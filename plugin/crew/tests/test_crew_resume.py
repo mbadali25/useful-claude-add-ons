@@ -196,12 +196,34 @@ class Fixture:
     def repo_file(self, name, value):
         (self.root / ".crew" / name).write_text(json.dumps({"resume": {"auto": value}}), encoding="utf-8")
 
-    def decide(self, text=None, source="clear", session="s1", **kwargs):
+    def bind(self, text=None, session="s1"):
+        """Record `text` as written by this session and (stubbed) process, the
+        way the PostToolUse recorder does after a Write of the handoff (T-0042)."""
         text = _handoff(self.root, written=self.written) if text is None else text
+        path = self.root.parent / "authored-handoff.md"
+        path.write_bytes(text.encode("utf-8"))
+        return crew_resume.record_author(str(self.root), session, str(path))
+
+    def decide(self, text=None, source="clear", session="s1", bound=True, **kwargs):
+        """`bound=True` first records the note as this session's own, so every
+        test written before T-0042 keeps its meaning; `bound=False` does not."""
+        text = _handoff(self.root, written=self.written) if text is None else text
+        if bound:
+            self.bind(text, session)
         payload = {"hook_event_name": "SessionStart", "source": source, "session_id": session,
                    "cwd": str(self.root)}
         return crew_resume.decide(str(self.root), payload, text, str(self.plugin),
                                   global_path=str(self.global_path), **kwargs)
+
+
+_ME = {"pid": 4242, "start": 777}
+
+
+@pytest.fixture(autouse=True)
+def _this_process(monkeypatch):
+    """Every in-process test runs as one fixed Claude Code process. The real
+    ancestry walk is exercised end to end in test_crew_resume_hook.py."""
+    monkeypatch.setattr(crew_resume, "session_process", lambda pid=None: dict(_ME))
 
 
 @pytest.fixture
@@ -227,11 +249,12 @@ def test_decide_runs_when_armed_and_matching(fx):
 
 
 def test_decide_writes_nothing(fx):
+    fx.bind()
     before = _tree(fx.root)
 
-    fx.decide()
-    fx.decide(source="startup")
-    fx.decide(text=_handoff(fx.root, head="0000000"))
+    fx.decide(bound=False)
+    fx.decide(source="startup", bound=False)
+    fx.decide(text=_handoff(fx.root, head="0000000"), bound=False)
 
     assert _tree(fx.root) == before
 
@@ -261,8 +284,10 @@ def test_default_machine_path_is_read_when_none_is_given(fx, monkeypatch):
     import crew_state  # pylint: disable=import-outside-toplevel
     monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(fx.global_path))
     payload = {"hook_event_name": "SessionStart", "source": "clear", "session_id": "s1"}
+    text = _handoff(fx.root)
+    fx.bind(text)
 
-    got = crew_resume.decide(str(fx.root), payload, _handoff(fx.root), str(fx.plugin))
+    got = crew_resume.decide(str(fx.root), payload, text, str(fx.plugin))
 
     assert got["action"] == "run"
 
@@ -597,15 +622,25 @@ def _cli(*args, stdin=""):
     return done.returncode, done.stdout
 
 
+def _bind_for_cli(fx):
+    """The CLI runs in its own process, where the in-process identity stub
+    does not reach, so the CLI tests resume a manual /compact: bound by
+    session_id, the same on every host (T-0042)."""
+    path = fx.root / ".work" / "HANDOFF.md"
+    path.write_text(_handoff(fx.root, written=fx.written), encoding="utf-8")
+    crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
+    crew_resume.record_author(str(fx.root), "s1", str(path))
+
+
 def test_cli_decide_and_record(fx):
-    (fx.root / ".work" / "HANDOFF.md").write_text(_handoff(fx.root), encoding="utf-8")
+    _bind_for_cli(fx)
     common = ["--root", str(fx.root), "--session", "s1", "--global-path", str(fx.global_path),
               "--plugin-root", str(fx.plugin)]
 
-    code, out = _cli("decide", *common, "--source", "clear", "--json")
+    code, out = _cli("decide", *common, "--source", "compact", "--json")
     decision = json.loads(out)
     rcode, rout = _cli("record", "--root", str(fx.root), "--decision-json", "-", stdin=out)
-    again = json.loads(_cli("decide", *common, "--source", "clear", "--json")[1])
+    again = json.loads(_cli("decide", *common, "--source", "compact", "--json")[1])
 
     assert (code, decision["action"], decision["prompt"], rcode, json.loads(rout)["ok"], again["action"]) == \
         (0, "run", "/crew:done T-0001", 0, True, "wait")
@@ -693,9 +728,9 @@ def test_cli_decide_applies_the_staleness_rule(fx):
 
 
 def test_cli_decide_runs_on_a_fresh_note(fx):
-    (fx.root / ".work" / "HANDOFF.md").write_text(_handoff(fx.root), encoding="utf-8")
+    _bind_for_cli(fx)
 
-    _code, out = _cli("decide", "--root", str(fx.root), "--session", "s1", "--source", "clear", "--json",
+    _code, out = _cli("decide", "--root", str(fx.root), "--session", "s1", "--source", "compact", "--json",
                       "--global-path", str(fx.global_path), "--plugin-root", str(fx.plugin))
 
     assert json.loads(out)["action"] == "run"
@@ -1153,3 +1188,164 @@ def test_stuck_markers_older_than_a_day_are_pruned(fx):
     crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
 
     assert sorted(n for n in os.listdir(state) if n.endswith(".stuck")) == ["precompact-fresh.stuck"]
+
+
+
+# --- T-0042 step 6: a handoff resumes only in the session that wrote it -----
+
+def _other_process(monkeypatch, value):
+    monkeypatch.setattr(crew_resume, "session_process", lambda pid=None: value)
+
+
+def test_clear_runs_for_the_session_that_wrote_the_handoff(fx):
+    fx.bind()
+
+    got = fx.decide(bound=False)
+
+    assert (got["action"], got["prompt"]) == ("run", "/crew:done T-0001"), got
+
+
+def test_clear_waits_on_a_handoff_another_session_wrote(fx, monkeypatch):
+    """Round 4 NIT :421: decide bound the note to the checkout only, so a
+    /clear in ANOTHER terminal on the same worktree resumed this one's note."""
+    fx.bind()
+    _other_process(monkeypatch, {"pid": 5151, "start": 888})
+
+    got = fx.decide(bound=False)
+
+    assert (got["action"], "written by another session" in got["reason"]) == ("wait", True), got
+
+
+def test_clear_waits_when_this_process_cannot_be_identified(fx, monkeypatch):
+    fx.bind()
+    _other_process(monkeypatch, None)
+
+    got = fx.decide(bound=False)
+
+    assert (got["action"], "could not be identified" in got["reason"]) == ("wait", True), got
+
+
+def test_clear_waits_when_the_author_process_was_not_identified(fx, monkeypatch):
+    """The neighbour: an author record whose process was unknown when it was
+    written matches nothing -- not even a reader that is also unknown."""
+    _other_process(monkeypatch, None)
+    fx.bind()
+    _other_process(monkeypatch, dict(_ME))
+
+    got = fx.decide(bound=False)
+
+    assert (got["action"], "written by another session" in got["reason"]) == ("wait", True), got
+
+
+def test_compact_runs_for_the_session_that_wrote_the_handoff(fx):
+    crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
+    fx.bind(session="s1")
+
+    got = fx.decide(source="compact", session="s1", bound=False)
+
+    assert (got["action"], got["prompt"]) == ("run", "/crew:done T-0001"), got
+
+
+def test_compact_waits_on_a_handoff_another_session_wrote(fx):
+    crew_resume.write_precompact_record(str(fx.root), {"session_id": "s2", "trigger": "manual"})
+    fx.bind(session="s1")
+
+    got = fx.decide(source="compact", session="s2", bound=False)
+
+    assert (got["action"], "written by another session" in got["reason"]) == ("wait", True), got
+
+
+def test_a_handoff_with_no_author_record_waits(fx):
+    got = fx.decide(bound=False)
+
+    assert (got["action"], "no record of which session wrote" in got["reason"]) == ("wait", True), got
+
+
+def test_a_handoff_changed_since_its_author_wrote_it_waits(fx):
+    fx.bind()
+
+    got = fx.decide(text=_handoff(fx.root, written=fx.written, extra="Edited by Bash."), bound=False)
+
+    assert (got["action"], "changed since its author session wrote it" in got["reason"]) == ("wait", True), got
+
+
+def _write_author(fx, content):
+    path = crew_resume.author_path(str(fx.root))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if os.path.lexists(path):
+        os.unlink(path)
+    if content == "dir":
+        os.makedirs(path)
+    else:
+        with open(path, "wb") as handle:
+            handle.write(content)
+    return path
+
+
+@pytest.mark.parametrize("content", [
+    pytest.param(b'{"worktrees": ', id="truncated"),
+    pytest.param(b"[]", id="not-an-object"),
+    pytest.param(b'{"worktrees": []}', id="worktrees-not-an-object"),
+    pytest.param("entry", id="entry-not-an-object"),
+    pytest.param("dir", id="a-directory"),
+    pytest.param("lstat", id="lstat-permission-error"),
+])
+def test_an_unreadable_author_record_waits(fx, monkeypatch, content):
+    fx.bind()
+    path = crew_resume.author_path(str(fx.root))
+    if content == "lstat":
+        _refuse_lstat(monkeypatch, path)
+    elif content == "entry":
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        (key,) = data["worktrees"]
+        data["worktrees"][key] = "nope"
+        _write_author(fx, json.dumps(data).encode("utf-8"))
+    else:
+        _write_author(fx, content)
+
+    got = fx.decide(bound=False)
+
+    assert (got["action"], "handoff-author.json" in got["reason"]) == ("wait", True), got
+
+
+def test_record_author_that_cannot_read_the_handoff_leaves_no_entry(fx):
+    """A recorder that could not read the note must not leave the PREVIOUS
+    note's entry standing for it."""
+    fx.bind()
+
+    ok, reason = crew_resume.record_author(str(fx.root), "s1", str(fx.root / "no-such-handoff.md"))
+
+    got = fx.decide(bound=False)
+    assert (ok, bool(reason), got["action"], "no record of which session wrote" in got["reason"]) == \
+        (False, True, "wait", True), got
+
+
+def test_record_author_writes_this_worktrees_entry(fx):
+    text = _handoff(fx.root, written=fx.written)
+
+    ok, _ = fx.bind(text, session="s9")
+
+    with open(crew_resume.author_path(str(fx.root)), encoding="utf-8") as handle:
+        (entry,) = json.load(handle)["worktrees"].values()
+    assert (ok, entry["session_id"], entry["process"],
+            entry["sha256"] == crew_resume.hashlib.sha256(text.encode("utf-8")).hexdigest()) == \
+        (True, "s9", _ME, True)
+
+
+def test_a_failed_author_write_leaves_no_entry_behind(fx, monkeypatch):
+    """s2 rewrote the same note and its record did not land: s1's entry must
+    not keep vouching for a note s1 no longer wrote last."""
+    crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
+    fx.bind(session="s1")
+
+    def refuse(_src, _dst):
+        raise PermissionError(13, "Permission denied")
+    monkeypatch.setattr(crew_resume.os, "replace", refuse)
+    ok, _ = fx.bind(session="s2")
+    monkeypatch.undo()
+    monkeypatch.setattr(crew_resume, "session_process", lambda pid=None: dict(_ME))
+
+    got = fx.decide(source="compact", session="s1", bound=False)
+
+    assert (ok, got["action"]) == (False, "wait"), got

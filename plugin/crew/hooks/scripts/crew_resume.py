@@ -67,6 +67,13 @@ RESUME_SOURCES = ("clear", "compact")
 # The consumed-once record keeps this many handoff hashes per worktree.
 CONSUMED_KEEP = 50
 STATE_FILE = "resume-state.json"
+# Which session wrote the handoff (T-0042): written by the PostToolUse hook
+# after a Write/Edit/MultiEdit of the handoff, on an armed machine only.
+AUTHOR_FILE = "handoff-author.json"
+# The process name Claude Code runs as, read from /proc/<pid>/comm. The
+# T-0042 spike (Claude Code 2.1.283, Linux) measured it as the nearest
+# ancestor of every hook, the same across /clear and different per terminal.
+CLAUDE_COMM = "claude"
 # A PreCompact record older than this does not describe the compact that
 # just happened.
 PRECOMPACT_MAX_AGE = 600
@@ -189,9 +196,136 @@ def state_path(root):
     return os.path.join(state_dir(root), STATE_FILE)
 
 
+def author_path(root):
+    return os.path.join(state_dir(root), AUTHOR_FILE)
+
+
 def _worktree_key(root):
     top = git_out(root, "rev-parse", "--show-toplevel")
     return os.path.normcase(os.path.realpath(top or root))
+
+
+# --------------------------------------------------------------------------
+# which session wrote the handoff
+
+def _proc_start(pid):
+    """/proc/<pid>/stat field 22 (start time in clock ticks), or None."""
+    try:
+        with open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as handle:
+            return int(handle.read().rsplit(")", 1)[1].split()[19])
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+def session_process(pid=None):
+    """{pid, start} of the nearest ancestor that is the Claude Code process,
+    or None when none is found or /proc cannot say -- always None on native
+    Windows, and on any host without /proc. The start time is part of the
+    identity so a reused pid is a different process. No environment
+    override: a variable can be copied from one session into another."""
+    if os.name == "nt":
+        return None
+    for candidate in crew_autocycle.ancestors(pid):
+        try:
+            with open(f"/proc/{candidate}/comm", encoding="utf-8", errors="replace") as handle:
+                comm = handle.read().strip()
+        except OSError:
+            return None
+        if comm == CLAUDE_COMM:
+            start = _proc_start(candidate)
+            return None if start is None else {"pid": candidate, "start": start}
+    return None
+
+
+def _author_entry(root):
+    """This worktree's author record: {} when there is no file or no entry,
+    None when the file cannot be stat'ed, read or parsed, or is not the shape
+    record_author writes. None is an unknown, never "nobody wrote it"."""
+    path = author_path(root)
+    absent = _absent(path)
+    if absent is None:
+        return None
+    if absent:
+        return {}
+    data = _read_author(path)
+    if data is None:
+        return None
+    entry = data["worktrees"].get(_worktree_key(root), {})
+    return entry if isinstance(entry, dict) else None
+
+
+def _read_author(path):
+    """The author file's object, or None when it is not the shape written."""
+    try:
+        with open(path, encoding="utf-8-sig") as handle:
+            data = json.loads(handle.read())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("worktrees", {}), dict):
+        return None
+    data.setdefault("worktrees", {})
+    return data
+
+
+def record_author(root, session_id, handoff_path):
+    """(ok, reason). Record that `session_id`, in this Claude Code process,
+    just wrote the handoff at `handoff_path`. The PostToolUse hook calls it
+    after a Write/Edit/MultiEdit of the handoff on an armed machine.
+
+    The note is read ONCE, under the lock, through the same reader `decide`'s
+    caller uses, so the recorded sha is the sha `decide` computes. A note that
+    cannot be read, or a write that fails, leaves NO entry for this worktree
+    (the previous one is removed where possible): a missing entry waits,
+    while a stale one would vouch for a note its session never saw. An author
+    file that cannot be read is replaced -- it holds no history, only the
+    latest writer per worktree, and a lost entry for another worktree only
+    makes that worktree wait."""
+    path = author_path(root)
+    lock = path + ".lock"
+    if not crew_context.acquire_lock(lock):
+        return False, "could not take the handoff-author lock"
+    try:
+        key = _worktree_key(root)
+        data = _read_author(path) if _absent(path) is False else None
+        worktrees = data["worktrees"] if data else {}
+        text = read_text(handoff_path)
+        entry = None
+        if isinstance(session_id, str) and session_id and text is not None:
+            entry = {"sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(), "session_id": session_id,
+                     "process": session_process(), "at": int(time.time())}
+        if entry is None:
+            worktrees.pop(key, None)
+        else:
+            worktrees[key] = entry
+        body = json.dumps({"worktrees": worktrees}, sort_keys=True)
+        tmp = f"{path}.{os.getpid()}.tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as handle:
+                handle.write(body)
+            os.replace(tmp, path)
+        except OSError as exc:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            if entry is not None:
+                _drop_author(path)
+            return False, f"handoff-author.json was not written: {exc.__class__.__name__}"
+        if entry is None:
+            return False, "the handoff could not be read, or no session id was given"
+        return True, ""
+    finally:
+        crew_context.release_lock(lock)
+
+
+def _drop_author(path):
+    """A failed write must not leave the previous entry vouching for the new
+    note. Removing the whole file is the only step left that needs no write
+    of it; an author file that is gone makes every worktree wait."""
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
 
 
 def _absent(path):
@@ -243,6 +377,36 @@ def _entry(state, key):
             or not isinstance(entry.get("last", {}), dict):
         return None
     return entry
+
+
+_UNREADABLE_AUTHOR = "handoff-author.json could not be read (or its directory cannot be searched)"
+_OTHER_SESSION = "the handoff was written by another session"
+
+
+def _author_refusal(root, payload, sha):
+    """Why this session may not resume this note, or "" when it wrote it.
+
+    `compact` keeps its session_id, so it is bound by that; `clear` gets a
+    new session_id, so it is bound by the Claude Code process (T-0042 spike).
+    An unknown on either side is a refusal, never a match."""
+    entry = _author_entry(root)
+    if entry is None:
+        return _UNREADABLE_AUTHOR
+    if not entry:
+        return "no record of which session wrote this handoff"
+    if entry.get("sha256") != sha:
+        return "the handoff changed since its author session wrote it"
+    if payload.get("source") == "compact":
+        mine = payload.get("session_id")
+        if not isinstance(mine, str) or not mine or entry.get("session_id") != mine:
+            return _OTHER_SESSION
+        return ""
+    me = session_process()
+    if me is None:
+        return "this session's process could not be identified"
+    if entry.get("process") != me:
+        return _OTHER_SESSION
+    return ""
 
 
 _UNREADABLE_STATE = ("resume-state.json could not be read (or its directory cannot be searched) - "
@@ -520,6 +684,9 @@ def decide(root, payload, handoff_text, plugin_root, global_path=None, archived=
     name = parsed["command"].split(":", 1)[1]
     if not os.path.isfile(os.path.join(plugin_root, "commands", name + ".md")):
         return _decision("wait", f"{parsed['command']} is not installed", prompt, sha)
+    refused = _author_refusal(root, payload, sha)
+    if refused:
+        return _decision("wait", refused, prompt, sha)
     entry = _entry(_read_state(root), _worktree_key(root))
     if entry is None:
         return _decision("wait", _UNREADABLE_STATE, prompt, sha)
