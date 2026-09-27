@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@fc54def6
-verified: 2026-09-25
+anchor: useful-claude-add-ons@05cf5bc9
+verified: 2026-09-27
 
 # localgpu
 
@@ -1065,3 +1065,11 @@ Both crew files were re-read at the two live citations: the `crew_config.py` re-
 above. The citations in the QA-history sections record what was true at their own passes and are
 left as written. Nothing under `plugin/localgpu/` changed.
 
+## Re-anchor provenance - `fc54def6` -> `05cf5bc9`, 2026-09-27 (T-0009)
+
+`git diff --name-only fc54def6 05cf5bc9 -- <the files this note cites>` returns
+`plugin/crew/hooks/scripts/crew_config.py` (T-0005's environment layer and T-0009's
+`deployWorkflow`/`environments.workflows` additions, all below `:240`). The live citation, the
+provider re-export at `plugin/crew/hooks/scripts/crew_config.py:127-128`, was re-taken by content
+with a line-level diff and holds (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`,
+`QA_PROVIDERS = crew_state.QA_PROVIDERS`). Nothing under `plugin/localgpu/` changed.

@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@a26ad8c0
-verified: 2026-09-25
+anchor: useful-claude-add-ons@05cf5bc9
+verified: 2026-09-27
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -212,7 +212,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2129-2136` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2196-2203` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -388,7 +388,7 @@ set on Ubuntu.
   `plugin/crew/tests/sabotage.py:75`, `:3046` — `sabotage_refresh.py`'s
   registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
-  `plugin/crew/CONFIG.md:2129-2136` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2196-2203` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -589,3 +589,14 @@ the descoping limitation moved `:2114-2121` -> `:2129-2136`, re-read with `diff`
 corrected above), the version files (stepped back and re-set, byte-identical to `aa7f9841`) and,
 under `plugin/crew/**`, the Step 10 code, tests, README, BUDGETS and the crew-cloud skill, none
 cited here at a line. `_verify/smoke.sh` and `scripts/check-marketplace.py` did not change.
+
+## Re-anchor provenance - `a26ad8c0` -> `05cf5bc9`, 2026-09-27 (T-0009)
+
+`git diff --name-only a26ad8c0 05cf5bc9 -- <the paths this note cites>` returns
+`plugin/crew/CONFIG.md` (two table rows, the leaf-count paragraph and the new
+`environments.workflows` subsection, 67 lines net above the verification chapter, so the
+descoping limitation moved `:2129-2136` -> `:2196-2203`, re-taken by content, same text;
+corrected above) and, under `plugin/crew/**`, the T-0009 code and tests, none cited here at a
+line. `.crew/verify.json`, `_verify/smoke.sh` and `scripts/check-marketplace.py` did not change;
+T-0005's cloud-guard rule already maps `cloud_guard.py`, `crew_guards.py` and the
+`test_cloud_guard*.py` files T-0009 touched.

@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@a26ad8c0
-verified: 2026-09-26
+anchor: useful-claude-add-ons@05cf5bc9
+verified: 2026-09-27
 
 ## Re-derive provenance
 
@@ -216,15 +216,17 @@ the previous note's account of it** — see "Unverified at this anchor").
 ## Config, the guard vocabulary, and the ratchet
 
 **DERIVED at this anchor by importing `crew_config` and executing both
-default functions.** Re-measured 2026-09-25 at the T-0005 anchor (116 / 65 / 51 at
-6c497a14; T-0005 added `environments.prodUnattended` to both layers and the repo-only
-`environments.nonProd`), module resolved from this checkout, not an installed plugin cache:
+default functions.** Re-measured 2026-09-27 at the T-0009 anchor (118 / 66 / 52 at the T-0005
+anchor `a26ad8c0`, 116 / 65 / 51 at 6c497a14; T-0005 added `environments.prodUnattended` to
+both layers and the repo-only `environments.nonProd`, T-0009 `guards.deployWorkflow` to both
+layers and the repo-only `environments.workflows`), module resolved from this checkout, not an
+installed plugin cache:
 
 | | Leaves | Source |
 |---|---|---|
-| `default_config()` | **118** | `plugin/crew/hooks/scripts/crew_config.py:240` |
-| `default_global_config()` | **66** | `plugin/crew/hooks/scripts/crew_config.py:374` |
-| repo-only | **52** | the set difference |
+| `default_config()` | **120** | `plugin/crew/hooks/scripts/crew_config.py:240` |
+| `default_global_config()` | **67** | `plugin/crew/hooks/scripts/crew_config.py:376` |
+| repo-only | **53** | the set difference |
 
 Treat these as a fact about one commit, not a standing figure. Re-measure
 from `plugin/crew/hooks/scripts/` rather than trusting the table:
@@ -250,21 +252,22 @@ one ratchet table.** `plugin/crew/hooks/scripts/crew_guards.py`:
 
 | Group | Names | Vocabulary | Line |
 |---|---|---|---|
-| `GUARD_NAMES` | `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive` (6) | `block`/`ask`/`allow`, `guard_policy_rank` (`:411`) | `:105-106` |
-| `PROD_GUARD_NAMES` | `prodDatabase`, `prodServer` (2) | `none`/`read`/`full`, `prod_level_rank` (`:440`) | `:127` |
-| `ROLE_WRITE_GUARD_NAMES` | `roleWrites` (1) | `block`/`report`/`off`, default `off` not floor, `role_writes_rank` (`:476`) | `:150` |
-| `CLOUD_GUARD_NAMES` | `cloudGuard` (1) — **new since the previous anchor** | same vocabulary and functions as `roleWrites`, its own words | `:189` |
+| `GUARD_NAMES` | `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive`, `deployWorkflow` (7) | `block`/`ask`/`allow`, `guard_policy_rank` (`:421`) | `:106-107` |
+| `PROD_GUARD_NAMES` | `prodDatabase`, `prodServer` (2) | `none`/`read`/`full`, `prod_level_rank` (`:450`) | `:128` |
+| `ROLE_WRITE_GUARD_NAMES` | `roleWrites` (1) | `block`/`report`/`off`, default `off` not floor, `role_writes_rank` (`:486`) | `:151` |
+| `CLOUD_GUARD_NAMES` | `cloudGuard` (1) — **new since the previous anchor** | same vocabulary and functions as `roleWrites`, its own words | `:190` |
 
-`ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:195-196`) is the
-concatenation of all four — **ten** guard names in total.
+`ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:196-197`) is the
+concatenation of all four — **eleven** guard names in total (T-0009 appended `deployWorkflow`
+to `GUARD_NAMES`).
 `cloud_guard.py`'s own docstring (`:1-6`) states what `cloudGuard` actually
-is: a switch, not a policy — turning it on is what makes the six
+is: a switch, not a policy — turning it on is what makes the seven
 `GUARD_NAMES` policies (which existed and ratcheted but governed nothing
 since the pre-1.0 command guard was removed) mean something again for the
 `Bash`/`PowerShell` `PreToolUse` matcher.
 
 **The environment layer (T-0005, crew 1.0.41).** `cloud_guard.py`'s ENVIRONMENTS docstring
-paragraph (`plugin/crew/hooks/scripts/cloud_guard.py:33-55`) states it: a terraform finding is
+paragraph (`plugin/crew/hooks/scripts/cloud_guard.py:34-56`) states it: a terraform finding is
 also judged by its target environment (`nonProd`, `prod` or `unknown`, from `TF_WORKSPACE`, an
 in-sequence literal `workspace select|new`, `.terraform/environment`, `-var environment=` /
 `TF_VAR_environment`, or a saved plan's sidecar) and by whether it destroys (`yes`, `no`,
@@ -272,8 +275,9 @@ in-sequence literal `workspace select|new`, `.terraform/environment`, `-var envi
 is `.crew/tfplan/<sha256>.json`, written outside the hook by
 `plugin/crew/hooks/scripts/crew_tfplan.py` (`summarize`, `:174`; `main`, `:237`), which reads
 the plan's workspace out of the plan file itself (`plan_workspace`, `:123`). The config is
-`crew_guards.ENVIRONMENTS_DEFAULTS` (`plugin/crew/hooks/scripts/crew_guards.py:251`):
-`environments.nonProd` is repo-only, `environments.prodUnattended` ratchets (below). DERIVED from
+`crew_guards.ENVIRONMENTS_DEFAULTS` (`plugin/crew/hooks/scripts/crew_guards.py:260-261`):
+`environments.nonProd` is repo-only, `environments.prodUnattended` ratchets (below), and T-0009's
+repo-only `environments.workflows` is left out of the terraform layer's `engaged`. DERIVED from
 the docstrings and definitions cited; the verdict table itself is `plugin/crew/CONFIG.md`'s
 `environments.*` section, not re-derived here.
 
@@ -282,45 +286,64 @@ anything, `scan` calls
 `_literal_gate` (`plugin/crew/hooks/scripts/cloud_guard.py:2802`, called at `:2851`, and only at
 depth 0 - the raw command, never the lexer's own nested extractions): a line that RUNS terraform,
 terragrunt or tofu and holds a word that is not a plain literal (`crew_guards.first_non_literal`,
-`plugin/crew/hooks/scripts/crew_guards.py:1206`) yields one `terraformApply` finding whose scope
+`plugin/crew/hooks/scripts/crew_guards.py:1216`) yields one `terraformApply` finding whose scope
 `op` is `OP_UNREADABLE_LINE`; `_terraform_verdict` answers it before reading any plan or
 environment (ask, denied unattended; `block` denies). "Runs" is Step 9's trigger,
-`crew_guards.command_trigger` (`:1802`; `command_names_terraform` `:1813` returns its word): its
-own bash reader, `_GateReader` (`:1251`), splits the raw text into argv lists, and `_argv_trigger`
-(`:1585`) fires on a command word that dequotes to one of the three after `_unwrap`'s wrappers, on
+`crew_guards.command_trigger` (`:1812`; `command_names_terraform` `:1823` returns its word): its
+own bash reader, `_GateReader` (`:1261`), splits the raw text into argv lists, and `_argv_trigger`
+(`:1595`) fires on a command word that dequotes to one of the three after `_unwrap`'s wrappers, on
 a `bash -c`/`eval`/`pwsh -c` payload or substitution that does, or on an unreadable command word
 when the line names terraform, `destroy`, `apply` or `workspace`. Anything the reader does not
 read with certainty falls back to Step 8's any-word trigger, `crew_guards.names_terraform`
-(`:1194`). PowerShell lines use the same command-word rule since Step 10, `crew_guards.ps_trigger`
-(`:1778`, per command `_ps_argv_trigger` `:1725`), read with the lexer's `_lex_ps`: `&`, `.`,
+(`:1204`). PowerShell lines use the same command-word rule since Step 10, `crew_guards.ps_trigger`
+(`:1788`, per command `_ps_argv_trigger` `:1735`), read with the lexer's `_lex_ps`: `&`, `.`,
 `terraform.exe`, a path, `Start-Process`, `pwsh -c`, `bash -c`, `Invoke-Expression`, `$(...)`.
 The trigger returns `(word, unseen)`: `unseen` marks a command the lexer is not known to read (an
 opaque script runner such as `flock` or `ssh` whose own words name terraform, `find -exec`'s found
 path, zsh's `=terraform`, the reader's give-up, an alias, and the name a line copies or links
-terraform to, run with a destroy/apply/workspace operand - `_copies_terraform` `:1662`), and an
+terraform to, run with a destroy/apply/workspace operand - `_copies_terraform` `:1672`), and an
 unseen line is could-not-tell even when every word is plain. Since Step 10 there is no
 unknown-wrapper fallback and no data-command exemption: an argument naming terraform is data
 unless the command word is terraform (README "What the guard does not catch" lists what that
-leaves out). A read-only terraform/tofu subcommand (`_tf_read_only`, `:1533`) does not trigger.
+leaves out). A read-only terraform/tofu subcommand (`_tf_read_only`, `:1543`) does not trigger.
 The helpers live in `crew_guards.py` because `cloud_guard.py` sits at `.pylintrc`'s
-max-module-lines (3400 of 3400 at `a26ad8c0`); `cloud_guard._GATE_HELPERS` (`:2798`) passes the
+max-module-lines (3400 of 3400 at `a26ad8c0`, and again at the T-0009 anchor, whose classifier
+lives in `crew_guards.py` for the same reason); `cloud_guard._GATE_HELPERS` (`:2798`) passes the
 lexer's `_unwrap`, `_shell_args`, `_pwsh_payload`, `_ps_normalise`, `_head_name` and `_lex_ps` in,
 so `crew_guards` still imports nothing from it. The lexer's own terraform reading skips options
-before the subcommand (`_tf_skip_options` `:1547`, used by `_terraform_destructive` `:1559`), so
+before the subcommand (`_tf_skip_options` `:1549`, used by `_terraform_destructive` `:1561`), so
 `terragrunt --working-dir infra destroy` is a destroy. DERIVED from the code cited.
 
-**The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2418-2530`)
-now holds 14 keys**, built in seven steps (a literal dict of two at `:2418`, four `.update()`
-calls at `:2433`, `:2446`, `:2457` and `:2467`, and two single-key assignments at `:2503` and
-`:2526`) rather than one table: `pm.authority`, `install.policy`, the 6 `GUARD_NAMES` keys, the 2
+**Workflow dispatches (T-0009).** `gh workflow run <wf>` and its REST twin, `gh api` POST on
+`repos/<o>/<r>/actions/workflows/<wf>/dispatches`, are parsed by `crew_guards.dispatch_scopes`
+(`plugin/crew/hooks/scripts/crew_guards.py:2108`; the two parsers `_dispatch_from_run` `:2006` and
+`_dispatch_from_api` `:2021`, `xargs`/`parallel` through `_fed_dispatch` `:2056`) into one scope
+shape, and classified by one function, `dispatch_environment` (`:2156`), against the repo-only
+`environments.workflows` map: a workflow matching no key returns None and is not judged; what
+crew cannot tell is `unknown`. `deploy_verdict` (`:2201`) is T-0005's table with
+`guards.deployWorkflow` as the base policy, except that `allow` covers nonProd only.
+`cloud_guard.py` holds only the call sites: `_classify`'s `gh` branch
+(`plugin/crew/hooks/scripts/cloud_guard.py:2268`) and `_judge_one` (`:3094`, through
+`judge_dispatch`, `crew_guards.py:2245`); the classes `ENV_NONPROD`/`ENV_PROD`/`ENV_UNKNOWN`
+are now defined in `crew_guards.py` (`:1858`) and imported by `cloud_guard.py` (`:131`). The
+map is read by `cloud_guard.environments_config` (`:2545`) and validated by
+`crew_config.environments_block_problem` (`plugin/crew/hooks/scripts/crew_config.py:1001`).
+DERIVED from the code cited.
+
+**The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2445-2568`)
+now holds 15 keys**, built in seven steps (a literal dict of two at `:2445`, four `.update()`
+calls at `:2460`, `:2484`, `:2495` and `:2505`, and two single-key assignments at `:2541` and
+`:2564`) rather than one table: `pm.authority`, `install.policy`, the 7 `GUARD_NAMES` keys, the 2
 `PROD_GUARD_NAMES` keys, `guards.roleWrites`, `guards.cloudGuard`,
 `change.requireForProduction` and `environments.prodUnattended` (T-0005, crew 1.0.41) =
-2 + 6 + 2 + 1 + 1 + 1 + 1 = 14. Counted by reading the construction sites and confirmed with
-`len(crew_config._RATCHETED)` at the T-0005 anchor, not by trusting the literal alone — the
-literal at `:2418-2429` holds only 2. (Before T-0005 this said "five steps" for 13 keys; the
+2 + 7 + 2 + 1 + 1 + 1 + 1 = 15 (T-0009 added `guards.deployWorkflow` through the
+`GUARD_NAMES` update, and `:2471` then replaces that key's `allow` widening note, adding no
+key). Counted by reading the construction sites and confirmed with
+`len(crew_config._RATCHETED)` at the T-0009 anchor, not by trusting the literal alone — the
+literal at `:2445-2456` holds only 2. (Before T-0005 this said "five steps" for 13 keys; the
 sites were already six then — the literal, four `.update()` calls and one assignment.) The
 same key is registered in `crew_guards.RATCHETED_KEYS`
-(`plugin/crew/hooks/scripts/crew_guards.py:545-549`).
+(`plugin/crew/hooks/scripts/crew_guards.py:555-559`).
 
 ## `.crew/config.json` vs `.crew/crew.json` — the open 1.0.x authority question
 
@@ -331,7 +354,7 @@ they disagree:
 - `crew_config.py` (used by `verify-gate.sh`, `promote-gate.sh`,
   `role-write-guard.ps1`'s config lookups, and everything the ratchet/guard
   machinery above touches) reads **only** `.crew/config.json`
-  (`plugin/crew/hooks/scripts/crew_config.py:1234`, and the module's own
+  (`plugin/crew/hooks/scripts/crew_config.py:1259`, and the module's own
   docstring at `:1` — "Owns the single definition of a fresh
   `.crew/config.json`").
 - `crew_context.py`'s `load_crew_config`
@@ -566,10 +589,10 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
 - `plugin/crew/hooks/scripts/crew_state.py:986` — `TRIGGERS`, a 15-entry
   tuple, unchanged in membership and order from the previous anchor.
 - `plugin/crew/hooks/scripts/crew_state.py:2883` — `evaluate_triggers`.
-- `plugin/crew/hooks/scripts/crew_config.py:240` / `:374` —
+- `plugin/crew/hooks/scripts/crew_config.py:240` / `:376` —
   `default_config()` / `default_global_config()`.
-- `plugin/crew/hooks/scripts/crew_config.py:2418` — `_RATCHETED`, the
-  14-key ratchet table (six construction steps).
+- `plugin/crew/hooks/scripts/crew_config.py:2445` — `_RATCHETED`, the
+  15-key ratchet table (six construction steps).
 - `plugin/crew/hooks/scripts/role_write_guard.py:539` — `classify`, the
   decision function; `:684` — `main()`.
 - `plugin/crew/hooks/scripts/role-write-guard.sh:348` — where the strict
@@ -608,8 +631,8 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   — 4 roles, all tiered, none a specialist.
 - `crew_state.PM_DEFAULTS` (`:1082-1095`) and `crew_state.AUTHORITY_DEFAULT`
   (`:1052`) — the unnamed session's own dispatch authority.
-- `crew_guards.ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:195-196`)
-  — 10 guard names across 4 vocabularies.
+- `crew_guards.ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:196-197`)
+  — 11 guard names across 4 vocabularies.
 - `.crew/metrics.jsonl` — append-only, one JSON object per line, replacing
   the pre-1.0 `.crew/metrics.md` (`crew_metrics.py`'s module docstring,
   **not otherwise read**). Still machine-local: the `.gitignore` un-ignore
@@ -869,3 +892,24 @@ the first change is at `:57`, so `:1-6` and `:33-55` hold; `_literal_gate` moved
 `:1552` -> `:1533`, `_argv_trigger` `:1625` -> `:1585`, `command_trigger` `:1778` -> `:1802`,
 `command_names_terraform` `:1789` -> `:1813`; `ps_unseen` and `cloud_guard._ps_unseen` are gone,
 `ps_trigger` and `_ps_argv_trigger` are new. Re-taken by content, corrected above.
+
+## Re-anchor provenance - `a26ad8c0` -> `05cf5bc9`, 2026-09-27 (T-0009)
+
+`git diff --name-only a26ad8c0 05cf5bc9 -- <the paths this note cites>` returns `cloud_guard.py`,
+`crew_guards.py`, `crew_config.py`, `plugin/crew/CONFIG.md` (cited by name and section only; the
+new `environments.workflows` subsection sits inside section 16, so section numbers hold) and,
+under `plugin/crew/**`, the T-0009 tests, templates, skills, README and BUDGETS. Every cited line
+of the three modules was re-taken by content with a line-level diff against `a26ad8c0`. In
+`crew_guards.py` `import json` (`:29`) moves everything below it +1 and the
+`ENVIRONMENTS_DEFAULTS` comment +9 more, so the guard table, `ALL_GUARD_NAMES` `:196-197`,
+`first_non_literal` `:1216`, the trigger functions and `RATCHETED_KEYS` `:555-559` moved;
+`ENVIRONMENTS_DEFAULTS` itself changed (`:260-261`, `workflows` added) and was re-read; the
+dispatch section is appended at `:1829`. In `cloud_guard.py` the docstring gained one line and
+the import block one, and `ENV_*`'s definition moved to `crew_guards.py`, so `:34-56` is the
+ENVIRONMENTS paragraph and `_literal_gate` `:2802`, `_GATE_HELPERS` `:2798` and
+`_terraform_verdict` `:2993` hold; the file is still 3400 lines. In `crew_config.py` a comment
+inside `default_config` (+2 from `:352`), the `workflows` validation (+23 more by `:1055`), the
+`deployWorkflow` prose (+2 more by `:2285`) and its allow note (+11 more by `:2568`) moved
+`default_global_config` `:376`, `_RATCHETED` `:2445` and its sites. The
+leaf counts (120 / 67 / 53), the guard count (11) and `len(crew_config._RATCHETED)` (15) were
+re-executed, not read. The T-0009 paragraph above is new and DERIVED from the code it cites.

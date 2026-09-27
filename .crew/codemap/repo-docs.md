@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@a26ad8c0
-verified: 2026-09-25
+anchor: useful-claude-add-ons@05cf5bc9
+verified: 2026-09-27
 
 ## Re-derive provenance
 
@@ -287,7 +287,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1854` (`:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`, `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1896` (`:1852` at `aa7f9841`, `:1837` at `1e210476`, `:1830` at `3a57b2d2`, `:1809` at `2170d72e`, `:1770` at `8d447a7d`, `:1767` at `f2bb919b`, `:1646` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -525,3 +525,14 @@ catch" subsection added, 44 lines net, so the `docs/runbooks/INDEX.md` mention m
 `:1854`, re-read, same text; corrected above; `:12`, `:15`, `:46`, `:414` and `:736` are above the
 first hunk and hold) and `CHANGELOG.md` (the 1.0.41 entry gained the Step 10 bullet; cited by
 name only). `.crew/verify.json` did not change.
+
+## Re-anchor provenance - `a26ad8c0` -> `05cf5bc9`, 2026-09-27 (T-0009)
+
+`git diff --name-only a26ad8c0 05cf5bc9 -- <the paths this note cites>` returns `plugin/crew/README.md`
+(the config-key table gained two rows, the cloud-guard table one, and a "Workflow dispatches"
+paragraph was added, 42 lines net above the cited block), `CHANGELOG.md` (the T-0009 entry under
+Unreleased; cited by name only in the body) and `docs/diagrams/data-flow-crew-config.mmd`
+(re-anchored in the same commit; `:1-2` is still its header). The README citations `:1896` and
+`:1852`, `:1837`, `:1830`, `:1809`, `:1770`, `:1767`, `:1646` were re-taken by content with a
+line-level diff (+42 each, same text); `:12`, `:15`, `:46`, `:414` and `:736` are above the first
+hunk and hold.
