@@ -29,10 +29,13 @@ _S = os.path.join(CREW, "hooks", "scripts")
 CHECK = os.path.join(_S, "crew_refresh_check.py")
 GUARD = os.path.join(_S, "scope_guard.py")
 AUDIT = os.path.join(_S, "completion_audit.py")
+IGNORE = os.path.join(_S, "crew_graph_ignore.py")
+STATUS = os.path.join(_S, "crew_status.py")
 _T = "tests/test_refresh_check.py::"
 _SG = "tests/test_scope_guard_refresh_artifacts.py::"
 _CA = "tests/test_completion_audit_refresh_artifacts.py::"
 _CAI = "tests/test_completion_audit.py::"
+_GI = "tests/test_graph_ignore.py::"
 
 _WORKTREE_DIFF = ("        return sorted(completion_audit.worktree_changes(root, sha, list(paths), "
                   "literal=True))\n")
@@ -243,4 +246,68 @@ REFRESH_MUTATIONS = (
     ("an edit to scope_guard.py runs no pytest rule", VERIFY,
      '                "plugin/crew/hooks/scripts/scope_guard.py",\n', "",
      _T + "test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule[scope_guard.py]"),
+    # T-0064: the secrets-denylist coverage check (crew_graph_ignore.py). Each
+    # one is a way a denylisted file could read as excluded while graphify
+    # still reads it, or an unknown could read as covered.
+    ("gitignore counts as coverage", IGNORE,
+     "    text = _read(root, IGNORE_FILE)\n",
+     '    text = (_read(root, ".gitignore") or "") + "\\n" + (_read(root, IGNORE_FILE) or "")\n',
+     _GI + "test_gitignore_alone_does_not_cover_a_tracked_file"),
+    ("an unknown reads as covered", IGNORE,
+     '    result = {"status": UNKNOWN, "uncovered": [], "denied": 0, "reason": why,\n',
+     '    result = {"status": COVERED, "uncovered": [], "denied": 0, "reason": why,\n',
+     _GI + "test_unknowns_never_read_as_covered"),
+    ("negation ignored", IGNORE,
+     '        if pattern and not pattern.startswith("!"):\n',
+     "        if pattern:\n",
+     _GI + "test_negation_in_graphifyignore_uncovers"),
+    ("write truncates first", IGNORE,
+     "    text = _block(missing)\n",
+     '    open(target, "w", encoding="utf-8").close()  # pylint: disable=consider-using-with\n'
+     "    text = _block(missing)\n",
+     _GI + "test_write_never_truncates_on_a_failed_build"),
+    ("a source is dropped", IGNORE,
+     'SETTINGS_FILES = (".claude/settings.json", ".claude/settings.local.json")\n',
+     'SETTINGS_FILES = (".claude/settings.json",)\n',
+     _GI + "test_each_source_contributes"),
+    ("the user's global excludes count as coverage", IGNORE,
+     '        done = _run_git(git, scratch, ["-c", f"core.excludesFile={empty}",\n',
+     "        done = _run_git(git, scratch, [\n",
+     _GI + "test_global_excludes_never_count_as_coverage"),
+    ("untracked and ignored files are not candidates", IGNORE,
+     '                                "--cached", "--others"])\n',
+     '                                "--cached"])\n',
+     _GI + "test_untracked_and_ignored_files_are_candidates"),
+    ("a nested .graphifyignore is not an unknown", IGNORE,
+     "        if nested:\n",
+     "        if False:\n",
+     _GI + "test_unknowns_never_read_as_covered[nested-graphifyignore]"),
+    ("an out-of-repo Read rule is kept as a root pattern", IGNORE,
+     '            return [], "outside the repository", None\n        patterns = [pattern]\n    elif inner == "~"',
+     '            return ["/**"], None, None\n        patterns = [pattern]\n    elif inner == "~"',
+     _GI + "test_out_of_repo_read_rules_are_skipped"),
+    ("the refresh check skips the coverage call", CHECK,
+     "    refused = _graph_ignore_refusal(root, graph_out, command)\n",
+     "    refused = None\n",
+     _T + "test_graph_refresh_refused_while_denylisted_path_uncovered"),
+    ("a refused graph stays refreshable", CHECK,
+     """"crew-graph SKILL 'Tainted graph'", command, refreshable=False)\n""",
+     """"crew-graph SKILL 'Tainted graph'", command, refreshable=True)\n""",
+     _T + "test_graph_refresh_refused_while_denylisted_path_uncovered"),
+    ("unknown coverage passes", CHECK,
+     '    if cover["status"] != crew_graph_ignore.COVERED:\n',
+     "    if False:\n",
+     _T + "test_graph_refresh_unknown_coverage_stops"),
+    ("an edit to crew_graph_ignore.py runs no pytest rule", VERIFY,
+     '    { "paths": ["plugin/crew/hooks/scripts/crew_graph_ignore.py",\n',
+     '    { "paths": [\n',
+     _T + "test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule[crew_graph_ignore.py]"),
+    ("status hides an uncovered path", STATUS,
+     '    if cover["status"] == crew_graph_ignore.COVERED:\n        return "graph-ignore  ok"\n',
+     '    if True:\n        return "graph-ignore  ok"\n',
+     "tests/test_status.py::test_status_flags_uncovered_denylisted_path"),
+    ("status reads an unknown coverage as ok", STATUS,
+     """    return f"graph-ignore  unknown - {cover['reason']}"\n""",
+     '    return "graph-ignore  ok"\n',
+     "tests/test_status.py::test_status_graph_ignore_ok_and_unknown[unknown]"),
 )

@@ -221,6 +221,61 @@ def test_graphify_missing_is_unknown(tmp_path):
     assert (item["status"], "graphify missing" in item["reason"]) == ("unknown", True), item
 
 
+def _stale_graph_with(tmp_path, files):
+    """The stale graph of `test_graph_behind_is_stale`, plus `files` committed
+    after it -- each a change the ticket made, so the graph is in scope."""
+    root, start = _repo(tmp_path)
+    _graph(root, start)
+    for rel, text in files.items():
+        _commit(root, rel, text)
+    return root
+
+
+def test_graph_refresh_refused_while_denylisted_path_uncovered(tmp_path, capsys):
+    """T-0064: graphify reads a tracked `.env` that no `.graphifyignore`
+    excludes, so naming its command would put the secret in the graph."""
+    root = _stale_graph_with(tmp_path, {".env": "PW=x\n"})
+
+    item = _artifact(_check(root), "graph", "graphify-out")
+    code = crew_refresh_check.main(["--root", str(root), "--ticket", TICKET])
+    out = capsys.readouterr().out
+
+    assert (item["status"], item["refreshable"], ".env" in item["reason"],
+            "crew_graph_ignore.py --write" in item["reason"], code,
+            "stop - a refresh cannot settle this" in out) == (
+        "unknown", False, True, True, 1, True), (item, out)
+
+
+def test_graph_refresh_named_once_covered(tmp_path):
+    root = _stale_graph_with(tmp_path, {".env": "PW=x\n", ".graphifyignore": ".env\n"})
+
+    item = _artifact(_check(root), "graph", "graphify-out")
+
+    assert (item["status"], item["refreshable"], item["command"]) == (
+        "stale", True, "graphify update ."), item
+
+
+def test_graph_refresh_unknown_coverage_stops(tmp_path):
+    root = _stale_graph_with(tmp_path, {".claude/settings.json": "{not json"})
+
+    item = _artifact(_check(root), "graph", "graphify-out")
+
+    assert (item["status"], item["refreshable"],
+            item["reason"].startswith("denylist coverage unknown: ")) == (
+        "unknown", False, True), item
+
+
+def test_autopilot_does_not_settle_a_refused_graph(tmp_path):
+    """The refusal reaches autopilot through the existing non-refreshable
+    `unknown`, which `_settles` already stops on; no autopilot code changes."""
+    import crew_autopilot  # pylint: disable=import-outside-toplevel
+    root = _stale_graph_with(tmp_path, {".env": "PW=x\n"})
+
+    item = _artifact(_check(root), "graph", "graphify-out")
+
+    assert crew_autopilot._settles(item) is False, item  # pylint: disable=protected-access
+
+
 def test_no_graph_file_is_not_applicable(tmp_path):
     root, _start = _repo(tmp_path)
     _commit(root, "src/app.py", "print('changed')\n")
@@ -961,7 +1016,7 @@ def test_no_artifact_keeps_a_measured_status_under_a_fallback_equal_to_head(tmp_
 
 
 _GUARD_MODULES = ("crew_refresh_check.py", "scope_guard.py", "completion_audit.py",
-                  "crew_freshness.py", "scope_base.py")
+                  "crew_freshness.py", "scope_base.py", "crew_graph_ignore.py")
 
 
 def _gate_matches(path, pat):

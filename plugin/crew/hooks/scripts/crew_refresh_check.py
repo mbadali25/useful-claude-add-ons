@@ -32,7 +32,11 @@ asks of it for the status line, narrowed here to THIS ticket:
            path (anything outside `GRAPH_NONCODE_PATHS` and `graph.out`).
            Refresh: `graphify update .` where the repo tracks GRAPH_REPORT.md
            beside the graph, else `graphify . --no-viz --code-only` -- the
-           choice `_read_graph`'s `reportTracked` already encodes.
+           choice `_read_graph`'s `reportTracked` already encodes. While
+           graphify would read a secrets-denylisted path the root
+           `.graphifyignore` does not exclude, or that cannot be told, the
+           graph is `unknown` and not refreshable, whatever its anchor says
+           (T-0064, `crew_graph_ignore.coverage`): no command is named.
 
 "The ticket changed" is `scope_base.resolve` then
 `completion_audit.changed_paths`: the base against the WORKING TREE plus
@@ -132,6 +136,7 @@ import shutil
 import sys
 
 import completion_audit
+import crew_graph_ignore
 import crew_ticket
 import scope_base
 from crew_common import dict_or_empty, git_out, read_text
@@ -486,6 +491,28 @@ def _diagrams(root, dirpath, changed, code, untracked):
     return found
 
 
+def _graph_ignore_refusal(root, graph_out, command):
+    """A non-refreshable `unknown` graph entry while graphify would read a
+    secrets-denylisted path (T-0064), else None. Running `command` then
+    would put the secret in the graph, so no refresh may be named; the fix
+    is `crew_graph_ignore.py --write`, which this check never runs: it is
+    read-only, and that write is outside the ticket's Touch."""
+    cover = crew_graph_ignore.coverage(root)
+    if cover["status"] == crew_graph_ignore.UNCOVERED:
+        paths = cover["uncovered"]
+        shown = ", ".join(paths[:3]) + (f" (+{len(paths) - 3} more)" if len(paths) > 3 else "")
+        return _entry("graph", graph_out, UNKNOWN,
+                      f"graphify would read {len(paths)} secrets-denylisted path(s) "
+                      f".graphifyignore does not exclude: {shown}; run "
+                      f"{crew_graph_ignore.FIX}, and if a graph was built before, see "
+                      "crew-graph SKILL 'Tainted graph'", command, refreshable=False)
+    if cover["status"] != crew_graph_ignore.COVERED:
+        return _entry("graph", graph_out, UNKNOWN,
+                      f"denylist coverage unknown: {cover['reason']}", command,
+                      refreshable=False)
+    return None
+
+
 def _graph(root, info, graph_out, code, untracked, which):
     command = ("graphify update ." if info["reportTracked"]
                else "graphify . --no-viz --code-only")
@@ -494,6 +521,9 @@ def _graph(root, info, graph_out, code, untracked, which):
                       f"no graph file at {graph_out}/graph.json", command)
     if not code:
         return None
+    refused = _graph_ignore_refusal(root, graph_out, command)
+    if refused:
+        return refused
     if not which("graphify"):
         return _entry("graph", graph_out, UNKNOWN,
                       "graphify missing on this machine, so the graph can be "
