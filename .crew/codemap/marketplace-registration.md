@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@954ce386
+anchor: useful-claude-add-ons@136517df
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -266,7 +266,9 @@ against synthetic fixtures and never reads this repo's own docs.
   Re-measured at `5536c2c8` (T-0018): 18,170 across 121 files on `:11`, and the measurement
   returns 18170 over 121 files, matching. Re-measured on the T-0010 x T-0024 merge tree (from
   the merged files, not taken from either side's 18,202 / 18,200): 18,226 across 121 files on
-  `:11`, and the measurement returns 18226 over 121 files, matching.
+  `:11`, and the measurement returns 18226 over 121 files, matching. Re-measured at T-0029's
+  `136517df`: 18,234 across 121 files on `:11`, and the measurement returns 18234 over 121 files,
+  matching.
 - **`MARKETPLACE.md`** was not re-read for a community-plugin or marketplace
   count of its own; only `README.md:231`'s prose was checked and found to no
   longer state a specific number.
@@ -430,3 +432,15 @@ bumped to 1.0.42, and the merge took T-0024's 1.0.43), `plugin/crew/BUDGETS.md` 
 No install script, `scripts/check-marketplace.py`, `CLAUDE.md`, `README.md` or `INSTALLATION.md`
 changed; no command, agent or skill was added or removed. `python3 scripts/check-marketplace.py`
 on the merged tree: `marketplace: 34 skills, 5 plugins`, `all checks passed`.
+
+## Re-anchor provenance - `954ce386` -> `136517df`, 2026-09-26 (T-0029, stacked on T-0010 `abd4f29b` and T-0018 `d9fafa0a`)
+
+Of the cited paths, `plugin/crew/BUDGETS.md` (`:11`, 18,234 / 121 - T-0029 added lines to
+`commands/autopilot.md`, `README.md`, `CONFIG.md` and `skills/crew-setup/SKILL.md`; re-measured with
+`count_crew_markdown_lines`'s `splitlines()` rule, matching), `.crew/verify.json` (30 rules; the doc
+rule at `:69-78` unchanged), `CHANGELOG.md` and `plugin/crew/README.md` changed. T-0029 set no
+version: `.claude-plugin/marketplace.json:218`, `plugin/PLUGINS.md:14` and
+`plugin/crew/.claude-plugin/plugin.json` still read 1.0.43 (landing sets it). No install script,
+`scripts/check-marketplace.py`, `CLAUDE.md`, `README.md` or `INSTALLATION.md` changed; no command,
+agent or skill was added or removed (`/crew:autopilot wave` is a subcommand). `check-marketplace.py`
+is run by the lane's verification, not for this note.

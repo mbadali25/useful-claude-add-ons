@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@954ce386
+anchor: useful-claude-add-ons@136517df
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -535,3 +535,13 @@ re-measured on the merged files, 18,226 lines across 121 files, not either side'
 `:217` unchanged) changed. Neither install script, `README.md`, `plugin/README.md`,
 `INSTALLATION.md` nor `scripts/check-marketplace.py` changed. `check-marketplace.py` passed on the
 merged tree before this refresh (`marketplace: 34 skills, 5 plugins`, `all checks passed`).
+
+## Re-anchor provenance - `954ce386` -> `136517df`, 2026-09-26 (T-0029, stacked on T-0010 `abd4f29b` and T-0018 `d9fafa0a`)
+
+Of the cited paths only `plugin/crew/README.md` (the `wave` table row and paragraph; the
+`35 commands` claim is now `:2283` and `4 agents` `:2294`, re-grepped, both unchanged in text) and
+`plugin/crew/BUDGETS.md` (marker still `:10`; `:11` re-measured, 18,234 lines across 121 files)
+changed. T-0029 set no version, so `plugin/PLUGINS.md` and `.claude-plugin/marketplace.json` did
+not change. Neither install script, `README.md`, `plugin/README.md`, `INSTALLATION.md` nor
+`scripts/check-marketplace.py` changed. Neither install script was executed; `drift-detection.sh`
+was not run.

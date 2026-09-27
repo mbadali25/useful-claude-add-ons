@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@954ce386
+anchor: useful-claude-add-ons@136517df
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -298,7 +298,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1829` (`:1821` at `926522f7`, `:1812` at `a2802526`, `:1804` at `07ca3972` and `6f96e627`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1832` (`:1829` at `954ce386`, `:1821` at `926522f7`, `:1812` at `a2802526`, `:1804` at `07ca3972` and `6f96e627`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -422,8 +422,10 @@ listing the directory.
   it as rule 28 (`:296-303`; `:290-297` as rule 27 on T-0024's branch at `a2802526`):
   `approval_hook.py`, both approval-hook wrappers, `crew_ticket.py`,
   `test_approval_hook.py`, `test_approval_group.py` and `sabotage_approval.py` run
-  `test_approval_hook.py`, `test_approval_group.py` and `test_crew_ticket.py`. The rules
-  above them did not move.
+  `test_approval_hook.py`, `test_approval_group.py` and `test_crew_ticket.py`. T-0029 appended
+  rule 29 (`:305-312`): `crew_wave.py`, `scope_guard.py`, `review_ledger.py`,
+  `commands/autopilot.md`, `test_crew_wave.py`, `test_scope_guard_wave.py` and `sabotage_wave.py`
+  run `test_crew_wave.py` and `test_scope_guard_wave.py`. The rules above them did not move.
 
 ## Unverified
 
@@ -639,3 +641,14 @@ mention moved to `:1829` (`:1821` at `926522f7`, `:1812` at `a2802526`; re-grepp
 `crew_ticket.py` is cited by name only. `CHANGELOG.md` holds T-0010's, T-0018's and T-0024's
 entries under [Unreleased] (cited without a line). `README.md`, `TODO.md` (unchanged by T-0024),
 `plugin/README.md` and both install scripts did not change.
+
+## Re-anchor provenance - `954ce386` -> `136517df`, 2026-09-26 (T-0029, stacked on T-0010 `abd4f29b` and T-0018 `d9fafa0a`)
+
+`git diff --name-only 954ce386 136517df` returns, among the paths this note cites, `.crew/verify.json`,
+`plugin/crew/README.md` and `plugin/crew/hooks/scripts/crew_state.py` (plus CHANGELOG.md, cited by name
+only). Every `path:line` citation into them was mapped with `difflib` over the file at both ends,
+line text compared: `plugin/crew/README.md`'s `docs/runbooks/INDEX.md` sentence moved `:1829` ->
+`:1832` (T-0029's `wave` table row and paragraph above it), content identical; `crew_state.py`'s
+re-exports `:129`/`:133`/`:136`/`:139` are above T-0029's only hunk (`AUTOPILOT_DEFAULTS`,
+`:1091` -> `:1095-1096`) and hold; `.crew/verify.json` gained rule 29 (`:305-312`) after rule 28,
+whose `:296-303` holds, as does rule 27's `:290-295`.
