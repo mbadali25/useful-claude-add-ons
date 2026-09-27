@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@d9cdb54c
+anchor: useful-claude-add-ons@12682e41
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -54,7 +54,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.43, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.44, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -255,7 +255,7 @@ both templates, so repo-only is unchanged. Re-executed at `07ca3972`: 119 / 66
 merge: 121 / 67 / 54 / 0 - T-0005 added `environments.prodUnattended` to both templates and
 `environments.nonProd` to `default_config()` only.
 `plugin/crew/tests/test_crew_config.py:277` asserts 121. T-0004's `CHANGELOG.md` entry now says
-"117 -> 119" (`:276-277`; `:228-229` at `2b18f7ab`, before T-0042's entry went in above it), matching the `07ca3972` execution; it said "116 -> 118" when this
+"117 -> 119" (`:390-391`; `:276-277` at `f0b12ee6`, before T-0021's entry went in above it; `:228-229` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this
 paragraph was first written. T-0005's entry states no leaf count.
 
 These are new counts, not the pre-1.0 note's 103/60/43 carried forward —
@@ -1488,3 +1488,20 @@ unchanged). One mutation, "tracker rewrites an existing ticket note", now names
 `test_create_loses_the_note_race_says_id_taken`: an existing note that is this repo's is not
 re-created since round 4, so only the claim reaches the exclusive open. The count stays 81, and
 this note cites the file by name only. No citation moved. No test suite was executed for this note.
+
+## Re-anchor provenance - `f0b12ee6` + `74f52fae` -> `12682e41`, 2026-09-27 (T-0021 lands on T-0042's main)
+
+`6df1231a` merges T-0021's reviewed head `74f52fae` into main `f0b12ee6` (T-0042 landed as crew
+1.0.43, PR #242), and `12682e41` bumps crew to 1.0.44. The two sides share no source file: the
+paths both changed since `502cb137` are `CHANGELOG.md`, `TODO.md`, `.crew/verify.json`,
+`plugin/crew/README.md`, `plugin/crew/CONFIG.md`, `plugin/crew/BUDGETS.md`, the version files and
+the refresh artifacts. The conflicting provenance sections keep both sides, T-0042's first. Every
+`path:N` citation in the body, and every bare `:N` that follows a path, was mapped from the side
+its line came from onto the merged tree with a line diff (`git show <side>:<path>` against the
+merge); each one that moved was re-read with `sed -n` on the merge and corrected: the version,
+1.0.44, at `.claude-plugin/marketplace.json:218` and `plugin/crew/.claude-plugin/plugin.json:3`;
+T-0004's "117 -> 119" `CHANGELOG.md:276-277` -> `:390-391` (T-0021's entry now sits above
+T-0042's). `.crew/verify.json` is 313 lines and 29 rules: rule 26 carries T-0042's pricing
+(62s, `seconds`/`why` changed in place) and T-0021's tracker rule is rule 28 at `:301-308`.
+`crew_resume.py`, `crew_context.py` and `crew_tracker.py` each changed on one side only, so
+their citations stand. No test suite was executed for this note.
