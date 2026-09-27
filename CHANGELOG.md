@@ -293,7 +293,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
-- **`crew` 1.0.42: T-0004 follow-up (T-0043).** Bumped `1.0.41 -> 1.0.42`.
+- **`crew` 1.0.43: T-0004 follow-up (T-0043).** Bumped `1.0.42 -> 1.0.43`.
   Round 2 of T-0004's review, two FIXes and four NITs.
   - **The FINDINGS stop names the refresh.** `crew_autopilot.py next` still
     stops at an un-accepted FINDINGS round (`accept-review`); its reason now
