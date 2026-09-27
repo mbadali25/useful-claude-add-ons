@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@f8671fdc
+anchor: useful-claude-add-ons@45345812
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -584,3 +584,8 @@ and 1.0.44 entries at the top; cited without a line), `plugin/PLUGINS.md` (`:14`
 `plugin/crew/README.md` (group-approval prose only; the `docs/runbooks/INDEX.md` mention still at
 `:1812`, re-grepped) and `plugin/crew/hooks/scripts/crew_ticket.py` (cited by name only, as a rule's
 path) changed. `.crew/verify.json`, `README.md`, `TODO.md` and both install scripts did not.
+
+Re-verified per-path from `f8671fdc` to `45345812` for T-0024's review round 3. Of the cited paths,
+`.claude-plugin/marketplace.json` (version only, 1.0.45), `CHANGELOG.md` (1.0.45 entry at the top;
+cited without a line), `plugin/PLUGINS.md` (`:14` only), `plugin/crew/README.md` (two sentences in
+place; `docs/runbooks/INDEX.md` still at `:1812`) and `crew_ticket.py` (by name only) changed.

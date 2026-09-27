@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@f8671fdc
+anchor: useful-claude-add-ons@45345812
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -497,3 +497,8 @@ unchanged), `plugin/PLUGINS.md` (`:14` only), `plugin/crew/BUDGETS.md` (`:11`, 1
 121 files, re-measured) and `plugin/crew/README.md` (group-approval prose only; the `35 commands`
 claim `:2263` and `4 agents` `:2274` did not move, re-grepped) changed. Neither install script,
 `README.md` nor `INSTALLATION.md` changed; the README pin landmine stands as recorded above.
+
+Re-verified per-path from `f8671fdc` to `45345812` for T-0024's review round 3 (crew 1.0.45): of the
+cited paths `.claude-plugin/marketplace.json` (`:218` only), `plugin/PLUGINS.md` (`:14` only) and
+`plugin/crew/README.md` (two sentences edited in place; `:2263`/`:2274` hold) changed. Neither
+install script, `README.md` nor `BUDGETS.md` changed.
