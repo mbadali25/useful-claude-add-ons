@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@eba11657
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -47,9 +47,9 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.41** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
-and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `07ca3972`; it
-was 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
+`rule-of-two`. `crew` is now **1.0.42** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `eba11657`; it
+was 1.0.41 at `07ca3972`, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
 
@@ -360,3 +360,17 @@ changed. `INSTALLATION.md` did not, so its `:252` still states 34 commands again
 `scripts/check-marketplace.py`, `CLAUDE.md` and `skills/README.md` did not change.
 `python3 scripts/check-marketplace.py` at `07ca3972`: `marketplace: 34 skills, 5 plugins`,
 `all checks passed`.
+
+Re-verified per-path from `6f96e627` to `eba11657` for T-0023 (plain-text lifecycle routing);
+`6f96e627` -> `1e0706ac` touched only refresh artifacts. Of the cited paths,
+`git diff --name-only 1e0706ac eba11657` returns `.claude-plugin/marketplace.json` (`:218` version
+1.0.42 only; the `:217` description is unchanged), `plugin/PLUGINS.md` (`:14` version; `:17`
+unchanged; the `crew-context` hook row `:39` gained one sentence in place),
+`plugin/crew/.claude-plugin/plugin.json` (version only), `.crew/verify.json` (rule 27 appended at
+`:289-297`, 28 rules; the doc rule at `:69-78` is unchanged) and `CHANGELOG.md`. No command,
+agent, skill or hook entry was added, so the count table stands. `plugin/crew/BUDGETS.md` did NOT
+change, and `python3 scripts/check-marketplace.py` at `eba11657` reports `marketplace: 34 skills,
+5 plugins` and one problem: `plugin/crew/BUDGETS.md:10: claims 18,176 plugin/crew Markdown lines,
+but plugin/crew/*.md currently totals 18239` - the marked claim moved because T-0023's README and
+CONFIG.md sections grew, and BUDGETS.md is outside T-0023's Touch, so it is left for the owner.
+

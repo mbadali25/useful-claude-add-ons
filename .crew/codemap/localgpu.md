@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@eba11657
 verified: 2026-09-26
 
 # localgpu
@@ -1072,3 +1072,14 @@ holds. `crew_state.py` gained `AUTOPILOT_DEFAULTS` at `:1087`, so the provider t
 `:1421-1422` -> `:1429-1430` (re-read via `grep -n "^DEV_PROVIDERS\|^QA_PROVIDERS"`: the same
 two lines, byte-identical), corrected in place above. Nothing under `plugin/localgpu/` changed.
 Nothing was executed.
+
+**Re-anchored `6f96e627` -> `eba11657` on 2026-09-26 (T-0023).** `6f96e627` -> `1e0706ac` touched
+only refresh artifacts; of the paths this note cites, `git diff --name-only 1e0706ac eba11657`
+returns `.claude-plugin/marketplace.json` (crew's `version` `:218` only; the `:217` description
+this note quotes is unchanged and `localgpu`'s own entry is still `0.1.20`) and
+`plugin/crew/hooks/scripts/crew_config.py`, whose two hunks (`:375-382` in `default_config()`,
+`:547-549` in `default_global_config()`, each adding `route`) are below the `:126-127` re-export,
+which holds (re-read: `DEV_PROVIDERS = crew_state.DEV_PROVIDERS` /
+`QA_PROVIDERS = crew_state.QA_PROVIDERS`). `crew_state.py` did not change, so the `:1429-1430`
+tuples stand. Nothing under `plugin/localgpu/` changed.
+

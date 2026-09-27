@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@eba11657
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -50,7 +50,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.41, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.42, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -222,14 +222,14 @@ the previous note's account of it** — see "Unverified at this anchor").
 ## Config, the guard vocabulary, and the ratchet
 
 **DERIVED at this anchor by importing `crew_config` and executing both
-default functions.** Measured 2026-09-26 at `07ca3972`, module resolved from
+default functions.** Measured 2026-09-26 at `eba11657`, module resolved from
 this checkout (`plugin/crew/hooks/scripts/crew_config.py`), not an installed
 plugin cache:
 
 | | Leaves | Source |
 |---|---|---|
-| `default_config()` | **119** | `plugin/crew/hooks/scripts/crew_config.py:239` |
-| `default_global_config()` | **66** | `plugin/crew/hooks/scripts/crew_config.py:378` |
+| `default_config()` | **120** | `plugin/crew/hooks/scripts/crew_config.py:239` |
+| `default_global_config()` | **67** | `plugin/crew/hooks/scripts/crew_config.py:386` |
 | repo-only | **53** | the set difference |
 
 Treat these as a fact about one commit, not a standing figure. Re-measure
@@ -248,9 +248,12 @@ both templates, so repo-only is unchanged. Re-executed at `07ca3972`: 119 / 66
 `default_config()` only (`:369-374`, "REPO ONLY, absent from
 `default_global_config()`"); the same functions at `a0c0847e`, run from a
 `git archive` of `plugin/crew`, give 117 / 66 / 51 / 0.
-`plugin/crew/tests/test_crew_config.py:275` asserts 119. `CHANGELOG.md:65`
-says "116 -> 118" for the same change - it does not match either execution,
-and is outside this note to fix.
+Re-executed at `eba11657`: 120 / 67 / 53 / 0 - T-0023 added `route.enabled`
+to both `default_config()` (`:382`) and `default_global_config()` (`:549`), so
+repo-only is unchanged. `plugin/crew/tests/test_crew_config.py:277` asserts
+120. `CHANGELOG.md:99` says "117 -> 119" for T-0004's change, which matches
+the `07ca3972` execution (this note previously quoted it as "116 -> 118";
+re-read at `eba11657`, that quotation was wrong, not the CHANGELOG).
 
 These are new counts, not the pre-1.0 note's 103/60/43 carried forward —
 `change.*`, `guards.cloudGuard` and the memory/recall keys (`TODO.md`'s
@@ -278,7 +281,7 @@ is: a switch, not a policy — turning it on is what makes the six
 since the pre-1.0 command guard was removed) mean something again for the
 `Bash`/`PowerShell` `PreToolUse` matcher.
 
-**The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2357-2446`)
+**The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2368-2457`)
 now holds 13 keys**, built in five steps (a literal dict of two, then four
 `.update()`/assignment calls) rather than one table, exactly the shape the
 previous anchor's note described for a smaller version of the same table:
@@ -298,7 +301,7 @@ they disagree:
 - `crew_config.py` (used by `verify-gate.sh`, `promote-gate.sh`,
   `role-write-guard.ps1`'s config lookups, and everything the ratchet/guard
   machinery above touches) reads **only** `.crew/config.json`
-  (`plugin/crew/hooks/scripts/crew_config.py:1173`, and the module's own
+  (`plugin/crew/hooks/scripts/crew_config.py:1184`, and the module's own
   docstring at `:1` — "Owns the single definition of a fresh
   `.crew/config.json`").
 - `crew_context.py`'s `load_crew_config`
@@ -332,7 +335,12 @@ they disagree:
   sides with `config.json` explicitly: it reads through
   `crew_config.resolve_config` and warns when `autopilot` is set in
   `crew.json` but not `config.json` ("crew does not read [it] for this key;
-  move it to .crew/config.json", `:612-616`). Flagging it is this
+  move it to .crew/config.json", `:612-616`). T-0023's
+  `crew_route.settings` (`plugin/crew/hooks/scripts/crew_route.py:275`) does
+  the same for `route` (`:300-303`) - and it is the sharper case, because
+  its only caller is `crew_context.route_item`, inside the one hook that reads
+  `crew.json` first for `memory.inject`: one hook, two files, by key.
+  Flagging it is this
   note's job; **deciding which file should win, or whether `crew_config.py`
   should learn to read `crew.json` too, is a decision for scribe to record,
   not this note's to make.**
@@ -438,7 +446,35 @@ an absent or unrecognised value reads as `high` with `known: False`, never
 names T-0010 as the consumer). Tests: `plugin/crew/tests/test_crew_autopilot.py`,
 `plugin/crew/tests/test_lifecycle_commands.py`; mutations
 `plugin/crew/tests/sabotage_autopilot.py`; `.crew/verify.json` rule 26
-(`:281-288`), the last. Confirmed present, **not run** by this note.
+(`:281-288`). Confirmed present, **not run** by this note.
+
+## Plain-text lifecycle routing (T-0023, crew 1.0.42)
+
+DERIVED at `eba11657`. `plugin/crew/hooks/scripts/crew_route.py` (338 lines)
+decides whether a short plain-text prompt names a lifecycle command. The table
+is `PHRASES` (`:72`): brainstorm, spec, plan, implement, review, done,
+continue, status - no approve row. `match` (`:122`) matches the WHOLE prompt
+after `normalise` (`:102`) refuses a line break, more than `MAX_PROMPT_CHARS`
+(`:61`, 80), or a leading `/`, `<` or backtick; `AMBIGUOUS` (`:86`) phrases
+("do it", "yes", bare "done"...) return None whatever a row says. `decide`
+(`:201`) returns `route`, `ask` or `none`; `_resolve` (`:160`) takes an
+explicit id only with a `.work/tickets/<id>/` folder, then
+`crew_ticket.resolve_active`'s `active-ticket` source, then
+`crew_autopilot.open_index_tickets` with exactly one ticket - never
+`resolve_active`'s own first-open-line INDEX answer. `continue` goes through
+`_continue` (`:181`) to `crew_autopilot.next_phase`; a stop, an exception, or
+a command naming approve is an `ask`. `settings` (`:275`) reads
+`crew_config.resolve_config` and arms only on `is True`. The one consumer is
+`crew_context.route_item` (`plugin/crew/hooks/scripts/crew_context.py:804`),
+called first in the UserPromptSubmit branch (`:902`): Claude harness only,
+`crew_route` imported inside a `try`, so any exception drops only the route
+line and logs `route: "error"` (`:1020` keeps that log line when nothing else
+is emitted). No new hook and no new skill: `plugin/crew/hooks/hooks.json` is
+unchanged. Tests: `plugin/crew/tests/test_crew_route.py`,
+`plugin/crew/tests/test_crew_route_hook.py`; mutations
+`plugin/crew/tests/sabotage_route.py` (registered at
+`plugin/crew/tests/sabotage.py:78`); `.crew/verify.json` rule 27 (`:289-297`),
+the last.
 
 ## verify-gate's temp-file rule capture
 
@@ -600,9 +636,9 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
 - `plugin/crew/hooks/scripts/crew_state.py:993` — `TRIGGERS`, a 15-entry
   tuple, unchanged in membership and order from the previous anchor.
 - `plugin/crew/hooks/scripts/crew_state.py:2898` — `evaluate_triggers`.
-- `plugin/crew/hooks/scripts/crew_config.py:239` / `:378` —
+- `plugin/crew/hooks/scripts/crew_config.py:239` / `:386` —
   `default_config()` / `default_global_config()`.
-- `plugin/crew/hooks/scripts/crew_config.py:2357` — `_RATCHETED`, the
+- `plugin/crew/hooks/scripts/crew_config.py:2368` — `_RATCHETED`, the
   13-key ratchet table (five construction steps).
 - `plugin/crew/hooks/scripts/role_write_guard.py:539` — `classify`, the
   decision function; `:684` — `main()`.
@@ -624,6 +660,10 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
 - `plugin/crew/hooks/scripts/crew_autopilot.py:451` — `next_phase`, read-only;
   `main()` at `:639` is the `next` / `resume` / `settings` / `stops` CLI
   `plugin/crew/commands/autopilot.md` calls.
+- `plugin/crew/hooks/scripts/crew_route.py:201` — `decide`, read-only
+  route / ask / none for a prompt; `main()` at `:311` is the `settings` /
+  `decide` CLI. Its hook caller is `crew_context.route_item`
+  (`plugin/crew/hooks/scripts/crew_context.py:804`).
 - `plugin/crew/hooks/scripts/crew_endpoints.py:566` — `declare_endpoint`,
   the only writer of *declared* records. Not the only writer of
   `.crew/endpoints.json`, whatever its docstring says (`:569-570`):
@@ -956,3 +996,37 @@ and both `scripts/install-prerequisites.*`. Each citation into them was re-read 
 
 New since `a0c0847e`, not re-anchored from anything: the `/crew:autopilot` section and its
 entry point, and `crew_autopilot.settings`'s place in the config-authority section.
+
+## Re-anchor provenance - `6f96e627` -> `eba11657`, 2026-09-26 (T-0023)
+
+`6f96e627` -> `1e0706ac` changed only the refresh artifacts themselves (T-0004's refresh commit
+and its merge). Of the paths this note cites, `git diff --name-only 1e0706ac eba11657` returns
+`.claude-plugin/marketplace.json`, `.crew/verify.json`, `CHANGELOG.md`, `plugin/PLUGINS.md`,
+`plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/CONFIG.md`, `plugin/crew/README.md`,
+`plugin/crew/hooks/scripts/crew_config.py`, `crew_context.py`, `plugin/crew/tests/sabotage.py`
+and `plugin/crew/tests/test_crew_config.py`. Every `path:line` citation into them was mapped
+through a line-level diff of the two revisions and each moved or modified one re-read at
+`eba11657`:
+
+- `crew_config.py` - the `route` block inserted at `:375-382` (end of `default_config()`) and
+  `:547-549` (end of `default_global_config()`): `default_global_config()` `:378` -> `:386`, the
+  `.crew/config.json` read `:1173` -> `:1184`, `_RATCHETED` `:2357-2446` -> `:2368-2457` (still
+  13 keys). `default_config()` `:239` and the autopilot line `:374` hold. Leaf counts
+  re-executed: 119/66/53 -> 120/67/53.
+- `crew_context.py` - `route_item` and its section header inserted at `:801-831` (`def` at
+  `:804`) and called at `:902-904`; the log-keep condition became two lines at `:1019-1020`. `load_crew_config` `:121-132` and `resume_decision`'s call
+  `:627` are above every hunk and hold.
+- `test_crew_config.py` - the leaf-count assertion `:275` -> `:277` (now 120, and it also
+  asserts `route.enabled` is declared at `:276`).
+- `CHANGELOG.md` - the 1.0.42 entry inserted at the top, so T-0004's leaf-count line `:65` ->
+  `:99`; re-read, it says "117 -> 119", which corrected this note's own misquotation above.
+- `plugin.json:3` / `marketplace.json:218` - crew's `version` 1.0.41 -> 1.0.42, corrected in
+  the Inventory paragraph; `:217`'s counts are unchanged (no command, agent or skill added).
+- `.crew/verify.json` - rule 27 (T-0023) appended at `:289-297`; rule 26 `:281-288` holds but is
+  no longer the last. 28 rules.
+- `sabotage.py` - `ROUTE_MUTATIONS` imported at `:78` and appended at `:3050`.
+- `CONFIG.md`, `plugin/crew/README.md`, `PLUGINS.md` - cited by name only here.
+
+New since `6f96e627`, not re-anchored from anything: the plain-text routing section, its entry
+point, and the `crew_route.settings` sentence in the config-authority section.
+

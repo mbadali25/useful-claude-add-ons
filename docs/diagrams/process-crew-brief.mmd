@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@6f96e627 on 2026-09-26. Verify before trusting.
+%% Generated from useful-claude-add-ons@eba11657 on 2026-09-26. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
@@ -26,6 +26,13 @@
 %% Re-anchored 2bb92f32 -> 07ca3972 (T-0004): of the Anchors paths only crew_state.py
 %% changed - AUTOPILOT_DEFAULTS, 8 lines inserted at :1081, below every line cited here.
 %% :643, :771, :856-911, :951-955 and :977 re-read with sed -n at 07ca3972; none moved.
+%% Re-anchored 07ca3972 -> eba11657 (T-0023): of the Anchors paths only crew_context.py changed -
+%% route_item (plain-text lifecycle routing, UserPromptSubmit only) inserted at :801-831 and its
+%% call at :902-904, so every SessionStart line cited here moved by +31 or +34: :925 -> :959,
+%% :931-934 -> :965-968, :816-827 -> :847-858, :828 -> :859, :835-836 -> :866-867, :843-845 ->
+%% :874-876, :846-858 -> :877-889, :859 -> :890, :1002 -> :1037 (mapped by line diff, each
+%% re-read). :121-132, :604, :627 and :653 are above the hunks and hold. Nothing drawn here
+%% changed: the route line is a UserPromptSubmit item, never a SessionStart one.
 %% What crew 1.0 does when a session starts, and what /crew:status reads.
 %% --
 %% REDRAWN for crew 1.0. The 0.20 version of this file drew the PM session-start
@@ -42,14 +49,14 @@
 %% crew_platform.py:507-530 silent without a config or .crew/; :537 claim;
 %%   :547-563 heal_config (refuses without .crew/, :229); :566-584 writes
 %%   changed platform fields, prints only on change.
-%% crew_context.py:925 no .crew/ directory -> emits nothing; :121-132 reads
-%%   crew.json else config.json; :931-934 inject:false -> incident banner only;
-%%   :816-827 branch@HEAD, incident banner, codemap-behind line; :828 stale
-%%   verdict + archive (_handoff_verdict :604); :835-836 auto-resume decision
+%% crew_context.py:959 no .crew/ directory -> emits nothing; :121-132 reads
+%%   crew.json else config.json; :965-968 inject:false -> incident banner only;
+%%   :847-858 branch@HEAD, incident banner, codemap-behind line; :859 stale
+%%   verdict + archive (_handoff_verdict :604); :866-867 auto-resume decision
 %%   (resume_decision :627, crew_resume.decide; `off` unless armed and source is
-%%   clear/compact); :843-845 startup -> pointer + next action; :846-858 other
-%%   sources -> full note, next action first, then the auto-resume line; :859 no
-%%   note but a resume line -> that line alone; :1002 JSON additionalContext.
+%%   clear/compact); :874-876 startup -> pointer + next action; :877-889 other
+%%   sources -> full note, next action first, then the auto-resume line; :890 no
+%%   note but a resume line -> that line alone; :1037 JSON additionalContext.
 %% Stale rule: crew_state.py:643 (72h / 3 commits), :856-911, archived to
 %%   .crew/handoffs/ (:771, :977), never deleted; never raises (:951-955).
 %% /crew:status: commands/status.md:14 -> crew_status.py; :185-209 report lines.
@@ -85,26 +92,26 @@ flowchart TB
     end
 
     subgraph crewContext["crew-context (crew_context.py)"]
-        CC --> cc1{".crew/ directory?<br/>:925"}
+        CC --> cc1{".crew/ directory?<br/>:959"}
         cc1 -- no --> ccx([emit nothing])
         cc1 -- yes --> cc2["read crew.json else config.json<br/>:121-132"]
-        cc2 --> cc3{"memory.inject?<br/>:931-934"}
+        cc2 --> cc3{"memory.inject?<br/>:965-968"}
         cc3 -- off --> cc4[incident banner only]
-        cc3 -- on --> cc5["branch@HEAD, incident banner,<br/>codemap-behind line<br/>:816-827"]
+        cc3 -- on --> cc5["branch@HEAD, incident banner,<br/>codemap-behind line<br/>:847-858"]
         cc5 --> stale{"handoff stale?<br/>72h / 3 commits / branch<br/>crew_state.py:643, :856-911"}
         stale -- yes --> arch["archive to .crew/handoffs/<br/>never delete<br/>crew_state.py:771, :977"]
         stale -- no --> cc6
         arch --> cc6
-        stale -. "stale but the move failed:<br/>note stays, stale passed on (:828)" .-> cc6
-        cc6{"auto-resume armed?<br/>machine resume.auto true, no repo veto<br/>source clear / manual compact<br/>:835, crew_resume.decide"}
+        stale -. "stale but the move failed:<br/>note stays, stale passed on (:859)" .-> cc6
+        cc6{"auto-resume armed?<br/>machine resume.auto true, no repo veto<br/>source clear / manual compact<br/>:866, crew_resume.decide"}
         cc6 -- "no (off)" --> src{"source?"}
         cc6 -- "run / wait" --> rs1["one line: ready to run the re-rendered command,<br/>or did not start: reason<br/>resume_line :653, never initialUserMessage"]
         rs1 --> src
-        src -- startup --> ptr["pointer + next action<br/>:843-845"]
-        src -- "resume/clear/compact/fork" --> full["full note, next action first,<br/>then the auto-resume line<br/>:846-858"]
+        src -- startup --> ptr["pointer + next action<br/>:874-876"]
+        src -- "resume/clear/compact/fork" --> full["full note, next action first,<br/>then the auto-resume line<br/>:877-889"]
     end
 
-    ptr --> out(["additionalContext JSON<br/>:1002"])
+    ptr --> out(["additionalContext JSON<br/>:1037"])
     full --> out
     cc4 --> out
 

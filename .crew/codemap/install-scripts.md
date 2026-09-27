@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@eba11657
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -477,3 +477,17 @@ script moved and every other install-script citation stands. That same change ma
 stale (Landmines). `scripts/check-marketplace.py`, `scripts/_test/self-claims.py`,
 `scripts/_test/drift-detection.sh` and `INSTALLATION.md` did not change. Neither install script was
 executed, and `check-marketplace.py` was not run at this pass.
+
+Re-verified per-path from `6f96e627` to `eba11657` for T-0023 (plain-text lifecycle routing,
+crew 1.0.42); `6f96e627` -> `1e0706ac` touched only refresh artifacts. Of the cited paths,
+`git diff --name-only 1e0706ac eba11657` returns `.claude-plugin/marketplace.json` (crew `version`
+`:218`, now 1.0.42; the `:217` description is unchanged), `plugin/PLUGINS.md` (`:14` version; the
+`:17` Registers row unchanged - no command, agent or skill was added) and `plugin/crew/README.md`
+(a 23-line "Plain-text lifecycle" subsection inserted before "Measuring 1.0", so the `35 commands`
+claim moved `:2255` -> `:2278` and `4 agents` `:2266` -> `:2289`, re-grepped). Neither install
+script, `scripts/check-marketplace.py`, `INSTALLATION.md` nor `plugin/README.md` changed.
+`plugin/crew/BUDGETS.md` did not change either, and that is now a defect: its `:11` figure still
+reads 18,176 while `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` returns 18239, so
+`check-marketplace.py` fails on it - BUDGETS.md is outside T-0023's Touch and was left for the
+owner. Neither install script was executed.
+

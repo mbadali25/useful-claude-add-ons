@@ -2,15 +2,15 @@
 paths:
   - "plugin/crew/**"
 ---
-<!-- crew:generated source=.crew/codemap/crew.md sha256=648a4cb2d154acd5 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/crew.md sha256=a69ac34a1d403c5d -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # crew
-Code map anchor `6f96e627`; if it is behind HEAD, re-check with `git diff --name-only 6f96e627..HEAD -- <cited paths>`.
+Code map anchor `eba11657`; if it is behind HEAD, re-check with `git diff --name-only eba11657..HEAD -- <cited paths>`.
 Covers: The crew plugin after 1.0: hooks, the four agents, commands, skills inventory, config layering and leaf counts, and how crew_freshness.py reads this very directory.
 ## Entry points
 - `plugin/crew/hooks/scripts/crew_state.py:993` — `TRIGGERS`, a 15-entry tuple, unchanged in membership and order from the previous anchor.
 - `plugin/crew/hooks/scripts/crew_state.py:2898` — `evaluate_triggers`.
-- `plugin/crew/hooks/scripts/crew_config.py:239` / `:378` — `default_config()` / `default_global_config()`.
-- `plugin/crew/hooks/scripts/crew_config.py:2357` — `_RATCHETED`, the 13-key ratchet table (five construction steps).
+- `plugin/crew/hooks/scripts/crew_config.py:239` / `:386` — `default_config()` / `default_global_config()`.
+- `plugin/crew/hooks/scripts/crew_config.py:2368` — `_RATCHETED`, the 13-key ratchet table (five construction steps).
 - `plugin/crew/hooks/scripts/role_write_guard.py:539` — `classify`, the decision function; `:684` — `main()`.
 - `plugin/crew/hooks/scripts/role-write-guard.sh:348` — where the strict private-resolver result feeds the guard's fail-closed fallback.
 - `plugin/crew/hooks/scripts/event_claim.py` — no single entry point read this pass beyond the module docstring; called from `notify.sh` and `handoff-write.sh` only.
@@ -19,5 +19,6 @@ Covers: The crew plugin after 1.0: hooks, the four agents, commands, skills inve
 - `plugin/crew/hooks/scripts/crew_resume.py:411` — `decide`, read-only; `main()` is the `decide` / `record` / `precompact` CLI.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:576` — `ticket_freshness`, the library entry point; `main()` at `:676`.
 - `plugin/crew/hooks/scripts/crew_autopilot.py:451` — `next_phase`, read-only; `main()` at `:639` is the `next` / `resume` / `settings` / `stops` CLI `plugin/crew/commands/autopilot.md` calls.
+- `plugin/crew/hooks/scripts/crew_route.py:201` — `decide`, read-only route / ask / none for a prompt; `main()` at `:311` is the `settings` / `decide` CLI.
 - `plugin/crew/hooks/scripts/crew_endpoints.py:566` — `declare_endpoint`, the only writer of *declared* records.
 Full note: `.crew/codemap/crew.md`.

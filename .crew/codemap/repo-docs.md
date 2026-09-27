@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@eba11657
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -298,7 +298,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1804` (`:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1827` (`:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -561,3 +561,16 @@ mention moved `:1759` -> `:1804`, re-grepped), `plugin/crew/hooks/scripts/crew_s
 `plugin/crew/hooks/scripts/crew_ticket.py` (cited by name only, as a rule's path) and both install
 scripts (crew catalog row count). `python3 scripts/check-marketplace.py` re-run at `07ca3972`:
 `marketplace: 34 skills, 5 plugins` / `all checks passed`.
+
+Re-verified per-path from `6f96e627` to `eba11657` for T-0023 (plain-text lifecycle routing, crew
+1.0.42); `6f96e627` -> `1e0706ac` touched only refresh artifacts. Of the cited paths,
+`git diff --name-only 1e0706ac eba11657` returns `.claude-plugin/marketplace.json` (crew `version`
+only), `.crew/verify.json` (rule 27 appended at `:289-297`; `:167-172`, `:251`, `:252-268`,
+`:270-280` and `:281-288` hold), `CHANGELOG.md` (the 1.0.42 entry at the top; cited without a line),
+`plugin/PLUGINS.md` (`:14` version; `:17` count unchanged) and `plugin/crew/README.md` (a 23-line
+"Plain-text lifecycle" subsection above "Measuring 1.0", so the `docs/runbooks/INDEX.md` mention
+moved `:1804` -> `:1827`, re-grepped). Nothing under `docs/` and neither `README.md`, `TODO.md` nor
+`plugin/README.md` changed. `python3 scripts/check-marketplace.py` at `eba11657`: `marketplace: 34
+skills, 5 plugins` and one problem, `plugin/crew/BUDGETS.md:10: claims 18,176 plugin/crew Markdown
+lines, but plugin/crew/*.md currently totals 18239` - BUDGETS.md is outside T-0023's Touch.
+
