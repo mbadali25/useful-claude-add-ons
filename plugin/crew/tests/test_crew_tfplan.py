@@ -122,9 +122,18 @@ case "$*" in
     ;;
 esac
 """
+# The Windows shim mirrors `_SH` branch for branch: without its sleep,
+# `test_a_timeout_writes_nothing` returned at once on win-repo-2 and never
+# timed out (`assert 0 == 2`). `ping -n N` waits about N-1 seconds. On a
+# timeout `subprocess.run` kills cmd.exe and then, on Windows only, calls
+# `communicate()` again, which waits for `ping` -- a grandchild still holding
+# the pipes -- to exit: bounded by the sleep, so the test takes ~4s, it does
+# not hang. crew_tfplan runs a real `terraform.exe` directly, not through a
+# cmd.exe shim, so the product code is left as it is.
 _CMD = ("@echo off\r\n"
         "echo %* | findstr /C:\"show -json\" >nul\r\n"
         "if not errorlevel 1 (\r\n"
+        "  if defined FAKE_TF_SLEEP ping -n %FAKE_TF_SLEEP% 127.0.0.1 >nul\r\n"
         "  if defined FAKE_TF_SHOW_EXIT exit /b %FAKE_TF_SHOW_EXIT%\r\n"
         "  type \"%FAKE_TF_SHOW%\"\r\n"
         "  exit /b 0\r\n"
