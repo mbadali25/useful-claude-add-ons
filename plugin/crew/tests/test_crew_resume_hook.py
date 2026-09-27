@@ -147,7 +147,13 @@ def _additional(out):
     return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
 
 
-def _decide_compact(root, session="s1"):
+def _decide_compact(root, session="s1", bound=True):
+    """decide for a SessionStart `compact`. `bound=True` first records the
+    handoff as `session`'s own, so a wait here comes from the PreCompact
+    record under test and never from the missing author record T-0042 added
+    (without it, every compact test that expects `wait` passed vacuously)."""
+    if bound:
+        _author(root, session)
     home = root.parent / "home"
     with open(root / ".work" / "HANDOFF.md", encoding="utf-8") as handle:
         text = handle.read()
@@ -161,7 +167,6 @@ def _decide_compact(root, session="s1"):
 def test_precompact_manual_compact_may_run(tmp_path):
     root = _repo(tmp_path)
     done = _run("sh", "handoff-write", root, _precompact(root, "s1", "manual"))
-    _author(root)
 
     got = _decide_compact(root)
 
@@ -236,7 +241,6 @@ def test_precompact_unreadable_record_waits(tmp_path):
 def test_precompact_session_key_is_reduced_like_the_wrap_up_marker(tmp_path):
     root = _repo(tmp_path)
     crew_resume.write_precompact_record(str(root), {"session_id": "a/b:c", "trigger": "manual"})
-    _author(root, "a/b:c")
 
     assert (os.path.exists(_record_path(root, "a_b_c")), _decide_compact(root, "a/b:c")["action"]) == \
         (True, "run")
