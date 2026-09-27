@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@2a79938d
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -186,7 +186,9 @@ Notable rules, re-read directly:
   mutation count (it said "six" until the refresh commit after `07ca3972`, while the tuple
   held more); count them in the tuple. One of them targets `crew_ticket.py`'s `parse_risk`, a path rule 26
   does not name (see rule 10). `crew_autopilot.py` also matches rules 0 and 14, `autopilot.md`
-  rules 0 and 11.
+  rules 0 and 11. T-0043 appended its mutations after a `# ---- T-0043` comment in the same
+  tuple and re-pointed "an INCOMPLETE round is rerun unattended" to the new condition; no new
+  file, so no new rule. The pair ran in 4.99s at `2a79938d` (196 tests), inside the 5s price.
 
 **Still unresolved at this anchor:** a declared `seconds` figure is only
 overwritten by measurement when the rule carries *no* `seconds` at all
@@ -684,3 +686,26 @@ workflows did not change, so their citations stand unread.
 - `marketplace.json`, `CHANGELOG.md`, `TODO.md`, `BUDGETS.md` - cited by name only.
 
 No suite or command was executed by this note; rule 26's suite and `sabotage.py` were not run.
+
+## Re-anchor provenance - `6f96e627` -> `2a79938d`, 2026-09-26 (T-0043)
+
+`6f96e627`'s tree is what `main` at `1e0706ac` carries for every path this note cites.
+`git diff --name-only 6f96e627..2a79938d -- <the paths this note cites>` returns
+`.claude-plugin/marketplace.json`, `CHANGELOG.md`, `plugin/PLUGINS.md`,
+`plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/commands/autopilot.md`,
+`plugin/crew/hooks/scripts/crew_autopilot.py`, `plugin/crew/tests/sabotage_autopilot.py` and
+`plugin/crew/tests/test_crew_autopilot.py`. `.crew/verify.json`, `plugin/crew/tests/sabotage.py`,
+`verify-gate.sh`/`.ps1`, `scripts/check-marketplace.py` and the CI workflows did not change, so
+their citations stand unread.
+
+- `sabotage_autopilot.py` - `AUTOPILOT_MUTATIONS` still opens at `:19`; nine entries appended and
+  one `find` re-pointed. `sabotage.py:77` and `:3049` re-read, unchanged.
+- `autopilot.md` - reworded in place, still 120 lines (the rule-26 line budget).
+- `marketplace.json`, `plugin.json`, `PLUGINS.md` - crew 1.0.42; `CHANGELOG.md`,
+  `crew_autopilot.py`, `test_crew_autopilot.py` - cited by name only.
+
+`python3 plugin/crew/tests/sabotage.py` ran at `17ebc087` (before the bump) and on a `git archive`
+of `1e0706ac`: the non-RED sets were the same fourteen labels plus, on the branch, "a peer heading
+drops an unexplained fenced block" STILL GREEN, which `2a79938d` re-points (renamed "a later
+section absorbs an unexplained fenced block"). The run at the final head is reported with the
+ticket, not here.

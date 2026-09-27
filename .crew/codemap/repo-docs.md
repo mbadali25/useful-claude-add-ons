@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@2a79938d
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -191,10 +191,11 @@ listing the directory.
   five/six-site figure this note's previous anchors repeatedly found
   disagreeing (see `install-scripts.md`'s "Corrected at this anchor"
   history); at `6c497a14` it does not disagree anywhere this note checked.
-  **At `07ca3972` one site disagrees again:** `INSTALLATION.md:252` (a file
-  unchanged since `a0c0847e`) still reads "34 slash commands" for crew. Its
-  `<!-- claim: plugin-skills:crew -->` marker binds the skills figure (29,
-  correct), not the command count, so `check_self_claims` does not catch it.
+  At `07ca3972` one site disagreed again: `INSTALLATION.md:252` read "34
+  slash commands" for crew, and its `<!-- claim: plugin-skills:crew -->`
+  marker bound only the skills figure. **Resolved at `2a79938d` (T-0043):**
+  the line says 35 and carries `<!-- claim: plugin-commands:crew -->` after
+  the count, so `check_self_claims` now checks it (red at 34, measured).
 - `SKILL_KEYS` dropped **36 -> 34**: `claude-memories-canvas` and
   `claude-memories-vault` removed from both install scripts' catalogs and
   from `skills/`. `skills/README.md` lost the two corresponding table rows in
@@ -561,3 +562,16 @@ mention moved `:1759` -> `:1804`, re-grepped), `plugin/crew/hooks/scripts/crew_s
 `plugin/crew/hooks/scripts/crew_ticket.py` (cited by name only, as a rule's path) and both install
 scripts (crew catalog row count). `python3 scripts/check-marketplace.py` re-run at `07ca3972`:
 `marketplace: 34 skills, 5 plugins` / `all checks passed`.
+
+Re-verified per-path from `6f96e627` to `2a79938d` for T-0043 (crew 1.0.42; `6f96e627`'s tree is
+what `main` at `1e0706ac` carries for every cited path). Of the cited paths,
+`git diff --name-only 6f96e627..2a79938d` returns `.claude-plugin/marketplace.json` (`:218` version
+only), `CHANGELOG.md` (the T-0043 entry at the top of the first `### Fixed`; cited without a line),
+`INSTALLATION.md` (`:252` only, 34 -> 35 slash commands with a `plugin-commands:crew` marker;
+`:174`, `:211` and `:213-224` did not move), `plugin/PLUGINS.md` (`:14` version; `:17` unchanged),
+`plugin/crew/README.md` (three lines reworded in place; `docs/runbooks/INDEX.md` still at `:1804`,
+re-grepped), `plugin/crew/hooks/scripts/crew_autopilot.py`, `plugin/crew/tests/test_crew_autopilot.py`
+and `plugin/crew/tests/sabotage_autopilot.py` (cited by name only, as rule 26's paths).
+`.crew/verify.json`, `README.md`, `plugin/README.md` and both install scripts did not change.
+`python3 scripts/check-marketplace.py` at `2a79938d`: `marketplace: 34 skills, 5 plugins` /
+`all checks passed`.

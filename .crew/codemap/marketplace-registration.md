@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@2a79938d
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -47,15 +47,15 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.41** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
-and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `07ca3972`; it
-was 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
+`rule-of-two`. `crew` is now **1.0.42** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `2a79938d`; it
+was 1.0.41 at `07ca3972`, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
 
-## Crew's own description agrees with disk, one site excepted
+## Crew's own description agrees with disk
 
-**DERIVED, re-measured at `07ca3972`.**
+**DERIVED, re-measured at `07ca3972`; the commands row re-measured at `2a79938d`.**
 `.claude-plugin/marketplace.json:217` — crew's `description` — reads "4
 context-isolated agents (explorer, reviewer, security, researcher) …, 35
 slash commands, 29 bundled skills … 34 hook entries." Measured independently
@@ -64,7 +64,7 @@ against disk:
 | Claim | Stated | On disk | Where |
 |---|---|---|---|
 | agents | 4 | `ls plugin/crew/agents/*.md` → 4 | `.claude-plugin/marketplace.json:217`, `plugin/PLUGINS.md:17`, `README.md:168`/`:874`, `INSTALLATION.md:252`, `plugin/README.md:414` |
-| commands | 35 | `find plugin/crew/commands -name '*.md'` → 35 (T-0004 added `autopilot.md`) | same sites **except `INSTALLATION.md:252`, which still reads "34 slash commands"** — unmarked, so no check catches it |
+| commands | 35 | `find plugin/crew/commands -name '*.md'` → 35 (T-0004 added `autopilot.md`) | same sites; `INSTALLATION.md:252` read "34 slash commands" until T-0043, which set it to 35 and marked it `<!-- claim: plugin-commands:crew -->`, so `check_self_claims` now checks it (red at 34, measured) |
 | skills | 29 | `find plugin/crew/skills -maxdepth 1 -mindepth 1 -type d` → 29 | same sites, each `<!-- claim: plugin-skills:crew -->`-marked |
 | hook entries | 34 | walking `plugin/crew/hooks/hooks.json`'s 8 events → 34 command entries | same sites |
 
@@ -360,3 +360,16 @@ changed. `INSTALLATION.md` did not, so its `:252` still states 34 commands again
 `scripts/check-marketplace.py`, `CLAUDE.md` and `skills/README.md` did not change.
 `python3 scripts/check-marketplace.py` at `07ca3972`: `marketplace: 34 skills, 5 plugins`,
 `all checks passed`.
+
+Re-verified per-path from `6f96e627` to `2a79938d` for T-0043 (crew 1.0.42; `6f96e627`'s tree is
+what `main` at `1e0706ac` carries for every cited path). Of the cited paths,
+`.claude-plugin/marketplace.json` (`:218` version 1.0.42; `:217` unchanged),
+`plugin/crew/.claude-plugin/plugin.json` (version only), `plugin/PLUGINS.md` (`:14` version; `:17`
+unchanged), `INSTALLATION.md` (`:252` 34 -> 35 slash commands, now claim-marked; no line moved),
+`CHANGELOG.md` (the T-0043 entry at the top of the first `### Fixed`) and
+`plugin/crew/commands/autopilot.md` (edited in place; still 35 commands) changed.
+`scripts/check-marketplace.py`, `CLAUDE.md`, `README.md`, `plugin/README.md`, both install scripts
+and `skills/README.md` did not change. `python3 scripts/check-marketplace.py` at `2a79938d`:
+`marketplace: 34 skills, 5 plugins` / `all checks passed`; with `INSTALLATION.md:252` set back to 34
+it fails with `INSTALLATION.md:252: claims 34 commands for plugin 'crew', but plugin/crew/commands/
+has 35` (reverted).

@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@2a79938d
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -197,15 +197,17 @@ through their own package managers.
 
 - **`README.md`'s install-URL pin is STALE again at this anchor, by one
   line per script.** `README.md:12` and `:18` still read
-  `6c497a14fc06612732241d2b13eee4fea41996f5` (re-read at `07ca3972`), but
-  `git log --oneline 6c497a14..07ca3972 -- scripts/install-prerequisites.sh
+  `6c497a14fc06612732241d2b13eee4fea41996f5` (re-read at `07ca3972` and again
+  at `2a79938d`), but
+  `git log --oneline 6c497a14..2a79938d -- scripts/install-prerequisites.sh
   scripts/install-prerequisites.ps1` now returns `ecf69e43` (crew 1.0.41,
   T-0004), and `git diff --stat` over the same range is 1 line in each script:
   the crew `PLUGIN_NAME` / `PluginCatalog` label, `34 commands` -> `35
   commands`. So a `curl | bash` taken from the README runs scripts that
   differ from the ones this note describes only in that menu label. DERIVED.
-  This is not merged to `main` at this anchor (branch `T-0004-autopilot`), so
-  the re-pin is due after that merge, per CLAUDE.md's promotion step. It was
+  `ecf69e43` reached `main` with T-0004's merge (`1e0706ac`), and the pin was
+  not re-pinned then, so the re-pin CLAUDE.md's promotion step asks for is due
+  now; T-0043 does not touch `README.md` or either script. It was
   current at `f2bb919b` (re-pinned by #226, `86931b29`, "README: re-pin
   install URLs to crew 1.0 merge (6c497a14)"). At `6c497a14` this bullet recorded the pin as STALE at
   `5d1fc5fd`, missing the merged `web-testing` row, `lsp-plugins`,
@@ -477,3 +479,16 @@ script moved and every other install-script citation stands. That same change ma
 stale (Landmines). `scripts/check-marketplace.py`, `scripts/_test/self-claims.py`,
 `scripts/_test/drift-detection.sh` and `INSTALLATION.md` did not change. Neither install script was
 executed, and `check-marketplace.py` was not run at this pass.
+
+Re-verified per-path from `6f96e627` to `2a79938d` for T-0043 (crew 1.0.42; `6f96e627`'s tree is
+what `main` at `1e0706ac` carries for every cited path). Of the cited paths,
+`.claude-plugin/marketplace.json` (crew `version` `:218`, now 1.0.42; `:217` unchanged),
+`plugin/PLUGINS.md` (`:14` version; `:17` unchanged), `INSTALLATION.md` (`:252`'s crew count
+34 -> 35 slash commands, in place, now carrying `<!-- claim: plugin-commands:crew -->`) and
+`plugin/crew/README.md` (three lines reworded in place; the `35 commands` claim still at `:2255`
+and `4 agents` at `:2266`, re-grepped) changed, and `plugin/crew/commands/autopilot.md` was edited
+in place (`ls plugin/crew/commands/*.md` still 35). `plugin/crew/BUDGETS.md` did not change and
+still matches: `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` returns 18176 across 121
+files. Both install scripts, `README.md`, `plugin/README.md` and `scripts/check-marketplace.py`
+did not change, so their citations stand. `python3 scripts/check-marketplace.py` at `2a79938d`:
+`marketplace: 34 skills, 5 plugins` / `all checks passed`. Neither install script was executed.
