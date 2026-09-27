@@ -75,6 +75,8 @@ from sabotage_event_claim import EVENT_CLAIM_MUTATIONS
 from sabotage_refresh import REFRESH_MUTATIONS
 from sabotage_resume import RESUME_MUTATIONS
 from sabotage_autopilot import AUTOPILOT_MUTATIONS
+from sabotage_tracker import TRACKER_MUTATIONS
+from sabotage_route import ROUTE_MUTATIONS
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__)))))
@@ -3042,11 +3044,12 @@ MUTATIONS = (
     ),
 )
 # The T1 review-fix, T3 scope, T5 cloud-guard, context, migrate, auto-cycle, T-0008 refresh-check,
-# T-0006 resume and T-0004 autopilot mutations live in the sabotage_*.py siblings: this file is at `.pylintrc`'s
-# max-module-lines, and raising that limit again is the move its own comment warns against.
+# T-0006 resume, T-0004 autopilot, T-0021 tracker and T-0023 route mutations live in the sabotage_*.py
+# siblings: this file is at `.pylintrc`'s max-module-lines, and raising that limit again is the move its own
+# comment warns against.
 MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS + CLOUD_GUARD_MUTATIONS + SCOPE_MUTATIONS
               + AUTOCYCLE_MUTATIONS + WEBTEST_MUTATIONS + EVENT_CLAIM_MUTATIONS + REFRESH_MUTATIONS
-              + RESUME_MUTATIONS + AUTOPILOT_MUTATIONS)
+              + RESUME_MUTATIONS + AUTOPILOT_MUTATIONS + TRACKER_MUTATIONS + ROUTE_MUTATIONS)
 
 # pytest's own exit codes (documented, not this file's invention): 0 all
 # passed; 1 at least one test FAILED (a real assertion, or an error raised

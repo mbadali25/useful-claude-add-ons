@@ -253,6 +253,42 @@ default time is 02:23; change it with `--time HH:MM`.
 `~/.claude/obsidian/gardener.log` has `acked <session>` lines, and `$VO queue`
 shows fewer items.
 
+## The ticket board
+
+The same vault can hold a Kanban board of your tickets, which crew moves for
+you at each lifecycle step. Crew writes the files itself, so nothing here
+needs the bridge or the `obsidian-vault` plugin; the vault needs `.obsidian/`
+and the Kanban community plugin.
+
+**Turning it on.** In `.crew/crew.json`, set `tracker.kind` to `obsidian` and
+give `tracker.obsidian` a `vaultPath`, a `boardDir` (relative to the vault) and
+optionally `board` (default `Board.md`) and `columns` (your lane names). Give
+every repository its own `boardDir`: with it unset, every repo shares one
+board at the vault root, and a card another repo owns is refused.
+
+| Ticket status | Lane (default name) |
+|---|---|
+| `direction`, `ready` | Backlog |
+| `spec`, `planned` | Ready |
+| `in-progress` | In Progress |
+| `review` | Review |
+| `done` | Done, checked, below `**Complete**` |
+
+**Whose card it is.** `/crew:brainstorm` writes a ticket note beside the board,
+`<boardDir>/T-0042.md`, once. Its `repo-id:` line is how crew tells your
+repository's cards from another's. The value is your origin URL, lowercased
+with `.git` dropped, or the git directory's path when there is no origin. An
+ssh origin keeps its username (`git@github.com:team/app`); other URLs lose any
+user or token; a `file://` origin is decoded to its path.
+
+**Claiming an older note.** A card whose note has no `repo-id:` (a board from
+crew 0.20, or a card you added by hand) is refused until you add one. The
+refusal names the exact line: add `- repo-id: <the id it prints>` to the note
+and run the command again. Crew never rewrites a note for you.
+
+The full rules, including every refusal, are in the crew README, section 13c
+("Optional: an Obsidian Kanban board"), in `plugin/crew/README.md`.
+
 ## Confirming recall reaches your sessions
 
 (written by the context-hook ticket)
