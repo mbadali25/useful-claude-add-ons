@@ -4,6 +4,24 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`crew` 1.0.43: group approval review round 1 (T-0024).** Bumped
+  `1.0.42 -> 1.0.43`. Four defects Codex found in `hooks/scripts/approval_hook.py`,
+  each with a failing test first and a mutation in `tests/sabotage_approval.py`:
+  - A confirm or group in the expanded `<command-name>`/`<command-args>` form
+    wrapped in other text was accepted; it now carries nothing but its tags.
+  - A line break before the command (`"\n/crew:approve --confirm"`) was
+    stripped away and confirmed; a group or confirm is refused on a break
+    anywhere but at the end. A single `/crew:approve <id>` is unchanged.
+  - An `OSError` part-way through a confirm reported "NOT recorded" over
+    receipts already written. Any failure now names recorded and NOT recorded
+    tickets, counts the failing ticket as recorded when its receipt landed
+    before the failure, and says "could not tell" when that receipt cannot be
+    read.
+  - Two confirms racing on one pending list could both record it; the list is
+    now claimed by an atomic rename, so exactly one confirm gets it.
+
 ### Added
 
 - **`crew` 1.0.42: approve several tickets in one prompt, with a confirm
