@@ -262,7 +262,7 @@ STATUS_MUTATIONS = (
     ("status's resume line counts a fall-through to the same ticket as taking it", AUTOPILOT,
      '            and source in (None, bare.get("source")))\n',
      "            and True)\n",
-     _S + "test_status_resume_line_mismatch_reason"),
+     _S + "test_status_resume_line_not_usable_when_resume_took_the_ticket_from_elsewhere"),
     ("a resume_target that raised reads as a verdict on the resume line", AUTOPILOT,
      "    if bare is None:\n",
      "    if False:\n",

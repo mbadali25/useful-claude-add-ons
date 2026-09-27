@@ -617,6 +617,23 @@ def test_status_resume_line_checks_the_handoff_it_read_not_the_one_resume_read(
     assert (bare["ticket"], line) == (T, f"not usable: /crew:autopilot {T} - {reason}")
 
 
+def test_status_resume_line_not_usable_when_resume_took_the_ticket_from_elsewhere(tmp_path):
+    """HANDOFF.md rewritten the other way: `resume_target`'s read fell through
+    and took the same ticket from the active pointer; this read passes every
+    check, but bare `/crew:autopilot` did not take the handoff."""
+    root = _approved(tmp_path)
+    crew_ticket.activate(str(root), T)
+    _handoff(root, f"resume: /crew:autopilot {T}", head="0123456789")
+    top = crew_ticket.toplevel(str(root))
+    bare = crew_autopilot.resume_target(top)
+    _handoff(root, f"resume: /crew:autopilot {T}")
+
+    line = crew_autopilot._resume_line(top, bare)  # pylint: disable=protected-access
+
+    assert (bare["ticket"], bare["source"] != "handoff", line) == (
+        T, True, f"not usable: /crew:autopilot {T} - bare /crew:autopilot does not take it")
+
+
 def test_status_resume_line_usable_when_the_handoff_is_rewritten_unchanged(tmp_path):
     root = _approved(tmp_path)
     _handoff(root, f"resume: /crew:autopilot {T}")
