@@ -362,6 +362,31 @@ def precompact_path(root, session):
     return os.path.join(state_dir(root), f"precompact-{crew_autocycle.session_key(session)}.json")
 
 
+def stuck_path(root, session):
+    """The marker a PreCompact leaves when it could not replace this
+    session's record: the record that survived says nothing about the latest
+    compact. `.stuck`, not `.json`, so the shells' `precompact-*.json`
+    sweeps never remove it; pruned by age with the records."""
+    return os.path.join(state_dir(root), f"precompact-{crew_autocycle.session_key(session)}.stuck")
+
+
+def _mark_stuck(root, session):
+    """Best effort: a marker that cannot be written leaves _compact_was_manual's
+    os.access check as the only refusal (an accepted risk, CONFIG.md §14a)."""
+    path = stuck_path(root, session)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    text = json.dumps({"at": int(time.time())})
+    try:
+        with open(tmp, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
 def write_precompact_record(root, payload):
     """PreCompact's note of how this compaction started, for `decide`.
 
@@ -384,13 +409,15 @@ def write_precompact_record(root, payload):
     # this compaction look typed. The shell flavours remove it too, before
     # python is even looked for. A record that cannot be removed is emptied
     # in place instead (an empty record is not manual); one that can be
-    # neither is refused by _compact_was_manual as unreplaceable.
+    # neither leaves the stuck marker, which _compact_was_manual honours
+    # (review round 4, T-0006: recorded, not predicted with os.access).
     try:
         os.unlink(path)
     except FileNotFoundError:
         pass
     except OSError:
         if not _blank(path):
+            _mark_stuck(root, session)
             return False
     text = json.dumps({"trigger": trigger, "at": int(time.time())}, sort_keys=True)
     tmp = f"{path}.{os.getpid()}.tmp"
@@ -405,6 +432,12 @@ def write_precompact_record(root, payload):
         except OSError:
             pass
         return False
+    # This session's record is current again. A marker that cannot be
+    # removed stays, and that session's compacts keep waiting.
+    try:
+        os.unlink(stuck_path(root, session))
+    except OSError:
+        pass
     return True
 
 
@@ -428,6 +461,10 @@ def _compact_was_manual(root, session):
     if not isinstance(session, str) or not session:
         return False
     path = precompact_path(root, session)
+    # A later PreCompact that could not replace the record said so; a marker
+    # whose presence cannot be told is as good as one that is there.
+    if _absent(stuck_path(root, session)) is not True:
+        return False
     # A record that neither its file nor its directory lets anyone replace
     # could have survived a later PreCompact that failed to remove it, so it
     # says nothing about the LATEST compact (review round 2, T-0006).

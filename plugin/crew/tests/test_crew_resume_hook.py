@@ -639,3 +639,28 @@ def test_a_staleness_verdict_that_raises_counts_as_stale(tmp_path, monkeypatch):
     monkeypatch.setattr(crew_state, "archive_stale_handoff", boom)
 
     assert crew_context._handoff_verdict(str(root), {}) == (False, True)  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("flavor", FLAVORS)
+def test_a_record_the_shell_could_not_remove_leaves_a_stuck_marker(tmp_path, flavor):
+    """Round 4 NIT :402 in the shell half. The record's place holds a
+    non-empty directory, which `rm -f` / `Remove-Item` cannot remove; with no
+    python on PATH the marker can only come from the shell itself."""
+    if os.name == "nt":
+        pytest.skip("symlinked PATH fixture is POSIX-only")
+    root = _repo(tmp_path)
+    record = _record_path(root, "s1")
+    os.makedirs(os.path.join(record, "keep"))
+    env = _env(root)
+    env["PATH"] = _no_python_path(tmp_path)
+    if flavor == "ps1":
+        env["OS"] = "Windows_NT"
+        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", os.path.join(_SCRIPTS, "handoff-write.ps1")]
+    else:
+        cmd = [_BASH, os.path.join(_SCRIPTS, "handoff-write.sh")]
+
+    done = subprocess.run(cmd, cwd=str(root), env=env, capture_output=True, text=True,
+                          input=json.dumps(_precompact(root, "s1", "auto")), check=False, timeout=120)
+
+    assert (done.returncode, os.path.isdir(record),
+            os.path.isfile(crew_resume.stuck_path(str(root), "s1"))) == (0, True, True), done.stderr

@@ -196,10 +196,11 @@ def prune_claims(root):
 
 def prune_precompact(root):
     """Drop `precompact-<session>.json` records (crew_resume's PreCompact
-    trigger notes), and their orphaned `.tmp` files, older than the claim age
-    rule above. `decide` trusts one
-    for 600 s; nothing reads it after that, and one is left per compacting
-    session."""
+    trigger notes), their orphaned `.tmp` files, and their `.stuck` markers,
+    older than the claim age rule above. `decide` trusts a record for 600 s;
+    nothing reads it after that, and one is left per compacting session. A
+    marker is only ever a refusal, so dropping an old one can re-allow
+    nothing a fresh record would not."""
     directory = state_dir(root)
     cutoff = time.time() - _CLAIM_STALE_SECONDS
     try:
@@ -209,7 +210,8 @@ def prune_precompact(root):
     for name in names:
         # `.tmp` too: a writer killed between open and os.replace (the .ps1
         # wrapper kills python at 10 s) leaves `precompact-<key>.json.<pid>.tmp`.
-        if not (name.startswith("precompact-") and name.endswith((".json", ".tmp"))):
+        # `.stuck`: T-0042's marker for a record a PreCompact could not replace.
+        if not (name.startswith("precompact-") and name.endswith((".json", ".tmp", ".stuck"))):
             continue
         path = os.path.join(directory, name)
         try:

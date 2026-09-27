@@ -1083,3 +1083,73 @@ def test_parse_accepts_a_note_that_merely_mentions_a_skeleton():
     parsed = crew_resume.parse_resume(text)
 
     assert (parsed["ok"], crew_resume.render(parsed)) == (True, "/crew:done T-0001"), parsed
+
+
+def _refuse_replacing(monkeypatch, path):
+    """os.unlink and open(path, "w") refused for `path` only, and os.access
+    lying that both the record and its directory are writable: the record a
+    later PreCompact can neither remove nor blank, which the os.access
+    prediction does not see."""
+    real_unlink, real_access = os.unlink, os.access
+
+    def unlink(target, *args, **kwargs):
+        if os.fspath(target) == path:
+            raise PermissionError(13, "Permission denied", target)
+        return real_unlink(target, *args, **kwargs)
+
+    def opener(target, mode="r", *args, **kwargs):
+        if os.fspath(target) == path and "w" in mode:
+            raise PermissionError(13, "Permission denied", target)
+        return open(target, mode, *args, **kwargs)
+    monkeypatch.setattr(crew_resume.os, "unlink", unlink)
+    monkeypatch.setattr(crew_resume, "open", opener, raising=False)
+    monkeypatch.setattr(crew_resume.os, "access", lambda target, mode, *a, **k: True
+                        if os.fspath(target) in (path, os.path.dirname(path)) else real_access(target, mode, *a, **k))
+
+
+def test_a_record_a_later_precompact_could_not_replace_is_not_manual(fx, monkeypatch):
+    """Round 4 NIT :402, the reviewer's repro: os.access PREDICTED
+    replaceability, so a record that survived a failed PreCompact still read
+    `manual` whenever access() said yes. The failure is now recorded."""
+    crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
+    path = crew_resume.precompact_path(str(fx.root), "s1")
+    _refuse_replacing(monkeypatch, path)
+
+    ok = crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "auto"})
+
+    assert (ok, os.path.exists(crew_resume.stuck_path(str(fx.root), "s1")),
+            crew_resume._compact_was_manual(str(fx.root), "s1")) == (False, True, False)  # pylint: disable=protected-access
+
+
+def test_a_stuck_marker_that_cannot_be_stat_ed_is_not_manual(fx, monkeypatch):
+    crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
+    _refuse_lstat(monkeypatch, crew_resume.stuck_path(str(fx.root), "s1"))
+
+    assert crew_resume._compact_was_manual(str(fx.root), "s1") is False  # pylint: disable=protected-access
+
+
+def test_a_successful_record_clears_the_stuck_marker(fx):
+    stuck = crew_resume.stuck_path(str(fx.root), "s1")
+    os.makedirs(os.path.dirname(stuck), exist_ok=True)
+    with open(stuck, "w", encoding="utf-8") as handle:
+        handle.write("{}")
+
+    ok = crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
+
+    assert (ok, os.path.exists(stuck), crew_resume._compact_was_manual(str(fx.root), "s1")) == \
+        (True, False, True)  # pylint: disable=protected-access
+
+
+def test_stuck_markers_older_than_a_day_are_pruned(fx):
+    state = crew_resume.state_dir(str(fx.root))
+    os.makedirs(state, exist_ok=True)
+    old, fresh = os.path.join(state, "precompact-old.stuck"), os.path.join(state, "precompact-fresh.stuck")
+    for path in (old, fresh):
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("{}")
+    stale = time.time() - 25 * 3600
+    os.utime(old, (stale, stale))
+
+    crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
+
+    assert sorted(n for n in os.listdir(state) if n.endswith(".stuck")) == ["precompact-fresh.stuck"]
