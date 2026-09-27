@@ -23,15 +23,18 @@ below; a feature does not. Feed its root-cause line into step 2.
 
 ## 1. Direction — one line
 
-Mint the ticket the way `/crew:brainstorm` step 1 does: next free `T-####`,
-create `.work/tickets/<id>/`, then
+Mint the ticket the way `/crew:brainstorm` step 1 does: next free `T-####`, then
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py create --root . --ticket <id> --title "<title>"`.
-Write `.work/tickets/<id>/direction.md` as one line: `Fix: $ARGUMENTS`. Show
-it, get a yes, move on — no options table, no multi-question round.
+If a line says `id taken`, that id is not yours: pick the next free id, run
+`create` again, and write nothing under the taken one. Then create
+`.work/tickets/<id>/` and write `.work/tickets/<id>/direction.md` as one line:
+`Fix: $ARGUMENTS`. Show it, get a yes, move on — no options table, no
+multi-question round.
 
-**Every tracker call in this file**: print its lines verbatim; on exit 3 run
-the command it printed; on exit 1 tell me `tracker not updated: <reason>` and
-carry on — the phase stands, nothing is undone.
+**Every tracker call in this file**, `id taken` aside: print its lines
+verbatim; on exit 3 run the command it printed; on exit 1 tell me
+`tracker not updated: <reason>` and carry on — the phase stands, nothing is
+undone.
 
 ## 2. Spec — six short sections
 

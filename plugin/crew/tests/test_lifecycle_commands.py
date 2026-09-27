@@ -275,3 +275,21 @@ def test_implement_moves_to_review_before_it_runs_the_review():
     review = text.find("**Then, last, `/crew:review $1`**")
 
     assert (move != -1, review != -1, move < review) == (True, True, True)
+
+
+TAKEN_RULE = "If a line says `id taken`, that id is not yours"
+
+
+@pytest.mark.parametrize("name", ("brainstorm.md", "fix.md"))
+def test_a_taken_id_is_never_written_under(name):
+    """T-0021 review round 3: a refused mint carried on into writing the held
+    ticket's files. The rule follows the create call and precedes every write
+    under `.work/tickets/`."""
+    text = " ".join(_read(os.path.join(COMMANDS, name)).split())
+
+    create = text.find(f"{_TRACKER} create --root .")
+    rule = text.find(TAKEN_RULE)
+    folder = text.find("create `.work/tickets/")
+
+    assert (create != -1, rule != -1, folder != -1, create < rule < folder,
+            "write nothing under the taken one" in text) == (True, True, True, True, True)

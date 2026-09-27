@@ -1264,30 +1264,40 @@ must be relative with no `..`, `board` a bare file name, the board and note must
 not resolve out of the vault through a symlink, and a board or note inside the
 worktree must be ignored by git (otherwise it would enter the review bundle) —
 checked per file, so a vault that *contains* the repo is caught too. Any of
-those fails, the board lacks its frontmatter key, or a configured lane is
-missing or doubled: exit 1, nothing written anywhere. Board writes are an
+those fails, the board lacks its frontmatter key, a configured lane is
+missing or doubled, or the done lane lacks exactly one `**Complete**`: exit 1,
+nothing written anywhere. Board writes are an
 exclusively created temp file (a link planted at its name is never followed)
 plus `os.replace`, keeping the board's mode and owner, re-reading the board
 first and recomputing if Obsidian saved it meanwhile. Every vault write reaches
 its directory from the vault root one component at a time with
 `O_DIRECTORY|O_NOFOLLOW` and writes relative to that directory, so a directory
 swapped for a link after the checks is refused rather than written through.
-Windows has no such calls: there the directory's real path is re-checked
-before the temp is written, before the replace and after it, and a swap inside
-that window remains a residual race.
+That fd follows its directory if it is renamed out of the vault, so the walk is
+repeated and matched by device and inode before the temp is written, before the
+replace and after it; a note that landed in a directory that left is removed
+through the fd. Windows has no such calls: there the directory's real path is
+re-checked at the same three points. On both, a move inside the last window
+remains a residual race.
 
 **Whose card.** The ticket note is written once and never rewritten, and
 records `repo-id:` — the origin URL, lowercased with credentials and `.git`
-dropped, or the git common dir's real path when there is no origin. Never the
-directory's name: `a/app` and `b/app` share that. With `boardDir` unset every
+dropped, or the git common dir's real path when there is no origin or the
+origin is a relative path (`../origin/app.git` from `a/app` and `b/app` is one
+string naming two repositories); an absolute local origin is its real path.
+Never the directory's name: `a/app` and `b/app` share that. With `boardDir` unset every
 repo shares one board, so a note naming another repo refuses `create`, `move`
 and `read`. A card whose owner cannot be told — no note, a note with no
 `repo-id:` — refuses `create` and `move` (`read` says so on its line), naming
-the fix: put `repo-id: <this repo's>` in the note. The one exception is a card
-with no note whose text is exactly this repo's INDEX title for the id: `move`
-takes that as the card's owner and writes the note. `create` refuses an id
-INDEX already holds under another title, so a second session cannot take over
-a ticket by minting the same id.
+the fix: put `repo-id: <this repo's>` in the note. There is no exception: ids
+start over in every repo and titles repeat, so a card's text matching this
+repo's INDEX row proves nothing. `create` refuses an id INDEX already holds,
+whatever its title, and an id the board holds for another or an unknown repo;
+each refusal begins `id taken`, and `/crew:brainstorm` and `/crew:fix` then
+take the next free id instead of writing under that one. A `move` whose INDEX
+half refuses — another session moved the ticket on meanwhile — leaves the
+board alone, and a card already in its lane is repaired in place (checked in
+Done, below `**Complete**`; unchecked elsewhere).
 
 **There is no `.work/cache/` mirror.** The ticket's content lives in
 `.work/tickets/<id>/` for every mode; the board carries status only. The key

@@ -80,7 +80,8 @@ board` in the frontmatter, the trailing `%% kanban:settings` block and
 file that opens as plain text. So never edit the board with `Edit` or `Write`:
 `crew_tracker.py` cuts the one card and inserts it under the target heading,
 leaves every other byte — archive included — as it was, and refuses a board
-that is missing its frontmatter key, a configured lane, or has one twice.
+that is missing its frontmatter key, a configured lane, or has one twice, or
+whose done lane lacks exactly one `**Complete**`.
 
 Lane names come from `obsidian.columns` rather than being hardcoded — a user
 with an existing board renames lanes in config, not in the vault. A lane named
@@ -97,8 +98,9 @@ the board or note sits inside this worktree without git ignoring it (it would
 enter the review bundle), or the ticket's note names another repo (a shared
 board, `boardDir` unset). Every board write is an exclusively created temp file
 plus `os.replace`, keeping the board's mode and owner, re-reading it first and
-recomputing if Obsidian saved it meanwhile. A card no note claims moves with
-`whose card could not tell` on its line; `create` refuses one.
+recomputing if Obsidian saved it meanwhile. A card whose owner cannot be told —
+no note, or a note with no `repo-id:` — is refused by `create` and `move`
+alike, whatever its text says; `read` says `whose card could not tell`.
 
 ## When the vault is a git repo of its own
 

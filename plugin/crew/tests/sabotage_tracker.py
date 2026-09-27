@@ -31,9 +31,9 @@ TRACKER_MUTATIONS = (
     (
         "tracker resolve ignores disagreeing settings under an agreeing kind",
         TRACKER,
-        '            if (kind in first["blocks"] and kind in second["blocks"]\n',
-        '            if (False and kind in first["blocks"] and kind in second["blocks"]\n',
-        _TESTS + "test_resolve_both_disagree_on_the_kinds_settings_is_could_not_tell",
+        '            elif first["blocks"].get(kind) != second["blocks"].get(kind):\n',
+        "            elif False:\n",
+        _TESTS + "test_resolve_both_disagree_on_jira_settings_is_could_not_tell",
     ),
     (
         "tracker resolve accepts a kind crew does not know",
@@ -170,8 +170,8 @@ TRACKER_MUTATIONS = (
         # The INDEX half is written before the board says it has no card.
         "tracker move skips the card lookup before writing anything",
         TRACKER,
-        "        card, problem = find_card(board, ticket)\n    claim = False\n",
-        "        card = find_card(board, ticket)[0]\n    claim = False\n",
+        "        _, problem = find_card(board, ticket)\n",
+        "        _ = find_card(board, ticket)[0]\n",
         _TESTS + "test_obsidian_move_without_a_card_writes_nothing",
     ),
     (
@@ -268,17 +268,16 @@ TRACKER_MUTATIONS = (
         "tracker move writes the board for a ticket this repo never minted",
         TRACKER,
         '    if not problem and row["state"] != READ:\n'
-        '        problem = f"no {INDEX_REL} row for {ticket} in this repo"\n'
-        "    if not problem and not reopen:\n",
-        '    if not problem and not reopen and row["state"] == READ:\n',
+        '        problem = f"no {INDEX_REL} row for {ticket} in this repo"\n',
+        "",
         _TESTS + "test_move_without_this_repos_index_row_writes_nothing",
     ),
     (
         # Round 2 FIX (:876): 'could not tell' must refuse, not move with a caveat.
         "tracker moves a card whose owner it could not tell",
         TRACKER,
-        "            problem = None if claim else _unclaimed(paths, ticket, detail, here)\n",
-        "            problem = None\n",
+        "        elif owner == UNKNOWN:\n            problem = _unclaimed(paths, ticket, detail, here)\n",
+        "        elif owner == UNKNOWN:\n            problem = None\n",
         _TESTS + "test_move_refuses_a_card_no_note_claims",
     ),
     (
@@ -342,8 +341,8 @@ TRACKER_MUTATIONS = (
     (
         "tracker owns a card by the repo directory's name when there is no origin",
         TRACKER,
-        "        return os.path.realpath(common)\n",
-        "        return os.path.basename(os.path.dirname(os.path.realpath(common)))\n",
+        "    if code == 2:\n        return os.path.realpath(common)\n",
+        "    if code == 2:\n        return os.path.basename(os.path.dirname(os.path.realpath(common)))\n",
         _TESTS + "test_same_repo_name_is_not_the_same_repo",
     ),
     (
@@ -358,37 +357,17 @@ TRACKER_MUTATIONS = (
         "tracker moves when git cannot say which repo this is",
         TRACKER,
         "    if not problem and here is None:\n        problem = _no_identity(root)\n"
-        "    board, problem = (None, problem) if problem else _load_board(paths, columns)\n    card = None\n",
-        "    board, problem = (None, problem) if problem else _load_board(paths, columns)\n    card = None\n",
+        "    board, problem = (None, problem) if problem else _load_board(paths, columns)\n"
+        "    if not problem:\n        _, problem = find_card(board, ticket)\n",
+        "    board, problem = (None, problem) if problem else _load_board(paths, columns)\n"
+        "    if not problem:\n        _, problem = find_card(board, ticket)\n",
         _TESTS + "test_move_refuses_when_this_repos_identity_cannot_be_told",
-    ),
-    (
-        "tracker claims a no-note card whatever its text says",
-        TRACKER,
-        '            claim = not note and text is not None and text == row.get("title")\n',
-        "            claim = not note\n",
-        _TESTS + "test_move_refuses_a_card_no_note_claims",
-    ),
-    (
-        # The neighbour: no card text and no INDEX title are both None.
-        "tracker claims a card when neither its text nor the INDEX title exists",
-        TRACKER,
-        '            claim = not note and text is not None and text == row.get("title")\n',
-        '            claim = not note and text == row.get("title")\n',
-        _TESTS + "test_move_refuses_a_multi_line_card_when_index_has_no_title",
-    ),
-    (
-        "tracker claims a card without recording this repo's repo-id",
-        TRACKER,
-        "    if claim:\n",
-        "    if False:\n",
-        _TESTS + "test_move_claims_an_exact_title_card_and_records_repo_id",
     ),
     (
         # Round 2 FIX (:181): the memory-vault fallback against a named vault.
         "tracker resolve ignores a disagreement in the effective vault or boardDir",
         TRACKER,
-        "        if one is not None and two is not None and one != two:\n",
+        "        if one != two:\n",
         "        if False:\n",
         _TESTS + "test_resolve_compares_the_effective_vault",
     ),
@@ -397,7 +376,7 @@ TRACKER_MUTATIONS = (
         TRACKER,
         '    elif board_dir is None and vault is not None:\n        board_dir = ""\n',
         "",
-        _TESTS + "test_resolve_compares_the_effective_board_dir",
+        _TESTS + "test_resolve_accepts_an_explicit_vault_root_board_dir_beside_an_unset_one",
     ),
     (
         # Round 2 FIX (:422): another session's id, silently taken over.
@@ -410,8 +389,8 @@ TRACKER_MUTATIONS = (
     (
         "tracker create writes the card after the INDEX half refused",
         TRACKER,
-        '    if files["state"] == FAILED:\n        return [files]\n',
-        "",
+        '    files = _files_create(root, ticket, title)\n    if files["state"] == FAILED:\n        return [files]\n',
+        "    files = _files_create(root, ticket, title)\n",
         _TESTS + "test_obsidian_create_on_a_held_id_writes_no_card",
     ),
     (
@@ -468,13 +447,6 @@ TRACKER_MUTATIONS = (
         _TESTS + "test_move_from_a_status_crew_does_not_know_is_could_not_tell",
     ),
     (
-        "tracker moves the board before the INDEX half refuses a backwards move",
-        TRACKER,
-        '    if not problem and not reopen:\n        problem = _backwards(ticket, row["status"], status)\n',
-        "",
-        _TESTS + "test_obsidian_backwards_move_leaves_the_board_alone",
-    ),
-    (
         "tracker ignores --reopen",
         TRACKER,
         "        backwards = None if reopen else _backwards(ticket, current, status)\n",
@@ -488,5 +460,175 @@ TRACKER_MUTATIONS = (
         "`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket <id> --to review`",
         "`crew_tracker.py move --root . --ticket <id> --to review`",
         _LIFECYCLE + "test_every_tracker_call_in_commands_carries_the_prefix",
+    ),
+    # --- review round 3 ----------------------------------------------------------
+    (
+        # Round 3 BLOCK (:973): the pinned fd follows its directory out of the vault.
+        "tracker writes through a pinned directory without re-walking to it",
+        TRACKER,
+        "        yield os.path.basename(paths[label]), fd, _pinned_check(paths, label, fd)\n",
+        "        yield os.path.basename(paths[label]), fd, lambda: None\n",
+        _TESTS + "test_board_dir_moved_out_of_the_vault_after_pinning_writes_nothing_there",
+    ),
+    (
+        "tracker takes a different directory at the pinned one's path as the same",
+        TRACKER,
+        "        if (seen.st_dev, seen.st_ino) != (held.st_dev, held.st_ino):\n",
+        "        if False:\n",
+        _TESTS + "test_board_dir_moved_out_of_the_vault_after_pinning_writes_nothing_there[replaced]",
+    ),
+    (
+        "tracker writes the note before checking its directory is still in the vault",
+        TRACKER,
+        '            moved = check()\n            if moved:\n                return _result("obsidian-note", FAILED, moved)\n',
+        "",
+        _TESTS + "test_note_dir_moved_out_of_the_vault_after_pinning_leaves_no_note_there",
+    ),
+    (
+        "tracker leaves a note it wrote into a directory that left the vault",
+        TRACKER,
+        "                _discard(name, fd)\n",
+        "",
+        _TESTS + "test_note_dir_moved_out_after_the_note_is_written_removes_it_there",
+    ),
+    (
+        # Round 3 FIX (:503): `../origin/app.git` is one string, two repositories.
+        "tracker takes a relative local origin as the repo's identity",
+        TRACKER,
+        "        if os.path.isabs(local) or ntpath.isabs(local):\n            return os.path.realpath(local)\n"
+        "        return os.path.realpath(common)\n",
+        "        return normal_url(url)\n",
+        _TESTS + "test_relative_local_origins_are_not_one_repo",
+    ),
+    (
+        "tracker reads an scp-style origin as a local path",
+        TRACKER,
+        '    if ":" in head and not ntpath.splitdrive(url)[0]:\n        return None\n',
+        "",
+        _TESTS + "test_repo_id_normalises_the_origin_url",
+    ),
+    (
+        # Round 3 FIX (:1138): a matching title is not an owner.
+        "tracker moves another repo's no-note card when the titles match",
+        TRACKER,
+        "        elif owner == UNKNOWN:\n            problem = _unclaimed(paths, ticket, detail, here)\n",
+        "        elif owner == UNKNOWN:\n            problem = None\n",
+        _TESTS + "test_move_refuses_another_repos_unclaimed_card_with_the_same_title",
+    ),
+    (
+        # Round 3 FIX (:565): the same title is still another session's id.
+        "tracker create answers 'unchanged' for a held id under the same title",
+        TRACKER,
+        "        held = [_cells(lines[i]) for i in _rows(lines, ticket)]\n        if held:\n",
+        "        held = [_cells(lines[i]) for i in _rows(lines, ticket)]\n"
+        "        if len(held) == 1 and len(held[0]) > 4 and held[0][4] == title:\n"
+        '            return None, _result(backend, UNCHANGED, "already")\n'
+        "        if held:\n",
+        _TESTS + "test_create_refuses_a_held_id_under_the_same_title",
+    ),
+    (
+        "tracker create does not say 'id taken' for another repo's card",
+        TRACKER,
+        '            problem = f"{TAKEN}: " + _foreign(paths, ticket, detail, here)\n',
+        "            problem = _foreign(paths, ticket, detail, here)\n",
+        _TESTS + "test_create_on_an_id_the_board_holds_says_id_taken[foreign]",
+    ),
+    (
+        "tracker create does not say 'id taken' for a card whose owner it cannot tell",
+        TRACKER,
+        '            problem = f"{TAKEN}: " + _unclaimed(paths, ticket, detail, here)\n',
+        "            problem = _unclaimed(paths, ticket, detail, here)\n",
+        _TESTS + "test_create_on_an_id_the_board_holds_says_id_taken[unknown]",
+    ),
+    (
+        # Round 3 FIX (brainstorm.md:35, fix.md:29): a refused mint carried on.
+        "brainstorm carries on under an id create said is taken",
+        BRAINSTORM,
+        "If a line says `id taken`, that id is not yours",
+        "If a line says anything, carry on",
+        _LIFECYCLE + "test_a_taken_id_is_never_written_under[brainstorm.md]",
+    ),
+    (
+        "fix carries on under an id create said is taken",
+        FIX,
+        "If a line says `id taken`, that id is not yours",
+        "If a line says anything, carry on",
+        _LIFECYCLE + "test_a_taken_id_is_never_written_under[fix.md]",
+    ),
+    (
+        # Round 3 FIX (:222): only one file carried the block.
+        "tracker resolve compares only the vault and boardDir each file yields",
+        TRACKER,
+        '    for field in ("vaultPath", "boardDir", "board", "columns"):\n',
+        '    for field in ("vaultPath", "boardDir"):\n',
+        _TESTS + "test_resolve_compares_every_effective_obsidian_setting",
+    ),
+    (
+        "tracker resolve takes a value one file yields and the other does not",
+        TRACKER,
+        "        if one != two:\n",
+        "        if one is not None and two is not None and one != two:\n",
+        _TESTS + "test_resolve_refuses_one_file_naming_a_vault_the_other_does_not",
+    ),
+    (
+        "tracker resolve takes the Jira/SDP block only one file carries",
+        TRACKER,
+        '            elif first["blocks"].get(kind) != second["blocks"].get(kind):\n',
+        '            elif (kind in first["blocks"] and kind in second["blocks"]\n'
+        '                  and first["blocks"][kind] != second["blocks"][kind]):\n',
+        _TESTS + "test_resolve_refuses_a_block_only_one_file_carries",
+    ),
+    (
+        # Round 3 FIX (:1158): the board moved after the INDEX half refused.
+        "tracker moves the board after the INDEX half refused the move",
+        TRACKER,
+        '    files = _files_move(root, ticket, status, reopen)\n    if files["state"] == FAILED:\n        return [files]\n',
+        "    files = _files_move(root, ticket, status, reopen)\n",
+        _TESTS + "test_board_is_not_moved_when_the_index_half_refuses",
+    ),
+    (
+        # The same gate now stops a backwards move's board half (round 2 NIT).
+        "tracker moves the board back after the INDEX half refused a backwards move",
+        TRACKER,
+        '    files = _files_move(root, ticket, status, reopen)\n    if files["state"] == FAILED:\n        return [files]\n',
+        "    files = _files_move(root, ticket, status, reopen)\n",
+        _TESTS + "test_obsidian_backwards_move_leaves_the_board_alone",
+    ),
+    (
+        # Round 3 FIX (:797): a card already in Done skipped its repair.
+        "tracker leaves a card in its lane with the wrong checkbox",
+        TRACKER,
+        '        fixed[card["start"]] = _checkbox(lines[card["start"]], key)\n',
+        '        fixed[card["start"]] = lines[card["start"]]\n',
+        _TESTS + "test_move_to_done_rechecks_a_card_already_in_done",
+    ),
+    (
+        "tracker leaves a card above **Complete** in Done",
+        TRACKER,
+        '    if card["lane"] == target and (key != "done" or card["start"] > _complete_markers(board)[0]):\n',
+        '    if card["lane"] == target:\n',
+        _TESTS + "test_move_to_done_puts_a_card_above_complete_below_it",
+    ),
+    (
+        "tracker reports a card repaired in its lane as unchanged",
+        TRACKER,
+        '        if moved_from == columns[key] and new == "".join(current["lines"]):\n',
+        "        if moved_from == columns[key]:\n",
+        _TESTS + "test_backend_repairs_an_unchecked_card_already_in_done",
+    ),
+    (
+        # Round 3 FIX (:765): a Done lane with no marker took a checked card.
+        "tracker accepts a Done lane with no **Complete** marker",
+        TRACKER,
+        "    if markers != 1:\n",
+        "    if markers > 1:\n",
+        _TESTS + "test_done_lane_without_complete_writes_nothing",
+    ),
+    (
+        "tracker accepts a Done lane with two **Complete** markers",
+        TRACKER,
+        "    if markers != 1:\n",
+        "    if markers == 0:\n",
+        _TESTS + "test_done_lane_needs_exactly_one_complete_marker",
     ),
 )

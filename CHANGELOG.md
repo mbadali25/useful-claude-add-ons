@@ -83,6 +83,25 @@ All notable changes to this repository are documented here. Format follows [Keep
   `crew_tracker.py` call in `commands/` carries the plugin-root prefix. 63
   mutations in `sabotage_tracker.py`.
 
+  Review round 3 fixes, same version (never shipped): the pinned directory fd
+  follows its directory if it is renamed out of the vault, so every vault
+  write now repeats the walk from the vault and matches it by device and inode
+  before the temp, before the replace and after it; a note that landed in a
+  directory that left is removed through its fd (the BLOCK). A relative local
+  origin (`../origin/app.git`) is no longer an identity -- the common dir is --
+  and an absolute one is its real path. The claim of a no-note card whose text
+  matched this repo's INDEX title is gone: an unknown owner is refused,
+  whatever the card says. `create` refuses every id INDEX holds, the same
+  title included, and its refusals for a held id begin `id taken`;
+  `/crew:brainstorm` and `/crew:fix` take the next free id on it and create
+  the ticket folder only after `create`. `resolve` compares the effective
+  board and lane names too, counts a value only one file yields as a
+  disagreement, and compares Jira/SDP blocks whole, a missing one included.
+  A `move` whose INDEX half refuses leaves the board alone. A card already in
+  its lane is repaired (checked below `**Complete**` in Done, unchecked
+  elsewhere), and a done lane without exactly one `**Complete**` is refused.
+  81 mutations in `sabotage_tracker.py`.
+
 ### Fixed
 
 - **`crew` 1.0.38: T-0008 follow-up (T-0034).** Bumped `1.0.37 -> 1.0.38`.

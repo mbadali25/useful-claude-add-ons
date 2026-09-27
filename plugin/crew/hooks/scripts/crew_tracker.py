@@ -45,7 +45,9 @@ carries the target's mode and owner before it replaces it: sessions here run as
 root, and a board handed to root 0644 is one Obsidian can no longer save.
 A vault write reaches its directory from the vault root one component at a
 time without following a link (`dir_fd`), so a directory swapped for a link
-after the checks is refused instead of written through. A failed tracker write never
+after the checks is refused instead of written through, and repeats that walk
+around the write, so a directory renamed out of the vault with the fd held is
+refused too. A failed tracker write never
 undoes the lifecycle transition that called it: it prints `could not update:
 <reason>` and exits 1, and the command's prose tells the human.
 """
@@ -74,6 +76,10 @@ DELEGATED = "delegated"
 NOT_APPLICABLE = "not applicable"
 READ = "read"
 UNREADABLE = "could not read"
+# How `create` begins its reason when the id is someone else's -- held in INDEX
+# or on the board. The lifecycle prose reads this phrase: that id is not the
+# session's to write under, so it takes the next free one.
+TAKEN = "id taken"
 
 # The ticket statuses a lifecycle command moves a ticket to, in order, and the
 # `obsidian.columns` key of the lane each one lands in. Table-driven on
@@ -167,7 +173,8 @@ def _settings(kind, side):
 
 
 def _effective(side):
-    """`{field: (value, where from)}` for the obsidian target a file yields.
+    """`{field: (value, where from)}` for the obsidian target a file yields --
+    vault, boardDir, board and lane names, defaults applied.
 
     A value is None when the file yields none. An unset boardDir is the vault
     root, so it is `""` once the file yields a vault.
@@ -181,15 +188,19 @@ def _effective(side):
     elif board_dir is None and vault is not None:
         board_dir = ""
     return {"vaultPath": (vault, settings.get("vaultPathFrom", "obsidian.vaultPath")),
-            "boardDir": (board_dir, "obsidian.boardDir")}
+            "boardDir": (board_dir, "obsidian.boardDir"),
+            "board": (settings.get("board"), "obsidian.board"),
+            "columns": (settings["columns"], "obsidian.columns")}
 
 
 def _effective_disagreements(first, second):
-    """What the two files' obsidian targets disagree on, fallbacks included."""
+    """What the two files' obsidian targets disagree on, fallbacks and
+    defaults included. A value one file yields and the other does not is a
+    disagreement too: resolve would otherwise pick whichever file came first."""
     problems, mine, theirs = [], _effective(first), _effective(second)
-    for field in ("vaultPath", "boardDir"):
+    for field in ("vaultPath", "boardDir", "board", "columns"):
         (one, one_from), (two, two_from) = mine[field], theirs[field]
-        if one is not None and two is not None and one != two:
+        if one != two:
             problems.append(f"{first['file']} yields obsidian {field} {one!r} ({one_from}), "
                             f"{second['file']} yields {two!r} ({two_from})")
     return problems
@@ -219,12 +230,15 @@ def resolve(root):
                             f"{second['file']} says {second['key']} {second['kind']!r}")
         else:
             kind = first["kind"]
-            if (kind in first["blocks"] and kind in second["blocks"]
-                    and first["blocks"][kind] != second["blocks"][kind]):
-                problems.append(f"{first['file']} and {second['file']} both say {kind!r} "
-                                f"but disagree on its {kind} settings")
+            # Obsidian field by field, defaults and fallbacks applied: the
+            # same target spelled two ways (`/v`, `/v/`) is not a disagreement.
+            # Any other kind's block whole -- a block only one file carries
+            # included, since resolve would otherwise take the first file's.
             if kind == "obsidian":
                 problems += _effective_disagreements(first, second)
+            elif first["blocks"].get(kind) != second["blocks"].get(kind):
+                problems.append(f"{first['file']} and {second['file']} both say {kind!r} "
+                                f"but disagree on its {kind} settings")
     if problems:
         return {"kind": COULD_NOT_TELL, "source": None, "settings": {}, "problems": problems}
     if not sides:
@@ -374,9 +388,9 @@ def _atomic_update(path, label, backend, compute, dir_fd=None, check=None):
     write and the result is returned as-is. When the file changed between
     the read and the replace, the temp is dropped and the text recomputed from
     the new bytes, at most WRITE_TRIES times. With `dir_fd`, `path` is a name
-    in that pinned directory. `check`, where the directory cannot be pinned,
-    returns why the directory moved (or None) and runs before the temp is
-    written, before the replace and after it.
+    in that pinned directory. `check`, for a vault write, returns why the
+    directory moved (or None) and runs before the temp is written, before the
+    replace and after it.
     """
     for _ in range(WRITE_TRIES):
         try:
@@ -488,19 +502,41 @@ def normal_url(url):
     return url[:-4] if url.endswith(".git") else url
 
 
+def _local_path(url):
+    """The filesystem path an origin URL names, or None for a remote URL.
+
+    Git's own rule: `scheme://` is a URL (`file://` a local one), and a colon
+    before the first slash is scp-style `host:path`; anything else is a path.
+    """
+    if "://" in url:
+        return url[len("file://"):] if url.lower().startswith("file://") else None
+    head = url.split("/", 1)[0]
+    if ":" in head and not ntpath.splitdrive(url)[0]:
+        return None
+    return url
+
+
 def repo_id(root):
     """This repository's identity, the same in every worktree of it, or None
     when git could not say.
 
     The origin URL (see `normal_url`), else the real path of the git common
-    dir. Never the directory's name: `a/app` and `b/app` share that.
+    dir. Never the directory's name: `a/app` and `b/app` share that. An origin
+    that is a relative path is not an identity either -- `../origin/app.git`
+    from `a/app` and from `b/app` is one string naming two repositories -- so
+    it is the common dir too; an absolute one is its real path.
     """
     common = _common_dir(root)
     if common is None:
         return None
     code, url = _git_out(root, "remote", "get-url", "origin")
     if code == 0 and url:
-        return normal_url(url)
+        local = _local_path(url)
+        if local is None:
+            return normal_url(url)
+        if os.path.isabs(local) or ntpath.isabs(local):
+            return os.path.realpath(local)
+        return os.path.realpath(common)
     if code == 2:
         return os.path.realpath(common)
     return None
@@ -529,13 +565,15 @@ def title_ok(title):
 
 
 def _held(ticket, held):
-    """Why `create` refuses an id INDEX already holds under another title."""
+    """Why `create` refuses an id INDEX already holds, whatever its title: a
+    second session minting the same id under the same title is still a second
+    session, and nothing in INDEX tells the two apart."""
     if len(held) > 1:
-        return f"{INDEX_REL} has {len(held)} rows for {ticket}"
+        return f"{TAKEN}: {INDEX_REL} has {len(held)} rows for {ticket}"
     cells = held[0]
     status = cells[1] if len(cells) > 1 and cells[1] else "(no status)"
     title = cells[4] if len(cells) > 4 else ""
-    return f'{ticket} is already {status} "{title}"'
+    return f'{TAKEN}: {ticket} is already {status} "{title}"'
 
 
 def _backwards(ticket, current, status):
@@ -562,8 +600,6 @@ def _files_create(root, ticket, title):
             return None, _result(backend, FAILED, problem)
         lines = text.splitlines()
         held = [_cells(lines[i]) for i in _rows(lines, ticket)]
-        if len(held) == 1 and len(held[0]) > 4 and held[0][4] == title:
-            return None, _result(backend, UNCHANGED, f"{INDEX_REL} already has {ticket}")
         if held:
             return None, _result(backend, FAILED, _held(ticket, held))
         if text and not text.endswith("\n"):
@@ -717,7 +753,19 @@ def parse_board(text, columns):
             return None, f"lane {name!r} (obsidian.columns.{key}) is not on the board"
         if count > 1:
             return None, f"lane {name!r} appears {count} times on the board"
-    return {"lines": lines, "lanes": lanes, "columns": dict(columns)}, None
+    board = {"lines": lines, "lanes": lanes, "columns": dict(columns)}
+    # Done is where a card is complete, and the plugin says so with one marker;
+    # a checked card in a lane without it is a completed card on no Done lane.
+    markers = len(_complete_markers(board))
+    if markers != 1:
+        what = "no **Complete** marker" if not markers else f"{markers} **Complete** markers"
+        return None, f"lane {columns['done']!r} (obsidian.columns.done) has {what}"
+    return board, None
+
+
+def _complete_markers(board):
+    lane = _lane(board, "done")
+    return [i for i in range(lane["heading"] + 1, lane["end"]) if _bare(board["lines"][i]).strip() == _COMPLETE]
 
 
 def _cards(board):
@@ -760,10 +808,7 @@ def _lane(board, key):
 def _insertion(board, key):
     """Where a card becomes the first item of lane `key` (after `**Complete**` in done)."""
     lines, lane = board["lines"], _lane(board, key)
-    anchor = lane["heading"]
-    if key == "done":
-        anchor = next((i for i in range(lane["heading"] + 1, lane["end"])
-                       if _bare(lines[i]).strip() == _COMPLETE), anchor)
+    anchor = _complete_markers(board)[0] if key == "done" else lane["heading"]
     for index in range(anchor + 1, lane["end"]):
         if _CARD_START.match(lines[index]):
             return index
@@ -787,23 +832,35 @@ def _place(board, key, card_lines):
     return "".join(lines)
 
 
+def _checkbox(line, key):
+    """A card's first line checked for lane `key` done, unchecked for any other."""
+    if key == "done" and line.startswith("- [ ]"):
+        return "- [x]" + line[5:]
+    if key != "done" and _CHECKED.match(line):
+        return "- [ ]" + line[5:]
+    return line
+
+
 def move_card(board, ticket, key):
-    """`(new_text, lane_it_was_in, None)` or `(None, None, problem)`."""
+    """`(new_text, lane_it_was_in, None)` or `(None, None, problem)`.
+
+    A card already in lane `key` stays where it is with its checkbox set for
+    that lane -- unless the lane is done and the card sits above `**Complete**`,
+    which is not done; that card is moved below the marker like any other.
+    """
     card, problem = find_card(board, ticket)
     if problem:
         return None, None, problem
     target = board["columns"][key]
     lines = board["lines"]
-    if card["lane"] == target:
-        return "".join(lines), card["lane"], None
+    if card["lane"] == target and (key != "done" or card["start"] > _complete_markers(board)[0]):
+        fixed = list(lines)
+        fixed[card["start"]] = _checkbox(lines[card["start"]], key)
+        return "".join(fixed), card["lane"], None
     moved = list(lines[card["start"]:card["end"]])
     ending = _ending(lines)
     moved = [line if line.endswith("\n") else line + ending for line in moved]
-    first = moved[0]
-    if key == "done" and first.startswith("- [ ]"):
-        moved[0] = "- [x]" + first[5:]
-    elif key != "done" and _CHECKED.match(first):
-        moved[0] = "- [ ]" + first[5:]
+    moved[0] = _checkbox(moved[0], key)
     remaining = lines[:card["start"]] + lines[card["end"]:]
     rest, problem = parse_board("".join(remaining), board["columns"])
     if problem:
@@ -947,6 +1004,35 @@ def _open_pinned(paths, label):
     return fd
 
 
+def _pinned_check(paths, label, fd):
+    """Where the directory is pinned (POSIX): why the directory `fd` holds is no
+    longer the one a fresh walk from the checked vault reaches, or None.
+
+    The fd follows its directory wherever it goes: renamed out of the vault
+    after the walk, it would take the write with it. So the walk is repeated
+    and the two compared by device and inode, before the temp is written,
+    before the replace and after it. A move between the last check and the
+    replace is the residual race README names, as on Windows.
+    """
+    shown = paths[label + "Shown"]
+    held = os.fstat(fd)
+
+    def check():
+        try:
+            again = _open_pinned(paths, label)
+        except OSError as exc:
+            return (f"{shown}: its directory is no longer where the vault checks found it "
+                    f"({exc.strerror or exc}); nothing written through it")
+        try:
+            seen = os.fstat(again)
+        finally:
+            os.close(again)
+        if (seen.st_dev, seen.st_ino) != (held.st_dev, held.st_ino):
+            return f"{shown}: its directory left the vault after the checks; nothing written through it"
+        return None
+    return check
+
+
 def _parent_check(paths, label):
     """Where a directory cannot be pinned (Windows): why the directory holding
     `paths[label]` no longer resolves where it did, or None. A swap between
@@ -964,13 +1050,14 @@ def _parent_check(paths, label):
 @contextlib.contextmanager
 def _pinned(paths, label):
     """`(name, dir_fd, check)` to write `paths[label]` with: a name in a pinned
-    directory where the platform allows it, else the path and a re-check."""
+    directory and a re-walk where the platform allows it, else the path and a
+    re-check. Either way `check` runs around every write."""
     if not _DIR_FD:
         yield paths[label], None, _parent_check(paths, label)
         return
     fd = _open_pinned(paths, label)
     try:
-        yield os.path.basename(paths[label]), fd, None
+        yield os.path.basename(paths[label]), fd, _pinned_check(paths, label, fd)
     finally:
         os.close(fd)
 
@@ -1010,10 +1097,18 @@ def _create_note_once(paths, text):
     data = text.encode("utf-8")
     try:
         with _pinned(paths, "note") as (name, fd, check):
-            moved = check() if check is not None else None
+            moved = check()
             if moved:
                 return _result("obsidian-note", FAILED, moved)
             _write_new(name, _NOTE_FLAGS, data, _ownership(name, fd), fd)
+            moved = check()
+            if moved and fd is None:
+                return _result("obsidian-note", FAILED, f"{moved}; the note may have landed there")
+            if moved:
+                # Through the fd, so it is the file this call made, wherever its
+                # directory went; by path it could be someone else's.
+                _discard(name, fd)
+                return _result("obsidian-note", FAILED, f"{moved}; the note written there is removed")
     except FileExistsError:
         return _result("obsidian-note", UNCHANGED, f"{paths['noteShown']} exists; never rewritten")
     except OSError as exc:
@@ -1032,11 +1127,10 @@ def _create_note_once(paths, text):
 #   unknown  no note, a note with no repo-id, unreadable create and move refuse;
 #                                                       read says so on its line
 #
-# Unknown is never "ours". The one way past it is `move` on a card with no note
-# at all whose text is exactly this repo's INDEX title for the id: that is
-# evidence, and the move writes the note (exclusive create) with this repo's
-# repo-id so the question never comes up again. An existing note is never
-# rewritten, so a note lacking repo-id is the human's to fix.
+# Unknown is never "ours", and nothing on a shared board can make it so: ids
+# start over in every repo and titles repeat ("Fix tests"), so a card's text
+# matching this repo's INDEX row is not evidence (review round 3). The human
+# puts `repo-id:` in the note; an existing note is never rewritten.
 _NOTE_REPO_ID = re.compile(r"^(?:- )?repo-id:[ \t]*['\"]?(.+?)['\"]?[ \t]*$", re.M)
 OURS, FOREIGN, UNKNOWN = "ours", "foreign", "unknown"
 
@@ -1075,15 +1169,6 @@ def _no_identity(root):
             f"for {os.path.realpath(root)}")
 
 
-def _card_text(board, card, ticket):
-    """A one-line card's text after its checkbox and id, or None."""
-    if card["end"] - card["start"] != 1:
-        return None
-    found = re.match(r"- \[[ xX]\] (?:\[\[" + re.escape(ticket) + r"\]\]|" + re.escape(ticket) + r") (.*)\Z",
-                     _bare(board["lines"][card["start"]]))
-    return found.group(1) if found else None
-
-
 def _obsidian_create(root, settings, ticket, title):
     columns = settings["columns"]
     here = repo_id(root)
@@ -1094,9 +1179,9 @@ def _obsidian_create(root, settings, ticket, title):
     if not problem:
         owner, detail, note = _card_owner(paths, here)
         if owner == FOREIGN:
-            problem = _foreign(paths, ticket, detail, here)
+            problem = f"{TAKEN}: " + _foreign(paths, ticket, detail, here)
         elif owner == UNKNOWN and (note or any(card["id"] == ticket for card in _cards(board))):
-            problem = _unclaimed(paths, ticket, detail, here)
+            problem = f"{TAKEN}: " + _unclaimed(paths, ticket, detail, here)
     if problem:
         return [_result("obsidian", FAILED, problem)]
     files = _files_create(root, ticket, title)
@@ -1120,43 +1205,36 @@ def _obsidian_move(root, settings, ticket, status, reopen=False):
     row = None if problem else _files_read(root, ticket)
     if not problem and row["state"] != READ:
         problem = f"no {INDEX_REL} row for {ticket} in this repo"
-    if not problem and not reopen:
-        problem = _backwards(ticket, row["status"], status)
     if not problem and here is None:
         problem = _no_identity(root)
     board, problem = (None, problem) if problem else _load_board(paths, columns)
-    card = None
     if not problem:
-        card, problem = find_card(board, ticket)
-    claim = False
+        _, problem = find_card(board, ticket)
     if not problem:
-        owner, detail, note = _card_owner(paths, here)
+        owner, detail, _ = _card_owner(paths, here)
         if owner == FOREIGN:
             problem = _foreign(paths, ticket, detail, here)
         elif owner == UNKNOWN:
-            text = _card_text(board, card, ticket)
-            claim = not note and text is not None and text == row.get("title")
-            problem = None if claim else _unclaimed(paths, ticket, detail, here)
+            problem = _unclaimed(paths, ticket, detail, here)
     if problem:
         return [_result("obsidian", FAILED, problem)]
-    note = None
-    if claim:
-        note = _create_note_once(paths, _note_text(root, ticket, row["title"], here))
-        if note["state"] != UPDATED:
-            why = note["reason"] if note["state"] == FAILED else f"{paths['noteShown']} appeared meanwhile"
-            return [_result("obsidian", FAILED, _unclaimed(paths, ticket, why, here))]
-        note["reason"] += " (its card's text is this repo's INDEX title, so the card is this repo's)"
 
     def edit(current):
         new, moved_from, why = move_card(current, ticket, key)
         if why:
             return None, _result("obsidian", FAILED, why)
-        if moved_from == columns[key]:
+        if moved_from == columns[key] and new == "".join(current["lines"]):
             return None, _result("obsidian", UNCHANGED, f"{paths['boardShown']} already in {moved_from}")
+        if moved_from == columns[key]:
+            return new, _result("obsidian", UPDATED, f"{paths['boardShown']} card repaired in {moved_from}")
         return new, _result("obsidian", UPDATED, f"{paths['boardShown']} {moved_from} -> {columns[key]}")
 
-    results = [_files_move(root, ticket, status, reopen), _board_write(paths, columns, edit)]
-    return results + ([note] if note else [])
+    # The board follows INDEX: when the INDEX half refuses -- another session
+    # moved the ticket on after the read above -- the board is not moved either.
+    files = _files_move(root, ticket, status, reopen)
+    if files["state"] == FAILED:
+        return [files]
+    return [files, _board_write(paths, columns, edit)]
 
 
 def _obsidian_read(root, settings, ticket):

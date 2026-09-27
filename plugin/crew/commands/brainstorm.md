@@ -22,8 +22,7 @@ not at spec.
 Read the tracker kind with `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py resolve --root .`
 — it reads `.crew/crew.json` and `.crew/config.json` alike. `could not tell`
 means the two disagree: show me its line and stop; never pick one.
-**Files and Obsidian Kanban**: pick the next free `T-####`, create
-`.work/tickets/T-####/`, then run
+**Files and Obsidian Kanban**: pick the next free `T-####`, then run
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py create --root . --ticket T-#### --title "<title>"
@@ -32,9 +31,11 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py create --root . --ti
 It appends `T-#### | direction | - | <this-repo> | <title>` to `.work/INDEX.md`
 and, for Obsidian, adds the `[[T-####]]` card to the board's backlog lane and
 the vault ticket note — a direction is not yet ready work. Print its lines
-verbatim. On exit 3 run the command it printed. On exit 1 tell me
-`tracker not updated: <reason>` and carry on — the ticket exists; nothing is
-undone. **Jira and ServiceDesk Plus**: create the tracker item now through MCP
+verbatim. If a line says `id taken`, that id is not yours — another session or
+repo holds it: pick the next free id, run `create` again, and write nothing
+under the taken one. Then create `.work/tickets/T-####/`. On exit 3 run the
+command it printed. On any other exit 1 tell me `tracker not updated: <reason>`
+and carry on — the ticket exists; nothing is undone. **Jira and ServiceDesk Plus**: create the tracker item now through MCP
 with a one-line placeholder summary, so the id exists before anything else
 does, and cache it at `.work/tickets/<KEY>/`.
 
