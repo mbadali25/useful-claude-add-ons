@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@6f96e627 on 2026-09-26. Verify before trusting.
+%% Generated from useful-claude-add-ons@56aa9f64 on 2026-09-27. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -27,6 +27,11 @@
 %% :578-599 -> :605-626, both re-read with sed -n. parse_risk has no caller in
 %% any command file yet (its consumer is T-0010), so no node or edge changed.
 %% The crew_ticket.py lines in the T-0026 note above are that anchor's, kept as history.
+%% Re-anchored for T-0046 at 56aa9f64: of the anchored paths review.md and
+%% completion_audit.py changed. review.md's bundle comment was rewritten in place
+%% (551 lines, no node's line moved); completion_audit.py gained the BUDGETS.md
+%% claim allowance, so the scope-judging lines :204-215 -> :244-256, re-read with
+%% sed -n (the claim drop at :246 sits under the same approval). No node or edge changed.
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):
@@ -79,7 +84,7 @@
 %% 1's single `status:` value from STATUS_VALUES, and status() compares that
 %% digest (:605-626); any other byte change still reads `stale`, and the
 %% completion audit still refuses to judge scope on anything but `approved`
-%% (plugin/crew/hooks/scripts/completion_audit.py:204-215). A receipt with no
+%% (plugin/crew/hooks/scripts/completion_audit.py:244-256). A receipt with no
 %% `digest` field is compared raw and stales once on its first status edit.
 flowchart TB
     ask([A request])

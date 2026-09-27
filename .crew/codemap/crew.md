@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@56aa9f64
+verified: 2026-09-27
 
 ## Re-derive provenance
 
@@ -50,7 +50,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.42, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.43, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -629,11 +629,29 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 - `REFRESH_ARTIFACT_PATHS` (`plugin/crew/hooks/scripts/crew_refresh_check.py:168-173`: the code map,
   `docs.diagramsDir`, `graph.out`, `.claude/rules`) is the one definition.
   The scope guard (`_refresh_artifact`,
-  `plugin/crew/hooks/scripts/scope_guard.py:186-197`) and the completion audit
+  `plugin/crew/hooks/scripts/scope_guard.py:198-209`) and the completion audit
   (`_outside_refresh_artifacts`,
-  `plugin/crew/hooks/scripts/completion_audit.py:177-187`) let a ticket write
+  `plugin/crew/hooks/scripts/completion_audit.py:184-194`) let a ticket write
   those paths without a Touch entry **only while its approval is current**;
   with no current approval nothing is exempt.
+- **BUDGETS.md claim numbers (T-0046, crew 1.0.43).** Under that same
+  approval a ticket may also change the digit runs of the one line a
+  `crew-markdown-lines` claim marker binds in `plugin/*/BUDGETS.md` without
+  Touch. One predicate decides it, `claim_numbers_only`
+  (`plugin/crew/hooks/scripts/crew_bookkeeping.py:123`, stdlib-only, its claim
+  grammar restated from `scripts/check-marketplace.py` at `:44-50`). The guard
+  applies it after `classify`, in `bookkeeping_verdict`
+  (`plugin/crew/hooks/scripts/scope_guard.py:285`, called at `:419`), from the
+  exact after-text of a Write, Edit or MultiEdit (`_after_text`, `:228`); the
+  audit applies it in `_outside_claim_bookkeeping`
+  (`plugin/crew/hooks/scripts/completion_audit.py:221`, called at `:246`) from
+  the base blob as checkout writes it against the file on disk. Suites:
+  `plugin/crew/tests/test_crew_bookkeeping.py`,
+  `plugin/crew/tests/test_scope_guard_claim_bookkeeping.py`,
+  `plugin/crew/tests/test_completion_audit_claim_bookkeeping.py`; mutations in
+  `plugin/crew/tests/sabotage_bookkeeping.py`; `.crew/verify.json:302-318`
+  (rule 28). DERIVED from the branch; the suites were run for T-0046, not by
+  this note.
 - Tests: `plugin/crew/tests/test_refresh_check.py`,
   `plugin/crew/tests/test_scope_guard_refresh_artifacts.py`,
   `plugin/crew/tests/test_completion_audit_refresh_artifacts.py`, with mutations in
@@ -742,7 +760,12 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   no sabotage test was run against either.
 - `review_ledger.py`, `review_patch.py`, `review_prompt.py`, `review_run.py`,
   `review_verdict.py` — the review pipeline `/crew:review` and `/crew:done`
-  depend on — were located but not opened.
+  depend on — were located but not opened, except where T-0046 changed them:
+  `review_patch.py` omits the three graphify outputs and lists them by hash
+  inside the patch (`GENERATED`, `plugin/crew/hooks/scripts/review_patch.py:127`;
+  `BUNDLE_SCHEME` `:129`; `_generated` `:249`; `compute` `:342`), and
+  `review_ledger.py`'s `_current_hash` (`plugin/crew/hooks/scripts/review_ledger.py:362`)
+  rebuilds a receipt under the `bundle_scheme` it was recorded with.
 - `webtest_guard.py`, `webtest_rules.py`, `webtest_scaffold.py` — new
   scripts since the previous anchor, backing `/crew:webtest` — were located
   but not opened.
@@ -1170,3 +1193,32 @@ line in `CHANGELOG.md`'s T-0005 bump note).
 
 `crew_refresh_check.py --root . --ticket T-0005` named this note. No suite was executed for it; the
 landing's suite results are in its PR.
+
+## Re-anchor provenance - `2b18f7ab` -> `56aa9f64`, 2026-09-27 (T-0046)
+
+`56aa9f64` is T-0046's crew 1.0.43 bump, the last commit on its branch (`T-0046-build`, off
+`502cb137`, which is `2b18f7ab` plus T-0005's artifact refresh and merge). A per-path check,
+`git diff --name-only 2b18f7ab..56aa9f64 -- <cited paths>`, named the files below; each line
+citation into them was re-mapped by content with a line diff against `502cb137` and re-read on
+the branch. Citations into files outside that list stand.
+
+- `plugin/crew/hooks/scripts/scope_guard.py` - module docstring rule 7 and one import added above
+  `_refresh_artifact`, so it moved `:186-197` -> `:198-209`; the new `_apply` `:212`,
+  `_after_text` `:228`, `_claim_bookkeeping` `:254` and `bookkeeping_verdict` `:285` follow it.
+  Corrected above.
+- `plugin/crew/hooks/scripts/completion_audit.py` - docstring lines and one import added, so
+  `_outside_refresh_artifacts` moved `:177-187` -> `:184-194`; `_claim_bookkeeping` `:197` and
+  `_outside_claim_bookkeeping` `:221` are new. Corrected above.
+- `plugin/crew/hooks/scripts/crew_bookkeeping.py` - new; cited above.
+- `plugin/crew/hooks/scripts/review_patch.py`, `review_ledger.py`, `review_run.py`,
+  `review_prompt.py` - changed by T-0046; this note cited them by name only, and now cites the
+  lines it names in "Unverified at this anchor".
+- `.crew/verify.json` - rule 28 appended (`:302-318`); rules 24-27 (`:263`, `:264-280`,
+  `:282-292`, `:293-300`) hold, rule 27's last line gaining only its comma. 29 rules, 322 lines.
+- `.claude-plugin/marketplace.json` - `:217` holds (4 agents, 35 commands, 29 skills), `:218` is
+  1.0.43, matching `plugin/crew/.claude-plugin/plugin.json:3`. Corrected above.
+- `plugin/crew/commands/review.md` - its bundle comment rewritten in place (still 551 lines);
+  cited by name only here.
+- `plugin/crew/README.md`, `CHANGELOG.md` - cited by name or section only.
+
+`crew_refresh_check.py --root . --ticket T-0046` named this note. No suite was run for this note.

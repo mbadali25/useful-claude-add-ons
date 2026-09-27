@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@56aa9f64
+verified: 2026-09-27
 paths: scripts/**, plugin/PLUGINS.md
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -47,7 +47,7 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.42** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+`rule-of-two`. `crew` is now **1.0.43** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
 and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `2b18f7ab`; it
 was 1.0.41 at `07ca3972` and on T-0005's branch, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
@@ -402,3 +402,22 @@ Of the paths this note cites, the version files, `plugin/PLUGINS.md`, `.crew/ver
 - `plugin/crew/BUDGETS.md` - marker still `:10`; the figure re-measured on the merge, 18,494 lines
   across 121 files, which `check-marketplace.py` verifies (`all checks passed`).
 - `CHANGELOG.md`, `TODO.md` - cited by name only.
+
+## Re-anchor provenance - `2b18f7ab` -> `56aa9f64`, 2026-09-27 (T-0046)
+
+`56aa9f64` is T-0046's crew 1.0.43 bump, the last commit on its branch (`T-0046-build`, off
+`502cb137`, which is `2b18f7ab` plus T-0005's artifact refresh and merge). A per-path check,
+`git diff --name-only 2b18f7ab..56aa9f64 -- <cited paths>`, named the files below; each line
+citation into them was re-mapped by content with a line diff against `502cb137` and re-read on
+the branch. Citations into files outside that list stand.
+
+- `.claude-plugin/marketplace.json` - `:218` is 1.0.43, `plugin/PLUGINS.md:14` and
+  `plugin/crew/.claude-plugin/plugin.json` match; `:217` unchanged. Corrected above.
+- `plugin/crew/BUDGETS.md` - marker `:10`; 18,497 lines across 121 files on `:11`, which
+  `check-marketplace.py` verifies (`all checks passed`). Since T-0046 an approved ticket may change
+  that line's digits without BUDGETS.md in its Touch (`crew_bookkeeping.claim_numbers_only`);
+  `check-marketplace.py` itself is unchanged and still the gate on the number.
+- `.crew/verify.json` - rule 28 appended at `:302-318`; the doc rule at `:69-78` holds. 29 rules.
+- `CHANGELOG.md` - T-0046's 1.0.43 entry sits above T-0005's 1.0.42; cited without a line.
+
+`crew_refresh_check.py --root . --ticket T-0046` named this note. No suite was run for this note.

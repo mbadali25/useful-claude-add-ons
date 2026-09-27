@@ -1,6 +1,6 @@
 # install-scripts
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@56aa9f64
+verified: 2026-09-27
 
 ## Re-derive provenance
 
@@ -556,3 +556,20 @@ commands, 29 skills, matching disk), `plugin/crew/BUDGETS.md` (marker `:10`; 18,
 `35 commands` claim is at `:2381` and `4 agents` at `:2392`, re-grepped) and `TODO.md` changed.
 Neither install script changed on T-0005's side, `README.md` and `scripts/check-marketplace.py` did
 not change on either, so their citations stand. Neither install script was executed.
+
+## Re-anchor provenance - `2b18f7ab` -> `56aa9f64`, 2026-09-27 (T-0046)
+
+`56aa9f64` is T-0046's crew 1.0.43 bump, the last commit on its branch (`T-0046-build`, off
+`502cb137`, which is `2b18f7ab` plus T-0005's artifact refresh and merge). A per-path check,
+`git diff --name-only 2b18f7ab..56aa9f64 -- <cited paths>`, named the files below; each line
+citation into them was re-mapped by content with a line diff against `502cb137` and re-read on
+the branch. Citations into files outside that list stand.
+
+- `plugin/crew/BUDGETS.md` - marker still `:10`; `:11` now reads 18,497 lines across 121 files
+  (re-measured last on the branch; `scripts/check-marketplace.py` prints `all checks passed`), and
+  a sentence after `:14` says re-measuring it is bookkeeping for an approved ticket (T-0046).
+- `plugin/PLUGINS.md` - `:14` is 1.0.43; `:17`'s Registers row is unchanged.
+- `.claude-plugin/marketplace.json` - `:218` is 1.0.43; `:217` unchanged.
+- `plugin/crew/README.md` - cited by name only; T-0046 added two paragraphs in section 10.
+
+`crew_refresh_check.py --root . --ticket T-0046` named this note. No suite was run for this note.

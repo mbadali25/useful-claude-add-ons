@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@56aa9f64
+verified: 2026-09-27
 
 ## Re-derive provenance
 
@@ -298,7 +298,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1930` (`:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1932` (`:1930` at `2b18f7ab`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -630,3 +630,21 @@ sit above the four re-exports, which are at `:132`/`:136`/`:139`/`:142` as T-000
 says, re-read on the merge; main's `RESUME_DEFAULTS`/`AUTOPILOT_DEFAULTS` are below them) and `CHANGELOG.md`
 (T-0005's 1.0.42 entry sits above T-0004's 1.0.41; cited without a line). The two diagrams this
 note cites are refreshed in the same commit as this note. Nothing was executed.
+
+## Re-anchor provenance - `2b18f7ab` -> `56aa9f64`, 2026-09-27 (T-0046)
+
+`56aa9f64` is T-0046's crew 1.0.43 bump, the last commit on its branch (`T-0046-build`, off
+`502cb137`, which is `2b18f7ab` plus T-0005's artifact refresh and merge). A per-path check,
+`git diff --name-only 2b18f7ab..56aa9f64 -- <cited paths>`, named the files below; each line
+citation into them was re-mapped by content with a line diff against `502cb137` and re-read on
+the branch. Citations into files outside that list stand.
+
+- `plugin/crew/README.md` - T-0046 added one paragraph (two lines) in section 10 above the
+  runbooks passage, so `:1930` -> `:1932`; re-read, still describes `docs/runbooks/INDEX.md`.
+  Corrected above.
+- `.crew/verify.json` - rule 28 appended (`:302-318`); 29 rules. Cited by name here.
+- `CHANGELOG.md`, `plugin/PLUGINS.md`, `.claude-plugin/marketplace.json`,
+  `plugin/crew/.claude-plugin/plugin.json` - the 1.0.43 bump; cited without lines except
+  `plugin/PLUGINS.md:17`, which holds.
+
+`crew_refresh_check.py --root . --ticket T-0046` named this note. No suite was run for this note.
