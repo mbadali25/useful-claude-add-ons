@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@35fcebcb
+anchor: useful-claude-add-ons@6fa7fb13
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -1382,3 +1382,5 @@ at `8314d670`:
 - `CHANGELOG.md` - T-0010's entry grew, so T-0004's leaf sentence is `:315-316`.
 - `sabotage_autopilot.py` - `POLICY_MUTATIONS` still `:167`, now 33 entries; `AUTOPILOT_MUTATIONS`
   31. `README.md` and `CONFIG.md` changed in place or below every line cited here.
+- `6fa7fb13` changed one test in `test_crew_autopilot_policy.py` (cited by name only); no claim
+  moved. Re-anchored there.
