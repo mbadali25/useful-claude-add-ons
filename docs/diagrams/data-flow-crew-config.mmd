@@ -1,5 +1,5 @@
-%% Generated from useful-claude-add-ons@e463ca53 on 2026-09-27. Verify before trusting.
-%% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py
+%% Generated from useful-claude-add-ons@657d3d9b on 2026-09-27. Verify before trusting.
+%% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/cloud_guard.py
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
 %% re-read. The 're-read at 6c497a14' statements below remain true of f2bb919b by that diff.
@@ -262,6 +262,14 @@
 %% MERGEW, WIDEN, WRITE and RC re-mapped by a line diff and re-read) and CONFIG.md changed. The
 %% Dispatch subgraph gains the machine-global layer's malformed block (dispatchProblem) and the
 %% run-time command word read by its argv's shape; its lines are re-read at c1f22bc2.
+%% Merged c1f22bc2 + e463ca53 -> 657d3d9b (T-0009 merges main bebbb97f at 638e7ae5, crew 1.0.47): the
+%% Anchors line is the union of both sides' (main's crew_tracker.py, T-0009's cloud_guard.py). Of the
+%% Anchors paths crew_config.py and CONFIG.md changed on both sides; every crew_config number in the
+%% nodes was mapped from its side with a line diff and re-read on the merged tree. T-0009's side had
+%% two stale ones (GlobalWriteRefused :2182, resolve_guard :1097), corrected from main's (:2234,
+%% :1124). Counts re-executed: 124 / 69 / 55 / 0; seventeen global blocks (route added by T-0023);
+%% eleven guard names; 14 read-side and 15 write-side ratchet keys. crew_guards.py, cloud_guard.py and
+%% crew_state.py changed on at most one side, so their numbers stand.
 flowchart TB
 
     subgraph Sources["Three sources, lowest precedence first"]

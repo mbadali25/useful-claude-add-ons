@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@e463ca53
+anchor: useful-claude-add-ons@657d3d9b
 verified: 2026-09-27
 
 # localgpu
@@ -1156,3 +1156,7 @@ moved. Re-anchored with the other five so the six stay on one commit.
 `d8d1da86` fixes T-0009 review round 3 (Codex, 4 BLOCK + 1 FIX); `c1f22bc2` re-sets crew 1.0.43 as the last plugin/crew commit. Of the paths this note cites only `plugin/crew/hooks/scripts/crew_config.py` changed:
 `global_environments_problem` was inserted at `:1056` (+16). Every `crew_config.py` line this note
 cites is above it (`:126-128` and the prose around them), re-read, same text, so nothing cited moved.
+
+## Re-anchor provenance - `c1f22bc2` + `e463ca53` -> `657d3d9b`, 2026-09-27 (T-0009 merges main `bebbb97f`)
+
+`638e7ae5` merges origin/main `bebbb97f` (T-0042 landed as crew 1.0.43, T-0021 as 1.0.44 and 1.0.45, T-0023 as 1.0.46; main's notes anchored `e463ca53`) into T-0009 at `bb398e4c` (its notes anchored `c1f22bc2`), and `657d3d9b` sets crew 1.0.47 as the last plugin/crew commit, changing only the version files and T-0009's CHANGELOG entry in place (its line count unchanged). The source files both sides changed since `502cb137` are `CHANGELOG.md`, `.crew/verify.json`, `plugin/crew/CONFIG.md`, `plugin/crew/README.md`, `plugin/crew/BUDGETS.md`, `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/skills/crew-setup/SKILL.md`, both config templates, `plugin/crew/tests/test_crew_config.py`, `docs/guides/crew/src/troubleshooting.md` and the version files. The conflicting provenance sections keep both sides, main's first. Every `path:N` citation in the body, and every bare `:N` that follows a path, was mapped from the side its line came from onto the merged tree with a line diff (`git show <side>:<path>` against the merge); each one that moved was re-read with `sed -n` or `grep -n`, and hits the diff attributed to the wrong file (a bare `SKILL.md`, the root `README.md`) were discarded rather than applied. This note's live citation, the provider re-export at `plugin/crew/hooks/scripts/crew_config.py:127-128`, is above both sides' hunks and holds (re-read: `DEV_PROVIDERS = crew_state.DEV_PROVIDERS` / `QA_PROVIDERS = crew_state.QA_PROVIDERS`). `.claude-plugin/marketplace.json` changed at crew's `version` only; `localgpu`'s own entry is still `0.1.20`. Nothing under `plugin/localgpu/` changed. Nothing was executed.

@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@e463ca53
+anchor: useful-claude-add-ons@657d3d9b
 verified: 2026-09-27
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -47,9 +47,9 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.46** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
-and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `e463ca53`, T-0023's bump; it
-was 1.0.45 at `db14619c` (T-0021, bumped again for a CI fix), 1.0.43 on T-0023's branch at `a1acd9b7`, 1.0.44 at `12682e41`, 1.0.43 at `f0b12ee6` (T-0042) and on T-0021's branch at `c2ae46ab`, 1.0.42 at `2b18f7ab` (1.0.46 on T-0021's branch until its merge of main), 1.0.41 at `07ca3972` and on T-0005's branch, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
+`rule-of-two`. `crew` is now **1.0.47** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `657d3d9b`, T-0009's bump after its merge of main; it
+was 1.0.46 at `e463ca53` (T-0023) and 1.0.43 on T-0009's branch at `c1f22bc2`, 1.0.45 at `db14619c` (T-0021, bumped again for a CI fix), 1.0.43 on T-0023's branch at `a1acd9b7`, 1.0.44 at `12682e41`, 1.0.43 at `f0b12ee6` (T-0042) and on T-0021's branch at `c2ae46ab`, 1.0.42 at `2b18f7ab` (1.0.46 on T-0021's branch until its merge of main), 1.0.41 at `07ca3972` and on T-0005's branch, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
 
@@ -282,6 +282,9 @@ against synthetic fixtures and never reads this repo's own docs.
   Re-measured on T-0023's merge of `db14619c` (`c68b40bd`, unchanged at `e463ca53`): 18,864 across
   126 files on `:11`, recomputed from the merged tree (T-0023's `a1acd9b7` read 18,558 across 121,
   main's `db14619c` 18,800 across 126), and the measurement returns 18864 over 126, matching.
+  Re-measured on T-0009's merge of `bebbb97f` (`638e7ae5`, unchanged at `657d3d9b`): 19,090 across
+  126 files on `:11`, recomputed from the merged tree (T-0009's `c1f22bc2` read 18,720 across 121,
+  main's `e463ca53` 18,864 across 126), and `check-marketplace.py`'s count returns 19090, matching.
 - **`MARKETPLACE.md`** was not re-read for a community-plugin or marketplace
   count of its own; only `README.md:231`'s prose was checked and found to no
   longer state a specific number.
@@ -612,3 +615,7 @@ did not change and passes at `20e9b396`.
 only (no line moved), `plugin/crew/BUDGETS.md`'s figure is now 18,720 (marker and line unmoved),
 and `.claude-plugin/marketplace.json` and `plugin/PLUGINS.md` read 1.0.43 again after the round's
 step back to 1.0.42; `scripts/check-marketplace.py` reports `all checks passed` at `c1f22bc2`.
+
+## Re-anchor provenance - `c1f22bc2` + `e463ca53` -> `657d3d9b`, 2026-09-27 (T-0009 merges main `bebbb97f`)
+
+`638e7ae5` merges origin/main `bebbb97f` (T-0042 landed as crew 1.0.43, T-0021 as 1.0.44 and 1.0.45, T-0023 as 1.0.46; main's notes anchored `e463ca53`) into T-0009 at `bb398e4c` (its notes anchored `c1f22bc2`), and `657d3d9b` sets crew 1.0.47 as the last plugin/crew commit, changing only the version files and T-0009's CHANGELOG entry in place (its line count unchanged). The source files both sides changed since `502cb137` are `CHANGELOG.md`, `.crew/verify.json`, `plugin/crew/CONFIG.md`, `plugin/crew/README.md`, `plugin/crew/BUDGETS.md`, `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/skills/crew-setup/SKILL.md`, both config templates, `plugin/crew/tests/test_crew_config.py`, `docs/guides/crew/src/troubleshooting.md` and the version files. The conflicting provenance sections keep both sides, main's first. Every `path:N` citation in the body, and every bare `:N` that follows a path, was mapped from the side its line came from onto the merged tree with a line diff (`git show <side>:<path>` against the merge); each one that moved was re-read with `sed -n` or `grep -n`, and hits the diff attributed to the wrong file (a bare `SKILL.md`, the root `README.md`) were discarded rather than applied. The crew version sentence now reads 1.0.47 (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`, `plugin/PLUGINS.md:14`, re-read at `657d3d9b`) and the Markdown-total bullet gains the merged-tree re-measure (19,090 across 126). `marketplace.json:217` and `PLUGINS.md:17` are unchanged. No other citation moved.

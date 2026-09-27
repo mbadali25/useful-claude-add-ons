@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@e463ca53
+anchor: useful-claude-add-ons@657d3d9b
 verified: 2026-09-27
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -1083,3 +1083,7 @@ and `why` (1861 passed in the default run, 444 more under `-m slow`) only, no li
 process-group limitation moved `:2318-2325` -> `:2327-2334` (re-read, same text; the history
 figures above are left as written); `plugin/crew/tests/sabotage_cloud.py` gained the round-3 block
 (20 entries, 290 -> 310 in the tuple, 5 re-anchored) and `plugin/crew/tests/test_cloud_guard_deploy.py` the R3 tables.
+
+## Re-anchor provenance - `c1f22bc2` + `e463ca53` -> `657d3d9b`, 2026-09-27 (T-0009 merges main `bebbb97f`)
+
+`638e7ae5` merges origin/main `bebbb97f` (T-0042 landed as crew 1.0.43, T-0021 as 1.0.44 and 1.0.45, T-0023 as 1.0.46; main's notes anchored `e463ca53`) into T-0009 at `bb398e4c` (its notes anchored `c1f22bc2`), and `657d3d9b` sets crew 1.0.47 as the last plugin/crew commit, changing only the version files and T-0009's CHANGELOG entry in place (its line count unchanged). The source files both sides changed since `502cb137` are `CHANGELOG.md`, `.crew/verify.json`, `plugin/crew/CONFIG.md`, `plugin/crew/README.md`, `plugin/crew/BUDGETS.md`, `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/skills/crew-setup/SKILL.md`, both config templates, `plugin/crew/tests/test_crew_config.py`, `docs/guides/crew/src/troubleshooting.md` and the version files. The conflicting provenance sections keep both sides, main's first. Every `path:N` citation in the body, and every bare `:N` that follows a path, was mapped from the side its line came from onto the merged tree with a line diff (`git show <side>:<path>` against the merge); each one that moved was re-read with `sed -n` or `grep -n`, and hits the diff attributed to the wrong file (a bare `SKILL.md`, the root `README.md`) were discarded rather than applied. `plugin/crew/CONFIG.md`'s descoped process-group paragraph moved to `:2376-2383` (main's `:2250-2257` and T-0009's `:2327-2334` both map there; re-read). Every `.crew/verify.json` rule citation was re-read on the merged tree and holds: T-0009 changed only rule 6's `seconds`, `run` and `why` in place; main changed rule 26's `seconds`/`why` and rule 27's `why` in place and appended rules 28 and 29 after them, so no rule above moved. No other citation moved.

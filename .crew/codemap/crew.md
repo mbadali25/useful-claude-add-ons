@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@e463ca53
+anchor: useful-claude-add-ons@657d3d9b
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -54,7 +54,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.46, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.47, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -346,7 +346,7 @@ before the subcommand (`crew_guards.tf_skip_options` `:1551`, used by `_terrafor
 `:1547`), so `terragrunt --working-dir infra destroy` is a destroy, and `_unwrap` reads a listed
 wrapper's options as GNU getopt does (`crew_guards.skip_wrapper_options` `:1570`). DERIVED from the code cited.
 
-**Workflow dispatches (T-0009, crew 1.0.43).** `gh workflow run <wf>` and its REST twin, `gh
+**Workflow dispatches (T-0009, crew 1.0.47; 1.0.43 on its branch).** `gh workflow run <wf>` and its REST twin, `gh
 api` POST on `repos/<o>/<r>/actions/workflows/<wf>/dispatches`, are judged behind THE DISPATCH
 GRAMMAR (`crew_guards.py`'s section comment at `:1979`; the successor plan after review round 2
 was rejected). `dispatch_answer` (`plugin/crew/hooks/scripts/crew_guards.py:2707`) is the one road:
@@ -1761,3 +1761,7 @@ unreadable finding), so everything from `:2380` moved by one (`GATE_HELPERS` `:2
 construction steps with it. `CHANGELOG.md`'s "117 -> 119" was already stale at `20e9b396`
 (`:294`, cited `:253-254`); it is `:306-307` now. The workflow-dispatch paragraph gained round 3's
 rules and is DERIVED from the code it cites.
+
+## Re-anchor provenance - `c1f22bc2` + `e463ca53` -> `657d3d9b`, 2026-09-27 (T-0009 merges main `bebbb97f`)
+
+`638e7ae5` merges origin/main `bebbb97f` (T-0042 landed as crew 1.0.43, T-0021 as 1.0.44 and 1.0.45, T-0023 as 1.0.46; main's notes anchored `e463ca53`) into T-0009 at `bb398e4c` (its notes anchored `c1f22bc2`), and `657d3d9b` sets crew 1.0.47 as the last plugin/crew commit, changing only the version files and T-0009's CHANGELOG entry in place (its line count unchanged). The source files both sides changed since `502cb137` are `CHANGELOG.md`, `.crew/verify.json`, `plugin/crew/CONFIG.md`, `plugin/crew/README.md`, `plugin/crew/BUDGETS.md`, `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/skills/crew-setup/SKILL.md`, both config templates, `plugin/crew/tests/test_crew_config.py`, `docs/guides/crew/src/troubleshooting.md` and the version files. The conflicting provenance sections keep both sides, main's first. Every `path:N` citation in the body, and every bare `:N` that follows a path, was mapped from the side its line came from onto the merged tree with a line diff (`git show <side>:<path>` against the merge); each one that moved was re-read with `sed -n` or `grep -n`, and hits the diff attributed to the wrong file (a bare `SKILL.md`, the root `README.md`) were discarded rather than applied. Moved in this note, each re-read: `crew_config.py` `default_global_config` `:387` -> `:395`, `environments_block_problem` `:1016` -> `:1027`, `global_environments_problem` `:1056` -> `:1067`, the repo-config read `:1260` -> `:1301` (main's number), and the `_RATCHETED` sites `:2476-2599` -> `:2487-2610` (literal `:2487-2498`, updates `:2502`, `:2526`, `:2537`, `:2547`, assignments `:2583`, `:2606`, the `allow` note `:2513`). Leaf counts re-executed on the merged tree: 124 / 69 / 55 / 0 (T-0009's two leaves plus T-0023's `route.enabled`), asserted at `plugin/crew/tests/test_crew_config.py:282`; T-0004's CHANGELOG "117 -> 119" is `:514-515`. The version sentence reads 1.0.47. `crew_guards.py` and `cloud_guard.py` changed on T-0009's side only, so the dispatch paragraph's citations into them stand; `crew_context.py`, `crew_tracker.py` and `crew_route.py` changed on main's side only, so main's citations into them stand.
