@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew`: environment-scoped workflow deploys in the cloud guard (T-0009; version set at landing)
+### Added — `crew` 1.0.43: environment-scoped workflow deploys in the cloud guard (T-0009)
 
 - **`guards.deployWorkflow` and `environments.workflows`.** While
   `guards.cloudGuard` is armed, `gh workflow run <wf>` and its REST twin,
@@ -30,6 +30,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   `workflows` at `{}` nothing is. `environments.workflows` does not engage the
   terraform layer. Not seen: an unlisted spelling of a deploy workflow, the
   workflow YAML, `gh run rerun`, `curl`.
+- Bumped `1.0.42 -> 1.0.43`.
 
 ### Changed — `crew` 1.0.42: environment-scoped terraform in the cloud guard (T-0005) — **BREAKING**
 
