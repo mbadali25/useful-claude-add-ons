@@ -1,6 +1,6 @@
 # install-scripts
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@b5903601
+verified: 2026-09-27
 
 ## Re-derive provenance
 
@@ -556,3 +556,13 @@ commands, 29 skills, matching disk), `plugin/crew/BUDGETS.md` (marker `:10`; 18,
 `35 commands` claim is at `:2381` and `4 agents` at `:2392`, re-grepped) and `TODO.md` changed.
 Neither install script changed on T-0005's side, `README.md` and `scripts/check-marketplace.py` did
 not change on either, so their citations stand. Neither install script was executed.
+
+## Re-anchor provenance - `2b18f7ab` -> `b5903601`, 2026-09-27 (T-0009 on 1.0.42)
+
+`b5903601` is the crew 1.0.43 bump on T-0009's branch, after the merge of main `502cb137` (T-0005 landed as 1.0.42) into it at `0c911558`. Main's code is `2b18f7ab` (main's later commit `45109fa1` touched only artifacts), so `git diff {OLD} {NEW}` is T-0009's change plus the bump. Of the paths this note cites, `.claude-plugin/marketplace.json` (`:218` 1.0.43; `:217`
+unchanged), `plugin/PLUGINS.md` (`:14` 1.0.43; `:17` unchanged), `plugin/crew/BUDGETS.md` (marker
+`:10`; 18,616 lines across 121 files, re-measured in the bump commit) and `plugin/crew/README.md`
+(T-0009's rows and paragraph, 42 lines net above the command table, so the `35 commands` claim
+moved `:2381` -> `:2423` and `4 agents` `:2392` -> `:2434`, both re-read, same text) changed. The
+install scripts, `README.md`, `TODO.md` and `scripts/check-marketplace.py` did not change. Neither
+install script was executed.

@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@b5903601
+verified: 2026-09-27
 
 ## Re-derive provenance
 
@@ -298,7 +298,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1930` (`:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1972` (`:1930` at `2b18f7ab`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -630,3 +630,15 @@ sit above the four re-exports, which are at `:132`/`:136`/`:139`/`:142` as T-000
 says, re-read on the merge; main's `RESUME_DEFAULTS`/`AUTOPILOT_DEFAULTS` are below them) and `CHANGELOG.md`
 (T-0005's 1.0.42 entry sits above T-0004's 1.0.41; cited without a line). The two diagrams this
 note cites are refreshed in the same commit as this note. Nothing was executed.
+
+## Re-anchor provenance - `2b18f7ab` -> `b5903601`, 2026-09-27 (T-0009 on 1.0.42)
+
+`b5903601` is the crew 1.0.43 bump on T-0009's branch, after the merge of main `502cb137` (T-0005 landed as 1.0.42) into it at `0c911558`. Main's code is `2b18f7ab` (main's later commit `45109fa1` touched only artifacts), so `git diff {OLD} {NEW}` is T-0009's change plus the bump. Of the paths this note cites, `plugin/crew/README.md` (T-0009's config-key and
+cloud-guard rows and its "Workflow dispatches" paragraph, 42 lines net above the cited block, so
+the `docs/runbooks/INDEX.md` mention moved `:1930` -> `:1972`, re-read, same text; the history
+figures after it record other commits and are left as written; `:12`, `:15`, `:46`, `:414` and
+`:736` are above the first hunk and hold), `CHANGELOG.md` (T-0009's 1.0.43 entry; cited by name)
+and `docs/guides/crew/crew-1.0-troubleshooting.{html,docx,pdf}` (rebuilt from source by
+`docs/guides/crew/src/build.py --guide troubleshooting`; cited by name) changed.
+`docs/diagrams/data-flow-crew-config.mmd` is re-anchored in the same commit; `:1-2` is still its
+header.

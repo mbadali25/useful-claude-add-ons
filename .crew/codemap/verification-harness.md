@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@b5903601
+verified: 2026-09-27
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -262,7 +262,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2201-2208` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2268-2275` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -444,7 +444,7 @@ set on Ubuntu.
 - `.crew/verify.json:293-300` (rule 27) — the T-0004 autopilot suite;
   `plugin/crew/tests/sabotage.py:77`, `:3049` — `sabotage_autopilot.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
-  `plugin/crew/CONFIG.md:2201-2208` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2268-2275` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -798,3 +798,13 @@ line in `CHANGELOG.md`'s T-0005 bump note).
 - `CHANGELOG.md`, `TODO.md`, `BUDGETS.md` - cited by name only.
 
 No suite or command was executed by this note; the landing's suite results are in its PR.
+
+## Re-anchor provenance - `2b18f7ab` -> `b5903601`, 2026-09-27 (T-0009 on 1.0.42)
+
+`b5903601` is the crew 1.0.43 bump on T-0009's branch, after the merge of main `502cb137` (T-0005 landed as 1.0.42) into it at `0c911558`. Main's code is `2b18f7ab` (main's later commit `45109fa1` touched only artifacts), so `git diff {OLD} {NEW}` is T-0009's change plus the bump. Of the paths this note cites, `plugin/crew/CONFIG.md` (two table rows, the leaf-count
+paragraph and the `environments.workflows` subsection, 67 lines net above the verification
+chapter, so the descoping limitation moved `:2201-2208` -> `:2268-2275`, re-taken by content, same
+text; corrected above) and `plugin/crew/tests/sabotage_cloud.py` (eighteen T-0009 entries and one
+re-anchored T-0005 entry; cited by name) changed. `.crew/verify.json`, `_verify/smoke.sh` and
+`scripts/check-marketplace.py` did not change; the cloud-guard rule already maps `cloud_guard.py`,
+`crew_guards.py` and the `test_cloud_guard*.py` files T-0009 touched.

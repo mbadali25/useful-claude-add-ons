@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@b5903601
+verified: 2026-09-27
 
 # localgpu
 
@@ -1093,3 +1093,11 @@ at `:127-128` and the provider tuples at `crew_state.py:1432-1433` (`grep -n
 "^DEV_PROVIDERS\|^QA_PROVIDERS"`, the same two lines, byte-identical), corrected above.
 `.claude-plugin/marketplace.json` changed at crew's `version` only (1.0.42); `localgpu`'s own entry
 is still `0.1.20`. Nothing under `plugin/localgpu/` changed. Nothing was executed.
+
+## Re-anchor provenance - `2b18f7ab` -> `b5903601`, 2026-09-27 (T-0009 on 1.0.42)
+
+`b5903601` is the crew 1.0.43 bump on T-0009's branch, after the merge of main `502cb137` (T-0005 landed as 1.0.42) into it at `0c911558`. Main's code is `2b18f7ab` (main's later commit `45109fa1` touched only artifacts), so `git diff {OLD} {NEW}` is T-0009's change plus the bump. Of the files this note cites, `plugin/crew/hooks/scripts/crew_config.py` (T-0009's
+additions, all below `:240`) and `.claude-plugin/marketplace.json` (crew's `version` only; the
+`localgpu` entry unchanged) changed. The live citation, the provider re-export at
+`plugin/crew/hooks/scripts/crew_config.py:127-128`, was re-read and holds. Nothing under
+`plugin/localgpu/` changed.
