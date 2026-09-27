@@ -507,19 +507,25 @@ def test_route_enabled_is_global_settable():
         ({"route": {"enabled": True}}, [], True)
 
 
-def _cli(*args):
+def _cli(tmp_path, *args):
+    # A subprocess does not see conftest's GLOBAL_CONFIG_PATH monkeypatch, so the
+    # child resolves `~` itself: point HOME (POSIX) and USERPROFILE (Windows) at
+    # an empty directory, or a real `route.enabled: true` in the developer's
+    # ~/.claude/crew/config.json leaks into the assertion below.
+    home = str(tmp_path / "home")
+    env = dict(os.environ, HOME=home, USERPROFILE=home)
     return subprocess.run([sys.executable, _SCRIPT, *args], capture_output=True, text=True,
-                          check=False, timeout=60)
+                          check=False, timeout=60, env=env)
 
 
 def test_cli_settings_and_decide_exit_zero(tmp_path):
     root = _repo(tmp_path)
     make_ticket(root, "T-1")
 
-    settings = _cli("settings", "--root", str(root), "--json")
-    decided = _cli("decide", "--root", str(root), "--prompt", "implement it", "--json")
-    text = _cli("decide", "--root", str(root), "--prompt", "implement it")
-    none = _cli("decide", "--root", str(root), "--prompt", "hello there")
+    settings = _cli(tmp_path, "settings", "--root", str(root), "--json")
+    decided = _cli(tmp_path, "decide", "--root", str(root), "--prompt", "implement it", "--json")
+    text = _cli(tmp_path, "decide", "--root", str(root), "--prompt", "implement it")
+    none = _cli(tmp_path, "decide", "--root", str(root), "--prompt", "hello there")
 
     assert (settings.returncode, json.loads(settings.stdout)["enabled"],
             decided.returncode, json.loads(decided.stdout)["command"],
@@ -527,8 +533,8 @@ def test_cli_settings_and_decide_exit_zero(tmp_path):
         (0, False, 0, "/crew:implement T-1", True, 0, "outcome=none\n")
 
 
-def test_cli_exits_zero_on_bad_arguments():
-    assert _cli("frobnicate").returncode == 0
+def test_cli_exits_zero_on_bad_arguments(tmp_path):
+    assert _cli(tmp_path, "frobnicate").returncode == 0
 
 
 # --- step 5: sabotage anchors ---------------------------------------------------
