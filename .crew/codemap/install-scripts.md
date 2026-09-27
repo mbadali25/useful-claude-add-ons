@@ -1,6 +1,6 @@
 # install-scripts
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@a1acd9b7
+verified: 2026-09-27
 
 ## Re-derive provenance
 
@@ -571,3 +571,14 @@ reads 18,176 while `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` returns
 `check-marketplace.py` fails on it - BUDGETS.md is outside T-0023's Touch and was left for the
 owner. Neither install script was executed.
 
+## Re-anchor provenance - `2b18f7ab` + `488053fc` -> `a1acd9b7`, 2026-09-27 (T-0023 merge of main)
+
+`3c968175` merges main at `502cb137` (T-0005 landed, its notes anchored `2b18f7ab`) into T-0023 at
+`488053fc` (review round 1's fixes); `f6abe8c1` re-sets crew to 1.0.43 and `a1acd9b7` re-prices
+`.crew/verify.json` rule 28 in place. Both lines' provenance is above. A citation can only be
+wrong at the merge when its file changed on both sides, or when a line from one side cites a file
+the other side changed. Each line of this note was classified by origin (main's text or
+T-0023's), its citations into such files re-mapped with a line diff from that side's revision to
+the merged tree (`502cb137` or `fa4d8cd5`), and each moved one re-read by content with
+`grep -n`/`sed -n`; citations the line diff attributed to the wrong file were discarded, not
+applied. Of the paths this note cites, `plugin/crew/README.md` changed on both sides (the `35 commands` claim is at `:2404` and `4 agents` at `:2415`, re-grepped) and the version files moved to 1.0.43 in place. `plugin/crew/BUDGETS.md`'s marked total is re-measured and `check-marketplace.py` passes on it; the defect T-0023's `eba11657` pass recorded above is closed. Neither install script, `scripts/check-marketplace.py` nor `INSTALLATION.md` changed.

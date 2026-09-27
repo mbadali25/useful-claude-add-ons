@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@a1acd9b7
+verified: 2026-09-27
 
 # localgpu
 
@@ -1103,3 +1103,14 @@ which holds (re-read: `DEV_PROVIDERS = crew_state.DEV_PROVIDERS` /
 `QA_PROVIDERS = crew_state.QA_PROVIDERS`). `crew_state.py` did not change, so the `:1429-1430`
 tuples stand. Nothing under `plugin/localgpu/` changed.
 
+## Re-anchor provenance - `2b18f7ab` + `488053fc` -> `a1acd9b7`, 2026-09-27 (T-0023 merge of main)
+
+`3c968175` merges main at `502cb137` (T-0005 landed, its notes anchored `2b18f7ab`) into T-0023 at
+`488053fc` (review round 1's fixes); `f6abe8c1` re-sets crew to 1.0.43 and `a1acd9b7` re-prices
+`.crew/verify.json` rule 28 in place. Both lines' provenance is above. A citation can only be
+wrong at the merge when its file changed on both sides, or when a line from one side cites a file
+the other side changed. Each line of this note was classified by origin (main's text or
+T-0023's), its citations into such files re-mapped with a line diff from that side's revision to
+the merged tree (`502cb137` or `fa4d8cd5`), and each moved one re-read by content with
+`grep -n`/`sed -n`; citations the line diff attributed to the wrong file were discarded, not
+applied. `crew_config.py` changed on both sides; the `:127-128` re-export is above both sides' hunks and holds (re-read). `crew_state.py` changed on T-0005's side only, so `:1432-1433` stands. `.claude-plugin/marketplace.json` moved crew to 1.0.43 in place; `localgpu`'s own entry is still `0.1.20`. Nothing under `plugin/localgpu/` changed. Nothing was executed.

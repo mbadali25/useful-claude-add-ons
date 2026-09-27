@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@a1acd9b7
+verified: 2026-09-27
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -204,7 +204,8 @@ Notable rules, re-read directly:
   `crew_route.py`, `crew_context.py`, `test_crew_route.py`, `test_crew_route_hook.py` and
   `sabotage_route.py` → `python3 -m pytest plugin/crew/tests/test_crew_route.py
   plugin/crew/tests/test_crew_route_hook.py plugin/crew/tests/test_crew_context.py -q`, priced
-  10s (its `why` records 9.9s, 168 passed, measured 2026-09-26 with bash and pwsh present).
+  10s (its `why` records 8.5s, 180 passed, measured 2026-09-27 after review round 1 and the merge,
+  with bash and pwsh present).
   `crew_context.py` is also a rule-26 path (the auto-resume suite), so an edit to it runs both suites. Its mutations
   live in `plugin/crew/tests/sabotage_route.py` (`ROUTE_MUTATIONS`), imported by
   `plugin/crew/tests/sabotage.py:78` and appended at `:3050`; the rule's `why` states no count.
@@ -277,7 +278,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2202-2209` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2203-2210` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -461,7 +462,7 @@ set on Ubuntu.
 - `.crew/verify.json:301-309` (rule 28) — the T-0023 plain-text routing suite;
   `plugin/crew/tests/sabotage.py:78`, `:3050` — `sabotage_route.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
-  `plugin/crew/CONFIG.md:2202-2209` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2203-2210` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -837,3 +838,14 @@ No suite or command was executed by this note; the landing's suite results are i
 Rule 27's suite was run for its `why` figure (168 passed, 9.9s); `sabotage.py` restricted to
 `ROUTE_MUTATIONS` ran 19 mutations, all `RED (good)`. Nothing else was executed for this note.
 
+## Re-anchor provenance - `2b18f7ab` + `488053fc` -> `a1acd9b7`, 2026-09-27 (T-0023 merge of main)
+
+`3c968175` merges main at `502cb137` (T-0005 landed, its notes anchored `2b18f7ab`) into T-0023 at
+`488053fc` (review round 1's fixes); `f6abe8c1` re-sets crew to 1.0.43 and `a1acd9b7` re-prices
+`.crew/verify.json` rule 28 in place. Both lines' provenance is above. A citation can only be
+wrong at the merge when its file changed on both sides, or when a line from one side cites a file
+the other side changed. Each line of this note was classified by origin (main's text or
+T-0023's), its citations into such files re-mapped with a line diff from that side's revision to
+the merged tree (`502cb137` or `fa4d8cd5`), and each moved one re-read by content with
+`grep -n`/`sed -n`; citations the line diff attributed to the wrong file were discarded, not
+applied. `.crew/verify.json` changed on both sides: T-0005's cloud-guard rule is rule 6, so T-0023's routing rule is **rule 28** at `:301-309` and the file is 29 rules, 314 lines (`default` `:312`, `unmapped` `:313`); rule 28's `why` was re-priced in `a1acd9b7` (8.5s, 180 passed), in place. `plugin/crew/tests/sabotage.py` changed on T-0023's side only: `:75`-`:78` imports, `MUTATIONS +=` at `:3048-3050` with `REFRESH_MUTATIONS` on `:3049` and the resume, autopilot and route tuples on `:3050`. `plugin/crew/CONFIG.md` changed on both sides and again in `f6abe8c1` (section 10 grew one line), so the process-group-kill limitation is `:2203-2210`. The crew-setup skill is cited by rule membership only.

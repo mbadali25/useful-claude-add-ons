@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@a1acd9b7
+verified: 2026-09-27
 paths: scripts/**, plugin/PLUGINS.md
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -47,9 +47,9 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.42** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
-and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `2b18f7ab`; it
-was 1.0.41 at `07ca3972` and on T-0005's branch, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
+`rule-of-two`. `crew` is now **1.0.43** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `a1acd9b7`; it
+was 1.0.42 at `2b18f7ab` (T-0005 landed) and on T-0023's branch, 1.0.41 at `07ca3972` and on T-0005's branch, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
 
@@ -417,3 +417,14 @@ change, and `python3 scripts/check-marketplace.py` at `eba11657` reports `market
 but plugin/crew/*.md currently totals 18239` - the marked claim moved because T-0023's README and
 CONFIG.md sections grew, and BUDGETS.md is outside T-0023's Touch, so it is left for the owner.
 
+## Re-anchor provenance - `2b18f7ab` + `488053fc` -> `a1acd9b7`, 2026-09-27 (T-0023 merge of main)
+
+`3c968175` merges main at `502cb137` (T-0005 landed, its notes anchored `2b18f7ab`) into T-0023 at
+`488053fc` (review round 1's fixes); `f6abe8c1` re-sets crew to 1.0.43 and `a1acd9b7` re-prices
+`.crew/verify.json` rule 28 in place. Both lines' provenance is above. A citation can only be
+wrong at the merge when its file changed on both sides, or when a line from one side cites a file
+the other side changed. Each line of this note was classified by origin (main's text or
+T-0023's), its citations into such files re-mapped with a line diff from that side's revision to
+the merged tree (`502cb137` or `fa4d8cd5`), and each moved one re-read by content with
+`grep -n`/`sed -n`; citations the line diff attributed to the wrong file were discarded, not
+applied. Of the paths this note cites, the version files moved to 1.0.43 in place, `.crew/verify.json` has 29 rules (T-0023's routing rule is rule 28 at `:301-309`; the doc rule at `:69-78` is unchanged), `plugin/PLUGINS.md` `:14`/`:17` hold, and `plugin/crew/BUDGETS.md` `:11` is re-measured (18,558 lines, 121 files). No command, agent, skill or hook entry was added. `python3 scripts/check-marketplace.py` on `a1acd9b7`: `marketplace: 34 skills, 5 plugins`, `all checks passed`.

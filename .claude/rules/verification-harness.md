@@ -4,9 +4,9 @@ paths:
   - "_verify/smoke.sh"
   - "scripts/check-marketplace.py"
 ---
-<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=d18b9259ecaad2fc -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=25ab89166873ebdc -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # verification-harness
-Code map anchor `2b18f7ab`; if it is behind HEAD, re-check with `git diff --name-only 2b18f7ab..HEAD -- <cited paths>`.
+Code map anchor `a1acd9b7`; if it is behind HEAD, re-check with `git diff --name-only a1acd9b7..HEAD -- <cited paths>`.
 Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and .crew/verify.json — what each actually runs, and where they overlap or don't. .crew/verify.json is tracked; its own anchor field (:3) is stale at 5238be3d, independent of this note's anchor.
 ## Entry points
 - `.crew/verify.json:164-169` (rule 9) — the whole-suite pytest rule and its 377s pricing.
@@ -20,7 +20,7 @@ Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and 
 - `.crew/verify.json:282-292` (rule 26) — the T-0006 auto-resume suite; `plugin/crew/tests/sabotage.py:76`, `:3050` — `sabotage_resume.py`'s registration.
 - `.crew/verify.json:293-300` (rule 27) — the T-0004 autopilot suite; `plugin/crew/tests/sabotage.py:77`, `:3050` — `sabotage_autopilot.py`'s registration.
 - `.crew/verify.json:301-309` (rule 28) — the T-0023 plain-text routing suite; `plugin/crew/tests/sabotage.py:78`, `:3050` — `sabotage_route.py`'s registration.
-- `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` / `plugin/crew/CONFIG.md:2202-2209` — the descoped per-rule process-group kill, documented as a standing limitation.
+- `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` / `plugin/crew/CONFIG.md:2203-2210` — the descoped per-rule process-group kill, documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` — `Resolve-CrewBash` refusal rather than a re-resolving hang.
 - `scripts/check-marketplace.py:1639` — `main()`, sixteen checks.
 - `scripts/check-marketplace.py:518` — `check_versions`.

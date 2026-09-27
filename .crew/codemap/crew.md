@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@a1acd9b7
+verified: 2026-09-27
 
 ## Re-derive provenance
 
@@ -50,7 +50,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.42, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.43, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -253,7 +253,7 @@ merge: 121 / 67 / 54 / 0 - T-0005 added `environments.prodUnattended` to both te
 68 / 54 / 0 - T-0023 added `route.enabled` to both `default_config()` (`:389`) and
 `default_global_config()` (`:563`), so repo-only is unchanged.
 `plugin/crew/tests/test_crew_config.py:279` asserts 122. T-0004's `CHANGELOG.md` entry now says
-"117 -> 119" (`:262-263`), matching the `07ca3972` execution; it said "116 -> 118" when this
+"117 -> 119" (`:273-274`), matching the `07ca3972` execution; it said "116 -> 118" when this
 paragraph was first written. T-0005's entry states no leaf count; T-0023's says 119 -> 120, true on its
 own branch before the merge.
 
@@ -1256,3 +1256,15 @@ returns only `plugin/crew/tests/test_crew_route.py` (its `_cli` helper now isola
 `USERPROFILE` for the child process). This note cites that file by name only, in the plain-text
 routing section, so no citation moved. `plugin.json`, `marketplace.json` and `PLUGINS.md` were
 stepped back and re-set to 1.0.42 twice in the range and are byte-identical to `eba11657`.
+
+## Re-anchor provenance - `2b18f7ab` + `488053fc` -> `a1acd9b7`, 2026-09-27 (T-0023 merge of main)
+
+`3c968175` merges main at `502cb137` (T-0005 landed, its notes anchored `2b18f7ab`) into T-0023 at
+`488053fc` (review round 1's fixes); `f6abe8c1` re-sets crew to 1.0.43 and `a1acd9b7` re-prices
+`.crew/verify.json` rule 28 in place. Both lines' provenance is above. A citation can only be
+wrong at the merge when its file changed on both sides, or when a line from one side cites a file
+the other side changed. Each line of this note was classified by origin (main's text or
+T-0023's), its citations into such files re-mapped with a line diff from that side's revision to
+the merged tree (`502cb137` or `fa4d8cd5`), and each moved one re-read by content with
+`grep -n`/`sed -n`; citations the line diff attributed to the wrong file were discarded, not
+applied. `crew_config.py` changed on both sides: `default_global_config()` `:393`, the `route` blocks `:389`/`:563`, the `.crew/config.json` read `:1260`, `_RATCHETED` `:2444-2556` (14 keys, re-counted). Leaf counts re-executed: 122 / 68 / 54 / 0. `test_crew_config.py` asserts 122 at `:279`. `.crew/verify.json` has 29 rules: autopilot rule 27 `:293-300`, routing rule 28 `:301-309`. `crew_route.py` changed in round 1 (`_clip`, `MAX_LINE_CHARS`), so the routing section's citations were re-taken by content (`PHRASES` `:81` through `main` `:332`). `CHANGELOG.md`'s T-0004 leaf-count line is `:273-274` after the 1.0.43 entry grew. `crew_state.py`, `crew_context.py`, `crew_guards.py` and `cloud_guard.py` changed on one side only, so those citations stand. The version is 1.0.43 (`marketplace.json:218`, `plugin.json:3`).

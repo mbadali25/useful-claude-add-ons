@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@2b18f7ab on 2026-09-26. Verify before trusting.
+%% Generated from useful-claude-add-ons@a1acd9b7 on 2026-09-27. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
@@ -82,6 +82,16 @@
 %% is cited by section and gained §21. Leaf counts re-executed: 120 / 67 / 53, fourth 0 -
 %% `route` is a NEW block in BOTH layers (a repo value wins, so a template-written `false`
 %% vetoes a machine `true`, CONFIG.md §21). crew_state.py did not change; its cites hold.
+%% Merged 2b18f7ab + 488053fc (T-0023's merge of main 502cb137, 3c968175): of the Anchors paths,
+%% crew_config.py and CONFIG.md changed on both sides. Each line was classified by origin; main's
+%% crew_config.py citations were re-mapped by a line diff 502cb137 -> merged tree (+8 below the
+%% default_config `route` block at :382-389, +11 below the global one at :561-563) and each
+%% re-read by content (e.g. default_global_config :393, read_global_config :720, resolve_config
+%% :773, resolve_ratcheted :815, _RATCHETED :2444 through :2556, write_global_config :2646);
+%% crew_state/crew_guards citations stand (one side only). Counts re-executed: 122 / 68 / 54
+%% leaves, fourth 0, 17 global blocks (route added to TMPL and S1). Anchored at a1acd9b7: the
+%% 1.0.43 re-set (f6abe8c1) grew CONFIG.md section 10 by one line, and this diagram cites
+%% CONFIG.md by section only; rule 28's re-price (a1acd9b7) is not an Anchors path.
 %% How one config value reaches a run, and what may set it where.
 %% --
 %% RE-ANCHORED after crew 1.0 (previously 60c79407). Every function/line cited
