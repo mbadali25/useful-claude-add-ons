@@ -1119,28 +1119,48 @@ POST`, `--method POST`, `-XPOST`, or fields/`--input` with no method) on
 `repos/<o>/<r>/actions/workflows/<wf>/dispatches` — both go through one
 classifier. The input comes from `-f`/`-F`/`--raw-field`/`--field` (`<name>=v`
 for `gh workflow run`, `inputs[<name>]=v` for the REST form, whose top-level
-`ref` is the branch and never an input), from a literal `--json` or `--input -`
-body on stdin, and every occurrence must agree. Under `ask` (in **both**
-layers — the ratchet), a nonProd environment runs unattended and is logged as
-`env:nonProd:<name>`; production runs unattended only with
-`environments.prodUnattended` true in both layers, and says so on screen.
-**`allow` covers nonProd only**: production without `prodUnattended`, and an
-environment crew cannot identify, still ask when attended and are refused
-unattended. Unknown is: no input given (the workflow's default is not read),
-`-F name=@file`, `--input FILE`, a value or workflow that is not a literal
-(`$ENV`, even after `ENV=staging` — crew never resolves a variable for a
-dispatch; `"$WF"`), conflicting values, stdin crew cannot see or that a filter
-or a `<` redirect may rewrite (only gh's own here-string or heredoc, or `echo`/
-`printf`/bare `cat` piped straight in, counts as literal), any word on the
-line that may expand into more arguments (`$Y`, a glob, `{a,b}`), no workflow
-named (gh prompts), anything `xargs`/`parallel` may append, and — for every
-dispatch, listed or not — an `environments` block crew cannot read. A workflow
-matching no key is **not judged**, as before; so with `workflows` at `{}`
-nothing is classified. A quoted display name (`'Deploy Staging'`) is matched as
-written, and the approval marker covers the inputs judged, not only the argv. `environments.workflows` does not engage the terraform
-layer. A deploy command also declared in `.crew/verify.json` still passes
-through `promote-gate.sh`, whose `requireHuman` is independent of
-`prodUnattended`.
+`ref` is the branch and never an input), and every occurrence must agree.
+Under `ask` (in **both** layers — the ratchet), a nonProd environment runs
+unattended and is logged as `env:nonProd:<name>`; production runs unattended
+only with `environments.prodUnattended` true in both layers, and says so on
+screen. **`allow` covers nonProd only**: production without `prodUnattended`,
+and an environment crew cannot identify, still ask when attended and are
+refused unattended. Unknown is: no input given (the workflow's default is not
+read), conflicting values, a second workflow argument, and no workflow named
+(gh prompts). A workflow matching no key is **not judged**, as before; so with
+`workflows` at `{}` no `gh` line is judged at all. `environments.workflows`
+does not engage the terraform layer. A deploy command also declared in
+`.crew/verify.json` still passes through `promote-gate.sh`, whose
+`requireHuman` is independent of `prodUnattended`.
+
+**The dispatch grammar.** A line that sends a dispatch is judged only when
+every word on it is a plain literal (letters, digits and `_./:=@%+,-`) or one
+whole single-quoted word, and its only operators are `;`, `&&`, `||`, `&`, a
+newline, `>`/`>>`/`&>`/`&>>` to a plain word, and `2>&1`. Anything else on it
+is **could not tell**: asked about when someone is attending, refused
+unattended at every setting, and approved one command at a time by the marker
+the refusal names, which covers those exact bytes and nothing else. So is a
+dispatch the guard does not follow — inside `bash -c`, `eval` or `pwsh -c`,
+behind `xargs`, `parallel` or `find -exec`, through an alias or a copy of `gh`
+made on the line, or a command word made at run time — and gh reading its
+inputs from stdin or a file. Crew never reads stdin. Refused, and how to write
+it instead:
+
+| Refused | Write instead |
+|---|---|
+| `--json` / `--input -` with a body on stdin, `-F name=@file` | `-f name=value` fields |
+| `"Deploy Staging"` (double quotes) | `'Deploy Staging'` |
+| `repos/{owner}/{repo}/...` unquoted, `-f inputs[environment]=x` | quote the word: `'repos/{owner}/{repo}/...'`, `-f 'inputs[environment]=x'` |
+| `... \| tee log`, `echo x \| gh ...` | `... > log` |
+| `-f environment=$ENV`, `${ENV}`, `$(...)` | the literal value |
+| `bash -c 'gh workflow run ...'` | the `gh` command itself |
+
+A literal `gh workflow run ... --help` (or `-h`) prints help and dispatches
+nothing, so it is not judged; `-f environment=--help` is a value, and after
+`--` a `--help` is a second workflow argument. Other `gh` commands (`gh pr
+create --title "..."`) are never gated. `crew_guards.dispatch_answer` is the
+one entry point a caller (autopilot, the promote path) uses, and it answers
+`nonProd`, `prod`, `unknown` or `unlisted`.
 
 **The always-stops.** A destroy is never applied unattended, at any setting:
 `destroy`, `apply -destroy`, `apply -replace`, `workspace delete`, a saved plan

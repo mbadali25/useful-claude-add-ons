@@ -21,27 +21,52 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **`allow` covers nonProd only for a deploy.** Production without
   `prodUnattended` in both layers, and an unknown environment, still ask when
   attended and are denied unattended, whatever `deployWorkflow` says.
-- **Unknown, never allowed unattended:** no input given, `-F name=@file`,
-  `--input FILE`, a value or workflow that is not a literal, conflicting
-  values, a JSON body crew cannot see, no workflow named, a dispatch behind
-  `xargs`/`parallel`, and every dispatch while the `environments` block does
-  not validate (which also forces an armed guard to `block` mode).
-- **Review round 1 closed five ways past that** (each with a must-block row
-  and a sabotage entry): a body piped through a filter (`sed`, `tr`, `jq`,
-  `awk`, `perl`, `python`, `tee`, a subshell) or replaced by a `<` redirect is
-  unknown — only gh's own here-string/heredoc, or `echo`/`printf`/bare `cat`
-  piped straight in, is literal; a value is read as written, so `$ENV` is
-  unknown even after `ENV=staging` (bash is case-sensitive, and `read`,
-  `source` and `export` can change it), and so is every input once any word
-  on the line may expand into more arguments (`-f note=$Y`, a glob,
-  `{a,b}`), or a body carries `$`, a backquote or a backslash; gh's clustered short flags
-  (`gh api -iX POST`) are read as gh reads them; the approval marker covers
-  the stdin, inputs and environment judged, not only the argv; and a quoted
-  display name with spaces is matched as written.
+- **The dispatch grammar: judged only when every word is a plain literal.**
+  A dispatch line is classified only when every word on it is a
+  `[A-Za-z0-9_./:=@%+,-]` word or one whole single-quoted word, joined only
+  by `;`, `&&`, `||`, `&`, newlines, `>`/`>>`/`&>`/`&>>` to a plain word and
+  `2>&1` — T-0005's literal-word allowlist, extended to `gh`. Everything else
+  is **could not tell**, asked when attended and denied unattended at every
+  setting: a pipe, any `<` form, any other `N>&M`, `<(`/`>(`, double quotes,
+  `$'...'`, a backslash, `$`, a backquote, a glob or brace, `~`; a dispatch
+  inside `bash -c`/`eval`/`pwsh -c`, behind `xargs`/`parallel`/`find -exec`,
+  through an alias or copy of `gh` made on the line, or from a command word
+  made at run time; gh reading stdin or a file (`--json`, `--input`,
+  `-F k=@f` — **stdin is never read**); and every dispatch-shaped line while
+  the `environments` block does not validate. Review rounds 1 and 2 found
+  nine ways past a parser that read the lexer's output (a filter or `<` on
+  stdin, `0>&3`, a variable, a bracket glob, a script piped into bash, a
+  marker that covered another file): each is now a must-block row, watched
+  red on `b979d640` first, with a sabotage entry.
+- **BREAKING for the dispatch forms that ran in the first 1.0.43 build:** a
+  `--json` body (heredoc, here-string or `echo` pipe), `--input -`, a
+  double-quoted display name, an unquoted `{owner}` endpoint and a pipe out of
+  `gh` now ask (denied unattended). Write `-f` fields, `'Deploy Staging'`,
+  `'repos/{owner}/{repo}/...'` and `> log` instead (README "The dispatch
+  grammar").
+- **Unknown on a literal line:** no input given, conflicting values, a second
+  workflow argument, no workflow named.
+- **`--help` settled.** A standalone `-h`/`--help` before `--` prints help
+  and sends nothing, so the line is not judged; `-f environment=--help` is a
+  value and `-- --help` is a second workflow argument. Terraform's `--help`
+  is unchanged.
+- **Markers cover exact bytes.** A dispatch marker is keyed on the whole
+  command text — plus, when classified, the workflow key and environment — so
+  an approval of `--json < prod-one.json` covers neither `< prod-two.json` nor
+  a config edit inside the 15 minutes.
+- **One road in.** `crew_guards.dispatch_answer(text, shell, envs)` returns
+  `(state, why, scope)`, `state` in `nonProd | prod | unknown | unlisted`,
+  could-not-tell being `unknown` with `op: line-not-literal`; the hook's
+  `_classify` reaches the parser only through it (T-0045, T-0072).
 - **Unchanged:** a workflow matching no key is not judged, and with
-  `workflows` at `{}` nothing is. `environments.workflows` does not engage the
-  terraform layer. Not seen: an unlisted spelling of a deploy workflow, the
-  workflow YAML, `gh run rerun`, `curl`.
+  `workflows` at `{}` no `gh` line is. Other `gh` commands are never gated.
+  `environments.workflows` does not engage the terraform layer. Not seen: an
+  unlisted spelling of a deploy workflow, the workflow YAML, `gh run rerun`,
+  `gh alias`, `curl`.
+- **Docs:** the troubleshooting guide now documents T-0005's
+  `environments.nonProd`, `environments.prodUnattended` (both layers) and the
+  destroy rule, beside the dispatch grammar; its HTML, DOCX and PDF are
+  rebuilt.
 - Bumped `1.0.42 -> 1.0.43`.
 
 ### Changed — `crew` 1.0.42: environment-scoped terraform in the cloud guard (T-0005) — **BREAKING**

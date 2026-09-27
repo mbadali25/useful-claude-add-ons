@@ -71,6 +71,12 @@ Direct use only (Step 10): a disguise -- a rename crew does not see made, `env
 -S`, BusyBox, git `!` aliases, an interpreter, a script, an unlisted wrapper
 -- is out of scope (README, "What the guard does not catch"; T-0044).
 
+THE DISPATCH GRAMMAR (T-0009; `crew_guards`' section states it in full). With a workflow listed, a line
+sending a dispatch is judged only when every word is plain or one whole single-quoted word, joined only
+by `;` `&&` `||` `&`, newline, `>` `>>` `&>` `&>>` to a plain word and `2>&1`; anything else, a nested or
+fed dispatch and gh reading stdin or a file is could-not-tell (stdin is never read), a literal `--help`
+is not judged, and the approval marker covers the exact command bytes. `dispatch_answer` is the one road.
+
 IDENTITY. Every `aws` and `az` command resolves the identity it would run as --
 `--profile`/`--region`/`--subscription` first, then the environment it would
 inherit (an `env X=Y` or `X=Y` prefix, an earlier `export`, `$env:X = ...` in
@@ -129,8 +135,8 @@ import crew_state
 from crew_guards import _head_name as _guards_head_name
 from crew_guards import command_trigger, first_non_literal, ps_trigger, \
     skip_wrapper_options, tf_skip_options as _tf_skip_options
-from crew_guards import DEPLOY_RULE, ENV_NONPROD, ENV_PROD, ENV_UNKNOWN, dispatch_scopes, judge_dispatch, \
-    command_stdin, reconcile_dispatch
+from crew_guards import DEPLOY_RULE, ENV_NONPROD, ENV_PROD, ENV_UNKNOWN, ENV_UNLISTED, dispatch_answer, \
+    dispatch_gate, dispatch_text, judge_dispatch
 
 
 def _head_name(token):
@@ -212,7 +218,6 @@ class _Cmd:
     def __init__(self, pipe_from=None):
         self.words = []
         self.stdin = None
-        self.stdin_unsure = False  # a `<` or other-fd redirect may replace it
         self.pipe_from = pipe_from
         # An output redirect to anything but the null device. It runs before
         # terraform reads its plan, so it could be rewriting that plan.
@@ -672,14 +677,11 @@ def _lex_bash(text, unsure=None):
             i += 1
             continue
         if c in "<>":
-            fd = "".join(state["word"] or ())
-            if fd.isdigit():
+            if state["word"] and "".join(state["word"]).isdigit():
                 # `2>`: the digits are the fd, not an argument.
                 state["word"] = None
             end_word()
             op = re.match(r"<<<|<<-|<<|>>|>&|<&|<>|>\||>|<", text[i:]).group(0)
-            if op[0] == "<" and (op in ("<", "<>", "<&") or fd.strip("0").isdigit()):
-                state["cur"].stdin_unsure = True
             if op in ("<&", ">&"):
                 # `2>&1`, `>&2`: an fd duplication, no target word to drop
                 # beyond the digit that follows. `>&file` (no digit) is
@@ -2252,7 +2254,10 @@ def _classify(argv, stdin, env, shell, depth, ctx=None, seq=None, fed=False):
         pairs = list(zip(words, words[1:]))
         if ("pr", "merge") in pairs and "--admin" in args:
             out.append(Finding("adminMerge", text, "gh pr merge --admin", None, True, None))
-        out += [Finding(DEPLOY_RULE, text, s["what"], None, True, None, s) for s in dispatch_scopes(args, stdin, fed)]
+        state, why, scope = dispatch_answer(dispatch_text(argv), shell, (ctx or {}).get("dispatch") or {}, fed,
+                                            GATE_HELPERS)
+        if state != ENV_UNLISTED:
+            out.append(Finding(DEPLOY_RULE, text, scope["what"], None, True, None, dict(scope, state=state, why=why)))
         return out
     if head == "aws":
         what = _aws_destructive(args)
@@ -2782,8 +2787,8 @@ def _track(argv, ctx, seq, fed, shell="bash"):
 OP_UNREADABLE_LINE = "line-not-literal"
 
 
-_GATE_HELPERS = (_unwrap, _shell_args, _pwsh_payload, _ps_normalise,
-                 _head_name, _lex_ps)
+GATE_HELPERS = (_unwrap, _shell_args, _pwsh_payload, _ps_normalise,
+                _head_name, _lex_ps)
 
 
 def _literal_gate(shell, text):
@@ -2795,9 +2800,9 @@ def _literal_gate(shell, text):
     binary, `Start-Process` -- is could-not-tell on a line of plain words
     too. PowerShell has the same command-word rule (`ps_trigger`)."""
     if shell == "powershell":
-        found = ps_trigger(_ps_normalise(text)[0], _GATE_HELPERS)
+        found = ps_trigger(_ps_normalise(text)[0], GATE_HELPERS)
     else:
-        found = command_trigger(text, _GATE_HELPERS)
+        found = command_trigger(text, GATE_HELPERS)
     if found is None:
         return None
     named, unseen = found
@@ -2870,7 +2875,8 @@ def scan(shell, text, env=None, depth=0, ctx=None, seq=None):
         findings.extend(scan(shell, sub, env, depth + 1, ctx, seq))
     for cmd in cmds:
         _note_cmd(cmd, ctx)
-        cmd.stdin = command_stdin(cmd, _stdout_literal, _head_name)
+        if cmd.pipe_from is not None and cmd.stdin is None:
+            cmd.stdin = _stdout_literal(cmd.pipe_from)
         words = [_substitute(w, variables) for w in cmd.words]
         if not words:
             continue
@@ -2935,13 +2941,13 @@ def scan(shell, text, env=None, depth=0, ctx=None, seq=None):
             # The fed finding carries the identity too, so the read-only
             # identity row it replaces would only say the same thing twice.
             found = [f for f in found if f.rule != IDENTITY_RULE] + [extra]
-        if words != cmd.words:  # a dispatch is read from the words as written
-            rfed = []
-            rargv = _unwrap(list(cmd.words), dict(env), rfed, None)
-            found = reconcile_dispatch(found, rargv and _classify(
-                rargv, None if rfed else cmd.stdin, dict(env), shell, depth,
-                fed=rfed[-1] if rfed else False))
         findings.extend(found)
+    if depth == 0:  # the dispatch grammar, on the raw line (T-0009)
+        cnt = dispatch_gate(text, shell, (ctx or {}).get("dispatch") or {},
+                            [f.scope for f in findings if f.rule == DEPLOY_RULE], GATE_HELPERS)
+        if cnt is not None:
+            findings = [f for f in findings if f.rule != DEPLOY_RULE] + [
+                Finding(DEPLOY_RULE, text, cnt["what"], None, True, None, cnt)]
     return findings
 
 
@@ -3082,7 +3088,7 @@ def _judge_one(root, finding, pins, problem, envs=None):
                 "unreadable", "", True)
     if finding.rule in crew_state.GUARD_NAMES or \
             finding.rule in crew_state.PROD_GUARD_NAMES:
-        if finding.rule == DEPLOY_RULE:  # keyed on the inputs judged too
+        if finding.rule == DEPLOY_RULE:  # keyed on the whole command and what was judged
             return judge_dispatch(finding.scope, finding.what, lambda key: crew_config.guard_decision(
                 root, DEPLOY_RULE, key), finding.text, envs or {}, _approval_is_live)
         out = crew_config.guard_decision(root, finding.rule, finding.text)
@@ -3130,8 +3136,8 @@ def evaluate(root, tool_name, command, data=None, mode="block"):
     skip the user's own prompt, and report mode judged nothing.
     """
     shell = "powershell" if tool_name == "PowerShell" else "bash"
-    envs = environments_config(root)
-    ctx = {"cd": False, "switch": False, "engaged": envs["engaged"]}
+    envs = dict(environments_config(root), command=command)
+    ctx = {"cd": False, "switch": False, "engaged": envs["engaged"], "dispatch": dict(envs)}
     findings = scan(shell, command, ctx=ctx)
     cwd = (data or {}).get("cwd")
     envs["cwd"] = cwd if isinstance(cwd, str) and cwd else None

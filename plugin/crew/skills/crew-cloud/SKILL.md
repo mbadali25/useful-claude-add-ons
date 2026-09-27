@@ -67,11 +67,20 @@ workflow matching no key is not judged. Under `ask` in both layers a nonProd
 environment runs unattended; production does only with
 `environments.prodUnattended` true in both layers. `allow` covers nonProd only:
 production without `prodUnattended`, and an environment crew cannot identify
-(no input, `-F name=@file`, `--input FILE`, `$ENV` whatever it was assigned,
-conflicting values, stdin a filter or `<` redirect may rewrite, no workflow
-named, `xargs`, a malformed `environments` block), still ask and are
-refused unattended. Not seen: an unlisted spelling of the workflow (display
-name, numeric id), the workflow YAML, `gh run rerun`, `curl`.
+(no input, conflicting values, two workflow arguments, no workflow named),
+still ask and are refused unattended. Not seen: an unlisted spelling of the
+workflow (display name, numeric id), the workflow YAML, `gh run rerun`,
+`gh alias`, `curl`.
+
+DISPATCH GRAMMAR. A dispatch line is judged only when every word is a plain
+literal or one whole single-quoted word, joined only by `;` `&&` `||` `&`,
+newlines, `>`/`>>`/`&>`/`&>>` to a plain word and `2>&1`; anything else — a
+pipe, any `<`, `$`, double quotes, a glob, a nested or `xargs`-fed dispatch, a
+copy or alias of `gh`, and gh reading stdin or a file (`--json`, `--input`,
+`-F k=@f`) — is could-not-tell: asked when attended, refused unattended, and
+approved one exact command at a time by the marker the refusal names. Write
+`-f` fields and single quotes instead (README "The dispatch grammar"); a
+literal `--help` is not judged.
 
 Not destructive, so not refused: `aws … --dry-run` / `--dryrun`, `Remove-Az*
 -WhatIf`, and `terraform apply -help`. SQL is read in the client's own dialect —

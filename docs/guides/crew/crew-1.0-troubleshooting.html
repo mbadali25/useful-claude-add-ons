@@ -185,9 +185,16 @@ every pair — that is what "even counts" in the file means, not a bug.</p>
 <tr>
 <td><code>PreToolUse</code> (<code>Bash</code>|<code>PowerShell</code>)</td>
 <td><code>cloud-guard.sh</code></td>
-<td>destructive <code>aws</code>/<code>az</code> commands, wrong-identity commands, and dispatches of workflows listed in <code>environments.workflows</code> (<code>guards.deployWorkflow</code>)</td>
+<td>destructive <code>aws</code>/<code>az</code> commands, wrong-identity commands, and dispatches of workflows listed in <code>environments.workflows</code> (<code>guards.deployWorkflow</code>) — judged only when every word on the line is a plain literal or a single-quoted word; anything else asks, and is refused unattended</td>
 <td><code>guards.cloudGuard</code> (<code>block</code>/<code>report</code>/<code>off</code>)</td>
 <td><code>off</code></td>
+</tr>
+<tr>
+<td><code>PreToolUse</code> (<code>Bash</code>|<code>PowerShell</code>)</td>
+<td><code>cloud-guard.sh</code>, environment layer (T-0005)</td>
+<td>a terraform apply judged by its target environment, and a destroy never applied unattended</td>
+<td><code>environments.nonProd</code> (repo only; globs naming non-production workspaces), <code>environments.prodUnattended</code> (both layers; true only when <strong>both</strong> say <code>true</code>)</td>
+<td><code>[]</code>, <code>false</code></td>
 </tr>
 <tr>
 <td><code>PreToolUse</code> (<code>Write</code>|<code>Edit</code>|<code>MultiEdit</code>|<code>NotebookEdit</code>|<code>Bash</code>|<code>PowerShell</code>)</td>
@@ -373,7 +380,22 @@ it <em>would</em> refuse before enforcing with <code>"block"</code>.</p>
   the command they simulate, because nothing in <code>_terraform_destructive</code>/<code>_aws_destructive</code>/the
   <code>Remove-Az*</code> matcher inspects those flags. This is a known gap, not a config bug — there is no key
   that special-cases them. If you need to run one of these unattended, use <code>report</code> mode while
-  testing, or approve the one-shot marker the deny message names.</p>
+  testing, or approve the one-shot marker the deny message names. A literal <code>gh workflow run ...
+  --help</code> (or <code>-h</code>) is the exception: gh prints help and dispatches nothing, so the line is not
+  judged at all; terraform's <code>--help</code> still is.</p>
+</li>
+<li>
+<p><strong>A workflow dispatch is refused as "could not tell" although it looks fine.</strong> With
+  <code>environments.workflows</code> set, a <code>gh workflow run</code> or <code>gh api .../dispatches</code> line is judged only
+  when every word on it is a plain literal (letters, digits, <code>_./:=@%+,-</code>) or one whole
+  single-quoted word, joined only by <code>;</code>, <code>&amp;&amp;</code>, <code>||</code>, <code>&amp;</code>, newlines, <code>&gt;</code>/<code>&gt;&gt;</code>/<code>&amp;&gt;</code>/<code>&amp;&gt;&gt;</code> to a plain
+  word and <code>2&gt;&amp;1</code>. A pipe, any <code>&lt;</code>, double quotes, <code>$</code>, a glob, <code>bash -c '...'</code>, <code>xargs</code>, and gh
+  reading stdin or a file (<code>--json</code>, <code>--input</code>, <code>-F k=@f</code>) make the line could-not-tell: it asks
+  when you are there and is denied unattended at every setting. <strong>Fix:</strong> write the literal form —
+  <code>-f environment=staging</code> instead of a <code>--json</code> body, <code>'Deploy Staging'</code> instead of
+  <code>"Deploy Staging"</code>, <code>&gt; log</code> instead of <code>| tee log</code>, the value instead of <code>$ENV</code> — or approve the
+  one command with the marker the refusal names (it covers those exact bytes only). Other <code>gh</code>
+  commands (<code>gh pr create --title "..."</code>) are never gated.</p>
 </li>
 <li>
 <p><strong>An "unpinned" repo makes an ordinary destructive command ask or deny, even when it is obviously
@@ -521,6 +543,18 @@ but returns immediately without judging anything; "off" for <code>verifyGate</co
 <td><code>block</code> is default and floor; <code>allow</code> covers nonProd only — production without <code>environments.prodUnattended</code> in both layers, and an unknown environment, still ask (denied unattended)</td>
 </tr>
 <tr>
+<td><code>environments.nonProd</code></td>
+<td>repo only</td>
+<td>list of globs</td>
+<td><code>[]</code>: nothing is nonProd, so every terraform apply asks (denied unattended)</td>
+</tr>
+<tr>
+<td><code>environments.prodUnattended</code></td>
+<td>both layers, ratchets (true only when both say <code>true</code>)</td>
+<td>bool</td>
+<td><code>false</code> in either layer holds it down: production applies and dispatches ask</td>
+</tr>
+<tr>
 <td><code>guards.prodDatabase</code>, <code>guards.prodServer</code></td>
 <td>both layers, ratchets</td>
 <td><code>none</code>/<code>read</code>/<code>full</code></td>
@@ -576,6 +610,11 @@ but returns immediately without judging anything; "off" for <code>verifyGate</co
 </tr>
 </tbody>
 </table>
+<p><strong>A destroy is never applied unattended</strong>, at any setting: <code>destroy</code>, <code>apply -destroy</code>, <code>-replace</code>,
+<code>workspace delete</code>, a saved plan whose sidecar lists a delete, or an apply with no sidecar at all
+asks when you are there and is denied unattended — <code>terraformApply: allow</code> and
+<code>environments.prodUnattended</code> included. The full decision table is in <code>plugin/crew/CONFIG.md</code>
+(<code>environments.*</code>).</p>
 <p><code>~/.claude/crew/config.json</code> is the machine-global layer; <code>.crew/config.json</code> is per-repo and wins
 where both speak. A <strong>ratcheted</strong> key (marked above) can only be <em>narrowed</em> by the repo relative to
 the machine-global value, never widened — a repo cloned from someone else cannot silently loosen a

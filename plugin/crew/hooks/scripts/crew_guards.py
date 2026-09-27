@@ -1633,7 +1633,69 @@ def _first_operand(args):
     return next((a for a in args if not a.startswith("-")), None)
 
 
-def _find_exec_trigger(args, top, helpers, depth, line):
+class _TerraformTool:
+    """What the command-word trigger asks about the program it gates, for
+    terraform, terragrunt and tofu. T-0009 parametrised the trigger on this
+    so the workflow-dispatch gate (`_DispatchTool`) reads a line with the same
+    reader; every answer here is T-0005's, unchanged."""
+
+    @staticmethod
+    def on_line(text, shell="bash"):
+        """The Step 8 read of `text`: the word naming the tool, or None."""
+        return names_terraform(text, shell)
+
+    @staticmethod
+    def names(word):
+        return _names_tool(word)
+
+    @staticmethod
+    def hole(_argv, top, shell="bash"):
+        """`(word, True)` for a command word made at run time, when the line
+        names one of the words a terraform line needs; else None."""
+        named = _verb_on_line(top) if shell == "bash" else _ps_verb_on_line(top)
+        return None if named is None else (named, True)
+
+    @staticmethod
+    def direct(argv, fed, _depth):
+        """`(word, unseen)` or None when `argv`'s command word names the tool;
+        False when it does not."""
+        first = argv[0]
+        if _zsh_names_tool(first):
+            return first, True
+        if _names_tool(first):
+            return None if _tf_read_only(argv, fed) else (first, False)
+        return False
+
+    @staticmethod
+    def copy_source(word):
+        """An operand of `cp`/`ln`/... that puts the tool under another name."""
+        return _HOLE not in word and _arg_names_tool(word)
+
+    @staticmethod
+    def copied(argv, top, shell="bash"):
+        """`(word, True)` when a name the line copied the tool to is run with a
+        verb, else None."""
+        verb = _first_operand(argv[1:])
+        if verb is not None and verb.lower() in _GATE_VERBS:
+            named = names_terraform(top, shell)
+            if named is not None:
+                return named, True
+        return None
+
+    @staticmethod
+    def opaque(args, top, launched=None):
+        """The word naming the tool in a script crew cannot split, or None.
+        `launched` is PowerShell's launcher values (`Start-Process X`)."""
+        if launched is not None:
+            return next((w for w in launched if _arg_names_tool(w)), None)
+        return names_terraform(top if any(_HOLE in a for a in args)
+                               else " ".join(args), "bash")
+
+
+_TF_TOOL = _TerraformTool()
+
+
+def _find_exec_trigger(args, top, helpers, depth, line, tool=_TF_TOOL):
     """`find -exec CMD ... ;|+`: each command it runs, read as one."""
     for index, arg in enumerate(args):
         if arg not in _FIND_EXEC:
@@ -1643,19 +1705,20 @@ def _find_exec_trigger(args, top, helpers, depth, line):
             if word in (";", "+"):
                 break
             sub.append(word.replace("{}", _HOLE))  # a path found at run time
-        found = _argv_trigger(sub, top, helpers, depth, line)
+        found = _argv_trigger(sub, top, helpers, depth, line, tool)
         if found is not None:
             return found[0], True
     return None
 
 
-def _argv_trigger(argv, top, helpers, depth, line):
-    """`(word, unseen)` when this simple command runs terraform, or None.
-    `unseen` means the lexer is not known to read that command (an alias, a
-    wrapper it does not strip, a renamed binary): the line is then "could
-    not tell" even when every word on it is plain. `line` is the reading of
-    the whole line: `copies`, the names a command on it copies or links a
-    terraform binary to (`_copies_terraform`)."""
+def _argv_trigger(argv, top, helpers, depth, line, tool=_TF_TOOL):
+    """`(word, unseen)` when this simple command runs the gated tool, or
+    None. `unseen` means the lexer is not known to read that command (an
+    alias, a wrapper it does not strip, a renamed binary): the line is then
+    "could not tell" even when every word on it is plain. `line` is the
+    reading of the whole line: `copies`, the names a command on it copies or
+    links the tool to (`_copies_terraform`). `tool` is what is gated
+    (`_TerraformTool`, or T-0009's `_DispatchTool`)."""
     unwrap, shell_args, pwsh_payload, ps_normalise, head_name, _lex = \
         helpers
     fed = []
@@ -1665,16 +1728,15 @@ def _argv_trigger(argv, top, helpers, depth, line):
     first, args = argv[0], argv[1:]
     if _HOLE in first:
         # Could not tell which program runs: gated only when the line names
-        # one of the words a terraform line needs.
-        named = _verb_on_line(top)
-        return None if named is None else (named, True)
-    if _zsh_names_tool(first):
-        return first, True
-    if _names_tool(first):
-        return None if _tf_read_only(argv, fed) else (first, False)
+        # one of the words a line running the tool needs.
+        return tool.hole(argv, top)
+    direct = tool.direct(argv, fed, depth)
+    if direct is not False:
+        return direct
     if any(c in first for c in " \t\n"):
         # `watch "terraform destroy"`: the command word is itself a script.
-        return _bash_trigger(" ".join(argv), top, helpers, depth + 1, line)
+        return _bash_trigger(" ".join(argv), top, helpers, depth + 1, line,
+                             tool)
     head = head_name(first)
     if head == "busybox" and args and head_name(args[0]) in _GATE_SHELLS:
         head, args = head_name(args[0]), args[1:]
@@ -1682,83 +1744,80 @@ def _argv_trigger(argv, top, helpers, depth, line):
         has_c, positional = shell_args(args)
         if has_c and positional and _HOLE not in positional[0]:
             return _bash_trigger(positional[0], top, helpers, depth + 1,
-                                 line)
+                                 line, tool)
         if not has_c and positional and _HOLE not in positional[0] \
-                and not _names_tool(positional[0]):
+                and not tool.names(positional[0]):
             # `bash build.sh`: a script file, which crew does not read
             # (WHAT IT CANNOT SEE) -- not stdin, which the line may feed.
             return None
-        named = names_terraform(top, "bash")
+        named = tool.on_line(top, "bash")
         return None if named is None else (named, True)
     if head in _GATE_PWSH:
         payload = pwsh_payload(args)
         if payload is None or _HOLE in payload:
-            named = names_terraform(top, "bash")
+            named = tool.on_line(top, "bash")
             return None if named is None else (named, True)
-        return ps_trigger(ps_normalise(payload)[0], helpers, depth + 1)
+        return ps_trigger(ps_normalise(payload)[0], helpers, depth + 1, tool)
     if head == "eval":
         # An expansion in the script is `_HOLE`, a control character, so the
         # reader gives up on it and the line-wide name decides.
         args = args[1:] if args[:1] == ["--"] else args  # `eval -- ...`
-        return _bash_trigger(" ".join(args), top, helpers, depth + 1, line)
+        return _bash_trigger(" ".join(args), top, helpers, depth + 1, line,
+                             tool)
     if head == "find" and any(a in _FIND_EXEC for a in args):
         # What find runs is read as commands of their own; find runs
         # nothing else.
-        return _find_exec_trigger(args, top, helpers, depth, line)
+        return _find_exec_trigger(args, top, helpers, depth, line, tool)
     if head in _GATE_OPAQUE:
         # A script crew cannot split: its own words decide, or the whole
         # line's when a word is made at run time (`source <(...)`).
-        own = names_terraform(top if any(_HOLE in a for a in args)
-                              else " ".join(args), "bash")
+        own = tool.opaque(args, top)
         return None if own is None else (own, True)
-    verb = _first_operand(args)
-    if head in line["copies"] and verb is not None \
-            and verb.lower() in _GATE_VERBS:
+    if head in line["copies"]:
         # `ln -sf /usr/bin/terraform tf && ./tf destroy`: the name the line
-        # copied or linked terraform to, run with a verb. A line that only
+        # copied or linked the tool to, run with a verb. A line that only
         # mentions terraform (`cp -r terraform bk && git apply x.patch`,
         # `terraform fmt && kubectl apply -f k.yaml`) is not read this way,
         # and neither is a program crew does not know as a wrapper
         # (`strace`, `aws-vault exec`): Step 10, direct use only; README
         # "What the guard does not catch".
-        named = names_terraform(top, "bash")
-        if named is not None:
-            return named, True
+        return tool.copied(argv, top)
     return None
 
 
-def _copies_terraform(cmds, head_name, copiers=_GATE_COPIERS):
-    """The names `cmds` copy or link terraform to: the last operand's
-    basename, for a copier whose other operands name terraform
+def _copies_terraform(cmds, head_name, copiers=_GATE_COPIERS,
+                      source=_TF_TOOL.copy_source):
+    """The names `cmds` copy or link the gated tool to: the last operand's
+    basename, for a copier whose other operands name it (`source`)
     (`cp /usr/bin/terraform ./ls` -> `ls`)."""
     out = set()
     for argv in cmds:
         ops = [a for a in argv[1:] if not a.startswith("-")]
         if argv and head_name(argv[0]) in copiers and len(ops) > 1 \
-                and any(_HOLE not in a and _arg_names_tool(a)
-                        for a in ops[:-1]):
+                and any(source(a) for a in ops[:-1]):
             out.add(head_name(ops[-1].rstrip("/\\")))
     return out
 
 
-def _bash_trigger(text, top, helpers, depth, line=None):
-    """`(word, unseen)` for the first command in `text` that runs
-    terraform, with `unseen` true when ANY such command is unseen. `line`
-    is shared with every nested script, so a copy of terraform made inside
-    `bash -c` still counts for the commands after it."""
+def _bash_trigger(text, top, helpers, depth, line=None, tool=_TF_TOOL):
+    """`(word, unseen)` for the first command in `text` that runs the gated
+    tool, with `unseen` true when ANY such command is unseen. `line` is
+    shared with every nested script, so a copy made inside `bash -c` still
+    counts for the commands after it."""
     try:
         if _GATE_CONTROL_RE.search(text):
             raise _Unsure("a control character")
         cmds = []
         _GateReader(text, depth, cmds).read()
     except _Unsure:
-        named = names_terraform(text, "bash") or names_terraform(top, "bash")
+        named = tool.on_line(text, "bash") or tool.on_line(top, "bash")
         return None if named is None else (named, True)
     line = {"copies": set()} if line is None else line
-    line["copies"] |= _copies_terraform(cmds, helpers[4])
+    line["copies"] |= _copies_terraform(cmds, helpers[4], _GATE_COPIERS,
+                                        tool.copy_source)
     found, unseen = None, False
     for argv in cmds:
-        hit = _argv_trigger(argv, top, helpers, depth, line)
+        hit = _argv_trigger(argv, top, helpers, depth, line, tool)
         if hit is not None:
             found = found or hit[0]
             unseen = unseen or hit[1]
@@ -1790,10 +1849,10 @@ def _ps_verb_on_line(normal):
                  if c.lower() in _GATE_VERBS), None)
 
 
-def _ps_argv_trigger(words, normal, helpers, depth, copies):
+def _ps_argv_trigger(words, normal, helpers, depth, copies, tool=_TF_TOOL):
     """`(word, unseen)` when one PowerShell simple command -- the lexer's
-    `words` -- runs terraform, or None: `_argv_trigger`'s rule, read the way
-    PowerShell runs a line."""
+    `words` -- runs the gated tool, or None: `_argv_trigger`'s rule, read the
+    way PowerShell runs a line."""
     _unwrap, shell_args, pwsh_payload, ps_normalise, head_name, _lex = \
         helpers
     argv = [str(w) for w in words]
@@ -1811,68 +1870,69 @@ def _ps_argv_trigger(words, normal, helpers, depth, copies):
     if not _PS_NAME_RE.match(first):
         # `& $tf destroy`, `& ("terra"+"form") destroy`: which program runs is
         # made at run time. Gated only on a line naming one of the words a
-        # terraform line needs, as in bash.
-        named = _ps_verb_on_line(normal)
-        return None if named is None else (named, True)
-    if _names_tool(first):
-        return None if _tf_read_only(argv, []) else (first, False)
+        # line running the tool needs, as in bash.
+        return tool.hole(argv, normal, "powershell")
+    direct = tool.direct(argv, [], depth)
+    if direct is not False:
+        return direct
     head = head_name(first)
     if head in _GATE_PWSH:
         payload = pwsh_payload(args)
         if payload is not None and "$" not in payload:
-            return ps_trigger(ps_normalise(payload)[0], helpers, depth + 1)
-        named = names_terraform(normal, "powershell")
+            return ps_trigger(ps_normalise(payload)[0], helpers, depth + 1,
+                              tool)
+        named = tool.on_line(normal, "powershell")
         return None if named is None else (named, True)
     if head in _GATE_SHELLS:
         has_c, positional = shell_args(args)
         if has_c and positional:
             return _bash_trigger(positional[0], positional[0], helpers,
-                                 depth + 1)
-        named = names_terraform(" ".join(args), "powershell")
+                                 depth + 1, None, tool)
+        named = tool.on_line(" ".join(args), "powershell")
         return None if named is None else (named, True)
     if head in _PS_EVAL:
         script = " ".join(a for a in args if not a.startswith("-"))
         if not script:
             # `"terraform destroy" | iex`: the text arrives on the pipeline,
             # which this reads no further than the line's own words.
-            named = names_terraform(normal, "powershell")
+            named = tool.on_line(normal, "powershell")
             return None if named is None else (named, True)
-        return ps_trigger(script, helpers, depth + 1)
+        return ps_trigger(script, helpers, depth + 1, tool)
     opaque = head in _GATE_OPAQUE  # `cmd /c`, `wsl`, `ssh`: bash's rule
     # A parameter's value may be bound with a colon: `-FilePath:terraform`.
     values = [w.split(":", 1)[1] if w.startswith("-") and ":" in w else w
               for w in args]
     if opaque or head in _PS_LAUNCHERS or any(
             w.lower().startswith(("alias:", "function:")) for w in args):
-        named = names_terraform(" ".join(args), "powershell") if opaque \
-            else next((w for w in values if _arg_names_tool(w)), None)
+        named = tool.on_line(" ".join(args), "powershell") if opaque \
+            else tool.opaque(args, normal, values)
         return None if named is None else (named, True)
-    verb = _first_operand(args)
-    if head in copies and verb is not None and verb.lower() in _GATE_VERBS:
+    if head in copies:
         # `Copy-Item terraform.exe ./tf; ./tf destroy`: the name the line
-        # copied terraform to, run with a verb.
-        named = names_terraform(normal, "powershell")
-        return None if named is None else (named, True)
+        # copied the tool to, run with a verb.
+        return tool.copied(argv, normal, "powershell")
     return None
 
 
-def ps_trigger(normal, helpers, depth=0):
+def ps_trigger(normal, helpers, depth=0, tool=_TF_TOOL):
     """`(word, unseen)` when normalised PowerShell `normal` RUNS terraform,
-    terragrunt or tofu, else None -- the command-word rule bash has
-    (`command_trigger`), with PowerShell's direct forms: `&` and `.`,
-    `terraform.exe` or a path, `Start-Process terraform`, `pwsh -c`, `bash
-    -c`, `Invoke-Expression`, `$(...)` and script blocks. A read-only
-    subcommand is not counted, and a word that only mentions terraform
-    (`git commit -m "fix terraform apply"`, `Select-String terraform *.md`)
-    is data. `helpers` as for `command_trigger`."""
+    terragrunt or tofu (or, with T-0009's `tool`, sends a workflow dispatch),
+    else None -- the command-word rule bash has (`command_trigger`), with
+    PowerShell's direct forms: `&` and `.`, `terraform.exe` or a path,
+    `Start-Process terraform`, `pwsh -c`, `bash -c`, `Invoke-Expression`,
+    `$(...)` and script blocks. A read-only subcommand is not counted, and a
+    word that only mentions terraform (`git commit -m "fix terraform
+    apply"`, `Select-String terraform *.md`) is data. `helpers` as for
+    `command_trigger`."""
     if depth > _GATE_DEPTH:
-        named = names_terraform(normal, "powershell")
+        named = tool.on_line(normal, "powershell")
         return None if named is None else (named, True)
     cmds, subs = helpers[5](normal)
     argvs = [[str(w) for w in c.words] for c in cmds]
-    copies = _copies_terraform(argvs, helpers[4], _PS_COPIERS)
-    hits = [ps_trigger(sub, helpers, depth + 1) for sub in subs]
-    hits += [_ps_argv_trigger(c.words, normal, helpers, depth, copies)
+    copies = _copies_terraform(argvs, helpers[4], _PS_COPIERS,
+                               tool.copy_source)
+    hits = [ps_trigger(sub, helpers, depth + 1, tool) for sub in subs]
+    hits += [_ps_argv_trigger(c.words, normal, helpers, depth, copies, tool)
              for c in cmds]
     hits = [h for h in hits if h is not None]
     if not hits:
@@ -1900,56 +1960,80 @@ def command_names_terraform(text, helpers):
 # --- workflow dispatches (T-0009) -------------------------------------------
 #
 # Two spellings of one act: `gh workflow run <wf>` and the REST call it makes,
-# `gh api -X POST repos/<o>/<r>/actions/workflows/<wf>/dispatches`. One flag
-# parser (`_gh_words`) reads both; each form then reads its own flags, and
-# both produce the SAME dispatch scope, and `dispatch_environment` is the one classifier either reaches.
-# It lives here rather than in `cloud_guard.py` for the reason the literal
-# allowlist does: that module sits at `.pylintrc`'s max-module-lines, so it
-# keeps only the call sites (`_classify`'s `gh` branch and `_judge_one`).
+# `gh api -X POST repos/<o>/<r>/actions/workflows/<wf>/dispatches`. It lives
+# here rather than in `cloud_guard.py` for the reason the literal allowlist
+# does: that module sits at `.pylintrc`'s max-module-lines, so it keeps only
+# the call sites (`_literal_gate`, `_classify`'s `gh` branch, `_judge_one`).
 #
-# Classified by the repo-only `environments.workflows` map (see
-# `ENVIRONMENTS_DEFAULTS`): the key the workflow matches (fnmatch,
-# case-insensitive, against the argument as written) says whether the
-# environment is the dispatch input `input:<name>` or a fixed name, and
-# `environments.nonProd` classifies that name as `cloud_guard` classifies a
-# terraform workspace. A workflow matching no key is NOT judged, as before.
-# What crew cannot tell -- no input, `-F name=@file`, `--input FILE`, a value
-# or workflow that is not a literal as WRITTEN (`reconcile_dispatch`: a
-# variable is never resolved), disagreeing values, stdin it cannot see or
-# that may have been rewritten (`command_stdin`), no workflow named,
-# xargs/parallel, a malformed `environments` block (every dispatch, listed or
-# not) -- is `unknown`. `deploy_verdict` then applies
-# T-0005's table with `guards.deployWorkflow` as the base policy, except that
-# `allow` covers nonProd only. Not seen: an unlisted spelling of a deploy
-# workflow (a display name or numeric id), the workflow YAML (`environment:`
-# keys, `${{ inputs.* }}`), `gh run rerun`, and a dispatch sent by `curl`.
+# THE DISPATCH GRAMMAR (successor plan, 2026-09-27). Review rounds 1 and 2
+# found nine ways past a parser that read what the lexer made of a line --
+# stdin rewritten by a filter, a `<` or `0>&3` replacing it, a variable, a
+# bracket glob, a script piped into bash -- each a shell construct the lexer
+# read differently from bash. T-0005 met the same pattern and answered with
+# the literal-word allowlist; this extends it to dispatches. A line the
+# trigger (`dispatch_trigger`: T-0005's command-word reader, parametrised by
+# `_DispatchTool`) finds sending a dispatch is judged only when
+# `dispatch_first_non_literal` accepts every word and operator on it:
+#
+#     words      `_PLAIN_WORD_RE` words, or a whole single-quoted word `'...'`
+#                with no `'` or control character inside (bash and PowerShell
+#                both pass it verbatim). PowerShell also refuses `,` and a
+#                leading `@`.
+#     operators  `;` `&&` `||` `&` and newline between commands; `>` `>>`
+#                `&>` `&>>` to a plain word; the exact token `2>&1`.
+#
+# Everything else -- `|` anywhere, every `<`-family operator, any other
+# `N>&M`, `>|`, `<(`/`>(`, double quotes, `$'`, a backslash, `$`, a
+# backquote, `*` `?` `[` `]` `{` `}` `~`, a tab or CR in a word, a control
+# character -- and a dispatch the lexer is not known to read (inside `bash
+# -c`/`eval`/`pwsh -c`, behind `xargs`/`parallel`/`find -exec`, an alias or a
+# copy of gh made on the line, a command word made at run time), and gh
+# reading its inputs from stdin or a file (`--json`, `--input`, `-F k=@f`),
+# is "could not tell": `ENV_UNKNOWN` with `op: line-not-literal`, asked about
+# and never allowed unattended. Stdin is never modelled. The grammar does not
+# resolve; it recognises or refuses.
+#
+# Once a line passes, the parser below reads it -- ONE flag parser
+# (`_gh_words`) for both forms -- and `dispatch_environment` classifies it by
+# the repo-only `environments.workflows` map (fnmatch, case-insensitive,
+# against the argument as written). A workflow matching no key is not
+# judged, as before. `dispatch_answer` is the one public road through all of
+# it (T-0045, T-0072): the gate first, then the parser. `deploy_verdict` then
+# applies T-0005's table with `guards.deployWorkflow` as the base policy,
+# except that `allow` covers nonProd only. Not seen: an unlisted spelling of a
+# deploy workflow (a display name or numeric id), the workflow YAML
+# (`environment:` keys, `${{ inputs.* }}`), `gh run rerun`, `gh alias`, a
+# `gh` copied or aliased by an earlier command, and a dispatch sent by `curl`.
 
 DEPLOY_RULE = "deployWorkflow"
 
 # The three environment classes. `cloud_guard` imports these, so the
 # terraform layer and the dispatch layer cannot name a class differently.
+# `unlisted` is the fourth answer `dispatch_answer` gives: nothing to judge.
 ENV_NONPROD, ENV_PROD, ENV_UNKNOWN = "nonProd", "prod", "unknown"
+ENV_UNLISTED = "unlisted"
+_STATE_RANK = {ENV_UNLISTED: 0, ENV_NONPROD: 1, ENV_PROD: 2, ENV_UNKNOWN: 3}
 
-# `cloud_guard._NON_LITERAL_RE`'s rule: anything a shell would still expand,
-# glob or split, so the word is not the value the command will see. (`~`
-# after the `=` of `-f environment=~x` is `_EXPANDS_RE`'s.)
+# `cloud_guard.OP_UNREADABLE_LINE`'s value: a could-not-tell finding's `op`.
+OP_LINE_NOT_LITERAL = "line-not-literal"
+
+_GH_NAMES = ("gh", "gh.exe")
+_DISPATCH_OPS = frozenset((";", "&&", "||", "&", "\n", ">", ">>", "&>", "&>>"))
+_DISPATCH_REDIRECTS = frozenset((">", ">>", "&>", "&>>"))
+_STDERR_TO_STDOUT = "2>&1"
+_SINGLE_QUOTED_RE = re.compile(r"^'[^'\x00-\x1f\x7f]*'$")
+_DISPATCH_WORD_ENDS = " \t\n;&|<>()"
+
+# A word the parser still refuses to read as a value, though the grammar
+# passed it: what a single quote kept verbatim (`'environment=$E'` sends the
+# five characters `$E`) is a name no environment glob was written for, and
+# a text `_classify` rebuilt from the lexer's words may carry what the lexer
+# left unexpanded. Unknown, never a guess.
 _DISPATCH_NON_LITERAL_RE = re.compile(r"[$`*?\[\]{}()<>|;&\s'\"\0]")
-# A workflow NAME is a whole word, so what survived the lexer's dequoting
-# with a blank or a quote in it was quoted, and gh receives it as written
-# (`gh workflow run 'Deploy Staging'`). Expansion and glob characters still
-# make it unknown: the lexer cannot say whether they were quoted.
+# A workflow NAME is a whole word, so a blank or a quote in it came from
+# quoting (`gh workflow run 'Deploy Staging'`). Expansion and glob characters
+# still make it unknown.
 _WORKFLOW_NON_LITERAL_RE = re.compile(r"[$`*?\[\]{}~\0]")
-# A word that may EXPAND into other words, whatever it is an argument of:
-# an unquoted `$Y` splits (`-f note=$Y`, Y='x -f environment=production'), a
-# glob may match a file named `-fenvironment=production`, `{a,b}` becomes two
-# words. The lexer cannot tell quoted from unquoted, so any such word makes
-# every input unknown. `{owner}` (gh's placeholder, no `,` or `..`) is not a
-# brace expansion, and `[` is left out: `inputs[name]=v` is the REST field.
-_EXPANDS_RE = re.compile(r"[$`*?\0]|\{[^{}]*(?:,|\.\.)[^{}]*\}|(?:^|[=:])~")
-# In a stdin body the same, plus a backslash: bash expands `$`/`` ` `` in an
-# unquoted heredoc (`"a": "$Y"` may add a second `environment` key) and
-# strips the backslash in `\\`, and `echo -e`/`printf` rewrite escapes.
-_BODY_EXPANDS_RE = re.compile(r"[$`\\]")
 
 # `gh` options that take a value, across both forms (`-R/--repo`, `-r/--ref`,
 # the fields, and `gh api`'s own). A value is never a positional word. Every
@@ -1960,9 +2044,12 @@ _GH_VALUE_OPTS = frozenset((
     "-X", "--method", "-H", "--header", "--input", "-q", "--jq", "-t",
     "--template", "-p", "--preview", "--hostname", "--cache"))
 # `-f`/`--raw-field` send the value as written; `-F`/`--field` read a value
-# starting with `@` from that file.
+# starting with `@` from that file (`@-`: stdin).
 _GH_FIELD_OPTS = {"-f": "raw", "--raw-field": "raw",
                   "-F": "typed", "--field": "typed"}
+# gh prints help and runs nothing for either, standing alone before `--`
+# (measured 2026-09-27, gh 2.46.0).
+_GH_HELP = frozenset(("-h", "--help"))
 
 # The REST dispatch endpoint, leading `/` or a full API URL allowed. The
 # owner and repo may be gh's own `{owner}`/`{repo}` placeholders.
@@ -1972,116 +2059,252 @@ _DISPATCH_RE = re.compile(
 # A REST field naming a workflow input: `inputs[<name>]=<value>`.
 _API_INPUT_RE = re.compile(r"^inputs\[([^\[\]]*)\]$")
 
-# A word crew could not see (`xargs` filled it in), marked so no literal test
-# can pass it.
-_UNSEEN = "\0"
-
 # What an input occurrence is called when crew cannot tell its name: it may
 # be any input, so it counts against every one.
 _ANY_INPUT = "*"
 
 
-class Rewritable(str):
-    """A command's stdin as `cloud_guard` reads it for the OTHER rules --
-    assuming every pipeline stage passes its input through, which is the
-    safe direction for a SQL or shell-script payload (it reads more) -- but
-    NOT known to be what the command receives: a filter may rewrite it, or a
-    `<` redirect replace it. A dispatch body read from one is `unknown`."""
+def _gh_name(word):
+    """True when `word` is gh as a command word: its last path part."""
+    return word.replace("\\", "/").rsplit("/", 1)[-1].lower() in _GH_NAMES
 
 
-def _exact_stdout(src, head_name):
-    """What pipeline stage `src` writes, when crew knows it exactly: `echo`
-    (only `-n` before its words) or `printf` of one literal with no `%`,
-    neither with a backslash (an escape `echo -e` or `printf` would turn
-    into something else), or a bare `cat` passing on an exact stdin. Every
-    other producer -- `sed`, `tr`, `jq`, `awk`, `perl`, `python`, `tee`, a
-    subshell or group, `cat FILE` -- None."""
-    words = list(src.words)
-    if not words:
+def _dispatch_mentions(text, shell, wild=True):
+    """`(gh, verb)` for the generous read of `text` (`_name_candidates`: quotes
+    and escapes out, an expansion as a wildcard): the first word that could
+    be gh -- a wildcard that could match it counts only when `wild` -- and
+    whether any word is `workflow` or names a `dispatches` endpoint."""
+    named, verb = None, False
+    for part in _name_candidates(text, shell):
+        words = _brace_expand(part) if "{" in part \
+            and shell != "powershell" else [part]
+        for word in words if words is not None else [part]:
+            base = word.replace("\\", "/").rsplit("/", 1)[-1].lower()
+            base = base[1:] if base.startswith("=") else base  # zsh's =gh
+            could = wild and any(c in base for c in "*?[") and any(
+                fnmatch.fnmatchcase(n, base) for n in _GH_NAMES)
+            if named is None and (base in _GH_NAMES or could):
+                named = part
+            verb = verb or base == "workflow" or "dispatches" in word.lower()
+    return named, verb
+
+
+def _dispatch_shape(argv, fed=()):
+    """True when `argv` -- gh, or a command word made at run time, and its
+    arguments -- could send a dispatch: positionals that could be `workflow
+    run ...` or `api <endpoint>` with the endpoint made at run time or
+    matching `_DISPATCH_RE`. `_HOLE` stands for any words, and so does a
+    word `xargs`/`parallel` (`fed`: `(via, placeholders)` pairs) fills in or
+    appends. Other gh commands are never dispatch-shaped."""
+    reps = [r for _via, reps in fed for r in reps]
+    args = [w + _HOLE if fed and ("{" in w or any(r in w for r in reps))
+            else w for w in argv[1:]]
+    if fed:
+        args.append(_HOLE)
+    positionals, options, _help = _gh_words(args)
+    if any(_HOLE in name for name, _value in options):
+        return True
+    if not positionals:
+        return False
+    first = positionals[0]
+    second = positionals[1] if len(positionals) > 1 else ""
+    if _HOLE in first:
+        return True
+    if first == "workflow":
+        return _HOLE in second or second == "run"
+    if first == "api":
+        return _HOLE in second or bool(_DISPATCH_RE.match(second))
+    return False
+
+
+class _DispatchTool:
+    """`_TerraformTool`'s questions, answered for a workflow dispatch. Every
+    dispatch the lexer is not known to read as bash runs it is `unseen`: a
+    nested script (`bash -c`, `eval`, `pwsh -c`), `xargs`/`parallel`, `find
+    -exec`, zsh's `=gh`, a name the line copied or aliased gh to. `fed` is
+    `cloud_guard.scan`'s `(via, placeholders)` for a command `xargs` or
+    `parallel` feeds, when the text is one the lexer already unwrapped."""
+
+    def __init__(self, fed=()):
+        self.fed = tuple(fed) if fed else ()
+
+    @staticmethod
+    def on_line(text, shell="bash"):
+        named, verb = _dispatch_mentions(text, shell)
+        return named if verb else None
+
+    @staticmethod
+    def names(word):
+        return _gh_name(word)
+
+    @staticmethod
+    def hole(_argv, top, shell="bash"):
+        named, verb = _dispatch_mentions(top, shell, wild=False)
+        if named is None and not verb:
+            return None
+        return named or "a command word made at run time", True
+
+    def direct(self, argv, fed, depth):
+        first = argv[0]
+        zsh = first.startswith("=") and _gh_name(first[1:])
+        if not zsh and not _gh_name(first):
+            return False
+        fed = list(fed) + ([self.fed] if self.fed else [])
+        if not _dispatch_shape(argv, fed):
+            return None
+        return first, bool(zsh or depth > 0 or fed)
+
+    @staticmethod
+    def copy_source(word):
+        return _HOLE in word or _gh_name(word.lstrip("="))
+
+    @staticmethod
+    def copied(argv, _top, _shell="bash"):
+        return (argv[0], True) if _dispatch_shape(argv) else None
+
+    @staticmethod
+    def opaque(args, top, launched=None):
+        shell = "bash" if launched is None else "powershell"
+        if launched is not None:
+            named = next((w for w in launched if _gh_name(w)), None)
+        else:
+            named, _verb = _dispatch_mentions(
+                top if any(_HOLE in a for a in args) else " ".join(args), shell)
+        return named if named and _dispatch_mentions(top, shell)[1] else None
+
+
+def dispatch_trigger(text, helpers, shell="bash", fed=()):
+    """`(word, unseen)` when `text` sends a workflow dispatch -- gh as a
+    command word with a dispatch's shape, read through `_unwrap`'s wrappers
+    and into `bash -c`/`eval`/`pwsh -c`/substitutions, or behind a command
+    word crew cannot read on a line naming gh, `workflow` or `dispatches` --
+    else None. On a reading `_GateReader` gives up on, the generous raw-text
+    read naming gh together with `workflow` or `dispatches` decides.
+    `helpers` as for `command_trigger`."""
+    tool = _DispatchTool(fed)
+    if shell == "powershell":
+        return ps_trigger(helpers[3](text)[0], helpers, 0, tool)
+    return _bash_trigger(text, text, helpers, 0, None, tool)
+
+
+def _dispatch_tokens(text):
+    """`text` as `(kind, token, start, end)`: `word` (quotes kept) or `op` (a
+    run of `;&|<>`, a paren, a newline). A single quote is read as bash reads
+    it only when the word turns out to be one whole quoted word, which is all
+    the grammar accepts."""
+    tokens, pos = [], 0
+    while pos < len(text):
+        char = text[pos]
+        if char in " \t":
+            pos += 1
+            continue
+        end = pos + 1
+        if char in ";&|<>":
+            while end < len(text) and text[end] in ";&|<>":
+                end += 1
+            kind = "op"
+        elif char in "()\n":
+            kind = "op"
+        else:
+            end, quoted = pos, False
+            while end < len(text) and (quoted or text[end] not in
+                                       _DISPATCH_WORD_ENDS):
+                quoted ^= text[end] == "'"
+                end += 1
+            kind = "word"
+        tokens.append((kind, text[pos:end], pos, end))
+        pos = end
+    return tokens
+
+
+def _dispatch_word_ok(word, shell):
+    if shell == "powershell" and (word.startswith("@") or "," in word):
+        return False  # a splat, or an array PowerShell passes as two words
+    return bool(_PLAIN_WORD_RE.match(word) or _SINGLE_QUOTED_RE.match(word))
+
+
+def _fd_redirect(tokens, index, text):
+    """The text of an fd-numbered redirection starting at `tokens[index]`
+    (`2>&1`, `0>&3`, `3<`, `2>log`) -- digits, then an operator and any
+    word written against them -- or None when that token is not one."""
+    kind, token, start, end = tokens[index]
+    after = tokens[index + 1:index + 3] + [("end", "", -1, -1)] * 2
+    oper, target = after[0], after[1]
+    if kind != "word" or not token.isdigit() or oper[0] != "op" \
+            or oper[2] != end or oper[1][0] not in "<>":
         return None
-    head, rest = head_name(words[0]), words[1:]
-    body = None
-    if head == "echo":
-        while rest[:1] == ["-n"]:
-            rest = rest[1:]
-        if not rest[:1] or not rest[0].startswith("-"):
-            body = " ".join(rest)
-    elif head == "printf" and len(rest) == 2 and rest[0] in ("%s", "%s\\n"):
-        body = rest[1]
-    elif head == "printf" and len(rest) == 1 and "%" not in rest[0]:
-        body = rest[0]
-    elif head == "cat" and not rest:
-        return src.stdin  # a `Rewritable` stays one: `sed ... | cat | gh`
-    return body  # an escape in it is `_json_inputs`' to refuse
+    return text[start:target[3] if target[2] == oper[3] else oper[3]]
 
 
-def command_stdin(cmd, stdout_literal, head_name):
-    """`cmd`'s stdin for `cloud_guard.scan`: its own here-string or heredoc,
-    else what the stage piped into it writes (`stdout_literal`, the lenient
-    reading). Marked `Rewritable` when that is not known to be exactly what
-    the command receives: a producer `_exact_stdout` cannot vouch for, or a
-    `<` redirect (file, process substitution, duplicated fd) or a here-doc on
-    another fd, any of which may replace it."""
-    stdin = cmd.stdin
-    if stdin is None and cmd.pipe_from is not None:
-        stdin = _exact_stdout(cmd.pipe_from, head_name)
-        if stdin is None:
-            stdin = stdout_literal(cmd.pipe_from)
-            stdin = None if stdin is None else Rewritable(stdin)
-    if stdin is not None and cmd.stdin_unsure:
-        stdin = Rewritable(stdin)
-    return stdin
+def _dispatch_grammar(text, shell):
+    """`(word, commands)`: the first token the dispatch grammar refuses, or
+    None and the line's simple commands -- each a list of words, quotes
+    removed, redirections dropped."""
+    tokens = _dispatch_tokens(text) + [("end", "", -1, -1)]
+    commands, words, index = [], [], 0
+    while tokens[index][0] != "end":
+        kind, token = tokens[index][:2]
+        redirect = _fd_redirect(tokens, index, text)
+        if redirect is not None:
+            # An fd number: `2>&1` exactly, and nothing else.
+            if redirect != _STDERR_TO_STDOUT:
+                return redirect, []
+            index += 3
+            continue
+        if kind == "word":
+            if not _dispatch_word_ok(token, shell):
+                return token, []
+            words.append(token[1:-1] if token.startswith("'") else token)
+        elif token in _DISPATCH_REDIRECTS:
+            target = tokens[index + 1]
+            if target[0] != "word" or not _PLAIN_WORD_RE.match(target[1]):
+                return token, []
+            index += 1  # its target, a plain word, is not an argument
+        elif token in _DISPATCH_OPS:
+            commands.append(words)
+            words = []
+        else:
+            return token, []
+        index += 1
+    commands.append(words)
+    return None, [c for c in commands if c]
 
 
-def reconcile_dispatch(found, raw_found):
-    """`found` with its dispatch findings replaced by the ones read from the
-    command's words BEFORE `cloud_guard` resolved `$NAME` from earlier
-    assignments (`raw_found`). A value crew resolved is not what bash will
-    pass: case-folded names, a `read`, a `source` or an `export` in between.
-    Read raw, `-f environment=$ENV` is not a literal, so it is `unknown`.
-    A dispatch only the resolved reading saw (`$GH workflow run ...`) is
-    kept, with its workflow and every input marked unseen."""
-    raw = [f for f in raw_found if f.rule == DEPLOY_RULE]
-    kept = [f for f in found if f.rule != DEPLOY_RULE]
-    if raw:
-        return kept + raw
-    for finding in found:
-        if finding.rule == DEPLOY_RULE:
-            scope = dict(finding.scope, inputs=[(
-                _ANY_INPUT, None, "a word of this command was built from a "
-                                  "variable, so crew cannot say what it holds")])
-            if scope.get("workflow") is not None:
-                scope["workflow"] = _UNSEEN + scope["workflow"]
-            elif scope.get("form") == "api":
-                scope["workflow"] = _UNSEEN
-            kept.append(finding._replace(scope=scope))
-    return kept
+def dispatch_first_non_literal(text, shell):
+    """The first word or operator of `text` the dispatch grammar does not
+    accept (THE DISPATCH GRAMMAR, above), or None when every one is."""
+    return _dispatch_grammar(text, shell)[0]
 
 
-def _dispatch_literal(value):
-    return isinstance(value, str) and bool(value) \
-        and not _DISPATCH_NON_LITERAL_RE.search(value)
-
-
-def _workflow_literal(value):
-    return isinstance(value, str) and bool(value.strip()) \
-        and not _WORKFLOW_NON_LITERAL_RE.search(value)
+def dispatch_text(argv):
+    """`argv` -- words the lexer produced -- as a line the grammar reads back
+    word for word: a plain word as it is, any other in single quotes, and one
+    single quotes cannot hold (a `'` or a control character) left bare, so
+    the grammar refuses it."""
+    return " ".join(
+        w if _PLAIN_WORD_RE.match(w) else
+        w if "'" in w or _GATE_CONTROL_RE.search(w) or "\n" in w else
+        f"'{w}'" for w in argv)
 
 
 def _gh_words(args):
-    """`(positionals, options)` for a `gh` command line -- THE parser for
-    both dispatch forms: options in order as `(name, value)`, value None for
-    a boolean flag. Split the way gh's flag parser (pflag) splits them:
+    """`(positionals, options, help)` for a `gh` command line -- THE parser
+    for both dispatch forms: options in order as `(name, value)`, value None
+    for a boolean flag. Split the way gh's flag parser (pflag) splits them:
     `--name=value`; a short cluster read one letter at a time, where the
     first letter that takes a value takes the rest of the cluster (`-iXPOST`,
-    `-iX=POST`) or, if nothing is left, the next word (`-iX POST`)."""
-    positionals, options, index = [], [], 0
+    `-iX=POST`) or, if nothing is left, the next word (`-iX POST`); `--` ends
+    the options. `help` is a standalone `-h`/`--help` before `--` that no
+    valued option took as its value: gh prints help and sends nothing."""
+    positionals, options, index, helped = [], [], 0, False
     while index < len(args):
         arg = args[index]
         if arg == "--":
             positionals.extend(args[index + 1:])
             break
-        if arg.startswith("--") and len(arg) > 2:
+        if arg in _GH_HELP:
+            helped = True
+        elif arg.startswith("--") and len(arg) > 2:
             name, sep, value = arg.partition("=")
             if not sep and name in _GH_VALUE_OPTS:
                 value = args[index + 1] if index + 1 < len(args) else None
@@ -2105,15 +2328,25 @@ def _gh_words(args):
         else:
             positionals.append(arg)
         index += 1
-    return positionals, options
+    return positionals, options, helped
 
 
-def _field_input(kind, raw, api):
+def _dispatch_literal(value):
+    return isinstance(value, str) and bool(value) \
+        and not _DISPATCH_NON_LITERAL_RE.search(value)
+
+
+def _workflow_literal(value):
+    return isinstance(value, str) and bool(value.strip()) \
+        and not _WORKFLOW_NON_LITERAL_RE.search(value)
+
+
+def _field_input(raw, api):
     """`(name, value, why)` for one `-f`/`-F` field that is a workflow input,
-    or None when it is not one. `value` None means crew cannot tell it: a
-    value read from a file, or one that is not a literal. `gh workflow run`
-    sends every field as an input; the REST body carries them as
-    `inputs[<name>]`, and its top-level `ref` is the branch, never an input."""
+    or None when it is not one. `value` None means crew cannot tell it.
+    `gh workflow run` sends every field as an input; the REST body carries
+    them as `inputs[<name>]`, and its top-level `ref` is the branch, never an
+    input."""
     if raw is None:
         return None
     key, sep, value = raw.partition("=")
@@ -2129,52 +2362,22 @@ def _field_input(kind, raw, api):
         key = match.group(1)
     if not _dispatch_literal(key):
         return (_ANY_INPUT, None, f"the field `{raw}` names no literal input")
-    if kind == "typed" and value.startswith("@"):
-        return (key, None, f"`{raw}` reads its value from a file crew does "
-                           "not open")
     if not _dispatch_literal(value):
         return (key, None, f"`{raw}` is not a literal value")
     return (key, value, "")
 
 
-def _no_duplicate_keys(pairs):
-    keys = [k for k, _v in pairs]
-    if len(keys) != len(set(keys)):
-        raise ValueError("a key is given twice")
-    return dict(pairs)
-
-
-def _json_inputs(text, api, source):
-    """The input occurrences in a literal JSON body: `gh workflow run
-    --json`'s body IS the inputs object, the REST body carries them under
-    `inputs`. A body crew cannot see or read counts against every input."""
-    if text is None:
-        return [(_ANY_INPUT, None, f"{source} reads a body crew cannot see")]
-    if isinstance(text, Rewritable):
-        return [(_ANY_INPUT, None, f"{source} reads a body something between "
-                                   "the literal and gh may rewrite, or a "
-                                   "redirect replaces")]
-    if _BODY_EXPANDS_RE.search(text):
-        return [(_ANY_INPUT, None, f"{source} carries a `$`, backquote or "
-                                   "backslash the shell may expand")]
-    try:
-        body = json.loads(text, object_pairs_hook=_no_duplicate_keys)
-    except ValueError:
-        return [(_ANY_INPUT, None, f"{source} is not one literal JSON object "
-                                   "with each key once")]
-    if api and isinstance(body, dict):
-        body = body.get("inputs", {})
-    if not isinstance(body, dict):
-        return [(_ANY_INPUT, None, f"{source} carries no inputs object")]
-    out = []
-    for name, value in body.items():
-        if isinstance(value, str) and _dispatch_literal(value) \
-                and _dispatch_literal(name):
-            out.append((name, value, ""))
-        else:
-            out.append((name if _dispatch_literal(name) else _ANY_INPUT, None,
-                        f"input `{name}` in {source} is not a literal string"))
-    return out
+def _dispatch_reads(options):
+    """The first option by which gh reads its inputs from stdin or a file --
+    `--json`, `--input <any>`, a typed field `-F k=@...` -- or None. Crew
+    never reads either, so a dispatch carrying one is could-not-tell."""
+    for name, value in options:
+        if name in ("--json", "--input"):
+            return name if value is None else f"{name} {value}"
+        if _GH_FIELD_OPTS.get(name) == "typed" and \
+                (value or "").partition("=")[2].startswith("@"):
+            return f"{name} {value}"
+    return None
 
 
 def _dispatch_endpoint(endpoint):
@@ -2184,27 +2387,20 @@ def _dispatch_endpoint(endpoint):
     match = _DISPATCH_RE.match(endpoint)
     if match:
         return match.group(1)
-    if any(c in endpoint for c in ("$", "`", _UNSEEN)):
+    if any(c in endpoint for c in ("$", "`", _HOLE)):
         return None
     return False
 
 
-def _dispatch_from_run(rest, options, stdin):
-    """`gh workflow run [<wf>] [-f|-F k=v]... [--json]`."""
-    inputs = []
-    for name, value in options:
-        if name in _GH_FIELD_OPTS:
-            found = _field_input(_GH_FIELD_OPTS[name], value, api=False)
-            if found is not None:
-                inputs.append(found)
-        elif name == "--json" and (value or "true").lower() not in (
-                "false", "0", "f"):
-            inputs.extend(_json_inputs(stdin, False, "`--json` on stdin"))
+def _dispatch_from_run(rest, options):
+    """`gh workflow run [<wf>] [-f|-F k=v]...`."""
+    inputs = [f for f in (_field_input(v, api=False) for n, v in options
+                          if n in _GH_FIELD_OPTS) if f is not None]
     return {"form": "workflow run", "workflow": rest[0] if rest else None,
-            "inputs": inputs}
+            "extra": rest[1:], "inputs": inputs}
 
 
-def _dispatch_from_api(rest, options, stdin):
+def _dispatch_from_api(rest, options):
     """`gh api [-X POST] repos/<o>/<r>/actions/workflows/<wf>/dispatches`, or
     None when the call is not a dispatch: another endpoint, or a method that
     is not POST. With no `-X`/`--method`, gh sends POST when any field or an
@@ -2216,104 +2412,45 @@ def _dispatch_from_api(rest, options, stdin):
     if workflow is False:
         return None
     methods = [v for n, v in options if n in ("-X", "--method")]
-    fields = [(n, v) for n, v in options if n in _GH_FIELD_OPTS]
-    bodies = [v for n, v in options if n == "--input"]
+    fields = [v for n, v in options if n in _GH_FIELD_OPTS]
     if methods:
         method = methods[-1] or ""
         if _dispatch_literal(method) and method.upper() != "POST":
             return None
-    elif not fields and not bodies:
+    elif not fields and not any(n == "--input" for n, _v in options):
         return None
-    inputs = []
-    for name, value in fields:
-        found = _field_input(_GH_FIELD_OPTS[name], value, api=True)
-        if found is not None:
-            inputs.append(found)
-    for body in bodies:
-        if body == "-":
-            inputs.extend(_json_inputs(stdin, True, "`--input -` on stdin"))
-        else:
-            inputs.append((_ANY_INPUT, None, f"`--input {body}` reads the "
-                                             "body from a file crew does not "
-                                             "open"))
-    return {"form": "api", "workflow": workflow, "inputs": inputs}
-
-
-def _fed_dispatch(args, fed):
-    """The dispatch a `gh` command behind `xargs`/`parallel` may send, or
-    None when the words crew CAN see already make it some other `gh`
-    command. `fed` is `(via, placeholders)`: a word carrying a placeholder is
-    not seen, and neither is a subcommand that is not there at all (`echo
-    workflow run deploy.yml | xargs gh`). Its workflow and inputs are never
-    known, so the only answer it can get is unlisted or `unknown`."""
-    via, placeholders = fed
-
-    def carries(word):
-        return "{" in word or any(p in word for p in placeholders)
-
-    positionals, _options = _gh_words(
-        [_UNSEEN + w if carries(w) else w for w in args])
-    first = positionals[0] if positionals else None
-    second = positionals[1] if len(positionals) > 1 else None
-    if first is not None and _dispatch_literal(first) \
-            and first not in ("workflow", "api"):
-        return None
-    scope = {"form": "unseen", "workflow": None, "inputs": [], "via": via}
-    if first == "workflow":
-        if second is not None and _dispatch_literal(second) \
-                and second != "run":
-            return None
-        scope["form"] = "workflow run"
-        scope["workflow"] = positionals[2] if len(positionals) > 2 else None
-    elif first == "api":
-        scope["form"] = "api"
-        scope["workflow"] = _dispatch_endpoint(second) \
-            if second is not None else None
-        if scope["workflow"] is False:
-            return None
-    return scope
+    inputs = [f for f in (_field_input(v, api=True) for v in fields)
+              if f is not None]
+    return {"form": "api", "workflow": workflow, "extra": [],
+            "inputs": inputs}
 
 
 def dispatch_what(scope):
     """The finding's `what`: the command as crew read it."""
     workflow = scope.get("workflow")
-    named = workflow.replace(_UNSEEN, "") if workflow is not None \
-        else "(no workflow named)"
+    named = workflow if workflow is not None else "(no workflow named)"
     if scope.get("form") == "api":
-        what = f"gh api POST .../actions/workflows/{named}/dispatches"
-    elif scope.get("form") == "unseen":
-        what = "gh (its subcommand filled in from input)"
-    else:
-        what = f"gh workflow run {named}"
-    if scope.get("fed"):
-        what += (f" (via {scope['via']}, which appends arguments crew cannot "
-                 "see)")
-    return what
+        return f"gh api POST .../actions/workflows/{named}/dispatches"
+    return f"gh workflow run {named}"
 
 
-def dispatch_scopes(args, stdin, fed=False):
-    """The workflow dispatch a `gh` command line sends, as a list of zero or
+def dispatch_scopes(args):
+    """The workflow dispatch gh's arguments `args` send, as a list of zero or
     one scope in the shape both forms share: `{"op": "deploy", "form",
-    "workflow", "inputs": [(name, value-or-None, why)], "fed", "what"}`.
-    `fed` is False, or `cloud_guard.scan`'s `(via, placeholders)` for a
-    command `xargs`/`parallel` appends words to."""
-    if fed:
-        scope = _fed_dispatch(args, fed)
-    else:
-        positionals, options = _gh_words(args)
-        scope = None
-        if positionals[:2] == ["workflow", "run"]:
-            scope = _dispatch_from_run(positionals[2:], options, stdin)
-        elif positionals[:1] == ["api"]:
-            scope = _dispatch_from_api(positionals[1:], options, stdin)
-        spread = [w for w in args if _EXPANDS_RE.search(w)]
-        if scope is not None and spread:
-            scope["inputs"].append((_ANY_INPUT, None, f"`{spread[0]}` may "
-                                    "expand into more arguments"))
+    "workflow", "extra", "inputs": [(name, value-or-None, why)], "reads",
+    "what"}`. None for a help request (`--help`) and for a `gh api` call
+    that is not a dispatch. Read only after the grammar passed the line."""
+    positionals, options, helped = _gh_words(args)
+    scope = None
+    if helped:
+        return []
+    if positionals[:2] == ["workflow", "run"]:
+        scope = _dispatch_from_run(positionals[2:], options)
+    elif positionals[:1] == ["api"]:
+        scope = _dispatch_from_api(positionals[1:], options)
     if scope is None:
         return []
-    scope.update(op="deploy", fed=bool(fed), stdin=None if stdin is None else
-                 [str(stdin), isinstance(stdin, Rewritable)])
+    scope.update(op="deploy", reads=_dispatch_reads(options))
     scope["what"] = dispatch_what(scope)
     return [scope]
 
@@ -2347,67 +2484,186 @@ def _dispatch_source(source, inputs, globs):
 def dispatch_environment(scope, envs):
     """THE classifier for a workflow dispatch, whichever form it came in:
     `(class, value, why, key)`, or None when the dispatch is unclassified --
-    `environments.workflows` is empty, or names no key its literal workflow
-    matches (fnmatch, case-insensitive, against the argument as written).
+    `environments.workflows` is empty, or no workflow gh was given matches a
+    key (fnmatch, case-insensitive, against the argument as written).
 
-    Never None for what crew could not tell: an `environments` block it
-    cannot read (every dispatch, listed or not), no workflow named (gh
-    prompts), a workflow that is not a literal, and anything `xargs`/
-    `parallel` may append to are each `unknown` while any workflow is
-    listed. `envs` is `cloud_guard.environments_config`'s dict."""
-    if envs.get("problem"):
-        return ENV_UNKNOWN, None, ("the environments block cannot be read: "
-                                   f"{envs['problem']}"), None
+    Never None for what crew could not tell once a key may match: no
+    workflow named (gh prompts), a workflow that is not a literal, a second
+    workflow argument, and an input it cannot read are each `unknown`.
+    `envs` is `cloud_guard.environments_config`'s dict."""
     workflows = envs.get("workflows") or {}
     if not workflows:
         return None
-    workflow = scope.get("workflow")
-    keys = []
-    if workflow is not None and _workflow_literal(workflow):
-        keys = [key for key in workflows
-                if fnmatch.fnmatch(workflow.lower(), key.lower())]
-        if not keys:
-            return None
-    if scope.get("fed"):
-        return ENV_UNKNOWN, None, ("xargs/parallel appends arguments crew "
-                                   "cannot see, so the workflow and its "
-                                   "inputs are not known"), None
-    if workflow is None:
+    named = [w for w in [scope.get("workflow")] + list(scope.get("extra", ()))
+             if w is not None]
+    keys = {w: [k for k in workflows if fnmatch.fnmatch(w.lower(), k.lower())]
+            for w in named if _workflow_literal(w)}
+    if named and len(keys) == len(named) and not any(keys.values()):
+        return None
+    if not named:
         return ENV_UNKNOWN, None, ("no workflow is named, so gh would prompt "
                                    "for one"), None
-    if not keys:
-        return ENV_UNKNOWN, None, ("the workflow `"
-                                   + workflow.replace(_UNSEEN, "")
-                                   + "` is not a literal"), None
+    odd = next((w for w in named if w not in keys), None)
+    if odd is not None:
+        return ENV_UNKNOWN, None, f"the workflow `{odd}` is not a literal", None
+    if len(named) > 1:
+        return ENV_UNKNOWN, None, ("gh takes one workflow, and this line names "
+                                   + ", ".join(f"`{w}`" for w in named)), None
+    workflow, matched = named[0], keys[named[0]]
     globs = envs.get("nonProd", [])
     results = {key: _dispatch_source(workflows[key], scope.get("inputs", []),
-                                     globs) for key in keys}
+                                     globs) for key in matched}
     if len({(k, v) for k, v, _w in results.values()}) > 1:
         return ENV_UNKNOWN, None, (f"`{workflow}` matches keys that name "
                                    "different environments: "
-                                   + ", ".join(sorted(keys))), None
-    klass, value, why = results[keys[0]]
-    return klass, value, why, keys[0]
+                                   + ", ".join(sorted(matched))), None
+    klass, value, why = results[matched[0]]
+    return klass, value, why, matched[0]
 
 
-def deploy_verdict(what, found, out, envs, live):
-    """`(decision, reason, policy, marker)` for a classified dispatch: T-0005's
-    table with `guards.deployWorkflow` as the base policy, except that `allow`
+def dispatch_engaged(envs):
+    """True while the dispatch gate runs: `environments.workflows` lists a
+    workflow, or the `environments` block cannot be read. A repo that never
+    listed one sees no new refusal."""
+    return bool(envs.get("workflows") or envs.get("problem"))
+
+
+def _gate_helpers():
+    """cloud_guard's reader helpers, for a caller that did not pass them.
+    Imported at call time, never at load: cloud_guard imports this module."""
+    import cloud_guard  # pylint: disable=import-outside-toplevel,cyclic-import
+    return cloud_guard.GATE_HELPERS
+
+
+def _not_literal(why, word, unseen):
+    """`dispatch_answer`'s could-not-tell answer."""
+    shown = word if word is None or len(word) <= 40 else word[:37] + "..."
+    return ENV_UNKNOWN, why, {"op": OP_LINE_NOT_LITERAL, "word": shown,
+                              "unseen": unseen,
+                              "what": "a workflow-dispatch line"}
+
+
+def dispatch_answer(text, shell, envs, fed=(), helpers=None):
+    """THE one public road to a dispatch's environment (T-0045, T-0072):
+    `(state, why, scope)` for the dispatches bash (or PowerShell, `shell`)
+    would send running `text`, `state` in `nonProd | prod | unknown |
+    unlisted`. Pure: `envs` is `cloud_guard.environments_config`'s dict.
+
+    The grammar runs before any parsing, so no caller reaches the parser
+    around it: a dispatch-shaped line with a word or operator the grammar
+    refuses, a dispatch the lexer is not known to read, gh reading stdin or
+    a file, or an `environments` block crew cannot read is `unknown` with
+    `scope["op"] == "line-not-literal"` -- could not tell. Only then are the
+    literal line's commands parsed and classified: `unlisted` when none is a
+    dispatch of a listed workflow, else the most severe dispatch's state and
+    scope, `scope["dispatches"]` holding every classified one. `fed` is
+    `cloud_guard.scan`'s `(via, placeholders)` for a text the lexer already
+    unwrapped from `xargs`/`parallel`."""
+    if not dispatch_engaged(envs):
+        return ENV_UNLISTED, "environments.workflows lists no workflow", None
+    helpers = helpers or _gate_helpers()
+    found = dispatch_trigger(text, helpers, shell, fed)
+    if found is None:
+        return ENV_UNLISTED, "the line sends no workflow dispatch", None
+    word = dispatch_first_non_literal(text, shell)
+    if word is not None:
+        return _not_literal(f"`{word}` is not a plain literal", word, False)
+    if found[1]:
+        return _not_literal((
+            f"it runs `{found[0]}` in a way crew does not follow -- a nested "
+            "shell or eval, xargs, parallel or find -exec, another name for "
+            "gh, or a command word made at run time"), None, True)
+    if envs.get("problem"):
+        return _not_literal("the environments block cannot be read: "
+                            f"{envs['problem']}", None, False)
+    shaped, scopes = 0, []
+    for argv in _dispatch_grammar(text, shell)[1]:
+        argv = helpers[0](argv, {}, [], {"cd": False})
+        if argv and _gh_name(argv[0]) and _dispatch_shape(argv):
+            shaped += 1
+            scopes += dispatch_scopes(argv[1:])
+    reads = next((s["reads"] for s in scopes if s["reads"]), None)
+    if reads is not None:
+        return _not_literal(f"gh reads `{reads}` from stdin or a file, which "
+                            "crew never reads", reads, False)
+    if not shaped:
+        # The reader found a dispatch the literal reading does not run as
+        # one (`. gh ...` in PowerShell): the two disagree, so neither is
+        # believed.
+        return _not_literal("crew's two readings of this line disagree about "
+                            "which command sends the dispatch", None, True)
+    answers = []
+    for scope in scopes:
+        klass = dispatch_environment(scope, envs)
+        if klass is not None:
+            answers.append((klass[0], klass[2], dict(
+                scope, value=klass[1], key=klass[3])))
+    if not answers:
+        return ENV_UNLISTED, "no dispatch on the line names a listed workflow", \
+            None
+    state, why, scope = max(answers, key=lambda a: _STATE_RANK[a[0]])
+    return state, why, dict(scope, dispatches=answers)
+
+
+def _dispatch_row(state, scope):
+    return (state, scope.get("key"), scope.get("value"), scope.get("workflow"))
+
+
+def dispatch_gate(text, shell, envs, lexed, helpers=None):
+    """`cloud_guard.scan`'s check of the RAW line, once, at the top: the
+    could-not-tell scope (`state` and `why` in it) that replaces every
+    dispatch finding the lexer made, or None when those stand. `lexed` is
+    their scopes. The line is could-not-tell when `dispatch_answer` says so
+    for the raw text, and when its literal reading names other dispatches
+    than the lexer's did -- a reading only one of the two made (`. gh` in
+    PowerShell, which the lexer does not unwrap) is not judged by the other
+    one's silence."""
+    state, why, scope = dispatch_answer(text, shell, envs, (), helpers)
+    if scope is not None and scope.get("op") == OP_LINE_NOT_LITERAL:
+        return dict(scope, state=state, why=why)
+    raw = sorted(_dispatch_row(st, s) for st, _w, s in
+                 (scope or {}).get("dispatches", ()))
+    if raw == sorted(_dispatch_row(s.get("state"), s) for s in lexed):
+        return None
+    _state, why, scope = _not_literal(
+        "crew's two readings of this line disagree about what it dispatches",
+        None, True)
+    return dict(scope, state=ENV_UNKNOWN, why=why)
+
+
+def dispatch_marker_key(text, scope):
+    """What a dispatch's approval marker is keyed on: the whole command text,
+    byte for byte -- never a subset of it, so a marker for one `<` path or
+    one stdin cannot cover another -- and, for a classified dispatch, the
+    workflow key and environment judged, so a config edit inside the TTL does
+    not carry an approval across."""
+    if scope.get("op") == OP_LINE_NOT_LITERAL:
+        return text
+    return text + "\n" + json.dumps(
+        {"workflow": scope.get("key"),
+         "environment": [scope.get("state"), scope.get("value")]},
+        sort_keys=True)
+
+
+def deploy_verdict(what, scope, out, envs, live):
+    """`(decision, reason, policy, marker)` for a dispatch: T-0005's table
+    with `guards.deployWorkflow` as the base policy, except that `allow`
     covers nonProd only (T-0009 amendment) -- a deploy never destroys, so
     T-0005's `allow` row would otherwise reach production and an unknown
     environment with nobody attending.
 
-        block        deny, whatever the environment
-        live marker  allow (the person approved this exact command)
-        nonProd      allow, logged (`ask` or `allow`)
-        production   allow only under `prodUnattended` in both layers (logged,
-                     and said on screen); otherwise ask
-        unknown      ask
+        block          deny, whatever the environment
+        live marker    allow (the person approved this exact command)
+        could not tell ask, naming the marker that approves this text
+        nonProd        allow, logged (`ask` or `allow`)
+        production     allow only under `prodUnattended` in both layers
+                       (logged, and said on screen); otherwise ask
+        unknown        ask
 
     `out` is `crew_config.guard_decision`'s dict, `live` the approval-marker
     test. `ask` becomes deny when nobody is attending (`cloud_guard.evaluate`).
     """
-    klass, value, why, _key = found
+    klass, value, why = scope["state"], scope.get("value"), scope.get("why")
     base = f"[{DEPLOY_RULE}] {what}"
     policy, marker = out["policy"], out["marker"]
     if policy == "block":
@@ -2415,6 +2671,18 @@ def deploy_verdict(what, found, out, envs, live):
     if live(marker):
         return "allow", f"{base}: approved for this command: {marker}", \
             policy, marker
+    if scope.get("op") == OP_LINE_NOT_LITERAL:
+        # The wording avoids the words other rows' reasons are checked for
+        # (unknown, production), so this finding can never stand in for the
+        # one a test expects the parser to make.
+        return "ask", (f"{base} -- crew judges a workflow dispatch only when "
+                       "every word on its line is a plain literal or a whole "
+                       f"single-quoted word, so it could not tell where this "
+                       f"line deploys: {why}. Such a line is asked about and "
+                       "never allowed unattended; approve this exact text "
+                       f"once with {marker}, or spell it with plain words "
+                       "and `-f` fields to have it judged"), \
+            "could-not-tell", marker
     head = f"{base}: guards.deployWorkflow is `{policy}`"
     if klass == ENV_NONPROD:
         return "allow", f"{head}; environment `{value}` is nonProd", \
@@ -2434,27 +2702,16 @@ def deploy_verdict(what, found, out, envs, live):
         "env:unknown", marker
 
 
-def dispatch_marker_key(text, scope, found):
-    """What a dispatch's approval marker is keyed on: the command's words AND
-    what was judged -- its stdin, the inputs read and the environment
-    classified. `text` alone is the argv, which is the same for two
-    `gh workflow run deploy.yml --json` lines fed different bodies, so an
-    approval of production-one would have run production-two."""
-    klass, value, _why, key = found
-    return text + "\n" + json.dumps(
-        {"stdin": scope.get("stdin"), "inputs": scope.get("inputs"),
-         "environment": [klass, value, key]}, sort_keys=True)
-
-
 def judge_dispatch(scope, what, decide, text, envs, live):
     """`cloud_guard._judge_one`'s `(decision, reason, policy, marker,
-    applies)` for a dispatch finding. Classified first: a dispatch of a
-    workflow nobody listed is not judged at all, exactly as before T-0009 --
-    no row, no decision. `decide` is `crew_config.guard_decision` for this
-    guard, handed `dispatch_marker_key`'s text."""
+    applies)` for a dispatch finding, whose scope carries `dispatch_answer`'s
+    `state` and `why`. An unlisted dispatch is not judged at all, exactly as
+    before T-0009 -- no row, no decision. `decide` is
+    `crew_config.guard_decision` for this guard, handed
+    `dispatch_marker_key`'s text; `text` is the whole command (`envs`'s
+    `command` when `evaluate` set it)."""
     scope = scope or {}
-    found = dispatch_environment(scope, envs)
-    if found is None:
+    if scope.get("state") not in (ENV_NONPROD, ENV_PROD, ENV_UNKNOWN):
         return "allow", "", "", "", False
-    out = decide(dispatch_marker_key(text, scope, found))
-    return deploy_verdict(what, found, out, envs, live) + (True,)
+    out = decide(dispatch_marker_key(envs.get("command") or text, scope))
+    return deploy_verdict(what, scope, out, envs, live) + (True,)
