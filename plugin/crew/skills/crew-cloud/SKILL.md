@@ -54,7 +54,10 @@ default: `guards.cloudDestructive` for `aws … delete-*/terminate-*/purge-*`,
 `guards.sqlDestructive` for `DROP`/`TRUNCATE` sent to `psql`, `mysql`, `sqlcmd`,
 `sqlite3` or `Invoke-Sqlcmd`; `guards.terraformApply` for `terraform`/`tofu`
 `apply`/`destroy`; `guards.forcePush` and `guards.adminMerge` for git and gh.
-`ask` prompts; `allow` lets it through and logs it.
+`ask` prompts; `allow` lets it through and logs it — except that since crew
+1.0.41 a terraform destroy (or an apply of a plan crew cannot read) asks even
+under `allow`, and `environments.*` lets non-production applies run unattended
+under `ask` (README "Cloud guard", CONFIG.md §16).
 
 Not destructive, so not refused: `aws … --dry-run` / `--dryrun`, `Remove-Az*
 -WhatIf`, and `terraform apply -help`. SQL is read in the client's own dialect —
@@ -136,6 +139,22 @@ A command named through a variable (`$TF apply`), a script file
 (`bash deploy.sh`, `psql -f x.sql`), SQL built at runtime, a splatted
 hashtable, Terraform's own provider credentials, and anything an MCP server
 does. It is a tripwire in front of scoped credentials, not a substitute.
+
+### What the guard does not catch
+
+The terraform rule is for an agent's accidental or direct command, not
+deliberate evasion. It catches `terraform`, `terragrunt` and `tofu` written
+directly — bare or path-qualified, behind `env`, `sudo`, `timeout`, `xargs`
+and the other listed wrappers, inside `bash -c` and `eval`, with options such
+as `-chdir=` or `--working-dir infra` before the subcommand, and PowerShell's
+`&`, `.`, `terraform.exe` and `Start-Process`. It does not try to catch a
+program renamed by alias, function, symlink or copy, `env -S` escapes, BusyBox
+applets, git `!` aliases, an interpreter (`python -c`, `node -e`), a script
+file, an unlisted wrapper (`strace`, `aws-vault exec`) or a container's
+entrypoint. No command-line guard can, because unattended work must run
+interpreters and scripts. The real boundary is the credentials an unattended
+run holds: scope them (T-0044). The full list is in the plugin README, "What
+the guard does not catch".
 
 ---
 

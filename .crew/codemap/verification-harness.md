@@ -37,21 +37,23 @@ including the slow version-drift walk `_verify/smoke.sh` skips), and
 them and is wired into CI but not into the local Stop gate: see
 "`scripts/check_instructions.py`" below.
 
-## `.crew/verify.json` — 27 rules, up from 26
+## `.crew/verify.json` — 28 rules, up from 27
 
-**DERIVED, read in full via `json.load` at this anchor.** 293 lines, **27**
-rules (26 at `a0c0847e`, 25 at `8ebbdedc` and at T-0006's `2bb92f32`, 24 at `c35edda5`, 23 at
-`f2bb919b`, 22 at `6c497a14`, 21 at `5d1fc5fd`) plus a `default` (`["bash _verify/smoke.sh"]`,
-`:291`) and `unmapped: "fail"` (`:292`). Rule 10 (T-0026, inserted mid-list, so every later rule's
-index is one higher than at `c35edda5`), rule 23 (#228), rule 24 (T-0008), rule 25 (T-0006) and
-rule 26 (T-0004; 25 and 26 each appended last, so no earlier index moved) are the only additions
-since `6c497a14`; see below. The rule set was restructured, not
+**DERIVED, read in full via `json.load` on the T-0005 landing merge.** 305 lines, **28**
+rules (27 at `07ca3972`, 26 at `a0c0847e`, 25 at `8ebbdedc`, at T-0006's `2bb92f32` and at T-0005's
+`a26ad8c0`, 24 at `c35edda5`, 23 at `f2bb919b`, 22 at `6c497a14`, 21 at `5d1fc5fd`) plus a `default`
+(`["bash _verify/smoke.sh"]`, `:303`) and `unmapped: "fail"` (`:304`). Rule 6 (T-0005, the
+cloud-guard suites) and rule 11 (T-0026, the approval digest) were each inserted mid-list, so every
+rule after them is one or two higher than at `c35edda5`; rule 24 (#228), rule 25 (T-0008), rule 26
+(T-0006) and rule 27 (T-0004) were each appended last. Those six are the only additions since
+`6c497a14`; see below. The rule set was restructured, not
 just grown: the broad `plugin/crew/hooks/**` / `plugin/crew/tests/**` shape
 this note previously described is gone, replaced by per-subsystem rules that
-name a handful of test files each — `crew_guards.py` (rule 5), `crew_config.py`
-(rule 6), the `crew_state.py` cluster (rule 7, eleven test modules), the
-whole-suite rule (rule 8), `crew_upgrade.py` (rule 9), `crew_ticket.py`'s approval digest
-(rule 10) and command/agent/skill frontmatter (rule 11) are each their own entry now, where the previous anchor
+name a handful of test files each — `crew_guards.py` (rule 5, and rule 6 since T-0005 Step 8),
+`cloud_guard.py` (rule 6, T-0005), `crew_config.py` (rule 7), the `crew_state.py` cluster (rule 8,
+eleven test modules), the whole-suite rule (rule 9), `crew_upgrade.py` (rule 10), `crew_ticket.py`'s
+approval digest (rule 11) and command/agent/skill frontmatter (rule 12) are each their own entry
+now, where the previous anchor
 folded several of these together. Every rule now carries a `"reach": "local"`
 field, unchanged in shape from the previous anchor.
 
@@ -83,7 +85,7 @@ Notable rules, re-read directly:
   it. This is the second confirmed deletion this pass found, though it
   predates `5d1fc5fd` and was never previously cited by this note, so it is
   new information here, not a correction.
-- **Rule 8**, the whole-suite rule (`plugin/crew/tests/conftest.py`,
+- **Rule 9**, the whole-suite rule (`plugin/crew/tests/conftest.py`,
   `crew_fixtures.py`, `context.py`, `sabotage.py` → `python3 -m pytest
   plugin/crew/tests/ -q`) — priced **377s**, re-measured 2026-09-24 ("crew 1.0
   F4") from an intermediate, unannotated 1928s figure the file's own `_note`
@@ -96,21 +98,29 @@ Notable rules, re-read directly:
   above `verify.stopBudgetSeconds` (default 60) is classified CHRONIC by
   `verify-gate.sh`'s own budget accounting and deferred every Stop turn until
   `/crew:verify --all` runs it. 377s is ~6x that budget on its own.
-- **Rule 10**, new at `8ebbdedc` (`.crew/verify.json:167-172`, T-0026): `paths`
+- **Rule 6**, new at `fc54def6` (`.crew/verify.json:117-127`, T-0005): `paths` `cloud_guard.py`,
+  `crew_guards.py` (since T-0005 Step 8), both `cloud-guard` flavours, `crew_tfplan.py`,
+  `test_cloud_guard*.py` and `test_crew_tfplan.py` → `python3 -m pytest` over
+  `test_cloud_guard.py`, `test_cloud_guard_environments.py` and `test_crew_tfplan.py`, priced 41s
+  (its `why` records 40.5s and 512 passed on 2026-09-25 — a claim read, not re-timed here). Its
+  mutations live in `plugin/crew/tests/sabotage_cloud.py` (`CLOUD_GUARD_MUTATIONS`), imported by
+  `plugin/crew/tests/sabotage.py:67`.
+- **Rule 11**, new at `8ebbdedc` (`.crew/verify.json:179-184`, T-0026; rule 10 until T-0005's rule 6
+  merged in above it): `paths`
   `plugin/crew/hooks/scripts/crew_ticket.py` and `plugin/crew/tests/test_approval_digest.py`
   → `python3 -m pytest plugin/crew/tests/test_approval_digest.py
   plugin/crew/tests/test_crew_ticket.py -q`, priced 20s. Its `why` says the scope guard and the
   completion audit act on nothing but `crew_ticket.py`'s approval answer, so a status-value
   normalisation one byte too wide lets a scope or risk change through unapproved, and names the
   `APPROVAL DIGEST` entries in `plugin/crew/tests/sabotage_scope.py` as the mutations proving
-  the tests can fail. Both paths also match rule 0 and rule 14 (`**/*.py`) by `fnmatch`.
+  the tests can fail. Both paths also match rule 0 and rule 15 (`**/*.py`) by `fnmatch`.
   Since T-0004, `crew_ticket.py` also carries `header_line`/`parse_risk` (`:496-515`, the spec
   header's `risk:`; unknown reads `high`, never `low`), which only
-  `plugin/crew/tests/test_crew_autopilot.py` exercises — a rule 26 test, while rule 26's `paths`
-  do not name `crew_ticket.py`. So an edit there runs rules 0, 10 and 14, none of which runs
-  that test; only rule 8's whole suite does, and that is deferred at Stop (DERIVED from the
+  `plugin/crew/tests/test_crew_autopilot.py` exercises — a rule 27 test, while rule 27's `paths`
+  do not name `crew_ticket.py`. So an edit there runs rules 0, 11 and 15, none of which runs
+  that test; only rule 9's whole suite does, and that is deferred at Stop (DERIVED from the
   `paths`/`run` lists and `grep -l parse_risk`, not observed in a gate run).
-- **Rule 12**, `plugin/crew/skills/crew-diagrams/**` → `bash
+- **Rule 13**, `plugin/crew/skills/crew-diagrams/**` → `bash
   plugin/crew/skills/crew-diagrams/scripts/_test/render.sh`, priced 8s. Its
   `why` records that this rule's exit-77 SKIP convention was **ported from PR
   #212** (origin/item8-ps1-parity): the suite used to exit 0 (a silent pass)
@@ -121,37 +131,37 @@ Notable rules, re-read directly:
   workflow runs this suite — CI runners typically carry no `mmdc` — so this
   Stop-gate rule is where it actually executes, on whichever machine happens
   to have the tool.
-- **Rules 13-14**, the `.ps1`/`.psm1` lint and the `ruff`/`pylint` pair, are
+- **Rules 14-15**, the `.ps1`/`.psm1` lint and the `ruff`/`pylint` pair, are
   unchanged in shape from the previous anchor: both wrap their command in an
   `sh -c` tool-presence probe exiting 77 rather than 1 when the interpreter or
-  module is absent, and rule 13 is the one rule carrying an `"agents"` key
+  module is absent, and rule 14 is the one rule carrying an `"agents"` key
   (`["powershell-security-hardening"]`).
-- **Rules 21-22**, the two `run: []` catch-alls (`.github/workflows/**`
+- **Rules 22-23**, the two `run: []` catch-alls (`.github/workflows/**`
   deliberately unchecked; `graphify-out/**`, `.crew/codemap/**`, `.crew/**`,
   `.serena/**` and others deliberately unchecked) are unchanged. Both declare
   `"reach": "local"` on the reading that an empty `run` cannot reach off this
   machine — `verify_record.scan_reach([])` already returns that.
-- **Rule 23**, new at `f2bb919b` (`.crew/verify.json:251`, #228): `paths`
+- **Rule 24**, new at `f2bb919b` (`.crew/verify.json:263`, #228; rule 23 until T-0005's rule 6 merged in): `paths`
   `.claude/rules/**` and `.crew/codemap/**` → `python3
   plugin/crew/hooks/scripts/crew_instructions.py rules --root . --check`, priced
   1s. Its `why` calls it a SYNC check between the two artifacts, not a
   correctness check on the codemap prose: it passes whenever the rules match
   the codemap, even a stale codemap. **`.crew/codemap/**` is now in two rules**
-  - rule 22's deliberately-unchecked `run: []` and rule 23 - and the gate runs
+  - rule 23's deliberately-unchecked `run: []` and rule 24 - and the gate runs
   every matched rule (`verify-gate.sh:920`, `rule_order`, "matched rule
-  indices"), so rule 22's "DELIBERATELY UNCHECKED" `why` no longer describes
+  indices"), so rule 23's "DELIBERATELY UNCHECKED" `why` no longer describes
   what happens to a codemap edit: any `.crew/codemap/` change without a
   regenerated `.claude/rules/` now fails the Stop gate.
-- **Rule 24**, new at `adf8d1dd` (`.crew/verify.json:252-268`, T-0008): `paths`
+- **Rule 25**, new at `adf8d1dd` (`.crew/verify.json:264-280`, T-0008; rule 24 until T-0005's rule 6 merged in): `paths`
   `plugin/crew/hooks/scripts/crew_refresh_check.py`, its three test files,
   `plugin/crew/tests/sabotage_refresh.py`, and `plugin/crew/commands/implement.md`
   / `done.md`, and since T-0008's review round 3 `scope_guard.py`,
   `completion_audit.py`, `crew_freshness.py` and `scope_base.py` with
   `test_scope_guard.py`, `test_completion_audit.py` and `test_scope_base.py`
   → `python3 -m pytest` over those six test files, priced 32s (its `why`,
-  `:268`, records 31.8s measured on the authoring host — a claim read, not
-  re-timed here). `crew_freshness.py` is on rule 7 too. At the default 60s
-  Stop budget rule 24 (32s) plus rule 14 (38s) no longer fit together, so a
+  `:280`, records 31.8s measured on the authoring host — a claim read, not
+  re-timed here). `crew_freshness.py` is on rule 8 too. At the default 60s
+  Stop budget rule 25 (32s) plus rule 15 (38s) no longer fit together, so a
   `.py` edit on these paths has one of them deferred at Stop (JUDGEMENT,
   from the two `seconds` values, not observed). A test,
   `test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule` in
@@ -163,11 +173,12 @@ Notable rules, re-read directly:
   imported by `plugin/crew/tests/sabotage.py:75` and appended to `MUTATIONS` at
   `:3048` (in the `MUTATIONS +=` statement at `:3047-3049`) — the same sibling-module pattern as the other `sabotage_*.py`
   lists, because `sabotage.py` sits at `.pylintrc`'s max-module-lines. Every
-  rule-24 path also matches rule 0 and either rule 14 (the `.py` files) or
-  rule 11 (the two commands), by `fnmatch`, the primitive `matches()` uses
-  (`verify-gate.sh:869-876`) — so an edit there runs more than rule 24.
-- **Rule 25**, new at `6d35ef8c` (`.crew/verify.json:270-280`, T-0006; rule 24 on its branch,
-  before T-0026's rule 10 moved every later index up by one): `paths`
+  rule-25 path also matches rule 0 and either rule 15 (the `.py` files) or
+  rule 12 (the two commands), by `fnmatch`, the primitive `matches()` uses
+  (`verify-gate.sh:869-876`) — so an edit there runs more than rule 25.
+- **Rule 26**, new at `6d35ef8c` (`.crew/verify.json:282-292`, T-0006; rule 24 on its branch,
+  25 once T-0026's rule 10 moved every later index up by one, 26 once T-0005's rule 6 did the
+  same): `paths`
   `crew_resume.py`, `crew_context.py`, both `handoff-write` flavours,
   `test_crew_resume.py`, `test_crew_resume_hook.py` and `sabotage_resume.py` →
   `python3 -m pytest` over the two resume test files plus `test_auto_cycle.py`, priced 89s (its
@@ -175,7 +186,8 @@ Notable rules, re-read directly:
   60s after round 2). Its
   mutations live in `plugin/crew/tests/sabotage_resume.py` (`RESUME_MUTATIONS`, 44), imported by
   `plugin/crew/tests/sabotage.py:76` and appended to `MUTATIONS` at `:3049`.
-- **Rule 26**, new at `07ca3972` (`.crew/verify.json:281-288`, T-0004): `paths`
+- **Rule 27**, new at `07ca3972` (`.crew/verify.json:293-300`, T-0004; rule 26 until T-0005's
+  rule 6 merged in): `paths`
   `crew_autopilot.py`, `commands/autopilot.md`, `test_crew_autopilot.py` and
   `sabotage_autopilot.py` → `python3 -m pytest plugin/crew/tests/test_crew_autopilot.py
   plugin/crew/tests/test_lifecycle_commands.py -q`, priced 5s (its `why` records 4.6s measured
@@ -184,9 +196,9 @@ Notable rules, re-read directly:
   `plugin/crew/tests/sabotage_autopilot.py` (`AUTOPILOT_MUTATIONS`, `:19`), imported by
   `plugin/crew/tests/sabotage.py:77` and appended at `:3049`. The rule's `why` states no
   mutation count (it said "six" until the refresh commit after `07ca3972`, while the tuple
-  held more); count them in the tuple. One of them targets `crew_ticket.py`'s `parse_risk`, a path rule 26
-  does not name (see rule 10). `crew_autopilot.py` also matches rules 0 and 14, `autopilot.md`
-  rules 0 and 11.
+  held more); count them in the tuple. One of them targets `crew_ticket.py`'s `parse_risk`, a path rule 27
+  does not name (see rule 11). `crew_autopilot.py` also matches rules 0 and 15, `autopilot.md`
+  rules 0 and 12.
 
 **Still unresolved at this anchor:** a declared `seconds` figure is only
 overwritten by measurement when the rule carries *no* `seconds` at all
@@ -247,10 +259,10 @@ that changed shape or are newly documented here:
   branch (`:1771`, reasoning `:1760-1770`), because `0..($totalRead - 1)` is
   the descending range `0,-1` in PowerShell, not an empty one
   (`plugin/crew/tests/test_verify_gate_rule_out_tail_read.py`). Neither new
-  test file is named in rule 4's `run`; only rule 8's whole suite runs them.
+  test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2029-2036` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2201-2208` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -412,26 +424,27 @@ set on Ubuntu.
 
 ## Entry points
 
-- `.crew/verify.json:152-157` (rule 8) — the whole-suite pytest rule and its
+- `.crew/verify.json:164-169` (rule 9) — the whole-suite pytest rule and its
   377s pricing.
-- `.crew/verify.json:167-172` (rule 10) — the T-0026 approval-digest suite.
-- `.crew/verify.json:181-185` (rule 12) — the crew-diagrams `render.sh`
+- `.crew/verify.json:117-127` (rule 6) — the T-0005 cloud-guard suites.
+- `.crew/verify.json:179-184` (rule 11) — the T-0026 approval-digest suite.
+- `.crew/verify.json:193-197` (rule 13) — the crew-diagrams `render.sh`
   exit-77 port.
 - `plugin/crew/hooks/scripts/verify-gate.sh:63-66` — the bounded single-read
   stdin gate.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1600-1705` /
   `verify-gate.ps1:1655-1789` — temp-file rule-output capture, 1 MiB tail cap,
   no-pipe fallback refusal.
-- `.crew/verify.json:251` (rule 23) — the `.claude/rules/` sync check.
-- `.crew/verify.json:270-280` (rule 25) — the T-0006 auto-resume suite;
-  `plugin/crew/tests/sabotage.py:76`, `:3049` — `sabotage_resume.py`'s registration.
-- `.crew/verify.json:281-288` (rule 26) — the T-0004 autopilot suite;
-  `plugin/crew/tests/sabotage.py:77`, `:3049` — `sabotage_autopilot.py`'s registration.
-- `.crew/verify.json:252-268` (rule 24) — the T-0008 refresh-check suite;
+- `.crew/verify.json:263` (rule 24) — the `.claude/rules/` sync check.
+- `.crew/verify.json:264-280` (rule 25) — the T-0008 refresh-check suite;
   `plugin/crew/tests/sabotage.py:75`, `:3048` — `sabotage_refresh.py`'s
   registration.
+- `.crew/verify.json:282-292` (rule 26) — the T-0006 auto-resume suite;
+  `plugin/crew/tests/sabotage.py:76`, `:3049` — `sabotage_resume.py`'s registration.
+- `.crew/verify.json:293-300` (rule 27) — the T-0004 autopilot suite;
+  `plugin/crew/tests/sabotage.py:77`, `:3049` — `sabotage_autopilot.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
-  `plugin/crew/CONFIG.md:2029-2036` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2201-2208` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -457,7 +470,7 @@ set on Ubuntu.
 
 ## Calls out to
 
-- `pwsh` — resolved by absolute path first (`.crew/verify.json`'s rule 13 `sh
+- `pwsh` — resolved by absolute path first (`.crew/verify.json`'s rule 14 `sh
   -c` probe list), never a bare `pwsh`, per CLAUDE.md's landmine about Git
   Bash's PATH.
 - `bash` on Windows — `Resolve-CrewBash` in `verify-gate.ps1`, refusing rather
@@ -684,3 +697,76 @@ workflows did not change, so their citations stand unread.
 - `marketplace.json`, `CHANGELOG.md`, `TODO.md`, `BUDGETS.md` - cited by name only.
 
 No suite or command was executed by this note; rule 26's suite and `sabotage.py` were not run.
+
+## Re-anchor provenance - `8d447a7d` -> `fc54def6`, 2026-09-25 (T-0005)
+
+`8d447a7d` is T-0008's pre-rebase round-3 commit, not an ancestor of HEAD (T-0008 landed by
+rebase-merge as `95120430`/`768a747a`). Of the paths this note cites, the ones T-0005 changed are
+`.crew/verify.json`, `plugin/crew/CONFIG.md`, `CHANGELOG.md`, `TODO.md` and the version files;
+`verify-gate.sh`/`.ps1`, `_verify/*`, `scripts/check-marketplace.py`,
+`scripts/check_instructions.py` and the CI workflows did not change, so their citations stand
+unread.
+
+- `.crew/verify.json` - one rule INSERTED at index 6 (`:117-126`, the three cloud-guard suites,
+  priced 41s), not appended, so every rule from the old 6 on is one higher and every line below
+  `:116` moved by 11: whole-suite rule 9 `:163-168`, diagrams rule 12 `:185-189`, `.claude/rules/`
+  rule 23 `:255`, refresh-check rule 24 `:256-272`, `default`/`unmapped` `:275`/`:276`. Corrected
+  above wherever the note states a current number; the provenance sections keep the numbers true
+  at their own anchors. `:3` and `:39-49` hold. Re-measured with `json.load` and `wc -l` (25 rules,
+  277 lines).
+- `plugin/crew/CONFIG.md` - the `environments.*` section added above the verify-gate chapter; the
+  descoping limitation moved `:1959-1966` -> `:2081-2088` (re-read, same text).
+- `CHANGELOG.md`, `TODO.md`, `.claude-plugin/marketplace.json` - cited by name or as rule paths only.
+
+No suite was executed by this note; T-0005's suite results are in its commits and review, not here.
+
+## Re-anchor provenance - `fc54def6` -> `2170d72e`, 2026-09-26 (T-0005 review round 2)
+
+`git diff --name-only fc54def6 2170d72e -- <the paths this note cites>` returns only what round 2
+changed: `plugin/crew/CONFIG.md`, three lines added at `:1368-1373` (the saved-plan paragraph), so the
+descoping limitation moved `:2081-2088` -> `:2084-2091` (re-read, same text; corrected above).
+`.crew/verify.json`, the gate scripts and `_verify/*` did not change.
+
+## Re-anchor provenance - `2170d72e` -> `3a57b2d2`, 2026-09-26 (T-0005 rounds 3-4 and Step 8)
+
+`git diff --name-only 2170d72e 3a57b2d2 -- <the paths this note cites>` returns `.crew/verify.json`
+(one path, `crew_guards.py`, added to rule 6's `paths` at `:118`, so the file is 278 lines and
+every later line moved +1: rule 9 `:164-169`, rule 12 `:186-190`, rule 23 `:256`, rule 24
+`:257-273`, `default` `:276`, `unmapped` `:277`; corrected above), `plugin/crew/CONFIG.md` (the
+allowlist paragraph and a table note, 20 lines above the verify-gate chapter, so the descoping
+limitation moved `:2084-2091` -> `:2104-2111`, re-read, same text), and under `plugin/crew/**`
+`cloud_guard.py`, `crew_guards.py`, `sabotage_cloud.py`, `test_cloud_guard.py`,
+`test_cloud_guard_environments.py` and `README.md`. None of the gate scripts, `_verify/*` or
+`scripts/check-marketplace.py` changed. Rule count still 25. No suite was executed by this note.
+
+## Re-anchor provenance - `3a57b2d2` -> `1e210476`, 2026-09-26 (T-0005 Step 9)
+
+`git diff --name-only 3a57b2d2 1e210476 -- <the paths this note cites>` returns
+`plugin/crew/CONFIG.md` (four lines added to the `environments.*` section, above the verify-gate
+chapter, so the descoping limitation moved `:2104-2111` -> `:2108-2115`, re-read, same text;
+corrected above) and under `plugin/crew/**` `cloud_guard.py`, `crew_guards.py`,
+`sabotage_cloud.py`, `test_cloud_guard.py`, `test_cloud_guard_environments.py`, `README.md`,
+`BUDGETS.md` and the version files. `.crew/verify.json`, the gate scripts, `_verify/*` and
+`scripts/check-marketplace.py` did not change; rule count still 25. No suite was executed by this
+note.
+
+## Re-anchor provenance - `1e210476` -> `aa7f9841`, 2026-09-26 (T-0005 review round 5)
+
+`git diff --name-only 1e210476 aa7f9841 -- <the paths this note cites>` returns
+`plugin/crew/CONFIG.md` (six lines added to the `environments.*` section, above the verify-gate
+chapter, so the descoping limitation moved `:2108-2115` -> `:2114-2121`, re-read with `diff`, same
+text; corrected above) and under `plugin/crew/**` `cloud_guard.py`, `crew_guards.py`,
+`sabotage_cloud.py`, `test_cloud_guard.py`, `test_cloud_guard_environments.py`, `README.md`,
+`BUDGETS.md` and the version files. `.crew/verify.json`, the gate scripts, `_verify/*` and
+`scripts/check-marketplace.py` did not change; rule count still 25. No suite was executed by this
+note.
+
+## Re-anchor provenance - `aa7f9841` -> `a26ad8c0`, 2026-09-26 (T-0005 Step 10)
+
+`git diff --name-only aa7f9841 a26ad8c0 -- <the paths this note cites>` returns
+`plugin/crew/CONFIG.md` (the `environments.*` section's allowlist paragraph rewritten and a "What
+the guard does not catch" paragraph added, 15 lines net, all above the verification chapter, so
+the descoping limitation moved `:2114-2121` -> `:2129-2136`, re-read with `diff`, same text;
+corrected above), the version files (stepped back and re-set, byte-identical to `aa7f9841`) and,
+under `plugin/crew/**`, the Step 10 code, tests, README, BUDGETS and the crew-cloud skill, none
+cited here at a line. `_verify/smoke.sh` and `scripts/check-marketplace.py` did not change.

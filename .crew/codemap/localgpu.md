@@ -510,9 +510,10 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")` quoted at `:33-34`.
   **Checked against the code, corrected after QA:**
-  `plugin/crew/hooks/scripts/crew_config.py:126-127` only re-exports
+  `plugin/crew/hooks/scripts/crew_config.py:127-128` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1429-1430` (re-numbered
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1432-1433` (`:1429-1430` on main before
+  T-0005's three import lines merged in, re-numbered
   from `:1503-1504` by crew 1.0 - see the re-anchor entries below; same two
   lines, `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")`, byte-identical).
@@ -1072,3 +1073,17 @@ holds. `crew_state.py` gained `AUTOPILOT_DEFAULTS` at `:1087`, so the provider t
 `:1421-1422` -> `:1429-1430` (re-read via `grep -n "^DEV_PROVIDERS\|^QA_PROVIDERS"`: the same
 two lines, byte-identical), corrected in place above. Nothing under `plugin/localgpu/` changed.
 Nothing was executed.
+
+**Re-anchored `f2bb919b` -> `fc54def6` on 2026-09-25 (T-0005).** `git diff --name-only f2bb919b
+fc54def6 -- <the files this note cites>` returns `.claude-plugin/marketplace.json` (crew's
+`version` only, now `1.0.41`; `:217`'s description and `localgpu`'s own entry, still `0.1.20`,
+unchanged), `CLAUDE.md` (cited without a line; its `open(p, "w")` landmine still names
+`plugin/localgpu/mcp/store.py`), `plugin/crew/hooks/scripts/crew_config.py` and
+`plugin/crew/hooks/scripts/crew_state.py`. `plugin/crew/` and `plugin/crew/agents/` are named only
+as locations (still 4 agent files).
+Both crew files were re-read at the two live citations: the `crew_config.py` re-export moved
+`:126-127` -> `:127-128` (one import line added above it) and the `crew_state.py` definition
+`:1411-1412` -> `:1414-1415` (three import lines); both still read as quoted and are corrected
+above. The citations in the QA-history sections record what was true at their own passes and are
+left as written. Nothing under `plugin/localgpu/` changed.
+

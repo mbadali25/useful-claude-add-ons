@@ -953,6 +953,8 @@ below govern something **only while `guards.cloudGuard` is `report` or
 | `guards.cloudDestructive` | `aws … delete-*/terminate-*/purge-*`, `s3 rm/rb`, `s3 sync --delete`, `az … delete/purge`, `Remove-Az*` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `guards.sqlDestructive` | `DROP`/`TRUNCATE` sent to `psql`, `mysql`, `mariadb`, `sqlcmd`, `sqlite3`, `Invoke-Sqlcmd` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `guards.cloudGuard` | whether the cloud guard judges commands at all: `off` (default) / `report` / `block` | `hooks/scripts/cloud_guard.py` |
+| `environments.nonProd` | **repo-only** globs naming the terraform workspaces/environments that may run unattended (default `[]`) | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
+| `environments.prodUnattended` | whether production may too — true only when **both** layers say `true` (default `false`) | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 
 - **`block`** refuses, exactly as the guard did before these keys existed.
 - **`ask`** refuses, prints the **exact** command, and names the one file that
@@ -1001,13 +1003,15 @@ A repo cannot turn off a machine-global `block`.
 When on, it reads each command into the simple commands it actually runs —
 through `&&`, `;`, `|`, `sudo`, `env X=Y`, `bash -c`, `pwsh -Command`, `$( )`,
 heredocs and PowerShell script blocks — and judges only those. A word inside an
-argument is never a finding: `git commit -m "terraform destroy"` and
-`psql -c "SELECT 'DROP TABLE x'"` both pass. That is the difference from the
-command guard removed in 0.19.52, which matched words anywhere.
+argument is never a finding of the rule it names: `psql -c "SELECT 'DROP TABLE
+x'"` passes. That is the difference from the command guard removed in 0.19.52,
+which matched words anywhere. A quoted terraform word is the one exception,
+below: it makes the line one crew could not tell.
 
 | It recognises | Decided by |
 |---|---|
 | `terraform`/`tofu` `apply`, `destroy` (`-auto-approve`, `-chdir=` included) | `guards.terraformApply` |
+| `terraform`/`tofu`/`terragrunt` `workspace delete` — a destroy, in every armed state; `workspace new`/`select -or-create` once `environments` is configured | `guards.terraformApply` |
 | `git push --force`, `-f`, `--force-with-lease`, `+ref` | `guards.forcePush` |
 | `gh pr merge --admin` | `guards.adminMerge` |
 | `aws … delete-*/terminate-*/purge-*`, `aws s3 rm/rb`, `az … delete/purge`, `Remove-Az*` | `guards.cloudDestructive` |
@@ -1024,6 +1028,84 @@ A command it could not read — nested more than six shells deep, or hook input
 that is not a readable Bash/PowerShell call — is refused as `[cloudGuard]`; a
 destructive-capable tool behind `xargs`/`parallel` is judged as destructive
 under its own rule. `--dry-run`, `-WhatIf` and `-help` are not destructive.
+
+**Environments and destroys (crew 1.0.41).** A terraform command is also
+judged by its target environment and by whether it destroys, both read without
+running terraform. Under `guards.terraformApply: ask`, an `apply` of a saved
+plan that deletes nothing, and `workspace new` / `select -or-create`, aimed at
+a workspace matching a repo-only `environments.nonProd` glob **runs
+unattended** and is logged as `env:nonProd:<name>`. Production does too only
+when `environments.prodUnattended` is `true` in **both** config layers, and it
+says so on screen. An environment crew cannot identify — no signal, a
+non-literal `TF_WORKSPACE=$WS`, signals that disagree, a `cd` in the command,
+no `.terraform/environment` (which is not read as `default`) — is **unknown**,
+and nothing allows unknown unattended. A saved plan is readable only through
+its sidecar, written outside the hook:
+
+```bash
+terraform plan -out p.tfplan
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tfplan.py" summarize p.tfplan
+TF_WORKSPACE=staging terraform apply p.tfplan
+```
+
+Three separate commands: a saved-plan apply is trusted only when it is the
+only command in its invocation, since anything beside it could rewrite the
+plan after the hook hashed it. The sidecar records the workspace the plan is
+bound to, read from the plan file, and any directory or environment change
+the hook cannot read makes the environment unknown.
+
+**Terraform lines are judged word by word, or not at all (crew 1.0.41).** A
+command line that RUNS `terraform`, `terragrunt` or `tofu` — its command word,
+after assignments and wrappers such as `env`, `sudo`, `timeout` or `xargs`,
+read with quotes and escapes taken out, so `"terraform"`, `t'erraform'`,
+`$'\x74erraform'` and `terr\aform` all count, or a command inside `bash -c`,
+`eval`, `pwsh -c`, `$(...)` or backquotes — is judged only
+when every word on it is a plain literal (`^[A-Za-z0-9_./:=@%+,-]+$`) joined by
+`;`, `&&`, `||`, `|`, `&` or a plain `>`/`>>`/`<` redirection. Anything else on
+such a line — a quote, `$`, a backquote, a backslash, a glob or brace, `<(`, a
+heredoc or here-string, a comment, a control character — makes it **could not
+tell**: asked about when someone is attending, **refused unattended** (and
+under `block`), never allowed, logged as `could-not-tell`. The check reads the
+raw text before the parser does, so no parser mistake can turn a shape it
+misread into an allow. Unusual quoting on a terraform line is asked about, not
+allowed; spell the line with plain words to have it judged. The rule is about
+the command being run: mentioning terraform in a commit message, a search or a
+file name (`git commit -m "fix terraform apply"`, `grep 'terraform apply' .`,
+`vim terraform.tf`) is not gated. A command word crew cannot read (`$x`,
+`$(...)`) is could not tell only on a line that names terraform, `destroy`,
+`apply` or `workspace`, so `x=terraform; $x destroy` is refused and `$EDITOR
+notes.md` is not. Where crew cannot split a line with certainty — a `case`
+arm, a function definition, a script piped into `bash`, `ssh`, `source` — it
+falls back to the older, wider rule: any word naming terraform.
+
+**A terraform command crew cannot follow is could not tell even in plain
+words.** An alias (`alias tf=terraform`, `hash -p`, PowerShell's `Set-Alias`
+and `alias:` drive), a binary the same line copies or links to another name
+and then runs by that name with `destroy`, `apply` or `workspace`, zsh's
+`=terraform`, a script runner crew does not split (`flock`, `ssh`, `source`)
+and PowerShell's `Start-Process terraform` are asked about and refused
+unattended: the parser would not see terraform in them. Run terraform by its
+own name to have it judged. Options before the subcommand are read the way
+terraform and terragrunt read them, so `terragrunt --working-dir infra
+destroy` is a destroy; an option crew does not know, followed by `apply` or
+`destroy`, is read as that operation. Two things are not gated for their
+quoting: a read-only subcommand (`plan`, `show`, `output`, `fmt`, `validate`,
+`init`, `workspace list`, ...) spelled where it cannot be another one, so
+`terraform plan -var 'environment=staging'` runs as before; and the arguments
+of any program that is not terraform (`cp -r terraform "$BACKUP_DIR"`, `rg
+terraform "$file"`). A PowerShell line follows the same command-word rule:
+`&`, `.`, `terraform.exe`, a path and `Start-Process terraform` run terraform,
+`git commit -m "fix terraform apply"` and `Select-String terraform *.md` do
+not.
+
+**The always-stops.** A destroy is never applied unattended, at any setting:
+`destroy`, `apply -destroy`, `apply -replace`, `workspace delete`, a saved plan
+that deletes, and any apply whose plan crew cannot read — including
+`terraform apply -auto-approve` with no saved plan. **BREAKING in 1.0.41:**
+under `terraformApply: allow` these now ask (and are denied unattended) where
+they used to run; approve one command with the marker the refusal names.
+`prodUnattended` does not stand down `promote-gate.sh`'s `requireHuman`.
+Details: [CONFIG.md §16](CONFIG.md), `environments.*`.
 
 **Identity.** The repo-only `cloud` block pins which AWS profiles/regions and
 Azure subscriptions this checkout may act as. A command resolving to anything
@@ -1050,8 +1132,52 @@ on any platform, never twice and never zero times.
 
 **What it cannot see:** a command named through a variable, a script file it
 runs, SQL built at runtime, Terraform's provider credentials, and MCP tool
-calls. Tests: `tests/test_cloud_guard.py` (every case through python, bash and
-pwsh) and the `cloud-guard.sh` section of `hooks/scripts/_test/run-tests.sh`.
+calls. For the terraform name specifically: a name built at run time from
+parts crew never sees whole (`$TF`, `$(printf te)$(printf rraform)`, a
+PowerShell string concatenation) and a wildcard that keeps fewer than three
+letters of it (`t*`) are not read as terraform. Tests: `tests/test_cloud_guard.py` (every case through python, bash and
+pwsh), `tests/test_cloud_guard_environments.py` and `tests/test_crew_tfplan.py`
+(the environment layer and the sidecar), and the `cloud-guard.sh` section of
+`hooks/scripts/_test/run-tests.sh`.
+
+#### What the guard does not catch
+
+The guard is a tripwire for an agent's accidental or direct destructive
+command, not a sandbox against deliberate evasion (owner decision,
+2026-09-26). It catches `terraform`, `terragrunt` and `tofu` written directly:
+bare or path-qualified, behind the listed wrappers (`env`, `sudo`, `doas`,
+`nice`, `ionice`, `timeout`, `stdbuf`, `nohup`, `command`, `exec`, `time`,
+`xargs`, `parallel`, `watch`, `flock`, `chroot`, `nsenter`, `wsl`, `pwsh -c`),
+inside `bash|sh|zsh -c` and `eval` strings, with global options before the
+subcommand (`-chdir=`, terragrunt's `--working-dir`), and PowerShell's `&`,
+`.`, `terraform.exe` and `Start-Process`. It does not try to catch a program
+renamed or started some other way. Each of these runs unjudged:
+
+- a rename by alias, function, symlink or copy, unless the same line makes a
+  plain copy or link and runs it by that name: `env ln -sf /usr/bin/terraform ./ls && PATH=.:/usr/bin ls destroy -auto-approve`,
+  `X=1 cp /usr/bin/terraform ./ls && PATH=.:/usr/bin ls destroy -auto-approve`,
+  `sudo ln -s /usr/bin/terraform /usr/local/bin/tf; tf destroy -auto-approve`
+- `env -S` escape strings: `env -S 'terraform\_destroy\_-auto-approve'`
+- BusyBox applets: `busybox env terraform destroy -auto-approve`,
+  `busybox timeout 60 terraform destroy -auto-approve`
+- git `!` aliases: `git -c alias.tf='!terraform' tf destroy -auto-approve`
+- an interpreter (`python -c`, `node -e`, ...): `python3 -c 'import os; os.system("terraform destroy")'`
+- a script file: `bash deploy.sh`
+- a wrapper not in the list above: `strace -f terraform destroy`,
+  `strace -f terraform $'\x64estroy' -auto-approve`, `strace =terraform destroy`,
+  `aws-vault exec p -- terraform destroy`,
+  `aws-vault exec prod -- terraform "destroy" -auto-approve`,
+  `unbuffer terraform destroy`, `systemd-run terraform destroy`
+- a program that runs another it is handed: `git bisect run terraform destroy`,
+  `git -C infra bisect run terraform destroy`,
+  `git -C add bisect run terraform destroy`, `rg --pre terraform destroy .`
+- a container's entrypoint: `docker run --rm hashicorp/terraform:1.9 destroy -auto-approve`
+
+No command-line guard can close these: unattended work has to run
+interpreters, scripts and build tools, and any of them can start terraform
+under another name, so a guard that refused them would refuse the work
+itself. The real boundary is the credentials an unattended run holds — scope
+them so the run cannot destroy what it must not. That is T-0044.
 
 ### §11c. `change` — change requests, added by schema 7
 

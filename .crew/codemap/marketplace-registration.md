@@ -360,3 +360,23 @@ changed. `INSTALLATION.md` did not, so its `:252` still states 34 commands again
 `scripts/check-marketplace.py`, `CLAUDE.md` and `skills/README.md` did not change.
 `python3 scripts/check-marketplace.py` at `07ca3972`: `marketplace: 34 skills, 5 plugins`,
 `all checks passed`.
+
+Re-verified per-path from `8d447a7d` to `fc54def6` for T-0005 (`8d447a7d` is T-0008's pre-rebase
+commit; T-0008 landed as `95120430`/`768a747a`): of the cited paths `.claude-plugin/marketplace.json`
+(`:218` version only; `:217`'s counts unchanged), `plugin/PLUGINS.md` (`:14` version only),
+`plugin/crew/.claude-plugin/plugin.json` (version only), `plugin/crew/BUDGETS.md` (`:11` figure,
+re-measured: 18,006 lines, 120 files), `.crew/verify.json` (a cloud-guard rule inserted at index 6,
+`:117-126`, below the doc rule at `:69-78`, which is unchanged), `CHANGELOG.md` and `TODO.md`
+changed, as did files under `plugin/crew/`, which this note cites as a directory for its counts:
+agents 4, commands 34, skills 29 and hook entries 34 re-counted from disk and unchanged. The other
+plugins' versions were re-read from `marketplace.json` and are unchanged.
+`python3 scripts/check-marketplace.py` at `fc54def6`: `marketplace: 34 skills, 5 plugins`,
+`all checks passed`.
+
+## Re-anchor provenance - `fc54def6` -> `3a57b2d2`, 2026-09-26 (T-0005 Step 8)
+
+`git diff --name-only fc54def6 3a57b2d2 -- <the paths this note cites>` returns `.crew/verify.json`
+(one path added to the cloud-guard rule at `:118`, below the doc rule, which stays at `:69-78`,
+re-read), `plugin/crew/BUDGETS.md` (the `:11` figure re-measured, now 18,050 lines, 120 files)
+and `CHANGELOG.md` (cited by name only). The version files are byte-identical to `fc54def6`'s
+crew entry.

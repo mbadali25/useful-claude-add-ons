@@ -477,3 +477,64 @@ script moved and every other install-script citation stands. That same change ma
 stale (Landmines). `scripts/check-marketplace.py`, `scripts/_test/self-claims.py`,
 `scripts/_test/drift-detection.sh` and `INSTALLATION.md` did not change. Neither install script was
 executed, and `check-marketplace.py` was not run at this pass.
+
+Re-verified per-path from `8d447a7d` to `fc54def6` for T-0005 (`8d447a7d` is T-0008's pre-rebase
+commit; T-0008 landed as `95120430`/`768a747a`): of the cited paths only
+`.claude-plugin/marketplace.json` (crew `version` `:218`, now 1.0.41; the `:217` description is
+unchanged), `plugin/PLUGINS.md` (`:14` version; `:17` Registers row unchanged),
+`plugin/crew/BUDGETS.md` (marker still `:10`; the `:11` figure re-measured, now 18,006 lines, 120
+files), `plugin/crew/README.md` (the cloud-guard environments section added above the command
+table; the `34 commands` claim moved `:2178` -> `:2217` and `4 agents` `:2189` -> `:2228`, both
+re-read and still true) and `TODO.md` changed. Both install scripts, `README.md` and
+`scripts/check-marketplace.py` did not change, so their citations stand.
+
+## Re-anchor provenance - `fc54def6` -> `2170d72e`, 2026-09-26 (T-0005 review round 2)
+
+`git diff --name-only fc54def6 2170d72e -- <the paths this note cites>` returns only what round 2
+changed: `plugin/crew/README.md` (one table row rewritten in place at `:971`, no line added or
+removed, so `:2217` and `:2228` hold; re-read) and `plugin/crew/BUDGETS.md` (the `:11`
+figure re-measured, now 18,009 lines, 120 files). The install scripts, `README.md` and
+`scripts/check-marketplace.py` did not change.
+
+## Re-anchor provenance - `2170d72e` -> `3a57b2d2`, 2026-09-26 (T-0005 rounds 3-4 and Step 8)
+
+`git diff --name-only 2170d72e 3a57b2d2 -- <the paths this note cites>` returns only
+`plugin/crew/README.md` (the cloud-guard section gained the allowlist paragraph, 21 lines above
+the command table, so the `34 commands` claim moved `:2217` -> `:2238` and `4 agents` `:2228` ->
+`:2249`; both re-read and still true) and `plugin/crew/BUDGETS.md` (marker still `:10`; the `:11`
+figure re-measured, now 18,050 lines, 120 files). The version files are byte-identical to
+`2170d72e` (crew 1.0.41 was stepped back and re-set). The install scripts, `README.md` and
+`scripts/check-marketplace.py` did not change.
+
+## Re-anchor provenance - `3a57b2d2` -> `1e210476`, 2026-09-26 (T-0005 Step 9)
+
+`git diff --name-only 3a57b2d2 1e210476 -- <the paths this note cites>` returns
+`plugin/crew/README.md` (the cloud-guard allowlist paragraph gained seven lines above the command
+table, so the `34 commands` claim moved `:2238` -> `:2245` and `4 agents` `:2249` -> `:2256`; both
+re-read and still true) and `plugin/crew/BUDGETS.md` (marker still `:10`; the `:11` figure
+re-measured, now 18,061 lines, 120 files, which `check-marketplace.py` verifies). The version files
+are byte-identical to `3a57b2d2` (crew stepped back to 1.0.37 and re-set to 1.0.41). The install
+scripts, `README.md` and `scripts/check-marketplace.py` did not change.
+
+## Re-anchor provenance - `1e210476` -> `aa7f9841`, 2026-09-26 (T-0005 review round 5)
+
+`git diff --name-only 1e210476 aa7f9841 -- <the paths this note cites>` returns
+`plugin/crew/README.md` (a round-5 paragraph of fifteen lines added to the cloud-guard section, so
+the `34 commands` claim moved `:2245` -> `:2260` and `4 agents` `:2256` -> `:2271`; both re-read
+and byte-identical to the old lines; `:12`, `:414` and `:736` are above the hunk and hold) and
+`plugin/crew/BUDGETS.md` (marker still `:10`; the `:11` figure re-measured, now 18,082 lines, 120
+files, which `check-marketplace.py` verifies). The version files are byte-identical to `1e210476`
+(crew stepped back to 1.0.37 and re-set to 1.0.41). The install scripts and
+`scripts/check-marketplace.py` did not change.
+
+## Re-anchor provenance - `aa7f9841` -> `a26ad8c0`, 2026-09-26 (T-0005 Step 10)
+
+`git diff --name-only aa7f9841 a26ad8c0 -- <the paths this note cites>` returns
+`plugin/crew/README.md` (the cloud-guard section's round-5 paragraph rewritten and a "What the
+guard does not catch" subsection added, 44 lines net above the command table, so the `34
+commands` claim moved `:2260` -> `:2304` and `4 agents` `:2271` -> `:2315`; both re-read and
+byte-identical to the old lines; `:12`, `:414` and `:736` are above the first hunk, at `:1038`,
+and hold) and `plugin/crew/BUDGETS.md` (marker still `:10`; the `:11` figure re-measured, now
+18,157 lines, 120 files, which `check-marketplace.py` verifies). The version files are
+byte-identical to `aa7f9841` (crew stepped back to 1.0.37 and re-set to 1.0.41). The install
+scripts and `scripts/check-marketplace.py` did not change.
