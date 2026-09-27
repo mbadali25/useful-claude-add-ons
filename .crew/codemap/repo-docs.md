@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@0593b32a
+anchor: useful-claude-add-ons@06e64472
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -652,3 +652,19 @@ sit above the four re-exports, which are at `:132`/`:136`/`:139`/`:142` as T-000
 says, re-read on the merge; main's `RESUME_DEFAULTS`/`AUTOPILOT_DEFAULTS` are below them) and `CHANGELOG.md`
 (T-0005's 1.0.42 entry sits above T-0004's 1.0.41; cited without a line). The two diagrams this
 note cites are refreshed in the same commit as this note. Nothing was executed.
+
+## Re-anchor provenance - `0593b32a` + `2b18f7ab` -> `06e64472`, 2026-09-27 (T-0043 merge of main)
+
+`06e64472` is T-0043's crew 1.0.43 re-set on top of `ae0eedff`, the merge of origin/main
+`502cb137` (T-0005 landed, this note's main-side anchor `2b18f7ab`) into T-0043 at `4af8153f`
+(round 1's neighbour fix: `_indent` and `_left_of_fence` inserted in `crew_autopilot.py`). Files
+changed on both sides since the merge base `1e0706ac`: `.claude-plugin/marketplace.json`,
+`plugin/crew/.claude-plugin/plugin.json`, `plugin/PLUGINS.md` (the version line only),
+`CHANGELOG.md` and `plugin/crew/README.md`. Every `path:N` and bare `:N` citation above this
+note's first provenance heading was checked by mapping the cited line from the parent whose note
+text carries it (`4af8153f`, `502cb137`, or both) to the merged tree (difflib line alignment),
+and each flagged one re-read with `sed -n`.
+
+None of this note's citations moved. `plugin/crew/README.md:1930` (the `docs/runbooks/INDEX.md`
+mention) is `:1930` in both main and the merged tree, re-grepped; T-0043's README edits sit below
+it. The autopilot files are cited by name only, as rule 27's paths. Nothing was executed.

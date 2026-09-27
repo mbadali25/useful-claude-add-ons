@@ -1,5 +1,5 @@
 
-anchor: useful-claude-add-ons@0593b32a
+anchor: useful-claude-add-ons@06e64472
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -51,7 +51,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.42, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.43, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -381,11 +381,11 @@ they disagree:
   `crew.json` alone [does nothing for autoClear behaviour, which
   `crew_config.py` still reads from `config.json`]". This is a real,
   present-tense inconsistency, not a hypothetical. T-0004's
-  `crew_autopilot.settings` (`plugin/crew/hooks/scripts/crew_autopilot.py:667`)
+  `crew_autopilot.settings` (`plugin/crew/hooks/scripts/crew_autopilot.py:688`)
   sides with `config.json` explicitly: it reads through
   `crew_config.resolve_config` and warns when `autopilot` is set in
   `crew.json` but not `config.json` ("crew does not read [it] for this key;
-  move it to .crew/config.json", `:687-691`). Flagging it is this
+  move it to .crew/config.json", `:708-712`). Flagging it is this
   note's job; **deciding which file should win, or whether `crew_config.py`
   should learn to read `crew.json` too, is a decision for scribe to record,
   not this note's to make.**
@@ -468,14 +468,14 @@ DERIVED at `07ca3972`. `plugin/crew/commands/autopilot.md` (120 lines,
 `allowed-tools: Read, Write, Edit, Bash, Agent, Skill`, `:4`) drives one
 ticket through the phase commands **in-session**, following each command's
 own procedure; its first step refuses unless armed (`:13-20`). The reader
-behind it, `plugin/crew/hooks/scripts/crew_autopilot.py` (769 lines), is
+behind it, `plugin/crew/hooks/scripts/crew_autopilot.py` (790 lines), is
 read-only (module docstring, `:1-13`) with four subcommands: `next`,
-`resume`, `settings`, `stops`. `next_phase` (`:526`) names the next phase
+`resume`, `settings`, `stops`. `next_phase` (`:547`) names the next phase
 from files on disk, first match wins (the table at `:15-37`); `resume_target`
-(`:597`) picks the ticket (the handoff's `resume:` line only when its branch
-and head match, per `plugin/crew/commands/autopilot.md:29-30`); `settings` (`:667`) arms only on
+(`:618`) picks the ticket (the handoff's `resume:` line only when its branch
+and head match, per `plugin/crew/commands/autopilot.md:29-30`); `settings` (`:688`) arms only on
 the exact string `plan`, falls back to `maxPhases` 12 for anything not a
-positive int, and warns on each. `stops` (`:696`) lists every stop from code:
+positive int, and warns on each. `stops` (`:717`) lists every stop from code:
 `crew_state.AUTONOMOUS_STOPS`, `FIXED_STOPS` (`:116`, nine), `PROCEDURE_STOPS`
 (`:133`, three) and `HUMAN_STOPS` (`:139`, four - brainstorm, plan approval,
 review acceptance, open questions). Defaults live in
@@ -493,13 +493,13 @@ names T-0010 as the consumer). Tests: `plugin/crew/tests/test_crew_autopilot.py`
 `plugin/crew/tests/sabotage_autopilot.py`; `.crew/verify.json` rule 27
 (`:293-300`), the last. Confirmed present, **not run** by this note.
 
-T-0043 (crew 1.0.42), DERIVED at `0593b32a`. The un-accepted FINDINGS stop
-in `_review_phase` (`crew_autopilot.py:466`) names
+T-0043 (crew 1.0.43), DERIVED at `06e64472`. The un-accepted FINDINGS stop
+in `_review_phase` (`crew_autopilot.py:487`) names
 `crew_refresh_check.py --root . --ticket <id>` and each refresh it names
-before `/crew:review <id>` (`:489-494`); `next` still stops there. The
+before `/crew:review <id>` (`:510-515`); `next` still stops there. The
 INCOMPLETE stop's condition is `verdict not in ("CLEAN", "FINDINGS")`
-(`:504`): a FINDINGS round reaching it is owner-accepted, so a stale receipt
-goes on to the refresh and review branches. `_open_items` (`:243`) treats
+(`:525`): a FINDINGS round reaching it is owner-accepted, so a stale receipt
+goes on to the refresh and review branches. `_open_items` (`:259`) treats
 backtick and tilde fences as literal text, by CommonMark's rules: a run of
 three or more of one marker opens one (`_FENCE`, `:211`) unless a backtick
 run has a backtick after it on the line, which is inline code
@@ -508,9 +508,14 @@ long and with nothing after it, closes it (`_fence_closes`, `:234`). A
 fenced block in an `Open questions` section with no item before it lists
 `UNEXPLAINED_FENCE` (`:212`) unless an unanswered item follows it in that
 section; a fence never closed that opened in the section, or swallowed an
-`Open questions` heading, lists `UNCLOSED_FENCE` (`:213`).
+`Open questions` heading, lists `UNCLOSED_FENCE` (`:213`). A non-blank
+line more than 3 columns left of a fence line indented 4+ is outside that
+fence (`_left_of_fence`, `:249`; `_indent`, `:243`, counts a tab as 4): such
+a line is indented code, or a fence inside a list item whose content starts
+at most 3 columns left of it.
 `plugin/crew/tests/sabotage_autopilot.py` holds one mutation per new branch
-(the blocks after `# ---- T-0043` and `# ---- T-0043 review round 1`).
+(the blocks after `# ---- T-0043` and `# ---- T-0043 review round 1`, the
+last three for `_left_of_fence`).
 
 ## verify-gate's temp-file rule capture
 
@@ -693,8 +698,8 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   `main()` is the `decide` / `record` / `precompact` CLI.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:576` — `ticket_freshness`,
   the library entry point; `main()` at `:676`.
-- `plugin/crew/hooks/scripts/crew_autopilot.py:526` — `next_phase`, read-only;
-  `main()` at `:714` is the `next` / `resume` / `settings` / `stops` CLI
+- `plugin/crew/hooks/scripts/crew_autopilot.py:547` — `next_phase`, read-only;
+  `main()` at `:735` is the `next` / `resume` / `settings` / `stops` CLI
   `plugin/crew/commands/autopilot.md` calls.
 - `plugin/crew/hooks/scripts/crew_endpoints.py:566` — `declare_endpoint`,
   the only writer of *declared* records. Not the only writer of
@@ -1248,3 +1253,31 @@ line in `CHANGELOG.md`'s T-0005 bump note).
 
 `crew_refresh_check.py --root . --ticket T-0005` named this note. No suite was executed for it; the
 landing's suite results are in its PR.
+
+## Re-anchor provenance - `0593b32a` + `2b18f7ab` -> `06e64472`, 2026-09-27 (T-0043 merge of main)
+
+`06e64472` is T-0043's crew 1.0.43 re-set on top of `ae0eedff`, the merge of origin/main
+`502cb137` (T-0005 landed, this note's main-side anchor `2b18f7ab`) into T-0043 at `4af8153f`
+(round 1's neighbour fix: `_indent` and `_left_of_fence` inserted in `crew_autopilot.py`). Files
+changed on both sides since the merge base `1e0706ac`: `.claude-plugin/marketplace.json`,
+`plugin/crew/.claude-plugin/plugin.json`, `plugin/PLUGINS.md` (the version line only),
+`CHANGELOG.md` and `plugin/crew/README.md`. Every `path:N` and bare `:N` citation above this
+note's first provenance heading was checked by mapping the cited line from the parent whose note
+text carries it (`4af8153f`, `502cb137`, or both) to the merged tree (difflib line alignment),
+and each flagged one re-read with `sed -n`.
+
+- `crew_autopilot.py` - 769 -> 790 lines at `4af8153f`; `_indent` (`:243`) and `_left_of_fence`
+  (`:249`) are new and `_open_items`' docstring and loop grew, so `_open_items` `:243` -> `:259`
+  and everything below +21: `_review_phase` `:466` -> `:487`, the FINDINGS reason `:489-494` ->
+  `:510-515`, the INCOMPLETE condition `:504` -> `:525`, `next_phase` `:526` -> `:547`,
+  `resume_target` `:597` -> `:618`, `settings` `:667` -> `:688`, the `crew.json` warning
+  `:687-691` -> `:708-712`, `stops` `:696` -> `:717`, `main()` `:714` -> `:735`. `_FENCE` `:211`,
+  `UNEXPLAINED_FENCE` `:212`, `UNCLOSED_FENCE` `:213`, `_fence_opener` `:221`, `_fence_closes`
+  `:234`, the stop tuples `:116`/`:133`/`:139` and the docstring `:1-37` hold. Corrected above; the
+  T-0043 paragraph gained the `_left_of_fence` sentence.
+- `.claude-plugin/marketplace.json:218` - 1.0.43 now (corrected above); `:217` holds.
+  `plugin/crew/.claude-plugin/plugin.json:3` agrees.
+- `plugin/crew/README.md`, `CHANGELOG.md` - no citation above moved (checked as described).
+
+The verify rule's pair (`test_crew_autopilot.py`, `test_lifecycle_commands.py`) ran at
+`06e64472`'s tree: 208 passed in 4.10s.

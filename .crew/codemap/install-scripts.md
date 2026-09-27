@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@2a79938d
+anchor: useful-claude-add-ons@06e64472
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -570,3 +570,18 @@ commands, 29 skills, matching disk), `plugin/crew/BUDGETS.md` (marker `:10`; 18,
 `35 commands` claim is at `:2381` and `4 agents` at `:2392`, re-grepped) and `TODO.md` changed.
 Neither install script changed on T-0005's side, `README.md` and `scripts/check-marketplace.py` did
 not change on either, so their citations stand. Neither install script was executed.
+
+## Re-anchor provenance - `2a79938d` + `2b18f7ab` -> `06e64472`, 2026-09-27 (T-0043 merge of main)
+
+`06e64472` is T-0043's crew 1.0.43 re-set on top of `ae0eedff`, the merge of origin/main
+`502cb137` (T-0005 landed, this note's main-side anchor `2b18f7ab`) into T-0043 at `4af8153f`
+(round 1's neighbour fix: `_indent` and `_left_of_fence` inserted in `crew_autopilot.py`). Files
+changed on both sides since the merge base `1e0706ac`: `.claude-plugin/marketplace.json`,
+`plugin/crew/.claude-plugin/plugin.json`, `plugin/PLUGINS.md` (the version line only),
+`CHANGELOG.md` and `plugin/crew/README.md`. Every `path:N` and bare `:N` citation above this
+note's first provenance heading was checked by mapping the cited line from the parent whose note
+text carries it (`4af8153f`, `502cb137`, or both) to the merged tree (difflib line alignment),
+and each flagged one re-read with `sed -n`.
+
+None of this note's citations moved. `plugin/crew/README.md` is cited by name only here, and
+neither install script changed on either side. Neither install script was executed.

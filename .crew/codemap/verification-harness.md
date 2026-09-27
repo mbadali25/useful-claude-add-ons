@@ -1,5 +1,5 @@
 
-anchor: useful-claude-add-ons@0593b32a
+anchor: useful-claude-add-ons@06e64472
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -202,8 +202,9 @@ Notable rules, re-read directly:
   rules 0 and 12. T-0043 appended its mutations after a `# ---- T-0043` comment in the same
   tuple and re-pointed "an INCOMPLETE round is rerun unattended" to the new condition; no new
   file, so no new rule. Review round 1 appended six more after `# ---- T-0043 review round 1`
-  and re-pointed "an unclosed fence in the section reads as closed". The pair ran in 4.71s
-  wall at `0593b32a`'s tree (205 tests), inside the 5s price.
+  and re-pointed "an unclosed fence in the section reads as closed"; its neighbour fix appended
+  three more at the end of the tuple. The pair ran in 4.10s (pytest's own figure) at
+  `06e64472`'s tree (208 tests), inside the 5s price.
 
 **Still unresolved at this anchor:** a declared `seconds` figure is only
 overwritten by measurement when the rule carries *no* `seconds` at all
@@ -838,3 +839,21 @@ line in `CHANGELOG.md`'s T-0005 bump note).
 - `CHANGELOG.md`, `TODO.md`, `BUDGETS.md` - cited by name only.
 
 No suite or command was executed by this note; the landing's suite results are in its PR.
+
+## Re-anchor provenance - `0593b32a` + `2b18f7ab` -> `06e64472`, 2026-09-27 (T-0043 merge of main)
+
+`06e64472` is T-0043's crew 1.0.43 re-set on top of `ae0eedff`, the merge of origin/main
+`502cb137` (T-0005 landed, this note's main-side anchor `2b18f7ab`) into T-0043 at `4af8153f`
+(round 1's neighbour fix: `_indent` and `_left_of_fence` inserted in `crew_autopilot.py`). Files
+changed on both sides since the merge base `1e0706ac`: `.claude-plugin/marketplace.json`,
+`plugin/crew/.claude-plugin/plugin.json`, `plugin/PLUGINS.md` (the version line only),
+`CHANGELOG.md` and `plugin/crew/README.md`. Every `path:N` and bare `:N` citation above this
+note's first provenance heading was checked by mapping the cited line from the parent whose note
+text carries it (`4af8153f`, `502cb137`, or both) to the merged tree (difflib line alignment),
+and each flagged one re-read with `sed -n`.
+
+- Rule numbers in the T-0043 sabotage sentence are main's (rule 27 for the autopilot pair, 28 rules
+  in all); T-0043's sentence was kept after them on the merge. `sabotage_autopilot.py`'s
+  `AUTOPILOT_MUTATIONS` is still `:19`, and `sabotage.py:77`/`:3049` hold, re-read.
+- The round-1 neighbour appended three more mutations at the end of the tuple (no new comment
+  header); corrected above. The pair's timing above is re-taken at `06e64472`.

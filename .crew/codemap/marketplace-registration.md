@@ -1,5 +1,5 @@
 
-anchor: useful-claude-add-ons@2a79938d
+anchor: useful-claude-add-ons@06e64472
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -48,9 +48,10 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.42** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
-and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `2b18f7ab`; it
-was 1.0.41 at `07ca3972` and on T-0005's branch, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
+`rule-of-two`. `crew` is now **1.0.43** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `06e64472`, T-0043's
+re-set after merging main; it was 1.0.42 at `2b18f7ab` (main, T-0005) and at `2a79938d` (T-0043 before the merge),
+1.0.41 at `07ca3972` and on T-0005's branch, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
 
@@ -263,6 +264,8 @@ against synthetic fixtures and never reads this repo's own docs.
   from the merged tree, not taken from either side), and the measurement returns 17973 over 120
   files, matching. Re-measured at `07ca3972` (T-0004): 18,176 across 121 files on `:11`, and
   `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` returns 18176 over 121 files, matching.
+  Re-measured at `06e64472` (T-0043 after merging main `502cb137`): 18,494 across 121 files on
+  `:11`, and the same measurement returns 18494, matching.
 - **`MARKETPLACE.md`** was not re-read for a community-plugin or marketplace
   count of its own; only `README.md:231`'s prose was checked and found to no
   longer state a specific number.
@@ -415,3 +418,23 @@ Of the paths this note cites, the version files, `plugin/PLUGINS.md`, `.crew/ver
 - `plugin/crew/BUDGETS.md` - marker still `:10`; the figure re-measured on the merge, 18,494 lines
   across 121 files, which `check-marketplace.py` verifies (`all checks passed`).
 - `CHANGELOG.md`, `TODO.md` - cited by name only.
+
+## Re-anchor provenance - `2a79938d` + `2b18f7ab` -> `06e64472`, 2026-09-27 (T-0043 merge of main)
+
+`06e64472` is T-0043's crew 1.0.43 re-set on top of `ae0eedff`, the merge of origin/main
+`502cb137` (T-0005 landed, this note's main-side anchor `2b18f7ab`) into T-0043 at `4af8153f`
+(round 1's neighbour fix: `_indent` and `_left_of_fence` inserted in `crew_autopilot.py`). Files
+changed on both sides since the merge base `1e0706ac`: `.claude-plugin/marketplace.json`,
+`plugin/crew/.claude-plugin/plugin.json`, `plugin/PLUGINS.md` (the version line only),
+`CHANGELOG.md` and `plugin/crew/README.md`. Every `path:N` and bare `:N` citation above this
+note's first provenance heading was checked by mapping the cited line from the parent whose note
+text carries it (`4af8153f`, `502cb137`, or both) to the merged tree (difflib line alignment),
+and each flagged one re-read with `sed -n`.
+
+- The crew version sentence now reads 1.0.43 at `06e64472` (`.claude-plugin/marketplace.json:218`,
+  `plugin/PLUGINS.md:14`'s `plugin-version:crew` claim, `plugin.json`), with 1.0.42 recorded at
+  `2b18f7ab` and `2a79938d`; corrected above.
+- `plugin/crew/BUDGETS.md:11` - 18,494 lines across 121 files, re-measured at `06e64472`
+  (`git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` returns 18494); appended above.
+- `INSTALLATION.md:252` - 35 slash commands with its `plugin-commands:crew` marker, re-read;
+  `check-marketplace.py` passes (`all checks passed`).
