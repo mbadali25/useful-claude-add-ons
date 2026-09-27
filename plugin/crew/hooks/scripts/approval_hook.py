@@ -157,11 +157,13 @@ def parse(prompt, root=None):
                 # No separate break check here: a break inside the args splits
                 # them into two tokens, so it can only reach _one_line_only as
                 # a group, a range or a refused --confirm -- never a single id.
-                request = _one_line_only(_slash(args[0], "expanded", root), args[0])
-                if request.kind in (GROUP, CONFIRM) and outside.strip():
+                # Nothing outside the tags, whatever the request -- a single id
+                # too (review round 3): an example wrapper around the command
+                # is text outside them, and must not approve.
+                if outside.strip():
                     return _refusal("expanded", "an approval must carry no other text: "
                                                 "type the command alone")
-                return request
+                return _one_line_only(_slash(args[0], "expanded", root), args[0])
     return _plain(prompt, root)
 
 

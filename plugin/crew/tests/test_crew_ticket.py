@@ -672,6 +672,39 @@ def test_precheck_a_row_with_no_status_is_could_not_tell(repo, row):
     assert any("could not tell" in p and "t-0050" in p for p in problems), problems
 
 
+# Review round 3: the row's id cell is its first single-token cell holding a
+# letter and a digit (an index column such as `1` is skipped), matched whole --
+# a trailing `-` or `.` is part of a valid id, never trimmed in a table. A row
+# naming the ticket as a whole cell that is not its id cell cannot be told.
+@pytest.mark.parametrize("ticket,row,closed", [
+    ("T-1", "| 1 | T-1 | done |", True),
+    ("T-1", "| 12 | t-1 | Merged | x |", True),
+    ("T-1", "T-1- | done | x", False),
+    ("T-1-", "T-1 | done | x", False),
+    ("T-1-", "T-1- | done | x", True),
+    ("T-1", "T-1. | done | x", False),
+    ("T-1", "- [x] T-1. widget", True),
+])
+def test_precheck_the_id_cell_is_found_and_matched_whole(repo, ticket, row, closed):
+    make_ticket(repo, ticket, activate=False)
+    (repo / ".work" / "INDEX.md").write_text(f"{row}\n", encoding="utf-8")
+
+    problems = crew_ticket.precheck(str(repo), ticket)["problems"]
+
+    assert (any("closed in .work/INDEX.md" in p for p in problems),
+            any("could not tell" in p for p in problems)) == (closed, False)
+
+
+@pytest.mark.parametrize("row", ["| T-2 | done | T-1 |", "| v2 | T-1 | done |"])
+def test_precheck_a_whole_cell_that_is_not_the_id_cell_is_could_not_tell(repo, row):
+    make_ticket(repo, "T-1", activate=False)
+    (repo / ".work" / "INDEX.md").write_text(f"{row}\n", encoding="utf-8")
+
+    problems = crew_ticket.precheck(str(repo), "T-1")["problems"]
+
+    assert any("could not tell" in p for p in problems), problems
+
+
 def test_precheck_unreadable_index_is_a_problem_not_open(repo):
     make_ticket(repo)
     (repo / ".work" / "INDEX.md").mkdir()

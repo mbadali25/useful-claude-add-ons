@@ -186,7 +186,7 @@ def test_a_trailing_line_break_alone_still_parses(text, kind):
 @pytest.mark.parametrize("text,ticket", [("/crew:approve T-1", "T-1"),
                                          ("\n/crew:approve T-1\n", "T-1"),
                                          ("<command-name>/crew:approve</command-name>\n"
-                                          "<command-args>T-1</command-args>\nnotes", "T-1"),
+                                          "<command-args>T-1</command-args>\n", "T-1"),
                                          ("/crew:approve ../x", "../x"),
                                          ("/crew:approve T-0010..", "T-0010..")])
 def test_single_id_parse_is_unchanged(text, ticket):
@@ -916,6 +916,50 @@ def test_a_concurrent_append_after_this_confirms_write_still_counts_it(
     code, _, err = _say(capsys, repo, "/crew:approve --confirm", prompt_id="p-2")
 
     assert (code, "recorded: T-1, T-2;" in err, "NOT recorded: T-3" in err) == (2, True, True)
+
+
+# --- review round 3: the expanded form is the whole prompt, for a single id too ----------
+# The single-id expanded form used to tolerate text outside its tags (kept
+# from before this ticket); that let an example wrapper around a command
+# approve it. Only the prompt's own top-level command counts, so the expanded
+# form carries nothing else, whatever it asks for.
+
+@pytest.mark.parametrize("text", [
+    "<command-example><command-name>/crew:approve</command-name>"
+    "<command-args>T-1</command-args></command-example>",
+    "<command-name>/crew:approve</command-name>\n<command-args>T-1</command-args>\nnotes",
+    "<command-name>/crew:approve</command-name> see <command-args>T-1</command-args>",
+])
+def test_the_expanded_single_id_with_other_text_is_refused(text):
+    request = approval_hook.parse(text)
+
+    assert (request.kind, "other text" in (request.error or "")) == (REFUSE, True), request
+
+
+def test_a_command_wrapped_in_a_non_command_tag_is_not_an_approval():
+    text = ("<example>\n<command-name>/crew:approve</command-name>\n"
+            "<command-args>T-1</command-args>\n</example>")
+
+    assert approval_hook.parse(text).kind == NONE
+
+
+def test_a_single_id_inside_an_example_tag_records_nothing(repo, capsys):
+    _tickets(repo, "T-1")
+
+    code, out, _ = _say(capsys, repo, "<command-example><command-name>/crew:approve</command-name>"
+                                      "<command-args>T-1</command-args></command-example>")
+
+    assert (code, out, _receipt(repo, "T-1")) == (2, "", None)
+
+
+def test_the_real_expanded_single_id_still_records(repo, capsys):
+    _tickets(repo, "T-1")
+
+    code, out, _ = _say(capsys, repo, "<command-message>crew:approve is running</command-message>\n"
+                                      "<command-name>/crew:approve</command-name>\n"
+                                      "<command-args>T-1</command-args>\n")
+
+    assert (code, "approved T-1" in _context(out), bool(_receipt(repo, "T-1"))) == (0, True, True)
 
 
 # --- step 5: the sabotage anchors ------------------------------------------------------
