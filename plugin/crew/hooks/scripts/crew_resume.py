@@ -279,10 +279,19 @@ def record_author(root, session_id, handoff_path):
     while a stale one would vouch for a note its session never saw. An author
     file that cannot be read is replaced -- it holds no history, only the
     latest writer per worktree, and a lost entry for another worktree only
-    makes that worktree wait."""
+    makes that worktree wait.
+
+    A lock that cannot be taken drops the whole file, unlocked: this session
+    did write the note, and the entry already there -- possibly another
+    session's for the same text -- must not keep vouching for it (review
+    round 1, T-0042). Unlinking races no reader into a torn file; the
+    residual race is a holder that read identical text before this write
+    and replaces the file after the drop, which content cannot tell apart."""
     path = author_path(root)
     lock = path + ".lock"
     if not crew_context.acquire_lock(lock):
+        if not _drop_author(path):
+            return False, "could not take the handoff-author lock, and the previous record may still stand"
         return False, "could not take the handoff-author lock"
     try:
         key = _worktree_key(root)
@@ -308,9 +317,10 @@ def record_author(root, session_id, handoff_path):
                 os.unlink(tmp)
             except OSError:
                 pass
-            if entry is not None:
-                _drop_author(path)
-            return False, f"handoff-author.json was not written: {exc.__class__.__name__}"
+            # With or without an entry of its own: a write that was to
+            # REMOVE this worktree's entry failed too (review round 1, T-0042).
+            dropped = "" if _drop_author(path) else ", and the previous record may still stand"
+            return False, f"handoff-author.json was not written: {exc.__class__.__name__}{dropped}"
         if entry is None:
             return False, "the handoff could not be read, or no session id was given"
         return True, ""
@@ -321,11 +331,15 @@ def record_author(root, session_id, handoff_path):
 def _drop_author(path):
     """A failed write must not leave the previous entry vouching for the new
     note. Removing the whole file is the only step left that needs no write
-    of it; an author file that is gone makes every worktree wait."""
+    of it; an author file that is gone makes every worktree wait. True when
+    nothing is left at `path`, False when the old file may still be there."""
     try:
         os.unlink(path)
+    except FileNotFoundError:
+        return True
     except OSError:
-        pass
+        return False
+    return True
 
 
 def _absent(path):

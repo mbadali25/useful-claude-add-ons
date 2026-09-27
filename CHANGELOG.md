@@ -36,6 +36,13 @@ All notable changes to this repository are documented here. Format follows [Keep
   - Flake: `test_same_handoff_never_fires_twice` re-stamped `written:` on
     every decide and failed across a second boundary; the fixture now stamps
     once.
+  - Review round 1 (T-0042): a recorder that could not take the author lock,
+    or whose write removing this worktree's entry failed, left the previous
+    session's entry vouching for a note it no longer wrote last. Both now
+    drop `handoff-author.json` (every worktree then waits) and say when even
+    that failed. The real-permissions test, root-skipped, now asserts the
+    author record's refusal, which is checked first; as a non-root user it
+    had failed on the `resume-state.json` wording.
   - Already closed before this ticket, so no work here: the
     `data-flow-crew-config.mmd` TMPL node lists `resume`, and the marketplace
     merge-tree NIT was settled when T-0006 landed at `2fd09e8f`.

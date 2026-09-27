@@ -1071,17 +1071,22 @@ def test_an_index_that_cannot_be_stat_ed_is_an_unknown(fx, monkeypatch):
 @pytest.mark.skipif(not hasattr(os, "geteuid") or os.geteuid() == 0,
                     reason="root searches a chmod 600 directory anyway; setpriv covers it on a root host")
 def test_unsearchable_crew_dir_waits_as_a_non_root_user(fx):
-    """Round 4 FIX with real permissions, the reviewer's repro."""
+    """Round 4 FIX with real permissions, the reviewer's repro. Both records
+    live in the one directory, so the author record -- checked first since
+    T-0042 -- is the one the decision names (T-0042 review round 1 FIX
+    :1084); resume-state.json's own stat refusal is covered in-process by
+    test_a_resume_state_that_cannot_be_stat_ed_waits."""
     text = _handoff(fx.root, resume="/crew:status", written=fx.written)
     ok, _ = crew_resume.record_run(str(fx.root), fx.decide(text=text))
     crew_dir = crew_resume.state_dir(str(fx.root))
     os.chmod(crew_dir, 0o600)
     try:
-        got = fx.decide(text=text)
+        got = fx.decide(text=text, bound=False)
     finally:
         os.chmod(crew_dir, 0o755)
 
-    assert (ok, got["action"], "resume-state.json" in got["reason"]) == (True, "wait", True), got
+    assert (ok, got["action"], "handoff-author.json" in got["reason"], "cannot be searched" in got["reason"]) \
+        == (True, "wait", True, True), got
 
 
 def _skeleton(root, files=("resume: /crew:status",)):
@@ -1350,6 +1355,62 @@ def test_a_failed_author_write_leaves_no_entry_behind(fx, monkeypatch):
     got = fx.decide(source="compact", session="s1", bound=False)
 
     assert (ok, got["action"]) == (False, "wait"), got
+
+
+def test_an_author_lock_that_cannot_be_taken_leaves_no_entry_behind(fx, monkeypatch):
+    """Review round 1 FIX :285: s2 rewrote the same note and could not take
+    the author lock, so s1's entry kept vouching for a note s1 no longer
+    wrote last."""
+    crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
+    fx.bind(session="s1")
+    monkeypatch.setattr(crew_resume.crew_context, "acquire_lock", lambda *_a, **_k: False)
+    ok, _ = fx.bind(session="s2")
+    monkeypatch.undo()
+    monkeypatch.setattr(crew_resume, "session_process", lambda pid=None: dict(_ME))
+
+    got = fx.decide(source="compact", session="s1", bound=False)
+
+    assert (ok, got["action"], "no record of which session wrote" in got["reason"]) == \
+        (False, "wait", True), got
+
+
+def test_an_author_lock_failure_that_cannot_drop_the_record_says_so(fx, monkeypatch):
+    """The neighbour: nothing is left that needs no write, so the recorder
+    must at least not report the failure as the plain lock one."""
+    fx.bind(session="s1")
+    monkeypatch.setattr(crew_resume.crew_context, "acquire_lock", lambda *_a, **_k: False)
+
+    def refuse(_path):
+        raise PermissionError(13, "Permission denied")
+    monkeypatch.setattr(crew_resume.os, "unlink", refuse)
+
+    ok, reason = fx.bind(session="s2")
+
+    assert (ok, "previous record may still stand" in reason) == (False, True), reason
+
+
+def test_a_failed_author_removal_leaves_no_entry_behind(fx, monkeypatch):
+    """Review round 1 FIX :311: s2's note could not be read and the write
+    removing s1's entry failed; cleanup skipped the drop because s2 had no
+    entry, so s1's entry survived and still matched."""
+    crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
+    fx.bind(session="s1")
+    real_open = open
+
+    def refuse_tmp(path, *args, **kwargs):
+        if str(path).endswith(".tmp"):
+            raise PermissionError(13, "Permission denied")
+        return real_open(path, *args, **kwargs)
+    monkeypatch.setattr(crew_resume, "read_text", lambda _path: None)
+    monkeypatch.setattr(crew_resume, "open", refuse_tmp, raising=False)
+    ok, reason = fx.bind(session="s2")
+    monkeypatch.undo()
+    monkeypatch.setattr(crew_resume, "session_process", lambda pid=None: dict(_ME))
+
+    got = fx.decide(source="compact", session="s1", bound=False)
+
+    assert (ok, "handoff-author.json was not written" in reason, got["action"],
+            "no record of which session wrote" in got["reason"]) == (False, True, "wait", True), got
 
 
 # --- T-0042 step 7: every wait reason is named where people read ------------
