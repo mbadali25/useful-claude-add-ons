@@ -63,7 +63,8 @@ is being kept, not refreshed.
 Check `knowledge.graph.present` from step 1's `crew_state.py` output. If
 false, follow `${CLAUDE_PLUGIN_ROOT}/skills/crew-graph/SKILL.md`'s **Build**
 section — `graphify . --no-viz --code-only`, both flags required, never
-optional. If `graphify` itself is absent, that skill's **Detect** section
+optional, after that skill's denylist check (`crew_graph_ignore.py --check`)
+passes; a check that exits 1 or 2 stops here. If `graphify` itself is absent, that skill's **Detect** section
 governs: report it and stop. An upgrade cannot derive graph facts with no
 graph and no CLI to build one, and it must not install anything without
 asking.

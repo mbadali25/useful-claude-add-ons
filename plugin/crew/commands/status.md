@@ -31,6 +31,7 @@ summary above or below it, and do not pad it with advice.
 | `review` | review ledgers under the git common dir, newest three | a ledger that will not parse |
 | `verify` | `.crew/.verify-gate.record.json`, counted by status | record unreadable |
 | `codemap` | anchors checked by path diff, as `crew_freshness.read_knowledge` does | no git |
+| `graph-ignore` | `crew_graph_ignore.py`: a secrets-denylisted path on disk that `.graphifyignore` does not exclude reads `UNCOVERED` with the paths and the `--write` fix | git missing, a settings file that will not parse, a nested `.graphifyignore`, a deny-all `Read` rule |
 | `metrics` | `.crew/metrics.jsonl`, else `.crew/metrics.md` | - |
 | `handoff` | `.work/HANDOFF.md` present | - |
 | `migrate` | a backup under `.crew/backups/` whose apply never finished | - |

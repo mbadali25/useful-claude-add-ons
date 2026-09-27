@@ -414,6 +414,23 @@ once-per-session claim marker (see `hooks/scripts/hook_once.py`): `.crew/*`
 already covers it, and it is named anyway because it is the entry whose absence
 shows up as noise in every `git status` rather than as a failure.
 
+## 3e. .graphifyignore from the secrets denylist
+
+`.gitignore` does not stop graphify reading a tracked file: only
+`.graphifyignore` can. So, before any graph is built, run:
+
+```
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_graph_ignore.py --root . --write
+```
+
+It appends every missing denylist pattern to `.graphifyignore` under one
+marked block and changes nothing else. Report what it printed: the patterns
+it added, or that none were needed. On exit 2, report the reason and do not
+build a graph. Repo-specific secret paths (`config/`, `/init.php`) go in
+`.claude/secrets-denylist`, one gitignore pattern per line. Commit both
+files. The crew-graph skill's **Secrets denylist** section lists every
+source.
+
 ## 4. Write the repo CLAUDE.md
 
 ### Writing it
