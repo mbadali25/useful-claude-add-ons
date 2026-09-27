@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@b1ae1500
+anchor: useful-claude-add-ons@9e21a0d9
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -1336,5 +1336,20 @@ was re-read with `grep -n`/`sed -n` on `git show b1ae1500:<path>`:
 - `marketplace.json:218` and `plugin.json:3` - 1.0.43, and `:217` still states 4 agents, 35
   commands, 29 skills.
 - `CHANGELOG.md`, `README.md` and the tests - cited by name only here.
+
+No suite was run by this note.
+
+## Re-anchor provenance - `b1ae1500` -> `9e21a0d9`, 2026-09-27 (T-0018 sabotage retarget, version re-set)
+
+`crew_refresh_check.py --root . --ticket T-0018` named this note after `a0158b3d`, which pointed
+`sabotage_autopilot.py`'s route and status `-B` mutations at
+`test_every_autopilot_invocation_in_command_skips_bytecode` (the behavioural test they named stayed
+green once round 4's `__main__` guard landed), then `9a1394ef` / `9e21a0d9`, which stepped the crew
+version back and re-set it to 1.0.43 last. Re-read on `git show 9e21a0d9:<path>`:
+
+- `plugin/crew/tests/sabotage_autopilot.py` - `AUTOPILOT_MUTATIONS` still `:25`,
+  `STATUS_MUTATIONS` still `:164`, still 40 entries (two retargeted, none added or removed), the
+  `+=` at `:340`.
+- The version files and `CHANGELOG.md` are byte-identical to `b1ae1500`'s.
 
 No suite was run by this note.

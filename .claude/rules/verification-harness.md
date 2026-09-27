@@ -4,9 +4,9 @@ paths:
   - "_verify/smoke.sh"
   - "scripts/check-marketplace.py"
 ---
-<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=d2b37dc51c16a325 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=1f0a422c2c9bde94 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # verification-harness
-Code map anchor `b1ae1500`; if it is behind HEAD, re-check with `git diff --name-only b1ae1500..HEAD -- <cited paths>`.
+Code map anchor `9e21a0d9`; if it is behind HEAD, re-check with `git diff --name-only 9e21a0d9..HEAD -- <cited paths>`.
 Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and .crew/verify.json — what each actually runs, and where they overlap or don't. .crew/verify.json is tracked; its own anchor field (:3) is stale at 5238be3d, independent of this note's anchor.
 ## Entry points
 - `.crew/verify.json:164-169` (rule 9) — the whole-suite pytest rule and its 377s pricing.

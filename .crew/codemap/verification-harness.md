@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@b1ae1500
+anchor: useful-claude-add-ons@9e21a0d9
 verified: 2026-09-27
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -900,3 +900,18 @@ later rule up by one) and T-0018's widened autopilot rule. Re-read on `git show 
   version files changed too; this note cites them by name or rule only.
 
 No suite or gate was executed by this note.
+
+## Re-anchor provenance - `b1ae1500` -> `9e21a0d9`, 2026-09-27 (T-0018 sabotage retarget, version re-set)
+
+`crew_refresh_check.py --root . --ticket T-0018` named this note after `a0158b3d`, which pointed
+`sabotage_autopilot.py`'s route and status `-B` mutations at
+`test_every_autopilot_invocation_in_command_skips_bytecode` (the behavioural test they named stayed
+green once round 4's `__main__` guard landed), then `9a1394ef` / `9e21a0d9`, which stepped the crew
+version back and re-set it to 1.0.43 last. Re-read on `git show 9e21a0d9:<path>`:
+
+- `plugin/crew/tests/sabotage_autopilot.py` - `AUTOPILOT_MUTATIONS` still `:25`,
+  `STATUS_MUTATIONS` still `:164`, still 40 entries (two retargeted, none added or removed), the
+  `+=` at `:340`.
+- The version files and `CHANGELOG.md` are byte-identical to `b1ae1500`'s.
+
+No suite was run by this note.
