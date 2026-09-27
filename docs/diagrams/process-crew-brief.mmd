@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@2b18f7ab on 2026-09-26. Verify before trusting.
+%% Generated from useful-claude-add-ons@53f5482c on 2026-09-27. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
@@ -36,8 +36,7 @@
 %% diff and re-read with sed -n on the merged tree). Every other Anchors path is unchanged.
 %% Anchored at 2b18f7ab, the crew 1.0.42 bump on top of that merge (4ed4b763), which changed
 %% none of the Anchors paths.
-
-%% Re-anchored 6f96e627 -> 068db4ff (T-0042, crew 1.0.42): 6f96e627..1e0706ac touched refresh
+%% On T-0042's branch: re-anchored 6f96e627 -> 068db4ff (T-0042, crew 1.0.42): 6f96e627..1e0706ac touched refresh
 %% artifacts only; of the Anchors paths, 1e0706ac..068db4ff changed crew_context.py and
 %% crew_resume.py. crew_context.py gained record_handoff_author (the :601 hunk, 1 -> 32 lines) and
 %% _record_author_logged (+14 after :951), plus three one-line hunks, so :925 -> :959,
@@ -51,6 +50,13 @@
 %% crew_resume.py changed (record_author's lock and write failures drop handoff-author.json),
 %% and it is cited by function name only (crew_resume.decide), so no line citation moved and
 %% cc6 still holds: a dropped record reads as no record, which waits.
+%% Merged 2b18f7ab + 07eefac5 at 53f5482c (T-0042 merges main 502cb137, crew 1.0.43): of the
+%% Anchors paths crew_state.py changed on main only (T-0005's three imports, so the Stale rule
+%% lines take main's :646, :859-914, :774, :980, :954-958) and crew_context.py / crew_resume.py
+%% on T-0042 only (crew_context lines take the branch's :959 ... :1051, unchanged since
+%% 07eefac5, re-read with sed -n at 53f5482c). crew_resume.py is cited by function name only; its
+%% partial-state fix makes decide wait on a resume-state.json missing worktrees, consumed or
+%% last, which cc6's wait edge already covers. No node or edge changed.
 %% What crew 1.0 does when a session starts, and what /crew:status reads.
 %% --
 %% REDRAWN for crew 1.0. The 0.20 version of this file drew the PM session-start

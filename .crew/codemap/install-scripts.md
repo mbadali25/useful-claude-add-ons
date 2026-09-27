@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@2b18f7ab
+anchor: useful-claude-add-ons@53f5482c
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -573,3 +573,16 @@ unchanged), `plugin/PLUGINS.md` (`:14` version only; the `:17` Registers row is 
 `hooks.json`, `scripts/check-marketplace.py` and `scripts/_test/self-claims.py` did not change, so
 their citations stand; the README pin is exactly as stale as it was at `6f96e627`. Neither install
 script was executed; `check-marketplace.py` was run at `068db4ff` and passed.
+
+## Re-anchor provenance - `2b18f7ab` + `068db4ff` -> `53f5482c`, 2026-09-27 (T-0042 merges main)
+
+`53f5482c` is T-0042's rule-26 re-measure on top of the merge of origin/main `502cb137` into its
+branch (`b7727a88`) and the crew 1.0.43 bump (`52778dd1`). Of the cited paths,
+`git diff --name-only 2b18f7ab 53f5482c` returns `.claude-plugin/marketplace.json` (`:218` 1.0.43;
+`:217` unchanged), `plugin/PLUGINS.md` (`:14` 1.0.43; the `:17` Registers row unchanged),
+`plugin/crew/BUDGETS.md` (marker `:10`; 18,571 lines across 121 files, re-measured on the merge),
+`plugin/crew/README.md` (T-0042's auto-resume prose above the claims, so the `35 commands` claim
+moved `:2381` -> `:2395` and `4 agents` `:2392` -> `:2406`, re-grepped) and `TODO.md`. Neither
+install script, `README.md`, `scripts/check-marketplace.py` nor `scripts/_test/self-claims.py`
+changed on either side since `2b18f7ab`, so their citations stand. Neither install script was
+executed.

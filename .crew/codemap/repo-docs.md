@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@2b18f7ab
+anchor: useful-claude-add-ons@53f5482c
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -656,3 +656,16 @@ in place, `:277` and `:280`; 293 lines, so `:167-172`, `:251`, `:252-268`, `:270
 the 1.0.42 entry; cited without a line). The version files were stepped to 1.0.41 and back and
 diff empty against `068db4ff`. `python3 scripts/check-marketplace.py` at `07eefac5`:
 `marketplace: 34 skills, 5 plugins`, `all checks passed`.
+
+## Re-anchor provenance - `2b18f7ab` + `07eefac5` -> `53f5482c`, 2026-09-27 (T-0042 merges main)
+
+`53f5482c` is T-0042's rule-26 re-measure on top of the merge of origin/main `502cb137` into its
+branch (`b7727a88`). Of the cited paths changed on both sides, each re-read on the merged tree:
+`plugin/crew/README.md` (T-0042's auto-resume prose at `:1747` sits above the runbooks mention,
+so main's `:1930` is `:1944`; set in the merge, re-read), `TODO.md` (the `render.sh` entry at
+`:1201`, main's `:1190` plus T-0042's eleven lines; T-0005's lines are appended at the end),
+`.crew/verify.json` (rule 26's `seconds` and `why` in place; `:167-172`, `:263`, `:264-280`,
+`:282-292` hold) and `CHANGELOG.md` (T-0042's 1.0.43 entry above T-0005's 1.0.42; cited without
+a line). `plugin/crew/commands/handoff.md:7` and `plugin/crew/skills/crew-context/SKILL.md:69`
+changed on T-0042 only and hold. The two diagrams this note cites are refreshed in the same
+commit as this note. Nothing was executed for this note.

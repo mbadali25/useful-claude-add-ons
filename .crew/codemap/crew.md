@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@2b18f7ab
+anchor: useful-claude-add-ons@53f5482c
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -50,7 +50,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.42, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.43, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -251,7 +251,7 @@ both templates, so repo-only is unchanged. Re-executed at `07ca3972`: 119 / 66
 merge: 121 / 67 / 54 / 0 - T-0005 added `environments.prodUnattended` to both templates and
 `environments.nonProd` to `default_config()` only.
 `plugin/crew/tests/test_crew_config.py:277` asserts 121. T-0004's `CHANGELOG.md` entry now says
-"117 -> 119" (`:228-229`), matching the `07ca3972` execution; it said "116 -> 118" when this
+"117 -> 119" (`:276-277`; `:228-229` at `2b18f7ab`, before T-0042's entry went in above it), matching the `07ca3972` execution; it said "116 -> 118" when this
 paragraph was first written. T-0005's entry states no leaf count.
 
 These are new counts, not the pre-1.0 note's 103/60/43 carried forward —
@@ -430,18 +430,19 @@ and gets nothing created.
   and `/crew:migrate` (`plugin/crew/commands/migrate.md:78`,
   `apply-migrate`).
 
-## Auto-resume after `/clear` (T-0006, crew 1.0.40; T-0042, crew 1.0.42)
+## Auto-resume after `/clear` (T-0006, crew 1.0.40; T-0042, crew 1.0.43)
 
 `plugin/crew/hooks/scripts/crew_resume.py` owns the `resume:` line a handoff
 carries (read in full at `6d35ef8c`, its changed functions re-read at `2bb92f32`, and every
-function T-0042 touched re-read at `068db4ff`): the closed
+function T-0042 touched re-read at `068db4ff`; every line citation below re-taken with `grep -n`
+at `53f5482c`): the closed
 allowlist `RESUME_COMMANDS` (`:37`, a module constant so no repo can widen it), the grammar
 (`parse_resume`, `:91`; ticket digits are ASCII `[0-9]`, `:83`; the automatic PreCompact
 skeleton - `crew_autocycle.SKELETON_MARK` - is refused whole before any line is read, `:102-103`),
 the opt-in (`settings`, `:172` - armed only when the
 machine file `~/.claude/crew/config.json` says `resume.auto: true`; a repo
 `false` in `.crew/crew.json` or `.crew/config.json` vetoes, a repo `true`
-grants nothing) and the read-only `decide` (`:644`), where the first failing
+grants nothing) and the read-only `decide` (`:667`), where the first failing
 check wins and every "could not tell" is `wait`, never `run`. It registers no
 hook. `crew_context.py`'s SessionStart branch calls it through
 `resume_decision` (`plugin/crew/hooks/scripts/crew_context.py:661`) for
@@ -451,10 +452,10 @@ rule that raises as stale; `resume_line` (`:687`) renders the one injected
 line. Nothing starts on its own - the command is named, never sent as
 `initialUserMessage`. On `PreCompact` both `handoff-write` flavours call its
 `precompact` CLI (`write_precompact_record`,
-`plugin/crew/hooks/scripts/crew_resume.py:568`); `decide` trusts a `manual`
+`plugin/crew/hooks/scripts/crew_resume.py:577`); `decide` trusts a `manual`
 record for 600 s and never one it could not have replaced
-(`_compact_was_manual`, `:634`). A record a later PreCompact could neither remove nor empty
-is MARKED, not predicted: `precompact-<key>.stuck` (`stuck_path` `:543`, `_mark_stuck` `:551`;
+(`_compact_was_manual`, `:643`). A record a later PreCompact could neither remove nor empty
+is MARKED, not predicted: `precompact-<key>.stuck` (`stuck_path` `:552`, `_mark_stuck` `:560`;
 the shell flavours write the same marker, `plugin/crew/hooks/scripts/handoff-write.sh:52-53`,
 `plugin/crew/hooks/scripts/handoff-write.ps1:327-328`), and a compact is not manual while that
 marker exists or cannot be stat'ed; `crew_context.prune_precompact` ages it out with the records.
@@ -469,23 +470,27 @@ through the never-raising `_record_author_logged` `:987` from `run` `:962`, befo
 without `/proc`). A recorder that cannot take the author lock, or whose write fails - including
 one that was only REMOVING this worktree's entry - drops the whole file (`_drop_author` `:331`)
 and says when even that failed, so the previous entry never vouches for a note another session
-wrote last (T-0042 review round 1). `decide` asks `_author_refusal` (`:400`) after the command checks and before
+wrote last (T-0042 review round 1). `decide` asks `_author_refusal` (`:409`) after the command checks and before
 the state file: `compact` must match the session id, `clear` the process; a missing, unreadable
 or sha-mismatched record, or an unidentifiable process, is a `wait`, never a match. `record_run`
-(`:719`) is the only writer of
+(`:728`) is the only writer of
 `<git-common-dir>/crew/resume-state.json`, and nothing in the plugin calls it
 yet (T-0013's contract). A state file that exists and cannot be read or is not
 the shape `record_run` writes is an unknown (`_read_state` `:362`, `_entry` `:384`
-return `None`): `decide` waits and `record_run` refuses rather than overwriting it.
+return `None`): `decide` waits and `record_run` refuses rather than overwriting it. A PARTIAL
+record is that shape too (T-0042, before review round 2): a file with no `worktrees` key, or an
+entry of this worktree missing `consumed`, `last`, or last's string `prompt`/`fingerprint`, is
+`None`, not "nothing consumed, no loop history"; no entry for this worktree is still `{}`.
 Whether it exists at all goes through `_absent` (`:345`): only `FileNotFoundError` /
 `NotADirectoryError` is absence, any other stat error is `None` - the round-4 FIX, since
 `os.path.lexists` read an unsearchable directory as "no file". `.work/INDEX.md` goes through the
-same helper (`_index_rows` `:457`), so an unstat-able index makes the fingerprint unknown.
+same helper (`_index_rows` `:466`), so an unstat-able index makes the fingerprint unknown.
 `record_run` asks consumed-once and the loop guard again under its lock through
-the same `_already` (`:430`) `decide` uses, so of two senders holding one `run`
+the same `_already` (`:439`) `decide` uses, so of two senders holding one `run`
 only the first gets `ok`. Tests: `plugin/crew/tests/test_crew_resume.py`,
 `plugin/crew/tests/test_crew_resume_hook.py`; mutations
-`plugin/crew/tests/sabotage_resume.py`; `.crew/verify.json` rule 26 (`:282-292`).
+`plugin/crew/tests/sabotage_resume.py` (72 by `len(RESUME_MUTATIONS)` at `53f5482c`); `.crew/verify.json`
+rule 26 (`:282-292`).
 
 ## `/crew:autopilot` (T-0004, crew 1.0.41)
 
@@ -695,7 +700,7 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   confirmed at a specific line this pass; called with subcommands
   (`plan-windows-default`, `apply-migrate`) from the three sites named
   above.
-- `plugin/crew/hooks/scripts/crew_resume.py:658` — `decide`, read-only;
+- `plugin/crew/hooks/scripts/crew_resume.py:667` — `decide`, read-only;
   `main()` is the `decide` / `record` / `precompact` CLI.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:576` — `ticket_freshness`,
   the library entry point; `main()` at `:676`.
@@ -1254,3 +1259,27 @@ re-mapped through the `-U0` hunks and re-read with `sed -n` at `07eefac5`:
 - `.crew/verify.json` - rule 25's `seconds` and `why` changed in place; 293 lines, every cited
   range stands.
 - `test_crew_resume.py` - cited by name only.
+
+## Re-anchor provenance - `2b18f7ab` + `07eefac5` -> `53f5482c`, 2026-09-27 (T-0042 merges main)
+
+`53f5482c` is T-0042's rule-26 re-measure on top of `b7727a88`, the merge of origin/main `502cb137`
+(T-0005 landed; `2b18f7ab..502cb137` touched refresh artifacts only) into T-0042's branch, plus
+`03cfab27` (a partial `resume-state.json` is an unknown) and `52778dd1` (crew 1.0.43). Both lines'
+provenance is above. Main-side citations were mapped through `git diff -U0 2b18f7ab 53f5482c`, the
+branch-side ones through `git diff -U0 07eefac5 53f5482c`, and every moved one re-read with `sed -n`
+on `53f5482c`:
+
+- `crew_resume.py` - changed on T-0042 only. `_entry` grew (+9 inside it), so everything below
+  `:384` moved: `_author_refusal` `:400` -> `:409`, `_already` `:430` -> `:439`, `_index_rows`
+  `:457` -> `:466`, `stuck_path` `:543` -> `:552`, `_mark_stuck` `:551` -> `:560`,
+  `write_precompact_record` `:568` -> `:577`, `_compact_was_manual` `:634` -> `:643`, `decide`
+  `:658` -> `:667` (the auto-resume paragraph still said `:644`, the `068db4ff` number; corrected),
+  `record_run` `:719` -> `:728`. `:37`, `:83`, `:91`, `:102-103`, `:172`, `:220`, `:270`, `:331`,
+  `:345`, `:362`, `:384` hold. The partial-state sentence is new.
+- `crew_context.py` - changed on T-0042 only, not since `07eefac5`; `:615`, `:638`, `:661`,
+  `:687`, `:962`, `:987` hold.
+- `CHANGELOG.md` - T-0042's entry (48 lines) sits above T-0005's; main's `:228-229` -> `:276-277`.
+- `.crew/verify.json` - rule 26's `why`/`seconds` in place; `:282-292` holds. 28 rules, 305 lines.
+- `TODO.md` - T-0042's eleven lines above, T-0005's appended; `:3963` holds.
+- `marketplace.json` / `plugin.json` - `:218` / `:3` now 1.0.43; `:217` unchanged.
+- `sabotage_resume.py` - 72 mutations (three added for the partial state).

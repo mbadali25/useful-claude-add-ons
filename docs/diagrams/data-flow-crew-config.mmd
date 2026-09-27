@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@2b18f7ab on 2026-09-26. Verify before trusting.
+%% Generated from useful-claude-add-ons@53f5482c on 2026-09-27. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
@@ -73,8 +73,7 @@
 %% Anchored at 2b18f7ab, the crew 1.0.42 bump on top of that merge (4ed4b763): the bump changed
 %% none of the Anchors paths except CONFIG.md, in place (1.0.41 -> 1.0.42 in a T-0005
 %% heading and table row), and CONFIG.md is cited here by section only.
-
-%% Re-anchored 6f96e627 -> 068db4ff (T-0042, crew 1.0.42): 6f96e627..1e0706ac touched refresh
+%% On T-0042's branch: re-anchored 6f96e627 -> 068db4ff (T-0042, crew 1.0.42): 6f96e627..1e0706ac touched refresh
 %% artifacts only; of the Anchors paths, 1e0706ac..068db4ff changed crew_context.py and
 %% CONFIG.md (and crew_resume.py, named in the T-0006 note above). crew_resume.settings moved
 %% :158 -> :172 (the handoff-author constants above it), re-read with sed -n. crew_context.py's
@@ -82,6 +81,12 @@
 %% 1e0706ac and now matches the :121-132 the TwoFiles note cites. CONFIG.md changed in §14a only
 %% (wait reasons); §15/§16/§18/§20 numbering holds. T-0042 adds no config key: leaf counts
 %% re-executed at 068db4ff, 119 / 66 / 53, fourth 0.
+%% Merged 2b18f7ab + 068db4ff at 53f5482c (T-0042 merges main 502cb137, crew 1.0.43): of the
+%% Anchors paths crew_config.py, crew_state.py and crew_guards.py changed on main only and
+%% crew_context.py on T-0042 only, so each side's citations stand; CONFIG.md changed on both,
+%% cited by section only (T-0042's lines are in §14a). crew_resume.settings :172 holds.
+%% T-0042 adds no config key (crew_config.py, both templates and crew_state.py are
+%% byte-identical to main at 53f5482c), so main's 121 / 67 / 54 stand; not re-executed here.
 %% How one config value reaches a run, and what may set it where.
 %% --
 %% RE-ANCHORED after crew 1.0 (previously 60c79407). Every function/line cited

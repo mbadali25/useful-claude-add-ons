@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@2b18f7ab
+anchor: useful-claude-add-ons@53f5482c
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -181,12 +181,13 @@ Notable rules, re-read directly:
   same): `paths`
   `crew_resume.py`, `crew_context.py`, both `handoff-write` flavours,
   `test_crew_resume.py`, `test_crew_resume_hook.py` and `sabotage_resume.py` →
-  `python3 -m pytest` over the two resume test files plus `test_auto_cycle.py`, priced 87s (its
-  `why` records 87s, 391 passed / 13 skipped / 68 deselected, measured after T-0042 review round 1
-  - a claim read, not re-timed here; 73s / 388 before that round, 89s / 348 / 12 after T-0006
+  `python3 -m pytest` over the two resume test files plus `test_auto_cycle.py`, priced 62s (its
+  `why` records 62s, 398 passed / 13 skipped / 68 deselected, measured at `52778dd1` before T-0042
+  review round 2 - a claim read, not re-timed here; 87s / 391 after review round 1, 73s / 388 before it, 89s / 348 / 12 after T-0006
   review round 3 under load, 60s after round 2; the 13th skip is a root-only skip). Its
-  mutations live in `plugin/crew/tests/sabotage_resume.py` (`RESUME_MUTATIONS`, 69 since T-0042
-  review round 1, 66 before it, 44 before T-0042; counted with `len()` at `07eefac5`), imported by
+  mutations live in `plugin/crew/tests/sabotage_resume.py` (`RESUME_MUTATIONS`, 72 since the
+  partial-state fix before T-0042 review round 2, 69 after round 1, 66 before it, 44 before T-0042;
+  counted with `len()` at `53f5482c`), imported by
   `plugin/crew/tests/sabotage.py:76` and appended to `MUTATIONS` at `:3049`.
 - **Rule 27**, new at `07ca3972` (`.crew/verify.json:293-300`, T-0004; rule 26 until T-0005's
   rule 6 merged in): `paths`
@@ -839,3 +840,23 @@ their citations stand unread.
 
 No suite was executed by this note; the figures in rule 25's `why` belong to the fix, not to this
 refresh.
+
+## Re-anchor provenance - `2b18f7ab` + `07eefac5` -> `53f5482c`, 2026-09-27 (T-0042 merges main)
+
+`53f5482c` is T-0042's rule-26 re-measure on top of the merge of origin/main `502cb137` into its
+branch (`b7727a88`), `03cfab27` (a partial `resume-state.json` is an unknown) and the crew 1.0.43
+bump. Of the paths this note cites, `git diff --name-only 2b18f7ab 53f5482c` returns
+`.crew/verify.json`, `plugin/crew/CONFIG.md`, `plugin/crew/tests/sabotage_resume.py`,
+`CHANGELOG.md`, `TODO.md`, `plugin/crew/BUDGETS.md` and the version files. `sabotage.py`,
+`verify-gate.sh`/`.ps1`, `verify_record.py`, `scripts/check-marketplace.py`, `_verify/*` and the CI
+workflows did not change on T-0042's side, so main's citations into them stand.
+
+- `.crew/verify.json` - rule 26's `seconds` and `why` rewritten in place; `:282-292` holds, and
+  every other cited range stands (28 rules, 305 lines, `json.load` and `wc -l`).
+- `CONFIG.md` - T-0042's §14a prose (+50) sits above the descope limitation: main's `:2201-2208`
+  is `:2249-2256`, set in the merge and re-read (same "Limitation (1.0)" paragraph).
+- `sabotage_resume.py` - 72 mutations by `len(RESUME_MUTATIONS)`; `sabotage.py:76` and `:3049`
+  still import and append them.
+- `marketplace.json`, `CHANGELOG.md`, `TODO.md`, `BUDGETS.md` - cited by name only.
+
+No suite was executed by this note; the figures in rule 26's `why` belong to that commit.
