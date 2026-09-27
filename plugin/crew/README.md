@@ -1428,7 +1428,8 @@ cheapest way to prove the connector is live before configuring a repo around it.
 ## 13c. Optional: an Obsidian Kanban board
 
 The fourth tracker, and the only one with nothing to connect to. `tracker:
-"obsidian"` plus a vault path that exists. The board is a markdown file the
+"obsidian"` (`tracker.kind` in `crew.json`) plus a vault path that exists and
+holds `.obsidian/`. The board is a markdown file the
 [Kanban plugin](https://github.com/mgmeyers/obsidian-kanban) round-trips, so
 crew writes files and Obsidian draws a board — there is no API, no auth, and no
 payload to amortise.
@@ -1441,18 +1442,101 @@ vault/
     T-0041.md
 ```
 
-The vault is the remote, exactly as Jira is: `.work/cache/T-####.md` is a terse
-local mirror that `/crew:implement` reads, and `/crew:obsidian-sync` touches the
-vault at pickup and completion only. The key keeps the `T-####` shape, so
-nothing else in crew needed a new format to recognise.
+**One interface, called by the lifecycle itself.** `hooks/scripts/crew_tracker.py`
+is the only code that writes a tracker, and the lifecycle commands call it at
+their status transitions — no sync command to remember:
+
+| Command | Call | Lane |
+|---|---|---|
+| `/crew:brainstorm` | `create` (INDEX row, card, ticket note); on approval `move --to ready` | Backlog |
+| `/crew:spec`, `/crew:plan` | `move --to spec`, `move --to planned` | Ready |
+| `/crew:implement` step 1 | `move --to in-progress` | In Progress |
+| `/crew:implement` step 6, before `/crew:review` | `move --to review` | Review |
+| `/crew:done` | `move --to done` | Done |
+
+`/crew:fix` makes the same calls, compressed. `resolve` reads the kind from
+1.0's `.crew/crew.json` (`tracker.kind`) and 0.20's `.crew/config.json`
+(`tracker`) alike; when both state one and they differ it says `could not tell`
+and every write refuses — it never picks one. The same holds for the vault and
+`boardDir` each file *yields*, fallbacks included: crew.json falling back to
+`memory.vaultPath` while config.json names another vault is `could not tell`,
+not a quiet write to the memory vault. Jira and ServiceDesk Plus are pushed at
+the boundaries only: `move --to in-progress` and `--to done` answer `delegated`
+with `/crew:jira-sync <KEY> --push --to <status>` (or `/crew:sdp-sync`), which
+the model runs because a script cannot call an MCP tool; every other move
+prints `nothing to push`.
+
+**Forward only, unless you say otherwise.** A move backwards by the lifecycle
+order (`direction`, `ready`, `spec`, `planned`, `in-progress`, `review`,
+`done`) exits 1 unless `--reopen` is passed, and so does a move from a status
+crew does not know (`merged`, say), because whether it goes backwards cannot be
+told. `/crew:implement` passes `--reopen` on a successor plan.
+
+**A tracker write never undoes a transition.** A write that fails prints
+`could not update: <reason>` and exits 1; the command tells you "tracker not
+updated" and the phase stands.
+
+**Confined to the vault, atomic, and loud.** Before anything is written —
+`INDEX.md` included — the vault must exist and hold `.obsidian/`, `boardDir`
+must be relative with no `..`, `board` a bare file name, the board and note must
+not resolve out of the vault through a symlink, and a board or note inside the
+worktree must be ignored by git (otherwise it would enter the review bundle) —
+checked per file, so a vault that *contains* the repo is caught too. Any of
+those fails, the board lacks its frontmatter key, a configured lane is
+missing or doubled, or the done lane lacks exactly one `**Complete**`: exit 1,
+nothing written anywhere. Board writes are an
+exclusively created temp file (a link planted at its name is never followed)
+plus `os.replace`, keeping the board's mode and owner, re-reading the board
+first and recomputing if Obsidian saved it meanwhile. Every vault write reaches
+its directory from the vault root one component at a time with
+`O_DIRECTORY|O_NOFOLLOW` and writes relative to that directory, so a directory
+swapped for a link after the checks is refused rather than written through.
+That fd follows its directory if it is renamed out of the vault, so the walk is
+repeated and matched by device and inode before the temp is written, before the
+replace and after it; a note that landed in a directory that left is removed
+through the fd. Windows has no such calls: there the directory's real path is
+re-checked at the same three points. On both, a move inside the last window
+remains a residual race.
+
+**Whose card.** The ticket note is written once and never rewritten, and
+records `repo-id:` — the origin URL lowercased with `.git` dropped, or the git
+common dir's real path when there is no origin or the origin is a relative path
+(`../origin/app.git` from `a/app` and `b/app` is one string naming two
+repositories). An ssh origin keeps its username and drops only a password:
+`alice@host:repo.git` and `bob@host:repo.git` are two users' repositories. Every
+other scheme drops the whole userinfo, because `https://<token>@host/...` puts a
+token where a username goes and the id is written into a note a human reads. A
+local origin is its real path, and a `file://` one is percent-decoded first, as
+git decodes it: `file:///srv/a%20b.git` is `/srv/a b.git`.
+Never the directory's name: `a/app` and `b/app` share that. With `boardDir` unset every
+repo shares one board, so a note naming another repo refuses `create`, `move`
+and `read`. A card whose owner cannot be told — no note, a note with no
+`repo-id:` — refuses `create` and `move` (`read` says so on its line), naming
+the fix: put `repo-id: <this repo's>` in the note. There is no exception: ids
+start over in every repo and titles repeat, so a card's text matching this
+repo's INDEX row proves nothing. `create` refuses an id INDEX already holds —
+read before the vault, so a vault failure never hides it — whatever its title,
+and an id the board holds for another or an unknown repo. Its claim on a new id
+is the note's exclusive creation, before the INDEX row and the card: a note
+another repo creates after the owner check makes the claim fail, and nothing
+follows it. Each refusal begins `id taken`, and `/crew:brainstorm` and
+`/crew:fix` then take the next free id; any other failed `create` stops them
+before anything is written under that id. A `move` whose INDEX
+half refuses — another session moved the ticket on meanwhile — leaves the
+board alone, and a card already in its lane is repaired in place (checked in
+Done, below `**Complete**`; unchecked elsewhere; a card with no checkbox gets one).
+
+**There is no `.work/cache/` mirror.** The ticket's content lives in
+`.work/tickets/<id>/` for every mode; the board carries status only. The key
+keeps the `T-####` shape, so nothing else in crew needed a new format.
 
 **Unlike Jira and ServiceDesk Plus, this mode also keeps `.work/INDEX.md`.**
 The session brief finds the open ticket by reading that file, and a key shaped
 `SDP-40219` was never going to be in it — `T-0042` can be. So the board is the
-human's view of the work and `INDEX.md` is the session's, which costs one line
-per ticket and is why the brief names a real ticket here rather than nothing.
+human's view of the work and `INDEX.md` is the session's; the same `move`
+writes both, and each half reports its own result.
 
-**Five lanes, and dragging a card is how status changes.**
+**Five lanes, named by `obsidian.columns`.**
 
 | Lane | Means |
 |---|---|
@@ -1462,20 +1546,21 @@ per ticket and is why the brief names a real ticket here rather than nothing.
 | Review | Implementation done, `/crew:review` outstanding. |
 | Done | Complete and verified. Carries the `**Complete**` marker. |
 
-On pull the card's lane wins for status and the note wins for content; on push
-the cache's `status:` names the lane — `--push` takes no lane argument and
-infers nothing, so a card cannot land in Done because the turn went well. That rule exists because both sides here are local markdown
-and both look equally authoritative — which makes the divergence hazard *worse*
-than Jira's, not absent. A silent fallback to file tickets is therefore refused
-the same way `/crew:jira-sync` refuses it.
+Dragging a card is yours to do; crew does not read it back as status.
+`/crew:obsidian-sync $1` shows the board lane beside the INDEX status and says
+when they disagree; `--push` moves the card to the lane the INDEX status names
+and reports the lane it came from. Both sides are local markdown and both look
+equally authoritative — which makes the divergence hazard *worse* than Jira's,
+not absent — so a silent fallback to file tickets is refused the same way
+`/crew:jira-sync` refuses it.
 
 **The board file has three load-bearing parts** and a naive rewrite destroys all
 three, after which the file silently opens as plain text instead of a board: the
 `kanban-plugin: board` frontmatter, the trailing `%% kanban:settings` block, and
 the `**Complete**` marker in the done lane. An archive, when one exists, sits
 below a `***` break under `## Archive` and is nobody's business but Obsidian's.
-So the board is edited in place, one card or one lane at a time, never
-regenerated from the cache.
+So `crew_tracker.py` cuts one card and inserts it under the target heading;
+every other byte, the archive included, is the byte it read.
 
 **Two things to accept before choosing this.** The vault lives outside the repo,
 so ticket state does not travel with a branch and is not on a colleague's
@@ -2430,8 +2515,8 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:webtest <id> [--stage spec\|implement\|heal\|evidence]` | Drive Playwright's Test Agents inside the ticket lifecycle; a healer skip is a finding, and the trace and axe results go to the reviewer |
 | `/crew:promote <env> [--dry-run\|--status]` | Promote development -> qa -> production with deploy, smoke, regression and post-soak verification as separate gates |
 | `/crew:survey [area]` | Research gaps, produce ranked findings with options |
-| `/crew:jira-sync <KEY> [--push]` | Sync one issue with the local cache |
-| `/crew:sdp-sync <REQUEST-ID> [--push]` | Sync one ServiceDesk Plus request with the local cache — see §13b |
+| `/crew:jira-sync <KEY> [--push --to <status>]` | Sync one issue with the local cache |
+| `/crew:sdp-sync <REQUEST-ID> [--push --to <status>]` | Sync one ServiceDesk Plus request with the local cache — see §13b |
 | `/crew:obsidian-sync <T-####> [--push]` | Sync one Obsidian Kanban card with the local cache — see §13c |
 | `/crew:upgrade [--force]` | Bring a pre-0.20 config up to the 0.20 schema; a 0.20 repo goes straight to `/crew:migrate` — see §11 |
 | `/crew:emergency <what is broken>` | Declare a time-boxed incident: gates stand down and record what they skipped, lanes investigate in parallel — see §24. `status`, `extend [min]`, `end` |

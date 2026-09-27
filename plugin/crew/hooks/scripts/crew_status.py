@@ -31,6 +31,7 @@ import subprocess
 
 import crew_freshness
 import crew_migrate
+import crew_tracker
 from crew_common import read_text
 
 MAX_LINES = 40
@@ -59,6 +60,13 @@ def _json(path):
         return "corrupt"
 
 
+def _tracker_line(root):
+    # Both config shapes, through the one resolver every tracker write uses:
+    # crew.json's kind shown while the commands gated on config.json's string
+    # was how the two disagreed with nothing reporting it.
+    return "tracker  " + crew_tracker.describe(crew_tracker.resolve(root))
+
+
 def _config_lines(root):
     crew = _json(os.path.join(root, ".crew", "crew.json"))
     legacy = _json(os.path.join(root, ".crew", "config.json"))
@@ -66,17 +74,16 @@ def _config_lines(root):
         return ["config   .crew/crew.json unreadable - status cannot tell the setup"], {}
     if isinstance(crew, dict):
         agents = crew.get("agents") or []
-        tracker = (crew.get("tracker") or {}).get("kind", "?") if isinstance(crew.get("tracker"), dict) else "?"
         return [f"config   .crew/crew.json schema {crew.get('schema', '?')}",
                 f"roster   {', '.join(agents) or 'none'} (1.0 roster: {', '.join(crew_migrate.ROSTER)})",
-                f"tracker  {tracker}"], crew
+                _tracker_line(root)], crew
     if isinstance(legacy, dict):
         roles = legacy.get("roles") if isinstance(legacy.get("roles"), list) else []
         kept = [r for r in crew_migrate.ROSTER
                 if r in roles or any(crew_migrate.RENAMED.get(x) == r for x in roles)]
         return [f"config   .crew/config.json schema {legacy.get('schema', '?')} - run /crew:migrate",
                 f"roster   {len(roles)} roles active; 1.0 keeps {', '.join(kept) or 'none of them'}",
-                f"tracker  {legacy.get('tracker', '?')}"], legacy
+                _tracker_line(root)], legacy
     if crew == "corrupt" or legacy == "corrupt":
         return ["config   unreadable JSON in .crew/ - status cannot tell the setup"], {}
     return ["config   none - run /crew:init"], {}

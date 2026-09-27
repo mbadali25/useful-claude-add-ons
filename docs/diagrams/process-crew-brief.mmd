@@ -1,12 +1,32 @@
-%% Generated from useful-claude-add-ons@53f5482c on 2026-09-27. Verify before trusting.
-%% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md
+%% Generated from useful-claude-add-ons@d276b268 on 2026-09-27. Verify before trusting.
+%% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
 %% re-read at f2bb919b (repo-relative): plugin/crew/hooks/hooks.json:3-10,
 %% plugin/crew/hooks/scripts/handoff-read.sh:34 :41 :42 :44,
 %% plugin/crew/hooks/scripts/crew_context.py:121-123 :833 :839 :909,
-%% plugin/crew/hooks/scripts/crew_state.py:643, plugin/crew/hooks/scripts/crew_status.py:200,
+%% plugin/crew/hooks/scripts/crew_state.py:643, plugin/crew/hooks/scripts/crew_status.py:207,
 %% plugin/crew/commands/status.md:14, plugin/crew/hooks/scripts/crew_platform.py:229 :507 :537.
+%% Re-anchored f2bb919b -> 7b667587 (T-0021): of the Anchors paths crew_state.py and
+%% crew_status.py changed. crew_state.py's cited lines (:643, :761, :846-901, :941-945,
+%% :967) did not move (`git diff -U0`, re-read). crew_status.py moved: the HANDOFF
+%% check :200 -> :207, the report lines :185-209 -> :192-216; its tracker line now comes
+%% from crew_tracker.resolve (crew_status.py:63), which reads crew.json AND config.json
+%% and prints `could not tell` when they disagree.
+%% Re-anchored 7b667587 -> 385eadd5 (T-0021 review round 1): of the Anchors paths only
+%% crew_tracker.py changed, and no node cites a line in it; crew_status.py:63 (the
+%% tracker line through crew_tracker.resolve) did not change.
+%% Re-anchored 385eadd5 -> bcb77ce2 (T-0021 review round 2): of the Anchors paths only
+%% crew_tracker.py changed; still no node cites a line in it, and crew_status.py:63
+%% did not change.
+%% Merged 2b18f7ab + bcb77ce2 -> c2ae46ab (T-0021 review round 3 and its merge of main): of
+%% the Anchors paths crew_status.py and crew_tracker.py changed on T-0021's side. On the merged
+%% tree crew_status.py's _tracker_line is :63, the HANDOFF check :207 and collect()'s report
+%% lines :192-216 (re-read with grep -n / sed -n); main's :185-209 in the note below is
+%% corrected to that. crew_context.py and crew_resume.py did not change on T-0021's side.
+%% No node cites a line in crew_tracker.py.
+%% Re-anchored c2ae46ab -> d276b268 (T-0021 review round 4): of the Anchors paths only
+%% crew_tracker.py changed; no node cites a line in it, and crew_status.py:63 did not change.
 %% The body below keeps the drawing's own shorthand (basename:line); the Anchors line
 %% names each basename's full path.
 %% Drawn in the diagrams-crew-1.0 worktree, uncommitted there; committed on T-0015-refresh.
@@ -83,12 +103,12 @@
 %%   note but a resume line -> that line alone; :1051 JSON additionalContext.
 %% Stale rule: crew_state.py:646 (72h / 3 commits), :859-914, archived to
 %%   .crew/handoffs/ (:774, :980), never deleted; never raises (:954-958).
-%% /crew:status: commands/status.md:14 -> crew_status.py; :185-209 report lines.
+%% /crew:status: commands/status.md:14 -> crew_status.py; :192-216 report lines.
 %% --
 %% Dashed '?' edges: handoff-read reads only config.json (:44), never crew.json,
 %% so a 1.0-only repo with inject:false gets no handoff from either hook -
 %% traced in the sh flavour only; the ps1 body was not read past :241.
-%% /crew:status checks the fixed path .work/HANDOFF.md (crew_status.py:200),
+%% /crew:status checks the fixed path .work/HANDOFF.md (crew_status.py:207),
 %% not context.handoffPath, and does not apply the stale rule.
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
@@ -142,6 +162,6 @@ flowchart TB
     hr3 -. "? 1.0-only repo (crew.json, no config.json)<br/>with inject:false gets no handoff" .-> hrx
 
     subgraph status["/crew:status (on demand)"]
-        st1["status.md:14<br/>crew_status.py --root ."] --> st2["git header, config file, roster,<br/>tickets, review ledgers, verify,<br/>codemap freshness, metrics,<br/>handoff, interrupted migrate<br/>:185-209"]
-        st2 -. "? checks fixed .work/HANDOFF.md (:200),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
+        st1["status.md:14<br/>crew_status.py --root ."] --> st2["git header, config file, roster,<br/>tracker (crew_tracker.resolve, :63),<br/>tickets, review ledgers, verify,<br/>codemap freshness, metrics,<br/>handoff, interrupted migrate<br/>:192-216"]
+        st2 -. "? checks fixed .work/HANDOFF.md (:207),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
     end

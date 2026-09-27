@@ -439,6 +439,31 @@ it <em>would</em> refuse before enforcing with <code>"block"</code>.</p>
   <code>inbox/pending-reflect.md</code> (no host suffix) is still read if present, so an old backlog drains
   rather than being stranded — it is just never written again.</p>
 </li>
+<li>
+<p><strong>Symptom: <code>/crew:brainstorm</code> or <code>/crew:fix</code> stops because <code>create</code> refused a ticket id.</strong>
+  On the Obsidian ticket board, <code>crew_tracker.py create</code> refuses an id it cannot
+  prove is yours, and prints one of four lines (paths and ids here are examples).
+  The first three begin <code>id taken</code>, and brainstorm and fix then take the next
+  free id on their own. For any other refusal they stop and show you the line.</p>
+<ul>
+<li><strong>Another repo owns it.</strong>
+  <code>obsidian: could not update: id taken: T-0060 on Board.md belongs to another repo (https://example.invalid/team/app, per T-0060.md), not this one (https://example.invalid/other/app): give this repo its own obsidian.boardDir</code>
+  <strong>Fix:</strong> two repos share one board. Give each repo its own <code>obsidian.boardDir</code>.</li>
+<li><strong>Nobody can tell who owns it.</strong>
+  <code>obsidian: could not update: id taken: could not tell whose card T-0042 is (no T-0042.md note names its repo-id); if it is this repo's, put 'repo-id: https://example.invalid/other/app' in T-0042.md</code>
+  <strong>Fix:</strong> if the card is yours, add the line it names to the note (see "The
+  ticket board" in <a href="memory-and-obsidian.md">Memory and Obsidian</a>). If it is not
+  yours, let brainstorm take the next id.</li>
+<li><strong>Another session in this repo holds it.</strong>
+  <code>files: could not update: id taken: T-0050 is already ready "Fix tests"</code>
+  <strong>Fix:</strong> none needed; <code>.work/INDEX.md</code> already has that ticket. This check
+  runs before the vault is opened, so it wins even when the vault is missing.</li>
+<li><strong>Crew cannot tell which repo this is.</strong>
+  <code>obsidian: could not update: could not tell this repo's identity: git gave neither an origin URL nor a common dir for &lt;repo path&gt;</code>
+  <strong>Fix:</strong> run crew inside a git checkout. <code>git rev-parse --git-common-dir</code>
+  must answer there.</li>
+</ul>
+</li>
 </ul>
 <h2 id="auto-wrap-up-clear-and-resume">Auto Wrap-Up, Clear and Resume</h2>
 <p>See <a href="auto-cycle.md">Auto wrap-up, clear and resume</a> for the full cycle that lets a long session

@@ -11,10 +11,6 @@
     "lines": 249,
     "reason": "T8: to trim"
   },
-  "plugin/crew/commands/obsidian-sync.md": {
-    "lines": 176,
-    "reason": "T8: to trim"
-  },
   "plugin/crew/commands/onboard.md": {
     "lines": 255,
     "reason": "raised: item 5 under 'Then make the knowledge executable' runs crew_autoclear_setup.py so a standalone /crew:onboard configures context.autoClear the same way /crew:init does"

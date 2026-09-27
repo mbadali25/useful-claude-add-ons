@@ -19,15 +19,25 @@ same rule `commands/ticket.md` states ("the key exists before the branch
 does"), moved one phase earlier because 1.0 starts the ticket at brainstorm,
 not at spec.
 
-Read `.crew/crew.json` (or `.crew/config.json` on an unmigrated repo) for
-`tracker`. **Files and Obsidian Kanban tracker modes**: pick the next free
-`T-####`, create `.work/tickets/T-####/`, and append
-`T-#### | direction | - | <this-repo> | <title>` to `.work/INDEX.md`. Obsidian
-mode also adds the `[[T-####]]` card to the board's `backlog` lane, the way
-`/crew:ticket` does — a direction is not yet ready work. <!-- deliberate --> **Jira and
-ServiceDesk Plus modes**: create the tracker item now with a one-line
-placeholder summary, so the id exists before anything else does, and cache it
-at `.work/tickets/<KEY>/`.
+Read the tracker kind with `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py resolve --root .`
+— it reads `.crew/crew.json` and `.crew/config.json` alike. `could not tell`
+means the two disagree: show me its line and stop; never pick one.
+**Files and Obsidian Kanban**: pick the next free `T-####`, then run
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py create --root . --ticket T-#### --title "<title>"
+```
+
+It appends `T-#### | direction | - | <this-repo> | <title>` to `.work/INDEX.md`
+and, for Obsidian, adds the `[[T-####]]` card to the board's backlog lane and
+the vault ticket note — a direction is not yet ready work. Print its lines
+verbatim. If a line says `id taken`, that id is not yours — another session or
+repo holds it: pick the next free id, run `create` again, and write nothing
+under the taken one. On any other failure, stop: show me its lines and write
+nothing under that id — a failed create has not made the id yours. Only then
+create `.work/tickets/T-####/`. **Jira and ServiceDesk Plus**: create the tracker item now through MCP
+with a one-line placeholder summary, so the id exists before anything else
+does, and cache it at `.work/tickets/<KEY>/`.
 
 ## 2. Establish shared understanding
 
@@ -65,8 +75,16 @@ direction I have not agreed to is not a direction.
 
 ## 5. On approval
 
-Update `.work/INDEX.md`'s status cell from `direction` to `ready`. Tell me to
-run `/crew:spec <id>` next; do not invoke it yourself.
+Move the ticket from `direction` to `ready` — never by editing `.work/INDEX.md`:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket <id> --to ready
+```
+
+Print its lines verbatim; the card stays in the backlog lane until a spec
+exists. On exit 3 run the command it printed; on exit 1 tell me
+`tracker not updated: <reason>`. Tell me to run `/crew:spec <id>` next; do not
+invoke it yourself.
 
 If this is genuinely small — one subsystem, no new behaviour, a known
 cause, nothing touching auth/SQL/IaC/secrets/migrations — say so and suggest
