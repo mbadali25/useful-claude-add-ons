@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@b1ae1500
+verified: 2026-09-27
 
 ## Re-derive provenance
 
@@ -417,9 +417,10 @@ listing the directory.
   `plugin/crew/tests/test_approval_digest.py` run that test file and
   `test_crew_ticket.py`. T-0005 inserted another mid-list (`:117-127`, the cloud-guard suites).
   Since `a0c0847e` T-0006's rule sits at `:282-292` (`:270-280` before T-0005 merged)
-  and T-0004 appended a last one (`:293-300`, `:281-288` before T-0005 merged): `crew_autopilot.py`,
-  `commands/autopilot.md`, `test_crew_autopilot.py` and
-  `sabotage_autopilot.py` run `test_crew_autopilot.py` plus
+  and T-0004 appended a last one (`:293-301` since T-0018 merged main; `:293-300` on main,
+  `:281-288` before T-0005 merged): `crew_autopilot.py`, `commands/autopilot.md`,
+  `test_crew_autopilot.py`, `test_crew_autopilot_status.py` (T-0018) and
+  `sabotage_autopilot.py` run `test_crew_autopilot.py`, `test_crew_autopilot_status.py` and
   `test_lifecycle_commands.py`.
 
 ## Unverified
@@ -662,3 +663,14 @@ Re-verified per-path from `29a987b0` to `c87ac3f4` (T-0018 review round 3). Of t
 `CHANGELOG.md` (the 1.0.42 entry gained its round-3 paragraph; cited without a line).
 `plugin/crew/README.md`, `README.md`, `TODO.md`, `plugin/README.md` and both install scripts did
 not change.
+
+Re-verified per-path from `2b18f7ab` (main) and `c87ac3f4` (the T-0018 branch) to `b1ae1500`, the
+T-0018 round-4 fixes, the merge of main `502cb137` (crew 1.0.42) and the crew 1.0.43 bump: of the
+cited paths, `plugin/crew/README.md` (T-0018's 15 autopilot lines on top of main's and one table
+row edited in place, so the `docs/runbooks/INDEX.md` sentence moved `:1930` -> `:1945`, re-grepped),
+`.crew/verify.json` (the autopilot rule widened in place to `:293-301`; every earlier rule is at
+main's lines), `CHANGELOG.md`, `plugin/PLUGINS.md` (`:14` 1.0.43; `:17` unchanged) and
+`.claude-plugin/marketplace.json` (`:218` 1.0.43; `:217` unchanged) changed. `README.md`,
+`plugin/README.md`, `INSTALLATION.md`, `docs/runbooks/` and
+`plugin/crew/skills/crew-runbooks/SKILL.md` did not. `check-marketplace.py` passed at `b1ae1500`
+(`marketplace: 34 skills, 5 plugins`).

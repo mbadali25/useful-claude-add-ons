@@ -1,6 +1,6 @@
 # install-scripts
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@b1ae1500
+verified: 2026-09-27
 
 ## Re-derive provenance
 
@@ -574,3 +574,15 @@ removed, so the `35 commands` claim at `:2269` and `4 agents` at `:2280` hold (r
 `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` still returns 18170, as `BUDGETS.md:11` says.
 Both install scripts, `README.md`, `plugin/README.md`, `INSTALLATION.md` and
 `scripts/check-marketplace.py` did not change. `check-marketplace.py` passed at `4ff7e764`.
+
+Re-verified per-path from `2b18f7ab` (main) and `4ff7e764` (the T-0018 branch) to `b1ae1500`, the
+T-0018 round-4 fixes, the merge of main `502cb137` (crew 1.0.42) and the crew 1.0.43 bump: of the
+cited paths `.claude-plugin/marketplace.json` (crew `version` `:218`, now 1.0.43; `:217`
+unchanged), `plugin/PLUGINS.md` (`:14` 1.0.43; the `:17` Registers row still reads 4 agents, 35
+commands, 29 skills), `plugin/crew/BUDGETS.md` (marker still `:10`; `:11` now reads 18,489 lines
+across 121 files, and `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` returns 18489 on the
+merged index) and `plugin/crew/README.md` (T-0018's 15 autopilot lines above the command table on
+top of main's, plus one table row edited in place: the `35 commands` claim is at `:2396` and
+`4 agents` at `:2407`, re-grepped) changed. `git diff --name-only 2b18f7ab b1ae1500 -- scripts/
+README.md INSTALLATION.md plugin/README.md` is empty, so both install scripts and the other
+counting sites stand. Neither install script was executed.

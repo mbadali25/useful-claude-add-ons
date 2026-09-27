@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@b1ae1500
+verified: 2026-09-27
 paths: scripts/**, plugin/PLUGINS.md
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -47,9 +47,9 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.42** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
-and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `2b18f7ab`; it
-was 1.0.41 at `07ca3972` and on T-0005's branch, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
+`rule-of-two`. `crew` is now **1.0.43** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `b1ae1500`; it
+was 1.0.42 at `2b18f7ab` (main, T-0005) and on T-0018's branch before main merged in, 1.0.41 at `07ca3972` and on T-0005's branch, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
 
@@ -431,3 +431,13 @@ files (`.claude-plugin/marketplace.json:218`, `plugin/PLUGINS.md:14`,
 `plugin/crew/.claude-plugin/plugin.json`) are at 1.0.42 on both sides. Both install scripts,
 `README.md`, `plugin/README.md`, `INSTALLATION.md`, `scripts/check-marketplace.py`, `CLAUDE.md`
 and `skills/README.md` did not change. No command, agent or skill was added or removed.
+
+Re-verified per-path from `2b18f7ab` (main) and `c87ac3f4` (the T-0018 branch) to `b1ae1500`, the
+T-0018 round-4 fixes, the merge of main `502cb137` (crew 1.0.42) and the crew 1.0.43 bump: of the
+cited paths, `.crew/verify.json` (the merged file: main's 28 rules with T-0018's autopilot rule
+widened in place, 306 lines; the doc rule at `:69-78` is unchanged), `CHANGELOG.md` and the version
+files changed. `.claude-plugin/marketplace.json:218`, `plugin/PLUGINS.md:14` and
+`plugin/crew/.claude-plugin/plugin.json` read 1.0.43, and `:217` and `PLUGINS.md:17` still state 4
+agents, 35 commands, 29 skills. `git diff --name-only 2b18f7ab b1ae1500 -- scripts/ README.md
+plugin/README.md INSTALLATION.md CLAUDE.md skills/README.md` is empty. No command, agent or skill
+was added or removed. `check-marketplace.py` passed at `b1ae1500`.

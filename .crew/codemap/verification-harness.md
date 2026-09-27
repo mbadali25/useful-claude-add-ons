@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@b1ae1500
+verified: 2026-09-27
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -880,3 +880,23 @@ Re-verified per-path from `c87ac3f4` to `4755ae1a` (T-0018 round-3 mutation reta
 still `:25`, `STATUS_MUTATIONS` still `:164`, still 37 entries; one round-1 entry was relabelled
 and pointed at a new test (a three-line comment added), so the append on the file's last line
 moved `:318` -> `:321`. `.crew/verify.json` and `sabotage.py` did not change.
+
+## Re-anchor provenance - `2b18f7ab` + `4755ae1a` -> `b1ae1500`, 2026-09-27 (T-0018 round 4, main merge)
+
+`crew_refresh_check.py --root . --ticket T-0018` named this note after `550aa306`, the merge of
+main (`502cb137`, crew 1.0.42) into the T-0018 branch, and `b1ae1500`, the crew 1.0.43 bump. The
+merge's conflicts here were resolved by keeping main's rule numbering (T-0005's rule 6 moved every
+later rule up by one) and T-0018's widened autopilot rule. Re-read on `git show b1ae1500:<path>`:
+
+- `.crew/verify.json` - 28 rules, 306 lines (main's 305 plus the autopilot rule's added
+  `test_crew_autopilot_status.py` path line): `default` `:304`, `unmapped` `:305`, the
+  `.claude/rules/` sync rule 24 `:263`, refresh-check rule 25 `:264-280`, auto-resume rule 26
+  `:282-292`, autopilot rule 27 `:293-301` (`seconds` 11, `why` unchanged since `4755ae1a`).
+- `plugin/crew/tests/sabotage.py` - unchanged by T-0018: `:76`, `:77` and `:3049` hold.
+- `plugin/crew/tests/sabotage_autopilot.py` - `AUTOPILOT_MUTATIONS` still at `:25`; round 4
+  appended three entries to `STATUS_MUTATIONS` (40 now), which
+  `test_crew_autopilot.py::test_status_sabotage_is_registered_with_sabotage_py` counts.
+- `plugin/crew/hooks/scripts/crew_autopilot.py`, `plugin/crew/README.md`, `CHANGELOG.md` and the
+  version files changed too; this note cites them by name or rule only.
+
+No suite or gate was executed by this note.
