@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@a2802526
+anchor: useful-claude-add-ons@f8671fdc
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -490,3 +490,10 @@ so their citations stand. The README pin landmine still holds: `README.md:12` an
 has since merged to `main` (`1e0706ac`), so the re-pin that bullet calls due after that merge is now
 due and was not done by T-0024, whose Touch excludes `README.md`. Neither install script was
 executed.
+
+Re-verified per-path from `a2802526` to `f8671fdc` for T-0024's review round 1 and successor step 6
+(crew 1.0.43, 1.0.44): of the cited paths `.claude-plugin/marketplace.json` (`:218` 1.0.44; `:217`
+unchanged), `plugin/PLUGINS.md` (`:14` only), `plugin/crew/BUDGETS.md` (`:11`, 18,202 lines across
+121 files, re-measured) and `plugin/crew/README.md` (group-approval prose only; the `35 commands`
+claim `:2263` and `4 agents` `:2274` did not move, re-grepped) changed. Neither install script,
+`README.md` nor `INSTALLATION.md` changed; the README pin landmine stands as recorded above.

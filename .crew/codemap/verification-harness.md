@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@32223b8a
+anchor: useful-claude-add-ons@f8671fdc
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -195,7 +195,7 @@ Notable rules, re-read directly:
   16 slow deselected, measured 2026-09-26 — a claim read, not re-timed by this note). The
   `FLAVOUR_MATRIX` `sh`/`ps1` cases are `slow`, so this rule does not run the wrappers; the
   whole-suite rule and CI's `-m slow` job do. Its mutations live in
-  `plugin/crew/tests/sabotage_approval.py` (`APPROVAL_MUTATIONS`, `:32`; 52 entries by
+  `plugin/crew/tests/sabotage_approval.py` (`APPROVAL_MUTATIONS`, `:32`; 61 entries by
   `len()` at this anchor — count them there, the `why` states no number), imported by
   `plugin/crew/tests/sabotage.py:78` and appended at `:3050`. `crew_ticket.py` is now named by
   rules 10 and 27 both.
@@ -730,3 +730,10 @@ three re-anchored, one re-targeted to the test that holds its single-id case, th
 break-check mutation deleted with its code; 52 by `len()`,
 `APPROVAL_MUTATIONS` still at `:32`), `marketplace.json` and `CHANGELOG.md` (cited by name only)
 changed. `sabotage.py`'s registration `:78`/`:3050` and `.crew/verify.json` did not change.
+
+Re-verified per-path from `32223b8a` to `f8671fdc` for T-0024's successor step 6: of the cited paths
+`plugin/crew/tests/sabotage_approval.py` (ten mutations added for the round-2 fixes, four
+re-anchored; 61 by `len()`, `APPROVAL_MUTATIONS` still at `:32`), `crew_ticket.py` (`precheck`
+`:765` -> `:793`; `approve` `:686` and `parse_risk` `:505` hold; still rules 10 and 27),
+`marketplace.json`, `CHANGELOG.md` and `BUDGETS.md` (cited by name only) changed. `sabotage.py`'s
+registration `:78`/`:3050` and `.crew/verify.json` did not change.

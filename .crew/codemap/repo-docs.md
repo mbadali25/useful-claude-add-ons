@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@a2802526
+anchor: useful-claude-add-ons@f8671fdc
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -577,3 +577,10 @@ re-grepped) and `plugin/crew/hooks/scripts/crew_ticket.py` (cited by name only, 
 `README.md`, `TODO.md`, `plugin/README.md` and both install scripts did not change.
 `python3 scripts/check-marketplace.py` re-run at `a2802526`: `marketplace: 34 skills, 5 plugins` /
 `all checks passed`.
+
+Re-verified per-path from `a2802526` to `f8671fdc` for T-0024's review round 1 and successor step 6.
+Of the cited paths, `.claude-plugin/marketplace.json` (version only, 1.0.44), `CHANGELOG.md` (1.0.43
+and 1.0.44 entries at the top; cited without a line), `plugin/PLUGINS.md` (`:14` only),
+`plugin/crew/README.md` (group-approval prose only; the `docs/runbooks/INDEX.md` mention still at
+`:1812`, re-grepped) and `plugin/crew/hooks/scripts/crew_ticket.py` (cited by name only, as a rule's
+path) changed. `.crew/verify.json`, `README.md`, `TODO.md` and both install scripts did not.
