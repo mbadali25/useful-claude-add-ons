@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@d2444be9
+verified: 2026-09-27
 
 # localgpu
 
@@ -1093,3 +1093,9 @@ at `:127-128` and the provider tuples at `crew_state.py:1432-1433` (`grep -n
 "^DEV_PROVIDERS\|^QA_PROVIDERS"`, the same two lines, byte-identical), corrected above.
 `.claude-plugin/marketplace.json` changed at crew's `version` only (1.0.42); `localgpu`'s own entry
 is still `0.1.20`. Nothing under `plugin/localgpu/` changed. Nothing was executed.
+
+**Re-anchored `2b18f7ab` -> `d2444be9` on 2026-09-27 (T-0075).** Of the paths this note cites, only
+`plugin/crew/hooks/scripts/crew_config.py` changed (`git diff --name-only 2b18f7ab d2444be9`), and
+only by T-0075's additions below `_RATCHETED` (`:2548` onward: the enum check, the repo writer, the
+`--repo` flag). The re-export is still `crew_config.py:127-128`, byte-identical, and `crew_state.py`
+did not change. Nothing under `plugin/localgpu/` changed. Nothing was executed.
