@@ -149,12 +149,25 @@ names the next command from the `resume:` line — `Auto-resume: ready to run
 /crew:done T-0001.`, saying it did not start from the hook, so press Enter or
 type it (T-0013 types it) — or says `Auto-resume did not start: <reason>.`
 The reasons: compact was not a manual /compact; no handoff note, or it was
-archived as stale, or is stale and could not be archived; no resume line, `resume: none`, or a refused line; the
-`branch:`/`head:` line does not match the checkout; the ticket directory or
-goal file is missing; the command is not installed; `resume-state.json` exists
-and could not be read; this handoff was already
-resumed; the progress fingerprint could not be computed; the same command
-with no progress since the last auto-resume. Never on `startup`.
+archived as stale, or is stale and could not be archived; the handoff is the
+automatic PreCompact skeleton; no resume line, `resume: none`, or a refused
+line; the `branch:`/`head:` line does not match the checkout; the ticket
+directory or goal file is missing; the command is not installed;
+`handoff-author.json` could not be read; no record of which session wrote
+this handoff; the handoff changed since its author session wrote it; the
+handoff was written by another session; this session's process could not be
+identified (always without `/proc`: native Windows, macOS);
+`resume-state.json` could not be read, or its directory cannot be searched;
+this handoff was already resumed; the progress fingerprint could not be
+computed; the same command with no progress since the last auto-resume;
+`internal error` (the decision failed; the handoff is still injected). Never
+on `startup`.
+
+Write the note with the Write tool: a note resumes only in the session that
+wrote it. The context hook records the author of a Write/Edit/MultiEdit of
+the handoff (`handoff-author.json`); `/compact` is matched by session id,
+`/clear` by the Claude Code process. A note written by Bash or by hand has no
+author record and waits.
 
 The injected note is framed as project information that the working tree
 overrides, so a subtly wrong handoff is read against `git diff` before anyone

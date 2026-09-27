@@ -607,7 +607,7 @@ test in `tests/test_promote_merge_gate.py`. `preset` is on this list because
 promote names it only to say it binds to nothing.
 
 `jira.project` is the one on this list that most looks like it should work.
-`/crew:jira-sync` gates on `tracker == "jira"` (`commands/jira-sync.md`) and
+`/crew:jira-sync` gates on `crew_tracker.py resolve` saying `jira` (`commands/jira-sync.md`) and
 then caches `jira.cloudId` — a key `default_config()` does not declare
 at all, and that nothing reads back either. So the Jira block ships two keys and
 crew consumes neither. `jira.cloudId` is counted in §12.3 rather than here,
@@ -628,7 +628,6 @@ them:
 
 | Key(s) | Consumer |
 |---|---|
-| `obsidian.columns.*` (five keys) | `commands/obsidian-sync.md`, which instructs: "Read the names from `obsidian.columns` rather than hardcoding them" |
 | `sdp.portal`, `sdp.noteVisibility`, `sdp.closeOnDone` | `commands/sdp-sync.md` |
 | `secondOpinion.provider`, `.sendsCode`, `.keyEnv` | `agents/planner.md`, `commands/plan.md`, `skills/crew-providers/SKILL.md` |
 | `docs.reportTheme` | `skills/crew-house-style/SKILL.md`, with a committed regression test in `tests/test_docs_routing.py` that binds it to the findings-report genre |
@@ -639,7 +638,7 @@ them:
 
 ## 10. Global-settable keys — 68
 
-68 measured (`leaf_paths(default_global_config())`, crew 1.0.43); the table
+68 measured (`leaf_paths(default_global_config())`, crew 1.0.46); the table
 below lists 64 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
 `guards.sqlDestructive` and `environments.prodUnattended` (§16) are
 global-settable and not tabled here.
@@ -754,20 +753,20 @@ repository or one checkout.
 | `schema` | integer | `7` | see §4 |
 | `tier` | integer | `0` | `crew_state.collect` |
 | `roles` | list (a leaf) | `["explorer", "reviewer"]` | `crew_state.collect` |
-| `tracker` | string | `"files"` | `crew_state.py`, `commands/brainstorm.md`, `commands/spec.md` |
+| `tracker` | string (0.20 `config.json`); `tracker.kind` in 1.0 `crew.json` | `"files"` | `crew_tracker.resolve` (`hooks/scripts/crew_tracker.py`) reads both shapes and answers `could not tell` when they disagree; the lifecycle commands, the sync commands and `crew_status.py` all go through it |
 | `jira.project` | string or `null` | `null` | **no consumer found**, §9 |
 | `jira.cloudId` | string or `null` | `null` | written by `commands/jira-sync.md`; **read by nothing**, §9 |
 | `sdp.portal` | string or `null` | `null` | prose, §9 |
 | `sdp.noteVisibility` | string | `"private"` | prose, §9 |
 | `sdp.closeOnDone` | boolean | `false` | prose, §9 |
-| `obsidian.vaultPath` | path or `null` | `null` | `commands/obsidian-sync.md` |
-| `obsidian.boardDir` | path or `null` | `null` | `commands/obsidian-sync.md` |
-| `obsidian.board` | filename | `"Board.md"` | `commands/obsidian-sync.md` |
-| `obsidian.columns.backlog` | string | `"Backlog"` | prose, §9 |
-| `obsidian.columns.ready` | string | `"Ready"` | prose, §9 |
-| `obsidian.columns.inProgress` | string | `"In Progress"` | prose, §9 |
-| `obsidian.columns.review` | string | `"Review"` | prose, §9 |
-| `obsidian.columns.done` | string | `"Done"` | prose, §9 |
+| `obsidian.vaultPath` | path or `null` | `null` | `crew_tracker.py` (falls back to `memory.vaultPath`; must hold `.obsidian/`) |
+| `obsidian.boardDir` | path or `null` | `null` | `crew_tracker.py` (relative, no `..`) |
+| `obsidian.board` | filename | `"Board.md"` | `crew_tracker.py` (a bare file name) |
+| `obsidian.columns.backlog` | string | `"Backlog"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
+| `obsidian.columns.ready` | string | `"Ready"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
+| `obsidian.columns.inProgress` | string | `"In Progress"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
+| `obsidian.columns.review` | string | `"Review"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
+| `obsidian.columns.done` | string | `"Done"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
 | `verifyGate` | boolean | `true` | `hooks/scripts/verify-gate.sh` |
 | `verify.stopBudgetSeconds` | integer | `60` | `hooks/scripts/verify-gate.sh`, `verify-gate.ps1` |
 | `context.enabled` | boolean | `true` | `hooks/scripts/context-watch.ps1` |
@@ -1081,16 +1080,64 @@ flavours record the trigger per session, in a repo with either
 record first, without needing python, so a compact whose own record never
 lands is not manual; absent, unreadable, older than 600 s, or not replaceable is not manual,
 and records and orphaned `.tmp` files older than a day are pruned); no handoff, or one archived
-as stale, or one judged stale that could not be archived; no `resume:`
+as stale, or one judged stale that could not be archived; the handoff is the
+automatic PreCompact skeleton (its Changed files list is bare `git` output, so
+a file named `resume: ...` would otherwise be read as the line); no `resume:`
 line, `resume: none`, or a line the grammar refuses; a `branch:` or `head:`
 that does not match the checkout; a missing `.work/tickets/<id>/` or
 `.work/autopilot/<slug>.json`; a command not installed in the plugin; a
-`<git-common-dir>/crew/resume-state.json` that exists and cannot be read or
-is not the shape `record_run` writes (an unknown, never "nothing resumed"; move
-it aside to reset); a handoff already passed to `record_run`; a progress fingerprint that cannot be
-computed (an unreadable `.work/INDEX.md` or an unlistable ticket directory
-counts as "cannot be computed", never as progress); and the same command a
-second time with no progress since. The `crew_resume.py decide` CLI applies
+`handoff-author.json` that could not be read; no record of which session wrote
+this handoff; the handoff changed since its author session wrote it; the
+handoff was written by another session; this session's process could not be
+identified; a `<git-common-dir>/crew/resume-state.json` that cannot be read,
+is not the shape `record_run` writes, or whose directory cannot be searched
+(an unknown, never "nothing resumed"; fix the permissions or move it aside to
+reset); a handoff already passed to `record_run`; a progress fingerprint that
+cannot be computed (an unreadable `.work/INDEX.md`, one whose directory
+cannot be searched, or an unlistable ticket directory counts as "cannot be
+computed", never as progress); and the same command a second time with no
+progress since. A `decide` that raises is `wait` with reason `internal
+error`, and the handoff is still injected.
+
+**Which session wrote the note (T-0042).** On an armed machine, a
+PostToolUse Write, Edit or MultiEdit of the configured handoff makes the
+context hook record `{sha256, session_id, process, at}` for this worktree in
+`<git-common-dir>/crew/handoff-author.json` (temp file then `os.replace`,
+under a lock; before the `memory.inject` gate, so injection off still binds).
+An unarmed machine writes no such file. `decide` then waits unless the note's
+sha matches the record and: after `compact`, the payload's `session_id` equals
+the recorded one (it is stable across `/compact`); after `clear`, the Claude
+Code process does (`session_id` changes across `/clear`). The process is the
+nearest ancestor whose `/proc/<pid>/comm` is exactly `claude`, identified by
+pid and start time (T-0042 spike, Claude Code 2.1.283). With no `/proc` —
+native Windows, macOS — the process is unknown and every `clear` waits with
+"this session's process could not be identified"; `compact` is unaffected.
+A note written without Write/Edit/MultiEdit (by Bash, by hand, or before the
+machine was armed) has no record and waits. A recorder that cannot read the
+note, or whose write fails, leaves no entry for the worktree, never the
+previous one.
+
+**The stuck marker.** When a PreCompact can neither remove nor blank this
+session's old record (python's `write_precompact_record`, or either shell
+flavour's keyed removal), it leaves `precompact-<key>.stuck` beside it, and a
+`compact` for that session is not manual while the marker exists or cannot be
+stat'ed. The next record that lands clears it; one older than a day is pruned
+with the records. `.stuck` is not `.json`, so the shells' `precompact-*.json`
+sweeps never remove it. The `os.access` check stays as a second refusal.
+
+**Accepted risks.** A full disk or quota can let an old record survive with no
+marker: if the record cannot be replaced and the marker cannot be created
+while the directory is still writable, an old `manual` record lives for up to
+600 s. The same holds when the PreCompact payload has no readable session id
+(the `precompact-*.json` sweep can fail with no key to mark). Two sessions
+writing the handoff in the same instant can attribute it to the wrong one;
+the record hashes the bytes it reads under a lock, which narrows the window
+but does not close it.
+
+**Unchanged, and reported to the owner:** a malformed repo file still vetoes
+nothing. It is the same class as round 4's FIX (an unreadable veto reads as no
+veto), but T-0006's approved plan chose it, so T-0042 reports it rather than
+changing it; TODO.md tracks the decision. The `crew_resume.py decide` CLI applies
 `crew_state.handoff_staleness` itself, read-only, and waits on a stale note.
 `record_run` asks the consumed-once and loop guards again under its lock and
 refuses (`ok: false`) a handoff already recorded, the same command with no
@@ -2246,7 +2293,7 @@ completion audit is relaxed. `pm.authority: autonomous` from 0.20 arms nothing �
 
 ## 21. `route` — plain-text lifecycle routing, off until `true`
 
-`route.enabled` (T-0023, since 1.0.43) lets a short plain-text prompt reach a
+`route.enabled` (T-0023, since 1.0.46) lets a short plain-text prompt reach a
 lifecycle command. When it is on, crew's UserPromptSubmit context hook
 (`crew_context.route_item`) calls `crew_route.decide` on the prompt and, unless
 the answer is `none`, puts one line FIRST in the turn's context: the

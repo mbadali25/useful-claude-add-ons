@@ -196,10 +196,11 @@ def prune_claims(root):
 
 def prune_precompact(root):
     """Drop `precompact-<session>.json` records (crew_resume's PreCompact
-    trigger notes), and their orphaned `.tmp` files, older than the claim age
-    rule above. `decide` trusts one
-    for 600 s; nothing reads it after that, and one is left per compacting
-    session."""
+    trigger notes), their orphaned `.tmp` files, and their `.stuck` markers,
+    older than the claim age rule above. `decide` trusts a record for 600 s;
+    nothing reads it after that, and one is left per compacting session. A
+    marker is only ever a refusal, so dropping an old one can re-allow
+    nothing a fresh record would not."""
     directory = state_dir(root)
     cutoff = time.time() - _CLAIM_STALE_SECONDS
     try:
@@ -209,7 +210,8 @@ def prune_precompact(root):
     for name in names:
         # `.tmp` too: a writer killed between open and os.replace (the .ps1
         # wrapper kills python at 10 s) leaves `precompact-<key>.json.<pid>.tmp`.
-        if not (name.startswith("precompact-") and name.endswith((".json", ".tmp"))):
+        # `.stuck`: T-0042's marker for a record a PreCompact could not replace.
+        if not (name.startswith("precompact-") and name.endswith((".json", ".tmp", ".stuck"))):
             continue
         path = os.path.join(directory, name)
         try:
@@ -590,7 +592,8 @@ def codemap_items(root, subs, head):
             for s in subs[:3]]
 
 
-def _handoff(root, cfg):
+def _handoff_file(root, cfg):
+    """The configured handoff's real path, kept inside the repo."""
     context_cfg = dict_or_empty(cfg.get("context"))
     rel = context_cfg.get("handoffPath") if isinstance(context_cfg.get("handoffPath"), str) else ""
     rel = rel or ".work/HANDOFF.md"
@@ -598,7 +601,38 @@ def _handoff(root, cfg):
     path = os.path.realpath(os.path.join(base, rel))
     if os.path.commonpath([base, path]) != base:
         path = os.path.join(base, ".work", "HANDOFF.md")
-    return os.path.relpath(path, base).replace("\\", "/"), read_text(path)
+    return path
+
+
+def _handoff(root, cfg):
+    path = _handoff_file(root, cfg)
+    return os.path.relpath(path, os.path.realpath(root)).replace("\\", "/"), read_text(path)
+
+
+_AUTHOR_TOOLS = ("Write", "Edit", "MultiEdit")
+
+
+def record_handoff_author(root, cfg, payload):
+    """T-0042: after a Write/Edit/MultiEdit of the handoff on an ARMED
+    machine, record which session and Claude Code process wrote it, so a
+    later /clear or /compact resumes the note only in that session.
+    Returns None when there is nothing to record, else crew_resume's
+    (ok, reason). Runs before the `memory.inject` gate, so a repo with
+    injection off still binds its notes. A path that is not the handoff
+    records nothing, and an unarmed machine writes no file at all."""
+    if payload.get("hook_event_name") != "PostToolUse" or payload.get("tool_name") not in _AUTHOR_TOOLS:
+        return None
+    target = dict_or_empty(payload.get("tool_input")).get("file_path")
+    if not isinstance(target, str) or not target:
+        return None
+    handoff = _handoff_file(root, cfg)
+    written = os.path.realpath(os.path.join(payload.get("cwd") or root, target))
+    if os.path.normcase(written) != os.path.normcase(handoff):
+        return None
+    import crew_resume  # pylint: disable=import-outside-toplevel
+    if not crew_resume.settings(root)["armed"]:
+        return None
+    return crew_resume.record_author(root, payload.get("session_id"), handoff)
 
 
 def _handoff_verdict(root, cfg):
@@ -959,6 +993,7 @@ def run(payload, raw, harness="claude"):
     if not os.path.isdir(os.path.join(root, ".crew")):
         return ""
     cfg = load_crew_config(root)
+    _record_author_logged(root, cfg, payload, harness)
     # ON unless the repo says `memory.inject: false`. handoff-read reads the
     # same flag (`inject_enabled`) and stops printing the handoff when it is
     # on, so a session gets the handoff from one emitter, never both.
@@ -981,6 +1016,20 @@ def run(payload, raw, harness="claude"):
         return _run_locked(root, payload, cfg, session, harness)
     finally:
         release_lock(lock)
+
+
+def _record_author_logged(root, cfg, payload, harness):
+    """record_handoff_author, never raising; a failure is one log line, and
+    an unbound note only ever makes a later resume wait."""
+    try:
+        result = record_handoff_author(root, cfg, payload)
+    except Exception as exc:  # pylint: disable=broad-except
+        result = (False, f"internal error: {exc.__class__.__name__}")
+    if result is not None and not result[0]:
+        append_log(root, {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "harness": harness,
+                          "event": payload.get("hook_event_name") or "",
+                          "session": payload.get("session_id") or "", "chars": 0,
+                          "resumeAuthor": "failed", "reason": result[1]})
 
 
 def _run_locked(root, payload, cfg, session, harness):

@@ -91,7 +91,69 @@ def _record_path(root, session):
     return os.path.join(crew_resume.state_dir(str(root)), f"precompact-{session}.json")
 
 
-def _decide_compact(root, session="s1"):
+def _author(root, session="s1"):
+    """Bind the fixture's handoff to `session`, as the PostToolUse recorder
+    does after a Write of it (T-0042). A compact is bound by session_id, so
+    which process records it does not matter here."""
+    return crew_resume.record_author(str(root), session, str(root / ".work" / "HANDOFF.md"))
+
+
+def _post_write(root, session="s0", file_path=".work/HANDOFF.md"):
+    return {"hook_event_name": "PostToolUse", "session_id": session, "cwd": str(root), "tool_name": "Write",
+            "tool_input": {"file_path": file_path, "content": "x"}, "tool_response": {},
+            "transcript_path": str(root / "fresh.jsonl")}
+
+
+needs_proc = pytest.mark.skipif(not os.path.isdir("/proc/self") or os.name == "nt",
+                                reason="no /proc: a clear waits by design here (T-0042) - NOT run")
+
+
+def _claude(tmp_path, name):
+    """A copy of bash named `claude`: to crew_resume.session_process it is
+    the Claude Code process, and the nearest one to every hook it starts."""
+    home = tmp_path / f"claude-{name}"
+    home.mkdir()
+    exe = home / "claude"
+    shutil.copy2(_BASH, exe)
+    return str(exe)
+
+
+def _hook_cmd(flavor, name):
+    if flavor == "ps1":
+        return ["env", "OS=Windows_NT", _PWSH, "-NoProfile", "-NonInteractive", "-File",
+                os.path.join(_SCRIPTS, f"{name}.ps1")]
+    return [_BASH, os.path.join(_SCRIPTS, f"{name}.sh")]
+
+
+def _in_claude(claude, root, steps):
+    """Run each (flavor, hook, payload) in turn as a child of ONE `claude`
+    process, and return each hook's stdout."""
+    import shlex  # pylint: disable=import-outside-toplevel
+    work = root.parent / f"steps-{os.path.basename(os.path.dirname(claude))}"
+    work.mkdir(exist_ok=True)
+    lines = []
+    for index, (flavor, name, payload) in enumerate(steps):
+        (work / f"{index}.json").write_text(json.dumps(payload), encoding="utf-8")
+        lines.append(f"{shlex.join(_hook_cmd(flavor, name))} < {shlex.quote(str(work / f'{index}.json'))} "
+                     f"> {shlex.quote(str(work / f'{index}.out'))} 2>&1")
+    (work / "run.sh").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    done = subprocess.run([claude, str(work / "run.sh")], cwd=str(root), env=_env(root), capture_output=True,
+                          text=True, check=False, timeout=240)
+    assert done.returncode == 0, done.stderr
+    return [(work / f"{index}.out").read_text(encoding="utf-8").strip() for index in range(len(steps))]
+
+
+def _additional(out):
+    return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
+
+
+def _decide_compact(root, session="s1", bound=True):
+    """decide for a SessionStart `compact`. `bound=True` first records the
+    handoff as `session`'s own, so a wait here comes from the PreCompact
+    record under test and never from the missing author record T-0042 added
+    (without it, every compact test that expects `wait` passed vacuously)."""
+    if bound:
+        _author(root, session)
     home = root.parent / "home"
     with open(root / ".work" / "HANDOFF.md", encoding="utf-8") as handle:
         text = handle.read()
@@ -222,11 +284,19 @@ def _start(root, source="clear", session="s1"):
             "cwd": str(root), "transcript_path": str(root / "fresh.jsonl")}
 
 
-def _context(flavor, root, source="clear", session="s1"):
+def _context(flavor, root, source="clear", session="s1", author=False):
+    """One SessionStart through the real hook. `author=True` first writes the
+    handoff through PostToolUse, both hooks inside ONE `claude` process, so
+    the note is this session's own (T-0042)."""
+    if author:
+        out = _in_claude(_claude(root.parent, "author"), root,
+                         [(flavor, "crew-context", _post_write(root)),
+                          (flavor, "crew-context", _start(root, source, session))])[-1]
+        return out, _additional(out)
     done = _run(flavor, "crew-context", root, _start(root, source, session))
     assert done.returncode == 0, done.stderr
     out = done.stdout.strip()
-    return out, (json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else "")
+    return out, _additional(out)
 
 
 def _todays_handoff_item(root):
@@ -242,11 +312,12 @@ def _todays_handoff_item(root):
             "The working tree is the source of truth; verify against git diff.")
 
 
+@needs_proc
 @pytest.mark.parametrize("flavor", FLAVORS)
 def test_armed_and_matching_names_the_exact_command(tmp_path, flavor):
     root = _repo(tmp_path)
 
-    _out, text = _context(flavor, root)
+    _out, text = _context(flavor, root, author=True)
 
     assert (f"Next action: Close T-0001 with /crew:done.\n{_RUN_LINE}\n# Handoff" in text,
             "resume: /crew:done T-0001" in text) == (True, True), text
@@ -319,6 +390,7 @@ def test_armed_with_a_stale_handoff_says_it_was_archived(tmp_path, flavor):
 def test_armed_compact_after_a_manual_compact_names_the_command(tmp_path, flavor):
     root = _repo(tmp_path)
     _run(flavor, "handoff-write", root, _precompact(root, "s1", "manual"))
+    _run(flavor, "crew-context", root, _post_write(root, session="s1"))
 
     _out, text = _context(flavor, root, source="compact")
 
@@ -337,10 +409,13 @@ def test_armed_compact_after_an_auto_compact_waits(tmp_path, flavor):
 
 @needs_bash
 @needs_pwsh
+@needs_proc
 def test_exactly_one_flavour_emits_for_one_payload(tmp_path):
     root = _repo(tmp_path)
 
-    outs = [_run(flavor, "crew-context", root, _start(root)).stdout.strip() for flavor in ("sh", "ps1")]
+    outs = _in_claude(_claude(tmp_path, "one"), root, [("sh", "crew-context", _post_write(root)),
+                                                       ("sh", "crew-context", _start(root)),
+                                                       ("ps1", "crew-context", _start(root))])[1:]
 
     assert (sum(bool(o) for o in outs), _RUN_LINE in "".join(outs)) == (1, True)
 
@@ -355,17 +430,18 @@ def test_never_emits_initial_user_message(tmp_path):
     for label, kwargs in (("run", {}), ("wait", {"resume": "/crew:approve T-0001"}), ("off", {"machine": None})):
         base = tmp_path / label
         base.mkdir()
-        outs.append(_context(flavor, _repo(base, **kwargs))[0])
+        outs.append(_context(flavor, _repo(base, **kwargs), author=True)[0])
 
     assert ([bool(o) for o in outs], [("initialUserMessage" in o) for o in outs],
             [set(json.loads(o)["hookSpecificOutput"]) for o in outs]) == \
         ([True] * 3, [False] * 3, [{"hookEventName", "additionalContext"}] * 3)
 
 
+@needs_proc
 def test_the_context_log_records_the_decision(tmp_path):
     root = _repo(tmp_path)
 
-    _context("sh" if _BASH else "ps1", root)
+    _context("sh" if _BASH else "ps1", root, author=True)
 
     starts = [r for r in context_fixtures.log_records(root) if r.get("event") == "SessionStart"]
     assert starts[-1]["resume"] == {"action": "run", "reason": "", "prompt": "/crew:done T-0001"}
@@ -439,9 +515,10 @@ def _golden_repo(tmp_path, machine=None, repo_true=False):
     return root, facts
 
 
-def _context_py(scripts, root, source):
-    """additionalContext from `scripts`/crew_context.py for one SessionStart."""
-    payload = json.dumps(_start(root, source))
+def _context_py(scripts, root, source, payload=None):
+    """additionalContext from `scripts`/crew_context.py for one SessionStart
+    (or for `payload`, when one is given)."""
+    payload = json.dumps(payload or _start(root, source))
     done = subprocess.run([sys.executable, os.path.join(scripts, "crew_context.py")], cwd=str(root),
                           env=_env(root), input=payload, capture_output=True, text=True, check=False,
                           timeout=120)
@@ -463,7 +540,10 @@ _UNARMED = [
 
 @pytest.mark.parametrize("source,kwargs", _UNARMED)
 def test_unarmed_output_is_byte_identical_to_base(tmp_path, source, kwargs):
+    """T-0042: the handoff is written through PostToolUse first, so the
+    author recorder runs too and must leave the output byte-identical."""
     root, facts = _golden_repo(tmp_path, **kwargs)
+    _context_py(_SCRIPTS, root, source, payload=_post_write(root))
 
     text = _context_py(_SCRIPTS, root, source)
 
@@ -639,3 +719,108 @@ def test_a_staleness_verdict_that_raises_counts_as_stale(tmp_path, monkeypatch):
     monkeypatch.setattr(crew_state, "archive_stale_handoff", boom)
 
     assert crew_context._handoff_verdict(str(root), {}) == (False, True)  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("flavor", FLAVORS)
+def test_a_record_the_shell_could_not_remove_leaves_a_stuck_marker(tmp_path, flavor):
+    """Round 4 NIT :402 in the shell half. The record's place holds a
+    non-empty directory, which `rm -f` / `Remove-Item` cannot remove; with no
+    python on PATH the marker can only come from the shell itself."""
+    if os.name == "nt":
+        pytest.skip("symlinked PATH fixture is POSIX-only")
+    root = _repo(tmp_path)
+    record = _record_path(root, "s1")
+    os.makedirs(os.path.join(record, "keep"))
+    env = _env(root)
+    env["PATH"] = _no_python_path(tmp_path)
+    if flavor == "ps1":
+        env["OS"] = "Windows_NT"
+        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", os.path.join(_SCRIPTS, "handoff-write.ps1")]
+    else:
+        cmd = [_BASH, os.path.join(_SCRIPTS, "handoff-write.sh")]
+
+    done = subprocess.run(cmd, cwd=str(root), env=env, capture_output=True, text=True,
+                          input=json.dumps(_precompact(root, "s1", "auto")), check=False, timeout=120)
+
+    assert (done.returncode, os.path.isdir(record),
+            os.path.isfile(crew_resume.stuck_path(str(root), "s1"))) == (0, True, True), done.stderr
+
+
+
+# --- T-0042 step 6: the note resumes only in the session that wrote it ------
+
+@needs_proc
+@pytest.mark.parametrize("flavor", FLAVORS)
+def test_the_writing_session_clear_names_the_command(tmp_path, flavor):
+    """End to end, no seam: the PostToolUse Write of the handoff and the
+    SessionStart `clear` run under one long-lived `claude` process."""
+    root = _repo(tmp_path)
+
+    _post, start = _in_claude(_claude(tmp_path, "a"), root, [(flavor, "crew-context", _post_write(root)),
+                                                             (flavor, "crew-context", _start(root, "clear", "s2"))])
+
+    assert (_RUN_LINE in _additional(start), os.path.isfile(crew_resume.author_path(str(root)))) == \
+        (True, True), start
+
+
+@needs_proc
+@pytest.mark.parametrize("flavor", FLAVORS)
+def test_another_session_clear_waits(tmp_path, flavor):
+    """Round 4 NIT :421: a /clear in ANOTHER terminal on the same worktree
+    used to resume this terminal's note."""
+    root = _repo(tmp_path)
+    _in_claude(_claude(tmp_path, "a"), root, [(flavor, "crew-context", _post_write(root))])
+
+    (start,) = _in_claude(_claude(tmp_path, "b"), root, [(flavor, "crew-context", _start(root, "clear", "s2"))])
+
+    text = _additional(start)
+    assert ("Auto-resume did not start: the handoff was written by another session." in text,
+            "ready to run" in text) == (True, False), text
+
+
+def _post_in_process(tmp_path, monkeypatch, root, file_path=".work/HANDOFF.md"):
+    import crew_context  # pylint: disable=import-outside-toplevel
+    import crew_state  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(tmp_path / "home" / ".claude" / "crew" / "config.json"))
+    monkeypatch.setenv("CREW_VAULT_OPS", str(tmp_path / "absent.py"))
+    monkeypatch.setenv("CREW_OBSIDIAN_CONFIG", str(tmp_path / "absent.json"))
+    payload = _post_write(root, "s1", file_path)
+    crew_context.run(payload, json.dumps(payload).encode())
+    return crew_resume.author_path(str(root))
+
+
+def test_a_write_of_the_handoff_records_its_author(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+
+    path = _post_in_process(tmp_path, monkeypatch, root, str(root / ".work" / "HANDOFF.md"))
+
+    with open(path, encoding="utf-8") as handle:
+        (entry,) = json.load(handle)["worktrees"].values()
+    assert entry["session_id"] == "s1"
+
+
+def test_a_write_to_another_file_records_nothing(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+
+    path = _post_in_process(tmp_path, monkeypatch, root, "src/alpha/core.py")
+
+    assert not os.path.lexists(path)
+
+
+def test_unarmed_writes_no_author_record(tmp_path, monkeypatch):
+    root = _repo(tmp_path, machine=None)
+
+    path = _post_in_process(tmp_path, monkeypatch, root)
+
+    assert not os.path.lexists(path)
+
+
+def test_injection_off_still_records_the_author(tmp_path, monkeypatch):
+    """`memory.inject: false` turns the context hook off, not the binding: a
+    repo with injection off would otherwise never resume anything."""
+    root = _repo(tmp_path)
+    (root / ".crew" / "config.json").write_text(json.dumps({"memory": {"inject": False}}), encoding="utf-8")
+
+    path = _post_in_process(tmp_path, monkeypatch, root)
+
+    assert os.path.isfile(path)

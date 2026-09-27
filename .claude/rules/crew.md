@@ -2,9 +2,9 @@
 paths:
   - "plugin/crew/**"
 ---
-<!-- crew:generated source=.crew/codemap/crew.md sha256=56dda5a2c34c6ece -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/crew.md sha256=5660eedb9c10c6eb -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # crew
-Code map anchor `a1acd9b7`; if it is behind HEAD, re-check with `git diff --name-only a1acd9b7..HEAD -- <cited paths>`.
+Code map anchor `12682e41`; if it is behind HEAD, re-check with `git diff --name-only 12682e41..HEAD -- <cited paths>`.
 Covers: The crew plugin after 1.0: hooks, the four agents, commands, skills inventory, config layering and leaf counts, and how crew_freshness.py reads this very directory.
 ## Entry points
 - `plugin/crew/hooks/scripts/crew_state.py:996` — `TRIGGERS`, a 15-entry tuple, unchanged in membership and order from the previous anchor.
@@ -16,7 +16,7 @@ Covers: The crew plugin after 1.0: hooks, the four agents, commands, skills inve
 - `plugin/crew/hooks/scripts/event_claim.py` — no single entry point read this pass beyond the module docstring; called from `notify.sh` and `handoff-write.sh` only.
 - `plugin/crew/hooks/scripts/crew_context.py:121` — `load_crew_config`, the one function that reads `crew.json` before `config.json`.
 - `plugin/crew/hooks/scripts/crew_autoclear_setup.py` — no single `main()` confirmed at a specific line this pass; called with subcommands (`plan-windows-default`, `apply-migrate`) from the three sites named above.
-- `plugin/crew/hooks/scripts/crew_resume.py:411` — `decide`, read-only; `main()` is the `decide` / `record` / `precompact` CLI.
+- `plugin/crew/hooks/scripts/crew_resume.py:667` — `decide`, read-only; `main()` is the `decide` / `record` / `precompact` CLI.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:576` — `ticket_freshness`, the library entry point; `main()` at `:676`.
 - `plugin/crew/hooks/scripts/crew_autopilot.py:451` — `next_phase`, read-only; `main()` at `:639` is the `next` / `resume` / `settings` / `stops` CLI `plugin/crew/commands/autopilot.md` calls.
 - `plugin/crew/hooks/scripts/crew_route.py:210` — `decide`, read-only route / ask / none for a prompt; `main()` at `:332` is the `settings` / `decide` CLI.
