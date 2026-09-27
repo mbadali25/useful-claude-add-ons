@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.43: environment-scoped workflow deploys in the cloud guard (T-0009)
+### Added — `crew` 1.0.47: environment-scoped workflow deploys in the cloud guard (T-0009)
 
 - **`guards.deployWorkflow` and `environments.workflows`.** While
   `guards.cloudGuard` is armed, `gh workflow run <wf>` and its REST twin,
@@ -51,7 +51,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   **machine-global** layer now engages the gate and makes every dispatch
   could-not-tell, as a malformed repo block does; the terraform layer's
   reading of it is unchanged.
-- **BREAKING for the dispatch forms that ran in the first 1.0.43 build:** a
+- **BREAKING for the dispatch forms that ran in T-0009's first build:** a
   `--json` body (heredoc, here-string or `echo` pipe), `--input -`, a
   double-quoted display name, an unquoted `{owner}` endpoint and a pipe out of
   `gh` now ask (denied unattended). Write `-f` fields, `'Deploy Staging'`,
@@ -80,7 +80,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   `environments.nonProd`, `environments.prodUnattended` (both layers) and the
   destroy rule, beside the dispatch grammar; its HTML, DOCX and PDF are
   rebuilt.
-- Bumped `1.0.42 -> 1.0.43`.
+- Bumped `1.0.46 -> 1.0.47` (1.0.43 on its branch; main gave 1.0.43-1.0.46 to T-0042, T-0021, T-0023).
 
 ### Added
 
