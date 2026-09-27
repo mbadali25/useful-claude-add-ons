@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@20e9b396
+anchor: useful-claude-add-ons@c1f22bc2
 verified: 2026-09-27
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -263,7 +263,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2318-2325` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2327-2334` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -445,7 +445,7 @@ set on Ubuntu.
 - `.crew/verify.json:293-300` (rule 27) — the T-0004 autopilot suite;
   `plugin/crew/tests/sabotage.py:77`, `:3049` — `sabotage_autopilot.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
-  `plugin/crew/CONFIG.md:2318-2325` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2327-2334` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -831,3 +831,12 @@ descoped-kill limitation (`:2284-2291` -> `:2318-2325`, re-read, same text);
 the trigger's parametrisation) and `plugin/crew/tests/test_cloud_guard_deploy.py` (the grammar
 tables) changed. The rule 6 bullet above still quotes the 2026-09-25 `why` it read then; the rule
 itself now records 110s.
+
+## Re-anchor provenance - `20e9b396` -> `c1f22bc2`, 2026-09-27 (T-0009 review round 3)
+
+`d8d1da86` fixes T-0009 review round 3 (Codex, 4 BLOCK + 1 FIX); `c1f22bc2` re-sets crew 1.0.43 as the last plugin/crew commit. Of the paths this note cites, `.crew/verify.json` changed in rule 7's `seconds` (116)
+and `why` (1861 passed in the default run, 444 more under `-m slow`) only, no line moved;
+`plugin/crew/CONFIG.md` gained 9 lines in the dispatch-grammar paragraph, so the descoped
+process-group limitation moved `:2318-2325` -> `:2327-2334` (re-read, same text; the history
+figures above are left as written); `plugin/crew/tests/sabotage_cloud.py` gained the round-3 block
+(20 entries, 290 -> 310 in the tuple, 5 re-anchored) and `plugin/crew/tests/test_cloud_guard_deploy.py` the R3 tables.

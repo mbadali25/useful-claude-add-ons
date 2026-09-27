@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@20e9b396
+anchor: useful-claude-add-ons@c1f22bc2
 verified: 2026-09-27
 
 # localgpu
@@ -1113,3 +1113,9 @@ additions, all below `:240`) and `.claude-plugin/marketplace.json` (crew's `vers
 `b5e55fb7` builds T-0009's dispatch grammar (the successor plan after review round 2); `20e9b396` re-sets crew 1.0.43 as the last plugin/crew commit. A per-path check
 `git diff --name-only 995b5874 20e9b396 -- <the paths this note cites>` is empty: nothing it cites
 moved. Re-anchored with the other five so the six stay on one commit.
+
+## Re-anchor provenance - 20e9b396 -> c1f22bc2, 2026-09-27 (T-0009 review round 3)
+
+`d8d1da86` fixes T-0009 review round 3 (Codex, 4 BLOCK + 1 FIX); `c1f22bc2` re-sets crew 1.0.43 as the last plugin/crew commit. Of the paths this note cites only `plugin/crew/hooks/scripts/crew_config.py` changed:
+`global_environments_problem` was inserted at `:1056` (+16). Every `crew_config.py` line this note
+cites is above it (`:126-128` and the prose around them), re-read, same text, so nothing cited moved.

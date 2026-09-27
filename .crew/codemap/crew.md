@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@20e9b396
+anchor: useful-claude-add-ons@c1f22bc2
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -253,7 +253,7 @@ merge: 121 / 67 / 54 / 0 - T-0005 added `environments.prodUnattended` to both te
 merged onto main `502cb137`): 123 / 68 / 55 / 0 - T-0009 added `guards.deployWorkflow` to both
 templates and `environments.workflows` (an empty dict, one leaf) to `default_config()` only.
 `plugin/crew/tests/test_crew_config.py:280` asserts 123. T-0004's `CHANGELOG.md` entry now says
-"117 -> 119" (`:253-254`), matching the `07ca3972` execution; it said "116 -> 118" when this
+"117 -> 119" (`:306-307`), matching the `07ca3972` execution; it said "116 -> 118" when this
 paragraph was first written. T-0005's entry states no leaf count.
 
 These are new counts, not the pre-1.0 note's 103/60/43 carried forward —
@@ -288,7 +288,7 @@ paragraph (`plugin/crew/hooks/scripts/cloud_guard.py:34-56`) states it: a terraf
 also judged by its target environment (`nonProd`, `prod` or `unknown`, from `TF_WORKSPACE`, an
 in-sequence literal `workspace select|new`, `.terraform/environment`, `-var environment=` /
 `TF_VAR_environment`, or a saved plan's sidecar) and by whether it destroys (`yes`, `no`,
-`unknown`, and `unknown` counts as `yes`); `_terraform_verdict` (`:2991`) decides. The sidecar
+`unknown`, and `unknown` counts as `yes`); `_terraform_verdict` (`:2992`) decides. The sidecar
 is `.crew/tfplan/<sha256>.json`, written outside the hook by
 `plugin/crew/hooks/scripts/crew_tfplan.py` (`summarize`, `:174`; `main`, `:237`), which reads
 the plan's workspace out of the plan file itself (`plan_workspace`, `:123`). The config is
@@ -300,38 +300,38 @@ the docstrings and definitions cited; the verdict table itself is `plugin/crew/C
 
 **The literal-word allowlist (T-0005 Steps 8-10).** Before the lexer reads
 anything, `scan` calls
-`_literal_gate` (`plugin/crew/hooks/scripts/cloud_guard.py:2794`, called at `:2843`, and only at
+`_literal_gate` (`plugin/crew/hooks/scripts/cloud_guard.py:2795`, called at `:2844`, and only at
 depth 0 - the raw command, never the lexer's own nested extractions): a line that RUNS terraform,
 terragrunt or tofu and holds a word that is not a plain literal (`crew_guards.first_non_literal`,
 `plugin/crew/hooks/scripts/crew_guards.py:1216`) yields one `terraformApply` finding whose scope
 `op` is `OP_UNREADABLE_LINE`; `_terraform_verdict` answers it before reading any plan or
 environment (ask, denied unattended; `block` denies). "Runs" is Step 9's trigger,
-`crew_guards.command_trigger` (`:1943`; `command_names_terraform` `:1954` returns its word): its
+`crew_guards.command_trigger` (`:1954`; `command_names_terraform` `:1965` returns its word): its
 own bash reader, `_GateReader` (`:1261`), splits the raw text into argv lists, and `_argv_trigger`
-(`:1714`) fires on a command word that dequotes to one of the three after `_unwrap`'s wrappers, on
+(`:1724`) fires on a command word that dequotes to one of the three after `_unwrap`'s wrappers, on
 a `bash -c`/`eval`/`pwsh -c` payload or substitution that does, or on an unreadable command word
 when the line names terraform, `destroy`, `apply` or `workspace`. Anything the reader does not
 read with certainty falls back to Step 8's any-word trigger, `crew_guards.names_terraform`
 (`:1204`). PowerShell lines use the same command-word rule since Step 10, `crew_guards.ps_trigger`
-(`:1917`, per command `_ps_argv_trigger` `:1852`), read with the lexer's `_lex_ps`: `&`, `.`,
+(`:1928`, per command `_ps_argv_trigger` `:1862`), read with the lexer's `_lex_ps`: `&`, `.`,
 `terraform.exe`, a path, `Start-Process`, `pwsh -c`, `bash -c`, `Invoke-Expression`, `$(...)`.
 The trigger returns `(word, unseen)`: `unseen` marks a command the lexer is not known to read (an
 opaque script runner such as `flock` or `ssh` whose own words name terraform, `find -exec`'s found
 path, zsh's `=terraform`, the reader's give-up, an alias, and the name a line copies or links
-terraform to, run with a destroy/apply/workspace operand - `_copies_terraform` `:1788`), and an
+terraform to, run with a destroy/apply/workspace operand - `_copies_terraform` `:1798`), and an
 unseen line is could-not-tell even when every word is plain. Since Step 10 there is no
 unknown-wrapper fallback and no data-command exemption: an argument naming terraform is data
 unless the command word is terraform (README "What the guard does not catch" lists what that
 leaves out). A read-only terraform/tofu subcommand (`_tf_read_only`, `:1595`, which reads terragrunt past its options and `run-all`) does not trigger.
 The helpers live in `crew_guards.py` because `cloud_guard.py` sits at `.pylintrc`'s
-max-module-lines (3380 of 3400 at `02d1513b`, 3399 at this anchor, whose dispatch
-code lives in `crew_guards.py` for the same reason); `cloud_guard.GATE_HELPERS` (`:2790`) passes the
+max-module-lines (3380 of 3400 at `02d1513b`, 3400 at this anchor, whose dispatch
+code lives in `crew_guards.py` for the same reason); `cloud_guard.GATE_HELPERS` (`:2791`) passes the
 lexer's `_unwrap`, `_shell_args`, `_pwsh_payload`, `_ps_normalise`, `_head_name` and `_lex_ps` in,
-so `crew_guards` imports nothing from it at load time (only `_gate_helpers`, `crew_guards.py:2531`,
+so `crew_guards` imports nothing from it at load time (only `_gate_helpers`, `crew_guards.py:2692`,
 imports it at call time, for a `dispatch_answer` caller that passed none). Since T-0009 the
 trigger is parametrised on the tool it gates: `_TerraformTool` (`:1636`, instance `_TF_TOOL`
-`:1695`) answers the name, hole, direct, copy and opaque questions exactly as before, and
-`_bash_trigger` (`:1802`), `_argv_trigger`, `_copies_terraform`, `_find_exec_trigger` (`:1698`),
+`:1705`) answers the name, hole, direct, copy and opaque questions exactly as before, and
+`_bash_trigger` (`:1812`), `_argv_trigger`, `_copies_terraform`, `_find_exec_trigger` (`:1708`),
 `_ps_argv_trigger` and `ps_trigger` take it as a defaulted `tool` argument. The lexer's own terraform reading skips options
 before the subcommand (`crew_guards.tf_skip_options` `:1551`, used by `_terraform_destructive`
 `:1547`), so `terragrunt --working-dir infra destroy` is a destroy, and `_unwrap` reads a listed
@@ -339,49 +339,61 @@ wrapper's options as GNU getopt does (`crew_guards.skip_wrapper_options` `:1570`
 
 **Workflow dispatches (T-0009, crew 1.0.43).** `gh workflow run <wf>` and its REST twin, `gh
 api` POST on `repos/<o>/<r>/actions/workflows/<wf>/dispatches`, are judged behind THE DISPATCH
-GRAMMAR (`crew_guards.py`'s section comment at `:1958`; the successor plan after review round 2
-was rejected). `dispatch_answer` (`plugin/crew/hooks/scripts/crew_guards.py:2546`) is the one road:
-it runs `dispatch_trigger` (`:2176`, the command-word reader above with `_DispatchTool` `:2120`,
-whose shape test is `_dispatch_shape` `:2092`: gh, or a run-time command word, with positionals
-that could be `workflow run` or `api <dispatch endpoint>`), then `dispatch_first_non_literal`
-(`:2273`, over `_dispatch_grammar` `:2239`: `_PLAIN_WORD_RE` words or one whole single-quoted word,
-joined only by `_DISPATCH_OPS` `:2021` and `2>&1`); an unseen dispatch (nested, `xargs`/`parallel`/
+GRAMMAR (`crew_guards.py`'s section comment at `:1979`; the successor plan after review round 2
+was rejected). `dispatch_answer` (`plugin/crew/hooks/scripts/crew_guards.py:2707`) is the one road:
+it runs `dispatch_trigger` (`:2329`, the command-word reader above with `_DispatchTool` `:2217`,
+whose shape test is `_dispatch_shape` `:2113`: gh with positionals that could be `workflow run`
+or `api <dispatch endpoint>`; since review round 3 a command word made at run time is read by its
+argv's shape too, `_hole_shape` `:2145`, the hole standing for any WORDS in bash, never by what
+the line mentions; an `xargs`/`parallel` placeholder command word is such a hole
+(`_DispatchTool.direct`); in PowerShell `_ps_values` `:2178` reads a `Start-Process` target and
+`-ArgumentList`, `ps_aliases` follows `Set-Alias`/`New-Alias`/an `alias:` path to gh or a
+run-time value, and `symbolic` makes a run-time word in gh's own argv a hole), then
+`dispatch_first_non_literal`
+(`:2426`, over `_dispatch_grammar` `:2392`: `_PLAIN_WORD_RE` words or one whole single-quoted word,
+joined only by `_DISPATCH_OPS` `:2042` and `2>&1`); an unseen dispatch (nested, `xargs`/`parallel`/
 `find -exec`, an alias or copy of gh, zsh's `=gh`), gh reading stdin or a file (`_dispatch_reads`
-`:2370`), an unreadable `environments` block, or a line the literal reading finds no dispatch in
+`:2523`), an unreadable `environments` block in either layer (`dispatch_engaged` `:2677` and
+`_envs_problem` `:2685` over `environments_config`'s `dispatchProblem`,
+`plugin/crew/hooks/scripts/cloud_guard.py:2572`, from
+`crew_config.global_environments_problem`, `plugin/crew/hooks/scripts/crew_config.py:1056`;
+the terraform layer still reads only the repo's `problem`), or a line the literal reading finds no dispatch in
 is `unknown` with `op: line-not-literal` (could not tell). Only a literal line reaches the parser:
-`dispatch_scopes` (`:2437`; ONE flag parser, `_gh_words` `:2290`, which reads gh's short clusters
+`dispatch_scopes` (`:2590`; ONE flag parser, `_gh_words` `:2443`, which reads gh's short clusters
 as pflag does, honours a standalone `-h`/`--help` before `--` as no dispatch, and ends options at
-`--`; then `_dispatch_from_run` `:2395` and `_dispatch_from_api` `:2403`) and one classifier,
-`dispatch_environment` (`:2484`), against the repo-only `environments.workflows` map: a workflow
+`--`; then `_dispatch_from_run` `:2548` and `_dispatch_from_api` `:2556`) and one classifier,
+`dispatch_environment` (`:2637`), against the repo-only `environments.workflows` map: a workflow
 matching no key is `unlisted` and not judged. Stdin is never read: round 1's readers
 (`Rewritable`, `_exact_stdout`, `command_stdin`, `reconcile_dispatch`, the JSON body reader,
 `cloud_guard`'s `_Cmd.stdin_unsure` and the resolved-variable re-read in `scan`) are gone.
-`dispatch_gate` (`:2612`) is `scan`'s last check, once, on the raw line
-(`plugin/crew/hooks/scripts/cloud_guard.py:2945`): the raw answer's could-not-tell replaces every
+`dispatch_gate` (`:2773`) is `scan`'s last check, once, on the raw line
+(`plugin/crew/hooks/scripts/cloud_guard.py:2946`): the raw answer's could-not-tell replaces every
 dispatch finding the lexer made, and so does a raw reading that names other dispatches than the
-lexer's. `deploy_verdict` (`:2648`) is T-0005's table with `guards.deployWorkflow` as the base
+lexer's; with it, `scan` drops cloudGuard's unconditional "unreadable" finding for an
+`xargs`/`parallel` placeholder command word whose visible arguments are a dispatch's
+(`fed_dispatch` `:2319`, marked in `_fed_finding`, `plugin/crew/hooks/scripts/cloud_guard.py:2350`). `deploy_verdict` (`crew_guards.py:2809`) is T-0005's table with `guards.deployWorkflow` as the base
 policy, `allow` covering nonProd only, plus the could-not-tell row (ask, naming the marker); the
-marker is keyed on `dispatch_marker_key` (`:2634`): the whole command text, plus the workflow key
+marker is keyed on `dispatch_marker_key` (`crew_guards.py:2795`): the whole command text, plus the workflow key
 and environment when classified. `cloud_guard.py` holds only the call sites: `_classify`'s `gh`
 branch (`:2257`, `dispatch_answer` over `dispatch_text(argv)`), `scan`'s `dispatch_gate` and
-`_judge_one` (`:3091`, through `judge_dispatch`, `crew_guards.py:2705`, which keys the marker on
+`_judge_one` (`:3092`, through `judge_dispatch`, `crew_guards.py:2866`, which keys the marker on
 `evaluate`'s whole command); `ENV_NONPROD`/`ENV_PROD`/`ENV_UNKNOWN` and `ENV_UNLISTED` are defined
-in `crew_guards.py` (`:2013-2014`) and imported by `cloud_guard.py` (`:138-139`). The map is read
+in `crew_guards.py` (`:2034-2035`) and imported by `cloud_guard.py` (`:138-139`). The map is read
 by `cloud_guard.environments_config` (`:2537`) and validated by
 `crew_config.environments_block_problem` (`plugin/crew/hooks/scripts/crew_config.py:1016`).
 DERIVED from the code cited.
 
-**The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2460-2583`)
-now holds 15 keys**, built in seven steps (a literal dict of two at `:2460`, four `.update()`
-calls at `:2475`, `:2499`, `:2510` and `:2520`, and two single-key assignments at `:2556` and
-`:2579`) rather than one table: `pm.authority`, `install.policy`, the 7 `GUARD_NAMES` keys, the 2
+**The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2476-2599`)
+now holds 15 keys**, built in seven steps (a literal dict of two at `:2476`, four `.update()`
+calls at `:2491`, `:2515`, `:2526` and `:2536`, and two single-key assignments at `:2572` and
+`:2595`) rather than one table: `pm.authority`, `install.policy`, the 7 `GUARD_NAMES` keys, the 2
 `PROD_GUARD_NAMES` keys, `guards.roleWrites`, `guards.cloudGuard`,
 `change.requireForProduction` and `environments.prodUnattended` (T-0005) =
 2 + 7 + 2 + 1 + 1 + 1 + 1 = 15 (T-0009 added `guards.deployWorkflow` through the
-`GUARD_NAMES` update; `:2486` then replaces that key's `allow` widening note and adds no key).
+`GUARD_NAMES` update; `:2502` then replaces that key's `allow` widening note and adds no key).
 Counted by reading the construction sites and confirmed with
 `len(crew_config._RATCHETED)` at the T-0009 anchor, not by trusting the literal alone — the
-literal at `:2460-2471` holds only 2. (Before T-0005 this said "five steps" for 13 keys; the
+literal at `:2476-2487` holds only 2. (Before T-0005 this said "five steps" for 13 keys; the
 sites were already six then — the literal, four `.update()` calls and one assignment.) The
 same key is registered in `crew_guards.RATCHETED_KEYS`
 (`plugin/crew/hooks/scripts/crew_guards.py:555-559`). `autopilot.*` is not ratcheted
@@ -396,7 +408,7 @@ they disagree:
 - `crew_config.py` (used by `verify-gate.sh`, `promote-gate.sh`,
   `role-write-guard.ps1`'s config lookups, and everything the ratchet/guard
   machinery above touches) reads **only** `.crew/config.json`
-  (`plugin/crew/hooks/scripts/crew_config.py:1274`, and the module's own
+  (`plugin/crew/hooks/scripts/crew_config.py:1290`, and the module's own
   docstring at `:1` — "Owns the single definition of a fresh
   `.crew/config.json`").
 - `crew_context.py`'s `load_crew_config`
@@ -700,7 +712,7 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
 - `plugin/crew/hooks/scripts/crew_state.py:2901` — `evaluate_triggers`.
 - `plugin/crew/hooks/scripts/crew_config.py:240` / `:387` —
   `default_config()` / `default_global_config()`.
-- `plugin/crew/hooks/scripts/crew_config.py:2460` — `_RATCHETED`, the
+- `plugin/crew/hooks/scripts/crew_config.py:2476` — `_RATCHETED`, the
   15-key ratchet table (seven construction steps).
 - `plugin/crew/hooks/scripts/role_write_guard.py:539` — `classify`, the
   decision function; `:684` — `main()`.
@@ -1267,3 +1279,25 @@ line, so `_literal_gate` `:2789` -> `:2794` (called `:2838` -> `:2843`), `_terra
 `GATE_HELPERS` (`:2785` -> `:2790`); the module is 3399 lines. `CHANGELOG.md` gained the grammar
 entry above T-0004's, so its "117 -> 119" moved `:228-229` -> `:253-254`. The two paragraphs on
 the trigger and on workflow dispatches are rewritten and DERIVED from the code they cite.
+
+## Re-anchor provenance - `20e9b396` -> `c1f22bc2`, 2026-09-27 (T-0009 review round 3)
+
+`d8d1da86` fixes T-0009 review round 3 (Codex, 4 BLOCK + 1 FIX); `c1f22bc2` re-sets crew 1.0.43 as the last plugin/crew commit. Of the paths this note cites, `crew_guards.py`, `cloud_guard.py`,
+`crew_config.py`, `plugin/crew/CONFIG.md`, `plugin/crew/README.md`, `.crew/verify.json` (rule 7's
+`seconds`/`why` only; no line moved), `CHANGELOG.md` and the deploy test and sabotage modules
+changed. Re-taken with a line-level diff against `20e9b396`, body only (the provenance sections
+above keep the numbers they recorded): in `crew_guards.py` the PowerShell trigger gained the
+tool's `symbolic`/`ps_aliases` hooks (+10 from `_TerraformTool`'s end), so `_argv_trigger` `:1714`
+-> `:1724`, `_copies_terraform` `:1788` -> `:1798`, `_bash_trigger` `:1802` -> `:1812`,
+`_ps_argv_trigger` `:1852` -> `:1862`, `ps_trigger` `:1917` -> `:1928`, `command_trigger` `:1943`
+-> `:1954`; the dispatch section grew `_fed_args`, `_hole_shape`, `_ps_runtime`, `_ps_values`,
+`_ps_quoted`, `fed_dispatch` and `_envs_problem`, and every citation into it was re-taken by
+symbol (`dispatch_answer` `:2546` -> `:2707`, `dispatch_gate` `:2612` -> `:2773`, ...). The old
+`:1958` for the section comment named the blank line above it; it now names THE DISPATCH GRAMMAR
+block, `:1979`. `cloud_guard.py` is 3400 lines (+1, the `fed_dispatch` scope on `_fed_finding`'s
+unreadable finding), so everything from `:2380` moved by one (`GATE_HELPERS` `:2791`,
+`_literal_gate` `:2795`, `_terraform_verdict` `:2992`). `crew_config.py` gained
+`global_environments_problem` (`:1056`, +16), so `_RATCHETED` `:2460` -> `:2476` and the
+construction steps with it. `CHANGELOG.md`'s "117 -> 119" was already stale at `20e9b396`
+(`:294`, cited `:253-254`); it is `:306-307` now. The workflow-dispatch paragraph gained round 3's
+rules and is DERIVED from the code it cites.

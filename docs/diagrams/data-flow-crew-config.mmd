@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@20e9b396 on 2026-09-27. Verify before trusting.
+%% Generated from useful-claude-add-ons@c1f22bc2 on 2026-09-27. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/cloud_guard.py
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
@@ -181,6 +181,13 @@
 %% cited before is below :574) and CONFIG.md (the dispatch subsection; section numbers hold) changed.
 %% Added the Dispatch subgraph: environments.workflows's one reader and the grammar that runs before
 %% the parser; cloud_guard.py joins the Anchors line for it. Its lines are re-read at 20e9b396.
+%% Re-anchored 20e9b396 -> c1f22bc2 (T-0009 review round 3): of the Anchors paths crew_guards.py
+%% (the trigger's PowerShell hooks from :1636 and the dispatch section - nothing this diagram cites
+%% outside Dispatch is below :574), cloud_guard.py (+1 from :2380; environments_config :2537 holds),
+%% crew_config.py (global_environments_problem inserted at :1056, +16 below it: PLAN, ISG, VAL,
+%% MERGEW, WIDEN, WRITE and RC re-mapped by a line diff and re-read) and CONFIG.md changed. The
+%% Dispatch subgraph gains the machine-global layer's malformed block (dispatchProblem) and the
+%% run-time command word read by its argv's shape; its lines are re-read at c1f22bc2.
 flowchart TB
 
     subgraph Sources["Three sources, lowest precedence first"]
@@ -221,14 +228,14 @@ flowchart TB
 
     subgraph Write["The WRITE side - /crew:config --set"]
         direction TB
-        PLAN["plan_global_write()<br/>plugin/crew/hooks/scripts/crew_config.py:2586<br/><i>pure</i>; returns (merged, changes)"]
-        ISG{"is_global_path()<br/>crew_config.py:692, checked at :2612"}
+        PLAN["plan_global_write()<br/>plugin/crew/hooks/scripts/crew_config.py:2602<br/><i>pure</i>; returns (merged, changes)"]
+        ISG{"is_global_path()<br/>crew_config.py:692, checked at :2628"}
         REFUSE>"GlobalWriteRefused (class :2182)<br/>names the path AND lists every allowed one"]
-        VAL{"validate_providers()<br/>crew_config.py:176, checked at :2633"}
+        VAL{"validate_providers()<br/>crew_config.py:176, checked at :2649"}
         PERR>"ProviderError (class :172)<br/>a VALUE check, not a path check"]
-        MERGEW["merge, never replace - crew_config.py:2621<br/>keys the file already holds that<br/>the update does not name survive<br/>byte-for-byte"]
-        WIDEN["_widens()<br/>plugin/crew/hooks/scripts/crew_config.py:2274<br/>called at :2667. RANK, not equality."]
-        WRITE["write_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:2673<br/>the only function in crew that writes<br/>outside the repo. Sibling-then-rename<br/>with the PID in the tmp name, fsync<br/>before os.replace :2699-2706 - PRE-EXISTING<br/>since 0.16.7, not new at this anchor"]
+        MERGEW["merge, never replace - crew_config.py:2637<br/>keys the file already holds that<br/>the update does not name survive<br/>byte-for-byte"]
+        WIDEN["_widens()<br/>plugin/crew/hooks/scripts/crew_config.py:2290<br/>called at :2683. RANK, not equality."]
+        WRITE["write_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:2689<br/>the only function in crew that writes<br/>outside the repo. Sibling-then-rename<br/>with the PID in the tmp name, fsync<br/>before os.replace :2715-2722 - PRE-EXISTING<br/>since 0.16.7, not new at this anchor"]
     end
 
     PLAN --> ISG
@@ -244,7 +251,7 @@ flowchart TB
     subgraph Ratchet["Two DIFFERENT ratchet tables, not one - 14 write-side, 13 read-side"]
         direction TB
         RG["<b>READ side: crew_guards.RATCHETED_KEYS</b><br/>plugin/crew/hooks/scripts/crew_guards.py:532-559<br/><b>14 keys</b> (executed + len()'d, this pass):<br/>install.policy, change.requireForProduction,<br/>environments.prodUnattended (T-0005),<br/>and all ELEVEN guards.* - terraformApply, forcePush,<br/>adminMerge, mergeGate, cloudDestructive,<br/>sqlDestructive, deployWorkflow (T-0009), prodDatabase, prodServer,<br/>roleWrites, <b>cloudGuard (new)</b>.<br/>Consumed by crew_config.resolve_ratcheted() :806<br/>via crew_guards.effective_ratcheted() :574, called<br/>at crew_config.py:850"]
-        RC["<b>WRITE side: crew_config._RATCHETED</b><br/>plugin/crew/hooks/scripts/crew_config.py:2460<br/>(extended through :2583)<br/><b>15 keys</b>: the same fourteen PLUS pm.authority.<br/>pm.authority is still NOT in RATCHETED_KEYS -<br/>it resolves by ordinary precedence and only<br/>needs a widening NOTE when /crew:config writes it"]
+        RC["<b>WRITE side: crew_config._RATCHETED</b><br/>plugin/crew/hooks/scripts/crew_config.py:2476<br/>(extended through :2599)<br/><b>15 keys</b>: the same fourteen PLUS pm.authority.<br/>pm.authority is still NOT in RATCHETED_KEYS -<br/>it resolves by ordinary precedence and only<br/>needs a widening NOTE when /crew:config writes it"]
         RSHAPE["Confirmed by import + diff + type(), not<br/>asserted: 13-key intersection, pm.authority the<br/>only difference (`set(_RATCHETED) -<br/>set(RATCHETED_KEYS) == {'pm.authority'}`), and<br/>the tuple field order STILL differs -- (function,<br/>function, dict) here, (tuple, function, function)<br/>there -- so the two still cannot be collapsed<br/>into one table as written"]
         RG --- RC --- RSHAPE
     end
@@ -334,13 +341,14 @@ flowchart TB
 
     subgraph Dispatch["environments.workflows's one reader - the grammar runs before the parser (T-0009)"]
         direction TB
-        DENV["cloud_guard.environments_config(root)<br/>plugin/crew/hooks/scripts/cloud_guard.py:2537<br/>workflows from the REPO file only;<br/>a malformed block empties it and sets problem"]
-        DGATE{"crew_guards.dispatch_answer<br/>plugin/crew/hooks/scripts/crew_guards.py:2546<br/>dispatch_trigger :2176, then<br/>dispatch_first_non_literal :2273 -<br/>BEFORE any parsing"}
+        DENV["cloud_guard.environments_config(root)<br/>plugin/crew/hooks/scripts/cloud_guard.py:2537<br/>workflows from the REPO file only;<br/>a malformed repo block empties it and sets problem;<br/>dispatchProblem :2572 adds the GLOBAL block's<br/>(crew_config.global_environments_problem :1056) -<br/>dispatches only, terraform still reads problem"]
+        DGATE{"crew_guards.dispatch_answer<br/>plugin/crew/hooks/scripts/crew_guards.py:2707<br/>dispatch_trigger :2329 (a run-time command word<br/>by its argv's shape, _hole_shape :2145), then<br/>dispatch_first_non_literal :2426 -<br/>BEFORE any parsing"}
         DCNT>"could not tell: unknown, op line-not-literal<br/>asks when attended, denied unattended"]
-        DPARSE["dispatch_scopes :2437, then<br/>dispatch_environment :2484<br/>nonProd / prod / unknown / unlisted"]
+        DPARSE["dispatch_scopes :2590, then<br/>dispatch_environment :2637<br/>nonProd / prod / unknown / unlisted"]
         DENV --> DGATE
-        DGATE -->|"a word or operator not plain, unseen,<br/>stdin or file read, malformed block"| DCNT
+        DGATE -->|"a word or operator not plain, unseen,<br/>stdin or file read, a malformed block<br/>in either layer"| DCNT
         DGATE -->|"every word plain or single-quoted"| DPARSE
     end
 
     REPO -.->|"environments.workflows (repo only)"| DENV
+    GLB -.->|"environments block: only whether it reads"| DENV

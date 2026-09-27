@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@20e9b396
+anchor: useful-claude-add-ons@c1f22bc2
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -298,7 +298,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1998` (`:1978` at `995b5874`, `:1972` at `b5903601`, `:1930` at `2b18f7ab`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:2004` (`:1998` at `20e9b396`, `:1978` at `995b5874`, `:1972` at `b5903601`, `:1930` at `2b18f7ab`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -659,3 +659,12 @@ runbooks section, so `:1978` -> `:1998`, re-grepped, same text) and `.crew/verif
 rule 7's `seconds`/`why` only (no line moved). `docs/guides/crew/src/troubleshooting.md` and its
 three built artifacts changed; the guide's README table row still fits. `docs/diagrams/`'s
 generated header moves with its own refresh.
+
+## Re-anchor provenance - `20e9b396` -> `c1f22bc2`, 2026-09-27 (T-0009 review round 3)
+
+`d8d1da86` fixes T-0009 review round 3 (Codex, 4 BLOCK + 1 FIX); `c1f22bc2` re-sets crew 1.0.43 as the last plugin/crew commit. Of the paths this note cites, `plugin/crew/README.md` changed (+6 lines in the
+dispatch-grammar paragraph, so the runbooks line moved `:1998` -> `:2004`, re-grepped, same text;
+the history figures after it are left as written), `.crew/verify.json` changed in rule 7's
+`seconds`/`why` only (no line moved), and `docs/guides/crew/src/troubleshooting.md` (+2 lines in
+the dispatch bullet) with its three built artifacts, rebuilt by `build.py --guide
+troubleshooting`; the guide README's table row still fits.
