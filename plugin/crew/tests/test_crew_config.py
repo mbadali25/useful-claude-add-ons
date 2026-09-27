@@ -275,7 +275,10 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # 121 with T-0010's `autopilot.approval` and `autopilot.questions`,
     # re-measured on T-0018's router.
     assert {"autopilot.approval", "autopilot.questions"} <= declared
-    assert len(declared) == 121
+    # 123 with T-0029's `autopilot.maxLanes` and `autopilot.reviewPolicy`
+    # (/crew:autopilot wave).
+    assert {"autopilot.maxLanes", "autopilot.reviewPolicy"} <= declared
+    assert len(declared) == 123
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():

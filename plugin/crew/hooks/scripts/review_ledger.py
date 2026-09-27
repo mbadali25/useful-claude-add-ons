@@ -466,7 +466,8 @@ def status(root, ticket):
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    # allow_abbrev=False (T-0029): `--acc` must not reach `--accept`.
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0], allow_abbrev=False)
     parser.add_argument("--root", default=".")
     parser.add_argument("--ticket", required=True)
     action = parser.add_mutually_exclusive_group(required=True)

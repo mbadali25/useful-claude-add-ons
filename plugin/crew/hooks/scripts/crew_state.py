@@ -1088,7 +1088,12 @@ AUTONOMOUS_STOPS = (
 # does at plan approval and at an open question. `risk` acts only on a spec
 # header saying `risk: low`; any other value reads as `human`, and approval
 # needs `scope.allowCliApproval: true` besides (crew_autopilot.approval_policy).
-AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "approval": "risk", "questions": "risk"}
+# `maxLanes` and `reviewPolicy` (T-0029) bind `/crew:autopilot wave`
+# (crew_wave.settings): `maxLanes` null means the resolved `pm.maxDispatches`,
+# and a larger value is capped to it; `reviewPolicy` is `stop|clean-only|
+# fix-and-rereview`, anything else reads as `stop`.
+AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "approval": "risk", "questions": "risk",
+                      "maxLanes": None, "reviewPolicy": "stop"}
 
 # How many tickets one session's work becomes. The default is `system`: one
 # session is one ticket, and a second ticket is opened only when the work

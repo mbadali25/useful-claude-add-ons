@@ -59,6 +59,14 @@ and only while `crew_autopilot.approval_policy` says yes for that ticket in
 this worktree (which needs `scope.allowCliApproval: true`). Any other command
 naming it is refused; a policy that cannot be told refuses too.
 
+A SUBAGENT (the payload carries a non-empty `agent_type`; T-0029 -- a
+`/crew:autopilot wave` lane is one) is refused, besides, the never-list:
+`review_ledger.py --accept|--reject` -- and every abbreviation argparse would
+once have expanded to them, `--a` up to `--accept` and `--rej` up to
+`--reject` -- and `gh pr merge ... --admin`. Accepting or rejecting a review
+and an admin merge are the owner's, from the main session; with no
+`agent_type` (the main thread, the owner's path) nothing here changes.
+
 That is a
 textual check, not a shell parser: it stops drift and accidental bypass, and
 a session that sets out to forge local state -- a variable holding the path,
@@ -116,6 +124,13 @@ _AUTOPILOT_APPROVE_RE = re.compile(r"crew_autopilot(?:\.py)?\b[^\n;&|]*\bapprove
 _AUTOPILOT_BARE_RE = re.compile(
     r"[ \t]*python3?(?:[ \t]+-B)?[ \t]+[\w./\\:~${}-]*crew_autopilot\.py[ \t]+approve"
     r"(?:[ \t]+--root[ \t]+\.)?[ \t]+--ticket[ \t]+([A-Z][A-Z0-9]*-[0-9]+)[ \t]*")
+# T-0029: the never-list, refused only when the payload shows a subagent.
+_ACCEPT_RE = re.compile(r"review_ledger(?:\.py)?\b[^\n;&|]*--(?:a(?:c(?:c(?:e(?:pt?)?)?)?)?"
+                        r"|rej(?:e(?:ct?)?)?)(?![\w-])", re.IGNORECASE)
+_ADMIN_MERGE_RE = re.compile(r"\bgh\b[^\n;&|]*\bpr\b[^\n;&|]*\bmerge\b[^\n;&|]*--admin\b",
+                             re.IGNORECASE)
+LANE_REFUSAL = ("a lane may not accept, reject or admin-merge; that is the owner's, from the "
+                "main session")
 _HOOK_RE = re.compile(r"approval[_-]hook(?:\.py|\.sh|\.ps1)?\b", re.IGNORECASE)
 _DOTGIT_CREW_RE = re.compile(r"\.git[\\/]+crew\b|git-common-dir\b.*\bcrew\b",
                              re.IGNORECASE | re.DOTALL)
@@ -246,14 +261,18 @@ def _autopilot_refusal(command, top):
     return f"autopilot.approval does not allow {ticket}: {reason}"
 
 
-def shell_refusal(command, common, top=None):
+def shell_refusal(command, common, top=None, agent_type=None):
     """Why a Bash/PowerShell `command` is refused, or None (module docstring,
     "Bash and PowerShell"). Textual on purpose, and conservative: a benign
     command that names crew's state beside a writing word is refused too.
     `top` is the worktree whose autopilot policy judges `crew_autopilot.py
-    approve`; without it that command is refused."""
+    approve`; without it that command is refused. `agent_type`, when a
+    non-empty string, is a subagent: the never-list is refused too."""
     if not isinstance(command, str):
         return None
+    if isinstance(agent_type, str) and agent_type.strip() and (
+            _ACCEPT_RE.search(command) or _ADMIN_MERGE_RE.search(command)):
+        return LANE_REFUSAL
     if _APPROVE_RE.search(command):
         return "it runs `crew_ticket.py approve`; approval comes from the user's own prompt"
     if _AUTOPILOT_APPROVE_RE.search(command):
@@ -323,9 +342,13 @@ def decide(data):
     if tool in SHELLS:
         tool_input = data.get("tool_input")
         command = tool_input.get("command") if isinstance(tool_input, dict) else None
-        reason = shell_refusal(command, common, top)
+        reason = shell_refusal(command, common, top, data.get("agent_type"))
         if reason is None:
             return 0
+        if reason == LANE_REFUSAL:
+            _log(top, configured, "block", None, "-", "lane-never-list")
+            return _deny([f"SCOPE GUARD: refused this {tool} command -- {reason}.",
+                          "  Write it as a question for the owner and stop the lane."])
         _log(top, configured, "block", None, "-", f"{tool}: {reason}")
         return _deny([f"SCOPE GUARD: refused this {tool} command -- {reason}.",
                       "  Approval is recorded when the USER types `/crew:approve <id>`;",

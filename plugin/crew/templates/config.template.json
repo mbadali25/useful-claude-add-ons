@@ -199,6 +199,8 @@
     "mode": "off",
     "maxPhases": 12,
     "approval": "risk",
-    "questions": "risk"
+    "questions": "risk",
+    "maxLanes": null,
+    "reviewPolicy": "stop"
   }
 }

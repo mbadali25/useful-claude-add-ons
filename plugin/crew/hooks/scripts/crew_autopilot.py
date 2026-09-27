@@ -163,6 +163,9 @@ PROCEDURE_STOPS = (
     ("review-verdict", "a review phase ends at its verdict: never fix and rerun inside it"),
     ("failed-done-check", "a /crew:done check refused: it is not retried around"),
     ("failed-phase", "a phase's own procedure refused or stopped"),
+    # T-0029: crew_wave.py plan/start refuse the whole wave on it.
+    ("scope-not-enforcing", "`/crew:autopilot wave` runs lanes only while scope.mode is "
+                            "block for every lane ticket (crew_wave.scope_enforcing)"),
 )
 # A person, unless the T-0010 policy named says otherwise; `human` always stops.
 HUMAN_STOPS = (
@@ -178,14 +181,19 @@ HUMAN_STOPS = (
 
 # T-0018: the command's subcommands. A later ticket adds its name to AVAILABLE
 # and drops it from ARRIVES when it replaces the router's stop.
-SUBCOMMANDS = ("status", "run", "assign", "goal", "focus")
-AVAILABLE = frozenset({"status", "run"})
+SUBCOMMANDS = ("status", "run", "assign", "goal", "focus", "wave")
+AVAILABLE = frozenset({"status", "run", "wave"})
 ARRIVES = {"assign": "T-0019", "goal": "T-0012", "focus": "T-0020"}
 GOAL_FLAG = "--goal"
 UNKNOWN_SUB = ("unknown subcommand; one of " + "|".join(SUBCOMMANDS)
                + ", or a ticket id")
 # The INDEX.md id shape, whole-string; [0-9], not \d, which is any Unicode digit.
 _INDEX_ID = re.compile(r"^[A-Z][A-Z0-9]*-[0-9]+$")
+# T-0029: a wave set's slug (T-0012's grammar); crew_wave.py reads it from here.
+WAVE_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+WAVE = "wave"
+WAVE_ARGS = ("wave takes nothing, `--set <slug>` ([a-z0-9][a-z0-9-]{0,63}), or one or more "
+             "ticket ids, never both")
 
 
 def _rel(top, path):
@@ -1004,13 +1012,37 @@ def route_args(root, text):
     word after a subcommand, or a bare ticket id itself. The command passes
     `$ARGUMENTS` whole because Claude Code numbers positional arguments from
     `$0` and leaves an out-of-range `$N` literal. A second word that is not a
-    ticket, or a third word, stops; it is never read as a ticket."""
+    ticket, or a third word, stops; it is never read as a ticket. `wave`
+    (T-0029) also gets `set` and `tickets`: `wave --set <slug>` or
+    `wave <id> <id>...`, parsed by `_wave_args`."""
+    return dict({"set": "", "tickets": []}, **_route_args(root, text))
+
+
+def _wave_args(top, got, rest):
+    """`wave`'s arguments: nothing, `--set <slug>`, or ticket ids -- each an
+    INDEX-shaped id or an existing ticket folder, once. Anything else stops."""
+    base = dict(got, ticket="", set="", tickets=[])
+    if not rest:
+        return base
+    if rest[0] == "--set":
+        if len(rest) == 2 and WAVE_SLUG.fullmatch(rest[1]):
+            return dict(base, set=rest[1])
+        return dict(base, stop=True, reason=WAVE_ARGS)
+    if len(set(rest)) == len(rest) and all(_INDEX_ID.fullmatch(w) or _existing_ticket(top, w)
+                                           for w in rest):
+        return dict(base, tickets=list(rest))
+    return dict(base, stop=True, reason=WAVE_ARGS)
+
+
+def _route_args(root, text):
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     words = (text or "").split()
     got = dict(route(top, words[0] if words else ""), ticket="")
     if got["stop"]:
         return got
     rest = words[1:] if words and words[0] in SUBCOMMANDS else words
+    if words[:1] == [WAVE]:
+        return _wave_args(top, got, rest)
     if words[:1] == ["run"] and rest[:1] == [GOAL_FLAG]:
         return dict(route(top, GOAL_FLAG), ticket="")
     if len(rest) > 1 or (rest and not (_INDEX_ID.fullmatch(rest[0])
@@ -1317,8 +1349,10 @@ def main(argv):
         text = _line(sub=result["sub"], stop=int(result["stop"]), reason=result["reason"])
     elif args.action == "route":
         result = route_args(args.root, args.args or "")
+        extra = ({"set": result["set"], "tickets": ",".join(result["tickets"])}
+                 if result["sub"] == WAVE else {})
         text = _line(sub=result["sub"], stop=int(result["stop"]), ticket=result["ticket"],
-                     reason=result["reason"])
+                     **extra, reason=result["reason"])
     elif args.action == "stops":
         result = stops()
         text = "\n".join(f"{kind} {row['id']}: {row['text']}"
