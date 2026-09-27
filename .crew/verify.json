@@ -297,7 +297,24 @@
       "seconds": 5,
       "run": ["python3 -m pytest plugin/crew/tests/test_crew_autopilot.py plugin/crew/tests/test_lifecycle_commands.py -q"],
       "reach": "local",
-      "why": "4.6s wall (178 passed) measured 2026-09-26 on the Linux host (20 CPUs, load average 4.1) after the round-1 fixes; 5 is that rounded up, not an estimate (2.1s before them, 2026-09-25). T-0004's /crew:autopilot: crew_autopilot.py names the next lifecycle phase from disk and picks the ticket to resume, and every branch that cannot tell must stop - so the suite carries one case per phase transition, every stop (approval, review acceptance, NEEDS_REPLAN, UNKNOWN ledger, failed validate, refresh unavailable, stale after review, maxPhases, no progress) and every resume source. Every mutation in sabotage_autopilot.py (one per must-stop branch; count them there, not here) goes red on its named test through sabotage.py. test_lifecycle_commands.py runs with it because it holds autopilot.md's 120-line budget and exact-CLI checks. reach: local - every case builds a throwaway git repository under pytest's tmp_path." }
+      "why": "4.6s wall (178 passed) measured 2026-09-26 on the Linux host (20 CPUs, load average 4.1) after the round-1 fixes; 5 is that rounded up, not an estimate (2.1s before them, 2026-09-25). T-0004's /crew:autopilot: crew_autopilot.py names the next lifecycle phase from disk and picks the ticket to resume, and every branch that cannot tell must stop - so the suite carries one case per phase transition, every stop (approval, review acceptance, NEEDS_REPLAN, UNKNOWN ledger, failed validate, refresh unavailable, stale after review, maxPhases, no progress) and every resume source. Every mutation in sabotage_autopilot.py (one per must-stop branch; count them there, not here) goes red on its named test through sabotage.py. test_lifecycle_commands.py runs with it because it holds autopilot.md's 120-line budget and exact-CLI checks. reach: local - every case builds a throwaway git repository under pytest's tmp_path." },
+
+    { "paths": ["plugin/crew/hooks/scripts/crew_bookkeeping.py",
+                "plugin/crew/hooks/scripts/scope_guard.py",
+                "plugin/crew/hooks/scripts/completion_audit.py",
+                "plugin/crew/hooks/scripts/review_patch.py",
+                "plugin/crew/hooks/scripts/review_ledger.py",
+                "plugin/crew/hooks/scripts/review_run.py",
+                "plugin/crew/hooks/scripts/review_prompt.py",
+                "plugin/crew/tests/test_crew_bookkeeping.py",
+                "plugin/crew/tests/test_scope_guard_claim_bookkeeping.py",
+                "plugin/crew/tests/test_completion_audit_claim_bookkeeping.py",
+                "plugin/crew/tests/test_review_patch_generated.py",
+                "plugin/crew/tests/sabotage_bookkeeping.py"],
+      "seconds": 17,
+      "run": ["python3 -m pytest plugin/crew/tests/test_crew_bookkeeping.py plugin/crew/tests/test_scope_guard_claim_bookkeeping.py plugin/crew/tests/test_completion_audit_claim_bookkeeping.py plugin/crew/tests/test_review_patch_generated.py plugin/crew/tests/test_review_patch.py plugin/crew/tests/test_review_receipt.py -q"],
+      "reach": "local",
+      "why": "16.1s wall (119 passed, 34 slow deselected) measured 2026-09-27 on the Linux host (20 CPUs, load average 7.6, other lanes running); 17 is that rounded up, not an estimate. T-0046: crew_bookkeeping.claim_numbers_only lets an approved ticket re-measure the crew-markdown-lines claim in plugin/*/BUDGETS.md without Touch, in the scope guard (PreToolUse) and the completion audit (Stop and /crew:done) - both blocking - and review_patch.py lists the three graphify outputs by path and sha256 inside the hashed patch instead of diffing them, with review_run.py and review_ledger.py carrying bundle_scheme so a pre-T-0046 receipt is checked against the full diff it was written over. Each file is a must-block and must-allow table: the predicate (plus a lockstep test against scripts/check-marketplace.py's claim grammar), the guard, the audit, and the bundle and receipt. Every mutation in sabotage_bookkeeping.py goes red on its named test through sabotage.py (count them there, not here). test_review_patch.py and test_review_receipt.py run with them because the omission changes what compute builds and what --check-receipt rebuilds. reach: local - every case builds a throwaway git repository under pytest's tmp_path; the sh and ps1 flavours of the guard cases are slow-marked and run only under --run-slow (ps1 needs pwsh)." }
   ],
 
   "default": ["bash _verify/smoke.sh"],

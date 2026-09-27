@@ -326,10 +326,10 @@ as though it were a preference.
 # about a different range than the diff the reviewer actually read.
 #
 # review_patch.py builds ONE bundle: committed range PLUS staged, unstaged and
-# untracked changes, with renames, modes, binaries and submodules in the
-# manifest, split into parts (never truncated) and hashed. `git diff
-# "$BASE"...HEAD` alone gave a 0-byte patch on a dirty tree (found by Codex,
-# `docs/review/03-codex-review.md`). The real index is never written.
+# untracked changes, renames/modes/binaries/submodules in the manifest, split
+# into parts (never truncated) and hashed; the three graphify-out/ outputs are
+# listed by path and sha256 at its end, not diffed (T-0046). `git diff
+# "$BASE"...HEAD` alone gave a 0-byte patch on a dirty tree. Index never written.
 MANIFEST="$SCRATCH/manifest.json"
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_patch.py \
   --root . --base "$BASE" --out "$SCRATCH/diff.txt" --manifest "$MANIFEST"

@@ -8,10 +8,11 @@ checked.
 ## Plugin Markdown total
 
 <!-- claim: crew-markdown-lines -->
-`git ls-files 'plugin/crew/*.md'` currently totals 18,494 lines across 121 files (including this
+`git ls-files 'plugin/crew/*.md'` currently totals 18,497 lines across 121 files (including this
 file). Target: ≤6,000 lines (`docs/review/04-redesign.md`). This number moves every time a tracked
 `plugin/crew/*.md` file is added, removed or resized — including this one — so re-measure rather
-than trusting it; the marker above is what keeps that honest.
+than trusting it; the marker above is what keeps that honest. Re-measuring it is bookkeeping (T-0046):
+an approved ticket may change the digits of the line the marker binds without BUDGETS.md in its Touch.
 
 The crew 1.0 T2 deletions (the PM, pulse, journal and 51 retired agents) landed the "held" half of
 this gap: 58 files and roughly 11,400 lines, as T8 estimated. What remains:
