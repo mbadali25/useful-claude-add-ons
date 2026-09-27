@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@2b18f7ab
 verified: 2026-09-26
 
 # localgpu
@@ -1087,3 +1087,9 @@ Both crew files were re-read at the two live citations: the `crew_config.py` re-
 above. The citations in the QA-history sections record what was true at their own passes and are
 left as written. Nothing under `plugin/localgpu/` changed.
 
+**Re-anchored `6f96e627` + `fc54def6` -> `2b18f7ab` on 2026-09-26 (T-0005 landing).** `2b18f7ab` is the crew 1.0.42 bump on top of `4ed4b763`, the merge of T-0005 (`4e0abc8f`) into main at `1e0706ac`. Both lines' provenance is above, side by side. A citation can only be wrong at the merge when its file changed on both sides, or when a line from one side cites a file the other side changed; each such citation was re-mapped with a line diff of the cited file and re-read with `grep -n`/`sed -n` on the merged tree. The bump commit replaced `1.0.41` with `1.0.42` in place in the version files and in T-0005's own version statements (no line added or removed, except one line in `CHANGELOG.md`'s T-0005 bump note). Of the paths this note cites, `plugin/crew/hooks/scripts/crew_config.py` and
+`plugin/crew/hooks/scripts/crew_state.py` changed on both sides: the `crew_config.py` re-export is
+at `:127-128` and the provider tuples at `crew_state.py:1432-1433` (`grep -n
+"^DEV_PROVIDERS\|^QA_PROVIDERS"`, the same two lines, byte-identical), corrected above.
+`.claude-plugin/marketplace.json` changed at crew's `version` only (1.0.42); `localgpu`'s own entry
+is still `0.1.20`. Nothing under `plugin/localgpu/` changed. Nothing was executed.

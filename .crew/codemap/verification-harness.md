@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@2b18f7ab
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -770,3 +770,31 @@ the descoping limitation moved `:2114-2121` -> `:2129-2136`, re-read with `diff`
 corrected above), the version files (stepped back and re-set, byte-identical to `aa7f9841`) and,
 under `plugin/crew/**`, the Step 10 code, tests, README, BUDGETS and the crew-cloud skill, none
 cited here at a line. `_verify/smoke.sh` and `scripts/check-marketplace.py` did not change.
+
+## Re-anchor provenance - `6f96e627` + `a26ad8c0` -> `2b18f7ab`, 2026-09-26 (T-0005 landing)
+
+`2b18f7ab` is the crew 1.0.42 bump on top of `4ed4b763`, the merge of T-0005 (`4e0abc8f`) into
+main at `1e0706ac`. Both lines' provenance is above, side by side. A citation can only be wrong at
+the merge when its file changed on both sides, or when a line from one side cites a file the other
+side changed; each such citation was re-mapped with a line diff of the cited file and re-read with
+`grep -n`/`sed -n` on the merged tree. The bump commit replaced `1.0.41` with `1.0.42` in place in
+the version files and in T-0005's own version statements (no line added or removed, except one
+line in `CHANGELOG.md`'s T-0005 bump note).
+
+- `.crew/verify.json` - changed on both sides. Main inserted T-0026's rule at index 10 and appended
+  T-0006's and T-0004's; T-0005 inserted the cloud-guard rule at index 6. Merged: **28 rules, 305
+  lines**; rule 6 (T-0005) `:117-127`, whole-suite rule 9 `:164-169`, rule 11 (T-0026)
+  `:179-184`, diagrams rule 13 `:193-197`, `.claude/rules/` rule 24 `:263`, refresh-check rule 25
+  `:264-280` (its `why` at `:280`), auto-resume rule 26 `:282-292`, autopilot rule 27 `:293-300`,
+  `default` `:303`, `unmapped` `:304`. Every rule both sides numbered from 11 on is one higher than
+  either side said; renumbered in the rule list and the entry points above, not in the history
+  sections. Re-measured with `json.load` and `grep -n`.
+- `plugin/crew/tests/sabotage.py` - changed on main only; `:67` (`CLOUD_GUARD_MUTATIONS`, T-0005's
+  sibling list), `:75`, `:76`, `:77` and `:3047-3049` hold.
+- `plugin/crew/CONFIG.md` - changed on both sides; the process-group-kill limitation is at
+  `:2201-2208` (re-read, same text).
+- `crew_ticket.py` - changed on main only; `:496-515` holds.
+- `.claude-plugin/marketplace.json` - `:218` is 1.0.42; still a rule 0 path.
+- `CHANGELOG.md`, `TODO.md`, `BUDGETS.md` - cited by name only.
+
+No suite or command was executed by this note; the landing's suite results are in its PR.

@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@2b18f7ab
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -616,3 +616,17 @@ catch" subsection added, 44 lines net, so the `docs/runbooks/INDEX.md` mention m
 `:1854`, re-read, same text; corrected above; `:12`, `:15`, `:46`, `:414` and `:736` are above the
 first hunk and hold) and `CHANGELOG.md` (the 1.0.41 entry gained the Step 10 bullet; cited by
 name only). `.crew/verify.json` did not change.
+
+Re-verified per-path to `2b18f7ab` for T-0005's landing (the crew 1.0.42 bump on top of `4ed4b763`,
+the merge of T-0005 `4e0abc8f` into main `1e0706ac`, joining this note's `6f96e627` and `a26ad8c0`
+lines). Of the cited paths, those changed on both sides were re-read on the merged tree:
+`plugin/crew/README.md` (the `docs/runbooks/INDEX.md` mention is at `:1930`, both sides' additions
+above it; corrected above), `.crew/verify.json` (T-0005's cloud-guard rule `:117-127` and T-0026's
+approval-digest rule `:179-184` both sit above the `.claude/rules/` check, now `:263`, and the
+refresh-check rule `:264-280`; T-0006's rule `:282-292` and T-0004's `:293-300` follow; corrected
+above), `TODO.md` (the `render.sh` entry still at `:1190`, same heading; T-0005's lines are
+appended at the end), `plugin/crew/hooks/scripts/crew_state.py` (T-0005's three import lines at `:74` and `:102-103`
+sit above the four re-exports, which are at `:132`/`:136`/`:139`/`:142` as T-0005's text above
+says, re-read on the merge; main's `RESUME_DEFAULTS`/`AUTOPILOT_DEFAULTS` are below them) and `CHANGELOG.md`
+(T-0005's 1.0.42 entry sits above T-0004's 1.0.41; cited without a line). The two diagrams this
+note cites are refreshed in the same commit as this note. Nothing was executed.

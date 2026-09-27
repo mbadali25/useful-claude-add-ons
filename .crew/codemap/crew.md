@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@2b18f7ab
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -50,7 +50,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.41, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.42, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -250,9 +250,9 @@ both templates, so repo-only is unchanged. Re-executed at `07ca3972`: 119 / 66
 `git archive` of `plugin/crew`, give 117 / 66 / 51 / 0. Re-executed on the T-0005 landing
 merge: 121 / 67 / 54 / 0 - T-0005 added `environments.prodUnattended` to both templates and
 `environments.nonProd` to `default_config()` only.
-`plugin/crew/tests/test_crew_config.py:277` asserts 121. `CHANGELOG.md:228`
-says "116 -> 118" for the same change - it does not match either execution,
-and is outside this note to fix.
+`plugin/crew/tests/test_crew_config.py:277` asserts 121. T-0004's `CHANGELOG.md` entry now says
+"117 -> 119" (`:228-229`), matching the `07ca3972` execution; it said "116 -> 118" when this
+paragraph was first written. T-0005's entry states no leaf count.
 
 These are new counts, not the pre-1.0 note's 103/60/43 carried forward —
 `change.*`, `guards.cloudGuard` and the memory/recall keys (`TODO.md`'s
@@ -1130,3 +1130,43 @@ everything the note cites above it holds (re-read); `_tf_read_only` `:1533` -> `
 `:1725` -> `:1783`, `ps_trigger` `:1778` -> `:1849`, `command_trigger` `:1802` -> `:1873`,
 `command_names_terraform` `:1813` -> `:1884`; `skip_wrapper_options` (`:1560`) is new. Re-taken by
 content, corrected above.
+
+## Re-anchor provenance - `6f96e627` + `02d1513b` -> `2b18f7ab`, 2026-09-26 (T-0005 landing)
+
+`2b18f7ab` is the crew 1.0.42 bump on top of `4ed4b763`, the merge of T-0005 (`4e0abc8f`) into
+main at `1e0706ac`. Both lines' provenance is above, side by side. A citation can only be wrong at
+the merge when its file changed on both sides, or when a line from one side cites a file the other
+side changed; each such citation was re-mapped with a line diff of the cited file and re-read with
+`grep -n`/`sed -n` on the merged tree. The bump commit replaced `1.0.41` with `1.0.42` in place in
+the version files and in T-0005's own version statements (no line added or removed, except one
+line in `CHANGELOG.md`'s T-0005 bump note).
+
+- `crew_state.py` - changed on both sides. Main's citations below T-0005's three import lines moved
+  +3: `SCHEMA_CURRENT` `:175` -> `:178`, `TRIGGERS` `:993` -> `:996`, `AUTHORITY_DEFAULT` `:1059` ->
+  `:1062`, `AUTONOMOUS_STOPS` `:1072-1079` -> `:1075-1082`, the autopilot comment `:1081-1086` ->
+  `:1084-1089`, `AUTOPILOT_DEFAULTS` `:1087` -> `:1090`, `PM_DEFAULTS` `:1097-1110` -> `:1100-1113`,
+  the roster comment `:1234-1239` -> `:1237-1242`, `ROLE_TIERS` -> `:1246-1251`, `SPECIALIST_ROLES`
+  -> `:1261`, `known_role` -> `:1264-1273`, `normalise_authority` -> `:1293-1304`,
+  `evaluate_triggers` `:2898` -> `:2901`, the exit-3 branch `:3288-3294` -> `:3291-3297`, the
+  roster/config block read in full `:993-1360` -> `:996-1363`.
+- `crew_config.py` - changed on both sides: `default_config()` `:240` (T-0005's number) holds,
+  `default_global_config()` -> `:385`, the `autopilot` block `:369-374` -> `:376-381`, the
+  `.crew/config.json` read -> `:1249`, `_RATCHETED` -> `:2433-2545` (literal `:2433-2444`,
+  `.update()` calls `:2448`, `:2461`, `:2472`, `:2482`, assignments `:2518`, `:2541`; 14 keys, seven
+  construction steps). Leaf counts re-executed: 121 / 67 / 54 / 0.
+- `crew_guards.py`, `cloud_guard.py`, `crew_tfplan.py` - changed on T-0005 only, so its citations
+  stand; main's guard-vocabulary range `:91-505` is `:92-538` on the merge.
+- `.crew/verify.json` - changed on both sides. T-0005's cloud-guard rule is rule 6 (`:117-127`), so
+  main's rules from 6 on are one higher: the `.claude/rules/` check is **rule 24** (`:263`), the
+  refresh-check suite **rule 25** (`:264-280`), auto-resume **rule 26** (`:282-292`) and
+  autopilot **rule 27** (`:293-300`). 28 rules, 305 lines. Corrected above.
+- `test_crew_config.py` - both sides edited the leaf-count assertion; the merge asserts 121 at `:277`.
+- `CHANGELOG.md` - the T-0004 leaf-count sentence is corrected above; T-0005's 1.0.42 entry sits
+  above T-0004's 1.0.41.
+- `marketplace.json` - `:217` is main's (35 commands), `:218` is 1.0.42; both match disk
+  (`ls plugin/crew/commands/*.md` 35, agents 4, skills 29) and `plugin/crew/.claude-plugin/plugin.json:3`.
+- `TODO.md` - T-0005's lines are appended at the end; `:3952` holds.
+- `CONFIG.md`, `plugin/crew/README.md`, the crew-cloud skill - cited by name or section only.
+
+`crew_refresh_check.py --root . --ticket T-0005` named this note. No suite was executed for it; the
+landing's suite results are in its PR.
