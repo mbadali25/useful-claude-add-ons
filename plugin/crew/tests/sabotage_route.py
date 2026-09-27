@@ -12,6 +12,8 @@ CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(CREW, "hooks", "scripts")
 ROUTE = os.path.join(SCRIPTS, "crew_route.py")
 CONTEXT = os.path.join(SCRIPTS, "crew_context.py")
+_HOOK_TEST = os.path.join(CREW, "tests", "test_crew_route_hook.py")
+_ROUTE_TEST = os.path.join(CREW, "tests", "test_crew_route.py")
 _T = "tests/test_crew_route.py::"
 _H = "tests/test_crew_route_hook.py::"
 
@@ -93,4 +95,44 @@ ROUTE_MUTATIONS = (
      '        if "route" in layer and not isinstance(layer["route"], dict):\n',
      "        if False:\n",
      _T + "test_a_route_block_that_is_not_an_object_is_off_and_reported"),
+    ("an over-long stop reason makes fit() drop the whole ask line", ROUTE,
+     '        reason = _clip(decision.get("reason"), "reason")\n',
+     '        reason = decision.get("reason")\n',
+     _H + "test_an_over_long_stop_reason_never_drops_the_ask_line"),
+    ("an ask's candidate names go unclipped", ROUTE,
+     '    shown = ", ".join(_clip(name, "candidate") for name in names[:MAX_CANDIDATES])\n',
+     '    shown = ", ".join(names[:MAX_CANDIDATES])\n',
+     _T + "test_render_is_one_bounded_line_whatever_the_fields"),
+    ("a route's command goes unclipped", ROUTE,
+     '    command = _clip(command or "", "command")\n',
+     '    command = command or ""\n',
+     _T + "test_render_is_one_bounded_line_whatever_the_fields"),
+    ("a ticket id goes unclipped", ROUTE,
+     '    ticket = _clip(ticket, "ticket") if ticket else ticket\n',
+     "",
+     _T + "test_render_is_one_bounded_line_whatever_the_fields"),
+    ("a route's source goes unclipped", ROUTE,
+     '    source = _clip(decision.get("source"), "source")\n',
+     '    source = decision.get("source")\n',
+     _T + "test_render_is_one_bounded_line_whatever_the_fields"),
+    ("a continue route's phase goes unclipped", ROUTE,
+     '            phase = _clip(decision.get("phase") or "the next phase", "phase")\n',
+     '            phase = decision.get("phase") or "the next phase"\n',
+     _T + "test_render_is_one_bounded_line_whatever_the_fields"),
+    ("an ask's intent goes unclipped", ROUTE,
+     '    intent = _clip(decision.get("intent"), "intent")\n',
+     '    intent = decision.get("intent")\n',
+     _T + "test_render_is_one_bounded_line_whatever_the_fields"),
+    ("the line bound is raised past the turn budget", ROUTE,
+     "MAX_LINE_CHARS = 1400\n",
+     "MAX_LINE_CHARS = 4000\n",
+     _T + "test_the_line_bound_fits_the_turn_budget"),
+    ("the hook test child inherits the real USERPROFILE", _HOOK_TEST,
+     "HOME=home, USERPROFILE=home)\n",
+     "HOME=home)\n",
+     _H + "test_the_hook_child_gets_an_empty_home_on_every_platform"),
+    ("the route CLI test child inherits the real USERPROFILE", _ROUTE_TEST,
+     "    return dict(os.environ, HOME=home, USERPROFILE=home)\n",
+     "    return dict(os.environ, HOME=home)\n",
+     _T + "test_the_cli_child_gets_an_empty_home_on_every_platform"),
 )

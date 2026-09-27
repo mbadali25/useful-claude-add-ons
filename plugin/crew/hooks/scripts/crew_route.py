@@ -61,6 +61,15 @@ from crew_common import read_text
 MAX_PROMPT_CHARS = 80
 MAX_CANDIDATES = 8
 PREFIX = "crew route: "
+# `render`'s line is at most this long whatever it is fed, so it always fits
+# the UserPromptSubmit budget (`crew_context.TURN_CHARS`, 2000) as the first
+# item: `fit` keeps whole items or none, and an over-long ask used to be
+# dropped entirely (review round 1). Every variable-length field is clipped
+# to its own cap below, whitespace collapsed so the line stays one line;
+# `test_render_is_one_bounded_line_whatever_the_fields` holds the sum.
+MAX_LINE_CHARS = 1400
+FIELD_CHARS = {"intent": 32, "ticket": 64, "source": 80, "phase": 48, "command": 200,
+               "reason": 480, "candidate": 48}
 
 _ID = r"(?P<id>[a-z][a-z0-9]*-\d+)"
 _REF = rf"(?:it|this|{_ID})"
@@ -217,14 +226,22 @@ def decide(root, prompt):
                    source=source)
 
 
+def _clip(value, field):
+    """`value` as one line of at most FIELD_CHARS[field] characters."""
+    text = _WS.sub(" ", str(value)).strip()
+    limit = FIELD_CHARS[field]
+    return text if len(text) <= limit else text[:limit - 3].rstrip() + "..."
+
+
 def _candidates(names):
-    shown = ", ".join(names[:MAX_CANDIDATES])
+    shown = ", ".join(_clip(name, "candidate") for name in names[:MAX_CANDIDATES])
     more = len(names) - MAX_CANDIDATES
     return shown + (f", and {more} more" if more > 0 else "")
 
 
 def _run_clause(command):
-    parsed = _CREW_COMMAND.match(command or "")
+    command = _clip(command or "", "command")
+    parsed = _CREW_COMMAND.match(command)
     if not parsed:
         return f"Run `{command}`."
     name, args = parsed.group(1), (parsed.group(2) or "").strip()
@@ -236,18 +253,21 @@ def _run_clause(command):
 def render(decision):
     """One line prefixed PREFIX, or "" for `none`."""
     outcome = decision.get("outcome")
-    intent = decision.get("intent")
+    intent = _clip(decision.get("intent"), "intent")
     ticket = decision.get("ticket")
+    ticket = _clip(ticket, "ticket") if ticket else ticket
+    source = _clip(decision.get("source"), "source")
     if outcome == "route":
         run = _run_clause(decision.get("command"))
         if intent == "continue":
-            head = (f"the user's prompt asks to continue {ticket} ({decision.get('source')}); "
-                    f"the files on disk name {decision.get('phase') or 'the next phase'} next. "
+            phase = _clip(decision.get("phase") or "the next phase", "phase")
+            head = (f"the user's prompt asks to continue {ticket} ({source}); "
+                    f"the files on disk name {phase} next. "
                     "Carry on with any task already in progress in this conversation first, "
                     "then ")
             run = run[0].lower() + run[1:]
         elif ticket:
-            head = f"the user's prompt asks for {intent} on {ticket} ({decision.get('source')}). "
+            head = f"the user's prompt asks for {intent} on {ticket} ({source}). "
         else:
             head = f"the user's prompt asks for {intent}. "
         return (PREFIX + head + run
@@ -257,7 +277,8 @@ def render(decision):
         candidates = decision.get("candidates") or []
         which = f"which ticket ({_candidates(candidates)}) " if candidates else \
             ("which ticket " if not ticket else "")
-        return (f"{PREFIX}the user's prompt reads as {intent}{on}, but {decision.get('reason')}; "
+        reason = _clip(decision.get("reason"), "reason")
+        return (f"{PREFIX}the user's prompt reads as {intent}{on}, but {reason}; "
                 f"ask the user {which}before running anything.")
     return ""
 

@@ -14,6 +14,7 @@ import pytest
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_autopilot
 import crew_config
+import crew_context
 import crew_route
 import crew_ticket
 from scope_fixtures import make_repo, make_ticket
@@ -512,10 +513,21 @@ def _cli(tmp_path, *args):
     # child resolves `~` itself: point HOME (POSIX) and USERPROFILE (Windows) at
     # an empty directory, or a real `route.enabled: true` in the developer's
     # ~/.claude/crew/config.json leaks into the assertion below.
-    home = str(tmp_path / "home")
-    env = dict(os.environ, HOME=home, USERPROFILE=home)
     return subprocess.run([sys.executable, _SCRIPT, *args], capture_output=True, text=True,
-                          check=False, timeout=60, env=env)
+                          check=False, timeout=60, env=_cli_env(tmp_path))
+
+
+def _cli_env(tmp_path):
+    home = str(tmp_path / "home")
+    return dict(os.environ, HOME=home, USERPROFILE=home)
+
+
+def test_the_cli_child_gets_an_empty_home_on_every_platform(tmp_path):
+    """POSIX expanduser reads HOME, Windows reads USERPROFILE: a child that
+    inherits either one reads the developer's real global config."""
+    env = _cli_env(tmp_path)
+
+    assert (env["HOME"], env["USERPROFILE"]) == (str(tmp_path / "home"),) * 2
 
 
 def test_cli_settings_and_decide_exit_zero(tmp_path):
@@ -546,3 +558,37 @@ def test_every_route_sabotage_anchor_is_present_exactly_once():
             assert handle.read().count(find) == 1, label
         assert test.startswith(("tests/test_crew_route.py::",
                                 "tests/test_crew_route_hook.py::")), label
+
+
+# --- review round 1: every variable-length field is bounded --------------------
+
+_HUGE = "x" * 5000
+_ASK_TAIL = "before running anything."
+_ROUTE_TAIL = "if the user plainly meant something else, ask."
+
+
+@pytest.mark.parametrize("decision, tail", [
+    ({"outcome": "ask", "intent": "continue", "ticket": "T-1", "reason": _HUGE}, _ASK_TAIL),
+    ({"outcome": "ask", "intent": "continue", "ticket": "T-1",
+      "reason": "line one\nline two " + _HUGE}, _ASK_TAIL),
+    ({"outcome": "ask", "intent": "implement", "ticket": None, "reason": "several",
+      "candidates": [_HUGE] * 20}, _ASK_TAIL),
+    ({"outcome": "ask", "intent": "implement", "ticket": _HUGE, "reason": "r"}, _ASK_TAIL),
+    ({"outcome": "ask", "intent": _HUGE, "ticket": _HUGE, "reason": _HUGE,
+      "candidates": [_HUGE] * 20}, _ASK_TAIL),
+    ({"outcome": "route", "intent": "continue", "ticket": _HUGE, "source": _HUGE,
+      "phase": _HUGE, "command": "/crew:implement " + _HUGE}, _ROUTE_TAIL),
+    ({"outcome": "route", "intent": "review", "ticket": _HUGE, "source": _HUGE,
+      "command": "/crew:" + _HUGE}, _ROUTE_TAIL),
+    ({"outcome": "route", "intent": "brainstorm", "ticket": None,
+      "command": "not a crew command " + _HUGE}, _ROUTE_TAIL),
+])
+def test_render_is_one_bounded_line_whatever_the_fields(decision, tail):
+    line = crew_route.render(decision)
+
+    assert (line.startswith(crew_route.PREFIX), "\n" in line, line.endswith(tail),
+            len(line) <= crew_route.MAX_LINE_CHARS) == (True, False, True, True)
+
+
+def test_the_line_bound_fits_the_turn_budget():
+    assert crew_route.MAX_LINE_CHARS < crew_context.TURN_CHARS

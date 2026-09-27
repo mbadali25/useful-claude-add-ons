@@ -3,8 +3,9 @@
 Driven through both wrappers, `crew-context.sh` and `crew-context.ps1`, with
 the same payload. The .ps1 cases need pwsh and run with `OS=Windows_NT` so
 its flavour guard proceeds on a Linux host; without pwsh they skip and say so.
-`HOME` points into tmp_path, so the machine-global crew config the hook reads
-is one that does not exist -- never the developer's real one.
+`HOME` and `USERPROFILE` point into tmp_path, so the machine-global crew
+config the hook reads is one that does not exist -- never the developer's
+real one, on POSIX or on Windows.
 """
 import json
 import os
@@ -17,6 +18,7 @@ import context  # noqa: F401  pylint: disable=unused-import
 import crew_context
 import crew_fixtures
 import crew_route
+import crew_ticket
 from context_fixtures import log_records, make_repo, payload
 
 SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "hooks" / "scripts"
@@ -52,8 +54,13 @@ def _head(root):
 
 
 def _env(tmp_path, **extra):
+    # HOME alone isolates nothing on Windows: Python's expanduser reads
+    # USERPROFILE there, so a real route.enabled: true in the developer's
+    # %USERPROFILE%\.claude\crew\config.json would arm the "unarmed" cases
+    # (review round 1). Both point at the same empty directory.
+    home = str(tmp_path / "home")
     env = dict(os.environ, CREW_VAULT_OPS=str(tmp_path / "absent.py"),
-               CREW_OBSIDIAN_CONFIG=str(tmp_path / "absent.json"), HOME=str(tmp_path / "home"))
+               CREW_OBSIDIAN_CONFIG=str(tmp_path / "absent.json"), HOME=home, USERPROFILE=home)
     env.pop("CLAUDE_PROJECT_DIR", None)
     env.update(extra)
     return env
@@ -238,3 +245,35 @@ def test_a_raising_router_is_logged_even_when_nothing_is_emitted(tmp_path, monke
     text = crew_context.run(data, json.dumps(data).encode())
 
     assert (text, log_records(root)[-1]["route"]) == ("", "error")
+
+
+def _stopped_on_a_long_open_question(tmp_path, chars):
+    root = _repo(tmp_path, armed=True)
+    folder = root / ".work" / "tickets" / "T-1"
+    (folder / "direction.md").write_text(
+        "go\n\n## Open questions\n\n- " + "q" * chars + "\n", encoding="utf-8")
+    (root / ".work" / "INDEX.md").write_text("T-1 | ready | high | r | one\n", encoding="utf-8")
+    crew_ticket.activate(str(root), "T-1")
+    return root
+
+
+def test_an_over_long_stop_reason_never_drops_the_ask_line(tmp_path, monkeypatch):
+    """Review round 1: a 2,100-character open question made the ask line
+    longer than TURN_CHARS, and `fit` dropped it whole. The reason is clipped
+    instead, so the ask survives and still ends by telling Claude to ask."""
+    root = _stopped_on_a_long_open_question(tmp_path, 2100)
+    monkeypatch.setenv("CREW_VAULT_OPS", str(tmp_path / "absent.py"))
+    monkeypatch.setenv("CREW_OBSIDIAN_CONFIG", str(tmp_path / "absent.json"))
+    data = payload("UserPromptSubmit", root, prompt="continue", prompt_id="p5")
+
+    text = crew_context.run(data, json.dumps(data).encode())
+
+    assert (text.startswith("crew route: "), "\n" in text,
+            text.endswith("ask the user before running anything.")) == (True, False, True)
+
+
+def test_the_hook_child_gets_an_empty_home_on_every_platform(tmp_path):
+    """Review round 1: HOME alone left Windows reading the real config."""
+    env = _env(tmp_path)
+
+    assert (env["HOME"], env["USERPROFILE"]) == (str(tmp_path / "home"),) * 2
