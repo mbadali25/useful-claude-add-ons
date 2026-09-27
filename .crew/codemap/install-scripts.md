@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@068db4ff
+anchor: useful-claude-add-ons@2b18f7ab
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -477,6 +477,87 @@ script moved and every other install-script citation stands. That same change ma
 stale (Landmines). `scripts/check-marketplace.py`, `scripts/_test/self-claims.py`,
 `scripts/_test/drift-detection.sh` and `INSTALLATION.md` did not change. Neither install script was
 executed, and `check-marketplace.py` was not run at this pass.
+
+Re-verified per-path from `8d447a7d` to `fc54def6` for T-0005 (`8d447a7d` is T-0008's pre-rebase
+commit; T-0008 landed as `95120430`/`768a747a`): of the cited paths only
+`.claude-plugin/marketplace.json` (crew `version` `:218`, now 1.0.41; the `:217` description is
+unchanged), `plugin/PLUGINS.md` (`:14` version; `:17` Registers row unchanged),
+`plugin/crew/BUDGETS.md` (marker still `:10`; the `:11` figure re-measured, now 18,006 lines, 120
+files), `plugin/crew/README.md` (the cloud-guard environments section added above the command
+table; the `34 commands` claim moved `:2178` -> `:2217` and `4 agents` `:2189` -> `:2228`, both
+re-read and still true) and `TODO.md` changed. Both install scripts, `README.md` and
+`scripts/check-marketplace.py` did not change, so their citations stand.
+
+## Re-anchor provenance - `fc54def6` -> `2170d72e`, 2026-09-26 (T-0005 review round 2)
+
+`git diff --name-only fc54def6 2170d72e -- <the paths this note cites>` returns only what round 2
+changed: `plugin/crew/README.md` (one table row rewritten in place at `:971`, no line added or
+removed, so `:2217` and `:2228` hold; re-read) and `plugin/crew/BUDGETS.md` (the `:11`
+figure re-measured, now 18,009 lines, 120 files). The install scripts, `README.md` and
+`scripts/check-marketplace.py` did not change.
+
+## Re-anchor provenance - `2170d72e` -> `3a57b2d2`, 2026-09-26 (T-0005 rounds 3-4 and Step 8)
+
+`git diff --name-only 2170d72e 3a57b2d2 -- <the paths this note cites>` returns only
+`plugin/crew/README.md` (the cloud-guard section gained the allowlist paragraph, 21 lines above
+the command table, so the `34 commands` claim moved `:2217` -> `:2238` and `4 agents` `:2228` ->
+`:2249`; both re-read and still true) and `plugin/crew/BUDGETS.md` (marker still `:10`; the `:11`
+figure re-measured, now 18,050 lines, 120 files). The version files are byte-identical to
+`2170d72e` (crew 1.0.41 was stepped back and re-set). The install scripts, `README.md` and
+`scripts/check-marketplace.py` did not change.
+
+## Re-anchor provenance - `3a57b2d2` -> `1e210476`, 2026-09-26 (T-0005 Step 9)
+
+`git diff --name-only 3a57b2d2 1e210476 -- <the paths this note cites>` returns
+`plugin/crew/README.md` (the cloud-guard allowlist paragraph gained seven lines above the command
+table, so the `34 commands` claim moved `:2238` -> `:2245` and `4 agents` `:2249` -> `:2256`; both
+re-read and still true) and `plugin/crew/BUDGETS.md` (marker still `:10`; the `:11` figure
+re-measured, now 18,061 lines, 120 files, which `check-marketplace.py` verifies). The version files
+are byte-identical to `3a57b2d2` (crew stepped back to 1.0.37 and re-set to 1.0.41). The install
+scripts, `README.md` and `scripts/check-marketplace.py` did not change.
+
+## Re-anchor provenance - `1e210476` -> `aa7f9841`, 2026-09-26 (T-0005 review round 5)
+
+`git diff --name-only 1e210476 aa7f9841 -- <the paths this note cites>` returns
+`plugin/crew/README.md` (a round-5 paragraph of fifteen lines added to the cloud-guard section, so
+the `34 commands` claim moved `:2245` -> `:2260` and `4 agents` `:2256` -> `:2271`; both re-read
+and byte-identical to the old lines; `:12`, `:414` and `:736` are above the hunk and hold) and
+`plugin/crew/BUDGETS.md` (marker still `:10`; the `:11` figure re-measured, now 18,082 lines, 120
+files, which `check-marketplace.py` verifies). The version files are byte-identical to `1e210476`
+(crew stepped back to 1.0.37 and re-set to 1.0.41). The install scripts and
+`scripts/check-marketplace.py` did not change.
+
+## Re-anchor provenance - `aa7f9841` -> `a26ad8c0`, 2026-09-26 (T-0005 Step 10)
+
+`git diff --name-only aa7f9841 a26ad8c0 -- <the paths this note cites>` returns
+`plugin/crew/README.md` (the cloud-guard section's round-5 paragraph rewritten and a "What the
+guard does not catch" subsection added, 44 lines net above the command table, so the `34
+commands` claim moved `:2260` -> `:2304` and `4 agents` `:2271` -> `:2315`; both re-read and
+byte-identical to the old lines; `:12`, `:414` and `:736` are above the first hunk, at `:1038`,
+and hold) and `plugin/crew/BUDGETS.md` (marker still `:10`; the `:11` figure re-measured, now
+18,157 lines, 120 files, which `check-marketplace.py` verifies). The version files are
+byte-identical to `aa7f9841` (crew stepped back to 1.0.37 and re-set to 1.0.41). The install
+scripts and `scripts/check-marketplace.py` did not change.
+
+## Re-anchor provenance - `6f96e627` + `a26ad8c0` -> `2b18f7ab`, 2026-09-26 (T-0005 landing)
+
+`2b18f7ab` is the crew 1.0.42 bump on top of `4ed4b763`, the merge of T-0005 (`4e0abc8f`) into
+main at `1e0706ac`. Both lines' provenance is above, side by side. A citation can only be wrong at
+the merge when its file changed on both sides, or when a line from one side cites a file the other
+side changed; each such citation was re-mapped with a line diff of the cited file and re-read with
+`grep -n`/`sed -n` on the merged tree. The bump commit replaced `1.0.41` with `1.0.42` in place in
+the version files and in T-0005's own version statements (no line added or removed, except one
+line in `CHANGELOG.md`'s T-0005 bump note).
+
+Of the paths this note cites, `.claude-plugin/marketplace.json` (`:218` 1.0.42; `:217` is main's,
+35 commands), `plugin/PLUGINS.md` (`:14` 1.0.42; the `:17` Registers row reads 4 agents, 35
+commands, 29 skills, matching disk), `plugin/crew/BUDGETS.md` (marker `:10`; 18,494 lines across
+121 files, re-measured on the merge), `plugin/crew/README.md` (both sides' additions; the
+`35 commands` claim is at `:2381` and `4 agents` at `:2392`, re-grepped) and `TODO.md` changed.
+Neither install script changed on T-0005's side, `README.md` and `scripts/check-marketplace.py` did
+not change on either, so their citations stand. Neither install script was executed.
+
+## Re-anchor provenance - T-0042's branch line, `6f96e627` -> `068db4ff` -> `07eefac5`, 2026-09-26
 
 Re-verified per-path from `6f96e627` to `068db4ff` for T-0042 (auto-resume round 4, crew 1.0.42).
 `6f96e627` is T-0004's landing and `git diff --name-only 6f96e627 1e0706ac` returns refresh
