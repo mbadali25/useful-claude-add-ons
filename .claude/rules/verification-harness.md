@@ -4,7 +4,7 @@ paths:
   - "_verify/smoke.sh"
   - "scripts/check-marketplace.py"
 ---
-<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=92becece7efa7b02 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=57cc2754e198e7bb -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # verification-harness
 Code map anchor `f7163410`; if it is behind HEAD, re-check with `git diff --name-only f7163410..HEAD -- <cited paths>`.
 Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and .crew/verify.json — what each actually runs, and where they overlap or don't. .crew/verify.json is tracked; its own anchor field (:3) is stale at 5238be3d, independent of this note's anchor.
@@ -18,9 +18,9 @@ Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and 
 - `.crew/verify.json:266` (rule 24) — the `.claude/rules/` sync check.
 - `.crew/verify.json:267-283` (rule 25) — the T-0008 refresh-check suite; `plugin/crew/tests/sabotage.py:75`, `:3052` — `sabotage_refresh.py`'s registration.
 - `.crew/verify.json:285-295` (rule 26) — the T-0006 auto-resume suite; `plugin/crew/tests/sabotage.py:76`, `:3053` — `sabotage_resume.py`'s registration.
-- `.crew/verify.json:296-303` (rule 27) — the T-0004 autopilot suite; `plugin/crew/tests/sabotage.py:77`, `:3053` — `sabotage_autopilot.py`'s registration.
-- `.crew/verify.json:304-311` (rule 28) — the T-0021 tracker suite; `plugin/crew/tests/sabotage.py:78`, `:3053` — `sabotage_tracker.py`'s registration.
-- `.crew/verify.json:312-320` (rule 29) — the T-0023 plain-text routing suite; `plugin/crew/tests/sabotage.py:79`, `:3053` — `sabotage_route.py`'s registration.
+- `.crew/verify.json:296-304` (rule 27) — the T-0004/T-0018 autopilot suite; `plugin/crew/tests/sabotage.py:77`, `:3053` — `sabotage_autopilot.py`'s registration.
+- `.crew/verify.json:305-312` (rule 28) — the T-0021 tracker suite; `plugin/crew/tests/sabotage.py:78`, `:3053` — `sabotage_tracker.py`'s registration.
+- `.crew/verify.json:313-321` (rule 29) — the T-0023 plain-text routing suite; `plugin/crew/tests/sabotage.py:79`, `:3053` — `sabotage_route.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` / `plugin/crew/CONFIG.md:2284-2291` — the descoped per-rule process-group kill, documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` — `Resolve-CrewBash` refusal rather than a re-resolving hang.
 - `scripts/check-marketplace.py:1639` — `main()`, sixteen checks.
