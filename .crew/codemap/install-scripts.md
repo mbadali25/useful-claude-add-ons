@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@068db4ff
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -477,3 +477,18 @@ script moved and every other install-script citation stands. That same change ma
 stale (Landmines). `scripts/check-marketplace.py`, `scripts/_test/self-claims.py`,
 `scripts/_test/drift-detection.sh` and `INSTALLATION.md` did not change. Neither install script was
 executed, and `check-marketplace.py` was not run at this pass.
+
+Re-verified per-path from `6f96e627` to `068db4ff` for T-0042 (auto-resume round 4, crew 1.0.42).
+`6f96e627` is T-0004's landing and `git diff --name-only 6f96e627 1e0706ac` returns refresh
+artifacts only. Of the cited paths, `git diff --name-only 1e0706ac 068db4ff` returns
+`.claude-plugin/marketplace.json` (crew `version` `:218`, now 1.0.42; the `:217` description is
+unchanged), `plugin/PLUGINS.md` (`:14` version only; the `:17` Registers row is unchanged),
+`plugin/crew/BUDGETS.md` (marker still `:10`; `:11` now reads 18,253 lines across 121 files, and
+`git ls-files -z 'plugin/crew/*.md' | xargs -0 cat | wc -l` returns 18253), `plugin/crew/README.md`
+(auto-resume prose added above the claims, so the `35 commands` claim moved `:2255` -> `:2269` and
+`4 agents` `:2266` -> `:2280`, re-grepped; `ls plugin/crew/commands/*.md` is 35,
+`ls plugin/crew/agents/*.md` is 4, `ls -d plugin/crew/skills/*/` is 29) and `TODO.md` (no live
+`TODO.md:<n>` claim here). Both install scripts, `README.md`, `plugin/README.md`, `INSTALLATION.md`,
+`hooks.json`, `scripts/check-marketplace.py` and `scripts/_test/self-claims.py` did not change, so
+their citations stand; the README pin is exactly as stale as it was at `6f96e627`. Neither install
+script was executed; `check-marketplace.py` was run at `068db4ff` and passed.

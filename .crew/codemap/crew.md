@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@068db4ff
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -27,8 +27,8 @@ Re-verified per-path from `f2bb919b` to `adf8d1dd` for T-0008, from
 `adf8d1dd` to `8d447a7d` for its review round 3, to `c35edda5` for
 T-0034, and to `8ebbdedc` for T-0026's landing; on T-0006's branch, from
 `8d447a7d` to `6d35ef8c` for T-0006 and from `6d35ef8c` to `2bb92f32` for its
-review round 3; both to `a0c0847e` for T-0006's landing; and on T-0004's
-branch from `a0c0847e` to `07ca3972`. See the last sections.
+review round 3; both to `a0c0847e` for T-0006's landing; on T-0004's
+branch from `a0c0847e` to `07ca3972`; and on T-0042's branch from `6f96e627` to `068db4ff`. See the last sections.
 
 # crew
 
@@ -50,7 +50,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.41, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.42, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -248,7 +248,7 @@ both templates, so repo-only is unchanged. Re-executed at `07ca3972`: 119 / 66
 `default_config()` only (`:369-374`, "REPO ONLY, absent from
 `default_global_config()`"); the same functions at `a0c0847e`, run from a
 `git archive` of `plugin/crew`, give 117 / 66 / 51 / 0.
-`plugin/crew/tests/test_crew_config.py:275` asserts 119. `CHANGELOG.md:65`
+`plugin/crew/tests/test_crew_config.py:275` asserts 119. `CHANGELOG.md:101`
 says "116 -> 118" for the same change - it does not match either execution,
 and is outside this note to fix.
 
@@ -308,9 +308,9 @@ they disagree:
   `config.json`".
 - Only `/crew:migrate` (`crew_migrate.py`, `--apply`) ever writes
   `.crew/crew.json`; `/crew:init` still writes only `.crew/config.json`
-  (`TODO.md:3952`, "T2 (lane D, additive) deferred items", filed
-  2026-09-23, still open at this anchor; it was `:3854` at `6c497a14` and
-  `:3884` at `f2bb919b`). `crew_migrate.py`'s own module
+  (`TODO.md:3963`, "T2 (lane D, additive) deferred items", filed
+  2026-09-23, still open at this anchor; it was `:3854` at `6c497a14`,
+  `:3884` at `f2bb919b` and `:3952` at `1e0706ac`). `crew_migrate.py`'s own module
   docstring (`:1-4`) frames this as "one-time move of a 0.20 crew setup onto
   the 1.0 layout" and its schema table (`:11,26-41`) treats `crew.json`
   schema 1 as the target, `config.json` schema <= 7 as "kept, retireable".
@@ -378,36 +378,59 @@ and gets nothing created.
   and `/crew:migrate` (`plugin/crew/commands/migrate.md:78`,
   `apply-migrate`).
 
-## Auto-resume after `/clear` (T-0006, crew 1.0.40)
+## Auto-resume after `/clear` (T-0006, crew 1.0.40; T-0042, crew 1.0.42)
 
 `plugin/crew/hooks/scripts/crew_resume.py` owns the `resume:` line a handoff
-carries (read in full at `6d35ef8c`, its changed functions re-read at `2bb92f32`): the closed
+carries (read in full at `6d35ef8c`, its changed functions re-read at `2bb92f32`, and every
+function T-0042 touched re-read at `068db4ff`): the closed
 allowlist `RESUME_COMMANDS` (`:37`, a module constant so no repo can widen it), the grammar
-(`parse_resume`, `:84`; ticket digits are ASCII `[0-9]`, `:76`), the opt-in (`settings`, `:158` - armed only when the
+(`parse_resume`, `:91`; ticket digits are ASCII `[0-9]`, `:83`; the automatic PreCompact
+skeleton - `crew_autocycle.SKELETON_MARK` - is refused whole before any line is read, `:102-103`),
+the opt-in (`settings`, `:172` - armed only when the
 machine file `~/.claude/crew/config.json` says `resume.auto: true`; a repo
 `false` in `.crew/crew.json` or `.crew/config.json` vetoes, a repo `true`
-grants nothing) and the read-only `decide` (`:411`), where the first failing
+grants nothing) and the read-only `decide` (`:644`), where the first failing
 check wins and every "could not tell" is `wait`, never `run`. It registers no
 hook. `crew_context.py`'s SessionStart branch calls it through
-`resume_decision` (`plugin/crew/hooks/scripts/crew_context.py:627`) for
-`clear`/`compact` only, after `_handoff_verdict` (`:604`), which passes the
+`resume_decision` (`plugin/crew/hooks/scripts/crew_context.py:661`) for
+`clear`/`compact` only, after `_handoff_verdict` (`:638`), which passes the
 staleness VERDICT on rather than whether the archive move succeeded, and a
-rule that raises as stale; `resume_line` (`:653`) renders the one injected
+rule that raises as stale; `resume_line` (`:687`) renders the one injected
 line. Nothing starts on its own - the command is named, never sent as
 `initialUserMessage`. On `PreCompact` both `handoff-write` flavours call its
 `precompact` CLI (`write_precompact_record`,
-`plugin/crew/hooks/scripts/crew_resume.py:333`); `decide` trusts a `manual`
+`plugin/crew/hooks/scripts/crew_resume.py:554`); `decide` trusts a `manual`
 record for 600 s and never one it could not have replaced
-(`_compact_was_manual`, `:391`). `record_run` (`:469`) is the only writer of
+(`_compact_was_manual`, `:620`). A record a later PreCompact could neither remove nor empty
+is MARKED, not predicted: `precompact-<key>.stuck` (`stuck_path` `:529`, `_mark_stuck` `:537`;
+the shell flavours write the same marker, `plugin/crew/hooks/scripts/handoff-write.sh:52-53`,
+`plugin/crew/hooks/scripts/handoff-write.ps1:327-328`), and a compact is not manual while that
+marker exists or cannot be stat'ed; `crew_context.prune_precompact` ages it out with the records.
+
+A handoff resumes only in the session that wrote it (T-0042). On an armed machine every
+`PostToolUse` Write/Edit/MultiEdit of the configured handoff is recorded by
+`crew_context.record_handoff_author` (`plugin/crew/hooks/scripts/crew_context.py:615`, called
+through the never-raising `_record_author_logged` `:987` from `run` `:962`, before the
+`memory.inject` gate) into `<git-common-dir>/crew/handoff-author.json` (`record_author`,
+`plugin/crew/hooks/scripts/crew_resume.py:270`: the note's sha256, `session_id`, and
+`session_process()` `:220` - the nearest `claude` ancestor as `{pid, start}`, `None` on any host
+without `/proc`). `decide` asks `_author_refusal` (`:386`) after the command checks and before
+the state file: `compact` must match the session id, `clear` the process; a missing, unreadable
+or sha-mismatched record, or an unidentifiable process, is a `wait`, never a match. `record_run`
+(`:705`) is the only writer of
 `<git-common-dir>/crew/resume-state.json`, and nothing in the plugin calls it
 yet (T-0013's contract). A state file that exists and cannot be read or is not
-the shape `record_run` writes is an unknown (`_read_state` `:190`, `_entry` `:209`
+the shape `record_run` writes is an unknown (`_read_state` `:348`, `_entry` `:370`
 return `None`): `decide` waits and `record_run` refuses rather than overwriting it.
+Whether it exists at all goes through `_absent` (`:331`): only `FileNotFoundError` /
+`NotADirectoryError` is absence, any other stat error is `None` - the round-4 FIX, since
+`os.path.lexists` read an unsearchable directory as "no file". `.work/INDEX.md` goes through the
+same helper (`_index_rows` `:443`), so an unstat-able index makes the fingerprint unknown.
 `record_run` asks consumed-once and the loop guard again under its lock through
-the same `_already` (`:224`) `decide` uses, so of two senders holding one `run`
+the same `_already` (`:416`) `decide` uses, so of two senders holding one `run`
 only the first gets `ok`. Tests: `plugin/crew/tests/test_crew_resume.py`,
 `plugin/crew/tests/test_crew_resume_hook.py`; mutations
-`plugin/crew/tests/sabotage_resume.py`; `.crew/verify.json` rule 25 (`:270-280`).
+`plugin/crew/tests/sabotage_resume.py` (66 since T-0042); `.crew/verify.json` rule 25 (`:270-280`).
 
 ## `/crew:autopilot` (T-0004, crew 1.0.41)
 
@@ -617,7 +640,7 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   confirmed at a specific line this pass; called with subcommands
   (`plan-windows-default`, `apply-migrate`) from the three sites named
   above.
-- `plugin/crew/hooks/scripts/crew_resume.py:411` — `decide`, read-only;
+- `plugin/crew/hooks/scripts/crew_resume.py:644` — `decide`, read-only;
   `main()` is the `decide` / `record` / `precompact` CLI.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:576` — `ticket_freshness`,
   the library entry point; `main()` at `:676`.
@@ -956,3 +979,37 @@ and both `scripts/install-prerequisites.*`. Each citation into them was re-read 
 
 New since `a0c0847e`, not re-anchored from anything: the `/crew:autopilot` section and its
 entry point, and `crew_autopilot.settings`'s place in the config-authority section.
+
+## Re-anchor provenance - `6f96e627` -> `068db4ff`, 2026-09-26 (T-0042)
+
+`6f96e627` is T-0004's landing of `07ca3972`; `git diff --name-only 6f96e627 1e0706ac` returns
+only refresh artifacts (`.claude/rules/`, `.crew/codemap/`, `docs/diagrams/`, `graphify-out/`),
+so every citation above held at `1e0706ac`. Of the paths this note cites,
+`git diff --name-only 1e0706ac 068db4ff` returns `.claude-plugin/marketplace.json`,
+`.crew/verify.json`, `CHANGELOG.md`, `TODO.md`, `plugin/crew/.claude-plugin/plugin.json`,
+`plugin/crew/CONFIG.md`, `plugin/crew/README.md`, `crew_context.py`, `crew_resume.py`, both
+`handoff-write` flavours and the three auto-resume test files. Each line citation into them was
+re-mapped through the `-U0` hunks of that diff and re-read with `sed -n` at `068db4ff`:
+
+- `crew_resume.py` - rewritten in the auto-resume section above, not re-pointed: T-0042 added
+  the author binding (`AUTHOR_FILE` `:72`, `session_process` `:220`, `record_author` `:270`,
+  `_author_refusal` `:386`), `_absent` `:331`, the `.stuck` marker (`:529`, `:537`) and the
+  skeleton refusal in `parse_resume` (`:102-103`). Moved: `parse_resume` `:84` -> `:91`, the
+  ticket regex `:76` -> `:83`, `settings` `:158` -> `:172`, `_read_state` `:190` -> `:348`,
+  `_entry` `:209` -> `:370`, `_already` `:224` -> `:416`, `write_precompact_record` `:333` ->
+  `:554`, `_compact_was_manual` `:391` -> `:620`, `decide` `:411` -> `:644`, `record_run`
+  `:469` -> `:705`. `RESUME_COMMANDS` `:37` holds.
+- `crew_context.py` - `record_handoff_author` (`:615`) and `_record_author_logged` (`:987`) are
+  new; `_handoff_verdict` `:604` -> `:638`, `resume_decision` `:627` -> `:661`, `resume_line`
+  `:653` -> `:687`. `load_crew_config` `:121-132` holds.
+- `.crew/verify.json` - rule 25's `seconds` and `why` changed in place; `:270-280` holds, as do
+  `:251`, `:252-268` and rule 26 `:281-288`.
+- `TODO.md` - eleven lines inserted above; `:3952` -> `:3963`, same bullet re-read.
+- `CHANGELOG.md` - the 1.0.42 entry inserted at the top; the "116 -> 118" line `:65` -> `:101`.
+- `marketplace.json` / `plugin.json` - crew `version` only, now 1.0.42 (`:218`, `:3`); `:217`'s
+  4/35/29 counts still match disk.
+- `handoff-write.sh` / `.ps1` - cited by name, plus the `.stuck` lines added to the section above.
+- `CONFIG.md`, `plugin/crew/README.md`, the test files - cited by name only.
+
+New since `6f96e627`, not re-anchored from anything: the handoff-author binding and `.stuck`
+marker paragraphs of the auto-resume section.

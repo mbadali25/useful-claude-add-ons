@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@068db4ff
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -47,9 +47,9 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.41** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
-and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `07ca3972`; it
-was 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
+`rule-of-two`. `crew` is now **1.0.42** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `068db4ff`; it
+was 1.0.41 at `07ca3972`, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
 
@@ -262,6 +262,9 @@ against synthetic fixtures and never reads this repo's own docs.
   from the merged tree, not taken from either side), and the measurement returns 17973 over 120
   files, matching. Re-measured at `07ca3972` (T-0004): 18,176 across 121 files on `:11`, and
   `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` returns 18176 over 121 files, matching.
+  Re-measured at `068db4ff` (T-0042): 18,253 across 121 files on `:11`, and the same measurement
+  returns 18253 over 121 files, matching; the ticket's docs had left it at 18,176 and
+  `check-marketplace.py` failed on it until `25f94459` re-measured it.
 - **`MARKETPLACE.md`** was not re-read for a community-plugin or marketplace
   count of its own; only `README.md:231`'s prose was checked and found to no
   longer state a specific number.
@@ -359,4 +362,17 @@ is unchanged), `CHANGELOG.md`, `TODO.md`, and `plugin/crew/commands/`/`plugin/cr
 changed. `INSTALLATION.md` did not, so its `:252` still states 34 commands against 35 on disk.
 `scripts/check-marketplace.py`, `CLAUDE.md` and `skills/README.md` did not change.
 `python3 scripts/check-marketplace.py` at `07ca3972`: `marketplace: 34 skills, 5 plugins`,
+`all checks passed`.
+
+Re-verified per-path from `6f96e627` to `068db4ff` for T-0042 (auto-resume round 4, crew 1.0.42).
+`6f96e627` is T-0004's landing and `git diff --name-only 6f96e627 1e0706ac` returns refresh
+artifacts only. Of the cited paths, `git diff --name-only 1e0706ac 068db4ff` returns
+`.claude-plugin/marketplace.json` (`:218` version only, 1.0.42; `:217` unchanged),
+`plugin/PLUGINS.md` (`:14` version only; `:17` unchanged), `plugin/crew/.claude-plugin/plugin.json`
+(version only), `plugin/crew/BUDGETS.md` (`:11`, 18,253 / 121, re-measured and matching),
+`.crew/verify.json` (rule 25's `seconds` and `why` in place; the doc rule at `:69-78` is unchanged),
+`CHANGELOG.md` and `TODO.md`. `scripts/check-marketplace.py`, both install scripts, `README.md`,
+`plugin/README.md`, `INSTALLATION.md`, `CLAUDE.md` and `skills/README.md` did not change, so
+`INSTALLATION.md:252` still states 34 commands against 35 on disk.
+`python3 scripts/check-marketplace.py` at `068db4ff`: `marketplace: 34 skills, 5 plugins`,
 `all checks passed`.

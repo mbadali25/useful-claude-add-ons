@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@068db4ff
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -298,15 +298,15 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1804` (`:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1818` (`:1804` at `1e0706ac`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
   the second.
 
 - **`/crew:handoff` still does not write `docs/HANDOFF.md`; unrelated to it.**
-  `plugin/crew/commands/handoff.md:7` — unchanged file, closed by the
-  per-path check — still reads "Write `.work/HANDOFF.md` following the
+  `plugin/crew/commands/handoff.md:7` — the file changed for T-0006 and
+  T-0042 below this line, `:7` re-read at `068db4ff` — still reads "Write `.work/HANDOFF.md` following the
   `crew-context` skill." `plugin/crew/skills/crew-context/SKILL.md:69` (moved
   from `:62` — the file changed substantially in this range, re-grepped: the
   session-start mechanism it describes was rewritten from `pm_brief`-driven
@@ -350,7 +350,8 @@ listing the directory.
   resolves to stale.
 
 - **`TODO.md`'s `render.sh` entry is still open, still un-CLOSED, re-located
-  rather than assumed at its old line.** Now at `TODO.md:1190` (`:1122` at
+  rather than assumed at its old line.** Now at `TODO.md:1201` (`:1190` at
+  `1e0706ac`, `:1122` at
   `f2bb919b`, `:1092` at `6c497a14`, `:1061` before that; the file grew 3645 -> 4714 lines, +1069,
   in the `5d1fc5fd..6c497a14` range, and 30 more lines landed after its
   `:16` by `f2bb919b`, and this note's own
@@ -561,3 +562,19 @@ mention moved `:1759` -> `:1804`, re-grepped), `plugin/crew/hooks/scripts/crew_s
 `plugin/crew/hooks/scripts/crew_ticket.py` (cited by name only, as a rule's path) and both install
 scripts (crew catalog row count). `python3 scripts/check-marketplace.py` re-run at `07ca3972`:
 `marketplace: 34 skills, 5 plugins` / `all checks passed`.
+
+Re-verified per-path from `6f96e627` to `068db4ff` for T-0042 (auto-resume round 4, crew 1.0.42).
+`6f96e627` is T-0004's landing and `git diff --name-only 6f96e627 1e0706ac` returns refresh
+artifacts only. Of the cited paths, `git diff --name-only 1e0706ac 068db4ff` returns
+`plugin/crew/README.md` (auto-resume prose added above it, so the `docs/runbooks/INDEX.md` mention
+moved `:1804` -> `:1818`, re-grepped; corrected above), `plugin/crew/commands/handoff.md` (how a
+note binds to its session added below `:7`, which holds), `plugin/crew/skills/crew-context/SKILL.md`
+(every wait reason named; `:69` holds, re-read), `docs/guides/crew/src/auto-cycle.md` (the same
+wait reasons; cited by name only), `TODO.md` (eleven lines inserted above the `render.sh` entry,
+`:1190` -> `:1201`, same heading; corrected above), `CHANGELOG.md` (the 1.0.42 entry at the top;
+cited without a line), `.crew/verify.json` (rule 25's `seconds` and `why` in place; `:167-172`,
+`:251`, `:252-268`, `:270-280`, `:281-288` hold), `plugin/PLUGINS.md` (`:14` version only; `:17`
+unchanged), `.claude-plugin/marketplace.json` and `plugin/crew/.claude-plugin/plugin.json`
+(crew `version` only, 1.0.42). `README.md`, `plugin/README.md`, `INSTALLATION.md`, `skills/README.md`
+and `docs/runbooks/` did not change, so their citations stand and the README pin is as stale as it
+was at `6f96e627`.
