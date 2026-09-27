@@ -394,7 +394,9 @@ TRACKER_MUTATIONS = (
         TRACKER,
         # INDEX is read before the vault too (review round 4), so only a row
         # appended after that read reaches this refusal.
-        '    files = _files_create(root, ticket, title)\n    if files["state"] == FAILED:\n        return [files, claim]\n',
+        '    files = _files_create(root, ticket, title)\n'
+        '    if files["state"] == FAILED:\n'
+        '        return [files, claim]\n',
         "    files = _files_create(root, ticket, title)\n",
         _TESTS + "test_obsidian_create_writes_no_card_when_index_refuses_late",
     ),
@@ -485,7 +487,9 @@ TRACKER_MUTATIONS = (
     (
         "tracker writes the note before checking its directory is still in the vault",
         TRACKER,
-        '            moved = check()\n            if moved:\n                return _result("obsidian-note", FAILED, moved)\n',
+        '            moved = check()\n'
+        '            if moved:\n'
+        '                return _result("obsidian-note", FAILED, moved)\n',
         "",
         _TESTS + "test_note_dir_moved_out_of_the_vault_after_pinning_leaves_no_note_there",
     ),
@@ -587,7 +591,9 @@ TRACKER_MUTATIONS = (
         # Round 3 FIX (:1158): the board moved after the INDEX half refused.
         "tracker moves the board after the INDEX half refused the move",
         TRACKER,
-        '    files = _files_move(root, ticket, status, reopen)\n    if files["state"] == FAILED:\n        return [files]\n',
+        '    files = _files_move(root, ticket, status, reopen)\n'
+        '    if files["state"] == FAILED:\n'
+        '        return [files]\n',
         "    files = _files_move(root, ticket, status, reopen)\n",
         _TESTS + "test_board_is_not_moved_when_the_index_half_refuses",
     ),
@@ -595,7 +601,9 @@ TRACKER_MUTATIONS = (
         # The same gate now stops a backwards move's board half (round 2 NIT).
         "tracker moves the board back after the INDEX half refused a backwards move",
         TRACKER,
-        '    files = _files_move(root, ticket, status, reopen)\n    if files["state"] == FAILED:\n        return [files]\n',
+        '    files = _files_move(root, ticket, status, reopen)\n'
+        '    if files["state"] == FAILED:\n'
+        '        return [files]\n',
         "    files = _files_move(root, ticket, status, reopen)\n",
         _TESTS + "test_obsidian_backwards_move_leaves_the_board_alone",
     ),

@@ -284,11 +284,11 @@ def run_windows_relpath_check(use_fixed_rel: bool) -> list:
     exact pre-fix body (a bare `os.path.relpath`, no normalisation) -- this is
     the "before" half, and it is not what makes this a sabotage check: it
     hand-reproduces the old bug rather than exercising current source, and
-    would keep reporting 19 even if the real fix were removed AND restored
+    would keep reporting the same problems even if the real fix were removed AND restored
     on the same line. ``use_fixed_rel=True`` calls the real, current `rel()`
     unmodified under the same simulated Windows `os.path.relpath`/`os.sep` --
     THAT half is the sabotage check: revert the `.replace(os.sep, "/")` in
-    `check_instructions.py`'s `rel()` and this call goes back to reporting 19,
+    `check_instructions.py`'s `rel()` and this call goes back to reporting them,
     turning `after == []` red on its own.
     """
     saved_relpath = CHECKER.os.path.relpath
@@ -497,17 +497,23 @@ def main() -> int:
                    needle in wiring_output)
 
     # --- rel()'s Windows os.sep bug, against this repo's own real tree ----
+    # The burn-in counted 19 (9 + 10). That count is a fact about one tree:
+    # T-0021 trimmed obsidian-sync.md under budget and dropped its allowance
+    # entry, which made it 18. So assert the shape instead -- non-empty, and
+    # every problem is a file one of the two exemption tables names.
     windows_before = run_windows_relpath_check(use_fixed_rel=False)
+    exempt = set(CHECKER.load_allowance(lambda _msg: None)) | set(CHECKER.LEGACY_STALE_NAME_FILES)
     check_true(
-        "WINDOWS: simulated pre-fix rel() reproduces the burn-in's 19 false "
-        "problems (9 budget-allowance + 10 stale-name exemptions missed)",
-        len(windows_before) == 19,
+        "WINDOWS: simulated pre-fix rel() reports false problems, each on a "
+        "file the allowance or the legacy stale-name list exempts",
+        bool(windows_before) and all(
+            problem.split(":", 1)[0].replace("\\", "/") in exempt for problem in windows_before),
     )
     windows_after = run_windows_relpath_check(use_fixed_rel=True)
     check_true(
         "WINDOWS SABOTAGE CHECK: the real, current rel() reports 0 problems "
         "under the same simulated Windows os.path.relpath/os.sep -- revert "
-        "rel()'s .replace(os.sep, \"/\") and this goes back to 19",
+        "rel()'s .replace(os.sep, \"/\") and the false problems come back",
         windows_after == [],
     )
 
