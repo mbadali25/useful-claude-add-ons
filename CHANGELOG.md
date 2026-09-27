@@ -4,6 +4,170 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.42: environment-scoped terraform in the cloud guard (T-0005) — **BREAKING**
+
+- **BREAKING: a destroy is never applied unattended, `guards.terraformApply:
+  allow` included.** While `guards.cloudGuard` is armed, a destroy —
+  `terraform|tofu destroy`, `apply -destroy`, `apply -replace`, `workspace
+  delete`, a saved plan whose summary lists a delete, and any apply whose plan
+  crew cannot read (**including `terraform apply -auto-approve` with no saved
+  plan**, any terragrunt apply, and a plan with no, a stale or a malformed
+  summary) — now **asks** under `allow`, and is **denied** when nobody is
+  attending. Before 1.0.42 each of these ran without a word under `allow`.
+  Approve one command with the `.approved-guard-terraformApply-<hash>` marker
+  the refusal names (15 minutes, that command only), or summarise a saved plan
+  with `hooks/scripts/crew_tfplan.py summarize PLANFILE` and apply that plan.
+  Bumped `1.0.41 -> 1.0.42` (`1.0.37 -> 1.0.41` on its branch; 1.0.38 to 1.0.41 went to
+  T-0034, T-0026, T-0006 and T-0004).
+- **A terraform line is judged only when every word is a plain literal.** A
+  command line naming `terraform`, `terragrunt` or `tofu` anywhere — spotted
+  after quotes and escapes are taken out of each word, so `"terraform"` and
+  `$'\x74erraform'` count — is judged only when every word matches
+  `^[A-Za-z0-9_./:=@%+,-]+$`. Any quote, `$`, backquote, backslash, glob,
+  brace, `<(`, heredoc, here-string, comment or control character on such a
+  line makes it **could not tell**: asked when attended, denied unattended and
+  under `block`, never allowed. The check runs on the raw text before the
+  parser, replacing four review rounds of per-shape quoting fixes (heredoc
+  delimiters, `${...}` nesting, `\r#`, `$"..."`, `$'\xNN'`, `destroy${x}`).
+  **This also refuses unattended some lines that used to pass**: a quoted plan
+  path (`terraform apply "p.tfplan"`), `2>$null`, and a comment or heredoc on
+  a terraform line.
+- **"A terraform line" is one that runs terraform, not one that mentions it.**
+  The literal-word rule above applies when a command word — after assignments
+  and wrappers (`env`, `sudo`, `timeout`, `xargs`, ...) — dequotes to
+  `terraform`, `terragrunt` or `tofu`, or when `bash -c`, `eval`, `pwsh -c`,
+  `$(...)` or backquotes carry such a command. `git commit -m "fix terraform
+  apply"`, `grep 'terraform apply' .` and `echo terraform` are no longer
+  refused. A command word crew cannot read (`$x`, `$(...)`) is could not tell
+  only on a line naming terraform, `destroy`, `apply` or `workspace`. A line
+  crew cannot split with certainty (a `case` arm, a function, a script piped
+  into a shell, `ssh`, `source`) keeps the wider rule. PowerShell lines follow
+  the same command-word rule (`&`, `.`, `terraform.exe`, a path, `Start-Process
+  terraform`), so `git commit -m "fix terraform apply"`, `terraform output -raw
+  "db_url"` and `Select-String terraform *.md` are not refused there either.
+- **A terraform command crew cannot follow is could not tell, however plainly
+  it is spelled.** An alias (`alias tf=terraform`, `hash -p`, PowerShell's
+  `Set-Alias`/`New-Alias`/`sal` and `alias:` drive), a binary the same line
+  copies or links and runs by its new name (`ln -sf /usr/bin/terraform tf &&
+  ./tf destroy`), zsh's `=terraform`, a script runner crew does not split
+  (`flock`, `ssh`, `trap`), a path `find -exec` finds, and PowerShell's
+  `Start-Process`/`saps` are asked about when attended and
+  refused unattended and under `block` — before, a line of plain words was
+  handed to the parser, which could not see terraform in it, and a destroy ran
+  unattended. `ssh host terraform plan` is refused unattended too. The other
+  way, **a read-only subcommand is not gated for its quoting**:
+  `terraform|tofu plan`, `show`, `output`, `fmt`, `validate`, `init`,
+  `providers`, `graph`, `get`, `console`, `version`, `workspace list|show` and
+  `state list|show|pull` — first after `-chdir=` options (terragrunt: first
+  word) and not an `xargs -I` placeholder — are judged by the parser as before
+  Step 8, so `terraform plan -var 'environment=staging'` runs under `block` and
+  unattended again. Nor are the arguments of a program that is not terraform:
+  `cp -r terraform "$BACKUP_DIR"` and `rg terraform "$file"` are not refused.
+  A script file run by a shell (`bash build.sh`) and a `source`d file stay
+  unread, as documented, rather than refusing every line beside them.
+- **Direct use only (owner, 2026-09-26, after review round 6).** The guard
+  catches terraform, terragrunt and tofu written directly: bare or
+  path-qualified, behind the listed wrappers, inside `bash|sh|zsh -c` and
+  `eval`, with global options before the subcommand, and PowerShell's direct
+  forms. Options before the subcommand are now skipped as terragrunt reads
+  them, so `terragrunt --working-dir infra destroy -auto-approve` - allowed
+  unattended before - is a destroy, and PowerShell's `. terraform destroy` is
+  read. A disguise is out of scope and is no longer chased: the fallback that
+  read `<any program> ... terraform ... $var` as terraform being run is gone
+  (it refused `rg terraform "$file"` and `vim terraform "$file"`), so an
+  unlisted wrapper (`strace`, `aws-vault exec`, `unbuffer`, `systemd-run`), a
+  program that runs another (`git bisect run`, `rg --pre`) and a container
+  image now run unjudged, with the rest of the disguises (a rename crew does
+  not see made, `env -S`, BusyBox applets, git `!` aliases, an interpreter, a
+  script file). README "What the guard does not catch" lists them; the
+  boundary is the credentials an unattended run holds (T-0044).
+- **Review round 7 (GUjM5s).** Direct spellings that ran unattended are now
+  read: a boolean option before a valued one (`terragrunt --non-interactive
+  --working-dir infra destroy`), a listed wrapper's long option, its unique
+  prefix or a short cluster (`stdbuf --output L`, `xargs -rn 1`, `timeout -vk
+  5 60`), `eval -- terraform destroy`, and PowerShell's colon-bound value
+  (`Start-Process -FilePath:terraform`). No longer refused: a quoted
+  PowerShell string (`$message = "terraform destroy"`), a terragrunt
+  read-only subcommand after its options or `run-all` (`terragrunt
+  --working-dir infra plan -out="p.tfplan"`), and `command -v terraform`.
+- **New `environments` block** (`environments.nonProd`, repo-only globs;
+  `environments.prodUnattended`, ratcheted, true only when **both** config
+  layers say the JSON literal `true`). Under `terraformApply: ask`, an apply of
+  a non-destroying saved plan and `workspace new` / `workspace select
+  -or-create` aimed at a `nonProd` target run unattended and are logged as
+  `env:nonProd:<name>`; production does too only under `prodUnattended` in
+  both layers, logged and said on screen. The environment is read from
+  `TF_WORKSPACE`, an earlier literal `workspace select|new`, the
+  `.terraform/environment` file under the payload's `cwd`, `-var
+  environment=` / `TF_VAR_environment`, and the plan summary — all of which
+  must agree. An environment crew cannot identify (no signal, a non-literal, a
+  conflict, a directory change in any spelling — `cd`, `env -C`/`--chdir=`,
+  `sudo -D`, `wsl --cd`, `pwsh -WorkingDirectory`/`-wd` and the rest — no
+  workspace file — never read as `default` — an environment change crew
+  cannot read such as `source`, `export $(...)`, a PowerShell `env:` write or
+  an `||` chain, or an unreadable block) is `unknown`, which nothing allows
+  unattended, `prodUnattended` included. A malformed block forces an armed
+  guard to `block` mode. The hook never runs terraform, and never opens a
+  plan, sidecar, workspace file or `azureProfile.json` that is not a regular
+  file (a FIFO or device reads as unknown instead of hanging the hook).
+- **A saved plan is trusted only when its apply is the only command.** The
+  hook hashes the plan before the command runs, so `terraform plan -out p &&
+  terraform apply p`, a `cp` onto the plan, a nested shell or an output
+  redirect beside the apply makes the destroy question unknown. A command
+  substitution counts as a command wherever the shell runs it: in an
+  unquoted heredoc body (a quoted delimiter — any part of it — keeps the body
+  literal), inside `${...}` and `$((...))`, and in `$((cmd) )` / `<((cmd))`,
+  which are subshells, not arithmetic. PowerShell's `2>&1` and `*>&1` are one
+  redirection, not a second command.
+- **The cloud guard reads heredocs as bash does.** A substitution in an
+  unquoted heredoc body is judged even when the heredoc feeds `cat`, so
+  `cat <<EOF` around `$(terraform destroy -auto-approve)` is a destroy (it
+  was not a finding at all before). A backslash-newline is joined before the
+  delimiter is matched, so `E\` + newline + `OF` ends a heredoc delimited by
+  `EOF`; a delimiter line ending in CR is read both as the end and not.
+- **The cloud guard delimits quoting as bash does, and fails closed where it
+  cannot.** `${...}` and `$( )` end where bash ends them — nested quotes,
+  `$'...'`, backslashes and `#` comments included — so `"${x:-"'"}"` is one
+  word and no longer hides the `$( )` or the `terraform destroy` after it.
+  Wherever crew still cannot be sure it split a line as the shell will
+  (quoting inside `${...}`, a quote or substitution that never closes, a
+  heredoc or `case` inside `$( )`, a redirection with no target, a control
+  character), it counts one command more — so a saved plan's apply is
+  refused unattended — and re-reads the rest of the line from scratch, so a
+  command the shell would run is judged either way. A line holding a CR is
+  read three ways: CR as a blank, as a word character (bash: `\r#` is not a
+  comment) and dropped. PowerShell's typographic quotes and a bare CR are
+  read as its tokenizer reads them. A terragrunt option whose value is the
+  word `workspace` no longer hides `workspace delete`.
+- **`workspace delete` is a destroy in every armed state**, `environments`
+  configured or not, terragrunt's included — behind `run-all`, `run --` and
+  `run --all --`, and after a terragrunt option that takes a value. **Once `environments` is configured**, `terraform
+  workspace new|select -or-create` become findings under
+  `guards.terraformApply` — denied under `block`, and under `ask` denied
+  unattended for a production or unknown target. With `environments` at its
+  defaults they are not judged, as before.
+- **New `hooks/scripts/crew_tfplan.py summarize`** writes
+  `.crew/tfplan/<sha256 of the plan bytes>.json` (the workspace the plan file
+  is bound to, read from the plan itself and `null` when unreadable,
+  `environment` variable, every address whose actions include `delete`) via a temp file and
+  `os.replace`; it writes nothing when `show` fails or times out and never
+  creates `.crew/`. **New `crew_config.py --check`** warns when a `nonProd`
+  glob covers a `.crew/verify.json` environment with `requireHuman: true`.
+  `prodUnattended` does not stand down `promote-gate.sh`'s `requireHuman`.
+- Tests: `test_cloud_guard_environments.py` (30 must-block, 6 must-block under
+  `allow`, 12 must-allow, 4 attended-ask, the unchanged-at-defaults reruns,
+  the resolver and destroy unit tables, and review round 1's 37 must-block
+  reproductions with the chdir-form, wrapper-option, unreadable-environment
+  and special-file tables), `test_crew_tfplan.py` (including a real 1.16.3
+  plan bound to `production`), the `environments` config tests in
+  `test_crew_config.py`; the must-block and must-allow tables for review
+  rounds 2 and 3, the literal-word gate, the command-word trigger and review
+  round 5 (`R5_MUST_BLOCK`, `R5_MUST_ALLOW`); 133 new mutations in
+  `sabotage_cloud.py`, each red. `.crew/verify.json` gains a rule running the
+  three cloud-guard suites. Not in scope: `gh workflow run` deploys (T-0009)
+  and TFC/HCP workspaces or runs driven over HTTP (`curl`, `gh api`), which
+  the guard does not recognise.
+
 ### Added
 
 - **`crew` 1.0.42: `/crew:autopilot status` and the subcommand router
