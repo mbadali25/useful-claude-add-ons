@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@12682e41
+anchor: useful-claude-add-ons@e95e5964
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -180,13 +180,14 @@ listing the directory.
   34 skills, 5 plugins / all checks passed`. `plugin/README.md:414`'s crew row
   (`<!-- claim: plugin-skills:crew -->`), `plugin/PLUGINS.md:17`, the
   `.claude-plugin/marketplace.json` `crew` description, and both install
-  scripts' `PLUGIN_NAME` crew rows all read **4 agents, 35 commands, 29
+  scripts' `PLUGIN_NAME` crew rows all read **4 agents, 36 commands, 29
   skills, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events** at
-  `07ca3972` (34 commands until T-0004 added `commands/autopilot.md`; every
-  site listed here was bumped in `ecf69e43`, and `README.md:168`/`:874` carry
-  the same 35) —
+  `e95e5964` (34 commands until T-0004 added `commands/autopilot.md`, 35
+  until T-0075 added `commands/config-setup.md`; every site listed here was
+  bumped in `ecf69e43` and again in `a77a42d6`, and `README.md:168`/`:874`
+  carry the same 36) —
   independently re-derived from the filesystem (`ls plugin/crew/agents/*.md`
-  = 4, `commands/*.md` = 35, `skills/*/` = 29) and from `hooks.json` (parsed
+  = 4, `commands/*.md` = 36, `skills/*/` = 29) and from `hooks.json` (parsed
   with `json.load`: 34 entries, 8 distinct event names, 26 unique `command`
   strings), not cross-quoted from any one of the docs. This is the same
   five/six-site figure this note's previous anchors repeatedly found
@@ -299,7 +300,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:2029` (`:2015` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1944` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:2079` (`:2029` at `12682e41`, before T-0075's `/crew:config` menu subsection went in above it; `:2015` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1944` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -738,3 +739,20 @@ mention in `plugin/crew/README.md` is `:2029` (`:2015` on T-0021's side, `:1944`
 `.crew/verify.json` are cited without a line here. `handoff.md`, `crew-context/SKILL.md` and the
 guide sources changed on one side only. The diagrams this note cites are re-anchored in the same
 commit as this note. Nothing was executed for this note.
+
+## Re-anchor provenance - `12682e41` + `d2444be9` -> `e95e5964`, 2026-09-27 (T-0075 merges main)
+
+`e95e5964` is T-0075's crew 1.0.46 bump on top of `e94ce6ce`, the merge of origin/main `db14619c`
+(T-0021 landed as 1.0.45) into T-0075's branch; the merge took main's copy of this note and
+T-0075's edits were re-applied. Of the cited paths, `git diff --name-only 12682e41 e95e5964`
+returns `plugin/crew/README.md` (T-0075's `/crew:config` menu subsection above the runbooks
+mention, so `:2029` -> `:2079`, re-read), `README.md`, `plugin/README.md`, `plugin/PLUGINS.md`,
+`.claude-plugin/marketplace.json` and both install scripts (the crew count 35 -> 36 in place, no
+line moved; corrected above; `:14`/`:218` now 1.0.46), `.crew/verify.json` (rule 7 +3 lines;
+`:167-172` holds, the tracker rule `:301-308` -> `:304-311`, cited here only in provenance),
+`CHANGELOG.md` (T-0075's entry above T-0021's; cited without a line) and
+`docs/guides/crew/src/auto-cycle.md` / `troubleshooting.md` (the menu and alias named; the
+troubleshooting guide's HTML, DOCX and PDF rebuilt from the merged sources by `build.py --guide
+troubleshooting` in the merge commit `e94ce6ce`). `docs/diagrams/data-flow-crew-config.mmd` is
+refreshed in the same commit as this note and keeps its `:1-2` header form. Nothing was executed
+for this note beyond `check-marketplace.py` (passed at `e95e5964`).

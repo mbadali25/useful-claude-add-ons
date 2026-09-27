@@ -2,15 +2,17 @@
 paths:
   - "plugin/crew/**"
 ---
-<!-- crew:generated source=.crew/codemap/crew.md sha256=7a54e1af014c9b76 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/crew.md sha256=a712bbf2ff0ce429 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # crew
-Code map anchor `12682e41`; if it is behind HEAD, re-check with `git diff --name-only 12682e41..HEAD -- <cited paths>`.
+Code map anchor `e95e5964`; if it is behind HEAD, re-check with `git diff --name-only e95e5964..HEAD -- <cited paths>`.
 Covers: The crew plugin after 1.0: hooks, the four agents, commands, skills inventory, config layering and leaf counts, and how crew_freshness.py reads this very directory.
 ## Entry points
 - `plugin/crew/hooks/scripts/crew_state.py:996` — `TRIGGERS`, a 15-entry tuple, unchanged in membership and order from the previous anchor.
 - `plugin/crew/hooks/scripts/crew_state.py:2901` — `evaluate_triggers`.
 - `plugin/crew/hooks/scripts/crew_config.py:240` / `:385` — `default_config()` / `default_global_config()`.
 - `plugin/crew/hooks/scripts/crew_config.py:2433` — `_RATCHETED`, the 14-key ratchet table (seven construction steps).
+- `plugin/crew/hooks/scripts/crew_config.py:2891` / `:2946` — `plan_repo_write` / `write_repo_config`, the one repo-layer writer (T-0075).
+- `plugin/crew/hooks/scripts/crew_config_menu.py:634` — `main()`, the `spec` / `save` / `delete-repo` / `restore-repo` CLI the `/crew:config` menu calls.
 - `plugin/crew/hooks/scripts/role_write_guard.py:539` — `classify`, the decision function; `:684` — `main()`.
 - `plugin/crew/hooks/scripts/role-write-guard.sh:348` — where the strict private-resolver result feeds the guard's fail-closed fallback.
 - `plugin/crew/hooks/scripts/event_claim.py` — no single entry point read this pass beyond the module docstring; called from `notify.sh` and `handoff-write.sh` only.
