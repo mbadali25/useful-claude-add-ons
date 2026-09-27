@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@fbc27b49
+anchor: useful-claude-add-ons@65bb3330
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -423,10 +423,12 @@ listing the directory.
   `:281-288` before T-0005 merged): `crew_autopilot.py`, `commands/autopilot.md`,
   `test_crew_autopilot.py`, `test_crew_autopilot_status.py` (T-0018) and
   `sabotage_autopilot.py` run `test_crew_autopilot.py`, `test_crew_autopilot_status.py` and
-  `test_lifecycle_commands.py`. T-0021's merge of main put its rule last
+  `test_lifecycle_commands.py`. T-0021's merge of main put its rule after it
   (`:302-309` since T-0018 landed; `:301-308` before that, `:262-269` on its branch before the merge): `crew_tracker.py`,
   `test_crew_tracker.py`, `sabotage_tracker.py` and the board fixtures run
-  `test_crew_tracker.py`.
+  `test_crew_tracker.py`. T-0023 appended rule 29 last (`:310-318` since T-0018 landed, `:309-317`
+  before): `crew_route.py`, `crew_context.py`, their two test files and `sabotage_route.py` run
+  `test_crew_route.py`, `test_crew_route_hook.py` and `test_crew_context.py`.
 
 ## Unverified
 
@@ -869,4 +871,21 @@ its line came from onto the merged tree with a line diff (`git show <side>:<path
 merge); each one that moved was re-read with `sed -n` on `fbc27b49` and corrected.
 Corrected here: the `docs/runbooks/INDEX.md` mention in `plugin/crew/README.md` is `:2044`;
 `.crew/verify.json` rule 27 is `:293-301` and rule 28 `:302-309`. Nothing was executed for this
+note.
+
+## Re-anchor provenance - `55f59b04` + `bebbb97f` -> `65bb3330`, 2026-09-27 (T-0018 lands on T-0023's main)
+
+`f458e752` merges main `bebbb97f` (T-0023 landed as crew 1.0.46, PR #244) into T-0018-land,
+which had merged T-0018's reviewed head `e6b696fb` into `db14619c` and been refreshed at
+`55f59b04`; `65bb3330` re-bumps crew to 1.0.47. The two sides share no source file: T-0023
+changed `crew_route.py`, `crew_context.py`, `crew_config.py`, `sabotage.py` and their tests, T-0018
+`crew_autopilot.py`, `autopilot.md` and theirs; both changed `CHANGELOG.md`, `.crew/verify.json`
+(merged cleanly: 30 rules, 323 lines), `plugin/crew/README.md` (merged cleanly),
+`plugin/crew/BUDGETS.md`, the version files and the refresh artifacts. The conflicting provenance
+sections keep both sides, main's (T-0023's) first. Every `path:N` citation in the body was mapped
+from the side its line came from onto the merged tree with a line diff, and each one that moved was
+re-read with `sed -n` on `65bb3330` and corrected.
+Corrected here: the `docs/runbooks/INDEX.md` mention in `plugin/crew/README.md` is `:2067`;
+`.crew/verify.json` rules 27, 28 and 29 are `:293-301`, `:302-309` and `:310-318`, and the rule
+paragraph now names T-0023's rule 29, which main's text had not. Nothing was executed for this
 note.

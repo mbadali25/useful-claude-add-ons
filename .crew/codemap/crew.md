@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@fbc27b49
+anchor: useful-claude-add-ons@65bb3330
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -54,7 +54,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.46, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.47, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -1897,3 +1897,20 @@ Corrected here: crew's version `:218` is 1.0.46; T-0004's CHANGELOG "117 -> 119"
 the tracker rule is `.crew/verify.json:302-309`. `crew_autopilot.py`, `commands/autopilot.md` and
 the autopilot tests changed only on T-0018's side, so their citations stand as T-0018's refresh left
 them. No test suite was executed for this note.
+
+## Re-anchor provenance - `55f59b04` + `bebbb97f` -> `65bb3330`, 2026-09-27 (T-0018 lands on T-0023's main)
+
+`f458e752` merges main `bebbb97f` (T-0023 landed as crew 1.0.46, PR #244) into T-0018-land,
+which had merged T-0018's reviewed head `e6b696fb` into `db14619c` and been refreshed at
+`55f59b04`; `65bb3330` re-bumps crew to 1.0.47. The two sides share no source file: T-0023
+changed `crew_route.py`, `crew_context.py`, `crew_config.py`, `sabotage.py` and their tests, T-0018
+`crew_autopilot.py`, `autopilot.md` and theirs; both changed `CHANGELOG.md`, `.crew/verify.json`
+(merged cleanly: 30 rules, 323 lines), `plugin/crew/README.md` (merged cleanly),
+`plugin/crew/BUDGETS.md`, the version files and the refresh artifacts. The conflicting provenance
+sections keep both sides, main's (T-0023's) first. Every `path:N` citation in the body was mapped
+from the side its line came from onto the merged tree with a line diff, and each one that moved was
+re-read with `sed -n` on `65bb3330` and corrected.
+Corrected here: crew's version `:218` is 1.0.47; T-0004's CHANGELOG "117 -> 119" is `:515-516`;
+`crew_autopilot.settings`' crew.json warning is `:656-660` (it read `:644-648`, stale on T-0018's
+side, and `:612-616` on main); T-0023's rule 29 is `.crew/verify.json:310-318`. No test suite was
+executed for this note.

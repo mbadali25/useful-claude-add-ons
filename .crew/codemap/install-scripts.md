@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@fbc27b49
+anchor: useful-claude-add-ons@65bb3330
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -780,5 +780,23 @@ Of the cited paths, `.claude-plugin/marketplace.json` (`:218` 1.0.46; `:217` unc
 `plugin/PLUGINS.md` (`:14` 1.0.46; `:17` unchanged), `plugin/crew/BUDGETS.md` (`:11` 18,795 lines
 across 126 files, recomputed on the merge) and `plugin/crew/README.md` changed: the `35 commands`
 claim is now `:2495` and `4 agents` `:2506` (re-grepped). Both install scripts, the root
+`README.md` and `scripts/check-marketplace.py` did not change on either side, so their citations
+stand. Neither install script was executed.
+
+## Re-anchor provenance - `55f59b04` + `bebbb97f` -> `65bb3330`, 2026-09-27 (T-0018 lands on T-0023's main)
+
+`f458e752` merges main `bebbb97f` (T-0023 landed as crew 1.0.46, PR #244) into T-0018-land,
+which had merged T-0018's reviewed head `e6b696fb` into `db14619c` and been refreshed at
+`55f59b04`; `65bb3330` re-bumps crew to 1.0.47. The two sides share no source file: T-0023
+changed `crew_route.py`, `crew_context.py`, `crew_config.py`, `sabotage.py` and their tests, T-0018
+`crew_autopilot.py`, `autopilot.md` and theirs; both changed `CHANGELOG.md`, `.crew/verify.json`
+(merged cleanly: 30 rules, 323 lines), `plugin/crew/README.md` (merged cleanly),
+`plugin/crew/BUDGETS.md`, the version files and the refresh artifacts. The conflicting provenance
+sections keep both sides, main's (T-0023's) first. Every `path:N` citation in the body was mapped
+from the side its line came from onto the merged tree with a line diff, and each one that moved was
+re-read with `sed -n` on `65bb3330` and corrected.
+Of the cited paths, `.claude-plugin/marketplace.json` (`:218` 1.0.47; `:217` unchanged),
+`plugin/PLUGINS.md` (`:14` 1.0.47), `plugin/crew/BUDGETS.md` (`:11` 18,859 lines across 126 files,
+recomputed on the merge) and `plugin/crew/README.md` changed. Both install scripts, the root
 `README.md` and `scripts/check-marketplace.py` did not change on either side, so their citations
 stand. Neither install script was executed.

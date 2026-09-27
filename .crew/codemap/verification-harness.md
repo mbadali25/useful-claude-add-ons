@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@fbc27b49
+anchor: useful-claude-add-ons@65bb3330
 verified: 2026-09-27
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -213,7 +213,7 @@ Notable rules, re-read directly:
   3.3s measured 2026-09-26 — a claim read, not re-timed here). Its mutations live in
   `plugin/crew/tests/sabotage_tracker.py` (`TRACKER_MUTATIONS`, 81 after review rounds 3 and 4),
   imported by `plugin/crew/tests/sabotage.py:78` and appended at `:3052`.
-- **Rule 29**, new at `eba11657` (`.crew/verify.json:309-317`, T-0023; rule 27 until T-0005's
+- **Rule 29**, new at `eba11657` (`.crew/verify.json:310-318` since T-0018 landed, `:309-317` before, T-0023; rule 27 until T-0005's
   rule 6 merged in, rule 28 until T-0021's tracker rule landed ahead of it): `paths`
   `crew_route.py`, `crew_context.py`, `test_crew_route.py`, `test_crew_route_hook.py` and
   `sabotage_route.py` → `python3 -m pytest plugin/crew/tests/test_crew_route.py
@@ -1231,3 +1231,20 @@ price and test file, rule 28 `:302-309`, `default` `:312`, `unmapped` `:313`), r
 `json.load`; `sabotage.py`'s `MUTATIONS +=` statement is `:3048-3050`, imports `:76-78`;
 `sabotage_autopilot.py` holds `AUTOPILOT_MUTATIONS` `:25`, `STATUS_MUTATIONS` `:164`, appended at
 `:358`. No suite was executed for this note; the landing's suite runs are reported in its PR.
+
+## Re-anchor provenance - `55f59b04` + `bebbb97f` -> `65bb3330`, 2026-09-27 (T-0018 lands on T-0023's main)
+
+`f458e752` merges main `bebbb97f` (T-0023 landed as crew 1.0.46, PR #244) into T-0018-land,
+which had merged T-0018's reviewed head `e6b696fb` into `db14619c` and been refreshed at
+`55f59b04`; `65bb3330` re-bumps crew to 1.0.47. The two sides share no source file: T-0023
+changed `crew_route.py`, `crew_context.py`, `crew_config.py`, `sabotage.py` and their tests, T-0018
+`crew_autopilot.py`, `autopilot.md` and theirs; both changed `CHANGELOG.md`, `.crew/verify.json`
+(merged cleanly: 30 rules, 323 lines), `plugin/crew/README.md` (merged cleanly),
+`plugin/crew/BUDGETS.md`, the version files and the refresh artifacts. The conflicting provenance
+sections keep both sides, main's (T-0023's) first. Every `path:N` citation in the body was mapped
+from the side its line came from onto the merged tree with a line diff, and each one that moved was
+re-read with `sed -n` on `65bb3330` and corrected.
+Corrected here: `.crew/verify.json` is 323 lines and 30 rules (rule 27 `:293-301`, rule 28
+`:302-309`, rule 29 `:310-318`, `default` `:321`, `unmapped` `:322`), read with `json.load`;
+`sabotage.py`'s `MUTATIONS +=` statement is `:3050-3052`, imports `:76-79`. No suite was executed
+for this note; the landing's suite runs are reported in its PR.
