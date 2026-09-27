@@ -801,9 +801,9 @@ A `.crew/config.json` that exists but does not parse, or a value outside those f
 | review ledger `UNKNOWN` / `NEEDS_REPLAN` | `review` / `replan` | stop |
 | no review round under the current plan | `implement` | runs `/crew:implement` (its step 6 runs tests, docs, the refresh check, then review) |
 | latest round reserved with no result | `review` | stop — another run would spend a round |
-| latest round FINDINGS, not owner-accepted | `accept-review` | stop — acceptance is the owner's |
+| latest round FINDINGS, not owner-accepted | `accept-review` | stop — acceptance is the owner's; the reason names the refresh to run after fixing, before `/crew:review` |
 | no receipt stands and no review round is left | `review` | stop — `/crew:review` would reserve a third round and write NEEDS_REPLAN, which only a new approved plan leaves; revert the edit that staled the receipt, or replan |
-| latest round INCOMPLETE | `accept-review` | stop — it cannot be accepted; a human reruns review or replans |
+| latest round INCOMPLETE, or completed with no verdict | `accept-review` | stop — it cannot be accepted; a human reruns review or replans |
 | receipt not current, artifacts stale | `refresh` | runs the command T-0008's check names |
 | receipt not current, an artifact unknown for a cause a refresh cannot settle | `refresh` | stop |
 | receipt not current, artifacts fresh | `review` | runs `/crew:review` |
@@ -812,7 +812,7 @@ A `.crew/config.json` that exists but does not parse, or a value outside those f
 
 **Implement's status edit keeps the approval.** `/crew:implement` step 7 writes `status: review` into spec.md's header, which T-0026's approval digest normalises, so `next` moves on. An approval that edit still stales — a receipt written before T-0026, or a value outside `crew_ticket.STATUS_VALUES` — stops at `approve`; when changing only that `status:` word back makes spec.md hash to the approved bytes (and plan.md is unchanged), the reason says only the header changed, so it reads differently from a Touch widened mid-implement.
 
-**A review phase ends at its verdict.** Whether reached as `/crew:review` or inside `/crew:implement` step 6, autopilot stops following `review.md` once the round is recorded and its BLOCK and FIX lines are reported: step 3.2's fix-and-rerun, `review_ledger.py --accept` and `gh pr review` are the human's. The next `next` stops at FINDINGS or INCOMPLETE, and any later round goes back through `next`, which puts a refresh before it.
+**A review phase ends at its verdict.** Whether reached as `/crew:review` or inside `/crew:implement` step 6, autopilot stops following `review.md` once the round is recorded and its BLOCK and FIX lines are reported: step 3.2's fix-and-rerun, `review_ledger.py --accept` and `gh pr review` are the human's. The next `next` stops at FINDINGS or INCOMPLETE. The FINDINGS stop names the refresh (`crew_refresh_check.py`, then each command it names) that the human runs after fixing and before `/crew:review`. `next` itself routes to a refresh ahead of a later round only when it reaches that round, from an owner-accepted receipt a later edit staled.
 
 **The ticket is re-checked every turn.** `next` stops (`ticket-mismatch`) before any phase that would run while `crew_ticket.resolve_active` — what the scope guard and the completion audit read — names another ticket, none, or a broken pointer. Anything `next` or `resume` raises prints `stop=1` with the exception, and the command treats any answer but a `stop=0` line as a stop.
 

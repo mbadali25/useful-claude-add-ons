@@ -249,8 +249,8 @@ both templates, so repo-only is unchanged. Re-executed at `07ca3972`: 119 / 66
 `default_global_config()`"); the same functions at `a0c0847e`, run from a
 `git archive` of `plugin/crew`, give 117 / 66 / 51 / 0.
 `plugin/crew/tests/test_crew_config.py:275` asserts 119. `CHANGELOG.md:65`
-says "116 -> 118" for the same change - it does not match either execution,
-and is outside this note to fix.
+says "117 -> 119" for the same change (corrected in `6f96e627`), matching the
+`07ca3972` execution.
 
 These are new counts, not the pre-1.0 note's 103/60/43 carried forward —
 `change.*`, `guards.cloudGuard` and the memory/recall keys (`TODO.md`'s

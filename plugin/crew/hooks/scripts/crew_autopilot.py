@@ -31,7 +31,7 @@ writes a file, never approves, never accepts a review.
   latest round still reserved            review              stop
   latest round FINDINGS, not accepted    accept-review       stop
   no receipt and no round left           review              stop, never a third reserve
-  latest round INCOMPLETE                accept-review       stop
+  latest round INCOMPLETE or no verdict  accept-review       stop
   receipt not current, artifacts stale   refresh             the refresh command
   receipt not current, artifacts fresh   review              /crew:review <id>
   receipt current, artifacts stale       stale-after-review  stop, nothing written
@@ -207,19 +207,49 @@ _HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 _ANSWERED = re.compile(r"^(?:(?:none|n/a)(?:$|\s*[-:,(\u2013\u2014])|\[x\]|~~|-$)")
 
 
+_FENCES = ("```", "~~~")
+UNEXPLAINED_FENCE = "(a fenced block with no question before it)"
+
+
 def _open_items(text):
     """Unanswered items under any `Open questions` heading, at any level, down
     to the next heading of the same or a higher level -- a sub-heading inside
-    the section stays inside it. See `_ANSWERED` for what counts as answered."""
-    items, depth = [], 0
+    the section stays inside it. See `_ANSWERED` for what counts as answered.
+
+    A code fence (```` ``` ```` or `~~~`, closed by a line starting with the
+    same marker) is literal text: a line inside one is never a heading and
+    never an item, so a `# comment` in a fenced example does not close the
+    section, and an `Open questions` heading inside a fence opens none. A
+    fenced block in the section with no item line before it counts as one
+    open item, and so does a fence opened in the section and never closed:
+    either could hide a question, so the section fails closed. A fenced block
+    after an item belongs to that item. The unexplained block's own item is
+    dropped only when an unanswered item follows it in the section: the
+    section stops on that item anyway, and the list names the real question.
+    An answered item after it does not settle it."""
+    items, depth, fence, seen, fenced_in_section = [], 0, None, False, False
+    unexplained = False
     for line in (text or "").splitlines():
+        stripped = line.lstrip()
+        if fence:
+            if stripped.startswith(fence):
+                fence = None
+            continue
+        opener = next((mark for mark in _FENCES if stripped.startswith(mark)), None)
+        if opener:
+            fence, fenced_in_section = opener, bool(depth)
+            unexplained = unexplained or (bool(depth) and not seen)
+            continue
         heading = _HEADING.match(line)
         if heading:
             level, title = len(heading.group(1)), heading.group(2).strip()
             if depth and level > depth:
                 continue
+            if unexplained:
+                items.append(UNEXPLAINED_FENCE)
+                unexplained = False
             if title.lower().startswith("open questions"):
-                depth, line = level, title[len("open questions"):]
+                depth, line, seen = level, title[len("open questions"):], False
             else:
                 depth = 0
         if not depth:
@@ -230,9 +260,17 @@ def _open_items(text):
                 item = item[len(mark):].strip()
         item = re.sub(r"^\d+[.)]\s*", "", item)
         bare = item.strip("\"'`.: ").lower()
-        if not bare or _ANSWERED.match(bare):
+        if not bare:
+            continue
+        seen = True
+        if _ANSWERED.match(bare):
             continue
         items.append(item)
+        unexplained = False
+    if unexplained:
+        items.append(UNEXPLAINED_FENCE)
+    if fence and fenced_in_section:
+        items.append("(an unclosed code fence)")
     return items
 
 
@@ -418,7 +456,10 @@ def _review_phase(top, ticket, evidence, answer):
             and receipt.get("round") == latest.get("round")):
         return answer("accept-review", True, f"round {latest.get('round')} is FINDINGS: "
                       "the owner accepts with review_ledger.py --accept --by <owner>, "
-                      "or fixes then /crew:review")
+                      "or fixes them, then runs crew_refresh_check.py --root . --ticket "
+                      f"{ticket} and each refresh it names (committed) before /crew:review "
+                      f"{ticket} - a round reviewed before that refresh ends in "
+                      "stale-after-review")
     ok, message = review_ledger.check_receipt(top, ticket)
     left = ledger.get("rounds_left", 0)
     if not ok and (not isinstance(left, int) or left < 1):
@@ -426,7 +467,9 @@ def _review_phase(top, ticket, evidence, answer):
                       f"({message}): /crew:review would reserve a third round and put "
                       f"{ticket} in NEEDS_REPLAN, which only a new approved plan leaves. A "
                       "human reverts the edit that staled the receipt, or replans")
-    if latest.get("verdict") != "CLEAN" and not ok:
+    # A FINDINGS round that gets here is owner-accepted (the stop above); its
+    # stale receipt is the refresh and review branches' case, not INCOMPLETE.
+    if latest.get("verdict") not in ("CLEAN", "FINDINGS") and not ok:
         return answer("accept-review", True, f"round {latest.get('round')} is "
                       f"{latest.get('verdict') or 'without a verdict'}: the reviewer did not "
                       "finish reading, and it cannot be accepted - a human reruns "

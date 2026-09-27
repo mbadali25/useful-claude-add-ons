@@ -290,6 +290,21 @@ def test_next_accept_review(tmp_path):
     assert (got["phase"], got["stop"]) == ("accept-review", True)
 
 
+def test_next_accept_review_names_the_refresh_before_the_next_round(tmp_path):
+    """Fixing FINDINGS and going straight to /crew:review reviews round 2
+    against stale artifacts, a dead end at stale-after-review: the stop names
+    the refresh, and names it before the review."""
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "FINDINGS")], state="REVIEWED")
+
+    got = _next(root)
+    refresh_at = got["reason"].find(f"crew_refresh_check.py --root . --ticket {T}")
+
+    assert ((got["phase"], got["stop"], got["command"]),
+            -1 < refresh_at < got["reason"].find(f"/crew:review {T}")) == (
+        ("accept-review", True, ""), True)
+
+
 def test_next_owner_accepted_findings_move_on(tmp_path, monkeypatch):
     root = _approved(tmp_path)
     _ledger(root, [_round(1, "FINDINGS")], state="ACCEPTED",
@@ -359,8 +374,9 @@ def test_next_closed(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("refresh", ["fresh", "stale"])
 @pytest.mark.parametrize("second,state,receipt", [
-    ("CLEAN", "ACCEPTED", _receipt(2)), ("INCOMPLETE", "REVIEWED", None)],
-    ids=["round-2-clean-gone-stale", "round-2-incomplete"])
+    ("CLEAN", "ACCEPTED", _receipt(2)), ("INCOMPLETE", "REVIEWED", None),
+    ("FINDINGS", "ACCEPTED", _receipt(2, "owner-accepted"))],
+    ids=["round-2-clean-gone-stale", "round-2-incomplete", "round-2-findings-accepted-gone-stale"])
 def test_next_budget_spent_without_a_receipt_stops(tmp_path, monkeypatch, refresh, second,
                                                    state, receipt):
     """Round 2 CLEAN whose receipt went stale, or round 2 INCOMPLETE (round
@@ -387,6 +403,41 @@ def test_next_incomplete_round_stops(tmp_path, monkeypatch):
 
     assert (got["phase"], got["stop"], "INCOMPLETE" in got["reason"]) == (
         "accept-review", True, True)
+
+
+def test_next_round_without_a_verdict_stops(tmp_path, monkeypatch):
+    """A completed round with no `verdict` key cannot tell what the reviewer
+    found: it stops like INCOMPLETE, never reads as accepted FINDINGS."""
+    root = _approved(tmp_path)
+    _ledger(root, [{"round": 1, "status": "completed", "provider": "claude", "model": None,
+                    "bundle_sha256": "a" * 64, "base": "HEAD"}], state="REVIEWED")
+    _receipt_ok(monkeypatch, False)
+    _refresh(monkeypatch, "fresh")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "without a verdict" in got["reason"]) == (
+        "accept-review", True, True)
+
+
+@pytest.mark.parametrize("refresh,expected", [
+    ("stale", ("refresh", False, "graphify update .")),
+    ("fresh", ("review", False, f"/crew:review {T}"))], ids=["stale", "fresh"])
+def test_next_owner_accepted_findings_then_an_edit_goes_through_refresh(tmp_path, monkeypatch,
+                                                                         refresh, expected):
+    """Round 1 FINDINGS the owner accepted, then an edit staled the receipt,
+    with a round left: refresh then review, never a false INCOMPLETE stop."""
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "FINDINGS")], state="ACCEPTED",
+            receipt=_receipt(1, "owner-accepted"))
+    _receipt_ok(monkeypatch, False)
+    _refresh(monkeypatch, refresh, command="graphify update .")
+
+    got = _next(root)
+
+    assert ((got["phase"], got["stop"], got["command"]),
+            "INCOMPLETE" in got["reason"] or "did not finish reading" in got["reason"]) == (
+        expected, False)
 
 
 def _header_only_edit(root):
@@ -503,6 +554,67 @@ def test_next_open_question_that_only_looks_answered_stops(tmp_path, text):
     got = _next(root)
 
     assert (got["phase"], got["stop"]) == ("open-questions", True)
+
+
+FENCED_HASH = 'go\n## Open questions\n```\n# how to check\n```\n- which DB?\n'
+
+
+def test_open_questions_after_a_fence_with_a_hash_line_stop(tmp_path):
+    """Round 2's repro: `# how to check` inside a fence read as a heading and
+    closed the section, so the question after it was never seen."""
+    root = _approved(tmp_path)
+    _write(root / ".work" / "tickets" / T / "direction.md", FENCED_HASH)
+
+    got = _next(root)
+
+    assert (crew_autopilot._open_items(FENCED_HASH),  # pylint: disable=protected-access
+            got["phase"], got["stop"]) == (["which DB?"], "open-questions", True)
+
+
+def test_open_questions_fenced_block_with_no_item_before_it_stops():
+    text = 'go\n## Open questions\n```\nwhich DB?\n```\n'
+
+    assert len(crew_autopilot._open_items(text)) == 1  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("text", [
+    'go\n## Open questions\n```\nwhich DB?\n```\n- none\n',
+    'go\n## Open questions\n```\nwhich DB?\n```\n## Recommendation\n- postgres\n',
+    'go\n## Open questions\n```\nwhich DB?\n```\n### Sub\n- none\n## Open questions\n- none\n',
+], ids=["answered-item-after", "peer-heading-after", "subheading-then-new-section"])
+def test_open_questions_fenced_block_with_no_item_before_it_is_not_settled_later(text):
+    """Only an unanswered item after the block drops its own item (the
+    section stops on that one): an answered item or the section's end
+    leaves it open."""
+    assert crew_autopilot._open_items(text) == [  # pylint: disable=protected-access
+        crew_autopilot.UNEXPLAINED_FENCE]
+
+
+def test_open_questions_unclosed_fence_stops():
+    text = 'go\n## Open questions\n- none\n```\n# x\n- which DB?\n'
+
+    assert len(crew_autopilot._open_items(text)) >= 1  # pylint: disable=protected-access
+
+
+def test_open_questions_tilde_fence_is_a_fence():
+    text = FENCED_HASH.replace("```", "~~~")
+
+    assert crew_autopilot._open_items(text) == ["which DB?"]  # pylint: disable=protected-access
+
+
+def test_open_questions_answered_item_with_a_fenced_example_does_not_stop(tmp_path):
+    text = 'go\n## Open questions\n- none - run:\n```\npsql -c "select 1"\n```\n'
+    root = _approved(tmp_path)
+    _write(root / ".work" / "tickets" / T / "direction.md", text)
+
+    assert (crew_autopilot._open_items(text),  # pylint: disable=protected-access
+            _next(root)["phase"]) == ([], "implement")
+
+
+def test_open_questions_heading_inside_a_fence_opens_no_section():
+    text = 'go\n```\n## Open questions\n- which DB?\n```\n'
+
+    assert crew_autopilot._open_items(text) == []  # pylint: disable=protected-access
 
 
 def test_next_open_questions_section_ends_at_the_next_peer_heading(tmp_path):
@@ -660,6 +772,20 @@ def test_refresh_unknown_other_cause_stops(tmp_path, monkeypatch, artifact):
     got = _next(root)
 
     assert (got["phase"], got["stop"], got["command"]) == ("refresh", True, "")
+
+
+def test_refresh_stale_artifact_marked_not_refreshable_stops(monkeypatch):
+    _freshness(monkeypatch, "stale",
+               ("diagram", "flow", "stale", "src/a.py changed", "/crew:diagram refresh", False))
+
+    assert _state()["state"] == "unsettled"
+
+
+def test_refresh_stale_artifact_without_the_key_settles(monkeypatch):
+    _freshness(monkeypatch, "stale",
+               ("diagram", "flow", "stale", "src/a.py changed", "/crew:diagram refresh", None))
+
+    assert (_state()["state"], _state()["command"]) == ("stale", "/crew:diagram refresh")
 
 
 def test_refresh_unknown_with_no_artifact_stops(monkeypatch):

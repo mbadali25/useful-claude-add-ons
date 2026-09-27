@@ -62,8 +62,8 @@ round is recorded, from `/crew:review` or inside `/crew:implement` step 6;
 never fix and rerun inside the phase. Report the BLOCK and FIX lines verbatim
 (review.md step 3.1); steps 3.2 to 3.4 - fixing and rerunning,
 `review_ledger.py --accept`, and `gh pr review` - are the human's. Go back
-through `next`: it stops at FINDINGS or INCOMPLETE and puts a refresh before
-any later round.
+through `next`: it stops at FINDINGS or INCOMPLETE. The FINDINGS stop names
+the refresh the human runs after fixing, before `/crew:review`.
 
 If a phase's own procedure refuses or stops - no approved plan, a red verify
 gate, a `/crew:done` check - stop there and report it verbatim. Never retry
@@ -73,11 +73,11 @@ keeps the approval, T-0026; a pre-T-0026 receipt stops at `approve`.)
 ## 3. Refresh sits between implement and review
 
 `/crew:implement` step 6 runs T-0008's check before `/crew:review`; `next`
-names `refresh` before every later round. Never after an accepted review: a
-bundle excludes only `.work/`, so that refresh stales the receipt - `next`
-says `stale-after-review` and writes nothing. An `unknown` artifact is
-refreshed only when T-0008 names a command for its orphaned-anchor case; any
-other `unknown` stops. T-0008 missing stops as "refresh-artifacts unavailable".
+names `refresh` before a later round it reaches itself (an accepted receipt a
+later edit staled). Never after an accepted review: a bundle excludes only
+`.work/`, so that refresh stales the receipt (`stale-after-review`, nothing
+written). An `unknown` is refreshed only in T-0008's orphaned-anchor case, with
+its command; others stop. T-0008 missing: "refresh-artifacts unavailable".
 
 ## 4. Stops
 
