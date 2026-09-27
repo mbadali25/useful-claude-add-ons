@@ -65,7 +65,7 @@ def test_every_approval_shape_parses(text, kind, ids, form):
     ("/crew:approve T-1\nT-2", "one line"),
     ("/crew:approve\nT-1", "one line"),
     ("/crew:approve T-1\r/crew:approve T-2", "one line"),
-    ("/crew:approve T-1 T-2", "one line"),
+    ("/crew:approve T-1\u2028T-2", "one line"),
     ("<command-name>/crew:approve</command-name>\n<command-args>T-1\nT-2</command-args>",
      "one line"),
     ("approve T-1\napprove T-2", "one line"),
@@ -134,7 +134,59 @@ def test_multiline_paste_with_ids_is_refused(text):
     assert (request.kind, "one line" in (request.error or "")) == (REFUSE, True)
 
 
+# Review round 1 (T-0024): a group or a confirm is one line and nothing else.
+# `str.strip()` used to run before the break check, so a line break BEFORE the
+# command, or text outside the expanded form's tags, slipped through. A trailing
+# break alone is still accepted: it carries nothing, and a submitted prompt may
+# end in one. The single-id path keeps its old rule (spec Exclusions).
+@pytest.mark.parametrize("text", [
+    "\n/crew:approve --confirm\n\n",
+    "\n/crew:approve --confirm",
+    "\r\n/crew:approve --confirm",
+    "\u2028/crew:approve --confirm",
+    "\n/crew:approve T-1 T-2",
+    "\napprove T-1 through T-3",
+    "\n\nplease approve T-1 and T-2",
+    "<command-name>/crew:approve</command-name>\n<command-args>\n--confirm</command-args>",
+    "<command-name>/crew:approve</command-name>\n<command-args>\nT-1 T-2</command-args>",
+])
+def test_a_line_break_before_a_group_or_confirm_is_refused(text):
+    request = approval_hook.parse(text)
+
+    assert (request.kind, "one line" in (request.error or "")) == (REFUSE, True), request
+
+
+@pytest.mark.parametrize("text", [
+    "<command-name>/crew:approve</command-name>\n<command-args>--confirm</command-args>\n"
+    "Do not approve anything; explain this example.",
+    "<command-name>/crew:approve</command-name> yes <command-args>--confirm</command-args>",
+    "<command-name>/crew:approve</command-name>\n<command-args>T-1 T-2</command-args>\n"
+    "and T-3 too",
+    "<command-message>x</command-message>\n<command-name>/crew:approve</command-name>\n"
+    "<command-args>--confirm</command-args>\n<command-args-extra>T-9</command-args-extra>",
+])
+def test_the_expanded_form_refuses_a_group_or_confirm_with_other_text(text):
+    request = approval_hook.parse(text)
+
+    assert (request.kind, "other text" in (request.error or "")) == (REFUSE, True), request
+
+
+@pytest.mark.parametrize("text,kind", [
+    ("/crew:approve --confirm\n", CONFIRM),
+    ("/crew:approve T-1 T-2\n", GROUP),
+    ("approve T-1 and T-2\n", GROUP),
+    ("<command-message>crew:approve is running</command-message>\n"
+     "<command-name>/crew:approve</command-name>\n<command-args>--confirm</command-args>\n",
+     CONFIRM),
+])
+def test_a_trailing_line_break_alone_still_parses(text, kind):
+    assert approval_hook.parse(text).kind == kind
+
+
 @pytest.mark.parametrize("text,ticket", [("/crew:approve T-1", "T-1"),
+                                         ("\n/crew:approve T-1\n", "T-1"),
+                                         ("<command-name>/crew:approve</command-name>\n"
+                                          "<command-args>T-1</command-args>\nnotes", "T-1"),
                                          ("/crew:approve ../x", "../x"),
                                          ("/crew:approve T-0010..", "T-0010..")])
 def test_single_id_parse_is_unchanged(text, ticket):
@@ -423,6 +475,20 @@ def test_confirm_with_extra_text_refuses(repo, capsys, text):
     assert (code, _nothing(repo, "T-1", "T-2")) == (2, True)
 
 
+@pytest.mark.parametrize("text", [
+    "\n/crew:approve --confirm\n\n",
+    "<command-name>/crew:approve</command-name>\n<command-args>--confirm</command-args>\n"
+    "Do not approve anything; explain this example.",
+])
+def test_a_confirm_with_a_leading_break_or_other_text_records_nothing(repo, capsys, text):
+    _tickets(repo, "T-1", "T-2")
+    _say(capsys, repo, "/crew:approve T-1 T-2")
+
+    code, out, _ = _say(capsys, repo, text)
+
+    assert (code, out, _nothing(repo, "T-1", "T-2")) == (2, "", True)
+
+
 def test_refused_confirm_deletes_pending(repo, capsys):
     _tickets(repo, "T-1", "T-2")
     _say(capsys, repo, "/crew:approve T-1 T-2", session="sess-1")
@@ -483,6 +549,88 @@ def test_a_write_failing_part_way_names_recorded_and_not_recorded(repo, capsys, 
         == (2, True, True, True)
     assert (bool(_receipt(repo, "T-1")), _receipt(repo, "T-3"), _pending(repo)) == \
         (True, None, [])
+
+
+@pytest.mark.parametrize("error", [OSError("No space left on device"),
+                                   PermissionError("read-only file system")])
+def test_an_os_error_part_way_names_recorded_and_not_recorded(repo, capsys, monkeypatch, error):
+    _tickets(repo, "T-1", "T-2", "T-3")
+    _say(capsys, repo, "/crew:approve T-1 T-2 T-3")
+    real = crew_ticket.approve
+
+    def fail_on_t2(root, ticket, **kwargs):
+        if ticket == "T-2":
+            raise error
+        return real(root, ticket, **kwargs)
+
+    monkeypatch.setattr(crew_ticket, "approve", fail_on_t2)
+
+    code, _, err = _say(capsys, repo, "/crew:approve --confirm")
+
+    assert (code, "recorded: T-1;" in err, "NOT recorded: T-2, T-3" in err, str(error) in err) \
+        == (2, True, True, True)
+    assert (bool(_receipt(repo, "T-1")), _receipt(repo, "T-2"), _pending(repo)) == \
+        (True, None, [])
+
+
+def test_a_failure_after_the_receipt_is_written_counts_it_recorded(repo, capsys, monkeypatch):
+    _tickets(repo, "T-1", "T-2", "T-3")
+    _say(capsys, repo, "/crew:approve T-1 T-2 T-3")
+    real = crew_ticket.approve
+
+    def fail_after_t2(root, ticket, **kwargs):
+        result = real(root, ticket, **kwargs)
+        if ticket == "T-2":
+            raise OSError("ledger unwritable")
+        return result
+
+    monkeypatch.setattr(crew_ticket, "approve", fail_after_t2)
+
+    code, _, err = _say(capsys, repo, "/crew:approve --confirm")
+
+    assert (code, "recorded: T-1, T-2;" in err, "NOT recorded: T-3" in err) == (2, True, True)
+
+
+def test_an_unreadable_receipt_after_a_failure_is_could_not_tell(repo, capsys, monkeypatch):
+    _tickets(repo, "T-1", "T-2", "T-3")
+    _say(capsys, repo, "/crew:approve T-1 T-2 T-3")
+    real = crew_ticket.approve
+
+    def corrupt_t2(root, ticket, **kwargs):
+        if ticket == "T-2":
+            path = pathlib.Path(crew_ticket.approval_path(root, ticket))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{", encoding="utf-8")
+            raise OSError("torn write")
+        return real(root, ticket, **kwargs)
+
+    monkeypatch.setattr(crew_ticket, "approve", corrupt_t2)
+
+    code, _, err = _say(capsys, repo, "/crew:approve --confirm")
+
+    assert (code, "recorded: T-1;" in err, "could not tell whether T-2" in err,
+            "NOT recorded: T-3" in err, "NOT recorded: T-2" in err) == (2, True, True, True, False)
+
+
+def test_two_confirms_cannot_both_consume_one_pending_list(repo, capsys, monkeypatch):
+    _tickets(repo, "T-1", "T-2")
+    _say(capsys, repo, "/crew:approve T-1 T-2")
+    real, raced = crew_ticket._read_json, []  # pylint: disable=protected-access
+
+    def race_after_the_read(path):
+        result = real(path)
+        if "approval-pending" in str(path) and not raced:
+            raced.append(None)
+            raced.append(approval_hook.handle(dict(
+                prompt(repo, "/crew:approve --confirm"), prompt_id="p-race")))
+        return result
+
+    monkeypatch.setattr(crew_ticket, "_read_json", race_after_the_read)
+
+    code, _, _ = _say(capsys, repo, "/crew:approve --confirm", prompt_id="p-2")
+    history = [len(_receipt(repo, t)["history"]) for t in ("T-1", "T-2")]
+
+    assert (sorted([code, raced[1]]), history, _pending(repo)) == ([0, 2], [1, 1], [])
 
 
 def test_the_confirm_passes_the_pending_hashes_to_approve(repo, capsys, monkeypatch):

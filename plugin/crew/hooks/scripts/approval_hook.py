@@ -79,6 +79,7 @@ import os
 import re
 import sys
 import time
+import uuid
 
 import crew_ticket
 
@@ -90,6 +91,9 @@ NONE, SINGLE, GROUP, CONFIRM, REFUSE = "none", "single", "group", "confirm", "re
 _RAW_RE = re.compile(r"^\s*/crew:approve(?:\s+(.*?))?\s*$", re.DOTALL)
 _NAME_RE = re.compile(r"<command-name>\s*/?crew:approve\s*</command-name>")
 _ARGS_RE = re.compile(r"<command-args>(.*?)</command-args>", re.DOTALL)
+# The whole expanded form. A group or a confirm in it carries nothing else:
+# text outside these tags is text the user did not type as the command.
+_TAGS_RE = re.compile(r"<command-(message|name|args)>.*?</command-\1>", re.DOTALL)
 # Every break `str.splitlines` honours. An approval is one line: a newline in
 # it is a paste, and a paste can carry ids the user did not type.
 _BREAK_RE = re.compile("[\n\r\x0b\x0c\x1c-\x1e\x85\u2028\u2029]")
@@ -136,14 +140,29 @@ def parse(prompt, root=None):
         if raw:
             if _BREAK_RE.search(prompt.strip()):
                 return _refusal("slash", "an approval must be one line")
-            return _slash(raw.group(1), "slash", root)
+            return _one_line_only(_slash(raw.group(1), "slash", root), prompt)
         if prompt.lstrip().startswith("<command-"):
             names, args = _NAME_RE.findall(prompt), _ARGS_RE.findall(prompt)
             if len(names) == 1 and len(args) == 1:
-                if _BREAK_RE.search(args[0].strip()):
-                    return _refusal("expanded", "an approval must be one line")
-                return _slash(args[0], "expanded", root)
+                # No separate break check here: a break inside the args splits
+                # them into two tokens, so it can only reach _one_line_only as
+                # a group, a range or a refused --confirm -- never a single id.
+                request = _one_line_only(_slash(args[0], "expanded", root), args[0])
+                if request.kind in (GROUP, CONFIRM) and _TAGS_RE.sub("", prompt).strip():
+                    return _refusal("expanded", "an approval must carry no other text: "
+                                                "type the command alone")
+                return request
     return _plain(prompt, root)
+
+
+def _one_line_only(request, text):
+    """`request`, unless it is a group or a confirm and `text` has a line break
+    anywhere but at its end. A trailing break carries nothing and a submitted
+    prompt may end in one; a break BEFORE the command is a paste. The single-id
+    path keeps its older, looser rule (spec Exclusions)."""
+    if request.kind in (GROUP, CONFIRM) and _BREAK_RE.search(text.rstrip()):
+        return _refusal(request.form, "an approval must be one line")
+    return request
 
 
 def _slash(text, form, root):
@@ -161,8 +180,10 @@ def _slash(text, form, root):
 
 
 def _plain(prompt, root):
-    lines = prompt.strip().splitlines()
-    found = _PLAIN_RE.match(lines[0]) if lines else None
+    # rstrip, not strip: blank lines BEFORE the approval are part of a paste.
+    lines = prompt.rstrip().splitlines()
+    first = next((line for line in lines if line.strip()), None)
+    found = _PLAIN_RE.match(first) if first is not None else None
     if not found:
         return _request(NONE)
     if len(lines) > 1:
@@ -352,13 +373,29 @@ def _well_formed(pending):
     return isinstance(created, (int, float)) and not isinstance(created, bool)
 
 
+_NO_PENDING = ("no pending group approval in this worktree; ask for the tickets "
+               "again (/crew:approve <id> <id> ...)")
+
+
+def _claim_pending(path):
+    """Move the pending list aside under a name only this process knows, and
+    return that name -- or None when there is no list. A rename is atomic, so
+    of two confirms racing on one list exactly one gets it and the other finds
+    nothing: reading and then deleting let both read it, and both record."""
+    claimed = f"{path}.claim-{os.getpid()}-{uuid.uuid4().hex}"
+    try:
+        os.rename(path, claimed)
+    except FileNotFoundError:
+        return None
+    return claimed
+
+
 def _read_pending(path, root):
     """(pending, why): `why` is None only for a list this confirm may act on."""
     # pylint: disable-next=protected-access
     pending, state = crew_ticket._read_json(path)
     if state == "absent":
-        return None, ("no pending group approval in this worktree; ask for the tickets "
-                      "again (/crew:approve <id> <id> ...)")
+        return None, _NO_PENDING
     if state != "ok" or not _well_formed(pending):
         return None, "the pending approval list is unreadable; ask for the tickets again"
     if pending.get("worktree") != crew_ticket.toplevel(root):
@@ -373,8 +410,12 @@ def _confirm(root, data):
     path = _pending_path(root)
     if not path:
         return _refuse(f"{root} is not a git repository")
-    pending, why = _read_pending(path, root)
-    _clear_pending(root)
+    claimed = _claim_pending(path)
+    try:
+        pending, why = _read_pending(claimed, root) if claimed else (None, _NO_PENDING)
+    finally:
+        if claimed and os.path.lexists(claimed):
+            os.remove(claimed)
     if why:
         return _refuse(why)
     session = _session(data)
@@ -397,25 +438,60 @@ def _confirm(root, data):
     if failing:
         return _refuse_all(failing, len(items), "no longer match what you were shown")
     clauses, recorded = [], []
-    for item in items:
+    for index, item in enumerate(items):
+        before = _receipt_count(root, item["ticket"])
         try:
             receipt, successor = crew_ticket.approve(
                 root, item["ticket"], via=crew_ticket.USER_PROMPT, session=session,
                 prompt_id=data.get("prompt_id"),
                 expect=(item["plan_sha256"], item["spec_sha256"]))
-        except crew_ticket.TicketError as exc:
-            rest = [i["ticket"] for i in items[len(recorded):]]
-            sys.stderr.write(
-                f"crew: /crew:approve was only PARTLY recorded -- recorded: "
-                f"{', '.join(recorded) or 'none'}; NOT recorded: {', '.join(rest)} "
-                f"({item['ticket']}: {_one_line(exc)})\n")
-            return 2
+        except Exception as exc:  # pylint: disable=broad-except
+            # ANY failure, not only a TicketError: an OSError escaping to
+            # main() would say "NOT recorded" over receipts already written.
+            return _partly(root, items, index, recorded, before, exc)
         recorded.append(item["ticket"])
         clauses.append(f"{item['ticket']}: plan {receipt['plan_sha256'][:12]}, spec "
                        f"{receipt['spec_sha256'][:12]}, approved_via user-prompt."
                        f"{_successor_text(successor)}")
     return _emit(f"crew: the user approved {', '.join(recorded)} from their own prompt "
                  f"(group confirm). " + " ".join(clauses))
+
+
+def _receipt_count(root, ticket):
+    """How many approvals `ticket`'s receipt history holds: 0 with no receipt,
+    None when it cannot be read -- "could not tell", never 0."""
+    try:
+        receipt, state = crew_ticket.read_approval(root, ticket)
+    except (crew_ticket.TicketError, OSError):
+        return None
+    if state == "absent":
+        return 0
+    history = receipt.get("history") if state == "ok" else None
+    return len(history) if isinstance(history, list) else None
+
+
+def _partly(root, items, index, recorded, before, exc):
+    """A confirm failed on `items[index]` after `recorded` were written. Say
+    which tickets hold a receipt from this confirm, which do not, and which
+    cannot be told -- the failing ticket's receipt may have been written
+    before the failure (the ledger step runs after the write)."""
+    ticket = items[index]["ticket"]
+    after = _receipt_count(root, ticket)
+    recorded, unknown = list(recorded), []
+    if before is None or after is None:
+        unknown.append(ticket)
+    elif after > before:
+        recorded.append(ticket)
+    missing = [i["ticket"] for i in items[index:] if i["ticket"] not in recorded + unknown]
+    why = _one_line(exc) if isinstance(exc, crew_ticket.TicketError) \
+        else f"{type(exc).__name__}: {_one_line(exc)}"
+    text = (f"crew: /crew:approve was only PARTLY recorded -- recorded: "
+            f"{', '.join(recorded) or 'none'}; NOT recorded: {', '.join(missing) or 'none'}")
+    if unknown:
+        text += (f"; could not tell whether {ticket} was recorded (its receipt could not "
+                 "be read -- check it with crew_ticket.py status)")
+    sys.stderr.write(f"{text} ({ticket}: {why})\n")
+    return 2
 
 
 def handle(data):
