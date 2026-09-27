@@ -1449,23 +1449,32 @@ re-checked at the same three points. On both, a move inside the last window
 remains a residual race.
 
 **Whose card.** The ticket note is written once and never rewritten, and
-records `repo-id:` — the origin URL, lowercased with credentials and `.git`
-dropped, or the git common dir's real path when there is no origin or the
-origin is a relative path (`../origin/app.git` from `a/app` and `b/app` is one
-string naming two repositories); an absolute local origin is its real path.
+records `repo-id:` — the origin URL lowercased with `.git` dropped, or the git
+common dir's real path when there is no origin or the origin is a relative path
+(`../origin/app.git` from `a/app` and `b/app` is one string naming two
+repositories). An ssh origin keeps its username and drops only a password:
+`alice@host:repo.git` and `bob@host:repo.git` are two users' repositories. Every
+other scheme drops the whole userinfo, because `https://<token>@host/...` puts a
+token where a username goes and the id is written into a note a human reads. A
+local origin is its real path, and a `file://` one is percent-decoded first, as
+git decodes it: `file:///srv/a%20b.git` is `/srv/a b.git`.
 Never the directory's name: `a/app` and `b/app` share that. With `boardDir` unset every
 repo shares one board, so a note naming another repo refuses `create`, `move`
 and `read`. A card whose owner cannot be told — no note, a note with no
 `repo-id:` — refuses `create` and `move` (`read` says so on its line), naming
 the fix: put `repo-id: <this repo's>` in the note. There is no exception: ids
 start over in every repo and titles repeat, so a card's text matching this
-repo's INDEX row proves nothing. `create` refuses an id INDEX already holds,
-whatever its title, and an id the board holds for another or an unknown repo;
-each refusal begins `id taken`, and `/crew:brainstorm` and `/crew:fix` then
-take the next free id instead of writing under that one. A `move` whose INDEX
+repo's INDEX row proves nothing. `create` refuses an id INDEX already holds —
+read before the vault, so a vault failure never hides it — whatever its title,
+and an id the board holds for another or an unknown repo. Its claim on a new id
+is the note's exclusive creation, before the INDEX row and the card: a note
+another repo creates after the owner check makes the claim fail, and nothing
+follows it. Each refusal begins `id taken`, and `/crew:brainstorm` and
+`/crew:fix` then take the next free id; any other failed `create` stops them
+before anything is written under that id. A `move` whose INDEX
 half refuses — another session moved the ticket on meanwhile — leaves the
 board alone, and a card already in its lane is repaired in place (checked in
-Done, below `**Complete**`; unchecked elsewhere).
+Done, below `**Complete**`; unchecked elsewhere; a card with no checkbox gets one).
 
 **There is no `.work/cache/` mirror.** The ticket's content lives in
 `.work/tickets/<id>/` for every mode; the board carries status only. The key

@@ -103,6 +103,21 @@ All notable changes to this repository are documented here. Format follows [Keep
   elsewhere), and a done lane without exactly one `**Complete**` is refused.
   81 mutations in `sabotage_tracker.py`.
 
+  Review round 4 fixes, same version (never shipped): the repo-id keeps an
+  ssh origin's username (`alice@host:repo` and `bob@host:repo` are two users'
+  repositories) and drops only its password, while every other scheme still
+  drops the whole userinfo (`https://<token>@host` puts a token there); a
+  `file://` origin is percent-decoded before its real path is taken, as git
+  decodes it. `create` claims a new id by creating the vault note exclusively
+  before the INDEX row and the card, so another repo's create between the
+  owner check and the claim is `id taken` and nothing follows; it reads INDEX
+  before resolving the vault, so a vault failure never hides a held id, and
+  `/crew:brainstorm` and `/crew:fix` stop on any other failed `create` instead
+  of carrying on into the ticket folder. A CRLF note's `repo-id:` no longer
+  carries the `\r`, and a card with no checkbox gets one (`[x]` in Done). The
+  memory-and-obsidian guide gains a ticket-board section, and troubleshooting
+  an `id taken` entry.
+
 ### Changed — `crew` 1.0.42: environment-scoped terraform in the cloud guard (T-0005) — **BREAKING**
 
 - **BREAKING: a destroy is never applied unattended, `guards.terraformApply:
