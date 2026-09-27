@@ -6,10 +6,10 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.43: Obsidian Kanban is a first-class tracker again, behind one
-  tracker interface (T-0021).** Bumped `1.0.42 -> 1.0.43`, one past main at
-  merge time (its review rounds ran as 1.0.46, a number reserved when main was
-  at 1.0.38). New
+- **`crew` 1.0.44: Obsidian Kanban is a first-class tracker again, behind one
+  tracker interface (T-0021).** Bumped `1.0.43 -> 1.0.44`, one past main at
+  landing (its branch declared 1.0.43, which main gave to T-0042; its review
+  rounds ran as 1.0.46, a number reserved when main was at 1.0.38). New
   `hooks/scripts/crew_tracker.py {resolve|create|move|read} --root . --ticket
   <id> [--title T] [--to STATUS] [--reopen] [--json]`, one line per backend; exit 0
   updated/unchanged, 1 `could not update: <reason>`, 3 `delegated` (run the
