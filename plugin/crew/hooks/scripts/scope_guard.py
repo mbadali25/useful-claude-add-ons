@@ -167,9 +167,8 @@ def _rel(path, top):
     return None if rel == ".." or rel.startswith("../") else rel
 
 
-def classify(top, common, ticket, touch, approval, target, base, payload=None):
-    """(ok, reason) for one target path. `payload` is the hook's tool call,
-    read only by the BUDGETS.md claim allowance (module docstring, rule 7)."""
+def classify(top, common, ticket, touch, approval, target, base):
+    """(ok, reason) for one target path."""
     absolute = target if os.path.isabs(target) else os.path.join(base, target)
     real = role_write_guard._resolve_real_target(absolute)  # pylint: disable=protected-access
     named = os.path.normpath(absolute)
@@ -184,8 +183,6 @@ def classify(top, common, ticket, touch, approval, target, base, payload=None):
         return True, "the ticket's own files"
     if _refresh_artifact(top, real_rel, checks, approval):
         return True, "a refresh artifact of an approved ticket"
-    if _claim_bookkeeping(top, real_rel, named_rel, approval, payload):
-        return True, "a claim-number edit of an approved ticket (bookkeeping)"
     if approval["status"] != "approved":
         return False, (f"{ticket}: {approval['why']}"
                        if approval["status"] in ("stale", "unaccepted")
@@ -258,9 +255,8 @@ def _claim_bookkeeping(top, real_rel, named_rel, approval, payload):
     """True only for a re-measure of a BUDGETS.md claim number by an
     approved ticket (module docstring, rule 7). Anything it cannot establish
     is False, and the Touch check decides."""
-    if approval["status"] != "approved":
-        return False
-    if real_rel is None or named_rel is None:
+    approved = approval["status"] == "approved"
+    if not approved or real_rel is None or named_rel is None:
         return False
     if real_rel != named_rel:
         return False
@@ -284,6 +280,22 @@ def _claim_bookkeeping(top, real_rel, named_rel, approval, payload):
     if after is None:
         return False
     return crew_bookkeeping.claim_numbers_only(current, after, named_rel)[0]
+
+
+def bookkeeping_verdict(top, approval, payload, base, verdict):
+    """`verdict` -- a `(path, ok, reason)` from `classify` -- turned into a
+    pass when it failed and the call is a claim re-measure of an approved
+    ticket (module docstring, rule 7). Judged after `classify`, never inside
+    it, so every refusal `classify` makes is unchanged for any other path."""
+    target, ok, _reason = verdict
+    if ok:
+        return verdict
+    absolute = target if os.path.isabs(target) else os.path.join(base, target)
+    real = role_write_guard._resolve_real_target(absolute)  # pylint: disable=protected-access
+    real_rel, named_rel = _rel(real, top), _rel(os.path.normpath(absolute), top)
+    if _claim_bookkeeping(top, real_rel, named_rel, approval, payload):
+        return target, True, "a claim-number edit of an approved ticket (bookkeeping)"
+    return verdict
 
 
 def protected(top, state, target, base):
@@ -402,9 +414,9 @@ def decide(data):
         # ONE read of spec.md: the approval's hash check and the Touch judged
         # below come from the same bytes (crew_ticket.status).
         approval = crew_ticket.accepted(root, ticket)
-        verdicts = [(p,) + classify(top, common, ticket, approval["touch"], approval, p, base,
-                                    payload=data)
+        verdicts = [(p,) + classify(top, common, ticket, approval["touch"], approval, p, base)
                     for p in paths]
+        verdicts = [bookkeeping_verdict(top, approval, data, base, v) for v in verdicts]
     bad = [(p, reason) for p, ok, reason in verdicts if not ok]
     if not bad:
         return 0

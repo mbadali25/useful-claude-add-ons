@@ -222,9 +222,9 @@ def _outside_claim_bookkeeping(top, base, paths, approval):
     """`paths` minus each BUDGETS.md whose change is a claim re-measure
     (module docstring) -- only when the ticket holds the same current,
     user-prompt approval the refresh allowance needs."""
-    if approval["status"] != "approved":
-        return paths
-    return [p for p in paths if not _claim_bookkeeping(top, base, p)]
+    if approval["status"] == "approved":
+        return [p for p in paths if not _claim_bookkeeping(top, base, p)]
+    return paths
 
 
 def audit(root, ticket):
