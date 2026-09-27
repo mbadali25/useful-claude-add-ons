@@ -6,9 +6,9 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.46: `/crew:autopilot status` and the subcommand router
-  (T-0018).** Bumped `1.0.45 -> 1.0.46` (its branch declared 1.0.44, which main gave to
-  T-0021). `commands/autopilot.md` now routes
+- **`crew` 1.0.47: `/crew:autopilot status` and the subcommand router
+  (T-0018).** Bumped `1.0.46 -> 1.0.47` (its branch declared 1.0.44, which main gave to
+  T-0021; 1.0.46 at its first landing merge, which main then gave to T-0023). `commands/autopilot.md` now routes
   its whole argument string through the new `crew_autopilot.py route --root .
   --args '$ARGUMENTS'` (single-quoted; arguments holding a quote, `$`, a
   backtick or a backslash stop before anything runs; `route --first <token>`
