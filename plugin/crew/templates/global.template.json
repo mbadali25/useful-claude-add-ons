@@ -120,5 +120,8 @@
     "sdpTemplate": "Change Management Request",
     "jiraIssueType": "Change",
     "category": null
+  },
+  "route": {
+    "enabled": false
   }
 }

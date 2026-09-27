@@ -273,11 +273,13 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # 119 with /crew:autopilot (T-0004): `autopilot.mode` and
     # `autopilot.maxPhases`, re-measured after rebasing onto T-0006.
     # 121 with T-0005: the repo-only `environments.nonProd` glob list and the
-    # ratcheted `environments.prodUnattended`, re-measured after merging main.
-    # 123 with T-0009: the ratcheted `guards.deployWorkflow` and the repo-only
-    # `environments.workflows` map (an empty dict, so one leaf, like
-    # `dev.roles`), re-measured after merging main (crew 1.0.42).
-    assert len(declared) == 123
+    # ratcheted `environments.prodUnattended`; 122 with plain-text routing
+    # (T-0023): `route.enabled`. 124 with T-0009: the ratcheted
+    # `guards.deployWorkflow` and the repo-only `environments.workflows` map
+    # (an empty dict, so one leaf, like `dev.roles`), re-measured after merging
+    # main (crew 1.0.46).
+    assert "route.enabled" in declared
+    assert len(declared) == 124
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():

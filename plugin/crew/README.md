@@ -824,6 +824,29 @@ A `.crew/config.json` that exists but does not parse, or a value outside those f
 
 **Settings** (`.crew/config.json`, repo only): `autopilot.mode` — `off` (default) or `plan`; only the exact string `plan` arms it, and any other value reads as `off` with a warning. `autopilot.maxPhases` — phases one invocation may run, default 12; anything but a positive integer reads as 12 with a warning. An `autopilot` block only in `.crew/crew.json` is reported, not silently ignored. `crew_autopilot.py settings --root .` shows what is in force.
 
+### Plain-text lifecycle: short prompts that name a command
+
+With `route.enabled: true` (since 1.0.46, **off by default**), a short plain-text prompt can stand in for a lifecycle command. crew's UserPromptSubmit context hook matches the **whole** prompt against a small table (`hooks/scripts/crew_route.py`, `PHRASES`) and, on a match, puts one `crew route:` line first in that turn's context: the `/crew:<command> <ticket>` whose procedure Claude should run through the Skill tool. The hook runs nothing and blocks nothing, and the command's own checks still decide.
+
+| You type (whole prompt) | Routes to |
+|---|---|
+| `brainstorm <topic>` | `/crew:brainstorm <topic>`, in your words |
+| `write the spec`, `write the spec for <id>`, `spec it`, `spec <id>` | `/crew:spec <ticket>` |
+| `plan it`, `plan <id>`, `write the plan` | `/crew:plan <ticket>` |
+| `implement it`, `implement <id>`, `start implementing` | `/crew:implement <ticket>` |
+| `review it`, `review <id>`, `run the review` | `/crew:review <ticket>` |
+| `close it`, `close it out`, `mark it done` | `/crew:done <ticket>` |
+| `continue`, `keep going`, `carry on` | whatever `crew_autopilot.next_phase` names from disk for the ticket |
+| `status`, `crew status` | `/crew:status` |
+
+`it` and `this` mean the ticket, as does leaving it out. The prompt is normalised first: surrounding space, one trailing `.` or `!`, and one leading `please`, `ok`, `now` or `let's` are dropped, and case is ignored. Nothing else routes: not a mention inside a longer sentence, not a question, not a prompt with a line break or over 80 characters, not a slash command or anything in backticks. `do it`, `go`, `go ahead`, `yes`, `ok`, `sure`, bare `done`, bare `next` and `ship it` never route — they usually answer Claude's last question.
+
+**Three outcomes.** `route` — an unambiguous phrase and a ticket that resolves to exactly one. `ask` — the phrase matched but the ticket did not resolve: an id with no `.work/tickets/<id>/` folder, a broken active-ticket pointer, several open tickets and no pointer (listed), none at all, or a `continue` whose next phase is a stop (with its reason). The line then tells Claude to ask you which before running anything. `none` — no line at all, so the context is exactly what it was. The ticket comes from the id you typed, else this worktree's active ticket, else `.work/INDEX.md` **only when exactly one** open ticket has a folder; the INDEX fallback that takes the first open line is never used.
+
+**Routing never approves.** No phrase routes to `/crew:approve`, a `continue` whose next step is approval asks instead, and `/crew:approve` is not model-invocable anyway. Type `/crew:approve <id>` yourself.
+
+**Settings.** `route.enabled` in `.crew/config.json` or the machine-global file; only the JSON value `true` arms it (`"true"`, `1` and `yes` read as off, with a warning). `/crew:init` writes `false` into a new repo's file, and the repo value wins, so a machine-wide `true` needs the key removed or set `true` there too. A `route` block only in `.crew/crew.json` is reported, not read. Under Codex no line is emitted, and `memory.inject: false` silences it with the rest of the hook. `python3 crew_route.py settings --root .` shows what is in force; `python3 crew_route.py decide --root . --prompt "review it"` shows what a prompt would do. CONFIG.md §21 has the key.
+
 ### Measuring 1.0
 
 `.crew/metrics.jsonl` (append-only; `.crew/metrics.md` from 0.20 becomes this via `/crew:migrate`, with every historical value it cannot recover marked `UNKNOWN`, never `0`) is where crew 1.0's own validation claim gets checked: at least 30% lower median active time or cost against the 0.20 baseline, 100% review-budget enforcement, zero unapproved scope changes, and no rise in escaped defects, over 10–20 matched tickets (docs/review/04-redesign.md, "Validation").
@@ -1452,7 +1475,8 @@ cheapest way to prove the connector is live before configuring a repo around it.
 ## 13c. Optional: an Obsidian Kanban board
 
 The fourth tracker, and the only one with nothing to connect to. `tracker:
-"obsidian"` plus a vault path that exists. The board is a markdown file the
+"obsidian"` (`tracker.kind` in `crew.json`) plus a vault path that exists and
+holds `.obsidian/`. The board is a markdown file the
 [Kanban plugin](https://github.com/mgmeyers/obsidian-kanban) round-trips, so
 crew writes files and Obsidian draws a board — there is no API, no auth, and no
 payload to amortise.
@@ -1465,18 +1489,101 @@ vault/
     T-0041.md
 ```
 
-The vault is the remote, exactly as Jira is: `.work/cache/T-####.md` is a terse
-local mirror that `/crew:implement` reads, and `/crew:obsidian-sync` touches the
-vault at pickup and completion only. The key keeps the `T-####` shape, so
-nothing else in crew needed a new format to recognise.
+**One interface, called by the lifecycle itself.** `hooks/scripts/crew_tracker.py`
+is the only code that writes a tracker, and the lifecycle commands call it at
+their status transitions — no sync command to remember:
+
+| Command | Call | Lane |
+|---|---|---|
+| `/crew:brainstorm` | `create` (INDEX row, card, ticket note); on approval `move --to ready` | Backlog |
+| `/crew:spec`, `/crew:plan` | `move --to spec`, `move --to planned` | Ready |
+| `/crew:implement` step 1 | `move --to in-progress` | In Progress |
+| `/crew:implement` step 6, before `/crew:review` | `move --to review` | Review |
+| `/crew:done` | `move --to done` | Done |
+
+`/crew:fix` makes the same calls, compressed. `resolve` reads the kind from
+1.0's `.crew/crew.json` (`tracker.kind`) and 0.20's `.crew/config.json`
+(`tracker`) alike; when both state one and they differ it says `could not tell`
+and every write refuses — it never picks one. The same holds for the vault and
+`boardDir` each file *yields*, fallbacks included: crew.json falling back to
+`memory.vaultPath` while config.json names another vault is `could not tell`,
+not a quiet write to the memory vault. Jira and ServiceDesk Plus are pushed at
+the boundaries only: `move --to in-progress` and `--to done` answer `delegated`
+with `/crew:jira-sync <KEY> --push --to <status>` (or `/crew:sdp-sync`), which
+the model runs because a script cannot call an MCP tool; every other move
+prints `nothing to push`.
+
+**Forward only, unless you say otherwise.** A move backwards by the lifecycle
+order (`direction`, `ready`, `spec`, `planned`, `in-progress`, `review`,
+`done`) exits 1 unless `--reopen` is passed, and so does a move from a status
+crew does not know (`merged`, say), because whether it goes backwards cannot be
+told. `/crew:implement` passes `--reopen` on a successor plan.
+
+**A tracker write never undoes a transition.** A write that fails prints
+`could not update: <reason>` and exits 1; the command tells you "tracker not
+updated" and the phase stands.
+
+**Confined to the vault, atomic, and loud.** Before anything is written —
+`INDEX.md` included — the vault must exist and hold `.obsidian/`, `boardDir`
+must be relative with no `..`, `board` a bare file name, the board and note must
+not resolve out of the vault through a symlink, and a board or note inside the
+worktree must be ignored by git (otherwise it would enter the review bundle) —
+checked per file, so a vault that *contains* the repo is caught too. Any of
+those fails, the board lacks its frontmatter key, a configured lane is
+missing or doubled, or the done lane lacks exactly one `**Complete**`: exit 1,
+nothing written anywhere. Board writes are an
+exclusively created temp file (a link planted at its name is never followed)
+plus `os.replace`, keeping the board's mode and owner, re-reading the board
+first and recomputing if Obsidian saved it meanwhile. Every vault write reaches
+its directory from the vault root one component at a time with
+`O_DIRECTORY|O_NOFOLLOW` and writes relative to that directory, so a directory
+swapped for a link after the checks is refused rather than written through.
+That fd follows its directory if it is renamed out of the vault, so the walk is
+repeated and matched by device and inode before the temp is written, before the
+replace and after it; a note that landed in a directory that left is removed
+through the fd. Windows has no such calls: there the directory's real path is
+re-checked at the same three points. On both, a move inside the last window
+remains a residual race.
+
+**Whose card.** The ticket note is written once and never rewritten, and
+records `repo-id:` — the origin URL lowercased with `.git` dropped, or the git
+common dir's real path when there is no origin or the origin is a relative path
+(`../origin/app.git` from `a/app` and `b/app` is one string naming two
+repositories). An ssh origin keeps its username and drops only a password:
+`alice@host:repo.git` and `bob@host:repo.git` are two users' repositories. Every
+other scheme drops the whole userinfo, because `https://<token>@host/...` puts a
+token where a username goes and the id is written into a note a human reads. A
+local origin is its real path, and a `file://` one is percent-decoded first, as
+git decodes it: `file:///srv/a%20b.git` is `/srv/a b.git`.
+Never the directory's name: `a/app` and `b/app` share that. With `boardDir` unset every
+repo shares one board, so a note naming another repo refuses `create`, `move`
+and `read`. A card whose owner cannot be told — no note, a note with no
+`repo-id:` — refuses `create` and `move` (`read` says so on its line), naming
+the fix: put `repo-id: <this repo's>` in the note. There is no exception: ids
+start over in every repo and titles repeat, so a card's text matching this
+repo's INDEX row proves nothing. `create` refuses an id INDEX already holds —
+read before the vault, so a vault failure never hides it — whatever its title,
+and an id the board holds for another or an unknown repo. Its claim on a new id
+is the note's exclusive creation, before the INDEX row and the card: a note
+another repo creates after the owner check makes the claim fail, and nothing
+follows it. Each refusal begins `id taken`, and `/crew:brainstorm` and
+`/crew:fix` then take the next free id; any other failed `create` stops them
+before anything is written under that id. A `move` whose INDEX
+half refuses — another session moved the ticket on meanwhile — leaves the
+board alone, and a card already in its lane is repaired in place (checked in
+Done, below `**Complete**`; unchecked elsewhere; a card with no checkbox gets one).
+
+**There is no `.work/cache/` mirror.** The ticket's content lives in
+`.work/tickets/<id>/` for every mode; the board carries status only. The key
+keeps the `T-####` shape, so nothing else in crew needed a new format.
 
 **Unlike Jira and ServiceDesk Plus, this mode also keeps `.work/INDEX.md`.**
 The session brief finds the open ticket by reading that file, and a key shaped
 `SDP-40219` was never going to be in it — `T-0042` can be. So the board is the
-human's view of the work and `INDEX.md` is the session's, which costs one line
-per ticket and is why the brief names a real ticket here rather than nothing.
+human's view of the work and `INDEX.md` is the session's; the same `move`
+writes both, and each half reports its own result.
 
-**Five lanes, and dragging a card is how status changes.**
+**Five lanes, named by `obsidian.columns`.**
 
 | Lane | Means |
 |---|---|
@@ -1486,20 +1593,21 @@ per ticket and is why the brief names a real ticket here rather than nothing.
 | Review | Implementation done, `/crew:review` outstanding. |
 | Done | Complete and verified. Carries the `**Complete**` marker. |
 
-On pull the card's lane wins for status and the note wins for content; on push
-the cache's `status:` names the lane — `--push` takes no lane argument and
-infers nothing, so a card cannot land in Done because the turn went well. That rule exists because both sides here are local markdown
-and both look equally authoritative — which makes the divergence hazard *worse*
-than Jira's, not absent. A silent fallback to file tickets is therefore refused
-the same way `/crew:jira-sync` refuses it.
+Dragging a card is yours to do; crew does not read it back as status.
+`/crew:obsidian-sync $1` shows the board lane beside the INDEX status and says
+when they disagree; `--push` moves the card to the lane the INDEX status names
+and reports the lane it came from. Both sides are local markdown and both look
+equally authoritative — which makes the divergence hazard *worse* than Jira's,
+not absent — so a silent fallback to file tickets is refused the same way
+`/crew:jira-sync` refuses it.
 
 **The board file has three load-bearing parts** and a naive rewrite destroys all
 three, after which the file silently opens as plain text instead of a board: the
 `kanban-plugin: board` frontmatter, the trailing `%% kanban:settings` block, and
 the `**Complete**` marker in the done lane. An archive, when one exists, sits
 below a `***` break under `## Archive` and is nobody's business but Obsidian's.
-So the board is edited in place, one card or one lane at a time, never
-regenerated from the cache.
+So `crew_tracker.py` cuts one card and inserts it under the target heading;
+every other byte, the archive included, is the byte it read.
 
 **Two things to accept before choosing this.** The vault lives outside the repo,
 so ticket state does not travel with a branch and is not on a colleague's
@@ -1818,14 +1926,28 @@ never sends one. When the checks pass, the injected handoff carries
 the hook — press Enter or type it; T-0013 is the ticket that types it. When
 they do not, it carries `Auto-resume did not start: <reason>.` The reasons:
 compact was not a manual /compact; no handoff note, or the handoff was
-archived as stale (or is stale and could not be archived); no resume line, `resume: none`, or a line the grammar
-refuses (two lines, trailing text, an unknown or excluded command such as
-`/crew:approve`); the `branch:` or `head:` line does not match the checkout;
-the ticket's `.work/tickets/<id>/` (or the goal file) does not exist; the
-command is not installed; the record of past auto-resumes
-(`resume-state.json`) exists and could not be read; this handoff was already
-resumed; the progress fingerprint could not be computed; or the same command with no progress since
-the last auto-resume. The allowlist is `crew_resume.RESUME_COMMANDS`:
+archived as stale (or is stale and could not be archived); the handoff is the
+automatic PreCompact skeleton (it names no next action); no resume line,
+`resume: none`, or a line the grammar refuses (two lines, trailing text, an
+unknown or excluded command such as `/crew:approve`); the `branch:` or
+`head:` line does not match the checkout; the ticket's `.work/tickets/<id>/`
+(or the goal file) does not exist; the command is not installed;
+`handoff-author.json` could not be read; no record of which session wrote
+this handoff; the handoff changed since its author session wrote it; the
+handoff was written by another session; this session's process could not be
+identified (always on a host without `/proc` — native Windows, macOS); the
+record of past auto-resumes (`resume-state.json`) could not be read, or its
+directory cannot be searched; this handoff was already resumed; the progress
+fingerprint could not be computed; the same command with no progress since
+the last auto-resume; or `internal error` (the decision itself failed — the
+handoff is still injected).
+
+A note resumes only in the session that wrote it (T-0042). When the note is
+written with Write, Edit or MultiEdit on an armed machine, the context hook
+records who wrote it in `<git-common-dir>/crew/handoff-author.json`: after
+`/compact` the session id must match, and after `/clear` (which changes the
+session id) the Claude Code process must. A note written by Bash, by hand,
+or before the machine was armed has no such record, so it waits. The allowlist is `crew_resume.RESUME_COMMANDS`:
 `/crew:spec`, `/crew:plan`, `/crew:implement`, `/crew:review`, `/crew:done`,
 `/crew:autopilot` and `/crew:status`. No gate changes: the resumed command's
 own approval, scope, verify and review gates still decide.
@@ -2440,8 +2562,8 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:webtest <id> [--stage spec\|implement\|heal\|evidence]` | Drive Playwright's Test Agents inside the ticket lifecycle; a healer skip is a finding, and the trace and axe results go to the reviewer |
 | `/crew:promote <env> [--dry-run\|--status]` | Promote development -> qa -> production with deploy, smoke, regression and post-soak verification as separate gates |
 | `/crew:survey [area]` | Research gaps, produce ranked findings with options |
-| `/crew:jira-sync <KEY> [--push]` | Sync one issue with the local cache |
-| `/crew:sdp-sync <REQUEST-ID> [--push]` | Sync one ServiceDesk Plus request with the local cache — see §13b |
+| `/crew:jira-sync <KEY> [--push --to <status>]` | Sync one issue with the local cache |
+| `/crew:sdp-sync <REQUEST-ID> [--push --to <status>]` | Sync one ServiceDesk Plus request with the local cache — see §13b |
 | `/crew:obsidian-sync <T-####> [--push]` | Sync one Obsidian Kanban card with the local cache — see §13c |
 | `/crew:upgrade [--force]` | Bring a pre-0.20 config up to the 0.20 schema; a 0.20 repo goes straight to `/crew:migrate` — see §11 |
 | `/crew:emergency <what is broken>` | Declare a time-boxed incident: gates stand down and record what they skipped, lanes investigate in parallel — see §24. `status`, `extend [min]`, `end` |
