@@ -824,6 +824,29 @@ A `.crew/config.json` that exists but does not parse, or a value outside those f
 
 **Settings** (`.crew/config.json`, repo only): `autopilot.mode` — `off` (default) or `plan`; only the exact string `plan` arms it, and any other value reads as `off` with a warning. `autopilot.maxPhases` — phases one invocation may run, default 12; anything but a positive integer reads as 12 with a warning. An `autopilot` block only in `.crew/crew.json` is reported, not silently ignored. `crew_autopilot.py settings --root .` shows what is in force.
 
+### Plain-text lifecycle: short prompts that name a command
+
+With `route.enabled: true` (since 1.0.46, **off by default**), a short plain-text prompt can stand in for a lifecycle command. crew's UserPromptSubmit context hook matches the **whole** prompt against a small table (`hooks/scripts/crew_route.py`, `PHRASES`) and, on a match, puts one `crew route:` line first in that turn's context: the `/crew:<command> <ticket>` whose procedure Claude should run through the Skill tool. The hook runs nothing and blocks nothing, and the command's own checks still decide.
+
+| You type (whole prompt) | Routes to |
+|---|---|
+| `brainstorm <topic>` | `/crew:brainstorm <topic>`, in your words |
+| `write the spec`, `write the spec for <id>`, `spec it`, `spec <id>` | `/crew:spec <ticket>` |
+| `plan it`, `plan <id>`, `write the plan` | `/crew:plan <ticket>` |
+| `implement it`, `implement <id>`, `start implementing` | `/crew:implement <ticket>` |
+| `review it`, `review <id>`, `run the review` | `/crew:review <ticket>` |
+| `close it`, `close it out`, `mark it done` | `/crew:done <ticket>` |
+| `continue`, `keep going`, `carry on` | whatever `crew_autopilot.next_phase` names from disk for the ticket |
+| `status`, `crew status` | `/crew:status` |
+
+`it` and `this` mean the ticket, as does leaving it out. The prompt is normalised first: surrounding space, one trailing `.` or `!`, and one leading `please`, `ok`, `now` or `let's` are dropped, and case is ignored. Nothing else routes: not a mention inside a longer sentence, not a question, not a prompt with a line break or over 80 characters, not a slash command or anything in backticks. `do it`, `go`, `go ahead`, `yes`, `ok`, `sure`, bare `done`, bare `next` and `ship it` never route — they usually answer Claude's last question.
+
+**Three outcomes.** `route` — an unambiguous phrase and a ticket that resolves to exactly one. `ask` — the phrase matched but the ticket did not resolve: an id with no `.work/tickets/<id>/` folder, a broken active-ticket pointer, several open tickets and no pointer (listed), none at all, or a `continue` whose next phase is a stop (with its reason). The line then tells Claude to ask you which before running anything. `none` — no line at all, so the context is exactly what it was. The ticket comes from the id you typed, else this worktree's active ticket, else `.work/INDEX.md` **only when exactly one** open ticket has a folder; the INDEX fallback that takes the first open line is never used.
+
+**Routing never approves.** No phrase routes to `/crew:approve`, a `continue` whose next step is approval asks instead, and `/crew:approve` is not model-invocable anyway. Type `/crew:approve <id>` yourself.
+
+**Settings.** `route.enabled` in `.crew/config.json` or the machine-global file; only the JSON value `true` arms it (`"true"`, `1` and `yes` read as off, with a warning). `/crew:init` writes `false` into a new repo's file, and the repo value wins, so a machine-wide `true` needs the key removed or set `true` there too. A `route` block only in `.crew/crew.json` is reported, not read. Under Codex no line is emitted, and `memory.inject: false` silences it with the rest of the hook. `python3 crew_route.py settings --root .` shows what is in force; `python3 crew_route.py decide --root . --prompt "review it"` shows what a prompt would do. CONFIG.md §21 has the key.
+
 ### Measuring 1.0
 
 `.crew/metrics.jsonl` (append-only; `.crew/metrics.md` from 0.20 becomes this via `/crew:migrate`, with every historical value it cannot recover marked `UNKNOWN`, never `0`) is where crew 1.0's own validation claim gets checked: at least 30% lower median active time or cost against the 0.20 baseline, 100% review-budget enforcement, zero unapproved scope changes, and no rise in escaped defects, over 10–20 matched tickets (docs/review/04-redesign.md, "Validation").
