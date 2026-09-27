@@ -1036,7 +1036,7 @@ def test_board_outside_worktree_of_a_vault_that_contains_it_is_allowed(tmp_path)
         0, "Review")
 
 
-@pytest.mark.parametrize("sep", [" ", " ", "\x85", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e"])
+@pytest.mark.parametrize("sep", ["\u2028", "\u2029", "\x85", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e"])
 def test_title_with_a_line_separator_is_refused(tmp_path, sep):
     root = _files_repo(tmp_path, "T-0001 | done | low | repo | first\n")
 
@@ -1049,13 +1049,13 @@ def test_title_with_a_line_separator_is_refused(tmp_path, sep):
 def test_a_human_card_holding_a_line_separator_moves_whole():
     """Obsidian keeps U+2028 inside a line; str.splitlines does not. Splitting
     the board there would move half a card and strand the rest."""
-    text = _fixture("board_0_20.md").replace("Fix token refresh on 401", "Fix token refresh on 401", 1)
+    text = _fixture("board_0_20.md").replace("Fix token refresh on 401", "Fix token\u2028refresh on 401", 1)
     board, problem = crew_tracker.parse_board(text, COLUMNS)
     assert problem is None, problem
 
     moved, _, why = crew_tracker.move_card(board, CARD, "review")
 
-    assert (why, moved.count(" "), "- [ ] [[T-0042]] Fix token refresh on 401\n" in moved,
+    assert (why, moved.count("\u2028"), "- [ ] [[T-0042]] Fix token\u2028refresh on 401\n" in moved,
             _lane_of(moved, CARD)) == (None, 1, True, "Review")
 
 
