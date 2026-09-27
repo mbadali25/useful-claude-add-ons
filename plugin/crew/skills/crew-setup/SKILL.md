@@ -158,11 +158,11 @@ still writes only the repo file.
   "github": { "mergeGate": { "enabled": false, "branch": null } },
   "install": {"policy": "manual"},
   "guards": { "terraformApply": "block", "forcePush": "block", "adminMerge": "block", "mergeGate": "block",
-              "cloudDestructive": "block", "sqlDestructive": "block",
+              "cloudDestructive": "block", "sqlDestructive": "block", "deployWorkflow": "block",
               "prodDatabase": "none", "prodServer": "none", "roleWrites": "off", "cloudGuard": "off" },
   "production": { "databases": [], "hosts": [] },
   "cloud": { "awsProfiles": [], "awsRegions": [], "azureSubscriptions": [] },
-  "environments": { "nonProd": [], "prodUnattended": false },
+  "environments": { "nonProd": [], "prodUnattended": false, "workflows": {} },
   "change": { "requester": null, "implementor": null, "requireForProduction": false,
               "sdpTemplate": "Change Management Request", "jiraIssueType": "Change", "category": null },
   "scope": { "mode": "off", "allowCliApproval": false }

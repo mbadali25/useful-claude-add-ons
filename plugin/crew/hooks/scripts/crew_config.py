@@ -350,7 +350,9 @@ def default_config():
         # `production`'s reason -- which workspaces are non-production is a
         # fact about this checkout -- and `prodUnattended` is in both layers
         # because it ratchets: production runs unattended only when the repo
-        # AND the machine owner both said `true`.
+        # AND the machine owner both said `true`. T-0009's `workflows` map is
+        # REPO ONLY too: which workflow file deploys where is a fact about
+        # this checkout.
         "environments": copy.deepcopy(crew_state.ENVIRONMENTS_DEFAULTS),
         # `/crew:change`. Both layers, like `install` and `guards` and for the
         # same two reasons: `requireForProduction` ratchets across them, and a
@@ -1004,6 +1006,12 @@ def environments_block_problem(block):
     A malformed block is never "nothing is nonProd" -- `cloud_guard` reads
     it as "no environment can be classified", which nothing allows
     unattended.
+
+    T-0009's `workflows`, when present, must be an object mapping a non-blank
+    workflow glob to either `input:<name>` (a GitHub input name: a letter or
+    `_`, then letters, digits, `_` or `-`) or a non-blank fixed environment
+    name. A malformed map is never "no workflow listed": `cloud_guard` reads
+    every dispatch as an unknown environment while it stands.
     """
     if not isinstance(block, dict):
         return "`environments` is not an object"
@@ -1014,7 +1022,24 @@ def environments_block_problem(block):
     if "prodUnattended" in block \
             and not isinstance(block["prodUnattended"], bool):
         return "`environments.prodUnattended` is not true or false"
+    workflows = block.get("workflows", {})
+    if not isinstance(workflows, dict):
+        return "`environments.workflows` is not an object"
+    for key, source in workflows.items():
+        if not key.strip():
+            return "`environments.workflows` has a blank workflow key"
+        if not isinstance(source, str) or not source.strip():
+            return (f"`environments.workflows[{key!r}]` is not `input:<name>` "
+                    "or an environment name")
+        if source.startswith("input:") \
+                and not _WORKFLOW_INPUT_RE.match(source[len("input:"):]):
+            return (f"`environments.workflows[{key!r}]` names no input "
+                    "(`input:<name>`)")
     return ""
+
+
+# A GitHub `workflow_dispatch` input name, as `input:<name>` spells it.
+_WORKFLOW_INPUT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 
 
 def environments_findings(root):
@@ -2276,6 +2301,8 @@ _GUARD_ACTIONS = {
     "sqlDestructive": "DROP or TRUNCATE handed to psql, mysql, sqlcmd, "
                       "sqlite3 or Invoke-Sqlcmd, by flag, heredoc or pipe",
     "cloudGuard": "the Bash/PowerShell cloud guard's per-rule policies",
+    "deployWorkflow": "a `gh workflow run` or `gh api .../dispatches` of a "
+                      "workflow listed in `environments.workflows`",
 }
 
 
@@ -2438,6 +2465,17 @@ _RATCHETED.update({
     )
     for _name in crew_state.GUARD_NAMES
 })
+# `deployWorkflow`'s `allow` is narrower than every other policy guard's
+# (T-0009 amendment): it covers nonProd only, so the generic "run WITHOUT
+# asking" would describe a grant the guard never makes.
+_RATCHETED["guards.deployWorkflow"][2]["allow"] = (
+    f"crew will run {_GUARD_ACTIONS['deployWorkflow']} WITHOUT asking when "
+    "its environment is nonProd, and write a row to "
+    f"`{crew_state.GUARD_LOG_PATH}`. It still asks -- and refuses when nobody "
+    "is attending -- for production unless environments.prodUnattended is "
+    "true in both config layers, and for an environment crew cannot "
+    "identify, whatever this key says."
+)
 # The two production guards, whose vocabulary is `none`/`read`/`full` rather
 # than `block`/`ask`/`allow`. They ratchet by the same table and warn on the
 # same line; only the words differ, and they differ because reusing the other

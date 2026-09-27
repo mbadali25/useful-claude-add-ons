@@ -4,6 +4,33 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew`: environment-scoped workflow deploys in the cloud guard (T-0009; version set at landing)
+
+- **`guards.deployWorkflow` and `environments.workflows`.** While
+  `guards.cloudGuard` is armed, `gh workflow run <wf>` and its REST twin,
+  `gh api -X POST repos/<o>/<r>/actions/workflows/<wf>/dispatches` (also
+  `--method POST`, `-XPOST`, or fields/`--input` with no method), are judged
+  when `<wf>` matches a key of the new repo-only `environments.workflows` map
+  (`{"deploy.yml": "input:environment", "deploy-prod.yml": "production"}`).
+  Both forms go through one classifier. `deployWorkflow` ships `block` (its
+  floor) and ratchets, so upgrading grants nothing: a repo that lists
+  workflows gets **a new refusal** for every listed dispatch until
+  `deployWorkflow: ask` is set in **both** layers. Under `ask`, a nonProd
+  environment runs unattended and is logged as `env:nonProd:<name>`;
+  production does only with `environments.prodUnattended` true in both layers.
+- **`allow` covers nonProd only for a deploy.** Production without
+  `prodUnattended` in both layers, and an unknown environment, still ask when
+  attended and are denied unattended, whatever `deployWorkflow` says.
+- **Unknown, never allowed unattended:** no input given, `-F name=@file`,
+  `--input FILE`, a value or workflow that is not a literal, conflicting
+  values, a JSON body crew cannot see, no workflow named, a dispatch behind
+  `xargs`/`parallel`, and every dispatch while the `environments` block does
+  not validate (which also forces an armed guard to `block` mode).
+- **Unchanged:** a workflow matching no key is not judged, and with
+  `workflows` at `{}` nothing is. `environments.workflows` does not engage the
+  terraform layer. Not seen: an unlisted spelling of a deploy workflow, the
+  workflow YAML, `gh run rerun`, `curl`.
+
 ### Changed — `crew` 1.0.41: environment-scoped terraform in the cloud guard (T-0005) — **BREAKING**
 
 - **BREAKING: a destroy is never applied unattended, `guards.terraformApply:

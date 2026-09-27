@@ -270,7 +270,10 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # `context.autoClear.onlyRepos` and `context.autoClear.onlySessions`.
     # 118 with T-0005: the repo-only `environments.nonProd` glob list and the
     # ratcheted `environments.prodUnattended` (crew 1.0.41).
-    assert len(declared) == 118
+    # 120 with T-0009: the ratcheted `guards.deployWorkflow` and the repo-only
+    # `environments.workflows` map (an empty dict, so one leaf, like
+    # `dev.roles`).
+    assert len(declared) == 120
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():
@@ -1690,11 +1693,11 @@ def _environments_layer(value):
 
 def test_environments_defaults_grant_nothing(tmp_path):
     assert crew_config.default_config()["environments"] == {
-        "nonProd": [], "prodUnattended": False}
+        "nonProd": [], "prodUnattended": False, "workflows": {}}
     assert crew_config.default_global_config()["environments"] == {
         "prodUnattended": False}
     assert crew_state.ENVIRONMENTS_DEFAULTS == {
-        "nonProd": [], "prodUnattended": False}
+        "nonProd": [], "prodUnattended": False, "workflows": {}}
     root = tmp_path / "repo"
     crew_fixtures.make_repo(tmp_path, config={
         "schema": crew_state.SCHEMA_CURRENT,
@@ -1732,6 +1735,74 @@ def test_global_non_prod_is_pruned_and_reported():
     assert ignored == ["environments.nonProd"]
     assert crew_config.is_global_path("environments.prodUnattended")
     assert not crew_config.is_global_path("environments.nonProd")
+
+
+# --- T-0009: `guards.deployWorkflow` and `environments.workflows` -----------
+#
+# `deployWorkflow` is a policy guard like `terraformApply`: default `block`,
+# which is also its floor, so a repo that asks for `ask` with no global value
+# gets `block` -- upgrading grants nothing. `environments.workflows` is REPO
+# ONLY, for `nonProd`'s reason: which workflow file deploys where is a fact
+# about the checkout.
+
+
+def test_deploy_workflow_defaults_to_block_and_ratchets(tmp_path):
+    assert crew_config.default_config()["guards"]["deployWorkflow"] == "block"
+    assert crew_config.default_global_config()["guards"]["deployWorkflow"] \
+        == "block"
+    assert "guards.deployWorkflow" in crew_state.RATCHETED_KEYS
+    root = tmp_path / "repo"
+    crew_fixtures.make_repo(tmp_path, config={
+        "schema": crew_state.SCHEMA_CURRENT,
+        "guards": {"deployWorkflow": "ask"}}, git=False)
+    absent = tmp_path / "absent-global.json"
+    row = crew_config.resolve_guard(str(root), "deployWorkflow", str(absent))
+    assert row["effective"] == "block", row
+    both = tmp_path / "global.json"
+    both.write_text(json.dumps({"guards": {"deployWorkflow": "ask"}}),
+                    encoding="utf-8")
+    row = crew_config.resolve_guard(str(root), "deployWorkflow", str(both))
+    assert row["effective"] == "ask", row
+
+
+def test_deploy_workflow_has_its_own_allow_note():
+    """`allow` covers nonProd only for a deploy (T-0009 amendment), so the
+    generic "run WITHOUT asking" note would describe a wider grant than the
+    guard makes."""
+    notes = crew_config._RATCHETED["guards.deployWorkflow"][2]  # pylint: disable=protected-access
+    assert set(notes) == set(crew_state.GUARD_POLICIES)
+    assert "nonProd" in notes["allow"] and "prodUnattended" in notes["allow"]
+
+
+@pytest.mark.parametrize("block", [
+    {"workflows": []}, {"workflows": {"deploy.yml": ""}},
+    {"workflows": {"deploy.yml": 1}}, {"workflows": {"deploy.yml": "input:"}},
+    {"workflows": {"": "staging"}}, {"workflows": None},
+    {"workflows": {"deploy.yml": "input:env ironment"}},
+    {"workflows": {"deploy.yml": "  "}}],
+    ids=["list", "blank", "int", "input-no-name", "blank-key", "null",
+         "input-space", "whitespace"])
+def test_workflows_block_problem(block):
+    assert crew_config.environments_block_problem(block)
+
+
+@pytest.mark.parametrize("block", [
+    {"workflows": {}},
+    {"workflows": {"deploy.yml": "input:environment",
+                   "deploy-staging.yml": "staging", "deploy-*.yml": "prod"}},
+    {"nonProd": ["qa"], "workflows": {"Deploy App": "input:target_env"}}])
+def test_workflows_block_accepts_a_real_map(block):
+    assert crew_config.environments_block_problem(block) == ""
+
+
+def test_global_workflows_is_pruned_and_reported():
+    kept, ignored = crew_config.filter_global(
+        {"environments": {"workflows": {"deploy.yml": "input:environment"},
+                          "prodUnattended": True}})
+    assert kept == {"environments": {"prodUnattended": True}}
+    assert ignored == ["environments.workflows"]
+    assert not crew_config.is_global_path("environments.workflows")
+    assert crew_config.is_global_path("guards.deployWorkflow")
 
 
 @pytest.mark.parametrize("block", [

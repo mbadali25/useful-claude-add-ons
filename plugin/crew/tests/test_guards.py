@@ -296,7 +296,7 @@ def test_the_ratchet_is_one_table_covering_install_policy_and_all_four_guards():
         "guards.adminMerge", "guards.mergeGate", "guards.prodDatabase",
         "guards.prodServer", "guards.roleWrites",
         "guards.cloudDestructive", "guards.sqlDestructive",
-        "guards.cloudGuard",
+        "guards.cloudGuard", "guards.deployWorkflow",
         "change.requireForProduction", "environments.prodUnattended"}
     # The cloud guard's switch shares `roleWrites`' vocabulary and split
     # default; it must never be normalised through `block`/`ask`/`allow`.

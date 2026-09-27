@@ -20,6 +20,7 @@ WHAT IT RECOGNISES, and which existing `guards.*` key decides each:
       is configured                                 guards.terraformApply
     git push --force|-f|--force-with-lease|+ref     guards.forcePush
     gh pr merge --admin                             guards.adminMerge
+    gh workflow run, gh api .../dispatches (T-0009) guards.deployWorkflow
     aws delete-*/terminate-*/purge-*, s3 rm|rb,
       s3 sync --delete; az ... delete|purge;
       Remove-Az*                                    guards.cloudDestructive
@@ -98,13 +99,13 @@ parts crew never sees whole (`$TF`, `$(printf te)$(printf rraform)`, a
 PowerShell concatenation), a wildcard keeping fewer than three of its
 letters (`t*`) on a line naming no verb, or another name for terraform made
 outside the line (a profile `alias`, a `ln -s` link, a container's entrypoint).
-What `xargs`/`parallel` append is not seen either,
-so a destructive-capable tool behind one is judged as destructive, and one
-whose executable is a placeholder is refused as unreadable. For terraform it
-does not read `-var-file` or `*.tfvars`, an HCL `cloud {}`/`backend` block's
-workspace name, terragrunt layouts, or a TFC/HCP workspace or run driven by
-`curl` or `gh api` -- those are unknown or unseen. Native permissions and
-restricted credentials are the boundary; this is a tripwire in front of them.
+What `xargs`/`parallel` append is not seen either, so a destructive-capable tool behind one is
+judged as destructive, and one whose executable is a placeholder is refused as unreadable. For
+terraform it does not read `-var-file` or `*.tfvars`, an HCL `cloud {}`/`backend` block's workspace
+name, terragrunt layouts, or a TFC/HCP workspace or run driven by `curl` or `gh api` -- those are
+unknown or unseen. For a workflow dispatch (`crew_guards`' T-0009 section): an unlisted spelling of
+the workflow, the workflow YAML, `gh run rerun`, `curl`. Native permissions and restricted
+credentials are the boundary; this is a tripwire in front of them.
 
 WHY THE PARSER IS HAND-ROLLED. `shlex` knows nothing of `&&`, heredocs, `$( )`
 or PowerShell, and the old command guard (removed in 0.19.52) was removed
@@ -127,6 +128,7 @@ import crew_config
 import crew_state
 from crew_guards import _head_name as _guards_head_name
 from crew_guards import command_trigger, first_non_literal, ps_trigger
+from crew_guards import DEPLOY_RULE, ENV_NONPROD, ENV_PROD, ENV_UNKNOWN, dispatch_scopes, judge_dispatch
 
 
 def _head_name(token):
@@ -1583,7 +1585,6 @@ def _terraform_destructive(head, args):
 # Destroy is three values too, and `unknown` is handled as `yes`: a plan crew
 # cannot read might delete anything.
 
-ENV_NONPROD, ENV_PROD, ENV_UNKNOWN = "nonProd", "prod", "unknown"
 DESTROY_YES, DESTROY_NO, DESTROY_UNKNOWN = "yes", "no", "unknown"
 
 # A saved plan bigger than this is not hashed: the hook has 15 seconds
@@ -2263,8 +2264,8 @@ def _classify(argv, stdin, env, shell, depth, ctx=None, seq=None, fed=False):
         words = [a for a in args if not a.startswith("-")]
         pairs = list(zip(words, words[1:]))
         if ("pr", "merge") in pairs and "--admin" in args:
-            out.append(Finding("adminMerge", text, "gh pr merge --admin",
-                               None, True, None))
+            out.append(Finding("adminMerge", text, "gh pr merge --admin", None, True, None))
+        out += [Finding(DEPLOY_RULE, text, s["what"], None, True, None, s) for s in dispatch_scopes(args, stdin, fed)]
         return out
     if head == "aws":
         what = _aws_destructive(args)
@@ -2552,7 +2553,7 @@ def environments_config(root):
     environment layer is configured at all: while it is not, `workspace`
     commands are not judged, exactly as before T-0005.
     """
-    out = {"nonProd": [], "problem": ""}
+    out = {"nonProd": [], "problem": "", "workflows": {}}
     path = os.path.join(root, ".crew", "config.json")
     try:
         with open(path, encoding="utf-8-sig", errors="replace") as handle:
@@ -2572,14 +2573,13 @@ def environments_config(root):
     elif "environments" in cfg:
         problem = crew_config.environments_block_problem(cfg["environments"])
         if problem:
-            out = {"nonProd": [], "problem": problem}
+            out = {"nonProd": [], "problem": problem, "workflows": {}}
         else:
-            out["nonProd"] = [v.strip() for v in
-                              cfg["environments"].get("nonProd", [])]
+            out["nonProd"] = [v.strip() for v in cfg["environments"].get("nonProd", [])]
+            out["workflows"] = dict(cfg["environments"].get("workflows", {}))
     out["prodUnattended"] = crew_config.resolve_ratcheted(
         root, "environments.prodUnattended")["effective"] is True
-    out["engaged"] = bool(out["nonProd"] or out["prodUnattended"]
-                          or out["problem"])
+    out["engaged"] = bool(out["nonProd"] or out["prodUnattended"] or out["problem"])
     return out
 
 
@@ -2939,7 +2939,7 @@ def scan(shell, text, env=None, depth=0, ctx=None, seq=None):
         if not argv:
             continue
         found = _classify(argv, None if fed else cmd.stdin, local_env, shell,
-                          depth, ctx, seq, bool(fed))
+                          depth, ctx, seq, fed[-1] if fed else False)
         extra = _fed_finding(argv, local_env, *fed[-1], ctx=ctx) if fed \
             else None
         _track(argv, ctx, seq, bool(fed), shell)
@@ -3091,6 +3091,8 @@ def _judge_one(root, finding, pins, problem, envs=None):
     if finding.rule in crew_state.GUARD_NAMES or \
             finding.rule in crew_state.PROD_GUARD_NAMES:
         out = crew_config.guard_decision(root, finding.rule, finding.text)
+        if finding.rule == DEPLOY_RULE:
+            return judge_dispatch(finding.scope, finding.what, out, envs or {}, _approval_is_live)
         if finding.scope is not None and envs is not None:
             return _terraform_verdict(root, finding, out, envs) + (True,)
         decision = {"block": "deny"}.get(out["decision"], out["decision"])

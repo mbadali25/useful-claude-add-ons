@@ -59,6 +59,19 @@ default: `guards.cloudDestructive` for `aws … delete-*/terminate-*/purge-*`,
 under `allow`, and `environments.*` lets non-production applies run unattended
 under `ask` (README "Cloud guard", CONFIG.md §16).
 
+`guards.deployWorkflow` (T-0009) judges `gh workflow run <wf>` and its REST
+twin, `gh api -X POST repos/<o>/<r>/actions/workflows/<wf>/dispatches`, when
+`<wf>` matches a key of the repo-only `environments.workflows` map
+(`{"deploy.yml": "input:environment", "deploy-prod.yml": "production"}`). A
+workflow matching no key is not judged. Under `ask` in both layers a nonProd
+environment runs unattended; production does only with
+`environments.prodUnattended` true in both layers. `allow` covers nonProd only:
+production without `prodUnattended`, and an environment crew cannot identify
+(no input, `-F name=@file`, `--input FILE`, `$ENV`, conflicting values, no
+workflow named, `xargs`, a malformed `environments` block), still ask and are
+refused unattended. Not seen: an unlisted spelling of the workflow (display
+name, numeric id), the workflow YAML, `gh run rerun`, `curl`.
+
 Not destructive, so not refused: `aws … --dry-run` / `--dryrun`, `Remove-Az*
 -WhatIf`, and `terraform apply -help`. SQL is read in the client's own dialect —
 PostgreSQL for `psql` (a backslash is a plain character except in `E'…'`),

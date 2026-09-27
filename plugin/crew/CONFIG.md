@@ -127,10 +127,11 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **66**
-leaves. `leaf_paths(default_config())` yields **118**, so **52** are repo-only.
-For all 118, `filter_global` and `plan_global_write` agree on whether the path is
-settable. (65 / 116 before crew 1.0.41 added `environments.prodUnattended` to
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **67**
+leaves. `leaf_paths(default_config())` yields **120**, so **53** are repo-only.
+For all 120, `filter_global` and `plan_global_write` agree on whether the path is
+settable. (66 / 118 before T-0009 added `guards.deployWorkflow` to both layers
+and the repo-only `environments.workflows`; 65 / 116 before crew 1.0.41 added `environments.prodUnattended` to
 both layers and the repo-only `environments.nonProd`; 63 / 114 before the
 Windows burn-in added
 `context.autoClear.onlyRepos` and `onlySessions` to both layers; this paragraph
@@ -699,6 +700,7 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 | `guards.mergeGate` | `block` \| `ask` \| `allow` (narrower layer wins, §16) | `"block"` |
 | `guards.prodDatabase` | `none` \| `read` \| `full` (narrower layer wins, §16) | `"none"` |
 | `guards.prodServer` | `none` \| `read` \| `full` (narrower layer wins, §16) | `"none"` |
+| `guards.deployWorkflow` | `block` \| `ask` \| `allow` (narrower layer wins, §16; `allow` covers nonProd only) | `"block"` |
 | `guards.roleWrites` | `block` \| `report` \| `off` (narrower layer wins, §18) | `"off"` |
 | `change.requester` | string or `null`, see §17 | `null` |
 | `change.implementor` | string or `null`, see §17 | `null` |
@@ -1126,6 +1128,7 @@ earn its own section: see §18, not the tables immediately below.
 | `guards.roleWrites` | `block` \| `report` \| `off` | `"off"` | both, **narrower wins** | `hooks/scripts/role-write-guard.sh`, `.ps1` |
 | `guards.cloudDestructive` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on) |
 | `guards.sqlDestructive` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on) |
+| `guards.deployWorkflow` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on); `allow` covers nonProd only |
 | `guards.cloudGuard` | `block` \| `report` \| `off` | `"off"` | both, **narrower wins** | `hooks/scripts/cloud-guard.sh`, `.ps1` -> `cloud_guard.py` |
 | `production.databases` | list of globs | `[]` | **repo only** | `crew_config.py::production_patterns` |
 | `production.hosts` | list of globs | `[]` | **repo only** | `crew_config.py::production_patterns` |
@@ -1134,6 +1137,7 @@ earn its own section: see §18, not the tables immediately below.
 | `cloud.azureSubscriptions` | list of globs (id or name) | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
 | `environments.nonProd` | list of globs | `[]` | **repo only** | `cloud_guard.py::environments_config` |
 | `environments.prodUnattended` | `true` \| `false` | `false` | both, **true only when both say `true`** | `cloud_guard.py::environments_config` |
+| `environments.workflows` | object: workflow glob -> `input:<name>` or an environment name | `{}` | **repo only** | `cloud_guard.py::environments_config`, `_dispatch_environment` |
 
 Read one with `crew_config.py --guard <name> [--json]`, which prints the
 decision, both layers' values and which one is holding it down. The two shell
@@ -1483,6 +1487,69 @@ needs that off. `.crew/verify.json` stays promote-gate's list of environments;
 `crew_config.py --check` warns when a `nonProd` glob covers one it marks
 `requireHuman: true`.
 
+
+### `environments.workflows` and `guards.deployWorkflow` — workflow dispatches (T-0009)
+
+Read by the cloud guard alone, while `guards.cloudGuard` is armed. A repo-only
+map from a workflow glob to where the target environment comes from:
+
+```json
+{ "environments": { "nonProd": ["dev", "qa", "staging"],
+                    "workflows": { "deploy.yml": "input:environment",
+                                   "deploy-staging.yml": "staging",
+                                   "deploy-prod.yml": "production" } } }
+```
+
+`input:<name>` reads the dispatch input `<name>` (a GitHub input name); any
+other string is that fixed environment, classified by `nonProd` like a
+terraform workspace. A key is matched with fnmatch, case-insensitively,
+against the workflow **as written** on the command line.
+
+**What is judged.** `gh workflow run <wf>` and the REST dispatch `gh api` sends
+for it — method POST (`-X POST`, `--method POST`, `-XPOST`, or fields/`--input`
+with no method, which gh sends as POST) on
+`repos/<o>/<r>/actions/workflows/<wf>/dispatches`, leading `/` optional — are
+parsed into one dispatch shape and classified by one function,
+`cloud_guard.py::_dispatch_environment`. Inputs come from `-f`/`--raw-field`
+and `-F`/`--field` (`name=v` for `gh workflow run`; `inputs[name]=v` for the
+REST form, whose top-level `ref` is the branch, never an input) and from a
+literal JSON body on stdin (`gh workflow run --json`, `gh api --input -`).
+Every occurrence must agree. A `gh api` GET, or a POST to any other path, is
+not a dispatch.
+
+**Unknown**, and never allowed unattended: no `<name>` input given (the
+workflow's default is not read), `-F name=@file`, `--input FILE`, a value or
+workflow that is not a literal (`$ENV`, `"$WF"`), conflicting values, a JSON
+body crew cannot see, no workflow named (gh prompts for one), a dispatch
+behind `xargs`/`parallel`, and — for **every** dispatch, listed or not — an
+`environments` block that does not validate (`workflows` must be an object of
+non-blank keys to `input:<name>` or non-blank names), which also forces an
+armed guard to `block` mode.
+
+**The decision**, after `guards.deployWorkflow` has been ratcheted (so `ask`
+means `ask` in **both** layers; a repo alone gets `block`):
+
+| policy | nonProd | prod, `prodUnattended` both layers | prod | unknown env |
+|---|---|---|---|---|
+| `block` | deny | deny | deny | deny |
+| `ask`, no live marker | **allow**, logged | **allow**, logged + on screen | ask | ask |
+| `ask`/`allow`, live marker | allow | allow | allow | allow |
+| `allow` | allow, logged | allow, logged + on screen | **ask** | **ask** |
+
+A deploy never destroys, so T-0005's destroy column does not apply — and
+`allow` **covers nonProd only**: production without `prodUnattended` in both
+layers, and an unknown environment, still ask when attended and are denied
+unattended. The approval marker is `.approved-guard-deployWorkflow-<hash>`.
+
+**Unclassified.** A workflow matching no key is not judged at all — no
+decision, no guard.log row — exactly as before T-0009; with `workflows` at `{}`
+nothing is. `environments.workflows` does not count toward the terraform
+layer's `engaged`, so listing workflows alone leaves `workspace new|select`
+unjudged. Not seen: an unlisted spelling of a deploy workflow (its display
+name or numeric id — list every spelling you use), the workflow YAML
+(`environment:` keys, `${{ inputs.* }}`), `gh run rerun`, and `curl`. A deploy
+command also declared in `.crew/verify.json` still passes through
+`promote-gate.sh`, whose `requireHuman` is independent of `prodUnattended`.
 ### The ratchet is one table, not five copies
 
 `install.policy` shipped its ratchet as a bespoke `effective_install_policy`

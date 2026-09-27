@@ -910,9 +910,11 @@ below govern something **only while `guards.cloudGuard` is `report` or
 | `guards.prodServer` | `ssh`/`plink`/`scp` aimed at a `production.hosts` pattern | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `guards.cloudDestructive` | `aws … delete-*/terminate-*/purge-*`, `s3 rm/rb`, `s3 sync --delete`, `az … delete/purge`, `Remove-Az*` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `guards.sqlDestructive` | `DROP`/`TRUNCATE` sent to `psql`, `mysql`, `mariadb`, `sqlcmd`, `sqlite3`, `Invoke-Sqlcmd` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
+| `guards.deployWorkflow` | `gh workflow run` / `gh api .../dispatches` of a workflow listed in `environments.workflows`; `allow` covers nonProd only | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `guards.cloudGuard` | whether the cloud guard judges commands at all: `off` (default) / `report` / `block` | `hooks/scripts/cloud_guard.py` |
 | `environments.nonProd` | **repo-only** globs naming the terraform workspaces/environments that may run unattended (default `[]`) | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `environments.prodUnattended` | whether production may too — true only when **both** layers say `true` (default `false`) | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
+| `environments.workflows` | **repo-only** map of workflow globs to `input:<name>` or a fixed environment, naming the deploy workflows `guards.deployWorkflow` judges (default `{}`) | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 
 - **`block`** refuses, exactly as the guard did before these keys existed.
 - **`ask`** refuses, prints the **exact** command, and names the one file that
@@ -972,6 +974,7 @@ below: it makes the line one crew could not tell.
 | `terraform`/`tofu`/`terragrunt` `workspace delete` — a destroy, in every armed state; `workspace new`/`select -or-create` once `environments` is configured | `guards.terraformApply` |
 | `git push --force`, `-f`, `--force-with-lease`, `+ref` | `guards.forcePush` |
 | `gh pr merge --admin` | `guards.adminMerge` |
+| `gh workflow run <wf>` and `gh api -X POST repos/<o>/<r>/actions/workflows/<wf>/dispatches`, when `<wf>` matches an `environments.workflows` key | `guards.deployWorkflow` |
 | `aws … delete-*/terminate-*/purge-*`, `aws s3 rm/rb`, `az … delete/purge`, `Remove-Az*` | `guards.cloudDestructive` |
 | `DROP`/`TRUNCATE` via `-c`/`-e`/`-Q`, heredoc, pipe or `Invoke-Sqlcmd -Query` | `guards.sqlDestructive` |
 | a SQL client or `ssh` aimed at a declared `production.*` pattern | `guards.prodDatabase` / `guards.prodServer` |
@@ -1056,6 +1059,42 @@ terraform "$file"`). A PowerShell line follows the same command-word rule:
 `git commit -m "fix terraform apply"` and `Select-String terraform *.md` do
 not.
 
+**Workflow dispatches (T-0009).** `environments.workflows` is a repo-only map
+from a workflow glob (fnmatch, case-insensitive, against the argument as
+written) to where its environment comes from: `input:<name>` (the dispatch
+input) or a fixed environment name.
+
+```json
+"environments": {
+  "nonProd": ["dev", "qa", "staging"],
+  "workflows": {"deploy.yml": "input:environment", "deploy-prod.yml": "production"}
+}
+```
+
+A `gh workflow run <wf>` whose `<wf>` matches a key is a `guards.deployWorkflow`
+finding, and so is the REST call it makes, `gh api` with method POST (`-X
+POST`, `--method POST`, `-XPOST`, or fields/`--input` with no method) on
+`repos/<o>/<r>/actions/workflows/<wf>/dispatches` — both go through one
+classifier. The input comes from `-f`/`-F`/`--raw-field`/`--field` (`<name>=v`
+for `gh workflow run`, `inputs[<name>]=v` for the REST form, whose top-level
+`ref` is the branch and never an input), from a literal `--json` or `--input -`
+body on stdin, and every occurrence must agree. Under `ask` (in **both**
+layers — the ratchet), a nonProd environment runs unattended and is logged as
+`env:nonProd:<name>`; production runs unattended only with
+`environments.prodUnattended` true in both layers, and says so on screen.
+**`allow` covers nonProd only**: production without `prodUnattended`, and an
+environment crew cannot identify, still ask when attended and are refused
+unattended. Unknown is: no input given (the workflow's default is not read),
+`-F name=@file`, `--input FILE`, a value or workflow that is not a literal
+(`$ENV`, `"$WF"`), conflicting values, stdin crew cannot see, no workflow
+named (gh prompts), anything `xargs`/`parallel` may append, and — for every
+dispatch, listed or not — an `environments` block crew cannot read. A workflow
+matching no key is **not judged**, as before; so with `workflows` at `{}`
+nothing is classified. `environments.workflows` does not engage the terraform
+layer. A deploy command also declared in `.crew/verify.json` still passes
+through `promote-gate.sh`, whose `requireHuman` is independent of
+`prodUnattended`.
+
 **The always-stops.** A destroy is never applied unattended, at any setting:
 `destroy`, `apply -destroy`, `apply -replace`, `workspace delete`, a saved plan
 that deletes, and any apply whose plan crew cannot read — including
@@ -1093,7 +1132,10 @@ runs, SQL built at runtime, Terraform's provider credentials, and MCP tool
 calls. For the terraform name specifically: a name built at run time from
 parts crew never sees whole (`$TF`, `$(printf te)$(printf rraform)`, a
 PowerShell string concatenation) and a wildcard that keeps fewer than three
-letters of it (`t*`) are not read as terraform. Tests: `tests/test_cloud_guard.py` (every case through python, bash and
+letters of it (`t*`) are not read as terraform. For workflow dispatches: a
+spelling of a deploy workflow not listed as a key (its display name or numeric
+id — list every spelling you use), the workflow YAML (`environment:` keys,
+`${{ inputs.* }}`), `gh run rerun`, and a dispatch sent with `curl`. Tests: `tests/test_cloud_guard.py` (every case through python, bash and
 pwsh), `tests/test_cloud_guard_environments.py` and `tests/test_crew_tfplan.py`
 (the environment layer and the sidecar), and the `cloud-guard.sh` section of
 `hooks/scripts/_test/run-tests.sh`.

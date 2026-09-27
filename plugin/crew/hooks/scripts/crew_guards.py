@@ -26,6 +26,7 @@ there rebinds a copy the reading function never sees, which is a guard failing
 open while wearing the label of a check that happened.
 """
 import fnmatch
+import json
 import os
 import re
 import shlex
@@ -103,7 +104,7 @@ GUARD_POLICY_DEFAULT = "block"
 # there is one guard block with one ratchet, rather than a fifth key somewhere
 # else with its own layering rule.
 GUARD_NAMES = ("terraformApply", "forcePush", "adminMerge", "mergeGate",
-               "cloudDestructive", "sqlDestructive")
+               "cloudDestructive", "sqlDestructive", "deployWorkflow")
 
 # The production-access guards, which live in the same `guards` block and
 # ratchet by the same table, but have their OWN three-value vocabulary:
@@ -188,7 +189,7 @@ ROLE_WRITE_DEFAULT = "off"
 # than growing a second copy of it.
 CLOUD_GUARD_NAMES = ("cloudGuard",)
 
-# Every guard, in declaration order: the six policy guards, the two
+# Every guard, in declaration order: the seven policy guards, the two
 # production ones, the role-write guard, then the cloud guard's switch.
 # `GUARD_DEFAULTS` is keyed off this, so a name that exists in none of the
 # four tuples cannot reach the config block at all.
@@ -245,10 +246,19 @@ CLOUD_DEFAULTS = {"awsProfiles": [], "awsRegions": [], "azureSubscriptions": []}
 #                   workspace in one checkout. Globs, fnmatch, case-insensitive.
 #   prodUnattended  RATCHETS, and is true only when BOTH layers say the JSON
 #                   literal `true` -- see `normalise_prod_unattended`.
+#   workflows       REPO ONLY (T-0009): `{workflow glob: source}`, where the
+#                   source is `input:<name>` (the dispatch input that names the
+#                   environment) or a fixed environment name. A `gh workflow
+#                   run` or `gh api .../dispatches` whose workflow matches a key
+#                   is a `guards.deployWorkflow` finding; one matching no key is
+#                   not judged. It does NOT count toward the terraform layer's
+#                   `engaged` (`cloud_guard.environments_config`).
 #
-# At these defaults nothing is nonProd and production is never unattended, so
-# an upgraded repo decides every apply exactly as before.
-ENVIRONMENTS_DEFAULTS = {"nonProd": [], "prodUnattended": False}
+# At these defaults nothing is nonProd, production is never unattended and no
+# workflow is classified, so an upgraded repo decides every apply and every
+# dispatch exactly as before.
+ENVIRONMENTS_DEFAULTS = {"nonProd": [], "prodUnattended": False,
+                         "workflows": {}}
 
 # Least to most permissive, like every tier tuple here: letting production be
 # written unattended is the capability, so `True` ranks above `False`.
@@ -1814,3 +1824,430 @@ def command_names_terraform(text, helpers):
     """The word `command_trigger` found, or None."""
     found = command_trigger(text, helpers)
     return None if found is None else found[0]
+
+
+# --- workflow dispatches (T-0009) -------------------------------------------
+#
+# Two spellings of one act: `gh workflow run <wf>` and the REST call it makes,
+# `gh api -X POST repos/<o>/<r>/actions/workflows/<wf>/dispatches`. Each has
+# its own parser, because the flags differ; both produce the SAME dispatch
+# scope, and `dispatch_environment` is the one classifier either reaches.
+# It lives here rather than in `cloud_guard.py` for the reason the literal
+# allowlist does: that module sits at `.pylintrc`'s max-module-lines, so it
+# keeps only the call sites (`_classify`'s `gh` branch and `_judge_one`).
+#
+# Classified by the repo-only `environments.workflows` map (see
+# `ENVIRONMENTS_DEFAULTS`): the key the workflow matches (fnmatch,
+# case-insensitive, against the argument as written) says whether the
+# environment is the dispatch input `input:<name>` or a fixed name, and
+# `environments.nonProd` classifies that name as `cloud_guard` classifies a
+# terraform workspace. A workflow matching no key is NOT judged, as before.
+# What crew cannot tell -- no input, `-F name=@file`, `--input FILE`, a value
+# or workflow that is not a literal, disagreeing values, stdin it cannot see,
+# no workflow named, xargs/parallel, a malformed `environments` block (every
+# dispatch, listed or not) -- is `unknown`. `deploy_verdict` then applies
+# T-0005's table with `guards.deployWorkflow` as the base policy, except that
+# `allow` covers nonProd only. Not seen: an unlisted spelling of a deploy
+# workflow (a display name or numeric id), the workflow YAML (`environment:`
+# keys, `${{ inputs.* }}`), `gh run rerun`, and a dispatch sent by `curl`.
+
+DEPLOY_RULE = "deployWorkflow"
+
+# The three environment classes. `cloud_guard` imports these, so the
+# terraform layer and the dispatch layer cannot name a class differently.
+ENV_NONPROD, ENV_PROD, ENV_UNKNOWN = "nonProd", "prod", "unknown"
+
+# `cloud_guard._NON_LITERAL_RE`'s rule: anything a shell would still expand,
+# glob or split, so the word is not the value the command will see.
+_DISPATCH_NON_LITERAL_RE = re.compile(r"[$`*?\[\]{}()<>|;&\s'\"\0]")
+
+# `gh` options that take a value, across both forms (`-R/--repo`, `-r/--ref`,
+# the fields, and `gh api`'s own). A value is never a positional word.
+_GH_VALUE_OPTS = frozenset((
+    "-R", "--repo", "-r", "--ref", "-f", "--raw-field", "-F", "--field",
+    "-X", "--method", "-H", "--header", "--input", "-q", "--jq", "-t",
+    "--template", "-p", "--preview", "--hostname", "--cache"))
+# `-f`/`--raw-field` send the value as written; `-F`/`--field` read a value
+# starting with `@` from that file.
+_GH_FIELD_OPTS = {"-f": "raw", "--raw-field": "raw",
+                  "-F": "typed", "--field": "typed"}
+
+# The REST dispatch endpoint, leading `/` or a full API URL allowed. The
+# owner and repo may be gh's own `{owner}`/`{repo}` placeholders.
+_DISPATCH_RE = re.compile(
+    r"^(?:https?://[^/]+/)?/?repos/[^/]+/[^/]+/actions/workflows/([^/?#]+)"
+    r"/dispatches/?(?:[?#].*)?$", re.IGNORECASE)
+# A REST field naming a workflow input: `inputs[<name>]=<value>`.
+_API_INPUT_RE = re.compile(r"^inputs\[([^\[\]]*)\]$")
+
+# A word crew could not see (`xargs` filled it in), marked so no literal test
+# can pass it.
+_UNSEEN = "\0"
+
+# What an input occurrence is called when crew cannot tell its name: it may
+# be any input, so it counts against every one.
+_ANY_INPUT = "*"
+
+
+def _dispatch_literal(value):
+    return isinstance(value, str) and bool(value) \
+        and not _DISPATCH_NON_LITERAL_RE.search(value)
+
+
+def _gh_words(args):
+    """`(positionals, options)` for a `gh` command line: options in order as
+    `(name, value)`, value None for a boolean flag. `--name=value`, `-Xvalue`
+    and `-X=value` split the way gh's flag parser splits them."""
+    positionals, options, index = [], [], 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--":
+            positionals.extend(args[index + 1:])
+            break
+        if arg.startswith("--") and len(arg) > 2:
+            name, sep, value = arg.partition("=")
+            if not sep and name in _GH_VALUE_OPTS:
+                value = args[index + 1] if index + 1 < len(args) else None
+                index += 1
+            options.append((name, value if sep or name in _GH_VALUE_OPTS
+                            else None))
+        elif arg.startswith("-") and len(arg) > 1:
+            name = arg[:2]
+            if name in _GH_VALUE_OPTS:
+                if len(arg) > 2:
+                    value = arg[2:]
+                    value = value[1:] if value.startswith("=") else value
+                else:
+                    value = args[index + 1] if index + 1 < len(args) else None
+                    index += 1
+                options.append((name, value))
+            else:
+                options.append((arg, None))
+        else:
+            positionals.append(arg)
+        index += 1
+    return positionals, options
+
+
+def _field_input(kind, raw, api):
+    """`(name, value, why)` for one `-f`/`-F` field that is a workflow input,
+    or None when it is not one. `value` None means crew cannot tell it: a
+    value read from a file, or one that is not a literal. `gh workflow run`
+    sends every field as an input; the REST body carries them as
+    `inputs[<name>]`, and its top-level `ref` is the branch, never an input."""
+    if raw is None:
+        return None
+    key, sep, value = raw.partition("=")
+    if not sep:
+        return None
+    if api:
+        match = _API_INPUT_RE.match(key)
+        if match is None:
+            if _dispatch_literal(key):
+                return None
+            return (_ANY_INPUT, None, f"the field `{raw}` names no literal "
+                                      "key, so it may be any input")
+        key = match.group(1)
+    if not _dispatch_literal(key):
+        return (_ANY_INPUT, None, f"the field `{raw}` names no literal input")
+    if kind == "typed" and value.startswith("@"):
+        return (key, None, f"`{raw}` reads its value from a file crew does "
+                           "not open")
+    if not _dispatch_literal(value):
+        return (key, None, f"`{raw}` is not a literal value")
+    return (key, value, "")
+
+
+def _no_duplicate_keys(pairs):
+    keys = [k for k, _v in pairs]
+    if len(keys) != len(set(keys)):
+        raise ValueError("a key is given twice")
+    return dict(pairs)
+
+
+def _json_inputs(text, api, source):
+    """The input occurrences in a literal JSON body: `gh workflow run
+    --json`'s body IS the inputs object, the REST body carries them under
+    `inputs`. A body crew cannot see or read counts against every input."""
+    if text is None:
+        return [(_ANY_INPUT, None, f"{source} reads a body crew cannot see")]
+    try:
+        body = json.loads(text, object_pairs_hook=_no_duplicate_keys)
+    except ValueError:
+        return [(_ANY_INPUT, None, f"{source} is not one literal JSON object "
+                                   "with each key once")]
+    if api and isinstance(body, dict):
+        body = body.get("inputs", {})
+    if not isinstance(body, dict):
+        return [(_ANY_INPUT, None, f"{source} carries no inputs object")]
+    out = []
+    for name, value in body.items():
+        if isinstance(value, str) and _dispatch_literal(value) \
+                and _dispatch_literal(name):
+            out.append((name, value, ""))
+        else:
+            out.append((name if _dispatch_literal(name) else _ANY_INPUT, None,
+                        f"input `{name}` in {source} is not a literal string"))
+    return out
+
+
+def _dispatch_endpoint(endpoint):
+    """The `<wf>` of a REST dispatch endpoint; None when the endpoint is
+    built at run time (so it may be one, naming a workflow crew cannot see);
+    False when it is plainly some other endpoint."""
+    match = _DISPATCH_RE.match(endpoint)
+    if match:
+        return match.group(1)
+    if any(c in endpoint for c in ("$", "`", _UNSEEN)):
+        return None
+    return False
+
+
+def _dispatch_from_run(rest, options, stdin):
+    """`gh workflow run [<wf>] [-f|-F k=v]... [--json]`."""
+    inputs = []
+    for name, value in options:
+        if name in _GH_FIELD_OPTS:
+            found = _field_input(_GH_FIELD_OPTS[name], value, api=False)
+            if found is not None:
+                inputs.append(found)
+        elif name == "--json" and (value or "true").lower() not in (
+                "false", "0", "f"):
+            inputs.extend(_json_inputs(stdin, False, "`--json` on stdin"))
+    return {"form": "workflow run", "workflow": rest[0] if rest else None,
+            "inputs": inputs}
+
+
+def _dispatch_from_api(rest, options, stdin):
+    """`gh api [-X POST] repos/<o>/<r>/actions/workflows/<wf>/dispatches`, or
+    None when the call is not a dispatch: another endpoint, or a method that
+    is not POST. With no `-X`/`--method`, gh sends POST when any field or an
+    `--input` body is given, and GET otherwise; a method that is not a
+    literal may be POST."""
+    if not rest:
+        return None
+    workflow = _dispatch_endpoint(rest[0])
+    if workflow is False:
+        return None
+    methods = [v for n, v in options if n in ("-X", "--method")]
+    fields = [(n, v) for n, v in options if n in _GH_FIELD_OPTS]
+    bodies = [v for n, v in options if n == "--input"]
+    if methods:
+        method = methods[-1] or ""
+        if _dispatch_literal(method) and method.upper() != "POST":
+            return None
+    elif not fields and not bodies:
+        return None
+    inputs = []
+    for name, value in fields:
+        found = _field_input(_GH_FIELD_OPTS[name], value, api=True)
+        if found is not None:
+            inputs.append(found)
+    for body in bodies:
+        if body == "-":
+            inputs.extend(_json_inputs(stdin, True, "`--input -` on stdin"))
+        else:
+            inputs.append((_ANY_INPUT, None, f"`--input {body}` reads the "
+                                             "body from a file crew does not "
+                                             "open"))
+    return {"form": "api", "workflow": workflow, "inputs": inputs}
+
+
+def _fed_dispatch(args, fed):
+    """The dispatch a `gh` command behind `xargs`/`parallel` may send, or
+    None when the words crew CAN see already make it some other `gh`
+    command. `fed` is `(via, placeholders)`: a word carrying a placeholder is
+    not seen, and neither is a subcommand that is not there at all (`echo
+    workflow run deploy.yml | xargs gh`). Its workflow and inputs are never
+    known, so the only answer it can get is unlisted or `unknown`."""
+    via, placeholders = fed
+
+    def carries(word):
+        return "{" in word or any(p in word for p in placeholders)
+
+    positionals, _options = _gh_words(
+        [_UNSEEN + w if carries(w) else w for w in args])
+    first = positionals[0] if positionals else None
+    second = positionals[1] if len(positionals) > 1 else None
+    if first is not None and _dispatch_literal(first) \
+            and first not in ("workflow", "api"):
+        return None
+    scope = {"form": "unseen", "workflow": None, "inputs": [], "via": via}
+    if first == "workflow":
+        if second is not None and _dispatch_literal(second) \
+                and second != "run":
+            return None
+        scope["form"] = "workflow run"
+        scope["workflow"] = positionals[2] if len(positionals) > 2 else None
+    elif first == "api":
+        scope["form"] = "api"
+        scope["workflow"] = _dispatch_endpoint(second) \
+            if second is not None else None
+        if scope["workflow"] is False:
+            return None
+    return scope
+
+
+def dispatch_what(scope):
+    """The finding's `what`: the command as crew read it."""
+    workflow = scope.get("workflow")
+    named = workflow.replace(_UNSEEN, "") if workflow is not None \
+        else "(no workflow named)"
+    if scope.get("form") == "api":
+        what = f"gh api POST .../actions/workflows/{named}/dispatches"
+    elif scope.get("form") == "unseen":
+        what = "gh (its subcommand filled in from input)"
+    else:
+        what = f"gh workflow run {named}"
+    if scope.get("fed"):
+        what += (f" (via {scope['via']}, which appends arguments crew cannot "
+                 "see)")
+    return what
+
+
+def dispatch_scopes(args, stdin, fed=False):
+    """The workflow dispatch a `gh` command line sends, as a list of zero or
+    one scope in the shape both forms share: `{"op": "deploy", "form",
+    "workflow", "inputs": [(name, value-or-None, why)], "fed", "what"}`.
+    `fed` is False, or `cloud_guard.scan`'s `(via, placeholders)` for a
+    command `xargs`/`parallel` appends words to."""
+    if fed:
+        scope = _fed_dispatch(args, fed)
+    else:
+        positionals, options = _gh_words(args)
+        scope = None
+        if positionals[:2] == ["workflow", "run"]:
+            scope = _dispatch_from_run(positionals[2:], options, stdin)
+        elif positionals[:1] == ["api"]:
+            scope = _dispatch_from_api(positionals[1:], options, stdin)
+    if scope is None:
+        return []
+    scope.update(op="deploy", fed=bool(fed))
+    scope["what"] = dispatch_what(scope)
+    return [scope]
+
+
+def _dispatch_class(value, globs):
+    return ENV_NONPROD if any(fnmatch.fnmatch(str(value).lower(), g.lower())
+                              for g in globs) else ENV_PROD
+
+
+def _dispatch_source(source, inputs, globs):
+    """`(class, value, why)` for one `environments.workflows` value."""
+    if not source.startswith("input:"):
+        return _dispatch_class(source, globs), source, ""
+    name = source[len("input:"):]
+    seen = [o for o in inputs
+            if o[0] == _ANY_INPUT or o[0].lower() == name.lower()]
+    if not seen:
+        return ENV_UNKNOWN, None, (f"no `{name}` input is given, and crew does "
+                                   "not read the workflow's default")
+    unknown = [why for _n, value, why in seen if value is None]
+    if unknown:
+        return ENV_UNKNOWN, None, "; ".join(unknown)
+    values = sorted({value for _n, value, _w in seen})
+    if len(values) > 1:
+        return ENV_UNKNOWN, None, (f"the `{name}` input is given more than "
+                                   "once, with different values: "
+                                   + ", ".join(f"`{v}`" for v in values))
+    return _dispatch_class(values[0], globs), values[0], ""
+
+
+def dispatch_environment(scope, envs):
+    """THE classifier for a workflow dispatch, whichever form it came in:
+    `(class, value, why, key)`, or None when the dispatch is unclassified --
+    `environments.workflows` is empty, or names no key its literal workflow
+    matches (fnmatch, case-insensitive, against the argument as written).
+
+    Never None for what crew could not tell: an `environments` block it
+    cannot read (every dispatch, listed or not), no workflow named (gh
+    prompts), a workflow that is not a literal, and anything `xargs`/
+    `parallel` may append to are each `unknown` while any workflow is
+    listed. `envs` is `cloud_guard.environments_config`'s dict."""
+    if envs.get("problem"):
+        return ENV_UNKNOWN, None, ("the environments block cannot be read: "
+                                   f"{envs['problem']}"), None
+    workflows = envs.get("workflows") or {}
+    if not workflows:
+        return None
+    workflow = scope.get("workflow")
+    keys = []
+    if workflow is not None and _dispatch_literal(workflow):
+        keys = [key for key in workflows
+                if fnmatch.fnmatch(workflow.lower(), key.lower())]
+        if not keys:
+            return None
+    if scope.get("fed"):
+        return ENV_UNKNOWN, None, ("xargs/parallel appends arguments crew "
+                                   "cannot see, so the workflow and its "
+                                   "inputs are not known"), None
+    if workflow is None:
+        return ENV_UNKNOWN, None, ("no workflow is named, so gh would prompt "
+                                   "for one"), None
+    if not keys:
+        return ENV_UNKNOWN, None, (f"the workflow `{workflow}` is not a "
+                                   "literal"), None
+    globs = envs.get("nonProd", [])
+    results = {key: _dispatch_source(workflows[key], scope.get("inputs", []),
+                                     globs) for key in keys}
+    if len({(k, v) for k, v, _w in results.values()}) > 1:
+        return ENV_UNKNOWN, None, (f"`{workflow}` matches keys that name "
+                                   "different environments: "
+                                   + ", ".join(sorted(keys))), None
+    klass, value, why = results[keys[0]]
+    return klass, value, why, keys[0]
+
+
+def deploy_verdict(what, found, out, envs, live):
+    """`(decision, reason, policy, marker)` for a classified dispatch: T-0005's
+    table with `guards.deployWorkflow` as the base policy, except that `allow`
+    covers nonProd only (T-0009 amendment) -- a deploy never destroys, so
+    T-0005's `allow` row would otherwise reach production and an unknown
+    environment with nobody attending.
+
+        block        deny, whatever the environment
+        live marker  allow (the person approved this exact command)
+        nonProd      allow, logged (`ask` or `allow`)
+        production   allow only under `prodUnattended` in both layers (logged,
+                     and said on screen); otherwise ask
+        unknown      ask
+
+    `out` is `crew_config.guard_decision`'s dict, `live` the approval-marker
+    test. `ask` becomes deny when nobody is attending (`cloud_guard.evaluate`).
+    """
+    klass, value, why, _key = found
+    base = f"[{DEPLOY_RULE}] {what}"
+    policy, marker = out["policy"], out["marker"]
+    if policy == "block":
+        return "deny", f"{base}: {out['reason']}", "block", marker
+    if live(marker):
+        return "allow", f"{base}: approved for this command: {marker}", \
+            policy, marker
+    head = f"{base}: guards.deployWorkflow is `{policy}`"
+    if klass == ENV_NONPROD:
+        return "allow", f"{head}; environment `{value}` is nonProd", \
+            f"env:nonProd:{value}", marker
+    if klass == ENV_PROD and envs.get("prodUnattended"):
+        return "allow", (f"{head}; environment `{value}` is production and "
+                         "environments.prodUnattended is true in both config "
+                         "layers"), f"env:prod-unattended:{value}", marker
+    if klass == ENV_PROD:
+        return "ask", (f"{head}: environment `{value}` is production -- it "
+                       "matches no environments.nonProd glob, and "
+                       "environments.prodUnattended is not true in both "
+                       "config layers (a deploy's `allow` covers nonProd "
+                       "only)"), f"env:prod:{value}", marker
+    return "ask", (f"{head}: environment unknown -- {why}. An environment "
+                   "crew cannot identify is never allowed unattended"), \
+        "env:unknown", marker
+
+
+def judge_dispatch(scope, what, out, envs, live):
+    """`cloud_guard._judge_one`'s `(decision, reason, policy, marker,
+    applies)` for a dispatch finding. Classified first: a dispatch of a
+    workflow nobody listed is not judged at all, exactly as before T-0009 --
+    no row, no decision."""
+    found = dispatch_environment(scope or {}, envs)
+    if found is None:
+        return "allow", "", "", "", False
+    return deploy_verdict(what, found, out, envs, live) + (True,)

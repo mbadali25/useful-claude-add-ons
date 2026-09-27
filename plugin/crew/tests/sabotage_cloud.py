@@ -292,6 +292,8 @@ CLOUD_GUARD_MUTATIONS = (
 GUARDS = os.path.join(SCRIPTS, "crew_guards.py")
 TFPLAN = os.path.join(SCRIPTS, "crew_tfplan.py")
 _E = "tests/test_cloud_guard_environments.py::"
+_DB = _E + "test_must_block_deploy_python"
+_DA = _E + "test_must_allow_deploy_python"
 _EB = _E + "test_must_block_env_python"
 _EP = _E + "test_must_block_allow_policy_python"
 _EA = _E + "test_must_allow_env_python"
@@ -383,9 +385,11 @@ CLOUD_GUARD_MUTATIONS += (
     ("crew_guards: prodUnattended normalised by truthiness", GUARDS,
      "    return value if isinstance(value, bool) else False\n",
      "    return bool(value)\n", _EB + "[prod-unattended-string]"),
+    # RE-ANCHORED in T-0009, not re-aimed: the line gained the `workflows`
+    # key; the mutation still drops the problem and nothing else.
     ("cloud guard env: a malformed environments block reads as empty", GUARD,
-     '            out = {"nonProd": [], "problem": problem}\n',
-     '            out = {"nonProd": [], "problem": ""}\n',
+     '            out = {"nonProd": [], "problem": problem, "workflows": {}}\n',
+     '            out = {"nonProd": [], "problem": "", "workflows": {}}\n',
      _EB + "[unknown-malformed-block]"),
     ("cloud guard env: no payload cwd falls back to the project root", GUARD,
      '    envs["cwd"] = cwd if isinstance(cwd, str) and cwd else None\n',
@@ -1024,4 +1028,101 @@ CLOUD_GUARD_MUTATIONS += (
      '            sub.append(word.replace("{}", _HOLE))  # a path found at '
      "run time\n", "            sub.append(word)\n",
      _R5 + "[r5-find-exec-found-binary]"),
+
+    # --- T-0009: workflow dispatches (`guards.deployWorkflow`) -------------
+    # The classifier lives in crew_guards.py (cloud_guard.py is at
+    # max-module-lines); the call sites stay in cloud_guard.py. Each run alone
+    # by hand on 2026-09-27 (cp aside, mutate, run the named test, restore,
+    # cmp): all red with a real test failure, plus the re-anchored
+    # malformed-block entry above.
+    ("deploy guard: an absent input read as nonProd", GUARDS,
+     "    if not seen:\n"
+     "        return ENV_UNKNOWN, None, (f\"no `{name}` input is given",
+     "    if not seen:\n"
+     "        return ENV_NONPROD, \"absent\", \"\"\n"
+     "        return ENV_UNKNOWN, None, (f\"no `{name}` input is given",
+     _DB + "[no-input]"),
+    ("deploy guard: the first of two conflicting fields wins", GUARDS,
+     "    values = sorted({value for _n, value, _w in seen})\n",
+     "    values = [seen[0][1]]\n", _DB + "[conflicting-fields]"),
+    ("deploy guard: `-F k=@file` read as a literal value", GUARDS,
+     '    if kind == "typed" and value.startswith("@"):\n',
+     "    if False:\n", _DB + "[field-at-file]"),
+    ("deploy guard: a non-literal workflow read as unlisted", GUARDS,
+     "    if not keys:\n"
+     "        return ENV_UNKNOWN, None, (f\"the workflow `{workflow}` is not a \"",
+     "    if not keys:\n"
+     "        return None\n"
+     "        return ENV_UNKNOWN, None, (f\"the workflow `{workflow}` is not a \"",
+     _DB + "[non-literal-workflow]"),
+    ("deploy guard: the environment layer applied under `block`", GUARDS,
+     '    if policy == "block":\n'
+     "        return \"deny\", f\"{base}: {out['reason']}\", \"block\", marker\n"
+     "    if live(marker):\n",
+     "    if False:\n"
+     "        return \"deny\", f\"{base}: {out['reason']}\", \"block\", marker\n"
+     "    if live(marker):\n",
+     _DB + "[block-not-loosened]"),
+    ("deploy guard: every workflow classified (key match ignored)", GUARDS,
+     "        keys = [key for key in workflows\n"
+     "                if fnmatch.fnmatch(workflow.lower(), key.lower())]\n",
+     "        keys = list(workflows)[:1]\n", _DA + "[unlisted-workflow]"),
+    ("deploy guard: the `--field=k=v` form not parsed", GUARDS,
+     '            name, sep, value = arg.partition("=")\n'
+     "            if not sep and name in _GH_VALUE_OPTS:\n",
+     '            name, sep, value = arg, "", ""\n'
+     "            if not sep and name in _GH_VALUE_OPTS:\n",
+     _DA + "[staging-field-eq]"),
+    ("deploy guard: xargs gh no longer read as a dispatch", GUARDS,
+     "    if fed:\n        scope = _fed_dispatch(args, fed)\n",
+     "    if fed:\n        scope = None\n", _DB + "[xargs-workflow]"),
+    ("deploy guard: xargs placeholders read as literal words", GUARDS,
+     '        return "{" in word or any(p in word for p in placeholders)\n',
+     "        return False\n", _DB + "[xargs-placeholder-workflow]"),
+    # Step 5: the REST form.
+    ("deploy guard: the `gh api` dispatch no longer recognised", GUARDS,
+     '        elif positionals[:1] == ["api"]:\n'
+     "            scope = _dispatch_from_api(",
+     "        elif False:\n"
+     "            scope = _dispatch_from_api(", _DB + "[api-prod-input]"),
+    ("deploy guard: `gh api` with fields and no -X read as GET", GUARDS,
+     "    elif not fields and not bodies:\n        return None\n",
+     "    elif not bodies:\n        return None\n", _DB + "[api-implied-post]"),
+    ("deploy guard: `gh api --input FILE` with no -X read as GET", GUARDS,
+     "    elif not fields and not bodies:\n        return None\n",
+     "    elif not fields:\n        return None\n",
+     _DB + "[api-input-implied-post]"),
+    ("deploy guard: `gh api -X GET` read as a dispatch", GUARDS,
+     '        if _dispatch_literal(method) and method.upper() != "POST":\n'
+     "            return None\n",
+     '        if _dispatch_literal(method) and method.upper() != "POST":\n'
+     "            pass\n", _DA + "[api-get-dispatches]"),
+    ("deploy guard: the REST `ref` field read as an input", GUARDS,
+     "            if _dispatch_literal(key):\n                return None\n",
+     "            if _dispatch_literal(key):\n"
+     "                return (key if key != \"ref\" else \"environment\", "
+     "value, \"\")\n", _DB + "[api-ref-not-input]"),
+    # Step 6: the amendment's decision rows.
+    ("deploy guard: `allow` reads T-0005's apply row", GUARDS,
+     '    head = f"{base}: guards.deployWorkflow is `{policy}`"\n',
+     '    if policy == "allow":\n'
+     '        return "allow", base, policy, marker\n'
+     '    head = f"{base}: guards.deployWorkflow is `{policy}`"\n',
+     _DB + "[allow-prod-unattended]"),
+    ("deploy guard: a malformed environments block reads as unlisted", GUARDS,
+     '    if envs.get("problem"):\n'
+     '        return ENV_UNKNOWN, None, ("the environments block cannot be read: "',
+     "    if False:\n"
+     '        return ENV_UNKNOWN, None, ("the environments block cannot be read: "',
+     _DB + "[malformed-environments]"),
+    ("deploy guard: `environments.workflows` counts toward engaged", GUARD,
+     '    out["engaged"] = bool(out["nonProd"] or out["prodUnattended"] or out["problem"])\n',
+     '    out["engaged"] = bool(out["nonProd"] or out["prodUnattended"] or out["problem"]\n'
+     '                          or out["workflows"])\n',
+     _E + "test_workflows_alone_do_not_engage_the_environment_layer"),
+    ("deploy guard: `_judge_one` no longer routes dispatches", GUARD,
+     "        if finding.rule == DEPLOY_RULE:\n"
+     "            return judge_dispatch(",
+     "        if False:\n"
+     "            return judge_dispatch(", _DB + "[prod-input]"),
 )
