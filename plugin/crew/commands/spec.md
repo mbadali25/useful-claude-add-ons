@@ -42,10 +42,10 @@ Each with how it will be resolved before implement, or "accepted as risk".
    carries a note after the path keeps the path in backticks and the note
    free of backticks (a second backtick span is refused as a second path).
 
-4. Append `.work/INDEX.md`: `$1 | spec | <risk> | <this-repo> | <title>`
-   (files and Obsidian modes) or push the tracker item to the equivalent state
-   (Jira, ServiceDesk Plus) — same rule `/crew:ticket` states for its own
-   append. <!-- deliberate -->
+4. Move the tracker to `spec`, every mode through one call:
+   `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket $1 --to spec`.
+   Print its lines verbatim. On exit 3 run the command it printed (Jira, SDP).
+   On exit 1 tell me `tracker not updated: <reason>` — the spec stands.
 5. `/crew:plan`, `/crew:implement`, `/crew:review` and `/crew:done` all refuse
    to run without this file. An empty or placeholder Acceptance list is the
    same as no spec — say so rather than writing one to satisfy the section

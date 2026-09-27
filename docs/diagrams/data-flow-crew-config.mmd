@@ -1,5 +1,5 @@
-%% Generated from useful-claude-add-ons@53f5482c on 2026-09-27. Verify before trusting.
-%% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md
+%% Generated from useful-claude-add-ons@12682e41 on 2026-09-27. Verify before trusting.
+%% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
 %% re-read. The 're-read at 6c497a14' statements below remain true of f2bb919b by that diff.
@@ -87,6 +87,39 @@
 %% cited by section only (T-0042's lines are in §14a). crew_resume.settings :172 holds.
 %% T-0042 adds no config key (crew_config.py, both templates and crew_state.py are
 %% byte-identical to main at 53f5482c), so main's 121 / 67 / 54 stand; not re-executed here.
+
+%% Merged 2b18f7ab + bcb77ce2 -> c2ae46ab (T-0021 review round 3 and its merge of main, crew
+%% 1.0.43): of the Anchors paths only CONFIG.md (T-0021's tracker and obsidian.* rows; the
+%% section headings are identical to 2b18f7ab's, diffed) and crew_tracker.py changed on
+%% T-0021's side. resolve() is :209 (re-grepped) and now also compares board and lane names,
+%% counts a value only one file yields as a disagreement, and compares jira/sdp blocks whole;
+%% TRKREAD redrawn to say so. No other node cites a line T-0021 changed.
+%% Re-anchored c2ae46ab -> d276b268 (T-0021 review round 4): of the Anchors paths only
+%% crew_tracker.py changed (repo-id, create's claim order, CRLF notes, boxless cards);
+%% resolve() moved :209 -> :210 (one import added above it, re-grepped) and is unchanged.
+%% No other citation moved.
+%% Merged f0b12ee6 + 74f52fae -> 12682e41 (T-0021 lands on T-0042's main, crew 1.0.44): of
+%% the Anchors paths crew_context.py and crew_resume.py changed on T-0042's side only and
+%% crew_tracker.py on T-0021's only, so each side's citations stand (crew_resume.settings
+%% :172, crew_context load_crew_config :121-132, crew_tracker resolve() :210, re-read).
+%% CONFIG.md changed on both sides and is cited by section only; T-0042's lines are in §14a,
+%% T-0021's in the tracker and obsidian.* rows, and the section headings are unchanged.
+%% On T-0021's branch (history, kept):
+%% re-read. The 're-read at 6c497a14' statements below remain true of f2bb919b by that diff.
+%% Re-anchored f2bb919b -> 7b667587 (T-0021): of the 13 Anchors paths three changed.
+%% crew_state.py gained lines only inside main() (:3267-3276), below every line cited
+%% here (:261, :695, :1079-1162, :1312 re-read); CLAUDE.md changed only its codemap
+%% paragraph (:68-80), not the hook rule (:43-44) cited here; CONFIG.md's tracker and
+%% obsidian.* consumer rows now name crew_tracker.py, and section numbers 14-18 are
+%% unchanged. New: crew_tracker.resolve (crew_tracker.py:150), a third reader of the
+%% two files, drawn as TRKREAD in the TwoFiles section.
+%% Re-anchored 7b667587 -> 385eadd5 (T-0021 review round 1): of the Anchors paths only
+%% crew_tracker.py changed; resolve() moved :150 -> :157 (re-grepped) and still reads
+%% both files and answers 'could not tell' on disagreement. No other citation moved.
+%% Re-anchored 385eadd5 -> bcb77ce2 (T-0021 review round 2): of the Anchors paths only
+%% crew_tracker.py changed; resolve() moved :157 -> :198 (re-grepped) and now also
+%% answers 'could not tell' when the two files yield a different obsidian vault or
+%% boardDir, memory.vaultPath fallback included (TRKREAD redrawn to say so).
 %% How one config value reaches a run, and what may set it where.
 %% --
 %% RE-ANCHORED after crew 1.0 (previously 60c79407). Every function/line cited
@@ -283,8 +316,10 @@ flowchart TB
         CTXREAD["crew_context.load_crew_config()<br/>plugin/crew/hooks/scripts/crew_context.py:121-132<br/>tries .crew/crew.json FIRST,<br/>falls back to .crew/config.json<br/>only if crew.json is absent"]
         MIGRATE["crew_migrate.py --apply<br/>the ONLY writer of .crew/crew.json<br/>(schema 1). Never touches config.json's<br/>runtime read path - crew_config.py<br/>keeps reading config.json regardless"]
         OPEN["Net effect: a repo that has run<br/>--apply has BOTH files, and which one<br/>governs a given read depends on which<br/>module asked. Not resolved by this<br/>diagram - a decision for scribe to<br/>record, not this note's to make."]
+        TRKREAD["crew_tracker.resolve()<br/>plugin/crew/hooks/scripts/crew_tracker.py:210<br/>tracker key only: reads BOTH files<br/>(crew.json tracker.kind, config.json tracker)<br/>and answers 'could not tell' when they<br/>disagree - on the kind, on the vault, boardDir,<br/>board or lane names each yields (defaults and<br/>memory.vaultPath fallback applied; a value only<br/>one file yields counts), or on a jira/sdp block<br/>- refuses rather than picks"]
         MIGRATE -.-> CTXREAD
         CFGREAD --- OPEN --- CTXREAD
+        TRKREAD -.- OPEN
     end
 
     REPO -.->|"the file crew_config.py reads"| CFGREAD

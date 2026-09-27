@@ -4,6 +4,120 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`crew` 1.0.45: Obsidian Kanban is a first-class tracker again, behind one
+  tracker interface (T-0021).** Bumped `1.0.43 -> 1.0.45` (1.0.44 at landing, bumped
+  again for a CI fix to its sabotage suite; its branch declared 1.0.43, which main gave to T-0042; its review
+  rounds ran as 1.0.46, a number reserved when main was at 1.0.38). New
+  `hooks/scripts/crew_tracker.py {resolve|create|move|read} --root . --ticket
+  <id> [--title T] [--to STATUS] [--reopen] [--json]`, one line per backend; exit 0
+  updated/unchanged, 1 `could not update: <reason>`, 3 `delegated` (run the
+  printed command), 2 usage. `resolve` reads 1.0's `.crew/crew.json`
+  (`tracker.kind`) and 0.20's `.crew/config.json` (`tracker`) alike and answers
+  `could not tell`, naming both files and values, when they disagree; every
+  write refuses on it. Files mode edits the `.work/INDEX.md` status cell of the
+  one matching row; Obsidian mode does that and moves the board card
+  (direction -> Backlog, spec/planned -> Ready, in-progress -> In Progress,
+  review -> Review, done -> Done, checked below `**Complete**`), from a
+  table-driven `LANE_FOR_STATUS`; Jira and SDP answer `delegated` with
+  `/crew:jira-sync` / `/crew:sdp-sync <KEY> --push --to <status>` at
+  `in-progress` and `done` only. Board writes are confined
+  to the vault and checked before anything is written, INDEX included: a
+  missing vault, no `.obsidian/`, an absolute or `..` `boardDir`, a board name
+  with a separator, a board or note symlinked out of the vault, an in-worktree
+  vault git does not ignore, or an unusable board exits 1 with nothing written.
+  Every write is temp-plus-`os.replace`, re-reading the target first and
+  recomputing (three tries) when another session or Obsidian changed it. The
+  ticket note is created once and never rewritten. `/crew:brainstorm`,
+  `/crew:spec`, `/crew:plan`, `/crew:implement` (step 1, and step 6 before
+  `/crew:review`), `/crew:done`
+  and `/crew:fix` call it at their transitions and never undo a transition on a
+  failed tracker write; `/crew:obsidian-sync` is rewritten on top of `read` and
+  `move` (176 -> 108 lines at review round 2's commit, budget allowance dropped); the sync commands,
+  `/crew:split` and `/crew:change` read the kind through `resolve`; and
+  `/crew:status` prints the tracker line from `resolve` with its source. There
+  is no `.work/cache/` mirror for Obsidian. 24 mutations (42 after review round 1) in
+  `tests/sabotage_tracker.py`, each red on its named test. Follow-ups (Jira/SDP
+  cache location, `jira.cloudId`, `scope_report.py`'s 0.20 locations,
+  `heal_config`, crew-setup writing `config.json`) are filed in `TODO.md`.
+
+  Review round 1 fixes, same version (never shipped): the temp file is now
+  created exclusively (`O_EXCL|O_NOFOLLOW`) under a random name, so a symlink
+  planted at the old fixed `.<board>.crew-<pid>.tmp` name can no longer take
+  the board's text out of the vault or turn `Board.md` into a link (the BLOCK).
+  A replaced board or INDEX keeps its mode and owner, and a new file takes its
+  directory's owner when crew runs as root; a replacement that cannot keep its
+  owner is refused. The in-worktree check is per file, so a vault that
+  contains the repo with `boardDir` pointing into it is refused unless git
+  ignores the board. A title holding any line break `str.splitlines` honours
+  (U+2028, `\x85`, `\x0c`, ...) is refused, and the board is split on LF
+  alone so a human's card holding one moves whole. On a shared board the ticket
+  note is the card's owner: a note naming another repo refuses `create`, `move`
+  and `read`; a card no note claims refuses `create`; `move` needs this repo's
+  INDEX row and prints `whose card could not tell` when no note names one.
+  `/crew:brainstorm`'s approval runs `crew_tracker.py move --to ready`, and
+  `ready` maps to the backlog lane. An INDEX row with no status cell, a `.work`
+  that is a file, and a non-string `obsidian.board` each answer `could not
+  update` instead of a traceback. 42 mutations in `sabotage_tracker.py`.
+
+  Review round 2 fixes, same version (never shipped): a card's owner is a
+  repo identity, not `repo_name()` -- the origin URL (lowercased, userinfo and
+  `.git` stripped, so no credential reaches the vault) or the git common dir's
+  real path -- recorded in the note as `repo-id:`, so `a/app` no longer moves
+  `b/app`'s card. A card whose owner cannot be told is not moved: `move` exits
+  1 with `could not tell whose card <id> is`, naming the `repo-id:` fix, except
+  a card with no note whose text is exactly this repo's INDEX title, which
+  `move` claims by writing the note. `resolve` compares the effective vault and
+  `boardDir` each file yields, `memory.vaultPath` fallback included, and says
+  `could not tell` when they differ. `create` on an id INDEX holds under
+  another title exits 1 with `<id> is already <status> "<title>"`. Jira and
+  SDP push at `in-progress` and `done` only, naming the target (`--push --to
+  <status>`); `/crew:jira-sync` and `/crew:sdp-sync` honour `--to` and comment
+  only on `done`; other moves print `nothing to push`. Vault writes walk from
+  the vault root with `O_DIRECTORY|O_NOFOLLOW` and write through that directory
+  fd, so a boardDir component swapped for a link after the checks is refused;
+  Windows re-checks the directory's real path around the replace instead. A
+  move backwards by `STATUS_ORDER`, or from a status crew does not know, exits
+  1 unless `--reopen`; `/crew:implement` passes it on a successor plan and now
+  moves the card to Review before `/crew:review`, as `/crew:fix` does; every
+  `crew_tracker.py` call in `commands/` carries the plugin-root prefix. 63
+  mutations in `sabotage_tracker.py`.
+
+  Review round 3 fixes, same version (never shipped): the pinned directory fd
+  follows its directory if it is renamed out of the vault, so every vault
+  write now repeats the walk from the vault and matches it by device and inode
+  before the temp, before the replace and after it; a note that landed in a
+  directory that left is removed through its fd (the BLOCK). A relative local
+  origin (`../origin/app.git`) is no longer an identity -- the common dir is --
+  and an absolute one is its real path. The claim of a no-note card whose text
+  matched this repo's INDEX title is gone: an unknown owner is refused,
+  whatever the card says. `create` refuses every id INDEX holds, the same
+  title included, and its refusals for a held id begin `id taken`;
+  `/crew:brainstorm` and `/crew:fix` take the next free id on it and create
+  the ticket folder only after `create`. `resolve` compares the effective
+  board and lane names too, counts a value only one file yields as a
+  disagreement, and compares Jira/SDP blocks whole, a missing one included.
+  A `move` whose INDEX half refuses leaves the board alone. A card already in
+  its lane is repaired (checked below `**Complete**` in Done, unchecked
+  elsewhere), and a done lane without exactly one `**Complete**` is refused.
+  81 mutations in `sabotage_tracker.py`.
+
+  Review round 4 fixes, same version (never shipped): the repo-id keeps an
+  ssh origin's username (`alice@host:repo` and `bob@host:repo` are two users'
+  repositories) and drops only its password, while every other scheme still
+  drops the whole userinfo (`https://<token>@host` puts a token there); a
+  `file://` origin is percent-decoded before its real path is taken, as git
+  decodes it. `create` claims a new id by creating the vault note exclusively
+  before the INDEX row and the card, so another repo's create between the
+  owner check and the claim is `id taken` and nothing follows; it reads INDEX
+  before resolving the vault, so a vault failure never hides a held id, and
+  `/crew:brainstorm` and `/crew:fix` stop on any other failed `create` instead
+  of carrying on into the ticket folder. A CRLF note's `repo-id:` no longer
+  carries the `\r`, and a card with no checkbox gets one (`[x]` in Done). The
+  memory-and-obsidian guide gains a ticket-board section, and troubleshooting
+  an `id taken` entry.
+
 ### Fixed
 
 - **`crew` 1.0.43: auto-resume closes T-0006's review round 4 (T-0042).**
