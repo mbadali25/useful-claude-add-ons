@@ -626,6 +626,59 @@ def test_open_questions_heading_inside_a_fence_opens_no_section():
     assert crew_autopilot._open_items(text) == []  # pylint: disable=protected-access
 
 
+@pytest.mark.parametrize("text", [
+    '````markdown\n```\n````\n## Open questions\n- which DB?\n',
+    'go\n## Open questions\n- none\n````\n```\n# x\n```\n````\n- which DB?\n',
+], ids=["before-the-section", "inside-the-section"])
+def test_open_questions_shorter_run_does_not_close_a_longer_fence(text):
+    """Round-1 review repro: a ``` line inside a ```` fence is text, not its
+    close, so the real close does not open a fence that hides the question."""
+    assert crew_autopilot._open_items(text) == ["which DB?"]  # pylint: disable=protected-access
+
+
+def test_open_questions_longer_run_closes_a_fence():
+    text = 'go\n## Open questions\n- none\n```\n# x\n`````\n- which DB?\n'
+
+    assert crew_autopilot._open_items(text) == ["which DB?"]  # pylint: disable=protected-access
+
+
+def test_open_questions_line_with_an_info_string_does_not_close_a_fence():
+    text = 'go\n## Open questions\n- none\n```\n```python\n# x\n```\n- which DB?\n'
+
+    assert crew_autopilot._open_items(text) == ["which DB?"]  # pylint: disable=protected-access
+
+
+def test_open_questions_other_marker_does_not_close_a_fence():
+    text = 'go\n## Open questions\n- none\n~~~\n```\n# x\n~~~\n- which DB?\n'
+
+    assert crew_autopilot._open_items(text) == ["which DB?"]  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("text", [
+    '```example```\n\n## Open questions\n- which DB?\n',
+    'go\n## Open questions\n```x``` or ```y```?\n- which DB?\n',
+], ids=["before-the-section", "inside-the-section"])
+def test_open_questions_inline_code_is_not_a_fence(text):
+    """Round-1 review repro: a backtick run with a backtick after it on the
+    same line is inline code, not a fence that swallows the rest."""
+    assert crew_autopilot._open_items(text)[-1] == "which DB?"  # pylint: disable=protected-access
+
+
+def test_open_questions_unclosed_fence_hiding_a_section_stops():
+    """A fence opened before the section and never closed swallows an `Open
+    questions` heading: that could hide a question, so it fails closed."""
+    text = 'go\n```\n## Open questions\n- which DB?\n'
+
+    assert crew_autopilot._open_items(text) == [  # pylint: disable=protected-access
+        crew_autopilot.UNCLOSED_FENCE]
+
+
+def test_open_questions_unclosed_fence_outside_any_section_does_not_stop():
+    text = 'go\n## Open questions\n- none\n## Notes\n```\nplain\n'
+
+    assert crew_autopilot._open_items(text) == []  # pylint: disable=protected-access
+
+
 def test_next_open_questions_section_ends_at_the_next_peer_heading(tmp_path):
     root = _approved(tmp_path)
     _write(root / ".work" / "tickets" / T / "direction.md",

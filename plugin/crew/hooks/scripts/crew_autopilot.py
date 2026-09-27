@@ -207,8 +207,37 @@ _HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 _ANSWERED = re.compile(r"^(?:(?:none|n/a)(?:$|\s*[-:,(\u2013\u2014])|\[x\]|~~|-$)")
 
 
-_FENCES = ("```", "~~~")
+# A fence line: a run of 3+ backticks or tildes, then an info string.
+_FENCE = re.compile(r"^(`{3,}|~{3,})(.*)$")
 UNEXPLAINED_FENCE = "(a fenced block with no question before it)"
+UNCLOSED_FENCE = "(an unclosed code fence)"
+
+
+def _opens_section(heading):
+    """Whether a `_HEADING` match is an `Open questions` heading."""
+    return bool(heading) and heading.group(2).strip().lower().startswith("open questions")
+
+
+def _fence_opener(stripped):
+    """The run that opens a fence on this line, or None. A backtick run with
+    a backtick after it on the line is inline code (```` ```x``` ````), not a
+    fence: CommonMark bars backticks from a backtick fence's info string."""
+    fence = _FENCE.match(stripped)
+    if not fence:
+        return None
+    run, info = fence.groups()
+    if run[0] == "`" and "`" in info:
+        return None
+    return run
+
+
+def _fence_closes(stripped, run):
+    """Whether this line closes the fence `run` opened: the same marker, at
+    least as long, and nothing after it. A three-backtick line inside a
+    four-backtick fence is text, and so is ```` ```python ````."""
+    fence = _FENCE.match(stripped)
+    return bool(fence) and fence.group(1)[0] == run[0] \
+        and len(fence.group(1)) >= len(run) and not fence.group(2).strip()
 
 
 def _open_items(text):
@@ -216,28 +245,31 @@ def _open_items(text):
     to the next heading of the same or a higher level -- a sub-heading inside
     the section stays inside it. See `_ANSWERED` for what counts as answered.
 
-    A code fence (```` ``` ```` or `~~~`, closed by a line starting with the
-    same marker) is literal text: a line inside one is never a heading and
+    A code fence (3+ backticks or tildes, see `_fence_opener` and
+    `_fence_closes`) is literal text: a line inside one is never a heading and
     never an item, so a `# comment` in a fenced example does not close the
     section, and an `Open questions` heading inside a fence opens none. A
     fenced block in the section with no item line before it counts as one
-    open item, and so does a fence opened in the section and never closed:
-    either could hide a question, so the section fails closed. A fenced block
-    after an item belongs to that item. The unexplained block's own item is
-    dropped only when an unanswered item follows it in the section: the
-    section stops on that item anyway, and the list names the real question.
-    An answered item after it does not settle it."""
+    open item, and so does a fence never closed that opened in the section
+    or swallowed an `Open questions` heading: either could hide a question,
+    so the section fails closed. A fenced block after an item belongs to
+    that item. The unexplained block's own item is dropped only when an
+    unanswered item follows it in the section: the section stops on that
+    item anyway, and the list names the real question. An answered item
+    after it does not settle it."""
     items, depth, fence, seen, fenced_in_section = [], 0, None, False, False
-    unexplained = False
+    unexplained = swallowed = False
     for line in (text or "").splitlines():
         stripped = line.lstrip()
         if fence:
-            if stripped.startswith(fence):
+            if _fence_closes(stripped, fence):
                 fence = None
+            elif _opens_section(_HEADING.match(stripped)):
+                swallowed = True
             continue
-        opener = next((mark for mark in _FENCES if stripped.startswith(mark)), None)
+        opener = _fence_opener(stripped)
         if opener:
-            fence, fenced_in_section = opener, bool(depth)
+            fence, fenced_in_section, swallowed = opener, bool(depth), False
             unexplained = unexplained or (bool(depth) and not seen)
             continue
         heading = _HEADING.match(line)
@@ -248,7 +280,7 @@ def _open_items(text):
             if unexplained:
                 items.append(UNEXPLAINED_FENCE)
                 unexplained = False
-            if title.lower().startswith("open questions"):
+            if _opens_section(heading):
                 depth, line, seen = level, title[len("open questions"):], False
             else:
                 depth = 0
@@ -269,8 +301,8 @@ def _open_items(text):
         unexplained = False
     if unexplained:
         items.append(UNEXPLAINED_FENCE)
-    if fence and fenced_in_section:
-        items.append("(an unclosed code fence)")
+    if fence and (fenced_in_section or swallowed):
+        items.append(UNCLOSED_FENCE)
     return items
 
 

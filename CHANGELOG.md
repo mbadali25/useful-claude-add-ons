@@ -144,14 +144,19 @@ All notable changes to this repository are documented here. Format follows [Keep
     completed round with no verdict still stop at `accept-review`; an
     accepted round 2 with a stale receipt still stops "no review round left".
   - NITs: failing controls for `_settles`' `refreshable` guard. `_open_items`
-    tracks ```` ``` ```` and `~~~` fences: a fenced `# comment` no longer closes
-    `## Open questions`, a fenced heading opens no section, and a fenced
-    block with no item before it, or a fence left open in the section, counts
-    as an open item (an answered item after the block does not settle it).
+    tracks backtick and tilde fences by CommonMark's rules: a fenced
+    `# comment` no longer closes `## Open questions`, a fenced heading opens
+    no section, and a fenced block with no item before it, or a fence never
+    closed that opened in the section or swallowed an `Open questions`
+    heading, counts as an open item (an answered item after the block does
+    not settle it). Only a run of the same marker, at least as long and
+    with nothing after it, closes a fence, and a backtick run with a
+    backtick after it on the line is inline code, not a fence (review
+    round 1: both had hidden a question the pre-fence parser found).
     The crew code map quotes `CHANGELOG.md:65` as "117 -> 119".
     `INSTALLATION.md` says crew has 35 slash commands, now checked by a
     `plugin-commands:crew` marker.
-  - `test_crew_autopilot.py` 151 -> 169 tests. Nine new mutations in
+  - `test_crew_autopilot.py` 151 -> 178 tests. Fifteen new mutations in
     `sabotage_autopilot.py`, one per new guard branch, each red on its named
     test; "an INCOMPLETE round is rerun unattended" is re-pointed to the new
     condition and still goes red.
