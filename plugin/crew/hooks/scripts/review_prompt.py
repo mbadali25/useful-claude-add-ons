@@ -89,6 +89,10 @@ def _bundle_block(manifest):
                        ("submodules", "submodule")):
         if manifest.get(key):
             out.append(f"  {label}: {', '.join(manifest[key])}")
+    generated = [g.get("path") for g in manifest.get("generated") or [] if isinstance(g, dict)]
+    if generated:
+        out.append("  generated (listed by path and sha256 at the end of the last part, not "
+                   f"shown; do not report them unread): {', '.join(generated)}")
     return out
 
 
