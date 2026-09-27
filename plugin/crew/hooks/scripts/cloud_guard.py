@@ -30,7 +30,7 @@ WHAT IT RECOGNISES, and which existing `guards.*` key decides each:
     the AWS profile/region or Azure subscription
       an aws/az command will act as                 cloud.* pins (below)
 
-ENVIRONMENTS (T-0005, crew 1.0.41). A terraform finding is also judged by its
+ENVIRONMENTS (T-0005, crew 1.0.42). A terraform finding is also judged by its
 target environment and by whether it destroys, both read without running
 terraform (the hook has 15 seconds). The environment is `nonProd` (a name
 matching a repo-only `environments.nonProd` glob), `prod` (a name matching
@@ -50,7 +50,7 @@ by `crew_tfplan.py summarize`. Under `terraformApply: ask`, a non-destroying
 nonProd target runs unattended and is logged; production does too only when
 `environments.prodUnattended` is true in BOTH config layers, and says so on
 screen; every other case asks. Under `allow` a destroy -- yes or unknown --
-now ASKS (BREAKING in 1.0.41), and so is denied unattended. `block` is never
+now ASKS (BREAKING in 1.0.42), and so is denied unattended. `block` is never
 loosened. An unknown environment is narrower than production: nothing allows
 it unattended. See `_terraform_verdict`.
 
@@ -2982,7 +2982,7 @@ def _terraform_verdict(root, finding, out, envs):
                 non-destroying nonProd target is allowed and logged; production
                 is allowed only under `prodUnattended` in both layers (logged,
                 and said on screen); otherwise it asks
-        allow   a destroy (yes or unknown) ASKS -- BREAKING in 1.0.41 --
+        allow   a destroy (yes or unknown) ASKS -- BREAKING in 1.0.42 --
                 unless a live marker approves this one command
 
     `ask` stays `deny` when nobody is attending (`evaluate`). `policy` is the

@@ -266,7 +266,7 @@ MUST_BLOCK_ENV = [
 ]
 
 # `terraformApply: allow` in both layers, environments at their defaults
-# (absent), unattended: the BREAKING cases. Before 1.0.41 every one of these
+# (absent), unattended: the BREAKING cases. Before 1.0.42 every one of these
 # ran without a word.
 ALLOW_POLICY = {"repo": {"guards": {"terraformApply": "allow"}},
                 "global_": {"guards": {"terraformApply": "allow"}},

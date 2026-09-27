@@ -1029,7 +1029,7 @@ that is not a readable Bash/PowerShell call — is refused as `[cloudGuard]`; a
 destructive-capable tool behind `xargs`/`parallel` is judged as destructive
 under its own rule. `--dry-run`, `-WhatIf` and `-help` are not destructive.
 
-**Environments and destroys (crew 1.0.41).** A terraform command is also
+**Environments and destroys (crew 1.0.42).** A terraform command is also
 judged by its target environment and by whether it destroys, both read without
 running terraform. Under `guards.terraformApply: ask`, an `apply` of a saved
 plan that deletes nothing, and `workspace new` / `select -or-create`, aimed at
@@ -1054,7 +1054,7 @@ plan after the hook hashed it. The sidecar records the workspace the plan is
 bound to, read from the plan file, and any directory or environment change
 the hook cannot read makes the environment unknown.
 
-**Terraform lines are judged word by word, or not at all (crew 1.0.41).** A
+**Terraform lines are judged word by word, or not at all (crew 1.0.42).** A
 command line that RUNS `terraform`, `terragrunt` or `tofu` — its command word,
 after assignments and wrappers such as `env`, `sudo`, `timeout` or `xargs`,
 read with quotes and escapes taken out, so `"terraform"`, `t'erraform'`,
@@ -1101,7 +1101,7 @@ not.
 **The always-stops.** A destroy is never applied unattended, at any setting:
 `destroy`, `apply -destroy`, `apply -replace`, `workspace delete`, a saved plan
 that deletes, and any apply whose plan crew cannot read — including
-`terraform apply -auto-approve` with no saved plan. **BREAKING in 1.0.41:**
+`terraform apply -auto-approve` with no saved plan. **BREAKING in 1.0.42:**
 under `terraformApply: allow` these now ask (and are denied unattended) where
 they used to run; approve one command with the marker the refusal names.
 `prodUnattended` does not stand down `promote-gate.sh`'s `requireHuman`.

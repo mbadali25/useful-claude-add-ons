@@ -283,7 +283,7 @@ CLOUD_GUARD_MUTATIONS = (
      _T + "test_pinned_vars_are_one_list_in_all_three_places"),
 )
 
-# T-0005 (crew 1.0.41): the environment layer and the destroy rule. Each entry
+# T-0005 (crew 1.0.42): the environment layer and the destroy rule. Each entry
 # names the case it must turn red, and every aimed case was built so that the
 # value the mutation collapses to would ALLOW -- a must-block whose collapsed
 # value also denies cannot go red. Each was run alone by hand first (target
@@ -308,7 +308,7 @@ CLOUD_GUARD_MUTATIONS += (
      '    if destroy != "no":\n        return "ask", (f"{head}, and this is',
      '    if False:\n        return "ask", (f"{head}, and this is',
      _EB + "[nonprod-destroy]"),
-    ("cloud guard env: a destroy under `allow` runs (pre-1.0.41)", GUARD,
+    ("cloud guard env: a destroy under `allow` runs (pre-1.0.42)", GUARD,
      '        if destroy in ("yes", "unknown"):\n',
      "        if False:\n", _EP + "[allow-destroy]"),
     ("cloud guard env: destroy unknown read as no under `allow`", GUARD,

@@ -55,7 +55,7 @@ default: `guards.cloudDestructive` for `aws … delete-*/terminate-*/purge-*`,
 `sqlite3` or `Invoke-Sqlcmd`; `guards.terraformApply` for `terraform`/`tofu`
 `apply`/`destroy`; `guards.forcePush` and `guards.adminMerge` for git and gh.
 `ask` prompts; `allow` lets it through and logs it — except that since crew
-1.0.41 a terraform destroy (or an apply of a plan crew cannot read) asks even
+1.0.42 a terraform destroy (or an apply of a plan crew cannot read) asks even
 under `allow`, and `environments.*` lets non-production applies run unattended
 under `ask` (README "Cloud guard", CONFIG.md §16).
 

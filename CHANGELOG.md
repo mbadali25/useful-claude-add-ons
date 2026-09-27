@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.41: environment-scoped terraform in the cloud guard (T-0005) — **BREAKING**
+### Changed — `crew` 1.0.42: environment-scoped terraform in the cloud guard (T-0005) — **BREAKING**
 
 - **BREAKING: a destroy is never applied unattended, `guards.terraformApply:
   allow` included.** While `guards.cloudGuard` is armed, a destroy —
@@ -13,11 +13,12 @@ All notable changes to this repository are documented here. Format follows [Keep
   crew cannot read (**including `terraform apply -auto-approve` with no saved
   plan**, any terragrunt apply, and a plan with no, a stale or a malformed
   summary) — now **asks** under `allow`, and is **denied** when nobody is
-  attending. Before 1.0.41 each of these ran without a word under `allow`.
+  attending. Before 1.0.42 each of these ran without a word under `allow`.
   Approve one command with the `.approved-guard-terraformApply-<hash>` marker
   the refusal names (15 minutes, that command only), or summarise a saved plan
   with `hooks/scripts/crew_tfplan.py summarize PLANFILE` and apply that plan.
-  Bumped `1.0.37 -> 1.0.41`.
+  Bumped `1.0.41 -> 1.0.42` (`1.0.37 -> 1.0.41` on its branch; 1.0.38 to 1.0.41 went to
+  T-0034, T-0026, T-0006 and T-0004).
 - **A terraform line is judged only when every word is a plain literal.** A
   command line naming `terraform`, `terragrunt` or `tofu` anywhere — spotted
   after quotes and escapes are taken out of each word, so `"terraform"` and

@@ -1389,7 +1389,7 @@ which is not on the command line, so crew genuinely cannot tell — and
 substituting a guess is the "unknown wearing the label of a check that
 happened" failure this file keeps returning to.
 
-### `environments.*` — which terraform targets may run unattended (crew 1.0.41)
+### `environments.*` — which terraform targets may run unattended (crew 1.0.42)
 
 Read by the cloud guard alone, and only while `guards.cloudGuard` is armed. It
 lets `terraform`/`tofu apply` of a **non-destroying saved plan**, and
@@ -1491,7 +1491,7 @@ refused, so its apply asks.
 | `block` | deny | deny | deny | deny | deny |
 | `ask`, no live marker | ask | **allow**, logged | **allow**, logged + on screen | ask | ask |
 | `ask`, live marker | allow (that command) | allow | allow | allow | allow |
-| `allow` | **ask — BREAKING in 1.0.41** | allow | allow | allow | allow |
+| `allow` | **ask — BREAKING in 1.0.42** | allow | allow | allow | allow |
 
 `ask` is denied when nobody is attending, as everywhere in this guard. The
 guard.log policy column says why: `env:nonProd:<name>`,
