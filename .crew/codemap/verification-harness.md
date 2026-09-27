@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@136517df
+anchor: useful-claude-add-ons@5e1895c4
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -896,3 +896,8 @@ was re-read at `136517df`:
 
 The 14 `WAVE_MUTATIONS` were run through `sabotage.py`'s harness by the T-0029 lane (14/14 RED),
 not for this refresh.
+
+Re-verified per-path from `136517df` to `5e1895c4` (T-0029): of the cited paths only
+`plugin/crew/commands/autopilot.md` changed - its frontmatter `description` (`:2`) was shortened
+to 113 characters for `validate-prompts.py`'s 120-character limit; the line count (100) and every
+cited line (`:4`, `:12-25`, `:27-33`, `:42-44`, `:95-100`) are unchanged.

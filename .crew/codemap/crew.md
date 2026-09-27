@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@136517df
+anchor: useful-claude-add-ons@5e1895c4
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -1244,3 +1244,8 @@ in 100 lines), `AUTOPILOT_DEFAULTS` (`:1095-1096`), `test_crew_config.py:281` (n
 bare `crew_autopilot.py` citations after the `autopilot.md` mention were re-derived with `grep -n`
 rather than mapped, since a mapper cannot tell which file a bare `:N` continues. The config leaf
 table was re-executed: 123 / 66 / 57 / 0. T-0029's own symbols are newly cited.
+
+Re-verified per-path from `136517df` to `5e1895c4` (T-0029): of the cited paths only
+`plugin/crew/commands/autopilot.md` changed - its frontmatter `description` (`:2`) was shortened
+to 113 characters for `validate-prompts.py`'s 120-character limit; the line count (100) and every
+cited line (`:4`, `:12-25`, `:27-33`, `:42-44`, `:95-100`) are unchanged.
