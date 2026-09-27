@@ -166,7 +166,8 @@ still writes only the repo file.
   "change": { "requester": null, "implementor": null, "requireForProduction": false,
               "sdpTemplate": "Change Management Request", "jiraIssueType": "Change", "category": null },
   "scope": { "mode": "off", "allowCliApproval": false },
-  "autopilot": { "mode": "off", "maxPhases": 12 }
+  "autopilot": { "mode": "off", "maxPhases": 12 },
+  "route": { "enabled": false }
 }
 ```
 

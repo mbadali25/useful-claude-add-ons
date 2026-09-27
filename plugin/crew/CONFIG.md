@@ -633,10 +633,10 @@ them:
 
 ---
 
-## 10. Global-settable keys — 66
+## 10. Global-settable keys — 67
 
-66 measured (`leaf_paths(default_global_config())`, crew 1.0.40); the table
-below lists 63 of them. `guards.cloudGuard`, `guards.cloudDestructive` and
+67 measured (`leaf_paths(default_global_config())`, crew 1.0.42); the table
+below lists 64 of them. `guards.cloudGuard`, `guards.cloudDestructive` and
 `guards.sqlDestructive` are global-settable and not tabled here.
 
 Settable in **either** layer; repo wins — **except `install.policy`, the
@@ -715,6 +715,7 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 | `change.jiraIssueType` | string, see §17 | `"Change"` |
 | `change.category` | string or `null`, see §17 | `null` |
 | `resume.auto` | `true` or `null`; **only the machine layer can arm it**, a repo `false` vetoes it (§14a) | `null` |
+| `route.enabled` | boolean; only the JSON value `true` arms it, and a repo value wins over the machine one (§21) | `false` |
 
 `crew_state.QA_PROVIDERS` and `DEV_PROVIDERS` are both
 `["claude", "codex", "copilot"]` (dumped by execution). `qa.provider`
@@ -2067,3 +2068,41 @@ brainstorm and open questions always stop for a person in this version; every
 `AUTONOMOUS_STOPS` id (§5) binds it; no guard, hook, review budget or
 completion audit is relaxed. `pm.authority: autonomous` from 0.20 arms nothing —
 `/crew:migrate` keeps it under `retired.pm` and its note points here.
+
+---
+
+## 21. `route` — plain-text lifecycle routing, off until `true`
+
+`route.enabled` (T-0023, since 1.0.42) lets a short plain-text prompt reach a
+lifecycle command. When it is on, crew's UserPromptSubmit context hook
+(`crew_context.route_item`) calls `crew_route.decide` on the prompt and, unless
+the answer is `none`, puts one line FIRST in the turn's context: the
+`/crew:<command> <ticket>` whose procedure Claude should run through the Skill
+tool, or a request to ask the user which ticket. The hook runs nothing and
+blocks nothing; the command's own checks still decide. The table of phrases,
+the three outcomes and what never routes are in the plugin README's
+"Plain-text lifecycle" section; `crew_route.PHRASES` is the single definition.
+
+| Key | Default | Read by | What an unexpected value does |
+|---|---|---|---|
+| `route.enabled` | `false` | `crew_route.settings`, through `crew_config.resolve_config` | Only the JSON value `true` arms it. `"true"`, `1`, `"yes"`, `"on"` — anything else — reads as off, and `settings` names the value it saw. A `route` that is not an object, in either file, is ignored by the merge and reported. |
+
+**Which file.** `.crew/config.json` over the machine-global
+`~/.claude/crew/config.json` over the default — `resolve_config`'s ordinary
+precedence. The context hook's own `memory.inject` switch is read from
+`.crew/crew.json` first (`crew_context.load_crew_config`), but this key is not:
+a `route` block found only in `.crew/crew.json` is reported by
+`python3 crew_route.py settings --root .` ("move it to .crew/config.json")
+rather than read as off with no word.
+
+**A machine-wide `true` reaches only repos whose file leaves the key out.**
+`/crew:init` writes the whole template, which carries `"route": {"enabled":
+false}`, and the repo layer wins. In a repo set up that way, delete the key
+from `.crew/config.json` or set it `true` there.
+
+**What arming it does not change.** Routing never approves: no phrase routes
+to `/crew:approve`, a `continue` whose next step is approval asks instead, and
+`commands/approve.md` sets `disable-model-invocation: true` besides. Under
+`--harness codex` no line is emitted, because the Skill tool it names does not
+exist there. With `memory.inject: false` the hook emits nothing, route line
+included.

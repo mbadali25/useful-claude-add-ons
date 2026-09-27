@@ -799,6 +799,37 @@ def _scan_agent_task(transcript, agent_type, consumed, tool_use_id=""):
 
 
 # --------------------------------------------------------------------------
+# plain-text lifecycle routing (T-0023)
+
+def route_item(root, prompt, harness, extra):
+    """The `crew route:` item for this prompt, or None.
+
+    Claude Code only: the line names the Skill tool, which Codex does not
+    have. Off unless `route.enabled` is exactly `true` (crew_route.settings).
+    Imported here, not at the top, so an unarmed repo pays nothing for it and
+    a router that cannot even import costs the route line and nothing else:
+    any exception is logged as `route: error` and the turn's other context
+    is built as if routing did not exist. The item goes FIRST so `fit` keeps
+    it, and its own source kind keeps the all-header drop from taking it."""
+    if harness != "claude":
+        return None
+    try:
+        import crew_route  # pylint: disable=import-outside-toplevel
+        if not crew_route.settings(root)["enabled"]:
+            return None
+        decision = crew_route.decide(root, prompt)
+        extra["route"] = {"outcome": decision["outcome"], "intent": decision["intent"],
+                          "ticket": decision["ticket"]}
+        text = crew_route.render(decision) if decision["outcome"] != "none" else ""
+    except Exception:  # pylint: disable=broad-except
+        extra["route"] = "error"
+        return None
+    if not text:
+        return None
+    return {"id": "", "text": text, "source": {"kind": "route", "outcome": decision["outcome"]}}
+
+
+# --------------------------------------------------------------------------
 # the hook
 
 def build(root, payload, cfg, state, harness):
@@ -868,6 +899,9 @@ def build(root, payload, cfg, state, harness):
         if prompt.lstrip().startswith("<task-notification>"):
             return event, [], 0, None, "main", {"skipped": "task-notification"}, ""
         items = []
+        route = route_item(root, prompt, harness, extra)
+        if route:
+            items.append(route)
         note = low_context_note(state, payload, cfg)
         if note:
             items.append(note)
@@ -982,7 +1016,8 @@ def _run_locked(root, payload, cfg, session, harness):
         extra["stateWrite"] = "failed"
         kept = [i for i in kept if i["source"]["kind"] in ("git", "incident")] if event == "SessionStart" else []
         text, cut = "\n".join(i["text"] for i in kept), True
-    worth_a_line = extra.get("vaultTool") or extra.get("stateWrite") or extra.get("query_from") == "ambiguous"
+    worth_a_line = extra.get("vaultTool") or extra.get("stateWrite") or extra.get("query_from") == "ambiguous" \
+        or extra.get("route") == "error"
     if text or recall or hits or worth_a_line:
         record = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "harness": harness,
                   "event": event, "session": session, "chars": len(text), "lines": text.count("\n") + 1 if text else 0,

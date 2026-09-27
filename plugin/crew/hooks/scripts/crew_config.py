@@ -372,6 +372,14 @@ def default_config():
         # from `default_global_config()`: whether one checkout may be driven
         # is a fact about that checkout.
         "autopilot": copy.deepcopy(crew_state.AUTOPILOT_DEFAULTS),
+        # Plain-text lifecycle routing (T-0023). `false` by default: only the
+        # JSON value `true` arms the one context line `crew_route.decide`
+        # adds (crew_route.settings). In BOTH layers: which way a person
+        # likes to drive the lifecycle is theirs, not the checkout's -- but a
+        # repo file written from the template carries this `false`, and the
+        # repo layer wins, so a machine-wide `true` reaches only repos whose
+        # file leaves the key out.
+        "route": {"enabled": False},
     }
 
 
@@ -536,6 +544,9 @@ def default_global_config():
         # here whose two layers do not combine by precedence: see
         # `crew_state.CHANGE_REQUIREMENTS` and `resolve_ratcheted`.
         "change": copy.deepcopy(crew_upgrade.CHANGE_BLOCK),
+        # T-0023's routing switch, settable machine-wide (see the comment in
+        # `default_config()` for why a repo file can still veto it).
+        "route": {"enabled": False},
     }
 
 

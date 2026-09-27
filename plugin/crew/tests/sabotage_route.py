@@ -1,0 +1,96 @@
+"""The T-0023 mutations: `crew_route.py` and the route item in
+`crew_context.py`. Same tuple shape as `sabotage.py`'s MUTATIONS --
+(label, target, find, replace, test) -- and appended to it there. Run
+`sabotage.py`, not this file.
+
+Each one is a way plain-text routing could approve, guess a ticket, route a
+prompt nobody meant as a command, or arm itself without being asked.
+"""
+import os
+
+CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SCRIPTS = os.path.join(CREW, "hooks", "scripts")
+ROUTE = os.path.join(SCRIPTS, "crew_route.py")
+CONTEXT = os.path.join(SCRIPTS, "crew_context.py")
+_T = "tests/test_crew_route.py::"
+_H = "tests/test_crew_route_hook.py::"
+
+ROUTE_MUTATIONS = (
+    ("BLOCK: the table gains an approve row", ROUTE,
+     '    ("status", "/crew:status", "none", (r"status", r"crew status")),\n',
+     '    ("status", "/crew:status", "none", (r"status", r"crew status")),\n'
+     '    ("approve", "/crew:approve", "ticket", (rf"approve {_REF}",)),\n',
+     _T + "test_no_route_ever_names_approve"),
+    ("a row matches inside a longer sentence", ROUTE,
+     "            found = pattern.fullmatch(text)\n",
+     "            found = pattern.search(text)\n",
+     _T + "test_mid_sentence_mention_is_not_a_route"),
+    ("the INDEX fallback takes the first of several open tickets", ROUTE,
+     "    if len(candidates) == 1:\n",
+     "    if len(candidates) >= 1:\n",
+     _T + "test_several_open_tickets_ask_and_list_them"),
+    ("an ask is rendered as a route", ROUTE,
+     '    if outcome == "route":\n',
+     '    if outcome in ("route", "ask"):\n',
+     _T + "test_continue_on_a_stop_phase_asks"),
+    ("a stop phase routes on continue", ROUTE,
+     '    if phase.get("stop") or not command:\n',
+     "    if not command:\n",
+     _T + "test_continue_on_a_stop_phase_asks"),
+    ("route.enabled arms on any truthy value", ROUTE,
+     "    enabled = saw is True\n",
+     "    enabled = bool(saw)\n",
+     _T + "test_string_true_is_off"),
+    ("the route line is emitted under codex", CONTEXT,
+     '    if harness != "claude":\n        return None\n    try:\n        import crew_route',
+     '    if False:\n        return None\n    try:\n        import crew_route',
+     _H + "test_codex_harness_never_routes"),
+    ("the route line is emitted unarmed", CONTEXT,
+     '        if not crew_route.settings(root)["enabled"]:\n',
+     "        if False:\n",
+     _H + "test_unarmed_output_is_byte_identical_to_before"),
+    ("a raising router takes the turn's whole context with it", CONTEXT,
+     '    except Exception:  # pylint: disable=broad-except\n        extra["route"] = "error"\n',
+     '    except ImportError:\n        extra["route"] = "error"\n',
+     _H + "test_a_raising_router_costs_only_the_route_line"),
+    ("an ambiguous phrase is claimed by a later row", ROUTE,
+     "    if text is None or text.casefold() in AMBIGUOUS:\n",
+     "    if text is None:\n",
+     _T + "test_the_ambiguous_guard_holds_against_a_row_that_claims_everything"),
+    ("a slash command, markup or backtick reaches the table", ROUTE,
+     ' or len(text) > MAX_PROMPT_CHARS \\\n            or text[0] in "/<`":\n',
+     " or len(text) > MAX_PROMPT_CHARS:\n",
+     _T + "test_the_shape_guard_holds_against_a_row_that_claims_everything"),
+    ("a prompt with a line break routes", ROUTE,
+     '    if not text or "\\n" in prompt or "\\r" in prompt or len(text)',
+     "    if not text or len(text)",
+     _T + "test_multiline_prompt_is_not_a_route"),
+    ("an over-long prompt routes", ROUTE,
+     " or len(text) > MAX_PROMPT_CHARS \\\n",
+     " or len(text) > 10 * MAX_PROMPT_CHARS \\\n",
+     _T + "test_long_prompt_is_not_a_route"),
+    ("an explicit id with no ticket folder routes", ROUTE,
+     "        if os.path.isdir(crew_ticket.ticket_dir(top, explicit)):\n",
+     "        if True:\n",
+     _T + "test_explicit_id_without_folder_asks"),
+    ("a broken active-ticket pointer is guessed past", ROUTE,
+     "    if broken:\n        return None, \"\", f\"the active-ticket pointer is broken",
+     "    if False:\n        return None, \"\", f\"the active-ticket pointer is broken",
+     _T + "test_broken_pointer_asks"),
+    ("continue routes a named approve", ROUTE,
+     "    if _APPROVE.search(command):\n",
+     "    if False:\n",
+     _T + "test_continue_that_names_approve_asks"),
+    ("a next-phase reader that raises is not caught", ROUTE,
+     "    except Exception as exc:  # pylint: disable=broad-except\n        return _answer(\"ask\"",
+     "    except ValueError as exc:\n        return _answer(\"ask\"",
+     _T + "test_continue_that_raises_asks"),
+    ("a route set only in .crew/crew.json goes unreported", ROUTE,
+     '    if isinstance(crew_json, dict) and "route" in crew_json and "route" not in repo:\n',
+     "    if False:\n",
+     _T + "test_route_only_in_crew_json_is_reported"),
+    ("a non-object route block goes unreported", ROUTE,
+     '        if "route" in layer and not isinstance(layer["route"], dict):\n',
+     "        if False:\n",
+     _T + "test_a_route_block_that_is_not_an_object_is_off_and_reported"),
+)
