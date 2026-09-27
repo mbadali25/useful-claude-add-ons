@@ -299,7 +299,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1804` (`:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1930` (`:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -344,7 +344,7 @@ listing the directory.
   `:273`, `read_diagrams` at `:472`, the `sha[:7] == head[:7]` comparisons at
   `:429` and `:512`, and the `_diagram_paths` call site inside `read_diagrams`
   at `:518` (was `:522`). Re-exported through
-  `plugin/crew/hooks/scripts/crew_state.py:129`/`:133`/`:136`/`:139`
+  `plugin/crew/hooks/scripts/crew_state.py:132`/`:136`/`:139`/`:142`
   (`_ANCHOR_RE`, `_DIAGRAM_ANCHOR_RE`, `_NOT_SUBSYSTEMS`, `_diagram_paths`).
   A diagram with no anchor header, or one whose anchor is old AND whose
   `%% Anchors:` paths have moved, still counts as `behind`; unknown still
@@ -401,23 +401,27 @@ listing the directory.
   policy, not re-verified again at this pass) and is present in this fresh
   worktree. `verification-harness.md` owns this file's full contents; this
   note only records what changed in its own tracked citations. Since
-  `6c497a14` one rule was appended (`:251` since T-0026 inserted a rule above
-  it, `:244` after T-0008's review round 3 added a path above it; `:243` when #228 added it): `.claude/rules/**` and
+  `6c497a14` one rule was appended (`:263` on the T-0005 landing merge, where T-0026's rule and
+  T-0005's cloud-guard rule both sit above it; `:251` after T-0026 inserted a rule above it,
+  `:256` after T-0005 did the same and Step 8 added a path; `:244` after T-0008's review round 3
+  added a path above it; `:243` when #228 added it): `.claude/rules/**` and
   `.crew/codemap/**` now run `crew_instructions.py rules --root . --check`.
-  Since `f2bb919b` another follows it (`:252-268`, T-0008): changes to
+  Since `f2bb919b` another follows it (`:264-280`, T-0008): changes to
   `plugin/crew/hooks/scripts/crew_refresh_check.py`, its tests,
   `plugin/crew/commands/implement.md` or `plugin/crew/commands/done.md` -
   and since review round 3 `scope_guard.py`, `completion_audit.py`,
   `crew_freshness.py` and `scope_base.py` - run the three refresh-artifact
   pytest files plus `test_scope_guard.py`, `test_completion_audit.py` and
   `test_scope_base.py`. Since `c35edda5` a third was inserted mid-list
-  (`:167-172`, T-0026): `plugin/crew/hooks/scripts/crew_ticket.py` and
+  (`:179-184` on the T-0005 landing merge, `:167-172` when T-0026 added it):
+  `plugin/crew/hooks/scripts/crew_ticket.py` and
   `plugin/crew/tests/test_approval_digest.py` run that test file and
-  `test_crew_ticket.py`. Since `a0c0847e` T-0006's rule sits at `:270-280`
-  and T-0004 appended a last one (`:281-288`): `crew_autopilot.py`,
+  `test_crew_ticket.py`. T-0005 inserted another mid-list (`:117-127`, the cloud-guard suites).
+  Since `a0c0847e` T-0006's rule sits at `:282-292` (`:270-280` before T-0005 merged)
+  and T-0004 appended a last one (`:293-300`, `:281-288` before T-0005 merged): `crew_autopilot.py`,
   `commands/autopilot.md`, `test_crew_autopilot.py` and
   `sabotage_autopilot.py` run `test_crew_autopilot.py` plus
-  `test_lifecycle_commands.py`. The rules above it did not move.
+  `test_lifecycle_commands.py`.
 
 ## Unverified
 
@@ -584,3 +588,67 @@ reworded and its test and mutation counts corrected; cited without a line),
 files went to 1.0.41 and back to 1.0.42, so their tree diff is empty. `.crew/verify.json`,
 `INSTALLATION.md`, `README.md`, `plugin/README.md`, `plugin/crew/README.md` and both install
 scripts did not change.
+Re-verified per-path from `8d447a7d` to `fc54def6` for T-0005 (`8d447a7d` is T-0008's pre-rebase
+commit; T-0008 landed as `95120430`/`768a747a`). Of the cited paths T-0005 changed
+`.crew/verify.json` (a cloud-guard rule inserted at index 6, `:117-126`, so the `.claude/rules/`
+rule moved `:244` -> `:255` and the refresh-check rule `:245-261` -> `:256-272`; corrected above),
+`plugin/crew/README.md` (the cloud-guard environments section, 39 lines added above the runbooks
+section, so the `docs/runbooks/INDEX.md` mention moved `:1728` -> `:1767`, re-read), `crew_state.py`
+(three import lines, so the four re-exports moved `:129`/`:133`/`:136`/`:139` ->
+`:132`/`:136`/`:139`/`:142`, re-read), `TODO.md` (lines appended at the end; the `render.sh` entry
+at `:1183` did not move), `CHANGELOG.md` (cited without a line) and the version files.
+
+## Re-anchor provenance - `fc54def6` -> `2170d72e`, 2026-09-26 (T-0005 review round 2)
+
+`git diff --name-only fc54def6 2170d72e -- <the paths this note cites>` returns only what round 2
+changed: `plugin/crew/README.md` (one row rewritten in place at `:971`; `:1767` holds, re-read) and
+`CHANGELOG.md` (the 1.0.41 entry gained round 2's bullets; cited by name only).
+
+## Re-anchor provenance - `2170d72e` -> `3a57b2d2`, 2026-09-26 (T-0005 rounds 3-4 and Step 8)
+
+`git diff --name-only 2170d72e 3a57b2d2 -- <the paths this note cites>` returns
+`plugin/crew/README.md` (the allowlist paragraph and two sentences above the runbooks section, so
+the `docs/runbooks/INDEX.md` mention moved `:1767` -> `:1788`, re-read), `.crew/verify.json`
+(`crew_guards.py` added to the cloud-guard rule, so the `.claude/rules/` rule moved `:255` ->
+`:256` and the refresh-check rule `:256-272` -> `:257-273`; corrected above) and `CHANGELOG.md`
+(the 1.0.41 entry gained the allowlist bullet; cited by name only).
+
+## Re-anchor provenance - `3a57b2d2` -> `1e210476`, 2026-09-26 (T-0005 Step 9)
+
+`git diff --name-only 3a57b2d2 1e210476 -- <the paths this note cites>` returns
+`plugin/crew/README.md` (the allowlist paragraph rewritten for Step 9, seven lines longer, so the
+`docs/runbooks/INDEX.md` mention moved `:1788` -> `:1795`, re-read; corrected above) and
+`CHANGELOG.md` (the 1.0.41 entry gained the Step 9 bullet; cited by name only). `.crew/verify.json`
+did not change.
+
+## Re-anchor provenance - `1e210476` -> `aa7f9841`, 2026-09-26 (T-0005 review round 5)
+
+`git diff --name-only 1e210476 aa7f9841 -- <the paths this note cites>` returns
+`plugin/crew/README.md` (fifteen lines added to the cloud-guard section, so the
+`docs/runbooks/INDEX.md` mention moved `:1795` -> `:1810`, re-read, same text; corrected above;
+`:12`, `:15`, `:46`, `:414` and `:736` are above the hunk and hold) and `CHANGELOG.md` (the 1.0.41
+entry gained the round-5 bullet and its Tests bullet was corrected; cited by name only).
+`.crew/verify.json` did not change.
+
+## Re-anchor provenance - `aa7f9841` -> `a26ad8c0`, 2026-09-26 (T-0005 Step 10)
+
+`git diff --name-only aa7f9841 a26ad8c0 -- <the paths this note cites>` returns
+`plugin/crew/README.md` (the cloud-guard section rewritten in part and a "What the guard does not
+catch" subsection added, 44 lines net, so the `docs/runbooks/INDEX.md` mention moved `:1810` ->
+`:1854`, re-read, same text; corrected above; `:12`, `:15`, `:46`, `:414` and `:736` are above the
+first hunk and hold) and `CHANGELOG.md` (the 1.0.41 entry gained the Step 10 bullet; cited by
+name only). `.crew/verify.json` did not change.
+
+Re-verified per-path to `2b18f7ab` for T-0005's landing (the crew 1.0.42 bump on top of `4ed4b763`,
+the merge of T-0005 `4e0abc8f` into main `1e0706ac`, joining this note's `6f96e627` and `a26ad8c0`
+lines). Of the cited paths, those changed on both sides were re-read on the merged tree:
+`plugin/crew/README.md` (the `docs/runbooks/INDEX.md` mention is at `:1930`, both sides' additions
+above it; corrected above), `.crew/verify.json` (T-0005's cloud-guard rule `:117-127` and T-0026's
+approval-digest rule `:179-184` both sit above the `.claude/rules/` check, now `:263`, and the
+refresh-check rule `:264-280`; T-0006's rule `:282-292` and T-0004's `:293-300` follow; corrected
+above), `TODO.md` (the `render.sh` entry still at `:1190`, same heading; T-0005's lines are
+appended at the end), `plugin/crew/hooks/scripts/crew_state.py` (T-0005's three import lines at `:74` and `:102-103`
+sit above the four re-exports, which are at `:132`/`:136`/`:139`/`:142` as T-0005's text above
+says, re-read on the merge; main's `RESUME_DEFAULTS`/`AUTOPILOT_DEFAULTS` are below them) and `CHANGELOG.md`
+(T-0005's 1.0.42 entry sits above T-0004's 1.0.41; cited without a line). The two diagrams this
+note cites are refreshed in the same commit as this note. Nothing was executed.

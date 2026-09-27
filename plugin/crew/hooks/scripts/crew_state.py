@@ -71,6 +71,7 @@ from crew_guards import (
     CHANGE_REQUIREMENT_DEFAULT,  # noqa: F401
     CLOUD_DEFAULTS,  # noqa: F401
     CLOUD_GUARD_NAMES,  # noqa: F401
+    ENVIRONMENTS_DEFAULTS,  # noqa: F401
     GUARD_APPROVAL_PREFIX,  # noqa: F401
     GUARD_APPROVAL_TTL,  # noqa: F401
     GUARD_DEFAULTS,  # noqa: F401
@@ -98,6 +99,8 @@ from crew_guards import (
     normalise_guard_policy,  # noqa: F401
     normalise_install_policy,  # noqa: F401
     normalise_require_for_production,  # noqa: F401
+    normalise_prod_unattended,  # noqa: F401
+    prod_unattended_rank,  # noqa: F401
     normalise_role_writes,  # noqa: F401
     require_change_rank,  # noqa: F401
     role_writes_rank,  # noqa: F401
