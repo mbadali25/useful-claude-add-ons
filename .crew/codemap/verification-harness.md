@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@a2802526
+anchor: useful-claude-add-ons@32223b8a
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -195,7 +195,7 @@ Notable rules, re-read directly:
   16 slow deselected, measured 2026-09-26 — a claim read, not re-timed by this note). The
   `FLAVOUR_MATRIX` `sh`/`ps1` cases are `slow`, so this rule does not run the wrappers; the
   whole-suite rule and CI's `-m slow` job do. Its mutations live in
-  `plugin/crew/tests/sabotage_approval.py` (`APPROVAL_MUTATIONS`, `:32`; 44 entries by
+  `plugin/crew/tests/sabotage_approval.py` (`APPROVAL_MUTATIONS`, `:32`; 52 entries by
   `len()` at this anchor — count them there, the `why` states no number), imported by
   `plugin/crew/tests/sabotage.py:78` and appended at `:3050`. `crew_ticket.py` is now named by
   rules 10 and 27 both.
@@ -723,3 +723,10 @@ No suite or command was executed by this note; rule 26's suite and `sabotage.py`
 Executed for this note: `python3 scripts/check-marketplace.py` at `a2802526` (`all checks
 passed`). Rule 27's suite and `sabotage.py` were run by the T-0024 lane's verification, not by this
 note; their results are in that ticket's review record, not restated here.
+
+Re-verified per-path from `a2802526` to `32223b8a` for T-0024's review round 1: of the cited paths
+only `plugin/crew/tests/sabotage_approval.py` (nine mutations added for the round-1 fixes,
+three re-anchored, one re-targeted to the test that holds its single-id case, the expanded-form
+break-check mutation deleted with its code; 52 by `len()`,
+`APPROVAL_MUTATIONS` still at `:32`), `marketplace.json` and `CHANGELOG.md` (cited by name only)
+changed. `sabotage.py`'s registration `:78`/`:3050` and `.crew/verify.json` did not change.

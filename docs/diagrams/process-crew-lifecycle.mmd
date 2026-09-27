@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@a2802526 on 2026-09-26. Verify before trusting.
+%% Generated from useful-claude-add-ons@32223b8a on 2026-09-26. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -34,7 +34,8 @@
 %% :605-626 hold. One node and two edges added: a group request (several ids, a
 %% range, or the plain-text form) is blocked as a PENDING list and recorded only
 %% by the user's own /crew:approve --confirm, all or none (approve.md:27-32;
-%% plugin/crew/hooks/scripts/approval_hook.py:313 pending, :369 confirm).
+%% plugin/crew/hooks/scripts/approval_hook.py:334 pending, :406 confirm, re-read at
+%% 32223b8a after T-0024's review round 1; no anchored path changed there).
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):
