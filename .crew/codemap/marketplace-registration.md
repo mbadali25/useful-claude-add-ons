@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@926522f7
+anchor: useful-claude-add-ons@954ce386
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -412,3 +412,21 @@ rule at `:69-78` is unchanged), `CHANGELOG.md` and `plugin/crew/README.md` chang
 script, `scripts/check-marketplace.py`, `CLAUDE.md`, `README.md` or `INSTALLATION.md` changed.
 `python3 scripts/check-marketplace.py` at `a2802526`: `marketplace: 34 skills, 5 plugins`,
 `all checks passed`.
+
+## Re-anchor provenance - `926522f7` + `a2802526` -> `954ce386`, 2026-09-26 (T-0010 x T-0024 merge)
+
+The T-0010 lane merged `T-0024-build` (`32223b8a`) into `T-0010-policies` (`cb602fb8`, whose
+notes were anchored at `926522f7`) as `954ce386`; T-0024's notes were anchored at `a2802526`. Both
+sides' provenance sections above are kept as history. Nothing was taken from one side: every
+citation this note makes into a path either side changed was mapped from its own side's anchor
+tree to the merged tree (`difflib` over the file at both ends, line text compared), and every
+one whose number moved or whose line changed was re-read with `grep -n`/`sed -n` at `954ce386`.
+
+Of the cited paths, the version files (1.0.43 at `.claude-plugin/marketplace.json:218`,
+`plugin/PLUGINS.md:14` and `plugin/crew/.claude-plugin/plugin.json`: T-0018 and T-0024 had each
+bumped to 1.0.42, and the merge took T-0024's 1.0.43), `plugin/crew/BUDGETS.md` (`:11`, 18,226 /
+121, re-measured on the merged files and matching `count_crew_markdown_lines`), `.crew/verify.json`
+(29 rules; the doc rule at `:69-78` unchanged), `CHANGELOG.md` and `plugin/crew/README.md` changed.
+No install script, `scripts/check-marketplace.py`, `CLAUDE.md`, `README.md` or `INSTALLATION.md`
+changed; no command, agent or skill was added or removed. `python3 scripts/check-marketplace.py`
+on the merged tree: `marketplace: 34 skills, 5 plugins`, `all checks passed`.

@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@926522f7
+anchor: useful-claude-add-ons@954ce386
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -622,3 +622,20 @@ re-grepped) and `plugin/crew/hooks/scripts/crew_ticket.py` (cited by name only, 
 `README.md`, `TODO.md`, `plugin/README.md` and both install scripts did not change.
 `python3 scripts/check-marketplace.py` re-run at `a2802526`: `marketplace: 34 skills, 5 plugins` /
 `all checks passed`.
+
+## Re-anchor provenance - `926522f7` + `a2802526` -> `954ce386`, 2026-09-26 (T-0010 x T-0024 merge)
+
+The T-0010 lane merged `T-0024-build` (`32223b8a`) into `T-0010-policies` (`cb602fb8`, whose
+notes were anchored at `926522f7`) as `954ce386`; T-0024's notes were anchored at `a2802526`. Both
+sides' provenance sections above are kept as history. Nothing was taken from one side: every
+citation this note makes into a path either side changed was mapped from its own side's anchor
+tree to the merged tree (`difflib` over the file at both ends, line text compared), and every
+one whose number moved or whose line changed was re-read with `grep -n`/`sed -n` at `954ce386`.
+
+Of the cited paths, `plugin/crew/README.md` changed on both sides, so the `docs/runbooks/INDEX.md`
+mention moved to `:1829` (`:1821` at `926522f7`, `:1812` at `a2802526`; re-grepped).
+`.crew/verify.json` keeps both appended rules: T-0010's rule 27 `:290-295` and T-0024's, now rule
+28, `:296-303`; `:167-172`, `:251`, `:252-268`, `:270-280` and `:281-289` hold.
+`crew_ticket.py` is cited by name only. `CHANGELOG.md` holds T-0010's, T-0018's and T-0024's
+entries under [Unreleased] (cited without a line). `README.md`, `TODO.md` (unchanged by T-0024),
+`plugin/README.md` and both install scripts did not change.

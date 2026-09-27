@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@926522f7
+anchor: useful-claude-add-ons@954ce386
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -837,3 +837,29 @@ not for this refresh.
 Executed for this note: `python3 scripts/check-marketplace.py` at `a2802526` (`all checks
 passed`). Rule 27's suite and `sabotage.py` were run by the T-0024 lane's verification, not by this
 note; their results are in that ticket's review record, not restated here.
+
+## Re-anchor provenance - `926522f7` + `a2802526` -> `954ce386`, 2026-09-26 (T-0010 x T-0024 merge)
+
+The T-0010 lane merged `T-0024-build` (`32223b8a`) into `T-0010-policies` (`cb602fb8`, whose
+notes were anchored at `926522f7`) as `954ce386`; T-0024's notes were anchored at `a2802526`. Both
+sides' provenance sections above are kept as history. Nothing was taken from one side: every
+citation this note makes into a path either side changed was mapped from its own side's anchor
+tree to the merged tree (`difflib` over the file at both ends, line text compared), and every
+one whose number moved or whose line changed was re-read with `grep -n`/`sed -n` at `954ce386`.
+
+- `.crew/verify.json` - 29 rules, 308 lines (`json.load`/`wc -l`); rule 27 is T-0010's `:290-295`,
+  rule 28 is T-0024's `:296-303` (its rule 27 at `:290-297` on its branch); `default`/`unmapped`
+  `:306`/`:307`. Rules 0-26 did not move.
+- `sabotage.py` - imports at `:75`-`:78`; the `MUTATIONS +=` statement is `:3049-3051`:
+  REFRESH on `:3050`, RESUME/AUTOPILOT/POLICY/APPROVAL on `:3051`. 3380 lines (`.pylintrc`'s
+  max-module-lines is 3400).
+- `sabotage_autopilot.py` - AUTOPILOT_MUTATIONS still `:25`; POLICY_MUTATIONS now 29 entries (the
+  merge added the two owner-only group-confirm mutations). `sabotage_approval.py` -
+  APPROVAL_MUTATIONS `:32`, 52 entries (44 at `a2802526`; T-0024's round 1 added the rest).
+- `crew_ticket.py` - `header_line`/`parse_risk` `:500-519` (the `:496-515` the rule-10 paragraph
+  carried was already T-0004's numbering, before T-0010's four `AUTOPILOT` lines).
+- `CHANGELOG.md`, `BUDGETS.md`, `marketplace.json` - cited by name only.
+
+Every POLICY_MUTATIONS, APPROVAL_MUTATIONS, AUTOPILOT_MUTATIONS and SCOPE_MUTATIONS anchor was
+counted in the merged text (exactly one each). The suites and `sabotage.py` were run for the
+merge, not for this note; their counts are in the merge report, not restated here.

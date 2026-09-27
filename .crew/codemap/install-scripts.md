@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@926522f7
+anchor: useful-claude-add-ons@954ce386
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -518,3 +518,20 @@ so their citations stand. The README pin landmine still holds: `README.md:12` an
 has since merged to `main` (`1e0706ac`), so the re-pin that bullet calls due after that merge is now
 due and was not done by T-0024, whose Touch excludes `README.md`. Neither install script was
 executed.
+
+## Re-anchor provenance - `926522f7` + `a2802526` -> `954ce386`, 2026-09-26 (T-0010 x T-0024 merge)
+
+The T-0010 lane merged `T-0024-build` (`32223b8a`) into `T-0010-policies` (`cb602fb8`, whose
+notes were anchored at `926522f7`) as `954ce386`; T-0024's notes were anchored at `a2802526`. Both
+sides' provenance sections above are kept as history. Nothing was taken from one side: every
+citation this note makes into a path either side changed was mapped from its own side's anchor
+tree to the merged tree (`difflib` over the file at both ends, line text compared), and every
+one whose number moved or whose line changed was re-read with `grep -n`/`sed -n` at `954ce386`.
+
+Of the cited paths, `plugin/crew/README.md` (both sides' sections; the `35 commands` claim is now
+`:2280` and `4 agents` `:2291`, re-grepped), `plugin/crew/BUDGETS.md` (marker still `:10`; `:11`
+re-measured on the merged files, 18,226 lines across 121 files, not either side's 18,202 / 18,200),
+`plugin/PLUGINS.md` and `.claude-plugin/marketplace.json` (`:14` / `:218` version 1.0.43, `:17` /
+`:217` unchanged) changed. Neither install script, `README.md`, `plugin/README.md`,
+`INSTALLATION.md` nor `scripts/check-marketplace.py` changed. `check-marketplace.py` passed on the
+merged tree before this refresh (`marketplace: 34 skills, 5 plugins`, `all checks passed`).

@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@926522f7
+anchor: useful-claude-add-ons@954ce386
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -28,7 +28,8 @@ Re-verified per-path from `f2bb919b` to `adf8d1dd` for T-0008, from
 T-0034, and to `8ebbdedc` for T-0026's landing; on T-0006's branch, from
 `8d447a7d` to `6d35ef8c` for T-0006 and from `6d35ef8c` to `2bb92f32` for its
 review round 3; both to `a0c0847e` for T-0006's landing; and on T-0004's
-branch from `a0c0847e` to `07ca3972`; on T-0024's branch from `6f96e627` to `a2802526`.
+branch from `a0c0847e` to `07ca3972`; on T-0024's branch from `6f96e627` to `a2802526`; both lines to `954ce386` (the
+T-0010 x T-0024 merge).
 See the last sections.
 
 # crew
@@ -1165,3 +1166,27 @@ tests. Each citation into them was re-read with `grep -n`/`sed -n` at `a2802526`
 
 `crew_refresh_check.py --ticket T-0024` named this note; nothing was executed for it beyond the
 re-reads above.
+
+## Re-anchor provenance - `926522f7` + `a2802526` -> `954ce386`, 2026-09-26 (T-0010 x T-0024 merge)
+
+The T-0010 lane merged `T-0024-build` (`32223b8a`) into `T-0010-policies` (`cb602fb8`, whose
+notes were anchored at `926522f7`) as `954ce386`; T-0024's notes were anchored at `a2802526`. Both
+sides' provenance sections above are kept as history. Nothing was taken from one side: every
+citation this note makes into a path either side changed was mapped from its own side's anchor
+tree to the merged tree (`difflib` over the file at both ends, line text compared), and every
+one whose number moved or whose line changed was re-read with `grep -n`/`sed -n` at `954ce386`.
+
+- `crew_ticket.py` - T-0010's citations above `:704` hold (`AUTOPILOT` `:144`, `parse_risk` `:509`,
+  `_autopilot_refusal` `:653`, `accepted` `:670`); T-0024's `_expected_pair` is `:716` and `approve`
+  `:716` -> `:723`, which now also refuses an `autopilot` via carrying an `expect` (`:742-744`, the
+  owner's decision that a group confirm is owner-only). `precheck` is `:813`.
+- `approval_hook.py` - T-0024's review round 1 (after `a2802526`) moved `_pending_group` `:313` ->
+  `:334` and `_confirm` `:369` -> `:406`; the `/crew:approve` row is corrected. `approve.md:27-41`
+  holds (unchanged since `a2802526`).
+- `sabotage.py` - `:77`/`:78` import POLICY_MUTATIONS and APPROVAL_MUTATIONS; the `MUTATIONS +=`
+  statement is `:3049-3051`, both registered on `:3051`.
+- `.crew/verify.json` - T-0010's rule 27 `:290-295`, T-0024's rule now 28 `:296-303` (the blank line
+  T-0024 left between rules was dropped); 29 rules, 308 lines.
+- `CHANGELOG.md` - T-0004's leaf-count sentence `:152-153` -> `:216-217`. The config leaf table was
+  re-executed on the merged tree: 121 / 66 / 55 / 0; `test_crew_config.py:278` asserts 121.
+- `marketplace.json:218`, `plugin.json:3` - 1.0.43, T-0024's (the higher side); landing sets it again.
