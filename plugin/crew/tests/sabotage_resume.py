@@ -249,6 +249,11 @@ RESUME_MUTATIONS = (
      "    except (FileNotFoundError, NotADirectoryError):\n        return True\n    except OSError:\n        return None\n",
      "    except OSError:\n        return True\n",
      _T + "test_record_run_refuses_a_resume_state_that_cannot_be_stat_ed"),
+    ("the PreCompact skeleton's file lines can be a resume line again", RESUME,
+     "    if crew_autocycle.SKELETON_MARK in (text or \"\"):\n"
+     '        return _refuse("the handoff is the automatic PreCompact skeleton; it names no next action")\n',
+     "",
+     _T + "test_parse_refuses_the_precompact_skeleton"),
 )
 
 

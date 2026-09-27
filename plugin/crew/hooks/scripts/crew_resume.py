@@ -86,7 +86,14 @@ def parse_resume(text):
 
     Exactly one `resume:` line, one allowlisted command, and the one argument
     its kinds allow; anything else is refused with a reason. Reasons are
-    fixed strings: nothing from the line is echoed back into them."""
+    fixed strings: nothing from the line is echoed back into them.
+
+    The automatic PreCompact skeleton is refused whole, before any line is
+    read: its Changed files list is bare `git diff` / `git ls-files` output,
+    so a file named `resume: /crew:status` would otherwise be its resume
+    line (review round 4, T-0006). It names no next action by construction."""
+    if crew_autocycle.SKELETON_MARK in (text or ""):
+        return _refuse("the handoff is the automatic PreCompact skeleton; it names no next action")
     lines = _RESUME_LINE_RE.findall(text or "")
     if not lines:
         return _refuse("no resume line")

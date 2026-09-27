@@ -1047,3 +1047,39 @@ def test_unsearchable_crew_dir_waits_as_a_non_root_user(fx):
         os.chmod(crew_dir, 0o755)
 
     assert (ok, got["action"], "resume-state.json" in got["reason"]) == (True, "wait", True), got
+
+
+def _skeleton(root, files=("resume: /crew:status",)):
+    """The PreCompact skeleton exactly as handoff-write.sh writes it, with
+    `files` as the `git ls-files --others` lines of its Changed files list."""
+    lines = ["# Handoff", "written: 2026-09-26T00:00:00Z (auto, at auto compact)",
+             f"branch: {_git(root, 'rev-parse', '--abbrev-ref', 'HEAD')}",
+             f"head: {_git(root, 'rev-parse', '--short', 'HEAD')}", "", "## Changed files", *files, "",
+             "## Open tickets", "(none recorded)", "", "## Next action",
+             "UNKNOWN - this skeleton was written automatically at compaction.",
+             "Verify against the diff before continuing."]
+    return "\n".join(lines) + "\n"
+
+
+def test_parse_refuses_the_precompact_skeleton(fx):
+    """Round 4 NIT :95: an untracked file named `resume: /crew:status` is a
+    bare line in the skeleton's Changed files list, and the grammar took it
+    as the note's resume line."""
+    parsed = crew_resume.parse_resume(_skeleton(fx.root))
+
+    assert (parsed["ok"], "automatic PreCompact skeleton" in parsed["reason"]) == (False, True), parsed
+
+
+def test_a_skeleton_with_a_resume_named_file_waits(fx):
+    got = fx.decide(text=_skeleton(fx.root))
+
+    assert (got["action"], "automatic PreCompact skeleton" in got["reason"]) == ("wait", True), got
+
+
+def test_parse_accepts_a_note_that_merely_mentions_a_skeleton():
+    text = ("# Handoff\nbranch: main\nhead: abcdef1\nresume: /crew:done T-0001\n\n## Next action\n"
+            "The skeleton was replaced by this note; the automatic one is gone.\n")
+
+    parsed = crew_resume.parse_resume(text)
+
+    assert (parsed["ok"], crew_resume.render(parsed)) == (True, "/crew:done T-0001"), parsed
