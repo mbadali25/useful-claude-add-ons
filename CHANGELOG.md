@@ -4,6 +4,42 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`crew` 1.0.42: auto-resume closes T-0006's review round 4 (T-0042).**
+  Bumped `1.0.41 -> 1.0.42`.
+  - FIX: a `resume-state.json` whose directory cannot be searched was read
+    as absent (`os.path.lexists` is False on any stat error), so an
+    already-resumed command came back `run`. New `crew_resume._absent`:
+    only "no such entry" is absent; any other stat error is an unknown, so
+    `decide` waits and `record_run` refuses. `.work/INDEX.md` had the same
+    shape and now fingerprints as unknown.
+  - NIT: a PreCompact record a later PreCompact could not replace is now
+    MARKED (`precompact-<key>.stuck`, by python and by both `handoff-write`
+    flavours) rather than predicted with `os.access`; a compact is not
+    manual while the marker exists or cannot be stat'ed. Pruned after a day.
+  - NIT: `parse_resume` refuses the automatic PreCompact skeleton, whose
+    Changed files list could otherwise supply a `resume:` line
+    (`/crew:autopilot` inherits it).
+  - NIT: a handoff resumes only in the session that wrote it. On an armed
+    machine the context hook records the author of a Write/Edit/MultiEdit of
+    the handoff in `<git-common-dir>/crew/handoff-author.json`; `compact`
+    matches the session id, `clear` the Claude Code process (nearest
+    `claude` ancestor, pid plus start time; spike on Claude Code 2.1.283).
+    **Behaviour change:** on a host without `/proc` (native Windows, macOS)
+    a `clear` now waits with "this session's process could not be
+    identified" where T-0006 named the command; `compact` is unaffected. A
+    note written by Bash or by hand has no author record and waits.
+  - NIT: every wait reason, `internal error` included, is named in the
+    README, CONFIG.md §14a, the crew-context skill and the auto-cycle guide,
+    held by `test_every_wait_reason_is_named_in_the_docs`.
+  - Flake: `test_same_handoff_never_fires_twice` re-stamped `written:` on
+    every decide and failed across a second boundary; the fixture now stamps
+    once.
+  - Already closed before this ticket, so no work here: the
+    `data-flow-crew-config.mmd` TMPL node lists `resume`, and the marketplace
+    merge-tree NIT was settled when T-0006 landed at `2fd09e8f`.
+
 ### Added
 
 - **`crew` 1.0.41: `/crew:autopilot` resumes and drives one ticket
