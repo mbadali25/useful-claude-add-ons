@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@995b5874
+anchor: useful-claude-add-ons@20e9b396
 verified: 2026-09-27
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -413,3 +413,11 @@ line in place; `plugin/crew/.claude-plugin/plugin.json` agrees. `scripts/**` did
 
 `995b5874` re-sets crew 1.0.43 as the last plugin/crew commit after T-0009's review-round-1 fix commit `7efb0f1d` (which stepped the version back to 1.0.42). `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json` and
 `plugin/PLUGINS.md:14` read 1.0.43, byte-identical to `b5903601`. `scripts/**` did not change.
+
+## Re-anchor provenance - `995b5874` -> `20e9b396`, 2026-09-27 (T-0009 dispatch grammar)
+
+`b5e55fb7` builds T-0009's dispatch grammar (the successor plan after review round 2); `20e9b396` re-sets crew 1.0.43 as the last plugin/crew commit. Of the paths this note cites, `.crew/verify.json`
+changed (rule 7's `seconds` and `why` only; no line moved, the doc rule untouched) and
+`plugin/crew/BUDGETS.md`'s figure is now 18,702 (the `:11` history above describes `f2bb919b` and
+stays as written). The version sites read 1.0.43 as at `995b5874`; `scripts/check-marketplace.py`
+did not change and passes at `20e9b396`.

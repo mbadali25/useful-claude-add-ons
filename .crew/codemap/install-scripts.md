@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@995b5874
+anchor: useful-claude-add-ons@20e9b396
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -574,4 +574,13 @@ install script was executed.
 command table, so the `35 commands` claim moved `:2423` -> `:2429` and `4 agents` `:2434` -> `:2440`,
 both re-read, same text) changed; `.claude-plugin/marketplace.json` and `plugin/PLUGINS.md` read
 1.0.43 again, as at `b5903601`. The install scripts, `README.md`, `TODO.md` and
+`scripts/check-marketplace.py` did not change.
+
+## Re-anchor provenance - `995b5874` -> `20e9b396`, 2026-09-27 (T-0009 dispatch grammar)
+
+`b5e55fb7` builds T-0009's dispatch grammar (the successor plan after review round 2); `20e9b396` re-sets crew 1.0.43 as the last plugin/crew commit. Of the paths this note cites, `plugin/crew/README.md`
+(20 lines net above the command table, so the `35 commands` claim moved `:2429` -> `:2449` and
+`4 agents` `:2440` -> `:2460`, both re-read, same text) and `plugin/crew/BUDGETS.md` (marker `:10`;
+18,702 lines across 121 files, re-measured in the re-set commit) changed; `.claude-plugin/marketplace.json`
+and `plugin/PLUGINS.md` read 1.0.43, as at `995b5874`. The install scripts, `README.md`, `TODO.md` and
 `scripts/check-marketplace.py` did not change.

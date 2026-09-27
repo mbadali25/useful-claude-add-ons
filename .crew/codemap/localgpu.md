@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@995b5874
+anchor: useful-claude-add-ons@20e9b396
 verified: 2026-09-27
 
 # localgpu
@@ -1107,3 +1107,9 @@ additions, all below `:240`) and `.claude-plugin/marketplace.json` (crew's `vers
 `995b5874` re-sets crew 1.0.43 as the last plugin/crew commit after T-0009's review-round-1 fix commit `7efb0f1d` (which stepped the version back to 1.0.42). None of the files this note cites changed in content: `crew_config.py` is untouched, and
 `.claude-plugin/marketplace.json` was stepped back and re-set to the same 1.0.43. Nothing under
 `plugin/localgpu/` changed.
+
+## Re-anchor provenance - `995b5874` -> `20e9b396`, 2026-09-27 (T-0009 dispatch grammar)
+
+`b5e55fb7` builds T-0009's dispatch grammar (the successor plan after review round 2); `20e9b396` re-sets crew 1.0.43 as the last plugin/crew commit. A per-path check
+`git diff --name-only 995b5874 20e9b396 -- <the paths this note cites>` is empty: nothing it cites
+moved. Re-anchored with the other five so the six stay on one commit.

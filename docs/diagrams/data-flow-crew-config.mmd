@@ -1,5 +1,5 @@
-%% Generated from useful-claude-add-ons@995b5874 on 2026-09-27. Verify before trusting.
-%% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md
+%% Generated from useful-claude-add-ons@20e9b396 on 2026-09-27. Verify before trusting.
+%% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/cloud_guard.py
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
 %% re-read. The 're-read at 6c497a14' statements below remain true of f2bb919b by that diff.
@@ -176,6 +176,11 @@
 %% definition, two directions - and, new at this anchor, a THIRD thing now
 %% reads a DIFFERENT repo file entirely for a different purpose (section 5).
 
+%% Re-anchored 995b5874 -> 20e9b396 (T-0009 dispatch grammar): of the Anchors paths only crew_guards.py
+%% (the trigger parametrised from :1636 and the dispatch section rewritten - nothing this diagram
+%% cited before is below :574) and CONFIG.md (the dispatch subsection; section numbers hold) changed.
+%% Added the Dispatch subgraph: environments.workflows's one reader and the grammar that runs before
+%% the parser; cloud_guard.py joins the Anchors line for it. Its lines are re-read at 20e9b396.
 flowchart TB
 
     subgraph Sources["Three sources, lowest precedence first"]
@@ -326,3 +331,16 @@ flowchart TB
 
     OUT -.-> Except
     WIDEN -.->|"14 keys ratchet on write (E1's 13,<br/>plus pm.authority for the widening notice only)"| Except
+
+    subgraph Dispatch["environments.workflows's one reader - the grammar runs before the parser (T-0009)"]
+        direction TB
+        DENV["cloud_guard.environments_config(root)<br/>plugin/crew/hooks/scripts/cloud_guard.py:2537<br/>workflows from the REPO file only;<br/>a malformed block empties it and sets problem"]
+        DGATE{"crew_guards.dispatch_answer<br/>plugin/crew/hooks/scripts/crew_guards.py:2546<br/>dispatch_trigger :2176, then<br/>dispatch_first_non_literal :2273 -<br/>BEFORE any parsing"}
+        DCNT>"could not tell: unknown, op line-not-literal<br/>asks when attended, denied unattended"]
+        DPARSE["dispatch_scopes :2437, then<br/>dispatch_environment :2484<br/>nonProd / prod / unknown / unlisted"]
+        DENV --> DGATE
+        DGATE -->|"a word or operator not plain, unseen,<br/>stdin or file read, malformed block"| DCNT
+        DGATE -->|"every word plain or single-quoted"| DPARSE
+    end
+
+    REPO -.->|"environments.workflows (repo only)"| DENV
