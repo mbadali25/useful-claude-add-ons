@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@f7163410
+anchor: useful-claude-add-ons@23371afb
 verified: 2026-09-27
 
 # localgpu
@@ -1166,3 +1166,18 @@ re-export, which is above both sides' hunks and holds (re-read: `DEV_PROVIDERS =
 crew_state.DEV_PROVIDERS` / `QA_PROVIDERS = crew_state.QA_PROVIDERS`); `crew_state.py` changed on
 neither side. `.claude-plugin/marketplace.json` moved crew to 1.0.47 in place; `localgpu`'s own
 entry is still `0.1.20`. Nothing under `plugin/localgpu/` changed. Nothing was executed.
+
+## Re-anchor provenance - `f7163410` + `65bb3330` -> `23371afb`, 2026-09-27 (T-0075 merges T-0018's main)
+
+`34b5f368` merges origin/main `67caa4b8` (T-0018 landed as crew 1.0.47, PR #245; its notes anchored
+`65bb3330`) into T-0075's branch at `b5ef35df` (notes anchored `f7163410`), and `23371afb` bumps crew
+to 1.0.48. The source files both sides changed since `bebbb97f` are `CHANGELOG.md`,
+`.crew/verify.json`, `plugin/crew/README.md`, `plugin/crew/BUDGETS.md` and the version files;
+`crew_autopilot.py`, `commands/autopilot.md` and the autopilot tests changed on main's side only,
+`crew_config.py`, `crew_config_menu.py`, `CONFIG.md` and `sabotage.py` on T-0075's only. The
+conflicting provenance sections keep both sides, main's first; each body citation into a file both
+sides changed was mapped from the side its line came from onto the merged tree and re-read with
+`sed -n`/`grep -n`. This note cites `.crew/verify.json` and `plugin/crew/README.md` by name only; the refresh check
+named it because both changed on both sides. `crew_config.py:127-128` (the provider re-export) and
+`crew_state.py` changed on neither side. `localgpu`'s marketplace entry is still `0.1.20`; nothing
+under `plugin/localgpu/` changed. Nothing was executed for this note.
