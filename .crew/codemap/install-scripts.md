@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@b1ae1500
+anchor: useful-claude-add-ons@89f73d79
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -586,3 +586,12 @@ top of main's, plus one table row edited in place: the `35 commands` claim is at
 `4 agents` at `:2407`, re-grepped) changed. `git diff --name-only 2b18f7ab b1ae1500 -- scripts/
 README.md INSTALLATION.md plugin/README.md` is empty, so both install scripts and the other
 counting sites stand. Neither install script was executed.
+
+Re-verified per-path from `b1ae1500` to `89f73d79` (T-0018 review round 5, the version step-back
+and re-set): of the cited paths only `plugin/crew/README.md` changed, one line in the `status`
+paragraph edited in place, none added or removed, so the `35 commands` claim at `:2396` and
+`4 agents` at `:2407` hold (re-grepped), and `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l`
+still returns 18489, as `BUDGETS.md:11` says. The version files are byte-identical to
+`b1ae1500`'s. Both install scripts, `README.md`, `plugin/README.md`, `INSTALLATION.md` and
+`scripts/check-marketplace.py` did not change. Neither install script was executed;
+`check-marketplace.py` passed at `89f73d79` (`marketplace: 34 skills, 5 plugins`).

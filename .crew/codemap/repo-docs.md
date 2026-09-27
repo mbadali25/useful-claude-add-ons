@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@b1ae1500
+anchor: useful-claude-add-ons@89f73d79
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -674,3 +674,12 @@ main's lines), `CHANGELOG.md`, `plugin/PLUGINS.md` (`:14` 1.0.43; `:17` unchange
 `plugin/README.md`, `INSTALLATION.md`, `docs/runbooks/` and
 `plugin/crew/skills/crew-runbooks/SKILL.md` did not. `check-marketplace.py` passed at `b1ae1500`
 (`marketplace: 34 skills, 5 plugins`).
+
+Re-verified per-path from `b1ae1500` to `89f73d79` (T-0018 review round 5, the version step-back
+and re-set). Of the cited paths, `plugin/crew/README.md` changed on one line in place (the
+`status` paragraph), so the `docs/runbooks/INDEX.md` sentence is still `:1945` (re-grepped), and
+`CHANGELOG.md` gained the round-5 paragraph in the 1.0.43 entry (cited without a line). The
+version files are byte-identical to `b1ae1500`'s; `.crew/verify.json`, `README.md`,
+`plugin/README.md`, `INSTALLATION.md`, `docs/runbooks/` and
+`plugin/crew/skills/crew-runbooks/SKILL.md` did not change. `check-marketplace.py` passed at
+`89f73d79` (`marketplace: 34 skills, 5 plugins`).
