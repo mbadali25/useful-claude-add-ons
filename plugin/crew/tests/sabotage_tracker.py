@@ -175,11 +175,14 @@ TRACKER_MUTATIONS = (
         _TESTS + "test_obsidian_move_without_a_card_writes_nothing",
     ),
     (
+        # Since review round 4 a note that is already this repo's is not
+        # re-created, so the exclusive open is reached only by the claim: a
+        # note another repo created after the owner check.
         "tracker rewrites an existing ticket note",
         TRACKER,
         "_NOTE_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW | _BINARY\n",
         "_NOTE_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | _BINARY\n",
-        _TESTS + "test_note_created_once_never_overwritten",
+        _TESTS + "test_create_loses_the_note_race_says_id_taken",
     ),
     (
         "tracker edits a board with no kanban-plugin key",
