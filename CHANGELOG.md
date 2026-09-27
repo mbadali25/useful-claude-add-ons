@@ -6,6 +6,18 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 1.0.45: group approval review round 3 (T-0024, successor plan).**
+  Bumped `1.0.44 -> 1.0.45`. Three defects Codex found, each with a failing
+  test first and a mutation in `tests/sabotage_approval.py`:
+  - A single `/crew:approve <id>` in the expanded form wrapped in an example
+    tag (`<command-example>...</command-example>`) recorded the approval. The
+    expanded form now carries nothing outside its tags for a single id too.
+  - An INDEX row with a column before the id (`| 1 | T-1 | done |`) read as
+    open. The row's id cell is its first id-shaped cell; a row naming the
+    ticket as a whole cell elsewhere is refused as "could not tell".
+  - Trimming a trailing `-` or `.` conflated distinct ids (`T-1-` and `T-1`).
+    Table cells are matched whole.
+
 - **`crew` 1.0.44: group approval review round 2 (T-0024, successor plan).**
   Bumped `1.0.43 -> 1.0.44`. Five defects Codex found, each with a failing test
   first and a mutation in `tests/sabotage_approval.py`:
