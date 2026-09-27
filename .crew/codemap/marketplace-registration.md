@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@c23fad63
+anchor: useful-claude-add-ons@332bff0e
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -371,3 +371,14 @@ install script, `plugin/README.md`, `README.md`, `INSTALLATION.md`, `scripts/che
 reports 2 problems, both expected mid-build and both settled by T-0011's closing version commit:
 crew's `plugin/crew/` changed after 1.0.42 was set (`856006af`), and `plugin/crew/BUDGETS.md:10`
 claims 18,200 lines where the tree totals 18201.
+
+Re-verified per-path from `c23fad63` to `332bff0e` for T-0011's review round 1: of the cited paths,
+`git diff --name-only c23fad63 332bff0e` returns `.crew/verify.json` (rule 27's `seconds` and `why`,
+in place; still 28 rules, and the doc rule at `:69-78` is unchanged), `CHANGELOG.md`, `TODO.md` and
+`plugin/crew/BUDGETS.md` (`:11` figure, 18,208, re-measured and matching `git ls-files
+'plugin/crew/*.md' | xargs cat | wc -l`). `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md` and
+`plugin.json` do not appear: T-0011's version step-back and re-set cancel out across the range. Neither
+install script, `plugin/README.md`, `README.md`, `INSTALLATION.md`, `scripts/check-marketplace.py`,
+`CLAUDE.md` nor `skills/README.md` changed. `python3 scripts/check-marketplace.py` at `332bff0e`
+reports one problem, expected mid-build and settled by T-0011's closing version commit: crew's
+`plugin/crew/` changed after 1.0.42 was set (`4dcf45e4`).
