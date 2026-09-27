@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@e463ca53
+anchor: useful-claude-add-ons@508a9641
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -704,3 +704,7 @@ sides: its `35 commands` claim is now `:2503` and `4 agents` `:2514` (re-grepped
 `ls plugin/crew/commands/*.md` is 35). Both install scripts, the root `README.md` and
 `scripts/check-marketplace.py` did not change on either side, so their citations stand.
 Neither install script was executed.
+
+## Re-anchor provenance - `e463ca53` -> `508a9641`, 2026-09-27 (T-0064)
+
+`7e98babd` merges origin/main `bebbb97f` (T-0023 landed, crew 1.0.46) into T-0064's branch, which carried no commit of its own before it; `a079741b` (the checker, the refresh-check gate and the `graph-ignore` status line), `1a093e74` (docs) and `508a9641` (crew 1.0.47) follow. Between `e463ca53` and `508a9641` the non-artifact paths that changed are `.crew/verify.json` (rule 26 inserted at `:282-287`, six lines, so every later line moved +6), `CHANGELOG.md` (+28 at the top), `plugin/crew/README.md` (one row at `:763`), `plugin/PLUGINS.md`, the version files (in place), `plugin/crew/commands/{onboard,upgrade,status}.md`, the crew-graph and crew-setup skills, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `crew_status.py`, the new `crew_graph_ignore.py`, their tests, `plugin/crew/tests/sabotage_refresh.py` and the troubleshooting guide. Every `path:N` citation in the body into one of them, and every bare `:N` after such a path, was mapped with a line diff (`git show e463ca53:<path>` against the tree) and each moved one re-read with `sed -n`; the provenance sections above keep their own numbers, as history. This note's body cites none of those files at a line that moved; the moved citations are all in provenance sections, kept as history. Nothing under `scripts/install-prerequisites.*` changed. Nothing was executed for this note.

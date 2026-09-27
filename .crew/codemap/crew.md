@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@e463ca53
+anchor: useful-claude-add-ons@508a9641
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -54,7 +54,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.46, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.47, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -258,7 +258,7 @@ merge: 121 / 67 / 54 / 0 - T-0005 added `environments.prodUnattended` to both te
 `default_global_config()` (`:563`), so repo-only is unchanged. Re-executed on T-0023's merge of
 `db14619c` (T-0042 and T-0021 landed): 122 / 68 / 54 / 0 - neither added a config leaf.
 `plugin/crew/tests/test_crew_config.py:279` asserts 122. T-0004's `CHANGELOG.md` entry now says
-"117 -> 119" (`:436-437`; `:390-391` at `db14619c`, before T-0023's entry went in above it; `:276-277` at `f0b12ee6`, before T-0021's; `:228-229` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this
+"117 -> 119" (`:464-465`; `:418-419` at `db14619c`, before T-0023's entry went in above it; `:304-305` at `f0b12ee6`, before T-0021's; `:256-257` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this
 paragraph was first written. T-0005's entry states no leaf count; T-0023's says 121 -> 122.
 
 These are new counts, not the pre-1.0 note's 103/60/43 carried forward —
@@ -437,7 +437,7 @@ and gets nothing created.
 - `crew_autoclear_setup.py` is called from **three** places, confirmed by
   grep and by reading each call site: `/crew:init`'s Phase 1
   (`plugin/crew/skills/crew-setup/phases.md:180-186`, `plan-windows-default`),
-  `/crew:onboard` (`plugin/crew/commands/onboard.md:199`, the identical
+  `/crew:onboard` (`plugin/crew/commands/onboard.md:201`, the identical
   helper, "so a repo onboarded standalone gets the identical question"),
   and `/crew:migrate` (`plugin/crew/commands/migrate.md:78`,
   `apply-migrate`).
@@ -502,7 +502,7 @@ the same `_already` (`:439`) `decide` uses, so of two senders holding one `run`
 only the first gets `ok`. Tests: `plugin/crew/tests/test_crew_resume.py`,
 `plugin/crew/tests/test_crew_resume_hook.py`; mutations
 `plugin/crew/tests/sabotage_resume.py` (72 by `len(RESUME_MUTATIONS)` at `53f5482c`); `.crew/verify.json`
-rule 26 (`:282-292`).
+rule 27 (`:288-298`).
 
 ## `/crew:autopilot` (T-0004, crew 1.0.41)
 
@@ -532,8 +532,8 @@ an absent or unrecognised value reads as `high` with `known: False`, never
 `low`. Nothing in `plugin/crew/hooks/scripts/` calls it yet (its docstring
 names T-0010 as the consumer). Tests: `plugin/crew/tests/test_crew_autopilot.py`,
 `plugin/crew/tests/test_lifecycle_commands.py`; mutations
-`plugin/crew/tests/sabotage_autopilot.py`; `.crew/verify.json` rule 27
-(`:293-300`). Confirmed present, **not run** by this note.
+`plugin/crew/tests/sabotage_autopilot.py`; `.crew/verify.json` rule 28
+(`:299-306`). Confirmed present, **not run** by this note.
 
 ## Plain-text lifecycle routing (T-0023, crew 1.0.43)
 
@@ -565,7 +565,7 @@ is emitted). No new hook and no new skill: `plugin/crew/hooks/hooks.json` is
 unchanged. Tests: `plugin/crew/tests/test_crew_route.py`,
 `plugin/crew/tests/test_crew_route_hook.py`; mutations
 `plugin/crew/tests/sabotage_route.py` (registered at
-`plugin/crew/tests/sabotage.py:79`); `.crew/verify.json` rule 29 (`:309-317`),
+`plugin/crew/tests/sabotage.py:79`); `.crew/verify.json` rule 30 (`:315-323`),
 the last.
 
 ## verify-gate's temp-file rule capture
@@ -777,11 +777,11 @@ Obsidian vault). A CLI the commands call, not a hook.
   the next free id on `id taken`, stop on any other failed `create`, and
   create the ticket folder only after a `create` that succeeded;
   `jira-sync.md` and `sdp-sync.md` honour `--to`; `crew_status.py` prints its
-  tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:63`).
+  tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:69`).
 - Tests: `plugin/crew/tests/test_crew_tracker.py`, fixtures under
   `plugin/crew/tests/tracker_fixtures/`, 81 mutations in
   `plugin/crew/tests/sabotage_tracker.py` (two of them RED only as root: the
-  owner tests skip without it); one `.crew/verify.json` rule (`:301-308`).
+  owner tests skip without it); one `.crew/verify.json` rule (`:307-314`).
   JUDGEMENT: the Kanban plugin's acceptance of the edited board was checked by
   byte comparison only, never by opening Obsidian.
 
@@ -807,7 +807,7 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   refresh, commits, and re-runs until `fresh`; a `stop` ends the loop.
 - `/crew:done` Check 4 (`plugin/crew/commands/done.md:46-57`) runs it again
   and refuses on `stale` or `unknown` without refreshing (`:52-55`).
-- `REFRESH_ARTIFACT_PATHS` (`plugin/crew/hooks/scripts/crew_refresh_check.py:168-173`: the code map,
+- `REFRESH_ARTIFACT_PATHS` (`plugin/crew/hooks/scripts/crew_refresh_check.py:173-178`: the code map,
   `docs.diagramsDir`, `graph.out`, `.claude/rules`) is the one definition.
   The scope guard (`_refresh_artifact`,
   `plugin/crew/hooks/scripts/scope_guard.py:186-197`) and the completion audit
@@ -827,6 +827,26 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 `docs/diagrams/process-crew-lifecycle.mmd` drew `/crew:done` as "all three
 or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
 "all four or nothing" (its `:125`).
+
+**The secrets-denylist gate on the graph (T-0064, crew 1.0.47).** DERIVED at `508a9641`.
+`_graph` calls `_graph_ignore_refusal`
+(`plugin/crew/hooks/scripts/crew_refresh_check.py:494`, called at `:524`) after its
+"no code changed" return and before the graphify-missing check. While
+`crew_graph_ignore.coverage` reports a secrets-denylisted file the root `.graphifyignore` does
+not exclude, or cannot tell, the graph entry is `unknown` with `refreshable: False`, so no
+graphify command is named and autopilot's `_settles` stops on it unchanged. The checker is
+`plugin/crew/hooks/scripts/crew_graph_ignore.py`: `BUILTIN_PATTERNS` (`:107`), `translate_rule`
+for `Read(...)` deny rules (`:169`), `denylist` (`:232`), `candidates` (`:259`, `git ls-files
+--cached --others`, no `--exclude-standard`), `_ignored` (`:273`, git's own `check-ignore
+--no-index` in a scratch repository with the user's global excludes disabled), `coverage`
+(`:310`), `write` (`:343`, temp file then `os.replace`) and `main` (`:395`). `crew_status.py`
+prints the same answer as its `graph-ignore` line (`_graph_ignore_line`,
+`plugin/crew/hooks/scripts/crew_status.py:166`, appended at `:228`). Tests:
+`plugin/crew/tests/test_graph_ignore.py`, `plugin/crew/tests/test_graph_ignore_graphify.py` (real
+graphify; skips without it), and new cases in `test_refresh_check.py` and `test_status.py`; the
+mutations are the T-0064 block of `plugin/crew/tests/sabotage_refresh.py` (`:249`). `.crew/verify.json`
+rule 26 (`:282-287`) maps them. JUDGEMENT: graphify's post-commit hook still builds without the
+check; `/crew:status`'s line is the only warning on that path.
 
 ## Entry points
 
@@ -852,8 +872,11 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   above.
 - `plugin/crew/hooks/scripts/crew_resume.py:667` — `decide`, read-only;
   `main()` is the `decide` / `record` / `precompact` CLI.
-- `plugin/crew/hooks/scripts/crew_refresh_check.py:576` — `ticket_freshness`,
-  the library entry point; `main()` at `:676`.
+- `plugin/crew/hooks/scripts/crew_refresh_check.py:606` — `ticket_freshness`,
+  the library entry point; `main()` at `:706`.
+- `plugin/crew/hooks/scripts/crew_graph_ignore.py:310` — `coverage`, the library
+  entry point `crew_refresh_check.py` and `crew_status.py` call; `main()` at `:395` is the
+  `--check` / `--write` CLI.
 - `plugin/crew/hooks/scripts/crew_autopilot.py:451` — `next_phase`, read-only;
   `main()` at `:639` is the `next` / `resume` / `settings` / `stops` CLI
   `plugin/crew/commands/autopilot.md` calls.
@@ -1628,3 +1651,7 @@ leaves re-executed on the merge: 122 / 68 / 54 / 0. T-0004's "117 -> 119" is now
 `role_write_guard.py` changed on one side only, so their citations stand. On the merge,
 `test_crew_route.py`, `test_crew_route_hook.py`, `test_crew_context.py`, `test_crew_tracker.py`
 and `test_crew_config.py` ran: 588 passed.
+
+## Re-anchor provenance - `e463ca53` -> `508a9641`, 2026-09-27 (T-0064)
+
+`7e98babd` merges origin/main `bebbb97f` (T-0023 landed, crew 1.0.46) into T-0064's branch, which carried no commit of its own before it; `a079741b` (the checker, the refresh-check gate and the `graph-ignore` status line), `1a093e74` (docs) and `508a9641` (crew 1.0.47) follow. Between `e463ca53` and `508a9641` the non-artifact paths that changed are `.crew/verify.json` (rule 26 inserted at `:282-287`, six lines, so every later line moved +6), `CHANGELOG.md` (+28 at the top), `plugin/crew/README.md` (one row at `:763`), `plugin/PLUGINS.md`, the version files (in place), `plugin/crew/commands/{onboard,upgrade,status}.md`, the crew-graph and crew-setup skills, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `crew_status.py`, the new `crew_graph_ignore.py`, their tests, `plugin/crew/tests/sabotage_refresh.py` and the troubleshooting guide. Every `path:N` citation in the body into one of them, and every bare `:N` after such a path, was mapped with a line diff (`git show e463ca53:<path>` against the tree) and each moved one re-read with `sed -n`; the provenance sections above keep their own numbers, as history. Moved here: `CHANGELOG.md`'s "117 -> 119" `:436-437` -> `:464-465` (with its history list), `plugin/crew/commands/onboard.md:199` -> `:201`, `plugin/crew/hooks/scripts/crew_status.py:63` -> `:69`, `crew_refresh_check.py`'s `REFRESH_ARTIFACT_PATHS` `:168-173` -> `:173-178`, `ticket_freshness` `:576` -> `:606` and `main()` `:676` -> `:706`, and `.crew/verify.json`'s resume, autopilot, tracker and routing rules `:282-292`/`:293-300`/`:301-308`/`:309-317` -> `:288-298`/`:299-306`/`:307-314`/`:315-323`, now rules 27-30. The version is 1.0.47 (`marketplace.json:218`, `plugin.json:3`, in place). New: the T-0064 paragraph in the refresh-check section and the `crew_graph_ignore.py` entry point, both DERIVED at `508a9641`. Nothing was executed for this note.

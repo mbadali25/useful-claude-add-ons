@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@d276b268 on 2026-09-27. Verify before trusting.
+%% Generated from useful-claude-add-ons@508a9641 on 2026-09-27. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -62,6 +62,13 @@
 %% (brainstorm.md:35-37, fix.md:29-30) instead of carrying on into the ticket
 %% folder. brainstorm.md kept its line count; fix.md gained one line, so its
 %% citations from :30 on moved +1 (re-mapped with a line diff against c2ae46ab).
+%% Re-anchored for T-0064 at 508a9641 (crew 1.0.47): of the anchored paths only
+%% crew_refresh_check.py changed since d276b268 (`git diff --name-only`). It now refuses
+%% the graph - `unknown`, not refreshable, no command named - while a secrets-denylisted
+%% file is not excluded by the root .graphifyignore or that cannot be told
+%% (_graph_ignore_refusal, crew_refresh_check.py:494, via crew_graph_ignore.coverage).
+%% That reaches rf1's existing `stop` edge; rf1 and rfx now say so. No command-file line
+%% moved, and no node cites a line in crew_refresh_check.py.
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):
@@ -173,10 +180,10 @@ flowchart TB
         im1 --> im2["steps in order, test first<br/>:41; scope-guard on every write<br/>hooks.json:31 (PreToolUse, Touch)"]
         im2 --> im3a["changed-file list, verify<br/>:59, :69"]
         im3a --> im3["step 6: tests, then /crew:docs<br/>:89-94"]
-        im3 --> rf1{"crew_refresh_check.py<br/>:96"}
+        im3 --> rf1{"crew_refresh_check.py<br/>:96<br/>(graph refused while a secrets-denylisted<br/>path is not in .graphifyignore, T-0064)"}
         rf1 -- "refresh with ..." --> rf2["run the named refresh,<br/>commit, re-run"]
         rf2 --> rf1
-        rf1 -- "stop" --> rfx([report the reason, stop])
+        rf1 -- "stop" --> rfx([report the reason, stop<br/>graph refusal: crew_graph_ignore.py --write])
         rf1 -- fresh --> im4["spec.md header 'status: review'<br/>(keeps the approval),<br/>crew_tracker.py move --to review<br/>(Review lane: review outstanding)<br/>:107-111"]
         im4 --> im5["then /crew:review last<br/>:112"]
     end

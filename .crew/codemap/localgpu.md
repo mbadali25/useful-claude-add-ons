@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@e463ca53
+anchor: useful-claude-add-ons@508a9641
 verified: 2026-09-27
 
 # localgpu
@@ -1130,3 +1130,7 @@ an unrelated path) were discarded rather than applied. This note cites
 `.crew/verify.json` by name only, and nothing under `plugin/localgpu/` changed on either side;
 the refresh check named the note only because `.crew/verify.json` gained T-0021's rule 28
 ahead of T-0023's routing rule, now 29. No citation moved. Nothing was executed for this note.
+
+## Re-anchor provenance - `e463ca53` -> `508a9641`, 2026-09-27 (T-0064)
+
+`7e98babd` merges origin/main `bebbb97f` (T-0023 landed, crew 1.0.46) into T-0064's branch, which carried no commit of its own before it; `a079741b` (the checker, the refresh-check gate and the `graph-ignore` status line), `1a093e74` (docs) and `508a9641` (crew 1.0.47) follow. Between `e463ca53` and `508a9641` the non-artifact paths that changed are `.crew/verify.json` (rule 26 inserted at `:282-287`, six lines, so every later line moved +6), `CHANGELOG.md` (+28 at the top), `plugin/crew/README.md` (one row at `:763`), `plugin/PLUGINS.md`, the version files (in place), `plugin/crew/commands/{onboard,upgrade,status}.md`, the crew-graph and crew-setup skills, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `crew_status.py`, the new `crew_graph_ignore.py`, their tests, `plugin/crew/tests/sabotage_refresh.py` and the troubleshooting guide. Every `path:N` citation in the body into one of them, and every bare `:N` after such a path, was mapped with a line diff (`git show e463ca53:<path>` against the tree) and each moved one re-read with `sed -n`; the provenance sections above keep their own numbers, as history. Nothing under `plugin/localgpu/` changed, and no body citation moved; the refresh check named this note because it cites `.crew/verify.json` and crew's `plugin.json` by name. Nothing was executed for this note.

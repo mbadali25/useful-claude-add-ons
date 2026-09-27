@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@e463ca53
+anchor: useful-claude-add-ons@508a9641
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -130,8 +130,10 @@ listing the directory.
   diff). Both provenance shapes are still accepted by `_DIAGRAM_ANCHOR_RE`.
 - `docs/diagrams/data-flow-crew-config.mmd:1-2`, `process-crew-brief.mmd:1`
   and `process-crew-lifecycle.mmd:1` - the three crew diagrams, each on the
-  `%% Generated from <repo>@<sha> on <date>.` form, all at `d276b268` after
-  T-0021 (which added `crew_tracker.py` to each one's `%% Anchors:` line and
+  `%% Generated from <repo>@<sha> on <date>.` form: `data-flow-crew-config` at `e463ca53`
+  (T-0023), `process-crew-brief` and `process-crew-lifecycle` at `508a9641` (T-0064, which
+  added the `graph-ignore` status line and the refresh check's graph refusal), all three at
+  `d276b268` after T-0021 (which added `crew_tracker.py` to each one's `%% Anchors:` line and
   drew the tracker calls into the lifecycle). `data-flow-crew-config` was redrawn for crew 1.0 at `6c497a14`
   (`5e937837`, the refresh branch) and re-anchored, its `%% Anchors:` paths
   unchanged in `6c497a14..f2bb919b`. `process-crew-brief` was **redrawn**:
@@ -299,7 +301,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:2052` (`:2029` at `db14619c`, `:1953` at T-0023's `a1acd9b7`, `:2015` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1944` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:2053` (`:2030` at `db14619c`, `:1954` at T-0023's `a1acd9b7`, `:2016` at T-0021's `74f52fae`, `:2007` at `c2ae46ab`, `:1945` at T-0042's `f0b12ee6`, `:1931` at `2b18f7ab`, `:1795` at T-0021's `bcb77ce2`, `:1805` at `07ca3972`, `:1760` at `a0c0847e`, `:1731` at `8ebbdedc`, `:1758` at T-0006's `2bb92f32`, `:1729` at `c35edda5`; on T-0005's branch `:1855` at `a26ad8c0`, `:1811` at `aa7f9841`, `:1796` at `1e210476`, `:1789` at `3a57b2d2`, `:1768` at `2170d72e`, `:1729` at `8d447a7d`; `:1726` at `f2bb919b`, `:1605` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -781,3 +783,7 @@ mention in `plugin/crew/README.md` is `:2052` (`:2029` on main's side, `:1953` o
 `TODO.md` is byte-identical to main's (`:1201` holds). `CHANGELOG.md` and `.crew/verify.json`
 are cited without a line here. The diagrams this note cites are re-anchored in the same commit
 as this note. Nothing was executed for this note.
+
+## Re-anchor provenance - `e463ca53` -> `508a9641`, 2026-09-27 (T-0064)
+
+`7e98babd` merges origin/main `bebbb97f` (T-0023 landed, crew 1.0.46) into T-0064's branch, which carried no commit of its own before it; `a079741b` (the checker, the refresh-check gate and the `graph-ignore` status line), `1a093e74` (docs) and `508a9641` (crew 1.0.47) follow. Between `e463ca53` and `508a9641` the non-artifact paths that changed are `.crew/verify.json` (rule 26 inserted at `:282-287`, six lines, so every later line moved +6), `CHANGELOG.md` (+28 at the top), `plugin/crew/README.md` (one row at `:763`), `plugin/PLUGINS.md`, the version files (in place), `plugin/crew/commands/{onboard,upgrade,status}.md`, the crew-graph and crew-setup skills, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `crew_status.py`, the new `crew_graph_ignore.py`, their tests, `plugin/crew/tests/sabotage_refresh.py` and the troubleshooting guide. Every `path:N` citation in the body into one of them, and every bare `:N` after such a path, was mapped with a line diff (`git show e463ca53:<path>` against the tree) and each moved one re-read with `sed -n`; the provenance sections above keep their own numbers, as history. Moved here: every `plugin/crew/README.md` citation below `:763` moved +1 (`:1604` through `:2052` in the reference-docs paragraph). The diagrams sentence now names each crew diagram's own anchor: `process-crew-brief.mmd` and `process-crew-lifecycle.mmd` were re-anchored to `508a9641` by this ticket, `data-flow-crew-config.mmd` stays at `e463ca53`. Nothing was executed for this note.
