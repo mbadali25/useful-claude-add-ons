@@ -170,8 +170,9 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.42: plain-text lifecycle routing (T-0023).** Bumped
-  `1.0.41 -> 1.0.42`. **Off by default** behind the new `route.enabled`
+- **`crew` 1.0.43: plain-text lifecycle routing (T-0023).** Bumped
+  `1.0.42 -> 1.0.43` (`1.0.41 -> 1.0.42` on its branch, re-set after merging
+  T-0005's 1.0.42). **Off by default** behind the new `route.enabled`
   (`false` in both config layers and both templates; only the JSON value
   `true` arms it - `"true"`, `1`, `"yes"` read as off with a warning). When
   armed, crew's existing UserPromptSubmit context hook matches the WHOLE
@@ -180,7 +181,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   status) and puts one `crew route:` line first in that turn's context,
   naming the `/crew:<command> <ticket>` whose procedure Claude runs through
   the Skill tool. The hook runs nothing, blocks nothing, and registers no new
-  hook or skill; unarmed, its output is byte-identical to 1.0.41 (compared
+  hook or skill; unarmed, its output is byte-identical to before routing (compared
   whole to a golden recorded from `1e0706ac`, through both wrappers).
   - Three outcomes: `route`; `ask` when the ticket does not resolve to
     exactly one (an id with no folder, a broken active-ticket pointer,
@@ -200,9 +201,19 @@ All notable changes to this repository are documented here. Format follows [Keep
   - A repo file written from the template carries `route.enabled: false`,
     and the repo layer wins, so a machine-wide `true` reaches only repos whose
     file leaves the key out (CONFIG.md §21).
-  - `tests/sabotage_route.py`: 19 mutations, each red on its named test
-    through `sabotage.py`. Config leaf count 119 -> 120; global-settable
-    keys 66 -> 67.
+  - **The route line is bounded (review round 1).** Every variable-length
+    field `render` reads - intent, ticket, source, phase, command, reason
+    and each listed candidate - is clipped to its own cap with whitespace
+    collapsed, so the line is at most `MAX_LINE_CHARS` (1400) and always fits
+    the 2000-character UserPromptSubmit budget. Before, a `continue` stopped
+    on a 2,100-character open question produced an ask longer than the
+    budget, and the context hook dropped it whole.
+  - `tests/sabotage_route.py`: 29 mutations, each red on its named test
+    through `sabotage.py`. The route tests' child processes point both
+    `HOME` and `USERPROFILE` at an empty directory, so a real
+    `route.enabled: true` in the machine config cannot arm the unarmed cases
+    on Windows either. Config leaf count 121 -> 122; global-settable keys
+    67 -> 68.
 
 - **`crew` 1.0.41: `/crew:autopilot` resumes and drives one ticket
   (T-0004).** Bumped `1.0.40 -> 1.0.41`. New

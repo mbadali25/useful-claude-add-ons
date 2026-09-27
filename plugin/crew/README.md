@@ -826,7 +826,7 @@ A `.crew/config.json` that exists but does not parse, or a value outside those f
 
 ### Plain-text lifecycle: short prompts that name a command
 
-With `route.enabled: true` (since 1.0.42, **off by default**), a short plain-text prompt can stand in for a lifecycle command. crew's UserPromptSubmit context hook matches the **whole** prompt against a small table (`hooks/scripts/crew_route.py`, `PHRASES`) and, on a match, puts one `crew route:` line first in that turn's context: the `/crew:<command> <ticket>` whose procedure Claude should run through the Skill tool. The hook runs nothing and blocks nothing, and the command's own checks still decide.
+With `route.enabled: true` (since 1.0.43, **off by default**), a short plain-text prompt can stand in for a lifecycle command. crew's UserPromptSubmit context hook matches the **whole** prompt against a small table (`hooks/scripts/crew_route.py`, `PHRASES`) and, on a match, puts one `crew route:` line first in that turn's context: the `/crew:<command> <ticket>` whose procedure Claude should run through the Skill tool. The hook runs nothing and blocks nothing, and the command's own checks still decide.
 
 | You type (whole prompt) | Routes to |
 |---|---|

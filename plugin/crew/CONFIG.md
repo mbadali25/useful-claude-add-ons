@@ -637,11 +637,12 @@ them:
 
 ---
 
-## 10. Global-settable keys — 67
+## 10. Global-settable keys — 68
 
-67 measured (`leaf_paths(default_global_config())`, crew 1.0.42); the table
-below lists 64 of them. `guards.cloudGuard`, `guards.cloudDestructive` and
-`guards.sqlDestructive` are global-settable and not tabled here.
+68 measured (`leaf_paths(default_global_config())`, crew 1.0.43); the table
+below lists 64 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
+`guards.sqlDestructive` and `environments.prodUnattended` (§16) are
+global-settable and not tabled here.
 
 Settable in **either** layer; repo wins — **except `install.policy`, the
 seven `guards.*` and `change.requireForProduction`, where the narrower of the
@@ -2245,7 +2246,7 @@ completion audit is relaxed. `pm.authority: autonomous` from 0.20 arms nothing �
 
 ## 21. `route` — plain-text lifecycle routing, off until `true`
 
-`route.enabled` (T-0023, since 1.0.42) lets a short plain-text prompt reach a
+`route.enabled` (T-0023, since 1.0.43) lets a short plain-text prompt reach a
 lifecycle command. When it is on, crew's UserPromptSubmit context hook
 (`crew_context.route_item`) calls `crew_route.decide` on the prompt and, unless
 the answer is `none`, puts one line FIRST in the turn's context: the
