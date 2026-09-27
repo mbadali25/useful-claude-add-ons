@@ -93,6 +93,19 @@ def test_number_and_prose(repo):
     assert (ok, named) == (False, True), lines
 
 
+def test_prose_committed_number_uncommitted(repo):
+    """Judged against the scope base, not HEAD or the index: the committed
+    prose edit is still part of the change."""
+    ready(repo)
+    _edit(repo, "currently totals", "now totals")
+    _commit(repo)
+    _edit(repo, OLD, NEW)
+
+    ok, named, lines = _fails_on(repo, REL)
+
+    assert (ok, named) == (False, True), lines
+
+
 def test_added(repo):
     ready(repo)
     _write(repo, "plugin/other/BUDGETS.md", BUDGETS)

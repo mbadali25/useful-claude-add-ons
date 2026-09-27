@@ -392,15 +392,15 @@ def compute(root, base, max_part_bytes=DEFAULT_MAX_PART_BYTES, omit_generated=Tr
         # blob ids on the `index` line, so the bytes still change with them.
         # The omitted generated files are excluded literally, so no glob
         # character in a name can widen what is left out.
-        skip = [f":(exclude,literal){e['path']}" for e in omitted]
-        diff = _run_raw(root, ["diff"] + _DIFF_FLAGS + [base_sha, working_tree] + only + skip)
+        only = only + [f":(exclude,literal){e['path']}" for e in omitted]
+        patch = _run_raw(root, ["diff"] + _DIFF_FLAGS + [base_sha, working_tree] + only)
         generated, listing = _listing(root, omitted)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
-    if listing and diff and not diff.endswith(b"\n"):
+    if listing and patch and not patch.endswith(b"\n"):
         listing = b"\n" + listing
-    patch = diff + listing
+    diff, patch = patch, patch + listing
     if not patch and (dirty or committed_files):
         # The bug this script exists to prevent: something was detected as
         # changed and the patch is still empty.
