@@ -1128,11 +1128,16 @@ layers — the ratchet), a nonProd environment runs unattended and is logged as
 environment crew cannot identify, still ask when attended and are refused
 unattended. Unknown is: no input given (the workflow's default is not read),
 `-F name=@file`, `--input FILE`, a value or workflow that is not a literal
-(`$ENV`, `"$WF"`), conflicting values, stdin crew cannot see, no workflow
+(`$ENV`, even after `ENV=staging` — crew never resolves a variable for a
+dispatch; `"$WF"`), conflicting values, stdin crew cannot see or that a filter
+or a `<` redirect may rewrite (only gh's own here-string or heredoc, or `echo`/
+`printf`/bare `cat` piped straight in, counts as literal), any word on the
+line that may expand into more arguments (`$Y`, a glob, `{a,b}`), no workflow
 named (gh prompts), anything `xargs`/`parallel` may append, and — for every
 dispatch, listed or not — an `environments` block crew cannot read. A workflow
 matching no key is **not judged**, as before; so with `workflows` at `{}`
-nothing is classified. `environments.workflows` does not engage the terraform
+nothing is classified. A quoted display name (`'Deploy Staging'`) is matched as
+written, and the approval marker covers the inputs judged, not only the argv. `environments.workflows` does not engage the terraform
 layer. A deploy command also declared in `.crew/verify.json` still passes
 through `promote-gate.sh`, whose `requireHuman` is independent of
 `prodUnattended`.
@@ -1179,7 +1184,8 @@ spelling of a deploy workflow not listed as a key (its display name or numeric
 id — list every spelling you use), the workflow YAML (`environment:` keys,
 `${{ inputs.* }}`), `gh run rerun`, and a dispatch sent with `curl`. Tests: `tests/test_cloud_guard.py` (every case through python, bash and
 pwsh), `tests/test_cloud_guard_environments.py` and `tests/test_crew_tfplan.py`
-(the environment layer and the sidecar), and the `cloud-guard.sh` section of
+(the environment layer and the sidecar), `tests/test_cloud_guard_deploy.py`
+(workflow dispatches), and the `cloud-guard.sh` section of
 `hooks/scripts/_test/run-tests.sh`.
 
 #### What the guard does not catch

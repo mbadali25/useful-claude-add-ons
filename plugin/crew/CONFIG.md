@@ -1209,7 +1209,7 @@ earn its own section: see §18, not the tables immediately below.
 | `cloud.azureSubscriptions` | list of globs (id or name) | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
 | `environments.nonProd` | list of globs | `[]` | **repo only** | `cloud_guard.py::environments_config` |
 | `environments.prodUnattended` | `true` \| `false` | `false` | both, **true only when both say `true`** | `cloud_guard.py::environments_config` |
-| `environments.workflows` | object: workflow glob -> `input:<name>` or an environment name | `{}` | **repo only** | `cloud_guard.py::environments_config`, `_dispatch_environment` |
+| `environments.workflows` | object: workflow glob -> `input:<name>` or an environment name | `{}` | **repo only** | `cloud_guard.py::environments_config`, `crew_guards.py::dispatch_environment` |
 
 Read one with `crew_config.py --guard <name> [--json]`, which prints the
 decision, both layers' values and which one is holding it down. The two shell
@@ -1575,25 +1575,38 @@ map from a workflow glob to where the target environment comes from:
 `input:<name>` reads the dispatch input `<name>` (a GitHub input name); any
 other string is that fixed environment, classified by `nonProd` like a
 terraform workspace. A key is matched with fnmatch, case-insensitively,
-against the workflow **as written** on the command line.
+against the workflow **as written** on the command line; a quoted display name
+with spaces (`gh workflow run 'Deploy Staging'`) is matched as that name.
 
 **What is judged.** `gh workflow run <wf>` and the REST dispatch `gh api` sends
 for it — method POST (`-X POST`, `--method POST`, `-XPOST`, or fields/`--input`
 with no method, which gh sends as POST) on
 `repos/<o>/<r>/actions/workflows/<wf>/dispatches`, leading `/` optional — are
-parsed into one dispatch shape and classified by one function,
-`cloud_guard.py::_dispatch_environment`. Inputs come from `-f`/`--raw-field`
+parsed by one flag parser, which reads gh's clustered short flags
+(`-iX POST`, `-iXPOST`, `-X=POST`), into one dispatch shape, and classified by
+one function, `crew_guards.py::dispatch_environment`. Inputs come from `-f`/`--raw-field`
 and `-F`/`--field` (`name=v` for `gh workflow run`; `inputs[name]=v` for the
 REST form, whose top-level `ref` is the branch, never an input) and from a
 literal JSON body on stdin (`gh workflow run --json`, `gh api --input -`).
-Every occurrence must agree. A `gh api` GET, or a POST to any other path, is
+Every occurrence must agree. A body on stdin is literal only when gh's own
+here-string or heredoc carries it, or when `echo` (only `-n`), `printf` of one
+literal, or a bare `cat` of such a body pipes it straight in, with no backslash
+in it, nor a `$` or backquote. Values are read from the command **as
+written**: crew never resolves `$ENV`, `${ENV}`, `$(...)` or backticks from an
+earlier assignment, and a word anywhere on the line that may expand into
+other words — an unquoted `$Y`, a glob, `{a,b}`, `~` — makes every input
+unknown, because it can add a `-f environment=...` crew never saw. crew cannot
+tell a quoted `"$Y"` from an unquoted one. A `gh api` GET, or a POST to any other path, is
 not a dispatch.
 
 **Unknown**, and never allowed unattended: no `<name>` input given (the
 workflow's default is not read), `-F name=@file`, `--input FILE`, a value or
-workflow that is not a literal (`$ENV`, `"$WF"`), conflicting values, a JSON
-body crew cannot see, no workflow named (gh prompts for one), a dispatch
-behind `xargs`/`parallel`, and — for **every** dispatch, listed or not — an
+workflow that is not a literal (`$ENV` even after `ENV=staging`, `"$WF"`,
+`~name`, `$(...)`), conflicting values, a JSON body crew cannot see, a body
+that passes through a filter (`sed`, `tr`, `jq`, `awk`, `perl`, `python`,
+`tee`, a subshell or group) or that a `<` redirect, process substitution,
+duplicated fd or here-doc on another fd may replace, no workflow named (gh
+prompts for one), a dispatch behind `xargs`/`parallel`, and — for **every** dispatch, listed or not — an
 `environments` block that does not validate (`workflows` must be an object of
 non-blank keys to `input:<name>` or non-blank names), which also forces an
 armed guard to `block` mode.
@@ -1611,7 +1624,10 @@ means `ask` in **both** layers; a repo alone gets `block`):
 A deploy never destroys, so T-0005's destroy column does not apply — and
 `allow` **covers nonProd only**: production without `prodUnattended` in both
 layers, and an unknown environment, still ask when attended and are denied
-unattended. The approval marker is `.approved-guard-deployWorkflow-<hash>`.
+unattended. The approval marker is `.approved-guard-deployWorkflow-<hash>`,
+keyed on the command **and** what was judged (its stdin, the inputs and the
+environment), so approving production-one never runs production-two; a body
+read from a file (`--input FILE`, `-F name=@file`) is not in the key.
 
 **Unclassified.** A workflow matching no key is not judged at all — no
 decision, no guard.log row — exactly as before T-0009; with `workflows` at `{}`

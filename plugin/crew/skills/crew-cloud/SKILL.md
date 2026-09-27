@@ -67,8 +67,9 @@ workflow matching no key is not judged. Under `ask` in both layers a nonProd
 environment runs unattended; production does only with
 `environments.prodUnattended` true in both layers. `allow` covers nonProd only:
 production without `prodUnattended`, and an environment crew cannot identify
-(no input, `-F name=@file`, `--input FILE`, `$ENV`, conflicting values, no
-workflow named, `xargs`, a malformed `environments` block), still ask and are
+(no input, `-F name=@file`, `--input FILE`, `$ENV` whatever it was assigned,
+conflicting values, stdin a filter or `<` redirect may rewrite, no workflow
+named, `xargs`, a malformed `environments` block), still ask and are
 refused unattended. Not seen: an unlisted spelling of the workflow (display
 name, numeric id), the workflow YAML, `gh run rerun`, `curl`.
 

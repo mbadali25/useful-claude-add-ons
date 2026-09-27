@@ -129,7 +129,8 @@ import crew_state
 from crew_guards import _head_name as _guards_head_name
 from crew_guards import command_trigger, first_non_literal, ps_trigger, \
     skip_wrapper_options, tf_skip_options as _tf_skip_options
-from crew_guards import DEPLOY_RULE, ENV_NONPROD, ENV_PROD, ENV_UNKNOWN, dispatch_scopes, judge_dispatch
+from crew_guards import DEPLOY_RULE, ENV_NONPROD, ENV_PROD, ENV_UNKNOWN, dispatch_scopes, judge_dispatch, \
+    command_stdin, reconcile_dispatch
 
 
 def _head_name(token):
@@ -211,6 +212,7 @@ class _Cmd:
     def __init__(self, pipe_from=None):
         self.words = []
         self.stdin = None
+        self.stdin_unsure = False  # a `<` or other-fd redirect may replace it
         self.pipe_from = pipe_from
         # An output redirect to anything but the null device. It runs before
         # terraform reads its plan, so it could be rewriting that plan.
@@ -670,11 +672,14 @@ def _lex_bash(text, unsure=None):
             i += 1
             continue
         if c in "<>":
-            if state["word"] and "".join(state["word"]).isdigit():
+            fd = "".join(state["word"] or ())
+            if fd.isdigit():
                 # `2>`: the digits are the fd, not an argument.
                 state["word"] = None
             end_word()
             op = re.match(r"<<<|<<-|<<|>>|>&|<&|<>|>\||>|<", text[i:]).group(0)
+            if op[0] == "<" and (op in ("<", "<>", "<&") or fd.strip("0").isdigit()):
+                state["cur"].stdin_unsure = True
             if op in ("<&", ">&"):
                 # `2>&1`, `>&2`: an fd duplication, no target word to drop
                 # beyond the digit that follows. `>&file` (no digit) is
@@ -2865,8 +2870,7 @@ def scan(shell, text, env=None, depth=0, ctx=None, seq=None):
         findings.extend(scan(shell, sub, env, depth + 1, ctx, seq))
     for cmd in cmds:
         _note_cmd(cmd, ctx)
-        if cmd.pipe_from is not None and cmd.stdin is None:
-            cmd.stdin = _stdout_literal(cmd.pipe_from)
+        cmd.stdin = command_stdin(cmd, _stdout_literal, _head_name)
         words = [_substitute(w, variables) for w in cmd.words]
         if not words:
             continue
@@ -2931,6 +2935,12 @@ def scan(shell, text, env=None, depth=0, ctx=None, seq=None):
             # The fed finding carries the identity too, so the read-only
             # identity row it replaces would only say the same thing twice.
             found = [f for f in found if f.rule != IDENTITY_RULE] + [extra]
+        if words != cmd.words:  # a dispatch is read from the words as written
+            rfed = []
+            rargv = _unwrap(list(cmd.words), dict(env), rfed, None)
+            found = reconcile_dispatch(found, rargv and _classify(
+                rargv, None if rfed else cmd.stdin, dict(env), shell, depth,
+                fed=rfed[-1] if rfed else False))
         findings.extend(found)
     return findings
 
@@ -3072,9 +3082,10 @@ def _judge_one(root, finding, pins, problem, envs=None):
                 "unreadable", "", True)
     if finding.rule in crew_state.GUARD_NAMES or \
             finding.rule in crew_state.PROD_GUARD_NAMES:
+        if finding.rule == DEPLOY_RULE:  # keyed on the inputs judged too
+            return judge_dispatch(finding.scope, finding.what, lambda key: crew_config.guard_decision(
+                root, DEPLOY_RULE, key), finding.text, envs or {}, _approval_is_live)
         out = crew_config.guard_decision(root, finding.rule, finding.text)
-        if finding.rule == DEPLOY_RULE:
-            return judge_dispatch(finding.scope, finding.what, out, envs or {}, _approval_is_live)
         if finding.scope is not None and envs is not None:
             return _terraform_verdict(root, finding, out, envs) + (True,)
         decision = {"block": "deny"}.get(out["decision"], out["decision"])

@@ -292,8 +292,10 @@ CLOUD_GUARD_MUTATIONS = (
 GUARDS = os.path.join(SCRIPTS, "crew_guards.py")
 TFPLAN = os.path.join(SCRIPTS, "crew_tfplan.py")
 _E = "tests/test_cloud_guard_environments.py::"
-_DB = _E + "test_must_block_deploy_python"
-_DA = _E + "test_must_allow_deploy_python"
+# T-0009's deploy tables live in their own module since review round 1.
+_ED = "tests/test_cloud_guard_deploy.py::"
+_DB = _ED + "test_must_block_deploy_python"
+_DA = _ED + "test_must_allow_deploy_python"
 _EB = _E + "test_must_block_env_python"
 _EP = _E + "test_must_block_allow_policy_python"
 _EA = _E + "test_must_allow_env_python"
@@ -1048,11 +1050,12 @@ CLOUD_GUARD_MUTATIONS += (
      '    if kind == "typed" and value.startswith("@"):\n',
      "    if False:\n", _DB + "[field-at-file]"),
     ("deploy guard: a non-literal workflow read as unlisted", GUARDS,
+     # Re-anchored in round 1: the message now strips the unseen marker.
      "    if not keys:\n"
-     "        return ENV_UNKNOWN, None, (f\"the workflow `{workflow}` is not a \"",
+     "        return ENV_UNKNOWN, None, (\"the workflow `\"",
      "    if not keys:\n"
      "        return None\n"
-     "        return ENV_UNKNOWN, None, (f\"the workflow `{workflow}` is not a \"",
+     "        return ENV_UNKNOWN, None, (\"the workflow `\"",
      _DB + "[non-literal-workflow]"),
     ("deploy guard: the environment layer applied under `block`", GUARDS,
      '    if policy == "block":\n'
@@ -1118,12 +1121,59 @@ CLOUD_GUARD_MUTATIONS += (
      '    out["engaged"] = bool(out["nonProd"] or out["prodUnattended"] or out["problem"])\n',
      '    out["engaged"] = bool(out["nonProd"] or out["prodUnattended"] or out["problem"]\n'
      '                          or out["workflows"])\n',
-     _E + "test_workflows_alone_do_not_engage_the_environment_layer"),
+     _ED + "test_workflows_alone_do_not_engage_the_environment_layer"),
     ("deploy guard: `_judge_one` no longer routes dispatches", GUARD,
-     "        if finding.rule == DEPLOY_RULE:\n"
+     "        if finding.rule == DEPLOY_RULE:  # keyed on the inputs judged too\n"
      "            return judge_dispatch(",
      "        if False:\n"
      "            return judge_dispatch(", _DB + "[prod-input]"),
+    # Review round 1: one entry per finding, and one per neighbour branch.
+    ("deploy guard r1: a rewritable stdin read as the literal", GUARDS,
+     "    if isinstance(text, Rewritable):\n",
+     "    if False:\n", _DB + "[r1-stdin-sed]"),
+    ("deploy guard r1: a bare `cat` drops the rewritable mark", GUARDS,
+     "        return src.stdin  # a `Rewritable` stays one: `sed ... | cat | gh`\n",
+     "        return None if src.stdin is None else str(src.stdin)\n",
+     _DB + "[stdin-sed-then-cat]"),
+    ("deploy guard r1: a body's `$`, backquote or backslash read as literal",
+     GUARDS, "    if _BODY_EXPANDS_RE.search(text):\n", "    if False:\n",
+     _DB + "[stdin-heredoc-expansion]"),
+    ("deploy guard r1: an expanding word elsewhere on the line ignored", GUARDS,
+     "        if scope is not None and spread:\n", "        if False:\n",
+     _DB + "[variable-other-field-splits]"),
+    ("deploy guard r1: a glob argument read as one word", GUARDS,
+     '_EXPANDS_RE = re.compile(r"[$`*?\\0]|',
+     '_EXPANDS_RE = re.compile(r"[$`\\0]|', _DB + "[glob-argument]"),
+    ("deploy guard r1: a brace expansion read as one word", GUARDS,
+     '|\\{[^{}]*(?:,|\\.\\.)[^{}]*\\}|(?:^|[=:])~")\n',
+     '|(?:^|[=:])~")\n', _DB + "[brace-argument]"),
+    ("deploy guard r1: a `<` redirect no longer replaces the pipe", GUARD,
+     "                state[\"cur\"].stdin_unsure = True\n",
+     "                pass\n", _DB + "[r1-stdin-redirect]"),
+    ("deploy guard r1: a here-string on another fd read as stdin", GUARD,
+     'or fd.strip("0").isdigit()):\n', "):\n",
+     _DB + "[stdin-other-fd-herestring]"),
+    ("deploy guard r1: a dispatch read from resolved variables", GUARD,
+     "        if words != cmd.words:  # a dispatch is read from the words as written\n",
+     "        if False:\n", _DB + "[r1-variable-case]"),
+    ("deploy guard r1: a dispatch only the resolved reading saw kept as is",
+     GUARDS, "            kept.append(finding._replace(scope=scope))\n",
+     "            kept.append(finding)\n", _DB + "[variable-head]"),
+    ("deploy guard r1: `~` after `=` read as a literal", GUARDS,
+     '[^{}]*\\}|(?:^|[=:])~")\n', '[^{}]*\\}")\n', _DB + "[variable-tilde]"),
+    ("deploy guard r1: a short cluster stops at its first boolean", GUARDS,
+     "                    options.append((name, None))\n"
+     "                    continue\n",
+     "                    options.append((name, None))\n"
+     "                    break\n", _DB + "[r1-api-cluster-iX]"),
+    ("deploy guard r1: the approval marker keyed on the argv alone", GUARDS,
+     '    return text + "\\n" + json.dumps(\n',
+     '    return text or json.dumps(\n',
+     _ED + "test_r1_an_approval_covers_one_deployment_only"),
+    ("deploy guard r1: a quoted display name read as not literal", GUARDS,
+     "    if workflow is not None and _workflow_literal(workflow):\n",
+     "    if workflow is not None and _dispatch_literal(workflow):\n",
+     _DA + "[r1-display-name-unlisted]"),
 )
 
 # T-0005 review round 7 (GUjM5s): direct spellings the option readers lost,

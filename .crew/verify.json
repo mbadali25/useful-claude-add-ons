@@ -122,7 +122,7 @@
                 "plugin/crew/tests/test_cloud_guard*.py",
                 "plugin/crew/tests/test_crew_tfplan.py"],
       "seconds": 41,
-      "run": ["python3 -m pytest plugin/crew/tests/test_cloud_guard.py plugin/crew/tests/test_cloud_guard_environments.py plugin/crew/tests/test_crew_tfplan.py -q"],
+      "run": ["python3 -m pytest plugin/crew/tests/test_cloud_guard.py plugin/crew/tests/test_cloud_guard_environments.py plugin/crew/tests/test_cloud_guard_deploy.py plugin/crew/tests/test_crew_tfplan.py -q"],
       "reach": "local",
       "why": "40.5s measured on 2026-09-25 (T-0005, crew 1.0.36): 512 passed in the default run - every cloud-guard case through the python driver plus the bash and pwsh parity samples, the environment layer's must-block/must-allow tables, and crew_tfplan's sidecar writer against a fake terraform shim. Before this rule only check-marketplace and ruff matched these paths, so a change to a guard that can BLOCK reached none of its own tests on the local Stop gate. reach: local - the tests build throwaway repos under tmp_path, point HOME at a fixture, and never run terraform, aws, az, git push or a SQL client." },
 

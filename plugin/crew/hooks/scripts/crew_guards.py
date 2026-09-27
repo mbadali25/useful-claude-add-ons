@@ -1900,9 +1900,9 @@ def command_names_terraform(text, helpers):
 # --- workflow dispatches (T-0009) -------------------------------------------
 #
 # Two spellings of one act: `gh workflow run <wf>` and the REST call it makes,
-# `gh api -X POST repos/<o>/<r>/actions/workflows/<wf>/dispatches`. Each has
-# its own parser, because the flags differ; both produce the SAME dispatch
-# scope, and `dispatch_environment` is the one classifier either reaches.
+# `gh api -X POST repos/<o>/<r>/actions/workflows/<wf>/dispatches`. One flag
+# parser (`_gh_words`) reads both; each form then reads its own flags, and
+# both produce the SAME dispatch scope, and `dispatch_environment` is the one classifier either reaches.
 # It lives here rather than in `cloud_guard.py` for the reason the literal
 # allowlist does: that module sits at `.pylintrc`'s max-module-lines, so it
 # keeps only the call sites (`_classify`'s `gh` branch and `_judge_one`).
@@ -1914,9 +1914,11 @@ def command_names_terraform(text, helpers):
 # `environments.nonProd` classifies that name as `cloud_guard` classifies a
 # terraform workspace. A workflow matching no key is NOT judged, as before.
 # What crew cannot tell -- no input, `-F name=@file`, `--input FILE`, a value
-# or workflow that is not a literal, disagreeing values, stdin it cannot see,
-# no workflow named, xargs/parallel, a malformed `environments` block (every
-# dispatch, listed or not) -- is `unknown`. `deploy_verdict` then applies
+# or workflow that is not a literal as WRITTEN (`reconcile_dispatch`: a
+# variable is never resolved), disagreeing values, stdin it cannot see or
+# that may have been rewritten (`command_stdin`), no workflow named,
+# xargs/parallel, a malformed `environments` block (every dispatch, listed or
+# not) -- is `unknown`. `deploy_verdict` then applies
 # T-0005's table with `guards.deployWorkflow` as the base policy, except that
 # `allow` covers nonProd only. Not seen: an unlisted spelling of a deploy
 # workflow (a display name or numeric id), the workflow YAML (`environment:`
@@ -1929,11 +1931,30 @@ DEPLOY_RULE = "deployWorkflow"
 ENV_NONPROD, ENV_PROD, ENV_UNKNOWN = "nonProd", "prod", "unknown"
 
 # `cloud_guard._NON_LITERAL_RE`'s rule: anything a shell would still expand,
-# glob or split, so the word is not the value the command will see.
+# glob or split, so the word is not the value the command will see. (`~`
+# after the `=` of `-f environment=~x` is `_EXPANDS_RE`'s.)
 _DISPATCH_NON_LITERAL_RE = re.compile(r"[$`*?\[\]{}()<>|;&\s'\"\0]")
+# A workflow NAME is a whole word, so what survived the lexer's dequoting
+# with a blank or a quote in it was quoted, and gh receives it as written
+# (`gh workflow run 'Deploy Staging'`). Expansion and glob characters still
+# make it unknown: the lexer cannot say whether they were quoted.
+_WORKFLOW_NON_LITERAL_RE = re.compile(r"[$`*?\[\]{}~\0]")
+# A word that may EXPAND into other words, whatever it is an argument of:
+# an unquoted `$Y` splits (`-f note=$Y`, Y='x -f environment=production'), a
+# glob may match a file named `-fenvironment=production`, `{a,b}` becomes two
+# words. The lexer cannot tell quoted from unquoted, so any such word makes
+# every input unknown. `{owner}` (gh's placeholder, no `,` or `..`) is not a
+# brace expansion, and `[` is left out: `inputs[name]=v` is the REST field.
+_EXPANDS_RE = re.compile(r"[$`*?\0]|\{[^{}]*(?:,|\.\.)[^{}]*\}|(?:^|[=:])~")
+# In a stdin body the same, plus a backslash: bash expands `$`/`` ` `` in an
+# unquoted heredoc (`"a": "$Y"` may add a second `environment` key) and
+# strips the backslash in `\\`, and `echo -e`/`printf` rewrite escapes.
+_BODY_EXPANDS_RE = re.compile(r"[$`\\]")
 
 # `gh` options that take a value, across both forms (`-R/--repo`, `-r/--ref`,
-# the fields, and `gh api`'s own). A value is never a positional word.
+# the fields, and `gh api`'s own). A value is never a positional word. Every
+# other short flag is a boolean (`-i`, `--paginate`); gh's flag parser
+# (pflag) lets booleans cluster in front of a valued one: `-iX POST`.
 _GH_VALUE_OPTS = frozenset((
     "-R", "--repo", "-r", "--ref", "-f", "--raw-field", "-F", "--field",
     "-X", "--method", "-H", "--header", "--input", "-q", "--jq", "-t",
@@ -1960,15 +1981,100 @@ _UNSEEN = "\0"
 _ANY_INPUT = "*"
 
 
+class Rewritable(str):
+    """A command's stdin as `cloud_guard` reads it for the OTHER rules --
+    assuming every pipeline stage passes its input through, which is the
+    safe direction for a SQL or shell-script payload (it reads more) -- but
+    NOT known to be what the command receives: a filter may rewrite it, or a
+    `<` redirect replace it. A dispatch body read from one is `unknown`."""
+
+
+def _exact_stdout(src, head_name):
+    """What pipeline stage `src` writes, when crew knows it exactly: `echo`
+    (only `-n` before its words) or `printf` of one literal with no `%`,
+    neither with a backslash (an escape `echo -e` or `printf` would turn
+    into something else), or a bare `cat` passing on an exact stdin. Every
+    other producer -- `sed`, `tr`, `jq`, `awk`, `perl`, `python`, `tee`, a
+    subshell or group, `cat FILE` -- None."""
+    words = list(src.words)
+    if not words:
+        return None
+    head, rest = head_name(words[0]), words[1:]
+    body = None
+    if head == "echo":
+        while rest[:1] == ["-n"]:
+            rest = rest[1:]
+        if not rest[:1] or not rest[0].startswith("-"):
+            body = " ".join(rest)
+    elif head == "printf" and len(rest) == 2 and rest[0] in ("%s", "%s\\n"):
+        body = rest[1]
+    elif head == "printf" and len(rest) == 1 and "%" not in rest[0]:
+        body = rest[0]
+    elif head == "cat" and not rest:
+        return src.stdin  # a `Rewritable` stays one: `sed ... | cat | gh`
+    return body  # an escape in it is `_json_inputs`' to refuse
+
+
+def command_stdin(cmd, stdout_literal, head_name):
+    """`cmd`'s stdin for `cloud_guard.scan`: its own here-string or heredoc,
+    else what the stage piped into it writes (`stdout_literal`, the lenient
+    reading). Marked `Rewritable` when that is not known to be exactly what
+    the command receives: a producer `_exact_stdout` cannot vouch for, or a
+    `<` redirect (file, process substitution, duplicated fd) or a here-doc on
+    another fd, any of which may replace it."""
+    stdin = cmd.stdin
+    if stdin is None and cmd.pipe_from is not None:
+        stdin = _exact_stdout(cmd.pipe_from, head_name)
+        if stdin is None:
+            stdin = stdout_literal(cmd.pipe_from)
+            stdin = None if stdin is None else Rewritable(stdin)
+    if stdin is not None and cmd.stdin_unsure:
+        stdin = Rewritable(stdin)
+    return stdin
+
+
+def reconcile_dispatch(found, raw_found):
+    """`found` with its dispatch findings replaced by the ones read from the
+    command's words BEFORE `cloud_guard` resolved `$NAME` from earlier
+    assignments (`raw_found`). A value crew resolved is not what bash will
+    pass: case-folded names, a `read`, a `source` or an `export` in between.
+    Read raw, `-f environment=$ENV` is not a literal, so it is `unknown`.
+    A dispatch only the resolved reading saw (`$GH workflow run ...`) is
+    kept, with its workflow and every input marked unseen."""
+    raw = [f for f in raw_found if f.rule == DEPLOY_RULE]
+    kept = [f for f in found if f.rule != DEPLOY_RULE]
+    if raw:
+        return kept + raw
+    for finding in found:
+        if finding.rule == DEPLOY_RULE:
+            scope = dict(finding.scope, inputs=[(
+                _ANY_INPUT, None, "a word of this command was built from a "
+                                  "variable, so crew cannot say what it holds")])
+            if scope.get("workflow") is not None:
+                scope["workflow"] = _UNSEEN + scope["workflow"]
+            elif scope.get("form") == "api":
+                scope["workflow"] = _UNSEEN
+            kept.append(finding._replace(scope=scope))
+    return kept
+
+
 def _dispatch_literal(value):
     return isinstance(value, str) and bool(value) \
         and not _DISPATCH_NON_LITERAL_RE.search(value)
 
 
+def _workflow_literal(value):
+    return isinstance(value, str) and bool(value.strip()) \
+        and not _WORKFLOW_NON_LITERAL_RE.search(value)
+
+
 def _gh_words(args):
-    """`(positionals, options)` for a `gh` command line: options in order as
-    `(name, value)`, value None for a boolean flag. `--name=value`, `-Xvalue`
-    and `-X=value` split the way gh's flag parser splits them."""
+    """`(positionals, options)` for a `gh` command line -- THE parser for
+    both dispatch forms: options in order as `(name, value)`, value None for
+    a boolean flag. Split the way gh's flag parser (pflag) splits them:
+    `--name=value`; a short cluster read one letter at a time, where the
+    first letter that takes a value takes the rest of the cluster (`-iXPOST`,
+    `-iX=POST`) or, if nothing is left, the next word (`-iX POST`)."""
     positionals, options, index = [], [], 0
     while index < len(args):
         arg = args[index]
@@ -1983,17 +2089,19 @@ def _gh_words(args):
             options.append((name, value if sep or name in _GH_VALUE_OPTS
                             else None))
         elif arg.startswith("-") and len(arg) > 1:
-            name = arg[:2]
-            if name in _GH_VALUE_OPTS:
-                if len(arg) > 2:
-                    value = arg[2:]
-                    value = value[1:] if value.startswith("=") else value
+            letters = arg[1:]
+            while letters:
+                name, letters = "-" + letters[0], letters[1:]
+                if name not in _GH_VALUE_OPTS:
+                    options.append((name, None))
+                    continue
+                if letters:
+                    value = letters[1:] if letters.startswith("=") else letters
                 else:
                     value = args[index + 1] if index + 1 < len(args) else None
                     index += 1
                 options.append((name, value))
-            else:
-                options.append((arg, None))
+                break
         else:
             positionals.append(arg)
         index += 1
@@ -2042,6 +2150,13 @@ def _json_inputs(text, api, source):
     `inputs`. A body crew cannot see or read counts against every input."""
     if text is None:
         return [(_ANY_INPUT, None, f"{source} reads a body crew cannot see")]
+    if isinstance(text, Rewritable):
+        return [(_ANY_INPUT, None, f"{source} reads a body something between "
+                                   "the literal and gh may rewrite, or a "
+                                   "redirect replaces")]
+    if _BODY_EXPANDS_RE.search(text):
+        return [(_ANY_INPUT, None, f"{source} carries a `$`, backquote or "
+                                   "backslash the shell may expand")]
     try:
         body = json.loads(text, object_pairs_hook=_no_duplicate_keys)
     except ValueError:
@@ -2191,9 +2306,14 @@ def dispatch_scopes(args, stdin, fed=False):
             scope = _dispatch_from_run(positionals[2:], options, stdin)
         elif positionals[:1] == ["api"]:
             scope = _dispatch_from_api(positionals[1:], options, stdin)
+        spread = [w for w in args if _EXPANDS_RE.search(w)]
+        if scope is not None and spread:
+            scope["inputs"].append((_ANY_INPUT, None, f"`{spread[0]}` may "
+                                    "expand into more arguments"))
     if scope is None:
         return []
-    scope.update(op="deploy", fed=bool(fed))
+    scope.update(op="deploy", fed=bool(fed), stdin=None if stdin is None else
+                 [str(stdin), isinstance(stdin, Rewritable)])
     scope["what"] = dispatch_what(scope)
     return [scope]
 
@@ -2243,7 +2363,7 @@ def dispatch_environment(scope, envs):
         return None
     workflow = scope.get("workflow")
     keys = []
-    if workflow is not None and _dispatch_literal(workflow):
+    if workflow is not None and _workflow_literal(workflow):
         keys = [key for key in workflows
                 if fnmatch.fnmatch(workflow.lower(), key.lower())]
         if not keys:
@@ -2256,8 +2376,9 @@ def dispatch_environment(scope, envs):
         return ENV_UNKNOWN, None, ("no workflow is named, so gh would prompt "
                                    "for one"), None
     if not keys:
-        return ENV_UNKNOWN, None, (f"the workflow `{workflow}` is not a "
-                                   "literal"), None
+        return ENV_UNKNOWN, None, ("the workflow `"
+                                   + workflow.replace(_UNSEEN, "")
+                                   + "` is not a literal"), None
     globs = envs.get("nonProd", [])
     results = {key: _dispatch_source(workflows[key], scope.get("inputs", []),
                                      globs) for key in keys}
@@ -2313,12 +2434,27 @@ def deploy_verdict(what, found, out, envs, live):
         "env:unknown", marker
 
 
-def judge_dispatch(scope, what, out, envs, live):
+def dispatch_marker_key(text, scope, found):
+    """What a dispatch's approval marker is keyed on: the command's words AND
+    what was judged -- its stdin, the inputs read and the environment
+    classified. `text` alone is the argv, which is the same for two
+    `gh workflow run deploy.yml --json` lines fed different bodies, so an
+    approval of production-one would have run production-two."""
+    klass, value, _why, key = found
+    return text + "\n" + json.dumps(
+        {"stdin": scope.get("stdin"), "inputs": scope.get("inputs"),
+         "environment": [klass, value, key]}, sort_keys=True)
+
+
+def judge_dispatch(scope, what, decide, text, envs, live):
     """`cloud_guard._judge_one`'s `(decision, reason, policy, marker,
     applies)` for a dispatch finding. Classified first: a dispatch of a
     workflow nobody listed is not judged at all, exactly as before T-0009 --
-    no row, no decision."""
-    found = dispatch_environment(scope or {}, envs)
+    no row, no decision. `decide` is `crew_config.guard_decision` for this
+    guard, handed `dispatch_marker_key`'s text."""
+    scope = scope or {}
+    found = dispatch_environment(scope, envs)
     if found is None:
         return "allow", "", "", "", False
+    out = decide(dispatch_marker_key(text, scope, found))
     return deploy_verdict(what, found, out, envs, live) + (True,)

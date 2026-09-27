@@ -26,6 +26,18 @@ All notable changes to this repository are documented here. Format follows [Keep
   values, a JSON body crew cannot see, no workflow named, a dispatch behind
   `xargs`/`parallel`, and every dispatch while the `environments` block does
   not validate (which also forces an armed guard to `block` mode).
+- **Review round 1 closed five ways past that** (each with a must-block row
+  and a sabotage entry): a body piped through a filter (`sed`, `tr`, `jq`,
+  `awk`, `perl`, `python`, `tee`, a subshell) or replaced by a `<` redirect is
+  unknown — only gh's own here-string/heredoc, or `echo`/`printf`/bare `cat`
+  piped straight in, is literal; a value is read as written, so `$ENV` is
+  unknown even after `ENV=staging` (bash is case-sensitive, and `read`,
+  `source` and `export` can change it), and so is every input once any word
+  on the line may expand into more arguments (`-f note=$Y`, a glob,
+  `{a,b}`), or a body carries `$`, a backquote or a backslash; gh's clustered short flags
+  (`gh api -iX POST`) are read as gh reads them; the approval marker covers
+  the stdin, inputs and environment judged, not only the argv; and a quoted
+  display name with spaces is matched as written.
 - **Unchanged:** a workflow matching no key is not judged, and with
   `workflows` at `{}` nothing is. `environments.workflows` does not engage the
   terraform layer. Not seen: an unlisted spelling of a deploy workflow, the
