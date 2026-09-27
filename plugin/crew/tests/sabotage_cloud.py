@@ -906,7 +906,7 @@ CLOUD_GUARD_MUTATIONS += (
      _R5 + "[r5-busybox-shell]"),
     ("cloud guard r5: a `pwsh -c` payload made at run time read", GUARDS,
      "        if payload is None or _HOLE in payload:\n",
-     "        if payload is None:\n", _R5 + "[r5-pwsh-expansion-payload]"),
+     "        if payload is None:\n", _R5 + "[r5-pwsh-substituted-payload]"),
     ("cloud guard r5: a control character read as bash reads it", GUARDS,
      "        if _GATE_CONTROL_RE.search(text):\n"
      '            raise _Unsure("a control character")\n', "",

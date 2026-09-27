@@ -2204,6 +2204,11 @@ R5_MUST_BLOCK = _normalise([
      _gate()),
     ("r5-pwsh-expansion-payload", "Bash", 'x=terraform; pwsh -c "$x destroy"',
      _gate()),
+    # Since Step 10 PowerShell's own command-word rule reads the row above
+    # (an unreadable command word beside `destroy`), so the payload branch is
+    # pinned by one whose PowerShell reading finds nothing at all.
+    ("r5-pwsh-substituted-payload", "Bash",
+     'pwsh -c "$(echo terraform) $(echo destroy) -auto-approve"', _gate()),
     ("r5-cr-heredoc-delimiter", "Bash",
      f'cat <<EOF\nEOF\r\n"terraform" {_ADESTROY}\nEOF', _gate()),
     ("r5-quoted-newline-before-body", "Bash",
