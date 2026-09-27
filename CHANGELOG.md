@@ -43,6 +43,11 @@ All notable changes to this repository are documented here. Format follows [Keep
     that failed. The real-permissions test, root-skipped, now asserts the
     author record's refusal, which is checked first; as a non-root user it
     had failed on the `resume-state.json` wording.
+  - A PARTIAL `resume-state.json` is an unknown too: a file with no
+    `worktrees` key, or this worktree's entry missing `consumed`, `last`,
+    or last's `prompt`/`fingerprint`, read as "nothing consumed, no loop
+    history" and let an already-resumed handoff come back `run`. `decide`
+    now waits on it and `record_run` refuses rather than overwriting it.
   - Already closed before this ticket, so no work here: the
     `data-flow-crew-config.mmd` TMPL node lists `resume`, and the marketplace
     merge-tree NIT was settled when T-0006 landed at `2fd09e8f`.

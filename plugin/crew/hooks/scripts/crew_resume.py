@@ -376,19 +376,28 @@ def _read_state(root):
             state = json.loads(handle.read())
     except (OSError, ValueError):
         return None
-    if not isinstance(state, dict) or not isinstance(state.get("worktrees", {}), dict):
+    if not isinstance(state, dict) or not isinstance(state.get("worktrees"), dict):
         return None
     return state
 
 
 def _entry(state, key):
     """This worktree's entry: {} when it has none, None when `state` is
-    unknown or the entry is not the shape record_run writes."""
+    unknown or the entry is not the shape record_run writes. A PARTIAL entry
+    -- "consumed" or "last", or last's prompt or fingerprint, missing -- is
+    not that shape: read as defaults it said "nothing consumed, no loop
+    history", which is the fresh state it cannot vouch for (T-0042)."""
     if state is None:
         return None
-    entry = state.get("worktrees", {}).get(key, {})
-    if not isinstance(entry, dict) or not isinstance(entry.get("consumed", []), list) \
-            or not isinstance(entry.get("last", {}), dict):
+    worktrees = state.get("worktrees", {})
+    if key not in worktrees:
+        return {}
+    entry = worktrees[key]
+    if not isinstance(entry, dict) or not isinstance(entry.get("consumed"), list):
+        return None
+    last = entry.get("last")
+    if not isinstance(last, dict) or not isinstance(last.get("prompt"), str) \
+            or not isinstance(last.get("fingerprint"), str):
         return None
     return entry
 

@@ -855,6 +855,7 @@ _UNREADABLE_STATE = [
     pytest.param(b"", id="empty"),
     pytest.param(b"[]", id="not-an-object"),
     pytest.param(b'{"worktrees": []}', id="worktrees-not-an-object"),
+    pytest.param(b"{}", id="no-worktrees-key"),
     pytest.param(b'\xff\xfe{"worktrees": {}}', id="not-utf8"),
     pytest.param("dir", id="a-directory"),
     pytest.param("dangling", id="a-dangling-symlink"),
@@ -874,7 +875,13 @@ def test_an_unreadable_resume_state_waits_rather_than_runs(fx, content):
     assert (ok, got["action"], "resume-state.json" in got["reason"]) == (True, "wait", True), got
 
 
+_DROP = object()
+
+
 def _mangle_entry(fx, field, value):
+    """Set `field` of this worktree's entry to `value` (the whole entry when
+    `field` is None, a key of "last" when it is ("last", key)); `_DROP`
+    deletes it instead."""
     path = crew_resume.state_path(str(fx.root))
     with open(path, encoding="utf-8") as handle:
         state = json.load(handle)
@@ -882,7 +889,12 @@ def _mangle_entry(fx, field, value):
     if field is None:
         state["worktrees"][key] = value
     else:
-        state["worktrees"][key][field] = value
+        owner, name = (state["worktrees"][key]["last"], field[1]) if isinstance(field, tuple) \
+            else (state["worktrees"][key], field)
+        if value is _DROP:
+            del owner[name]
+        else:
+            owner[name] = value
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(json.dumps(state))
 
@@ -891,11 +903,19 @@ def _mangle_entry(fx, field, value):
     pytest.param(None, [], id="entry-not-an-object"),
     pytest.param("consumed", "abc", id="consumed-not-a-list"),
     pytest.param("last", "abc", id="last-not-an-object"),
+    pytest.param(None, {}, id="entry-empty"),
+    pytest.param("consumed", _DROP, id="consumed-missing"),
+    pytest.param("last", _DROP, id="last-missing"),
+    pytest.param(("last", "prompt"), _DROP, id="last-prompt-missing"),
+    pytest.param(("last", "fingerprint"), None, id="last-fingerprint-not-a-string"),
 ])
 def test_a_resume_state_entry_of_the_wrong_shape_waits(fx, field, value):
     """Review round 3 FIX :417, the neighbour: this worktree's entry, or a
     field of it, in a shape record_run never writes is as unknown as a file
-    that does not parse."""
+    that does not parse. A PARTIAL entry is that too (T-0042, before review
+    round 2): a missing "consumed" read as nothing consumed, a missing "last"
+    as no loop history, so a partial record let an already-resumed handoff
+    come back `run`."""
     ok, _ = crew_resume.record_run(str(fx.root), fx.decide())
     _mangle_entry(fx, field, value)
 

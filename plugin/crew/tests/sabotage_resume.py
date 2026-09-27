@@ -207,15 +207,33 @@ RESUME_MUTATIONS = (
      "            state = json.loads(handle.read())\n    except (OSError, ValueError):\n        return {}\n",
      _T + "test_an_unreadable_resume_state_waits_rather_than_runs[truncated]"),
     ("a resume-state.json of the wrong shape reads as no history", RESUME,
-     '    if not isinstance(state, dict) or not isinstance(state.get("worktrees", {}), dict):\n'
+     '    if not isinstance(state, dict) or not isinstance(state.get("worktrees"), dict):\n'
      "        return None\n",
-     '    if not isinstance(state, dict) or not isinstance(state.get("worktrees", {}), dict):\n'
+     '    if not isinstance(state, dict) or not isinstance(state.get("worktrees"), dict):\n'
      "        return {}\n",
      _T + "test_an_unreadable_resume_state_waits_rather_than_runs[worktrees-not-an-object]"),
     ("a worktree entry of the wrong shape reads as no history", RESUME,
-     '            or not isinstance(entry.get("last", {}), dict):\n        return None\n',
-     '            or not isinstance(entry.get("last", {}), dict):\n        return {}\n',
+     '    if not isinstance(entry, dict) or not isinstance(entry.get("consumed"), list):\n'
+     "        return None\n",
+     '    if not isinstance(entry, dict) or not isinstance(entry.get("consumed"), list):\n'
+     "        return {}\n",
      _T + "test_a_resume_state_entry_of_the_wrong_shape_waits[consumed-not-a-list]"),
+    # --- T-0042, before review round 2: a partial state is an unknown ------
+    ("a resume-state.json with no worktrees key reads as no history", RESUME,
+     '    if not isinstance(state, dict) or not isinstance(state.get("worktrees"), dict):\n',
+     '    if not isinstance(state, dict) or not isinstance(state.get("worktrees", {}), dict):\n',
+     _T + "test_an_unreadable_resume_state_waits_rather_than_runs[no-worktrees-key]"),
+    ("an entry missing consumed reads as nothing consumed", RESUME,
+     '    if not isinstance(entry, dict) or not isinstance(entry.get("consumed"), list):\n',
+     '    if not isinstance(entry, dict) or not isinstance(entry.get("consumed", []), list):\n',
+     _T + "test_a_resume_state_entry_of_the_wrong_shape_waits[consumed-missing]"),
+    ("an entry missing last, or last's prompt, reads as no loop history", RESUME,
+     '    last = entry.get("last")\n'
+     '    if not isinstance(last, dict) or not isinstance(last.get("prompt"), str) \\\n'
+     '            or not isinstance(last.get("fingerprint"), str):\n',
+     '    last = entry.get("last", {})\n'
+     "    if not isinstance(last, dict):\n",
+     _T + "test_a_resume_state_entry_of_the_wrong_shape_waits[last-missing]"),
     ("decide reads an unknown resume state as no history", RESUME,
      "    if entry is None:\n        return _decision(\"wait\", _UNREADABLE_STATE, prompt, sha)\n",
      "    entry = {} if entry is None else entry\n",
