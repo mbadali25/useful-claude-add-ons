@@ -136,6 +136,18 @@ def test_machine_only_cloud_guard_block_arms(tmp_path, monkeypatch):
     assert got["verdict"] == "allow"
 
 
+@pytest.mark.parametrize("env_class", [PROD, NONPROD])
+def test_machine_route_block_does_not_change_the_verdict(tmp_path, monkeypatch, env_class):
+    """T-0023 put a `route` block in `default_global_config()`: a machine
+    file that sets it beside the armed fixture is a well-formed layer, not
+    a corrupt one, so the verdict stays `allow`."""
+    root = _armed(tmp_path, monkeypatch, machine={"route": {"enabled": True}})
+
+    got = _verdict(root, env_class, env="production" if env_class == PROD else "dev")
+
+    assert got["verdict"] == "allow"
+
+
 @pytest.mark.parametrize("case", ["ask", "refuse"])
 def test_every_prod_decision_reports(tmp_path, monkeypatch, case):
     if case == "ask":
