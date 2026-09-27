@@ -43,20 +43,21 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py next --root . \
   --ticket <ticket> --phases-run N --last-command "LAST"
 ```
 
-It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`. Anything but a
-`stop=0` line - no output, a traceback, a non-zero exit - is a stop.
+It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`.
+No output, a traceback or a non-zero exit is a stop.
 
-- `stop=1` - print the phase, the reason and the command the human types
-  (may be empty), then **stop**. Do not run that command yourself.
 - `stop=0` - announce `phase <p>: <c>` and follow that command's procedure
   here: `/crew:spec`, `/crew:plan`, `/crew:implement`, `/crew:review`,
   `/crew:done` are their `commands/*.md`; a refresh command
   (`/crew:onboard --refresh <subsystem>`, `/crew:diagram refresh`,
   `graphify update .`) is run as named and committed. Then `LAST=<c>`,
   `N+=1`, and go round again.
+- `stop=1` with `phase=approve` or `phase=open-questions` - not yet a stop: run
+  the policy below first, and stop only where it says so.
+- any other `stop=1` - print the phase, the reason and the command the human types
+  (may be empty), then **stop**. Do not run that command yourself.
 
-`phase=approve` or `phase=open-questions` (T-0010; `next`'s reason names the
-policy; `human` always stops). Approval: run
+The policy (T-0010; `next`'s reason names it; `human` always stops). Approval: run
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py approve --root . --ticket <ticket>`,
 which prints `self-approved ...` (report it by name, go round again) or `refused:`
 (stop; the human types `/crew:approve <ticket>`). A question: research it

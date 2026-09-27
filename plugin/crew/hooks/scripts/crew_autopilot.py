@@ -21,7 +21,8 @@ phase is visible and a phase that cannot be told stops. Read-only except
 
 `approval_policy` allows only when `scope.allowCliApproval` is exactly
 `true` in `.crew/config.json` -- at every setting -- and the review ledger is
-neither NEEDS_REPLAN (a successor plan is the human's) nor unreadable; then
+readable (a NEEDS_REPLAN one included: a distinct successor plan is its only
+way out, and the ledger refuses a plan approved before); then
 `human` never allows, `self` allows any risk, `risk` only a spec header that
 says `risk: low`. An absent or unparseable risk is `high`
 (`crew_ticket.parse_risk`), never `low`. `approve` also needs autopilot
@@ -35,8 +36,10 @@ the researched recommendation or `stop` -- with no `allowCliApproval` rule.
 `questions-check` validates `.work/tickets/<id>/questions.md` (the shape is
 QUESTIONS_SHAPE, printed when it fails) and prints `valid= action= policy=
 risk=`, then one `taken:` line per question autopilot answered. A `taken:`
-line is valid only for the recommended option, under the policy in force, and
-only when that policy says `take`. Exit 0 valid, 1 not.
+line is valid only for the recommended option, only naming a policy that
+takes (`self` or `risk` -- the one in force when it was taken, so a later
+policy change does not void an honest record), and only while the policy in
+force says `take`. Exit 0 valid, 1 not.
 
 ## next -- the phase from disk, first match wins
 
@@ -430,7 +433,8 @@ def _review_phase(top, ticket, evidence, answer):
                       "UNKNOWN (unreadable): the rounds spent cannot be counted")
     if ledger["state"] == review_ledger.NEEDS_REPLAN:
         return answer("replan", True, f"{ticket} is NEEDS_REPLAN: the review budget is "
-                      "spent; a successor plan needs the human's /crew:approve",
+                      "spent; a different plan continues it once approved (the approve "
+                      "phase and autopilot.approval decide by whom)",
                       f"/crew:plan {ticket}")
     rounds = _current_rounds(ledger)
     if not rounds:
@@ -705,9 +709,11 @@ def approval_policy(root, ticket):
     """`{"allow", "policy", "risk", "known", "reason", "warnings"}` -- whether
     autopilot may approve `ticket`'s plan itself. Never allows unless
     `scope.allowCliApproval` is exactly true, at any setting; `human` never,
-    `self` at any risk, `risk` only on a known `risk: low`. A review ledger
-    that is NEEDS_REPLAN or unreadable refuses too: a successor plan after a
-    spent budget is the human's. Anything that cannot be told refuses."""
+    `self` at any risk, `risk` only on a known `risk: low`. A NEEDS_REPLAN
+    ledger is no refusal: approving a distinct successor plan is the only way
+    out of it, and `crew_ticket.approve` hands that plan to
+    `review_ledger.continue_with_successor_plan`, which refuses one approved
+    before. An unreadable ledger refuses, like anything that cannot be told."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     try:
         policy, risk, warnings = _decision(top, ticket, "approval")
@@ -724,9 +730,9 @@ def approval_policy(root, ticket):
                "the human's counts")
     elif policy == HUMAN:
         why = "autopilot.approval is human: plan approval always waits for the owner"
-    elif ledger in (review_ledger.NEEDS_REPLAN, review_ledger.UNKNOWN):
-        why = (f"the review ledger is {ledger}: a plan after a spent or unreadable review "
-               "budget is the human's to approve")
+    elif ledger == review_ledger.UNKNOWN:
+        why = ("the review ledger is unreadable, so whether this plan may continue review "
+               "cannot be told; the human approves")
     elif policy == SELF:
         return dict(result, allow=True, reason=f"autopilot.approval is self ({_risk_words(risk)})")
     elif risk["known"] and risk["risk"] == "low":
@@ -849,7 +855,10 @@ def _question_blocks(text):
 
 def _question_problems(block, decision):
     """(problems, taken) for one `## Q<n>` section, judged against the
-    questions policy in force (`decision`, from `question_policy`)."""
+    questions policy in force (`decision`, from `question_policy`). A `taken:`
+    line's `(<policy>)` records the policy that took it, which may differ from
+    today's: it must name one that takes (`self` or `risk`), and today's must
+    say `take`."""
     number, title, preamble, options, taken = block
     name, problems = f"Q{number}", []
     if not title:
@@ -876,9 +885,11 @@ def _question_problems(block, decision):
         oid, policy = form.groups()
         if not options or oid != options[0][0]:
             problems.append(f"{name}: taken Option {oid}, not the recommended option")
-        if policy != decision["policy"]:
-            problems.append(f"{name}: taken under {policy}, but autopilot.questions is "
-                            f"{decision['policy']}")
+        # The name is history: the policy that took it then. It must be one
+        # that can take at all; whether taking is allowed NOW is the next check.
+        if policy not in (SELF, RISK):
+            problems.append(f"{name}: taken under {policy!r}, a policy that never takes "
+                            f"(only {SELF} or {RISK} does)")
         if decision["action"] != TAKE:
             problems.append(f"{name}: taken, but the questions policy says stop: "
                             f"{decision['reason']}")
@@ -890,7 +901,8 @@ def questions_check(root, ticket):
     """`{"valid", "action", "policy", "risk", "known", "reason", "warnings",
     "questions", "taken", "problems"}` for `.work/tickets/<id>/questions.md`.
     Valid only when every question has the QUESTIONS_SHAPE and every
-    `taken:` line is one the questions policy in force permits."""
+    `taken:` line names a policy that takes, while the policy in force says
+    `take` (`_question_problems`)."""
     crew_ticket.check_ticket(ticket)
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     decision = question_policy(top, ticket)

@@ -376,6 +376,47 @@ def test_autopilot_approve_that_is_not_the_bare_command_is_refused(flavour, repo
 
 
 @pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+@pytest.mark.parametrize("approval", ["self", "human"])
+@pytest.mark.parametrize("command", [
+    pytest.param("python3 hooks/scripts/crew_autopilot.py \\\n  approve --root . --ticket T-1",
+                 id="before-approve"),
+    pytest.param("python3 hooks/scripts/crew_autopilot.py approve \\\n  --root . --ticket T-1",
+                 id="after-approve"),
+    pytest.param("python3 hooks/scripts/crew_auto\\\npilot.py approve --root . --ticket T-1",
+                 id="inside-the-name"),
+    pytest.param("python3 hooks/scripts/crew_autopilot.py \\\r\n  approve --root . --ticket T-1",
+                 id="crlf"),
+])
+def test_autopilot_approve_across_a_line_continuation_is_refused(flavour, repo, approval,
+                                                                command):
+    _policy_repo(repo, approval)
+
+    code, _, err = _shell(flavour, repo, command)
+
+    assert (code, "SCOPE GUARD" in err) == (2, True)
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+@pytest.mark.parametrize("tool,command", [
+    pytest.param("Bash", "python3 hooks/scripts/crew_ticket.py \\\n  approve --ticket T-1",
+                 id="bash-crew-ticket"),
+    pytest.param("Bash", "python3 hooks/scripts/crew_tic\\\nket.py approve --ticket T-1",
+                 id="bash-inside-the-name"),
+    pytest.param("PowerShell", "& python crew_ticket.py `\n  approve --ticket T-1",
+                 id="ps-crew-ticket"),
+    pytest.param("PowerShell", "& python crew_autopilot.py `\n  approve --root . --ticket T-1",
+                 id="ps-crew-autopilot"),
+    pytest.param("Bash", "python3 hooks/scripts/approval_\\\nhook.py", id="bash-hook"),
+])
+def test_an_approval_split_across_a_line_continuation_is_refused(flavour, repo, tool, command):
+    _policy_repo(repo, "self")
+
+    code, _, err = _shell(flavour, repo, command, tool)
+
+    assert (code, "SCOPE GUARD" in err) == (2, True)
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_crew_ticket_approve_stays_refused_under_every_policy(flavour, repo):
     _policy_repo(repo, "self")
 
@@ -434,6 +475,8 @@ def test_a_policy_answer_that_is_not_a_plain_yes_is_refused(repo, monkeypatch, a
     ("Bash", "python3 hooks/scripts/crew_ticket.py status --ticket T-1"),
     ("Bash", "python3 hooks/scripts/crew_ticket.py activate --ticket T-1"),
     ("Bash", "python3 crew_ticket.py status --ticket T-1 && echo approve"),
+    ("Bash", "python3 crew_ticket.py status --ticket T-1\necho approve"),
+    ("Bash", "python3 crew_ticket.py status \\\n  --ticket T-1\necho approve"),
     ("Bash", "cat .git/crew/active-ticket 2>/dev/null"),
     ("PowerShell", "Get-Content .git\\crew\\active-ticket"),
 ])

@@ -12,9 +12,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   and `autopilot.questions` (`human|self|risk`, default `risk`; any other value
   reads as `human`, with a warning, and `human` always stops).
   - `crew_autopilot.approval_policy` allows only when `scope.allowCliApproval`
-    is exactly `true` (at every setting) and the review ledger is neither
-    NEEDS_REPLAN nor unreadable; then `self` at any risk, `risk` only on a spec
-    header saying `risk: low` (unknown reads `high`). `crew_autopilot.py approve
+    is exactly `true` (at every setting) and the review ledger is readable
+    (NEEDS_REPLAN included: a distinct successor plan is its only way out, and
+    the ledger refuses one approved before); then `self` at any risk, `risk`
+    only on a spec header saying `risk: low` (unknown reads `high`). `crew_autopilot.py approve
     --root . --ticket <id>` (armed only) writes `approved_via: "autopilot"` and
     prints `self-approved <id> under approval=<policy>, risk=<risk>`; a refusal
     exits 2 with `refused: <why>`. `crew_ticket.approve` refuses an `autopilot`
@@ -23,16 +24,23 @@ All notable changes to this repository are documented here. Format follows [Keep
     demotes it; an unimportable policy demotes it too.
   - `scope_guard.py` allows exactly the bare `python3 [-B] <path>/crew_autopilot.py
     approve [--root .] --ticket <ID>`, only while the policy says yes; any other
-    command naming it, and every `crew_ticket.py approve`, stays refused.
+    command naming it, and every `crew_ticket.py approve`, stays refused. Every
+    shell check also reads the command with its line continuations joined
+    (bash backslash-newline, PowerShell backtick-newline), so a continuation
+    cannot carry an approve past the newline a check stops at.
   - `crew_autopilot.question_policy` (`take|stop`) and `crew_autopilot.py
     questions-check`, which validates `.work/tickets/<id>/questions.md` (a
     `Research:` line, 2-4 options, the recommendation first, a `Cost:` each)
-    and refuses a `taken:` line the policy in force would not allow. `next`
-    names the policy's answer at the `approve` and `open-questions` stops.
+    and refuses a `taken:` line naming a policy that never takes (`human`, or
+    not a policy) or any `taken:` while the policy in force says `stop`; the
+    recorded policy is history, so a later `risk`/`self` switch does not void
+    it. `next` names the policy's answer at the `approve` and `open-questions`
+    stops.
   - Accepting review FINDINGS stays the owner's at every setting.
     `sabotage_autopilot.py`'s POLICY_MUTATIONS (one per refusing branch) are
     registered in `sabotage.py`. `commands/autopilot.md` runs both at the
-    `approve` and `open-questions` phases, within its 120-line budget. Config
+    `approve` and `open-questions` phases, within its 120-line budget: a
+    `stop=1` at either phase runs its policy first instead of stopping. Config
     leaf count 121 -> 123 (both keys repo-only).
 
 ### Fixed

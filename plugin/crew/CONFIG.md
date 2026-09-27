@@ -2292,8 +2292,10 @@ plan-approval phase: `human` always stops for `/crew:approve`; `self` lets
 risk; `risk` does so only when the spec's header line says `risk: low` (an
 absent or unparseable risk is `high`, never `low`). At **every** setting the
 approval also needs `scope.allowCliApproval` exactly `true`, autopilot armed,
-and a review ledger that is neither NEEDS_REPLAN nor unreadable (a plan after a
-spent review budget is the human's). The receipt says `approved_via:
+and a readable review ledger. A NEEDS_REPLAN ledger does not refuse: approving
+a different successor plan is the only way out of it, and the ledger still
+refuses a plan approved before (`approve` then exits 3 and says so). The
+receipt says `approved_via:
 "autopilot"` and `approved_by: "autopilot:<policy>"`, and `crew_ticket.accepted`
 re-asks the policy on every read: turn the policy to `human`, set
 `allowCliApproval` false, or edit the spec, and the scope guard and the
@@ -2306,8 +2308,11 @@ and only while the policy says yes; `crew_ticket.py approve` stays refused.
 recommendation first, each with a `Cost:` line, and a `Research:` line), and
 `crew_autopilot.py questions-check` validates it and says `take` or `stop`.
 `self` takes the recommendation, `risk` only on `risk: low`, `human` stops; a
-`taken: Option <id> by autopilot (<policy>)` line records each one, and the
-check refuses a `taken:` line the policy in force would not allow. Every
+`taken: Option <id> by autopilot (<policy>)` line records each one under the
+policy that took it. The check refuses a `taken:` line naming a policy that
+never takes (only `self` or `risk` does), and any `taken:` line while the
+policy in force says `stop`; switching between `self` and `risk` later does
+not void an earlier honest record. Every
 self-approval and every taken answer is reported by name.
 
 **What arming it does not change.** Review acceptance and brainstorm always

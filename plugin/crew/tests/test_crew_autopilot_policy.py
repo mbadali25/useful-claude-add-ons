@@ -177,19 +177,63 @@ def test_approval_default_is_risk(tmp_path):
     assert (got["policy"], got["allow"]) == ("risk", True)
 
 
-@pytest.mark.parametrize("state", [review_ledger.NEEDS_REPLAN, "corrupt"])
-def test_approval_refuses_when_the_review_budget_is_spent_or_unreadable(tmp_path, state):
+def test_approval_refuses_when_the_review_ledger_is_unreadable(tmp_path):
     root = _repo(tmp_path, approval="self")
-    if state == "corrupt":
-        path = review_ledger.ledger_path(str(root), T)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        _write(path, "{not json")
-    else:
-        _ledger(root, [], state)
+    path = review_ledger.ledger_path(str(root), T)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    _write(path, "{not json")
 
     got = crew_autopilot.approval_policy(str(root), T)
 
-    assert (got["allow"], "review" in got["reason"]) == (False, True)
+    assert (got["allow"], "review ledger" in got["reason"]) == (False, True)
+
+
+def _needs_replan_with_a_successor_plan(tmp_path, approval="self", risk="low"):
+    """T-1 approved by the user, its review budget spent (NEEDS_REPLAN), then
+    plan.md rewritten: the distinct successor plan that is the way out."""
+    root = _repo(tmp_path, approval=approval, risk=risk)
+    approve_as_user(root, T)
+    _ledger(root, [], review_ledger.NEEDS_REPLAN)
+    _write(root / ".work" / "tickets" / T / "plan.md",
+           PLAN.format(files="src/app.py") + "\nA successor plan, after the budget ran out.\n")
+    return root
+
+
+@pytest.mark.parametrize("risk", RISKS)
+def test_approval_self_allows_a_successor_plan_under_needs_replan(tmp_path, risk):
+    root = _needs_replan_with_a_successor_plan(tmp_path, risk=risk)
+
+    got = crew_autopilot.approval_policy(str(root), T)
+
+    assert got["allow"] is True
+
+
+def test_approval_risk_still_refuses_a_high_successor_plan_under_needs_replan(tmp_path):
+    root = _needs_replan_with_a_successor_plan(tmp_path, approval="risk", risk="high")
+
+    got = crew_autopilot.approval_policy(str(root), T)
+
+    assert (got["allow"], "risk: high" in got["reason"]) == (False, True)
+
+
+def test_autopilot_approve_of_a_successor_plan_continues_needs_replan(tmp_path):
+    root = _needs_replan_with_a_successor_plan(tmp_path)
+
+    done = _cli(root, "approve", "--ticket", T)
+
+    assert (done.returncode, done.stdout.startswith(f"self-approved {T}"),
+            review_ledger.status(str(root), T)["state"]) == (0, True, review_ledger.IN_REVIEW)
+
+
+def test_autopilot_approve_of_the_same_plan_leaves_needs_replan(tmp_path):
+    root = _repo(tmp_path, approval="self")
+    approve_as_user(root, T)
+    _ledger(root, [], review_ledger.NEEDS_REPLAN)
+
+    done = _cli(root, "approve", "--ticket", T)
+
+    assert (done.returncode, "NEEDS_REPLAN" in done.stdout,
+            review_ledger.status(str(root), T)["state"]) == (3, True, review_ledger.NEEDS_REPLAN)
 
 
 def test_approval_with_no_spec_denies_under_risk(tmp_path):
@@ -501,13 +545,39 @@ def test_questions_file_taken_non_recommended_invalid(tmp_path):
     assert (got["valid"], any("recommended" in p for p in got["problems"])) == (False, True)
 
 
-def test_questions_file_taken_naming_another_policy_invalid(tmp_path):
-    root = _repo(tmp_path, questions="self")
-    _questions(root, GOOD_QUESTIONS + "\ntaken: Option A by autopilot (risk)\n")
+SECOND_QUESTION = """
+## Q2: Which port?
+Research: crew:explorer found src/app.py binds 8080; crew:researcher: none needed.
+
+### Option A (recommended): keep 8080
+Cost: none.
+
+### Option B: 443
+Cost: root to bind it.
+"""
+
+
+@pytest.mark.parametrize("taken_under,questions,risk", [("risk", "self", "high"),
+                                                        ("self", "risk", "low")])
+def test_questions_file_taken_under_an_earlier_policy_that_took_stays_valid(
+        tmp_path, taken_under, questions, risk):
+    root = _repo(tmp_path, questions=questions, risk=risk)
+    _questions(root, GOOD_QUESTIONS + f"\ntaken: Option A by autopilot ({taken_under})\n"
+               + SECOND_QUESTION)
 
     got = _check(root)
 
-    assert got["valid"] is False
+    assert (got["valid"], got["questions"], got["action"]) == (True, 2, "take")
+
+
+@pytest.mark.parametrize("taken_under", ["human", "yolo"])
+def test_questions_file_taken_naming_a_policy_that_never_takes_invalid(tmp_path, taken_under):
+    root = _repo(tmp_path, questions="self")
+    _questions(root, GOOD_QUESTIONS + f"\ntaken: Option A by autopilot ({taken_under})\n")
+
+    got = _check(root)
+
+    assert (got["valid"], any("never takes" in p for p in got["problems"])) == (False, True)
 
 
 def test_questions_check_cli_prints_action_first_then_taken(tmp_path):
@@ -544,6 +614,14 @@ def test_command_routes_approval_through_policy():
             "crew_autopilot.py questions-check --root . --ticket <ticket>" in flat,
             "crew_ticket.py approve" in flat, "`human` always stops" in flat) == (
         True, True, False, True)
+
+
+def test_command_sends_a_stop_at_approve_or_open_questions_to_the_policy_first():
+    flat = " ".join(_command_text().split())
+
+    assert ("- `stop=1` with `phase=approve` or `phase=open-questions` - not yet a stop" in flat,
+            "- any other `stop=1` - print the phase" in flat,
+            "Anything but a `stop=0` line" in flat) == (True, True, False)
 
 
 def test_command_reports_every_self_approval_and_answer_by_name():

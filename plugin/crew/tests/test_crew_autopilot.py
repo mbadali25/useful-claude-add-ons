@@ -1127,7 +1127,7 @@ def test_command_leaves_accept_and_pr_review_to_the_human():
 
 def test_command_reads_no_answer_as_a_stop():
     text = " ".join(_command_text().split())
-    assert "Anything but a `stop=0` line" in text
+    assert "No output, a traceback or a non-zero exit is a stop" in text
 
 
 def test_code_enforced_stops_are_not_procedure_stops():

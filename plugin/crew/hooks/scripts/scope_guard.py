@@ -50,7 +50,11 @@ the payload in, so the two shells cannot disagree.
 A shell command is not judged against Touch (the Stop audit does that, from
 the tree). It is refused, in every mode but `off`, when its text invokes
 `crew_ticket.py approve`, names the approval hook script, or names
-`<git-common-dir>/crew/` alongside a redirect or a writing command.
+`<git-common-dir>/crew/` alongside a redirect or a writing command. Each check
+reads the text as written and with its line continuations joined (bash's
+backslash-newline deleted, PowerShell's backtick-newline a space), so a
+continuation cannot split an approval across the newline a check stops at; a
+bare newline still separates commands.
 
 `crew_autopilot.py approve` (T-0010) is the one approval a session may run,
 and only as the whole command `python3 [-B] <path>/crew_autopilot.py approve
@@ -117,6 +121,10 @@ _AUTOPILOT_BARE_RE = re.compile(
     r"[ \t]*python3?(?:[ \t]+-B)?[ \t]+[\w./\\:~${}-]*crew_autopilot\.py[ \t]+approve"
     r"(?:[ \t]+--root[ \t]+\.)?[ \t]+--ticket[ \t]+([A-Z][A-Z0-9]*-[0-9]+)[ \t]*")
 _HOOK_RE = re.compile(r"approval[_-]hook(?:\.py|\.sh|\.ps1)?\b", re.IGNORECASE)
+# A line continuation: bash's backslash-newline, which the shell deletes (so it
+# can split a word), and PowerShell's backtick-newline, which reads as a space.
+_BASH_CONTINUATION_RE = re.compile(r"\\\r?\n")
+_PS_CONTINUATION_RE = re.compile(r"`\r?\n")
 _DOTGIT_CREW_RE = re.compile(r"\.git[\\/]+crew\b|git-common-dir\b.*\bcrew\b",
                              re.IGNORECASE | re.DOTALL)
 # A redirect (not into /dev/null, $null or another descriptor), or a word
@@ -246,6 +254,14 @@ def _autopilot_refusal(command, top):
     return f"autopilot.approval does not allow {ticket}: {reason}"
 
 
+def _joined(command):
+    """`command` as written, as bash joins its continuations, and as
+    PowerShell does -- every check runs on all three, so a newline that only
+    continues the line never ends the span a check reads."""
+    bash = _BASH_CONTINUATION_RE.sub("", command)
+    return command, bash, _PS_CONTINUATION_RE.sub(" ", command)
+
+
 def shell_refusal(command, common, top=None):
     """Why a Bash/PowerShell `command` is refused, or None (module docstring,
     "Bash and PowerShell"). Textual on purpose, and conservative: a benign
@@ -254,19 +270,26 @@ def shell_refusal(command, common, top=None):
     approve`; without it that command is refused."""
     if not isinstance(command, str):
         return None
-    if _APPROVE_RE.search(command):
+    texts = _joined(command)
+    if any(_APPROVE_RE.search(text) for text in texts):
         return "it runs `crew_ticket.py approve`; approval comes from the user's own prompt"
-    if _AUTOPILOT_APPROVE_RE.search(command):
+    if any(_AUTOPILOT_APPROVE_RE.search(text) for text in texts):
         return _autopilot_refusal(command, top)
-    if _HOOK_RE.search(command):
+    if any(_HOOK_RE.search(text) for text in texts):
         return "it names the approval hook, which only the user's prompt may drive"
+    if any(_writes_state(text, common) for text in texts):
+        return "it writes under <git-common-dir>/crew/, crew's approval and ledger state"
+    return None
+
+
+def _writes_state(command, common):
+    """`command` names `<git-common-dir>/crew/` beside a redirect or a
+    writing word."""
     state = os.path.join(common, "crew") if common else None
     folded = os.path.normcase(command).replace("\\", "/")
     names_state = bool(_DOTGIT_CREW_RE.search(command)) or bool(
         state and os.path.normcase(state).replace("\\", "/") in folded)
-    if names_state and _WRITES_RE.search(command):
-        return "it writes under <git-common-dir>/crew/, crew's approval and ledger state"
-    return None
+    return bool(names_state and _WRITES_RE.search(command))
 
 
 def _log(top, mode, decision, ticket, path, reason):
