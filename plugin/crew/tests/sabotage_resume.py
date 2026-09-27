@@ -236,6 +236,19 @@ RESUME_MUTATIONS = (
      '_TICKET_ID_RE = re.compile(r"^[A-Z][A-Z0-9]*-[0-9]+$")\n',
      '_TICKET_ID_RE = re.compile(r"^[A-Z][A-Z0-9]*-\\d+$")\n',
      _T + "test_a_ticket_id_with_non_ascii_digits_is_refused[arabic-indic]"),
+    # --- review round 4 (T-0042) -------------------------------------------
+    ("a resume state that cannot be stat'ed reads as absent again", RESUME,
+     "    absent = _absent(path)\n    if absent is None:\n        return None\n    if absent:\n        return {}\n",
+     "    if not os.path.lexists(path):\n        return {}\n",
+     _T + "test_a_resume_state_that_cannot_be_stat_ed_waits[status]"),
+    ("an INDEX.md that cannot be stat'ed reads as no rows again", RESUME,
+     '    absent = _absent(path)\n    if absent is None:\n        return None\n    if absent:\n        return ""\n',
+     '    if not os.path.lexists(path):\n        return ""\n',
+     _T + "test_an_index_that_cannot_be_stat_ed_is_an_unknown"),
+    ("_absent reads every stat error as absence", RESUME,
+     "    except (FileNotFoundError, NotADirectoryError):\n        return True\n    except OSError:\n        return None\n",
+     "    except OSError:\n        return True\n",
+     _T + "test_record_run_refuses_a_resume_state_that_cannot_be_stat_ed"),
 )
 
 

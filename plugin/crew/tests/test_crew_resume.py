@@ -979,3 +979,71 @@ def test_a_ticket_id_with_non_ascii_digits_is_refused(ticket):
     parsed = crew_resume.parse_resume(f"resume: /crew:done {ticket}\n")
 
     assert (parsed["ok"], "ABC-123" in parsed["reason"]) == (False, True), parsed
+
+
+# --- T-0042: round 4 ---------------------------------------------------------
+
+def _refuse_lstat(monkeypatch, target):
+    """os.lstat raises PermissionError for `target` only: what a directory
+    this user cannot search looks like, without needing a non-root user."""
+    real = os.lstat
+
+    def refusing(path, *args, **kwargs):
+        if os.path.abspath(os.fspath(path)) == os.path.abspath(os.fspath(target)):
+            raise PermissionError(13, "Permission denied", os.fspath(path))
+        return real(path, *args, **kwargs)
+    monkeypatch.setattr(crew_resume.os, "lstat", refusing)
+
+
+@pytest.mark.parametrize("resume", [
+    pytest.param("/crew:done T-0001", id="done"),
+    pytest.param("/crew:status", id="status"),
+])
+def test_a_resume_state_that_cannot_be_stat_ed_waits(fx, monkeypatch, resume):
+    """Review round 4 FIX: `os.path.lexists` is False on ANY stat error, so a
+    resume-state.json whose directory could not be searched read as "no
+    history" and an already-resumed command came back `run`."""
+    text = _handoff(fx.root, resume=resume, written=fx.written)
+    ok, _ = crew_resume.record_run(str(fx.root), fx.decide(text=text))
+    _refuse_lstat(monkeypatch, crew_resume.state_path(str(fx.root)))
+
+    got = fx.decide(text=text)
+
+    assert (ok, got["action"], "resume-state.json" in got["reason"]) == (True, "wait", True), got
+
+
+def test_record_run_refuses_a_resume_state_that_cannot_be_stat_ed(fx, monkeypatch):
+    decision = fx.decide()
+    path = crew_resume.state_path(str(fx.root))
+    _refuse_lstat(monkeypatch, path)
+
+    ok, reason = crew_resume.record_run(str(fx.root), decision)
+
+    assert (ok, "resume-state.json" in reason, os.path.exists(path)) == (False, True, False), reason
+
+
+def test_an_index_that_cannot_be_stat_ed_is_an_unknown(fx, monkeypatch):
+    """Round 4 FIX, the neighbour: INDEX.md decided absence the same way."""
+    (fx.root / ".work" / "INDEX.md").write_text("| T-0001 | implement |\n", encoding="utf-8")
+    _refuse_lstat(monkeypatch, fx.root / ".work" / "INDEX.md")
+
+    fingerprint = crew_resume.progress_fingerprint(str(fx.root), "T-0001")
+    got = fx.decide()
+
+    assert (fingerprint, got["action"], "fingerprint" in got["reason"]) == (None, "wait", True), got
+
+
+@pytest.mark.skipif(not hasattr(os, "geteuid") or os.geteuid() == 0,
+                    reason="root searches a chmod 600 directory anyway; setpriv covers it on a root host")
+def test_unsearchable_crew_dir_waits_as_a_non_root_user(fx):
+    """Round 4 FIX with real permissions, the reviewer's repro."""
+    text = _handoff(fx.root, resume="/crew:status", written=fx.written)
+    ok, _ = crew_resume.record_run(str(fx.root), fx.decide(text=text))
+    crew_dir = crew_resume.state_dir(str(fx.root))
+    os.chmod(crew_dir, 0o600)
+    try:
+        got = fx.decide(text=text)
+    finally:
+        os.chmod(crew_dir, 0o755)
+
+    assert (ok, got["action"], "resume-state.json" in got["reason"]) == (True, "wait", True), got

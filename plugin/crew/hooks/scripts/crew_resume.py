@@ -187,14 +187,34 @@ def _worktree_key(root):
     return os.path.normcase(os.path.realpath(top or root))
 
 
+def _absent(path):
+    """True when nothing is at `path`, False when something is, None when
+    that cannot be told. Only the kernel saying "no such entry"
+    (FileNotFoundError, or NotADirectoryError for a file where a directory
+    on the path should be) is absence; any other stat error -- a directory
+    this user cannot search -- is an unknown. `os.path.lexists` returns
+    False for both, which read "cannot tell" as "nothing there" (review
+    round 4, T-0006)."""
+    try:
+        os.lstat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return True
+    except OSError:
+        return None
+    return False
+
+
 def _read_state(root):
     """The resume-state object: {} when there is no file, None when there is
     one that cannot be read, does not parse, or is not the shape record_run
-    writes. None is an unknown -- never "nothing was resumed" -- because the
-    consumed-once and loop guards read their history from here (review
-    round 3, T-0006)."""
+    writes, or when whether there is one cannot be told. None is an unknown
+    -- never "nothing was resumed" -- because the consumed-once and loop
+    guards read their history from here (review rounds 3 and 4, T-0006)."""
     path = state_path(root)
-    if not os.path.lexists(path):
+    absent = _absent(path)
+    if absent is None:
+        return None
+    if absent:
         return {}
     try:
         with open(path, encoding="utf-8-sig") as handle:
@@ -218,7 +238,8 @@ def _entry(state, key):
     return entry
 
 
-_UNREADABLE_STATE = "resume-state.json exists and could not be read - move it aside to reset auto-resume"
+_UNREADABLE_STATE = ("resume-state.json could not be read (or its directory cannot be searched) - "
+                     "fix the permissions or move it aside to reset auto-resume")
 
 
 def _already(entry, sha, prompt, fingerprint):
@@ -250,9 +271,13 @@ def _file_digest(path):
 
 def _index_rows(root, ticket):
     """The ticket's INDEX.md row(s); "" when there is no INDEX.md, None when
-    there is one and it cannot be read -- an unknown, never "no rows"."""
+    there is one and it cannot be read, or whether there is one cannot be
+    told -- an unknown, never "no rows"."""
     path = os.path.join(root, ".work", "INDEX.md")
-    if not os.path.lexists(path):
+    absent = _absent(path)
+    if absent is None:
+        return None
+    if absent:
         return ""
     try:
         with open(path, encoding="utf-8-sig", errors="replace") as handle:
