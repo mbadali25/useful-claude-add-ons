@@ -6,6 +6,25 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 1.0.44: group approval review round 2 (T-0024, successor plan).**
+  Bumped `1.0.43 -> 1.0.44`. Five defects Codex found, each with a failing test
+  first and a mutation in `tests/sabotage_approval.py`:
+  - A `/crew:approve --confirm` nested inside a `<command-message>` (an example)
+    confirmed. Only the prompt's own top-level command counts now: a command
+    tag nested in another, or left unclosed, is refused; one in a code fence,
+    a quote or another command's message records nothing.
+  - A comma not between two ids was dropped: `,--confirm,` confirmed and
+    `/crew:approve T-1,` recorded T-1. Both are refused, with the grammar named.
+  - Whitespace after `--confirm` still confirms (the owner's decision, pinned
+    by a test); any other text after a line break refuses it.
+  - The closed-ticket check read a lower-case or suffixed id (`t-0050`,
+    `T-0050-fix`) as open. `crew_ticket.precheck` now matches the INDEX row's
+    first cell whole and in any case; a row with no status cell is refused as
+    "could not tell".
+  - A confirm failing part-way counted another session's concurrent approval
+    as its own write. It now looks for its own entry (session, prompt,
+    hashes) in the receipt history.
+
 - **`crew` 1.0.43: group approval review round 1 (T-0024).** Bumped
   `1.0.42 -> 1.0.43`. Four defects Codex found in `hooks/scripts/approval_hook.py`,
   each with a failing test first and a mutation in `tests/sabotage_approval.py`:
