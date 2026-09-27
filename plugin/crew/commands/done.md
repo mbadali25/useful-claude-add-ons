@@ -58,7 +58,8 @@ commit, then `/crew:review $1` again, then rerun this command. Documents read
 
 ## On all four passing
 
-1. Set `.work/tickets/$1/spec.md`'s header to `status: done`, then move the
+1. Set `.work/tickets/$1/spec.md`'s header to `status: done`; changing only
+   that value keeps the approval, so the checks above stay true. Then move the
    tracker: `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket "$1" --to done`.
    Print its lines verbatim; on exit 3 run the command it printed (Jira, SDP);
    on exit 1 tell me `tracker not updated: <reason>` — done still stands.

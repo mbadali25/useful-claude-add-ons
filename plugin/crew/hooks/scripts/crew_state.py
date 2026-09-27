@@ -71,6 +71,7 @@ from crew_guards import (
     CHANGE_REQUIREMENT_DEFAULT,  # noqa: F401
     CLOUD_DEFAULTS,  # noqa: F401
     CLOUD_GUARD_NAMES,  # noqa: F401
+    ENVIRONMENTS_DEFAULTS,  # noqa: F401
     GUARD_APPROVAL_PREFIX,  # noqa: F401
     GUARD_APPROVAL_TTL,  # noqa: F401
     GUARD_DEFAULTS,  # noqa: F401
@@ -98,6 +99,8 @@ from crew_guards import (
     normalise_guard_policy,  # noqa: F401
     normalise_install_policy,  # noqa: F401
     normalise_require_for_production,  # noqa: F401
+    normalise_prod_unattended,  # noqa: F401
+    prod_unattended_rank,  # noqa: F401
     normalise_role_writes,  # noqa: F401
     require_change_rank,  # noqa: F401
     role_writes_rank,  # noqa: F401
@@ -681,6 +684,16 @@ AUTOCLEAR_DEFAULTS = {
     "onlySessions": None,
 }
 
+# The `resume` block (T-0006): auto-resume after /clear or a manual /compact.
+# OFF by default and a MACHINE opt-in, the `autoClear.enabled` rule:
+# `crew_resume.settings` arms it only when the machine-global file says
+# exactly `true`, and a repo `false` in `.crew/crew.json` or
+# `.crew/config.json` vetoes it -- a repo value can never switch it on. Null
+# rather than false so the /crew:init template, which writes every key, does
+# not veto a machine opt-in. `context.autoResume` is a different, retired key
+# and stays unread.
+RESUME_DEFAULTS = {"auto": None}
+
 # Keys inside `autoClear` that are CONSENT rather than capability, and so are
 # declared but never granted machine-wide. `unsafeFocus: true` accepts that
 # `wtype` types into whatever currently has focus, which Wayland offers no way
@@ -1067,6 +1080,14 @@ AUTONOMOUS_STOPS = (
      "destroying git history or tracked work - force-push, branch delete, "
      "history rewrite, or rm of a tracked file"),
 )
+
+# `/crew:autopilot` (T-0004): drives one ticket through the lifecycle phases
+# `crew_autopilot.py next` names from disk. `mode` is armed only by the exact
+# string `plan`; anything else -- a typo included -- is `off`
+# (crew_autopilot.settings). `maxPhases` bounds the phases one invocation runs.
+# Every AUTONOMOUS_STOPS entry above binds it too: commands/autopilot.md names
+# each one, and a test iterates this tuple against that file.
+AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12}
 
 # How many tickets one session's work becomes. The default is `system`: one
 # session is one ticket, and a second ticket is opened only when the work

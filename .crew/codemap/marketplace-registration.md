@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@bcb77ce2
+anchor: useful-claude-add-ons@2b18f7ab
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -47,29 +47,29 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.46** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
-and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `7b667587`; it
-was 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
+`rule-of-two`. `crew` is now **1.0.42** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `2b18f7ab`; it
+was 1.0.41 at `07ca3972` and on T-0005's branch, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
 
-## Crew's own description now agrees with disk, everywhere checked
+## Crew's own description agrees with disk, one site excepted
 
-**DERIVED, and the first time this note can say that without a qualifier.**
+**DERIVED, re-measured at `07ca3972`.**
 `.claude-plugin/marketplace.json:217` — crew's `description` — reads "4
-context-isolated agents (explorer, reviewer, security, researcher) …, 34
+context-isolated agents (explorer, reviewer, security, researcher) …, 35
 slash commands, 29 bundled skills … 34 hook entries." Measured independently
 against disk:
 
 | Claim | Stated | On disk | Where |
 |---|---|---|---|
 | agents | 4 | `ls plugin/crew/agents/*.md` → 4 | `.claude-plugin/marketplace.json:217`, `plugin/PLUGINS.md:17`, `README.md:168`/`:874`, `INSTALLATION.md:252`, `plugin/README.md:414` |
-| commands | 34 | `find plugin/crew/commands -name '*.md'` → 34 | same sites |
+| commands | 35 | `find plugin/crew/commands -name '*.md'` → 35 (T-0004 added `autopilot.md`) | same sites **except `INSTALLATION.md:252`, which still reads "34 slash commands"** — unmarked, so no check catches it |
 | skills | 29 | `find plugin/crew/skills -maxdepth 1 -mindepth 1 -type d` → 29 | same sites, each `<!-- claim: plugin-skills:crew -->`-marked |
 | hook entries | 34 | walking `plugin/crew/hooks/hooks.json`'s 8 events → 34 command entries | same sites |
 
 Both install scripts' own crew catalog row (`scripts/install-prerequisites.sh:1391`,
-`scripts/install-prerequisites.ps1:1174`) states "4 agents, 34 commands" and
+`scripts/install-prerequisites.ps1:1174`) states "4 agents, 35 commands" and
 matches too — `CATALOG_CLAIMS` (below) checks exactly this pair for exactly
 this reason. Every number in the table above was re-derived from the
 filesystem this pass, not read off a previous version of this note or off the
@@ -124,8 +124,8 @@ two tables is, like an unmarked number anywhere else, not checked.
 | Own manifest version | none | `plugin/<name>/.claude-plugin/plugin.json`, bumped in lockstep with the marketplace entry |
 
 Both install-script catalog rows for `crew` (`scripts/install-prerequisites.sh:1391`,
-`scripts/install-prerequisites.ps1:1174`) read "4 agents, 34 commands, safety
-hooks" and "4 agents, 34 commands" respectively, matching `PLUGIN_KEYS` order
+`scripts/install-prerequisites.ps1:1174`) both read "4 agents, 35 commands,
+safety hooks", matching `PLUGIN_KEYS` order
 (`crew`, `gizmoduck`, `localgpu`, `obsidian-vault`, `rule-of-two`) against
 `marketplace.json`'s own plugin ordering — `check_catalogs`
 (`scripts/check-marketplace.py:301-327`) compares that ordering, not merely
@@ -205,7 +205,7 @@ the fast path proves nothing about a missing version bump either way.
 its **first** command, unchanged from the previous anchor's fix — see
 `verification-harness.md`, which owns this file. This is what makes the
 count table above a real, gate-enforced invariant rather than prose nobody
-re-derives: a marked claim drifting on any of these thirteen paths fails this
+re-derives: a marked claim drifting on any of these fourteen paths fails this
 rule, not merely `scripts/_test/self-claims.py`, which tests the checker
 against synthetic fixtures and never reads this repo's own docs.
 
@@ -253,7 +253,15 @@ against synthetic fixtures and never reads this repo's own docs.
   `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` returns 17811 over 120
   files, matching; `check-marketplace.py` passes it. Re-measured for T-0008: the marker
   is still `:10`, the figure on `:11` reads 17,841 lines across 120 files, and the
-  same measurement returns 17841 over 120 files, matching. Re-measured for T-0021 at `7b667587`:
+  same measurement returns 17841 over 120 files, matching. Re-measured at `8ebbdedc`: `:11`
+  reads 17,847 lines across 120 files, and `count_crew_markdown_lines()`'s `splitlines()` total
+  over `git ls-files 'plugin/crew/*.md'` returns 17847 over 120 files, matching. On T-0006's
+  branch, re-measured at `6d35ef8c`: 17,959 on `:11`, and the measurement returns 17959 over 120 files, matching. Re-measured for
+  T-0006 review round 3 at `2bb92f32`: 17,967 on `:11`, and the measurement returns 17967 over
+  120 files, matching. Re-measured at the T-0006 landing `a0c0847e`: 17,973 on `:11` (recomputed
+  from the merged tree, not taken from either side), and the measurement returns 17973 over 120
+  files, matching. Re-measured at `07ca3972` (T-0004): 18,176 across 121 files on `:11`, and
+  `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` returns 18176 over 121 files, matching. On T-0021's branch, re-measured at `7b667587`:
   the figure on `:11` reads 17,989 lines across 125 files (T-0021 added five tracked board
   fixtures under `plugin/crew/tests/tracker_fixtures/`), and the measurement returns 17989 over
   125, matching. Re-measured at `385eadd5` (T-0021 review round 1): the figure reads 18,007
@@ -304,6 +312,102 @@ only `.crew/verify.json` changed (one path added to rule 7, rule 23 grown); the 
 is above both and unchanged. `python3 scripts/check-marketplace.py` at `8d447a7d` reports one
 problem, the version-drift check: `plugin/crew/` changed after `1.0.36` was set at `adf8d1dd`, with
 no bump.
+
+Re-verified per-path from `8d447a7d` to `8ebbdedc` for T-0034 and T-0026's landing (`8ebbdedc` is
+the crew 1.0.39 bump on top of the T-0026 merge `563f54c3`): of the cited paths,
+`.claude-plugin/marketplace.json` (`:218` version only, now 1.0.39), `plugin/PLUGINS.md` (`:14`
+version only), `plugin/crew/.claude-plugin/plugin.json` (version only), `plugin/crew/BUDGETS.md`
+(`:11` figure, re-measured and matching), `.crew/verify.json` (T-0026's rule inserted at
+`:167-172`; the doc rule at `:69-78` is above it and unchanged), `CHANGELOG.md`, `TODO.md` and four
+`plugin/crew/commands/` files changed; the crew command count is still 34, and
+`scripts/check-marketplace.py`, both install scripts, `CLAUDE.md`, `README.md` and
+`skills/README.md` did not change. The version-drift problem recorded above is gone:
+`python3 scripts/check-marketplace.py` at `8ebbdedc` prints `all checks passed`. The merge
+`563f54c3` carries main's 1.0.38 and `8ebbdedc` alone sets 1.0.39, because the reviewed branch
+had declared 1.0.39 at `ee7babde`, before main's `plugin/crew/` changes reached it.
+Re-verified per-path from `8d447a7d` to `6d35ef8c` for T-0006 (`8d447a7d` is T-0008's pre-rebase
+commit, tree-identical to `origin/main` `768a747a` for these paths): of the cited paths,
+`.claude-plugin/marketplace.json` (`:218` version only, 1.0.40), `plugin/PLUGINS.md` (`:14` version
+only), `plugin/crew/.claude-plugin/plugin.json` (version only), `plugin/crew/BUDGETS.md` (`:11`
+figure, re-measured and matching), `.crew/verify.json` (rule 24 appended after rule 23; the doc
+rule at `:69-78` is unchanged), `CHANGELOG.md` and `TODO.md` changed. `CLAUDE.md` did not.
+`python3 scripts/check-marketplace.py` at `6d35ef8c`: `marketplace: 34 skills, 5 plugins`,
+`all checks passed`.
+
+Re-verified per-path from `6d35ef8c` to `2bb92f32` for T-0006's review round 3: of the cited
+paths, `plugin/crew/BUDGETS.md` (`:11` figure, re-measured and matching), `.crew/verify.json`
+(rule 24's `seconds` and `why` only; the doc rule at `:69-78` is unchanged) and `CHANGELOG.md`
+changed. `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md` and
+`plugin/crew/.claude-plugin/plugin.json` were stepped back to 1.0.37 (`3ba9f727`) and re-set to
+1.0.40 (`2bb92f32`) so the version is set after the last `plugin/crew/` change, which is what
+`check_versions`' `version_set_at` walk needs; they end byte-identical to `6d35ef8c`. `CLAUDE.md`
+did not change. `python3 scripts/check-marketplace.py` at `2bb92f32`:
+`marketplace: 34 skills, 5 plugins`, `all checks passed`.
+
+Re-verified per-path to `a0c0847e` for T-0006's landing (`a0c0847e` is the crew 1.0.40 bump on top of
+`1cec9572`, the merge of T-0006 `cb125d51` into main `d3844c76`, joining this note's `8ebbdedc`
+and `2bb92f32` lines): of the cited paths, `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md`
+and `plugin/crew/.claude-plugin/plugin.json` (version only: the merge carries main's 1.0.39,
+`a0c0847e` alone sets 1.0.40), `plugin/crew/BUDGETS.md` (`:11` figure, 17,973, re-measured and
+matching), `.crew/verify.json` (26 rules; the doc rule at `:69-78` is above both sides' changes
+and unchanged), `CHANGELOG.md` and `TODO.md` changed. `CLAUDE.md` and `README.md` did not.
+`python3 scripts/check-marketplace.py` at `a0c0847e`: `marketplace: 34 skills, 5 plugins`,
+`all checks passed`.
+
+Re-verified per-path from `a0c0847e` to `07ca3972` for T-0004 (`/crew:autopilot`): of the cited
+paths, `.claude-plugin/marketplace.json` (`:217` description 34 -> 35 slash commands, `:218` version
+1.0.41), `plugin/PLUGINS.md` (`:14` version, `:17` 35 commands), `plugin/README.md` and `README.md`
+(`:414`, `:168`, `:874` - 35 commands; no line moved), `plugin/crew/.claude-plugin/plugin.json`
+(version only), `plugin/crew/BUDGETS.md` (`:11`, 18,176 / 121, re-measured and matching), both
+install scripts (the crew catalog row only, `:1391` / `:1174`, now 35 commands; every other array
+citation unmoved), `.crew/verify.json` (T-0004's rule appended, 27 rules; the doc rule at `:69-78`
+is unchanged), `CHANGELOG.md`, `TODO.md`, and `plugin/crew/commands/`/`plugin/crew/skills/` files
+changed. `INSTALLATION.md` did not, so its `:252` still states 34 commands against 35 on disk.
+`scripts/check-marketplace.py`, `CLAUDE.md` and `skills/README.md` did not change.
+`python3 scripts/check-marketplace.py` at `07ca3972`: `marketplace: 34 skills, 5 plugins`,
+`all checks passed`.
+
+Re-verified per-path from `8d447a7d` to `fc54def6` for T-0005 (`8d447a7d` is T-0008's pre-rebase
+commit; T-0008 landed as `95120430`/`768a747a`): of the cited paths `.claude-plugin/marketplace.json`
+(`:218` version only; `:217`'s counts unchanged), `plugin/PLUGINS.md` (`:14` version only),
+`plugin/crew/.claude-plugin/plugin.json` (version only), `plugin/crew/BUDGETS.md` (`:11` figure,
+re-measured: 18,006 lines, 120 files), `.crew/verify.json` (a cloud-guard rule inserted at index 6,
+`:117-126`, below the doc rule at `:69-78`, which is unchanged), `CHANGELOG.md` and `TODO.md`
+changed, as did files under `plugin/crew/`, which this note cites as a directory for its counts:
+agents 4, commands 34, skills 29 and hook entries 34 re-counted from disk and unchanged. The other
+plugins' versions were re-read from `marketplace.json` and are unchanged.
+`python3 scripts/check-marketplace.py` at `fc54def6`: `marketplace: 34 skills, 5 plugins`,
+`all checks passed`.
+
+## Re-anchor provenance - `fc54def6` -> `3a57b2d2`, 2026-09-26 (T-0005 Step 8)
+
+`git diff --name-only fc54def6 3a57b2d2 -- <the paths this note cites>` returns `.crew/verify.json`
+(one path added to the cloud-guard rule at `:118`, below the doc rule, which stays at `:69-78`,
+re-read), `plugin/crew/BUDGETS.md` (the `:11` figure re-measured, now 18,050 lines, 120 files)
+and `CHANGELOG.md` (cited by name only). The version files are byte-identical to `fc54def6`'s
+crew entry.
+
+## Re-anchor provenance - `6f96e627` + `3a57b2d2` -> `2b18f7ab`, 2026-09-26 (T-0005 landing)
+
+`2b18f7ab` is the crew 1.0.42 bump on top of `4ed4b763`, the merge of T-0005 (`4e0abc8f`) into
+main at `1e0706ac`. Both lines' provenance is above, side by side. A citation can only be wrong at
+the merge when its file changed on both sides, or when a line from one side cites a file the other
+side changed; each such citation was re-mapped with a line diff of the cited file and re-read with
+`grep -n`/`sed -n` on the merged tree. The bump commit replaced `1.0.41` with `1.0.42` in place in
+the version files and in T-0005's own version statements (no line added or removed, except one
+line in `CHANGELOG.md`'s T-0005 bump note).
+
+Of the paths this note cites, the version files, `plugin/PLUGINS.md`, `.crew/verify.json`,
+`CHANGELOG.md`, `TODO.md` and `plugin/crew/BUDGETS.md` changed on both sides.
+
+- `.claude-plugin/marketplace.json` - `:217` keeps main's description (35 slash commands, which
+  `ls plugin/crew/commands/*.md` confirms); `:218` is 1.0.42, and `plugin/PLUGINS.md:14`'s
+  `plugin-version:crew` claim agrees. Corrected above.
+- `.crew/verify.json` - the doc rule stays at `:69-78` (rule 2); T-0005's cloud-guard rule is rule 6
+  at `:117-127`. 28 rules.
+- `plugin/crew/BUDGETS.md` - marker still `:10`; the figure re-measured on the merge, 18,494 lines
+  across 121 files, which `check-marketplace.py` verifies (`all checks passed`).
+- `CHANGELOG.md`, `TODO.md` - cited by name only.
 
 Re-verified per-path from `8d447a7d` to `7b667587` for T-0021 (T-0034's `c35edda5` and T-0021's
 own commits in between): of the cited paths, `.claude-plugin/marketplace.json` (`:218` version

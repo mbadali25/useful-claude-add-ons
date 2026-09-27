@@ -753,9 +753,9 @@ A crew 1.0 ticket is a directory, `.work/tickets/<id>/`, holding `direction.md`,
 | Script | What it does |
 |---|---|
 | `crew_ticket.py validate --ticket <id>` | Every spec section present; every plan `Files:` entry inside Touch. A plan path outside Touch is an error, never a silent widening. |
-| `/crew:approve <id>` — `approval_hook.py` (UserPromptSubmit) | **How you approve.** When the prompt *you* submit is exactly `/crew:approve <id>`, the hook reads `spec.md` and `plan.md` once, validates those bytes and writes `<git-common-dir>/crew/tickets/<id>/approval.json` with their sha256, `approved_via: "user-prompt"`, and the prompt's session id and time. A contract that does not validate blocks the prompt and says why; nothing is recorded. |
+| `/crew:approve <id>` — `approval_hook.py` (UserPromptSubmit) | **How you approve.** When the prompt *you* submit is exactly `/crew:approve <id>`, the hook reads `spec.md` and `plan.md` once, validates those bytes and writes `<git-common-dir>/crew/tickets/<id>/approval.json` with their sha256 and their approval digest (below), `approved_via: "user-prompt"`, and the prompt's session id and time. A contract that does not validate blocks the prompt and says why; nothing is recorded. |
 | `crew_ticket.py approve --ticket <id> [--by <who>]` | The same receipt from a shell, for tests and CI, marked `approved_via: "cli"`. The guard and the audit accept a `cli` receipt only when `scope.allowCliApproval` is `true` (default `false`). |
-| `crew_ticket.py status --ticket <id>` | `approved`, `stale` (spec or plan edited since) or `none`. Exit 0 only for `approved`. |
+| `crew_ticket.py status --ticket <id>` | `approved`, `stale` (spec or plan edited since, other than the header's status value) or `none`. Exit 0 only for `approved`. |
 | `crew_ticket.py activate --ticket <id>` | Makes `<id>` this worktree's active ticket (`<git-common-dir>/crew/active-ticket`, keyed by worktree). Without it, the open ticket in `.work/INDEX.md` is used when its `.work/tickets/<id>/` directory exists. |
 | `scope_guard.py` (PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit\|Bash\|PowerShell`) | Refuses an edit when the active ticket has no current approval from your prompt, or when the target is outside Touch. Refuses a shell command that runs `crew_ticket.py approve`, names the approval hook, or writes under `<git-common-dir>/crew/`. |
 | `completion_audit.py` (Stop) | Diffs the whole tree against the ticket's scope base — committed, staged, unstaged and untracked, both ends of a rename — so shell-made writes are caught too. `--check --ticket <id>` is the form `/crew:done` calls. |
@@ -766,6 +766,8 @@ A crew 1.0 ticket is a directory, `.work/tickets/<id>/`, holding `direction.md`,
 **What the guard judges.** The real path, following symlinks and junctions the way the OS will, *and* the path as named, when that is inside the worktree — so a link cannot carry a write out of Touch or launder one into it. `..` is resolved where the OS resolves it. The ticket's own `.work/tickets/<id>/` files are always writable, so you can amend the spec and plan. Since 1.0.36 a ticket with a current approval from your prompt (a `cli` receipt only under `scope.allowCliApproval`) may also write the refresh-artifact paths — `.crew/codemap/`, the configured diagrams dir (`docs.diagramsDir`), the graph dir (`graph.out`) and `.claude/rules/` — because `/crew:implement` step 6 refreshes them for every ticket whose changes reach them, and no Touch names them. The completion audit accepts them under the same condition. The match is on whole path segments after `..` is collapsed (`.crew/codemapX` is not the code map), both the real and the named path must be artifacts, and a configured dir that resolves to the repository root opens nothing. Nothing else is exempt: not the rest of `.crew/`, not `TODO.md`, not the rest of `.claude/`, not crew's own policy files — put them in Touch if the ticket changes them. Anything under `<git-common-dir>/crew/` (approval receipts, the review ledger, the active-ticket pointer, the ramp count) and `.crew/.scope-base` are refused to Write/Edit in every mode but `off`, ticket or no ticket. A path outside the worktree (a scratch directory) is not a repository path and is allowed, except the git directory.
 
 **Amending scope** is editing `spec.md` `## Touch` (and `plan.md`), then `/crew:approve <id>` again. The edit makes the approval stale, so edits outside the ticket directory are refused until you approve.
+
+**The status edit keeps the approval.** The receipt binds each file's approval digest (`digest: "crew-approval/2"`, fields `spec_digest` and `plan_digest`), which normalises exactly one thing: the value of the header's `status:` token, so `/crew:plan`, `/crew:implement` and `/crew:done` can move a ticket through `spec` -> `planned` -> `review` -> `done` without a fresh approval. It applies only when line 1 (ending at the first line break the spec parser splits on - `\n`, `\r\n`, a bare `\r`, or any other `str.splitlines` break) starts with `# `, holds exactly one `status:` (counted case-insensitively), and that token's value is one of `spec`, `planned`, `approved`, `in-progress`, `review`, `done`, `merged`. Everything else still stales it: `risk:`, the title, whitespace, line endings, any body line, a second `status:` anywhere, a value outside that list, and a `status:` added where there was none. `plan_sha256`/`spec_sha256` stay the raw full-file sha256, which the review ledger's successor-plan rule still reads. A receipt written before T-0026 has no `digest` field and is compared on the raw sha256, so it verifies on unchanged files and goes stale once on its first status edit; approving again writes a `/2` receipt. A `digest` naming any other scheme reads `stale`, never a raw fallback.
 
 **Modes** — `scope.mode` in `.crew/config.json`:
 
@@ -781,6 +783,46 @@ A `.crew/config.json` that exists but does not parse, or a value outside those f
 **Threat model.** These guards stop *drift and accidental bypass*: a session editing outside the plan, approving its own plan through the CLI, or writing the approval state through Write/Edit or an obvious shell command. They do not stop a session that sets out to forge local state. It has a shell, and the receipt, the active-ticket pointer and the ramp count are files on your machine: a command that hides the path in a variable or an encoded string, or a script that writes JSON, passes the textual shell check. The Stop audit and review are the backstop — the audit diffs the whole tree after the fact, and a reviewer sees the change and the receipt's `approved_via`. Treat an approval as "the user asked, and nothing obviously went around it", not as a signature.
 
 **What this does not do.** The edit guard judges only the four editing tools against Touch; the Stop audit is what catches `sed -i`, redirects and formatters, after the fact. The audit sees what git sees: gitignored files (`.crew/*` among them) and `.work/` are outside it.
+
+### Autopilot: one ticket, driven until a person is needed
+
+`/crew:autopilot [<id>]` (since 1.0.41, **off by default**) drives one ticket through spec, plan, approval, implement, refresh artifacts, review and done, following each phase command's own procedure in the same session. It does not decide the order itself: every turn it runs `hooks/scripts/crew_autopilot.py next --root . --ticket <id>`, which names the next phase from files on disk only, so a skipped phase is visible and a phase that cannot be told stops.
+
+| On disk | Phase | |
+|---|---|---|
+| no `direction.md`, or INDEX status `direction` | `brainstorm` / `direction-approval` | stop — a human dialogue |
+| no INDEX table row for the ticket (or no INDEX), or a status cell that is not `ready`, `open`, `spec`, `planned`, `approved`, `in-progress`, `implement` or `review` | `direction-approval` | stop — cannot tell whether the direction was approved (Jira and ServiceDesk Plus modes write no row; a blank or unknown cell is not a yes) |
+| INDEX status `done`, `merged`, `closed`, `shipped`, `complete(d)` | `closed` | stop — never re-driven |
+| spec header `status: done` | `closed` | stop — never re-driven |
+| an item under an `Open questions` heading (any level, sub-headings included) in direction.md, spec.md or plan.md | `open-questions` | stop — answered by writing `none - <answer>` or checking it `[x]`; `None of us has decided` is still open |
+| no `spec.md` / no `plan.md` | `spec` / `plan` | runs `/crew:spec` / `/crew:plan` |
+| `crew_ticket.validate` refuses | `spec` / `plan` | stop, with the problems |
+| approval not accepted (none, stale, or `cli`) | `approve` | stop — **you** type `/crew:approve <id>` |
+| review ledger `UNKNOWN` / `NEEDS_REPLAN` | `review` / `replan` | stop |
+| no review round under the current plan | `implement` | runs `/crew:implement` (its step 6 runs tests, docs, the refresh check, then review) |
+| latest round reserved with no result | `review` | stop — another run would spend a round |
+| latest round FINDINGS, not owner-accepted | `accept-review` | stop — acceptance is the owner's |
+| no receipt stands and no review round is left | `review` | stop — `/crew:review` would reserve a third round and write NEEDS_REPLAN, which only a new approved plan leaves; revert the edit that staled the receipt, or replan |
+| latest round INCOMPLETE | `accept-review` | stop — it cannot be accepted; a human reruns review or replans |
+| receipt not current, artifacts stale | `refresh` | runs the command T-0008's check names |
+| receipt not current, an artifact unknown for a cause a refresh cannot settle | `refresh` | stop |
+| receipt not current, artifacts fresh | `review` | runs `/crew:review` |
+| receipt current, artifacts not fresh | `stale-after-review` | stop, nothing written — a refresh now would stale the receipt |
+| receipt current, artifacts fresh | `done` | runs `/crew:done` |
+
+**Implement's status edit keeps the approval.** `/crew:implement` step 7 writes `status: review` into spec.md's header, which T-0026's approval digest normalises, so `next` moves on. An approval that edit still stales — a receipt written before T-0026, or a value outside `crew_ticket.STATUS_VALUES` — stops at `approve`; when changing only that `status:` word back makes spec.md hash to the approved bytes (and plan.md is unchanged), the reason says only the header changed, so it reads differently from a Touch widened mid-implement.
+
+**A review phase ends at its verdict.** Whether reached as `/crew:review` or inside `/crew:implement` step 6, autopilot stops following `review.md` once the round is recorded and its BLOCK and FIX lines are reported: step 3.2's fix-and-rerun, `review_ledger.py --accept` and `gh pr review` are the human's. The next `next` stops at FINDINGS or INCOMPLETE, and any later round goes back through `next`, which puts a refresh before it.
+
+**The ticket is re-checked every turn.** `next` stops (`ticket-mismatch`) before any phase that would run while `crew_ticket.resolve_active` — what the scope guard and the completion audit read — names another ticket, none, or a broken pointer. Anything `next` or `resume` raises prints `stop=1` with the exception, and the command treats any answer but a `stop=0` line as a stop.
+
+**Refresh sits between implement and review, every round.** A review bundle excludes only `.work/`, so a refresh written after an accepted review stales its receipt and `/crew:done` refuses; autopilot therefore never refreshes after review. The freshness judgement is T-0008's `crew_refresh_check.ticket_freshness`. A `stale` artifact is refreshed with the command it names. An `unknown` one is refreshed only in T-0008's orphaned-anchor case — the anchor names no commit (a squash merge dropped it), T-0008 marks it refreshable and names the command; every other `unknown` (graphify missing, no or a fallback scope base, a check that raised) stops, as `/crew:implement` step 6 does. When the module cannot be imported the phase stops as "refresh-artifacts unavailable (T-0008 not landed)" rather than being skipped.
+
+**Which ticket** (`crew_autopilot.py resume [--ticket <id>]`): the id you gave; else the handoff's `resume:` line, parsed by T-0006's `crew_resume.parse_resume` and used only when the handoff's `branch:` and `head:` match this checkout and the ticket folder exists; then this worktree's active ticket; then `.work/INDEX.md`, **only when exactly one** open ticket has a folder — several open tickets and no pointer stop and list them. A handoff that cannot be used (no line, `resume: none`, unparseable, branch or head mismatch, no folder, T-0006 not installed) falls through with its reason printed; `## Next action` prose is never guessed from. When the handoff names a different command from the one disk names, disk wins and the disagreement is printed. `resume: /crew:autopilot --goal <slug>` stops until T-0012. **A ticket that is not this worktree's active one stops**, naming both — the scope guard and the completion audit judge edits by the active pointer; with no pointer set, autopilot activates the ticket it drives (`crew_ticket.py activate`). When context runs low, autopilot writes `resume: /crew:autopilot <id>` into the handoff and stops.
+
+**Stops.** Always a person in this version: `brainstorm`, `plan-approval`, `review-acceptance`, `open-questions`. Enforced by `next` from disk: `needs-replan`, `needs-replan-or-revert`, `unknown-ledger`, `failed-validate`, `direction-unknown`, `unsettled-artifact`, `ticket-mismatch`, `max-phases`, `no-progress` (the command just run is named again). Enforced by the command's procedure, not by `next` — which sees them only as `no-progress` if the same command comes round again: `review-verdict`, `failed-done-check`, `failed-phase`. And every `AUTONOMOUS_STOPS` entry — `offboard-role`, `delete-map`, `rewrite-metrics`, `git-destruction` — which `commands/autopilot.md` names and a test pins against `crew_state.AUTONOMOUS_STOPS`. `crew_autopilot.py stops` lists them all from code. No deploy, merge, PR or new ticket: T-0005, T-0011, T-0012.
+
+**Settings** (`.crew/config.json`, repo only): `autopilot.mode` — `off` (default) or `plan`; only the exact string `plan` arms it, and any other value reads as `off` with a warning. `autopilot.maxPhases` — phases one invocation may run, default 12; anything but a positive integer reads as 12 with a warning. An `autopilot` block only in `.crew/crew.json` is reported, not silently ignored. `crew_autopilot.py settings --root .` shows what is in force.
 
 ### Measuring 1.0
 
@@ -911,6 +953,8 @@ below govern something **only while `guards.cloudGuard` is `report` or
 | `guards.cloudDestructive` | `aws … delete-*/terminate-*/purge-*`, `s3 rm/rb`, `s3 sync --delete`, `az … delete/purge`, `Remove-Az*` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `guards.sqlDestructive` | `DROP`/`TRUNCATE` sent to `psql`, `mysql`, `mariadb`, `sqlcmd`, `sqlite3`, `Invoke-Sqlcmd` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `guards.cloudGuard` | whether the cloud guard judges commands at all: `off` (default) / `report` / `block` | `hooks/scripts/cloud_guard.py` |
+| `environments.nonProd` | **repo-only** globs naming the terraform workspaces/environments that may run unattended (default `[]`) | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
+| `environments.prodUnattended` | whether production may too — true only when **both** layers say `true` (default `false`) | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 
 - **`block`** refuses, exactly as the guard did before these keys existed.
 - **`ask`** refuses, prints the **exact** command, and names the one file that
@@ -959,13 +1003,15 @@ A repo cannot turn off a machine-global `block`.
 When on, it reads each command into the simple commands it actually runs —
 through `&&`, `;`, `|`, `sudo`, `env X=Y`, `bash -c`, `pwsh -Command`, `$( )`,
 heredocs and PowerShell script blocks — and judges only those. A word inside an
-argument is never a finding: `git commit -m "terraform destroy"` and
-`psql -c "SELECT 'DROP TABLE x'"` both pass. That is the difference from the
-command guard removed in 0.19.52, which matched words anywhere.
+argument is never a finding of the rule it names: `psql -c "SELECT 'DROP TABLE
+x'"` passes. That is the difference from the command guard removed in 0.19.52,
+which matched words anywhere. A quoted terraform word is the one exception,
+below: it makes the line one crew could not tell.
 
 | It recognises | Decided by |
 |---|---|
 | `terraform`/`tofu` `apply`, `destroy` (`-auto-approve`, `-chdir=` included) | `guards.terraformApply` |
+| `terraform`/`tofu`/`terragrunt` `workspace delete` — a destroy, in every armed state; `workspace new`/`select -or-create` once `environments` is configured | `guards.terraformApply` |
 | `git push --force`, `-f`, `--force-with-lease`, `+ref` | `guards.forcePush` |
 | `gh pr merge --admin` | `guards.adminMerge` |
 | `aws … delete-*/terminate-*/purge-*`, `aws s3 rm/rb`, `az … delete/purge`, `Remove-Az*` | `guards.cloudDestructive` |
@@ -982,6 +1028,84 @@ A command it could not read — nested more than six shells deep, or hook input
 that is not a readable Bash/PowerShell call — is refused as `[cloudGuard]`; a
 destructive-capable tool behind `xargs`/`parallel` is judged as destructive
 under its own rule. `--dry-run`, `-WhatIf` and `-help` are not destructive.
+
+**Environments and destroys (crew 1.0.42).** A terraform command is also
+judged by its target environment and by whether it destroys, both read without
+running terraform. Under `guards.terraformApply: ask`, an `apply` of a saved
+plan that deletes nothing, and `workspace new` / `select -or-create`, aimed at
+a workspace matching a repo-only `environments.nonProd` glob **runs
+unattended** and is logged as `env:nonProd:<name>`. Production does too only
+when `environments.prodUnattended` is `true` in **both** config layers, and it
+says so on screen. An environment crew cannot identify — no signal, a
+non-literal `TF_WORKSPACE=$WS`, signals that disagree, a `cd` in the command,
+no `.terraform/environment` (which is not read as `default`) — is **unknown**,
+and nothing allows unknown unattended. A saved plan is readable only through
+its sidecar, written outside the hook:
+
+```bash
+terraform plan -out p.tfplan
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tfplan.py" summarize p.tfplan
+TF_WORKSPACE=staging terraform apply p.tfplan
+```
+
+Three separate commands: a saved-plan apply is trusted only when it is the
+only command in its invocation, since anything beside it could rewrite the
+plan after the hook hashed it. The sidecar records the workspace the plan is
+bound to, read from the plan file, and any directory or environment change
+the hook cannot read makes the environment unknown.
+
+**Terraform lines are judged word by word, or not at all (crew 1.0.42).** A
+command line that RUNS `terraform`, `terragrunt` or `tofu` — its command word,
+after assignments and wrappers such as `env`, `sudo`, `timeout` or `xargs`,
+read with quotes and escapes taken out, so `"terraform"`, `t'erraform'`,
+`$'\x74erraform'` and `terr\aform` all count, or a command inside `bash -c`,
+`eval`, `pwsh -c`, `$(...)` or backquotes — is judged only
+when every word on it is a plain literal (`^[A-Za-z0-9_./:=@%+,-]+$`) joined by
+`;`, `&&`, `||`, `|`, `&` or a plain `>`/`>>`/`<` redirection. Anything else on
+such a line — a quote, `$`, a backquote, a backslash, a glob or brace, `<(`, a
+heredoc or here-string, a comment, a control character — makes it **could not
+tell**: asked about when someone is attending, **refused unattended** (and
+under `block`), never allowed, logged as `could-not-tell`. The check reads the
+raw text before the parser does, so no parser mistake can turn a shape it
+misread into an allow. Unusual quoting on a terraform line is asked about, not
+allowed; spell the line with plain words to have it judged. The rule is about
+the command being run: mentioning terraform in a commit message, a search or a
+file name (`git commit -m "fix terraform apply"`, `grep 'terraform apply' .`,
+`vim terraform.tf`) is not gated. A command word crew cannot read (`$x`,
+`$(...)`) is could not tell only on a line that names terraform, `destroy`,
+`apply` or `workspace`, so `x=terraform; $x destroy` is refused and `$EDITOR
+notes.md` is not. Where crew cannot split a line with certainty — a `case`
+arm, a function definition, a script piped into `bash`, `ssh`, `source` — it
+falls back to the older, wider rule: any word naming terraform.
+
+**A terraform command crew cannot follow is could not tell even in plain
+words.** An alias (`alias tf=terraform`, `hash -p`, PowerShell's `Set-Alias`
+and `alias:` drive), a binary the same line copies or links to another name
+and then runs by that name with `destroy`, `apply` or `workspace`, zsh's
+`=terraform`, a script runner crew does not split (`flock`, `ssh`, `source`)
+and PowerShell's `Start-Process terraform` are asked about and refused
+unattended: the parser would not see terraform in them. Run terraform by its
+own name to have it judged. Options before the subcommand are read the way
+terraform and terragrunt read them, so `terragrunt --working-dir infra
+destroy` is a destroy; an option crew does not know, followed by `apply` or
+`destroy`, is read as that operation. Two things are not gated for their
+quoting: a read-only subcommand (`plan`, `show`, `output`, `fmt`, `validate`,
+`init`, `workspace list`, ...) spelled where it cannot be another one, so
+`terraform plan -var 'environment=staging'` runs as before; and the arguments
+of any program that is not terraform (`cp -r terraform "$BACKUP_DIR"`, `rg
+terraform "$file"`). A PowerShell line follows the same command-word rule:
+`&`, `.`, `terraform.exe`, a path and `Start-Process terraform` run terraform,
+`git commit -m "fix terraform apply"` and `Select-String terraform *.md` do
+not.
+
+**The always-stops.** A destroy is never applied unattended, at any setting:
+`destroy`, `apply -destroy`, `apply -replace`, `workspace delete`, a saved plan
+that deletes, and any apply whose plan crew cannot read — including
+`terraform apply -auto-approve` with no saved plan. **BREAKING in 1.0.42:**
+under `terraformApply: allow` these now ask (and are denied unattended) where
+they used to run; approve one command with the marker the refusal names.
+`prodUnattended` does not stand down `promote-gate.sh`'s `requireHuman`.
+Details: [CONFIG.md §16](CONFIG.md), `environments.*`.
 
 **Identity.** The repo-only `cloud` block pins which AWS profiles/regions and
 Azure subscriptions this checkout may act as. A command resolving to anything
@@ -1008,8 +1132,52 @@ on any platform, never twice and never zero times.
 
 **What it cannot see:** a command named through a variable, a script file it
 runs, SQL built at runtime, Terraform's provider credentials, and MCP tool
-calls. Tests: `tests/test_cloud_guard.py` (every case through python, bash and
-pwsh) and the `cloud-guard.sh` section of `hooks/scripts/_test/run-tests.sh`.
+calls. For the terraform name specifically: a name built at run time from
+parts crew never sees whole (`$TF`, `$(printf te)$(printf rraform)`, a
+PowerShell string concatenation) and a wildcard that keeps fewer than three
+letters of it (`t*`) are not read as terraform. Tests: `tests/test_cloud_guard.py` (every case through python, bash and
+pwsh), `tests/test_cloud_guard_environments.py` and `tests/test_crew_tfplan.py`
+(the environment layer and the sidecar), and the `cloud-guard.sh` section of
+`hooks/scripts/_test/run-tests.sh`.
+
+#### What the guard does not catch
+
+The guard is a tripwire for an agent's accidental or direct destructive
+command, not a sandbox against deliberate evasion (owner decision,
+2026-09-26). It catches `terraform`, `terragrunt` and `tofu` written directly:
+bare or path-qualified, behind the listed wrappers (`env`, `sudo`, `doas`,
+`nice`, `ionice`, `timeout`, `stdbuf`, `nohup`, `command`, `exec`, `time`,
+`xargs`, `parallel`, `watch`, `flock`, `chroot`, `nsenter`, `wsl`, `pwsh -c`),
+inside `bash|sh|zsh -c` and `eval` strings, with global options before the
+subcommand (`-chdir=`, terragrunt's `--working-dir`), and PowerShell's `&`,
+`.`, `terraform.exe` and `Start-Process`. It does not try to catch a program
+renamed or started some other way. Each of these runs unjudged:
+
+- a rename by alias, function, symlink or copy, unless the same line makes a
+  plain copy or link and runs it by that name: `env ln -sf /usr/bin/terraform ./ls && PATH=.:/usr/bin ls destroy -auto-approve`,
+  `X=1 cp /usr/bin/terraform ./ls && PATH=.:/usr/bin ls destroy -auto-approve`,
+  `sudo ln -s /usr/bin/terraform /usr/local/bin/tf; tf destroy -auto-approve`
+- `env -S` escape strings: `env -S 'terraform\_destroy\_-auto-approve'`
+- BusyBox applets: `busybox env terraform destroy -auto-approve`,
+  `busybox timeout 60 terraform destroy -auto-approve`
+- git `!` aliases: `git -c alias.tf='!terraform' tf destroy -auto-approve`
+- an interpreter (`python -c`, `node -e`, ...): `python3 -c 'import os; os.system("terraform destroy")'`
+- a script file: `bash deploy.sh`
+- a wrapper not in the list above: `strace -f terraform destroy`,
+  `strace -f terraform $'\x64estroy' -auto-approve`, `strace =terraform destroy`,
+  `aws-vault exec p -- terraform destroy`,
+  `aws-vault exec prod -- terraform "destroy" -auto-approve`,
+  `unbuffer terraform destroy`, `systemd-run terraform destroy`
+- a program that runs another it is handed: `git bisect run terraform destroy`,
+  `git -C infra bisect run terraform destroy`,
+  `git -C add bisect run terraform destroy`, `rg --pre terraform destroy .`
+- a container's entrypoint: `docker run --rm hashicorp/terraform:1.9 destroy -auto-approve`
+
+No command-line guard can close these: unattended work has to run
+interpreters, scripts and build tools, and any of them can start terraform
+under another name, so a guard that refused them would refuse the work
+itself. The real boundary is the credentials an unattended run holds — scope
+them so the run cannot destroy what it must not. That is T-0044.
 
 ### §11c. `change` — change requests, added by schema 7
 
@@ -1635,6 +1803,40 @@ moment where a subtly wrong handoff gets caught before more work is built on
 top of it. `context.autoResume` is no longer read. Set `memory.inject: false`
 and `handoff-read` prints the note instead.
 
+#### Auto-resume (`resume.auto`, off by default)
+
+`/crew:handoff` writes one machine-readable line into the note's header,
+`resume: /crew:done T-0001` (or `resume: none`), and with `resume.auto: true`
+in `~/.claude/crew/config.json` the context hook works out, on the
+`SessionStart` after `/clear` or a manual `/compact`, whether that command may
+be resumed. Only the machine file can switch it on; a `false` in
+`.crew/crew.json` or `.crew/config.json` vetoes it, and a repo `true` does
+nothing (`CONFIG.md` §14a). Never on `startup`.
+
+**Nothing starts on its own yet.** Claude Code 2.1.282 drops a SessionStart
+`initialUserMessage` in an interactive session (spike, 2026-09-25), so crew
+never sends one. When the checks pass, the injected handoff carries
+`Auto-resume: ready to run /crew:done T-0001.` and says it did not start from
+the hook — press Enter or type it; T-0013 is the ticket that types it. When
+they do not, it carries `Auto-resume did not start: <reason>.` The reasons:
+compact was not a manual /compact; no handoff note, or the handoff was
+archived as stale (or is stale and could not be archived); no resume line, `resume: none`, or a line the grammar
+refuses (two lines, trailing text, an unknown or excluded command such as
+`/crew:approve`); the `branch:` or `head:` line does not match the checkout;
+the ticket's `.work/tickets/<id>/` (or the goal file) does not exist; the
+command is not installed; the record of past auto-resumes
+(`resume-state.json`) exists and could not be read; this handoff was already
+resumed; the progress fingerprint could not be computed; or the same command with no progress since
+the last auto-resume. The allowlist is `crew_resume.RESUME_COMMANDS`:
+`/crew:spec`, `/crew:plan`, `/crew:implement`, `/crew:review`, `/crew:done`,
+`/crew:autopilot` and `/crew:status`. No gate changes: the resumed command's
+own approval, scope, verify and review gates still decide.
+
+A handoff written while `/crew:autopilot` drives a ticket carries
+`resume: /crew:autopilot <id>`; typing `/crew:autopilot` with no argument in
+the next session reads that line and recomputes the phase from disk (see
+"Autopilot").
+
 ### Housekeeping
 
 `/crew:done` deletes `HANDOFF.md` on ticket completion — do that yourself
@@ -2226,6 +2428,7 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:implement <id>` | Implement an approved plan, then tests, docs, artifact refresh and review; refuses without a current approval |
 | `/crew:done <id>` | Close a ticket: accepted review receipt, clean verify gate, passing completion audit and current artifacts, or no close |
 | `/crew:fix <one sentence>` | The light path — every lifecycle phase present, each compressed to one step |
+| `/crew:autopilot [<id>]` | Drive one ticket through the lifecycle until a person is needed; with no id, resume from the handoff's `resume:` line, the active ticket, or the one open ticket. Off until `autopilot.mode: plan` — see "Autopilot" |
 | `/crew:review` | Independent QA — Codex, then Copilot, then Claude: the first that probes clean |
 | `/crew:onboard [--refresh <area>]` | Build or refresh the code map |
 | `/crew:reference [--api\|--features\|--audit]` | Enumerate the API and features into `docs/reference/`, anchored to `file:line` |
@@ -2251,7 +2454,7 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
 | `/crew:change <new\|status <id>\|close <id>\|list>` | File a change request into SDP, Jira or `.work/changes/`, one process either way. `new` refuses to file while any of the template's questions 1–9 is unanswered or a placeholder and names which; `close` refuses without the post-change validation results — see §24b |
 
-34 commands.<!-- claim: plugin-commands:crew -->
+35 commands.<!-- claim: plugin-commands:crew -->
 
 ### Agents
 

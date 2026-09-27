@@ -105,7 +105,8 @@ line (a missing tool, git unable to diff) or on the top line (a scope base that
 hides or may hide the change, an unreadable config): report it with its reason.
 Documents read `not measured` — `/crew:docs`'s judgement, never a pass. Commit
 the refresh before `/crew:review $1` builds its bundle. Set `spec.md`'s header
-to `status: review` and run
+to `status: review` — that edit keeps the approval: the digest normalises only
+the header's status value — and run
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket $1 --to review`,
 handled as in step 1: the Review lane means the review is outstanding.
 **Then, last, `/crew:review $1`** — its receipt covers the refreshes; a later one stales it.

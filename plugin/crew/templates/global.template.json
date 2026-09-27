@@ -74,6 +74,9 @@
       "onlySessions": null
     }
   },
+  "resume": {
+    "auto": null
+  },
   "docs": {
     "theme": null,
     "reportTheme": null
@@ -105,6 +108,9 @@
     "prodServer": "none",
     "roleWrites": "off",
     "cloudGuard": "off"
+  },
+  "environments": {
+    "prodUnattended": false
   },
   "change": {
     "requester": null,

@@ -101,6 +101,9 @@
       "maxCommitsBehind": 3
     }
   },
+  "resume": {
+    "auto": null
+  },
   "emergency": {
     "standDown": true,
     "ttlMinutes": 120,
@@ -180,6 +183,10 @@
     "awsRegions": [],
     "azureSubscriptions": []
   },
+  "environments": {
+    "nonProd": [],
+    "prodUnattended": false
+  },
   "change": {
     "requester": null,
     "implementor": null,
@@ -191,5 +198,9 @@
   "scope": {
     "mode": "off",
     "allowCliApproval": false
+  },
+  "autopilot": {
+    "mode": "off",
+    "maxPhases": 12
   }
 }

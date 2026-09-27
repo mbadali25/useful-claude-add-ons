@@ -2,13 +2,13 @@
 paths:
   - "plugin/crew/**"
 ---
-<!-- crew:generated source=.crew/codemap/repo-docs.md sha256=b403713923373a2a -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/repo-docs.md sha256=911f4c97bf35433b -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # repo-docs
-Code map anchor `bcb77ce2`; if it is behind HEAD, re-check with `git diff --name-only bcb77ce2..HEAD -- <cited paths>`.
+Code map anchor `2b18f7ab`; if it is behind HEAD, re-check with `git diff --name-only 2b18f7ab..HEAD -- <cited paths>`.
 Covers: docs/ and CHANGELOG.md. Records that docs/adr/ holds three ADRs while accepted decisions under docs/review/ were never promoted to it, and that TODO.md's render.sh entry is still open though the cygpath -w fix is in source.
 ## Landmines
 - `INSTALLATION.md`'s "Eight MCP servers" section describes a menu row that no longer exists, and this is new at this anchor — not carried forward from a previous pass.
-- `README.md`'s install-URL pin is current at this anchor; it was stale at `6c497a14`, and its history says it will be again.
+- `README.md`'s install-URL pin is stale again at this anchor, as its history said it would be.
 - `docs/runbooks/rollback.md`'s only change in this range is a path-rename fix, and it is correct.
 - `docs/HANDOFF.md` — unchanged file, closed by the per-path check.
 - `docs/runbooks/INDEX.md` still does not exist.

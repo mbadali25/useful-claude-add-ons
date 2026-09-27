@@ -102,7 +102,328 @@ All notable changes to this repository are documented here. Format follows [Keep
   elsewhere), and a done lane without exactly one `**Complete**` is refused.
   81 mutations in `sabotage_tracker.py`.
 
+### Changed — `crew` 1.0.42: environment-scoped terraform in the cloud guard (T-0005) — **BREAKING**
+
+- **BREAKING: a destroy is never applied unattended, `guards.terraformApply:
+  allow` included.** While `guards.cloudGuard` is armed, a destroy —
+  `terraform|tofu destroy`, `apply -destroy`, `apply -replace`, `workspace
+  delete`, a saved plan whose summary lists a delete, and any apply whose plan
+  crew cannot read (**including `terraform apply -auto-approve` with no saved
+  plan**, any terragrunt apply, and a plan with no, a stale or a malformed
+  summary) — now **asks** under `allow`, and is **denied** when nobody is
+  attending. Before 1.0.42 each of these ran without a word under `allow`.
+  Approve one command with the `.approved-guard-terraformApply-<hash>` marker
+  the refusal names (15 minutes, that command only), or summarise a saved plan
+  with `hooks/scripts/crew_tfplan.py summarize PLANFILE` and apply that plan.
+  Bumped `1.0.41 -> 1.0.42` (`1.0.37 -> 1.0.41` on its branch; 1.0.38 to 1.0.41 went to
+  T-0034, T-0026, T-0006 and T-0004).
+- **A terraform line is judged only when every word is a plain literal.** A
+  command line naming `terraform`, `terragrunt` or `tofu` anywhere — spotted
+  after quotes and escapes are taken out of each word, so `"terraform"` and
+  `$'\x74erraform'` count — is judged only when every word matches
+  `^[A-Za-z0-9_./:=@%+,-]+$`. Any quote, `$`, backquote, backslash, glob,
+  brace, `<(`, heredoc, here-string, comment or control character on such a
+  line makes it **could not tell**: asked when attended, denied unattended and
+  under `block`, never allowed. The check runs on the raw text before the
+  parser, replacing four review rounds of per-shape quoting fixes (heredoc
+  delimiters, `${...}` nesting, `\r#`, `$"..."`, `$'\xNN'`, `destroy${x}`).
+  **This also refuses unattended some lines that used to pass**: a quoted plan
+  path (`terraform apply "p.tfplan"`), `2>$null`, and a comment or heredoc on
+  a terraform line.
+- **"A terraform line" is one that runs terraform, not one that mentions it.**
+  The literal-word rule above applies when a command word — after assignments
+  and wrappers (`env`, `sudo`, `timeout`, `xargs`, ...) — dequotes to
+  `terraform`, `terragrunt` or `tofu`, or when `bash -c`, `eval`, `pwsh -c`,
+  `$(...)` or backquotes carry such a command. `git commit -m "fix terraform
+  apply"`, `grep 'terraform apply' .` and `echo terraform` are no longer
+  refused. A command word crew cannot read (`$x`, `$(...)`) is could not tell
+  only on a line naming terraform, `destroy`, `apply` or `workspace`. A line
+  crew cannot split with certainty (a `case` arm, a function, a script piped
+  into a shell, `ssh`, `source`) keeps the wider rule. PowerShell lines follow
+  the same command-word rule (`&`, `.`, `terraform.exe`, a path, `Start-Process
+  terraform`), so `git commit -m "fix terraform apply"`, `terraform output -raw
+  "db_url"` and `Select-String terraform *.md` are not refused there either.
+- **A terraform command crew cannot follow is could not tell, however plainly
+  it is spelled.** An alias (`alias tf=terraform`, `hash -p`, PowerShell's
+  `Set-Alias`/`New-Alias`/`sal` and `alias:` drive), a binary the same line
+  copies or links and runs by its new name (`ln -sf /usr/bin/terraform tf &&
+  ./tf destroy`), zsh's `=terraform`, a script runner crew does not split
+  (`flock`, `ssh`, `trap`), a path `find -exec` finds, and PowerShell's
+  `Start-Process`/`saps` are asked about when attended and
+  refused unattended and under `block` — before, a line of plain words was
+  handed to the parser, which could not see terraform in it, and a destroy ran
+  unattended. `ssh host terraform plan` is refused unattended too. The other
+  way, **a read-only subcommand is not gated for its quoting**:
+  `terraform|tofu plan`, `show`, `output`, `fmt`, `validate`, `init`,
+  `providers`, `graph`, `get`, `console`, `version`, `workspace list|show` and
+  `state list|show|pull` — first after `-chdir=` options (terragrunt: first
+  word) and not an `xargs -I` placeholder — are judged by the parser as before
+  Step 8, so `terraform plan -var 'environment=staging'` runs under `block` and
+  unattended again. Nor are the arguments of a program that is not terraform:
+  `cp -r terraform "$BACKUP_DIR"` and `rg terraform "$file"` are not refused.
+  A script file run by a shell (`bash build.sh`) and a `source`d file stay
+  unread, as documented, rather than refusing every line beside them.
+- **Direct use only (owner, 2026-09-26, after review round 6).** The guard
+  catches terraform, terragrunt and tofu written directly: bare or
+  path-qualified, behind the listed wrappers, inside `bash|sh|zsh -c` and
+  `eval`, with global options before the subcommand, and PowerShell's direct
+  forms. Options before the subcommand are now skipped as terragrunt reads
+  them, so `terragrunt --working-dir infra destroy -auto-approve` - allowed
+  unattended before - is a destroy, and PowerShell's `. terraform destroy` is
+  read. A disguise is out of scope and is no longer chased: the fallback that
+  read `<any program> ... terraform ... $var` as terraform being run is gone
+  (it refused `rg terraform "$file"` and `vim terraform "$file"`), so an
+  unlisted wrapper (`strace`, `aws-vault exec`, `unbuffer`, `systemd-run`), a
+  program that runs another (`git bisect run`, `rg --pre`) and a container
+  image now run unjudged, with the rest of the disguises (a rename crew does
+  not see made, `env -S`, BusyBox applets, git `!` aliases, an interpreter, a
+  script file). README "What the guard does not catch" lists them; the
+  boundary is the credentials an unattended run holds (T-0044).
+- **Review round 7 (GUjM5s).** Direct spellings that ran unattended are now
+  read: a boolean option before a valued one (`terragrunt --non-interactive
+  --working-dir infra destroy`), a listed wrapper's long option, its unique
+  prefix or a short cluster (`stdbuf --output L`, `xargs -rn 1`, `timeout -vk
+  5 60`), `eval -- terraform destroy`, and PowerShell's colon-bound value
+  (`Start-Process -FilePath:terraform`). No longer refused: a quoted
+  PowerShell string (`$message = "terraform destroy"`), a terragrunt
+  read-only subcommand after its options or `run-all` (`terragrunt
+  --working-dir infra plan -out="p.tfplan"`), and `command -v terraform`.
+- **New `environments` block** (`environments.nonProd`, repo-only globs;
+  `environments.prodUnattended`, ratcheted, true only when **both** config
+  layers say the JSON literal `true`). Under `terraformApply: ask`, an apply of
+  a non-destroying saved plan and `workspace new` / `workspace select
+  -or-create` aimed at a `nonProd` target run unattended and are logged as
+  `env:nonProd:<name>`; production does too only under `prodUnattended` in
+  both layers, logged and said on screen. The environment is read from
+  `TF_WORKSPACE`, an earlier literal `workspace select|new`, the
+  `.terraform/environment` file under the payload's `cwd`, `-var
+  environment=` / `TF_VAR_environment`, and the plan summary — all of which
+  must agree. An environment crew cannot identify (no signal, a non-literal, a
+  conflict, a directory change in any spelling — `cd`, `env -C`/`--chdir=`,
+  `sudo -D`, `wsl --cd`, `pwsh -WorkingDirectory`/`-wd` and the rest — no
+  workspace file — never read as `default` — an environment change crew
+  cannot read such as `source`, `export $(...)`, a PowerShell `env:` write or
+  an `||` chain, or an unreadable block) is `unknown`, which nothing allows
+  unattended, `prodUnattended` included. A malformed block forces an armed
+  guard to `block` mode. The hook never runs terraform, and never opens a
+  plan, sidecar, workspace file or `azureProfile.json` that is not a regular
+  file (a FIFO or device reads as unknown instead of hanging the hook).
+- **A saved plan is trusted only when its apply is the only command.** The
+  hook hashes the plan before the command runs, so `terraform plan -out p &&
+  terraform apply p`, a `cp` onto the plan, a nested shell or an output
+  redirect beside the apply makes the destroy question unknown. A command
+  substitution counts as a command wherever the shell runs it: in an
+  unquoted heredoc body (a quoted delimiter — any part of it — keeps the body
+  literal), inside `${...}` and `$((...))`, and in `$((cmd) )` / `<((cmd))`,
+  which are subshells, not arithmetic. PowerShell's `2>&1` and `*>&1` are one
+  redirection, not a second command.
+- **The cloud guard reads heredocs as bash does.** A substitution in an
+  unquoted heredoc body is judged even when the heredoc feeds `cat`, so
+  `cat <<EOF` around `$(terraform destroy -auto-approve)` is a destroy (it
+  was not a finding at all before). A backslash-newline is joined before the
+  delimiter is matched, so `E\` + newline + `OF` ends a heredoc delimited by
+  `EOF`; a delimiter line ending in CR is read both as the end and not.
+- **The cloud guard delimits quoting as bash does, and fails closed where it
+  cannot.** `${...}` and `$( )` end where bash ends them — nested quotes,
+  `$'...'`, backslashes and `#` comments included — so `"${x:-"'"}"` is one
+  word and no longer hides the `$( )` or the `terraform destroy` after it.
+  Wherever crew still cannot be sure it split a line as the shell will
+  (quoting inside `${...}`, a quote or substitution that never closes, a
+  heredoc or `case` inside `$( )`, a redirection with no target, a control
+  character), it counts one command more — so a saved plan's apply is
+  refused unattended — and re-reads the rest of the line from scratch, so a
+  command the shell would run is judged either way. A line holding a CR is
+  read three ways: CR as a blank, as a word character (bash: `\r#` is not a
+  comment) and dropped. PowerShell's typographic quotes and a bare CR are
+  read as its tokenizer reads them. A terragrunt option whose value is the
+  word `workspace` no longer hides `workspace delete`.
+- **`workspace delete` is a destroy in every armed state**, `environments`
+  configured or not, terragrunt's included — behind `run-all`, `run --` and
+  `run --all --`, and after a terragrunt option that takes a value. **Once `environments` is configured**, `terraform
+  workspace new|select -or-create` become findings under
+  `guards.terraformApply` — denied under `block`, and under `ask` denied
+  unattended for a production or unknown target. With `environments` at its
+  defaults they are not judged, as before.
+- **New `hooks/scripts/crew_tfplan.py summarize`** writes
+  `.crew/tfplan/<sha256 of the plan bytes>.json` (the workspace the plan file
+  is bound to, read from the plan itself and `null` when unreadable,
+  `environment` variable, every address whose actions include `delete`) via a temp file and
+  `os.replace`; it writes nothing when `show` fails or times out and never
+  creates `.crew/`. **New `crew_config.py --check`** warns when a `nonProd`
+  glob covers a `.crew/verify.json` environment with `requireHuman: true`.
+  `prodUnattended` does not stand down `promote-gate.sh`'s `requireHuman`.
+- Tests: `test_cloud_guard_environments.py` (30 must-block, 6 must-block under
+  `allow`, 12 must-allow, 4 attended-ask, the unchanged-at-defaults reruns,
+  the resolver and destroy unit tables, and review round 1's 37 must-block
+  reproductions with the chdir-form, wrapper-option, unreadable-environment
+  and special-file tables), `test_crew_tfplan.py` (including a real 1.16.3
+  plan bound to `production`), the `environments` config tests in
+  `test_crew_config.py`; the must-block and must-allow tables for review
+  rounds 2 and 3, the literal-word gate, the command-word trigger and review
+  round 5 (`R5_MUST_BLOCK`, `R5_MUST_ALLOW`); 133 new mutations in
+  `sabotage_cloud.py`, each red. `.crew/verify.json` gains a rule running the
+  three cloud-guard suites. Not in scope: `gh workflow run` deploys (T-0009)
+  and TFC/HCP workspaces or runs driven over HTTP (`curl`, `gh api`), which
+  the guard does not recognise.
+
+### Added
+
+- **`crew` 1.0.41: `/crew:autopilot` resumes and drives one ticket
+  (T-0004).** Bumped `1.0.40 -> 1.0.41`. New
+  `commands/autopilot.md` follows each lifecycle command's procedure
+  in-session, in the order the new read-only
+  `hooks/scripts/crew_autopilot.py next --root . --ticket <id>` names from
+  files on disk: brainstorm, direction-approval, open-questions, spec, plan,
+  approve, implement, refresh, review, accept-review, replan,
+  stale-after-review, done, closed. **Off by default** - new repo-only config
+  block `autopilot` (`mode: off|plan`, `maxPhases: 12`); only the exact string
+  `plan` arms it.
+  - `crew_autopilot.py resume [--ticket <id>]` picks the ticket: the id given;
+    else the handoff's `resume:` line through T-0006's
+    `crew_resume.parse_resume` (imported optionally; when absent the handoff
+    falls through with that reason), only when its `branch:`/`head:` match the
+    checkout; then this worktree's active ticket; then `.work/INDEX.md` only
+    when exactly one open ticket has a folder - several stop and are listed.
+    Disk beats the handoff's command, and the disagreement is printed. A
+    ticket other than this worktree's active one stops, naming both; with no
+    pointer set, autopilot activates the ticket it drives.
+  - Plan approval, review acceptance, brainstorm, direction approval (an
+    INDEX `direction` status, no INDEX row, or a status cell outside the
+    closed list that says it was approved) and any item under an
+    `Open questions` heading in direction.md, spec.md or plan.md always stop
+    for a person; `None of us has decided` is an open item, not an answer.
+    An INDEX `done`/`merged` row stops as `closed`. `next` also stops on NEEDS_REPLAN, an UNKNOWN ledger, a failed
+    `crew_ticket.validate`, a reserved round with no result, an INCOMPLETE
+    round, no review round left with no standing receipt (a review would write
+    NEEDS_REPLAN unattended), `maxPhases`, and the same command named twice.
+    A review phase ends at its verdict: autopilot never runs review.md's
+    fix-and-rerun itself. Every `crew_state.AUTONOMOUS_STOPS` id is named in
+    the command, pinned by a test iterating the tuple.
+  - Implement's `status: review` edit keeps the approval (T-0026's digest);
+    one that still stales it (a pre-T-0026 receipt) stops at `approve` with a
+    reason saying only the header changed, measured by hashing.
+  - `next` re-checks the ticket every turn: it stops before any phase that
+    would run while `crew_ticket.resolve_active` names another ticket, none,
+    or a broken pointer. An exception in `next` or `resume` prints `stop=1`,
+    and the command reads any answer but `stop=0` as a stop. The review
+    phase reports BLOCK and FIX lines and leaves `--accept` and
+    `gh pr review` to the human.
+  - Refresh (T-0008's `crew_refresh_check.ticket_freshness`) runs after
+    implement and before every review round, never after an accepted
+    receipt: a stale artifact then is `stale-after-review`, a stop that writes
+    nothing. An `unknown` artifact is refreshed only in T-0008's
+    orphaned-anchor case; any other `unknown`, or a check that raised, stops.
+    The module missing stops as "refresh-artifacts unavailable (T-0008 not
+    landed)".
+  - `crew_ticket.parse_risk` reads the spec header's `risk:`; absent or
+    unrecognised reads as `high`, never `low`.
+  - `crew_migrate.AUTOPILOT_NOTE` no longer promises autopilot "in 1.1.0".
+  - `tests/test_crew_autopilot.py` (one case per transition, stop and resume
+    source) and `tests/sabotage_autopilot.py`, registered in `sabotage.py`:
+    each must-stop branch is mutated and goes red on its named test.
+    `.crew/verify.json` maps the new files to `python3 -m pytest
+    plugin/crew/tests/test_crew_autopilot.py
+    plugin/crew/tests/test_lifecycle_commands.py -q`. Config leaf count
+    117 -> 119; crew's command count 34 -> 35.
+
+- **`crew` 1.0.40: auto-resume after `/clear`, reduced form (T-0006).** Bumped
+  `1.0.39 -> 1.0.40`, the owner's land-order assignment of 2026-09-25
+  (1.0.38 and 1.0.39 went to T-0034 and T-0026, which landed first). New key
+  `resume.auto`, **default off (`null`)**, which only
+  `~/.claude/crew/config.json` can switch on; a `false` in `.crew/crew.json`
+  or `.crew/config.json` vetoes it and a repo `true` does nothing.
+  `context.autoResume` stays unread. `/crew:handoff` now writes a
+  machine-readable `resume:` line (`resume: /crew:done T-0001`, or
+  `resume: none`), and the new `crew_resume.py` owns its grammar, the closed
+  allowlist `RESUME_COMMANDS` (`/crew:spec`, `/crew:plan`, `/crew:implement`,
+  `/crew:review`, `/crew:done`, `/crew:autopilot`, `/crew:status`), and the
+  read-only `decide`. On a SessionStart after `/clear` or a manual `/compact`
+  (both `handoff-write` flavours now record the PreCompact trigger per
+  session), the context hook names the exact command re-rendered from the
+  parsed tokens, or the reason it will not: wrong source, an automatic
+  compact, no or stale handoff, a refused `resume:` line, a `branch:`/`head:`
+  mismatch, a missing ticket or goal, a command not installed, a handoff
+  already resumed, an uncomputable progress fingerprint, or the same command
+  with no progress since. **Nothing starts on its own**: the spike on Claude
+  Code 2.1.282 showed an interactive SessionStart drops `initialUserMessage`
+  (only `claude -p` honours it), so crew never emits it and the human presses
+  Enter; T-0013 is the typing fallback and the one caller of `record_run`
+  (the consumed-once and loop-guard record). No gate changes. Must-fire and
+  must-not-fire cases in `test_crew_resume.py` and, through both wrappers,
+  `test_crew_resume_hook.py`; an unarmed or `startup` SessionStart is compared
+  WHOLE against base 768a747a's output (a stored golden, and live against
+  that commit's code where it is reachable). Review round 1 (1 BLOCK, 3 FIX,
+  5 NIT) fixed: a later PreCompact removes the session's old record first,
+  in shell, so a compact whose record never lands is not manual; an
+  unreadable INDEX.md or unlistable ticket directory is an unknown
+  fingerprint, not progress; an opt-in that cannot be confirmed is `off`;
+  PreCompact records older than a day are pruned; a `.crew/crew.json`-only
+  repo still gets its PreCompact record; the CLI `decide` applies the
+  staleness rule; the wait line only points at a handoff when one is there.
+  Review round 2 (1 FIX, 2 NIT) fixed: the hook passes the staleness
+  VERDICT to `decide`, not whether archiving succeeded, so a stale note that
+  cannot be moved waits (and a staleness rule that raises counts as stale);
+  a PreCompact record that cannot be removed is emptied in place, and one
+  that neither its file nor its directory lets anyone replace is not read as
+  manual; `write_precompact_record` removes its own `.tmp` on a failed write
+  and SessionStart prunes orphaned `precompact-*.tmp` files by the same age
+  rule. `/crew:handoff` no longer names `/crew:autopilot`, a command this
+  plugin does not ship (`validate-prompts.py` failed on it); it points at
+  the allowlist in the `crew-context` skill. Its `.crew/verify.json` rule is
+  appended last (rule 24 on its branch, rule 25 once merged after T-0026's rule 10),
+  so no existing rule's index moves. Rebased onto
+  1.0.37 (T-0003, T-0008) without behaviour change to either, and merged onto
+  1.0.39 (T-0034, T-0026) with no conflict outside release bookkeeping.
+  Review round 3 (2 FIX, 5 NIT) fixed: a `resume-state.json` that exists and
+  cannot be read, or is not the shape `record_run` writes, is an unknown -
+  `decide` waits and `record_run` refuses rather than overwriting the
+  history; `record_run` asks the consumed-once and loop guards again under
+  its lock (and refuses a run with no fingerprint), so of two senders
+  holding the same `run` only the first gets `ok`; a ticket id's digits are
+  ASCII `[0-9]`, not any Unicode `\d`; the golden's base is `768a747a`.
+  Sabotage run: all 44 `sabotage_resume.py` mutations RED on their named
+  tests (among them allowlisting `/crew:approve`, arming on a repo `true`,
+  dropping the repo veto, the head or branch check, consumed-once or the
+  loop guard, counting an unknown fingerprint as progress, firing on
+  `startup`, accepting an automatic compact, rendering from the raw line,
+  emitting `initialUserMessage`, and an extra line on an unarmed `/clear`).
+  Config leaf count 116 -> 117.
+
 ### Fixed
+
+- **`crew` 1.0.39: an approval survives the lifecycle status edits (T-0026).**
+  Bumped `1.0.38 -> 1.0.39`. `/crew:implement` and `/crew:done` each rewrite
+  `spec.md`'s header `status:`, and `/crew:plan` set `status: planned` on
+  `plan.md`'s header, a token its template never carried. The approval receipt bound each whole file's sha256, so each of
+  those edits staled the approval the ticket had just been given (TODO.md,
+  "`/crew:done` stales its own approval receipt").
+  - **`crew_ticket.approval_digest`** hashes each file with only the header's
+    status VALUE normalised: line 1 must start with `# `, hold exactly one
+    `status:` (counted case-insensitively), and carry a value from the closed
+    `STATUS_VALUES` list. Anything else normalises nothing and stales as
+    before: `risk:`, the title, any body line, a second status token, an
+    unknown value, a header that moved. The preimage is domain-separated
+    (`crew-approval/2`, then `normalised` or `raw`), so a file holding the
+    placeholder text literally can never match a normalised one. Line 1 ends
+    at the first break `str.splitlines` honours (`\n`, `\r\n`, a bare `\r`,
+    `\x0b`, `\x0c`, `\x1c`-`\x1e`, U+0085, U+2028, U+2029), the same line 1
+    the spec parser reads, so in a bare-CR spec a body `status:` line is never
+    normalised.
+  - **Dual-read.** A receipt keeps the raw `plan_sha256`/`spec_sha256` and adds
+    `plan_digest`, `spec_digest` and `digest: "crew-approval/2"`. A receipt with
+    no `digest` field is compared raw, so it still verifies on unchanged files
+    and stales once on its first status edit. An unknown scheme, or a `/2`
+    receipt missing a digest, reads `stale`, never a raw fallback. The review
+    ledger's successor-plan identity still reads the raw hash.
+  - **Lifecycle prose.** `/crew:plan` sets `status: planned` on `spec.md`'s
+    header, no longer adding a status token to `plan.md`. `/crew:implement`,
+    `/crew:done` and `/crew:approve` say the status edit keeps the approval.
+  - New `test_approval_digest.py` (must-allow/must-block pairs, the dual-read,
+    and the scope guard, completion audit and metrics end to end). Eighteen
+    `APPROVAL DIGEST` mutations in `sabotage_scope.py`, each turning its named
+    test red, pinned by label so deleting one fails the suite. Two cover
+    `approve` digesting the bytes it validated, not a later read. A
+    `.crew/verify.json` rule maps `crew_ticket.py` to them.
 
 - **`crew` 1.0.38: T-0008 follow-up (T-0034).** Bumped `1.0.37 -> 1.0.38`.
   `crew_refresh_check.py` uses `split("/", maxsplit=1)` (pylint C0207; same
@@ -292,6 +613,7 @@ All notable changes to this repository are documented here. Format follows [Keep
     must-fail cases; the ones that can hang on a regression run under a
     bounded worker stopped before it can write. `plugin/crew/tests/sabotage.py`
     carries a mutation for each, each seen red on Linux.
+
 - **`crew` 1.0.29: the PATH stubs in `test_34d` and `test_1` are reached on
   native Windows, from win-repo-2 (T-0007).** Bumped `1.0.28 -> 1.0.29`. Test
   harness only - no hook script changes. Two of win-repo-2's commits,
