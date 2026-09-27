@@ -16,8 +16,8 @@ approves, accepts a review, or skips a phase.
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py settings --root .
 ```
 
-Anything but `mode=plan` - stop, print its `warning:` lines, and say
-`autopilot.mode: plan` in `.crew/config.json` turns it on. Note `maxPhases`.
+Anything but `mode=plan` - stop, print its `warning:` lines, and say `autopilot.mode: plan`
+in `.crew/config.json` turns it on. Note `maxPhases` and `deploy` (CONFIG.md §20; nothing here deploys).
 
 ## 1. Which ticket
 
