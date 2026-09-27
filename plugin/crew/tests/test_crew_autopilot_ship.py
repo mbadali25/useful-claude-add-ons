@@ -177,6 +177,7 @@ def test_decision_same_family_stops_before_waiting_on_ci():
 
 T = "T-1"
 BRANCH = "T-1-build"
+SHA = "a" * 40
 NO_PR = f'no pull requests found for branch "{BRANCH}"\n'
 
 
@@ -433,6 +434,11 @@ def test_adapter_checks_asks_for_required_checks_only(monkeypatch):
     (8, "check\tpass\t1m\turl\t\n", ""),
     (0, "no tabs here\n", ""),
     (4, "check\tpass\t1m\turl\t\n", ""),
+    (1, "check\tpass\t1m\turl\t\n", "output incomplete\n"),
+    (1, "check\tpass\t1m\turl\t\n", ""),
+    (1, "check\tpending\t1m\turl\t\n", ""),
+    (0, "check\tpass\t1m\turl\t\n", "warning: something\n"),
+    (8, "check\tpending\t1m\turl\t\n", "error\n"),
 ])
 def test_adapter_checks_that_cannot_be_read_are_none(monkeypatch, answer):
     monkeypatch.setattr(crew_autopilot, "_run_gh", FakeGh(pr_checks=answer))
@@ -442,11 +448,70 @@ def test_adapter_checks_that_cannot_be_read_are_none(monkeypatch, answer):
 
 def test_adapter_checks_an_unknown_bucket_reads_unknown(monkeypatch):
     monkeypatch.setattr(crew_autopilot, "_run_gh", FakeGh(pr_checks=_checks(
-        ("check", "neutral"), code=1)))
+        ("check", "neutral"), code=0)))
 
     got = crew_autopilot.read_checks(".", 7)
 
     assert crew_autopilot.ship_decision("merge", "low", got, ["gpt"], [])["action"] == "stop"
+
+
+def test_adapter_check_name_is_read_verbatim(monkeypatch):
+    monkeypatch.setattr(crew_autopilot, "_run_gh", FakeGh(pr_checks=(
+        1, " check \tfail\t1m\turl\t\n", "")))
+
+    got = crew_autopilot.read_checks(".", 7)
+
+    assert crew_autopilot.ship_decision("merge", "low", got, ["gpt"], ["check"])["action"] == (
+        "stop")
+
+
+@pytest.mark.parametrize("bucket", ["PASS", "Pass", " pass", "pass "])
+def test_adapter_bucket_is_read_verbatim(monkeypatch, bucket):
+    monkeypatch.setattr(crew_autopilot, "_run_gh", FakeGh(pr_checks=(
+        0, f"check\t{bucket}\t1m\turl\t\n", "")))
+
+    got = crew_autopilot.read_checks(".", 7)
+
+    assert crew_autopilot.ship_decision("merge", "low", got, ["gpt"], [])["action"] == "stop"
+
+
+def _queue(enabled, queued):
+    return {"data": {"repository": {"pullRequest": {"isMergeQueueEnabled": enabled,
+                                                    "isInMergeQueue": queued}}}}
+
+
+def _gql(data):
+    return (0, json.dumps(data), "")
+
+
+@pytest.mark.parametrize("answer, expected", [
+    (_gql(_queue(False, False)), False),
+    (_gql(_queue(True, False)), True),
+    (_gql(_queue(False, True)), True),
+    (None, None),
+    ((1, "", "HTTP 401: Bad credentials\n"), None),
+    ((0, "not json", ""), None),
+    (_gql({"data": {"repository": {"pullRequest": None}}}), None),
+    (_gql({"data": None}), None),
+    (_gql(_queue(None, False)), None),
+    (_gql(_queue("false", False)), None),
+    (_gql(_queue(0, False)), None),
+    (_gql({"data": {"repository": {"pullRequest": {"isInMergeQueue": False}}}}), None),
+])
+def test_adapter_merge_queue(monkeypatch, answer, expected):
+    monkeypatch.setattr(crew_autopilot, "_run_gh", FakeGh(api_graphql=answer))
+
+    assert crew_autopilot.read_merge_queue(".", 7) is expected
+
+
+def test_adapter_merge_queue_asks_about_this_pr(monkeypatch):
+    fake = FakeGh(api_graphql=_gql(_queue(False, False)))
+    monkeypatch.setattr(crew_autopilot, "_run_gh", fake)
+
+    crew_autopilot.read_merge_queue(".", 7)
+
+    assert fake.calls[0][:8] == ["api", "graphql", "-F", "owner={owner}", "-F", "repo={repo}",
+                                 "-F", "number=7"]
 
 
 def test_adapter_no_required_checks_reported_is_empty(monkeypatch):
@@ -461,10 +526,10 @@ def test_merge_argv_is_merge_commit_without_admin(monkeypatch):
     monkeypatch.setattr(crew_autopilot.subprocess, "run", lambda argv, **_kw: (
         ran.append(argv) or subprocess.CompletedProcess(argv, 0, "", "")))
 
-    crew_autopilot._run_gh(".", crew_autopilot.merge_argv(7))  # pylint: disable=protected-access
+    crew_autopilot._run_gh(".", crew_autopilot.merge_argv(7, SHA))  # pylint: disable=protected-access
 
     assert (ran, [f for f in ("--squash", "--rebase", "--admin") if f in ran[0]]) == (
-        [["gh", "pr", "merge", "7", "--merge"]], [])
+        [["gh", "pr", "merge", "7", "--merge", "--match-head-commit", SHA]], [])
 
 
 def test_push_argv_never_forces():
@@ -474,16 +539,24 @@ def test_push_argv_never_forces():
 # --- step 2: the ship action ------------------------------------------------------
 
 class Clock:
+    """A fake monotonic clock. `drift` is time a poll spends beyond its sleep
+    (gh's own latency); `on_sleep` runs during each sleep, standing in for
+    whatever else changes on disk while CI runs."""
+
     def __init__(self):
         self.now = 0.0
         self.slept = []
+        self.drift = 0.0
+        self.on_sleep = None
 
     def time(self):
         return self.now
 
     def sleep(self, seconds):
         self.slept.append(seconds)
-        self.now += seconds
+        self.now += seconds + self.drift
+        if self.on_sleep is not None:
+            self.on_sleep()
 
 
 def _ship_env(tmp_path, monkeypatch, fake, families=("gpt",), push_ok=True, **block):
@@ -499,6 +572,7 @@ def _ship_env(tmp_path, monkeypatch, fake, families=("gpt",), push_ok=True, **bl
             fake.answers[key] = _view(dict(value, headRefOid=head))
     fake.answers.setdefault("repo_view", (0, json.dumps({"defaultBranchRef": {"name": "main"}}),
                                           ""))
+    fake.answers.setdefault("api_graphql", _gql(_queue(False, False)))
     pushes = []
     monkeypatch.setattr(crew_autopilot, "_run_gh", fake)
     monkeypatch.setattr(crew_autopilot, "_push", lambda top, branch: (
@@ -527,12 +601,13 @@ def test_ship_merge_command_is_merge_commit_without_admin(tmp_path, monkeypatch)
     fake = FakeGh(pr_view=[(1, "", NO_PR), _pr("OPEN"), _pr("OPEN"), _pr("MERGED")],
                   pr_checks=_checks(("check", "pass")), pr_merge=(0, "", ""))
     root, _, _ = _ship_env(tmp_path, monkeypatch, fake)
+    head = git(root, "rev-parse", "HEAD").strip()
 
     crew_autopilot.ship(str(root), T)
 
     assert (fake.ran("pr", "merge"), [c for c in fake.calls if {"--squash", "--rebase",
                                                                  "--admin"} & set(c)]) == (
-        [["pr", "merge", "7", "--merge"]], [])
+        [["pr", "merge", "7", "--merge", "--match-head-commit", head]], [])
 
 
 def test_ship_pr_policy_opens_and_never_merges(tmp_path, monkeypatch):
@@ -568,6 +643,79 @@ def test_ship_waits_then_merges_when_checks_go_green(tmp_path, monkeypatch):
     got = crew_autopilot.ship(str(root), T)
 
     assert (got["action"], clock.slept) == ("merged", [30])
+
+
+def _pending_then_green(*extra):
+    return FakeGh(pr_view=_pr("OPEN"), pr_merge=(0, "", ""),
+                  pr_checks=[_checks(("check", "pending"), code=8)] * (1 + len(extra))
+                  + [_checks(("check", "pass"))])
+
+
+def test_ship_green_after_the_deadline_stops(tmp_path, monkeypatch):
+    fake = _pending_then_green("second pending poll")
+    root, _, clock = _ship_env(tmp_path, monkeypatch, fake, ciTimeoutMinutes=1)
+    clock.drift = 10
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["action"], clock.now > 60, fake.ran("pr", "merge")) == ("stop", True, [])
+
+
+def test_ship_rereads_the_review_families_while_waiting(tmp_path, monkeypatch):
+    fake = _pending_then_green()
+    root, _, clock = _ship_env(tmp_path, monkeypatch, fake, families=("gpt",))
+    clock.on_sleep = lambda: _ledger(root, "claude")
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["action"], "same-family" in got["reason"], fake.ran("pr", "merge")) == (
+        "stop", True, [])
+
+
+def test_ship_disarmed_while_waiting_stops(tmp_path, monkeypatch):
+    fake = _pending_then_green()
+    root, _, clock = _ship_env(tmp_path, monkeypatch, fake)
+    clock.on_sleep = lambda: _config(root, mode="off")
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["action"], fake.ran("pr", "merge")) == ("stop", [])
+
+
+def test_ship_policy_changed_to_pr_while_waiting_never_merges(tmp_path, monkeypatch):
+    fake = _pending_then_green()
+    root, _, clock = _ship_env(tmp_path, monkeypatch, fake)
+    clock.on_sleep = lambda: _config(root, ship="pr")
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["action"], fake.ran("pr", "merge")) == ("open-pr", [])
+
+
+def test_ship_receipt_staled_while_waiting_stops(tmp_path, monkeypatch):
+    fake = _pending_then_green()
+    root, _, _ = _ship_env(tmp_path, monkeypatch, fake)
+    answers = iter([(True, "receipt current")])
+    monkeypatch.setattr(review_ledger, "check_receipt", lambda _root, _ticket: next(
+        answers, (False, "receipt is stale")))
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["stop"], "receipt" in got["reason"], fake.ran("pr", "merge")) == (
+        True, True, [])
+
+
+@pytest.mark.parametrize("answer", [_gql(_queue(True, False)), _gql(_queue(False, True)),
+                                    None, (1, "", "HTTP 502\n")])
+def test_ship_merge_queue_or_unreadable_queue_never_merges(tmp_path, monkeypatch, answer):
+    fake = FakeGh(pr_view=_pr("OPEN"), pr_checks=_checks(("check", "pass")),
+                  pr_merge=(0, "", ""), api_graphql=answer)
+    root, _, _ = _ship_env(tmp_path, monkeypatch, fake)
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["stop"], "merge queue" in got["reason"], fake.ran("pr", "merge")) == (
+        True, True, [])
 
 
 def test_ship_high_risk_same_family_never_merges(tmp_path, monkeypatch):

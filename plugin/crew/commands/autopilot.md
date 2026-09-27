@@ -78,10 +78,10 @@ other `unknown` stops. T-0008 missing stops as "refresh-artifacts unavailable".
 
 Run `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py ship --root . --ticket <ticket>`
 and print its `action=`, `checks:` and `families:` lines verbatim; `stop=1` is a
-stop. It pushes (never force, never the default branch), opens the PR, and
-under `autopilot.ship: merge` runs exactly `gh pr merge <n> --merge` (never
-`--squash`, `--rebase` or `--admin`) once the required checks allow. Never
-merge by hand; no deploy (T-0005), new ticket (T-0012), lane or writer.
+stop. It pushes (never force, never the default branch), opens the PR, and under
+`autopilot.ship: merge` runs exactly `gh pr merge <n> --merge --match-head-commit
+<HEAD>` (never `--squash`, `--rebase`, `--admin` or a merge queue) once the checks
+allow. Never merge by hand; no deploy (T-0005), new ticket (T-0012), lane or writer.
 
 ## 5. Stops
 

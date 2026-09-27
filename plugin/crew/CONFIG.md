@@ -2057,9 +2057,9 @@ driven is a fact about that checkout.
 |---|---|---|---|
 | `autopilot.mode` | `"off"` | `crew_autopilot.settings`, through `crew_config.resolve_config` | Only the exact string `"plan"` arms it. `"Plan"`, `"plan "`, `true`, `"on"`, `null` — anything else — reads as `off`, and `settings` prints which value it saw. A typo must not arm a driver. |
 | `autopilot.maxPhases` | `12` | `crew_autopilot.settings`; `next_phase` stops once the session's phase count reaches it | Anything but a positive integer (`0`, `-3`, `"12"`, `true`, `2.5`) reads as `12`, with a warning. |
-| `autopilot.ship` | `"merge"` | `crew_autopilot.settings`; `next_phase`'s ship rows and `crew_autopilot.ship` (T-0011, since 1.0.42) | After `/crew:done`: `pr` pushes the branch, opens the PR and stops; `merge` also runs exactly `gh pr merge <n> --merge` (never `--squash`, `--rebase` or `--admin`) once the required checks allow. A merge commit, because a squash or rebase rewrites the ticket's commits and every codemap and diagram `anchor:` naming one then names no commit on the default branch (D-028). Anything but exactly `pr` or `merge` (`"Merge"`, `"squash"`, `true`, `null`) reads as `pr` - the non-merging direction - with a warning. |
+| `autopilot.ship` | `"merge"` | `crew_autopilot.settings`; `next_phase`'s ship rows and `crew_autopilot.ship` (T-0011, since 1.0.42) | After `/crew:done`: `pr` pushes the branch, opens the PR and stops; `merge` also runs exactly `gh pr merge <n> --merge --match-head-commit <HEAD>` (never `--squash`, `--rebase` or `--admin`, and never into a merge queue) once the required checks allow. A merge commit, because a squash or rebase rewrites the ticket's commits and every codemap and diagram `anchor:` naming one then names no commit on the default branch (D-028). Anything but exactly `pr` or `merge` (`"Merge"`, `"squash"`, `true`, `null`) reads as `pr` - the non-merging direction - with a warning. |
 | `autopilot.knownFailures` | `[]` | `crew_autopilot.settings`; `crew_autopilot.ship_decision` | Required-check names whose `fail` does not block a merge, matched **exactly** - `crew-shell-matrix` does not excuse `crew-shell-matrix (windows-latest)`. Anything but a list of strings reads as `[]`, with a warning. |
-| `autopilot.ciTimeoutMinutes` | `60` | `crew_autopilot.settings`; `crew_autopilot.ship` polls the required checks every 30 s until it | A check still pending at the timeout stops; it never merges. Anything but a positive integer reads as `60`, with a warning. |
+| `autopilot.ciTimeoutMinutes` | `60` | `crew_autopilot.settings`; `crew_autopilot.ship` polls the required checks every 30 s until it | A check still pending at the timeout stops, and so does one that turns green after it; it never merges. Anything but a positive integer reads as `60`, with a warning. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
@@ -2078,8 +2078,15 @@ round's `model_family` is `claude` or absent: an unrecorded family counts as the
 author's. **Until Codex returns on 2026-10-01 every review here is
 same-family, so every `high`-risk ticket stops at `ship: merge` with its PR open
 for a person to merge.** A merge also needs the PR's head to be this checkout's
-HEAD and the review receipt to still stand. Unarmed, a ticket `/crew:done`
-closed reads `closed` and nothing is pushed.
+HEAD, the review receipt to still stand after the wait, and a base branch with
+no merge queue (a queue picks its own merge method, which may squash, and keeps
+merging after `ship` stops; a queue state that cannot be read stops too). The
+merge is bound with `--match-head-commit <HEAD>`, so a push after the last read
+is refused by GitHub, not merged. Check names and states are read verbatim -
+`knownFailures` never matches a trimmed or re-cased name. The settings, the
+risk and the review families are re-read on every poll, and a green that lands
+after `ciTimeoutMinutes` stops like a pending one. Unarmed, a ticket
+`/crew:done` closed reads `closed` and nothing is pushed.
 
 **What arming it does not change.** Plan approval, review acceptance,
 brainstorm and open questions always stop for a person in this version; every

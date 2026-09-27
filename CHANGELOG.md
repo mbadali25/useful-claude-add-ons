@@ -23,24 +23,33 @@ All notable changes to this repository are documented here. Format follows [Keep
   - `ship` refuses the default branch before it pushes, pushes with
     `git push -u origin <branch>` (never with force) and opens the PR when
     there is none. Under `merge` it polls `gh pr checks <n> --required` every
-    30 s and runs exactly `gh pr merge <n> --merge` - a merge commit, never
-    `--squash`, `--rebase` or `--admin` - because a squash or rebase rewrites
-    the commits refresh anchors name (D-028). That
-    happens only when every required check passes or fails under a name
-    listed exactly in `knownFailures`, the PR's head is this checkout's HEAD,
-    and afterwards the PR must read MERGED.
+    30 s and runs exactly `gh pr merge <n> --merge --match-head-commit
+    <HEAD>` - a merge commit, never `--squash`, `--rebase` or `--admin` -
+    because a squash or rebase rewrites the commits refresh anchors name
+    (D-028). That happens only when every required check passes or fails
+    under a name listed exactly in `knownFailures`, the PR's head is this
+    checkout's HEAD, the review receipt still stands after the wait, and the
+    base branch has no merge queue (read with `gh api graphql`; a queue picks
+    its own merge method and keeps merging after `ship` stops, and a queue
+    state that cannot be read stops too). Afterwards the PR must read MERGED.
+  - The settings, the spec's risk and the review families are re-read on
+    every poll, so disarming autopilot, switching to `ship: pr`, or a ledger
+    that turns same-family while CI runs stops it; a green that lands after
+    `ciTimeoutMinutes` stops like a pending one.
   - Pending checks, or no required check reported yet, wait until the
     timeout, then stop. A skipped, unknown or unreadable check, or a failure
     not in the list, stops at once. gh 2.46's `gh pr checks` has no `--json`,
-    so its text output is parsed, and a line or exit code that does not fit
-    reads as unreadable.
+    so its text output is parsed, names and states verbatim (never trimmed or
+    re-cased, so `knownFailures` stays exact), and a line or exit code that
+    does not fit - exit 1 with no failing row, or anything on stderr beside
+    the rows - reads as unreadable.
   - A `high`-risk ticket, or one with no risk in its header, never merges
     when every completed review round is `claude` or has no `model_family`.
     Codex is out until 2026-10-01, so until then every `high`-risk ticket
     stops at `ship: merge` with its PR open.
-  - New `tests/test_crew_autopilot_ship.py` (93 cases, gh and push stubbed),
+  - New `tests/test_crew_autopilot_ship.py` (125 cases, gh and push stubbed),
     and `.crew/verify.json` gains a rule for it. `sabotage_autopilot.py`'s
-    new `SHIP_MUTATIONS` (44, one per refusing branch, plus the merge
+    new `SHIP_MUTATIONS` (56, one per refusing branch, plus the merge
     argv regaining `--squash` or becoming `--rebase`) all go red through
     `sabotage.py`.
   - `commands/autopilot.md` gains section 4, Ship, and stays within its
