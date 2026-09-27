@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.43: release bookkeeping stops costing review rounds (T-0046)
+### Changed — `crew` 1.0.47: release bookkeeping stops costing review rounds (T-0046)
 
 - **BUDGETS.md claim numbers are bookkeeping.** An approved ticket (a current
   approval from the user's prompt; a `cli` receipt only under
@@ -29,12 +29,12 @@ All notable changes to this repository are documented here. Format follows [Keep
   differently cased names are still diffed. The listing is inside the hashed
   patch, so a graph refreshed after review still stales the receipt.
 - **Existing receipts stay valid (dual-read).** A new round and receipt carry
-  `bundle_scheme: "crew-review/generated-1"`. A receipt written before 1.0.43
+  `bundle_scheme: "crew-review/generated-1"`. A receipt written before 1.0.47
   has none and `--check-receipt` / `--accept` rebuild today's full diff for
   it; an unknown scheme reads as not checkable, never as a fallback.
 - **Sabotage:** `sabotage_bookkeeping.py` adds one mutation per refusing
   branch plus must-allow checks; every one goes red on its named test. Bumped
-  `1.0.42 -> 1.0.43`.
+  `1.0.46 -> 1.0.47` (1.0.43 on its branch, re-set after merging main's 1.0.46).
 
 ### Added
 
