@@ -148,10 +148,16 @@ def _git(root, *args):
                           check=True).stdout.strip()
 
 
-def _handoff(root, resume="/crew:done T-0001", branch=None, head=None, extra=""):
+def _stamp():
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+
+
+def _handoff(root, resume="/crew:done T-0001", branch=None, head=None, extra="", written=None):
+    """A handoff note. `written=None` stamps the current second; a Fixture
+    passes its own stamp so two default notes in one test are one note."""
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD") if branch is None else branch
     head = _git(root, "rev-parse", "--short", "HEAD") if head is None else head
-    lines = ["# Handoff", f"written: {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}",
+    lines = ["# Handoff", f"written: {_stamp() if written is None else written}",
              "ticket: T-0001"]
     if branch is not False:
         lines.append(f"branch: {branch}")
@@ -169,6 +175,8 @@ class Fixture:
     def __init__(self, tmp_path, machine=True, commands=("spec", "plan", "implement", "review",
                                                          "done", "status")):
         self.root = context_fixtures.make_repo(tmp_path)
+        # One stamp per fixture: a re-stamped note is a different note (T-0042 flake).
+        self.written = _stamp()
         (self.root / ".work" / "tickets" / "T-0001").mkdir(parents=True)
         (self.root / ".work" / "tickets" / "T-0001" / "spec.md").write_text("spec\n", encoding="utf-8")
         self.global_path = tmp_path / "home" / ".claude" / "crew" / "config.json"
@@ -189,7 +197,7 @@ class Fixture:
         (self.root / ".crew" / name).write_text(json.dumps({"resume": {"auto": value}}), encoding="utf-8")
 
     def decide(self, text=None, source="clear", session="s1", **kwargs):
-        text = _handoff(self.root) if text is None else text
+        text = _handoff(self.root, written=self.written) if text is None else text
         payload = {"hook_event_name": "SessionStart", "source": source, "session_id": session,
                    "cwd": str(self.root)}
         return crew_resume.decide(str(self.root), payload, text, str(self.plugin),
@@ -440,6 +448,24 @@ def test_same_handoff_never_fires_twice(fx):
     assert (ok, got["action"], "already resumed" in got["reason"]) == (True, "wait", True)
 
 
+def test_same_handoff_never_fires_twice_across_a_second_boundary(fx, monkeypatch):
+    """T-0042 flake: the fixture used to re-stamp `written:` on every decide,
+    so a second boundary between the two decides made a new note (new sha)
+    and the consumed-once guard never saw the first. Forced here by moving
+    `time.gmtime` one second forward on every call."""
+    real = time.gmtime
+    ticks = iter(range(1, 1000))
+    monkeypatch.setattr(time, "gmtime", lambda secs=None: real((time.time() if secs is None else secs)
+                                                               + (next(ticks) if secs is None else 0)))
+    first = fx.decide()
+    ok, _ = crew_resume.record_run(str(fx.root), first)
+    (fx.root / ".work" / "tickets" / "T-0001" / "plan.md").write_text("progress\n", encoding="utf-8")
+
+    got = fx.decide()
+
+    assert (ok, got["action"], "already resumed" in got["reason"]) == (True, "wait", True), got
+
+
 def test_same_command_no_progress_second_time_waits(fx):
     ok, _ = crew_resume.record_run(str(fx.root), fx.decide())
 
@@ -653,9 +679,9 @@ def test_unlistable_ticket_subdirectory_is_an_unknown_not_progress(fx, monkeypat
 def test_cli_decide_applies_the_staleness_rule(fx):
     """Review NIT :453. The CLI is T-0013's entry point and can run without
     the SessionStart archive having run first."""
-    text = _handoff(fx.root).replace(
-        f"written: {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}",
-        f"written: {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - 10 * 86400))}")
+    # Stamped directly: a replace() of "now" missed whenever a second
+    # boundary fell between building the note and rebuilding the stamp.
+    text = _handoff(fx.root, written=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - 10 * 86400)))
     (fx.root / ".work" / "HANDOFF.md").write_text(text, encoding="utf-8")
 
     _code, out = _cli("decide", "--root", str(fx.root), "--session", "s1", "--source", "clear", "--json",
