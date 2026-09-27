@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@c23fad63
+anchor: useful-claude-add-ons@332bff0e
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -252,9 +252,11 @@ both templates, so repo-only is unchanged. Re-executed at `07ca3972`: 119 / 66
 122 / 66 / 56 / 0 - T-0011 added `autopilot.ship`, `autopilot.knownFailures` and
 `autopilot.ciTimeoutMinutes`, repo-only like the rest of the block.
 `plugin/crew/tests/test_crew_config.py:280` asserts 122 (the comment at `:273-276` records
-119 for T-0004 and 122 for T-0011). `CHANGELOG.md:65`
-says "116 -> 118" for the same change - it does not match either execution,
-and is outside this note to fix.
+119 for T-0004 and 122 for T-0011). `CHANGELOG.md:117` says "117 -> 119" for
+the T-0004 change, matching both executions. (Until the `332bff0e` pass this
+note said `CHANGELOG.md:65` read "116 -> 118" and matched neither; T-0004's
+`6f96e627` had already corrected that line, and three passes carried the stale
+sentence forward without re-reading it.)
 
 These are new counts, not the pre-1.0 note's 103/60/43 carried forward —
 `change.*`, `guards.cloudGuard` and the memory/recall keys (`TODO.md`'s
@@ -332,7 +334,7 @@ they disagree:
   `crew.json` alone [does nothing for autoClear behaviour, which
   `crew_config.py` still reads from `config.json`]". This is a real,
   present-tense inconsistency, not a hypothetical. T-0004's
-  `crew_autopilot.settings` (`plugin/crew/hooks/scripts/crew_autopilot.py:939`)
+  `crew_autopilot.settings` (`plugin/crew/hooks/scripts/crew_autopilot.py:1016`)
   sides with `config.json` explicitly: it reads through
   `crew_config.resolve_config` and warns when `autopilot` is set in
   `crew.json` but not `config.json` ("crew does not read [it] for this key;
@@ -415,23 +417,23 @@ only the first gets `ok`. Tests: `plugin/crew/tests/test_crew_resume.py`,
 
 ## `/crew:autopilot` (T-0004, crew 1.0.41; ship phase T-0011, crew 1.0.42)
 
-DERIVED at `c23fad63`. `plugin/crew/commands/autopilot.md` (120 lines,
+DERIVED at `c23fad63`, re-read at `332bff0e`. `plugin/crew/commands/autopilot.md` (120 lines,
 `allowed-tools: Read, Write, Edit, Bash, Agent, Skill`, `:4`) drives one
 ticket through the phase commands **in-session**, following each command's
 own procedure; its first step refuses unless armed (`:12-19`). The reader
-behind it, `plugin/crew/hooks/scripts/crew_autopilot.py` (1078 lines), is
-read-only except `ship` (module docstring, `:1-16`) with five subcommands:
-`next`, `resume`, `settings`, `stops`, `ship`. `next_phase` (`:798`) names the
-next phase from files on disk, first match wins (the table at `:18-48`);
-`resume_target` (`:869`) picks the ticket (the handoff's `resume:` line only
+behind it, `plugin/crew/hooks/scripts/crew_autopilot.py` (1155 lines), is
+read-only except `ship` (module docstring, `:1-17`) with five subcommands:
+`next`, `resume`, `settings`, `stops`, `ship`. `next_phase` (`:875`) names the
+next phase from files on disk, first match wins (the table at `:19-49`);
+`resume_target` (`:946`) picks the ticket (the handoff's `resume:` line only
 when its branch and head match, per `plugin/crew/commands/autopilot.md:28-29`);
-`settings` (`:939`) arms only on the exact string `plan`, falls back to
+`settings` (`:1016`) arms only on the exact string `plan`, falls back to
 `maxPhases` 12 for anything not a positive int, reads a `ship` that is not
 exactly `pr` or `merge` as `pr`, a `knownFailures` that is not a list of
 strings as `[]` and a `ciTimeoutMinutes` that is not a positive int as 60, and
-warns on each. `stops` (`:985`) lists every stop from code:
-`crew_state.AUTONOMOUS_STOPS`, `FIXED_STOPS` (`:139`, nine), `PROCEDURE_STOPS`
-(`:156`, three) and `HUMAN_STOPS` (`:162`, four - brainstorm, plan approval,
+warns on each. `stops` (`:1062`) lists every stop from code:
+`crew_state.AUTONOMOUS_STOPS`, `FIXED_STOPS` (`:144`, nine), `PROCEDURE_STOPS`
+(`:161`, three) and `HUMAN_STOPS` (`:167`, four - brainstorm, plan approval,
 review acceptance, open questions). Defaults live in
 `crew_state.AUTOPILOT_DEFAULTS` (`plugin/crew/hooks/scripts/crew_state.py:1092-1093`,
 `{"mode": "off", "maxPhases": 12, "ship": "merge", "knownFailures": [],
@@ -440,27 +442,37 @@ review acceptance, open questions). Defaults live in
 `plugin/crew/hooks/hooks.json` is unchanged since `a0c0847e`.
 
 **Ship (T-0011).** After `/crew:done`, armed, `next_phase` reads the branch's
-PR (`read_pr`, `:296`): MERGED is `closed`, an open PR under `ship: pr` is
+PR (`read_pr`, `:303`): MERGED is `closed`, an open PR under `ship: pr` is
 `closed` ("merge by hand"), and a gh failure, detached HEAD, a PR closed
-unmerged or a receipt that no longer stands stops. `ship` (`:414`) refuses the
-default branch, pushes with `push_argv` (`:257`, never `--force`), opens the PR
-if there is none, and under `ship: merge` polls `read_checks` (`:317`, text
-parsing - gh 2.46's `gh pr checks` has no `--json`) into `ship_decision`
-(`:189`), the pure rule: pending or none reported waits up to
-`ciTimeoutMinutes`; unknown, skipped, unreadable or a failure not named
-exactly in `knownFailures` stops; a `high` or unknown risk whose completed
-rounds are all `SAME_FAMILY` (`:175`, `("claude", None)` - a missing
-`model_family` counts as the author's) stops. It merges with `merge_argv`
-(`:251`), exactly `gh pr merge <n> --merge` - a merge commit, never
-`--squash`, `--rebase` or `--admin` (D-028: a squash or rebase rewrites the
-commits refresh anchors name) - only when the PR's head is this checkout's
-HEAD, then confirms MERGED. `_run_gh` (`:262`) is the only code that runs gh.
+unmerged or a receipt that no longer stands stops. `ship` (`:473`) refuses the
+default branch, pushes with `push_argv` (`:264`, never `--force`), opens the PR
+if there is none, and under `ship: merge` polls `read_checks` (`:324`, text
+parsing - gh 2.46's `gh pr checks` has no `--json`; names and buckets read
+verbatim, and exit 1 with no failing row or anything on stderr beside the rows
+reads as unreadable) into `ship_decision` (`:194`), the pure rule: pending or
+none reported waits up to `ciTimeoutMinutes`; unknown, skipped, unreadable or
+a failure not named exactly in `knownFailures` stops; a `high` or unknown risk
+whose completed rounds are all `SAME_FAMILY` (`:180`, `("claude", None)` - a
+missing `model_family` counts as the author's) stops. Each poll re-reads
+`_ship_gate` (`:406`: settings, the spec's risk, the review families), so a
+disarm, a switch to `ship: pr` or a ledger turned same-family while CI runs is
+seen; a green read at or past the deadline stops. After the wait it re-checks
+the review receipt, requires the PR's head to be this checkout's HEAD, and
+asks `read_merge_queue` (`:363`, `gh api graphql` for `isMergeQueueEnabled` /
+`isInMergeQueue` - gh 2.46's `pr view --json` has neither) - a queue, or a
+queue state it cannot read, stops, because a queue picks its own merge method.
+It merges with `merge_argv` (`:256`), exactly `gh pr merge <n> --merge
+--match-head-commit <HEAD>` - a merge commit, never `--squash`, `--rebase` or
+`--admin` (D-028: a squash or rebase rewrites the commits refresh anchors
+name), bound to the HEAD it checked - then confirms MERGED. `_run_gh`
+(`:269`) is the only code that runs gh.
 
 `crew_ticket.parse_risk` (`plugin/crew/hooks/scripts/crew_ticket.py:505`)
 also landed in T-0004: it reads `risk:` from the spec header line only, and
 an absent or unrecognised value reads as `high` with `known: False`, never
 `low`. Its one caller in `plugin/crew/hooks/scripts/` is now
-`crew_autopilot.ship` (`plugin/crew/hooks/scripts/crew_autopilot.py:450`);
+`crew_autopilot._ship_gate` (`plugin/crew/hooks/scripts/crew_autopilot.py:416`,
+re-read on every poll of `ship`);
 its docstring still names T-0010 as the consumer. Tests:
 `plugin/crew/tests/test_crew_autopilot.py`,
 `plugin/crew/tests/test_lifecycle_commands.py`,
@@ -651,10 +663,11 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   `main()` is the `decide` / `record` / `precompact` CLI.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:576` — `ticket_freshness`,
   the library entry point; `main()` at `:676`.
-- `plugin/crew/hooks/scripts/crew_autopilot.py:798` — `next_phase`, read-only;
-  `main()` at `:1015` is the `next` / `resume` / `settings` / `stops` / `ship` CLI
-  `plugin/crew/commands/autopilot.md` calls. `ship` (`:414`) is the one
-  subcommand that acts: push, `gh pr create`, and `gh pr merge <n> --merge`.
+- `plugin/crew/hooks/scripts/crew_autopilot.py:875` — `next_phase`, read-only;
+  `main()` at `:1092` is the `next` / `resume` / `settings` / `stops` / `ship` CLI
+  `plugin/crew/commands/autopilot.md` calls. `ship` (`:473`) is the one
+  subcommand that acts: push, `gh pr create`, and `gh pr merge <n> --merge
+  --match-head-commit <HEAD>`.
 - `plugin/crew/hooks/scripts/crew_endpoints.py:566` — `declare_endpoint`,
   the only writer of *declared* records. Not the only writer of
   `.crew/endpoints.json`, whatever its docstring says (`:569-570`):
@@ -1029,3 +1042,34 @@ re-read with `grep -n`/`sed -n` at `c23fad63`:
 
 New since `6f96e627`: the ship paragraph of the `/crew:autopilot` section, rule 27, and the
 `parse_risk` caller.
+
+## Re-anchor provenance - `c23fad63` -> `332bff0e`, 2026-09-26 (T-0011 review round 1)
+
+Of the paths this note cites, `git diff --name-only c23fad63 332bff0e` returns
+`.crew/verify.json`, `CHANGELOG.md`, `TODO.md`, `plugin/crew/CONFIG.md`, `plugin/crew/README.md`, `plugin/crew/commands/autopilot.md`,
+`plugin/crew/hooks/scripts/crew_autopilot.py`, `sabotage_autopilot.py` and
+`test_crew_autopilot_ship.py`. The version files do not appear: T-0011's step-back and re-set
+commits cancel out across this range. Each citation into them was mapped old -> new with a
+`difflib` line map over `git show c23fad63:<path>` / `git show 332bff0e:<path>` and re-read with
+`grep -n` at `332bff0e`:
+
+- `crew_autopilot.py` - 1078 -> 1155 lines: `merge_argv` gained its `head` argument,
+  `read_checks` two refusals, and `read_merge_queue` (`:363`) and `_ship_gate` (`:406`) are new.
+  Moved: `FIXED_STOPS` `:139` -> `:144`, `PROCEDURE_STOPS` `:156` -> `:161`, `HUMAN_STOPS`
+  `:162` -> `:167`, `SAME_FAMILY` `:175` -> `:180`, `ship_decision` `:189` -> `:194`,
+  `merge_argv` `:251` -> `:256`, `push_argv` `:257` -> `:264`, `_run_gh` `:262` -> `:269`,
+  `read_pr` `:296` -> `:303`, `read_checks` `:317` -> `:324`, `ship` `:414` -> `:473`,
+  `next_phase` `:798` -> `:875`, `resume_target` `:869` -> `:946`, `settings` `:939` -> `:1016`,
+  `stops` `:985` -> `:1062`, `main` `:1015` -> `:1092`; the docstring `:1-16` -> `:1-17` and the
+  `next` table `:18-48` -> `:19-49`. The `parse_risk` call moved from `ship` (`:450`) into
+  `_ship_gate` (`:416`); `grep -rn 'parse_risk(' plugin/crew/hooks/scripts/` still returns one
+  caller.
+- `commands/autopilot.md` - still 120 lines; only section 4's sentence was rewrapped in place, so
+  `:4`, `:12-19` and `:28-29` hold.
+- `CHANGELOG.md` - the stale `:65` "116 -> 118" citation is corrected above to `:117`
+  ("117 -> 119").
+- `sabotage_autopilot.py` - `AUTOPILOT_MUTATIONS` `:19` and `SHIP_MUTATIONS` `:165` hold.
+- `.crew/verify.json` - rule 27's `seconds` and `why` changed in place; `:281-288` and `:289-295`
+  hold.
+- `TODO.md:3952`, `CONFIG.md`, `plugin/crew/README.md`,
+  `test_crew_autopilot_ship.py` - cited by name only, or at lines that did not move.

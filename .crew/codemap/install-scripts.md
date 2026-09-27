@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@c23fad63
+anchor: useful-claude-add-ons@332bff0e
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -487,6 +487,19 @@ returns 18201 there - one line short, corrected by T-0011's version commit), `TO
 `plugin/crew/README.md` (three lines added in the autopilot config prose and two in the Ship
 paragraph, so the `35 commands` claim is now at `:2260` and `4 agents` at `:2271`, re-grepped)
 changed. Neither install script, `plugin/README.md`, `README.md`, `INSTALLATION.md`,
+`scripts/check-marketplace.py` nor anything under `scripts/_test/` changed, so every
+install-script citation stands. `ls plugin/crew/commands/*.md` is still 35. Neither install script
+was executed at this pass.
+
+Re-verified per-path from `c23fad63` to `332bff0e` for T-0011's review round 1: of the cited paths
+`git diff --name-only c23fad63 332bff0e` returns `TODO.md`, `plugin/crew/BUDGETS.md` and
+`plugin/crew/README.md`. `BUDGETS.md` keeps its marker at `:10`; `:11` now reads 18,208 lines
+across 121 files, which `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` returns at
+`332bff0e` (the 18,201 figure above was set by the version step-back commit `d3dc6389`).
+`plugin/crew/README.md` changed only its Ship paragraph, in place, so `:2260` (`35 commands`) and
+`:2271` (`4 agents`) hold, re-grepped. `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md` and
+`plugin.json` do not appear: T-0011's version step-back and re-set cancel out across the range.
+Neither install script, `plugin/README.md`, `README.md`, `INSTALLATION.md`,
 `scripts/check-marketplace.py` nor anything under `scripts/_test/` changed, so every
 install-script citation stands. `ls plugin/crew/commands/*.md` is still 35. Neither install script
 was executed at this pass.

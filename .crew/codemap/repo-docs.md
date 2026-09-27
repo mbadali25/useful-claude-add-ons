@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@c23fad63
+anchor: useful-claude-add-ons@332bff0e
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -577,3 +577,13 @@ the `:129`-`:139` re-exports, which hold). `docs/diagrams/data-flow-crew-config.
 `process-crew-brief.mmd` are re-anchored to `c23fad63` by the same T-0011 refresh; their `:1`/`:2`
 header shape, which this note describes, is unchanged. `README.md`, `plugin/README.md` and both
 install scripts did not change.
+
+Re-verified per-path from `c23fad63` to `332bff0e` for T-0011's review round 1. Of the cited paths,
+`git diff --name-only c23fad63..332bff0e` returns `.crew/verify.json` (rule 27's `seconds` and
+`why`, in place; `:289-295` and every earlier span hold), `CHANGELOG.md` (the 1.0.42 entry grew;
+cited without a line), `TODO.md` (the T-0011 note, in place; the `render.sh` entry still at
+`:1190`, same heading), `plugin/crew/README.md` (the Ship paragraph, in place; the
+`docs/runbooks/INDEX.md` mention holds at `:1809`, re-grepped) and the two diagrams, which the
+T-0011 refresh `0c22e464` re-anchored and this pass re-anchors again; their `:1`/`:2` header shape
+is unchanged. `README.md`, `plugin/README.md`, `crew_state.py`, `crew_ticket.py` and both install
+scripts did not change.

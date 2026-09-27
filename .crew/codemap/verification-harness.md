@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@c23fad63
+anchor: useful-claude-add-ons@332bff0e
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -108,8 +108,8 @@ Notable rules, re-read directly:
   Since T-0004, `crew_ticket.py` also carries `header_line`/`parse_risk` (`:496-515`, the spec
   header's `risk:`; unknown reads `high`, never `low`), which only
   `plugin/crew/tests/test_crew_autopilot.py` exercises directly — a rule 26 test — and
-  `plugin/crew/tests/test_crew_autopilot_ship.py` through `crew_autopilot.ship` (its one caller,
-  T-0011) — a rule 27 test; neither rule's `paths` names `crew_ticket.py`. So an edit there runs
+  `plugin/crew/tests/test_crew_autopilot_ship.py` through `crew_autopilot._ship_gate` (its one
+  caller, T-0011, re-read on every poll of `ship`) — a rule 27 test; neither rule's `paths` names `crew_ticket.py`. So an edit there runs
   rules 0, 10 and 14, none of which runs either test; only rule 8's whole suite does, and that is deferred at Stop (DERIVED from the
   `paths`/`run` lists and `grep -l parse_risk`, not observed in a gate run).
 - **Rule 12**, `plugin/crew/skills/crew-diagrams/**` → `bash
@@ -191,8 +191,9 @@ Notable rules, re-read directly:
   rules 0 and 11.
 - **Rule 27**, new since `6f96e627` (`.crew/verify.json:289-295`, T-0011): `paths`
   `crew_autopilot.py`, `test_crew_autopilot_ship.py` and `sabotage_autopilot.py` → `python3 -m
-  pytest plugin/crew/tests/test_crew_autopilot_ship.py -q`, priced 2s (its `why` records 1.84s,
-  93 passed, measured 2026-09-26 - a claim read, not re-timed here). gh and `git push` are
+  pytest plugin/crew/tests/test_crew_autopilot_ship.py -q`, priced 3s (its `why` records 2.64s,
+  125 passed, the slowest of three runs measured 2026-09-26 after review round 1's fixes; it was
+  2s / 1.84s / 93 passed before them). gh and `git push` are
   stubbed in every case. Its mutations are `SHIP_MUTATIONS` (`plugin/crew/tests/sabotage_autopilot.py:165`),
   imported beside `AUTOPILOT_MUTATIONS` at `plugin/crew/tests/sabotage.py:77` and appended at
   `:3049`; the `why` states no count, so count the tuple. `crew_autopilot.py` and
@@ -723,3 +724,28 @@ and `plugin/crew/tests/test_crew_autopilot.py`. `verify-gate.sh`/`.ps1`, `verify
 
 No suite or command was executed by this note; T-0011's build ran rule 27's suite and
 `sabotage.py` separately.
+
+## Re-anchor provenance - `c23fad63` -> `332bff0e`, 2026-09-26 (T-0011 review round 1)
+
+`git diff --name-only c23fad63..332bff0e -- <the paths this note cites>` returns
+`.crew/verify.json`, `CHANGELOG.md`, `TODO.md`, `plugin/crew/BUDGETS.md`, `plugin/crew/CONFIG.md`,
+`plugin/crew/hooks/scripts/crew_autopilot.py`, `plugin/crew/tests/sabotage_autopilot.py` and
+`plugin/crew/tests/test_crew_autopilot_ship.py`.
+The version files do not appear (T-0011's step-back and re-set cancel out). `verify-gate.sh`/`.ps1`,
+`verify_record.py`, `scripts/check-marketplace.py`, `scripts/check_instructions.py`, `_verify/*`,
+`CLAUDE.md`, `crew_ticket.py`, `sabotage.py` and the CI workflows did not change, so their
+citations stand unread.
+
+- `.crew/verify.json` - rule 27's `seconds` 2 -> 3 and its `why` (re-timed: 2.36-2.64s wall over
+  three runs, 125 passed), both in place; `:281-288`, `:289-295` and every earlier span hold.
+- `plugin/crew/CONFIG.md` - the `autopilot.ship` and `ciTimeoutMinutes` rows (`:2060`, `:2062`)
+  changed in place and the §20 ship paragraph grew seven lines at `:2081`; the process-group-kill limitation `:2032-2039` holds (re-read by
+  `grep -n`).
+- `sabotage_autopilot.py` - `SHIP_MUTATIONS` still opens at `:165` and now holds 56 entries (12
+  added by review round 1, one per new refusing branch); `AUTOPILOT_MUTATIONS` `:19` holds.
+- `crew_autopilot.py` - `parse_risk`'s one caller moved from `ship` into `_ship_gate`; rule 10's
+  text above says so.
+- `CHANGELOG.md`, `TODO.md`, `BUDGETS.md`, `test_crew_autopilot_ship.py` - cited by name only.
+
+The ship suite and the `ship:` subset of `sabotage.py` were run for the fix commit; this note
+records their counts but executed nothing itself.

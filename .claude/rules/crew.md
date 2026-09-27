@@ -2,9 +2,9 @@
 paths:
   - "plugin/crew/**"
 ---
-<!-- crew:generated source=.crew/codemap/crew.md sha256=621b8e0345a66aad -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/crew.md sha256=a87750ca3ede6af5 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # crew
-Code map anchor `c23fad63`; if it is behind HEAD, re-check with `git diff --name-only c23fad63..HEAD -- <cited paths>`.
+Code map anchor `332bff0e`; if it is behind HEAD, re-check with `git diff --name-only 332bff0e..HEAD -- <cited paths>`.
 Covers: The crew plugin after 1.0: hooks, the four agents, commands, skills inventory, config layering and leaf counts, and how crew_freshness.py reads this very directory.
 ## Entry points
 - `plugin/crew/hooks/scripts/crew_state.py:993` — `TRIGGERS`, a 15-entry tuple, unchanged in membership and order from the previous anchor.
@@ -18,6 +18,6 @@ Covers: The crew plugin after 1.0: hooks, the four agents, commands, skills inve
 - `plugin/crew/hooks/scripts/crew_autoclear_setup.py` — no single `main()` confirmed at a specific line this pass; called with subcommands (`plan-windows-default`, `apply-migrate`) from the three sites named above.
 - `plugin/crew/hooks/scripts/crew_resume.py:411` — `decide`, read-only; `main()` is the `decide` / `record` / `precompact` CLI.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:576` — `ticket_freshness`, the library entry point; `main()` at `:676`.
-- `plugin/crew/hooks/scripts/crew_autopilot.py:798` — `next_phase`, read-only; `main()` at `:1015` is the `next` / `resume` / `settings` / `stops` / `ship` CLI `plugin/crew/commands/autopilot.md` calls.
+- `plugin/crew/hooks/scripts/crew_autopilot.py:875` — `next_phase`, read-only; `main()` at `:1092` is the `next` / `resume` / `settings` / `stops` / `ship` CLI `plugin/crew/commands/autopilot.md` calls.
 - `plugin/crew/hooks/scripts/crew_endpoints.py:566` — `declare_endpoint`, the only writer of *declared* records.
 Full note: `.crew/codemap/crew.md`.
