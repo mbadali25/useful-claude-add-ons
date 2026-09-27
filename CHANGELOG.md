@@ -4,6 +4,38 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.43: release bookkeeping stops costing review rounds (T-0046)
+
+- **BUDGETS.md claim numbers are bookkeeping.** An approved ticket (a current
+  approval from the user's prompt; a `cli` receipt only under
+  `scope.allowCliApproval`) may re-measure the number a
+  `<!-- claim: crew-markdown-lines -->` marker binds in `plugin/*/BUDGETS.md`
+  without that file in its Touch. The scope guard computes the exact text a
+  Write, Edit or MultiEdit leaves and the completion audit reads the base blob
+  against the file on disk; both pass it only through
+  `crew_bookkeeping.claim_numbers_only`: the bound line is the only line that
+  differs, and only in its digit runs. Prose on that line, any other line, a
+  moved marker, an added or removed line, a line-ending change, a new or
+  deleted BUDGETS.md, a mode change, a link, a NotebookEdit, a non-unique
+  `old_string` and anything unreadable still need Touch. Version files are not
+  exempt. T-0023, T-0024 and T-0042 each stopped on this claim.
+- **The review bundle lists the graphify outputs by hash.**
+  `graphify-out/graph.json`, `GRAPH_REPORT.md` and `graph.html` at the
+  repository root are no longer diffed when they arrive as a plain add, modify
+  or delete of a regular file; the patch ends with a listing of each one's
+  status, path, both blob ids, and the sha256 and size of its new content.
+  They were 94-97% of every bundle measured, and T-0028's round was lost at 30
+  parts. Renames, links, mode changes, other `graphify-out/` files and
+  differently cased names are still diffed. The listing is inside the hashed
+  patch, so a graph refreshed after review still stales the receipt.
+- **Existing receipts stay valid (dual-read).** A new round and receipt carry
+  `bundle_scheme: "crew-review/generated-1"`. A receipt written before 1.0.43
+  has none and `--check-receipt` / `--accept` rebuild today's full diff for
+  it; an unknown scheme reads as not checkable, never as a fallback.
+- **Sabotage:** `sabotage_bookkeeping.py` adds one mutation per refusing
+  branch plus must-allow checks; every one goes red on its named test. Bumped
+  `1.0.42 -> 1.0.43`.
+
 ### Changed — `crew` 1.0.42: environment-scoped terraform in the cloud guard (T-0005) — **BREAKING**
 
 - **BREAKING: a destroy is never applied unattended, `guards.terraformApply:
