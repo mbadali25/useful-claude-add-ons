@@ -18,7 +18,9 @@ Build it from the repository, not from recollection:
    the next action (`resume: /crew:done T-0001`), otherwise `resume: none`.
    The allowlist, including the autopilot forms for a plugin that ships an
    autopilot command, is in the `crew-context` skill. Also write `branch:`
-   and `head:` as their own lines
+   and `head:` as their own lines. Write the note with the Write tool, not
+   Bash: auto-resume binds a note to the session that wrote it, and a note
+   written by Bash or by hand has no author record, so it waits
 
 Then add the two things only you know: the **next action** in one concrete
 sentence, and any **dead ends** already tried so the next session does not repeat
