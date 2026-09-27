@@ -129,6 +129,33 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 1.0.42: T-0004 follow-up (T-0043).** Bumped `1.0.41 -> 1.0.42`.
+  Round 2 of T-0004's review, two FIXes and four NITs.
+  - **The FINDINGS stop names the refresh.** `crew_autopilot.py next` still
+    stops at an un-accepted FINDINGS round (`accept-review`); its reason now
+    names `crew_refresh_check.py --root . --ticket <id>` and each refresh it
+    names, committed, before `/crew:review <id>`. Following the old "fixes
+    then /crew:review" reviewed round 2 against stale artifacts and ended in
+    `stale-after-review` with no round left. `commands/autopilot.md` and the
+    README no longer say `next` puts a refresh before every later round.
+  - **Accepted FINDINGS no longer reads as INCOMPLETE.** An owner-accepted
+    FINDINGS round whose receipt a later edit staled goes to `refresh` (stale
+    artifacts) or `review` (fresh), with a round left. INCOMPLETE and a
+    completed round with no verdict still stop at `accept-review`; an
+    accepted round 2 with a stale receipt still stops "no review round left".
+  - NITs: failing controls for `_settles`' `refreshable` guard. `_open_items`
+    tracks ```` ``` ```` and `~~~` fences: a fenced `# comment` no longer closes
+    `## Open questions`, a fenced heading opens no section, and a fenced
+    block with no item before it, or a fence left open in the section, counts
+    as an open item (an answered item after the block does not settle it).
+    The crew code map quotes `CHANGELOG.md:65` as "117 -> 119".
+    `INSTALLATION.md` says crew has 35 slash commands, now checked by a
+    `plugin-commands:crew` marker.
+  - `test_crew_autopilot.py` 151 -> 169 tests. Nine new mutations in
+    `sabotage_autopilot.py`, one per new guard branch, each red on its named
+    test; "an INCOMPLETE round is rerun unattended" is re-pointed to the new
+    condition and still goes red.
+
 - **`crew` 1.0.39: an approval survives the lifecycle status edits (T-0026).**
   Bumped `1.0.38 -> 1.0.39`. `/crew:implement` and `/crew:done` each rewrite
   `spec.md`'s header `status:`, and `/crew:plan` set `status: planned` on

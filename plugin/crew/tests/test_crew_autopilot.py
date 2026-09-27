@@ -590,6 +590,15 @@ def test_open_questions_fenced_block_with_no_item_before_it_is_not_settled_later
         crew_autopilot.UNEXPLAINED_FENCE]
 
 
+def test_open_questions_fenced_block_is_not_absorbed_by_a_later_section():
+    """An open item in a LATER `Open questions` section does not stand for
+    an earlier section's unexplained fenced block: both are listed."""
+    text = 'go\n## Open questions\n```\nx\n```\n## Open questions\n- which DB?\n'
+
+    assert crew_autopilot._open_items(text) == [  # pylint: disable=protected-access
+        crew_autopilot.UNEXPLAINED_FENCE, "which DB?"]
+
+
 def test_open_questions_unclosed_fence_stops():
     text = 'go\n## Open questions\n- none\n```\n# x\n- which DB?\n'
 
