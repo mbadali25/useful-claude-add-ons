@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@d276b268
+anchor: useful-claude-add-ons@d9cdb54c
 verified: 2026-09-27
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -875,3 +875,14 @@ re-aimed at moved lines, the userinfo mutation at `normal_url`'s new line and th
 INDEX-refused-late mutation at `test_obsidian_create_writes_no_card_when_index_refuses_late`.
 `plugin/crew/tests/sabotage.py` did not change, so `:75`-`:78` and `:3048-3050` hold. No test
 suite was executed for this note.
+
+## Re-anchor provenance - `d276b268` -> `d9cdb54c`, 2026-09-27 (T-0021 round-4 suite fixes)
+
+`git diff --name-only d276b268 d9cdb54c` returns `plugin/crew/tests/sabotage_tracker.py`,
+`plugin/crew/BUDGETS.md` and the version files (stepped to 1.0.42 and re-set to 1.0.43, net
+unchanged). The serial run at `0384afc7` found "tracker rewrites an existing ticket note" STILL GREEN
+(`test_note_created_once_never_overwritten` no longer reaches `_NOTE_FLAGS`' exclusive open, since
+an existing note that is this repo's is not re-created); it now names
+`test_create_loses_the_note_race_says_id_taken`, which goes red under it (checked in a
+`git archive` copy with the mutation applied). `TRACKER_MUTATIONS` still holds 81; `sabotage.py`
+did not change. No test suite was executed for this note.

@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@d276b268
+anchor: useful-claude-add-ons@d9cdb54c
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -1365,3 +1365,12 @@ every line it cites was re-mapped with a line diff against `5832b32a`, and the n
 Its command call sites: `brainstorm.md:28`/`:81` hold (the file kept its line count); `fix.md:27`
 holds and `:72`/`:80`/`:88`/`:90` moved to `:73`/`:81`/`:89`/`:91`; `fix.md:2` holds. README,
 CHANGELOG and the test files are cited by name only. No test suite was executed for this note.
+
+## Re-anchor provenance - `d276b268` -> `d9cdb54c`, 2026-09-27 (T-0021 round-4 suite fixes)
+
+`git diff --name-only d276b268 d9cdb54c` returns `plugin/crew/tests/sabotage_tracker.py`,
+`plugin/crew/BUDGETS.md` and the version files (stepped to 1.0.42 and re-set to 1.0.43, net
+unchanged). One mutation, "tracker rewrites an existing ticket note", now names
+`test_create_loses_the_note_race_says_id_taken`: an existing note that is this repo's is not
+re-created since round 4, so only the claim reaches the exclusive open. The count stays 81, and
+this note cites the file by name only. No citation moved. No test suite was executed for this note.

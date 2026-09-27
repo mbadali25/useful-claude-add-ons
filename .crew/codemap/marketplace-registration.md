@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@d276b268
+anchor: useful-claude-add-ons@d9cdb54c
 verified: 2026-09-27
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -271,6 +271,8 @@ against synthetic fixtures and never reads this repo's own docs.
   (`86ea912f`, unchanged at `c2ae46ab`): 18,713 across 126 files on `:11`, recomputed from the
   merged tree rather than taken from either side (main's `2b18f7ab` read 18,494 across 121), and
   the measurement returns 18713 over 126 files, matching; `check-marketplace.py` passes it.
+  Re-measured at `d9cdb54c` (T-0021 review round 4): 18,723 across 126 files on `:11`, and the
+  measurement returns 18723 over 126, matching.
 - **`MARKETPLACE.md`** was not re-read for a community-plugin or marketplace
   count of its own; only `README.md:231`'s prose was checked and found to no
   longer state a specific number.
@@ -463,3 +465,14 @@ crew's `version` at `.claude-plugin/marketplace.json:218` and `plugin/PLUGINS.md
 `:17` were re-read and hold. `scripts/check-marketplace.py`, both install scripts, `CLAUDE.md`,
 the root `README.md` and `skills/README.md` did not change. No test suite was executed for this
 note.
+
+## Re-anchor provenance - `d276b268` -> `d9cdb54c`, 2026-09-27 (T-0021 round-4 suite fixes)
+
+`git diff --name-only d276b268 d9cdb54c` returns `plugin/crew/tests/sabotage_tracker.py`,
+`plugin/crew/BUDGETS.md` and the version files (stepped to 1.0.42 and re-set to 1.0.43, net
+unchanged). Corrected here: `plugin/crew/BUDGETS.md:11` reads 18,723 lines across 126 files, after
+`check-marketplace.py` at `0384afc7` reported "plugin/crew/BUDGETS.md:10: claims 18,713 plugin/crew
+Markdown lines, but plugin/crew/*.md currently totals 18723" (round 4 grew `plugin/crew/README.md`
+by 9 lines and `fix.md` by 1); re-measured with `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l`.
+crew's `version` at `.claude-plugin/marketplace.json:218` and `plugin/PLUGINS.md:14` read 1.0.43.
+No test suite was executed for this note.
