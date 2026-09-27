@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@d3a1c77e
+anchor: useful-claude-add-ons@e30af7f9
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -381,11 +381,11 @@ they disagree:
   `crew.json` alone [does nothing for autoClear behaviour, which
   `crew_config.py` still reads from `config.json`]". This is a real,
   present-tense inconsistency, not a hypothetical. T-0004's
-  `crew_autopilot.settings` (`plugin/crew/hooks/scripts/crew_autopilot.py:610`)
+  `crew_autopilot.settings` (`plugin/crew/hooks/scripts/crew_autopilot.py:611`)
   sides with `config.json` explicitly: it reads through
   `crew_config.resolve_config` and warns when `autopilot` is set in
   `crew.json` but not `config.json` ("crew does not read [it] for this key;
-  move it to .crew/config.json", `:640-644`). Flagging it is this
+  move it to .crew/config.json", `:641-645`). Flagging it is this
   note's job; **deciding which file should win, or whether `crew_config.py`
   should learn to read `crew.json` too, is a decision for scribe to record,
   not this note's to make.**
@@ -499,16 +499,16 @@ DERIVED at `07ca3972`. `plugin/crew/commands/autopilot.md` (120 lines,
 `allowed-tools: Read, Write, Edit, Bash, Agent, Skill`, `:4`) drives one
 ticket through the phase commands **in-session**, following each command's
 own procedure; its first step refuses unless armed (`:13-20`). The reader
-behind it, `plugin/crew/hooks/scripts/crew_autopilot.py` (837 lines), is
+behind it, `plugin/crew/hooks/scripts/crew_autopilot.py` (861 lines), is
 read-only (module docstring, `:1-15`) with five subcommands: `next`,
-`resume`, `settings`, `stops` and `deploy-allowed` (T-0072). `next_phase` (`:469`) names the next phase
+`resume`, `settings`, `stops` and `deploy-allowed` (T-0072). `next_phase` (`:470`) names the next phase
 from files on disk, first match wins (the table at `:17-39`); `resume_target`
-(`:540`) picks the ticket (the handoff's `resume:` line only when its branch
-and head match, per `plugin/crew/commands/autopilot.md:29-30`); `settings` (`:610`) arms only on
+(`:541`) picks the ticket (the handoff's `resume:` line only when its branch
+and head match, per `plugin/crew/commands/autopilot.md:29-30`); `settings` (`:611`) arms only on
 the exact string `plan`, falls back to `maxPhases` 12 for anything not a
-positive int, reads `deploy` only as the exact strings in `DEPLOY_VALUES` (`:110`), and warns on each. `stops` (`:742`) lists every stop from code:
-`crew_state.AUTONOMOUS_STOPS`, `FIXED_STOPS` (`:134`, nine), `PROCEDURE_STOPS`
-(`:151`, three) and `HUMAN_STOPS` (`:157`, four - brainstorm, plan approval,
+positive int, reads `deploy` only as the exact strings in `DEPLOY_VALUES` (`:111`), and warns on each. `stops` (`:766`) lists every stop from code:
+`crew_state.AUTONOMOUS_STOPS`, `FIXED_STOPS` (`:135`, nine), `PROCEDURE_STOPS`
+(`:152`, three) and `HUMAN_STOPS` (`:158`, four - brainstorm, plan approval,
 review acceptance, open questions). Defaults live in
 `crew_state.AUTOPILOT_DEFAULTS` (`plugin/crew/hooks/scripts/crew_state.py:1090`,
 `{"mode": "off", "maxPhases": 12, "deploy": "none"}`), deep-copied into `default_config()`
@@ -524,16 +524,20 @@ names T-0010 as the consumer). Tests: `plugin/crew/tests/test_crew_autopilot.py`
 `plugin/crew/tests/sabotage_autopilot.py`; `.crew/verify.json` rule 27
 (`:293-300`), the last. Confirmed present, **not run** by this note.
 
-**`deploy_allowed` (T-0072, crew 1.0.44).** DERIVED at `d3a1c77e`.
-`crew_autopilot.deploy_allowed` (`plugin/crew/hooks/scripts/crew_autopilot.py:724`) is the policy
+**`deploy_allowed` (T-0072, crew 1.0.44).** DERIVED at `e30af7f9`.
+`crew_autopilot.deploy_allowed` (`plugin/crew/hooks/scripts/crew_autopilot.py:742`) is the policy
 layer for a deploy without asking: `allow`, `ask` or `refuse` for one environment, from
-`_deploy_verdict` (`:668`), rows in the order the module docstring's `deploy-allowed` section
-(`:81-94`) states. An incident file (`_incident`, `:655`, `os.lstat` so an unreadable path is not
+`_deploy_verdict` (`:669`), rows in the order the module docstring's `deploy-allowed` section
+(`:81-95`) states. An incident file (`_incident`, `:656`, `os.lstat` so an unreadable path is not
 "absent") refuses; an unusable name, a class outside `cloud_guard.ENV_NONPROD`/`ENV_PROD`, or a
 corrupt layer under `crew_config.layer_state(..., environments=True)` asks; production allows
 only under `deploy: all` with `resolve_ratcheted("environments.prodUnattended")["effective"]`
 true and `cloud_guard.resolve_mode` exactly `("block", "")`. Nothing calls it yet: T-0045 is the
-consumer, and `settings` warns while `deploy` is not `none`. Tests
+consumer, and `settings` warns while `deploy` is not `none`. The incident check runs before
+`_deploy_verdict` imports `cloud_guard`, so an import failure cannot turn `refuse` into `ask`
+(review round 1), and `deploy_allowed` builds the report inside its never-raises boundary: a
+value it cannot print is named by `_safe_text` (`:716`) and a crash reason comes from
+`_crash_reason` (`:725`). Tests
 `plugin/crew/tests/test_crew_autopilot_deploy.py` (must-block, must-allow, the 324-case matrix,
 parity with `cloud_guard.environments_config`); mutations `DEPLOY_MUTATIONS` in
 `plugin/crew/tests/sabotage_autopilot.py`, appended to `AUTOPILOT_MUTATIONS`.
@@ -719,8 +723,8 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   `main()` is the `decide` / `record` / `precompact` CLI.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:576` — `ticket_freshness`,
   the library entry point; `main()` at `:676`.
-- `plugin/crew/hooks/scripts/crew_autopilot.py:469` — `next_phase`, read-only;
-  `main()` at `:760` is the `next` / `resume` / `settings` / `stops` / `deploy-allowed` CLI
+- `plugin/crew/hooks/scripts/crew_autopilot.py:470` — `next_phase`, read-only;
+  `main()` at `:784` is the `next` / `resume` / `settings` / `stops` / `deploy-allowed` CLI
   `plugin/crew/commands/autopilot.md` calls.
 - `plugin/crew/hooks/scripts/crew_endpoints.py:566` — `declare_endpoint`,
   the only writer of *declared* records. Not the only writer of
@@ -1300,3 +1304,5 @@ on `53f5482c`:
 - `sabotage_resume.py` - 72 mutations (three added for the partial state).
 
 **Re-anchored `53f5482c` -> `d3a1c77e` on 2026-09-27 (T-0072, crew 1.0.44).** `d3a1c77e` is T-0072's version commit on `T-0072-build`, after it merged origin/main `f0b12ee6` (T-0042's landing) with a merge commit. `git diff --name-only 53f5482c d3a1c77e` over the cited paths returns only T-0072's changes and the version files. T-0072 edited in place, with no line added or removed, `crew_state.py` (`:1084-1090`, the `AUTOPILOT_DEFAULTS` comment and value), `plugin/crew/README.md` (the autopilot Settings paragraph), `plugin/crew/commands/autopilot.md` (`:19-20`), `plugin/crew/BUDGETS.md` (`:11`, now 18,612 lines across 121 files), `plugin/PLUGINS.md` (`:14` 1.0.44, the `/crew:autopilot` row), `.claude-plugin/marketplace.json` (`:218` 1.0.44), `plugin/crew/.claude-plugin/plugin.json` (`:3`) and `.crew/verify.json` (rule 27 `:293-300`, same lines). It added lines to `crew_autopilot.py` (the `deploy-allowed` docstring section and functions, 694 -> 837 lines), `CONFIG.md` (+1 at the leaf paragraph, +1 in the key table, +1 in §20's table, a closing §20 section), `CHANGELOG.md` (+32 at the top) and the autopilot tests. Citations into `crew_autopilot.py` were re-taken with `grep -n` and corrected above (`settings` `:592` -> `:610`, `next_phase` `:451` -> `:469`, `main` `:639` -> `:760`, the `crew.json` warning `:612-616` -> `:640-644`, the stop tuples +18); leaf counts re-executed (122 / 67 / 55 / 0); `test_crew_config.py:277` -> `:278`; T-0004's CHANGELOG leaf sentence `:276-277` -> `:307-308`; the version line reads 1.0.44. The `deploy_allowed` paragraph under `/crew:autopilot` is new. No suite was run by this note.
+
+**Re-anchored `d3a1c77e` -> `e30af7f9` on 2026-09-27 (T-0072 review round 1).** `e30af7f9` is T-0072's review-round-1 fix commit on `T-0072-build`. `git diff --name-only d3a1c77e e30af7f9` returns `.crew/verify.json` (rule 27's `why` re-measured in place, still `:293-300`), `CHANGELOG.md` (the 1.0.44 entry, four lines reworded, cited without a line), `plugin/crew/BUDGETS.md` (`:11`, now 18,615 lines across 121 files; `check-marketplace.py` prints `all checks passed`), `plugin/crew/CONFIG.md` (+3 lines in §20's closing section, at `:2317`; nothing cited above it moved, `:2251-2258` holds), `plugin/crew/hooks/scripts/crew_autopilot.py` (+24 lines: the docstring gains a line at `:88`, `_deploy_verdict` moves its `cloud_guard` import below the incident check, `_safe_text` and `_crash_reason` are new), `plugin/crew/tests/sabotage_autopilot.py` (+32: `CLOUD` at `:18`, six mutations) and `plugin/crew/tests/test_crew_autopilot_deploy.py`, plus the refresh artifacts of the previous pass. No crew version change (1.0.44). Citations into `crew_autopilot.py` were re-taken with `grep -n` and corrected above (`settings` `:610` -> `:611`, the `crew.json` warning `:640-644` -> `:641-645`, `next_phase` `:469` -> `:470`, `resume_target` `:540` -> `:541`, `DEPLOY_VALUES` `:110` -> `:111`, the stop tuples +1, `_incident` `:655` -> `:656`, `_deploy_verdict` `:668` -> `:669`, `deploy_allowed` `:724` -> `:742`, `stops` `:742` -> `:766`, `main` `:760` -> `:784`, the docstring section `:81-94` -> `:81-95`, 837 -> 861 lines); the `deploy_allowed` paragraph gained the round-1 ordering and boundary. `verify.json` rule 27 `:293-300` holds. The restricted sabotage run over `AUTOPILOT_MUTATIONS` (61) printed `SABOTAGE SUITE: PASS` at `e30af7f9`'s code.
