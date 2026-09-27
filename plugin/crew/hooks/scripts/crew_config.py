@@ -79,6 +79,7 @@ whether the self-review guard is barring it, and which fallback is armed.
 import argparse
 import collections
 import copy
+import fnmatch
 import hashlib
 import json
 import os
@@ -350,6 +351,12 @@ def default_config():
         # Azure subscription THIS checkout's commands are pinned to is a fact
         # about the checkout. Read by `cloud_guard.py` alone.
         "cloud": copy.deepcopy(crew_state.CLOUD_DEFAULTS),
+        # T-0005, read by `cloud_guard.py` alone. `nonProd` is REPO ONLY for
+        # `production`'s reason -- which workspaces are non-production is a
+        # fact about this checkout -- and `prodUnattended` is in both layers
+        # because it ratchets: production runs unattended only when the repo
+        # AND the machine owner both said `true`.
+        "environments": copy.deepcopy(crew_state.ENVIRONMENTS_DEFAULTS),
         # `/crew:change`. Both layers, like `install` and `guards` and for the
         # same two reasons: `requireForProduction` ratchets across them, and a
         # key that existed only globally would fail `is_global_path`'s rule
@@ -532,6 +539,13 @@ def default_global_config():
         # NOT here: `production.*`, the patterns the first two match against,
         # which is a repo fact.
         "guards": copy.deepcopy(crew_state.GUARD_DEFAULTS),
+        # `environments.prodUnattended` and NOTHING ELSE: whether this machine
+        # lets crew write to production with nobody attending is the owner's
+        # answer, and it ratchets. `environments.nonProd` is absent on
+        # purpose, so `filter_global` prunes and reports a global list --
+        # one repo's `staging` must never become every repo's.
+        "environments": {
+            "prodUnattended": crew_state.ENVIRONMENTS_DEFAULTS["prodUnattended"]},
         # The whole `change` block, and every key in it earns the global layer
         # on its own terms. `requester` and `implementor` are the person:
         # somebody who files changes under one name files them under that name
@@ -887,7 +901,7 @@ def install_plan_for(root, name, path=None):
     return plan
 
 
-def layer_state(path, cloud=False):
+def layer_state(path, cloud=False, environments=False):
     """One config FILE, classified as `"absent"`, `"ok"` or `"corrupt"` --
     the one rule every caller that needs to distinguish "nobody set this"
     from "something here is unreadable" derives from, for EITHER config
@@ -942,7 +956,8 @@ def layer_state(path, cloud=False):
     `cloud=True` -- the cloud guard's read, and only its -- also classifies
     a present `cloud` block that `cloud_block_problem` rejects as
     `"corrupt"`. Off by default so a malformed `cloud` block cannot arm
-    `roleWrites`, which never reads it.
+    `roleWrites`, which never reads it. `environments=True` does the same
+    for a present `environments` block `environments_block_problem` rejects.
 
     Never touches `load_config`, `read_global_config`, `resolve_ratcheted`
     or any of the other eight ratcheted keys, which keep their existing
@@ -982,6 +997,9 @@ def layer_state(path, cloud=False):
         return "corrupt"
     if cloud and "cloud" in parsed and cloud_block_problem(parsed["cloud"]):
         return "corrupt"
+    if environments and "environments" in parsed \
+            and environments_block_problem(parsed["environments"]):
+        return "corrupt"
     return "ok"
 
 
@@ -1002,6 +1020,64 @@ def cloud_block_problem(block):
                 isinstance(v, str) and v.strip() for v in value):
             return f"`cloud.{key}` is not a list of glob strings"
     return ""
+
+
+def environments_block_problem(block):
+    """Why a PRESENT `environments` block cannot be read, or `""`.
+
+    `cloud_block_problem`'s rule for T-0005's block: `nonProd` must be a list
+    of non-blank glob strings and `prodUnattended`, when present, a JSON bool.
+    A malformed block is never "nothing is nonProd" -- `cloud_guard` reads
+    it as "no environment can be classified", which nothing allows
+    unattended.
+    """
+    if not isinstance(block, dict):
+        return "`environments` is not an object"
+    value = block.get("nonProd", [])
+    if not isinstance(value, list) or not all(
+            isinstance(v, str) and v.strip() for v in value):
+        return "`environments.nonProd` is not a list of glob strings"
+    if "prodUnattended" in block \
+            and not isinstance(block["prodUnattended"], bool):
+        return "`environments.prodUnattended` is not true or false"
+    return ""
+
+
+def environments_findings(root):
+    """What `--check` says about the repo's `environments` block. Warnings.
+
+    `.crew/verify.json` stays `promote-gate.sh`'s list of environments and
+    `environments.nonProd` the cloud guard's, so the two can disagree: a
+    `nonProd` glob that covers an environment promote-gate makes a human
+    approve is a contradiction worth a line, not a refusal -- neither file
+    is wrong on its own.
+    """
+    cfg = crew_state.load_config(root)
+    block = cfg.get("environments") if isinstance(cfg, dict) else None
+    if block is None:
+        return []
+    problem = environments_block_problem(block)
+    if problem:
+        return [problem + "; the cloud guard reads every environment as "
+                "unknown until it is fixed"]
+    globs = [g.strip() for g in block.get("nonProd", [])]
+    text = crew_state.read_text(os.path.join(root, ".crew", "verify.json"))
+    try:
+        envs = json.loads(text).get("environments", {}) if text else {}
+    except (ValueError, AttributeError):
+        envs = {}
+    out = []
+    for name, env_cfg in envs.items() if isinstance(envs, dict) else ():
+        if not isinstance(env_cfg, dict) or not env_cfg.get("requireHuman"):
+            continue
+        hits = [g for g in globs
+                if fnmatch.fnmatch(str(name).lower(), g.lower())]
+        if hits:
+            out.append(f"environments.nonProd `{hits[0]}` classifies "
+                       f"`{name}` as nonProd, but .crew/verify.json gives it "
+                       "requireHuman: true -- the cloud guard would let "
+                       "terraform write to it unattended")
+    return out
 
 
 def resolve_guard(root, name, path=None):
@@ -2456,6 +2532,29 @@ _RATCHETED["change.requireForProduction"] = (
     _CHANGE_WIDENING_NOTES,
 )
 
+# T-0005. Keyed on bools like the table above; `True` is the widening.
+_PROD_UNATTENDED_NOTES = {
+    False: (
+        "the cloud guard stops a terraform apply or workspace creation "
+        "aimed at production for a per-run yes, and denies it when nobody "
+        "is attending. This is the narrowest value and nothing widens into "
+        "it."
+    ),
+    True: (
+        "the cloud guard lets a non-destroying terraform apply of a saved "
+        "plan, and workspace creation, aimed at PRODUCTION run with nobody "
+        "attending -- but only in a repo whose own .crew/config.json also "
+        "says true, and never a destroy. It does not stand down "
+        "promote-gate.sh's requireHuman."
+    ),
+}
+
+_RATCHETED["environments.prodUnattended"] = (
+    crew_state.prod_unattended_rank,
+    crew_state.normalise_prod_unattended,
+    _PROD_UNATTENDED_NOTES,
+)
+
 
 def plan_global_write(updates, path=None):
     """What writing `updates` to the global file would change. Pure.
@@ -2651,6 +2750,8 @@ def main(argv=None):
                         help="every globally-settable key, value and source")
     parser.add_argument("--check-global", action="store_true",
                         help="findings about the machine-global config")
+    parser.add_argument("--check", action="store_true",
+                        help="warnings about the repo config (exit 0)")
     parser.add_argument("--author-stale", action="store_true",
                         help="the caller compared the recorded dispatch "
                              "against the diff's merge-base and found it "
@@ -2800,6 +2901,14 @@ def main(argv=None):
             print(json.dumps(report, indent=2))
         else:
             _print_models(report)
+        return 0
+
+    if args.check:
+        findings = environments_findings(args.root)
+        for finding in findings:
+            print(f"- [warn] {finding}")
+        if not findings:
+            print("no warnings")
         return 0
 
     if args.check_global:

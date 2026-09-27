@@ -127,10 +127,14 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **66**
-leaves. `leaf_paths(default_config())` yields **117**, so **51** are repo-only.
-For all 117, `filter_global` and `plan_global_write` agree on whether the path is
-settable. (65 / 116 before T-0006 added `resume.auto` to both layers, §14a;
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **67**
+leaves. `leaf_paths(default_config())` yields **121**, so **54** are repo-only.
+For all 121, `filter_global` and `plan_global_write` agree on whether the path is
+settable. (66 / 119 before crew 1.0.42 merged T-0005, which added
+`environments.prodUnattended` to both layers and the repo-only
+`environments.nonProd`; this paragraph said 117 at that point, not counting
+T-0004's repo-only `autopilot.mode` and `autopilot.maxPhases`. 65 / 116 before
+T-0006 added `resume.auto` to both layers, §14a;
 63 / 114 before the Windows burn-in added
 `context.autoClear.onlyRepos` and `onlySessions` to both layers; this paragraph
 still said 60 / 106 at that point, so the cloud-guard and scope-guard keys had
@@ -1201,6 +1205,8 @@ earn its own section: see §18, not the tables immediately below.
 | `cloud.awsProfiles` | list of globs | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
 | `cloud.awsRegions` | list of globs | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
 | `cloud.azureSubscriptions` | list of globs (id or name) | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
+| `environments.nonProd` | list of globs | `[]` | **repo only** | `cloud_guard.py::environments_config` |
+| `environments.prodUnattended` | `true` \| `false` | `false` | both, **true only when both say `true`** | `cloud_guard.py::environments_config` |
 
 Read one with `crew_config.py --guard <name> [--json]`, which prints the
 decision, both layers' values and which one is holding it down. The two shell
@@ -1383,6 +1389,172 @@ that `ask` and `allow` both print the target branch before acting, from
 which is not on the command line, so crew genuinely cannot tell — and
 substituting a guess is the "unknown wearing the label of a check that
 happened" failure this file keeps returning to.
+
+### `environments.*` — which terraform targets may run unattended (crew 1.0.42)
+
+Read by the cloud guard alone, and only while `guards.cloudGuard` is armed. It
+lets `terraform`/`tofu apply` of a **non-destroying saved plan**, and
+`workspace new` / `workspace select -or-create`, run with nobody attending
+when the target is non-production — and keeps a destroy from ever doing so.
+
+```json
+{ "environments": { "nonProd": ["dev", "qa", "staging", "*-staging"],
+                    "prodUnattended": false } }
+```
+
+**Three environment values, never two.** `nonProd` is a name matching a
+`nonProd` glob (fnmatch, case-insensitive). `prod` is a name matching none.
+`unknown` is everything crew cannot settle: no signal, a signal that is not a
+literal (`TF_WORKSPACE=$WS`), signals that classify differently, or an
+`environments` block it cannot read. **`unknown` is narrower than `prod`**:
+`prodUnattended` allows `prod`, and nothing allows `unknown` unattended.
+
+The names come from, and must all agree after classification:
+`TF_WORKSPACE` (inline, `env`, `export`, `$env:`, then the hook's own
+environment); else a literal `workspace select|new X` earlier in the same
+command; else `<payload cwd>/<-chdir>/<TF_DATA_DIR or .terraform>/environment`
+— used only when nothing in the command changes directory or switches
+workspace, and a **missing file is unknown, not `default`** (terraform writes
+no file for `default`, measured on 1.16.3, so the default workspace is always
+unknown this way). Plus `-var environment=X` / `TF_VAR_environment`, and a
+saved plan's sidecar. `-var-file`, `*.tfvars` and HCL are never read.
+
+A directory change in **any** spelling makes the workspace file unusable:
+`cd`/`pushd`/`Set-Location`, `env -C DIR`/`-CDIR`/`--chdir=DIR`, `sudo
+-D`/`--chdir`/`-R`, `wsl --cd`/`~`, `pwsh -WorkingDirectory`/`-wd`, `parallel
+--wd`, `chroot`/`unshare -w`/`nsenter -w`, a sourced file or `.ps1`, and .NET's
+`CurrentDirectory`. An environment change crew cannot read makes
+`TF_WORKSPACE` itself unknown: `source`/`.` of a file, `export $(...)`, `eval`
+or `iex` of text built at run time (or fed from the pipeline), `set -a`,
+`read`, any PowerShell `env:` drive write or `SetEnvironmentVariable`, and an
+`||` chain (the next command runs only if this one failed). A plan, sidecar,
+workspace file or `azureProfile.json` that is not a regular file (a FIFO, a
+device) is never read: it is unknown, not a hang past the hook's budget.
+
+**A terraform line is judged only when every word on it is a plain
+literal.** Before any of the reading below, the raw command text is checked:
+if it names `terraform`, `terragrunt` or `tofu` anywhere — each word read with
+its quotes and escapes taken out, `$'...'` decoded, an expansion read as "could
+be anything" and a brace list expanded — then every word must match
+`^[A-Za-z0-9_./:=@%+,-]+$` and every operator between words must be `;`,
+`&&`, `||`, `|`, `&`, `>`, `>>`, `>&`, `&>`, `<` (PowerShell's `*>` too).
+Otherwise the line is **could not tell** — a quote, `$`, backquote,
+backslash, glob, brace, `<(`, heredoc, here-string, comment or control
+character on it, or a PowerShell `@` splat — and it is asked about when someone attends, denied when
+nobody does and denied under `block`; a live one-shot marker for that exact
+text still lets it through under `ask`/`allow`. Nothing else below is
+consulted for it (guard.log policy `could-not-tell`). Unusual quoting on a
+terraform line is asked about, not allowed; unattended, it is refused — which
+includes `terraform apply "p.tfplan"`, `terraform plan 2>$null` and a commit
+message that quotes the word terraform. Plain lines are read exactly as
+before.
+
+**Destroy is `yes`, `no` or `unknown`, and unknown counts as yes.** `yes`:
+`destroy`, `apply -destroy`, `apply -replace`, `run-all destroy`, `workspace
+delete`, a saved plan whose sidecar lists a delete. `no`: only a saved plan
+whose sidecar lists none, `workspace new`, `select -or-create`. Everything
+else is `unknown` — an apply with no saved plan, any terragrunt apply, a plan
+with no sidecar, a stale one (the plan's sha256 changed), a malformed or
+unreadable one, a plan path that is not a literal, a plan over 64 MiB, and a
+saved-plan apply that is **not the only command** in the invocation. The plan
+is hashed when the hook runs, before the command does, so anything beside the
+apply — `terraform plan -out`, `cp`, a nested shell, an output redirect to
+anything but `/dev/null`, a command substitution anywhere the shell runs one
+(an unquoted heredoc body, `${...}`, `$((...))`) — could replace the plan
+after crew read it. A quoted heredoc (`<<'EOF'`) is literal and counts for
+nothing; PowerShell's `2>&1` is a redirection, not a command. Run the plan
+and summarize steps first, then the apply on its own.
+
+**The sidecar.** The hook cannot run `terraform show` (15 seconds, and it
+must not run terraform at all), so a saved plan is summarised first, outside
+it:
+
+```bash
+terraform plan -out p.tfplan
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tfplan.py" summarize p.tfplan
+terraform apply p.tfplan    # a separate command, on its own
+```
+
+`summarize` writes `.crew/tfplan/<sha256 of the plan bytes>.json` with the
+workspace, the `environment` variable and every address whose actions include
+`delete`. The workspace is the one the **plan** is bound to, read out of the
+plan file itself (its `backend.workspace`), never `workspace show` — a plan
+made under `TF_WORKSPACE=production` in a directory with staging selected is
+a production plan. When it cannot be read it is `null`, which the hook reads
+as unknown. It writes nothing when `show` fails or times out, and never creates
+`.crew/`. A plan with no changes has no `resource_changes` at all and is
+refused, so its apply asks.
+
+**The decision**, applied after `guards.terraformApply` has been ratcheted:
+
+| policy | destroy yes/unknown | nonProd | prod, `prodUnattended` both layers | prod | unknown env |
+|---|---|---|---|---|---|
+| `block` | deny | deny | deny | deny | deny |
+| `ask`, no live marker | ask | **allow**, logged | **allow**, logged + on screen | ask | ask |
+| `ask`, live marker | allow (that command) | allow | allow | allow | allow |
+| `allow` | **ask — BREAKING in 1.0.42** | allow | allow | allow | allow |
+
+`ask` is denied when nobody is attending, as everywhere in this guard. The
+guard.log policy column says why: `env:nonProd:<name>`,
+`env:prod-unattended:<name>`, `env:prod:<name>`, `env:unknown`, `destroy:ask`,
+and `could-not-tell` for a terraform line that is not all plain literals
+(asked under `ask` and `allow` whatever its environment, denied under `block`).
+"A terraform line" means one that runs terraform, terragrunt or tofu as a
+command -- its command word, or a command inside `bash -c`, `eval`, `pwsh -c`
+or a substitution -- not one that mentions the word in a message, a search or
+a file name (README, "Cloud guard"); PowerShell lines follow the same rule. A
+line that runs terraform in a way the parser does not follow (an alias, a
+binary the same line copies or links and runs by its new name, zsh's
+`=terraform`, a script runner such as `flock` or `ssh`, PowerShell's
+`Set-Alias` or `Start-Process`) is `could-not-tell` even when every word is
+plain; a read-only subcommand (`plan`, `show`, `output`, `fmt`, ...) and the
+arguments of a program that is not terraform (`cp -r terraform
+"$BACKUP_DIR"`) are not gated for their quoting. Options before the
+subcommand are skipped as terraform and terragrunt read them (`terragrunt
+--working-dir infra destroy` is a destroy).
+
+**What the guard does not catch.** It catches terraform, terragrunt and tofu
+written directly: bare or path-qualified, behind the listed wrappers, inside
+`bash|sh|zsh -c` and `eval`, with global options before the subcommand, and
+PowerShell's `&`, `.`, `terraform.exe` and `Start-Process`. It does not try to
+catch a program renamed by alias, function, symlink or copy, `env -S` escape
+strings, BusyBox applets, git `!` aliases, an interpreter (`python -c`, `node
+-e`), a script file, a wrapper it does not list (`strace`, `aws-vault exec`),
+a program that runs another (`git bisect run`, `rg --pre`) or a container's
+entrypoint. No command-line guard can: unattended work must run interpreters
+and scripts. The real boundary is the credentials an unattended run holds,
+which is T-0044. README, "What the guard does not catch", lists the commands.
+
+**The always-stops.** A destroy is never applied unattended at any setting —
+`terraformApply: allow` and `prodUnattended: true` included. So is an apply of
+a plan crew cannot read, which means **`terraform apply -auto-approve` with no
+saved plan now asks under `allow`**. Approve one command with the
+`.approved-guard-terraformApply-<hash>` marker the refusal names, or summarise
+a saved plan. An unknown environment is never unattended either.
+
+**`prodUnattended` ratchets, and only the literal `true` counts.** It is true
+only when the repo's `.crew/config.json` **and** the machine-global file both
+say `true`; `"true"`, `1` and `null` are false. A cloned repo cannot grant
+itself unattended production. `nonProd` is **repo only**, for `production.*`'s
+reason — `staging` names one workspace in one checkout — so `filter_global`
+prunes and reports a global list. A malformed block (`nonProd: "dev"`, a
+non-bool `prodUnattended`) makes every environment unknown and forces an armed
+guard to `block` mode.
+
+**At the defaults nothing changes except the destroy rule.** With `nonProd`
+empty and `prodUnattended` false, every name is `prod` or `unknown` and `ask`
+asks as before. `workspace delete` is a destroy, so it is a finding in every
+armed state, the layer engaged or not. `workspace new|select -or-create` are
+judged only once the layer is engaged (a `nonProd` glob, or `prodUnattended`
+true); then they are **new** findings: denied under `block`, and under `ask`
+denied unattended for a prod or unknown target.
+
+**Not a promotion gate.** `prodUnattended` does not stand down
+`promote-gate.sh`'s `requireHuman` (`promote-gate.sh`, the `requireHuman`
+check), which still applies independently: fully unattended production also
+needs that off. `.crew/verify.json` stays promote-gate's list of environments;
+`crew_config.py --check` warns when a `nonProd` glob covers one it marks
+`requireHuman: true`.
 
 ### The ratchet is one table, not five copies
 

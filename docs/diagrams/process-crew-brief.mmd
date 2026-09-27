@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@eba11657 on 2026-09-26. Verify before trusting.
+%% Generated from useful-claude-add-ons@2b18f7ab on 2026-09-26. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
@@ -26,6 +26,16 @@
 %% Re-anchored 2bb92f32 -> 07ca3972 (T-0004): of the Anchors paths only crew_state.py
 %% changed - AUTOPILOT_DEFAULTS, 8 lines inserted at :1081, below every line cited here.
 %% :643, :771, :856-911, :951-955 and :977 re-read with sed -n at 07ca3972; none moved.
+%% Re-anchored f2bb919b -> fc54def6 (T-0005, on its own branch): of the Anchors paths only crew_state.py
+%% changed - three import lines at :74 and :102-103 - so its four citations below moved by +3
+%% (:643 -> :646 STALE_HANDOFF_DEFAULTS, :846-901 -> :849-904, :761 -> :764, :967 -> :970),
+%% each re-read by content. The T-0015 spot-read list above keeps its f2bb919b numbers.
+%% Merged 07ca3972 + fc54def6 (T-0005 landing, crew 1.0.42): of the Anchors paths only
+%% crew_state.py differs from 07ca3972, by T-0005's three import lines, so :643 -> :646,
+%% :856-911 -> :859-914, :771 -> :774, :977 -> :980, :951-955 -> :954-958 (mapped with a line
+%% diff and re-read with sed -n on the merged tree). Every other Anchors path is unchanged.
+%% Anchored at 2b18f7ab, the crew 1.0.42 bump on top of that merge (4ed4b763), which changed
+%% none of the Anchors paths.
 %% Re-anchored 07ca3972 -> eba11657 (T-0023): of the Anchors paths only crew_context.py changed -
 %% route_item (plain-text lifecycle routing, UserPromptSubmit only) inserted at :801-831 and its
 %% call at :902-904, so every SessionStart line cited here moved by +31 or +34: :925 -> :959,
@@ -57,8 +67,8 @@
 %%   clear/compact); :874-876 startup -> pointer + next action; :877-889 other
 %%   sources -> full note, next action first, then the auto-resume line; :890 no
 %%   note but a resume line -> that line alone; :1037 JSON additionalContext.
-%% Stale rule: crew_state.py:643 (72h / 3 commits), :856-911, archived to
-%%   .crew/handoffs/ (:771, :977), never deleted; never raises (:951-955).
+%% Stale rule: crew_state.py:646 (72h / 3 commits), :859-914, archived to
+%%   .crew/handoffs/ (:774, :980), never deleted; never raises (:954-958).
 %% /crew:status: commands/status.md:14 -> crew_status.py; :185-209 report lines.
 %% --
 %% Dashed '?' edges: handoff-read reads only config.json (:44), never crew.json,
@@ -98,8 +108,8 @@ flowchart TB
         cc2 --> cc3{"memory.inject?<br/>:965-968"}
         cc3 -- off --> cc4[incident banner only]
         cc3 -- on --> cc5["branch@HEAD, incident banner,<br/>codemap-behind line<br/>:847-858"]
-        cc5 --> stale{"handoff stale?<br/>72h / 3 commits / branch<br/>crew_state.py:643, :856-911"}
-        stale -- yes --> arch["archive to .crew/handoffs/<br/>never delete<br/>crew_state.py:771, :977"]
+        cc5 --> stale{"handoff stale?<br/>72h / 3 commits / branch<br/>crew_state.py:646, :859-914"}
+        stale -- yes --> arch["archive to .crew/handoffs/<br/>never delete<br/>crew_state.py:774, :980"]
         stale -- no --> cc6
         arch --> cc6
         stale -. "stale but the move failed:<br/>note stays, stale passed on (:859)" .-> cc6

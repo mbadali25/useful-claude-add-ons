@@ -272,9 +272,11 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     assert "resume.auto" in declared
     # 119 with /crew:autopilot (T-0004): `autopilot.mode` and
     # `autopilot.maxPhases`, re-measured after rebasing onto T-0006.
-    # 120 with plain-text routing (T-0023): `route.enabled`.
+    # 121 with T-0005: the repo-only `environments.nonProd` glob list and the
+    # ratcheted `environments.prodUnattended`; 122 with plain-text routing
+    # (T-0023): `route.enabled`. Re-measured after merging main.
     assert "route.enabled" in declared
-    assert len(declared) == 120
+    assert len(declared) == 122
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():
@@ -1685,3 +1687,125 @@ def test_explain_config_reports_autoclear_only_repos_from_the_global_layer_only(
     settings = crew_autocycle.settings(str(root), global_path=str(global_path))
     assert settings["onlyRepos"] is None
     assert settings["onlyRepos"] == row["value"]
+
+
+# --- T-0005: the `environments` block ----------------------------------------
+#
+# `environments.nonProd` is REPO ONLY (what counts as non-production is a fact
+# about the checkout, as `production.*` is); `environments.prodUnattended`
+# ratchets across both layers and is true only when BOTH say the JSON literal
+# `true`. Anything else -- absent, `false`, the string "true", `1`, `null` --
+# is false, so upgrading grants nothing and a cloned repo cannot grant itself
+# unattended production on a stranger's machine.
+
+_PU_ABSENT = object()
+_PU_VALUES = [_PU_ABSENT, False, True, "true", 1, None]
+_PU_IDS = ["absent", "false", "true", "str-true", "one", "null"]
+
+
+def _environments_layer(value):
+    if value is _PU_ABSENT:
+        return {}
+    return {"environments": {"prodUnattended": value}}
+
+
+def test_environments_defaults_grant_nothing(tmp_path):
+    assert crew_config.default_config()["environments"] == {
+        "nonProd": [], "prodUnattended": False}
+    assert crew_config.default_global_config()["environments"] == {
+        "prodUnattended": False}
+    assert crew_state.ENVIRONMENTS_DEFAULTS == {
+        "nonProd": [], "prodUnattended": False}
+    root = tmp_path / "repo"
+    crew_fixtures.make_repo(tmp_path, config={
+        "schema": crew_state.SCHEMA_CURRENT,
+        "environments": crew_config.default_config()["environments"]},
+        git=False)
+    global_path = tmp_path / "global.json"
+    global_path.write_text(json.dumps(
+        {"environments": crew_config.default_global_config()["environments"]}),
+        encoding="utf-8")
+    row = crew_config.resolve_ratcheted(
+        str(root), "environments.prodUnattended", str(global_path))
+    assert row["effective"] is False
+
+
+@pytest.mark.parametrize("global_value", _PU_VALUES, ids=_PU_IDS)
+@pytest.mark.parametrize("repo_value", _PU_VALUES, ids=_PU_IDS)
+def test_prod_unattended_ratchets(tmp_path, repo_value, global_value):
+    root = tmp_path / "repo"
+    crew_fixtures.make_repo(tmp_path, config=dict(
+        {"schema": crew_state.SCHEMA_CURRENT},
+        **_environments_layer(repo_value)), git=False)
+    global_path = tmp_path / "global.json"
+    global_path.write_text(json.dumps(_environments_layer(global_value)),
+                           encoding="utf-8")
+    row = crew_config.resolve_ratcheted(
+        str(root), "environments.prodUnattended", str(global_path))
+    want = repo_value is True and global_value is True
+    assert row["effective"] is want, (repo_value, global_value, row)
+
+
+def test_global_non_prod_is_pruned_and_reported():
+    kept, ignored = crew_config.filter_global(
+        {"environments": {"nonProd": ["dev"], "prodUnattended": True}})
+    assert kept == {"environments": {"prodUnattended": True}}
+    assert ignored == ["environments.nonProd"]
+    assert crew_config.is_global_path("environments.prodUnattended")
+    assert not crew_config.is_global_path("environments.nonProd")
+
+
+@pytest.mark.parametrize("block", [
+    {"nonProd": "dev"}, {"nonProd": [""]}, {"nonProd": [1]},
+    {"nonProd": None}, {"prodUnattended": "yes"}, [], None, "dev"],
+    ids=["nonprod-string", "nonprod-blank", "nonprod-int", "nonprod-null",
+         "prod-unattended-string", "list", "null", "string"])
+def test_environments_block_problem(block):
+    assert crew_config.environments_block_problem(block)
+
+
+@pytest.mark.parametrize("block", [
+    {}, {"nonProd": []}, {"nonProd": ["dev", "*-staging"]},
+    {"prodUnattended": False}, {"nonProd": ["qa"], "prodUnattended": True}])
+def test_environments_block_problem_accepts_a_real_block(block):
+    assert crew_config.environments_block_problem(block) == ""
+
+
+def test_layer_state_classifies_a_malformed_environments_block(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"environments": {"nonProd": "dev"}}),
+                    encoding="utf-8")
+    assert crew_config.layer_state(str(path), environments=True) == "corrupt"
+    assert crew_config.layer_state(str(path)) == "ok"
+    path.write_text(json.dumps({"environments": {"nonProd": ["dev"]}}),
+                    encoding="utf-8")
+    assert crew_config.layer_state(str(path), environments=True) == "ok"
+
+
+def test_check_warns_when_non_prod_covers_a_require_human_environment(
+        tmp_path, capsys):
+    root = tmp_path / "repo"
+    crew_fixtures.make_repo(tmp_path, config={
+        "schema": crew_state.SCHEMA_CURRENT,
+        "environments": {"nonProd": ["stag*"]}}, git=False)
+    (root / ".crew" / "verify.json").write_text(json.dumps({"environments": {
+        "staging": {"requireHuman": True},
+        "uat": {"requireHuman": True},
+        "production": {"requireHuman": True}}}), encoding="utf-8")
+    code = crew_config.main(["--root", str(root), "--check"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "staging" in out and "requireHuman" in out, out
+    assert "production" not in out, out
+    assert "uat" not in out, out
+
+
+def test_check_is_quiet_without_a_contradiction(tmp_path, capsys):
+    root = tmp_path / "repo"
+    crew_fixtures.make_repo(tmp_path, config={
+        "schema": crew_state.SCHEMA_CURRENT,
+        "environments": {"nonProd": ["dev"]}}, git=False)
+    (root / ".crew" / "verify.json").write_text(json.dumps({"environments": {
+        "production": {"requireHuman": True}}}), encoding="utf-8")
+    assert crew_config.main(["--root", str(root), "--check"]) == 0
+    assert "requireHuman" not in capsys.readouterr().out

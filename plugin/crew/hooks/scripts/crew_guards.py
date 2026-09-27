@@ -27,6 +27,7 @@ open while wearing the label of a check that happened.
 """
 import fnmatch
 import os
+import re
 import shlex
 
 # What crew may do when a skill it needs is NOT installed. Ordered least to most
@@ -236,6 +237,38 @@ PRODUCTION_DEFAULTS = {"databases": [], "hosts": []}
 # for -- `cloud_guard.py` treats that as unknown, and an unknown identity is
 # never allowed unattended.
 CLOUD_DEFAULTS = {"awsProfiles": [], "awsRegions": [], "azureSubscriptions": []}
+
+# Which target environments the cloud guard may let terraform write to with
+# nobody attending (T-0005). Two keys, two layering rules:
+#
+#   nonProd         REPO ONLY, for `production`'s reason: `staging` names one
+#                   workspace in one checkout. Globs, fnmatch, case-insensitive.
+#   prodUnattended  RATCHETS, and is true only when BOTH layers say the JSON
+#                   literal `true` -- see `normalise_prod_unattended`.
+#
+# At these defaults nothing is nonProd and production is never unattended, so
+# an upgraded repo decides every apply exactly as before.
+ENVIRONMENTS_DEFAULTS = {"nonProd": [], "prodUnattended": False}
+
+# Least to most permissive, like every tier tuple here: letting production be
+# written unattended is the capability, so `True` ranks above `False`.
+PROD_UNATTENDED_TIERS = (False, True)
+
+
+def normalise_prod_unattended(value):
+    """`value` as a bool, where only the JSON literal `true` is true.
+
+    `isinstance(value, bool)` rather than truthiness, for
+    `normalise_require_for_production`'s reason in the opposite direction:
+    here `True` is the WIDE value, so `"true"`, `1` and `null` must read as
+    `False` -- a value crew cannot read never grants unattended production.
+    """
+    return value if isinstance(value, bool) else False
+
+
+def prod_unattended_rank(value):
+    """`value`'s position in `PROD_UNATTENDED_TIERS`; higher is wider."""
+    return PROD_UNATTENDED_TIERS.index(normalise_prod_unattended(value))
 
 # Whether promoting to production needs an APPROVED change request for the sha
 # being promoted. `change.requireForProduction`, and it ratchets by the same
@@ -506,6 +539,13 @@ RATCHETED_KEYS["change.requireForProduction"] = (
     CHANGE_REQUIREMENTS,
     normalise_require_for_production,
     require_change_rank,
+)
+# T-0005. Registering it is again the whole cost: `min` means production is
+# unattended only when the repo AND the machine owner both said `true`.
+RATCHETED_KEYS["environments.prodUnattended"] = (
+    PROD_UNATTENDED_TIERS,
+    normalise_prod_unattended,
+    prod_unattended_rank,
 )
 
 
@@ -1015,3 +1055,833 @@ def prod_decision(level, command, patterns):
                 f"and this is not: `{matched}`", matched, access)
     return ("block", f"`none` permits no access to `{matched}`", matched,
             access)
+
+
+# --- the literal-word allowlist (T-0005 Step 8) ------------------------------
+#
+# Here rather than in `cloud_guard.py`, which holds the only caller, because
+# that module sits at `.pylintrc`'s max-module-lines; `_literal_gate` there
+# turns these two answers into a finding.
+#
+# Four review rounds each found a bash quoting shape the lexer misread, and
+# each turned a destroy into an allow. So a line naming terraform, terragrunt
+# or tofu is judged only when every word on it is a plain literal, a shape
+# the lexer cannot misread; anything else is "could not tell". Both checks
+# read the RAW text, before the lexer: the name is looked for generously
+# (quotes and escapes out, `$'...'` decoded, an expansion as a wildcard, brace
+# lists expanded), the words are checked strictly.
+_TF_NAMES = tuple(n + e for n in ("terraform", "terragrunt", "tofu")
+                  for e in ("", ".exe", ".cmd", ".bat", ".ps1"))
+_PLAIN_WORD_RE = re.compile(r"^[A-Za-z0-9_./:=@%+,-]+$")
+# `<<`, `<<<`, `<(`, `<>`, `>|`, `<&`, `|&`, `;;` are not plain. PowerShell's
+# all-streams `*>` is read as `>`.
+_PLAIN_OPS = frozenset((";", "&&", "||", "|", "&", ">", ">>", ">&", "<",
+                        "&>", "&>>"))
+_NAME_SPLIT_RE = re.compile(r"[\s|&;()<>]+")
+# An expansion, innermost first. Its value could be anything, empty included.
+_EXPANSION_RE = re.compile(r"\$\{[^{}]*\}|\$\([^()]*\)|`[^`]*`"
+                           r"|\$[A-Za-z_][A-Za-z0-9_]*|\$[0-9@*#?$!-]")
+_SIMPLE_EXPANSION_RE = re.compile(r"\$\{[^{}]*\}|\$[A-Za-z_][A-Za-z0-9_]*"
+                                  r"|\$[0-9@*#?$!-]")
+# `${x:-word}` and its kin: the word after the operator may be the value.
+_PARAM_OP_RE = re.compile(
+    r"\$\{[#!]?[A-Za-z0-9_@*]*(?::?[-=+?]|##?|%%?|//?|\^\^?|,,?)?")
+_ANSI_SPAN_RE = re.compile(r"\$'((?:[^'\\]|\\.)*)'?", re.DOTALL)
+_ANSI_ESCAPE_RE = re.compile(r"\\(?:([abeEfnrtv\\'\"?])|x([0-9A-Fa-f]{1,2})"
+                             r"|u([0-9A-Fa-f]{1,4})|U([0-9A-Fa-f]{1,8})"
+                             r"|([0-7]{1,3})|c(.))", re.DOTALL)
+_ANSI_SIMPLE = dict(zip("abeEfnrtv\\'\"?", "\a\b\x1b\x1b\f\n\r\t\v\\'\"?"))
+_BRACE_SEQ_RE = re.compile(r"^(-?\d+|[A-Za-z])\.\.(-?\d+|[A-Za-z])"
+                           r"(?:\.\.-?\d+)?$")
+_BRACE_LIMIT = 4096
+
+
+def _ansi_c_decode(body):
+    """What a bash `$'...'` body stands for, `\\xHH`/`\\u`/octal/`\\cX`
+    included."""
+    def one(m):
+        simple, hexa, uni, wide, octal, ctrl = m.groups()
+        if simple:
+            return _ANSI_SIMPLE[simple]
+        if ctrl is not None:
+            return chr(ord(ctrl) & 0x1f)
+        value = int(octal, 8) if octal else int(hexa or uni or wide, 16)
+        return chr(min(value, 0x10ffff))
+    return _ANSI_ESCAPE_RE.sub(one, body)
+
+
+def _brace_expand(word):
+    """Every word bash's brace expansion could make of `word` (a numeric
+    sequence stands for one digit), or None past `_BRACE_LIMIT` results."""
+    out, todo = [], [word]
+    while todo:
+        current, found = todo.pop(), None
+        start = current.find("{")
+        while start != -1 and found is None:
+            depth, cuts = 0, [start]
+            for j in range(start, len(current)):
+                depth += {"{": 1, "}": -1}.get(current[j], 0)
+                if current[j] == "," and depth == 1:
+                    cuts.append(j)
+                if depth == 0:
+                    seq = _BRACE_SEQ_RE.match(current[start + 1:j])
+                    if len(cuts) > 1:
+                        found = [current[a + 1:b]
+                                 for a, b in zip(cuts, cuts[1:] + [j])]
+                    elif seq and not seq.group(1).isalpha():
+                        found = ["0"]
+                    elif seq:
+                        low, high = sorted(map(ord, seq.group(1, 2)))
+                        found = [chr(k) for k in range(low, high + 1)]
+                    break
+            if found is not None:
+                todo.extend(current[:start] + alt + current[j + 1:]
+                            for alt in found)
+            start = current.find("{", start + 1)
+        if found is None:
+            out.append(current)
+        if len(out) + len(todo) > _BRACE_LIMIT:
+            return None
+    return out
+
+
+def _names_tool(word):
+    """True when `word` could be terraform/terragrunt/tofu: its last path
+    part, lowered. A wildcard counts when it could match and keeps three
+    literal letters (a bare `*` or `t*` does not -- WHAT IT CANNOT SEE)."""
+    base = word.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    if not any(c in base for c in "*?["):
+        return base in _TF_NAMES
+    letters = re.sub(r"\[[^\]]*\]|[*?]", "", base)
+    return sum(c.isalnum() for c in letters) >= 3 and any(
+        fnmatch.fnmatchcase(name, base) for name in _TF_NAMES)
+
+
+def _name_candidates(text, shell):
+    """Every word `text` could make that might name a program: each
+    expansion read as a wildcard, and again with its delimiters as blanks
+    (`$(echo terraform)`, `${x:-terraform}`), quotes and escapes out, and an
+    assignment's value too (`x=terraform; $x destroy`)."""
+    if shell == "powershell":
+        texts = [text.replace("`\n", "")]
+    else:
+        body = text.replace("\\\r\n", "").replace("\\\n", "")
+        texts = [body, _ANSI_SPAN_RE.sub(
+            lambda m: _ansi_c_decode(m.group(1)), body)]
+    for source in texts:
+        wild = source
+        for _round in range(16):
+            wild, count = _EXPANSION_RE.subn("*", wild)
+            if not count:
+                break
+        opened = re.sub(r"[$(){}`]", " ", _PARAM_OP_RE.sub(" ", source))
+        # And every simple expansion as empty: `"$x"terraform` inside
+        # backquotes, which the two readings above both lose (Step 9).
+        emptied = re.sub(r"[$(){}`]", " ", _SIMPLE_EXPANSION_RE.sub("", source))
+        for chunk in _NAME_SPLIT_RE.split(" ".join((wild, opened, emptied))):
+            if shell == "powershell":
+                bares = (re.sub(r"[`'\"]", "", chunk),)
+            else:
+                bare = re.sub(r"\$(?=['\"])", "", chunk)
+                bare = re.sub(r"['\"`]", "", bare)
+                bares = (bare.replace("\\", ""), bare.replace("\\", "/"))
+            for bare in bares:
+                yield bare
+                if "=" in bare:
+                    yield bare.split("=", 1)[1]
+
+
+def names_terraform(text, shell):
+    """The first word `text` could make that names terraform, terragrunt or
+    tofu, or None. PowerShell text arrives already normalised
+    (`cloud_guard._ps_normalise`)."""
+    for part in _name_candidates(text, shell):
+        words = _brace_expand(part) if "{" in part \
+            and shell != "powershell" else [part]
+        if words is None or any(_names_tool(w) for w in words):
+            return part
+    return None
+
+
+def first_non_literal(text, shell):
+    """The first word or operator in `text` that is not plain, or None. In
+    PowerShell a word opening with `@` splats a variable, so it is not."""
+    for chunk in re.split(r"[ \t\n]+", text):
+        if shell == "powershell":
+            chunk = re.sub(r"\*(?=>)", "", chunk)
+        for piece in re.findall(r"[;&|<>]+|[^;&|<>]+", chunk):
+            if piece not in _PLAIN_OPS and not _PLAIN_WORD_RE.match(piece) \
+                    or shell == "powershell" and piece.startswith("@"):
+                return piece
+    return None
+
+
+# --- the command-word trigger (T-0005 Step 9) --------------------------------
+#
+# Step 8 gated a line when ANY word on it could name terraform, so
+# `git commit -m "fix terraform apply"` was refused. The gate now fires when a
+# COMMAND WORD could: `_GateReader` splits the raw text the way bash does,
+# with its own quote, escape, substitution and heredoc reading -- never the
+# lexer's, so a lexer bug still cannot turn a shape into an allow -- and every
+# shape it does not read with certainty raises `_Unsure`, which falls back to
+# the Step 8 trigger. Falling back can only widen the gate, never narrow it.
+
+class _Unsure(Exception):
+    """The trigger's reading met a shape it does not read with certainty."""
+
+
+_HOLE = "\x00"  # a word part whose value is known only at run time
+_GATE_DEPTH = 8
+_GATE_CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+_GATE_OPS = ("&>>", "<<<", "<<-", ";;&", "&&", "||", ";;", ";&", "|&", "<<",
+             "<>", "<&", ">>", ">&", ">|", "&>", ";", "&", "|", "<", ">")
+_GATE_PARAM_RE = re.compile(r"[A-Za-z0-9_#!@*?:%/=+^,.~\[\] -]*")
+_FD_WORD_RE = re.compile(r"^(?:\d+|\{[A-Za-z_][A-Za-z0-9_]*\})$")
+# A command word this far into a line runs terraform only through a script
+# crew cannot split: the Step 8 trigger decides for the whole line.
+_GATE_OPAQUE = frozenset((
+    "source", ".", "ssh", "cmd", "wsl", "trap", "alias", "hash", "function",
+    "flock", "script", ":::", "::::", "fish", "csh", "tcsh"))
+_GATE_SHELLS = frozenset(("bash", "sh", "zsh", "dash", "ksh", "ash", "mksh",
+                          "busybox"))
+_GATE_PWSH = frozenset(("pwsh", "powershell", "pwsh-preview"))
+_GATE_VERBS = frozenset(("destroy", "apply", "workspace"))
+
+
+class _GateReader:
+    """The simple commands of `text` as argv lists, bash's way: quotes and
+    escapes removed, `$'...'` decoded, and `_HOLE` wherever a value is made
+    at run time (an expansion, a substitution, a glob, a brace list). Every
+    substitution's commands -- in a word, a double-quoted string, an
+    unquoted heredoc body -- are read into the same `cmds`."""
+
+    def __init__(self, text, depth, cmds, pending=None):
+        if depth > _GATE_DEPTH:
+            raise _Unsure("nested too deep")
+        self.text, self.pos, self.depth, self.cmds = text, 0, depth, cmds
+        self.nest = 0
+        self.pending = [] if pending is None else pending
+
+    def _peek(self, count=1):
+        return self.text[self.pos:self.pos + count]
+
+    def read(self, closer=None):
+        """Read to the end, or past the `)` closing a `$(`/`(`/`<(`."""
+        words, word = [], []
+        state = {"word": False, "target": False, "brace": False,
+                 "glob": False}
+
+        def end_word():
+            if state["word"]:
+                value = "".join(word)
+                if state["glob"] and value not in ("[", "[["):
+                    value += _HOLE
+                if state["brace"] and value not in ("{", "}", "{}"):
+                    value += _HOLE
+                if state["target"]:
+                    state["target"] = False
+                else:
+                    words.append(value)
+            word.clear()
+            state.update(word=False, brace=False, glob=False)
+
+        def end_command():
+            end_word()
+            if state["target"]:
+                raise _Unsure("a redirection with no target")
+            if words:
+                self.cmds.append(list(words))
+            words.clear()
+
+        self.nest += 1
+        if self.nest > 4 * _GATE_DEPTH:
+            raise _Unsure("nested too deep")
+        while self.pos < len(self.text):
+            char = self.text[self.pos]
+            if self._peek(2) == "\\\n":
+                self.pos += 2
+            elif char in " \t":
+                end_word()
+                self.pos += 1
+            elif char == "\n":
+                end_command()
+                self.pos += 1
+                self._bodies()
+            elif char == "#" and not state["word"]:
+                while self.pos < len(self.text) and self._peek() != "\n":
+                    self.pos += 1
+            elif char == ")":
+                if closer != ")":
+                    raise _Unsure("an unmatched )")
+                end_command()
+                self.pos += 1
+                self.nest -= 1
+                return
+            elif char == "(":
+                if state["word"] or words:
+                    raise _Unsure("( inside a command")
+                self.pos += 1
+                self.read(")")
+            elif char in "<>" and self._peek(2)[1:] == "(":
+                self.pos += 2
+                self.read(")")
+                word.append(_HOLE)
+                state["word"] = True
+            elif char in ";&|<>":
+                if state["word"] and char in "<>" and \
+                        _FD_WORD_RE.match("".join(word)):
+                    word.clear()
+                    state["word"] = False
+                self._operator(end_word, end_command, state)
+            else:
+                word.append(self._word_part(state))
+                state["word"] = True
+        if closer is not None:
+            raise _Unsure("an unclosed (")
+        end_command()
+        if self.pending:
+            raise _Unsure("a heredoc with no body")
+
+    def _operator(self, end_word, end_command, state):
+        op = next(o for o in _GATE_OPS if self.text.startswith(o, self.pos))
+        self.pos += len(op)
+        if op in (";;", ";&", ";;&"):
+            raise _Unsure("a case arm")
+        if op in (";", "&", "&&", "||", "|", "|&"):
+            end_command()
+            return
+        end_word()
+        if op in ("<<", "<<-"):
+            self._delimiter(op == "<<-")
+        else:
+            state["target"] = True
+
+    def _delimiter(self, strip):
+        while self._peek() in (" ", "\t"):
+            self.pos += 1
+        raw = []
+        while self.pos < len(self.text) and \
+                self._peek() not in " \t\n;&|()<>":
+            raw.append(self._peek())
+            self.pos += 1
+        raw = "".join(raw)
+        # A backslash beside a quote is dequoted differently inside and
+        # outside the quotes (`<<'E\OF'` ends at `E\OF`): not read.
+        mixed = "\\" in raw and ("'" in raw or '"' in raw)
+        odd = raw.count("'") % 2 or raw.count('"') % 2
+        if not raw or odd or mixed or "$" in raw or "`" in raw:
+            raise _Unsure("a heredoc delimiter crew cannot spell")
+        quoted = any(c in raw for c in "'\"\\")
+        delim = re.sub(r"\\(.)", r"\1", raw.replace("'", "").replace('"', ""))
+        self.pending.append((delim, strip, quoted))
+
+    def _bodies(self):
+        pending, self.pending[:] = list(self.pending), []
+        for delim, strip, quoted in pending:
+            lines = []
+            while True:
+                if self.pos >= len(self.text):
+                    raise _Unsure("a heredoc with no delimiter line")
+                end = self.text.find("\n", self.pos)
+                end = len(self.text) if end == -1 else end
+                line = self.text[self.pos:end]
+                self.pos = min(end + 1, len(self.text))
+                if (line.lstrip("\t") if strip else line) == delim:
+                    break
+                lines.append(line)
+            if not quoted:
+                _GateReader("\n".join(lines), self.depth + 1,
+                            self.cmds)._substitutions()
+
+    def _substitutions(self):
+        """An unquoted heredoc body: only its expansions are code."""
+        while self.pos < len(self.text):
+            char = self._peek()
+            if char == "\\":
+                self.pos += 2
+            elif char in "$`":
+                self._word_part({"word": True}, in_dq=True)
+            else:
+                self.pos += 1
+
+    def _word_part(self, state, in_dq=False):
+        """One character or quoted run of a word, as text or `_HOLE`."""
+        char = self._peek()
+        if char == "\\":
+            self.pos += 2
+            nxt = self.text[self.pos - 1:self.pos]
+            if in_dq and nxt not in '$`"\\\n':
+                return "\\" + nxt
+            return "" if nxt == "\n" else nxt
+        if char == "'" and not in_dq:
+            end = self.text.find("'", self.pos + 1)
+            if end == -1:
+                raise _Unsure("an unclosed '")
+            self._no_body_across(self.pos, end)
+            part, self.pos = self.text[self.pos + 1:end], end + 1
+            return part
+        if char == '"' and not in_dq:
+            self.pos += 1
+            return self._double_quoted()
+        if char == "$":
+            return self._dollar(in_dq)
+        if char == "`":
+            return self._backquote(in_dq)
+        self.pos += 1
+        if not in_dq and char in "*?[":
+            state["glob"] = True
+        if not in_dq and char == "{":
+            state["brace"] = True
+        return char
+
+    def _no_body_across(self, start, end):
+        if self.pending and "\n" in self.text[start:end]:
+            raise _Unsure("a quoted newline before a heredoc body")
+
+    def _double_quoted(self):
+        parts, start = [], self.pos
+        while self._peek() != '"':
+            if self.pos >= len(self.text):
+                raise _Unsure('an unclosed "')
+            parts.append(self._word_part({}, in_dq=True))
+        self._no_body_across(start, self.pos)
+        self.pos += 1
+        return "".join(parts)
+
+    def _dollar(self, in_dq):
+        nxt = self.text[self.pos + 1:self.pos + 2]
+        if self.text.startswith("$((", self.pos):
+            end = self.text.find("))", self.pos)
+            body = self.text[self.pos + 3:end]
+            if end == -1 or re.search(r"[$`'\"\\()]", body):
+                raise _Unsure("arithmetic crew does not read")
+            self.pos = end + 2
+            return _HOLE
+        if nxt == "(":
+            self.pos += 2
+            self.read(")")
+            return _HOLE
+        if nxt == "{":
+            end = self.text.find("}", self.pos)
+            match = _GATE_PARAM_RE.fullmatch(self.text, self.pos + 2, end) \
+                if end != -1 else None
+            if match is None:
+                raise _Unsure("a ${...} crew does not read")
+            self.pos = end + 1
+            return _HOLE
+        if nxt == "'" and not in_dq:
+            match = _ANSI_SPAN_RE.match(self.text, self.pos)
+            if match.end() - match.start() != len(match.group(1)) + 3:
+                raise _Unsure("an unclosed $'")
+            self.pos = match.end()
+            return _ansi_c_decode(match.group(1))
+        if nxt == '"' and not in_dq:
+            self.pos += 2
+            return self._double_quoted()
+        name = re.match(r"[A-Za-z_][A-Za-z0-9_]*|[0-9@*#?$!-]",
+                        self.text[self.pos + 1:])
+        if name:
+            self.pos += 1 + name.end()
+            return _HOLE
+        self.pos += 1
+        return "$"
+
+    def _backquote(self, in_dq):
+        body, self.pos = [], self.pos + 1
+        while self._peek() != "`":
+            if self.pos >= len(self.text):
+                raise _Unsure("an unclosed `")
+            char = self._peek()
+            nxt = self.text[self.pos + 1:self.pos + 2]
+            if char == "\\" and (nxt in "`$\\" or in_dq and nxt == '"') \
+                    and nxt:
+                body.append(nxt)
+                self.pos += 2
+                continue
+            body.append(char)
+            self.pos += 1
+        self.pos += 1
+        _GateReader("".join(body), self.depth + 1, self.cmds).read()
+        return _HOLE
+
+
+def _verb_on_line(top):
+    """The Step 8 name, or a word dequoting to destroy/apply/workspace."""
+    named = names_terraform(top, "bash")
+    if named is not None:
+        return named
+    return next((c for c in _name_candidates(top, "bash")
+                 if c.lower() in _GATE_VERBS), None)
+
+
+# Subcommands that change no infrastructure, so a terraform or tofu line
+# running one is not gated for its quoting (review round 5): the lexer judges
+# it, as it did before Step 8. `workspace` and `state` are read-only only with
+# the second words listed.
+_TF_READ_ONLY = frozenset((
+    "plan", "show", "output", "fmt", "validate", "version", "providers",
+    "graph", "get", "init", "console", "metadata", "modules", "login",
+    "logout"))
+_TF_READ_ONLY_PAIRS = {"workspace": frozenset(("list", "show")),
+                       "state": frozenset(("list", "show", "pull"))}
+# Commands that can put terraform under another name for a later command on
+# the same line (`ln -sf /usr/bin/terraform tf && ./tf destroy`).
+_GATE_COPIERS = frozenset(("ln", "cp", "install", "link", "mv", "rsync"))
+_FIND_EXEC = frozenset(("-exec", "-execdir", "-ok", "-okdir"))
+
+
+# Options before a subcommand (terragrunt's, and after `run-all`/`run`) whose
+# value may be any word, `apply` included: `--working-dir apply destroy`.
+_TF_GLOBAL_VALUE_OPTS = frozenset((
+    "working-dir", "terragrunt-working-dir", "terragrunt-config", "config",
+    "chdir", "queue-exclude-dir", "queue-include-dir"))
+_TF_OPS = frozenset(("apply", "destroy", "run-all", "run"))
+
+
+def tf_skip_options(args, index):
+    """The index of the first word from `index` that is not an option or its
+    value; `--` ends the options. A known value option (`_TF_GLOBAL_VALUE_OPTS`)
+    takes the next word. An unknown one takes it only when it is not an
+    option, not an `_TF_OPS` word and not made at run time: the reading that
+    finds the operation (`--some-option x destroy`, `--non-interactive
+    --working-dir infra destroy`)."""
+    while index < len(args) and args[index].startswith("-"):
+        if args[index] == "--":
+            return index + 1
+        name, sep, _value = args[index].lstrip("-").partition("=")
+        nxt = args[index + 1] if index + 1 < len(args) else None
+        takes = not sep and nxt is not None and (
+            name in _TF_GLOBAL_VALUE_OPTS or nxt not in _TF_OPS
+            and not nxt.startswith("-") and _HOLE not in nxt)
+        index += 2 if takes else 1
+    return index
+
+
+def skip_wrapper_options(args, takes):
+    """`args` past a wrapper's own options, read as GNU getopt reads them:
+    `--name=v`; `--name v` for a value option in `takes`, or a unique prefix
+    of one (`--out L`); a short cluster whose first value letter takes the
+    rest of the word, or the next word when it is last (`-rn 1`, `-vk 5`);
+    `--` ends them, `-` is an operand."""
+    shorts = {t[1] for t in takes if len(t) == 2}
+    longs = [t for t in takes if t.startswith("--")]
+    index = 0
+    while index < len(args) and args[index].startswith("-") \
+            and args[index] != "-":
+        word, index = args[index], index + 1
+        if word == "--":
+            break
+        if word.startswith("--"):
+            match = [t for t in longs if t.startswith(word)]
+            index += "=" not in word and len(match) == 1
+            continue
+        for pos, letter in enumerate(word[1:], 1):
+            if letter in shorts:
+                index += pos == len(word) - 1
+                break
+    return args[index:]
+
+
+def _tf_read_only(argv, fed):
+    """True when `argv` -- terraform, tofu or terragrunt and its arguments,
+    as bash will run them -- runs a subcommand in `_TF_READ_ONLY`, spelled
+    so it cannot be another one: a literal word, first after `-chdir=`
+    options (terragrunt: after its options, read by `tf_skip_options`, and
+    after `run-all`/`run` -- `--working-dir plan destroy` is a destroy), and
+    not a placeholder an `xargs -I` replaces. `parallel` substitutes too
+    many forms to be read here."""
+    if any(head != "xargs" or any(r in word for r in reps for word in argv)
+           for head, reps in fed):
+        return False
+    rest = argv[1:]
+    if "terragrunt" not in _head_name(argv[0]):
+        while rest and rest[0].startswith("-chdir="):
+            rest = rest[1:]
+    else:
+        rest = rest[tf_skip_options(rest, 0):]
+        if rest[:1] in (["run-all"], ["run"]):
+            rest = rest[1:][tf_skip_options(rest[1:], 0):]
+    if not rest or _HOLE in rest[0]:
+        return False
+    if rest[0] in _TF_READ_ONLY:
+        return True
+    pair = _TF_READ_ONLY_PAIRS.get(rest[0])
+    return pair is not None and len(rest) > 1 and rest[1] in pair
+
+
+def _zsh_names_tool(word):
+    """zsh expands `=terraform` to terraform's path (`EQUALS`)."""
+    return word.startswith("=") and _names_tool(word[1:])
+
+
+def _arg_names_tool(word):
+    """An argument that may be terraform: its name or zsh's `=terraform`."""
+    return _names_tool(word) or _zsh_names_tool(word)
+
+
+def _first_operand(args):
+    return next((a for a in args if not a.startswith("-")), None)
+
+
+def _find_exec_trigger(args, top, helpers, depth, line):
+    """`find -exec CMD ... ;|+`: each command it runs, read as one."""
+    for index, arg in enumerate(args):
+        if arg not in _FIND_EXEC:
+            continue
+        sub = []
+        for word in args[index + 1:]:
+            if word in (";", "+"):
+                break
+            sub.append(word.replace("{}", _HOLE))  # a path found at run time
+        found = _argv_trigger(sub, top, helpers, depth, line)
+        if found is not None:
+            return found[0], True
+    return None
+
+
+def _argv_trigger(argv, top, helpers, depth, line):
+    """`(word, unseen)` when this simple command runs terraform, or None.
+    `unseen` means the lexer is not known to read that command (an alias, a
+    wrapper it does not strip, a renamed binary): the line is then "could
+    not tell" even when every word on it is plain. `line` is the reading of
+    the whole line: `copies`, the names a command on it copies or links a
+    terraform binary to (`_copies_terraform`)."""
+    unwrap, shell_args, pwsh_payload, ps_normalise, head_name, _lex = \
+        helpers
+    fed = []
+    argv = unwrap(argv, {}, fed, {"cd": False})
+    if not argv:
+        return None
+    first, args = argv[0], argv[1:]
+    if _HOLE in first:
+        # Could not tell which program runs: gated only when the line names
+        # one of the words a terraform line needs.
+        named = _verb_on_line(top)
+        return None if named is None else (named, True)
+    if _zsh_names_tool(first):
+        return first, True
+    if _names_tool(first):
+        return None if _tf_read_only(argv, fed) else (first, False)
+    if any(c in first for c in " \t\n"):
+        # `watch "terraform destroy"`: the command word is itself a script.
+        return _bash_trigger(" ".join(argv), top, helpers, depth + 1, line)
+    head = head_name(first)
+    if head == "busybox" and args and head_name(args[0]) in _GATE_SHELLS:
+        head, args = head_name(args[0]), args[1:]
+    if head in _GATE_SHELLS:
+        has_c, positional = shell_args(args)
+        if has_c and positional and _HOLE not in positional[0]:
+            return _bash_trigger(positional[0], top, helpers, depth + 1,
+                                 line)
+        if not has_c and positional and _HOLE not in positional[0] \
+                and not _names_tool(positional[0]):
+            # `bash build.sh`: a script file, which crew does not read
+            # (WHAT IT CANNOT SEE) -- not stdin, which the line may feed.
+            return None
+        named = names_terraform(top, "bash")
+        return None if named is None else (named, True)
+    if head in _GATE_PWSH:
+        payload = pwsh_payload(args)
+        if payload is None or _HOLE in payload:
+            named = names_terraform(top, "bash")
+            return None if named is None else (named, True)
+        return ps_trigger(ps_normalise(payload)[0], helpers, depth + 1)
+    if head == "eval":
+        # An expansion in the script is `_HOLE`, a control character, so the
+        # reader gives up on it and the line-wide name decides.
+        args = args[1:] if args[:1] == ["--"] else args  # `eval -- ...`
+        return _bash_trigger(" ".join(args), top, helpers, depth + 1, line)
+    if head == "find" and any(a in _FIND_EXEC for a in args):
+        # What find runs is read as commands of their own; find runs
+        # nothing else.
+        return _find_exec_trigger(args, top, helpers, depth, line)
+    if head in _GATE_OPAQUE:
+        # A script crew cannot split: its own words decide, or the whole
+        # line's when a word is made at run time (`source <(...)`).
+        own = names_terraform(top if any(_HOLE in a for a in args)
+                              else " ".join(args), "bash")
+        return None if own is None else (own, True)
+    verb = _first_operand(args)
+    if head in line["copies"] and verb is not None \
+            and verb.lower() in _GATE_VERBS:
+        # `ln -sf /usr/bin/terraform tf && ./tf destroy`: the name the line
+        # copied or linked terraform to, run with a verb. A line that only
+        # mentions terraform (`cp -r terraform bk && git apply x.patch`,
+        # `terraform fmt && kubectl apply -f k.yaml`) is not read this way,
+        # and neither is a program crew does not know as a wrapper
+        # (`strace`, `aws-vault exec`): Step 10, direct use only; README
+        # "What the guard does not catch".
+        named = names_terraform(top, "bash")
+        if named is not None:
+            return named, True
+    return None
+
+
+def _copies_terraform(cmds, head_name, copiers=_GATE_COPIERS):
+    """The names `cmds` copy or link terraform to: the last operand's
+    basename, for a copier whose other operands name terraform
+    (`cp /usr/bin/terraform ./ls` -> `ls`)."""
+    out = set()
+    for argv in cmds:
+        ops = [a for a in argv[1:] if not a.startswith("-")]
+        if argv and head_name(argv[0]) in copiers and len(ops) > 1 \
+                and any(_HOLE not in a and _arg_names_tool(a)
+                        for a in ops[:-1]):
+            out.add(head_name(ops[-1].rstrip("/\\")))
+    return out
+
+
+def _bash_trigger(text, top, helpers, depth, line=None):
+    """`(word, unseen)` for the first command in `text` that runs
+    terraform, with `unseen` true when ANY such command is unseen. `line`
+    is shared with every nested script, so a copy of terraform made inside
+    `bash -c` still counts for the commands after it."""
+    try:
+        if _GATE_CONTROL_RE.search(text):
+            raise _Unsure("a control character")
+        cmds = []
+        _GateReader(text, depth, cmds).read()
+    except _Unsure:
+        named = names_terraform(text, "bash") or names_terraform(top, "bash")
+        return None if named is None else (named, True)
+    line = {"copies": set()} if line is None else line
+    line["copies"] |= _copies_terraform(cmds, helpers[4])
+    found, unseen = None, False
+    for argv in cmds:
+        hit = _argv_trigger(argv, top, helpers, depth, line)
+        if hit is not None:
+            found = found or hit[0]
+            unseen = unseen or hit[1]
+    return None if found is None else (found, unseen)
+
+
+# PowerShell commands that run a program an argument names, or give it another
+# name (review round 5): `Start-Process terraform -ArgumentList destroy`,
+# `Set-Alias tf terraform`. `Invoke-Expression` is read as the eval it is.
+_PS_LAUNCHERS = frozenset((
+    "set-alias", "sal", "new-alias", "nal", "import-alias", "ipal",
+    "start-process", "saps", "start", "invoke-command", "icm", "start-job",
+    "sajb", "start-threadjob", "invoke-item", "ii"))
+_PS_EVAL = frozenset(("invoke-expression", "iex"))
+_PS_COPIERS = frozenset(("copy-item", "copy", "cpi", "cp", "move-item", "move",
+                         "mi", "mv", "new-item", "ni", "rename-item", "ren",
+                         "rni"))
+# A command word PowerShell runs as written: a name or a path, no `$`, `(`,
+# `+` or quote left in it.
+_PS_NAME_RE = re.compile(r"^[A-Za-z0-9_./\\:~-]+$")
+
+
+def _ps_verb_on_line(normal):
+    """`_verb_on_line` for normalised PowerShell."""
+    named = names_terraform(normal, "powershell")
+    if named is not None:
+        return named
+    return next((c for c in _name_candidates(normal, "powershell")
+                 if c.lower() in _GATE_VERBS), None)
+
+
+def _ps_argv_trigger(words, normal, helpers, depth, copies):
+    """`(word, unseen)` when one PowerShell simple command -- the lexer's
+    `words` -- runs terraform, or None: `_argv_trigger`'s rule, read the way
+    PowerShell runs a line."""
+    _unwrap, shell_args, pwsh_payload, ps_normalise, head_name, _lex = \
+        helpers
+    argv = [str(w) for w in words]
+    if len(argv) > 2 and argv[0].startswith("$") and argv[1] in (
+            "=", "+=", "-=", "*=", "/=", "??="):
+        argv, words = argv[2:], words[2:]  # `$out = terraform destroy` runs
+    if argv and argv[0] in ("&", "."):
+        argv, words = argv[1:], words[1:]
+    if not argv or len(argv) == 1 and (argv[0].startswith("$") or type(
+            words[0]).__name__ != "_Bare"):
+        # Nothing, or an expression PowerShell only prints: `$x`, a quoted
+        # string (`$m = "terraform destroy"`, `('terraform destroy')`).
+        return None
+    first, args = argv[0], argv[1:]
+    if not _PS_NAME_RE.match(first):
+        # `& $tf destroy`, `& ("terra"+"form") destroy`: which program runs is
+        # made at run time. Gated only on a line naming one of the words a
+        # terraform line needs, as in bash.
+        named = _ps_verb_on_line(normal)
+        return None if named is None else (named, True)
+    if _names_tool(first):
+        return None if _tf_read_only(argv, []) else (first, False)
+    head = head_name(first)
+    if head in _GATE_PWSH:
+        payload = pwsh_payload(args)
+        if payload is not None and "$" not in payload:
+            return ps_trigger(ps_normalise(payload)[0], helpers, depth + 1)
+        named = names_terraform(normal, "powershell")
+        return None if named is None else (named, True)
+    if head in _GATE_SHELLS:
+        has_c, positional = shell_args(args)
+        if has_c and positional:
+            return _bash_trigger(positional[0], positional[0], helpers,
+                                 depth + 1)
+        named = names_terraform(" ".join(args), "powershell")
+        return None if named is None else (named, True)
+    if head in _PS_EVAL:
+        script = " ".join(a for a in args if not a.startswith("-"))
+        if not script:
+            # `"terraform destroy" | iex`: the text arrives on the pipeline,
+            # which this reads no further than the line's own words.
+            named = names_terraform(normal, "powershell")
+            return None if named is None else (named, True)
+        return ps_trigger(script, helpers, depth + 1)
+    opaque = head in _GATE_OPAQUE  # `cmd /c`, `wsl`, `ssh`: bash's rule
+    # A parameter's value may be bound with a colon: `-FilePath:terraform`.
+    values = [w.split(":", 1)[1] if w.startswith("-") and ":" in w else w
+              for w in args]
+    if opaque or head in _PS_LAUNCHERS or any(
+            w.lower().startswith(("alias:", "function:")) for w in args):
+        named = names_terraform(" ".join(args), "powershell") if opaque \
+            else next((w for w in values if _arg_names_tool(w)), None)
+        return None if named is None else (named, True)
+    verb = _first_operand(args)
+    if head in copies and verb is not None and verb.lower() in _GATE_VERBS:
+        # `Copy-Item terraform.exe ./tf; ./tf destroy`: the name the line
+        # copied terraform to, run with a verb.
+        named = names_terraform(normal, "powershell")
+        return None if named is None else (named, True)
+    return None
+
+
+def ps_trigger(normal, helpers, depth=0):
+    """`(word, unseen)` when normalised PowerShell `normal` RUNS terraform,
+    terragrunt or tofu, else None -- the command-word rule bash has
+    (`command_trigger`), with PowerShell's direct forms: `&` and `.`,
+    `terraform.exe` or a path, `Start-Process terraform`, `pwsh -c`, `bash
+    -c`, `Invoke-Expression`, `$(...)` and script blocks. A read-only
+    subcommand is not counted, and a word that only mentions terraform
+    (`git commit -m "fix terraform apply"`, `Select-String terraform *.md`)
+    is data. `helpers` as for `command_trigger`."""
+    if depth > _GATE_DEPTH:
+        named = names_terraform(normal, "powershell")
+        return None if named is None else (named, True)
+    cmds, subs = helpers[5](normal)
+    argvs = [[str(w) for w in c.words] for c in cmds]
+    copies = _copies_terraform(argvs, helpers[4], _PS_COPIERS)
+    hits = [ps_trigger(sub, helpers, depth + 1) for sub in subs]
+    hits += [_ps_argv_trigger(c.words, normal, helpers, depth, copies)
+             for c in cmds]
+    hits = [h for h in hits if h is not None]
+    if not hits:
+        return None
+    return hits[0][0], any(h[1] for h in hits)
+
+
+def command_trigger(text, helpers):
+    """`(word, unseen)` when bash `text` RUNS terraform, terragrunt or tofu
+    -- as a command word, inside `bash -c`/`eval`/`pwsh -c`/a substitution,
+    or behind a command word crew cannot read on a line naming terraform,
+    destroy, apply or workspace -- else None. A read-only subcommand
+    (`_tf_read_only`) is not counted. `unseen`: some such command is one the
+    lexer is not known to read. `helpers` is cloud_guard's `(_unwrap,
+    _shell_args, _pwsh_payload, _ps_normalise, _head_name, _lex_ps)`."""
+    return _bash_trigger(text, text, helpers, 0)
+
+
+def command_names_terraform(text, helpers):
+    """The word `command_trigger` found, or None."""
+    found = command_trigger(text, helpers)
+    return None if found is None else found[0]
