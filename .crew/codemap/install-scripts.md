@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@53f5482c
+anchor: useful-claude-add-ons@89c9ee9a
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -600,3 +600,20 @@ command table, so the `35 commands` claim moved `:2381` -> `:2384` and `4 agents
 re-measured), `plugin/PLUGINS.md:14` and `.claude-plugin/marketplace.json:218` (1.0.43) changed
 in place. Neither install script, `README.md`, `INSTALLATION.md` nor
 `scripts/check-marketplace.py` changed. `check-marketplace.py`: `all checks passed`.
+
+## Re-anchor provenance - `53f5482c` + `50e67586` -> `89c9ee9a`, 2026-09-27 (T-0010-solo merges main, crew 1.0.44)
+
+`89c9ee9a` is T-0010's crew 1.0.44 version commit on top of `132c1758`, the merge of origin/main
+`f0b12ee6` (T-0042 landed at 1.0.43) into T-0010-solo. Both lines' provenance is above. Main-side
+citations were mapped through `git diff origin/main 89c9ee9a`, the branch-side ones through
+`git diff 708db116 89c9ee9a`, with `difflib` over every repo-relative `path:line` citation, and
+every moved or merge-set one re-read with `sed -n` at `89c9ee9a`:
+
+Of the cited paths, `plugin/crew/README.md` changed on both sides: T-0042's auto-resume prose and
+T-0010's three lines both sit above the claims, so the `35 commands` claim is `:2398` and
+`4 agents` `:2409` (re-grepped). `plugin/crew/BUDGETS.md` (marker `:10`; `:11` reads 18,601 lines
+across 121 files, re-measured on the merge), `plugin/PLUGINS.md:14` and
+`.claude-plugin/marketplace.json:218` (1.0.44) changed in place. Neither install script,
+`README.md`, `INSTALLATION.md`, `scripts/check-marketplace.py` nor `scripts/_test/self-claims.py`
+changed on either side. `python3 scripts/check-marketplace.py` at `89c9ee9a`: `all checks passed`.
+Neither install script was executed.

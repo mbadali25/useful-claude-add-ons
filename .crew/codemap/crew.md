@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@53f5482c
+anchor: useful-claude-add-ons@89c9ee9a
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -50,7 +50,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.43, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.44 (T-0010), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -253,7 +253,7 @@ merge: 121 / 67 / 54 / 0 - T-0005 added `environments.prodUnattended` to both te
 `502cb137` plus T-0010): 123 / 67 / 56 / 0 - T-0010 added `autopilot.approval` and
 `autopilot.questions`, repo-only through the same `autopilot` block.
 `plugin/crew/tests/test_crew_config.py:280` asserts 123. T-0004's `CHANGELOG.md` entry now says
-"117 -> 119" (`:304-305` on T-0010-solo's merge of main `f0b12ee6`; `:276-277` at `53f5482c`, `:256-257` on T-0010-solo's branch, `:228-229` at `2b18f7ab`), matching the `07ca3972` execution; it said "116 -> 118" when this
+"117 -> 119" (`:307-308` at `89c9ee9a`, `:304-305` on T-0010-solo's merge of main `132c1758`; `:276-277` at `53f5482c`, `:256-257` on T-0010-solo's branch, `:228-229` at `2b18f7ab`), matching the `07ca3972` execution; it said "116 -> 118" when this
 paragraph was first written. T-0005's entry states no leaf count.
 
 These are new counts, not the pre-1.0 note's 103/60/43 carried forward —
@@ -1330,3 +1330,25 @@ was re-pointed and compared line for line with the anchor tree at `50e67586`.
   (123 / 67 / 56 / 0). `CHANGELOG.md` - T-0004's leaf sentence `:228-229` -> `:256-257`.
 - `.crew/verify.json` - rule 27 `:293-300` holds (its last line gained a comma); T-0010's rule
   28 is `:301-306`. `marketplace.json:218`, `plugin.json:3` - 1.0.43.
+
+## Re-anchor provenance - `53f5482c` + `50e67586` -> `89c9ee9a`, 2026-09-27 (T-0010-solo merges main, crew 1.0.44)
+
+`89c9ee9a` is T-0010's crew 1.0.44 version commit on top of `132c1758`, the merge of origin/main
+`f0b12ee6` (T-0042 landed at 1.0.43) into T-0010-solo. Both lines' provenance is above. Main-side
+citations were mapped through `git diff origin/main 89c9ee9a`, the branch-side ones through
+`git diff 708db116 89c9ee9a`, with `difflib` over every repo-relative `path:line` citation, and
+every moved or merge-set one re-read with `sed -n` at `89c9ee9a`:
+
+- `crew_autopilot.py`, `crew_ticket.py`, `scope_guard.py`, `crew_state.py` and the T-0010 tests -
+  changed on T-0010 only; the branch's citations (`next_phase` `:480`, `main` `:964`,
+  `parse_risk` `:509`, `AUTOPILOT_DEFAULTS` `:1094`) hold.
+- `crew_resume.py`, `crew_context.py`, `handoff-write.*`, `sabotage_resume.py` - changed on T-0042
+  only; main's citations (`decide` `:667`, `:615`, `:638`, `:661`, `:687`) hold; 72 mutations.
+- `CHANGELOG.md` - T-0010's entry moved above T-0042's as 1.0.44, so T-0004's leaf sentence is
+  `:307-308` (`:304-305` on the merge). Corrected above.
+- `.crew/verify.json` - both sides' rules merged: 29 rules, 311 lines; rule 26 `:282-292`,
+  rule 27 `:293-300`, rule 28 `:301-306`.
+- `test_crew_config.py:280` still asserts 123 (T-0042 adds no config key), so the leaf table's
+  123 / 67 / 56 / 0 stands; not re-executed on the merge.
+- `marketplace.json:218`, `plugin.json:3` - 1.0.44; `:217`'s 4/35/29 counts unchanged. Corrected
+  above.

@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@53f5482c
+anchor: useful-claude-add-ons@89c9ee9a
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -684,3 +684,20 @@ holds), `CHANGELOG.md` (T-0010's entry under Added; cited without a line), `TODO
 T-0010 line in the autopilot note reworded in place), the version files and `crew_state.py`/
 `crew_ticket.py` (cited by name only) changed. `README.md`, `plugin/README.md` and both install
 scripts did not.
+
+## Re-anchor provenance - `53f5482c` + `50e67586` -> `89c9ee9a`, 2026-09-27 (T-0010-solo merges main, crew 1.0.44)
+
+`89c9ee9a` is T-0010's crew 1.0.44 version commit on top of `132c1758`, the merge of origin/main
+`f0b12ee6` (T-0042 landed at 1.0.43) into T-0010-solo. Both lines' provenance is above. Main-side
+citations were mapped through `git diff origin/main 89c9ee9a`, the branch-side ones through
+`git diff 708db116 89c9ee9a`, with `difflib` over every repo-relative `path:line` citation, and
+every moved or merge-set one re-read with `sed -n` at `89c9ee9a`:
+
+Of the cited paths changed on both sides, each re-read at `89c9ee9a`: `plugin/crew/README.md`
+(T-0042's auto-resume prose and T-0010's three lines both sit above the runbooks mention, so it
+is `:1947`; set in the merge, corrected above), `TODO.md` (the `render.sh` entry holds at
+`:1201`; T-0010's autopilot line reworded in place), `.crew/verify.json` (29 rules, 311 lines;
+`:167-172`, `:263`, `:264-280`, `:282-292` hold and T-0010's rule 28 is `:301-306`) and
+`CHANGELOG.md` (T-0010's 1.0.44 entry above T-0042's 1.0.43; cited without a line). The two
+diagrams this note cites are refreshed in the same commit as this note. Nothing was executed for
+this note.

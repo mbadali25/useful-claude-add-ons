@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@53f5482c
+anchor: useful-claude-add-ons@89c9ee9a
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -888,3 +888,23 @@ was re-pointed and compared line for line with the anchor tree at `50e67586`.
 - `crew_ticket.py` - `header_line`/`parse_risk` `:496-515` -> `:500-519`.
 - `plugin/crew/CONFIG.md` - `:2201-2208` -> `:2203-2210` (T-0010's §20 rows above), same text.
 - `CHANGELOG.md`, `BUDGETS.md` - cited by name only.
+
+## Re-anchor provenance - `53f5482c` + `50e67586` -> `89c9ee9a`, 2026-09-27 (T-0010-solo merges main, crew 1.0.44)
+
+`89c9ee9a` is T-0010's crew 1.0.44 version commit on top of `132c1758`, the merge of origin/main
+`f0b12ee6` (T-0042 landed at 1.0.43) into T-0010-solo. Both lines' provenance is above. Main-side
+citations were mapped through `git diff origin/main 89c9ee9a`, the branch-side ones through
+`git diff 708db116 89c9ee9a`, with `difflib` over every repo-relative `path:line` citation, and
+every moved or merge-set one re-read with `sed -n` at `89c9ee9a`:
+
+- `.crew/verify.json` - both sides' rules merged without conflict: 29 rules, 311 lines
+  (`json.load`/`wc -l`); rule 26 `:282-292`, rule 27 `:293-300`, rule 28 `:301-306`, `default`
+  `:309`, `unmapped` `:310`.
+- `plugin/crew/CONFIG.md` - T-0042's §14a prose and T-0010's §20 rows both sit above the descope
+  limitation: `:2251-2258`, set in the merge and re-read (same "Limitation (1.0)" paragraph).
+- `sabotage.py` - `:76` imports `RESUME_MUTATIONS`, `:77` `AUTOPILOT_MUTATIONS` and
+  `POLICY_MUTATIONS`, and `:3049` appends all three. `len(RESUME_MUTATIONS)` 72,
+  `len(AUTOPILOT_MUTATIONS)` 31, `len(POLICY_MUTATIONS)` 27.
+- `marketplace.json`, `CHANGELOG.md`, `TODO.md`, `BUDGETS.md` - cited by name only.
+
+The suite results for this merge are T-0010's implement report's, not this note's.
