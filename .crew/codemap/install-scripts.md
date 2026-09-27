@@ -505,3 +505,16 @@ cat | wc -l` returns 18202. `plugin/crew/commands/` gained no file (`ls` still 3
 scripts, `README.md`, `plugin/README.md`, `INSTALLATION.md`, `plugin/PLUGINS.md`,
 `.claude-plugin/marketplace.json` and `scripts/check-marketplace.py` did not change.
 `check-marketplace.py` passed at `926522f7` plus this refresh's BUDGETS figure.
+
+Re-verified per-path from `6f96e627` to `a2802526` for T-0024 (group approval, crew 1.0.42): of the
+cited paths `.claude-plugin/marketplace.json` (crew `version` `:218`, now 1.0.42; `:217` unchanged),
+`plugin/PLUGINS.md` (`:14` version only), `plugin/crew/BUDGETS.md` (marker still `:10`; `:11` now
+reads 18,200 lines across 121 files, re-measured and matching `check-marketplace.py`) and
+`plugin/crew/README.md` (the "Scope and approval" section grew, so the `35 commands` claim is now at
+`:2263` and `4 agents` at `:2274`, re-grepped; `ls plugin/crew/commands/*.md` is still 35) changed.
+Neither install script, `README.md`, `INSTALLATION.md` nor `scripts/check-marketplace.py` changed,
+so their citations stand. The README pin landmine still holds: `README.md:12` and `:18` read
+`6c497a14`, and `git log 6c497a14..a2802526` over both scripts still returns only `ecf69e43`. T-0004
+has since merged to `main` (`1e0706ac`), so the re-pin that bullet calls due after that merge is now
+due and was not done by T-0024, whose Touch excludes `README.md`. Neither install script was
+executed.
