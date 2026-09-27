@@ -529,11 +529,13 @@ def test_questions_file_taken_under_self_valid_and_reported(tmp_path):
                                             ("risk", None)])
 def test_questions_file_taken_while_the_policy_stops_invalid(tmp_path, questions, risk):
     root = _repo(tmp_path, questions=questions, risk=risk)
-    _questions(root, GOOD_QUESTIONS + f"\ntaken: Option A by autopilot ({questions})\n")
+    _questions(root, GOOD_QUESTIONS + "\ntaken: Option A by autopilot (self)\n")
 
     got = _check(root)
 
-    assert (got["valid"], got["action"]) == (False, "stop")
+    assert (got["valid"], got["action"],
+            any("the questions policy says stop" in p for p in got["problems"])) == (
+        False, "stop", True)
 
 
 def test_questions_file_taken_non_recommended_invalid(tmp_path):
