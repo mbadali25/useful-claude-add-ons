@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@e463ca53
+anchor: useful-claude-add-ons@6715d54d
 verified: 2026-09-27
 
 # localgpu
@@ -1130,3 +1130,23 @@ an unrelated path) were discarded rather than applied. This note cites
 `.crew/verify.json` by name only, and nothing under `plugin/localgpu/` changed on either side;
 the refresh check named the note only because `.crew/verify.json` gained T-0021's rule 28
 ahead of T-0023's routing rule, now 29. No citation moved. Nothing was executed for this note.
+
+## Re-anchor provenance - `bebbb97f` + `3135b24f` -> `6715d54d`, 2026-09-27 (T-0046 merge of main)
+
+`5a4c77c0` merges origin/main `bebbb97f` (T-0042, T-0021 and T-0023 landed; crew 1.0.46) into
+T-0046's `3135b24f`, and `6715d54d` re-sets crew to 1.0.47 as the last plugin/crew commit. The
+non-artifact files both sides changed since `502cb137` are `CHANGELOG.md`, `.crew/verify.json`,
+`plugin/crew/README.md` (auto-merged), `plugin/crew/BUDGETS.md`, `plugin/crew/tests/sabotage.py`
+and the three version files. Conflicting provenance sections keep both sides, main's first.
+Every `path:N` citation in this note, and every bare `:N` that follows a path, was checked
+against the side its paragraph came from (`git show <side>:<path>` against the merged file);
+citations inside earlier provenance sections record the commit they name and were left as
+history. The merge moved: `.crew/verify.json` is 336 lines and 31 rules, T-0046's rule 28 now
+rule 30 at `:318-332`; `plugin/crew/tests/sabotage.py` gained one import (`:80`), so the
+`MUTATIONS +=` statement is `:3051-3054`; `plugin/crew/BUDGETS.md:11` reads 18,867 lines across
+126 files; the version is 1.0.47.
+
+
+This note cites `.crew/verify.json` by name only, and nothing under `plugin/localgpu/` changed on
+either side; the refresh check named it only because `.crew/verify.json`, `plugin/crew/README.md`
+and `plugin/crew/tests/sabotage.py` changed. No citation moved. Nothing was executed for this note.

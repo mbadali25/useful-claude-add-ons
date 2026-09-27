@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@d276b268 on 2026-09-27. Verify before trusting.
+%% Generated from useful-claude-add-ons@6715d54d on 2026-09-27. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -67,6 +67,10 @@
 %% (551 lines, no node's line moved); completion_audit.py gained the BUDGETS.md
 %% claim allowance, so the scope-judging lines :204-215 -> :244-256, re-read with
 %% sed -n (the claim drop at :246 sits under the same approval). No node or edge changed.
+%% Re-anchored for T-0046's merge of main at 6715d54d (merge 5a4c77c0 of bebbb97f):
+%% main's side is T-0021's d276b268 drawing; since then only review.md and
+%% completion_audit.py of the anchored paths changed, both on T-0046's side only, so
+%% the :244-256 citation above holds on the merge (re-read with sed -n). No node or edge changed.
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):
