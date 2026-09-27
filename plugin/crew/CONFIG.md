@@ -2088,7 +2088,10 @@ recommendation first, each with a `Cost:` line, and a `Research:` line), and
 `self` takes the recommendation, `risk` only on `risk: low`, `human` stops; a
 `taken: Option <id> by autopilot (<policy>)` line records each one, and the
 check refuses a `taken:` line the policy in force would not allow. Every
-self-approval and every taken answer is reported by name.
+self-approval and every taken answer is reported by name. Autopilot approves one
+ticket at a time: a group approval and its `/crew:approve --confirm` stay the
+owner's, and `crew_ticket.approve` refuses an `autopilot` approval carrying a
+group's hashes.
 
 **What arming it does not change.** Review acceptance and brainstorm always
 stop for a person, at every setting — accepting review FINDINGS
