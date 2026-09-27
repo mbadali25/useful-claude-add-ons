@@ -2640,3 +2640,150 @@ def test_step10_tables_are_distinct():
     assert len(ids) == len(set(ids))
     commands = [c for _d, c in DOCUMENTED_NOT_CAUGHT]
     assert len(commands) == len(set(commands))
+
+
+# --- Review round 7 (GUjM5s): direct spellings and wrong refusals --------------
+#
+# Measured at 8d6603d4: every R7_MUST_BLOCK row was allowed unattended (the
+# `--non-interactive --terragrunt-config=` and `xargs -n1`, `timeout
+# --kill-after`, `nice --adjustment`, `command -p` neighbours were already
+# denied and pin the other side), and every R7_MUST_ALLOW row was denied.
+R7_MUST_BLOCK = _normalise([
+    # BLOCK 1: a boolean option before a valued one.
+    ("r7-tg-bool-then-working-dir", "Bash",
+     f"terragrunt --non-interactive --working-dir infra {_ADESTROY}",
+     _o(**_STAGING)),
+    ("r7-tg-bool-then-tg-working-dir-apply", "Bash",
+     "terragrunt --terragrunt-non-interactive --terragrunt-working-dir infra "
+     "apply -auto-approve", _o(**_STAGING)),
+    ("r7-tg-run-all-bool-then-value", "Bash",
+     "terragrunt run-all --non-interactive --queue-exclude-dir x destroy",
+     _o(**_STAGING)),
+    ("r7-tg-bool-then-config-eq", "Bash",
+     "terragrunt --non-interactive --terragrunt-config=x.hcl destroy",
+     _o(**_STAGING)),
+    # BLOCK 2: listed wrappers' long options and short clusters.
+    ("r7-stdbuf-long-value", "Bash", f"stdbuf --output L terraform {_ADESTROY}",
+     _o(**_STAGING)),
+    ("r7-stdbuf-long-abbrev", "Bash", f"stdbuf --out L terraform {_ADESTROY}",
+     _o(**_STAGING)),
+    ("r7-xargs-slot-var", "Bash",
+     f"xargs --process-slot-var SLOT terraform {_ADESTROY}", _o(**_STAGING)),
+    ("r7-xargs-cluster", "Bash", f"xargs -rn 1 terraform {_ADESTROY}",
+     _o(**_STAGING)),
+    ("r7-xargs-attached", "Bash", f"xargs -n1 terraform {_ADESTROY}",
+     _o(**_STAGING)),
+    ("r7-timeout-cluster", "Bash", f"timeout -vk 5 60 terraform {_ADESTROY}",
+     _o(**_STAGING)),
+    ("r7-timeout-long", "Bash",
+     f"timeout --kill-after 5 60 terraform {_ADESTROY}", _o(**_STAGING)),
+    ("r7-nice-long", "Bash", f"nice --adjustment 5 terraform {_ADESTROY}",
+     _o(**_STAGING)),
+    # BLOCK 3: eval's `--`.
+    ("r7-eval-dashdash", "Bash", f"eval -- terraform {_ADESTROY}",
+     _o(**_STAGING)),
+    ("r7-eval-dashdash-quoted", "Bash",
+     "eval -- 'tofu workspace delete production'", _o(**_STAGING)),
+    ("r7-eval-dashdash-quoted-plan", "Bash",
+     f'eval -- terraform apply "{PLAN}"', _o(**_STAGING, why=GATE_WHY)),
+    # BLOCK 4: PowerShell's colon-bound parameter values.
+    ("r7-ps-start-process-colon", "PowerShell",
+     "Start-Process -FilePath:terraform -ArgumentList destroy -Wait",
+     _o(**_STAGING)),
+    ("r7-ps-start-process-colon-quoted", "PowerShell",
+     "Start-Process -FilePath:'terraform' -ArgumentList destroy",
+     _o(**_STAGING)),
+    ("r7-ps-set-alias-colon", "PowerShell",
+     "Set-Alias -Name tf -Value:terraform; tf destroy", _o(**_STAGING)),
+    # FIX 1 and 3's neighbours: a quoted command after `&`/`.`, and `command`
+    # without a lookup flag, still run terraform.
+    ("r7-ps-call-quoted-path", "PowerShell",
+     "& 'C:\\tools\\terraform.exe' destroy", _o(**_STAGING)),
+    ("r7-ps-dot-quoted", "PowerShell", '. "terraform" destroy',
+     _o(**_STAGING)),
+    ("r7-command-p", "Bash", f"command -p terraform {_ADESTROY}",
+     _o(**_STAGING)),
+    # FIX 1's neighbour: a quoted string piped into Invoke-Expression runs.
+    ("r7-ps-string-piped-to-iex", "PowerShell",
+     '"terraform destroy" | Invoke-Expression', _o(**_STAGING)),
+    ("r7-ps-variable-to-iex", "PowerShell",
+     "$m = 'terraform destroy'; iex $m", _o(**_STAGING)),
+    # FIX 2's neighbour: a value option whose value hides the subcommand.
+    ("r7-tg-option-value-before-plan-destroy", "Bash",
+     'terragrunt --some-option "$X" plan -out="p.tfplan"', _o(**_STAGING)),
+])
+
+R7_MUST_ALLOW = _normalise([
+    # FIX 1: a quoted PowerShell string is data, not a program.
+    ("r7a-ps-assign-string", "PowerShell", '$message = "terraform destroy"',
+     _o(**_STAGING)),
+    ("r7a-ps-write-paren-string", "PowerShell",
+     "Write-Output ('terraform destroy')", _o(**_STAGING)),
+    ("r7a-ps-assign-then-commit", "PowerShell",
+     "$message = 'terraform destroy'; git commit -m $message", _o(**_STAGING)),
+    ("r7a-ps-bare-string", "PowerShell", '"terraform destroy"', _o(**_STAGING)),
+    # FIX 2: terragrunt read-only past its options and run-all.
+    ("r7a-tg-working-dir-plan", "Bash",
+     'terragrunt --working-dir infra plan -out="p.tfplan"', _o(**_STAGING)),
+    ("r7a-ps-tg-working-dir-plan", "PowerShell",
+     'terragrunt --working-dir infra plan -out="p.tfplan"', _o(**_STAGING)),
+    ("r7a-tg-run-all-plan", "Bash",
+     'terragrunt run-all plan --terragrunt-log-level "info"', _o(**_STAGING)),
+    ("r7a-tg-run-dashdash-plan", "Bash",
+     'terragrunt run -- plan -out="p.tfplan"', _o(**_STAGING)),
+    # FIX 3: `command -v`/`-V` only look a name up.
+    ("r7a-command-v", "Bash", 'command -v terraform "$other"', _o(**_STAGING)),
+    ("r7a-command-cap-v", "Bash", 'command -V terraform "$x"', _o(**_STAGING)),
+    ("r7a-command-pv", "Bash", 'command -pv terraform "$x"', _o(**_STAGING)),
+])
+
+
+@pytest.mark.parametrize("policy", ["ask", "block", "allow"])
+@pytest.mark.parametrize("case", R7_MUST_BLOCK, ids=_ids(R7_MUST_BLOCK))
+def test_round7_must_block_python(tmp_path, case, policy):
+    over = {"ask": {}, "block": BLOCK_POLICY, "allow": ALLOW_POLICY}[policy]
+    case_id, tool, command, opts = case
+    _deny("python", tmp_path, _normalise(
+        [(case_id, tool, command, _o(**{**opts, **over}))])[0])
+
+
+@pytest.mark.parametrize("case", _sample(
+    R7_MUST_BLOCK, ("r7-xargs-cluster", "r7-eval-dashdash"),
+    (tcg.needs_bash,)))
+def test_round7_must_block_bash(tmp_path, case):
+    _deny("bash", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", _sample(
+    R7_MUST_BLOCK, ("r7-ps-start-process-colon",), (tcg.needs_pwsh,)))
+def test_round7_must_block_pwsh(tmp_path, case):
+    _deny("pwsh", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", R7_MUST_ALLOW, ids=_ids(R7_MUST_ALLOW))
+def test_round7_must_allow_python(tmp_path, case):
+    _allow_literal("python", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", [
+    c for c in R7_MUST_ALLOW if c[0] in (
+        "r7a-ps-assign-string", "r7a-tg-working-dir-plan", "r7a-command-v")],
+    ids=lambda c: c[0])
+def test_round7_must_allow_under_block(tmp_path, case):
+    case_id, tool, command, opts = case
+    _allow_literal("python", tmp_path, _normalise(
+        [(case_id, tool, command, _o(**{**opts, **BLOCK_POLICY}))])[0])
+
+
+@pytest.mark.parametrize("case", _sample(
+    R7_MUST_ALLOW, ("r7a-ps-assign-string",), (tcg.needs_pwsh,)))
+def test_round7_must_allow_pwsh(tmp_path, case):
+    _allow_literal("pwsh", tmp_path, case)
+
+
+def test_round7_tables_are_distinct():
+    ids = _ids(MUST_BLOCK_LITERAL + MUST_ALLOW_LITERAL + ASK_LITERAL
+               + NOW_NOT_LITERAL + S9_MUST_ALLOW + S9_MUST_BLOCK
+               + R5_MUST_BLOCK + R5_MUST_ALLOW + S10_DIRECT_BLOCK
+               + S10_ORDINARY_ALLOW + R7_MUST_BLOCK + R7_MUST_ALLOW)
+    assert len(ids) == len(set(ids))

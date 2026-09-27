@@ -80,6 +80,15 @@ All notable changes to this repository are documented here. Format follows [Keep
   not see made, `env -S`, BusyBox applets, git `!` aliases, an interpreter, a
   script file). README "What the guard does not catch" lists them; the
   boundary is the credentials an unattended run holds (T-0044).
+- **Review round 7 (GUjM5s).** Direct spellings that ran unattended are now
+  read: a boolean option before a valued one (`terragrunt --non-interactive
+  --working-dir infra destroy`), a listed wrapper's long option, its unique
+  prefix or a short cluster (`stdbuf --output L`, `xargs -rn 1`, `timeout -vk
+  5 60`), `eval -- terraform destroy`, and PowerShell's colon-bound value
+  (`Start-Process -FilePath:terraform`). No longer refused: a quoted
+  PowerShell string (`$message = "terraform destroy"`), a terragrunt
+  read-only subcommand after its options or `run-all` (`terragrunt
+  --working-dir infra plan -out="p.tfplan"`), and `command -v terraform`.
 - **New `environments` block** (`environments.nonProd`, repo-only globs;
   `environments.prodUnattended`, ratcheted, true only when **both** config
   layers say the JSON literal `true`). Under `terraformApply: ask`, an apply of
