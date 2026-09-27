@@ -272,12 +272,16 @@ def record(root, ticket, number, review):
             "bundle_sha256": review.get("bundle_sha256"), "base": review.get("base"),
             "head": review.get("head"), "model_family": review.get("model_family"),
         })
+        if review.get("bundle_scheme") is not None:
+            row["bundle_scheme"] = review["bundle_scheme"]
         if review["verdict"] == "CLEAN":
             data["receipt"] = {
                 "kind": "clean", "round": number, "bundle_sha256": review["bundle_sha256"],
                 "base": review["base"], "verdict": "CLEAN", "accepted_by": None,
                 "accepted_at": row["completed_at"],
             }
+            if row.get("bundle_scheme") is not None:
+                data["receipt"]["bundle_scheme"] = row["bundle_scheme"]
             data["state"] = ACCEPTED
         else:
             data["state"] = REVIEWED
@@ -317,7 +321,7 @@ def accept(root, ticket, by):
         if receipt.get("round") == row["round"]:
             raise LedgerError(f"round {row['round']} was already accepted by "
                               f"{receipt.get('accepted_by')} at {receipt.get('accepted_at')}")
-        current = _current_hash(root, row.get("base"))
+        current = _current_hash(root, row.get("base"), row.get("bundle_scheme"))
         if current != row.get("bundle_sha256"):
             raise LedgerError("the tree has changed since that review, so accepting it would "
                               "accept code nobody reviewed")
@@ -326,6 +330,8 @@ def accept(root, ticket, by):
             "bundle_sha256": row["bundle_sha256"], "base": row["base"],
             "verdict": "FINDINGS", "accepted_by": by.strip(), "accepted_at": _now(),
         }
+        if row.get("bundle_scheme") is not None:
+            data["receipt"]["bundle_scheme"] = row["bundle_scheme"]
         data["state"] = ACCEPTED
         return data, data["receipt"]
 
@@ -353,11 +359,22 @@ def reject(root, ticket, by):
     return _mutate(root, ticket, change)
 
 
-def _current_hash(root, base):
+def _current_hash(root, base, scheme=None):
+    """The bundle hash the tree builds now, under the scheme the round was
+    recorded with (T-0046). No scheme is a round from before schemes
+    existed: every generated file diffed, as it was then. An unknown scheme
+    is refused rather than guessed, so it can never read as current."""
     if not base:
         raise LedgerError("the recorded round has no base commit")
+    if scheme is None:
+        omit = False
+    elif scheme == review_patch.BUNDLE_SCHEME:
+        omit = True
+    else:
+        raise LedgerError(f"unknown bundle scheme {scheme!r}; this crew builds "
+                          f"{review_patch.BUNDLE_SCHEME!r} and pre-scheme receipts only")
     try:
-        manifest, _, _ = review_patch.compute(root, base)
+        manifest, _, _ = review_patch.compute(root, base, omit_generated=omit)
     except RuntimeError as exc:
         raise LedgerError(f"could not rebuild the bundle: {exc}") from exc
     return manifest["bundle_sha256"]
@@ -385,7 +402,7 @@ def check_receipt(root, ticket):
         return False, (f"round {latest.get('round')} is {latest.get('verdict') or 'not completed'}"
                        "; a receipt stands only on a CLEAN or owner-accepted round")
     try:
-        current = _current_hash(root, receipt.get("base"))
+        current = _current_hash(root, receipt.get("base"), receipt.get("bundle_scheme"))
     except LedgerError as exc:
         return False, f"receipt could not be checked: {exc}"
     if current != receipt["bundle_sha256"]:

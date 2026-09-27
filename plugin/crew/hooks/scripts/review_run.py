@@ -333,6 +333,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
         "provider": args.provider, "model": args.model or None,
         "model_family": crew_state.family(args.provider, args.model),
         "bundle_sha256": manifest.get("bundle_sha256"),
+        "bundle_scheme": manifest.get("bundle_scheme"),
         "base": manifest.get("base"), "head": manifest.get("head"),
         "exit_code": exit_code, "timed_out": timed_out,
         "webtest_findings": rows, "webtest_check": webtest_record,
