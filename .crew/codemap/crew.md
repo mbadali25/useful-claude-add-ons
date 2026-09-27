@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@eba11657
-verified: 2026-09-26
+anchor: useful-claude-add-ons@311388b7
+verified: 2026-09-27
 
 ## Re-derive provenance
 
@@ -1030,3 +1030,11 @@ through a line-level diff of the two revisions and each moved or modified one re
 New since `6f96e627`, not re-anchored from anything: the plain-text routing section, its entry
 point, and the `crew_route.settings` sentence in the config-authority section.
 
+
+## Re-anchor provenance - `eba11657` -> `311388b7`, 2026-09-27 (T-0023)
+
+Per-path re-verify. Of the paths this note cites, `git diff --name-only eba11657 311388b7`
+returns only `plugin/crew/tests/test_crew_route.py` (its `_cli` helper now isolates `HOME` and
+`USERPROFILE` for the child process). This note cites that file by name only, in the plain-text
+routing section, so no citation moved. `plugin.json`, `marketplace.json` and `PLUGINS.md` were
+stepped back and re-set to 1.0.42 twice in the range and are byte-identical to `eba11657`.
