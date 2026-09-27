@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@56aa9f64
+anchor: useful-claude-add-ons@c91f0e5d
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -557,11 +557,12 @@ commands, 29 skills, matching disk), `plugin/crew/BUDGETS.md` (marker `:10`; 18,
 Neither install script changed on T-0005's side, `README.md` and `scripts/check-marketplace.py` did
 not change on either, so their citations stand. Neither install script was executed.
 
-## Re-anchor provenance - `2b18f7ab` -> `56aa9f64`, 2026-09-27 (T-0046)
+## Re-anchor provenance - `2b18f7ab` -> `c91f0e5d`, 2026-09-27 (T-0046)
 
-`56aa9f64` is T-0046's crew 1.0.43 bump, the last commit on its branch (`T-0046-build`, off
+`c91f0e5d` is T-0046's crew 1.0.43 re-set, the last commit on its branch (the bump was first
+made at `56aa9f64`; a lint commit followed it, so the version was stepped back and re-set; `T-0046-build`, off
 `502cb137`, which is `2b18f7ab` plus T-0005's artifact refresh and merge). A per-path check,
-`git diff --name-only 2b18f7ab..56aa9f64 -- <cited paths>`, named the files below; each line
+`git diff --name-only 2b18f7ab..c91f0e5d -- <cited paths>`, named the files below; each line
 citation into them was re-mapped by content with a line diff against `502cb137` and re-read on
 the branch. Citations into files outside that list stand.
 

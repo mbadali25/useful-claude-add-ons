@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@56aa9f64
+anchor: useful-claude-add-ons@c91f0e5d
 verified: 2026-09-27
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -39,10 +39,10 @@ them and is wired into CI but not into the local Stop gate: see
 
 ## `.crew/verify.json` — 29 rules, up from 28
 
-**DERIVED, read in full via `json.load` on T-0046's branch at `56aa9f64`.** 322 lines, **29**
+**DERIVED, read in full via `json.load` on T-0046's branch at `c91f0e5d`.** 320 lines, **29**
 rules (28 at `2b18f7ab`, 27 at `07ca3972`, 26 at `a0c0847e`, 25 at `8ebbdedc`, at T-0006's `2bb92f32` and at T-0005's
 `a26ad8c0`, 24 at `c35edda5`, 23 at `f2bb919b`, 22 at `6c497a14`, 21 at `5d1fc5fd`) plus a `default`
-(`["bash _verify/smoke.sh"]`, `:320`) and `unmapped: "fail"` (`:321`). Rule 6 (T-0005, the
+(`["bash _verify/smoke.sh"]`, `:318`) and `unmapped: "fail"` (`:319`). Rule 6 (T-0005, the
 cloud-guard suites) and rule 11 (T-0026, the approval digest) were each inserted mid-list, so every
 rule after them is one or two higher than at `c35edda5`; rule 24 (#228), rule 25 (T-0008), rule 26
 (T-0006), rule 27 (T-0004) and rule 28 (T-0046) were each appended last. Those seven are the only additions since
@@ -158,10 +158,11 @@ Notable rules, re-read directly:
   / `done.md`, and since T-0008's review round 3 `scope_guard.py`,
   `completion_audit.py`, `crew_freshness.py` and `scope_base.py` with
   `test_scope_guard.py`, `test_completion_audit.py` and `test_scope_base.py`
-  → `python3 -m pytest` over those six test files, priced 32s (its `why`,
-  `:280`, records 31.8s measured on the authoring host — a claim read, not
-  re-timed here). `crew_freshness.py` is on rule 8 too. At the default 60s
-  Stop budget rule 25 (32s) plus rule 15 (38s) no longer fit together, so a
+  → `python3 -m pytest` over those six test files, plus since T-0046 the three BUDGETS.md claim
+  suites (`test_crew_bookkeeping.py`, `test_scope_guard_claim_bookkeeping.py`,
+  `test_completion_audit_claim_bookkeeping.py`), priced 42s (its `why`, `:280`, records 31.8s for
+  the six and 41.4s with the claim suites — claims read, not re-timed here). `crew_freshness.py` is on rule 8 too. At the default 60s
+  Stop budget rule 25 (42s) plus rule 15 (38s) no longer fit together, so a
   `.py` edit on these paths has one of them deferred at Stop (JUDGEMENT,
   from the two `seconds` values, not observed). A test,
   `test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule` in
@@ -199,16 +200,17 @@ Notable rules, re-read directly:
   held more); count them in the tuple. One of them targets `crew_ticket.py`'s `parse_risk`, a path rule 27
   does not name (see rule 11). `crew_autopilot.py` also matches rules 0 and 15, `autopilot.md`
   rules 0 and 12.
-- **Rule 28**, new at `09b9955e` (`.crew/verify.json:302-318`, T-0046): `paths`
-  `crew_bookkeeping.py`, `scope_guard.py`, `completion_audit.py`, `review_patch.py`,
-  `review_ledger.py`, `review_run.py`, `review_prompt.py`, the four new suites and
+- **Rule 28**, new at `09b9955e` (`.crew/verify.json:302-316`, T-0046): `paths`
+  `crew_bookkeeping.py`, `review_patch.py`, `review_ledger.py`, `review_run.py`, `review_prompt.py`, the four new suites and
   `sabotage_bookkeeping.py` → `python3 -m pytest` over `test_crew_bookkeeping.py`,
   `test_scope_guard_claim_bookkeeping.py`, `test_completion_audit_claim_bookkeeping.py`,
   `test_review_patch_generated.py`, `test_review_patch.py` and `test_review_receipt.py`, priced 17s
   (its `why` records 16.1s, 119 passed, under load 7.6 — a claim read, not re-timed here). Its
   mutations live in `plugin/crew/tests/sabotage_bookkeeping.py` (`BOOKKEEPING_MUTATIONS`),
   imported by `plugin/crew/tests/sabotage.py:78` and appended at `:3050`. `scope_guard.py` and
-  `completion_audit.py` are in rule 25 too, so an edit there runs both suites.
+  `completion_audit.py` are deliberately NOT in its `paths`: they stay on rule 25, whose `run`
+  carries their claim suites, because listing them here too would leave `sabotage_refresh.py`'s
+  "an edit to scope_guard.py runs no pytest rule" mutation vacuous.
 
 **Still unresolved at this anchor:** a declared `seconds` figure is only
 overwritten by measurement when the rule carries *no* `seconds` at all
@@ -453,7 +455,7 @@ set on Ubuntu.
   `plugin/crew/tests/sabotage.py:76`, `:3050` — `sabotage_resume.py`'s registration.
 - `.crew/verify.json:293-300` (rule 27) — the T-0004 autopilot suite;
   `plugin/crew/tests/sabotage.py:77`, `:3050` — `sabotage_autopilot.py`'s registration.
-- `.crew/verify.json:302-318` (rule 28) — the T-0046 bookkeeping and bundle suite;
+- `.crew/verify.json:302-316` (rule 28) — the T-0046 bookkeeping and bundle suite;
   `plugin/crew/tests/sabotage.py:78`, `:3050` — `sabotage_bookkeeping.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
   `plugin/crew/CONFIG.md:2201-2208` — the descoped per-rule process-group kill,
@@ -811,16 +813,18 @@ line in `CHANGELOG.md`'s T-0005 bump note).
 
 No suite or command was executed by this note; the landing's suite results are in its PR.
 
-## Re-anchor provenance - `2b18f7ab` -> `56aa9f64`, 2026-09-27 (T-0046)
+## Re-anchor provenance - `2b18f7ab` -> `c91f0e5d`, 2026-09-27 (T-0046)
 
-`56aa9f64` is T-0046's crew 1.0.43 bump, the last commit on its branch (`T-0046-build`, off
+`c91f0e5d` is T-0046's crew 1.0.43 re-set, the last commit on its branch (the bump was first
+made at `56aa9f64`; a lint commit followed it, so the version was stepped back and re-set; `T-0046-build`, off
 `502cb137`, which is `2b18f7ab` plus T-0005's artifact refresh and merge). A per-path check,
-`git diff --name-only 2b18f7ab..56aa9f64 -- <cited paths>`, named the files below; each line
+`git diff --name-only 2b18f7ab..c91f0e5d -- <cited paths>`, named the files below; each line
 citation into them was re-mapped by content with a line diff against `502cb137` and re-read on
 the branch. Citations into files outside that list stand.
 
-- `.crew/verify.json` - rule 28 appended at `:302-318`, rule 27's last line gaining only its comma;
-  `default` `:303` -> `:320`, `unmapped` `:304` -> `:321`; 29 rules, 322 lines. Corrected above.
+- `.crew/verify.json` - rule 28 appended at `:302-316`, rule 27's last line gaining only its comma;
+  `default` `:303` -> `:318`, `unmapped` `:304` -> `:319`; 29 rules, 320 lines. Rule 25's `run`
+  gained the three claim suites and its `seconds` went 32 -> 42 (its `why` records 41.4s). Corrected above.
 - `plugin/crew/tests/sabotage.py` - one import added at `:78` (`sabotage_bookkeeping`), so the
   `MUTATIONS +=` statement moved `:3047-3049` -> `:3048-3050`; the three import citations `:75`,
   `:76`, `:77` and `:67` hold. 3379 lines, under `.pylintrc`'s 3400. Corrected above.
