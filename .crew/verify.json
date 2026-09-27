@@ -297,7 +297,15 @@
       "seconds": 5,
       "run": ["python3 -m pytest plugin/crew/tests/test_crew_autopilot.py plugin/crew/tests/test_lifecycle_commands.py -q"],
       "reach": "local",
-      "why": "4.6s wall (178 passed) measured 2026-09-26 on the Linux host (20 CPUs, load average 4.1) after the round-1 fixes; 5 is that rounded up, not an estimate (2.1s before them, 2026-09-25). T-0004's /crew:autopilot: crew_autopilot.py names the next lifecycle phase from disk and picks the ticket to resume, and every branch that cannot tell must stop - so the suite carries one case per phase transition, every stop (approval, review acceptance, NEEDS_REPLAN, UNKNOWN ledger, failed validate, refresh unavailable, stale after review, maxPhases, no progress) and every resume source. Every mutation in sabotage_autopilot.py (one per must-stop branch; count them there, not here) goes red on its named test through sabotage.py. test_lifecycle_commands.py runs with it because it holds autopilot.md's 120-line budget and exact-CLI checks. reach: local - every case builds a throwaway git repository under pytest's tmp_path." }
+      "why": "4.6s wall (178 passed) measured 2026-09-26 on the Linux host (20 CPUs, load average 4.1) after the round-1 fixes; 5 is that rounded up, not an estimate (2.1s before them, 2026-09-25). T-0004's /crew:autopilot: crew_autopilot.py names the next lifecycle phase from disk and picks the ticket to resume, and every branch that cannot tell must stop - so the suite carries one case per phase transition, every stop (approval, review acceptance, NEEDS_REPLAN, UNKNOWN ledger, failed validate, refresh unavailable, stale after review, maxPhases, no progress) and every resume source. Every mutation in sabotage_autopilot.py (one per must-stop branch; count them there, not here) goes red on its named test through sabotage.py. test_lifecycle_commands.py runs with it because it holds autopilot.md's 120-line budget and exact-CLI checks. reach: local - every case builds a throwaway git repository under pytest's tmp_path." },
+    { "paths": ["plugin/crew/hooks/scripts/crew_tracker.py",
+                "plugin/crew/tests/test_crew_tracker.py",
+                "plugin/crew/tests/sabotage_tracker.py",
+                "plugin/crew/tests/tracker_fixtures/**"],
+      "seconds": 4,
+      "run": ["python3 -m pytest plugin/crew/tests/test_crew_tracker.py -q"],
+      "reach": "local",
+      "why": "3.3s measured 2026-09-26 on the Linux host (20 CPUs, load average 5.8-7.0). T-0021's one tracker interface, the only crew code that writes outside the repository (into an Obsidian vault). The suite carries the must-block cases (missing vault, no .obsidian/, absolute or '..' boardDir, a board name with a separator, board or note symlinked out of the vault, an in-worktree vault git does not ignore or cannot say about, an unusable board, kind 'could not tell') each asserting the vault AND the repo byte-identical afterwards, and the must-allow cases (nested boardDir, spaces, a symlinked vault, an ignored in-worktree vault, a 0.20 board). Every mutation in sabotage_tracker.py goes red on its named test through sabotage.py. reach: local - every vault and repo is a throwaway fixture under pytest's tmp_path; nothing reads or writes a real vault." }
   ],
 
   "default": ["bash _verify/smoke.sh"],
