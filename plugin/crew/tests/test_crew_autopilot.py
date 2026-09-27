@@ -679,6 +679,25 @@ def test_open_questions_unclosed_fence_outside_any_section_does_not_stop():
     assert crew_autopilot._open_items(text) == []  # pylint: disable=protected-access
 
 
+@pytest.mark.parametrize("text", [
+    'go\n\n    ```\n## Open questions\n- which DB?\n```\ndone\n```\n',
+    'go\n- item\n\n    ```\n## Open questions\n- which DB?\n```\ndone\n```\n',
+], ids=["indented-code", "list-item"])
+def test_open_questions_line_left_of_an_indented_fence_ends_it(text):
+    """A fence line indented 4+ spaces is indented code, or a fence inside a
+    list item. Either way a line 4+ columns left of it is outside it, so the
+    later ``` pair does not hide the section the pre-fence parser found."""
+    assert crew_autopilot._open_items(text) == ["which DB?"]  # pylint: disable=protected-access
+
+
+def test_open_questions_indented_fence_in_a_list_item_is_still_a_fence():
+    """`- none` puts the item's content 2 columns in, so a fence 4 in is inside
+    it, and so are a blank line and a `# y` 2 columns in."""
+    text = 'go\n## Open questions\n- none\n    ```\n    # x\n\n  # y\n    ```\n- which DB?\n'
+
+    assert crew_autopilot._open_items(text) == ["which DB?"]  # pylint: disable=protected-access
+
+
 def test_next_open_questions_section_ends_at_the_next_peer_heading(tmp_path):
     root = _approved(tmp_path)
     _write(root / ".work" / "tickets" / T / "direction.md",

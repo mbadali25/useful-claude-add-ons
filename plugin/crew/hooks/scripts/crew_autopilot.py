@@ -240,13 +240,30 @@ def _fence_closes(stripped, run):
         and len(fence.group(1)) >= len(run) and not fence.group(2).strip()
 
 
+def _indent(line):
+    """Leading columns, a tab counting 4."""
+    expanded = line.expandtabs(4)
+    return len(expanded) - len(expanded.lstrip())
+
+
+def _left_of_fence(line, at):
+    """Whether this line is outside a fence whose opener sat `at` columns in.
+    An opener 4+ columns in is indented code (no fence at all) or a fence
+    inside a list item whose content starts at most 3 columns left of it, so
+    a non-blank line more than 3 columns left of it is outside it either way.
+    A top-level fence may sit 0-3 columns in with its text further left, so
+    nothing shallower is decided this way, and a blank line never is."""
+    return bool(line.strip()) and _indent(line) < at - 3
+
+
 def _open_items(text):
     """Unanswered items under any `Open questions` heading, at any level, down
     to the next heading of the same or a higher level -- a sub-heading inside
     the section stays inside it. See `_ANSWERED` for what counts as answered.
 
     A code fence (3+ backticks or tildes, see `_fence_opener` and
-    `_fence_closes`) is literal text: a line inside one is never a heading and
+    `_fence_closes`; `_left_of_fence` for a line that leaves an indented one)
+    is literal text: a line inside one is never a heading and
     never an item, so a `# comment` in a fenced example does not close the
     section, and an `Open questions` heading inside a fence opens none. A
     fenced block in the section with no item line before it counts as one
@@ -259,8 +276,11 @@ def _open_items(text):
     after it does not settle it."""
     items, depth, fence, seen, fenced_in_section = [], 0, None, False, False
     unexplained = swallowed = False
+    fence_at = 0
     for line in (text or "").splitlines():
         stripped = line.lstrip()
+        if fence and _left_of_fence(line, fence_at):
+            fence = None
         if fence:
             if _fence_closes(stripped, fence):
                 fence = None
@@ -270,6 +290,7 @@ def _open_items(text):
         opener = _fence_opener(stripped)
         if opener:
             fence, fenced_in_section, swallowed = opener, bool(depth), False
+            fence_at = _indent(line)
             unexplained = unexplained or (bool(depth) and not seen)
             continue
         heading = _HEADING.match(line)

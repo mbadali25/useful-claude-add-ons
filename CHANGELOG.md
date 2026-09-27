@@ -152,11 +152,14 @@ All notable changes to this repository are documented here. Format follows [Keep
     not settle it). Only a run of the same marker, at least as long and
     with nothing after it, closes a fence, and a backtick run with a
     backtick after it on the line is inline code, not a fence (review
-    round 1: both had hidden a question the pre-fence parser found).
+    round 1: both had hidden a question the pre-fence parser found). A
+    non-blank line more than 3 columns left of a fence line indented 4+
+    (indented code, or a fence inside a list item) is outside that fence,
+    so a later fence pair no longer hides the section it would swallow.
     The crew code map quotes `CHANGELOG.md:65` as "117 -> 119".
     `INSTALLATION.md` says crew has 35 slash commands, now checked by a
     `plugin-commands:crew` marker.
-  - `test_crew_autopilot.py` 151 -> 178 tests. Fifteen new mutations in
+  - `test_crew_autopilot.py` 151 -> 181 tests. Eighteen new mutations in
     `sabotage_autopilot.py`, one per new guard branch, each red on its named
     test; "an INCOMPLETE round is rerun unattended" is re-pointed to the new
     condition and still goes red.
