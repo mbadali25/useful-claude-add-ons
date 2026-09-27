@@ -5,6 +5,8 @@
     python3 crew_autopilot.py resume --root . [--ticket <id>] [--json]
     python3 crew_autopilot.py settings --root . [--json]
     python3 crew_autopilot.py stops [--json]
+    python3 crew_autopilot.py deploy-allowed --root . --env <name> --class <class>
+                                             [--json]
 
 T-0004. The lifecycle is prose commands (spec, plan, implement, review,
 done); `/crew:autopilot` follows each one's procedure in-session. This module
@@ -75,6 +77,20 @@ With no pointer, `activate` tells the command to set it to the ticket it drives.
 Exit 0 always; the answer is in the output. An exception inside `next` or
 `resume` prints `stop=1` with its reason: a crash is "cannot tell", never
 silence the command could read as permission.
+
+## deploy-allowed -- may autopilot deploy here without asking (T-0072)
+
+`deploy_allowed` answers `allow`, `ask` or `refuse` for one environment, first
+match wins: an incident file refuses; an unusable name, a class that is not
+`nonProd`/`prod`, or a corrupt config layer asks (could not tell); autopilot
+off or `autopilot.deploy: none` asks; `nonProd` allows under `nonprod`/`all`;
+`prod` allows only under `all`, with `environments.prodUnattended` true in BOTH
+layers and `guards.cloudGuard` resolving to a plain `block`. A crash asks.
+
+The consumer (T-0045, not built here) calls it immediately before each
+dispatch, passes the class from T-0005's classifier, proceeds only on the exact
+verdict `allow`, and persists every non-empty `report`. `allow` is necessary,
+not sufficient: T-0009's hook, promote-gate and every other gate still decide.
 """
 import argparse
 import importlib
@@ -90,6 +106,8 @@ import review_ledger
 from crew_common import git_out, read_text
 
 AUTOPILOT = "/crew:autopilot"
+# `autopilot.deploy` (T-0072): where a deploy may run without asking.
+DEPLOY_VALUES = ("none", "nonprod", "all")
 UNAVAILABLE = "unavailable"
 FRESH = "fresh"
 STALE = "stale"
@@ -590,10 +608,11 @@ def _read_json(path):
 
 
 def settings(root):
-    """`{"mode", "armed", "maxPhases", "saw", "warnings"}`. Read through
-    `crew_config.resolve_config` -- `.crew/config.json` over the defaults, the
-    file `crew_ticket.cli_approval_allowed` reads. `mode` arms only when it is
-    exactly the string `plan`; `maxPhases` must be a positive int, else 12."""
+    """`{"mode", "armed", "maxPhases", "saw", "deploy", "deploySaw", "warnings"}`.
+    Read through `crew_config.resolve_config` -- `.crew/config.json` over the
+    defaults, the file `crew_ticket.cli_approval_allowed` reads. `mode` arms
+    only when it is exactly the string `plan`; `maxPhases` must be a positive
+    int, else 12; `deploy` is exactly one of DEPLOY_VALUES, else `none`."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     block = crew_config.resolve_config(top).get("autopilot")
     block = block if isinstance(block, dict) else {}
@@ -609,13 +628,115 @@ def settings(root):
         warnings.append(f"autopilot.maxPhases is {limit!r}, not a positive integer; "
                         f"using {default}")
         limit = default
+    deploy_saw = block.get("deploy", "none")
+    deploy = deploy_saw if _exact(deploy_saw, DEPLOY_VALUES) else "none"
+    if deploy != deploy_saw:
+        warnings.append(f"autopilot.deploy is {deploy_saw!r}: only the exact strings "
+                        "'nonprod' and 'all' arm it, so it reads as none")
+    if deploy != "none":
+        warnings.append(f"autopilot.deploy is {deploy!r}, but nothing in this crew version "
+                        "dispatches a deploy: T-0045 consumes it; deploy-allowed answers "
+                        "the policy only")
     crew_json = _read_json(os.path.join(top, ".crew", "crew.json"))
     if isinstance(crew_json, dict) and "autopilot" in crew_json \
             and "autopilot" not in crew_state.load_config(top):
         warnings.append("autopilot is set in .crew/crew.json, which crew does not read "
                         "for this key; move it to .crew/config.json")
     return {"mode": "plan" if armed else "off", "armed": armed, "maxPhases": limit,
-            "saw": mode, "warnings": warnings}
+            "saw": mode, "deploy": deploy, "deploySaw": deploy_saw, "warnings": warnings}
+
+
+def _exact(value, allowed):
+    """`value` is one of the strings in `allowed`, compared as a string: `True`
+    and `1` compare equal to nothing here, and neither does `"All"`."""
+    return isinstance(value, str) and value in allowed
+
+
+def _incident(top):
+    """Why an emergency may be active, or `""`. `os.lstat`, not
+    `os.path.lexists`: that returns False when lstat raises for ANY reason, so
+    an unreadable path would read as "no incident". Only a missing file is."""
+    try:
+        os.lstat(os.path.join(top, ".crew", "incident.json"))
+    except (FileNotFoundError, NotADirectoryError):
+        return ""
+    except OSError as exc:
+        return f"could not tell whether an emergency is active ({type(exc).__name__})"
+    return "an emergency may be active (.crew/incident.json exists)"
+
+
+def _deploy_verdict(root, env_name, env_class):
+    """`(verdict, reason, deploy)`, the Design table's rows in order."""
+    import cloud_guard  # pylint: disable=import-outside-toplevel
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    emergency = _incident(top)
+    if emergency:
+        return "refuse", emergency, None
+    if not isinstance(env_name, str) or not env_name.strip() or not env_name.isprintable():
+        return "ask", f"could not tell which environment: {env_name!r}", None
+    known = (cloud_guard.ENV_NONPROD, cloud_guard.ENV_PROD)
+    cls = env_class if isinstance(env_class, str) else ""
+    if cls not in known:
+        return "ask", f"crew could not classify {env_name} (class {env_class!r})", None
+    layers = (("repo", os.path.join(top, ".crew", "config.json")),
+              ("machine", crew_config.GLOBAL_CONFIG_PATH))
+    for label, path in layers:
+        if crew_config.layer_state(path, environments=True) == "corrupt":
+            return "ask", f"could not read the {label} config layer", None
+    current = settings(top)
+    deploy = current["deploy"]
+    if not current["armed"]:
+        return "ask", "autopilot.mode is not plan", deploy
+    if deploy == "none":
+        return "ask", "autopilot.deploy is none", deploy
+    if cls == cloud_guard.ENV_NONPROD:
+        return "allow", f"autopilot.deploy={deploy} allows nonProd", deploy
+    if deploy != "all":
+        return "ask", "autopilot.deploy is nonprod; production needs all", deploy
+    ratchet = crew_config.resolve_ratcheted(top, "environments.prodUnattended")
+    if ratchet["effective"] is not True:
+        short = [name for name, key in (("repo", "repo"), ("machine", "global"))
+                 if ratchet[key] is not True]
+        where = " and ".join(short) or f"held down by {ratchet['heldDownBy']}"
+        return "ask", (f"environments.prodUnattended is not true in the {where} config "
+                       "layer; production needs true in both"), deploy
+    mode = cloud_guard.resolve_mode(top)
+    if mode != ("block", ""):
+        note = f": {mode[1]}" if mode[1] else ""
+        return "ask", (f"guards.cloudGuard is {mode[0]}{note}, so T-0009's guard is not "
+                       "armed to enforce the dispatch"), deploy
+    return "allow", ("autopilot.deploy=all and environments.prodUnattended=true in both "
+                     "config layers (repo and machine), guards.cloudGuard=block"), deploy
+
+
+def _env_label(env_name):
+    usable = isinstance(env_name, str) and env_name.strip() and env_name.isprintable()
+    return env_name if usable else repr(env_name)
+
+
+def _deploy_report(env_name, verdict, reason, env_class):
+    """The line every production decision carries, `""` for any other class."""
+    if env_class != "prod":
+        return ""
+    return f"unattended production: {_env_label(env_name)} {verdict} - {reason}"
+
+
+def deploy_allowed(root, env_name, env_class):
+    """`{"verdict", "reason", "report", "env", "envClass", "deploy"}` for one
+    environment: may autopilot deploy there without asking a person? Read-only
+    and never raises; "could not tell" asks and an emergency refuses. See the
+    module docstring's `deploy-allowed` section for the rows and the consumer
+    contract."""
+    deploy = None
+    try:
+        verdict, reason, deploy = _deploy_verdict(root, env_name, env_class)
+    except Exception as exc:  # pylint: disable=broad-except
+        # A crash cannot tell whether production is allowed: it asks.
+        verdict, reason = "ask", (f"crew_autopilot raised {type(exc).__name__}: {exc} - "
+                                  "cannot tell, so ask")
+    return {"verdict": verdict, "reason": reason,
+            "report": _deploy_report(env_name, verdict, reason, env_class),
+            "env": env_name, "envClass": env_class, "deploy": deploy}
 
 
 def stops():
@@ -648,6 +769,12 @@ def main(argv):
     sub.choices["resume"].add_argument("--ticket", default="")
     sub.choices["next"].add_argument("--phases-run", type=int, default=0)
     sub.choices["next"].add_argument("--last-command", default="")
+    deploy = sub.add_parser("deploy-allowed")
+    deploy.add_argument("--json", action="store_true")
+    deploy.add_argument("--root", default=".")
+    deploy.add_argument("--env", required=True)
+    # No `choices`: a class crew does not know reaches deploy_allowed and asks.
+    deploy.add_argument("--class", dest="env_class", required=True)
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
@@ -660,8 +787,24 @@ def main(argv):
                          for kind, rows in result.items() for row in rows)
     elif args.action == "settings":
         result = settings(args.root)
-        text = "\n".join([_line(mode=result["mode"], maxPhases=result["maxPhases"])]
+        text = "\n".join([_line(mode=result["mode"], maxPhases=result["maxPhases"],
+                                deploy=result["deploy"])]
                          + [f"warning: {w}" for w in result["warnings"]])
+    elif args.action == "deploy-allowed":
+        try:
+            result = deploy_allowed(args.root, args.env, args.env_class)
+        except Exception as exc:  # pylint: disable=broad-except
+            # deploy_allowed never raises; if it does, that cannot tell: ask.
+            reason = (f"crew_autopilot raised {type(exc).__name__}: {exc} - "
+                      "cannot tell, so ask")
+            report = (f"unattended production: {args.env!r} ask - {reason}"
+                      if args.env_class == "prod" else "")
+            result = {"verdict": "ask", "reason": reason, "report": report,
+                      "env": args.env, "envClass": args.env_class, "deploy": None}
+        text = _line(**{"verdict": result["verdict"], "env": result["env"],
+                        "class": result["envClass"], "reason": result["reason"]})
+        if result["report"]:
+            sys.stderr.write(result["report"] + "\n")
     elif args.action == "resume":
         try:
             result = resume_target(args.root, args.ticket or None)

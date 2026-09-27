@@ -274,7 +274,8 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # `autopilot.maxPhases`, re-measured after rebasing onto T-0006.
     # 121 with T-0005: the repo-only `environments.nonProd` glob list and the
     # ratcheted `environments.prodUnattended`, re-measured after merging main.
-    assert len(declared) == 121
+    # 122 with T-0072: the repo-only `autopilot.deploy`.
+    assert len(declared) == 122
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():

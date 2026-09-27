@@ -1073,7 +1073,8 @@ def test_stops_lists_every_autonomous_stop():
 
 def test_autopilot_defaults_are_the_config_block():
     import crew_config  # pylint: disable=import-outside-toplevel
-    assert crew_config.default_config()["autopilot"] == {"mode": "off", "maxPhases": 12}
+    assert crew_config.default_config()["autopilot"] == {
+        "mode": "off", "maxPhases": 12, "deploy": "none"}
 
 
 # --- step 6: the command -----------------------------------------------------
@@ -1157,7 +1158,8 @@ def test_every_autopilot_sabotage_anchor_is_present_exactly_once():
     for label, target, find, _replace, test in AUTOPILOT_MUTATIONS:
         with open(target, encoding="utf-8") as handle:
             assert handle.read().count(find) == 1, label
-        assert test.startswith("tests/test_crew_autopilot.py::"), label
+        assert test.startswith(("tests/test_crew_autopilot.py::",
+                                 "tests/test_crew_autopilot_deploy.py::")), label
 
 
 def test_autopilot_block_is_repo_only():
