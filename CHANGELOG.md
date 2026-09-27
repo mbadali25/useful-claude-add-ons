@@ -170,8 +170,8 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.42: `/crew:autopilot status` and the subcommand router
-  (T-0018).** Bumped `1.0.41 -> 1.0.42`. `commands/autopilot.md` now routes
+- **`crew` 1.0.43: `/crew:autopilot status` and the subcommand router
+  (T-0018).** Bumped `1.0.42 -> 1.0.43`. `commands/autopilot.md` now routes
   its whole argument string through the new `crew_autopilot.py route --root .
   --args '$ARGUMENTS'` (single-quoted; arguments holding a quote, `$`, a
   backtick or a backslash stop before anything runs; `route --first <token>`
