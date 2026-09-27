@@ -14,10 +14,9 @@ matching case here goes red.
 """
 import os
 
-import pytest
-
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_ticket
+import pytest
 from review_fixtures import git
 from scope_fixtures import FLAVOUR_MATRIX, make_repo, make_ticket, ready, run_hook
 from test_crew_bookkeeping import BUDGETS
@@ -258,4 +257,3 @@ def test_budgets_in_touch_prose(flavour, repo):
                                                new_string="now totals"))
 
     assert code == 0, err
-

@@ -125,5 +125,5 @@ def claim_numbers_only(before, after, path):
     docstring). Never raises; anything it cannot evaluate is False."""
     try:
         return _judge(before, after, path)
-    except Exception:  # pylint: disable=broad-except
+    except Exception:  # noqa: BLE001  pylint: disable=broad-except
         return False, "could not tell"

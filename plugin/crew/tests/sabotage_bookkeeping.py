@@ -48,7 +48,7 @@ _AUDIT_APPROVED_DROPPED = ("    if True:\n"
 _SAME_FILE = "    if real_rel != named_rel:\n        return False\n"
 _KINDS = ('            if e["status"] in _GENERATED_STATUS\n'
           '            and e["path"] == e["old_path"] and e["path"] in GENERATED\n')
-_MODES = ('            and e["old_mode"] in _GENERATED_MODES and e["new_mode"] in _GENERATED_MODES\n')
+_MODES = '            and e["old_mode"] in _GENERATED_MODES and e["new_mode"] in _GENERATED_MODES\n'
 
 BOOKKEEPING_MUTATIONS = (
     # crew_bookkeeping.py -- the predicate
@@ -115,14 +115,14 @@ BOOKKEEPING_MUTATIONS = (
      _RP + "test_mode_change"),
     ("bundle: every file under graphify-out/ is omitted", PATCH,
      _KINDS,
-     '            if e["status"] in _GENERATED_STATUS\n'
-     '            and e["path"] == e["old_path"] and e["path"].startswith("graphify-out/")\n',
+     ('            if e["status"] in _GENERATED_STATUS\n'
+      '            and e["path"] == e["old_path"] and e["path"].startswith("graphify-out/")\n'),
      _RP + "test_not_a_generated_path[other-file]"),
     ("bundle: generated paths match case-insensitively", PATCH,
      _KINDS,
-     '            if e["status"] in _GENERATED_STATUS\n'
-     '            and e["path"] == e["old_path"]\n'
-     '            and e["path"].lower() in [g.lower() for g in GENERATED]\n',
+     ('            if e["status"] in _GENERATED_STATUS\n'
+      '            and e["path"] == e["old_path"]\n'
+      '            and e["path"].lower() in [g.lower() for g in GENERATED]\n'),
      _RP + "test_not_a_generated_path[case-variant]"),
     ("bundle: a linked graphify-out is omitted", PATCH,
      '    if os.path.islink(os.path.join(root, "graphify-out")):\n',

@@ -15,10 +15,9 @@ import os
 import subprocess
 import sys
 
-import pytest
-
-import context  # noqa: F401  pylint: disable=unused-import
 import completion_audit
+import context  # noqa: F401  pylint: disable=unused-import
+import pytest
 from review_fixtures import git
 from scope_fixtures import SCRIPTS, approve_as_user, make_repo, make_ticket, ready
 from test_crew_bookkeeping import BUDGETS, CHECKER

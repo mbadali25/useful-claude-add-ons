@@ -12,10 +12,9 @@ lockstep test compares the two.
 import importlib.util
 import os
 
-import pytest
-
-import context  # noqa: F401  pylint: disable=unused-import
+import context
 import crew_bookkeeping as cb
+import pytest
 
 PATH = "plugin/crew/BUDGETS.md"
 REPO = os.path.dirname(os.path.dirname(context._ROOT))  # pylint: disable=protected-access

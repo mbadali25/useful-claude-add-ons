@@ -25,9 +25,8 @@ import re
 import subprocess
 import sys
 
+import context
 import pytest
-
-import context  # noqa: F401  pylint: disable=unused-import
 import review_ledger as rl
 import review_patch
 import review_prompt
