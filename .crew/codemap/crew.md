@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@c2ae46ab
+anchor: useful-claude-add-ons@5832b32a
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -1331,3 +1331,11 @@ the wider `resolve` comparison, the board gated on the INDEX half, in-lane repai
 version at `.claude-plugin/marketplace.json:218` is 1.0.43. The lifecycle table's `spec.md`,
 `plan.md`, `implement.md` and `done.md` line ranges were re-read and hold. No test suite was executed for
 this note.
+
+## Re-anchor provenance - `c2ae46ab` -> `5832b32a`, 2026-09-27 (T-0021 test escape)
+
+`git diff --name-only c2ae46ab 5832b32a` returns the version files (stepped to 1.0.42 and re-set to
+1.0.43, net unchanged), `TODO.md` (one follow-up appended) and
+`plugin/crew/tests/test_crew_tracker.py`, where three lines now spell U+2028/U+2029 as escapes
+instead of raw characters (the same strings at run time). This note cites that test file by name
+only, so no citation moved. No test suite was executed for this note.
