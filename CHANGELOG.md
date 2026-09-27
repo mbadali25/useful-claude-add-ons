@@ -6,6 +6,34 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 1.0.47: a graph build never reads a secrets-denylisted file (T-0064).** Bumped
+  `1.0.46 -> 1.0.47`. graphify reads every file its ignore rules do not exclude, and for a file
+  git tracks `.gitignore` does not exclude it (graphify 0.9.65 skips `.gitignore` rules for
+  tracked paths), so a tracked `config/env.php` listed only in `.gitignore` reached `graph.json`.
+  New `hooks/scripts/crew_graph_ignore.py` builds the repo's secrets denylist - built-in
+  patterns (`.env`, `.env.*` but not `.env.example`, `*.pem`, `*.key`, `*.p12`, `*.pfx`,
+  `id_rsa*`, `id_ed25519*`), the optional tracked `.claude/secrets-denylist`, and every in-repo
+  `Read(...)` deny rule in `.claude/settings.json` and `.claude/settings.local.json` - and lists
+  every file on disk (tracked, untracked or ignored) it matches that the root `.graphifyignore`
+  does not exclude, judged by git's own matcher in a scratch repository. `--check` exits 0
+  covered, 1 uncovered (paths only, never content), 2 unknown; `--write` appends only the
+  missing patterns under one marked block, atomically.
+  - `crew_refresh_check.py` reports the graph `unknown` and not refreshable, naming the paths
+    and `crew_graph_ignore.py --write`, while any denylisted path is uncovered or coverage cannot
+    be told, so neither it nor autopilot names a graphify command then.
+  - `/crew:status` gains a `graph-ignore` line: `ok`, `UNCOVERED` with the paths, or `unknown`
+    with the reason. graphify's post-commit hook bypasses crew, so this line is its warning.
+  - Every unknown stays unknown, never covered: git missing, a settings file that does not parse,
+    an unreadable denylist or `.graphifyignore`, a nested `.graphifyignore`, a deny-all `Read`.
+  - crew-graph's **Build** runs `--check` first and stops on 1 or 2; new **Secrets denylist**
+    and **Tainted graph** (delete the output, `--write`, rebuild) sections. crew-setup gains
+    step 3e (`--write`). onboard, upgrade and status docs, the README, `PLUGINS.md` and the
+    troubleshooting guide say the same.
+  - Tests: `test_graph_ignore.py`, the real-graphify fixture `test_graph_ignore_graphify.py`
+    (skips, saying so, without graphify), and new cases in `test_refresh_check.py` and
+    `test_status.py`; the mutations are appended to `sabotage_refresh.py`. `.crew/verify.json`
+    gains a rule for the checker. Not run on Windows.
+
 - **`crew` 1.0.46: plain-text lifecycle routing (T-0023).** Bumped
   `1.0.45 -> 1.0.46` (`1.0.41 -> 1.0.42 -> 1.0.43` on its branch, re-set after merging
   T-0005's 1.0.42; main then gave 1.0.43 to T-0042 and 1.0.44 and 1.0.45 to T-0021).
