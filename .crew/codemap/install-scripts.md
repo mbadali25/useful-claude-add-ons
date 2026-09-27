@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@e95e5964
+anchor: useful-claude-add-ons@e463ca53
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -660,6 +660,53 @@ across 126 files, recomputed on the merge) and `plugin/crew/README.md` changed: 
 commands` claim is now `:2480` and `4 agents` `:2491` (re-grepped; `ls plugin/crew/commands/*.md`
 is 35). Both install scripts, the root `README.md` and `scripts/check-marketplace.py` did not
 change on either side, so their citations stand. Neither install script was executed.
+
+## Re-anchor provenance - `6f96e627` -> `eba11657`, 2026-09-26 (T-0023)
+
+Re-verified per-path from `6f96e627` to `eba11657` for T-0023 (plain-text lifecycle routing,
+crew 1.0.42); `6f96e627` -> `1e0706ac` touched only refresh artifacts. Of the cited paths,
+`git diff --name-only 1e0706ac eba11657` returns `.claude-plugin/marketplace.json` (crew `version`
+`:218`, now 1.0.42; the `:217` description is unchanged), `plugin/PLUGINS.md` (`:14` version; the
+`:17` Registers row unchanged - no command, agent or skill was added) and `plugin/crew/README.md`
+(a 23-line "Plain-text lifecycle" subsection inserted before "Measuring 1.0", so the `35 commands`
+claim moved `:2255` -> `:2278` and `4 agents` `:2266` -> `:2289`, re-grepped). Neither install
+script, `scripts/check-marketplace.py`, `INSTALLATION.md` nor `plugin/README.md` changed.
+`plugin/crew/BUDGETS.md` did not change either, and that is now a defect: its `:11` figure still
+reads 18,176 while `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` returns 18239, so
+`check-marketplace.py` fails on it - BUDGETS.md is outside T-0023's Touch and was left for the
+owner. Neither install script was executed.
+
+## Re-anchor provenance - `2b18f7ab` + `488053fc` -> `a1acd9b7`, 2026-09-27 (T-0023 merge of main)
+
+`3c968175` merges main at `502cb137` (T-0005 landed, its notes anchored `2b18f7ab`) into T-0023 at
+`488053fc` (review round 1's fixes); `f6abe8c1` re-sets crew to 1.0.43 and `a1acd9b7` re-prices
+`.crew/verify.json` rule 28 in place. Both lines' provenance is above. A citation can only be
+wrong at the merge when its file changed on both sides, or when a line from one side cites a file
+the other side changed. Each line of this note was classified by origin (main's text or
+T-0023's), its citations into such files re-mapped with a line diff from that side's revision to
+the merged tree (`502cb137` or `fa4d8cd5`), and each moved one re-read by content with
+`grep -n`/`sed -n`; citations the line diff attributed to the wrong file were discarded, not
+applied. Of the paths this note cites, `plugin/crew/README.md` changed on both sides (the `35 commands` claim is at `:2404` and `4 agents` at `:2415`, re-grepped) and the version files moved to 1.0.43 in place. `plugin/crew/BUDGETS.md`'s marked total is re-measured and `check-marketplace.py` passes on it; the defect T-0023's `eba11657` pass recorded above is closed. Neither install script, `scripts/check-marketplace.py` nor `INSTALLATION.md` changed.
+
+## Re-anchor provenance - `db14619c` + `ad74ed35` -> `e463ca53`, 2026-09-27 (T-0023 lands on T-0021's main)
+
+`c68b40bd` merges origin/main `db14619c` (T-0042 landed as crew 1.0.43, PR #242; T-0021 as
+1.0.45, PR #243) into T-0023's `ad74ed35`, and `e463ca53` bumps crew to 1.0.46. The files both
+sides changed since `502cb137` are `CHANGELOG.md`, `.crew/verify.json`, `plugin/crew/README.md`,
+`plugin/crew/CONFIG.md`, `plugin/crew/BUDGETS.md`, `plugin/crew/hooks/scripts/crew_context.py`,
+`plugin/crew/tests/sabotage.py`, the version files and the refresh artifacts. The conflicting
+provenance sections keep both sides, main's first. Every `path:N` citation in the body, and every
+bare `:N` that follows a path, was mapped from the side its line came from onto the merged tree
+with a line diff (`git show <side>:<path>` against the merge); each one that moved was re-read
+with `sed -n` and corrected, and hits the diff attributed to the wrong file (a bare `:N` after
+an unrelated path) were discarded rather than applied. Of the cited
+paths, `.claude-plugin/marketplace.json` (`:218` 1.0.46; `:217` unchanged), `plugin/PLUGINS.md`
+(`:14` 1.0.46; `:17` unchanged) and `plugin/crew/BUDGETS.md` (marker `:10`; `:11` 18,864 lines
+across 126 files, recomputed on the merge) changed. `plugin/crew/README.md` changed on both
+sides: its `35 commands` claim is now `:2503` and `4 agents` `:2514` (re-grepped;
+`ls plugin/crew/commands/*.md` is 35). Both install scripts, the root `README.md` and
+`scripts/check-marketplace.py` did not change on either side, so their citations stand.
+Neither install script was executed.
 
 ## Re-anchor provenance - `12682e41` + `d2444be9` -> `e95e5964`, 2026-09-27 (T-0075 merges main)
 

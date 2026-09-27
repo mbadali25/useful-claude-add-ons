@@ -202,5 +202,8 @@
   "autopilot": {
     "mode": "off",
     "maxPhases": 12
+  },
+  "route": {
+    "enabled": false
   }
 }
