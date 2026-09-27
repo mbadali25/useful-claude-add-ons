@@ -11,6 +11,17 @@ be wrong can be closed on evidence.
   list, read the way `autoClear.onlyRepos` is, would let an owner arm it for chosen repos only.
   Excluded from T-0006 by its spec. There is deliberately no `startup` trigger and no flag for
   one (owner decision 2026-09-25), so that is not a follow-up.
+- **crew: native-Windows process identity for auto-resume `clear` binding** (Toolhelp32 snapshot +
+  GetProcessTimes) - T-0042 left `clear` waiting there with "this session's process could not be
+  identified" (`plugin/crew/hooks/scripts/crew_resume.py::session_process` returns None when
+  `os.name == "nt"`). macOS is in the same state: `session_process` reads `/proc`, which macOS does
+  not have (`ps -o comm=,lstart=` would be the candidate there). `compact` binds by `session_id`
+  and is unaffected on both.
+- **crew: decide whether an unreadable `.crew/crew.json`/`config.json` should veto `resume.auto`**
+  (T-0042 round-4 neighbour). `crew_resume.py::settings` reads each repo file through `_load`,
+  which returns `{}` for a malformed or unreadable file, so it vetoes nothing - the same class as
+  round 4's FIX (an unreadable veto reads as no veto). T-0006's approved plan chose it and
+  CONFIG.md §14a documents it; reported to the owner, not changed quietly.
 - `plugin/crew/tests/test_auto_cycle.py` (24 failures, measured both
   before and after crew-1.0-win-ps1-ac's fix, identical set both times):
   bash/tmux/symlink-flavour tests fail on this Windows dev host for
