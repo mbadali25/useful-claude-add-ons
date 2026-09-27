@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@068db4ff
+anchor: useful-claude-add-ons@07eefac5
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -376,3 +376,10 @@ artifacts only. Of the cited paths, `git diff --name-only 1e0706ac 068db4ff` ret
 `INSTALLATION.md:252` still states 34 commands against 35 on disk.
 `python3 scripts/check-marketplace.py` at `068db4ff`: `marketplace: 34 skills, 5 plugins`,
 `all checks passed`.
+
+Re-verified per-path from `068db4ff` to `07eefac5` for T-0042 review round 1. Of the cited paths,
+`git diff --name-only 068db4ff 07eefac5` returns `.crew/verify.json` (rule 25's `seconds` and `why`
+in place, `:277` and `:280`; 293 lines, so the doc rule at `:69-78` and every other cited range hold) and `CHANGELOG.md` (seven lines inside
+the 1.0.42 entry; cited without a line). The version files were stepped to 1.0.41 and back and
+diff empty against `068db4ff`. `python3 scripts/check-marketplace.py` at `07eefac5`:
+`marketplace: 34 skills, 5 plugins`, `all checks passed`.

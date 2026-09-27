@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@068db4ff
+anchor: useful-claude-add-ons@07eefac5
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -578,3 +578,10 @@ unchanged), `.claude-plugin/marketplace.json` and `plugin/crew/.claude-plugin/pl
 (crew `version` only, 1.0.42). `README.md`, `plugin/README.md`, `INSTALLATION.md`, `skills/README.md`
 and `docs/runbooks/` did not change, so their citations stand and the README pin is as stale as it
 was at `6f96e627`.
+
+Re-verified per-path from `068db4ff` to `07eefac5` for T-0042 review round 1. Of the cited paths,
+`git diff --name-only 068db4ff 07eefac5` returns `.crew/verify.json` (rule 25's `seconds` and `why`
+in place, `:277` and `:280`; 293 lines, so `:167-172`, `:251`, `:252-268`, `:270-280` and `:281-288` hold) and `CHANGELOG.md` (seven lines inside
+the 1.0.42 entry; cited without a line). The version files were stepped to 1.0.41 and back and
+diff empty against `068db4ff`. `python3 scripts/check-marketplace.py` at `07eefac5`:
+`marketplace: 34 skills, 5 plugins`, `all checks passed`.
