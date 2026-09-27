@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@53f5482c
-verified: 2026-09-26
+anchor: useful-claude-add-ons@d3a1c77e
+verified: 2026-09-27
 
 ## Re-derive provenance
 
@@ -669,3 +669,5 @@ so main's `:1930` is `:1944`; set in the merge, re-read), `TODO.md` (the `render
 a line). `plugin/crew/commands/handoff.md:7` and `plugin/crew/skills/crew-context/SKILL.md:69`
 changed on T-0042 only and hold. The two diagrams this note cites are refreshed in the same
 commit as this note. Nothing was executed for this note.
+
+**Re-anchored `53f5482c` -> `d3a1c77e` on 2026-09-27 (T-0072, crew 1.0.44).** `d3a1c77e` is T-0072's version commit on `T-0072-build`, after it merged origin/main `f0b12ee6` (T-0042's landing) with a merge commit. `git diff --name-only 53f5482c d3a1c77e` over the cited paths returns only T-0072's changes and the version files. T-0072 edited in place, with no line added or removed, `crew_state.py` (`:1084-1090`, the `AUTOPILOT_DEFAULTS` comment and value), `plugin/crew/README.md` (the autopilot Settings paragraph), `plugin/crew/commands/autopilot.md` (`:19-20`), `plugin/crew/BUDGETS.md` (`:11`, now 18,612 lines across 121 files), `plugin/PLUGINS.md` (`:14` 1.0.44, the `/crew:autopilot` row), `.claude-plugin/marketplace.json` (`:218` 1.0.44), `plugin/crew/.claude-plugin/plugin.json` (`:3`) and `.crew/verify.json` (rule 27 `:293-300`, same lines). It added lines to `crew_autopilot.py` (the `deploy-allowed` docstring section and functions, 694 -> 837 lines), `CONFIG.md` (+1 at the leaf paragraph, +1 in the key table, +1 in §20's table, a closing §20 section), `CHANGELOG.md` (+32 at the top) and the autopilot tests. Of the paths this note cites, `.crew/verify.json` (rule 27 in place, `:293-300`), `plugin/crew/README.md` (the autopilot Settings paragraph, in place), `crew_state.py` (line-neutral; `:132` holds), `plugin/PLUGINS.md` (`:14` 1.0.44 and the `/crew:autopilot` row, in place; `:17` holds) and `CHANGELOG.md` (T-0072's 1.0.44 entry above T-0042's 1.0.43; cited without a line) changed. `docs/guides/crew/src/*.md` did not change: none mentions autopilot.

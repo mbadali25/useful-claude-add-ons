@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@53f5482c on 2026-09-27. Verify before trusting.
+%% Generated from useful-claude-add-ons@d3a1c77e on 2026-09-27. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
@@ -90,6 +90,9 @@
 %% traced in the sh flavour only; the ps1 body was not read past :241.
 %% /crew:status checks the fixed path .work/HANDOFF.md (crew_status.py:200),
 %% not context.handoffPath, and does not apply the stale rule.
+%% Re-anchored 53f5482c -> d3a1c77e (T-0072, crew 1.0.44): of the Anchors paths only
+%% crew_state.py changed, line-neutral at :1084-1090 (AUTOPILOT_DEFAULTS); every crew_state.py
+%% line cited below (:646, :774, :859-914, :980) is above that hunk and did not move.
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
     start --> reg["hooks.json:3-10<br/>3 SessionStart pairs, sh + ps1, no matcher<br/>each claims per session+source"]
