@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@2a79938d
+anchor: useful-claude-add-ons@0593b32a
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -328,11 +328,11 @@ they disagree:
   `crew.json` alone [does nothing for autoClear behaviour, which
   `crew_config.py` still reads from `config.json`]". This is a real,
   present-tense inconsistency, not a hypothetical. T-0004's
-  `crew_autopilot.settings` (`plugin/crew/hooks/scripts/crew_autopilot.py:635`)
+  `crew_autopilot.settings` (`plugin/crew/hooks/scripts/crew_autopilot.py:667`)
   sides with `config.json` explicitly: it reads through
   `crew_config.resolve_config` and warns when `autopilot` is set in
   `crew.json` but not `config.json` ("crew does not read [it] for this key;
-  move it to .crew/config.json", `:612-616`). Flagging it is this
+  move it to .crew/config.json", `:687-691`). Flagging it is this
   note's job; **deciding which file should win, or whether `crew_config.py`
   should learn to read `crew.json` too, is a decision for scribe to record,
   not this note's to make.**
@@ -415,14 +415,14 @@ DERIVED at `07ca3972`. `plugin/crew/commands/autopilot.md` (120 lines,
 `allowed-tools: Read, Write, Edit, Bash, Agent, Skill`, `:4`) drives one
 ticket through the phase commands **in-session**, following each command's
 own procedure; its first step refuses unless armed (`:13-20`). The reader
-behind it, `plugin/crew/hooks/scripts/crew_autopilot.py` (737 lines), is
+behind it, `plugin/crew/hooks/scripts/crew_autopilot.py` (769 lines), is
 read-only (module docstring, `:1-13`) with four subcommands: `next`,
-`resume`, `settings`, `stops`. `next_phase` (`:494`) names the next phase
+`resume`, `settings`, `stops`. `next_phase` (`:526`) names the next phase
 from files on disk, first match wins (the table at `:15-37`); `resume_target`
-(`:565`) picks the ticket (the handoff's `resume:` line only when its branch
-and head match, per `plugin/crew/commands/autopilot.md:29-30`); `settings` (`:635`) arms only on
+(`:597`) picks the ticket (the handoff's `resume:` line only when its branch
+and head match, per `plugin/crew/commands/autopilot.md:29-30`); `settings` (`:667`) arms only on
 the exact string `plan`, falls back to `maxPhases` 12 for anything not a
-positive int, and warns on each. `stops` (`:664`) lists every stop from code:
+positive int, and warns on each. `stops` (`:696`) lists every stop from code:
 `crew_state.AUTONOMOUS_STOPS`, `FIXED_STOPS` (`:116`, nine), `PROCEDURE_STOPS`
 (`:133`, three) and `HUMAN_STOPS` (`:139`, four - brainstorm, plan approval,
 review acceptance, open questions). Defaults live in
@@ -440,19 +440,24 @@ names T-0010 as the consumer). Tests: `plugin/crew/tests/test_crew_autopilot.py`
 `plugin/crew/tests/sabotage_autopilot.py`; `.crew/verify.json` rule 26
 (`:281-288`), the last. Confirmed present, **not run** by this note.
 
-T-0043 (crew 1.0.42), DERIVED at `2a79938d`. The un-accepted FINDINGS stop
-in `_review_phase` (`crew_autopilot.py:434`) names
+T-0043 (crew 1.0.42), DERIVED at `0593b32a`. The un-accepted FINDINGS stop
+in `_review_phase` (`crew_autopilot.py:466`) names
 `crew_refresh_check.py --root . --ticket <id>` and each refresh it names
-before `/crew:review <id>` (`:457-462`); `next` still stops there. The
+before `/crew:review <id>` (`:489-494`); `next` still stops there. The
 INCOMPLETE stop's condition is `verdict not in ("CLEAN", "FINDINGS")`
-(`:472`): a FINDINGS round reaching it is owner-accepted, so a stale receipt
-goes on to the refresh and review branches. `_open_items` (`:214`) treats
-```` ``` ```` and `~~~` fences (`_FENCES`, `:210`) as literal text; a fenced
-block in an `Open questions` section with no item before it lists
-`UNEXPLAINED_FENCE` (`:211`) unless an unanswered item follows it in that
-section, and a fence left open in the section lists "(an unclosed code
-fence)". `plugin/crew/tests/sabotage_autopilot.py` holds one mutation per
-new branch (the block after `# ---- T-0043`).
+(`:504`): a FINDINGS round reaching it is owner-accepted, so a stale receipt
+goes on to the refresh and review branches. `_open_items` (`:243`) treats
+backtick and tilde fences as literal text, by CommonMark's rules: a run of
+three or more of one marker opens one (`_FENCE`, `:211`) unless a backtick
+run has a backtick after it on the line, which is inline code
+(`_fence_opener`, `:221`), and only a run of the same marker, at least as
+long and with nothing after it, closes it (`_fence_closes`, `:234`). A
+fenced block in an `Open questions` section with no item before it lists
+`UNEXPLAINED_FENCE` (`:212`) unless an unanswered item follows it in that
+section; a fence never closed that opened in the section, or swallowed an
+`Open questions` heading, lists `UNCLOSED_FENCE` (`:213`).
+`plugin/crew/tests/sabotage_autopilot.py` holds one mutation per new branch
+(the blocks after `# ---- T-0043` and `# ---- T-0043 review round 1`).
 
 ## verify-gate's temp-file rule capture
 
@@ -635,8 +640,8 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   `main()` is the `decide` / `record` / `precompact` CLI.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:576` — `ticket_freshness`,
   the library entry point; `main()` at `:676`.
-- `plugin/crew/hooks/scripts/crew_autopilot.py:494` — `next_phase`, read-only;
-  `main()` at `:682` is the `next` / `resume` / `settings` / `stops` CLI
+- `plugin/crew/hooks/scripts/crew_autopilot.py:526` — `next_phase`, read-only;
+  `main()` at `:714` is the `next` / `resume` / `settings` / `stops` CLI
   `plugin/crew/commands/autopilot.md` calls.
 - `plugin/crew/hooks/scripts/crew_endpoints.py:566` — `declare_endpoint`,
   the only writer of *declared* records. Not the only writer of
@@ -999,3 +1004,33 @@ outside generated and code-map files, returns `.claude-plugin/marketplace.json`,
 `python3 -m pytest plugin/crew/tests -q -p no:cacheprovider` ran at `17ebc087` (the code commit
 before the bump): 3594 passed, 234 skipped. The verify rule's pair (`test_crew_autopilot.py`,
 `test_lifecycle_commands.py`) ran at `2a79938d`'s tree: 196 passed.
+
+## Re-anchor provenance - `2a79938d` -> `0593b32a`, 2026-09-26 (T-0043 review round 1)
+
+`0593b32a` re-sets crew 1.0.42 after `d513e671`, the round-1 fix to `_open_items`' fence
+handling. `git diff --name-only 2a79938d 0593b32a`, outside generated and code-map files,
+returns `CHANGELOG.md`, `plugin/crew/hooks/scripts/crew_autopilot.py`,
+`plugin/crew/tests/sabotage_autopilot.py` and `plugin/crew/tests/test_crew_autopilot.py`
+(`marketplace.json`, `plugin.json` and `PLUGINS.md` went to 1.0.41 and back, so the tree
+diff is empty). Each citation into them was re-read with `grep -n`/`sed -n` at `0593b32a`:
+
+- `crew_autopilot.py` - 737 -> 769 lines. `_FENCE` replaced `_FENCES` at `:211`; `UNCLOSED_FENCE`
+  (`:213`), `_opens_section` (`:216`), `_fence_opener` (`:221`) and `_fence_closes` (`:234`) are
+  new, so everything below moved +29 to +32: `_open_items` `:214` -> `:243`, `_review_phase`
+  `:434` -> `:466`, the FINDINGS reason `:457-462` -> `:489-494`, the INCOMPLETE condition `:472`
+  -> `:504`, `next_phase` `:494` -> `:526`, `resume_target` `:565` -> `:597`, `settings` `:635` ->
+  `:667`, `stops` `:664` -> `:696`, `main()` `:682` -> `:714`. `FIXED_STOPS` `:116`,
+  `PROCEDURE_STOPS` `:133`, `HUMAN_STOPS` `:139`, the docstring `:1-13` and the phase table
+  `:15-37` hold.
+- **Corrected at this anchor:** the `crew.json` warning `settings` emits was still cited at
+  `:612-616`, its place at `6f96e627`; the `6f96e627` -> `2a79938d` pass above did not move it
+  (it was `:655-659` there). It is `:687-691` now.
+- The T-0043 paragraph's fence sentence was reworded so no line of this note starts with a
+  backtick run. graphify's markdown extractor (in the installed graphify package, not this
+  repo) toggles its code-block state on any line whose stripped text starts with three
+  backticks, so such a line hid every later heading of this note from the graph: 12 nodes
+  for this file at `e17bf526`, 33 from the extractor on this text.
+- `CHANGELOG.md`, the two test files - cited by name only.
+
+The verify rule's pair (`test_crew_autopilot.py`, `test_lifecycle_commands.py`) ran at
+`d513e671`'s tree: 205 passed.

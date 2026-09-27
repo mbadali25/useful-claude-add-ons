@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@2a79938d
+anchor: useful-claude-add-ons@0593b32a
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -188,7 +188,9 @@ Notable rules, re-read directly:
   does not name (see rule 10). `crew_autopilot.py` also matches rules 0 and 14, `autopilot.md`
   rules 0 and 11. T-0043 appended its mutations after a `# ---- T-0043` comment in the same
   tuple and re-pointed "an INCOMPLETE round is rerun unattended" to the new condition; no new
-  file, so no new rule. The pair ran in 4.99s at `2a79938d` (196 tests), inside the 5s price.
+  file, so no new rule. Review round 1 appended six more after `# ---- T-0043 review round 1`
+  and re-pointed "an unclosed fence in the section reads as closed". The pair ran in 4.71s
+  wall at `0593b32a`'s tree (205 tests), inside the 5s price.
 
 **Still unresolved at this anchor:** a declared `seconds` figure is only
 overwritten by measurement when the rule carries *no* `seconds` at all
@@ -709,3 +711,16 @@ of `1e0706ac`: the non-RED sets were the same fourteen labels plus, on the branc
 drops an unexplained fenced block" STILL GREEN, which `2a79938d` re-points (renamed "a later
 section absorbs an unexplained fenced block"). The run at the final head is reported with the
 ticket, not here.
+
+## Re-anchor provenance - `2a79938d` -> `0593b32a`, 2026-09-26 (T-0043 review round 1)
+
+`git diff --name-only 2a79938d 0593b32a -- <the paths this note cites>` returns `CHANGELOG.md`,
+`plugin/crew/hooks/scripts/crew_autopilot.py`, `plugin/crew/tests/sabotage_autopilot.py` and
+`plugin/crew/tests/test_crew_autopilot.py`. `marketplace.json`, `plugin.json` and `PLUGINS.md`
+went to 1.0.41 in `9d77a4c8` and back to 1.0.42 in `0593b32a`, so their tree diff is empty.
+`.crew/verify.json`, `plugin/crew/tests/sabotage.py`, `verify-gate.sh`/`.ps1`,
+`scripts/check-marketplace.py` and the CI workflows did not change, so their citations stand unread.
+
+- `sabotage_autopilot.py` - `AUTOPILOT_MUTATIONS` still opens at `:19`; six entries appended and
+  one `find` re-pointed. `sabotage.py:77` and `:3049` re-read, unchanged.
+- `crew_autopilot.py`, `test_crew_autopilot.py`, `CHANGELOG.md` - cited by name only.

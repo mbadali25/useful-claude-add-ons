@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@2a79938d
+anchor: useful-claude-add-ons@0593b32a
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -575,3 +575,12 @@ and `plugin/crew/tests/sabotage_autopilot.py` (cited by name only, as rule 26's 
 `.crew/verify.json`, `README.md`, `plugin/README.md` and both install scripts did not change.
 `python3 scripts/check-marketplace.py` at `2a79938d`: `marketplace: 34 skills, 5 plugins` /
 `all checks passed`.
+
+Re-verified per-path from `2a79938d` to `0593b32a` for T-0043 review round 1. Of the cited paths,
+`git diff --name-only 2a79938d 0593b32a` returns `CHANGELOG.md` (the T-0043 entry's fence NIT
+reworded and its test and mutation counts corrected; cited without a line),
+`plugin/crew/hooks/scripts/crew_autopilot.py`, `plugin/crew/tests/test_crew_autopilot.py` and
+`plugin/crew/tests/sabotage_autopilot.py` (cited by name only, as rule 26's paths). The version
+files went to 1.0.41 and back to 1.0.42, so their tree diff is empty. `.crew/verify.json`,
+`INSTALLATION.md`, `README.md`, `plugin/README.md`, `plugin/crew/README.md` and both install
+scripts did not change.
