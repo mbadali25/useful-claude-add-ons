@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@8314d670
+anchor: useful-claude-add-ons@35fcebcb
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -544,9 +544,10 @@ two `stop=1` lines before stopping. In
 (`:653`), `accepted` (`:670`) demotes an `autopilot` receipt unless that refusal is None, and
 `approve` (`:716`) refuses an `autopilot` via the policy denies. `scope_guard.py`'s
 `_AUTOPILOT_APPROVE_RE` / `_AUTOPILOT_BARE_RE` (`:118-122`) and `_autopilot_refusal` (`:237`)
-allow only the bare command while the policy says yes; `_joined` (`:257`) gives every shell check
-the command as written and with line continuations joined (`_BASH_CONTINUATION_RE` /
-`_PS_CONTINUATION_RE`, `:126-127`). `commands/autopilot.md` runs both CLIs at
+allow only the bare command while the policy says yes; `shell_refusal` (`:265`) runs
+`_reading_refusal` (`:281`) on each reading `_joined` (`:257`) gives - the command as written
+and with line continuations joined (`_BASH_CONTINUATION_RE` / `_PS_CONTINUATION_RE`,
+`:126-127`) - while the bare-command rule judges the command as written. `commands/autopilot.md` runs both CLIs at
 the `approve` and `open-questions` phases (section 2), 119 of its 120 lines. Tests
 `plugin/crew/tests/test_crew_autopilot_policy.py` plus new cases in `test_crew_ticket.py` and
 `test_scope_guard.py`; mutations `POLICY_MUTATIONS` in `sabotage_autopilot.py` (33, `:167`),
@@ -1360,7 +1361,7 @@ every moved or merge-set one re-read with `sed -n` at `89c9ee9a`:
 - `marketplace.json:218`, `plugin.json:3` - 1.0.44; `:217`'s 4/35/29 counts unchanged. Corrected
   above.
 
-## Re-anchor provenance - `89c9ee9a` -> `8314d670`, 2026-09-27 (T-0010 review round 1 fixes)
+## Re-anchor provenance - `89c9ee9a` -> `8314d670` -> `35fcebcb`, 2026-09-27 (T-0010 review round 1 fixes)
 
 `8314d670` fixes the four FIX findings of T-0010's review round 1. Its citations were checked
 per path through `git diff 89c9ee9a 8314d670`, every moved one re-read with `grep -n`/`sed -n`
@@ -1373,9 +1374,10 @@ at `8314d670`:
   `questions_check` `:900`, `stops` `:937`, `main` `:976`; `FIXED_STOPS` `:145`,
   `PROCEDURE_STOPS` `:162`, `HUMAN_STOPS` `:168`. The T-0010 paragraph's claims changed with the
   code: a NEEDS_REPLAN ledger no longer refuses, and a `taken:` line's policy is history.
-- `scope_guard.py` (440 lines) - `_AUTOPILOT_APPROVE_RE` / `_AUTOPILOT_BARE_RE` `:118-122`, the
+- `scope_guard.py` (445 lines at `35fcebcb`, which split each reading's checks into
+  `_reading_refusal` `:281`) - `_AUTOPILOT_APPROVE_RE` / `_AUTOPILOT_BARE_RE` `:118-122`, the
   two continuation regexes `:126-127`, `_refresh_artifact` `:201-212` -> `:209-220`,
-  `_autopilot_refusal` `:237`, `_joined` `:257`.
+  `_autopilot_refusal` `:237`, `_joined` `:257`, `shell_refusal` `:265`.
 - `autopilot.md` - 119 lines; `:4`, `:13-20` and `:29-30` sit above the edit and hold.
 - `CHANGELOG.md` - T-0010's entry grew, so T-0004's leaf sentence is `:315-316`.
 - `sabotage_autopilot.py` - `POLICY_MUTATIONS` still `:167`, now 33 entries; `AUTOPILOT_MUTATIONS`

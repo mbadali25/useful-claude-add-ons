@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@8314d670
+anchor: useful-claude-add-ons@35fcebcb
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -921,3 +921,5 @@ at `8314d670`:
 - `.crew/verify.json` did not change; rules 27 and 28 still map the changed files.
 - `test_crew_autopilot.py`, `test_crew_autopilot_policy.py`, `test_scope_guard.py` - cited by
   name only.
+- `35fcebcb` (the guard's `_reading_refusal` split) changed one `POLICY_MUTATIONS` anchor string in
+  `sabotage_autopilot.py` in place; `:167` and the 33 / 31 counts hold. Re-anchored there.
