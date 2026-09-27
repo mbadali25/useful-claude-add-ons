@@ -316,6 +316,19 @@ STATUS_MUTATIONS = (
      "python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py next ",
      "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py next ",
      _S + "test_every_autopilot_invocation_in_command_skips_bytecode"),
+    # Round 4's FIX lines (T-0018-router--TR98fj, successor Step 6), one per new branch.
+    ("an unreadable active spec reads as an open ticket to offer", AUTOPILOT,
+     "    if spec is None and os.path.lexists(",
+     "    if spec is None and False and os.path.lexists(",
+     _S + "test_status_repoint_unreadable_active_spec_is_could_not_tell"),
+    ("a ticket named like a subcommand is suggested without `run`", AUTOPILOT,
+     "    if ticket in SUBCOMMANDS:\n        return f\"{AUTOPILOT} run {ticket}\"\n",
+     "    if False:\n        return f\"{AUTOPILOT} run {ticket}\"\n",
+     _S + "test_status_suggests_run_for_a_ticket_named_like_a_subcommand"),
+    ("the direct CLI writes bytecode", AUTOPILOT,
+     "    sys.dont_write_bytecode = True\n",
+     "    pass\n",
+     _S + "test_status_direct_cli_writes_no_bytecode"),
 )
 
 AUTOPILOT_MUTATIONS += STATUS_MUTATIONS

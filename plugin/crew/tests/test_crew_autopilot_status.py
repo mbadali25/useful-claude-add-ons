@@ -648,6 +648,113 @@ def test_status_repoint_says_unknown_when_the_active_phase_raises(tmp_path, monk
             "could not tell whether T-2" in got["waiting"]) == (True, False, True)
 
 
+def _deny_spec(monkeypatch, ticket):
+    """`ticket`'s spec.md exists and cannot be read. chmod denies nothing to
+    root, which these sessions run as, so the denial is injected into the
+    reader `crew_ticket.read_contract` uses."""
+    real = open
+    target = os.path.join(".work", "tickets", ticket, "spec.md")
+
+    def deny(path, *args, **kwargs):
+        if os.path.normpath(str(path)).endswith(target):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real(path, *args, **kwargs)
+    monkeypatch.setattr(crew_ticket, "open", deny, raising=False)
+
+
+def test_status_repoint_unreadable_active_spec_is_could_not_tell(tmp_path, monkeypatch):
+    root = _two_tickets(tmp_path, activate="T-2")
+    approve_as_user(root, T)
+    _deny_spec(monkeypatch, "T-2")
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert (f"crew_ticket.py activate --ticket {T}" in got["waiting"],
+            "or runs /crew:autopilot T-2" in got["waiting"],
+            "could not tell whether T-2 is still open" in got["waiting"]) == (True, False, True)
+
+
+@pytest.mark.parametrize("spec", ["readable", "absent"])
+def test_status_repoint_offers_an_open_active_ticket_whose_spec_reads_or_is_absent(
+        tmp_path, spec):
+    root = _two_tickets(tmp_path, activate="T-2")
+    approve_as_user(root, T)
+    if spec == "absent":
+        os.remove(str(root / ".work" / "tickets" / "T-2" / "spec.md"))
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert (got["waiting"].endswith("or runs /crew:autopilot T-2"),
+            "could not tell" in got["waiting"]) == (True, False)
+
+
+def _index_reads(monkeypatch, ticket):
+    """INDEX.md rows parse INDEX-shaped ids only (`crew_state._TICKET_RE`), so
+    a ticket named like a subcommand never gets past direction-approval on
+    disk. Its status cell is read as `spec` here so the drive suggestions
+    after that phase can be reached at all."""
+    real = crew_autopilot._index_status  # pylint: disable=protected-access
+
+    def status_cell(top, name):
+        return "spec" if name == ticket else real(top, name)
+    monkeypatch.setattr(crew_autopilot, "_index_status", status_cell)
+
+
+def _subcommand_ticket(tmp_path, monkeypatch, name, activate=True):
+    root = make_repo(tmp_path, mode="off")
+    for ticket in (name, "T-2"):
+        _ticket(root, ticket=ticket)
+    _index(root, "T-2 | spec | high | r | two")
+    _index_reads(monkeypatch, name)
+    approve_as_user(root, name)
+    if activate:
+        crew_ticket.activate(str(root), name)
+    return root
+
+
+@pytest.mark.parametrize("name", list(crew_autopilot.SUBCOMMANDS) + [T])
+def test_status_suggests_run_for_a_ticket_named_like_a_subcommand(tmp_path, monkeypatch, name):
+    root = _subcommand_ticket(tmp_path, monkeypatch, name)
+    _handoff(root, "resume: /crew:autopilot T-2")
+    word = "run " if name in crew_autopilot.SUBCOMMANDS else ""
+
+    got = crew_autopilot.status(str(root), name)
+    routed = crew_autopilot.route_args(str(root), f"{word}{name}")
+
+    assert (got["stop"], got["waiting"], routed["sub"], routed["ticket"], routed["stop"]) == (
+        False, f"autopilot - run /crew:autopilot {word}{name} to continue", "run", name, False)
+
+
+@pytest.mark.parametrize("name", ["status", "focus", T])
+def test_status_activating_suggestion_runs_a_ticket_named_like_a_subcommand(
+        tmp_path, monkeypatch, name):
+    root = _subcommand_ticket(tmp_path, monkeypatch, name, activate=False)
+    word = "run " if name in crew_autopilot.SUBCOMMANDS else ""
+
+    got = crew_autopilot.status(str(root), name)
+
+    assert (got["stop"], got["waiting"]) == (
+        True, f"autopilot - run /crew:autopilot {word}{name} to continue; it activates "
+              f"{name} first")
+
+
+@pytest.mark.parametrize("name", ["status", "assign", "T-3"])
+def test_status_repoint_offers_run_for_an_active_ticket_named_like_a_subcommand(
+        tmp_path, monkeypatch, name):
+    root = _two_tickets(tmp_path)
+    _ticket(root, ticket=name)
+    _index(root, "T-1 | spec | high | r | one", "T-2 | spec | high | r | two")
+    crew_ticket.activate(str(root), name)
+    approve_as_user(root, T)
+    word = "run " if name in crew_autopilot.SUBCOMMANDS else ""
+
+    got = crew_autopilot.status(str(root), T)
+    routed = crew_autopilot.route_args(str(root), f"{word}{name}")
+
+    assert (got["waiting"].endswith(f", or runs /crew:autopilot {word}{name}"),
+            routed["sub"], routed["ticket"], routed["stop"]) == (True, "run", name, False)
+
+
 def _git_state(root):
     index = os.path.join(str(root), ".git", "index")
     return _snapshot(root), os.stat(index).st_mtime_ns
@@ -703,6 +810,41 @@ def test_status_as_the_command_runs_it_writes_no_bytecode(tmp_path):
                for name in dirs + files if name == "__pycache__" or name.endswith(".pyc")]
     assert (outs[0].startswith("sub=status stop=0"), "ticket: " in outs[1], written) == (
         True, True, [])
+
+
+def _bytecode_env():
+    return {k: v for k, v in os.environ.items()
+            if k not in ("PYTHONDONTWRITEBYTECODE", "PYTHONPYCACHEPREFIX")}
+
+
+def _bytecode(plugin):
+    return [os.path.join(base, name) for base, dirs, files in os.walk(str(plugin))
+            for name in dirs + files if name == "__pycache__" or name.endswith(".pyc")]
+
+
+def test_status_direct_cli_writes_no_bytecode(tmp_path):
+    root = _approved(tmp_path / "repo")
+    plugin = _plugin_copy(tmp_path)
+    script = os.path.join(str(plugin), "hooks", "scripts", "crew_autopilot.py")
+
+    out = subprocess.run([sys.executable, script, "status", "--root", str(root)],
+                         cwd=str(root), env=_bytecode_env(), capture_output=True, text=True,
+                         check=False, stdin=subprocess.DEVNULL).stdout
+
+    assert ("ticket: " in out, _bytecode(plugin)) == (True, [])
+
+
+def test_importing_crew_autopilot_leaves_bytecode_setting_alone(tmp_path):
+    plugin = _plugin_copy(tmp_path)
+    scripts = os.path.join(str(plugin), "hooks", "scripts")
+    probe = ("import sys; sys.path.insert(0, sys.argv[1]); import crew_autopilot; "
+             "print(sys.dont_write_bytecode)")
+
+    out = subprocess.run([sys.executable, "-c", probe, scripts], cwd=str(tmp_path),
+                         env=_bytecode_env(), capture_output=True, text=True, check=False,
+                         stdin=subprocess.DEVNULL)
+
+    assert (out.returncode, out.stdout.strip()) == (0, "False")
 
 
 def test_every_autopilot_invocation_in_command_skips_bytecode():

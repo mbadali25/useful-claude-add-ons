@@ -13,7 +13,9 @@ T-0004. The lifecycle is prose commands (spec, plan, implement, review,
 done); `/crew:autopilot` follows each one's procedure in-session. This module
 is what names the NEXT one, from files on disk and nothing else, so a skipped
 phase is visible and a phase that cannot be told stops. Read-only: it never
-writes a file, never approves, never accepts a review.
+writes a file, never approves, never accepts a review. Run as a script it
+writes no bytecode either, however it is invoked (`-B` or not); a module that
+imports it keeps its own bytecode setting.
 
 ## next -- the phase from disk, first match wins
 
@@ -85,6 +87,10 @@ import json
 import os
 import re
 import sys
+
+if __name__ == "__main__":
+    # Before the sibling imports: the direct CLI is read-only too.
+    sys.dont_write_bytecode = True
 
 import crew_config
 import crew_state
@@ -768,7 +774,7 @@ def _waiting(top, result, bare):
         # is named only when it would drive this same ticket.
         if _takes(bare, result["ticket"]):
             return f"autopilot - run {AUTOPILOT} to continue"
-        return f"autopilot - run {AUTOPILOT} {result['ticket']} to continue"
+        return f"autopilot - run {_drive(result['ticket'])} to continue"
     try:
         guard = not _phase(top, result["ticket"])["stop"]
     except Exception:  # pylint: disable=broad-except
@@ -786,7 +792,7 @@ def _repoint(top, ticket):
         return ("owner - fixes the broken active-ticket pointer: "
                 f"crew_ticket.py activate --ticket {ticket}")
     if where != "active-ticket":
-        return f"autopilot - run {AUTOPILOT} {ticket} to continue; it activates {ticket} first"
+        return f"autopilot - run {_drive(ticket)} to continue; it activates {ticket} first"
     repoint = f"owner - re-points this worktree: crew_ticket.py activate --ticket {ticket}"
     try:
         closed = _closed(top, active)
@@ -796,7 +802,16 @@ def _repoint(top, ticket):
         return f"{repoint} (could not tell whether {active} is still open)"
     if closed:
         return f"{repoint} ({active} is closed)"
-    return f"{repoint}, or runs {AUTOPILOT} {active}"
+    return f"{repoint}, or runs {_drive(active)}"
+
+
+def _drive(ticket):
+    """The command that drives `ticket`. `route` reads a SUBCOMMANDS name as
+    the subcommand, so a ticket named like one is driven as `run <id>`; every
+    other id keeps the bare `/crew:autopilot <id>` form."""
+    if ticket in SUBCOMMANDS:
+        return f"{AUTOPILOT} run {ticket}"
+    return f"{AUTOPILOT} {ticket}"
 
 
 def _closed(top, ticket):
@@ -806,6 +821,11 @@ def _closed(top, ticket):
     if _index_status(top, ticket) in INDEX_DONE:
         return True
     spec = crew_ticket.read_contract(top, ticket)["spec.md"]
+    # read_contract returns None for a spec it could not read as well as for an
+    # absent one; only absence says "not closed".
+    if spec is None and os.path.lexists(os.path.join(crew_ticket.ticket_dir(top, ticket),
+                                                     "spec.md")):
+        return None
     return spec is not None and _header_status(
         crew_ticket._text(spec)) == "done"  # pylint: disable=protected-access
 

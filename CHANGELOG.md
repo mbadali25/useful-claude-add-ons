@@ -62,7 +62,16 @@ All notable changes to this repository are documented here. Format follows [Keep
     closes it, even with no `direction.md`; every `crew_autopilot.py` line in
     `autopilot.md` runs `python3 -B`, so `route` and `status` write no
     bytecode cache into the plugin (tested against a writable copy).
-  - Thirty-seven mutations in `tests/sabotage_autopilot.py`'s `STATUS_MUTATIONS`
+  - Review round 4's fixes: an active ticket whose `spec.md` exists but
+    cannot be read makes a pointer stop say it could not tell whether that
+    ticket is still open, never offer to drive it; a ticket whose id is a
+    subcommand name (`status`, `run`, `assign`, `goal`, `focus`) is suggested
+    as `/crew:autopilot run <id>`, since `route` reads the bare name as the
+    subcommand; `crew_autopilot.py` run as a script sets
+    `sys.dont_write_bytecode` before its sibling imports, so the direct CLI
+    writes no bytecode with or without `-B`, and a module importing it keeps
+    its own setting.
+  - Forty mutations in `tests/sabotage_autopilot.py`'s `STATUS_MUTATIONS`
     each turn their named test red. They are appended to
     `AUTOPILOT_MUTATIONS`, so `sabotage.py` runs them with the rest, and
     `test_crew_autopilot.py` asserts each one reaches `sabotage.MUTATIONS`.
