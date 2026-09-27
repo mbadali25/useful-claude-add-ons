@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@89f73d79
+anchor: useful-claude-add-ons@0834aaf9
 verified: 2026-09-27
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -930,5 +930,23 @@ Re-read at `89f73d79`:
   hold.
 - `test_crew_autopilot.py` - `test_status_sabotage_is_registered_with_sabotage_py` now expects 44.
 - `.crew/verify.json` did not change; rule 27's paths and command hold.
+
+No suite was run by this note.
+
+## Re-anchor provenance - `89f73d79` -> `0834aaf9`, 2026-09-27 (T-0018 plan step 7)
+
+`crew_refresh_check.py --root . --ticket T-0018` named this note after `88f52aa6`. That commit
+added one must-block test to `plugin/crew/tests/test_crew_autopilot_status.py` and pointed one
+`STATUS_MUTATIONS` entry at it, a one-line change in place in
+`plugin/crew/tests/sabotage_autopilot.py`. After it, `5c6cadee` / `0834aaf9` stepped the crew
+version back and set 1.0.43 again as the last change. Re-read at `0834aaf9`:
+
+- `plugin/crew/tests/sabotage_autopilot.py` - `AUTOPILOT_MUTATIONS` still `:25`,
+  `STATUS_MUTATIONS` still `:164`, still 44 entries (one retargeted, none added), the `+=` still
+  at `:358`, 358 lines.
+- `plugin/crew/tests/test_crew_autopilot_status.py` - cited by name only, so no line citation
+  moved.
+- `crew_autopilot.py`, `plugin/crew/tests/sabotage.py`, `.crew/verify.json` and the version files
+  are byte-identical to `89f73d79`'s.
 
 No suite was run by this note.

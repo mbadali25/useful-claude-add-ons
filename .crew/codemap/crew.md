@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@89f73d79
+anchor: useful-claude-add-ons@0834aaf9
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -1382,5 +1382,23 @@ citation into the changed files was re-read with `grep -n`/`sed -n` at `89f73d79
 - `plugin/crew/README.md` changed on one line in place (the `status` paragraph), so no line
   moved; the version files are byte-identical to `9e21a0d9`'s; `autopilot.md` and
   `.crew/verify.json` are unchanged.
+
+No suite was run by this note.
+
+## Re-anchor provenance - `89f73d79` -> `0834aaf9`, 2026-09-27 (T-0018 plan step 7)
+
+`crew_refresh_check.py --root . --ticket T-0018` named this note after `88f52aa6`. That commit
+added one must-block test to `plugin/crew/tests/test_crew_autopilot_status.py` and pointed one
+`STATUS_MUTATIONS` entry at it, a one-line change in place in
+`plugin/crew/tests/sabotage_autopilot.py`. After it, `5c6cadee` / `0834aaf9` stepped the crew
+version back and set 1.0.43 again as the last change. Re-read at `0834aaf9`:
+
+- `plugin/crew/tests/sabotage_autopilot.py` - `AUTOPILOT_MUTATIONS` still `:25`,
+  `STATUS_MUTATIONS` still `:164`, still 44 entries (one retargeted, none added), the `+=` still
+  at `:358`, 358 lines.
+- `plugin/crew/tests/test_crew_autopilot_status.py` - cited by name only, so no line citation
+  moved.
+- `crew_autopilot.py`, `plugin/crew/tests/sabotage.py`, `.crew/verify.json` and the version files
+  are byte-identical to `89f73d79`'s.
 
 No suite was run by this note.
