@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@e463ca53
+anchor: useful-claude-add-ons@65bb3330
 verified: 2026-09-27
 
 # localgpu
@@ -1130,3 +1130,12 @@ an unrelated path) were discarded rather than applied. This note cites
 `.crew/verify.json` by name only, and nothing under `plugin/localgpu/` changed on either side;
 the refresh check named the note only because `.crew/verify.json` gained T-0021's rule 28
 ahead of T-0023's routing rule, now 29. No citation moved. Nothing was executed for this note.
+
+## Re-anchor provenance - `e463ca53` -> `65bb3330`, 2026-09-27 (T-0018 lands on T-0023's main)
+
+`f458e752` merges main `bebbb97f` into T-0018-land (T-0018's reviewed head `e6b696fb` merged into
+`db14619c`), and `65bb3330` re-bumps crew to 1.0.47. `git diff --name-only e463ca53 65bb3330` returns
+T-0018's files and the refresh artifacts; nothing under `plugin/localgpu/` changed. This note cites
+`.crew/verify.json` and `plugin/crew/README.md` by name only; the refresh check named it because
+T-0018 widened rule 27 (one path line added) and documented its subcommands in the README. No
+citation moved. Nothing was executed for this note.
