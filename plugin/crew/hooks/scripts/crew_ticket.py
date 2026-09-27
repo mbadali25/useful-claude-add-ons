@@ -741,25 +741,53 @@ def approve(root, ticket, by=None, via=CLI, session=None, prompt_id=None, expect
     return receipt, successor
 
 
+_INDEX_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def _names(text, key):
+    """True when `text` names the ticket whose casefolded id is `key` as a
+    whole token -- `T-0050` is not `T-0050-fix` -- in any case."""
+    return any(tok.casefold() == key or tok.rstrip(".-").casefold() == key
+               for tok in _INDEX_TOKEN_RE.findall(text))
+
+
 def _index_closed(top, ticket):
-    """True when a `.work/INDEX.md` line closes `ticket` -- a table row whose
-    status cell is a `crew_state._TABLE_DONE_WORDS` word, or a prose line with
-    a done marker, the rule `crew_autopilot._is_open` applies. None when the
-    file exists and cannot be read: whether it is closed is then unknown."""
+    """`(closed, why)` from `.work/INDEX.md`: True, False, or None ("could not
+    tell", with `why`). Its own matcher, not crew_state's: that one knows only
+    upper-case prefix-number keys, so a lower-case or suffixed id -- both
+    valid `_TICKET_RE` ids -- read as open (review round 2). The id is
+    matched case-insensitively and whole. A table row is the ticket's when its
+    FIRST cell names it, and its status is the next cell; a row naming it
+    with no status cell cannot be told. A prose line closes it with a
+    `crew_state._DONE_RE` marker, the rule `crew_autopilot._is_open` applies."""
     import crew_state  # pylint: disable=import-outside-toplevel
     path = os.path.join(top, ".work", "INDEX.md")
     text = crew_common.read_text(path)
     if text is None:
-        return None if os.path.lexists(path) else False
+        if os.path.lexists(path):
+            return None, "could not read .work/INDEX.md"
+        return False, None
+    key, unknown = ticket.casefold(), None
     for line in text.splitlines():
-        table = crew_state._table_status(line, ticket)  # pylint: disable=protected-access
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        # Two bars make a table row; one makes a row only when the first
+        # cell is the bare id (`t-0050 |`), so a prose line with a stray bar
+        # still gets the prose rule.
+        table = line.count("|") >= 2 or (
+            line.count("|") == 1 and _INDEX_TOKEN_RE.fullmatch(cells[0] or "-") is not None)
         if table:
-            return True
-        found = crew_state._TICKET_RE.search(line)  # pylint: disable=protected-access
-        if table is None and found and found.group(1) == ticket \
-                and crew_state._DONE_RE.search(line):  # pylint: disable=protected-access
-            return True
-    return False
+            if _names(cells[0], key):
+                status = cells[1].lower() if len(cells) > 1 else ""
+                if status in crew_state._TABLE_DONE_WORDS:  # pylint: disable=protected-access
+                    return True, None
+                if not status:
+                    unknown = f"its row {line.strip()!r} has no status cell"
+            continue
+        if _names(line, key) and crew_state._DONE_RE.search(line):  # pylint: disable=protected-access
+            return True, None
+    if unknown:
+        return None, unknown
+    return False, None
 
 
 def precheck(root, ticket):
@@ -785,9 +813,9 @@ def precheck(root, ticket):
     result["plan_sha256"], result["spec_sha256"] = _sha(contract["plan.md"]), \
         _sha(contract["spec.md"])
     problems.extend(validate(top, ticket, contract))
-    closed = _index_closed(top, ticket)
+    closed, why = _index_closed(top, ticket)
     if closed is None:
-        problems.append(f"could not read .work/INDEX.md to tell whether {ticket} is closed")
+        problems.append(f"could not tell from .work/INDEX.md whether {ticket} is closed ({why})")
     elif closed:
         problems.append(f"{ticket} is closed in .work/INDEX.md")
     _, state = read_approval(root, ticket)

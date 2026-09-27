@@ -635,6 +635,43 @@ def test_precheck_closed_index_row(repo, row, closed):
     assert any("closed in .work/INDEX.md" in p for p in problems) is closed
 
 
+# Review round 2: the id is matched case-insensitively and whole, for every id
+# `_TICKET_RE` accepts -- crew_state's matcher knows only upper-case
+# prefix-number keys, so a lower-case or suffixed id read as open.
+@pytest.mark.parametrize("ticket,row,closed", [
+    ("t-0050", "T-0050 | done | high | x", True),
+    ("t-0050", "| T-0050 | Merged | x |", True),
+    ("t-0050", "- [x] T-0050 widget", True),
+    ("T-0050", "t-0050 | closed | x", True),
+    ("T-0050-fix", "T-0050-fix | done | x", True),
+    ("T-0050-fix", "| t-0050-FIX | shipped | x |", True),
+    ("rel.1", "REL.1 | complete | x", True),
+    ("T-0050-fix", "T-0050 | done | x", False),
+    ("t-0050", "T-0050-fix | done | x", False),
+    ("t-0050", "T-0050 | in-progress | x", False),
+    ("t-0050", "T-0051 | done | t-0050 follow-up", False),
+    ("t-0050", "- T-0050 widget", False),
+])
+def test_precheck_closed_row_any_case_or_suffix(repo, ticket, row, closed):
+    make_ticket(repo, ticket, activate=False)
+    (repo / ".work" / "INDEX.md").write_text(f"# Work\n\n{row}\n", encoding="utf-8")
+
+    problems = crew_ticket.precheck(str(repo), ticket)["problems"]
+
+    assert (any("closed in .work/INDEX.md" in p for p in problems),
+            any("could not tell" in p for p in problems)) == (closed, False)
+
+
+@pytest.mark.parametrize("row", ["| T-0050 |", "t-0050 |", "| t-0050 |  | x |"])
+def test_precheck_a_row_with_no_status_is_could_not_tell(repo, row):
+    make_ticket(repo, "t-0050", activate=False)
+    (repo / ".work" / "INDEX.md").write_text(f"{row}\n", encoding="utf-8")
+
+    problems = crew_ticket.precheck(str(repo), "t-0050")["problems"]
+
+    assert any("could not tell" in p and "t-0050" in p for p in problems), problems
+
+
 def test_precheck_unreadable_index_is_a_problem_not_open(repo):
     make_ticket(repo)
     (repo / ".work" / "INDEX.md").mkdir()
