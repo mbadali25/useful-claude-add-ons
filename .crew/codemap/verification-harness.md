@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@5832b32a
+anchor: useful-claude-add-ons@d276b268
 verified: 2026-09-27
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -205,7 +205,7 @@ Notable rules, re-read directly:
   `plugin/crew/tests/sabotage_tracker.py` and `plugin/crew/tests/tracker_fixtures/**` →
   `python3 -m pytest plugin/crew/tests/test_crew_tracker.py -q`, priced 4s (its `why` records
   3.3s measured 2026-09-26 — a claim read, not re-timed here). Its mutations live in
-  `plugin/crew/tests/sabotage_tracker.py` (`TRACKER_MUTATIONS`, 81 after review round 3),
+  `plugin/crew/tests/sabotage_tracker.py` (`TRACKER_MUTATIONS`, 81 after review rounds 3 and 4),
   imported by `plugin/crew/tests/sabotage.py:78` and appended at `:3050`.
 
 **Still unresolved at this anchor:** a declared `seconds` figure is only
@@ -863,3 +863,15 @@ this note.
 `plugin/crew/tests/test_crew_tracker.py`, where three lines now spell U+2028/U+2029 as escapes
 instead of raw characters (the same strings at run time). This note cites that test file by name
 only, so no citation moved. No test suite was executed for this note.
+
+## Re-anchor provenance - `5832b32a` -> `d276b268`, 2026-09-27 (T-0021 review round 4)
+
+`git diff --name-only 5832b32a d276b268` returns T-0021's round-4 files: `crew_tracker.py`,
+`brainstorm.md`, `fix.md`, `test_crew_tracker.py`, `test_lifecycle_commands.py`,
+`sabotage_tracker.py`, `plugin/crew/README.md`, `CHANGELOG.md`, two crew guides and the version
+files (net unchanged). This note cites the tracker files and `fix.md` by name only.
+`TRACKER_MUTATIONS` still holds 81 (counted by importing `sabotage_tracker`); two of them were
+re-aimed at moved lines, the userinfo mutation at `normal_url`'s new line and the
+INDEX-refused-late mutation at `test_obsidian_create_writes_no_card_when_index_refuses_late`.
+`plugin/crew/tests/sabotage.py` did not change, so `:75`-`:78` and `:3048-3050` hold. No test
+suite was executed for this note.

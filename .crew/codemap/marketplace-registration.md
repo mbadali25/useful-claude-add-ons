@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@c2ae46ab
+anchor: useful-claude-add-ons@d276b268
 verified: 2026-09-27
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -451,3 +451,15 @@ was re-mapped from the side of the merge its line came from (`git blame`: main's
 was re-read at `c2ae46ab`. Corrected here: crew's version is 1.0.43 at all three sites;
 `plugin/crew/BUDGETS.md:11` reads 18,713 lines across 126 files, recomputed on the merged tree and
 matching `check-marketplace.py`. No test suite was executed for this note.
+
+## Re-anchor provenance - `c2ae46ab` -> `d276b268`, 2026-09-27 (T-0021 review round 4)
+
+`git diff --name-only c2ae46ab d276b268` returns T-0021's test-escape and round-4 files:
+`crew_tracker.py`, `brainstorm.md`, `fix.md`, three test files, `plugin/crew/README.md`,
+`CHANGELOG.md`, `TODO.md` (one follow-up appended at `:5080`), two crew guides with their built
+outputs, and the version files (stepped to 1.0.42 and re-set to 1.0.43 twice, net unchanged, so
+crew's `version` at `.claude-plugin/marketplace.json:218` and `plugin/PLUGINS.md:14` still read
+1.0.43). This note cites `plugin/crew/README.md` by name only, and `:217`, `:218`, `:14` and
+`:17` were re-read and hold. `scripts/check-marketplace.py`, both install scripts, `CLAUDE.md`,
+the root `README.md` and `skills/README.md` did not change. No test suite was executed for this
+note.

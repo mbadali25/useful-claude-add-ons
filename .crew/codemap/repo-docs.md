@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@c2ae46ab
+anchor: useful-claude-add-ons@d276b268
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -130,7 +130,7 @@ listing the directory.
   diff). Both provenance shapes are still accepted by `_DIAGRAM_ANCHOR_RE`.
 - `docs/diagrams/data-flow-crew-config.mmd:1-2`, `process-crew-brief.mmd:1`
   and `process-crew-lifecycle.mmd:1` - the three crew diagrams, each on the
-  `%% Generated from <repo>@<sha> on <date>.` form, all at `7b667587` after
+  `%% Generated from <repo>@<sha> on <date>.` form, all at `d276b268` after
   T-0021 (which added `crew_tracker.py` to each one's `%% Anchors:` line and
   drew the tracker calls into the lifecycle). `data-flow-crew-config` was redrawn for crew 1.0 at `6c497a14`
   (`5e937837`, the refresh branch) and re-anchored, its `%% Anchors:` paths
@@ -299,7 +299,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:2006` (`:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:2015` (`:2006` at `c2ae46ab`, `:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -669,3 +669,17 @@ was re-mapped from the side of the merge its line came from (`git blame`: main's
 was re-read at `c2ae46ab`. Corrected here: the `docs/runbooks/INDEX.md` sentence in
 `plugin/crew/README.md` is `:2006`; the tracker rule is recorded at `.crew/verify.json:301-308`. No
 command or suite was executed for this note.
+
+## Re-anchor provenance - `c2ae46ab` -> `d276b268`, 2026-09-27 (T-0021 review round 4)
+
+`git diff --name-only c2ae46ab d276b268` returns T-0021's test-escape and round-4 files:
+`crew_tracker.py`, `brainstorm.md`, `fix.md`, three test files, `plugin/crew/README.md`,
+`CHANGELOG.md`, `TODO.md` (one follow-up appended at `:5080`), two crew guides with their built
+outputs, and the version files (stepped to 1.0.42 and re-set to 1.0.43 twice, net unchanged, so
+crew's `version` at `.claude-plugin/marketplace.json:218` and `plugin/PLUGINS.md:14` still read
+1.0.43). Corrected here: the `docs/runbooks/INDEX.md` sentence in `plugin/crew/README.md` is
+`:2015` (section 13c grew by 9 lines above it, re-grepped), and the three crew diagrams now carry
+`d276b268`. `TODO.md:1190` sits above the appended line and holds. `docs/guides/crew/src/`
+gained a ticket-board section in `memory-and-obsidian.md` and an `id taken` entry in
+`troubleshooting.md`; only those two guides were rebuilt. The root `README.md`, `plugin/README.md`
+and `skills/README.md` did not change. No command or suite was executed for this note.

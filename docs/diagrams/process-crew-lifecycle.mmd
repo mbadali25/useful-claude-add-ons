@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@c2ae46ab on 2026-09-27. Verify before trusting.
+%% Generated from useful-claude-add-ons@d276b268 on 2026-09-27. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -57,12 +57,18 @@
 %% take the next free id and write nothing under it (brainstorm.md:34-36,
 %% fix.md:28-29), creating the ticket folder only after; brainstorm.md from :41 on
 %% and fix.md from :30 on moved (+1 and +3), re-read with grep -n.
+%% Review round 4 at d276b268: on any failed `create` other than `id taken`,
+%% brainstorm.md and fix.md now stop and write nothing under that id
+%% (brainstorm.md:35-37, fix.md:29-30) instead of carrying on into the ticket
+%% folder. brainstorm.md kept its line count; fix.md gained one line, so its
+%% citations from :30 on moved +1 (re-mapped with a line diff against c2ae46ab).
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):
 %%   plugin/crew/commands/brainstorm.md:15-40 mint ticket: crew_tracker.py resolve (:22),
 %%     then crew_tracker.py create (:28) - INDEX row `direction`, Obsidian card + note;
-%%     `id taken` -> next free id, nothing written under it (:34-36);
+%%     `id taken` -> next free id, nothing written under it (:34-36); any other
+%%     failed create -> stop, nothing written under that id (:35-37);
 %%     :45 one question per message; :54 propose 2-3 options; :63-71 direction.md;
 %%     :73 show and stop; :81 crew_tracker.py move --to ready (INDEX `ready`, card
 %%     stays in Backlog); :90-91 suggest /crew:fix when small.
@@ -105,9 +111,10 @@
 %%     (:61-62), then crew_tracker.py move --to done (:63); :70 crew_metrics record.
 %%     Stop hooks: plugin/crew/hooks/hooks.json:58 (verify-gate.sh), :62 (completion-audit.sh).
 %%   plugin/crew/commands/fix.md:2 the light path - every phase, each compressed
-%%     to one step; :27 crew_tracker.py create (`id taken` -> next free id, :28-29),
-%%     :72 --to spec, :80 --to planned, :88 --to in-progress, :90 --to review;
-%%     :74 one-step plan, still /crew:approve; :93 one review round.
+%%     to one step; :27 crew_tracker.py create (`id taken` -> next free id, :28-29;
+%%     any other failure -> stop, :29-30),
+%%     :73 --to spec, :81 --to planned, :89 --to in-progress, :91 --to review;
+%%     :75 one-step plan, still /crew:approve; :94 one review round.
 %% --
 %% Status edits after approval (T-0026): three steps edit spec.md's header status
 %% AFTER approval - plan.md:59 (`planned`), implement.md:108 (`review`) and
@@ -123,11 +130,11 @@
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
-    small -- yes --> fix["/crew:fix - same phases,<br/>one step each, one review round<br/>fix.md:2, :74, :93"]
+    small -- yes --> fix["/crew:fix - same phases,<br/>one step each, one review round<br/>fix.md:2, :75, :94"]
     small -- no --> BR
 
     subgraph brainstorm["/crew:brainstorm"]
-        BR["mint T-####: crew_tracker.py create<br/>INDEX row 'direction' (+ Obsidian card);<br/>'id taken' -> next free id<br/>brainstorm.md:15-40"] --> br2["one question per message,<br/>then 2-3 options, recommendation first<br/>:45, :54"]
+        BR["mint T-####: crew_tracker.py create<br/>INDEX row 'direction' (+ Obsidian card);<br/>'id taken' -> next free id;<br/>any other failure -> stop<br/>brainstorm.md:15-40"] --> br2["one question per message,<br/>then 2-3 options, recommendation first<br/>:45, :54"]
         br2 --> br3["write direction.md, show, STOP<br/>:63-73"]
     end
 

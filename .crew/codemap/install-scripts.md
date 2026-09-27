@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@c2ae46ab
+anchor: useful-claude-add-ons@d276b268
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -597,3 +597,16 @@ was re-read at `c2ae46ab`. Of the cited paths `.claude-plugin/marketplace.json` 
 `plugin/crew/README.md` changed; both install scripts, the root `README.md` and
 `scripts/check-marketplace.py` did not, so their citations stand. No test suite was executed
 for this note.
+
+## Re-anchor provenance - `c2ae46ab` -> `d276b268`, 2026-09-27 (T-0021 review round 4)
+
+`git diff --name-only c2ae46ab d276b268` returns T-0021's test-escape and round-4 files:
+`crew_tracker.py`, `brainstorm.md`, `fix.md`, three test files, `plugin/crew/README.md`,
+`CHANGELOG.md`, `TODO.md` (one follow-up appended at `:5080`), two crew guides with their built
+outputs, and the version files (stepped to 1.0.42 and re-set to 1.0.43 twice, net unchanged, so
+crew's `version` at `.claude-plugin/marketplace.json:218` and `plugin/PLUGINS.md:14` still read
+1.0.43). Of the cited paths only `plugin/crew/README.md` changed: section 13c's "Whose card"
+paragraph grew by 9 lines above the command table, so the `35 commands` claim moved `:2457` ->
+`:2466` and `4 agents` `:2468` -> `:2477` (re-grepped; `ls plugin/crew/commands/*.md` is 35).
+Both install scripts, the root `README.md` and `scripts/check-marketplace.py` did not change, so
+their citations stand. No test suite was executed for this note.

@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@5832b32a
+anchor: useful-claude-add-ons@d276b268
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -609,90 +609,102 @@ T-0015 against this refresh.
 
 ## The tracker interface (T-0021, crew 1.0.43)
 
-DERIVED at `c2ae46ab` (review round 3's fixes merged onto main's 1.0.42 and
-set to 1.0.43; first derived at `7b667587`, re-derived at `bcb77ce2`).
+DERIVED at `2a9e0989` (review round 4's fixes; set to 1.0.43 at `d276b268`;
+first derived at `7b667587`, re-derived at `bcb77ce2` and `c2ae46ab`).
 `plugin/crew/hooks/scripts/crew_tracker.py` is the one module that writes a
 tracker, and the only crew code that writes outside the repository (an
 Obsidian vault). A CLI the commands call, not a hook.
 
-- `resolve` (`:209`) reads BOTH config shapes - `.crew/crew.json`
-  `tracker.kind` and `.crew/config.json` `tracker` (`_side`, `:138`) - and
+- `resolve` (`:210`) reads BOTH config shapes - `.crew/crew.json`
+  `tracker.kind` and `.crew/config.json` `tracker` (`_side`, `:139`) - and
   answers `could not tell` when both state a kind and they differ; for
   obsidian, when the two files yield a different effective vault, `boardDir`,
   `board` or lane names, defaults and the `memory.vaultPath` fallback applied,
-  a value only one file yields included (`_effective` `:175`,
-  `_effective_disagreements` `:196`); for jira/sdp, when their blocks differ
+  a value only one file yields included (`_effective` `:176`,
+  `_effective_disagreements` `:197`); for jira/sdp, when their blocks differ
   whole, a block only one file carries included. `not configured` when
   neither states one. Every write refuses on `could not tell` (`_gate`,
-  `:269`).
-- Status -> lane is the table `LANE_FOR_STATUS` (`:89`), `ready` (brainstorm's
+  `:270`).
+- Status -> lane is the table `LANE_FOR_STATUS` (`:90`), `ready` (brainstorm's
   approval) included, mapped to the backlog lane; a status absent from it is
-  refused with nothing written (`move`, `:1294`). `STATUS_ORDER` (`:88`) is
-  read by `_backwards` (`:579`): a move backwards, or from a status crew does
+  refused with nothing written (`move`, `:1356`). `STATUS_ORDER` (`:89`) is
+  read by `_backwards` (`:590`): a move backwards, or from a status crew does
   not know, is `could not update` unless `--reopen`.
 - Files backend: the `.work/INDEX.md` row whose id cell matches exactly
-  (`_files_create` `:591`, `_files_move` `:617`, `_files_read` `:645`); a row
+  (`_files_create` `:602`, `_files_move` `:628`, `_files_read` `:656`); a row
   with no status cell is `could not update` / `could not read`; `create` on
   any id INDEX holds, the same title included, is refused with a reason
-  beginning `id taken` (`_held`, `:567`; `TAKEN`, `:82`). `title_ok`
-  (`:557`) refuses `|` and every break `str.splitlines` honours. Obsidian =
-  files + the board (`_obsidian_create` `:1172`, `_obsidian_move` `:1201`,
-  `_obsidian_read` `:1240`); a move whose INDEX half refuses writes no board
-  (`:1235`), as a create whose INDEX half refuses writes no card (`:1188`).
+  beginning `id taken` (`_held`, `:578`; `TAKEN`, `:83`). `title_ok`
+  (`:568`) refuses `|` and every break `str.splitlines` honours. Obsidian =
+  files + the board (`_obsidian_create` `:1218`, `_obsidian_move` `:1263`,
+  `_obsidian_read` `:1302`); a move whose INDEX half refuses writes no board
+  (`:1297`), as a create whose INDEX half refuses writes no card (`:1251`).
   Jira/SDP answer `delegated` with `<sync> <KEY> --push --to <status>` at
-  `_PUSH_AT` (`:112`: `in-progress`, `done`) and `nothing to push` otherwise
-  (`_push` `:1270`, `_delegated` `:1265`); CLI exit codes 0/1/3/2
-  (`exit_code` `:263`, `main` `:1348`).
-- Every write goes through `_atomic_update` (`:384`): the temp is created by
-  `_write_temp` (`:371`) via `_write_new` (`:358`) with `_TEMP_FLAGS` (`:288`,
+  `_PUSH_AT` (`:113`: `in-progress`, `done`) and `nothing to push` otherwise
+  (`_push` `:1332`, `_delegated` `:1327`); CLI exit codes 0/1/3/2
+  (`exit_code` `:264`, `main` `:1410`).
+- Obsidian `create`'s order (review round 4): INDEX first (`_index_holds`
+  `:1192`, called at `:1220`, before `_vault_paths`), so a vault failure never
+  hides a held id; then vault, identity, board and owner check; then the
+  claim, the note's exclusive create (`:1245`), before the INDEX row and the
+  card. A note that appeared after the owner check makes that create fail,
+  and `create` answers `id taken` (`:1246`, reason from `_lost_claim`
+  `:1208`) with nothing written after it. A note that was already this repo's
+  is not re-created, and the INDEX row decides under its atomic update.
+- Every write goes through `_atomic_update` (`:385`): the temp is created by
+  `_write_temp` (`:372`) via `_write_new` (`:359`) with `_TEMP_FLAGS` (`:289`,
   `O_EXCL|O_NOFOLLOW`) under a random name, so a planted link is never
-  followed; `_carry` (`:342`) gives it the target's owner and mode from
-  `_ownership` (`:326`) - a new file takes its directory's owner only as root;
-  then re-read the target (`:410`), `os.replace`, at most `WRITE_TRIES`
-  (`:106`) recomputes.
-- Vault confinement is `_vault_paths` (`:905`): realpath, `.obsidian/`
+  followed; `_carry` (`:343`) gives it the target's owner and mode from
+  `_ownership` (`:327`) - a new file takes its directory's owner only as root;
+  then re-read the target (`:411`), `os.replace`, at most `WRITE_TRIES`
+  (`:107`) recomputes.
+- Vault confinement is `_vault_paths` (`:923`): realpath, `.obsidian/`
   required, relative `boardDir` without `..`, a string bare `board`,
-  `commonpath` inside the vault (`:938`), the vault's device and inode
-  recorded (`:930`), and each board or note file inside the worktree only when
-  `git check-ignore` says ignored (`:949`, per file, so a vault that contains
+  `commonpath` inside the vault (`:956`), the vault's device and inode
+  recorded (`:948`), and each board or note file inside the worktree only when
+  `git check-ignore` says ignored (`:967`, per file, so a vault that contains
   the repo is covered). It runs before either half writes. The write then
-  pins its directory (`_pinned` `:1051`): where `_DIR_FD` (`:295`) holds,
-  `_open_pinned` (`:981`) opens the checked vault (inode matched) and walks the
-  real path's components with `_DIR_FLAGS` (`:290`, `O_DIRECTORY|O_NOFOLLOW`),
+  pins its directory (`_pinned` `:1069`): where `_DIR_FD` (`:296`) holds,
+  `_open_pinned` (`:999`) opens the checked vault (inode matched) and walks the
+  real path's components with `_DIR_FLAGS` (`:291`, `O_DIRECTORY|O_NOFOLLOW`),
   every read, temp, replace and note create is relative to that fd, and
-  `_pinned_check` (`:1007`) repeats the walk and matches device and inode
+  `_pinned_check` (`:1025`) repeats the walk and matches device and inode
   before the temp, before the replace and after it, because the fd follows its
   directory if it is renamed out of the vault; a note written into a directory
-  that left is unlinked through the fd (`_create_note_once` `:1093`).
-  Elsewhere (Windows) `_parent_check` (`:1036`) re-checks the directory's
+  that left is unlinked through the fd (`_create_note_once` `:1111`).
+  Elsewhere (Windows) `_parent_check` (`:1054`) re-checks the directory's
   realpath at the same three points.
 - Card ownership on a shared board (`boardDir` unset): the ticket note's
-  `repo-id:` (`_NOTE_REPO_ID` `:1134`, `_card_owner` `:1138` -> ours / foreign
-  / unknown). The id is `repo_id` (`:519`): the origin URL through
-  `normal_url` (`:487`, lowercased, userinfo and `.git` stripped); for a local
-  origin (`_local_path` `:505`), an absolute path's realpath, and for a
-  relative one - `../origin/app.git` names a different repository from each
-  checkout - the git common dir's realpath, as with no origin; `None` (git
-  could not say) refuses via `_no_identity` (`:1167`). `_foreign` (`:1157`)
-  refuses create, move and read; unknown refuses create and move with the
-  `repo-id:` fix (`_unclaimed` `:1162`) and is a caveat on read. There is no
-  claim: a card's text matching this repo's INDEX title is not an owner.
-  `repo_name` (`:545`) is a human label only.
-- The board is edited, never regenerated: `parse_board` (`:727`, lines split
-  on LF alone by `_board_lines` `:686`; the done lane must carry exactly one
-  `**Complete**`, `_complete_markers` `:766`), `find_card` (`:790`; a card is
-  the first id on its first line), `move_card` (`:844`; a card already in its
-  lane is repaired in place by `_checkbox` `:835`, and one above
-  `**Complete**` in Done is moved below it), `add_card` (`:871`), written by
-  `_board_write` (`:1065`). The ticket note (`_note_text` `:1084`) is an
-  exclusive create (`_create_note_once` `:1093`, `_NOTE_FLAGS` `:289`).
+  `repo-id:` (`_NOTE_REPO_ID` `:1154`, trailing `\r` excluded so a CRLF note
+  reads as written; `_card_owner` `:1158` -> ours / foreign / unknown). The id
+  is `repo_id` (`:530`): the origin URL through `normal_url` (`:491`,
+  lowercased, `.git` stripped; an ssh origin - scp-style or a scheme in
+  `_SSH_SCHEMES` `:488` - keeps its username and drops a password, every other
+  scheme drops the whole userinfo); for a local origin (`_local_path` `:513`,
+  a `file://` path percent-decoded as git decodes it), an absolute path's
+  realpath, and for a relative one - `../origin/app.git` names a different
+  repository from each checkout - the git common dir's realpath, as with no
+  origin; `None` (git could not say) refuses via `_no_identity` (`:1187`).
+  `_foreign` (`:1177`) refuses create, move and read; unknown refuses create
+  and move with the `repo-id:` fix (`_unclaimed` `:1182`) and is a caveat on
+  read. There is no claim by title: a card's text matching this repo's INDEX
+  title is not an owner. `repo_name` (`:556`) is a human label only.
+- The board is edited, never regenerated: `parse_board` (`:738`, lines split
+  on LF alone by `_board_lines` `:697`; the done lane must carry exactly one
+  `**Complete**`, `_complete_markers` `:777`), `find_card` (`:801`; a card is
+  the first id on its first line), `move_card` (`:862`; a card already in its
+  lane is repaired in place by `_checkbox` `:849`, which also gives a card
+  with no box one (`_BOX` `:846`), and one above `**Complete**` in Done is
+  moved below it), `add_card` (`:889`), written by `_board_write` (`:1083`).
+  The ticket note (`_note_text` `:1102`) is an exclusive create
+  (`_create_note_once` `:1111`, `_NOTE_FLAGS` `:290`).
 - Called by `brainstorm.md:28` and `:81`, `spec.md:46`, `plan.md:60`,
-  `implement.md:36` and `:110`, `done.md:63` and `fix.md:27`, `:72`, `:80`,
-  `:88`, `:90` (all under `plugin/crew/commands/`); brainstorm and fix take
-  the next free id on `id taken` and create the ticket folder only after
-  `create`; `jira-sync.md` and `sdp-sync.md` honour `--to`; `crew_status.py`
-  prints its tracker line from `resolve`
-  (`plugin/crew/hooks/scripts/crew_status.py:63`).
+  `implement.md:36` and `:110`, `done.md:63` and `fix.md:27`, `:73`, `:81`,
+  `:89`, `:91` (all under `plugin/crew/commands/`); brainstorm and fix take
+  the next free id on `id taken`, stop on any other failed `create`, and
+  create the ticket folder only after a `create` that succeeded;
+  `jira-sync.md` and `sdp-sync.md` honour `--to`; `crew_status.py` prints its
+  tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:63`).
 - Tests: `plugin/crew/tests/test_crew_tracker.py`, fixtures under
   `plugin/crew/tests/tracker_fixtures/`, 81 mutations in
   `plugin/crew/tests/sabotage_tracker.py` (two of them RED only as root: the
@@ -1339,3 +1351,17 @@ this note.
 `plugin/crew/tests/test_crew_tracker.py`, where three lines now spell U+2028/U+2029 as escapes
 instead of raw characters (the same strings at run time). This note cites that test file by name
 only, so no citation moved. No test suite was executed for this note.
+
+## Re-anchor provenance - `5832b32a` -> `d276b268`, 2026-09-27 (T-0021 review round 4)
+
+`git diff --name-only 5832b32a d276b268` returns `plugin/crew/hooks/scripts/crew_tracker.py`,
+`plugin/crew/commands/brainstorm.md`, `plugin/crew/commands/fix.md`, three test files
+(`test_crew_tracker.py`, `test_lifecycle_commands.py`, `sabotage_tracker.py`),
+`plugin/crew/README.md`, `CHANGELOG.md`, two guide sources with their six built outputs, and the
+version files (stepped to 1.0.42 and re-set to 1.0.43, net unchanged). The tracker-interface
+section was re-derived from source at `2a9e0989` (`crew_tracker.py` is identical at `d276b268`):
+every line it cites was re-mapped with a line diff against `5832b32a`, and the new ones
+(`_SSH_SCHEMES`, `_BOX`, `_index_holds`, `_lost_claim`, the claim at `:1245-1246`) were grepped.
+Its command call sites: `brainstorm.md:28`/`:81` hold (the file kept its line count); `fix.md:27`
+holds and `:72`/`:80`/`:88`/`:90` moved to `:73`/`:81`/`:89`/`:91`; `fix.md:2` holds. README,
+CHANGELOG and the test files are cited by name only. No test suite was executed for this note.
