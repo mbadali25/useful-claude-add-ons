@@ -210,12 +210,12 @@ Notable rules, re-read directly:
   16 slow deselected, measured 2026-09-26 — a claim read, not re-timed by this note). The
   `FLAVOUR_MATRIX` `sh`/`ps1` cases are `slow`, so this rule does not run the wrappers; the
   whole-suite rule and CI's `-m slow` job do. Its mutations live in
-  `plugin/crew/tests/sabotage_approval.py` (`APPROVAL_MUTATIONS`, `:32`; 52 entries by
-  `len()` on the merge tree, 44 at `a2802526` — count them there, the `why` states no number),
-  imported by `plugin/crew/tests/sabotage.py:78` and appended at `:3051`. `crew_ticket.py` is
-  now named by rules 10 and 28 both. The merge's owner-only group-confirm gate in
-  `crew_ticket.approve` is tested in `test_crew_ticket.py` (so rules 10 and 28 run it) and its
-  two mutations sit in rule 27's `POLICY_MUTATIONS` (29 entries on the merge tree).
+  `plugin/crew/tests/sabotage_approval.py` (`APPROVAL_MUTATIONS`, `:32`; 65 entries by
+  `len()` on the second merge tree, 52 on the first, 44 at `a2802526` — count them there, the
+  `why` states no number), imported by `plugin/crew/tests/sabotage.py:78` and appended at
+  `:3051`. `crew_ticket.py` is now named by rules 10 and 28 both. The merge's owner-only
+  group-confirm gate in `crew_ticket.approve` is tested in `test_crew_ticket.py` (so rules 10
+  and 28 run it) and its two mutations sit in rule 27's `POLICY_MUTATIONS` (29 entries).
 
 **Still unresolved at this anchor:** a declared `seconds` figure is only
 overwritten by measurement when the rule carries *no* `seconds` at all
@@ -863,3 +863,23 @@ one whose number moved or whose line changed was re-read with `grep -n`/`sed -n`
 Every POLICY_MUTATIONS, APPROVAL_MUTATIONS, AUTOPILOT_MUTATIONS and SCOPE_MUTATIONS anchor was
 counted in the merged text (exactly one each). The suites and `sabotage.py` were run for the
 merge, not for this note; their counts are in the merge report, not restated here.
+
+Re-verified per-path from `a2802526` to `32223b8a` for T-0024's review round 1: of the cited paths
+only `plugin/crew/tests/sabotage_approval.py` (nine mutations added for the round-1 fixes,
+three re-anchored, one re-targeted to the test that holds its single-id case, the expanded-form
+break-check mutation deleted with its code; 52 by `len()`,
+`APPROVAL_MUTATIONS` still at `:32`), `marketplace.json` and `CHANGELOG.md` (cited by name only)
+changed. `sabotage.py`'s registration `:78`/`:3050` and `.crew/verify.json` did not change.
+
+Re-verified per-path from `32223b8a` to `f8671fdc` for T-0024's successor step 6: of the cited paths
+`plugin/crew/tests/sabotage_approval.py` (ten mutations added for the round-2 fixes, four
+re-anchored; 61 by `len()`, `APPROVAL_MUTATIONS` still at `:32`), `crew_ticket.py` (`precheck`
+`:765` -> `:793`; `approve` `:686` and `parse_risk` `:505` hold; still rules 10 and 27),
+`marketplace.json`, `CHANGELOG.md` and `BUDGETS.md` (cited by name only) changed. `sabotage.py`'s
+registration `:78`/`:3050` and `.crew/verify.json` did not change.
+
+Re-verified per-path from `f8671fdc` to `45345812` for T-0024's review round 3: of the cited paths
+`plugin/crew/tests/sabotage_approval.py` (four mutations added, three re-anchored, one retargeted;
+65 by `len()`, still at `:32`), `crew_ticket.py` (`precheck` `:793` -> `:810`; `approve` `:686`,
+`parse_risk` `:505` hold), `marketplace.json` and `CHANGELOG.md` (by name only) changed.
+`sabotage.py` `:78`/`:3050`, `.crew/verify.json` and `BUDGETS.md` did not change.

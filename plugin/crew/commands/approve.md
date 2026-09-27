@@ -30,6 +30,8 @@ hook checks every ticket, blocks the prompt, and shows the user a PENDING
 list with each ticket's plan and spec hash. Only the user's own next
 `/crew:approve --confirm` (one line, same session, within 10 minutes, every
 hash unchanged) records them - one receipt per ticket - or records none.
+Whitespace after `--confirm` is ignored; other text after a line break, a
+comma not between two ids, or a command nested in another tag is refused.
 When `$1` is `--confirm` or the hook message names several tickets, relay the
 result in at most one line per ticket:
 

@@ -639,3 +639,15 @@ mention moved to `:1829` (`:1821` at `926522f7`, `:1812` at `a2802526`; re-grepp
 `crew_ticket.py` is cited by name only. `CHANGELOG.md` holds T-0010's, T-0018's and T-0024's
 entries under [Unreleased] (cited without a line). `README.md`, `TODO.md` (unchanged by T-0024),
 `plugin/README.md` and both install scripts did not change.
+
+Re-verified per-path from `a2802526` to `f8671fdc` for T-0024's review round 1 and successor step 6.
+Of the cited paths, `.claude-plugin/marketplace.json` (version only, 1.0.44), `CHANGELOG.md` (1.0.43
+and 1.0.44 entries at the top; cited without a line), `plugin/PLUGINS.md` (`:14` only),
+`plugin/crew/README.md` (group-approval prose only; the `docs/runbooks/INDEX.md` mention still at
+`:1812`, re-grepped) and `plugin/crew/hooks/scripts/crew_ticket.py` (cited by name only, as a rule's
+path) changed. `.crew/verify.json`, `README.md`, `TODO.md` and both install scripts did not.
+
+Re-verified per-path from `f8671fdc` to `45345812` for T-0024's review round 3. Of the cited paths,
+`.claude-plugin/marketplace.json` (version only, 1.0.45), `CHANGELOG.md` (1.0.45 entry at the top;
+cited without a line), `plugin/PLUGINS.md` (`:14` only), `plugin/crew/README.md` (two sentences in
+place; `docs/runbooks/INDEX.md` still at `:1812`) and `crew_ticket.py` (by name only) changed.

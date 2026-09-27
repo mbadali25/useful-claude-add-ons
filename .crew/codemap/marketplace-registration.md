@@ -47,10 +47,9 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.43** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
-and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read on the T-0010 x T-0024
-merge tree, which took T-0024's higher version - T-0018 and T-0024 had each bumped to 1.0.42, and
-the version is set again at landing; it was 1.0.42 at `5536c2c8` and at `a2802526`, 1.0.41 at `07ca3972`, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
+`rule-of-two`. `crew` is now **1.0.45** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `45345812` and on the second T-0010 x T-0024 merge tree, which
+takes T-0024's version (landing sets it again); it was 1.0.43 on the first merge `954ce386`, 1.0.44 at `f8671fdc`, 1.0.43 at `32223b8a`, 1.0.42 at `a2802526`, 1.0.41 at `07ca3972`, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
 
@@ -430,3 +429,22 @@ bumped to 1.0.42, and the merge took T-0024's 1.0.43), `plugin/crew/BUDGETS.md` 
 No install script, `scripts/check-marketplace.py`, `CLAUDE.md`, `README.md` or `INSTALLATION.md`
 changed; no command, agent or skill was added or removed. `python3 scripts/check-marketplace.py`
 on the merged tree: `marketplace: 34 skills, 5 plugins`, `all checks passed`.
+
+Re-verified per-path from `a2802526` to `32223b8a` for T-0024's review round 1 (crew 1.0.43): of the
+cited paths only `.claude-plugin/marketplace.json` (`:218` 1.0.43), `plugin/PLUGINS.md` (`:14`),
+`plugin/crew/.claude-plugin/plugin.json` and `CHANGELOG.md` changed; `BUDGETS.md` did not (no
+`plugin/crew/*.md` changed). `python3 scripts/check-marketplace.py` at `32223b8a`: `all checks
+passed`.
+
+Re-verified per-path from `32223b8a` to `f8671fdc` for T-0024's successor step 6 (crew 1.0.44): of
+the cited paths `.claude-plugin/marketplace.json` (`:218` 1.0.44), `plugin/PLUGINS.md` (`:14`),
+`plugin/crew/.claude-plugin/plugin.json`, `CHANGELOG.md`, `plugin/crew/README.md` (group-approval
+prose only; the `35 commands` claim `:2263` and `4 agents` `:2274` did not move) and
+`plugin/crew/BUDGETS.md` (`:11`, 18,202 / 121, re-measured and matching) changed.
+`python3 scripts/check-marketplace.py` at `f8671fdc`: `all checks passed`.
+
+Re-verified per-path from `f8671fdc` to `45345812` for T-0024's review round 3 (crew 1.0.45): of the
+cited paths `.claude-plugin/marketplace.json` (`:218` 1.0.45), `plugin/PLUGINS.md` (`:14`),
+`plugin/crew/.claude-plugin/plugin.json`, `CHANGELOG.md` and `plugin/crew/README.md` (two
+group-approval sentences, in place; `:2263`/`:2274` hold) changed; `BUDGETS.md` did not (18,202
+still measures). `python3 scripts/check-marketplace.py` at `45345812`: `all checks passed`.

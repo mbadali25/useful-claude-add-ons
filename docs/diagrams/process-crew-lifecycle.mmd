@@ -41,7 +41,16 @@
 %% :605-626 hold. One node and two edges added: a group request (several ids, a
 %% range, or the plain-text form) is blocked as a PENDING list and recorded only
 %% by the user's own /crew:approve --confirm, all or none (approve.md:27-32;
-%% plugin/crew/hooks/scripts/approval_hook.py:313 pending, :369 confirm).
+%% plugin/crew/hooks/scripts/approval_hook.py:334 pending, :406 confirm, re-read at
+%% 32223b8a after T-0024's review round 1; no anchored path changed there).
+%% Re-anchored for T-0024's successor step 6 at f8671fdc: approve.md's relay is now
+%% :27-43 (:5, :9, :12-13, :15 hold); crew_ticket.py changed from :744 down
+%% (precheck :793), so :530-571 and :605-626 hold; approval_hook.py's pending and
+%% confirm are now :359 and :431. No node or edge changed: the group path still
+%% reads PENDING list -> the user's own /crew:approve --confirm -> all or none.
+%% Re-anchored for T-0024's review round 3 at 45345812: of the anchored paths only
+%% crew_ticket.py changed, from :744 down (precheck :810), so :530-571 and
+%% :605-626 hold; approval_hook.py's pending and confirm are :361 and :433.
 %% Re-anchored for the T-0010 x T-0024 merge 954ce386 (T-0010 lane merged T-0024-build at 32223b8a):
 %% of the anchored paths approve.md (unchanged since a2802526) and crew_ticket.py differ from
 %% each side. Every merged crew_ticket.py change sits from :704 down (_expected_pair :716,

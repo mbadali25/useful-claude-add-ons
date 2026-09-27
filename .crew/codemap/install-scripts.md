@@ -535,3 +535,15 @@ re-measured on the merged files, 18,226 lines across 121 files, not either side'
 `:217` unchanged) changed. Neither install script, `README.md`, `plugin/README.md`,
 `INSTALLATION.md` nor `scripts/check-marketplace.py` changed. `check-marketplace.py` passed on the
 merged tree before this refresh (`marketplace: 34 skills, 5 plugins`, `all checks passed`).
+
+Re-verified per-path from `a2802526` to `f8671fdc` for T-0024's review round 1 and successor step 6
+(crew 1.0.43, 1.0.44): of the cited paths `.claude-plugin/marketplace.json` (`:218` 1.0.44; `:217`
+unchanged), `plugin/PLUGINS.md` (`:14` only), `plugin/crew/BUDGETS.md` (`:11`, 18,202 lines across
+121 files, re-measured) and `plugin/crew/README.md` (group-approval prose only; the `35 commands`
+claim `:2263` and `4 agents` `:2274` did not move, re-grepped) changed. Neither install script,
+`README.md` nor `INSTALLATION.md` changed; the README pin landmine stands as recorded above.
+
+Re-verified per-path from `f8671fdc` to `45345812` for T-0024's review round 3 (crew 1.0.45): of the
+cited paths `.claude-plugin/marketplace.json` (`:218` only), `plugin/PLUGINS.md` (`:14` only) and
+`plugin/crew/README.md` (two sentences edited in place; `:2263`/`:2274` hold) changed. Neither
+install script, `README.md` nor `BUDGETS.md` changed.

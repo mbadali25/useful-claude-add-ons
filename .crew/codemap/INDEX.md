@@ -131,6 +131,10 @@ On T-0024's branch (2026-09-26) five notes -- `crew`, `install-scripts`,
 `marketplace-registration`, `repo-docs` and `verification-harness` -- moved to `a2802526`, its
 crew 1.0.42 commit, after a per-path re-verify from `6f96e627` (each note's last section records
 it). `localgpu` and `obsidian-vault` cite nothing T-0024 changed and stay at `6f96e627`.
+After T-0024's review round 1, `crew`, `marketplace-registration` and `verification-harness`
+moved again to `32223b8a` (crew 1.0.43); the other two cite nothing round 1 changed.
+After its successor step 6 (crew 1.0.44) all five moved to `f8671fdc`.
+After its review round 3 (crew 1.0.45) all five moved to `45345812`.
 On T-0010's branch (2026-09-26, stacked on T-0018) the same five and `localgpu` moved to `926522f7`,
 T-0010's code commit; this table was not updated then. The T-0010 lane then merged T-0024-build
 (`32223b8a`) as `954ce386`, and the five moved to `954ce386` after re-mapping every citation into a path
