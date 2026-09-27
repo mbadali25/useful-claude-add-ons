@@ -1,5 +1,5 @@
 ---
-description: Report a ticket's standing (status), drive it through the lifecycle until a human is needed (run), or run an approved set as parallel lanes (wave)
+description: Report a ticket (status), drive it until a human is needed (run), or run an approved set as parallel lanes (wave)
 argument-hint: "[status|run|assign|goal|focus|wave] [ticket id | --goal <slug> | --set <slug>]"
 allowed-tools: Read, Write, Edit, Bash, Agent, Skill
 ---
