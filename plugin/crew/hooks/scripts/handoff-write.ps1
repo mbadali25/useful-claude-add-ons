@@ -322,6 +322,11 @@ $precompactCommon = (git rev-parse --git-common-dir 2>$null)
 $precompactDir = if ($precompactCommon) { Join-Path $precompactCommon 'crew' } else { '.work/crew' }
 if ($precompactKey) {
   Remove-Item -LiteralPath (Join-Path $precompactDir "precompact-$precompactKey.json") -Force -ErrorAction SilentlyContinue
+  # T-0042: a record Remove-Item could not remove says nothing about THIS
+  # compact. Mark it, so decide refuses it even when python never runs.
+  if (Test-Path -LiteralPath (Join-Path $precompactDir "precompact-$precompactKey.json")) {
+    New-Item -ItemType File -Force -Path (Join-Path $precompactDir "precompact-$precompactKey.stuck") -ErrorAction SilentlyContinue | Out-Null
+  }
 } else {
   Remove-Item -Path (Join-Path $precompactDir 'precompact-*.json') -Force -ErrorAction SilentlyContinue
 }

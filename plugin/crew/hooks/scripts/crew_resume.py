@@ -67,6 +67,13 @@ RESUME_SOURCES = ("clear", "compact")
 # The consumed-once record keeps this many handoff hashes per worktree.
 CONSUMED_KEEP = 50
 STATE_FILE = "resume-state.json"
+# Which session wrote the handoff (T-0042): written by the PostToolUse hook
+# after a Write/Edit/MultiEdit of the handoff, on an armed machine only.
+AUTHOR_FILE = "handoff-author.json"
+# The process name Claude Code runs as, read from /proc/<pid>/comm. The
+# T-0042 spike (Claude Code 2.1.283, Linux) measured it as the nearest
+# ancestor of every hook, the same across /clear and different per terminal.
+CLAUDE_COMM = "claude"
 # A PreCompact record older than this does not describe the compact that
 # just happened.
 PRECOMPACT_MAX_AGE = 600
@@ -86,7 +93,14 @@ def parse_resume(text):
 
     Exactly one `resume:` line, one allowlisted command, and the one argument
     its kinds allow; anything else is refused with a reason. Reasons are
-    fixed strings: nothing from the line is echoed back into them."""
+    fixed strings: nothing from the line is echoed back into them.
+
+    The automatic PreCompact skeleton is refused whole, before any line is
+    read: its Changed files list is bare `git diff` / `git ls-files` output,
+    so a file named `resume: /crew:status` would otherwise be its resume
+    line (review round 4, T-0006). It names no next action by construction."""
+    if crew_autocycle.SKELETON_MARK in (text or ""):
+        return _refuse("the handoff is the automatic PreCompact skeleton; it names no next action")
     lines = _RESUME_LINE_RE.findall(text or "")
     if not lines:
         return _refuse("no resume line")
@@ -182,43 +196,244 @@ def state_path(root):
     return os.path.join(state_dir(root), STATE_FILE)
 
 
+def author_path(root):
+    return os.path.join(state_dir(root), AUTHOR_FILE)
+
+
 def _worktree_key(root):
     top = git_out(root, "rev-parse", "--show-toplevel")
     return os.path.normcase(os.path.realpath(top or root))
 
 
+# --------------------------------------------------------------------------
+# which session wrote the handoff
+
+def _proc_start(pid):
+    """/proc/<pid>/stat field 22 (start time in clock ticks), or None."""
+    try:
+        with open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as handle:
+            return int(handle.read().rsplit(")", 1)[1].split()[19])
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+def session_process(pid=None):
+    """{pid, start} of the nearest ancestor that is the Claude Code process,
+    or None when none is found or /proc cannot say -- always None on native
+    Windows, and on any host without /proc. The start time is part of the
+    identity so a reused pid is a different process. No environment
+    override: a variable can be copied from one session into another."""
+    if os.name == "nt":
+        return None
+    for candidate in crew_autocycle.ancestors(pid):
+        try:
+            with open(f"/proc/{candidate}/comm", encoding="utf-8", errors="replace") as handle:
+                comm = handle.read().strip()
+        except OSError:
+            return None
+        if comm == CLAUDE_COMM:
+            start = _proc_start(candidate)
+            return None if start is None else {"pid": candidate, "start": start}
+    return None
+
+
+def _author_entry(root):
+    """This worktree's author record: {} when there is no file or no entry,
+    None when the file cannot be stat'ed, read or parsed, or is not the shape
+    record_author writes. None is an unknown, never "nobody wrote it"."""
+    path = author_path(root)
+    absent = _absent(path)
+    if absent is None:
+        return None
+    if absent:
+        return {}
+    data = _read_author(path)
+    if data is None:
+        return None
+    entry = data["worktrees"].get(_worktree_key(root), {})
+    return entry if isinstance(entry, dict) else None
+
+
+def _read_author(path):
+    """The author file's object, or None when it is not the shape written."""
+    try:
+        with open(path, encoding="utf-8-sig") as handle:
+            data = json.loads(handle.read())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("worktrees", {}), dict):
+        return None
+    data.setdefault("worktrees", {})
+    return data
+
+
+def record_author(root, session_id, handoff_path):
+    """(ok, reason). Record that `session_id`, in this Claude Code process,
+    just wrote the handoff at `handoff_path`. The PostToolUse hook calls it
+    after a Write/Edit/MultiEdit of the handoff on an armed machine.
+
+    The note is read ONCE, under the lock, through the same reader `decide`'s
+    caller uses, so the recorded sha is the sha `decide` computes. A note that
+    cannot be read, or a write that fails, leaves NO entry for this worktree
+    (the previous one is removed where possible): a missing entry waits,
+    while a stale one would vouch for a note its session never saw. An author
+    file that cannot be read is replaced -- it holds no history, only the
+    latest writer per worktree, and a lost entry for another worktree only
+    makes that worktree wait.
+
+    A lock that cannot be taken drops the whole file, unlocked: this session
+    did write the note, and the entry already there -- possibly another
+    session's for the same text -- must not keep vouching for it (review
+    round 1, T-0042). Unlinking races no reader into a torn file; the
+    residual race is a holder that read identical text before this write
+    and replaces the file after the drop, which content cannot tell apart."""
+    path = author_path(root)
+    lock = path + ".lock"
+    if not crew_context.acquire_lock(lock):
+        if not _drop_author(path):
+            return False, "could not take the handoff-author lock, and the previous record may still stand"
+        return False, "could not take the handoff-author lock"
+    try:
+        key = _worktree_key(root)
+        data = _read_author(path) if _absent(path) is False else None
+        worktrees = data["worktrees"] if data else {}
+        text = read_text(handoff_path)
+        entry = None
+        if isinstance(session_id, str) and session_id and text is not None:
+            entry = {"sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(), "session_id": session_id,
+                     "process": session_process(), "at": int(time.time())}
+        if entry is None:
+            worktrees.pop(key, None)
+        else:
+            worktrees[key] = entry
+        body = json.dumps({"worktrees": worktrees}, sort_keys=True)
+        tmp = f"{path}.{os.getpid()}.tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as handle:
+                handle.write(body)
+            os.replace(tmp, path)
+        except OSError as exc:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            # With or without an entry of its own: a write that was to
+            # REMOVE this worktree's entry failed too (review round 1, T-0042).
+            dropped = "" if _drop_author(path) else ", and the previous record may still stand"
+            return False, f"handoff-author.json was not written: {exc.__class__.__name__}{dropped}"
+        if entry is None:
+            return False, "the handoff could not be read, or no session id was given"
+        return True, ""
+    finally:
+        crew_context.release_lock(lock)
+
+
+def _drop_author(path):
+    """A failed write must not leave the previous entry vouching for the new
+    note. Removing the whole file is the only step left that needs no write
+    of it; an author file that is gone makes every worktree wait. True when
+    nothing is left at `path`, False when the old file may still be there."""
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _absent(path):
+    """True when nothing is at `path`, False when something is, None when
+    that cannot be told. Only the kernel saying "no such entry"
+    (FileNotFoundError, or NotADirectoryError for a file where a directory
+    on the path should be) is absence; any other stat error -- a directory
+    this user cannot search -- is an unknown. `os.path.lexists` returns
+    False for both, which read "cannot tell" as "nothing there" (review
+    round 4, T-0006)."""
+    try:
+        os.lstat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return True
+    except OSError:
+        return None
+    return False
+
+
 def _read_state(root):
     """The resume-state object: {} when there is no file, None when there is
     one that cannot be read, does not parse, or is not the shape record_run
-    writes. None is an unknown -- never "nothing was resumed" -- because the
-    consumed-once and loop guards read their history from here (review
-    round 3, T-0006)."""
+    writes, or when whether there is one cannot be told. None is an unknown
+    -- never "nothing was resumed" -- because the consumed-once and loop
+    guards read their history from here (review rounds 3 and 4, T-0006)."""
     path = state_path(root)
-    if not os.path.lexists(path):
+    absent = _absent(path)
+    if absent is None:
+        return None
+    if absent:
         return {}
     try:
         with open(path, encoding="utf-8-sig") as handle:
             state = json.loads(handle.read())
     except (OSError, ValueError):
         return None
-    if not isinstance(state, dict) or not isinstance(state.get("worktrees", {}), dict):
+    if not isinstance(state, dict) or not isinstance(state.get("worktrees"), dict):
         return None
     return state
 
 
 def _entry(state, key):
     """This worktree's entry: {} when it has none, None when `state` is
-    unknown or the entry is not the shape record_run writes."""
+    unknown or the entry is not the shape record_run writes. A PARTIAL entry
+    -- "consumed" or "last", or last's prompt or fingerprint, missing -- is
+    not that shape: read as defaults it said "nothing consumed, no loop
+    history", which is the fresh state it cannot vouch for (T-0042)."""
     if state is None:
         return None
-    entry = state.get("worktrees", {}).get(key, {})
-    if not isinstance(entry, dict) or not isinstance(entry.get("consumed", []), list) \
-            or not isinstance(entry.get("last", {}), dict):
+    worktrees = state.get("worktrees", {})
+    if key not in worktrees:
+        return {}
+    entry = worktrees[key]
+    if not isinstance(entry, dict) or not isinstance(entry.get("consumed"), list):
+        return None
+    last = entry.get("last")
+    if not isinstance(last, dict) or not isinstance(last.get("prompt"), str) \
+            or not isinstance(last.get("fingerprint"), str):
         return None
     return entry
 
 
-_UNREADABLE_STATE = "resume-state.json exists and could not be read - move it aside to reset auto-resume"
+_UNREADABLE_AUTHOR = "handoff-author.json could not be read (or its directory cannot be searched)"
+_OTHER_SESSION = "the handoff was written by another session"
+
+
+def _author_refusal(root, payload, sha):
+    """Why this session may not resume this note, or "" when it wrote it.
+
+    `compact` keeps its session_id, so it is bound by that; `clear` gets a
+    new session_id, so it is bound by the Claude Code process (T-0042 spike).
+    An unknown on either side is a refusal, never a match."""
+    entry = _author_entry(root)
+    if entry is None:
+        return _UNREADABLE_AUTHOR
+    if not entry:
+        return "no record of which session wrote this handoff"
+    if entry.get("sha256") != sha:
+        return "the handoff changed since its author session wrote it"
+    if payload.get("source") == "compact":
+        mine = payload.get("session_id")
+        if not isinstance(mine, str) or not mine or entry.get("session_id") != mine:
+            return _OTHER_SESSION
+        return ""
+    me = session_process()
+    if me is None:
+        return "this session's process could not be identified"
+    if entry.get("process") != me:
+        return _OTHER_SESSION
+    return ""
+
+
+_UNREADABLE_STATE = ("resume-state.json could not be read (or its directory cannot be searched) - "
+                     "fix the permissions or move it aside to reset auto-resume")
 
 
 def _already(entry, sha, prompt, fingerprint):
@@ -250,9 +465,13 @@ def _file_digest(path):
 
 def _index_rows(root, ticket):
     """The ticket's INDEX.md row(s); "" when there is no INDEX.md, None when
-    there is one and it cannot be read -- an unknown, never "no rows"."""
+    there is one and it cannot be read, or whether there is one cannot be
+    told -- an unknown, never "no rows"."""
     path = os.path.join(root, ".work", "INDEX.md")
-    if not os.path.lexists(path):
+    absent = _absent(path)
+    if absent is None:
+        return None
+    if absent:
         return ""
     try:
         with open(path, encoding="utf-8-sig", errors="replace") as handle:
@@ -330,6 +549,31 @@ def precompact_path(root, session):
     return os.path.join(state_dir(root), f"precompact-{crew_autocycle.session_key(session)}.json")
 
 
+def stuck_path(root, session):
+    """The marker a PreCompact leaves when it could not replace this
+    session's record: the record that survived says nothing about the latest
+    compact. `.stuck`, not `.json`, so the shells' `precompact-*.json`
+    sweeps never remove it; pruned by age with the records."""
+    return os.path.join(state_dir(root), f"precompact-{crew_autocycle.session_key(session)}.stuck")
+
+
+def _mark_stuck(root, session):
+    """Best effort: a marker that cannot be written leaves _compact_was_manual's
+    os.access check as the only refusal (an accepted risk, CONFIG.md §14a)."""
+    path = stuck_path(root, session)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    text = json.dumps({"at": int(time.time())})
+    try:
+        with open(tmp, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
 def write_precompact_record(root, payload):
     """PreCompact's note of how this compaction started, for `decide`.
 
@@ -352,13 +596,15 @@ def write_precompact_record(root, payload):
     # this compaction look typed. The shell flavours remove it too, before
     # python is even looked for. A record that cannot be removed is emptied
     # in place instead (an empty record is not manual); one that can be
-    # neither is refused by _compact_was_manual as unreplaceable.
+    # neither leaves the stuck marker, which _compact_was_manual honours
+    # (review round 4, T-0006: recorded, not predicted with os.access).
     try:
         os.unlink(path)
     except FileNotFoundError:
         pass
     except OSError:
         if not _blank(path):
+            _mark_stuck(root, session)
             return False
     text = json.dumps({"trigger": trigger, "at": int(time.time())}, sort_keys=True)
     tmp = f"{path}.{os.getpid()}.tmp"
@@ -373,6 +619,12 @@ def write_precompact_record(root, payload):
         except OSError:
             pass
         return False
+    # This session's record is current again. A marker that cannot be
+    # removed stays, and that session's compacts keep waiting.
+    try:
+        os.unlink(stuck_path(root, session))
+    except OSError:
+        pass
     return True
 
 
@@ -396,6 +648,10 @@ def _compact_was_manual(root, session):
     if not isinstance(session, str) or not session:
         return False
     path = precompact_path(root, session)
+    # A later PreCompact that could not replace the record said so; a marker
+    # whose presence cannot be told is as good as one that is there.
+    if _absent(stuck_path(root, session)) is not True:
+        return False
     # A record that neither its file nor its directory lets anyone replace
     # could have survived a later PreCompact that failed to remove it, so it
     # says nothing about the LATEST compact (review round 2, T-0006).
@@ -451,6 +707,9 @@ def decide(root, payload, handoff_text, plugin_root, global_path=None, archived=
     name = parsed["command"].split(":", 1)[1]
     if not os.path.isfile(os.path.join(plugin_root, "commands", name + ".md")):
         return _decision("wait", f"{parsed['command']} is not installed", prompt, sha)
+    refused = _author_refusal(root, payload, sha)
+    if refused:
+        return _decision("wait", refused, prompt, sha)
     entry = _entry(_read_state(root), _worktree_key(root))
     if entry is None:
         return _decision("wait", _UNREADABLE_STATE, prompt, sha)
