@@ -10,6 +10,7 @@ repository is built under tmp_path; nothing touches the real one or
 ~/.claude. `sabotage_autopilot.STATUS_MUTATIONS` mutates the must-refuse and
 must-say-unknown branches to prove these tests can fail.
 """
+import json
 import os
 import re
 import shlex
@@ -330,6 +331,12 @@ def _unreadable_handoff(root, monkeypatch, how):
     if how == "directory":
         os.makedirs(str(root / ".work" / "HANDOFF.md"))
         return
+    if how in ("dangling", "loop"):
+        # An entry open() cannot follow: FileNotFoundError for a dangling link,
+        # ELOOP for a loop. Either is there, so neither is absent.
+        os.symlink("missing" if how == "dangling" else "HANDOFF.md",
+                   str(root / ".work" / "HANDOFF.md"))
+        return
     _handoff(root, f"resume: /crew:autopilot {T}")
     real = open
 
@@ -340,7 +347,7 @@ def _unreadable_handoff(root, monkeypatch, how):
     monkeypatch.setattr(crew_autopilot, "open", deny, raising=False)
 
 
-@pytest.mark.parametrize("how", ["denied", "directory"])
+@pytest.mark.parametrize("how", ["denied", "directory", "dangling", "loop"])
 def test_status_resume_line_unknown_when_the_handoff_cannot_be_read(tmp_path, monkeypatch,
                                                                     how):
     root = _approved(tmp_path)
@@ -351,7 +358,7 @@ def test_status_resume_line_unknown_when_the_handoff_cannot_be_read(tmp_path, mo
     assert got["resume_line"] == crew_autopilot.HANDOFF_UNREADABLE
 
 
-@pytest.mark.parametrize("how", ["denied", "directory"])
+@pytest.mark.parametrize("how", ["denied", "directory", "dangling", "loop"])
 def test_resume_falls_through_saying_the_handoff_could_not_be_read(tmp_path, monkeypatch, how):
     root = _approved(tmp_path)
     crew_ticket.activate(str(root), T)
@@ -360,6 +367,31 @@ def test_resume_falls_through_saying_the_handoff_could_not_be_read(tmp_path, mon
     got = crew_autopilot.resume_target(str(root))
 
     assert (got["ticket"], got["fallthrough"][0]) == (T, crew_autopilot.HANDOFF_UNREADABLE)
+
+
+def test_status_resume_line_usable_through_a_symlinked_handoff(tmp_path):
+    root = _approved(tmp_path)
+    _handoff(root, f"resume: /crew:autopilot {T}")
+    os.replace(str(root / ".work" / "HANDOFF.md"), str(root / ".work" / "handoff-real.md"))
+    os.symlink("handoff-real.md", str(root / ".work" / "HANDOFF.md"))
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert got["resume_line"] == f"/crew:autopilot {T} (usable)"
+
+
+@pytest.mark.parametrize("work,want", [
+    ("dangling", crew_autopilot.HANDOFF_UNREADABLE),
+    ("absent", crew_autopilot.HANDOFF_ABSENT),
+])
+def test_read_handoff_unknown_when_work_is_a_dangling_symlink(tmp_path, work, want):
+    root = make_repo(tmp_path, mode="off")
+    if work == "dangling":
+        os.symlink("missing", str(root / ".work"))
+
+    got = crew_autopilot._read_handoff(str(root))  # pylint: disable=protected-access
+
+    assert got == (None, want)
 
 
 def test_status_resume_line_unavailable_without_crew_resume(tmp_path, monkeypatch):
@@ -559,6 +591,42 @@ def test_status_resume_line_unknown_when_resume_target_raises(tmp_path, monkeypa
 
     assert (line.startswith("not usable"), line.endswith("(usable)"), "unknown" in line) == (
         False, False, True)
+
+
+@pytest.mark.parametrize("change,reason", [
+    ("branch", "its branch: does not match this checkout"),
+    ("head", "its head: does not match this checkout"),
+    ("folder", "its ticket has no .work/tickets/ folder"),
+])
+def test_status_resume_line_checks_the_handoff_it_read_not_the_one_resume_read(
+        tmp_path, change, reason):
+    """HANDOFF.md rewritten between `resume_target`'s read and `_resume_line`'s:
+    the same ticket, but this read fails a check `resume_target` never saw."""
+    root = _approved(tmp_path)
+    _handoff(root, f"resume: /crew:autopilot {T}")
+    top = crew_ticket.toplevel(str(root))
+    bare = crew_autopilot.resume_target(top)
+    if change == "folder":
+        shutil.rmtree(str(root / ".work" / "tickets" / T))
+    else:
+        _handoff(root, f"resume: /crew:autopilot {T}",
+                 **{change: "elsewhere" if change == "branch" else "0123456789"})
+
+    line = crew_autopilot._resume_line(top, bare)  # pylint: disable=protected-access
+
+    assert (bare["ticket"], line) == (T, f"not usable: /crew:autopilot {T} - {reason}")
+
+
+def test_status_resume_line_usable_when_the_handoff_is_rewritten_unchanged(tmp_path):
+    root = _approved(tmp_path)
+    _handoff(root, f"resume: /crew:autopilot {T}")
+    top = crew_ticket.toplevel(str(root))
+    bare = crew_autopilot.resume_target(top)
+    _handoff(root, f"resume: /crew:autopilot {T}")
+
+    line = crew_autopilot._resume_line(top, bare)  # pylint: disable=protected-access
+
+    assert line == f"/crew:autopilot {T} (usable)"
 
 
 def test_status_continue_names_this_ticket_when_bare_autopilot_would_not(tmp_path):
@@ -867,6 +935,24 @@ def test_status_at_most_12_lines(tmp_path, monkeypatch, capsys):
     lines = capsys.readouterr().out.splitlines()
     assert (code, len(lines), lines[-1].startswith("(+")) == (
         0, crew_autopilot.STATUS_MAX_LINES, True)
+
+
+@pytest.mark.parametrize("how", ["ordinary", "raises"])
+def test_status_json_at_most_12_lines(tmp_path, monkeypatch, capsys, how):
+    root = _two_tickets(tmp_path)
+    _handoff(root, "resume: /crew:autopilot T-1", head="0123456789")
+    monkeypatch.setattr(crew_autopilot, "settings", lambda _root: {
+        "mode": "off", "armed": False, "maxPhases": 12, "saw": None,
+        "warnings": [f"w{n}" for n in range(10)]})
+    if how == "raises":
+        monkeypatch.setattr(crew_autopilot, "status", _raise)
+
+    code = crew_autopilot.main(["status", "--root", str(root), "--json"])
+
+    out = capsys.readouterr().out
+    kept = len(json.loads(out).get("warnings", []))
+    assert (code, len(out.splitlines()) <= crew_autopilot.STATUS_MAX_LINES, kept) == (
+        0, True, 10 if how == "ordinary" else 0)
 
 
 def test_status_folds_a_multiline_reason_into_one_line(tmp_path):

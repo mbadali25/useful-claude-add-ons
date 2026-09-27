@@ -8,6 +8,7 @@
     python3 crew_autopilot.py route --root . --args "<the command's arguments>" [--json]
     python3 crew_autopilot.py route --root . --first <token> [--json]
     python3 crew_autopilot.py status --root . [--ticket <id>] [--json]
+                                     (at most 12 lines; --json is one line)
 
 T-0004. The lifecycle is prose commands (spec, plan, implement, review,
 done); `/crew:autopilot` follows each one's procedure in-session. This module
@@ -505,13 +506,18 @@ HANDOFF_UNREADABLE = "unknown - .work/HANDOFF.md exists but could not be read"
 def _read_handoff(top):
     """(text, why_not): `.work/HANDOFF.md`'s text, or None with why. Only a
     file that is not there is absent; one that is there and cannot be read
-    -- denied, a directory -- is unknown, never absent (read_text says None
-    for both)."""
+    -- denied, a directory, a dangling or looping symlink, or a `.work` that
+    is a dangling symlink -- is unknown, never absent (read_text says None
+    for all of them)."""
+    work = os.path.join(top, ".work")
+    path = os.path.join(work, "HANDOFF.md")
     try:
-        with open(os.path.join(top, ".work", "HANDOFF.md"), "r", encoding="utf-8-sig",
-                  errors="replace") as handle:
+        with open(path, "r", encoding="utf-8-sig", errors="replace") as handle:
             return handle.read(), ""
     except FileNotFoundError:
+        # open() follows links: a dangling one raises this too, but its entry is there.
+        if os.path.lexists(path) or (os.path.lexists(work) and not os.path.isdir(work)):
+            return None, HANDOFF_UNREADABLE
         return None, HANDOFF_ABSENT
     except (OSError, ValueError):
         return None, HANDOFF_UNREADABLE
@@ -872,13 +878,11 @@ def _resume_line(top, bare):
     if bare is None:
         return f"{rendered} (unknown: resume_target raised, so whether it is usable " \
                "could not be told)"
-    taken = _takes(bare, parsed.get("arg"), "handoff")
-    if taken:
-        return f"{rendered} (usable)"
     if parsed.get("command") == AUTOPILOT and parsed.get("kind") == "goal":
         return f"not usable: {rendered} - goal resume arrives with {ARRIVES['goal']}"
-    # Not taken. The reason: `_handoff_ticket`'s fall-through checks in its
-    # order, in fixed text, then the stop `resume_target` made after taking it.
+    # `_handoff_ticket`'s checks in its order, in fixed text, on THIS read's
+    # text: `bare` came from an earlier read the file may have been rewritten
+    # since, so it vouches for the ticket only after these pass.
     if parsed.get("kind") != "ticket" or not parsed.get("arg"):
         return f"not usable: {rendered} - it names no ticket"
     branch = crew_state._HANDOFF_BRANCH_RE.search(text)  # pylint: disable=protected-access
@@ -890,6 +894,8 @@ def _resume_line(top, bare):
         return f"not usable: {rendered} - its head: does not match this checkout"
     if not _existing_ticket(top, parsed["arg"]):
         return f"not usable: {rendered} - its ticket has no .work/tickets/ folder"
+    if _takes(bare, parsed.get("arg"), "handoff"):
+        return f"{rendered} (usable)"
     if bare.get("stop"):
         return f"not usable: {rendered} - {bare.get('reason') or 'resume_target stopped'}"
     return f"not usable: {rendered} - bare {AUTOPILOT} does not take it"
@@ -1046,7 +1052,10 @@ def main(argv):
                       "command": "", "reason": _failure(exc), "evidence": []}
         text = _line(phase=result["phase"], stop=int(result["stop"]),
                      command=result["command"], reason=result["reason"])
-    sys.stdout.write((json.dumps(result, indent=2) if args.json else text) + "\n")
+    if args.json:
+        # status holds STATUS_MAX_LINES as JSON too: one line, nothing dropped.
+        text = json.dumps(result, indent=None if args.action == "status" else 2)
+    sys.stdout.write(text + "\n")
     return 0
 
 

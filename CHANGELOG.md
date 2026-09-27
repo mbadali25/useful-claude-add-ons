@@ -235,7 +235,14 @@ All notable changes to this repository are documented here. Format follows [Keep
     `sys.dont_write_bytecode` before its sibling imports, so the direct CLI
     writes no bytecode with or without `-B`, and a module importing it keeps
     its own setting.
-  - Forty mutations in `tests/sabotage_autopilot.py`'s `STATUS_MUTATIONS`
+  - Review round 5's fixes: a `.work/HANDOFF.md` that is a dangling symlink,
+    or sits under a `.work` that is one, prints `resume: unknown` (and
+    `resume` falls through saying so), never `no .work/HANDOFF.md`; the
+    `resume:` line is marked usable only after its own read of the handoff
+    passes the branch, head and folder checks, so a handoff rewritten after
+    `resume_target` read it is never vouched for by that earlier read;
+    `status --json` prints one line of JSON, inside the 12-line cap.
+  - Forty-four mutations in `tests/sabotage_autopilot.py`'s `STATUS_MUTATIONS`
     each turn their named test red. They are appended to
     `AUTOPILOT_MUTATIONS`, so `sabotage.py` runs them with the rest, and
     `test_crew_autopilot.py` asserts each one reaches `sabotage.MUTATIONS`.

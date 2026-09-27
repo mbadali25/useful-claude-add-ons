@@ -256,8 +256,8 @@ STATUS_MUTATIONS = (
      _S + "test_command_never_hands_the_shell_an_expandable_argument"),
     # Round 2's FIX and NIT lines (successor Step 5), one per new guard branch.
     ("status's resume line ignores the active pointer", AUTOPILOT,
-     '    taken = _takes(bare, parsed.get("arg"), "handoff")\n',
-     "    taken = bool(_handoff_ticket(top)[0])\n",
+     '    if _takes(bare, parsed.get("arg"), "handoff"):\n',
+     "    if bool(_handoff_ticket(top)[0]):\n",
      _S + "test_status_resume_line_not_usable_on_a_pointer_mismatch"),
     ("status's resume line counts a fall-through to the same ticket as taking it", AUTOPILOT,
      '            and source in (None, bare.get("source")))\n',
@@ -335,6 +335,24 @@ STATUS_MUTATIONS = (
      "    sys.dont_write_bytecode = True\n",
      "    pass\n",
      _S + "test_status_direct_cli_writes_no_bytecode"),
+    # Round 5's FIX lines (T-0018 review round 5, successor Step 7), one per new branch.
+    ("a dangling HANDOFF.md symlink reads as absent", AUTOPILOT,
+     "        if os.path.lexists(path) or (",
+     "        if False or (",
+     _S + "test_status_resume_line_unknown_when_the_handoff_cannot_be_read"),
+    ("a dangling .work symlink reads the handoff as absent", AUTOPILOT,
+     "(os.path.lexists(work) and not os.path.isdir(work))",
+     "False",
+     _S + "test_read_handoff_unknown_when_work_is_a_dangling_symlink"),
+    ("status's resume line trusts resume_target's earlier read of the handoff", AUTOPILOT,
+     "    # `_handoff_ticket`'s checks in its order, in fixed text, on THIS read's\n",
+     ('    if _takes(bare, parsed.get("arg"), "handoff"):\n'
+      '        return f"{rendered} (usable)"\n'),
+     _S + "test_status_resume_line_checks_the_handoff_it_read_not_the_one_resume_read"),
+    ("status --json prints past the line cap", AUTOPILOT,
+     'indent=None if args.action == "status" else 2',
+     "indent=2",
+     _S + "test_status_json_at_most_12_lines"),
 )
 
 AUTOPILOT_MUTATIONS += STATUS_MUTATIONS
