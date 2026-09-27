@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@2b18f7ab
+anchor: useful-claude-add-ons@50e67586
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -556,3 +556,17 @@ commands, 29 skills, matching disk), `plugin/crew/BUDGETS.md` (marker `:10`; 18,
 `35 commands` claim is at `:2381` and `4 agents` at `:2392`, re-grepped) and `TODO.md` changed.
 Neither install script changed on T-0005's side, `README.md` and `scripts/check-marketplace.py` did
 not change on either, so their citations stand. Neither install script was executed.
+
+## Re-anchor provenance - `2b18f7ab` -> `50e67586`, 2026-09-27 (T-0010-solo, crew 1.0.43)
+
+T-0010's code commit was cherry-picked off `origin/main` (`502cb137`) as `0fc5b069`, apart from
+T-0018 and T-0024, and the version set in `50e67586`. Every `path:line` citation this note makes into
+a path T-0010 changed was mapped from the `2b18f7ab` tree with `difflib`; each one that moved
+was re-pointed and compared line for line with the anchor tree at `50e67586`.
+
+Of the cited paths only `plugin/crew/README.md` changed: T-0010's three lines sit above the
+command table, so the `35 commands` claim moved `:2381` -> `:2384` and `4 agents` `:2392` ->
+`:2395` (re-grepped). `plugin/crew/BUDGETS.md` (`:11`, 18,524 lines across 121 files,
+re-measured), `plugin/PLUGINS.md:14` and `.claude-plugin/marketplace.json:218` (1.0.43) changed
+in place. Neither install script, `README.md`, `INSTALLATION.md` nor
+`scripts/check-marketplace.py` changed. `check-marketplace.py`: `all checks passed`.

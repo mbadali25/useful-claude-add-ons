@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@2b18f7ab
+anchor: useful-claude-add-ons@50e67586
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -47,8 +47,8 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.42** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
-and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `2b18f7ab`; it
+`rule-of-two`. `crew` is now **1.0.43** (T-0010-solo; `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read on T-0010-solo; it was 1.0.42 at `2b18f7ab`; it
 was 1.0.41 at `07ca3972` and on T-0005's branch, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
@@ -402,3 +402,18 @@ Of the paths this note cites, the version files, `plugin/PLUGINS.md`, `.crew/ver
 - `plugin/crew/BUDGETS.md` - marker still `:10`; the figure re-measured on the merge, 18,494 lines
   across 121 files, which `check-marketplace.py` verifies (`all checks passed`).
 - `CHANGELOG.md`, `TODO.md` - cited by name only.
+
+## Re-anchor provenance - `2b18f7ab` -> `50e67586`, 2026-09-27 (T-0010-solo, crew 1.0.43)
+
+T-0010's code commit was cherry-picked off `origin/main` (`502cb137`) as `0fc5b069`, apart from
+T-0018 and T-0024, and the version set in `50e67586`. Every `path:line` citation this note makes into
+a path T-0010 changed was mapped from the `2b18f7ab` tree with `difflib`; each one that moved
+was re-pointed and compared line for line with the anchor tree at `50e67586`.
+
+Of the cited paths the version files (1.0.43 at `.claude-plugin/marketplace.json:218`,
+`plugin/PLUGINS.md:14`, `plugin/crew/.claude-plugin/plugin.json`), `plugin/crew/BUDGETS.md`
+(`:11`, 18,524 / 121, re-measured with `git ls-files 'plugin/crew/*.md'` and `splitlines()`),
+`.crew/verify.json` (T-0010's rule 28 appended; 29 rules; the doc rule `:69-78` unchanged) and
+`CHANGELOG.md` changed. No install script, `scripts/check-marketplace.py`, `CLAUDE.md`,
+`README.md` or `INSTALLATION.md` changed; no command, agent or skill was added or removed.
+`python3 scripts/check-marketplace.py`: `marketplace: 34 skills, 5 plugins`, `all checks passed`.

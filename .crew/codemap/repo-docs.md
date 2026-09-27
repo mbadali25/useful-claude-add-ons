@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@2b18f7ab
+anchor: useful-claude-add-ons@50e67586
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -298,7 +298,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1930` (`:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1933` (`:1930` at `2b18f7ab`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -420,7 +420,8 @@ listing the directory.
   and T-0004 appended a last one (`:293-300`, `:281-288` before T-0005 merged): `crew_autopilot.py`,
   `commands/autopilot.md`, `test_crew_autopilot.py` and
   `sabotage_autopilot.py` run `test_crew_autopilot.py` plus
-  `test_lifecycle_commands.py`.
+  `test_lifecycle_commands.py`. T-0010 appended rule 28 (`:301-306`): `crew_autopilot.py` and
+  `test_crew_autopilot_policy.py` run that file plus `test_scope_guard.py`.
 
 ## Unverified
 
@@ -630,3 +631,17 @@ sit above the four re-exports, which are at `:132`/`:136`/`:139`/`:142` as T-000
 says, re-read on the merge; main's `RESUME_DEFAULTS`/`AUTOPILOT_DEFAULTS` are below them) and `CHANGELOG.md`
 (T-0005's 1.0.42 entry sits above T-0004's 1.0.41; cited without a line). The two diagrams this
 note cites are refreshed in the same commit as this note. Nothing was executed.
+
+## Re-anchor provenance - `2b18f7ab` -> `50e67586`, 2026-09-27 (T-0010-solo, crew 1.0.43)
+
+T-0010's code commit was cherry-picked off `origin/main` (`502cb137`) as `0fc5b069`, apart from
+T-0018 and T-0024, and the version set in `50e67586`. Every `path:line` citation this note makes into
+a path T-0010 changed was mapped from the `2b18f7ab` tree with `difflib`; each one that moved
+was re-pointed and compared line for line with the anchor tree at `50e67586`.
+
+Of the cited paths `plugin/crew/README.md` (the `docs/runbooks/INDEX.md` mention `:1930` ->
+`:1933`, re-grepped), `.crew/verify.json` (rule 28 appended at `:301-306`; every earlier rule
+holds), `CHANGELOG.md` (T-0010's entry under Added; cited without a line), `TODO.md` (the
+T-0010 line in the autopilot note reworded in place), the version files and `crew_state.py`/
+`crew_ticket.py` (cited by name only) changed. `README.md`, `plugin/README.md` and both install
+scripts did not.

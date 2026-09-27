@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@2b18f7ab
+anchor: useful-claude-add-ons@50e67586
 verified: 2026-09-26
 
 # localgpu
@@ -512,7 +512,8 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   **Checked against the code, corrected after QA:**
   `plugin/crew/hooks/scripts/crew_config.py:127-128` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1432-1433` (`:1429-1430` on main before
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1436-1437` on T-0010-solo, after T-0010's
+  four `AUTOPILOT_DEFAULTS` lines (`:1432-1433` at `2b18f7ab`; `:1429-1430` on main before
   T-0005's three import lines merged in, re-numbered
   from `:1503-1504` by crew 1.0 - see the re-anchor entries below; same two
   lines, `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
@@ -1093,3 +1094,15 @@ at `:127-128` and the provider tuples at `crew_state.py:1432-1433` (`grep -n
 "^DEV_PROVIDERS\|^QA_PROVIDERS"`, the same two lines, byte-identical), corrected above.
 `.claude-plugin/marketplace.json` changed at crew's `version` only (1.0.42); `localgpu`'s own entry
 is still `0.1.20`. Nothing under `plugin/localgpu/` changed. Nothing was executed.
+
+## Re-anchor provenance - `2b18f7ab` -> `50e67586`, 2026-09-27 (T-0010-solo, crew 1.0.43)
+
+T-0010's code commit was cherry-picked off `origin/main` (`502cb137`) as `0fc5b069`, apart from
+T-0018 and T-0024, and the version set in `50e67586`. Every `path:line` citation this note makes into
+a path T-0010 changed was mapped from the `2b18f7ab` tree with `difflib`; each one that moved
+was re-pointed and compared line for line with the anchor tree at `50e67586`.
+
+Only `plugin/crew/hooks/scripts/crew_state.py` changed among the cited paths: the
+`DEV_PROVIDERS`/`QA_PROVIDERS` definitions moved `:1432-1433` -> `:1436-1437` (four
+`AUTOPILOT_DEFAULTS` lines above them), byte-identical. The dated QA-record sections keep
+their own numbers as history.
