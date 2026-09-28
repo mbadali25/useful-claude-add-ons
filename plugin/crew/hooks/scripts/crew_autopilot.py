@@ -53,8 +53,8 @@ outside `crew_ticket.STATUS_VALUES` -- stops, with a reason saying only the
 header changed.
 
 Refresh runs after implement and before every review round, never after an
-accepted receipt: a review bundle excludes only `.work/`
-(`review_patch.py`), so a refresh written after review stales the receipt and
+accepted receipt: a review bundle excludes only `.work/` and `graphify-out/`
+(`review_patch.py`), so a codemap, diagram or rules refresh stales the receipt and
 `/crew:done` refuses. T-0008's `crew_refresh_check.ticket_freshness` judges
 the artifacts. A `stale` one is refreshed with the command it names. An
 `unknown` one is refreshed only in T-0008's orphaned-anchor case (the anchor
