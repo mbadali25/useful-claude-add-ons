@@ -35,6 +35,15 @@ All notable changes to this repository are documented here. Format follows [Keep
     `C:\...` translation: another spelling fails closed as a missing part.
   - Docs: `agents/reviewer.md`, `README.md`'s verdict table and the crew code
     map state the form.
+  - Reviewer output is split on `\n` only (amendment, 2026-09-27).
+    `review_verdict.parse` and `review_verdict.codex_final_message` split
+    with `str.splitlines()`, which also breaks at U+2028, U+2029, U+0085 and
+    the C0 separators; Codex prints U+2028 raw inside JSON strings, so an
+    event was cut mid-JSON and T-0072 round 4 read `unparseable Codex event
+    line`. Both now split on `\n`, each line still stripped, so a `\r\n` end
+    parses as before. Replayed over that round's `codex-events.jsonl`, the
+    stream now yields its final message with no error. Two sabotage entries
+    restore `splitlines()` at each site and turn a named test red.
 
 ### Added
 

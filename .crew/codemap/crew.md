@@ -972,17 +972,21 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
 - `review_ledger.py`, `review_patch.py` — part of the review pipeline
   `/crew:review` and `/crew:done` depend on — were located but not opened.
 - DERIVED (T-0079): the READ-line rule of the review verdict is
-  `review_verdict._covers` (`plugin/crew/hooks/scripts/review_verdict.py:74`):
+  `review_verdict._covers` (`plugin/crew/hooks/scripts/review_verdict.py:79`):
   a READ token counts for a part when, `\` read as `/` and `normpath`ed, it
   IS the part's listed path, or has no directory and is its file name;
-  `parse` applies it at `plugin/crew/hooks/scripts/review_verdict.py:119`.
+  `parse` applies it at `plugin/crew/hooks/scripts/review_verdict.py:124`.
   The prompt quotes `review_verdict.READ_FORM`
-  (`plugin/crew/hooks/scripts/review_verdict.py:65`) in `_bundle_block`
+  (`plugin/crew/hooks/scripts/review_verdict.py:70`) in `_bundle_block`
   (`plugin/crew/hooks/scripts/review_prompt.py:84`) and on the webtest
   overflow line (`plugin/crew/hooks/scripts/review_prompt.py:239`), and
   `review_run.finish` hands `parse` the manifest `path`s
   (`plugin/crew/hooks/scripts/review_run.py:315`) and the overflow file's
-  scratch path (`plugin/crew/hooks/scripts/review_run.py:317`). The rest of
+  scratch path (`plugin/crew/hooks/scripts/review_run.py:317`). `parse` and
+  `codex_final_message` split reviewer output on `\n` only, never
+  `str.splitlines()`, whose U+2028 break cut a Codex event mid-JSON
+  (`plugin/crew/hooks/scripts/review_verdict.py:94`,
+  `plugin/crew/hooks/scripts/review_verdict.py:164`). The rest of
   `review_prompt.py`, `review_run.py` and `review_verdict.py` was not opened.
 - `webtest_guard.py`, `webtest_rules.py`, `webtest_scaffold.py` — new
   scripts since the previous anchor, backing `/crew:webtest` — were located
