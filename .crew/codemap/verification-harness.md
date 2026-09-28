@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@23371afb
+anchor: useful-claude-add-ons@764f6018
 verified: 2026-09-27
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -296,7 +296,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2284-2291` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2290-2297` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -482,7 +482,7 @@ set on Ubuntu.
 - `.crew/verify.json:313-321` (rule 29) — the T-0023 plain-text routing suite;
   `plugin/crew/tests/sabotage.py:79`, `:3053` — `sabotage_route.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
-  `plugin/crew/CONFIG.md:2284-2291` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2290-2297` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -986,7 +986,7 @@ its line came from onto the merged tree with a line diff (`git show <side>:<path
 merge); each one that moved was re-read with `sed -n` on the merge and corrected: the
 resume registration in `plugin/crew/tests/sabotage.py` is appended at `:3050` (was `:3049` on
 T-0042's side; the `MUTATIONS +=` statement at `:3048-3050` now ends with `TRACKER_MUTATIONS`),
-and the descoped process-group limitation is `plugin/crew/CONFIG.md:2248-2255` (was `:2249-2256`
+and the descoped process-group limitation is `plugin/crew/CONFIG.md:2254-2261` (was `:2249-2256`
 on T-0042's side, `:2200-2207` on T-0021's). The resume rule's description keeps T-0042's
 figures (62s, 72 mutations), which is what the merged `.crew/verify.json` records.
 `.crew/verify.json` is 313 lines and 29 rules, T-0021's tracker rule last at `:301-308`. No test
@@ -1044,7 +1044,7 @@ sibling tuples (`:78` tracker, `:79` route) and its `MUTATIONS +=` statement mov
 `:3048-3050` -> `:3050-3052` (refresh at `:3051`; resume, autopilot, tracker and route at
 `:3052`); the sibling-module comment above it names T-0023's route mutations and grew by one
 line (3381 lines, under `.pylintrc`'s 3400). The descoped process-group limitation is
-`plugin/crew/CONFIG.md:2250-2257` (`:2248-2255` on main's side, `:2203-2210` on T-0023's).
+`plugin/crew/CONFIG.md:2256-2263` (`:2248-2255` on main's side, `:2203-2210` on T-0023's).
 The resume rule keeps T-0042's figures (62s, 72 mutations), which is what the merged
 `.crew/verify.json` records. The route and tracker suites ran on the merge (part of the 588
 passed above); the sabotage runner was not executed for this note.
@@ -1313,3 +1313,15 @@ walk). `sabotage.py` did not change on main's side: imports `:75-80`, the `MUTAT
 `:3051-3053` (REFRESH on `:3052`, the rest on `:3053`). `plugin/crew/CONFIG.md`'s descoped
 process-group kill stays `:2284-2291`. `verify-gate.sh` changed on neither side. No suite was run for
 this note; the suites T-0075 ran are in its ticket evidence.
+
+## Re-anchor provenance - `23371afb` -> `764f6018`, 2026-09-27 (T-0075 review round 1)
+
+`764f6018` fixes T-0075's review round 1. `git diff --name-only 23371afb 764f6018` is `CHANGELOG.md`,
+`plugin/crew/BUDGETS.md`, `plugin/crew/CONFIG.md`, `plugin/crew/README.md`,
+`plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_config_menu.py`,
+`plugin/crew/skills/crew-setup/config-menu.md` and three crew test files. Each citation into one
+of them was mapped with a line diff from `87627d86` (the tree `23371afb` describes for those
+files) and re-read with `sed -n`/`grep -n`. `plugin/crew/CONFIG.md` gained 6 lines in the repo-writer section, so
+`CONFIG.md:2248-2257` / `:2284-2291` citations became `:2254-2263` / `:2290-2297` (same text, diffed).
+`.crew/verify.json` did not change: rule 7 already maps the three T-0075 files. The rule-7 suites
+ran on the fix commit (550 passed). Nothing else was executed for this note.

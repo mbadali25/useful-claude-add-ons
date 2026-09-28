@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@23371afb
+anchor: useful-claude-add-ons@764f6018
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -361,25 +361,34 @@ same key is registered in `crew_guards.RATCHETED_KEYS`
   consent keys refused by `is_global_path`, `:701`), plus one behaviour change: `_value_problems`
   (`:2597`) refuses a value outside `enum_values` (`:2559`) for that key, where it used to write
   it and read it back as the narrowest tier.
-- Repo: `plan_repo_write` (`:2902`) / `write_repo_config` (`:2957`), CLI `--set PATH=JSON --repo
-  [--apply]` through `_set_repo` (`:3071`). Merge, leaf keys only, atomic, line ending kept. It
+- Repo: `plan_repo_write` (`:2911`) / `write_repo_config` (`:2966`), CLI `--set PATH=JSON --repo
+  [--apply]` through `_set_repo` (`:3080`). Merge, leaf keys only, atomic, line ending kept. It
   refuses `REPO_REFUSED` (`:2765`: `platform`, `schema`, `scope.mode`, `scope.allowCliApproval`
-  and the machine-only auto-clear paths), takes only `false`/`null` for `REPO_VETO_ONLY` (`:2786`:
+  and the machine-only auto-clear paths), takes only `false`/`null` (by identity, `is_repo_veto`
+  `:2789`, so `0` is refused) for `REPO_VETO_ONLY` (`:2786`:
   `context.autoClear.enabled`, `resume.auto`), and marks `!` on a widening: the ratchet against
-  what is in force (`repo_widens`, `:2832`) and the `_REPO_WIDENING` table (`:2790`). It refuses
-  when `.crew/config.json` is absent or malformed (`_read_repo_strict`, `:2873`) rather than
+  what is in force (`repo_widens`, `:2841`) and the `_REPO_WIDENING` table (`:2799`). It refuses
+  when `.crew/config.json` is absent or malformed (`_read_repo_strict`, `:2882`) rather than
   creating one.
 
 `plugin/crew/hooks/scripts/crew_config_menu.py` (new) is what the menu procedure
 (`plugin/crew/skills/crew-setup/config-menu.md`, followed by both `/crew:config` with no argument and
-the alias `/crew:config-setup`) calls. `menu_spec` (`crew_config_menu.py:248`) builds the rows from
+the alias `/crew:config-setup`) calls. `menu_spec` (`crew_config_menu.py:285`) builds the rows from
 `leaf_paths(default_global_config())` (machine) and `leaf_paths(default_config())` (repo, refused
-rows read-only with their reason), grouped by `AREAS` (`:48`); `choices` (`:177`) offers only
-values `_allowed_at` (`:168`) says that layer's writer accepts. `save` (`:358`) validates both
-layers before writing either and writes each changed layer once. `delete_repo_config` (`:533`)
+rows read-only with their reason), grouped by `AREAS` (`:48`); `choices` (`:181`) offers only
+values `_allowed_at` (`:172`) says that layer's writer accepts. `save` (`:401`) validates both
+layers before writing either and writes each changed layer once. `delete_repo_config` (`:634`)
 needs the typed repo name, writes `.crew/config.json.bak-<UTC>` first and checks it, removes only
 `config.json` (never `crew.json`) and prints the `restore-repo` command; `restore_repo_config`
-(`:587`) backs up whatever default a heal wrote in the meantime before restoring. Tests:
+(`:688`) backs up whatever default a heal wrote in the meantime before restoring. Over an absent
+or unparseable `.crew/config.json` every repo row is read-only with the writer's own refusal
+(`_repo_unwritable`, `:254`, which calls `_read_repo_strict`); the machine layer adds `platform.*`
+and `schema` as read-only rows (`_MACHINE_READ_ONLY`, `:269`); an expanded `qa.roles.<kind>` row
+takes `explain_config`'s source rule through `_layer_supplies`, `repo+global` included (`_source`,
+`:239`). The typed delete name is `crew_ticket.toplevel`'s basename (`repo_name`, `:464`); the
+preview skips `platform.*` (re-detected at the same SessionStart) and names a ratcheted key the
+floor keeps as `stays` (`_held_by_ratchet`, `:565`); the restore command is shlex-quoted on POSIX
+and double-quoted with forward slashes on Windows (`_shell_command`, `:615`). Tests:
 `plugin/crew/tests/test_config_menu.py`, `plugin/crew/tests/test_crew_config.py`; mutations in
 `plugin/crew/tests/sabotage_config.py` (`CONFIG_MENU_MUTATIONS`, registered in `sabotage.py`);
 `.crew/verify.json` rule 7 maps all three plus the module.
@@ -915,9 +924,9 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   `default_config()` / `default_global_config()`.
 - `plugin/crew/hooks/scripts/crew_config.py:2444` — `_RATCHETED`, the
   14-key ratchet table (seven construction steps).
-- `plugin/crew/hooks/scripts/crew_config.py:2902` / `:2957` — `plan_repo_write` /
+- `plugin/crew/hooks/scripts/crew_config.py:2911` / `:2966` — `plan_repo_write` /
   `write_repo_config`, the one repo-layer writer (T-0075).
-- `plugin/crew/hooks/scripts/crew_config_menu.py:634` — `main()`, the `spec` / `save` /
+- `plugin/crew/hooks/scripts/crew_config_menu.py:735` — `main()`, the `spec` / `save` /
   `delete-repo` / `restore-repo` CLI the `/crew:config` menu calls.
 - `plugin/crew/hooks/scripts/role_write_guard.py:539` — `classify`, the
   decision function; `:684` — `main()`.
@@ -1627,7 +1636,7 @@ the refresh artifacts. The conflicting provenance sections keep both sides, T-00
 its line came from onto the merged tree with a line diff (`git show <side>:<path>` against the
 merge); each one that moved was re-read with `sed -n` on the merge and corrected: the version,
 1.0.44, at `.claude-plugin/marketplace.json:218` and `plugin/crew/.claude-plugin/plugin.json:3`;
-T-0004's "117 -> 119" `CHANGELOG.md:276-277` -> `:390-391` (T-0021's entry now sits above
+T-0004's "117 -> 119" `CHANGELOG.md:286-287` -> `:390-391` (T-0021's entry now sits above
 T-0042's). `.crew/verify.json` is 313 lines and 29 rules: rule 26 carries T-0042's pricing
 (62s, `seconds`/`why` changed in place) and T-0021's tracker rule is rule 28 at `:301-308`.
 `crew_resume.py`, `crew_context.py` and `crew_tracker.py` each changed on one side only, so
@@ -1706,7 +1715,7 @@ carries T-0023's `route_item` hunk on main's tree, so main's `_record_author_log
 rule at `:309-317`, after T-0021's tracker rule 28 at `:301-308`. The version is 1.0.46 at
 `.claude-plugin/marketplace.json:218` and `plugin/crew/.claude-plugin/plugin.json:3`. Config
 leaves re-executed on the merge: 122 / 68 / 54 / 0. T-0004's "117 -> 119" is now
-`CHANGELOG.md:436-437` (T-0023's entry sits first). `crew_tracker.py`, `crew_resume.py` and
+`CHANGELOG.md:446-447` (T-0023's entry sits first). `crew_tracker.py`, `crew_resume.py` and
 `role_write_guard.py` changed on one side only, so their citations stand. On the merge,
 `test_crew_route.py`, `test_crew_route_hook.py`, `test_crew_context.py`, `test_crew_tracker.py`
 and `test_crew_config.py` ran: 588 passed.
@@ -1766,7 +1775,7 @@ citation into them was re-read with `grep -n`/`sed -n` at `29a987b0`:
   `_handoff_ticket`.
 - `.crew/verify.json` - rule 26's `seconds` and `why` changed in place; `:281-289` holds, 294
   lines.
-- `CHANGELOG.md` and the tests - cited by name only here, except `CHANGELOG.md:65` (the config
+- `CHANGELOG.md` and the tests - cited by name only here, except `CHANGELOG.md:75` (the config
   key count paragraph), which did not match "116 -> 118" at `4ff7e764` either and is left as it
   was, outside this refresh.
 
@@ -2009,7 +2018,7 @@ Leaves re-executed on the merge: 122 / 68 / 54 / 0; `test_crew_config.py:279` as
 `.crew/verify.json` is 325 lines, 30 rules: autopilot rule 27 `:296-303`, tracker 28 `:304-311`,
 routing 29 `:312-320`. `sabotage.py` imports `ROUTE_MUTATIONS` at `:79` and
 `CONFIG_MENU_MUTATIONS` at `:80`, both appended at `:3053`. T-0004's "117 -> 119" is
-`CHANGELOG.md:467-468` (T-0075's entry now sits first). The version is 1.0.47 at
+`CHANGELOG.md:477-478` (T-0075's entry now sits first). The version is 1.0.47 at
 `.claude-plugin/marketplace.json:218` and `plugin/crew/.claude-plugin/plugin.json:3`; `:217`
 states 36 commands. `crew_context.py`, `crew_route.py` and the templates changed on main's side
 only, so the routing section's citations stand.
@@ -2032,3 +2041,21 @@ side, so the writers section's citations (`enum_values` `:2559` through `write_r
 hold; leaves re-executed 122 / 68 / 54 / 0, `test_crew_config.py:279` asserts 122. The version is
 1.0.48 at `.claude-plugin/marketplace.json:218` and `plugin/crew/.claude-plugin/plugin.json:3`;
 `:217` states 36 commands. No test suite was executed for this note.
+
+## Re-anchor provenance - `23371afb` -> `764f6018`, 2026-09-27 (T-0075 review round 1)
+
+`764f6018` fixes T-0075's review round 1. `git diff --name-only 23371afb 764f6018` is `CHANGELOG.md`,
+`plugin/crew/BUDGETS.md`, `plugin/crew/CONFIG.md`, `plugin/crew/README.md`,
+`plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_config_menu.py`,
+`plugin/crew/skills/crew-setup/config-menu.md` and three crew test files. Each citation into one
+of them was mapped with a line diff from `87627d86` (the tree `23371afb` describes for those
+files) and re-read with `sed -n`/`grep -n`. `crew_config.py` gained `is_repo_veto` (`:2789`) below `REPO_VETO_ONLY` (`:2786`), so the
+writers section moved +9 from `:2787` on (`plan_repo_write` `:2902` -> `:2911`, `write_repo_config`
+`:2957` -> `:2966`, `_set_repo` `:3071` -> `:3080`, `repo_widens` `:2832` -> `:2841`, `_REPO_WIDENING`
+`:2790` -> `:2799`, `_read_repo_strict` `:2873` -> `:2882`); citations above `:2786` hold. The menu
+paragraph's `crew_config_menu.py` lines were re-taken with `grep -n` and it gained the round-1
+behaviour. `CHANGELOG.md` moved +10 above T-0075's entry; its four body citations were remapped.
+`plugin/crew/BUDGETS.md:11` now reads 19,145 lines across 128 files (re-measured by
+`scripts/check-marketplace.py`); the older BUDGETS figures above are history at their anchors and
+stand. Version still 1.0.48. The rule-7 suites ran (550 passed) and the 22 `CONFIG_MENU_MUTATIONS`
+went RED through `sabotage.py`'s own `main`; the full `sabotage.py` was not run for this note.

@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@23371afb
+anchor: useful-claude-add-ons@764f6018
 verified: 2026-09-27
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -748,3 +748,15 @@ reads 19,120 lines across 128 files, measured on the resolved index. `.crew/veri
 lines, 30 rules; the doc rule at `:69-78` holds. `scripts/check-marketplace.py` did not change.
 `python3 scripts/check-marketplace.py` at `23371afb`: `marketplace: 34 skills, 5 plugins`, `all
 checks passed`.
+
+## Re-anchor provenance - `23371afb` -> `764f6018`, 2026-09-27 (T-0075 review round 1)
+
+`764f6018` fixes T-0075's review round 1. `git diff --name-only 23371afb 764f6018` is `CHANGELOG.md`,
+`plugin/crew/BUDGETS.md`, `plugin/crew/CONFIG.md`, `plugin/crew/README.md`,
+`plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_config_menu.py`,
+`plugin/crew/skills/crew-setup/config-menu.md` and three crew test files. Each citation into one
+of them was mapped with a line diff from `87627d86` (the tree `23371afb` describes for those
+files) and re-read with `sed -n`/`grep -n`. No marketplace entry, count or install-script line changed;
+`plugin/crew/BUDGETS.md:11` now reads 19,145 lines across 128 files (the figures above are history at
+their anchors). crew is still 1.0.48. Nothing else was executed for this note; `scripts/check-marketplace.py`
+reported `all checks passed` on the fix commit.

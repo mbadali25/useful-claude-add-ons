@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@f7163410 on 2026-09-27. Verify before trusting.
+%% Generated from useful-claude-add-ons@764f6018 on 2026-09-27. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
@@ -166,6 +166,14 @@
 %% repo_widens :2832, _read_repo_strict :2873, plan_repo_write :2902, write_repo_config :2957.
 %% Main's citations (the Ratchet section, :859, :2444) hold. crew_config_menu.py changed on
 %% T-0075's side only. Counts re-executed on the merge: 122 / 68 / 54 / 0.
+%% Re-anchored f7163410 -> 764f6018 (T-0075 review round 1, crew 1.0.48): of the Anchors paths
+%% crew_config.py, crew_config_menu.py and CONFIG.md changed, all on T-0075's side. crew_config.py
+%% gained is_repo_veto (:2789) below REPO_VETO_ONLY (:2786), so every citation above :2786 holds and
+%% the RepoWrite subgraph's were mapped by a line diff and re-read with grep -n (plan_repo_write
+%% :2902 -> :2911, _read_repo_strict :2873 -> :2882, repo_widens :2832 -> :2841, _REPO_WIDENING
+%% :2790 -> :2799, write_repo_config :2957 -> :2966, tmp :2973 -> :2982). The Menu nodes were
+%% re-taken (menu_spec :285, choices :181, save :401, delete_repo_config :634) and redrawn for the
+%% round-1 behaviour. CONFIG.md is cited by section only. Leaf counts unchanged: no key added.
 %% How one config value reaches a run, and what may set it where.
 %% --
 %% RE-ANCHORED after crew 1.0 (previously 60c79407). Every function/line cited
@@ -324,10 +332,10 @@ flowchart TB
 
     subgraph RepoWrite["NEW (T-0075): the repo writer - /crew:config --set --repo, the only path into .crew/config.json"]
         direction TB
-        RPLAN["plan_repo_write()<br/>plugin/crew/hooks/scripts/crew_config.py:2902<br/>refuses a missing or malformed file<br/>(_read_repo_strict :2873) rather than creating one"]
-        RREF>"RepoWriteRefused (class :2754)<br/>REPO_REFUSED :2765 - platform, schema,<br/>scope.mode, scope.allowCliApproval, the<br/>machine-only autoClear paths;<br/>REPO_VETO_ONLY :2786 - autoClear.enabled and<br/>resume.auto take only false / null"]
-        RWIDEN["repo_widens() :2832 - the ratchet against<br/>what is in force, plus _REPO_WIDENING :2790;<br/>a repo value held down by the machine layer<br/>is named, not marked as a widening"]
-        RWRITE["write_repo_config()<br/>plugin/crew/hooks/scripts/crew_config.py:2957<br/>merge, leaf keys only, line ending kept,<br/>sibling-then-rename :2973"]
+        RPLAN["plan_repo_write()<br/>plugin/crew/hooks/scripts/crew_config.py:2911<br/>refuses a missing or malformed file<br/>(_read_repo_strict :2882) rather than creating one"]
+        RREF>"RepoWriteRefused (class :2754)<br/>REPO_REFUSED :2765 - platform, schema,<br/>scope.mode, scope.allowCliApproval, the<br/>machine-only autoClear paths;<br/>REPO_VETO_ONLY :2786 - autoClear.enabled and<br/>resume.auto take only false / null<br/>(by identity, is_repo_veto :2789: 0 is refused)"]
+        RWIDEN["repo_widens() :2841 - the ratchet against<br/>what is in force, plus _REPO_WIDENING :2799;<br/>a repo value held down by the machine layer<br/>is named, not marked as a widening"]
+        RWRITE["write_repo_config()<br/>plugin/crew/hooks/scripts/crew_config.py:2966<br/>merge, leaf keys only, line ending kept,<br/>sibling-then-rename :2982"]
         RPLAN -->|"refused key or value"| RREF
         RPLAN --> RWIDEN --> RWRITE
     end
@@ -337,9 +345,9 @@ flowchart TB
 
     subgraph Menu["NEW (T-0075): the /crew:config menu - plugin/crew/hooks/scripts/crew_config_menu.py"]
         direction TB
-        MSPEC["menu_spec() :248<br/>rows = leaf_paths(default_global_config())<br/>(machine) / leaf_paths(default_config())<br/>(repo, refused rows read-only); choices()<br/>:177 offers only what the writer accepts"]
-        MSAVE["save() :358<br/>validates BOTH layers before writing<br/>either, then writes each changed layer once"]
-        MDEL["delete_repo_config() :533<br/>typed repo name, verified<br/>.crew/config.json.bak-UTC backup FIRST,<br/>removes config.json only (never crew.json),<br/>prints the restore-repo command"]
+        MSPEC["menu_spec() :285<br/>rows = leaf_paths(default_global_config())<br/>(machine, plus platform.* and schema read-only)<br/>/ leaf_paths(default_config()) (repo, refused rows<br/>read-only; EVERY row read-only when config.json<br/>is absent or unparseable, _repo_unwritable :254);<br/>choices() :181 offers only what the writer accepts"]
+        MSAVE["save() :401<br/>validates BOTH layers before writing<br/>either, then writes each changed layer once;<br/>a write refused after validation is reported<br/>as a partial write, naming the layer that landed"]
+        MDEL["delete_repo_config() :634<br/>typed repo name (git toplevel basename,<br/>repo_name :464), preview skips platform.*<br/>and names a ratchet-held key as stays, verified<br/>.crew/config.json.bak-UTC backup FIRST,<br/>removes config.json only (never crew.json),<br/>prints the restore-repo command"]
         MSPEC --> MSAVE
     end
 

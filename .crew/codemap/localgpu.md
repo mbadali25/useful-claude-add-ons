@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@23371afb
+anchor: useful-claude-add-ons@764f6018
 verified: 2026-09-27
 
 # localgpu
@@ -1181,3 +1181,14 @@ sides changed was mapped from the side its line came from onto the merged tree a
 named it because both changed on both sides. `crew_config.py:127-128` (the provider re-export) and
 `crew_state.py` changed on neither side. `localgpu`'s marketplace entry is still `0.1.20`; nothing
 under `plugin/localgpu/` changed. Nothing was executed for this note.
+
+## Re-anchor provenance - `23371afb` -> `764f6018`, 2026-09-27 (T-0075 review round 1)
+
+`764f6018` fixes T-0075's review round 1. `git diff --name-only 23371afb 764f6018` is `CHANGELOG.md`,
+`plugin/crew/BUDGETS.md`, `plugin/crew/CONFIG.md`, `plugin/crew/README.md`,
+`plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_config_menu.py`,
+`plugin/crew/skills/crew-setup/config-menu.md` and three crew test files. Each citation into one
+of them was mapped with a line diff from `87627d86` (the tree `23371afb` describes for those
+files) and re-read with `sed -n`/`grep -n`. This note's line citations into `crew_config.py` (`:127-128`, the provider
+re-export) sit above the only insertion (`:2789`) and hold; the rest are by name. Nothing under
+`plugin/localgpu/` changed; its marketplace entry is still `0.1.20`. Nothing was executed for this note.

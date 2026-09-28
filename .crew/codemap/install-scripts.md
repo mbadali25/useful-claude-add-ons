@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@23371afb
+anchor: useful-claude-add-ons@764f6018
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -859,3 +859,14 @@ place), `plugin/PLUGINS.md` (`:14` 1.0.48; `:17` 36 commands) and `plugin/crew/B
 index) changed. `plugin/crew/README.md` changed on both sides: its `36 commands` claim is `:2569` and
 `4 agents` `:2580` (re-grepped). Both install scripts, the root `README.md` and `plugin/README.md`
 did not change on main's side, so their citations stand. Neither install script was executed.
+
+## Re-anchor provenance - `23371afb` -> `764f6018`, 2026-09-27 (T-0075 review round 1)
+
+`764f6018` fixes T-0075's review round 1. `git diff --name-only 23371afb 764f6018` is `CHANGELOG.md`,
+`plugin/crew/BUDGETS.md`, `plugin/crew/CONFIG.md`, `plugin/crew/README.md`,
+`plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_config_menu.py`,
+`plugin/crew/skills/crew-setup/config-menu.md` and three crew test files. Each citation into one
+of them was mapped with a line diff from `87627d86` (the tree `23371afb` describes for those
+files) and re-read with `sed -n`/`grep -n`. This note cites those files by name, by section or by historical
+BUDGETS figures only, plus `crew_config.py` and `test_crew_config.py` by name; none of its line
+citations moved. The install scripts did not change. Nothing was executed for this note.
