@@ -902,7 +902,8 @@ def apply_delete(root, plan, confirm, now=None, expect=None):
               f"check {path}", file=sys.stderr)
         return 1
     except OSError as exc:
-        print(f"refused: {path} could not be moved to a backup ({exc}); left "
+        print(f"refused: {path} could not be moved to a backup "
+              f"({crew_config_files.os_error_text(exc)}); left "
               "in place", file=sys.stderr)
         return 2
     if os.path.lexists(path):

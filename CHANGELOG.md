@@ -185,11 +185,17 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.56: `/crew:config` menu mode and `/crew:config-setup` (T-0075).**
-  Landed as 1.0.56, not 1.0.55: the landing branch added a file-level
-  `# pylint: disable=consider-using-with` to `plugin/crew/tests/test_config_menu.py`
-  (owner decision 2026-09-28, "Disable at land"; the `with` rewrite is a follow-up),
-  and that `plugin/crew/` change needs its own bump.
+- **`crew` 1.0.57: `/crew:config` menu mode and `/crew:config-setup` (T-0075).**
+  Landed as 1.0.57, not 1.0.55, after two landing-branch changes, each needing its
+  own bump. 1.0.56: a file-level `# pylint: disable=consider-using-with` in
+  `plugin/crew/tests/test_config_menu.py` (owner decision 2026-09-28, "Disable at
+  land"; the `with` rewrite is a follow-up). 1.0.57: the config writers' and the
+  menu's OS-error refusals name paths as written. `str(OSError)` repr()'d the
+  filename, doubling every backslash in a Windows path, so three T-0075 tests
+  failed on Windows. `crew_config_files.os_error_text` is now used at
+  `write_global_config`, `write_repo_config` and `apply_delete`. The message text
+  changes; exit codes and writes do not. Diagnosed natively by win-repo-2 (owner
+  decision 2026-09-28, "Production fix at land").
   Bumped one past origin/main (1.0.54, T-0092) as the last `plugin/crew/` commit;
   the build earlier declared 1.0.44, 1.0.46, 1.0.47, 1.0.48, 1.0.49, 1.0.50,
   1.0.51 and 1.0.52, each given to another ticket on main first. This entry describes the successor design

@@ -2886,8 +2886,9 @@ def write_global_config(updates, path=None, expect=None):
     except (crew_config_files.Busy, crew_config_files.Unreadable) as exc:
         raise GlobalWriteRefused(f"{exc}; nothing written") from exc
     except OSError as exc:
-        raise GlobalWriteRefused(f"{real_path}: {exc}; nothing written (its directory, its lock or the write "
-                                 "itself failed at the OS; check the directory)") from exc
+        raise GlobalWriteRefused(f"{real_path}: {crew_config_files.os_error_text(exc)}; nothing written (its "
+                                 "directory, its lock or the write itself failed at the OS; check the "
+                                 "directory)") from exc
     return out["plan"]
 
 
@@ -3100,8 +3101,8 @@ def write_repo_config(root, updates, global_path=None, expect=None,
     except crew_config_files.Busy as exc:
         raise RepoWriteRefused(f"{exc}; nothing written") from exc
     except OSError as exc:
-        raise RepoWriteRefused(f"{exc}; nothing written (the machine-global directory, a lock or the write "
-                               "failed at the OS)") from exc
+        raise RepoWriteRefused(f"{crew_config_files.os_error_text(exc)}; nothing written (the machine-global "
+                               "directory, a lock or the write failed at the OS)") from exc
     return out["plan"]
 
 

@@ -79,6 +79,20 @@ class Displaced(OSError):
         self.parked = parked
 
 
+def os_error_text(exc):
+    """`str(exc)` for an OSError, with its paths as written rather than repr()'d.
+
+    `str(OSError)` quotes the filename with repr(), which doubles every
+    backslash in a Windows path, so a refusal would name a path the user
+    cannot paste and a test cannot find."""
+    if not isinstance(exc, OSError) or exc.filename is None:
+        return str(exc)
+    code = getattr(exc, "winerror", None)
+    tag = f"[WinError {code}] " if code else (f"[Errno {exc.errno}] " if exc.errno else "")
+    text = f"{tag}{exc.strerror or type(exc).__name__}: {exc.filename}"
+    return text + (f" -> {exc.filename2}" if exc.filename2 is not None else "")
+
+
 def _holder(lock_path):
     try:
         with open(lock_path, "rb") as handle:
