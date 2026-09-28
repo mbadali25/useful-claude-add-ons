@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@a43acd56 on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@0339bf3c on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% T-0088: the review subgraph gained the Codex probe node (rvp) and its three edges, read from
 %% plugin/crew/commands/review.md:239 (the probe table row, which also carries the limit rule)
@@ -165,6 +165,11 @@
 %% place) changed, both line-neutral; review.md:25-29, :449 and completion_audit.py:177-187,
 %% :204-215 hold (compared by script). The bundle now also leaves out graphify-out/, which no
 %% node here names. No node or edge changed.
+%% Re-anchored a43acd56 / c99e31f6 -> 0339bf3c (T-0088 merges origin/main 6387ab49, T-0092 landing, and
+%% re-bumps crew to 1.0.55): both notes above hold on the merged tree - git diff a43acd56 0339bf3c on
+%% review.md is the one hunk at :325-335 and on completion_audit.py the one at :71-78, both T-0092's and
+%% line-neutral, so review.md:25-29, :239, :447, :449 and completion_audit.py:177-187, :204-215 hold.
+%% No node or edge changed.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
