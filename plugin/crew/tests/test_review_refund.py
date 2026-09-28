@@ -14,6 +14,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_ticket
+import review_fixtures
 import review_ledger as rl
 import review_verdict as rv
 from review_fixtures import init_repo
@@ -193,3 +194,79 @@ def test_accept_after_a_refund_still_refuses_a_round_from_a_replaced_plan(ticket
 
     with pytest.raises(rl.LedgerError, match="a successor replaced"):
         rl.accept(str(repo), "T-1", "owner")
+
+
+# --- Step 3: review_run records the class and the refund, end to end ------------
+
+def _run(repo, tmp_path, mode, *extra):
+    (repo / "change.txt").write_text("change\n", encoding="utf-8")
+    scratch, work = tmp_path / "scratch", tmp_path / "work"
+    review_fixtures.bundle(repo, scratch)
+    fakes = review_fixtures.fake_reviewer_bin(tmp_path / "bin")
+    result = review_fixtures.run_review(repo, scratch, fakes, mode, "--work-dir", str(work),
+                                        *extra)
+    review = json.loads((work / "review.json").read_text(encoding="utf-8"))
+    return result, review
+
+
+def _assert_refunded_tool_failure(repo, result, review):
+    status = rl.status(str(repo), "T1")
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert (review["failure_class"], review["refunded"]) == ("tool", True)
+    assert (status["rounds_left"], status["rounds_refunded"]) == (2, 1)
+    assert any(ln.startswith("review: round 1 was a tool failure") and "refunded" in ln
+               for ln in result.stdout.splitlines()), result.stdout
+
+
+def test_turn_failed_round_is_refunded(repo, tmp_path):
+    _assert_refunded_tool_failure(repo, *_run(repo, tmp_path, "turnfail"))
+
+
+def test_timed_out_round_is_refunded(repo, tmp_path):
+    _assert_refunded_tool_failure(repo, *_run(repo, tmp_path, "hang", "--timeout", "2"))
+
+
+def test_nonzero_exit_round_is_refunded(repo, tmp_path):
+    _assert_refunded_tool_failure(repo, *_run(repo, tmp_path, "fail"))
+
+
+def test_contract_broken_round_is_not_refunded(repo, tmp_path):
+    result, review = _run(repo, tmp_path, "prose")
+
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert (review["failure_class"], review["refunded"]) == ("reviewer", False)
+    assert rl.status(str(repo), "T1")["rounds_left"] == 1
+
+
+def test_tree_changed_round_is_not_refunded(repo, tmp_path):
+    (repo / "change.txt").write_text("change\n", encoding="utf-8")
+    scratch, work = tmp_path / "scratch", tmp_path / "work"
+    review_fixtures.bundle(repo, scratch)
+    first = json.loads((scratch / "manifest.json").read_text(encoding="utf-8"))["parts"][0]
+    with open(first["path"], "ab") as fh:
+        fh.write(b"x")
+    fakes = review_fixtures.fake_reviewer_bin(tmp_path / "bin")
+
+    result = review_fixtures.run_review(repo, scratch, fakes, "clean", "--work-dir", str(work))
+
+    review = json.loads((work / "review.json").read_text(encoding="utf-8"))
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert (review["failure_class"], review["refunded"]) == ("tree", False)
+    assert rl.status(str(repo), "T1")["rounds_left"] == 1
+
+
+@pytest.mark.parametrize("mode", ["clean", "findings"])
+def test_clean_and_findings_rounds_carry_no_failure_class(repo, tmp_path, mode):
+    _, review = _run(repo, tmp_path, mode)
+
+    assert (review["failure_class"], review["refunded"]) == (None, False)
+
+
+def test_refund_limit_holds_through_review_run(repo, tmp_path):
+    outs = []
+    for n in range(3):
+        result, _ = _run(repo, tmp_path / str(n), "turnfail")
+        outs.append(result.stdout)
+
+    assert "NOT refunded" in outs[2], outs[2]
+    assert rl.status(str(repo), "T1")["rounds_left"] == 1

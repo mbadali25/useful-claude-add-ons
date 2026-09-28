@@ -1,6 +1,7 @@
 """Throwaway git repositories and a fake reviewer CLI for the review-adapter
 tests. Everything is built under pytest's tmp_path: no test here touches the
 real repository, its ledger directory, or ~/.claude."""
+import json
 import os
 import subprocess
 import sys
@@ -57,6 +58,8 @@ def init_repo(root):
 #   hang      sleep far past any test timeout
 #   crash     kill the parent (review_run.py) -- an orchestrator crash
 #   turnfail  a JSON stream whose turn failed, exit 0
+#   prose     a completed turn whose only agent message is prose: no READ
+#             lines, no verdict -- a reviewer that broke the contract (T-0087)
 #   escape    fork a detached `setsid` grandchild that inherits this
 #             process's stdout/stderr and outlives it, then exit immediately
 #             -- the leader-already-gone shape review_run.py's `launch` BLOCK
@@ -103,6 +106,8 @@ if mode == "escape":
 parts = sorted(set(re.findall(r"part-\d{3}-of-\d{3}\.patch", prompt)))
 body = "\n".join("READ|" + p for p in parts)
 body += "\nFIX|seed.txt:1|breaks|repro" if mode == "findings" else "\nCLEAN"
+if mode == "prose":
+    body = "I reviewed the change and it looks fine."
 events = [{"type": "thread.started"}, {"type": "turn.started"},
           {"type": "item.completed", "item": {"type": "agent_message", "text": body}}]
 events.append({"type": "turn.failed", "error": {"message": "stream died"}}
@@ -141,3 +146,31 @@ def env_with_path(directory, **extra):
     env["FAKE_REVIEWER_ESCAPE_LIFETIME"] = str(ESCAPE_CHILD_LIFETIME_S)
     env.update(extra)
     return env
+
+
+_SCRIPTS = os.path.dirname(os.path.abspath(review_run.__file__))
+
+
+def bundle(repo, scratch):
+    """Cut the review bundle for `repo`'s working tree against HEAD into
+    `scratch` (diff, manifest, a prompt naming every part)."""
+    base = git(repo, "rev-parse", "HEAD")
+    scratch.mkdir(parents=True, exist_ok=True)
+    subprocess.run([sys.executable, os.path.join(_SCRIPTS, "review_patch.py"),
+                    "--root", str(repo), "--base", base,
+                    "--out", str(scratch / "diff.txt"),
+                    "--manifest", str(scratch / "manifest.json")],
+                   check=True, capture_output=True, stdin=subprocess.DEVNULL)
+    (scratch / "prompt.txt").write_text(
+        "Review. " + " ".join(p["name"] for p in json.loads(
+            (scratch / "manifest.json").read_text(encoding="utf-8"))["parts"]),
+        encoding="utf-8")
+
+
+def run_review(repo, scratch, fakes, mode, *extra, **env_extra):
+    """Run review_run.py for ticket T1 with the fake codex in `mode`."""
+    return subprocess.run(
+        [sys.executable, os.path.join(_SCRIPTS, "review_run.py"), "--root", str(repo),
+         "--ticket", "T1", "--scratch", str(scratch), "--provider", "codex"] + list(extra),
+        capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False,
+        env=env_with_path(fakes, FAKE_REVIEWER_MODE=mode, **env_extra), timeout=120)

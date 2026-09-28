@@ -52,6 +52,14 @@ whether or not the reviewer carried it. When the prompt overflowed its inline
 rows into `webtest-findings.txt` in the scratch directory, that file is an
 expected READ like a bundle part.
 
+FAILURE CLASS AND REFUNDS (T-0087). An INCOMPLETE round is classed by
+`review_verdict.failure_class`: `tree` when a bundle or webtest reason was
+added here, `tool` when the answer never arrived intact (timeout, unknown or
+non-zero exit, empty output, a `codex:` stream error), else `reviewer`.
+review.json carries `failure_class`, and `refunded` / `refund_refused` as the
+ledger recorded them; a `review:` line says whether the round was refunded. A
+refunded round still exits 3.
+
 Exit codes: 0 CLEAN; 1 FINDINGS; 3 INCOMPLETE; 4 budget refused
 (NEEDS_REPLAN); 2 usage or setup error.
 """
@@ -316,6 +324,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     if os.path.exists(os.path.join(args.scratch, review_prompt.WEBTEST_FINDINGS_FILE)):
         parts.append(os.path.join(args.scratch, review_prompt.WEBTEST_FINDINGS_FILE))
     rows, webtest_record, webtest_reasons = webtest_check(args.root, args.ticket, manifest)
+    stream_reasons = list(extra_reasons)
     extra_reasons = list(extra_reasons) + bundle_problems(manifest)
     extra_reasons += webtest_reasons
     result = review_verdict.parse(output, exit_code, timed_out, parts)
@@ -328,6 +337,12 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
                            "is a finding, never accepted, so this round is not CLEAN")
         if result["verdict"] == review_verdict.CLEAN:
             result["verdict"] = review_verdict.FINDINGS
+    # Whose fault an INCOMPLETE was: extra reasons beyond the stream's are the
+    # bundle/webtest checks (the tree); a stream error means the answer never
+    # arrived intact (the tool).
+    failure = review_verdict.failure_class(result["verdict"],
+                                           result["delivered"] and not stream_reasons,
+                                           len(extra_reasons) > len(stream_reasons))
     review = {
         "ticket": args.ticket, "round": number, "budget": review_ledger.BUDGET,
         "verdict": result["verdict"], "counts": result["counts"],
@@ -343,9 +358,14 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
         "written_at": datetime.datetime.now(datetime.timezone.utc).isoformat(
             timespec="seconds"),
     }
+    review["failure_class"] = failure
     # Ledger first: it refuses a round that was never reserved or already
     # has a result, and a refused record must not leave a review.json behind.
     state = review_ledger.record(args.root, args.ticket, number, review)
+    ledger = review_ledger.status(args.root, args.ticket)
+    row = next((r for r in ledger.get("rounds") or [] if r.get("round") == number), {})
+    review["refunded"] = row.get("refunded") is True
+    review["refund_refused"] = row.get("refund_refused")
     work_dir = args.work_dir or os.path.join(args.root, ".work", "tickets", args.ticket)
     _write_atomic(os.path.join(work_dir, "review.json"),
                   json.dumps(review, indent=2, sort_keys=True) + "\n")
@@ -356,6 +376,14 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
           f"ledger={state}")
     for reason in result["reasons"]:
         print(f"review: INCOMPLETE because {reason}")
+    if failure == review_verdict.TOOL and review["refunded"]:
+        print(f"review: round {number} was a tool failure ({result['reasons'][0]}); refunded - "
+              f"{ledger.get('rounds_spent')} of {review_ledger.BUDGET} budget rounds used")
+    elif failure == review_verdict.TOOL:
+        print(f"review: round {number} was a tool failure; NOT refunded - "
+              f"{review['refund_refused']}")
+    elif failure:
+        print(f"review: round {number} is INCOMPLETE ({failure}) and counts against the budget")
     if webtest_verdict:
         print(f"review: {result['verdict']} because {webtest_verdict}")
     return {review_verdict.CLEAN: EXIT_CLEAN, review_verdict.FINDINGS: EXIT_FINDINGS}.get(
