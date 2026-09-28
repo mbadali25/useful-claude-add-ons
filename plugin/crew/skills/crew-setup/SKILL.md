@@ -114,10 +114,12 @@ taking precedence over it — see "Global config, and how it layers with the
 repo file" in `README.md` §11.
 
 The global file has its own guided walkthrough, `/crew:config`, defined in
-`global-config.md` beside this file. Offer it during Phase 1; never run it
-without being asked, and never write `~/.claude` on your own initiative — the
-same reasoning that forbids deleting a global `find-skills`. Setup itself
-still writes only the repo file.
+`global-config.md` beside this file. With no argument it opens a menu
+(`config-menu.md`; `/crew:config-setup` is the same menu) that sets either
+layer, machine or repo, from a list of values and deletes the repo config with
+a backup. Offer it during Phase 1; never run it without being asked, and never
+write `~/.claude` on your own initiative — the same reasoning that forbids
+deleting a global `find-skills`. Setup itself still writes only the repo file.
 
 ```json
 {

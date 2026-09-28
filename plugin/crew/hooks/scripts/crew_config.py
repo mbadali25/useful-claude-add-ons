@@ -88,6 +88,7 @@ import shutil
 import sys
 import time
 
+import crew_config_files
 import crew_state
 
 sys.path.insert(0, os.path.join(
@@ -202,7 +203,10 @@ def validate_providers(cfg):
             "here whether the name is a typo or a real provider crew simply "
             "does not dispatch a reviewer to.")
 
-    for name in qa.get("order") or []:
+    order = qa.get("order")
+    if order is not None and not isinstance(order, list):
+        raise ProviderError(f"qa.order = {order!r} is not a list of QA providers ({qa_names}) or null.")
+    for name in order or []:
         if name not in QA_PROVIDERS:
             raise ProviderError(
                 f"qa.order contains {name!r}, which is not a QA provider. QA "
@@ -216,25 +220,24 @@ def validate_providers(cfg):
             f"dev.provider = {dev_provider!r} is not a dev provider. "
             f"dev accepts {dev_names}.")
 
-    for role, block in crew_state.dict_or_empty(dev.get("roles")).items():
-        pin = crew_state.dict_or_empty(block).get("provider")
-        if pin is not None and pin not in DEV_PROVIDERS:
-            raise ProviderError(
-                f"dev.roles.{role}.provider = {pin!r} is not a dev provider. "
-                f"dev accepts {dev_names}.")
-
-    for role, block in crew_state.dict_or_empty(qa.get("roles")).items():
-        pin = crew_state.dict_or_empty(block).get("provider")
-        if pin is not None and pin not in QA_PROVIDERS:
-            raise ProviderError(
-                f"qa.roles.{role}.provider = {pin!r} is not a QA provider. QA "
-                f"accepts {qa_names}. A pin is evaluated AFTER the family "
-                "guard, so a pin here would not merely add a reviewer -- it "
-                "would name one.")
+    for kind, block, allowed, label, names, tail in (
+            ("dev", dev, DEV_PROVIDERS, "dev", dev_names, ""),
+            ("qa", qa, QA_PROVIDERS, "QA", qa_names, " A pin is evaluated AFTER the family "
+             "guard, so a pin here would not merely add a reviewer -- it would name one.")):
+        table = block.get("roles")
+        if table is not None and not isinstance(table, dict):
+            raise ProviderError(f"{kind}.roles = {table!r} is not an object of role pins "
+                                "(or null); every pin under it is dropped on read.")
+        for role, pin in (table or {}).items():
+            if pin is not None and not isinstance(pin, dict):
+                raise ProviderError(f"{kind}.roles.{role} = {pin!r} is not a pin object "
+                                    "or null; it is ignored on read.")
+            provider = (pin or {}).get("provider")
+            if provider is not None and provider not in allowed:
+                raise ProviderError(f"{kind}.roles.{role}.provider = {provider!r} is not a "
+                                    f"{label} provider. {label} accepts {names}.{tail}")
 
     return cfg
-
-
 
 
 def default_config():
@@ -2194,6 +2197,10 @@ class GlobalWriteRefused(Exception):
     """A requested global write named a key the walkthrough may not set."""
 
 
+class GlobalWriteConflict(GlobalWriteRefused):
+    """The machine file changed since the caller read it; nothing written."""
+
+
 def _set_path(target, parts, value):
     node = target
     for part in parts[:-1]:
@@ -2556,135 +2563,581 @@ _RATCHETED["environments.prodUnattended"] = (
 )
 
 
-def plan_global_write(updates, path=None):
-    """What writing `updates` to the global file would change. Pure.
+def enum_values(dotted):
+    """The values `dotted` may take, as a tuple, or None for an open key: the
+    tuple its READER normalises against, never a second list, so both writers
+    refuse a value outside it rather than let it collapse on read (T-0075)."""
+    spec = crew_state.ratchet_spec(dotted)
+    if spec is not None:
+        return tuple(spec[0])
+    if dotted == "pm.authority":
+        return tuple(crew_state.AUTHORITIES)
+    if dotted == "pm.ticketGranularity":
+        return tuple(crew_state.TICKET_GRANULARITIES)
+    if dotted == "qa.provider":
+        return ("auto",) + tuple(QA_PROVIDERS)
+    if dotted == "dev.provider":
+        return tuple(DEV_PROVIDERS)
+    return None
 
-    `updates` is a flat `{"pm.authority": "act"}` mapping. Returns
-    `(merged, changes)` where `changes` is a list of
-    `{"path", "before", "after", "widens"}` for the entries that
-    would actually differ.
 
-    Two rules enforced here rather than in prose:
+def leaf_updates(updates):
+    """`(dotted, value)` for every LEAF of `updates`, to any depth, so a refused
+    key cannot ride past either writer inside a block; `{}` stays a leaf."""
+    out = []
+    for dotted, value in updates.items():
+        if isinstance(value, dict) and value:
+            out.extend(leaf_updates(
+                {f"{dotted}.{key}": inner for key, inner in value.items()}))
+        else:
+            out.append((dotted, value))
+    return out
 
-      * **Merge, never replace.** The existing file is the base and every key
-        it carries that `updates` does not name survives byte-for-byte,
-        including keys this module has never heard of. A walkthrough that
-        asks about six settings must not cost a user the seventh.
-      * **Only globally-meaningful keys.** A path outside
-        `default_global_config()` is refused by name, using the same
-        `is_global_path` predicate `filter_global` prunes the READ layer with
-        -- what the global file may write is exactly what the global layer may
-        supply. That keeps `tracker`, `jira.project` and `graph.out` out of a
-        file every repo reads, and it is what makes
-        `graph.obsidian.confirmed` structurally un-grantable from here: it is
-        consent to write into the user's own notes outside the repo, not a
-        capability, so no guided flow can hand it over. Since 0.16.0 that flag
-        is doubly un-grantable -- refused on the write path here, and dropped
-        on the read path by `filter_global` even if some other tool wrote it.
-    """
-    refused = [p for p in updates if not is_global_path(p)]
-    if refused:
-        allowed = sorted(leaf_paths(default_global_config()))
+
+def _is_open_table(dotted):
+    """True for `qa.roles` / `dev.roles` themselves: an empty dict default."""
+    node = _dig(default_config(), tuple(dotted.split(".")))
+    return isinstance(node, dict) and not node
+
+
+def assignments(updates):
+    """`(dotted, value)` for every UNIT a planner writes: a block expands to the
+    leaves `leaf_updates` judged (siblings survive, a widening is marked on its
+    leaf), an open role table to its entries, each pin whole; else itself."""
+    out = []
+    for dotted, value in updates.items():
+        if isinstance(value, dict) and value and (
+                _shape(dotted) == "block" or _is_open_table(dotted)):
+            out.extend(assignments(
+                {f"{dotted}.{key}": inner for key, inner in value.items()}))
+        else:
+            out.append((dotted, value))
+    return out
+
+
+# Consent keys, refused at the machine layer by name and reason (the
+# structural rule behind them is still `is_global_path`).
+MACHINE_REFUSED = {
+    "context.autoClear." + key: (
+        "consent, not a capability: accepting this risk is a per-repo "
+        "decision, never granted machine-wide")
+    for key in crew_state.AUTOCLEAR_CONSENT_KEYS
+}
+MACHINE_REFUSED["graph.obsidian.confirmed"] = (
+    "consent to write into your own notes outside the repo; no guided flow "
+    "may grant it")
+
+
+def _shape(dotted):
+    """`block`, `open` (at or under an open table), `leaf`, `under` (past a
+    template leaf, which takes a value, not keys) or `unknown`."""
+    node = default_config()
+    for part in dotted.split("."):
+        if isinstance(node, dict) and not node:
+            return "open"
+        if not isinstance(node, dict):
+            return "under"
+        if part not in node:
+            return "unknown"
+        node = node[part]
+    if isinstance(node, dict):
+        return "block" if node else "open"
+    return "leaf"
+
+
+def _in_values(value, allowed):
+    # `True == 1`, so compare type as well as value.
+    return any(value == ok and type(value) is type(ok) for ok in allowed)
+
+
+def _values_text(allowed):
+    return ", ".join(repr(ok) for ok in allowed)
+
+
+def null_means(dotted, layer):
+    """What a `null` at `dotted` in `layer` means, or None (refused). Repo:
+    a veto-only key's null clears the veto; a machine-settable key inherits
+    the machine value (`without_null_shadows`). An open key is unset. An enum
+    key at the machine layer has no null meaning."""
+    if layer == "repo":
+        if dotted in REPO_VETO_ONLY:
+            return "clears the veto"
+        if is_global_path(dotted):
+            return "inherits the machine-global value"
+    if enum_values(dotted) is None:
+        return "unset"
+    return None
+
+
+def _consent_refusal(dotted):
+    for key, reason in MACHINE_REFUSED.items():
+        if dotted == key or dotted.startswith(key + "."):
+            return reason
+    return None
+
+
+_VETO_ONLY = ("a repo may only veto this (false) or clear its veto (null); "
+              "only the machine-global file can arm it")
+_FIX_FIRST = "fix that key first (it can be fixed in the same write)"
+
+
+def _layer_path_refusal(dotted, layer, value):
+    if layer == "machine":
+        if _consent_refusal(dotted):
+            return _consent_refusal(dotted)
+        if not is_global_path(dotted):
+            return "not settable in the machine-global config (repo-only or unknown)"
+        return None
+    reason = _repo_refusal(dotted)
+    if reason is None and not is_repo_path(dotted):
+        reason = ("not a settable leaf of .crew/config.json (a block is set "
+                  "one key at a time; unknown keys are refused)")
+    if reason is None and dotted in REPO_VETO_ONLY and not is_repo_veto(value):
+        reason = _VETO_ONLY
+    return reason
+
+
+def value_allowed(dotted, layer, value):
+    """None when `layer` accepts `value` at the LEAF `dotted`, else why not:
+    the layer's path rule, a block emptied or replaced by a scalar, the null
+    rule, then `enum_values` membership. Both planners and the menu use it."""
+    reason = _layer_path_refusal(dotted, layer, value)
+    if reason is not None:
+        return f"{dotted} - {reason}"
+    shape = _shape(dotted)
+    if shape == "under":
+        return f"{dotted} - under a key that takes a value, not keys; set that key to one of its values"
+    if shape == "block":
+        if value == {}:
+            return (f"{dotted} - setting a block to {{}} drops every key "
+                    "under it; set its keys one at a time")
+        return (f"{dotted} - a block; a {type(value).__name__} here is "
+                "discarded on read, so set its keys one at a time")
+    if shape == "leaf" and isinstance(value, dict):
+        return f"{dotted} = {value!r} is an object; this key takes a value, not keys"
+    allowed = enum_values(dotted)
+    if value is None:
+        if null_means(dotted, layer) is not None:
+            return None
+        default = _dig(default_config(), tuple(dotted.split(".")))
+        return (f"{dotted} = null is not one of its values here "
+                f"({_values_text(allowed)}); pick one of them, or its default "
+                f"{None if default is _MISSING else default!r}")
+    if allowed is not None and not _in_values(value, allowed):
+        return (f"{dotted} = {value!r} is not one of its values "
+                f"({_values_text(allowed)})")
+    return None
+
+
+def _content_problem(dotted, layer, value):
+    """Why a known leaf ALREADY in a file is not allowed there, or None
+    (review round 3): a consent key in the machine file, an armed veto-only
+    key in the repo file, or an enum value outside its tuple (a legacy null
+    is tolerated). Unknown keys are preserved, never judged.
+    JUDGEMENT: refusals of a WRITE are not refusals of CONTENT. `REPO_REFUSED`
+    keys belong in the repo file (`/crew:init`, platform-sync), and a repo-only
+    key in the machine file is pruned by `filter_global` on every read, so
+    refusing it would lock a machine file (this owner's holds `autopilot.mode`
+    ahead of T-0070) that nothing reads the key from."""
+    if layer == "machine" and _consent_refusal(dotted):
+        return _consent_refusal(dotted)
+    shape = _shape(dotted)
+    if shape == "under":
+        return f"= {value!r} sits under a key that takes a value, not keys; {_FIX_FIRST}"
+    if shape == "leaf" and isinstance(value, dict):
+        return f"= {value!r} is an object where a value belongs; {_FIX_FIRST}"
+    if shape == "unknown":
+        return None
+    if layer == "repo" and dotted in REPO_VETO_ONLY and not is_repo_veto(value):
+        return _VETO_ONLY
+    allowed = enum_values(dotted)
+    if value is None or allowed is None or _in_values(value, allowed):
+        return None
+    return f"= {value!r} is not one of its values ({_values_text(allowed)}); {_FIX_FIRST}"
+
+
+def merged_problems(merged, touched, label, layer):
+    """Refusals for the FILE a write would produce at `layer`: every leaf not
+    written now, by `_content_problem`, named pre-existing; then
+    `validate_providers` on the merged file."""
+    problems = []
+    for leaf in leaf_paths(merged):
+        if any(leaf == key or leaf.startswith(key + ".") for key in touched):
+            continue
+        value = _dig(merged, tuple(leaf.split(".")))
+        problem = _content_problem(leaf, layer, value)
+        if problem is None:
+            continue
+        if problem.startswith("= "):
+            problems.append(f"pre-existing in {label}: {leaf} {problem}")
+        else:
+            problems.append(
+                f"pre-existing in {label}: {leaf} = {value!r} - {problem}; "
+                "remove it by hand first (no crew writer sets or removes it)")
+    try:
+        validate_providers(merged)
+    except ProviderError as exc:
+        problems.append(str(exc))
+    return problems
+
+
+def _leaf_problems(updates, layer):
+    return [problem for dotted, value in leaf_updates(updates)
+            for problem in [value_allowed(dotted, layer, value)] if problem]
+
+
+def _unchanged(before, value):
+    return before is not _MISSING and before == value and type(before) is type(value)
+
+
+def _global_label(path):
+    return GLOBAL_CONFIG_PATH if path is None else path
+
+
+def global_snapshot(path=None):
+    """`(parsed, raw, digest)` of the machine file, strictly: absent is
+    `({}, None, ABSENT)`; unparsable or non-object refuses, since a write merged
+    onto `read_global_config`'s `{}` collapse would replace the whole file."""
+    real_path = _global_label(path)
+    try:
+        parsed, raw = crew_config_files.read_strict(real_path, allow_empty=True)
+    except crew_config_files.Unreadable as exc:
+        if exc.kind == "absent":
+            return {}, None, crew_config_files.ABSENT
         raise GlobalWriteRefused(
-            "not settable in the machine-global config: "
-            + ", ".join(sorted(refused))
-            + f" (allowed: {', '.join(allowed)})"
-        )
+            f"{exc}; left untouched. Fix or remove it by hand before a write "
+            "can merge into it") from exc
+    return parsed, raw, crew_config_files.digest(raw)
 
-    merged = copy.deepcopy(read_global_config(path))
 
-    # Refuse a bad provider HERE, at the boundary where the value enters,
-    # rather than where it is read. `resolve_config` documents "never raises"
-    # and that contract is load-bearing -- a malformed file must not wedge the
-    # session hook. So a write that would put an unusable provider name into
-    # the file is rejected outright, and the read path only ever REPORTS (see
-    # `provider_problems`). Validating the MERGED result, not `updates`, so a
-    # write is judged on the file it would produce.
-    _probe = copy.deepcopy(merged)
-    for dotted, value in updates.items():
-        _set_path(_probe, dotted.split("."), value)
-    validate_providers(_probe)
-
-    changes = []
-    for dotted, value in updates.items():
+def _plan_on(base, updates, layer, label, global_cfg=None):
+    """Either planner on an already-read file. Pure. Writes
+    `assignments(updates)`, the units `leaf_updates` judged. Never silently:
+    a machine widening (`pm.authority`, `install.policy`) is marked by RANK
+    (`_widens`), a repo one by `repo_widens` against `global_cfg`."""
+    merged, changes = copy.deepcopy(base), []
+    units = assignments(updates)
+    for dotted, value in units:
         parts = dotted.split(".")
         before = _dig(merged, parts)
-        if before is not _MISSING and before == value:
+        if _unchanged(before, value):
             continue
-        changes.append({
-            "path": dotted,
-            "before": None if before is _MISSING else before,
-            "after": value,
-            # Never silently. These are the keys whose wrong value the user
-            # cannot recover from by noticing -- `pm.authority` gives them
-            # agents they did not ask for or a report where they expected
-            # work, and `install.policy` runs commands on their machine -- so
-            # a widening is marked, printed on the dry run, and printed again
-            # on the write.
-            #
-            # RANK, never equality. This read
-            # `after == "act" and before != "act"`, which was correct only
-            # while "act" was the top tier. With a third tier it is wrong in
-            # both directions at once: act -> autonomous computes False, so the
-            # widest grant crew offers would ship unannounced; and
-            # autonomous -> act computes True, so DIALLING DOWN warns about a
-            # widening. The second is the more corrosive of the two -- a
-            # warning that fires on the safe direction is a warning users learn
-            # to click past, which costs the first case its only defence.
-            # `authority_rank` normalises first, so an unrecognised `before`
-            # ranks 0 and anything above it correctly reads as a widening.
-            # Renamed from `widens_authority` when `install.policy` became the
-            # second ratcheted key. The old name would have had to either lie
-            # about install policy or spawn a sibling flag beside it, and a
-            # sibling is how the two-mechanism failure starts.
-            "widens": _widens(dotted, before, value),
-        })
+        change = {"path": dotted,
+                  "before": None if before is _MISSING else before,
+                  "after": value}
+        if layer == "machine":
+            change["widens"] = _widens(dotted, before, value)
+        else:
+            held = _dig(global_cfg, parts)
+            change["globalValue"] = None if held is _MISSING else held
+            change.update(repo_widens(dotted, change["before"], value,
+                                      change["globalValue"]))
+        if value is None:
+            change["null"] = null_means(dotted, layer)
+        changes.append(change)
         _set_path(merged, parts, value)
+    problems = merged_problems(merged, {d for d, _v in units}, label, layer)
+    if problems:
+        error = GlobalWriteRefused if layer == "machine" else RepoWriteRefused
+        raise error(f"refused at the {layer} layer: " + "; ".join(problems))
     return merged, changes
 
 
-def write_global_config(updates, path=None):
-    """Apply `plan_global_write` to disk. Returns `(merged, changes)`.
+def plan_global_write(updates, path=None, snapshot=None):
+    """What writing `updates` (a flat mapping; a block leaf by leaf) to the
+    global file would change. Pure. Returns `(merged, changes)`, a null `after`
+    carrying `null`, its meaning. Merge, never replace: unnamed keys survive.
+    `value_allowed` judges each leaf (consent keys refused, in a block too) and
+    `merged_problems` the merged file; `snapshot` is a `global_snapshot`."""
+    problems = _leaf_problems(updates, "machine")
+    if problems:
+        refused_paths = [p for p in problems if " - " in p]
+        suffix = ""
+        if refused_paths:
+            allowed = sorted(leaf_paths(default_global_config()))
+            suffix = f" (allowed: {', '.join(allowed)})"
+        raise GlobalWriteRefused(
+            "refused at the machine layer: " + "; ".join(problems) + suffix)
+    base = (global_snapshot(path) if snapshot is None else snapshot)[0]
+    return _plan_on(base, updates, "machine", _global_label(path))
 
-    Creates `~/.claude/crew/` if it is not there. This is the ONLY function in
-    crew that writes outside the repo, and it is reached only from a flow that
-    has shown the user the plan and been told to go ahead -- see
-    `commands/config.md`.
-    """
-    real_path = GLOBAL_CONFIG_PATH if path is None else path
+
+def write_global_config(updates, path=None, expect=None):
+    """Apply `plan_global_write` to disk; returns `(merged, changes)`. The ONLY
+    crew writer outside the repo, reached after the user saw the plan and said
+    go. Compare-and-swap (T-0075): re-planned on the bytes `update_json` reads
+    under its lock; `expect` (a digest or `ABSENT`) refuses a changed file; an
+    OS error is a `GlobalWriteRefused`. Creates `~/.claude/crew/`; replaced by
+    sibling-fsync-replace, never "w" on the live file."""
+    real_path = _global_label(path)
     merged, changes = plan_global_write(updates, real_path)
     if not changes:
         return merged, changes
-    parent = os.path.dirname(real_path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    # Sibling-then-rename, with the PID in the name. Two things go wrong with
-    # the obvious version, and this is the ONE file crew writes outside the
-    # repo, so both matter more here than anywhere else:
-    #
-    #   * opening the live file "w" truncates it before the JSON is complete,
-    #     and every reader collapses malformed global config to `{}` -- so an
-    #     interrupted write does not fail loudly, it silently drops every repo
-    #     on the machine back to built-in defaults.
-    #   * a fixed `.tmp` name races another `/crew:config` in a second
-    #     session: both write the same sibling, and one publishes the other's
-    #     bytes.
-    tmp_path = f"{real_path}.{os.getpid()}.tmp"
+    out = {}
+
+    def _mutate(parsed):
+        out["plan"] = _plan_on(parsed, updates, "machine", real_path)
+        return out["plan"][0] if out["plan"][1] else None
     try:
-        with open(tmp_path, "w", encoding="utf-8") as handle:
-            json.dump(merged, handle, indent=2)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp_path, real_path)
-    except BaseException:
-        try:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-        except OSError:
-            pass                # a stray temp is the lesser problem
-        raise
-    return merged, changes
+        crew_config_files.update_json(real_path, _mutate, expect=expect,
+                                      create=True)
+    except crew_config_files.Conflict as exc:
+        raise GlobalWriteConflict(str(exc)) from exc
+    except (crew_config_files.Busy, crew_config_files.Unreadable) as exc:
+        raise GlobalWriteRefused(f"{exc}; nothing written") from exc
+    except OSError as exc:
+        raise GlobalWriteRefused(f"{real_path}: {crew_config_files.os_error_text(exc)}; nothing written (its "
+                                 "directory, its lock or the write itself failed at the OS; check the "
+                                 "directory)") from exc
+    return out["plan"]
+
+
+# --- Writing the repo file (T-0075) -----------------------------------------
+
+
+class RepoWriteRefused(Exception):
+    """A requested repo write named a key or value the repo layer may not set."""
+
+
+class RepoWriteConflict(RepoWriteRefused):
+    """`.crew/config.json` changed since the caller read it; nothing written."""
+
+
+# Paths the repo writer refuses, by prefix, each with the reason it prints.
+# `platform` is platform-sync's: it rewrites the block every SessionStart.
+# `schema` is the file's layout version, not a setting. `scope.*` is the
+# approval and scope guard's trust root, and `.crew/config.json` is untracked,
+# so a write through a one-command CLI is a write the Stop-time completion
+# audit (which diffs tracked files) never sees -- a session could disarm its
+# own guard. It stays a hand edit by the owner, or `/crew:init`.
+REPO_REFUSED = {
+    "platform": "written only by platform-sync, which repairs it every "
+                "SessionStart",
+    "schema": "the file's layout version, set by /crew:init and "
+              "/crew:migrate; not a setting",
+    "scope.mode": "the scope guard's trust root; a session must not be able "
+                  "to disarm its own guard, so it stays a hand edit by the "
+                  "owner or /crew:init",
+    "scope.allowCliApproval": "decides which approvals the scope guard "
+                              "accepts; a hand edit by the owner only",
+}
+# From the tuple, never written out: their readers consult the machine file
+# only, so a repo value would be a narrowing the run never applies.
+REPO_REFUSED.update({
+    path: "read from the machine-global file only; a repo value would do "
+          "nothing"
+    for path in _AUTOCLEAR_MACHINE_ONLY_PATHS
+})
+
+# Keys whose readers ARM only from the machine file. A repo may veto them
+# (`false`) or clear its own veto (`null`), never arm them.
+REPO_VETO_ONLY = {"context.autoClear.enabled", "resume.auto"}
+
+
+def is_repo_veto(value):
+    """True for exactly `false` and `null`, by identity.
+
+    Not `value in (False, None)`: `0 == False` in Python, so that test lets
+    `0` and `0.0` through, and the readers (`crew_autocycle`, `crew_resume`)
+    compare with `is False`, so a written `0` vetoes nothing."""
+    return value is False or value is None
+
+# Repo-layer values that grant something, beside the ratchet. Keyed on
+# (path, value); the note is the `!` line's text.
+_REPO_WIDENING = {
+    ("context.autoClear.unsafeFocus", True): (
+        "auto-clear may send its keystroke to a window it could not confirm "
+        "is this session's -- consent, not a preference"),
+    ("autopilot.mode", "plan"): (
+        "/crew:autopilot may drive this repo's tickets through the lifecycle "
+        "in-session, running phase commands until a human is needed"),
+    ("verifyGate", False): (
+        "the verify gate stops holding the session at Stop for unverified "
+        "changed paths"),
+    ("scope.mode", "off"): (
+        "the plan-approval scope guard and the completion audit stand down: "
+        "edits outside an approved plan's Touch list are no longer blocked"),
+}
+
+
+def _repo_refusal(dotted):
+    for prefix, reason in REPO_REFUSED.items():
+        if dotted == prefix or dotted.startswith(prefix + "."):
+            return reason
+    return None
+
+
+def is_repo_path(dotted):
+    """True when `dotted` is a LEAF a repo file may set: a known leaf, an
+    open table such as `qa.roles`, or anything under one -- never a block,
+    which would slip past every per-key rule (`scope: {}` drops `scope.mode`).
+    """
+    return _shape(dotted) in ("leaf", "open")
+
+
+def repo_widens(dotted, before, after, global_value):
+    """`{"widens", "heldDownBy", "heldAt"}` for a repo-layer change.
+
+    A ratcheted key compares what is IN FORCE before and after, by rank: a
+    repo `block` -> `allow` under a machine `allow` widens, and the same edit
+    under a machine `block` does not -- the machine holds it down, and that is
+    named instead. `pm.authority` resolves by precedence, so its effective
+    value before is the repo's own, else the machine's. Anything else widens
+    only when `(dotted, after)` is in `_REPO_WIDENING`.
+    """
+    out = {"widens": False, "heldDownBy": None, "heldAt": None}
+    spec = crew_state.ratchet_spec(dotted)
+    if spec is not None:
+        _tiers, _normalise, rank = spec
+        was = crew_state.effective_ratcheted(dotted, before, global_value)
+        now = crew_state.effective_ratcheted(dotted, after, global_value)
+        out["widens"] = rank(now) > rank(was)
+        if rank(after) > rank(now):
+            out["heldDownBy"], out["heldAt"] = "global", now
+        return out
+    if dotted in _RATCHETED:
+        rank = _RATCHETED[dotted][0]
+        was = before if before is not None else global_value
+        out["widens"] = rank(after) > rank(was)
+        return out
+    out["widens"] = _consent_widening(dotted, after) and before != after
+    return out
+
+
+def _consent_widening(dotted, value):
+    """True when `(dotted, value)` is a `_REPO_WIDENING` grant. A list or dict
+    value cannot be one, and cannot be looked up either (unhashable)."""
+    if isinstance(value, (list, dict)):
+        return False
+    return (dotted, value) in _REPO_WIDENING
+
+
+def repo_config_path(root):
+    return os.path.join(root, ".crew", "config.json")
+
+
+def _repo_unreadable(path, exc):
+    if exc.kind == "absent":
+        return RepoWriteRefused(
+            f"no {path} - nothing to write into. Run /crew:init to set this "
+            "repo up, or, if .crew/ exists, start a session so platform-sync "
+            "heals it with the built-in defaults")
+    if exc.kind == "unparsable":
+        return RepoWriteRefused(
+            f"{exc}; left untouched. Start a session so platform-sync backs it "
+            "up to config.json.broken and heals it, or fix it by hand")
+    return RepoWriteRefused(
+        f"{path} is not a config (an empty or non-object JSON value); left "
+        "untouched. Start a session so platform-sync heals it")
+
+
+def repo_snapshot(root):
+    """`(parsed, raw, digest)` of `.crew/config.json`, strictly, or
+    `RepoWriteRefused` -- never `load_config`'s `{}` collapse, which would
+    create a config from one key or destroy the only copy of a broken one."""
+    path = repo_config_path(root)
+    try:
+        parsed, raw = crew_config_files.read_strict(path)
+    except crew_config_files.Unreadable as exc:
+        raise _repo_unreadable(path, exc) from exc
+    return parsed, raw, crew_config_files.digest(raw)
+
+
+def plan_repo_write(root, updates, global_path=None, snapshot=None,
+                    machine=None):
+    """What writing `updates` to the repo's `.crew/config.json` would change.
+
+    Pure. Returns `(merged, changes)`, each change carrying `widens`,
+    `heldDownBy`, `heldAt`, and `null` (its meaning) for a null `after`;
+    `snapshot` is a `repo_snapshot` and `machine` a `machine_view` (the
+    widening marks read both). Every LEAF `value_allowed` refuses is refused
+    before the file is read, then the merged file is judged whole.
+    """
+    problems = _leaf_problems(updates, "repo")
+    if problems:
+        raise RepoWriteRefused("refused at the repo layer: "
+                               + "; ".join(problems))
+    parsed = (repo_snapshot(root) if snapshot is None else snapshot)[0]
+    global_cfg = (machine_view(global_path) if machine is None else machine)[0]
+    return _plan_on(parsed, updates, "repo", repo_config_path(root), global_cfg)
+
+
+def machine_view(global_path=None):
+    """`(filtered_cfg, state_digest)` of the machine file from ONE read: what
+    a repo plan judges widening against, and the digest that binds it."""
+    parsed, state = crew_config_files.read_tolerant(_global_label(global_path))
+    return filter_global(parsed)[0], state
+
+
+def write_repo_config(root, updates, global_path=None, expect=None,
+                      expect_global=None):
+    """Apply `plan_repo_write` to disk; returns `(merged, changes)`. The same
+    compare-and-swap (`RepoWriteConflict`), keeping CRLF and BOM; never creates
+    the file. The machine file is bound too: read under its lock, always taken
+    before the repo lock, and `expect_global` refuses one that changed since.
+    An OS error (either lock, the machine directory, the write) is refused."""
+    merged, changes = plan_repo_write(root, updates, global_path)
+    if not changes:
+        return merged, changes
+    real_path = repo_config_path(root)
+    out = {}
+
+    def _mutate(parsed):
+        global_cfg, machine = machine_view(global_path)
+        if expect_global is not None and expect_global != machine:
+            raise crew_config_files.Conflict(
+                f"the machine-global file {_global_label(global_path)} changed "
+                f"since it was read (digest {machine}, expected {expect_global})"
+                "; the widening marks read it, so nothing written. Re-run")
+        out["plan"] = _plan_on(parsed, updates, "repo", real_path, global_cfg)
+        return out["plan"][0] if out["plan"][1] else None
+    try:
+        with crew_config_files.machine_lock(_global_label(global_path)):
+            crew_config_files.update_json(real_path, _mutate, expect=expect)
+    except crew_config_files.Conflict as exc:
+        raise RepoWriteConflict(str(exc)) from exc
+    except crew_config_files.Unreadable as exc:
+        raise _repo_unreadable(real_path, exc) from exc
+    except crew_config_files.Busy as exc:
+        raise RepoWriteRefused(f"{exc}; nothing written") from exc
+    except OSError as exc:
+        raise RepoWriteRefused(f"{crew_config_files.os_error_text(exc)}; nothing written (the machine-global "
+                               "directory, a lock or the write failed at the OS)") from exc
+    return out["plan"]
+
+
+def widening_note(dotted, after):
+    """The `!` line's text for a widening change at `dotted`."""
+    if dotted in _RATCHETED:
+        _, normalise, notes = _RATCHETED[dotted]
+        return notes[normalise(after)]
+    return _REPO_WIDENING[(dotted, after)] if _consent_widening(dotted, after) else ""
+
+
+def print_changes(changes):
+    """The change lines both writers' CLIs print, `!` and held-down included."""
+    for change in changes:
+        print(f"  {change['path']}: {json.dumps(change['before'])} -> "
+              f"{json.dumps(change['after'])}"
+              + (f"  (null {change['null']})" if change.get("null") else ""))
+        if change["widens"]:
+            print(f"  ! {change['path']} widens to "
+                  f"`{json.dumps(change['after']).strip(chr(34))}`: "
+                  + widening_note(change["path"], change["after"]))
+        if change.get("heldDownBy"):
+            unset = (" (unset there, and unset is the floor)"
+                     if change.get("globalValue") is None else "")
+            print(f"    {change['path']}: held down by the machine-global "
+                  f"layer at {change['heldAt']}{unset} - the repo may ask "
+                  "for less than the machine allows, never more")
+    if not changes:
+        print("  nothing to change")
+
+
+CREW_JSON_NOTICE = (
+    "note: .crew/crew.json exists. crew_context, crew_resume and "
+    "crew_refresh_check read it before .crew/config.json, so a key set here "
+    "may not be the one they use")
 
 
 # --- CLI -------------------------------------------------------------------
@@ -2735,6 +3188,40 @@ def _print_explain(rows):
           ".crew/config.json.")
 
 
+def _set_layer(root, updates, args):
+    """`--set`: plan (and with `--apply`, write) one layer, printing the
+    digest of the bytes the plan read so `--apply --expect` can refuse a file
+    that changed since. The one CLI path into either file."""
+    repo = args.repo
+    try:
+        if repo:
+            snap, machine = repo_snapshot(root), machine_view(args.global_path)
+            _, changes = plan_repo_write(root, updates, args.global_path,
+                                         snapshot=snap, machine=machine)
+        else:
+            snap = global_snapshot(args.global_path)
+            _, changes = plan_global_write(updates, args.global_path,
+                                           snapshot=snap)
+        if args.apply:
+            _, changes = (write_repo_config(
+                root, updates, args.global_path, expect=args.expect,
+                expect_global=args.expect_global) if repo else
+                          write_global_config(updates, args.global_path,
+                                              expect=args.expect))
+    except (RepoWriteRefused, GlobalWriteRefused) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    verb = "wrote" if args.apply else "would write (dry run)"
+    print(f"{verb}: {repo_config_path(root) if repo else _global_label(args.global_path)}")
+    print(f"digest: {snap[2]}")
+    if repo:
+        print(f"machine digest: {machine[1]}")
+    print_changes(changes)
+    if repo and os.path.exists(os.path.join(root, ".crew", "crew.json")):
+        print(CREW_JSON_NOTICE)
+    return 0
+
+
 def main(argv=None):
     """Report the config layering, or write the global file.
 
@@ -2763,6 +3250,16 @@ def main(argv=None):
                         help="a global key to set, e.g. pm.authority='\"act\"'")
     parser.add_argument("--apply", action="store_true",
                         help="actually write; without it --set is a dry run")
+    parser.add_argument("--repo", action="store_true",
+                        help="with --set, write the repo's .crew/config.json "
+                             "instead of the machine-global file")
+    parser.add_argument("--expect", metavar="DIGEST", default=None,
+                        help="with --set --apply, refuse unless the file's "
+                             "sha256 is still DIGEST, or it is still absent "
+                             "(`absent`); the dry run prints it")
+    parser.add_argument("--expect-global", metavar="DIGEST", default=None,
+                        help="with --set --repo --apply, the same for the "
+                             "machine file the plan's widening marks read")
     parser.add_argument("--install-plan", metavar="NAME", default=None,
                         help="what crew may do about NAME not being "
                              "installed, under install.policy")
@@ -2854,46 +3351,16 @@ def main(argv=None):
         return 0
 
     if args.set:
-        updates = {}
-        for item in args.set:
-            if "=" not in item:
-                print(f"--set expects PATH=JSON, got: {item}", file=sys.stderr)
-                return 2
-            key, raw = item.split("=", 1)
-            try:
-                updates[key.strip()] = json.loads(raw)
-            except ValueError:
-                updates[key.strip()] = raw      # a bare string is fine
-        try:
-            if args.apply:
-                _, changes = write_global_config(updates, args.global_path)
-            else:
-                _, changes = plan_global_write(updates, args.global_path)
-        except GlobalWriteRefused as exc:
-            print(str(exc), file=sys.stderr)
+        problem = (crew_config_files.expectation_problem("--expect", args.expect)
+                   or crew_config_files.expectation_problem(
+                       "--expect-global", args.expect_global))
+        if problem is None and args.expect_global is not None and not args.repo:
+            problem = "--expect-global goes with --repo"
+        updates, parse_problem = crew_config_files.parse_assignments(args.set)
+        if problem or parse_problem:
+            print(problem or parse_problem, file=sys.stderr)
             return 2
-        verb = "wrote" if args.apply else "would write (dry run)"
-        target = GLOBAL_CONFIG_PATH if args.global_path is None else args.global_path
-        print(f"{verb}: {target}")
-        for change in changes or []:
-            print(f"  {change['path']}: {json.dumps(change['before'])} -> "
-                  f"{json.dumps(change['after'])}")
-            if change["widens"]:
-                # Name the tier being GRANTED, not a hardcoded one. This said
-                # "widens to `act`" whatever the target was, so setting
-                # `autonomous` warned about the wrong tier and described only
-                # what `act` does -- omitting the single thing `autonomous`
-                # actually adds, which is that the PM stops asking you to
-                # choose. A warning that under-describes the grant is the exact
-                # failure this marker exists to prevent, so it is driven off
-                # the value rather than written out once.
-                _, normalise, notes = _RATCHETED[change["path"]]
-                granted = normalise(change["after"])
-                print(f"  ! {change['path']} widens to `{granted}`: "
-                      + notes[granted])
-        if not changes:
-            print("  nothing to change")
-        return 0
+        return _set_layer(args.root, updates, args)
 
     if args.models:
         report = model_report(args.root, stale=args.author_stale)

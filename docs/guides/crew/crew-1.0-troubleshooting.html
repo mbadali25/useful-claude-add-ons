@@ -600,7 +600,12 @@ but returns immediately without judging anything; "off" for <code>verifyGate</co
 <p><code>~/.claude/crew/config.json</code> is the machine-global layer; <code>.crew/config.json</code> is per-repo and wins
 where both speak. A <strong>ratcheted</strong> key (marked above) can only be <em>narrowed</em> by the repo relative to
 the machine-global value, never widened — a repo cloned from someone else cannot silently loosen a
-guard the machine owner set to <code>block</code>. <code>/crew:config</code> shows where each setting actually came from.</p>
+guard the machine owner set to <code>block</code>. <code>/crew:config --show</code> shows where each setting actually came
+from, and <code>/crew:config</code> with no argument (alias <code>/crew:config-setup</code>) sets either layer from a menu:
+it marks a repo value that widens a guard with <code>!</code>, and names a repo value the machine layer holds
+down. The same menu can delete a repo's <code>.crew/config.json</code>: it moves the file to a backup in one
+rename, compares it with what the preview read (a file that changed since is put back and nothing
+is deleted), and prints the command that restores it for sh, cmd and PowerShell.</p>
 <h2 id="web-testing">Web Testing</h2>
 <p><strong>Symptom:</strong> <code>--select web-testing</code> (or the ticked default row) fails, or Playwright
 runs but the visual rule never passes.</p>
@@ -774,8 +779,12 @@ in the machine-global config, because it drives this machine's keyboard:</p>
 </tr>
 </tbody>
 </table>
-<p><code>/crew:config</code> shows where each value comes from and walks you through the global file. To turn the
-cycle off on a machine, set <code>context.autoClear.enabled</code> to <code>false</code> or delete the key.</p>
+<p><code>/crew:config --show</code> shows where each value comes from. <code>/crew:config</code> with no argument (or
+<code>/crew:config-setup</code>) opens a menu that sets either file from a list of values, with a dry run
+before anything is written. To turn the cycle off on a machine, set <code>context.autoClear.enabled</code> to
+<code>false</code> or delete the key. In a repo the menu offers only the veto (<code>false</code>) or <code>null</code> for
+<code>context.autoClear.enabled</code> and <code>resume.auto</code>, and shows <code>onlyRepos</code>/<code>onlySessions</code> read-only,
+because only the machine file can arm or narrow them.</p>
 <h4 id="arming-one-scratch-repo-while-other-sessions-are-live">Arming one scratch repo while other sessions are live</h4>
 <p><code>enabled: true</code> arms auto-clear in <strong>every</strong> Claude session on the machine, not just the one you
 are testing. If other sessions are running, one of them can get <code>/clear</code> typed into its terminal
