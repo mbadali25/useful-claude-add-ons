@@ -957,6 +957,8 @@ def test_temp_name_collision_never_follows_a_link(tmp_path, monkeypatch):
             board.read_bytes() == before) == ("could not update", "victim\n", False, True)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows has no group/other mode bits: chmod only sets read-only, "
+                    "so 0o664 reads back as 0o666 and there is no mode to keep")
 def test_board_keeps_its_mode(tmp_path):
     vault = _make_vault(tmp_path / "vault")
     root = _obsidian_repo(tmp_path, vault)
@@ -1314,7 +1316,8 @@ def test_resolve_compares_the_effective_vault(tmp_path):
     got = crew_tracker.resolve(str(root))
     done, untouched = _refused(tmp_path, root)
 
-    assert (got["kind"], str(first) in got["problems"][0], str(second) in got["problems"][0],
+    # The problem quotes each path with repr, which doubles a Windows backslash.
+    assert (got["kind"], repr(str(first)) in got["problems"][0], repr(str(second)) in got["problems"][0],
             done.returncode, untouched) == ("could not tell", True, True, 1, True)
 
 
@@ -1536,16 +1539,41 @@ def test_move_refuses_a_multi_line_card_when_index_has_no_title(tmp_path):
 
 # --- review round 3 (T-0021): each test is a reviewer repro, run first ---------
 
+# Windows holds every directory from the vault down with a handle that denies
+# FILE_SHARE_DELETE (T-0077), so the swaps below are refused by the OS instead of
+# happening. There the tests assert that refusal AND where the bytes landed;
+# POSIX, which pins by fd and lets the directory move, keeps its assertions.
+_HELD_BY_HANDLE = os.name == "nt"
+
+
+def _rename_or_refused(src, dst, refused):
+    """`os.rename`, except that on Windows a held directory's PermissionError is
+    recorded in `refused` -- the outcome the pin exists to produce -- not raised."""
+    try:
+        os.rename(src, dst)
+    except PermissionError:
+        if not _HELD_BY_HANDLE:
+            raise
+        refused.append(os.path.basename(src))
+        return False
+    return True
+
+
+def _no_temp_anywhere(*dirs):
+    return [name for top in dirs if os.path.isdir(top) for name in os.listdir(top) if name.endswith(".tmp")]
+
+
 def _move_out_when_pinned(monkeypatch, real_dir, outside, label, when="pinned"):
     """Past every check, once a write holds its directory -- as the fd is
     handed back (`pinned`, or `replaced` when a fresh directory then takes its
     place in the vault) or once the temp is written beside the target (`temp`)
     -- `real_dir` is renamed out of the vault. The fd now names a directory
-    outside it."""
+    outside it. Returns the list the Windows refusals land in."""
+    refused = []
+
     def move_out():
-        if not os.path.exists(outside):
-            os.rename(real_dir, outside)
-            if when == "replaced":
+        if not os.path.exists(outside) and not refused:
+            if _rename_or_refused(real_dir, outside, refused) and when == "replaced":
                 os.mkdir(real_dir)
 
     if when in ("pinned", "replaced"):
@@ -1566,23 +1594,31 @@ def _move_out_when_pinned(monkeypatch, real_dir, outside, label, when="pinned"):
                 move_out()
             return tmp
         monkeypatch.setattr(crew_tracker, "_write_temp", moving_after_temp)
+    return refused
 
 
 @pytest.mark.parametrize("when", ["pinned", "replaced", "temp"])
 def test_board_dir_moved_out_of_the_vault_after_pinning_writes_nothing_there(tmp_path, monkeypatch, when):
     """Round 3 BLOCK (:973): the reviewer's repro -- an owned card's board, its
-    directory renamed out of the vault once the fd is held."""
+    directory renamed out of the vault once the fd is held. On Windows the held
+    handle refuses the rename, so the write lands in the vault and no temp is
+    left anywhere (T-0077)."""
     vault = _make_vault(tmp_path / "vault", board_dir="B")
     root = _obsidian_repo(tmp_path, vault, boardDir="B")
     assert crew_tracker.create(str(root), "T-0060", "new work")["results"][1]["state"] == "updated"
     before = (vault / "B" / "Board.md").read_bytes()
     outside = tmp_path / "out"
-    _move_out_when_pinned(monkeypatch, vault / "B", outside, "board", when)
+    refused = _move_out_when_pinned(monkeypatch, vault / "B", outside, "board", when)
 
     got = crew_tracker.move(str(root), "T-0060", "spec")
 
-    assert (crew_tracker.exit_code(got), (outside / "Board.md").read_bytes() == before,
-            [name for name in os.listdir(outside) if name.endswith(".tmp")]) == (1, True, [])
+    if _HELD_BY_HANDLE:
+        assert (refused, crew_tracker.exit_code(got), outside.exists(),
+                (vault / "B" / "Board.md").read_bytes() != before, _no_temp_anywhere(vault / "B")) == (
+                    ["B"], 0, False, True, [])
+    else:
+        assert (crew_tracker.exit_code(got), (outside / "Board.md").read_bytes() == before,
+                _no_temp_anywhere(outside)) == (1, True, [])
 
 
 def _note_result(got):
@@ -1596,14 +1632,18 @@ def test_note_dir_moved_out_of_the_vault_after_pinning_leaves_no_note_there(tmp_
     vault = _make_vault(tmp_path / "vault", board_dir="B")
     root = _obsidian_repo(tmp_path, vault, boardDir="B")
     outside = tmp_path / "out"
-    _move_out_when_pinned(monkeypatch, vault / "B", outside, "note")
+    refused = _move_out_when_pinned(monkeypatch, vault / "B", outside, "note")
 
     got = crew_tracker.create(str(root), "T-0060", "new work")
 
     note = _note_result(got)
 
-    assert (note["state"], note["reason"].endswith("nothing written through it"),
-            (outside / "T-0060.md").exists(), _index(root)) == ("could not update", True, False, ROW)
+    if _HELD_BY_HANDLE:
+        assert (refused, note["state"], (vault / "B" / "T-0060.md").exists(), outside.exists()) == (
+            ["B"], "updated", True, False)
+    else:
+        assert (note["state"], note["reason"].endswith("nothing written through it"),
+                (outside / "T-0060.md").exists(), _index(root)) == ("could not update", True, False, ROW)
 
 
 def test_note_dir_moved_out_after_the_note_is_written_removes_it_there(tmp_path, monkeypatch):
@@ -1613,18 +1653,157 @@ def test_note_dir_moved_out_after_the_note_is_written_removes_it_there(tmp_path,
     root = _obsidian_repo(tmp_path, vault, boardDir="B")
     outside = tmp_path / "out"
     real = crew_tracker._write_new  # pylint: disable=protected-access
+    refused = []
 
     def moving(path, flags, data, ownership, dir_fd=None):
         real(path, flags, data, ownership, dir_fd)
-        if path == "T-0060.md":
-            os.rename(vault / "B", outside)
+        if os.path.basename(path) == "T-0060.md":
+            _rename_or_refused(vault / "B", outside, refused)
 
     monkeypatch.setattr(crew_tracker, "_write_new", moving)
 
     got = crew_tracker.create(str(root), "T-0060", "new work")
 
-    assert (_note_result(got)["state"], (outside / "T-0060.md").exists(), (outside / "Board.md").exists(),
-            _index(root)) == ("could not update", False, True, ROW)
+    if _HELD_BY_HANDLE:
+        assert (refused, _note_result(got)["state"], (vault / "B" / "T-0060.md").exists(), outside.exists()) == (
+            ["B"], "updated", True, False)
+    else:
+        assert (_note_result(got)["state"], (outside / "T-0060.md").exists(), (outside / "Board.md").exists(),
+                _index(root)) == ("could not update", False, True, ROW)
+
+
+# --- T-0077: the Windows handle pin, and the platform with no pin ---------------
+
+def _fake_held(identity=None, attributes=0, at=None):
+    """A stand-in for `_win_open_dir` that runs anywhere: the real directory's
+    identity, except `identity` (st_dev, st_ino) or `attributes` for the component
+    whose basename is `at` (every component when `at` is None)."""
+    import types  # pylint: disable=import-outside-toplevel
+
+    def opener(path):
+        real = os.stat(path)
+        hit = at is None or os.path.basename(path) == at
+        dev, ino = identity if (hit and identity is not None) else (real.st_dev, real.st_ino)
+        seen = types.SimpleNamespace(st_dev=dev, st_ino=ino, st_mode=real.st_mode,
+                                     st_file_attributes=attributes if hit else 0)
+        return seen, lambda: None
+    return opener
+
+
+def _held_repo(tmp_path, monkeypatch, opener):
+    """An owned card on a vault board, written through the Windows pin branch on
+    any OS: dir_fd off, the handle pin on, and `opener` in place of CreateFileW."""
+    vault = _make_vault(tmp_path / "vault", board_dir="B")
+    root = _obsidian_repo(tmp_path, vault, boardDir="B")
+    assert crew_tracker.create(str(root), "T-0060", "new work")["results"][1]["state"] == "updated"
+    monkeypatch.setattr(crew_tracker, "_DIR_FD", False)
+    monkeypatch.setattr(crew_tracker, "_WIN_PIN", True)
+    monkeypatch.setattr(crew_tracker, "_win_open_dir", opener)
+    return vault, root, (vault / "B" / "Board.md").read_bytes()
+
+
+def test_pin_share_mask_never_lets_a_held_directory_be_renamed():
+    """The spike (T-0077): FILE_READ_ATTRIBUTES alone did NOT block a rename; a
+    handle with data access that denies FILE_SHARE_DELETE does. So the masks are
+    a contract, not a detail."""
+    assert (crew_tracker._PIN_SHARE & crew_tracker._FILE_SHARE_DELETE,  # pylint: disable=protected-access
+            bool(crew_tracker._PIN_ACCESS & crew_tracker._FILE_LIST_DIRECTORY),  # pylint: disable=protected-access
+            bool(crew_tracker._PIN_FLAGS & crew_tracker._FILE_FLAG_OPEN_REPARSE_POINT)) == (  # pylint: disable=protected-access
+                0, True, True)
+
+
+def test_the_handle_pin_writes_when_every_directory_is_the_one_checked(tmp_path, monkeypatch):
+    vault, root, before = _held_repo(tmp_path, monkeypatch, _fake_held())
+
+    got = crew_tracker.move(str(root), "T-0060", "spec")
+
+    assert (crew_tracker.exit_code(got), (vault / "B" / "Board.md").read_bytes() != before) == (0, True)
+
+
+def test_the_handle_pin_refuses_a_different_vault(tmp_path, monkeypatch):
+    vault, root, before = _held_repo(tmp_path, monkeypatch, _fake_held(identity=(1, 1), at="vault"))
+
+    got = crew_tracker.move(str(root), "T-0060", "spec")
+
+    assert (crew_tracker.exit_code(got), (vault / "B" / "Board.md").read_bytes() == before) == (1, True)
+
+
+def test_the_handle_pin_refuses_a_zero_file_id_as_could_not_tell(tmp_path, monkeypatch):
+    """No file id is no evidence: never read as 'the same directory'."""
+    vault, root, before = _held_repo(tmp_path, monkeypatch, _fake_held(identity=(7, 0), at="B"))
+
+    got = crew_tracker.move(str(root), "T-0060", "spec")
+
+    assert (crew_tracker.exit_code(got), "could not tell" in got["results"][-1]["reason"],
+            (vault / "B" / "Board.md").read_bytes() == before) == (1, True, True)
+
+
+def test_the_handle_pin_refuses_a_reparse_point_on_the_walk(tmp_path, monkeypatch):
+    vault, root, before = _held_repo(
+        tmp_path, monkeypatch, _fake_held(attributes=crew_tracker._REPARSE_POINT, at="B"))  # pylint: disable=protected-access
+
+    got = crew_tracker.move(str(root), "T-0060", "spec")
+
+    assert (crew_tracker.exit_code(got), (vault / "B" / "Board.md").read_bytes() == before) == (1, True)
+
+
+def test_the_held_check_refuses_when_the_path_no_longer_reaches_the_held_directory(tmp_path, monkeypatch):
+    """The re-check beside the handles: with no real handle held (the fake
+    opener), the directory CAN move once pinned, and the write must see it."""
+    import shutil  # pylint: disable=import-outside-toplevel
+    vault, root, before = _held_repo(tmp_path, monkeypatch, _fake_held())
+    outside = tmp_path / "out"
+    real = crew_tracker._open_pinned  # pylint: disable=protected-access
+
+    def swapped_for_a_copy(paths, which):
+        held = real(paths, which)
+        if which == "board" and not outside.exists():
+            # A byte-identical impostor at the same path: only identity tells.
+            os.rename(vault / "B", outside)
+            shutil.copytree(outside, vault / "B")
+        return held
+    monkeypatch.setattr(crew_tracker, "_open_pinned", swapped_for_a_copy)
+
+    got = crew_tracker.move(str(root), "T-0060", "spec")
+
+    assert (crew_tracker.exit_code(got), (vault / "B" / "Board.md").read_bytes() == before,
+            (outside / "Board.md").read_bytes() == before, _no_temp_anywhere(outside, vault / "B")) == (
+                1, True, True, [])
+
+
+def test_a_platform_with_no_pin_refuses_as_could_not_tell(tmp_path, monkeypatch):
+    """Neither dir_fd nor the handle pin: the write is refused, never made with a
+    path-only re-check that a rename-and-replace passes (T-0077)."""
+    vault = _make_vault(tmp_path / "vault", board_dir="B")
+    root = _obsidian_repo(tmp_path, vault, boardDir="B")
+    assert crew_tracker.create(str(root), "T-0060", "new work")["results"][1]["state"] == "updated"
+    before = (vault / "B" / "Board.md").read_bytes()
+    monkeypatch.setattr(crew_tracker, "_DIR_FD", False)
+    monkeypatch.setattr(crew_tracker, "_WIN_PIN", False)
+
+    got = crew_tracker.move(str(root), "T-0060", "spec")
+
+    assert (crew_tracker.exit_code(got), "could not tell" in got["results"][-1]["reason"],
+            (vault / "B" / "Board.md").read_bytes() == before) == (1, True, True)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the handle pin is Windows-only; POSIX pins by dir_fd")
+def test_the_windows_pin_blocks_renames_while_held_and_frees_them_after(tmp_path):
+    vault = _make_vault(tmp_path / "vault", board_dir="B")
+    seen = os.stat(vault)
+    paths = {"vault": str(vault), "vaultId": (seen.st_dev, seen.st_ino),
+             "board": str(vault / "B" / "Board.md"), "boardShown": "B/Board.md"}
+    refused = []
+
+    held = crew_tracker._open_pinned(paths, "board")  # pylint: disable=protected-access
+    try:
+        _rename_or_refused(vault / "B", tmp_path / "B.moved", refused)
+        _rename_or_refused(vault, tmp_path / "vault.moved", refused)
+    finally:
+        crew_tracker._release(held)  # pylint: disable=protected-access
+    freed = _rename_or_refused(vault / "B", tmp_path / "B.moved", refused)
+
+    assert (refused, freed) == (["B", "vault"], True)
 
 
 def test_relative_local_origins_are_not_one_repo(tmp_path):
