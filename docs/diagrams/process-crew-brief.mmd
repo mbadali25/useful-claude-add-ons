@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@2aa49bb8 on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@3c4f1a68 on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
@@ -122,7 +122,7 @@
 %%   (resume_decision :661, crew_resume.decide; `off` unless armed and source is
 %%   clear/compact); :908-910 startup -> pointer + next action; :911-923 other
 %%   sources -> full note, next action first, then the auto-resume line; :924 no
-%%   note but a resume line -> that line alone; :1086 JSON additionalContext.
+%%   note but a resume line -> that line alone; :1090 JSON additionalContext.
 %% Stale rule: crew_state.py:646 (72h / 3 commits), :859-914, archived to
 %%   .crew/handoffs/ (:774, :980), never deleted; never raises (:954-958).
 %% /crew:status: commands/status.md:14 -> crew_status.py; :192-216 report lines.
@@ -141,6 +141,10 @@
 %% Re-anchored 715a8c2f -> a4eb2f55 (T-0072 merged onto 5050ea3b, T-0077, crew 1.0.50): of the
 %% Anchors paths only crew_tracker.py changed (T-0077); no node cites a line in it, and
 %% crew_status.py:63 did not change. No node or edge changed.
+%% Re-anchored a4eb2f55 -> 3c4f1a68 (T-0092 merged onto c426c018, T-0076, crew 1.0.53): of the
+%% Anchors paths only crew_context.py changed - T-0076's byte-exact LF, +4 lines inside emit(),
+%% so its JSON write moves :1086 -> :1090 (re-read with sed -n; the note above and the out node
+%% now say :1090). Every other cited crew_context.py line is above :1086. No node or edge changed.
 %% Re-anchored a4eb2f55 -> 2aa49bb8 (T-0085 merged onto main c426c018, T-0076, crew 1.0.53): of the
 %% Anchors paths only crew_context.py changed - T-0076 added four lines inside emit() (:1086-1089,
 %% stdout reconfigured to LF), so the additionalContext write moved :1086 -> :1090; every other

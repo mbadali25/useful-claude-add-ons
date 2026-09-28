@@ -27,6 +27,58 @@ All notable changes to this repository are documented here. Format follows [Keep
   crew-setup template and every document that states it. ADR 0004 records the
   decision. crew bundles 30 skills.
 
+### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
+
+- **What changed.** `review_patch.py`'s `EXCLUDED` is now `(".work/",
+  "graphify-out/")` and `_EXCLUDE_SPEC` carries `:(exclude)graphify-out` beside
+  `:(exclude).work`, so no bundle, part, file listing or `entries` row carries
+  graphify's generated `graph.json` or `GRAPH_REPORT.md`, and the manifest's
+  `excluded` names both paths. `review_prompt.py`'s bundle block prints
+  `excluded (never in the bundle): .work/, graphify-out/` (or `excluded: none
+  recorded` for a manifest without the key), so every reviewer — Codex,
+  Copilot or the Claude fallback — is told what was left out.
+- **Why.** T-0075's round-5 Claude review came back INCOMPLETE with no READ
+  line for 77 of 80 parts, parts 003-077 being the 24 MB `graph.json`; with
+  Codex out of credits until Oct 3 every lane's review is the Claude fallback.
+- **Unchanged.** `.work/` handling (same pathspec, still never on `git add`);
+  `completion_audit.py`'s own pathspec (only its comment is reworded); no
+  configurable exclude list. The pathspec is root-anchored: `docs/graphify-out/`
+  and `graphify-out-notes/` stay in the bundle (`test_look_alike_paths_are_still_bundled`).
+- **Receipt.** A graph rebuild after an accepted review no longer stales the
+  receipt (`test_graph_only_change_keeps_the_bundle_hash`); a codemap, diagram
+  or `.claude/rules/` refresh still does. README, `commands/review.md`,
+  `crew_autopilot.py`'s docstring, `TODO.md`'s constraint and the codemap say so.
+- **Sabotage.** Three entries in `plugin/crew/tests/sabotage_review.py` (the
+  pathspec, the manifest list, the prompt line), each run by hand against the
+  tracked file and confirmed RED.
+- Bumped `1.0.53 -> 1.0.54` (1.0.52 on its branch; re-set to 1.0.53 after merging main's 1.0.52, T-0076, and to 1.0.54 after merging main's 1.0.53, T-0089).
+
+### Security - mcp-servers 0.2.1: the Graph token goes only to the configured Graph origin (T-0090)
+
+- **What leaked.** `GraphClient` in `@badali404/mcp-ms-core` 0.2.0 sent
+  `Authorization: Bearer <token>` to any absolute URL a caller passed and to
+  every `@odata.nextLink` a response named, whatever its host, scheme or port.
+- **Exploitability.** Not remotely exploitable through the four shipped servers
+  (every call passes a literal relative path and the default base, and page 1
+  always goes to Graph), but a real leak for library consumers passing absolute
+  URLs or a non-default base, and for anyone able to shape a Graph response;
+  high impact when it happens (delegated `Mail.Send`-class tokens). Node 22's
+  `fetch` already strips `Authorization` on a cross-origin redirect (measured
+  on Node 22.22.1), so redirects are unchanged.
+- **Now.** Every request URL - caller-supplied absolute, relative path joined to
+  the base, and each `@odata.nextLink` - must match the configured base URL's
+  scheme, host and port and carry no username or password; anything else throws
+  the new exported `GraphOriginError` (naming the refused URL's scheme and host
+  and the expected origin, never the path, query, userinfo or token) before a
+  token is acquired or anything is fetched. The check compares parsed `URL`
+  fields, so look-alike hosts, userinfo tricks, `http:` downgrades and port
+  changes are all refused.
+- **Versions.** `@badali404/mcp-ms-core` 0.2.1, and `mcp-msgraph`,
+  `mcp-intune`, `mcp-o365-user` and `mcp-o365-admin` 0.2.1, each pinning core
+  `0.2.1` exactly. Publishing to npm (tag `mcp-servers-v0.2.1`) is the owner's
+  step per `mcp-servers/PUBLISHING.md` section 5; until then `npx ...@latest`
+  still installs 0.2.0.
+
 ### Added — `crew` 1.0.51: `autopilot.deploy` — production without asking, opt-in (T-0072)
 
 - **New production authority, off by default.** `autopilot.deploy` (repo
@@ -76,6 +128,18 @@ All notable changes to this repository are documented here. Format follows [Keep
   merging main's 1.0.50, T-0079).
 
 ### Fixed
+
+- **`crew` 1.0.53: Windows' slow `test_role_write_guard` resolver cases pass (T-0089).**
+  Bumped `1.0.52 -> 1.0.53`. With T-0076's default step green, `crew-shell-matrix (windows-latest)` ran `-m slow` for
+  the first time, and 3 python-probe cases failed there and on main. Two test fixtures had fallen behind the resolvers;
+  neither resolver changes.
+  - `_stub(reports=...)` echoed a bare path. The ps1 probe accepts only its JSON answer (`v`, `exe`, `impl`), so every
+    must-allow case resolved to nothing. The stub now echoes that JSON line.
+  - The bash case's stub echoed an unquoted Windows path, which `sh` de-escaped into `D:temp...`, so the guard exited 2
+    with "no usable python found". The path is now single-quoted.
+  - The fixed cases still catch a broken resolver: a first-match-only resolver (ps1 without `-All`, sh `type -p`) turns
+    both walk-on cases red, and a `python3`-only ps1 name list turns the different-name case red.
+  - Windows CI on the branch: default 6106 passed; slow 1625 passed, 9 skipped, 0 failed.
 
 - **`crew` 1.0.52: the crew suite passes natively on Windows (T-0076).**
   Bumped `1.0.51 -> 1.0.52` (1.0.51 on its branch; re-set at landing after merging main's 1.0.51, T-0072).

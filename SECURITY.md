@@ -9,6 +9,7 @@ Covered by this policy:
 - Everything under `skills/` — `SKILL.md` files, `references/`, `scripts/`, `assets/`.
 - `scripts/install-prerequisites.ps1` and `scripts/install-prerequisites.sh`.
 - `.claude-plugin/marketplace.json`.
+- `mcp-servers/` - the Microsoft Graph MCP servers and their shared `@badali404/mcp-ms-core` client.
 
 Not covered: the Claude Code CLI itself, or the third-party services each skill talks to (Cloudflare, AWS, Sophos, etc.) — report issues with those to their respective vendors.
 
@@ -33,6 +34,7 @@ Expect an acknowledgement within 2 business days. If a reported issue involves a
 - **Leaked credentials or real tenant data** in any `SKILL.md`, `references/*.md`, `scripts/*`, or example payload. See [`Skill-Authoring-Standard.md`](Skill-Authoring-Standard.md) section 6 — this must never happen and is a blocking finding in review.
 - **A skill performing a destructive or state-changing action without a dry-run path or explicit confirmation.** Every skill that can mutate a remote system (delete an index, quarantine an email, isolate an endpoint, push a firewall change, force-push git) must gate that action. This is enforced at the [Skill Pipeline](Skill-Pipeline.md) review stage, but report it immediately if you find a gap in a merged skill.
 - **Prompt-injection surface** — a skill or reference doc that would cause Claude to execute attacker-controlled instructions found in fetched data (an API response, an email body, a file) without treating it as untrusted content.
+- **A Microsoft Graph token sent anywhere but the configured Graph origin.** `GraphClient` (`mcp-servers/packages/core/src/graphClient.ts`) sends its Bearer token only to its base URL's scheme, host and port, and refuses any other absolute URL or `@odata.nextLink` - including look-alike hosts, userinfo URLs, `http:` and another port - before acquiring a token (0.2.1, T-0090). Cross-origin redirects rely on the runtime stripping `Authorization`, measured on Node 22. Any path that sends the token elsewhere is a vulnerability: report it as above.
 - **Supply-chain risk in the install scripts** — the prerequisite scripts run `choco install`, `npx -y <package>`, and `claude plugin install` against several third-party sources (Chocolatey community repo, npm registry, GitHub-hosted plugin marketplaces). If any of those sources is compromised or a package name is typo-squatted, report it — see the pinned-source notes in [`INSTALLATION.md`](INSTALLATION.md).
 
 ## Credential handling policy (applies to every skill)

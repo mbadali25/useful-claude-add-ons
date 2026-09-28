@@ -49,6 +49,17 @@ def test_build_includes_spec_sections_plan_and_receipts(repo):
         assert expected in text, expected
 
 
+def test_build_names_the_excluded_paths(repo):
+    """T-0092: a reviewer is told what the bundle left out, and a manifest
+    that cannot say is stated, not silent."""
+    text = rp.build(str(repo), "T9", dict(MANIFEST, excluded=[".work/", "graphify-out/"]))
+    bare = rp.build(str(repo), "T9", MANIFEST)
+
+    assert "  excluded (never in the bundle): .work/, graphify-out/" in text
+    assert text.index("excluded (never in the bundle)") < text.index("Manifest (file categories")
+    assert "  excluded: none recorded" in bare
+
+
 def test_build_states_the_read_form_the_parser_accepts(repo):
     """The prompt quotes the parser's own READ form: asking for a bare name
     while listing full paths is how honest rounds read as INCOMPLETE (T-0079)."""
