@@ -400,17 +400,28 @@ def run(args):
     cmd = command_for(args.provider, exe, args.root, prompt, args.model, args.effort)
     stdout, stderr, code, timed_out = launch(cmd, args.root, args.timeout)
     extra = []
+    limit = None
     if args.provider == "codex":
         _write_atomic(os.path.join(args.scratch, "codex-events.jsonl"), stdout)
         message_text, error = review_verdict.codex_final_message(stdout)
         output = message_text or ""
         if error and not timed_out:
             extra.append(f"codex: {error}")
+        # Only a FAILED call is judged: a 429 Codex retried and got past leaves
+        # `error` events in a round that still delivered (T-0088).
+        if timed_out or code != 0 or not output.strip():
+            limit = review_limit.limit_line(error or "", stderr)
+        if limit:
+            review_limit.record(args.root, args.ticket, number, "codex", args.model, limit)
     else:
         output = stdout
     _write_atomic(os.path.join(args.scratch, "out.txt"), output)
     _write_atomic(os.path.join(args.scratch, "stderr.txt"), stderr)
-    return finish(args, number, output, code, timed_out, extra)
+    status = finish(args, number, output, code, timed_out, extra)
+    if limit:
+        print(f"review: codex usage limit in round {number}: {limit!r}; the next round runs "
+              "the Claude reviewer (same-family, not independent)")
+    return status
 
 
 def probe(args):
@@ -421,6 +432,9 @@ def probe(args):
     call whose error or stderr names a limit, or a limit recorded by the round
     before (`review_limit.recorded`, no call made); `failed` is any other
     failure, quoted; `unknown` is no answer within the probe's timeout."""
+    mark = review_limit.recorded(args.root, args.ticket)
+    if mark:
+        return PROBE_LIMITED, f"recorded in round {mark['round']}: {mark['error']}"
     exe = shutil.which("codex")
     if not exe:
         return PROBE_FAILED, "codex is not on PATH"

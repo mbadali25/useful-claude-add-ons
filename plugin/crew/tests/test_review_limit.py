@@ -273,3 +273,65 @@ def test_probe_is_codex_only(lane):
     result = _script(repo, scratch, _env(bin_dir, "ok"), "--provider", "claude", "--probe")
 
     assert result.returncode == 2 and "codex provider only" in result.stderr
+
+
+# --- a limit hit mid-round is recorded, for the next round only --------------------------
+
+def test_limit_mid_round_is_recorded_and_next_probe_says_limited(lane):
+    repo, scratch, bin_dir = lane
+    _bundle(repo, scratch)
+
+    review = _review(repo, scratch, bin_dir, "limit")
+    with open(review_limit.marker_path(str(repo), "T1"), encoding="utf-8") as handle:
+        mark = json.load(handle)
+    before = len(_calls(bin_dir))
+    probe = _probe(repo, scratch, bin_dir, "ok")
+
+    assert (review.returncode, mark["round"], mark["provider"]) == (3, 1, "codex")
+    assert "hit your usage limit" in mark["error"]
+    assert "review: codex usage limit in round 1:" in review.stdout
+    assert probe.returncode == 5 and _field(probe, "PROBE_DETAIL").startswith(
+        "recorded in round 1:")
+    assert len(_calls(bin_dir)) == before
+
+
+def test_recorded_limit_applies_to_the_next_round_only(lane):
+    repo, scratch, bin_dir = lane
+    _bundle(repo, scratch)
+    _review(repo, scratch, bin_dir, "limit")
+    _script(repo, scratch, _env(bin_dir, "ok"), "--provider", "claude", "--reserve-only")
+    before = len(_calls(bin_dir))
+
+    probe = _probe(repo, scratch, bin_dir, "ok")
+
+    assert (probe.returncode, len(_calls(bin_dir))) == (0, before + 1)
+
+
+def test_non_limit_failure_mid_round_records_nothing(lane):
+    repo, scratch, bin_dir = lane
+    _bundle(repo, scratch)
+
+    _review(repo, scratch, bin_dir, "unauthorized")
+
+    assert not os.path.exists(review_limit.marker_path(str(repo), "T1"))
+
+
+def test_delivered_round_with_retried_rate_limit_records_nothing(lane):
+    repo, scratch, bin_dir = lane
+    _bundle(repo, scratch)
+
+    _review(repo, scratch, bin_dir, "retried_then_ok")
+
+    assert not os.path.exists(review_limit.marker_path(str(repo), "T1"))
+
+
+def test_corrupt_limit_marker_falls_back_to_a_live_probe(lane):
+    repo, scratch, bin_dir = lane
+    path = review_limit.marker_path(str(repo), "T1")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("{")
+
+    probe = _probe(repo, scratch, bin_dir, "ok")
+
+    assert probe.returncode == 0

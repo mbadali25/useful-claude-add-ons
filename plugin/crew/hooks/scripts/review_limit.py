@@ -64,3 +64,44 @@ def limit_line(*texts):
             if _LIMIT_RE.search(line):
                 return line.strip()[:300]
     return None
+
+
+def marker_path(root, ticket):
+    """`<git-common-dir>/crew/review/<ticket>.limit.json`, beside the ledger."""
+    return os.path.join(review_ledger.common_dir(root), "crew", "review",
+                        review_ledger.check_ticket(ticket) + MARKER_SUFFIX)
+
+
+def record(root, ticket, number, provider, model, line):
+    """Record that round `number`'s call failed on a limit. Atomic: the text is
+    computed before any file is opened, then written to a temp file in the same
+    directory and moved into place, so a failure leaves no half-written marker."""
+    path = marker_path(root, ticket)
+    text = json.dumps({
+        "ticket": ticket, "round": number, "provider": provider, "model": model or None,
+        "error": line,
+        "at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+    }, indent=2, sort_keys=True) + "\n"
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+    os.replace(tmp, path)
+    return path
+
+
+def recorded(root, ticket):
+    """The marker dict when it applies to the NEXT round (its round equals the
+    ledger's rounds_used), else None; a missing, unreadable or corrupt marker, or
+    an UNKNOWN ledger, is None and the live probe decides."""
+    try:
+        with open(marker_path(root, ticket), encoding="utf-8") as handle:
+            mark = json.load(handle)
+        if not isinstance(mark, dict):
+            return None
+        used = review_ledger.status(root, ticket).get("rounds_used")
+    except (OSError, ValueError, review_ledger.LedgerError):
+        return None
+    if mark.get("round") != used:
+        return None
+    return mark
