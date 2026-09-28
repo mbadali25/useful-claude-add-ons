@@ -768,6 +768,8 @@ if [ -z "$PWSH" ]; then
     [ -x "$c" ] && { PWSH="$c"; break; }
   done
 fi
+# Named absolutely: ps_run hands it to env, which resolves through the fixture's PATH.
+PS_LIMIT="$(command -v timeout 2>/dev/null)"
 
 ps_harness() {
   # $1 fixture name, $2 the case body. Builds a runnable script out of the SHIPPED
@@ -817,12 +819,10 @@ ps_run() {
   local fx="$TMP/$1"
   ps_harness "$1" "$2"
   # Bounded and unattended: a case that waits on anything fails in two minutes
-  # instead of holding the whole suite (T-0076). `timeout` is named absolutely,
-  # because env resolves it through the fixture's own PATH.
-  local limit
-  limit="$(command -v timeout 2>/dev/null)"
+  # instead of holding the whole suite (T-0076). Never unbounded - with no
+  # `timeout` these cases SKIP (below) rather than run without one.
   ( env -u PSModulePath PATH="$fx/bin" HOME="$fx/home" UV_TEST_CALLS="$fx/calls" \
-      ${limit:+"$limit" 120} "$PWSH" -NoProfile -NoLogo -NonInteractive -File "$fx/harness.ps1" ) \
+      "$PS_LIMIT" 120 "$PWSH" -NoProfile -NoLogo -NonInteractive -File "$fx/harness.ps1" ) \
       </dev/null >"$TMP/out" 2>"$TMP/err"
   RC=$?
 }
@@ -834,6 +834,13 @@ if [ -z "$PWSH" ]; then
   printf '\033[90m%s\033[0m\n' "       TOOL, not a failed check - Install-Uv is BEHAVIOURALLY UNVERIFIED in"
   printf '\033[90m%s\033[0m\n' "       this run. Set PWSH=/absolute/path/to/pwsh to run these five cases."
   TOOL_SKIPPED=1
+  SKIP_WHY="pwsh absent"
+elif [ -z "$PS_LIMIT" ]; then
+  printf '\033[90m%s\033[0m\n' "21-25. SKIPPED: no 'timeout' on PATH, and these cases never run pwsh unbounded -"
+  printf '\033[90m%s\033[0m\n' "       one that waits on a prompt or a dialog would hold the whole suite. That is a"
+  printf '\033[90m%s\033[0m\n' "       MISSING TOOL, not a failed check - Install-Uv is BEHAVIOURALLY UNVERIFIED here."
+  TOOL_SKIPPED=1
+  SKIP_WHY="timeout absent"
 else
   # A uv that a Windows-side installer would drop somewhere already on PATH.
   printf '#!/bin/sh\nexit 0\n' > "$TMP/uv-payload-bin"; chmod +x "$TMP/uv-payload-bin"
@@ -997,7 +1004,7 @@ if [ "$TOOL_SKIPPED" -ne 0 ]; then
   # convention) says "this run did not check everything it claims to",
   # which 0 does not. See mcp-preflight-catalog.sh's identical fix and
   # CLAUDE.md's note that render.sh does the same for a missing mmdc.
-  green "$PASS passed, 0 failed (cases 21-25 SKIPPED - pwsh absent)"
+  green "$PASS passed, 0 failed (cases 21-25 SKIPPED - $SKIP_WHY)"
   exit 77
 fi
 green "$PASS passed, 0 failed"
