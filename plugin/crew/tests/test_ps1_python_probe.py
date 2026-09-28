@@ -30,6 +30,7 @@ body still reaches, just by a different (fail-closed) path.
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import time
@@ -76,6 +77,9 @@ def _stub(directory, name, body, win_body=None):
     non-resolution, which an unrunnable batch file still produces."""
     directory.mkdir(parents=True, exist_ok=True)
     if os.name == "nt":
+        # Git Bash never matches `name.cmd` for a bare `name`, so bash's
+        # resolvers get the extensionless sh stub beside it (T-0076).
+        (directory / name).write_text("#!/bin/sh\n" + body + "\n", encoding="ascii", newline="\n")
         path = directory / (name + ".cmd")
         path.write_text("@echo off\r\n" + (win_body if win_body is not None else body) + "\r\n",
                         encoding="ascii", newline="\r\n")
@@ -108,7 +112,16 @@ def _hung(directory, names=("python3",)):
 
 def _tools(tmp_path):
     """Everything in /usr/bin and /bin EXCEPT python, so bash's resolvers have
-    `tr`/`cut` and no fixture can be rescued by the host's own interpreter."""
+    `tr`/`cut` and no fixture can be rescued by the host's own interpreter.
+
+    On Windows `/usr/bin` is not a path Python can open (it resolves to the
+    current drive's root), so Git's own tools directory is used as it
+    stands, once it is proven to hold no python (T-0076)."""
+    found = shutil.which("tr") if os.name == "nt" else None
+    if found:
+        native = pathlib.Path(found).parent
+        if not [n for n in os.listdir(native) if n.lower().startswith(("python", "py"))]:
+            return native
     tools = tmp_path / "tools"
     tools.mkdir()
     for source in ("/usr/bin", "/bin"):
@@ -138,11 +151,24 @@ def _bash_resolver(fn, path_entries):
     script = f'. "{SCRIPTS / "_common.sh"}"; {fn}'
     done = subprocess.run([BASH, "-c", script], env=env, stdin=subprocess.DEVNULL,
                           capture_output=True, text=True, check=False, timeout=60)
-    return done.stdout.strip() if done.returncode == 0 else ""
+    out = done.stdout.strip() if done.returncode == 0 else ""
+    cygpath = shutil.which("cygpath") if os.name == "nt" else None
+    if out.startswith("/") and cygpath:
+        # bash spells a Windows file the MSYS way (/c/...); pwsh spells the
+        # same file C:\...  Compare the file, not the spelling (T-0076).
+        out = subprocess.run([cygpath, "-w", out], capture_output=True, text=True,
+                             check=False, timeout=30).stdout.strip() or out
+    return out
 
 
 def _runs(interpreter):
-    done = subprocess.run([interpreter, "-c", "print(1)"], capture_output=True,
+    """Whether `interpreter` runs, launched the way its callers launch it:
+    `crew_py`'s callers are bash scripts, and on Windows the candidate it
+    names can be an extensionless sh stub only bash can start (T-0076)."""
+    argv = [interpreter, "-c", "print(1)"]
+    if os.name == "nt" and BASH:
+        argv = [BASH, "-c", '"$0" -c "print(1)"', interpreter]
+    done = subprocess.run(argv, capture_output=True,
                           text=True, check=False, timeout=30)
     return done.returncode == 0 and done.stdout.strip() == "1"
 

@@ -125,7 +125,7 @@
 %%   (resume_decision :661, crew_resume.decide; `off` unless armed and source is
 %%   clear/compact); :908-910 startup -> pointer + next action; :911-923 other
 %%   sources -> full note, next action first, then the auto-resume line; :924 no
-%%   note but a resume line -> that line alone; :1086 JSON additionalContext.
+%%   note but a resume line -> that line alone; :1090 JSON additionalContext.
 %% Stale rule: crew_state.py:646 (72h / 3 commits), :859-914, archived to
 %%   .crew/handoffs/ (:774, :980), never deleted; never raises (:954-958).
 %% /crew:status: commands/status.md:14 -> crew_status.py; :192-216 report lines.
@@ -148,6 +148,10 @@
 %% crew 1.0.52): of the Anchors paths only crew_state.py changed since 8cabe586, T-0072's
 %% line-neutral AUTOPILOT_DEFAULTS hunk at :1086-1090; every crew_state.py line cited here is above
 %% it and did not move (checked with git diff -U0). Nothing below was redrawn.
+%% Re-anchored a4eb2f55 -> 3c4f1a68 (T-0092 merged onto c426c018, T-0076, crew 1.0.53): of the
+%% Anchors paths only crew_context.py changed - T-0076's byte-exact LF, +4 lines inside emit(),
+%% so its JSON write moves :1086 -> :1090 (re-read with sed -n; the note above and the out node
+%% now say :1090). Every other cited crew_context.py line is above :1086. No node or edge changed.
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
     start --> reg["hooks.json:3-10<br/>3 SessionStart pairs, sh + ps1, no matcher<br/>each claims per session+source"]
@@ -193,7 +197,7 @@ flowchart TB
         src -- "resume/clear/compact/fork" --> full["full note, next action first,<br/>then the auto-resume line<br/>:911-923"]
     end
 
-    ptr --> out(["additionalContext JSON<br/>:1086"])
+    ptr --> out(["additionalContext JSON<br/>:1090"])
     full --> out
     cc4 --> out
 
