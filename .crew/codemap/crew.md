@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@8cabe586
+anchor: useful-claude-add-ons@5e2d71a7
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -262,7 +262,7 @@ Re-executed on T-0075's merge of `bebbb97f` (T-0023 landed): 122 / 68 / 54 / 0 -
 config leaf; unchanged again on its merge of `67caa4b8` (T-0018 landed, no config leaf) and of
 `d2fbd408` (T-0024 landed; it changes neither template nor `crew_config.py`).
 `plugin/crew/tests/test_crew_config.py:279` asserts 122. T-0004's `CHANGELOG.md` entry
-now says "117 -> 119" (`:688-689` since T-0075's merge of `f96e9ec9` put T-0077's entry above it, `:666-667` on T-0075's merge of `d2fbd408`; `:608-609` at `d2fbd408`, before T-0075's entry went in above it; `:545-546` on T-0075's branch before that merge; `:515-516` at `67caa4b8`, before T-0024's four entries and T-0075's went in above it;
+now says "117 -> 119" (`:699-700` since T-0075's merge of `5050ea3b` put shipstation's entry above it, `:688-689` after its merge of `f96e9ec9` put T-0077's entry above it, `:666-667` on T-0075's merge of `d2fbd408`; `:608-609` at `d2fbd408`, before T-0075's entry went in above it; `:545-546` on T-0075's branch before that merge; `:515-516` at `67caa4b8`, before T-0024's four entries and T-0075's went in above it;
 `:436-437` at `bebbb97f`, before T-0018's; `:390-391` at `db14619c`, before T-0023's; `:276-277` at `f0b12ee6`, before T-0021's; `:228-229` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this
 paragraph was first written. T-0005's entry states no leaf count; T-0023's says 121 -> 122.
 
@@ -2227,3 +2227,13 @@ with the Windows pinning sentence rewritten for T-0077 (`_parent_check` removed;
 `:1066`, `_held_check` `:1161`, `_win_open_dir` `:331`, `_WIN_PIN` `:328`) and the tracker rule
 corrected to `.crew/verify.json:307-314` (missed at `7d217751`); 87 `TRACKER_MUTATIONS`; T-0004's
 "117 -> 119" is `CHANGELOG.md:688-689`; the version is 1.0.50. `.crew/verify.json` did not change.
+
+## Re-anchor provenance - `8cabe586` + `5050ea3b` -> `5e2d71a7`, 2026-09-28 (T-0075 sabotage re-anchor, merges shipstation's main)
+
+Between `8cabe586` and `5e2d71a7`: `c426b5fb` re-anchored `sabotage_config.py`'s "repo writer accepts a
+whole block" entry over both block guards (the T-0075 subset run found it vacuous: the leaf-path
+rule and `value_allowed`'s shape rule each refuse a block alone), the 1.0.49/1.0.50 step-back and
+re-set (`1a3cd377`, `1afd2216`), and `5e2d71a7` merging origin/main `5050ea3b` (shipstation 1.1.1:
+`skills/shipstation/`, its marketplace entry and a CHANGELOG entry, none cited here). Moved in
+this note: T-0004's "117 -> 119" is `CHANGELOG.md:699-700`. `CONFIG_MENU_MUTATIONS` is still 50;
+crew is still 1.0.50 (`1afd2216`). Nothing else this note cites changed.
