@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@3d9b8853
+anchor: useful-claude-add-ons@4c9e6eb1
 verified: 2026-09-28
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -305,6 +305,8 @@ against synthetic fixtures and never reads this repo's own docs.
   Re-measured on T-0009's merge of main `d2fbd408`: 19,147 across 126 files on `:11`, recomputed
   from the merged index (T-0009's `0b9e3a41` read 19,121 across 126, main's `d2fbd408` 18,885
   across 126), and `check-marketplace.py`'s `count_crew_markdown_lines()` returns 19147, matching.
+  Re-measured for T-0009 review round 5 at `4c9e6eb1`: 19,155 across 126 files on `:11`, and
+  `check-marketplace.py`'s `count_crew_markdown_lines()` returns 19155, matching.
 - **`MARKETPLACE.md`** was not re-read for a community-plugin or marketplace
   count of its own; only `README.md:231`'s prose was checked and found to no
   longer state a specific number.
@@ -787,3 +789,7 @@ step back to 1.0.42; `scripts/check-marketplace.py` reports `all checks passed` 
 ## Re-anchor provenance - `314fb065` -> `3d9b8853`, 2026-09-28 (T-0009 merges main `5050ea3b`)
 
 `37806d9a` merges origin/main `5050ea3b` (T-0077 landed as crew 1.0.49, PR #247; shipstation 1.1.1, PR #248; main changed no code map) into T-0009 at `7bba0fbb`; `3d9b8853` sets crew 1.0.50 as the last plugin/crew commit, changing only the version files and T-0009's CHANGELOG heading and bump line in place. Main's side changed `plugin/crew/hooks/scripts/crew_tracker.py`, `plugin/crew/hooks/scripts/crew_autopilot.py`, `plugin/crew/README.md`, their tests and sabotage tables, `CHANGELOG.md`, `skills/shipstation/` and the version files; the merge was clean. Every `path:N` citation in the body was mapped from `587fc5fa` (this note's text; no cited source changed between `314fb065` and it) onto `3d9b8853` with a line diff; a citation whose line the diff could not carry was re-read with `sed -n`. No line moved; `.claude-plugin/marketplace.json:218` and `plugin/PLUGINS.md:14` were re-read and now state 1.0.50, and the version history gains the 1.0.49 merge. Nothing was executed for this note.
+
+## Re-anchor provenance - `3d9b8853` -> `4c9e6eb1`, 2026-09-28 (T-0009 review round 5)
+
+`bd6e127f` fixes T-0009's review round 5 (Codex, head `cc754aa0`: two unknown dispatches, the marker over every dispatch, bash alias copies in order and by their value's last command, PowerShell commas in single quotes) in `plugin/crew/hooks/scripts/crew_guards.py`, `plugin/crew/hooks/scripts/cloud_guard.py` (+1 line at `:80`), their tests and sabotage table, `plugin/crew/README.md`, `plugin/crew/CONFIG.md`, `CHANGELOG.md`, `plugin/crew/BUDGETS.md` (19,155 lines across 126 files on `:11`, recomputed) and `.crew/verify.json` (rule 6's `why`, same line); `4c9e6eb1` re-sets crew 1.0.50 as the last plugin/crew commit (the fix commit stepped it to 1.0.49). Every `path:N` citation in the body into a changed file was mapped from `3d9b8853` onto `4c9e6eb1` with a line diff, and a citation whose line the diff could not carry was re-read with `grep -n`. In this note: the BUDGETS figure on `:11` reads 19,155 across 126 files and `check-marketplace.py` passes it at `4c9e6eb1`; no body citation moved. Nothing was executed for this note beyond `check-marketplace.py`.
