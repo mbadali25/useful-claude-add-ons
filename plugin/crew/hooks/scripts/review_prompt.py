@@ -3,7 +3,8 @@
 `/crew:review` builds ONE prompt that every reviewer reads byte-for-byte; this
 script writes the part of it that is about the ticket rather than the diff:
 
-  - the bundle parts, in order, and the READ acknowledgement each needs;
+  - the bundle parts, in order, and the READ acknowledgement each needs,
+    and the paths the manifest excluded;
   - the ticket's spec sections -- Intent, Exclusions, Evidence, Unknowns,
     Acceptance checks -- from `.work/tickets/<id>/spec.md` (or, for a
     files-mode ticket with no spec.md yet, `.work/tickets/<id>.md`);
@@ -85,6 +86,9 @@ def _bundle_block(manifest):
            "other directory counts for nothing; a part with no READ line makes the review "
            "INCOMPLETE."]
     out += [f"  {p['path']}" for p in parts]
+    excluded = manifest.get("excluded")
+    out.append(f"  excluded (never in the bundle): {', '.join(excluded)}" if excluded
+               else "  excluded: none recorded")
     out.append(f"Manifest (file categories, renames, modes, binaries, submodules): "
                f"{manifest.get('manifest_path', 'manifest.json')}")
     for key, label in (("renames", "renamed"), ("mode_changes", "mode changed"),
