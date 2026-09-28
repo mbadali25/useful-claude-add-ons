@@ -71,8 +71,8 @@ import scope_base
 
 MAX_LINES = 6
 GIT_TIMEOUT = 60
-# The review bundle's exclusion (`review_patch._EXCLUDE_SPEC`): crew's scratch
-# space is never a changed path.
+# The review bundle's `.work` exclusion: crew's scratch space is never a changed path.
+# `review_patch._EXCLUDE_SPEC` also drops generated `graphify-out/`; this audit keeps it.
 _ONLY = ["--", ".", ":(exclude).work"]
 
 

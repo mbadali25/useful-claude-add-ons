@@ -10,6 +10,8 @@ export {
 export {
   GraphClient,
   GraphApiError,
+  GraphOriginError,
+  pinToOrigin,
   GRAPH_BASE,
   GRAPH_DEFAULT_SCOPE,
   type GraphRequestOptions,

@@ -36,6 +36,39 @@ REVIEW_FIX_MUTATIONS = (
         ("tests/test_review_patch.py::"
          "test_work_entries_already_in_the_index_stay_out_of_the_bundle"),
     ),
+    # T-0092 (crew 1.0.54): generated graphify-out/ leaves the bundle. Each
+    # was run by hand against the tracked file, restored with `git checkout`.
+    (
+        # The diffs read graphify-out/ again: a reviewer is handed ~120 parts
+        # of generated JSON and the Claude fallback comes back INCOMPLETE.
+        "the bundle diff no longer excludes graphify-out",
+        REVIEW_PATCH,
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"]\n',
+        '_EXCLUDE_SPEC = [":(exclude).work"]\n',
+        ("tests/test_review_patch.py::"
+         "test_generated_graph_dir_is_excluded_and_says_so"),
+    ),
+    (
+        # The manifest stops naming graphify-out/: a reviewer reads a bundle
+        # with the graph left out and nothing records that it was.
+        "the manifest stops saying graphify-out is excluded",
+        REVIEW_PATCH,
+        'EXCLUDED = (".work/", "graphify-out/")\n',
+        'EXCLUDED = (".work/",)\n',
+        ("tests/test_review_patch.py::"
+         "test_generated_graph_dir_is_excluded_and_says_so"),
+    ),
+    (
+        # The prompt stops naming the excluded paths: a reviewer can report
+        # CLEAN on a bundle without knowing anything was left out of it.
+        "the review prompt stops naming the excluded paths",
+        REVIEW_PROMPT,
+        ('    out.append(f"  excluded (never in the bundle): {\', \'.join(excluded)}" if excluded\n'
+         '               else "  excluded: none recorded")\n'),
+        "    pass\n",
+        ("tests/test_review_prompt.py::"
+         "test_build_names_the_excluded_paths"),
+    ),
     (
         # An older round's result lands after a later round was reserved.
         "the ledger records a result for a round that is not the latest",
