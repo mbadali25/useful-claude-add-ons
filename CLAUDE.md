@@ -182,24 +182,34 @@ the gate tells you the other places exist.
   trap — `expr` is evaluated before the call — but the `with open(...) as fh:`
   form is, and that is the form in this repo. Repair with `git checkout --`.
 
-  Measured across every tracked `*.py`, by AST rather than by grep — a write
-  inside a truncating `open` whose first argument is neither a bare name nor a
-  constant. Eight carry that shape. Three are test fixtures. One
-  (`plugin/localgpu/mcp/store.py:646`) writes a temp file that is then
-  `os.replace`d, so a raising argument costs the temp and nothing else — that
-  is the immune construction, and it is one file here, not the general case.
-  `plugin/localgpu/cli/localgpu_cli.py` was reordered in this change because
-  its target is a repo's whole `.mcp.json`; nothing reaching that line can
-  raise today, and the ordering is what keeps that a fact about today.
-  Three remain, unfixed and each in a different marketplace entry that would
-  need its own bump: `plugin/gizmoduck/scripts/gizmoduck.py:90` (a `str.join`
-  over a list of `str` — no reachable raise),
-  `skills/aws-opensearch/scripts/opensearch_client.py:405` (`resp.text`, already
-  materialised on the line above), and
-  `skills/intune-graph/scripts/export_report.py:90` — which is the live one:
-  `dst.write(src.read())` on a zip member, and `src.read()` raises `BadZipFile`
-  on a corrupt archive, leaving a zero-byte extract behind. Re-run the scan
-  rather than trusting this count; it is a fact about one commit.
+  Measured across every tracked `*.py` at `f54af3fa`, by AST rather than by
+  grep: a `.write` or `.writelines` on a handle from builtin `open` or
+  `io.open` whose mode contains `w` (the `with` form or the chained one),
+  whose argument is neither a bare name nor a constant. 57 sites carry that
+  shape; 48 are in test files and fixtures. Of the nine that ship, two cannot
+  hurt what they truncate: `plugin/localgpu/mcp/store.py:646` writes a temp
+  file that `:651` then `os.replace`s — the immune construction — and
+  `scripts/check-marketplace.py:1330` writes into a `TemporaryDirectory`. The
+  other seven were read one by one and none has a raise reachable between the
+  open and the write, each for a reason that is a fact about today: the
+  argument is a `str` already in hand
+  (`skills/aws-opensearch/scripts/opensearch_client.py:405`, read at `:402`;
+  `plugin/gizmoduck/scripts/scanners/checkov.py:82` and
+  `plugin/gizmoduck/scripts/scanners/semgrep.py:100`, whose `result.stdout` is
+  coerced to `str` at `plugin/gizmoduck/scripts/scanners/base.py:45`); a
+  `str.join` over lines split before the open
+  (`plugin/gizmoduck/scripts/gizmoduck.py:152`,
+  `plugin/gizmoduck/scripts/scanners/nuclei.py:170`); a value the same run
+  already built once (`skills/doc-builder/scripts/build_gallery.py:206`, first
+  at `:128`); or one `json.dumps` per finding
+  (`plugin/gizmoduck/scripts/routine.py:508`), where a raise would leave a
+  partial file rather than an empty one. That is reading, not execution.
+  `skills/intune-graph/scripts/export_report.py`, which this paragraph named as
+  the live site until T-0091, now stages each member through `mkstemp` and
+  `os.replace` (`:113`, `:205`), and `plugin/localgpu/cli/localgpu_cli.py`
+  serialises before it opens (`:421`), so neither appears. The scan is not
+  committed; its script and full output are in T-0091's PR body. Re-run it
+  rather than trusting these counts; they are a fact about one commit.
 
 - **`pathlib.write_text` converts a `.sh` to CRLF on Windows** — it is text mode, so every `\n`
   becomes `\r\n` and the script dies on its shebang as `bad interpreter: ...^M`. Pass
