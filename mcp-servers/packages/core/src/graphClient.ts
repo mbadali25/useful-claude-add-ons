@@ -23,7 +23,7 @@ export class GraphApiError extends Error {
 
 /**
  * Thrown instead of sending the Graph Bearer token anywhere but the configured
- * base URL's origin (scheme + host + port). The message carries origins only --
+ * base URL's origin (scheme + host + port). The message carries scheme and host only --
  * never a path, query string or token -- because withToolErrorHandling
  * (toolResult.ts) hands err.message to the model verbatim.
  */
@@ -37,6 +37,16 @@ export class GraphOriginError extends Error {
     this.refusedOrigin = refusedOrigin;
     this.expectedOrigin = expectedOrigin;
   }
+}
+
+/**
+ * Names a refused URL by scheme and host only -- never path, query or userinfo.
+ * Not `url.origin`: a `blob:` URL reports its inner URL's origin (so
+ * `blob:https://graph.microsoft.com/x` would read as the allowed Graph origin)
+ * and a non-special scheme such as `foo:` or `file:` reports "null".
+ */
+function describeRefused(url: URL): string {
+  return url.host ? `${url.protocol}//${url.host}` : `a ${url.protocol} URL`;
 }
 
 /**
@@ -59,10 +69,10 @@ export function pinToOrigin(candidate: string, base: URL): URL {
     throw new GraphOriginError("<not an absolute URL>", base.origin, "not an absolute URL");
   }
   if (url.username || url.password) {
-    throw new GraphOriginError(url.origin, base.origin, "the URL carries a username or password");
+    throw new GraphOriginError(describeRefused(url), base.origin, "the URL carries a username or password");
   }
   if (url.protocol !== base.protocol || url.hostname !== base.hostname || url.port !== base.port) {
-    throw new GraphOriginError(url.origin, base.origin, "scheme, host or port differs from the configured Graph base");
+    throw new GraphOriginError(describeRefused(url), base.origin, "scheme, host or port differs from the configured Graph base");
   }
   return url;
 }

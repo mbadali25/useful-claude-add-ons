@@ -404,6 +404,49 @@ describe("GraphClient", () => {
     });
   }
 
+  // The refusal names what was refused, not url.origin: a blob: URL reports its
+  // inner URL's origin -- the allowed Graph origin itself -- and a non-special
+  // scheme reports "null". Exact match on refusedOrigin, because the blob: case
+  // passes a substring check against GRAPH_ORIGIN by naming the wrong thing.
+  const describedRefusals: Array<{ name: string; nextLink: string; refused: string }> = [
+    {
+      name: "a refused blob: nextLink is named by its scheme, not the Graph origin it wraps",
+      nextLink: "blob:https://graph.microsoft.com/abc",
+      refused: "a blob: URL",
+    },
+    {
+      name: "a refused file: nextLink is named by its scheme",
+      nextLink: "file:///etc/passwd",
+      refused: "a file: URL",
+    },
+    {
+      name: "a refused non-special-scheme nextLink names its host, not null",
+      nextLink: "foo://evil.example/v1.0/users?page=2",
+      refused: "foo://evil.example",
+    },
+    {
+      name: "a refused non-special-scheme userinfo nextLink names its host without the credentials",
+      nextLink: "foo://u:pw@evil.example/v1.0/users",
+      refused: "foo://evil.example",
+    },
+  ];
+
+  for (const c of describedRefusals) {
+    test(c.name, async () => {
+      const cred = countingCredential();
+      const fetched = recordFetch([{ value: [{ id: 1 }], "@odata.nextLink": c.nextLink }, { value: [{ id: 2 }] }]);
+      const client = new GraphClient(cred.credential);
+
+      const err = await expectRefused(() => client.getAllPages("/users"), fetched, c.refused);
+
+      assert.ok(err instanceof GraphOriginError);
+      assert.equal(err.refusedOrigin, c.refused);
+      assert.ok(err.message.startsWith(`Refused to send the Graph token to ${c.refused}: `), err.message);
+      assert.ok(!err.message.includes("pw"), `message must not carry credentials: ${err.message}`);
+      assert.deepEqual(fetched.map((f) => f.url), ["https://graph.microsoft.com/v1.0/users"]);
+    });
+  }
+
   test("getAllPages follows a graph.microsoft.com nextLink", async () => {
     const nextLink = "https://graph.microsoft.com/v1.0/users?$skiptoken=abc";
     const fetched = recordFetch([{ value: [{ id: 1 }], "@odata.nextLink": nextLink }, { value: [{ id: 2 }] }]);
