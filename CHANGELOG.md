@@ -4,6 +4,32 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Security - mcp-servers 0.2.1: the Graph token goes only to the configured Graph origin (T-0090)
+
+- **What leaked.** `GraphClient` in `@badali404/mcp-ms-core` 0.2.0 sent
+  `Authorization: Bearer <token>` to any absolute URL a caller passed and to
+  every `@odata.nextLink` a response named, whatever its host, scheme or port.
+- **Exploitability.** Not remotely exploitable through the four shipped servers
+  (every call passes a literal relative path and the default base, and page 1
+  always goes to Graph), but a real leak for library consumers passing absolute
+  URLs or a non-default base, and for anyone able to shape a Graph response;
+  high impact when it happens (delegated `Mail.Send`-class tokens). Node 22's
+  `fetch` already strips `Authorization` on a cross-origin redirect (measured
+  on Node 22.22.1), so redirects are unchanged.
+- **Now.** Every request URL - caller-supplied absolute, relative path joined to
+  the base, and each `@odata.nextLink` - must match the configured base URL's
+  scheme, host and port and carry no username or password; anything else throws
+  the new exported `GraphOriginError` (naming the refused URL's scheme and host
+  and the expected origin, never the path, query, userinfo or token) before a
+  token is acquired or anything is fetched. The check compares parsed `URL`
+  fields, so look-alike hosts, userinfo tricks, `http:` downgrades and port
+  changes are all refused.
+- **Versions.** `@badali404/mcp-ms-core` 0.2.1, and `mcp-msgraph`,
+  `mcp-intune`, `mcp-o365-user` and `mcp-o365-admin` 0.2.1, each pinning core
+  `0.2.1` exactly. Publishing to npm (tag `mcp-servers-v0.2.1`) is the owner's
+  step per `mcp-servers/PUBLISHING.md` section 5; until then `npx ...@latest`
+  still installs 0.2.0.
+
 ### Added — `crew` 1.0.51: `autopilot.deploy` — production without asking, opt-in (T-0072)
 
 - **New production authority, off by default.** `autopilot.deploy` (repo

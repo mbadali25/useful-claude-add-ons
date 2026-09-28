@@ -3,10 +3,10 @@ paths:
   - "mcp-servers/packages/**"
   - "mcp-servers/scripts/**"
 ---
-<!-- crew:generated source=.crew/codemap/mcp-servers.md sha256=ae6bce43dfe1718c -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/mcp-servers.md sha256=01864f6fb4a9377f -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # mcp-servers
-Code map anchor `f2bb919b`; if it is behind HEAD, re-check with `git diff --name-only f2bb919b..HEAD -- <cited paths>`.
-Covers: The TypeScript monorepo — four stdio MCP servers over one shared core. Holds the two recorded adminAuth.ts defects (TODO items 2 and 3), still open. Not a marketplace plugin; nothing registers it. mcp-servers/ is untouched by crew 1.0.
+Code map anchor `eb4c4fa8`; if it is behind HEAD, re-check with `git diff --name-only eb4c4fa8..HEAD -- <cited paths>`.
+Covers: The TypeScript monorepo — four stdio MCP servers over one shared core. Holds the two recorded adminAuth.ts defects (TODO items 2 and 3), still open. GraphClient sends its token only to its base origin (T-0090). Not a marketplace plugin; nothing registers it.
 ## Landmines
 - The credential chain caches its winner for the process lifetime.
 - `scopesOverride` silently broadens a narrow scope request.
