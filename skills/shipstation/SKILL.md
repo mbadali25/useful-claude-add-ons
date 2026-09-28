@@ -28,7 +28,10 @@ lives under the **V1** namespace. Only `/apis/openapi/*` is V2; `/apis/shipstati
 and `/apis/shipengine/openapi/*` are the other two.
 
 That does **not** mean V2 can't act on orders: **every V1 order is also a V2 shipment**, with
-`shipment_id = "se-" + orderId` (order `882684294` → `se-882684294`). So:
+`shipment_id = "se-" + orderId` (order `882684294` → `se-882684294`). That mapping is **observed
+live (2026-09-27), not documented** — ShipStation only documents `orderNumber` = `shipment_number`
+and `orderKey` = `external_shipment_id`. If `se-<orderId>` ever 404s, look the shipment up with
+`/v2/shipments?shipment_number=<orderNumber>`. So:
 
 - **Find / filter** orders in **V1** `/orders` (`orderStatus`, `createDateEnd`, ...) — the direct answer.
 - **Act** on them in bulk through **V2**, keyed by `se-<orderId>` (see *Bulk order changes*).
@@ -38,6 +41,17 @@ Open statuses — V1 `orderStatus`: `awaiting_payment`, `awaiting_shipment`, `pe
 `on_hold`. V2 `shipment_status`: `pending`, `on_hold`.
 
 Don't invent a V2 orders path. Don't report "no orders found" from a 404 — that's the wrong API, not an empty account.
+
+V2 is **not** V1 relabelled. What each can do:
+
+| Need | V1 | V2 |
+|---|---|---|
+| Find / filter orders (status, create date, customer) | ✅ `/orders` | Partial — `/v2/shipments` filters |
+| Bulk-change existing orders (ship, tag, cancel) | one call per order | ✅ `/v2/fulfillments`, `/tags`, `/cancel` |
+| Stores (list, refresh marketplace sync, sync status) | ✅ | ❌ — only a `store_id` filter |
+| Customers | ✅ | ❌ |
+| `awaiting_payment` status | ✅ | ❌ |
+| Labels, rates, inventory, purchase orders, totes, pickups, manifests | — | ✅ |
 
 ## Credentials
 
@@ -49,7 +63,7 @@ Read from environment variables — never inline a key in a command (shell histo
 | `SHIPSTATION_V1_API_KEY` + `SHIPSTATION_V1_API_SECRET` | V1 |
 
 Generate a V2 key in **ShipStation → Settings → Account → API Settings**; it's shown only once and
-V2 allows **one active key at a time**. V1 keys are separate — a V2 key will not authenticate V1.
+V2 allows **one active key at a time** (V1 allows two credential sets). V1 keys are separate — a V2 key will not authenticate V1.
 
 `ss.ps1` resolves each variable from **Process → User → Machine** scope, so persistent variables
 (`setx`, System Properties) work even in an already-running shell or agent session. A long-lived
