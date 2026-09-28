@@ -908,13 +908,26 @@ def _cygpath_list(entries, cygpath):
     return out.split(":") if done.returncode == 0 and out else None
 
 
+def _is_git_launcher(bash):
+    """True for Git for Windows' `bin\\bash.exe`, never its `usr\\bin` one."""
+    parts = [p.lower() for p in pathlib.PureWindowsPath(bash or "").parts]
+    return parts[-2:] == ["bin", "bash.exe"] and "usr" not in parts
+
+
 def shell_path(flavor, dirs, base=None, windows=None, cygpath=None):
     """The PATH value `flavor` ("sh" or "ps1") should be handed, with `dirs`
     first and `base` (default: this process's PATH) behind them.
 
     `windows` and `cygpath` exist so a Linux test can drive the Windows
     branch: `windows=True` treats `base` as a `;`-list of native paths, and
-    `cygpath=False` forces the manual `C:\\x` -> `/c/x` conversion."""
+    `cygpath=False` forces the manual `C:\\x` -> `/c/x` conversion.
+
+    On a real Windows host whose bash is Git's `bin\\bash.exe` launcher, "sh"
+    gets the native `;` form too: the launcher converts PATH itself, and a
+    `:`-joined one reaches the native python it runs as a handful of mangled
+    entries, so `shutil.which` there misses every stub (T-0076)."""
+    if windows is None and os.name == "nt" and flavor == "sh" and _is_git_launcher(resolve_bash()):
+        flavor = "ps1"
     windows = os.name == "nt" if windows is None else windows
     base = os.environ.get("PATH", "") if base is None else base
     native_sep = ";" if windows else ":"

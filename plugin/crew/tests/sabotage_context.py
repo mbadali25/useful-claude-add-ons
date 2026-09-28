@@ -190,4 +190,14 @@ CONTEXT_MUTATIONS = (
         ("tests/test_crew_context_wrappers.py::"
          "test_bash_flavour_emits_when_inject_is_on_or_unset"),
     ),
+    (
+        # T-0076: without the pin, Windows' text-mode stdout writes CRLF and
+        # the route hook's byte-identical tests fail on sh and ps1.
+        "the context hook inherits the platform's line ending",
+        CONTEXT,
+        '            sys.stdout.reconfigure(newline="\\n")\n',
+        "            pass\n",
+        ("tests/test_crew_context.py::"
+         "test_emit_writes_lf_even_through_a_crlf_translating_stdout"),
+    ),
 ) + REVIEW_FIX_CONTEXT_MUTATIONS

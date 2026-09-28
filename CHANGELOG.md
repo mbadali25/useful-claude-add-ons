@@ -54,6 +54,32 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 1.0.52: the crew suite passes natively on Windows (T-0076).**
+  Bumped `1.0.51 -> 1.0.52` (1.0.51 on its branch; re-set at landing after merging main's 1.0.51, T-0072).
+  - **Before.** `crew-shell-matrix (windows-latest)` reported "44 failed" on main f96e9ec9, and the native full suite
+    reported 47. Its `-m slow` step had never run on Windows, because the default step failed first.
+  - **Triage.** Every failure was in test fixtures or the harness, with one exception in production code.
+  - **The production fix.** `crew_context.emit()` now writes byte-exact LF (`sys.stdout.reconfigure(newline="\n")`,
+    as `verify_fingerprint.py` and `verify_record.py` already do). Windows' text-mode stdout wrote CRLF, so the route
+    hook's byte-identical tests failed on both sh and ps1.
+  - **Fixture fixes.**
+    - `crew_fixtures.shell_path` gives Git's `bin\bash.exe` launcher a native PATH.
+    - The bash flavour takes the xdotool title fallback on Windows, where there is no native tmux and the pane check
+      fails closed.
+    - The resume-hook test uses the real bash, and the review crash simulation kills past the `codex.cmd` shell.
+    - Git Bash can now see the stubs it runs.
+    - The event-claim test times each run separately and bounds every one by the notify grace, so start-up time no
+      longer counts against it.
+  - **Skips and xfails.** Each carries its reason. The sh/ps1 trailing-space and backslash `onlyRepos` cases are strict
+    xfail on Windows, pending the owner's decision on that parity gap.
+  - **Still failing on Windows: T-0089.** With the default step green, the Windows `-m slow` step runs for the first
+    time. It shows 3 `test_role_write_guard.py` python-probe cases that fail the same way on main e6e10432, so T-0076
+    did not introduce them. Natively: 3 failed, 1622 passed, 9 skipped.
+  - **`scripts/_test/uv-install.sh`** no longer hangs natively. pwsh had handed its extensionless stubs to
+    ShellExecute, which opened a "Pick an app" dialog and waited on it. Each stub now has a `.cmd` twin, the MSYS DLLs
+    sit beside the tools copied into the fixture, and `ps_run` is bounded and non-interactive. Natively: 162 passed,
+    0 failed.
+
 - **`crew` 1.0.50: review READ lines match the parts as listed (T-0079).**
   Bumped `1.0.49 -> 1.0.50`. The review prompt listed every bundle part by
   its full path and asked for `READ|<its file name>`, while
