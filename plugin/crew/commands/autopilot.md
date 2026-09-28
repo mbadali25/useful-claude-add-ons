@@ -70,7 +70,8 @@ refresh command (`/crew:onboard --refresh`, `/crew:diagram refresh`,
 A review phase ends at its verdict: stop following `review.md` once the round is recorded,
 from `/crew:review` or inside `/crew:implement` step 6; never fix and rerun inside the phase.
 Report BLOCK and FIX lines verbatim; fixing, `review_ledger.py --accept` and `gh pr review`
-are the human's. Go back through `next`: it stops at FINDINGS or INCOMPLETE. A phase's own
+are the human's. Go back through `next`: it stops at FINDINGS or an unrefunded INCOMPLETE; a
+refunded tool-failure round goes back to review (refresh first when stale). A phase's own
 refusal - no approved plan, a red verify gate, a `/crew:done` check - stops here, reported
 verbatim; never retry around it or edit a gate. Implement's `status: review` edit keeps the
 approval (T-0026). Refresh runs after implement and before each later round, never after an

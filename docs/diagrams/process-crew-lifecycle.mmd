@@ -123,7 +123,8 @@
 %%   plugin/crew/commands/review.md:25-29 two rounds per ticket, a third is refused
 %%     -> NEEDS_REPLAN; :440 exit codes 0 CLEAN / 1 FINDINGS / 3 INCOMPLETE /
 %%     4 NEEDS_REPLAN / 2 not run; :449 Claude fallback; :481 the verdict is the
-%%     script's; :504 round 2 is the last; :508 --accept --by <who>; :511 a CLEAN
+%%     script's; :484-488 an INCOMPLETE's class and the tool-failure refund;
+%%     :508 round 2 is the last (rounds not refunded); :513 --accept --by <who>; :516 a CLEAN
 %%     round writes its receipt itself.
 %%   plugin/crew/commands/done.md:7 all four checks must pass; :10-13 check 1
 %%     review receipt (--check-receipt); :21-27 check 2 verify gate via
@@ -152,6 +153,10 @@
 %% Re-anchored 8de3c669 -> a4eb2f55 (T-0072 merged onto 5050ea3b, T-0077, crew 1.0.50): of the
 %% Anchors paths only crew_tracker.py changed (T-0077's Windows directory holds); it is cited
 %% by name only, and every command-file line cited here is unchanged. No node or edge changed.
+%% Re-drawn for T-0087 (crew 1.0.52): review.md gained the INCOMPLETE classes and the
+%% tool-failure refund at :484-488, so :504/:508/:511 moved to :508/:513/:516 (re-read with
+%% sed -n), and the one INCOMPLETE edge became two: a refunded tool failure goes back to
+%% review without spending the budget (review_ledger._charged); a reviewer or tree round counts.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
@@ -211,11 +216,12 @@ flowchart TB
     subgraph review["/crew:review - two rounds per ticket"]
         im5 --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle<br/>review.md:25-29, :449"]
         rv1 --> rv2{"verdict (the script's)<br/>:440, :481"}
-        rv2 -- CLEAN --> rcpt["receipt written<br/>:511"]
-        rv2 -- FINDINGS --> rv3{"fix, or<br/>user accepts?<br/>:504, :508"}
+        rv2 -- CLEAN --> rcpt["receipt written<br/>:516"]
+        rv2 -- FINDINGS --> rv3{"fix, or<br/>user accepts?<br/>:508, :513"}
         rv3 -- accept --> rcpt
         rv3 -- "fix, round 2" --> rv1
-        rv2 -- "INCOMPLETE" --> rv1
+        rv2 -- "INCOMPLETE (tool failure: refunded, :484-488)" --> rv1
+        rv2 -- "INCOMPLETE (reviewer / tree): counts" --> rv1
         rv2 -- "third round refused" --> replan([NEEDS_REPLAN:<br/>back to /crew:plan])
     end
 
