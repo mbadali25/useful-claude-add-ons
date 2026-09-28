@@ -186,10 +186,23 @@ All notable changes to this repository are documented here. Format follows [Keep
       platform-sync writes (`crew_platform.DERIVED_KEYS`), and no longer
       promises a value is written back; any other `platform.*` key is a
       `-> (removed)` row.
-  - 98 sabotage mutations in `tests/sabotage_config.py`: the 22 from the first
+  - Review round 5's fixes (owner: "Fix them now"):
+    - Nothing goes under a leaf and no object sits at one: `pm.authority={"a": 1}`,
+      `pm.authority.a=1` and `notify.chatId={}` are refused at both layers with
+      exit 2, and such a value already in either file is named `pre-existing`
+      (fixable in the same write); the menu shows the rows it blocks read-only.
+    - `qa.roles` / `dev.roles` and each entry under them must be an object or
+      `null`: `qa.roles=1`, `qa.roles.review="codex"` and `dev.roles=[]` are
+      refused at both layers, in the file included, instead of being written
+      and dropped on read (`qa.roles=1` wiped every pin).
+    - An OS error from either lock, the machine directory or the write is a
+      refusal with exit 2 at both layers, naming the path, never a traceback;
+      a lock file whose PID write fails is removed before the error is raised.
+  - 112 sabotage mutations in `tests/sabotage_config.py`: the 22 from the first
     build and review round 1 and the 28 for review round 2's findings (all
     re-anchored where the code moved), 31 for review round 3's findings and
-    their neighbouring cases, and 17 for review round 4's.
+    their neighbouring cases, 17 for review round 4's, and 14 for review
+    round 5's.
 
 - **`shipstation` 1.1.1: reach for V2 when changing orders in bulk.** Bumped `1.0.0 -> 1.1.1`.
   `SKILL.md` gains a *Bulk order changes* section: every V1 order is a V2 shipment

@@ -1718,7 +1718,13 @@ the layer's refusal. `qa.order` must be a list of QA providers or `null`: any
 other shape (`1`, `true`, `"codex"`, an object) is refused at both layers with
 exit 2, never a traceback, including when it is already in the file an
 unrelated write merges onto (the menu then shows the rows it blocks read-only,
-naming `qa.order`).
+naming `qa.order`). A path past a template leaf (`pm.authority.a`) and an
+object at a leaf (`pm.authority={"a": 1}`, `notify.chatId={}`) are refused at
+both layers, on the update and when already in the file (`pre-existing`,
+fixable in the same write). `qa.roles` and `dev.roles`, and each entry under
+them, must be an object or `null`: a string, number, boolean or array there is
+refused with exit 2 at both layers, the file included, since the reader drops
+it and `qa.roles=1` would silently wipe every pin.
 
 **Compare-and-swap, both files.** `write_global_config` and
 `write_repo_config` re-run their plan on the bytes read inside
@@ -1737,7 +1743,9 @@ machine file once under the machine lock (always taken, creating its
 directory when absent, never the file; taken before the repo lock, the one
 nesting order) and refuses one that changed since. The machine writer now refuses an unparsable or non-object global file
 instead of replacing it from the read path's `{}` collapse. A foreign writer
-(an editor's save) is not serialised by the lock.
+(an editor's save) is not serialised by the lock. An OS error from either
+lock, the machine directory or the write itself is refused with exit 2,
+nothing written and the path named, never a traceback.
 
 ### One resolver, two flavours
 

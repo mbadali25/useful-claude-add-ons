@@ -1035,7 +1035,9 @@ first; the owner never has to type one.
   an enum key at the machine layer refuses it. Then the merged file is
   checked, every known leaf: a bad enum value, a consent key in the machine
   file, or an armed veto-only key in the repo file already there refuses an
-  unrelated write, naming the key to fix first.
+  unrelated write, naming the key to fix first. Nothing goes under a leaf
+  and no object sits at one; `qa.roles` / `dev.roles` and their entries are
+  objects or `null`, so `qa.roles=1` is refused rather than wiping every pin.
 - **Both writers are compare-and-swap.** Read, merge and replace happen inside
   an `O_CREAT|O_EXCL` lock file beside the config (`config.json.lock`, 3 s
   wait, then a refusal naming the lock and its PID), so two sessions never
@@ -1043,7 +1045,8 @@ first; the owner never has to type one.
   file) and `--apply --expect <digest|absent>` refuses a file that changed,
   or appeared, since; `--set --repo` also prints `machine digest:` and takes
   `--expect-global`. A malformed machine file is refused rather than
-  overwritten from `{}`.
+  overwritten from `{}`. An OS error (a lock, the machine directory, the
+  write) is a refusal with exit 2, never a traceback.
 - **`crew_config_files.py` is the one file layer** under both writers, delete
   and restore: the lock, the strict read, the `restorable` predicate and the
   regular-file read delete and restore share, the digest, the atomic
