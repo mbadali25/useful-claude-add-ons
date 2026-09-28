@@ -133,7 +133,9 @@ result back. A config change nobody verified is a claim, not a change.
    (kept by every write, removed with the file), a `stays` line for a
    ratcheted key the repo narrowed under a wider machine value (deleting does
    not widen it: an absent repo value is the floor), a `re-detected by
-   platform-sync` group for `platform.*`, and what deleting means on disk:
+   platform-sync` group for the `platform.*` keys platform-sync writes (it
+   promises no value: a key this machine gives no value for is left unset;
+   any other `platform.*` key is `-> (removed)`), and what deleting means on disk:
    hooks stand down until the next SessionStart, then platform-sync recreates
    the built-in defaults. It ends with a `repo digest:` and a `machine
    digest:` line: the two files the preview was built from. It exits 2
@@ -150,16 +152,24 @@ result back. A config change nobody verified is a claim, not a change.
 3. `S delete-repo --confirm <name> --apply --expect-repo <digest>
    --expect-machine <digest>`, with the two digests the preview printed:
    the apply refuses (exit 2) without them or when either file changed since,
-   so the typed name confirms the preview that was shown. Under the config
-   lock it moves the file to `.crew/config.json.bak-<UTC timestamp>` in one
+   so the typed name confirms the preview that was shown. Under the machine
+   lock and then the config lock it reads the machine file again (changed
+   since the preview: exit 2, preview again), then moves the file to
+   `.crew/config.json.bak-<UTC timestamp>` in one
    rename that never replaces an existing file (the backup is the file
    itself, never a copy), compares the moved bytes with what the preview
    read, and if the file changed since, moves it straight back, never over a
    file saved in between, and deletes nothing (exit 2: preview again).
+   Exit 1 means another writer interleaved with the move: nothing is lost.
+   Read out every path it names (the backup, `.crew/config.json`, and a
+   `*.moving` name holding the other writer's file) and stop; never delete
+   one for the owner.
 4. It prints three restore lines, `restore (sh):`, `restore (cmd):` and
    `restore (PowerShell):`. Read back the one that matches the owner's shell
    verbatim, and say the other two exist. Each puts the backup back byte for
    byte (moving whatever is there aside first, such as healed defaults).
+   Restore exits 1 the same way when another writer interleaves with that
+   move-aside: read out the paths it names.
 
 ## Headless
 

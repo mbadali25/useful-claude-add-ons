@@ -1714,7 +1714,11 @@ are not refusals of content, so a `REPO_REFUSED` key in the repo file
 (`/crew:init` and platform-sync write them) and a repo-only key in the
 machine file (pruned by `filter_global` on every read) do not block a write.
 Then `validate_providers` runs on the merged file at both layers, wrapped as
-the layer's refusal.
+the layer's refusal. `qa.order` must be a list of QA providers or `null`: any
+other shape (`1`, `true`, `"codex"`, an object) is refused at both layers with
+exit 2, never a traceback, including when it is already in the file an
+unrelated write merges onto (the menu then shows the rows it blocks read-only,
+naming `qa.order`).
 
 **Compare-and-swap, both files.** `write_global_config` and
 `write_repo_config` re-run their plan on the bytes read inside
@@ -1729,7 +1733,8 @@ the refusals, so every existing `except` still catches them). Without
 `--expect` the merge is onto the file under the lock. A repo write's widening
 marks read the machine file, so `--set --repo` also prints `machine digest:`
 and `--expect-global <digest|absent>` binds it: `write_repo_config` reads the
-machine file once under the machine lock (taken before the repo lock, the one
+machine file once under the machine lock (always taken, creating its
+directory when absent, never the file; taken before the repo lock, the one
 nesting order) and refuses one that changed since. The machine writer now refuses an unparsable or non-object global file
 instead of replacing it from the read path's `{}` collapse. A foreign writer
 (an editor's save) is not serialised by the lock.

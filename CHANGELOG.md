@@ -168,10 +168,28 @@ All notable changes to this repository are documented here. Format follows [Keep
     value (`guards='{"forcePush": "ask"}'`) now merges leaf by leaf instead of
     replacing the block, and a `qa.roles` / `dev.roles` value now sets only the
     roles it names (set a role to `{}` to clear its pin).
-  - 81 sabotage mutations in `tests/sabotage_config.py`: the 22 from the first
+  - Review round 4's fixes (owner: "Reject, narrow fix"):
+    - A move never unlinks a name that may be a foreign file's last: a file
+      that replaced the source during the no-clobber move is put back and a
+      second name for it (`*.moving`) is kept, and the link to the backup is
+      never undone once the source was renamed. Delete and restore then exit
+      1 naming every path; nothing is lost.
+    - Delete takes the machine lock and then the repo lock (crew's one
+      order), and reads the machine digest again inside them: a machine write
+      since the preview refuses with exit 2. The machine lock is always taken,
+      creating its directory when absent (never the file), by delete and by
+      the repo writer.
+    - `qa.order` must be a list or `null`: any other shape is refused with
+      exit 2 at both layers, a value already in the file included, instead of
+      a `TypeError` traceback; the menu shows the rows it blocks read-only.
+    - The delete preview marks as re-detected only the `platform.*` keys
+      platform-sync writes (`crew_platform.DERIVED_KEYS`), and no longer
+      promises a value is written back; any other `platform.*` key is a
+      `-> (removed)` row.
+  - 98 sabotage mutations in `tests/sabotage_config.py`: the 22 from the first
     build and review round 1 and the 28 for review round 2's findings (all
-    re-anchored where the code moved), and 31 for review round 3's findings
-    and their neighbouring cases.
+    re-anchored where the code moved), 31 for review round 3's findings and
+    their neighbouring cases, and 17 for review round 4's.
 
 - **`shipstation` 1.1.1: reach for V2 when changing orders in bulk.** Bumped `1.0.0 -> 1.1.1`.
   `SKILL.md` gains a *Bulk order changes* section: every V1 order is a V2 shipment

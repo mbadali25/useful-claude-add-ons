@@ -1058,22 +1058,31 @@ first; the owner never has to type one.
   file's bytes and walks its own leaves: a `!` on anything that widens
   (`scope.mode` returning to `off` included), `-> (removed)` for a key crew
   does not know, a `stays` line for a ratcheted key the repo narrowed under a
-  wider machine value (deleting does not widen it), and `platform.*` in a
-  "re-detected by platform-sync" group, then the `repo digest:` and
+  wider machine value (deleting does not widen it), and the `platform.*`
+  keys platform-sync writes (`crew_platform.DERIVED_KEYS`) in a "re-detected
+  by platform-sync" group, which promises no value: a key it finds none for on
+  this machine is left unset. Any other `platform.*` key is `-> (removed)`.
+  Then the `repo digest:` and
   `machine digest:` it was built from. A file a restore could not take back
   (unparsable, empty, `{}`, not an object, or not a regular file, such as a
   symlink) is refused: that is platform-sync's to heal, or the owner's to
   remove by hand. The delete requires the typed repo name (the checkout's
   `git rev-parse --show-toplevel` basename) and both preview digests
   (`--expect-repo`, `--expect-machine`), so it is the delete the preview
-  showed; then, under the config lock,
+  showed; then, under the machine lock and then the repo config lock (crew's
+  one nesting order), it reads the machine digest again (a machine write since
+  the preview refuses, exit 2, nothing deleted),
   moves the file to `.crew/config.json.bak-<UTC timestamp>` in one rename —
   the backup is the original, never a copy — and compares the moved bytes
   with the held ones: a file that changed since the preview is moved straight
-  back, never over a file saved in between, and nothing is deleted. It prints the restore command three ways,
+  back, never over a file saved in between, and nothing is deleted. A file
+  another writer puts at `.crew/config.json` during the rename is never
+  unlinked: it keeps a second name, `*.moving`, and the command exits 1
+  naming the backup, the config and that name — nothing is lost. It prints the restore command three ways,
   `restore (sh):`, `restore (cmd):` and `restore (PowerShell):`
   (`crew_config_menu.py restore-repo --from <backup> --apply`); each form is
-  executed by a test, and restore accepts exactly what delete does. Until the next
+  executed by a test, and restore accepts exactly what delete does, exiting 1
+  the same way when another writer interleaves with its move-aside. Until the next
   SessionStart there is no config, so `isCrew` is false and every hook that
   gates on it stands down; then platform-sync's heal recreates the built-in
   defaults. `.crew/crew.json`, `verify.json`, backups and ticket state are
