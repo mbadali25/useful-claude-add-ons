@@ -122,5 +122,9 @@
   },
   "route": {
     "enabled": false
+  },
+  "shellRoute": {
+    "mode": "auto",
+    "distro": null
   }
 }

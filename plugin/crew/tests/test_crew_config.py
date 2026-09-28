@@ -110,6 +110,16 @@ def test_every_global_key_is_a_real_repo_config_key():
             node = node[part]
 
 
+def test_shell_route_is_on_both_layers():
+    """T-0040. Which shell is fast is a fact about the machine, and a repo may
+    still override it, so `shellRoute` sits in both layers. It is a new block
+    rather than a `platform.*` key because platform-sync rewrites `platform.*`
+    every SessionStart, and it is not the old draft name `wslRouting`."""
+    for layer in (crew_config.default_config(), crew_config.default_global_config()):
+        assert layer["shellRoute"] == {"mode": "auto", "distro": None}
+        assert "wslRouting" not in layer
+
+
 def test_default_global_config_returns_a_fresh_object_each_call():
     first = crew_config.default_global_config()
     first["pm"]["authority"] = "act"
@@ -277,9 +287,11 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # (T-0023): `route.enabled`. Re-measured after merging main.
     # 123 with T-0072: the repo-only `autopilot.deploy`, re-measured after
     # merging main's T-0023.
+    # 125 with T-0040: `shellRoute.mode` and `shellRoute.distro`.
     assert "route.enabled" in declared
     assert "autopilot.deploy" in declared
-    assert len(declared) == 123
+    assert "shellRoute.mode" in declared and "shellRoute.distro" in declared
+    assert len(declared) == 125
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():
