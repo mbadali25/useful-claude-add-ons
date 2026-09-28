@@ -60,6 +60,17 @@ def init_repo(root):
 #   turnfail  a JSON stream whose turn failed, exit 0
 #   prose     a completed turn whose only agent message is prose: no READ
 #             lines, no verdict -- a reviewer that broke the contract (T-0087)
+#   golden    replay a REAL `codex exec --json` stream from the golden corpus
+#             (FAKE_REVIEWER_GOLDEN_STREAM) byte for byte, except its last
+#             agent message, which becomes READ lines for the parts this
+#             prompt lists -- full paths, or bare names with
+#             FAKE_REVIEWER_READ_FORM=bare -- followed by the non-READ lines of
+#             FAKE_REVIEWER_GOLDEN_OUT. The canary's mode (T-0087): it answers
+#             the way reviewers do, not the way the parser wants.
+#
+# Whatever the mode, a prompt that says its instructions are in a file (the
+# form review_run.prompt_argument passes when the prompt is over
+# INLINE_PROMPT_LIMIT) is read from that file, as a real reviewer does.
 #   escape    fork a detached `setsid` grandchild that inherits this
 #             process's stdout/stderr and outlives it, then exit immediately
 #             -- the leader-already-gone shape review_run.py's `launch` BLOCK
@@ -85,7 +96,36 @@ _FAKE = r'''
 import json, os, re, signal, subprocess, sys, time
 prompt = sys.argv[-1]
 sys.stdin.read()
+m = re.search(r"instructions are in the file (.+?)\. Read that file", prompt)
+if m:
+    with open(m.group(1), encoding="utf-8") as fh:
+        prompt = fh.read()
 mode = os.environ.get("FAKE_REVIEWER_MODE", "clean")
+if mode == "golden":
+    listed = re.findall(r"^  (\S.*part-\d{3}-of-\d{3}\.patch)$", prompt, re.M)
+    if os.environ.get("FAKE_REVIEWER_READ_FORM", "full") == "bare":
+        listed = [p.replace("\\", "/").rsplit("/", 1)[-1] for p in listed]
+    with open(os.environ["FAKE_REVIEWER_GOLDEN_OUT"], encoding="utf-8", newline="") as fh:
+        body = [l for l in fh.read().split("\n") if l.strip() and not l.startswith("READ|")]
+    with open(os.environ["FAKE_REVIEWER_GOLDEN_STREAM"], encoding="utf-8", newline="") as fh:
+        lines = fh.read().split("\n")
+    last = None
+    for i, line in enumerate(lines):
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        item = event.get("item")
+        if event.get("type") == "item.completed" and isinstance(item, dict) \
+                and item.get("type") == "agent_message":
+            last = i
+    lines[last] = json.dumps({"type": "item.completed", "item": {
+        "id": "item_canary", "type": "agent_message",
+        "text": "\n".join(["READ|" + p for p in listed] + body)}}, ensure_ascii=False)
+    sys.stdout.buffer.write("\n".join(lines).encode("utf-8"))
+    sys.exit(0)
 if mode == "hang":
     time.sleep(120)
 if mode == "crash":
