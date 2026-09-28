@@ -3,9 +3,9 @@ paths:
   - "plugin/crew/**"
   - "scripts/**"
 ---
-<!-- crew:generated source=.crew/codemap/install-scripts.md sha256=1a7ce04407eb4852 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/install-scripts.md sha256=84704b7b34d3f87c -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # install-scripts
-Code map anchor `50a275ea`; if it is behind HEAD, re-check with `git diff --name-only 50a275ea..HEAD -- <cited paths>`.
+Code map anchor `360c4029`; if it is behind HEAD, re-check with `git diff --name-only 360c4029..HEAD -- <cited paths>`.
 Covers: The install-prerequisites.{sh,ps1} matched pair: catalog parity, the pick_fit/Format-PickerLine no-bypass rule, idempotency branches, and hook-plugins-default-off on both sides.
 ## Landmines
 - `README.md`'s install-URL pin is STALE again at this anchor, by one line per script.

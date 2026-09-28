@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@50a275ea
+anchor: useful-claude-add-ons@360c4029
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.50 (T-0010), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.51 (T-0010), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -2254,3 +2254,15 @@ sentence re-derived from source (`_parent_check` is gone; `_hold_dirs`, `_releas
 hold and re-check the directories), and its mutation count read from the tuple (87). The version
 sentence moves to 1.0.50; T-0004's CHANGELOG "117 -> 119" is now `:672`. Nothing was executed for
 this note beyond the citation script and the tuple count.
+
+## Re-anchor provenance - `50a275ea` + `81685adf` -> `360c4029`, 2026-09-28 (T-0010-solo merges T-0079's `e6e10432`)
+
+`c312702b` merges origin/main `e6e10432` (T-0079 landed as crew 1.0.50, its code maps anchored
+`81685adf`) into T-0010-solo `ac0b5151`; `360c4029` sets crew 1.0.51. The artifact conflicts were
+anchor, version and provenance lines only: T-0010's side kept for anchors and body (its
+`crew_autopilot.py` and `commands/autopilot.md` line numbers are this tree's), both sides'
+provenance kept. `git diff --name-only 50a275ea 360c4029`, refresh artifacts aside, is T-0079's files
+(`review_verdict.py`, `review_prompt.py`, `review_run.py`, `agents/reviewer.md`, their tests and
+sabotage modules, identical to origin/main's), `plugin/crew/README.md` (two lines rewritten in
+place, `:735` and `:739`, line-neutral), `CHANGELOG.md` and the version files. Every citation into
+T-0079's files equals main's note at `81685adf` (compared by script). No test was run by this note.

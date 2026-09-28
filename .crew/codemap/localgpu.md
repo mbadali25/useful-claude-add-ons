@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@50a275ea
+anchor: useful-claude-add-ons@360c4029
 verified: 2026-09-27
 
 # localgpu
@@ -1237,3 +1237,15 @@ on both sides), `CHANGELOG.md` and the three version files. Every body citation 
 `path:line` into those files was compared by script between `a6e81869` and `81685adf`.
 Nothing under `plugin/localgpu/` changed. This note cites `plugin/crew/README.md` by name only;
 no citation moved. Nothing was executed for this note.
+
+## Re-anchor provenance - `50a275ea` + `81685adf` -> `360c4029`, 2026-09-28 (T-0010-solo merges T-0079's `e6e10432`)
+
+`c312702b` merges origin/main `e6e10432` (T-0079 landed as crew 1.0.50, its code maps anchored
+`81685adf`) into T-0010-solo `ac0b5151`; `360c4029` sets crew 1.0.51. The artifact conflicts were
+anchor, version and provenance lines only: T-0010's side kept for anchors and body (its
+`crew_autopilot.py` and `commands/autopilot.md` line numbers are this tree's), both sides'
+provenance kept. `git diff --name-only 50a275ea 360c4029`, refresh artifacts aside, is T-0079's files
+(`review_verdict.py`, `review_prompt.py`, `review_run.py`, `agents/reviewer.md`, their tests and
+sabotage modules, identical to origin/main's), `plugin/crew/README.md` (two lines rewritten in
+place, `:735` and `:739`, line-neutral), `CHANGELOG.md` and the version files. Every citation into
+T-0079's files equals main's note at `81685adf` (compared by script). No test was run by this note.
