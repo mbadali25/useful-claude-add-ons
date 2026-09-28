@@ -155,7 +155,7 @@
       "name": "shipstation",
       "source": "./skills/shipstation",
       "description": "ShipStation across V2, legacy V1, and ShipEngine - shipments, labels, rates, carriers, warehouses, inventory, products, orders, tracking, batches, manifests.",
-      "version": "1.1.0"
+      "version": "1.1.1"
     },
     {
       "name": "solomon-doc-builder",
