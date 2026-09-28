@@ -170,8 +170,10 @@ overrides `memory.mode` in its own config.
 ## 3. Show the plan, then write
 
 From the menu, Save runs `crew_config_menu.py save --changes '<json>'` (a dry
-run over both layers) and then the same with `--apply` — see
-`config-menu.md` step 4. It calls the same writer as the command below.
+run over both layers, printing each layer's digest) and then the same with
+`--apply --expect-machine <digest>` — see `config-menu.md` step 4. It calls
+the same writer as the command below, which prints a `digest:` line too and
+takes `--expect <digest>` with `--apply`.
 
 Dry run first — this is the default, and it is what the user says yes to:
 
@@ -181,7 +183,8 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py \
   --set qa.roles='{"review": {"provider": "codex", "model": "gpt-5.6-luna"}}'
 ```
 
-Each `--set` takes `path=JSON`, so a string needs its quotes (`'"act"'`), and
+Each `--set` takes `path=JSON`, so a string needs its quotes (`'"act"'`; a
+bare `act` is refused, exit 2), and
 `true`, `false`, `null`, lists and objects are written as JSON. `qa.roles` and
 `dev.roles` are set as whole objects — the table is open, so any role name is
 accepted, including one this release does not ship. The output names every key

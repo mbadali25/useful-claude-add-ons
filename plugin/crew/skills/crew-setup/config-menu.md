@@ -30,7 +30,17 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config_menu.py --root .
   been shown and the owner said yes to it.
 - **Never hand-edit either config file.** Every write goes through
   `S save`, which calls `crew_config.py`'s validated writers. A refusal
-  (exit 2) is the guard working: read it out, never route around it.
+  (exit 2) is the guard working: read it out, never route around it. Both
+  writers judge every leaf (a whole-block value included) and the whole file
+  they would produce, and both are compare-and-swap under a lock beside the
+  file (`config.json.lock`): a file another session changed since the dry run
+  is refused, never merged over.
+- **A row Save would refuse is read-only, with the writer's reason.** The
+  menu probes every value through the layer's own planner on the file Save
+  would produce, the pending set included. A row whose every value is
+  refused (a bad value already in the file, such as an unknown `qa.provider`)
+  shows `refusedReason`: read it out, fix the key it names first, then come
+  back to the row.
 - **Read-only rows stay read-only.** At the repo layer `platform.*`,
   `schema`, `scope.mode`, `scope.allowCliApproval` and
   `context.autoClear.onlyRepos` / `.onlySessions` are shown with the reason
@@ -78,7 +88,10 @@ grants, from `global-config.md` or the `!` line Save will print.
 A read-only row shows its `refusedReason` and offers nothing.
 
 Add the pick to the pending set, then ask: another setting in this area,
-another area, the other layer, show pending, Save, or Discard.
+another area, the other layer, show pending, Save, or Discard. Every `spec`
+after the first pick passes the pending set, so rows are judged on the file
+Save would produce: `S spec --layer <layer> --json --pending '<json>'`. A row
+that becomes writable or read-only because of a pick is expected.
 
 ## 4. Save
 
@@ -89,12 +102,17 @@ run first:
 S save --changes '<json>'
 ```
 
-It validates both layers before writing either and prints both diffs. Read
-back every `!` line (a widening) and every `held down by the machine-global
-layer` line (a repo value the machine layer overrules). Then, and only after
-the dry run has been shown and the owner said yes, the same command with
-`--apply`. Each changed layer is written once. If it reports one layer
-written and the other not, say exactly that; the written layer stays written.
+It validates both layers before writing either and prints both diffs, each
+under a `machine digest:` / `repo digest:` line. Read back every `!` line (a
+widening) and every `held down by the machine-global layer` line (a repo
+value the machine layer overrules), and record the two digests. Then, and
+only after the dry run has been shown and the owner said yes, the same
+command with `--apply --expect-machine <digest> --expect-repo <digest>` (the
+flag for each layer that has changes). A refusal naming a layer that
+"changed since the dry run" means another session or an editor wrote the
+file in between: nothing was written; run the dry run again and show it.
+Each changed layer is written once. If it reports one layer written and the
+other not, say exactly that; the written layer stays written.
 
 **Discard** writes nothing and ends the menu.
 
@@ -106,27 +124,37 @@ result back. A config change nobody verified is a claim, not a change.
 
 ## 6. Delete this repo's config
 
-1. Preview: `S delete-repo`. It prints what changes (a `!` marks a
-   widening: `scope.mode` returning to `off` disarms the scope guard), a
-   `stays` line for a ratcheted key the repo narrowed under a wider machine
-   value (deleting does not widen it: an absent repo value is the floor), and
-   what deleting means on disk: hooks stand down until the next SessionStart,
-   then platform-sync recreates the built-in defaults and re-detects
-   `platform.*`, which is why `platform.*` is not listed. It exits 2 without
-   a confirmation; that is expected.
+1. Preview: `S delete-repo`. It walks the file's own leaves and prints
+   what changes (a `!` marks a widening: `scope.mode` returning to `off`
+   disarms the scope guard), `-> (removed)` for a key crew does not know
+   (kept by every write, removed with the file), a `stays` line for a
+   ratcheted key the repo narrowed under a wider machine value (deleting does
+   not widen it: an absent repo value is the floor), a `re-detected by
+   platform-sync` group for `platform.*`, and what deleting means on disk:
+   hooks stand down until the next SessionStart, then platform-sync recreates
+   the built-in defaults. It exits 2 without a confirmation; that is
+   expected. A file that does not parse, is empty, is `{}` or is not an
+   object is refused outright (a restore could not take it back): say that
+   platform-sync backs it up to `config.json.broken` and heals it at the next
+   SessionStart, or the owner removes it by hand, and stop.
 2. Ask the owner to type the repo name the preview asks for: the checkout's
    name (`git rev-parse --show-toplevel`'s basename, else the directory's).
    Never fill it in for them, and never infer it from a yes.
-3. `S delete-repo --confirm <name> --apply`. It writes a verified backup
-   (`.crew/config.json.bak-<UTC timestamp>`) before it deletes, and refuses if
-   the backup fails.
-4. Read the printed `restore:` command back to the owner verbatim. It copies
-   the backup back (backing up whatever is there first, such as healed
-   defaults).
+3. `S delete-repo --confirm <name> --apply`. Under the config lock it
+   moves the file to `.crew/config.json.bak-<UTC timestamp>` in one rename
+   (the backup is the file itself, never a copy), compares the moved bytes
+   with what the preview read, and if the file changed since, moves it
+   straight back and deletes nothing (exit 2: preview again).
+4. It prints three restore lines, `restore (sh):`, `restore (cmd):` and
+   `restore (PowerShell):`. Read back the one that matches the owner's shell
+   verbatim, and say the other two exist. Each puts the backup back byte for
+   byte (moving whatever is there aside first, such as healed defaults).
 
 ## Headless
 
 With no AskUserQuestion (a headless or scripted session), print the plan
 instead of asking: `crew_config_menu.py --root . spec --layer <layer>`, and
-require the explicit flags, `save --changes '<json>' --apply` or
-`delete-repo --confirm <name> --apply`. Nothing is applied from a default.
+require the explicit flags, `save --changes '<json>' --apply
+--expect-machine <digest> --expect-repo <digest>` (the digests from the dry
+run) or `delete-repo --confirm <name> --apply`. Nothing is applied from a
+default.

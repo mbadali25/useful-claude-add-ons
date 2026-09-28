@@ -44,13 +44,19 @@ How it writes, whatever the arguments say:
   first, and `--apply` follows a yes.
 - **The repo file only through the validated path**, never a hand edit:
   `crew_config.py --set PATH=JSON --repo [--apply]`, or the menu's
-  `crew_config_menu.py save`. It merges, refuses unknown keys and out-of-range
-  values, and marks a widening with `!`. It refuses `platform.*` (platform-sync
+  `crew_config_menu.py save`. It merges, judges every leaf (a whole-block
+  value included) and the whole file it would produce, refuses unknown keys
+  and out-of-range values, and marks a widening with `!`. Both writers are
+  compare-and-swap under a lock beside the file: the dry run prints a
+  `digest:`, and `--apply --expect <digest>` refuses a file that changed
+  since. It refuses `platform.*` (platform-sync
   owns it), `schema`, `scope.mode` and `scope.allowCliApproval` (the scope
   guard's trust root, a hand edit by the owner or `/crew:init`), and
   `context.autoClear.onlyRepos` / `.onlySessions` (read from the machine file
   only); `context.autoClear.enabled` and `resume.auto` take only a veto
   (`false`) or `null` at the repo layer.
 - **Deleting the repo config** is the menu's delete step only: preview, typed
-  repo name, a verified `.crew/config.json.bak-<UTC>` backup first, and the
-  printed restore command.
+  repo name, then one rename of the file to `.crew/config.json.bak-<UTC>`
+  under the lock, compared with what the preview read (a changed file is put
+  back and nothing is deleted), and three printed restore lines (sh, cmd,
+  PowerShell).
