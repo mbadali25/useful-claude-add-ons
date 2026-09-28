@@ -630,6 +630,25 @@ def test_status_crash_that_cannot_be_described_still_prints_unknown(tmp_path, mo
     assert (code, capsys.readouterr().out.startswith("status: unknown")) == (0, True)
 
 
+def test_next_ticket_error_that_cannot_be_described_still_stops(tmp_path, monkeypatch,
+                                                                capsys):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+
+    class _UnprintableTicketError(crew_autopilot.crew_ticket.TicketError):
+        def __str__(self):
+            raise ValueError("no str")
+
+    def boom(*_args, **_kwargs):
+        raise _UnprintableTicketError()
+
+    monkeypatch.setattr(crew_autopilot, "next_phase", boom)
+
+    code = crew_autopilot.main(["next", "--root", str(root), "--ticket", T])
+
+    assert (code, "stop=1" in capsys.readouterr().out) == (0, True)
+
+
 def test_cli_next_prints_one_line_and_exits_zero(tmp_path):
     root = make_repo(tmp_path, mode="off")
     _ticket(root)

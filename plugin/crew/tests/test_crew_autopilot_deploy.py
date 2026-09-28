@@ -883,6 +883,27 @@ def test_cli_crash_that_cannot_be_described_prints_ask(tmp_path, monkeypatch, ca
         0, 1, True, 1, True)
 
 
+def test_cli_crash_whose_reason_cannot_be_built_prints_ask(tmp_path, monkeypatch, capsys):
+    """Round 4's neighbour: describing the crash itself raises; stage 2 still
+    prints the literal ask, with its constant reason."""
+    root = _armed(tmp_path, monkeypatch)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("decision exploded")
+
+    def no_reason(_exc):
+        raise ValueError("cannot describe")
+
+    monkeypatch.setattr(crew_autopilot, "deploy_allowed", boom)
+    monkeypatch.setattr(crew_autopilot, "_crash_reason", no_reason)
+
+    code = _cli_prod(root)
+    out = capsys.readouterr().out
+
+    assert (code, len(out.splitlines()), out.startswith("verdict=ask "),
+            "could not describe" in out) == (0, 1, True, True)
+
+
 def test_cli_result_missing_a_key_prints_ask(tmp_path, monkeypatch, capsys):
     root = _armed(tmp_path, monkeypatch)
     monkeypatch.setattr(crew_autopilot, "deploy_allowed", lambda *_a, **_k: {})
