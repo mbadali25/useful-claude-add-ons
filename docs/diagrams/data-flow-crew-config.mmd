@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@81685adf on 2026-09-27. Verify before trusting.
+%% Generated from useful-claude-add-ons@0f488706 on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
@@ -145,10 +145,6 @@
 %% so each side's citations stand; crew_context.py changed on both, and this diagram cites only
 %% load_crew_config :121-132, above both hunks (re-read). CONFIG.md changed on both sides and is
 %% cited by section only. Counts re-executed on the merge: 122 / 68 / 54 / 0.
-%% Re-anchored e463ca53 -> 81685adf (T-0079 merges T-0077's f96e9ec9, crew 1.0.50): of the
-%% Anchors paths only crew_tracker.py changed (`git diff --name-only`), by T-0077's
-%% ba2ee465 alone - the Windows directory hold, below resolve() and inside the vault-write
-%% path. No node cites a line or behaviour in that hunk, so nothing below was redrawn.
 %% How one config value reaches a run, and what may set it where.
 %% --
 %% RE-ANCHORED after crew 1.0 (previously 60c79407). Every function/line cited
@@ -217,7 +213,8 @@
 %%     require python to take effect; a restricted role's write is ALWAYS
 %%     blocked with no python on PATH.
 %% --
-%% METHODOLOGY: leaf counts below (122 / 68 / 54 on T-0023's merge of main - T-0023's `route.enabled`,
+%% METHODOLOGY: leaf counts below (123 / 68 / 55 on T-0072's merge of main - T-0072's `autopilot.deploy`,
+%% repo-only; 122 / 68 / 54 on T-0023's merge of main - T-0023's `route.enabled`,
 %% both layers; 121 / 67 / 54 on the T-0005 landing merge; 119 / 66 / 53 at
 %% 07ca3972 - T-0004's `autopilot`, repo-only; 118 / 66 / 52 at T-0005's fc54def6 -
 %% environments.prodUnattended in both, environments.nonProd repo-only; 117 / 66 / 51 at
@@ -241,12 +238,42 @@
 %% the WRITE side refuses paths against it (plan_global_write). One
 %% definition, two directions - and, new at this anchor, a THIRD thing now
 %% reads a DIFFERENT repo file entirely for a different purpose (section 5).
-
+%% Re-anchored 53f5482c -> d3a1c77e (T-0072, autopilot.deploy, crew 1.0.44, after merging main
+%% f0b12ee6): of the Anchors paths crew_state.py (line-neutral at :1084-1090, AUTOPILOT_DEFAULTS
+%% still :1090, now with deploy "none") and CONFIG.md (lines added; cited by section only)
+%% changed. No crew_config.py line moved. Leaf counts re-executed at d3a1c77e: 122 / 67 / 55,
+%% fourth figure 0 - autopilot.deploy is repo-only. The DEF, S2 and S3 node texts carry the new
+%% counts; no node or edge was added or removed.
+%% Re-anchored d3a1c77e -> e30af7f9 (T-0072 review round 1): of the Anchors paths only
+%% CONFIG.md changed (+3 lines in section 20's closing deploy_allowed text, at :2317; cited
+%% by section only). No crew_config.py or crew_state.py line moved; the leaf counts are
+%% unchanged (122 / 67 / 55). Nothing below was redrawn.
+%% Re-anchored e463ca53 -> 715a8c2f (T-0072 merged onto bebbb97f, crew 1.0.47): of the Anchors
+%% paths only crew_state.py (line-neutral at :1086-1090) and CONFIG.md (lines added; cited by
+%% section only) differ from main. crew_config.py is main's, so no crew_config.py line moved.
+%% Leaf counts re-executed on the merge: 123 / 68 / 55, fourth figure 0 - autopilot.deploy is
+%% repo-only, route.enabled is in both. The DEF, S2 and S3 node texts carry the new counts; no
+%% node or edge was added or removed.
+%% Re-anchored 715a8c2f -> 53855ea5 (T-0072 review round 3): of the Anchors paths only CONFIG.md
+%% changed (one section 20 table row in place, +3 lines at its closing CLI paragraph); it is cited
+%% here by section only, and sections 15, 16, 18 and 20 keep their numbers. No count, node or edge
+%% changed.
+%% Re-anchored 53855ea5 -> 80326b1d (T-0072 merged onto d2fbd408, review round 4's redesign, crew
+%% 1.0.49): of the Anchors paths only CONFIG.md changed (section 20's table rows 1 and 4 in place,
+%% +5 lines in its crash paragraph); it is cited here by section only, and sections 15, 16, 18 and
+%% 20 keep their numbers. The leaf counts re-executed at 80326b1d: 123 / 68 / 55 / 0. No count,
+%% node or edge changed.
+%% Re-anchored 80326b1d -> a4eb2f55 (T-0072 merged onto 5050ea3b, T-0077, crew 1.0.50): of the
+%% Anchors paths only crew_tracker.py changed (T-0077's Windows directory holds, +123 lines, all
+%% below :296); TRKREAD's crew_tracker.resolve :210 holds (re-read). No count, node or edge changed.
+%% Re-anchored a4eb2f55 -> 0f488706 (T-0072 review round 5): of the Anchors paths only CONFIG.md
+%% changed (one section 20 sentence re-worded in place at :2331-2333, no line added: --json is one
+%% line); it is cited here by section only. No count, node or edge changed.
 flowchart TB
 
     subgraph Sources["Three sources, lowest precedence first"]
         direction TB
-        DEF["default_config()<br/>plugin/crew/hooks/scripts/crew_config.py:240<br/><b>122 leaves</b> (executed, this pass)<br/>composed from crew_state's PM_DEFAULTS<br/>:1100, QA_DEFAULTS :1147, DEV_DEFAULTS<br/>:1156, WORKTREE_DEFAULTS :1183, CONTEXT_DEFAULTS<br/>:732, RESUME_DEFAULTS :695, AUTOPILOT_DEFAULTS :1090 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS<br/>:48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS<br/>:222, CLOUD_DEFAULTS :239 - repo-only,<br/>ENVIRONMENTS_DEFAULTS :251 - nonProd repo-only), and<br/>crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK<br/>:107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK<br/>:173 / CHANGE_BLOCK :203"]
+        DEF["default_config()<br/>plugin/crew/hooks/scripts/crew_config.py:240<br/><b>123 leaves</b> (executed, this pass)<br/>composed from crew_state's PM_DEFAULTS<br/>:1100, QA_DEFAULTS :1147, DEV_DEFAULTS<br/>:1156, WORKTREE_DEFAULTS :1183, CONTEXT_DEFAULTS<br/>:732, RESUME_DEFAULTS :695, AUTOPILOT_DEFAULTS :1090 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS<br/>:48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS<br/>:222, CLOUD_DEFAULTS :239 - repo-only,<br/>ENVIRONMENTS_DEFAULTS :251 - nonProd repo-only), and<br/>crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK<br/>:107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK<br/>:173 / CHANGE_BLOCK :203"]
         GLB[("~/.claude/crew/config.json<br/>read_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:720<br/><i>never raises</i> - absent, malformed or<br/>non-object all return {}, because this is<br/>reached from a SessionStart hook")]
         REPO[(".crew/config.json - schema 7<br/>crew_state.load_config()<br/>plugin/crew/hooks/scripts/crew_state.py:266<br/>NOT the same file crew_context.py reads<br/>first - see the TwoFiles section below")]
     end
@@ -373,8 +400,8 @@ flowchart TB
     subgraph Split["What may be set where - measured, not asserted (executed this pass)"]
         direction TB
         S1["<b>68 global-settable</b> leaves, across seventeen<br/>blocks: qa, dev, worktree, secondOpinion, memory,<br/>notify, pm, context.autoClear, docs, bitbucket,<br/>github, install, guards (all TEN), change,<br/>resume (T-0006: machine opt-in, repo may only veto),<br/>environments (prodUnattended only, T-0005),<br/>route (T-0023: route.enabled, repo beats machine -<br/>read by crew_route.settings through resolve_config)"]
-        S2["<b>54 repo-only</b> leaves (set difference, executed),<br/>environments.nonProd among them (T-0005).<br/>Whole blocks absent from the global template:<br/>autopilot, cloud, emergency, graph, jira, obsidian, platform,<br/>production, roles, schema, scope, sdp, tier,<br/>tracker, verifyGate - <b>cloud and scope are NEW<br/>repo-only blocks since the previous anchor</b><br/>(cloud identity pins, the T3 scope guard);<br/><b>autopilot is NEW at 07ca3972</b> (T-0004,<br/>mode + maxPhases, CONFIG.md §20)"]
-        S3["<b>Counts are executed, not read by eye.</b><br/>122 repo-template / 68 global / 54 repo-only on<br/>T-0023's merge of main (121 / 67 / 54 on the T-0005 landing merge, 120 / 67 / 53<br/>at T-0023's eba11657, 119 / 66 / 53 at 07ca3972, 118 / 66 / 52 at fc54def6,<br/>117 / 66 / 51 at 6d35ef8c, 116 / 65 / 51 at 6c497a14); .crew/codemap/crew.md agrees and gives<br/>the re-measure command."]
+        S2["<b>55 repo-only</b> leaves (set difference, executed),<br/>environments.nonProd among them (T-0005).<br/>Whole blocks absent from the global template:<br/>autopilot, cloud, emergency, graph, jira, obsidian, platform,<br/>production, roles, schema, scope, sdp, tier,<br/>tracker, verifyGate - <b>cloud and scope are NEW<br/>repo-only blocks since the previous anchor</b><br/>(cloud identity pins, the T3 scope guard);<br/><b>autopilot is NEW at 07ca3972</b> (T-0004,<br/>mode + maxPhases, CONFIG.md §20; deploy<br/>added by T-0072)"]
+        S3["<b>Counts are executed, not read by eye.</b><br/>123 repo-template / 68 global / 55 repo-only on<br/>T-0072's merge of main (122 / 68 / 54 on T-0023's merge of main, 121 / 67 / 54 on the T-0005 landing merge, 120 / 67 / 53<br/>at T-0023's eba11657, 119 / 66 / 53 at 07ca3972, 118 / 66 / 52 at fc54def6,<br/>117 / 66 / 51 at 6d35ef8c, 116 / 65 / 51 at 6c497a14); .crew/codemap/crew.md agrees and gives<br/>the re-measure command."]
         S4["<b>Consent is not capability.</b><br/>context.autoClear.unsafeFocus is excluded from the<br/>global template on purpose (AUTOCLEAR_CONSENT_KEYS,<br/>crew_state.py:708) - a Wayland focus-typing risk<br/>accepted once must not arm for every repo."]
         S1 --- S2 --- S3 --- S4
     end

@@ -4,6 +4,54 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.51: `autopilot.deploy` — production without asking, opt-in (T-0072)
+
+- **New production authority, off by default.** `autopilot.deploy` (repo
+  only: `none` | `nonprod` | `all`, default `none`) says where a deploy may run
+  without asking a person. `crew_autopilot.deploy_allowed(root, env, class)`
+  and `crew_autopilot.py deploy-allowed --env <name> --class <class>` answer
+  `allow`, `ask` or `refuse` for one environment.
+- **Production needs two opt-ins.** `autopilot.deploy: all` in the repo's
+  `.crew/config.json` **and** `environments.prodUnattended: true` in **both**
+  config layers (the existing ratchet), with `guards.cloudGuard` resolving to a
+  plain `block`. `nonprod` never reaches production.
+- **Anything crew cannot tell asks**: an unusable environment name, a class
+  other than exactly `nonProd`/`prod` (`unknown` included), a corrupt config
+  layer or a malformed `environments` block, `autopilot.mode` not `plan`, a
+  typo'd `deploy` value (read as `none`, with a warning naming it), a
+  fail-closed cloud guard, and a crash inside the decision or its report.
+  **An emergency refuses**: `.crew/incident.json` present in any form, or a
+  path that cannot be checked for any reason (finding the checkout included),
+  even when a later import fails. Every production decision carries a report line naming the
+  environment (`unattended production: <env> <verdict> - <reason>`). The CLI
+  prints one line on stdout, verdict first: a value it was handed, or a reason,
+  that is not plain printable text prints as its repr, so no input can add a
+  second verdict line.
+- **Review round 4 redesign.** The checkout root is resolved once per answer
+  and named in the result (`root`), so the incident check and the decision
+  cannot judge two different checkouts; a lookup that raises refuses. Every
+  path probe answers present, absent or could-not-tell, and could-not-tell
+  refuses (the incident file) or asks (a config layer), never reading as
+  absent; a layer the probe saw present asks unless `layer_state` calls it ok.
+  Each handler guards one call. The CLI prints `verdict=ask` even when the
+  crash cannot be described, and a `next`/`resume`/`status` crash of the same
+  kind still prints its stop.
+- **Review round 5.** A checkout root that is not text (a bytes path) refuses
+  instead of crashing into `ask` before the incident check, and `--json`
+  prints its answer, or its fallback, as one line of JSON.
+- **Inert until T-0045.** Nothing in this version dispatches a deploy;
+  `settings` warns whenever `autopilot.deploy` is not `none`. The consumer
+  contract is in `plugin/crew/CONFIG.md` §20: call it immediately before each
+  dispatch, proceed only on `allow`, persist every report. `allow` is
+  necessary, not sufficient — T-0009's hook, promote-gate and every other gate
+  still decide.
+- **Not breaking.** The default `none` answers `ask` everywhere, and no
+  existing key, stop or guard changes. The declared config leaves go 122 -> 123
+  (repo-only 54 -> 55). `sabotage_autopilot.py`'s `DEPLOY_MUTATIONS` prove
+  the must-block and must-allow tests can fail. Bumped `1.0.50 -> 1.0.51`
+  (1.0.44, 1.0.47, 1.0.48, 1.0.49, then 1.0.50, on its branch; re-set at landing after
+  merging main's 1.0.50, T-0079).
+
 ### Fixed
 
 - **`crew` 1.0.50: review READ lines match the parts as listed (T-0079).**
