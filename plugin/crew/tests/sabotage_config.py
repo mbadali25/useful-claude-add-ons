@@ -620,14 +620,15 @@ CONFIG_MENU_MUTATIONS = (
     # escaped both writers as a traceback.
     ("repo writer lets an OS error escape", CONFIG,
      '    except OSError as exc:\n'
-     '        raise RepoWriteRefused(f"{exc}; nothing written (the machine-global directory, a lock or the write "\n'
-     '                               "failed at the OS)") from exc\n',
+     '        raise RepoWriteRefused(f"{crew_config_files.os_error_text(exc)}; nothing written (the machine-global "\n'
+     '                               "directory, a lock or the write failed at the OS)") from exc\n',
      '',
      _C + "test_repo_write_refuses_when_the_machine_directory_cannot_be_made[permission]"),
     ("machine writer lets an OS error escape", CONFIG,
      '    except OSError as exc:\n'
-     '        raise GlobalWriteRefused(f"{real_path}: {exc}; nothing written (its directory, its lock or the write "\n'
-     '                                 "itself failed at the OS; check the directory)") from exc\n',
+     '        raise GlobalWriteRefused(f"{real_path}: {crew_config_files.os_error_text(exc)}; nothing written (its "\n'
+     '                                 "directory, its lock or the write itself failed at the OS; check the "\n'
+     '                                 "directory)") from exc\n',
      '',
      _C + "test_global_write_refuses_when_its_directory_cannot_be_made[permission]"),
     ("repo writer catches only PermissionError", CONFIG,
