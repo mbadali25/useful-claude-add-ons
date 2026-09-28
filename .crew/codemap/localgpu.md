@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@9631c707
+anchor: useful-claude-add-ons@22399a9c
 verified: 2026-09-28
 
 # localgpu
@@ -339,7 +339,7 @@ serialisation raise and checking the file survives.
 `plugin/localgpu/skills/localgpu/templates/mcp.json`) — and the repo's
 `.gitignore` still carries the `.mcp.json` line `mcp-init` writes
 (`_IGNORE_NOTE`, `plugin/localgpu/cli/localgpu_cli.py:435-443`), but it moved to
-`.gitignore:421` (was cited as `:369`; the file grew — it is 482 lines now).
+`.gitignore:428` (was cited as `:421` before T-0085 and `:369` before that; the file grew — it is 489 lines now).
 
 **Correction, not just a re-point.** The pass that set the previous anchor
 (`84976536`) reported an untracked `.mcp.json` actually present in the working
@@ -1201,3 +1201,5 @@ Nothing under `plugin/localgpu/` changed. This note cites `plugin/crew/README.md
 no citation moved. Nothing was executed for this note.
 
 **Re-anchored `0f488706` -> `9631c707` on 2026-09-28 (T-0072 landing, crew 1.0.51).** `9631c707` is T-0072's landing bump on `T-0072-land`, after `34af80ef` merged the reviewed `T-0072-build` (`a0978df6`) onto main `e6e10432` (T-0079 landed as crew 1.0.50) and `bf0c513a` re-priced verify rule 27. `git diff --name-only 0f488706 9631c707`, refresh artifacts aside, returns T-0079's files, the three version files, `CHANGELOG.md` and `.crew/verify.json`. The two this note's citations reach changed in place: `.crew/verify.json` `:298` and `:301` (rule 27's `seconds` 16 -> 18 and its `why`, still `:293-301`) and `plugin/crew/README.md` `:735` and `:739` (T-0079's verdict table, line-neutral); no citation moved. The version sentence moves to 1.0.51. No suite was executed for this note.
+
+**Re-anchored `9631c707` -> `22399a9c` on 2026-09-28 (T-0085, crew 1.0.52).** `22399a9c` is T-0085's version commit on `T-0085-build` (the change is `d02fe008`, from origin/main `f54af3fa`). Of the paths this note cites, T-0085 changed `.gitignore` (7 lines added after `:330`, the `!.crew/standards.md` un-ignore, so the `.mcp.json` line moved `:421` -> `:428`, corrected above), `.crew/verify.json` (rule 31 appended), `CLAUDE.md` (the ignore-policy paragraph, line-neutral), `plugin/crew/README.md` (18 lines added from `:712`), `plugin/crew/skills/crew-setup/SKILL.md`, `plugin/crew/tests/sabotage.py`, `plugin/PLUGINS.md`, `plugin/crew/BUDGETS.md`, `CHANGELOG.md` and the version files. Every body citation into those files was compared by script at both commits; only the `.gitignore` line moved. Nothing under `plugin/localgpu/` changed; `localgpu` is still `0.1.20`. Nothing was executed for this note.

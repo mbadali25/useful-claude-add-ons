@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@9631c707
+anchor: useful-claude-add-ons@22399a9c
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -221,8 +221,10 @@ through their own package managers.
   anchors is fully resolved and re-confirmed independently correct, not
   merely re-synced.** All of the following read **4 agents, 35 commands** (34
   until `ecf69e43` added `/crew:autopilot`; re-read at `07ca3972`) (or
-  the plugin-level 29 skills / 34 hook entries across 8 events figures that go
-  with them), checked directly rather than cross-quoted from one another:
+  the plugin-level 30 skills (29 until T-0085 added `crew-standards`; at
+  `22399a9c` `plugin/README.md:414` and `INSTALLATION.md:252` still say 29, outside
+  T-0085's Touch, and `scripts/check-marketplace.py` fails on both) / 34 hook
+  entries across 8 events figures that go with them), checked directly rather than cross-quoted from one another:
   `.claude-plugin/marketplace.json`'s `crew` description (parsed with
   `json.load`); `plugin/PLUGINS.md:17`; `plugin/README.md:414`'s crew row;
   `plugin/crew/README.md`; `PLUGIN_NAME`'s crew row in both install scripts
@@ -231,7 +233,7 @@ through their own package managers.
   filesystem rather than trusted: `ls plugin/crew/agents/*.md` = 4 (explorer,
   researcher, reviewer, security — no PM, no scribe: the roster cut this
   repo's own memory already names), `ls plugin/crew/commands/*.md` = 35,
-  `ls -d plugin/crew/skills/*/` = 29, and `hooks.json` parsed with `json.load`
+  `ls -d plugin/crew/skills/*/` = 30, and `hooks.json` parsed with `json.load`
   = 34 entries across 8 events (`{PostToolUse, PreToolUse, UserPromptSubmit,
   PreCompact, Notification, Stop, SessionStart, SubagentStart}`), 26 unique
   `command` strings (13 scripts × two shells). `python3
@@ -885,3 +887,5 @@ This note cites `plugin/crew/README.md` and the version files by name or at unmo
 citation moved. Nothing was executed for this note.
 
 **Re-anchored `0f488706` -> `9631c707` on 2026-09-28 (T-0072 landing, crew 1.0.51).** `9631c707` is T-0072's landing bump on `T-0072-land`, after `34af80ef` merged the reviewed `T-0072-build` (`a0978df6`) onto main `e6e10432` (T-0079 landed as crew 1.0.50) and `bf0c513a` re-priced verify rule 27. `git diff --name-only 0f488706 9631c707`, refresh artifacts aside, returns T-0079's files, the three version files, `CHANGELOG.md` and `.crew/verify.json`. The two this note's citations reach changed in place: `.crew/verify.json` `:298` and `:301` (rule 27's `seconds` 16 -> 18 and its `why`, still `:293-301`) and `plugin/crew/README.md` `:735` and `:739` (T-0079's verdict table, line-neutral); no citation moved. The version sentence moves to 1.0.51. No suite was executed for this note.
+
+**Re-anchored `9631c707` -> `22399a9c` on 2026-09-28 (T-0085, crew 1.0.52).** `22399a9c` is T-0085's version commit on `T-0085-build` (the change is `d02fe008`, from origin/main `f54af3fa`). Of the paths this note cites, T-0085 changed `README.md` (`:168` and `:874`, 29 -> 30 skills, line-neutral), `plugin/PLUGINS.md` (`:14` 1.0.52, `:17` 30 skills, and one skills-table row added below `:213`), `.claude-plugin/marketplace.json` (`:217` 30 skills, `:218` 1.0.52), `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/crew/README.md` (a section added after `:750`), `.gitignore`, `CLAUDE.md`, `.crew/verify.json` (one rule appended) and `plugin/crew/skills/crew-setup/SKILL.md` (`!.crew/standards.md` in the shipped template). Every body citation into those files was compared by script at both commits; only the skills figure moved, corrected above. Neither install script changed. Nothing was executed for this note.

@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@9631c707
+anchor: useful-claude-add-ons@22399a9c
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -181,7 +181,10 @@ listing the directory.
   (`<!-- claim: plugin-skills:crew -->`), `plugin/PLUGINS.md:17`, the
   `.claude-plugin/marketplace.json` `crew` description, and both install
   scripts' `PLUGIN_NAME` crew rows all read **4 agents, 35 commands, 29
-  skills, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events** at
+  skills (30 at `22399a9c`, where T-0085 added `crew-standards` and moved
+  `plugin/PLUGINS.md:17`, `README.md:168`/`:874` and the description to 30
+  while `plugin/README.md:414` and `INSTALLATION.md:252`, outside its Touch,
+  still read 29 and fail `check_self_claims`), 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events** at
   `07ca3972` (34 commands until T-0004 added `commands/autopilot.md`; every
   site listed here was bumped in `ecf69e43`, and `README.md:168`/`:874` carry
   the same 35) —
@@ -299,7 +302,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:2075` (`:2067` at `67caa4b8`, `:1812` on T-0024's branch at `45345812`, `:2052` at `bebbb97f`, `:2044` on T-0018's first landing merge at `fbc27b49`, `:2029` at `db14619c`, `:1959` on T-0018's branch at `e6b696fb`, `:1953` at T-0023's `a1acd9b7`, `:2015` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1944` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:2093` (`:2075` at `9631c707`, `:2067` at `67caa4b8`, `:1812` on T-0024's branch at `45345812`, `:2052` at `bebbb97f`, `:2044` on T-0018's first landing merge at `fbc27b49`, `:2029` at `db14619c`, `:1959` on T-0018's branch at `e6b696fb`, `:1953` at T-0023's `a1acd9b7`, `:2015` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1944` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -977,3 +980,5 @@ on both sides), `CHANGELOG.md` and the three version files. Every body citation 
 Nothing was executed for this note.
 
 **Re-anchored `0f488706` -> `9631c707` on 2026-09-28 (T-0072 landing, crew 1.0.51).** `9631c707` is T-0072's landing bump on `T-0072-land`, after `34af80ef` merged the reviewed `T-0072-build` (`a0978df6`) onto main `e6e10432` (T-0079 landed as crew 1.0.50) and `bf0c513a` re-priced verify rule 27. `git diff --name-only 0f488706 9631c707`, refresh artifacts aside, returns T-0079's files, the three version files, `CHANGELOG.md` and `.crew/verify.json`. The two this note's citations reach changed in place: `.crew/verify.json` `:298` and `:301` (rule 27's `seconds` 16 -> 18 and its `why`, still `:293-301`) and `plugin/crew/README.md` `:735` and `:739` (T-0079's verdict table, line-neutral); no citation moved. The version sentence moves to 1.0.51. No suite was executed for this note.
+
+**Re-anchored `9631c707` -> `22399a9c` on 2026-09-28 (T-0085, crew 1.0.52).** `22399a9c` is T-0085's version commit on `T-0085-build` (the change is `d02fe008`, from origin/main `f54af3fa`). T-0085 adds `docs/adr/0004-build-time-development-standards.md`, edits `docs/guides/crew/src/daily-workflow.md` and `working-with-codex.md` and rebuilds their HTML, DOCX and PDF (`docs/guides/crew/src/build.py`, LibreOffice on this host), re-draws `docs/diagrams/process-crew-lifecycle.mmd` (a self-check node and the review's exit-2 edge) and re-anchors `data-flow-crew-config.mmd`, adds 18 lines to `plugin/crew/README.md` (the self-check paragraph after `:712` and a "Development standards" section at `:752`), and edits the skills figure in `README.md`, `plugin/PLUGINS.md` and the marketplace description. Every body citation into a changed file was compared by script at both commits; the runbook-index line moved `:2075` -> `:2093`, and the skills figure is annotated above. Nothing was executed for this note.
