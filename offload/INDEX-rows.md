@@ -1,0 +1,3 @@
+T-0040 | direction | med | useful-claude-add-ons | on Windows, crew runs shell-heavy work (tests, sabotage, graphify) in WSL2 when installed; recommends installing it; explicit fallback; AMENDED 2026-09-28: WSL / PowerShell / Git Bash as selectable routes, re-spec + re-plan
+T-0097 | direction | - | useful-claude-add-ons | ps1 python probe: a candidate that prints nothing makes ConvertFrom-Json write an error record to stderr (result still correct); probe is byte-identical across crew .ps1 files
+T-0099 | new | low | useful-claude-add-ons | review_prompt prints 'excluded: none recorded' for both excluded: [] (known empty) and a missing key (unknown); give each state its own line (T-0092 round-2 NIT, review_prompt.py:90)
