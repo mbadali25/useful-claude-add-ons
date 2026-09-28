@@ -27,6 +27,15 @@ All notable changes to this repository are documented here. Format follows [Keep
   prints one line on stdout, verdict first: a value it was handed, or a reason,
   that is not plain printable text prints as its repr, so no input can add a
   second verdict line.
+- **Review round 4 redesign.** The checkout root is resolved once per answer
+  and named in the result (`root`), so the incident check and the decision
+  cannot judge two different checkouts; a lookup that raises refuses. Every
+  path probe answers present, absent or could-not-tell, and could-not-tell
+  refuses (the incident file) or asks (a config layer), never reading as
+  absent; a layer the probe saw present asks unless `layer_state` calls it ok.
+  Each handler guards one call. The CLI prints `verdict=ask` even when the
+  crash cannot be described, and a `next`/`resume`/`status` crash of the same
+  kind still prints its stop.
 - **Inert until T-0045.** Nothing in this version dispatches a deploy;
   `settings` warns whenever `autopilot.deploy` is not `none`. The consumer
   contract is in `plugin/crew/CONFIG.md` §20: call it immediately before each

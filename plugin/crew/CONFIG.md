@@ -2306,10 +2306,10 @@ class)` answers, first match wins:
 
 | Condition | Verdict |
 |---|---|
-| `.crew/incident.json` exists in any form, or its path cannot be checked for any reason | `refuse` — an emergency may be active |
+| the checkout cannot be found (the lookup raised), `.crew/incident.json` exists in any form, or its path cannot be checked for any reason | `refuse` — an emergency may be active |
 | the environment name is blank, not a string, or not printable | `ask` — could not tell which environment |
 | the class is not exactly `nonProd` or `prod` (T-0005's classes; `unknown` included) | `ask` — crew could not classify it |
-| either config layer is corrupt (unreadable, not JSON, a bad `guards` or `environments` block) | `ask` — could not read that layer |
+| either config layer could not be checked (its path cannot be stat'ed for any reason but a missing file), or is present and not ok (unreadable, not JSON, a bad `guards` or `environments` block) | `ask` — could not read that layer |
 | `autopilot.mode` is not `plan`, or `autopilot.deploy` is `none` | `ask` |
 | `nonProd`, with `nonprod` or `all` | `allow` |
 | `prod`, with `nonprod` | `ask` |
@@ -2317,10 +2317,15 @@ class)` answers, first match wins:
 | `prod`, with `all`, and `guards.cloudGuard` not a plain `block` (a fail-closed `block` with a note included) | `ask` |
 | `prod`, with `all`, otherwise | `allow` |
 
-A crash inside the decision asks, and so does one building its report or
-printing a value it was handed. The incident check runs before anything
-that can fail to import, so a crash never turns an emergency's `refuse` into
-`ask`. Every production decision — `allow`, `ask`
+The checkout root is resolved **once** per answer, and that one root is what
+the incident check, both layers and every row judge; the result names it
+(`root`). Every path is probed for present, absent or could-not-tell, and
+could-not-tell never reads as absent: it refuses for the incident file and
+asks for a config layer. A crash inside the decision asks, and so does one
+building its report or printing a value it was handed; the CLI prints
+`verdict=ask` even for a crash it cannot describe. The incident check runs
+before anything that can fail to import, so a crash never turns an
+emergency's `refuse` into `ask`. Every production decision — `allow`, `ask`
 or `refuse` — carries a report line naming the environment
 (`unattended production: <env> <verdict> - <reason>`). The CLI is
 `crew_autopilot.py deploy-allowed --root . --env <name> --class <class>
