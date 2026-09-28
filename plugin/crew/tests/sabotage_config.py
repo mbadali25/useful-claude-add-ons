@@ -53,7 +53,7 @@ CONFIG_MENU_MUTATIONS = (
      'REPO_VETO_ONLY = {"context.autoClear.enabled", "resume.auto"}\n',
      'REPO_VETO_ONLY = set()\n',
      _C + "test_repo_writer_refuses[context.autoClear.enabled-True]"),
-    # Re-anchored (successor): a block is refused twice, by the leaf-path rule
+    # Re-anchored (successor; again in round 5, `shape` bound once): a block is refused twice, by the leaf-path rule
     # (`is_repo_path`) and by `value_allowed`'s shape rule, so removing either
     # alone is equivalent and the test stays green. Both go, in one span.
     ("repo writer accepts a whole block", CONFIG,
@@ -72,7 +72,10 @@ CONFIG_MENU_MUTATIONS = (
      '    reason = _layer_path_refusal(dotted, layer, value)\n'
      '    if reason is not None:\n'
      '        return f"{dotted} - {reason}"\n'
-     '    if _shape(dotted) == "block":\n',
+     '    shape = _shape(dotted)\n'
+     '    if shape == "under":\n'
+     '        return f"{dotted} - under a key that takes a value, not keys; set that key to one of its values"\n'
+     '    if shape == "block":\n',
      '    if reason is None and not (is_repo_path(dotted) or _shape(dotted) == "block"):\n'
      '        reason = ("not a settable leaf of .crew/config.json (a block is set "\n'
      '                  "one key at a time; unknown keys are refused)")\n'
@@ -88,6 +91,9 @@ CONFIG_MENU_MUTATIONS = (
      '    reason = _layer_path_refusal(dotted, layer, value)\n'
      '    if reason is not None:\n'
      '        return f"{dotted} - {reason}"\n'
+     '    shape = _shape(dotted)\n'
+     '    if shape == "under":\n'
+     '        return f"{dotted} - under a key that takes a value, not keys; set that key to one of its values"\n'
      '    if False:\n',
      _C + "test_repo_writer_refuses_a_whole_block"),
     # Re-anchored (successor): the enum branch now lives in `value_allowed`.
@@ -357,9 +363,9 @@ CONFIG_MENU_MUTATIONS = (
      _C + "test_merged_file_refuses_a_pre_existing_leaf_forbidden_at_its_layer"
      "[repo-armed-autoclear]"),
     ("a repo-only key in the machine file blocks a write", CONFIG,
-     '    if _shape(dotted) == "unknown":\n        return None\n'
+     '    if shape == "unknown":\n        return None\n'
      '    if layer == "repo" and dotted in REPO_VETO_ONLY',
-     '    if _shape(dotted) == "unknown":\n        return None\n'
+     '    if shape == "unknown":\n        return None\n'
      '    if layer == "machine" and not is_global_path(dotted):\n'
      '        return "repo-only"\n'
      '    if layer == "repo" and dotted in REPO_VETO_ONLY',
@@ -564,4 +570,72 @@ CONFIG_MENU_MUTATIONS = (
      '        print("re-detected by platform-sync at the next SessionStart "\n'
      '              "(written back from this machine, not reset):")\n',
      _M + "test_delete_preview_redetected_header_does_not_promise_a_value"),
+    # Review round 5, FIX 1: an object at a leaf, or a path through one, was
+    # written at the machine layer and tolerated in either file.
+    ("a path under a leaf is accepted", CONFIG,
+     '            return "under"\n',
+     '            return "unknown"\n',
+     _C + "test_a_path_through_a_leaf_is_refused[machine-pm.authority.a]"),
+    ("an object at a leaf is accepted", CONFIG,
+     '    if shape == "leaf" and isinstance(value, dict):\n'
+     '        return f"{dotted} = {value!r} is an object',
+     '    if False:\n'
+     '        return f"{dotted} = {value!r} is an object',
+     _C + "test_an_object_at_a_leaf_is_refused[machine-notify.chatId-{}]"),
+    ("a pre-existing object at a leaf is tolerated", CONFIG,
+     '    if shape == "under":\n        return f"= {value!r} sits under',
+     '    if False:\n        return f"= {value!r} sits under',
+     _C + "test_a_pre_existing_object_at_a_leaf_is_named_not_tolerated[machine]"),
+    ("an object at a leaf accepted (menu)", CONFIG,
+     '            return "under"\n',
+     '            return "unknown"\n',
+     _M + "test_save_refuses_an_object_at_a_leaf"),
+    # Review round 5, FIX 2: a non-object role table or pin was written and
+    # then ignored on read, so `qa.roles=1` wiped every pin.
+    ("open table shape check dropped", CONFIG,
+     '        if table is not None and not isinstance(table, dict):\n',
+     '        if False:\n',
+     _C + "test_an_open_table_must_be_an_object[repo-qa.roles-1]"),
+    ("open table entry shape check dropped", CONFIG,
+     '            if pin is not None and not isinstance(pin, dict):\n',
+     '            if False:\n',
+     _C + "test_an_open_table_must_be_an_object[repo-qa.roles.review-codex]"),
+    ("open table shape check accepts any iterable", CONFIG,
+     '        if table is not None and not isinstance(table, dict):\n',
+     '        if table is not None and not hasattr(table, "__iter__"):\n',
+     _C + "test_an_open_table_must_be_an_object[machine-qa.roles-codex]"),
+    ("open table shape check dropped (pre-existing file)", CONFIG,
+     '        if table is not None and not isinstance(table, dict):\n',
+     '        if False:\n',
+     _C + "test_a_pre_existing_non_object_in_an_open_table_is_named[machine]"),
+    ("open table shape check dropped (menu)", CONFIG,
+     '            if pin is not None and not isinstance(pin, dict):\n',
+     '            if False:\n',
+     _M + "test_menu_spec_reads_a_non_object_open_table[repo]"),
+    ("open table wipe reaches the file", CONFIG,
+     '        if table is not None and not isinstance(table, dict):\n',
+     '        if False:\n',
+     _C + "test_a_wiped_pin_table_never_reaches_the_file"),
+    # Review round 5, FIX 3: an OS error from a lock or the machine directory
+    # escaped both writers as a traceback.
+    ("repo writer lets an OS error escape", CONFIG,
+     '    except OSError as exc:\n'
+     '        raise RepoWriteRefused(f"{exc}; nothing written (the machine-global directory, a lock or the write "\n'
+     '                               "failed at the OS)") from exc\n',
+     '',
+     _C + "test_repo_write_refuses_when_the_machine_directory_cannot_be_made[permission]"),
+    ("machine writer lets an OS error escape", CONFIG,
+     '    except OSError as exc:\n'
+     '        raise GlobalWriteRefused(f"{real_path}: {exc}; nothing written (its directory, its lock or the write "\n'
+     '                                 "itself failed at the OS; check the directory)") from exc\n',
+     '',
+     _C + "test_global_write_refuses_when_its_directory_cannot_be_made[permission]"),
+    ("repo writer catches only PermissionError", CONFIG,
+     '    except OSError as exc:\n        raise RepoWriteRefused(',
+     '    except PermissionError as exc:\n        raise RepoWriteRefused(',
+     _C + "test_repo_write_refuses_when_the_machine_directory_cannot_be_made[file]"),
+    ("lock file left behind when the PID write fails", FILES,
+     '                os.close(fd)\n                try:\n                    os.remove(self.path)\n',
+     '                os.close(fd)\n                try:\n                    pass\n',
+     _F + "test_lock_removes_its_file_when_the_pid_write_fails"),
 )
