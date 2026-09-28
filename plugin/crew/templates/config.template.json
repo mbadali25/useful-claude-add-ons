@@ -204,5 +204,8 @@
     "maxPhases": 12,
     "approval": "risk",
     "questions": "risk"
+  },
+  "route": {
+    "enabled": false
   }
 }

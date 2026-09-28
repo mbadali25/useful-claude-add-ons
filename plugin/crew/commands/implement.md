@@ -32,7 +32,11 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope_base.py --root . --record $1
 ```
 
 HEAD now, keyed by ticket, never moved by a later re-run. Every changed-file
-list below diffs from this, not from the verify gate's own marker.
+list below diffs from this, not from the verify gate's own marker. Then
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket $1 --to in-progress`
+(add `--reopen` on a successor plan, whose ticket is already `review`):
+print its lines verbatim; on exit 3 run the command it printed; on exit 1 tell
+me `tracker not updated: <reason>` and keep going — a tracker never blocks work.
 
 ## 2. Work the plan's steps in order
 
@@ -100,12 +104,15 @@ paths for an approved ticket. A `stop` anywhere ends the loop, on an artifact
 line (a missing tool, git unable to diff) or on the top line (a scope base that
 hides or may hide the change, an unreadable config): report it with its reason.
 Documents read `not measured` — `/crew:docs`'s judgement, never a pass. Commit
-the refresh before `/crew:review $1` builds its bundle. **Then, last,
-`/crew:review $1`** — its receipt covers the refreshes; a later one stales it.
+the refresh before `/crew:review $1` builds its bundle. Set `spec.md`'s header
+to `status: review` — that edit keeps the approval: the digest normalises only
+the header's status value — and run
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket $1 --to review`,
+handled as in step 1: the Review lane means the review is outstanding.
+**Then, last, `/crew:review $1`** — its receipt covers the refreshes; a later one stales it.
 
-## 7. Update status
+## 7. Done is not this command's
 
-Set `spec.md`'s header to `status: review`. That edit keeps the approval: the
-digest normalises only the header's status value. `/crew:done $1` moves it to
-`done` once the review receipt, the gate, the completion audit and the artifact
-check all pass — this command does not set `done` itself.
+`/crew:done $1` moves it to `done` once the review receipt, the gate, the
+completion audit and the artifact check all pass — this command does not set
+`done` itself.
