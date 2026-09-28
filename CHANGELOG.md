@@ -4,6 +4,32 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.52: review bundles leave generated `graphify-out/` out (T-0092)
+
+- **What changed.** `review_patch.py`'s `EXCLUDED` is now `(".work/",
+  "graphify-out/")` and `_EXCLUDE_SPEC` carries `:(exclude)graphify-out` beside
+  `:(exclude).work`, so no bundle, part, file listing or `entries` row carries
+  graphify's generated `graph.json` or `GRAPH_REPORT.md`, and the manifest's
+  `excluded` names both paths. `review_prompt.py`'s bundle block prints
+  `excluded (never in the bundle): .work/, graphify-out/` (or `excluded: none
+  recorded` for a manifest without the key), so every reviewer — Codex,
+  Copilot or the Claude fallback — is told what was left out.
+- **Why.** T-0075's round-5 Claude review came back INCOMPLETE with no READ
+  line for 77 of 80 parts, parts 003-077 being the 24 MB `graph.json`; with
+  Codex out of credits until Oct 3 every lane's review is the Claude fallback.
+- **Unchanged.** `.work/` handling (same pathspec, still never on `git add`);
+  `completion_audit.py`'s own pathspec (only its comment is reworded); no
+  configurable exclude list. The pathspec is root-anchored: `docs/graphify-out/`
+  and `graphify-out-notes/` stay in the bundle (`test_look_alike_paths_are_still_bundled`).
+- **Receipt.** A graph rebuild after an accepted review no longer stales the
+  receipt (`test_graph_only_change_keeps_the_bundle_hash`); a codemap, diagram
+  or `.claude/rules/` refresh still does. README, `commands/review.md`,
+  `crew_autopilot.py`'s docstring, `TODO.md`'s constraint and the codemap say so.
+- **Sabotage.** Three entries in `plugin/crew/tests/sabotage_review.py` (the
+  pathspec, the manifest list, the prompt line), each run by hand against the
+  tracked file and confirmed RED.
+- Bumped `1.0.51 -> 1.0.52`.
+
 ### Added — `crew` 1.0.51: `autopilot.deploy` — production without asking, opt-in (T-0072)
 
 - **New production authority, off by default.** `autopilot.deploy` (repo

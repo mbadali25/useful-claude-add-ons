@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.51, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.52, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -1016,7 +1016,16 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   `test_verify_gate_python_resolver.py` were confirmed present, not read;
   no sabotage test was run against either.
 - `review_ledger.py`, `review_patch.py` — part of the review pipeline
-  `/crew:review` and `/crew:done` depend on — were located but not opened.
+  `/crew:review` and `/crew:done` depend on — were located but not opened,
+  except for the exclusion below.
+- DERIVED (T-0092, crew 1.0.52): `EXCLUDED` and `_EXCLUDE_SPEC`
+  (`plugin/crew/hooks/scripts/review_patch.py:104`,
+  `plugin/crew/hooks/scripts/review_patch.py:105`) name `.work/` and the
+  generated `graphify-out/`, root-anchored, on every diff and listing but
+  never on `git add`; the manifest's `excluded` is `list(EXCLUDED)`.
+  `_bundle_block` prints that list as `excluded (never in the bundle): ...`,
+  or `excluded: none recorded` when the manifest has none
+  (`plugin/crew/hooks/scripts/review_prompt.py:89`).
 - DERIVED (T-0079): the READ-line rule of the review verdict is
   `review_verdict._covers` (`plugin/crew/hooks/scripts/review_verdict.py:79`):
   a READ token counts for a part when, `\` read as `/` and `normpath`ed, it
@@ -1024,8 +1033,8 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   `parse` applies it at `plugin/crew/hooks/scripts/review_verdict.py:124`.
   The prompt quotes `review_verdict.READ_FORM`
   (`plugin/crew/hooks/scripts/review_verdict.py:70`) in `_bundle_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:84`) and on the webtest
-  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:239`), and
+  (`plugin/crew/hooks/scripts/review_prompt.py:85`) and on the webtest
+  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:243`), and
   `review_run.finish` hands `parse` the manifest `path`s
   (`plugin/crew/hooks/scripts/review_run.py:315`) and the overflow file's
   scratch path (`plugin/crew/hooks/scripts/review_run.py:317`). `parse` and
