@@ -21,6 +21,19 @@ That refusal, and an explicit `--reject --by <who>`, are the only ways into
 NEEDS_REPLAN: a completed round 2 -- FINDINGS or INCOMPLETE -- leaves the
 ticket REVIEWED, so the owner can still accept round 2's FINDINGS.
 
+REFUNDS (T-0087). A round the TOOL lost -- recorded INCOMPLETE with
+`failure_class: "tool"` (`review_verdict.failure_class`: the answer never
+arrived intact) -- is refunded automatically: its row says `refunded: true`
+and it does not count against `BUDGET`. At most `REFUND_LIMIT` rounds per plan
+are refunded; the next one is recorded `refunded: false` with
+`refund_refused` saying why, and counts. Never refunded: a `reviewer` or
+`tree` INCOMPLETE, a FINDINGS or CLEAN round, a round with no recorded result
+(still `reserved`, above), and rows written before this rule (no
+`failure_class`). `_spent` keeps meaning "rows reserved since the successor
+boundary" -- the boundary checks in `record` and `accept` read it -- and
+`_charged` (spent minus refunded) is what the budget uses. Nothing else resets
+the count.
+
 ATOMICITY. Every mutation holds `<ticket>.lock`, created with
 O_CREAT|O_EXCL, for the read-modify-write, and replaces the ledger with
 `os.replace` from a temp file in the same directory. Two concurrent
@@ -78,6 +91,9 @@ import time
 import review_patch
 
 BUDGET = 2
+# A constant like BUDGET: bounds a refund loop at four launched rounds per
+# two-round budget. No flag, env var or config key reads into it.
+REFUND_LIMIT = 2
 
 NEEDS_REPLAN = "NEEDS_REPLAN"
 IN_REVIEW = "IN_REVIEW"
@@ -200,6 +216,25 @@ def _spent(data):
     return len(data.get("rounds", [])) - (after if isinstance(after, int) else 0)
 
 
+def _boundary(data):
+    """Index of the first round under the current plan (the latest successor's
+    `after_round`, or 0 without one)."""
+    successors = data.get("successors") or []
+    after = successors[-1].get("after_round", 0) if successors else 0
+    return after if isinstance(after, int) else 0
+
+
+def _refunded(data):
+    """Rounds under the current plan that were refunded as tool failures."""
+    return sum(1 for r in data.get("rounds", [])[_boundary(data):]
+               if isinstance(r, dict) and r.get("refunded") is True)
+
+
+def _charged(data):
+    """Rounds under the current plan that count against BUDGET."""
+    return _spent(data) - _refunded(data)
+
+
 def _fresh(ticket):
     return {"ticket": ticket, "budget": BUDGET, "state": None, "rounds": [],
             "refused": [], "receipt": None}
@@ -218,11 +253,11 @@ def reserve(root, ticket, provider, model=None):
             data = _fresh(ticket)
         rounds = data.setdefault("rounds", [])
         exhausted = (False, None,
-                     f"review budget exhausted: {_spent(data)} of {BUDGET} rounds used. "
+                     f"review budget exhausted: {_charged(data)} of {BUDGET} rounds used. "
                      f"State is {NEEDS_REPLAN}; only an approved successor plan continues")
         if data.get("state") == NEEDS_REPLAN:
             return None, exhausted
-        if _spent(data) >= BUDGET:
+        if _charged(data) >= BUDGET:
             data["state"] = NEEDS_REPLAN
             data.setdefault("refused", []).append({"at": _now(), "provider": provider})
             return data, exhausted
@@ -230,7 +265,9 @@ def reserve(root, ticket, provider, model=None):
         rounds.append({"round": number, "status": "reserved", "reserved_at": _now(),
                        "provider": provider, "model": model or None, "pid": os.getpid()})
         data["state"] = IN_REVIEW
-        return data, (True, number, f"round {number} of {BUDGET} reserved")
+        return data, (True, number,
+                      f"round {number} reserved ({_charged(data)} of {BUDGET} budget rounds "
+                      f"used, {_refunded(data)} refunded)")
 
     return _mutate(root, ticket, change)
 
@@ -271,7 +308,14 @@ def record(root, ticket, number, review):
             "verdict": review["verdict"], "counts": review.get("counts"),
             "bundle_sha256": review.get("bundle_sha256"), "base": review.get("base"),
             "head": review.get("head"), "model_family": review.get("model_family"),
+            "failure_class": review.get("failure_class"),
         })
+        if review["verdict"] == "INCOMPLETE" and review.get("failure_class") == "tool":
+            row["refunded"] = _refunded(data) < REFUND_LIMIT
+            if not row["refunded"]:
+                row["refund_refused"] = f"refund limit {REFUND_LIMIT} per plan reached"
+        else:
+            row["refunded"] = False
         if review["verdict"] == "CLEAN":
             data["receipt"] = {
                 "kind": "clean", "round": number, "bundle_sha256": review["bundle_sha256"],
@@ -452,17 +496,27 @@ def continue_with_successor_plan(root, ticket, plan_hash):
     return _mutate(root, ticket, change)
 
 
-def status(root, ticket):
-    path = ledger_path(root, ticket)
-    data, state = _load(path)
+load = _load
+
+
+def summary(data, state, ticket, path):
+    """The status dict for a loaded ledger: what `status` returns and what
+    `/crew:status` renders, so the two cannot count rounds differently."""
     if state == "corrupt":
         return {"ticket": ticket, "path": path, "state": UNKNOWN}
     rounds = data.get("rounds", [])
     return {"ticket": ticket, "path": path, "state": data.get("state") or "EMPTY",
             "rounds_used": len(rounds), "budget": BUDGET,
-            "rounds_left": max(0, BUDGET - _spent(data)), "rounds": rounds,
+            "rounds_spent": _charged(data), "rounds_refunded": _refunded(data),
+            "refund_limit": REFUND_LIMIT,
+            "rounds_left": max(0, BUDGET - _charged(data)), "rounds": rounds,
             "successors": data.get("successors") or [],
             "receipt": data.get("receipt")}
+
+
+def status(root, ticket):
+    path = ledger_path(root, ticket)
+    return summary(*_load(path), ticket, path)
 
 
 def main(argv):
