@@ -6,9 +6,11 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.48: `/crew:config` menu mode and `/crew:config-setup` (T-0075).**
+- **`crew` 1.0.49: `/crew:config` menu mode and `/crew:config-setup` (T-0075).**
   Bumped `1.0.47 -> 1.0.48` (its build declared 1.0.44, which main gave to T-0021, then
-  1.0.46, which main gave to T-0023, then 1.0.47, which main gave to T-0018).
+  1.0.46, which main gave to T-0023, then 1.0.47, which main gave to T-0018), then
+  `1.0.48 -> 1.0.49` as the last `plugin/crew/` commit after review round 1's fixes; the
+  landing sets it one past whatever origin/main then holds.
   - `/crew:config` with no argument, and the new alias `/crew:config-setup`,
     open a menu (`skills/crew-setup/config-menu.md`): pick the machine or repo
     layer, an area, a setting, then a value from a list showing the current
