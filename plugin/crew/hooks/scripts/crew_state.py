@@ -1083,11 +1083,11 @@ AUTONOMOUS_STOPS = (
 
 # `/crew:autopilot` (T-0004): drives one ticket through the lifecycle phases
 # `crew_autopilot.py next` names from disk. `mode` is armed only by the exact
-# string `plan`; anything else -- a typo included -- is `off`
-# (crew_autopilot.settings). `maxPhases` bounds the phases one invocation runs.
-# Every AUTONOMOUS_STOPS entry above binds it too: commands/autopilot.md names
-# each one, and a test iterates this tuple against that file.
-AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12}
+# string `plan`, a typo is `off`; `maxPhases` bounds the phases one run takes.
+# `deploy` (T-0072) is exactly `none`, `nonprod` or `all`, else `none`, and is
+# read by crew_autopilot.deploy_allowed. Every AUTONOMOUS_STOPS entry above
+# binds it too: commands/autopilot.md names each, a test iterates the tuple.
+AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none"}
 
 # How many tickets one session's work becomes. The default is `system`: one
 # session is one ticket, and a second ticket is opened only when the work
