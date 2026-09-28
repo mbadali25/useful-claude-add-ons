@@ -13,6 +13,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_status
+import review_ledger
 from crew_fixtures import make_repo
 
 SCRIPT = os.path.join(os.path.dirname(crew_status.__file__), "crew_status.py")
@@ -182,3 +183,33 @@ def test_index_rows_with_a_leading_pipe_are_reported_open(tmp_path):
     lines = crew_status.collect(str(root))
 
     assert "open     T-0007" in lines
+
+
+def _review(verdict, failure_class=None):
+    return {"verdict": verdict, "counts": {"BLOCK": 0, "FIX": 1, "NIT": 0},
+            "bundle_sha256": "b" * 64, "base": "c" * 40, "head": "c" * 40,
+            "model_family": "gpt", "provider": "codex", "model": None,
+            "failure_class": failure_class}
+
+
+def test_status_review_line_shows_budget_and_refunds(tmp_path):
+    root = make_repo(tmp_path)
+    for verdict, failure in (("INCOMPLETE", "tool"), ("FINDINGS", None)):
+        _, number, _ = review_ledger.reserve(str(root), "T1", "codex")
+        review_ledger.record(str(root), "T1", number, _review(verdict, failure))
+
+    done = _run(root)
+
+    assert "review   T1: REVIEWED, 1/2 rounds used, 1 refunded" in done.stdout, done.stdout
+
+
+def test_status_review_line_for_an_unreadable_ledger_is_unknown(tmp_path):
+    root = make_repo(tmp_path)
+    path = review_ledger.ledger_path(str(root), "T1")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("{not json")
+
+    done = _run(root)
+
+    assert "review   T1: UNKNOWN (ledger unreadable)" in done.stdout, done.stdout

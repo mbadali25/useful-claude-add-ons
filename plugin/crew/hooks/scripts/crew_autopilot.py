@@ -453,11 +453,21 @@ def _review_phase(top, ticket, evidence, answer):
                       f"({message}): /crew:review would reserve a third round and put "
                       f"{ticket} in NEEDS_REPLAN, which only a new approved plan leaves. A "
                       "human reverts the edit that staled the receipt, or replans")
+    if latest.get("refunded") is True and not ok:
+        return _toward_review(top, ticket, answer, ok, message,
+                              f"round {latest.get('round')} was a tool failure and was "
+                              "refunded; ")
     if latest.get("verdict") != "CLEAN" and not ok:
         return answer("accept-review", True, f"round {latest.get('round')} is "
                       f"{latest.get('verdict') or 'without a verdict'}: the reviewer did not "
                       "finish reading, and it cannot be accepted - a human reruns "
                       "/crew:review (spending a round) or replans")
+    return _toward_review(top, ticket, answer, ok, message)
+
+
+def _toward_review(top, ticket, answer, ok, message, note=""):
+    """Refresh before the next review round, then review; or done once a
+    receipt stands. `note` prefixes the review reason (a refunded round)."""
     refresh = _refresh_state(top, ticket)
     if refresh["state"] == UNAVAILABLE:
         return answer("refresh", True, refresh["reason"])
@@ -466,7 +476,7 @@ def _review_phase(top, ticket, evidence, answer):
         return answer("refresh", not command,
                       f"before the next review round - {refresh['reason']}", command)
     if not ok:
-        return answer("review", False, f"{message}; artifacts fresh",
+        return answer("review", False, f"{note}{message}; artifacts fresh",
                       f"/crew:review {ticket}")
     if refresh["state"] != FRESH:
         return answer("stale-after-review", True, "an artifact is stale after an "
