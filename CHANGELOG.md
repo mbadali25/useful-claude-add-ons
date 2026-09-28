@@ -6,9 +6,11 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.42: approve several tickets in one prompt, with a confirm
-  step (T-0024).** Bumped `1.0.41 -> 1.0.42`. `hooks/scripts/approval_hook.py`
-  now accepts `/crew:approve T-4 T-5` (spaces or commas), a range
+- **`crew` 1.0.48: approve several tickets in one prompt, with a confirm
+  step (T-0024).** Bumped `1.0.47 -> 1.0.48`. Its branch declared 1.0.42, then
+  1.0.43-1.0.45 for review rounds 1-3 (the Fixed entries below); main gave
+  1.0.42 to T-0005, 1.0.43 to T-0042, 1.0.44 and 1.0.45 to T-0021.
+  `hooks/scripts/approval_hook.py` now accepts `/crew:approve T-4 T-5` (spaces or commas), a range
   `/crew:approve T-0010..T-0012` (one prefix, start <= end, at most 20
   tickets), and one plain-text form, the whole prompt on one line:
   `[please] approve T-1 and T-2` / `approve T-0010 through|thru|to T-0012`.
@@ -48,8 +50,8 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
-- **`crew` 1.0.45: group approval review round 3 (T-0024, successor plan).**
-  Bumped `1.0.44 -> 1.0.45`. Three defects Codex found, each with a failing
+- **`crew` 1.0.48: group approval review round 3 (T-0024, successor plan).**
+  Bumped `1.0.44 -> 1.0.45` on its branch; lands in 1.0.48. Three defects Codex found, each with a failing
   test first and a mutation in `tests/sabotage_approval.py`:
   - A single `/crew:approve <id>` in the expanded form wrapped in an example
     tag (`<command-example>...</command-example>`) recorded the approval. The
@@ -60,8 +62,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   - Trimming a trailing `-` or `.` conflated distinct ids (`T-1-` and `T-1`).
     Table cells are matched whole.
 
-- **`crew` 1.0.44: group approval review round 2 (T-0024, successor plan).**
-  Bumped `1.0.43 -> 1.0.44`. Five defects Codex found, each with a failing test
+- **`crew` 1.0.48: group approval review round 2 (T-0024, successor plan).**
+  Bumped `1.0.43 -> 1.0.44` on its branch; lands in 1.0.48. Five defects Codex found, each with a failing test
   first and a mutation in `tests/sabotage_approval.py`:
   - A `/crew:approve --confirm` nested inside a `<command-message>` (an example)
     confirmed. Only the prompt's own top-level command counts now: a command
@@ -79,8 +81,8 @@ All notable changes to this repository are documented here. Format follows [Keep
     as its own write. It now looks for its own entry (session, prompt,
     hashes) in the receipt history.
 
-- **`crew` 1.0.43: group approval review round 1 (T-0024).** Bumped
-  `1.0.42 -> 1.0.43`. Four defects Codex found in `hooks/scripts/approval_hook.py`,
+- **`crew` 1.0.48: group approval review round 1 (T-0024).** Bumped
+  `1.0.42 -> 1.0.43` on its branch; lands in 1.0.48. Four defects Codex found in `hooks/scripts/approval_hook.py`,
   each with a failing test first and a mutation in `tests/sabotage_approval.py`:
   - A confirm or group in the expanded `<command-name>`/`<command-args>` form
     wrapped in other text was accepted; it now carries nothing but its tags.
