@@ -21,8 +21,12 @@ All notable changes to this repository are documented here. Format follows [Keep
   typo'd `deploy` value (read as `none`, with a warning naming it), a
   fail-closed cloud guard, and a crash inside the decision or its report.
   **An emergency refuses**: `.crew/incident.json` present in any form, or a
-  path that cannot be checked, even when a later import fails. Every production decision carries a report line naming the
-  environment (`unattended production: <env> <verdict> - <reason>`).
+  path that cannot be checked for any reason (finding the checkout included),
+  even when a later import fails. Every production decision carries a report line naming the
+  environment (`unattended production: <env> <verdict> - <reason>`). The CLI
+  prints one line on stdout, verdict first: a value it was handed, or a reason,
+  that is not plain printable text prints as its repr, so no input can add a
+  second verdict line.
 - **Inert until T-0045.** Nothing in this version dispatches a deploy;
   `settings` warns whenever `autopilot.deploy` is not `none`. The consumer
   contract is in `plugin/crew/CONFIG.md` §20: call it immediately before each
@@ -31,7 +35,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   still decide.
 - **Not breaking.** The default `none` answers `ask` everywhere, and no
   existing key, stop or guard changes. The declared config leaves go 122 -> 123
-  (repo-only 54 -> 55). 30 sabotage mutations in `sabotage_autopilot.py` prove
+  (repo-only 54 -> 55). `sabotage_autopilot.py`'s `DEPLOY_MUTATIONS` prove
   the must-block and must-allow tests can fail. Bumped `1.0.47 -> 1.0.48`
   (1.0.44, then 1.0.47, on its branch; re-set after merging main's 1.0.47, T-0018).
 

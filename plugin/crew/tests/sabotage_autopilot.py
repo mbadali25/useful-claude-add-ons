@@ -253,7 +253,7 @@ DEPLOY_MUTATIONS = (
      '    return f"unattended production: {verdict} - {reason}"\n',
      _D + "test_prod_allow_reports_by_name"),
     ("the report is not printed", AUTOPILOT,
-     '            sys.stderr.write(result["report"] + "\\n")\n',
+     '            sys.stderr.write(_cli_value(result["report"]) + "\\n")\n',
      "            pass\n",
      _D + "test_cli_prints_report_to_stderr"),
     ("must-allow non-vacuity: production never allows", AUTOPILOT,
@@ -297,6 +297,42 @@ DEPLOY_MUTATIONS = (
      '        if label == "repo" and crew_config.layer_state(path, environments=True) '
      '== "corrupt":\n',
      _D + "test_machine_problem_never_grants_and_asks"),
+    # Review round 3: a FIX per finding, then its neighbouring case.
+    ("a non-OSError while checking the incident path asks", AUTOPILOT,
+     "    except Exception as exc:  # pylint: disable=broad-except\n"
+     "        return _cannot_exclude(exc)\n",
+     "    except OSError as exc:\n        return _cannot_exclude(exc)\n",
+     _D + "test_incident_check_that_raises_a_non_oserror_refuses"),
+    ("finding the checkout escapes the incident check", AUTOPILOT,
+     "    try:\n        top = crew_ticket.toplevel(root) or os.path.abspath(root)\n"
+     "        os.lstat(",
+     "    top = crew_ticket.toplevel(root) or os.path.abspath(root)\n    try:\n"
+     "        os.lstat(",
+     _D + "test_incident_path_that_cannot_be_found_refuses"),
+    ("the deploy-allowed CLI echoes the environment raw", AUTOPILOT,
+     '                        "env": _cli_value(result["env"], token=True),\n',
+     '                        "env": result["env"],\n',
+     _D + "test_cli_prints_one_line_whatever_it_is_handed"),
+    ("the deploy-allowed CLI echoes the class raw", AUTOPILOT,
+     '                        "class": _cli_value(result["envClass"], token=True),\n',
+     '                        "class": result["envClass"],\n',
+     _D + "test_cli_prints_one_line_whatever_it_is_handed"),
+    ("the deploy-allowed CLI prints a crash reason raw", AUTOPILOT,
+     '                        "reason": _cli_value(result["reason"])})\n',
+     '                        "reason": result["reason"]})\n',
+     _D + "test_cli_reason_is_one_line_when_a_crash_message_breaks_lines"),
+    ("the deploy-allowed CLI prints its own fallback's reason raw", AUTOPILOT,
+     '                        "reason": _cli_value(result["reason"])})\n',
+     '                        "reason": result["reason"]})\n',
+     _D + "test_cli_fallback_is_one_line_when_deploy_allowed_raises"),
+    ("the deploy-allowed CLI writes the report raw", AUTOPILOT,
+     '            sys.stderr.write(_cli_value(result["report"]) + "\\n")\n',
+     '            sys.stderr.write(result["report"] + "\\n")\n',
+     _D + "test_cli_report_is_one_line_when_a_crash_message_breaks_lines"),
+    ("a value holding whitespace prints as a bare token", AUTOPILOT,
+     "    plain = text.isprintable() and not (token and (not text or any(\n",
+     "    plain = text.isprintable() and not (token and (not text or False and any(\n",
+     _D + "test_cli_quotes_a_value_holding_whitespace"),
 )
 
 AUTOPILOT_MUTATIONS = AUTOPILOT_MUTATIONS + DEPLOY_MUTATIONS

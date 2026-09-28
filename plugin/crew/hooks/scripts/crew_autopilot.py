@@ -87,12 +87,14 @@ silence the command could read as permission.
 ## deploy-allowed -- may autopilot deploy here without asking (T-0072)
 
 `deploy_allowed` answers `allow`, `ask` or `refuse` for one environment, first
-match wins: an incident file refuses; an unusable name, a class that is not
-`nonProd`/`prod`, or a corrupt config layer asks (could not tell); autopilot
-off or `autopilot.deploy: none` asks; `nonProd` allows under `nonprod`/`all`;
-`prod` allows only under `all`, with `environments.prodUnattended` true in BOTH
-layers and `guards.cloudGuard` resolving to a plain `block`. A crash asks,
-building the report included, and cannot come ahead of the incident check.
+match wins: an incident file, or any failure checking for one, refuses; an
+unusable name, a class that is not `nonProd`/`prod`, or a corrupt config layer
+asks (could not tell); autopilot off or `autopilot.deploy: none` asks;
+`nonProd` allows under `nonprod`/`all`; `prod` allows only under `all`, with
+`environments.prodUnattended` true in BOTH layers and `guards.cloudGuard`
+resolving to a plain `block`. A crash asks, building the report included, and
+cannot come ahead of the incident check. The CLI prints one line per stream:
+a value that is not plain printable text prints as its repr.
 
 The consumer (T-0045, not built here) calls it immediately before each
 dispatch, passes the class from T-0005's classifier, proceeds only on the exact
@@ -697,16 +699,22 @@ def _exact(value, allowed):
     return isinstance(value, str) and value in allowed
 
 
-def _incident(top):
+def _cannot_exclude(exc):
+    return f"could not tell whether an emergency is active ({type(exc).__name__})"
+
+
+def _incident(root):
     """Why an emergency may be active, or `""`. `os.lstat`, not
     `os.path.lexists`: that returns False when lstat raises for ANY reason, so
-    an unreadable path would read as "no incident". Only a missing file is."""
+    an unreadable path would read as "no incident". Only a missing file is;
+    anything else raised on the way, finding the checkout included, refuses."""
     try:
+        top = crew_ticket.toplevel(root) or os.path.abspath(root)
         os.lstat(os.path.join(top, ".crew", "incident.json"))
     except (FileNotFoundError, NotADirectoryError):
         return ""
-    except OSError as exc:
-        return f"could not tell whether an emergency is active ({type(exc).__name__})"
+    except Exception as exc:  # pylint: disable=broad-except
+        return _cannot_exclude(exc)
     return "an emergency may be active (.crew/incident.json exists)"
 
 
@@ -714,10 +722,10 @@ def _deploy_verdict(root, env_name, env_class):
     """`(verdict, reason, deploy)`, the Design table's rows in order. The
     incident check runs first, ahead of the `cloud_guard` import: a failure
     after it asks, and asking would downgrade a present emergency's refusal."""
-    top = crew_ticket.toplevel(root) or os.path.abspath(root)
-    emergency = _incident(top)
+    emergency = _incident(root)
     if emergency:
         return "refuse", emergency, None
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
     import cloud_guard  # pylint: disable=import-outside-toplevel
     if not isinstance(env_name, str) or not env_name.strip() or not env_name.isprintable():
         return "ask", f"could not tell which environment: {_safe_text(env_name)}", None
@@ -1121,6 +1129,18 @@ def _line(**fields):
     return " ".join(f"{k}={v}" for k, v in fields.items())
 
 
+def _cli_value(value, token=False):
+    """`value` as one field of deploy-allowed's one line: itself when it is a
+    printable string (for a `token`, non-empty with no whitespace either),
+    else its repr, which escapes every line break. So nothing the CLI was
+    handed, and no exception text, can print a second line to read as a
+    verdict (review round 3)."""
+    text = value if isinstance(value, str) else _safe_text(value)
+    plain = text.isprintable() and not (token and (not text or any(
+        char.isspace() for char in text)))
+    return text if plain else _safe_text(text)
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="action", required=True)
@@ -1191,10 +1211,12 @@ def main(argv):
                       if args.env_class == "prod" else "")
             result = {"verdict": "ask", "reason": reason, "report": report,
                       "env": args.env, "envClass": args.env_class, "deploy": None}
-        text = _line(**{"verdict": result["verdict"], "env": result["env"],
-                        "class": result["envClass"], "reason": result["reason"]})
+        text = _line(**{"verdict": result["verdict"],
+                        "env": _cli_value(result["env"], token=True),
+                        "class": _cli_value(result["envClass"], token=True),
+                        "reason": _cli_value(result["reason"])})
         if result["report"]:
-            sys.stderr.write(result["report"] + "\n")
+            sys.stderr.write(_cli_value(result["report"]) + "\n")
     elif args.action == "resume":
         try:
             result = resume_target(args.root, args.ticket or None)

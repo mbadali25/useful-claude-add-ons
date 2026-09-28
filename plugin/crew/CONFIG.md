@@ -2306,7 +2306,7 @@ class)` answers, first match wins:
 
 | Condition | Verdict |
 |---|---|
-| `.crew/incident.json` exists in any form, or its path cannot be checked | `refuse` — an emergency may be active |
+| `.crew/incident.json` exists in any form, or its path cannot be checked for any reason | `refuse` — an emergency may be active |
 | the environment name is blank, not a string, or not printable | `ask` — could not tell which environment |
 | the class is not exactly `nonProd` or `prod` (T-0005's classes; `unknown` included) | `ask` — crew could not classify it |
 | either config layer is corrupt (unreadable, not JSON, a bad `guards` or `environments` block) | `ask` — could not read that layer |
@@ -2324,7 +2324,10 @@ that can fail to import, so a crash never turns an emergency's `refuse` into
 or `refuse` — carries a report line naming the environment
 (`unattended production: <env> <verdict> - <reason>`). The CLI is
 `crew_autopilot.py deploy-allowed --root . --env <name> --class <class>
-[--json]`: the verdict line on stdout, the report on stderr, exit 0.
+[--json]`: the verdict line on stdout, the report on stderr, exit 0. Each is
+one line, the verdict first: an environment, class or reason that is not plain
+printable text (a class or environment holding whitespace included) prints as
+its repr, so no input can add a line a consumer would read as a second verdict.
 
 **Inert until T-0045.** Nothing in this crew version dispatches a deploy, so
 `settings` warns whenever `autopilot.deploy` is not `none`. The consumer

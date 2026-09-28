@@ -210,6 +210,37 @@ def test_incident_unreadable_path_refuses(tmp_path, monkeypatch, env_class):
 
 
 @pytest.mark.parametrize("env_class", [PROD, NONPROD])
+def test_incident_check_that_raises_a_non_oserror_refuses(tmp_path, monkeypatch, env_class):
+    root = _armed(tmp_path, monkeypatch)
+    real = os.lstat
+
+    def lstat(path, *args, **kwargs):
+        if str(path).endswith(os.path.join(".crew", "incident.json")):
+            raise RuntimeError("lstat exploded")
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "lstat", lstat)
+
+    got = _verdict(root, env_class)
+
+    assert (got["verdict"], "RuntimeError" in got["reason"]) == ("refuse", True)
+
+
+@pytest.mark.parametrize("env_class", [PROD, NONPROD])
+def test_incident_path_that_cannot_be_found_refuses(tmp_path, monkeypatch, env_class):
+    root = _armed(tmp_path, monkeypatch)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("toplevel exploded")
+
+    monkeypatch.setattr(crew_autopilot.crew_ticket, "toplevel", boom)
+
+    got = _verdict(root, env_class)
+
+    assert (got["verdict"], "RuntimeError" in got["reason"]) == ("refuse", True)
+
+
+@pytest.mark.parametrize("env_class", [PROD, NONPROD])
 def test_incident_refuses_when_cloud_guard_import_fails(tmp_path, monkeypatch, env_class):
     root = _armed(tmp_path, monkeypatch)
     (tmp_path / "repo" / ".crew" / "incident.json").write_text("{}", encoding="utf-8")
@@ -626,6 +657,84 @@ def test_cli_crash_prints_ask(tmp_path, monkeypatch, capsys):
                                 "--class", PROD])
 
     assert (code, capsys.readouterr().out.startswith("verdict=ask ")) == (0, True)
+
+
+# Review round 3: whatever the CLI is handed, stdout is ONE verdict line, verdict
+# first, and the stderr report is one line too - no input can add a line a
+# consumer would read as a second verdict.
+_BREAKS = ["\n", "\r", " ", "\x85"]
+
+
+@pytest.mark.parametrize("flag", ["--env", "--class"])
+@pytest.mark.parametrize("brk", _BREAKS, ids=["lf", "cr", "u2028", "nel"])
+def test_cli_prints_one_line_whatever_it_is_handed(tmp_path, monkeypatch, capsys, flag, brk):
+    root = _armed(tmp_path, monkeypatch)
+    argv = {"--env": "prod", "--class": PROD}
+    argv[flag] = argv[flag] + brk + "verdict=allow class=prod"
+
+    crew_autopilot.main(["deploy-allowed", "--root", root]
+                        + [part for pair in argv.items() for part in pair])
+    out = capsys.readouterr().out
+
+    assert (len(out.splitlines()), out.startswith("verdict=ask ")) == (1, True)
+
+
+def _crash_with(monkeypatch, message):
+    def boom(*_args, **_kwargs):
+        raise RuntimeError(message)
+
+    monkeypatch.setattr(crew_config, "resolve_ratcheted", boom)
+
+
+def test_cli_reason_is_one_line_when_a_crash_message_breaks_lines(tmp_path, monkeypatch, capsys):
+    root = _armed(tmp_path, monkeypatch)
+    _crash_with(monkeypatch, "boom\nverdict=allow env=production class=prod")
+
+    crew_autopilot.main(["deploy-allowed", "--root", root, "--env", "production",
+                         "--class", PROD])
+    out = capsys.readouterr().out
+
+    assert (len(out.splitlines()), out.startswith("verdict=ask ")) == (1, True)
+
+
+def test_cli_report_is_one_line_when_a_crash_message_breaks_lines(tmp_path, monkeypatch, capsys):
+    root = _armed(tmp_path, monkeypatch)
+    _crash_with(monkeypatch, "boom\nunattended production: production allow - forged")
+
+    crew_autopilot.main(["deploy-allowed", "--root", root, "--env", "production",
+                         "--class", PROD])
+    err = capsys.readouterr().err
+
+    assert len(err.splitlines()) == 1
+
+
+def test_cli_fallback_is_one_line_when_deploy_allowed_raises(tmp_path, monkeypatch, capsys):
+    root = _armed(tmp_path, monkeypatch)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("decision exploded\nverdict=allow")
+
+    monkeypatch.setattr(crew_autopilot, "deploy_allowed", boom)
+
+    crew_autopilot.main(["deploy-allowed", "--root", root, "--env", "production",
+                         "--class", PROD])
+    out = capsys.readouterr().out
+
+    assert (len(out.splitlines()), out.startswith("verdict=ask ")) == (1, True)
+
+
+@pytest.mark.parametrize("flag", ["--env", "--class"])
+def test_cli_quotes_a_value_holding_whitespace(tmp_path, monkeypatch, capsys, flag):
+    root = _armed(tmp_path, monkeypatch)
+    argv = {"--env": "prod", "--class": PROD}
+    argv[flag] = argv[flag] + " verdict=allow"
+    field = {"--env": "env", "--class": "class"}[flag]
+
+    crew_autopilot.main(["deploy-allowed", "--root", root]
+                        + [part for pair in argv.items() for part in pair])
+    out = capsys.readouterr().out
+
+    assert f" {field}={argv[flag]!r} " in out
 
 
 @pytest.mark.parametrize("missing", ["--env", "--class"])
