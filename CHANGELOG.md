@@ -185,10 +185,10 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.52: `/crew:config` menu mode and `/crew:config-setup` (T-0075).**
-  Bumped one past origin/main (1.0.51, T-0072) as the last `plugin/crew/` commit;
-  the build earlier declared 1.0.44, 1.0.46, 1.0.47, 1.0.48, 1.0.49, 1.0.50 and
-  1.0.51, each given to another ticket on main first. This entry describes the successor design
+- **`crew` 1.0.55: `/crew:config` menu mode and `/crew:config-setup` (T-0075).**
+  Bumped one past origin/main (1.0.54, T-0092) as the last `plugin/crew/` commit;
+  the build earlier declared 1.0.44, 1.0.46, 1.0.47, 1.0.48, 1.0.49, 1.0.50,
+  1.0.51 and 1.0.52, each given to another ticket on main first. This entry describes the successor design
   written after review round 2 was rejected by the owner, with review round 3's
   fixes.
   - `/crew:config` with no argument, and the new alias `/crew:config-setup`,
