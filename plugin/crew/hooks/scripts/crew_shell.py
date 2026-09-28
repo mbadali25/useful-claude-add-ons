@@ -32,6 +32,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 
 MODES = ("auto", "wsl", "powershell", "gitbash")
 
@@ -411,6 +412,322 @@ def configured_distro(cfg):
     return value if isinstance(value, str) and value else None
 
 
+def raw_mode(cfg):
+    value = _block(cfg).get("mode")
+    return "auto" if value is None else str(value)
+
+
+def mode(cfg):
+    """`(mode, note)`. An unrecognised value is read as `auto`, and the note
+    names it so the route line and the status line can say so."""
+    value = raw_mode(cfg)
+    if value in MODES:
+        return value, None
+    return "auto", f"shellRoute.mode {value!r} is not a mode - read as auto"
+
+
+def effective_probe(cache, cfg):
+    """The cached probe, or `unknown` when `shellRoute.distro` names a distro
+    other than the one the cache probed: that answer is about another distro."""
+    wanted = configured_distro(cfg)
+    probed = cache.get("distro")
+    if wanted and probed and wanted.casefold() != str(probed).casefold():
+        return {"state": "unknown", "distro": None,
+                "detail": f"cache probed {probed} but shellRoute.distro is {wanted} - "
+                          "run crew_shell.py probe --write"}
+    return cache
+
+
+def _repo_key(root):
+    return os.path.normcase(root)
+
+
+def measured_verdict(cache, root):
+    """`wsl-faster`, `gitbash-faster` or `none` for this repo."""
+    measured = cache.get("measured") if isinstance(cache, dict) else None
+    entry = measured.get(_repo_key(root)) if isinstance(measured, dict) else None
+    verdict = entry.get("verdict") if isinstance(entry, dict) else None
+    return verdict if verdict in ("wsl-faster", "gitbash-faster") else "none"
+
+
+# --- decide ---------------------------------------------------------------------------
+
+POWERSHELL_BASH = "powershell requested; job is bash syntax -> gitbash"
+REFUSED = "-> refused (exit 3)"
+
+
+def _wsl_state(probe_result):
+    state = (probe_result or {}).get("state") or "unknown"
+    detail = (probe_result or {}).get("detail")
+    if state == "unknown" and detail == "never probed":
+        return "WSL never probed (unknown)"
+    return f"WSL {state}" + (f" ({detail})" if detail else "")
+
+
+def fallback(job_class, why):
+    """`auto` without WSL: plain argv runs with no shell, anything else in Git
+    Bash. Never pwsh -- on a real job the launcher is noise and direct exec is
+    the cheaper of the two."""
+    if job_class == "plain":
+        return "direct", f"{why}; plain argv -> direct", None
+    return "gitbash", f"{why}; bash syntax -> gitbash", None
+
+
+def decide(mode_value, probe_result, location, measured, host, job_class, pwsh):
+    """`(route, reason, exit)`. `route` is `bash` (off Windows: plain `bash -c`,
+    no message), `wsl`, `gitbash`, `direct`, `powershell` or `refuse` (with
+    exit 3). A pure function of its arguments: the same job takes the same
+    route on the same machine."""
+    if not on_windows(host):
+        return "bash", "", None
+    note = ""
+    if mode_value not in MODES:
+        note = f"shellRoute.mode {mode_value!r} is not a mode - read as auto; "
+        mode_value = "auto"
+    state = (probe_result or {}).get("state") or "unknown"
+    distro = (probe_result or {}).get("distro")
+    if mode_value == "gitbash":
+        return "gitbash", "shellRoute.mode gitbash -> gitbash", None
+    if mode_value == "powershell":
+        if job_class != "plain":
+            return "gitbash", POWERSHELL_BASH, None
+        if pwsh:
+            return "powershell", f"shellRoute.mode powershell; plain argv -> powershell ({pwsh})", None
+        return "refuse", f"shellRoute.mode powershell but {resolve_pwsh(exists=lambda _p: False)[1]} {REFUSED}", 3
+    usable = state == "usable"
+    if mode_value == "wsl":
+        if not usable:
+            return "refuse", f"shellRoute.mode wsl but {_wsl_state(probe_result)} {REFUSED}, no fallback", 3
+        if location not in ("windows-drive", "wsl-fs"):
+            return "refuse", f"shellRoute.mode wsl but the repo path has no WSL translation {REFUSED}", 3
+        return "wsl", f"shellRoute.mode wsl; WSL2 usable ({distro}) -> wsl", None
+    if usable and location == "wsl-fs":
+        return "wsl", f"{note}auto: WSL2 usable ({distro}) and the repo is inside WSL -> wsl", None
+    if usable and location == "windows-drive" and measured == "wsl-faster":
+        return "wsl", f"{note}auto: WSL2 usable ({distro}) and measured faster than Git Bash here -> wsl", None
+    if not usable:
+        why = _wsl_state(probe_result)
+    elif location == "windows-drive" and measured == "gitbash-faster":
+        why = "WSL usable but measured slower than Git Bash for this repo on its Windows drive"
+    elif location == "windows-drive":
+        why = "WSL usable but this repo is on a Windows drive and not measured (crew_shell.py measure --write)"
+    else:
+        why = "WSL usable but the repo path has no WSL translation"
+    return fallback(job_class, f"{note}auto: {why}")
+
+
+# --- run ------------------------------------------------------------------------------
+
+def wsl_argv(cmd, cwd, distro):
+    return ["wsl.exe", "-d", distro, "--cd", cwd, "-e", "bash", "-lc", cmd]
+
+
+def gitbash_argv(cmd, bash):
+    return [bash, "-lc", cmd]
+
+
+def pwsh_argv(argv, pwsh):
+    """`argv` is the classified list, never a command string: each element is
+    single-quoted with `'` doubled, so pwsh sees literal arguments."""
+    quoted = " ".join("'" + part.replace("'", "''") + "'" for part in argv)
+    return [pwsh, "-NoProfile", "-NonInteractive", "-Command", f"& {quoted}; exit $LASTEXITCODE"]
+
+
+def execute_job(argv, cwd):
+    """The default executor: stdio inherited, the child's exit code returned."""
+    return subprocess.run(argv, cwd=cwd, check=False).returncode
+
+
+_BUILTINS = ("cd", "source", ".", "exec", "eval", "export", "set")
+
+
+def _first_word(cmd):
+    """The program a bash job starts with, for the WSL preflight, or None when
+    there is nothing to look up (a builtin, a path, an empty command)."""
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        tokens = cmd.split()
+    for token in tokens:
+        token = token.lstrip("({")
+        name = token.split("=", 1)[0]
+        if not token or ("=" in token and name.isidentifier()):
+            continue
+        if token in _BUILTINS or "/" in token:
+            return None
+        return token
+    return None
+
+
+def _preflight(runner, distro, cmd):
+    """None when the job's first word resolves inside WSL, else why not."""
+    word = _first_word(cmd)
+    if word is None:
+        return None
+    argv = ["wsl.exe", "-d", distro, "-e", "sh", "-c", "command -v " + shlex.quote(word)]
+    code, _, _, failed = _call(runner, argv, TOOLS_TIMEOUT)
+    if failed:
+        return f"the WSL preflight for {word} failed: {failed[1]}"
+    return None if code == 0 else f"{word} is not on PATH inside {distro}"
+
+
+def _absolute(root):
+    if _DRIVE.match(root) or root.startswith(("\\\\", "//")):
+        return root
+    return os.path.abspath(root)
+
+
+def run(cmd, root=".", runner=None, execute=None):
+    """Run `cmd` on the resolved route and return its exit code. Off native
+    Windows this is exactly `bash -c <cmd>`: no probe, no config read, no
+    message."""
+    execute = execute or execute_job
+    if not on_windows():
+        return execute(["bash", "-c", cmd], root)
+    runner = runner or capture
+    root = _absolute(root)
+    cfg = settings(root)
+    normal, _ = mode(cfg)
+    cache = effective_probe(load_cache(), cfg)
+    kind, argv, creason = classify(cmd)
+    location = repo_location(root)
+    pwsh = resolve_pwsh()[0] if normal == "powershell" and kind == "plain" else None
+    route, reason, code = decide(raw_mode(cfg), cache, location, measured_verdict(cache, root), host_os(), kind, pwsh)
+    distro = cache.get("distro")
+    wsl_cwd = None
+    if route == "wsl":
+        wsl_cwd, why = to_wsl_path(root, distro)
+        missing = why if wsl_cwd is None else _preflight(runner, distro, cmd)
+        if missing and normal == "wsl":
+            route, reason, code = "refuse", f"shellRoute.mode wsl but {missing} {REFUSED}, no fallback", 3
+        elif missing:
+            route, reason, code = fallback(kind, f"auto: WSL usable but {missing}")
+    bash = None
+    if route == "gitbash":
+        bash, why = resolve_gitbash(runner)
+        if bash is None:
+            route, reason, code = "refuse", f"{reason}; but {why} {REFUSED}", 3
+    if route in ("direct", "powershell"):
+        reason += f" [{creason}]"
+    print(f"crew-shell: {reason}", file=sys.stderr, flush=True)
+    if code:
+        return code
+    job = {"wsl": lambda: wsl_argv(cmd, wsl_cwd, distro), "gitbash": lambda: gitbash_argv(cmd, bash),
+           "direct": lambda: argv, "powershell": lambda: pwsh_argv(argv, pwsh)}[route]()
+    return execute(job, root)
+
+
+# --- measure --------------------------------------------------------------------------
+
+FORKS, WRITES = 50, 200
+_BASH_FORKS = f"i=0; while [ $i -lt {FORKS} ]; do /usr/bin/true; i=$((i+1)); done"
+_BASH_WRITES = "i=0; while [ $i -lt " + str(WRITES) + " ]; do echo x > \"$d/f$i\"; i=$((i+1)); done"
+_PWSH_FORKS = f"for ($i=0; $i -lt {FORKS}; $i++) {{ & $env:ComSpec /d /c rem }}"
+_PWSH_WRITES = f"for ($i=0; $i -lt {WRITES}; $i++) {{ [IO.File]::WriteAllText(\"$d\\f$i\", 'x') }}"
+
+
+def _timed(runner, timer, argv, timeout=120):
+    start = timer()
+    code, _, err = runner(argv, timeout)
+    elapsed = timer() - start
+    if code != 0:
+        raise RuntimeError(f"exit {code}: {decode(err).strip()[:200]}")
+    return elapsed
+
+
+def _side(runner, timer, prefix, scripts):
+    """`{"forks": s, "writes": s}` net of the shell's own start-up, or
+    `{"error": ...}`. A side that failed is an error, never a number."""
+    base, forks, writes = scripts
+    try:
+        startup = _timed(runner, timer, prefix + [base])
+        return {"forks": round(max(0.0, _timed(runner, timer, prefix + [forks]) - startup), 4),
+                "writes": round(max(0.0, _timed(runner, timer, prefix + [writes]) - startup), 4)}
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+        return {"error": str(exc) or type(exc).__name__}
+
+
+def _verdict(sides):
+    gitbash, wsl = sides.get("gitbash", {}), sides.get("wsl", {})
+    if not all(key in side for side in (gitbash, wsl) for key in ("forks", "writes")):
+        return "unknown"
+    faster = wsl["forks"] < gitbash["forks"] and wsl["writes"] < gitbash["writes"]
+    return "wsl-faster" if faster else "gitbash-faster"
+
+
+def measure(root, runner=None, timer=None, cache=None, cfg=None):
+    """50 forks and 200 small writes for Git Bash, pwsh and WSL, at the repo's
+    own location, plus WSL's ext4 as the in-WSL clone reference when the repo
+    is on a Windows drive. Off native Windows: `n/a`, nothing run."""
+    if not on_windows():
+        return {"state": "n/a", "detail": "not native Windows"}
+    import datetime
+    import socket
+    import tempfile
+    runner = runner or capture
+    timer = timer or time.perf_counter
+    root = _absolute(root)
+    cfg = settings(root) if cfg is None else cfg
+    cache = effective_probe(load_cache() if cache is None else cache, cfg)
+    location = repo_location(root)
+    work = tempfile.mkdtemp(prefix=".crew-shell-measure-", dir=root)
+    sides = {}
+    try:
+        bash, why = resolve_gitbash(runner)
+        if bash:
+            d_bash = os.path.join(work, "gitbash").replace("\\", "/")
+            os.makedirs(d_bash)
+            sides["gitbash"] = _side(runner, timer, [bash, "-c"],
+                                     (":", _BASH_FORKS, f"d='{d_bash}'; " + _BASH_WRITES))
+        else:
+            sides["gitbash"] = {"error": why}
+        pwsh, why = resolve_pwsh()
+        if pwsh:
+            d_pwsh = os.path.join(work, "pwsh")
+            os.makedirs(d_pwsh)
+            sides["pwsh"] = _side(runner, timer, [pwsh, "-NoProfile", "-NonInteractive", "-Command"],
+                                  ("exit 0", _PWSH_FORKS, f"$d = '{d_pwsh}'; " + _PWSH_WRITES))
+        else:
+            sides["pwsh"] = {"error": why}
+        distro = cache.get("distro")
+        if cache.get("state") != "usable":
+            sides["wsl"] = {"error": f"{_wsl_state(cache)} - run crew_shell.py probe --write first"}
+        else:
+            prefix = ["wsl.exe", "-d", distro, "-e", "bash", "-c"]
+            d_wsl, why = to_wsl_path(os.path.join(work, "wsl"), distro)
+            if d_wsl is None:
+                sides["wsl"] = {"error": why}
+            else:
+                os.makedirs(os.path.join(work, "wsl"))
+                sides["wsl"] = _side(runner, timer, prefix, (":", _BASH_FORKS, f"d='{d_wsl}'; " + _BASH_WRITES))
+            if location == "windows-drive":
+                sides["wsl-ext4"] = _side(runner, timer, prefix, (
+                    'd=$(mktemp -d); rm -rf "$d"', _BASH_FORKS,
+                    'd=$(mktemp -d); ' + _BASH_WRITES + '; rm -rf "$d"'))
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return {"host": socket.gethostname(), "date": datetime.date.today().isoformat(), "root": root,
+            "location": location, "distro": cache.get("distro"), "forks": FORKS, "writes": WRITES,
+            "sides": sides, "verdict": _verdict(sides)}
+
+
+def _clone_offer(result):
+    ext4, here = result["sides"].get("wsl-ext4", {}), result["sides"].get("gitbash", {})
+    if result.get("location") != "windows-drive" or "writes" not in ext4 or "writes" not in here:
+        return None
+    return (f"In-WSL clone (offered, never made by crew): WSL ext4 takes {ext4['forks']} s for {FORKS} forks "
+            f"and {ext4['writes']} s for {WRITES} writes, against Git Bash's {here['forks']} s and "
+            f"{here['writes']} s here. A clone inside WSL, opened from Windows through \\\\wsl.localhost\\, "
+            "routes to WSL under auto. Moving a repo changes paths other tools use; the owner decides.")
+
+
+def status_line(root):
+    """The `/crew:status` `shell` line, or None off native Windows."""
+    if not on_windows():
+        return None
+    return None
+
+
 # --- CLI ------------------------------------------------------------------------------
 
 def _cmd_probe(args):
@@ -434,16 +751,71 @@ def _cmd_probe(args):
     return 0
 
 
+def _command_text(parts):
+    """`run -- "<cmd>"` takes one argument; several are joined with spaces."""
+    parts = list(parts)
+    if parts[:1] == ["--"]:
+        parts = parts[1:]
+    return parts[0] if len(parts) == 1 else " ".join(parts)
+
+
+def _cmd_measure(args):
+    result = measure(args.root)
+    if result.get("state") == "n/a":
+        print("crew-shell: not native Windows - nothing to measure")
+        return 0
+    if args.write:
+        cache = load_cache()
+        measured = cache.get("measured") if isinstance(cache.get("measured"), dict) else {}
+        measured[_repo_key(result["root"])] = result
+        cache["measured"] = measured
+        write_cache(cache)
+    if args.json:
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    print(f"measured on {result['host']} {result['date']}, repo {result['root']} ({result['location']})")
+    for side, numbers in result["sides"].items():
+        if "error" in numbers:
+            print(f"  {side:<9} error: {numbers['error']}")
+        else:
+            print(f"  {side:<9} {FORKS} forks {numbers['forks']} s, {WRITES} writes {numbers['writes']} s")
+    print(f"verdict {result['verdict']}")
+    offer = _clone_offer(result)
+    if offer:
+        print(offer)
+    return 0
+
+
+def _cmd_classify(args):
+    kind, _, reason = classify(_command_text(args.command))
+    print(f"{kind}: {reason}")
+    return 0
+
+
+def _cmd_run(args):
+    return run(_command_text(args.command), root=args.root)
+
+
 def main(argv=None):
     import argparse
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command_name", required=True)
     cmd = sub.add_parser("probe", help="is WSL2 usable from this Windows side")
     cmd.add_argument("--json", action="store_true")
     cmd.add_argument("--write", action="store_true", help="record the answer in the machine-local cache")
     cmd.add_argument("--root", default=".")
+    cmd = sub.add_parser("measure", help="forks and small writes per shell, at this repo's location")
+    cmd.add_argument("--json", action="store_true")
+    cmd.add_argument("--write", action="store_true", help="record the result in the machine-local cache")
+    cmd.add_argument("--root", default=".")
+    cmd = sub.add_parser("classify", help="plain argv or bash syntax, and why")
+    cmd.add_argument("command", nargs=argparse.REMAINDER)
+    cmd = sub.add_parser("run", help="run one job on the resolved route")
+    cmd.add_argument("--root", default=".")
+    cmd.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
-    return {"probe": _cmd_probe}[args.command](args)
+    handlers = {"probe": _cmd_probe, "measure": _cmd_measure, "classify": _cmd_classify, "run": _cmd_run}
+    return handlers[args.command_name](args)
 
 
 if __name__ == "__main__":

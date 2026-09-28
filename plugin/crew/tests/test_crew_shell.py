@@ -526,3 +526,366 @@ def test_probe_cli_not_installed_prints_recommendation(windows, monkeypatch, tmp
     assert crew_shell.main(["probe", "--root", str(tmp_path)]) == 0
     out = capsys.readouterr().out
     assert "not-installed" in out and "wsl --install -d Ubuntu" in out
+
+
+# --- Step 5: decide, run and measure ----------------------------------------------
+
+STATES = ("usable", "not-installed", "no-distro", "wsl1-only", "no-python3", "no-git", "broken", "unknown", "n/a")
+LOCATIONS = ("windows-drive", "wsl-fs", "unknown")
+MEASURED = ("none", "wsl-faster", "gitbash-faster")
+GITBASH = "C:/Program Files/Git/bin/bash.exe"
+EXACT_POWERSHELL_BASH = "powershell requested; job is bash syntax -> gitbash"
+
+
+def _expected_route(mode, state, location, measured, job, pwsh):
+    """The spec's rules, restated independently of `decide`."""
+    if mode == "gitbash":
+        return "gitbash", None
+    if mode == "powershell":
+        if job == "bash":
+            return "gitbash", None
+        return ("powershell", None) if pwsh else ("refuse", 3)
+    usable = state == "usable"
+    if mode == "wsl":
+        return ("wsl", None) if usable and location in ("windows-drive", "wsl-fs") else ("refuse", 3)
+    if usable and (location == "wsl-fs" or (location == "windows-drive" and measured == "wsl-faster")):
+        return "wsl", None
+    return ("direct" if job == "plain" else "gitbash"), None
+
+
+@pytest.mark.parametrize("mode", crew_shell.MODES + ("bogus",))
+def test_decide(mode):
+    for state in STATES:
+        probe = {"state": state, "detail": "d", "distro": "Ubuntu-24.04"}
+        for location in LOCATIONS:
+            for measured in MEASURED:
+                for job in ("plain", "bash"):
+                    for pwsh in (PWSH7, None):
+                        route, reason, code = crew_shell.decide(mode, probe, location, measured, "windows-bash",
+                                                                job, pwsh)
+                        cell = (mode, state, location, measured, job, pwsh, reason)
+                        normal = "auto" if mode == "bogus" else mode
+                        assert (route, code) == _expected_route(normal, state, location, measured, job, pwsh), cell
+                        assert reason, cell
+                        if mode in ("auto", "bogus"):
+                            assert route != "powershell", cell
+                            if route != "wsl":
+                                assert state in reason, cell
+                        if mode == "bogus":
+                            assert "'bogus'" in reason, cell
+                        if mode == "wsl" and route == "refuse" and state != "usable":
+                            assert state in reason, cell
+                        if mode == "powershell" and job == "bash":
+                            assert reason == EXACT_POWERSHELL_BASH, cell
+
+
+def test_decide_names_never_probed():
+    route, reason, _ = crew_shell.decide("auto", {"state": "unknown", "detail": "never probed"}, "windows-drive",
+                                         "none", "windows", "bash", None)
+    assert route == "gitbash" and "never probed" in reason
+
+
+@pytest.mark.parametrize("host", ["linux", "macos", "wsl", "other"])
+def test_decide_off_windows_is_bash_c(host):
+    for mode in crew_shell.MODES + ("bogus",):
+        for state in STATES:
+            for job in ("plain", "bash"):
+                assert crew_shell.decide(mode, {"state": state}, "windows-drive", "wsl-faster", host, job,
+                                         PWSH7) == ("bash", "", None)
+
+
+def _forbidden(*_a, **_k):
+    raise AssertionError("called off Windows")
+
+
+@pytest.mark.parametrize("host", ["linux", "macos", "wsl"])
+def test_off_windows_is_inert(host, monkeypatch, tmp_path, capfd):
+    monkeypatch.setattr(crew_shell, "host_os", lambda *a, **k: host)
+    for name in ("settings", "load_cache", "resolve_gitbash", "resolve_pwsh", "capture", "locate"):
+        monkeypatch.setattr(crew_shell, name, _forbidden)
+    assert crew_shell.probe(runner=_forbidden, which=_forbidden)["state"] == "n/a"
+    assert crew_shell.status_line(str(tmp_path)) is None
+    cmd = 'printf "a\\n"; echo b >&2; exit 3'
+    code = crew_shell.run(cmd, root=".", runner=_forbidden)
+    got = capfd.readouterr()
+    want = subprocess.run(["bash", "-c", cmd], capture_output=True, check=False)
+    assert (got.out.encode(), got.err.encode(), code) == (want.stdout, want.stderr, want.returncode)
+    assert "crew-shell" not in got.err
+
+
+class Recorder:
+    """`execute(argv, cwd)` and `runner(argv, timeout)` in one: records every
+    call, answers the WSL preflight, and exits the job with `rc`."""
+
+    def __init__(self, rc=0, preflight_rc=0):
+        self.rc, self.preflight_rc = rc, preflight_rc
+        self.jobs, self.calls = [], []
+
+    def execute(self, argv, cwd):
+        self.jobs.append((list(argv), cwd))
+        return self.rc
+
+    def runner(self, argv, timeout):
+        self.calls.append(list(argv))
+        return self.preflight_rc, b"/usr/bin/x\n", b""
+
+
+def _windows_run(monkeypatch, mode, cache=None, distro=None, pwsh=PWSH7, gitbash=GITBASH):
+    monkeypatch.setattr(crew_shell, "host_os", lambda *a, **k: "windows-bash")
+    monkeypatch.setattr(crew_shell, "settings", lambda _root: {"shellRoute": {"mode": mode, "distro": distro}})
+    monkeypatch.setattr(crew_shell, "load_cache",
+                        lambda: dict(cache or {"state": "usable", "distro": "Ubuntu-24.04", "detail": "ok"}))
+    monkeypatch.setattr(crew_shell, "resolve_pwsh", lambda *a, **k: (pwsh, "pwsh reason"))
+    monkeypatch.setattr(crew_shell, "resolve_gitbash", lambda *a, **k: (gitbash, "gitbash reason"))
+
+
+REAL_LOAD_CACHE = crew_shell.load_cache
+WIN_ROOT = "C:\\repos\\x"
+WSL_ROOT = "\\\\wsl.localhost\\Ubuntu-24.04\\home\\u\\r"
+
+
+def test_run_argv_for_wsl(monkeypatch):
+    _windows_run(monkeypatch, "wsl")
+    rec = Recorder()
+    cmd = 'echo "$HOME" \'/c/x\' && ls /c/x'
+    assert crew_shell.run(cmd, root=WIN_ROOT, runner=rec.runner, execute=rec.execute) == 0
+    assert rec.jobs == [(["wsl.exe", "-d", "Ubuntu-24.04", "--cd", "/mnt/c/repos/x", "-e", "bash", "-lc", cmd],
+                         WIN_ROOT)]
+    assert rec.calls == [["wsl.exe", "-d", "Ubuntu-24.04", "-e", "sh", "-c", "command -v echo"]]
+
+
+def test_run_auto_routes_wsl_fs_repo_to_wsl(monkeypatch):
+    _windows_run(monkeypatch, "auto")
+    rec = Recorder()
+    crew_shell.run("python3 -m pytest x.py", root=WSL_ROOT, runner=rec.runner, execute=rec.execute)
+    assert rec.jobs[0][0][:5] == ["wsl.exe", "-d", "Ubuntu-24.04", "--cd", "/home/u/r"]
+
+
+def test_run_argv_for_gitbash(monkeypatch):
+    _windows_run(monkeypatch, "gitbash")
+    rec = Recorder()
+    cmd = "python3 -m pytest x.py -q"
+    crew_shell.run(cmd, root=WIN_ROOT, runner=rec.runner, execute=rec.execute)
+    assert rec.jobs == [([GITBASH, "-lc", cmd], WIN_ROOT)]
+
+
+def test_run_argv_for_direct(monkeypatch):
+    _windows_run(monkeypatch, "auto", cache={"state": "not-installed", "detail": "wsl.exe is not on PATH"})
+    rec = Recorder()
+    crew_shell.run("python3 -m pytest x.py -q", root=WIN_ROOT, runner=rec.runner, execute=rec.execute)
+    assert rec.jobs == [([sys.executable, "-m", "pytest", "x.py", "-q"], WIN_ROOT)]
+    assert rec.calls == []
+
+
+def test_pwsh_argv_quotes_each_element():
+    assert crew_shell.pwsh_argv(["a", "b c", "it's"], PWSH7) == [
+        PWSH7, "-NoProfile", "-NonInteractive", "-Command", "& 'a' 'b c' 'it''s'; exit $LASTEXITCODE"]
+
+
+def test_run_argv_for_powershell(monkeypatch):
+    _windows_run(monkeypatch, "powershell")
+    rec = Recorder()
+    crew_shell.run("python3 -m pytest x.py", root=WIN_ROOT, runner=rec.runner, execute=rec.execute)
+    quoted = sys.executable.replace("'", "''")
+    assert rec.jobs == [([PWSH7, "-NoProfile", "-NonInteractive", "-Command",
+                          f"& '{quoted}' '-m' 'pytest' 'x.py'; exit $LASTEXITCODE"], WIN_ROOT)]
+
+
+def test_run_powershell_without_pwsh_refuses(monkeypatch, capsys):
+    _windows_run(monkeypatch, "powershell", pwsh=None)
+    rec = Recorder()
+    assert crew_shell.run("python3 x.py", root=WIN_ROOT, runner=rec.runner, execute=rec.execute) == 3
+    assert rec.jobs == []
+    assert "exit 3" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("cmd", [cmd for cmd, _ in MUST_BASH] + list(VERIFY_MAP_BASH))
+def test_powershell_mode_never_hands_bash_to_pwsh(monkeypatch, capsys, cmd):
+    _windows_run(monkeypatch, "powershell")
+    rec = Recorder()
+    crew_shell.run(cmd, root=WIN_ROOT, runner=rec.runner, execute=rec.execute)
+    for argv in [job for job, _ in rec.jobs] + rec.calls:
+        assert argv[0] != PWSH7, argv
+    assert rec.jobs == [([GITBASH, "-lc", cmd], WIN_ROOT)]
+    assert capsys.readouterr().err == f"crew-shell: {EXACT_POWERSHELL_BASH}\n"
+
+
+def test_gitbash_mode_with_a_plain_job_still_runs_gitbash(monkeypatch):
+    _windows_run(monkeypatch, "gitbash")
+    rec = Recorder()
+    crew_shell.run("python3 x.py", root=WIN_ROOT, runner=rec.runner, execute=rec.execute)
+    assert rec.jobs[0][0][0] == GITBASH
+
+
+ROUTE_SETUPS = {
+    "wsl": ("wsl", None),
+    "gitbash": ("gitbash", None),
+    "direct": ("auto", {"state": "not-installed", "detail": "x"}),
+    "powershell": ("powershell", None),
+}
+
+
+@pytest.mark.parametrize("route", sorted(ROUTE_SETUPS))
+@pytest.mark.parametrize("rc", [0, 1, 7])
+def test_run_passes_exit_code_through(monkeypatch, route, rc):
+    mode, cache = ROUTE_SETUPS[route]
+    _windows_run(monkeypatch, mode, cache=cache)
+    rec = Recorder(rc=rc)
+    assert crew_shell.run("python3 x.py", root=WIN_ROOT, runner=rec.runner, execute=rec.execute) == rc
+    assert len(rec.jobs) == 1
+
+
+def test_run_prints_one_route_line_to_stderr(monkeypatch, capsys):
+    _windows_run(monkeypatch, "auto", cache={"state": "not-installed", "detail": "wsl.exe is not on PATH"})
+    rec = Recorder()
+    crew_shell.run("python3 x.py", root=WIN_ROOT, runner=rec.runner, execute=rec.execute)
+    out, err = capsys.readouterr()
+    assert out == ""
+    lines = err.splitlines()
+    assert len(lines) == 1 and lines[0].startswith("crew-shell: ")
+    assert "not-installed" in lines[0] and "direct" in lines[0] and "sys.executable" in lines[0]
+
+
+def test_run_preflight_missing_tool(monkeypatch, capsys):
+    _windows_run(monkeypatch, "auto")
+    rec = Recorder(preflight_rc=1)
+    crew_shell.run("python3 x.py", root=WSL_ROOT, runner=rec.runner, execute=rec.execute)
+    assert rec.jobs == [([sys.executable, "x.py"], WSL_ROOT)]
+    assert "python3 is not on PATH inside Ubuntu-24.04" in capsys.readouterr().err
+
+    _windows_run(monkeypatch, "wsl")
+    rec = Recorder(preflight_rc=1)
+    assert crew_shell.run("python3 x.py", root=WSL_ROOT, runner=rec.runner, execute=rec.execute) == 3
+    assert rec.jobs == []
+
+
+def test_run_wsl_mode_refuses_another_distros_path(monkeypatch):
+    _windows_run(monkeypatch, "wsl")
+    rec = Recorder()
+    root = "\\\\wsl.localhost\\Debian\\home\\u\\r"
+    assert crew_shell.run("python3 x.py", root=root, runner=rec.runner, execute=rec.execute) == 3
+    assert rec.jobs == []
+
+
+def test_run_config_distro_disagreeing_with_the_cache_is_unknown(monkeypatch, capsys):
+    _windows_run(monkeypatch, "wsl", distro="Debian")
+    rec = Recorder()
+    assert crew_shell.run("python3 x.py", root=WIN_ROOT, runner=rec.runner, execute=rec.execute) == 3
+    assert "probe --write" in capsys.readouterr().err
+
+
+def test_run_without_gitbash_refuses(monkeypatch):
+    _windows_run(monkeypatch, "gitbash", gitbash=None)
+    rec = Recorder()
+    assert crew_shell.run("python3 x.py", root=WIN_ROOT, runner=rec.runner, execute=rec.execute) == 3
+    assert rec.jobs == []
+
+
+def test_mode_normalises_an_unrecognised_value():
+    assert crew_shell.mode({"shellRoute": {"mode": "wsl"}}) == ("wsl", None)
+    assert crew_shell.mode({}) == ("auto", None)
+    normal, note = crew_shell.mode({"shellRoute": {"mode": "native"}})
+    assert normal == "auto" and "'native'" in note
+
+
+def test_run_cli_joins_argv_and_strips_dashdash(monkeypatch):
+    seen = []
+    monkeypatch.setattr(crew_shell, "run", lambda cmd, root=".", **_k: seen.append((cmd, root)) or 5)
+    assert crew_shell.main(["run", "--", "python3 -m pytest x.py"]) == 5
+    assert crew_shell.main(["run", "--root", "r", "--", "python3", "-m", "pytest"]) == 5
+    assert seen == [("python3 -m pytest x.py", "."), ("python3 -m pytest", "r")]
+
+
+def test_classify_cli(capsys):
+    assert crew_shell.main(["classify", "--", "a | b"]) == 0
+    assert capsys.readouterr().out.startswith("bash: ")
+
+
+class Clock:
+    """`timer()` plus a `runner` that advances it by a per-script cost, so each
+    side's net forks/writes seconds come out exactly."""
+
+    # WSL's fork loop is the same script at either location, so its cost is too.
+    COSTS = {"gitbash": (1.70, 0.13), "pwsh": (0.93, 0.051), "wsl": (0.03, 0.70), "wsl-ext4": (0.03, 0.007)}
+
+    def __init__(self, costs=None):
+        self.now = 100.0
+        self.calls = []
+        self.costs = costs or self.COSTS
+
+    def timer(self):
+        return self.now
+
+    def runner(self, argv, timeout):
+        self.calls.append(list(argv))
+        script = argv[-1]
+        if argv[0] == GITBASH:
+            side = "gitbash"
+        elif argv[0] == PWSH7:
+            side = "pwsh"
+        else:
+            side = "wsl-ext4" if "mktemp" in script else "wsl"
+        forks, writes = self.costs[side]
+        self.now += 0.5 + (forks if "-lt 50" in script else writes if "-lt 200" in script else 0.0)
+        return 0, b"", b""
+
+
+def _measure_setup(monkeypatch, tmp_path):
+    _windows_run(monkeypatch, "auto")
+    monkeypatch.setattr(crew_shell, "repo_location", lambda _p: "windows-drive")
+    monkeypatch.setattr(crew_shell, "to_wsl_path", lambda p, distro=None: ("/mnt/c/x/" + os.path.basename(p), ""))
+    return str(tmp_path)
+
+
+def test_measure_reports_every_side(monkeypatch, tmp_path):
+    root = _measure_setup(monkeypatch, tmp_path)
+    clock = Clock()
+    result = crew_shell.measure(root, runner=clock.runner, timer=clock.timer)
+    assert result["host"] and result["date"] and result["location"] == "windows-drive"
+    for side, (forks, writes) in Clock.COSTS.items():
+        assert result["sides"][side] == {"forks": pytest.approx(forks), "writes": pytest.approx(writes)}, side
+    assert result["verdict"] == "gitbash-faster"  # WSL on /mnt loses on writes
+    assert not [name for name in os.listdir(root) if name.startswith(".crew-shell-measure")]
+    for argv in clock.calls:
+        assert argv[0] in (GITBASH, PWSH7, "wsl.exe")
+
+
+def test_measure_wsl_faster_needs_both_forks_and_writes(monkeypatch, tmp_path):
+    root = _measure_setup(monkeypatch, tmp_path)
+    costs = dict(Clock.COSTS, wsl=(0.03, 0.05))
+    clock = Clock(costs)
+    assert crew_shell.measure(root, runner=clock.runner, timer=clock.timer)["verdict"] == "wsl-faster"
+
+
+def test_measure_write_stores_it_and_decide_reads_it(monkeypatch, tmp_path, capsys):
+    root = _measure_setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(crew_shell, "load_cache", REAL_LOAD_CACHE)
+    crew_shell.write_cache({"state": "usable", "distro": "Ubuntu-24.04", "detail": "seeded"})
+    clock = Clock(dict(Clock.COSTS, wsl=(0.03, 0.05)))
+    monkeypatch.setattr(crew_shell, "capture", clock.runner)
+    monkeypatch.setattr(crew_shell.time, "perf_counter", clock.timer)
+    assert crew_shell.main(["measure", "--write", "--root", root]) == 0
+    assert "wsl-faster" in capsys.readouterr().out
+    with open(crew_shell.probe_path(), encoding="utf-8") as handle:
+        stored = json.load(handle)
+    assert crew_shell.measured_verdict(stored, root) == "wsl-faster"
+    assert stored["state"] == "usable"
+
+
+def test_measure_off_windows_runs_nothing(monkeypatch, tmp_path):
+    monkeypatch.setattr(crew_shell, "host_os", lambda *a, **k: "linux")
+    assert crew_shell.measure(str(tmp_path), runner=_forbidden, timer=_forbidden) == {
+        "state": "n/a", "detail": "not native Windows"}
+
+
+def test_measure_side_failure_is_an_error_not_a_number(monkeypatch, tmp_path):
+    root = _measure_setup(monkeypatch, tmp_path)
+    clock = Clock()
+
+    def runner(argv, timeout):
+        if argv[0] == "wsl.exe":
+            raise OSError("wsl gone")
+        return clock.runner(argv, timeout)
+    result = crew_shell.measure(root, runner=runner, timer=clock.timer)
+    assert "wsl gone" in result["sides"]["wsl"]["error"]
+    assert result["verdict"] == "unknown"
