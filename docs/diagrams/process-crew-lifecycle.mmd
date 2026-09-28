@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@d276b268 on 2026-09-27. Verify before trusting.
+%% Generated from useful-claude-add-ons@c817782f on 2026-09-27. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -62,6 +62,19 @@
 %% (brainstorm.md:35-37, fix.md:29-30) instead of carrying on into the ticket
 %% folder. brainstorm.md kept its line count; fix.md gained one line, so its
 %% citations from :30 on moved +1 (re-mapped with a line diff against c2ae46ab).
+%% On T-0010-solo's branch (history, kept):
+%% Re-anchored for T-0010 at 50e67586 (T-0010-solo, crew 1.0.43): of the anchored paths only
+%% crew_ticket.py changed - the `autopilot` via (4 lines at :141-144) moved approval_digest
+%% :530-571 -> :534-575 and status()'s compare :605-626 -> :609-630 (compared line for line).
+%% T-0010 adds a second approval route, `crew_autopilot.py approve` under autopilot.approval
+%% (always behind scope.allowCliApproval: true), reached only from /crew:autopilot; no command
+%% file drawn here changed, so no node or edge moved.
+%% Merged d276b268's lines + 50e67586 at c817782f (T-0010-solo merges T-0018's main 67caa4b8,
+%% crew 1.0.48): of the anchored paths crew_ticket.py changed on T-0010's side (the `autopilot`
+%% via, +4 above the digest: approval_digest's block :534-575 and status()'s compare :609-630,
+%% mapped by a line diff from f0b12ee6 and re-read); the command files drawn here are unchanged by
+%% T-0010. The approve node still draws the human route; T-0010's `crew_autopilot.py approve` is
+%% reached only from /crew:autopilot under autopilot.approval (scope.allowCliApproval: true).
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):
@@ -121,9 +134,9 @@
 %% done.md:61 (`status: done`). Until T-0026 the receipt hashed both files whole,
 %% so each left it stale; the done.md case was seen live on 2026-09-25. A
 %% `crew-approval/2` receipt now binds approval_digest
-%% (plugin/crew/hooks/scripts/crew_ticket.py:530-571), which normalises only line
+%% (plugin/crew/hooks/scripts/crew_ticket.py:534-575), which normalises only line
 %% 1's single `status:` value from STATUS_VALUES, and status() compares that
-%% digest (:605-626); any other byte change still reads `stale`, and the
+%% digest (:609-630); any other byte change still reads `stale`, and the
 %% completion audit still refuses to judge scope on anything but `approved`
 %% (plugin/crew/hooks/scripts/completion_audit.py:204-215). A receipt with no
 %% `digest` field is compared raw and stales once on its first status edit.
