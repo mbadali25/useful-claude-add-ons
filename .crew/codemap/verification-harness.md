@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@8a084c6c
+anchor: useful-claude-add-ons@07bcaf3b
 verified: 2026-09-28
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -243,15 +243,16 @@ Notable rules, re-read directly:
   `len()` at `45345812` — count them there, the `why` states no number), imported by
   `plugin/crew/tests/sabotage.py:80` and appended at `:3054`. `crew_ticket.py` is named by
   rules 11 and 30 both.
-- **Rule 31**, new at `22399a9c` (`.crew/verify.json:328-336`, T-0085): `paths`
+- **Rule 31**, new at `22399a9c` (`.crew/verify.json:328-337`, T-0085): `paths`
   `crew_standards.py`, `review_run.py`, `review_prompt.py`, `plugin/crew/skills/crew-standards/**`,
   `.crew/standards.md`, `test_crew_standards.py`, `test_review_run_standards.py`,
-  `test_review_prompt.py` and `sabotage_standards.py` → `python3 -m pytest` over those three
+  `test_review_prompt.py`, `sabotage_standards.py`, and since review round 1 (`07bcaf3b`)
+  `test_review_receipt.py` and `test_webtest_guard.py` → `python3 -m pytest` over those five
   test files plus `test_review_run_launch.py`, `test_review_ledger.py` and
-  `test_lifecycle_commands.py`, priced 31s (its `why` records 171 passed, 1 skipped in 30.3s on
-  this host, 2026-09-28, load 2.9). Before it `review_run.py` and `review_prompt.py` matched only
+  `test_lifecycle_commands.py`, priced 41s (its `why` records 327 passed, 2 skipped in 40.9s on
+  this host, 2026-09-28, load 7.0). Before it `review_run.py` and `review_prompt.py` matched only
   rules 0 and 15. Its mutations live in `plugin/crew/tests/sabotage_standards.py`
-  (`STANDARDS_MUTATIONS`, `:17`, 8 entries), imported by `plugin/crew/tests/sabotage.py:81` and
+  (`STANDARDS_MUTATIONS`, `:21`, 14 entries), imported by `plugin/crew/tests/sabotage.py:81` and
   appended at `:3055`.
 
 **Still unresolved at this anchor:** a declared `seconds` figure is only
@@ -1402,3 +1403,5 @@ Nothing was executed for this note.
 **Re-anchored `2aa49bb8` -> `b82035e6` on 2026-09-28 (T-0085 merges main `f8b6c8d7`, T-0091).** `17b70570` merged origin/main `f8b6c8d7` into `T-0085-build` (mechanical conflicts only: anchors, provenance paragraphs, INDEX history cells, generated rules and graph); `b82035e6` moves the crew skills claim at `plugin/README.md:414` and `INSTALLATION.md:252` from 29 to 30 (spec Touch amendment). Of the paths this note cites, `git diff --name-only 2aa49bb8 b82035e6` returns only `CLAUDE.md`. `CLAUDE.md`'s change is T-0091's Landmines truncating-`open` paragraph, whose citations were moved on main's side and merged in, plus T-0085's four-line ignore-policy reflow, which shifts no line. Every `CLAUDE.md:N`, `INSTALLATION.md:N` and `plugin/README.md:N` citation was compared by script against its text at `2aa49bb8`, `c192b83d` and HEAD; none needed moving: every `CLAUDE.md:N` citation here reads the same text at HEAD as at main's `c192b83d`, where T-0091 already moved them. No suite was executed for this note.
 
 **Re-anchored `136f4b33` -> `8a084c6c` on 2026-09-28 (T-0085 merges main `6387ab49`, T-0089, T-0090, T-0092; crew 1.0.55).** `f97219dc` merged origin/main `6387ab49` into `T-0085-build` (mechanical conflicts only: crew version lines, CHANGELOG, anchors, provenance paragraphs, INDEX history cells, diagram headers, generated rules and graph); `8a084c6c` re-bumps crew to 1.0.55, one past main's 1.0.54. Each side had already re-verified its own changes (main's line to `136f4b33`/`2442d367`/`b2553d26`, T-0085's to `b82035e6`), so this pass checks the files BOTH sides changed: the crew version lines (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`, value only, same line), `CHANGELOG.md` (both sections kept; release bookkeeping), `plugin/crew/README.md` and `plugin/crew/commands/review.md` (main's T-0092 edits are in place and line-neutral: 2883 and 551 lines, as on T-0085's side), `plugin/crew/hooks/scripts/review_prompt.py` (main's docstring line split in two at `:6-7` and three `excluded` lines added at `:96-98` shift T-0085's lines below them by 4) and `plugin/crew/tests/test_review_prompt.py`. Every `path:N` citation into those files was compared by script against its text on the side that wrote it (`f3ad630b` or `6387ab49`) and at the merged tree; none moved. Paragraphs dated before this one describe the tree at their own anchor and were not rewritten. No suite was executed for this note.
+
+**Re-anchored `8a084c6c` -> `07bcaf3b` on 2026-09-28 (T-0085 review round 1 fixes).** `07bcaf3b` changes `plugin/crew/hooks/scripts/crew_standards.py` (`gate_applies`, `checklist_block`, `stamp`, `_plugin_sets`, the module docstring), its tests and sabotage entries, `.crew/standards.md` (REPO-03's rule text), `.crew/verify.json` (rule 31 gains two test files; its `seconds` and `why`), `CHANGELOG.md` (T-0085's bump bullet, two lines to three), `plugin/crew/BUDGETS.md:10-11` (the count, in place), `plugin/crew/README.md` (three table rows, in place), `plugin/crew/commands/implement.md` (two lines reflowed in place; still 120 lines), `plugin/crew/commands/review.md` (step 6's reviewer-cell line becomes three, so lines below `:530` move by 2), `plugin/crew/skills/crew-standards/SKILL.md`, ADR 0004 and the working-with-codex guide. Every `path:N` citation in this note into those files was compared by script between `8a084c6c` and `07bcaf3b`: rule 31's entry (now `.crew/verify.json:328-337`) was rewritten in place (paths, run list, 41s, 14 mutations at `sabotage_standards.py:21`); the `BUDGETS.md:11` hits are inside earlier dated provenance paragraphs, left as history. Paragraphs dated before this one describe the tree at their own anchor and were not rewritten. No suite was executed for this note.

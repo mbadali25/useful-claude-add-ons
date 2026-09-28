@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@8a084c6c on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@07bcaf3b on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -172,6 +172,12 @@
 %% T-0085 redraw only review.md (:325-335) and completion_audit.py (:71-78) changed among the
 %% Anchors paths, both T-0092's in-place comment reflows (551 and 301 lines before and after); no
 %% node cites either range, so review.md:25-29, :441, :446-450, :452, :484 hold. No node or edge changed.
+%% Re-anchored 8a084c6c -> 07bcaf3b (T-0085 review round 1 fixes): of the Anchors paths
+%% implement.md (two lines reflowed in place, still 120), review.md (step 6's reviewer cell
+%% line becomes three, +2 below :530) and crew_standards.py changed. implement.md:105-109
+%% and review.md:25-29, :441, :446-450, :452, :484 hold (compared by script). The gate now
+%% proves 'no approval receipt' with an lstat and gates on any other lookup error; the
+%% rv0 edge's 'no approval receipt' still reads true. No node or edge changed.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
