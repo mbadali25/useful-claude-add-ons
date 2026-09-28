@@ -185,9 +185,10 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.51: `/crew:autopilot` approval and questions policies (T-0010).**
-  Bumped `1.0.50 -> 1.0.51` (1.0.43, 1.0.44, 1.0.48 and 1.0.50 on its branch; main gave 1.0.43 to
-  T-0042, and T-0018, T-0024, T-0077 and T-0079 landed first as 1.0.47, 1.0.48, 1.0.49 and 1.0.50).
+- **`crew` 1.0.55: `/crew:autopilot` approval and questions policies (T-0010).**
+  Bumped `1.0.54 -> 1.0.55` (1.0.43, 1.0.44, 1.0.48, 1.0.50 and 1.0.51 on its branch; main gave 1.0.43 to
+  T-0042, and T-0018, T-0024, T-0077, T-0079, T-0072, T-0076, T-0089 and T-0092 landed first as 1.0.47,
+  1.0.48, 1.0.49, 1.0.50, 1.0.51, 1.0.52, 1.0.53 and 1.0.54).
   - **The one exception to T-0018's read-only autopilot (owner decision,
     2026-09-27).** `crew_autopilot.py` is read-only except `approve`, and
     only when `approval_policy` allows under the configured policy; `approve`
