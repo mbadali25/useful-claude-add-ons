@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.53: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088)
+### Changed — `crew` 1.0.55: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088)
 
 - **`/crew:review` probes Codex with a real call.** `review_run.py --probe` makes
   one minimal Codex call, with the round's own model and effort, before any
@@ -36,7 +36,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   The shell and PowerShell readers (`verify-gate.sh`, `_common.sh`,
   `notify.sh`, the handoff scripts, `promote-gate.ps1`, `scope-guard.ps1`,
   `cloud-guard.ps1`, `auto-clear.ps1`) are not routed yet.
-- Bumped `1.0.52 -> 1.0.53` (1.0.52 on its branch; re-set after merging main's 1.0.52, T-0076).
+- Bumped `1.0.54 -> 1.0.55` (1.0.52 on its branch; re-set to 1.0.53 after merging main's 1.0.52, T-0076, and to 1.0.55 after merging main's 1.0.54, T-0092).
 
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 

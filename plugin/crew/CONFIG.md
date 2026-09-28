@@ -114,7 +114,7 @@ files on migration rather than only resolving them for a read
 
 ### In a linked worktree
 
-Since crew 1.0.53 (T-0088) every Python reader of the repo config opens
+Since crew 1.0.55 (T-0088) every Python reader of the repo config opens
 `crew_common.repo_config_file(root, name)`, which resolves the `.crew/`
 directory in this order:
 
