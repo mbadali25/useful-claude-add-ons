@@ -189,21 +189,28 @@ the gate tells you the other places exist.
   shape; 48 are in test files and fixtures. Of the nine that ship, two cannot
   hurt what they truncate: `plugin/localgpu/mcp/store.py:646` writes a temp
   file that `:651` then `os.replace`s — the immune construction — and
-  `scripts/check-marketplace.py:1330` writes into a `TemporaryDirectory`. The
-  other seven were read one by one and none has a raise reachable between the
-  open and the write, each for a reason that is a fact about today: the
-  argument is a `str` already in hand
+  `scripts/check-marketplace.py:1330` writes into a `TemporaryDirectory`. Six
+  more were read one by one and none has a raise reachable between the open
+  and the write, each for a reason that is a fact about today: the argument
+  is a `str` already in hand
   (`skills/aws-opensearch/scripts/opensearch_client.py:405`, read at `:402`;
   `plugin/gizmoduck/scripts/scanners/checkov.py:82` and
   `plugin/gizmoduck/scripts/scanners/semgrep.py:100`, whose `result.stdout` is
   coerced to `str` at `plugin/gizmoduck/scripts/scanners/base.py:45`); a
   `str.join` over lines split before the open
   (`plugin/gizmoduck/scripts/gizmoduck.py:152`,
-  `plugin/gizmoduck/scripts/scanners/nuclei.py:170`); a value the same run
-  already built once (`skills/doc-builder/scripts/build_gallery.py:206`, first
-  at `:128`); or one `json.dumps` per finding
-  (`plugin/gizmoduck/scripts/routine.py:508`), where a raise would leave a
-  partial file rather than an empty one. That is reading, not execution.
+  `plugin/gizmoduck/scripts/scanners/nuclei.py:170`); or a re-run of a function
+  whose raising calls already ran once in the same run
+  (`skills/doc-builder/scripts/build_gallery.py:206` calls `index_html()` again
+  after `:128`, and only the thumbnail `os.path.isfile` at `:85` differs). That
+  is reading, not execution. The ninth is the one to re-check first:
+  `plugin/gizmoduck/scripts/routine.py:508` calls `json.dumps` once per finding
+  inside the `with` opened at `:506`, so a value `json` cannot encode (a
+  `Path`, a `set`) raises there. On the first finding that leaves
+  `findings.jsonl` at zero bytes, exactly this landmine; on a later one, a
+  truncated file. Only what the adapters put in a finding keeps it off the live
+  list (values parsed out of tool output, most through `normalize.make_finding`,
+  `plugin/gizmoduck/scripts/normalize.py:102`), and that too was read, not run.
   `skills/intune-graph/scripts/export_report.py`, which this paragraph named as
   the live site until T-0091, now stages each member through `mkstemp` and
   `os.replace` (`:113`, `:205`), and `plugin/localgpu/cli/localgpu_cli.py`
