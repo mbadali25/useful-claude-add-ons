@@ -73,10 +73,12 @@ def test_an_empty_exclusion_list_is_not_reported_as_unknown(repo):
     assert "excluded (never in the bundle)" not in bare
 
 
-@pytest.mark.parametrize("value", [None, ".work/", [".work/", 3], {"a": 1}])
+@pytest.mark.parametrize("value", [None, ".work/", [".work/", 3], {"a": 1},
+                                   [""], ["", ""], [".work/", ""]])
 def test_a_malformed_exclusion_value_reads_as_unknown(repo, value):
-    """T-0099: a value that is not a list of strings cannot say what was left
-    out; a string must never be spelled out as a list of its characters."""
+    """T-0099: a value that is not a list of non-empty strings cannot say what
+    was left out; a string must never be spelled out as a list of its
+    characters, and `[""]` must not read as a known-empty list."""
     text = rp.build(str(repo), "T9", dict(MANIFEST, excluded=value))
 
     assert UNKNOWN_EXCLUDED in text

@@ -87,11 +87,12 @@ def _bundle_block(manifest):
            "INCOMPLETE."]
     out += [f"  {p['path']}" for p in parts]
     # Three states, one line each (T-0099): an empty list is a manifest saying
-    # nothing was left out; no key, or anything but a list of strings, is one
-    # that cannot say, and must not read as either of the known answers.
+    # nothing was left out; no key, or anything but a list of non-empty strings,
+    # is one that cannot say, and must not read as either of the known answers.
     excluded = manifest.get("excluded")
-    if isinstance(excluded, list) and all(isinstance(p, str) for p in excluded):
-        out.append(f"  excluded (never in the bundle): {', '.join(excluded) or 'none'}")
+    if isinstance(excluded, list) and all(isinstance(p, str) and p for p in excluded):
+        out.append("  excluded (never in the bundle): "
+                   + (", ".join(excluded) if excluded else "none"))
     else:
         out.append("  excluded: not recorded by this manifest (unknown)")
     out.append(f"Manifest (file categories, renames, modes, binaries, submodules): "
