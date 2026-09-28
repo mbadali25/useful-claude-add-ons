@@ -458,6 +458,11 @@ STATUS_MUTATIONS = (
      '    left = ledger.get("rounds_left")\n',
      '    left = ledger.get("rounds_left", review_ledger.BUDGET)\n',
      _S + "test_status_ledger_without_a_rounds_count_is_unknown"),
+    # T-0077: a ledger on another Windows drive than the repo.
+    ("status crashes on an evidence path with no relative form", AUTOPILOT,
+     "    except ValueError:\n        return path.replace(\"\\\\\", \"/\")\n",
+     "    except KeyError:\n        return path.replace(\"\\\\\", \"/\")\n",
+     _S + "test_status_ledger_on_another_drive_is_still_reported"),
     ("status reads an unmapped phase as waiting on autopilot", AUTOPILOT,
      "    who = WAITING.get(phase, UNKNOWN)\n",
      '    who = WAITING.get(phase, "autopilot")\n',

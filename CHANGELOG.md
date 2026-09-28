@@ -51,6 +51,16 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`shipstation` 1.1.1: reach for V2 when changing orders in bulk.** Bumped `1.0.0 -> 1.1.1`.
+  `SKILL.md` gains a *Bulk order changes* section: every V1 order is a V2 shipment
+  (`se-<orderId>`), so find in V1 and act through `POST /v2/fulfillments` in batches of 100
+  (3,181 orders in ~1 minute, verified live 2026-09-27) instead of V1 `/orders/markasshipped`
+  one per call. Rate limits now state both budgets (V2 ~200/min, V1 ~40/min, per account), plus the
+  V1-Pacific / V2-UTC date trap and bulk-write safety steps. `ss.ps1`'s V1 429 hint names the
+  ~40/min per-account budget. 1.1.1 adds a V1-vs-V2 capability table, marks the `se-<orderId>`
+  mapping as observed rather than documented (fallback: `shipment_number`), and corrects the key
+  rule: V2 allows one active key, V1 allows two credential sets.
+
 - **`crew` 1.0.48: approve several tickets in one prompt, with a confirm
   step (T-0024).** Bumped `1.0.47 -> 1.0.48`. Its branch declared 1.0.42, then
   1.0.43-1.0.45 for review rounds 1-3 (the Fixed entries below); main gave
@@ -94,6 +104,28 @@ All notable changes to this repository are documented here. Format follows [Keep
     `commands/approve.md` relays a group result per ticket.
 
 ### Fixed
+
+- **`crew` 1.0.49: Windows holds a vault write's directories in place (T-0077).**
+  Bumped `1.0.48 -> 1.0.49`.
+  - **The bug.** On Windows, `crew_tracker.py` had no directory pinning: `_DIR_FD` is POSIX-only. Its fallback
+    re-checked `realpath(folder)`, which a directory renamed away and replaced by another passes. So a vault, board
+    directory or note directory swapped after the checks was written into, not refused. This was a fail-open guard.
+  - **The fix.** Windows now opens a handle on the vault and on every directory down to the target. Each handle has
+    `FILE_LIST_DIRECTORY` access, shares read and write but **not** delete, and uses
+    `FILE_FLAG_OPEN_REPARSE_POINT`. The handles are held for the length of the write, and the OS refuses to rename any
+    of those directories while they are open.
+  - **What it refuses.** Each handle is refused rather than trusted when it is a reparse point, not a directory, the
+    wrong vault, or has no file id ("could not tell"). A path re-check still runs at the same three points.
+  - **Other platforms.** A platform that can neither pin by fd nor hold by handle now refuses the write, instead of
+    re-checking a path.
+  - **The swap tests on Windows.** The three `board_dir_moved_out` cases and both note-dir cases now assert that the
+    swap is refused by the OS, that the write lands in the vault, and that no `.tmp` is left anywhere.
+  - **`crew_autopilot._rel`.** It no longer raises ValueError when an evidence path is on a different Windows drive
+    than the repo; it falls back to the path itself.
+  - **T-0071 #7, two Windows-only tracker tests made portable:**
+    - `test_board_keeps_its_mode` skips on Windows, which has no group/other mode bits.
+    - `test_resolve_compares_the_effective_vault` compares the repr'd path the message prints.
+  - Eight new sabotage mutations go red, and the removed `_parent_check` mutation is replaced.
 
 - **`crew` 1.0.48: group approval review round 3 (T-0024, successor plan).**
   Bumped `1.0.44 -> 1.0.45` on its branch; lands in 1.0.48. Three defects Codex found, each with a failing
