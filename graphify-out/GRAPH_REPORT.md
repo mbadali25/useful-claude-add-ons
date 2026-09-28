@@ -1,7 +1,7 @@
 # Graph Report - uca-t0088  (2026-09-28)
 
 ## Corpus Check
-- 961 files · ~2,141,829 words
+- 961 files · ~2,142,509 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 59 file(s) not represented in the graph (top: (none) 33, .mmd 8, .csv 4)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `31fbf6b6`
+- Built from commit: `9d3518b2`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -1842,7 +1842,7 @@ Nodes (11): Configure Claude Code's default behavior, Hard rules, Reference file
 
 ### Community 238 - "repo_config_file"
 Cohesion: 0.05
-Nodes (47): Changed — `crew` 1.0.55: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088), Linked worktrees read the main checkout's config (T-0088, crew 1.0.53), Re-anchor provenance - `a6e81869` -> `81685adf`, 2026-09-27 (T-0079 merges main, Step 7, re-bump), Re-anchor provenance - `a6e81869` -> `81685adf`, 2026-09-27 (T-0079 merges main, Step 7, re-bump), Re-anchor provenance — 60c79407 -> 6c497a14, 2026-09-25 (crew 1.0, PR #225). Re-derive provenance., Re-anchor provenance - `a6e81869` -> `81685adf`, 2026-09-27 (T-0079 merges main, Step 7, re-bump), Re-anchor provenance - `a6e81869` -> `81685adf`, 2026-09-27 (T-0079 merges main, Step 7, re-bump), Task 5: `pm_brief.py` — quiet mode (+39 more)
+Nodes (47): Changed — `crew` 1.0.56: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088), Linked worktrees read the main checkout's config (T-0088, crew 1.0.53), Re-anchor provenance - `a6e81869` -> `81685adf`, 2026-09-27 (T-0079 merges main, Step 7, re-bump), Re-anchor provenance - `a6e81869` -> `81685adf`, 2026-09-27 (T-0079 merges main, Step 7, re-bump), Re-anchor provenance — 60c79407 -> 6c497a14, 2026-09-25 (crew 1.0, PR #225). Re-derive provenance., Re-anchor provenance - `a6e81869` -> `81685adf`, 2026-09-27 (T-0079 merges main, Step 7, re-bump), Re-anchor provenance - `a6e81869` -> `81685adf`, 2026-09-27 (T-0079 merges main, Step 7, re-bump), Task 5: `pm_brief.py` — quiet mode (+39 more)
 
 ### Community 239 - "crew_state.py"
 Cohesion: 0.02
