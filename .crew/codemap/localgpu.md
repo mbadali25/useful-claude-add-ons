@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@764f6018
+anchor: useful-claude-add-ons@7d217751
 verified: 2026-09-27
 
 # localgpu
@@ -510,7 +510,7 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")` quoted at `:33-34`.
   **Checked against the code, corrected after QA:**
-  `plugin/crew/hooks/scripts/crew_config.py:127-128` only re-exports
+  `plugin/crew/hooks/scripts/crew_config.py:128-129` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
   *defined* at `plugin/crew/hooks/scripts/crew_state.py:1432-1433` (`:1429-1430` on main before
   T-0005's three import lines merged in, re-numbered
@@ -1205,3 +1205,19 @@ of them was mapped with a line diff from `87627d86` (the tree `23371afb` describ
 files) and re-read with `sed -n`/`grep -n`. This note's line citations into `crew_config.py` (`:127-128`, the provider
 re-export) sit above the only insertion (`:2789`) and hold; the rest are by name. Nothing under
 `plugin/localgpu/` changed; its marketplace entry is still `0.1.20`. Nothing was executed for this note.
+
+## Re-anchor provenance - `764f6018` + `8de3c669` -> `7d217751`, 2026-09-27 (T-0075 successor build, merges T-0024's main)
+
+`7d217751` is T-0075's crew 1.0.49 bump. Between `764f6018` (T-0075 review round 1, this note's
+last anchor) and it: the successor build's steps 1-9 (`4911b896`..`763eaeff`: `crew_config_files.py`
+new, `crew_config.py` and `crew_config_menu.py` redesigned, their tests and sabotage entries, the
+menu procedure, `commands/config.md`, `config-setup.md`, `global-config.md`, `plugin/crew/README.md`,
+`CONFIG.md`, the troubleshooting guide and `CHANGELOG.md`), `748a823d` merging origin/main `d2fbd408`
+(T-0024 landed as 1.0.48, notes anchored `8de3c669`), `af1ee7ef` adding two paths to
+`.crew/verify.json` rule 7, `cb67a6ef` rebuilding the troubleshooting guide, `plugin/crew/BUDGETS.md`
+re-measured (19,280 lines across 128 files) and the bump. The merge's provenance sections keep both
+sides, main's first. Each citation into a path `git diff --name-only 764f6018 7d217751` names was
+checked against the tree it was written for (`git blame` on this note gives the commit) and re-read
+at `7d217751` with `sed -n`/`grep -n`; the provider re-export `crew_config.py:127-128` -> `:128-129` (one import line
+above it); the rest are by name. Nothing under `plugin/localgpu/` changed; its marketplace entry is
+still `0.1.20`. Nothing was executed for this note.

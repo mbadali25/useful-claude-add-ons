@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@764f6018
+anchor: useful-claude-add-ons@7d217751
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -997,3 +997,21 @@ of them was mapped with a line diff from `87627d86` (the tree `23371afb` describ
 files) and re-read with `sed -n`/`grep -n`. `plugin/crew/README.md` gained lines in the `/crew:config` menu section, so
 `plugin/crew/README.md:2117` became `:2127` (same text, re-read); every other README citation here is
 above that section or by name. Nothing was executed for this note.
+
+## Re-anchor provenance - `764f6018` + `8de3c669` -> `7d217751`, 2026-09-27 (T-0075 successor build, merges T-0024's main)
+
+`7d217751` is T-0075's crew 1.0.49 bump. Between `764f6018` (T-0075 review round 1, this note's
+last anchor) and it: the successor build's steps 1-9 (`4911b896`..`763eaeff`: `crew_config_files.py`
+new, `crew_config.py` and `crew_config_menu.py` redesigned, their tests and sabotage entries, the
+menu procedure, `commands/config.md`, `config-setup.md`, `global-config.md`, `plugin/crew/README.md`,
+`CONFIG.md`, the troubleshooting guide and `CHANGELOG.md`), `748a823d` merging origin/main `d2fbd408`
+(T-0024 landed as 1.0.48, notes anchored `8de3c669`), `af1ee7ef` adding two paths to
+`.crew/verify.json` rule 7, `cb67a6ef` rebuilding the troubleshooting guide, `plugin/crew/BUDGETS.md`
+re-measured (19,280 lines across 128 files) and the bump. The merge's provenance sections keep both
+sides, main's first. Each citation into a path `git diff --name-only 764f6018 7d217751` names was
+checked against the tree it was written for (`git blame` on this note gives the commit) and re-read
+at `7d217751` with `sed -n`/`grep -n`; `plugin/crew/README.md:2169` (`docs/runbooks/INDEX.md`) holds from the merge;
+the troubleshooting guide's source changed (`docs/guides/crew/src/troubleshooting.md`, the
+`/crew:config` delete sentence) and its HTML, DOCX and PDF were rebuilt at `cb67a6ef`;
+`CHANGELOG.md` carries T-0075's successor entry first. `docs/diagrams/data-flow-crew-config.mmd` is
+refreshed in the same change. Nothing was executed for this note.
