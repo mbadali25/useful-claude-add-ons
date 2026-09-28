@@ -84,6 +84,85 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 1.0.47: `/crew:autopilot status` and the subcommand router
+  (T-0018).** Bumped `1.0.46 -> 1.0.47` (its branch declared 1.0.44, which main gave to
+  T-0021; 1.0.46 at its first landing merge, which main then gave to T-0023). `commands/autopilot.md` now routes
+  its whole argument string through the new `crew_autopilot.py route --root .
+  --args '$ARGUMENTS'` (single-quoted; arguments holding a quote, `$`, a
+  backtick or a backslash stop before anything runs; `route --first <token>`
+  routes one token alone): `status` and `run` run; a bare ticket id (INDEX-shaped, or
+  an existing `.work/tickets/<id>/`) or nothing is `run`, as in 1.0.41;
+  `assign`, `goal` and `run --goal` stop with "arrives with T-0019|T-0012",
+  `focus` with "arrives with T-0020"; any other word (`stauts`, `Status`,
+  `rm`) is refused rather than read as a ticket id, and so is a second word
+  that is not a ticket id, or a third word. Route prints the ticket
+  (`ticket=`), and the command uses that, never `$1`/`$2`: Claude Code
+  2.1.283 numbers positional arguments from `$0` and leaves an out-of-range
+  `$N` literal, so `/crew:autopilot status T-0018` expanded `$1` to `T-0018`
+  and never substituted `$2` (measured on a real invocation).
+  - `crew_autopilot.py status --root . [--ticket <id>]` is read-only and
+    prints at most 12 lines: mode, ticket and its source, the phase `next`
+    names and its command, who it waits on (`owner`, `autopilot`,
+    `reviewer`, `nobody`), review rounds left, and the handoff's `resume:`
+    line with whether it is usable, plus `resume`'s `fell through:` and
+    `disagreement:` lines. An unreadable ledger prints `review: unknown
+    (ledger unreadable)`, an unmapped phase `waiting on: unknown`, and a
+    missing `crew_resume` `unavailable (T-0006 not landed)`. It writes
+    nothing (tested: tree, `.work/`, `<git-common-dir>/crew/` and the
+    `.git/index` mtime are identical after it runs) and exits 0.
+  - `autopilot.md` is compressed from 120 to 100 lines, keeping every stop
+    id and exact CLI string T-0004's tests pin; `test_lifecycle_commands.py`
+    holds it to 100 so T-0010, T-0012, T-0019 and T-0020 have 20 lines.
+  - Review round 1's fixes: the handoff's `resume:` line reads usable only
+    where `resume` takes it (not for a line naming no ticket, or a ticket
+    with no folder); a `next` stop on the active-ticket pointer waits on the
+    owner re-pointing it (or on autopilot activating it when no pointer is
+    set), never on the owner typing the phase's command; `run --goal` stops
+    with "arrives with T-0012"; `--args --goal` and `--args -h` are values,
+    not options; the command treats a router crash or no output as a stop,
+    and from `resume` on drives the ticket `resume` printed.
+  - Review round 2's fixes: the `resume:` line reads usable only when bare
+    `/crew:autopilot` (`resume_target`) would itself take it, so a handoff
+    naming one ticket while the active-ticket pointer names another prints
+    `not usable:` with `resume_target`'s stop reason, and a
+    `resume_target` that raised prints `unknown`, never a verdict; when
+    `next` gives `stop=0`, `waiting on:` names bare `/crew:autopilot` only
+    when that would drive the same ticket, else `/crew:autopilot <ticket>`;
+    a pointer stop offers `or runs /crew:autopilot <active>` only while the
+    active ticket is not closed, and says it could not tell when that
+    ticket's phase could not be read. `.crew/verify.json`'s autopilot rule
+    is re-priced from a fresh measurement.
+  - Review round 3's fixes: a ledger whose state is `UNKNOWN` prints
+    `review: unknown (ledger unreadable)` and one whose state review_ledger
+    never writes prints `unknown`, never a rounds count; a `.work/HANDOFF.md`
+    that exists but cannot be read prints `resume: unknown` (and `resume`
+    falls through saying so), never `no .work/HANDOFF.md`; a pointer stop
+    never offers a closed active ticket, whether INDEX.md or its spec header
+    closes it, even with no `direction.md`; every `crew_autopilot.py` line in
+    `autopilot.md` runs `python3 -B`, so `route` and `status` write no
+    bytecode cache into the plugin (tested against a writable copy).
+  - Review round 4's fixes: an active ticket whose `spec.md` exists but
+    cannot be read makes a pointer stop say it could not tell whether that
+    ticket is still open, never offer to drive it; a ticket whose id is a
+    subcommand name (`status`, `run`, `assign`, `goal`, `focus`) is suggested
+    as `/crew:autopilot run <id>`, since `route` reads the bare name as the
+    subcommand; `crew_autopilot.py` run as a script sets
+    `sys.dont_write_bytecode` before its sibling imports, so the direct CLI
+    writes no bytecode with or without `-B`, and a module importing it keeps
+    its own setting.
+  - Review round 5's fixes: a `.work/HANDOFF.md` that is a dangling symlink,
+    or sits under a `.work` that is one, prints `resume: unknown` (and
+    `resume` falls through saying so), never `no .work/HANDOFF.md`; the
+    `resume:` line is marked usable only after its own read of the handoff
+    passes the branch, head and folder checks, so a handoff rewritten after
+    `resume_target` read it is never vouched for by that earlier read;
+    `status --json` prints one line of JSON, inside the 12-line cap.
+  - Forty-four mutations in `tests/sabotage_autopilot.py`'s `STATUS_MUTATIONS`
+    each turn their named test red. They are appended to
+    `AUTOPILOT_MUTATIONS`, so `sabotage.py` runs them with the rest, and
+    `test_crew_autopilot.py` asserts each one reaches `sabotage.MUTATIONS`.
+  - `BUDGETS.md` restates the measured `plugin/crew/*.md` total.
+
 - **`crew` 1.0.46: plain-text lifecycle routing (T-0023).** Bumped
   `1.0.45 -> 1.0.46` (`1.0.41 -> 1.0.42 -> 1.0.43` on its branch, re-set after merging
   T-0005's 1.0.42; main then gave 1.0.43 to T-0042 and 1.0.44 and 1.0.45 to T-0021).
