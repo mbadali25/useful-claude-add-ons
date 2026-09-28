@@ -68,6 +68,10 @@ A tooling change: this release carries no feature work.
   (`STILL GREEN -- TEST IS VACUOUS`).
 - `plugin/crew/BUDGETS.md`'s Markdown line count is re-measured: 19,055 lines
   across 127 files.
+- `scripts/check-tooling-pr.py` allows `plugin/crew/BUDGETS.md` alongside a
+  harness change: its line count moves with every crew doc edit. It refused this
+  branch's own re-measure until then; `scripts/_test/tooling-pr.py` gains the
+  must-allow case.
 
 ### Added — `crew` 1.0.51: `autopilot.deploy` — production without asking, opt-in (T-0072)
 

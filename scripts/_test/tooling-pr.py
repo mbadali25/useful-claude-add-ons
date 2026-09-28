@@ -100,6 +100,15 @@ def case_harness_tests_docs(tmp: str) -> str:
     return root
 
 
+def case_harness_budgets(tmp: str) -> str:
+    """BUDGETS.md's line-count claim moves with every crew .md edit (owner,
+    2026-09-28), so a harness change that edits a command file carries it."""
+    root = repo(tmp)
+    commit(root, ["plugin/crew/hooks/scripts/review_verdict.py", "plugin/crew/commands/review.md",
+                  "plugin/crew/BUDGETS.md"], "harness with its budget re-measure")
+    return root
+
+
 def case_feature_only(tmp: str) -> str:
     root = repo(tmp)
     commit(root, ["plugin/crew/hooks/scripts/crew_tracker.py"], "feature only")
@@ -137,6 +146,7 @@ CASES = [
     ("must-block harness+uncommitted-feature", case_harness_uncommitted_feature, 1,
      "skills/x/SKILL.md"),
     ("must-allow harness+tests+docs", case_harness_tests_docs, 0, "OK"),
+    ("must-allow harness+budgets", case_harness_budgets, 0, "OK"),
     ("must-allow feature-only", case_feature_only, 0, "no harness path changed"),
     ("must-allow merged-main", case_merged_main, 0, "OK"),
     ("must-report no-origin", case_no_origin, 77, "TOOL MISSING"),

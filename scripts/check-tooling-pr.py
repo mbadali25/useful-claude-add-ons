@@ -9,8 +9,9 @@ review and gate harness decides whether every other change is accepted. When a
 harness change rides in a PR with a feature, a harness bug is found only after
 it has already judged that feature, and a review round lost to the tool is
 also a round lost to the feature. So when a branch changes any `HARNESS` path,
-every other path it changes must be in `ALONGSIDE`: the harness's tests, docs,
-version files, code map, graph and ticket records.
+every other path it changes must be in `ALONGSIDE`: the harness's tests, docs
+(`BUDGETS.md`'s line count moves with every crew doc edit), version files, code
+map, graph and ticket records.
 
 WHAT COUNTS AS CHANGED. The lane's own changes: `git diff --name-only
 origin/main...HEAD` (from the merge base, so the files a merge of main brought
@@ -71,6 +72,7 @@ ALONGSIDE = (
     "plugin/crew/tests/**",
     "plugin/crew/README.md",
     "plugin/crew/CONFIG.md",
+    "plugin/crew/BUDGETS.md",
     "plugin/crew/commands/**",
     "plugin/crew/agents/**",
     "plugin/crew/docs/**",
