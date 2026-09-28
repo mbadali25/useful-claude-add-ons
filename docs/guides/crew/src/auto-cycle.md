@@ -74,8 +74,12 @@ in the machine-global config, because it drives this machine's keyboard:
 | `.crew/config.json` | `context.enabled` | `false` | turns off the whole context watcher, wrap-up included |
 | `.crew/config.json` | `memory.inject` | `false` | `handoff-read` prints the handoff for you to read, without extracting the next action. `context.autoResume` is no longer read. |
 
-`/crew:config` shows where each value comes from and walks you through the global file. To turn the
-cycle off on a machine, set `context.autoClear.enabled` to `false` or delete the key.
+`/crew:config --show` shows where each value comes from. `/crew:config` with no argument (or
+`/crew:config-setup`) opens a menu that sets either file from a list of values, with a dry run
+before anything is written. To turn the cycle off on a machine, set `context.autoClear.enabled` to
+`false` or delete the key. In a repo the menu offers only the veto (`false`) or `null` for
+`context.autoClear.enabled` and `resume.auto`, and shows `onlyRepos`/`onlySessions` read-only,
+because only the machine file can arm or narrow them.
 
 ### Arming one scratch repo while other sessions are live
 

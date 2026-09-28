@@ -47,29 +47,29 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.55** (T-0010; `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
-and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `d7c7c75c`, whose 1.0.55 is T-0010's re-set `130bf67e` after merging main `6387ab49`; on T-0010-solo it was 1.0.51 at `360c4029` and 1.0.50 at `50a275ea`; it was 1.0.54 at `2442d367`, T-0092's landing merge onto main `311dab8c`, whose 1.0.54 is T-0092's re-bump `136f4b33` after merging main `ff59160f`; it was 1.0.53 at main `311dab8c` and `ff59160f` (T-0089's landing bump `0f526a8c`) and at `3c4f1a68`, T-0092's re-bump after merging main `c426c018`; it was 1.0.52 at `c426c018` (T-0076's landing, `e329eb8f`) and at `c99e31f6`, T-0092's first bump; it was 1.0.51 at `9631c707`, T-0072's landing bump after its merge of `e6e10432`; it was 1.0.50 at `a4eb2f55`, T-0072's bump after its merge of `5050ea3b`, and at main `e6e10432`, T-0079's landing, bumped on T-0079's branch at `81685adf`, where it was 1.0.49 at `78215930`; it was 1.0.49 at `fc289446` (T-0077's landing bump) and on T-0072's branch at `80326b1d`, 1.0.48 at `8de3c669` (T-0024's landing bump) and on T-0072's branch at `21429244` and `996a0a9e`, 1.0.47 at `67caa4b8` after T-0018's re-bump `65bb3330` on its merge of
+`rule-of-two`. `crew` is now **1.0.59** (T-0075's landing bumps: 1.0.59 for the refused-probe F821 fix, 1.0.58 for re-anchored sabotage entries, 1.0.56 for the landing branch's pylint disable, 1.0.57 for the Windows path fix in the OS-error refusals; `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree); it was 1.0.55 at `3648f59a`, T-0075's re-bump one past main after its merge of `6387ab49`; on T-0075's branch it was 1.0.52 at `938e3b11` (its re-bump after its merge of `f54af3fa`), 1.0.51 at `3724731b`, 1.0.50 at `8cabe586`, 1.0.49 at `7d217751`, `81ed193c` and `ca667718`, 1.0.48 at `23371afb`, 1.0.47 at `f7163410`, 1.0.46 at `e95e5964` and 1.0.44 at `d2444be9`; on main it was 1.0.54 at `6387ab49` and `2442d367` (T-0092's landing merge onto main `311dab8c`, whose 1.0.54 is T-0092's re-bump `136f4b33` after merging main `ff59160f`); it was 1.0.53 at main `311dab8c` and `ff59160f` (T-0089's landing bump `0f526a8c`) and at `3c4f1a68`, T-0092's re-bump after merging main `c426c018`; it was 1.0.52 at `c426c018` (T-0076's landing, `e329eb8f`) and at `c99e31f6`, T-0092's first bump; it was 1.0.51 at `9631c707`, T-0072's landing bump after its merge of `e6e10432`; it was 1.0.50 at `a4eb2f55`, T-0072's bump after its merge of `5050ea3b`, and at main `e6e10432`, T-0079's landing, bumped on T-0079's branch at `81685adf`, where it was 1.0.49 at `78215930`; it was 1.0.49 at `fc289446` (T-0077's landing bump) and on T-0072's branch at `80326b1d`, 1.0.48 at `8de3c669` (T-0024's landing bump) and on T-0072's branch at `21429244` and `996a0a9e`, 1.0.47 at `67caa4b8` after T-0018's re-bump `65bb3330` on its merge of
 main `bebbb97f` (`f458e752`), 1.0.47 on T-0072's branch at `715a8c2f`, 1.0.46 at `bebbb97f` and at that merge (T-0023's bump `e463ca53`) and at T-0018's first landing bump `fbc27b49`, 1.0.45 at `db14619c` (T-0021, bumped again for a CI fix), 1.0.44 on T-0018's branch at `0c7f6b84`, 1.0.43 on T-0023's branch at `a1acd9b7` and on T-0018's at `39f8f59f`, 1.0.44 at `12682e41`, 1.0.43 at `f0b12ee6` (T-0042) and on T-0021's branch at `c2ae46ab`, 1.0.42 at `2b18f7ab` (1.0.46 on T-0021's branch until its merge of main), 1.0.41 at `07ca3972` and on T-0005's branch, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
 
 ## Crew's own description agrees with disk, one site excepted
 
-**DERIVED, re-measured at `07ca3972`.**
+**DERIVED, re-measured at `07ca3972`; the command count re-measured at `e95e5964`.**
 `.claude-plugin/marketplace.json:217` — crew's `description` — reads "4
-context-isolated agents (explorer, reviewer, security, researcher) …, 35
+context-isolated agents (explorer, reviewer, security, researcher) …, 36
 slash commands, 29 bundled skills … 34 hook entries." Measured independently
 against disk:
 
 | Claim | Stated | On disk | Where |
 |---|---|---|---|
 | agents | 4 | `ls plugin/crew/agents/*.md` → 4 | `.claude-plugin/marketplace.json:217`, `plugin/PLUGINS.md:17`, `README.md:168`/`:874`, `INSTALLATION.md:252`, `plugin/README.md:414` |
-| commands | 35 | `find plugin/crew/commands -name '*.md'` → 35 (T-0004 added `autopilot.md`) | same sites **except `INSTALLATION.md:252`, which still reads "34 slash commands"** — unmarked, so no check catches it |
+| commands | 36 | `find plugin/crew/commands -name '*.md'` → 36 (T-0004 added `autopilot.md`, T-0075 `config-setup.md`) | same sites **except `INSTALLATION.md:252`, which still reads "34 slash commands"** — unmarked, so no check catches it |
 | skills | 29 | `find plugin/crew/skills -maxdepth 1 -mindepth 1 -type d` → 29 | same sites, each `<!-- claim: plugin-skills:crew -->`-marked |
 | hook entries | 34 | walking `plugin/crew/hooks/hooks.json`'s 8 events → 34 command entries | same sites |
 
 Both install scripts' own crew catalog row (`scripts/install-prerequisites.sh:1391`,
-`scripts/install-prerequisites.ps1:1174`) states "4 agents, 35 commands" and
+`scripts/install-prerequisites.ps1:1174`) states "4 agents, 36 commands" and
 matches too — `CATALOG_CLAIMS` (below) checks exactly this pair for exactly
 this reason. Every number in the table above was re-derived from the
 filesystem this pass, not read off a previous version of this note or off the
@@ -124,7 +124,7 @@ two tables is, like an unmarked number anywhere else, not checked.
 | Own manifest version | none | `plugin/<name>/.claude-plugin/plugin.json`, bumped in lockstep with the marketplace entry |
 
 Both install-script catalog rows for `crew` (`scripts/install-prerequisites.sh:1391`,
-`scripts/install-prerequisites.ps1:1174`) both read "4 agents, 35 commands,
+`scripts/install-prerequisites.ps1:1174`) both read "4 agents, 36 commands,
 safety hooks", matching `PLUGIN_KEYS` order
 (`crew`, `gizmoduck`, `localgpu`, `obsidian-vault`, `rule-of-two`) against
 `marketplace.json`'s own plugin ordering — `check_catalogs`
@@ -863,6 +863,152 @@ The version sentence moves to 1.0.50; no other citation moved. Nothing was execu
 
 **Re-anchored `0f488706` -> `9631c707` on 2026-09-28 (T-0072 landing, crew 1.0.51).** `9631c707` is T-0072's landing bump on `T-0072-land`, after `34af80ef` merged the reviewed `T-0072-build` (`a0978df6`) onto main `e6e10432` (T-0079 landed as crew 1.0.50) and `bf0c513a` re-priced verify rule 27. `git diff --name-only 0f488706 9631c707`, refresh artifacts aside, returns T-0079's files, the three version files, `CHANGELOG.md` and `.crew/verify.json`. The two this note's citations reach changed in place: `.crew/verify.json` `:298` and `:301` (rule 27's `seconds` 16 -> 18 and its `why`, still `:293-301`) and `plugin/crew/README.md` `:735` and `:739` (T-0079's verdict table, line-neutral); no citation moved. The version sentence moves to 1.0.51. No suite was executed for this note.
 
+## Re-anchor provenance - `12682e41` + `d2444be9` -> `e95e5964`, 2026-09-27 (T-0075 merges main)
+
+`e95e5964` is T-0075's crew 1.0.46 bump on top of `e94ce6ce`, the merge of origin/main `db14619c`
+(T-0021 landed as 1.0.45) into T-0075's branch; the merge took main's copy of this note and
+T-0075's edits were re-applied. Of the cited paths, `git diff --name-only 12682e41 e95e5964`
+returns `.claude-plugin/marketplace.json` (`:217` 36 slash commands, `:218` 1.0.46, both in place),
+`plugin/PLUGINS.md` (`:14` 1.0.46; `:17` 36 commands), `plugin/crew/.claude-plugin/plugin.json`
+(version only), `plugin/README.md` (`:414`) and `README.md` (`:168`, `:874`), each 35 -> 36 in
+place, both install scripts (the crew catalog label at `scripts/install-prerequisites.sh:1391` /
+`scripts/install-prerequisites.ps1:1174`, 35 -> 36 in place, no line moved), `plugin/crew/BUDGETS.md`
+(`:11`, 19,061 lines across 128 files, re-measured on the merged index as the checker counts),
+`.crew/verify.json` (rule 7 gained three paths at `:136-138`; the doc rule at `:69-78` holds; 29
+rules) and `CHANGELOG.md` (cited by name only). `ls plugin/crew/commands/*.md` is 36, agents 4,
+skills 29. `INSTALLATION.md` did not change, so `INSTALLATION.md:252` still states 34 commands, now
+against 36 on disk; it is outside T-0075's Touch list and unmarked, so no check catches it.
+`python3 scripts/check-marketplace.py` at `e95e5964`: `marketplace: 34 skills, 5 plugins`, `all
+checks passed`.
+
+## Re-anchor provenance - `e95e5964` + `e463ca53` -> `f7163410`, 2026-09-27 (T-0075 merges T-0023's main)
+
+`96b7e59c` merges origin/main `bebbb97f` (T-0023 landed as crew 1.0.46, PR #244; its notes anchored
+`e463ca53`) into T-0075's branch at `0c6b5ecb` (notes anchored `e95e5964`), and `f7163410` bumps
+crew to 1.0.47. The source files both sides changed since `db14619c` are `CHANGELOG.md`,
+`.crew/verify.json`, `plugin/PLUGINS.md`, `plugin/crew/README.md`, `plugin/crew/CONFIG.md`,
+`plugin/crew/BUDGETS.md`, `plugin/crew/hooks/scripts/crew_config.py`,
+`plugin/crew/skills/crew-setup/SKILL.md`, `plugin/crew/tests/sabotage.py`,
+`plugin/crew/tests/test_crew_config.py` and the version files. The conflicting provenance sections
+keep both sides, main's first. Each body line was classified by origin (in T-0075's copy only, in
+main's only, or in both), its `path:N` citations - and bare `:N` after a path in the same
+paragraph - into files the other side changed were mapped with a line diff (`git show
+<side>:<path>` against the merged tree), each moved one re-read with `sed -n`, and hits the diff
+attributed to the wrong file (a bare `:N` after an unrelated path, a same-named file elsewhere)
+discarded rather than applied. Crew's `version` at `.claude-plugin/marketplace.json:218`,
+`plugin/crew/.claude-plugin/plugin.json:3` and `plugin/PLUGINS.md:14` reads 1.0.47; `:217` and
+`PLUGINS.md:17` state 36 commands (`ls plugin/crew/commands/*.md` is 36). `plugin/crew/BUDGETS.md:11`
+reads 19,125 lines across 128 files, measured on the resolved index. `.crew/verify.json` is 325
+lines, 30 rules; the doc rule at `:69-78` holds. `scripts/check-marketplace.py` did not change.
+`python3 scripts/check-marketplace.py` at `f7163410`: `marketplace: 34 skills, 5 plugins`, `all
+checks passed`.
+
+## Re-anchor provenance - `f7163410` + `65bb3330` -> `23371afb`, 2026-09-27 (T-0075 merges T-0018's main)
+
+`34b5f368` merges origin/main `67caa4b8` (T-0018 landed as crew 1.0.47, PR #245; its notes anchored
+`65bb3330`) into T-0075's branch at `b5ef35df` (notes anchored `f7163410`), and `23371afb` bumps crew
+to 1.0.48. The source files both sides changed since `bebbb97f` are `CHANGELOG.md`,
+`.crew/verify.json`, `plugin/crew/README.md`, `plugin/crew/BUDGETS.md` and the version files;
+`crew_autopilot.py`, `commands/autopilot.md` and the autopilot tests changed on main's side only,
+`crew_config.py`, `crew_config_menu.py`, `CONFIG.md` and `sabotage.py` on T-0075's only. The
+conflicting provenance sections keep both sides, main's first; each body citation into a file both
+sides changed was mapped from the side its line came from onto the merged tree and re-read with
+`sed -n`/`grep -n`. Crew's `version` at `.claude-plugin/marketplace.json:218`,
+`plugin/crew/.claude-plugin/plugin.json:3` and `plugin/PLUGINS.md:14` reads 1.0.48; `:217` and
+`PLUGINS.md:17` state 36 commands (`ls plugin/crew/commands/*.md` is 36). `plugin/crew/BUDGETS.md:11`
+reads 19,120 lines across 128 files, measured on the resolved index. `.crew/verify.json` is 326
+lines, 30 rules; the doc rule at `:69-78` holds. `scripts/check-marketplace.py` did not change.
+`python3 scripts/check-marketplace.py` at `23371afb`: `marketplace: 34 skills, 5 plugins`, `all
+checks passed`.
+
+## Re-anchor provenance - `23371afb` -> `764f6018`, 2026-09-27 (T-0075 review round 1)
+
+`764f6018` fixes T-0075's review round 1. `git diff --name-only 23371afb 764f6018` is `CHANGELOG.md`,
+`plugin/crew/BUDGETS.md`, `plugin/crew/CONFIG.md`, `plugin/crew/README.md`,
+`plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_config_menu.py`,
+`plugin/crew/skills/crew-setup/config-menu.md` and three crew test files. Each citation into one
+of them was mapped with a line diff from `87627d86` (the tree `23371afb` describes for those
+files) and re-read with `sed -n`/`grep -n`. No marketplace entry, count or install-script line changed;
+`plugin/crew/BUDGETS.md:11` now reads 19,145 lines across 128 files (the figures above are history at
+their anchors). crew was still 1.0.48 at `764f6018`; `ca667718` then re-set it to 1.0.49 as the last
+`plugin/crew/` commit (marketplace.json `:218`, plugin.json `:3`, PLUGINS.md `:14`, re-read). Nothing else was executed for this note; `scripts/check-marketplace.py`
+reported `all checks passed` on the fix commit.
+
+## Re-anchor provenance - `764f6018` + `8de3c669` -> `7d217751`, 2026-09-27 (T-0075 successor build, merges T-0024's main)
+
+`7d217751` is T-0075's crew 1.0.49 bump. Between `764f6018` (T-0075 review round 1, this note's
+last anchor) and it: the successor build's steps 1-9 (`4911b896`..`763eaeff`: `crew_config_files.py`
+new, `crew_config.py` and `crew_config_menu.py` redesigned, their tests and sabotage entries, the
+menu procedure, `commands/config.md`, `config-setup.md`, `global-config.md`, `plugin/crew/README.md`,
+`CONFIG.md`, the troubleshooting guide and `CHANGELOG.md`), `748a823d` merging origin/main `d2fbd408`
+(T-0024 landed as 1.0.48, notes anchored `8de3c669`), `af1ee7ef` adding two paths to
+`.crew/verify.json` rule 7, `cb67a6ef` rebuilding the troubleshooting guide, `plugin/crew/BUDGETS.md`
+re-measured (19,280 lines across 128 files) and the bump. The merge's provenance sections keep both
+sides, main's first. Each citation into a path `git diff --name-only 764f6018 7d217751` names was
+checked against the tree it was written for (`git blame` on this note gives the commit) and re-read
+at `7d217751` with `sed -n`/`grep -n`; the crew version statement now reads 1.0.49 at `7d217751`
+(`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`,
+`plugin/PLUGINS.md:14`), 1.0.48 at `d2fbd408` and on the merge; `:217` still states 36 commands.
+`.crew/verify.json`'s doc rule `:69-78` holds. `python3 scripts/check-marketplace.py` at `7d217751`:
+`marketplace: 34 skills, 5 plugins`, `all checks passed`.
+
+## Re-anchor provenance - `7d217751` + `f96e9ec9` -> `8cabe586`, 2026-09-27 (T-0075 post-merge fixes, merges T-0077's main)
+
+`8cabe586` is T-0075's crew 1.0.50 bump. Between `7d217751` and it: `ed7cb36c` (the stray line
+step 6 left in `crew_config_menu.py:940`, a restore-line test's assertion, and the widening-warning
+mutation re-anchored in `sabotage.py`, each found by the first full suite run after the build), a
+1.0.48/1.0.49 step-back and re-set (`b80db8e1`, `81ed193c`), `3ebddc74` merging origin/main
+`f96e9ec9` (T-0077 landed as 1.0.49: Windows directory handles in `crew_tracker.py`,
+`crew_autopilot._rel`, their tests and mutations, three `plugin/crew/README.md` lines and its
+`CHANGELOG.md` entry; main's notes were not refreshed for it) and the bump. Citations into the
+paths `git diff --name-only 7d217751 8cabe586` names were mapped with `git diff -U0` and each
+moved one checked by content at `8cabe586`; the crew version statement reads 1.0.50 at `8cabe586`; `:217` still
+states 36 commands (main's T-0077 description said 35; the merge kept T-0075's). `python3
+scripts/check-marketplace.py` at `8cabe586`: `marketplace: 34 skills, 5 plugins`, `all checks passed`.
+
+## Re-anchor provenance - `8cabe586` + `81685adf` -> `3724731b`, 2026-09-28 (T-0075 review round 3, merge of `e6e10432`)
+
+`3036dc02` is T-0075's review-round-3 fix (`crew_config.py`, `crew_config_files.py`,
+`crew_config_menu.py`, their three test files, `sabotage_config.py`, and `README.md`, `CONFIG.md`,
+`commands/config.md`, `config-menu.md`, `global-config.md`, `CHANGELOG.md`); `6d5f0b61` merges
+origin/main `e6e10432` (T-0079 landed as crew 1.0.50: `review_prompt.py`, `review_run.py`,
+`review_verdict.py`, `agents/reviewer.md`, their tests, `sabotage_review.py`,
+`sabotage_webtest.py`, `test_webtest_guard.py`, `README.md`, `CHANGELOG.md`; its notes anchored
+`81685adf`); `3724731b` re-bumps crew to 1.0.51 (`plugin.json`, `marketplace.json`,
+`plugin/PLUGINS.md`, `plugin/crew/BUDGETS.md`, `CHANGELOG.md`). The merge's conflicting provenance
+sections kept both sides, main's first; anchor lines kept T-0075's and are replaced here.
+
+The version sentence moves to 1.0.51 (`.claude-plugin/marketplace.json:218`, `plugin/PLUGINS.md:14`,
+`plugin/crew/.claude-plugin/plugin.json` agree); `:217` and `:17` still state 36 commands. No
+other citation moved (script over every explicit `path:N`). `python3 scripts/check-marketplace.py`
+at `3724731b`: `marketplace: 34 skills, 5 plugins`, `all checks passed`.
+
+## Re-anchor provenance - `3724731b` + `9631c707` -> `938e3b11`, 2026-09-28 (T-0075 review round 4, merge of `f54af3fa`)
+
+`7d473f24` merges origin/main `f54af3fa` (T-0072 landed as crew 1.0.51: `crew_autopilot.py`,
+`commands/autopilot.md`, `crew_state.py`'s line-neutral `AUTOPILOT_DEFAULTS` hunk at `:1086-1090`,
+`templates/config.template.json`, `skills/crew-setup/SKILL.md`, `CONFIG.md` §20, `README.md`, its
+tests, `sabotage_autopilot.py`, `.crew/verify.json` rule 27's `seconds` and `why`; its notes
+anchored `9631c707`); `07354a39`, `df419a55`, `7a206c8e`, `4112498e`, `1b31ed2f` and `7ef3c4f1` are
+T-0075's review-round-4 steps 11-16 (`crew_config.py`, `crew_config_files.py`,
+`crew_config_menu.py`, their three test files, `sabotage_config.py`, `README.md`, `CONFIG.md`,
+`skills/crew-setup/config-menu.md`, `CHANGELOG.md`, `plugin/crew/BUDGETS.md`); `938e3b11` re-bumps
+crew to 1.0.52 (`plugin.json`, `marketplace.json`, `plugin/PLUGINS.md`, `CHANGELOG.md`). The merge's
+conflicting provenance kept both sides; anchor lines kept T-0075's and are replaced here.
+
+The version sentence moves to 1.0.52 (`.claude-plugin/marketplace.json:218`,
+`plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`, all re-read).
+`plugin/crew/BUDGETS.md:11` now reads 19,415 lines across 128 files (re-measured with `git ls-files
+'plugin/crew/*.md' | xargs cat | wc -l`); this note's body states no current figure for it. No other
+citation moved.
+
+Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N`
+carried from the last path named in its paragraph, from both `3724731b` and `9631c707` to the tree
+at `938e3b11` (difflib equal blocks); every citation neither base maps to itself was read with `sed
+-n` / `grep -n`. The script attributes some bare `:N` to the wrong file (a `crew_autopilot.py`
+citation after an `autopilot.md` mention, a `plugin.json:3` in another plugin); those were read and
+hold. Nothing else was executed for this note.
+
 **Re-anchored `9631c707` -> `051f9e85` on 2026-09-28 (T-0091).** `051f9e85` is T-0091's one commit on `T-0091-build`, off main `f54af3fa`. `git diff --name-only 9631c707 f54af3fa -- <every tracked path this note cites>` is empty; `f54af3fa..051f9e85` changes only `CLAUDE.md` (the Landmines truncating-`open` entry's measurement paragraph, now `:185-212`, +28/-18, so every later line moves +10) and `TODO.md` (one entry closed at `:4473`, three lines appended at `:4480-4482`). This note's `CLAUDE.md` citations, `:5` and `:47`, sit above the changed paragraph and still read as quoted (re-read). No claim moved. Nothing was executed.
 
 **Re-anchored `051f9e85` -> `c192b83d` on 2026-09-28 (T-0091 review round 1).** `c192b83d` is T-0091's review-round-1 fix on `T-0091-build`. `git diff --name-only 051f9e85 c192b83d` returns only `CLAUDE.md`: the same Landmines truncating-`open` measurement paragraph, now `:185-219` (+16/-9, so every later line moves +7; lines above `:192` are byte-identical). This note's `CLAUDE.md` citations, `:5` and `:47`, sit above the paragraph and still read as quoted (re-read). No claim moved. Nothing was executed.
@@ -884,6 +1030,14 @@ The version sentence moves to 1.0.50; no other citation moved. Nothing was execu
 **Re-anchored `b2553d26` / `136f4b33` -> `2442d367` on 2026-09-28 (T-0092 landing, crew 1.0.54).** `2442d367` is `T-0092-land`'s merge of the reviewed `T-0092-build` (`68d34203`) onto main `311dab8c` (T-0090's landing, no crew bump, so crew is 1.0.53 there and T-0092's 1.0.54 is one past it). The code-map, INDEX and rules conflicts were resolved mechanically - both sides' provenance notes kept, main's first; the anchor held at main's `b2553d26` in the merge and moved here. Every body citation of the form `path:line` was compared by script twice: `b2553d26` -> `2442d367` differs only on T-0092's own lines (the three version lines, 1.0.53 -> 1.0.54 in place, `plugin/crew/README.md:842` in place, and `TODO.md:5051`, T-0092's constraint bullet edited in place), and `136f4b33` -> `2442d367` touches no cited file (T-0090's files - `SECURITY.md`, `CHANGELOG.md`, ten under `mcp-servers/` - are named here without a line). The version sentence was re-read at `2442d367` (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`: 1.0.54) and at each commit it now names, by `git show <sha>:<path>`. Nothing else was executed for this note.
 
 (Corrected at the T-0092 landing: the version sentence above first said 1.0.54 was "re-read at `3c4f1a68`, T-0092's re-bump after merging main `c426c018`", and its history skipped 1.0.53. `git show 3c4f1a68:plugin/crew/.claude-plugin/plugin.json | grep version` prints `"version": "1.0.53"`; the 1.0.54 re-bump is `136f4b33`. It now cites the landing merge `2442d367`, which holds 1.0.54, and records 1.0.53 at `3c4f1a68`, `ff59160f` and `311dab8c`. Review round 2 FIX, owner-accepted, fixed at this re-anchor.)
+
+## Re-anchor provenance - `938e3b11` + `2442d367` -> `3648f59a`, 2026-09-28 (T-0075 review round 5, merge of `6387ab49`)
+
+`9420bc16` merges origin/main `6387ab49` into `T-0075-build`: T-0076 (crew 1.0.52, `crew_context.py`'s byte-exact LF), T-0091 (`CLAUDE.md`'s Landmines paragraph, a `TODO.md` entry), T-0089 (crew 1.0.53, `test_role_write_guard.py` fixtures), T-0090 (mcp-servers 0.2.1, `SECURITY.md`) and T-0092 (crew 1.0.54: `review_patch.py` / `review_prompt.py` leave `graphify-out/` out of the review bundle), whose notes above are anchored `136f4b33`, `2442d367`, `c192b83d` or `b2553d26`. `faf4b0db`, `e7825a0e`, `04e3a01c`, `517628b9` and `d1460d77` are T-0075's review-round-5 steps 18-22 (`crew_config.py`, `crew_config_files.py`, their three test files, `sabotage_config.py`, `README.md`, `CONFIG.md`, `CHANGELOG.md`, `plugin/crew/BUDGETS.md`); `3648f59a` re-bumps crew to 1.0.55 (`plugin.json`, `marketplace.json`, `plugin/PLUGINS.md`, `CHANGELOG.md`). The merge's conflicting provenance kept both sides, T-0075's `## Re-anchor provenance` sections first and main's `**Re-anchored ...**` paragraphs after them; the anchor line kept T-0075's and is replaced here.
+
+The version sentence moves to 1.0.55 and now lists both lines' history (T-0075's re-bumps 1.0.44-1.0.52 on its branch; main's 1.0.51-1.0.54). `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3` and `plugin/PLUGINS.md:14` re-read at `3648f59a`: all 1.0.55. `.claude-plugin/marketplace.json:217` keeps T-0075's 36 slash commands. No other body citation moved.
+
+Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `938e3b11` for a line in T-0075's copy of this note and from `6387ab49` for a line only in main's, to the tree at `3648f59a` (difflib equal blocks); every citation that did not map to itself was read with `sed -n` / `grep -n`. The script attributes some bare `:N` to the wrong file (a `.crew/verify.json` range after a test-file mention, a `check-marketplace.py` range after a `PLUGINS.md` mention, a `SKILL.md` in another skill); those were read and hold. A citation inside a list of per-commit positions keeps its commit's line; only the current position is added. Nothing else was executed for this note.
 
 ## Re-anchor provenance - `50a275ea` + `81685adf` -> `360c4029`, 2026-09-28 (T-0010-solo merges T-0079's `e6e10432`)
 
