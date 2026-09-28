@@ -1,17 +1,17 @@
-# Graph Report - uca-t0072-land  (2026-09-28)
+# Graph Report - uca-t0091  (2026-09-28)
 
 ## Corpus Check
-- 957 files · ~2,114,423 words
+- 957 files · ~2,115,840 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 59 file(s) not represented in the graph (top: (none) 33, .mmd 8, .csv 4)
 
 ## Summary
-- 18976 nodes · 38351 edges · 920 communities (743 shown, 177 thin omitted)
-- Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 2772 edges (avg confidence: 0.92)
+- 18976 nodes · 38353 edges · 920 communities (743 shown, 177 thin omitted)
+- Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 2774 edges (avg confidence: 0.92)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `9631c707`
+- Built from commit: `5656ab82`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -1302,7 +1302,7 @@ Cohesion: 0.18
 Nodes (19): cache_get(), cache_put(), cmd_init(), cmd_jira_token(), cmd_zoho_token(), default_config_path(), form_encode(), http_request() (+11 more)
 
 ### Community 105 - "localgpu"
-Cohesion: 0.06
+Cohesion: 0.07
 Nodes (43): Entry points, localgpu, bootstrap.ps1 vs bootstrap.sh — verdict: the "twin" claim holds, Calls out to, Entry points, localgpu, Re-anchor provenance - 1f97e51c -> 84976536, 2026-09-22, Re-anchor provenance - `2b18f7ab` + `488053fc` -> `a1acd9b7`, 2026-09-27 (T-0023 merge of main) (+35 more)
 
 ### Community 106 - "test_crew_resume.py"
@@ -3870,8 +3870,8 @@ Cohesion: 0.33
 Nodes (5): 2. No MCP server for ChatGPT; `codex:codex-rescue` as-is, Consequences, Context, Decision, Why not build it
 
 ## Knowledge Gaps
-- **2800 isolated node(s):** `ci-status.sh script`, `name`, `private`, `description`, `workspaces` (+2795 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 8186 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **2799 isolated node(s):** `ci-status.sh script`, `name`, `private`, `description`, `workspaces` (+2794 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 8185 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **177 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
@@ -3884,7 +3884,7 @@ _Questions this graph is uniquely positioned to answer:_
 - **Why does `init()` connect `init` to `Work Log Reporter`, `scan`, `What's new`, `Stack: .NET`, `anthropic_proxy.py`, `Security events: search, inspect, triage`, `Infrastructure work ticketing`, `Configuration reference`, `[Unreleased]`?**
   _High betweenness centrality (0.011) - this node is a cross-community bridge._
 - **What connects `ci-status.sh script`, `name`, `private` to the rest of the system?**
-  _2800 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _2799 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `install-prerequisites.sh` be split into smaller, more focused modules?**
   _Cohesion score 0.08140610545790934 - nodes in this community are weakly interconnected._
 - **Should `crew_resume.py` be split into smaller, more focused modules?**
