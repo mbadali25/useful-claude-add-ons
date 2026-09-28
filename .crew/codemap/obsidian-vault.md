@@ -1,6 +1,6 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@6f96e627
-verified: 2026-09-26
+anchor: useful-claude-add-ons@a43acd56
+verified: 2026-09-28
 
 ## Does
 Turns one or more Obsidian vaults into Claude Code's durable memory: a PostToolUse guard that
@@ -950,3 +950,5 @@ corrected, and it was wrong when written, not drifted:** the Landmines bullet on
 `claude-memories-*` skills placed the "Two vault systems on one host" entry in this repo's
 `CLAUDE.md`; it is in no tracked file (`git grep`, at both commits) and lives in the operator's
 untracked auto-memory. The suite was not re-run this pass.
+
+**Re-anchored `6f96e627` -> `a43acd56` on 2026-09-28 (T-0088, crew 1.0.53).** `a43acd56` is T-0088's crew 1.0.53 version commit on `T-0088-build`, after `7b1e2228` merged origin/main `c426c018` with a merge commit. `git diff --name-only 6f96e627 a43acd56` over this note's cited paths returns `plugin/crew/hooks/scripts/crew_platform.py` (T-0088's inheriting-worktree guard in `heal_config`, and the resolver import), which this note cites by name only (`:799`), and `.claude-plugin/marketplace.json`, cited only at `:248` inside provenance sections that describe their own commits. No citation moved. Nothing was executed for this note.
