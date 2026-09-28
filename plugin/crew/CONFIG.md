@@ -2290,8 +2290,8 @@ driven is a fact about that checkout.
 adds reads the same one. `/crew:migrate` writes `.crew/crew.json`, which crew
 does not read for this key; an `autopilot` block found only there is reported
 by `settings` ("move it to .crew/config.json") rather than read as `off` with
-no word. `settings` prints `mode`, `maxPhases`, `approval` and `questions`, in
-text and with `--json`.
+no word. `settings` prints `mode`, `maxPhases` and `deploy` on its first text
+line, `approval` and `questions` on its second, and all five with `--json`.
 
 **The two policies (T-0010).** `autopilot.approval` decides the
 plan-approval phase: `human` always stops for `/crew:approve`; `self` lets

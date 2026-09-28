@@ -218,8 +218,10 @@ All notable changes to this repository are documented here. Format follows [Keep
     `approval_policy` refuses it in its own branch before `self` and `risk`,
     `question_policy` stops, `settings` warns and reads `mode` as `off`, and an
     `autopilot` receipt is demoted; an absent file or block still reads the
-    defaults. `crew_autopilot.py settings` prints `approval` and `questions` in
-    its text line as well as `--json`. The duplicate `_one_line` is gone
+    defaults. `crew_autopilot.py settings` prints `approval` and `questions` on
+    a second text line as well as in `--json`; its first line stays T-0072's
+    `mode maxPhases deploy`, which `test_crew_autopilot_deploy.py` pins
+    exactly. The duplicate `_one_line` is gone
     (pylint E0102), pinned by a test that no module-level name is defined twice.
   - A group confirm is owner-only (carried from T-0024's hand-off: T-0024
     landed first without it). `crew_ticket.approve` refuses `via=autopilot`

@@ -916,7 +916,7 @@ def test_settings_cli_text_prints_both_policies(tmp_path, approval, questions):
 
     out = _cli(root, "settings").stdout
 
-    assert f"approval={approval} questions={questions}" in out.splitlines()[0]
+    assert out.splitlines()[1] == f"approval={approval} questions={questions}"
 
 
 @pytest.mark.parametrize("approval,questions", [("self", "human"), ("human", "self")])
