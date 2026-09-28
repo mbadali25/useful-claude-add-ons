@@ -370,7 +370,12 @@ but returns immediately without judging anything; "off" for `verifyGate` means t
 `~/.claude/crew/config.json` is the machine-global layer; `.crew/config.json` is per-repo and wins
 where both speak. A **ratcheted** key (marked above) can only be *narrowed* by the repo relative to
 the machine-global value, never widened — a repo cloned from someone else cannot silently loosen a
-guard the machine owner set to `block`. `/crew:config` shows where each setting actually came from.
+guard the machine owner set to `block`. `/crew:config --show` shows where each setting actually came
+from, and `/crew:config` with no argument (alias `/crew:config-setup`) sets either layer from a menu:
+it marks a repo value that widens a guard with `!`, and names a repo value the machine layer holds
+down. The same menu can delete a repo's `.crew/config.json`: it moves the file to a backup in one
+rename, compares it with what the preview read (a file that changed since is put back and nothing
+is deleted), and prints the command that restores it for sh, cmd and PowerShell.
 
 ## Web testing
 

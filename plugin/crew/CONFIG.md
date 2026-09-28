@@ -1634,6 +1634,119 @@ An unknown value fails closed to `block` on whichever layer carries it
 ranked — so a typo costs capability rather than granting it, and a widening
 *from* an unknown still reads as a widening.
 
+### Writing the repo layer, and the enum check both writers share
+
+`/crew:config`'s menu (T-0075) writes `.crew/config.json` through one path,
+`crew_config.plan_repo_write` / `write_repo_config` (CLI
+`crew_config.py --set PATH=JSON --repo [--apply]`). It does not change what
+either layer means on read; it marks what a repo edit changes **in force**:
+
+- A **ratcheted** key compares `effective_ratcheted` before and after, by rank.
+  Repo `guards.forcePush` `block` -> `allow` under a machine `allow` prints
+  `! guards.forcePush widens to`; the same edit under a machine `block` does
+  not widen, and prints `held down by the machine-global layer at block`
+  instead.
+- `pm.authority` resolves by precedence, so its before-value is the repo's own,
+  else the machine's, ranked by `_RATCHETED`.
+- Three repo-only consents are marked by value: `context.autoClear.unsafeFocus:
+  true`, `autopilot.mode: "plan"` and `verifyGate: false`
+  (`crew_config._REPO_WIDENING`).
+
+Every update is judged per LEAF (`crew_config.leaf_updates`, recursive), by
+the one predicate both planners and the menu share, `value_allowed(dotted,
+layer, value)`: a whole-block value is expanded, so
+`context={"autoClear": {"unsafeFocus": true}}` is judged as
+`context.autoClear.unsafeFocus` and refused at the machine layer
+(`MACHINE_REFUSED` names the two consent keys), and one good leaf does not
+carry a bad one. A block set to `{}`, or replaced by a scalar, is refused off
+an open table (`guards: {}` refused, `qa.roles.review: {}` is "no pin").
+
+Each judged leaf is also what is WRITTEN (`crew_config.assignments`, review
+round 3): a block value is written leaf by leaf, so the block's untouched
+siblings, unknown keys included, survive, and a widening is marked on the leaf
+that widens (`{"guards": {"forcePush": "allow"}}` prints
+`! guards.forcePush widens to`). A value at an open role table (`qa.roles`,
+`dev.roles`) is written one ENTRY at a time, each entry a whole pin, so the
+other roles' pins survive and a new pin never inherits the old one's model.
+
+It refuses, naming the key and the reason: a path that is not a leaf of
+`default_config()` (unknown keys, and a block emptied or replaced by a scalar,
+such as `scope: {}`, that would drop a leaf the per-key rules guard),
+`platform.*`, `schema`,
+`scope.mode`, `scope.allowCliApproval`, `context.autoClear.onlyRepos` /
+`.onlySessions`, and anything but exactly `false` or `null` for
+`context.autoClear.enabled` or `resume.auto` (only the machine file arms
+those). That test is by identity (`crew_config.is_repo_veto`), not `in (False,
+None)`: `0 == False` in Python, and the readers (`crew_autocycle`,
+`crew_resume`) compare with `is False`, so a written `0` would veto nothing. It
+refuses to write when the file is absent or does not parse, rather than
+creating a config from one key or overwriting the only copy -- and the menu
+reads the file the same strict way, so over an absent or unparseable
+`.crew/config.json` every repo row is read-only with that refusal as its
+reason, rather than offered and then refused at Save.
+
+**Enum values are checked on both writers.** `crew_config.enum_values` returns
+the tuple each reader normalises against — the `RATCHETED_KEYS` tiers,
+`AUTHORITIES`, `TICKET_GRANULARITIES`, `auto` + `QA_PROVIDERS`, and
+`DEV_PROVIDERS` — and a value outside it is refused. This is a behaviour
+change for the global `--set`: it used to write `pm.authority: "bogus"` and
+read it back as `report-only`.
+
+**The null rule** (`crew_config.null_means`). At the repo layer a `null` on a
+veto-only key clears the veto, and on a key the machine file may set it
+inherits the machine value (`without_null_shadows` drops it on read); either
+layer, a `null` on an open key (no tuple) is unset. A `null` on an enum key at
+the machine layer is refused: it is outside every tuple its reader normalises
+against. A legacy `null` already in a file is tolerated; the rule judges what
+is being written now. Each change carries its meaning (`null`), and the dry
+run prints it.
+
+**The merged file is judged whole** (`crew_config.merged_problems`): every
+untouched known leaf of the file the write would produce is checked for what
+its presence means at that layer (`_content_problem`): an enum value outside
+its tuple (a legacy `null` tolerated), a consent key (`MACHINE_REFUSED`) in
+the machine file, and a veto-only key holding anything but `false`/`null` in
+the repo file. One already there refuses an unrelated write as `pre-existing
+...`: an enum value says `fix that key first` (it can be fixed in the same
+write), the other two `remove it by hand first` (no crew writer sets or
+removes them). Unknown keys are never judged. JUDGEMENT: refusals of a write
+are not refusals of content, so a `REPO_REFUSED` key in the repo file
+(`/crew:init` and platform-sync write them) and a repo-only key in the
+machine file (pruned by `filter_global` on every read) do not block a write.
+Then `validate_providers` runs on the merged file at both layers, wrapped as
+the layer's refusal. `qa.order` must be a list of QA providers or `null`: any
+other shape (`1`, `true`, `"codex"`, an object) is refused at both layers with
+exit 2, never a traceback, including when it is already in the file an
+unrelated write merges onto (the menu then shows the rows it blocks read-only,
+naming `qa.order`). A path past a template leaf (`pm.authority.a`) and an
+object at a leaf (`pm.authority={"a": 1}`, `notify.chatId={}`) are refused at
+both layers, on the update and when already in the file (`pre-existing`,
+fixable in the same write). `qa.roles` and `dev.roles`, and each entry under
+them, must be an object or `null`: a string, number, boolean or array there is
+refused with exit 2 at both layers, the file included, since the reader drops
+it and `qa.roles=1` would silently wipe every pin.
+
+**Compare-and-swap, both files.** `write_global_config` and
+`write_repo_config` re-run their plan on the bytes read inside
+`crew_config_files.update_json`: an `O_CREAT|O_EXCL` lock file beside the
+config (`<file>.lock`, the review ledger's construction; 3 s wait, then a
+refusal naming the lock and the PID inside it), a strict read, and a
+sibling-fsync-replace that keeps CRLF and a UTF-8 BOM. `--set` prints the
+digest (sha256) of the bytes it planned against, `absent` when there is no
+file, and `--apply --expect <digest|absent>` refuses a file that changed, or
+appeared, since (`RepoWriteConflict` / `GlobalWriteConflict`, subclasses of
+the refusals, so every existing `except` still catches them). Without
+`--expect` the merge is onto the file under the lock. A repo write's widening
+marks read the machine file, so `--set --repo` also prints `machine digest:`
+and `--expect-global <digest|absent>` binds it: `write_repo_config` reads the
+machine file once under the machine lock (always taken, creating its
+directory when absent, never the file; taken before the repo lock, the one
+nesting order) and refuses one that changed since. The machine writer now refuses an unparsable or non-object global file
+instead of replacing it from the read path's `{}` collapse. A foreign writer
+(an editor's save) is not serialised by the lock. An OS error from either
+lock, the machine directory or the write itself is refused with exit 2,
+nothing written and the path named, never a traceback.
+
 ### One resolver, two flavours
 
 `guard.sh` and `guard.ps1` both shell out to `crew_config.py --guard`. Neither

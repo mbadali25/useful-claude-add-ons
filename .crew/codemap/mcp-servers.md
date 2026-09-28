@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@b2553d26
+anchor: useful-claude-add-ons@3648f59a
 verified: 2026-09-28
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -364,3 +364,5 @@ returns `.claude-plugin/marketplace.json` (crew's version line only) and `TODO.m
 `:4470`, below every citation here); nothing under `mcp-servers/`. `TODO.md:189`, `:200` and
 `:281` re-read, unchanged; `grep -c mcp-servers .claude-plugin/marketplace.json` is still **0**.
 No citation moved.
+
+**Re-anchored `b2553d26` -> `3648f59a` on 2026-09-28 (T-0075 review round 5, merge of `6387ab49`).** `git diff --name-only b2553d26 3648f59a -- mcp-servers/ README.md TODO.md .claude-plugin/marketplace.json` returns `README.md` (T-0075: crew's slash-command count 35 -> 36 at `:168` and `:874`, in place), `TODO.md` (T-0092's entry at `:5051`, below every citation here) and `.claude-plugin/marketplace.json` (crew's lines only); nothing under `mcp-servers/`. `TODO.md:189`, `:200` and `:281` re-read, unchanged; `grep -c mcp-servers .claude-plugin/marketplace.json` is still **0**. No citation moved.
