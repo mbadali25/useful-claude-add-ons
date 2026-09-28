@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@5e2d71a7
-verified: 2026-09-27
+anchor: useful-claude-add-ons@3724731b
+verified: 2026-09-28
 
 ## Re-derive provenance
 
@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 36 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.50 (`8cabe586`, one past main's 1.0.49 from T-0077's `fc289446`), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.51 (`3724731b`, one past main's 1.0.50 from T-0079's `81685adf`), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -263,7 +263,7 @@ Re-executed on T-0075's merge of `bebbb97f` (T-0023 landed): 122 / 68 / 54 / 0 -
 config leaf; unchanged again on its merge of `67caa4b8` (T-0018 landed, no config leaf) and of
 `d2fbd408` (T-0024 landed; it changes neither template nor `crew_config.py`).
 `plugin/crew/tests/test_crew_config.py:279` asserts 122. T-0004's `CHANGELOG.md` entry
-now says "117 -> 119" (`:699-700` since T-0075's merge of `5050ea3b` put shipstation's entry above it, `:688-689` after its merge of `f96e9ec9` put T-0077's entry above it, `:666-667` on T-0075's merge of `d2fbd408`; `:608-609` at `d2fbd408`, before T-0075's entry went in above it; `:545-546` on T-0075's branch before that merge; `:515-516` at `67caa4b8`, before T-0024's four entries and T-0075's went in above it;
+now says "117 -> 119" (`:759-760` at `3724731b`, after T-0075's merge of `e6e10432` put T-0079's entry above it and its round-3 fix grew its own; `:699-700` since T-0075's merge of `5050ea3b` put shipstation's entry above it, `:688-689` after its merge of `f96e9ec9` put T-0077's entry above it, `:666-667` on T-0075's merge of `d2fbd408`; `:608-609` at `d2fbd408`, before T-0075's entry went in above it; `:545-546` on T-0075's branch before that merge; `:515-516` at `67caa4b8`, before T-0024's four entries and T-0075's went in above it;
 `:436-437` at `bebbb97f`, before T-0018's; `:390-391` at `db14619c`, before T-0023's; `:276-277` at `f0b12ee6`, before T-0021's; `:228-229` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this
 paragraph was first written. T-0005's entry states no leaf count; T-0023's says 121 -> 122.
 
@@ -354,77 +354,104 @@ same key is registered in `crew_guards.RATCHETED_KEYS`
 (`plugin/crew/hooks/scripts/crew_guards.py:545-549`). `autopilot.*` is not ratcheted
 (T-0004 added no `_RATCHETED` entry).
 
-## The writers and the `/crew:config` menu (T-0075, crew 1.0.50)
+## The writers and the `/crew:config` menu (T-0075, crew 1.0.51)
 
-**DERIVED from the source at `7d217751`, re-read at `8cabe586`** (only a stray line below
-`:930` left `crew_config_menu.py` in between). Two writers, one per layer, both in `crew_config.py`,
-one file layer under both, and nothing else writes either file on the menu's behalf. The design is
-the successor written after review round 2 was rejected: each round-2 finding is closed by where
-the check sits, not by a patch at the call site.
+**DERIVED from the source at `3724731b`** (T-0075's review-round-3 fixes, its merge of main
+`e6e10432` and the 1.0.51 bump; first derived at `7d217751`, re-read at `8cabe586`). Two writers,
+one per layer, both in `crew_config.py`, one file layer under both, and nothing else writes either
+file on the menu's behalf. Each round-2 and round-3 finding is closed by where the check sits, not
+by a patch at the call site.
 
 - **One file layer, `plugin/crew/hooks/scripts/crew_config_files.py` (new, no crew imports).**
-  `Lock` (`:65`) is an `O_CREAT|O_EXCL` `<path>.lock` beside the config holding the PID, waiting
-  `LOCK_WAIT_SECONDS` (`:34`) then raising `Busy` (`:49`); it serialises crew's own writers, not a
-  hand edit. `read_strict` (`:135`) is the four-case read (`Unreadable.kind` `absent`,
-  `unparsable`, `empty`, `notobject`, `:39`), never `load_config`'s `{}` collapse. `restorable`
-  (`:125`) is the ONE predicate delete refuses by and restore accepts by. `digest` (`:153`) is
-  sha256 of the bytes. `replace_bytes` / `replace_text` (`:173`, `:194`) write a PID-suffixed
-  sibling, fsync, `os.replace`, keeping CRLF and a UTF-8 BOM. `update_json` (`:206`) reads,
-  compares `expect` (raising `Conflict`, `:53`), mutates and replaces inside the lock.
-  `move_aside` (`:246`) is one `os.replace` to a name that must not exist.
-- **Per-leaf judgement, shared by both planners.** `leaf_updates` (`crew_config.py:2588`) flattens
-  every update to its leaves, a whole-block value included, so a consent key cannot ride inside a
-  block; `value_allowed` (`:2671`) judges each leaf: the layer's path rule (`MACHINE_REFUSED`
-  `:2604` and `is_global_path` `:702` at the machine layer; `REPO_REFUSED` `:2871`, `is_repo_path`
-  `:2928` and `REPO_VETO_ONLY` `:2892` by identity, `is_repo_veto` `:2895`, at the repo layer), a
-  block emptied or replaced by a scalar, the null rule (`null_means`, `:2638`: repo null inherits
-  the machine value or clears a veto, an open key's null unsets, an enum key's null at the machine
-  layer is refused), then membership in `enum_values` (`:2564`). `merged_problems` (`:2698`) then
-  judges the FILE the write would produce: an untouched enum leaf outside its values (a legacy null
-  tolerated) refuses an unrelated write, named "pre-existing", and `validate_providers` runs on the
-  merged file.
-- **Machine:** `plan_global_write` (`:2781`) on `global_snapshot` (`:2736`, strict: an
-  unparsable or non-object machine file is refused, never merged onto `{}`) / `write_global_config`
-  (`:2820`), which re-runs the plan (`_plan_global_on`, `:2752`) on the bytes `update_json` read
-  under the lock, `expect` refusing a changed file (`GlobalWriteConflict`).
-- **Repo:** `plan_repo_write` (`:3045`) on `repo_snapshot` (`:3014`, `_read_repo_strict` `:2988`:
-  absent or malformed is refused, never created) / `write_repo_config` (`:3071`), the same
-  compare-and-swap (`RepoWriteConflict`). `!` on a widening: the ratchet by what is in force
-  (`repo_widens`, `:2947`) and the `_REPO_WIDENING` table (`:2905`).
-- **CLI:** `--set PATH=JSON [--repo] [--apply [--expect DIGEST]]` through `_set_layer` (`:3183`),
-  which prints `digest:` of the bytes the plan read; `_DOTTED_RE` / `_DIGEST_RE` (`:3179-3180`)
-  refuse a malformed path or digest with exit 2. `wc -l` is 3396, under `.pylintrc`'s 3400.
+  `Lock` (`:89`) is an `O_CREAT|O_EXCL` `<path>.lock` beside the config holding the PID, waiting
+  `LOCK_WAIT_SECONDS` (`:44`) then raising `Busy` (`:64`); it serialises crew's own writers, not a
+  hand edit. `read_strict` (`:159`) is the four-case read (`Unreadable.kind` `absent`,
+  `unparsable`, `empty`, `notobject`, `:54`), never `load_config`'s `{}` collapse;
+  `read_restorable` (`:177`) is that read on a REGULAR file only (`O_NOFOLLOW`, judged by `fstat`,
+  kind `notregular`), the one read delete and restore share. `restorable` (`:149`) is the predicate
+  both accept by. `digest` / `state_digest` (`:216`, `:221`) are sha256 of the bytes, `ABSENT`
+  (`:51`, the string `absent`) for no file; `is_expectation` / `expectation_problem` (`:226`,
+  `:267`) judge an `--expect*` value. `read_tolerant` (`:233`) is the machine file read as
+  `read_global_config` reads it plus its `state_digest`; `lock_if_dir` (`:251`) is the machine
+  lock a repo write takes without creating `~/.claude/crew/`. `is_dotted` / `parse_assignments`
+  (`:262`, `:275`) are the one dotted-path and `PATH=JSON` rule both CLIs use.
+  `replace_bytes` / `replace_text` (`:308`, `:329`) write a PID-suffixed sibling, fsync,
+  `os.replace`, keeping CRLF and a UTF-8 BOM. `update_json` (`:341`) reads, compares `expect`
+  against the `state_digest` (raising `Conflict`, `:68`), mutates and replaces inside the lock.
+  `move_no_clobber` (`:424`) never replaces an existing destination by the rename itself (POSIX:
+  `os.link`, then `_unlink_source` `:395`, which parks the source and removes it only while it is
+  the linked inode, putting a foreign replacement back or raising `Displaced` `:72`; Windows:
+  `os.rename`); `move_aside` (`:464`) is that move plus the moved bytes, `create_bytes` (`:473`) a
+  new file by the same move.
+- **Per-leaf judgement and per-leaf writing, shared by both planners.** `leaf_updates`
+  (`crew_config.py:2585`) flattens every update to its leaves, a whole-block value included, so a
+  consent key cannot ride inside a block; `value_allowed` (`:2700`) judges each leaf: the layer's
+  path rule (`MACHINE_REFUSED` `:2624` via `_consent_refusal` `:2673`, and `is_global_path` `:702`
+  at the machine layer; `REPO_REFUSED` `:2912`, `is_repo_path` `:2969` (`_shape` `:2635` is a leaf
+  or open) and `REPO_VETO_ONLY` `:2933` by identity, `is_repo_veto` `:2936`, at the repo layer), a
+  block emptied or replaced by a scalar, the null rule (`null_means`, `:2658`), then membership in
+  `enum_values` (`:2564`). `assignments` (`:2605`) is what is WRITTEN: the same leaves for a block
+  (its untouched siblings, unknown keys included, survive; the widening is marked on the leaf),
+  and one whole pin per role for an open role table. `_plan_on` (`:2804`) is both planners on an
+  already-read file. `merged_problems` (`:2750`) then judges the FILE the write would produce,
+  every known leaf by `_content_problem` (`:2727`): an enum value outside its tuple (a legacy null
+  tolerated), a consent key in the machine file, an armed veto-only key in the repo file, each
+  named "pre-existing"; unknown keys and write-only refusals (`REPO_REFUSED` keys in the repo file,
+  a repo-only key in the machine file) are not judged (JUDGEMENT in the docstring). Then
+  `validate_providers` runs on the merged file.
+- **Machine:** `plan_global_write` (`:2837`) on `global_snapshot` (`:2788`, strict: an
+  unparsable or non-object machine file is refused, never merged onto `{}`; absent is `ABSENT`) /
+  `write_global_config` (`:2865`), which re-runs `_plan_on` on the bytes `update_json` read under
+  the lock, `expect` (a digest or `ABSENT`) refusing a changed file (`GlobalWriteConflict`).
+- **Repo:** `plan_repo_write` (`:3045`) on `repo_snapshot` (`:3033`, strict: absent or malformed
+  is refused, never created) and `machine_view` (`:3064`, the filtered machine file and its
+  `state_digest` from one `read_tolerant`) / `write_repo_config` (`:3071`), the same
+  compare-and-swap (`RepoWriteConflict`), plus `expect_global`: the machine file is read once under
+  `lock_if_dir` (taken before the repo lock) and a changed one is refused. `!` on a widening: the
+  ratchet by what is in force (`repo_widens`, `:2977`) and the `_REPO_WIDENING` table (`:2946`).
+- **CLI:** `--set PATH=JSON [--repo] [--apply [--expect DIGEST|absent] [--expect-global
+  DIGEST|absent]]` through `_set_layer` (`:3189`), which prints `digest:` of the bytes the plan
+  read and, with `--repo`, `machine digest:`; `main` (`:3223`) refuses a malformed path, value or
+  digest with exit 2. `wc -l` is 3398, under `.pylintrc`'s 3400.
 
 `plugin/crew/hooks/scripts/crew_config_menu.py` (new) is what the menu procedure
 (`plugin/crew/skills/crew-setup/config-menu.md`, followed by both `/crew:config` with no argument
-and the alias `/crew:config-setup`) calls. `menu_spec` (`crew_config_menu.py:314`) builds the rows
+and the alias `/crew:config-setup`) calls. `menu_spec` (`crew_config_menu.py:315`) builds the rows
 from `leaf_paths(default_global_config())` (machine, plus `platform.*` and `schema` read-only,
-`_MACHINE_READ_ONLY` `:298`) and `leaf_paths(default_config())` (repo), grouped by `AREAS`
-(`:49`), and returns the layer's `digest`. `choices` (`:212`) offers a value only when
-`_probe_for`'s probe (`:169`) - the layer's own planner on one snapshot, with the session's
-`--pending` set plus the candidate - accepts it; when every candidate is refused the row is
-read-only with the planner's first refusal (a bad value already in the file names that key). `save`
-(`:446`) plans both layers before writing either, prints each layer's `digest`, checks
-`--expect-machine` / `--expect-repo` for both layers before either write and passes each to its
-writer; a refusal after a layer landed says which (exit 1). Delete is two phases: `plan_delete`
-(`:745`) holds the file's bytes and digest and refuses what `restorable` refuses (pointing at
-platform-sync's `config.json.broken` heal); `delete_preview` (`:593`) walks the known leaves AND
-the file's own (`_file_leaves`, `:581`: `removed` for unknown keys, `redetected` for `platform.*`,
-`heldAgainst` for a ratcheted key a narrowing keeps, `_held_by_ratchet` `:646`); `apply_delete`
-(`:766`) needs the typed repo name (`repo_name`, `:533`), then under the config `Lock` moves the
-file to a fresh `.crew/config.json.bak-<UTC>` (`_free_backup`, `:549`) in one rename and compares
-the moved bytes with the held ones - a changed file is renamed straight back and nothing is deleted
-(exit 2; exit 1 when a new file appeared too) - and prints three restore lines (`restore_lines`
-`:726`, `command_forms` `:709`: sh `shlex.quote`, cmd double-quoted with forward slashes and a `%`
-warning, PowerShell `&` with single quotes). `restore_repo_config` (`:853`) accepts exactly what
-`_valid_backup` (`:833`, location, name, then `restorable`) accepts, moves any current file aside
-under the lock first, writes the bytes sibling-then-replace and reads them back.
-`validate_change_set` (`:901`) and `_usage_problem` (`:930`) refuse a malformed `--changes`,
-`--pending`, digest, `--confirm` or `--from` with exit 2. Tests:
-`plugin/crew/tests/test_config_files.py`, `plugin/crew/tests/test_config_menu.py`,
-`plugin/crew/tests/test_crew_config.py`; 50 mutations in `plugin/crew/tests/sabotage_config.py`
-(`CONFIG_MENU_MUTATIONS`, `len()` at `7d217751`, registered in `sabotage.py:80`, appended at
-`:3055`); `.crew/verify.json` rule 7 (`:129-144`) maps all of them plus the three modules.
+`_MACHINE_READ_ONLY` `:299`) and `leaf_paths(default_config())` (repo), grouped by `AREAS`
+(`:48`), and returns the layer's `digest`. `choices` (`:213`) offers a value only when
+`_probe_for`'s probe (`:168`) - the layer's own planner on one snapshot (and, at the repo layer,
+one `machine_view`), with the session's `--pending` set plus the candidate - accepts it; when every
+candidate is refused the row is read-only with the planner's first refusal. `save` (`:478`) plans
+both layers before writing either (`_plan_both`, `:444`: the repo plan judged against the machine
+file as this Save leaves it), prints the machine digest whenever anything changes and the repo
+digest when it does, checks every given `--expect-machine` / `--expect-repo` by presence (never
+truthiness; `_current_digest` `:439`) before either write and passes each to its writer, binding
+the repo write to the machine digest too - after a machine write in the same Save, to the bytes it
+wrote (`_machine_as_written`, `:469`); a refusal after a layer landed says which (exit 1). Delete
+is two phases: `plan_delete` (`:784`) holds the file's bytes, its digest and the machine digest
+(`_machine_digest` `:779`, read before and after the preview) and refuses what `read_restorable`
+refuses (a symlink included), pointing at platform-sync's `config.json.broken` heal;
+`delete_preview` (`:627`) walks the known leaves AND the file's own (`_file_leaves`, `:615`:
+`removed` for unknown keys, `redetected` for `platform.*`, `heldAgainst` for a ratcheted key a
+narrowing keeps, `_held_by_ratchet` `:680`); `delete_repo_config` (`:891`) prints `repo digest:`
+and `machine digest:` under the preview; `apply_delete` (`:835`) needs the typed repo name
+(`repo_name`, `:567`) and both digests (`_unbound`, `:819`), then under the config `Lock` moves
+the file to a fresh `.crew/config.json.bak-<UTC>` (`_free_backup`, `:583`) with `move_aside` and
+compares the moved bytes with the held ones - a changed file is moved straight back with
+`move_no_clobber`, never over a file saved in the gap (exit 2; exit 1 when a new file appeared) -
+and prints three restore lines (`restore_lines` `:760`, `command_forms` `:743`: sh `shlex.quote`,
+cmd double-quoted with forward slashes and a `%` warning, PowerShell `&` with single quotes).
+`restore_repo_config` (`:932`) accepts exactly what `_valid_backup` (`:916`, location, name, then
+`read_restorable` on the backup itself) accepts, moves any current file aside under the lock
+first, writes the bytes with `create_bytes` (a file that appeared meanwhile is refused, never
+replaced) and reads them back. `validate_change_set` (`:977`) and `_usage_problem` (`:1006`)
+refuse a malformed `--changes`, `--pending` (an explicitly empty one included), digest,
+`--confirm` or `--from` with exit 2. Tests: `plugin/crew/tests/test_config_files.py`,
+`plugin/crew/tests/test_config_menu.py`, `plugin/crew/tests/test_crew_config.py`; 81 mutations in
+`plugin/crew/tests/sabotage_config.py` (`CONFIG_MENU_MUTATIONS`, `len()` at `3724731b`: 50 through
+review round 2, 31 for round 3; registered in `sabotage.py:80`, appended at `:3055`);
+`.crew/verify.json` rule 7 (`:129-144`) maps all of them plus the three modules.
 
 ## `.crew/config.json` vs `.crew/crew.json` — the open 1.0.x authority question
 
@@ -966,10 +993,10 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
 - `plugin/crew/hooks/scripts/crew_config.py:2449` — `_RATCHETED`, the
   14-key ratchet table (seven construction steps).
 - `plugin/crew/hooks/scripts/crew_config.py:3045` / `:3071` — `plan_repo_write` /
-  `write_repo_config`, the one repo-layer writer (T-0075); `:2781` / `:2820` — the machine pair.
-- `plugin/crew/hooks/scripts/crew_config_files.py:206` — `update_json`, the lock and
+  `write_repo_config`, the one repo-layer writer (T-0075); `:2837` / `:2865` — the machine pair.
+- `plugin/crew/hooks/scripts/crew_config_files.py:341` — `update_json`, the lock and
   compare-and-swap both writers stand on (T-0075).
-- `plugin/crew/hooks/scripts/crew_config_menu.py:942` — `main()`, the `spec` / `save` /
+- `plugin/crew/hooks/scripts/crew_config_menu.py:1018` — `main()`, the `spec` / `save` /
   `delete-repo` / `restore-repo` CLI the `/crew:config` menu calls.
 - `plugin/crew/hooks/scripts/role_write_guard.py:539` — `classify`, the
   decision function; `:684` — `main()`.
@@ -2290,3 +2317,28 @@ re-set (`1a3cd377`, `1afd2216`), and `5e2d71a7` merging origin/main `5050ea3b` (
 `skills/shipstation/`, its marketplace entry and a CHANGELOG entry, none cited here). Moved in
 this note: T-0004's "117 -> 119" is `CHANGELOG.md:699-700`. `CONFIG_MENU_MUTATIONS` is still 50;
 crew is still 1.0.50 (`1afd2216`). Nothing else this note cites changed.
+
+## Re-anchor provenance - `5e2d71a7` + `81685adf` -> `3724731b`, 2026-09-28 (T-0075 review round 3, merge of `e6e10432`)
+
+`3036dc02` is T-0075's review-round-3 fix (`crew_config.py`, `crew_config_files.py`,
+`crew_config_menu.py`, their three test files, `sabotage_config.py`, and `README.md`, `CONFIG.md`,
+`commands/config.md`, `config-menu.md`, `global-config.md`, `CHANGELOG.md`); `6d5f0b61` merges
+origin/main `e6e10432` (T-0079 landed as crew 1.0.50: `review_prompt.py`, `review_run.py`,
+`review_verdict.py`, `agents/reviewer.md`, their tests, `sabotage_review.py`,
+`sabotage_webtest.py`, `test_webtest_guard.py`, `README.md`, `CHANGELOG.md`; its notes anchored
+`81685adf`); `3724731b` re-bumps crew to 1.0.51 (`plugin.json`, `marketplace.json`,
+`plugin/PLUGINS.md`, `plugin/crew/BUDGETS.md`, `CHANGELOG.md`). The merge's conflicting provenance
+sections kept both sides, main's first; anchor lines kept T-0075's and are replaced here.
+
+The writers-and-menu section was re-derived from the source at `3724731b` and rewritten (every
+`crew_config.py` citation from `:2567` on, every `crew_config_files.py` and `crew_config_menu.py`
+citation moved, and round 3 added `assignments`, `_plan_on`, `_content_problem`, `machine_view`,
+`read_restorable`, `move_no_clobber`, `create_bytes`, `read_tolerant`, `lock_if_dir`,
+`parse_assignments`, `_plan_both`, `_machine_as_written`, `_unbound` and the delete digests); the
+entry-point list's three T-0075 citations were re-read; the version sentence moves to 1.0.51; the
+CHANGELOG "117 -> 119" citation moves to `:759-760`. `crew_config.py` is unchanged above `:2567`,
+so every earlier citation into it holds. T-0079's `review_*` citations were written at `81685adf`,
+and `git diff --name-only 81685adf 3724731b` does not list those three files, so they hold.
+Checked by a script mapping every explicit `path:N` through `git diff -U0` and by `sed -n` on each
+rewritten symbol; bare `:N` citations were read by hand. `CONFIG_MENU_MUTATIONS` is 81 by `len()`.
+Nothing else was executed for this note.

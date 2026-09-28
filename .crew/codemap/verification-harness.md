@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@8cabe586
-verified: 2026-09-27
+anchor: useful-claude-add-ons@3724731b
+verified: 2026-09-28
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -311,7 +311,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2328-2335` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2350-2357` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -499,7 +499,7 @@ set on Ubuntu.
 - `.crew/verify.json:325-332` (rule 30) — the T-0024 group-approval suite;
   `plugin/crew/tests/sabotage.py:81`, `:3054` — `sabotage_approval.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
-  `plugin/crew/CONFIG.md:2328-2335` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2350-2357` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -1465,3 +1465,21 @@ paths `git diff --name-only 7d217751 8cabe586` names were mapped with `git diff 
 moved one checked by content at `8cabe586`; `.crew/verify.json` did not change (337 lines, 31 rules); `sabotage.py`
 kept its line count, so `:80`, `:81` and `:3052-3055` hold; `TRACKER_MUTATIONS` is 87 by `len()`
 (T-0077 added its own). Suites are reported in T-0075's implement result, not executed for this note.
+
+## Re-anchor provenance - `8cabe586` + `81685adf` -> `3724731b`, 2026-09-28 (T-0075 review round 3, merge of `e6e10432`)
+
+`3036dc02` is T-0075's review-round-3 fix (`crew_config.py`, `crew_config_files.py`,
+`crew_config_menu.py`, their three test files, `sabotage_config.py`, and `README.md`, `CONFIG.md`,
+`commands/config.md`, `config-menu.md`, `global-config.md`, `CHANGELOG.md`); `6d5f0b61` merges
+origin/main `e6e10432` (T-0079 landed as crew 1.0.50: `review_prompt.py`, `review_run.py`,
+`review_verdict.py`, `agents/reviewer.md`, their tests, `sabotage_review.py`,
+`sabotage_webtest.py`, `test_webtest_guard.py`, `README.md`, `CHANGELOG.md`; its notes anchored
+`81685adf`); `3724731b` re-bumps crew to 1.0.51 (`plugin.json`, `marketplace.json`,
+`plugin/PLUGINS.md`, `plugin/crew/BUDGETS.md`, `CHANGELOG.md`). The merge's conflicting provenance
+sections kept both sides, main's first; anchor lines kept T-0075's and are replaced here.
+
+`plugin/crew/CONFIG.md:2328-2335` (the descoped per-rule process-group kill, cited twice) moves to
+`:2350-2357` (round 3's CONFIG.md lines above it); re-read with `sed -n`. No other citation moved
+(script over every explicit `path:N`); `.crew/verify.json` and `sabotage.py` did not change
+(`:80`, `:3055` hold). `CONFIG_MENU_MUTATIONS` is 81 by `len()`. Suites are reported in T-0075's
+fix result, not executed for this note.

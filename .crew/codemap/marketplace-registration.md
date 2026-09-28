@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@8cabe586
-verified: 2026-09-27
+anchor: useful-claude-add-ons@3724731b
+verified: 2026-09-28
 paths: scripts/**, plugin/PLUGINS.md
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -47,8 +47,8 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.50** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
-and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `8cabe586`, T-0075's bump one past main after its merge of `f96e9ec9`); it was 1.0.49 at `f96e9ec9` (T-0077's re-bump `fc289446`) and on T-0075's branch at `7d217751` and `81ed193c`, 1.0.48 at `d2fbd408` (T-0024's bump `8de3c669`) and on that merge (`748a823d`), 1.0.49 on T-0075's branch at `ca667718`, T-0075's re-set after review round 1; 1.0.48 at `23371afb`, T-0075's bump on its merge of main `67caa4b8`; it
+`rule-of-two`. `crew` is now **1.0.51** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `3724731b`, T-0075's re-bump one past main after its merge of `e6e10432`); it was 1.0.50 at `e6e10432` (T-0079's bump `81685adf`) and on T-0075's branch at `8cabe586`, 1.0.49 at `f96e9ec9` (T-0077's re-bump `fc289446`) and on T-0075's branch at `7d217751` and `81ed193c`, 1.0.48 at `d2fbd408` (T-0024's bump `8de3c669`) and on that merge (`748a823d`), 1.0.49 on T-0075's branch at `ca667718`, T-0075's re-set after review round 1; 1.0.48 at `23371afb`, T-0075's bump on its merge of main `67caa4b8`; it
 was 1.0.47 at `67caa4b8` (T-0018's re-bump `65bb3330` on its merge of main `bebbb97f`) and on T-0075's branch at `f7163410`, 1.0.46 at `bebbb97f` (T-0023's bump `e463ca53`), at T-0018's first landing bump `fbc27b49` and on T-0075's branch at `e95e5964`, 1.0.45 at `db14619c` (T-0021, bumped again for a CI fix), 1.0.44 on T-0018's branch at `0c7f6b84`, 1.0.43 on T-0023's branch at `a1acd9b7` and on T-0018's at `39f8f59f`, 1.0.44 at `12682e41` and on T-0075's branch at `d2444be9`, 1.0.43 at `f0b12ee6` (T-0042) and on T-0021's branch at `c2ae46ab`, 1.0.42 at `2b18f7ab` (1.0.46 on T-0021's branch until its merge of main), 1.0.41 at `07ca3972` and on T-0005's branch, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
@@ -864,3 +864,20 @@ paths `git diff --name-only 7d217751 8cabe586` names were mapped with `git diff 
 moved one checked by content at `8cabe586`; the crew version statement reads 1.0.50 at `8cabe586`; `:217` still
 states 36 commands (main's T-0077 description said 35; the merge kept T-0075's). `python3
 scripts/check-marketplace.py` at `8cabe586`: `marketplace: 34 skills, 5 plugins`, `all checks passed`.
+
+## Re-anchor provenance - `8cabe586` + `81685adf` -> `3724731b`, 2026-09-28 (T-0075 review round 3, merge of `e6e10432`)
+
+`3036dc02` is T-0075's review-round-3 fix (`crew_config.py`, `crew_config_files.py`,
+`crew_config_menu.py`, their three test files, `sabotage_config.py`, and `README.md`, `CONFIG.md`,
+`commands/config.md`, `config-menu.md`, `global-config.md`, `CHANGELOG.md`); `6d5f0b61` merges
+origin/main `e6e10432` (T-0079 landed as crew 1.0.50: `review_prompt.py`, `review_run.py`,
+`review_verdict.py`, `agents/reviewer.md`, their tests, `sabotage_review.py`,
+`sabotage_webtest.py`, `test_webtest_guard.py`, `README.md`, `CHANGELOG.md`; its notes anchored
+`81685adf`); `3724731b` re-bumps crew to 1.0.51 (`plugin.json`, `marketplace.json`,
+`plugin/PLUGINS.md`, `plugin/crew/BUDGETS.md`, `CHANGELOG.md`). The merge's conflicting provenance
+sections kept both sides, main's first; anchor lines kept T-0075's and are replaced here.
+
+The version sentence moves to 1.0.51 (`.claude-plugin/marketplace.json:218`, `plugin/PLUGINS.md:14`,
+`plugin/crew/.claude-plugin/plugin.json` agree); `:217` and `:17` still state 36 commands. No
+other citation moved (script over every explicit `path:N`). `python3 scripts/check-marketplace.py`
+at `3724731b`: `marketplace: 34 skills, 5 plugins`, `all checks passed`.

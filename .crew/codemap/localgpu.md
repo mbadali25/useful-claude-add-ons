@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@8cabe586
-verified: 2026-09-27
+anchor: useful-claude-add-ons@3724731b
+verified: 2026-09-28
 
 # localgpu
 
@@ -1260,3 +1260,18 @@ mutation re-anchored in `sabotage.py`, each found by the first full suite run af
 paths `git diff --name-only 7d217751 8cabe586` names were mapped with `git diff -U0` and each
 moved one checked by content at `8cabe586`; none of this note's citations moved (`crew_config.py` did not change in this
 range). Nothing under `plugin/localgpu/` changed. Nothing was executed for this note.
+
+## Re-anchor provenance - `8cabe586` + `81685adf` -> `3724731b`, 2026-09-28 (T-0075 review round 3, merge of `e6e10432`)
+
+`3036dc02` is T-0075's review-round-3 fix (`crew_config.py`, `crew_config_files.py`,
+`crew_config_menu.py`, their three test files, `sabotage_config.py`, and `README.md`, `CONFIG.md`,
+`commands/config.md`, `config-menu.md`, `global-config.md`, `CHANGELOG.md`); `6d5f0b61` merges
+origin/main `e6e10432` (T-0079 landed as crew 1.0.50: `review_prompt.py`, `review_run.py`,
+`review_verdict.py`, `agents/reviewer.md`, their tests, `sabotage_review.py`,
+`sabotage_webtest.py`, `test_webtest_guard.py`, `README.md`, `CHANGELOG.md`; its notes anchored
+`81685adf`); `3724731b` re-bumps crew to 1.0.51 (`plugin.json`, `marketplace.json`,
+`plugin/PLUGINS.md`, `plugin/crew/BUDGETS.md`, `CHANGELOG.md`). The merge's conflicting provenance
+sections kept both sides, main's first; anchor lines kept T-0075's and are replaced here.
+
+Nothing under `plugin/localgpu/` changed, and the `crew_config.py:128-129` re-export this note
+cites sits above the first changed line (`:2567`). No citation moved. Nothing was executed.

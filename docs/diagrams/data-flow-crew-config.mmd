@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@8cabe586 on 2026-09-27. Verify before trusting.
+%% Generated from useful-claude-add-ons@3724731b on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_config_files.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
@@ -197,6 +197,12 @@
 %% T-0077, crew 1.0.50): crew_config_menu.py lost one stray line at :940, below every Menu node's
 %% citation (main() is now :942, not drawn); crew_tracker.py gained T-0077's Windows handles from
 %% :299, below resolve() :210, which TRKREAD cites and which holds. Nothing redrawn.
+%% Re-derived 8cabe586 + 81685adf -> 3724731b (T-0075 review round 3, its merge of main e6e10432,
+%% crew 1.0.51): of the Anchors paths crew_config.py (from :2567 on), crew_config_files.py,
+%% crew_config_menu.py and CONFIG.md changed. The Write, Files, RepoWrite and Menu subgraphs were
+%% redrawn from the source at 3724731b: assignments/_plan_on, _content_problem, machine_view and
+%% --expect-global, ABSENT, move_no_clobber/create_bytes/read_restorable, _plan_both and the
+%% preview-bound delete. Every other node cites a line above :2567 or a file that did not change.
 %% How one config value reaches a run, and what may set it where.
 %% --
 %% RE-ANCHORED after crew 1.0 (previously 60c79407). Every function/line cited
@@ -330,12 +336,12 @@ flowchart TB
 
     subgraph Write["The WRITE side - /crew:config --set, and the menu's Save (machine layer)"]
         direction TB
-        PLAN["plan_global_write()<br/>plugin/crew/hooks/scripts/crew_config.py:2781<br/><i>pure</i>; on global_snapshot() :2736, which REFUSES<br/>an unparsable or non-object machine file<br/>instead of merging onto {}"]
-        ISG{"per LEAF: leaf_updates() :2588, value_allowed() :2671<br/>MACHINE_REFUSED :2604 (consent keys, inside a<br/>whole-block value too), is_global_path() :702,<br/>a block emptied or replaced, null_means() :2638<br/>(an enum key's null refused), enum_values() :2564"}
+        PLAN["plan_global_write()<br/>plugin/crew/hooks/scripts/crew_config.py:2837<br/><i>pure</i>; on global_snapshot() :2788, which REFUSES<br/>an unparsable or non-object machine file<br/>instead of merging onto {} (absent = ABSENT)"]
+        ISG{"per LEAF: leaf_updates() :2585, value_allowed() :2700<br/>MACHINE_REFUSED :2624 (consent keys, inside a<br/>whole-block value too), is_global_path() :702,<br/>a block emptied or replaced, null_means() :2658<br/>(an enum key's null refused), enum_values() :2564"}
         REFUSE>"GlobalWriteRefused (class :2194)<br/>names the path AND lists every allowed one"]
-        MERGED{"merged_problems() :2698 - the FILE the write<br/>produces: an untouched enum leaf outside its<br/>values refuses an unrelated write (pre-existing),<br/>then validate_providers() :177 on the merged file"}
-        WIDEN["_widens()<br/>plugin/crew/hooks/scripts/crew_config.py:2265<br/>in _plan_global_on() :2752. RANK, not equality."]
-        WRITE["write_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:2820<br/>the only function in crew that writes outside<br/>the repo. Re-plans on the bytes read under the<br/>lock; --expect DIGEST refuses a changed file<br/>(GlobalWriteConflict :2198)"]
+        MERGED{"merged_problems() :2750 - the FILE the write<br/>produces, every known leaf by _content_problem()<br/>:2727: an enum value outside its values, a consent<br/>key (machine), an armed veto key (repo) refuses an<br/>unrelated write (pre-existing), then<br/>validate_providers() :177 on the merged file"}
+        WIDEN["_plan_on() :2804 writes assignments() :2605 -<br/>the judged leaves (a block's siblings survive;<br/>one whole pin per role) - marking each leaf with<br/>_widens() plugin/crew/hooks/scripts/crew_config.py:2265.<br/>RANK, not equality."]
+        WRITE["write_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:2865<br/>the only function in crew that writes outside<br/>the repo. Re-plans on the bytes read under the<br/>lock; --expect DIGEST|absent refuses a changed<br/>file (GlobalWriteConflict :2198)"]
     end
 
     PLAN --> ISG
@@ -348,10 +354,10 @@ flowchart TB
 
     subgraph Files["NEW (T-0075): the one file layer - plugin/crew/hooks/scripts/crew_config_files.py"]
         direction TB
-        FLOCK["Lock :65 - O_CREAT|O_EXCL &lt;path&gt;.lock holding<br/>the PID; Busy :49 after LOCK_WAIT_SECONDS :34.<br/>Serialises crew's writers, not a hand edit"]
-        FUPD["update_json() :206 - inside the lock: read_strict()<br/>:135 (absent / unparsable / empty / notobject),<br/>digest() :153 compared with expect (Conflict :53),<br/>mutate, replace_text() :194 (sibling, fsync,<br/>os.replace, CRLF and BOM kept)"]
-        FMOVE["move_aside() :246 - ONE os.replace to a name<br/>that must not exist: the backup IS the inode"]
-        FREST["restorable() :125 - the ONE predicate delete<br/>refuses by and restore accepts by"]
+        FLOCK["Lock :89 - O_CREAT|O_EXCL &lt;path&gt;.lock holding<br/>the PID; Busy :64 after LOCK_WAIT_SECONDS :44.<br/>Serialises crew's writers, not a hand edit"]
+        FUPD["update_json() :341 - inside the lock: read_strict()<br/>:159 (absent / unparsable / empty / notobject),<br/>state_digest() :221 (ABSENT :51 for no file)<br/>compared with expect (Conflict :68), mutate,<br/>replace_text() :329 (sibling, fsync, os.replace,<br/>CRLF and BOM kept)"]
+        FMOVE["move_no_clobber() :424 - a rename that NEVER<br/>replaces its destination: os.link, then<br/>_unlink_source() :395 removes the source only while<br/>it is the linked inode. move_aside() :464 (the<br/>backup IS the inode), create_bytes() :473"]
+        FREST["read_restorable() :177 - a REGULAR file that<br/>restorable() :149 accepts: the ONE read delete<br/>refuses by and restore accepts by"]
         FLOCK --- FUPD
     end
 
@@ -360,10 +366,10 @@ flowchart TB
 
     subgraph RepoWrite["NEW (T-0075): the repo writer - /crew:config --set --repo, the only path into .crew/config.json"]
         direction TB
-        RPLAN["plan_repo_write()<br/>plugin/crew/hooks/scripts/crew_config.py:3045<br/>on repo_snapshot() :3014; refuses a missing or<br/>malformed file (_read_repo_strict :2988)<br/>rather than creating one"]
-        RREF>"RepoWriteRefused (class :2856)<br/>REPO_REFUSED :2871 - platform, schema,<br/>scope.mode, scope.allowCliApproval, the<br/>machine-only autoClear paths; a block is<br/>set one leaf at a time (is_repo_path :2928);<br/>REPO_VETO_ONLY :2892 takes only false / null<br/>(by identity, is_repo_veto :2895)"]
-        RWIDEN["repo_widens() :2947 - the ratchet against<br/>what is in force, plus _REPO_WIDENING :2905;<br/>a repo value held down by the machine layer<br/>is named, not marked as a widening"]
-        RWRITE["write_repo_config()<br/>plugin/crew/hooks/scripts/crew_config.py:3071<br/>the same compare-and-swap<br/>(RepoWriteConflict :2860); never creates the file"]
+        RPLAN["plan_repo_write()<br/>plugin/crew/hooks/scripts/crew_config.py:3045<br/>on repo_snapshot() :3033 (refuses a missing or<br/>malformed file rather than creating one) and<br/>machine_view() :3064 (the machine file and its<br/>digest, one read)"]
+        RREF>"RepoWriteRefused (class :2897)<br/>REPO_REFUSED :2912 - platform, schema,<br/>scope.mode, scope.allowCliApproval, the<br/>machine-only autoClear paths; a block emptied or<br/>replaced is refused (is_repo_path :2969);<br/>REPO_VETO_ONLY :2933 takes only false / null<br/>(by identity, is_repo_veto :2936)"]
+        RWIDEN["repo_widens() :2977 - the ratchet against<br/>what is in force, plus _REPO_WIDENING :2946;<br/>a repo value held down by the machine layer<br/>is named, not marked as a widening"]
+        RWRITE["write_repo_config()<br/>plugin/crew/hooks/scripts/crew_config.py:3071<br/>the same compare-and-swap (RepoWriteConflict<br/>:2901), and --expect-global binds the machine<br/>file under its lock; never creates the file"]
         RPLAN -->|"refused leaf, or a bad value in the merged file"| RREF
         RPLAN --> RWIDEN --> RWRITE
     end
@@ -374,12 +380,12 @@ flowchart TB
 
     subgraph Menu["NEW (T-0075): the /crew:config menu - plugin/crew/hooks/scripts/crew_config_menu.py"]
         direction TB
-        MSPEC["menu_spec() :314<br/>rows = leaf_paths(default_global_config())<br/>(machine, plus platform.* and schema read-only)<br/>/ leaf_paths(default_config()) (repo); returns<br/>the layer file's digest"]
-        MCHOICE["choices() :212 - a value is offered only when<br/>_probe_for() :169 accepts it: the layer's own<br/>planner on one snapshot, with the --pending set<br/>plus the candidate; all refused = a read-only row<br/>naming the key to fix"]
-        MSAVE["save() :446<br/>plans BOTH layers before writing either, prints<br/>each digest, checks --expect-machine /<br/>--expect-repo for both before either write and<br/>passes each to its writer; a later refusal<br/>names the layer that landed"]
-        MPLAN["plan_delete() :745 - holds the file's bytes;<br/>refuses what restorable() refuses; preview<br/>delete_preview() :593 walks the file's OWN leaves<br/>too (removed / re-detected / held by the ratchet)"]
-        MDEL["apply_delete() :766 - typed repo name, then under<br/>the Lock ONE rename to .crew/config.json.bak-UTC,<br/>compare with the held bytes (changed: renamed<br/>back, nothing deleted); prints three restore<br/>lines, sh / cmd / PowerShell (restore_lines :726)"]
-        MREST["restore_repo_config() :853 - _valid_backup()<br/>:833 then restorable(); under the Lock moves any<br/>current file aside, writes the bytes, reads back"]
+        MSPEC["menu_spec() :315<br/>rows = leaf_paths(default_global_config())<br/>(machine, plus platform.* and schema read-only)<br/>/ leaf_paths(default_config()) (repo); returns<br/>the layer file's digest"]
+        MCHOICE["choices() :213 - a value is offered only when<br/>_probe_for() :168 accepts it: the layer's own<br/>planner on one snapshot, with the --pending set<br/>plus the candidate; all refused = a read-only row<br/>naming the key to fix"]
+        MSAVE["save() :478<br/>_plan_both() :444 plans BOTH layers before writing<br/>either (the repo against the machine as this Save<br/>leaves it), prints the machine digest whenever<br/>anything changes, checks every given --expect-*<br/>before either write and binds each writer, the<br/>repo write to the machine digest too"]
+        MPLAN["plan_delete() :784 - holds the file's bytes, its<br/>digest and the machine digest; refuses what<br/>read_restorable() refuses (a symlink included);<br/>delete_preview() :627 walks the file's OWN leaves<br/>too (removed / re-detected / held by the ratchet)"]
+        MDEL["apply_delete() :835 - typed repo name AND both<br/>preview digests (_unbound() :819), then under the<br/>Lock move_aside() to .crew/config.json.bak-UTC,<br/>compare with the held bytes (changed: moved back<br/>no-clobber, nothing deleted); prints three restore<br/>lines, sh / cmd / PowerShell (restore_lines :760)"]
+        MREST["restore_repo_config() :932 - _valid_backup()<br/>:916 then read_restorable(); under the Lock moves<br/>any current file aside, create_bytes() (never over<br/>a file that appeared), reads back"]
         MSPEC --> MCHOICE
         MCHOICE --> MSAVE
         MPLAN --> MDEL
