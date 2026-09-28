@@ -82,6 +82,5 @@ One line per defect, nothing else:
 
 When the prompt lists bundle parts, read every one and lead with one
 `READ|<the path exactly as listed, or its bare file name>` line per part; a
-path in any other directory counts for nothing, and an unacknowledged part
-makes the round INCOMPLETE. If you find nothing, output exactly `CLEAN` (after the
-self-derived line, on that fallback). No summary, no praise, no caveats.
+path in any other directory counts for nothing, and an unacknowledged part makes the round INCOMPLETE.
+If you find nothing, output exactly `CLEAN` (after the self-derived line, on that fallback). No summary, no praise, no caveats.
