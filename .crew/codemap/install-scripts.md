@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@c817782f
+anchor: useful-claude-add-ons@926443d8
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -862,3 +862,12 @@ Neither side moved a citation this note makes: no install script, `README.md`,
 `plugin/crew/BUDGETS.md:11` reads 18,917 across 126 files, `plugin/PLUGINS.md:14` and
 `.claude-plugin/marketplace.json:218` read 1.0.48 (changed in place). Neither install script
 was executed.
+
+## Re-anchor provenance - `c817782f` -> `926443d8`, 2026-09-27 (T-0010 review round 3 fixes)
+
+`git diff --name-only c817782f 926443d8` is T-0010's round-3 fix (`caabb005`), the BUDGETS.md
+count, the version step-back and re-set, and this refresh. Of the paths this note cites, `plugin/crew/README.md`, `plugin/crew/CONFIG.md` and
+`plugin/crew/BUDGETS.md` changed: README two lines rewritten in place (`:792`, `:818`),
+CONFIG.md's §20 one-writer paragraph grew six lines, and `BUDGETS.md:11`'s count moved
+18,917 -> 18,923 on the same line. No citation this note makes moved (checked with `difflib`
+over every cited path). Nothing was executed.

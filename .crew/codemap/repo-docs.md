@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@c817782f
+anchor: useful-claude-add-ons@926443d8
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -952,3 +952,12 @@ The verify rules this note lists were renumbered by hand (T-0010's rule 28 at
 `.crew/verify.json:302-308`, tracker `:309-316`, routing `:317-325`); `plugin/crew/README.md:2072`
 is unmoved. The two rebuilt guides (daily-workflow, troubleshooting) are T-0010's approve-exception
 sentences, rebuilt with `docs/guides/crew/src/build.py`.
+
+## Re-anchor provenance - `c817782f` -> `926443d8`, 2026-09-27 (T-0010 review round 3 fixes)
+
+`git diff --name-only c817782f 926443d8` is T-0010's round-3 fix (`caabb005`), the BUDGETS.md
+count, the version step-back and re-set, and this refresh. Of the paths this note cites, `plugin/crew/README.md`, `plugin/crew/CONFIG.md` and
+`plugin/crew/BUDGETS.md` changed: README two lines rewritten in place (`:792`, `:818`),
+CONFIG.md's §20 one-writer paragraph grew six lines, and `BUDGETS.md:11`'s count moved
+18,917 -> 18,923 on the same line. No citation this note makes moved (checked with `difflib`
+over every cited path). Nothing was executed.

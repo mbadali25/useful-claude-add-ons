@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@c817782f
+anchor: useful-claude-add-ons@926443d8
 verified: 2026-09-27
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -214,11 +214,12 @@ Notable rules, re-read directly:
   priced 20s (its `why` records 19.3s wall, 239 passed, measured 2026-09-27 after the merge -
   a claim read, not re-timed by this note). `test_scope_guard.py` rides along for the
   `crew_autopilot.py approve` must-block/must-allow cases. Its mutations are `POLICY_MUTATIONS` at
-  the end of `plugin/crew/tests/sabotage_autopilot.py` (`:370`, 39 entries since the merge's six),
+  the end of `plugin/crew/tests/sabotage_autopilot.py` (`:371`, 47 entries: 39 after the merge's six, then review round 3's eight),
   imported beside `AUTOPILOT_MUTATIONS` by `plugin/crew/tests/sabotage.py:77` and appended at
   `:3053`; `test_crew_autopilot_policy.py` asserts each reaches `sabotage.MUTATIONS`. Several
   target `crew_ticket.py` and `scope_guard.py`, paths this rule does not name (rules 11 and 25
-  do); the six from the merge name tests in `test_crew_autopilot_status.py` and
+  do), and two (review round 3) target `plugin/crew/README.md`'s approve-exception sentence and
+  phase-table row, which `test_crew_autopilot_policy.py` reads; the six from the merge name tests in `test_crew_autopilot_status.py` and
   `test_crew_route.py`, which rules 27 and 30 run.
 - **Rule 29**, new at `7b667587` (`.crew/verify.json:309-316` since T-0010's rule 28 went in above it, `:302-309` after T-0018 widened rule 27, `:301-308` before, T-0021; rule 24 on its branch
   until the merge of main at `86ea912f` put it after rule 27, rule 28 until T-0010's merge): `paths`
@@ -1334,3 +1335,10 @@ Re-read by hand: `.crew/verify.json` (330 lines, 31 rules, `default` `:328`,
 `unmapped` `:329`), rules 27-30 with their prices (rule 27 13s, rule 28 20s, both re-measured
 for T-0010's merge), and `plugin/crew/tests/sabotage.py`'s registration (`:77-79`, the
 `MUTATIONS +=` statement at `:3050-3053`, `POLICY_MUTATIONS` on `:3053`).
+
+## Re-anchor provenance - `c817782f` -> `926443d8`, 2026-09-27 (T-0010 review round 3 fixes)
+
+`git diff --name-only c817782f 926443d8` is T-0010's round-3 fix (`caabb005`), the BUDGETS.md
+count, the version step-back and re-set, and this refresh. `sabotage_autopilot.py`'s `POLICY_MUTATIONS` `:370` -> `:371` and 39 -> 47 entries,
+two of them targeting `plugin/crew/README.md`; the rule-28 paragraph says so. `.crew/verify.json`
+did not change, so no rule number or line moved. No test was run by this note.
