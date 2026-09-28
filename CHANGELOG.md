@@ -6,8 +6,8 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
-- **`crew` 1.0.49: review READ lines match the parts as listed (T-0079).**
-  Bumped `1.0.48 -> 1.0.49`. The review prompt listed every bundle part by
+- **`crew` 1.0.50: review READ lines match the parts as listed (T-0079).**
+  Bumped `1.0.49 -> 1.0.50`. The review prompt listed every bundle part by
   its full path and asked for `READ|<its file name>`, while
   `review_verdict.parse` compared READ tokens by exact string equality
   against the bare names `review_run.finish` handed it. A reviewer that
