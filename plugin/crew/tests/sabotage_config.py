@@ -8,9 +8,9 @@ apart. Run `sabotage.py`, not this file.
 Each one is a way the menu could disarm a guard, write before it validated,
 merge over another writer, or delete the only copy of a config.
 
-Review round 2's BLOCK 1 and round 3's first BLOCK (the verify gate's record)
-have no code path, so they have no entry here: their proof is the
-`verify_record.py report` quoted in the review context.
+Review round 2's BLOCK 1, round 3's first BLOCK and round 4's BLOCK 1 (the
+verify gate's record) have no code path, so they have no entry here: their
+proof is the `verify_record.py report` quoted in the review context.
 """
 import os
 
@@ -175,7 +175,7 @@ CONFIG_MENU_MUTATIONS = (
      '            if False:\n',
      _M + "test_delete_preview_names_a_guard_the_ratchet_holds[allow-True]"),
     ("delete preview resets platform leaves to null", MENU,
-     '        if dotted.split(".", 1)[0] == "platform":\n',
+     '        if dotted in redetected:\n',
      '        if False:\n',
      _M + "test_delete_preview_names_platform_as_re_detected"),
     ("typed delete name is the root's basename", MENU,
@@ -212,10 +212,8 @@ CONFIG_MENU_MUTATIONS = (
      '            got = plan["held"]\n',
      _M + "test_delete_backs_up_by_rename"),
     ("delete takes no lock", MENU,
-     '        with crew_config_files.Lock(path):\n'
-     '            backup = _free_backup(root, now)\n',
-     '        with open(os.devnull, encoding="utf-8"):\n'
-     '            backup = _free_backup(root, now)\n',
+     '                crew_config_files.Lock(path):\n',
+     '                open(os.devnull, encoding="utf-8"):\n',
      _M + "test_delete_refuses_while_the_lock_is_held"),
     # F1: a whole-block value judged by its block path.
     ("machine planner judges the block path, not its leaves", CONFIG,
@@ -441,8 +439,8 @@ CONFIG_MENU_MUTATIONS = (
      '        os.replace(tmp, path)\n',
      _F + "test_create_bytes_never_replaces_an_existing_file"),
     ("move removes a file that replaced the source", FILES,
-     '    if os.path.samestat(os.lstat(parked), os.lstat(dest)):\n',
-     '    if True:\n',
+     '        same = os.path.samestat(os.lstat(parked), os.lstat(dest))\n',
+     '        same = True\n',
      _F + "test_move_aside_puts_back_a_file_that_replaced_the_source"),
     # BLOCK: the mismatch rollback checked, then replaced.
     ("rollback overwrites a file saved in the gap", MENU,
@@ -475,4 +473,95 @@ CONFIG_MENU_MUTATIONS = (
      '        if args.area is not None:\n',
      '        if args.area:\n',
      _M + "test_cli_refuses_an_explicitly_empty_value[area-empty]"),
+    # Review round 4, BLOCK 2: a move unlinked a name that may be a foreign
+    # file's last.
+    ("move unlinks the parked foreign file after putting it back", FILES,
+     '    raise Displaced(\n'
+     '        f"a file replaced {src} during the move; it is back at {src}, and a "\n',
+     '    os.remove(parked)\n'
+     '    return\n'
+     '    raise Displaced(\n'
+     '        f"a file replaced {src} during the move; it is back at {src}, and a "\n',
+     _F + "test_move_aside_keeps_a_foreign_file_through_a_second_replacement"),
+    ("undo unlinks the backup after the source moved", FILES,
+     '        except Displaced:\n'
+     '            raise\n'
+     '        except BaseException:\n',
+     '        except BaseException:\n',
+     _F + "test_move_aside_keeps_the_backup_when_the_put_back_fails"),
+    ("restore reports a displaced file as a plain refusal", MENU,
+     '    except crew_config_files.Displaced as exc:\n'
+     '        print(f"{exc}; nothing is lost, check {path}", file=sys.stderr)\n'
+     '        return 1\n',
+     '',
+     _M + "test_restore_reports_a_foreign_file_kept_during_its_move_aside"),
+    ("delete's displaced report omits the backup", MENU,
+     '        print(f"refused: {exc}; nothing is lost: the original is at {backup}, "\n',
+     '        print(f"refused: {exc}; nothing is lost, "\n',
+     _M + "test_delete_reports_a_foreign_file_kept_during_the_move"),
+    # Review round 4, BLOCK 3: delete checked the machine file outside the
+    # locks and took only the repo lock.
+    ("delete re-checks nothing inside the locks", MENU,
+     '            if now_machine != plan["machine"]:\n',
+     '            if False:\n',
+     _M + "test_delete_rechecks_the_machine_file_inside_the_locks"),
+    ("delete takes only the repo lock", MENU,
+     '        with crew_config_files.machine_lock(plan["machinePath"]), \\\n'
+     '                crew_config_files.Lock(path):\n',
+     '        with crew_config_files.Lock(path):\n',
+     _M + "test_delete_refuses_while_the_machine_lock_is_held"),
+    ("delete nests the repo lock outside the machine lock", MENU,
+     '        with crew_config_files.machine_lock(plan["machinePath"]), \\\n'
+     '                crew_config_files.Lock(path):\n',
+     '        with crew_config_files.Lock(path), \\\n'
+     '                crew_config_files.machine_lock(plan["machinePath"]):\n',
+     _M + "test_delete_takes_the_machine_lock_before_the_repo_lock"),
+    ("machine lock skipped when its directory is absent", FILES,
+     '    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)\n'
+     '    return Lock(path, wait)\n',
+     '    if not os.path.isdir(os.path.dirname(os.path.abspath(path))):\n'
+     '        return open(os.devnull, encoding="utf-8")\n'
+     '    return Lock(path, wait)\n',
+     _M + "test_delete_takes_the_machine_lock_when_its_directory_is_absent"),
+    ("repo writer skips the machine lock", CONFIG,
+     '        with crew_config_files.machine_lock(_global_label(global_path)):\n',
+     '        with open(os.devnull, encoding="utf-8"):\n',
+     _C + "test_repo_write_takes_the_machine_lock_when_its_directory_is_absent"),
+    # Review round 4, FIX: a non-list qa.order raised a TypeError.
+    ("qa.order shape check dropped (update)", CONFIG,
+     '    if order is not None and not isinstance(order, list):\n',
+     '    if False:\n',
+     _C + "test_qa_order_must_be_a_list[machine-1]"),
+    ("qa.order shape check dropped (pre-existing file)", CONFIG,
+     '    if order is not None and not isinstance(order, list):\n',
+     '    if False:\n',
+     _C + "test_a_pre_existing_non_list_qa_order_is_named_not_a_traceback[repo]"),
+    ("qa.order shape check dropped (menu)", CONFIG,
+     '    if order is not None and not isinstance(order, list):\n',
+     '    if False:\n',
+     _M + "test_menu_spec_reads_a_non_list_qa_order[repo]"),
+    ("qa.order shape check accepts any iterable", CONFIG,
+     '    if order is not None and not isinstance(order, list):\n',
+     '    if order is not None and not hasattr(order, "__iter__"):\n',
+     _C + "test_qa_order_must_be_a_list[repo-codex]"),
+    ("qa.order shape check judges only an int", CONFIG,
+     '    if order is not None and not isinstance(order, list):\n',
+     '    if order is not None and isinstance(order, int):\n',
+     _C + "test_qa_order_must_be_a_list[machine-1.5]"),
+    # Review round 4, FIX: every platform.* leaf was promised re-detected.
+    ("platform prefix marks every leaf re-detected", MENU,
+     '        if dotted in redetected:\n',
+     '        if dotted.split(".", 1)[0] == "platform":\n',
+     _M + "test_delete_preview_platform_rows_follow_the_sync_writer[x-local]"),
+    ("re-detected judged by the defaults' platform leaves", MENU,
+     '    return frozenset("platform." + key for key in crew_platform.DERIVED_KEYS)\n',
+     '    return frozenset(p for p in crew_config.leaf_paths(crew_config.default_config())\n'
+     '                     if p.startswith("platform."))\n',
+     _M + "test_delete_preview_platform_rows_follow_the_sync_writer[distro]"),
+    ("re-detected header promises a value", MENU,
+     '        print("re-detected by platform-sync at the next SessionStart (from "\n'
+     '              "this machine; a key it finds no value for is left unset):")\n',
+     '        print("re-detected by platform-sync at the next SessionStart "\n'
+     '              "(written back from this machine, not reset):")\n',
+     _M + "test_delete_preview_redetected_header_does_not_promise_a_value"),
 )
