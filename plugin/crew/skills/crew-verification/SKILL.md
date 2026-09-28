@@ -146,8 +146,8 @@ particular agent.
 <!-- crew-ignore-policy:list -->
 This is the whole risk of the feature: the map **travels and the agent roster
 does not**. `.gitignore` ignores `.crew/*` with a named un-ignore list —
-`!.crew/codemap/`, `!.crew/endpoints.json`, `!.crew/verify.json` — so the map is
-committed, while the agents a rule names are whatever happened to be installed on
+`!.crew/codemap/`, `!.crew/endpoints.json`, `!.crew/verify.json`,
+`!.crew/standards.md` — so the map is committed, while the agents a rule names are whatever happened to be installed on
 the box that wrote it. On any other machine a rule can ask for an agent that does
 not exist, quietly reviewing less while nothing about the output looks different. `/crew:review` therefore lists every agent a matched rule asked for
 and could not find, and treats it exactly like a specialist that was skipped.

@@ -4,6 +4,29 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew`: build-time development standards and a required pre-review self-check (T-0085)
+
+- **New `crew-standards` skill.** `references/generic.md` ships GEN-01 to GEN-12,
+  crew-generic standards mined from 224 BLOCK/FIX findings in crew's own QA reviews;
+  each cites the findings that earned it and names at least three reviewed change
+  sets. A repository adds its own in a tracked overlay, `.crew/standards.md` (this
+  repository's holds REPO-01 to REPO-03 and four supplements); the overlay adds and
+  never removes. An unreadable or malformed overlay is could-not-tell, never absent.
+- **`/crew:plan`** steps carry a `Standards:` line; **`/crew:implement`** and
+  **`/crew:fix`** run a required self-check (`crew_standards.py init`, answer every
+  row, `crew_standards.py stamp`), bound to the review bundle's sha256 and the
+  standards digest.
+- **`review_run.py` refuses to reserve a round** (exit 2, nothing spent) without a
+  current stamp, for every provider; it applies to tickets with an approval receipt
+  and stands down, logged, in an active incident.
+- **The review prompt ends with the standards checklist**, without the author's
+  answers. After a round, `crew_standards.py proposals` writes the findings for the
+  owner to classify; `crew_standards.py metric` reports first-round BLOCK+FIX before
+  and after, split on the `std:` token the metrics row now carries.
+- `.crew/standards.md` joins the `.crew/` un-ignore list in `.gitignore`, the shipped
+  crew-setup template and every document that states it. ADR 0004 records the
+  decision. crew bundles 30 skills.
+
 ### Added — `crew` 1.0.51: `autopilot.deploy` — production without asking, opt-in (T-0072)
 
 - **New production authority, off by default.** `autopilot.deploy` (repo

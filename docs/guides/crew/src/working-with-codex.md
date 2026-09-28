@@ -63,6 +63,14 @@ those.
 
 A review that exits non-zero or prints nothing is INCOMPLETE, never CLEAN.
 
+The review prompt Codex reads ends with a **development standards checklist**: the rules and
+self-check questions of every standard that applies to the change (crew's generic set, any
+matching per-language set, and the repository's `.crew/standards.md` overlay). The author's own
+self-check answers are withheld, so Codex judges each standard's applicability itself, and the
+prompt says the list does not bound the review: a defect outside it is reported the same way.
+`review_run.py` will not launch Codex, or reserve a round, until the author's self-check is
+complete and stamped for the exact bundle Codex is about to read.
+
 ## What is proven, and what is only configured
 
 Run the probe. The sample below shows the probe's format with this build's values. The

@@ -343,7 +343,8 @@ elif [ "$PATCH_STATUS" -ne 0 ]; then
 fi
 
 # The ticket contract: bundle parts + READ acks, spec sections (Intent,
-# Exclusions, Evidence, Unknowns, Acceptance checks), plan, test receipts, web tests.
+# Exclusions, Evidence, Unknowns, Acceptance checks), plan, test receipts, the
+# standards checklist (never the author's self-check answers), web tests.
 # Anything absent is written as MISSING, never left out.
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_prompt.py --root . \
   --ticket "$TICKET" --manifest "$MANIFEST" --out "$SCRATCH/contract.txt"
@@ -443,8 +444,10 @@ REVIEW_STATUS=$?   # 0 CLEAN, 1 FINDINGS, 3 INCOMPLETE, 4 NEEDS_REPLAN, 2 not ru
 `reasoningEffort` accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`;
 Codex rejects a wrong one with an HTTP 400. Copilot exiting non-zero with `Access
 denied by policy settings` is org or enterprise policy — report that exact
-cause. Exit 2 means nothing launched (not on PATH) and no round was spent; walk
-to the next eligible provider.
+cause. Exit 2 means nothing launched and no round was spent: not on PATH (walk
+to the next eligible provider), or `review-run: self-check: ...` - the standards
+self-check is missing or stale for this bundle (every provider): answer
+`.work/tickets/$TICKET/selfcheck.md`, run the `crew_standards.py stamp` it names, rebuild.
 
 **Step 2c — Claude fallback.** Invoke the `crew:reviewer` subagent with the
 SAME bundle 2a and 2b just read: the exact `$SCRATCH/prompt.txt` content —
@@ -467,7 +470,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TI
   --output "$SCRATCH/out.txt" --exit-code 0
 ```
 
-An empty `ROUND` is a refusal (budget spent): do not dispatch.
+An empty `ROUND` is a refusal (budget spent, or the self-check as in 2a): do not dispatch.
 
 The fallback is genuinely weaker than a different family: the same model family
 reviewing itself finds fewer defects. Tell me when it is what ran, so I review
@@ -477,22 +480,19 @@ harder myself.
 re-word it per provider: identical instructions are what make a differing
 defect count a fact about the model rather than about the prompt.
 
-Read ONLY `$SCRATCH/out.txt` and the `review:` lines. Never load the diff back
-into your context. **The verdict is the script's, not yours**: CLEAN only for
-exactly `CLEAN` at exit 0 with every part acknowledged; any BLOCK/FIX/NIT is
-FINDINGS; a non-zero exit, empty or unparseable output, a skipped part or a
-timeout is INCOMPLETE — never report INCOMPLETE as clean.
+Read ONLY `$SCRATCH/out.txt` and the `review:` lines. Never load the diff back into your context.
+**The verdict is the script's, not yours**: CLEAN only for exactly `CLEAN` at exit 0 with every
+part acknowledged; any BLOCK/FIX/NIT is FINDINGS; a non-zero exit, empty or unparseable output, a
+skipped part or a timeout is INCOMPLETE — never report INCOMPLETE as clean.
 
-**Step 2d — re-run the failing control, do not read about it.** If the diff
-adds or edits a test, guard, assertion or smoke step, the author is expected to
-have broken it on purpose and shown it go red. A pasted RED transcript is a
-claim about a mutation, not the mutation. Where the check is runnable here, run
-it yourself: revert the guard's condition (or delete the line it asserts on),
-run the check, confirm it fails with a message naming the thing under test,
-then restore. Report which controls you re-ran and which you could only take on
-the author's word. An unverified control is a BLOCK, not a NIT — a check that
-has never been shown to fail is the defect class this crew loses the most time
-to.
+**Step 2d — re-run the failing control, do not read about it.** If the diff adds or edits a test,
+guard, assertion or smoke step, the author is expected to have broken it on purpose and shown it go
+red. A pasted RED transcript is a claim about a mutation, not the mutation. Where the check is
+runnable here, run it yourself: revert the guard's condition (or delete the line it asserts on),
+run the check, confirm it fails with a message naming the thing under test, then restore. Report
+which controls you re-ran and which you could only take on the author's word. An unverified control
+is a BLOCK, not a NIT — a check that has never been shown to fail is the defect class this crew
+loses the most time to.
 
 **Step 3 — act.**
 1. Report every BLOCK and FIX line verbatim. Do not soften or argue before
@@ -528,24 +528,24 @@ to.
    `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh review "<n> BLOCK, <n> FIX (<reviewer>)"`
    Counts only. Never the findings themselves — those stay in the repo.
 6. Append the result to `.crew/metrics.md`: `<date> | <ticket> | <reviewer> | <n BLOCK> | <n FIX>`
-   (counts from `review.json`; an INCOMPLETE round is recorded as INCOMPLETE, not as 0/0)
-7. Name every specialist from step 0 that ran, every one that a matched rule
-   asked for but you skipped, and every one that a matched rule named but that
-   **is not installed on this machine**. A review that quietly dropped the `dba`
-   pass on a migration reads exactly like one that had nothing to find, and a
-   rule naming an agent this box does not have fails the same way while looking
-   even more normal — there is nothing to skip, so nothing feels skipped.
+   (counts from `review.json`; an INCOMPLETE round is recorded as INCOMPLETE, not as 0/0).
+   Reviewer cell: `(r<N>, std:<first 8 of the standards digest>)`, `std:none` if the gate did not apply.
+7. `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py proposals --root . --ticket "$TICKET" --scratch "$SCRATCH" --round <N>`,
+   then fill each finding's row as the `crew-standards` skill says; I approve or reject each.
+8. Name every specialist from step 0 that ran, every one that a matched rule asked for but you
+   skipped, and every one that a matched rule named but that **is not installed on this machine**.
+   A review that quietly dropped the `dba` pass on a migration reads exactly like one that had
+   nothing to find, and a rule naming an agent this box does not have fails the same way while
+   looking even more normal — there is nothing to skip, so nothing feels skipped.
 
-   Record the not-installed ones in `.crew/metrics.md` too. `/crew:status` reads
-   that file, and "this rule has asked for `security-auditor` eleven times and
-   never got it" is exactly the evidence that should drive either installing it
-   or deleting the rule.
-8. Name the author family **and its source** in the same breath as the reviewer:
-   `recorded dispatch <role>/<provider>/<model>`, `READ FROM CONFIG - no
-   dispatch recorded`, or `STALE RECORD - both families struck`. Which family
-   was barred is only checkable by a reader who knows whether the bar rests on a
-   fact or on a guess, and that is the whole difference this record exists to
-   make visible.
+   Record the not-installed ones in `.crew/metrics.md` too. `/crew:status` reads that file, and
+   "this rule has asked for `security-auditor` eleven times and never got it" is exactly the
+   evidence that should drive either installing it or deleting the rule.
+9. Name the author family **and its source** in the same breath as the reviewer: `recorded dispatch
+   <role>/<provider>/<model>`, `READ FROM CONFIG - no dispatch recorded`, or `STALE RECORD - both
+   families struck`. Which family was barred is only checkable by a reader who knows whether the
+   bar rests on a fact or on a guess, and that is the whole difference this record exists to make
+   visible.
 
 That metrics line is not bookkeeping. `/crew:status` reads it to show whether
 this setup is actually catching anything.

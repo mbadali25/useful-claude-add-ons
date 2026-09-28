@@ -23,6 +23,16 @@ PROVIDERS.
 A provider binary that is not on PATH is refused BEFORE reservation: nothing
 was launched, so nothing is spent.
 
+STANDARDS SELF-CHECK (T-0085). Also before reservation, for every provider
+(`claude --reserve-only` included): a ticket with an approval receipt must
+have `.work/tickets/<id>/selfcheck.md` complete and stamped for exactly this
+manifest's `bundle_sha256` and the effective standards digest
+(`crew_standards.review_gate`). Missing, unreadable, incomplete, unstamped or
+stale is exit 2 with each problem named and no round spent. A ticket with no
+approval receipt never ran /crew:implement or /crew:fix, so the gate says it
+does not apply; an active incident stands it down and logs a
+`standards-selfcheck` skip.
+
 The prompt is passed inline when it fits a Windows command line; otherwise the
 argument tells the reviewer to read `prompt.txt`, and says so on stderr.
 
@@ -53,7 +63,8 @@ rows into `webtest-findings.txt` in the scratch directory, that file is an
 expected READ like a bundle part.
 
 Exit codes: 0 CLEAN; 1 FINDINGS; 3 INCOMPLETE; 4 budget refused
-(NEEDS_REPLAN); 2 usage or setup error.
+(NEEDS_REPLAN); 2 usage or setup error, or the standards self-check missing or
+stale -- not run, no round spent.
 """
 import argparse
 import datetime
@@ -66,6 +77,8 @@ import subprocess
 import sys
 
 import crew_common
+import crew_incident
+import crew_standards
 import crew_state
 import review_ledger
 import review_patch
@@ -362,6 +375,32 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
         result["verdict"], EXIT_INCOMPLETE)
 
 
+def standards_gate(args):
+    """None to go on and reserve; EXIT_USAGE to refuse with nothing spent.
+
+    The required standards self-check (T-0085, `crew_standards.py`) must be
+    complete and stamped for exactly this bundle and this standards set. In an
+    active incident the gate stands down and logs the skip, as verify-gate.sh
+    does for its own."""
+    problems, note = crew_standards.review_gate(args.root, args.ticket, args.manifest)
+    if note:
+        sys.stderr.write(f"review-run: {note}\n")
+    if problems:
+        incident = crew_incident.read_state(args.root, crew_state.load_config(args.root))
+        if incident["active"]:
+            crew_incident.log_skip(args.root, "standards-selfcheck", "; ".join(problems))
+            sys.stderr.write(f"review-run: incident {incident['id']} is active; the standards "
+                             "self-check stands down and the skip is logged\n")
+            return None
+        for problem in problems:
+            sys.stderr.write(f"review-run: self-check: {problem}\n")
+        sys.stderr.write("review-run: answer .work/tickets/<id>/selfcheck.md, then run "
+                         f"crew_standards.py stamp --root . --ticket {args.ticket}; nothing "
+                         "launched, no round spent\n")
+        return EXIT_USAGE
+    return None
+
+
 def run(args):
     exe = prompt = None
     if args.provider in LAUNCHED:
@@ -375,6 +414,10 @@ def run(args):
                              "no round spent\n")
             return EXIT_USAGE
         prompt = prompt_argument(os.path.join(args.scratch, "prompt.txt"))
+
+    refused = standards_gate(args)
+    if refused is not None:
+        return refused
 
     ok, number, message = review_ledger.reserve(args.root, args.ticket, args.provider,
                                                 args.model)

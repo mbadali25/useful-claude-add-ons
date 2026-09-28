@@ -344,9 +344,10 @@ The skill will:
 <!-- crew-ignore-policy:list -->
 **Commit the part that is about the code, not the part that is about your box.**
 The policy `/crew:init` writes is `.crew/*` ignored plus a named un-ignore list —
-`!.crew/codemap/`, `!.crew/endpoints.json`, `!.crew/verify.json`. Those three
-describe the repository: the code map, the endpoint ledger a security scan is
-owed against, and the verification map. Commit them, and `_verify/`, `docs/adr/`
+`!.crew/codemap/`, `!.crew/endpoints.json`, `!.crew/verify.json`,
+`!.crew/standards.md`. Those four describe the repository: the code map, the
+endpoint ledger a security scan is owed against, the verification map and the
+development standards overlay (the `crew-standards` skill). Commit them, and `_verify/`, `docs/adr/`
 and `CLAUDE.md` with them. `.crew/config.json`, `.crew/STATUS.md`, the transcripts
 and the gate's own marker files stay out, and so does the whole of `.work/` —
 they describe one checkout on one machine. (This line used to say `.work/`
@@ -712,6 +713,8 @@ The session reads exactly one ticket file, delegates the search to `explorer`, p
 
 If the change added behavior with no smoke coverage, the implementing session adds a check. A feature without a check is how the next change breaks it silently. Review comes after the tests and the docs (since 0.20.17), so the reviewer reads the finished change rather than a draft that later edits move out from under it.
 
+Between the refresh and the review sits the **required standards self-check** (see "Development standards" below): every standard in the effective set answered in `.work/tickets/<id>/selfcheck.md`, then stamped with `crew_standards.py stamp`. `/crew:review` refuses to spend a round without a current stamp.
+
 ### Review it
 
 ```
@@ -742,9 +745,24 @@ A READ line naming anything else - a path outside the bundle, or the same file n
 
 **The receipt is bound to the bundle.** A `CLEAN` round writes an acceptance receipt carrying the bundle sha256. `FINDINGS` you decide to accept become one only through `review_ledger.py --ticket <id> --accept --by <who>`, which records who and when and refuses if the tree changed since that round. It accepts only the most recent round, only once that round completed with `FINDINGS`, only once per round, and never once the ticket is `NEEDS_REPLAN` — so round 2's FINDINGS can be accepted until a third reservation is refused or the ticket is rejected, and not after (since 0.20.18). `review_ledger.py --ticket <id> --check-receipt` rebuilds the bundle from the receipt's base and exits non-zero when there is no receipt or the hash differs — any edit after review invalidates it; committing the reviewed change does not. `/crew:done` will gate on it; for now, run it yourself before you open the pull request.
 
-The prompt every reviewer reads also carries the ticket's spec sections (Intent, Exclusions, Evidence, Unknowns, Acceptance checks) from `.work/tickets/<id>/spec.md`, the plan from `plan.md`, the codemap landmines, and the verify gate's latest receipts. A missing piece is written into the prompt as `MISSING`, never left out.
+The prompt every reviewer reads also carries the ticket's spec sections (Intent, Exclusions, Evidence, Unknowns, Acceptance checks) from `.work/tickets/<id>/spec.md`, the plan from `plan.md`, the codemap landmines, the verify gate's latest receipts, and the development standards checklist (below). A missing piece is written into the prompt as `MISSING`, never left out.
 
 You open the pull request. The crew stops at the boundary of your judgment.
+
+### Development standards and the pre-review self-check
+
+Review kept finding the same classes of defect, so since T-0085 crew applies them the first time the code is written. The `crew-standards` skill ships **GEN-01 to GEN-12**, crew-generic standards mined from crew's own QA review findings (`skills/crew-standards/references/generic.md`; each cites the findings that earned it and needs three distinct reviewed change sets). T-0086's per-language sets are further files in that directory, each applying when a changed file matches its `applies-to` globs.
+
+A repository adds its own in the **overlay**, `.crew/standards.md` (set `REPO`, tracked through the ignore policy's un-ignore list): standards of its own and `## Supplements <GEN-id>` sections carrying its literal commands. The overlay adds and supplements; it never removes, reuses or weakens a plugin standard. No overlay means generic only, and the summary says so. An overlay that cannot be read, is not UTF-8 or is malformed is could-not-tell: the stamp and the review gate refuse until it is fixed.
+
+| Where | What happens |
+|---|---|
+| `/crew:plan` | Each step carries `Standards: <ids>` (or `none - <why>`), and the self-review asks whether every step names them |
+| `/crew:implement`, `/crew:fix` | `crew_standards.py init` writes `selfcheck.md` with a row per effective standard; each is `addressed` with evidence or `n/a` with a reason; `crew_standards.py stamp` refuses an incomplete record and binds a complete one to the review bundle's sha256 and the standards digest. Any later edit needs a new stamp |
+| `review_run.py` | Before reserving the round, for every provider: a missing, unreadable, incomplete, unstamped or stale self-check is exit 2, no round spent. It applies to a ticket with an approval receipt; in an active incident it stands down and logs a `standards-selfcheck` skip |
+| The review prompt | Ends with the effective set's rules and self-check questions. The author's answers are withheld, so the reviewer judges applicability itself, and the list does not bound the review |
+| After a round | `crew_standards.py proposals` writes `standards-proposals-r<N>.md` with every BLOCK/FIX line verbatim; you approve or reject each proposed standard or amendment. Nothing is added to a standards file automatically |
+| `.crew/metrics.md` | The reviewer cell carries `std:<first 8 of the digest>` (or `std:none`); `crew_standards.py metric` prints first-round BLOCK+FIX per ticket before and after, unknown-round rows on neither side, and "not enough data" below 10 tickets a side. `--record` appends a pipe-free summary line the other readers skip |
 
 ### Scope and approval
 
