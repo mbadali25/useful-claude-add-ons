@@ -168,9 +168,11 @@ the Claude reviewer - even when <code>qa.provider</code> pins <code>codex</code>
 with the error quoted, because it is not an independent review.</p>
 <p>A limit hit in the middle of a round leaves that round INCOMPLETE and prints
 <code>review: codex usage limit in round N: ...</code>. It is recorded in
-<code>&lt;git-common-dir&gt;/crew/review/&lt;ticket&gt;.limit.json</code>, so the next <code>/crew:review</code> answers <code>limited</code> from
+<code>&lt;git-common-dir&gt;/crew/review-limit/&lt;ticket&gt;.json</code>, so the next <code>/crew:review</code> answers <code>limited</code> from
 the record without calling Codex again. Once that next round is reserved the record stops applying,
-and the round after it probes Codex live.</p>
+and the round after it probes Codex live. The record is written after the round's verdict: when it
+cannot be written the round still ends INCOMPLETE (exit 3), the line says <code>could not record it (...)</code>,
+and the next probe calls Codex live instead.</p>
 <h2 id="what-is-proven-and-what-is-only-configured">What Is Proven, and What Is Only Configured</h2>
 <p>Run the probe. The sample below shows the probe's format with this build's values. The
 <code>hooks feature</code> value was measured with <code>codex features list</code>. The probe itself has only been
