@@ -21,6 +21,52 @@ export class GraphApiError extends Error {
   }
 }
 
+/**
+ * Thrown instead of sending the Graph Bearer token anywhere but the configured
+ * base URL's origin (scheme + host + port). The message carries origins only --
+ * never a path, query string or token -- because withToolErrorHandling
+ * (toolResult.ts) hands err.message to the model verbatim.
+ */
+export class GraphOriginError extends Error {
+  refusedOrigin: string;
+  expectedOrigin: string;
+
+  constructor(refusedOrigin: string, expectedOrigin: string, reason: string) {
+    super(`Refused to send the Graph token to ${refusedOrigin}: ${reason}. Only ${expectedOrigin} is allowed.`);
+    this.name = "GraphOriginError";
+    this.refusedOrigin = refusedOrigin;
+    this.expectedOrigin = expectedOrigin;
+  }
+}
+
+/**
+ * Parses `candidate` and returns it only when it is on `base`'s origin. Compares
+ * parsed URL fields, never string prefixes, so each of these is refused (T-0090,
+ * measured with `new URL` on Node 22): a look-alike host
+ * (`https://graph.microsoft.com.evil.example`), userinfo
+ * (`https://graph.microsoft.com@evil.example` -- host `evil.example` -- and any
+ * `user:pw@` on the Graph host itself), an `http:` downgrade, another port, a
+ * relative path concatenated off a path-less base (`.evil.example/x`), and
+ * anything that does not parse as an absolute URL (`//evil.example/x`).
+ * Cross-origin redirects are not handled here: Node's fetch strips
+ * Authorization on them (measured Node 22.22.1).
+ */
+export function pinToOrigin(candidate: string, base: URL): URL {
+  let url: URL;
+  try {
+    url = new URL(candidate);
+  } catch {
+    throw new GraphOriginError("<not an absolute URL>", base.origin, "not an absolute URL");
+  }
+  if (url.username || url.password) {
+    throw new GraphOriginError(url.origin, base.origin, "the URL carries a username or password");
+  }
+  if (url.protocol !== base.protocol || url.hostname !== base.hostname || url.port !== base.port) {
+    throw new GraphOriginError(url.origin, base.origin, "scheme, host or port differs from the configured Graph base");
+  }
+  return url;
+}
+
 function describeBody(body: unknown): string {
   if (typeof body === "string") return body.slice(0, 500);
   try {
@@ -108,7 +154,8 @@ export class GraphClient {
   }
 
   private buildUrl(path: string, query?: GraphRequestOptions["query"]): string {
-    const url = path.startsWith("http") ? new URL(path) : new URL(this.baseUrl + path);
+    const raw = path.startsWith("http") ? path : this.baseUrl + path;
+    const url = pinToOrigin(raw, new URL(this.baseUrl));
     if (query) {
       for (const [key, value] of Object.entries(query)) {
         if (value !== undefined) url.searchParams.set(key, String(value));
@@ -137,8 +184,8 @@ export class GraphClient {
     options: GraphRequestOptions = {}
   ): Promise<T> {
     const scopes = options.scopes ?? this.defaultScopes;
-    const token = await this.getToken(scopes);
     const url = this.buildUrl(path, options.query);
+    const token = await this.getToken(scopes);
 
     const res = await this.fetchWithRetry(url, {
       method,
@@ -194,16 +241,18 @@ export class GraphClient {
     const items: T[] = [];
     let next: string | undefined = this.buildUrl(path, options.query);
     let page = 0;
+    const base = new URL(this.baseUrl);
 
     while (next && page < maxPages) {
+      const target = pinToOrigin(next, base).toString();
       const scopes = options.scopes ?? this.defaultScopes;
       const token = await this.getToken(scopes);
-      const res = await this.fetchWithRetry(next, {
+      const res = await this.fetchWithRetry(target, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const parsed = await readBody(res);
       if (!res.ok) {
-        throw new GraphApiError(res.status, parsed, next);
+        throw new GraphApiError(res.status, parsed, target);
       }
       const body = (parsed ?? {}) as { value?: T[]; "@odata.nextLink"?: string };
       items.push(...(body.value ?? []));

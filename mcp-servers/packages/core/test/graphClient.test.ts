@@ -1,7 +1,7 @@
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { TokenCredential } from "@azure/identity";
-import { GraphClient, GraphApiError } from "../src/graphClient.js";
+import { GraphClient, GraphApiError, GraphOriginError } from "../src/graphClient.js";
 
 const fakeCredential: TokenCredential = {
   getToken: async () => ({ token: "fake-token", expiresOnTimestamp: Date.now() + 3600_000 }),
@@ -462,6 +462,9 @@ describe("GraphClient", () => {
 
     const err = await expectRefused(() => client.getAllPages("/users"), fetched, "https://evil.example");
 
+    assert.ok(err instanceof GraphOriginError);
+    assert.equal(err.refusedOrigin, "https://evil.example");
+    assert.equal(err.expectedOrigin, GRAPH_ORIGIN);
     assert.ok(err.message.includes("https://evil.example"));
     assert.ok(err.message.includes(GRAPH_ORIGIN));
     assert.ok(!err.message.includes("fake-token"));
