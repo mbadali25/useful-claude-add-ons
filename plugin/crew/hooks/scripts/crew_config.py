@@ -220,21 +220,22 @@ def validate_providers(cfg):
             f"dev.provider = {dev_provider!r} is not a dev provider. "
             f"dev accepts {dev_names}.")
 
-    for role, block in crew_state.dict_or_empty(dev.get("roles")).items():
-        pin = crew_state.dict_or_empty(block).get("provider")
-        if pin is not None and pin not in DEV_PROVIDERS:
-            raise ProviderError(
-                f"dev.roles.{role}.provider = {pin!r} is not a dev provider. "
-                f"dev accepts {dev_names}.")
-
-    for role, block in crew_state.dict_or_empty(qa.get("roles")).items():
-        pin = crew_state.dict_or_empty(block).get("provider")
-        if pin is not None and pin not in QA_PROVIDERS:
-            raise ProviderError(
-                f"qa.roles.{role}.provider = {pin!r} is not a QA provider. QA "
-                f"accepts {qa_names}. A pin is evaluated AFTER the family "
-                "guard, so a pin here would not merely add a reviewer -- it "
-                "would name one.")
+    for kind, block, allowed, label, names, tail in (
+            ("dev", dev, DEV_PROVIDERS, "dev", dev_names, ""),
+            ("qa", qa, QA_PROVIDERS, "QA", qa_names, " A pin is evaluated AFTER the family "
+             "guard, so a pin here would not merely add a reviewer -- it would name one.")):
+        table = block.get("roles")
+        if table is not None and not isinstance(table, dict):
+            raise ProviderError(f"{kind}.roles = {table!r} is not an object of role pins "
+                                "(or null); every pin under it is dropped on read.")
+        for role, pin in (table or {}).items():
+            if pin is not None and not isinstance(pin, dict):
+                raise ProviderError(f"{kind}.roles.{role} = {pin!r} is not a pin object "
+                                    "or null; it is ignored on read.")
+            provider = (pin or {}).get("provider")
+            if provider is not None and provider not in allowed:
+                raise ProviderError(f"{kind}.roles.{role}.provider = {provider!r} is not a "
+                                    f"{label} provider. {label} accepts {names}.{tail}")
 
     return cfg
 

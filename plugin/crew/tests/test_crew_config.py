@@ -2400,6 +2400,105 @@ def _both_bytes(root, gpath):
     return _repo_bytes(root), gpath.read_bytes()
 
 
+_NOT_OBJECTS = [("qa.roles", 1), ("qa.roles", True), ("qa.roles", "codex"),
+                ("qa.roles", []), ("dev.roles", 1), ("dev.roles", []),
+                ("qa.roles.review", "codex"), ("qa.roles.review", 1),
+                ("qa.roles.review", []), ("qa.roles.review", True),
+                ("dev.roles.developer", "claude"), ("dev.roles.developer", [])]
+
+
+def _pinned(tmp_path, pin=None):
+    return _two_layers(tmp_path, {"qa.roles.review": pin or {"provider": "codex"}},
+                       global_cfg={})
+
+
+@pytest.mark.parametrize("dotted,value", _NOT_OBJECTS,
+                         ids=[f"{d}-{v}" for d, v in _NOT_OBJECTS])
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_an_open_table_must_be_an_object(tmp_path, capsys, layer, dotted, value):
+    root, gpath = _pinned(tmp_path)
+    before = _both_bytes(root, gpath)
+
+    code = _set_at(root, gpath, layer, f"{dotted}={json.dumps(value)}")
+
+    err = capsys.readouterr().err
+    assert (code, dotted in err, "object" in err) == (2, True, True)
+    assert _both_bytes(root, gpath) == before
+
+
+_OPEN_OK = ["qa.roles=null", "qa.roles.review=null", "qa.roles={}",
+            "qa.roles.review={}",
+            'qa.roles.review={"provider": "codex", "model": "gpt-5.6-luna"}',
+            'dev.roles.developer={"provider": "claude"}']
+
+
+@pytest.mark.parametrize("assignment", _OPEN_OK)
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_open_table_null_and_objects_still_accepted(tmp_path, capsys, layer,
+                                                    assignment):
+    root, gpath = _pinned(tmp_path)
+
+    code = _set_at(root, gpath, layer, assignment, apply=False)
+
+    assert code == 0, capsys.readouterr().err
+
+
+def test_validate_providers_names_a_non_object_table():
+    with pytest.raises(crew_config.ProviderError) as table:
+        crew_config.validate_providers({"qa": {"roles": 1}})
+    with pytest.raises(crew_config.ProviderError) as entry:
+        crew_config.validate_providers({"dev": {"roles": {"developer": []}}})
+    nulls = [crew_config.validate_providers({"qa": {"roles": None}}),
+             crew_config.validate_providers({"qa": {"roles": {"review": None}}})]
+    listed = crew_config.provider_problems({"qa": {"roles": 1}})
+
+    assert "qa.roles" in str(table.value)
+    assert "dev.roles.developer" in str(entry.value)
+    assert nulls == [{"qa": {"roles": None}}, {"qa": {"roles": {"review": None}}}]
+    assert (len(listed), "qa.roles" in listed[0]) == (1, True)
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_a_pre_existing_non_object_in_an_open_table_is_named(tmp_path, capsys,
+                                                            layer):
+    if layer == "machine":
+        root, gpath = _two_layers(tmp_path, global_cfg={"qa": {"roles": 1}})
+        assignment, key = 'notify.chatId="1"', "qa.roles"
+    else:
+        root, gpath = _two_layers(tmp_path, {"qa.roles.review": "codex"},
+                                  global_cfg={})
+        assignment, key = 'tracker="jira"', "qa.roles.review"
+    before = _both_bytes(root, gpath)
+
+    code = _set_at(root, gpath, layer, assignment)
+
+    assert (code, key in capsys.readouterr().err) == (2, True)
+    assert _both_bytes(root, gpath) == before
+
+
+def test_fixing_the_open_table_in_the_same_write_is_accepted(tmp_path, capsys):
+    root, gpath = _two_layers(tmp_path, {"qa.roles.review": "codex"}, global_cfg={})
+
+    code = _set_at(root, gpath, "repo", 'qa.roles.review={"provider": "codex"}',
+                   apply=False)
+
+    assert code == 0, capsys.readouterr().err
+
+
+def test_a_wiped_pin_table_never_reaches_the_file(tmp_path, capsys):
+    root, gpath = _pinned(tmp_path)
+    before = _repo_bytes(root)
+
+    code = _set_at(root, gpath, "repo", "qa.roles=1")
+    capsys.readouterr()
+    crew_config.main(["--root", str(root), "--global-path", str(gpath), "--models"])
+    review = [line for line in capsys.readouterr().out.splitlines()
+              if line.startswith("review ")]
+
+    assert (code, _repo_bytes(root) == before) == (2, True)
+    assert "role-pin" in review[0]
+
+
 @pytest.mark.parametrize("value", [v for _, v in _NOT_LISTS],
                          ids=[i for i, _ in _NOT_LISTS])
 @pytest.mark.parametrize("layer", ["machine", "repo"])

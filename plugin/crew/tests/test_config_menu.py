@@ -276,6 +276,36 @@ def test_save_refuses_an_object_at_a_leaf(tmp_path, capsys):
     assert open(gpath, "rb").read() == before
 
 
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_menu_spec_reads_a_non_object_open_table(tmp_path, capsys, layer):
+    if layer == "machine":
+        root, gpath = _repo(tmp_path, global_cfg={"qa": {"roles": 1}})
+        blocked, bad = "pm.authority", "qa.roles"
+    else:
+        root, gpath = _repo(tmp_path, {"qa.roles.review": "codex"})
+        blocked, bad = "tracker", "qa.roles.review"
+
+    code = menu.main(["--root", root, "--global-path", gpath, "spec",
+                      "--layer", layer, "--json"])
+
+    rows = {r["path"]: r for r in _rows(json.loads(capsys.readouterr().out))}
+    assert (code, rows[blocked]["writable"]) == (0, False)
+    assert bad in rows[blocked]["refusedReason"]
+    assert rows["qa.roles.review"]["writable"]
+    assert any(isinstance(c["value"], dict) for c in rows["qa.roles.review"]["choices"])
+
+
+def test_save_refuses_a_non_object_at_an_open_table(tmp_path, capsys):
+    root, gpath = _repo(tmp_path)
+    before = open(_config(root), "rb").read()
+
+    code = menu.main(["--root", root, "--global-path", gpath, "save", "--changes",
+                      '{"repo":{"qa.roles":1}}'])
+
+    assert (code, "refused, nothing written" in capsys.readouterr().err) == (2, True)
+    assert open(_config(root), "rb").read() == before
+
+
 def test_pending_set_unblocks_rows(tmp_path, capsys):
     root, gpath = _repo(tmp_path, {"qa.provider": "gpt"})
     pending = {"repo": {"qa.provider": "codex"}}
