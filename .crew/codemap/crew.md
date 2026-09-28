@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@08ed88a5
+anchor: useful-claude-add-ons@0d331967
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -1066,7 +1066,7 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   `plugin/crew/tests/test_review_golden.py`. The canary
   (`plugin/crew/tests/test_review_canary.py`) drives the stub reviewer's `golden`
   mode (`plugin/crew/tests/review_fixtures.py:104`). `scripts/check-tooling-pr.py`
-  (`HARNESS` `:45`, `ALONGSIDE` `:70`, `check` `:136`) refuses feature work on a
+  (`HARNESS` `:45`, `ALONGSIDE` `:70`, `check` `:138`) refuses feature work on a
   harness branch, and `.crew/verify.json` rule 31 runs all of it. The external tool
   formats crew parses are in `plugin/crew/docs/external-tool-formats.md`. JUDGEMENT:
   the refund and the tooling-alone rule are the two places this area now grants or
@@ -2161,3 +2161,5 @@ this note beyond the citation script and the tuple count.
 **Re-anchored `b5c37635` -> `1da1233d` on 2026-09-28 (T-0087, crew 1.0.52).** `1da1233d` is T-0087's crew 1.0.52 bump re-set after two reflow commits: `4648581a` rewrapped `plugin/crew/commands/review.md` to its 551-line allowance and `plugin/crew/commands/autopilot.md` to its 100-line budget, and `4304a9da` kept the sabotage anchor "are the human's. Go back" on one line (no rule changed in either). `git diff --name-only b5c37635 1da1233d`, refresh artifacts aside, returns those two command files and the three version files, which read 1.0.52 on both sides. Of this note's citations into them, `review.md:25-29`, `:449,464` and `autopilot.md:4`, `:12-26`, `:28-35`, `:44-45`, `:46-47` sit above both reflowed ranges and were re-read with `sed -n` unchanged; `autopilot.md` is 100 lines again, as the `/crew:autopilot` section states. Nothing was executed for this note.
 
 **Re-anchored `1da1233d` -> `08ed88a5` on 2026-09-28 (T-0087, crew 1.0.52).** `08ed88a5` is T-0087's crew 1.0.52 bump re-set after two fixes the spec's 2026-09-28 amendment brought into Touch: `88d35703` re-measured `plugin/crew/BUDGETS.md`'s line count, and `5aa1d9dc` made the sabotage entry "an edit to scope_guard.py runs no pytest rule" drop `scope_guard.py` from rule 31 as well as rule 27 (`_scope_guard_rule_span` in `plugin/crew/tests/sabotage_refresh.py` reads the span between the two from `.crew/verify.json`, since `apply_mutation` patches one unique span). `git diff --name-only 1da1233d 08ed88a5`, refresh artifacts aside, returns `plugin/crew/BUDGETS.md`, `plugin/crew/tests/sabotage_refresh.py`, `CHANGELOG.md` and the three version files, which read 1.0.52 on both sides. This note cites `sabotage_refresh.py` by name only; no line moved. Nothing was executed for this note.
+
+**Re-anchored `08ed88a5` -> `0d331967` on 2026-09-28 (T-0087, crew 1.0.52).** `0d331967` adds `plugin/crew/BUDGETS.md` to `scripts/check-tooling-pr.py`'s `ALONGSIDE` (its line count moves with every crew doc edit, and the checker refused this branch's own re-measure) and the `harness+budgets` must-allow case to `scripts/_test/tooling-pr.py`, red first (7 passed, 1 failed), then 8 passed. `git diff --name-only 08ed88a5 0d331967`, refresh artifacts aside, returns those two scripts and `CHANGELOG.md`. `check` moved `:136` -> `:138` (two docstring lines), re-read with `grep -n`; `HARNESS` `:45` and `ALONGSIDE` `:70` are unchanged. Nothing was executed for this note beyond the suite named above.

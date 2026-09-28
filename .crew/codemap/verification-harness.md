@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@08ed88a5
+anchor: useful-claude-add-ons@0d331967
 verified: 2026-09-28
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -251,7 +251,7 @@ Notable rules, re-read directly:
   `test_verify_rule_paths_are_the_checkers_harness_globs` in
   `plugin/crew/tests/test_review_contracts.py`. It runs `python3 scripts/check-tooling-pr.py`
   (a harness change carrying feature work exits 1; no `origin/main` exits 77, a SKIP),
-  `python3 scripts/_test/tooling-pr.py` (seven must-block/must-allow cases in throwaway repos) and
+  `python3 scripts/_test/tooling-pr.py` (eight must-block/must-allow cases in throwaway repos, `harness+budgets` added for the BUDGETS.md re-measure) and
   the golden, contract, canary, refund and external-tool-format pytest files, priced 8s from a
   measured 7.2s. Its mutations are `plugin/crew/tests/sabotage_tooling.py`
   (`TOOLING_MUTATIONS`, 13 entries), imported by `plugin/crew/tests/sabotage.py:81` and appended at
@@ -1396,3 +1396,5 @@ Nothing was executed for this note.
 **Re-anchored `b5c37635` -> `1da1233d` on 2026-09-28 (T-0087, crew 1.0.52).** `1da1233d` is T-0087's crew 1.0.52 bump re-set after two reflow commits: `4648581a` rewrapped `plugin/crew/commands/review.md` to its 551-line allowance and `plugin/crew/commands/autopilot.md` to its 100-line budget, and `4304a9da` kept the sabotage anchor "are the human's. Go back" on one line (no rule changed in either). `git diff --name-only b5c37635 1da1233d`, refresh artifacts aside, returns those two command files and the three version files, which read 1.0.52 on both sides. This note cites neither file by line (the `commands/autopilot.md` mentions are rule `paths`, not line citations). No suite was executed for this note.
 
 **Re-anchored `1da1233d` -> `08ed88a5` on 2026-09-28 (T-0087, crew 1.0.52).** `08ed88a5` is T-0087's crew 1.0.52 bump re-set after two fixes the spec's 2026-09-28 amendment brought into Touch: `88d35703` re-measured `plugin/crew/BUDGETS.md`'s line count, and `5aa1d9dc` made the sabotage entry "an edit to scope_guard.py runs no pytest rule" drop `scope_guard.py` from rule 31 as well as rule 27 (`_scope_guard_rule_span` in `plugin/crew/tests/sabotage_refresh.py` reads the span between the two from `.crew/verify.json`, since `apply_mutation` patches one unique span). `git diff --name-only 1da1233d 08ed88a5`, refresh artifacts aside, returns `plugin/crew/BUDGETS.md`, `plugin/crew/tests/sabotage_refresh.py`, `CHANGELOG.md` and the three version files, which read 1.0.52 on both sides. `REFRESH_MUTATIONS` moved `:51` -> `:80` (the helper was added above it), re-read with `grep -n`; `sabotage.py:75` and `:3053` are unchanged. The mutation was run by hand: applied, `test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule[scope_guard.py]` failed, restored.
+
+**Re-anchored `08ed88a5` -> `0d331967` on 2026-09-28 (T-0087, crew 1.0.52).** `0d331967` adds `plugin/crew/BUDGETS.md` to `scripts/check-tooling-pr.py`'s `ALONGSIDE` (its line count moves with every crew doc edit, and the checker refused this branch's own re-measure) and the `harness+budgets` must-allow case to `scripts/_test/tooling-pr.py`, red first (7 passed, 1 failed), then 8 passed. `git diff --name-only 08ed88a5 0d331967`, refresh artifacts aside, returns those two scripts and `CHANGELOG.md`. The suite's case count reads eight; `.crew/verify.json:328-344` and `sabotage.py:81`, `:3055` are unchanged. No suite was executed for this note beyond the one named above.
