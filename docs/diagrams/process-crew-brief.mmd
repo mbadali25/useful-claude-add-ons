@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@3c4f1a68 on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@379ab5e6 on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
@@ -154,6 +154,9 @@
 %% paths only crew_context.py changed - emit() now forces LF stdout (+4 lines at :1086), so the
 %% additionalContext write :1086 -> :1090 (re-read with sed -n); :121-132, :881-924 and :993-1003 are
 %% above it and unchanged. No node or edge changed.
+%% Re-anchored c8cc69ec / 3c4f1a68 -> 379ab5e6 (T-0087 merged onto 6387ab49, crew 1.0.55): of the
+%% Anchors paths none changed between c8cc69ec and 379ab5e6 (git diff --name-only); T-0087's
+%% crew_status.py and status.md lines cited above were already current at c8cc69ec. No node or edge changed.
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
     start --> reg["hooks.json:3-10<br/>3 SessionStart pairs, sh + ps1, no matcher<br/>each claims per session+source"]

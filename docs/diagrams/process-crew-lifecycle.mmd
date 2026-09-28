@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@c99e31f6 on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@379ab5e6 on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -166,6 +166,10 @@
 %% line allowance (no rule changed), so :481 -> :480, :484-488 -> :482-484, :508 -> :503-504,
 %% :513 -> :508 and :516 -> :511 (re-read with sed -n); :25-29, :440 and :449 are unchanged.
 %% No node or edge changed.
+%% Re-anchored 1da1233d / c99e31f6 -> 379ab5e6 (T-0087 merged onto 6387ab49, crew 1.0.55): of the
+%% Anchors paths review.md (:325-335) and completion_audit.py (:71-78) changed, T-0092's two
+%% line-neutral comment reflows; no line this diagram cites falls inside either hunk (diffed by
+%% script). No node or edge changed.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
