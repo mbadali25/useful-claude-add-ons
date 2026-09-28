@@ -1701,6 +1701,12 @@ class _TerraformTool:
         """Names a PowerShell line aliases the tool to: none followed."""
         return set()
 
+    @staticmethod
+    def bash_aliases(_cmds):
+        """Names a bash line aliases the tool to: none followed (T-0005's
+        copies are `_copies_terraform`'s alone)."""
+        return set()
+
 
 _TF_TOOL = _TerraformTool()
 
@@ -1825,6 +1831,7 @@ def _bash_trigger(text, top, helpers, depth, line=None, tool=_TF_TOOL):
     line = {"copies": set()} if line is None else line
     line["copies"] |= _copies_terraform(cmds, helpers[4], _GATE_COPIERS,
                                         tool.copy_source)
+    line["copies"] |= tool.bash_aliases(cmds)
     found, unseen = None, False
     for argv in cmds:
         hit = _argv_trigger(argv, top, helpers, depth, line, tool)
@@ -2014,6 +2021,19 @@ def command_names_terraform(text, helpers):
 # dispatch (`dispatchProblem`); the terraform layer keeps reading only the
 # repo's.
 #
+# THE LAUNCHER RULE (review round 4): a PowerShell launcher or alias writer
+# (`Start-Process`, `Set-Alias`, an `alias:` path, ...) holding a
+# dispatch-shaped word -- gh, `workflow`, `dispatches`, or a word made at run
+# time -- is could-not-tell unless every parameter on it is a full,
+# value-taking name in `_PS_FULL_PARAMS`, because PowerShell binds a switch,
+# an abbreviation or a parameter alias by rules crew does not model. A
+# trusted line is read by `_ps_values`, which passes gh only the positional
+# values and `-ArgumentList`. THE SAME-COMMAND RULE: a command crew cannot
+# split is gated only when gh and `workflow`/`dispatches` are in that ONE
+# command (the whole line only when a word in it is made at run time), and a
+# bash `alias NAME=VALUE` or `hash -p PATH NAME` pointing at gh makes NAME a
+# copy of gh for the rest of the line (`bash_aliases`).
+#
 # Once a line passes, the parser below reads it -- ONE flag parser
 # (`_gh_words`) for both forms -- and `dispatch_environment` classifies it by
 # the repo-only `environments.workflows` map (fnmatch, case-insensitive,
@@ -2163,6 +2183,104 @@ def _hole_shape(args, fed=(), split=True):
 # and the commands that make an alias (`Set-Alias NAME VALUE`, in that order).
 _PS_TARGET_PARAMS = ("-filepath", "-path", "-literalpath", "-value")
 _PS_ALIASERS = frozenset(("set-alias", "sal", "new-alias", "nal"))
+# THE LAUNCHER RULE (review round 4). A launcher's or aliaser's alias, as the
+# command it is; and each one's FULL, value-taking parameter names, measured
+# with pwsh 7 (`test_r4_ps_full_params_match_powershell`) minus the common
+# parameters and `-RedirectStandardInput`, which feeds gh's stdin. A switch
+# (`-NoNewWindow`) takes no value and an abbreviation (`-Fi`) or parameter
+# alias (`-Args`) is bound by PowerShell's own rules, so any other parameter on
+# a line holding a dispatch-shaped word makes it could-not-tell. `alias-path`
+# is a command writing an `alias:`/`function:` path; a launcher with no entry
+# (`Invoke-Command`, `Start-Job`, ...) trusts no parameter.
+_PS_CANON = {"saps": "start-process", "start": "start-process",
+             "sal": "set-alias", "nal": "new-alias", "ipal": "import-alias",
+             "icm": "invoke-command", "sajb": "start-job",
+             "ii": "invoke-item"}
+_PS_ALIAS_PARAMS = frozenset(("-name", "-value", "-description", "-option",
+                              "-scope"))
+_PS_FULL_PARAMS = {
+    "start-process": frozenset((
+        "-filepath", "-argumentlist", "-workingdirectory", "-credential",
+        "-verb", "-windowstyle", "-redirectstandardoutput",
+        "-redirectstandarderror", "-environment")),
+    "set-alias": _PS_ALIAS_PARAMS, "new-alias": _PS_ALIAS_PARAMS,
+    "alias-path": frozenset(("-path", "-literalpath", "-name", "-value"))}
+# PowerShell reads an en dash, em dash or horizontal bar as a parameter's dash.
+_PS_DASHES = ("-", "\u2013", "\u2014", "\u2015")
+_PS_BOUND_PARAM_RE = re.compile(
+    "^[-\u2013\u2014\u2015][A-Za-z_?][A-Za-z0-9_-]*:")
+_PS_CONSTANTS = frozenset(("$true", "$false", "$null"))
+
+
+def _ps_canon(word):
+    """A PowerShell command word as the command it runs: module qualifier and
+    path dropped, lowered, an alias of a launcher or aliaser resolved."""
+    head = str(word).replace("\\", "/").rsplit("/", 1)[-1].lower()
+    return _PS_CANON.get(head, head)
+
+
+def _ps_param(word):
+    """The parameter name `word` is (lowered, dash as written, before any
+    `:`), or None when it is a value. A quoted word is a value unless it is
+    a name bound with a colon (`-ArgumentList:'x'`, which the lexer keeps as
+    one quoted word)."""
+    text = str(word)
+    if type(word).__name__ == "_Bare" and text.startswith(_PS_DASHES) \
+            and len(text) > 1:
+        return text.split(":", 1)[0].lower()
+    if _PS_BOUND_PARAM_RE.match(text):
+        return text.split(":", 1)[0].lower()
+    return None
+
+
+def _ps_dispatch_word(word, text):
+    """True when one PowerShell word could be part of a dispatch: it names gh,
+    it is or holds `workflow` or a `dispatches` endpoint (a quoted value
+    split on whitespace and commas, as `_ps_values` splits `-ArgumentList`),
+    or it is made at run time. A parameter is judged by its bound value, and
+    `$true`/`$false`/`$null` are constants."""
+    if _ps_param(word) is not None:
+        bound = str(word).partition(":")[2]
+        if not bound or bound.lower() in _PS_CONSTANTS:
+            return False
+        return any(c in bound for c in "$(@") or _ps_names_dispatch(bound)
+    return _ps_runtime(word, text) or _ps_names_dispatch(str(word))
+
+
+def _ps_names_dispatch(value):
+    """True when a PowerShell value, split on whitespace and commas, holds a
+    word naming gh, `workflow`, or a `dispatches` endpoint."""
+    return any(_gh_name(p) or p.lower() == "workflow"
+               or "dispatches" in p.lower()
+               for p in re.split(r"[\s,]+", value) if p)
+
+
+def _ps_param_table(words):
+    """The trusted parameter names for the launcher or alias writer `words`."""
+    canon = _ps_canon(words[0])
+    if canon in _PS_FULL_PARAMS:
+        return _PS_FULL_PARAMS[canon]
+    if canon in _PS_LAUNCHERS:
+        return frozenset()
+    return _PS_FULL_PARAMS["alias-path"]
+
+
+def _ps_params_trusted(words, table):
+    """True when every parameter on `words` is a full name in `table`."""
+    return all(name in table for name in (_ps_param(w) for w in words[1:])
+               if name is not None)
+
+
+def _ps_untrusted_dispatch(words, text):
+    """The word that makes a launcher or alias writer could-not-tell -- the gh
+    word, else the run-time word, else the command -- or None when it holds
+    no dispatch-shaped word or every parameter on it is trusted."""
+    shaped = [w for w in words[1:] if _ps_dispatch_word(w, text)]
+    if not shaped or _ps_params_trusted(words, _ps_param_table(words)):
+        return None
+    return next((str(w) for w in shaped if _gh_name(str(w))), None) or next(
+        (str(w) for w in shaped if _ps_runtime(w, text)), None) \
+        or str(words[0])
 
 
 def _ps_runtime(word, text):
@@ -2179,9 +2297,13 @@ def _ps_values(words, text):
     """A PowerShell launcher's or alias's words as `(name, target, rest)`.
     For an alias (`Set-Alias NAME VALUE`, or `-Name`/`-Value`): its name and
     what it stands for. For a launcher: the value of `-FilePath`/`-Path`
-    (else its first value) and every other value as the words it passes on
-    -- `-ArgumentList 'workflow run x'` is three -- with a run-time value as
-    `_HOLE`. Parameter names are dropped; a switch takes no value."""
+    (else its first value), and the other positional values and
+    `-ArgumentList`'s as the words it passes on -- `-ArgumentList 'workflow
+    run x'` is three -- with a run-time value as `_HOLE`. Another
+    parameter's value (`-WindowStyle Hidden`) is not passed on (review round
+    4: read as gh's first argument it hid the dispatch). Parameter names are
+    dropped; the launcher rule has already refused a line whose parameters
+    are not all full, value-taking names (`_ps_untrusted_dispatch`)."""
     values, found, index = [], {}, 1
     while index < len(words):
         word, index = words[index], index + 1
@@ -2195,17 +2317,28 @@ def _ps_values(words, text):
         if bound or value:
             found[name.lower()] = value
     target = next((found[p] for p in _PS_TARGET_PARAMS if p in found), None)
-    if str(words[0]).lower() in _PS_ALIASERS:
+    if _ps_canon(words[0]) in _PS_ALIASERS:
         name = found.get("-name") or (values.pop(0) if values else None)
         return name, target or (values[0] if values else None), []
     if target is None and values:
         target = values.pop(0)
-    values += [v for k, v in found.items() if k not in _PS_TARGET_PARAMS]
+    values += [v for k, v in found.items() if k == "-argumentlist"]
     rest = []
     for value in values:
         rest += [_HOLE] if "$" in value or value.startswith("@") or not \
             _ps_quoted(value, text) else re.split(r"[\s,]+", str(value))
     return None, target, [w for w in rest if w]
+
+
+def _ps_named(words, param):
+    """The value `words` give the full parameter `param` (`-Name g`, or
+    `-Name:g`), else `""`."""
+    for index, word in enumerate(words):
+        if _ps_param(word) == param:
+            bound = str(word).partition(":")[2]
+            return bound or (str(words[index + 1]) if index + 1 < len(words)
+                             else "")
+    return ""
 
 
 def _ps_quoted(word, text):
@@ -2270,20 +2403,32 @@ class _DispatchTool:
 
     @staticmethod
     def opaque(args, top, launched=None, typed=None):
-        shell = "bash" if launched is None else "powershell"
-        if launched is not None:
-            named = next((w for w in launched if _gh_name(w)), None)
-            _alias, target, rest = _ps_values(typed, top)
-            if target is not None and (_gh_name(str(target)) or _ps_runtime(
-                    target, top)) and _dispatch_shape([_HOLE] + rest):
-                # `Start-Process $x -ArgumentList 'workflow run x'`: what it
-                # launches is gh or is made at run time, with a dispatch's
-                # arguments (review round 3).
-                return named or str(target)
-        else:
-            named, _verb = _dispatch_mentions(
-                top if any(_HOLE in a for a in args) else " ".join(args), shell)
-        return named if named and _dispatch_mentions(top, shell)[1] else None
+        if launched is None:
+            # Gh and `workflow` in the SAME command (review round 4: `alias
+            # g=gh; echo workflow` sends nothing); the whole line only when a
+            # word here is made at run time (`source <(...)`).
+            named, verb = _dispatch_mentions(
+                top if any(_HOLE in a for a in args) else " ".join(args),
+                "bash")
+            return named if named and verb else None
+        refused = _ps_untrusted_dispatch(typed, top)
+        if refused is not None:
+            # A switch, an abbreviation, a parameter alias or an unknown
+            # parameter beside a dispatch-shaped word: PowerShell binds it by
+            # rules crew does not model (the launcher rule, review round 4).
+            return refused
+        named = next((w for w in launched if _gh_name(w)), None)
+        _alias, target, rest = _ps_values(typed, top)
+        if target is not None and (_gh_name(str(target)) or _ps_runtime(
+                target, top)) and _dispatch_shape([_HOLE] + rest):
+            # `Start-Process $x -ArgumentList 'workflow run x'`: what it
+            # launches is gh or is made at run time, with a dispatch's
+            # arguments (review round 3).
+            return named or str(target)
+        own = top if any(_ps_runtime(w, top) for w in typed[1:]) \
+            else " ".join(launched)
+        return named if named and _dispatch_mentions(
+            own, "powershell")[1] else None
 
     @staticmethod
     def symbolic(argv, words, text):
@@ -2301,18 +2446,53 @@ class _DispatchTool:
         for words in (list(c.words) for c in cmds if c.words):
             path = next((str(w) for w in words[1:] if str(w).lower().startswith(
                 ("alias:", "function:"))), None)
-            if str(words[0]).lower() in _PS_ALIASERS:
+            if _ps_canon(words[0]) in _PS_ALIASERS:
                 name, target, _rest = _ps_values(words, text)
                 targets = [target]
             elif path is not None:
-                name, targets = path.split(":", 1)[1], [
+                # `alias:g`, `alias:\g`, or `alias:` with `-Name g` (review
+                # round 4: `New-Item -Path alias: -Name g -Value gh`).
+                name = path.split(":", 1)[1].lstrip("\\/") or _ps_named(
+                    words, "-name")
+                targets = [
                     w for w in words[1:] if str(w) != path
                     and not (type(w).__name__ == "_Bare" and w.startswith("-"))]
             else:
                 continue
+            if _ps_untrusted_dispatch(words, text) is not None:
+                continue  # an untrusted aliaser: the line is already refused
             if name and any(t is not None and (_gh_name(str(t)) or _ps_runtime(
                     t, text)) for t in targets):
                 out.add(_head_name(str(name)))
+        return out
+
+    @staticmethod
+    def bash_aliases(cmds):
+        """The names a bash line points at gh (review round 4): each `alias
+        NAME=VALUE` whose VALUE has a word naming gh or made at run time
+        (`alias g='env gh'`), and each NAME of `hash -p PATH NAME` whose PATH
+        does -- each then run as a copy of gh would be."""
+        out = set()
+        for argv in cmds:
+            head = _head_name(argv[0]) if argv else ""
+            if head == "alias":
+                for word in argv[1:]:
+                    name, eq, value = word.partition("=")
+                    if eq and not name.startswith("-") and (
+                            _HOLE in value or any(_gh_name(w) for w in
+                                                  value.split())):
+                        out.add(_head_name(name))
+            elif head == "hash":
+                path, names = None, []
+                for index, word in enumerate(argv[1:], 1):
+                    if path is None and word.startswith("-") \
+                            and "p" in word[1:] and index + 1 < len(argv):
+                        path = argv[index + 1]
+                    elif path is not None and word != path \
+                            and not word.startswith("-"):
+                        names.append(word)
+                if path is not None and (_HOLE in path or _gh_name(path)):
+                    out.update(_head_name(n) for n in names)
         return out
 
 

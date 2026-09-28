@@ -51,6 +51,21 @@ All notable changes to this repository are documented here. Format follows [Keep
   **machine-global** layer now engages the gate and makes every dispatch
   could-not-tell, as a malformed repo block does; the terraform layer's
   reading of it is unchanged.
+- **PowerShell launchers and aliases need full parameter names** (review
+  round 4). A `Start-Process`/`saps`, `Set-Alias`/`New-Alias` or `alias:`
+  path line holding gh, `workflow` or a run-time word is could-not-tell
+  unless every parameter on it is a full, value-taking name: a switch
+  (`-NoNewWindow`, `-Wait`, `-Force`), an abbreviation (`-Fi`), a parameter
+  alias (`-Args`, `-PSPath`) or `-RedirectStandardInput` used to hide the
+  target and now refuses the line — so `Start-Process $exe -Wait ...` asks
+  though it may send nothing. A trusted launcher passes gh only its
+  positional values and `-ArgumentList` (`-WindowStyle Hidden` no longer
+  reads as gh's first argument), and a module-qualified or en-dash spelling
+  is read as the command it is. **gh and `workflow` must be in the same
+  command:** `alias g=gh; echo workflow` is no longer refused, while `alias
+  g=gh`, `alias g='env gh'` and `hash -p /usr/bin/gh g` make `g` gh for the
+  rest of the line, and `New-Item -Path alias: -Name g -Value gh` and
+  `alias:\g` are read as aliases.
 - **BREAKING for the dispatch forms that ran in T-0009's first build:** a
   `--json` body (heredoc, here-string or `echo` pipe), `--input -`, a
   double-quoted display name, an unquoted `{owner}` endpoint and a pipe out of

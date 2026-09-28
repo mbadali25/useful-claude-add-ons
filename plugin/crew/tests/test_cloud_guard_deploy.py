@@ -64,6 +64,49 @@ against `6494d149` in a detached worktree before the fix, python driver:
   already GREEN, kept as over-block guards: r3-hole-other-shape,
     r3-ps-start-process-other, r3-global-well-formed
 
+REVIEW ROUND 4 (Codex, head `6d0f5a69`). Every `r4-` row and test was run
+against `6d0f5a69` in a detached worktree before the fix, python driver:
+
+  allowed unattended (RED): r4-ps-switch-before-target,
+    r4-ps-abbrev-filepath, r4-ps-switch-wait, r4-ps-saps-switch,
+    r4-ps-common-param, r4-ps-switch-all-runtime, r4-ps-en-dash-switch,
+    r4-ps-module-qualified-switch, r4-ps-abbrev-single, r4-ps-alias-abbrev,
+    r4-ps-alias-switch, r4-ps-module-qualified-alias,
+    r4-alias-then-hole-verb, r4-ps-switch-after-args,
+    r4-ps-alias-switch-between, r4-ps-full-params-before-args,
+    r4-ps-workdir-before-args, r4-ps-param-alias-pspath,
+    r4-ps-redirect-stdin-runtime, r4-ps-new-item-alias-abbrev; attended,
+    r4-ask-ps-switch-before-target, r4-ask-ps-abbrev-filepath,
+    r4-ask-ps-switch-runtime-other and r4-ask-ps-alias-literal-switch (no
+    ask at all)
+  denied unattended as could-not-tell (RED, the over-block): r4-alias-then-echo,
+    r4-alias-then-echo-dispatches, r4-hash-then-echo, r4-ps-alias-then-echo,
+    r4-ps-new-item-alias-then-echo
+  RED as a function: test_r4_ps_full_params_match_powershell (no
+    `_PS_FULL_PARAMS`)
+  already GREEN, kept as regression rows: r4-ps-switch-passthru-after,
+    r4-ps-switch-colon-bound, r4-ps-switch-literal-gh,
+    r4-ps-abbrev-argumentlist, r4-ps-param-alias, every r4-ps-args- row,
+    r4-ps-full-lowercase, r4-ps-redirect-stdin, r4-ps-new-alias-abbrev,
+    r4-ps-alias-provider-switch, r4-alias-then-dispatch-prod,
+    r4-alias-quoted-both, r4-alias-wrapped-gh, r4-hash-p-copy,
+    r4-source-procsub (the line-wide read the same-command rule narrows was
+    what caught the bash ones), and the must-allow rows r4-alias-then-other-gh,
+    r4-alias-other-target, r4-ps-launcher-switch-no-dispatch,
+    r4-ps-launcher-colon-true-no-dispatch, r4-ps-full-params-other,
+    r4-ps-saps-full-params-other; and r4-ps-new-item-alias-name and
+    r4-ps-alias-path-backslash, which the same-command rule then OPENED (both
+    were caught only by the line-wide read) until `ps_aliases` read an
+    `alias:` path's name from `-Name` and past a leading backslash
+
+The en dash, module-qualified, `alias g=gh; g $W ...`, switch-after,
+`-PSPath`, run-time `-RedirectStandardInput`, trusted-value, `saps` and
+`New-Item`/`alias:\\` rows are neighbours found while checking each fix, not
+rows the plan named. Two of them showed the plan's "trusted lines are read as
+now" was not enough on its own: a trusted parameter's value (`-WindowStyle
+Hidden`, `-WorkingDirectory C:\\`) was read as gh's first argument, so
+`_ps_values` now passes on only the positional values and `-ArgumentList`.
+
 Retabled by the grammar (old id kept, reason now "could not tell"): the
 eight rows in `MOVED_MUST_BLOCK` left the must-allow tables, and every
 round-1 stdin, variable, glob and xargs row, `bash-c-prod`, the `-F @file`
@@ -77,11 +120,13 @@ import copy
 import inspect
 import json
 import re
+import subprocess
 
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_config
+import crew_fixtures
 import crew_guards
 import test_cloud_guard as tcg
 from test_cloud_guard_environments import (  # pylint: disable=unused-import
@@ -863,10 +908,178 @@ R3_ASK_DEPLOY = [
      R3_PS_GH + "Start-Process $x -ArgumentList " + R3_ARG, _d(cnt=True)),
 ]
 
+# --- review round 4 (Codex, head `6d0f5a69`) --------------------------------
+#
+# BLOCK 1: a PowerShell switch (`-NoNewWindow`) before a run-time gh target
+# swallowed the target as its value. BLOCK 2: an abbreviation (`-Fi` for
+# `-FilePath`) was not read as the target parameter. FIX: `alias g=gh; echo
+# workflow` was denied, gh named by one command and `workflow` by another.
+# The launcher rule: a PowerShell launcher or alias line holding a
+# dispatch-shaped word is could-not-tell unless every parameter on it is a
+# known FULL, value-taking parameter name. The same-command rule: gh and
+# `workflow` must be in ONE command, and a bash alias or `hash -p` of gh makes
+# its name a copy of gh. Each must-block row maps to `deploy-prod.yml`, which
+# is production, so a collapse to "unlisted" allows and a collapse to a
+# literal reading denies as production, never "could not tell".
+R4_PS_GH = "$x = 'g'+'h'; "
+R4_ARG = "'workflow run deploy-prod.yml'"
+R4_PROD = "g workflow run deploy-prod.yml"
+
+R4_MUST_BLOCK_DEPLOY = [
+    ("r4-ps-switch-before-target", "PowerShell",
+     R4_PS_GH + "Start-Process -NoNewWindow $x -ArgumentList " + R4_ARG,
+     _d(why=CNT)),
+    ("r4-ps-abbrev-filepath", "PowerShell",
+     R4_PS_GH + "Start-Process -Fi $x -ArgumentList " + R4_ARG, _d(why=CNT)),
+    ("r4-ps-switch-wait", "PowerShell",
+     R4_PS_GH + "Start-Process -Wait $x -ArgumentList " + R4_ARG, _d(why=CNT)),
+    ("r4-ps-switch-passthru-after", "PowerShell",
+     R4_PS_GH + "Start-Process $x -PassThru -ArgumentList " + R4_ARG,
+     _d(why=CNT)),
+    ("r4-ps-switch-colon-bound", "PowerShell",
+     R4_PS_GH + "Start-Process -NoNewWindow:$true $x -ArgumentList " + R4_ARG,
+     _d(why=CNT)),
+    ("r4-ps-switch-literal-gh", "PowerShell",
+     "Start-Process -NoNewWindow gh -ArgumentList " + R4_ARG, _d(why=CNT)),
+    ("r4-ps-saps-switch", "PowerShell",
+     R4_PS_GH + "saps -NoNewWindow $x -ArgumentList " + R4_ARG, _d(why=CNT)),
+    ("r4-ps-common-param", "PowerShell",
+     R4_PS_GH + "Start-Process -Verbose $x -ArgumentList " + R4_ARG,
+     _d(why=CNT)),
+    # Every dispatch-shaped word is made at run time: no literal gh or
+    # `workflow` on the line.
+    ("r4-ps-switch-all-runtime", "PowerShell",
+     R4_PS_GH + "$a = 'work'+'flow'; Start-Process -NoNewWindow $x "
+     "-ArgumentList $a", _d(why=CNT)),
+    # PowerShell reads an en dash as the dash of a parameter.
+    ("r4-ps-en-dash-switch", "PowerShell",
+     R4_PS_GH + "Start-Process –NoNewWindow $x -ArgumentList " + R4_ARG,
+     _d(why=CNT)),
+    ("r4-ps-module-qualified-switch", "PowerShell",
+     R4_PS_GH + "Microsoft.PowerShell.Management\\Start-Process -NoNewWindow "
+     "$x -ArgumentList " + R4_ARG, _d(why=CNT)),
+    # A switch after the first value, before the value it swallows.
+    ("r4-ps-switch-after-args", "PowerShell",
+     R4_PS_GH + "Start-Process -ArgumentList " + R4_ARG + " -Wait $x",
+     _d(why=CNT)),
+    ("r4-ps-alias-switch-between", "PowerShell",
+     R4_PS_GH + "Set-Alias g -Force $x; " + R4_PROD, _d(why=CNT)),
+    # A trusted parameter's value is not gh's first argument.
+    ("r4-ps-full-params-before-args", "PowerShell",
+     R4_PS_GH + "Start-Process -FilePath $x -WindowStyle Hidden -ArgumentList "
+     + R4_ARG, _d(why=CNT)),
+    ("r4-ps-workdir-before-args", "PowerShell",
+     R4_PS_GH + "Start-Process $x -WorkingDirectory C:\\ -ArgumentList "
+     + R4_ARG, _d(why=CNT)),
+    ("r4-ps-abbrev-single", "PowerShell",
+     R4_PS_GH + "Start-Process -F $x -ArgumentList " + R4_ARG, _d(why=CNT)),
+    ("r4-ps-abbrev-argumentlist", "PowerShell",
+     R4_PS_GH + "Start-Process -FilePath $x -Arg " + R4_ARG, _d(why=CNT)),
+    ("r4-ps-param-alias", "PowerShell",
+     R4_PS_GH + "Start-Process -FilePath $x -Args " + R4_ARG, _d(why=CNT)),
+    ("r4-ps-param-alias-pspath", "PowerShell",
+     R4_PS_GH + "Start-Process -PSPath $x -ArgumentList " + R4_ARG,
+     _d(why=CNT)),
+    ("r4-ps-args-positional", "PowerShell",
+     R4_PS_GH + "Start-Process $x " + R4_ARG, _d(why=CNT)),
+    ("r4-ps-args-comma-bare", "PowerShell",
+     R4_PS_GH + "Start-Process $x -ArgumentList workflow,run,deploy-prod.yml",
+     _d(why=CNT)),
+    ("r4-ps-args-array", "PowerShell",
+     R4_PS_GH + "Start-Process $x -ArgumentList "
+     "@('workflow','run','deploy-prod.yml')", _d(why=CNT)),
+    ("r4-ps-args-colon", "PowerShell",
+     R4_PS_GH + "Start-Process $x -ArgumentList:" + R4_ARG, _d(why=CNT)),
+    # Full names in any case are trusted, read normally, and still caught.
+    ("r4-ps-full-lowercase", "PowerShell",
+     R4_PS_GH + "Start-Process -filepath $x -argumentlist " + R4_ARG,
+     _d(why=CNT)),
+    ("r4-ps-redirect-stdin", "PowerShell",
+     "Start-Process gh -RedirectStandardInput in.json -ArgumentList "
+     "'workflow run deploy-prod.yml --json'", _d(why=CNT)),
+    ("r4-ps-redirect-stdin-runtime", "PowerShell",
+     R4_PS_GH + "Start-Process $x -RedirectStandardInput in.json "
+     "-ArgumentList " + R4_ARG, _d(why=CNT)),
+    ("r4-ps-alias-abbrev", "PowerShell",
+     R4_PS_GH + "Set-Alias -N g -Va $x; " + R4_PROD, _d(why=CNT)),
+    ("r4-ps-alias-switch", "PowerShell",
+     R4_PS_GH + "Set-Alias -Force g $x; " + R4_PROD, _d(why=CNT)),
+    ("r4-ps-new-alias-abbrev", "PowerShell",
+     "New-Alias -Na g -Val gh; " + R4_PROD, _d(why=CNT)),
+    ("r4-ps-alias-provider-switch", "PowerShell",
+     R4_PS_GH + "Set-Item -Force alias:g $x; " + R4_PROD, _d(why=CNT)),
+    ("r4-ps-new-item-alias-name", "PowerShell",
+     "New-Item -Path alias: -Name g -Value gh; " + R4_PROD, _d(why=CNT)),
+    ("r4-ps-new-item-alias-abbrev", "PowerShell",
+     R4_PS_GH + "New-Item -Path alias: -N g -Value $x; " + R4_PROD,
+     _d(why=CNT)),
+    ("r4-ps-alias-path-backslash", "PowerShell",
+     "Set-Item alias:\\g gh; " + R4_PROD, _d(why=CNT)),
+    ("r4-ps-module-qualified-alias", "PowerShell",
+     R4_PS_GH + "Microsoft.PowerShell.Utility\\Set-Alias g $x; " + R4_PROD,
+     _d(why=CNT)),
+    ("r4-alias-then-dispatch-prod", "Bash", "alias g=gh; " + R4_PROD,
+     _d(why=CNT)),
+    ("r4-alias-quoted-both", "Bash",
+     "alias g='gh workflow'; g run deploy-prod.yml", _d(why=CNT)),
+    # gh behind a wrapper inside the alias's value.
+    ("r4-alias-wrapped-gh", "Bash", "alias g='env gh'; " + R4_PROD,
+     _d(why=CNT)),
+    ("r4-alias-then-hole-verb", "Bash", "alias g=gh; g $W run deploy-prod.yml",
+     _d(why=CNT)),
+    ("r4-hash-p-copy", "Bash", "hash -p /usr/bin/gh g; " + R4_PROD,
+     _d(why=CNT)),
+    ("r4-source-procsub", "Bash",
+     "source <(echo gh workflow run deploy-prod.yml)", _d(why=CNT)),
+]
+
+R4_MUST_ALLOW_DEPLOY = [
+    ("r4-alias-then-echo", "Bash", "alias g=gh; echo workflow", _d(log=None)),
+    ("r4-alias-then-echo-dispatches", "Bash", "alias g=gh; echo dispatches",
+     _d(log=None)),
+    ("r4-alias-then-other-gh", "Bash", "alias g=gh; g pr list", _d(log=None)),
+    ("r4-alias-other-target", "Bash", "alias ll=ls; ll workflow run notes",
+     _d(log=None)),
+    ("r4-hash-then-echo", "Bash", "hash -p /usr/bin/gh g; echo workflow",
+     _d(log=None)),
+    ("r4-ps-alias-then-echo", "PowerShell", "Set-Alias g gh; echo workflow",
+     _d(log=None)),
+    ("r4-ps-new-item-alias-then-echo", "PowerShell",
+     "New-Item -Path alias: -Name g -Value gh; echo workflow", _d(log=None)),
+    # `saps` is Start-Process: its full names are trusted, not refused.
+    ("r4-ps-saps-full-params-other", "PowerShell",
+     "saps -FilePath $exe -WindowStyle Hidden -ArgumentList 'notes.txt'",
+     _d(log=None)),
+    ("r4-ps-launcher-switch-no-dispatch", "PowerShell",
+     "Start-Process notepad -Wait -ArgumentList 'notes.txt'", _d(log=None)),
+    # A switch bound to a constant is not a word made at run time.
+    ("r4-ps-launcher-colon-true-no-dispatch", "PowerShell",
+     "Start-Process notepad -Wait:$true -ArgumentList 'notes.txt'",
+     _d(log=None)),
+    ("r4-ps-full-params-other", "PowerShell",
+     "Start-Process -FilePath $exe -WindowStyle Hidden -ArgumentList "
+     "'notes.txt'", _d(log=None)),
+]
+
+R4_ASK_DEPLOY = [
+    ("r4-ask-ps-switch-before-target", "PowerShell",
+     R4_PS_GH + "Start-Process -NoNewWindow $x -ArgumentList " + R4_ARG,
+     _d(cnt=True)),
+    ("r4-ask-ps-abbrev-filepath", "PowerShell",
+     R4_PS_GH + "Start-Process -Fi $x -ArgumentList " + R4_ARG, _d(cnt=True)),
+    # The accepted cost: a run-time target and a switch ask, though this one
+    # may send nothing.
+    ("r4-ask-ps-switch-runtime-other", "PowerShell",
+     "Start-Process $exe -Wait -ArgumentList 'notes.txt'", _d(cnt=True)),
+    ("r4-ask-ps-alias-literal-switch", "PowerShell", "Set-Alias g gh -Force",
+     _d(cnt=True)),
+]
+
 MUST_BLOCK_DEPLOY += R2_MUST_BLOCK_DEPLOY + GRAMMAR_MUST_BLOCK \
-    + R3_MUST_BLOCK_DEPLOY
-MUST_ALLOW_DEPLOY += GRAMMAR_MUST_ALLOW + R3_MUST_ALLOW_DEPLOY
-ASK_DEPLOY += GRAMMAR_ASK + R3_ASK_DEPLOY
+    + R3_MUST_BLOCK_DEPLOY + R4_MUST_BLOCK_DEPLOY
+MUST_ALLOW_DEPLOY += GRAMMAR_MUST_ALLOW + R3_MUST_ALLOW_DEPLOY \
+    + R4_MUST_ALLOW_DEPLOY
+ASK_DEPLOY += GRAMMAR_ASK + R3_ASK_DEPLOY + R4_ASK_DEPLOY
 
 _DB_SAMPLE = ("prod-input", "powershell-prod", "api-prod-input",
               "api-powershell-prod", "r2-bracket-glob", "g-double-quotes")
@@ -1319,3 +1532,37 @@ def test_r3_a_fed_command_word_on_the_classify_road():
         text, "bash", _CONTRACT_ENVS, ("parallel", ("{}",)))
     assert (state, (scope or {}).get("op")) == ("unknown", "line-not-literal"), \
         (state, why, scope)
+
+
+# `_PS_FULL_PARAMS`, measured with pwsh 7 on this host (2026-09-27): each
+# cmdlet's non-switch parameters, minus the common parameters and
+# `RedirectStandardInput` (gh's stdin, which crew never reads).
+R4_MEASURED = {
+    "start-process": ("-argumentlist", "-credential", "-environment",
+                      "-filepath", "-redirectstandarderror",
+                      "-redirectstandardoutput", "-verb", "-windowstyle",
+                      "-workingdirectory"),
+    "set-alias": ("-description", "-name", "-option", "-scope", "-value"),
+    "new-alias": ("-description", "-name", "-option", "-scope", "-value"),
+}
+_R4_PS_PARAMS = (
+    "$c = [System.Management.Automation.PSCmdlet]::CommonParameters; "
+    "(Get-Command {cmd}).Parameters.Values | ? {{ $_.ParameterType -ne "
+    "[switch] -and $c -notcontains $_.Name }} | % Name")
+
+
+def test_r4_ps_full_params_match_powershell():
+    """The launcher rule's table is what PowerShell itself reports, where
+    pwsh is on the host; the docstring's measurement stands in otherwise."""
+    for cmd, names in R4_MEASURED.items():
+        assert crew_guards._PS_FULL_PARAMS[cmd] == frozenset(names), cmd  # pylint: disable=protected-access
+    pwsh = crew_fixtures.resolve_pwsh()
+    if pwsh is None:
+        pytest.skip("no pwsh on this host: R4_MEASURED is the record")
+    for cmd, names in R4_MEASURED.items():
+        out = subprocess.run(
+            [pwsh, "-NoProfile", "-c", _R4_PS_PARAMS.format(cmd=cmd)],
+            capture_output=True, text=True, timeout=120, check=True).stdout
+        got = {"-" + n.strip().lower() for n in out.split()} \
+            - {"-redirectstandardinput"}
+        assert got == set(names), (cmd, sorted(got))

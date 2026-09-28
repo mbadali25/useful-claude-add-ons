@@ -76,6 +76,8 @@ sending a dispatch (a run-time command word read by its argv's shape) is judged 
 plain or one whole single-quoted word, joined by `;` `&&` `||` `&`, newline, `>` `>>` `&>` `&>>` to a plain
 word, `2>&1`; else a nested or fed dispatch, gh reading stdin or a file, a malformed block in either layer
 is could-not-tell (stdin is never read); `--help` is not judged; markers are exact bytes; one road, `dispatch_answer`.
+A PowerShell launcher or alias line holding a dispatch-shaped word is could-not-tell unless every parameter on it is a
+full, value-taking name (no switch, abbreviation or alias); gh and `workflow` count only in ONE command (round 4).
 
 IDENTITY. Every `aws` and `az` command resolves the identity it would run as --
 `--profile`/`--region`/`--subscription` first, then the environment it would
@@ -97,14 +99,12 @@ per-rule policies say: nesting past MAX_DEPTH, and hook input that is not a
 readable Bash/PowerShell call. `report` mode prints no decision at all -- never
 `allow` -- plus a `systemMessage` saying what `block` would have done.
 
-WHAT IT CANNOT SEE, stated so nobody mistakes this for a sandbox: a command
-named through a variable (`$TF apply`), a script file it runs (`bash x.sh`,
-`psql -f x.sql`), SQL built at runtime, a hashtable splatted into a cmdlet, and
-anything an MCP server does -- and for the terraform name, one built from
-parts crew never sees whole (`$TF`, `$(printf te)$(printf rraform)`, a
-PowerShell concatenation), a wildcard keeping fewer than three of its
-letters (`t*`) on a line naming no verb, or another name for terraform made
-outside the line (a profile `alias`, a `ln -s` link, a container's entrypoint).
+WHAT IT CANNOT SEE, stated so nobody mistakes this for a sandbox: a command named through a variable
+(`$TF apply`), a script file it runs (`bash x.sh`, `psql -f x.sql`), SQL built at runtime, a hashtable
+splatted into a cmdlet, and anything an MCP server does -- and for the terraform name, one built from parts
+crew never sees whole (`$TF`, `$(printf te)$(printf rraform)`, a PowerShell concatenation), a wildcard
+keeping fewer than three of its letters (`t*`) on a line naming no verb, or another name for terraform
+made outside the line (a profile `alias`, a `ln -s` link, a container's entrypoint).
 What `xargs`/`parallel` append is not seen either, so a destructive-capable tool behind one is
 judged as destructive, and one whose executable is a placeholder is refused as unreadable. For
 terraform it does not read `-var-file` or `*.tfvars`, an HCL `cloud {}`/`backend` block's workspace

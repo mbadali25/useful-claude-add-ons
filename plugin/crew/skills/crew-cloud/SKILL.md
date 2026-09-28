@@ -79,9 +79,13 @@ pipe, any `<`, `$`, double quotes, a glob, a nested or `xargs`-fed dispatch, a
 copy or alias of `gh`, a command word made at run time whose arguments could
 follow part of a dispatch (`$X $Y run x`, `$C`, `xargs -I CMD CMD workflow
 run x`, `Start-Process $x`, an alias to a run-time value), gh reading stdin or
-a file (`--json`, `--input`, `-F k=@f`), and a malformed `environments`
-block in either layer — is could-not-tell: asked when attended, refused unattended, and
-approved one exact command at a time by the marker the refusal names. Write
+a file (`--json`, `--input`, `-F k=@f`), a PowerShell launcher or alias
+holding gh, `workflow` or a run-time word with any parameter that is not a
+full, value-taking name (a switch, `-Fi`, `-Args`), and a malformed
+`environments` block in either layer — is could-not-tell; gh and `workflow`
+count only in one command, so `alias g=gh; echo workflow` is not judged. A
+could-not-tell line is asked when attended, refused unattended, and approved
+one exact command at a time by the marker the refusal names. Write
 `-f` fields and single quotes instead (README "The dispatch grammar"); a
 literal `--help` is not judged.
 

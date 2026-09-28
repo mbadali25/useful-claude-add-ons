@@ -1187,8 +1187,15 @@ time is judged by the shape of what follows it, not by what the line mentions:
 `xargs -I CMD CMD workflow run ...`, `Start-Process $x -ArgumentList
 'workflow run ...'` and an alias pointed at a run-time value all ask, while
 `$X pr create` does not. So does every dispatch while the machine-global
-config's `environments` block is malformed. Refused, and how to write
-it instead:
+config's `environments` block is malformed. A PowerShell launcher or alias
+line (`Start-Process`, `saps`, `Set-Alias`, `New-Alias`, an `alias:` path)
+holding gh, `workflow` or a word made at run time is could not tell unless
+every parameter on it is a full, value-taking name: a switch (`-NoNewWindow`,
+`-Wait`, `-Force`), an abbreviation (`-Fi`) or a parameter alias (`-Args`)
+refuses it, even on a line that sends nothing (`Start-Process $exe -Wait`).
+gh and `workflow` must be in the same command to count, so `alias g=gh; echo
+workflow` is not judged, while an `alias` or `hash -p` pointing at gh makes
+that name gh for the rest of the line. Refused, and how to write it instead:
 
 | Refused | Write instead |
 |---|---|
@@ -1198,6 +1205,7 @@ it instead:
 | `... \| tee log`, `echo x \| gh ...` | `... > log` |
 | `-f environment=$ENV`, `${ENV}`, `$(...)` | the literal value |
 | `bash -c 'gh workflow run ...'` | the `gh` command itself |
+| `Start-Process -NoNewWindow $x ...`, `-Fi`, `-Args`, `Set-Alias -Force g gh` | full parameter names and no switches, or `gh workflow run ...` directly |
 
 A literal `gh workflow run ... --help` (or `-h`) prints help and dispatches
 nothing, so it is not judged; `-f environment=--help` is a value, and after

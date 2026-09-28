@@ -1672,13 +1672,37 @@ of non-blank keys to `input:<name>` or non-blank names), which also forces an
 armed guard to `block` mode — in either layer: a malformed machine-global
 block (`"prodUnattended": "yes"`, `null`) engages the gate and makes every
 dispatch could-not-tell too, though it leaves the terraform layer's reading
-and the mode as they were (the ratchet already holds a non-bool down). The grammar does not resolve anything: `x=staging;
+and the mode as they were (the ratchet already holds a non-bool down).
+**The launcher rule** (review round 4): a PowerShell launcher or alias writer
+(`Start-Process`/`saps`/`start`, `Set-Alias`/`New-Alias`, a command writing an
+`alias:`/`function:` path, `Invoke-Command`, `Start-Job`, ...) holding a
+dispatch-shaped word — gh, `workflow`, `dispatches` (a quoted `-ArgumentList`
+split on spaces and commas) or a word made at run time — is could-not-tell
+unless every parameter on it is a full, value-taking name of that command
+(`Start-Process`: `-FilePath`, `-ArgumentList`, `-WorkingDirectory`,
+`-Credential`, `-Verb`, `-WindowStyle`, `-RedirectStandardOutput`,
+`-RedirectStandardError`, `-Environment`; the aliasers: `-Name`, `-Value`,
+`-Description`, `-Option`, `-Scope`; an `alias:` path writer: `-Path`,
+`-LiteralPath`, `-Name`, `-Value`; any other launcher: none). A switch
+(`-NoNewWindow`, `-Wait:$true`), an abbreviation (`-Fi`), a parameter alias
+(`-Args`, `-PSPath`), `-RedirectStandardInput`, a common parameter or an en
+dash refuses it — the accepted cost is that `Start-Process $exe -Wait
+-ArgumentList 'notes.txt'` asks. A trusted line passes gh only its positional
+values and `-ArgumentList`. **The same-command rule**: a command crew cannot
+split (`alias`, `hash`, `source`, `ssh`, a launcher) is gated only when gh and
+`workflow`/`dispatches` are in that one command — the whole line only when a
+word in it is made at run time — so `alias g=gh; echo workflow` is not judged;
+and `alias NAME=VALUE` with gh in VALUE, or `hash -p PATH NAME` with PATH
+naming gh, makes NAME a copy of gh for the rest of the line, as `Set-Alias`
+does. The grammar does not resolve anything: `x=staging;
 gh ... -f environment=$x` is could-not-tell although bash would pass
 `staging`. What a user may not expect, and the literal to write instead:
 `--json`/`--input -` → `-f` fields; `"Deploy Staging"` → `'Deploy Staging'`;
 unquoted `repos/{owner}/{repo}/...` or `-f inputs[environment]=x` → quote the
 word; `| tee log` → `> log`; `$ENV` → the value; `bash -c 'gh ...'` → the
-`gh` command itself. Other `gh` commands (`gh pr create --title "..."`) are
+`gh` command itself; a PowerShell launcher or alias with a switch, an
+abbreviation or a parameter alias → full parameter names and no switches, or
+`gh workflow run ...` directly. Other `gh` commands (`gh pr create --title "..."`) are
 never gated, and with `workflows` at `{}` (and a valid block) the gate does
 not run at all.
 
