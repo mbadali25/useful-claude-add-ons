@@ -86,9 +86,14 @@ def _bundle_block(manifest):
            "other directory counts for nothing; a part with no READ line makes the review "
            "INCOMPLETE."]
     out += [f"  {p['path']}" for p in parts]
+    # Three states, one line each (T-0099): an empty list is a manifest saying
+    # nothing was left out; no key, or anything but a list of strings, is one
+    # that cannot say, and must not read as either of the known answers.
     excluded = manifest.get("excluded")
-    out.append(f"  excluded (never in the bundle): {', '.join(excluded)}" if excluded
-               else "  excluded: none recorded")
+    if isinstance(excluded, list) and all(isinstance(p, str) for p in excluded):
+        out.append(f"  excluded (never in the bundle): {', '.join(excluded) or 'none'}")
+    else:
+        out.append("  excluded: not recorded by this manifest (unknown)")
     out.append(f"Manifest (file categories, renames, modes, binaries, submodules): "
                f"{manifest.get('manifest_path', 'manifest.json')}")
     for key, label in (("renames", "renamed"), ("mode_changes", "mode changed"),
