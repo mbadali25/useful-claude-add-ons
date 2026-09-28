@@ -142,6 +142,34 @@ def test_another_event_is_not_an_approval(repo):
     assert (approval_hook.handle(payload), _receipt(repo)) == (0, None)
 
 
+# --- T-0024: plain text and groups reach python through every wrapper --------------------
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_plain_text_approval_goes_pending_then_confirm_records(flavour, repo):
+    make_ticket(repo)
+    make_ticket(repo, "T-2", activate=False)
+
+    first = _hook(flavour, repo, prompt(repo, "approve T-1 and T-2"))
+    pending = (_receipt(repo), _receipt(repo, "T-2"))
+    code, out, _ = _hook(flavour, repo, prompt(repo, "/crew:approve --confirm"))
+
+    assert (first[0], "PENDING" in first[2], pending) == (2, True, (None, None))
+    assert (code, _receipt(repo)["approved_via"], _receipt(repo, "T-2")["approved_via"]) == \
+        (0, "user-prompt", "user-prompt")
+    assert "group confirm" in json.loads(out)["hookSpecificOutput"]["additionalContext"]
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+@pytest.mark.parametrize("text", ["does the reviewer approve this?", "I approve of T-1",
+                                  "Approved.", "yes"])
+def test_a_prompt_using_the_word_approve_passes_untouched(flavour, repo, text):
+    make_ticket(repo)
+
+    code, out, err = _hook(flavour, repo, prompt(repo, text))
+
+    assert (code, out, err, _receipt(repo)) == (0, "", "", None)
+
+
 # --- the wrappers ------------------------------------------------------------------------
 
 def _no_python_env(tmp_path, root):
@@ -157,7 +185,9 @@ def _no_python_env(tmp_path, root):
 
 
 @pytest.mark.parametrize("shell", ["sh", "ps1"])
-@pytest.mark.parametrize("text,expected", [("/crew:approve T-1", 2), ("hello", 0)])
+@pytest.mark.parametrize("text,expected", [("/crew:approve T-1", 2), ("hello", 0),
+                                           ("approve T-1", 0),
+                                           ("does the reviewer approve this?", 0)])
 def test_without_python_only_an_approve_prompt_is_blocked(tmp_path, repo, shell, text,
                                                           expected):
     if shell == "ps1" and PWSH is None:

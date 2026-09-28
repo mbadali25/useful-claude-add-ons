@@ -4,7 +4,7 @@ paths:
   - "_verify/smoke.sh"
   - "scripts/check-marketplace.py"
 ---
-<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=91a247cd6425df90 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=8244119e23f3baf5 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # verification-harness
 Code map anchor `764f6018`; if it is behind HEAD, re-check with `git diff --name-only 764f6018..HEAD -- <cited paths>`.
 Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and .crew/verify.json — what each actually runs, and where they overlap or don't. .crew/verify.json is tracked; its own anchor field (:3) is stale at 5238be3d, independent of this note's anchor.
@@ -21,10 +21,10 @@ Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and 
 - `.crew/verify.json:296-304` (rule 27) — the T-0004/T-0018 autopilot suite; `plugin/crew/tests/sabotage.py:77`, `:3053` — `sabotage_autopilot.py`'s registration.
 - `.crew/verify.json:305-312` (rule 28) — the T-0021 tracker suite; `plugin/crew/tests/sabotage.py:78`, `:3053` — `sabotage_tracker.py`'s registration.
 - `.crew/verify.json:313-321` (rule 29) — the T-0023 plain-text routing suite; `plugin/crew/tests/sabotage.py:79`, `:3053` — `sabotage_route.py`'s registration.
+- `.crew/verify.json:323-330` (rule 30) — the T-0024 group-approval suite; `plugin/crew/tests/sabotage.py:81`, `:3054` — `sabotage_approval.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` / `plugin/crew/CONFIG.md:2290-2297` — the descoped per-rule process-group kill, documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` — `Resolve-CrewBash` refusal rather than a re-resolving hang.
 - `scripts/check-marketplace.py:1639` — `main()`, sixteen checks.
 - `scripts/check-marketplace.py:518` — `check_versions`.
 - `scripts/check-marketplace.py:564`, `:673` — `count_crew_markdown_lines`, `check_self_claims`.
-- `scripts/check_instructions.py:685` — `main()`, nine checks.
 Full note: `.crew/codemap/verification-harness.md`.

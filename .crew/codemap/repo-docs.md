@@ -300,7 +300,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:2127` (`:2067` at `67caa4b8`, `:2102` on T-0075's `f7163410`, `:2052` at `bebbb97f`, `:2079` on T-0075's `e95e5964`, `:2044` on T-0018's first landing merge at `fbc27b49`, `:2029` at `db14619c`, `:1959` on T-0018's branch at `e6b696fb`, `:1953` at T-0023's `a1acd9b7`, `:2015` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1944` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:2169` (on T-0075's merge of `d2fbd408`; `:2075` at `d2fbd408`, `:1812` on T-0024's branch at `45345812`, `:2161` on T-0075's branch at `763eaeff`, `:2127` at `764f6018`, `:2067` at `67caa4b8`, `:2102` on T-0075's `f7163410`, `:2052` at `bebbb97f`, `:2079` on T-0075's `e95e5964`, `:2044` on T-0018's first landing merge at `fbc27b49`, `:2029` at `db14619c`, `:1959` on T-0018's branch at `e6b696fb`, `:1953` at T-0023's `a1acd9b7`, `:2015` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1944` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -430,6 +430,11 @@ listing the directory.
   `test_crew_tracker.py`. T-0023 appended rule 29 last (`:310-318` since T-0018 landed, `:309-317`
   before): `crew_route.py`, `crew_context.py`, their two test files and `sabotage_route.py` run
   `test_crew_route.py`, `test_crew_route_hook.py` and `test_crew_context.py`.
+  T-0024 appended rule 30 last (`:320-327` since its landing merge; rule 27 at `:290-297` on its
+  branch): `approval_hook.py`, both approval-hook wrappers, `crew_ticket.py`,
+  `test_approval_hook.py`, `test_approval_group.py` and `sabotage_approval.py` run
+  `test_approval_hook.py`, `test_approval_group.py` and `test_crew_ticket.py`. The rules above it
+  did not move.
 
 ## Unverified
 
@@ -890,6 +895,43 @@ Corrected here: the `docs/runbooks/INDEX.md` mention in `plugin/crew/README.md` 
 `.crew/verify.json` rules 27, 28 and 29 are `:293-301`, `:302-309` and `:310-318`, and the rule
 paragraph now names T-0023's rule 29, which main's text had not. Nothing was executed for this
 note.
+
+Re-verified per-path from `6f96e627` to `a2802526` for T-0024 (group approval, crew 1.0.42). Of the
+cited paths, `git diff --name-only 6f96e627..a2802526` returns `.claude-plugin/marketplace.json`
+(crew `version` only), `.crew/verify.json` (rule 27 appended at `:290-297`; `:167-172`, `:251`,
+`:252-268`, `:270-280`, `:281-288` hold), `CHANGELOG.md` (1.0.42 entry at the top; cited without a
+line), `plugin/PLUGINS.md` (`:14` version only), `plugin/crew/README.md` ("Scope and approval"
+gained the group forms, so the `docs/runbooks/INDEX.md` mention moved `:1804` -> `:1812`,
+re-grepped) and `plugin/crew/hooks/scripts/crew_ticket.py` (cited by name only, as a rule's path).
+`README.md`, `TODO.md`, `plugin/README.md` and both install scripts did not change.
+`python3 scripts/check-marketplace.py` re-run at `a2802526`: `marketplace: 34 skills, 5 plugins` /
+`all checks passed`.
+
+Re-verified per-path from `a2802526` to `f8671fdc` for T-0024's review round 1 and successor step 6.
+Of the cited paths, `.claude-plugin/marketplace.json` (version only, 1.0.44), `CHANGELOG.md` (1.0.43
+and 1.0.44 entries at the top; cited without a line), `plugin/PLUGINS.md` (`:14` only),
+`plugin/crew/README.md` (group-approval prose only; the `docs/runbooks/INDEX.md` mention still at
+`:1812`, re-grepped) and `plugin/crew/hooks/scripts/crew_ticket.py` (cited by name only, as a rule's
+path) changed. `.crew/verify.json`, `README.md`, `TODO.md` and both install scripts did not.
+
+Re-verified per-path from `f8671fdc` to `45345812` for T-0024's review round 3. Of the cited paths,
+`.claude-plugin/marketplace.json` (version only, 1.0.45), `CHANGELOG.md` (1.0.45 entry at the top;
+cited without a line), `plugin/PLUGINS.md` (`:14` only), `plugin/crew/README.md` (two sentences in
+place; `docs/runbooks/INDEX.md` still at `:1812`) and `crew_ticket.py` (by name only) changed.
+
+## Re-anchor provenance - `65bb3330` + `474aea8b` -> `8de3c669`, 2026-09-27 (T-0024 lands on T-0018's main)
+
+`affa22a5` merges T-0024's reviewed head `474aea8b` (review round 4 FINDINGS, owner-accepted) into
+main `67caa4b8` (T-0018 landed as crew 1.0.47, PR #245), and `8de3c669` bumps crew to 1.0.48.
+The two sides share no source file: T-0024 changed `approval_hook.py`, both approval-hook wrappers,
+`crew_ticket.py`, `commands/approve.md` and their tests; both sides changed `CHANGELOG.md`,
+`.crew/verify.json`, `plugin/crew/README.md` (merged cleanly), `plugin/crew/tests/sabotage.py`,
+`plugin/crew/BUDGETS.md`, the version files and the refresh artifacts. The conflicting provenance
+sections keep both sides, main's first.
+Corrected here: the `docs/runbooks/INDEX.md` sentence is `plugin/crew/README.md:2075` (T-0024's
+group-approval paragraph added eight lines above it); `.crew/verify.json` gains T-0024's rule 30 at
+`:320-327`, after T-0023's rule 29 `:310-318`, whose last line gained only a trailing comma. Rules
+above it did not move. No test suite was executed for this note.
 
 ## Re-anchor provenance - `12682e41` + `d2444be9` -> `e95e5964`, 2026-09-27 (T-0075 merges main)
 
