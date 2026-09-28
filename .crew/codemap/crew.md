@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@0f488706
-verified: 2026-09-27
+anchor: useful-claude-add-ons@9631c707
+verified: 2026-09-28
 
 ## Re-derive provenance
 
@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.50, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.51, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -619,7 +619,7 @@ unchanged. Tests: `plugin/crew/tests/test_crew_route.py`,
 `plugin/crew/tests/sabotage.py:79`); `.crew/verify.json` rule 29 (`:310-318`);
 T-0024's rule 30 (`:320`) follows it.
 
-**`deploy_allowed` (T-0072, crew 1.0.50).** DERIVED at `80326b1d` (T-0072's review-round-4 redesign, `35733d76`); lines re-read after its merge of T-0077 (`a4eb2f55`, `_rel` +6 at `:170`) and its review-round-5 fix (`0f488706`, `_resolve_root` +4).
+**`deploy_allowed` (T-0072, crew 1.0.51).** DERIVED at `80326b1d` (T-0072's review-round-4 redesign, `35733d76`); lines re-read after its merge of T-0077 (`a4eb2f55`, `_rel` +6 at `:170`) and its review-round-5 fix (`0f488706`, `_resolve_root` +4).
 `crew_autopilot.deploy_allowed` (`plugin/crew/hooks/scripts/crew_autopilot.py:836`) is the policy
 layer for a deploy without asking: `allow`, `ask` or `refuse` for one environment, rows in the
 order the module docstring's `deploy-allowed` section (`:87-104`) states. It resolves the checkout
@@ -2115,3 +2115,5 @@ sentence re-derived from source (`_parent_check` is gone; `_hold_dirs`, `_releas
 hold and re-check the directories), and its mutation count read from the tuple (87). The version
 sentence moves to 1.0.50; T-0004's CHANGELOG "117 -> 119" is now `:672`. Nothing was executed for
 this note beyond the citation script and the tuple count.
+
+**Re-anchored `0f488706` -> `9631c707` on 2026-09-28 (T-0072 landing, crew 1.0.51).** `9631c707` is T-0072's landing bump on `T-0072-land`, after `34af80ef` merged the reviewed `T-0072-build` (`a0978df6`) onto main `e6e10432` (T-0079 landed as crew 1.0.50) and `bf0c513a` re-priced verify rule 27. `git diff --name-only 0f488706 9631c707`, refresh artifacts aside, returns T-0079's files, the three version files, `CHANGELOG.md` and `.crew/verify.json`. The two this note's citations reach changed in place: `.crew/verify.json` `:298` and `:301` (rule 27's `seconds` 16 -> 18 and its `why`, still `:293-301`) and `plugin/crew/README.md` `:735` and `:739` (T-0079's verdict table, line-neutral); no citation moved. The version sentence moves to 1.0.51. No suite was executed for this note.

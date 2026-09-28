@@ -1,6 +1,6 @@
 # install-scripts
-anchor: useful-claude-add-ons@0f488706
-verified: 2026-09-27
+anchor: useful-claude-add-ons@9631c707
+verified: 2026-09-28
 
 ## Re-derive provenance
 
@@ -883,3 +883,5 @@ on both sides), `CHANGELOG.md` and the three version files. Every body citation 
 `path:line` into those files was compared by script between `a6e81869` and `81685adf`.
 This note cites `plugin/crew/README.md` and the version files by name or at unmoved lines; no
 citation moved. Nothing was executed for this note.
+
+**Re-anchored `0f488706` -> `9631c707` on 2026-09-28 (T-0072 landing, crew 1.0.51).** `9631c707` is T-0072's landing bump on `T-0072-land`, after `34af80ef` merged the reviewed `T-0072-build` (`a0978df6`) onto main `e6e10432` (T-0079 landed as crew 1.0.50) and `bf0c513a` re-priced verify rule 27. `git diff --name-only 0f488706 9631c707`, refresh artifacts aside, returns T-0079's files, the three version files, `CHANGELOG.md` and `.crew/verify.json`. The two this note's citations reach changed in place: `.crew/verify.json` `:298` and `:301` (rule 27's `seconds` 16 -> 18 and its `why`, still `:293-301`) and `plugin/crew/README.md` `:735` and `:739` (T-0079's verdict table, line-neutral); no citation moved. The version sentence moves to 1.0.51. No suite was executed for this note.
