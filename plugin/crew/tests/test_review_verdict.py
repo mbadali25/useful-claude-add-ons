@@ -14,6 +14,11 @@ import review_verdict as rv
 
 PARTS = ("part-001-of-002.patch", "part-002-of-002.patch")
 ACKS = "READ|part-001-of-002.patch\nREAD|part-002-of-002.patch\n"
+LISTED = ("/s/b/part-001-of-002.patch", "/s/b/part-002-of-002.patch")
+
+
+def _acks(tokens):
+    return "".join(f"READ|{token}\n" for token in tokens)
 
 
 def test_parse_exact_clean_with_exit_zero_is_clean():
@@ -67,6 +72,70 @@ def test_parse_missing_part_acknowledgement_is_incomplete():
 
     assert (result["verdict"], result["parts_missing"]) == (
         rv.INCOMPLETE, ["part-002-of-002.patch"])
+
+
+def test_parse_a_full_path_read_counts_for_its_listed_part():
+    """The prompt lists every part by its full path; a reviewer that echoes
+    that path back was scored INCOMPLETE until T-0079 (T-0009 round 4)."""
+    result = rv.parse(_acks(LISTED) + "CLEAN\n", 0, expected_parts=LISTED)
+
+    assert (result["verdict"], result["parts_missing"]) == (rv.CLEAN, [])
+
+
+def test_parse_a_bare_name_read_counts_for_its_listed_part():
+    result = rv.parse(_acks(PARTS) + "CLEAN\n", 0, expected_parts=LISTED)
+
+    assert (result["verdict"], result["parts_missing"]) == (rv.CLEAN, [])
+
+
+@pytest.mark.parametrize("listed,token", [
+    ("C:\\s\\b\\part-001-of-001.patch", "C:/s/b/part-001-of-001.patch"),
+    ("C:/s/b/part-001-of-001.patch", "C:\\s\\b\\part-001-of-001.patch"),
+    ("/s/b/part-001-of-001.patch", "/s/b/x/../part-001-of-001.patch"),
+    ("/s/b/part-001-of-001.patch", "./part-001-of-001.patch"),
+])
+def test_parse_a_differently_spelled_listed_path_counts(listed, token):
+    result = rv.parse(f"READ|{token}\nCLEAN\n", 0, expected_parts=(listed,))
+
+    assert (result["verdict"], result["parts_missing"]) == (rv.CLEAN, [])
+
+
+def test_parse_a_read_of_a_path_outside_the_bundle_counts_for_nothing():
+    result = rv.parse(_acks((LISTED[0], "/etc/passwd")) + "CLEAN\n", 0,
+                      expected_parts=LISTED)
+
+    assert (result["verdict"], result["parts_missing"]) == (rv.INCOMPLETE, [LISTED[1]])
+
+
+def test_parse_a_same_basename_in_another_directory_counts_for_nothing():
+    """A file name alone is not an identity: part-002 of some other bundle is
+    not this bundle's part-002."""
+    result = rv.parse(_acks((LISTED[0], "/tmp/other/part-002-of-002.patch")) + "CLEAN\n", 0,
+                      expected_parts=LISTED)
+
+    assert (result["verdict"], result["parts_missing"]) == (rv.INCOMPLETE, [LISTED[1]])
+
+
+def test_parse_a_listed_path_with_a_space_counts():
+    listed = ("/s/Some One/part-001-of-001.patch",)
+
+    result = rv.parse(f"READ|{listed[0]}\nCLEAN\n", 0, expected_parts=listed)
+
+    assert (result["verdict"], result["parts_missing"]) == (rv.CLEAN, [])
+
+
+def test_parse_an_unlisted_read_beside_full_coverage_adds_no_reason():
+    result = rv.parse(_acks(LISTED + ("/elsewhere/notes.txt",)) + "CLEAN\n", 0,
+                      expected_parts=LISTED)
+
+    assert (result["verdict"], result["reasons"]) == (rv.CLEAN, [])
+
+
+def test_parse_an_empty_read_token_is_unparseable():
+    result = rv.parse("READ|\nCLEAN\n", 0)
+
+    assert result["verdict"] == rv.INCOMPLETE and any(
+        "match no part of the contract" in reason for reason in result["reasons"])
 
 
 @pytest.mark.parametrize("line,severity", [
