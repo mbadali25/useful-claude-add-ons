@@ -36,6 +36,8 @@ import re
 import subprocess
 import sys
 
+import review_verdict
+
 SPEC_SECTIONS = ("Intent", "Exclusions", "Evidence", "Unknowns", "Acceptance checks")
 WEBTEST_FINDINGS_MAX = 50
 WEBTEST_FINDINGS_FILE = "webtest-findings.txt"
@@ -79,8 +81,9 @@ def _bundle_block(manifest):
     out = [f"== Bundle: {len(parts)} part(s), {manifest.get('patch_bytes', 0)} bytes, "
            f"sha256 {manifest.get('bundle_sha256')} ==",
            "Read EVERY part below, in order, in full. After reading each one, output",
-           "READ|<its file name> on its own line. A part with no READ line makes the",
-           "review INCOMPLETE."]
+           f"{review_verdict.READ_FORM} on its own line. A READ line for a path in any",
+           "other directory counts for nothing; a part with no READ line makes the review "
+           "INCOMPLETE."]
     out += [f"  {p['path']}" for p in parts]
     out.append(f"Manifest (file categories, renames, modes, binaries, submodules): "
                f"{manifest.get('manifest_path', 'manifest.json')}")
@@ -233,8 +236,8 @@ def _webtest_block(root, ticket, manifest, out_dir=None):
         out += every[:WEBTEST_FINDINGS_MAX]
         out.append(f"  ... and {len(every) - WEBTEST_FINDINGS_MAX} more. ALL {len(every)} rows "
                    f"are in {overflow}: read that file in full, carry every FINDING row in it, "
-                   f"and output READ|{WEBTEST_FINDINGS_FILE} on its own line. Without that "
-                   "READ line the review is INCOMPLETE.")
+                   f"and output {review_verdict.READ_FORM} for that file on its own line. "
+                   "Without that READ line the review is INCOMPLETE.")
     else:
         out += every
     out.append("Carry every FINDING row into your findings as FIX: a healer skip is a "

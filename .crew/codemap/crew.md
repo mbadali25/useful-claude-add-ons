@@ -33,7 +33,8 @@ on T-0021's branch, from `c35edda5` to
 `7b667587` for T-0021 and to `385eadd5` and `bcb77ce2` for its review rounds 1
 and 2; and to `c2ae46ab` for its review round 3 and merge of main; on T-0024's branch
 from `6f96e627` to `a2802526`, then to `32223b8a` for its review round 1, `f8671fdc` for
-its successor step 6 and `45345812` for its review round 3. See the last sections.
+its successor step 6 and `45345812` for its review round 3; on T-0079's branch from
+`8de3c669` to `a6e81869`. See the last sections.
 
 # crew
 
@@ -468,7 +469,7 @@ they disagree:
   sides with `config.json` explicitly: it reads through
   `crew_config.resolve_config` and warns when `autopilot` is set in
   `crew.json` but not `config.json` ("crew does not read [it] for this key;
-  move it to .crew/config.json", `:656-660`). T-0023's
+  move it to .crew/config.json", `:662-666`). T-0023's
   `crew_route.settings` (`plugin/crew/hooks/scripts/crew_route.py:296`) does
   the same for `route` (`:321-324`) - and it is the sharper case, because
   its only caller is `crew_context.route_item`, inside the one hook that reads
@@ -802,7 +803,9 @@ T-0015 against this refresh.
 ## The tracker interface (T-0021, crew 1.0.43)
 
 DERIVED at `2a9e0989` (review round 4's fixes; set to 1.0.43 at `d276b268`;
-first derived at `7b667587`, re-derived at `bcb77ce2` and `c2ae46ab`).
+first derived at `7b667587`, re-derived at `bcb77ce2` and `c2ae46ab`;
+`crew_tracker.py` citations re-mapped and the Windows sentence re-derived at
+`81685adf`, after T-0077 merged in).
 `plugin/crew/hooks/scripts/crew_tracker.py` is the one module that writes a
 tracker, and the only crew code that writes outside the repository (an
 Obsidian vault). A CLI the commands call, not a hook.
@@ -1056,9 +1059,25 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
 - `plugin/crew/tests/test_context_watch_python_resolver.py` and
   `test_verify_gate_python_resolver.py` were confirmed present, not read;
   no sabotage test was run against either.
-- `review_ledger.py`, `review_patch.py`, `review_prompt.py`, `review_run.py`,
-  `review_verdict.py` — the review pipeline `/crew:review` and `/crew:done`
-  depend on — were located but not opened.
+- `review_ledger.py`, `review_patch.py` — part of the review pipeline
+  `/crew:review` and `/crew:done` depend on — were located but not opened.
+- DERIVED (T-0079): the READ-line rule of the review verdict is
+  `review_verdict._covers` (`plugin/crew/hooks/scripts/review_verdict.py:79`):
+  a READ token counts for a part when, `\` read as `/` and `normpath`ed, it
+  IS the part's listed path, or has no directory and is its file name;
+  `parse` applies it at `plugin/crew/hooks/scripts/review_verdict.py:124`.
+  The prompt quotes `review_verdict.READ_FORM`
+  (`plugin/crew/hooks/scripts/review_verdict.py:70`) in `_bundle_block`
+  (`plugin/crew/hooks/scripts/review_prompt.py:84`) and on the webtest
+  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:239`), and
+  `review_run.finish` hands `parse` the manifest `path`s
+  (`plugin/crew/hooks/scripts/review_run.py:315`) and the overflow file's
+  scratch path (`plugin/crew/hooks/scripts/review_run.py:317`). `parse` and
+  `codex_final_message` split reviewer output on `\n` only, never
+  `str.splitlines()`, whose U+2028 break cut a Codex event mid-JSON
+  (`plugin/crew/hooks/scripts/review_verdict.py:94`,
+  `plugin/crew/hooks/scripts/review_verdict.py:164`). The rest of
+  `review_prompt.py`, `review_run.py` and `review_verdict.py` was not opened.
 - `webtest_guard.py`, `webtest_rules.py`, `webtest_scaffold.py` — new
   scripts since the previous anchor, backing `/crew:webtest` — were located
   but not opened.
@@ -2088,6 +2107,40 @@ CHANGELOG "117 -> 119" is `:608-609`, T-0024's four entries now sitting above it
 range is added to the anchor history at the top. The `/crew:approve` row's `approve.md`,
 `approval_hook.py` and `crew_ticket.py` citations are T-0024's and hold (main changed none of those
 files). No test suite was executed for this note.
+
+## Re-anchor provenance - `8de3c669` -> `a6e81869`, 2026-09-27 (T-0079 on its branch)
+
+`T-0079-read` was cut from `67caa4b8`, merged main `d2fbd408` (T-0024 landed; its refresh `fdc54ce9`
+changed refresh artifacts only) in `f034ef5c`, and carries T-0079's commits through `a6e81869`
+(crew 1.0.49). `git diff --name-only 8de3c669 a6e81869`, refresh artifacts aside, returns T-0079's
+files only: `review_verdict.py`, `review_prompt.py`, `review_run.py`, their tests and
+`sabotage_review.py`, `agents/reviewer.md`, `plugin/crew/README.md` (line-neutral), `CHANGELOG.md`
+and the three version files. Every body citation into those files was compared by script between
+`8de3c669` and `a6e81869` at the same line.
+Corrected here: crew's version is 1.0.49 (`:218`, `plugin.json:3`, and the body sentence citing
+them); T-0004's CHANGELOG "117 -> 119" is `:649-650`, T-0079's entry sitting above it. The
+DERIVED T-0079 review bullet was written against `a6e81869` and its citations re-read there with
+`sed -n`; it now also records the newline-only split (the U+2028 amendment). T-0079's branch
+range is added to the anchor history at the top. Every other citation held. No test suite was
+executed for this note.
+
+## Re-anchor provenance - `a6e81869` -> `81685adf`, 2026-09-27 (T-0079 merges main, Step 7, re-bump)
+
+`T-0079-read` gained T-0079's Step 7 (`8f7c62dd`, one `find` string in
+`plugin/crew/tests/sabotage_webtest.py`), merged main `f96e9ec9` (T-0077 landed, crew 1.0.49) in
+`548ee44e`, and re-bumped crew to 1.0.50 in `81685adf`. `git diff --name-only a6e81869 81685adf`,
+refresh artifacts aside, returns that `sabotage_webtest.py`, T-0077's files (`crew_tracker.py`,
+`crew_autopilot.py`, `sabotage_tracker.py`, `sabotage_autopilot.py`, `test_crew_tracker.py`,
+`test_crew_autopilot.py`, `test_crew_autopilot_status.py`), `plugin/crew/README.md` (line-neutral
+on both sides), `CHANGELOG.md` and the three version files. Every body citation of the form
+`path:line` into those files was compared by script between `a6e81869` and `81685adf`.
+Moved and re-cited: `crew_autopilot.py` below `_rel` shifted +6 (T-0077's cross-drive `_rel`), so
+the autopilot section's citations, `settings` (`:642`), `next_phase` (`:478`) and `main` (`:985`) moved;
+the tracker-interface section's `crew_tracker.py` citations were re-mapped line by line, its Windows
+sentence re-derived from source (`_parent_check` is gone; `_hold_dirs`, `_release` and `_held_check`
+hold and re-check the directories), and its mutation count read from the tuple (87). The version
+sentence moves to 1.0.50; T-0004's CHANGELOG "117 -> 119" is now `:672`. Nothing was executed for
+this note beyond the citation script and the tuple count.
 
 ## Re-anchor provenance - `12682e41` + `d2444be9` -> `e95e5964`, 2026-09-27 (T-0075 merges main)
 
