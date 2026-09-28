@@ -35,6 +35,7 @@ import copy
 import datetime
 import json
 import os
+import re
 import shlex
 import sys
 import tempfile
@@ -891,7 +892,52 @@ def restore_repo_config(root, backup, apply, now=None):
     return 0
 
 
-# --- CLI --------------------------------------------------------------------
+# --- CLI ---
+
+_DOTTED_RE = re.compile(r"^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$")
+_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def validate_change_set(obj, what):
+    """None when `obj` is `{"machine"?: {PATH: VALUE}, "repo"?: {PATH: VALUE}}`
+    with every PATH a dotted path; else the message. `save --changes` and
+    `spec --pending` share it, so a malformed shape is exit 2, never a
+    traceback."""
+    if not isinstance(obj, dict):
+        return f'{what} must be a JSON object {{"machine": {{...}}, "repo": {{...}}}}'
+    for layer, updates in obj.items():
+        if layer not in LAYERS:
+            return f"{what}: {layer!r} is not a layer (machine, repo)"
+        if not isinstance(updates, dict):
+            return (f"{what}: the {layer} value must be an object of "
+                    f"PATH: VALUE, not {type(updates).__name__}")
+        for dotted in updates:
+            if not _DOTTED_RE.match(dotted):
+                return f"{what}: {dotted!r} is not a dotted path (a.b.c)"
+    return None
+
+
+def _json_arg(raw, what):
+    """`(obj, None)` or `(None, message)` for a JSON-shaped change set."""
+    try:
+        obj = json.loads(raw)
+    except ValueError as exc:
+        return None, f"{what} is not JSON: {exc}"
+    problem = validate_change_set(obj, what)
+    return (None, problem) if problem else (obj, None)
+
+
+def _usage_problem(args):
+    for flag, value in (("--expect-machine", getattr(args, "expect_machine", None)),
+                        ("--expect-repo", getattr(args, "expect_repo", None))):
+        if value is not None and not _DIGEST_RE.match(value):
+            return f"{flag} must be a sha256 digest (64 lowercase hex), not {value!r}"
+    for flag, value in (("--confirm", getattr(args, "confirm", None)),
+                        ("--from", getattr(args, "source", None))):
+        if value is not None and not value.strip():
+            return f"{flag} must not be empty"
+    return None
+-----------------------------------------------------------------
 
 
 def main(argv=None):
@@ -919,9 +965,18 @@ def main(argv=None):
     res_p.add_argument("--from", dest="source", required=True)
     res_p.add_argument("--apply", action="store_true")
     args = parser.parse_args(argv)
+    problem = _usage_problem(args)
+    if problem:
+        print(problem, file=sys.stderr)
+        return 2
 
     if args.cmd == "spec":
-        pending = json.loads(args.pending) if args.pending else None
+        pending = None
+        if args.pending:
+            pending, problem = _json_arg(args.pending, "--pending")
+            if problem:
+                print(problem, file=sys.stderr)
+                return 2
         spec = menu_spec(args.root, args.layer, args.global_path, pending)
         if args.area:
             ids = [a[0] for a in AREAS]
@@ -936,14 +991,9 @@ def main(argv=None):
             _print_spec(spec)
         return 0
     if args.cmd == "save":
-        try:
-            changes = json.loads(args.changes)
-        except ValueError as exc:
-            print(f"--changes is not JSON: {exc}", file=sys.stderr)
-            return 2
-        if not isinstance(changes, dict) or set(changes) - set(LAYERS):
-            print('--changes must be {"machine": {...}, "repo": {...}}',
-                  file=sys.stderr)
+        changes, problem = _json_arg(args.changes, "--changes")
+        if problem:
+            print(problem, file=sys.stderr)
             return 2
         return save(args.root, changes, args.apply, args.global_path,
                     {"machine": args.expect_machine, "repo": args.expect_repo})

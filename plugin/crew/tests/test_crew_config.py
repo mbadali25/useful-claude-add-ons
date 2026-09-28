@@ -2405,3 +2405,20 @@ def test_set_cli_prints_the_digest_and_takes_expect(tmp_path, capsys, layer):
     assert "changed since it was read" in stale_err
     assert "--expect" in usage_err
     assert unchanged and target.read_bytes() != before
+
+
+@pytest.mark.parametrize("argv", [
+    ["--set", "a..b=1"], ["--set", "=1"], ["--set", "x"],
+    ["--set", ".a=1"], ["--set", "pm.authority=act"],
+    ["--set", 'notify.chatId="1"', "--expect", "zz"],
+], ids=["double-dot", "empty-key", "no-equals", "leading-dot", "not-json",
+        "bad-digest"])
+def test_set_cli_refuses_malformed_shapes(tmp_path, capsys, argv):
+    path = _global_file(tmp_path, {"pm": {"authority": "report-only"}})
+    before = path.read_bytes()
+
+    code = crew_config.main(["--global-path", str(path), "--apply"] + argv)
+
+    err = capsys.readouterr().err
+    assert (code, "Traceback" in err, path.read_bytes() == before) == (2, False, True)
+    assert err.strip()

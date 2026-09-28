@@ -3177,6 +3177,7 @@ def _print_explain(rows):
 
 
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+_DOTTED_RE = re.compile(r"^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$")
 
 
 def _set_layer(root, updates, args):
@@ -3345,10 +3346,16 @@ def main(argv=None):
                 print(f"--set expects PATH=JSON, got: {item}", file=sys.stderr)
                 return 2
             key, raw = item.split("=", 1)
+            key = key.strip()
+            if not _DOTTED_RE.match(key):
+                print(f"--set: {key!r} is not a dotted path (a.b.c)", file=sys.stderr)
+                return 2
             try:
-                updates[key.strip()] = json.loads(raw)
+                updates[key] = json.loads(raw)
             except ValueError:
-                updates[key.strip()] = raw      # a bare string is fine
+                print(f"--set {key}: {raw!r} is not JSON; a string needs its "
+                      f"quotes ({key}='\"{raw}\"')", file=sys.stderr)
+                return 2
         return _set_layer(args.root, updates, args)
 
     if args.models:

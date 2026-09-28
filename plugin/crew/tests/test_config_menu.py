@@ -685,7 +685,7 @@ def _preview(root, gpath, capsys):
     ("x-local", "x-local: 1 -> (removed)"),
     ("foo.bar", "foo.bar: 2 -> (removed)"),
     ("tracker", 'tracker: "jira" -> "files"'),
-])
+], ids=["x-local", "foo.bar", "tracker"])
 def test_delete_preview_lists_every_leaf_of_the_file(tmp_path, capsys, leaf, line):
     root, gpath = _repo(tmp_path, {"x-local": 1, "foo": {"bar": 2},
                                    "tracker": "jira"})
@@ -777,13 +777,15 @@ def test_restore_command_runs_in_powershell(tmp_path, capsys):
 
 
 def test_delete_prints_all_three_restore_lines(tmp_path, capsys):
-    root, gpath = _repo(tmp_path)
+    root, gpath = _repo(tmp_path / "my repo's")
 
     menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
 
     out = capsys.readouterr().out
+    cmd = [ln for ln in out.splitlines() if ln.startswith("restore (cmd): ")]
     assert [n for n in ("sh", "cmd", "PowerShell")
             if f"restore ({n}): " in out] == ["sh", "cmd", "PowerShell"]
+    assert "'" not in cmd[0].split(": ", 1)[1]
 
 
 def test_delete_preview_names_what_changes(tmp_path, capsys):
@@ -974,6 +976,22 @@ def test_menu_procedure_requires_save_and_typed_delete():
     assert "only after the dry run has been shown" in text
     assert "delete-repo --confirm" in text
     assert text.index("save --changes") < text.index("--apply")
+    assert "--expect-machine" in text and "--expect-repo" in text
+    assert text.index("digest") < text.index("--expect-repo")
+
+
+def test_menu_procedure_prints_three_restore_forms():
+    text = _flat(_read("skills", "crew-setup", "config-menu.md"))
+
+    assert all(f"restore ({n})" in text for n in ("sh", "cmd", "PowerShell"))
+    assert "the one that matches the owner's shell" in text
+
+
+def test_menu_procedure_names_blocked_rows():
+    text = _flat(_read("skills", "crew-setup", "config-menu.md"))
+
+    assert "refusedReason" in text and "--pending" in text
+    assert "fix the key it names first" in text
 
 
 def test_menu_procedure_headless_fallback():
@@ -1047,3 +1065,58 @@ def test_save_cli_passes_the_expected_digests(tmp_path, capsys):
 
     assert code == 2, capsys.readouterr()
     assert open(_config(root), "rb").read() == before
+
+
+# --- T-0075 successor: CLI shape validation, never a traceback --------------
+
+_MALFORMED = [
+    ("save-machine-1", ["save", "--changes", '{"machine":1}'], "machine"),
+    ("save-machine-list", ["save", "--changes", '{"machine":[]}'], "machine"),
+    ("save-empty-key", ["save", "--changes", '{"repo":{"":1}}'], "not a dotted path"),
+    ("save-a..b", ["save", "--changes", '{"repo":{"a..b":1}}'],
+     "not a dotted path"),
+    ("save-leading-dot", ["save", "--changes", '{"repo":{".a":1}}'],
+     "not a dotted path"),
+    ("save-other-layer", ["save", "--changes", '{"other":{}}'], "other"),
+    ("save-array", ["save", "--changes", "[]"], "object"),
+    ("save-string", ["save", "--changes", '"x"'], "object"),
+    ("save-notjson", ["save", "--changes", "{not json"], "JSON"),
+    ("spec-pending-1", ["spec", "--layer", "repo", "--pending", '{"repo":1}'],
+     "repo"),
+    ("spec-pending-array", ["spec", "--layer", "repo", "--pending", "[]"],
+     "object"),
+    ("save-expect-zz", ["save", "--changes", "{}", "--expect-repo", "zz"],
+     "--expect-repo"),
+    ("delete-empty-confirm", ["delete-repo", "--confirm", ""], "--confirm"),
+    ("restore-empty-from", ["restore-repo", "--from", ""], "--from"),
+]
+
+
+@pytest.mark.parametrize("argv,needle", [(a, n) for _i, a, n in _MALFORMED],
+                         ids=[i for i, _a, _n in _MALFORMED])
+def test_cli_refuses_malformed_input_with_exit_2(tmp_path, capsys, argv, needle):
+    root, gpath = _repo(tmp_path)
+    before = open(_config(root), "rb").read()
+
+    code = menu.main(["--root", root, "--global-path", gpath] + argv)
+
+    assert code == 2
+    assert needle in capsys.readouterr().err
+    assert open(_config(root), "rb").read() == before
+
+
+@pytest.mark.parametrize("argv", [
+    ["save", "--changes", '{"machine":1}', "--apply"],
+    ["spec", "--layer", "machine", "--pending", '{"machine":[1]}'],
+    ["delete-repo", "--confirm", "", "--apply"],
+    ["restore-repo", "--from", "", "--apply"],
+], ids=["save", "spec", "delete-repo", "restore-repo"])
+def test_cli_subprocess_prints_no_traceback(tmp_path, argv):
+    root, gpath = _repo(tmp_path)
+    script = os.path.join(_PLUGIN, "hooks", "scripts", "crew_config_menu.py")
+
+    run = subprocess.run([sys.executable, script, "--root", root,
+                          "--global-path", gpath] + argv,
+                         capture_output=True, text=True, check=False)
+
+    assert (run.returncode, "Traceback" in run.stderr) == (2, False), run.stderr
