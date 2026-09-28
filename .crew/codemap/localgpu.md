@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@65bb3330
+anchor: useful-claude-add-ons@8de3c669
 verified: 2026-09-27
 
 # localgpu
@@ -1139,3 +1139,17 @@ T-0018's files and the refresh artifacts; nothing under `plugin/localgpu/` chang
 `.crew/verify.json` and `plugin/crew/README.md` by name only; the refresh check named it because
 T-0018 widened rule 27 (one path line added) and documented its subcommands in the README. No
 citation moved. Nothing was executed for this note.
+
+## Re-anchor provenance - `65bb3330` + `474aea8b` -> `8de3c669`, 2026-09-27 (T-0024 lands on T-0018's main)
+
+`affa22a5` merges T-0024's reviewed head `474aea8b` (review round 4 FINDINGS, owner-accepted) into
+main `67caa4b8` (T-0018 landed as crew 1.0.47, PR #245), and `8de3c669` bumps crew to 1.0.48.
+The two sides share no source file: T-0024 changed `approval_hook.py`, both approval-hook wrappers,
+`crew_ticket.py`, `commands/approve.md` and their tests; both sides changed `CHANGELOG.md`,
+`.crew/verify.json`, `plugin/crew/README.md` (merged cleanly), `plugin/crew/tests/sabotage.py`,
+`plugin/crew/BUDGETS.md`, the version files and the refresh artifacts. The conflicting provenance
+sections keep both sides, main's first.
+Nothing under `plugin/localgpu/` changed on either side. This note cites `.crew/verify.json` and
+`plugin/crew/README.md` by name only; the refresh check named it because T-0024's approval rule was
+appended as rule 30 and the README gained its group-approval paragraph. No citation moved. Nothing
+was executed for this note.
