@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.47: `autopilot.deploy` — production without asking, opt-in (T-0072)
+### Added — `crew` 1.0.48: `autopilot.deploy` — production without asking, opt-in (T-0072)
 
 - **New production authority, off by default.** `autopilot.deploy` (repo
   only: `none` | `nonprod` | `all`, default `none`) says where a deploy may run
@@ -32,8 +32,8 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Not breaking.** The default `none` answers `ask` everywhere, and no
   existing key, stop or guard changes. The declared config leaves go 122 -> 123
   (repo-only 54 -> 55). 30 sabotage mutations in `sabotage_autopilot.py` prove
-  the must-block and must-allow tests can fail. Bumped `1.0.46 -> 1.0.47`
-  (1.0.44 on its branch, re-set after merging main's 1.0.46).
+  the must-block and must-allow tests can fail. Bumped `1.0.47 -> 1.0.48`
+  (1.0.44, then 1.0.47, on its branch; re-set after merging main's 1.0.47, T-0018).
 
 ### Added
 
