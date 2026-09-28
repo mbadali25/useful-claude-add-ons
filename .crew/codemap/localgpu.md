@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@d7c7c75c
+anchor: useful-claude-add-ons@cd106b8b
 verified: 2026-09-28
 
 # localgpu
@@ -1431,3 +1431,18 @@ this section names it.
 Nothing under `plugin/localgpu/` changed on either side. The `crew_state.py` provider tuples this
 note cites sit below both sides' `AUTOPILOT_DEFAULTS` hunks and read `:1437-1438` at `d7c7c75c`
 (mapped by the line diff, re-read with `grep -n`). Nothing was executed for this note.
+
+## Re-anchor provenance - `d7c7c75c` + `3648f59a` -> `cd106b8b`, 2026-09-28 (T-0010-solo merges T-0075's `e878cc31`)
+
+`acbb0fb2` merges origin/main `e878cc31` into T-0010-solo `07032fc7`: T-0075 (`/crew:config` menu mode and
+`/crew:config-setup`) landed as crew 1.0.59, its code maps anchored `3648f59a`. `92e0717a` re-measures
+`plugin/crew/BUDGETS.md` (19,494 lines across 128 files) and rebuilds the troubleshooting guide's DOCX and
+PDF; `cd106b8b` re-sets crew 1.0.60, one past main. The code merged without a conflict (T-0010 and T-0075 change
+disjoint scripts); the conflicts were this note's anchor, provenance and a few cited lines. Both sides'
+provenance was kept, main's first. Every body `path:N` citation was traced to the side whose copy of this
+note carries its line (`07032fc7` or `e878cc31`) and mapped to `cd106b8b` through a `difflib` line diff
+(`/root/crew-tmp/t-0010/citemap.py`, machine-local); each line that did not map to itself was read with
+`sed -n` / `grep -n`. The script takes a bare `:N` as the last path named on its line, so some flags were
+that misattribution (a `crew_ticket.py` or `review_ledger.py` line after another file's mention) and hold.
+
+Nothing under `plugin/localgpu/` changed on either side. Nothing was executed for this note.

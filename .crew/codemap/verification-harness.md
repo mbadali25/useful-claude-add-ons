@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@d7c7c75c
+anchor: useful-claude-add-ons@cd106b8b
 verified: 2026-09-28
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -1699,3 +1699,22 @@ The autopilot rule's paragraph was resolved by hand and T-0010's policy rule re-
 (20.9s, 260 passed, measured on this tree under heavy-run) and 55 `POLICY_MUTATIONS` (the
 merge's `deploy-allowed` entry added one), registered at `plugin/crew/tests/sabotage.py:77` and
 appended at `:3054`. The autopilot rule ran 551 passed in 13.4s under heavy-run on this tree.
+
+## Re-anchor provenance - `d7c7c75c` + `3648f59a` -> `cd106b8b`, 2026-09-28 (T-0010-solo merges T-0075's `e878cc31`)
+
+`acbb0fb2` merges origin/main `e878cc31` into T-0010-solo `07032fc7`: T-0075 (`/crew:config` menu mode and
+`/crew:config-setup`) landed as crew 1.0.59, its code maps anchored `3648f59a`. `92e0717a` re-measures
+`plugin/crew/BUDGETS.md` (19,494 lines across 128 files) and rebuilds the troubleshooting guide's DOCX and
+PDF; `cd106b8b` re-sets crew 1.0.60, one past main. The code merged without a conflict (T-0010 and T-0075 change
+disjoint scripts); the conflicts were this note's anchor, provenance and a few cited lines. Both sides'
+provenance was kept, main's first. Every body `path:N` citation was traced to the side whose copy of this
+note carries its line (`07032fc7` or `e878cc31`) and mapped to `cd106b8b` through a `difflib` line diff
+(`/root/crew-tmp/t-0010/citemap.py`, machine-local); each line that did not map to itself was read with
+`sed -n` / `grep -n`. The script takes a bare `:N` as the last path named on its line, so some flags were
+that misattribution (a `crew_ticket.py` or `review_ledger.py` line after another file's mention) and hold.
+
+`.crew/verify.json` was read in full via `json.load` at `cd106b8b`: 345 lines, 32 rules, `default` `:342`,
+`unmapped` `:343`; each rule range this note cites (`:287-297`, `:298-306`, `:307-313`, `:314-321`,
+`:322-330`, `:332-339`) re-derived by brace depth. `plugin/crew/tests/sabotage.py` imports `:76-81` and
+the `MUTATIONS +=` statement `:3052-3055` were re-read; `plugin/crew/CONFIG.md:2373-2380` is the descoped
+process-group-kill paragraph (main's `:2371-2378` plus T-0010's two lines above it).

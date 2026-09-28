@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@d7c7c75c
+anchor: useful-claude-add-ons@cd106b8b
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -1257,3 +1257,21 @@ this section names it.
 The `.crew/verify.json` rules paragraph was resolved by hand: T-0010's policy rule is at
 `:302-308`, the tracker rule `:309-316`, T-0023's route rule `:317-325` and T-0024's approval rule
 `:327-334`, each re-read with `sed -n`. Nothing was executed for this note.
+
+## Re-anchor provenance - `d7c7c75c` + `3648f59a` -> `cd106b8b`, 2026-09-28 (T-0010-solo merges T-0075's `e878cc31`)
+
+`acbb0fb2` merges origin/main `e878cc31` into T-0010-solo `07032fc7`: T-0075 (`/crew:config` menu mode and
+`/crew:config-setup`) landed as crew 1.0.59, its code maps anchored `3648f59a`. `92e0717a` re-measures
+`plugin/crew/BUDGETS.md` (19,494 lines across 128 files) and rebuilds the troubleshooting guide's DOCX and
+PDF; `cd106b8b` re-sets crew 1.0.60, one past main. The code merged without a conflict (T-0010 and T-0075 change
+disjoint scripts); the conflicts were this note's anchor, provenance and a few cited lines. Both sides'
+provenance was kept, main's first. Every body `path:N` citation was traced to the side whose copy of this
+note carries its line (`07032fc7` or `e878cc31`) and mapped to `cd106b8b` through a `difflib` line diff
+(`/root/crew-tmp/t-0010/citemap.py`, machine-local); each line that did not map to itself was read with
+`sed -n` / `grep -n`. The script takes a bare `:N` as the last path named on its line, so some flags were
+that misattribution (a `crew_ticket.py` or `review_ledger.py` line after another file's mention) and hold.
+
+`plugin/crew/README.md:2204` (the runbooks-index sentence) was re-read with `grep -n`; the
+troubleshooting guide's sources (`troubleshooting.md`, `auto-cycle.md`) merged both sides and
+`docs/guides/crew/src/build.py --guide troubleshooting` reproduced the merged HTML byte-identically.
+Nothing else was executed for this note.

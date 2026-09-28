@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@d7c7c75c
+anchor: useful-claude-add-ons@cd106b8b
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -1165,3 +1165,21 @@ Of the paths this note cites, the version files (1.0.55 at `.claude-plugin/marke
 (19,007 lines across 126 files, re-measured) and `.crew/verify.json` changed in place; README and
 CONFIG.md changed in paragraphs cited by name only. No install script, `README.md`,
 `INSTALLATION.md` or `scripts/check-marketplace.py` changed. Neither install script was executed.
+
+## Re-anchor provenance - `d7c7c75c` + `3648f59a` -> `cd106b8b`, 2026-09-28 (T-0010-solo merges T-0075's `e878cc31`)
+
+`acbb0fb2` merges origin/main `e878cc31` into T-0010-solo `07032fc7`: T-0075 (`/crew:config` menu mode and
+`/crew:config-setup`) landed as crew 1.0.59, its code maps anchored `3648f59a`. `92e0717a` re-measures
+`plugin/crew/BUDGETS.md` (19,494 lines across 128 files) and rebuilds the troubleshooting guide's DOCX and
+PDF; `cd106b8b` re-sets crew 1.0.60, one past main. The code merged without a conflict (T-0010 and T-0075 change
+disjoint scripts); the conflicts were this note's anchor, provenance and a few cited lines. Both sides'
+provenance was kept, main's first. Every body `path:N` citation was traced to the side whose copy of this
+note carries its line (`07032fc7` or `e878cc31`) and mapped to `cd106b8b` through a `difflib` line diff
+(`/root/crew-tmp/t-0010/citemap.py`, machine-local); each line that did not map to itself was read with
+`sed -n` / `grep -n`. The script takes a bare `:N` as the last path named on its line, so some flags were
+that misattribution (a `crew_ticket.py` or `review_ledger.py` line after another file's mention) and hold.
+
+No install script, `README.md`, `INSTALLATION.md` or `scripts/check-marketplace.py` changed in the merge
+beyond main's own edits already in its note; the version files changed in place (1.0.60 at
+`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`).
+Neither install script was executed.
