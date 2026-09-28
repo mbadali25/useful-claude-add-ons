@@ -323,7 +323,9 @@ contract itself. This section is what goes wrong with the approval and the audit
   formatter or a <code>git mv</code> never reaches it. The audit instead diffs the <strong>whole working tree</strong>
   against the ticket's scope base (<code>scope_base.resolve</code> — the commit the ticket started from) across
   committed, staged, unstaged and untracked changes, so a shell-made write is caught here even
-  though nothing blocked it at the time.
+  though nothing blocked it at the time. A file byte-identical to main as last merged is not
+  counted; a <code>merged main: could not tell</code> line (detached HEAD, no <code>origin/main</code>) means every
+  merged-in file was counted, so check out the ticket branch and rerun.
   <strong>Check it directly, without waiting for a Stop:</strong></p>
 </li>
 </ul>
