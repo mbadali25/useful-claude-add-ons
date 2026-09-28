@@ -487,7 +487,7 @@ def main(argv):
         sys.stderr.write(
             f"review-patch: nothing of this ticket's to review -- every change since "
             f"{manifest['base'][:12]} is identical to merged {merged['ref']} "
-            f"{merged['commit'][:12]}\n"
+            f"{(merged['commit'] or '')[:12]}\n"
         )
     elif code == EXIT_NOTHING_TO_REVIEW:
         sys.stderr.write(

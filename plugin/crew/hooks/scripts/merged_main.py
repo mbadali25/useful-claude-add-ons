@@ -75,7 +75,7 @@ def resolve(root, base_sha):
         return {"ref": ref, "commit": None, "applies": False,
                 "reason": f"{UNKNOWN}: HEAD is detached, so which commits since the start "
                           f"are {ref}'s cannot be told; nothing dropped"}
-    if branch in (ref, ref[len("origin/"):] if ref.startswith("origin/") else ref):
+    if branch in (ref, ref.removeprefix("origin/")):
         return {"ref": ref, "commit": crew_common.git_out(root, "rev-parse", "HEAD"),
                 "applies": False,
                 "reason": f"HEAD is on {branch} itself; every commit since the start is "
@@ -109,8 +109,4 @@ def bare_reason(merged):
     """`merged["reason"]` without its "could not tell: " lead and its
     "; nothing dropped" tail, for a line that states both in its own words."""
     reason = str((merged or {}).get("reason") or "")
-    if reason.startswith(UNKNOWN + ": "):
-        reason = reason[len(UNKNOWN) + 2:]
-    if reason.endswith("; nothing dropped"):
-        reason = reason[:-len("; nothing dropped")]
-    return reason
+    return reason.removeprefix(UNKNOWN + ": ").removesuffix("; nothing dropped")

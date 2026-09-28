@@ -260,11 +260,11 @@ def _merged_lines(merged, dropped):
     """The verdict's `merged main` line: the commit and what it did not count,
     or could-not-tell. Empty when there was no merge to account for."""
     if merged["applies"]:
-        return [f"  merged main {merged['commit'][:12]} ({merged['ref']}): {dropped} path(s) "
-                "identical to it not counted"]
+        return [(f"  merged main {merged['commit'][:12]} ({merged['ref']}): {dropped} path(s) "
+                 "identical to it not counted")]
     if merged["commit"] is None:
-        return [f"  merged main: {merged_main.UNKNOWN} - "
-                f"{shown(merged_main.bare_reason(merged))}; every changed path counted"]
+        return [(f"  merged main: {merged_main.UNKNOWN} - "
+                 f"{shown(merged_main.bare_reason(merged))}; every changed path counted")]
     return []
 
 

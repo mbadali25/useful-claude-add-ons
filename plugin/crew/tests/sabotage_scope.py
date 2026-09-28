@@ -362,7 +362,7 @@ SCOPE_MUTATIONS = (
      '    ref = ref or "HEAD"\n    if False:\n        return {"ref": None,',
      _MM + "test_could_not_tell_drops_nothing[no-ref]"),
     ("MERGED MAIN: HEAD on the integration branch still applies", MERGED_MAIN,
-     '    if branch in (ref, ref[len("origin/"):] if ref.startswith("origin/") else ref):\n',
+     '    if branch in (ref, ref.removeprefix("origin/")):\n',
      "    if False:\n",
      _MM + "test_head_on_the_integration_branch_never_applies"),
     ("MERGED MAIN: keep drops nothing", MERGED_MAIN,

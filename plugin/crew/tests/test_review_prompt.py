@@ -97,12 +97,12 @@ def test_sections_keeps_nested_headings_inside_their_parent():
 @pytest.mark.parametrize("merged,line", [
     ({"ref": "origin/main", "commit": "c" * 40, "applies": True, "reason": "merged",
       "dropped": ["gone.txt", "m.txt", "m2.txt", "r_new.txt", "r_old.txt"]},
-     f"  merged main: {'c' * 12} (origin/main) - 5 path(s) identical to it left out: "
-     "gone.txt, m.txt, m2.txt, r_new.txt, r_old.txt"),
+     (f"  merged main: {'c' * 12} (origin/main) - 5 path(s) identical to it left out: "
+      "gone.txt, m.txt, m2.txt, r_new.txt, r_old.txt")),
     ({"ref": "origin/main", "commit": "b" * 40, "applies": False, "dropped": [],
       "reason": "no merge of origin/main past the ticket start; nothing dropped"},
-     "  merged main: none since the ticket start "
-     "(no merge of origin/main past the ticket start)"),
+     ("  merged main: none since the ticket start "
+      "(no merge of origin/main past the ticket start)")),
     ({"ref": "origin/main", "commit": None, "applies": False, "dropped": [],
       "reason": "could not tell: HEAD is detached; nothing dropped"},
      "  merged main: could not tell - HEAD is detached; nothing left out"),
