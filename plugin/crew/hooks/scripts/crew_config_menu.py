@@ -624,6 +624,14 @@ def _file_leaves(parsed, known):
     return out
 
 
+def _redetected():
+    """The `platform.*` leaves platform-sync writes (`crew_platform.
+    DERIVED_KEYS`); any other `platform.*` leaf is removed with the file.
+    Imported lazily: `crew_platform` imports `crew_config`."""
+    import crew_platform  # pylint: disable=import-outside-toplevel
+    return frozenset("platform." + key for key in crew_platform.DERIVED_KEYS)
+
+
 def delete_preview(root, parsed, global_path=None):
     """What deleting `.crew/config.json` changes, walking the FILE's own
     leaves as well as the known ones, so the preview is the whole of what the
@@ -634,9 +642,11 @@ def delete_preview(root, parsed, global_path=None):
     keeps in force anyway (an absent repo value is the floor; `guards.
     roleWrites` and `change.requireForProduction` widen because their DEFAULT
     is wider); `removed: True` for a leaf crew does not know (preserved by
-    every write, removed with the file); `redetected: True` for `platform.*`,
-    which the same SessionStart that heals the file re-detects from this
-    machine -- a "becomes null" row would be a change that never happens.
+    every write, removed with the file); `redetected: True` for a
+    `platform.*` leaf in `crew_platform.DERIVED_KEYS`, which the same
+    SessionStart that heals the file re-detects from this machine -- a
+    "becomes null" row would be a change that never happens. Any other
+    `platform.*` leaf is unknown, so `removed`.
     `before` is what is in force now, `after` what platform-sync's heal leaves.
     """
     defaults = crew_config.default_config()
@@ -649,9 +659,10 @@ def delete_preview(root, parsed, global_path=None):
     global_kept, _ = crew_config.filter_global(
         crew_config.read_global_config(global_path))
     rows = []
+    redetected = _redetected()
     for dotted in known + _file_leaves(parsed, known_set):
         held = _dig(parsed, dotted)
-        if dotted.split(".", 1)[0] == "platform":
+        if dotted in redetected:
             if held is not crew_config._MISSING:  # pylint: disable=protected-access
                 rows.append({"path": dotted, "before": held, "after": held,
                              "widens": False, "redetected": True})
@@ -732,8 +743,8 @@ def _print_preview(root, rows):
                   "the default, which is the floor")
     redetected = [row for row in rows if row.get("redetected")]
     if redetected:
-        print("re-detected by platform-sync at the next SessionStart "
-              "(written back from this machine, not reset):")
+        print("re-detected by platform-sync at the next SessionStart (from "
+              "this machine; a key it finds no value for is left unset):")
         for row in redetected:
             print(f"  {row['path']}: now {json.dumps(row['before'])}")
     for line in DELETE_NOTICE:

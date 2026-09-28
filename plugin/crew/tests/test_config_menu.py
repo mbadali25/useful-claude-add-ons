@@ -739,6 +739,40 @@ def test_delete_preview_names_platform_as_re_detected(tmp_path, capsys):
     assert 'tracker: "jira" -> "files"' in out
 
 
+_HEADER = "re-detected by platform-sync at the next SessionStart"
+
+
+@pytest.mark.parametrize("leaf,value,redetected", [
+    ("x-local", 1, False), ("distro", "Ubuntu", True), ("os", "linux", True),
+], ids=["x-local", "distro", "os"])
+def test_delete_preview_platform_rows_follow_the_sync_writer(
+        tmp_path, capsys, leaf, value, redetected):
+    dotted = "platform." + leaf
+    root, gpath = _repo(tmp_path, {dotted: value})
+    with open(_config(root), encoding="utf-8") as handle:
+        parsed = json.load(handle)
+
+    row = {r["path"]: r for r in menu.delete_preview(root, parsed, gpath)}[dotted]
+    before, _, after = _preview(root, gpath, capsys).partition(_HEADER)
+
+    if redetected:
+        assert (row.get("redetected"), row.get("removed")) == (True, None)
+        assert (dotted in before, dotted in after) == (False, True)
+    else:
+        assert (row.get("removed"), row.get("redetected")) == (True, None)
+        assert f"{dotted}: 1 -> (removed)" in before and dotted not in after
+
+
+def test_delete_preview_redetected_header_does_not_promise_a_value(tmp_path, capsys):
+    root, gpath = _repo(tmp_path, {"platform.os": "linux"})
+
+    out = _preview(root, gpath, capsys)
+
+    header = [line for line in out.splitlines() if _HEADER in line]
+    assert len(header) == 1 and "left unset" in header[0]
+    assert "written back from this machine" not in out
+
+
 _WIN_PARTS = ("C:\\Py 3\\python.exe", "C:\\r p\\crew_config_menu.py", "--root",
               "C:\\r p", "restore-repo", "--from",
               "C:\\r p\\.crew\\config.json.bak-X", "--apply")
