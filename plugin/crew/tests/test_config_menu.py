@@ -245,6 +245,37 @@ def test_menu_spec_reads_a_non_list_qa_order(tmp_path, capsys, layer):
     assert rows["qa.order"]["writable"]
 
 
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_menu_spec_reads_an_object_at_a_leaf(tmp_path, capsys, layer):
+    if layer == "machine":
+        root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": {"a": 1}}})
+        blocked, bad = "notify.chatId", "pm.authority"
+    else:
+        root, gpath = _repo(tmp_path, {"notify.chatId": {}})
+        blocked, bad = "tracker", "notify.chatId"
+
+    code = menu.main(["--root", root, "--global-path", gpath, "spec",
+                      "--layer", layer, "--json"])
+
+    rows = {r["path"]: r for r in _rows(json.loads(capsys.readouterr().out))}
+    assert (code, rows[blocked]["writable"]) == (0, False)
+    assert bad in rows[blocked]["refusedReason"]
+    assert rows[bad]["writable"]
+    assert layer == "repo" or "act" in [c["value"] for c in rows[bad]["choices"]]
+
+
+def test_save_refuses_an_object_at_a_leaf(tmp_path, capsys):
+    root, gpath = _repo(tmp_path, global_cfg={})
+    before = open(gpath, "rb").read()
+
+    code = menu.main(["--root", root, "--global-path", gpath, "save", "--changes",
+                      '{"machine":{"pm.authority":{"a":1}}}'])
+
+    out, err = capsys.readouterr()
+    assert (code, "refused, nothing written" in err, "->" in out) == (2, True, False)
+    assert open(gpath, "rb").read() == before
+
+
 def test_pending_set_unblocks_rows(tmp_path, capsys):
     root, gpath = _repo(tmp_path, {"qa.provider": "gpt"})
     pending = {"repo": {"qa.provider": "codex"}}

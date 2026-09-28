@@ -2201,6 +2201,105 @@ def test_a_scalar_where_a_block_belongs_is_refused(tmp_path, value):
     assert "guards" in str(caught.value)
 
 
+def _set_at(root, gpath, layer, assignment, apply=True):
+    return crew_config.main(
+        ["--root", str(root), "--global-path", str(gpath), "--set", assignment]
+        + (["--repo"] if layer == "repo" else [])
+        + (["--apply"] if apply else []))
+
+
+_OBJECTS_AT_LEAVES = [
+    ("pm.authority", {"a": 1}), ("guards.forcePush", {"x": "allow"}),
+    ("install.policy", {"a": 1}), ("pm.ticketGranularity", {"a": 1}),
+    ("dev.provider", {"a": 1}), ("notify.chatId", {"a": 1}),
+    ("notify.chatId", {}), ("qa.order", {"a": 1})]
+
+
+@pytest.mark.parametrize("dotted,value", _OBJECTS_AT_LEAVES,
+                         ids=[f"{d}-{json.dumps(v)}" for d, v in _OBJECTS_AT_LEAVES])
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_an_object_at_a_leaf_is_refused(tmp_path, capsys, layer, dotted, value):
+    root, gpath = _two_layers(tmp_path, global_cfg={})
+    before = _both_bytes(root, gpath)
+
+    code = _set_at(root, gpath, layer, f"{dotted}={json.dumps(value)}")
+
+    err = capsys.readouterr().err
+    assert (code, dotted in err) == (2, True)
+    assert layer == "repo" or "takes a value" in err
+    assert _both_bytes(root, gpath) == before
+
+
+@pytest.mark.parametrize("assignment,dotted", [
+    ("pm.authority.a=1", "pm.authority"), ('notify.chatId.a="x"', "notify.chatId"),
+    ("qa.order.0=1", "qa.order")], ids=["pm.authority.a", "notify.chatId.a",
+                                        "qa.order.0"])
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_a_path_through_a_leaf_is_refused(tmp_path, capsys, layer, assignment,
+                                          dotted):
+    root, gpath = _two_layers(tmp_path, global_cfg={})
+    before = _both_bytes(root, gpath)
+
+    code = _set_at(root, gpath, layer, assignment)
+
+    assert (code, dotted in capsys.readouterr().err) == (2, True)
+    assert _both_bytes(root, gpath) == before
+
+
+@pytest.mark.parametrize("assignment,leaf", [
+    ('pm={"authority": {"a": 1}}', "pm.authority"),
+    ('notify={"chatId": {}}', "notify.chatId")], ids=["pm", "notify"])
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_a_block_holding_an_object_at_a_leaf_is_refused(tmp_path, capsys, layer,
+                                                        assignment, leaf):
+    root, gpath = _two_layers(tmp_path, global_cfg={})
+    before = _both_bytes(root, gpath)
+
+    code = _set_at(root, gpath, layer, assignment)
+
+    assert (code, leaf in capsys.readouterr().err) == (2, True)
+    assert _both_bytes(root, gpath) == before
+
+
+@pytest.mark.parametrize("value", ["[1]", "[]", '["act"]'])
+@pytest.mark.parametrize("dotted", ["pm.authority", "guards.forcePush"])
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_an_array_at_an_enum_key_is_refused_at_both_layers(tmp_path, capsys, layer,
+                                                           dotted, value):
+    root, gpath = _two_layers(tmp_path, global_cfg={})
+
+    code = _set_at(root, gpath, layer, f"{dotted}={value}")
+
+    assert (code, "not one of its values" in capsys.readouterr().err) == (2, True)
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_a_pre_existing_object_at_a_leaf_is_named_not_tolerated(tmp_path, capsys,
+                                                                layer):
+    if layer == "machine":
+        root, gpath = _two_layers(tmp_path, global_cfg={"pm": {"authority": {"a": 1}}})
+        assignment, key = 'notify.chatId="1"', "pm.authority"
+    else:
+        root, gpath = _two_layers(tmp_path, {"notify.chatId": {}}, global_cfg={})
+        assignment, key = 'tracker="jira"', "notify.chatId"
+    before = _both_bytes(root, gpath)
+
+    code = _set_at(root, gpath, layer, assignment)
+
+    err = capsys.readouterr().err
+    assert (code, "pre-existing" in err, key in err) == (2, True, True)
+    assert _both_bytes(root, gpath) == before
+
+
+def test_fixing_the_object_at_a_leaf_in_the_same_write_is_accepted(tmp_path, capsys):
+    root, gpath = _two_layers(tmp_path, global_cfg={"pm": {"authority": {"a": 1}}})
+
+    code = _set_at(root, gpath, "machine", 'pm.authority="act"', apply=False)
+
+    assert (code, 'pm.authority: {"a": 1} -> "act"' in capsys.readouterr().out) == (
+        0, True)
+
+
 @pytest.mark.parametrize("dotted", ["pm.authority", "guards.forcePush",
                                     "install.policy", "qa.provider"])
 def test_null_is_refused_for_an_enum_key_at_the_machine_layer(tmp_path, dotted):
@@ -2313,8 +2412,9 @@ def test_qa_order_must_be_a_list(tmp_path, capsys, layer, value):
          f"qa.order={value}"] + (["--repo"] if layer == "repo" else []))
 
     err = capsys.readouterr().err
-    # A repo object is a block: the leaf rule refuses it before the shape check.
-    reason = "settable leaf" if (layer, value) == ("repo", '{"a": 1}') else "list"
+    # An object is refused by the leaf rule before the list check (round 5).
+    reason = {("repo", '{"a": 1}'): "settable leaf",
+              ("machine", '{"a": 1}'): "takes a value"}.get((layer, value), "list")
     assert (code, "qa.order" in err, reason in err) == (2, True, True)
     assert _both_bytes(root, gpath) == before
 

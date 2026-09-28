@@ -2563,12 +2563,9 @@ _RATCHETED["environments.prodUnattended"] = (
 
 
 def enum_values(dotted):
-    """The values `dotted` may take, as a tuple, or None for an open key.
-
-    T-0075. Each tuple is the one the key's READER normalises against, never
-    a second list. A value outside it used to be written and collapse on read
-    to the narrowest tier, so a `--set` typo looked applied; both writers now
-    refuse it."""
+    """The values `dotted` may take, as a tuple, or None for an open key: the
+    tuple its READER normalises against, never a second list, so both writers
+    refuse a value outside it rather than let it collapse on read (T-0075)."""
     spec = crew_state.ratchet_spec(dotted)
     if spec is not None:
         return tuple(spec[0])
@@ -2584,9 +2581,8 @@ def enum_values(dotted):
 
 
 def leaf_updates(updates):
-    """`(dotted, value)` for every LEAF of `updates`, to any depth, so a
-    refused key cannot ride past either writer inside a block (T-0075). `{}`
-    stays a leaf for `value_allowed` to judge."""
+    """`(dotted, value)` for every LEAF of `updates`, to any depth, so a refused
+    key cannot ride past either writer inside a block; `{}` stays a leaf."""
     out = []
     for dotted, value in updates.items():
         if isinstance(value, dict) and value:
@@ -2604,11 +2600,9 @@ def _is_open_table(dotted):
 
 
 def assignments(updates):
-    """`(dotted, value)` for every UNIT a planner writes (review round 3): a
-    block value is expanded to the leaves `leaf_updates` judged, so untouched
-    siblings (unknown keys too) survive and a widening is marked on its leaf;
-    an open role table to its ENTRIES, each one pin written whole. Anything
-    else is its own unit, still judged by `value_allowed`."""
+    """`(dotted, value)` for every UNIT a planner writes: a block expands to the
+    leaves `leaf_updates` judged (siblings survive, a widening is marked on its
+    leaf), an open role table to its entries, each pin whole; else itself."""
     out = []
     for dotted, value in updates.items():
         if isinstance(value, dict) and value and (
@@ -2634,12 +2628,15 @@ MACHINE_REFUSED["graph.obsidian.confirmed"] = (
 
 
 def _shape(dotted):
-    """`block`, `open` (at or under an open table), `leaf` or `unknown`."""
+    """`block`, `open` (at or under an open table), `leaf`, `under` (past a
+    template leaf, which takes a value, not keys) or `unknown`."""
     node = default_config()
     for part in dotted.split("."):
         if isinstance(node, dict) and not node:
             return "open"
-        if not isinstance(node, dict) or part not in node:
+        if not isinstance(node, dict):
+            return "under"
+        if part not in node:
             return "unknown"
         node = node[part]
     if isinstance(node, dict):
@@ -2680,6 +2677,7 @@ def _consent_refusal(dotted):
 
 _VETO_ONLY = ("a repo may only veto this (false) or clear its veto (null); "
               "only the machine-global file can arm it")
+_FIX_FIRST = "fix that key first (it can be fixed in the same write)"
 
 
 def _layer_path_refusal(dotted, layer, value):
@@ -2705,12 +2703,17 @@ def value_allowed(dotted, layer, value):
     reason = _layer_path_refusal(dotted, layer, value)
     if reason is not None:
         return f"{dotted} - {reason}"
-    if _shape(dotted) == "block":
+    shape = _shape(dotted)
+    if shape == "under":
+        return f"{dotted} - under a key that takes a value, not keys; set that key to one of its values"
+    if shape == "block":
         if value == {}:
             return (f"{dotted} - setting a block to {{}} drops every key "
                     "under it; set its keys one at a time")
         return (f"{dotted} - a block; a {type(value).__name__} here is "
                 "discarded on read, so set its keys one at a time")
+    if shape == "leaf" and isinstance(value, dict):
+        return f"{dotted} = {value!r} is an object; this key takes a value, not keys"
     allowed = enum_values(dotted)
     if value is None:
         if null_means(dotted, layer) is not None:
@@ -2737,15 +2740,19 @@ def _content_problem(dotted, layer, value):
     ahead of T-0070) that nothing reads the key from."""
     if layer == "machine" and _consent_refusal(dotted):
         return _consent_refusal(dotted)
-    if _shape(dotted) == "unknown":
+    shape = _shape(dotted)
+    if shape == "under":
+        return f"= {value!r} sits under a key that takes a value, not keys; {_FIX_FIRST}"
+    if shape == "leaf" and isinstance(value, dict):
+        return f"= {value!r} is an object where a value belongs; {_FIX_FIRST}"
+    if shape == "unknown":
         return None
     if layer == "repo" and dotted in REPO_VETO_ONLY and not is_repo_veto(value):
         return _VETO_ONLY
     allowed = enum_values(dotted)
     if value is None or allowed is None or _in_values(value, allowed):
         return None
-    return (f"= {value!r} is not one of its values ({_values_text(allowed)}); "
-            "fix that key first (it can be fixed in the same write)")
+    return f"= {value!r} is not one of its values ({_values_text(allowed)}); {_FIX_FIRST}"
 
 
 def merged_problems(merged, touched, label, layer):
@@ -2836,20 +2843,11 @@ def _plan_on(base, updates, layer, label, global_cfg=None):
 
 
 def plan_global_write(updates, path=None, snapshot=None):
-    """What writing `updates` to the global file would change. Pure.
-
-    `updates` is a flat `{"pm.authority": "act"}` mapping; a block value is
-    judged and written leaf by leaf (`assignments`). Returns `(merged,
-    changes)`, each change `{"path", "before", "after", "widens"}` plus `null`
-    (its meaning) for a null `after`. `snapshot` is a `global_snapshot`.
-    Merge, never replace: keys `updates` does not name survive, unknown ones
-    included. Only globally-meaningful LEAVES (`value_allowed`, the same
-    `is_global_path` `filter_global` prunes the READ layer with), so the
-    consent keys (`MACHINE_REFUSED`) are un-grantable here, inside a block
-    too. Values in their tuple, null only where `null_means` gives it a
-    meaning. The merged file is judged whole (`merged_problems`), so a bad
-    provider is refused where it would enter -- `resolve_config` never raises.
-    """
+    """What writing `updates` (a flat mapping; a block leaf by leaf) to the
+    global file would change. Pure. Returns `(merged, changes)`, a null `after`
+    carrying `null`, its meaning. Merge, never replace: unnamed keys survive.
+    `value_allowed` judges each leaf (consent keys refused, in a block too) and
+    `merged_problems` the merged file; `snapshot` is a `global_snapshot`."""
     problems = _leaf_problems(updates, "machine")
     if problems:
         refused_paths = [p for p in problems if " - " in p]
@@ -2864,15 +2862,11 @@ def plan_global_write(updates, path=None, snapshot=None):
 
 
 def write_global_config(updates, path=None, expect=None):
-    """Apply `plan_global_write` to disk. Returns `(merged, changes)`.
-
-    Creates `~/.claude/crew/` if needed. The ONLY function in crew that writes
-    outside the repo, reached only after the user saw the plan and said go
-    (`commands/config.md`). Compare-and-swap (T-0075): the plan is re-run on
-    the bytes `crew_config_files.update_json` reads under its lock, and
-    `expect` (a digest, or `ABSENT`) refuses a changed file
-    (`GlobalWriteConflict`). Sibling-fsync-replace, never "w" on the live file.
-    """
+    """Apply `plan_global_write` to disk; returns `(merged, changes)`. The ONLY
+    crew writer outside the repo, reached after the user saw the plan and said
+    go. Compare-and-swap (T-0075): re-planned on the bytes `update_json` reads
+    under its lock; `expect` (a digest or `ABSENT`) refuses a changed file.
+    Creates `~/.claude/crew/`; sibling-fsync-replace, never "w" on the live file."""
     real_path = _global_label(path)
     merged, changes = plan_global_write(updates, real_path)
     if not changes:
@@ -3071,13 +3065,10 @@ def machine_view(global_path=None):
 
 def write_repo_config(root, updates, global_path=None, expect=None,
                       expect_global=None):
-    """Apply `plan_repo_write` to disk. Returns `(merged, changes)`.
-
-    `write_global_config`'s compare-and-swap (`RepoWriteConflict`), keeping
-    CRLF and BOM; never creates the file. The widening marks read the MACHINE
-    file, so it is bound too (review round 3): read once under its lock, always
-    taken, before the repo lock (crew's one nesting order), and `expect_global`
-    (a digest or `ABSENT`) refuses one that changed since."""
+    """Apply `plan_repo_write` to disk; returns `(merged, changes)`. The same
+    compare-and-swap (`RepoWriteConflict`), keeping CRLF and BOM; never creates
+    the file. The machine file is bound too: read under its lock, always taken
+    before the repo lock, and `expect_global` refuses one that changed since."""
     merged, changes = plan_repo_write(root, updates, global_path)
     if not changes:
         return merged, changes
