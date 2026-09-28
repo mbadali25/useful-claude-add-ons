@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@90442603
+anchor: useful-claude-add-ons@753719dc
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -902,7 +902,7 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   The scope guard (`_refresh_artifact`,
   `plugin/crew/hooks/scripts/scope_guard.py:186-197`) and the completion audit
   (`_outside_refresh_artifacts`,
-  `plugin/crew/hooks/scripts/completion_audit.py:202-212`) let a ticket write
+  `plugin/crew/hooks/scripts/completion_audit.py:198-208`) let a ticket write
   those paths without a Touch entry **only while its approval is current**;
   with no current approval nothing is exempt.
 - Tests: `plugin/crew/tests/test_refresh_check.py`,
@@ -1042,11 +1042,11 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   (`plugin/crew/hooks/scripts/review_patch.py:369`); the manifest carries
   `merged_main` and `bundle_base_tree`
   (`plugin/crew/hooks/scripts/review_patch.py:414`). The completion audit
-  applies the same rule in `_changed`
-  (`plugin/crew/hooks/scripts/completion_audit.py:175`), called from `audit`
-  (`plugin/crew/hooks/scripts/completion_audit.py:226`), and prints its
+  applies the same rule in `changed_paths(top, base, merged)`
+  (`plugin/crew/hooks/scripts/completion_audit.py:168`), called from `audit`
+  (`plugin/crew/hooks/scripts/completion_audit.py:222`), and prints its
   `merged main` line from `_merged_lines`
-  (`plugin/crew/hooks/scripts/completion_audit.py:259`); `changed_paths`
+  (`plugin/crew/hooks/scripts/completion_audit.py:257`); `changed_paths`
   without `merged` is unchanged for `crew_refresh_check`. The prompt's
   `merged main:` line is `_merged_main_line`
   (`plugin/crew/hooks/scripts/review_prompt.py:93`), and the receipt check's
@@ -2164,4 +2164,4 @@ this note beyond the citation script and the tuple count.
 
 **Re-anchored `25d2de63` -> `136f4b33` on 2026-09-28 (T-0092 merged onto `ff59160f`, T-0089, crew 1.0.54).** `e2220836` merges origin/main `ff59160f` (T-0089 landed as crew 1.0.53 at `0f526a8c`: `plugin/crew/tests/test_role_write_guard.py` fixtures and a `CHANGELOG.md` entry) into `T-0092-build`; the merge was clean. `136f4b33` re-bumps crew to 1.0.54 and moves T-0092's `1.0.53` mentions (`review_patch.py`'s docstring, `plugin/crew/README.md:842`, `TODO.md:5051`, the two test-file comments, its `CHANGELOG.md` heading) to 1.0.54, all in place. Every body citation of the form `path:line` into a file changed between `25d2de63` and `136f4b33` was compared by script: the only differences are version-file lines changed in place, `plugin/crew/README.md:842` in place, and lines cited inside dated provenance notes (`CHANGELOG.md`, which T-0089's entry shifts by 12 lines below `:80`, and `TODO.md:5048`), left as history at their own commit. No citation into `test_role_write_guard.py` exists here. The version sentence and the T-0092 DERIVED bullet move to 1.0.54. Nothing was executed for this note.
 
-**Re-anchored `136f4b33` -> `90442603` on 2026-09-28 (T-0100, crew 1.0.55).** `90442603` is T-0100's last pre-refresh commit on `T-0100-build`, cut from main `6387ab49` (T-0092 landed as crew 1.0.54); `f6ff7c6f` is its crew 1.0.55 version commit and `90442603` after it touches only `.crew/verify.json` (rule 25's new paths moved onto existing lines) and `TODO.md` (the follow-up moved to the end), both line-neutral against `6387ab49`. Every body citation of the form `path:line` into a file changed between `136f4b33` and `90442603` was compared by script (the anchor's lines against `90442603`'s): the ones that moved are re-pointed here - `plugin/crew/commands/done.md` gained three lines inside check 3 (check 4 `:46-57` -> `:49-60`, `:52-55` -> `:55-58`, the tracker call `:63` -> `:66`), `plugin/crew/hooks/scripts/completion_audit.py`'s `_outside_refresh_artifacts` `:177-187` -> `:202-212`, `plugin/crew/hooks/scripts/review_patch.py`'s `EXCLUDED` / `_EXCLUDE_SPEC` `:104-105` -> `:121-122`, `plugin/crew/hooks/scripts/review_prompt.py` `:85` -> `:86`, `:89` -> `:90`, `:243` -> `:261`; `.crew/verify.json:264-280` is still rule 25, changed in place. A new DERIVED bullet names `merged_main.py`, the synthetic base tree, the audit filter, the prompt line and the receipt note. The version sentence moves to 1.0.55. The other differences are version-file lines, `plugin/crew/BUDGETS.md:11` and `plugin/crew/README.md:842` changed in place, and `CHANGELOG.md` lines (+65 at its top) cited only inside dated provenance notes, left as history at their own commit. Suites were run for the code this note describes (T-0100's implement phase), not for this note.
+**Re-anchored `136f4b33` -> `753719dc` on 2026-09-28 (T-0100, crew 1.0.55).** `753719dc` is T-0100's last pre-refresh commit on `T-0100-build`, cut from main `6387ab49` (T-0092 landed as crew 1.0.54); `f6ff7c6f` is its crew 1.0.55 version commit; after it `90442603` touches only `.crew/verify.json` (rule 25's new paths moved onto existing lines) and `TODO.md` (the follow-up moved to the end), both line-neutral against `6387ab49`, and `753719dc` routes `completion_audit.audit` back through `changed_paths` (a sabotage entry had gone vacuous) with its sabotage anchor. Every body citation of the form `path:line` into a file changed between `136f4b33` and `753719dc` was compared by script (the anchor's lines against `753719dc`'s): the ones that moved are re-pointed here - `plugin/crew/commands/done.md` gained three lines inside check 3 (check 4 `:46-57` -> `:49-60`, `:52-55` -> `:55-58`, the tracker call `:63` -> `:66`), `plugin/crew/hooks/scripts/completion_audit.py`'s `_outside_refresh_artifacts` `:177-187` -> `:198-208`, `plugin/crew/hooks/scripts/review_patch.py`'s `EXCLUDED` / `_EXCLUDE_SPEC` `:104-105` -> `:121-122`, `plugin/crew/hooks/scripts/review_prompt.py` `:85` -> `:86`, `:89` -> `:90`, `:243` -> `:261`; `.crew/verify.json:264-280` is still rule 25, changed in place. A new DERIVED bullet names `merged_main.py`, the synthetic base tree, the audit filter, the prompt line and the receipt note. The version sentence moves to 1.0.55. The other differences are version-file lines, `plugin/crew/BUDGETS.md:11` and `plugin/crew/README.md:842` changed in place, and `CHANGELOG.md` lines (+65 at its top) cited only inside dated provenance notes, left as history at their own commit. Suites were run for the code this note describes (T-0100's implement phase), not for this note.

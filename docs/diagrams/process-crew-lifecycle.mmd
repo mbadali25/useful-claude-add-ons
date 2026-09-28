@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@90442603 on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@753719dc on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -147,7 +147,7 @@
 %% 1's single `status:` value from STATUS_VALUES, and status() compares that
 %% digest (:605-626); any other byte change still reads `stale`, and the
 %% completion audit still refuses to judge scope on anything but `approved`
-%% (plugin/crew/hooks/scripts/completion_audit.py:233-245). A receipt with no
+%% (plugin/crew/hooks/scripts/completion_audit.py:231-243). A receipt with no
 %% `digest` field is compared raw and stales once on its first status edit.
 %% Re-anchored 8de3c669 -> a4eb2f55 (T-0072 merged onto 5050ea3b, T-0077, crew 1.0.50): of the
 %% Anchors paths only crew_tracker.py changed (T-0077's Windows directory holds); it is cited
@@ -157,11 +157,11 @@
 %% place) changed, both line-neutral; review.md:25-29, :449 and completion_audit.py:177-187,
 %% :204-215 hold (compared by script). The bundle now also leaves out graphify-out/, which no
 %% node here names. No node or edge changed.
-%% Re-anchored c99e31f6 -> 90442603 (T-0100, crew 1.0.55): of the Anchors paths done.md gained
+%% Re-anchored c99e31f6 -> 753719dc (T-0100, crew 1.0.55): of the Anchors paths done.md gained
 %% three lines inside check 3 (:41-47), so check 4 and after move +3 (:46-57 -> :49-60,
 %% :59-70 -> :62-73, :61 -> :64, :63 -> :66); completion_audit.py's approval block moved
-%% :204-215 -> :233-245 (its pass returns now carry the merged-main line) and its refresh
-%% allowance :177-187 -> :202-212; review.md changed comment lines in place (:119-124,
+%% :204-215 -> :231-243 (its pass returns now carry the merged-main line) and its refresh
+%% allowance :177-187 -> :198-208; review.md changed comment lines in place (:119-124,
 %% :328-332) and one echo line, line-neutral, so review.md:25-29, :449 hold (compared by
 %% script). Check 3 now leaves out paths identical to merged main, which no node here
 %% draws. No node or edge changed.
