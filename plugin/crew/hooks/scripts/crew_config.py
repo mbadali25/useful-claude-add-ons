@@ -2130,7 +2130,19 @@ def role_status(row):
     return "eligible"
 
 
-def _print_models(report):
+def _repo_layer_line(root):
+    """`repo layer: <path> (<source>)` -- which `.crew/config.json` the repo
+    layer was read from; in a linked worktree with none of its own, the main
+    checkout's (T-0088)."""
+    crew_dir, source, detail = crew_common.repo_config_dir(root)
+    line = f"repo layer: {os.path.join(crew_dir, 'config.json')} ({source})"
+    if source == crew_common.SOURCE_UNKNOWN:
+        line += f" - {detail}"
+    return line
+
+
+def _print_models(report, root="."):
+    print(_repo_layer_line(root))
     # A fact about the CONFIG, printed ahead of anything role-shaped -- a
     # hand-edited file naming a provider nothing resolves is a problem with
     # what was read, not with any one row's resolution.
@@ -2691,7 +2703,8 @@ def write_global_config(updates, path=None):
 # --- CLI -------------------------------------------------------------------
 
 
-def _print_explain(rows):
+def _print_explain(rows, root="."):
+    print(_repo_layer_line(root))
     width = max((len(r["path"]) for r in rows), default=4)
     print(f"{'key'.ljust(width)}  source    value")
     narrowed, ignored = [], []
@@ -2901,7 +2914,7 @@ def main(argv=None):
         if args.json:
             print(json.dumps(report, indent=2))
         else:
-            _print_models(report)
+            _print_models(report, args.root)
         return 0
 
     if args.check:
@@ -2926,7 +2939,7 @@ def main(argv=None):
     if args.json or not args.explain:
         print(json.dumps(rows, indent=2))
     else:
-        _print_explain(rows)
+        _print_explain(rows, args.root)
     return 0
 
 
