@@ -42,7 +42,9 @@ a missing, unreadable, incomplete, unstamped or stale self-check refuses the
 round (exit 2, nothing spent). It applies to a ticket that has an approval
 receipt -- the precondition of `/crew:implement` and `/crew:fix`, the two
 commands that run the self-check; a ticket with none never went through
-either, and the gate says so rather than passing silently.
+either, and the gate says so rather than passing silently. "None" is proven
+(FileNotFoundError), never inferred from a lookup that failed. On a pass it
+prints the `std:<8 hex>` token the metrics row carries.
 
 THE CHECKLIST. `checklist_block` lists the effective set's rules and
 self-check questions for the shared review prompt. It never reads
@@ -242,6 +244,9 @@ def _plugin_sets(refs_dir):
             continue
         if parsed["supplements"]:
             problems.append(f"references/{name}: a plugin set may not carry Supplements")
+        if parsed["set"] == OVERLAY_SET:
+            problems.append(f"references/{name}: set {OVERLAY_SET} is the repository "
+                            "overlay's set; a plugin set may not use it")
         if parsed["set"] in owners:
             problems.append(f"references/{name}: set {parsed['set']} is also "
                             f"references/{owners[parsed['set']]}")
@@ -357,16 +362,21 @@ def selfcheck_template(ticket, found):
 def read_selfcheck(root, ticket):
     """(rows, stamp, problems). rows: [(id, status, evidence)] in file order;
     stamp: {"bundle", "standards", "base"} or None."""
-    path = selfcheck_path(root, ticket)
-    raw, why = _read_bytes(path)
+    return _read_selfcheck_raw(root, ticket)[1:]
+
+
+def _read_selfcheck_raw(root, ticket):
+    """(raw_bytes_or_None, rows, stamp, problems): one read, parsed from the
+    bytes it returned, so a caller that writes back writes what it checked."""
+    raw, why = _read_bytes(selfcheck_path(root, ticket))
     if raw is None:
-        return [], None, [f"no self-check at .work/tickets/{ticket}/{SELFCHECK_NAME}; run "
-                          f"crew_standards.py init --root . --ticket {ticket}"
-                          if why == "absent" else f"the self-check {why}"]
+        return None, [], None, [f"no self-check at .work/tickets/{ticket}/{SELFCHECK_NAME}; "
+                                f"run crew_standards.py init --root . --ticket {ticket}"
+                                if why == "absent" else f"the self-check {why}"]
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
-        return [], None, ["the self-check is not UTF-8"]
+        return raw, [], None, ["the self-check is not UTF-8"]
     rows, stamps, problems = [], [], []
     for number, line in enumerate(text.replace("\r\n", "\n").split("\n"), 1):
         stripped = line.strip()
@@ -391,7 +401,7 @@ def read_selfcheck(root, ticket):
         rows.append((cells[0], cells[1], cells[2].rstrip("|").strip()))
     if len(stamps) > 1:
         problems.append(f"the self-check carries {len(stamps)} stamp lines; one is allowed")
-    return rows, (stamps[0] if len(stamps) == 1 else None), problems
+    return raw, rows, (stamps[0] if len(stamps) == 1 else None), problems
 
 
 def _placeholder(text):
@@ -466,8 +476,11 @@ def init(root, ticket, refs_dir=None):
 
 
 def stamp(root, ticket, refs_dir=None):
-    """(exit_code, lines). Refuses on any problem; writes nothing then."""
-    rows, _, problems = read_selfcheck(root, ticket)
+    """(exit_code, lines). Refuses on any problem; writes nothing then. The
+    rows are validated from one read and those same bytes are written back
+    with the stamp; a record that changed during the compute is refused, not
+    stamped (GEN-03: the authorizing fact is read once)."""
+    raw, rows, _, problems = _read_selfcheck_raw(root, ticket)
     base, manifest, scope_problems = _scope(root, ticket)
     problems += scope_problems
     found = None
@@ -479,9 +492,11 @@ def stamp(root, ticket, refs_dir=None):
     if problems or found is None:
         return 1, [f"self-check: {p}" for p in problems]
     path = selfcheck_path(root, ticket)
-    raw, why = _read_bytes(path)
-    if raw is None:
-        return 1, [f"self-check: {why}"]
+    now, why = _read_bytes(path)
+    if now != raw:
+        return 1, [f"self-check: .work/tickets/{ticket}/{SELFCHECK_NAME} changed while it was "
+                   f"being stamped{'' if now is not None else f' ({why})'}; nothing written, "
+                   "run stamp again"]
     lines = [line for line in raw.decode("utf-8").split("\n")
              if not line.strip().startswith("<!-- stamp:")]
     line = (f"<!-- stamp: bundle={manifest['bundle_sha256']} standards={found['digest']} "
@@ -498,25 +513,43 @@ def gate_applies(root, ticket):
     """(applies, note). The self-check is required of /crew:implement and
     /crew:fix, which both refuse without an approval receipt; a ticket with no
     receipt never ran either, so the gate does not apply and says so. A
-    receipt that cannot be read, or a lookup that fails, applies the gate."""
+    receipt that cannot be read, or a lookup that fails, applies the gate.
+    `read_approval` says "absent" whenever the path does not exist after a
+    failed read, which is also what an unreadable or non-directory parent
+    looks like; so absence is proven here with an lstat, and only
+    FileNotFoundError is absent (GEN-01)."""
     try:
         _, state = crew_ticket.read_approval(root, ticket)
+        path = crew_ticket.approval_path(root, ticket)
     except crew_ticket.TicketError as exc:
         return True, f"the approval receipt could not be looked up ({exc}); gating anyway"
-    if state == "absent":
+    if state != "absent":
+        return True, None
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
         return False, (f"standards self-check not required: {ticket} has no approval receipt, "
                        "so /crew:implement and /crew:fix never ran for it")
-    return True, None
+    except OSError as exc:
+        return True, (f"could not tell whether {ticket} has an approval receipt "
+                      f"({exc.__class__.__name__}: {exc.strerror or exc}); gating anyway")
+    return True, (f"could not tell whether {ticket} has an approval receipt (it was not "
+                  "readable, then it existed); gating anyway")
 
 
 def gate_problems(root, ticket, manifest, refs_dir=None):
     """Why the round must not be reserved; empty when the self-check is
     complete and stamped for exactly this bundle and this standards set."""
+    return _gate(root, ticket, manifest, refs_dir)[0]
+
+
+def _gate(root, ticket, manifest, refs_dir=None):
+    """(problems, standards digest or None)."""
     problems = []
     try:
         files = changed_files(manifest)
     except (ValueError, AttributeError) as exc:
-        return [f"the review manifest is unusable: {exc}"]
+        return [f"the review manifest is unusable: {exc}"], None
     found = effective_set(root, files, refs_dir)
     problems += found["problems"]
     rows, seal, read_problems = read_selfcheck(root, ticket)
@@ -535,7 +568,7 @@ def gate_problems(root, ticket, manifest, refs_dir=None):
         if seal["standards"] != found["digest"]:
             problems.append("the stamp is stale: the standards set changed since stamping "
                             f"({seal['standards'][:8]} then, {found['digest'][:8]} now)")
-    return problems
+    return problems, found["digest"]
 
 
 def review_gate(root, ticket, manifest_path, refs_dir=None):
@@ -550,7 +583,12 @@ def review_gate(root, ticket, manifest_path, refs_dir=None):
         return [f"the review manifest {manifest_path} cannot be read: {exc}"], note
     if not isinstance(manifest, dict):
         return [f"the review manifest {manifest_path} is not an object"], note
-    return gate_problems(root, ticket, manifest, refs_dir), note
+    problems, digest = _gate(root, ticket, manifest, refs_dir)
+    if problems:
+        return problems, note
+    current = (f"standards self-check current (std:{digest[:8]}); that token goes in "
+               "this round's .crew/metrics.md reviewer cell")
+    return [], f"{note}; {current}" if note else current
 
 
 # ---- the reviewer's checklist -----------------------------------------------------
@@ -566,12 +604,15 @@ def checklist_block(root, manifest, refs_dir=None):
            "applicability yourself.",
            "This list does not bound the review: report a defect outside it the same way."]
     try:
-        files = changed_files(manifest)
+        files, unknown = changed_files(manifest), None
     except (ValueError, AttributeError) as exc:
-        return out + [f"UNKNOWN: the manifest's file lists are unusable ({exc}); which stack "
-                      "sets apply is not known, so only the always-on sets are listed."]
+        files, unknown = [], (f"UNKNOWN: the manifest's file lists are unusable ({exc}); which "
+                              "stack sets apply is not known, so only the always-on sets are "
+                              "listed.")
     found = effective_set(root, files, refs_dir)
     out.append(summary_line(found))
+    if unknown:
+        out.append(unknown)
     for problem in found["overlay_problems"]:
         out.append(f"UNREADABLE: {problem}")
     for problem in found["problems"]:

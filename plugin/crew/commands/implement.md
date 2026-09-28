@@ -103,8 +103,8 @@ hides or may hide the change, an unreadable config): report it with its reason.
 Documents read `not measured` — `/crew:docs`'s judgement, never a pass. Commit
 the refresh before `/crew:review $1` builds its bundle.
 Then the **required self-check** (`crew-standards` skill): run
-`crew_standards.py init --root . --ticket $1`, answer every row of `.work/tickets/$1/selfcheck.md`
-(addressed with evidence, or n/a with a reason), then run
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py init --root . --ticket $1`, answer
+every row of `.work/tickets/$1/selfcheck.md` (addressed with evidence, or n/a with a reason), then run
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py stamp --root . --ticket $1`
 until it exits 0. `/crew:review` refuses without a current stamp; any later edit re-stamps.
 Set `spec.md`'s header to `status: review` — that edit keeps the approval: the

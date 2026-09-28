@@ -77,11 +77,13 @@ last fix.
 - **Gate.** `review_run.py` refuses to reserve a round (exit 2, nothing spent)
   when the self-check is missing, unreadable, incomplete, unstamped, or stamped
   for another bundle or another standards set. It applies to a ticket with an
-  approval receipt. In an active incident (`/crew:emergency`) it stands down
-  and logs a `standards-selfcheck` skip.
+  approval receipt, or whose receipt cannot be proven absent. In an active
+  incident (`/crew:emergency`) it stands down and logs a `standards-selfcheck`
+  skip. On a pass it prints the `std:<8 hex>` token for the metrics row.
 - **Checklist.** The shared review prompt ends with the effective set's rules
-  and self-check questions. The author's answers are withheld, so the reviewer
-  judges applicability itself, and the list does not bound the review.
+  and self-check questions. The author's answers are withheld from the prompt,
+  so the reviewer judges applicability itself, and the list does not bound the
+  review. `selfcheck.md` itself stays readable in `.work/`; the prompt never names it.
 - **Proposals.** After a round, `crew_standards.py proposals --root .
   --ticket <id> --scratch <dir> --round <N>` writes
   `.work/tickets/<id>/standards-proposals-r<N>.md`: every BLOCK/FIX line

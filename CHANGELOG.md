@@ -26,8 +26,9 @@ All notable changes to this repository are documented here. Format follows [Keep
 - `.crew/standards.md` joins the `.crew/` un-ignore list in `.gitignore`, the shipped
   crew-setup template and every document that states it. ADR 0004 records the
   decision. crew bundles 30 skills.
-- Bumped `1.0.54 -> 1.0.55` (1.0.52 on its branch; re-set to 1.0.53 after merging main's
-  1.0.52, T-0076, and to 1.0.55 after merging main's 1.0.54: T-0089, T-0090, T-0092).
+- Bumped `1.0.54 -> 1.0.55`, provisional on the build branch so the version-drift check in
+  `scripts/check-marketplace.py` passes; the number is re-set at land, one patch above
+  `origin/main` then (`.crew/standards.md` REPO-03).
 
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 

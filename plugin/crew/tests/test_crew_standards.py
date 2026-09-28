@@ -107,18 +107,25 @@ def test_missing_overlay_reads_generic_only_and_says_so(refs, root):
 
 
 _BAD_OVERLAYS = {
-    "no-front-matter": "## REPO-01 Local\n\n**Rule.** x\n\n**Self-check.** y\n",
-    "wrong-prefix": OVERLAY.replace("set: REPO", "set: GEN"),
-    "duplicate-id": OVERLAY + "\n" + _standard("REPO-01", "Again", plugin=False),
-    "supplements-unknown-id": OVERLAY + "\n## Supplements GEN-99\n\ntext\n",
-    "id-prefix-mismatch": OVERLAY + "\n" + _standard("XYZ-01", "Other", plugin=False),
-    "unknown-heading": OVERLAY + "\n## Notes\n\nprose\n",
-    "applies-to-not-json": OVERLAY.replace('["**"]', "**"),
-    "missing-self-check": _set_file("REPO", ["**"], "## REPO-01 Local\n\n**Rule.** x\n"),
+    "no-front-matter": ("## REPO-01 Local\n\n**Rule.** x\n\n**Self-check.** y\n",
+                        "no front matter"),
+    "wrong-prefix": (OVERLAY.replace("set: REPO", "set: GEN"), "the overlay's set is REPO"),
+    "duplicate-id": (OVERLAY + "\n" + _standard("REPO-01", "Again", plugin=False),
+                     "REPO-01 is defined twice"),
+    "supplements-unknown-id": (OVERLAY + "\n## Supplements GEN-99\n\ntext\n",
+                               "Supplements GEN-99 names no plugin standard"),
+    "id-prefix-mismatch": (OVERLAY + "\n" + _standard("XYZ-01", "Other", plugin=False),
+                           "XYZ-01 does not carry this file's set prefix REPO"),
+    "unknown-heading": (OVERLAY + "\n## Notes\n\nprose\n", "is neither"),
+    "applies-to-not-json": (OVERLAY.replace('["**"]', "**"),
+                            "applies-to is not a JSON list"),
+    "missing-self-check": (_set_file("REPO", ["**"], "## REPO-01 Local\n\n**Rule.** x\n"),
+                           "REPO-01 has no **Self-check.** field"),
 }
+_BAD_OVERLAY_CAUSES = {"not-utf8": "not UTF-8", "unreadable": "cannot be read"}
 
 
-@pytest.mark.parametrize("shape", sorted(_BAD_OVERLAYS) + ["not-utf8", "unreadable"])
+@pytest.mark.parametrize("shape", sorted(_BAD_OVERLAYS) + sorted(_BAD_OVERLAY_CAUSES))
 def test_bad_overlay_refuses(refs, root, shape):
     if shape == "unreadable":
         if os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0):
@@ -128,11 +135,38 @@ def test_bad_overlay_refuses(refs, root, shape):
     elif shape == "not-utf8":
         _write_overlay(root, raw=b"---\nset: REPO\napplies-to: [\"**\"]\n---\n\xff\xfe\n")
     else:
-        _write_overlay(root, _BAD_OVERLAYS[shape])
+        _write_overlay(root, _BAD_OVERLAYS[shape][0])
+    cause = _BAD_OVERLAYS[shape][1] if shape in _BAD_OVERLAYS else _BAD_OVERLAY_CAUSES[shape]
 
     found = cs.effective_set(str(root), ["x.py"], refs_dir=str(refs))
 
-    assert found["overlay"] == "unknown" and found["problems"], found
+    assert (found["overlay"], any(cause in p for p in found["overlay_problems"])) == (
+        "unknown", True), found["problems"]
+
+
+def _refs_with_a_repo_set(refs):
+    (refs / "repo.md").write_text(_set_file("REPO", ["**"], _standard("REPO-01", "Plugin")),
+                                  encoding="utf-8")
+
+
+def test_overlay_may_not_reuse_a_plugin_id(refs, root):
+    _refs_with_a_repo_set(refs)
+    _write_overlay(root)
+
+    found = cs.effective_set(str(root), ["x.py"], refs_dir=str(refs))
+
+    assert (found["overlay"], any("REPO-01 reuses a plugin id" in p
+                                  for p in found["overlay_problems"])) == ("unknown", True), (
+        found["problems"])
+
+
+def test_plugin_set_may_not_claim_the_overlay_set(refs, root):
+    _refs_with_a_repo_set(refs)
+
+    found = cs.effective_set(str(root), ["x.py"], refs_dir=str(refs))
+
+    assert any("references/repo.md" in p and "overlay's set" in p for p in found["problems"]), (
+        found["problems"])
 
 
 def test_overlay_that_is_a_directory_is_unknown_not_absent(refs, root):
@@ -519,3 +553,84 @@ def test_gate_refuses_a_stamp_for_another_bundle(tmp_path, refs):
                                 refs_dir=str(refs))
 
     assert any("another base" in p or "stale" in p for p in problems), problems
+
+
+# ---- review round 1: could-not-tell stays could-not-tell ------------------------
+
+def _break_receipt_path(repo, shape):
+    """Make `approval.json`'s lookup fail with something other than ENOENT."""
+    import crew_ticket  # pylint: disable=import-outside-toplevel
+    path = crew_ticket.approval_path(str(repo), "T-1")
+    ticket_dir = os.path.dirname(path)
+    if shape == "ticket-dir-is-a-file":
+        os.makedirs(os.path.dirname(ticket_dir), exist_ok=True)
+        with open(ticket_dir, "w", encoding="utf-8") as fh:
+            fh.write("not a directory\n")
+    elif shape == "tickets-dir-is-a-file":
+        os.makedirs(os.path.dirname(os.path.dirname(ticket_dir)), exist_ok=True)
+        with open(os.path.dirname(ticket_dir), "w", encoding="utf-8") as fh:
+            fh.write("not a directory\n")
+    else:
+        if os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0):
+            pytest.skip("chmod 000 does not stop a lookup on Windows or as root, so an "
+                        "unreadable parent cannot be produced this way here")
+        os.makedirs(ticket_dir, exist_ok=True)
+        os.chmod(ticket_dir, 0)
+    return ticket_dir
+
+
+@pytest.mark.parametrize("shape", ["ticket-dir-is-a-file", "tickets-dir-is-a-file",
+                                   "unreadable-parent"])
+def test_gate_applies_when_the_receipt_cannot_be_looked_up(tmp_path, shape):
+    repo = init_repo(tmp_path / "repo")
+    ticket_dir = _break_receipt_path(repo, shape)
+
+    try:
+        applies, note = cs.gate_applies(str(repo), "T-1")
+    finally:
+        if os.path.isdir(ticket_dir):
+            os.chmod(ticket_dir, 0o755)
+
+    assert (applies, "could not tell" in (note or "")) == (True, True), note
+
+
+def test_gate_does_not_apply_when_the_receipt_is_proven_absent(tmp_path):
+    repo = init_repo(tmp_path / "repo")
+
+    applies, note = cs.gate_applies(str(repo), "T-1")
+
+    assert (applies, "not required" in note) == (False, True), note
+
+
+def test_checklist_lists_the_always_on_sets_when_file_lists_are_unusable(refs, root):
+    _write_overlay(root)
+
+    out = "\n".join(cs.checklist_block(str(root), {"bundle_sha256": "x"}, refs_dir=str(refs)))
+
+    assert (["GEN-01 One" in out, "GEN-02 Two" in out, "REPO-01 Local" in out,
+             "PHP-01" in out, "UNKNOWN:" in out]) == [True, True, True, False, True], out
+
+
+def test_checklist_with_a_manifest_that_is_not_an_object_still_lists(refs, root):
+    out = "\n".join(cs.checklist_block(str(root), ["not", "a", "dict"], refs_dir=str(refs)))
+
+    assert ("GEN-01 One" in out, "UNKNOWN:" in out) == (True, True), out
+
+
+def test_stamp_refuses_a_record_that_changes_while_stamping(tmp_path, refs, monkeypatch):
+    repo = _scoped_repo(tmp_path)
+    cs.init(str(repo), "T-1", refs_dir=str(refs))
+    path = _answer_all(repo)
+    real_scope = cs._scope  # pylint: disable=protected-access
+
+    def scope_then_edit(root, ticket):
+        found = real_scope(root, ticket)
+        path.write_bytes(path.read_bytes() + b"\xff\n")
+        return found
+
+    monkeypatch.setattr(cs, "_scope", scope_then_edit)
+    code, lines = cs.stamp(str(repo), "T-1", refs_dir=str(refs))
+
+    after = path.read_bytes()
+    assert (code, any("changed while" in line for line in lines), after.endswith(b"\xff\n"),
+            b"<!-- stamp:" in after) == (1, True, True, False), lines

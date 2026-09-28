@@ -529,7 +529,9 @@ loses the most time to.
    Counts only. Never the findings themselves — those stay in the repo.
 6. Append the result to `.crew/metrics.md`: `<date> | <ticket> | <reviewer> | <n BLOCK> | <n FIX>`
    (counts from `review.json`; an INCOMPLETE round is recorded as INCOMPLETE, not as 0/0).
-   Reviewer cell: `(r<N>, std:<first 8 of the standards digest>)`, `std:none` if the gate did not apply.
+   Reviewer cell: `(r<N>, std:<first 8 of the standards digest>)` — the `std:` token step 2a's
+   `review_run.py` printed on stderr (`review-run: standards self-check current (std:...)`) —
+   or `std:none` if it printed that the gate did not apply, or stood down in an incident.
 7. `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py proposals --root . --ticket "$TICKET" --scratch "$SCRATCH" --round <N>`,
    then fill each finding's row as the `crew-standards` skill says; I approve or reject each.
 8. Name every specialist from step 0 that ran, every one that a matched rule asked for but you

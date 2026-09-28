@@ -6,7 +6,11 @@ all `sabotage.py`'s. Run that file, not this one.
 Each entry weakens one refusal the required self-check depends on and names
 the test that must go red: the review gate, the stamp's completeness check,
 the reviewer's independence from the author's answers, the overlay's
-could-not-tell reading, and both halves of the stamp's binding.
+could-not-tell reading, and both halves of the stamp's binding. Review round
+1 added six: an overlay reusing a plugin id, an overlay supplementing a
+standard no plugin set has, a plugin set claiming the overlay's set name, an
+approval receipt that cannot be proven absent, a checklist built from unusable
+file lists, and a self-check that changes while it is being stamped.
 """
 import os
 
@@ -19,9 +23,9 @@ STANDARDS_MUTATIONS = (
         "the self-check gate finds no problem",
         STANDARDS,
         '                            f"({seal[\'standards\'][:8]} then, {found[\'digest\'][:8]} now)")\n'
-        "    return problems\n",
+        "    return problems, found[\"digest\"]\n",
         '                            f"({seal[\'standards\'][:8]} then, {found[\'digest\'][:8]} now)")\n'
-        "    return []\n",
+        "    return [], found[\"digest\"]\n",
         ("tests/test_review_run_standards.py::"
          "test_run_refuses_before_reserve_without_selfcheck"),
     ),
@@ -84,5 +88,55 @@ STANDARDS_MUTATIONS = (
         "        if False:\n",
         ("tests/test_crew_standards.py::"
          "test_gate_refuses_a_stamp_for_another_standards_set"),
+    ),
+    (
+        "an overlay may reuse a plugin id",
+        STANDARDS,
+        "                    overlay_problems.append(f\"{OVERLAY_REL}: {std['id']} reuses a "
+        "plugin id\")\n",
+        "                    pass\n",
+        "tests/test_crew_standards.py::test_overlay_may_not_reuse_a_plugin_id",
+    ),
+    (
+        "an overlay may supplement a standard no plugin set has",
+        STANDARDS,
+        "                if target not in plugin_ids:\n",
+        "                if False:\n",
+        "tests/test_crew_standards.py::test_bad_overlay_refuses",
+    ),
+    (
+        "a plugin set may claim the overlay's set name",
+        STANDARDS,
+        "        if parsed[\"set\"] == OVERLAY_SET:\n",
+        "        if False:\n",
+        "tests/test_crew_standards.py::test_plugin_set_may_not_claim_the_overlay_set",
+    ),
+    (
+        "an approval receipt that cannot be looked up reads as absent",
+        STANDARDS,
+        "        os.lstat(path)\n"
+        "    except FileNotFoundError:\n",
+        "        os.lstat(path)\n"
+        "    except OSError:\n",
+        ("tests/test_crew_standards.py::"
+         "test_gate_applies_when_the_receipt_cannot_be_looked_up"),
+    ),
+    (
+        "the checklist lists nothing when the file lists are unusable",
+        STANDARDS,
+        "    if unknown:\n"
+        "        out.append(unknown)\n",
+        "    if unknown:\n"
+        "        return out + [unknown]\n",
+        ("tests/test_crew_standards.py::"
+         "test_checklist_lists_the_always_on_sets_when_file_lists_are_unusable"),
+    ),
+    (
+        "the stamp writes a record that changed while it was stamped",
+        STANDARDS,
+        "    if now != raw:\n",
+        "    if False:\n",
+        ("tests/test_crew_standards.py::"
+         "test_stamp_refuses_a_record_that_changes_while_stamping"),
     ),
 )

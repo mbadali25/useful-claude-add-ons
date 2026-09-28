@@ -119,12 +119,24 @@ def test_run_refuses_before_reserve_without_selfcheck(repo, tmp_path, provider, 
         2, True, True, True, 0), result.stderr
 
 
-@pytest.mark.parametrize("change", ["edit-a-file", "change-the-overlay"])
+_STALE_BY = {"edit-a-file": "the change moved after stamping",
+             "change-the-overlay": "the standards set changed since stamping"}
+
+
+@pytest.mark.parametrize("change", sorted(_STALE_BY))
 def test_run_refuses_stale_selfcheck(repo, tmp_path, change):
+    if change == "change-the-overlay":
+        # Keep the overlay out of the bundle, so only the standards digest
+        # can see this change: the case tests that binding and no other.
+        exclude = os.path.join(str(repo), git(repo, "rev-parse", "--git-path", "info/exclude"))
+        os.makedirs(os.path.dirname(exclude), exist_ok=True)
+        with open(exclude, "a", encoding="utf-8") as fh:
+            fh.write(".crew/\n")
     _selfcheck(repo)
     if change == "edit-a-file":
         (repo / "change.txt").write_text("changed after stamping\n", encoding="utf-8")
     else:
+        (repo / ".crew").mkdir(exist_ok=True)
         (repo / ".crew" / "standards.md").write_text(
             '---\nset: REPO\napplies-to: ["**"]\n---\n\n## REPO-01 Local\n\n**Rule.** r\n\n'
             "**Self-check.** s\n", encoding="utf-8")
@@ -135,8 +147,8 @@ def test_run_refuses_stale_selfcheck(repo, tmp_path, change):
 
     result = _run(repo, scratch, fakes, "claude", "--reserve-only")
 
-    assert (result.returncode, "stale" in result.stderr, _ledger_snapshot(repo) == before) == (
-        2, True, True), result.stderr
+    assert (result.returncode, _STALE_BY[change] in result.stderr,
+            _ledger_snapshot(repo) == before) == (2, True, True), result.stderr
 
 
 def test_run_reserves_with_current_selfcheck(repo, tmp_path):
@@ -147,7 +159,10 @@ def test_run_reserves_with_current_selfcheck(repo, tmp_path):
 
     result = _run(repo, scratch, fakes, "claude", "--reserve-only")
 
-    assert (result.returncode, result.stdout.strip()) == (0, "ROUND=1"), result.stderr
+    _, seal, _ = cs.read_selfcheck(str(repo), TICKET)
+    assert (result.returncode, result.stdout.strip(),
+            f"std:{seal['standards'][:8]}" in result.stderr) == (0, "ROUND=1", True), (
+        result.stderr)
 
 
 def test_run_with_current_selfcheck_launches_codex(repo, tmp_path):

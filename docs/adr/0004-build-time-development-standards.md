@@ -43,12 +43,14 @@ are not missed the first time the code is built.
    and the standards digest.
 5. **Gated before reservation, not by a hook.** `review_run.py` refuses to reserve a round (exit 2,
    nothing spent) without a current stamp, for every provider. It applies to a ticket with an
-   approval receipt (the precondition of the two commands that run the self-check) and stands down,
-   logged, in an active incident.
+   approval receipt (the precondition of the two commands that run the self-check), or whose
+   receipt cannot be proven absent, and stands down, logged, in an active incident.
 6. **The reviewer gets the checklist, never the answers.** The shared prompt ends with the
-   effective set's rules and self-check questions; the author's answers are withheld so the
-   reviewer judges applicability independently, and the prompt says the list does not bound the
-   review.
+   effective set's rules and self-check questions; the author's answers are withheld from the
+   prompt so the reviewer judges applicability independently, and the prompt says the list does
+   not bound the review. Withheld from the prompt, not hidden: `selfcheck.md` stays at
+   `.work/tickets/<id>/selfcheck.md`, which a reviewer with read access to the checkout can open;
+   the prompt never names it.
 7. **The owner approves every new standard.** After each round, `crew_standards.py proposals`
    writes the round's findings verbatim for classification; nothing is added to a standards file
    automatically.
