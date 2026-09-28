@@ -27,9 +27,26 @@ and `crew_state` are imported where they are used.
 import os
 import platform
 import re
+import shlex
+import shutil
+import subprocess
 import sys
 
-WSL_MODES = ("auto", "wsl", "powershell", "gitbash")
+MODES = ("auto", "wsl", "powershell", "gitbash")
+
+# Any of these anywhere in a command means it is not provably plain argv. The
+# classifier fails toward Git Bash: a character on this list costs a shell
+# launch, a character missing from it costs a broken check.
+METACHARACTERS = frozenset("|&;<>()$`*?[]{}~!#'\"\\\n")
+# First words that are shell syntax, not programs.
+SHELL_WORDS = frozenset(("sh", "bash", "zsh", "dash", "cd", "source", ".", "exec", "eval", "export",
+                         "set", "env"))
+# Replaced by `sys.executable`: on native Windows `python3` can resolve to a
+# WindowsApps App Execution Alias that prints a Store prompt and exits 9009.
+PYTHONS = ("python3", "python")
+
+PWSH7 = "C:/Program Files/PowerShell/7/pwsh.exe"
+GITBASH_DEFAULT = "C:/Program Files/Git/bin/bash.exe"
 
 _DRIVE = re.compile(r"^([A-Za-z]):(?:[\\/](.*))?$")
 _GITBASH_DRIVE = re.compile(r"^/([A-Za-z])(?:/(.*))?$")
@@ -111,7 +128,111 @@ def decode(data):
         text = data.decode("utf-16-le", errors="replace")
     else:
         text = data.decode("utf-8", errors="replace")
-    return text.replace("﻿", "").replace("\x00", "")
+    return text.replace("\ufeff", "").replace("\x00", "")
+
+
+def capture(argv, timeout):
+    """The default runner: `(returncode, stdout bytes, stderr bytes)`. Raises
+    `OSError` when the program cannot start and `subprocess.TimeoutExpired`."""
+    done = subprocess.run(argv, capture_output=True, timeout=timeout, stdin=subprocess.DEVNULL, check=False)
+    return done.returncode, done.stdout, done.stderr
+
+
+# --- the argv classifier ---------------------------------------------------------
+
+def _bash(reason):
+    return "bash", None, reason
+
+
+def classify(cmd, which=shutil.which):
+    """`("plain", argv, reason)` only when the command is provably plain argv,
+    else `("bash", None, reason)` naming the first offending token."""
+    if not cmd or not cmd.strip():
+        return _bash("empty command")
+    for char in cmd:
+        if char == "\n":
+            return _bash("newline in command")
+        if (ord(char) < 32 and char != "\t") or ord(char) == 127:
+            return _bash(f"control character {char!r} in command")
+    tokens = cmd.split()
+    for index, token in enumerate(tokens):
+        hit = next((char for char in token if char in METACHARACTERS), None)
+        if hit:
+            return _bash(f"token {token!r} has shell metacharacter {hit!r}")
+        if token.startswith("/"):
+            return _bash(f"token {token!r} is a POSIX path, valid only after MSYS converts it")
+        if index == 0:
+            if token in SHELL_WORDS:
+                return _bash(f"{token!r} is shell syntax")
+            if "=" in token:
+                return _bash(f"{token!r} is an environment assignment")
+            if token.endswith(".sh"):
+                return _bash(f"{token!r} is a shell script")
+    try:
+        argv = shlex.split(cmd)
+    except ValueError as exc:
+        return _bash(f"shlex cannot parse it: {exc}")
+    if not argv:
+        return _bash("empty command")
+    if argv[0] in PYTHONS:
+        return "plain", [sys.executable] + argv[1:], f"plain argv; {argv[0]} -> sys.executable ({sys.executable})"
+    found = which(argv[0])
+    if not found:
+        return _bash(f"argv[0] {argv[0]!r} does not resolve on PATH")
+    return "plain", [found] + argv[1:], f"plain argv; {argv[0]} -> {found}"
+
+
+# --- absolute shell resolution ---------------------------------------------------
+
+def _pwsh51(env):
+    return (env.get("SystemRoot") or "C:\\Windows") + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+
+
+def resolve_pwsh(exists=os.path.isfile, env=None):
+    """pwsh 7 at its absolute path, else Windows PowerShell 5.1, else None.
+    Never the bare name `pwsh`: it is not on Git Bash's PATH. Runs nothing."""
+    env = os.environ if env is None else env
+    tried = [PWSH7, _pwsh51(env)]
+    for path in tried:
+        if exists(path):
+            return path, f"PowerShell at {path}"
+    return None, "no PowerShell found (tried " + ", ".join(tried) + ")"
+
+
+def _is_launcher(path):
+    """WSL's `bash.exe` launcher in System32, or a WindowsApps alias. A bare
+    `bash` reaches these before Git Bash from a PATH that does not start with
+    Git's directories."""
+    norm = path.replace("\\", "/").lower()
+    return "/windows/system32/" in norm or "/windowsapps/" in norm
+
+
+def resolve_gitbash(runner=None, exists=os.path.isfile, which=shutil.which):
+    """Git Bash's `bash.exe`, absolutely: three levels above `git --exec-path`
+    plus `bin/bash.exe`, else the default install path, else a PATH `bash`
+    that is not WSL's launcher. `(None, reason)` naming every path tried."""
+    runner = runner or capture
+    try:
+        code, out, _ = runner(["git", "--exec-path"], 10)
+        exec_path = decode(out).strip() if code == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        exec_path = ""
+    candidates = []
+    parts = [part for part in exec_path.replace("\\", "/").split("/") if part]
+    if len(parts) > 3:
+        candidates.append("/".join(parts[:-3]) + "/bin/bash.exe")
+    candidates.append(GITBASH_DEFAULT)
+    tried = []
+    for path in candidates:
+        tried.append(path)
+        if not _is_launcher(path) and exists(path):
+            return path, f"Git Bash at {path}"
+    found = which("bash")
+    if found:
+        tried.append(found)
+        if not _is_launcher(found):
+            return found, f"Git Bash at {found}"
+    return None, "Git Bash not found (tried " + ", ".join(tried) + ")"
 
 
 if __name__ == "__main__":
