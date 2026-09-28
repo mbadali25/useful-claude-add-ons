@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@9631c707
+anchor: useful-claude-add-ons@b5c37635
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.51, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.52, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -394,7 +394,7 @@ they disagree:
   `crew.json` alone [does nothing for autoClear behaviour, which
   `crew_config.py` still reads from `config.json`]". This is a real,
   present-tense inconsistency, not a hypothetical. T-0004's
-  `crew_autopilot.settings` (`plugin/crew/hooks/scripts/crew_autopilot.py:664`)
+  `crew_autopilot.settings` (`plugin/crew/hooks/scripts/crew_autopilot.py:674`)
   sides with `config.json` explicitly: it reads through
   `crew_config.resolve_config` and warns when `autopilot` is set in
   `crew.json` but not `config.json` ("crew does not read [it] for this key;
@@ -521,9 +521,9 @@ one ticket through the phase commands **in-session**, following each
 command's own procedure; the run refuses unless armed (`:44-45`). The reader
 behind it, `plugin/crew/hooks/scripts/crew_autopilot.py` (1252 lines), is
 read-only (module docstring, `:1-21`) with seven subcommands: `next`,
-`resume`, `settings`, `stops`, `route`, `status` and `deploy-allowed` (T-0072). `next_phase` (`:493`) names
+`resume`, `settings`, `stops`, `route`, `status` and `deploy-allowed` (T-0072). `next_phase` (`:503`) names
 the next phase from files on disk, first match wins (the table at `:23-46`);
-`resume_target` (`:587`) picks the ticket (the handoff's `resume:` line only
+`resume_target` (`:597`) picks the ticket (the handoff's `resume:` line only
 when its branch and head match, per `plugin/crew/commands/autopilot.md:46-47`);
 `settings` (`:657`) arms only on the exact string `plan`, falls back to
 `maxPhases` 12 for anything not a positive int, reads `deploy` only as the exact strings in
@@ -620,30 +620,30 @@ unchanged. Tests: `plugin/crew/tests/test_crew_route.py`,
 T-0024's rule 30 (`:320`) follows it.
 
 **`deploy_allowed` (T-0072, crew 1.0.51).** DERIVED at `80326b1d` (T-0072's review-round-4 redesign, `35733d76`); lines re-read after its merge of T-0077 (`a4eb2f55`, `_rel` +6 at `:170`) and its review-round-5 fix (`0f488706`, `_resolve_root` +4).
-`crew_autopilot.deploy_allowed` (`plugin/crew/hooks/scripts/crew_autopilot.py:836`) is the policy
+`crew_autopilot.deploy_allowed` (`plugin/crew/hooks/scripts/crew_autopilot.py:846`) is the policy
 layer for a deploy without asking: `allow`, `ask` or `refuse` for one environment, rows in the
 order the module docstring's `deploy-allowed` section (`:87-104`) states. It resolves the checkout
-root **once**, through `_resolve_root` (`:729`, whose try holds only the `toplevel` lookup; any
+root **once**, through `_resolve_root` (`:739`, whose try holds only the `toplevel` lookup; any
 exception, or a root that is not text such as a bytes path, is row 0, `refuse`), reads `crew_config.GLOBAL_CONFIG_PATH` once as `machine_path`, and
-hands both to `_decide(top, env_name, env_class, machine_path)` (`:759`), which never looks the
-root up again: settings come from `_settings_at(top)` (`:673`; `settings(root)` `:664` is the lookup
+hands both to `_decide(top, env_name, env_class, machine_path)` (`:769`), which never looks the
+root up again: settings come from `_settings_at(top)` (`:683`; `settings(root)` `:674` is the lookup
 plus that call) and the ratchet from `resolve_ratcheted(top, "environments.prodUnattended",
-path=machine_path)`. The result names the root it judged (`root`). `_probe` (`:714`) is the only
+path=machine_path)`. The result names the root it judged (`root`). `_probe` (`:724`) is the only
 existence check in the module: a try holding one `os.lstat`, `FileNotFoundError`/`NotADirectoryError`
 absent, any other exception `could-not-tell` with its type, else present. The incident file
 present or could-not-tell refuses, before `import cloud_guard` (review round 1). An unusable name
-or a class outside `cloud_guard.ENV_NONPROD`/`ENV_PROD` asks; `_layer_problem` (`:744`) asks for a
+or a class outside `cloud_guard.ENV_NONPROD`/`ENV_PROD` asks; `_layer_problem` (`:754`) asks for a
 layer the probe could not tell about, and for a present layer `crew_config.layer_state(...,
 environments=True)` does not call `ok` - so `layer_state`'s `lexists` collapse is consulted only for
 a path this module saw present (review round 4). Production allows only under `deploy: all` with
 the ratchet's `effective` true and `cloud_guard.resolve_mode(top)` exactly `("block", "")`.
 Nothing calls it yet: T-0045 is the consumer, and `settings` warns while `deploy` is not `none`.
 `deploy_allowed` builds the report inside its never-raises boundary: a value it cannot print is
-named by `_safe_text` (`:810`) and a crash reason comes from `_crash_reason` (`:819`). The
-`deploy-allowed` CLI is `_cli_deploy` (`:1194`), which never raises: stage 1 builds the line, the
+named by `_safe_text` (`:820`) and a crash reason comes from `_crash_reason` (`:829`). The
+`deploy-allowed` CLI is `_cli_deploy` (`:1204`), which never raises: stage 1 builds the line, the
 JSON and the report from the result; stage 2, on any exception from stage 1, prints the literal
 `verdict=ask`, with a constant reason when the exception cannot be described. Each stream is one
-line through `_cli_value` (`:1182`), and `--json` is one line of JSON on both stages. `_failure` (`:1170`) renders a `next`/`resume`/`status` crash
+line through `_cli_value` (`:1192`), and `--json` is one line of JSON on both stages. `_failure` (`:1180`) renders a `next`/`resume`/`status` crash
 through `_safe_text` the same way. Tests `plugin/crew/tests/test_crew_autopilot_deploy.py`
 (must-block, must-allow, the 324-case matrix, parity with `cloud_guard.environments_config`, the
 one-root, probe and layer cases); mutations `DEPLOY_MUTATIONS` in
@@ -867,7 +867,7 @@ Obsidian vault). A CLI the commands call, not a hook.
   the next free id on `id taken`, stop on any other failed `create`, and
   create the ticket folder only after a `create` that succeeded;
   `jira-sync.md` and `sdp-sync.md` honour `--to`; `crew_status.py` prints its
-  tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:63`).
+  tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:65`).
 - Tests: `plugin/crew/tests/test_crew_tracker.py`, fixtures under
   `plugin/crew/tests/tracker_fixtures/`, 87 mutations (81 until T-0077 added six) in
   `plugin/crew/tests/sabotage_tracker.py` (two of them RED only as root: the
@@ -944,8 +944,8 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   `main()` is the `decide` / `record` / `precompact` CLI.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:576` — `ticket_freshness`,
   the library entry point; `main()` at `:676`.
-- `plugin/crew/hooks/scripts/crew_autopilot.py:500` — `next_phase`, read-only;
-  `main()` at `:1225` is the `next` / `resume` / `settings` / `stops` /
+- `plugin/crew/hooks/scripts/crew_autopilot.py:510` — `next_phase`, read-only;
+  `main()` at `:1235` is the `next` / `resume` / `settings` / `stops` /
   `route` / `status` / `deploy-allowed` CLI `plugin/crew/commands/autopilot.md` calls.
 - `plugin/crew/hooks/scripts/crew_route.py:210` — `decide`, read-only
   route / ask / none for a prompt; `main()` at `:332` is the `settings` /
@@ -1016,24 +1016,62 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   `test_verify_gate_python_resolver.py` were confirmed present, not read;
   no sabotage test was run against either.
 - `review_ledger.py`, `review_patch.py` — part of the review pipeline
-  `/crew:review` and `/crew:done` depend on — were located but not opened.
+  `/crew:review` and `/crew:done` depend on — were opened only at the T-0087
+  lines cited below; the rest was not re-read.
 - DERIVED (T-0079): the READ-line rule of the review verdict is
-  `review_verdict._covers` (`plugin/crew/hooks/scripts/review_verdict.py:79`):
+  `review_verdict._covers` (`plugin/crew/hooks/scripts/review_verdict.py:99`):
   a READ token counts for a part when, `\` read as `/` and `normpath`ed, it
   IS the part's listed path, or has no directory and is its file name;
-  `parse` applies it at `plugin/crew/hooks/scripts/review_verdict.py:124`.
+  `parse` applies it at `plugin/crew/hooks/scripts/review_verdict.py:146`.
   The prompt quotes `review_verdict.READ_FORM`
-  (`plugin/crew/hooks/scripts/review_verdict.py:70`) in `_bundle_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:84`) and on the webtest
-  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:239`), and
+  (`plugin/crew/hooks/scripts/review_verdict.py:90`) in `_bundle_block`
+  (`plugin/crew/hooks/scripts/review_prompt.py:85`) and on the webtest
+  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:236`), and
   `review_run.finish` hands `parse` the manifest `path`s
-  (`plugin/crew/hooks/scripts/review_run.py:315`) and the overflow file's
-  scratch path (`plugin/crew/hooks/scripts/review_run.py:317`). `parse` and
+  (`plugin/crew/hooks/scripts/review_run.py:323`) and the overflow file's
+  scratch path (`plugin/crew/hooks/scripts/review_run.py:325`). `parse` and
   `codex_final_message` split reviewer output on `\n` only, never
   `str.splitlines()`, whose U+2028 break cut a Codex event mid-JSON
-  (`plugin/crew/hooks/scripts/review_verdict.py:94`,
-  `plugin/crew/hooks/scripts/review_verdict.py:164`). The rest of
+  (`plugin/crew/hooks/scripts/review_verdict.py:116`,
+  `plugin/crew/hooks/scripts/review_verdict.py:197`). The rest of
   `review_prompt.py`, `review_run.py` and `review_verdict.py` was not opened.
+- DERIVED (T-0087, crew 1.0.52): an INCOMPLETE round is classed by
+  `review_verdict.failure_class` (`plugin/crew/hooks/scripts/review_verdict.py:175`):
+  `tree` when a bundle or webtest reason was added, else `tool` when the answer was
+  not `delivered` (`parse` returns it, `plugin/crew/hooks/scripts/review_verdict.py:171`),
+  else `reviewer`. `VERDICTS`, `FINDING_FORM` and the class names are at
+  `plugin/crew/hooks/scripts/review_verdict.py:72`, `:75` and `:77`, and the Codex
+  event and item vocabularies start at `:80`. `review_run.finish` computes the class at
+  `plugin/crew/hooks/scripts/review_run.py:343` and prints the refund line at `:380`
+  and `:383`. The ledger refunds a `tool` round up to `REFUND_LIMIT`
+  (`plugin/crew/hooks/scripts/review_ledger.py:96`; `BUDGET` `:93` unchanged).
+  `_refunded` (`:227`) counts refunded rows after the successor boundary
+  (`_boundary`, `:219`), `_charged` (`:233`) is spent minus refunded, and
+  `reserve` tests `_charged` against `BUDGET`. `summary` (`:502`, `load = _load` at
+  `:499`) is the dict `status` returns and the one `crew_status._review_lines`
+  renders (`plugin/crew/hooks/scripts/crew_status.py:129`). Autopilot sends a
+  refunded round back to review (`plugin/crew/hooks/scripts/crew_autopilot.py:478`,
+  `_toward_review` `:490`).
+- DERIVED (T-0087): the shared definitions at each review seam are
+  `review_patch.MANIFEST_KEYS` / `OPTIONAL_MANIFEST_KEYS` / `PART_KEYS`
+  (`plugin/crew/hooks/scripts/review_patch.py:111`, `:115`, `:116`) and
+  `verify_record.read_record` (`plugin/crew/hooks/scripts/verify_record.py:80`), now
+  the one gate-record reader for `review_prompt._receipts_block`
+  (`plugin/crew/hooks/scripts/review_prompt.py:156`) and `crew_status._verify_line`
+  (`plugin/crew/hooks/scripts/crew_status.py:144`). The producer-to-consumer tests
+  are `plugin/crew/tests/test_review_contracts.py`. The golden corpus of real,
+  redacted reviewer output is `plugin/crew/tests/golden/review/` (41 fixtures, one
+  Codex stream), built and machine-locally replayed by
+  `plugin/crew/tests/golden_build.py` and replayed in CI by
+  `plugin/crew/tests/test_review_golden.py`. The canary
+  (`plugin/crew/tests/test_review_canary.py`) drives the stub reviewer's `golden`
+  mode (`plugin/crew/tests/review_fixtures.py:104`). `scripts/check-tooling-pr.py`
+  (`HARNESS` `:45`, `ALONGSIDE` `:70`, `check` `:136`) refuses feature work on a
+  harness branch, and `.crew/verify.json` rule 31 runs all of it. The external tool
+  formats crew parses are in `plugin/crew/docs/external-tool-formats.md`. JUDGEMENT:
+  the refund and the tooling-alone rule are the two places this area now grants or
+  refuses something on its own; both carry sabotage entries in
+  `plugin/crew/tests/sabotage_tooling.py`.
 - `webtest_guard.py`, `webtest_rules.py`, `webtest_scaffold.py` — new
   scripts since the previous anchor, backing `/crew:webtest` — were located
   but not opened.
@@ -2117,3 +2155,5 @@ sentence moves to 1.0.50; T-0004's CHANGELOG "117 -> 119" is now `:672`. Nothing
 this note beyond the citation script and the tuple count.
 
 **Re-anchored `0f488706` -> `9631c707` on 2026-09-28 (T-0072 landing, crew 1.0.51).** `9631c707` is T-0072's landing bump on `T-0072-land`, after `34af80ef` merged the reviewed `T-0072-build` (`a0978df6`) onto main `e6e10432` (T-0079 landed as crew 1.0.50) and `bf0c513a` re-priced verify rule 27. `git diff --name-only 0f488706 9631c707`, refresh artifacts aside, returns T-0079's files, the three version files, `CHANGELOG.md` and `.crew/verify.json`. The two this note's citations reach changed in place: `.crew/verify.json` `:298` and `:301` (rule 27's `seconds` 16 -> 18 and its `why`, still `:293-301`) and `plugin/crew/README.md` `:735` and `:739` (T-0079's verdict table, line-neutral); no citation moved. The version sentence moves to 1.0.51. No suite was executed for this note.
+
+**Re-anchored `9631c707` -> `b5c37635` on 2026-09-28 (T-0087, crew 1.0.52).** `b5c37635` is T-0087's crew 1.0.52 bump on `T-0087-build`, after `d05727af` merged main `f54af3fa` (T-0072 landed as crew 1.0.51). `git diff --name-only 9631c707 b5c37635`, refresh artifacts aside, returns T-0087's files (the review/gate harness, its tests, the golden corpus, `scripts/check-tooling-pr.py`, rule 31 in `.crew/verify.json`, `CLAUDE.md`'s tooling-alone bullet, the docs and guides) plus the three version files and `CHANGELOG.md`. Every body citation `path:line` into those files, outside the provenance sections, was re-mapped by script (difflib over the two blobs) and the moved ones re-read: `crew_autopilot.py` +10 below `:478` (the refunded-round branch and `_toward_review`), `review_verdict.py` (the T-0079 bullet's `:99`, `:146`, `:90`, `:116`, `:197`), `review_prompt.py` `:85`/`:236`, `review_run.py` `:323`/`:325`, `crew_status.py` `:65`, `CLAUDE.md` +7 below `:40`, `plugin/crew/README.md` +4/+5 below `:737` and `CHANGELOG.md` +59. Two DERIVED bullets for T-0087 were added under "Unverified at this anchor" (the refund, the seam definitions, the corpus, the canary, the checker). The version sentence under Inventory moves to 1.0.52. No suite was executed for this note.

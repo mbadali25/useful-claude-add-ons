@@ -1,11 +1,11 @@
-%% Generated from useful-claude-add-ons@a4eb2f55 on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@b5c37635 on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
 %% re-read at f2bb919b (repo-relative): plugin/crew/hooks/hooks.json:3-10,
 %% plugin/crew/hooks/scripts/handoff-read.sh:34 :41 :42 :44,
 %% plugin/crew/hooks/scripts/crew_context.py:121-123 :833 :839 :909,
-%% plugin/crew/hooks/scripts/crew_state.py:643, plugin/crew/hooks/scripts/crew_status.py:207,
+%% plugin/crew/hooks/scripts/crew_state.py:643, plugin/crew/hooks/scripts/crew_status.py:215,
 %% plugin/crew/commands/status.md:14, plugin/crew/hooks/scripts/crew_platform.py:229 :507 :537.
 %% Re-anchored f2bb919b -> 7b667587 (T-0021): of the Anchors paths crew_state.py and
 %% crew_status.py changed. crew_state.py's cited lines (:643, :761, :846-901, :941-945,
@@ -77,6 +77,11 @@
 %% 07eefac5, re-read with sed -n at 53f5482c). crew_resume.py is cited by function name only; its
 %% partial-state fix makes decide wait on a resume-state.json missing worktrees, consumed or
 %% last, which cc6's wait edge already covers. No node or edge changed.
+%% Re-anchored a4eb2f55 -> b5c37635 (T-0087, crew 1.0.52): of the Anchors paths
+%% crew_status.py changed (T-0087's refund-aware review lines and the shared gate-record
+%% reader): _tracker_line :63 -> :65, the HANDOFF check :207 -> :215, the report lines
+%% :192-216 -> :200-224, re-mapped by script and re-read. commands/status.md's review row
+%% changed in place (:14 holds). No node or edge changed.
 
 %% Re-anchored 07ca3972 -> eba11657 (T-0023): of the Anchors paths only crew_context.py changed -
 %% route_item (plain-text lifecycle routing, UserPromptSubmit only) inserted at :801-831 and its
@@ -125,12 +130,12 @@
 %%   note but a resume line -> that line alone; :1086 JSON additionalContext.
 %% Stale rule: crew_state.py:646 (72h / 3 commits), :859-914, archived to
 %%   .crew/handoffs/ (:774, :980), never deleted; never raises (:954-958).
-%% /crew:status: commands/status.md:14 -> crew_status.py; :192-216 report lines.
+%% /crew:status: commands/status.md:14 -> crew_status.py; :200-224 report lines.
 %% --
 %% Dashed '?' edges: handoff-read reads only config.json (:44), never crew.json,
 %% so a 1.0-only repo with inject:false gets no handoff from either hook -
 %% traced in the sh flavour only; the ps1 body was not read past :241.
-%% /crew:status checks the fixed path .work/HANDOFF.md (crew_status.py:207),
+%% /crew:status checks the fixed path .work/HANDOFF.md (crew_status.py:215),
 %% not context.handoffPath, and does not apply the stale rule.
 %% Re-anchored 53f5482c -> d3a1c77e (T-0072, crew 1.0.44): of the Anchors paths only
 %% crew_state.py changed, line-neutral at :1084-1090 (AUTOPILOT_DEFAULTS); every crew_state.py
@@ -193,6 +198,6 @@ flowchart TB
     hr3 -. "? 1.0-only repo (crew.json, no config.json)<br/>with inject:false gets no handoff" .-> hrx
 
     subgraph status["/crew:status (on demand)"]
-        st1["status.md:14<br/>crew_status.py --root ."] --> st2["git header, config file, roster,<br/>tracker (crew_tracker.resolve, :63),<br/>tickets, review ledgers, verify,<br/>codemap freshness, metrics,<br/>handoff, interrupted migrate<br/>:192-216"]
-        st2 -. "? checks fixed .work/HANDOFF.md (:207),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
+        st1["status.md:14<br/>crew_status.py --root ."] --> st2["git header, config file, roster,<br/>tracker (crew_tracker.resolve, :65),<br/>tickets, review ledgers, verify,<br/>codemap freshness, metrics,<br/>handoff, interrupted migrate<br/>:192-216"]
+        st2 -. "? checks fixed .work/HANDOFF.md (:215),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
     end

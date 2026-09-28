@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@9631c707
+anchor: useful-claude-add-ons@b5c37635
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -299,7 +299,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:2075` (`:2067` at `67caa4b8`, `:1812` on T-0024's branch at `45345812`, `:2052` at `bebbb97f`, `:2044` on T-0018's first landing merge at `fbc27b49`, `:2029` at `db14619c`, `:1959` on T-0018's branch at `e6b696fb`, `:1953` at T-0023's `a1acd9b7`, `:2015` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1944` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:2080` (`:2067` at `67caa4b8`, `:1817` on T-0024's branch at `45345812`, `:2052` at `bebbb97f`, `:2049` on T-0018's first landing merge at `fbc27b49`, `:2029` at `db14619c`, `:1964` on T-0018's branch at `e6b696fb`, `:1958` at T-0023's `a1acd9b7`, `:2020` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1949` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1799` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1762` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1609` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -327,7 +327,7 @@ listing the directory.
   per-path check), `0002-no-chatgpt-mcp-server.md` (accepted 2026-09-14) and
   `0003-crew-departs-from-three-community-best-practices.md` (accepted
   2026-09-17) — the latter two were already present at the previous anchor
-  and are not new in this range. `CLAUDE.md:147` still reads "Decisions in
+  and are not new in this range. `CLAUDE.md:154` still reads "Decisions in
   `docs/adr/`" at `adf8d1dd` (re-grepped; `CLAUDE.md` changed in
   `f2bb919b..adf8d1dd`, but only its `crew_freshness.py` line citations).
 - **`docs/review/`'s existence is itself a mild instance of the same gap
@@ -452,7 +452,7 @@ listing the directory.
 - `docs/review/*`'s nine documents were not read beyond their titles and the
   one quoted cross-review row; whether other rows record further
   never-filed decisions was not checked file by file.
-- `CLAUDE.md` beyond its `:147` "Decisions in `docs/adr/`" line (re-confirmed
+- `CLAUDE.md` beyond its `:154` "Decisions in `docs/adr/`" line (re-confirmed
   at `adf8d1dd`) was not re-derived end to end; this note's business with it
   is narrow.
 - `crew-docs/SKILL.md`'s retired-role references (`/crew:work`,
@@ -977,3 +977,5 @@ on both sides), `CHANGELOG.md` and the three version files. Every body citation 
 Nothing was executed for this note.
 
 **Re-anchored `0f488706` -> `9631c707` on 2026-09-28 (T-0072 landing, crew 1.0.51).** `9631c707` is T-0072's landing bump on `T-0072-land`, after `34af80ef` merged the reviewed `T-0072-build` (`a0978df6`) onto main `e6e10432` (T-0079 landed as crew 1.0.50) and `bf0c513a` re-priced verify rule 27. `git diff --name-only 0f488706 9631c707`, refresh artifacts aside, returns T-0079's files, the three version files, `CHANGELOG.md` and `.crew/verify.json`. The two this note's citations reach changed in place: `.crew/verify.json` `:298` and `:301` (rule 27's `seconds` 16 -> 18 and its `why`, still `:293-301`) and `plugin/crew/README.md` `:735` and `:739` (T-0079's verdict table, line-neutral); no citation moved. The version sentence moves to 1.0.51. No suite was executed for this note.
+
+**Re-anchored `9631c707` -> `b5c37635` on 2026-09-28 (T-0087, crew 1.0.52).** `b5c37635` is T-0087's crew 1.0.52 bump on `T-0087-build`, after `d05727af` merged main `f54af3fa` (T-0072 landed as crew 1.0.51). `git diff --name-only 9631c707 b5c37635`, refresh artifacts aside, returns T-0087's files (the review/gate harness, its tests, the golden corpus, `scripts/check-tooling-pr.py`, rule 31 in `.crew/verify.json`, `CLAUDE.md`'s tooling-alone bullet, the docs and guides) plus the three version files and `CHANGELOG.md`. Every body citation into `plugin/crew/README.md` below the refund paragraph moved +5 (re-mapped by script and re-read), and `CLAUDE.md:147` -> `:154`; citations inside provenance sections are history and were not touched. Its citations of the three version lines (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`) changed in place and now read 1.0.52. Nothing was executed for this note.
