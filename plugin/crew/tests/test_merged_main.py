@@ -1,0 +1,130 @@
+"""merged_main.py: which commit of the integration branch a ticket branch has
+merged, and the one rule both the review bundle and the completion audit use
+to leave out a path byte-identical to it (T-0100).
+
+The unknown never collapses into "nothing merged" or "everything merged":
+each could-not-tell cause drops nothing and says so.
+"""
+import pytest
+
+import context  # noqa: F401  pylint: disable=unused-import
+import completion_audit
+import crew_common
+import merged_main
+import review_patch
+import scope_base
+from merged_main_fixtures import DROPPED, advance_main, build, merge_main, ticket_commit, write
+from review_fixtures import git, init_repo
+
+
+def test_no_merge_past_the_start_changes_nothing(tmp_path):
+    root, upstream, sha = build(tmp_path)
+    ticket_commit(root, "src/t.txt", "ticket line\n")
+    advance_main(upstream)
+    git(root, "fetch", "-q", "origin")
+
+    got = merged_main.resolve(str(root), sha["base"])
+
+    assert (got["applies"], got["commit"], got["ref"]) == (False, sha["base"], "origin/main")
+    assert "no merge of origin/main past" in got["reason"]
+
+
+def test_a_merge_of_main_is_found_and_the_latest_one_wins(tmp_path):
+    root, upstream, sha = build(tmp_path)
+    ticket_commit(root, "src/t.txt", "ticket line\n")
+    advance_main(upstream)
+    first = merge_main(root)
+    once = merged_main.resolve(str(root), sha["base"])
+    advance_main(upstream, ("write", "later.txt", "later, from main\n"))
+    second = merge_main(root)
+
+    twice = merged_main.resolve(str(root), sha["base"])
+
+    assert ((once["applies"], once["commit"]), (twice["applies"], twice["commit"])) == (
+        (True, first), (True, second))
+
+
+def test_head_on_the_integration_branch_never_applies(tmp_path):
+    root = init_repo(tmp_path / "r")
+    base = git(root, "rev-parse", "HEAD")
+    write(root, "other/after.py", "y = 22\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "after the start")
+
+    got = merged_main.resolve(str(root), base)
+
+    assert (got["applies"], got["ref"]) == (False, "main")
+    assert "HEAD is on main itself" in got["reason"]
+
+
+def test_a_fallback_base_equal_to_the_merge_base_changes_nothing(tmp_path):
+    root, upstream, _ = build(tmp_path)
+    ticket_commit(root, "src/t.txt", "ticket line\n")
+    advance_main(upstream)
+    merged = merge_main(root)
+    fallback = git(root, "merge-base", "HEAD", "origin/main")
+
+    got = merged_main.resolve(str(root), fallback)
+
+    assert (fallback, got["applies"], got["commit"]) == (merged, False, merged)
+
+
+def _no_ref(monkeypatch, _root):
+    monkeypatch.setattr(scope_base, "_default_ref", lambda root: None)
+
+
+def _detached(_monkeypatch, root):
+    git(root, "checkout", "-q", "--detach")
+
+
+def _merge_base_fails(monkeypatch, _root):
+    real = crew_common.git_out
+
+    def fake(root, *args):
+        if args[:1] == ("merge-base",) and "--is-ancestor" not in args:
+            return None
+        return real(root, *args)
+    monkeypatch.setattr(crew_common, "git_out", fake)
+
+
+@pytest.mark.parametrize("cause", [_no_ref, _detached, _merge_base_fails],
+                         ids=["no-ref", "detached-head", "merge-base-fails"])
+def test_could_not_tell_drops_nothing(tmp_path, monkeypatch, cause):
+    root, upstream, sha = build(tmp_path)
+    ticket_commit(root, "src/t.txt", "ticket line\n")
+    advance_main(upstream)
+    merge_main(root)
+    cause(monkeypatch, root)
+
+    got = merged_main.resolve(str(root), sha["base"])
+
+    assert (got["applies"], got["commit"], got["reason"].startswith("could not tell")) == (
+        False, None, True)
+
+
+def test_keep_is_the_intersection():
+    since_base = ["a", "b", "c", "d"]
+    since_merged = {"d", "b", "z"}
+
+    kept = merged_main.keep(since_base, since_merged)
+
+    assert kept == ["b", "d"]
+
+
+def test_the_bundle_and_the_audit_name_the_same_changed_paths(tmp_path):
+    root, upstream, sha = build(tmp_path)
+    ticket_commit(root, "src/t.txt", "ticket line\n")
+    advance_main(upstream)
+    merge_main(root)
+    ticket_commit(root, "src/shared.py", "shared = 1\nmain_line = 2\nticket_line = 3\n")
+    write(root, "other/x.py", "x = 2, unstaged\n")
+    write(root, "src/untracked.txt", "untracked\n")
+    top, base = str(root), sha["base"]
+
+    manifest, _, _ = review_patch.compute(top, base)
+    audited = completion_audit.changed_paths(top, base, merged_main.resolve(top, base))
+
+    bundled = set()
+    for key in ("committed_files", "staged_files", "unstaged_files", "untracked_files"):
+        bundled.update(manifest[key])
+    assert (bundled, bundled & set(DROPPED)) == (set(audited), set())
