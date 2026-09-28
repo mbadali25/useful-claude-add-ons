@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@136f4b33
+anchor: useful-claude-add-ons@90442603
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.54, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.55, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -862,7 +862,7 @@ Obsidian vault). A CLI the commands call, not a hook.
   The ticket note (`_note_text` `:1225`) is an exclusive create
   (`_create_note_once` `:1234`, `_NOTE_FLAGS` `:290`).
 - Called by `brainstorm.md:28` and `:81`, `spec.md:46`, `plan.md:60`,
-  `implement.md:36` and `:110`, `done.md:63` and `fix.md:27`, `:73`, `:81`,
+  `implement.md:36` and `:110`, `done.md:66` and `fix.md:27`, `:73`, `:81`,
   `:89`, `:91` (all under `plugin/crew/commands/`); brainstorm and fix take
   the next free id on `id taken`, stop on any other failed `create`, and
   create the ticket folder only after a `create` that succeeded;
@@ -895,14 +895,14 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 - `/crew:implement` step 6 (`plugin/crew/commands/implement.md:89-111`) runs
   it after `/crew:docs` and before `/crew:review` (`:96`), runs each named
   refresh, commits, and re-runs until `fresh`; a `stop` ends the loop.
-- `/crew:done` Check 4 (`plugin/crew/commands/done.md:46-57`) runs it again
-  and refuses on `stale` or `unknown` without refreshing (`:52-55`).
+- `/crew:done` Check 4 (`plugin/crew/commands/done.md:49-60`) runs it again
+  and refuses on `stale` or `unknown` without refreshing (`:55-58`).
 - `REFRESH_ARTIFACT_PATHS` (`plugin/crew/hooks/scripts/crew_refresh_check.py:168-173`: the code map,
   `docs.diagramsDir`, `graph.out`, `.claude/rules`) is the one definition.
   The scope guard (`_refresh_artifact`,
   `plugin/crew/hooks/scripts/scope_guard.py:186-197`) and the completion audit
   (`_outside_refresh_artifacts`,
-  `plugin/crew/hooks/scripts/completion_audit.py:177-187`) let a ticket write
+  `plugin/crew/hooks/scripts/completion_audit.py:202-212`) let a ticket write
   those paths without a Touch entry **only while its approval is current**;
   with no current approval nothing is exempt.
 - Tests: `plugin/crew/tests/test_refresh_check.py`,
@@ -1019,13 +1019,38 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   `/crew:review` and `/crew:done` depend on — were located but not opened,
   except for the exclusion below.
 - DERIVED (T-0092, crew 1.0.54): `EXCLUDED` and `_EXCLUDE_SPEC`
-  (`plugin/crew/hooks/scripts/review_patch.py:104`,
-  `plugin/crew/hooks/scripts/review_patch.py:105`) name `.work/` and the
+  (`plugin/crew/hooks/scripts/review_patch.py:121`,
+  `plugin/crew/hooks/scripts/review_patch.py:122`) name `.work/` and the
   generated `graphify-out/`, root-anchored, on every diff and listing but
   never on `git add`; the manifest's `excluded` is `list(EXCLUDED)`.
   `_bundle_block` prints that list as `excluded (never in the bundle): ...`,
   or `excluded: none recorded` when the manifest has none
-  (`plugin/crew/hooks/scripts/review_prompt.py:89`).
+  (`plugin/crew/hooks/scripts/review_prompt.py:90`).
+- DERIVED (T-0100, crew 1.0.55): `merged_main.resolve`
+  (`plugin/crew/hooks/scripts/merged_main.py:65`) names the latest merged
+  integration commit, `git merge-base HEAD <ref>` with `<ref>` from
+  `scope_base._default_ref`; it never applies when HEAD's branch is `<ref>`
+  or when that commit is an ancestor of the ticket start, and returns
+  `commit None` with a reason starting `could not tell` for no ref, a
+  detached HEAD or a git error. `merged_main.keep`
+  (`plugin/crew/hooks/scripts/merged_main.py:101`) is the one drop rule: a
+  path stays when it differs from the start AND from the merged commit.
+  `review_patch._ticket_base_tree`
+  (`plugin/crew/hooks/scripts/review_patch.py:245`) builds the synthetic base
+  tree (the start's tree with each dropped path set to its working-state
+  entry, in a second temporary index) that `compute` diffs from
+  (`plugin/crew/hooks/scripts/review_patch.py:369`); the manifest carries
+  `merged_main` and `bundle_base_tree`
+  (`plugin/crew/hooks/scripts/review_patch.py:414`). The completion audit
+  applies the same rule in `_changed`
+  (`plugin/crew/hooks/scripts/completion_audit.py:175`), called from `audit`
+  (`plugin/crew/hooks/scripts/completion_audit.py:226`), and prints its
+  `merged main` line from `_merged_lines`
+  (`plugin/crew/hooks/scripts/completion_audit.py:259`); `changed_paths`
+  without `merged` is unchanged for `crew_refresh_check`. The prompt's
+  `merged main:` line is `_merged_main_line`
+  (`plugin/crew/hooks/scripts/review_prompt.py:93`), and the receipt check's
+  note `_merged_note` (`plugin/crew/hooks/scripts/review_ledger.py:367`).
 - DERIVED (T-0079): the READ-line rule of the review verdict is
   `review_verdict._covers` (`plugin/crew/hooks/scripts/review_verdict.py:79`):
   a READ token counts for a part when, `\` read as `/` and `normpath`ed, it
@@ -1033,8 +1058,8 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   `parse` applies it at `plugin/crew/hooks/scripts/review_verdict.py:124`.
   The prompt quotes `review_verdict.READ_FORM`
   (`plugin/crew/hooks/scripts/review_verdict.py:70`) in `_bundle_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:85`) and on the webtest
-  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:243`), and
+  (`plugin/crew/hooks/scripts/review_prompt.py:86`) and on the webtest
+  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:261`), and
   `review_run.finish` hands `parse` the manifest `path`s
   (`plugin/crew/hooks/scripts/review_run.py:315`) and the overflow file's
   scratch path (`plugin/crew/hooks/scripts/review_run.py:317`). `parse` and
@@ -2138,3 +2163,5 @@ this note beyond the citation script and the tuple count.
 **Re-anchored `c192b83d` / `3c4f1a68` -> `25d2de63` on 2026-09-28 (T-0092 merged onto `f8b6c8d7`, T-0091, crew 1.0.53).** `25d2de63` merges origin/main `f8b6c8d7` (T-0091 landed at `c192b83d`: `CLAUDE.md`'s Landmines paragraph and a `TODO.md` entry, no plugin bumped) into `T-0092-build`. The code-map, INDEX, rules, diagram and graph conflicts were resolved mechanically - both sides' provenance notes kept, main's first; the anchor taken from this note. Every body citation of the form `path:line` was compared by script twice: `c192b83d` -> `25d2de63` differs only on T-0092's own lines (the exclusion, the re-pointed `review_prompt.py` lines, `plugin/crew/README.md:842` in place, the version lines), and `3c4f1a68` -> `25d2de63` only on T-0091's `CLAUDE.md` lines, which T-0091's own notes above cite at `c192b83d`, and on `TODO.md:5048`, cited in T-0092's notes above as that commit's line: T-0091's three added lines move the bullet to `:5051`. Nothing was executed for this note.
 
 **Re-anchored `25d2de63` -> `136f4b33` on 2026-09-28 (T-0092 merged onto `ff59160f`, T-0089, crew 1.0.54).** `e2220836` merges origin/main `ff59160f` (T-0089 landed as crew 1.0.53 at `0f526a8c`: `plugin/crew/tests/test_role_write_guard.py` fixtures and a `CHANGELOG.md` entry) into `T-0092-build`; the merge was clean. `136f4b33` re-bumps crew to 1.0.54 and moves T-0092's `1.0.53` mentions (`review_patch.py`'s docstring, `plugin/crew/README.md:842`, `TODO.md:5051`, the two test-file comments, its `CHANGELOG.md` heading) to 1.0.54, all in place. Every body citation of the form `path:line` into a file changed between `25d2de63` and `136f4b33` was compared by script: the only differences are version-file lines changed in place, `plugin/crew/README.md:842` in place, and lines cited inside dated provenance notes (`CHANGELOG.md`, which T-0089's entry shifts by 12 lines below `:80`, and `TODO.md:5048`), left as history at their own commit. No citation into `test_role_write_guard.py` exists here. The version sentence and the T-0092 DERIVED bullet move to 1.0.54. Nothing was executed for this note.
+
+**Re-anchored `136f4b33` -> `90442603` on 2026-09-28 (T-0100, crew 1.0.55).** `90442603` is T-0100's last pre-refresh commit on `T-0100-build`, cut from main `6387ab49` (T-0092 landed as crew 1.0.54); `f6ff7c6f` is its crew 1.0.55 version commit and `90442603` after it touches only `.crew/verify.json` (rule 25's new paths moved onto existing lines) and `TODO.md` (the follow-up moved to the end), both line-neutral against `6387ab49`. Every body citation of the form `path:line` into a file changed between `136f4b33` and `90442603` was compared by script (the anchor's lines against `90442603`'s): the ones that moved are re-pointed here - `plugin/crew/commands/done.md` gained three lines inside check 3 (check 4 `:46-57` -> `:49-60`, `:52-55` -> `:55-58`, the tracker call `:63` -> `:66`), `plugin/crew/hooks/scripts/completion_audit.py`'s `_outside_refresh_artifacts` `:177-187` -> `:202-212`, `plugin/crew/hooks/scripts/review_patch.py`'s `EXCLUDED` / `_EXCLUDE_SPEC` `:104-105` -> `:121-122`, `plugin/crew/hooks/scripts/review_prompt.py` `:85` -> `:86`, `:89` -> `:90`, `:243` -> `:261`; `.crew/verify.json:264-280` is still rule 25, changed in place. A new DERIVED bullet names `merged_main.py`, the synthetic base tree, the audit filter, the prompt line and the receipt note. The version sentence moves to 1.0.55. The other differences are version-file lines, `plugin/crew/BUDGETS.md:11` and `plugin/crew/README.md:842` changed in place, and `CHANGELOG.md` lines (+65 at its top) cited only inside dated provenance notes, left as history at their own commit. Suites were run for the code this note describes (T-0100's implement phase), not for this note.

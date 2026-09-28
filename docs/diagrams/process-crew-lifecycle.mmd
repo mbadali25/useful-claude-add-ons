@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@c99e31f6 on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@90442603 on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -127,10 +127,10 @@
 %%     round writes its receipt itself.
 %%   plugin/crew/commands/done.md:7 all four checks must pass; :10-13 check 1
 %%     review receipt (--check-receipt); :21-27 check 2 verify gate via
-%%     crew_status.py; :35-38 check 3 completion audit; :46-57 check 4
-%%     crew_refresh_check.py (:49), read-only, refuses on stale/unknown and never
-%%     refreshes; :59-65 all pass -> spec.md `status: done`, keeping the approval
-%%     (:61-62), then crew_tracker.py move --to done (:63); :70 crew_metrics record.
+%%     crew_status.py; :35-38 check 3 completion audit; :49-60 check 4
+%%     crew_refresh_check.py (:52), read-only, refuses on stale/unknown and never
+%%     refreshes; :62-68 all pass -> spec.md `status: done`, keeping the approval
+%%     (:64-65), then crew_tracker.py move --to done (:66); :73 crew_metrics record.
 %%     Stop hooks: plugin/crew/hooks/hooks.json:58 (verify-gate.sh), :62 (completion-audit.sh).
 %%   plugin/crew/commands/fix.md:2 the light path - every phase, each compressed
 %%     to one step; :27 crew_tracker.py create (`id taken` -> next free id, :28-29;
@@ -140,14 +140,14 @@
 %% --
 %% Status edits after approval (T-0026): three steps edit spec.md's header status
 %% AFTER approval - plan.md:59 (`planned`), implement.md:108 (`review`) and
-%% done.md:61 (`status: done`). Until T-0026 the receipt hashed both files whole,
+%% done.md:64 (`status: done`). Until T-0026 the receipt hashed both files whole,
 %% so each left it stale; the done.md case was seen live on 2026-09-25. A
 %% `crew-approval/2` receipt now binds approval_digest
 %% (plugin/crew/hooks/scripts/crew_ticket.py:530-571), which normalises only line
 %% 1's single `status:` value from STATUS_VALUES, and status() compares that
 %% digest (:605-626); any other byte change still reads `stale`, and the
 %% completion audit still refuses to judge scope on anything but `approved`
-%% (plugin/crew/hooks/scripts/completion_audit.py:204-215). A receipt with no
+%% (plugin/crew/hooks/scripts/completion_audit.py:233-245). A receipt with no
 %% `digest` field is compared raw and stales once on its first status edit.
 %% Re-anchored 8de3c669 -> a4eb2f55 (T-0072 merged onto 5050ea3b, T-0077, crew 1.0.50): of the
 %% Anchors paths only crew_tracker.py changed (T-0077's Windows directory holds); it is cited
@@ -157,6 +157,14 @@
 %% place) changed, both line-neutral; review.md:25-29, :449 and completion_audit.py:177-187,
 %% :204-215 hold (compared by script). The bundle now also leaves out graphify-out/, which no
 %% node here names. No node or edge changed.
+%% Re-anchored c99e31f6 -> 90442603 (T-0100, crew 1.0.55): of the Anchors paths done.md gained
+%% three lines inside check 3 (:41-47), so check 4 and after move +3 (:46-57 -> :49-60,
+%% :59-70 -> :62-73, :61 -> :64, :63 -> :66); completion_audit.py's approval block moved
+%% :204-215 -> :233-245 (its pass returns now carry the merged-main line) and its refresh
+%% allowance :177-187 -> :202-212; review.md changed comment lines in place (:119-124,
+%% :328-332) and one echo line, line-neutral, so review.md:25-29, :449 hold (compared by
+%% script). Check 3 now leaves out paths identical to merged main, which no node here
+%% draws. No node or edge changed.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
@@ -229,8 +237,8 @@ flowchart TB
         rcpt --> dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
         dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py<br/>:21-27"}
         dn2 -- pass --> dn3{"3 completion audit<br/>:35-38"}
-        dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:46-57"}
-        dn5 -- fresh --> dn4["spec.md 'status: done' (keeps the approval),<br/>crew_tracker.py move --to done,<br/>crew_metrics record<br/>:59-70"]
+        dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:49-60"}
+        dn5 -- fresh --> dn4["spec.md 'status: done' (keeps the approval),<br/>crew_tracker.py move --to done,<br/>crew_metrics record<br/>:62-73"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx

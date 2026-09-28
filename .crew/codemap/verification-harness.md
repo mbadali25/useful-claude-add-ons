@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@136f4b33
+anchor: useful-claude-add-ons@90442603
 verified: 2026-09-28
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -157,11 +157,12 @@ Notable rules, re-read directly:
   `plugin/crew/tests/sabotage_refresh.py`, and `plugin/crew/commands/implement.md`
   / `done.md`, and since T-0008's review round 3 `scope_guard.py`,
   `completion_audit.py`, `crew_freshness.py` and `scope_base.py` with
-  `test_scope_guard.py`, `test_completion_audit.py` and `test_scope_base.py`
-  → `python3 -m pytest` over those six test files, priced 32s (its `why`,
-  `:280`, records 31.8s measured on the authoring host — a claim read, not
-  re-timed here). `crew_freshness.py` is on rule 8 too. At the default 60s
-  Stop budget rule 25 (32s) plus rule 15 (38s) no longer fit together, so a
+  `test_scope_guard.py`, `test_completion_audit.py` and `test_scope_base.py`,
+  and since T-0100 `merged_main.py`, `merged_main_fixtures.py` and `test_merged_main.py`
+  → `python3 -m pytest` over those seven test files, priced 48s (its `why`,
+  `:280`, records 47.3s measured on the authoring host under load 5.6-6.5 — a
+  claim read, not re-timed here). `crew_freshness.py` is on rule 8 too. At the default 60s
+  Stop budget rule 25 (48s) plus rule 15 (38s) no longer fit together, so a
   `.py` edit on these paths has one of them deferred at Stop (JUDGEMENT,
   from the two `seconds` values, not observed). A test,
   `test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule` in
@@ -1384,3 +1385,5 @@ Nothing was executed for this note.
 **Re-anchored `c192b83d` / `3c4f1a68` -> `25d2de63` on 2026-09-28 (T-0092 merged onto `f8b6c8d7`, T-0091, crew 1.0.53).** `25d2de63` merges origin/main `f8b6c8d7` (T-0091 landed at `c192b83d`: `CLAUDE.md`'s Landmines paragraph and a `TODO.md` entry, no plugin bumped) into `T-0092-build`. The code-map, INDEX, rules, diagram and graph conflicts were resolved mechanically - both sides' provenance notes kept, main's first; the anchor taken from this note. Every body citation of the form `path:line` was compared by script twice: `c192b83d` -> `25d2de63` differs only on T-0092's own lines (the exclusion, the re-pointed `review_prompt.py` lines, `plugin/crew/README.md:842` in place, the version lines), and `3c4f1a68` -> `25d2de63` only on T-0091's `CLAUDE.md` lines, which T-0091's own notes above cite at `c192b83d`, and on `TODO.md:5048`, cited in T-0092's notes above as that commit's line: T-0091's three added lines move the bullet to `:5051`. Nothing was executed for this note.
 
 **Re-anchored `25d2de63` -> `136f4b33` on 2026-09-28 (T-0092 merged onto `ff59160f`, T-0089, crew 1.0.54).** `e2220836` merges origin/main `ff59160f` (T-0089 landed as crew 1.0.53 at `0f526a8c`: `plugin/crew/tests/test_role_write_guard.py` fixtures and a `CHANGELOG.md` entry) into `T-0092-build`; the merge was clean. `136f4b33` re-bumps crew to 1.0.54 and moves T-0092's `1.0.53` mentions (`review_patch.py`'s docstring, `plugin/crew/README.md:842`, `TODO.md:5051`, the two test-file comments, its `CHANGELOG.md` heading) to 1.0.54, all in place. Every body citation of the form `path:line` into a file changed between `25d2de63` and `136f4b33` was compared by script: the only differences are version-file lines changed in place, `plugin/crew/README.md:842` in place, and lines cited inside dated provenance notes (`CHANGELOG.md`, which T-0089's entry shifts by 12 lines below `:80`, and `TODO.md:5048`), left as history at their own commit. No citation into `test_role_write_guard.py` exists here. Nothing was executed for this note.
+
+**Re-anchored `136f4b33` -> `90442603` on 2026-09-28 (T-0100, crew 1.0.55).** `90442603` is T-0100's last pre-refresh commit on `T-0100-build`, cut from main `6387ab49` (T-0092 landed as crew 1.0.54); `f6ff7c6f` is its crew 1.0.55 version commit and `90442603` after it touches only `.crew/verify.json` (rule 25's new paths moved onto existing lines) and `TODO.md` (the follow-up moved to the end), both line-neutral against `6387ab49`. Every body citation of the form `path:line` into a file changed between `136f4b33` and `90442603` was compared by script. Rule 25 (`.crew/verify.json:264-280`) changed in place: its `paths` gained `merged_main.py`, `merged_main_fixtures.py` and `test_merged_main.py` on existing lines, its `run` gained `test_merged_main.py`, `seconds` 32 -> 48 and its `why` records 47.3s; the rule 25 bullet says so. `:262-269` still spans rule 23's tail and rule 25's head. The other differences are version-file lines, `plugin/crew/BUDGETS.md:11` and `plugin/crew/README.md:842` changed in place, all inside dated provenance notes. Nothing was executed for this note.
