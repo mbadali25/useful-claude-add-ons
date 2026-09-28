@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@b5c37635 on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@c8cc69ec on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
@@ -127,7 +127,7 @@
 %%   (resume_decision :661, crew_resume.decide; `off` unless armed and source is
 %%   clear/compact); :908-910 startup -> pointer + next action; :911-923 other
 %%   sources -> full note, next action first, then the auto-resume line; :924 no
-%%   note but a resume line -> that line alone; :1086 JSON additionalContext.
+%%   note but a resume line -> that line alone; :1090 JSON additionalContext (LF stdout, :1086-1089).
 %% Stale rule: crew_state.py:646 (72h / 3 commits), :859-914, archived to
 %%   .crew/handoffs/ (:774, :980), never deleted; never raises (:954-958).
 %% /crew:status: commands/status.md:14 -> crew_status.py; :200-224 report lines.
@@ -146,6 +146,10 @@
 %% Re-anchored 715a8c2f -> a4eb2f55 (T-0072 merged onto 5050ea3b, T-0077, crew 1.0.50): of the
 %% Anchors paths only crew_tracker.py changed (T-0077); no node cites a line in it, and
 %% crew_status.py:63 did not change. No node or edge changed.
+%% Re-anchored b5c37635 -> c8cc69ec (T-0087 merged main c426c018, T-0076, crew 1.0.53): of the Anchors
+%% paths only crew_context.py changed - emit() now forces LF stdout (+4 lines at :1086), so the
+%% additionalContext write :1086 -> :1090 (re-read with sed -n); :121-132, :881-924 and :993-1003 are
+%% above it and unchanged. No node or edge changed.
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
     start --> reg["hooks.json:3-10<br/>3 SessionStart pairs, sh + ps1, no matcher<br/>each claims per session+source"]
@@ -191,7 +195,7 @@ flowchart TB
         src -- "resume/clear/compact/fork" --> full["full note, next action first,<br/>then the auto-resume line<br/>:911-923"]
     end
 
-    ptr --> out(["additionalContext JSON<br/>:1086"])
+    ptr --> out(["additionalContext JSON<br/>:1090"])
     full --> out
     cc4 --> out
 
