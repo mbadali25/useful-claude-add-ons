@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.52: build-time development standards and a required pre-review self-check (T-0085)
+### Added — `crew` 1.0.53: build-time development standards and a required pre-review self-check (T-0085)
 
 - **New `crew-standards` skill.** `references/generic.md` ships GEN-01 to GEN-12,
   crew-generic standards mined from 224 BLOCK/FIX findings in crew's own QA reviews;
