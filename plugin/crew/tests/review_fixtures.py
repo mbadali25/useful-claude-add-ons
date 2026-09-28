@@ -85,8 +85,35 @@ sys.stdin.read()
 mode = os.environ.get("FAKE_REVIEWER_MODE", "clean")
 if mode == "hang":
     time.sleep(120)
+def _parent_of(pid):
+    # Windows only: the .cmd shim's cmd.exe sits between this script and
+    # review_run.py, so the parent to kill is the shim's own parent (T-0076).
+    import ctypes
+    from ctypes import wintypes
+    class Entry(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                    ("th32ProcessID", wintypes.DWORD), ("th32DefaultHeapID", ctypes.c_void_p),
+                    ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long),
+                    ("dwFlags", wintypes.DWORD), ("szExeFile", ctypes.c_char * 260)]
+    kernel = ctypes.windll.kernel32
+    kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    snap = kernel.CreateToolhelp32Snapshot(2, 0)
+    entry = Entry()
+    entry.dwSize = ctypes.sizeof(Entry)
+    found = None
+    more = kernel.Process32First(snap, ctypes.byref(entry))
+    while more and found is None:
+        if entry.th32ProcessID == pid:
+            found = entry.th32ParentProcessID
+        more = kernel.Process32Next(snap, ctypes.byref(entry))
+    kernel.CloseHandle(snap)
+    return found
 if mode == "crash":
-    os.kill(os.getppid(), getattr(signal, "SIGKILL", signal.SIGTERM))
+    target = os.getppid()
+    if os.name == "nt":
+        target = _parent_of(target) or target
+    os.kill(target, getattr(signal, "SIGKILL", signal.SIGTERM))
     time.sleep(5)
     sys.exit(0)
 if mode == "fail":

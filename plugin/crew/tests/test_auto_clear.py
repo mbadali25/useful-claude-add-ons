@@ -182,7 +182,19 @@ def _sendable(flavor, tmp_path):
     tmux must now prove the pane is this session's: the stub reports this
     test process's pid as the pane pid, and this process IS an ancestor of
     the script. The Windows flavour gets one stubbed window whose title is
-    the only match -- the title fallback, since no ancestor owns it."""
+    the only match -- the title fallback, since no ancestor owns it.
+
+    Native Windows has no tmux, and the pane check cannot confirm one there
+    (no parent-pid walk; it fails closed), so the bash flavour takes the
+    xdotool title fallback instead of skipping (T-0076)."""
+    if flavor == "sh" and os.name == "nt":
+        bindir = str(tmp_path / "fakebin")
+        _stub(bindir, "xdotool")
+        env = {"PATH": crew_fixtures.shell_path("sh", [bindir]), "DISPLAY": ":0"}
+        env.update(_window_stub(tmp_path, [{"id": 4242, "pid": 999999,
+                                            "title": "NoSuchWindowForTests"}]))
+        return ({"enabled": True, "method": "xdotool",
+                 "windowTitle": "NoSuchWindowForTests"}, env)
     if flavor == "sh":
         bindir = str(tmp_path / "fakebin")
         _stub(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n",
@@ -433,7 +445,7 @@ def test_the_dry_run_plan_reports_the_configured_command_and_delay(
         flavor, tmp_path):
     # Whatever method `_sendable` actually resolves to on this host decides
     # what "the delay" means: sendkeys/tmux wait the configured seconds out,
-    # notify has none to wait (its own exact wording is asserted below). Read
+    # xdotool too; notify has none to wait (its own exact wording is asserted below). Read
     # `method:` back out of the emitted plan rather than assuming which one
     # was reached -- forcing a method here is what made the old version of
     # this test vacuous: under the window-stub pid (999999) the .ps1 flavour
@@ -452,7 +464,7 @@ def test_the_dry_run_plan_reports_the_configured_command_and_delay(
         f"stderr={result.stderr!r})")
     resolved = method_lines[0]
     assert "command: /compact" in out, out
-    if resolved in ("sendkeys", "tmux"):
+    if resolved in ("sendkeys", "tmux", "xdotool"):
         assert "delay: 9s" in out, out
     elif resolved == "notify":
         assert "delay: n/a (notify sends no keystroke)" in out, out
@@ -517,16 +529,15 @@ def test_config_values_survive_a_crlf_writing_python(tmp_path):
     whether or not that stripping was there to catch. See
     `_crlf_python_env`'s docstring for the sabotage check that proved it.
     """
-    bindir = str(tmp_path / "fakebin")
-    _stub(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n",
-              f"@echo off\r\necho {os.getpid()}\r\n")
-    root = _repo(tmp_path, auto_clear={"enabled": True, "method": "tmux"})
-    env = {"PATH": crew_fixtures.shell_path("sh", [bindir]),
-           "TMUX": "/tmp/fake,1,0", "TMUX_PANE": "%9"}
+    config, env = _sendable("sh", tmp_path)
+    root = _repo(tmp_path, auto_clear=config)
     env.update(_crlf_python_env(tmp_path))
     out = _run("sh", root, "--dry-run", env_extra=env).stdout
-    assert "method: tmux" in out, "a CR in the config values would break this"
-    assert "target: %9" in out
+    # tmux, or on native Windows the xdotool title fallback (see _sendable).
+    method, target = ((config["method"], "%9") if config["method"] == "tmux"
+                      else (config["method"], config["windowTitle"]))
+    assert f"method: {method}" in out, "a CR in the config values would break this"
+    assert f"target: {target}" in out
 
 
 @pytest.mark.skipif("sh" not in FLAVORS, reason="needs bash")
