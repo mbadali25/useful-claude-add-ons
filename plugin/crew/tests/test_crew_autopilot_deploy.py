@@ -436,15 +436,16 @@ def test_layer_parent_unreadable_asks(tmp_path, monkeypatch, layer, env_class):
 @pytest.mark.parametrize("layer", ["repo", "machine"])
 def test_layer_present_but_layer_state_says_absent_asks(tmp_path, monkeypatch, layer,
                                                         env_class):
-    """Round 4's repro: `layer_state`'s `lexists` collapse calls a layer this
-    module saw present `absent`; that must ask, never pass as unset."""
+    """Round 4's repro: `layer_state`'s `lexists` collapse (its `read_text`
+    None and `os.path.lexists` False) calls a layer this module saw present
+    `absent`; that must ask, never pass as unset. `layer_state` itself answers
+    `absent` here: patching the `read_text` it reaches through `crew_state`
+    is what test_module_split forbids."""
     root = _armed(tmp_path, monkeypatch)
     target = _layer_path(tmp_path, root, layer)
-    real_read, real_lexists = crew_state.read_text, os.path.lexists
-    monkeypatch.setattr(crew_state, "read_text", lambda path, *a, **k: (
-        None if os.fspath(path) == target else real_read(path, *a, **k)))
-    monkeypatch.setattr(os.path, "lexists", lambda path: (
-        False if os.fspath(path) == target else real_lexists(path)))
+    real_state = crew_config.layer_state
+    monkeypatch.setattr(crew_config, "layer_state", lambda path, *a, **k: (
+        "absent" if os.fspath(path) == target else real_state(path, *a, **k)))
 
     got = _verdict(root, env_class)
 
