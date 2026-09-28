@@ -1160,6 +1160,16 @@ def test_every_autopilot_sabotage_anchor_is_present_exactly_once():
             assert handle.read().count(find) == 1, label
         assert test.startswith(("tests/test_crew_autopilot.py::",
                                 "tests/test_crew_autopilot_status.py::")), label
+    # T-0010's POLICY_MUTATIONS, the approve exception's six included: they
+    # share these targets, so an anchor either list moves must stay unique.
+    from sabotage_autopilot import POLICY_MUTATIONS  # pylint: disable=import-outside-toplevel
+    for label, target, find, _replace, test in POLICY_MUTATIONS:
+        with open(target, encoding="utf-8") as handle:
+            assert handle.read().count(find) == 1, label
+        assert test.startswith(("tests/test_crew_autopilot_policy.py::",
+                                "tests/test_crew_autopilot_status.py::",
+                                "tests/test_crew_route.py::", "tests/test_crew_ticket.py::",
+                                "tests/test_scope_guard.py::")), label
 
 
 def test_status_sabotage_is_registered_with_sabotage_py():

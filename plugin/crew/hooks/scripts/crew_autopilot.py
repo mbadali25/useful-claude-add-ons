@@ -15,10 +15,17 @@
 T-0004. The lifecycle is prose commands (spec, plan, implement, review,
 done); `/crew:autopilot` follows each one's procedure in-session. This module
 is what names the NEXT one, from files on disk and nothing else, so a skipped
-phase is visible and a phase that cannot be told stops. Read-only: it never
-writes a file, never approves, never accepts a review. Run as a script it
-writes no bytecode either, however it is invoked (`-B` or not); a module that
-imports it keeps its own bytecode setting.
+phase is visible and a phase that cannot be told stops. Read-only except
+`approve`, which writes only the approval receipt, and only when
+`approval_policy` allows under the configured policy; it never accepts a
+review. That is the single exception (T-0010, below): `next`, `resume`,
+`settings`, `stops`, `route`, `status` and `questions-check` write no file.
+The receipt is what `crew_ticket.approve` writes for every approval route,
+`/crew:approve` included, all under `<git-common-dir>/crew/`: `approval.json`,
+the scope ramp's `scope-tickets.json` on a ticket's first approval, and a
+NEEDS_REPLAN ledger's successor continuation. Run as a script it writes no
+bytecode either, however it is invoked (`-B` or not); a module that imports it
+keeps its own bytecode setting.
 
 ## approve and questions-check -- the two policies (T-0010)
 
@@ -59,7 +66,7 @@ force says `take`. Exit 0 valid, 1 not.
   spec fails crew_ticket.validate        spec                stop
   no plan.md                             plan                /crew:plan <id>
   plan fails crew_ticket.validate        plan                stop
-  approval not accepted                  approve             stop, the human types it
+  approval not accepted                  approve             stop, unless the policy allows
   review ledger UNKNOWN                  review              stop
   review ledger NEEDS_REPLAN             replan              stop
   no review round under this plan        implement           /crew:implement <id>
@@ -107,8 +114,8 @@ A ticket that differs from this worktree's active-ticket pointer stops, naming
 both: the scope guard and the completion audit judge edits by the pointer.
 With no pointer, `activate` tells the command to set it to the ticket it drives.
 
-Exit 0 always; the answer is in the output. An exception inside `next` or
-`resume` prints `stop=1` with its reason: a crash is "cannot tell", never
+Exit 0 always, but for `approve` and `questions-check` (above); the answer is
+in the output. An exception inside `next` or `resume` prints `stop=1` with its reason: a crash is "cannot tell", never
 silence the command could read as permission.
 """
 import argparse
@@ -119,7 +126,7 @@ import re
 import sys
 
 if __name__ == "__main__":
-    # Before the sibling imports: the direct CLI is read-only too.
+    # Before the sibling imports: the direct CLI writes no bytecode either.
     sys.dont_write_bytecode = True
 
 import crew_config
@@ -1342,7 +1349,8 @@ def main(argv):
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
-    # Read-only: git must not even refresh the index's stat cache.
+    # Read-only but for approve's receipt: git must not even refresh the index's
+    # stat cache.
     os.environ["GIT_OPTIONAL_LOCKS"] = "0"
     if args.action in ("approve", "questions-check"):
         return _policy_main(args)

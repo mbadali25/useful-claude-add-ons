@@ -50,7 +50,10 @@ sha256 of `spec.md` and `plan.md` in `<git-common-dir>/crew/tickets/T-0042/appro
 `approved_via: "user-prompt"`. If the contract does not validate, the hook blocks the prompt and
 says why. That file is outside the worktree, and the scope guard refuses any Write or Edit to it
 and any shell command that runs `crew_ticket.py approve`, so the session cannot approve its own
-plan. The approval is a step you take, not a lock.
+plan. The one exception is opt-in: with `scope.allowCliApproval: true` and `autopilot.approval`
+set to `self` (or `risk`, for a `risk: low` spec), `/crew:autopilot` runs
+`crew_autopilot.py approve`, which writes an `autopilot` receipt and nothing else. Both default
+off, so out of the box nothing self-approves. The approval is a step you take, not a lock.
 
 `crew_ticket.py status --ticket T-0042` prints one of three states:
 

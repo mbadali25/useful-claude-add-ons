@@ -365,6 +365,7 @@ GUARD = os.path.join(SCRIPTS, "scope_guard.py")
 _P = "tests/test_crew_autopilot_policy.py::"
 _CT = "tests/test_crew_ticket.py::"
 _SG = "tests/test_scope_guard.py::"
+_R = "tests/test_crew_route.py::"
 
 POLICY_MUTATIONS = (
     ("approval: risk approves a med spec", AUTOPILOT,
@@ -508,4 +509,37 @@ POLICY_MUTATIONS = (
      "`human` always stops",
      "`human` usually stops",
      _P + "test_command_routes_approval_through_policy"),
+    # ---- amendment 2026-09-27 (plan Step 6): the approve exception to T-0018's
+    # read-only module. approve is the only writer; route and status are T-0018's.
+    ("a read-only subcommand writes", AUTOPILOT,
+     '    crew_json = _read_json(os.path.join(top, ".crew", "crew.json"))\n',
+     '    os.makedirs(os.path.join(top, ".work"), exist_ok=True)\n'
+     '    open(os.path.join(top, ".work", "settings-ran"), "a").close()\n'
+     '    crew_json = _read_json(os.path.join(top, ".crew", "crew.json"))\n',
+     _P + "test_approve_is_the_only_writing_subcommand"),
+    ("approve writes beside the receipt", AUTOPILOT,
+     "        top, ticket, by=f\"autopilot:{got['policy']}\", via=crew_ticket.AUTOPILOT)\n",
+     "        top, ticket, by=f\"autopilot:{got['policy']}\", via=crew_ticket.AUTOPILOT)\n"
+     '    open(os.path.join(crew_ticket.ticket_dir(top, ticket), "approved"), "w").close()\n',
+     _P + "test_approve_is_the_only_writing_subcommand"),
+    ("a refused approve still writes", AUTOPILOT,
+     "        return 2, f\"refused: {got['reason']}; {human}\"\n",
+     '        crew_ticket.approve(top, ticket, by="refused", via=crew_ticket.CLI)\n'
+     "        return 2, f\"refused: {got['reason']}; {human}\"\n",
+     _P + "test_approve_refused_writes_nothing"),
+    ("status reads the policy", AUTOPILOT,
+     '    return f"owner - types {command}" if command else "owner - see the phase reason"\n',
+     '    if phase == "approve":\n'
+     "        return f\"owner - {_approval_hint(top, result['ticket'])}\"\n"
+     '    return f"owner - types {command}" if command else "owner - see the phase reason"\n',
+     _S + "test_route_and_status_unaffected_by_approval_policy[self]"),
+    ("approve becomes a command subcommand", AUTOPILOT,
+     'SUBCOMMANDS = ("status", "run", "assign", "goal", "focus")\n',
+     'SUBCOMMANDS = ("status", "run", "assign", "goal", "focus", "approve")\n',
+     _R + "test_policy_subcommands_are_not_command_subcommands"),
+    ("the command says nothing approves", COMMAND,
+     "Nothing here accepts a review or skips a phase, and nothing approves except\n"
+     "section 3's `approve`, which writes only the approval receipt, under the approval policy.\n",
+     "Nothing here approves, accepts a review, or skips a phase.\n",
+     _P + "test_command_states_the_approve_exception"),
 )

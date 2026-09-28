@@ -158,10 +158,12 @@ contract itself. This section is what goes wrong with the approval and the audit
   stale immediately** — that is deliberate: an edited spec cannot silently widen what the guard
   accepts. Only a receipt from the user's own prompt counts by default; a `cli`-sourced receipt
   (written by `crew_ticket.py approve` directly, for tests/CI) is accepted only when
-  `.crew/config.json` sets `scope.allowCliApproval: true`.
-  **Fix:** re-approve. The user types `/crew:approve <id>` again — nothing else can write the
-  receipt; `scope_guard.py` refuses a Write/Edit under `<git-common-dir>/crew/` in every mode but
-  `off`, so a session cannot forge or refresh its own approval.
+  `.crew/config.json` sets `scope.allowCliApproval: true`, and an `autopilot` receipt (from
+  `crew_autopilot.py approve`) only while that is true and `autopilot.approval` still allows it.
+  **Fix:** re-approve. The user types `/crew:approve <id>` again — the only other route is
+  `/crew:autopilot` under an opted-in `autopilot.approval`; `scope_guard.py` refuses a Write/Edit
+  under `<git-common-dir>/crew/` in every mode but `off`, so a session cannot forge or refresh its
+  own approval.
 
 - **Symptom: you need to touch one more path mid-ticket.**
   **Fix:** amend `spec.md`'s `## Touch` (widen it), then approve again. There is no partial-approve;
@@ -359,7 +361,7 @@ but returns immediately without judging anything; "off" for `verifyGate` means t
 | `guards.terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive` | both layers, ratchets | `block`/`ask`/`allow` | there is no "off" — `allow` is the most permissive tier, still logged |
 | `guards.prodDatabase`, `guards.prodServer` | both layers, ratchets | `none`/`read`/`full` | `none` is both the default and the floor |
 | `scope.mode` | repo only | `off`/`report`/`block`/`auto` | `off`: neither the edit guard nor the completion audit runs |
-| `scope.allowCliApproval` | repo only | bool | `false`: only a `/crew:approve` typed by the user counts |
+| `scope.allowCliApproval` | repo only | bool | `false`: only a `/crew:approve` typed by the user counts (no `cli` or `autopilot` receipt) |
 | `verifyGate` | repo only | bool | `false`: the Stop verify gate does not run at all |
 | `context.enabled` | both layers | bool | `false`: `context-watch.sh` (the Stop nag) does nothing |
 | `context.autoClear.enabled`, `autoWrapUp` | both layers | bool | each independently disables one leg of the wrap-up/clear loop |

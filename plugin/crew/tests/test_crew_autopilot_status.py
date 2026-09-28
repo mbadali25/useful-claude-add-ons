@@ -1093,3 +1093,26 @@ def test_every_status_sabotage_anchor_is_present_exactly_once():
         prefix, name = test.split("::")
         assert (prefix, callable(globals().get(name))) == (
             "tests/test_crew_autopilot_status.py", True), label
+
+
+# --- T-0010: route and status are untouched by the approval policy -------------
+
+ROUTE_ARGS = ("", "status", "run T-1", "T-1", "status T-1")
+
+
+@pytest.mark.parametrize("policy", ["human", "self", "risk"])
+def test_route_and_status_unaffected_by_approval_policy(tmp_path, policy):
+    from test_crew_autopilot_policy import _repo  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, approval=policy, risk="low")
+    config = root / ".crew" / "config.json"
+    with_policy = config.read_text(encoding="utf-8")
+    before = _git_state(root)
+    code, lines = _lines(root)
+    after = _git_state(root)
+    routed = [crew_autopilot.route_args(str(root), text) for text in ROUTE_ARGS]
+    _write(config, json.dumps({"scope": json.loads(with_policy)["scope"]}))
+
+    plain = [crew_autopilot.route_args(str(root), text) for text in ROUTE_ARGS]
+
+    assert (code, _field(lines, "waiting on"), after == before, routed == plain) == (
+        0, f"waiting on: owner - types /crew:approve {T}", True, True)

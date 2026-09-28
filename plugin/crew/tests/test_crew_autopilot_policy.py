@@ -646,3 +646,114 @@ def test_policy_sabotage_is_registered_with_sabotage_py():
     from sabotage_autopilot import POLICY_MUTATIONS  # pylint: disable=import-outside-toplevel
 
     assert [m[0] for m in POLICY_MUTATIONS if m not in sabotage.MUTATIONS] == []
+
+
+# --- step 6: the approve exception to T-0018's read-only module ---------------
+
+_REPO = os.path.dirname(os.path.dirname(_ROOT))
+
+
+def _files(root):
+    """{path: (size, sha256)} for every file in the worktree (not `.git`) and
+    under `<git-common-dir>/crew/`."""
+    import hashlib  # pylint: disable=import-outside-toplevel
+    found = {}
+    walks = [str(root), os.path.join(crew_ticket.common_dir(str(root)), "crew")]
+    for base, dirs, names in (entry for top in walks for entry in os.walk(top)):
+        dirs[:] = [d for d in dirs if d != ".git"]
+        for name in names:
+            path = os.path.join(base, name)
+            with open(path, "rb") as handle:
+                data = handle.read()
+            found[path] = (len(data), hashlib.sha256(data).hexdigest())
+    return found
+
+
+READ_ONLY_RUNS = (("next", "--ticket", T), ("resume",), ("settings",), ("stops",),
+                  ("route", "--args", f"status {T}"), ("status",),
+                  ("questions-check", "--ticket", T))
+
+
+def _main(root, action, *rest):
+    argv = [action] + ([] if action == "stops" else ["--root", str(root)]) + list(rest)
+    return crew_autopilot.main(argv)
+
+
+def test_approve_is_the_only_writing_subcommand(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "0")
+    root = _repo(tmp_path, approval="self", risk="low")
+    _questions(root, GOOD_QUESTIONS)
+    before = _files(root)
+
+    for run in READ_ONLY_RUNS:
+        _main(root, *run)
+    after_reads = _files(root)
+    code = _main(root, "approve", "--ticket", T)
+    after = _files(root)
+    capsys.readouterr()
+
+    added = sorted(set(after) - set(before))
+    # The receipt is what crew_ticket.approve writes for every route: the
+    # approval and, on a ticket's first approval, the scope ramp's list.
+    receipt = sorted([crew_ticket.approval_path(str(root), T),
+                      os.path.join(crew_ticket.state_dir(str(root)), "scope-tickets.json")])
+    assert (after_reads == before, code, added,
+            {p: v for p, v in after.items() if p in before} == before) == (
+        True, 0, receipt, True)
+
+
+def test_approve_refused_writes_nothing(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "0")
+    root = _repo(tmp_path, approval="human", risk="low")
+    before = _files(root)
+
+    code = _main(root, "approve", "--ticket", T)
+    capsys.readouterr()
+
+    assert (code, _files(root) == before) == (2, True)
+
+
+def test_command_states_the_approve_exception():
+    flat = " ".join(_command_text().split())
+
+    assert ("Nothing here approves" in flat,
+            "only the human types `/crew:approve <ticket>`" in flat,
+            "nothing approves except section 3's `approve`, which writes only the approval "
+            "receipt, under the approval policy" in flat,
+            "`plan-approval` and `open-questions` are a person unless section 3's policy "
+            "allows" in flat) == (False, False, True, True)
+
+
+def test_module_docstring_states_the_approve_exception():
+    doc = crew_autopilot.__doc__
+    usage = doc.split("\n\n")[1]
+    flat = " ".join(doc.split())
+
+    assert ("never approves" in flat,
+            "Read-only except `approve`, which writes only the approval receipt, and only "
+            "when `approval_policy` allows under the configured policy; it never accepts a "
+            "review." in flat,
+            "crew_autopilot.py approve --root . --ticket <id>" in usage,
+            "crew_autopilot.py questions-check --root . --ticket <id>" in usage) == (
+        False, True, True, True)
+
+
+def test_command_states_questions_file_shape():
+    flat = " ".join(_command_text().split())
+    required = ("`## Q<n>: <question>`", "`Research:`", "2-4 `### Option <id>`",
+                f"`{crew_autopilot.RECOMMENDED}`", "`Cost:`",
+                "`taken: Option <id> by autopilot (<policy>)`")
+
+    assert [literal for literal in required if literal not in flat] == []
+
+
+def test_verify_maps_autopilot_command_to_policy_suite():
+    import fnmatch  # pylint: disable=import-outside-toplevel
+    with open(os.path.join(_REPO, ".crew", "verify.json"), encoding="utf-8") as handle:
+        rules = json.load(handle)["rules"]
+    target = "plugin/crew/commands/autopilot.md"
+
+    runs = [" ".join(rule.get("run") or []) for rule in rules
+            if any(fnmatch.fnmatchcase(target, path) for path in rule.get("paths") or [])]
+
+    assert any("test_crew_autopilot_policy.py" in run for run in runs), runs

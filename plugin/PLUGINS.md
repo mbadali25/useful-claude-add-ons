@@ -124,8 +124,8 @@ to CI or to branch protection.
 
 | Command | Purpose |
 |---|---|
-| `/crew:approve <ticket-id>` | Approve a ticket's plan - only you can, by typing this; the prompt hook records the receipt |
-| `/crew:autopilot [ticket id]` | Resume one ticket from the handoff and drive it through the lifecycle until a human is needed - off until `autopilot.mode: plan`; approval and review acceptance always stop |
+| `/crew:approve <ticket-id>` | Approve a ticket's plan - only you can, by typing this, unless you opt `/crew:autopilot` into `autopilot.approval`; the prompt hook records the receipt |
+| `/crew:autopilot [status\|run] [ticket id]` | Report a ticket's standing (`status`, read-only) or drive it through the lifecycle until a human is needed (`run`) - off until `autopilot.mode: plan`; review acceptance always stops, and plan approval stops unless `autopilot.approval` lets `crew_autopilot.py approve` write the receipt, its one write (needs `scope.allowCliApproval: true`) |
 | `/crew:brainstorm <what needs doing>` | Brainstorm a request into an approved direction, before it becomes a spec |
 | `/crew:change <new \| status <id> \| close <id> \| list>` | File, check and close a change request — SDP, Jira or local |
 | `/crew:config [--show]` | Show where every crew setting comes from, and guide the machine-global config |

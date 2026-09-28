@@ -2316,6 +2316,15 @@ policy in force says `stop`; switching between `self` and `risk` later does
 not void an earlier honest record. Every
 self-approval and every taken answer is reported by name.
 
+**The one writer.** `crew_autopilot.py` is read-only except `approve`, which
+writes only the approval receipt (`approval.json`, plus what
+`crew_ticket.approve` writes beside it for every route: the scope ramp's
+`scope-tickets.json` on a ticket's first approval, and a NEEDS_REPLAN ledger's
+successor continuation), and only when `autopilot.approval` allows it.
+`next`, `resume`, `settings`, `stops`, `route`, `status` and `questions-check`
+write nothing, and T-0018's `route` and `status` read no policy: `status` at
+the approve phase names `/crew:approve <id>` under every setting.
+
 **What arming it does not change.** Review acceptance and brainstorm always
 stop for a person, at every setting — accepting review FINDINGS
 (`review_ledger.py --accept`) is never automatic; every
