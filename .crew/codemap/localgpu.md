@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@314fb065
-verified: 2026-09-27
+anchor: useful-claude-add-ons@3d9b8853
+verified: 2026-09-28
 
 # localgpu
 
@@ -1191,3 +1191,7 @@ cites is above it (`:126-128` and the prose around them), re-read, same text, so
 ## Re-anchor provenance - `3cf1eea2` + `8de3c669` -> `314fb065`, 2026-09-27 (T-0009 review round 4, merges main `d2fbd408`)
 
 `0b9e3a41` builds T-0009's review-round-4 successor (Steps 6-9: the PowerShell launcher rule, the same-command rule, bash alias copies); `e3088f2c` merges origin/main `d2fbd408` (T-0024 landed as crew 1.0.48, PR #246; main's notes anchored `8de3c669`) into it; `314fb065` sets crew 1.0.49 as the last plugin/crew commit, changing only the version files and T-0009's CHANGELOG heading and bump line in place. Source files both sides changed: `CHANGELOG.md`, `.crew/verify.json` (merged cleanly: 31 rules, 332 lines), `plugin/crew/README.md` (merged cleanly), `plugin/crew/BUDGETS.md` (19,147 lines across 126 files, recomputed on the merged index), `plugin/PLUGINS.md` and the version files. The conflicting provenance sections keep both sides, main's first. Every `path:N` citation in the body was mapped from the side its line came from (`8de3c669` for main's lines, `3cf1eea2` for T-0009's) onto `314fb065` with a line diff; a citation whose line the diff could not carry was re-read with `sed -n`/`grep -n`. No body citation moved; nothing under `plugin/localgpu/` changed on either side. Nothing was executed for this note.
+
+## Re-anchor provenance - `314fb065` -> `3d9b8853`, 2026-09-28 (T-0009 merges main `5050ea3b`)
+
+`37806d9a` merges origin/main `5050ea3b` (T-0077 landed as crew 1.0.49, PR #247; shipstation 1.1.1, PR #248; main changed no code map) into T-0009 at `7bba0fbb`; `3d9b8853` sets crew 1.0.50 as the last plugin/crew commit, changing only the version files and T-0009's CHANGELOG heading and bump line in place. Main's side changed `plugin/crew/hooks/scripts/crew_tracker.py`, `plugin/crew/hooks/scripts/crew_autopilot.py`, `plugin/crew/README.md`, their tests and sabotage tables, `CHANGELOG.md`, `skills/shipstation/` and the version files; the merge was clean. Every `path:N` citation in the body was mapped from `587fc5fa` (this note's text; no cited source changed between `314fb065` and it) onto `3d9b8853` with a line diff; a citation whose line the diff could not carry was re-read with `sed -n`. No body citation moved; nothing under `plugin/localgpu/` changed on either side. Nothing was executed for this note.

@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@314fb065
-verified: 2026-09-27
+anchor: useful-claude-add-ons@3d9b8853
+verified: 2026-09-28
 
 ## Re-derive provenance
 
@@ -55,7 +55,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.49, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.50, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -349,7 +349,7 @@ before the subcommand (`crew_guards.tf_skip_options` `:1551`, used by `_terrafor
 `:1547`), so `terragrunt --working-dir infra destroy` is a destroy, and `_unwrap` reads a listed
 wrapper's options as GNU getopt does (`crew_guards.skip_wrapper_options` `:1570`). DERIVED from the code cited.
 
-**Workflow dispatches (T-0009, crew 1.0.49; 1.0.43 on its branch).** `gh workflow run <wf>` and its REST twin, `gh
+**Workflow dispatches (T-0009, crew 1.0.50; 1.0.43 on its branch).** `gh workflow run <wf>` and its REST twin, `gh
 api` POST on `repos/<o>/<r>/actions/workflows/<wf>/dispatches`, are judged behind THE DISPATCH
 GRAMMAR (`crew_guards.py`'s section comment at `:1986`; the successor plan after review round 2
 was rejected). `dispatch_answer` (`plugin/crew/hooks/scripts/crew_guards.py:2887`) is the one road:
@@ -456,7 +456,7 @@ they disagree:
   `crew.json` alone [does nothing for autoClear behaviour, which
   `crew_config.py` still reads from `config.json`]". This is a real,
   present-tense inconsistency, not a hypothetical. T-0004's
-  `crew_autopilot.settings` (`plugin/crew/hooks/scripts/crew_autopilot.py:636`)
+  `crew_autopilot.settings` (`plugin/crew/hooks/scripts/crew_autopilot.py:642`)
   sides with `config.json` explicitly: it reads through
   `crew_config.resolve_config` and warns when `autopilot` is set in
   `crew.json` but not `config.json` ("crew does not read [it] for this key;
@@ -965,7 +965,7 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   `main()` is the `decide` / `record` / `precompact` CLI.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:576` — `ticket_freshness`,
   the library entry point; `main()` at `:676`.
-- `plugin/crew/hooks/scripts/crew_autopilot.py:472` — `next_phase`, read-only;
+- `plugin/crew/hooks/scripts/crew_autopilot.py:478` — `next_phase`, read-only;
   `main()` at `:979` is the `next` / `resume` / `settings` / `stops` /
   `route` / `status` CLI `plugin/crew/commands/autopilot.md` calls.
 - `plugin/crew/hooks/scripts/crew_route.py:210` — `decide`, read-only
@@ -2153,3 +2153,7 @@ rules and is DERIVED from the code it cites.
 ## Re-anchor provenance - `3cf1eea2` + `8de3c669` -> `314fb065`, 2026-09-27 (T-0009 review round 4, merges main `d2fbd408`)
 
 `0b9e3a41` builds T-0009's review-round-4 successor (Steps 6-9: the PowerShell launcher rule, the same-command rule, bash alias copies); `e3088f2c` merges origin/main `d2fbd408` (T-0024 landed as crew 1.0.48, PR #246; main's notes anchored `8de3c669`) into it; `314fb065` sets crew 1.0.49 as the last plugin/crew commit, changing only the version files and T-0009's CHANGELOG heading and bump line in place. Source files both sides changed: `CHANGELOG.md`, `.crew/verify.json` (merged cleanly: 31 rules, 332 lines), `plugin/crew/README.md` (merged cleanly), `plugin/crew/BUDGETS.md` (19,147 lines across 126 files, recomputed on the merged index), `plugin/PLUGINS.md` and the version files. The conflicting provenance sections keep both sides, main's first. Every `path:N` citation in the body was mapped from the side its line came from (`8de3c669` for main's lines, `3cf1eea2` for T-0009's) onto `314fb065` with a line diff; a citation whose line the diff could not carry was re-read with `sed -n`/`grep -n`. In `crew_guards.py` round 4 added `bash_aliases` to `_TerraformTool` (+6 from `_TF_TOOL`, `:1705` -> `:1711`) and one line to `_bash_trigger` (THE DISPATCH GRAMMAR `:1979` -> `:1986`), the LAUNCHER RULE comment after it (`DEPLOY_RULE` `:2029` -> `:2049`), the launcher tables and helpers before `_ps_runtime` (`:2168` -> `:2286`), `_ps_named` (`_DispatchTool` `:2217` -> `:2350`) and the grown `opaque`/`ps_aliases`/`bash_aliases` (`fed_dispatch` `:2319` -> `:2499`, +180 from there down), so every bare `:N` into it was re-taken by symbol (its `def` line): `_argv_trigger` `:1724` -> `:1730`, `_copies_terraform` `:1798` -> `:1804`, `_bash_trigger` `:1812` -> `:1818`, `ps_trigger` `:1928` -> `:1935`, `command_trigger` `:1954` -> `:1961`, `_DispatchTool` `:2217` -> `:2350`, `dispatch_trigger` `:2329` -> `:2509`, `dispatch_answer` `:2707` -> `:2887`, `deploy_verdict` `:2809` -> `:2989`, `judge_dispatch` `:2866` -> `:3046`, `ENV_*` `:2034-2035` -> `:2054-2055`. `cloud_guard.py`'s docstring edit is line-neutral (still 3400 lines) and nothing it cites below `:114` moved; one mapping that bound `cloud_guard.GATE_HELPERS` `:2791` to `crew_guards.py` was caught on re-read and reverted. T-0004's CHANGELOG "117 -> 119" is `:701-702`; the version sentence reads 1.0.49; `plugin/crew/tests/test_crew_config.py:282` still asserts 124 (T-0024 added no config leaf). The dispatch paragraph gained round 4's rules, DERIVED from the code it cites.
+
+## Re-anchor provenance - `314fb065` -> `3d9b8853`, 2026-09-28 (T-0009 merges main `5050ea3b`)
+
+`37806d9a` merges origin/main `5050ea3b` (T-0077 landed as crew 1.0.49, PR #247; shipstation 1.1.1, PR #248; main changed no code map) into T-0009 at `7bba0fbb`; `3d9b8853` sets crew 1.0.50 as the last plugin/crew commit, changing only the version files and T-0009's CHANGELOG heading and bump line in place. Main's side changed `plugin/crew/hooks/scripts/crew_tracker.py`, `plugin/crew/hooks/scripts/crew_autopilot.py`, `plugin/crew/README.md`, their tests and sabotage tables, `CHANGELOG.md`, `skills/shipstation/` and the version files; the merge was clean. Every `path:N` citation in the body was mapped from `587fc5fa` (this note's text; no cited source changed between `314fb065` and it) onto `3d9b8853` with a line diff; a citation whose line the diff could not carry was re-read with `sed -n`. Two moved, each re-read: `plugin/crew/hooks/scripts/crew_autopilot.py:642` (`def settings`, was `:636`) and `:478` (`def next_phase`, was `:472`); the version sentence citing `plugin/crew/.claude-plugin/plugin.json:3` and the dispatch paragraph's heading now read 1.0.50. Nothing was executed for this note.
