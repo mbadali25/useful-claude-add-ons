@@ -94,9 +94,10 @@ def test_status_output_fits_forty_lines_on_a_busy_repo(tmp_path, monkeypatch, ca
     assert any(line.startswith("shell    ") for line in out)
 
 
-def test_status_has_no_shell_line_off_windows(tmp_path, monkeypatch):
+@pytest.mark.parametrize("host", ["linux", "macos", "wsl"])
+def test_status_has_no_shell_line_off_windows(tmp_path, monkeypatch, host):
     root = make_repo(tmp_path)
-    monkeypatch.setattr(crew_shell, "host_os", lambda *a, **k: "linux")
+    monkeypatch.setattr(crew_shell, "host_os", lambda *a, **k: host)
     without = crew_status.collect(str(root))
     crew_shell.write_cache({"state": "usable", "distro": "Ubuntu-24.04", "detail": "ok"})
 

@@ -594,7 +594,7 @@ def run(cmd, root=".", runner=None, execute=None):
     cache = effective_probe(load_cache(), cfg)
     kind, argv, creason = classify(cmd)
     location = repo_location(root)
-    pwsh = resolve_pwsh()[0] if normal == "powershell" and kind == "plain" else None
+    pwsh = resolve_pwsh()[0] if normal == "powershell" else None
     route, reason, code = decide(raw_mode(cfg), cache, location, measured_verdict(cache, root), host_os(), kind, pwsh)
     distro = cache.get("distro")
     wsl_cwd = None
