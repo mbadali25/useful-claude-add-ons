@@ -1,17 +1,17 @@
 # Graph Report - uca-t0088  (2026-09-28)
 
 ## Corpus Check
-- 961 files · ~2,126,633 words
+- 961 files · ~2,128,717 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 59 file(s) not represented in the graph (top: (none) 33, .mmd 8, .csv 4)
 
 ## Summary
-- 19080 nodes · 38667 edges · 926 communities (742 shown, 184 thin omitted)
-- Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 2796 edges (avg confidence: 0.92)
+- 19080 nodes · 38671 edges · 924 communities (742 shown, 182 thin omitted)
+- Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 2800 edges (avg confidence: 0.92)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `65cc07db`
+- Built from commit: `460157b9`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -33,7 +33,7 @@
 - test_scanner_testssl.py
 - test_vault_ops.py
 - test_worktree_config.py
-- base.py
+- test_scanner_zap.py
 - test_provider_table.py
 - test_refresh_check.py
 - Phase A - Setup (Steps 1-12) - reversible
@@ -46,7 +46,7 @@
 - test_proxy_server.py
 - cc_audit.py
 - Mailbox Restore and Hold Removal - setup, triage, five paths
-- main
+- render.py
 - make_repo
 - crew_state.py
 - test_verify_gate_lock.py
@@ -66,12 +66,12 @@
 - localgpu/bootstrap.sh
 - test_flavour_windows_direction.py
 - test_crew_route.py
-- crew 1.0.x deferral: tests hardcode `windows=` against `crew_autocycle.normalise_repo_path`, contradicting the real host - OPEN (filed 2026-09-24, measured by win-repo-2)
-- worklog.py
+- in_scope
+- wlconfig.py
 - Policy: vulnerability management for deployed web applications
-- __init__.py
+- test_scanner_nikto.py
 - check-marketplace.py
-- hashlib
+- auth.py
 - Connecting Claude to the vault
 - test_role_write_guard.py
 - test_report_grouping.py
@@ -83,8 +83,8 @@
 - ZohoSDP
 - crew_guards.py
 - test_ollama.py
-- init_repo
-- run_tool
+- datetime
+- base.py
 - core/src/index.ts
 - test_verify_gate_lock_sh.py
 - localgpu/bootstrap.ps1
@@ -109,7 +109,7 @@
 - graph/package.json
 - Providers
 - _test/test_config.py
-- ok
+- time
 - CloudflareClient
 - render_mermaid.py
 - Fortinet Skill — Design
@@ -145,7 +145,7 @@
 - SophosClient
 - Gotchas
 - approval_hook.py
-- Re-anchor provenance - `65bb3330` + `474aea8b` -> `8de3c669`, 2026-09-27 (T-0024 lands on T-0018's main)
+- repo_config_file
 - test_completion_audit.py
 - test_verify_gate_lock_window.py
 - test_gates_powershell.py
@@ -155,7 +155,7 @@
 - bitbucket/scripts/merge_gate.sh
 - Brand
 - Migrating from ADI to SCIM
-- _repo
+- test_auto_cycle.py
 - have
 - _prod_ceiling
 - LabTargetHandler
@@ -193,7 +193,7 @@
 - test_auto_clear_review_fixes.py
 - gizmoduck/bootstrap.ps1
 - family
-- check_group_parity
+- worklog.py
 - test_themes.py
 - Worked examples by domain
 - MerakiHTTP
@@ -217,7 +217,7 @@
 - Find Skills
 - Changed
 - gizmoduck/bootstrap.sh
-- run
+- test_scanner_depcheck.py
 - _verdict
 - ready
 - Bitbucket Cloud REST API 2.0 — endpoint reference
@@ -240,7 +240,7 @@
 - _config_json
 - vault_setup.py
 - test_render_engine.py
-- test_auto_cycle.py
+- _repo
 - Exchange Mailbox Restore and Hold Removal (operator walkthrough)
 - Visio diagrams
 - claude-obsidian setup
@@ -264,11 +264,11 @@
 - _cli
 - setup-claude-obsidian.sh
 - Systematic debugging
-- bridge_status.py
-- test_codemap_read_path.py
+- Gizmoduck Multi-Scanner Routine Implementation Plan
+- repo_survey.py
 - Crew Graph
 - Notifications
-- test_scanner_depcheck.py
+- escaped
 - test_install_policy.py
 - obsidian-vault/hooks/scripts/_test/run-tests.sh
 - test_crew_route_hook.py
@@ -318,7 +318,7 @@
 - git_out
 - .text
 - _word_pdf
-- _run_init
+- test_asset_encoding.py
 - Cleanup commands
 - tg.py
 - Holds and mailbox states
@@ -338,7 +338,7 @@
 - install-scripts
 - check-dist-fresh.test.mjs
 - Root Cause Tracing
-- _parse
+- What's new
 - Claude Code Marketplace & Plugin Installation
 - test_crew_context_wrappers.py
 - crew_autocycle.py
@@ -393,11 +393,11 @@
 - AWS managed OpenSearch (Amazon OpenSearch Service)
 - Authentication, regions, and headers
 - Check Point Email Security API
-- repo_config_file
+- main
 - test_routine_manifest.py
 - Symptom → cause → how to confirm
 - Diagnose a slow or bloated Claude Code setup
-- Crew setup
+- test_merge.py
 - Drata API — Authentication
 - Drata Public API
 - parametrize
@@ -410,7 +410,7 @@
 - test_crew_instructions.py
 - _verify/smoke.sh
 - install-obsidian-plugins.ps1
-- obsidian-vault/hooks/scripts/_test/test_flavour_guard.py
+- pathlib
 - crew/hooks/scripts/_test/test_flavour_guard.py
 - test_event_claim_crash_safety.py
 - test_manager_config_remote_paths.py
@@ -429,11 +429,11 @@
 - test_rules_generation_path.py
 - crew_tracker.py
 - test_webtest_podman.py
-- completion_audit.py
+- toplevel
 - doctor.test.ts
 - test_approval_digest.py
 - parametrize
-- stale
+- record
 - jira-sync.md
 - onboard.md
 - check_instructions.py
@@ -444,7 +444,7 @@
 - Cloud MCP servers
 - _invariant_repo
 - The tracker interface (T-0021, crew 1.0.43)
-- _fixture
+- test_promote_gate_fails_closed.py
 - _css
 - _verify
 - main
@@ -470,7 +470,7 @@
 - Getting a Telegram bot token
 - Telegram setup
 - Authentication, Whoami, and Tenant Resolution
-- `crew` — virtual dev team for multi-repo legacy work
+- `obsidian-vault` — one or more Obsidian vaults as Claude Code memory
 - notify.py
 - Indexer API reference — port 9200
 - Defense-in-Depth Validation
@@ -488,7 +488,7 @@
 - lsp-stack-tools.sh
 - ChunkRecord
 - researcher.md
-- _pathdir_with
+- StubOllama
 - security.md
 - vsdx_writer.py
 - CLAUDE.md: structure, size, and the four anti-patterns
@@ -505,7 +505,7 @@
 - test_status.py
 - _repo
 - parametrize
-- depcheck.py
+- `crew` — virtual dev team for multi-repo legacy work
 - decision.md
 - design.md
 - build.py
@@ -515,7 +515,7 @@
 - _lex_ps
 - What is loaded before the user's first message
 - Screenshots: anonymisation and provenance
-- test_normalize.py
+- active_time_seconds
 - Extraction guide
 - obsidian-vault
 - report_mcp_routing
@@ -545,7 +545,7 @@
 - Vendored driver scripts - provenance
 - exchange-mailbox-restore/scripts/Resolve-OperatorInput.ps1
 - Vendored driver script - provenance (exchange-mailbox-restore copy)
-- crew_platform.py
+- check_env.py
 - Email backends
 - Skills
 - work-log
@@ -556,7 +556,7 @@
 - os
 - build_gallery.py
 - ._patch_get
-- INDEX.md
+- test_spec_templates_validate.py
 - runbook.md
 - Setup phases
 - debug.md
@@ -657,7 +657,7 @@
 - crew review, September 2026
 - reviewer.md
 - PM assign wave 2, 2026-09-24 - status corrections and new deferrals
-- Stack: PowerShell (5.1 and 7)
+- git_changelog.py
 - crew-brainstorm
 - Stack: Bash
 - Stack: Python
@@ -678,7 +678,7 @@
 - brainstorm.md
 - reconcile
 - _mangle_entry
-- write_shim
+- Diagrams
 - refuse
 - apply_mutation
 - _restore_all
@@ -689,7 +689,7 @@
 - completion-audit.ps1
 - _context_py
 - install_task_observer
-- Deferred by the PM, assign pass 2026-09-24 (10 dispatches, authority autonomous)
+- check_allowance_no_silent_raise
 - normalise_install_policy
 - _ids
 - _all_packages_ok
@@ -698,7 +698,7 @@
 - test_a_hyphenated_product_name_survives_unchanged
 - diagram_from_spec.py
 - test_build_report_cases_the_title_it_renders
-- What's new
+- Plugin updates
 - test_build_report_emits_the_shared_stylesheet_into_the_document
 - adf_to_text
 - .test_main_reports_os_error_cleanly_and_exits_nonzero
@@ -726,13 +726,13 @@
 - _machine_path
 - test_str_title_would_fail_every_one_of_these
 - test_small_words_are_lowered_in_the_middle_only
-- check_self_claims
+- Open items handed off 2026-09-22
 - Cross-review of `docs/review/04b-redesign-codex.md` against my design (`04a`)
 - Obsidian setup
 - test_same_handoff_never_fires_twice_across_a_second_boundary
 - gate.md
 - _freshness
-- API map
+- load
 - .test_cleanup_failure_does_not_mask_original_exception
 - _snapshot
 - Mermaid → SVG for Bitbucket Cloud
@@ -748,20 +748,20 @@
 - Common API (`{dataRegion}/common/v1`)
 - test_verify_gate_baseline.py
 - load_config
-- test_the_configured_delay_reaches_the_detached_senders_own_sleep_argument
+- test_auto_clear_child_tab_recheck_structure.py
 - _refuse_lstat
 - Authentication
 - Change requests
 - board_0_20.md
 - board_no_frontmatter.md
 - board_renamed_lanes.md
-- license-consistency.py
+- self-claims.py
 - endpoint
-- argparse
+- audit_page.py
 - test_verify_gate_rule_framing.py
 - _vault_around_repo
 - done.md
-- _write_handoff
+- _write_marker
 - The Rule of Two — scope
 - 24. The emergency lane
 - 3. Requirements and platforms
@@ -770,7 +770,7 @@
 - test_apply_creates_local_scratch_files_before_the_backup_and_cleanup_tracks_only_what_it_created
 - Reconciling the codemap against the graph
 - test_an_unconfirmable_opt_in_is_off_not_an_internal_error
-- main
+- 8. Verification, secrets, and browser tests
 - _slug_ids
 - test_a_cr_heredoc_delimiter_is_read_both_ways_by_the_lexer
 - test_workspace_new_is_not_judged_until_environments_is_configured
@@ -784,7 +784,7 @@
 - _Uncomparable
 - _Unprintable
 - to_crew
-- test_review_base.py
+- completion-audit.sh
 - fixture
 - test_cleanup_prints_a_named_warning_when_remote_rm_itself_raises_os_error
 - _teams
@@ -825,27 +825,25 @@
 - role-write-guard.sh
 - test_cleanup_handles_a_second_interrupt_without_masking_the_first
 - ask.md
-- obsidian-vault/commands/doctor.md
+- 15. Optional: Teams and Telegram notifications
 - test_record_run_refuses_the_same_command_with_no_progress
 - _real_ollama_ready
 - test_input_tokens_scale_with_prompt_size_on_a_real_model
 - The review contract
 - _effective
-- test_verify_gate_bash_empty_refusal.py
+- 7b. The API and feature reference
 - _vault_paths
 - [2026-07-28]
 - normalise_require_for_production
 - Manifest
-- .flock
+- _body_after_frontmatter
 - reviewer-claude.md
 - test_a_config_that_is_not_there_reads_absent_on_every_platform
 - test_a_marker_written_by_one_flavour_is_honoured_by_the_other
-- resolve_bash_no_prepend
 - test_status_ledger_on_another_drive_is_still_reported
 - _FakeResponse
 - _no_live_targets
 - change.md
-- run_check
 - test_28_the_real_verify_json_scans_clean_for_every_rule
 - _author
 - test_an_author_lock_that_cannot_be_taken_leaves_no_entry_behind
@@ -901,19 +899,19 @@
 ## Import Cycles
 - None detected.
 
-## Communities (926 total, 184 thin omitted)
+## Communities (924 total, 182 thin omitted)
 
 ### Community 0 - "install-prerequisites.sh"
 Cohesion: 0.08
 Nodes (43): all_keys(), default_keys(), expand_group_spec(), expand_selection_spec(), expand_skills_spec(), group_display_name(), group_index_for(), group_name() (+35 more)
 
 ### Community 1 - "crew_resume.py"
-Cohesion: 0.06
-Nodes (77): Added, Fixed, Auto-resume after `/clear` (T-0006, crew 1.0.40; T-0042, crew 1.0.43), Re-anchor provenance - `068db4ff` -> `07eefac5`, 2026-09-26 (T-0042 review round 1), Re-anchor provenance - `2b18f7ab` + `07eefac5` -> `53f5482c`, 2026-09-27 (T-0042 merges main), Re-anchor provenance - `6d35ef8c` -> `2bb92f32`, 2026-09-26 (T-0006 review round 3), Re-anchor provenance - `6f96e627` -> `068db4ff`, 2026-09-26 (T-0042), 14a. `resume.auto` — auto-resume after `/clear`, armed by the machine only (+69 more)
+Cohesion: 0.07
+Nodes (69): Added, Auto-resume after `/clear` (T-0006, crew 1.0.40; T-0042, crew 1.0.43), Re-anchor provenance - `068db4ff` -> `07eefac5`, 2026-09-26 (T-0042 review round 1), Re-anchor provenance - `2b18f7ab` + `07eefac5` -> `53f5482c`, 2026-09-27 (T-0042 merges main), Re-anchor provenance - `6d35ef8c` -> `2bb92f32`, 2026-09-26 (T-0006 review round 3), 14a. `resume.auto` — auto-resume after `/clear`, armed by the machine only, _absent(), _already() (+61 more)
 
 ### Community 2 - "base"
 Cohesion: 0.06
-Nodes (61): _declined(), _find_session_dir(), _has_injection_point(), _iter_confirmed(), _looks_like_sqlmap_log(), _matches_target_host(), parse(), parse_errors() (+53 more)
+Nodes (62): Adapter registry. Kind -> default adapter names, and name -> module. No tfsec:…, _declined(), _find_session_dir(), _has_injection_point(), _iter_confirmed(), _looks_like_sqlmap_log(), _matches_target_host(), parse() (+54 more)
 
 ### Community 3 - "test_scanner_nmap.py"
 Cohesion: 0.05
@@ -928,8 +926,8 @@ Cohesion: 0.07
 Nodes (83): Add-ClaudeMarketplace(), Add-McpServer(), Add-OrRefreshMcpServer(), Add-PluginToCache(), Enable-ClaudePlugin(), Expand-GroupSpec(), Expand-SelectionSpec(), Expand-SkillsSpec() (+75 more)
 
 ### Community 6 - "test_scanner_trivy.py"
-Cohesion: 0.06
-Nodes (55): _as_list(), _as_obj(), _attr(), _first_cvss(), is_available(), parse(), _parse_misconfigurations(), _parse_vulnerabilities() (+47 more)
+Cohesion: 0.04
+Nodes (69): 5.1-only cases (hard blocks on 7, not preferences), LSP, Pitfalls that cost time - 5.1, Pitfalls that cost time - 7, Security hardening (both editions), Stack: PowerShell (5.1 and 7), Verification, verify.json rules to propose (5.1 and 7 checked separately) (+61 more)
 
 ### Community 7 - "test_webtest_guard.py"
 Cohesion: 0.07
@@ -944,8 +942,8 @@ Cohesion: 0.06
 Nodes (76): _cygpath_list(), _is_git_launcher(), `C:\\x\\y` -> `/c/x/y`, the shape `cygpath -u` gives. Pure, so the Windows…, `cygpath -u -p` over the whole list in one process, or None., True for Git for Windows' `bin\\bash.exe`, never its `usr\\bin` one., The PATH value `flavor` ("sh" or "ps1") should be handed, with `dirs` first and…, shell_path(), windows_to_posix() (+68 more)
 
 ### Community 10 - "crew_incident.py"
-Cohesion: 0.13
-Nodes (32): Added, Fixed, Which of these you were asked for, declare(), _dict_or_empty(), emergency_config(), end(), extend() (+24 more)
+Cohesion: 0.11
+Nodes (36): Added, Fixed, Closing, Declaring, Status, What it cannot do, Which of these you were asked for, declare() (+28 more)
 
 ### Community 11 - "test_context_watch_python_resolver.py"
 Cohesion: 0.06
@@ -964,12 +962,12 @@ Cohesion: 0.09
 Nodes (66): bridge_status, check(), check_in(), check_not_in(), line_for(), make_vault(), Recorded Windows evidence: these vault windows are open, no others., Recorded macOS/Linux evidence: process presence only, no window list. (+58 more)
 
 ### Community 16 - "test_worktree_config.py"
-Cohesion: 0.10
-Nodes (32): cloud_guard, env_for(), Run one hook flavour. `stem` is `scope_guard` or `completion_audit`. Returns…, run_hook(), parametrize, _scope_repo(), test_a_blocking_hook_reaches_the_same_verdict_in_both_flavours(), _const() (+24 more)
+Cohesion: 0.05
+Nodes (48): cloud_guard, Linked worktrees read the main checkout's config (T-0088, crew 1.0.53), init_repo(), Once the first reports "sent". Before that the second waits -- see…, bash's `$(cat)` drops trailing newlines; a PowerShell read can keep a BOM. Both…, test_a_lost_claim_exits_10_through_the_cli(), test_a_trailing_newline_or_bom_does_not_split_one_event_into_two(), test_an_empty_payload_is_never_claimed() (+40 more)
 
-### Community 17 - "base.py"
-Cohesion: 0.06
-Nodes (51): Tasks 5–13: One adapter per tool, One manifest entry. `options` is the per-target toggle dict spec section 5…, Target, ParseError, Exception, Shared plumbing for scanner adapters. run_tool never raises on a non-zero exit…, A tool's output could not be read as the format it should be in. Raise this…, which() (+43 more)
+### Community 17 - "test_scanner_zap.py"
+Cohesion: 0.07
+Nodes (43): which(), is_available(), _build_plan(), _context_name(), is_available(), parse(), Write the AF plan and invoke it - `zap.bat -cmd -autorun <plan>.yaml` when a…, Parse the AF `report` job's traditional-json output, or raise base.ParseError.… (+35 more)
 
 ### Community 18 - "test_provider_table.py"
 Cohesion: 0.01
@@ -989,11 +987,11 @@ Nodes (47): botocore_auth, botocore_awsrequest, botocore_session, build_parser()
 
 ### Community 22 - "VectorStore"
 Cohesion: 0.04
-Nodes (51): Owns data, Hooks crew ships, Testing, memmap, ndarray, Hit, match_glob(), normalise() (+43 more)
+Nodes (51): Owns data, Re-anchor provenance - `a6e81869` -> `81685adf`, 2026-09-27 (T-0079 merges main, Step 7, re-bump), Hooks crew ships, memmap, ndarray, Hit, match_glob(), normalise() (+43 more)
 
 ### Community 23 - "crew_endpoints.py"
-Cohesion: 0.05
-Nodes (76): Changed, Fixed, `crew_endpoints.py` — the ledger now fails closed under an OS lock, Re-anchor provenance - `f2bb919b` -> `adf8d1dd`, 2026-09-25 (T-0008), fcntl, msvcrt, _acquire_endpoints_lock(), _acquire_os_lock() (+68 more)
+Cohesion: 0.03
+Nodes (97): Added, Changed, Fixed, `crew_endpoints.py` — the ledger now fails closed under an OS lock, Re-anchor provenance - `f2bb919b` -> `adf8d1dd`, 2026-09-25 (T-0008), fcntl, msvcrt, _acquire_endpoints_lock() (+89 more)
 
 ### Community 24 - "test_memory_ops.py"
 Cohesion: 0.06
@@ -1015,9 +1013,9 @@ Nodes (33): check_context_budget(), check_disabled_plugins(), check_disk(), chec
 Cohesion: 0.05
 Nodes (42): 1.1 - Record what is there now, 1.2 - Remove the hold and clear the tag, 1.3 - Verify, 1.4 - The temporary licence (a read, not a change), 1.5 - Ticket note and close, 2.1 - Find the inactive mailbox and record its ExchangeGuid, 2.2 - Create the target shared mailbox, 2.3 - Start the restore (+34 more)
 
-### Community 30 - "main"
-Cohesion: 0.11
-Nodes (24): build(), main(), Run check_self_claims against a fixture and return its failures., Run check_self_claims against a fixture carrying `plugin/crew/*.md` files, for…, Run check_description_claims against a fixture and return its failures.…, Build plugin/widget/commands/<rel> for each key in ``files`` (content is…, Point ROOT at a REAL directory holding a real plugin/widget/commands/ full of…, Run check_catalog_claims against a fixture pair of install-script- shaped files… (+16 more)
+### Community 30 - "render.py"
+Cohesion: 0.16
+Nodes (26): _chips(), _day(), _duration(), Path, Rendering for work log reports: HTML email body, plain-text fallback, and the…, Render a badge for anything that is not plain 'done'. A blocked or in-progress…, Build the detailed PDF. Raises ImportError if reportlab is missing so the…, render_email_html() (+18 more)
 
 ### Community 31 - "make_repo"
 Cohesion: 0.01
@@ -1025,7 +1023,7 @@ Nodes (211): make_repo(), Write a synthetic crew repo under tmp_path and return 
 
 ### Community 32 - "crew_state.py"
 Cohesion: 0.05
-Nodes (71): calendar, Added, Fixed, _adopt_slot(), _append_dispatch(), archive_stale_handoff(), _archived_handoff_name(), author_families() (+63 more)
+Nodes (73): calendar, Fixed, Fixed, Lessons - each one cost real time here, more than once, 12. Migration and version plan, Task 22: `context.autoResume` — pick up where the last session stopped, Task 4: `crew_state.py` — trigger evaluation and `collect`, 6. `pm.ticketGranularity` (+65 more)
 
 ### Community 33 - "test_verify_gate_lock.py"
 Cohesion: 0.11
@@ -1036,8 +1034,8 @@ Cohesion: 0.17
 Nodes (39): _config(), _marker(), by_flavor, by_flavor_matrix, parametrize, Tests for the context-watch Stop hook: threshold detection, the autoWrapUp…, One assistant turn as Claude Code writes it: message.usage carries the prompt…, A transcript whose LAST usage record holds `used` tokens. `peak` adds an… (+31 more)
 
 ### Community 35 - "crew_refresh_check.py"
-Cohesion: 0.05
-Nodes (66): Added, Re-anchor provenance - `8d447a7d` -> `c35edda5`, 2026-09-25 (T-0034), Re-anchor provenance - `adf8d1dd` -> `8d447a7d`, 2026-09-25 (T-0008 review round 3), The artifact refresh check (T-0008, crew 1.0.36), _outside_refresh_artifacts(), `paths` minus the refresh artifacts (`crew_refresh_check.…, _built_at_commit(), contained_path() (+58 more)
+Cohesion: 0.09
+Nodes (40): _bookkeeping(), _codemaps(), _config(), _declared(), _diagrams(), _entry(), _fallback_hides(), _few() (+32 more)
 
 ### Community 36 - "test_upgrade.py"
 Cohesion: 0.01
@@ -1065,7 +1063,7 @@ Nodes (31): The `localgpu` command itself: argument parsing, preflight, and the 
 
 ### Community 42 - "rule"
 Cohesion: 0.03
-Nodes (67): Added, collections, copy, difflib, Cisco Meraki Skill Implementation Plan, Deviation from the spec (deliberate), Global Constraints, Self-Review (+59 more)
+Nodes (75): Added, collections, copy, Gates that actually exist in code, difflib, Cisco Meraki Skill Implementation Plan, Deviation from the spec (deliberate), File Structure (+67 more)
 
 ### Community 43 - "test_role_ladder.py"
 Cohesion: 0.11
@@ -1073,7 +1071,7 @@ Nodes (14): _agent_files(), The crew 1.0 roster has one definition in code and o
 
 ### Community 44 - "obsidian_common.py"
 Cohesion: 0.05
-Nodes (61): Entry points, Owns data, Unverified, main(), _declared_default_entry(), default_vault_name(), detect_vault_from_app(), discover_vaults() (+53 more)
+Nodes (67): claim(), collision_sentence(), emit(), key_rejected_line(), listening(), main(), not_answering_line(), probe() (+59 more)
 
 ### Community 45 - "build_sop.py"
 Cohesion: 0.05
@@ -1095,29 +1093,29 @@ Nodes (28): atexit, http_server, _both_notify(), _Counter, _crew_repo(), _env(),
 Cohesion: 0.05
 Nodes (60): _cli(), _cli_env(), _config(), _folder(), _global(), _index(), parametrize, T-0023: plain-text lifecycle routing (`crew_route.py`). Step 1 is the phrase… (+52 more)
 
-### Community 50 - "crew 1.0.x deferral: tests hardcode `windows=` against `crew_autocycle.normalise_repo_path`, contradicting the real host - OPEN (filed 2026-09-24, measured by win-repo-2)"
-Cohesion: 0.13
-Nodes (15): _fill(), _posix_shaped(), A path the `windows=False` rules accept on every host. POSIX: a real directory…, The exact `_SCOPE_CASES` table the wrapper test above drives through a real…, Review round 1 (crew-1.0-burnin-fix4): normalise_repo_path used to replace…, Review round 2: normalise_repo_path used to `.strip()` the entry before…, Review round 2: the absolute-path check used one regex for both platforms, so a…, The Python twin's realpath call must not share auto-clear.ps1's lexical-… (+7 more)
+### Community 50 - "in_scope"
+Cohesion: 0.10
+Nodes (20): in_scope(), normalise_repo_path(), The form `onlyRepos` entries and the repo root are compared in, or "" for…, None when the key does not narrow (absent or null); otherwise the list of…, Is this repo AND this session inside the machine's narrowing? Each key that is…, _scope(), Review round 1 (crew-1.0-burnin-fix4): normalise_repo_path used to replace…, Review round 2: the absolute-path check used one regex for both platforms, so a… (+12 more)
 
-### Community 51 - "worklog.py"
-Cohesion: 0.05
-Nodes (104): datetime, email_utils, EmailMessage, _appendix(), _authorized_html(), _card(), _cover(), _coverage_cell_style() (+96 more)
+### Community 51 - "wlconfig.py"
+Cohesion: 0.18
+Nodes (34): collect_sessions(), config_path(), _deep_merge(), find_root(), list_session_ids(), load_config(), load_session(), load_state() (+26 more)
 
 ### Community 52 - "Policy: vulnerability management for deployed web applications"
 Cohesion: 0.06
 Nodes (31): 10. Review, 1. Purpose, 2. Scope, 3.1 Two independent controls, both required, 3.2 Scanning is performed against the public entry point, 3.3 Authorisation is a precondition, 3.4 Findings are triaged by severity, 3.5 Evidence is retained in version control (+23 more)
 
-### Community 53 - "__init__.py"
+### Community 53 - "test_scanner_nikto.py"
 Cohesion: 0.09
-Nodes (33): csv, Adapter registry. Kind -> default adapter names, and name -> module. No tfsec:…, _find_nikto_pl(), is_available(), _is_banner(), parse(), Nikto adapter. Nikto has no JSON output worth trusting (spec 13.6): `-Format…, The nikto command line to run: a native `nikto` binary on PATH (the Linux/apt-… (+25 more)
+Nodes (32): csv, _find_nikto_pl(), is_available(), _is_banner(), parse(), Nikto adapter. Nikto has no JSON output worth trusting (spec 13.6): `-Format…, The nikto command line to run: a native `nikto` binary on PATH (the Linux/apt-…, Returns (raw_path | None, base.ToolResult) per the cross-adapter contract:… (+24 more)
 
 ### Community 54 - "check-marketplace.py"
-Cohesion: 0.07
-Nodes (61): Fixed, `check_description_claims` and `check_catalog_claims` — unchanged in shape, Re-anchor provenance - `6c497a14` -> `f2bb919b`, 2026-09-25 (T-0015), Two version-check paths, still not one, Unverified at this anchor, `scripts/check-marketplace.py` — the direct gate, _active_rules(), bump_candidates() (+53 more)
+Cohesion: 0.06
+Nodes (81): Fixed, Fixed, Entry points, marketplace-registration, Entry points, Re-anchor provenance - `6c497a14` -> `f2bb919b`, 2026-09-25 (T-0015), The registration web — skill vs. plugin, re-confirmed at this anchor, Two version-check paths, still not one (+73 more)
 
-### Community 55 - "hashlib"
+### Community 55 - "auth.py"
 Cohesion: 0.05
-Nodes (62): base64, Out of scope for this note, hashlib, io, _deletes(), _environment(), _fields(), main() (+54 more)
+Nodes (63): base64, Out of scope for this note, io, _deletes(), _environment(), _fields(), main(), plan_workspace() (+55 more)
 
 ### Community 56 - "Connecting Claude to the vault"
 Cohesion: 0.08
@@ -1145,11 +1143,11 @@ Nodes (59): _agent(), _chmod_000_blocks_directory_access(), _command(), _norm(),
 
 ### Community 62 - "crew_autoclear_setup.py"
 Cohesion: 0.07
-Nodes (54): Auto-clear, already_configured_global(), apply_migrate_to_repo(), apply_onlyRepos_narrowing(), _atomic_write_json(), check_no_forbidden_words(), convert_method_windows_literal(), describe_global_windows_conversion() (+46 more)
+Nodes (52): Auto-clear, already_configured_global(), apply_migrate_to_repo(), apply_onlyRepos_narrowing(), _atomic_write_json(), check_no_forbidden_words(), convert_method_windows_literal(), describe_global_windows_conversion() (+44 more)
 
 ### Community 63 - "vault_garden.py"
 Cohesion: 0.05
-Nodes (76): ack(), acked_ids(), add_parsers(), already_distilled(), attributed_files(), _BoundedStreamReader, captured_at(), changed_files() (+68 more)
+Nodes (78): host_id(), This machine's name as used in per-host file names: lowercase, [a-z0-9-].…, ack(), acked_ids(), add_parsers(), already_distilled(), attributed_files(), _BoundedStreamReader (+70 more)
 
 ### Community 64 - "ZohoSDP"
 Cohesion: 0.10
@@ -1163,11 +1161,11 @@ Nodes (57): Config, the guard vocabulary, and the ratchet, Re-anchor provenance 
 Cohesion: 0.07
 Nodes (48): Three one-shot subcommands that are neither half — new at 0.1.18, HTTPError, _describe(), _model_missing(), ModelNotPulled, OllamaClient, OllamaError, OllamaTimeout (+40 more)
 
-### Community 67 - "init_repo"
-Cohesion: 0.09
-Nodes (20): init_repo(), Once the first reports "sent". Before that the second waits -- see…, bash's `$(cat)` drops trailing newlines; a PowerShell read can keep a BOM. Both…, test_a_lost_claim_exits_10_through_the_cli(), test_a_trailing_newline_or_bom_does_not_split_one_event_into_two(), test_an_empty_payload_is_never_claimed(), test_an_identical_event_after_the_window_is_a_new_event(), test_claims_live_in_the_git_common_dir_not_the_working_tree() (+12 more)
+### Community 67 - "datetime"
+Cohesion: 0.13
+Nodes (25): datetime, _appendix(), _authorized_html(), _card(), _cover(), _coverage_cell_style(), _coverage_cell_text(), _coverage_table_html() (+17 more)
 
-### Community 68 - "run_tool"
+### Community 68 - "base.py"
 Cohesion: 0.05
 Nodes (37): 10. Testing, 11. Rollout / compatibility, 12. Resolved questions (2026-09-10 review), 13.10 Existing-code realities that change task shape, 13.11 Resolved — the three gaps, answered, 13.12 Two more exit-code traps — six of nine tools now, 13.13 Timeouts: most tools have no whole-scan cap, 13.14 `run()` returns a tuple, not a path (+29 more)
 
@@ -1225,7 +1223,7 @@ Nodes (3): deep_get(), eprint(), Jira
 
 ### Community 82 - "crew_context.py"
 Cohesion: 0.05
-Nodes (83): dict_or_empty(), `value` when it is genuinely a dict, else `{}`. `(cfg.get(k) or {})` is the…, acquire_lock(), _agent_task(), anchor_state(), append_log(), build(), bullets() (+75 more)
+Nodes (90): Re-anchor provenance - `6f96e627` -> `068db4ff`, 2026-09-26 (T-0042), dict_or_empty(), `value` when it is genuinely a dict, else `{}`. `(cfg.get(k) or {})` is the…, acquire_lock(), _agent_task(), anchor_state(), append_log(), build() (+82 more)
 
 ### Community 83 - "test_docs_routing.py"
 Cohesion: 0.06
@@ -1236,8 +1234,8 @@ Cohesion: 0.12
 Nodes (46): parametrize, skipif, _ran(), The Stop budget: verify-gate runs what fits and SAYS what it deferred.…, The commands the gate actually executed, in order. Read off the per-rule…, Unknown is not free. The rule runs, and the output refuses to imply a number…, What /crew:verify uses: the whole map, nothing deferred., The safe direction. A config that cannot be parsed must not read as "no limit"… (+38 more)
 
 ### Community 85 - "routine.py"
-Cohesion: 0.09
-Nodes (26): Task 14: routine.py — manifest parsing and the authorization gate, AuthorizationError, _error_message_of(), load_manifest(), _location(), _location_field_name(), Manifest, _mode_of() (+18 more)
+Cohesion: 0.07
+Nodes (32): Task 14: routine.py — manifest parsing and the authorization gate, AuthorizationError, _error_message_of(), load_manifest(), _location(), _location_field_name(), Manifest, _mode_of() (+24 more)
 
 ### Community 86 - "test_handoff_staleness.py"
 Cohesion: 0.20
@@ -1249,7 +1247,7 @@ Nodes (26): base_url(), cmd_drift(), cmd_duplicates(), cmd_reconcile(), cmd_sche
 
 ### Community 88 - "TODO"
 Cohesion: 0.03
-Nodes (70): 1. `json_query` resolves `python3` only — not `python`, not `py`, 2. The scroll line bypasses `pick_fit` / `Format-PickerLine`, A green check on a stacked PR is a claim about its BASE, not about `main`, Briefing style: state claims as claims, and say that refuting them is a win, CHANGELOG.md is not CRLF-normalised by git on this machine, `CHANGELOG.md`'s "0.16.8: the machine-global config..." entries are mislabeled, Correction: nothing under `.crew/` is committed, and one commit message says otherwise, crew 1.0.36: cloud guard gaps found while fixing T-0005 review round 1 (filed 2026-09-25) (+62 more)
+Nodes (75): 1. `json_query` resolves `python3` only — not `python`, not `py`, 2. The scroll line bypasses `pick_fit` / `Format-PickerLine`, 4. ~~`vault_guard.py` blocks every edit to a vault's own `CLAUDE.md`~~ — DONE, 5. `core` consumers import the built artifact; `dist/` staleness — CLOSED 2026-09-06, A green check on a stacked PR is a claim about its BASE, not about `main`, Briefing style: state claims as claims, and say that refuting them is a win, CHANGELOG.md is not CRLF-normalised by git on this machine, `CHANGELOG.md`'s "0.16.8: the machine-global config..." entries are mislabeled (+67 more)
 
 ### Community 89 - "Cisco Meraki Skill — Design"
 Cohesion: 0.08
@@ -1267,9 +1265,9 @@ Nodes (25): An external implementer (`dev.provider`), Check, Check, Codex (QA re
 Cohesion: 0.09
 Nodes (27): Full re-derivation, 84976536 -> 2b337296, 2026-09-22, `ignore` / `unignore` / `.gitignore` — three layers, QA block, fixed in place, same day, The floor refuses out loud — correcting this note's own JUDGEMENT, Path, Where the install root resolves to, and how the two config layers merge., And says so. Dropping the entry silently would leave the floor intact but the…, The refusal must be about the floor, not about using `unignore` at all. (+19 more)
 
-### Community 93 - "ok"
-Cohesion: 0.04
-Nodes (34): random, build_parser(), _emit(), main(), MerakiClient, meraki_client.py -- read-only client for the Cisco Meraki Dashboard API v1.…, ConfigTool, Stage a batch with confirmed:false so Meraki validates the whole payload… (+26 more)
+### Community 93 - "time"
+Cohesion: 0.03
+Nodes (45): random, build_parser(), _emit(), main(), MerakiClient, meraki_client.py -- read-only client for the Cisco Meraki Dashboard API v1.…, meraki_http.py -- transport layer for the Cisco Meraki Dashboard API v1. Stdlib…, Puts the skill's scripts/ directory on sys.path so tests can import it. (+37 more)
 
 ### Community 94 - "CloudflareClient"
 Cohesion: 0.16
@@ -1301,11 +1299,11 @@ Nodes (34): bin, mcp-o365-user, dependencies, @badali404/mcp-ms-core, @modelcont
 
 ### Community 102 - "role_write_guard.py"
 Cohesion: 0.08
-Nodes (42): Fixed, 18. `guards.roleWrites` — mechanical enforcement of a role's write scope, A different drive is proven outside the repo, not merely unverifiable, A `\?\` extended-length path is never classified at all, A target outside the repo root entirely is not this guard's business, `..` after a symlink is a platform-specific rule, not one algorithm, Scope is judged on the real path, not the one the tool call named, The policy table is in the hook script, not in this file (+34 more)
+Nodes (43): Fixed, 18. `guards.roleWrites` — mechanical enforcement of a role's write scope, A different drive is proven outside the repo, not merely unverifiable, A `\?\` extended-length path is never classified at all, A target outside the repo root entirely is not this guard's business, `..` after a symlink is a platform-specific rule, not one algorithm, Scope is judged on the real path, not the one the tool call named, The policy table is in the hook script, not in this file (+35 more)
 
 ### Community 103 - "vault_ops.py"
 Cohesion: 0.04
-Nodes (93): collect_rest_settings(), describe_collision(), find_port_collisions(), (http_port, https_port) for a vault. Both read, neither derived. `config_port`…, {name: read_rest_settings(entry["path"])} for a discovered vault map., Every port claimed by more than one vault, or twice by one vault. Returns a…, One sentence naming who collides on what, for a report or a hook line., resolve_ports() (+85 more)
+Nodes (91): describe_collision(), find_port_collisions(), (http_port, https_port) for a vault. Both read, neither derived. `config_port`…, Every port claimed by more than one vault, or twice by one vault. Returns a…, One sentence naming who collides on what, for a report or a hook line., resolve_ports(), authenticated(), blocked_step() (+83 more)
 
 ### Community 104 - "TicketError"
 Cohesion: 0.18
@@ -1313,7 +1311,7 @@ Nodes (19): cache_get(), cache_put(), cmd_init(), cmd_jira_token(), cmd_zoho_tok
 
 ### Community 105 - "localgpu_cli.py"
 Cohesion: 0.06
-Nodes (47): Entry points, localgpu, Calls out to, Entry points, localgpu, `.mcp.json` — the gap closed at 0.1.18, Re-anchor provenance - 1f97e51c -> 84976536, 2026-09-22, Re-anchor provenance - `2b18f7ab` + `488053fc` -> `a1acd9b7`, 2026-09-27 (T-0023 merge of main) (+39 more)
+Nodes (50): Entry points, localgpu, Calls out to, Entry points, localgpu, `.mcp.json` — the gap closed at 0.1.18, Re-anchor provenance - 1f97e51c -> 84976536, 2026-09-22, Re-anchor provenance - `2b18f7ab` + `488053fc` -> `a1acd9b7`, 2026-09-27 (T-0023 merge of main) (+42 more)
 
 ### Community 106 - "test_crew_resume.py"
 Cohesion: 0.04
@@ -1340,12 +1338,12 @@ Cohesion: 0.11
 Nodes (26): posix_only, parametrize, A path is absolute on whichever OS AUTHORED it, at every call site - not just…, The whole defect in one assertion: the drive path must not survive INSIDE the…, The behavioural assertion, not an exit-code one: the .docx has to land in the…, `--dry-run` is what someone checks BEFORE writing a production master, so it…, The regression guard on the ordinary path - the fix must not have made every…, This branch stat's the joined path, so it ALREADY raised before the fix. It… (+18 more)
 
 ### Community 112 - "Design: crew Project Manager, graph-backed onboarding, and v1 upgrade path"
-Cohesion: 0.10
-Nodes (20): A1. `hooks/scripts/pm-brief.sh` + `pm-brief.ps1`, A2. `skills/crew-pm/SKILL.md`, A3. `agents/pm.md` (`crew:pm`), A4. `commands/pm.md` (`/crew:pm`), A5. `config.json` additions, A. The Project Manager, B. find-skills, C1. `skills/crew-graph/SKILL.md` (+12 more)
+Cohesion: 0.09
+Nodes (21): A1. `hooks/scripts/pm-brief.sh` + `pm-brief.ps1`, A2. `skills/crew-pm/SKILL.md`, A3. `agents/pm.md` (`crew:pm`), A4. `commands/pm.md` (`/crew:pm`), A5. `config.json` additions, A. The Project Manager, B. find-skills, C1. `skills/crew-graph/SKILL.md` (+13 more)
 
 ### Community 113 - "crew"
-Cohesion: 0.04
-Nodes (49): 12. Optional: Codex as reviewer, Gemini as design partner, 12b. Optional: Perplexity MCP for web-grounded QA, 13. Optional: Jira via MCP, 13b. Optional: ServiceDesk Plus via MCP, 13c. Optional: an Obsidian Kanban board, 14. Optional: Obsidian for memory, 15. Optional: Teams and Telegram notifications, 17. Linting, Terraform docs, and repo conventions (+41 more)
+Cohesion: 0.06
+Nodes (34): 12. Optional: Codex as reviewer, Gemini as design partner, 12b. Optional: Perplexity MCP for web-grounded QA, 13. Optional: Jira via MCP, 13b. Optional: ServiceDesk Plus via MCP, 13c. Optional: an Obsidian Kanban board, 14. Optional: Obsidian for memory, 17. Linting, Terraform docs, and repo conventions, 18. Document maintenance (+26 more)
 
 ### Community 114 - "test_agent_examples.py"
 Cohesion: 0.09
@@ -1357,7 +1355,7 @@ Nodes (13): combined_findings(), gz(), fixture, HTML/PDF report grouping and the
 
 ### Community 116 - "crew_autopilot.py"
 Cohesion: 0.06
-Nodes (83): Added, crew, Entry points, `/crew:autopilot` (T-0004, crew 1.0.41), Entry points, Re-anchor provenance - `29a987b0` -> `c87ac3f4`, 2026-09-26 (T-0018 review round 3), Re-anchor provenance - `2b18f7ab` + `4755ae1a` -> `b1ae1500`, 2026-09-27 (T-0018 round 4, main merge), Re-anchor provenance - `4ff7e764` -> `29a987b0`, 2026-09-26 (T-0018 review round 2) (+75 more)
+Nodes (82): Added, crew, Entry points, `/crew:autopilot` (T-0004, crew 1.0.41), Entry points, Re-anchor provenance - `29a987b0` -> `c87ac3f4`, 2026-09-26 (T-0018 review round 3), Re-anchor provenance - `2b18f7ab` + `4755ae1a` -> `b1ae1500`, 2026-09-27 (T-0018 round 4, main merge), Re-anchor provenance - `4ff7e764` -> `29a987b0`, 2026-09-26 (T-0018 review round 2) (+74 more)
 
 ### Community 117 - "README.md"
 Cohesion: 0.23
@@ -1365,7 +1363,7 @@ Nodes (4): MCP server updates, Unreleased, Skill updates, Unreleased
 
 ### Community 118 - "webtest_guard.py"
 Cohesion: 0.05
-Nodes (62): artifacts(), changed_files(), check_auth_leak(), check_skips(), check_visual(), config_auth_paths(), container_evidence(), declared_storage_state() (+54 more)
+Nodes (63): artifacts(), changed_files(), check_auth_leak(), check_skips(), check_visual(), config_auth_paths(), container_evidence(), declared_storage_state() (+55 more)
 
 ### Community 119 - "Microsoft MCP servers"
 Cohesion: 0.12
@@ -1404,12 +1402,12 @@ Cohesion: 0.10
 Nodes (20): 1. Preflight, 1. The header comment must be the first thing in main.tf, 2. Install terraform-docs only if the user says so, 2. The config requires terraform-docs >= 0.16, 3. Mixed line endings on Windows checkouts, 3. Treat .tool-versions as the source of truth, 4. Missing markers means the block gets appended, 4. Scaffold anything missing (+12 more)
 
 ### Community 128 - "approval_hook.py"
-Cohesion: 0.10
-Nodes (37): Re-anchor provenance - `a2802526` -> `32223b8a`, 2026-09-26 (T-0024 review round 1), _claim_pending(), _confirm(), _emit(), _expand(), _group_request(), _is_folder(), main() (+29 more)
+Cohesion: 0.05
+Nodes (69): Added, Re-anchor provenance - `32223b8a` -> `f8671fdc`, 2026-09-26 (T-0024 successor, step 6), Re-anchor provenance - `6f96e627` -> `a2802526`, 2026-09-26 (T-0024), Re-anchor provenance - `a2802526` -> `32223b8a`, 2026-09-26 (T-0024 review round 1), Re-anchor provenance - `f8671fdc` -> `45345812`, 2026-09-26 (T-0024 review round 3), `.crew/verify.json` — 31 rules, up from 30, Re-anchor provenance - `a0c0847e` -> `07ca3972`, 2026-09-26 (T-0004), Re-verify provenance - `6f96e627` -> `a2802526`, 2026-09-26 (T-0024) (+61 more)
 
-### Community 129 - "Re-anchor provenance - `65bb3330` + `474aea8b` -> `8de3c669`, 2026-09-27 (T-0024 lands on T-0018's main)"
-Cohesion: 0.16
-Nodes (37): Plain-text lifecycle routing (T-0023, crew 1.0.43), Re-anchor provenance - `65bb3330` + `474aea8b` -> `8de3c669`, 2026-09-27 (T-0024 lands on T-0018's main), Re-anchor provenance - `a6e81869` -> `81685adf`, 2026-09-27 (T-0079 merges main, Step 7, re-bump), Re-anchor provenance - `65bb3330` + `474aea8b` -> `8de3c669`, 2026-09-27 (T-0024 lands on T-0018's main), Re-anchor provenance - `65bb3330` + `474aea8b` -> `8de3c669`, 2026-09-27 (T-0024 lands on T-0018's main), Re-anchor provenance - `65bb3330` + `474aea8b` -> `8de3c669`, 2026-09-27 (T-0024 lands on T-0018's main), Re-anchor provenance - `65bb3330` + `474aea8b` -> `8de3c669`, 2026-09-27 (T-0024 lands on T-0018's main), Re-anchor provenance - `65bb3330` + `474aea8b` -> `8de3c669`, 2026-09-27 (T-0024 lands on T-0018's main) (+29 more)
+### Community 129 - "repo_config_file"
+Cohesion: 0.09
+Nodes (54): `.crew/config.json` vs `.crew/crew.json` — the open 1.0.x authority question, Plain-text lifecycle routing (T-0023, crew 1.0.43), Re-anchor provenance - `55f59b04` + `bebbb97f` -> `65bb3330`, 2026-09-27 (T-0018 lands on T-0023's main), Re-anchor provenance - `65bb3330` + `474aea8b` -> `8de3c669`, 2026-09-27 (T-0024 lands on T-0018's main), Re-anchor provenance - `a6e81869` -> `81685adf`, 2026-09-27 (T-0079 merges main, Step 7, re-bump), Re-anchor provenance - `65bb3330` + `474aea8b` -> `8de3c669`, 2026-09-27 (T-0024 lands on T-0018's main), Re-anchor provenance - `a6e81869` -> `81685adf`, 2026-09-27 (T-0079 merges main, Step 7, re-bump), Re-anchor provenance - `65bb3330` + `474aea8b` -> `8de3c669`, 2026-09-27 (T-0024 lands on T-0018's main) (+46 more)
 
 ### Community 130 - "test_completion_audit.py"
 Cohesion: 0.07
@@ -1447,9 +1445,9 @@ Nodes (36): Added, Block styles, Document pattern, Footer, Measurement history, 
 Cohesion: 0.10
 Nodes (19): "A specific user never appears", "Changes I make in the KSAT console keep reverting", Data loss to warn about explicitly, Default attribute mappings, Distinguishing duplicates from leftovers, "Duplicate users, or SSO logins land on a second account", "I clicked Provision on demand and it fails / does nothing", "It worked, then stopped weeks later" (+11 more)
 
-### Community 139 - "_repo"
-Cohesion: 0.18
-Nodes (31): _invoke(), _marker_path(), by_flavor_matrix, The mirror case: off native Windows (no `OS=Windows_NT`), with no tmux and no…, CREW_AUTOCLEAR_INHIBIT exists so a test suite never drives the real keyboard --…, Root cause of "worked when it worked": the continuation the wrap-up forces is…, crew 1.0 F4 reachability fix. Before it, `context-watch.sh:81` / `context-…, Both senders: `auto` with no tmux pane and no X11 must choose `notify`, never… (+23 more)
+### Community 139 - "test_auto_cycle.py"
+Cohesion: 0.14
+Nodes (30): _context_cfg(), _invoke(), _marker_path(), _proc_comm(), by_flavor_matrix, The auto wrap-up -> auto-clear -> auto-resume cycle, as ONE opt-in feature.…, `.crew/` present (so `make_repo` still creates it) but NO `.crew/config.json`…, Review round 2: comparing paths with `str.casefold()` uses Unicode special-… (+22 more)
 
 ### Community 140 - "have"
 Cohesion: 0.16
@@ -1576,12 +1574,12 @@ Cohesion: 0.16
 Nodes (17): _agent(), _agent_raw(), _implement(), _norm(), The roles that touch code must carry a scope rule, and report what they left.…, The base is what makes the narrowed rule safe: record it when work begins, diff…, Collapse runs of whitespace so an assertion survives a rewrap. These files are…, Unnormalised. Frontmatter is line-structured, and _norm collapses it to a… (+9 more)
 
 ### Community 172 - "vault_guard.py"
-Cohesion: 0.16
-Nodes (18): Calls out to, Does, Landmines, Measured this pass, obsidian-vault, Re-anchor provenance, Re-anchor provenance — 5d1fc5fd -> 60c79407, 2026-09-22 (PR #210, "Windows audit wave 3"), Re-anchor provenance — 84976536 -> 2b337296, 2026-09-22 (+10 more)
+Cohesion: 0.09
+Nodes (37): Calls out to, Does, Entry points, Landmines, Measured this pass, obsidian-vault, Owns data, Re-anchor provenance (+29 more)
 
 ### Community 173 - "crew_instructions.py"
-Cohesion: 0.03
-Nodes (103): Added, Changed, `.claude/rules/` - generated from this directory, and gated against it, Confirming recall reaches your sessions, Measured against the real `vault_ops.py recall`, 2026-09-23, Reading `--stats`, The seeded-note proof, Where recall comes from (+95 more)
+Cohesion: 0.02
+Nodes (111): Added, Changed, `.claude/rules/` - generated from this directory, and gated against it, Confirming recall reaches your sessions, Measured against the real `vault_ops.py recall`, 2026-09-23, Reading `--stats`, The seeded-note proof, Where recall comes from (+103 more)
 
 ### Community 174 - "test_auto_clear_review_fixes.py"
 Cohesion: 0.08
@@ -1595,9 +1593,9 @@ Nodes (10): Add-ToUserPath(), Install-DependencyCheck(), Install-XmlWriterModule
 Cohesion: 0.11
 Nodes (23): Blast radius, crew: complexity-based dev routing, Decisions taken, Migration (2 -> 3), Problem, Related requirement: crew owns the Copilot model, and sets it up, Related requirement: fallbacks, per-role Codex models, and a Codex advisor, Related requirement: split QA by what it actually checks (+15 more)
 
-### Community 177 - "check_group_parity"
-Cohesion: 0.11
-Nodes (28): Fixed, Entry points, marketplace-registration, Unverified, Entry points, The registration web — skill vs. plugin, re-confirmed at this anchor, bash_array(), check_catalogs() (+20 more)
+### Community 177 - "worklog.py"
+Cohesion: 0.17
+Nodes (19): email_utils, EmailMessage, build_message(), Path, SMTP delivery for work log reports. Supports three transport shapes because…, recipients(), send(), Exception (+11 more)
 
 ### Community 178 - "test_themes.py"
 Cohesion: 0.07
@@ -1612,16 +1610,16 @@ Cohesion: 0.08
 Nodes (15): Task 1: Transport core, MerakiHTTP, _MethodPreservingRedirectHandler, RateLimitError, Remove the API key from any string bound for output., Follow redirects without changing the method or losing auth headers., redact(), FakeSend (+7 more)
 
 ### Community 181 - "test_chunking.py"
-Cohesion: 0.08
-Nodes (45): `.gitignore` merging, Command file budget, Instruction-surface budgets (crew 1.0, T8), Plugin Markdown total, Chunk, chunk_lines(), document_text(), excerpt() (+37 more)
+Cohesion: 0.09
+Nodes (42): `.gitignore` merging, Chunk, chunk_lines(), document_text(), excerpt(), is_ignored(), iter_files(), _parse_gitignore() (+34 more)
 
 ### Community 182 - "Remaining setup — the steps only you can do"
 Cohesion: 0.22
 Nodes (8): 1. Install the obsidian-vault plugin and repair the vault, 1a. Install and initialize, 1b. Run doctor — this is the actual repair, 1c. Optional: plugin set review, 2. Publish the MCP servers to npm (unlocks `npx` installs), 4. Optional: crew's new switches, Done-when checklist, Remaining setup — the steps only you can do
 
 ### Community 183 - "crew"
-Cohesion: 0.02
-Nodes (137): Fixed, Calls out to, crew, Hooks, Inventory, Owns data, Re-anchor provenance - `385eadd5` -> `bcb77ce2`, 2026-09-26 (T-0021 review round 2), Re-anchor provenance - `55f59b04` + `bebbb97f` -> `65bb3330`, 2026-09-27 (T-0018 lands on T-0023's main) (+129 more)
+Cohesion: 0.03
+Nodes (111): Calls out to, crew, Hooks, Inventory, Owns data, Re-anchor provenance - `385eadd5` -> `bcb77ce2`, 2026-09-26 (T-0021 review round 2), Re-anchor provenance - `6c497a14` -> `f2bb919b`, 2026-09-25 (T-0015), Re-anchor provenance - `6f96e627` + `02d1513b` -> `2b18f7ab`, 2026-09-26 (T-0005 landing) (+103 more)
 
 ### Community 184 - "crew/hooks/scripts/_test/run-tests.sh"
 Cohesion: 0.27
@@ -1637,7 +1635,7 @@ Nodes (14): CISA, NPM, NVD, OSSINDEX, RETIREJS, dependencies, projectInfo, credi
 
 ### Community 187 - "review_run.py"
 Cohesion: 0.08
-Nodes (46): Fixed, A Codex usage limit runs the review round on Claude (T-0088, crew 1.0.53), 4. `--stage evidence` - what the reviewer gets, limit_line(), marker_path(), Is this Codex failure a usage, rate or quota limit? (T-0088) Owner, 2026-09-28:…, The first line of `texts` naming a Codex usage/rate/quota limit, stripped and…, `<git-common-dir>/crew/review/<ticket>.limit.json`, beside the ledger. (+38 more)
+Nodes (45): Fixed, A Codex usage limit runs the review round on Claude (T-0088, crew 1.0.53), 4. `--stage evidence` - what the reviewer gets, limit_line(), marker_path(), Is this Codex failure a usage, rate or quota limit? (T-0088) Owner, 2026-09-28:…, The first line of `texts` naming a Codex usage/rate/quota limit, stripped and…, `<git-common-dir>/crew/review/<ticket>.limit.json`, beside the ledger. (+37 more)
 
 ### Community 188 - "Connecting, modules and preflight"
 Cohesion: 0.13
@@ -1668,12 +1666,12 @@ Cohesion: 0.03
 Nodes (105): check(), _emitted_config_keys(), walk(), FakeProc, Path, Every key name the `config` subcommand actually prints, nested included., A command file must never read a key the script stopped emitting.…, `${CLAUDE_PLUGIN_ROOT}` is empty in a checkout, and expands to nothing. An… (+97 more)
 
 ### Community 195 - "MerakiError"
-Cohesion: 0.03
-Nodes (58): Gates that actually exist in code, File Structure, Task 2: Bootstrap, cache, and pagination, Task 3: Log surfaces, Task 4: Live diagnostic tools, Task 5: Semantic diff, default-rule handling, redaction, Task 6: Write CLI — snapshot, apply, rollback, hard blocks, Task 7: Action batches (+50 more)
+Cohesion: 0.04
+Nodes (39): Task 3: Log surfaces, Task 4: Live diagnostic tools, Task 8: SKILL.md and reference documents, Phase 2 — Providers and notifications, ts(), Setup phase order, Air Marshal, API self-audit (+31 more)
 
 ### Community 196 - "_common.sh"
-Cohesion: 0.09
-Nodes (22): approval-hook.sh script, note(), auto-clear.sh script, _cloud_guard_armed(), cloud-guard.sh script, crew_incident_active(), crew_incident_log(), crew_json_field() (+14 more)
+Cohesion: 0.11
+Nodes (18): approval-hook.sh script, note(), auto-clear.sh script, _cloud_guard_armed(), cloud-guard.sh script, crew_incident_active(), crew_incident_log(), crew_json_field() (+10 more)
 
 ### Community 197 - "Document maintenance"
 Cohesion: 0.14
@@ -1684,24 +1682,24 @@ Cohesion: 0.14
 Nodes (13): Common Skill Categories, Find Skills, How to Help Users Find Skills, Step 1: Understand What They Need, Step 2: Check the Leaderboard First, Step 3: Search for Skills, Step 4: Verify Quality Before Recommending, Step 5: Present Options to the User (+5 more)
 
 ### Community 199 - "Changed"
-Cohesion: 0.05
-Nodes (55): Changed, gate_processes(), kill_process_group(), pid_alive(), popen_gate(), _proc_start_ticks(), fixture, `subprocess.Popen`, but the child is made killable as a whole GROUP. A gate… (+47 more)
+Cohesion: 0.06
+Nodes (49): Changed, gate_processes(), kill_process_group(), pid_alive(), popen_gate(), _proc_start_ticks(), fixture, `subprocess.Popen`, but the child is made killable as a whole GROUP. A gate… (+41 more)
 
 ### Community 200 - "gizmoduck/bootstrap.sh"
 Cohesion: 0.15
 Nodes (3): bootstrap.sh script, try_install(), update_nuclei_templates()
 
-### Community 201 - "run"
-Cohesion: 0.11
-Nodes (18): parse_errors(), Return a degraded-NVD-data warning as a tool-error record, not a finding - the…, Returns (raw_path, result) - raw_path is None when the tool was not run or…, run(), _scan_path(), The failure that would actually matter: the key's literal value must not…, Same DEFECT-1 freshness discipline as the report file itself: a degraded run's…, test_nvd_api_key_flag_is_absent_when_the_env_var_is_unset() (+10 more)
+### Community 201 - "test_scanner_depcheck.py"
+Cohesion: 0.05
+Nodes (65): _as_list(), _as_obj(), _best_score(), is_available(), _package_and_version(), parse(), parse_errors(), OWASP Dependency-Check adapter. Invocation: `dependency-check --format JSON… (+57 more)
 
 ### Community 202 - "_verdict"
 Cohesion: 0.12
 Nodes (20): Patch `crew_ticket.toplevel` to return `answers` in turn (the last one…, test_all_allows_nonprod(), test_checkout_lookup_that_raises_refuses(), test_cloud_guard_forced_block_is_not_armed(), test_cloud_guard_import_failure_asks(), test_deploy_only_in_machine_layer_reads_none(), test_fully_armed_prod_allows(), test_fully_armed_prod_names_the_checkout_it_judged() (+12 more)
 
 ### Community 203 - "ready"
-Cohesion: 0.11
-Nodes (67): edit(), A ticket made, activated, approved and with its scope base recorded., ready(), _guard(), parametrize, scope_guard.py and its .sh / .ps1 wrappers: the PreToolUse plan-approval +…, _config(), _guard() (+59 more)
+Cohesion: 0.10
+Nodes (73): common_dir(), edit(), A ticket made, activated, approved and with its scope base recorded., ready(), test_a_corrupt_receipt_is_none_and_blocks_reapproval(), test_a_receipt_from_before_approved_via_is_unaccepted(), parametrize, _scope_repo() (+65 more)
 
 ### Community 204 - "Bitbucket Cloud REST API 2.0 — endpoint reference"
 Cohesion: 0.14
@@ -1709,7 +1707,7 @@ Nodes (13): Bitbucket Cloud REST API 2.0 — endpoint reference, Branch restrict
 
 ### Community 205 - "search_code"
 Cohesion: 0.04
-Nodes (70): Added, `check_embed_model` — line numbers, re-checked at this anchor, Two independent process trees, one shared Ollama, mcp_server_mcpserver, Step 0 — is crew even set up here, Step 2 — which roles are plausible, and which are not, Step 3 — the one supported route: a separate proxy session, Step 4 — end with one recommendation (+62 more)
+Nodes (68): Added, `check_embed_model` — line numbers, re-checked at this anchor, Two independent process trees, one shared Ollama, mcp_server_mcpserver, Step 0 — is crew even set up here, Step 2 — which roles are plausible, and which are not, Step 3 — the one supported route: a separate proxy session, Step 4 — end with one recommendation (+60 more)
 
 ### Community 206 - "house_style.py"
 Cohesion: 0.05
@@ -1744,8 +1742,8 @@ Cohesion: 0.15
 Nodes (12): Auto-resume, Configuration, Context and handoff, Housekeeping, How the reading is taken, Measuring usage, One correction first, Resuming (+4 more)
 
 ### Community 214 - "anthropic_proxy.py"
-Cohesion: 0.06
-Nodes (60): Fixed, Second QA round, same day — each finding right about its target, wrong one line over, _blocks_to_text(), check_fits_context(), _could_still_be_a_tool_call(), estimate_prompt_tokens(), _iter_ndjson(), make_server() (+52 more)
+Cohesion: 0.07
+Nodes (55): Fixed, Second QA round, same day — each finding right about its target, wrong one line over, _blocks_to_text(), check_fits_context(), _could_still_be_a_tool_call(), estimate_prompt_tokens(), _iter_ndjson(), _new_message_id() (+47 more)
 
 ### Community 215 - "Platform reference"
 Cohesion: 0.15
@@ -1760,8 +1758,8 @@ Cohesion: 0.09
 Nodes (33): Changed, build(), build_mixed(), check(), parametrize, Path, Regression suite for `render_mermaid.py --check`. The defect these tests exist…, An intact SVG under a v1 manifest must be reported UNVERIFIED and exit 1. This… (+25 more)
 
 ### Community 218 - "Indexer"
-Cohesion: 0.08
-Nodes (34): Embedder, Indexer, Drives one refresh pass over the configured roots., Sabotage log, FlakyEmbedder, make_indexer(), Swapping the embed model for a different one of the same width must not be…, model-a indexes alpha.py, then fails embedding beta.py before the manifest is… (+26 more)
+Cohesion: 0.07
+Nodes (36): Embedder, Indexer, Drives one refresh pass over the configured roots., Sabotage log, FlakyEmbedder, make_indexer(), Swapping the embed model for a different one of the same width must not be…, model-a indexes alpha.py, then fails embedding beta.py before the manifest is… (+28 more)
 
 ### Community 219 - "_prompt_args"
 Cohesion: 0.13
@@ -1783,9 +1781,9 @@ Nodes (39): config_path(), _home(), The user's home directory, HOME-first. os.pa
 Cohesion: 0.10
 Nodes (12): _build_report(), _preflight(), fixture, parametrize, The renderer is a deliberate, labelled choice - and Gate 2 has three outcomes.…, --renderer word off Windows must stop, not quietly use LibreOffice., soffice exits 0 on a locked profile. The exit code alone is not the check., test_a_converter_that_exits_zero_having_written_nothing_is_a_failure() (+4 more)
 
-### Community 224 - "test_auto_cycle.py"
-Cohesion: 0.12
-Nodes (28): _armed_or_silent(), _proc_comm(), by_flavor, The auto wrap-up -> auto-clear -> auto-resume cycle, as ONE opt-in feature.…, `.crew/` present (so `make_repo` still creates it) but NO `.crew/config.json`…, The REAL PATH's tmux, never `_sendable`'s injected shim: if this host truly has…, A/link1 -> ../B/link2 -> inner/repo: each hop must resolve against the symlink…, alias -> B, A/link -> ../alias/inner/repo: `alias` is a symlink INSIDE the… (+20 more)
+### Community 224 - "_repo"
+Cohesion: 0.17
+Nodes (25): _armed_or_silent(), by_flavor, The REAL PATH's tmux, never `_sendable`'s injected shim: if this host truly has…, A/link1 -> ../B/link2 -> inner/repo: each hop must resolve against the symlink…, alias -> B, A/link -> ../alias/inner/repo: `alias` is a symlink INSIDE the…, alias -> B/nested, A/link -> ../alias/../repo: the substituted target string…, A self-referential symlink in an onlyRepos entry must never resolve to a…, One key at a time, so neither can hide a widening of the other. (+17 more)
 
 ### Community 225 - "Exchange Mailbox Restore and Hold Removal (operator walkthrough)"
 Cohesion: 0.15
@@ -1840,12 +1838,12 @@ Cohesion: 0.17
 Nodes (11): Configure Claude Code's default behavior, Hard rules, Reference files, Step 1 — Route the request, Step 2 — Inventory what's already there, Step 3 — Interview, briefly, Step 4 — Propose before writing, Step 5 — Verify and hand off (+3 more)
 
 ### Community 238 - "crew_route.py"
-Cohesion: 0.08
-Nodes (32): Re-anchor provenance - `2b18f7ab` + `488053fc` -> `a1acd9b7`, 2026-09-27 (T-0023 merge of main), 21. `route` — plain-text lifecycle routing, off until `true`, _answer(), _candidates(), _clip(), command_for(), compile_table(), _continue() (+24 more)
+Cohesion: 0.07
+Nodes (39): Re-anchor provenance - `2b18f7ab` + `488053fc` -> `a1acd9b7`, 2026-09-27 (T-0023 merge of main), Re-anchor provenance - `6f96e627` -> `eba11657`, 2026-09-26 (T-0023), Re-anchor provenance - `db14619c` + `ad74ed35` -> `e463ca53`, 2026-09-27 (T-0023 lands on T-0021's main), 21. `route` — plain-text lifecycle routing, off until `true`, The `crew route:` item for this prompt, or None. Claude Code only: the line…, route_item(), _answer(), _candidates() (+31 more)
 
 ### Community 239 - "read_text"
-Cohesion: 0.08
-Nodes (41): Added, Re-anchor provenance - `2b18f7ab` + `bcb77ce2` -> `c2ae46ab`, 2026-09-27 (T-0021 review round 3 and its merge of main), Re-anchor provenance - 2b337296 -> 5d1fc5fd, 2026-09-22, Re-anchor provenance, Re-anchor provenance — 2b337296 -> 5d1fc5fd, 2026-09-22, Landmines, The three readers every crew script shares, and the repo-config resolver. Split…, One line for /crew:status and /crew:config naming the file in force; empty when… (+33 more)
+Cohesion: 0.06
+Nodes (50): Added, Re-anchor provenance - `2b18f7ab` + `bcb77ce2` -> `c2ae46ab`, 2026-09-27 (T-0021 review round 3 and its merge of main), Re-anchor provenance - 2b337296 -> 5d1fc5fd, 2026-09-22, Re-anchor provenance, Re-anchor provenance — 2b337296 -> 5d1fc5fd, 2026-09-22, Landmines, `--memory`, Run it (+42 more)
 
 ### Community 240 - "_repo"
 Cohesion: 0.12
@@ -1879,13 +1877,13 @@ Nodes (10): head2(), install_pkgs(), pkg_available(), py_version_ok(), run(), se
 Cohesion: 0.11
 Nodes (18): Common Rationalizations, Overview, Phase 1 in a crew repository - read what is already written down, Phase 1: Root Cause Investigation, Phase 2: Pattern Analysis, Phase 3: Hypothesis and Testing, Phase 4: Implementation, Prefer the upstream skill when it is installed (+10 more)
 
-### Community 248 - "bridge_status.py"
-Cohesion: 0.13
-Nodes (21): claim(), collision_sentence(), emit(), key_rejected_line(), listening(), not_answering_line(), probe(), True if this call is the first for session_id, across whichever interpreter's… (+13 more)
+### Community 248 - "Gizmoduck Multi-Scanner Routine Implementation Plan"
+Cohesion: 0.11
+Nodes (18): Gizmoduck Multi-Scanner Routine Implementation Plan, Global Constraints, Open items — all three answered (spec §13.11), Self-review notes, Task 15: routine.py — orchestration, Task 16: Coverage table and target grouping — Markdown path, Task 17: Coverage table — HTML/PDF path, Task 18: Cross-tool merge for deps and iac (+10 more)
 
-### Community 249 - "test_codemap_read_path.py"
-Cohesion: 0.18
-Nodes (16): _agent(), _command(), _command_raw(), _norm(), The roles that touch code must be told to read the code map. Crew wrote a per-…, 0.19.61 wired the FALLBACK reviewer and nobody else. /crew:review tries Codex…, All three providers must receive the same bytes. review.md states this as its…, Collapse runs of whitespace so an assertion survives a rewrap. Same helper,… (+8 more)
+### Community 249 - "repo_survey.py"
+Cohesion: 0.30
+Nodes (13): changes_since_manifest(), git_info(), human(), is_probably_text(), main(), Path, Yield (dirpath, filenames) for non-ignored directories., Survey a repository to ground documentation generation. Inventories… (+5 more)
 
 ### Community 250 - "Crew Graph"
 Cohesion: 0.18
@@ -1895,9 +1893,9 @@ Nodes (10): Build, Config keys, Crew Graph, Detect — never auto-install, Fresh
 Cohesion: 0.17
 Nodes (11): Configuration, Limits worth knowing, Microsoft Teams, Note, Notifications, Payload discipline, Setup, Setup (+3 more)
 
-### Community 252 - "test_scanner_depcheck.py"
-Cohesion: 0.15
-Nodes (19): parse(), Returns findings, or raises base.ParseError. DEFECT 2: an empty, truncated or…, Tests for the OWASP Dependency-Check adapter (Task 11). The edge case this file…, DEFECT 1 (CRITICAL): `{}` is syntactically valid JSON but is missing the…, Guard against trading a false-clean for a false-error: a real report with an…, DEFECT 2 (MEDIUM): a `packages[]` entry that is `null` used to reach…, A record with no text severity, an invalid ("NaN") cvssv2 score, and a valid…, test_dependency_entry_wrong_shape_raises_parse_error_not_attributeerror() (+11 more)
+### Community 252 - "escaped"
+Cohesion: 0.18
+Nodes (11): append_row(), check_ticket(), escaped(), _Lock, MetricsError, RuntimeError, A metrics operation that could not be carried out., O_CREAT|O_EXCL lock, `review_ledger._Lock`'s design, held for one read-then-… (+3 more)
 
 ### Community 253 - "test_install_policy.py"
 Cohesion: 0.06
@@ -1913,7 +1911,7 @@ Nodes (30): _context(), _env(), _head(), needs_bash, needs_pwsh, parametrize, T-
 
 ### Community 256 - "Verification harness"
 Cohesion: 0.05
-Nodes (44): Calls out to, `.github/workflows/instruction-budgets.yml` — the base-sha fix, `.github/workflows/` — seven other workflows, one of them new, Owns data, Re-anchor provenance - `068db4ff` -> `07eefac5`, 2026-09-26 (T-0042 review round 1), Re-anchor provenance - `1e210476` -> `aa7f9841`, 2026-09-26 (T-0005 review round 5), Re-anchor provenance - `2170d72e` -> `3a57b2d2`, 2026-09-26 (T-0005 rounds 3-4 and Step 8), Re-anchor provenance - `2b18f7ab` + `07eefac5` -> `53f5482c`, 2026-09-27 (T-0042 merges main) (+36 more)
+Nodes (42): Calls out to, `.github/workflows/` — seven other workflows, one of them new, Owns data, Re-anchor provenance - `068db4ff` -> `07eefac5`, 2026-09-26 (T-0042 review round 1), Re-anchor provenance - `1e210476` -> `aa7f9841`, 2026-09-26 (T-0005 review round 5), Re-anchor provenance - `2170d72e` -> `3a57b2d2`, 2026-09-26 (T-0005 rounds 3-4 and Step 8), Re-anchor provenance - `2b18f7ab` + `07eefac5` -> `53f5482c`, 2026-09-27 (T-0042 merges main), Re-anchor provenance - `2b18f7ab` + `4755ae1a` -> `b1ae1500`, 2026-09-27 (T-0018 round 4, main merge) (+34 more)
 
 ### Community 257 - "bitbucket/scripts/_test/merge_gate.sh"
 Cohesion: 0.47
@@ -1993,7 +1991,7 @@ Nodes (17): Code review, including the model's own work, Commits, Context manage
 
 ### Community 276 - "test_verify_gate_stop_gate_record.py"
 Cohesion: 0.03
-Nodes (140): `subprocess.run`, but a timeout kills the child's whole process GROUP before…, run_gate(), _commit(), _fail_on_gate_timeout(), _git(), NoReturn, parametrize, skipif (+132 more)
+Nodes (144): `subprocess.run`, but a timeout kills the child's whole process GROUP before…, run_gate(), _commit(), _fail_on_gate_timeout(), _git(), _kill_if_still_same_process(), NoReturn, parametrize (+136 more)
 
 ### Community 277 - "ref_badali404_mcp_ms_core"
 Cohesion: 0.10
@@ -2016,8 +2014,8 @@ Cohesion: 0.10
 Nodes (38): _accept_cli(), _check(), _claude_round(), parametrize, The acceptance receipt is bound to the bundle hash the reviewer read.…, Codex BLOCK: build a bundle, truncate every part, return the READ lines plus…, Codex BLOCK: complete round 1 with FINDINGS, reserve round 2, attempt a third…, Round 2 FINDINGS left unaccepted, then a third reservation: refused,… (+30 more)
 
 ### Community 282 - "Filed 2026-09-23 by the crew PM, during the unnamed-PM fix, not fixed there"
-Cohesion: 0.04
-Nodes (60): Fixed, Lessons - each one cost real time here, more than once, 12. Migration and version plan, Task 22: `context.autoResume` — pick up where the last session stopped, Task 4: `crew_state.py` — trigger evaluation and `collect`, 6. `pm.ticketGranularity`, collect(), evaluate_triggers() (+52 more)
+Cohesion: 0.05
+Nodes (37): Concurrent PMs can dispatch the same trigger twice - OPEN (filed 2026-09-23, crew 0.20.15 review), crew 0.20.15 B1-B3: Codex single-round residuals, not fixed (filed 2026-09-23) - OPEN, crew 0.20.15 T1-T4: Codex single-round findings, not fixed (filed 2026-09-23) - OPEN, crew 0.20.17 (T1) review adapter: deferred, not fixed (filed 2026-09-23) - OPEN, crew 1.0.0 final integration deferrals (filed 2026-09-23) - OPEN, crew 1.0.1: T2 removal review FIXes (filed 2026-09-23) - OPEN, crew 1.0.7 deferrals (filed 2026-09-24) - OPEN, crew 1.0 guides: multi-line code blocks render with a blank line between every line (LibreOffice, quickstart p1) - OPEN, cosmetic (filed 2026-09-23) (+29 more)
 
 ### Community 283 - "test_migrate.py"
 Cohesion: 0.08
@@ -2084,8 +2082,8 @@ Cohesion: 0.12
 Nodes (32): approval_hook, 1. Verdict, 2. Keep / remove / add, 3. Missing hooks (put in `~/.claude/settings.json`; matcher = tool name), 4. Global CLAUDE.md, 5. Codex setup, 6. Estimated context saved per session, 7. Sources and gaps (+24 more)
 
 ### Community 299 - "git_out"
-Cohesion: 0.08
-Nodes (41): Changed, 2. Ticket contract, git_out(), Stripped stdout of a git command, or None on any failure. Failure includes git…, changed(), _default_ref(), _entry(), _fallback_ref() (+33 more)
+Cohesion: 0.07
+Nodes (44): Changed, 2. Ticket contract, git_out(), The three readers every crew script shares, and the repo-config resolver. Split…, One line for /crew:status and /crew:config naming the file in force; empty when…, Stripped stdout of a git command, or None on any failure. Failure includes git…, repo_config_source_line(), changed() (+36 more)
 
 ### Community 300 - ".text"
 Cohesion: 0.10
@@ -2095,9 +2093,9 @@ Nodes (17): Layout, Profile: canvas-maps (JSON Canvas in a memory vault), Schema
 Cohesion: 0.24
 Nodes (15): The package that reads the .docx is one of the things that can be missing., _ink_mask and _coverage run for real here; `missing` is genuinely 0., The defect Gate 2 exists for: three edges painted, the top one gone. Non-zero…, No ink at all reads as `unbordered`. Only the .docx knows better., _run_gate2(), _sibling_docx(), test_a_clipped_top_edge_is_a_real_fail(), test_a_corrupt_sibling_docx_is_unavailable_not_pass() (+7 more)
 
-### Community 302 - "_run_init"
-Cohesion: 0.19
-Nodes (13): CompletedProcess, parametrize, Path, The C locale gives an ASCII `locale.getpreferredencoding(False)`.…, Red on a UTF-8 host, where the byte comparisons above cannot fail.…, The `worklog.config.example.json` read, from the behaviour end. Latent rather…, Run `worklog.py init` against a throwaway root. `WORKLOG_ROOT` is what keeps…, _run_init() (+5 more)
+### Community 302 - "test_asset_encoding.py"
+Cohesion: 0.18
+Nodes (16): CompletedProcess, parametrize, Path, `worklog.py init` must copy its assets byte-identically on every platform. The…, The C locale gives an ASCII `locale.getpreferredencoding(False)`.…, Red on a UTF-8 host, where the byte comparisons above cannot fail.…, The `worklog.config.example.json` read, from the behaviour end. Latent rather…, Run `worklog.py init` against a throwaway root. `WORKLOG_ROOT` is what keeps… (+8 more)
 
 ### Community 303 - "Cleanup commands"
 Cohesion: 0.20
@@ -2132,12 +2130,12 @@ Cohesion: 0.20
 Nodes (9): Active Directory Integration (ADI), Changing data in KnowBe4, Choosing a route, Console-only operations, Find out what exists before planning around it, Graph API (GraphQL), SCIM 2.0, The drift problem (+1 more)
 
 ### Community 311 - "test_stack_skills.py"
-Cohesion: 0.10
-Nodes (34): _absolute_fallback_present(), _all_rule_commands(), _frontmatter(), _json_rules(), _ps_command_body(), _pwsh_has_psscriptanalyzer(), skipif, Doc tests for the `stack-*` skills (crew 1.0 T5 part 2, lane C2 fix round;… (+26 more)
+Cohesion: 0.07
+Nodes (46): _absolute_fallback_present(), _all_rule_commands(), _frontmatter(), _json_rules(), _ps_command_body(), _pwsh_has_psscriptanalyzer(), skipif, Doc tests for the `stack-*` skills (crew 1.0 T5 part 2, lane C2 fix round;… (+38 more)
 
 ### Community 312 - "normalize.py"
-Cohesion: 0.08
-Nodes (32): Per-tool specifics, Task 18: Cross-tool merge for deps and iac, _deps_key(), _iac_key(), make_finding(), merge_category(), _merge_group(), _native_rule_id() (+24 more)
+Cohesion: 0.07
+Nodes (31): Landmines - every one of these has already shipped broken, Per-tool specifics, Tasks 5–13: One adapter per tool, _deps_key(), _iac_key(), make_finding(), merge_category(), _merge_group() (+23 more)
 
 ### Community 313 - "Installing terraform-docs"
 Cohesion: 0.20
@@ -2156,16 +2154,16 @@ Cohesion: 0.20
 Nodes (9): Known gaps, Layout, `mcp-servers` — the failure propagates through the exit code, not the visible tail, One sabotage that was wrong, not a hole, Preconditions, Sabotage status, The one that mattered, `_verify/` — the check harness (+1 more)
 
 ### Community 317 - "[Unreleased]"
-Cohesion: 0.04
-Nodes (58): Added, Added, Added, Added, Added, Added, Added, Added (+50 more)
+Cohesion: 0.03
+Nodes (59): Added, Added, Added, Added, Added, Added, Added, Added (+51 more)
 
 ### Community 318 - "crew_ticket.py"
-Cohesion: 0.03
-Nodes (144): Added, Fixed, Re-anchor provenance - `32223b8a` -> `f8671fdc`, 2026-09-26 (T-0024 successor, step 6), Re-anchor provenance - `6f96e627` -> `a2802526`, 2026-09-26 (T-0024), Re-anchor provenance - `f8671fdc` -> `45345812`, 2026-09-26 (T-0024 review round 3), `.crew/verify.json` — 31 rules, up from 30, Re-anchor provenance - `a0c0847e` -> `07ca3972`, 2026-09-26 (T-0004), Re-verify provenance - `6f96e627` -> `a2802526`, 2026-09-26 (T-0024) (+136 more)
+Cohesion: 0.04
+Nodes (98): Fixed, Lifecycle commands, After two review rounds: a successor plan, Amending scope, Approval, At the end of a turn: the completion audit, Modes, Scope and approval (+90 more)
 
 ### Community 319 - "install-scripts"
 Cohesion: 0.08
-Nodes (25): Calls out to, Does, install-scripts, Landmines, Owns data, Re-anchor provenance - `1e210476` -> `aa7f9841`, 2026-09-26 (T-0005 review round 5), Re-anchor provenance - `2170d72e` -> `3a57b2d2`, 2026-09-26 (T-0005 rounds 3-4 and Step 8), Re-anchor provenance - `2b18f7ab` + `068db4ff` -> `53f5482c`, 2026-09-27 (T-0042 merges main) (+17 more)
+Nodes (26): Calls out to, Does, install-scripts, Landmines, Owns data, Re-anchor provenance - `1e210476` -> `aa7f9841`, 2026-09-26 (T-0005 review round 5), Re-anchor provenance - `2170d72e` -> `3a57b2d2`, 2026-09-26 (T-0005 rounds 3-4 and Step 8), Re-anchor provenance - `2b18f7ab` + `068db4ff` -> `53f5482c`, 2026-09-27 (T-0042 merges main) (+18 more)
 
 ### Community 320 - "check-dist-fresh.test.mjs"
 Cohesion: 0.25
@@ -2175,9 +2173,9 @@ Nodes (12): Unverified, checkOwnBuild(), checkPackage(), fail(), main(), newestM
 Cohesion: 0.12
 Nodes (15): 1. Observe the Symptom, 2. Find Immediate Cause, 3. Ask: What Called This?, 4. Keep Tracing Up, 5. Find Original Trigger, Adding Stack Traces, Finding Which Test Causes Pollution, Key Principle (+7 more)
 
-### Community 322 - "_parse"
-Cohesion: 0.17
-Nodes (16): _by_cve(), _parse(), The second fixture dependency carries no `packages[]` block at all - the merge…, THE required edge case: severity text "HIGH", no cvssv3 block at all., DEFECT 3, from the shared fixture (CVE-2022-77777): no text severity, a garbage…, Both vulnerabilities on the lodash dependency share its one `packages[]` entry,…, test_cvssv2_only_fallback_when_text_severity_is_absent(), test_finding_count() (+8 more)
+### Community 322 - "What's new"
+Cohesion: 0.15
+Nodes (13): Adding a new plugin, crew 0.15.1, crew 0.16.10, crew 0.16.8, crew 0.17.0, Hooks only run where hooks run, Install, localgpu 0.1.7 (+5 more)
 
 ### Community 323 - "Claude Code Marketplace & Plugin Installation"
 Cohesion: 0.22
@@ -2188,12 +2186,12 @@ Cohesion: 0.20
 Nodes (22): _assert_non_blocking(), _env(), _payloads(), needs_bash, parametrize, skipif, crew-context.sh / crew-context.ps1: both flavours are non-blocking. For every…, Byte for byte outside the probe's try block; inside it this copy runs the… (+14 more)
 
 ### Community 325 - "crew_autocycle.py"
-Cohesion: 0.08
-Nodes (39): ancestors(), _block(), _contained(), global_config_path(), in_scope(), list_windows(), _load(), log_autoclear() (+31 more)
+Cohesion: 0.10
+Nodes (32): ancestors(), _block(), _contained(), global_config_path(), list_windows(), _load(), log_autoclear(), main() (+24 more)
 
 ### Community 326 - "gizmoduck.py"
-Cohesion: 0.05
-Nodes (66): File Structure, Gizmoduck Multi-Scanner Routine Implementation Plan, Global Constraints, Open items — all three answered (spec §13.11), Self-review notes, Task 15: routine.py — orchestration, Task 16: Coverage table and target grouping — Markdown path, Task 17: Coverage table — HTML/PDF path (+58 more)
+Cohesion: 0.14
+Nodes (26): 4. Tools, invocation, output → normalization, _categories_for(), category_of(), _cell_text(), cmd_report(), _cmd_report_combined(), cmd_summary(), cmd_tickets() (+18 more)
 
 ### Community 327 - "test_verify_gate_partial_failure_recording.py"
 Cohesion: 0.24
@@ -2260,8 +2258,8 @@ Cohesion: 0.22
 Nodes (8): Judgement calls worth making out loud, KnowBe4 Admin, Reference files, Step 1 — Route the task before writing anything, Step 2 — Check three things before running anything, Step 3 — Do the work, Step 4 — Report back, Troubleshooting SCIM sync
 
 ### Community 343 - "Notify (Telegram + email)"
-Cohesion: 0.09
-Nodes (17): fixture, Answers whatever the test tells it to, and records what it was sent., stub(), StubOllama, do_GET(), do_POST(), _send(), Concurrent jobs (dispatcher + topic-per-job) (+9 more)
+Cohesion: 0.17
+Nodes (10): Concurrent jobs (dispatcher + topic-per-job), Email via a connector (when a session is driving), Files, Notify (Telegram + email), Responsible use, Sending, Setup (once), Two-way: asking a question and waiting (+2 more)
 
 ### Community 344 - "localgpu"
 Cohesion: 0.13
@@ -2292,8 +2290,8 @@ Cohesion: 0.10
 Nodes (26): head_sha(), Short HEAD sha of a fixture repo., `None` is not `False`, and every caller must resolve it to stale. An anchor…, test_moved_since_reports_none_rather_than_false_when_it_cannot_tell(), The control. Without this the test above passes on a comparison that always…, The same truncation, at the second site. `read_diagrams` carries its own copy…, Control for the diagram site, same reason as the codemap one., 7, 8 and 40-character anchors all match a HEAD that IS that commit. Change… (+18 more)
 
 ### Community 351 - "Marketplace and registration"
-Cohesion: 0.10
-Nodes (21): Calls out to, Counts, measured fresh: 39 entries, 34 skills, 5 plugins, Crew's own description agrees with disk, one site excepted, `.crew/verify.json`'s doc rule still runs the marked-claim checker first, Marketplace and registration, Owns data, Re-anchor provenance - `2b18f7ab` + `07eefac5` -> `53f5482c`, 2026-09-27 (T-0042 merges main), Re-anchor provenance - `2b18f7ab` + `488053fc` -> `a1acd9b7`, 2026-09-27 (T-0023 merge of main) (+13 more)
+Cohesion: 0.06
+Nodes (38): Entry points, verification-harness, Entry points, Calls out to, `check_description_claims` and `check_catalog_claims` — unchanged in shape, `check_self_claims` — three marker types now, not two, Counts, measured fresh: 39 entries, 34 skills, 5 plugins, Crew's own description agrees with disk, one site excepted (+30 more)
 
 ### Community 352 - "test_review_patch.py"
 Cohesion: 0.15
@@ -2395,9 +2393,13 @@ Nodes (7): Authentication, regions, and headers, Generating an API key, Getting 
 Cohesion: 0.25
 Nodes (7): API map - which reference to read, Check Point Email Security API, Credentials - handle with care, Helper script, Quick start (the auth dance), Safety rails for destructive actions, Universal conventions
 
-### Community 377 - "repo_config_file"
-Cohesion: 0.05
-Nodes (54): Added, Changed — `crew` 1.0.53: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088), `.crew/config.json` vs `.crew/crew.json` — the open 1.0.x authority question, Linked worktrees read the main checkout's config (T-0088, crew 1.0.53), Re-anchor provenance - `a6e81869` -> `81685adf`, 2026-09-27 (T-0079 merges main, Step 7, re-bump), Re-anchor provenance - `a6e81869` -> `81685adf`, 2026-09-27 (T-0079 merges main, Step 7, re-bump), Re-anchor provenance — 60c79407 -> 6c497a14, 2026-09-25 (crew 1.0, PR #225). Re-derive provenance., Re-anchor provenance - `a6e81869` -> `81685adf`, 2026-09-27 (T-0079 merges main, Step 7, re-bump) (+46 more)
+### Community 377 - "main"
+Cohesion: 0.26
+Nodes (12): cmd_doctor(), line(), cmd_scan(), cmd_update(), find_nuclei(), html_to_pdf(), main(), Write `text` to `path` as UTF-8, closing the handle on the way out. (+4 more)
+
+### Community 378 - "test_routine_manifest.py"
+Cohesion: 0.09
+Nodes (4): File Structure, Tests for routine.py's manifest parsing and authorization gate (Task 14). Fully…, test_a_refused_manifest_never_reaches_the_adapter_registry(), ADAPTERS()
 
 ### Community 379 - "Symptom → cause → how to confirm"
 Cohesion: 0.25
@@ -2407,9 +2409,9 @@ Nodes (7): "A hook is erroring on everything", "Every command feels laggy", "It 
 Cohesion: 0.25
 Nodes (7): Diagnose a slow or bloated Claude Code setup, Related, Safety rails, Step 1 — Run the audit, Step 2 — Read the findings in this order, Step 3 — Reference map, Step 4 — Propose, then act
 
-### Community 381 - "Crew setup"
-Cohesion: 0.15
-Nodes (12): 1. Detect, do not assume, 2. Ask exactly three things, 3a. Record the platform, 3b-3d. Tracker wiring (Jira, ServiceDesk Plus, Obsidian), 3c. Gitignore secrets before any exist, 4. Write the repo CLAUDE.md, 5. Stop and say this out loud, 6. What comes after (+4 more)
+### Community 381 - "test_merge.py"
+Cohesion: 0.30
+Nodes (11): _finding(), Tests for normalize.merge_category - the cross-tool merge for the `deps` and…, test_deps_findings_sharing_cve_package_version_merge_with_highest_severity(), test_deps_findings_sharing_cve_with_only_package_absent_stay_separate(), test_deps_findings_sharing_cve_with_only_version_absent_stay_separate(), test_deps_findings_sharing_cve_with_package_and_version_both_absent_stay_separate(), test_finding_with_no_cve_never_merges(), test_iac_findings_sharing_path_line_resource_merge_despite_different_check_ids() (+3 more)
 
 ### Community 382 - "Drata API — Authentication"
 Cohesion: 0.25
@@ -2459,9 +2461,9 @@ Nodes (4): check(), check_optional(), localgpu_cli_check(), smoke.sh script
 Cohesion: 0.38
 Nodes (3): Fix(), Merge-JsonArray(), Pass()
 
-### Community 395 - "obsidian-vault/hooks/scripts/_test/test_flavour_guard.py"
-Cohesion: 0.19
-Nodes (17): build_fixture(), check(), _diff(), first_statements(), main(), non_debug(), pwsh(), [(script_path, [args]), ...] for every powershell hook in hooks.json. The args… (+9 more)
+### Community 395 - "pathlib"
+Cohesion: 0.04
+Nodes (66): pathlib, _agent(), _command(), _command_raw(), _norm(), The roles that touch code must be told to read the code map. Crew wrote a per-…, 0.19.61 wired the FALLBACK reviewer and nobody else. /crew:review tries Codex…, All three providers must receive the same bytes. review.md states this as its… (+58 more)
 
 ### Community 396 - "crew/hooks/scripts/_test/test_flavour_guard.py"
 Cohesion: 0.19
@@ -2500,8 +2502,8 @@ Cohesion: 0.08
 Nodes (22): sleep(), Common Mistakes, Condition-Based Waiting, Core Pattern, Implementation, Overview, Quick Patterns, Real-World Impact (+14 more)
 
 ### Community 405 - "crew_config.py"
-Cohesion: 0.04
-Nodes (83): 16. `guards` — the configurable guardrails, `block` did not preserve everything, and that is stated rather than implied, `environments.*` — which terraform targets may run unattended (crew 1.0.42), `forcePush: allow` honours the value everywhere, and names the branch, `guards.mergeGate` is read by a command, not by the guard, One resolver, two flavours, Production access — `prodDatabase`, `prodServer`, and `production.*`, The one asymmetry, and it matters (+75 more)
+Cohesion: 0.03
+Nodes (134): Added, Changed — `crew` 1.0.53: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088), Fixed, Config shape, 11. Repo-only keys — all 41, 16. `guards` — the configurable guardrails, 1. The two layers, 20. `autopilot` — `/crew:autopilot`, off until `plan` (+126 more)
 
 ### Community 406 - "test_bridge_capture_sh.sh"
 Cohesion: 0.27
@@ -2535,25 +2537,25 @@ Nodes (28): add_card(), _bare(), _board_lines(), _cards(), _checkbox(), _complet
 Cohesion: 0.20
 Nodes (20): _host(), _in_image(), _on_path(), parametrize, webtest_guard visual: Podman is a container runtime like Docker. The Windows…, Codex r1 finding 5: the advertised bind mount (`-v "$PWD":/work`) had no…, The runtime line is for a host. Inside a container the fix is the image, not…, `runtime_line()` prints `-v "$PWD":/work:Z -w /work` (the SELinux relabel… (+12 more)
 
-### Community 414 - "completion_audit.py"
-Cohesion: 0.16
-Nodes (21): Added, audit(), changed_paths(), _git_fields(), main(), _payload(), physical(), Stop-time completion scope audit, and `/crew:done`'s scope check. crew 1.0,… (+13 more)
+### Community 414 - "toplevel"
+Cohesion: 0.06
+Nodes (63): Added, Re-anchor provenance - `8d447a7d` -> `c35edda5`, 2026-09-25 (T-0034), Re-anchor provenance - `adf8d1dd` -> `8d447a7d`, 2026-09-25 (T-0008 review round 3), The artifact refresh check (T-0008, crew 1.0.36), audit(), changed_paths(), _git_fields(), main() (+55 more)
 
 ### Community 415 - "doctor.test.ts"
 Cohesion: 0.14
 Nodes (6): assertWriteAllowed(), WriteGateArgs, WriteNotAllowedError, fakeCredential, ref_node_assert, ref_node_test
 
 ### Community 416 - "test_approval_digest.py"
-Cohesion: 0.11
-Nodes (47): _approved(), _as_v1(), _check(), _edit_receipt(), parametrize, The approval digest (T-0026): an approval survives the lifecycle commands…, A header-bearing ticket approved from the user's prompt, base recorded., A valid ticket whose spec.md line 1 is `header`, written byte-exact. (+39 more)
+Cohesion: 0.10
+Nodes (50): env_for(), Run one hook flavour. `stem` is `scope_guard` or `completion_audit`. Returns…, run_hook(), _approved(), _as_v1(), _check(), _edit_receipt(), parametrize (+42 more)
 
 ### Community 417 - "parametrize"
 Cohesion: 0.10
 Nodes (25): _bare_with_commit(), _git(), parametrize, A repo at tmp_path/<where> (e.g. `a/app`) on `vault`'s top-level board., Round 2 FIX (:830): `a/app` and `b/app` share a basename, not an identity., Round 2 FIX (:876): the review repro -- another repo's no-note T-0042., Round 3 FIX (:503): `../origin/app.git` from a/app and from b/app are two…, Round 3 FIX (:1138): a title is not an owner. A's no-note T-0042 and B's INDEX… (+17 more)
 
-### Community 418 - "stale"
-Cohesion: 0.11
-Nodes (18): Lifecycle commands, After two review rounds: a successor plan, Amending scope, Approval, At the end of a turn: the completion audit, Modes, Scope and approval, The contract (+10 more)
+### Community 418 - "record"
+Cohesion: 0.20
+Nodes (11): _injected_chars(), _now(), _phases(), [{"phase", "at"}], built only from timestamps a source actually has., (count_or_UNKNOWN, source_note). A row that does not split into the shape…, (count_or_UNKNOWN, source_note). `session` may be given explicitly or left None…, (count_or_UNKNOWN, source_note) from the completion audit's own outside-Touch…, Build and append one row for `ticket`. Returns the row. (+3 more)
 
 ### Community 419 - "jira-sync.md"
 Cohesion: 0.29
@@ -2564,8 +2566,8 @@ Cohesion: 0.22
 Nodes (8): 1. Build or refresh the graph first, 2. Derive the subsystem list from the graph, not by guessing, 3. Fill the DERIVE sections from the graph, 4. Spawn `crew:explorer` only for what the graph cannot answer, 5. Map the data layer, if there is one, 6. Generate the path-scoped rules, `--refresh <subsystem>`, Then make the knowledge executable
 
 ### Community 421 - "check_instructions.py"
-Cohesion: 0.10
-Nodes (43): _allowance_at(), _body_after_frontmatter(), check_allowance_growth(), check_allowance_no_silent_raise(), check_allowance_paths_exist(), check_broken_references(), _check(), check_command_budget() (+35 more)
+Cohesion: 0.13
+Nodes (34): check_allowance_growth(), check_allowance_paths_exist(), check_broken_references(), _check(), check_command_budget(), check_frontmatter(), check_generated_drift(), check_policy_ids() (+26 more)
 
 ### Community 422 - "reference.md"
 Cohesion: 0.29
@@ -2595,9 +2597,9 @@ Nodes (11): _invariant_repo(), A repo whose single rule PASSES, ready to be seed
 Cohesion: 0.15
 Nodes (24): The tracker interface (T-0021, crew 1.0.43), _backwards(), _card_owner(), _common_dir(), _foreign(), _git_out(), _local_path(), _lost_claim() (+16 more)
 
-### Community 429 - "_fixture"
-Cohesion: 0.23
-Nodes (14): _fixture(), needs_bash, Control, and the one that matters most: the fix must not be "block everything".…, The fail-closed path itself, exercised by an input that actually raises. This…, Control for the branch next door -- no date at all is a separate finding from a…, A clean, committed repo gated on one environment. Committing…, The regression. `2026-99-99` used to exit 0 with an empty stderr., Control: the ordinary blocking path is untouched, and says something different… (+6 more)
+### Community 429 - "test_promote_gate_fails_closed.py"
+Cohesion: 0.24
+Nodes (15): _fixture(), needs_bash, The promote gate must fail closed when its own check cannot be evaluated.…, Control, and the one that matters most: the fix must not be "block everything".…, The fail-closed path itself, exercised by an input that actually raises. This…, Control for the branch next door -- no date at all is a separate finding from a…, A clean, committed repo gated on one environment. Committing…, The regression. `2026-99-99` used to exit 0 with an empty stderr. (+7 more)
 
 ### Community 430 - "_css"
 Cohesion: 0.16
@@ -2699,9 +2701,9 @@ Nodes (6): 1. Create the bot & get a token, 2. Get your chat_id, 3. Wire it up, 
 Cohesion: 0.29
 Nodes (6): 1. Obtain a bearer token, 2. Whoami — discover who the credential belongs to, 3. Partner and organization credentials, 4. Common auth failures, 5. Credential roles (set at creation in Central Admin), Authentication, Whoami, and Tenant Resolution
 
-### Community 455 - "`crew` — virtual dev team for multi-repo legacy work"
-Cohesion: 0.08
-Nodes (26): Agents — 2, Agents — one per `agents/*.md`, Bundled skills — 29, Bundled skills — 3, Commands — 11, Commands — 35, all explicit, `crew` — virtual dev team for multi-repo legacy work, Hooks — the part that runs without being asked (+18 more)
+### Community 455 - "`obsidian-vault` — one or more Obsidian vaults as Claude Code memory"
+Cohesion: 0.13
+Nodes (15): Agents — 2, Bundled skills — 3, Commands — 11, Hooks — the part that runs without being asked, `obsidian-vault` — one or more Obsidian vaults as Claude Code memory, Optional integrations, Plugin reference, Related tooling this plugin does not absorb (+7 more)
 
 ### Community 456 - "notify.py"
 Cohesion: 0.23
@@ -2728,8 +2730,8 @@ Cohesion: 0.22
 Nodes (14): ensure_uv(), ensure_uv_once(), install_aws_mcp(), install_aws_pricing_mcp(), install_graphify(), install_pipx_package(), pep668_enforced(), install_sqlfluff() (+6 more)
 
 ### Community 462 - "test_change_validator.py"
-Cohesion: 0.05
-Nodes (48): _answer_for(), check_answer(), describe(), main(), normalise_answer(), The ten-question gate on a change request. Pure, and the whole feature. The…, `value` reduced to the form `PLACEHOLDERS` is compared against. Lower-cased,…, One finding for question `number`, or None when it is answered. A finding is… (+40 more)
+Cohesion: 0.08
+Nodes (31): _answered(), parametrize, The ten-question gate, measured rather than described. `crew_change` is the…, Question 9 is "has there been a notification sent to those affected?", and `no`…, Matched against the WHOLE normalised answer, never as a substring. "none of the…, The assertion that keeps every refusal above non-vacuous. Without it a…, Naming which" is the requirement. An operator who fixes one answer and is…, At filing time the change has not happened, so question 10 cannot be answered.… (+23 more)
 
 ### Community 463 - "o365-admin/tsconfig.json"
 Cohesion: 0.29
@@ -2767,9 +2769,9 @@ Nodes (39): MonkeyPatch, ChunkRecord, One window of one file, before it has a ro
 Cohesion: 0.33
 Nodes (5): Refuse to answer from memory, Sourcing, What you never do, What you return, Where you look, in order
 
-### Community 473 - "_pathdir_with"
-Cohesion: 0.21
-Nodes (13): _pathdir_with(), Must-allow, and the reported case. `python` exists, `python3` does not -- Git…, Must-allow twin: the fix must not have reordered the family., Must-block: no interpreter under any name. The script has to say so in its own…, Must-allow: the early return above the python call is untouched., A directory holding `names`, each a shim that `exec`s the real interpreter by…, _repo_with_map(), _run() (+5 more)
+### Community 473 - "StubOllama"
+Cohesion: 0.22
+Nodes (7): fixture, Answers whatever the test tells it to, and records what it was sent., stub(), StubOllama, do_GET(), do_POST(), _send()
 
 ### Community 474 - "security.md"
 Cohesion: 0.33
@@ -2828,12 +2830,12 @@ Cohesion: 0.09
 Nodes (22): _crash_mid_claim(), Codex r1 finding 1 (event_claim.py:230): a claimant that loses the O_EXCL race…, Documented, not a defect: nothing in a Notification payload tells the other…, The review's reproduction through the CLI: the winner is 'paused' -- it got…, Codex FIX (event_claim.py:215 at the previous anchor): the release before the…, g1 is created, ages past `_STALE_SECONDS` and is pruned, then g1 is RECREATED…, Codex final review, round 3 (crew-1.0-r4-scope): the OLD `mark_sent` read…, The review's reproduction: an expired marker, the winner of the takeover killed… (+14 more)
 
 ### Community 489 - "parametrize"
-Cohesion: 0.18
-Nodes (11): _context_cfg(), fixture, parametrize, The handoff's next action is its LAST section, after a body longer than the…, A PID that (a) really backs a running process, so ps1's owner-safety Get-…, _real_foreign_pid(), test_resolve_target_table(), test_the_configured_delay_reaches_the_dry_run_plan_at_several_values() (+3 more)
+Cohesion: 0.13
+Nodes (15): _fill(), _posix_shaped(), fixture, parametrize, A path the `windows=False` rules accept on every host. POSIX: a real directory…, The exact `_SCOPE_CASES` table the wrapper test above drives through a real…, Review round 2: normalise_repo_path used to `.strip()` the entry before…, A PID that (a) really backs a running process, so ps1's owner-safety Get-… (+7 more)
 
-### Community 490 - "depcheck.py"
-Cohesion: 0.21
-Nodes (12): _as_list(), _as_obj(), _best_score(), is_available(), _package_and_version(), OWASP Dependency-Check adapter. Invocation: `dependency-check --format JSON…, (severity_int, was_a_real_assessment) via the documented fallback: text…, Numeric score for the finding's `cvss` field - CVSSv3 preferred as the more… (+4 more)
+### Community 490 - "`crew` — virtual dev team for multi-repo legacy work"
+Cohesion: 0.18
+Nodes (11): Agents — one per `agents/*.md`, Bundled skills — 29, Commands — 35, all explicit, `crew` — virtual dev team for multi-repo legacy work, Hooks — the part that runs without being asked, Optional integrations, Testing, The code graph (+3 more)
 
 ### Community 491 - "decision.md"
 Cohesion: 0.33
@@ -2867,9 +2869,9 @@ Nodes (5): Measuring rather than estimating, Shrinking it, in order of payoff, T
 Cohesion: 0.33
 Nodes (5): 1. Anonymise — and audit the whole image, not just the field you are fixing, 2. Check provenance, Layout, Screenshots: anonymisation and provenance, Where source images live
 
-### Community 500 - "test_normalize.py"
+### Community 500 - "active_time_seconds"
 Cohesion: 0.22
-Nodes (7): parametrize, test_cvss_bands_including_boundaries(), test_cvss_rejects_missing_non_finite_and_out_of_range(), test_known_text_levels(), test_riskcode_map_and_unexpected(), test_riskcode_rejects_non_integral_values(), test_unknown_text_falls_back_and_flags()
+Nodes (10): active_time_seconds(), _parse_iso(), An aware UTC datetime, or None -- never raises. A non-string `ts`, a string…, (unparseable, instant): groups events whose timestamp does not parse after…, (events, had_unparseable_line). `events` is [(timestamp_str, record)] for every…, Sum of gaps between consecutive main-chain transcript events, each capped at…, Sum of every main-chain assistant message's usage fields. UNKNOWN when no…, _sort_key() (+2 more)
 
 ### Community 501 - "Extraction guide"
 Cohesion: 0.14
@@ -2987,9 +2989,9 @@ Nodes (3): ConvertFrom-InputByte(), Find-AddressColumn(), Read-InputFile()
 Cohesion: 0.40
 Nodes (4): Copied at, Manifest, Upstream may have moved on, Vendored driver script - provenance (exchange-mailbox-restore copy)
 
-### Community 530 - "crew_platform.py"
-Cohesion: 0.07
-Nodes (41): Task 5: `pm_brief.py` — quiet mode, platform, apply_changes(), concerns(), detect(), diff(), _first_line(), load() (+33 more)
+### Community 530 - "check_env.py"
+Cohesion: 0.22
+Nodes (16): platform, browsers_dir(), collect(), installed_browsers(), main(), node_playwright(), python_playwright(), Ordered list of (what, why, command) for anything missing. (+8 more)
 
 ### Community 531 - "Email backends"
 Cohesion: 0.40
@@ -3016,12 +3018,12 @@ Cohesion: 0.50
 Nodes (3): LOCALGPU_HOME, {{LOCALGPU_PYTHON}}, localgpu
 
 ### Community 537 - "verify_fingerprint.py"
-Cohesion: 0.15
-Nodes (19): _corrupt_cache(), _file_digest(), fingerprint(), _gate_owned(), _head(), _index_entries(), main(), _material() (+11 more)
+Cohesion: 0.14
+Nodes (20): Fixed, _corrupt_cache(), _file_digest(), fingerprint(), _gate_owned(), _head(), _index_entries(), main() (+12 more)
 
 ### Community 538 - "os"
-Cohesion: 0.02
-Nodes (195): builtins, config, crew_config, ctypes, dataclasses, filecmp, fnmatch, json (+187 more)
+Cohesion: 0.01
+Nodes (231): argparse, builtins, config, crew_config, ctypes, dataclasses, Task 5: `pm_brief.py` — quiet mode, filecmp (+223 more)
 
 ### Community 539 - "build_gallery.py"
 Cohesion: 0.31
@@ -3031,9 +3033,9 @@ Nodes (12): _brand(), expected_files(), find_chrome(), index_html(), main(), {fi
 Cohesion: 0.31
 Nodes (3): _build_zip(), umask 0o027, not the more common 0o022: 0o666 & ~0o022 == 0o644, which is…, A single ZIP_STORED member, optionally with one payload byte flipped so the…
 
-### Community 541 - "INDEX.md"
-Cohesion: 0.17
-Nodes (5): Re-derive provenance, Code map — index, Coverage — and what is still unmapped, Files, How to read these files
+### Community 541 - "test_spec_templates_validate.py"
+Cohesion: 0.33
+Nodes (9): parametrize, The spec templates that /crew:spec and /crew:fix tell the model to write must…, The fenced block in commands/<command>.md that holds the spec.md template - the…, The prose in fix.md and spec.md says a note after the path must carry no…, _template(), test_a_touch_note_parses_only_when_it_carries_no_backticks(), test_every_required_section_is_a_heading_in_the_template(), test_no_required_section_is_empty_in_the_template() (+1 more)
 
 ### Community 542 - "runbook.md"
 Cohesion: 0.50
@@ -3224,8 +3226,8 @@ Cohesion: 0.67
 Nodes (3): parametrize, The preserve rule, checked in every position a token can occupy -- first,…, test_a_token_carrying_its_own_capitalisation_is_preserved_anywhere()
 
 ### Community 623 - "init"
-Cohesion: 0.24
-Nodes (22): commit(), init(), manifest(), merge(), plugin_file(), Bump, THEN change the plugin. The whole reason the check exists., Change the plugin, THEN bump. The correct order, and it must stay quiet., A branch bumps and changes crew; main's own manifest commit is dated between. A… (+14 more)
+Cohesion: 0.17
+Nodes (28): Changed — `crew` 1.0.42: environment-scoped terraform in the cloud guard (T-0005) — **BREAKING**, Cloud guard, What the guard does not catch, commit(), init(), main(), manifest(), merge() (+20 more)
 
 ### Community 624 - "test_change_command.py"
 Cohesion: 0.06
@@ -3284,8 +3286,8 @@ Cohesion: 0.29
 Nodes (3): Connector, 1-D shape with dynamic glue, so Visio reroutes it when shapes move., Trim the line to each shape's bounding box so arrowheads land on the edge.
 
 ### Community 645 - "crew_metrics.py"
-Cohesion: 0.07
-Nodes (48): active_time_seconds(), append_row(), baseline(), check_ticket(), compare(), effective_ticket_metrics(), escaped(), _injected_chars() (+40 more)
+Cohesion: 0.20
+Nodes (16): baseline(), compare(), effective_ticket_metrics(), _is_legacy(), main(), _median(), metrics_path(), crew 1.0, lane T9: the metrics harness (docs/review/04-redesign.md… (+8 more)
 
 ### Community 646 - "Publishing mcp-servers to npm"
 Cohesion: 0.25
@@ -3303,9 +3305,9 @@ Nodes (6): Checks that cannot fail, Output, Read the map first, Scope, Start fro
 Cohesion: 0.15
 Nodes (13): A crew version bump is OWED and is not ours to make - RELAY TO THE CREW SESSION, Codemap re-derive budget - only ONE note is actually worth it, CORRECTION to the wave-1 entry above: `.crew/verify.json` is TRACKED, not gitignored, CORRECTION to the wave-1 entry above: the `data-flow-crew-config` off-by-one is PRE-EXISTING, Deferred by the 1.0 ship pass - triggers left standing, Deferred to crew 1.0.x - four test-harness defects, deliberately NOT fixed tonight, Four Codex PowerShell BLOCKs at `85dfa4a7` - AWAITING DETAILS, From T-0008 (crew 1.0.36) - the light path and the guide still say three `/crew:done` checks (+5 more)
 
-### Community 650 - "Stack: PowerShell (5.1 and 7)"
-Cohesion: 0.20
-Nodes (9): 5.1-only cases (hard blocks on 7, not preferences), LSP, Pitfalls that cost time - 5.1, Pitfalls that cost time - 7, Security hardening (both editions), Stack: PowerShell (5.1 and 7), Verification, verify.json rules to propose (5.1 and 7 checked separately) (+1 more)
+### Community 650 - "git_changelog.py"
+Cohesion: 0.38
+Nodes (9): build(), classify(), collect(), git(), main(), Path, Return (category, cleaned_subject, breaking, noise)., Draft Keep a Changelog entries from git history. Groups commits into Added /… (+1 more)
 
 ### Community 651 - "crew-brainstorm"
 Cohesion: 0.29
@@ -3340,8 +3342,8 @@ Cohesion: 0.18
 Nodes (8): _layer_path(), _lstat_raising(), Round 4's repro: `layer_state`'s `lexists` collapse (its `read_text` None and…, test_incident_check_that_raises_a_non_oserror_refuses(), test_incident_unreadable_path_refuses(), lstat(), test_layer_parent_unreadable_asks(), test_layer_present_but_layer_state_says_absent_asks()
 
 ### Community 659 - ".verify"
-Cohesion: 0.09
-Nodes (22): bootstrap.ps1 vs bootstrap.sh — verdict: the "twin" claim holds, Closing, Declaring, Status, What it cannot do, 23. Promotion: development to qa to production, Declared, not remembered, Five gates, in order, stopping at the first failure (+14 more)
+Cohesion: 0.12
+Nodes (18): bootstrap.ps1 vs bootstrap.sh — verdict: the "twin" claim holds, 23. Promotion: development to qa to production, Declared, not remembered, Five gates, in order, stopping at the first failure, Rules with no override, Starting from nothing, The promotion record, What a hook enforces, and what it cannot (+10 more)
 
 ### Community 660 - "skills-itsm"
 Cohesion: 0.20
@@ -3368,8 +3370,8 @@ Cohesion: 0.33
 Nodes (5): 1. Recommended toolset (versions as of 2026-09-23), 2. Design, 3. Alternatives and why Playwright wins for validation, 4. Risks, Sources (verified, fetched today)
 
 ### Community 690 - "repo-docs"
-Cohesion: 0.08
-Nodes (25): Calls out to, Does, Entry points, Owns data, Re-anchor provenance - `1e210476` -> `aa7f9841`, 2026-09-26 (T-0005 review round 5), Re-anchor provenance - `2170d72e` -> `3a57b2d2`, 2026-09-26 (T-0005 rounds 3-4 and Step 8), Re-anchor provenance - `2b18f7ab` + `07eefac5` -> `53f5482c`, 2026-09-27 (T-0042 merges main), Re-anchor provenance - `2b18f7ab` + `488053fc` -> `a1acd9b7`, 2026-09-27 (T-0023 merge of main) (+17 more)
+Cohesion: 0.05
+Nodes (30): Re-derive provenance, Code map — index, Coverage — and what is still unmapped, Files, How to read these files, Calls out to, Does, Entry points (+22 more)
 
 ### Community 691 - "brainstorm.md"
 Cohesion: 0.33
@@ -3383,9 +3385,9 @@ Nodes (13): Fixed, Task 10: `graph_reconcile.py` — codemap against graph, is_p
 Cohesion: 0.33
 Nodes (6): _mangle_entry(), Set `field` of this worktree's entry to `value` (the whole entry when `field`…, Review round 3 FIX :417, the neighbour: this worktree's entry, or a field of…, test_a_resume_state_entry_of_the_wrong_shape_waits(), test_record_run_never_overwrites_an_entry_of_the_wrong_shape(), test_record_run_refusal_leaves_the_state_unchanged()
 
-### Community 694 - "write_shim"
-Cohesion: 0.25
-Nodes (9): A fake executable called `name` in `directory`; returns its path. POSIX: one…, `{"PATH": ...}` with `bindir` first, built for `flavor`, plus `extra`., shim_env(), write_shim(), A fake tmux whose one pane reports `pane_pid` (default: this test process, an…, tmux's own mechanics, so never the xdotool fallback `_sendable` takes on native…, test_a_tmux_pane_must_be_the_one_running_this_session(), test_wtype_is_refused_even_with_unsafe_focus() (+1 more)
+### Community 694 - "Diagrams"
+Cohesion: 0.22
+Nodes (8): Diagrams, Picking the diagram type, Rendering to PNG and SVG, Rules that keep them readable, The PM refreshes these on its own, Visio, What not to diagram, Where things go
 
 ### Community 695 - "refuse"
 Cohesion: 0.13
@@ -3423,9 +3425,9 @@ Nodes (9): _base_scripts(), _context_py(), _git(), _golden_repo(), additionalCon
 Cohesion: 0.60
 Nodes (5): check_global_find_skills_collision(), claude_skills_dir(), install_find_skills(), install_task_observer(), user_skill_installed()
 
-### Community 705 - "Deferred by the PM, assign pass 2026-09-24 (10 dispatches, authority autonomous)"
-Cohesion: 0.17
-Nodes (12): `/crew:verify --all` and the stale verify marker - DEFERRED (cost + standing veto), Deferred by the PM, assign pass 2026-09-24 (10 dispatches, authority autonomous), Exit-127 group is NOT one root cause - OPEN, Family C production fix - OPEN, highest-value unstarted item, Five new burn-in families, sha `2f7f71f7` - OPEN, `INDEX.md` anchor column has drifted again - OPEN (filed 2026-09-24, PM), Item 3 (Windows Terminal tab check) - the ticket changed shape mid-pass, needs a FRESH brief, Per-path triage of the 7 `knowledgeBehind` codemap notes - BLOCKED on a tool gap, not on the work (+4 more)
+### Community 705 - "check_allowance_no_silent_raise"
+Cohesion: 0.25
+Nodes (8): `.github/workflows/instruction-budgets.yml` — the base-sha fix, `scripts/check_instructions.py` — new since the previous anchor, CI-only, _allowance_at(), check_allowance_no_silent_raise(), Best-effort name for this repo's default branch, tried in the order most to…, `.budget-allowance.json` as committed at `ref`. None means git could not answer…, A listed ceiling can be raised in the very same change that grows the file it…, _resolve_default_branch()
 
 ### Community 706 - "normalise_install_policy"
 Cohesion: 0.17
@@ -3451,9 +3453,9 @@ Nodes (10): _expected(), _is_malformed(), _layer(), _merge(), _problem_forms(), 
 Cohesion: 0.23
 Nodes (11): build(), _esc(), load_spec(), main(), Path, rank_nodes(), Flip Y (Visio origin is bottom-left, SVG is top-left) and draw at 72dpi., diagram_from_spec.py - Turn a YAML/JSON diagram spec into a native .vsdx, plus… (+3 more)
 
-### Community 715 - "What's new"
-Cohesion: 0.06
-Nodes (34): Every ladder role at or below `tier`, in ladder order., roles_for_tier(), Adding a new plugin, crew 0.15.1, crew 0.16.10, crew 0.16.7, crew 0.16.8, crew 0.17.0 (+26 more)
+### Community 715 - "Plugin updates"
+Cohesion: 0.10
+Nodes (21): Every ladder role at or below `tier`, in ladder order., roles_for_tier(), crew 0.16.7, crew 0.15.1, crew 0.16.10, crew 0.16.7, crew 0.16.8, crew 0.17.0 (+13 more)
 
 ### Community 720 - "_skeleton"
 Cohesion: 0.40
@@ -3480,8 +3482,8 @@ Cohesion: 0.39
 Nodes (8): _config_leaves_and_roots(), _dotted_candidates(), _guide_text(), The troubleshooting guide names config keys and script paths as facts about the…, Every backtick dotted token whose root is a real config section and whose last…, _requires_guide(), test_every_config_key_the_guide_names_exists(), test_every_script_the_guide_names_exists()
 
 ### Community 730 - "CLAUDE.md"
-Cohesion: 0.20
-Nodes (8): Commands - build, test, verify, regression, promote, Landmines - every one of these has already shipped broken, Memory - where the code map and runbooks live, Promotion: development -> qa -> production, Reporting - errors verbatim, say what you did NOT verify, Scope discipline - fix the ticket, not what you notice nearby, Stop and ask - the conditions that should halt work, Where things are - entrypoints, logic, DO NOT TOUCH
+Cohesion: 0.22
+Nodes (7): Commands - build, test, verify, regression, promote, Memory - where the code map and runbooks live, Promotion: development -> qa -> production, Reporting - errors verbatim, say what you did NOT verify, Scope discipline - fix the ticket, not what you notice nearby, Stop and ask - the conditions that should halt work, Where things are - entrypoints, logic, DO NOT TOUCH
 
 ### Community 731 - "test_module_split.py"
 Cohesion: 0.24
@@ -3527,9 +3529,9 @@ Nodes (6): 1. Show what is in effect, and where each value comes from, 2. Ask, o
 Cohesion: 0.25
 Nodes (8): _machine_path(), Swap the file at `path` for a broken `form` of it., _replace_file(), test_corrupt_machine_layer_asks(), test_corrupt_repo_layer_names_could_not_tell(), test_layer_absent_is_permissive(), test_machine_path_is_the_one_probed(), test_machine_problem_never_grants_and_asks()
 
-### Community 748 - "check_self_claims"
-Cohesion: 0.12
-Nodes (22): Entry points, verification-harness, Entry points, `check_self_claims` — three marker types now, not two, Re-anchor provenance - `db14619c` + `e6b696fb` -> `fbc27b49`, 2026-09-27 (T-0018 lands on T-0021's main), Entry points, _bash(), Returns (seconds_or_None, status) where status is "ok", "failed" or "skip77".… (+14 more)
+### Community 748 - "Open items handed off 2026-09-22"
+Cohesion: 0.24
+Nodes (10): _bash(), Returns (seconds_or_None, status) where status is "ok", "failed" or "skip77".…, _time_rule(), count_plugin_agents(), count_plugin_commands(), List tracked files under ``pathspec``, or None if git could not answer.…, How many slash commands ``plugin/<name>/commands/`` actually holds. Counted…, How many agents ``plugin/<name>/agents/`` actually holds. Same rule as… (+2 more)
 
 ### Community 749 - "Cross-review of `docs/review/04b-redesign-codex.md` against my design (`04a`)"
 Cohesion: 0.22
@@ -3547,9 +3549,9 @@ Nodes (8): 0. Read `guards.mergeGate` first, before anything else, 1. Resolve th
 Cohesion: 0.43
 Nodes (7): _freshness(), T-0008 says `unknown` for the whole answer (a fallback scope base) while every…, _state(), test_refresh_one_unsettled_artifact_stops_the_rest(), test_refresh_overall_unknown_over_stale_artifacts_stops(), test_refresh_unknown_orphaned_anchor_refreshes(), test_refresh_unknown_with_no_artifact_stops()
 
-### Community 754 - "API map"
-Cohesion: 0.29
-Nodes (6): API map, Key resource paths, Pagination, Response envelope, Scope: zone vs account, WAF / firewall: use the Rulesets engine
+### Community 754 - "load"
+Cohesion: 0.25
+Nodes (8): cmd_diff(), _is_normalized_record(), _is_raw_nuclei_record(), load(), True for a raw `nuclei -jsonl` line: a top-level `template-id` (hyphen)…, True for an already-normalized finding (normalize.make_finding's shape, which…, Parse a findings.jsonl file. Two, and only two, line shapes are recognized: -…, Findings present in `current` but not in `baseline` (per template_id+location).
 
 ### Community 755 - ".test_cleanup_failure_does_not_mask_original_exception"
 Cohesion: 0.22
@@ -3591,9 +3593,9 @@ Nodes (25): _branch(), _git(), _head(), _marker(), The Stop gate's baseline: a c
 Cohesion: 0.33
 Nodes (7): _coerce_config(), config_paths(), load_config(), Path, Where config is looked for, nearest first. Never crew's config., Return (config, source). Shallow-merges over DEFAULT_CONFIG. Every shape…, Force every value to the type the rest of the code assumes. Validating only the…
 
-### Community 773 - "test_the_configured_delay_reaches_the_detached_senders_own_sleep_argument"
-Cohesion: 0.16
-Nodes (14): _child_heredoc_source(), _ps1_source(), Structural (no-execution) regression for Get-CrewChildTabRecheck.…, The detached sender is a separate process, built as a literal here-string and…, test_get_crew_child_tab_recheck_cannot_short_circuit_to_send(), _extract_ps1_function(), _pwsh_can_resolve_an_owner_window(), The value handed to the DETACHED sender -- not merely echoed by the dry-run… (+6 more)
+### Community 773 - "test_auto_clear_child_tab_recheck_structure.py"
+Cohesion: 0.19
+Nodes (12): _child_heredoc_source(), _ps1_source(), Structural (no-execution) regression for Get-CrewChildTabRecheck.…, The detached sender is a separate process, built as a literal here-string and…, test_get_crew_child_tab_recheck_cannot_short_circuit_to_send(), _extract_ps1_function(), _pwsh_can_resolve_an_owner_window(), Probes the REAL (non-stubbed) window walk once: does any window on this host… (+4 more)
 
 ### Community 774 - "_refuse_lstat"
 Cohesion: 0.12
@@ -3619,17 +3621,17 @@ Nodes (5): Backlog, Done, In Progress, Ready, Review
 Cohesion: 0.33
 Nodes (5): Doing, Icebox, QA, Shipped, Todo
 
-### Community 780 - "license-consistency.py"
-Cohesion: 0.07
-Nodes (31): importlib_util, build(), main(), Sabotage suite for check-marketplace.py's check_argument_hint_frontmatter.…, Write a fixture repo: just the frontmatter-bearing files under test., Run check_argument_hint_frontmatter against a fixture, return failures., run(), main() (+23 more)
+### Community 780 - "self-claims.py"
+Cohesion: 0.05
+Nodes (50): importlib_util, build(), main(), Sabotage suite for check-marketplace.py's check_argument_hint_frontmatter.…, Write a fixture repo: just the frontmatter-bearing files under test., Run check_argument_hint_frontmatter against a fixture, return failures., run(), main() (+42 more)
 
 ### Community 781 - "endpoint"
 Cohesion: 0.15
 Nodes (11): endpoint(), ollama(), fixture, A proxy pointed at the real Ollama and the real chat model - no fake anywhere…, real_endpoint(), showing_ollama(), Full config schema, Jira (+3 more)
 
-### Community 782 - "argparse"
-Cohesion: 0.05
-Nodes (46): argparse, playwright_sync_api, requests_auth, Cloudflare v4 API client + CLI. Self-contained, standard library only (urllib)…, main(), _parse_params(), Drata Public API client + CLI. Handles both auth methods (long-lived API key OR…, decode() (+38 more)
+### Community 782 - "audit_page.py"
+Cohesion: 0.10
+Nodes (18): playwright_sync_api, main(), parse_viewports(), Load a page in a real browser and report everything that went wrong. Captures…, fill_snippet(), main(), Best-practice Playwright locator for a field, most robust first., How you'd actually drive this control. (+10 more)
 
 ### Community 783 - "test_verify_gate_rule_framing.py"
 Cohesion: 0.14
@@ -3643,9 +3645,9 @@ Nodes (7): _own(), A vault at tmp_path that CONTAINS the repo at tmp_path/repo.,
 Cohesion: 0.33
 Nodes (5): Check 1 — the review receipt, Check 2 — the verify gate, Check 3 — the completion audit, Check 4 — artifacts are current, On all four passing
 
-### Community 786 - "_write_handoff"
-Cohesion: 0.15
-Nodes (31): _log(), _machine(), skipif, Wording: the notify path must say what it did (the handoff is written and…, requirement: `sendkeys` must resolve the owning window, then decline rather…, The machine-file keys naming the method `_sendable`'s target uses.…, A target each flavour can identify uniquely: a tmux pane whose pid is this test…, A fake `xdotool` the bash flavour AND the python it starts can find: on Windows… (+23 more)
+### Community 786 - "_write_marker"
+Cohesion: 0.10
+Nodes (51): A fake executable called `name` in `directory`; returns its path. POSIX: one…, `{"PATH": ...}` with `bindir` first, built for `flavor`, plus `extra`., shim_env(), write_shim(), _log(), _machine(), skipif, The value handed to the DETACHED sender -- not merely echoed by the dry-run… (+43 more)
 
 ### Community 787 - "The Rule of Two — scope"
 Cohesion: 0.25
@@ -3678,6 +3680,10 @@ Nodes (6): Anchors are bumped only on sections actually re-verified, Comparison 
 ### Community 794 - "test_an_unconfirmable_opt_in_is_off_not_an_internal_error"
 Cohesion: 0.29
 Nodes (5): Review NIT :605. With no machine opt-in, a crew_resume that cannot even be…, Could not tell" is not "fresh": an archive step that raises must not let…, test_a_staleness_verdict_that_raises_counts_as_stale(), test_an_unconfirmable_opt_in_is_off_not_an_internal_error(), boom()
+
+### Community 795 - "8. Verification, secrets, and browser tests"
+Cohesion: 0.33
+Nodes (6): 8. Verification, secrets, and browser tests, After database changes, Browser tests, Checks and rules are written together, Secrets, The verification map
 
 ### Community 799 - "github/scripts/_test/merge_gate.sh"
 Cohesion: 0.24
@@ -3719,9 +3725,9 @@ Nodes (4): An environment name whose repr raises., test_env_name_repr_raises_ask
 Cohesion: 0.40
 Nodes (5): migration_notes(), _put(), (crew.json dict, unmapped key list) from a legacy config dict., Settings 1.0 carries but does not act on, said out loud. `to_legacy` never…, to_crew()
 
-### Community 809 - "test_review_base.py"
-Cohesion: 0.53
-Nodes (5): _base_assignments(), `/crew:review` bundles from the ticket's START, not the default-branch merge-…, _step_1a(), test_review_base_comes_from_scope_base_first(), test_review_merge_base_is_only_a_stated_fallback()
+### Community 809 - "completion-audit.sh"
+Cohesion: 0.70
+Nodes (4): _block_once(), _marker(), _scope_provably_off(), completion-audit.sh script
 
 ### Community 810 - "fixture"
 Cohesion: 0.40
@@ -3749,7 +3755,7 @@ Nodes (6): _head(), Bytes alone miss a mode flip. A COMMITTED chmod is already c
 
 ### Community 818 - "make_ticket"
 Cohesion: 0.07
-Nodes (70): common_dir(), make_ticket(), test_a_range_token_that_is_also_a_ticket_folder_is_ambiguous(), _allow_cli(), _approve_from_prompt(), _cli(), _exhaust(), _exhaust_after_two() (+62 more)
+Nodes (67): make_ticket(), test_a_range_token_that_is_also_a_ticket_folder_is_ambiguous(), _allow_cli(), _approve_from_prompt(), _cli(), _exhaust(), _exhaust_after_two(), _plan() (+59 more)
 
 ### Community 826 - "_bridge_status_resolve_python"
 Cohesion: 0.83
@@ -3791,9 +3797,9 @@ Nodes (5): _resolve_role_write_python(), _role_write_fallback_decision(), _role_
 Cohesion: 0.33
 Nodes (5): Attribute every answer, How to run it, VRAM, What this model is for, and what it is not, When this is the wrong command
 
-### Community 864 - "obsidian-vault/commands/doctor.md"
-Cohesion: 0.33
-Nodes (5): 1. Run the diagnosis, 2. Explain the verdicts, 3. Checks the script does not make, 4. Companion plugins - report only, Report format
+### Community 864 - "15. Optional: Teams and Telegram notifications"
+Cohesion: 0.40
+Nodes (5): 15. Optional: Teams and Telegram notifications, Payload discipline, Teams, Telegram, Two-way is available and mostly a bad idea
 
 ### Community 880 - "_real_ollama_ready"
 Cohesion: 0.50
@@ -3811,9 +3817,9 @@ Nodes (7): Sections, in this order, The artifact rubric, The method, The review 
 Cohesion: 0.40
 Nodes (5): _effective(), _effective_disagreements(), `{field: (value, where from)}` for the obsidian target a file yields -- vault,…, What the two files' obsidian targets disagree on, fallbacks and defaults…, _settings()
 
-### Community 884 - "test_verify_gate_bash_empty_refusal.py"
-Cohesion: 0.53
-Nodes (5): Every Resolve-CrewBash call site must refuse by name on an empty return (B2,…, _src(), test_the_resolver_no_longer_falls_back_to_the_bare_name(), test_the_rule_loop_refuses_named_before_invoking(), test_the_smoke_lane_refuses_named_before_invoking()
+### Community 884 - "7b. The API and feature reference"
+Cohesion: 0.50
+Nodes (4): 7b. The API and feature reference, Keeping it honest, The two rules, What is worth the effort
 
 ### Community 885 - "_vault_paths"
 Cohesion: 0.40
@@ -3827,9 +3833,9 @@ Nodes (5): [2026-07-28], Added, Changelog, Fixed, Skills present as of this base
 Cohesion: 0.40
 Nodes (5): The default is `false` and the floor is `true`, and they are not the same, normalise_require_for_production(), `value` as a bool: absent means the default, malformed means required. See…, `value`'s position in `CHANGE_REQUIREMENTS`. Higher is more permissive. Routed…, require_change_rank()
 
-### Community 889 - ".flock"
+### Community 889 - "_body_after_frontmatter"
 Cohesion: 0.67
-Nodes (3): Changed — `crew` 1.0.42: environment-scoped terraform in the cloud guard (T-0005) — **BREAKING**, Cloud guard, What the guard does not catch
+Nodes (3): _body_after_frontmatter(), (body, first body line number). Frontmatter is metadata (a `name:` or…, crew-1.0 T8 fix round deferrals (filed 2026-09-23) - OPEN
 
 ### Community 891 - "test_a_config_that_is_not_there_reads_absent_on_every_platform"
 Cohesion: 0.50
@@ -3839,10 +3845,6 @@ Nodes (3): parametrize, The two exceptions `open(".crew/config.json")` raises fo
 Cohesion: 0.67
 Nodes (3): skipif, The point of putting the digest in a shared .py instead of hashing in bash and…, test_a_marker_written_by_one_flavour_is_honoured_by_the_other()
 
-### Community 893 - "resolve_bash_no_prepend"
-Cohesion: 0.50
-Nodes (4): Does this bash actually run a script living at a Windows path? This is the…, A bash that does NOT silently prepend `/mingw64/bin:/usr/bin` ahead of whatever…, resolve_bash_no_prepend(), _usable()
-
 ### Community 896 - "_no_live_targets"
 Cohesion: 0.67
 Nodes (3): _no_live_targets(), fixture, `_LIVE` is module state and the handlers are process state. A test that leaves…
@@ -3850,10 +3852,6 @@ Nodes (3): _no_live_targets(), fixture, `_LIVE` is module state and the handlers
 ### Community 897 - "change.md"
 Cohesion: 0.18
 Nodes (10): 0. The backend, first, 1. `new`, 2. `status <id>`, 3. `close <id>`, 4. `list`, 5. `change.requireForProduction`, Collect, File (+2 more)
-
-### Community 898 - "run_check"
-Cohesion: 0.67
-Nodes (3): main(), Run the real check_versions with the checker's ROOT pointed at a fixture., run_check()
 
 ### Community 904 - "1. `/crew:promote` stays unarmed in this repo"
 Cohesion: 0.33
@@ -3872,24 +3870,24 @@ Cohesion: 0.33
 Nodes (5): 2. No MCP server for ChatGPT; `codex:codex-rescue` as-is, Consequences, Context, Decision, Why not build it
 
 ## Knowledge Gaps
-- **2796 isolated node(s):** `ci-status.sh script`, `name`, `private`, `description`, `workspaces` (+2791 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 8208 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **184 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **2795 isolated node(s):** `ci-status.sh script`, `name`, `private`, `description`, `workspaces` (+2790 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 8207 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **182 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `make_repo()` connect `make_repo` to `test_context_watch_autoclear_visibility.py`, `test_the_configured_delay_reaches_the_detached_senders_own_sleep_argument`, `test_auto_clear_order.py`, `_fake`, `test_auto_clear.py`, `_repo`, `test_context_watch_python_resolver.py`, `_vault_around_repo`, `test_provider_table.py`, `test_refresh_check.py`, `_named_repo`, `_check`, `os`, `parametrize`, `test_context_watch.py`, `test_the_cli_announces_the_new_key_and_does_not_only_write_it_to_a_file`, `test_upgrade.py`, `test_crew_config.py`, `test_auto_clear_review_fixes.py`, `_Stdin`, `test_role_write_guard.py`, `test_crew_context_fixes.py`, `test_endpoints.py`, `_commit`, `test_crew_tracker.py`, `test_handoff_staleness.py`, `test_incident.py`, `_config_json`, `head_sha`, `test_verify_absent_and_diagram_kind.py`, `test_auto_cycle.py`, `crew Project Manager, Graph-Backed Onboarding, and v1 Upgrade — Implementation Plan`, `test_platform_sync.py`, `test_status.py`, `test_anchor_trigger_fixpoint.py`, `_snapshot`, `_cli`, `_make_vault`, `test_a_config_that_is_not_there_reads_absent_on_every_platform`, `test_install_policy.py`?**
+- **Why does `make_repo()` connect `make_repo` to `test_context_watch_autoclear_visibility.py`, `test_auto_clear_child_tab_recheck_structure.py`, `test_auto_clear_order.py`, `_fake`, `test_auto_clear.py`, `test_auto_cycle.py`, `test_context_watch_python_resolver.py`, `_vault_around_repo`, `test_provider_table.py`, `test_refresh_check.py`, `_named_repo`, `_check`, `os`, `parametrize`, `test_context_watch.py`, `test_the_cli_announces_the_new_key_and_does_not_only_write_it_to_a_file`, `test_upgrade.py`, `test_crew_config.py`, `test_auto_clear_review_fixes.py`, `_Stdin`, `test_role_write_guard.py`, `test_crew_context_fixes.py`, `test_endpoints.py`, `_commit`, `test_crew_tracker.py`, `test_handoff_staleness.py`, `test_incident.py`, `_config_json`, `head_sha`, `test_verify_absent_and_diagram_kind.py`, `_repo`, `crew Project Manager, Graph-Backed Onboarding, and v1 Upgrade — Implementation Plan`, `test_platform_sync.py`, `test_status.py`, `test_anchor_trigger_fixpoint.py`, `_snapshot`, `_cli`, `_make_vault`, `test_a_config_that_is_not_there_reads_absent_on_every_platform`, `test_install_policy.py`?**
   _High betweenness centrality (0.016) - this node is a cross-community bridge._
-- **Why does `validate_config()` connect `worklog.py` to `Configuration reference`?**
+- **Why does `validate_config()` connect `worklog.py` to `wlconfig.py`, `Configuration reference`?**
   _High betweenness centrality (0.013) - this node is a cross-community bridge._
-- **Why does `strip_default_rule()` connect `rule` to `MerakiError`, `MX security appliance`?**
+- **Why does `strip_default_rule()` connect `rule` to `MX security appliance`?**
   _High betweenness centrality (0.009) - this node is a cross-community bridge._
 - **What connects `ci-status.sh script`, `name`, `private` to the rest of the system?**
-  _2796 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _2795 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `install-prerequisites.sh` be split into smaller, more focused modules?**
   _Cohesion score 0.08140610545790934 - nodes in this community are weakly interconnected._
 - **Should `crew_resume.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.06260406260406261 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06832298136645963 - nodes in this community are weakly interconnected._
 - **Should `base` be split into smaller, more focused modules?**
-  _Cohesion score 0.05839727195225917 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.056338028169014086 - nodes in this community are weakly interconnected._
