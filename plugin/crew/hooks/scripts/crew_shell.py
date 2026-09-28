@@ -24,6 +24,7 @@ Standard library only. No crew module is imported at import time; `crew_config`
 and `crew_state` are imported where they are used.
 """
 
+import json
 import os
 import platform
 import re
@@ -235,5 +236,215 @@ def resolve_gitbash(runner=None, exists=os.path.isfile, which=shutil.which):
     return None, "Git Bash not found (tried " + ", ".join(tried) + ")"
 
 
+# --- the probe and its machine-local cache ---------------------------------------
+
+LIST_TIMEOUT = 15
+TOOLS_TIMEOUT = 30  # covers a cold start of a `Stopped` VM
+TOOLS_CHECK = "command -v python3; command -v git"
+locate = shutil.which  # module-level so a test can replace it
+
+# What the not-installed recommendation cites. Two hosts, two dates, two
+# procedures: reported side by side and never blended (spec, Evidence).
+MEASURED = (
+    "dadeush-desktop, 2026-09-28: 50 forks Git Bash 1.70 s, pwsh 0.93 s, WSL2 0.03 s; "
+    "200 small writes Git Bash 0.13 s, pwsh 0.051 s, WSL2 ext4 0.007 s, WSL2 on /mnt/c 0.70 s. "
+    "dadeush-legion, 2026-09-22: 50 forks Git Bash 27.7-35.5 s, WSL2 0.19-0.20 s; "
+    "200 small writes /mnt/c 4.43 s, WSL2 ext4 0.062 s."
+)
+
+
+def _now():
+    import datetime
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _result(state, detail, **extra):
+    import socket
+    out = {"state": state, "distro": None, "version": None, "python3": None, "git": None,
+           "detail": detail, "probedAt": _now(), "host": socket.gethostname()}
+    out.update(extra)
+    return out
+
+
+def _parse_listing(text):
+    """`[(name, version, is_default)]` from `wsl.exe --list --verbose`. A row
+    whose last column is not a number (the header, in any locale) is skipped."""
+    rows = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        default = stripped.startswith("*")
+        parts = stripped.lstrip("*").split()
+        if len(parts) >= 3 and parts[-1].isdigit():
+            rows.append((parts[0], parts[-1], default))
+    return rows
+
+
+def _call(runner, argv, timeout):
+    """`(code, out, err, None)` or `(None, None, None, (state, detail))`. A
+    timeout is `broken`; a runner that could not run at all is `unknown`,
+    never `not-installed` -- an unknown must not collapse into an answer."""
+    shown = " ".join(argv[:3])
+    try:
+        code, out, err = runner(argv, timeout)
+    except subprocess.TimeoutExpired:
+        return None, None, None, ("broken", f"{shown} timed out after {timeout}s")
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        return None, None, None, ("unknown", f"{shown} could not run: {exc}")
+    return code, out, err, None
+
+
+def probe(runner=None, which=None, distro=None):
+    """Is WSL2 usable from this Windows side? Off native Windows this returns
+    `{"state": "n/a"}` and runs nothing. Never installs, updates or changes a
+    default: the only calls are `--list --verbose` and one `command -v`."""
+    if not on_windows():
+        return {"state": "n/a", "detail": "not native Windows"}
+    runner = runner or capture
+    which = which or locate
+    if not which("wsl.exe"):
+        return _result("not-installed", "wsl.exe is not on PATH")
+    code, out, err, failed = _call(runner, ["wsl.exe", "--list", "--verbose"], LIST_TIMEOUT)
+    if failed:
+        return _result(*failed)
+    listing = decode(out)
+    text = (listing + "\n" + decode(err)).strip()
+    lowered = text.lower()
+    if "no installed distributions" in lowered:
+        return _result("no-distro", text.splitlines()[0])
+    if "is not installed" in lowered or "is not enabled" in lowered:
+        return _result("not-installed", text.splitlines()[0])
+    if code != 0:
+        return _result("broken", f"wsl.exe --list --verbose exit {code}: {text}")
+    rows = _parse_listing(listing)
+    if distro:
+        target = next((row for row in rows if row[0].casefold() == distro.casefold()), None)
+        if target is None:
+            installed = ", ".join(row[0] for row in rows) or "none"
+            return _result("no-distro", f"configured distro {distro} is not installed (installed: {installed})")
+    else:
+        target = next((row for row in rows if row[2]), None)
+        if target is None:
+            return _result("no-distro", "wsl.exe --list --verbose shows no default distro")
+    name, version = target[0], target[1]
+    if version != "2":
+        return _result("wsl1-only", f"distro {name} is WSL{version}, not WSL2", distro=name, version=version)
+    code, out, err, failed = _call(runner, ["wsl.exe", "-d", name, "-e", "sh", "-c", TOOLS_CHECK], TOOLS_TIMEOUT)
+    if failed:
+        return _result(*failed, distro=name, version=version)
+    if code not in (0, 1, 127):
+        return _result("broken", f"wsl.exe -d {name} exit {code}: {(decode(err) or decode(out)).strip()}",
+                       distro=name, version=version)
+    found = [line.strip() for line in decode(out).splitlines() if line.strip()]
+    python3 = next((path for path in found if path.endswith("/python3")), None)
+    git = next((path for path in found if path.endswith("/git")), None)
+    extra = {"distro": name, "version": version, "python3": python3, "git": git}
+    if not python3:
+        return _result("no-python3", f"python3 is not on PATH inside {name}", **extra)
+    if not git:
+        return _result("no-git", f"git is not on PATH inside {name}", **extra)
+    return _result("usable", f"WSL2 distro {name} has python3 and git", **extra)
+
+
+def recommendation(result):
+    """The install recommendation, printed and never run, or None."""
+    if (result or {}).get("state") not in ("not-installed", "no-distro"):
+        return None
+    return ("WSL2 is recommended for crew's shell-heavy jobs on this machine. To install it, run "
+            "`wsl --install -d Ubuntu` in an elevated (Administrator) shell, then reboot. "
+            "crew never runs it. Measured: " + MEASURED)
+
+
+def probe_path():
+    """`~/.claude/crew/shell-route.json`, beside the machine-global config and
+    never under a repo: which shell is usable is a fact about this machine.
+    Resolved at call time so a patched `crew_state.GLOBAL_CONFIG_PATH` holds."""
+    import crew_state
+    return os.path.join(os.path.dirname(crew_state.GLOBAL_CONFIG_PATH), "shell-route.json")
+
+
+def load_cache():
+    path = probe_path()
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        return {"state": "unknown", "detail": "never probed"}
+    except (OSError, ValueError):
+        return {"state": "unknown", "detail": f"cache unreadable: {path}"}
+    if not isinstance(data, dict) or not isinstance(data.get("state"), str):
+        return {"state": "unknown", "detail": f"cache unreadable: {path}"}
+    return data
+
+
+def write_cache(result):
+    """Atomic and LF: the full text is computed before any file is opened, then
+    written to a temp file and `os.replace`d, so a payload that raises leaves
+    the previous cache byte-identical."""
+    path = probe_path()
+    text = json.dumps(result, indent=2, sort_keys=True) + "\n"
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
+# --- config -------------------------------------------------------------------------
+
+def settings(root):
+    """The resolved config for `root`, both layers."""
+    import crew_config
+    return crew_config.resolve_config(root)
+
+
+def _block(cfg):
+    block = (cfg or {}).get("shellRoute")
+    return block if isinstance(block, dict) else {}
+
+
+def configured_distro(cfg):
+    value = _block(cfg).get("distro")
+    return value if isinstance(value, str) and value else None
+
+
+# --- CLI ------------------------------------------------------------------------------
+
+def _cmd_probe(args):
+    result = probe(distro=configured_distro(settings(args.root)))
+    if args.write:
+        if result.get("state") == "n/a":
+            print("crew-shell: not native Windows - nothing to probe, cache not written", file=sys.stderr)
+        else:
+            measured = load_cache().get("measured")
+            if isinstance(measured, dict):
+                result["measured"] = measured
+            write_cache(result)
+    if args.json:
+        print(json.dumps(result, indent=2, sort_keys=True))
+    else:
+        print(f"wsl {result['state']}" + (f" ({result['distro']})" if result.get("distro") else "")
+              + f" - {result.get('detail', '')}")
+        advice = recommendation(result)
+        if advice:
+            print(advice)
+    return 0
+
+
+def main(argv=None):
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    sub = parser.add_subparsers(dest="command", required=True)
+    cmd = sub.add_parser("probe", help="is WSL2 usable from this Windows side")
+    cmd.add_argument("--json", action="store_true")
+    cmd.add_argument("--write", action="store_true", help="record the answer in the machine-local cache")
+    cmd.add_argument("--root", default=".")
+    args = parser.parse_args(argv)
+    return {"probe": _cmd_probe}[args.command](args)
+
+
 if __name__ == "__main__":
-    sys.exit(0)
+    sys.exit(main())
