@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6715d54d
+anchor: useful-claude-add-ons@f7799dc2
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -54,7 +54,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.47, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.48, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -258,7 +258,7 @@ merge: 121 / 67 / 54 / 0 - T-0005 added `environments.prodUnattended` to both te
 `default_global_config()` (`:563`), so repo-only is unchanged. Re-executed on T-0023's merge of
 `db14619c` (T-0042 and T-0021 landed): 122 / 68 / 54 / 0 - neither added a config leaf.
 `plugin/crew/tests/test_crew_config.py:279` asserts 122. T-0004's `CHANGELOG.md` entry now says
-"117 -> 119" (`:515-516`; `:436-437` at `bebbb97f`, before T-0018's entry went in above it; `:390-391` at `db14619c`, before T-0023's; `:276-277` at `f0b12ee6`, before T-0021's; `:228-229` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this
+"117 -> 119" (`:548-549`; `:515-516` at `67caa4b8`, before T-0046's entry went in above it; `:436-437` at `bebbb97f`, before T-0018's entry went in above it; `:390-391` at `db14619c`, before T-0023's; `:276-277` at `f0b12ee6`, before T-0021's; `:228-229` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this
 paragraph was first written. T-0005's entry states no leaf count; T-0023's says 121 -> 122.
 
 These are new counts, not the pre-1.0 note's 103/60/43 carried forward —
@@ -857,7 +857,7 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   `plugin/crew/hooks/scripts/completion_audit.py:184-194`) let a ticket write
   those paths without a Touch entry **only while its approval is current**;
   with no current approval nothing is exempt.
-- **BUDGETS.md claim numbers (T-0046, crew 1.0.47).** Under that same
+- **BUDGETS.md claim numbers (T-0046, crew 1.0.48).** Under that same
   approval a ticket may also change the digit runs of the one line a
   `crew-markdown-lines` claim marker binds in `plugin/*/BUDGETS.md` without
   Touch. One predicate decides it, `claim_numbers_only`
@@ -872,7 +872,7 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   `plugin/crew/tests/test_crew_bookkeeping.py`,
   `plugin/crew/tests/test_scope_guard_claim_bookkeeping.py`,
   `plugin/crew/tests/test_completion_audit_claim_bookkeeping.py`; mutations in
-  `plugin/crew/tests/sabotage_bookkeeping.py`; `.crew/verify.json:318-332`
+  `plugin/crew/tests/sabotage_bookkeeping.py`; `.crew/verify.json:319-332`
   (rule 30), and rule 25's `run` for the two hooks (`.crew/verify.json:264-280`). DERIVED from the branch; the suites were run for T-0046, not by
   this note.
 - Tests: `plugin/crew/tests/test_refresh_check.py`,
@@ -1987,3 +1987,27 @@ In this note: the version (`:218` / `plugin.json:3`) and the BUDGETS.md claim bu
 `.crew/verify.json:318-332` (rule 30) were corrected, and the routing section now says rule 30
 follows rule 29. No other body citation moved. Nothing was executed for this note beyond the
 suites the ticket ran.
+
+## Re-anchor provenance - `6715d54d` + `67caa4b8` -> `f7799dc2`, 2026-09-27 (T-0046 merge of main, T-0018 landed)
+
+`a181daa0` merges origin/main `67caa4b8` (T-0018 landed; crew 1.0.47) into T-0046's `bf37a87d`,
+and `f7799dc2` re-sets crew to 1.0.48 as the last plugin/crew commit. The non-artifact files both
+sides changed since `bebbb97f` are `CHANGELOG.md`, `.crew/verify.json`, `plugin/crew/README.md`
+(all three auto-merged), `plugin/crew/BUDGETS.md` and the three version files; T-0018's
+`crew_autopilot.py`, `commands/autopilot.md`, `test_crew_autopilot_status.py` and its other tests
+changed on main's side only. Conflicting provenance sections keep both sides, main's first. Every
+`path:N` citation outside the provenance sections into a changed file, and every bare `:N` that
+follows one, was compared line for line against the side its note line came from (a script over
+`git show <side>:<path>` and the merged file); citations that record an older commit were left as
+history. The merge moved: `.crew/verify.json` is 337 lines and 31 rules, T-0046's rule 30 at
+`:319-332`, `default` `:335`, `unmapped` `:336`; `plugin/crew/README.md`'s runbooks line is
+`:2069`; `plugin/crew/BUDGETS.md:11` reads 18,862 lines across 126 files; `plugin/crew/tests/sabotage.py`
+is T-0046's, unchanged by the merge (`MUTATIONS +=` at `:3051-3054`); the version is 1.0.48.
+
+In this note: the version (`.claude-plugin/marketplace.json:218` / `plugin.json:3`) and the
+BUDGETS.md claim bullet's crew version now read 1.0.48, that bullet's `.crew/verify.json:319-332`
+(rule 30) and the routing section's rule 29 (`:310-318`) and rule 30 ranges were corrected, and
+T-0004's "117 -> 119" is now `CHANGELOG.md:548-549` (T-0046's entry sits above it). No other body
+citation moved. Nothing was executed for this note.
+
+`crew_refresh_check.py --root . --ticket T-0046` named this note.

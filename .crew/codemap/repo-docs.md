@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@6715d54d
+anchor: useful-claude-add-ons@f7799dc2
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -928,3 +928,25 @@ rule 30 at `:318-332`; `plugin/crew/tests/sabotage.py` gained one import (`:80`)
 In this note: the `docs/runbooks/INDEX.md` mention in `plugin/crew/README.md` is `:2054`
 (`:2052` on main, `:1932` on T-0046's side), re-grepped on the merge and corrected. No other
 citation moved. Nothing was executed for this note.
+
+## Re-anchor provenance - `6715d54d` + `67caa4b8` -> `f7799dc2`, 2026-09-27 (T-0046 merge of main, T-0018 landed)
+
+`a181daa0` merges origin/main `67caa4b8` (T-0018 landed; crew 1.0.47) into T-0046's `bf37a87d`,
+and `f7799dc2` re-sets crew to 1.0.48 as the last plugin/crew commit. The non-artifact files both
+sides changed since `bebbb97f` are `CHANGELOG.md`, `.crew/verify.json`, `plugin/crew/README.md`
+(all three auto-merged), `plugin/crew/BUDGETS.md` and the three version files; T-0018's
+`crew_autopilot.py`, `commands/autopilot.md`, `test_crew_autopilot_status.py` and its other tests
+changed on main's side only. Conflicting provenance sections keep both sides, main's first. Every
+`path:N` citation outside the provenance sections into a changed file, and every bare `:N` that
+follows one, was compared line for line against the side its note line came from (a script over
+`git show <side>:<path>` and the merged file); citations that record an older commit were left as
+history. The merge moved: `.crew/verify.json` is 337 lines and 31 rules, T-0046's rule 30 at
+`:319-332`, `default` `:335`, `unmapped` `:336`; `plugin/crew/README.md`'s runbooks line is
+`:2069`; `plugin/crew/BUDGETS.md:11` reads 18,862 lines across 126 files; `plugin/crew/tests/sabotage.py`
+is T-0046's, unchanged by the merge (`MUTATIONS +=` at `:3051-3054`); the version is 1.0.48.
+
+In this note: the `docs/runbooks/INDEX.md` mention in `plugin/crew/README.md` is `:2069` (`:2067`
+at `67caa4b8`, `:2054` at T-0046's `6715d54d`); both sides' line histories are joined in the one
+citation. No other body citation moved. Nothing was executed for this note.
+
+`crew_refresh_check.py --root . --ticket T-0046` named this note.
