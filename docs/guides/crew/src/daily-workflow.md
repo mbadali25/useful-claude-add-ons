@@ -68,8 +68,8 @@ the ticket becomes `NEEDS_REPLAN`.
 
 **8. Done.** You type `/crew:done T-0091`. Three checks, all required: the
 review receipt rebuilds clean, the verify gate is clean, and the completion
-audit (the whole tree diffed against the scope base) finds nothing outside
-scope. Any one failing refuses the close and names what to fix. On success it
+audit (the whole tree diffed against the scope base, not counting a file that
+is byte-identical to main as last merged) finds nothing outside scope. Any one failing refuses the close and names what to fix. On success it
 appends a metrics row, marks the ticket done, and clears a stale handoff.
 
 ## What each hook does, in order

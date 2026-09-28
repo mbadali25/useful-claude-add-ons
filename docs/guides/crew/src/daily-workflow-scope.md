@@ -85,7 +85,8 @@ SCOPE GUARD: refused Edit on other/keep.py.
 The guard only sees the editing tools. A `sed -i`, a shell redirect or a formatter can still
 change files. So when the session stops, the completion audit compares the whole tree with the
 commit the ticket started from. It covers committed, staged, unstaged and untracked changes, and
-both ends of a rename. If any changed path is outside Touch, the audit blocks the stop and lists
+both ends of a rename. After you merge main, a file byte-identical to the merged main commit is
+not counted: it is main's change, not the ticket's; the verdict names that commit. If any changed path is outside Touch, the audit blocks the stop and lists
 the paths in six lines or fewer. It never blocks the continuation it caused. `/crew:done` runs
 the same check:
 

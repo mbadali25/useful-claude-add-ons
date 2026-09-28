@@ -173,7 +173,9 @@ contract itself. This section is what goes wrong with the approval and the audit
   formatter or a `git mv` never reaches it. The audit instead diffs the **whole working tree**
   against the ticket's scope base (`scope_base.resolve` — the commit the ticket started from) across
   committed, staged, unstaged and untracked changes, so a shell-made write is caught here even
-  though nothing blocked it at the time.
+  though nothing blocked it at the time. A file byte-identical to main as last merged is not
+  counted; a `merged main: could not tell` line (detached HEAD, no `origin/main`) means every
+  merged-in file was counted, so check out the ticket branch and rerun.
   **Check it directly, without waiting for a Stop:**
   ```bash
   python3 "<crew>/hooks/scripts/completion_audit.py" --check --ticket <id>
