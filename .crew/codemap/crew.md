@@ -54,7 +54,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 36 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.48, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.49 (`ca667718`), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -2057,5 +2057,5 @@ paragraph's `crew_config_menu.py` lines were re-taken with `grep -n` and it gain
 behaviour. `CHANGELOG.md` moved +10 above T-0075's entry; its four body citations were remapped.
 `plugin/crew/BUDGETS.md:11` now reads 19,145 lines across 128 files (re-measured by
 `scripts/check-marketplace.py`); the older BUDGETS figures above are history at their anchors and
-stand. Version still 1.0.48. The rule-7 suites ran (550 passed) and the 22 `CONFIG_MENU_MUTATIONS`
+stand. Version 1.0.48 at `764f6018`, re-set to 1.0.49 by `ca667718` (the last `plugin/crew/` commit). The rule-7 suites ran (550 passed) and the 22 `CONFIG_MENU_MUTATIONS`
 went RED through `sabotage.py`'s own `main`; the full `sabotage.py` was not run for this note.
