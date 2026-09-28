@@ -242,8 +242,11 @@ def _stub_bin_dir(tmp_path):
         if not real:
             continue
         if os.name == "nt":
-            (stub / (shell_name + ".cmd")).write_text(
-                f'@echo off\r\n"{real}" %*\r\n', encoding="ascii", newline="\r\n")
+            # Extensionless: bash never matches `sh.cmd` for a bare `sh`, so a
+            # .cmd-only stub made the tool "missing" (exit 127) (T-0076).
+            target = str(real).replace("\\", "/")
+            (stub / shell_name).write_text(
+                f'#!/usr/bin/sh\nexec "{target}" "$@"\n', encoding="ascii", newline="\n")
         else:
             (stub / shell_name).symlink_to(real)
     return str(stub)
