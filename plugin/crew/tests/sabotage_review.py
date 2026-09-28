@@ -31,8 +31,8 @@ REVIEW_FIX_MUTATIONS = (
         # index, or committed at the base, reach the bundle and its hash.
         "the bundle diff no longer excludes .work",
         REVIEW_PATCH,
-        '        patch = _run_raw(root, ["diff"] + _DIFF_FLAGS + [base_sha, working_tree] + only)\n',
-        '        patch = _run_raw(root, ["diff"] + _DIFF_FLAGS + [base_sha, working_tree])\n',
+        '        patch = _run_raw(root, ["diff"] + _DIFF_FLAGS + [tree, working_tree] + only)\n',
+        '        patch = _run_raw(root, ["diff"] + _DIFF_FLAGS + [tree, working_tree])\n',
         ("tests/test_review_patch.py::"
          "test_work_entries_already_in_the_index_stay_out_of_the_bundle"),
     ),
@@ -425,5 +425,36 @@ REVIEW_FIX_MUTATIONS = (
         '    for line in (jsonl or "").splitlines():\n',
         ("tests/test_review_verdict.py::"
          "test_codex_final_message_an_event_holding_a_unicode_line_break_parses_intact"),
+    ),
+    # T-0100: paths identical to merged main leave the bundle, and the reviewer
+    # and the receipt check are told. Each run by hand against the tracked
+    # file, restored with `git checkout`.
+    (
+        "the bundle diffs from the ticket start instead of the synthetic base",
+        REVIEW_PATCH,
+        '        patch = _run_raw(root, ["diff"] + _DIFF_FLAGS + [tree, working_tree] + only)\n',
+        '        patch = _run_raw(root, ["diff"] + _DIFF_FLAGS + [base_sha, working_tree] + only)\n',
+        "tests/test_review_patch.py::test_merged_main_paths_leave_the_bundle",
+    ),
+    (
+        "the manifest entries read the ticket start instead of the synthetic base",
+        REVIEW_PATCH,
+        "        entries = _entries(root, tree, working_tree)\n",
+        "        entries = _entries(root, base_sha, working_tree)\n",
+        "tests/test_review_patch.py::test_merged_main_paths_leave_the_bundle",
+    ),
+    (
+        "the reviewer is not told what merged main left out",
+        REVIEW_PROMPT,
+        '    out.append(_merged_main_line(manifest.get("merged_main")))\n',
+        "",
+        "tests/test_review_prompt.py::test_build_names_the_merged_main_line[could-not-tell]",
+    ),
+    (
+        "a stale receipt hides a could-not-tell merge of main",
+        REVIEW_LEDGER,
+        '                       f"{_merged_note(merged, stale=True)}")\n',
+        '                       "")\n',
+        "tests/test_review_receipt.py::test_check_receipt_stale_message_says_could_not_tell",
     ),
 )

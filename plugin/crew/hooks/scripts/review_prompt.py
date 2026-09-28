@@ -37,6 +37,7 @@ import re
 import subprocess
 import sys
 
+import merged_main
 import review_verdict
 
 SPEC_SECTIONS = ("Intent", "Exclusions", "Evidence", "Unknowns", "Acceptance checks")
@@ -89,6 +90,7 @@ def _bundle_block(manifest):
     excluded = manifest.get("excluded")
     out.append(f"  excluded (never in the bundle): {', '.join(excluded)}" if excluded
                else "  excluded: none recorded")
+    out.append(_merged_main_line(manifest.get("merged_main")))
     out.append(f"Manifest (file categories, renames, modes, binaries, submodules): "
                f"{manifest.get('manifest_path', 'manifest.json')}")
     for key, label in (("renames", "renamed"), ("mode_changes", "mode changed"),
@@ -97,6 +99,22 @@ def _bundle_block(manifest):
         if manifest.get(key):
             out.append(f"  {label}: {', '.join(manifest[key])}")
     return out
+
+
+def _merged_main_line(merged):
+    """What the bundle left out as identical to the merged integration commit
+    (T-0100), could-not-tell, none, or not recorded -- never silent."""
+    if not isinstance(merged, dict):
+        return "  merged main: not recorded"
+    if merged.get("applies"):
+        dropped = merged.get("dropped") or []
+        return (f"  merged main: {str(merged.get('commit'))[:12]} ({merged.get('ref')}) - "
+                f"{len(dropped)} path(s) identical to it left out: "
+                f"{', '.join(dropped) if dropped else 'none'}")
+    if merged.get("commit") is None:
+        return (f"  merged main: {merged_main.UNKNOWN} - {merged_main.bare_reason(merged)}; "
+                "nothing left out")
+    return f"  merged main: none since the ticket start ({merged_main.bare_reason(merged)})"
 
 
 def _spec_block(root, ticket):

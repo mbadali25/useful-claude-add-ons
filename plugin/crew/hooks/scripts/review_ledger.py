@@ -75,6 +75,7 @@ import subprocess
 import sys
 import time
 
+import merged_main
 import review_patch
 
 BUDGET = 2
@@ -317,7 +318,7 @@ def accept(root, ticket, by):
         if receipt.get("round") == row["round"]:
             raise LedgerError(f"round {row['round']} was already accepted by "
                               f"{receipt.get('accepted_by')} at {receipt.get('accepted_at')}")
-        current = _current_hash(root, row.get("base"))
+        current, _merged = _current_hash(root, row.get("base"))
         if current != row.get("bundle_sha256"):
             raise LedgerError("the tree has changed since that review, so accepting it would "
                               "accept code nobody reviewed")
@@ -360,7 +361,24 @@ def _current_hash(root, base):
         manifest, _, _ = review_patch.compute(root, base)
     except RuntimeError as exc:
         raise LedgerError(f"could not rebuild the bundle: {exc}") from exc
-    return manifest["bundle_sha256"]
+    return manifest["bundle_sha256"], manifest.get("merged_main")
+
+
+def _merged_note(merged, stale):
+    """What the rebuild left out as identical to merged main (T-0100), for the
+    receipt check's line: the commit on a stale receipt, the count on a
+    current one, and could-not-tell on either."""
+    if not isinstance(merged, dict):
+        return ""
+    if merged.get("commit") is None:
+        return (f"; merged main: {merged_main.UNKNOWN} - {merged_main.bare_reason(merged)}; "
+                "nothing left out")
+    if not merged.get("applies"):
+        return ""
+    count = len(merged.get("dropped") or [])
+    if stale:
+        return f"; merged main: {merged['commit'][:12]} ({count} path(s) identical to it left out)"
+    return f" ({count} path(s) identical to merged main left out)" if count else ""
 
 
 def check_receipt(root, ticket):
@@ -385,15 +403,16 @@ def check_receipt(root, ticket):
         return False, (f"round {latest.get('round')} is {latest.get('verdict') or 'not completed'}"
                        "; a receipt stands only on a CLEAN or owner-accepted round")
     try:
-        current = _current_hash(root, receipt.get("base"))
+        current, merged = _current_hash(root, receipt.get("base"))
     except LedgerError as exc:
         return False, f"receipt could not be checked: {exc}"
     if current != receipt["bundle_sha256"]:
         return False, (f"receipt is stale: round {receipt.get('round')} accepted bundle "
                        f"{receipt['bundle_sha256'][:12]}, the tree now builds "
-                       f"{(current or 'nothing')[:12]}; the change was edited after review")
+                       f"{(current or 'nothing')[:12]}; the change was edited after review"
+                       f"{_merged_note(merged, stale=True)}")
     return True, (f"receipt current: round {receipt.get('round')} {receipt.get('kind')}, "
-                  f"bundle {(current or '')[:12]}")
+                  f"bundle {(current or '')[:12]}{_merged_note(merged, stale=False)}")
 
 
 def _plan_approval_receipt(root, ticket, plan_hash):

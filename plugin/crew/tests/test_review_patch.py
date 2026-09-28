@@ -27,12 +27,15 @@ import hashlib
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import merged_main_fixtures
+import review_patch
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _SCRIPT = os.path.join(_ROOT, "hooks", "scripts", "review_patch.py")
@@ -199,6 +202,8 @@ def test_manifest_lists_each_category_correctly(repo, tmp_path):
     assert manifest["head"] == _git(repo, "rev-parse", "HEAD")
     assert manifest["branch"] == "main"
     assert manifest["patch_bytes"] == len(out.read_text(encoding="utf-8").encode("utf-8"))
+    assert (manifest["merged_main"]["applies"],
+            "HEAD is on main itself" in manifest["merged_main"]["reason"]) == (False, True)
 
 
 def test_bad_base_fails_loudly(repo, tmp_path):
@@ -306,7 +311,6 @@ def test_oversized_bundle_splits_and_concatenates_to_the_whole(repo, tmp_path):
 
 
 def test_bundle_hash_is_stable_and_moves_with_content(repo, tmp_path):
-    import review_patch  # pylint: disable=import-outside-toplevel
     base = _git(repo, "rev-parse", "HEAD")
     (repo / "a.txt").write_text("a\n", encoding="utf-8")
 
@@ -335,7 +339,6 @@ def test_work_dir_is_excluded_and_says_so(repo, tmp_path):
 
 
 def test_split_parts_never_truncates():
-    import review_patch  # pylint: disable=import-outside-toplevel
     data = b"diff --git a/x b/x\n" + b"y" * 1000 + b"\ndiff --git a/z b/z\nshort\n"
     for limit in (1, 7, 64, 500, 5000):
         parts = review_patch.split_parts(data, limit)
@@ -452,3 +455,118 @@ def test_look_alike_paths_are_still_bundled(repo, tmp_path):
     patch = (tmp_path / "diff.txt").read_bytes()
     assert b"notes" in patch and b"nested" in patch
     assert b"graphify-out/graph.json" not in patch
+
+
+# ---- T-0100: paths byte-identical to merged main leave the bundle -------------
+
+_SHARED_ON_TOP = "shared = 1\nmain_line = 2\nticket_line = 3\n"
+
+
+def _merged_fixture(tmp_path, merge=True):
+    """The spec's Evidence shape: a ticket commit, main advancing (edit, add,
+    delete, rename, and an edit to `src/shared.py`), a merge of main, the
+    ticket editing `src/shared.py` on top, an unstaged out-of-Touch edit and
+    an untracked file. Returns `(clone, base, merged commit or None)`."""
+    root, upstream, sha = merged_main_fixtures.build(tmp_path)
+    merged_main_fixtures.ticket_commit(root, "src/t.txt", "ticket line\n")
+    merged_main_fixtures.advance_main(upstream)
+    merged = merged_main_fixtures.merge_main(root) if merge else None
+    if not merge:
+        _git(root, "fetch", "-q", "origin")
+    merged_main_fixtures.ticket_commit(root, "src/shared.py", _SHARED_ON_TOP)
+    merged_main_fixtures.write(root, "other/x.py", "x = 2  # unstaged\n")
+    merged_main_fixtures.write(root, "src/untracked.txt", "untracked\n")
+    return root, sha["base"], merged
+
+
+def _working_tree_id(root, tmp_path):
+    """The tree `review_patch.compute` diffs against, rebuilt the same way."""
+    index = tmp_path / "rebuilt-index"
+    real = _git(root, "rev-parse", "--git-path", "index")
+    shutil.copy(os.path.join(root, real), index)
+    env = dict(os.environ, GIT_INDEX_FILE=str(index))
+    subprocess.run(["git", "add", "-A", "--", "."], cwd=root, env=env, check=True,
+                   capture_output=True, stdin=subprocess.DEVNULL)
+    return subprocess.run(["git", "write-tree"], cwd=root, env=env, check=True,
+                          capture_output=True, text=True,
+                          stdin=subprocess.DEVNULL).stdout.strip()
+
+
+def test_merged_main_paths_leave_the_bundle(tmp_path):
+    root, base, merged = _merged_fixture(tmp_path)
+
+    result = _run_script(root, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+
+    assert result.returncode == 0, result.stderr
+    patch, m = (tmp_path / "diff.txt").read_bytes(), _manifest(tmp_path)
+    assert (b"ticket line" in patch, b"x = 2" in patch,
+            [s for s in (b"m v2", b"m2.txt", b"gone.txt", b"r_old.txt", b"r_new.txt")
+             if s in patch]) == (True, True, [])
+    assert {k: v for k, v in m["merged_main"].items() if k != "reason"} == {
+        "ref": "origin/main", "commit": merged, "applies": True,
+        "dropped": merged_main_fixtures.DROPPED}
+    assert (m["base"], m["committed_files"]) == (base, ["src/shared.py", "src/t.txt"])
+    assert [e["path"] for e in m["entries"] if e["path"] in merged_main_fixtures.DROPPED
+            or e["old_path"] in merged_main_fixtures.DROPPED] == []
+    assert f"merged-main={merged[:12]} dropped=5" in result.stderr
+
+
+def test_the_bundle_is_byte_identical_to_the_pathspec_form(tmp_path):
+    root, base, _ = _merged_fixture(tmp_path)
+    manifest, patch, _ = review_patch.compute(str(root), base)
+    tree = _working_tree_id(root, tmp_path)
+    kept = ["other/x.py", "src/shared.py", "src/t.txt", "src/untracked.txt"]
+
+    expected = subprocess.run(
+        ["git", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", "--full-index",
+         base, tree, "--"] + kept, cwd=root, check=True, capture_output=True,
+        stdin=subprocess.DEVNULL).stdout
+
+    assert (manifest["merged_main"]["applies"], patch) == (True, expected)
+
+
+def test_a_ticket_edit_on_top_of_merged_mains_edit_stays_in_the_bundle(tmp_path):
+    root, base, _ = _merged_fixture(tmp_path)
+
+    _, patch, _ = review_patch.compute(str(root), base)
+
+    shared = patch.split(b"diff --git a/src/shared.py")[1].split(b"diff --git")[0]
+    assert (b"+ticket_line = 3" in shared, b"+main_line = 2" in shared) == (True, True)
+
+
+def test_no_merge_of_main_leaves_the_bundle_unchanged(tmp_path):
+    root, base, _ = _merged_fixture(tmp_path, merge=False)
+    manifest, patch, _ = review_patch.compute(str(root), base)
+    tree = _working_tree_id(root, tmp_path)
+
+    before = subprocess.run(
+        ["git", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", "--full-index",
+         base, tree, "--", ".", ":(exclude).work", ":(exclude)graphify-out"], cwd=root,
+        check=True, capture_output=True, stdin=subprocess.DEVNULL).stdout
+
+    assert (manifest["merged_main"]["applies"], manifest["merged_main"]["dropped"],
+            patch) == (False, [], before)
+
+
+def test_could_not_tell_bundles_everything_and_says_so(tmp_path):
+    root, base, _ = _merged_fixture(tmp_path)
+    _git(root, "checkout", "-q", "--detach")
+
+    result = _run_script(root, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+
+    patch, m = (tmp_path / "diff.txt").read_bytes(), _manifest(tmp_path)
+    assert (result.returncode, [s for s in (b"m v2", b"m2.txt", b"gone.txt", b"r_new.txt")
+                                if s not in patch]) == (0, [])
+    assert (m["merged_main"]["commit"], m["merged_main"]["reason"].startswith("could not tell"),
+            "merged-main=could-not-tell" in result.stderr) == (None, True, True)
+
+
+def test_everything_merged_and_nothing_else_is_nothing_to_review(tmp_path):
+    root, upstream, sha = merged_main_fixtures.build(tmp_path)
+    merged_main_fixtures.advance_main(upstream)
+    merged = merged_main_fixtures.merge_main(root)
+
+    result = _run_script(root, sha["base"], tmp_path / "diff.txt", tmp_path / "manifest.json")
+
+    assert (result.returncode, f"identical to merged origin/main {merged[:12]}" in result.stderr,
+            "matches" in result.stderr) == (2, True, False)

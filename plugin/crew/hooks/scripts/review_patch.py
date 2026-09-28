@@ -65,6 +65,22 @@ a Claude review of a bundle carrying it came back INCOMPLETE on 77 of 80
 parts. The pathspec is root-anchored, so a look-alike such as
 `docs/graphify-out/` or `graphify-out-notes/` stays in the bundle.
 
+MERGED MAIN (T-0100). `--base` is the ticket's recorded start, so after the
+ticket merges its integration branch every file main changed in between used
+to reach the bundle too: T-0092's round-2 reviewer re-read three landed
+tickets. The bundle now diffs from a SYNTHETIC base tree -- the start commit's
+tree with each path that is byte-identical, in the working state, to the
+merged commit (`merged_main.resolve` / `merged_main.keep`, the rule the
+completion audit shares) set to its working-state entry -- so those paths
+drop out of the patch, `entries` and every file list, while a ticket edit on
+top of main's edit to the same file stays, diffed from the start. The manifest
+records `merged_main` (ref, commit, applies, reason, dropped) and
+`bundle_base_tree`; `base` stays the start. Could-not-tell drops nothing and
+says so. The synthetic tree, not a pathspec of the kept paths: that pathspec
+can run past Windows' ~32 KB command line, and `git diff` has no
+`--pathspec-from-file`. It is built in a second temporary index, never the
+real one.
+
 CLI: --root <repo> --base <sha> --out <patch-file> --manifest <json-file>
      [--parts-dir <dir>] [--max-part-bytes N]
 
@@ -86,6 +102,7 @@ import subprocess
 import sys
 import tempfile
 
+import merged_main
 import webtest_guard
 
 GIT_TIMEOUT = 30
@@ -112,14 +129,15 @@ _DIFF_FLAGS = ["--no-color", "--no-ext-diff", "--no-textconv", "-M", "--full-ind
 SUBMODULE_MODE = "160000"
 
 
-def _run_raw(root, args, env=None):
+def _run_raw(root, args, env=None, data=None):
     """Run `git -C root <args>` and return stdout as BYTES, raising
     RuntimeError with git's own stderr on a nonzero exit. Unlike
     `crew_common.git_out`, this never fails soft -- a caller building the
     review input needs to know WHY it could not, not a silent None that a
     downstream `if` turns into "clean". Bytes, because a patch is not
     necessarily UTF-8 and decoding it lossily would change what the
-    reviewer reads and what the bundle hash covers."""
+    reviewer reads and what the bundle hash covers. `data` is fed on
+    stdin; without it stdin is closed."""
     full_env = dict(os.environ)
     if env:
         full_env.update(env)
@@ -127,7 +145,7 @@ def _run_raw(root, args, env=None):
         done = subprocess.run(
             ["git", "-C", root] + list(args),
             capture_output=True, timeout=GIT_TIMEOUT, env=full_env, check=False,
-            stdin=subprocess.DEVNULL,
+            input=data, stdin=None if data is not None else subprocess.DEVNULL,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise RuntimeError(f"git {' '.join(args)} could not run: {exc}") from exc
@@ -224,6 +242,38 @@ def _entries(root, base_sha, tree):
     return entries
 
 
+def _ticket_base_tree(root, base_sha, working_tree, tmp_dir):
+    """`(tree, merged, dropped)`: the tree the bundle diffs from. The start
+    commit's tree, unless a merge of main applies and some path is identical
+    to the merged commit in the working state; then that tree with each such
+    path set to its `working_tree` entry (absent when the working state has
+    none), written from a second temporary index. `dropped` is those
+    `--raw` entries, sorted by path."""
+    merged = merged_main.resolve(root, base_sha)
+    base_tree = _run(root, ["rev-parse", base_sha + "^{tree}"]).strip()
+    if not merged["applies"]:
+        return base_tree, merged, []
+    only = ["--", "."] + _EXCLUDE_SPEC
+    raw = ["diff", "--raw", "-z", "--no-renames", "--no-abbrev"]
+    since_base = _parse_raw(_run_raw(root, raw + [base_sha, working_tree] + only))
+    since_merged = [e["path"] for e in
+                    _parse_raw(_run_raw(root, raw + [merged["commit"], working_tree] + only))]
+    kept = set(merged_main.keep([e["path"] for e in since_base], since_merged))
+    dropped = sorted((e for e in since_base if e["path"] not in kept),
+                     key=lambda e: e["path"])
+    if not dropped:
+        return base_tree, merged, []
+    env = {"GIT_INDEX_FILE": os.path.join(tmp_dir, "index2")}
+    _run(root, ["read-tree", base_sha], env=env)
+    # One `--index-info` record per dropped path: its working-state mode and
+    # blob, or mode 0 (remove) when the working state has no such path.
+    info = "".join(f"{e['new_mode']} {e['new_id']}\t{e['path']}\0" if e["new_mode"] != "000000"
+                   else f"0 {e['new_id']}\t{e['path']}\0" for e in dropped)
+    _run_raw(root, ["update-index", "-z", "--index-info"], env=env,
+             data=info.encode("utf-8", errors="surrogateescape"))
+    return _run(root, ["write-tree"], env=env).strip(), merged, dropped
+
+
 def split_parts(data, max_bytes):
     """Split `data` (bytes) into ordered chunks of at most `max_bytes`,
     preferring `diff --git` file boundaries, then line boundaries, then the
@@ -288,7 +338,6 @@ def compute(root, base, max_part_bytes=DEFAULT_MAX_PART_BYTES):
     branch = _run(root, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
 
     only = ["--", "."] + _EXCLUDE_SPEC
-    committed_files = _lines(root, ["diff", "--name-only", base_sha, head] + only)
     staged_files = _lines(root, ["diff", "--cached", "--name-only"] + only)
     unstaged_files = _lines(root, ["diff", "--name-only"] + only)
     untracked_files = _lines(root, ["ls-files", "--others", "--exclude-standard"] + only)
@@ -315,23 +364,34 @@ def compute(root, base, max_part_bytes=DEFAULT_MAX_PART_BYTES):
         # `.work` is gitignored. The diffs below exclude it instead.
         _run(root, ["add", "-A", "--", "."], env=env)
         working_tree = _run(root, ["write-tree"], env=env).strip()
+        # T-0100: the start's tree, with every path identical to merged main
+        # already at its working-state content (module docstring).
+        tree, merged, dropped = _ticket_base_tree(root, base_sha, working_tree, tmp_dir)
 
         # ONE diff: base -> the full working state (committed range, staged,
         # unstaged and untracked all folded into the tree `write-tree` just
         # produced). Binary files get git's own "Binary files ... differ"
         # marker -- no `--binary` flag -- and `--full-index` puts both full
         # blob ids on the `index` line, so the bytes still change with them.
-        patch = _run_raw(root, ["diff"] + _DIFF_FLAGS + [base_sha, working_tree] + only)
-        entries = _entries(root, base_sha, working_tree)
+        patch = _run_raw(root, ["diff"] + _DIFF_FLAGS + [tree, working_tree] + only)
+        entries = _entries(root, tree, working_tree)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
-    if not patch and (dirty or committed_files):
+    # No list names a path the bundle left out as identical to merged main.
+    gone = {e["path"] for e in dropped}
+    committed_files = [p for p in _lines(root, ["diff", "--name-only", tree, head] + only)
+                       if p not in gone]
+    staged_files, unstaged_files, untracked_files = (
+        [p for p in files if p not in gone]
+        for files in (staged_files, unstaged_files, untracked_files))
+    if not patch and (staged_files or unstaged_files or untracked_files or committed_files):
         # The bug this script exists to prevent: something was detected as
         # changed and the patch is still empty.
         raise RuntimeError(
             "empty patch despite detected changes "
-            f"(dirty={dirty}, committed={len(committed_files)} files) -- "
+            f"(dirty={dirty}, committed={len(committed_files)} files, "
+            f"{len(gone)} identical to merged main left out) -- "
             "this is a defect in review_patch.py, not a clean diff"
         )
 
@@ -351,6 +411,8 @@ def compute(root, base, max_part_bytes=DEFAULT_MAX_PART_BYTES):
         "binary_files": [e["path"] for e in entries if e["binary"]],
         "submodules": [e["path"] for e in entries if e["submodule"]],
         "excluded": list(EXCLUDED),
+        "merged_main": dict(merged, dropped=sorted(gone)),
+        "bundle_base_tree": tree,
         "patch_bytes": len(patch),
         "max_part_bytes": max_part_bytes,
         "bundle_sha256": bundle_sha256(parts) if parts else None,
@@ -420,7 +482,14 @@ def main(argv):
         sys.stderr.write(f"review-patch: {exc}\n")
         return EXIT_ERROR
 
-    if code == EXIT_NOTHING_TO_REVIEW:
+    merged = manifest["merged_main"]
+    if code == EXIT_NOTHING_TO_REVIEW and merged["dropped"]:
+        sys.stderr.write(
+            f"review-patch: nothing of this ticket's to review -- every change since "
+            f"{manifest['base'][:12]} is identical to merged {merged['ref']} "
+            f"{merged['commit'][:12]}\n"
+        )
+    elif code == EXIT_NOTHING_TO_REVIEW:
         sys.stderr.write(
             f"review-patch: nothing to review -- {manifest['head'][:12]} "
             f"matches {manifest['base'][:12]} and the tree is clean\n"
@@ -431,9 +500,17 @@ def main(argv):
             f"{len(manifest['parts'])} part(s), "
             f"bundle={(manifest['bundle_sha256'] or '')[:12]} "
             f"base={manifest['base'][:12]} head={manifest['head'][:12]} "
-            f"branch={manifest['branch']} dirty={manifest['dirty']}\n"
+            f"branch={manifest['branch']} dirty={manifest['dirty']}"
+            f"{_merged_field(merged)}\n"
         )
     return code
+
+
+def _merged_field(merged):
+    """The summary line's `merged-main=` field."""
+    if merged["applies"]:
+        return f" merged-main={merged['commit'][:12]} dropped={len(merged['dropped'])}"
+    return " merged-main=could-not-tell" if merged["commit"] is None else " merged-main=none"
 
 
 if __name__ == "__main__":
