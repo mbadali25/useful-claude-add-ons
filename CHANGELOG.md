@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.55: the review bundle and the completion audit account for merged main (T-0100)
+### Changed — `crew` 1.0.60: the review bundle and the completion audit account for merged main (T-0100)
 
 - **What changed.** A new `plugin/crew/hooks/scripts/merged_main.py` names the
   latest merged integration commit (`git merge-base HEAD <ref>`, `<ref>` from
@@ -29,11 +29,11 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Receipt.** A merge of main that touches no reviewed path keeps an
   accepted receipt current (the line says how many paths it left out); one
   that changes a reviewed path stales it and names the merged commit. A
-  receipt recorded before 1.0.55 on a branch that had already merged main
+  receipt recorded before 1.0.60 on a branch that had already merged main
   reads stale once. The same fix landing byte-identical on main and on the
   ticket drops out of both.
 - **Unchanged.** HEAD on the integration branch itself, or no merge of it past
-  the start: byte-identical to 1.0.54. `completion_audit.changed_paths` without
+  the start: byte-identical to 1.0.59. `completion_audit.changed_paths` without
   the new argument (the refresh check's caller), Touch membership, the
   refresh-artifact allowance, `scope_base.py`, and `scope_base.py --changed` /
   `scope_report.py` (filed to `TODO.md`).
@@ -42,6 +42,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   on-main test, `keep` unfiltered and widened, the audit's untracked re-add and
   its `merged` argument, the bundle's patch and `entries` bases, the prompt line
   and the receipt note. Each run by hand against the tracked file and seen RED.
+- Bumped `1.0.59 -> 1.0.60` (1.0.55 on its branch, re-set after merging main's
+  1.0.59, T-0075).
 
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 
