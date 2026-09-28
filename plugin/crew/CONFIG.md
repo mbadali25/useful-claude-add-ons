@@ -1692,9 +1692,12 @@ values and `-ArgumentList`. **The same-command rule**: a command crew cannot
 split (`alias`, `hash`, `source`, `ssh`, a launcher) is gated only when gh and
 `workflow`/`dispatches` are in that one command — the whole line only when a
 word in it is made at run time — so `alias g=gh; echo workflow` is not judged;
-and `alias NAME=VALUE` with gh in VALUE, or `hash -p PATH NAME` with PATH
-naming gh, makes NAME a copy of gh for the rest of the line, as `Set-Alias`
-does. The grammar does not resolve anything: `x=staging;
+and `alias NAME=VALUE` whose VALUE's last command runs gh (past `env`,
+`command` and the other wrappers; `alias g='echo gh'` runs echo), or `hash -p
+PATH NAME` with PATH naming gh, makes NAME a copy of gh for the commands
+after it — for the whole line when a loop, a function or a `trap` on it can
+run earlier text later; `Set-Alias` counts for the whole line. A PowerShell
+comma inside one whole single-quoted word is text; a bare one is refused. The grammar does not resolve anything: `x=staging;
 gh ... -f environment=$x` is could-not-tell although bash would pass
 `staging`. What a user may not expect, and the literal to write instead:
 `--json`/`--input -` → `-f` fields; `"Deploy Staging"` → `'Deploy Staging'`;

@@ -66,6 +66,15 @@ All notable changes to this repository are documented here. Format follows [Keep
   g=gh`, `alias g='env gh'` and `hash -p /usr/bin/gh g` make `g` gh for the
   rest of the line, and `New-Item -Path alias: -Name g -Value gh` and
   `alias:\g` are read as aliases.
+- **Review round 5.** Two dispatches the line leaves unknown (`gh workflow
+  run; gh workflow run deploy.yml`) are asked about instead of refused as an
+  internal error; a marker covers every dispatch judged on the line, so a
+  config edit reclassifying a second one does not carry an approval across;
+  a bash alias or `hash -p` counts only for the commands after it (the whole
+  line under a loop, a function or a `trap`, and a name it copied counts as
+  gh inside `trap '...'`), and only when the alias value's last command runs
+  gh (`alias g='echo gh'` is not judged; `alias g='$x'` is could-not-tell);
+  a PowerShell comma inside one whole single-quoted word is text.
 - **BREAKING for the dispatch forms that ran in T-0009's first build:** a
   `--json` body (heredoc, here-string or `echo` pipe), `--input -`, a
   double-quoted display name, an unquoted `{owner}` endpoint and a pipe out of

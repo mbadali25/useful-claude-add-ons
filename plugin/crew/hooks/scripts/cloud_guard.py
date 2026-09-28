@@ -78,6 +78,7 @@ word, `2>&1`; else a nested or fed dispatch, gh reading stdin or a file, a malfo
 is could-not-tell (stdin is never read); `--help` is not judged; markers are exact bytes; one road, `dispatch_answer`.
 A PowerShell launcher or alias line holding a dispatch-shaped word is could-not-tell unless every parameter on it is a
 full, value-taking name (no switch, abbreviation or alias); gh and `workflow` count only in ONE command (round 4).
+A bash alias or `hash -p` makes gh of a name for the commands after it (the whole line under a loop, function or trap).
 
 IDENTITY. Every `aws` and `az` command resolves the identity it would run as --
 `--profile`/`--region`/`--subscription` first, then the environment it would

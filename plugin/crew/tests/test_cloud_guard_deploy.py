@@ -99,6 +99,38 @@ against `6d0f5a69` in a detached worktree before the fix, python driver:
     were caught only by the line-wide read) until `ps_aliases` read an
     `alias:` path's name from `-Name` and past a leading backslash
 
+REVIEW ROUND 5 (Codex, head `cc754aa0`). Every `r5-` row and test was run
+against the unchanged code at `cc754aa0` before the fix, python driver:
+
+  refused as cloud guard "internal error (TypeError)", never deployWorkflow
+    (RED on the reason; the hook failed CLOSED, so unattended it was denied,
+    not run, but `scan` and `dispatch_answer`'s gate raised): r5-two-unknown-
+    dispatches, r5-two-unknown-reversed, r5-two-unknown-api; RED as a
+    function, test_r5_two_unknown_dispatches_do_not_crash_the_scan
+  allowed unattended (RED): r5-function-hash-after, r5-trap-hash-after,
+    r5-trap-alias-before, r5-alias-dollar-value
+  denied unattended as could-not-tell (RED, the over-block):
+    r5-alias-after-dispatch-word, r5-hash-after-dispatch-word,
+    r5-alias-echo-gh, r5-alias-gh-then-echo, r5-ps-comma-quoted,
+    r5-ps-comma-quoted-api
+  RED as a function: test_r5_a_marker_covers_every_dispatch_judged
+  already GREEN, kept as regression rows: r5-loop-hash-after,
+    r5-while-alias-after, r5-alias-command-gh, r5-alias-assign-gh,
+    r5-alias-last-command-gh, r5-alias-dq-dollar, r5-ps-comma-bare,
+    r5-ps-comma-quoted-array, r5-bash-comma-quoted, and
+    test_r5_an_approval_does_not_survive_a_second_dispatchs_remap -- the
+    hook keys each finding on its own dispatch, so BLOCK 2's repro did not
+    reproduce through the hook; `dispatch_answer`'s public scope, the one
+    T-0045 keys on, carried only the top-ranked dispatch
+
+The function, trap, `alias g='$x'`, loop and alias-value rows are
+neighbours found while checking the fixes, not rows the review named.
+Checked and left as they are: a PowerShell `Set-Alias` still counts for its
+whole line (`g workflow run x; Set-Alias g gh` asks) -- the PowerShell reader
+does not order script blocks, so the whole-line read stays the conservative
+one -- and terraform's `cp`/`ln` copies (`_copies_terraform`, T-0005) still
+count for the whole line.
+
 The en dash, module-qualified, `alias g=gh; g $W ...`, switch-after,
 `-PSPath`, run-time `-RedirectStandardInput`, trusted-value, `saps` and
 `New-Item`/`alias:\\` rows are neighbours found while checking each fix, not
@@ -1075,10 +1107,76 @@ R4_ASK_DEPLOY = [
      _d(cnt=True)),
 ]
 
+# --- T-0009 review round 5 (Codex, head cc754aa0) ----------------------------
+# Two dispatches the literal reading leaves unknown; a bash alias or `hash -p`
+# counts for the commands AFTER it (unless a loop, a function or a trap runs
+# earlier text later), its VALUE's command decides, not any word in it; and a
+# PowerShell comma inside one whole single-quoted word is literal.
+R5_COMMA = {"nonProd": ["staging,*"] + DEPLOY_NONPROD, "workflows": WORKFLOWS}
+R5_HASH = "hash -p /usr/bin/gh g"
+
+R5_MUST_BLOCK_DEPLOY = [
+    ("r5-two-unknown-dispatches", "Bash",
+     "gh workflow run; gh workflow run deploy.yml", _d(pu=True, why="unknown")),
+    ("r5-two-unknown-reversed", "Bash",
+     "gh workflow run deploy.yml; gh workflow run", _d(pu=True, why="unknown")),
+    ("r5-two-unknown-api", "Bash",
+     f"gh api -X POST {DISPATCH}/deploy.yml/dispatches; gh workflow run",
+     _d(pu=True, why="unknown")),
+    # Text a loop, a function or a trap runs AFTER the alias or `hash -p`.
+    ("r5-loop-hash-after", "Bash",
+     "for i in 1 2; do " + R4_PROD + "; " + R5_HASH + "; done", _d(why=CNT)),
+    ("r5-while-alias-after", "Bash",
+     "while true; do " + R4_PROD + "; alias g=gh; done", _d(why=CNT)),
+    ("r5-function-hash-after", "Bash",
+     "function f { " + R4_PROD + "; }; " + R5_HASH + "; f", _d(why=CNT)),
+    ("r5-trap-hash-after", "Bash",
+     "trap '" + R4_PROD + "' EXIT; " + R5_HASH, _d(why=CNT)),
+    ("r5-trap-alias-before", "Bash",
+     "alias g=gh; trap '" + R4_PROD + "' EXIT", _d(why=CNT)),
+    # The alias's value is text bash reads again: its last command runs with
+    # the words after the name, through the wrappers `_unwrap` knows.
+    ("r5-alias-dollar-value", "Bash", "alias g='$x'; " + R4_PROD, _d(why=CNT)),
+    ("r5-alias-dq-dollar", "Bash", 'alias g="$x"; ' + R4_PROD, _d(why=CNT)),
+    ("r5-alias-command-gh", "Bash", "alias g='command gh'; " + R4_PROD,
+     _d(why=CNT)),
+    ("r5-alias-assign-gh", "Bash", "alias g='GH_TOKEN=x gh'; " + R4_PROD,
+     _d(why=CNT)),
+    ("r5-alias-last-command-gh", "Bash", "alias g='cd /tmp; gh'; " + R4_PROD,
+     _d(why=CNT)),
+    # A bare comma is a PowerShell array; quotes joined by one are two words.
+    ("r5-ps-comma-bare", "PowerShell",
+     "gh workflow run deploy.yml -f environment=staging,west",
+     _d(environments=R5_COMMA, why=CNT)),
+    ("r5-ps-comma-quoted-array", "PowerShell",
+     "gh workflow run deploy.yml -f 'environment=staging','west'",
+     _d(environments=R5_COMMA, why=CNT)),
+]
+
+R5_MUST_ALLOW_DEPLOY = [
+    ("r5-alias-after-dispatch-word", "Bash", R4_PROD + "; alias g=gh",
+     _d(log=None)),
+    ("r5-hash-after-dispatch-word", "Bash", R4_PROD + "; " + R5_HASH,
+     _d(log=None)),
+    ("r5-alias-echo-gh", "Bash", "alias g='echo gh'; " + R4_PROD, _d(log=None)),
+    ("r5-alias-gh-then-echo", "Bash", "alias g='gh pr list; echo'; " + R4_PROD,
+     _d(log=None)),
+    ("r5-ps-comma-quoted", "PowerShell",
+     "gh workflow run deploy.yml -f 'environment=staging,west'",
+     _d(environments=R5_COMMA, log="env:nonProd:staging,west")),
+    ("r5-ps-comma-quoted-api", "PowerShell",
+     f"gh api -X POST {DISPATCH}/deploy.yml/dispatches -f ref=main "
+     "-f 'inputs[environment]=staging,west'",
+     _d(environments=R5_COMMA, log="env:nonProd:staging,west")),
+    ("r5-bash-comma-quoted", "Bash",
+     "gh workflow run deploy.yml -f 'environment=staging,west'",
+     _d(environments=R5_COMMA, log="env:nonProd:staging,west")),
+]
+
 MUST_BLOCK_DEPLOY += R2_MUST_BLOCK_DEPLOY + GRAMMAR_MUST_BLOCK \
-    + R3_MUST_BLOCK_DEPLOY + R4_MUST_BLOCK_DEPLOY
+    + R3_MUST_BLOCK_DEPLOY + R4_MUST_BLOCK_DEPLOY + R5_MUST_BLOCK_DEPLOY
 MUST_ALLOW_DEPLOY += GRAMMAR_MUST_ALLOW + R3_MUST_ALLOW_DEPLOY \
-    + R4_MUST_ALLOW_DEPLOY
+    + R4_MUST_ALLOW_DEPLOY + R5_MUST_ALLOW_DEPLOY
 ASK_DEPLOY += GRAMMAR_ASK + R3_ASK_DEPLOY + R4_ASK_DEPLOY
 
 _DB_SAMPLE = ("prod-input", "powershell-prod", "api-prod-input",
@@ -1566,3 +1664,55 @@ def test_r4_ps_full_params_match_powershell():
         got = {"-" + n.strip().lower() for n in out.split()} \
             - {"-redirectstandardinput"}
         assert got == set(names), (cmd, sorted(got))
+
+
+# --- review round 5: the marker over every dispatch judged ------------------
+
+R5_TWO = "gh workflow run a.yml; gh workflow run b.yml"
+R5_TWO_ENVS = {"nonProd": ["staging"], "workflows": {"a.yml": "production",
+                                                     "b.yml": "staging"}}
+
+
+def test_r5_a_marker_covers_every_dispatch_judged():
+    """Round 5 BLOCK 2: `dispatch_answer`'s scope for a line of two dispatches
+    keys its marker on BOTH classified dispatches, so a config edit that
+    reclassifies the lower-ranked one inside the TTL is a different key."""
+    envs = dict(_CONTRACT_ENVS, **R5_TWO_ENVS)
+    state, why, scope = crew_guards.dispatch_answer(R5_TWO, "bash", envs)
+    before = crew_guards.dispatch_marker_key(R5_TWO, dict(scope, state=state,
+                                                          why=why))
+    envs["workflows"] = {"a.yml": "production", "b.yml": "production"}
+    state, why, scope = crew_guards.dispatch_answer(R5_TWO, "bash", envs)
+    after = crew_guards.dispatch_marker_key(R5_TWO, dict(scope, state=state,
+                                                         why=why))
+    assert state == "prod", (state, why)
+    assert before != after
+
+
+def test_r5_an_approval_does_not_survive_a_second_dispatchs_remap(tmp_path):
+    """Round 5 BLOCK 2, through the hook: approve the two-dispatch line, then
+    make its nonProd dispatch production inside the TTL -- denied."""
+    case = ("r5-marker", "Bash", R5_TWO,
+            _d(environments=R5_TWO_ENVS, why="production"))
+    repo, result = _run("python", tmp_path, case)
+    assert result[0] == "deny", result
+    open(_deny_marker(result[1]), "w", encoding="utf-8").close()  # pylint: disable=consider-using-with
+    result = tcg.run_hook("python", tmp_path, "Bash", R5_TWO,
+                          extra_env=dict(UNATTENDED))
+    assert result[0] == "allow", result
+    _write_workflows(repo, {"a.yml": "production", "b.yml": "production"})
+    result = tcg.run_hook("python", tmp_path, "Bash", R5_TWO,
+                          extra_env=dict(UNATTENDED))
+    assert result[0] == "deny", result
+
+
+def test_r5_two_unknown_dispatches_do_not_crash_the_scan():
+    """Round 5 BLOCK 1: the gate compares its rows sorted, and a row holds
+    None where no workflow is named -- `scan` must not raise."""
+    envs = dict(_CONTRACT_ENVS, engaged=True)
+    for text in ("gh workflow run; gh workflow run deploy.yml",
+                 "gh workflow run deploy.yml; gh workflow run"):
+        findings = [f for f in cloud_guard.scan("bash", text,
+                                                ctx={"dispatch": envs})
+                    if f.rule == "deployWorkflow"]
+        assert [f.scope["state"] for f in findings] == ["unknown"] * 2, text

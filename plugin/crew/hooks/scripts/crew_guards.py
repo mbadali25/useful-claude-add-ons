@@ -1256,6 +1256,10 @@ _GATE_SHELLS = frozenset(("bash", "sh", "zsh", "dash", "ksh", "ash", "mksh",
                           "busybox"))
 _GATE_PWSH = frozenset(("pwsh", "powershell", "pwsh-preview"))
 _GATE_VERBS = frozenset(("destroy", "apply", "workspace"))
+# Command words after which bash may run text written earlier on the line
+# (review round 5): a loop's next pass, a function body, a trap.
+_GATE_DEFERS = frozenset(("for", "while", "until", "select", "function",
+                          "trap", "coproc"))
 
 
 class _GateReader:
@@ -1683,7 +1687,7 @@ class _TerraformTool:
         return None
 
     @staticmethod
-    def opaque(args, top, launched=None, _typed=None):
+    def opaque(args, top, launched=None, _typed=None, _copies=()):
         """The word naming the tool in a script crew cannot split, or None.
         `launched` is PowerShell's launcher values (`Start-Process X`)."""
         if launched is not None:
@@ -1702,7 +1706,7 @@ class _TerraformTool:
         return set()
 
     @staticmethod
-    def bash_aliases(_cmds):
+    def bash_aliases(_cmds, _helpers=None):
         """Names a bash line aliases the tool to: none followed (T-0005's
         copies are `_copies_terraform`'s alone)."""
         return set()
@@ -1787,7 +1791,7 @@ def _argv_trigger(argv, top, helpers, depth, line, tool=_TF_TOOL):
     if head in _GATE_OPAQUE:
         # A script crew cannot split: its own words decide, or the whole
         # line's when a word is made at run time (`source <(...)`).
-        own = tool.opaque(args, top)
+        own = tool.opaque(args, top, _copies=line["copies"])
         return None if own is None else (own, True)
     if head in line["copies"]:
         # `ln -sf /usr/bin/terraform tf && ./tf destroy`: the name the line
@@ -1831,13 +1835,18 @@ def _bash_trigger(text, top, helpers, depth, line=None, tool=_TF_TOOL):
     line = {"copies": set()} if line is None else line
     line["copies"] |= _copies_terraform(cmds, helpers[4], _GATE_COPIERS,
                                         tool.copy_source)
-    line["copies"] |= tool.bash_aliases(cmds)
+    if any(argv and helpers[4](argv[0]) in _GATE_DEFERS for argv in cmds):
+        # A loop, a function or a trap runs text written BEFORE an alias or
+        # `hash -p` after it: every one on the line counts (review round 5).
+        line["copies"] |= tool.bash_aliases(cmds, helpers)
     found, unseen = None, False
     for argv in cmds:
         hit = _argv_trigger(argv, top, helpers, depth, line, tool)
         if hit is not None:
             found = found or hit[0]
             unseen = unseen or hit[1]
+        # An alias or `hash -p` names gh for the REST of the line only.
+        line["copies"] |= tool.bash_aliases([argv], helpers)
     return None if found is None else (found, unseen)
 
 
@@ -2032,7 +2041,11 @@ def command_names_terraform(text, helpers):
 # split is gated only when gh and `workflow`/`dispatches` are in that ONE
 # command (the whole line only when a word in it is made at run time), and a
 # bash `alias NAME=VALUE` or `hash -p PATH NAME` pointing at gh makes NAME a
-# copy of gh for the rest of the line (`bash_aliases`).
+# copy of gh for the rest of the line (`bash_aliases`) -- the commands AFTER
+# it, or the whole line when a loop, a function or a trap on it can run
+# earlier text later (review round 5) -- where VALUE's last command runs gh
+# (`alias g='echo gh'` runs echo). In PowerShell a comma inside one whole
+# single-quoted word is text; a bare one makes an array and is refused.
 #
 # Once a line passes, the parser below reads it -- ONE flag parser
 # (`_gh_words`) for both forms -- and `dispatch_environment` classifies it by
@@ -2402,14 +2415,17 @@ class _DispatchTool:
         return (argv[0], True) if _dispatch_shape(argv) else None
 
     @staticmethod
-    def opaque(args, top, launched=None, typed=None):
+    def opaque(args, top, launched=None, typed=None, _copies=()):
         if launched is None:
             # Gh and `workflow` in the SAME command (review round 4: `alias
             # g=gh; echo workflow` sends nothing); the whole line only when a
-            # word here is made at run time (`source <(...)`).
-            named, verb = _dispatch_mentions(
-                top if any(_HOLE in a for a in args) else " ".join(args),
-                "bash")
+            # word here is made at run time (`source <(...)`). A name the
+            # line made a copy of gh counts as gh (review round 5: `trap 'g
+            # workflow run x' EXIT; hash -p /usr/bin/gh g`).
+            own = top if any(_HOLE in a for a in args) else " ".join(args)
+            named, verb = _dispatch_mentions(own, "bash")
+            named = named or next((w for w in own.split()
+                                   if _head_name(w) in _copies), None)
             return named if named and verb else None
         refused = _ps_untrusted_dispatch(typed, top)
         if refused is not None:
@@ -2467,20 +2483,19 @@ class _DispatchTool:
         return out
 
     @staticmethod
-    def bash_aliases(cmds):
+    def bash_aliases(cmds, helpers=None):
         """The names a bash line points at gh (review round 4): each `alias
-        NAME=VALUE` whose VALUE has a word naming gh or made at run time
-        (`alias g='env gh'`), and each NAME of `hash -p PATH NAME` whose PATH
-        does -- each then run as a copy of gh would be."""
+        NAME=VALUE` whose VALUE runs gh with the words after NAME
+        (`_alias_runs_gh`), and each NAME of `hash -p PATH NAME` whose PATH
+        names gh -- each then run as a copy of gh would be."""
         out = set()
         for argv in cmds:
             head = _head_name(argv[0]) if argv else ""
             if head == "alias":
                 for word in argv[1:]:
                     name, eq, value = word.partition("=")
-                    if eq and not name.startswith("-") and (
-                            _HOLE in value or any(_gh_name(w) for w in
-                                                  value.split())):
+                    if eq and not name.startswith("-") \
+                            and _alias_runs_gh(value, helpers):
                         out.add(_head_name(name))
             elif head == "hash":
                 path, names = None, []
@@ -2494,6 +2509,28 @@ class _DispatchTool:
                 if path is not None and (_HOLE in path or _gh_name(path)):
                     out.update(_head_name(n) for n in names)
         return out
+
+
+def _alias_runs_gh(value, helpers):
+    """True when an alias VALUE runs gh with the words written after the
+    alias's name (review round 5): bash reads VALUE again as text, and those
+    words join its LAST simple command, read through `_unwrap`'s wrappers
+    (`alias g='env gh'`, `alias g='cd x; gh'`), whose command word names gh
+    or is made at run time (`alias g='$x'`). `alias g='echo gh'` runs echo.
+    A value crew cannot read counts when any word in it names gh."""
+    if _HOLE in value:
+        return True
+    cmds = []
+    try:
+        if _GATE_CONTROL_RE.search(value):
+            raise _Unsure("a control character")
+        _GateReader(value, 0, cmds).read()
+    except _Unsure:
+        return any(_gh_name(w) for w in value.split())
+    argv = cmds[-1] if cmds else []
+    if argv and helpers is not None:
+        argv = helpers[0](argv, {}, [], {"cd": False})
+    return bool(argv) and (_HOLE in argv[0] or _gh_name(argv[0]))
 
 
 def fed_dispatch(argv):
@@ -2551,8 +2588,11 @@ def _dispatch_tokens(text):
 
 
 def _dispatch_word_ok(word, shell):
-    if shell == "powershell" and (word.startswith("@") or "," in word):
-        return False  # a splat, or an array PowerShell passes as two words
+    if shell == "powershell" and (word.startswith("@") or "," in word
+                                  and not _SINGLE_QUOTED_RE.match(word)):
+        # A splat, or a bare comma: an array PowerShell passes as two words.
+        # Inside one whole single-quoted word a comma is text (review round 5).
+        return False
     return bool(_PLAIN_WORD_RE.match(word) or _SINGLE_QUOTED_RE.match(word))
 
 
@@ -2613,9 +2653,10 @@ def dispatch_text(argv):
     """`argv` -- words the lexer produced -- as a line the grammar reads back
     word for word: a plain word as it is, any other in single quotes, and one
     single quotes cannot hold (a `'` or a control character) left bare, so
-    the grammar refuses it."""
+    the grammar refuses it. A word with a comma is quoted too: the one word
+    PowerShell's lexer made of `'a,b'` is two when written back bare."""
     return " ".join(
-        w if _PLAIN_WORD_RE.match(w) else
+        w if _PLAIN_WORD_RE.match(w) and "," not in w else
         w if "'" in w or _GATE_CONTROL_RE.search(w) or "\n" in w else
         f"'{w}'" for w in argv)
 
@@ -2947,7 +2988,11 @@ def dispatch_answer(text, shell, envs, fed=(), helpers=None):
 
 
 def _dispatch_row(state, scope):
-    return (state, scope.get("key"), scope.get("value"), scope.get("workflow"))
+    """One dispatch as the gate compares it: a tuple of strings, `None` (no
+    workflow named, no environment read) written as `-`, so rows sort --
+    `None` beside a string would raise (review round 5)."""
+    return tuple("-" if v is None else "=" + str(v) for v in (
+        state, scope.get("key"), scope.get("value"), scope.get("workflow")))
 
 
 def dispatch_gate(text, shell, envs, lexed, helpers=None):
@@ -2976,14 +3021,18 @@ def dispatch_marker_key(text, scope):
     """What a dispatch's approval marker is keyed on: the whole command text,
     byte for byte -- never a subset of it, so a marker for one `<` path or
     one stdin cannot cover another -- and, for a classified dispatch, the
-    workflow key and environment judged, so a config edit inside the TTL does
-    not carry an approval across."""
+    workflow key and environment judged, AND every other dispatch in
+    `scope["dispatches"]` (review round 5: `dispatch_answer`'s scope for a
+    two-dispatch line is its highest-ranked one), so a config edit inside the
+    TTL that reclassifies any of them does not carry an approval across."""
     if scope.get("op") == OP_LINE_NOT_LITERAL:
         return text
+    judged = sorted(json.dumps([klass, s.get("key"), s.get("value")])
+                    for klass, _why, s in scope.get("dispatches") or ())
     return text + "\n" + json.dumps(
         {"workflow": scope.get("key"),
-         "environment": [scope.get("state"), scope.get("value")]},
-        sort_keys=True)
+         "environment": [scope.get("state"), scope.get("value")],
+         "dispatches": judged}, sort_keys=True)
 
 
 def deploy_verdict(what, scope, out, envs, live):

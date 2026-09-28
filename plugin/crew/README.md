@@ -1203,7 +1203,12 @@ every parameter on it is a full, value-taking name: a switch (`-NoNewWindow`,
 refuses it, even on a line that sends nothing (`Start-Process $exe -Wait`).
 gh and `workflow` must be in the same command to count, so `alias g=gh; echo
 workflow` is not judged, while an `alias` or `hash -p` pointing at gh makes
-that name gh for the rest of the line. Refused, and how to write it instead:
+that name gh for the rest of the line — the commands after it, or the whole
+line when a loop, a function or a `trap` on it can run earlier text later.
+An alias counts only when its value's last command runs gh (`alias g='env
+gh'` does, `alias g='echo gh'` does not). In PowerShell a comma inside one
+whole single-quoted word is text (`-f 'environment=staging,west'`); a bare
+comma makes an array and is refused. Refused, and how to write it instead:
 
 | Refused | Write instead |
 |---|---|
