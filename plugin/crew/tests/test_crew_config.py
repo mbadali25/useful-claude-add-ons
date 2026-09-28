@@ -19,6 +19,8 @@ import copy
 import json
 import os
 import re
+import subprocess
+import sys
 
 import pytest
 
@@ -2277,6 +2279,90 @@ def test_merged_file_provider_check_holds_at_both_layers(tmp_path, layer):
                                         str(tmp_path / "g.json"))
 
     assert "qa.provider" in str(caught.value)
+
+
+# --- Review round 4 (T-0075): qa.order has one shape -----------------------
+
+_NOT_LISTS = [("1", "1"), ("true", "true"), ("1.5", "1.5"),
+              ("codex", '"codex"'), ("object", '{"a": 1}')]
+
+
+def _two_layers(tmp_path, repo_updates=None, global_cfg=None):
+    cfg = crew_config.default_config()
+    for dotted, value in (repo_updates or {}).items():
+        crew_config._set_path(cfg, dotted.split("."), value)  # pylint: disable=protected-access
+    root = _repo(tmp_path, cfg)
+    gpath = _global_file(tmp_path, global_cfg if global_cfg is not None
+                         else {"pm": {"authority": "act"}})
+    return root, gpath
+
+
+def _both_bytes(root, gpath):
+    return _repo_bytes(root), gpath.read_bytes()
+
+
+@pytest.mark.parametrize("value", [v for _, v in _NOT_LISTS],
+                         ids=[i for i, _ in _NOT_LISTS])
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_qa_order_must_be_a_list(tmp_path, capsys, layer, value):
+    root, gpath = _two_layers(tmp_path)
+    before = _both_bytes(root, gpath)
+
+    code = crew_config.main(
+        ["--root", str(root), "--global-path", str(gpath), "--set",
+         f"qa.order={value}"] + (["--repo"] if layer == "repo" else []))
+
+    err = capsys.readouterr().err
+    # A repo object is a block: the leaf rule refuses it before the shape check.
+    reason = "settable leaf" if (layer, value) == ("repo", '{"a": 1}') else "list"
+    assert (code, "qa.order" in err, reason in err) == (2, True, True)
+    assert _both_bytes(root, gpath) == before
+
+
+@pytest.mark.parametrize("value", ['["codex", "claude"]', "null"],
+                         ids=["list", "null"])
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_qa_order_list_and_null_still_accepted(tmp_path, capsys, layer, value):
+    root, gpath = _two_layers(tmp_path)
+
+    code = crew_config.main(
+        ["--root", str(root), "--global-path", str(gpath), "--set",
+         f"qa.order={value}"] + (["--repo"] if layer == "repo" else []))
+
+    capsys.readouterr()
+    assert code == 0
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_a_pre_existing_non_list_qa_order_is_named_not_a_traceback(
+        tmp_path, capsys, layer):
+    if layer == "machine":
+        root, gpath = _two_layers(tmp_path, global_cfg={"qa": {"order": True}})
+        argv = ["--set", 'notify.chatId="1"']
+    else:
+        root, gpath = _two_layers(tmp_path, {"qa.order": 1})
+        argv = ["--set", 'tracker="jira"', "--repo"]
+
+    code = crew_config.main(["--root", str(root), "--global-path", str(gpath)]
+                            + argv)
+
+    assert code == 2
+    assert "qa.order" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_set_cli_subprocess_prints_no_traceback_for_qa_order(tmp_path, layer):
+    root, gpath = _two_layers(tmp_path)
+    script = os.path.join(os.path.dirname(os.path.abspath(crew_config.__file__)),
+                          "crew_config.py")
+
+    done = subprocess.run(
+        [sys.executable, script, "--root", str(root), "--global-path",
+         str(gpath), "--set", "qa.order=1"]
+        + (["--repo"] if layer == "repo" else []),
+        capture_output=True, text=True, check=False)
+
+    assert (done.returncode, "Traceback" in done.stderr) == (2, False)
 
 
 def test_fixing_the_bad_key_in_the_same_write_is_accepted(tmp_path):

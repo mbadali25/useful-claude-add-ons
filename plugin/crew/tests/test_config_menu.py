@@ -227,6 +227,24 @@ def test_choices_are_filtered_through_the_merged_file(tmp_path, layer):
     assert "codex" in [c["value"] for c in rows["qa.provider"]["choices"]]
 
 
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_menu_spec_reads_a_non_list_qa_order(tmp_path, capsys, layer):
+    if layer == "repo":
+        root, gpath = _repo(tmp_path, {"qa.order": 1})
+        blocked = "tracker"
+    else:
+        root, gpath = _repo(tmp_path, global_cfg={"qa": {"order": True}})
+        blocked = "pm.authority"
+
+    code = menu.main(["--root", root, "--global-path", gpath, "spec",
+                      "--layer", layer, "--json"])
+
+    rows = {r["path"]: r for r in _rows(json.loads(capsys.readouterr().out))}
+    assert (code, rows[blocked]["writable"]) == (0, False)
+    assert "qa.order" in rows[blocked]["refusedReason"]
+    assert rows["qa.order"]["writable"]
+
+
 def test_pending_set_unblocks_rows(tmp_path, capsys):
     root, gpath = _repo(tmp_path, {"qa.provider": "gpt"})
     pending = {"repo": {"qa.provider": "codex"}}

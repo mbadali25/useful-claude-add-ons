@@ -203,7 +203,10 @@ def validate_providers(cfg):
             "here whether the name is a typo or a real provider crew simply "
             "does not dispatch a reviewer to.")
 
-    for name in qa.get("order") or []:
+    order = qa.get("order")
+    if order is not None and not isinstance(order, list):
+        raise ProviderError(f"qa.order = {order!r} is not a list of QA providers ({qa_names}) or null.")
+    for name in order or []:
         if name not in QA_PROVIDERS:
             raise ProviderError(
                 f"qa.order contains {name!r}, which is not a QA provider. QA "
@@ -234,8 +237,6 @@ def validate_providers(cfg):
                 "would name one.")
 
     return cfg
-
-
 
 
 def default_config():
