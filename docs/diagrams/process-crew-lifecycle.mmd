@@ -98,6 +98,10 @@
 %% mapped by a line diff from f0b12ee6 and re-read); the command files drawn here are unchanged by
 %% T-0010. The approve node still draws the human route; T-0010's `crew_autopilot.py approve` is
 %% reached only from /crew:autopilot under autopilot.approval (scope.allowCliApproval: true).
+%% Re-anchored 8de3c669 -> 81685adf (T-0079 merges T-0077's f96e9ec9, crew 1.0.50): of the
+%% Anchors paths only crew_tracker.py changed (`git diff --name-only`), by T-0077's
+%% ba2ee465 alone - the Windows directory hold, below resolve() and inside the vault-write
+%% path. No node cites a line or behaviour in that hunk, so nothing below was redrawn.
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):

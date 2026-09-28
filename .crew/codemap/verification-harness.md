@@ -228,7 +228,7 @@ Notable rules, re-read directly:
   `plugin/crew/tests/sabotage_tracker.py` and `plugin/crew/tests/tracker_fixtures/**` →
   `python3 -m pytest plugin/crew/tests/test_crew_tracker.py -q`, priced 4s (its `why` records
   3.3s measured 2026-09-26 — a claim read, not re-timed here). Its mutations live in
-  `plugin/crew/tests/sabotage_tracker.py` (`TRACKER_MUTATIONS`, 81 after review rounds 3 and 4),
+  `plugin/crew/tests/sabotage_tracker.py` (`TRACKER_MUTATIONS`, 87 since T-0077; 81 after T-0021 review rounds 3 and 4),
   imported by `plugin/crew/tests/sabotage.py:78` and appended at `:3053`.
 - **Rule 30**, new at `eba11657` (`.crew/verify.json:317-325` since T-0018 landed and unmoved by T-0010's merge, `:309-317` before, T-0023; rule 27 until T-0005's
   rule 6 merged in, rule 28 until T-0021's tracker rule landed ahead of it, rule 29 until T-0010's merge): `paths`
@@ -1441,3 +1441,30 @@ tracker and route on `:3053`, `POLICY_MUTATIONS` and `APPROVAL_MUTATIONS` on `:3
 owner-only refusals and five round-4 fixes added, one anchor moved to the new `elif`); one names
 `test_crew_autopilot.py`. `crew_ticket.py` is named by rules 11 and 31. No test was run by this
 note.
+
+## Re-anchor provenance - `8de3c669` -> `a6e81869`, 2026-09-27 (T-0079 on its branch)
+
+`T-0079-read` was cut from `67caa4b8`, merged main `d2fbd408` (T-0024 landed; its refresh `fdc54ce9`
+changed refresh artifacts only) in `f034ef5c`, and carries T-0079's commits through `a6e81869`
+(crew 1.0.49). `git diff --name-only 8de3c669 a6e81869`, refresh artifacts aside, returns T-0079's
+files only: `review_verdict.py`, `review_prompt.py`, `review_run.py`, their tests and
+`sabotage_review.py`, `agents/reviewer.md`, `plugin/crew/README.md` (line-neutral), `CHANGELOG.md`
+and the three version files. Every body citation into those files was compared by script between
+`8de3c669` and `a6e81869` at the same line.
+Of the cited paths, `.claude-plugin/marketplace.json` (`:218` 1.0.49, in place) and
+`plugin/PLUGINS.md` (`:14` 1.0.49, in place) changed; no citation moved. No test suite was executed
+for this note.
+
+## Re-anchor provenance - `a6e81869` -> `81685adf`, 2026-09-27 (T-0079 merges main, Step 7, re-bump)
+
+`T-0079-read` gained T-0079's Step 7 (`8f7c62dd`, one `find` string in
+`plugin/crew/tests/sabotage_webtest.py`), merged main `f96e9ec9` (T-0077 landed, crew 1.0.49) in
+`548ee44e`, and re-bumped crew to 1.0.50 in `81685adf`. `git diff --name-only a6e81869 81685adf`,
+refresh artifacts aside, returns that `sabotage_webtest.py`, T-0077's files (`crew_tracker.py`,
+`crew_autopilot.py`, `sabotage_tracker.py`, `sabotage_autopilot.py`, `test_crew_tracker.py`,
+`test_crew_autopilot.py`, `test_crew_autopilot_status.py`), `plugin/crew/README.md` (line-neutral
+on both sides), `CHANGELOG.md` and the three version files. Every body citation of the form
+`path:line` into those files was compared by script between `a6e81869` and `81685adf`.
+Rule 28's `TRACKER_MUTATIONS` count moves to 87 (read from the tuple, T-0077 added six); the
+`sabotage.py:77`, `:78` and `:3053` registrations and `AUTOPILOT_MUTATIONS` `:25` did not move.
+Nothing was executed for this note.

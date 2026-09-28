@@ -11,6 +11,7 @@ REVIEW_VERDICT = os.path.join(CREW, "hooks", "scripts", "review_verdict.py")
 REVIEW_LEDGER = os.path.join(CREW, "hooks", "scripts", "review_ledger.py")
 REVIEW_RUN = os.path.join(CREW, "hooks", "scripts", "review_run.py")
 REVIEW_PATCH = os.path.join(CREW, "hooks", "scripts", "review_patch.py")
+REVIEW_PROMPT = os.path.join(CREW, "hooks", "scripts", "review_prompt.py")
 
 REVIEW_FIX_MUTATIONS = (
     # The T1 review-fix round. Each was also run by hand against the tracked
@@ -283,5 +284,113 @@ REVIEW_FIX_MUTATIONS = (
         "            stdout, stderr = \"\", \"\"\n",
         ("tests/test_review_run_launch.py::"
          "test_post_kill_communicate_is_bounded_and_keeps_the_partial_output"),
+    ),
+    # T-0079: a READ line counts for a part when it is the part's path as
+    # listed, or its bare file name -- and for nothing else. Each rule below
+    # has its own proof.
+    (
+        # Exact comparison against the listed path gone: only bare names count,
+        # so a reviewer echoing the listed path is INCOMPLETE (T-0009 round 4).
+        "the READ parser compares bare names only again",
+        REVIEW_VERDICT,
+        "    if token == listed:\n        return True\n",
+        "    if False:\n        return True\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_full_path_read_counts_for_its_listed_part"),
+    ),
+    (
+        # A file name alone is not an identity: part-002 of another bundle
+        # would cover this bundle's part-002.
+        "any READ token is reduced to its basename",
+        REVIEW_VERDICT,
+        "    return \"/\" not in token and token == posixpath.basename(listed)\n",
+        "    return posixpath.basename(token) == posixpath.basename(listed)\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_same_basename_in_another_directory_counts_for_nothing"),
+    ),
+    (
+        # The loosest rule: any READ line at all covers every part, so a path
+        # outside the bundle stands in for a part nobody claimed to read.
+        "any READ line counts for any part",
+        REVIEW_VERDICT,
+        "    return \"/\" not in token and token == posixpath.basename(listed)\n",
+        "    return True\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_read_of_a_path_outside_the_bundle_counts_for_nothing"),
+    ),
+    (
+        # A Windows reviewer writing C:/... for a listed C:\... is INCOMPLETE.
+        "READ paths are no longer separator-normalised",
+        REVIEW_VERDICT,
+        "    return posixpath.normpath(path.strip().replace(\"\\\\\", \"/\"))\n",
+        "    return posixpath.normpath(path.strip())\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_differently_spelled_listed_path_counts"),
+    ),
+    (
+        # A listed path under a directory with a space cannot be acknowledged.
+        "a READ path containing a space is unparseable again",
+        REVIEW_VERDICT,
+        "_READ = re.compile(r\"^READ\\|(.*\\S.*)$\")\n",
+        "_READ = re.compile(r\"^READ\\|(\\S+)$\")\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_listed_path_with_a_space_counts"),
+    ),
+    (
+        # The parser handed bare names while the prompt lists full paths.
+        "review_run expects bare part names again",
+        REVIEW_RUN,
+        "    parts = [p.get(\"path\") or p[\"name\"] for p in manifest.get(\"parts\") or []]\n",
+        "    parts = [p[\"name\"] for p in manifest.get(\"parts\") or []]\n",
+        ("tests/test_webtest_guard.py::"
+         "test_review_reads_written_as_the_listed_paths_are_clean"),
+    ),
+    (
+        # The overflow file's READ must match the full path the prompt printed.
+        "review_run expects the webtest overflow file by bare name again",
+        REVIEW_RUN,
+        "        parts.append(os.path.join(args.scratch, review_prompt.WEBTEST_FINDINGS_FILE))\n",
+        "        parts.append(review_prompt.WEBTEST_FINDINGS_FILE)\n",
+        ("tests/test_webtest_guard.py::"
+         "test_review_the_overflow_file_needs_its_own_read"),
+    ),
+    (
+        # The prompt asking for a form the parser does not state is the defect.
+        "the bundle prompt asks for READ|<its file name> again",
+        REVIEW_PROMPT,
+        "           f\"{review_verdict.READ_FORM} on its own line. A READ line for a path in any\",\n",
+        "           \"READ|<its file name> on its own line. A READ line for a path in any\",\n",
+        ("tests/test_review_prompt.py::"
+         "test_build_states_the_read_form_the_parser_accepts"),
+    ),
+    (
+        # The webtest overflow line asking for the bare name again. The bundle
+        # block states READ_FORM too, so the test reads the overflow line alone.
+        "the webtest overflow line asks for a bare READ name again",
+        REVIEW_PROMPT,
+        "                   f\"and output {review_verdict.READ_FORM} for that file on its own line. \"\n",
+        "                   f\"and output READ|{WEBTEST_FINDINGS_FILE} on its own line. \"\n",
+        ("tests/test_webtest_guard.py::"
+         "test_review_prompt_hands_over_every_row_through_a_file_past_the_inline_limit"),
+    ),
+    (
+        # splitlines() also breaks at U+2028 and the C0 separators, cutting a
+        # verdict line in two (T-0079 amendment).
+        "the verdict parser splits reviewer output with splitlines again",
+        REVIEW_VERDICT,
+        '    for raw in (text or "").split("\\n"):\n',
+        '    for raw in (text or "").splitlines():\n',
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_verdict_line_holding_a_unicode_line_break_is_one_line"),
+    ),
+    (
+        # A raw U+2028 inside a Codex event's JSON cut it mid-object and scored
+        # T-0072 round 4 INCOMPLETE.
+        "the Codex event reader splits with splitlines again",
+        REVIEW_VERDICT,
+        '    for line in (jsonl or "").split("\\n"):\n',
+        '    for line in (jsonl or "").splitlines():\n',
+        ("tests/test_review_verdict.py::"
+         "test_codex_final_message_an_event_holding_a_unicode_line_break_parses_intact"),
     ),
 )

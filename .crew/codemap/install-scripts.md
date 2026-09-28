@@ -928,3 +928,29 @@ Of the paths this note cites, `plugin/crew/BUDGETS.md` (`:11`, 18,953 across 126
 changed in place; README and CONFIG.md changed in paragraphs cited by name only. No install
 script, `README.md`, `INSTALLATION.md` or `scripts/check-marketplace.py` changed, so no
 citation moved. Neither install script was executed.
+
+## Re-anchor provenance - `8de3c669` -> `a6e81869`, 2026-09-27 (T-0079 on its branch)
+
+`T-0079-read` was cut from `67caa4b8`, merged main `d2fbd408` (T-0024 landed; its refresh `fdc54ce9`
+changed refresh artifacts only) in `f034ef5c`, and carries T-0079's commits through `a6e81869`
+(crew 1.0.49). `git diff --name-only 8de3c669 a6e81869`, refresh artifacts aside, returns T-0079's
+files only: `review_verdict.py`, `review_prompt.py`, `review_run.py`, their tests and
+`sabotage_review.py`, `agents/reviewer.md`, `plugin/crew/README.md` (line-neutral), `CHANGELOG.md`
+and the three version files. Every body citation into those files was compared by script between
+`8de3c669` and `a6e81869` at the same line.
+Of the cited paths, `.claude-plugin/marketplace.json` (`:218` 1.0.49, in place) and
+`plugin/PLUGINS.md` (`:14` 1.0.49, in place) changed; no citation moved. Nothing was executed for
+this note.
+
+## Re-anchor provenance - `a6e81869` -> `81685adf`, 2026-09-27 (T-0079 merges main, Step 7, re-bump)
+
+`T-0079-read` gained T-0079's Step 7 (`8f7c62dd`, one `find` string in
+`plugin/crew/tests/sabotage_webtest.py`), merged main `f96e9ec9` (T-0077 landed, crew 1.0.49) in
+`548ee44e`, and re-bumped crew to 1.0.50 in `81685adf`. `git diff --name-only a6e81869 81685adf`,
+refresh artifacts aside, returns that `sabotage_webtest.py`, T-0077's files (`crew_tracker.py`,
+`crew_autopilot.py`, `sabotage_tracker.py`, `sabotage_autopilot.py`, `test_crew_tracker.py`,
+`test_crew_autopilot.py`, `test_crew_autopilot_status.py`), `plugin/crew/README.md` (line-neutral
+on both sides), `CHANGELOG.md` and the three version files. Every body citation of the form
+`path:line` into those files was compared by script between `a6e81869` and `81685adf`.
+This note cites `plugin/crew/README.md` and the version files by name or at unmoved lines; no
+citation moved. Nothing was executed for this note.

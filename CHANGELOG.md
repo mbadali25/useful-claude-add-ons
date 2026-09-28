@@ -4,6 +4,47 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`crew` 1.0.50: review READ lines match the parts as listed (T-0079).**
+  Bumped `1.0.49 -> 1.0.50`. The review prompt listed every bundle part by
+  its full path and asked for `READ|<its file name>`, while
+  `review_verdict.parse` compared READ tokens by exact string equality
+  against the bare names `review_run.finish` handed it. A reviewer that
+  echoed the listed path was scored INCOMPLETE: T-0009 round 4 wrote a READ
+  line for all 22 parts, each the listed path, and read `no READ line for 22
+  of 22 bundle part(s)`.
+  - A READ token now counts for a part when, `\` read as `/` and
+    `normpath`ed, it IS the part's listed path, or when it has no directory
+    and is that part's file name (`review_verdict._covers`). A path outside
+    the bundle, or the same file name in another directory, counts for no
+    part. The token is the rest of the line, so a listed path containing a
+    space can be acknowledged; an empty `READ|` stays unparseable.
+  - `review_run.finish` passes the manifest's part `path`s (falling back to
+    `name`) and the webtest overflow file's scratch path.
+  - The bundle block and the webtest overflow line of the prompt quote
+    `review_verdict.READ_FORM`, so the prompt and the parser cannot drift
+    apart without a test going red. Nine sabotage entries in
+    `tests/sabotage_review.py` prove each rule.
+  - **Shape change:** `review.json`'s `parts_expected` and `parts_missing`
+    name each part by its listed path, not its bare file name. Nothing else
+    reads them.
+  - Unchanged: no new INCOMPLETE reason (an unlisted READ is not a reason of
+    its own; the uncovered part is), and a READ line stays the reviewer's own
+    claim, not an observation of its reads. No case-folding or `/c/...` <->
+    `C:\...` translation: another spelling fails closed as a missing part.
+  - Docs: `agents/reviewer.md`, `README.md`'s verdict table and the crew code
+    map state the form.
+  - Reviewer output is split on `\n` only (amendment, 2026-09-27).
+    `review_verdict.parse` and `review_verdict.codex_final_message` split
+    with `str.splitlines()`, which also breaks at U+2028, U+2029, U+0085 and
+    the C0 separators; Codex prints U+2028 raw inside JSON strings, so an
+    event was cut mid-JSON and T-0072 round 4 read `unparseable Codex event
+    line`. Both now split on `\n`, each line still stripped, so a `\r\n` end
+    parses as before. Replayed over that round's `codex-events.jsonl`, the
+    stream now yields its final message with no error. Two sabotage entries
+    restore `splitlines()` at each site and turn a named test red.
+
 ### Added
 
 - **`crew` 1.0.50: `/crew:autopilot` approval and questions policies (T-0010).**
