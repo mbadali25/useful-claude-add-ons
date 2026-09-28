@@ -4154,8 +4154,8 @@ Enforced by the same hooks (approval receipts, scope guard, cloud guard, review 
 **Partly shipped in crew 1.0.41 (T-0004):** `/crew:autopilot [<id>]` drives ONE ticket with `autopilot.mode: plan`,
 stopping for every approval, review acceptance, brainstorm and open question; the migrate note now points at it. Still
 open, each its own ticket depending on T-0004: **T-0010** approval/questions policies - BUILT (branch
-`T-0010-solo`, awaiting review; lands after T-0018, which landed first, and before T-0024, which carries b6920a99's
-owner-only `via=autopilot` refusal): `autopilot.approval|questions: human|self|risk`, the
+`T-0010-solo`, awaiting review; lands after T-0018 and T-0024, which both landed first, so it carries b6920a99's
+owner-only `via=autopilot` refusal itself): `autopilot.approval|questions: human|self|risk`, the
 `autopilot` receipt behind `scope.allowCliApproval` as the one documented exception to T-0018's read-only
 `crew_autopilot.py`, `questions.md` + `questions-check` (round 2's two FIXes, filed as T-0078, folded in); **T-0011** `ship: pr|merge`, the
 same-family high-risk merge refusal and the known-fixture CI list; **T-0012** `mode: backlog`, goal decomposition,

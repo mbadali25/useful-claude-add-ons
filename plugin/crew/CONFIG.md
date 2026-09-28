@@ -2277,15 +2277,16 @@ driven is a fact about that checkout.
 |---|---|---|---|
 | `autopilot.mode` | `"off"` | `crew_autopilot.settings`, through `crew_config.resolve_config` | Only the exact string `"plan"` arms it. `"Plan"`, `"plan "`, `true`, `"on"`, `null` — anything else — reads as `off`, and `settings` prints which value it saw. A typo must not arm a driver. |
 | `autopilot.maxPhases` | `12` | `crew_autopilot.settings`; `next_phase` stops once the session's phase count reaches it | Anything but a positive integer (`0`, `-3`, `"12"`, `true`, `2.5`) reads as `12`, with a warning. |
-| `autopilot.approval` | `"risk"` | `crew_autopilot.approval_policy` (T-0010): whether `crew_autopilot.py approve` may record the plan approval itself | Anything but exactly `human`, `self` or `risk` (`"Self"`, `true`, `null`) reads as `human`, with a warning. `human` always stops. |
-| `autopilot.questions` | `"risk"` | `crew_autopilot.question_policy` (T-0010): whether autopilot takes the researched recommendation for an open question | Same: anything else reads as `human`, which always stops. |
+| `autopilot.approval` | `"risk"` | `crew_autopilot.approval_policy` (T-0010): whether `crew_autopilot.py approve` may record the plan approval itself | Anything but exactly `human`, `self` or `risk` (`"Self"`, `true`, `null`) reads as `human`, with a warning. `human` always stops. A `.crew/config.json` that exists but is not a readable JSON object, or an `autopilot` value that is not an object, reads as `unknown` (could not tell): `approve` refuses, and `mode` reads `off`. An absent file or block reads the default. |
+| `autopilot.questions` | `"risk"` | `crew_autopilot.question_policy` (T-0010): whether autopilot takes the researched recommendation for an open question | Same: anything else reads as `human`, which always stops; an unreadable config or non-object block reads as `unknown`, and a question stops. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
 adds reads the same one. `/crew:migrate` writes `.crew/crew.json`, which crew
 does not read for this key; an `autopilot` block found only there is reported
 by `settings` ("move it to .crew/config.json") rather than read as `off` with
-no word.
+no word. `settings` prints `mode`, `maxPhases`, `approval` and `questions`, in
+text and with `--json`.
 
 **The two policies (T-0010).** `autopilot.approval` decides the
 plan-approval phase: `human` always stops for `/crew:approve`; `self` lets

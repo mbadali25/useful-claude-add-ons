@@ -686,14 +686,47 @@ def _read_json(path):
         return None
 
 
+def _unreadable_autopilot(top):
+    """Why the repo's `autopilot` block cannot be told, or "" when it can.
+    `crew_config.resolve_config` collapses a malformed file, and
+    `merge_defaults` a non-object block, to the defaults; this reads the raw
+    file first so neither collapse is taken for a configured value."""
+    data, state = crew_ticket._read_json(  # pylint: disable=protected-access
+        os.path.join(top, ".crew", "config.json"))
+    if state == "corrupt":
+        return ".crew/config.json exists but could not be read as JSON"
+    if state == "ok" and not isinstance(data, dict):
+        return (f".crew/config.json is {type(data).__name__}, not a JSON object, so it "
+                "could not be read")
+    block = data.get("autopilot") if state == "ok" else None
+    if block is not None and not isinstance(block, dict):
+        return f"autopilot in .crew/config.json is {block!r}, not an object"
+    return ""
+
+
 def settings(root):
     """`{"mode", "armed", "maxPhases", "approval", "questions", "saw",
     "warnings"}`. Read through `crew_config.resolve_config` --
     `.crew/config.json` over the defaults, the file
     `crew_ticket.cli_approval_allowed` reads. `mode` arms only when it is
     exactly the string `plan`; `maxPhases` must be a positive int, else 12;
-    `approval` and `questions` must be one of POLICIES, else `human`."""
+    `approval` and `questions` must be one of POLICIES, else `human`.
+
+    A `.crew/config.json` that is present but unreadable, or an `autopilot`
+    value that is not an object, is could-not-tell: both policies read
+    UNKNOWN, `mode` reads `off`, and a warning names the cause. That is never
+    the default `risk`, which `resolve_config` would otherwise hand back for
+    both. An absent file or an absent (or null) block is known and reads the
+    defaults."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    cause = _unreadable_autopilot(top)
+    if cause:
+        return {"mode": "off", "armed": False,
+                "maxPhases": crew_state.AUTOPILOT_DEFAULTS["maxPhases"],
+                "approval": UNKNOWN, "questions": UNKNOWN, "saw": None,
+                "warnings": [f"{cause}, so autopilot.approval and autopilot.questions "
+                             "could not be told (both read as unknown, which never "
+                             "approves or takes an answer) and autopilot reads as off"]}
     block = crew_config.resolve_config(top).get("autopilot")
     block = block if isinstance(block, dict) else {}
     warnings = []
@@ -789,7 +822,10 @@ def approval_policy(root, ticket):
                                            f"({type(exc).__name__}: {exc})")}
     result = {"allow": False, "policy": policy, "risk": risk["risk"],
               "known": risk["known"], "warnings": warnings}
-    if not allowed:
+    if policy == UNKNOWN:
+        why = (f"could not tell autopilot.approval ({'; '.join(warnings) or 'unreadable'}); "
+               "the human approves")
+    elif not allowed:
         why = (f"{ALLOW_CLI} is not exactly true in .crew/config.json, so no approval but "
                "the human's counts")
     elif policy == HUMAN:
@@ -821,6 +857,9 @@ def question_policy(root, ticket):
                                            f"({type(exc).__name__}: {exc})")}
     result = {"action": STOP, "policy": policy, "risk": risk["risk"],
               "known": risk["known"], "warnings": warnings}
+    if policy == UNKNOWN:
+        return dict(result, reason=(f"could not tell autopilot.questions "
+                                    f"({'; '.join(warnings) or 'unreadable'}): a person answers"))
     if policy == SELF:
         return dict(result, action=TAKE, reason="autopilot.questions is self")
     if policy == RISK and risk["known"] and risk["risk"] == "low":
@@ -874,7 +913,7 @@ def approve(root, ticket):
     got = approval_policy(top, ticket)
     if not got["allow"]:
         return 2, f"refused: {got['reason']}; {human}"
-    receipt, successor = crew_ticket.approve(
+    _receipt, successor = crew_ticket.approve(
         top, ticket, by=f"autopilot:{got['policy']}", via=crew_ticket.AUTOPILOT)
     text = (f"self-approved {ticket} under approval={got['policy']}, "
             f"risk={got['risk'] if got['known'] else 'unknown (high)'}")
@@ -1329,10 +1368,6 @@ def _line(**fields):
     return " ".join(f"{k}={v}" for k, v in fields.items())
 
 
-def _one_line(value):
-    return " ".join(str(value).split())
-
-
 def _policy_main(args):
     """`approve` and `questions-check`: exit 0 only on a yes. A crash is a
     refusal (exit 1), never an approval or a valid file."""
@@ -1405,7 +1440,8 @@ def main(argv):
                          for kind, rows in result.items() for row in rows)
     elif args.action == "settings":
         result = settings(args.root)
-        text = "\n".join([_line(mode=result["mode"], maxPhases=result["maxPhases"])]
+        text = "\n".join([_line(mode=result["mode"], maxPhases=result["maxPhases"],
+                                approval=result["approval"], questions=result["questions"])]
                          + [f"warning: {w}" for w in result["warnings"]])
     elif args.action == "resume":
         try:

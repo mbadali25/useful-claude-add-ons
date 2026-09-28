@@ -817,3 +817,112 @@ def test_verify_maps_autopilot_command_to_policy_suite():
             if any(fnmatch.fnmatchcase(target, path) for path in rule.get("paths") or [])]
 
     assert any("test_crew_autopilot_policy.py" in run for run in runs), runs
+
+
+# --- step 7: review round 4's three FIXes ---------------------------------------
+# An unreadable `.crew/config.json`, or an `autopilot` value that is not an
+# object, is could-not-tell: both policies read `unknown`, never the default
+# `risk`. Absence is known and still reads the defaults.
+
+def _raw_config(root, text):
+    _write(root / ".crew" / "config.json", text)
+
+
+@pytest.mark.parametrize("text", ["{bad", "[]"])
+def test_settings_unreadable_config_reads_policies_unknown(tmp_path, text):
+    root = _repo(tmp_path, approval="self", questions="self")
+    _raw_config(root, text)
+
+    got = crew_autopilot.settings(str(root))
+
+    assert (got["approval"], got["questions"], got["mode"],
+            any(".crew/config.json" in w and "could not" in w for w in got["warnings"])) == (
+        "unknown", "unknown", "off", True)
+
+
+@pytest.mark.parametrize("value", [["x"], "self", 1, True])
+def test_settings_non_object_autopilot_reads_policies_unknown(tmp_path, value):
+    root = _repo(tmp_path)
+    _raw_config(root, json.dumps({"scope": {"allowCliApproval": True}, "autopilot": value}))
+
+    got = crew_autopilot.settings(str(root))
+
+    assert (got["approval"], got["questions"], got["mode"],
+            any("not an object" in w and repr(value) in w for w in got["warnings"])) == (
+        "unknown", "unknown", "off", True)
+
+
+def test_question_policy_stops_when_config_unreadable(tmp_path):
+    root = _repo(tmp_path, questions="self", risk="low")
+    _raw_config(root, "{bad")
+
+    got = crew_autopilot.question_policy(str(root), T)
+
+    assert (got["action"], got["policy"], "could not tell" in got["reason"]) == (
+        "stop", "unknown", True)
+
+
+def test_question_policy_stops_when_autopilot_not_an_object(tmp_path):
+    root = _repo(tmp_path, risk="low")
+    _raw_config(root, json.dumps({"scope": {"allowCliApproval": True}, "autopilot": ["x"]}))
+
+    got = crew_autopilot.question_policy(str(root), T)
+
+    assert (got["action"], got["policy"], "could not tell" in got["reason"]) == (
+        "stop", "unknown", True)
+
+
+def test_approval_policy_refuses_when_autopilot_not_an_object(tmp_path):
+    root = _repo(tmp_path, risk="low")
+    _raw_config(root, json.dumps({"scope": {"allowCliApproval": True}, "autopilot": ["x"]}))
+
+    got = crew_autopilot.approval_policy(str(root), T)
+
+    assert (got["allow"], got["policy"], "could not tell" in got["reason"]) == (
+        False, "unknown", True)
+
+
+def test_approval_policy_refuses_an_unknown_policy_before_the_risk_branch(tmp_path,
+                                                                          monkeypatch):
+    root = _repo(tmp_path, risk="low")
+    monkeypatch.setattr(crew_autopilot, "settings", lambda _root: {
+        "mode": "off", "armed": False, "maxPhases": 12, "approval": "unknown",
+        "questions": "unknown", "saw": None,
+        "warnings": ["autopilot.approval could not be told (a test)"]})
+
+    got = crew_autopilot.approval_policy(str(root), T)
+
+    assert (got["allow"], got["policy"]) == (False, "unknown")
+
+
+@pytest.mark.parametrize("config", [None, {"scope": {"allowCliApproval": True}},
+                                    {"scope": {"allowCliApproval": True}, "autopilot": None}])
+def test_settings_absent_config_or_block_reads_defaults(tmp_path, config):
+    root = _repo(tmp_path)
+    path = root / ".crew" / "config.json"
+    if config is None:
+        path.unlink()
+    else:
+        _raw_config(root, json.dumps(config))
+
+    got = crew_autopilot.settings(str(root))
+
+    assert (got["approval"], got["questions"], got["warnings"]) == ("risk", "risk", [])
+
+
+@pytest.mark.parametrize("approval,questions", [("self", "human"), ("human", "self")])
+def test_settings_cli_text_prints_both_policies(tmp_path, approval, questions):
+    root = _repo(tmp_path, approval=approval, questions=questions)
+
+    out = _cli(root, "settings").stdout
+
+    assert f"approval={approval} questions={questions}" in out.splitlines()[0]
+
+
+@pytest.mark.parametrize("approval,questions", [("self", "human"), ("human", "self")])
+def test_settings_cli_json_prints_both_policies(tmp_path, approval, questions):
+    root = _repo(tmp_path, approval=approval, questions=questions)
+
+    got = json.loads(_cli(root, "settings", "--json").stdout)
+
+    assert (got["approval"], got["questions"]) == (approval, questions)

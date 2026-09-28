@@ -29,6 +29,25 @@ All notable changes to this repository are documented here. Format follows [Keep
     autopilot.md budget moves from 100 to 110 lines (T-0018's comment gave
     T-0010 part of the 20-line reserve), leaving 10 for T-0012, T-0019 and
     T-0020.
+  - Review round 4 (rejected; successor plan): the carve-out names `approve`'s
+    three writes (`approval.json`, `scope-tickets.json` on a ticket's first
+    approval, and the NEEDS_REPLAN -> IN_REVIEW ledger continuation for a
+    distinct successor plan). Three FIXes, each test-first with a
+    POLICY_MUTATIONS entry: a `.crew/config.json` that exists but is not a
+    readable JSON object, or an `autopilot` value that is not an object, reads
+    both policies as `unknown` (could not tell) instead of the default `risk` -
+    `approval_policy` refuses it in its own branch before `self` and `risk`,
+    `question_policy` stops, `settings` warns and reads `mode` as `off`, and an
+    `autopilot` receipt is demoted; an absent file or block still reads the
+    defaults. `crew_autopilot.py settings` prints `approval` and `questions` in
+    its text line as well as `--json`. The duplicate `_one_line` is gone
+    (pylint E0102), pinned by a test that no module-level name is defined twice.
+  - A group confirm is owner-only (carried from T-0024's hand-off: T-0024
+    landed first without it). `crew_ticket.approve` refuses `via=autopilot`
+    with an `expect` before `expect` is validated and before anything is
+    written; the owner's own group confirm and autopilot's one-ticket approval
+    still record. Three tests in `test_crew_ticket.py`, two POLICY_MUTATIONS,
+    and README and CONFIG.md say so.
   - Review round 3's BLOCK and two FIXes: every statement of the exception
     (module and `approve` docstrings, `commands/autopilot.md`, README, CONFIG.md,
     the daily-workflow guide, the code map) names what `approve` writes instead

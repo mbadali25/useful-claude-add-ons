@@ -44,7 +44,7 @@ python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py resume --root .
 ```
 
 `settings`: anything but `mode=plan` - stop, print its `warning:` lines, and say
-`autopilot.mode: plan` in `.crew/config.json` turns it on. Note `maxPhases`. `resume` with
+`autopilot.mode: plan` in `.crew/config.json` turns it on. Note `maxPhases`, `approval`, `questions`. `resume` with
 no ticket tries the handoff's `resume:` line (only when its `branch:` and `head:` match this
 checkout), then this worktree's active ticket, then `.work/INDEX.md` only when one ticket is
 open. Print the `source`, every `fell through:` and any `disagreement:` line (disk wins).

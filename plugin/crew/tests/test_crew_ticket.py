@@ -828,6 +828,15 @@ def test_precheck_outside_git_is_a_problem(tmp_path):
     assert "not a git repository" in " ".join(result["problems"])
 
 
+def test_autopilot_receipt_demoted_when_autopilot_block_is_not_an_object(repo):
+    _autopilot_config(repo)
+    _autopilot_approved(repo)
+    (repo / ".crew" / "config.json").write_text(json.dumps(
+        {"scope": {"mode": "block", "allowCliApproval": True}, "autopilot": ["x"]}),
+        encoding="utf-8")
+
+    assert crew_ticket.accepted(str(repo), "T-1")["status"] == "unaccepted"
+
 # --- T-0010 x T-0024: a group confirm is owner-only ----------------------------------
 # The owner decided (2026-09-26) that autopilot's self-approval never uses T-0024's
 # group confirm: `approve(via=AUTOPILOT, expect=...)` is refused, whatever the policy

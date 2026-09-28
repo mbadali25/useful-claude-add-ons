@@ -1170,6 +1170,7 @@ def test_every_autopilot_sabotage_anchor_is_present_exactly_once():
         with open(target, encoding="utf-8") as handle:
             assert handle.read().count(find) == 1, label
         assert test.startswith(("tests/test_crew_autopilot_policy.py::",
+                                "tests/test_crew_autopilot.py::",
                                 "tests/test_crew_autopilot_status.py::",
                                 "tests/test_crew_route.py::", "tests/test_crew_ticket.py::",
                                 "tests/test_scope_guard.py::")), label
@@ -1190,3 +1191,13 @@ def test_autopilot_block_is_repo_only():
 
     assert (kept, bool(ignored), crew_config.is_global_path("autopilot.mode")) == (
         {}, True, False)
+
+
+def test_module_defines_each_function_once():
+    import ast  # pylint: disable=import-outside-toplevel
+    with open(_SCRIPT, encoding="utf-8") as handle:
+        tree = ast.parse(handle.read())
+    names = [node.name for node in tree.body
+             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+
+    assert sorted({n for n in names if names.count(n) > 1}) == []
