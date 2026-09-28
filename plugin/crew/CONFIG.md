@@ -127,10 +127,13 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **67**
-leaves. `leaf_paths(default_config())` yields **121**, so **54** are repo-only.
-For all 121, `filter_global` and `plan_global_write` agree on whether the path is
-settable. (66 / 119 before crew 1.0.42 merged T-0005, which added
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **68**
+leaves. `leaf_paths(default_config())` yields **123**, so **55** are repo-only.
+For all 123, `filter_global` and `plan_global_write` agree on whether the path is
+settable. (122 / 67 / 55 on T-0072's branch, which added the repo-only
+`autopilot.deploy`; 122 / 68 / 54 on main after T-0023 added `route.enabled` to
+both layers; 121 / 67 / 54 before either.
+66 / 119 before crew 1.0.42 merged T-0005, which added
 `environments.prodUnattended` to both layers and the repo-only
 `environments.nonProd`; this paragraph said 117 at that point, not counting
 T-0004's repo-only `autopilot.mode` and `autopilot.maxPhases`. 65 / 116 before
@@ -797,6 +800,7 @@ repository or one checkout.
 | `graph.commitHook` | boolean | `false` | **no consumer found**, §9 |
 | `autopilot.mode` | `"off"` or `"plan"` | `"off"` | `crew_autopilot.settings` — only the exact string `plan` arms `/crew:autopilot`, §20 |
 | `autopilot.maxPhases` | positive integer | `12` | `crew_autopilot.settings`, read by `crew_autopilot.next_phase`, §20 |
+| `autopilot.deploy` | `"none"`, `"nonprod"` or `"all"` | `"none"` | `crew_autopilot.settings` and `crew_autopilot.deploy_allowed` — where a deploy may run without asking; production also needs `environments.prodUnattended`, §20 |
 | `autopilot.approval` | `"human"`, `"self"` or `"risk"` | `"risk"` | `crew_autopilot.approval_policy`, read by `crew_autopilot.py approve`, `crew_ticket.accepted` and `scope_guard.py`, §20 |
 | `autopilot.questions` | `"human"`, `"self"` or `"risk"` | `"risk"` | `crew_autopilot.question_policy`, read by `crew_autopilot.py questions-check` and `next`, §20 |
 
@@ -1256,7 +1260,7 @@ earn its own section: see §18, not the tables immediately below.
 | `cloud.awsRegions` | list of globs | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
 | `cloud.azureSubscriptions` | list of globs (id or name) | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
 | `environments.nonProd` | list of globs | `[]` | **repo only** | `cloud_guard.py::environments_config` |
-| `environments.prodUnattended` | `true` \| `false` | `false` | both, **true only when both say `true`** | `cloud_guard.py::environments_config` |
+| `environments.prodUnattended` | `true` \| `false` | `false` | both, **true only when both say `true`** | `cloud_guard.py::environments_config`, `crew_autopilot.deploy_allowed` |
 
 Read one with `crew_config.py --guard <name> [--json]`, which prints the
 decision, both layers' values and which one is holding it down. The two shell
@@ -2277,6 +2281,7 @@ driven is a fact about that checkout.
 |---|---|---|---|
 | `autopilot.mode` | `"off"` | `crew_autopilot.settings`, through `crew_config.resolve_config` | Only the exact string `"plan"` arms it. `"Plan"`, `"plan "`, `true`, `"on"`, `null` — anything else — reads as `off`, and `settings` prints which value it saw. A typo must not arm a driver. |
 | `autopilot.maxPhases` | `12` | `crew_autopilot.settings`; `next_phase` stops once the session's phase count reaches it | Anything but a positive integer (`0`, `-3`, `"12"`, `true`, `2.5`) reads as `12`, with a warning. |
+| `autopilot.deploy` | `"none"` | `crew_autopilot.settings`; `crew_autopilot.deploy_allowed` (T-0072) | Only the exact strings `"none"`, `"nonprod"` and `"all"` are read as themselves. `"All"`, `"all "`, `"prod"`, `true`, `1`, `null` — anything else — read as `none`, with a warning naming the value. Set only in the machine file, it takes effect nowhere (repo only). |
 | `autopilot.approval` | `"risk"` | `crew_autopilot.approval_policy` (T-0010): whether `crew_autopilot.py approve` may record the plan approval itself | Anything but exactly `human`, `self` or `risk` (`"Self"`, `true`, `null`) reads as `human`, with a warning. `human` always stops. A `.crew/config.json` that exists but is not a readable JSON object, or an `autopilot` value that is not an object, reads as `unknown` (could not tell): `approve` refuses, and `mode` reads `off`. An absent file or block reads the default. |
 | `autopilot.questions` | `"risk"` | `crew_autopilot.question_policy` (T-0010): whether autopilot takes the researched recommendation for an open question | Same: anything else reads as `human`, which always stops; an unreadable config or non-object block reads as `unknown`, and a question stops. |
 
@@ -2341,6 +2346,55 @@ stop for a person, at every setting — accepting review FINDINGS
 `AUTONOMOUS_STOPS` id (§5) binds it; no hook, review budget or completion
 audit is relaxed. `pm.authority: autonomous` from 0.20 arms nothing —
 `/crew:migrate` keeps it under `retired.pm` and its note points here.
+
+**Production without asking (T-0072).** `autopilot.deploy` says where a deploy
+may run with no person asked: `none` (the default) nowhere, `nonprod` in a
+`nonProd` environment only, `all` in production too. Production needs **two
+opt-ins**: `autopilot.deploy: all` in the repo's `.crew/config.json`, **and**
+`environments.prodUnattended: true` in **both** config layers (§16, the
+ratchet: a repo cannot grant it alone, and neither can the machine file). It
+also needs `guards.cloudGuard` to resolve to a plain `block`, so T-0009's guard
+is armed to enforce the dispatch. `crew_autopilot.deploy_allowed(root, env,
+class)` answers, first match wins:
+
+| Condition | Verdict |
+|---|---|
+| the checkout cannot be found (the lookup raised), `.crew/incident.json` exists in any form, or its path cannot be checked for any reason | `refuse` — an emergency may be active |
+| the environment name is blank, not a string, or not printable | `ask` — could not tell which environment |
+| the class is not exactly `nonProd` or `prod` (T-0005's classes; `unknown` included) | `ask` — crew could not classify it |
+| either config layer could not be checked (its path cannot be stat'ed for any reason but a missing file), or is present and not ok (unreadable, not JSON, a bad `guards` or `environments` block) | `ask` — could not read that layer |
+| `autopilot.mode` is not `plan`, or `autopilot.deploy` is `none` | `ask` |
+| `nonProd`, with `nonprod` or `all` | `allow` |
+| `prod`, with `nonprod` | `ask` |
+| `prod`, with `all`, and `prodUnattended` not `true` in both layers | `ask`, naming the layer |
+| `prod`, with `all`, and `guards.cloudGuard` not a plain `block` (a fail-closed `block` with a note included) | `ask` |
+| `prod`, with `all`, otherwise | `allow` |
+
+The checkout root is resolved **once** per answer, and that one root is what
+the incident check, both layers and every row judge; the result names it
+(`root`). Every path is probed for present, absent or could-not-tell, and
+could-not-tell never reads as absent: it refuses for the incident file and
+asks for a config layer. A crash inside the decision asks, and so does one
+building its report or printing a value it was handed; the CLI prints
+`verdict=ask` even for a crash it cannot describe. The incident check runs
+before anything that can fail to import, so a crash never turns an
+emergency's `refuse` into `ask`. Every production decision — `allow`, `ask`
+or `refuse` — carries a report line naming the environment
+(`unattended production: <env> <verdict> - <reason>`). The CLI is
+`crew_autopilot.py deploy-allowed --root . --env <name> --class <class>
+[--json]`: the verdict line (or one line of JSON) on stdout, the report on
+stderr, exit 0. Each is one line, the verdict first: a value that is not plain
+printable text (a class or environment holding whitespace included) prints as
+its repr, so no input can add a line a consumer would read as a second verdict.
+
+**Inert until T-0045.** Nothing in this crew version dispatches a deploy, so
+`settings` warns whenever `autopilot.deploy` is not `none`. The consumer
+(T-0045) calls `deploy_allowed` immediately before each dispatch, passes the
+class from T-0005's classifier, proceeds only on the exact verdict `allow`
+(anything else — `ask`, `refuse`, no answer, a non-zero exit — stops), and
+persists every report. `allow` is necessary, not sufficient: T-0009's hook,
+promote-gate (`requireHuman`, the post-deploy proof) and every other gate
+still decide.
 
 ---
 

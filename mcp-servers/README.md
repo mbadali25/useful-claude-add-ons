@@ -20,8 +20,8 @@ and why it hasn't happened yet): one `GraphClient` HTTP wrapper, one `getUserCre
 helper, one admin credential chain (`buildAdminCredential`), one write-gate, one `doctor`
 implementation. No server reimplements auth or HTTP. Source: `mcp-servers/packages/`.
 
-Each server pins an **exact** version of core (`"@badali404/mcp-ms-core": "0.2.0"`, not a
-range) rather than `^0.2.0` or `workspace:*`. That is deliberate -- it means a core-only
+Each server pins an **exact** version of core (`"@badali404/mcp-ms-core": "0.2.1"`, not a
+range) rather than `^0.2.1` or `workspace:*`. That is deliberate -- it means a core-only
 change can never silently ship to a server that hasn't been tested against it -- but it
 also means **a core-only version bump has no effect on npm until all four servers are
 re-published with their pin updated to match**. See

@@ -1,6 +1,6 @@
 # install-scripts
-anchor: useful-claude-add-ons@360c4029
-verified: 2026-09-27
+anchor: useful-claude-add-ons@136f4b33
+verified: 2026-09-28
 
 ## Re-derive provenance
 
@@ -587,48 +587,6 @@ install script, `README.md`, `scripts/check-marketplace.py` nor `scripts/_test/s
 changed on either side since `2b18f7ab`, so their citations stand. Neither install script was
 executed.
 
-## Re-anchor provenance - T-0010-solo's branch line, `2b18f7ab` -> `50e67586`, 2026-09-27 (crew 1.0.43 on its branch)
-
-T-0010's code commit was cherry-picked off `origin/main` (`502cb137`) as `0fc5b069`, apart from
-T-0018 and T-0024, and the version set in `50e67586`. Every `path:line` citation this note makes into
-a path T-0010 changed was mapped from the `2b18f7ab` tree with `difflib`; each one that moved
-was re-pointed and compared line for line with the anchor tree at `50e67586`.
-
-Of the cited paths only `plugin/crew/README.md` changed: T-0010's three lines sit above the
-command table, so the `35 commands` claim moved `:2381` -> `:2384` and `4 agents` `:2392` ->
-`:2395` (re-grepped). `plugin/crew/BUDGETS.md` (`:11`, 18,524 lines across 121 files,
-re-measured), `plugin/PLUGINS.md:14` and `.claude-plugin/marketplace.json:218` (1.0.43) changed
-in place. Neither install script, `README.md`, `INSTALLATION.md` nor
-`scripts/check-marketplace.py` changed. `check-marketplace.py`: `all checks passed`.
-
-## Re-anchor provenance - `53f5482c` + `50e67586` -> `89c9ee9a`, 2026-09-27 (T-0010-solo merges main, crew 1.0.44)
-
-`89c9ee9a` is T-0010's crew 1.0.44 version commit on top of `132c1758`, the merge of origin/main
-`f0b12ee6` (T-0042 landed at 1.0.43) into T-0010-solo. Both lines' provenance is above. Main-side
-citations were mapped through `git diff origin/main 89c9ee9a`, the branch-side ones through
-`git diff 708db116 89c9ee9a`, with `difflib` over every repo-relative `path:line` citation, and
-every moved or merge-set one re-read with `sed -n` at `89c9ee9a`:
-
-Of the cited paths, `plugin/crew/README.md` changed on both sides: T-0042's auto-resume prose and
-T-0010's three lines both sit above the claims, so the `35 commands` claim is `:2398` and
-`4 agents` `:2409` (re-grepped). `plugin/crew/BUDGETS.md` (marker `:10`; `:11` reads 18,601 lines
-across 121 files, re-measured on the merge), `plugin/PLUGINS.md:14` and
-`.claude-plugin/marketplace.json:218` (1.0.44) changed in place. Neither install script,
-`README.md`, `INSTALLATION.md`, `scripts/check-marketplace.py` nor `scripts/_test/self-claims.py`
-changed on either side. `python3 scripts/check-marketplace.py` at `89c9ee9a`: `all checks passed`.
-Neither install script was executed.
-
-## Re-anchor provenance - `89c9ee9a` -> `8314d670`, 2026-09-27 (T-0010 review round 1 fixes)
-
-`8314d670` fixes the four FIX findings of T-0010's review round 1. Its citations were checked
-per path through `git diff 89c9ee9a 8314d670`, every moved one re-read with `grep -n`/`sed -n`
-at `8314d670`:
-
-`plugin/crew/README.md` changed one line in place (T-0010's policy paragraph), so `:2398` and
-`:2409` hold (re-grepped). `plugin/crew/BUDGETS.md` changed in place: marker `:10`, and `:11`
-now reads 18,607 lines across 121 files (`check_self_claims` re-measured it). Neither install
-script changed. Nothing was executed for this note beyond `scripts/check-marketplace.py`.
-
 Re-verified per-path from `8d447a7d` to `7b667587` for T-0021 (T-0034's `c35edda5` in between):
 of the cited paths `.claude-plugin/marketplace.json` (crew `version` `:218`, now 1.0.46; `:217`
 unchanged), `plugin/PLUGINS.md` (`:14` version; `:17` unchanged), `plugin/crew/BUDGETS.md`
@@ -882,52 +840,23 @@ in its provenance history; `plugin/PLUGINS.md` `:14` now reads 1.0.48 and `plugi
 `:11` 18,885 lines across 126 files, both changed in place. No body citation moved. Nothing was
 executed for this note.
 
-## Re-anchor provenance - `65bb3330` + `8314d670` -> `c817782f`, 2026-09-27 (T-0010-solo merges `67caa4b8`)
+**Re-anchored `53f5482c` -> `d3a1c77e` on 2026-09-27 (T-0072, crew 1.0.44).** `d3a1c77e` is T-0072's version commit on `T-0072-build`, after it merged origin/main `f0b12ee6` (T-0042's landing) with a merge commit. `git diff --name-only 53f5482c d3a1c77e` over the cited paths returns only T-0072's changes and the version files. T-0072 edited in place, with no line added or removed, `crew_state.py` (`:1084-1090`, the `AUTOPILOT_DEFAULTS` comment and value), `plugin/crew/README.md` (the autopilot Settings paragraph), `plugin/crew/commands/autopilot.md` (`:19-20`), `plugin/crew/BUDGETS.md` (`:11`, now 18,612 lines across 121 files), `plugin/PLUGINS.md` (`:14` 1.0.44, the `/crew:autopilot` row), `.claude-plugin/marketplace.json` (`:218` 1.0.44), `plugin/crew/.claude-plugin/plugin.json` (`:3`) and `.crew/verify.json` (rule 27 `:293-300`, same lines). It added lines to `crew_autopilot.py` (the `deploy-allowed` docstring section and functions, 694 -> 837 lines), `CONFIG.md` (+1 at the leaf paragraph, +1 in the key table, +1 in §20's table, a closing §20 section), `CHANGELOG.md` (+32 at the top) and the autopilot tests. Of the paths this note cites, `plugin/crew/README.md` (in place; the `35 commands`/`4 agents` claims did not move), `plugin/PLUGINS.md` (`:14` 1.0.44; `:17` unchanged), `plugin/crew/BUDGETS.md` (marker `:10`; `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` returns 18612, matching `:11`) and `.claude-plugin/marketplace.json` (`:218` 1.0.44) changed. Both install scripts did not.
 
-`c817782f` is T-0010's crew 1.0.48 version commit on top of `d1e119d2`, T-0010-solo's merge of
-origin/main `67caa4b8` (T-0018 landed as 1.0.47; its code maps anchored `65bb3330`), and
-`3e2c9962`, the reconciliation under the owner's approve carve-out. Main's side of this note was
-mapped from `65bb3330`, T-0010's side from its own anchor (`8314d670`), to `c817782f` with `difflib`
-over every cited file, a bare `:N` taken as the last path named in its section; sections headed
-provenance (and localgpu's re-derivation record) were left as written. The two mapped texts were
-then merged three-way from `f0b12ee6`. Between `65bb3330` and `c817782f` the cited paths that
-changed are T-0010's: `crew_autopilot.py`, `crew_ticket.py`, `scope_guard.py`, `crew_state.py`
-(four `AUTOPILOT_DEFAULTS` lines at `:1094`, so every later line moved by 4), `commands/autopilot.md`,
-the version files, `BUDGETS.md`, README, CONFIG.md, the tests and sabotage modules, and
-`.crew/verify.json` (rule 28 inserted at `:302-308`, so rules 29 and 30 moved down by 7).
+**Re-anchored `d3a1c77e` -> `e30af7f9` on 2026-09-27 (T-0072 review round 1).** `e30af7f9` is T-0072's review-round-1 fix commit on `T-0072-build`. `git diff --name-only d3a1c77e e30af7f9` returns `.crew/verify.json` (rule 27's `why` re-measured in place, still `:293-300`), `CHANGELOG.md` (the 1.0.44 entry, four lines reworded, cited without a line), `plugin/crew/BUDGETS.md` (`:11`, now 18,615 lines across 121 files; `check-marketplace.py` prints `all checks passed`), `plugin/crew/CONFIG.md` (+3 lines in §20's closing section, at `:2317`; nothing cited above it moved, `:2251-2258` holds), `plugin/crew/hooks/scripts/crew_autopilot.py` (+24 lines: the docstring gains a line at `:88`, `_deploy_verdict` moves its `cloud_guard` import below the incident check, `_safe_text` and `_crash_reason` are new), `plugin/crew/tests/sabotage_autopilot.py` (+32: `CLOUD` at `:18`, six mutations) and `plugin/crew/tests/test_crew_autopilot_deploy.py`, plus the refresh artifacts of the previous pass. No crew version change (1.0.44). Of the paths this note cites, only `.crew/verify.json` changed, in place inside rule 27's `why`; every line it cites holds. Nothing else this note cites changed.
 
-Neither side moved a citation this note makes: no install script, `README.md`,
-`INSTALLATION.md`, `scripts/check-marketplace.py` nor `scripts/_test/self-claims.py` changed.
-`plugin/crew/BUDGETS.md:11` reads 18,917 across 126 files, `plugin/PLUGINS.md:14` and
-`.claude-plugin/marketplace.json:218` read 1.0.48 (changed in place). Neither install script
-was executed.
+**Re-anchored `e463ca53` -> `715a8c2f` on 2026-09-27 (T-0072 merged onto `bebbb97f`, crew 1.0.47).** `715a8c2f` is T-0072's crew 1.0.47 version commit on `T-0072-build`, on top of `e658bb04`, its merge of origin/main `bebbb97f` (T-0021 and T-0023 landed; this note was anchored at T-0023's `e463ca53`). `git diff --name-only e463ca53 715a8c2f` over the cited paths returns only T-0072's changes, the neighbour test T-0072 added after the merge, and the version files. Against main, T-0072 edits in place, with no line added or removed, `crew_state.py` (`:1086-1090`, the `AUTOPILOT_DEFAULTS` comment and value), `plugin/crew/README.md` (`:825`, the autopilot Settings paragraph), `plugin/crew/commands/autopilot.md` (`:19-20`), `plugin/crew/BUDGETS.md` (`:11`, now 18,910 lines across 126 files), `plugin/PLUGINS.md` (`:14` 1.0.47, `:128` the `/crew:autopilot` row), `plugin/crew/skills/crew-setup/SKILL.md` (`:170`), `.claude-plugin/marketplace.json` (`:218` 1.0.47), `plugin/crew/.claude-plugin/plugin.json` (`:3`) and `.crew/verify.json` (rule 27 `:293-300`, same lines). It adds lines to `crew_autopilot.py` (694 -> 861), `CONFIG.md` (+3 at the leaf paragraph `:130`, +1 at `:803`, +1 at `:2282`, and the closing §20 section at `:2297`, 41 lines, with T-0023's §21 after it), `CHANGELOG.md` (+31 at `:7`, T-0072's entry above T-0023's), `config.template.json` (+1 at `:205`), `test_crew_config.py` (+3; the count assertion is `:282`, 123), `test_crew_autopilot.py` (+2), `sabotage_autopilot.py` (+140) and the new `test_crew_autopilot_deploy.py`. Of the paths this note cites, `plugin/crew/README.md` (in place at `:825`; the `35 commands`/`4 agents` claims did not move), `plugin/PLUGINS.md` (`:14` 1.0.47; `:17` holds), `plugin/crew/BUDGETS.md` (marker `:10`; `:11` reads 18,910, which `scripts/check-marketplace.py`'s `count_crew_markdown_lines` returns) and `.claude-plugin/marketplace.json` (`:218` 1.0.47; `:217` unchanged) changed. Neither install script changed. No install script was executed.
 
-## Re-anchor provenance - `c817782f` -> `926443d8`, 2026-09-27 (T-0010 review round 3 fixes)
+**Re-anchored `65bb3330` -> `21429244` on 2026-09-27 (T-0072 merged onto `67caa4b8`, crew 1.0.48).** `21429244` is T-0072's crew 1.0.48 version commit on `T-0072-build`, on top of `80d4073b`, its merge of origin/main `67caa4b8` (T-0018 landed; this note was anchored at T-0018's `65bb3330`, and nothing outside the refresh artifacts changed between `65bb3330` and `67caa4b8`). Main's side of this note was taken in the merge and T-0072's earlier refresh replayed on top (`git apply --3way` of `bebbb97f..b1ec6877`); every citation into a file either side changed was mapped with a line diff (main -> merged for main's text, `b1ec6877` -> merged for T-0072's) and each one that moved was re-read with `sed -n`. `git diff --name-only 65bb3330 21429244`, outside the refresh artifacts, returns only T-0072's files: `crew_autopilot.py` (1063 -> 1230 lines: the `deploy-allowed` docstring section and functions, and its parser at `:1140`), `CONFIG.md` (+56), `CHANGELOG.md` (+31 at the top), `commands/autopilot.md` (the settings sentence rewrapped at `:44-47`, still 100 lines), `crew_state.py` (line-neutral at `:1086-1090`), `config.template.json`, `crew-setup/SKILL.md` (`:170`), `.crew/verify.json` (rule 27 `:293-301`, same lines: `test_crew_autopilot_deploy.py` joins its paths and run), the version files (1.0.48 at `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`), `plugin/crew/BUDGETS.md:11` (18,905 lines across 126 files, re-measured on the merge), and the autopilot tests. Of the paths this note cites, only the version files and `plugin/crew/BUDGETS.md:11` changed, in place; both install scripts, the root `README.md`, `plugin/crew/README.md` (T-0072's paragraph is line-neutral, so the command and agent counts it carries hold) and `scripts/check-marketplace.py` did not move. Neither install script was executed.
 
-`git diff --name-only c817782f 926443d8` is T-0010's round-3 fix (`caabb005`), the BUDGETS.md
-count, the version step-back and re-set, and this refresh. Of the paths this note cites, `plugin/crew/README.md`, `plugin/crew/CONFIG.md` and
-`plugin/crew/BUDGETS.md` changed: README two lines rewritten in place (`:792`, `:818`),
-CONFIG.md's §20 one-writer paragraph grew six lines, and `BUDGETS.md:11`'s count moved
-18,917 -> 18,923 on the same line. No citation this note makes moved (checked with `difflib`
-over every cited path). Nothing was executed.
+**Re-anchored `21429244` -> `53855ea5` on 2026-09-27 (T-0072 review round 3).** `53855ea5` is T-0072's review-round-3 fix commit on `T-0072-build`. `git diff --name-only 21429244 53855ea5`, outside the refresh artifacts, returns only T-0072's files: `.crew/verify.json` (rule 27's `seconds` 16 -> 20 and its `why`, in place, still `:293-301`), `CHANGELOG.md` (T-0072's 1.0.48 entry, +4 lines, cited without a line), `plugin/crew/BUDGETS.md` (`:11`, in place: 18,908 lines across 126 files, which `check-marketplace.py` verifies), `plugin/crew/CONFIG.md` (one §20 table row edited in place at `:2309`, +3 lines after `:2327`), `plugin/crew/hooks/scripts/crew_autopilot.py` (1230 -> 1252 lines: +2 in the docstring at `:90-97`, `_cannot_exclude` and `_incident(root)` at `:702-718`, `_cli_value` at `:1132`, the `deploy-allowed` printing at `:1214-1219`), `plugin/crew/tests/sabotage_autopilot.py` (+36 at `:300-335`: eight `DEPLOY_MUTATIONS`; one re-anchored in place at `:256`) and `plugin/crew/tests/test_crew_autopilot_deploy.py`. No crew version change (1.0.48). Of the paths this note cites, only `plugin/crew/BUDGETS.md:11` changed, in place (the marker is still `:10`). Neither install script changed or was executed.
 
-## Re-anchor provenance - `926443d8` + `8de3c669` -> `50a275ea`, 2026-09-28 (T-0010's successor merges `f96e9ec9`)
+**Re-anchored `8de3c669` -> `80326b1d` on 2026-09-27 (T-0072 merged onto `d2fbd408`, then review round 4's redesign, crew 1.0.49).** `ba7d5c52` merged origin/main `d2fbd408` (T-0024 landed as crew 1.0.48 at `8de3c669`) into `T-0072-build` and took main's side of every code map; T-0072's earlier refresh (`git diff 67caa4b8 2fa75f79 -- .crew/codemap/`) was replayed on top with `git apply --3way`, conflicting provenance sections keeping both sides, main's first. `80326b1d` is T-0072's crew 1.0.49 version commit, after the redesign `35733d76` (one root per answer, a tri-state path probe, a two-stage CLI fallback), its sabotage `fa4c8397`, its docs `8a40dd2c` and the rule-27 re-price `37fa7c97`. `git diff --name-only 8de3c669 80326b1d`, outside the refresh artifacts, returns only T-0072's files: `.claude-plugin/marketplace.json` (`:218` 1.0.49), `.crew/verify.json` (rule 27 in place, `:293-301`, `seconds` 16), `CHANGELOG.md` (T-0072's entry, +45 at the top), `plugin/PLUGINS.md` (`:14` 1.0.49, `:128` the `/crew:autopilot` row in place), `plugin/crew/.claude-plugin/plugin.json` (`:3`), `plugin/crew/BUDGETS.md` (`:11`, 18,939 lines across 126 files, which `check-marketplace.py` verifies), `plugin/crew/CONFIG.md` (2328 -> 2382 lines: the leaf paragraph `:130`, the key table `:803`, the `prodUnattended` row `:1261`, `:2282`, and section 20's closing "Production without asking" block from `:2297`), `plugin/crew/README.md` (`:848` in place), `plugin/crew/commands/autopilot.md` (`:45-48` in place, 100 lines), `crew_autopilot.py` (1312 lines), `crew_state.py` (line-neutral at `:1086-1090`), `crew-setup/SKILL.md` and `config.template.json` (the leaf), `test_crew_config.py` (`:282` asserts 123), `sabotage_autopilot.py`, `test_crew_autopilot.py` and `test_crew_autopilot_deploy.py`. Nothing under `scripts/` changed and neither install script is touched; this note cites the changed files by name or at the version and BUDGETS sites only, which now read 1.0.49 and 18,939 / 126. No citation moved. Nothing was executed for this note.
 
-`ab85880b` merges origin/main `f96e9ec9` (T-0024 landed as crew 1.0.48, its code maps anchored
-`8de3c669`; T-0077 as 1.0.49) into T-0010-solo `216ee85f`; `a2f4db76` fixes review round 4's
-three FIXes; `3438dc9a` merges `5050ea3b` (shipstation only); `48b2820d` re-measures
-`plugin/crew/BUDGETS.md` and `50a275ea` sets crew 1.0.50. The merge took main's side of this
-note; it was then re-merged three-way from `67caa4b8`, T-0010's side at `216ee85f` (anchor
-`926443d8`) and main's at `f96e9ec9` (anchor `8de3c669`), both sides' provenance kept, main's
-first. Every body citation into a file changed since its side's own anchor was mapped with
-`difflib` (a bare `:N` taken as the last path named in its section) and each one that moved was
-re-read at `50a275ea`.
+**Re-anchored `80326b1d` -> `1b5b6560` on 2026-09-27 (T-0072 test fix).** `git diff --name-only 80326b1d 1b5b6560`, outside the refresh artifacts, returns only `plugin/crew/tests/test_crew_autopilot_deploy.py` (the layer_state repro now patches `crew_config.layer_state`, not `crew_state.read_text`, which `test_module_split.py` forbids) and the three version files, stepped back to 1.0.48 and re-set to 1.0.49 so the version stays the last `plugin/crew/` commit (same content as at `80326b1d`). This note cites that test file by name only. No citation moved. Nothing was executed for this note.
 
-Of the paths this note cites, `plugin/crew/BUDGETS.md` (`:11`, 18,953 across 126 files),
-`plugin/PLUGINS.md` (`:14`, 1.0.50) and `.claude-plugin/marketplace.json` (`:218`, 1.0.50)
-changed in place; README and CONFIG.md changed in paragraphs cited by name only. No install
-script, `README.md`, `INSTALLATION.md` or `scripts/check-marketplace.py` changed, so no
-citation moved. Neither install script was executed.
+**Re-anchored `1b5b6560` -> `a4eb2f55` on 2026-09-28 (T-0072 merged onto `5050ea3b`, crew 1.0.50).** `a4eb2f55` is T-0072's crew 1.0.50 version commit on top of its merge of origin/main `5050ea3b` (T-0077 landed as crew 1.0.49 at `fc289446`; shipstation 1.1.1). The merge was clean. `git diff --name-only 1b5b6560 a4eb2f55`, outside the refresh artifacts, returns main's T-0077 and shipstation files - `crew_tracker.py` (+123: Windows now holds a vault write's directories by handle, `_hold_dirs` / `_held_check` replace `_parent_check`), `crew_autopilot.py` (`_rel` +6 at `:170`, so every later line moves by 6), `sabotage_autopilot.py` (+5 inside `STATUS_MUTATIONS`; the `+=` append moved `:639` -> `:644`), `sabotage_tracker.py` (87 `TRACKER_MUTATIONS`, was 81), `plugin/crew/README.md` (`:1493-1495` in place), `test_crew_tracker.py`, `test_crew_autopilot.py`, `test_crew_autopilot_status.py`, `skills/shipstation/*` - and the version files (1.0.50 at `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`) and `CHANGELOG.md` (T-0077's and shipstation's entries under T-0072's). Neither install script changed, and this note cites the changed files by name or at the version sites only. No citation moved. Nothing was executed for this note.
+
+**Re-anchored `a4eb2f55` -> `0f488706` on 2026-09-28 (T-0072 review round 5).** `0f488706` is T-0072's review-round-5 fix commit. `git diff --name-only a4eb2f55 0f488706`, outside the refresh artifacts (`0282cb5c`, `37fa2322`), returns only T-0072's files: `plugin/crew/hooks/scripts/crew_autopilot.py` (`_resolve_root` +4 at `:729`, refusing a root that is not text, so every line after it moves by 4: `_layer_problem` `:744`, `_decide` `:759`, `deploy_allowed` `:836`, `_failure` `:1170`, `_cli_deploy` `:1194`, `main` `:1225`; `--json` dumps without indent, in place; the module docstring re-worded in place, `:87-104`), `plugin/crew/tests/sabotage_autopilot.py` (+30 inside `DEPLOY_MUTATIONS`, 64 entries by `len()`: the `AUTOPILOT_MUTATIONS + DEPLOY_MUTATIONS` append moved `:443` -> `:473`, `STATUS_MUTATIONS`' `:644` -> `:674`), `plugin/crew/tests/test_crew_autopilot_deploy.py`, `plugin/crew/CONFIG.md` (one sentence in section 20 re-worded in place, `:2331-2333`, no line added) and `CHANGELOG.md`. This note cites those files by name or at lines above the change; no citation moved. No suite was executed for this note.
 
 ## Re-anchor provenance - `8de3c669` -> `a6e81869`, 2026-09-27 (T-0079 on its branch)
 
@@ -955,14 +884,10 @@ on both sides), `CHANGELOG.md` and the three version files. Every body citation 
 This note cites `plugin/crew/README.md` and the version files by name or at unmoved lines; no
 citation moved. Nothing was executed for this note.
 
-## Re-anchor provenance - `50a275ea` + `81685adf` -> `360c4029`, 2026-09-28 (T-0010-solo merges T-0079's `e6e10432`)
+**Re-anchored `0f488706` -> `9631c707` on 2026-09-28 (T-0072 landing, crew 1.0.51).** `9631c707` is T-0072's landing bump on `T-0072-land`, after `34af80ef` merged the reviewed `T-0072-build` (`a0978df6`) onto main `e6e10432` (T-0079 landed as crew 1.0.50) and `bf0c513a` re-priced verify rule 27. `git diff --name-only 0f488706 9631c707`, refresh artifacts aside, returns T-0079's files, the three version files, `CHANGELOG.md` and `.crew/verify.json`. The two this note's citations reach changed in place: `.crew/verify.json` `:298` and `:301` (rule 27's `seconds` 16 -> 18 and its `why`, still `:293-301`) and `plugin/crew/README.md` `:735` and `:739` (T-0079's verdict table, line-neutral); no citation moved. The version sentence moves to 1.0.51. No suite was executed for this note.
 
-`c312702b` merges origin/main `e6e10432` (T-0079 landed as crew 1.0.50, its code maps anchored
-`81685adf`) into T-0010-solo `ac0b5151`; `360c4029` sets crew 1.0.51. The artifact conflicts were
-anchor, version and provenance lines only: T-0010's side kept for anchors and body (its
-`crew_autopilot.py` and `commands/autopilot.md` line numbers are this tree's), both sides'
-provenance kept. `git diff --name-only 50a275ea 360c4029`, refresh artifacts aside, is T-0079's files
-(`review_verdict.py`, `review_prompt.py`, `review_run.py`, `agents/reviewer.md`, their tests and
-sabotage modules, identical to origin/main's), `plugin/crew/README.md` (two lines rewritten in
-place, `:735` and `:739`, line-neutral), `CHANGELOG.md` and the version files. Every citation into
-T-0079's files equals main's note at `81685adf` (compared by script). No test was run by this note.
+**Re-anchored `9631c707` -> `c99e31f6` on 2026-09-28 (T-0092, crew 1.0.52).** `c99e31f6` is T-0092's crew 1.0.52 version commit on `T-0092-build`, cut from main `f54af3fa` (T-0072's landing merge, whose only commit past `9631c707` is the refresh `f1f118de`). `git diff --name-only 9631c707 c99e31f6`, refresh artifacts aside, returns T-0092's files: `plugin/crew/hooks/scripts/review_patch.py` (+8: the docstring paragraph on `graphify-out/` and one comment line; `EXCLUDED` / `_EXCLUDE_SPEC` now at `:104-105`), `plugin/crew/hooks/scripts/review_prompt.py` (+4: one docstring line and the `excluded` line at `:89-91`, so `:84` -> `:85` and `:239` -> `:243`), `test_review_patch.py`, `test_review_prompt.py`, `sabotage_review.py`, line-neutral edits to `plugin/crew/README.md` (`:723`, `:842`), `plugin/crew/commands/review.md` (`:328-332` reflowed in place), `crew_autopilot.py` (`:55-56`), `completion_audit.py` (`:74-75`) and `TODO.md` (`:5048`), `CHANGELOG.md` (+26 at the top) and the three version files (1.0.52 at `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`). Every body citation of the form `path:line` into those files was compared by script between `9631c707` and `c99e31f6`. The only differing citations are the version-file lines, changed in place, which the provenance notes cite with the value at their own commit. No citation moved. Nothing was executed for this note.
+
+**Re-anchored `c99e31f6` -> `3c4f1a68` on 2026-09-28 (T-0092 merged onto `c426c018`, crew 1.0.53).** `95cc12cf` merged origin/main `c426c018` (T-0076 landed as crew 1.0.52 at `e329eb8f`) into `T-0092-build`; the merge was clean (both sides had set the version files to 1.0.52). `3c4f1a68` re-bumps crew to 1.0.53 and moves T-0092's four `1.0.52` mentions (`review_patch.py`'s docstring, `plugin/crew/README.md:842`, `TODO.md:5048`, the two test-file comments) to 1.0.53, all in place. `git diff --name-only c99e31f6 3c4f1a68`, refresh artifacts aside, returns T-0076's files - `plugin/crew/hooks/scripts/crew_context.py` (+4 inside `emit`, so `sys.stdout.write` moves `:1086` -> `:1090`), `plugin/crew/README.md` (`:1673` in place), `scripts/_test/uv-install.sh` and twelve test files - plus `CHANGELOG.md` (T-0076's entry merged below T-0092's) and the version files. Every body citation of the form `path:line` into those files was compared by script between `c99e31f6` and `3c4f1a68`: the only differences are version-file lines changed in place and `CHANGELOG.md` lines inside dated provenance notes, left as history; nothing here cites `crew_context.py` at or below `:1086`. Nothing was executed for this note.
+
+**Re-anchored `3c4f1a68` -> `136f4b33` on 2026-09-28 (T-0092 merged onto `ff59160f`, T-0089, crew 1.0.54).** `e2220836` merges origin/main `ff59160f` (T-0089 landed as crew 1.0.53 at `0f526a8c`: `plugin/crew/tests/test_role_write_guard.py` fixtures and a `CHANGELOG.md` entry) into `T-0092-build`; the merge was clean. `136f4b33` re-bumps crew to 1.0.54 and moves T-0092's `1.0.53` mentions (`review_patch.py`'s docstring, `plugin/crew/README.md:842`, `TODO.md:5051`, the two test-file comments, its `CHANGELOG.md` heading) to 1.0.54, all in place. Every body citation of the form `path:line` into a file changed between `3c4f1a68` and `136f4b33` was compared by script: the only differences are version-file lines changed in place, `plugin/crew/README.md:842` in place, and lines cited inside dated provenance notes (`CHANGELOG.md`, which T-0089's entry shifts by 12 lines below `:80`, and `TODO.md:5048`), left as history at their own commit. No citation into `test_role_write_guard.py` exists here. Nothing was executed for this note.

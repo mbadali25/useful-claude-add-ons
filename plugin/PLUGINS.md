@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.0.51<!-- claim: plugin-version:crew --> |
+| **Version** | 1.0.54<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents, 35 commands, 29 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
@@ -125,7 +125,7 @@ to CI or to branch protection.
 | Command | Purpose |
 |---|---|
 | `/crew:approve <ticket-id>` | Approve a ticket's plan - only you can, by typing this, unless you opt `/crew:autopilot` into `autopilot.approval`; the prompt hook records the receipt |
-| `/crew:autopilot [status\|run] [ticket id]` | Report a ticket's standing (`status`, read-only) or drive it through the lifecycle until a human is needed (`run`) - off until `autopilot.mode: plan`; review acceptance always stops, and plan approval stops unless `autopilot.approval` lets `crew_autopilot.py approve` write the receipt, its one write (needs `scope.allowCliApproval: true`) |
+| `/crew:autopilot [status\|run] [ticket id]` | Report a ticket's standing (`status`, read-only) or drive it through the lifecycle until a human is needed (`run`) - off until `autopilot.mode: plan`; review acceptance always stops, and plan approval stops unless `autopilot.approval` lets `crew_autopilot.py approve` write the receipt, its one write (needs `scope.allowCliApproval: true`); `autopilot.deploy` (default `none`) says where a deploy may run unattended - production only with `environments.prodUnattended` true in both layers |
 | `/crew:brainstorm <what needs doing>` | Brainstorm a request into an approved direction, before it becomes a spec |
 | `/crew:change <new \| status <id> \| close <id> \| list>` | File, check and close a change request — SDP, Jira or local |
 | `/crew:config [--show]` | Show where every crew setting comes from, and guide the machine-global config |

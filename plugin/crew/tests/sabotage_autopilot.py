@@ -19,7 +19,10 @@ SCRIPTS = os.path.join(CREW, "hooks", "scripts")
 AUTOPILOT = os.path.join(SCRIPTS, "crew_autopilot.py")
 TICKET = os.path.join(SCRIPTS, "crew_ticket.py")
 COMMAND = os.path.join(CREW, "commands", "autopilot.md")
+STATE = os.path.join(SCRIPTS, "crew_state.py")
+CLOUD = os.path.join(SCRIPTS, "cloud_guard.py")
 _T = "tests/test_crew_autopilot.py::"
+_D = "tests/test_crew_autopilot_deploy.py::"
 _S = "tests/test_crew_autopilot_status.py::"
 
 AUTOPILOT_MUTATIONS = (
@@ -160,6 +163,314 @@ AUTOPILOT_MUTATIONS = (
      "",
      _T + "test_command_reads_no_answer_as_a_stop"),
 )
+
+# T-0072: `deploy_allowed` is production authority. Each mutation is one way
+# it could let autopilot deploy without asking, or stop saying so; each names
+# the must-block (or must-allow) test that has to go red.
+DEPLOY_MUTATIONS = (
+    # Both refusals go: a present file falls through to the rows below.
+    ("the incident check is gone", AUTOPILOT,
+     '    if state == "present":\n        return "refuse", "an emergency may be active '
+     '(.crew/incident.json exists)", None\n    if state != "absent":\n',
+     '    if False:\n        return "refuse", "an emergency may be active '
+     '(.crew/incident.json exists)", None\n    if state == "could-not-tell":\n',
+     _D + "test_incident_refuses"),
+    ("an emergency only asks", AUTOPILOT,
+     '        return "refuse", "an emergency may be active (.crew/incident.json exists)", None\n',
+     '        return "ask", "an emergency may be active (.crew/incident.json exists)", None\n',
+     _D + "test_incident_refuses"),
+    ("an unusable env name is accepted", AUTOPILOT,
+     "    if not isinstance(env_name, str) or not env_name.strip() "
+     "or not env_name.isprintable():\n",
+     "    if False:\n",
+     _D + "test_env_name_not_usable_asks"),
+    ("unknown classifies as prod", AUTOPILOT,
+     "    known = (cloud_guard.ENV_NONPROD, cloud_guard.ENV_PROD)\n",
+     "    known = (cloud_guard.ENV_NONPROD, cloud_guard.ENV_PROD, cloud_guard.ENV_UNKNOWN)\n",
+     _D + "test_class_not_known_asks"),
+    ("the class compare folds case", AUTOPILOT,
+     "    if cls not in known:\n",
+     "    if cls.lower() not in [k.lower() for k in known]:\n",
+     _D + "test_class_not_known_asks"),
+    ("a corrupt machine layer reads as absent", AUTOPILOT,
+     ',\n              ("machine", machine_path))\n',
+     ',)\n',
+     _D + "test_corrupt_machine_layer_asks"),
+    ("a corrupt repo layer reads as absent", AUTOPILOT,
+     '    layers = (("repo", os.path.join(top, ".crew", "config.json")),\n',
+     '    layers = (("repo", os.path.join(top, ".crew", "absent.json")),\n',
+     _D + "test_corrupt_repo_layer_names_could_not_tell"),
+    ("a malformed environments block passes", AUTOPILOT,
+     '    if crew_config.layer_state(path, environments=True) != "ok":\n',
+     '    if crew_config.layer_state(path) != "ok":\n',
+     _D + "test_malformed_environments_block_asks"),
+    ("autopilot off still deploys", AUTOPILOT,
+     '    if not current["armed"]:\n',
+     "    if False:\n",
+     _D + "test_autopilot_not_armed_asks"),
+    ("a deploy typo arms", AUTOPILOT,
+     '    deploy = deploy_saw if _exact(deploy_saw, DEPLOY_VALUES) else "none"\n',
+     "    deploy = (str(deploy_saw).strip().lower() if _exact(str(deploy_saw).strip()"
+     '.lower(), DEPLOY_VALUES) else "none")\n',
+     _D + "test_deploy_value_typo_reads_none"),
+    ("the deploy default is all", STATE,
+     'AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", ',
+     'AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "all", ',
+     _D + "test_deploy_only_in_machine_layer_reads_none"),
+    ("deploy none still deploys nonProd", AUTOPILOT,
+     '    if deploy == "none":\n        return "ask", "autopilot.deploy is none", deploy\n',
+     '    if False:\n        return "ask", "autopilot.deploy is none", deploy\n',
+     _D + "test_deploy_none_asks"),
+    ("nonprod reaches production", AUTOPILOT,
+     '        return "ask", "autopilot.deploy is nonprod; production needs all", deploy\n',
+     '        return "allow", "autopilot.deploy is nonprod; production needs all", deploy\n',
+     _D + "test_nonprod_never_allows_prod"),
+    ("one layer grants production", AUTOPILOT,
+     '    if ratchet["effective"] is not True:\n',
+     '    if ratchet["repo"] is not True:\n',
+     _D + "test_prod_needs_both_layers"),
+    ("an unarmed cloud guard is fine", AUTOPILOT,
+     '    if mode != ("block", ""):\n',
+     "    if False:\n",
+     _D + "test_cloud_guard_not_armed_asks"),
+    ("a fail-closed block counts as armed", AUTOPILOT,
+     '    if mode != ("block", ""):\n',
+     '    if mode[0] != "block":\n',
+     _D + "test_cloud_guard_forced_block_is_not_armed"),
+    ("a crash allows", AUTOPILOT,
+     '        # A crash cannot tell whether production is allowed: it asks.\n'
+     '        verdict, reason = "ask", _crash_reason(exc)\n',
+     '        # A crash cannot tell whether production is allowed: it asks.\n'
+     '        verdict, reason = "allow", _crash_reason(exc)\n',
+     _D + "test_exception_asks"),
+    ("the CLI crash allows", AUTOPILOT,
+     '    text = _line(**{"verdict": "ask", "env": env, "class": cls, '
+     '"reason": _cli_value(reason)})\n',
+     '    text = _line(**{"verdict": "allow", "env": env, "class": cls, '
+     '"reason": _cli_value(reason)})\n',
+     _D + "test_cli_crash_prints_ask"),
+    ("the report drops the name", AUTOPILOT,
+     '    return f"unattended production: {_env_label(env_name)} {verdict} - {reason}"\n',
+     '    return f"unattended production: {verdict} - {reason}"\n',
+     _D + "test_prod_allow_reports_by_name"),
+    ("the report is not printed", AUTOPILOT,
+     '            sys.stderr.write(report + "\\n")\n',
+     "            pass\n",
+     _D + "test_cli_prints_report_to_stderr"),
+    ("must-allow non-vacuity: production never allows", AUTOPILOT,
+     '    return "allow", ("autopilot.deploy=all and environments.prodUnattended=true',
+     '    return "ask", ("autopilot.deploy=all and environments.prodUnattended=true',
+     _D + "test_fully_armed_prod_allows"),
+    ("must-allow non-vacuity: nonProd never allows", AUTOPILOT,
+     '        return "allow", f"autopilot.deploy={deploy} allows nonProd", deploy\n',
+     '        return "ask", f"autopilot.deploy={deploy} allows nonProd", deploy\n',
+     _D + "test_all_allows_nonprod"),
+    ("the inert warning is gone", AUTOPILOT,
+     '    if deploy != "none":\n        warnings.append(',
+     "    if False:\n        warnings.append(",
+     _D + "test_deploy_armed_warns_inert"),
+    # Review round 1.
+    ("cloud_guard is imported ahead of the incident check", AUTOPILOT,
+     "    failure after it asks, and asking would downgrade an emergency's refusal.\"\"\"\n",
+     "    failure after it asks, and asking would downgrade an emergency's refusal.\"\"\"\n"
+     "    import cloud_guard  # pylint: disable=import-outside-toplevel\n",
+     _D + "test_incident_refuses_when_cloud_guard_import_fails"),
+    ("the report escapes the never-raises boundary", AUTOPILOT,
+     "        report = _deploy_report(env_name, verdict, reason, env_class)\n"
+     "    except Exception as exc:  # pylint: disable=broad-except\n",
+     "        report = _deploy_report(env_name, verdict, reason, env_class)\n"
+     "    except ArithmeticError as exc:  # pylint: disable=broad-except\n",
+     _D + "test_env_class_compare_raises_asks"),
+    ("an unprintable name crashes its own reason", AUTOPILOT,
+     "        return render(value)\n    except Exception:  # pylint: disable=broad-except\n",
+     "        return render(value)\n    except ArithmeticError:  # pylint: disable=broad-except\n",
+     _D + "test_env_name_repr_raises_asks"),
+    ("an unprintable exception crashes the crash path", AUTOPILOT,
+     '{_safe_text(exc, str)} - "\n            "cannot tell, so ask")\n',
+     '{exc} - "\n            "cannot tell, so ask")\n',
+     _D + "test_exception_str_raises_asks"),
+    ("a non-object repo layer reports no problem", CLOUD,
+     '        out["problem"] = ".crew/config.json is not a JSON object"\n',
+     '        out["problem"] = ""\n',
+     _D + "test_every_problem_fixture_reports_and_asks"),
+    ("a malformed machine layer passes", AUTOPILOT,
+     '    if crew_config.layer_state(path, environments=True) != "ok":\n',
+     '    if label == "repo" and crew_config.layer_state(path, environments=True) != "ok":\n',
+     _D + "test_machine_problem_never_grants_and_asks"),
+    # Review round 3: a FIX per finding, then its neighbouring case.
+    ("a non-OSError while checking the incident path asks", AUTOPILOT,
+     "    except Exception as exc:  # pylint: disable=broad-except\n"
+     '        return "could-not-tell", type(exc).__name__\n',
+     "    except OSError as exc:\n"
+     '        return "could-not-tell", type(exc).__name__\n',
+     _D + "test_incident_check_that_raises_a_non_oserror_refuses"),
+    ("the deploy-allowed CLI echoes the environment raw", AUTOPILOT,
+     '                        "env": _cli_value(result["env"], token=True),\n',
+     '                        "env": result["env"],\n',
+     _D + "test_cli_prints_one_line_whatever_it_is_handed"),
+    ("the deploy-allowed CLI echoes the class raw", AUTOPILOT,
+     '                        "class": _cli_value(result["envClass"], token=True),\n',
+     '                        "class": result["envClass"],\n',
+     _D + "test_cli_prints_one_line_whatever_it_is_handed"),
+    ("the deploy-allowed CLI prints a crash reason raw", AUTOPILOT,
+     '                        "reason": _cli_value(result["reason"])})\n',
+     '                        "reason": result["reason"]})\n',
+     _D + "test_cli_reason_is_one_line_when_a_crash_message_breaks_lines"),
+    ("the deploy-allowed CLI prints its own fallback's reason raw", AUTOPILOT,
+     '    text = _line(**{"verdict": "ask", "env": env, "class": cls, '
+     '"reason": _cli_value(reason)})\n',
+     '    text = _line(**{"verdict": "ask", "env": env, "class": cls, "reason": reason})\n',
+     _D + "test_cli_fallback_is_one_line_when_deploy_allowed_raises"),
+    ("the deploy-allowed CLI writes the report raw", AUTOPILOT,
+     '        report = _cli_value(result["report"]) if result["report"] else ""\n',
+     '        report = result["report"] if result["report"] else ""\n',
+     _D + "test_cli_report_is_one_line_when_a_crash_message_breaks_lines"),
+    ("a value holding whitespace prints as a bare token", AUTOPILOT,
+     "    plain = text.isprintable() and not (token and (not text or any(\n",
+     "    plain = text.isprintable() and not (token and (not text or False and any(\n",
+     _D + "test_cli_quotes_a_value_holding_whitespace"),
+    # Review round 4: one mutation per finding, then each neighbouring case.
+    ("round 4: the root is resolved again inside the decision", AUTOPILOT,
+     "    import cloud_guard  # pylint: disable=import-outside-toplevel\n",
+     "    top = crew_ticket.toplevel(top) or top\n"
+     "    import cloud_guard  # pylint: disable=import-outside-toplevel\n",
+     _D + "test_root_is_resolved_exactly_once"),
+    ("round 4: the decision reads settings through the resolving reader", AUTOPILOT,
+     "    current = _settings_at(top)\n",
+     "    current = settings(top)\n",
+     _D + "test_root_is_resolved_exactly_once"),
+    ("round 4: the machine path is re-read for the ratchet", AUTOPILOT,
+     '    ratchet = crew_config.resolve_ratcheted(top, "environments.prodUnattended",\n'
+     "                                            path=machine_path)\n",
+     '    ratchet = crew_config.resolve_ratcheted(top, "environments.prodUnattended")\n',
+     _D + "test_machine_path_is_the_one_probed"),
+    ("round 4: the result names no root", AUTOPILOT,
+     '            "env": env_name, "envClass": env_class, "deploy": deploy, "root": top}\n',
+     '            "env": env_name, "envClass": env_class, "deploy": deploy}\n',
+     _D + "test_root_is_resolved_exactly_once"),
+    ("round 4: a lookup failure reads as outside git", AUTOPILOT,
+     "    except Exception as exc:  # pylint: disable=broad-except\n"
+     '        return None, f"could not find the checkout ({type(exc).__name__})"\n',
+     "    except (FileNotFoundError, NotADirectoryError):\n"
+     '        return os.path.abspath(root), ""\n'
+     "    except Exception as exc:  # pylint: disable=broad-except\n"
+     '        return None, f"could not find the checkout ({type(exc).__name__})"\n',
+     _D + "test_checkout_lookup_that_raises_refuses"),
+    ("round 4: a lookup failure asks instead of refusing", AUTOPILOT,
+     '            verdict, reason = "refuse", f"could not tell whether an emergency is active: '
+     '{problem}"\n',
+     '            verdict, reason = "ask", f"could not tell whether an emergency is active: '
+     '{problem}"\n',
+     _D + "test_checkout_lookup_that_raises_refuses"),
+    ("round 4: a root that is not a path is decided anyway", AUTOPILOT,
+     "        top = crew_ticket.toplevel(root) or os.path.abspath(root)\n"
+     "    except Exception as exc:  # pylint: disable=broad-except\n",
+     "        top = crew_ticket.toplevel(root) or os.path.abspath(root)\n"
+     "    except OSError as exc:\n",
+     _D + "test_root_that_is_not_a_path_refuses"),
+    ("round 4: finding the checkout escapes the incident check", AUTOPILOT,
+     "        top = crew_ticket.toplevel(root) or os.path.abspath(root)\n"
+     "    except Exception as exc:  # pylint: disable=broad-except\n",
+     "        top = crew_ticket.toplevel(root) or os.path.abspath(root)\n"
+     "    except ArithmeticError as exc:  # pylint: disable=broad-except\n",
+     _D + "test_incident_path_that_cannot_be_found_refuses"),
+    ("round 4: the probe's try also stats through a symlink", AUTOPILOT,
+     "    try:\n        os.lstat(path)\n",
+     "    try:\n        os.lstat(path)\n        os.stat(path)\n",
+     _D + "test_incident_refuses"),
+    # Round 5: the mutation the plan named and round 4's table lacked - the
+    # path join moved inside the probe's try, so a join that raises would read
+    # as the probe's could-not-tell.
+    ("round 4: the probe's try covers more than the stat (the join)", AUTOPILOT,
+     "    try:\n        os.lstat(path)\n",
+     "    try:\n        os.lstat(os.path.join(path))\n",
+     _D + "test_probe_answers"),
+    ("round 4: the probe reads every OSError as absent (incident)", AUTOPILOT,
+     '    except (FileNotFoundError, NotADirectoryError):\n        return "absent", ""\n',
+     '    except OSError:\n        return "absent", ""\n',
+     _D + "test_incident_unreadable_path_refuses"),
+    ("round 4: the probe reads every OSError as absent (layer)", AUTOPILOT,
+     '    except (FileNotFoundError, NotADirectoryError):\n        return "absent", ""\n',
+     '    except OSError:\n        return "absent", ""\n',
+     _D + "test_layer_parent_unreadable_asks"),
+    ("round 4: the probe reads could-not-tell as absent", AUTOPILOT,
+     '        return "could-not-tell", type(exc).__name__\n',
+     '        return "absent", ""\n',
+     _D + "test_layer_parent_unreadable_asks"),
+    ("round 4: the probe answers could-not-tell with no detail", AUTOPILOT,
+     '        return "could-not-tell", type(exc).__name__\n',
+     '        return "could-not-tell", ""\n',
+     _D + "test_probe_answers"),
+    ("round 4: a present layer that layer_state calls absent passes", AUTOPILOT,
+     '    if crew_config.layer_state(path, environments=True) != "ok":\n',
+     '    if crew_config.layer_state(path, environments=True) == "corrupt":\n',
+     _D + "test_layer_present_but_layer_state_says_absent_asks"),
+    ("round 4: a layer could-not-tell is permissive", AUTOPILOT,
+     '        return f"could not tell whether the {label} config layer can be read ({detail})"\n',
+     '        return ""\n',
+     _D + "test_layer_parent_unreadable_asks"),
+    ("round 4: the machine layer is not probed", AUTOPILOT,
+     ',\n              ("machine", machine_path))\n',
+     ',)\n',
+     _D + "test_layer_parent_unreadable_asks"),
+    ("round 4: the CLI fallback interpolates the exception", AUTOPILOT,
+     "        try:\n            reason = _crash_reason(exc)\n"
+     "        except Exception:  # pylint: disable=broad-except\n"
+     '            reason = ("crew_autopilot raised an exception it could not describe - "\n'
+     '                      "cannot tell, so ask")\n',
+     '        reason = f"crew_autopilot raised {type(exc).__name__}: {exc} - cannot tell, so ask"\n',
+     _D + "test_cli_crash_that_cannot_be_described_prints_ask"),
+    ("round 4: the CLI fallback has no constant reason", AUTOPILOT,
+     "            reason = _crash_reason(exc)\n"
+     "        except Exception:  # pylint: disable=broad-except\n",
+     "            reason = _crash_reason(exc)\n"
+     "        except ArithmeticError:  # pylint: disable=broad-except\n",
+     _D + "test_cli_crash_whose_reason_cannot_be_built_prints_ask"),
+    ("round 4: the CLI fallback does not cover building the line", AUTOPILOT,
+     "    try:\n        result = deploy_allowed(args.root, args.env, args.env_class)\n",
+     "    result = deploy_allowed(args.root, args.env, args.env_class)\n"
+     '    _line(verdict=result["verdict"], reason=result["reason"])\n'
+     "    try:\n        result = deploy_allowed(args.root, args.env, args.env_class)\n",
+     _D + "test_cli_result_missing_a_key_prints_ask"),
+    ("round 4: the JSON is built outside the fallback", AUTOPILOT,
+     "            text = json_text\n",
+     "            text = json.dumps(deploy_allowed(args.root, args.env, args.env_class),\n"
+     "                              indent=2)\n",
+     _D + "test_cli_json_of_an_undumpable_result_prints_ask"),
+    # Review round 5: a bytes root, and --json printed on many lines.
+    ("round 5: a root that is not text is decided anyway", AUTOPILOT,
+     "    if not isinstance(top, str):\n"
+     '        return None, f"could not find the checkout (a {type(top).__name__} path, '
+     'not text)"\n',
+     "",
+     _D + "test_root_that_is_not_text_refuses"),
+    ("round 5: the text check refuses a pathlib root too", AUTOPILOT,
+     "    if not isinstance(top, str):\n",
+     "    if not isinstance(root, str):\n",
+     _D + "test_pathlike_root_is_decided"),
+    ("round 5: --json indents the answer", AUTOPILOT,
+     "        return text, json.dumps(result), report\n",
+     "        return text, json.dumps(result, indent=2), report\n",
+     _D + "test_cli_json_of_an_allow_is_one_line"),
+    ("round 5: --json indents the fallback", AUTOPILOT,
+     '                             "root": None}), report\n',
+     '                             "root": None}, indent=2), report\n',
+     _D + "test_cli_json_fallback_is_one_line"),
+    ("round 5: --json writes a line separator raw", AUTOPILOT,
+     "        return text, json.dumps(result), report\n",
+     "        return text, json.dumps(result, ensure_ascii=False), report\n",
+     _D + "test_cli_json_is_one_line"),
+    ("round 4: a stop's crash text interpolates the exception", AUTOPILOT,
+     '{_safe_text(exc, str)} - "\n            "cannot tell, so stop")\n',
+     '{exc} - "\n            "cannot tell, so stop")\n',
+     _T + "test_next_crash_that_cannot_be_described_still_stops"),
+    ("round 4: a stop's ticket error interpolates the exception", AUTOPILOT,
+     "        return _safe_text(exc, str)\n    return (f\"crew_autopilot raised",
+     "        return str(exc)\n    return (f\"crew_autopilot raised",
+     _T + "test_next_ticket_error_that_cannot_be_described_still_stops"),
+)
+
+AUTOPILOT_MUTATIONS = AUTOPILOT_MUTATIONS + DEPLOY_MUTATIONS
 
 STATUS_MUTATIONS = (
     ("route reads an unknown word as a ticket to run", AUTOPILOT,

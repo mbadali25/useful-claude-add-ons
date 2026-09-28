@@ -588,6 +588,67 @@ def test_cli_that_raises_prints_a_stop(tmp_path, monkeypatch, capsys, action):
     assert (code, "stop=1" in out, "disk on fire" in out) == (0, True, True)
 
 
+class _UnprintableError(RuntimeError):
+    """An exception whose `__str__` raises (T-0072 review round 4's neighbour)."""
+
+    def __str__(self):
+        raise ValueError("no str")
+
+
+def _raise_unprintable(*_args, **_kwargs):
+    raise _UnprintableError()
+
+
+def test_next_crash_that_cannot_be_described_still_stops(tmp_path, monkeypatch, capsys):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    monkeypatch.setattr(crew_autopilot, "next_phase", _raise_unprintable)
+
+    code = crew_autopilot.main(["next", "--root", str(root), "--ticket", T])
+
+    assert (code, "stop=1" in capsys.readouterr().out) == (0, True)
+
+
+def test_resume_crash_that_cannot_be_described_still_stops(tmp_path, monkeypatch, capsys):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    monkeypatch.setattr(crew_autopilot, "resume_target", _raise_unprintable)
+
+    code = crew_autopilot.main(["resume", "--root", str(root), "--ticket", T])
+
+    assert (code, "stop=1" in capsys.readouterr().out) == (0, True)
+
+
+def test_status_crash_that_cannot_be_described_still_prints_unknown(tmp_path, monkeypatch,
+                                                                    capsys):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    monkeypatch.setattr(crew_autopilot, "status", _raise_unprintable)
+
+    code = crew_autopilot.main(["status", "--root", str(root), "--ticket", T])
+
+    assert (code, capsys.readouterr().out.startswith("status: unknown")) == (0, True)
+
+
+def test_next_ticket_error_that_cannot_be_described_still_stops(tmp_path, monkeypatch,
+                                                                capsys):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+
+    class _UnprintableTicketError(crew_autopilot.crew_ticket.TicketError):
+        def __str__(self):
+            raise ValueError("no str")
+
+    def boom(*_args, **_kwargs):
+        raise _UnprintableTicketError()
+
+    monkeypatch.setattr(crew_autopilot, "next_phase", boom)
+
+    code = crew_autopilot.main(["next", "--root", str(root), "--ticket", T])
+
+    assert (code, "stop=1" in capsys.readouterr().out) == (0, True)
+
+
 def test_cli_next_prints_one_line_and_exits_zero(tmp_path):
     root = make_repo(tmp_path, mode="off")
     _ticket(root)
@@ -1074,7 +1135,8 @@ def test_stops_lists_every_autonomous_stop():
 def test_autopilot_defaults_are_the_config_block():
     import crew_config  # pylint: disable=import-outside-toplevel
     assert crew_config.default_config()["autopilot"] == {
-        "mode": "off", "maxPhases": 12, "approval": "risk", "questions": "risk"}
+        "mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk",
+        "questions": "risk"}
 
 
 # --- step 6: the command -----------------------------------------------------
@@ -1162,6 +1224,7 @@ def test_every_autopilot_sabotage_anchor_is_present_exactly_once():
         with open(target, encoding="utf-8") as handle:
             assert handle.read().count(find) == 1, label
         assert test.startswith(("tests/test_crew_autopilot.py::",
+                                "tests/test_crew_autopilot_deploy.py::",
                                 "tests/test_crew_autopilot_status.py::")), label
     # T-0010's POLICY_MUTATIONS, the approve exception's six included: they
     # share these targets, so an anchor either list moves must stay unique.
