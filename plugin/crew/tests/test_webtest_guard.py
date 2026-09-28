@@ -21,6 +21,7 @@ import review_ledger
 import review_patch
 import review_prompt
 import review_run
+import review_verdict
 import webtest_guard
 import webtest_rules
 
@@ -735,8 +736,9 @@ def test_review_prompt_hands_over_every_row_through_a_file_past_the_inline_limit
     with open(tmp_path / review_prompt.WEBTEST_FINDINGS_FILE, encoding="utf-8") as fh:
         listed = fh.read().splitlines()
     assert (text.count("FINDING|FIX|healer-skip|"), len(listed),
-            f"READ|{review_prompt.WEBTEST_FINDINGS_FILE}" in text) == (
-        review_prompt.WEBTEST_FINDINGS_MAX, review_prompt.WEBTEST_FINDINGS_MAX + 1, True)
+            str(tmp_path / review_prompt.WEBTEST_FINDINGS_FILE) in text,
+            review_verdict.READ_FORM in text) == (
+        review_prompt.WEBTEST_FINDINGS_MAX, review_prompt.WEBTEST_FINDINGS_MAX + 1, True, True)
 
 
 def test_review_prompt_without_an_out_dir_puts_every_row_inline(repo):
