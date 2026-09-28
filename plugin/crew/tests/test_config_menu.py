@@ -150,6 +150,20 @@ def test_refused_rows_offer_no_choices_and_name_a_reason(tmp_path):
         assert rows[path]["refusedReason"]
 
 
+@pytest.mark.parametrize("layer", ["repo", "machine"])
+def test_a_refused_snapshot_probe_names_the_refusal(tmp_path, layer):
+    # `except ... as exc` unbinds exc when the block ends, so a probe that
+    # closed over it raised NameError the first time the menu called it.
+    root, gpath = _repo(tmp_path, global_cfg={})
+    target = os.path.join(root, ".crew", "config.json") if layer == "repo" else gpath
+    with open(target, "w", encoding="utf-8") as handle:
+        handle.write("{bad")
+
+    probe, _, reason = menu._probe_for(root, layer, gpath, None)  # pylint: disable=protected-access
+
+    assert (probe("qa.provider", "codex"), bool(reason)) == (reason, True)
+
+
 def test_repo_veto_rows_offer_only_a_veto(tmp_path):
     root, gpath = _repo(tmp_path)
 

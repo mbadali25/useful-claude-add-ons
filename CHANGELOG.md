@@ -185,9 +185,12 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.58: `/crew:config` menu mode and `/crew:config-setup` (T-0075).**
-  Landed as 1.0.58, not 1.0.55, after three landing-branch changes, each needing its
-  own bump. 1.0.58: the two round-5 sabotage entries in `sabotage_config.py` re-anchored
+- **`crew` 1.0.59: `/crew:config` menu mode and `/crew:config-setup` (T-0075).**
+  Landed as 1.0.59, not 1.0.55, after four landing-branch changes, each needing its
+  own bump. 1.0.59: `_probe_for`'s refused-snapshot probe closed over `exc`, which
+  the except block unbinds (ruff F821), so calling it raised NameError; it now keeps
+  the message in a local. Latent: `menu_spec` never calls a refused probe. Found when
+  ruff was installed locally (owner decision 2026-09-28, "Fix at land"). 1.0.58: the two round-5 sabotage entries in `sabotage_config.py` re-anchored
   to the 1.0.57 refusal text. 1.0.56: a file-level `# pylint: disable=consider-using-with` in
   `plugin/crew/tests/test_config_menu.py` (owner decision 2026-09-28, "Disable at
   land"; the `with` rewrite is a follow-up). 1.0.57: the config writers' and the

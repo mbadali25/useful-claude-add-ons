@@ -39,6 +39,19 @@ def _value_only(layer, error):
 
 
 CONFIG_MENU_MUTATIONS = (
+    # T-0075 landing: a probe closed over `exc`, which the except block unbinds.
+    ("menu repo probe closes over the unbound exc", MENU,
+     '            reason = str(exc)\n            return (lambda _d, _v: reason), None, reason\n'
+     '        machine = crew_config.machine_view(global_path)\n',
+     '            return (lambda _d, _v: str(exc)), None, str(exc)\n'
+     '        machine = crew_config.machine_view(global_path)\n',
+     _M + "test_a_refused_snapshot_probe_names_the_refusal[repo]"),
+    ("menu machine probe closes over the unbound exc", MENU,
+     '            reason = str(exc)\n            return (lambda _d, _v: reason), None, reason\n\n'
+     '        def plan(updates):\n            crew_config.plan_global_write(',
+     '            return (lambda _d, _v: str(exc)), None, str(exc)\n\n'
+     '        def plan(updates):\n            crew_config.plan_global_write(',
+     _M + "test_a_refused_snapshot_probe_names_the_refusal[machine]"),
     ("repo writer admits scope.allowCliApproval", CONFIG,
      '    "scope.allowCliApproval": "decides which approvals the scope guard "\n'
      '                              "accepts; a hand edit by the owner only",\n',
@@ -155,7 +168,7 @@ CONFIG_MENU_MUTATIONS = (
      _M + "test_repo_veto_rows_never_offer_a_held_zero"),
     ("repo rows writable over an unreadable config", MENU,
      '        except crew_config.RepoWriteRefused as exc:\n'
-     '            return (lambda _d, _v: str(exc)), None, str(exc)\n',
+     '            reason = str(exc)\n            return (lambda _d, _v: reason), None, reason\n',
      '        except crew_config.RepoWriteRefused as exc:\n'
      '            return (lambda _d, _v: None), None, None\n',
      _M + "test_repo_rows_are_read_only_without_a_readable_config[missing]"),

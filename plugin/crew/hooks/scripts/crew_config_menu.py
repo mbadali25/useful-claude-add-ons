@@ -180,7 +180,8 @@ def _probe_for(root, layer, global_path, pending):
         try:
             snap = crew_config.repo_snapshot(root)
         except crew_config.RepoWriteRefused as exc:
-            return (lambda _d, _v: str(exc)), None, str(exc)
+            reason = str(exc)
+            return (lambda _d, _v: reason), None, reason
         machine = crew_config.machine_view(global_path)
 
         def plan(updates):
@@ -191,7 +192,8 @@ def _probe_for(root, layer, global_path, pending):
         try:
             snap = crew_config.global_snapshot(global_path)
         except crew_config.GlobalWriteRefused as exc:
-            return (lambda _d, _v: str(exc)), None, str(exc)
+            reason = str(exc)
+            return (lambda _d, _v: reason), None, reason
 
         def plan(updates):
             crew_config.plan_global_write(updates, global_path, snapshot=snap)
