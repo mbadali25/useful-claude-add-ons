@@ -2,9 +2,9 @@
 paths:
   - "plugin/crew/**"
 ---
-<!-- crew:generated source=.crew/codemap/repo-docs.md sha256=8b0604cdfa37d44c -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/repo-docs.md sha256=edac30b57b8c35b5 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # repo-docs
-Code map anchor `65bb3330`; if it is behind HEAD, re-check with `git diff --name-only 65bb3330..HEAD -- <cited paths>`.
+Code map anchor `21429244`; if it is behind HEAD, re-check with `git diff --name-only 21429244..HEAD -- <cited paths>`.
 Covers: docs/ and CHANGELOG.md. Records that docs/adr/ holds three ADRs while accepted decisions under docs/review/ were never promoted to it, and that TODO.md's render.sh entry is still open though the cygpath -w fix is in source.
 ## Landmines
 - `INSTALLATION.md`'s "Eight MCP servers" section describes a menu row that no longer exists, and this is new at this anchor — not carried forward from a previous pass.
