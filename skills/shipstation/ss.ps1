@@ -207,7 +207,7 @@ function Invoke-SS {
             if ($wait -le 0) { $wait = [Math]::Pow(2, $attempt) }
             $hint = ''
             if ($status -eq 429) {
-                if ($V1) { $hint = ' V1 has a lower request budget than V2 - slow down or narrow the query.' }
+                if ($V1) { $hint = ' V1 allows ~40 req/min per account; parallel workers share it. Slow down, or act in bulk via V2.' }
                 else     { $hint = ' V2 allows ~200 req/min.' }
             }
             elseif ($status -ge 500) {
