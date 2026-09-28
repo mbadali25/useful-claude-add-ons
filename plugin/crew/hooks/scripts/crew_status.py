@@ -31,6 +31,7 @@ import subprocess
 
 import crew_freshness
 import crew_migrate
+import crew_shell  # noqa: E402
 import crew_tracker
 from crew_common import read_text
 
@@ -202,6 +203,11 @@ def collect(root, memory=False):
     lines += _ticket_lines(root)
     lines += _review_lines(root)
     lines.append(_verify_line(root))
+    # T-0040: native Windows only. Read from config and the machine-local
+    # probe cache; runs no wsl.exe, no pwsh and no git.
+    shell = crew_shell.status_line(root)
+    if shell:
+        lines.append(shell)
     lines.append(_codemap_line(root, cfg))
     lines.append(_metrics_line(root))
     handoff = os.path.isfile(os.path.join(root, ".work", "HANDOFF.md"))

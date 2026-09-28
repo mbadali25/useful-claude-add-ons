@@ -460,8 +460,19 @@ def _wsl_state(probe_result):
     state = (probe_result or {}).get("state") or "unknown"
     detail = (probe_result or {}).get("detail")
     if state == "unknown" and detail == "never probed":
-        return "WSL never probed (unknown)"
+        return "WSL never probed"
     return f"WSL {state}" + (f" ({detail})" if detail else "")
+
+
+def _auto_why(probe_result, location, measured):
+    """Why `auto` did not pick WSL, naming the WSL state."""
+    if (probe_result or {}).get("state") != "usable":
+        return _wsl_state(probe_result)
+    if location == "windows-drive" and measured == "gitbash-faster":
+        return "WSL usable but measured slower than Git Bash for this repo on its Windows drive"
+    if location == "windows-drive":
+        return "WSL usable but this repo is on a Windows drive and not measured (crew_shell.py measure --write)"
+    return "WSL usable but the repo path has no WSL translation"
 
 
 def fallback(job_class, why):
@@ -505,15 +516,7 @@ def decide(mode_value, probe_result, location, measured, host, job_class, pwsh):
         return "wsl", f"{note}auto: WSL2 usable ({distro}) and the repo is inside WSL -> wsl", None
     if usable and location == "windows-drive" and measured == "wsl-faster":
         return "wsl", f"{note}auto: WSL2 usable ({distro}) and measured faster than Git Bash here -> wsl", None
-    if not usable:
-        why = _wsl_state(probe_result)
-    elif location == "windows-drive" and measured == "gitbash-faster":
-        why = "WSL usable but measured slower than Git Bash for this repo on its Windows drive"
-    elif location == "windows-drive":
-        why = "WSL usable but this repo is on a Windows drive and not measured (crew_shell.py measure --write)"
-    else:
-        why = "WSL usable but the repo path has no WSL translation"
-    return fallback(job_class, f"{note}auto: {why}")
+    return fallback(job_class, f"{note}auto: {_auto_why(probe_result, location, measured)}")
 
 
 # --- run ------------------------------------------------------------------------------
@@ -725,7 +728,39 @@ def status_line(root):
     """The `/crew:status` `shell` line, or None off native Windows."""
     if not on_windows():
         return None
-    return None
+    root = _absolute(root)
+    cfg = settings(root)
+    normal, note = mode(cfg)
+    shown = normal if note is None else f"{normal} (shellRoute.mode {raw_mode(cfg)!r} is not a mode)"
+    cache = effective_probe(load_cache(), cfg)
+    location = repo_location(root)
+    measured = measured_verdict(cache, root)
+    distro = cache.get("distro")
+    split = "direct (plain argv) / gitbash (bash syntax)"
+    if normal == "gitbash":
+        route, why = "gitbash", "set by shellRoute.mode"
+    elif normal == "powershell":
+        pwsh, reason = resolve_pwsh()  # os.path.isfile only: runs nothing
+        route = f"{pwsh} (plain argv) / gitbash (bash syntax)" if pwsh else \
+            "refused for plain argv (exit 3) / gitbash (bash syntax)"
+        why = "a bash string is never handed to pwsh" if pwsh else reason
+    else:
+        chosen, _, _ = decide(normal, cache, location, measured, host_os(), "plain", None)
+        if chosen == "wsl":
+            route = f"wsl ({distro})"
+            why = "WSL2 usable and the repo is inside WSL" if location == "wsl-fs" else \
+                "WSL2 usable and measured faster than Git Bash for this repo"
+        elif normal == "wsl":
+            route, why = "refused (exit 3)", _wsl_state(cache) if cache.get("state") != "usable" else \
+                "the repo path has no WSL translation"
+        else:
+            route, why = split, _auto_why(cache, location, measured)
+    state = cache.get("state")
+    if normal in ("auto", "wsl") and state in ("not-installed", "no-distro"):
+        why += "; recommend `wsl --install -d Ubuntu` in an elevated shell, then reboot"
+    elif normal in ("auto", "wsl") and state == "unknown":
+        why += " - run /crew:config"
+    return f"shell    {shown} -> {route} - {why}"
 
 
 # --- CLI ------------------------------------------------------------------------------
