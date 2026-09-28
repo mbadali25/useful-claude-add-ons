@@ -732,9 +732,11 @@ Then it appends a line to `.crew/metrics.md`. That line is not bookkeeping; `/cr
 
 | Verdict | When |
 |---|---|
-| `CLEAN` | exactly one `CLEAN` line, exit 0, and a `READ|<part>` line for every bundle part |
+| `CLEAN` | exactly one `CLEAN` line, exit 0, and a READ line for every bundle part - its path exactly as listed, or its bare file name |
 | `FINDINGS` | at least one `BLOCK`, `FIX` or `NIT` line, and nothing below applies |
 | `INCOMPLETE` | non-zero exit, unknown exit, timeout, empty output, any line outside the contract (a code fence, or a finding with an empty field, included), a part not acknowledged, a bundle part that no longer matches its manifest size and sha256, an unreadable line in Codex's event stream, or `CLEAN` beside findings |
+
+A READ line naming anything else - a path outside the bundle, or the same file name in another directory - counts for no part; the part it failed to cover is what makes the round `INCOMPLETE`. The prompt quotes that form from `review_verdict.READ_FORM`, so the two cannot disagree again (T-0079). From crew 1.0.48, `review.json`'s `parts_expected` and `parts_missing` name each part by its listed path, not its bare file name.
 
 `INCOMPLETE` is never `CLEAN`. Codex runs as `codex exec --json --sandbox read-only` with stdin closed, and a turn that failed in its event stream is `INCOMPLETE` even when the process exited 0. Each round writes `.work/tickets/<id>/review.json` (verdict, counts, provider, model, model family, bundle hash, base/head, round).
 
