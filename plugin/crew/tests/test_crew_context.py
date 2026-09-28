@@ -322,6 +322,21 @@ def test_the_low_context_note_shows_once_per_epoch(tmp_path):
     assert "context is at" not in second
 
 
+def test_emit_writes_lf_even_through_a_crlf_translating_stdout(monkeypatch):
+    """Windows' text-mode stdout turns LF into CRLF (T-0076). The route hook's
+    byte-identical tests compare bytes, so emit pins its line ending rather
+    than inheriting the platform's -- simulated here on every OS."""
+    import io  # pylint: disable=import-outside-toplevel
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding="utf-8", newline="\r\n")
+    monkeypatch.setattr(crew_context.sys, "stdout", stream)
+
+    crew_context.emit("SessionStart", "hello")
+    stream.flush()
+
+    assert (raw.getvalue().endswith(b"}\n"), b"\r" in raw.getvalue()) == (True, False)
+
+
 def test_main_never_emits_a_decision_and_always_returns_zero(tmp_path, monkeypatch, capsys):
     root = make_repo(tmp_path)
     for raw in (b"", b"not json", b"[1,2]", json.dumps(payload("Stop", root)).encode(),

@@ -1084,6 +1084,10 @@ def _run_locked(root, payload, cfg, session, harness):
 
 def emit(event, text):
     if text:
+        # Byte-exact LF on every OS: Windows' text-mode stdout would write CRLF
+        # (T-0076), as verify_fingerprint.py and verify_record.py already pin.
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(newline="\n")
         sys.stdout.write(json.dumps({"hookSpecificOutput": {"hookEventName": event,
                                                             "additionalContext": text}}) + "\n")
 

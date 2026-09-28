@@ -1695,7 +1695,7 @@ You don't need it to. The lifecycle already covers the cycle:
 |---|---|---|
 | Nearing the limit | `Stop` | Estimates usage, asks for a handoff before the turn ends |
 | Auto-compaction imminent | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
-| After `/clear`, `/compact`, resume | `SessionStart` | Prints the handoff — stdout is injected as context |
+| After `/clear`, `/compact`, resume | `SessionStart` | Prints the handoff — stdout is injected as context, byte-exact LF on every OS |
 
 So: crew tells you it's time, you type `/clear`, and the next session opens
 already holding the note. The one manual step is the `/clear` — which is the

@@ -127,11 +127,31 @@ def test_a_broken_active_ticket_pointer_blocks_the_stop(flavour, repo):
     assert (code, "pointer is broken" in err) == (2, True)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="NTFS rejects a newline in a filename; "
+                    "the git-only variant below covers Windows (T-0076)")
 @pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_filename_with_newlines_cannot_add_lines(flavour, repo):
     ready(repo)
     for number in range(12):
         (repo / "other" / f"a{number}\nb\nc.py").write_text("y\n", encoding="utf-8")
+
+    code, _, err = _audit(flavour, repo, stop(repo))
+
+    assert (code, len(err.splitlines()) <= 6, "\\x0a" in err) == (2, True, True)
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+def test_a_committed_filename_with_newlines_cannot_add_lines(flavour, repo):
+    """The same cap through the deletion listing, on every OS: the names exist
+    only in git (committed with core.protectNTFS off, never on disk), so they
+    reach the audit as deleted paths rather than untracked ones (T-0076)."""
+    blob = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=repo, input=b"y\n",
+                          capture_output=True, check=True).stdout.decode().strip()
+    for number in range(12):
+        git(repo, "-c", "core.protectNTFS=false", "update-index", "--add", "--cacheinfo",
+            f"100644,{blob},other/a{number}\nb\nc.py")
+    git(repo, "-c", "core.protectNTFS=false", "commit", "-qm", "names with newlines")
+    ready(repo)
 
     code, _, err = _audit(flavour, repo, stop(repo))
 
