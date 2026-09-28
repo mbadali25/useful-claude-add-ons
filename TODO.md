@@ -4470,12 +4470,15 @@ pid 2363532, which is no longer running; `git status --porcelain` shows 15 modif
 `plugin/crew/CONFIG.md` and `docs/guides/crew/src/`. This is most likely the partial burn-in fix work the
 2026-09-24 handoff says to check before re-dispatching FAILs 1-7. Nobody has reviewed it. Whoever picks up the burn-in fixes should start from it rather than starting over.
 
-### CLAUDE.md still lists `skills/intune-graph/scripts/export_report.py:90` as a live landmine - OPEN (filed 2026-09-24, PM)
+### CLAUDE.md still lists `skills/intune-graph/scripts/export_report.py:90` as a live landmine - CLOSED by T-0091 (filed 2026-09-24, PM; closed 2026-09-28)
 
 crew:explorer reported on 2026-09-24 that 60c79407 (PR #210) fixed it (`_download` now stages writes through `mkstemp` and
 `os.replace`, `skills/intune-graph/scripts/export_report.py:136-243`). CLAUDE.md's truncating-`open` landmine still calls
 this "the live one" and says three unfixed files remain. Relayed, not re-read by the PM. A developer should re-run the AST scan that
 paragraph describes and correct the count. Deferred because CLAUDE.md is not the PM's to edit and the codemap refresh did not depend on it.
+
+Closed by T-0091: the AST scan was reconstructed, calibrated against the original eight sites at ac93221d^, re-run at f54af3fa
+(57 sites, 9 shipped, none live on reading), and CLAUDE.md's paragraph rewritten from that output.
 
 ### win-repo hand-offs from the merge/pipe-capture/test-hygiene pass (filed 2026-09-24) - OPEN
 
