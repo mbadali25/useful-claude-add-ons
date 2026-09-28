@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.52: review bundles leave generated `graphify-out/` out (T-0092)
+### Changed — `crew` 1.0.53: review bundles leave generated `graphify-out/` out (T-0092)
 
 - **What changed.** `review_patch.py`'s `EXCLUDED` is now `(".work/",
   "graphify-out/")` and `_EXCLUDE_SPEC` carries `:(exclude)graphify-out` beside
@@ -28,7 +28,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Sabotage.** Three entries in `plugin/crew/tests/sabotage_review.py` (the
   pathspec, the manifest list, the prompt line), each run by hand against the
   tracked file and confirmed RED.
-- Bumped `1.0.51 -> 1.0.52`.
+- Bumped `1.0.52 -> 1.0.53` (1.0.52 on its branch; re-set after merging main's 1.0.52, T-0076).
 
 ### Added — `crew` 1.0.51: `autopilot.deploy` — production without asking, opt-in (T-0072)
 

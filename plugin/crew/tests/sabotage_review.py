@@ -36,7 +36,7 @@ REVIEW_FIX_MUTATIONS = (
         ("tests/test_review_patch.py::"
          "test_work_entries_already_in_the_index_stay_out_of_the_bundle"),
     ),
-    # T-0092 (crew 1.0.52): generated graphify-out/ leaves the bundle. Each
+    # T-0092 (crew 1.0.53): generated graphify-out/ leaves the bundle. Each
     # was run by hand against the tracked file, restored with `git checkout`.
     (
         # The diffs read graphify-out/ again: a reviewer is handed ~120 parts

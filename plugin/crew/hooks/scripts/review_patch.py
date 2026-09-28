@@ -60,7 +60,7 @@ range, but no diff reads them.
 
 Generated `graphify-out/` (graphify's `graph.json` and `GRAPH_REPORT.md`,
 rebuilt by a command and never hand-edited, 24 MB in this repository) is
-excluded the same way since crew 1.0.52 (T-0092), and `excluded` names it:
+excluded the same way since crew 1.0.53 (T-0092), and `excluded` names it:
 a Claude review of a bundle carrying it came back INCOMPLETE on 77 of 80
 parts. The pathspec is root-anchored, so a look-alike such as
 `docs/graphify-out/` or `graphify-out-notes/` stays in the bundle.

@@ -383,7 +383,7 @@ def test_work_entries_already_in_the_index_stay_out_of_the_bundle(repo, tmp_path
     assert b".work/" not in patch and b"scratch" not in patch
 
 
-# ---- 1.0.52 (T-0092): generated graphify-out/ is excluded like .work/ -------
+# ---- 1.0.53 (T-0092): generated graphify-out/ is excluded like .work/ -------
 
 def test_generated_graph_dir_is_excluded_and_says_so(repo, tmp_path):
     """A 24 MB `graphify-out/graph.json` split into ~120 parts left a Claude
