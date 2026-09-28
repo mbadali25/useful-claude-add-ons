@@ -80,6 +80,18 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 1.0.53: Windows' slow `test_role_write_guard` resolver cases pass (T-0089).**
+  Bumped `1.0.52 -> 1.0.53`. With T-0076's default step green, `crew-shell-matrix (windows-latest)` ran `-m slow` for
+  the first time, and 3 python-probe cases failed there and on main. Two test fixtures had fallen behind the resolvers;
+  neither resolver changes.
+  - `_stub(reports=...)` echoed a bare path. The ps1 probe accepts only its JSON answer (`v`, `exe`, `impl`), so every
+    must-allow case resolved to nothing. The stub now echoes that JSON line.
+  - The bash case's stub echoed an unquoted Windows path, which `sh` de-escaped into `D:temp...`, so the guard exited 2
+    with "no usable python found". The path is now single-quoted.
+  - The fixed cases still catch a broken resolver: a first-match-only resolver (ps1 without `-All`, sh `type -p`) turns
+    both walk-on cases red, and a `python3`-only ps1 name list turns the different-name case red.
+  - Windows CI on the branch: default 6106 passed; slow 1625 passed, 9 skipped, 0 failed.
+
 - **`crew` 1.0.52: the crew suite passes natively on Windows (T-0076).**
   Bumped `1.0.51 -> 1.0.52` (1.0.51 on its branch; re-set at landing after merging main's 1.0.51, T-0072).
   - **Before.** `crew-shell-matrix (windows-latest)` reported "44 failed" on main f96e9ec9, and the native full suite
