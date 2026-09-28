@@ -6,6 +6,9 @@ layer, every writable row offers a value, and every value offered is one the
 writer accepts. Save, delete and restore are tested for order -- validate
 before write, back up before remove -- because that order is the feature.
 """
+# The tests read and write fixture files through inline open() calls; the
+# rewrite to `with` blocks is tracked in the T-0075 round-6 follow-up ticket.
+# pylint: disable=consider-using-with
 import errno
 import json
 import os
