@@ -15,6 +15,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_config
+import crew_config_files
 import crew_config_menu as menu
 import crew_fixtures
 import crew_platform
@@ -104,10 +105,17 @@ def test_every_writable_setting_offers_a_selectable_value(tmp_path, layer):
     assert empty == []
 
 
+_FIXTURES = {
+    "plain": ({"guards.forcePush": "ask"}, {"pm": {"authority": "act"}}),
+    "badprovider": ({"qa.provider": "gpt"}, {"qa": {"provider": "gpt"}}),
+    "legacynull": ({"pm.authority": None}, {"pm": {"authority": None}}),
+}
+
+
+@pytest.mark.parametrize("fixture", sorted(_FIXTURES))
 @pytest.mark.parametrize("layer", ["machine", "repo"])
-def test_every_offered_choice_is_accepted_by_the_writer(tmp_path, layer):
-    root, gpath = _repo(tmp_path, {"guards.forcePush": "ask"},
-                        {"pm": {"authority": "act"}})
+def test_every_offered_choice_is_accepted_by_the_writer(tmp_path, layer, fixture):
+    root, gpath = _repo(tmp_path, *_FIXTURES[fixture])
     rows = _rows(menu.menu_spec(root, layer, gpath))
 
     refused = []
@@ -199,6 +207,72 @@ def test_repo_rows_are_read_only_without_a_readable_config(tmp_path, state):
     offered = [r["path"] for r in _rows(spec) if r["writable"] or r["choices"]]
     assert (offered, bool(spec["refusedReason"])) == ([], True)
     assert all(r["refusedReason"] for r in _rows(spec))
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_choices_are_filtered_through_the_merged_file(tmp_path, layer):
+    if layer == "repo":
+        root, gpath = _repo(tmp_path, {"qa.provider": "gpt"})
+        blocked = "tracker"
+    else:
+        root, gpath = _repo(tmp_path, global_cfg={"qa": {"provider": "gpt"}})
+        blocked = "pm.authority"
+
+    rows = {r["path"]: r for r in _rows(menu.menu_spec(root, layer, gpath))}
+
+    assert (rows[blocked]["writable"], rows[blocked]["choices"]) == (False, [])
+    assert "qa.provider" in rows[blocked]["refusedReason"]
+    assert rows["qa.provider"]["writable"]
+    assert "codex" in [c["value"] for c in rows["qa.provider"]["choices"]]
+
+
+def test_pending_set_unblocks_rows(tmp_path, capsys):
+    root, gpath = _repo(tmp_path, {"qa.provider": "gpt"})
+    pending = {"repo": {"qa.provider": "codex"}}
+
+    rows = {r["path"]: r for r in _rows(
+        menu.menu_spec(root, "repo", gpath, pending=pending))}
+    code = menu.main(["--root", root, "--global-path", gpath, "spec", "--layer",
+                      "repo", "--area", "memory", "--json", "--pending",
+                      json.dumps(pending)])
+    cli = {r["path"]: r for r in json.loads(capsys.readouterr().out)[
+        "areas"][0]["rows"]}
+
+    assert (rows["tracker"]["writable"], code, cli["tracker"]["writable"]) == (
+        True, 0, True)
+
+
+def test_menu_offers_null_only_where_the_writer_takes_it(tmp_path):
+    root, gpath = _repo(tmp_path, {"context.autoClear.enabled": False})
+
+    machine = _rows(menu.menu_spec(root, "machine", gpath))
+    repo = {r["path"]: r for r in _rows(menu.menu_spec(root, "repo", gpath))}
+
+    offered = [r["path"] for r in machine if crew_config.enum_values(r["path"])
+               and None in [c["value"] for c in r["choices"]]]
+    tags = {p: [c["tags"] for c in repo[p]["choices"] if c["value"] is None]
+            for p in ("guards.forcePush", "context.autoClear.enabled")}
+    assert offered == []
+    assert ["inherit machine" in t for t in tags["guards.forcePush"]] == [True]
+    assert ["clear veto" in t for t in tags["context.autoClear.enabled"]] == [True]
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_spec_prints_the_layer_digest(tmp_path, capsys, layer):
+    root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "act"}})
+    target = gpath if layer == "machine" else _config(root)
+    raw = open(target, "rb").read()
+
+    spec = menu.menu_spec(root, layer, gpath)
+    menu.main(["--root", root, "--global-path", gpath, "spec", "--layer", layer,
+               "--area", "guards"])
+    out = capsys.readouterr().out
+    os.remove(target)
+    absent = menu.menu_spec(root, layer, gpath)["digest"]
+
+    assert spec["digest"] == crew_config_files.digest(raw)
+    assert f"digest: {spec['digest']}" in out
+    assert absent is None
 
 
 def test_machine_rows_stay_writable_without_a_global_file(tmp_path):
@@ -762,3 +836,61 @@ def test_config_md_no_longer_claims_it_never_writes_the_repo_file():
 
     assert "it does not write `.crew/config.json`" not in text
     assert "--set" in text and "--repo" in text
+
+
+# --- T-0075 successor: digests on Save ---------------------------------------
+
+
+def test_save_dry_run_prints_both_digests(tmp_path, capsys):
+    root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "report-only"}})
+    digests = (crew_config_files.digest(open(gpath, "rb").read()),
+               crew_config_files.digest(open(_config(root), "rb").read()))
+
+    code = menu.save(root, {"machine": _MACHINE_SET, "repo": _REPO_SET},
+                     apply=False, global_path=gpath)
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert f"machine digest: {digests[0]}" in out
+    assert f"repo digest: {digests[1]}" in out
+
+
+def test_save_apply_refuses_when_a_layer_changed_since_the_dry_run(tmp_path, capsys):
+    root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "report-only"}})
+    good = crew_config_files.digest(open(gpath, "rb").read())
+    before = (open(gpath, "rb").read(), open(_config(root), "rb").read())
+
+    code = menu.save(root, {"machine": _MACHINE_SET, "repo": _REPO_SET},
+                     apply=True, global_path=gpath,
+                     expect={"machine": good, "repo": "0" * 64})
+
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "repo layer" in err and "changed since" in err
+    assert (open(gpath, "rb").read(), open(_config(root), "rb").read()) == before
+
+
+def test_save_apply_without_expect_still_merges_inside_the_lock(tmp_path):
+    root, gpath = _repo(tmp_path)
+    data = json.loads(open(_config(root), encoding="utf-8").read())
+    data["x-other"] = 1
+    with open(_config(root), "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(data))
+
+    code = menu.save(root, {"repo": {"tracker": "sdp"}}, apply=True,
+                     global_path=gpath)
+
+    written = json.loads(open(_config(root), encoding="utf-8").read())
+    assert (code, written["x-other"], written["tracker"]) == (0, 1, "sdp")
+
+
+def test_save_cli_passes_the_expected_digests(tmp_path, capsys):
+    root, gpath = _repo(tmp_path)
+    before = open(_config(root), "rb").read()
+
+    code = menu.main(["--root", root, "--global-path", gpath, "save",
+                      "--changes", json.dumps({"repo": {"tracker": "sdp"}}),
+                      "--apply", "--expect-repo", "f" * 64])
+
+    assert code == 2, capsys.readouterr()
+    assert open(_config(root), "rb").read() == before

@@ -41,6 +41,7 @@ import sys
 import tempfile
 
 import crew_config
+import crew_config_files
 import crew_state
 
 # (id, label, prefixes). Order is the menu order; `other` is the catch-all and
@@ -169,26 +170,67 @@ def _model_values(dotted):
     return []
 
 
-def _allowed_at(dotted, layer, value):
-    """Would this layer's writer accept `value` at `dotted`? The veto rule and
-    the enum check; a hand-edited bad value in either layer is not offered."""
-    if layer == "repo" and dotted in crew_config.REPO_VETO_ONLY and \
-            not crew_config.is_repo_veto(value):
-        return False
-    return not crew_config._value_problems({dotted: value})  # pylint: disable=protected-access
+def _probe_for(root, layer, global_path, pending):
+    """`(probe, digest, unwritable)` for `layer`.
+
+    `probe(dotted, value)` runs the layer's own PLANNER on the real file with
+    the layer's pending set plus the candidate, and returns the refusal
+    message or None -- so a value is offered only when Save would accept it
+    on the file it would produce, a bad value already in the file included.
+    The file is read once per spec (`snapshot`); the rules are the planner's.
+    """
+    pending_layer = dict((pending or {}).get(layer) or {})
+    if layer == "repo":
+        refused = (crew_config.RepoWriteRefused, crew_config.ProviderError)
+        try:
+            snap = crew_config.repo_snapshot(root)
+        except crew_config.RepoWriteRefused as exc:
+            return (lambda _d, _v: str(exc)), None, str(exc)
+
+        def plan(updates):
+            crew_config.plan_repo_write(root, updates, global_path, snapshot=snap)
+    else:
+        refused = (crew_config.GlobalWriteRefused, crew_config.ProviderError)
+        try:
+            snap = crew_config.global_snapshot(global_path)
+        except crew_config.GlobalWriteRefused as exc:
+            return (lambda _d, _v: str(exc)), None, str(exc)
+
+        def plan(updates):
+            crew_config.plan_global_write(updates, global_path, snapshot=snap)
+
+    def probe(dotted, value):
+        try:
+            plan({**pending_layer, dotted: value})
+        except refused as exc:
+            return str(exc)
+        return None
+    return probe, snap[2], None
+
+
+# The null choice's tag, for the meanings a repo null has beyond "unset".
+_NULL_TAGS = {"inherits the machine-global value": "inherit machine",
+              "clears the veto": "clear veto"}
 
 
 def choices(dotted, layer, ctx):
-    """The selectable values for `dotted` at `layer`, recommendation first.
+    """`(entries, refusal)`: the selectable values for `dotted` at `layer`,
+    recommendation first, and the first refusal message when the probe
+    refused every candidate (the row is then read-only with that reason).
 
-    Order: recommendation, current effective value, default, then the key's
-    allowed values (`enum_values`, `known_values()`, model ids, or the role
-    pins), then any value either layer holds. De-duplicated, and filtered
-    through the layer's veto and enum rules. Each is `{value, label, tags}`.
+    Order: recommendation, current effective value, default, a repo null
+    that inherits or clears a veto, then the key's allowed values
+    (`enum_values`, `known_values()`, model ids, or the role pins), then any
+    value either layer holds. De-duplicated, and each one kept only when
+    `ctx["probe"]` -- the layer's planner on the merged file -- accepts it.
+    Each is `{value, label, tags}`.
     """
     ordered = [(ctx["recommendation"], "recommended"),
                (ctx["current"], "current")]
     ordered.append((ctx["default"], "default"))
+    null_tag = _NULL_TAGS.get(crew_config.null_means(dotted, layer))
+    if null_tag:
+        ordered.append((None, null_tag))
     table = ctx.get("table")
     if table:
         ordered.extend((v, None) for v in _pin_values(_role_tables()[table][2]))
@@ -199,16 +241,19 @@ def choices(dotted, layer, ctx):
     for held in ctx["held"]:
         ordered.append((held, None))
 
-    seen, out = {}, []
+    seen, out, refusal = {}, [], None
     for value, tag in ordered:
         if value is crew_config._MISSING:  # pylint: disable=protected-access
             continue
         key = _key(value)
         if key in seen:
-            if tag and tag not in seen[key]["tags"]:
+            if seen[key] is not None and tag and tag not in seen[key]["tags"]:
                 seen[key]["tags"].append(tag)
             continue
-        if not _allowed_at(dotted, layer, value):
+        problem = ctx["probe"](dotted, value)
+        if problem is not None:
+            seen[key] = None
+            refusal = refusal or problem
             continue
         entry = {"value": copy.deepcopy(value), "tags": [tag] if tag else []}
         seen[key] = entry
@@ -218,7 +263,7 @@ def choices(dotted, layer, ctx):
             entry["value"])
         entry["label"] = (f"{label} ({', '.join(entry['tags'])})"
                           if entry["tags"] else label)
-    return out
+    return out, (None if out else refusal)
 
 
 def _dig(node, dotted):
@@ -251,18 +296,6 @@ def _source(repo_pruned, global_kept, dotted, value, defaults):
     return "repo" if from_repo else "global" if from_global else "default"
 
 
-def _repo_unwritable(root):
-    """Why no repo row can be written, or None. `plan_repo_write` refuses
-    onto an absent, malformed, empty or non-object `.crew/config.json`, and
-    `load_config` collapses every one of those to `{}`, so the rows must be
-    judged against the writer's own strict read rather than that `{}`."""
-    try:
-        crew_config._read_repo_strict(root)  # pylint: disable=protected-access
-    except crew_config.RepoWriteRefused as exc:
-        return str(exc)
-    return None
-
-
 # Repo-refused leaves the machine template omits, shown read-only at the
 # machine layer too: `platform.*` is platform-sync's at both layers and
 # `schema` is never a setting. Their reasons are the repo writer's own.
@@ -282,14 +315,17 @@ def _paths(template):
     return out
 
 
-def menu_spec(root, layer, global_path=None):
+def menu_spec(root, layer, global_path=None, pending=None):
     """Every row of the menu for `layer`, grouped by area.
 
     `{"layer", "path", "exists", "crewJson", "areas": [{id, label, rows}]}`,
     each row `{path, table, writable, refusedReason, value, source,
     layerValue, default, recommendation, choices}`. `value`/`source` are the
     effective value and the layer that decided it -- `explain_config`'s answer
-    for a global key, `repo` or `default` for a repo-only one.
+    for a global key, `repo` or `default` for a repo-only one. `pending` is
+    the session's unsaved `{"machine": {...}, "repo": {...}}`: choices are
+    judged on the file Save would produce with it. `digest` is the sha256 of
+    the layer's file as read (None when absent), for `save --expect-*`.
     """
     if layer not in LAYERS:
         raise ValueError(f"layer must be one of {LAYERS}, not {layer!r}")
@@ -304,7 +340,7 @@ def menu_spec(root, layer, global_path=None):
                 else defaults)
     own = global_raw if layer == "machine" else repo_raw
     repo_pruned = crew_config.without_null_shadows(repo_raw, global_kept, defaults)
-    unwritable = _repo_unwritable(root) if layer == "repo" else None
+    probe, digest, unwritable = _probe_for(root, layer, global_path, pending)
 
     areas = {area_id: [] for area_id, _l, _p in AREAS}
     extra_roles = {}
@@ -330,7 +366,8 @@ def menu_spec(root, layer, global_path=None):
                 crew_config._repo_refusal(dotted)  # pylint: disable=protected-access
                 or "repo-only: not settable in the machine-global file")
         else:
-            reason = crew_config._repo_refusal(dotted) or unwritable  # pylint: disable=protected-access
+            reason = crew_config._repo_refusal(dotted)  # pylint: disable=protected-access
+        reason = reason or unwritable
         default = _unmissing(_dig(defaults, dotted))
         if table:
             default = NO_PIN
@@ -357,9 +394,11 @@ def menu_spec(root, layer, global_path=None):
             "choices": [],
         }
         if reason is None:
-            row["choices"] = choices(dotted, layer, {
+            row["choices"], blocked = choices(dotted, layer, {
                 "recommendation": rec[0], "current": value, "default": default,
-                "held": held, "known": known, "table": table})
+                "held": held, "known": known, "table": table, "probe": probe})
+            if blocked:
+                row["writable"], row["refusedReason"] = False, blocked
         areas[area_of(dotted)].append(row)
 
     path = (crew_config.GLOBAL_CONFIG_PATH if global_path is None else global_path
@@ -369,6 +408,7 @@ def menu_spec(root, layer, global_path=None):
         "path": path,
         "exists": os.path.isfile(path),
         "refusedReason": unwritable,
+        "digest": digest,
         "crewJson": os.path.isfile(os.path.join(root, ".crew", "crew.json")),
         "areas": [{"id": area_id, "label": label, "rows": areas[area_id]}
                   for area_id, label, _p in AREAS],
@@ -380,6 +420,7 @@ def _print_spec(spec):
           + ("" if spec["exists"] else "  (does not exist)"))
     if spec["layer"] == "repo" and spec["crewJson"]:
         print(crew_config.CREW_JSON_NOTICE)
+    print(f"digest: {spec['digest'] or 'none (the file is absent)'}")
     if spec["refusedReason"]:
         print(f"every row is read-only: {spec['refusedReason']}")
     for area in spec["areas"]:
@@ -398,33 +439,52 @@ def _print_spec(spec):
 # --- Save -------------------------------------------------------------------
 
 
-def save(root, changes, apply, global_path=None):
+def _current_digest(path):
+    try:
+        with open(path, "rb") as handle:
+            return crew_config_files.digest(handle.read())
+    except FileNotFoundError:
+        return None
+
+
+def save(root, changes, apply, global_path=None, expect=None):
     """Validate both layers, print both diffs, then (with `apply`) write each
     changed layer once. Returns an exit code: 0, 2 refused, 1 a partial write.
 
     Both plans are computed before either write: a refusal anywhere means
     nothing is written, which is the whole point of one Save for a pending
-    set that spans two files.
+    set that spans two files. The dry run prints each layer's digest; `expect`
+    (`{"machine": d, "repo": d}`, from those lines) is checked for BOTH layers
+    before either write and passed to each writer, whose compare-and-swap
+    refuses a file that changed in between.
     """
     machine = dict((changes or {}).get("machine") or {})
     repo = dict((changes or {}).get("repo") or {})
+    expect = dict(expect or {})
     target = crew_config.GLOBAL_CONFIG_PATH if global_path is None else global_path
-    plans = {}
+    files = {"machine": target, "repo": crew_config.repo_config_path(root)}
+    plans, digests = {}, {}
     try:
         if machine:
-            plans["machine"] = crew_config.plan_global_write(machine, global_path)[1]
+            snap = crew_config.global_snapshot(global_path)
+            digests["machine"] = snap[2]
+            plans["machine"] = crew_config.plan_global_write(
+                machine, global_path, snapshot=snap)[1]
         if repo:
-            plans["repo"] = crew_config.plan_repo_write(root, repo, global_path)[1]
+            snap = crew_config.repo_snapshot(root)
+            digests["repo"] = snap[2]
+            plans["repo"] = crew_config.plan_repo_write(
+                root, repo, global_path, snapshot=snap)[1]
     except (crew_config.GlobalWriteRefused, crew_config.RepoWriteRefused,
             crew_config.ProviderError) as exc:
         print(f"refused, nothing written: {exc}", file=sys.stderr)
         return 2
 
     verb = "writing" if apply else "would write (dry run)"
-    files = {"machine": target, "repo": crew_config.repo_config_path(root)}
     for layer in LAYERS:
         if layer in plans:
             print(f"{layer} layer - {verb}: {files[layer]}")
+            print(f"{layer} digest: {digests[layer] or 'none (the file is absent)'}")
             crew_config.print_changes(plans[layer])
     if not plans:
         print("nothing pending")
@@ -433,24 +493,37 @@ def save(root, changes, apply, global_path=None):
     if not apply:
         return 0
 
+    for layer in LAYERS:
+        if expect.get(layer) and _current_digest(files[layer]) != expect[layer]:
+            print(f"refused, nothing written: the {layer} layer changed since "
+                  f"the dry run ({files[layer]}); re-run the dry run and "
+                  "review it again", file=sys.stderr)
+            return 2
+
     written = []
     for layer, updates, writer in (
-            ("machine", machine, lambda u: crew_config.write_global_config(u, global_path)),
-            ("repo", repo, lambda u: crew_config.write_repo_config(root, u, global_path))):
+            ("machine", machine, lambda u, **kw: crew_config.write_global_config(
+                u, global_path, **kw)),
+            ("repo", repo, lambda u, **kw: crew_config.write_repo_config(
+                root, u, global_path, **kw))):
         if not plans.get(layer):
             continue
+        kwargs = {"expect": expect[layer]} if expect.get(layer) else {}
         try:
-            writer(updates)
+            writer(updates, **kwargs)
         except (OSError, crew_config.GlobalWriteRefused,
                 crew_config.RepoWriteRefused, crew_config.ProviderError) as exc:
             # Validated a moment ago, refused now: the file changed (deleted,
-            # corrupted, edited) between the plan and this write. Same report
-            # as an OS failure -- which layer landed, which did not.
+            # corrupted, edited, or its digest moved) between the plan and
+            # this write. Same report as an OS failure -- which layer landed,
+            # which did not.
             done = (f"the {', '.join(written)} layer was written"
                     if written else "nothing was written")
             print(f"{layer} layer: NOT written ({exc}); {done}. Re-run Save "
                   "for the rest once the cause is fixed.", file=sys.stderr)
-            return 1
+            conflict = isinstance(exc, (crew_config.GlobalWriteConflict,
+                                        crew_config.RepoWriteConflict))
+            return 2 if conflict and not written else 1
         written.append(layer)
         print(f"{layer} layer: written")
     return 0
@@ -742,10 +815,14 @@ def main(argv=None):
     spec_p.add_argument("--layer", choices=LAYERS, required=True)
     spec_p.add_argument("--area", default=None)
     spec_p.add_argument("--json", action="store_true")
+    spec_p.add_argument("--pending", default=None,
+                        help='the unsaved {"machine": {...}, "repo": {...}}')
     save_p = sub.add_parser("save", help="validate both layers, then write each once")
     save_p.add_argument("--changes", required=True,
                         help='{"machine": {PATH: VALUE}, "repo": {PATH: VALUE}}')
     save_p.add_argument("--apply", action="store_true")
+    save_p.add_argument("--expect-machine", default=None, metavar="DIGEST")
+    save_p.add_argument("--expect-repo", default=None, metavar="DIGEST")
     del_p = sub.add_parser("delete-repo", help="preview, back up and delete .crew/config.json")
     del_p.add_argument("--confirm", default=None, metavar="REPO_NAME")
     del_p.add_argument("--apply", action="store_true")
@@ -755,7 +832,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     if args.cmd == "spec":
-        spec = menu_spec(args.root, args.layer, args.global_path)
+        pending = json.loads(args.pending) if args.pending else None
+        spec = menu_spec(args.root, args.layer, args.global_path, pending)
         if args.area:
             ids = [a[0] for a in AREAS]
             if args.area not in ids:
@@ -778,7 +856,8 @@ def main(argv=None):
             print('--changes must be {"machine": {...}, "repo": {...}}',
                   file=sys.stderr)
             return 2
-        return save(args.root, changes, args.apply, args.global_path)
+        return save(args.root, changes, args.apply, args.global_path,
+                    {"machine": args.expect_machine, "repo": args.expect_repo})
     if args.cmd == "delete-repo":
         return delete_repo_config(args.root, args.confirm, args.apply,
                                   global_path=args.global_path)
