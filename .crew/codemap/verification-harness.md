@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@379ab5e6
+anchor: useful-claude-add-ons@17fa035e
 verified: 2026-09-28
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -40,9 +40,9 @@ them and is wired into CI but not into the local Stop gate: see
 ## `.crew/verify.json` — 32 rules, up from 31
 
 **DERIVED, read in full via `json.load` on T-0024's landing merge of `67caa4b8`; re-read for
-T-0087 on `T-0087-build`.** 349 lines, **32** rules (31 and 332 lines before T-0087's rule 31, 30 and 323 lines at `67caa4b8`, 28 and 302 on T-0024's branch at `45345812`, 30 and 322 lines at `bebbb97f`, 29 at `db14619c` and on T-0023's merge of `502cb137`, 28 on the T-0005 landing `2b18f7ab` and at T-0023's `eba11657`, 27 at `07ca3972`, 26 at `a0c0847e`, 25 at `8ebbdedc`, at T-0006's `2bb92f32` and at T-0005's
+T-0087 on `T-0087-build`.** 358 lines, **32** rules (349 lines before T-0087 review round 1 widened rule 31's paths; 31 and 332 lines before T-0087's rule 31, 30 and 323 lines at `67caa4b8`, 28 and 302 on T-0024's branch at `45345812`, 30 and 322 lines at `bebbb97f`, 29 at `db14619c` and on T-0023's merge of `502cb137`, 28 on the T-0005 landing `2b18f7ab` and at T-0023's `eba11657`, 27 at `07ca3972`, 26 at `a0c0847e`, 25 at `8ebbdedc`, at T-0006's `2bb92f32` and at T-0005's
 `a26ad8c0`, 24 at `c35edda5`, 23 at `f2bb919b`, 22 at `6c497a14`, 21 at `5d1fc5fd`) plus a `default`
-(`["bash _verify/smoke.sh"]`, `:347`) and `unmapped: "fail"` (`:348`). Rule 6 (T-0005, the
+(`["bash _verify/smoke.sh"]`, `:356`) and `unmapped: "fail"` (`:357`). Rule 6 (T-0005, the
 cloud-guard suites) and rule 11 (T-0026, the approval digest) were each inserted mid-list, so every
 rule after them is one or two higher than at `c35edda5`; rule 24 (#228), rule 25 (T-0008), rule 26
 (T-0006), rule 27 (T-0004), rule 28 (T-0021), rule 29 (T-0023), rule 30 (T-0024; rule 27 on its branch) and rule 31 (T-0087) were each appended last. Those ten are the only additions since
@@ -243,20 +243,25 @@ Notable rules, re-read directly:
   `len()` at `45345812` — count them there, the `why` states no number), imported by
   `plugin/crew/tests/sabotage.py:80` and appended at `:3054`. `crew_ticket.py` is named by
   rules 11, 30 and 31.
-- **Rule 31**, new in T-0087 (`.crew/verify.json:328-344`): `paths` are exactly the `HARNESS` globs
+- **Rule 31**, new in T-0087 (`.crew/verify.json:328-353`): `paths` are the `HARNESS` globs
   of `scripts/check-tooling-pr.py` (the review/gate harness: `review_*.py`, both `verify-gate`
   flavours, `verify_record.py`, `verify_fingerprint.py`, `verify_price.py`, `crew_ticket.py`, the
   approval-hook, scope-guard and completion-audit triples, `scope_base.py`, `sabotage*.py`,
-  `review_fixtures.py`, `golden_build.py`, `golden/**` and the checker itself), pinned equal by
-  `test_verify_rule_paths_are_the_checkers_harness_globs` in
-  `plugin/crew/tests/test_review_contracts.py`. It runs `python3 scripts/check-tooling-pr.py`
-  (a harness change carrying feature work exits 1; no `origin/main` exits 77, a SKIP),
-  `python3 scripts/_test/tooling-pr.py` (eight must-block/must-allow cases in throwaway repos, `harness+budgets` added for the BUDGETS.md re-measure) and
-  the golden, contract, canary, refund and external-tool-format pytest files, priced 8s from a
-  measured 7.2s. Its mutations are `plugin/crew/tests/sabotage_tooling.py`
-  (`TOOLING_MUTATIONS`, 13 entries), imported by `plugin/crew/tests/sabotage.py:81` and appended at
-  `:3055`. The checker's own sabotage is by hand, outside `sabotage.py` (the
-  `scripts/_test/self-claims.py` precedent). JUDGEMENT: it overlaps rules 0, 9, 11, 15 and 30 by
+  `review_fixtures.py`, `golden_build.py`, `golden/**`, the reviewer's prompts and the checker
+  itself), its `SEAM` consumers (`crew_status.py`, `crew_autopilot.py`, `crew_resume.py`, the
+  status and autopilot commands), every suite the rule runs and
+  `plugin/crew/docs/external-tool-formats.md`, pinned by
+  `test_verify_rule_paths_cover_the_harness_its_seams_and_suites` in
+  `plugin/crew/tests/test_review_contracts.py` (review round 1: before it, an edit to a suite or a
+  seam consumer ran none of them). It runs `python3 scripts/check-tooling-pr.py`
+  (a harness change carrying feature work, or an undeclared seam consumer, exits 1; no
+  `origin/main` exits 77, a SKIP), `python3 scripts/_test/tooling-pr.py` (must-block/must-allow
+  cases in throwaway repos; count them there) and the golden, contract, canary, refund,
+  external-tool-format and status pytest files. Its mutations are
+  `plugin/crew/tests/sabotage_tooling.py` (`TOOLING_MUTATIONS`; count them by `len()`), imported by
+  `plugin/crew/tests/sabotage.py:81` and appended at `:3055`. The checker's and `verify.json`'s
+  entries are appended only where those repo files exist, and run the suite through
+  `test_tooling_alone_checker_passes_its_must_block_must_allow_suite`. JUDGEMENT: it overlaps rules 0, 9, 11, 15 and 30 by
   path; that overlap is the point, since it adds the tooling-alone check those rules lack.
 
 **Still unresolved at this anchor:** a declared `seconds` figure is only
@@ -386,7 +391,7 @@ The one change in this range is internal to `check_self_claims`
 explicit UNVERIFIED finding rather than comparing `None` against a real count
 — named in its own docstring as the same "unknown collapsing into the
 safe-looking value" bug CLAUDE.md's Lessons section calls out
-(`CLAUDE.md:257`). See
+(`CLAUDE.md:259`). See
 `marketplace-registration.md` for what this marker checks and where it is
 used; this note owns the mechanism, not the claim.
 
@@ -508,7 +513,7 @@ set on Ubuntu.
   `plugin/crew/tests/sabotage.py:79`, `:3054` — `sabotage_route.py`'s registration.
 - `.crew/verify.json:320-327` (rule 30) — the T-0024 group-approval suite;
   `plugin/crew/tests/sabotage.py:80`, `:3054` — `sabotage_approval.py`'s registration.
-- `.crew/verify.json:328-344` (rule 31) — the T-0087 harness rule; `scripts/check-tooling-pr.py`
+- `.crew/verify.json:328-353` (rule 31) — the T-0087 harness rule; `scripts/check-tooling-pr.py`
   and its suite `scripts/_test/tooling-pr.py`; `plugin/crew/tests/sabotage.py:81`, `:3055` —
   `sabotage_tooling.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
@@ -1416,3 +1421,5 @@ Nothing was executed for this note.
 **Re-anchored `c8cc69ec` -> `c0768d0e` on 2026-09-28 (T-0087, crew 1.0.53).** `c0768d0e` is T-0087's merge of main `f8b6c8d7` (T-0091, no plugin version change) into `T-0087-build`; crew stays 1.0.53, one past main's 1.0.52, and `c8cc69ec` is still the last `plugin/crew` commit. `git diff --name-only c8cc69ec c0768d0e`, refresh artifacts aside, returns `CLAUDE.md` (T-0091's Landmines truncating-`open` measurement paragraph, +35/-18 at `:189`, so every later line moves +17) and `TODO.md`. The one body citation past that paragraph, the Lessons bullet on an unknown collapsing into the safe-looking value, conflicted as `CLAUDE.md:240` (ours) against `:250` (main) and was set to `:257`, where both edits put it; re-read. Every other body `CLAUDE.md:N` citation here is at or above `:189`, or sits inside a dated re-anchor note that states the coordinates of its own commit, so none moved. Nothing was executed for this note.
 
 **Re-anchored `136f4b33` / `c0768d0e` -> `379ab5e6` on 2026-09-28 (T-0087 merged onto `6387ab49`, crew 1.0.55).** `01dd3854` merges origin/main `6387ab49` into `T-0087-build`: T-0089 (crew 1.0.53, `plugin/crew/tests/test_role_write_guard.py`), T-0090 (mcp-servers 0.2.1: `SECURITY.md`, ten files under `mcp-servers/`) and T-0092 (crew 1.0.54: `graphify-out/` left out of review bundles - `review_patch.py`, `review_prompt.py`, `completion_audit.py`'s comment, `crew_autopilot.py`'s docstring, `commands/review.md`, `plugin/crew/README.md`, `TODO.md`, three test files). `379ab5e6` re-bumps crew to 1.0.55, one past main's 1.0.54, and moves T-0087's `1.0.53` mentions (`plugin/crew/README.md:743`, its `CHANGELOG.md` entry) to 1.0.55 in place. The code-map, INDEX, diagram, rules and graph conflicts were resolved mechanically - both sides' provenance notes kept, main's first; the version sentence, `.claude/rules/` and `graphify-out/` taken from main and then refreshed. Every body citation of the form `path:line` was re-mapped by script (difflib over each cited file, from the anchor of the side `git blame` puts the note line on, both anchors for a line common to both, never guessed): none moved in this map. Citations the script could not map, or where the two sides' anchors disagree on a line common to both, were not re-read here and are unchanged; they predate this merge (for example `CHANGELOG.md`'s "117 -> 119" is cited at `:653-654` on both sides and sits at `:891-892`), and this pass only re-anchors.
+
+**Re-anchored `379ab5e6` -> `17fa035e` on 2026-09-28 (T-0087 review round 1, crew 1.0.55 unchanged - not yet released).** `bbe68e85` fixes review round 1: autopilot lets a refunded round's `/crew:review` rerun past its no-progress stop, rule 31 triggers on its suites and seam consumers, `scripts/check-tooling-pr.py` admits no production code or prompt alongside the harness (a `SEAM` consumer only with a `Tooling-seam:` trailer), `golden_build.redact` bounds both sides of a match, a malformed `successors` loads as corrupt, `review_run.py`'s summary line counts charged rounds, a worktree rename is parsed, and the guides stop calling a post-refund rerun free; `17fa035e` re-prices rule 31. `git diff --name-only 379ab5e6 17fa035e`, refresh artifacts aside, returns those scripts, their tests, one golden fixture, `.crew/verify.json`, `CLAUDE.md`, `CHANGELOG.md`, `plugin/crew/README.md`, `plugin/crew/BUDGETS.md`, `commands/autopilot.md`, `commands/review.md` and the troubleshooting guide. Body citations of the form `path:line` into those files were re-mapped by script (difflib over each cited file from `379ab5e6` to `bbe68e85`, only for note lines committed before this pass, never guessed): one moved, `CLAUDE.md` `:257` -> `:259`. Corrected by hand: `.crew/verify.json` is 358 lines (`default` `:356`, `unmapped` `:357`), rule 31 is `:328-353`, and its bullet now states the widened paths and names where to count the checker's cases and the sabotage entries rather than a number. Everything else here is unchanged and was not re-read.

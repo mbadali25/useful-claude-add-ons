@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@379ab5e6
+anchor: useful-claude-add-ons@17fa035e
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -327,7 +327,7 @@ listing the directory.
   per-path check), `0002-no-chatgpt-mcp-server.md` (accepted 2026-09-14) and
   `0003-crew-departs-from-three-community-best-practices.md` (accepted
   2026-09-17) — the latter two were already present at the previous anchor
-  and are not new in this range. `CLAUDE.md:154` still reads "Decisions in
+  and are not new in this range. `CLAUDE.md:156` still reads "Decisions in
   `docs/adr/`" at `adf8d1dd` (re-grepped; `CLAUDE.md` changed in
   `f2bb919b..adf8d1dd`, but only its `crew_freshness.py` line citations).
 - **`docs/review/`'s existence is itself a mild instance of the same gap
@@ -402,10 +402,10 @@ listing the directory.
   policy, not re-verified again at this pass) and is present in this fresh
   worktree. `verification-harness.md` owns this file's full contents; this
   note only records what changed in its own tracked citations. Since
-  `6c497a14` one rule was appended (`:263` on the T-0005 landing merge, where T-0026's rule and
-  T-0005's cloud-guard rule both sit above it; `:251` after T-0026 inserted a rule above it,
-  `:256` after T-0005 did the same and Step 8 added a path; `:244` after T-0008's review round 3
-  added a path above it; `:243` when #228 added it): `.claude/rules/**` and
+  `6c497a14` one rule was appended (`:265` on the T-0005 landing merge, where T-0026's rule and
+  T-0005's cloud-guard rule both sit above it; `:253` after T-0026 inserted a rule above it,
+  `:258` after T-0005 did the same and Step 8 added a path; `:246` after T-0008's review round 3
+  added a path above it; `:245` when #228 added it): `.claude/rules/**` and
   `.crew/codemap/**` now run `crew_instructions.py rules --root . --check`.
   Since `f2bb919b` another follows it (`:264-280`, T-0008): changes to
   `plugin/crew/hooks/scripts/crew_refresh_check.py`, its tests,
@@ -452,7 +452,7 @@ listing the directory.
 - `docs/review/*`'s nine documents were not read beyond their titles and the
   one quoted cross-review row; whether other rows record further
   never-filed decisions was not checked file by file.
-- `CLAUDE.md` beyond its `:154` "Decisions in `docs/adr/`" line (re-confirmed
+- `CLAUDE.md` beyond its `:156` "Decisions in `docs/adr/`" line (re-confirmed
   at `adf8d1dd`) was not re-derived end to end; this note's business with it
   is narrow.
 - `crew-docs/SKILL.md`'s retired-role references (`/crew:work`,
@@ -1001,3 +1001,5 @@ Nothing was executed for this note.
 **Re-anchored `c8cc69ec` -> `c0768d0e` on 2026-09-28 (T-0087, crew 1.0.53).** `c0768d0e` is T-0087's merge of main `f8b6c8d7` (T-0091, no plugin version change) into `T-0087-build`; crew stays 1.0.53, one past main's 1.0.52, and `c8cc69ec` is still the last `plugin/crew` commit. `git diff --name-only c8cc69ec c0768d0e`, refresh artifacts aside, returns `CLAUDE.md` (T-0091's Landmines truncating-`open` measurement paragraph, +35/-18 at `:189`, so every later line moves +17) and `TODO.md`. Every other body `CLAUDE.md:N` citation here is at or above `:189`, or sits inside a dated re-anchor note that states the coordinates of its own commit, so none moved. Nothing was executed for this note.
 
 **Re-anchored `136f4b33` / `c0768d0e` -> `379ab5e6` on 2026-09-28 (T-0087 merged onto `6387ab49`, crew 1.0.55).** `01dd3854` merges origin/main `6387ab49` into `T-0087-build`: T-0089 (crew 1.0.53, `plugin/crew/tests/test_role_write_guard.py`), T-0090 (mcp-servers 0.2.1: `SECURITY.md`, ten files under `mcp-servers/`) and T-0092 (crew 1.0.54: `graphify-out/` left out of review bundles - `review_patch.py`, `review_prompt.py`, `completion_audit.py`'s comment, `crew_autopilot.py`'s docstring, `commands/review.md`, `plugin/crew/README.md`, `TODO.md`, three test files). `379ab5e6` re-bumps crew to 1.0.55, one past main's 1.0.54, and moves T-0087's `1.0.53` mentions (`plugin/crew/README.md:743`, its `CHANGELOG.md` entry) to 1.0.55 in place. The code-map, INDEX, diagram, rules and graph conflicts were resolved mechanically - both sides' provenance notes kept, main's first; the version sentence, `.claude/rules/` and `graphify-out/` taken from main and then refreshed. Every body citation of the form `path:line` was re-mapped by script (difflib over each cited file, from the anchor of the side `git blame` puts the note line on, both anchors for a line common to both, never guessed): none moved in this map. Citations the script could not map, or where the two sides' anchors disagree on a line common to both, were not re-read here and are unchanged; they predate this merge (for example `CHANGELOG.md`'s "117 -> 119" is cited at `:653-654` on both sides and sits at `:891-892`), and this pass only re-anchors.
+
+**Re-anchored `379ab5e6` -> `17fa035e` on 2026-09-28 (T-0087 review round 1, crew 1.0.55 unchanged - not yet released).** `bbe68e85` fixes review round 1: autopilot lets a refunded round's `/crew:review` rerun past its no-progress stop, rule 31 triggers on its suites and seam consumers, `scripts/check-tooling-pr.py` admits no production code or prompt alongside the harness (a `SEAM` consumer only with a `Tooling-seam:` trailer), `golden_build.redact` bounds both sides of a match, a malformed `successors` loads as corrupt, `review_run.py`'s summary line counts charged rounds, a worktree rename is parsed, and the guides stop calling a post-refund rerun free; `17fa035e` re-prices rule 31. `git diff --name-only 379ab5e6 17fa035e`, refresh artifacts aside, returns those scripts, their tests, one golden fixture, `.crew/verify.json`, `CLAUDE.md`, `CHANGELOG.md`, `plugin/crew/README.md`, `plugin/crew/BUDGETS.md`, `commands/autopilot.md`, `commands/review.md` and the troubleshooting guide. Body citations of the form `path:line` into those files were re-mapped by script (difflib over each cited file from `379ab5e6` to `bbe68e85`, only for note lines committed before this pass, never guessed): seven moved, all `CLAUDE.md` citations below the tooling-alone bullet (+2: `:154` twice, `:243`, `:244`, `:251`, `:256`, `:263`). Nothing else here moved.

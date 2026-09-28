@@ -4,9 +4,9 @@ paths:
   - "_verify/smoke.sh"
   - "scripts/check-marketplace.py"
 ---
-<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=ec6395d9d6cff341 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=1bb93216c0278066 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # verification-harness
-Code map anchor `379ab5e6`; if it is behind HEAD, re-check with `git diff --name-only 379ab5e6..HEAD -- <cited paths>`.
+Code map anchor `17fa035e`; if it is behind HEAD, re-check with `git diff --name-only 17fa035e..HEAD -- <cited paths>`.
 Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and .crew/verify.json — what each actually runs, and where they overlap or don't. .crew/verify.json is tracked; its own anchor field (:3) is stale at 5238be3d, independent of this note's anchor; re-anchored to 379ab5e6 (T-0087 merged main 6387ab49, crew 1.0.55)
 ## Entry points
 - `.crew/verify.json:164-169` (rule 9) — the whole-suite pytest rule and its 377s pricing.
@@ -22,7 +22,7 @@ Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and 
 - `.crew/verify.json:302-309` (rule 28) — the T-0021 tracker suite; `plugin/crew/tests/sabotage.py:78`, `:3054` — `sabotage_tracker.py`'s registration.
 - `.crew/verify.json:310-318` (rule 29) — the T-0023 plain-text routing suite; `plugin/crew/tests/sabotage.py:79`, `:3054` — `sabotage_route.py`'s registration.
 - `.crew/verify.json:320-327` (rule 30) — the T-0024 group-approval suite; `plugin/crew/tests/sabotage.py:80`, `:3054` — `sabotage_approval.py`'s registration.
-- `.crew/verify.json:328-344` (rule 31) — the T-0087 harness rule; `scripts/check-tooling-pr.py` and its suite `scripts/_test/tooling-pr.py`; `plugin/crew/tests/sabotage.py:81`, `:3055` — `sabotage_tooling.py`'s registr...
+- `.crew/verify.json:328-353` (rule 31) — the T-0087 harness rule; `scripts/check-tooling-pr.py` and its suite `scripts/_test/tooling-pr.py`; `plugin/crew/tests/sabotage.py:81`, `:3055` — `sabotage_tooling.py`'s registr...
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` / `plugin/crew/CONFIG.md:2254-2261` — the descoped per-rule process-group kill, documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` — `Resolve-CrewBash` refusal rather than a re-resolving hang.
 - `scripts/check-marketplace.py:1639` — `main()`, sixteen checks.

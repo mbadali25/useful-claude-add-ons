@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@379ab5e6 on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@17fa035e on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -123,8 +123,8 @@
 %%   plugin/crew/commands/review.md:25-29 two rounds per ticket, a third is refused
 %%     -> NEEDS_REPLAN; :440 exit codes 0 CLEAN / 1 FINDINGS / 3 INCOMPLETE /
 %%     4 NEEDS_REPLAN / 2 not run; :449 Claude fallback; :480 the verdict is the
-%%     script's; :482-484 an INCOMPLETE's class and the tool-failure refund;
-%%     :503-504 round 2 is the last (rounds not refunded); :508 --accept --by <who>; :511 a CLEAN
+%%     script's; :482-485 an INCOMPLETE's class and the tool-failure refund;
+%%     :504-505 round 2 is the last (rounds not refunded); :509 --accept --by <who>; :512 a CLEAN
 %%     round writes its receipt itself.
 %%   plugin/crew/commands/done.md:7 all four checks must pass; :10-13 check 1
 %%     review receipt (--check-receipt); :21-27 check 2 verify gate via
@@ -170,6 +170,10 @@
 %% Anchors paths review.md (:325-335) and completion_audit.py (:71-78) changed, T-0092's two
 %% line-neutral comment reflows; no line this diagram cites falls inside either hunk (diffed by
 %% script). No node or edge changed.
+%% Re-anchored 379ab5e6 -> 17fa035e (T-0087 review round 1): of the Anchors paths only review.md
+%% changed - the refund sentence no longer calls the rerun free and runs one line longer, so
+%% :482-484 -> :482-485, :503-504 -> :504-505, :508 -> :509 and :511 -> :512 (re-read with sed -n);
+%% :25-29, :440, :449 and :480 are unchanged. No node or edge changed.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
@@ -229,11 +233,11 @@ flowchart TB
     subgraph review["/crew:review - two rounds per ticket"]
         im5 --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle<br/>review.md:25-29, :449"]
         rv1 --> rv2{"verdict (the script's)<br/>:440, :480"}
-        rv2 -- CLEAN --> rcpt["receipt written<br/>:511"]
-        rv2 -- FINDINGS --> rv3{"fix, or<br/>user accepts?<br/>:503-504, :508"}
+        rv2 -- CLEAN --> rcpt["receipt written<br/>:512"]
+        rv2 -- FINDINGS --> rv3{"fix, or<br/>user accepts?<br/>:504-505, :509"}
         rv3 -- accept --> rcpt
         rv3 -- "fix, round 2" --> rv1
-        rv2 -- "INCOMPLETE (tool failure: refunded, :482-484)" --> rv1
+        rv2 -- "INCOMPLETE (tool failure: refunded, :482-485)" --> rv1
         rv2 -- "INCOMPLETE (reviewer / tree): counts" --> rv1
         rv2 -- "third round refused" --> replan([NEEDS_REPLAN:<br/>back to /crew:plan])
     end
