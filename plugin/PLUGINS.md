@@ -125,7 +125,7 @@ to CI or to branch protection.
 | Command | Purpose |
 |---|---|
 | `/crew:approve <ticket-id>` | Approve a ticket's plan - only you can, by typing this; the prompt hook records the receipt |
-| `/crew:autopilot [ticket id]` | Resume one ticket from the handoff and drive it through the lifecycle until a human is needed - off until `autopilot.mode: plan`; approval and review acceptance always stop |
+| `/crew:autopilot [ticket id]` | Resume one ticket from the handoff and drive it through the lifecycle until a human is needed - off until `autopilot.mode: plan`; approval and review acceptance always stop; `autopilot.deploy` (default `none`) says where a deploy may run unattended - production only with `environments.prodUnattended` true in both layers |
 | `/crew:brainstorm <what needs doing>` | Brainstorm a request into an approved direction, before it becomes a spec |
 | `/crew:change <new \| status <id> \| close <id> \| list>` | File, check and close a change request — SDP, Jira or local |
 | `/crew:config [--show]` | Show where every crew setting comes from, and guide the machine-global config |
