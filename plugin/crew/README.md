@@ -939,7 +939,14 @@ rather than showing the config as simply absent. A submodule, or a bare common
 directory, is its own repo. Inheritance is read-only: no writer (`/crew:init`,
 the heal path, `platform-sync`, `/crew:migrate`, the auto-clear setup) ever
 writes the main checkout's file, and the heal path no longer creates a default
-config in an inheriting worktree, because that default would shadow the owner's.
+config in an inheriting worktree, because that default would shadow the owner's
+(nor in one where git could not tell; it asks again next session).
+
+**A lane made before 1.0.55 still reads its own file.** Every SessionStart heal
+on crew 1.0.54 or earlier wrote a default `.crew/config.json` into a lane that
+had none, and that file wins whole. `/crew:status` and `/crew:config --explain`
+say so (`... the main checkout's (<path>) is not read ...`); if the lane's file is
+a default nobody edited, delete it (and `.crew/crew.json`) to inherit.
 
 **Behaviour change:** every Python guard in a lane worktree now reads the owner's
 settings where it read the built-in defaults before - `guards.forcePush: allow`

@@ -115,21 +115,61 @@ def repo_config_dir(root):
     own = os.path.join(root, ".crew")
     if any(os.path.lexists(os.path.join(own, name)) for name in CONFIG_NAMES):
         return own, SOURCE_OWN, ""
-    if not os.path.isfile(os.path.join(root, ".git")):
+    main_root, problem = _main_checkout(root)
+    if problem:
+        return own, SOURCE_UNKNOWN, problem
+    if main_root is None:
         return own, SOURCE_OWN, ""
-    out = git_out(root, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir")
+    main = os.path.join(main_root, ".crew")
+    if any(os.path.lexists(os.path.join(main, name)) for name in CONFIG_NAMES):
+        return main, SOURCE_MAIN, main_root
+    return own, SOURCE_OWN, ""
+
+
+def _main_checkout(root):
+    """(main_root, problem): the main checkout of the linked worktree at `root`,
+    or None when `root` is not one; `problem` is non-empty only when git could
+    not tell.
+
+    `.git` a directory, or missing, is not a linked worktree, with no
+    subprocess. No `--path-format`: git before 2.31 does not know it and
+    rev-parse echoes an unknown argument back as a line of its own, which read
+    as "git could not tell" on every such git. Both paths are joined to `root`
+    instead, git's cwd here, which leaves an absolute one unchanged.
+    """
+    if not os.path.isfile(os.path.join(root, ".git")):
+        return None, ""
+    out = git_out(root, "rev-parse", "--git-dir", "--git-common-dir")
     lines = (out or "").splitlines()
     if len(lines) != 2:
-        return own, SOURCE_UNKNOWN, (
-            "this looks like a linked worktree, but git could not name its main checkout")
-    real_git, real_common = (os.path.realpath(p) for p in lines)
+        return None, "this looks like a linked worktree, but git could not name its main checkout"
+    real_git, real_common = (os.path.realpath(os.path.join(root, p)) for p in lines)
     if os.path.normcase(real_git) == os.path.normcase(real_common) \
             or os.path.basename(real_common) != ".git":
-        return own, SOURCE_OWN, ""
-    main = os.path.join(os.path.dirname(real_common), ".crew")
+        return None, ""
+    return os.path.dirname(real_common), ""
+
+
+def shadowed_main_config(root):
+    """The main checkout's `.crew/` when `root` is a linked worktree whose OWN
+    config is in force while the main checkout has one too; else "".
+
+    Own wins whole, by design, so this is not an error -- but it is invisible.
+    Every crew <= 1.0.54 SessionStart heal wrote a default `.crew/config.json`
+    into a lane that had none, and that default now shadows the owner's
+    settings with nothing saying so (T-0088 review round 1). Status and config
+    name it, so the owner can tell a chosen config from a heal-written one.
+    """
+    own = os.path.join(root, ".crew")
+    if not any(os.path.lexists(os.path.join(own, name)) for name in CONFIG_NAMES):
+        return ""
+    main_root, _problem = _main_checkout(root)
+    if main_root is None:
+        return ""
+    main = os.path.join(main_root, ".crew")
     if any(os.path.lexists(os.path.join(main, name)) for name in CONFIG_NAMES):
-        return main, SOURCE_MAIN, os.path.dirname(real_common)
-    return own, SOURCE_OWN, ""
+        return main
+    return ""
 
 
 def repo_config_file(root, name="config.json"):
@@ -139,7 +179,7 @@ def repo_config_file(root, name="config.json"):
 
 def repo_config_source_line(root):
     """One line for /crew:status and /crew:config naming the file in force;
-    empty when the repo reads its own `.crew/`."""
+    empty when the repo reads its own `.crew/` and that shadows nothing."""
     crew_dir, source, detail = repo_config_dir(root)
     if source == SOURCE_MAIN:
         path = os.path.join(crew_dir, "config.json")
@@ -147,4 +187,16 @@ def repo_config_source_line(root):
                 "config of its own; never merged")
     if source == SOURCE_UNKNOWN:
         return f"could not tell ({detail}) - read only this worktree's own .crew/"
+    shadowed = shadowed_main_config(root)
+    if shadowed:
+        return shadow_note(shadowed)
     return ""
+
+
+def shadow_note(main_crew_dir):
+    """The one wording, for status and config, of an own config shadowing the
+    main checkout's."""
+    return (f"this worktree's own .crew/ is in force; the main checkout's ({main_crew_dir}) "
+            "is not read (own wins whole, never merged). A default written by a crew <= 1.0.54 "
+            "SessionStart heal shadows it too: delete this worktree's .crew/config.json "
+            "(and .crew/crew.json) to inherit")

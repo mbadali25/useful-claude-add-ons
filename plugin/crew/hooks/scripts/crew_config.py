@@ -2138,6 +2138,9 @@ def _repo_layer_line(root):
     line = f"repo layer: {os.path.join(crew_dir, 'config.json')} ({source})"
     if source == crew_common.SOURCE_UNKNOWN:
         line += f" - {detail}"
+    shadowed = crew_common.shadowed_main_config(root) if source == crew_common.SOURCE_OWN else ""
+    if shadowed:
+        line += " - " + crew_common.shadow_note(shadowed)
     return line
 
 

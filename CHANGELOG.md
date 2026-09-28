@@ -18,9 +18,12 @@ All notable changes to this repository are documented here. Format follows [Keep
   patterns are Codex's own messages from `openai/codex` `error.rs`, each cited
   in `hooks/scripts/review_limit.py`; "model at capacity" and "high demand" are
   not limits. A limit hit mid-round leaves that round INCOMPLETE and is
-  recorded in `<git-common-dir>/crew/review/<ticket>.limit.json`, so the next
-  round goes to Claude without another call; the round after probes Codex
-  live. No refund: a limit round is spent as before (T-0087 covers that).
+  recorded in `<git-common-dir>/crew/review-limit/<ticket>.json` (not the
+  ledgers' folder, which `/crew:status` lists), so the next round goes to
+  Claude without another call; the round after probes Codex live. The record
+  is written after the round's verdict, and one that cannot be written says so
+  and leaves the round's INCOMPLETE record and exit 3 intact. No refund: a
+  limit round is spent as before (T-0087 covers that).
 - **A linked worktree with no crew config reads the main checkout's.** Every
   Python reader of `.crew/config.json`/`.crew/crew.json` goes through
   `crew_common.repo_config_dir`, found with `git rev-parse --git-common-dir`.
@@ -28,7 +31,18 @@ All notable changes to this repository are documented here. Format follows [Keep
   as `unknown` and inherits nothing. `/crew:status` prints the inherited
   source and `/crew:config --explain`/`--models` start with
   `repo layer: <path> (<source>)`. The heal path no longer writes a default
-  config into an inheriting worktree, where it would shadow the owner's.
+  config into an inheriting worktree, where it would shadow the owner's, nor
+  into one where git could not tell (it asks again next session). The git
+  call no longer passes `--path-format`, which git before 2.31 echoed back as
+  an extra line and read as `unknown`.
+- **Existing lanes do not inherit until their heal-written default is
+  deleted.** Every SessionStart on crew 1.0.54 or earlier wrote a default
+  `.crew/config.json` into a lane worktree that had none, and that file is the
+  lane's own config, which wins whole. `/crew:status` and `/crew:config
+  --explain` now say so on a lane whose own config shadows the main
+  checkout's (`... the main checkout's (<path>) is not read ...`). If that
+  file is a default you never edited, delete the lane's
+  `.crew/config.json` (and `.crew/crew.json`) and it inherits from then on.
 - **Behaviour change:** Python guards in a lane worktree now follow the
   owner's settings (`guards.*`, `scope.mode`, `scope.allowCliApproval`,
   `roleWrites`, `cloudGuard`) where they read the built-in defaults before;

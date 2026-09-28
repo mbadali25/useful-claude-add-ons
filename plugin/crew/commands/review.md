@@ -236,7 +236,7 @@ first surviving provider that passes its probe:
 
 | Provider | Probe | Runs |
 |---|---|---|
-| `codex` | `review_run.py ... --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT" --probe`: one minimal real call, no round reserved (`command -v` is not a probe: a logged-out or limited Codex is on `PATH` and fails at the first call) | exit 0 (ok): step 2a. Exit 6 (failed) or 7 (unknown, timed out): skip Codex with `PROBE_DETAIL` quoted - a pinned `codex` hard-fails, as before. Exit 5 (limited): **a Codex usage limit runs the round on Claude** - step 2c, pinned or not (owner, 2026-09-28: "if we hit a codex limit please use claude ads the reviewer"), announced `same-family (codex limit)`, not independent, with `PROBE_DETAIL` quoted verbatim; the round is spent like any other (a refund is T-0087's). The patterns are Codex's own messages, cited in `review_limit.py` |
+| `codex` | `review_run.py ... --provider codex --probe`, run by the `case` line that opens Step 2's bundle block (after `$QA_MODEL`/`$QA_EFFORT` are set), which leaves `$PROBE_STATUS` and `$PROBE_DETAIL`: one minimal real call, no round reserved (`command -v` is not a probe: a logged-out or limited Codex is on `PATH` and fails at the first call) | exit 0 (ok): step 2a. Exit 6 (failed) or 7 (unknown, timed out): skip Codex with `PROBE_DETAIL` quoted - a pinned `codex` hard-fails, as before. Exit 5 (limited): **a Codex usage limit runs the round on Claude** - step 2c, pinned or not (owner, 2026-09-28: "if we hit a codex limit please use claude ads the reviewer"), announced `same-family (codex limit)`, not independent, with `PROBE_DETAIL` quoted verbatim; the round is spent like any other (a refund is T-0087's). The patterns are Codex's own messages, cited in `review_limit.py`. Any other exit is no answer about Codex (2 a usage error, 1 the probe crashed): stop and quote it; never read it as ok or as limited |
 | `copilot` | `command -v copilot` **and** `qa.copilot.model` is set | step 2b |
 | `claude` | always passes | step 2c |
 
@@ -320,7 +320,7 @@ the reason a rung was lost, rather than presenting the narrower candidate list
 as though it were a preference.
 
 ```bash
-
+case " $ELIGIBLE " in *" codex "*) PROBE_OUT=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" --scratch "$SCRATCH" --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT" --probe); PROBE_STATUS=$?; PROBE_DETAIL=$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^PROBE_DETAIL=//p'); echo "codex probe: exit $PROBE_STATUS - $PROBE_DETAIL";; *) PROBE_STATUS=; PROBE_DETAIL=;; esac  # T-0088: the Codex probe, only when codex is a candidate; $PROBE_STATUS picks Step 1's table row
 # $BASE comes from step 1a. Reuse it; do not recompute it here. A second
 # derivation can disagree with the first, and then the staleness verdict was
 # about a different range than the diff the reviewer actually read.
@@ -444,7 +444,7 @@ REVIEW_STATUS=$?   # 0 CLEAN, 1 FINDINGS, 3 INCOMPLETE, 4 NEEDS_REPLAN, 2 not ru
 Codex rejects a wrong one with an HTTP 400. Copilot exiting non-zero with `Access
 denied by policy settings` is org or enterprise policy — report that exact
 cause. Exit 2 means nothing launched (not on PATH) and no round was spent; walk
-to the next eligible provider. A Codex round whose call fails on a usage limit stays INCOMPLETE, prints `review: codex usage limit in round N: '<the error>'` and is recorded beside the ledger (`<git-common-dir>/crew/review/<ticket>.limit.json`): the next probe answers `limited` from that record without a call, so the next round runs step 2c; the round after it probes Codex live again.
+to the next eligible provider. A Codex round whose call fails on a usage limit stays INCOMPLETE, prints `review: codex usage limit in round N: '<the error>'` and is recorded after the verdict, in `<git-common-dir>/crew/review-limit/<ticket>.json` (not the ledgers' folder, which `/crew:status` lists): the next probe answers `limited` from that record without a call, so the next round runs step 2c; the round after it probes Codex live again. A record that cannot be written prints `could not record it (...)` instead; the round is still INCOMPLETE (exit 3) and the next probe calls Codex live.
 
 **Step 2c — Claude fallback.** Invoke the `crew:reviewer` subagent with the
 SAME bundle 2a and 2b just read: the exact `$SCRATCH/prompt.txt` content —

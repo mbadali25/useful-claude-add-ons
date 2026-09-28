@@ -18,6 +18,7 @@ import textwrap
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_status
 import review_ledger
 import review_limit
 import review_run
@@ -335,3 +336,73 @@ def test_corrupt_limit_marker_falls_back_to_a_live_probe(lane):
     probe = _probe(repo, scratch, bin_dir, "ok")
 
     assert probe.returncode == 0
+
+
+# --- review round 1 (T-0088): the marker never breaks a round, and nobody reads it as a ledger
+
+def _tmp_litter(repo):
+    """Every `*.tmp` under the marker's directory and its parent."""
+    folder = os.path.dirname(review_limit.marker_path(str(repo), "T1"))
+    found = []
+    for base in (folder, os.path.dirname(folder)):
+        if os.path.isdir(base):
+            found += [n for n in os.listdir(base) if n.endswith(".tmp")]
+    return found
+
+
+@pytest.mark.parametrize("block", ["marker-is-a-directory", "marker-folder-is-a-file"])
+def test_unwritable_limit_marker_still_finishes_the_round(lane, block):
+    repo, scratch, bin_dir = lane
+    _bundle(repo, scratch)
+    path = review_limit.marker_path(str(repo), "T1")
+    if block == "marker-is-a-directory":
+        os.makedirs(path)
+    else:
+        os.makedirs(os.path.dirname(os.path.dirname(path)), exist_ok=True)
+        with open(os.path.dirname(path), "w", encoding="utf-8") as handle:
+            handle.write("")
+
+    review = _review(repo, scratch, bin_dir, "limit")
+
+    rounds = review_ledger.status(str(repo), "T1")["rounds"]
+    assert (review.returncode, rounds[0]["status"] != "reserved", _tmp_litter(repo)) == (3, True, [])
+    assert "could not record" in review.stdout + review.stderr
+
+
+def test_limit_marker_is_not_listed_as_a_review_ledger(lane):
+    repo, _scratch, _bin_dir = lane
+    review_ledger.reserve(str(repo), "T2", "codex", None)
+    review_limit.record(str(repo), "T2", 1, "codex", None, _LIMIT_MESSAGE)
+
+    lines = crew_status._review_lines(str(repo))  # pylint: disable=protected-access
+
+    assert [line for line in lines if "limit" in line] == []
+
+
+def test_a_ticket_named_like_a_marker_keeps_its_own_ledger(lane):
+    repo, _scratch, _bin_dir = lane
+    review_ledger.reserve(str(repo), "T1.limit", "codex", None)
+    review_ledger.reserve(str(repo), "T1", "codex", None)
+
+    review_limit.record(str(repo), "T1", 1, "codex", None, _LIMIT_MESSAGE)
+
+    assert review_ledger.status(str(repo), "T1.limit")["rounds_used"] == 1
+
+
+@pytest.mark.parametrize("mark", [
+    pytest.param({"round": 1}, id="no-error"),
+    pytest.param({"round": True, "error": "You've hit your usage limit."}, id="round-true"),
+    pytest.param({"round": 1, "error": 5}, id="error-not-text"),
+    pytest.param({"round": 1, "error": ""}, id="error-empty"),
+])
+def test_malformed_limit_marker_falls_back_to_a_live_probe(lane, mark):
+    repo, scratch, bin_dir = lane
+    _script(repo, scratch, _env(bin_dir, "ok"), "--provider", "claude", "--reserve-only")
+    path = review_limit.marker_path(str(repo), "T1")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(mark, handle)
+
+    probe = _probe(repo, scratch, bin_dir, "ok")
+
+    assert (probe.returncode, len(_calls(bin_dir))) == (0, 1)

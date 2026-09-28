@@ -84,9 +84,11 @@ with the error quoted, because it is not an independent review.
 
 A limit hit in the middle of a round leaves that round INCOMPLETE and prints
 `review: codex usage limit in round N: ...`. It is recorded in
-`<git-common-dir>/crew/review/<ticket>.limit.json`, so the next `/crew:review` answers `limited` from
+`<git-common-dir>/crew/review-limit/<ticket>.json`, so the next `/crew:review` answers `limited` from
 the record without calling Codex again. Once that next round is reserved the record stops applying,
-and the round after it probes Codex live.
+and the round after it probes Codex live. The record is written after the round's verdict: when it
+cannot be written the round still ends INCOMPLETE (exit 3), the line says `could not record it (...)`,
+and the next probe calls Codex live instead.
 
 ## What is proven, and what is only configured
 

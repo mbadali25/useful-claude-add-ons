@@ -18,6 +18,8 @@ import os
 import subprocess
 import sys
 
+import pytest
+
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_common
 import crew_config
@@ -117,6 +119,24 @@ def test_git_failure_in_a_linked_worktree_is_unknown_not_own(tmp_path, monkeypat
     assert (source, bool(detail)) == (crew_common.SOURCE_UNKNOWN, True)
     assert crew_ticket.cli_approval_allowed(str(wt)) is False
 
+
+
+def test_resolver_works_on_a_git_without_path_format(tmp_path, monkeypatch):
+    """git before 2.31 has no `--path-format`, and rev-parse echoes an
+    argument it does not know as a line of its own."""
+    _main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    real = crew_common.git_out
+
+    def old_git(root, *args):
+        known = [a for a in args if not a.startswith("--path-format")]
+        out = real(root, *known)
+        if len(known) != len(args) and out is not None:
+            return "--path-format=absolute\n" + out
+        return out
+
+    monkeypatch.setattr(crew_common, "git_out", old_git)
+
+    assert crew_common.repo_config_dir(str(wt))[1] == crew_common.SOURCE_MAIN
 
 # --- guard input, must-block and must-allow ---------------------------------------------
 # The scope guard judges a write only for an active ticket, so each case has one
@@ -254,6 +274,26 @@ def test_heal_config_creates_nothing_in_an_inheriting_worktree(tmp_path):
     assert not (wt / ".crew" / "config.json").exists()
 
 
+
+def test_heal_config_creates_nothing_when_git_could_not_tell(tmp_path, monkeypatch):
+    _main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    (wt / ".crew").mkdir()
+    monkeypatch.setattr(crew_common, "git_out", lambda *a: None)
+
+    cfg, message = crew_platform.heal_config(str(wt))
+
+    assert cfg is None and "could not tell" in message
+    assert not (wt / ".crew" / "config.json").exists()
+
+
+def test_heal_config_still_heals_a_worktree_whose_main_checkout_has_none(tmp_path):
+    _main, wt = _lane(tmp_path, None)
+    (wt / ".crew").mkdir()
+
+    cfg, _message = crew_platform.heal_config(str(wt))
+
+    assert cfg is not None and (wt / ".crew" / "config.json").exists()
+
 def test_heal_config_still_heals_a_main_checkout(tmp_path):
     main = make_repo(tmp_path, mode=None, name="main")
 
@@ -280,6 +320,27 @@ def test_status_config_line_says_when_git_could_not_tell(tmp_path, monkeypatch):
     assert "could not tell" in text
 
 
+
+def test_status_names_the_main_config_a_worktree_own_config_shadows(tmp_path):
+    main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    _own(wt, "config.json", {"scope": {"mode": "off"}})
+
+    text = "\n".join(crew_status._config_lines(str(wt))[0])  # pylint: disable=protected-access
+
+    assert "not read" in text and str(main / ".crew") in text
+
+
+@pytest.mark.parametrize("case", ["main-checkout", "worktree-main-has-none"])
+def test_status_has_no_shadow_line_when_nothing_is_shadowed(tmp_path, case):
+    main, wt = _lane(tmp_path, None if case == "worktree-main-has-none"
+                     else {"scope": {"allowCliApproval": True}})
+    _own(wt, "config.json", {"scope": {"mode": "off"}})
+
+    root = main if case == "main-checkout" else wt
+    text = "\n".join(crew_status._config_lines(str(root))[0])  # pylint: disable=protected-access
+
+    assert "not read" not in text
+
 def _explain(root, *extra):
     home = root.parent / "home"
     home.mkdir(exist_ok=True)
@@ -299,3 +360,12 @@ def test_explain_prints_the_repo_layer_path_and_source(tmp_path):
     assert "repo layer:" in in_wt and str(main / ".crew" / "config.json") in in_wt
     assert "(own)" in in_main
     assert isinstance(json.loads(as_json), list)
+
+
+def test_explain_names_the_main_config_a_worktree_own_config_shadows(tmp_path):
+    main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    _own(wt, "config.json", {"scope": {"mode": "off"}})
+
+    in_wt = _explain(wt, "--explain").stdout
+
+    assert "not read" in in_wt and str(main / ".crew") in in_wt

@@ -33,7 +33,10 @@ This command works with no repo in mind: `--root` is optional, and with no
 `.crew/config.json` the `repo` layer is simply empty. Run it from anywhere. In a
 linked git worktree with no crew config of its own, the `repo` layer is the main
 checkout's file; `--explain` and `--models` print it first, as
-`repo layer: <path> (<own | main checkout | unknown>)`.
+`repo layer: <path> (<own | main checkout | unknown>)`. An `own` line in a linked
+worktree whose main checkout also has a config adds `the main checkout's (<path>)
+is not read`: own wins whole, and a crew <= 1.0.54 heal wrote a default into
+every lane that had none, so say which it is before trusting the lane's settings.
 
 Two things it never does, whatever the arguments say: it does not write
 `.crew/config.json` — that is `/crew:init` — and it does not write anything at

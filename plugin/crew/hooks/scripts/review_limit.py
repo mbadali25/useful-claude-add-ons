@@ -28,13 +28,22 @@ about to retry, and a run that then completes is not limited
 (`codex-rs/exec/src/lib.rs:1262-1277`).
 
 THE MARKER. A round whose call failed on a limit is recorded in
-`<git-common-dir>/crew/review/<ticket>.limit.json`, beside the ledger, so every
-worktree of the repository sees it. It applies to the NEXT round only: while
+`<git-common-dir>/crew/review-limit/<ticket>.json`, under the common directory
+like the ledger, so every worktree of the repository sees it. It is NOT in the
+ledger's own folder: `/crew:status` lists every `*.json` there as a ledger, and
+a `<ticket>.limit.json` beside them was both a phantom ticket in that listing
+and, since a ticket id may contain dots, ticket `<ticket>.limit`'s ledger
+path. It applies to the NEXT round only: while
 its `round` equals the ledger's `rounds_used` (no round reserved since), the
 next probe answers limited without a call. Once that round is reserved, it no
 longer applies and Codex is probed live again. A missing, unreadable or
-corrupt marker, or a ledger that cannot be read, is None: the live probe
-decides, so the answer is still a real call and never a guess.
+corrupt marker (not a dict, `round` not an int, `error` not a non-empty
+string), or a ledger that cannot be read, is None: the live probe decides, so
+the answer is still a real call and never a guess.
+
+Recording is best-effort by design: `review_run.run` records only after the
+round's verdict is on the ledger, and a marker that cannot be written costs the
+next round a live probe, never the round's own INCOMPLETE record.
 """
 import datetime
 import json
@@ -53,7 +62,7 @@ LIMIT_PATTERNS = (
     r"exceeded retry limit, last status: 429",  # error.rs:661-673 (RetryLimit, 429)
 )
 _LIMIT_RE = re.compile("|".join(LIMIT_PATTERNS), re.IGNORECASE)
-MARKER_SUFFIX = ".limit.json"
+MARKER_DIR = "review-limit"
 
 
 def limit_line(*texts):
@@ -67,15 +76,17 @@ def limit_line(*texts):
 
 
 def marker_path(root, ticket):
-    """`<git-common-dir>/crew/review/<ticket>.limit.json`, beside the ledger."""
-    return os.path.join(review_ledger.common_dir(root), "crew", "review",
-                        review_ledger.check_ticket(ticket) + MARKER_SUFFIX)
+    """`<git-common-dir>/crew/review-limit/<ticket>.json`: not the ledger's folder."""
+    return os.path.join(review_ledger.common_dir(root), "crew", MARKER_DIR,
+                        review_ledger.check_ticket(ticket) + ".json")
 
 
 def record(root, ticket, number, provider, model, line):
     """Record that round `number`'s call failed on a limit. Atomic: the text is
     computed before any file is opened, then written to a temp file in the same
-    directory and moved into place, so a failure leaves no half-written marker."""
+    directory and moved into place, so a failure leaves no half-written marker;
+    the temp file is removed when the write or the move fails, and the OSError
+    is the caller's to report."""
     path = marker_path(root, ticket)
     text = json.dumps({
         "ticket": ticket, "round": number, "provider": provider, "model": model or None,
@@ -84,9 +95,16 @@ def record(root, ticket, number, provider, model, line):
     }, indent=2, sort_keys=True) + "\n"
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = f"{path}.{os.getpid()}.tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(text)
-    os.replace(tmp, path)
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
     return path
 
 
@@ -101,6 +119,11 @@ def recorded(root, ticket):
             return None
         used = review_ledger.status(root, ticket).get("rounds_used")
     except (OSError, ValueError, review_ledger.LedgerError):
+        return None
+    number, error = mark.get("round"), mark.get("error")
+    # bool is an int, and True == 1: a `"round": true` must not pass for round 1.
+    if not isinstance(number, int) or isinstance(number, bool) \
+            or not isinstance(error, str) or not error.strip():
         return None
     if mark.get("round") != used:
         return None

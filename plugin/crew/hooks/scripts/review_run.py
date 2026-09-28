@@ -411,16 +411,22 @@ def run(args):
         # `error` events in a round that still delivered (T-0088).
         if timed_out or code != 0 or not output.strip():
             limit = review_limit.limit_line(error or "", stderr)
-        if limit:
-            review_limit.record(args.root, args.ticket, number, "codex", args.model, limit)
     else:
         output = stdout
     _write_atomic(os.path.join(args.scratch, "out.txt"), output)
     _write_atomic(os.path.join(args.scratch, "stderr.txt"), stderr)
     status = finish(args, number, output, code, timed_out, extra)
     if limit:
-        print(f"review: codex usage limit in round {number}: {limit!r}; the next round runs "
-              "the Claude reviewer (same-family, not independent)")
+        # After finish, never before: the round's INCOMPLETE record is the
+        # ledger's, and a marker that cannot be written (disk full, a path that
+        # is not a directory) must not take it, or exit 3, down with it.
+        try:
+            review_limit.record(args.root, args.ticket, number, "codex", args.model, limit)
+            then = "the next round runs the Claude reviewer (same-family, not independent)"
+        except OSError as exc:
+            then = (f"could not record it ({exc}), so the next probe calls Codex live "
+                    "instead of answering limited from the record")
+        print(f"review: codex usage limit in round {number}: {limit!r}; {then}")
     return status
 
 
