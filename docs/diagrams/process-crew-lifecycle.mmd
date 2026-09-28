@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@8de3c669 on 2026-09-27. Verify before trusting.
+%% Generated from useful-claude-add-ons@81685adf on 2026-09-27. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -84,6 +84,10 @@
 %% both kept. Main changed none of approve.md, crew_ticket.py or approval_hook.py since
 %% d276b268 and T-0024 changed no tracker-bearing command file, so every node's line
 %% citation holds on the merged tree (checked by script against both sides' content).
+%% Re-anchored 8de3c669 -> 81685adf (T-0079 merges T-0077's f96e9ec9, crew 1.0.50): of the
+%% Anchors paths only crew_tracker.py changed (`git diff --name-only`), by T-0077's
+%% ba2ee465 alone - the Windows directory hold, below resolve() and inside the vault-write
+%% path. No node cites a line or behaviour in that hunk, so nothing below was redrawn.
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):
