@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@a43acd56
+anchor: useful-claude-add-ons@6caa1872
 verified: 2026-09-28
 
 ## Does
@@ -956,3 +956,5 @@ untracked auto-memory. The suite was not re-run this pass.
 **Re-anchored `051f9e85` -> `c192b83d` on 2026-09-28 (T-0091 review round 1).** `c192b83d` is T-0091's review-round-1 fix on `T-0091-build`. `git diff --name-only 051f9e85 c192b83d` returns only `CLAUDE.md`: the same Landmines truncating-`open` measurement paragraph, now `:185-219` (+16/-9, so every later line moves +7; lines above `:192` are byte-identical). This note cites `CLAUDE.md` without a line. No claim moved. Nothing was executed.
 
 **Re-anchored `6f96e627` -> `a43acd56` on 2026-09-28 (T-0088, crew 1.0.53).** `a43acd56` is T-0088's crew 1.0.53 version commit on `T-0088-build`, after `7b1e2228` merged origin/main `c426c018` with a merge commit. `git diff --name-only 6f96e627 a43acd56` over this note's cited paths returns `plugin/crew/hooks/scripts/crew_platform.py` (T-0088's inheriting-worktree guard in `heal_config`, and the resolver import), which this note cites by name only (`:799`), and `.claude-plugin/marketplace.json`, cited only at `:248` inside provenance sections that describe their own commits. No citation moved. Nothing was executed for this note.
+
+**Re-anchored `a43acd56` -> `6caa1872` on 2026-09-28 (T-0088 merges origin/main `f8b6c8d7`, T-0091).** `6caa1872` is the merge commit on `T-0088-build` that joins T-0088's line (above, `a43acd56`) with T-0091's (above, `c192b83d`); its conflicts were the parallel anchor lines and re-anchor paragraphs only, both histories kept. `git diff --name-only a43acd56 6caa1872`, refresh artifacts aside, returns `CLAUDE.md` and `TODO.md` and nothing under `plugin/`, `scripts/` or `skills/`. `git diff c192b83d 6caa1872 -- CLAUDE.md` is empty, so this note's `CLAUDE.md` citations are the ones T-0091 re-verified at `c192b83d`, carried in by the merge; `TODO.md`'s only change (T-0091, `:4473` and `:4480-4482`) sits below every `TODO.md` line cited here. Every citation into a path T-0088 changed is as re-verified at `a43acd56`. No claim, count or citation changed. Nothing was executed for this note beyond those comparisons.
