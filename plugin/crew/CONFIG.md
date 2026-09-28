@@ -1652,10 +1652,16 @@ It refuses, naming the key and the reason: a path that is not a leaf of
 `default_config()` (unknown keys, and whole blocks such as `scope: {}` that
 would drop a leaf the per-key rules guard), `platform.*`, `schema`,
 `scope.mode`, `scope.allowCliApproval`, `context.autoClear.onlyRepos` /
-`.onlySessions`, and a `true` for `context.autoClear.enabled` or `resume.auto`
-(only the machine file arms those). It refuses to write when the file is absent
-or does not parse, rather than creating a config from one key or overwriting
-the only copy.
+`.onlySessions`, and anything but exactly `false` or `null` for
+`context.autoClear.enabled` or `resume.auto` (only the machine file arms
+those). That test is by identity (`crew_config.is_repo_veto`), not `in (False,
+None)`: `0 == False` in Python, and the readers (`crew_autocycle`,
+`crew_resume`) compare with `is False`, so a written `0` would veto nothing. It
+refuses to write when the file is absent or does not parse, rather than
+creating a config from one key or overwriting the only copy -- and the menu
+reads the file the same strict way, so over an absent or unparseable
+`.crew/config.json` every repo row is read-only with that refusal as its
+reason, rather than offered and then refused at Save.
 
 **Enum values are checked on both writers.** `crew_config.enum_values` returns
 the tuple each reader normalises against — the `RATCHETED_KEYS` tiers,

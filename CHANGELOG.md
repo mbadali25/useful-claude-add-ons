@@ -35,7 +35,17 @@ All notable changes to this repository are documented here. Format follows [Keep
     refuses a value outside the key's own values (`pm.authority`,
     `pm.ticketGranularity`, `qa.provider`, `dev.provider`, every ratcheted
     key). It used to write it and read it back as the narrowest tier.
-  - 12 sabotage mutations in `tests/sabotage_config.py`.
+  - Review round 1: the printed restore command is double-quoted with forward
+    slashes on Windows (cmd.exe ignores single quotes); the repo veto keys
+    take exactly `false`/`null` by identity (`0` is refused); an absent or
+    unparseable `.crew/config.json` makes every repo row read-only; an
+    expanded role row names `repo+global` when both layers merge into it; a
+    write refused after validation is reported as a partial Save; the machine
+    layer lists `platform.*` and `schema` read-only; the delete preview skips
+    `platform.*` (re-detected at the same SessionStart) and names a ratcheted
+    key the repo narrowed under a wider machine value as `stays`; the typed
+    delete name is the checkout's `git rev-parse --show-toplevel` basename.
+  - 22 sabotage mutations in `tests/sabotage_config.py`.
 - **`crew` 1.0.47: `/crew:autopilot status` and the subcommand router
   (T-0018).** Bumped `1.0.46 -> 1.0.47` (its branch declared 1.0.44, which main gave to
   T-0021; 1.0.46 at its first landing merge, which main then gave to T-0023). `commands/autopilot.md` now routes

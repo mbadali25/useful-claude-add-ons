@@ -1890,6 +1890,10 @@ def _repo_bytes(root):
     ("autopilot.frobnicate", 1),
     ("context.autoClear.enabled", True),
     ("resume.auto", True),
+    # `0 == False` in Python; the readers test `is False`, so 0 vetoes nothing.
+    ("context.autoClear.enabled", 0),
+    ("resume.auto", 0),
+    ("resume.auto", 0.0),
 ])
 def test_repo_writer_refuses(tmp_path, dotted, value):
     root = _repo(tmp_path)
@@ -1926,6 +1930,12 @@ def test_repo_writer_accepts_a_veto(tmp_path):
     written = json.loads(_repo_bytes(root))
     assert (written["context"]["autoClear"]["enabled"],
             written["resume"]["auto"]) == (False, False)
+
+
+@pytest.mark.parametrize("value,veto", [(False, True), (None, True), (0, False),
+                                        (0.0, False), ("", False), ([], False)])
+def test_is_repo_veto_is_identity_not_equality(value, veto):
+    assert crew_config.is_repo_veto(value) is veto
 
 
 def test_repo_write_merges_and_keeps_unknown_keys(tmp_path):

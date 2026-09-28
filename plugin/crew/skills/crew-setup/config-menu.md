@@ -35,7 +35,12 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config_menu.py --root .
   `schema`, `scope.mode`, `scope.allowCliApproval` and
   `context.autoClear.onlyRepos` / `.onlySessions` are shown with the reason
   they are refused. `scope.*` is the approval and scope guard's trust root: it
-  is a hand edit by the owner or `/crew:init`, never this menu.
+  is a hand edit by the owner or `/crew:init`, never this menu. At the machine
+  layer `platform.*` and `schema` are shown read-only too. When
+  `.crew/config.json` is absent or does not parse, the repo spec's own
+  `refusedReason` says so and every repo row is read-only: say that once and
+  point at `/crew:init` or a new session (platform-sync heals it), rather
+  than collecting picks Save would refuse.
 
 ## 1. Pick the layer
 
@@ -102,12 +107,16 @@ result back. A config change nobody verified is a claim, not a change.
 ## 6. Delete this repo's config
 
 1. Preview: `S delete-repo`. It prints what changes (a `!` marks a
-   widening: `scope.mode` returning to `off` disarms the scope guard) and
+   widening: `scope.mode` returning to `off` disarms the scope guard), a
+   `stays` line for a ratcheted key the repo narrowed under a wider machine
+   value (deleting does not widen it: an absent repo value is the floor), and
    what deleting means on disk: hooks stand down until the next SessionStart,
-   then platform-sync recreates the built-in defaults. It exits 2 without a
-   confirmation; that is expected.
-2. Ask the owner to type the repo name the preview asks for. Never fill it
-   in for them, and never infer it from a yes.
+   then platform-sync recreates the built-in defaults and re-detects
+   `platform.*`, which is why `platform.*` is not listed. It exits 2 without
+   a confirmation; that is expected.
+2. Ask the owner to type the repo name the preview asks for: the checkout's
+   name (`git rev-parse --show-toplevel`'s basename, else the directory's).
+   Never fill it in for them, and never infer it from a yes.
 3. `S delete-repo --confirm <name> --apply`. It writes a verified backup
    (`.crew/config.json.bak-<UTC timestamp>`) before it deletes, and refuses if
    the backup fails.

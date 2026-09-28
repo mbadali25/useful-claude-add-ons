@@ -150,7 +150,8 @@ def test_repo_veto_rows_offer_only_a_veto(tmp_path):
 def test_machine_menu_never_offers_a_repo_only_key(tmp_path):
     root, gpath = _repo(tmp_path)
 
-    paths = {r["path"] for r in _rows(menu.menu_spec(root, "machine", gpath))}
+    paths = {r["path"] for r in _rows(menu.menu_spec(root, "machine", gpath))
+             if r["writable"] or r["choices"]}
 
     for bad in ("tracker", "jira.project", "scope.mode",
                 "scope.allowCliApproval", "platform.os",
@@ -159,6 +160,72 @@ def test_machine_menu_never_offers_a_repo_only_key(tmp_path):
     assert not any(p.startswith(("autopilot.", "scope.", "platform."))
                    for p in paths
                    if not crew_config.is_global_path(p))
+
+
+def test_machine_menu_shows_platform_and_schema_read_only(tmp_path):
+    root, gpath = _repo(tmp_path)
+    expected = ["schema"] + [p for p in crew_config.leaf_paths(
+        crew_config.default_config()) if p.startswith("platform.")]
+
+    rows = {r["path"]: r for r in _rows(menu.menu_spec(root, "machine", gpath))}
+
+    shown = [(p, rows[p]["writable"], rows[p]["choices"],
+              bool(rows[p]["refusedReason"])) for p in expected if p in rows]
+    assert shown == [(p, False, [], True) for p in expected]
+
+
+def test_repo_veto_rows_never_offer_a_held_zero(tmp_path):
+    root, gpath = _repo(tmp_path, {"context.autoClear.enabled": 0,
+                                   "resume.auto": 0})
+
+    rows = {r["path"]: r for r in _rows(menu.menu_spec(root, "repo", gpath))}
+
+    offered = [(p, c["value"]) for p in sorted(crew_config.REPO_VETO_ONLY)
+               for c in rows[p]["choices"] if not crew_config.is_repo_veto(c["value"])]
+    assert offered == []
+
+
+@pytest.mark.parametrize("state", ["missing", "notjson", "empty", "array"])
+def test_repo_rows_are_read_only_without_a_readable_config(tmp_path, state):
+    root, gpath = _repo(tmp_path)
+    if state == "missing":
+        os.remove(_config(root))
+    else:
+        with open(_config(root), "w", encoding="utf-8") as handle:
+            handle.write({"notjson": "{nope", "empty": "{}", "array": "[]"}[state])
+
+    spec = menu.menu_spec(root, "repo", gpath)
+
+    offered = [r["path"] for r in _rows(spec) if r["writable"] or r["choices"]]
+    assert (offered, bool(spec["refusedReason"])) == ([], True)
+    assert all(r["refusedReason"] for r in _rows(spec))
+
+
+def test_machine_rows_stay_writable_without_a_global_file(tmp_path):
+    root, gpath = _repo(tmp_path)
+
+    spec = menu.menu_spec(root, "machine", gpath)
+
+    assert (spec["exists"], spec["refusedReason"]) == (False, None)
+    assert any(r["writable"] for r in _rows(spec))
+
+
+@pytest.mark.parametrize("repo_pin,global_pin,source", [
+    ({"model": "gpt-5.6-luna"}, {"provider": "codex"}, "repo+global"),
+    (None, {"provider": "codex", "model": "gpt-5.6-luna"}, "global"),
+    ({"provider": "codex", "model": "gpt-5.6-luna"}, None, "repo"),
+])
+def test_role_row_names_both_layers_it_merges(tmp_path, repo_pin, global_pin,
+                                              source):
+    root, gpath = _repo(
+        tmp_path,
+        {"qa.roles": {"review": repo_pin}} if repo_pin else None,
+        {"qa": {"roles": {"review": global_pin}}} if global_pin else {})
+
+    rows = {r["path"]: r for r in _rows(menu.menu_spec(root, "repo", gpath))}
+
+    assert (rows["qa.roles.review"]["value"], rows["qa.roles.review"]["source"]) == (
+        {"provider": "codex", "model": "gpt-5.6-luna"}, source)
 
 
 def test_recommendation_is_listed_first(tmp_path):
@@ -307,6 +374,40 @@ def test_save_reports_a_partial_os_failure(tmp_path, monkeypatch, capsys):
     assert json.loads(open(gpath, encoding="utf-8").read())["pm"]["authority"] == "act"
 
 
+def test_save_reports_a_partial_refusal(tmp_path, monkeypatch, capsys):
+    root, gpath = _repo(tmp_path)
+    real = crew_config.write_global_config
+
+    def _write_then_lose_the_repo_file(updates, path=None):
+        out = real(updates, path)
+        os.remove(_config(root))
+        return out
+    monkeypatch.setattr(menu.crew_config, "write_global_config",
+                        _write_then_lose_the_repo_file)
+    code = menu.save(root, {"machine": _MACHINE_SET, "repo": _REPO_SET},
+                     apply=True, global_path=gpath)
+
+    captured = capsys.readouterr()
+    assert (code, "machine layer: written" in captured.out,
+            "repo layer: NOT written" in captured.err) == (1, True, True)
+
+
+def test_save_reports_a_refusal_on_the_first_write(tmp_path, monkeypatch, capsys):
+    root, gpath = _repo(tmp_path)
+    before = open(_config(root), "rb").read()
+
+    def _refuse(*_args, **_kwargs):
+        raise crew_config.GlobalWriteRefused("the global file changed")
+    monkeypatch.setattr(menu.crew_config, "write_global_config", _refuse)
+    code = menu.save(root, {"machine": _MACHINE_SET, "repo": _REPO_SET},
+                     apply=True, global_path=gpath)
+
+    err = capsys.readouterr().err
+    assert (code, "machine layer: NOT written" in err,
+            "nothing was written" in err) == (1, True, True)
+    assert open(_config(root), "rb").read() == before
+
+
 def test_save_cli_takes_a_json_change_set(tmp_path, capsys):
     root, gpath = _repo(tmp_path)
 
@@ -406,6 +507,47 @@ def test_delete_prints_restore_command_that_works(tmp_path, capsys):
     assert open(_config(root), "rb").read() == original
 
 
+def test_windows_restore_command_is_cmd_safe():
+    parts = ["C:\\Py 3\\python.exe", "C:\\r p\\crew_config_menu.py", "--root",
+             "C:\\r p", "restore-repo", "--from",
+             "C:\\r p\\.crew\\config.json.bak-X", "--apply"]
+
+    command = menu._shell_command(parts, windows=True)  # pylint: disable=protected-access
+
+    assert command == ('"C:/Py 3/python.exe" "C:/r p/crew_config_menu.py" '
+                       '"--root" "C:/r p" "restore-repo" "--from" '
+                       '"C:/r p/.crew/config.json.bak-X" "--apply"')
+
+
+def test_windows_form_of_the_restore_command_runs(tmp_path, monkeypatch, capsys):
+    root, gpath = _repo(tmp_path, {"tracker": "jira"})
+    original = open(_config(root), "rb").read()
+    monkeypatch.setattr(menu, "_ON_WINDOWS", True)
+
+    menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
+    command = [ln for ln in capsys.readouterr().out.splitlines()
+               if "restore-repo" in ln][-1].split("restore: ", 1)[1]
+    run = subprocess.run(command, shell=True, capture_output=True, text=True,
+                         check=False)
+
+    assert ("'" in command, run.returncode) == (False, 0), run.stderr
+    assert open(_config(root), "rb").read() == original
+
+
+def test_restore_command_survives_a_path_with_a_space_and_a_quote(tmp_path, capsys):
+    root, gpath = _repo(tmp_path / "my repo's", {"tracker": "jira"})
+    original = open(_config(root), "rb").read()
+
+    menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
+    command = [ln for ln in capsys.readouterr().out.splitlines()
+               if "restore-repo" in ln][-1].split("restore: ", 1)[1]
+    run = subprocess.run(command, shell=True, capture_output=True, text=True,
+                         check=False)
+
+    assert run.returncode == 0, run.stderr
+    assert open(_config(root), "rb").read() == original
+
+
 def test_delete_preview_names_what_changes(tmp_path, capsys):
     root, gpath = _repo(tmp_path,
                         {"scope.mode": "block", "guards.forcePush": "block",
@@ -419,9 +561,49 @@ def test_delete_preview_names_what_changes(tmp_path, capsys):
     assert "guards.roleWrites: \"block\" -> \"off\"  !" in out
     assert "tracker: \"jira\" -> \"files\"" in out
     # The ratchet, not precedence: an absent repo value is the floor, so
-    # deleting a repo `block` under a machine `allow` stays `block`.
-    assert "guards.forcePush" not in out
+    # deleting a repo `block` under a machine `allow` stays `block` -- named
+    # as held, never as a `->` change.
+    assert "guards.forcePush: \"block\" ->" not in out
+    assert "guards.forcePush: stays \"block\"" in out
     assert "isCrew" in out and "platform-sync" in out
+
+
+@pytest.mark.parametrize("machine,named", [("allow", True), ("block", False)])
+def test_delete_preview_names_a_guard_the_ratchet_holds(tmp_path, capsys,
+                                                        machine, named):
+    root, gpath = _repo(tmp_path, {"guards.forcePush": "block"},
+                        {"guards": {"forcePush": machine}})
+
+    menu.delete_repo_config(root, None, False, now=_now(), global_path=gpath)
+
+    lines = [ln for ln in capsys.readouterr().out.splitlines()
+             if "guards.forcePush" in ln]
+    assert [("stays" in ln, "!" in ln) for ln in lines] == (
+        [(True, False)] if named else [])
+
+
+def test_delete_really_does_not_widen_a_held_guard(tmp_path):
+    root, gpath = _repo(tmp_path, {"guards.forcePush": "block"},
+                        {"guards": {"forcePush": "allow"}})
+
+    before = crew_config.resolve_guard(root, "forcePush", gpath)["effective"]
+    menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
+    gap = crew_config.resolve_guard(root, "forcePush", gpath)["effective"]
+    crew_platform.heal_config(root)
+    after = crew_config.resolve_guard(root, "forcePush", gpath)["effective"]
+
+    assert (before, gap, after) == ("block", "block", "block")
+
+
+def test_delete_preview_skips_platform_owned_leaves(tmp_path, capsys):
+    root, gpath = _repo(tmp_path, {"platform.os": "linux",
+                                   "platform.shell": "bash", "tracker": "jira"})
+
+    menu.delete_repo_config(root, None, False, now=_now(), global_path=gpath)
+
+    out = capsys.readouterr().out
+    assert ("platform.os:" in out, "platform.shell:" in out) == (False, False)
+    assert 'tracker: "jira" -> "files"' in out
 
 
 def test_delete_leaves_crew_json(tmp_path):
@@ -471,6 +653,22 @@ def test_restore_refuses_a_non_backup_path(tmp_path, where):
 
 def test_repo_name_is_the_checkout_basename(tmp_path):
     root, _ = _repo(tmp_path)
+
+    assert menu.repo_name(root) == "repo"
+
+
+def test_repo_name_is_the_git_toplevel_basename(tmp_path):
+    outer = tmp_path / "outer"
+    nested = outer / "tools" / "sub"
+    (nested / ".crew").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(outer)], check=True)
+
+    assert menu.repo_name(str(nested)) == "outer"
+
+
+def test_repo_name_falls_back_without_git(tmp_path, monkeypatch):
+    root, _ = _repo(tmp_path)
+    monkeypatch.setenv("PATH", "")
 
     assert menu.repo_name(root) == "repo"
 

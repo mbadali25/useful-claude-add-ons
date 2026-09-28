@@ -984,29 +984,39 @@ first; the owner never has to type one.
 - **Data-driven.** The rows are `crew_config.py`'s own key lists
   (`default_global_config()` for the machine layer, `default_config()` for the
   repo), so a key added to crew appears with no menu edit, and a committed test
-  runs every offered value through the writer.
+  runs every offered value through the writer. The machine layer also lists
+  `platform.*` and `schema` read-only, and an absent or unparseable
+  `.crew/config.json` makes every repo row read-only with the writer's own
+  refusal as the reason.
 - **Selection only, Save once per layer.** Picks collect in a pending set that
   spans areas and both layers. Save validates **both** layers before writing
   either, shows the dry-run diff with `!` widening lines and "held down by the
-  machine-global layer" lines, then writes each changed layer once. Discard
-  writes nothing.
+  machine-global layer" lines, then writes each changed layer once. A write
+  that fails or is refused after validation (the file changed underneath)
+  reports which layer landed and which did not. Discard writes nothing.
 - **One validated repo writer.** `crew_config.py --set PATH=JSON --repo
   [--apply]` (`plan_repo_write` / `write_repo_config`) merges, refuses unknown
   keys and whole-block writes, checks enum values, validates providers, writes
   atomically and keeps the file's line ending. It refuses `platform.*`
   (platform-sync owns it), `schema`, and `context.autoClear.onlyRepos` /
   `.onlySessions` (read from the machine file only), and takes only a veto
-  (`false`) or `null` for `context.autoClear.enabled` and `resume.auto`.
+  (`false`) or `null` for `context.autoClear.enabled` and `resume.auto` —
+  exactly those, by identity, so `0` is refused.
 - **`scope.*` is refused on purpose.** `scope.mode` and
   `scope.allowCliApproval` are the scope guard's trust root, and
   `.crew/config.json` is untracked, so the completion audit (which diffs
   tracked files) would never see a one-command write that disarmed it. They
   stay a hand edit by the owner or `/crew:init`, shown read-only in the menu.
 - **Delete the repo config.** Previews what changes (a `!` on anything that
-  widens, `scope.mode` returning to `off` included), requires the typed repo
-  name, writes a verified `.crew/config.json.bak-<UTC timestamp>` first, then
-  deletes and prints the exact restore command
-  (`crew_config_menu.py restore-repo --from <backup> --apply`). Until the next
+  widens, `scope.mode` returning to `off` included; a `stays` line for a
+  ratcheted key the repo narrowed under a wider machine value, which deleting
+  does not widen; `platform.*` left out, since the same SessionStart
+  re-detects it), requires the typed repo name (the checkout's
+  `git rev-parse --show-toplevel` basename), writes a verified
+  `.crew/config.json.bak-<UTC timestamp>` first, then deletes and prints the
+  exact restore command
+  (`crew_config_menu.py restore-repo --from <backup> --apply`), quoted for
+  cmd.exe on Windows and for sh elsewhere. Until the next
   SessionStart there is no config, so `isCrew` is false and every hook that
   gates on it stands down; then platform-sync's heal recreates the built-in
   defaults. `.crew/crew.json`, `verify.json`, backups and ticket state are

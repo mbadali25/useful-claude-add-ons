@@ -2785,6 +2785,15 @@ REPO_REFUSED.update({
 # (`false`) or clear its own veto (`null`), never arm them.
 REPO_VETO_ONLY = {"context.autoClear.enabled", "resume.auto"}
 
+
+def is_repo_veto(value):
+    """True for exactly `false` and `null`, by identity.
+
+    Not `value in (False, None)`: `0 == False` in Python, so that test lets
+    `0` and `0.0` through, and the readers (`crew_autocycle`, `crew_resume`)
+    compare with `is False`, so a written `0` vetoes nothing."""
+    return value is False or value is None
+
 # Repo-layer values that grant something, beside the ratchet. Keyed on
 # (path, value); the note is the `!` line's text.
 _REPO_WIDENING = {
@@ -2915,8 +2924,8 @@ def plan_repo_write(root, updates, global_path=None):
         if reason is None and not is_repo_path(dotted):
             reason = ("not a settable leaf of .crew/config.json (a block is "
                       "set one key at a time; unknown keys are refused)")
-        if reason is None and dotted in REPO_VETO_ONLY and value not in (
-                False, None):
+        if reason is None and dotted in REPO_VETO_ONLY and not is_repo_veto(
+                value):
             reason = ("a repo may only veto this (false) or clear its veto "
                       "(null); only the machine-global file can arm it")
         if reason is not None:

@@ -123,6 +123,10 @@ RECOMMENDATIONS = {
 
 NO_PIN = {}
 LAYERS = ("machine", "repo")
+# The restore command is printed for the shell `subprocess.run(shell=True)`
+# uses here: cmd.exe on Windows, sh elsewhere. A module constant so a test can
+# exercise the Windows form on any host.
+_ON_WINDOWS = os.name == "nt"
 
 
 def area_of(dotted):
@@ -168,8 +172,8 @@ def _model_values(dotted):
 def _allowed_at(dotted, layer, value):
     """Would this layer's writer accept `value` at `dotted`? The veto rule and
     the enum check; a hand-edited bad value in either layer is not offered."""
-    if layer == "repo" and dotted in crew_config.REPO_VETO_ONLY and value not in (
-            False, None):
+    if layer == "repo" and dotted in crew_config.REPO_VETO_ONLY and \
+            not crew_config.is_repo_veto(value):
         return False
     return not crew_config._value_problems({dotted: value})  # pylint: disable=protected-access
 
@@ -232,6 +236,39 @@ def _layers(root, global_path):
     return repo_raw, global_raw, global_kept
 
 
+def _source(repo_pruned, global_kept, dotted, value, defaults):
+    """`explain_config`'s source rule for a row it does not cover (an
+    expanded `qa.roles.<kind>` row, a repo-only leaf): each layer's
+    contribution judged by `crew_config._layer_supplies` on the same pruned
+    layers, and `repo+global` for a dict both layers put keys into -- the
+    merged value, not a contest one layer won."""
+    parts = tuple(dotted.split("."))
+    from_repo = crew_config._layer_supplies(repo_pruned, parts, defaults)  # pylint: disable=protected-access
+    from_global = (crew_config.is_global_path(dotted) and crew_config._layer_supplies(  # pylint: disable=protected-access
+        global_kept, parts, defaults))
+    if from_repo and from_global and isinstance(value, dict):
+        return "repo+global"
+    return "repo" if from_repo else "global" if from_global else "default"
+
+
+def _repo_unwritable(root):
+    """Why no repo row can be written, or None. `plan_repo_write` refuses
+    onto an absent, malformed, empty or non-object `.crew/config.json`, and
+    `load_config` collapses every one of those to `{}`, so the rows must be
+    judged against the writer's own strict read rather than that `{}`."""
+    try:
+        crew_config._read_repo_strict(root)  # pylint: disable=protected-access
+    except crew_config.RepoWriteRefused as exc:
+        return str(exc)
+    return None
+
+
+# Repo-refused leaves the machine template omits, shown read-only at the
+# machine layer too: `platform.*` is platform-sync's at both layers and
+# `schema` is never a setting. Their reasons are the repo writer's own.
+_MACHINE_READ_ONLY = ("platform", "schema")
+
+
 def _paths(template):
     """Leaves of `template`, with each open role table expanded to one row per
     known role kind, plus any role the layers already name."""
@@ -266,6 +303,8 @@ def menu_spec(root, layer, global_path=None):
     template = (crew_config.default_global_config() if layer == "machine"
                 else defaults)
     own = global_raw if layer == "machine" else repo_raw
+    repo_pruned = crew_config.without_null_shadows(repo_raw, global_kept, defaults)
+    unwritable = _repo_unwritable(root) if layer == "repo" else None
 
     areas = {area_id: [] for area_id, _l, _p in AREAS}
     extra_roles = {}
@@ -277,6 +316,9 @@ def menu_spec(root, layer, global_path=None):
                 extra_roles[table].extend(k for k in named
                                           if k not in extra_roles[table])
     paths = _paths(template)
+    if layer == "machine":
+        paths.extend((dotted, None) for dotted in crew_config.leaf_paths(defaults)
+                     if dotted.split(".", 1)[0] in _MACHINE_READ_ONLY)
     for table, kinds in extra_roles.items():
         known_rows = {p for p, _t in paths}
         paths.extend((f"{table}.{kind}", table) for kind in kinds
@@ -285,9 +327,10 @@ def menu_spec(root, layer, global_path=None):
     for dotted, table in paths:
         if layer == "machine":
             reason = None if crew_config.is_global_path(dotted) else (
-                "repo-only: not settable in the machine-global file")
+                crew_config._repo_refusal(dotted)  # pylint: disable=protected-access
+                or "repo-only: not settable in the machine-global file")
         else:
-            reason = crew_config._repo_refusal(dotted)  # pylint: disable=protected-access
+            reason = crew_config._repo_refusal(dotted) or unwritable  # pylint: disable=protected-access
         default = _unmissing(_dig(defaults, dotted))
         if table:
             default = NO_PIN
@@ -295,10 +338,7 @@ def menu_spec(root, layer, global_path=None):
             value, source = explain[dotted]["value"], explain[dotted]["source"]
         else:
             value = _unmissing(_dig(resolved, dotted))
-            in_repo = _dig(repo_raw, dotted) is not crew_config._MISSING  # pylint: disable=protected-access
-            in_global = (crew_config.is_global_path(dotted)
-                         and _dig(global_kept, dotted) is not crew_config._MISSING)  # pylint: disable=protected-access
-            source = "repo" if in_repo else "global" if in_global else "default"
+            source = _source(repo_pruned, global_kept, dotted, value, defaults)
             if table and value is None:
                 value = NO_PIN
         held = [v for v in (_dig(repo_raw, dotted), _dig(global_raw, dotted))
@@ -328,6 +368,7 @@ def menu_spec(root, layer, global_path=None):
         "layer": layer,
         "path": path,
         "exists": os.path.isfile(path),
+        "refusedReason": unwritable,
         "crewJson": os.path.isfile(os.path.join(root, ".crew", "crew.json")),
         "areas": [{"id": area_id, "label": label, "rows": areas[area_id]}
                   for area_id, label, _p in AREAS],
@@ -339,6 +380,8 @@ def _print_spec(spec):
           + ("" if spec["exists"] else "  (does not exist)"))
     if spec["layer"] == "repo" and spec["crewJson"]:
         print(crew_config.CREW_JSON_NOTICE)
+    if spec["refusedReason"]:
+        print(f"every row is read-only: {spec['refusedReason']}")
     for area in spec["areas"]:
         if not area["rows"]:
             continue
@@ -398,9 +441,14 @@ def save(root, changes, apply, global_path=None):
             continue
         try:
             writer(updates)
-        except OSError as exc:
-            print(f"{layer} layer: NOT written ({exc}); the "
-                  + (", ".join(written) or "no") + " layer was. Re-run Save "
+        except (OSError, crew_config.GlobalWriteRefused,
+                crew_config.RepoWriteRefused, crew_config.ProviderError) as exc:
+            # Validated a moment ago, refused now: the file changed (deleted,
+            # corrupted, edited) between the plan and this write. Same report
+            # as an OS failure -- which layer landed, which did not.
+            done = (f"the {', '.join(written)} layer was written"
+                    if written else "nothing was written")
+            print(f"{layer} layer: NOT written ({exc}); {done}. Re-run Save "
                   "for the rest once the cause is fixed.", file=sys.stderr)
             return 1
         written.append(layer)
@@ -414,12 +462,14 @@ BACKUP_PREFIX = "config.json.bak-"
 
 
 def repo_name(root):
-    """The name the owner types to confirm a delete: the basename of `root`,
-    the directory whose `.crew/config.json` is deleted. For a checkout that is
-    `git rev-parse --show-toplevel`'s basename; it is read from `root` itself
-    so a `.crew/` nested inside some other repository names its own
-    directory, never the outer one's."""
-    return os.path.basename(os.path.realpath(root))
+    """The name the owner types to confirm a delete: the basename of
+    `git rev-parse --show-toplevel` run in `root` (the checkout's name, a
+    worktree's own directory), falling back to `root`'s basename outside git
+    or when git cannot run. `crew_ticket.toplevel` is that call, reused.
+    Imported lazily, like `crew_platform` above."""
+    import crew_ticket  # pylint: disable=import-outside-toplevel
+    top = crew_ticket.toplevel(root)
+    return os.path.basename(top or os.path.realpath(root))
 
 
 def _stamp(now):
@@ -475,15 +525,25 @@ def delete_preview(root, global_path=None):
     sync's heal leaves in force. Ratcheted keys follow the ratchet: an absent
     repo value is the floor, so a repo narrowing under a wider machine value
     does not widen on delete unless the DEFAULT is wider (`guards.roleWrites`,
-    `change.requireForProduction`)."""
+    `change.requireForProduction`); such a held key is a row carrying
+    `heldAgainst` (the wider machine value) and `before == after`, so the
+    preview names it rather than leaving it out. `platform.*` is skipped:
+    platform detection rewrites it in the same SessionStart as the heal."""
     defaults = crew_config.default_config()
     repo_raw = crew_state.load_config(root)
     now = {row["path"]: row["value"] for row in
            crew_config.explain_config(root, global_path)}
     later = {path: row["value"] for path, row in
              _post_heal_rows(root, global_path).items()}
+    global_kept, _ = crew_config.filter_global(
+        crew_config.read_global_config(global_path))
     rows = []
     for dotted in crew_config.leaf_paths(defaults):
+        if dotted.split(".", 1)[0] == "platform":
+            # The same SessionStart that heals the file goes on to platform
+            # detection, which writes these back from this machine; a
+            # "becomes null" row would be a change that never happens.
+            continue
         if dotted in now:
             before, after = now[dotted], later.get(dotted)
         else:
@@ -492,10 +552,29 @@ def delete_preview(root, global_path=None):
                 continue
             before, after = held, _unmissing(_dig(defaults, dotted))
         if _key(before) == _key(after):
+            held = _held_by_ratchet(dotted, repo_raw, global_kept, before)
+            if held is not None:
+                rows.append({"path": dotted, "before": before, "after": after,
+                             "widens": False, "heldAgainst": held})
             continue
         rows.append({"path": dotted, "before": before, "after": after,
                      "widens": _widens(dotted, before, after)})
     return rows
+
+
+def _held_by_ratchet(dotted, repo_raw, global_kept, value):
+    """The machine value a repo narrowing sits under, when deleting leaves it
+    in force anyway; else None. A ratcheted key takes the LOWER rank and an
+    absent repo value is the default, which is the floor
+    (`crew_guards.effective_ratcheted`), so a repo `block` under a machine
+    `allow` stays `block` -- named, so the preview says why no widening."""
+    spec = crew_state.ratchet_spec(dotted)
+    if spec is None or _dig(repo_raw, dotted) is crew_config._MISSING:  # pylint: disable=protected-access
+        return None
+    machine = _dig(global_kept, dotted)
+    if machine is crew_config._MISSING or spec[2](machine) <= spec[2](value):  # pylint: disable=protected-access
+        return None
+    return machine
 
 
 DELETE_NOTICE = (
@@ -507,6 +586,8 @@ DELETE_NOTICE = (
     "  - At the next SessionStart, platform-sync (crew_platform.heal_config) "
     "recreates .crew/config.json from the built-in defaults, because .crew/ "
     "still exists. The rows above are that state.",
+    "  - platform.* is not listed: the same SessionStart re-detects it from "
+    "this machine and writes it back.",
     "  - Only .crew/config.json is removed. .crew/crew.json, verify.json, the "
     "codemap, backups and ticket state are untouched.",
 )
@@ -514,20 +595,40 @@ DELETE_NOTICE = (
 
 def _print_preview(root, rows):
     print(f"delete {crew_config.repo_config_path(root)} - what changes:")
-    for row in rows:
+    changed = [row for row in rows if "heldAgainst" not in row]
+    for row in changed:
         mark = "  !" if row["widens"] else ""
         print(f"  {row['path']}: {json.dumps(row['before'])} -> "
               f"{json.dumps(row['after'])}{mark}")
-    if not rows:
+    if not changed:
         print("  no setting changes value")
+    for row in rows:
+        if "heldAgainst" in row:
+            print(f"  {row['path']}: stays {json.dumps(row['after'])} - the "
+                  f"machine-global {json.dumps(row['heldAgainst'])} does not "
+                  "widen it: this key ratchets, and an absent repo value is "
+                  "the default, which is the floor")
     for line in DELETE_NOTICE:
         print(line)
 
 
+def _shell_command(parts, windows):
+    """`parts` as one command line for `subprocess.run(shell=True)`'s shell.
+
+    POSIX: `shlex.quote`. Windows: cmd.exe does not honour single quotes, so
+    each part is double-quoted, with its backslashes turned to forward
+    slashes -- Python and every Windows API accept them, and a double-quoted
+    forward-slash path reads the same in cmd.exe and in Git Bash, where a
+    backslash inside double quotes can escape. A Windows path cannot contain
+    `"`, so the quoting cannot be broken from inside."""
+    if windows:
+        return " ".join('"' + part.replace("\\", "/") + '"' for part in parts)
+    return " ".join(shlex.quote(part) for part in parts)
+
+
 def _script_command(root, *args):
-    return " ".join(shlex.quote(part) for part in (
-        sys.executable, os.path.abspath(__file__), "--root",
-        os.path.abspath(root)) + args)
+    return _shell_command((sys.executable, os.path.abspath(__file__), "--root",
+                           os.path.abspath(root)) + args, _ON_WINDOWS)
 
 
 def delete_repo_config(root, confirm, apply, now=None, global_path=None):
