@@ -641,22 +641,23 @@ def test_an_unknown_provider_does_not_orphan_the_twin(tmp_path):
                           "cwd": root, "message": "hi"}).encode()
     env = dict(os.environ, CLAUDE_PROJECT_DIR=root, OS="Windows_NT")
 
-    codes = []
+    codes, took = [], []
     for cmd in ([PWSH, "-NoProfile", "-File", str(SCRIPTS / "notify.ps1")],
                 [BASH, str(SCRIPTS / "notify.sh")]):
         began = time.monotonic()
         done = subprocess.run(cmd + ["waiting", "hi"], input=payload, cwd=root, env=env,
                               capture_output=True, check=False, timeout=30)
+        took.append(time.monotonic() - began)
         codes.append(done.returncode)
-    # Only the twin's own run, against the grace it would wait out if broken:
-    # a total over both runs also counted two process start-ups, which alone
-    # passed 3s on Windows (T-0076).
-    elapsed = time.monotonic() - began
+    # Each run against the grace it would wait out if broken. A 3s total over
+    # both runs also counted two process start-ups, which alone passed 3s on
+    # Windows; timing only the twin let a slow first run through (T-0076).
+    grace = event_claim._HOOK_GRACE["notify"]
 
     claims = _claim_files(root)
-    assert (codes, elapsed < event_claim._HOOK_GRACE["notify"]) == ([0, 0], True), (
-        "the twin must stand down immediately, not wait out the grace: "
-        f"codes={codes} elapsed={elapsed}")
+    assert (codes, [seconds < grace for seconds in took]) == ([0, 0], [True, True]), (
+        "neither flavour may wait out the grace, and the twin must stand down at once: "
+        f"codes={codes} took={took}")
     assert len(claims) == 1, (
         "an unknown provider must not orphan a second generation: " +
         repr([c.name for c in claims]))
