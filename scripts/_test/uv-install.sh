@@ -168,6 +168,31 @@ SHIPPED_UV_SHA256="$UV_INSTALLER_SHA256"
 # explicitly, so "the host happened to have it" can never make a case pass.
 BASH_ABS="$(command -v bash)"
 
+# Native Windows (Git Bash): pwsh cannot run an extensionless '#!' stub. It hands the
+# file to ShellExecute, which opens a "Pick an app" dialog and waits on it with
+# nobody there to answer; that hung two cases for 25 minutes each in a verify-gate run
+# (T-0076). So there every stub gets a .cmd twin, which pwsh resolves ahead of the
+# extensionless file (measured), running the same stub through bash. Off Windows,
+# cmd_twin does nothing.
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) WIN_HOST=1 ;; *) WIN_HOST= ;; esac
+# MSYS's `ln -s` copies unless told otherwise, and a copy is not the link that
+# mkfixture's entries and case 26 depend on. Ask for native links, but only after
+# proving this host can make one (Developer Mode or admin); say so if it cannot.
+if [ -n "$WIN_HOST" ]; then
+  _probe="$(mktemp -d)" && : > "$_probe/t" &&
+    MSYS="winsymlinks:nativestrict${MSYS:+ $MSYS}" ln -s "$_probe/t" "$_probe/l" 2>/dev/null &&
+    [ -L "$_probe/l" ] && export MSYS="winsymlinks:nativestrict${MSYS:+ $MSYS}" ||
+    printf '%s\n' "NOTE: this Windows host cannot make native symlinks; case 26's link checks will fail." >&2
+  rm -rf "$_probe"
+fi
+cmd_twin() {
+  # $1 an extensionless stub. Writes $1.cmd, which keeps the stub's exit code.
+  [ -n "$WIN_HOST" ] || return 0
+  rm -f "$1.cmd"
+  printf '@"%s" "%s" %%*\r\n@exit /b %%ERRORLEVEL%%\r\n' \
+    "$(cygpath -w "$BASH_ABS")" "$(cygpath -w "$1")" > "$1.cmd"
+}
+
 # --- the real tools a fixture may need, COPIED into $TMP first ----------------
 # Fixtures used to symlink straight at /usr/bin/<tool>. That put a link to a HOST
 # BINARY inside the very directory stub() writes into, so the only thing standing
@@ -225,6 +250,21 @@ mkrealbin() {
       exit 2
     fi
   done
+  # Native Windows: an MSYS tool loads msys-2.0.dll and friends from its own
+  # directory or from PATH, and a fixture's PATH holds neither. So every copy above
+  # failed to start, and each case that ran one (the stubs' own `cp` included)
+  # failed for that alone (T-0076). Copy exactly the DLLs ldd says they import.
+  REALBIN_DLLS=""
+  [ -n "$WIN_HOST" ] || return 0
+  local dll
+  for t in $REALBIN_TOOLS; do
+    src="$(command -v "$t" 2>/dev/null)" || continue
+    for dll in $(ldd "$src" 2>/dev/null | awk '$1 ~ /^msys-.*\.dll$/ { print $3 }'); do
+      case " $REALBIN_DLLS " in *" ${dll##*/} "*) continue ;; esac
+      cp "$dll" "$REALBIN/${dll##*/}"
+      REALBIN_DLLS="$REALBIN_DLLS ${dll##*/}"
+    done
+  done
 }
 mkrealbin
 
@@ -241,7 +281,7 @@ mkfixture() {
   # that wants a different answer from any of them stubs it over the top.
   # $REALBIN, never /usr/bin: see mkrealbin above. Nothing in a fixture may resolve
   # to a host binary, and case 0 asserts that as a standing invariant.
-  for t in $REALBIN_TOOLS; do
+  for t in $REALBIN_TOOLS $REALBIN_DLLS; do
     [ -e "$REALBIN/$t" ] && ln -s "$REALBIN/$t" "$fx/bin/$t"
   done
   # as_root prefers sudo when not uid 0; stub it so the case behaves the same
@@ -280,6 +320,7 @@ stub() {
     printf '%s\n' "$@"
   } > "$fx/bin/$name"
   chmod +x "$fx/bin/$name"
+  cmd_twin "$fx/bin/$name"
 }
 
 # A stub that behaves like a successful uv install: drops a uv into ~/.local/bin,
@@ -775,8 +816,14 @@ ps_run() {
   # command Install-Uv reaches for is a stub in $fx/bin or is genuinely absent.
   local fx="$TMP/$1"
   ps_harness "$1" "$2"
+  # Bounded and unattended: a case that waits on anything fails in two minutes
+  # instead of holding the whole suite (T-0076). `timeout` is named absolutely,
+  # because env resolves it through the fixture's own PATH.
+  local limit
+  limit="$(command -v timeout 2>/dev/null)"
   ( env -u PSModulePath PATH="$fx/bin" HOME="$fx/home" UV_TEST_CALLS="$fx/calls" \
-      "$PWSH" -NoProfile -NoLogo -File "$fx/harness.ps1" ) >"$TMP/out" 2>"$TMP/err"
+      ${limit:+"$limit" 120} "$PWSH" -NoProfile -NoLogo -NonInteractive -File "$fx/harness.ps1" ) \
+      </dev/null >"$TMP/out" 2>"$TMP/err"
   RC=$?
 }
 ps_field() { sed -n "s/^$1=//p" "$TMP/out"; }
@@ -790,6 +837,7 @@ if [ -z "$PWSH" ]; then
 else
   # A uv that a Windows-side installer would drop somewhere already on PATH.
   printf '#!/bin/sh\nexit 0\n' > "$TMP/uv-payload-bin"; chmod +x "$TMP/uv-payload-bin"
+  cmd_twin "$TMP/uv-payload-bin"
 
   echo "21. .ps1 idempotence: uv already present is detected and nothing is run"
   FX=ps-have-uv; mkfixture "$FX" >/dev/null
@@ -811,6 +859,7 @@ else
   # aws-pricing and graphify - three rows failing on a dependency uv does not have.
   FX=ps-winget; mkfixture "$FX" >/dev/null
   stub "$FX" winget "cp '$TMP/uv-payload-bin' '$TMP/$FX/bin/uv'
+${WIN_HOST:+cp '$TMP/uv-payload-bin.cmd' '$TMP/$FX/bin/uv.cmd'}
 exit 0"
   ps_run "$FX" "$PS_TAIL"
   check "no error"                       ""  "$(ps_field ERR)"
@@ -842,6 +891,7 @@ exit 0"
   echo "25. .ps1 prefers pipx over winget, the same order the .sh uses"
   FX=ps-order; mkfixture "$FX" >/dev/null
   stub "$FX" pipx "cp '$TMP/uv-payload-bin' '$TMP/$FX/bin/uv'
+${WIN_HOST:+cp '$TMP/uv-payload-bin.cmd' '$TMP/$FX/bin/uv.cmd'}
 exit 0"
   stub "$FX" winget 'exit 0'
   stub "$FX" pip 'exit 0'

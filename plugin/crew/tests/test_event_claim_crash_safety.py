@@ -641,17 +641,20 @@ def test_an_unknown_provider_does_not_orphan_the_twin(tmp_path):
                           "cwd": root, "message": "hi"}).encode()
     env = dict(os.environ, CLAUDE_PROJECT_DIR=root, OS="Windows_NT")
 
-    began = time.monotonic()
     codes = []
     for cmd in ([PWSH, "-NoProfile", "-File", str(SCRIPTS / "notify.ps1")],
                 [BASH, str(SCRIPTS / "notify.sh")]):
+        began = time.monotonic()
         done = subprocess.run(cmd + ["waiting", "hi"], input=payload, cwd=root, env=env,
                               capture_output=True, check=False, timeout=30)
         codes.append(done.returncode)
+    # Only the twin's own run, against the grace it would wait out if broken:
+    # a total over both runs also counted two process start-ups, which alone
+    # passed 3s on Windows (T-0076).
     elapsed = time.monotonic() - began
 
     claims = _claim_files(root)
-    assert (codes, elapsed < 3) == ([0, 0], True), (
+    assert (codes, elapsed < event_claim._HOOK_GRACE["notify"]) == ([0, 0], True), (
         "the twin must stand down immediately, not wait out the grace: "
         f"codes={codes} elapsed={elapsed}")
     assert len(claims) == 1, (
