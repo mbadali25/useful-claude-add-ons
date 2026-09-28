@@ -14,6 +14,7 @@ DEPLOY_MUTATIONS proves each one can. Every repository and the machine-global
 file are built under tmp_path; nothing reads the real ~/.claude.
 """
 import copy
+import errno
 import itertools
 import json
 import os
@@ -102,6 +103,15 @@ def test_fully_armed_prod_allows(tmp_path, monkeypatch):
     got = _verdict(root, PROD)
 
     assert (got["verdict"], got["reason"]) == ("allow", ALLOW_REASON)
+
+
+def test_fully_armed_prod_names_the_checkout_it_judged(tmp_path, monkeypatch):
+    root = _armed(tmp_path, monkeypatch)
+    judged = crew_autopilot.crew_ticket.toplevel(root) or os.path.abspath(root)
+
+    got = _verdict(root, PROD)
+
+    assert (got["verdict"], got["root"]) == ("allow", judged)
 
 
 def test_all_allows_nonprod(tmp_path, monkeypatch):
@@ -258,6 +268,198 @@ def test_cloud_guard_import_failure_asks(tmp_path, monkeypatch):
     got = _verdict(root, PROD)
 
     assert (got["verdict"], "cloud_guard" in got["reason"]) == ("ask", True)
+
+
+# --- review round 4: one root per answer ---------------------------------------
+
+def _toplevel_returning(monkeypatch, *answers):
+    """Patch `crew_ticket.toplevel` to return `answers` in turn (the last one
+    repeated); returns the list of calls it saw."""
+    calls = []
+
+    def toplevel(root):
+        calls.append(root)
+        return answers[min(len(calls), len(answers)) - 1]
+
+    monkeypatch.setattr(crew_autopilot.crew_ticket, "toplevel", toplevel)
+    return calls
+
+
+@pytest.mark.parametrize("env_class", [PROD, NONPROD])
+def test_root_is_resolved_exactly_once(tmp_path, monkeypatch, env_class):
+    root = _armed(tmp_path, monkeypatch)
+    real = os.path.realpath(root)
+    calls = _toplevel_returning(monkeypatch, real)
+
+    got = _verdict(root, env_class)
+
+    assert (len(calls), got["root"], got["verdict"]) == (1, real, "allow")
+
+
+def test_root_swap_cannot_split_the_decision(tmp_path, monkeypatch):
+    clean = _armed(tmp_path / "clean", monkeypatch)
+    dirty = _armed(tmp_path / "dirty", monkeypatch)
+    (tmp_path / "dirty" / "repo" / ".crew" / "incident.json").write_text("{}", encoding="utf-8")
+    calls = _toplevel_returning(monkeypatch, clean, dirty)
+
+    got = _verdict(clean, PROD)
+
+    assert (got["verdict"], len(calls), got["root"]) == ("allow", 1, clean)
+
+
+def test_root_swap_the_other_way_refuses(tmp_path, monkeypatch):
+    clean = _armed(tmp_path / "clean", monkeypatch)
+    dirty = _armed(tmp_path / "dirty", monkeypatch)
+    (tmp_path / "dirty" / "repo" / ".crew" / "incident.json").write_text("{}", encoding="utf-8")
+    _toplevel_returning(monkeypatch, dirty, clean)
+
+    got = _verdict(clean, PROD)
+
+    assert (got["verdict"], got["root"]) == ("refuse", dirty)
+
+
+def test_machine_path_is_the_one_probed(tmp_path, monkeypatch):
+    root = _armed(tmp_path, monkeypatch)
+    real = crew_config.resolve_ratcheted
+    seen = []
+
+    def recorder(*args, **kwargs):
+        # cloud_guard.resolve_mode reaches here too, through its own
+        # environments_config (the spec's accepted risk): record crew_autopilot's.
+        if sys._getframe(1).f_globals.get("__name__") == "crew_autopilot":  # pylint: disable=protected-access
+            seen.append(kwargs.get("path"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(crew_config, "resolve_ratcheted", recorder)
+
+    got = _verdict(root, PROD)
+
+    assert (seen, got["verdict"]) == ([_machine_path(tmp_path)], "allow")
+
+
+def test_outside_git_decides_from_abspath(tmp_path, monkeypatch):
+    root = _armed(tmp_path, monkeypatch)
+    _toplevel_returning(monkeypatch, None)
+
+    got = _verdict(root, PROD)
+
+    assert (got["root"], got["verdict"]) == (os.path.abspath(root), "allow")
+
+
+@pytest.mark.parametrize("env_class", [PROD, NONPROD])
+@pytest.mark.parametrize("error", [FileNotFoundError, NotADirectoryError, PermissionError,
+                                   RuntimeError])
+def test_checkout_lookup_that_raises_refuses(tmp_path, monkeypatch, error, env_class):
+    root = _armed(tmp_path, monkeypatch)
+
+    def toplevel(_root):
+        raise error("lookup failed")
+
+    monkeypatch.setattr(crew_autopilot.crew_ticket, "toplevel", toplevel)
+
+    got = _verdict(root, env_class)
+
+    assert (got["verdict"], error.__name__ in got["reason"]) == ("refuse", True)
+
+
+@pytest.mark.parametrize("root", [None, 5, "a\x00b"], ids=["none", "int", "nul"])
+def test_root_that_is_not_a_path_refuses(tmp_path, monkeypatch, root):
+    _armed(tmp_path, monkeypatch)
+
+    got = _verdict(root, PROD)
+
+    assert got["verdict"] == "refuse"
+
+
+# --- review round 4: every probe answers present, absent or could-not-tell ----
+
+def _lstat_raising(error):
+    def lstat(*_args, **_kwargs):
+        raise error
+
+    return lstat
+
+
+@pytest.mark.parametrize("case", [
+    "present", "absent-enoent", "absent-enotdir", "could-not-tell-permission",
+    "could-not-tell-eloop", "could-not-tell-valueerror", "could-not-tell-runtimeerror"])
+def test_probe_answers(tmp_path, monkeypatch, case):
+    real_file = tmp_path / "file"
+    real_file.write_text("x", encoding="utf-8")
+    paths = {"present": real_file, "absent-enoent": tmp_path / "missing",
+             "absent-enotdir": real_file / "under-a-file"}
+    raised = {"could-not-tell-permission": PermissionError(errno.EACCES, "denied"),
+              "could-not-tell-eloop": OSError(errno.ELOOP, "loop"),
+              "could-not-tell-valueerror": ValueError("embedded null byte"),
+              "could-not-tell-runtimeerror": RuntimeError("lstat exploded")}
+    if case in raised:
+        monkeypatch.setattr(os, "lstat", _lstat_raising(raised[case]))
+    expected = {"present": ("present", ""), "absent-enoent": ("absent", ""),
+                "absent-enotdir": ("absent", ""),
+                "could-not-tell-permission": ("could-not-tell", "PermissionError"),
+                "could-not-tell-eloop": ("could-not-tell", "OSError"),
+                "could-not-tell-valueerror": ("could-not-tell", "ValueError"),
+                "could-not-tell-runtimeerror": ("could-not-tell", "RuntimeError")}[case]
+
+    got = crew_autopilot._probe(str(paths.get(case, real_file)))  # pylint: disable=protected-access
+
+    assert got == expected
+
+
+def _layer_path(tmp_path, root, layer):
+    return (os.path.join(root, ".crew", "config.json") if layer == "repo"
+            else _machine_path(tmp_path))
+
+
+@pytest.mark.parametrize("env_class", [PROD, NONPROD])
+@pytest.mark.parametrize("layer", ["repo", "machine"])
+def test_layer_parent_unreadable_asks(tmp_path, monkeypatch, layer, env_class):
+    root = _armed(tmp_path, monkeypatch)
+    target = _layer_path(tmp_path, root, layer)
+    real = os.lstat
+
+    def lstat(path, *args, **kwargs):
+        if os.fspath(path) == target:
+            raise PermissionError(13, "Permission denied", target)
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "lstat", lstat)
+
+    got = _verdict(root, env_class)
+
+    assert (got["verdict"], f"the {layer} config layer" in got["reason"],
+            "PermissionError" in got["reason"], "guards.cloudGuard" in got["reason"]) == (
+        "ask", True, True, False)
+
+
+@pytest.mark.parametrize("env_class", [PROD, NONPROD])
+@pytest.mark.parametrize("layer", ["repo", "machine"])
+def test_layer_present_but_layer_state_says_absent_asks(tmp_path, monkeypatch, layer,
+                                                        env_class):
+    """Round 4's repro: `layer_state`'s `lexists` collapse calls a layer this
+    module saw present `absent`; that must ask, never pass as unset."""
+    root = _armed(tmp_path, monkeypatch)
+    target = _layer_path(tmp_path, root, layer)
+    real_read, real_lexists = crew_state.read_text, os.path.lexists
+    monkeypatch.setattr(crew_state, "read_text", lambda path, *a, **k: (
+        None if os.fspath(path) == target else real_read(path, *a, **k)))
+    monkeypatch.setattr(os.path, "lexists", lambda path: (
+        False if os.fspath(path) == target else real_lexists(path)))
+
+    got = _verdict(root, env_class)
+
+    assert (got["verdict"], got["reason"]) == ("ask", f"could not read the {layer} config layer")
+
+
+def test_layer_absent_is_permissive(tmp_path, monkeypatch):
+    root = _armed(tmp_path, monkeypatch)
+    os.remove(_machine_path(tmp_path))
+
+    nonprod = _verdict(root, NONPROD, env="dev")
+    prod = _verdict(root, PROD)
+
+    assert (nonprod["verdict"], prod["verdict"],
+            "not true in the machine config layer" in prod["reason"]) == ("allow", "ask", True)
 
 
 # --- must-block: could not tell asks -----------------------------------------
@@ -659,14 +861,57 @@ def test_cli_crash_prints_ask(tmp_path, monkeypatch, capsys):
     assert (code, capsys.readouterr().out.startswith("verdict=ask ")) == (0, True)
 
 
+def _cli_prod(root, *extra):
+    return crew_autopilot.main(["deploy-allowed", "--root", root, "--env", "production",
+                                "--class", PROD, *extra])
+
+
+def test_cli_crash_that_cannot_be_described_prints_ask(tmp_path, monkeypatch, capsys):
+    """Round 4's repro: the exception's `__str__` raises inside the fallback."""
+    root = _armed(tmp_path, monkeypatch)
+
+    def boom(*_args, **_kwargs):
+        raise _UnprintableError()
+
+    monkeypatch.setattr(crew_autopilot, "deploy_allowed", boom)
+
+    code = _cli_prod(root)
+    out, err = capsys.readouterr()
+
+    assert (code, len(out.splitlines()), out.startswith("verdict=ask "),
+            len(err.splitlines()), err.startswith("unattended production: ")) == (
+        0, 1, True, 1, True)
+
+
+def test_cli_result_missing_a_key_prints_ask(tmp_path, monkeypatch, capsys):
+    root = _armed(tmp_path, monkeypatch)
+    monkeypatch.setattr(crew_autopilot, "deploy_allowed", lambda *_a, **_k: {})
+
+    code = _cli_prod(root)
+    out = capsys.readouterr().out
+
+    assert (code, len(out.splitlines()), out.startswith("verdict=ask ")) == (0, 1, True)
+
+
+def test_cli_json_of_an_undumpable_result_prints_ask(tmp_path, monkeypatch, capsys):
+    root = _armed(tmp_path, monkeypatch)
+    undumpable = {"verdict": "allow", "reason": "forged", "report": "", "env": "production",
+                  "envClass": PROD, "deploy": object(), "root": root}
+    monkeypatch.setattr(crew_autopilot, "deploy_allowed", lambda *_a, **_k: undumpable)
+
+    code = _cli_prod(root, "--json")
+
+    assert (code, json.loads(capsys.readouterr().out)["verdict"]) == (0, "ask")
+
+
 # Review round 3: whatever the CLI is handed, stdout is ONE verdict line, verdict
 # first, and the stderr report is one line too - no input can add a line a
 # consumer would read as a second verdict.
-_BREAKS = ["\n", "\r", " ", "\x85"]
+_BREAKS = ["\n", "\r", "\u2028", "\x85", "\u2029"]
 
 
 @pytest.mark.parametrize("flag", ["--env", "--class"])
-@pytest.mark.parametrize("brk", _BREAKS, ids=["lf", "cr", "u2028", "nel"])
+@pytest.mark.parametrize("brk", _BREAKS, ids=["lf", "cr", "u2028", "nel", "ps"])
 def test_cli_prints_one_line_whatever_it_is_handed(tmp_path, monkeypatch, capsys, flag, brk):
     root = _armed(tmp_path, monkeypatch)
     argv = {"--env": "prod", "--class": PROD}

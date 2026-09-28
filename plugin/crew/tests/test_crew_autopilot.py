@@ -588,6 +588,48 @@ def test_cli_that_raises_prints_a_stop(tmp_path, monkeypatch, capsys, action):
     assert (code, "stop=1" in out, "disk on fire" in out) == (0, True, True)
 
 
+class _UnprintableError(RuntimeError):
+    """An exception whose `__str__` raises (T-0072 review round 4's neighbour)."""
+
+    def __str__(self):
+        raise ValueError("no str")
+
+
+def _raise_unprintable(*_args, **_kwargs):
+    raise _UnprintableError()
+
+
+def test_next_crash_that_cannot_be_described_still_stops(tmp_path, monkeypatch, capsys):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    monkeypatch.setattr(crew_autopilot, "next_phase", _raise_unprintable)
+
+    code = crew_autopilot.main(["next", "--root", str(root), "--ticket", T])
+
+    assert (code, "stop=1" in capsys.readouterr().out) == (0, True)
+
+
+def test_resume_crash_that_cannot_be_described_still_stops(tmp_path, monkeypatch, capsys):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    monkeypatch.setattr(crew_autopilot, "resume_target", _raise_unprintable)
+
+    code = crew_autopilot.main(["resume", "--root", str(root), "--ticket", T])
+
+    assert (code, "stop=1" in capsys.readouterr().out) == (0, True)
+
+
+def test_status_crash_that_cannot_be_described_still_prints_unknown(tmp_path, monkeypatch,
+                                                                    capsys):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    monkeypatch.setattr(crew_autopilot, "status", _raise_unprintable)
+
+    code = crew_autopilot.main(["status", "--root", str(root), "--ticket", T])
+
+    assert (code, capsys.readouterr().out.startswith("status: unknown")) == (0, True)
+
+
 def test_cli_next_prints_one_line_and_exits_zero(tmp_path):
     root = make_repo(tmp_path, mode="off")
     _ticket(root)
