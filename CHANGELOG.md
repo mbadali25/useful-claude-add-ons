@@ -62,6 +62,12 @@ A tooling change: this release carries no feature work.
 
 - Importing `verify_record` no longer reconfigures `sys.stdout`; that now
   happens in its `main`.
+- The sabotage entry "an edit to scope_guard.py runs no pytest rule" now drops
+  `scope_guard.py` from rule 31 as well as rule 27. Rule 31 lists it too, so
+  dropping it from rule 27 alone left it covered and the entry stayed green
+  (`STILL GREEN -- TEST IS VACUOUS`).
+- `plugin/crew/BUDGETS.md`'s Markdown line count is re-measured: 19,055 lines
+  across 127 files.
 
 ### Added — `crew` 1.0.51: `autopilot.deploy` — production without asking, opt-in (T-0072)
 
