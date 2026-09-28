@@ -70,8 +70,10 @@ class Conflict(Exception):
 
 
 class Displaced(OSError):
-    """A move found a foreign file at its source and could not put it back
-    without replacing a newer one; the foreign file is at `parked`."""
+    """A move found a foreign file at its source. `parked` is a name that
+    holds it, KEPT: crew never removes it, since it may be that file's last
+    name (review round 4). The message says whether the file is also back at
+    the source."""
 
     def __init__(self, message, parked):
         super().__init__(message)
@@ -397,9 +399,13 @@ def _unlink_source(src, dest):
 
     There is no "unlink if this inode" call, so `src` is renamed onto a
     reserved name (replacing only this process's own placeholder) and
-    compared there. A foreign file that replaced `src` after the link is put
-    back with a no-clobber link; if a newer file took `src` meanwhile, the
-    foreign one stays parked and `Displaced` names it."""
+    compared there. The one unlink after that rename is of the reserved name
+    when it IS the moved inode: `dest` names it too, so no bytes can go. A
+    foreign file found there is put back with a no-clobber link and its
+    reserved name is KEPT, never removed -- another writer may replace `src`
+    again at any moment, making that name the file's last (review round 4).
+    Once `src` is renamed, every failure is `Displaced`, so the caller never
+    undoes its link to `dest`: the original may have no other name."""
     parked = _reserve(src)
     try:
         os.rename(src, parked)
@@ -409,7 +415,13 @@ def _unlink_source(src, dest):
     except BaseException:
         os.remove(parked)
         raise
-    if os.path.samestat(os.lstat(parked), os.lstat(dest)):
+    try:
+        same = os.path.samestat(os.lstat(parked), os.lstat(dest))
+    except OSError as exc:
+        raise Displaced(
+            f"{src} was moved to {parked} and could not be compared with "
+            f"{dest} ({exc}); both are kept", parked) from exc
+    if same:
         os.remove(parked)               # the second name of the moved inode
         return
     try:
@@ -418,7 +430,16 @@ def _unlink_source(src, dest):
         raise Displaced(
             f"a file replaced {src} during the move and another took its "
             f"place after; the first is kept at {parked}", parked) from exc
-    os.remove(parked)
+    except OSError as exc:
+        raise Displaced(
+            f"a file replaced {src} during the move and could not be put "
+            f"back ({exc}); it is at {parked}, and the moved original is at "
+            f"{dest}", parked) from exc
+    raise Displaced(
+        f"a file replaced {src} during the move; it is back at {src}, and a "
+        f"second name for it is kept at {parked} (crew never removes a name "
+        f"that may be another writer's last copy; delete it after checking "
+        f"{src})", parked)
 
 
 def move_no_clobber(src, dest):
@@ -431,6 +452,8 @@ def move_no_clobber(src, dest):
     so there it is `os.link` (which refuses) and then `_unlink_source`,
     which removes `src` only while it still names the linked inode. A
     filesystem without hard links refuses with its `OSError`; nothing moved.
+    The link is undone only for a failure before `src` was renamed:
+    `Displaced` (every failure after it) passes through with `dest` kept.
     """
     if os.name == "nt":
         os.rename(src, dest)
@@ -442,7 +465,7 @@ def move_no_clobber(src, dest):
             raise
         except BaseException:
             try:
-                os.remove(dest)         # undo the link: dest is ours alone
+                os.remove(dest)         # undo the link: src still names it
             except OSError:
                 pass
             raise

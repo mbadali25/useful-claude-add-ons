@@ -299,6 +299,12 @@ def test_create_bytes_writes_a_new_file(tmp_path):
     assert sorted(os.listdir(tmp_path)) == ["config.json"]
 
 
+def _replace(tmp_path, path, data):
+    """Another writer's atomic save: a sibling, then `os.replace` onto `path`."""
+    sibling = _write(tmp_path / "foreign.tmp", data)
+    os.replace(sibling, path)
+
+
 @pytest.mark.skipif(os.name == "nt", reason="the link-then-park move is POSIX's")
 def test_move_aside_puts_back_a_file_that_replaced_the_source(tmp_path,
                                                               monkeypatch):
@@ -309,15 +315,84 @@ def test_move_aside_puts_back_a_file_that_replaced_the_source(tmp_path,
     def _link_then_a_foreign_save(a, b, **kwargs):
         real_link(a, b, **kwargs)
         if b == dest:
-            _write(tmp_path / "config.json.tmp-foreign", b'{"foreign": 1}')
-            os.replace(str(tmp_path / "config.json.tmp-foreign"), src)
+            _replace(tmp_path, src, b'{"F1": 1}')
     monkeypatch.setattr(files.os, "link", _link_then_a_foreign_save)
 
-    got = files.move_aside(src, dest)
+    with pytest.raises(files.Displaced) as caught:
+        files.move_aside(src, dest)
 
-    assert (got, _read(dest), _read(src)) == (
-        b'{"original": 1}', b'{"original": 1}', b'{"foreign": 1}')
-    assert sorted(os.listdir(tmp_path)) == ["config.json", "config.json.bak-X"]
+    exc = caught.value
+    assert (_read(src), _read(dest), _read(exc.parked)) == (
+        b'{"F1": 1}', b'{"original": 1}', b'{"F1": 1}')
+    assert exc.parked in str(exc)
+    assert len(os.listdir(tmp_path)) == 3
+
+
+# --- Review round 4 (T-0075): a move never unlinks a foreign file's last name -
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the link-then-park move is POSIX's")
+def test_move_aside_keeps_a_foreign_file_through_a_second_replacement(
+        tmp_path, monkeypatch):
+    src = _write(tmp_path / "config.json", b'{"original": 1}')
+    dest = str(tmp_path / "config.json.bak-X")
+    real_link = os.link
+
+    def _link_then_two_foreign_saves(a, b, **kwargs):
+        real_link(a, b, **kwargs)
+        if b == dest:
+            _replace(tmp_path, src, b'{"F1": 1}')
+        elif b == src:
+            _replace(tmp_path, src, b'{"F2": 1}')
+    monkeypatch.setattr(files.os, "link", _link_then_two_foreign_saves)
+
+    with pytest.raises(files.Displaced) as caught:
+        files.move_aside(src, dest)
+
+    exc = caught.value
+    assert (_read(exc.parked), _read(src), _read(dest)) == (
+        b'{"F1": 1}', b'{"F2": 1}', b'{"original": 1}')
+    held = sorted(_read(tmp_path / name) for name in os.listdir(tmp_path))
+    assert held == sorted([b'{"F1": 1}', b'{"F2": 1}', b'{"original": 1}'])
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the link-then-park move is POSIX's")
+def test_move_aside_keeps_the_backup_when_the_put_back_fails(tmp_path,
+                                                             monkeypatch):
+    src = _write(tmp_path / "config.json", b'{"original": 1}')
+    dest = str(tmp_path / "config.json.bak-X")
+    real_link = os.link
+
+    def _link_then_a_foreign_save_then_refuse(a, b, **kwargs):
+        if b == src:
+            raise PermissionError(13, "Permission denied", b)
+        real_link(a, b, **kwargs)
+        if b == dest:
+            _replace(tmp_path, src, b'{"F1": 1}')
+    monkeypatch.setattr(files.os, "link", _link_then_a_foreign_save_then_refuse)
+
+    with pytest.raises(files.Displaced) as caught:
+        files.move_aside(src, dest)
+
+    assert _read(dest) == b'{"original": 1}'
+    assert _read(caught.value.parked) == b'{"F1": 1}'
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the link-then-park move is POSIX's")
+def test_move_aside_undoes_the_link_while_the_source_is_untouched(tmp_path,
+                                                                 monkeypatch):
+    src = _write(tmp_path / "config.json", b'{"original": 1}')
+    dest = str(tmp_path / "config.json.bak-X")
+
+    def _no_reservation(_near):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(files, "_reserve", _no_reservation)
+
+    with pytest.raises(OSError):
+        files.move_aside(src, dest)
+
+    assert not os.path.lexists(dest)
+    assert _read(src) == b'{"original": 1}'
 
 
 @pytest.mark.skipif(os.name == "nt", reason="needs a POSIX symlink and FIFO")

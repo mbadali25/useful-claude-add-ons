@@ -872,7 +872,8 @@ def apply_delete(root, plan, confirm, now=None, expect=None):
         print(f"refused: {exc}; {path} left in place", file=sys.stderr)
         return 2
     except crew_config_files.Displaced as exc:
-        print(f"refused: {exc}; nothing is lost, check {path}", file=sys.stderr)
+        print(f"refused: {exc}; nothing is lost: the original is at {backup}, "
+              f"check {path}", file=sys.stderr)
         return 1
     except OSError as exc:
         print(f"refused: {path} could not be moved to a backup ({exc}); left "
@@ -961,6 +962,9 @@ def restore_repo_config(root, backup, apply, now=None):
     except crew_config_files.Busy as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return 2
+    except crew_config_files.Displaced as exc:
+        print(f"{exc}; nothing is lost, check {path}", file=sys.stderr)
+        return 1
     except OSError as exc:
         print(f"refused: could not restore {path} ({exc})", file=sys.stderr)
         return 2

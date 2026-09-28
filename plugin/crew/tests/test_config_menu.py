@@ -1355,6 +1355,74 @@ def test_delete_rollback_never_replaces_a_file_saved_in_the_gap(
     assert backup in capsys.readouterr().err
 
 
+def _two_foreign_saves(root, monkeypatch):
+    """Wrap `os.link` as crew_config_files calls it: after the link to a
+    `.bak-` name another writer saves F1 over the config, and after the link
+    that puts F1 back it saves F2 over it (review round 4's BLOCK 2)."""
+    path = _config(root)
+    real_link = os.link
+
+    def _save(data):
+        sibling = path + ".foreign.tmp"
+        with open(sibling, "wb") as handle:
+            handle.write(data)
+        os.replace(sibling, path)
+
+    def _link(src, dst, **kwargs):
+        real_link(src, dst, **kwargs)
+        if ".bak-" in os.path.basename(dst):
+            _save(b'{"F1": 1}\n')
+        elif dst == path:
+            _save(b'{"F2": 1}\n')
+    monkeypatch.setattr(crew_config_files.os, "link", _link)
+
+
+def _moving(root):
+    crew_dir = os.path.join(root, ".crew")
+    return [os.path.join(crew_dir, n) for n in os.listdir(crew_dir)
+            if n.endswith(".moving")]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the link-then-park move is POSIX's")
+def test_delete_reports_a_foreign_file_kept_during_the_move(
+        tmp_path, capsys, monkeypatch):
+    root, gpath = _repo(tmp_path)
+    original = open(_config(root), "rb").read()
+    plan = menu.plan_delete(root, gpath)
+    _two_foreign_saves(root, monkeypatch)
+
+    code = menu.delete_repo_config(root, "repo", True, now=_now(),
+                                   global_path=gpath, expect={
+                                       "repo": plan["digest"],
+                                       "machine": plan["machine"]})
+
+    backup = os.path.join(root, ".crew", f"config.json.bak-{_TS}")
+    err = capsys.readouterr().err
+    kept = _moving(root)
+    assert (code, open(backup, "rb").read(), open(_config(root), "rb").read()) == (
+        1, original, b'{"F2": 1}\n')
+    assert [open(k, "rb").read() for k in kept] == [b'{"F1": 1}\n']
+    assert backup in err and kept[0] in err
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the link-then-park move is POSIX's")
+def test_restore_reports_a_foreign_file_kept_during_its_move_aside(
+        tmp_path, capsys, monkeypatch):
+    root, _ = _repo(tmp_path, {"tracker": "jira"})
+    backup = os.path.join(root, ".crew", f"config.json.bak-{_TS}-old")
+    with open(backup, "wb") as handle:
+        handle.write(b'{"tracker": "sdp"}\n')
+    _two_foreign_saves(root, monkeypatch)
+
+    code = menu.restore_repo_config(root, backup, True, now=_now())
+
+    err = capsys.readouterr().err
+    kept = _moving(root)
+    assert (code, open(_config(root), "rb").read()) == (1, b'{"F2": 1}\n')
+    assert [open(k, "rb").read() for k in kept] == [b'{"F1": 1}\n']
+    assert kept[0] in err
+
+
 @pytest.mark.skipif(os.name == "nt", reason="needs a POSIX symlink")
 def test_delete_refuses_a_symlinked_config(tmp_path, capsys):
     root, gpath = _repo(tmp_path)
