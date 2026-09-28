@@ -20,8 +20,8 @@ is what names the NEXT one, from files on disk and nothing else, so a skipped
 phase is visible and a phase that cannot be told stops. Read-only except
 `approve`, and only when `approval_policy` allows under the configured policy;
 it never accepts a review. That is the single exception (T-0010, below):
-`next`, `resume`, `settings`, `stops`, `route`, `status` and `questions-check`
-write no file. `approve` writes exactly what `crew_ticket.approve` writes for
+`next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check` and
+T-0072's `deploy-allowed` write no file. `approve` writes exactly what `crew_ticket.approve` writes for
 every approval route, `/crew:approve` included, all under
 `<git-common-dir>/crew/`: `approval.json`; `scope-tickets.json`, the scope
 ramp's list, on a ticket's first approval; and, when the review ledger is

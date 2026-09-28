@@ -196,7 +196,8 @@ All notable changes to this repository are documented here. Format follows [Keep
     `scope-tickets.json` on a ticket's first approval, and, for a distinct
     successor plan, the review ledger moved NEEDS_REPLAN -> IN_REVIEW. `next`,
     `resume`, `settings`, `stops`,
-    `route`, `status` and `questions-check` write nothing (tested: a snapshot
+    `route`, `status`, `questions-check` and T-0072's `deploy-allowed` write
+    nothing (tested: a snapshot
     of the worktree and `<git-common-dir>/crew/` is byte-identical after each,
     and `approve` adds exactly `approval.json` and, on a ticket's first
     approval, the scope ramp's `scope-tickets.json`, which `crew_ticket.approve`
@@ -277,8 +278,8 @@ All notable changes to this repository are documented here. Format follows [Keep
     `sabotage_autopilot.py`'s POLICY_MUTATIONS (one per refusing branch) are
     registered in `sabotage.py`. `commands/autopilot.md` runs both at the
     `approve` and `open-questions` phases: a `stop=1` at either phase runs
-    its policy first instead of stopping. Config leaf count 122 -> 124 (both
-    keys repo-only).
+    its policy first instead of stopping. Config leaf count 123 -> 125 (both
+    keys repo-only; 122 -> 124 before T-0072's `autopilot.deploy` landed first).
 
 - **`shipstation` 1.1.1: reach for V2 when changing orders in bulk.** Bumped `1.0.0 -> 1.1.1`.
   `SKILL.md` gains a *Bulk order changes* section: every V1 order is a V2 shipment

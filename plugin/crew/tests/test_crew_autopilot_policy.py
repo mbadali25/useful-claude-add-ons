@@ -671,7 +671,8 @@ def _files(root):
 
 READ_ONLY_RUNS = (("next", "--ticket", T), ("resume",), ("settings",), ("stops",),
                   ("route", "--args", f"status {T}"), ("status",),
-                  ("questions-check", "--ticket", T))
+                  ("questions-check", "--ticket", T),
+                  ("deploy-allowed", "--env", "staging", "--class", "nonProd"))
 
 
 def _main(root, action, *rest):

@@ -2332,8 +2332,8 @@ only when `autopilot.approval` allows it. `approve` writes exactly what
 `scope-tickets.json` on a ticket's first approval; and, when the review ledger
 is NEEDS_REPLAN and the plan is a distinct successor, the ledger itself, moved
 NEEDS_REPLAN -> IN_REVIEW (the successor continuation, a fresh review budget).
-`next`, `resume`, `settings`, `stops`, `route`, `status` and `questions-check`
-write nothing, and T-0018's `route` and `status` read no policy of their own:
+`next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check` and
+T-0072's `deploy-allowed` write nothing, and T-0018's `route` and `status` read no policy of their own:
 `status`'s lines, the approve and open-questions reasons included, read the
 same under every setting, and at the approve phase it names
 `/crew:approve <id>`; `next` is what names the policy's route. The one policy

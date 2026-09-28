@@ -842,6 +842,12 @@ POLICY_MUTATIONS = (
      '    open(os.path.join(top, ".work", "settings-ran"), "a").close()\n'
      '    crew_json = _read_json(os.path.join(top, ".crew", "crew.json"))\n',
      _P + "test_approve_is_the_only_writing_subcommand"),
+    ("deploy-allowed writes (T-0072's subcommand under T-0010's only-writer rule)", AUTOPILOT,
+     '    elif args.action == "deploy-allowed":\n        text, json_text, report = _cli_deploy(args)\n',
+     '    elif args.action == "deploy-allowed":\n'
+     '        open(os.path.join(args.root, ".work", "deploy-ran"), "a").close()\n'
+     '        text, json_text, report = _cli_deploy(args)\n',
+     _P + "test_approve_is_the_only_writing_subcommand"),
     ("approve writes beside the receipt", AUTOPILOT,
      "        top, ticket, by=f\"autopilot:{got['policy']}\", via=crew_ticket.AUTOPILOT)\n",
      "        top, ticket, by=f\"autopilot:{got['policy']}\", via=crew_ticket.AUTOPILOT)\n"
