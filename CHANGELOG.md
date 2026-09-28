@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.53: build-time development standards and a required pre-review self-check (T-0085)
+### Added — `crew` 1.0.55: build-time development standards and a required pre-review self-check (T-0085)
 
 - **New `crew-standards` skill.** `references/generic.md` ships GEN-01 to GEN-12,
   crew-generic standards mined from 224 BLOCK/FIX findings in crew's own QA reviews;
@@ -26,6 +26,8 @@ All notable changes to this repository are documented here. Format follows [Keep
 - `.crew/standards.md` joins the `.crew/` un-ignore list in `.gitignore`, the shipped
   crew-setup template and every document that states it. ADR 0004 records the
   decision. crew bundles 30 skills.
+- Bumped `1.0.54 -> 1.0.55` (1.0.52 on its branch; re-set to 1.0.53 after merging main's
+  1.0.52, T-0076, and to 1.0.55 after merging main's 1.0.54: T-0089, T-0090, T-0092).
 
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 
