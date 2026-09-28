@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@eb4c4fa8
+anchor: useful-claude-add-ons@b2553d26
 verified: 2026-09-28
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -317,7 +317,7 @@ Not re-verified at this pass: nothing under `mcp-servers/` was built, installed 
 ```
 git diff --name-only f2bb919b 79127fa1 -- mcp-servers/ TODO.md .claude-plugin/marketplace.json
 ```
-returns `.claude-plugin/marketplace.json`, `TODO.md` and eleven `mcp-servers/` files - T-0090's
+returns `.claude-plugin/marketplace.json`, `TODO.md` and ten `mcp-servers/` files - T-0090's
 `graphClient.ts`, `index.ts`, `graphClient.test.ts`, the five `package.json` files (version `:3`
 and each server's core pin `:29`, in place), `package-lock.json` and `README.md`.
 
@@ -350,3 +350,17 @@ Executed for this pass: `npm --prefix mcp-servers test`, exit 0 - `check-dist-fr
 `o365-user` 6/0, `o365-admin` 7/0, `intune` 6/0, `msgraph` 6/0, `core` 69/0 (108 pass in all).
 Re-measure by reading every `# pass` line of that run, not by counting `test(` in source: the
 tables in `graphClient.test.ts` generate their tests in loops.
+
+(Corrected at the T-0090 landing: the `f2bb919b` -> `79127fa1` paragraph first said "eleven
+`mcp-servers/` files"; the list it gives and `git diff --name-only f2bb919b 79127fa1 -- mcp-servers/ | wc -l`
+are both 10. Review round 2 FIX, owner-accepted, fixed at this re-anchor.)
+
+**Re-anchored `eb4c4fa8` -> `b2553d26` on 2026-09-28 (T-0090 landing).** `b2553d26` is `T-0090-land`'s
+merge of the reviewed `T-0090-build` (`631d3317`) onto main `ff59160f`.
+```
+git diff --name-only eb4c4fa8 b2553d26 -- mcp-servers/ TODO.md .claude-plugin/marketplace.json
+```
+returns `.claude-plugin/marketplace.json` (crew's version line only) and `TODO.md` (one hunk at
+`:4470`, below every citation here); nothing under `mcp-servers/`. `TODO.md:189`, `:200` and
+`:281` re-read, unchanged; `grep -c mcp-servers .claude-plugin/marketplace.json` is still **0**.
+No citation moved.
