@@ -19,10 +19,11 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Now.** Every request URL - caller-supplied absolute, relative path joined to
   the base, and each `@odata.nextLink` - must match the configured base URL's
   scheme, host and port and carry no username or password; anything else throws
-  the new exported `GraphOriginError` (naming the refused and expected origins,
-  never the path, query or token) before a token is acquired or anything is
-  fetched. The check compares parsed `URL` fields, so look-alike hosts,
-  userinfo tricks, `http:` downgrades and port changes are all refused.
+  the new exported `GraphOriginError` (naming the refused URL's scheme and host
+  and the expected origin, never the path, query, userinfo or token) before a
+  token is acquired or anything is fetched. The check compares parsed `URL`
+  fields, so look-alike hosts, userinfo tricks, `http:` downgrades and port
+  changes are all refused.
 - **Versions.** `@badali404/mcp-ms-core` 0.2.1, and `mcp-msgraph`,
   `mcp-intune`, `mcp-o365-user` and `mcp-o365-admin` 0.2.1, each pinning core
   `0.2.1` exactly. Publishing to npm (tag `mcp-servers-v0.2.1`) is the owner's

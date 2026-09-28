@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@79127fa1
+anchor: useful-claude-add-ons@eb4c4fa8
 verified: 2026-09-28
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -35,12 +35,14 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
 - Microsoft Graph and the Intune / O365 admin endpoints, via the shared client in
   `mcp-servers/packages/core/src/graphClient.ts`.
 - **DERIVED: `GraphClient` sends its Bearer token only to its base URL's origin** (T-0090, 0.2.1).
-  `pinToOrigin` (`mcp-servers/packages/core/src/graphClient.ts:54`) compares parsed scheme, host
+  `pinToOrigin` (`mcp-servers/packages/core/src/graphClient.ts:64`) compares parsed scheme, host
   and port against the base and refuses userinfo and non-absolute URLs, throwing
-  `GraphOriginError` (`:30`, origins only in its message). It is applied to the FINAL URL in
-  `buildUrl` (`:156`, pin at `:158`, so a relative path concatenated off a path-less base is caught
-  too) and to every page in `getAllPages` (`:236`, pin at `:247`), both before `getToken`
-  (`request()` builds the URL at `:187`, then acquires the token at `:188`). Redirects are not
+  `GraphOriginError` (`:30`); the refused URL is named by `describeRefused` (`:48`) as scheme and
+  host only, never `url.origin`, which is the inner Graph origin for a `blob:` URL and `null` for a
+  non-special scheme. It is applied to the FINAL URL in
+  `buildUrl` (`:166`, pin at `:168`, so a relative path concatenated off a path-less base is caught
+  too) and to every page in `getAllPages` (`:246`, pin at `:257`), both before `getToken`
+  (`request()` builds the URL at `:197`, then acquires the token at `:198`). Redirects are not
   pinned: Node's `fetch` strips `Authorization` on a cross-origin redirect (measured Node 22.22.1,
   T-0090 spec). Must-block / must-allow cases live in
   `mcp-servers/packages/core/test/graphClient.test.ts`.
@@ -328,6 +330,23 @@ and each server's core pin `:29`, in place), `package-lock.json` and `README.md`
   `f2bb919b`'s `:202-209` (`diff` over both ranges, empty). Corrected in the body.
 - `grep -c mcp-servers .claude-plugin/marketplace.json` still returns **0**.
 
-Executed for this pass: `npm --prefix mcp-servers test` (65 pass / 0 fail) and the T-0090 hand
+Executed for this pass: `npm --prefix mcp-servers test` and the T-0090 hand
 sabotage of the pin. The `## Unverified` dist-staleness line is still a 2026-09-06 measurement of
 one machine.
+(Corrected at the next pass: this line first said "65 pass / 0 fail", which is the core suite
+alone - `npm --prefix mcp-servers test` runs six `node --test` suites and each prints its own
+`# pass` line.)
+
+**Re-anchored `79127fa1` -> `eb4c4fa8` on 2026-09-28 (T-0090 review round 1 fix).**
+```
+git diff --name-only 79127fa1 eb4c4fa8 -- mcp-servers/ TODO.md .claude-plugin/marketplace.json
+```
+returns two files, `mcp-servers/packages/core/src/graphClient.ts` and its test. `describeRefused`
+was inserted at `:42-50`, so every `graphClient.ts` citation from `pinToOrigin` down moved by +10
+(re-read with `grep -n` at `eb4c4fa8`); `GraphOriginError` `:30` did not move. The
+"origins only" clause above was false after this change and is corrected in place.
+
+Executed for this pass: `npm --prefix mcp-servers test`, exit 0 - `check-dist-fresh` 14/0,
+`o365-user` 6/0, `o365-admin` 7/0, `intune` 6/0, `msgraph` 6/0, `core` 69/0 (108 pass in all).
+Re-measure by reading every `# pass` line of that run, not by counting `test(` in source: the
+tables in `graphClient.test.ts` generate their tests in loops.
