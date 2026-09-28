@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@22399a9c
+anchor: useful-claude-add-ons@2aa49bb8
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 30 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.52, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.53, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -2180,3 +2180,5 @@ version (30, 1.0.52). The new "Development standards" section is read from sourc
 moved. No suite was executed for this note.
 
 The `.gitignore` un-ignore list (`:279-337`, four paths since T-0085's `!.crew/standards.md` at `:337`) was also re-read at `22399a9c`; the "Owns data" bullet is corrected in place.
+
+**Re-anchored `22399a9c` -> `2aa49bb8` on 2026-09-28 (T-0085 merged onto main `c426c018`, crew 1.0.53).** `c49f3aca` merged origin/main `c426c018` (T-0076 landed as crew 1.0.52) into `T-0085-build`, one mechanical conflict (the crew description's skills count in `.claude-plugin/marketplace.json`, kept at 30), and `2aa49bb8` bumped crew to 1.0.53. `git diff --name-only 22399a9c 2aa49bb8`, refresh artifacts aside, returns T-0076's files (`plugin/crew/hooks/scripts/crew_context.py`, four lines added inside `emit()` at `:1086-1089`; `plugin/crew/README.md`, one line in place; `scripts/_test/uv-install.sh`; eleven test files) and the version files. Every body citation into a changed file was compared by script at both commits; only the version moved (1.0.53, corrected in the inventory paragraph). No suite was executed for this note.
