@@ -937,7 +937,6 @@ def _usage_problem(args):
         if value is not None and not value.strip():
             return f"{flag} must not be empty"
     return None
------------------------------------------------------------------
 
 
 def main(argv=None):

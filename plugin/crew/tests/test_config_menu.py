@@ -785,7 +785,10 @@ def test_delete_prints_all_three_restore_lines(tmp_path, capsys):
     cmd = [ln for ln in out.splitlines() if ln.startswith("restore (cmd): ")]
     assert [n for n in ("sh", "cmd", "PowerShell")
             if f"restore ({n}): " in out] == ["sh", "cmd", "PowerShell"]
-    assert "'" not in cmd[0].split(": ", 1)[1]
+    # The path holds an apostrophe on purpose: the cmd line double-quotes each
+    # part, where POSIX quoting would open with ' and escape it as '"'"'.
+    cmd_line = cmd[0].split(": ", 1)[1]
+    assert cmd_line.startswith('"') and "'\"'\"'" not in cmd_line
 
 
 def test_delete_preview_names_what_changes(tmp_path, capsys):

@@ -1073,16 +1073,16 @@ MUTATIONS = (
         # hardcoded tier, so setting `autonomous` warned about `act` and
         # described only what `act` grants -- omitting the one thing the tier
         # adds. Same bug class as the rank fix two entries up: the warning
-        # under-describes the grant it is there to announce.
+        # under-describes the grant it is there to announce. (T-0075: re-anchored
+        # on print_changes, where the successor moved the `!` line.)
         "the widening warning names a hardcoded tier",
         CONFIG,
-        '                _, normalise, notes = _RATCHETED[change["path"]]\n'
-        '                granted = normalise(change["after"])\n'
-        '                print(f"  ! {change[\'path\']} widens to `{granted}`: "\n'
-        '                      + notes[granted])',
-        '                print("  ! pm.authority widens to `act`: the PM will '
+        '            print(f"  ! {change[\'path\']} widens to "\n'
+        '                  f"`{json.dumps(change[\'after\']).strip(chr(34))}`: "\n'
+        '                  + widening_note(change["path"], change["after"]))',
+        '            print("  ! pm.authority widens to `act`: the PM will '
         'dispatch "\n'
-        '                      "roles itself and report after.")',
+        '                  "roles itself and report after.")',
         ("tests/test_crew_config.py::"
          "test_the_widening_warning_names_the_tier_it_grants"),
     ),
