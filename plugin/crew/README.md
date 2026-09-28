@@ -988,47 +988,81 @@ first; the owner never has to type one.
   `platform.*` and `schema` read-only, and an absent or unparseable
   `.crew/config.json` makes every repo row read-only with the writer's own
   refusal as the reason.
+- **Offered means accepted.** Every candidate value is probed through the
+  layer's own planner on the file Save would produce, the pending set
+  included (`spec --pending`). A row no value can pass — a bad value already
+  in the file, such as an unknown `qa.provider` — is read-only with the
+  planner's reason, which names the key to fix first.
 - **Selection only, Save once per layer.** Picks collect in a pending set that
   spans areas and both layers. Save validates **both** layers before writing
   either, shows the dry-run diff with `!` widening lines and "held down by the
   machine-global layer" lines, then writes each changed layer once. A write
   that fails or is refused after validation (the file changed underneath)
-  reports which layer landed and which did not. Discard writes nothing.
+  reports which layer landed and which did not. The dry run prints each
+  layer's `digest:`; `--apply --expect-machine/--expect-repo` checks both
+  before either write, so a file another session changed since the dry run
+  is refused, never merged over. Discard writes nothing.
 - **One validated repo writer.** `crew_config.py --set PATH=JSON --repo
   [--apply]` (`plan_repo_write` / `write_repo_config`) merges, refuses unknown
   keys and whole-block writes, checks enum values, validates providers, writes
-  atomically and keeps the file's line ending. It refuses `platform.*`
+  atomically and keeps the file's line ending and BOM. It refuses `platform.*`
   (platform-sync owns it), `schema`, and `context.autoClear.onlyRepos` /
   `.onlySessions` (read from the machine file only), and takes only a veto
   (`false`) or `null` for `context.autoClear.enabled` and `resume.auto` —
   exactly those, by identity, so `0` is refused.
+- **Both writers judge per leaf, and the whole file.** Each update is expanded
+  to its leaves, so a whole-block value such as
+  `context={"autoClear": {"unsafeFocus": true}}` cannot carry a refused key
+  past the machine writer. `null` is accepted only where the layer gives it a
+  meaning: at the repo layer it inherits the machine value for a
+  machine-settable key, or clears a veto; an open key is unset; an enum key
+  at the machine layer refuses it. Then the merged file is checked: a bad
+  enum value already in it refuses an unrelated write, naming the key to fix.
+- **Both writers are compare-and-swap.** Read, merge and replace happen inside
+  an `O_CREAT|O_EXCL` lock file beside the config (`config.json.lock`, 3 s
+  wait, then a refusal naming the lock and its PID), so two sessions never
+  merge against stale snapshots; `--set` prints `digest:` and
+  `--apply --expect <digest>` refuses a file that changed since. A
+  malformed machine file is refused rather than overwritten from `{}`.
+- **`crew_config_files.py` is the one file layer** under both writers, delete
+  and restore: the lock, the strict read, the `restorable` predicate, the
+  digest, the atomic replace and the move-aside rename.
 - **`scope.*` is refused on purpose.** `scope.mode` and
   `scope.allowCliApproval` are the scope guard's trust root, and
   `.crew/config.json` is untracked, so the completion audit (which diffs
   tracked files) would never see a one-command write that disarmed it. They
   stay a hand edit by the owner or `/crew:init`, shown read-only in the menu.
-- **Delete the repo config.** Previews what changes (a `!` on anything that
-  widens, `scope.mode` returning to `off` included; a `stays` line for a
-  ratcheted key the repo narrowed under a wider machine value, which deleting
-  does not widen; `platform.*` left out, since the same SessionStart
-  re-detects it), requires the typed repo name (the checkout's
-  `git rev-parse --show-toplevel` basename), writes a verified
-  `.crew/config.json.bak-<UTC timestamp>` first, then deletes and prints the
-  exact restore command
-  (`crew_config_menu.py restore-repo --from <backup> --apply`), quoted for
-  cmd.exe on Windows and for sh elsewhere. Until the next
+- **Delete the repo config.** Two phases. The preview reads and holds the
+  file's bytes and walks its own leaves: a `!` on anything that widens
+  (`scope.mode` returning to `off` included), `-> (removed)` for a key crew
+  does not know, a `stays` line for a ratcheted key the repo narrowed under a
+  wider machine value (deleting does not widen it), and `platform.*` in a
+  "re-detected by platform-sync" group. A file a restore could not take back
+  (unparsable, empty, `{}`, not an object) is refused: that is
+  platform-sync's to heal, or the owner's to remove by hand. The delete
+  requires the typed repo name (the checkout's
+  `git rev-parse --show-toplevel` basename), then, under the config lock,
+  moves the file to `.crew/config.json.bak-<UTC timestamp>` in one rename —
+  the backup is the original, never a copy — and compares the moved bytes
+  with the held ones: a file that changed since the preview is moved straight
+  back and nothing is deleted. It prints the restore command three ways,
+  `restore (sh):`, `restore (cmd):` and `restore (PowerShell):`
+  (`crew_config_menu.py restore-repo --from <backup> --apply`); each form is
+  executed by a test, and restore accepts exactly what delete does. Until the next
   SessionStart there is no config, so `isCrew` is false and every hook that
   gates on it stands down; then platform-sync's heal recreates the built-in
   defaults. `.crew/crew.json`, `verify.json`, backups and ticket state are
   untouched.
 - **Headless.** With no way to ask, `crew_config_menu.py spec --layer
   <layer>` prints the plan and a write needs the explicit
-  `save --changes '<json>' --apply` or `delete-repo --confirm <name> --apply`.
+  `save --changes '<json>' --apply --expect-machine/--expect-repo <digest>` or
+  `delete-repo --confirm <name> --apply`.
 
 Both writers now refuse a value outside the key's own tier or provider list
 (`pm.authority`, `pm.ticketGranularity`, `qa.provider`, `dev.provider` and every
-ratcheted key). Before T-0075 a global `--set pm.authority=bogus` was written
-and then read as `report-only`.
+ratcheted key), refuse `null` for one of those at the machine layer, and refuse
+a `--set` value that is not JSON. Before T-0075 a global `--set
+pm.authority=bogus` was written and then read as `report-only`.
 
 ### §11b. `guards` — the guardrails you can turn down, per machine
 

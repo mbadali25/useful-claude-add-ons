@@ -7,47 +7,63 @@ All notable changes to this repository are documented here. Format follows [Keep
 ### Added
 
 - **`crew` 1.0.49: `/crew:config` menu mode and `/crew:config-setup` (T-0075).**
-  Bumped `1.0.47 -> 1.0.48` (its build declared 1.0.44, which main gave to T-0021, then
-  1.0.46, which main gave to T-0023, then 1.0.47, which main gave to T-0018), then
-  `1.0.48 -> 1.0.49` as the last `plugin/crew/` commit after review round 1's fixes; the
-  landing sets it one past whatever origin/main then holds.
+  Bumped one past origin/main (1.0.48, T-0024) as the last `plugin/crew/` commit;
+  the build earlier declared 1.0.44, 1.0.46, 1.0.47 and 1.0.48, each given to
+  another ticket on main first. This entry describes the successor design written
+  after review round 2 was rejected by the owner.
   - `/crew:config` with no argument, and the new alias `/crew:config-setup`,
     open a menu (`skills/crew-setup/config-menu.md`): pick the machine or repo
     layer, an area, a setting, then a value from a list showing the current
     value, the layer that decided it, and the recommendation first. Picks
     collect in a pending set; Save validates both layers, shows the dry-run
-    diff, and writes each changed layer once. Discard writes nothing.
-  - New `hooks/scripts/crew_config_menu.py` (`spec`, `save`, `delete-repo`,
-    `restore-repo`). The rows are `crew_config.py`'s own key lists, so a new
-    key appears with no menu edit; a test runs every offered value through
-    the writer.
+    diff with each layer's digest, and writes each changed layer once, with
+    `--expect-machine/--expect-repo` refusing a file that changed since the dry
+    run. Discard writes nothing.
+  - New `hooks/scripts/crew_config_menu.py` (`spec [--pending]`, `save`,
+    `delete-repo`, `restore-repo`). The rows are `crew_config.py`'s own key
+    lists, so a new key appears with no menu edit, and every candidate value
+    is probed through the layer's own planner on the file Save would produce:
+    a value is offered only when Save accepts it, and a row blocked by a bad
+    value already in the file is read-only with a reason naming that key.
+  - New `hooks/scripts/crew_config_files.py`, the one file layer under both
+    writers, delete and restore: an `O_CREAT|O_EXCL` lock beside the config,
+    the strict four-case read, the `restorable` predicate, the digest, the
+    atomic replace keeping CRLF and a BOM, and the move-aside rename.
   - New repo writer `crew_config.plan_repo_write` / `write_repo_config`, CLI
-    `crew_config.py --set PATH=JSON --repo [--apply]`: merge, leaf keys only,
-    atomic, line ending kept, `!` on a widening (ratchet by what is in force,
+    `crew_config.py --set PATH=JSON --repo [--apply [--expect DIGEST]]`: merge,
+    leaf keys only, `!` on a widening (ratchet by what is in force,
     `pm.authority`, `unsafeFocus: true`, `autopilot.mode: plan`,
     `verifyGate: false`) and a "held down by the machine-global layer" line.
     It refuses `platform.*`, `schema`, `scope.mode`, `scope.allowCliApproval`
     and `context.autoClear.onlyRepos`/`.onlySessions`; `context.autoClear.enabled`
-    and `resume.auto` take only `false` or `null`.
-  - Delete the repo config: preview (with `!` on what widens, `scope.mode`
-    returning to `off` included, and what deleting means for `isCrew` and the
-    heal), typed repo name, verified `.crew/config.json.bak-<UTC>` backup
-    first, then the printed restore command.
-  - **Behaviour change:** `crew_config.py --set` on the machine-global file now
+    and `resume.auto` take only `false` or `null`, by identity.
+  - Both writers judge every LEAF of an update (a whole-block value included),
+    apply the null rule (repo: inherit the machine value or clear a veto; open
+    key: unset; an enum key at the machine layer: refused), judge the merged
+    file whole (a bad enum value already in it refuses an unrelated write), and
+    are compare-and-swap: plan re-run under the lock, `--set` prints `digest:`,
+    `--apply --expect <digest>` refuses a changed file.
+  - Delete the repo config in two phases: the preview holds the file's bytes
+    and walks its own leaves (`-> (removed)` for unknown keys, `platform.*` as
+    re-detected, `!` on what widens, `stays` for a held ratcheted key); a file
+    a restore could not take back is refused; with the typed repo name the file
+    is moved to `.crew/config.json.bak-<UTC>` in one rename under the lock and
+    compared with the held bytes (a changed file is moved back, nothing
+    deleted); three restore lines are printed (sh, cmd, PowerShell), each
+    executed by a test, and restore accepts exactly what delete does.
+  - Every CLI entry validates its input shape and refuses with exit 2, never a
+    traceback.
+  - **Behaviour changes:** `crew_config.py --set` on the machine-global file now
     refuses a value outside the key's own values (`pm.authority`,
-    `pm.ticketGranularity`, `qa.provider`, `dev.provider`, every ratcheted
-    key). It used to write it and read it back as the narrowest tier.
-  - Review round 1: the printed restore command is double-quoted with forward
-    slashes on Windows (cmd.exe ignores single quotes); the repo veto keys
-    take exactly `false`/`null` by identity (`0` is refused); an absent or
-    unparseable `.crew/config.json` makes every repo row read-only; an
-    expanded role row names `repo+global` when both layers merge into it; a
-    write refused after validation is reported as a partial Save; the machine
-    layer lists `platform.*` and `schema` read-only; the delete preview skips
-    `platform.*` (re-detected at the same SessionStart) and names a ratcheted
-    key the repo narrowed under a wider machine value as `stays`; the typed
-    delete name is the checkout's `git rev-parse --show-toplevel` basename.
-  - 22 sabotage mutations in `tests/sabotage_config.py`.
+    `pm.ticketGranularity`, `qa.provider`, `dev.provider`, every ratcheted key),
+    refuses `null` for one of those, refuses a consent key inside a whole-block
+    value, refuses a write when the merged file holds a bad enum value
+    elsewhere, refuses a value that is not JSON (a bare `act` used to be
+    written as a string), and refuses to write over an unparsable or
+    non-object machine file instead of replacing it from `{}`.
+  - 50 sabotage mutations in `tests/sabotage_config.py`: the 22 from the first
+    build and review round 1 (re-anchored where the code moved), and 28 for
+    review round 2's findings and their neighbouring cases.
 - **`crew` 1.0.47: `/crew:autopilot status` and the subcommand router
   (T-0018).** Bumped `1.0.46 -> 1.0.47` (its branch declared 1.0.44, which main gave to
   T-0021; 1.0.46 at its first landing merge, which main then gave to T-0023). `commands/autopilot.md` now routes

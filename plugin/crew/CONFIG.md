@@ -1648,6 +1648,15 @@ either layer means on read; it marks what a repo edit changes **in force**:
   true`, `autopilot.mode: "plan"` and `verifyGate: false`
   (`crew_config._REPO_WIDENING`).
 
+Every update is judged per LEAF (`crew_config.leaf_updates`, recursive), by
+the one predicate both planners and the menu share, `value_allowed(dotted,
+layer, value)`: a whole-block value is expanded, so
+`context={"autoClear": {"unsafeFocus": true}}` is judged as
+`context.autoClear.unsafeFocus` and refused at the machine layer
+(`MACHINE_REFUSED` names the two consent keys), and one good leaf does not
+carry a bad one. A block set to `{}`, or replaced by a scalar, is refused off
+an open table (`guards: {}` refused, `qa.roles.review: {}` is "no pin").
+
 It refuses, naming the key and the reason: a path that is not a leaf of
 `default_config()` (unknown keys, and whole blocks such as `scope: {}` that
 would drop a leaf the per-key rules guard), `platform.*`, `schema`,
@@ -1668,7 +1677,36 @@ the tuple each reader normalises against — the `RATCHETED_KEYS` tiers,
 `AUTHORITIES`, `TICKET_GRANULARITIES`, `auto` + `QA_PROVIDERS`, and
 `DEV_PROVIDERS` — and a value outside it is refused. This is a behaviour
 change for the global `--set`: it used to write `pm.authority: "bogus"` and
-read it back as `report-only`. `null` is still accepted (it reads as unset).
+read it back as `report-only`.
+
+**The null rule** (`crew_config.null_means`). At the repo layer a `null` on a
+veto-only key clears the veto, and on a key the machine file may set it
+inherits the machine value (`without_null_shadows` drops it on read); either
+layer, a `null` on an open key (no tuple) is unset. A `null` on an enum key at
+the machine layer is refused: it is outside every tuple its reader normalises
+against. A legacy `null` already in a file is tolerated; the rule judges what
+is being written now. Each change carries its meaning (`null`), and the dry
+run prints it.
+
+**The merged file is judged whole** (`crew_config.merged_problems`): every
+untouched enum leaf of the file the write would produce is checked, and a bad
+value already there refuses an unrelated write as `pre-existing ... fix that
+key first` (it can be fixed in the same write); then `validate_providers`
+runs on the merged file at both layers, wrapped as the layer's refusal.
+
+**Compare-and-swap, both files.** `write_global_config` and
+`write_repo_config` re-run their plan on the bytes read inside
+`crew_config_files.update_json`: an `O_CREAT|O_EXCL` lock file beside the
+config (`<file>.lock`, the review ledger's construction; 3 s wait, then a
+refusal naming the lock and the PID inside it), a strict read, and a
+sibling-fsync-replace that keeps CRLF and a UTF-8 BOM. `--set` prints the
+digest (sha256) of the bytes it planned against, and `--apply --expect
+<digest>` refuses a file that changed since (`RepoWriteConflict` /
+`GlobalWriteConflict`, subclasses of the refusals, so every existing `except`
+still catches them). Without `--expect` the merge is onto the file under the
+lock. The machine writer now refuses an unparsable or non-object global file
+instead of replacing it from the read path's `{}` collapse. A foreign writer
+(an editor's save) is not serialised by the lock.
 
 ### One resolver, two flavours
 
