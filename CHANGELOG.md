@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.55: build-time development standards and a required pre-review self-check (T-0085)
+### Added — `crew` 1.0.56: build-time development standards and a required pre-review self-check (T-0085)
 
 - **New `crew-standards` skill.** `references/generic.md` ships GEN-01 to GEN-12,
   crew-generic standards mined from 224 BLOCK/FIX findings in crew's own QA reviews;
@@ -26,9 +26,10 @@ All notable changes to this repository are documented here. Format follows [Keep
 - `.crew/standards.md` joins the `.crew/` un-ignore list in `.gitignore`, the shipped
   crew-setup template and every document that states it. ADR 0004 records the
   decision. crew bundles 30 skills.
-- Bumped `1.0.54 -> 1.0.55`, provisional on the build branch so the version-drift check in
-  `scripts/check-marketplace.py` passes; the number is re-set at land, one patch above
-  `origin/main` then (`.crew/standards.md` REPO-03).
+- Bumped to `1.0.56`, provisional on the build branch: the version-drift check in
+  `scripts/check-marketplace.py` needs a bump after every commit that changes `plugin/crew/`,
+  review-fix rounds included. The number is re-set at land, one patch above `origin/main` then
+  (`.crew/standards.md` REPO-03).
 
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 
