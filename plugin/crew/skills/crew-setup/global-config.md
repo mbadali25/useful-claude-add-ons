@@ -55,7 +55,10 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root <repo> --expla
 ```
 
 Every globally-settable key with its effective value and the layer that decided
-it: `repo`, `global`, or `default`. Show this table before asking anything.
+it: `repo`, `global`, or `default`. Show this table before asking anything. Its
+first line names the repo layer's file and where it came from:
+`repo layer: <path> (own)`, or `(main checkout)` in a linked worktree that
+inherits the main checkout's config, or `(unknown)` when git could not tell.
 `--root` is optional outside a repo — with no `.crew/config.json` the `repo`
 layer is simply empty, which is the right answer for a user who has no repo in
 mind yet.

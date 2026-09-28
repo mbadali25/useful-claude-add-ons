@@ -236,9 +236,21 @@ first surviving provider that passes its probe:
 
 | Provider | Probe | Runs |
 |---|---|---|
-| `codex` | `command -v codex` | step 2a |
+| `codex` | `review_run.py ... --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT" --probe` (one minimal real call, no round reserved) | exit 0 (ok): step 2a. Exit 5 (limited): step 2c. Exit 6 (failed) or 7 (unknown, timed out): skip Codex with the quoted `PROBE_DETAIL` - a pinned `codex` hard-fails, as before |
 | `copilot` | `command -v copilot` **and** `qa.copilot.model` is set | step 2b |
 | `claude` | always passes | step 2c |
+
+**A Codex usage limit runs the round on Claude.** The owner's rule (2026-09-28:
+"if we hit a codex limit please use claude ads the reviewer"), and it holds
+whether `qa.provider` pins `codex` or reaches it through `auto`: a probe that
+answers `limited` - a usage limit, rate limit, quota, spend cap or plan error,
+matched against Codex's own messages by `review_limit.limit_line` - runs step 2c,
+not Copilot and not a hard fail. Announce it as `same-family (codex limit)`, say
+it does not count as independent, and quote `PROBE_DETAIL` verbatim. The round is
+spent like any other (a refund for a failed tool round is T-0087's, not this
+rule's). Being on `PATH` is not being able to review: a logged-out or limited
+Codex resolves on `PATH` and fails at the first call, which is why the probe is
+a real call and not `command -v`.
 
 Announce which reviewer ran **and every provider you skipped, with the reason**. A
 skipped provider is the single most dangerous silent failure here: a QA gate that
@@ -303,6 +315,16 @@ report = json.load(open(sys.argv[1]))
 print(" ".join(c["provider"] for c in report.get("qaFallThrough") or []
                 if c.get("eligible")))' "$REPORT")
 echo "authors=$AUTHORS source=$AUTHOR_SOURCE eligible=${ELIGIBLE:-<none>}"
+
+# Only when Codex is the provider about to run: one minimal real call, before any
+# round is reserved. 0 ok, 5 limited (-> step 2c), 6 failed, 7 unknown.
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
+  --scratch "$SCRATCH" --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT" \
+  --probe > "$SCRATCH/probe.txt"
+PROBE_STATUS=$?
+PROBE=$(sed -n 's/^PROBE=//p' "$SCRATCH/probe.txt")
+PROBE_DETAIL=$(sed -n 's/^PROBE_DETAIL=//p' "$SCRATCH/probe.txt")
+echo "codex probe: $PROBE ($PROBE_STATUS) $PROBE_DETAIL"
 ```
 
 **Use `$ELIGIBLE`, in that order, and say `$AUTHOR_SOURCE` out loud.** It is the
@@ -446,6 +468,13 @@ denied by policy settings` is org or enterprise policy — report that exact
 cause. Exit 2 means nothing launched (not on PATH) and no round was spent; walk
 to the next eligible provider.
 
+A Codex round whose call fails on a limit stays INCOMPLETE and prints
+`review: codex usage limit in round N: '<the error>'`. It is recorded beside the
+ledger (`<git-common-dir>/crew/review/<ticket>.limit.json`), so the next
+`/crew:review` probe answers `limited` from that record without a call, and the
+next round runs step 2c. The record applies to that one round: once it is
+reserved, the round after it probes Codex live again.
+
 **Step 2c — Claude fallback.** Invoke the `crew:reviewer` subagent with the
 SAME bundle 2a and 2b just read: the exact `$SCRATCH/prompt.txt` content —
 byte-identical instructions, per this file's own invariant — plus the concrete
@@ -528,7 +557,9 @@ to.
    `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh review "<n> BLOCK, <n> FIX (<reviewer>)"`
    Counts only. Never the findings themselves — those stay in the repo.
 6. Append the result to `.crew/metrics.md`: `<date> | <ticket> | <reviewer> | <n BLOCK> | <n FIX>`
-   (counts from `review.json`; an INCOMPLETE round is recorded as INCOMPLETE, not as 0/0)
+   (counts from `review.json`; an INCOMPLETE round is recorded as INCOMPLETE, not as 0/0).
+   A round sent to step 2c by a Codex limit has the reviewer column
+   `claude (same-family: codex limit)`, never a bare `claude`.
 7. Name every specialist from step 0 that ran, every one that a matched rule
    asked for but you skipped, and every one that a matched rule named but that
    **is not installed on this machine**. A review that quietly dropped the `dba`
@@ -542,7 +573,9 @@ to.
    or deleting the rule.
 8. Name the author family **and its source** in the same breath as the reviewer:
    `recorded dispatch <role>/<provider>/<model>`, `READ FROM CONFIG - no
-   dispatch recorded`, or `STALE RECORD - both families struck`. Which family
+   dispatch recorded`, or `STALE RECORD - both families struck`. A round a Codex
+   limit sent to Claude is named `claude (same-family: codex limit)`, with the
+   probe's quoted `PROBE_DETAIL`. Which family
    was barred is only checkable by a reader who knows whether the bar rests on a
    fact or on a guess, and that is the whole difference this record exists to
    make visible.

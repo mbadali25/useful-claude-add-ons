@@ -30,7 +30,10 @@ changed in 0.16.0 and both are silent if unmentioned:
   exists.
 
 This command works with no repo in mind: `--root` is optional, and with no
-`.crew/config.json` the `repo` layer is simply empty. Run it from anywhere.
+`.crew/config.json` the `repo` layer is simply empty. Run it from anywhere. In a
+linked git worktree with no crew config of its own, the `repo` layer is the main
+checkout's file; `--explain` and `--models` print it first, as
+`repo layer: <path> (<own | main checkout | unknown>)`.
 
 Two things it never does, whatever the arguments say: it does not write
 `.crew/config.json` — that is `/crew:init` — and it does not write anything at

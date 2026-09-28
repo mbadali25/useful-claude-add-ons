@@ -25,7 +25,7 @@ summary above or below it, and do not pad it with advice.
 | Line | Source | When it says "unknown" |
 |---|---|---|
 | header | `git rev-parse`, `git status --porcelain` (no index refresh) | not a git repo |
-| `config` | `.crew/crew.json` (1.0) or `.crew/config.json` (0.20) | JSON unreadable |
+| `config` | `.crew/crew.json` (1.0) or `.crew/config.json` (0.20) - in a linked worktree with neither, the main checkout's, shown on a second `config` line (`inherited from the main checkout (<path>) ...`, or `could not tell (...)` when git cannot name it) | JSON unreadable |
 | `roster` | `agents` in crew.json, or `roles` measured against the 1.0 four | - |
 | `tickets` / `open` | `.work/tickets/`, `.work/INDEX.md` | - |
 | `review` | review ledgers under the git common dir, newest three | a ledger that will not parse |

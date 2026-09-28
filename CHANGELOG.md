@@ -4,6 +4,39 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.52: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088)
+
+- **`/crew:review` probes Codex with a real call.** `review_run.py --probe` makes
+  one minimal Codex call, with the round's own model and effort, before any
+  round is reserved, and exits `0` ok, `5` limited, `6` failed or `7` unknown
+  (no answer in 120 s). `command -v codex` said only that the CLI was
+  installed; a logged-out or limited Codex passed it and failed at the first
+  call.
+- **A Codex usage limit runs the round on Claude** (owner, 2026-09-28: "if we
+  hit a codex limit please use claude ads the reviewer"), pinned or not,
+  announced as `same-family (codex limit)` with the error quoted. The limit
+  patterns are Codex's own messages from `openai/codex` `error.rs`, each cited
+  in `hooks/scripts/review_limit.py`; "model at capacity" and "high demand" are
+  not limits. A limit hit mid-round leaves that round INCOMPLETE and is
+  recorded in `<git-common-dir>/crew/review/<ticket>.limit.json`, so the next
+  round goes to Claude without another call; the round after probes Codex
+  live. No refund: a limit round is spent as before (T-0087 covers that).
+- **A linked worktree with no crew config reads the main checkout's.** Every
+  Python reader of `.crew/config.json`/`.crew/crew.json` goes through
+  `crew_common.repo_config_dir`, found with `git rev-parse --git-common-dir`.
+  A worktree's own files win whole and are never merged; a git failure reads
+  as `unknown` and inherits nothing. `/crew:status` prints the inherited
+  source and `/crew:config --explain`/`--models` start with
+  `repo layer: <path> (<source>)`. The heal path no longer writes a default
+  config into an inheriting worktree, where it would shadow the owner's.
+- **Behaviour change:** Python guards in a lane worktree now follow the
+  owner's settings (`guards.*`, `scope.mode`, `scope.allowCliApproval`,
+  `roleWrites`, `cloudGuard`) where they read the built-in defaults before;
+  ratcheted guard keys still take the narrower of repo and machine-global.
+  The shell and PowerShell readers (`verify-gate.sh`, `_common.sh`,
+  `notify.sh`, the handoff scripts, `promote-gate.ps1`, `scope-guard.ps1`,
+  `cloud-guard.ps1`, `auto-clear.ps1`) are not routed yet.
+
 ### Added — `crew` 1.0.51: `autopilot.deploy` — production without asking, opt-in (T-0072)
 
 - **New production authority, off by default.** `autopilot.deploy` (repo

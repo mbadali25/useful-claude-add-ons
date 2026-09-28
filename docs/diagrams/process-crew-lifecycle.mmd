@@ -1,5 +1,8 @@
 %% Generated from useful-claude-add-ons@a4eb2f55 on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
+%% T-0088: the review subgraph gained the Codex probe node (rvp) and its three edges, read from
+%% plugin/crew/commands/review.md:239 (probe table row), :243 (the limit rule), :323 (the probe
+%% call in step 2) and :472 (the mid-round record); no other node was redrawn.
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
 %% NEW in T-0015. Drawn from the command files themselves, each read in full at
@@ -209,7 +212,11 @@ flowchart TB
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
-        im5 --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle<br/>review.md:25-29, :449"]
+        im5 --> rvp{"probe codex (review_run.py --probe)<br/>one real call, nothing reserved<br/>review.md:239, :323"}
+        rvp -- "ok (exit 0) -> 2a" --> rv1
+        rvp -- "limited (exit 5) -> 2c same-family,<br/>error quoted - review.md:243" --> rv1
+        rvp -- "failed / unknown (6 / 7):<br/>skip Codex, or hard-fail if pinned" --> rv1
+        rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle<br/>review.md:25-29, :449<br/>a limit mid-round is recorded for the next round :472"]
         rv1 --> rv2{"verdict (the script's)<br/>:440, :481"}
         rv2 -- CLEAN --> rcpt["receipt written<br/>:511"]
         rv2 -- FINDINGS --> rv3{"fix, or<br/>user accepts?<br/>:504, :508"}

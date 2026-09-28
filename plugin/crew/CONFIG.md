@@ -36,7 +36,7 @@ print(json.dumps(c.leaf_paths(c.default_global_config()), indent=1))"
 
 | Layer | File | Read by |
 |---|---|---|
-| repo | `.crew/config.json` in the repository root | `crew_state.load_config` |
+| repo | `.crew/config.json` in the repository root - or, in a linked worktree with neither `.crew/config.json` nor `.crew/crew.json`, the main checkout's (`crew_common.repo_config_dir`) | `crew_state.load_config` |
 | machine-global | `~/.claude/crew/config.json` | `crew_config.py::read_global_config` |
 
 Both are optional. `read_global_config` **never raises**: an absent, malformed,
@@ -111,6 +111,31 @@ files on migration rather than only resolving them for a read
 (`crew_config.py`, a comment).
 
 ---
+
+### In a linked worktree
+
+Since crew 1.0.52 (T-0088) every Python reader of the repo config opens
+`crew_common.repo_config_file(root, name)`, which resolves the `.crew/`
+directory in this order:
+
+1. The worktree's own `.crew/` when it holds `config.json` **or** `crew.json`.
+   Both files are then read from there and nothing is inherited, even when
+   they are partial: the two checkouts' files are never merged.
+2. `.git` a directory, or missing: the repository's own `.crew/`, with no git call.
+3. `.git` a file (a linked worktree or a submodule): `git rev-parse
+   --path-format=absolute --git-dir --git-common-dir`. A submodule (git-dir equals
+   common-dir) or a bare common directory (not named `.git`) has no main
+   checkout and reads its own `.crew/`. Otherwise the main checkout's `.crew/`,
+   when it holds either file.
+4. When git cannot answer, the source is `unknown`: the worktree's own `.crew/`
+   is read (nothing inherited), and `/crew:status` and `/crew:config --explain`
+   print that git could not tell.
+
+The writers never follow it: `crew_platform` (heal and `platform-sync`),
+`crew_autoclear_setup`, `crew_migrate`, `/crew:init` and the machine-global writer
+keep their own-path behaviour, and the heal path creates nothing in a worktree
+that inherits a config. The shell and PowerShell readers (`verify-gate.sh`, `_common.sh`, `notify.sh`, `handoff-read.sh`, `handoff-write.sh`, `promote-gate.ps1`, `scope-guard.ps1`, `cloud-guard.ps1` and `auto-clear.ps1`) are not
+routed yet and read only the worktree's own file.
 
 ## 2. The invariant
 
