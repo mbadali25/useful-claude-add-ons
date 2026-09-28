@@ -776,9 +776,12 @@ class DeleteRefused(Exception):
     """The repo config cannot be deleted as it stands; nothing was touched."""
 
 
+def _machine_path(global_path):
+    return crew_config.GLOBAL_CONFIG_PATH if global_path is None else global_path
+
+
 def _machine_digest(global_path):
-    return crew_config_files.read_tolerant(
-        crew_config.GLOBAL_CONFIG_PATH if global_path is None else global_path)[1]
+    return crew_config_files.read_tolerant(_machine_path(global_path))[1]
 
 
 def plan_delete(root, global_path=None):
@@ -787,9 +790,10 @@ def plan_delete(root, global_path=None):
     restore shares: a symlink moved into a backup is one restore refuses),
     and build the preview.
 
-    `{"path", "held", "digest", "machine", "parsed", "rows", "name"}`:
-    `digest` and `machine` are what the preview was computed from, and what
-    `--apply` must name (review round 3)."""
+    `{"path", "held", "digest", "machine", "machinePath", "parsed", "rows",
+    "name"}`: `digest` and `machine` are what the preview was computed from,
+    and what `--apply` must name (review round 3); `machinePath` is the
+    machine file they were read from."""
     path = crew_config.repo_config_path(root)
     try:
         parsed, held = crew_config_files.read_restorable(path)
@@ -812,8 +816,8 @@ def plan_delete(root, global_path=None):
         raise DeleteRefused("the machine-global file changed while the "
                             "preview was built; run it again")
     return {"path": path, "held": held, "digest": crew_config_files.digest(held),
-            "machine": machine, "parsed": parsed, "rows": rows,
-            "name": repo_name(root)}
+            "machine": machine, "machinePath": _machine_path(global_path),
+            "parsed": parsed, "rows": rows, "name": repo_name(root)}
 
 
 def _unbound(plan, expect):
@@ -834,13 +838,16 @@ def _unbound(plan, expect):
 
 def apply_delete(root, plan, confirm, now=None, expect=None):
     """Phase two: the typed name and the preview's two digests (`expect`),
-    then, under the config lock, ONE no-clobber rename of the file to a fresh
-    `config.json.bak-<UTC>` (the backup is the original inode: no copy, no
-    moment the bytes are at neither name), then compare the moved bytes with
-    the held ones. A mismatch means the file changed since the preview: it is
-    moved straight back, never over a file saved in the gap. Returns an exit
-    code: 0 deleted, 2 refused (file in place), 1 a foreign writer
-    interleaved (both files kept, both named)."""
+    then, under the machine lock and then the repo config lock (crew's one
+    order), the machine digest again -- the preview's widening rows read that
+    file, so a machine write since refuses (review round 4) -- then ONE
+    no-clobber rename of the file to a fresh `config.json.bak-<UTC>` (the
+    backup is the original inode: no copy, no moment the bytes are at
+    neither name), then compare the moved bytes with the held ones. A
+    mismatch means the file changed since the preview: it is moved straight
+    back, never over a file saved in the gap. Returns an exit code: 0
+    deleted, 2 refused (file in place), 1 a foreign writer interleaved (every
+    file kept, each named)."""
     path = plan["path"]
     if confirm != plan["name"]:
         why = ("no confirmation" if confirm is None
@@ -853,7 +860,15 @@ def apply_delete(root, plan, confirm, now=None, expect=None):
         print(f"refused, nothing deleted: {problem}", file=sys.stderr)
         return 2
     try:
-        with crew_config_files.Lock(path):
+        with crew_config_files.machine_lock(plan["machinePath"]), \
+                crew_config_files.Lock(path):
+            now_machine = _machine_digest(plan["machinePath"])
+            if now_machine != plan["machine"]:
+                print(f"refused, nothing deleted: the machine-global file "
+                      f"{plan['machinePath']} changed since the preview "
+                      f"(digest {now_machine}, expected {plan['machine']}); "
+                      "run the preview again", file=sys.stderr)
+                return 2
             backup = _free_backup(root, now)
             got = crew_config_files.move_aside(path, backup)
             if got != plan["held"]:

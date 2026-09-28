@@ -1311,6 +1311,89 @@ def test_delete_apply_is_bound_to_the_preview(tmp_path, capsys, expect):
     assert "preview" in capsys.readouterr().err
 
 
+def _record_locks(monkeypatch):
+    taken = []
+    real_enter = crew_config_files.Lock.__enter__
+
+    def _enter(self):
+        taken.append(self.path)
+        return real_enter(self)
+    monkeypatch.setattr(crew_config_files.Lock, "__enter__", _enter)
+    return taken
+
+
+def _bound(plan):
+    return {"repo": plan["digest"], "machine": plan["machine"]}
+
+
+def test_delete_rechecks_the_machine_file_inside_the_locks(tmp_path, capsys,
+                                                           monkeypatch):
+    root, gpath = _repo(tmp_path, {"guards.forcePush": "block"},
+                        global_cfg={"guards": {"forcePush": "block"}})
+    plan = menu.plan_delete(root, gpath)
+    before = open(_config(root), "rb").read()
+    real_unbound = menu._unbound  # pylint: disable=protected-access
+
+    def _unbound_then_a_machine_write(*args):
+        got = real_unbound(*args)
+        with open(gpath, "w", encoding="utf-8") as handle:
+            json.dump({"guards": {"forcePush": "allow"}}, handle)
+        return got
+    monkeypatch.setattr(menu, "_unbound", _unbound_then_a_machine_write)
+
+    code = menu.apply_delete(root, plan, "repo", now=_now(), expect=_bound(plan))
+
+    err = capsys.readouterr().err
+    assert (code, open(_config(root), "rb").read(), _backups(root)) == (
+        2, before, [])
+    assert "changed since the preview" in err and gpath in err
+
+
+def test_delete_refuses_while_the_machine_lock_is_held(tmp_path, capsys,
+                                                       monkeypatch):
+    monkeypatch.setattr(crew_config_files, "LOCK_WAIT_SECONDS", 0.1)
+    root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "act"}})
+    before = open(_config(root), "rb").read()
+    with open(gpath + ".lock", "w", encoding="utf-8") as handle:
+        handle.write("4242")
+
+    code = _delete(root, gpath)
+
+    assert (code, open(_config(root), "rb").read(), _backups(root)) == (
+        2, before, [])
+    assert gpath + ".lock" in capsys.readouterr().err
+
+
+def test_delete_takes_the_machine_lock_before_the_repo_lock(tmp_path, capsys,
+                                                            monkeypatch):
+    root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "act"}})
+    taken = _record_locks(monkeypatch)
+
+    code = _delete(root, gpath)
+
+    capsys.readouterr()
+    assert code == 0
+    assert taken[:2] == [gpath + ".lock", _config(root) + ".lock"]
+
+
+def test_delete_takes_the_machine_lock_when_its_directory_is_absent(
+        tmp_path, capsys, monkeypatch):
+    root, _ = _repo(tmp_path)
+    gpath = str(tmp_path / "no-such-dir" / "config.json")
+    plan = menu.plan_delete(root, gpath)
+    taken = _record_locks(monkeypatch)
+
+    code = menu.apply_delete(root, plan, "repo", now=_now(), expect=_bound(plan))
+
+    capsys.readouterr()
+    assert (plan["machine"], code) == ("absent", 0)
+    assert gpath + ".lock" in taken
+    assert os.path.isdir(os.path.dirname(gpath)) and not os.path.lexists(gpath)
+    leftovers = [n for d in (os.path.dirname(gpath), os.path.join(root, ".crew"))
+                 for n in os.listdir(d) if n.endswith(".lock")]
+    assert leftovers == []
+
+
 def test_delete_cli_apply_needs_the_preview_digests(tmp_path, capsys):
     root, gpath = _repo(tmp_path)
     base = ["--root", root, "--global-path", gpath, "delete-repo",

@@ -3074,9 +3074,9 @@ def write_repo_config(root, updates, global_path=None, expect=None,
 
     `write_global_config`'s compare-and-swap (`RepoWriteConflict`), keeping
     CRLF and BOM; never creates the file. The widening marks read the MACHINE
-    file, so it is bound too (review round 3): read once under its lock (taken
-    before the repo lock, crew's one nesting order), and `expect_global` (a
-    digest or `ABSENT`) refuses one that changed since."""
+    file, so it is bound too (review round 3): read once under its lock, always
+    taken, before the repo lock (crew's one nesting order), and `expect_global`
+    (a digest or `ABSENT`) refuses one that changed since."""
     merged, changes = plan_repo_write(root, updates, global_path)
     if not changes:
         return merged, changes
@@ -3093,7 +3093,7 @@ def write_repo_config(root, updates, global_path=None, expect=None,
         out["plan"] = _plan_on(parsed, updates, "repo", real_path, global_cfg)
         return out["plan"][0] if out["plan"][1] else None
     try:
-        with crew_config_files.lock_if_dir(_global_label(global_path)):
+        with crew_config_files.machine_lock(_global_label(global_path)):
             crew_config_files.update_json(real_path, _mutate, expect=expect)
     except crew_config_files.Conflict as exc:
         raise RepoWriteConflict(str(exc)) from exc

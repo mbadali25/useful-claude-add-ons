@@ -2569,6 +2569,26 @@ def test_repo_write_refuses_when_the_machine_file_changed(tmp_path):
     assert _repo_bytes(root) == before
 
 
+def test_repo_write_takes_the_machine_lock_when_its_directory_is_absent(
+        tmp_path, monkeypatch):
+    import crew_config_files  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path)
+    gpath = str(tmp_path / "no-such-dir" / "config.json")
+    taken = []
+    real_enter = crew_config_files.Lock.__enter__
+
+    def _enter(self):
+        taken.append(self.path)
+        return real_enter(self)
+    monkeypatch.setattr(crew_config_files.Lock, "__enter__", _enter)
+
+    crew_config.write_repo_config(str(root), {"tracker": "jira"}, gpath,
+                                  expect_global=crew_config_files.ABSENT)
+
+    repo_lock = str(root / ".crew" / "config.json") + ".lock"
+    assert taken[:2] == [gpath + ".lock", repo_lock]
+
+
 @pytest.mark.parametrize("create,conflict", [(False, False), (True, True)])
 def test_repo_write_compares_the_machine_file_against_absence(tmp_path, create,
                                                               conflict):

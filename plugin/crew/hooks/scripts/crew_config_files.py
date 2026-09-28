@@ -29,7 +29,6 @@ Both config writers (`crew_config.write_global_config`,
 
 No crew imports, so `crew_config` and `crew_config_menu` can both import it.
 """
-import contextlib
 import copy
 import hashlib
 import json
@@ -250,12 +249,13 @@ def read_tolerant(path):
     return (parsed if isinstance(parsed, dict) else {}), digest(raw)
 
 
-def lock_if_dir(path):
-    """`Lock(path)` when `path`'s directory exists, else a no-op context: a
-    reader that must not create the directory still excludes its writers."""
-    if os.path.isdir(os.path.dirname(os.path.abspath(path))):
-        return Lock(path)
-    return contextlib.nullcontext()
+def machine_lock(path, wait=None):
+    """`Lock(path)` on the machine-global file, creating its directory first
+    (never the file): the lock is always taken, so a machine write cannot
+    slip between a repo write's or a delete's read of it and their own write
+    (review round 4). Take it before the repo lock -- crew's one order."""
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    return Lock(path, wait)
 
 
 _DOTTED_RE = re.compile(r"^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$")

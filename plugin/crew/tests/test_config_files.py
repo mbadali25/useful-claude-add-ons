@@ -450,3 +450,14 @@ def test_update_json_compares_against_absence(tmp_path, present, expect,
 def test_expected_digest_token_names_absence():
     assert (files.state_digest(None), files.state_digest(b"x")) == (
         files.ABSENT, files.digest(b"x"))
+
+
+def test_machine_lock_creates_the_directory_and_locks(tmp_path):
+    path = str(tmp_path / "no-such-dir" / "config.json")
+
+    with files.machine_lock(path):
+        held = os.path.exists(path + ".lock")
+
+    assert (held, os.path.exists(path + ".lock"), os.path.lexists(path)) == (
+        True, False, False)
+    assert os.path.isdir(os.path.dirname(path))
