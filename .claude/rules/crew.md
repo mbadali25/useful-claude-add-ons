@@ -21,7 +21,7 @@ Covers: The crew plugin after 1.0: hooks, the four agents, commands, skills inve
 - `plugin/crew/hooks/scripts/crew_autoclear_setup.py` — no single `main()` confirmed at a specific line this pass; called with subcommands (`plan-windows-default`, `apply-migrate`) from the three sites named above.
 - `plugin/crew/hooks/scripts/crew_resume.py:667` — `decide`, read-only; `main()` is the `decide` / `record` / `precompact` CLI.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:576` — `ticket_freshness`, the library entry point; `main()` at `:676`.
-- `plugin/crew/hooks/scripts/crew_autopilot.py:478` — `next_phase`, read-only; `main()` at `:985` is the `next` / `resume` / `settings` / `stops` / `route` / `status` CLI `plugin/crew/commands/autopilot.md` calls.
+- `plugin/crew/hooks/scripts/crew_autopilot.py:500` — `next_phase`, read-only; `main()` at `:1225` is the `next` / `resume` / `settings` / `stops` / `route` / `status` / `deploy-allowed` CLI `plugin/crew/commands/autopi...
 - `plugin/crew/hooks/scripts/crew_route.py:210` — `decide`, read-only route / ask / none for a prompt; `main()` at `:332` is the `settings` / `decide` CLI.
 - `plugin/crew/hooks/scripts/crew_endpoints.py:566` — `declare_endpoint`, the only writer of *declared* records.
 Full note: `.crew/codemap/crew.md`.

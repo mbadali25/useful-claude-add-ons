@@ -103,10 +103,6 @@
 %% f96e9ec9): of the Anchors paths only crew_tracker.py changed (T-0077's Windows directory
 %% handles, inserted from :299 and :1061); no node cites a line in it, so nothing was redrawn.
 %% What crew 1.0 does when a session starts, and what /crew:status reads.
-%% Re-anchored e463ca53 -> 81685adf (T-0079 merges T-0077's f96e9ec9, crew 1.0.50): of the
-%% Anchors paths only crew_tracker.py changed (`git diff --name-only`), by T-0077's
-%% ba2ee465 alone - the Windows directory hold, below resolve() and inside the vault-write
-%% path. No node cites a line or behaviour in that hunk, so nothing below was redrawn.
 %% --
 %% REDRAWN for crew 1.0. The 0.20 version of this file drew the PM session-start
 %% brief (pm-brief.sh / pm_brief.py), both removed in 1.0 - the diagram described
@@ -139,6 +135,15 @@
 %% traced in the sh flavour only; the ps1 body was not read past :241.
 %% /crew:status checks the fixed path .work/HANDOFF.md (crew_status.py:207),
 %% not context.handoffPath, and does not apply the stale rule.
+%% Re-anchored 53f5482c -> d3a1c77e (T-0072, crew 1.0.44): of the Anchors paths only
+%% crew_state.py changed, line-neutral at :1084-1090 (AUTOPILOT_DEFAULTS); every crew_state.py
+%% line cited below (:646, :774, :859-914, :980) is above that hunk and did not move.
+%% Re-anchored e463ca53 -> 715a8c2f (T-0072 merged onto bebbb97f, crew 1.0.47): of the Anchors
+%% paths only crew_state.py differs from main, line-neutral at :1086-1090; every crew_state.py
+%% line cited here is above that hunk and did not move. Nothing below was redrawn.
+%% Re-anchored 715a8c2f -> a4eb2f55 (T-0072 merged onto 5050ea3b, T-0077, crew 1.0.50): of the
+%% Anchors paths only crew_tracker.py changed (T-0077); no node cites a line in it, and
+%% crew_status.py:63 did not change. No node or edge changed.
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
     start --> reg["hooks.json:3-10<br/>3 SessionStart pairs, sh + ps1, no matcher<br/>each claims per session+source"]
