@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.53: tooling reliability — tool-failure refunds, golden replay, seam contracts, a canary review (T-0087)
+### Added — `crew` 1.0.55: tooling reliability — tool-failure refunds, golden replay, seam contracts, a canary review (T-0087)
 
 A tooling change: this release carries no feature work.
 
@@ -16,7 +16,7 @@ A tooling change: this release carries no feature work.
   Anything else is `reviewer`. Only `tool` is refunded, automatically, at most
   `REFUND_LIMIT` (2) times per plan; a third is recorded with `refund_refused`
   and counts. These are never refunded: `reviewer` and `tree` rounds, a round
-  with no recorded result, and ledger rows from before 1.0.53. The two-round
+  with no recorded result, and ledger rows from before 1.0.55. The two-round
   `BUDGET`, the exit codes, the READ rule and the grader are unchanged, and a
   successor plan still starts both counts afresh.
 - **Where it shows.** Ledger rows carry `failure_class`, `refunded` and
@@ -58,7 +58,7 @@ A tooling change: this release carries no feature work.
   the budget, the golden replay, the manifest, status, autopilot, the gate
   record and the canary. All thirteen go RED.
 
-### Fixed — `crew` 1.0.53 (T-0087)
+### Fixed — `crew` 1.0.55 (T-0087)
 
 - Importing `verify_record` no longer reconfigures `sys.stdout`; that now
   happens in its `main`.
@@ -72,6 +72,9 @@ A tooling change: this release carries no feature work.
   harness change: its line count moves with every crew doc edit. It refused this
   branch's own re-measure until then; `scripts/_test/tooling-pr.py` gains the
   must-allow case.
+- Bumped `1.0.54 -> 1.0.55` (1.0.52 on its branch; re-set to 1.0.53 after
+  merging main's 1.0.52, T-0076, and to 1.0.55 after merging main's 1.0.54,
+  T-0092).
 
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 
