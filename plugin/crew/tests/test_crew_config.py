@@ -16,6 +16,7 @@ three guarantees -- merge, refuse a repo key, mark a widening of
 prose.
 """
 import copy
+import errno
 import json
 import os
 import re
@@ -27,6 +28,7 @@ import pytest
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_autocycle
 import crew_config
+import crew_config_files
 import crew_fixtures
 import crew_platform
 import crew_state
@@ -2000,7 +2002,7 @@ def test_repo_write_is_atomic(tmp_path, monkeypatch):
     def _boom(_fd):
         raise OSError("disk full")
     monkeypatch.setattr(crew_config.os, "fsync", _boom)
-    with pytest.raises(OSError):
+    with pytest.raises(crew_config.RepoWriteRefused, match="disk full"):
         crew_config.write_repo_config(str(root), {"tracker": "jira"},
                                       str(tmp_path / "g.json"))
 
@@ -2581,7 +2583,6 @@ def test_fixing_the_bad_key_in_the_same_write_is_accepted(tmp_path):
 
 @pytest.fixture
 def _short_lock(monkeypatch):
-    import crew_config_files  # pylint: disable=import-outside-toplevel
     monkeypatch.setattr(crew_config_files, "LOCK_WAIT_SECONDS", 0.1)
 
 
@@ -2856,7 +2857,6 @@ def test_repo_write_refuses_when_the_machine_file_changed(tmp_path):
 
 def test_repo_write_takes_the_machine_lock_when_its_directory_is_absent(
         tmp_path, monkeypatch):
-    import crew_config_files  # pylint: disable=import-outside-toplevel
     root = _repo(tmp_path)
     gpath = str(tmp_path / "no-such-dir" / "config.json")
     taken = []
@@ -2872,6 +2872,99 @@ def test_repo_write_takes_the_machine_lock_when_its_directory_is_absent(
 
     repo_lock = str(root / ".crew" / "config.json") + ".lock"
     assert taken[:2] == [gpath + ".lock", repo_lock]
+
+
+def _unmakeable(tmp_path, monkeypatch, kind):
+    """A machine path whose directory cannot be made: `os.makedirs` denied
+    (patched after every fixture directory exists), or a file in its way."""
+    if kind == "permission":
+        def _deny(path, *_args, **_kwargs):
+            raise PermissionError(errno.EACCES, "Permission denied", path)
+        monkeypatch.setattr(crew_config_files.os, "makedirs", _deny)
+        return str(tmp_path / "nodir" / "config.json")
+    (tmp_path / "afile").write_text("x", encoding="utf-8")
+    return str(tmp_path / "afile" / "config.json")
+
+
+def _stray_locks(root, gpath):
+    crew_dir = root / ".crew"
+    beside = os.path.dirname(gpath)
+    return ([n for n in os.listdir(crew_dir) if n.endswith(".lock")]
+            + ([n for n in os.listdir(beside) if n.endswith(".lock")]
+               if os.path.isdir(beside) else []))
+
+
+@pytest.mark.parametrize("kind", ["permission", "file"])
+def test_repo_write_refuses_when_the_machine_directory_cannot_be_made(
+        tmp_path, capsys, monkeypatch, kind):
+    root = _repo(tmp_path)
+    before = _repo_bytes(root)
+    gpath = _unmakeable(tmp_path, monkeypatch, kind)
+
+    code = _set_at(root, gpath, "repo", 'tracker="jira"')
+
+    err = capsys.readouterr().err
+    assert (code, "nothing written" in err, os.path.dirname(gpath) in err) == (
+        2, True, True)
+    assert (_repo_bytes(root), _stray_locks(root, gpath)) == (before, [])
+
+
+@pytest.mark.parametrize("kind", ["permission", "file"])
+def test_global_write_refuses_when_its_directory_cannot_be_made(
+        tmp_path, capsys, monkeypatch, kind):
+    root = _repo(tmp_path)
+    gpath = _unmakeable(tmp_path, monkeypatch, kind)
+
+    code = _set_at(root, gpath, "machine", 'pm.authority="act"')
+
+    assert (code, os.path.dirname(gpath) in capsys.readouterr().err) == (2, True)
+
+
+def _deny_lock_files(monkeypatch):
+    real_open = crew_config_files.os.open
+
+    def _open(path, *args, **kwargs):
+        if str(path).endswith(".lock"):
+            raise PermissionError(errno.EACCES, "Permission denied", path)
+        return real_open(path, *args, **kwargs)
+    monkeypatch.setattr(crew_config_files.os, "open", _open)
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_both_writers_refuse_when_the_lock_cannot_be_created(
+        tmp_path, capsys, monkeypatch, layer):
+    root = _repo(tmp_path)
+    gdir = tmp_path / "machine"
+    gdir.mkdir()
+    gpath = _global_file(gdir, {})
+    gpath = gpath.rename(gdir / "config.json")
+    before = _both_bytes(root, gpath)
+    _deny_lock_files(monkeypatch)
+
+    code = _set_at(root, gpath, layer,
+                   'pm.authority="act"' if layer == "machine" else 'tracker="jira"')
+
+    err = capsys.readouterr().err
+    assert (code, "config.json.lock" in err, "nothing written" in err) == (
+        2, True, True)
+    assert _both_bytes(root, gpath) == before
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_set_cli_subprocess_prints_no_traceback_when_the_machine_directory_is_a_file(
+        tmp_path, layer):
+    root = _repo(tmp_path)
+    gpath = _unmakeable(tmp_path, None, "file")
+    script = os.path.join(os.path.dirname(os.path.abspath(crew_config.__file__)),
+                          "crew_config.py")
+
+    done = subprocess.run(
+        [sys.executable, script, "--root", str(root), "--global-path", gpath,
+         "--set", 'pm.authority="act"' if layer == "machine" else 'tracker="jira"',
+         "--apply"] + (["--repo"] if layer == "repo" else []),
+        capture_output=True, text=True, check=False)
+
+    assert (done.returncode, "Traceback" in done.stderr) == (2, False)
 
 
 @pytest.mark.parametrize("create,conflict", [(False, False), (True, True)])

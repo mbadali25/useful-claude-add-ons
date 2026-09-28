@@ -6,6 +6,7 @@ layer, every writable row offers a value, and every value offered is one the
 writer accepts. Save, delete and restore are tested for order -- validate
 before write, back up before remove -- because that order is the feature.
 """
+import errno
 import json
 import os
 import shlex
@@ -1475,6 +1476,62 @@ def test_delete_refuses_while_the_machine_lock_is_held(tmp_path, capsys,
     assert (code, open(_config(root), "rb").read(), _backups(root)) == (
         2, before, [])
     assert gpath + ".lock" in capsys.readouterr().err
+
+
+def _deny_lock_files(monkeypatch):
+    real_open = crew_config_files.os.open
+
+    def _open(path, *args, **kwargs):
+        if str(path).endswith(".lock"):
+            raise PermissionError(errno.EACCES, "Permission denied", path)
+        return real_open(path, *args, **kwargs)
+    monkeypatch.setattr(crew_config_files.os, "open", _open)
+
+
+def test_delete_refuses_when_the_machine_lock_cannot_be_created(tmp_path, capsys,
+                                                                monkeypatch):
+    root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "act"}})
+    before = open(_config(root), "rb").read()
+    plan = menu.plan_delete(root, gpath)
+    _deny_lock_files(monkeypatch)
+
+    code = menu.apply_delete(root, plan, "repo", now=_now(),
+                             expect={"repo": plan["digest"], "machine": plan["machine"]})
+
+    assert (code, open(_config(root), "rb").read(), _backups(root)) == (
+        2, before, [])
+    assert gpath + ".lock" in capsys.readouterr().err
+
+
+def test_restore_refuses_when_the_lock_cannot_be_created(tmp_path, capsys,
+                                                         monkeypatch):
+    root, gpath = _repo(tmp_path, {"tracker": "jira"})
+    _delete(root, gpath)
+    crew_platform.heal_config(root)
+    healed = open(_config(root), "rb").read()
+    backup = os.path.join(root, ".crew", f"config.json.bak-{_TS}")
+    capsys.readouterr()
+    _deny_lock_files(monkeypatch)
+
+    code = menu.restore_repo_config(root, backup, True, now=_now())
+
+    assert (code, open(_config(root), "rb").read()) == (2, healed)
+    assert "config.json.lock" in capsys.readouterr().err
+
+
+def test_save_reports_an_os_failure_without_a_traceback(tmp_path, capsys,
+                                                        monkeypatch):
+    root, gpath = _repo(tmp_path)
+    before = open(_config(root), "rb").read()
+    _deny_lock_files(monkeypatch)
+
+    code = menu.save(root, {"repo": {"tracker": "jira"}}, apply=True,
+                     global_path=gpath)
+
+    err = capsys.readouterr().err
+    assert (code, "repo layer: NOT written" in err, "nothing was written" in err,
+            ".json.lock" in err) == (1, True, True, True)
+    assert open(_config(root), "rb").read() == before
 
 
 def test_delete_takes_the_machine_lock_before_the_repo_lock(tmp_path, capsys,

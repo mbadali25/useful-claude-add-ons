@@ -7,6 +7,7 @@ lock, the strict read, the `restorable` predicate delete and restore share,
 the digest a compare-and-swap checks, the atomic replace and the move-aside
 rename -- so there is one construction to test here and one to sabotage.
 """
+import errno
 import json
 import os
 
@@ -122,6 +123,20 @@ def test_lock_is_released_on_exit_and_on_error(tmp_path):
             raise RuntimeError("boom")
 
     assert (held, os.path.exists(path + ".lock")) == (True, False)
+
+
+def test_lock_removes_its_file_when_the_pid_write_fails(tmp_path, monkeypatch):
+    path = str(tmp_path / "config.json")
+
+    def _full(*_args):
+        raise OSError(errno.ENOSPC, "No space left on device")
+    monkeypatch.setattr(files.os, "write", _full)
+    with pytest.raises(OSError):
+        with files.Lock(path):
+            pass
+    monkeypatch.undo()
+
+    assert not os.path.exists(path + ".lock")
 
 
 # --- update_json: compare-and-swap inside the lock -----------------------------

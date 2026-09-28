@@ -93,7 +93,8 @@ class Lock:
     Waits `wait` seconds (default `LOCK_WAIT_SECONDS`) for a holder to finish,
     then raises `Busy` naming the lock file and the PID in it. A process that
     died holding it leaves the file; the message says to remove it by hand,
-    the same rule as the review ledger's lock.
+    the same rule as the review ledger's lock. A failed PID write never leaves
+    one behind: the file is removed before the error is raised.
     """
 
     def __init__(self, path, wait=None):
@@ -118,8 +119,14 @@ class Lock:
                 continue
             try:
                 os.write(fd, str(os.getpid()).encode("ascii"))
-            finally:
+            except BaseException:
                 os.close(fd)
+                try:
+                    os.remove(self.path)
+                except OSError:
+                    pass
+                raise
+            os.close(fd)
             return self
 
     def __exit__(self, *exc):

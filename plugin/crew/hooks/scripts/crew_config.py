@@ -2866,8 +2866,9 @@ def write_global_config(updates, path=None, expect=None):
     """Apply `plan_global_write` to disk; returns `(merged, changes)`. The ONLY
     crew writer outside the repo, reached after the user saw the plan and said
     go. Compare-and-swap (T-0075): re-planned on the bytes `update_json` reads
-    under its lock; `expect` (a digest or `ABSENT`) refuses a changed file.
-    Creates `~/.claude/crew/`; sibling-fsync-replace, never "w" on the live file."""
+    under its lock; `expect` (a digest or `ABSENT`) refuses a changed file; an
+    OS error is a `GlobalWriteRefused`. Creates `~/.claude/crew/`; replaced by
+    sibling-fsync-replace, never "w" on the live file."""
     real_path = _global_label(path)
     merged, changes = plan_global_write(updates, real_path)
     if not changes:
@@ -2884,6 +2885,9 @@ def write_global_config(updates, path=None, expect=None):
         raise GlobalWriteConflict(str(exc)) from exc
     except (crew_config_files.Busy, crew_config_files.Unreadable) as exc:
         raise GlobalWriteRefused(f"{exc}; nothing written") from exc
+    except OSError as exc:
+        raise GlobalWriteRefused(f"{real_path}: {exc}; nothing written (its directory, its lock or the write "
+                                 "itself failed at the OS; check the directory)") from exc
     return out["plan"]
 
 
@@ -3069,7 +3073,8 @@ def write_repo_config(root, updates, global_path=None, expect=None,
     """Apply `plan_repo_write` to disk; returns `(merged, changes)`. The same
     compare-and-swap (`RepoWriteConflict`), keeping CRLF and BOM; never creates
     the file. The machine file is bound too: read under its lock, always taken
-    before the repo lock, and `expect_global` refuses one that changed since."""
+    before the repo lock, and `expect_global` refuses one that changed since.
+    An OS error (either lock, the machine directory, the write) is refused."""
     merged, changes = plan_repo_write(root, updates, global_path)
     if not changes:
         return merged, changes
@@ -3094,6 +3099,9 @@ def write_repo_config(root, updates, global_path=None, expect=None,
         raise _repo_unreadable(real_path, exc) from exc
     except crew_config_files.Busy as exc:
         raise RepoWriteRefused(f"{exc}; nothing written") from exc
+    except OSError as exc:
+        raise RepoWriteRefused(f"{exc}; nothing written (the machine-global directory, a lock or the write "
+                               "failed at the OS)") from exc
     return out["plan"]
 
 
