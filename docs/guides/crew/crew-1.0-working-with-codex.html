@@ -152,6 +152,13 @@ this project's <code>.codex/config.toml</code>. Create <code>$CODEX_HOME/review.
 <code>$CODEX_HOME/work.config.toml</code> yourself and pass <code>--profile review</code>/<code>--profile work</code> against
 those.</p>
 <p>A review that exits non-zero or prints nothing is INCOMPLETE, never CLEAN.</p>
+<p>The review prompt Codex reads ends with a <strong>development standards checklist</strong>: the rules and
+self-check questions of every standard that applies to the change (crew's generic set, any
+matching per-language set, and the repository's <code>.crew/standards.md</code> overlay). The author's own
+self-check answers are withheld, so Codex judges each standard's applicability itself, and the
+prompt says the list does not bound the review: a defect outside it is reported the same way.
+<code>review_run.py</code> will not launch Codex, or reserve a round, until the author's self-check is
+complete and stamped for the exact bundle Codex is about to read.</p>
 <h2 id="what-is-proven-and-what-is-only-configured">What Is Proven, and What Is Only Configured</h2>
 <p>Run the probe. The sample below shows the probe's format with this build's values. The
 <code>hooks feature</code> value was measured with <code>codex features list</code>. The probe itself has only been
