@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@8cabe586 on 2026-09-27. Verify before trusting.
+%% Generated from useful-claude-add-ons@938e3b11 on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
@@ -144,6 +144,10 @@
 %% Re-anchored 715a8c2f -> a4eb2f55 (T-0072 merged onto 5050ea3b, T-0077, crew 1.0.50): of the
 %% Anchors paths only crew_tracker.py changed (T-0077); no node cites a line in it, and
 %% crew_status.py:63 did not change. No node or edge changed.
+%% Re-anchored 8cabe586 -> 938e3b11 (T-0075 review round 4, its merge of main f54af3fa with T-0072,
+%% crew 1.0.52): of the Anchors paths only crew_state.py changed since 8cabe586, T-0072's
+%% line-neutral AUTOPILOT_DEFAULTS hunk at :1086-1090; every crew_state.py line cited here is above
+%% it and did not move (checked with git diff -U0). Nothing below was redrawn.
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
     start --> reg["hooks.json:3-10<br/>3 SessionStart pairs, sh + ps1, no matcher<br/>each claims per session+source"]
