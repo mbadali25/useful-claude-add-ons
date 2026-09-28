@@ -1138,7 +1138,12 @@ def test_resolver_accepts_a_proven_python_38(tmp_path, path, header, fn):
     assert exit_line == "EXIT:0", (
         f"a proven Python 3.8 must be ACCEPTED. "
         f"stdout={proc.stdout!r} stderr={proc.stderr!r}")
-    assert printed == [_posix_form(real)], f"must return the real interpreter's path. got {printed!r}"
+    # The resolver prints `sys.executable`. That is `real` itself on POSIX, but
+    # on Windows `real` can be a WindowsApps alias forwarding to the real
+    # interpreter elsewhere, so ask `real` for the path it reports (T-0076).
+    reported = subprocess.run([real, "-c", "import sys; print(sys.executable)"],
+                              capture_output=True, text=True, check=True).stdout.strip()
+    assert printed == [_posix_form(reported)], f"must return the real interpreter's path. got {printed!r}"
 
 
 # --- FIX (round-3 review): context.enabled must be honoured even when
