@@ -296,6 +296,68 @@ _DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | _NOFOLLOW
 _DIR_FD = (hasattr(os, "O_DIRECTORY") and bool(_NOFOLLOW)
            and all(call in os.supports_dir_fd for call in (os.open, os.stat, os.unlink, os.rename)))
 
+# Windows pins differently (T-0077): a handle on each directory from the vault
+# down, opened with data access and WITHOUT FILE_SHARE_DELETE, makes the OS
+# refuse to rename that directory or any directory above it for as long as it
+# is held, while files inside it are still written and replaced. Measured: a
+# handle with FILE_READ_ATTRIBUTES alone does not block the rename, which is
+# why the access mask below is part of the contract and a test pins it.
+_FILE_LIST_DIRECTORY = 0x0001
+_FILE_READ_ATTRIBUTES = 0x0080
+_FILE_SHARE_READ, _FILE_SHARE_WRITE, _FILE_SHARE_DELETE = 0x1, 0x2, 0x4
+_FILE_FLAG_BACKUP_SEMANTICS = 0x02000000  # required to open a directory at all
+_FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000  # open a link itself, never its target
+_OPEN_EXISTING = 3
+_PIN_ACCESS = _FILE_LIST_DIRECTORY | _FILE_READ_ATTRIBUTES
+_PIN_SHARE = _FILE_SHARE_READ | _FILE_SHARE_WRITE
+_PIN_FLAGS = _FILE_FLAG_BACKUP_SEMANTICS | _FILE_FLAG_OPEN_REPARSE_POINT
+_REPARSE_POINT = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+
+
+def _win_pin_available():
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes  # pylint: disable=import-outside-toplevel
+        import msvcrt  # pylint: disable=import-outside-toplevel
+    except ImportError:
+        return False
+    return hasattr(ctypes, "WinDLL") and hasattr(msvcrt, "open_osfhandle")
+
+
+_WIN_PIN = _win_pin_available()
+
+
+def _win_open_dir(path):
+    """`(stat, close)` for a held handle on directory `path` (Windows only).
+
+    The handle denies FILE_SHARE_DELETE, so while it is open `path` and every
+    directory above it cannot be renamed. It is wrapped in a CRT fd so
+    `os.fstat` reports the same `(st_dev, st_ino)` `os.stat` does, and `close`
+    closes both. Any failure raises OSError: the caller refuses the write."""
+    import ctypes  # pylint: disable=import-outside-toplevel
+    import msvcrt  # pylint: disable=import-outside-toplevel
+    from ctypes import wintypes  # pylint: disable=import-outside-toplevel
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create = kernel32.CreateFileW
+    create.restype = wintypes.HANDLE
+    create.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
+                       wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    handle = create(path, _PIN_ACCESS, _PIN_SHARE, None, _OPEN_EXISTING, _PIN_FLAGS, None)
+    if handle is None or handle == wintypes.HANDLE(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        fd = msvcrt.open_osfhandle(handle, os.O_RDONLY)
+    except BaseException:
+        kernel32.CloseHandle(wintypes.HANDLE(handle))
+        raise
+    try:
+        seen = os.fstat(fd)
+    except BaseException:
+        os.close(fd)
+        raise
+    return seen, lambda: os.close(fd)
+
 
 def _read_bytes(path, dir_fd=None):
     """The file's bytes, or None when it does not exist. With `dir_fd`, `path`
@@ -996,17 +1058,62 @@ def _moved(shown, exc):
     return f"{shown}: {exc.strerror or exc}"
 
 
+def _components(paths, label):
+    rel = os.path.relpath(os.path.dirname(paths[label]), paths["vault"])
+    return [part for part in rel.split(os.sep) if part not in ("", ".")]
+
+
+def _hold_dirs(paths, label):
+    """Windows: `[(stat, close)]`, a held handle on the vault and on every real
+    component down to the directory holding `paths[label]`, outermost first.
+
+    Held together they make every one of those directories un-renameable until
+    `_release`. Each is refused rather than trusted when it is a reparse point
+    (a link planted where a checked directory was), not a directory, or has no
+    file id to compare -- no id is "could not tell", never "the same". The
+    vault is matched by device and file id against the one checked.
+    """
+    held = []
+    try:
+        path = paths["vault"]
+        for index, part in enumerate([None] + _components(paths, label)):
+            if part is not None:
+                path = os.path.join(path, part)
+            held.append(_win_open_dir(path))
+            seen = held[-1][0]
+            if getattr(seen, "st_file_attributes", 0) & _REPARSE_POINT:
+                raise OSError(errno.ELOOP, "a link sits where a checked directory was")
+            if not stat.S_ISDIR(seen.st_mode):
+                raise OSError(errno.ENOTDIR, "something other than a directory sits where one was checked")
+            if not seen.st_ino:
+                raise OSError(errno.EIO, "could not tell whether this is the directory the vault checks found: "
+                                         "the file system reports no file id; nothing written")
+            if index == 0 and (seen.st_dev, seen.st_ino) != paths["vaultId"]:
+                raise OSError(errno.ESTALE, "the vault is not the directory that was checked")
+    except BaseException:
+        _release(held)
+        raise
+    return held
+
+
+def _release(held):
+    for _seen, close in reversed(held):
+        close()
+
+
 def _open_pinned(paths, label):
-    """An fd on the directory holding `paths[label]`, reached from the vault it
-    checked one real component at a time, never through a link.
+    """What holds the directory for `paths[label]` in place: on POSIX an fd on
+    it, reached from the vault it checked one real component at a time, never
+    through a link; on Windows the `_hold_dirs` handles.
 
     The components are the REAL path's, so a boardDir that is a link inside the
     vault still works; what cannot happen is a component that became a link
     after `_vault_paths` resolved it. The vault itself is matched by device and
     inode against the one checked.
     """
-    rel = os.path.relpath(os.path.dirname(paths[label]), paths["vault"])
-    parts = [part for part in rel.split(os.sep) if part not in ("", ".")]
+    if not _DIR_FD:
+        return _hold_dirs(paths, label)
+    parts = _components(paths, label)
     fd = os.open(paths["vault"], _DIR_FLAGS)
     try:
         seen = os.fstat(fd)
@@ -1051,27 +1158,43 @@ def _pinned_check(paths, label, fd):
     return check
 
 
-def _parent_check(paths, label):
-    """Where a directory cannot be pinned (Windows): why the directory holding
-    `paths[label]` no longer resolves where it did, or None. A swap between
-    this check and the replace is the residual race README names."""
+def _held_check(paths, label, held):
+    """Where the directories are held by handle (Windows): why the path no
+    longer reaches the held directory, or None. Held, it cannot have moved; this
+    is the belt to that pair of braces, and runs at the same three points."""
+    shown = paths[label + "Shown"]
     folder = os.path.dirname(paths[label])
+    want = (held[-1][0].st_dev, held[-1][0].st_ino)
 
     def check():
-        if os.path.realpath(folder) != folder:
-            return (f"{paths[label + 'Shown']}: its directory now resolves elsewhere; "
-                    f"nothing written through it")
+        try:
+            seen = os.stat(folder)
+        except OSError as exc:
+            return (f"{shown}: its directory is no longer where the vault checks found it "
+                    f"({exc.strerror or exc}); nothing written through it")
+        if (seen.st_dev, seen.st_ino) != want:
+            return f"{shown}: its directory left the vault after the checks; nothing written through it"
         return None
     return check
 
 
 @contextlib.contextmanager
 def _pinned(paths, label):
-    """`(name, dir_fd, check)` to write `paths[label]` with: a name in a pinned
-    directory and a re-walk where the platform allows it, else the path and a
-    re-check. Either way `check` runs around every write."""
+    """`(name, dir_fd, check)` to write `paths[label]` with, `check` running
+    around every write: on POSIX a name in a pinned directory fd and a re-walk;
+    on Windows the path, its directories held un-renameable by handle, and a
+    re-check. A platform with neither is refused -- a path-only re-check is
+    passed by a directory renamed away and replaced, so it is no guard."""
     if not _DIR_FD:
-        yield paths[label], None, _parent_check(paths, label)
+        if not _WIN_PIN:
+            raise OSError(errno.EOPNOTSUPP, "could not tell whether its directory stays in the vault: this "
+                                            "platform can neither pin a directory fd nor hold one by handle; "
+                                            "nothing written")
+        held = _open_pinned(paths, label)
+        try:
+            yield paths[label], None, _held_check(paths, label, held)
+        finally:
+            _release(held)
         return
     fd = _open_pinned(paths, label)
     try:
