@@ -1490,7 +1490,7 @@ swapped for a link after the checks is refused rather than written through.
 That fd follows its directory if it is renamed out of the vault, so the walk is
 repeated and matched by device and inode before the temp is written, before the
 replace and after it; a note that landed in a directory that left is removed
-through the fd. Windows has no such calls, so it holds the directories instead (since 1.0.48, T-0077): it opens a handle on the vault and on every directory down to the target, each denying `FILE_SHARE_DELETE`, and keeps them open for the length of the write, so the OS refuses to rename any of them meanwhile. A handle that is a reparse point, not a directory, the wrong vault, or has no file id is refused (no file id is "could not tell", never "the same"), and the path is still re-checked against the held directory's id at the same three points.
+through the fd. Windows has no such calls, so it holds the directories instead (since 1.0.49, T-0077): it opens a handle on the vault and on every directory down to the target, each denying `FILE_SHARE_DELETE`, and keeps them open for the length of the write, so the OS refuses to rename any of them meanwhile. A handle that is a reparse point, not a directory, the wrong vault, or has no file id is refused (no file id is "could not tell", never "the same"), and the path is still re-checked against the held directory's id at the same three points.
 A platform with neither mechanism refuses the write. On POSIX a move inside the last window
 remains a residual race; on Windows the held handles close it.
 
