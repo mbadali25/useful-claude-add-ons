@@ -192,7 +192,7 @@ WEBTEST_MUTATIONS = (
      "    else:\n        out += every[:WEBTEST_FINDINGS_MAX]\n",
      _T + "test_review_prompt_without_an_out_dir_puts_every_row_inline"),
     ("r1 review_prompt:197: the overflow file needs no READ", RUN,
-     "        parts.append(review_prompt.WEBTEST_FINDINGS_FILE)\n",
+     "        parts.append(os.path.join(args.scratch, review_prompt.WEBTEST_FINDINGS_FILE))\n",
      "        pass\n",
      _T + "test_review_the_overflow_file_needs_its_own_read"),
     ("r1 scaffold:208: an existing config is not checked", SCAFFOLD,
