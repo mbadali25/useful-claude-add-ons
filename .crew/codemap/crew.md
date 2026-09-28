@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@1b5b6560
+anchor: useful-claude-add-ons@a4eb2f55
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -55,7 +55,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.49, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.50, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -393,11 +393,11 @@ they disagree:
   `crew.json` alone [does nothing for autoClear behaviour, which
   `crew_config.py` still reads from `config.json`]". This is a real,
   present-tense inconsistency, not a hypothetical. T-0004's
-  `crew_autopilot.settings` (`plugin/crew/hooks/scripts/crew_autopilot.py:658`)
+  `crew_autopilot.settings` (`plugin/crew/hooks/scripts/crew_autopilot.py:664`)
   sides with `config.json` explicitly: it reads through
   `crew_config.resolve_config` and warns when `autopilot` is set in
   `crew.json` but not `config.json` ("crew does not read [it] for this key;
-  move it to .crew/config.json", `:694-697`, in `_settings_at` `:667`). T-0023's
+  move it to .crew/config.json", `:700-703`, in `_settings_at` `:673`). T-0023's
   `crew_route.settings` (`plugin/crew/hooks/scripts/crew_route.py:296`) does
   the same for `route` (`:321-324`) - and it is the sharper case, because
   its only caller is `crew_context.route_item`, inside the one hook that reads
@@ -618,31 +618,31 @@ unchanged. Tests: `plugin/crew/tests/test_crew_route.py`,
 `plugin/crew/tests/sabotage.py:79`); `.crew/verify.json` rule 29 (`:310-318`);
 T-0024's rule 30 (`:320`) follows it.
 
-**`deploy_allowed` (T-0072, crew 1.0.49).** DERIVED at `80326b1d` (T-0072's review-round-4 redesign, `35733d76`).
-`crew_autopilot.deploy_allowed` (`plugin/crew/hooks/scripts/crew_autopilot.py:826`) is the policy
+**`deploy_allowed` (T-0072, crew 1.0.50).** DERIVED at `80326b1d` (T-0072's review-round-4 redesign, `35733d76`); lines re-read after its merge of T-0077 (`a4eb2f55`, `_rel` +6 at `:170`).
+`crew_autopilot.deploy_allowed` (`plugin/crew/hooks/scripts/crew_autopilot.py:832`) is the policy
 layer for a deploy without asking: `allow`, `ask` or `refuse` for one environment, rows in the
 order the module docstring's `deploy-allowed` section (`:87-104`) states. It resolves the checkout
-root **once**, through `_resolve_root` (`:723`, whose try holds only the `toplevel` lookup; any
+root **once**, through `_resolve_root` (`:729`, whose try holds only the `toplevel` lookup; any
 exception is row 0, `refuse`), reads `crew_config.GLOBAL_CONFIG_PATH` once as `machine_path`, and
-hands both to `_decide(top, env_name, env_class, machine_path)` (`:749`), which never looks the
-root up again: settings come from `_settings_at(top)` (`:667`; `settings(root)` `:658` is the lookup
+hands both to `_decide(top, env_name, env_class, machine_path)` (`:755`), which never looks the
+root up again: settings come from `_settings_at(top)` (`:673`; `settings(root)` `:664` is the lookup
 plus that call) and the ratchet from `resolve_ratcheted(top, "environments.prodUnattended",
-path=machine_path)`. The result names the root it judged (`root`). `_probe` (`:708`) is the only
+path=machine_path)`. The result names the root it judged (`root`). `_probe` (`:714`) is the only
 existence check in the module: a try holding one `os.lstat`, `FileNotFoundError`/`NotADirectoryError`
 absent, any other exception `could-not-tell` with its type, else present. The incident file
 present or could-not-tell refuses, before `import cloud_guard` (review round 1). An unusable name
-or a class outside `cloud_guard.ENV_NONPROD`/`ENV_PROD` asks; `_layer_problem` (`:734`) asks for a
+or a class outside `cloud_guard.ENV_NONPROD`/`ENV_PROD` asks; `_layer_problem` (`:740`) asks for a
 layer the probe could not tell about, and for a present layer `crew_config.layer_state(...,
 environments=True)` does not call `ok` - so `layer_state`'s `lexists` collapse is consulted only for
 a path this module saw present (review round 4). Production allows only under `deploy: all` with
 the ratchet's `effective` true and `cloud_guard.resolve_mode(top)` exactly `("block", "")`.
 Nothing calls it yet: T-0045 is the consumer, and `settings` warns while `deploy` is not `none`.
 `deploy_allowed` builds the report inside its never-raises boundary: a value it cannot print is
-named by `_safe_text` (`:800`) and a crash reason comes from `_crash_reason` (`:809`). The
-`deploy-allowed` CLI is `_cli_deploy` (`:1184`), which never raises: stage 1 builds the line, the
+named by `_safe_text` (`:806`) and a crash reason comes from `_crash_reason` (`:815`). The
+`deploy-allowed` CLI is `_cli_deploy` (`:1190`), which never raises: stage 1 builds the line, the
 JSON and the report from the result; stage 2, on any exception from stage 1, prints the literal
 `verdict=ask`, with a constant reason when the exception cannot be described. Each stream is one
-line through `_cli_value` (`:1172`). `_failure` (`:1160`) renders a `next`/`resume`/`status` crash
+line through `_cli_value` (`:1178`). `_failure` (`:1166`) renders a `next`/`resume`/`status` crash
 through `_safe_text` the same way. Tests `plugin/crew/tests/test_crew_autopilot_deploy.py`
 (must-block, must-allow, the 324-case matrix, parity with `cloud_guard.environments_config`, the
 one-root, probe and layer cases); mutations `DEPLOY_MUTATIONS` in
@@ -764,7 +764,9 @@ T-0015 against this refresh.
 ## The tracker interface (T-0021, crew 1.0.43)
 
 DERIVED at `2a9e0989` (review round 4's fixes; set to 1.0.43 at `d276b268`;
-first derived at `7b667587`, re-derived at `bcb77ce2` and `c2ae46ab`).
+first derived at `7b667587`, re-derived at `bcb77ce2` and `c2ae46ab`); line
+citations re-mapped, and the Windows pinning sentence re-derived, at T-0072's
+merge of T-0077 (`a4eb2f55`).
 `plugin/crew/hooks/scripts/crew_tracker.py` is the one module that writes a
 tracker, and the only crew code that writes outside the repository (an
 Obsidian vault). A CLI the commands call, not a hook.
@@ -781,77 +783,83 @@ Obsidian vault). A CLI the commands call, not a hook.
   `:270`).
 - Status -> lane is the table `LANE_FOR_STATUS` (`:90`), `ready` (brainstorm's
   approval) included, mapped to the backlog lane; a status absent from it is
-  refused with nothing written (`move`, `:1356`). `STATUS_ORDER` (`:89`) is
-  read by `_backwards` (`:590`): a move backwards, or from a status crew does
+  refused with nothing written (`move`, `:1479`). `STATUS_ORDER` (`:89`) is
+  read by `_backwards` (`:652`): a move backwards, or from a status crew does
   not know, is `could not update` unless `--reopen`.
 - Files backend: the `.work/INDEX.md` row whose id cell matches exactly
-  (`_files_create` `:602`, `_files_move` `:628`, `_files_read` `:656`); a row
+  (`_files_create` `:664`, `_files_move` `:690`, `_files_read` `:718`); a row
   with no status cell is `could not update` / `could not read`; `create` on
   any id INDEX holds, the same title included, is refused with a reason
-  beginning `id taken` (`_held`, `:578`; `TAKEN`, `:83`). `title_ok`
-  (`:568`) refuses `|` and every break `str.splitlines` honours. Obsidian =
-  files + the board (`_obsidian_create` `:1218`, `_obsidian_move` `:1263`,
-  `_obsidian_read` `:1302`); a move whose INDEX half refuses writes no board
-  (`:1297`), as a create whose INDEX half refuses writes no card (`:1251`).
+  beginning `id taken` (`_held`, `:640`; `TAKEN`, `:83`). `title_ok`
+  (`:630`) refuses `|` and every break `str.splitlines` honours. Obsidian =
+  files + the board (`_obsidian_create` `:1341`, `_obsidian_move` `:1386`,
+  `_obsidian_read` `:1425`); a move whose INDEX half refuses writes no board
+  (`:1420`), as a create whose INDEX half refuses writes no card (`:1374`).
   Jira/SDP answer `delegated` with `<sync> <KEY> --push --to <status>` at
   `_PUSH_AT` (`:113`: `in-progress`, `done`) and `nothing to push` otherwise
-  (`_push` `:1332`, `_delegated` `:1327`); CLI exit codes 0/1/3/2
-  (`exit_code` `:264`, `main` `:1410`).
+  (`_push` `:1455`, `_delegated` `:1450`); CLI exit codes 0/1/3/2
+  (`exit_code` `:264`, `main` `:1533`).
 - Obsidian `create`'s order (review round 4): INDEX first (`_index_holds`
-  `:1192`, called at `:1220`, before `_vault_paths`), so a vault failure never
+  `:1315`, called at `:1343`, before `_vault_paths`), so a vault failure never
   hides a held id; then vault, identity, board and owner check; then the
-  claim, the note's exclusive create (`:1245`), before the INDEX row and the
+  claim, the note's exclusive create (`:1368`), before the INDEX row and the
   card. A note that appeared after the owner check makes that create fail,
-  and `create` answers `id taken` (`:1246`, reason from `_lost_claim`
-  `:1208`) with nothing written after it. A note that was already this repo's
+  and `create` answers `id taken` (`:1369`, reason from `_lost_claim`
+  `:1331`) with nothing written after it. A note that was already this repo's
   is not re-created, and the INDEX row decides under its atomic update.
-- Every write goes through `_atomic_update` (`:385`): the temp is created by
-  `_write_temp` (`:372`) via `_write_new` (`:359`) with `_TEMP_FLAGS` (`:289`,
+- Every write goes through `_atomic_update` (`:447`): the temp is created by
+  `_write_temp` (`:434`) via `_write_new` (`:421`) with `_TEMP_FLAGS` (`:289`,
   `O_EXCL|O_NOFOLLOW`) under a random name, so a planted link is never
-  followed; `_carry` (`:343`) gives it the target's owner and mode from
-  `_ownership` (`:327`) - a new file takes its directory's owner only as root;
-  then re-read the target (`:411`), `os.replace`, at most `WRITE_TRIES`
+  followed; `_carry` (`:405`) gives it the target's owner and mode from
+  `_ownership` (`:389`) - a new file takes its directory's owner only as root;
+  then re-read the target (`:473`), `os.replace`, at most `WRITE_TRIES`
   (`:107`) recomputes.
-- Vault confinement is `_vault_paths` (`:923`): realpath, `.obsidian/`
+- Vault confinement is `_vault_paths` (`:985`): realpath, `.obsidian/`
   required, relative `boardDir` without `..`, a string bare `board`,
-  `commonpath` inside the vault (`:956`), the vault's device and inode
-  recorded (`:948`), and each board or note file inside the worktree only when
-  `git check-ignore` says ignored (`:967`, per file, so a vault that contains
+  `commonpath` inside the vault (`:1018`), the vault's device and inode
+  recorded (`:1010`), and each board or note file inside the worktree only when
+  `git check-ignore` says ignored (`:1029`, per file, so a vault that contains
   the repo is covered). It runs before either half writes. The write then
-  pins its directory (`_pinned` `:1069`): where `_DIR_FD` (`:296`) holds,
-  `_open_pinned` (`:999`) opens the checked vault (inode matched) and walks the
+  pins its directory (`_pinned` `:1182`): where `_DIR_FD` (`:296`) holds,
+  `_open_pinned` (`:1104`) opens the checked vault (inode matched) and walks the
   real path's components with `_DIR_FLAGS` (`:291`, `O_DIRECTORY|O_NOFOLLOW`),
   every read, temp, replace and note create is relative to that fd, and
-  `_pinned_check` (`:1025`) repeats the walk and matches device and inode
+  `_pinned_check` (`:1132`) repeats the walk and matches device and inode
   before the temp, before the replace and after it, because the fd follows its
   directory if it is renamed out of the vault; a note written into a directory
-  that left is unlinked through the fd (`_create_note_once` `:1111`).
-  Elsewhere (Windows) `_parent_check` (`:1054`) re-checks the directory's
-  realpath at the same three points.
+  that left is unlinked through the fd (`_create_note_once` `:1234`).
+  On Windows (T-0077), where `_DIR_FD` does not hold, `_pinned` instead holds
+  a handle on the vault and on every real component down to the directory
+  (`_hold_dirs` `:1066`, each opened by `_win_open_dir` `:331` with
+  `_PIN_ACCESS` `:311` and no `FILE_SHARE_DELETE`, so the OS refuses to rename
+  any of them while held; a reparse point, a non-directory, no file id or
+  the wrong vault refuses), and `_held_check` (`:1161`) re-stats the
+  directory's device and file id at the same three points. A platform with
+  neither (`_WIN_PIN` `:328` false) refuses the write.
 - Card ownership on a shared board (`boardDir` unset): the ticket note's
-  `repo-id:` (`_NOTE_REPO_ID` `:1154`, trailing `\r` excluded so a CRLF note
-  reads as written; `_card_owner` `:1158` -> ours / foreign / unknown). The id
-  is `repo_id` (`:530`): the origin URL through `normal_url` (`:491`,
+  `repo-id:` (`_NOTE_REPO_ID` `:1277`, trailing `\r` excluded so a CRLF note
+  reads as written; `_card_owner` `:1281` -> ours / foreign / unknown). The id
+  is `repo_id` (`:592`): the origin URL through `normal_url` (`:553`,
   lowercased, `.git` stripped; an ssh origin - scp-style or a scheme in
-  `_SSH_SCHEMES` `:488` - keeps its username and drops a password, every other
-  scheme drops the whole userinfo); for a local origin (`_local_path` `:513`,
+  `_SSH_SCHEMES` `:550` - keeps its username and drops a password, every other
+  scheme drops the whole userinfo); for a local origin (`_local_path` `:575`,
   a `file://` path percent-decoded as git decodes it), an absolute path's
   realpath, and for a relative one - `../origin/app.git` names a different
   repository from each checkout - the git common dir's realpath, as with no
-  origin; `None` (git could not say) refuses via `_no_identity` (`:1187`).
-  `_foreign` (`:1177`) refuses create, move and read; unknown refuses create
-  and move with the `repo-id:` fix (`_unclaimed` `:1182`) and is a caveat on
+  origin; `None` (git could not say) refuses via `_no_identity` (`:1310`).
+  `_foreign` (`:1300`) refuses create, move and read; unknown refuses create
+  and move with the `repo-id:` fix (`_unclaimed` `:1305`) and is a caveat on
   read. There is no claim by title: a card's text matching this repo's INDEX
-  title is not an owner. `repo_name` (`:556`) is a human label only.
-- The board is edited, never regenerated: `parse_board` (`:738`, lines split
-  on LF alone by `_board_lines` `:697`; the done lane must carry exactly one
-  `**Complete**`, `_complete_markers` `:777`), `find_card` (`:801`; a card is
-  the first id on its first line), `move_card` (`:862`; a card already in its
-  lane is repaired in place by `_checkbox` `:849`, which also gives a card
-  with no box one (`_BOX` `:846`), and one above `**Complete**` in Done is
-  moved below it), `add_card` (`:889`), written by `_board_write` (`:1083`).
-  The ticket note (`_note_text` `:1102`) is an exclusive create
-  (`_create_note_once` `:1111`, `_NOTE_FLAGS` `:290`).
+  title is not an owner. `repo_name` (`:618`) is a human label only.
+- The board is edited, never regenerated: `parse_board` (`:800`, lines split
+  on LF alone by `_board_lines` `:759`; the done lane must carry exactly one
+  `**Complete**`, `_complete_markers` `:839`), `find_card` (`:863`; a card is
+  the first id on its first line), `move_card` (`:924`; a card already in its
+  lane is repaired in place by `_checkbox` `:911`, which also gives a card
+  with no box one (`_BOX` `:908`), and one above `**Complete**` in Done is
+  moved below it), `add_card` (`:951`), written by `_board_write` (`:1206`).
+  The ticket note (`_note_text` `:1225`) is an exclusive create
+  (`_create_note_once` `:1234`, `_NOTE_FLAGS` `:290`).
 - Called by `brainstorm.md:28` and `:81`, `spec.md:46`, `plan.md:60`,
   `implement.md:36` and `:110`, `done.md:63` and `fix.md:27`, `:73`, `:81`,
   `:89`, `:91` (all under `plugin/crew/commands/`); brainstorm and fix take
@@ -860,7 +868,7 @@ Obsidian vault). A CLI the commands call, not a hook.
   `jira-sync.md` and `sdp-sync.md` honour `--to`; `crew_status.py` prints its
   tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:63`).
 - Tests: `plugin/crew/tests/test_crew_tracker.py`, fixtures under
-  `plugin/crew/tests/tracker_fixtures/`, 81 mutations in
+  `plugin/crew/tests/tracker_fixtures/`, 87 mutations (81 until T-0077 added six) in
   `plugin/crew/tests/sabotage_tracker.py` (two of them RED only as root: the
   owner tests skip without it); one `.crew/verify.json` rule (`:302-309`; `:301-308` before T-0018 landed).
   JUDGEMENT: the Kanban plugin's acceptance of the edited board was checked by
@@ -935,8 +943,8 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   `main()` is the `decide` / `record` / `precompact` CLI.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:576` — `ticket_freshness`,
   the library entry point; `main()` at `:676`.
-- `plugin/crew/hooks/scripts/crew_autopilot.py:494` — `next_phase`, read-only;
-  `main()` at `:1215` is the `next` / `resume` / `settings` / `stops` /
+- `plugin/crew/hooks/scripts/crew_autopilot.py:500` — `next_phase`, read-only;
+  `main()` at `:1221` is the `next` / `resume` / `settings` / `stops` /
   `route` / `status` / `deploy-allowed` CLI `plugin/crew/commands/autopilot.md` calls.
 - `plugin/crew/hooks/scripts/crew_route.py:210` — `decide`, read-only
   route / ask / none for a prompt; `main()` at `:332` is the `settings` /
@@ -2052,3 +2060,5 @@ files). No test suite was executed for this note.
 **Re-anchored `8de3c669` -> `80326b1d` on 2026-09-27 (T-0072 merged onto `d2fbd408`, then review round 4's redesign, crew 1.0.49).** `ba7d5c52` merged origin/main `d2fbd408` (T-0024 landed as crew 1.0.48 at `8de3c669`) into `T-0072-build` and took main's side of every code map; T-0072's earlier refresh (`git diff 67caa4b8 2fa75f79 -- .crew/codemap/`) was replayed on top with `git apply --3way`, conflicting provenance sections keeping both sides, main's first. `80326b1d` is T-0072's crew 1.0.49 version commit, after the redesign `35733d76` (one root per answer, a tri-state path probe, a two-stage CLI fallback), its sabotage `fa4c8397`, its docs `8a40dd2c` and the rule-27 re-price `37fa7c97`. `git diff --name-only 8de3c669 80326b1d`, outside the refresh artifacts, returns only T-0072's files: `.claude-plugin/marketplace.json` (`:218` 1.0.49), `.crew/verify.json` (rule 27 in place, `:293-301`, `seconds` 16), `CHANGELOG.md` (T-0072's entry, +45 at the top), `plugin/PLUGINS.md` (`:14` 1.0.49, `:128` the `/crew:autopilot` row in place), `plugin/crew/.claude-plugin/plugin.json` (`:3`), `plugin/crew/BUDGETS.md` (`:11`, 18,939 lines across 126 files, which `check-marketplace.py` verifies), `plugin/crew/CONFIG.md` (2328 -> 2382 lines: the leaf paragraph `:130`, the key table `:803`, the `prodUnattended` row `:1261`, `:2282`, and section 20's closing "Production without asking" block from `:2297`), `plugin/crew/README.md` (`:848` in place), `plugin/crew/commands/autopilot.md` (`:45-48` in place, 100 lines), `crew_autopilot.py` (1312 lines), `crew_state.py` (line-neutral at `:1086-1090`), `crew-setup/SKILL.md` and `config.template.json` (the leaf), `test_crew_config.py` (`:282` asserts 123), `sabotage_autopilot.py`, `test_crew_autopilot.py` and `test_crew_autopilot_deploy.py`. The `deploy_allowed` paragraph is re-derived at `80326b1d` from `crew_autopilot.py` (`deploy_allowed` `:826`, `_resolve_root` `:723`, `_probe` `:708`, `_layer_problem` `:734`, `_decide` `:749`, `_settings_at` `:667`, `_cli_deploy` `:1184`, `_failure` `:1160`); `settings` `:657` -> `:658` (its crew.json warning `:694-697`), `next_phase` `:493` -> `:494`, `main` `:1144` -> `:1215`, each re-read with `sed -n`. The leaf counts were re-executed (123 / 68 / 55 / 0) and T-0004's "117 -> 119" is `CHANGELOG.md:653-654`. Corrected in passing: the route paragraph called rule 29 (`:310-318`) the last rule; T-0024's rule 30 (`:320`) follows it on main already. Only the leaf-count functions were executed for this note.
 
 **Re-anchored `80326b1d` -> `1b5b6560` on 2026-09-27 (T-0072 test fix).** `git diff --name-only 80326b1d 1b5b6560`, outside the refresh artifacts, returns only `plugin/crew/tests/test_crew_autopilot_deploy.py` (the layer_state repro now patches `crew_config.layer_state`, not `crew_state.read_text`, which `test_module_split.py` forbids) and the three version files, stepped back to 1.0.48 and re-set to 1.0.49 so the version stays the last `plugin/crew/` commit (same content as at `80326b1d`). This note cites that test file by name only. No citation moved. Nothing was executed for this note.
+
+**Re-anchored `1b5b6560` -> `a4eb2f55` on 2026-09-28 (T-0072 merged onto `5050ea3b`, crew 1.0.50).** `a4eb2f55` is T-0072's crew 1.0.50 version commit on top of its merge of origin/main `5050ea3b` (T-0077 landed as crew 1.0.49 at `fc289446`; shipstation 1.1.1). The merge was clean. `git diff --name-only 1b5b6560 a4eb2f55`, outside the refresh artifacts, returns main's T-0077 and shipstation files - `crew_tracker.py` (+123: Windows now holds a vault write's directories by handle, `_hold_dirs` / `_held_check` replace `_parent_check`), `crew_autopilot.py` (`_rel` +6 at `:170`, so every later line moves by 6), `sabotage_autopilot.py` (+5 inside `STATUS_MUTATIONS`; the `+=` append moved `:639` -> `:644`), `sabotage_tracker.py` (87 `TRACKER_MUTATIONS`, was 81), `plugin/crew/README.md` (`:1493-1495` in place), `test_crew_tracker.py`, `test_crew_autopilot.py`, `test_crew_autopilot_status.py`, `skills/shipstation/*` - and the version files (1.0.50 at `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`) and `CHANGELOG.md` (T-0077's and shipstation's entries under T-0072's). Every `crew_tracker.py` citation in the tracker-interface section was re-mapped with a line diff (`8de3c669` -> merged) and re-read by symbol; the Windows `_parent_check` sentence, false after T-0077, is re-derived from `_pinned` / `_hold_dirs` / `_held_check`; the mutation count is 87. The `deploy_allowed` paragraph and the other `crew_autopilot.py` citations moved by 6 (`deploy_allowed` `:832`, `settings` `:664`, `next_phase` `:500`, `main` `:1221`). Version 1.0.50. No suite was executed for this note.
