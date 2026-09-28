@@ -2329,8 +2329,8 @@ emergency's `refuse` into `ask`. Every production decision — `allow`, `ask`
 or `refuse` — carries a report line naming the environment
 (`unattended production: <env> <verdict> - <reason>`). The CLI is
 `crew_autopilot.py deploy-allowed --root . --env <name> --class <class>
-[--json]`: the verdict line on stdout, the report on stderr, exit 0. Each is
-one line, the verdict first: an environment, class or reason that is not plain
+[--json]`: the verdict line (or one line of JSON) on stdout, the report on
+stderr, exit 0. Each is one line, the verdict first: a value that is not plain
 printable text (a class or environment holding whitespace included) prints as
 its repr, so no input can add a line a consumer would read as a second verdict.
 

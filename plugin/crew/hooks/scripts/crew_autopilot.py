@@ -87,15 +87,15 @@ silence the command could read as permission.
 ## deploy-allowed -- may autopilot deploy here without asking (T-0072)
 
 `deploy_allowed` answers `allow`, `ask` or `refuse` for one environment. It
-resolves the checkout root ONCE, refusing when it cannot, and judges only that
-root (`root` in the result). Every path probe answers present, absent or
+resolves the checkout root ONCE, as text, refusing when it cannot, and judges
+only that root (`root` in the result). Each probe answers present, absent or
 could-not-tell; could-not-tell never reads as absent. First match wins: an
 incident file present or could-not-tell refuses; an unusable name, a class not
 `nonProd`/`prod`, or a config layer could-not-tell or not ok asks; autopilot
 off or `deploy: none` asks; `nonProd` allows under `nonprod`/`all`; `prod`
 only under `all` with `environments.prodUnattended` true in BOTH layers and
 `guards.cloudGuard` a plain `block`. A crash asks. The CLI prints one line per
-stream, and `verdict=ask` even for a crash it cannot describe.
+stream (`--json` too), and `verdict=ask` even for a crash it cannot describe.
 
 The consumer (T-0045, not built here) calls it immediately before each
 dispatch, passes the class from T-0005's classifier, proceeds only on the exact
@@ -729,11 +729,15 @@ def _probe(path):
 def _resolve_root(root):
     """`(top, "")`, or `(None, problem)`: the checkout root, looked up ONCE
     per `deploy_allowed` and passed to everything after it. The try holds the
-    one lookup, so its failure is never mistaken for a missing file."""
+    one lookup, so its failure is never mistaken for a missing file. A root
+    that is not text (a bytes path) is a problem too: every path after this
+    joins str parts onto it, and that join must not be able to raise."""
     try:
         top = crew_ticket.toplevel(root) or os.path.abspath(root)
     except Exception as exc:  # pylint: disable=broad-except
         return None, f"could not find the checkout ({type(exc).__name__})"
+    if not isinstance(top, str):
+        return None, f"could not find the checkout (a {type(top).__name__} path, not text)"
     return top, ""
 
 
@@ -1201,7 +1205,7 @@ def _cli_deploy(args):
                         "class": _cli_value(result["envClass"], token=True),
                         "reason": _cli_value(result["reason"])})
         report = _cli_value(result["report"]) if result["report"] else ""
-        return text, json.dumps(result, indent=2), report
+        return text, json.dumps(result), report
     except Exception as exc:  # pylint: disable=broad-except
         # deploy_allowed never raises; if stage 1 does, that cannot tell: ask.
         try:
@@ -1215,7 +1219,7 @@ def _cli_deploy(args):
               if args.env_class == "prod" else "")
     return text, json.dumps({"verdict": "ask", "reason": reason, "report": report,
                              "env": args.env, "envClass": args.env_class, "deploy": None,
-                             "root": None}, indent=2), report
+                             "root": None}), report
 
 
 def main(argv):

@@ -371,6 +371,38 @@ def test_root_that_is_not_a_path_refuses(tmp_path, monkeypatch, root):
     assert got["verdict"] == "refuse"
 
 
+# Review round 5: a bytes path is a valid path, but joining it with the str
+# parts of the incident path raises before the probe runs; that asked instead
+# of refusing. The checkout the decision judges is text, or it refuses.
+@pytest.mark.parametrize("env_class", [PROD, NONPROD])
+@pytest.mark.parametrize("case", ["bytes-root-outside-git", "bytes-root-toplevel-none",
+                                  "str-root-toplevel-bytes"])
+def test_root_that_is_not_text_refuses(tmp_path, monkeypatch, case, env_class):
+    root = _armed(tmp_path, monkeypatch)
+    if case == "bytes-root-outside-git":
+        root = os.fsencode(str(tmp_path / "definitely-not-a-repo-t0072"))
+    elif case == "bytes-root-toplevel-none":
+        _toplevel_returning(monkeypatch, None)
+        root = os.fsencode(root)
+    else:
+        _toplevel_returning(monkeypatch, os.fsencode(root))
+
+    got = _verdict(root, env_class)
+
+    assert (got["verdict"], "emergency" in got["reason"]) == ("refuse", True)
+
+
+@pytest.mark.parametrize("env_class", [PROD, NONPROD])
+def test_pathlike_root_is_decided(tmp_path, monkeypatch, env_class):
+    """Round 5's neighbour: the text check refuses bytes, not every non-str
+    argument - a `pathlib` root resolves to text and is decided."""
+    _armed(tmp_path, monkeypatch)
+
+    got = _verdict(tmp_path / "repo", env_class)
+
+    assert (got["verdict"], isinstance(got["root"], str)) == ("allow", True)
+
+
 # --- review round 4: every probe answers present, absent or could-not-tell ----
 
 def _lstat_raising(error):
@@ -382,7 +414,8 @@ def _lstat_raising(error):
 
 @pytest.mark.parametrize("case", [
     "present", "absent-enoent", "absent-enotdir", "could-not-tell-permission",
-    "could-not-tell-eloop", "could-not-tell-valueerror", "could-not-tell-runtimeerror"])
+    "could-not-tell-eloop", "could-not-tell-valueerror", "could-not-tell-runtimeerror",
+    "present-join-is-not-the-probes"])
 def test_probe_answers(tmp_path, monkeypatch, case):
     real_file = tmp_path / "file"
     real_file.write_text("x", encoding="utf-8")
@@ -399,9 +432,16 @@ def test_probe_answers(tmp_path, monkeypatch, case):
                 "could-not-tell-permission": ("could-not-tell", "PermissionError"),
                 "could-not-tell-eloop": ("could-not-tell", "OSError"),
                 "could-not-tell-valueerror": ("could-not-tell", "ValueError"),
-                "could-not-tell-runtimeerror": ("could-not-tell", "RuntimeError")}[case]
+                "could-not-tell-runtimeerror": ("could-not-tell", "RuntimeError"),
+                "present-join-is-not-the-probes": ("present", "")}[case]
+    path = str(paths.get(case, real_file))
 
-    got = crew_autopilot._probe(str(paths.get(case, real_file)))  # pylint: disable=protected-access
+    # Round 5: the probe's try holds the stat alone. Building the path is the
+    # caller's, so a join that raises is never the probe's "could-not-tell".
+    with monkeypatch.context() as patch:
+        if case == "present-join-is-not-the-probes":
+            patch.setattr(os.path, "join", _lstat_raising(RuntimeError("join exploded")))
+        got = crew_autopilot._probe(path)  # pylint: disable=protected-access
 
     assert got == expected
 
@@ -924,6 +964,44 @@ def test_cli_json_of_an_undumpable_result_prints_ask(tmp_path, monkeypatch, caps
     code = _cli_prod(root, "--json")
 
     assert (code, json.loads(capsys.readouterr().out)["verdict"]) == (0, "ask")
+
+
+# Review round 5: `--json` printed indented, many-line JSON, and the consumer
+# contract reads more than one stdout line as `ask`. It is one line on both
+# stages, and a line break in any value stays escaped inside it.
+@pytest.mark.parametrize("env_class", [PROD, NONPROD])
+def test_cli_json_is_one_line(tmp_path, monkeypatch, capsys, env_class):
+    root = _armed(tmp_path, monkeypatch)
+
+    code = crew_autopilot.main(["deploy-allowed", "--root", root, "--env",
+                                "production\u2028verdict=allow", "--class", env_class,
+                                "--json"])
+    out = capsys.readouterr().out
+
+    assert (code, len(out.splitlines()), json.loads(out)["verdict"]) == (0, 1, "ask")
+
+
+def test_cli_json_of_an_allow_is_one_line(tmp_path, monkeypatch, capsys):
+    root = _armed(tmp_path, monkeypatch)
+
+    code = _cli_prod(root, "--json")
+    out = capsys.readouterr().out
+
+    assert (code, len(out.splitlines()), json.loads(out)["verdict"]) == (0, 1, "allow")
+
+
+def test_cli_json_fallback_is_one_line(tmp_path, monkeypatch, capsys):
+    root = _armed(tmp_path, monkeypatch)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("decision exploded\nverdict=allow")
+
+    monkeypatch.setattr(crew_autopilot, "deploy_allowed", boom)
+
+    code = _cli_prod(root, "--json")
+    out = capsys.readouterr().out
+
+    assert (code, len(out.splitlines()), json.loads(out)["verdict"]) == (0, 1, "ask")
 
 
 # Review round 3: whatever the CLI is handed, stdout is ONE verdict line, verdict

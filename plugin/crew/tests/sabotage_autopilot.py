@@ -374,10 +374,17 @@ DEPLOY_MUTATIONS = (
      "        top = crew_ticket.toplevel(root) or os.path.abspath(root)\n"
      "    except ArithmeticError as exc:  # pylint: disable=broad-except\n",
      _D + "test_incident_path_that_cannot_be_found_refuses"),
-    ("round 4: the probe's try covers more than the stat", AUTOPILOT,
+    ("round 4: the probe's try also stats through a symlink", AUTOPILOT,
      "    try:\n        os.lstat(path)\n",
      "    try:\n        os.lstat(path)\n        os.stat(path)\n",
      _D + "test_incident_refuses"),
+    # Round 5: the mutation the plan named and round 4's table lacked - the
+    # path join moved inside the probe's try, so a join that raises would read
+    # as the probe's could-not-tell.
+    ("round 4: the probe's try covers more than the stat (the join)", AUTOPILOT,
+     "    try:\n        os.lstat(path)\n",
+     "    try:\n        os.lstat(os.path.join(path))\n",
+     _D + "test_probe_answers"),
     ("round 4: the probe reads every OSError as absent (incident)", AUTOPILOT,
      '    except (FileNotFoundError, NotADirectoryError):\n        return "absent", ""\n',
      '    except OSError:\n        return "absent", ""\n',
@@ -430,6 +437,29 @@ DEPLOY_MUTATIONS = (
      "            text = json.dumps(deploy_allowed(args.root, args.env, args.env_class),\n"
      "                              indent=2)\n",
      _D + "test_cli_json_of_an_undumpable_result_prints_ask"),
+    # Review round 5: a bytes root, and --json printed on many lines.
+    ("round 5: a root that is not text is decided anyway", AUTOPILOT,
+     "    if not isinstance(top, str):\n"
+     '        return None, f"could not find the checkout (a {type(top).__name__} path, '
+     'not text)"\n',
+     "",
+     _D + "test_root_that_is_not_text_refuses"),
+    ("round 5: the text check refuses a pathlib root too", AUTOPILOT,
+     "    if not isinstance(top, str):\n",
+     "    if not isinstance(root, str):\n",
+     _D + "test_pathlike_root_is_decided"),
+    ("round 5: --json indents the answer", AUTOPILOT,
+     "        return text, json.dumps(result), report\n",
+     "        return text, json.dumps(result, indent=2), report\n",
+     _D + "test_cli_json_of_an_allow_is_one_line"),
+    ("round 5: --json indents the fallback", AUTOPILOT,
+     '                             "root": None}), report\n',
+     '                             "root": None}, indent=2), report\n',
+     _D + "test_cli_json_fallback_is_one_line"),
+    ("round 5: --json writes a line separator raw", AUTOPILOT,
+     "        return text, json.dumps(result), report\n",
+     "        return text, json.dumps(result, ensure_ascii=False), report\n",
+     _D + "test_cli_json_is_one_line"),
     ("round 4: a stop's crash text interpolates the exception", AUTOPILOT,
      '{_safe_text(exc, str)} - "\n            "cannot tell, so stop")\n',
      '{exc} - "\n            "cannot tell, so stop")\n',

@@ -36,6 +36,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   Each handler guards one call. The CLI prints `verdict=ask` even when the
   crash cannot be described, and a `next`/`resume`/`status` crash of the same
   kind still prints its stop.
+- **Review round 5.** A checkout root that is not text (a bytes path) refuses
+  instead of crashing into `ask` before the incident check, and `--json`
+  prints its answer, or its fallback, as one line of JSON.
 - **Inert until T-0045.** Nothing in this version dispatches a deploy;
   `settings` warns whenever `autopilot.deploy` is not `none`. The consumer
   contract is in `plugin/crew/CONFIG.md` §20: call it immediately before each
