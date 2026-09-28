@@ -4,6 +4,45 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.55: the review bundle and the completion audit account for merged main (T-0100)
+
+- **What changed.** A new `plugin/crew/hooks/scripts/merged_main.py` names the
+  latest merged integration commit (`git merge-base HEAD <ref>`, `<ref>` from
+  `scope_base._default_ref`) and holds the one rule both consumers share: a path
+  leaves the changed set when its working-state content and mode are
+  byte-identical to that commit. `review_patch.py` diffs from a synthetic base
+  tree (the start's tree with each such path set to its working-state entry,
+  built in a second temporary index), so the patch, `entries` and every file
+  list drop those paths; the manifest gains `merged_main` (ref, commit,
+  applies, reason, dropped) and `bundle_base_tree`, `base` stays the recorded
+  start, and the stderr summary carries `merged-main=`. `completion_audit.py`
+  leaves the same paths out and its verdict prints `merged main <sha>
+  (<ref>): <n> path(s) identical to it not counted`. The reviewer's prompt
+  prints a `merged main:` line; `--check-receipt` names the merged commit.
+- **Why.** Both diffed from the ticket's recorded start, so after a merge of
+  main T-0092's round-2 bundle re-carried three landed tickets and its
+  `/crew:done` check 3 flagged 16 merged-in paths; T-0075's flagged 89. Both
+  were waived by hand as merge artifacts.
+- **Could not tell.** No integration ref, a detached HEAD, or git giving no
+  answer: nothing is dropped, and the manifest, stderr (`merged-main=could-not-tell`),
+  prompt, audit verdict and receipt check each say `could not tell`.
+- **Receipt.** A merge of main that touches no reviewed path keeps an
+  accepted receipt current (the line says how many paths it left out); one
+  that changes a reviewed path stales it and names the merged commit. A
+  receipt recorded before 1.0.55 on a branch that had already merged main
+  reads stale once. The same fix landing byte-identical on main and on the
+  ticket drops out of both.
+- **Unchanged.** HEAD on the integration branch itself, or no merge of it past
+  the start: byte-identical to 1.0.54. `completion_audit.changed_paths` without
+  the new argument (the refresh check's caller), Touch membership, the
+  refresh-artifact allowance, `scope_base.py`, and `scope_base.py --changed` /
+  `scope_report.py` (filed to `TODO.md`).
+- **Sabotage.** Eleven entries across `plugin/crew/tests/sabotage_scope.py` and
+  `sabotage_review.py`: the ancestor test, the could-not-tell fall-through, the
+  on-main test, `keep` unfiltered and widened, the audit's untracked re-add and
+  its `merged` argument, the bundle's patch and `entries` bases, the prompt line
+  and the receipt note. Each run by hand against the tracked file and seen RED.
+
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 
 - **What changed.** `review_patch.py`'s `EXCLUDED` is now `(".work/",
