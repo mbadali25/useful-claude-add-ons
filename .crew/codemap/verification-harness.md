@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@3cf1eea2
+anchor: useful-claude-add-ons@314fb065
 verified: 2026-09-27
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -306,7 +306,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2376-2383` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2400-2407` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -494,7 +494,7 @@ set on Ubuntu.
 - `.crew/verify.json:320-327` (rule 30) — the T-0024 group-approval suite;
   `plugin/crew/tests/sabotage.py:80`, `:3053` — `sabotage_approval.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
-  `plugin/crew/CONFIG.md:2376-2383` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2400-2407` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -1374,3 +1374,7 @@ figures above are left as written); `plugin/crew/tests/sabotage_cloud.py` gained
 ## Re-anchor provenance - `657d3d9b` + `65bb3330` -> `3cf1eea2`, 2026-09-27 (T-0009 merges main `67caa4b8`)
 
 `1f4f9082` merges origin/main `67caa4b8` (T-0018 landed as crew 1.0.47, PR #245; main's notes anchored `65bb3330`) into T-0009 at `055c5fae` (its notes anchored `657d3d9b`), and `3cf1eea2` sets crew 1.0.48 as the last plugin/crew commit, changing only the version files and T-0009's CHANGELOG heading and bump line in place. The two sides share no source file: T-0018 changed `crew_autopilot.py`, `commands/autopilot.md` and their tests, T-0009 the cloud guard, config and docs; both changed `CHANGELOG.md`, `.crew/verify.json` (merged cleanly: 30 rules, 323 lines), `plugin/crew/README.md` (merged cleanly), `plugin/crew/BUDGETS.md` (19,085 lines across 126 files, recomputed on the merged index), `plugin/PLUGINS.md`, the version files and the refresh artifacts. The conflicting provenance sections keep both sides, main's first. Every `path:N` citation in the body, and every bare `:N` that follows a path on the same line, was mapped from the side its line came from onto the merged tree with a line diff (`git show <side>:<path>` against `3cf1eea2`); the only ones that moved are the ones named below, each re-read with `sed -n` or `grep -n`. `.crew/verify.json` merged cleanly (30 rules, 323 lines; T-0009's side read 322, main's 323), and no body citation into it, or into any other file either side changed, moved. Nothing was executed for this note.
+
+## Re-anchor provenance - `3cf1eea2` + `8de3c669` -> `314fb065`, 2026-09-27 (T-0009 review round 4, merges main `d2fbd408`)
+
+`0b9e3a41` builds T-0009's review-round-4 successor (Steps 6-9: the PowerShell launcher rule, the same-command rule, bash alias copies); `e3088f2c` merges origin/main `d2fbd408` (T-0024 landed as crew 1.0.48, PR #246; main's notes anchored `8de3c669`) into it; `314fb065` sets crew 1.0.49 as the last plugin/crew commit, changing only the version files and T-0009's CHANGELOG heading and bump line in place. Source files both sides changed: `CHANGELOG.md`, `.crew/verify.json` (merged cleanly: 31 rules, 332 lines), `plugin/crew/README.md` (merged cleanly), `plugin/crew/BUDGETS.md` (19,147 lines across 126 files, recomputed on the merged index), `plugin/PLUGINS.md` and the version files. The conflicting provenance sections keep both sides, main's first. Every `path:N` citation in the body was mapped from the side its line came from (`8de3c669` for main's lines, `3cf1eea2` for T-0009's) onto `314fb065` with a line diff; a citation whose line the diff could not carry was re-read with `sed -n`/`grep -n`. `plugin/crew/CONFIG.md:2376-2383` -> `:2400-2407` (round 4's CONFIG paragraph above it), re-read: the background-process limitation. `.crew/verify.json:117-127` is still the cloud-guard rule (its `seconds` and `why` changed in place: 158s, 1917 passed) and `:310-318` still the routing rule (T-0024's rule follows at `:320`). No other body citation moved.
