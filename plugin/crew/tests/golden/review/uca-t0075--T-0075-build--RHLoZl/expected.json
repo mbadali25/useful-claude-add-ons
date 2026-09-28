@@ -1,0 +1,13 @@
+{
+  "counts": {
+    "BLOCK": 2,
+    "FIX": 8,
+    "NIT": 0
+  },
+  "delivered": true,
+  "failure_class": null,
+  "origin": "uca-t0075/T-0075-build--RHLoZl",
+  "parts_missing": [],
+  "read_form": "full",
+  "verdict": "FINDINGS"
+}
