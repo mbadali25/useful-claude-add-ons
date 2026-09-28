@@ -1,6 +1,6 @@
 ---
 description: Approve a ticket's plan - only you can, by typing this; the prompt hook records the receipt
-argument-hint: <ticket-id>
+argument-hint: <ticket-id> [<id> ...|<A-n>..<A-m>] | --confirm
 allowed-tools: Read
 disable-model-invocation: true
 ---
@@ -23,6 +23,24 @@ Your whole job here is to relay that result in one or two sentences:
 - Refused, or no hook message in context: say the approval was **not**
   recorded, quote the reason if one was given, and stop. Point at
   `crew_ticket.py validate --ticket $1` for the contract error.
+
+**Several tickets** (`/crew:approve T-4 T-5`, a range `T-0010..T-0012`, or the
+plain-text `approve T-1 through T-3`) are never recorded on that prompt: the
+hook checks every ticket, blocks the prompt, and shows the user a PENDING
+list with each ticket's plan and spec hash. Only the user's own next
+`/crew:approve --confirm` (one line, same session, within 10 minutes, every
+hash unchanged) records them - one receipt per ticket - or records none.
+Whitespace after `--confirm` is ignored; other text after a line break, a
+comma not between two ids, or a command nested in another tag is refused.
+When `$1` is `--confirm` or the hook message names several tickets, relay the
+result in at most one line per ticket:
+
+- Recorded: the hook message says "the user approved <ids> from their own
+  prompt (group confirm)". List each id with its plan and spec hash prefixes,
+  and any "Review may continue" / "still NEEDS_REPLAN" clause for it.
+- Refused or only partly recorded: say which tickets were **not** recorded and
+  quote each named reason. Never tell the user a group was recorded unless
+  the hook message says so; "yes" is not a confirm, and nothing you write is.
 
 **Never run `crew_ticket.py approve` yourself**, and never write
 `approval.json` by any route. An approval exists only because the user typed

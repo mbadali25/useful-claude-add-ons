@@ -2314,7 +2314,10 @@ policy that took it. The check refuses a `taken:` line naming a policy that
 never takes (only `self` or `risk` does), and any `taken:` line while the
 policy in force says `stop`; switching between `self` and `risk` later does
 not void an earlier honest record. Every
-self-approval and every taken answer is reported by name.
+self-approval and every taken answer is reported by name. Autopilot approves one
+ticket at a time: a group approval and its `/crew:approve --confirm` stay the
+owner's, and `crew_ticket.approve` refuses an `autopilot` approval carrying a
+group's hashes.
 
 **The one writer.** `crew_autopilot.py` is read-only except `approve`, and
 only when `autopilot.approval` allows it. `approve` writes exactly what

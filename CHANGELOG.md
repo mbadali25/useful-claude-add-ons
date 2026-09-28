@@ -79,6 +79,121 @@ All notable changes to this repository are documented here. Format follows [Keep
     its policy first instead of stopping. Config leaf count 122 -> 124 (both
     keys repo-only).
 
+- **`crew` 1.0.48: approve several tickets in one prompt, with a confirm
+  step (T-0024).** Bumped `1.0.47 -> 1.0.48`. Its branch declared 1.0.42, then
+  1.0.43-1.0.45 for review rounds 1-3 (the Fixed entries below); main gave
+  1.0.42 to T-0005, 1.0.43 to T-0042, 1.0.44 and 1.0.45 to T-0021.
+  `hooks/scripts/approval_hook.py` now accepts `/crew:approve T-4 T-5` (spaces or commas), a range
+  `/crew:approve T-0010..T-0012` (one prefix, start <= end, at most 20
+  tickets), and one plain-text form, the whole prompt on one line:
+  `[please] approve T-1 and T-2` / `approve T-0010 through|thru|to T-0012`.
+  - Any request for more than one ticket, and any plain-text request, records
+    nothing: every ticket is checked (`crew_ticket.precheck`), a pending list
+    binding each ticket to its spec and plan sha256 is written under
+    `<git-common-dir>/crew/approval-pending/` (one per worktree), and the
+    prompt is blocked with that list. Only the user's own
+    `/crew:approve --confirm` - one line, nothing else on it, the same
+    `session_id`, within 600 s, every hash unchanged - records one
+    `user-prompt` receipt per ticket, through `crew_ticket.approve`'s new
+    `expect=(plan_sha256, spec_sha256)`, which refuses bytes that hash
+    differently before writing. "yes" is not a confirm.
+  - Refuse all: when any ticket fails, nothing is recorded, nothing stays
+    pending, and every failing id is named. A single `/crew:approve <id>` is
+    unchanged apart from refusing a line break between the command and its id.
+  - Must-block cases, one test each in `tests/test_approval_group.py`: an id
+    in a multi-line paste (slash, expanded and plain-text forms); a range with
+    a ticket whose contract does not validate, a missing folder, or a row
+    closed in `.work/INDEX.md` (and an unreadable INDEX, which is not read as
+    open); mixed prefixes, reversed bounds, more than 20 ids, a duplicate-only
+    list, a range token that is also a ticket folder; a confirm with no
+    pending list, after spec.md or plan.md changed, after a ticket became
+    invalid, from another session, outside the TTL (or future-dated), with
+    extra text, outside git, or against an unreadable or foreign pending
+    list; a group request with no `session_id`; an edit between the confirm's
+    check and its write. Mid-sentence uses ("does the reviewer approve T-1?",
+    "approve it", "lgtm") pass untouched.
+  - The wrappers hand python any prompt containing the word "approve"; with no
+    usable python only `crew:approve` still blocks, so a plain-text approval
+    passes unrecorded instead of every prompt using the word being blocked.
+  - `tests/sabotage_approval.py` (registered in `sabotage.py`): every
+    mutation goes red on its named test, and the four approval-hook rows in
+    `sabotage_scope.py` still do. `.crew/verify.json` maps the hook, both
+    wrappers, `crew_ticket.py` and the tests to the approval suites.
+    `commands/approve.md` relays a group result per ticket.
+
+### Fixed
+
+- **`crew` 1.0.49: Windows holds a vault write's directories in place (T-0077).**
+  Bumped `1.0.48 -> 1.0.49`.
+  - **The bug.** On Windows, `crew_tracker.py` had no directory pinning: `_DIR_FD` is POSIX-only. Its fallback
+    re-checked `realpath(folder)`, which a directory renamed away and replaced by another passes. So a vault, board
+    directory or note directory swapped after the checks was written into, not refused. This was a fail-open guard.
+  - **The fix.** Windows now opens a handle on the vault and on every directory down to the target. Each handle has
+    `FILE_LIST_DIRECTORY` access, shares read and write but **not** delete, and uses
+    `FILE_FLAG_OPEN_REPARSE_POINT`. The handles are held for the length of the write, and the OS refuses to rename any
+    of those directories while they are open.
+  - **What it refuses.** Each handle is refused rather than trusted when it is a reparse point, not a directory, the
+    wrong vault, or has no file id ("could not tell"). A path re-check still runs at the same three points.
+  - **Other platforms.** A platform that can neither pin by fd nor hold by handle now refuses the write, instead of
+    re-checking a path.
+  - **The swap tests on Windows.** The three `board_dir_moved_out` cases and both note-dir cases now assert that the
+    swap is refused by the OS, that the write lands in the vault, and that no `.tmp` is left anywhere.
+  - **`crew_autopilot._rel`.** It no longer raises ValueError when an evidence path is on a different Windows drive
+    than the repo; it falls back to the path itself.
+  - **T-0071 #7, two Windows-only tracker tests made portable:**
+    - `test_board_keeps_its_mode` skips on Windows, which has no group/other mode bits.
+    - `test_resolve_compares_the_effective_vault` compares the repr'd path the message prints.
+  - Eight new sabotage mutations go red, and the removed `_parent_check` mutation is replaced.
+
+- **`crew` 1.0.48: group approval review round 3 (T-0024, successor plan).**
+  Bumped `1.0.44 -> 1.0.45` on its branch; lands in 1.0.48. Three defects Codex found, each with a failing
+  test first and a mutation in `tests/sabotage_approval.py`:
+  - A single `/crew:approve <id>` in the expanded form wrapped in an example
+    tag (`<command-example>...</command-example>`) recorded the approval. The
+    expanded form now carries nothing outside its tags for a single id too.
+  - An INDEX row with a column before the id (`| 1 | T-1 | done |`) read as
+    open. The row's id cell is its first id-shaped cell; a row naming the
+    ticket as a whole cell elsewhere is refused as "could not tell".
+  - Trimming a trailing `-` or `.` conflated distinct ids (`T-1-` and `T-1`).
+    Table cells are matched whole.
+
+- **`crew` 1.0.48: group approval review round 2 (T-0024, successor plan).**
+  Bumped `1.0.43 -> 1.0.44` on its branch; lands in 1.0.48. Five defects Codex found, each with a failing test
+  first and a mutation in `tests/sabotage_approval.py`:
+  - A `/crew:approve --confirm` nested inside a `<command-message>` (an example)
+    confirmed. Only the prompt's own top-level command counts now: a command
+    tag nested in another, or left unclosed, is refused; one in a code fence,
+    a quote or another command's message records nothing.
+  - A comma not between two ids was dropped: `,--confirm,` confirmed and
+    `/crew:approve T-1,` recorded T-1. Both are refused, with the grammar named.
+  - Whitespace after `--confirm` still confirms (the owner's decision, pinned
+    by a test); any other text after a line break refuses it.
+  - The closed-ticket check read a lower-case or suffixed id (`t-0050`,
+    `T-0050-fix`) as open. `crew_ticket.precheck` now matches the INDEX row's
+    first cell whole and in any case; a row with no status cell is refused as
+    "could not tell".
+  - A confirm failing part-way counted another session's concurrent approval
+    as its own write. It now looks for its own entry (session, prompt,
+    hashes) in the receipt history.
+
+- **`crew` 1.0.48: group approval review round 1 (T-0024).** Bumped
+  `1.0.42 -> 1.0.43` on its branch; lands in 1.0.48. Four defects Codex found in `hooks/scripts/approval_hook.py`,
+  each with a failing test first and a mutation in `tests/sabotage_approval.py`:
+  - A confirm or group in the expanded `<command-name>`/`<command-args>` form
+    wrapped in other text was accepted; it now carries nothing but its tags.
+  - A line break before the command (`"\n/crew:approve --confirm"`) was
+    stripped away and confirmed; a group or confirm is refused on a break
+    anywhere but at the end. A single `/crew:approve <id>` is unchanged.
+  - An `OSError` part-way through a confirm reported "NOT recorded" over
+    receipts already written. Any failure now names recorded and NOT recorded
+    tickets, counts the failing ticket as recorded when its receipt landed
+    before the failure, and says "could not tell" when that receipt cannot be
+    read.
+  - Two confirms racing on one pending list could both record it; the list is
+    now claimed by an atomic rename, so exactly one confirm gets it.
+
+### Added
+
 - **`crew` 1.0.47: `/crew:autopilot status` and the subcommand router
   (T-0018).** Bumped `1.0.46 -> 1.0.47` (its branch declared 1.0.44, which main gave to
   T-0021; 1.0.46 at its first landing merge, which main then gave to T-0023). `commands/autopilot.md` now routes

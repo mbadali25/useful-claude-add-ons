@@ -277,6 +277,23 @@ def test_status_ledger_without_a_rounds_count_is_unknown(tmp_path, monkeypatch):
     assert got["review"] == "unknown (ledger unreadable)"
 
 
+def test_status_ledger_on_another_drive_is_still_reported(tmp_path, monkeypatch):
+    """T-0077: `os.path.relpath` raises when the path and the repo are on
+    different Windows drives (pytest's tmp on D:, a checkout on C:). Simulated
+    here so it runs everywhere: the status is still the ledger's outcome."""
+    root = _approved(tmp_path)
+    monkeypatch.setattr(review_ledger, "status", lambda *_a: {
+        "ticket": T, "path": "p", "state": review_ledger.IN_REVIEW, "budget": 2})
+
+    def across_drives(path, start=os.curdir):
+        raise ValueError(f"path is on mount 'C:', start on mount 'D:' ({path!r}, {start!r})")
+    monkeypatch.setattr(crew_autopilot.os.path, "relpath", across_drives)
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert got["review"] == "unknown (ledger unreadable)"
+
+
 def test_status_ledger_that_says_unknown_prints_no_rounds_count(tmp_path):
     root = _approved(tmp_path)
     _ledger(root, [], state="UNKNOWN")
