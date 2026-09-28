@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.47: environment-scoped workflow deploys in the cloud guard (T-0009)
+### Added — `crew` 1.0.48: environment-scoped workflow deploys in the cloud guard (T-0009)
 
 - **`guards.deployWorkflow` and `environments.workflows`.** While
   `guards.cloudGuard` is armed, `gh workflow run <wf>` and its REST twin,
@@ -80,7 +80,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   `environments.nonProd`, `environments.prodUnattended` (both layers) and the
   destroy rule, beside the dispatch grammar; its HTML, DOCX and PDF are
   rebuilt.
-- Bumped `1.0.46 -> 1.0.47` (1.0.43 on its branch; main gave 1.0.43-1.0.46 to T-0042, T-0021, T-0023).
+- Bumped `1.0.47 -> 1.0.48` (1.0.43 on its branch; main gave 1.0.43-1.0.47 to T-0042, T-0021, T-0023, T-0018).
 
 ### Added
 
