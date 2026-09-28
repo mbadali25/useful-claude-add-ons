@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@b2553d26
+anchor: useful-claude-add-ons@8a084c6c
 verified: 2026-09-28
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -364,3 +364,5 @@ returns `.claude-plugin/marketplace.json` (crew's version line only) and `TODO.m
 `:4470`, below every citation here); nothing under `mcp-servers/`. `TODO.md:189`, `:200` and
 `:281` re-read, unchanged; `grep -c mcp-servers .claude-plugin/marketplace.json` is still **0**.
 No citation moved.
+
+**Re-anchored `b2553d26` -> `8a084c6c` on 2026-09-28 (T-0085 merges main `6387ab49`, T-0089, T-0090, T-0092; crew 1.0.55).** `f97219dc` merged origin/main `6387ab49` into `T-0085-build` (mechanical conflicts only: crew version lines, CHANGELOG, anchors, provenance paragraphs, INDEX history cells, diagram headers, generated rules and graph); `8a084c6c` re-bumps crew to 1.0.55, one past main's 1.0.54. Each side had already re-verified its own changes (main's line to `136f4b33`/`2442d367`/`b2553d26`, T-0085's to `b82035e6`), so this pass checks the files BOTH sides changed: the crew version lines (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`, value only, same line), `CHANGELOG.md` (both sections kept; release bookkeeping), `plugin/crew/README.md` and `plugin/crew/commands/review.md` (main's T-0092 edits are in place and line-neutral: 2883 and 551 lines, as on T-0085's side), `plugin/crew/hooks/scripts/review_prompt.py` (main's docstring line split in two at `:6-7` and three `excluded` lines added at `:96-98` shift T-0085's lines below them by 4) and `plugin/crew/tests/test_review_prompt.py`. Every `path:N` citation into those files was compared by script against its text on the side that wrote it (`f3ad630b` or `6387ab49`) and at the merged tree; this note cites the root `README.md` only as `mcp-servers/`'s own README by bare name, and the root file's one change is T-0085's crew skill count (29 -> 30), which no claim here reads. Paragraphs dated before this one describe the tree at their own anchor and were not rewritten. No suite was executed for this note.

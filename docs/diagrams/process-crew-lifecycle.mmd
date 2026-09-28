@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@c99e31f6 on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@8a084c6c on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -168,6 +168,10 @@
 %% verdict :484. The gate is review_run.py's standards_gate, called before
 %% review_ledger.reserve (crew_standards.review_gate). The line list under "Every node
 %% cites" below is kept as of a4eb2f55; the nodes carry the current lines.
+%% Re-anchored 22399a9c / c99e31f6 -> 8a084c6c (T-0085 merges main 6387ab49, crew 1.0.55): since the
+%% T-0085 redraw only review.md (:325-335) and completion_audit.py (:71-78) changed among the
+%% Anchors paths, both T-0092's in-place comment reflows (551 and 301 lines before and after); no
+%% node cites either range, so review.md:25-29, :441, :446-450, :452, :484 hold. No node or edge changed.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
