@@ -735,9 +735,12 @@ def test_review_prompt_hands_over_every_row_through_a_file_past_the_inline_limit
 
     with open(tmp_path / review_prompt.WEBTEST_FINDINGS_FILE, encoding="utf-8") as fh:
         listed = fh.read().splitlines()
+    # The overflow line itself: the bundle block states READ_FORM too, so a
+    # whole-text check would pass with the overflow line asking for a bare name.
+    overflow_line = next(line for line in text.splitlines() if " rows are in " in line)
     assert (text.count("FINDING|FIX|healer-skip|"), len(listed),
-            str(tmp_path / review_prompt.WEBTEST_FINDINGS_FILE) in text,
-            review_verdict.READ_FORM in text) == (
+            str(tmp_path / review_prompt.WEBTEST_FINDINGS_FILE) in overflow_line,
+            review_verdict.READ_FORM in overflow_line) == (
         review_prompt.WEBTEST_FINDINGS_MAX, review_prompt.WEBTEST_FINDINGS_MAX + 1, True, True)
 
 
