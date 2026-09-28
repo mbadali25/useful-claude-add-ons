@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@2aa49bb8
+anchor: useful-claude-add-ons@b82035e6
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -223,7 +223,8 @@ through their own package managers.
   until `ecf69e43` added `/crew:autopilot`; re-read at `07ca3972`) (or
   the plugin-level 30 skills (29 until T-0085 added `crew-standards`; at
   `22399a9c` `plugin/README.md:414` and `INSTALLATION.md:252` still say 29, outside
-  T-0085's Touch, and `scripts/check-marketplace.py` fails on both) / 34 hook
+  T-0085's Touch, and `scripts/check-marketplace.py` fails on both; both read 30
+  from `b82035e6`, the Touch amendment, and the check passes) / 34 hook
   entries across 8 events figures that go with them), checked directly rather than cross-quoted from one another:
   `.claude-plugin/marketplace.json`'s `crew` description (parsed with
   `json.load`); `plugin/PLUGINS.md:17`; `plugin/README.md:414`'s crew row;
@@ -891,3 +892,5 @@ citation moved. Nothing was executed for this note.
 **Re-anchored `9631c707` -> `22399a9c` on 2026-09-28 (T-0085, crew 1.0.52).** `22399a9c` is T-0085's version commit on `T-0085-build` (the change is `d02fe008`, from origin/main `f54af3fa`). Of the paths this note cites, T-0085 changed `README.md` (`:168` and `:874`, 29 -> 30 skills, line-neutral), `plugin/PLUGINS.md` (`:14` 1.0.52, `:17` 30 skills, and one skills-table row added below `:213`), `.claude-plugin/marketplace.json` (`:217` 30 skills, `:218` 1.0.52), `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/crew/README.md` (a section added after `:750`), `.gitignore`, `CLAUDE.md`, `.crew/verify.json` (one rule appended) and `plugin/crew/skills/crew-setup/SKILL.md` (`!.crew/standards.md` in the shipped template). Every body citation into those files was compared by script at both commits; only the skills figure moved, corrected above. Neither install script changed. Nothing was executed for this note.
 
 **Re-anchored `22399a9c` -> `2aa49bb8` on 2026-09-28 (T-0085 merged onto main `c426c018`, crew 1.0.53).** `c49f3aca` merged origin/main `c426c018` (T-0076 landed as crew 1.0.52) into `T-0085-build`, one mechanical conflict (the crew description's skills count in `.claude-plugin/marketplace.json`, kept at 30), and `2aa49bb8` bumped crew to 1.0.53. `git diff --name-only 22399a9c 2aa49bb8`, refresh artifacts aside, returns T-0076's files (`plugin/crew/hooks/scripts/crew_context.py`, four lines added inside `emit()` at `:1086-1089`; `plugin/crew/README.md`, one line in place; `scripts/_test/uv-install.sh`; eleven test files) and the version files. Every body citation into a changed file was compared by script at both commits; none moved. No suite was executed for this note.
+
+**Re-anchored `2aa49bb8` -> `b82035e6` on 2026-09-28 (T-0085 merges main `f8b6c8d7`, T-0091).** `17b70570` merged origin/main `f8b6c8d7` into `T-0085-build` (mechanical conflicts only: anchors, provenance paragraphs, INDEX history cells, generated rules and graph); `b82035e6` moves the crew skills claim at `plugin/README.md:414` and `INSTALLATION.md:252` from 29 to 30 (spec Touch amendment). Of the paths this note cites, `git diff --name-only 2aa49bb8 b82035e6` returns `CLAUDE.md`, `INSTALLATION.md` and `plugin/README.md`. `CLAUDE.md`'s change is T-0091's Landmines truncating-`open` paragraph, whose citations were moved on main's side and merged in, plus T-0085's four-line ignore-policy reflow, which shifts no line. Every `CLAUDE.md:N`, `INSTALLATION.md:N` and `plugin/README.md:N` citation was compared by script against its text at `2aa49bb8`, `c192b83d` and HEAD; the one sentence saying both still read 29 is corrected in place. No suite was executed for this note.

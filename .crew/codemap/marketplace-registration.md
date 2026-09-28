@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@2aa49bb8
+anchor: useful-claude-add-ons@b82035e6
 verified: 2026-09-28
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -65,7 +65,7 @@ against disk:
 |---|---|---|---|
 | agents | 4 | `ls plugin/crew/agents/*.md` → 4 | `.claude-plugin/marketplace.json:217`, `plugin/PLUGINS.md:17`, `README.md:168`/`:874`, `INSTALLATION.md:252`, `plugin/README.md:414` |
 | commands | 35 | `find plugin/crew/commands -name '*.md'` → 35 (T-0004 added `autopilot.md`) | same sites **except `INSTALLATION.md:252`, which still reads "34 slash commands"** — unmarked, so no check catches it |
-| skills | 30 | `find plugin/crew/skills -maxdepth 1 -mindepth 1 -type d` → 30 (T-0085 added `crew-standards`) | same sites, each `<!-- claim: plugin-skills:crew -->`-marked; **at `22399a9c` `INSTALLATION.md:252` and `plugin/README.md:414` still read 29** (outside T-0085's Touch), so `check_self_claims` fails on both |
+| skills | 30 | `find plugin/crew/skills -maxdepth 1 -mindepth 1 -type d` → 30 (T-0085 added `crew-standards`) | same sites, each `<!-- claim: plugin-skills:crew -->`-marked; **at `22399a9c` `INSTALLATION.md:252` and `plugin/README.md:414` still read 29** (outside T-0085's Touch), so `check_self_claims` fails on both; both read 30 from `b82035e6` (the Touch amendment) and the check passes |
 | hook entries | 34 | walking `plugin/crew/hooks/hooks.json`'s 8 events → 34 command entries | same sites |
 
 Both install scripts' own crew catalog row (`scripts/install-prerequisites.sh:1391`,
@@ -789,3 +789,5 @@ The version sentence moves to 1.0.50; no other citation moved. Nothing was execu
 **Re-anchored `9631c707` -> `051f9e85` on 2026-09-28 (T-0091).** `051f9e85` is T-0091's one commit on `T-0091-build`, off main `f54af3fa`. `git diff --name-only 9631c707 f54af3fa -- <every tracked path this note cites>` is empty; `f54af3fa..051f9e85` changes only `CLAUDE.md` (the Landmines truncating-`open` entry's measurement paragraph, now `:185-212`, +28/-18, so every later line moves +10) and `TODO.md` (one entry closed at `:4473`, three lines appended at `:4480-4482`). This note's `CLAUDE.md` citations, `:5` and `:47`, sit above the changed paragraph and still read as quoted (re-read). No claim moved. Nothing was executed.
 
 **Re-anchored `051f9e85` -> `c192b83d` on 2026-09-28 (T-0091 review round 1).** `c192b83d` is T-0091's review-round-1 fix on `T-0091-build`. `git diff --name-only 051f9e85 c192b83d` returns only `CLAUDE.md`: the same Landmines truncating-`open` measurement paragraph, now `:185-219` (+16/-9, so every later line moves +7; lines above `:192` are byte-identical). This note's `CLAUDE.md` citations, `:5` and `:47`, sit above the paragraph and still read as quoted (re-read). No claim moved. Nothing was executed.
+
+**Re-anchored `2aa49bb8` -> `b82035e6` on 2026-09-28 (T-0085 merges main `f8b6c8d7`, T-0091).** `17b70570` merged origin/main `f8b6c8d7` into `T-0085-build` (mechanical conflicts only: anchors, provenance paragraphs, INDEX history cells, generated rules and graph); `b82035e6` moves the crew skills claim at `plugin/README.md:414` and `INSTALLATION.md:252` from 29 to 30 (spec Touch amendment). Of the paths this note cites, `git diff --name-only 2aa49bb8 b82035e6` returns `CLAUDE.md`, `INSTALLATION.md` and `plugin/README.md`. `CLAUDE.md`'s change is T-0091's Landmines truncating-`open` paragraph, whose citations were moved on main's side and merged in, plus T-0085's four-line ignore-policy reflow, which shifts no line. Every `CLAUDE.md:N`, `INSTALLATION.md:N` and `plugin/README.md:N` citation was compared by script against its text at `2aa49bb8`, `c192b83d` and HEAD; the skills row's note that both still read 29 is corrected in place. No suite was executed for this note.
