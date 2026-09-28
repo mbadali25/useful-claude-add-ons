@@ -6,8 +6,33 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.44: `/crew:autopilot` approval and questions policies (T-0010).**
-  Bumped `1.0.43 -> 1.0.44` (`1.0.42 -> 1.0.43` on its branch; 1.0.43 went to T-0042).
+- **`crew` 1.0.48: `/crew:autopilot` approval and questions policies (T-0010).**
+  Bumped `1.0.47 -> 1.0.48` (1.0.43, then 1.0.44, on its branch; main gave 1.0.43 to
+  T-0042, and T-0018 landed first as 1.0.47).
+  - **The one exception to T-0018's read-only autopilot (owner decision,
+    2026-09-27).** `crew_autopilot.py` is read-only except `approve`, which
+    writes only the approval receipt, and only when `approval_policy` allows
+    under the configured policy; `next`, `resume`, `settings`, `stops`,
+    `route`, `status` and `questions-check` write nothing (tested: a snapshot
+    of the worktree and `<git-common-dir>/crew/` is byte-identical after each,
+    and `approve` adds exactly `approval.json` and, on a ticket's first
+    approval, the scope ramp's `scope-tickets.json`, which `crew_ticket.approve`
+    writes for every route). T-0018's `route` and `status` read no policy and
+    its `SUBCOMMANDS` are unchanged; `approve` and `questions-check` are script
+    subcommands in the same dispatch. `commands/autopilot.md`, the module
+    docstring, README, CONFIG.md §20, the PLUGINS.md rows and the
+    daily-workflow and troubleshooting guides state the exception where
+    T-0018's text said nothing approves. `test_lifecycle_commands.py`'s
+    autopilot.md budget moves from 100 to 110 lines (T-0018's comment gave
+    T-0010 part of the 20-line reserve), leaving 10 for T-0012, T-0019 and
+    T-0020.
+  - Review round 2's two FIXes (filed as T-0078): `commands/autopilot.md`
+    states the `questions.md` shape `questions-check` enforces (`## Q<n>`, a
+    `Research:` line, 2-4 `### Option <id>` blocks, the first
+    `(recommended)`, each with `Cost:`, and `taken: Option <id> by autopilot
+    (<policy>)`), and `.crew/verify.json` maps `commands/autopilot.md` to
+    `test_crew_autopilot_policy.py`. Six more POLICY_MUTATIONS, each red on
+    its named test.
   Two repo-only keys, `autopilot.approval`
   and `autopilot.questions` (`human|self|risk`, default `risk`; any other value
   reads as `human`, with a warning, and `human` always stops).
@@ -39,9 +64,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   - Accepting review FINDINGS stays the owner's at every setting.
     `sabotage_autopilot.py`'s POLICY_MUTATIONS (one per refusing branch) are
     registered in `sabotage.py`. `commands/autopilot.md` runs both at the
-    `approve` and `open-questions` phases, within its 120-line budget: a
-    `stop=1` at either phase runs its policy first instead of stopping. Config
-    leaf count 121 -> 123 (both keys repo-only).
+    `approve` and `open-questions` phases: a `stop=1` at either phase runs
+    its policy first instead of stopping. Config leaf count 122 -> 124 (both
+    keys repo-only).
 
 - **`crew` 1.0.47: `/crew:autopilot status` and the subcommand router
   (T-0018).** Bumped `1.0.46 -> 1.0.47` (its branch declared 1.0.44, which main gave to
