@@ -52,9 +52,44 @@ CONFIG_MENU_MUTATIONS = (
      'REPO_VETO_ONLY = {"context.autoClear.enabled", "resume.auto"}\n',
      'REPO_VETO_ONLY = set()\n',
      _C + "test_repo_writer_refuses[context.autoClear.enabled-True]"),
+    # Re-anchored (successor): a block is refused twice, by the leaf-path rule
+    # (`is_repo_path`) and by `value_allowed`'s shape rule, so removing either
+    # alone is equivalent and the test stays green. Both go, in one span.
     ("repo writer accepts a whole block", CONFIG,
-     '    return not (isinstance(node, dict) and node)\n',
-     '    return True\n',
+     '    if reason is None and not is_repo_path(dotted):\n'
+     '        reason = ("not a settable leaf of .crew/config.json (a block is set "\n'
+     '                  "one key at a time; unknown keys are refused)")\n'
+     '    if reason is None and dotted in REPO_VETO_ONLY and not is_repo_veto(value):\n'
+     '        reason = ("a repo may only veto this (false) or clear its veto (null); "\n'
+     '                  "only the machine-global file can arm it")\n'
+     '    return reason\n'
+     '\n'
+     '\n'
+     'def value_allowed(dotted, layer, value):\n'
+     '    """None when `layer` accepts `value` at the LEAF `dotted`, else why not:\n'
+     "    the layer's path rule, a block emptied or replaced by a scalar, the null\n"
+     '    rule, then `enum_values` membership. Both planners and the menu use it."""\n'
+     '    reason = _layer_path_refusal(dotted, layer, value)\n'
+     '    if reason is not None:\n'
+     '        return f"{dotted} - {reason}"\n'
+     '    if _shape(dotted) == "block":\n',
+     '    if reason is None and not (is_repo_path(dotted) or _shape(dotted) == "block"):\n'
+     '        reason = ("not a settable leaf of .crew/config.json (a block is set "\n'
+     '                  "one key at a time; unknown keys are refused)")\n'
+     '    if reason is None and dotted in REPO_VETO_ONLY and not is_repo_veto(value):\n'
+     '        reason = ("a repo may only veto this (false) or clear its veto (null); "\n'
+     '                  "only the machine-global file can arm it")\n'
+     '    return reason\n'
+     '\n'
+     '\n'
+     'def value_allowed(dotted, layer, value):\n'
+     '    """None when `layer` accepts `value` at the LEAF `dotted`, else why not:\n'
+     "    the layer's path rule, a block emptied or replaced by a scalar, the null\n"
+     '    rule, then `enum_values` membership. Both planners and the menu use it."""\n'
+     '    reason = _layer_path_refusal(dotted, layer, value)\n'
+     '    if reason is not None:\n'
+     '        return f"{dotted} - {reason}"\n'
+     '    if False:\n',
      _C + "test_repo_writer_refuses_a_whole_block"),
     # Re-anchored (successor): the enum branch now lives in `value_allowed`.
     ("enum check removed", CONFIG,
