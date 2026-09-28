@@ -270,3 +270,14 @@ def test_refund_limit_holds_through_review_run(repo, tmp_path):
 
     assert "NOT refunded" in outs[2], outs[2]
     assert rl.status(str(repo), "T1")["rounds_left"] == 1
+
+
+def test_summary_line_after_refunds_is_never_over_budget(repo, tmp_path):
+    for n in range(2):
+        _run(repo, tmp_path / str(n), "turnfail")
+
+    result, _ = _run(repo, tmp_path / "2", "findings")
+
+    first = result.stdout.splitlines()[0]
+    assert (first.startswith("review: FINDINGS round 3, 1 of 2 budget rounds used, "
+                             "2 refunded ("), "3/2" in result.stdout) == (True, False), first

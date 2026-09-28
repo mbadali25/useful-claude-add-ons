@@ -16,6 +16,10 @@ REVIEW_PATCH = os.path.join(SCRIPTS, "review_patch.py")
 CREW_STATUS = os.path.join(SCRIPTS, "crew_status.py")
 CREW_AUTOPILOT = os.path.join(SCRIPTS, "crew_autopilot.py")
 VERIFY_RECORD = os.path.join(SCRIPTS, "verify_record.py")
+GOLDEN_BUILD = os.path.join(CREW, "tests", "golden_build.py")
+REPO = os.path.dirname(os.path.dirname(CREW))
+CHECKER = os.path.join(REPO, "scripts", "check-tooling-pr.py")
+VERIFY_JSON = os.path.join(REPO, ".crew", "verify.json")
 
 TOOLING_MUTATIONS = (
     (
@@ -132,4 +136,114 @@ TOOLING_MUTATIONS = (
         '    review["failure_class"] = None\n',
         "tests/test_review_canary.py::test_canary_turn_failed_is_a_refunded_tool_failure",
     ),
+    (
+        # (n) Round-1 FIX: a refunded round reruns review even straight after
+        # /crew:review; the no-progress stop swallowed it.
+        "autopilot reads a refunded rerun as no progress",
+        CREW_AUTOPILOT,
+        '    if last_command and result["command"] == last_command and not rerun:\n',
+        '    if last_command and result["command"] == last_command:\n',
+        "tests/test_crew_autopilot.py::test_next_refunded_rerun_after_review_is_not_no_progress",
+    ),
+    (
+        # (o) The private marker leaks into `next`'s answer (and its --json).
+        "the refunded-rerun marker is left in the answer",
+        CREW_AUTOPILOT,
+        '    rerun = result.pop("refunded_rerun", False)\n',
+        '    rerun = result.get("refunded_rerun", False)\n',
+        "tests/test_crew_autopilot.py::test_next_refunded_rerun_after_review_is_not_no_progress",
+    ),
+    (
+        # (p) Round-1 NIT: a `successors` that is not a list of objects
+        # crashes /crew:status instead of reading UNKNOWN.
+        "malformed successors load as ok",
+        REVIEW_LEDGER,
+        "    if not isinstance(successors, list) or not all(isinstance(s, dict) for s in successors):\n",
+        "    if False:\n",
+        "tests/test_status.py::test_status_review_line_for_malformed_successors_is_unknown",
+    ),
+    (
+        # (q) Round-1 NIT: the summary line prints the round over the budget.
+        "the summary line prints round N/BUDGET again",
+        REVIEW_RUN,
+        "    print(f\"review: {result['verdict']} round {number}, {budget} \"\n",
+        "    print(f\"review: {result['verdict']} round {number}/{review_ledger.BUDGET} \"\n",
+        "tests/test_review_refund.py::test_summary_line_after_refunds_is_never_over_budget",
+    ),
+    (
+        # (r) Round-1 NIT: a path placeholder with no left boundary rewrites
+        # prose (`symlink/root race` -> `symlink<HOME> race`).
+        "redaction loses its left boundary",
+        GOLDEN_BUILD,
+        '_START = r"(?:(?<![A-Za-z0-9_.-])|(?<=\\\\[nrt]))"\n',
+        '_START = ""\n',
+        "tests/test_review_golden.py::test_redact_leaves_prose_that_only_contains_a_machine_string",
+    ),
+    (
+        # (s) The host name is replaced inside longer words again.
+        "the host name is replaced as a bare substring",
+        GOLDEN_BUILD,
+        '        text = re.sub(r"(?<![A-Za-z0-9_-])" + re.escape(host) + r"(?![A-Za-z0-9_-])",\n',
+        '        text = re.sub(re.escape(host) + r"(?![A-Za-z0-9_-])",\n',
+        "tests/test_review_golden.py::test_redact_leaves_prose_that_only_contains_a_machine_string",
+    ),
 )
+
+# Outside the plugin: present only in the marketplace repo, never in an
+# installed copy, so these are appended only when their targets exist.
+_CHECKER_SUITE = ("tests/test_review_contracts.py::"
+                  "test_tooling_alone_checker_passes_its_must_block_must_allow_suite")
+_RULE_PATHS = ("tests/test_review_contracts.py::"
+               "test_verify_rule_paths_cover_the_harness_its_seams_and_suites")
+if os.path.isfile(CHECKER) and os.path.isfile(VERIFY_JSON):
+    TOOLING_MUTATIONS += (
+        (
+            # (t) Round-1 FIX: an undeclared seam consumer rides along.
+            "a seam consumer rides along undeclared",
+            CHECKER,
+            "    seams = [p for p in paths if p in declared and _matches(p, SEAM)]\n",
+            "    seams = [p for p in paths if _matches(p, SEAM)]\n",
+            _CHECKER_SUITE,
+        ),
+        (
+            # (u) A Tooling-seam trailer admits a file outside SEAM.
+            "a trailer admits any path",
+            CHECKER,
+            "    seams = [p for p in paths if p in declared and _matches(p, SEAM)]\n",
+            "    seams = [p for p in paths if p in declared]\n",
+            _CHECKER_SUITE,
+        ),
+        (
+            # (v) Round-1 FIX: every prompt rides along again.
+            "ALONGSIDE admits every command prompt again",
+            CHECKER,
+            '    "plugin/crew/docs/**",\n',
+            '    "plugin/crew/docs/**",\n    "plugin/crew/commands/**",\n',
+            _CHECKER_SUITE,
+        ),
+        (
+            # (w) Round-1 NIT: a worktree rename (` R`) leaves its old path
+            # in the stream, parsed as an entry of its own.
+            "a worktree rename's source path is parsed as an entry",
+            CHECKER,
+            '        if set(entry[:2]) & {"R", "C"} and i < len(entries):\n',
+            '        if entry[0] in ("R", "C") and i < len(entries):\n',
+            _CHECKER_SUITE,
+        ),
+        (
+            # (x) Round-1 FIX: the harness rule stops triggering on a suite it runs.
+            "rule 31 stops triggering on test_status.py",
+            VERIFY_JSON,
+            '"plugin/crew/tests/test_status.py", "plugin/crew/docs/external-tool-formats.md"],',
+            '"plugin/crew/docs/external-tool-formats.md"],',
+            _RULE_PATHS,
+        ),
+        (
+            # (y) ... or stops running the status suite at all.
+            "rule 31 stops running test_status.py",
+            VERIFY_JSON,
+            ' plugin/crew/tests/test_status.py -q"]',
+            ' -q"]',
+            _RULE_PATHS,
+        ),
+    )

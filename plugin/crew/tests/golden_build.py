@@ -62,6 +62,9 @@ DEFAULT_STREAM = "T-0072-build--2BJpY8"
 KNOWN_INCOMPLETE = ("useful-claude-add-ons-aa9d50-T-0028-kimi--T-0028-kimi--t2GDOu",)
 
 _STOP = r"[^/\s\"'`]+"
+# A machine path starts where no word or path character precedes it, or right
+# after a JSON string escape (`\n/root/x` inside an event stream).
+_START = r"(?:(?<![A-Za-z0-9_.-])|(?<=\\[nrt]))"
 LEAKS = (
     ("machine path", re.compile(r"/repos/|/root/|/home/|/Users/|C:\\Users\\|\\\\Users\\\\")),
     ("sk- token", re.compile(r"(?<![A-Za-z0-9])sk-[A-Za-z0-9]{20}")),
@@ -84,21 +87,27 @@ def allowed_address(found):
 
 
 def redact(text, checkout_root):
-    """Machine-specific paths and the host name to placeholders; nothing else."""
-    text = re.sub(re.escape(checkout_root.rstrip("/")) + r"(?![A-Za-z0-9_.-])", "<ROOT>", text)
-    text = re.sub(r"/repos/personal/" + _STOP, "<ROOT>", text)
+    """Machine-specific paths and the host name to placeholders; nothing else.
+    Each match needs a boundary on BOTH sides: a path starts where no word or
+    path character precedes it, and the host name is a whole word, so prose
+    that merely contains one (`symlink/root race`) is left as written."""
+    text = re.sub(_START + re.escape(checkout_root.rstrip("/")) + r"(?![A-Za-z0-9_.-])",
+                  "<ROOT>", text)
+    text = re.sub(_START + r"/repos/personal/" + _STOP, "<ROOT>", text)
     home = os.path.expanduser("~").rstrip("/")
     if home and home != "/":
-        text = re.sub(re.escape(home) + r"(?![A-Za-z0-9_.-])", "<HOME>", text)
-    text = re.sub(r"/home/" + _STOP, "<HOME>", text)
-    text = re.sub(r"/Users/" + _STOP, "<HOME>", text)
-    text = re.sub(r"[A-Za-z]:(?:\\\\|\\)Users(?:\\\\|\\)[^\\\s\"'`]+", "<HOME>", text)
+        text = re.sub(_START + re.escape(home) + r"(?![A-Za-z0-9_.-])", "<HOME>", text)
+    text = re.sub(_START + r"/home/" + _STOP, "<HOME>", text)
+    text = re.sub(_START + r"/Users/" + _STOP, "<HOME>", text)
+    text = re.sub(r"(?<![A-Za-z0-9_])[A-Za-z]:(?:\\\\|\\)Users(?:\\\\|\\)[^\\\s\"'`]+",
+                  "<HOME>", text)
     tmp = tempfile.gettempdir().rstrip("/")
     if tmp and tmp != "/":
-        text = text.replace(tmp + "/", "<TMP>/")
+        text = re.sub(_START + re.escape(tmp) + "/", "<TMP>/", text)
     host = socket.gethostname()
     if host:
-        text = text.replace(host, "<HOST>")
+        text = re.sub(r"(?<![A-Za-z0-9_-])" + re.escape(host) + r"(?![A-Za-z0-9_-])",
+                      "<HOST>", text)
     # A person's address (a `git log` author line inside a Codex stream) is
     # normalised like a path; the leak check below stays as the backstop.
     return EMAIL.sub(lambda m: m.group(0) if allowed_address(m.group(0)) else "<EMAIL>", text)

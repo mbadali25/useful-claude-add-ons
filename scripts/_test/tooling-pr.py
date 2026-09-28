@@ -132,6 +132,77 @@ def case_merged_main(tmp: str) -> str:
     return root
 
 
+def _harness_with(tmp: str, other: str, message: str = "harness plus other") -> str:
+    root = repo(tmp)
+    commit(root, ["plugin/crew/hooks/scripts/review_verdict.py", other], message)
+    return root
+
+
+def case_harness_autopilot_feature(tmp: str) -> str:
+    """A new subcommand in a seam consumer, undeclared: file level cannot tell
+    it from a seam edit, so it blocks."""
+    return _harness_with(tmp, "plugin/crew/hooks/scripts/crew_autopilot.py")
+
+
+def case_harness_status_undeclared(tmp: str) -> str:
+    return _harness_with(tmp, "plugin/crew/hooks/scripts/crew_status.py")
+
+
+def case_harness_implement_prompt(tmp: str) -> str:
+    return _harness_with(tmp, "plugin/crew/commands/implement.md")
+
+
+def case_harness_agent_prompt(tmp: str) -> str:
+    return _harness_with(tmp, "plugin/crew/agents/developer.md")
+
+
+def case_harness_other_eval(tmp: str) -> str:
+    return _harness_with(tmp, "plugin/crew/evals/pm-does-not-write-code/prompt.md")
+
+
+def case_declared_non_seam(tmp: str) -> str:
+    """A trailer cannot admit a file outside SEAM."""
+    return _harness_with(tmp, "plugin/crew/hooks/scripts/crew_tracker.py",
+                         "harness\n\nTooling-seam: plugin/crew/hooks/scripts/crew_tracker.py")
+
+
+def case_harness_declared_seam(tmp: str) -> str:
+    root = repo(tmp)
+    commit(root, [HARNESS_FILE, "plugin/crew/hooks/scripts/crew_status.py",
+                  "plugin/crew/commands/status.md"],
+           "harness with its status consumer\n\n"
+           "Tooling-seam: plugin/crew/hooks/scripts/crew_status.py\n"
+           "Tooling-seam: plugin/crew/commands/status.md")
+    write(root, "plugin/crew/hooks/scripts/crew_status.py", "edited after the declaration\n")
+    return root
+
+
+def case_harness_review_prompts(tmp: str) -> str:
+    root = repo(tmp)
+    commit(root, ["plugin/crew/commands/review.md", "plugin/crew/agents/reviewer.md",
+                  "plugin/crew/evals/qa-reviewer-stays-read-only/prompt.md"],
+           "the reviewer's prompts are harness")
+    return root
+
+
+def case_worktree_rename(tmp: str) -> str:
+    """` R` from `git add -N`: the old path follows as its own field."""
+    root = os.path.join(tmp, "repo")
+    os.makedirs(root)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "config", "user.email", "t@example.com")
+    git(root, "config", "user.name", "t")
+    git(root, "config", "core.autocrlf", "false")
+    commit(root, ["README.md", "a/feature.py"], "seed with a feature file long enough")
+    git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(root, "checkout", "-qb", "lane")
+    commit(root, [HARNESS_FILE], "harness")
+    os.makedirs(os.path.join(root, "b"))
+    os.replace(os.path.join(root, "a", "feature.py"), os.path.join(root, "b", "feature.py"))
+    git(root, "add", "-N", "b/feature.py")
+    return root
+
+
 def case_no_origin(tmp: str) -> str:
     root = repo(tmp, origin=False)
     commit(root, [HARNESS_FILE], "harness")
@@ -150,6 +221,21 @@ CASES = [
     ("must-allow feature-only", case_feature_only, 0, "no harness path changed"),
     ("must-allow merged-main", case_merged_main, 0, "OK"),
     ("must-report no-origin", case_no_origin, 77, "TOOL MISSING"),
+    ("must-block harness+autopilot-feature", case_harness_autopilot_feature, 1,
+     "  plugin/crew/hooks/scripts/crew_autopilot.py"),
+    ("must-block harness+status-undeclared", case_harness_status_undeclared, 1,
+     "  plugin/crew/hooks/scripts/crew_status.py"),
+    ("must-block harness+implement-prompt", case_harness_implement_prompt, 1,
+     "  plugin/crew/commands/implement.md"),
+    ("must-block harness+agent-prompt", case_harness_agent_prompt, 1,
+     "  plugin/crew/agents/developer.md"),
+    ("must-block harness+other-eval", case_harness_other_eval, 1,
+     "  plugin/crew/evals/pm-does-not-write-code/prompt.md"),
+    ("must-block declared-non-seam", case_declared_non_seam, 1,
+     "  plugin/crew/hooks/scripts/crew_tracker.py"),
+    ("must-block worktree-rename", case_worktree_rename, 1, "\n  a/feature.py"),
+    ("must-allow harness+declared-seam", case_harness_declared_seam, 0, "OK"),
+    ("must-allow harness+review-prompts", case_harness_review_prompts, 0, "OK"),
 ]
 
 

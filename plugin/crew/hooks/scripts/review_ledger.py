@@ -155,6 +155,11 @@ def _load(path):
         return {}, "corrupt"
     if not isinstance(data, dict) or not isinstance(data.get("rounds", []), list):
         return {}, "corrupt"
+    # `_spent` and `_boundary` read the latest successor row: a `successors`
+    # that is not a list of objects is unreadable, never a crash (T-0087).
+    successors = data.get("successors") or []
+    if not isinstance(successors, list) or not all(isinstance(s, dict) for s in successors):
+        return {}, "corrupt"
     return data, "ok"
 
 

@@ -23,8 +23,12 @@ A tooling change: this release carries no feature work.
   `refund_refused`. `review.json` carries the same fields. `review_run.py`
   prints `review: round N was a tool failure (...); refunded - ...` or
   `NOT refunded - ...`, and `/crew:status` reads `1/2 rounds used, 1 refunded`
-  through `review_ledger.summary`. Autopilot sends a refunded round back to
-  review (refresh first) instead of stopping. This is the review-side twin of
+  through `review_ledger.summary`. The summary line counts the budget the way
+  the ledger charges it (`round 3, 1 of 2 budget rounds used, 2 refunded`),
+  never `round 3/2`. Autopilot sends a refunded round back to review (refresh
+  first) instead of stopping, even straight after `/crew:review`: the
+  no-progress stop does not apply to that rerun, and `REFUND_LIMIT` and
+  `maxPhases` bound it. This is the review-side twin of
   T-0082's gate rule: a killed, hung or timed-out run is "could not tell",
   never a pass.
 - **Golden corpus of real reviewer output.** 41 real `out.txt` from this
@@ -45,18 +49,28 @@ A tooling change: this release carries no feature work.
   `golden` mode replays the real stream, and the stub reads an over-limit
   prompt from its file as a real reviewer does.
 - **Tooling PRs land alone.** `scripts/check-tooling-pr.py` refuses a branch
-  that changes a review/gate harness path and also carries feature work. It
-  diffs from the merge base, so a merge of main does not count, and exits 77
-  (NOT VERIFIED) without `origin/main`. Its suite is `scripts/_test/tooling-pr.py`.
-  `.crew/verify.json` rule 31 runs the checker, the corpus, the contracts and
-  the canary whenever a harness path changes, and CLAUDE.md states the rule.
+  that changes a review/gate harness path and also carries feature work. The
+  harness includes the reviewer's prompts (`commands/review.md`,
+  `agents/reviewer.md`, the `qa-reviewer-stays-read-only` eval). Tests, docs,
+  version files, the code map and the graph may ride along; no production code
+  and no other prompt may. The few files that read a harness format
+  (`crew_status.py`, `crew_autopilot.py`, `crew_resume.py`, `commands/status.md`,
+  `commands/autopilot.md`) ride along only when a lane commit declares each with
+  a `Tooling-seam: <path>` trailer. It diffs from the merge base, so a merge of
+  main does not count, and exits 77 (NOT VERIFIED) without `origin/main`. Its
+  suite is `scripts/_test/tooling-pr.py`. `.crew/verify.json` rule 31 runs the
+  checker, the corpus, the contracts, the canary and `test_status.py` whenever
+  a harness path, a seam consumer, one of those suites or
+  `external-tool-formats.md` changes, and CLAUDE.md states the rule.
 - **External tool formats, cited and probed.** `plugin/crew/docs/external-tool-formats.md`
   covers Codex CLI's `--json` events (`exec_events.rs`), `wsl.exe`'s UTF-16LE
   output and `gh`'s exit codes and review flags, each with its URL, read date
   and probe record. It is held to crew's call sites by `test_external_tool_formats.py`.
-- **Thirteen sabotage entries** (`tests/sabotage_tooling.py`) cover the refund,
-  the budget, the golden replay, the manifest, status, autopilot, the gate
-  record and the canary. All thirteen go RED.
+- **Twenty-five sabotage entries** (`tests/sabotage_tooling.py`) cover the
+  refund, the budget, the golden replay and its redaction, the manifest,
+  status, autopilot, the gate record, the canary, the tooling-alone checker and
+  rule 31's paths. The six on the checker and `verify.json` are added only where
+  those repo files exist. All twenty-five go RED.
 
 ### Fixed — `crew` 1.0.55 (T-0087)
 
@@ -66,12 +80,19 @@ A tooling change: this release carries no feature work.
   `scope_guard.py` from rule 31 as well as rule 27. Rule 31 lists it too, so
   dropping it from rule 27 alone left it covered and the entry stayed green
   (`STILL GREEN -- TEST IS VACUOUS`).
-- `plugin/crew/BUDGETS.md`'s Markdown line count is re-measured: 19,055 lines
+- `plugin/crew/BUDGETS.md`'s Markdown line count is re-measured: 19,056 lines
   across 127 files.
 - `scripts/check-tooling-pr.py` allows `plugin/crew/BUDGETS.md` alongside a
   harness change: its line count moves with every crew doc edit. It refused this
   branch's own re-measure until then; `scripts/_test/tooling-pr.py` gains the
   must-allow case.
+- Review round 1: `golden_build.redact` needs a boundary on both sides of a
+  path or the host name, so it no longer rewrites prose (`symlink/root race`
+  had become `symlink<HOME> race` in one committed fixture, now restored from
+  a rebuild). A ledger whose `successors` is not a list of objects reads as
+  UNKNOWN in `/crew:status` instead of crashing it. `check-tooling-pr.py`
+  reads a worktree rename's (` R`) source path. The guides no longer call a
+  rerun after a refund free: only the failed round is given back.
 - Bumped `1.0.54 -> 1.0.55` (1.0.52 on its branch; re-set to 1.0.53 after
   merging main's 1.0.52, T-0076, and to 1.0.55 after merging main's 1.0.54,
   T-0092).

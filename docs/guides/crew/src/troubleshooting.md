@@ -129,8 +129,10 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   or web-test report changed under the reviewer. `reviewer` means the output arrived and broke the
   contract.
   **Fix:** a `tool` round is refunded automatically, up to two per plan. The line reads
-  `review: round N was a tool failure (...); refunded`. Rerun `/crew:review`, which does not spend
-  the budget; if Codex is out of quota, use the next eligible provider. A third tool failure under
+  `review: round N was a tool failure (...); refunded`. Only the failed round is given back: the
+  rerun `/crew:review` reserves a new round, charged like any other unless it is a tool failure
+  too, so a ticket with one charged round that reruns and gets FINDINGS has spent the budget. If
+  Codex is out of quota, use the next eligible provider. A third tool failure under
   one plan reads `NOT refunded - refund limit 2 per plan reached` and counts. A `reviewer` or `tree`
   round always counts. Rebuild the bundle (tree), or rerun and read what the reviewer wrote
   (reviewer).

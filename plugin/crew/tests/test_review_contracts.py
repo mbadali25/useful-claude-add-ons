@@ -13,6 +13,7 @@ import importlib.util
 import json
 import os
 import re
+import subprocess
 import sys
 import types
 
@@ -313,10 +314,22 @@ def test_resume_fingerprint_watches_the_paths_the_producers_write(tmp_path):
 
 
 
-def test_verify_rule_paths_are_the_checkers_harness_globs():
-    repo = os.path.dirname(os.path.dirname(CREW))
-    verify = os.path.join(repo, ".crew", "verify.json")
-    checker_path = os.path.join(repo, "scripts", "check-tooling-pr.py")
+# The suites the harness rule must both run and trigger on: the five T-0087
+# suites and test_status.py, the one that exercises crew_status's ledger line.
+HARNESS_SUITES = (
+    "scripts/_test/tooling-pr.py",
+    "plugin/crew/tests/test_review_golden.py",
+    "plugin/crew/tests/test_review_contracts.py",
+    "plugin/crew/tests/test_review_canary.py",
+    "plugin/crew/tests/test_review_refund.py",
+    "plugin/crew/tests/test_external_tool_formats.py",
+    "plugin/crew/tests/test_status.py",
+)
+
+
+def _harness_rule():
+    verify = os.path.join(REPO, ".crew", "verify.json")
+    checker_path = os.path.join(REPO, "scripts", "check-tooling-pr.py")
     if not (os.path.isfile(verify) and os.path.isfile(checker_path)):
         pytest.skip("the crew dir is not inside the marketplace repo (an installed copy): "
                     "no .crew/verify.json or scripts/check-tooling-pr.py beside it")
@@ -325,8 +338,24 @@ def test_verify_rule_paths_are_the_checkers_harness_globs():
     spec = importlib.util.spec_from_file_location("check_tooling_pr", checker_path)
     checker = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(checker)
-
     matching = [r for r in rules if any("scripts/check-tooling-pr.py" in c for c in r["run"])]
-
     assert len(matching) == 1, [r["paths"] for r in matching]
-    assert matching[0]["paths"] == list(checker.HARNESS)
+    return matching[0], checker
+
+
+def test_verify_rule_paths_cover_the_harness_its_seams_and_suites():
+    rule, checker = _harness_rule()
+    run = set(re.findall(r"[\w./-]+\.py", " ".join(rule["run"])))
+
+    assert (set(HARNESS_SUITES) - run, set(rule["paths"])) == (set(), set(
+        checker.HARNESS + checker.SEAM + HARNESS_SUITES
+        + ("plugin/crew/docs/external-tool-formats.md",)))
+
+
+def test_tooling_alone_checker_passes_its_must_block_must_allow_suite():
+    _harness_rule()
+    suite = os.path.join(REPO, "scripts", "_test", "tooling-pr.py")
+    done = subprocess.run([sys.executable, suite], capture_output=True, text=True,
+                          stdin=subprocess.DEVNULL, check=False)
+
+    assert done.returncode == 0, done.stdout[-4000:] + done.stderr[-2000:]

@@ -213,3 +213,31 @@ def test_status_review_line_for_an_unreadable_ledger_is_unknown(tmp_path):
     done = _run(root)
 
     assert "review   T1: UNKNOWN (ledger unreadable)" in done.stdout, done.stdout
+
+
+def _ledger_text(root, text):
+    path = review_ledger.ledger_path(str(root), "T1")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+@pytest.mark.parametrize("successors", ['{"x": 1}', "[1]", '"abc"', "[{}, null]"])
+def test_status_review_line_for_malformed_successors_is_unknown(tmp_path, successors):
+    root = make_repo(tmp_path)
+    _ledger_text(root, '{"state": "REVIEWED", "rounds": [], "successors": %s}' % successors)
+
+    done = _run(root)
+
+    assert (done.returncode, "review   T1: UNKNOWN (ledger unreadable)" in done.stdout) == (
+        0, True), done.stdout + done.stderr
+
+
+def test_status_review_line_survives_rounds_that_are_not_objects(tmp_path):
+    root = make_repo(tmp_path)
+    _ledger_text(root, '{"state": "REVIEWED", "rounds": [1, "x"]}')
+
+    done = _run(root)
+
+    assert (done.returncode, "review   T1: REVIEWED, 2/2 rounds used" in done.stdout) == (
+        0, True), done.stdout + done.stderr

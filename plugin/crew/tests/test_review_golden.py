@@ -19,6 +19,7 @@ import re
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import golden_build
 import review_verdict as rv
 
 GOLDEN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "golden", "review")
@@ -111,3 +112,41 @@ def test_golden_corpus_stays_under_its_size_bound():
     total = sum(os.path.getsize(p) for p in _files())
 
     assert 0 < total < SIZE_BOUND, total
+
+
+def test_golden_corpus_placeholders_replace_whole_paths_only():
+    """`symlink<HOME> race` was `symlink/root race`: a placeholder glued to
+    the word before it replaced prose, not a path."""
+    glued = []
+    for path in _files():
+        with open(path, encoding="utf-8", newline="") as fh:
+            glued += [(os.path.relpath(path, GOLDEN), m.group(0)) for m in
+                      re.finditer(r"(?<!\\)[A-Za-z0-9_]<(?:ROOT|HOME|TMP|HOST)>", fh.read())]
+
+    assert not glued, glued
+
+
+@pytest.mark.parametrize("text", [
+    "a symlink/root race", "a/tmp/b is not the temp dir", "a boxer is not the host",
+    "unbox the thing", "re/repos/personal/x stays"])
+def test_redact_leaves_prose_that_only_contains_a_machine_string(monkeypatch, text):
+    monkeypatch.setattr(golden_build.os.path, "expanduser", lambda p: "/root")
+    monkeypatch.setattr(golden_build.tempfile, "gettempdir", lambda: "/tmp")
+    monkeypatch.setattr(golden_build.socket, "gethostname", lambda: "box")
+
+    assert golden_build.redact(text, "/repos/personal/x") == text
+
+
+@pytest.mark.parametrize("text, want", [
+    ("see /root/x and (/root)", "see <HOME>/x and (<HOME>)"),
+    ("in /tmp/a", "in <TMP>/a"),
+    ("host box: ok, box.local", "host <HOST>: ok, <HOST>.local"),
+    ("cd /repos/personal/x/y", "cd <ROOT>/y"),
+    ('"text":"a\\n/root/x"', '"text":"a\\n<HOME>/x"'),
+])
+def test_redact_still_replaces_whole_machine_strings(monkeypatch, text, want):
+    monkeypatch.setattr(golden_build.os.path, "expanduser", lambda p: "/root")
+    monkeypatch.setattr(golden_build.tempfile, "gettempdir", lambda: "/tmp")
+    monkeypatch.setattr(golden_build.socket, "gethostname", lambda: "box")
+
+    assert golden_build.redact(text, "/repos/personal/x") == want

@@ -39,7 +39,9 @@ guesses which is which fails correct lines. That silence is asserted by
 Whenever one of them changes, `.crew/verify.json`'s harness rule runs that checker, its suite
 `scripts/_test/tooling-pr.py`, the golden replay of real reviewer output, the seam contracts and
 the canary review. Tests, docs, version files, the code map and the graph may ride along. A feature
-may not.
+may not, and neither may production code or a prompt outside the harness. The few files that read a
+harness format (`SEAM` in the same script) ride along only when a lane commit declares each with a
+`Tooling-seam: <path>` trailer, a claim the reviewer holds the diff to.
 
 ## Stop and ask - the conditions that should halt work
 

@@ -370,7 +370,12 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     _write_atomic(os.path.join(work_dir, "review.json"),
                   json.dumps(review, indent=2, sort_keys=True) + "\n")
     counts = result["counts"]
-    print(f"review: {result['verdict']} round {number}/{review_ledger.BUDGET} "
+    # The budget as the ledger charges it: a refunded round is a round number,
+    # never a unit of budget, so "round 3/2" would read as over budget.
+    spent, refunded = ledger.get("rounds_spent"), ledger.get("rounds_refunded")
+    budget = (f"{spent if isinstance(spent, int) else '?'} of {review_ledger.BUDGET} "
+              f"budget rounds used" + (f", {refunded} refunded" if refunded else ""))
+    print(f"review: {result['verdict']} round {number}, {budget} "
           f"({counts['BLOCK']} BLOCK, {counts['FIX']} FIX, {counts['NIT']} NIT) "
           f"{args.provider}/{args.model or 'default'} family={review['model_family']} "
           f"ledger={state}")

@@ -9,15 +9,27 @@ review and gate harness decides whether every other change is accepted. When a
 harness change rides in a PR with a feature, a harness bug is found only after
 it has already judged that feature, and a review round lost to the tool is
 also a round lost to the feature. So when a branch changes any `HARNESS` path,
-every other path it changes must be in `ALONGSIDE`: the harness's tests, docs
-(`BUDGETS.md`'s line count moves with every crew doc edit), version files, code
-map, graph and ticket records.
+every other path it changes must be in `ALONGSIDE`: tests, docs (`BUDGETS.md`'s
+line count moves with every crew doc edit), version files, code map, graph and
+ticket records. No production code and no prompt is in `ALONGSIDE`.
+
+SEAM CONSUMERS. `SEAM` names the few production files that read a harness
+format (`crew_status.py` renders the ledger, `crew_autopilot.py` routes on it,
+`crew_resume.py` fingerprints it, and the two commands that describe them). A
+harness change may have to move them, but a file-level check cannot tell that
+edit from feature work in the same file. So a `SEAM` path rides along only
+when a lane commit declares it with a `Tooling-seam: <path>` trailer, which
+puts the claim in the PR for the reviewer to hold it to. An undeclared one
+blocks like any feature file, and a trailer naming a path outside `SEAM`
+admits nothing.
 
 WHAT COUNTS AS CHANGED. The lane's own changes: `git diff --name-only
 origin/main...HEAD` (from the merge base, so the files a merge of main brought
 in are main's, not the lane's, while an edit made inside a merge's conflict
 resolution IS seen), both sides of a rename, plus every path `git status`
-reports (staged, unstaged, untracked), so an uncommitted feature file counts.
+reports (staged, unstaged, untracked; both sides of a rename in either
+column), so an uncommitted feature file counts. Declarations are read from
+the trailers of `origin/main..HEAD`'s commits.
 
 Exit 0: no harness path changed, or only tooling changed. Exit 1: a harness
 change carries feature work, with one line per path to land separately. Exit
@@ -25,9 +37,9 @@ change carries feature work, with one line per path to land separately. Exit
 missing ref, never a pass: the verify gate records 77 as SKIP (NOT VERIFIED).
 
 Matching is `crew_ticket.path_matches`, the same segment-aware globs as a
-spec's Touch list. `.crew/verify.json`'s harness rule lists exactly `HARNESS`
-as its paths, and `test_verify_rule_paths_are_the_checkers_harness_globs`
-keeps the two lists equal.
+spec's Touch list. `.crew/verify.json`'s harness rule lists `HARNESS`, `SEAM`
+and the suites it runs as its paths, and
+`test_verify_rule_paths_cover_the_harness_its_seams_and_suites` keeps them so.
 """
 
 from __future__ import annotations
@@ -65,21 +77,28 @@ HARNESS = (
     "plugin/crew/tests/review_fixtures.py",
     "plugin/crew/tests/golden_build.py",
     "plugin/crew/tests/golden/**",
+    "plugin/crew/commands/review.md",
+    "plugin/crew/agents/reviewer.md",
+    "plugin/crew/evals/qa-reviewer-stays-read-only/**",
     "scripts/check-tooling-pr.py",
 )
+
+SEAM = (
+    "plugin/crew/hooks/scripts/crew_status.py",
+    "plugin/crew/hooks/scripts/crew_autopilot.py",
+    "plugin/crew/hooks/scripts/crew_resume.py",
+    "plugin/crew/commands/status.md",
+    "plugin/crew/commands/autopilot.md",
+)
+
+TRAILER = "Tooling-seam"
 
 ALONGSIDE = (
     "plugin/crew/tests/**",
     "plugin/crew/README.md",
     "plugin/crew/CONFIG.md",
     "plugin/crew/BUDGETS.md",
-    "plugin/crew/commands/**",
-    "plugin/crew/agents/**",
     "plugin/crew/docs/**",
-    "plugin/crew/evals/**",
-    "plugin/crew/hooks/scripts/crew_status.py",
-    "plugin/crew/hooks/scripts/crew_autopilot.py",
-    "plugin/crew/hooks/scripts/crew_resume.py",
     "plugin/crew/.claude-plugin/plugin.json",
     ".claude-plugin/marketplace.json",
     ".claude/rules/**",
@@ -125,10 +144,21 @@ def changed_paths(root: str) -> list[str]:
         if len(entry) < 4:
             continue
         paths.add(entry[3:])
-        if entry[0] in ("R", "C"):
+        # A rename or copy in EITHER column (` R` is a worktree rename, from
+        # `git add -N`) is followed by its source path as a field of its own.
+        if set(entry[:2]) & {"R", "C"} and i < len(entries):
             paths.add(entries[i])
             i += 1
     return sorted(paths)
+
+
+def declared_seams(root: str) -> set[str]:
+    """Paths the lane's own commits declare with a `Tooling-seam:` trailer."""
+    log = _git(root, "log", f"--format=%(trailers:key={TRAILER},valueonly)",
+               "origin/main..HEAD")
+    if log.returncode != 0:
+        raise RuntimeError(f"git log origin/main..HEAD failed: {log.stderr.strip()}")
+    return {line.strip() for line in log.stdout.splitlines() if line.strip()}
 
 
 def _matches(path: str, globs: tuple[str, ...]) -> bool:
@@ -143,16 +173,29 @@ def check(root: str) -> tuple[int, list[str]]:
                               "not a pass."]
     try:
         paths = changed_paths(root)
+        declared = declared_seams(root)
     except RuntimeError as exc:
         return EXIT_MISSING, [f"TOOL MISSING: {exc}; the tooling-alone check DID NOT RUN."]
+    return judge(paths, declared)
+
+
+def judge(paths: list[str], declared: set[str]) -> tuple[int, list[str]]:
+    """(exit code, output lines) for a lane's changed paths and its declared seams."""
     harness = [p for p in paths if _matches(p, HARNESS)]
     if not harness:
         return 0, ["tooling-pr: no harness path changed"]
-    outside = [p for p in paths if not _matches(p, HARNESS + ALONGSIDE)]
+    seams = [p for p in paths if p in declared and _matches(p, SEAM)]
+    outside = [p for p in paths if not _matches(p, HARNESS + ALONGSIDE) and p not in seams]
     if outside:
+        undeclared = [p for p in outside if _matches(p, SEAM)]
+        hint = ([f"  (a seam consumer rides along only when a lane commit declares it: "
+                 f"`{TRAILER}: <path>`; undeclared: {', '.join(undeclared)})"]
+                if undeclared else [])
         return 1, (["tooling-pr: FAIL - a tooling change carries feature work; "
-                    "land these separately:"] + [f"  {p}" for p in outside])
-    return 0, [f"tooling-pr: OK - {len(harness)} harness path(s), nothing outside tooling"]
+                    "land these separately:"] + [f"  {p}" for p in outside] + hint)
+    tail = f", {len(seams)} declared seam consumer(s)" if seams else ""
+    return 0, [f"tooling-pr: OK - {len(harness)} harness path(s){tail}, "
+               "nothing outside tooling"]
 
 
 def main(argv: list[str]) -> int:

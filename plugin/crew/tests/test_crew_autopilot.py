@@ -1266,3 +1266,28 @@ def test_next_refunded_incomplete_refreshes_first(tmp_path, monkeypatch):
     got = _next(root)
 
     assert got["phase"] == "refresh"
+
+
+def test_next_refunded_rerun_after_review_is_not_no_progress(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [dict(_round(1, "INCOMPLETE"), refunded=True, failure_class="tool")],
+            state="REVIEWED")
+    _receipt_ok(monkeypatch, False)
+    _refresh(monkeypatch, "fresh")
+
+    got = _next(root, phases_run=1, last_command=f"/crew:review {T}", max_phases=12)
+
+    assert (got["phase"], got["stop"], got["command"], sorted(got)) == (
+        "review", False, f"/crew:review {T}",
+        ["command", "evidence", "phase", "reason", "stop", "ticket"])
+
+
+def test_next_unrefunded_rerun_after_review_is_still_no_progress(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "CLEAN")], state="REVIEWED")
+    _receipt_ok(monkeypatch, False)
+    _refresh(monkeypatch, "fresh")
+
+    got = _next(root, phases_run=1, last_command=f"/crew:review {T}", max_phases=12)
+
+    assert (got["stop"], got["reason"].startswith("no progress")) == (True, True)
