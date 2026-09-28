@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@0339bf3c
+anchor: useful-claude-add-ons@fe80f69d
 verified: 2026-09-28
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -306,7 +306,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2279-2286` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2289-2296` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -494,7 +494,7 @@ set on Ubuntu.
 - `.crew/verify.json:320-327` (rule 30) — the T-0024 group-approval suite;
   `plugin/crew/tests/sabotage.py:80`, `:3054` — `sabotage_approval.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
-  `plugin/crew/CONFIG.md:2279-2286` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2289-2296` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -1389,3 +1389,5 @@ Nothing was executed for this note.
 **Re-anchored `25d2de63` -> `136f4b33` on 2026-09-28 (T-0092 merged onto `ff59160f`, T-0089, crew 1.0.54).** `e2220836` merges origin/main `ff59160f` (T-0089 landed as crew 1.0.53 at `0f526a8c`: `plugin/crew/tests/test_role_write_guard.py` fixtures and a `CHANGELOG.md` entry) into `T-0092-build`; the merge was clean. `136f4b33` re-bumps crew to 1.0.54 and moves T-0092's `1.0.53` mentions (`review_patch.py`'s docstring, `plugin/crew/README.md:842`, `TODO.md:5051`, the two test-file comments, its `CHANGELOG.md` heading) to 1.0.54, all in place. Every body citation of the form `path:line` into a file changed between `25d2de63` and `136f4b33` was compared by script: the only differences are version-file lines changed in place, `plugin/crew/README.md:842` in place, and lines cited inside dated provenance notes (`CHANGELOG.md`, which T-0089's entry shifts by 12 lines below `:80`, and `TODO.md:5048`), left as history at their own commit. No citation into `test_role_write_guard.py` exists here. Nothing was executed for this note.
 
 **Re-anchored `6caa1872` / `136f4b33` -> `0339bf3c` on 2026-09-28 (T-0088 merges origin/main `6387ab49`, T-0092 landing, and re-bumps crew to 1.0.55).** `04dc2a78` merges origin/main `6387ab49` (T-0092 landed as crew 1.0.54 at `2442d367`, after T-0090's `b2553d26` and T-0089's `0f526a8c`) into `T-0088-build`; its conflicts were the version files (main's 1.0.54 taken), `CHANGELOG.md` (both `[Unreleased]` entries kept) and the refresh artifacts (anchor lines, re-anchor paragraphs and INDEX rows, both histories kept). `0339bf3c` re-bumps crew to 1.0.55 and moves T-0088's own `1.0.53` mentions (`plugin/crew/CONFIG.md:117`, `plugin/crew/README.md:932`, `docs/guides/crew/src/troubleshooting.md:166` and its rebuilt HTML/DOCX/PDF) to 1.0.55, all in place. `git diff --name-only 6caa1872 0339bf3c`, refresh artifacts aside, returns main's files since the merge base (T-0092's `review_patch.py`, `review_prompt.py`, `completion_audit.py`, `crew_autopilot.py`, `commands/review.md`, `README.md` and their tests; T-0090's `mcp-servers/` and `SECURITY.md`; T-0089's `test_role_write_guard.py`; `CHANGELOG.md`, `TODO.md`) and the bump's files. Every body citation of the form `path:line` into those files was compared by script (`/root/crew-tmp/t-0088/cites.py`, local): 69 checked, and each one's cited text at `0339bf3c` equals its text at `6caa1872` or at `136f4b33` except 14. 14 are the version lines (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`), which now read 1.0.55 and are cited, outside the current-version sentence, only inside dated provenance notes left as history. Nothing was executed for this note.
+
+**Re-anchored `0339bf3c` -> `fe80f69d` on 2026-09-28 (T-0088 review round 1 fixes, crew 1.0.55 unchanged).** `c3624af6` fixes the round's four FIX and three NIT findings (`crew_common.py`, `crew_platform.py`, `crew_config.py`, `review_run.py`, `review_limit.py`, their tests and sabotage entries, and the docs that describe them: `plugin/crew/CONFIG.md` +10 below `:126`, `plugin/crew/README.md` +7 below `:942`, `commands/review.md` in place, `CHANGELOG.md`, the troubleshooting and working-with-codex guides, `BUDGETS.md:11` in place); `fe80f69d` rebuilds the two guides. Every body citation of the form `path:line` into those files was compared by script (`/root/crew-tmp/t-0088/cites.py`, local); `plugin/crew/CONFIG.md:2279-2286` moved to `:2289-2296` and is re-cited at both body mentions, the others hold; `BUDGETS.md:11` (the count, in place) and `CHANGELOG.md` lines inside dated provenance notes are left as history. Nothing was executed for this note.

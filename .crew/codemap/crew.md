@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@0339bf3c
+anchor: useful-claude-add-ons@fe80f69d
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -341,7 +341,7 @@ before the subcommand (`crew_guards.tf_skip_options` `:1541`, used by `_terrafor
 `:1540`), so `terragrunt --working-dir infra destroy` is a destroy, and `_unwrap` reads a listed
 wrapper's options as GNU getopt does (`crew_guards.skip_wrapper_options` `:1560`). DERIVED from the code cited.
 
-**The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2457-2569`)
+**The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2460-2572`)
 now holds 14 keys**, built in seven steps (a literal dict of two at `:2457`, four `.update()`
 calls at `:2472`, `:2485`, `:2496` and `:2506`, and two single-key assignments at `:2542` and
 `:2565`) rather than one table: `pm.authority`, `install.policy`, the 6 `GUARD_NAMES` keys, the 2
@@ -429,18 +429,23 @@ saw the built-in defaults instead of the owner's settings.
   `source` one of `SOURCE_OWN`, `SOURCE_MAIN`, `SOURCE_UNKNOWN` (`:93`, `"own"`,
   `"main checkout"`, `"unknown"`). Order: this checkout's `.crew/` wins whole if **either** name
   in `CONFIG_NAMES` (`:92`, `crew.json`, `config.json`) exists (`:116-117`), so the layers are
-  never merged; `.git` a directory or missing is `own` with no subprocess (`:118-119`); a `.git`
-  file asks `git rev-parse --path-format=absolute --git-dir --git-common-dir` (`:120`); anything
-  but two lines back is `unknown` with a reason and inherits nothing (`:122-124`); a submodule
-  (git-dir == common-dir) or a common dir not named `.git` is `own` (`:126-128`); otherwise the
-  main checkout's `.crew/` if it holds either name (`:130-131`).
-- `repo_config_file(root, name)` (`:135`) is the path every reader opens, and
-  `repo_config_source_line(root)` (`:140`) the one line `/crew:status` and `/crew:config` print:
-  empty for `own`, "inherited from the main checkout (...) ... never merged" or "could not tell
-  (...)". `/crew:status` inserts it as the second `config` row
+  never merged; the git part is `_main_checkout(root)` (`:129`, called at `:118`): `.git` a
+  directory or missing is not a linked worktree, with no subprocess (`:140-141`); a `.git` file
+  asks `git rev-parse --git-dir --git-common-dir` (`:142`), each path joined to `root` - no
+  `--path-format`, which git before 2.31 echoed back as a third line; anything but two lines back
+  is `unknown` with a reason and inherits nothing (`:144-145`, `:119-120`); a submodule
+  (git-dir == common-dir) or a common dir not named `.git` is `own` (`:147-149`); otherwise the
+  main checkout's `.crew/` if it holds either name (`:123-125`).
+- `repo_config_file(root, name)` (`:175`) is the path every reader opens, and
+  `repo_config_source_line(root)` (`:180`) the one line `/crew:status` and `/crew:config` print:
+  "inherited from the main checkout (...) ... never merged", "could not tell (...)", or - for a
+  linked worktree whose OWN config is in force while the main checkout has one too
+  (`shadowed_main_config`, `:153`) - `shadow_note` (`:196`), "... the main checkout's (<path>) is
+  not read ..." naming the delete that inherits (every crew <= 1.0.54 SessionStart heal wrote such
+  a default into a lane); empty otherwise. `/crew:status` inserts it as the second `config` row
   (`plugin/crew/hooks/scripts/crew_status.py:76-78`); `crew_config._repo_layer_line`
-  (`plugin/crew/hooks/scripts/crew_config.py:2133`) prints `repo layer: <path> (<source>)` first
-  in `--models` and `--explain` (`:2145`, `:2707`).
+  (`plugin/crew/hooks/scripts/crew_config.py:2133`, the shadow at `:2141-2143`) prints
+  `repo layer: <path> (<source>)` first in `--models` and `--explain` (`:2148`, `:2710`).
 - The routed readers - every Python module that opens a repo `.crew/config.json` or
   `.crew/crew.json`: `crew_state.py` (`load_config`, `plugin/crew/hooks/scripts/crew_state.py:267`),
   `crew_config.py`, `crew_context.py`, `crew_status.py`, `crew_autopilot.py`, `crew_platform.py`,
@@ -448,19 +453,20 @@ saw the built-in defaults instead of the owner's settings.
   `role_write_guard.py`, `crew_autocycle.py`, `webtest_guard.py`, `crew_tracker.py`,
   `crew_incident.py` and `crew_ticket.py` (scope mode and CLI approval). The contract is executable:
   `test_no_module_reads_repo_config_outside_the_resolver`
-  (`plugin/crew/tests/test_worktree_config.py:228`) fails on any module that joins a repo config
+  (`plugin/crew/tests/test_worktree_config.py:248`) fails on any module that joins a repo config
   path itself. The shell and PowerShell readers (`verify-gate.sh`, `_common.sh`, `notify.sh`, the
   handoff scripts, `promote-gate.ps1`, `scope-guard.ps1`, `cloud-guard.ps1`, `auto-clear.ps1`) are
   **not** routed - named in `CHANGELOG.md`'s T-0088 entry as the follow-up.
 - Heal never shadows: `crew_platform.heal_config` (`plugin/crew/hooks/scripts/crew_platform.py:192`)
-  returns without writing when the source is `SOURCE_MAIN` (`:234-238`), because a default written
-  into the lane would win whole over the owner's config.
+  returns without writing when the source is `SOURCE_MAIN` (`:235-238`), because a default written
+  into the lane would win whole over the owner's config, and when it is `SOURCE_UNKNOWN`
+  (`:242-245`), because "could not tell" written down as a default would be `own` for good.
 - Writers do not follow the resolver: `crew_platform` (heal and `platform-sync`),
   `crew_autoclear_setup`, `crew_migrate`, `/crew:init` and the machine-global writer keep their
   own-path behaviour (`plugin/crew/CONFIG.md`, "In a linked worktree"; JUDGEMENT - taken from that
   section and the AST contract test's scope, not re-derived per writer here).
-- Guarded by 12 `LIMIT_WORKTREE_MUTATIONS` in `plugin/crew/tests/sabotage_limit_worktree.py`
-  (counted with `len()`), six of them on this resolver, and by `.crew/verify.json` rule 31
+- Guarded by 21 `LIMIT_WORKTREE_MUTATIONS` in `plugin/crew/tests/sabotage_limit_worktree.py`
+  (counted with `len()`), seven of them on `crew_common.py`, and by `.crew/verify.json` rule 31
   (`:328-334`).
 
 ## A Codex usage limit runs the review round on Claude (T-0088, crew 1.0.53)
@@ -468,21 +474,27 @@ saw the built-in defaults instead of the owner's settings.
 **DERIVED at `a43acd56`, each line re-read with `sed -n`.** `/crew:review`'s probe for Codex was
 `command -v codex`, which a logged-out or limited Codex passes.
 
-- `review_run.py --probe` (`plugin/crew/hooks/scripts/review_run.py:473`, codex only `:484`,
-  reserving nothing `:486`) runs `probe(args)` (`:427`): one call with `PROBE_PROMPT` (`:95`) at the
+- `review_run.py --probe` (`plugin/crew/hooks/scripts/review_run.py:479`, codex only `:489`,
+  reserving nothing `:491`) runs `probe(args)` (`:433`): one call with `PROBE_PROMPT` (`:95`) at the
   round's own model and effort, `PROBE_TIMEOUT` 120 s (`:94`); prints `PROBE=` and `PROBE_DETAIL=`
-  and exits 0 ok, 5 limited, 6 failed, 7 unknown (`:96`, `:488-493`). A limit recorded by the round
-  before answers `limited` with no call (`:435-437`); a delivered message at exit 0 is `ok` even if
-  Codex retried a 429 (`:447-448`); a timeout is `unknown`, never `ok` (`:452-453`); a limit named in a timed-out call's error or stderr is `limited` (`:449-451`).
-- The classifier is `review_limit.limit_line(*texts)` (`plugin/crew/hooks/scripts/review_limit.py:59`)
-  over `LIMIT_PATTERNS` (`:46-54`), each pattern cited to `openai/codex` `error.rs` in its comment;
+  and exits 0 ok, 5 limited, 6 failed, 7 unknown (`:96`, `:494-499`). A limit recorded by the round
+  before answers `limited` with no call (`:441-443`); a delivered message at exit 0 is `ok` even if
+  Codex retried a 429 (`:453-454`); a timeout is `unknown`, never `ok` (`:458-459`); a limit named in a timed-out call's error or stderr is `limited` (`:455-457`).
+- The classifier is `review_limit.limit_line(*texts)` (`plugin/crew/hooks/scripts/review_limit.py:68`)
+  over `LIMIT_PATTERNS` (`:55-63`), each pattern cited to `openai/codex` `error.rs` in its comment;
   "model at capacity" and "high demand" are deliberately not limits.
-- Mid-round: `review_run.run` judges only a FAILED call (`review_run.py:412-413`) and, on a limit,
-  `review_limit.record` (`review_limit.py:75`, called at `review_run.py:414-415`) writes `<git-common-dir>/crew/review/<ticket>.limit.json`
-  (`marker_path`, `:69`) and prints `review: codex usage limit in round N: ...` (`review_run.py:421-423`).
-  `review_limit.recorded` (`:93`) honours the marker only while its round equals the ledger's
-  `rounds_used` - the next round only; missing, corrupt or an UNKNOWN ledger is None and the live
-  probe decides.
+- Mid-round: `review_run.run` judges only a FAILED call (`review_run.py:412-413`) and, AFTER
+  `finish` has put the round's verdict on the ledger (`:418`), `review_limit.record`
+  (`review_limit.py:84`, called at `review_run.py:423-429`) writes
+  `<git-common-dir>/crew/review-limit/<ticket>.json` (`marker_path`, `:78`; `MARKER_DIR`, `:65`) -
+  not the ledgers' folder, which `crew_status._review_lines` lists as tickets and where a dotted
+  ticket id `<id>.limit` would share the path - and prints `review: codex usage limit in round N:
+  ...`. An OSError from the write is caught and printed as `could not record it (...)`; the round
+  keeps its INCOMPLETE record and exit 3, and `record` removes its temp file. `review_limit.recorded`
+  (`:111`) honours the marker only while its round equals the ledger's `rounds_used` (`:128`) - the
+  next round only; a marker whose `round` is not an int (a bool is refused) or whose `error` is not
+  a non-empty string (`:125-127`), missing, corrupt, or an UNKNOWN ledger is None and the live probe
+  decides.
 - The round a limit sends to Claude is spent as before; refunding it is T-0087's, not this ticket's.
   `commands/review.md:239` carries the rule and `:447` the mid-round record.
 
@@ -997,7 +1009,7 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
 - `plugin/crew/hooks/scripts/crew_state.py:2904` — `evaluate_triggers`.
 - `plugin/crew/hooks/scripts/crew_config.py:241` / `:394` —
   `default_config()` / `default_global_config()`.
-- `plugin/crew/hooks/scripts/crew_config.py:2457` — `_RATCHETED`, the
+- `plugin/crew/hooks/scripts/crew_config.py:2460` — `_RATCHETED`, the
   14-key ratchet table (seven construction steps).
 - `plugin/crew/hooks/scripts/role_write_guard.py:540` — `classify`, the
   decision function; `:685` — `main()`.
@@ -2215,3 +2227,5 @@ this note beyond the citation script and the tuple count.
 **Re-anchored `25d2de63` -> `136f4b33` on 2026-09-28 (T-0092 merged onto `ff59160f`, T-0089, crew 1.0.54).** `e2220836` merges origin/main `ff59160f` (T-0089 landed as crew 1.0.53 at `0f526a8c`: `plugin/crew/tests/test_role_write_guard.py` fixtures and a `CHANGELOG.md` entry) into `T-0092-build`; the merge was clean. `136f4b33` re-bumps crew to 1.0.54 and moves T-0092's `1.0.53` mentions (`review_patch.py`'s docstring, `plugin/crew/README.md:842`, `TODO.md:5051`, the two test-file comments, its `CHANGELOG.md` heading) to 1.0.54, all in place. Every body citation of the form `path:line` into a file changed between `25d2de63` and `136f4b33` was compared by script: the only differences are version-file lines changed in place, `plugin/crew/README.md:842` in place, and lines cited inside dated provenance notes (`CHANGELOG.md`, which T-0089's entry shifts by 12 lines below `:80`, and `TODO.md:5048`), left as history at their own commit. No citation into `test_role_write_guard.py` exists here. The version sentence and the T-0092 DERIVED bullet move to 1.0.54. Nothing was executed for this note.
 
 **Re-anchored `6caa1872` / `136f4b33` -> `0339bf3c` on 2026-09-28 (T-0088 merges origin/main `6387ab49`, T-0092 landing, and re-bumps crew to 1.0.55).** `04dc2a78` merges origin/main `6387ab49` (T-0092 landed as crew 1.0.54 at `2442d367`, after T-0090's `b2553d26` and T-0089's `0f526a8c`) into `T-0088-build`; its conflicts were the version files (main's 1.0.54 taken), `CHANGELOG.md` (both `[Unreleased]` entries kept) and the refresh artifacts (anchor lines, re-anchor paragraphs and INDEX rows, both histories kept). `0339bf3c` re-bumps crew to 1.0.55 and moves T-0088's own `1.0.53` mentions (`plugin/crew/CONFIG.md:117`, `plugin/crew/README.md:932`, `docs/guides/crew/src/troubleshooting.md:166` and its rebuilt HTML/DOCX/PDF) to 1.0.55, all in place. `git diff --name-only 6caa1872 0339bf3c`, refresh artifacts aside, returns main's files since the merge base (T-0092's `review_patch.py`, `review_prompt.py`, `completion_audit.py`, `crew_autopilot.py`, `commands/review.md`, `README.md` and their tests; T-0090's `mcp-servers/` and `SECURITY.md`; T-0089's `test_role_write_guard.py`; `CHANGELOG.md`, `TODO.md`) and the bump's files. Every body citation of the form `path:line` into those files was compared by script (`/root/crew-tmp/t-0088/cites.py`, local): 104 checked, and each one's cited text at `0339bf3c` equals its text at `6caa1872` or at `136f4b33` except 26. 22 are the version lines (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`), which now read 1.0.55 and are cited, outside the current-version sentence, only inside dated provenance notes left as history. The other four are `CHANGELOG.md` line numbers inside dated re-anchor notes (`:276-277`, `:436-437`, `:65`, `:653-654`), which every landing's `[Unreleased]` entry shifts; they are left as history at their own commits, and T-0004's "117 -> 119" is now `CHANGELOG.md:853-854`, re-read with `sed -n` at `0339bf3c`. The version sentence moves to 1.0.55; the T-0092 DERIVED bullet keeps 1.0.54, the release it landed in. Nothing was executed for this note.
+
+**Re-anchored `0339bf3c` -> `fe80f69d` on 2026-09-28 (T-0088 review round 1 fixes, crew 1.0.55 unchanged).** `c3624af6` fixes the round's four FIX and three NIT findings and `fe80f69d` rebuilds two guides. Of the paths this map cites, `crew_common.py` (the git call moves into `_main_checkout`, `--path-format` dropped, `shadowed_main_config`/`shadow_note` added), `crew_platform.py` (+7, the `SOURCE_UNKNOWN` stand-down), `crew_config.py` (+3 at `:2141`, so `_RATCHETED` moves `:2457` -> `:2460`), `review_run.py` (record after `finish`, +6 below `:418`), `review_limit.py` (marker directory, temp cleanup, shape check), `test_worktree_config.py` (+20 above the AST contract test), the docs and `BUDGETS.md:11` (the count, in place) changed. The resolver, heal and Codex-limit sections above were re-derived with `grep -n`/`sed -n` at `fe80f69d`; every other body citation of the form `path:line` into a changed file was compared by script (`/root/crew-tmp/t-0088/cites.py`, local) and holds, except `CHANGELOG.md` and `BUDGETS.md:11` lines inside dated provenance notes, left as history. `commands/review.md` changed only in place (`:239`, `:323`, `:447` hold). Nothing was executed for this note.

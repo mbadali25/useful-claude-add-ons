@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@a43acd56 on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@fe80f69d on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
@@ -153,6 +153,12 @@
 %% Anchors paths only crew_context.py changed - T-0076's byte-exact LF, +4 lines inside emit(),
 %% so its JSON write moves :1086 -> :1090 (re-read with sed -n; the note above and the out node
 %% now say :1090). Every other cited crew_context.py line is above :1086. No node or edge changed.
+%% Re-anchored a43acd56 -> fe80f69d (T-0088 merges origin/main 6387ab49, then its review round 1
+%% fixes, crew 1.0.55): of the Anchors paths only commands/status.md (the config row, in place; :14
+%% holds) and crew_platform.py (+7 in heal_config: it also stands down when git could not tell)
+%% changed; the merged origin/main commits touched no other Anchors path (git diff --name-only).
+%% ps1-ps3 moved +7 and are re-cited, mapped by a line diff (a43acd56 -> fe80f69d) and re-read with
+%% sed -n. No node or edge changed.
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
     start --> reg["hooks.json:3-10<br/>3 SessionStart pairs, sh + ps1, no matcher<br/>each claims per session+source"]
@@ -172,10 +178,10 @@ flowchart TB
     end
 
     subgraph platformSync["platform-sync (crew_platform.py)"]
-        PS --> ps1{"config or .crew/?<br/>:515-538"}
+        PS --> ps1{"config or .crew/?<br/>:522-545"}
         ps1 -- no --> psx([exit 0, silent])
-        ps1 -- yes --> ps2["heal_config if broken<br/>:555-571"]
-        ps2 --> ps3["detect machine,<br/>write changed platform fields<br/>:574-592"]
+        ps1 -- yes --> ps2["heal_config if broken<br/>:562-578"]
+        ps2 --> ps3["detect machine,<br/>write changed platform fields<br/>:581-599"]
     end
 
     subgraph crewContext["crew-context (crew_context.py)"]

@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@0339bf3c on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@fe80f69d on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_common.py
 %% T-0088: the REPO node now names the linked-worktree source - crew_state.load_config
 %% (plugin/crew/hooks/scripts/crew_state.py:267) reads crew_common.repo_config_file, and
@@ -306,6 +306,12 @@
 %% re-bumps crew to 1.0.55): of the Anchors paths only CONFIG.md changed, T-0088's own version mention at
 %% :117 (1.0.53 -> 1.0.55, in place); CONFIG.md is cited by name only. T-0092, T-0090 and T-0089 changed no
 %% Anchors path. Every path:line citation into a changed file was compared by script. No count, node or edge changed.
+%% Re-anchored 0339bf3c -> fe80f69d (T-0088 review round 1 fixes, crew 1.0.55 unchanged): of the
+%% Anchors paths crew_config.py (+3 at :2141, _repo_layer_line names an own config that shadows the
+%% main checkout's), crew_common.py (repo_config_dir's git call moved into _main_checkout, no
+%% --path-format; :96 holds) and CONFIG.md (cited by section only) changed. Every crew_config.py
+%% line cited below :2141 holds; PLAN, MERGEW, WIDEN, WRITE and RC moved +3 and are re-cited
+%% (re-read with sed -n at fe80f69d). No node or edge changed.
 flowchart TB
 
     subgraph Sources["Three sources, lowest precedence first"]
@@ -346,14 +352,14 @@ flowchart TB
 
     subgraph Write["The WRITE side - /crew:config --set"]
         direction TB
-        PLAN["plan_global_write()<br/>plugin/crew/hooks/scripts/crew_config.py:2572<br/><i>pure</i>; returns (merged, changes)"]
+        PLAN["plan_global_write()<br/>plugin/crew/hooks/scripts/crew_config.py:2575<br/><i>pure</i>; returns (merged, changes)"]
         ISG{"is_global_path()<br/>crew_config.py:702, checked at :2598"}
         REFUSE>"GlobalWriteRefused (class :2206)<br/>names the path AND lists every allowed one"]
         VAL{"validate_providers()<br/>crew_config.py:177, checked at :2619"}
         PERR>"ProviderError (class :173)<br/>a VALUE check, not a path check"]
-        MERGEW["merge, never replace - crew_config.py:2607<br/>keys the file already holds that<br/>the update does not name survive<br/>byte-for-byte"]
-        WIDEN["_widens()<br/>plugin/crew/hooks/scripts/crew_config.py:2273<br/>called at :2653. RANK, not equality."]
-        WRITE["write_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:2659<br/>the only function in crew that writes<br/>outside the repo. Sibling-then-rename<br/>with the PID in the tmp name, fsync<br/>before os.replace :2685-2692 - PRE-EXISTING<br/>since 0.16.7, not new at this anchor"]
+        MERGEW["merge, never replace - crew_config.py:2610<br/>keys the file already holds that<br/>the update does not name survive<br/>byte-for-byte"]
+        WIDEN["_widens()<br/>plugin/crew/hooks/scripts/crew_config.py:2276<br/>called at :2656. RANK, not equality."]
+        WRITE["write_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:2662<br/>the only function in crew that writes<br/>outside the repo. Sibling-then-rename<br/>with the PID in the tmp name, fsync<br/>before os.replace :2685-2692 - PRE-EXISTING<br/>since 0.16.7, not new at this anchor"]
     end
 
     PLAN --> ISG
@@ -369,7 +375,7 @@ flowchart TB
     subgraph Ratchet["Two DIFFERENT ratchet tables, not one - 14 write-side, 13 read-side"]
         direction TB
         RG["<b>READ side: crew_guards.RATCHETED_KEYS</b><br/>plugin/crew/hooks/scripts/crew_guards.py:522-549<br/><b>13 keys</b> (executed + len()'d, this pass):<br/>install.policy, change.requireForProduction,<br/>environments.prodUnattended (T-0005),<br/>and all TEN guards.* - terraformApply, forcePush,<br/>adminMerge, mergeGate, cloudDestructive,<br/>sqlDestructive, prodDatabase, prodServer,<br/>roleWrites, <b>cloudGuard (new)</b>.<br/>Consumed by crew_config.resolve_ratcheted() :816<br/>via crew_guards.effective_ratcheted() :564, called<br/>at crew_config.py:860"]
-        RC["<b>WRITE side: crew_config._RATCHETED</b><br/>plugin/crew/hooks/scripts/crew_config.py:2457<br/>(extended through :2569)<br/><b>14 keys</b>: the same thirteen PLUS pm.authority.<br/>pm.authority is still NOT in RATCHETED_KEYS -<br/>it resolves by ordinary precedence and only<br/>needs a widening NOTE when /crew:config writes it"]
+        RC["<b>WRITE side: crew_config._RATCHETED</b><br/>plugin/crew/hooks/scripts/crew_config.py:2460<br/>(extended through :2572)<br/><b>14 keys</b>: the same thirteen PLUS pm.authority.<br/>pm.authority is still NOT in RATCHETED_KEYS -<br/>it resolves by ordinary precedence and only<br/>needs a widening NOTE when /crew:config writes it"]
         RSHAPE["Confirmed by import + diff + type(), not<br/>asserted: 13-key intersection, pm.authority the<br/>only difference (`set(_RATCHETED) -<br/>set(RATCHETED_KEYS) == {'pm.authority'}`), and<br/>the tuple field order STILL differs -- (function,<br/>function, dict) here, (tuple, function, function)<br/>there -- so the two still cannot be collapsed<br/>into one table as written"]
         RG --- RC --- RSHAPE
     end
