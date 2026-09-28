@@ -163,7 +163,7 @@ contract itself. This section is what goes wrong with the approval and the audit
   read as `off`, guards at their defaults). `.crew/*` is gitignored, so `git worktree add` makes a
   checkout with no crew config.
   **Check:** `/crew:status` prints `config   inherited from the main checkout (<path>) ...` when
-  the worktree reads the main checkout's `.crew/config.json` (crew 1.0.52+, T-0088), and
+  the worktree reads the main checkout's `.crew/config.json` (crew 1.0.53+, T-0088), and
   `crew_config.py --root . --explain` starts with `repo layer: <path> (<source>)`.
   **Cause and fix:** a worktree with its own `.crew/config.json` or `.crew/crew.json` reads only
   those, never merged with the main checkout's - delete them to inherit. `(unknown)` means git

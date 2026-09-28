@@ -929,7 +929,7 @@ Two things never go through this layering, on purpose:
 
 **In a linked git worktree.** `.crew/*` is gitignored, so a lane made with
 `git worktree add` starts with no `.crew/config.json` or `.crew/crew.json`. Since
-crew 1.0.52 (T-0088) such a worktree reads the **main checkout's** repo config,
+crew 1.0.53 (T-0088) such a worktree reads the **main checkout's** repo config,
 found through `git rev-parse --git-common-dir` (`crew_common.repo_config_dir`).
 A worktree with either file of its own reads only its own files: they win whole,
 even when partial, and are **never merged** with the main checkout's. When `.git`
