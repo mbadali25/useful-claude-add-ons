@@ -430,13 +430,60 @@ TRACKER_MUTATIONS = (
         "        if False:\n",
         _TESTS + "test_vault_replaced_after_the_checks_writes_nothing",
     ),
+    # --- T-0077: Windows holds the directories by handle; nothing else writes ---
     (
-        # The Windows branch, run on POSIX by switching dir_fd support off.
-        "tracker's no-dir_fd branch writes without re-checking the directory",
+        # The old fallback: a path-only re-check a rename-and-replace passes.
+        "tracker writes on a platform that can neither pin by fd nor hold by handle",
         TRACKER,
-        "        yield paths[label], None, _parent_check(paths, label)\n",
-        "        yield paths[label], None, None\n",
-        _TESTS + "test_board_dir_swapped_for_a_link_after_the_checks_writes_nothing_outside",
+        "        if not _WIN_PIN:\n            raise OSError(errno.EOPNOTSUPP,",
+        "        if not _WIN_PIN:\n            yield paths[label], None, lambda: None\n            return\n"
+        "            raise OSError(errno.EOPNOTSUPP,",
+        _TESTS + "test_a_platform_with_no_pin_refuses_as_could_not_tell",
+    ),
+    (
+        # With FILE_SHARE_DELETE the held handle no longer stops a rename.
+        "tracker's Windows pin lets a held directory be renamed",
+        TRACKER,
+        "_PIN_SHARE = _FILE_SHARE_READ | _FILE_SHARE_WRITE\n",
+        "_PIN_SHARE = _FILE_SHARE_READ | _FILE_SHARE_WRITE | _FILE_SHARE_DELETE\n",
+        _TESTS + "test_pin_share_mask_never_lets_a_held_directory_be_renamed",
+    ),
+    (
+        # Measured: an attribute-only handle does not take part in sharing.
+        "tracker's Windows pin opens its handles with attribute access only",
+        TRACKER,
+        "_PIN_ACCESS = _FILE_LIST_DIRECTORY | _FILE_READ_ATTRIBUTES\n",
+        "_PIN_ACCESS = _FILE_READ_ATTRIBUTES\n",
+        _TESTS + "test_pin_share_mask_never_lets_a_held_directory_be_renamed",
+    ),
+    (
+        "tracker's Windows pin writes into whatever directory now sits at the vault's path",
+        TRACKER,
+        '            if index == 0 and (seen.st_dev, seen.st_ino) != paths["vaultId"]:\n',
+        "            if False:\n",
+        _TESTS + "test_the_handle_pin_refuses_a_different_vault",
+    ),
+    (
+        # The unknown-collapses-to-safe bug: no file id read as the same directory.
+        "tracker's Windows pin takes a directory with no file id as the one checked",
+        TRACKER,
+        "            if not seen.st_ino:\n",
+        "            if False:\n",
+        _TESTS + "test_the_handle_pin_refuses_a_zero_file_id_as_could_not_tell",
+    ),
+    (
+        "tracker's Windows pin walks through a reparse point",
+        TRACKER,
+        '            if getattr(seen, "st_file_attributes", 0) & _REPARSE_POINT:\n',
+        "            if False:\n",
+        _TESTS + "test_the_handle_pin_refuses_a_reparse_point_on_the_walk",
+    ),
+    (
+        "tracker's Windows pin writes without re-checking the held directory",
+        TRACKER,
+        "            yield paths[label], None, _held_check(paths, label, held)\n",
+        "            yield paths[label], None, lambda: None\n",
+        _TESTS + "test_the_held_check_refuses_when_the_path_no_longer_reaches_the_held_directory",
     ),
     (
         # Round 2 NIT (:72): STATUS_ORDER was defined and never read.
