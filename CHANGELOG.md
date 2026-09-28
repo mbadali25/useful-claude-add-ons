@@ -10,9 +10,12 @@ All notable changes to this repository are documented here. Format follows [Keep
   Bumped `1.0.47 -> 1.0.48` (1.0.43, then 1.0.44, on its branch; main gave 1.0.43 to
   T-0042, and T-0018 landed first as 1.0.47).
   - **The one exception to T-0018's read-only autopilot (owner decision,
-    2026-09-27).** `crew_autopilot.py` is read-only except `approve`, which
-    writes only the approval receipt, and only when `approval_policy` allows
-    under the configured policy; `next`, `resume`, `settings`, `stops`,
+    2026-09-27).** `crew_autopilot.py` is read-only except `approve`, and
+    only when `approval_policy` allows under the configured policy; `approve`
+    writes what `crew_ticket.approve` writes for every route: `approval.json`,
+    `scope-tickets.json` on a ticket's first approval, and, for a distinct
+    successor plan, the review ledger moved NEEDS_REPLAN -> IN_REVIEW. `next`,
+    `resume`, `settings`, `stops`,
     `route`, `status` and `questions-check` write nothing (tested: a snapshot
     of the worktree and `<git-common-dir>/crew/` is byte-identical after each,
     and `approve` adds exactly `approval.json` and, on a ticket's first
@@ -26,6 +29,14 @@ All notable changes to this repository are documented here. Format follows [Keep
     autopilot.md budget moves from 100 to 110 lines (T-0018's comment gave
     T-0010 part of the 20-line reserve), leaving 10 for T-0012, T-0019 and
     T-0020.
+  - Review round 3's BLOCK and two FIXes: every statement of the exception
+    (module and `approve` docstrings, `commands/autopilot.md`, README, CONFIG.md,
+    the daily-workflow guide, the code map) names what `approve` writes instead
+    of "only the approval receipt"; `status` reads no approval or questions
+    policy (`next_phase(..., policy=False)`), so its approve and open-questions
+    lines read the same under every setting and no longer name the autopilot
+    route while waiting on the owner; and README's phase table states the policy
+    route at `approve`. Tests pin each, with a POLICY_MUTATIONS entry per fix.
   - Review round 2's two FIXes (filed as T-0078): `commands/autopilot.md`
     states the `questions.md` shape `questions-check` enforces (`## Q<n>`, a
     `Research:` line, 2-4 `### Option <id>` blocks, the first

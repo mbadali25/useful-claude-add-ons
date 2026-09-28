@@ -8,7 +8,8 @@ Subcommands `status`, `run`, `assign`, `goal`, `focus`; a bare ticket id or noth
 one ticket through spec, plan, approval, implement, refresh, review and done, following each phase
 command's procedure here in the order `crew_autopilot.py next` names from disk, stopping when a
 phase needs a person. Nothing here accepts a review or skips a phase, and nothing approves except
-section 3's `approve`, which writes only the approval receipt, under the approval policy.
+section 3's `approve`, under the approval policy; it writes `approval.json`, `scope-tickets.json`
+on a ticket's first approval, and a distinct successor plan's NEEDS_REPLAN -> IN_REVIEW ledger move.
 
 ## 0. Route
 
@@ -20,10 +21,9 @@ python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route --root . 
 ```
 
 It prints `sub=<s> stop=<0|1> ticket=<t> reason=<r>`. Anything but a `sub=` line - no output,
-a traceback, a non-zero exit - is a stop. `stop=1`: print the reason and stop
-(an unknown word is never read as a ticket; `assign`, `goal`, `focus` arrive
-with T-0019, T-0012, T-0020). `sub=status`: section 1 only. `sub=run`:
-sections 2 to 5. `<ticket>` is route's `ticket=`, never re-read from the
+a traceback, a non-zero exit - is a stop. `stop=1`: print the reason and stop (an unknown word is
+never read as a ticket; `assign`, `goal`, `focus` arrive with T-0019, T-0012, T-0020). `sub=status`:
+section 1 only. `sub=run`: sections 2 to 5. `<ticket>` is route's `ticket=`, never re-read from the
 arguments; from `resume` on, `<ticket>` is the `ticket=` resume printed.
 
 ## 1. status

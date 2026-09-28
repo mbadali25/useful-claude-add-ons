@@ -366,6 +366,7 @@ _P = "tests/test_crew_autopilot_policy.py::"
 _CT = "tests/test_crew_ticket.py::"
 _SG = "tests/test_scope_guard.py::"
 _R = "tests/test_crew_route.py::"
+README = os.path.join(CREW, "README.md")
 
 POLICY_MUTATIONS = (
     ("approval: risk approves a med spec", AUTOPILOT,
@@ -539,7 +540,45 @@ POLICY_MUTATIONS = (
      _R + "test_policy_subcommands_are_not_command_subcommands"),
     ("the command says nothing approves", COMMAND,
      "Nothing here accepts a review or skips a phase, and nothing approves except\n"
-     "section 3's `approve`, which writes only the approval receipt, under the approval policy.\n",
+     "section 3's `approve`, under the approval policy; it writes `approval.json`, "
+     "`scope-tickets.json`\n",
      "Nothing here approves, accepts a review, or skips a phase.\n",
      _P + "test_command_states_the_approve_exception"),
+    # ---- T-0010 review round 3 (T-0010-solo--V7Q7fm): the BLOCK, both FIXes,
+    # and each one's neighbour
+    ("BLOCK: the module docstring says approve writes only approval.json", AUTOPILOT,
+     "`<git-common-dir>/crew/`: `approval.json`; `scope-tickets.json`, the scope\n"
+     "ramp's list, on a ticket's first approval; and, when the review ledger is\n",
+     "`<git-common-dir>/crew/`: `approval.json` and nothing else; when the review ledger is\n",
+     _P + "test_every_statement_of_the_exception_names_what_approve_writes"),
+    ("BLOCK: the command drops the ledger's successor continuation", COMMAND,
+     "on a ticket's first approval, and a distinct successor plan's NEEDS_REPLAN -> IN_REVIEW "
+     "ledger move.\n",
+     "on a ticket's first approval.\n",
+     _P + "test_every_statement_of_the_exception_names_what_approve_writes"),
+    ("BLOCK: README says approve writes only the approval receipt", README,
+     "— except `approve`, and only when `autopilot.approval` allows it",
+     "— except `approve`, which writes only the approval receipt, and only when "
+     "`autopilot.approval` allows it",
+     _P + "test_no_statement_of_the_exception_says_approve_writes_only_the_receipt"),
+    ("approve of a successor plan leaves the ledger NEEDS_REPLAN", TICKET,
+     "    if ledger.get(\"state\") == review_ledger.NEEDS_REPLAN:\n",
+     "    if False:\n",
+     _P + "test_approve_of_a_successor_plan_writes_the_receipt_and_moves_the_ledger"),
+    ("FIX: status for a named ticket reads the approval policy", AUTOPILOT,
+     '"disagreement": "", "next": next_phase(top, ticket, policy=False)}',
+     '"disagreement": "", "next": next_phase(top, ticket)}',
+     _S + "test_status_at_approve_reads_the_same_under_an_allowing_policy[self-T-1]"),
+    ("status with no ticket reads the approval policy", AUTOPILOT,
+     "        pick = bare = resume_target(top, policy=False)\n",
+     "        pick = bare = resume_target(top)\n",
+     _S + "test_status_at_approve_reads_the_same_under_an_allowing_policy[self-None]"),
+    ("status at open questions reads the questions policy", AUTOPILOT,
+     "(_question_hint(top, ticket) if policy else POLICY_FREE_QUESTIONS)",
+     "_question_hint(top, ticket)",
+     _S + "test_status_at_open_questions_reads_the_same_under_every_questions_policy[T-1]"),
+    ("FIX: README's phase table sends every unaccepted approval to the human", README,
+     "stop — **you** type `/crew:approve <id>`, unless `autopilot.approval` allows",
+     "stop — **you** type `/crew:approve <id>`, unless nothing allows",
+     _P + "test_readme_phase_table_names_the_policy_route_at_approve"),
 )

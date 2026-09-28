@@ -16,14 +16,15 @@ T-0004. The lifecycle is prose commands (spec, plan, implement, review,
 done); `/crew:autopilot` follows each one's procedure in-session. This module
 is what names the NEXT one, from files on disk and nothing else, so a skipped
 phase is visible and a phase that cannot be told stops. Read-only except
-`approve`, which writes only the approval receipt, and only when
-`approval_policy` allows under the configured policy; it never accepts a
-review. That is the single exception (T-0010, below): `next`, `resume`,
-`settings`, `stops`, `route`, `status` and `questions-check` write no file.
-The receipt is what `crew_ticket.approve` writes for every approval route,
-`/crew:approve` included, all under `<git-common-dir>/crew/`: `approval.json`,
-the scope ramp's `scope-tickets.json` on a ticket's first approval, and a
-NEEDS_REPLAN ledger's successor continuation. Run as a script it writes no
+`approve`, and only when `approval_policy` allows under the configured policy;
+it never accepts a review. That is the single exception (T-0010, below):
+`next`, `resume`, `settings`, `stops`, `route`, `status` and `questions-check`
+write no file. `approve` writes exactly what `crew_ticket.approve` writes for
+every approval route, `/crew:approve` included, all under
+`<git-common-dir>/crew/`: `approval.json`; `scope-tickets.json`, the scope
+ramp's list, on a ticket's first approval; and, when the review ledger is
+NEEDS_REPLAN and the plan is a distinct successor, the ledger itself, moved
+NEEDS_REPLAN -> IN_REVIEW (the successor continuation). Run as a script it writes no
 bytecode either, however it is invoked (`-B` or not); a module that imports it
 keeps its own bytecode setting.
 
@@ -371,8 +372,10 @@ def _header_only_change(contract, receipt):
     return None
 
 
-def _phase(root, ticket):
-    """`next`'s phase table (module docstring), with no session guard."""
+def _phase(root, ticket, policy=True):
+    """`next`'s phase table (module docstring), with no session guard.
+    `policy=False` is `status`'s read: the approve and open-questions reasons
+    then name no policy, so status reads the same under every setting."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     folder = crew_ticket.ticket_dir(top, ticket)
     evidence = []
@@ -415,7 +418,7 @@ def _phase(root, ticket):
         return answer("open-questions", True, "unanswered under ## Open questions: "
                       + "; ".join(f"{name}: {item}" for name, item in questions[:4])
                       + " - a person answers (write `none - <answer>` or check it `[x]`). "
-                      + _question_hint(top, ticket))
+                      + (_question_hint(top, ticket) if policy else POLICY_FREE_QUESTIONS))
     if contract["spec.md"] is None:
         return answer("spec", False, "no spec.md", f"/crew:spec {ticket}")
     spec_only = crew_ticket.validate(top, ticket, {"spec.md": contract["spec.md"],
@@ -440,8 +443,9 @@ def _phase(root, ticket):
             f"`status: {_header_status(crew_ticket._text(contract['spec.md']))}`), an edit "  # pylint: disable=protected-access
             "T-0026's approval digest keeps only for a receipt written since T-0026 and a "
             "value in crew_ticket.STATUS_VALUES; this one is older or the value is not")
-        return answer("approve", True, f"{why}. {_approval_hint(top, ticket)}",
-                      f"/crew:approve {ticket}")
+        hint = (_approval_hint(top, ticket) if policy
+                else POLICY_FREE_APPROVE.format(ticket=ticket))
+        return answer("approve", True, f"{why}. {hint}", f"/crew:approve {ticket}")
     return _review_phase(top, ticket, evidence, answer)
 
 
@@ -509,15 +513,17 @@ def _review_phase(top, ticket, evidence, answer):
     return answer("done", False, f"{message}; artifacts fresh", f"/crew:done {ticket}")
 
 
-def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None):
+def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
+               policy=True):
     """`{"ticket", "phase", "stop", "reason", "command", "evidence"}`. A
     `stop` phase's `command` is what the HUMAN types, never run by autopilot.
     `max_phases` and `last_command` are the session's count and the command it
     last ran: reaching the count, or being handed the same command again, stops.
     So does a phase that would run while `crew_ticket.resolve_active` -- what
-    the scope guard reads -- names another ticket, none, or a broken pointer."""
+    the scope guard reads -- names another ticket, none, or a broken pointer.
+    `policy=False` is `status`'s: see `_phase`."""
     crew_ticket.check_ticket(ticket)
-    result = _phase(root, ticket)
+    result = _phase(root, ticket, policy)
     if result["stop"]:
         return result
     active, where, broken = crew_ticket.resolve_active(
@@ -603,10 +609,11 @@ def _handoff_ticket(top):
     return arg, (render(parsed) if callable(render) else f"{command} {arg}"), None, ""
 
 
-def resume_target(root, ticket=None):
+def resume_target(root, ticket=None, policy=True):
     """`{"ticket", "source", "stop", "hint", "disagreement", "reason",
     "fallthrough", "next", "activate"}` -- see the module docstring's order.
-    `ticket` is the command's `$1`; it is still held to the active pointer."""
+    `ticket` is the command's `$1`; it is still held to the active pointer.
+    `policy=False` is `status`'s: see `_phase`."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     fallthrough = []
 
@@ -653,7 +660,7 @@ def resume_target(root, ticket=None):
                        f"is {active}, and the scope guard and completion audit judge edits "
                        f"by {active}'s approval and Touch. Run /crew:autopilot {active}, or "
                        f"the human re-points it: crew_ticket.py activate --ticket {ticket}")
-    disk = next_phase(top, ticket)
+    disk = next_phase(top, ticket, policy=policy)
     disagreement = ""
     if hint and not hint.startswith(AUTOPILOT + " ") and hint != disk["command"]:
         disagreement = (f"the handoff says {hint}, the disk says "
@@ -819,6 +826,17 @@ def question_policy(root, ticket):
                                f"{_risk_words(risk)}")
 
 
+# `status`'s approve and open-questions sentences: fixed text, so the report
+# reads the same under every autopilot.approval and autopilot.questions value
+# (T-0018's status reads no policy; `next` names the policy's route instead).
+POLICY_FREE_APPROVE = ("The human types /crew:approve {ticket}. status reads no approval "
+                       "policy: crew_autopilot.py settings shows whether autopilot.approval "
+                       "lets /crew:autopilot approve it instead")
+POLICY_FREE_QUESTIONS = ("status reads no questions policy: crew_autopilot.py settings shows "
+                         "whether autopilot.questions lets /crew:autopilot research and "
+                         "answer them instead")
+
+
 def _approval_hint(top, ticket):
     """The approve phase's second sentence: which route approves, and why."""
     got = approval_policy(top, ticket)
@@ -835,9 +853,12 @@ def _question_hint(top, ticket):
 
 
 def approve(root, ticket):
-    """(exit code, text). The one write this module makes: an `autopilot`
-    receipt, only when autopilot is armed and `approval_policy` allows.
-    `crew_ticket.approve` asks `approval_policy` again before it writes."""
+    """(exit code, text). This module's one writing path, only when autopilot
+    is armed and `approval_policy` allows: `crew_ticket.approve` with
+    `via=autopilot`, which asks `approval_policy` again and then writes
+    `approval.json`, `scope-tickets.json` on a ticket's first approval, and,
+    for a distinct successor plan under a NEEDS_REPLAN ledger, the ledger
+    moved NEEDS_REPLAN -> IN_REVIEW. Exit 3 when that continuation refused."""
     crew_ticket.check_ticket(ticket)
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     human = f"the human types /crew:approve {ticket}"
@@ -1076,9 +1097,10 @@ def _reserved_round(top, ticket):
 
 def _bare(top):
     """What bare `/crew:autopilot` would take: `resume_target(top)`, or None
-    when it raised -- could not tell, which is never read as agreeing."""
+    when it raised -- could not tell, which is never read as agreeing. Read
+    with no policy, as everything status composes is."""
     try:
-        return resume_target(top)
+        return resume_target(top, policy=False)
     except Exception:  # pylint: disable=broad-except
         return None
 
@@ -1105,7 +1127,7 @@ def _waiting(top, result, bare):
             return f"autopilot - run {AUTOPILOT} to continue"
         return f"autopilot - run {_drive(result['ticket'])} to continue"
     try:
-        guard = not _phase(top, result["ticket"])["stop"]
+        guard = not _phase(top, result["ticket"], policy=False)["stop"]
     except Exception:  # pylint: disable=broad-except
         return "unknown (could not tell which check stopped the phase)"
     if guard:
@@ -1229,21 +1251,23 @@ def status(root, ticket=None):
     "command", "stop", "phase_reason", "waiting", "review", "resume_line",
     "fallthrough", "disagreement"}`. Read-only: composes `settings`,
     `resume_target` (or `next_phase` for an argument), `review_ledger.status`
-    and `crew_resume`. Whatever it cannot tell reads `unknown`."""
+    and `crew_resume`. Whatever it cannot tell reads `unknown`. It reads no
+    approval or questions policy (`policy=False`): its lines are the same
+    under every setting, and `next` is what names the policy's route."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     conf = settings(top)
     if ticket:
         crew_ticket.check_ticket(ticket)
         if os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
             pick = {"ticket": ticket, "source": "argument", "reason": "", "fallthrough": [],
-                    "disagreement": "", "next": next_phase(top, ticket)}
+                    "disagreement": "", "next": next_phase(top, ticket, policy=False)}
         else:
             pick = {"ticket": None, "source": "argument", "fallthrough": [],
                     "disagreement": "", "next": None,
                     "reason": f"{ticket} has no .work/tickets/ folder"}
         bare = _bare(top)
     else:
-        pick = bare = resume_target(top)
+        pick = bare = resume_target(top, policy=False)
     disk = pick.get("next") or {}
     found = pick.get("ticket")
     return {"mode": conf["mode"], "maxPhases": conf["maxPhases"], "warnings": conf["warnings"],

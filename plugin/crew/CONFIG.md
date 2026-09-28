@@ -2316,14 +2316,20 @@ policy in force says `stop`; switching between `self` and `risk` later does
 not void an earlier honest record. Every
 self-approval and every taken answer is reported by name.
 
-**The one writer.** `crew_autopilot.py` is read-only except `approve`, which
-writes only the approval receipt (`approval.json`, plus what
-`crew_ticket.approve` writes beside it for every route: the scope ramp's
-`scope-tickets.json` on a ticket's first approval, and a NEEDS_REPLAN ledger's
-successor continuation), and only when `autopilot.approval` allows it.
+**The one writer.** `crew_autopilot.py` is read-only except `approve`, and
+only when `autopilot.approval` allows it. `approve` writes exactly what
+`crew_ticket.approve` writes for every approval route, all under
+`<git-common-dir>/crew/`: `approval.json`; the scope ramp's
+`scope-tickets.json` on a ticket's first approval; and, when the review ledger
+is NEEDS_REPLAN and the plan is a distinct successor, the ledger itself, moved
+NEEDS_REPLAN -> IN_REVIEW (the successor continuation, a fresh review budget).
 `next`, `resume`, `settings`, `stops`, `route`, `status` and `questions-check`
-write nothing, and T-0018's `route` and `status` read no policy: `status` at
-the approve phase names `/crew:approve <id>` under every setting.
+write nothing, and T-0018's `route` and `status` read no policy of their own:
+`status`'s lines, the approve and open-questions reasons included, read the
+same under every setting, and at the approve phase it names
+`/crew:approve <id>`; `next` is what names the policy's route. The one policy
+effect `status` shows is `crew_ticket.accepted`'s: an `autopilot` receipt
+stands only while the policy still allows it.
 
 **What arming it does not change.** Review acceptance and brainstorm always
 stop for a person, at every setting — accepting review FINDINGS

@@ -1140,8 +1140,11 @@ def test_command_never_types_approve():
     text = _command_text()
     approving = [line for line in text.splitlines()
                  if "/crew:approve" in line and "human" not in line.lower()]
-    assert ("crew_ticket.py approve" in text, "approval.json" in text, approving) == (
-        False, False, [])
+    # T-0010 review round 3: the one `approval.json` is the exception sentence
+    # naming what section 3's `approve` script writes -- never a file to write.
+    rest = text.replace("it writes `approval.json`, `scope-tickets.json`", "", 1)
+    assert ("crew_ticket.py approve" in text, "approval.json" in rest, approving,
+            text.count("approval.json")) == (False, False, [], 1)
 
 
 def test_command_drives_through_the_cli_and_writes_the_resume_line():

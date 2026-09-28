@@ -718,8 +718,7 @@ def test_command_states_the_approve_exception():
 
     assert ("Nothing here approves" in flat,
             "only the human types `/crew:approve <ticket>`" in flat,
-            "nothing approves except section 3's `approve`, which writes only the approval "
-            "receipt, under the approval policy" in flat,
+            "nothing approves except section 3's `approve`, under the approval policy" in flat,
             "`plan-approval` and `open-questions` are a person unless section 3's policy "
             "allows" in flat) == (False, False, True, True)
 
@@ -730,12 +729,73 @@ def test_module_docstring_states_the_approve_exception():
     flat = " ".join(doc.split())
 
     assert ("never approves" in flat,
-            "Read-only except `approve`, which writes only the approval receipt, and only "
-            "when `approval_policy` allows under the configured policy; it never accepts a "
-            "review." in flat,
+            "Read-only except `approve`, and only when `approval_policy` allows under the "
+            "configured policy; it never accepts a review." in flat,
             "crew_autopilot.py approve --root . --ticket <id>" in usage,
             "crew_autopilot.py questions-check --root . --ticket <id>" in usage) == (
         False, True, True, True)
+
+
+# Review round 3's BLOCK: every statement of the exception names what approve
+# writes -- what crew_ticket.approve writes for every route -- never "only the
+# approval receipt". Each file is where the exception is stated.
+APPROVE_WRITES = ("`approval.json`", "`scope-tickets.json`", "on a ticket's first approval",
+                  "NEEDS_REPLAN -> IN_REVIEW")
+UNDERSTATED = ("writes only the approval receipt", "receipt and nothing else",
+               "The one write this module makes")
+
+
+def _exception_statements():
+    def read(*parts):
+        with open(os.path.join(*parts), encoding="utf-8") as handle:
+            return handle.read()
+    return {"crew_autopilot.py docstring": crew_autopilot.__doc__,
+            "crew_autopilot.approve docstring": crew_autopilot.approve.__doc__,
+            "commands/autopilot.md": _command_text(),
+            "README.md": read(_ROOT, "README.md"),
+            "CONFIG.md": read(_ROOT, "CONFIG.md"),
+            "daily-workflow-scope.md": read(_REPO, "docs", "guides", "crew", "src",
+                                            "daily-workflow-scope.md")}
+
+
+def test_every_statement_of_the_exception_names_what_approve_writes():
+    missing = {name: [w for w in APPROVE_WRITES if w not in " ".join(text.split())]
+               for name, text in _exception_statements().items()}
+
+    assert {name: gaps for name, gaps in missing.items() if gaps} == {}
+
+
+def test_no_statement_of_the_exception_says_approve_writes_only_the_receipt():
+    found = {name: [w for w in UNDERSTATED if w in " ".join(text.split())]
+             for name, text in _exception_statements().items()}
+
+    assert {name: hits for name, hits in found.items() if hits} == {}
+
+
+def test_approve_of_a_successor_plan_writes_the_receipt_and_moves_the_ledger(
+        tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "0")
+    root = _needs_replan_with_a_successor_plan(tmp_path)
+    ledger = review_ledger.ledger_path(str(root), T)
+    before = _files(root)
+
+    code = _main(root, "approve", "--ticket", T)
+    after = _files(root)
+    capsys.readouterr()
+
+    changed = sorted(p for p in set(before) | set(after) if before.get(p) != after.get(p))
+    assert (code, changed, review_ledger.status(str(root), T)["state"]) == (
+        0, sorted([crew_ticket.approval_path(str(root), T), ledger]), review_ledger.IN_REVIEW)
+
+
+def test_readme_phase_table_names_the_policy_route_at_approve():
+    with open(os.path.join(_ROOT, "README.md"), encoding="utf-8") as handle:
+        rows = [line for line in handle.read().splitlines()
+                if line.startswith("| approval not accepted")]
+
+    assert (len(rows), "`autopilot.approval`" in rows[0],
+            "`crew_autopilot.py approve`" in rows[0], "`/crew:approve <id>`" in rows[0],
+            "`scope.allowCliApproval: true`" in rows[0]) == (1, True, True, True, True)
 
 
 def test_command_states_questions_file_shape():

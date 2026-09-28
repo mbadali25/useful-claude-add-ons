@@ -1116,3 +1116,40 @@ def test_route_and_status_unaffected_by_approval_policy(tmp_path, policy):
 
     assert (code, _field(lines, "waiting on"), after == before, routed == plain) == (
         0, f"waiting on: owner - types /crew:approve {T}", True, True)
+
+
+def _status_under(root, config, key, value, ticket):
+    """status's text with `autopilot.<key>` set to `value` in `config`."""
+    settings = json.loads(config.read_text(encoding="utf-8"))
+    settings["autopilot"][key] = value
+    _write(config, json.dumps(settings))
+    return crew_autopilot.status_text(crew_autopilot.status(str(root), ticket))
+
+
+@pytest.mark.parametrize("ticket", [None, T])
+@pytest.mark.parametrize("policy", ["self", "risk"])
+def test_status_at_approve_reads_the_same_under_an_allowing_policy(tmp_path, policy, ticket):
+    from test_crew_autopilot_policy import _repo  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, approval="human", risk="low")
+    config = root / ".crew" / "config.json"
+    human = _status_under(root, config, "approval", "human", ticket)
+
+    allowing = _status_under(root, config, "approval", policy, ticket)
+
+    assert (allowing == human, "crew_autopilot.py approve" in allowing,
+            f"waiting on: owner - types /crew:approve {T}" in allowing) == (True, False, True)
+
+
+@pytest.mark.parametrize("ticket", [None, T])
+def test_status_at_open_questions_reads_the_same_under_every_questions_policy(tmp_path,
+                                                                             ticket):
+    from test_crew_autopilot_policy import _repo  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, questions="human", risk="low")
+    _write(root / ".work" / "tickets" / T / "direction.md",
+           "go\n\n## Open questions\n- which database?\n")
+    config = root / ".crew" / "config.json"
+    texts = [_status_under(root, config, "questions", value, ticket)
+             for value in ("human", "self", "risk")]
+
+    assert (texts[1:] == texts[:1] * 2, "action=" in texts[0],
+            "phase: open-questions, stopped" in texts[0]) == (True, False, True)

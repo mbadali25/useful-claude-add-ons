@@ -518,8 +518,10 @@ prints `status` (`## 1. status`, `:29-36`, read-only, armed or not) or drives
 one ticket through the phase commands **in-session**, following each
 command's own procedure; the run refuses unless armed (`:46-47`). The reader
 behind it, `plugin/crew/hooks/scripts/crew_autopilot.py` (1412 lines), is
-read-only except T-0010's `approve`, which writes only the approval receipt and only when
-`approval_policy` allows (module docstring, `:1-120`; the owner's carve-out of 2026-09-27),
+read-only except T-0010's `approve`, only when `approval_policy` allows, which writes what
+`crew_ticket.approve` writes for every route: `approval.json`, `scope-tickets.json` on a
+ticket's first approval, and a distinct successor plan's NEEDS_REPLAN -> IN_REVIEW ledger move
+(module docstring, `:1-120`; the owner's carve-out of 2026-09-27),
 with eight subcommands: `next`, `resume`, `settings`, `stops`, `route`, `status`, and
 T-0010's `approve` and `questions-check` - script subcommands, not `/crew:autopilot` ones.
 `next_phase` (`:512`) names the next phase from files on disk, first match wins (the table at
