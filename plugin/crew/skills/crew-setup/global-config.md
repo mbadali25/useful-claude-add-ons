@@ -170,10 +170,11 @@ overrides `memory.mode` in its own config.
 ## 3. Show the plan, then write
 
 From the menu, Save runs `crew_config_menu.py save --changes '<json>'` (a dry
-run over both layers, printing each layer's digest) and then the same with
-`--apply --expect-machine <digest>` — see `config-menu.md` step 4. It calls
-the same writer as the command below, which prints a `digest:` line too and
-takes `--expect <digest>` with `--apply`.
+run over both layers, printing each layer's digest, `absent` for a file that
+does not exist yet) and then the same with `--apply --expect-machine
+<digest>` — see `config-menu.md` step 4. It calls the same writer as the
+command below, which prints a `digest:` line too and takes `--expect
+<digest|absent>` with `--apply`.
 
 Dry run first — this is the default, and it is what the user says yes to:
 
@@ -186,8 +187,11 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py \
 Each `--set` takes `path=JSON`, so a string needs its quotes (`'"act"'`; a
 bare `act` is refused, exit 2), and
 `true`, `false`, `null`, lists and objects are written as JSON. `qa.roles` and
-`dev.roles` are set as whole objects — the table is open, so any role name is
-accepted, including one this release does not ship. The output names every key
+`dev.roles` are set one role at a time: each role named in the value is
+written as a whole pin, and the other roles' pins already in the file are
+kept. The table is open, so any role name is accepted, including one this
+release does not ship. A block value (`guards='{"forcePush": "ask"}'`) is
+written leaf by leaf the same way, keeping the block's other keys. The output names every key
 that would change, from what to what, and prints a `!` line for a widening of
 `pm.authority`.
 

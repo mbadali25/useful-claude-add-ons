@@ -35,7 +35,6 @@ import copy
 import datetime
 import json
 import os
-import re
 import shlex
 import sys
 import tempfile
@@ -182,9 +181,11 @@ def _probe_for(root, layer, global_path, pending):
             snap = crew_config.repo_snapshot(root)
         except crew_config.RepoWriteRefused as exc:
             return (lambda _d, _v: str(exc)), None, str(exc)
+        machine = crew_config.machine_view(global_path)
 
         def plan(updates):
-            crew_config.plan_repo_write(root, updates, global_path, snapshot=snap)
+            crew_config.plan_repo_write(root, updates, global_path, snapshot=snap,
+                                        machine=machine)
     else:
         refused = (crew_config.GlobalWriteRefused, crew_config.ProviderError)
         try:
@@ -436,11 +437,42 @@ def _print_spec(spec):
 
 
 def _current_digest(path):
-    try:
-        with open(path, "rb") as handle:
-            return crew_config_files.digest(handle.read())
-    except FileNotFoundError:
-        return None
+    """The file's `state_digest` now: its sha256, or `ABSENT`."""
+    return crew_config_files.read_tolerant(path)[1]
+
+
+def _plan_both(root, machine, repo, global_path):
+    """`(plans, digests, machine_after)` for one Save, both layers validated
+    before either is written. The repo plan's widening marks are judged
+    against the machine file as THIS Save leaves it, and the machine digest
+    is recorded whenever either layer changes: a repo-only Save depends on
+    the machine file too (review round 3)."""
+    plans, digests, after = {}, {}, None
+    if machine:
+        snap = crew_config.global_snapshot(global_path)
+        digests["machine"] = snap[2]
+        merged, plans["machine"] = crew_config.plan_global_write(
+            machine, global_path, snapshot=snap)
+        after = crew_config.filter_global(merged)[0]
+        view = (after, None)
+    else:
+        view = crew_config.machine_view(global_path)
+        digests["machine"] = view[1]
+    if repo:
+        snap = crew_config.repo_snapshot(root)
+        digests["repo"] = snap[2]
+        plans["repo"] = crew_config.plan_repo_write(
+            root, repo, global_path, snapshot=snap, machine=view)[1]
+    return plans, digests, after
+
+
+def _machine_as_written(global_path, planned):
+    """The digest of the machine file the repo write is bound to, after this
+    Save wrote it: its bytes read now, accepted only when they hold what the
+    plan wrote (else a foreign write landed in between; None)."""
+    parsed, state = crew_config_files.read_tolerant(
+        crew_config.GLOBAL_CONFIG_PATH if global_path is None else global_path)
+    return state if crew_config.filter_global(parsed)[0] == planned else None
 
 
 def save(root, changes, apply, global_path=None, expect=None):
@@ -449,28 +481,20 @@ def save(root, changes, apply, global_path=None, expect=None):
 
     Both plans are computed before either write: a refusal anywhere means
     nothing is written, which is the whole point of one Save for a pending
-    set that spans two files. The dry run prints each layer's digest; `expect`
-    (`{"machine": d, "repo": d}`, from those lines) is checked for BOTH layers
-    before either write and passed to each writer, whose compare-and-swap
-    refuses a file that changed in between.
+    set that spans two files. The dry run prints the machine digest whenever
+    anything changes and the repo digest when the repo does (`ABSENT` for no
+    file); `expect` (`{"machine": d, "repo": d}`, from those lines, any
+    subset) is checked before either write and passed to each writer, whose
+    compare-and-swap refuses a file that changed in between. The repo write
+    is bound to the machine file too, since its widening marks read it.
     """
     machine = dict((changes or {}).get("machine") or {})
     repo = dict((changes or {}).get("repo") or {})
-    expect = dict(expect or {})
+    expect = {k: v for k, v in (expect or {}).items() if v is not None}
     target = crew_config.GLOBAL_CONFIG_PATH if global_path is None else global_path
     files = {"machine": target, "repo": crew_config.repo_config_path(root)}
-    plans, digests = {}, {}
     try:
-        if machine:
-            snap = crew_config.global_snapshot(global_path)
-            digests["machine"] = snap[2]
-            plans["machine"] = crew_config.plan_global_write(
-                machine, global_path, snapshot=snap)[1]
-        if repo:
-            snap = crew_config.repo_snapshot(root)
-            digests["repo"] = snap[2]
-            plans["repo"] = crew_config.plan_repo_write(
-                root, repo, global_path, snapshot=snap)[1]
+        plans, digests, after = _plan_both(root, machine, repo, global_path)
     except (crew_config.GlobalWriteRefused, crew_config.RepoWriteRefused,
             crew_config.ProviderError) as exc:
         print(f"refused, nothing written: {exc}", file=sys.stderr)
@@ -480,7 +504,9 @@ def save(root, changes, apply, global_path=None, expect=None):
     for layer in LAYERS:
         if layer in plans:
             print(f"{layer} layer - {verb}: {files[layer]}")
-            print(f"{layer} digest: {digests[layer] or 'none (the file is absent)'}")
+        if layer in plans or (plans and layer == "machine"):
+            print(f"{layer} digest: {digests[layer]}")
+        if layer in plans:
             crew_config.print_changes(plans[layer])
     if not plans:
         print("nothing pending")
@@ -490,23 +516,31 @@ def save(root, changes, apply, global_path=None, expect=None):
         return 0
 
     for layer in LAYERS:
-        if expect.get(layer) and _current_digest(files[layer]) != expect[layer]:
+        if layer in expect and _current_digest(files[layer]) != expect[layer]:
             print(f"refused, nothing written: the {layer} layer changed since "
                   f"the dry run ({files[layer]}); re-run the dry run and "
                   "review it again", file=sys.stderr)
             return 2
 
     written = []
-    for layer, updates, writer in (
-            ("machine", machine, lambda u, **kw: crew_config.write_global_config(
-                u, global_path, **kw)),
-            ("repo", repo, lambda u, **kw: crew_config.write_repo_config(
-                root, u, global_path, **kw))):
+    for layer in LAYERS:
         if not plans.get(layer):
             continue
-        kwargs = {"expect": expect[layer]} if expect.get(layer) else {}
         try:
-            writer(updates, **kwargs)
+            if layer == "machine":
+                crew_config.write_global_config(machine, global_path,
+                                                expect=expect.get("machine"))
+            else:
+                bound = (expect.get("machine") if "machine" not in written
+                         else _machine_as_written(global_path, after))
+                if "machine" in written and bound is None:
+                    raise crew_config.RepoWriteConflict(
+                        "the machine-global file changed after this Save "
+                        "wrote it, so the repo plan's widening marks no "
+                        "longer hold")
+                crew_config.write_repo_config(root, repo, global_path,
+                                              expect=expect.get("repo"),
+                                              expect_global=bound)
         except (OSError, crew_config.GlobalWriteRefused,
                 crew_config.RepoWriteRefused, crew_config.ProviderError) as exc:
             # Validated a moment ago, refused now: the file changed (deleted,
@@ -742,35 +776,71 @@ class DeleteRefused(Exception):
     """The repo config cannot be deleted as it stands; nothing was touched."""
 
 
+def _machine_digest(global_path):
+    return crew_config_files.read_tolerant(
+        crew_config.GLOBAL_CONFIG_PATH if global_path is None else global_path)[1]
+
+
 def plan_delete(root, global_path=None):
     """Phase one: read and HOLD the file's bytes, refusing a file `restorable`
-    rejects (a restore could not take it back), and build the preview.
+    rejects or one that is not a regular file (`read_restorable`, the read
+    restore shares: a symlink moved into a backup is one restore refuses),
+    and build the preview.
 
-    `{"path", "held", "digest", "parsed", "rows", "name"}`."""
+    `{"path", "held", "digest", "machine", "parsed", "rows", "name"}`:
+    `digest` and `machine` are what the preview was computed from, and what
+    `--apply` must name (review round 3)."""
     path = crew_config.repo_config_path(root)
     try:
-        parsed, held = crew_config_files.read_strict(path)
+        parsed, held = crew_config_files.read_restorable(path)
     except crew_config_files.Unreadable as exc:
         if exc.kind == "absent":
             raise DeleteRefused(f"no {path} to delete") from exc
+        if exc.kind == "notregular":
+            raise DeleteRefused(
+                f"{exc}. Its backup would be one a restore refuses, so it is "
+                "not deleted; replace it with a regular file or remove it by "
+                "hand") from exc
         raise DeleteRefused(
             f"{exc}. A restore could not take this file back, so it is not "
             "deleted. platform-sync backs an unreadable config up to "
             "config.json.broken and heals it at the next SessionStart; or "
             "remove it by hand") from exc
+    machine = _machine_digest(global_path)
+    rows = delete_preview(root, parsed, global_path)
+    if _machine_digest(global_path) != machine:
+        raise DeleteRefused("the machine-global file changed while the "
+                            "preview was built; run it again")
     return {"path": path, "held": held, "digest": crew_config_files.digest(held),
-            "parsed": parsed, "rows": delete_preview(root, parsed, global_path),
+            "machine": machine, "parsed": parsed, "rows": rows,
             "name": repo_name(root)}
 
 
-def apply_delete(root, plan, confirm, now=None):
-    """Phase two: the typed name, then, under the config lock, ONE rename of
-    the file to a fresh `config.json.bak-<UTC>` (the backup is the original
-    inode: no copy, no moment the bytes are at neither name), then compare
-    the moved bytes with the held ones. A mismatch means the file changed
-    since the preview: it is renamed straight back and nothing is deleted.
-    Returns an exit code: 0 deleted, 2 refused (file in place), 1 a foreign
-    writer interleaved (both files kept, both named)."""
+def _unbound(plan, expect):
+    """Why `expect` does not name the preview `plan` was built from, or None.
+    Both digests are required: the rows depend on the repo file AND the
+    machine file, and the typed name confirms those rows, not a fresh plan."""
+    expect = expect or {}
+    for layer, have in (("repo", plan["digest"]), ("machine", plan["machine"])):
+        if expect.get(layer) is None:
+            return (f"--apply needs --expect-{layer} <digest> from the preview "
+                    "(the dry run prints it), so the delete is the one the "
+                    "preview showed")
+        if expect[layer] != have:
+            return (f"the {layer} file changed since the preview (digest "
+                    f"{have}, expected {expect[layer]}); run the preview again")
+    return None
+
+
+def apply_delete(root, plan, confirm, now=None, expect=None):
+    """Phase two: the typed name and the preview's two digests (`expect`),
+    then, under the config lock, ONE no-clobber rename of the file to a fresh
+    `config.json.bak-<UTC>` (the backup is the original inode: no copy, no
+    moment the bytes are at neither name), then compare the moved bytes with
+    the held ones. A mismatch means the file changed since the preview: it is
+    moved straight back, never over a file saved in the gap. Returns an exit
+    code: 0 deleted, 2 refused (file in place), 1 a foreign writer
+    interleaved (both files kept, both named)."""
     path = plan["path"]
     if confirm != plan["name"]:
         why = ("no confirmation" if confirm is None
@@ -778,17 +848,22 @@ def apply_delete(root, plan, confirm, now=None):
         print(f"refused ({why}): type the repo name to confirm - "
               f"--confirm {plan['name']}", file=sys.stderr)
         return 2
+    problem = _unbound(plan, expect)
+    if problem:
+        print(f"refused, nothing deleted: {problem}", file=sys.stderr)
+        return 2
     try:
         with crew_config_files.Lock(path):
             backup = _free_backup(root, now)
             got = crew_config_files.move_aside(path, backup)
             if got != plan["held"]:
-                if os.path.lexists(path):
+                try:
+                    crew_config_files.move_no_clobber(backup, path)
+                except FileExistsError:
                     print(f"refused: {path} changed since the preview and a "
                           f"new file appeared there too; the moved one is at "
                           f"{backup}. Check both.", file=sys.stderr)
                     return 1
-                os.replace(backup, path)
                 print(f"refused: {path} changed since the preview; it is back "
                       "in place and nothing was deleted. Re-run the preview.",
                       file=sys.stderr)
@@ -796,6 +871,9 @@ def apply_delete(root, plan, confirm, now=None):
     except crew_config_files.Busy as exc:
         print(f"refused: {exc}; {path} left in place", file=sys.stderr)
         return 2
+    except crew_config_files.Displaced as exc:
+        print(f"refused: {exc}; nothing is lost, check {path}", file=sys.stderr)
+        return 1
     except OSError as exc:
         print(f"refused: {path} could not be moved to a backup ({exc}); left "
               "in place", file=sys.stderr)
@@ -810,29 +888,35 @@ def apply_delete(root, plan, confirm, now=None):
     return 0
 
 
-def delete_repo_config(root, confirm, apply, now=None, global_path=None):
-    """Preview (phase one), then with the typed name and `apply`, the
-    compare-and-delete (phase two). Returns 0 on a delete or a confirmed dry
-    run, 2 on a refusal."""
+def delete_repo_config(root, confirm, apply, now=None, global_path=None,
+                       expect=None):
+    """Preview (phase one), then with the typed name, `apply` and the
+    preview's digests (`expect`), the compare-and-delete (phase two). Returns
+    0 on a delete or a confirmed dry run, 2 on a refusal."""
     try:
         plan = plan_delete(root, global_path)
     except DeleteRefused as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return 2
     _print_preview(root, plan["rows"])
+    print(f"repo digest: {plan['digest']}")
+    print(f"machine digest: {plan['machine']}")
     if not apply:
         if confirm != plan["name"]:
             return apply_delete(root, plan, confirm, now)
         print(f"would move {plan['path']} to {_free_backup(root, now)} (the "
               "backup is the file itself), compare it with what this preview "
-              "read, and report it deleted (dry run; add --apply)")
+              "read, and report it deleted (dry run; add --apply "
+              f"--expect-repo {plan['digest']} --expect-machine "
+              f"{plan['machine']})")
         return 0
-    return apply_delete(root, plan, confirm, now)
+    return apply_delete(root, plan, confirm, now, expect)
 
 
 def _valid_backup(root, backup):
-    """`(problem, data)`: the location and name rules, then `restorable` on
-    the bytes -- the predicate delete refuses by, so the two cannot drift."""
+    """`(problem, data)`: the location and name rules, then `read_restorable`
+    on the backup itself -- the read delete refuses by (a regular file that
+    `restorable` accepts), so the two cannot drift."""
     crew_dir = os.path.realpath(os.path.join(root, ".crew"))
     real = os.path.realpath(backup)
     if os.path.dirname(real) != crew_dir:
@@ -840,14 +924,9 @@ def _valid_backup(root, backup):
     if not os.path.basename(real).startswith(BACKUP_PREFIX):
         return f"{backup} is not named {BACKUP_PREFIX}*", None
     try:
-        with open(real, "rb") as handle:
-            data = handle.read()
-    except OSError as exc:
-        return f"{backup} cannot be read ({exc})", None
-    problem = crew_config_files.restorable(data)
-    if problem:
-        return f"{backup} {problem}; not a config a restore puts back", None
-    return None, data
+        return None, crew_config_files.read_restorable(backup)[1]
+    except crew_config_files.Unreadable as exc:
+        return f"{exc}; not a config a restore puts back", None
 
 
 def restore_repo_config(root, backup, apply, now=None):
@@ -856,7 +935,8 @@ def restore_repo_config(root, backup, apply, now=None):
     Under the config lock: a config already there (platform-sync's healed
     defaults, most often) is MOVED aside to a fresh `.bak-` first, so a
     restore never destroys a file either; then the backup's bytes are written
-    sibling-then-replace and read back and compared.
+    as a NEW file (`create_bytes`: a file that appeared meanwhile is refused,
+    never replaced) and read back and compared.
     """
     problem, data = _valid_backup(root, backup)
     if problem:
@@ -875,7 +955,7 @@ def restore_repo_config(root, backup, apply, now=None):
                 saved = _free_backup(root, now)
                 crew_config_files.move_aside(path, saved)
                 print(f"moved the current file aside to {saved}")
-            crew_config_files.replace_bytes(path, data)
+            crew_config_files.create_bytes(path, data)
             with open(path, "rb") as handle:
                 back = handle.read()
     except crew_config_files.Busy as exc:
@@ -894,10 +974,6 @@ def restore_repo_config(root, backup, apply, now=None):
 
 # --- CLI ---
 
-_DOTTED_RE = re.compile(r"^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$")
-_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
-
-
 def validate_change_set(obj, what):
     """None when `obj` is `{"machine"?: {PATH: VALUE}, "repo"?: {PATH: VALUE}}`
     with every PATH a dotted path; else the message. `save --changes` and
@@ -912,7 +988,7 @@ def validate_change_set(obj, what):
             return (f"{what}: the {layer} value must be an object of "
                     f"PATH: VALUE, not {type(updates).__name__}")
         for dotted in updates:
-            if not _DOTTED_RE.match(dotted):
+            if not crew_config_files.is_dotted(dotted):
                 return f"{what}: {dotted!r} is not a dotted path (a.b.c)"
     return None
 
@@ -930,8 +1006,8 @@ def _json_arg(raw, what):
 def _usage_problem(args):
     for flag, value in (("--expect-machine", getattr(args, "expect_machine", None)),
                         ("--expect-repo", getattr(args, "expect_repo", None))):
-        if value is not None and not _DIGEST_RE.match(value):
-            return f"{flag} must be a sha256 digest (64 lowercase hex), not {value!r}"
+        if crew_config_files.expectation_problem(flag, value):
+            return crew_config_files.expectation_problem(flag, value)
     for flag, value in (("--confirm", getattr(args, "confirm", None)),
                         ("--from", getattr(args, "source", None))):
         if value is not None and not value.strip():
@@ -960,6 +1036,8 @@ def main(argv=None):
     del_p = sub.add_parser("delete-repo", help="preview, back up and delete .crew/config.json")
     del_p.add_argument("--confirm", default=None, metavar="REPO_NAME")
     del_p.add_argument("--apply", action="store_true")
+    del_p.add_argument("--expect-repo", default=None, metavar="DIGEST")
+    del_p.add_argument("--expect-machine", default=None, metavar="DIGEST")
     res_p = sub.add_parser("restore-repo", help="restore a config.json.bak-* backup")
     res_p.add_argument("--from", dest="source", required=True)
     res_p.add_argument("--apply", action="store_true")
@@ -971,13 +1049,13 @@ def main(argv=None):
 
     if args.cmd == "spec":
         pending = None
-        if args.pending:
+        if args.pending is not None:
             pending, problem = _json_arg(args.pending, "--pending")
             if problem:
                 print(problem, file=sys.stderr)
                 return 2
         spec = menu_spec(args.root, args.layer, args.global_path, pending)
-        if args.area:
+        if args.area is not None:
             ids = [a[0] for a in AREAS]
             if args.area not in ids:
                 print(f"unknown area {args.area!r} (known: {', '.join(ids)})",
@@ -998,7 +1076,9 @@ def main(argv=None):
                     {"machine": args.expect_machine, "repo": args.expect_repo})
     if args.cmd == "delete-repo":
         return delete_repo_config(args.root, args.confirm, args.apply,
-                                  global_path=args.global_path)
+                                  global_path=args.global_path, expect={
+                                      "repo": args.expect_repo,
+                                      "machine": args.expect_machine})
     return restore_repo_config(args.root, args.source, args.apply)
 
 

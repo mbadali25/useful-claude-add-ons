@@ -48,8 +48,9 @@ How it writes, whatever the arguments say:
   value included) and the whole file it would produce, refuses unknown keys
   and out-of-range values, and marks a widening with `!`. Both writers are
   compare-and-swap under a lock beside the file: the dry run prints a
-  `digest:`, and `--apply --expect <digest>` refuses a file that changed
-  since. It refuses `platform.*` (platform-sync
+  `digest:` (`absent` for no file), and `--apply --expect <digest>` refuses a
+  file that changed, or appeared, since; a repo write also prints the
+  `machine digest:` its widening marks read and takes `--expect-global`. It refuses `platform.*` (platform-sync
   owns it), `schema`, `scope.mode` and `scope.allowCliApproval` (the scope
   guard's trust root, a hand edit by the owner or `/crew:init`), and
   `context.autoClear.onlyRepos` / `.onlySessions` (read from the machine file

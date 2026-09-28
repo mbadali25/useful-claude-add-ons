@@ -1657,9 +1657,18 @@ layer, value)`: a whole-block value is expanded, so
 carry a bad one. A block set to `{}`, or replaced by a scalar, is refused off
 an open table (`guards: {}` refused, `qa.roles.review: {}` is "no pin").
 
+Each judged leaf is also what is WRITTEN (`crew_config.assignments`, review
+round 3): a block value is written leaf by leaf, so the block's untouched
+siblings, unknown keys included, survive, and a widening is marked on the leaf
+that widens (`{"guards": {"forcePush": "allow"}}` prints
+`! guards.forcePush widens to`). A value at an open role table (`qa.roles`,
+`dev.roles`) is written one ENTRY at a time, each entry a whole pin, so the
+other roles' pins survive and a new pin never inherits the old one's model.
+
 It refuses, naming the key and the reason: a path that is not a leaf of
-`default_config()` (unknown keys, and whole blocks such as `scope: {}` that
-would drop a leaf the per-key rules guard), `platform.*`, `schema`,
+`default_config()` (unknown keys, and a block emptied or replaced by a scalar,
+such as `scope: {}`, that would drop a leaf the per-key rules guard),
+`platform.*`, `schema`,
 `scope.mode`, `scope.allowCliApproval`, `context.autoClear.onlyRepos` /
 `.onlySessions`, and anything but exactly `false` or `null` for
 `context.autoClear.enabled` or `resume.auto` (only the machine file arms
@@ -1689,10 +1698,19 @@ is being written now. Each change carries its meaning (`null`), and the dry
 run prints it.
 
 **The merged file is judged whole** (`crew_config.merged_problems`): every
-untouched enum leaf of the file the write would produce is checked, and a bad
-value already there refuses an unrelated write as `pre-existing ... fix that
-key first` (it can be fixed in the same write); then `validate_providers`
-runs on the merged file at both layers, wrapped as the layer's refusal.
+untouched known leaf of the file the write would produce is checked for what
+its presence means at that layer (`_content_problem`): an enum value outside
+its tuple (a legacy `null` tolerated), a consent key (`MACHINE_REFUSED`) in
+the machine file, and a veto-only key holding anything but `false`/`null` in
+the repo file. One already there refuses an unrelated write as `pre-existing
+...`: an enum value says `fix that key first` (it can be fixed in the same
+write), the other two `remove it by hand first` (no crew writer sets or
+removes them). Unknown keys are never judged. JUDGEMENT: refusals of a write
+are not refusals of content, so a `REPO_REFUSED` key in the repo file
+(`/crew:init` and platform-sync write them) and a repo-only key in the
+machine file (pruned by `filter_global` on every read) do not block a write.
+Then `validate_providers` runs on the merged file at both layers, wrapped as
+the layer's refusal.
 
 **Compare-and-swap, both files.** `write_global_config` and
 `write_repo_config` re-run their plan on the bytes read inside
@@ -1700,11 +1718,15 @@ runs on the merged file at both layers, wrapped as the layer's refusal.
 config (`<file>.lock`, the review ledger's construction; 3 s wait, then a
 refusal naming the lock and the PID inside it), a strict read, and a
 sibling-fsync-replace that keeps CRLF and a UTF-8 BOM. `--set` prints the
-digest (sha256) of the bytes it planned against, and `--apply --expect
-<digest>` refuses a file that changed since (`RepoWriteConflict` /
-`GlobalWriteConflict`, subclasses of the refusals, so every existing `except`
-still catches them). Without `--expect` the merge is onto the file under the
-lock. The machine writer now refuses an unparsable or non-object global file
+digest (sha256) of the bytes it planned against, `absent` when there is no
+file, and `--apply --expect <digest|absent>` refuses a file that changed, or
+appeared, since (`RepoWriteConflict` / `GlobalWriteConflict`, subclasses of
+the refusals, so every existing `except` still catches them). Without
+`--expect` the merge is onto the file under the lock. A repo write's widening
+marks read the machine file, so `--set --repo` also prints `machine digest:`
+and `--expect-global <digest|absent>` binds it: `write_repo_config` reads the
+machine file once under the machine lock (taken before the repo lock, the one
+nesting order) and refuses one that changed since. The machine writer now refuses an unparsable or non-object global file
 instead of replacing it from the read path's `{}` collapse. A foreign writer
 (an editor's save) is not serialised by the lock.
 

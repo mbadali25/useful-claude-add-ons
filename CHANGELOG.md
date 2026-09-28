@@ -16,9 +16,11 @@ All notable changes to this repository are documented here. Format follows [Keep
     layer, an area, a setting, then a value from a list showing the current
     value, the layer that decided it, and the recommendation first. Picks
     collect in a pending set; Save validates both layers, shows the dry-run
-    diff with each layer's digest, and writes each changed layer once, with
-    `--expect-machine/--expect-repo` refusing a file that changed since the dry
-    run. Discard writes nothing.
+    diff with each layer's digest (`absent` for no file; the machine digest
+    whenever anything changes, since a repo value's widening marks read it),
+    and writes each changed layer once, with `--expect-machine/--expect-repo`
+    refusing a file that changed, or appeared, since the dry run. Discard
+    writes nothing.
   - New `hooks/scripts/crew_config_menu.py` (`spec [--pending]`, `save`,
     `delete-repo`, `restore-repo`). The rows are `crew_config.py`'s own key
     lists, so a new key appears with no menu edit, and every candidate value
@@ -27,8 +29,10 @@ All notable changes to this repository are documented here. Format follows [Keep
     value already in the file is read-only with a reason naming that key.
   - New `hooks/scripts/crew_config_files.py`, the one file layer under both
     writers, delete and restore: an `O_CREAT|O_EXCL` lock beside the config,
-    the strict four-case read, the `restorable` predicate, the digest, the
-    atomic replace keeping CRLF and a BOM, and the move-aside rename.
+    the strict four-case read, the `restorable` predicate and the regular-file
+    read delete and restore share, the digest (`absent` for no file), the
+    atomic replace keeping CRLF and a BOM, and the no-clobber move: a rename
+    that never replaces an existing destination, by the rename itself.
   - New repo writer `crew_config.plan_repo_write` / `write_repo_config`, CLI
     `crew_config.py --set PATH=JSON --repo [--apply [--expect DIGEST]]`: merge,
     leaf keys only, `!` on a widening (ratchet by what is in force,
@@ -37,20 +41,29 @@ All notable changes to this repository are documented here. Format follows [Keep
     It refuses `platform.*`, `schema`, `scope.mode`, `scope.allowCliApproval`
     and `context.autoClear.onlyRepos`/`.onlySessions`; `context.autoClear.enabled`
     and `resume.auto` take only `false` or `null`, by identity.
-  - Both writers judge every LEAF of an update (a whole-block value included),
-    apply the null rule (repo: inherit the machine value or clear a veto; open
-    key: unset; an enum key at the machine layer: refused), judge the merged
-    file whole (a bad enum value already in it refuses an unrelated write), and
-    are compare-and-swap: plan re-run under the lock, `--set` prints `digest:`,
-    `--apply --expect <digest>` refuses a changed file.
+  - Both writers judge every LEAF of an update (a whole-block value included)
+    and write exactly those leaves (the block's other keys survive; a role
+    table is written one whole pin per role, the other pins kept), apply the
+    null rule (repo: inherit the machine value or clear a veto; open key:
+    unset; an enum key at the machine layer: refused), judge the merged file's
+    every known leaf (a bad enum value, a consent key in the machine file or
+    an armed veto-only key in the repo file already there refuses an unrelated
+    write), and are compare-and-swap: plan re-run under the lock, `--set`
+    prints `digest:`, `--apply --expect <digest|absent>` refuses a changed
+    file, and `--set --repo` also binds the machine file (`machine digest:`,
+    `--expect-global`).
   - Delete the repo config in two phases: the preview holds the file's bytes
     and walks its own leaves (`-> (removed)` for unknown keys, `platform.*` as
     re-detected, `!` on what widens, `stays` for a held ratcheted key); a file
-    a restore could not take back is refused; with the typed repo name the file
-    is moved to `.crew/config.json.bak-<UTC>` in one rename under the lock and
-    compared with the held bytes (a changed file is moved back, nothing
-    deleted); three restore lines are printed (sh, cmd, PowerShell), each
-    executed by a test, and restore accepts exactly what delete does.
+    a restore could not take back (a symlink included) is refused; with the
+    typed repo name and the preview's two digests (`--expect-repo`,
+    `--expect-machine`, so the apply is the delete the preview showed) the file
+    is moved to `.crew/config.json.bak-<UTC>` in one no-clobber rename under
+    the lock and compared with the held bytes (a changed file is moved back,
+    never over a file saved in between, and nothing is deleted); three restore
+    lines are printed (sh, cmd, PowerShell), each executed by a test, and
+    restore accepts exactly what delete does, never replacing a file that
+    appears while it runs.
   - Every CLI entry validates its input shape and refuses with exit 2, never a
     traceback.
   - **Behaviour changes:** `crew_config.py --set` on the machine-global file now
@@ -59,11 +72,16 @@ All notable changes to this repository are documented here. Format follows [Keep
     refuses `null` for one of those, refuses a consent key inside a whole-block
     value, refuses a write when the merged file holds a bad enum value
     elsewhere, refuses a value that is not JSON (a bare `act` used to be
-    written as a string), and refuses to write over an unparsable or
-    non-object machine file instead of replacing it from `{}`.
-  - 50 sabotage mutations in `tests/sabotage_config.py`: the 22 from the first
-    build and review round 1 (re-anchored where the code moved), and 28 for
-    review round 2's findings and their neighbouring cases.
+    written as a string), refuses to write over an unparsable or non-object
+    machine file instead of replacing it from `{}`, and refuses any write while
+    the machine file holds a consent key (remove it by hand first). A block
+    value (`guards='{"forcePush": "ask"}'`) now merges leaf by leaf instead of
+    replacing the block, and a `qa.roles` / `dev.roles` value now sets only the
+    roles it names (set a role to `{}` to clear its pin).
+  - 81 sabotage mutations in `tests/sabotage_config.py`: the 22 from the first
+    build and review round 1 and the 28 for review round 2's findings (all
+    re-anchored where the code moved), and 31 for review round 3's findings
+    and their neighbouring cases.
 
 - **`shipstation` 1.1.1: reach for V2 when changing orders in bulk.** Bumped `1.0.0 -> 1.1.1`.
   `SKILL.md` gains a *Bulk order changes* section: every V1 order is a V2 shipment

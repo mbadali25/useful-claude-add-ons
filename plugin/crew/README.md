@@ -1007,34 +1007,48 @@ first; the owner never has to type one.
   machine-global layer" lines, then writes each changed layer once. A write
   that fails or is refused after validation (the file changed underneath)
   reports which layer landed and which did not. The dry run prints each
-  layer's `digest:`; `--apply --expect-machine/--expect-repo` checks both
-  before either write, so a file another session changed since the dry run
-  is refused, never merged over. Discard writes nothing.
+  changed layer's `digest:`, and the machine digest whenever anything
+  changes, since a repo value's widening marks are judged against the
+  machine file (as this Save leaves it); `absent` names a file that does not
+  exist. `--apply --expect-machine/--expect-repo` checks both before either
+  write and binds each writer to them, the repo write to the machine digest
+  too, so a file another session changed or created since the dry run is
+  refused, never merged over. Discard writes nothing.
 - **One validated repo writer.** `crew_config.py --set PATH=JSON --repo
   [--apply]` (`plan_repo_write` / `write_repo_config`) merges, refuses unknown
-  keys and whole-block writes, checks enum values, validates providers, writes
+  keys, takes a whole-block value leaf by leaf (as the machine writer does),
+  checks enum values, validates providers, writes
   atomically and keeps the file's line ending and BOM. It refuses `platform.*`
   (platform-sync owns it), `schema`, and `context.autoClear.onlyRepos` /
   `.onlySessions` (read from the machine file only), and takes only a veto
   (`false`) or `null` for `context.autoClear.enabled` and `resume.auto` —
   exactly those, by identity, so `0` is refused.
-- **Both writers judge per leaf, and the whole file.** Each update is expanded
-  to its leaves, so a whole-block value such as
+- **Both writers judge per leaf, write per leaf, and judge the whole file.**
+  Each update is expanded to its leaves, so a whole-block value such as
   `context={"autoClear": {"unsafeFocus": true}}` cannot carry a refused key
-  past the machine writer. `null` is accepted only where the layer gives it a
-  meaning: at the repo layer it inherits the machine value for a
-  machine-settable key, or clears a veto; an open key is unset; an enum key
-  at the machine layer refuses it. Then the merged file is checked: a bad
-  enum value already in it refuses an unrelated write, naming the key to fix.
+  past the machine writer, and each leaf is written on its own: the block's
+  untouched siblings (unknown keys included) survive, and a widening is
+  marked on the leaf that widens. A role-table value (`qa.roles`) is written
+  one whole pin per role, the other pins kept. `null` is accepted only where
+  the layer gives it a meaning: at the repo layer it inherits the machine
+  value for a machine-settable key, or clears a veto; an open key is unset;
+  an enum key at the machine layer refuses it. Then the merged file is
+  checked, every known leaf: a bad enum value, a consent key in the machine
+  file, or an armed veto-only key in the repo file already there refuses an
+  unrelated write, naming the key to fix first.
 - **Both writers are compare-and-swap.** Read, merge and replace happen inside
   an `O_CREAT|O_EXCL` lock file beside the config (`config.json.lock`, 3 s
   wait, then a refusal naming the lock and its PID), so two sessions never
-  merge against stale snapshots; `--set` prints `digest:` and
-  `--apply --expect <digest>` refuses a file that changed since. A
-  malformed machine file is refused rather than overwritten from `{}`.
+  merge against stale snapshots; `--set` prints `digest:` (`absent` for no
+  file) and `--apply --expect <digest|absent>` refuses a file that changed,
+  or appeared, since; `--set --repo` also prints `machine digest:` and takes
+  `--expect-global`. A malformed machine file is refused rather than
+  overwritten from `{}`.
 - **`crew_config_files.py` is the one file layer** under both writers, delete
-  and restore: the lock, the strict read, the `restorable` predicate, the
-  digest, the atomic replace and the move-aside rename.
+  and restore: the lock, the strict read, the `restorable` predicate and the
+  regular-file read delete and restore share, the digest, the atomic
+  replace, and the no-clobber move: a rename that never replaces an existing
+  destination, by the rename itself rather than a check before it.
 - **`scope.*` is refused on purpose.** `scope.mode` and
   `scope.allowCliApproval` are the scope guard's trust root, and
   `.crew/config.json` is untracked, so the completion audit (which diffs
@@ -1045,15 +1059,18 @@ first; the owner never has to type one.
   (`scope.mode` returning to `off` included), `-> (removed)` for a key crew
   does not know, a `stays` line for a ratcheted key the repo narrowed under a
   wider machine value (deleting does not widen it), and `platform.*` in a
-  "re-detected by platform-sync" group. A file a restore could not take back
-  (unparsable, empty, `{}`, not an object) is refused: that is
-  platform-sync's to heal, or the owner's to remove by hand. The delete
-  requires the typed repo name (the checkout's
-  `git rev-parse --show-toplevel` basename), then, under the config lock,
+  "re-detected by platform-sync" group, then the `repo digest:` and
+  `machine digest:` it was built from. A file a restore could not take back
+  (unparsable, empty, `{}`, not an object, or not a regular file, such as a
+  symlink) is refused: that is platform-sync's to heal, or the owner's to
+  remove by hand. The delete requires the typed repo name (the checkout's
+  `git rev-parse --show-toplevel` basename) and both preview digests
+  (`--expect-repo`, `--expect-machine`), so it is the delete the preview
+  showed; then, under the config lock,
   moves the file to `.crew/config.json.bak-<UTC timestamp>` in one rename —
   the backup is the original, never a copy — and compares the moved bytes
   with the held ones: a file that changed since the preview is moved straight
-  back and nothing is deleted. It prints the restore command three ways,
+  back, never over a file saved in between, and nothing is deleted. It prints the restore command three ways,
   `restore (sh):`, `restore (cmd):` and `restore (PowerShell):`
   (`crew_config_menu.py restore-repo --from <backup> --apply`); each form is
   executed by a test, and restore accepts exactly what delete does. Until the next
@@ -1064,7 +1081,8 @@ first; the owner never has to type one.
 - **Headless.** With no way to ask, `crew_config_menu.py spec --layer
   <layer>` prints the plan and a write needs the explicit
   `save --changes '<json>' --apply --expect-machine/--expect-repo <digest>` or
-  `delete-repo --confirm <name> --apply`.
+  `delete-repo --confirm <name> --apply --expect-repo <digest>
+  --expect-machine <digest>`.
 
 Both writers now refuse a value outside the key's own tier or provider list
 (`pm.authority`, `pm.ticketGranularity`, `qa.provider`, `dev.provider` and every

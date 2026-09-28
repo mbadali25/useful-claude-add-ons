@@ -260,3 +260,118 @@ def test_move_aside_refuses_an_existing_destination(tmp_path):
         files.move_aside(src, dest)
 
     assert (_read(src), _read(dest)) == (b'{"a": 1}', b"older")
+
+
+# --- Review round 3 (T-0075): no-clobber moves, absence, regular files -------
+
+
+def test_move_aside_never_replaces_a_destination_created_after_a_check(
+        tmp_path, monkeypatch):
+    src = _write(tmp_path / "config.json", b'{"a": 1}')
+    dest = _write(tmp_path / "config.json.bak-X", b"a backup made meanwhile")
+    monkeypatch.setattr(files.os.path, "lexists", lambda _p: False)
+    monkeypatch.setattr(files.os.path, "exists", lambda _p: False)
+
+    with pytest.raises(FileExistsError):
+        files.move_aside(src, dest)
+
+    assert (_read(src), _read(dest)) == (b'{"a": 1}', b"a backup made meanwhile")
+
+
+def test_create_bytes_never_replaces_an_existing_file(tmp_path, monkeypatch):
+    path = _write(tmp_path / "config.json", b'{"healed": true}')
+    monkeypatch.setattr(files.os.path, "lexists", lambda _p: False)
+    monkeypatch.setattr(files.os.path, "exists", lambda _p: False)
+
+    with pytest.raises(FileExistsError):
+        files.create_bytes(path, b'{"restored": true}')
+
+    assert _read(path) == b'{"healed": true}'
+    assert sorted(os.listdir(tmp_path)) == ["config.json"]
+
+
+def test_create_bytes_writes_a_new_file(tmp_path):
+    path = str(tmp_path / "config.json")
+
+    files.create_bytes(path, b'{"restored": true}\r\n')
+
+    assert _read(path) == b'{"restored": true}\r\n'
+    assert sorted(os.listdir(tmp_path)) == ["config.json"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the link-then-park move is POSIX's")
+def test_move_aside_puts_back_a_file_that_replaced_the_source(tmp_path,
+                                                              monkeypatch):
+    src = _write(tmp_path / "config.json", b'{"original": 1}')
+    dest = str(tmp_path / "config.json.bak-X")
+    real_link = os.link
+
+    def _link_then_a_foreign_save(a, b, **kwargs):
+        real_link(a, b, **kwargs)
+        if b == dest:
+            _write(tmp_path / "config.json.tmp-foreign", b'{"foreign": 1}')
+            os.replace(str(tmp_path / "config.json.tmp-foreign"), src)
+    monkeypatch.setattr(files.os, "link", _link_then_a_foreign_save)
+
+    got = files.move_aside(src, dest)
+
+    assert (got, _read(dest), _read(src)) == (
+        b'{"original": 1}', b'{"original": 1}', b'{"foreign": 1}')
+    assert sorted(os.listdir(tmp_path)) == ["config.json", "config.json.bak-X"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="needs a POSIX symlink and FIFO")
+@pytest.mark.parametrize("kind", ["symlink", "fifo", "directory"])
+def test_restorable_file_refuses_what_is_not_a_regular_file(tmp_path, kind):
+    target = _write(tmp_path / "real.json", b'{"tracker": "jira"}\n')
+    path = str(tmp_path / "config.json")
+    if kind == "symlink":
+        os.symlink(target, path)
+    elif kind == "fifo":
+        os.mkfifo(path)
+    else:
+        os.mkdir(path)
+
+    with pytest.raises(files.Unreadable) as caught:
+        files.read_restorable(path)
+
+    assert caught.value.kind == "notregular"
+    assert "not a regular file" in str(caught.value)
+
+
+def test_read_restorable_takes_a_regular_config(tmp_path):
+    path = _write(tmp_path / "config.json", _BOM + b'{"tracker": "jira"}\r\n')
+
+    parsed, raw = files.read_restorable(path)
+
+    assert (parsed, raw) == ({"tracker": "jira"}, _BOM + b'{"tracker": "jira"}\r\n')
+
+
+@pytest.mark.parametrize("present,expect,conflict", [
+    (False, "absent", False), (True, "absent", True),
+    (False, "0" * 64, True), (True, None, False)],
+    ids=["absent-as-planned", "created-since", "deleted-since", "no-expect"])
+def test_update_json_compares_against_absence(tmp_path, present, expect,
+                                              conflict):
+    path = str(tmp_path / "g.json")
+    if present:
+        _write(path, b'{"other": 1}\n')
+    before = _read(path) if present else None
+
+    def _mutate(parsed):
+        parsed["mine"] = 1
+        return parsed
+    if conflict:
+        with pytest.raises(files.Conflict):
+            files.update_json(path, _mutate, expect=expect, create=True)
+        after = _read(path) if os.path.exists(path) else None
+        assert after == before
+        return
+    files.update_json(path, _mutate, expect=expect, create=True)
+
+    assert json.loads(_read(path))["mine"] == 1
+
+
+def test_expected_digest_token_names_absence():
+    assert (files.state_digest(None), files.state_digest(b"x")) == (
+        files.ABSENT, files.digest(b"x"))

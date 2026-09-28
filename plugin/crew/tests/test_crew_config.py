@@ -1863,7 +1863,9 @@ def test_non_enum_key_keeps_accepting_any_json(tmp_path):
          "qa.roles": {"anything": {"provider": "codex", "x": [1]}}},
         str(tmp_path / "global.json"))
 
-    assert {c["path"] for c in changes} == {"notify.chatId", "qa.roles"}
+    # Review round 3: a role table is written entry by entry, so the other
+    # pins in it survive; the entry itself is the unit.
+    assert {c["path"] for c in changes} == {"notify.chatId", "qa.roles.anything"}
 
 
 # --- T-0075: the one repo write path ----------------------------------------
@@ -2422,3 +2424,198 @@ def test_set_cli_refuses_malformed_shapes(tmp_path, capsys, argv):
     err = capsys.readouterr().err
     assert (code, "Traceback" in err, path.read_bytes() == before) == (2, False, True)
     assert err.strip()
+
+
+# --- Review round 3 (T-0075): assign exactly what was judged ----------------
+
+
+def _machine_and_repo(tmp_path, global_cfg, repo_updates=None):
+    cfg = crew_config.default_config()
+    for dotted, value in (repo_updates or {}).items():
+        crew_config._set_path(cfg, dotted.split("."), value)  # pylint: disable=protected-access
+    root = _repo(tmp_path, cfg)
+    return root, _global_file(tmp_path, global_cfg)
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_a_block_write_keeps_its_untouched_siblings(tmp_path, layer):
+    root, gpath = _machine_and_repo(
+        tmp_path, {"context": {"autoClear": {"method": "tmux"}, "x-local": 1}},
+        {"context.x-local": 1, "context.autoClear.method": "tmux"})
+    update = {"context": {"autoClear": {"enabled": False}}}
+
+    if layer == "machine":
+        merged, changes = crew_config.write_global_config(update, str(gpath))
+    else:
+        merged, changes = crew_config.write_repo_config(str(root), update,
+                                                        str(gpath))
+
+    assert [c["path"] for c in changes] == ["context.autoClear.enabled"]
+    assert (merged["context"]["x-local"],
+            merged["context"]["autoClear"]["method"],
+            merged["context"]["autoClear"]["enabled"]) == (1, "tmux", False)
+
+
+def test_a_machine_block_write_marks_its_leaf_widening(tmp_path):
+    gpath = _global_file(tmp_path, {"pm": {"authority": "report-only"}})
+
+    _, changes = crew_config.plan_global_write({"pm": {"authority": "act"}},
+                                               str(gpath))
+
+    assert [(c["path"], c["widens"]) for c in changes] == [("pm.authority", True)]
+
+
+def test_a_repo_block_write_marks_its_leaf_widening(tmp_path):
+    root, gpath = _machine_and_repo(tmp_path, {"guards": {"forcePush": "allow"}},
+                                    {"guards.forcePush": "block"})
+
+    _, changes = crew_config.plan_repo_write(
+        str(root), {"guards": {"forcePush": "allow"}}, str(gpath))
+
+    assert [(c["path"], c["widens"]) for c in changes] == [
+        ("guards.forcePush", True)]
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_a_role_table_write_keeps_the_other_pins(tmp_path, layer):
+    pins = {"phase1": {"provider": "codex", "model": "gpt-5.6-sol"},
+            "review": {"provider": "codex", "model": "gpt-5.6-luna"}}
+    root, gpath = _machine_and_repo(tmp_path, {"qa": {"roles": pins}},
+                                    {"qa.roles": pins})
+    update = {"qa.roles": {"review": {"provider": "claude"}}}
+
+    if layer == "machine":
+        merged, changes = crew_config.write_global_config(update, str(gpath))
+    else:
+        merged, changes = crew_config.write_repo_config(str(root), update,
+                                                        str(gpath))
+
+    assert [c["path"] for c in changes] == ["qa.roles.review"]
+    assert merged["qa"]["roles"] == {"phase1": pins["phase1"],
+                                     "review": {"provider": "claude"}}
+
+
+def test_repo_writer_takes_a_block_leaf_by_leaf(tmp_path):
+    root = _repo(tmp_path)
+
+    _, changes = crew_config.write_repo_config(
+        str(root), {"guards": {"forcePush": "ask"}}, str(tmp_path / "g.json"))
+
+    written = json.loads(_repo_bytes(root))
+    assert ([c["path"] for c in changes], written["guards"]["forcePush"]) == (
+        ["guards.forcePush"], "ask")
+    assert written["guards"]["mergeGate"] == crew_config.default_config()[
+        "guards"]["mergeGate"]
+
+
+@pytest.mark.parametrize("layer,held,leaf", [
+    ("machine", {"context": {"autoClear": {"unsafeFocus": True}}},
+     "context.autoClear.unsafeFocus"),
+    ("machine", {"graph": {"obsidian": {"confirmed": True}}},
+     "graph.obsidian.confirmed"),
+    ("repo", {"context.autoClear.enabled": True}, "context.autoClear.enabled"),
+    ("repo", {"resume.auto": 0}, "resume.auto"),
+], ids=["machine-unsafeFocus", "machine-obsidian", "repo-armed-autoclear",
+        "repo-zero-veto"])
+def test_merged_file_refuses_a_pre_existing_leaf_forbidden_at_its_layer(
+        tmp_path, layer, held, leaf):
+    if layer == "machine":
+        gpath = _global_file(tmp_path, held)
+        before = gpath.read_bytes()
+        with pytest.raises(crew_config.GlobalWriteRefused) as caught:
+            crew_config.write_global_config({"notify.chatId": "1"}, str(gpath))
+        after = gpath.read_bytes()
+    else:
+        root, gpath = _machine_and_repo(tmp_path, {}, held)
+        before = _repo_bytes(root)
+        with pytest.raises(crew_config.RepoWriteRefused) as caught:
+            crew_config.write_repo_config(str(root), {"tracker": "jira"},
+                                          str(gpath))
+        after = _repo_bytes(root)
+
+    message = str(caught.value)
+    assert "pre-existing" in message and leaf in message and "by hand" in message
+    assert after == before
+
+
+def test_a_repo_only_key_in_the_machine_file_does_not_block_a_write(tmp_path):
+    # JUDGEMENT (review round 3): a repo-only key in the machine file is
+    # pruned by `filter_global` on every read, so it cannot take effect; the
+    # owner's own machine file holds `autopilot.mode` ahead of T-0070.
+    gpath = _global_file(tmp_path, {"autopilot": {"mode": "plan"}})
+
+    merged, _ = crew_config.write_global_config({"notify.chatId": "1"},
+                                                str(gpath))
+
+    assert merged["autopilot"] == {"mode": "plan"}
+    assert crew_config.filter_global(merged)[0].get("autopilot") is None
+
+
+def test_repo_write_refuses_when_the_machine_file_changed(tmp_path):
+    root, gpath = _machine_and_repo(tmp_path, {"guards": {"forcePush": "block"}},
+                                    {"guards.forcePush": "block"})
+    machine = crew_config.global_snapshot(str(gpath))[2]
+    before = _repo_bytes(root)
+    _rewrite_with(gpath, "guards", {"forcePush": "allow"})
+
+    with pytest.raises(crew_config.RepoWriteConflict) as caught:
+        crew_config.write_repo_config(str(root), {"guards.forcePush": "allow"},
+                                      str(gpath), expect_global=machine)
+
+    assert "machine-global" in str(caught.value)
+    assert _repo_bytes(root) == before
+
+
+@pytest.mark.parametrize("create,conflict", [(False, False), (True, True)])
+def test_repo_write_compares_the_machine_file_against_absence(tmp_path, create,
+                                                              conflict):
+    root = _repo(tmp_path)
+    gpath = tmp_path / "g.json"
+    if create:
+        gpath.write_text('{"pm": {"authority": "act"}}', encoding="utf-8")
+
+    def _write():
+        return crew_config.write_repo_config(str(root), {"tracker": "jira"},
+                                             str(gpath), expect_global="absent")
+    if conflict:
+        with pytest.raises(crew_config.RepoWriteConflict):
+            _write()
+    else:
+        _write()
+
+    assert json.loads(_repo_bytes(root))["tracker"] == ("files" if conflict
+                                                        else "jira")
+
+
+def test_set_repo_cli_prints_and_takes_the_machine_digest(tmp_path, capsys):
+    root = _repo(tmp_path)
+    gpath = _global_file(tmp_path, {"pm": {"authority": "act"}})
+    base = ["--root", str(root), "--global-path", str(gpath), "--repo",
+            "--set", 'tracker="jira"']
+
+    crew_config.main(base)
+    out = capsys.readouterr().out
+    machine = re.search(r"machine digest: ([0-9a-f]{64})", out)
+    _rewrite_with(gpath, "x-other", 1)
+    stale = crew_config.main(base + ["--apply", "--expect-global",
+                                     machine.group(1)])
+    err = capsys.readouterr().err
+
+    assert stale == 2 and "changed since it was read" in err
+    assert json.loads(_repo_bytes(root))["tracker"] == "files"
+
+
+def test_set_cli_takes_absent_for_a_first_machine_write(tmp_path, capsys):
+    gpath = tmp_path / "g.json"
+
+    crew_config.main(["--global-path", str(gpath), "--set", 'notify.chatId="1"'])
+    out = capsys.readouterr().out
+    gpath.write_text('{"x-other": 1}', encoding="utf-8")
+    stale = crew_config.main(["--global-path", str(gpath), "--set",
+                              'notify.chatId="1"', "--apply", "--expect",
+                              "absent"])
+    err = capsys.readouterr().err
+
+    assert "digest: absent" in out
+    assert stale == 2 and "changed since it was read" in err
+    assert json.loads(gpath.read_text(encoding="utf-8")) == {"x-other": 1}

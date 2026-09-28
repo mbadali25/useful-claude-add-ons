@@ -273,7 +273,7 @@ def test_spec_prints_the_layer_digest(tmp_path, capsys, layer):
 
     assert spec["digest"] == crew_config_files.digest(raw)
     assert f"digest: {spec['digest']}" in out
-    assert absent is None
+    assert absent == ("absent" if layer == "machine" else None)
 
 
 def test_machine_rows_stay_writable_without_a_global_file(tmp_path):
@@ -453,8 +453,8 @@ def test_save_reports_a_partial_refusal(tmp_path, monkeypatch, capsys):
     root, gpath = _repo(tmp_path)
     real = crew_config.write_global_config
 
-    def _write_then_lose_the_repo_file(updates, path=None):
-        out = real(updates, path)
+    def _write_then_lose_the_repo_file(updates, path=None, **kwargs):
+        out = real(updates, path, **kwargs)
         os.remove(_config(root))
         return out
     monkeypatch.setattr(menu.crew_config, "write_global_config",
@@ -503,6 +503,18 @@ def _config(root):
     return os.path.join(root, ".crew", "config.json")
 
 
+def _delete(root, gpath):
+    """The owner's flow: the preview, then `--apply` bound to the two digests
+    that preview printed (review round 3)."""
+    try:
+        plan = menu.plan_delete(root, gpath)
+        expect = {"repo": plan["digest"], "machine": plan["machine"]}
+    except menu.DeleteRefused:
+        expect = None
+    return menu.delete_repo_config(root, "repo", True, now=_now(),
+                                   global_path=gpath, expect=expect)
+
+
 def _backups(root):
     return sorted(n for n in os.listdir(os.path.join(root, ".crew"))
                   if n.startswith("config.json.bak-"))
@@ -513,9 +525,12 @@ def _backups(root):
 def test_delete_refuses_without_confirmation(tmp_path, confirm, apply):
     root, gpath = _repo(tmp_path)
     before = open(_config(root), "rb").read()
+    plan = menu.plan_delete(root, gpath)
 
     code = menu.delete_repo_config(root, confirm, apply, now=_now(),
-                                   global_path=gpath)
+                                   global_path=gpath, expect={
+                                       "repo": plan["digest"],
+                                       "machine": plan["machine"]})
 
     assert code == (0 if confirm == "repo" else 2)
     assert (_backups(root), open(_config(root), "rb").read()) == ([], before)
@@ -533,8 +548,7 @@ def test_delete_writes_backup_first(tmp_path, monkeypatch):
         return got
     monkeypatch.setattr(crew_config_files, "move_aside", _checking_move)
 
-    code = menu.delete_repo_config(root, "repo", True, now=_now(),
-                                   global_path=gpath)
+    code = _delete(root, gpath)
 
     assert (code, seen, os.path.exists(_config(root))) == (0, [(False, True)], False)
 
@@ -546,8 +560,7 @@ def test_delete_refuses_when_the_move_fails(tmp_path, monkeypatch):
     def _fail(*_args, **_kwargs):
         raise OSError("read-only file system")
     monkeypatch.setattr(crew_config_files, "move_aside", _fail)
-    code = menu.delete_repo_config(root, "repo", True, now=_now(),
-                                   global_path=gpath)
+    code = _delete(root, gpath)
 
     assert (code, open(_config(root), "rb").read(), _backups(root)) == (2, before, [])
 
@@ -560,7 +573,7 @@ def test_delete_backup_name_never_collides(tmp_path):
         with open(os.path.join(crew_dir, name), "wb") as handle:
             handle.write(body)
 
-    menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
+    _delete(root, gpath)
 
     assert _backups(root) == [f"config.json.bak-{_TS}", f"config.json.bak-{_TS}-2"]
     assert open(os.path.join(crew_dir, f"config.json.bak-{_TS}"), "rb").read() == b"older"
@@ -582,8 +595,7 @@ def test_delete_refuses_a_config_restore_would_refuse(tmp_path, capsys, state):
     root, gpath = _repo(tmp_path)
     _write_config(root, _UNRESTORABLE[state])
 
-    code = menu.delete_repo_config(root, "repo", True, now=_now(),
-                                   global_path=gpath)
+    code = _delete(root, gpath)
 
     err = capsys.readouterr().err
     assert (code, open(_config(root), "rb").read(), _backups(root)) == (
@@ -627,8 +639,7 @@ def test_delete_backs_up_by_rename(tmp_path, monkeypatch):
         raise OSError("a copy is not how this backs up")
     monkeypatch.setattr(shutil, "copy2", _fail)
     monkeypatch.setattr(shutil, "copyfile", _fail)
-    code = menu.delete_repo_config(root, "repo", True, now=_now(),
-                                   global_path=gpath)
+    code = _delete(root, gpath)
 
     backup = os.path.join(root, ".crew", f"config.json.bak-{_TS}")
     assert (code, os.path.exists(_config(root))) == (0, False)
@@ -642,7 +653,8 @@ def test_delete_refuses_when_the_file_changed_after_the_plan(tmp_path, capsys):
     newer = b'{"tracker": "sdp", "x-new": 1}\n'
     _write_config(root, newer)
 
-    code = menu.apply_delete(root, plan, "repo", now=_now())
+    code = menu.apply_delete(root, plan, "repo", now=_now(), expect={
+        "repo": plan["digest"], "machine": plan["machine"]})
 
     assert (code, open(_config(root), "rb").read(), _backups(root)) == (2, newer, [])
     assert "changed since the preview" in capsys.readouterr().err
@@ -655,8 +667,7 @@ def test_delete_refuses_while_the_lock_is_held(tmp_path, capsys, monkeypatch):
     with open(_config(root) + ".lock", "w", encoding="utf-8") as handle:
         handle.write("4242")
 
-    code = menu.delete_repo_config(root, "repo", True, now=_now(),
-                                   global_path=gpath)
+    code = _delete(root, gpath)
 
     assert (code, open(_config(root), "rb").read(), _backups(root)) == (2, before, [])
     assert "config.json.lock" in capsys.readouterr().err
@@ -667,7 +678,7 @@ def test_delete_then_restore_is_byte_identical_with_bom_and_crlf(tmp_path, capsy
     text = json.dumps(dict(crew_config.default_config(), tracker="jira"), indent=2)
     original = _BOM + text.replace("\n", "\r\n").encode("utf-8") + b"\r\n"
     _write_config(root, original)
-    menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
+    _delete(root, gpath)
     backup = os.path.join(root, ".crew", f"config.json.bak-{_TS}")
 
     code = menu.restore_repo_config(root, backup, True, now=_now())
@@ -750,7 +761,7 @@ def _restore_form(capsys, name):
 def test_restore_command_runs_in_the_host_shell(tmp_path, capsys):
     root, gpath = _repo(tmp_path / "my repo's", {"tracker": "jira"})
     original = open(_config(root), "rb").read()
-    menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
+    _delete(root, gpath)
     command = _restore_form(capsys, "cmd" if os.name == "nt" else "sh")
 
     run = subprocess.run(command, shell=True, capture_output=True, text=True,
@@ -766,7 +777,7 @@ def test_restore_command_runs_in_powershell(tmp_path, capsys):
         pytest.skip("no pwsh on this machine: the PowerShell form is not run")
     root, gpath = _repo(tmp_path / "my repo's", {"tracker": "jira"})
     original = open(_config(root), "rb").read()
-    menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
+    _delete(root, gpath)
     command = _restore_form(capsys, "PowerShell")
 
     run = subprocess.run([pwsh, "-NoProfile", "-Command", command],
@@ -779,7 +790,7 @@ def test_restore_command_runs_in_powershell(tmp_path, capsys):
 def test_delete_prints_all_three_restore_lines(tmp_path, capsys):
     root, gpath = _repo(tmp_path / "my repo's")
 
-    menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
+    _delete(root, gpath)
 
     out = capsys.readouterr().out
     cmd = [ln for ln in out.splitlines() if ln.startswith("restore (cmd): ")]
@@ -830,7 +841,7 @@ def test_delete_really_does_not_widen_a_held_guard(tmp_path):
                         {"guards": {"forcePush": "allow"}})
 
     before = crew_config.resolve_guard(root, "forcePush", gpath)["effective"]
-    menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
+    _delete(root, gpath)
     gap = crew_config.resolve_guard(root, "forcePush", gpath)["effective"]
     crew_platform.heal_config(root)
     after = crew_config.resolve_guard(root, "forcePush", gpath)["effective"]
@@ -844,7 +855,7 @@ def test_delete_leaves_crew_json(tmp_path):
     with open(crew_json, "w", encoding="utf-8") as handle:
         handle.write('{"x": 1}')
 
-    menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
+    _delete(root, gpath)
 
     assert open(crew_json, encoding="utf-8").read() == '{"x": 1}'
 
@@ -852,7 +863,7 @@ def test_delete_leaves_crew_json(tmp_path):
 def test_restore_backs_up_a_healed_default_first(tmp_path):
     root, gpath = _repo(tmp_path, {"tracker": "jira"})
     original = open(_config(root), "rb").read()
-    menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
+    _delete(root, gpath)
     crew_platform.heal_config(root)
     healed = open(_config(root), "rb").read()
     backup = os.path.join(root, ".crew", f"config.json.bak-{_TS}")
@@ -981,6 +992,7 @@ def test_menu_procedure_requires_save_and_typed_delete():
     assert text.index("save --changes") < text.index("--apply")
     assert "--expect-machine" in text and "--expect-repo" in text
     assert text.index("digest") < text.index("--expect-repo")
+    assert "delete-repo --confirm <name> --apply --expect-repo <digest>" in text
 
 
 def test_menu_procedure_prints_three_restore_forms():
@@ -1123,3 +1135,290 @@ def test_cli_subprocess_prints_no_traceback(tmp_path, argv):
                          capture_output=True, text=True, check=False)
 
     assert (run.returncode, "Traceback" in run.stderr) == (2, False), run.stderr
+
+
+# --- Review round 3 (T-0075): bound to what the owner reviewed ---------------
+
+
+def _digest_line(out, label):
+    line = [ln for ln in out.splitlines() if ln.startswith(f"{label} digest: ")]
+    return line[-1].split(": ", 1)[1]
+
+
+def test_repo_only_save_prints_the_machine_digest(tmp_path, capsys):
+    root, gpath = _repo(tmp_path, global_cfg={"guards": {"forcePush": "block"}})
+
+    menu.save(root, {"repo": {"tracker": "sdp"}}, apply=False, global_path=gpath)
+
+    out = capsys.readouterr().out
+    assert _digest_line(out, "machine") == crew_config_files.digest(
+        open(gpath, "rb").read())
+
+
+def test_repo_only_save_refuses_when_the_machine_file_changed(tmp_path, capsys):
+    root, gpath = _repo(tmp_path, {"guards.forcePush": "block"},
+                        {"guards": {"forcePush": "block"}})
+    menu.save(root, {"repo": {"guards.forcePush": "allow"}}, apply=False,
+              global_path=gpath)
+    out = capsys.readouterr().out
+    reviewed = {"machine": _digest_line(out, "machine"),
+                "repo": _digest_line(out, "repo")}
+    with open(gpath, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps({"guards": {"forcePush": "allow"}}))
+    before = open(_config(root), "rb").read()
+
+    code = menu.save(root, {"repo": {"guards.forcePush": "allow"}}, apply=True,
+                     global_path=gpath, expect=reviewed)
+
+    assert code == 2
+    assert "machine layer" in capsys.readouterr().err
+    assert open(_config(root), "rb").read() == before
+
+
+def test_repo_only_save_passes_the_machine_digest_to_the_writer(tmp_path,
+                                                                monkeypatch):
+    root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "act"}})
+    machine = crew_config_files.digest(open(gpath, "rb").read())
+    seen = {}
+    real = crew_config.write_repo_config
+
+    def _spy(*args, **kwargs):
+        seen.update(kwargs)
+        return real(*args, **kwargs)
+    monkeypatch.setattr(menu.crew_config, "write_repo_config", _spy)
+
+    code = menu.save(root, {"repo": {"tracker": "sdp"}}, apply=True,
+                     global_path=gpath, expect={"machine": machine})
+
+    assert (code, seen.get("expect_global")) == (0, machine)
+
+
+def test_two_layer_save_binds_the_repo_write_to_the_machine_it_wrote(tmp_path,
+                                                                    capsys):
+    root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "report-only"}})
+    changes = {"machine": _MACHINE_SET, "repo": _REPO_SET}
+    menu.save(root, changes, apply=False, global_path=gpath)
+    out = capsys.readouterr().out
+    reviewed = {"machine": _digest_line(out, "machine"),
+                "repo": _digest_line(out, "repo")}
+
+    code = menu.save(root, changes, apply=True, global_path=gpath,
+                     expect=reviewed)
+
+    written = json.loads(open(_config(root), encoding="utf-8").read())
+    assert (code, written["tracker"]) == (0, "jira"), capsys.readouterr().err
+
+
+def test_two_layer_save_judges_the_repo_against_the_saved_machine(tmp_path,
+                                                                  capsys):
+    root, gpath = _repo(tmp_path, {"guards.forcePush": "ask"},
+                        {"guards": {"forcePush": "allow"}})
+
+    menu.save(root, {"machine": {"guards.forcePush": "block"},
+                     "repo": {"guards.forcePush": "allow"}},
+              apply=False, global_path=gpath)
+
+    repo_part = capsys.readouterr().out.split("repo layer - ", 1)[1]
+    assert "held down by the machine-global layer" in repo_part
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_save_dry_run_names_an_absent_machine_file(tmp_path, capsys, layer):
+    root, gpath = _repo(tmp_path)
+    changes = ({"machine": {"pm.authority": "act"}} if layer == "machine"
+               else {"repo": {"tracker": "sdp"}})
+
+    menu.save(root, changes, apply=False, global_path=gpath)
+
+    assert _digest_line(capsys.readouterr().out, "machine") == "absent"
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_save_compares_against_an_absent_machine_file(tmp_path, capsys, layer):
+    root, gpath = _repo(tmp_path)
+    changes = ({"machine": {"pm.authority": "act"}} if layer == "machine"
+               else {"repo": {"tracker": "sdp"}})
+    with open(gpath, "w", encoding="utf-8") as handle:
+        handle.write('{"x-other": 1}')
+    before = (open(gpath, "rb").read(), open(_config(root), "rb").read())
+
+    code = menu.save(root, changes, apply=True, global_path=gpath,
+                     expect={"machine": "absent"})
+
+    assert code == 2, capsys.readouterr()
+    assert (open(gpath, "rb").read(), open(_config(root), "rb").read()) == before
+
+
+def test_save_passes_an_absent_expectation_to_the_machine_writer(tmp_path,
+                                                                 monkeypatch):
+    root, gpath = _repo(tmp_path)
+    seen = {}
+    real = crew_config.write_global_config
+
+    def _spy(*args, **kwargs):
+        seen.update(kwargs)
+        return real(*args, **kwargs)
+    monkeypatch.setattr(menu.crew_config, "write_global_config", _spy)
+
+    code = menu.save(root, {"machine": {"pm.authority": "act"}}, apply=True,
+                     global_path=gpath, expect={"machine": "absent"})
+
+    assert (code, seen.get("expect")) == (0, "absent")
+
+
+def test_save_cli_takes_absent_as_an_expectation(tmp_path, capsys):
+    root, gpath = _repo(tmp_path)
+
+    code = menu.main(["--root", root, "--global-path", gpath, "save",
+                      "--changes", '{"machine": {"pm.authority": "act"}}',
+                      "--apply", "--expect-machine", "absent"])
+
+    assert code == 0, capsys.readouterr().err
+    assert json.loads(open(gpath, encoding="utf-8").read())["pm"] == {
+        "authority": "act"}
+
+
+def test_delete_preview_prints_both_digests(tmp_path, capsys):
+    root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "act"}})
+
+    out = _preview(root, gpath, capsys)
+
+    assert (_digest_line(out, "repo"), _digest_line(out, "machine")) == (
+        crew_config_files.digest(open(_config(root), "rb").read()),
+        crew_config_files.digest(open(gpath, "rb").read()))
+
+
+@pytest.mark.parametrize("expect", [None, "stale-repo", "stale-machine",
+                                    "no-machine"])
+def test_delete_apply_is_bound_to_the_preview(tmp_path, capsys, expect):
+    root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "act"}})
+    plan = menu.plan_delete(root, gpath)
+    reviewed = {"repo": plan["digest"], "machine": plan["machine"]}
+    if expect == "stale-repo":
+        reviewed["repo"] = "0" * 64
+    elif expect == "stale-machine":
+        reviewed["machine"] = "absent"
+    elif expect == "no-machine":
+        del reviewed["machine"]
+    before = open(_config(root), "rb").read()
+
+    code = menu.delete_repo_config(root, "repo", True, now=_now(),
+                                   global_path=gpath,
+                                   expect=None if expect is None else reviewed)
+
+    assert (code, open(_config(root), "rb").read(), _backups(root)) == (
+        2, before, [])
+    assert "preview" in capsys.readouterr().err
+
+
+def test_delete_cli_apply_needs_the_preview_digests(tmp_path, capsys):
+    root, gpath = _repo(tmp_path)
+    base = ["--root", root, "--global-path", gpath, "delete-repo",
+            "--confirm", "repo"]
+    menu.main(base)
+    out = capsys.readouterr().out
+
+    unbound = menu.main(base + ["--apply"])
+    unbound_err = capsys.readouterr().err
+    bound = menu.main(base + ["--apply", "--expect-repo",
+                              _digest_line(out, "repo"), "--expect-machine",
+                              _digest_line(out, "machine")])
+
+    assert (unbound, bound) == (2, 0)
+    assert "--expect-repo" in unbound_err
+    assert not os.path.exists(_config(root))
+
+
+def test_delete_rollback_never_replaces_a_file_saved_in_the_gap(
+        tmp_path, capsys, monkeypatch):
+    root, gpath = _repo(tmp_path)
+    plan = menu.plan_delete(root, gpath)
+    changed = b'{"tracker": "sdp"}\n'
+    foreign = b'{"tracker": "jira", "saved": "in the gap"}\n'
+    _write_config(root, changed)
+    real_move = crew_config_files.move_aside
+
+    def _move_then_a_foreign_save(src, dest):
+        got = real_move(src, dest)
+        with open(src, "wb") as handle:
+            handle.write(foreign)
+        return got
+    monkeypatch.setattr(crew_config_files, "move_aside", _move_then_a_foreign_save)
+    monkeypatch.setattr(menu.os.path, "lexists", lambda _p: False)
+
+    code = menu.apply_delete(root, plan, "repo", now=_now(), expect={
+        "repo": plan["digest"], "machine": plan["machine"]})
+
+    backup = os.path.join(root, ".crew", f"config.json.bak-{_TS}")
+    assert (code, open(_config(root), "rb").read(), open(backup, "rb").read()) == (
+        1, foreign, changed)
+    assert backup in capsys.readouterr().err
+
+
+@pytest.mark.skipif(os.name == "nt", reason="needs a POSIX symlink")
+def test_delete_refuses_a_symlinked_config(tmp_path, capsys):
+    root, gpath = _repo(tmp_path)
+    real = os.path.join(root, ".crew", "real-config.json")
+    os.replace(_config(root), real)
+    os.symlink(real, _config(root))
+
+    code = _delete(root, gpath)
+
+    assert (code, os.path.islink(_config(root)), _backups(root)) == (2, True, [])
+    assert "not a regular file" in capsys.readouterr().err
+
+
+@pytest.mark.skipif(os.name == "nt", reason="needs a POSIX symlink")
+def test_restore_refuses_a_symlinked_backup(tmp_path, capsys):
+    root, _ = _repo(tmp_path)
+    before = open(_config(root), "rb").read()
+    target = os.path.join(root, ".crew", f"config.json.bak-{_TS}-real")
+    with open(target, "wb") as handle:
+        handle.write(b'{"tracker": "jira"}\n')
+    link = os.path.join(root, ".crew", f"config.json.bak-{_TS}")
+    os.symlink(target, link)
+
+    code = menu.restore_repo_config(root, link, True, now=_now())
+
+    assert (code, open(_config(root), "rb").read()) == (2, before)
+    assert "not a regular file" in capsys.readouterr().err
+
+
+def test_restore_never_replaces_a_file_that_appears_after_the_move_aside(
+        tmp_path, capsys, monkeypatch):
+    root, gpath = _repo(tmp_path, {"tracker": "jira"})
+    _delete(root, gpath)
+    crew_platform.heal_config(root)
+    backup = os.path.join(root, ".crew", f"config.json.bak-{_TS}")
+    healed_again = b'{"tracker": "files", "healed": "again"}\n'
+    real_move = crew_config_files.move_aside
+
+    def _aside_then_heal(src, dest):
+        got = real_move(src, dest)
+        with open(src, "wb") as handle:
+            handle.write(healed_again)
+        return got
+    monkeypatch.setattr(crew_config_files, "move_aside", _aside_then_heal)
+    capsys.readouterr()
+
+    code = menu.restore_repo_config(root, backup, True, now=_now())
+
+    assert (code, open(_config(root), "rb").read()) == (2, healed_again)
+
+
+@pytest.mark.parametrize("argv,needle", [
+    (["spec", "--layer", "repo", "--pending", ""], "--pending"),
+    (["spec", "--layer", "repo", "--area", ""], "area"),
+    (["delete-repo", "--expect-repo", "zz"], "--expect-repo"),
+    (["delete-repo", "--expect-machine", ""], "--expect-machine"),
+], ids=["pending-empty", "area-empty", "delete-expect-zz",
+        "delete-expect-empty"])
+def test_cli_refuses_an_explicitly_empty_value(tmp_path, capsys, argv, needle):
+    root, gpath = _repo(tmp_path)
+    before = open(_config(root), "rb").read()
+
+    code = menu.main(["--root", root, "--global-path", gpath] + argv)
+
+    assert code == 2
+    assert needle in capsys.readouterr().err
+    assert open(_config(root), "rb").read() == before

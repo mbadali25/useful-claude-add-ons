@@ -8,9 +8,9 @@ apart. Run `sabotage.py`, not this file.
 Each one is a way the menu could disarm a guard, write before it validated,
 merge over another writer, or delete the only copy of a config.
 
-Review round 2's BLOCK 1 (the verify gate's record) has no code path, so it
-has no entry here: its proof is the `verify_record.py report` quoted in the
-review context.
+Review round 2's BLOCK 1 and round 3's first BLOCK (the verify gate's record)
+have no code path, so they have no entry here: their proof is the
+`verify_record.py report` quoted in the review context.
 """
 import os
 
@@ -24,7 +24,8 @@ _F = "tests/test_config_files.py::"
 _M = "tests/test_config_menu.py::"
 
 _REPO_PLAN = ('            crew_config.plan_repo_write(root, updates, global_path, '
-              'snapshot=snap)\n')
+              'snapshot=snap,\n'
+              '                                        machine=machine)\n')
 _GLOBAL_PLAN = ('            crew_config.plan_global_write(updates, global_path, '
                 'snapshot=snap)\n')
 
@@ -60,8 +61,7 @@ CONFIG_MENU_MUTATIONS = (
      '        reason = ("not a settable leaf of .crew/config.json (a block is set "\n'
      '                  "one key at a time; unknown keys are refused)")\n'
      '    if reason is None and dotted in REPO_VETO_ONLY and not is_repo_veto(value):\n'
-     '        reason = ("a repo may only veto this (false) or clear its veto (null); "\n'
-     '                  "only the machine-global file can arm it")\n'
+     '        reason = _VETO_ONLY\n'
      '    return reason\n'
      '\n'
      '\n'
@@ -77,8 +77,7 @@ CONFIG_MENU_MUTATIONS = (
      '        reason = ("not a settable leaf of .crew/config.json (a block is set "\n'
      '                  "one key at a time; unknown keys are refused)")\n'
      '    if reason is None and dotted in REPO_VETO_ONLY and not is_repo_veto(value):\n'
-     '        reason = ("a repo may only veto this (false) or clear its veto (null); "\n'
-     '                  "only the machine-global file can arm it")\n'
+     '        reason = _VETO_ONLY\n'
      '    return reason\n'
      '\n'
      '\n'
@@ -112,11 +111,12 @@ CONFIG_MENU_MUTATIONS = (
      '    return (out if (table or crew_config.enum_values(dotted)\n'
      '                    or dotted in ctx["known"]) else []), (None if out else refusal)\n',
      _M + "test_every_writable_setting_offers_a_selectable_value"),
+    # Re-anchored (round 3): both plans are built in `_plan_both`.
     ("save writes before validating", MENU,
-     '            plans["machine"] = crew_config.plan_global_write(\n'
-     '                machine, global_path, snapshot=snap)[1]\n',
-     '            plans["machine"] = (crew_config.write_global_config if apply else\n'
-     '                                crew_config.plan_global_write)(machine, global_path)[1]\n',
+     '        merged, plans["machine"] = crew_config.plan_global_write(\n'
+     '            machine, global_path, snapshot=snap)\n',
+     '        merged, plans["machine"] = crew_config.write_global_config(\n'
+     '            machine, global_path)\n',
      _M + "test_save_validates_both_layers_before_writing_either"),
     # Re-anchored (successor): the backup is now the move itself.
     ("delete removes before the backup", MENU,
@@ -187,15 +187,16 @@ CONFIG_MENU_MUTATIONS = (
     # neighbouring case. ---
     # B2: delete accepted a config restore refuses.
     ("delete skips the restorable check", MENU,
-     '        parsed, held = crew_config_files.read_strict(path)\n',
+     '        parsed, held = crew_config_files.read_restorable(path)\n',
      '        parsed, held = {}, open(path, "rb").read()\n',
      _M + "test_delete_refuses_a_config_restore_would_refuse[notjson]"),
+    # Re-anchored (round 3): restore reads through `read_restorable` too.
     ("restore accepts what delete refuses", MENU,
-     '    problem = crew_config_files.restorable(data)\n',
-     '    problem = None\n',
+     '        return None, crew_config_files.read_restorable(backup)[1]\n',
+     '        return None, open(backup, "rb").read()\n',
      _M + "test_delete_and_restore_share_one_predicate"),
     ("restore rewrites the line ending", MENU,
-     '            crew_config_files.replace_bytes(path, data)\n',
+     '            crew_config_files.create_bytes(path, data)\n',
      '            crew_config_files.replace_text(\n'
      '                path, data.decode("utf-8-sig").replace("\\r\\n", "\\n"), b"")\n',
      _M + "test_delete_then_restore_is_byte_identical_with_bom_and_crlf"),
@@ -309,7 +310,8 @@ CONFIG_MENU_MUTATIONS = (
      '            pending, problem = _json_arg(args.pending, "--pending")\n',
      '            pending, problem = json.loads(args.pending), None\n',
      _M + "test_cli_refuses_malformed_input_with_exit_2[spec-pending-1]"),
-    ("dotted-path check dropped", MENU,
+    # Re-anchored (round 3): the one dotted-path rule is the file layer's.
+    ("dotted-path check dropped", FILES,
      '_DOTTED_RE = re.compile(r"^[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*$")\n',
      '_DOTTED_RE = re.compile(r".*")\n',
      _M + "test_cli_refuses_malformed_input_with_exit_2[save-a..b]"),
@@ -322,4 +324,155 @@ CONFIG_MENU_MUTATIONS = (
      '    lines = [f"restore (sh): {forms[\'sh\']}", f"restore (cmd): {forms[\'cmd\']}"]\n',
      '    lines = [f"restore (sh): {forms[\'sh\']}", f"restore (cmd): {forms[\'sh\']}"]\n',
      _M + "test_delete_prints_all_three_restore_lines"),
+
+    # --- Review round 3 (T-0075): one per finding, one per neighbouring
+    # case. The gate-record BLOCK has no code path (see the docstring). ---
+    # BLOCK: a block value was judged by leaf but assigned whole.
+    ("planner assigns the block, not its leaves", CONFIG,
+     '    units = assignments(updates)\n',
+     '    units = list(updates.items())\n',
+     _C + "test_a_repo_block_write_marks_its_leaf_widening"),
+    ("assignment keeps blocks whole", CONFIG,
+     '                _shape(dotted) == "block" or _is_open_table(dotted)):\n',
+     '                _is_open_table(dotted)):\n',
+     _C + "test_a_block_write_keeps_its_untouched_siblings[machine]"),
+    ("assignment expansion stops at one level", CONFIG,
+     '            out.extend(assignments(\n'
+     '                {f"{dotted}.{key}": inner for key, inner in value.items()}))\n',
+     '            out.extend((f"{dotted}.{key}", inner)\n'
+     '                       for key, inner in value.items())\n',
+     _C + "test_a_block_write_keeps_its_untouched_siblings[repo]"),
+    ("role table assigned whole", CONFIG,
+     '                _shape(dotted) == "block" or _is_open_table(dotted)):\n',
+     '                _shape(dotted) == "block"):\n',
+     _C + "test_a_role_table_write_keeps_the_other_pins[machine]"),
+    # FIX: the merged file was judged on enums and providers only.
+    ("merged machine file keeps a consent key", CONFIG,
+     '    if layer == "machine" and _consent_refusal(dotted):\n',
+     '    if False:\n',
+     _C + "test_merged_file_refuses_a_pre_existing_leaf_forbidden_at_its_layer"
+     "[machine-unsafeFocus]"),
+    ("merged repo file keeps an armed veto key", CONFIG,
+     '    if layer == "repo" and dotted in REPO_VETO_ONLY and not is_repo_veto(value):\n'
+     '        return _VETO_ONLY\n',
+     '',
+     _C + "test_merged_file_refuses_a_pre_existing_leaf_forbidden_at_its_layer"
+     "[repo-armed-autoclear]"),
+    ("a repo-only key in the machine file blocks a write", CONFIG,
+     '    if _shape(dotted) == "unknown":\n        return None\n'
+     '    if layer == "repo" and dotted in REPO_VETO_ONLY',
+     '    if _shape(dotted) == "unknown":\n        return None\n'
+     '    if layer == "machine" and not is_global_path(dotted):\n'
+     '        return "repo-only"\n'
+     '    if layer == "repo" and dotted in REPO_VETO_ONLY',
+     _C + "test_a_repo_only_key_in_the_machine_file_does_not_block_a_write"),
+    # FIX: an absent file had no digest to compare against.
+    ("an absent machine file digests as None", CONFIG,
+     '            return {}, None, crew_config_files.ABSENT\n',
+     '            return {}, None, None\n',
+     _M + "test_save_dry_run_names_an_absent_machine_file[machine]"),
+    ("update_json cannot compare against absence", FILES,
+     '        current = state_digest(raw)\n',
+     '        current = None if raw is None else digest(raw)\n',
+     _F + "test_update_json_compares_against_absence[absent-as-planned]"),
+    ("machine writer not passed the expectation", MENU,
+     '                crew_config.write_global_config(machine, global_path,\n'
+     '                                                expect=expect.get("machine"))\n',
+     '                crew_config.write_global_config(machine, global_path,\n'
+     '                                                expect=None)\n',
+     _M + "test_save_passes_an_absent_expectation_to_the_machine_writer"),
+    ("--expect refuses absent", FILES,
+     '    return value == ABSENT or (',
+     '    return (',
+     _C + "test_set_cli_takes_absent_for_a_first_machine_write"),
+    # BLOCK: a repo-only Save did not bind the machine file it judged against.
+    ("repo-only save records no machine digest", MENU,
+     '        if layer in plans or (plans and layer == "machine"):\n',
+     '        if layer in plans:\n',
+     _M + "test_repo_only_save_prints_the_machine_digest"),
+    ("repo write not bound to the machine digest", MENU,
+     '                                              expect_global=bound)\n',
+     '                                              expect_global=None)\n',
+     _M + "test_repo_only_save_passes_the_machine_digest_to_the_writer"),
+    ("repo writer ignores expect_global", CONFIG,
+     '        if expect_global is not None and expect_global != machine:\n',
+     '        if False:\n',
+     _C + "test_repo_write_refuses_when_the_machine_file_changed"),
+    ("two-layer save binds the repo to the pre-save machine", MENU,
+     '                         else _machine_as_written(global_path, after))\n',
+     '                         else expect.get("machine"))\n',
+     _M + "test_two_layer_save_binds_the_repo_write_to_the_machine_it_wrote"),
+    ("repo plan judged against the pre-save machine", MENU,
+     '        view = (after, None)\n',
+     '        view = crew_config.machine_view(global_path)\n',
+     _M + "test_two_layer_save_judges_the_repo_against_the_saved_machine"),
+    ("--set --repo prints no machine digest", CONFIG,
+     '        print(f"machine digest: {machine[1]}")\n',
+     '        pass\n',
+     _C + "test_set_repo_cli_prints_and_takes_the_machine_digest"),
+    # BLOCK: the typed confirmation was not bound to the reviewed preview.
+    ("delete apply skips the preview digests", MENU,
+     '    problem = _unbound(plan, expect)\n',
+     '    problem = None\n',
+     _M + "test_delete_apply_is_bound_to_the_preview[stale-repo]"),
+    ("delete binds the repo digest only", MENU,
+     '    for layer, have in (("repo", plan["digest"]), ("machine", plan["machine"])):\n',
+     '    for layer, have in (("repo", plan["digest"]),):\n',
+     _M + "test_delete_apply_is_bound_to_the_preview[stale-machine]"),
+    ("delete apply without digests allowed", MENU,
+     '        if expect.get(layer) is None:\n            return (',
+     '        if expect.get(layer) is None:\n            continue\n            return (',
+     _M + "test_delete_apply_is_bound_to_the_preview[None]"),
+    ("delete CLI drops --expect-repo", MENU,
+     '                                      "repo": args.expect_repo,\n',
+     '                                      "repo": None,\n',
+     _M + "test_delete_cli_apply_needs_the_preview_digests"),
+    # BLOCK: a destination refusal was check-then-replace.
+    ("move checks the destination, then replaces", FILES,
+     '        os.link(src, dest, follow_symlinks=False)\n        try:\n',
+     '        if os.path.lexists(dest):\n'
+     '            raise FileExistsError(dest)\n'
+     '        os.replace(src, dest)\n'
+     '        return\n'
+     '        try:\n',
+     _F + "test_move_aside_never_replaces_a_destination_created_after_a_check"),
+    ("create_bytes replaces an existing file", FILES,
+     '        move_no_clobber(tmp, path)\n',
+     '        os.replace(tmp, path)\n',
+     _F + "test_create_bytes_never_replaces_an_existing_file"),
+    ("move removes a file that replaced the source", FILES,
+     '    if os.path.samestat(os.lstat(parked), os.lstat(dest)):\n',
+     '    if True:\n',
+     _F + "test_move_aside_puts_back_a_file_that_replaced_the_source"),
+    # BLOCK: the mismatch rollback checked, then replaced.
+    ("rollback overwrites a file saved in the gap", MENU,
+     '                    crew_config_files.move_no_clobber(backup, path)\n',
+     '                    os.replace(backup, path)\n',
+     _M + "test_delete_rollback_never_replaces_a_file_saved_in_the_gap"),
+    ("restore replaces a file that appeared after the move-aside", MENU,
+     '            crew_config_files.create_bytes(path, data)\n',
+     '            crew_config_files.replace_bytes(path, data)\n',
+     _M + "test_restore_never_replaces_a_file_that_appears_after_the_move_aside"),
+    # BLOCK: delete moved a symlink into a backup restore then refused.
+    ("delete follows a symlinked config", MENU,
+     '        parsed, held = crew_config_files.read_restorable(path)\n',
+     '        parsed, held = crew_config_files.read_strict(path)\n',
+     _M + "test_delete_refuses_a_symlinked_config"),
+    ("restore follows a symlinked backup", MENU,
+     '        return None, crew_config_files.read_restorable(backup)[1]\n',
+     '        return None, crew_config_files.read_strict(backup)[1]\n',
+     _M + "test_restore_refuses_a_symlinked_backup"),
+    ("read_restorable reads a FIFO", FILES,
+     '        if not stat.S_ISREG(os.fstat(fd).st_mode):\n',
+     '        if False:\n',
+     _F + "test_restorable_file_refuses_what_is_not_a_regular_file[fifo]"),
+    # FIX: an explicitly empty value skipped validation.
+    ("empty --pending skips validation", MENU,
+     '        if args.pending is not None:\n',
+     '        if args.pending:\n',
+     _M + "test_cli_refuses_an_explicitly_empty_value[pending-empty]"),
+    ("empty --area skips validation", MENU,
+     '        if args.area is not None:\n',
+     '        if args.area:\n',
+     _M + "test_cli_refuses_an_explicitly_empty_value[area-empty]"),
 )

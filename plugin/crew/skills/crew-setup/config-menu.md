@@ -102,15 +102,18 @@ run first:
 S save --changes '<json>'
 ```
 
-It validates both layers before writing either and prints both diffs, each
-under a `machine digest:` / `repo digest:` line. Read back every `!` line (a
-widening) and every `held down by the machine-global layer` line (a repo
-value the machine layer overrules), and record the two digests. Then, and
-only after the dry run has been shown and the owner said yes, the same
-command with `--apply --expect-machine <digest> --expect-repo <digest>` (the
-flag for each layer that has changes). A refusal naming a layer that
-"changed since the dry run" means another session or an editor wrote the
-file in between: nothing was written; run the dry run again and show it.
+It validates both layers before writing either and prints both diffs, with a
+`machine digest:` line whenever anything changes (a repo value's widening
+marks are judged against the machine file, as this Save leaves it) and a
+`repo digest:` line when the repo changes; `absent` means the file does not
+exist yet. Read back every `!` line (a widening) and every `held down by the
+machine-global layer` line (a repo value the machine layer overrules), and
+record the digests. Then, and only after the dry run has been shown and the
+owner said yes, the same command with `--apply --expect-machine <digest>
+--expect-repo <digest>` (every digest the dry run printed, `absent`
+included). A refusal naming a layer that "changed since the dry run" means
+another session or an editor wrote or created the file in between: nothing
+was written; run the dry run again and show it.
 Each changed layer is written once. If it reports one layer written and the
 other not, say exactly that; the written layer stays written.
 
@@ -132,19 +135,27 @@ result back. A config change nobody verified is a claim, not a change.
    not widen it: an absent repo value is the floor), a `re-detected by
    platform-sync` group for `platform.*`, and what deleting means on disk:
    hooks stand down until the next SessionStart, then platform-sync recreates
-   the built-in defaults. It exits 2 without a confirmation; that is
-   expected. A file that does not parse, is empty, is `{}` or is not an
-   object is refused outright (a restore could not take it back): say that
-   platform-sync backs it up to `config.json.broken` and heals it at the next
-   SessionStart, or the owner removes it by hand, and stop.
+   the built-in defaults. It ends with a `repo digest:` and a `machine
+   digest:` line: the two files the preview was built from. It exits 2
+   without a confirmation; that is expected. A file that does not parse, is
+   empty, is `{}` or is not an object is refused outright (a restore could
+   not take it back): say that platform-sync backs it up to
+   `config.json.broken` and heals it at the next SessionStart, or the owner
+   removes it by hand, and stop. A symlink or other non-regular file is
+   refused the same way (its backup would be one restore refuses): the owner
+   replaces or removes it by hand.
 2. Ask the owner to type the repo name the preview asks for: the checkout's
    name (`git rev-parse --show-toplevel`'s basename, else the directory's).
    Never fill it in for them, and never infer it from a yes.
-3. `S delete-repo --confirm <name> --apply`. Under the config lock it
-   moves the file to `.crew/config.json.bak-<UTC timestamp>` in one rename
-   (the backup is the file itself, never a copy), compares the moved bytes
-   with what the preview read, and if the file changed since, moves it
-   straight back and deletes nothing (exit 2: preview again).
+3. `S delete-repo --confirm <name> --apply --expect-repo <digest>
+   --expect-machine <digest>`, with the two digests the preview printed:
+   the apply refuses (exit 2) without them or when either file changed since,
+   so the typed name confirms the preview that was shown. Under the config
+   lock it moves the file to `.crew/config.json.bak-<UTC timestamp>` in one
+   rename that never replaces an existing file (the backup is the file
+   itself, never a copy), compares the moved bytes with what the preview
+   read, and if the file changed since, moves it straight back, never over a
+   file saved in between, and deletes nothing (exit 2: preview again).
 4. It prints three restore lines, `restore (sh):`, `restore (cmd):` and
    `restore (PowerShell):`. Read back the one that matches the owner's shell
    verbatim, and say the other two exist. Each puts the backup back byte for
@@ -156,5 +167,6 @@ With no AskUserQuestion (a headless or scripted session), print the plan
 instead of asking: `crew_config_menu.py --root . spec --layer <layer>`, and
 require the explicit flags, `save --changes '<json>' --apply
 --expect-machine <digest> --expect-repo <digest>` (the digests from the dry
-run) or `delete-repo --confirm <name> --apply`. Nothing is applied from a
-default.
+run) or `delete-repo --confirm <name> --apply --expect-repo <digest>
+--expect-machine <digest>` (the digests from the preview). Nothing is
+applied from a default.
