@@ -1,6 +1,6 @@
 ---
 name: shipstation
-description: Use when querying, exploring, or troubleshooting a ShipStation account through its API - shipments, labels, rates, carriers, warehouses, inventory, products, tracking, orders, batches, manifests, fulfillments, or stores. Also use when choosing between ShipStation API V2 and V1, when a ShipStation call returns 401/403/404/429, or when an expected endpoint appears to be missing.
+description: Use when querying, exploring, or troubleshooting a ShipStation account through its API - shipments, labels, rates, carriers, warehouses, inventory, products, tracking, orders, batches, manifests, fulfillments, or stores. Also use when changing orders in bulk (marking hundreds or thousands shipped), when choosing between ShipStation API V2 and V1, when a ShipStation call returns 401/403/404/429, or when an expected endpoint appears to be missing.
 ---
 
 # ShipStation API
@@ -15,10 +15,10 @@ single most common failure, because the auth scheme, base URL, and available res
 | API | Base URL | Auth | Use for |
 |---|---|---|---|
 | **V2** (current, default) | `https://api.shipstation.com` | `API-Key: <key>` header | Shipments, labels, rates, carriers, warehouses, inventory, products, tracking, batches, manifests, fulfillments, purchase orders, suppliers, totes |
-| **V1** (legacy, still supported) | `https://ssapi.shipstation.com` | Basic `base64(key:secret)` | **Orders, customers, stores** - and nothing else worth reaching for |
+| **V1** (legacy, still supported) | `https://ssapi.shipstation.com` | Basic `base64(key:secret)` | **Finding** orders, customers, stores - not bulk writes (~40 req/min) |
 | ShipEngine (white-label lineage) | `api.shipengine.com` | `API-Key` header | Ignore unless explicitly on ShipEngine |
 
-## The trap: V2 has no orders endpoint
+## The trap: V2 has no orders endpoint (but can still act on orders)
 
 There is **no `/v2/orders`, `/v2/stores`, or `/v2/customers`**. Verified against the V2 spec
 (99 paths / 142 operations) and the published V2 reference - neither contains them.
@@ -27,10 +27,15 @@ The docs site makes this easy to get wrong: `/apis/openapi/orders/list_orders` l
 lives under the **V1** namespace. Only `/apis/openapi/*` is V2; `/apis/shipstation-v1/openapi/*`
 and `/apis/shipengine/openapi/*` are the other two.
 
-So when the question is about **orders** ("how many awaiting shipment?", "what did customer X buy?"):
+That does **not** mean V2 can't act on orders: **every V1 order is also a V2 shipment**, with
+`shipment_id = "se-" + orderId` (order `882684294` → `se-882684294`). So:
 
-- Use **V1** `/orders` — the direct answer, or
-- Approximate in V2 via `/v2/shipments` (has `sales_order_id`, `store_id`, `item_keyword`) or `/v2/fulfillments`.
+- **Find / filter** orders in **V1** `/orders` (`orderStatus`, `createDateEnd`, ...) — the direct answer.
+- **Act** on them in bulk through **V2**, keyed by `se-<orderId>` (see *Bulk order changes*).
+- Approximate order questions in V2 via `/v2/shipments` (`sales_order_id`, `store_id`, `item_keyword`) or `/v2/fulfillments`.
+
+Open statuses — V1 `orderStatus`: `awaiting_payment`, `awaiting_shipment`, `pending_fulfillment`,
+`on_hold`. V2 `shipment_status`: `pending`, `on_hold`.
 
 Don't invent a V2 orders path. Don't report "no orders found" from a 404 — that's the wrong API, not an empty account.
 
@@ -95,8 +100,47 @@ warning as "re-scope the query", not "raise the cap".
 
 ### Rate limits
 
-**~200 requests/minute** by default; exceeding it returns **429** with a `Retry-After` header (seconds).
-Prefer bulk endpoints (`/v2/rates/bulk`, batches) over loops. `ss.ps1` already honours `Retry-After`.
+| API | Budget | Notes |
+|---|---|---|
+| V2 | **~200 requests/min** | 429 with `Retry-After` (seconds) |
+| V1 | **~40 requests/min** | ~39/min is the sustained ceiling; 429 past it |
+
+Both limits are **per account/key**: parallel workers or extra agents share the same budget and only
+add 429s. Prefer bulk endpoints (`/v2/fulfillments`, `/v2/rates/bulk`, batches) over loops.
+`ss.ps1` already honours `Retry-After`. During a long V1 job, poll progress sparingly — every check
+spends the same 40/min.
+
+## Bulk order changes
+
+**Reach for V2 first.** V1 `/orders/markasshipped` is one order per call — ~2 hours for 3,800 orders.
+V2 `POST /v2/fulfillments` takes 100 per call: 3,181 orders in ~1 minute, zero errors (verified live,
+2026-09-27).
+
+1. **Find** targets in V1 and **save the ID list to a file** — the collection shifts while you mutate it.
+2. Map each to `se-<orderId>`.
+3. **Trial on a handful**, then run in batches of 100, logging a result per ID.
+4. **Verify** with one V1 `pageSize=1` call per status and read `total`.
+
+```powershell
+$ids = Get-Content .\targets.txt                    # V1 orderIds, saved before any write
+for ($i = 0; $i -lt $ids.Count; $i += 100) {
+    $batch = $ids[$i..([Math]::Min($i + 99, $ids.Count - 1))]
+    $r = .\ss.ps1 /v2/fulfillments -Method POST -Body @{ fulfillments = @($batch | ForEach-Object {
+        @{ shipment_id = "se-$_"; tracking_number = ''; carrier_code = 'other'
+           ship_date = '2026-09-27T12:00:00Z'; notify_customer = $false; notify_order_source = $false } }) }
+    $r | ConvertTo-Json -Depth 10 -Compress | Add-Content .\fulfill-log.jsonl   # per-ID results
+}
+```
+
+- `tracking_number` is required by the spec, but `""` is accepted — don't invent tracking numbers.
+  `carrier_code = 'other'` is accepted.
+- **Confirm the notify choice with the user**; default `notify_customer` / `notify_order_source` to `false`.
+- Afterwards V2 status moves `pending_fulfillment` → `label_purchased`; V1 shows `orderStatus = shipped`.
+
+**Time zones differ between the APIs.** V1 `createDateEnd` is read as **Pacific**; V2 `created_at_end`
+is **UTC**. A V2 cutoff of `2026-07-29T00:00:00Z` missed 2 orders that V1's
+`createDateEnd='2026-07-29 00:00:00'` included — so build the ID list from V1 alone. A `ship_date` of
+`T00:00:00Z` shows in V1 as the previous day; use `T12:00:00Z`.
 
 ## Endpoint reference
 
@@ -133,6 +177,10 @@ That MCP serves docs only — it cannot read account data, so it does not replac
 | Base `ssapi.shipstation.com` with an `API-Key` header | `ssapi` is V1/Basic; V2 is `api.shipstation.com` |
 | Accepting the default `page_size=25` and reporting a partial count as a total | Raise `page_size`, follow `pages`, or use `-All` |
 | Reading `total` as "count returned" | `total` is the full match count; the array is one page |
-| Looping single requests for bulk work | Use bulk/batch endpoints; respect 200/min |
+| Looping single requests for bulk work | Use bulk/batch endpoints; respect 200/min (V2), 40/min (V1) |
+| Looping V1 `/orders/markasshipped` for thousands of orders | V2 `/v2/fulfillments` in batches of 100, keyed `se-<orderId>` |
+| Adding parallel workers/agents to beat the V1 limit | The limit is per account/key — they share one budget |
+| Using the same wall-clock cutoff in V1 and V2 | V1 dates are Pacific, V2 are UTC — build the ID list in V1 |
+| Inventing tracking numbers to satisfy `/v2/fulfillments` | `tracking_number: ""` is accepted |
 | Treating a 403 as a bad key | 403 usually means the endpoint is gated by account plan |
 | Pasting the API key into a command or script | Env var only; V2 shows the key once and allows one active key |

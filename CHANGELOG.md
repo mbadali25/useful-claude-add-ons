@@ -6,6 +6,14 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`shipstation` 1.1.0: reach for V2 when changing orders in bulk.** Bumped `1.0.0 -> 1.1.0`.
+  `SKILL.md` gains a *Bulk order changes* section: every V1 order is a V2 shipment
+  (`se-<orderId>`), so find in V1 and act through `POST /v2/fulfillments` in batches of 100
+  (3,181 orders in ~1 minute, verified live 2026-09-27) instead of V1 `/orders/markasshipped`
+  one per call. Rate limits now state both budgets (V2 ~200/min, V1 ~40/min, per account), plus the
+  V1-Pacific / V2-UTC date trap and bulk-write safety steps. `ss.ps1`'s V1 429 hint names the
+  ~40/min per-account budget.
+
 - **`crew` 1.0.48: approve several tickets in one prompt, with a confirm
   step (T-0024).** Bumped `1.0.47 -> 1.0.48`. Its branch declared 1.0.42, then
   1.0.43-1.0.45 for review rounds 1-3 (the Fixed entries below); main gave
