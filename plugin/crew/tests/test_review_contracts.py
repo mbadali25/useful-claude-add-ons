@@ -9,6 +9,7 @@ CONSUMER (T-0087).
 import ast
 import glob
 import importlib
+import importlib.util
 import json
 import os
 import re
@@ -310,3 +311,22 @@ def test_resume_fingerprint_watches_the_paths_the_producers_write(tmp_path):
 
     assert None not in seen and len(set(seen)) == 3, seen
 
+
+
+def test_verify_rule_paths_are_the_checkers_harness_globs():
+    repo = os.path.dirname(os.path.dirname(CREW))
+    verify = os.path.join(repo, ".crew", "verify.json")
+    checker_path = os.path.join(repo, "scripts", "check-tooling-pr.py")
+    if not (os.path.isfile(verify) and os.path.isfile(checker_path)):
+        pytest.skip("the crew dir is not inside the marketplace repo (an installed copy): "
+                    "no .crew/verify.json or scripts/check-tooling-pr.py beside it")
+    with open(verify, encoding="utf-8") as fh:
+        rules = json.load(fh)["rules"]
+    spec = importlib.util.spec_from_file_location("check_tooling_pr", checker_path)
+    checker = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(checker)
+
+    matching = [r for r in rules if any("scripts/check-tooling-pr.py" in c for c in r["run"])]
+
+    assert len(matching) == 1, [r["paths"] for r in matching]
+    assert matching[0]["paths"] == list(checker.HARNESS)
