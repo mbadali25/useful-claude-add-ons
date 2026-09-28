@@ -33,6 +33,7 @@ import crew_freshness
 import crew_migrate
 import crew_tracker
 import review_ledger
+import verify_record
 from crew_common import read_text
 
 MAX_LINES = 40
@@ -140,13 +141,13 @@ def _review_lines(root):
 
 
 def _verify_line(root):
-    record = _json(os.path.join(root, ".crew", ".verify-gate.record.json"))
-    if record is None:
+    state, rules = verify_record.read_record(root)
+    if state == "absent":
         return "verify   no gate record yet"
-    if not isinstance(record, dict) or not isinstance(record.get("rules"), dict):
+    if state != "ok":
         return "verify   UNKNOWN (gate record unreadable)"
     counts = {}
-    for rule in record["rules"].values():
+    for rule in rules.values():
         state = rule.get("status", "unknown") if isinstance(rule, dict) else "unknown"
         counts[state] = counts.get(state, 0) + 1
     return "verify   " + (", ".join(f"{v} {k}" for k, v in sorted(counts.items())) or "no rules recorded")
