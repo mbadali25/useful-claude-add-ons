@@ -23,6 +23,12 @@ PROVIDERS.
 A provider binary that is not on PATH is refused BEFORE reservation: nothing
 was launched, so nothing is spent.
 
+`--probe` (codex only) makes one minimal real call and reserves nothing: exit
+0 ok, 5 limited (a usage/rate/quota limit, `review_limit.limit_line`), 6
+failed, 7 unknown (timed out). /crew:review runs it before step 2a. Being on
+PATH is not being able to review: a logged-out or rate-limited Codex resolves
+on PATH and fails at the first call (T-0088).
+
 The prompt is passed inline when it fits a Windows command line; otherwise the
 argument tells the reviewer to read `prompt.txt`, and says so on stderr.
 
@@ -68,6 +74,7 @@ import sys
 import crew_common
 import crew_state
 import review_ledger
+import review_limit
 import review_patch
 import review_prompt
 import review_verdict
@@ -83,6 +90,11 @@ POST_KILL_TIMEOUT = 5
 # Windows' CreateProcess limit is 32767 characters for the whole command line.
 INLINE_PROMPT_LIMIT = 24000
 LAUNCHED = ("codex", "copilot")
+# The probe (T-0088): one minimal real Codex call, before any reservation.
+PROBE_TIMEOUT = 120
+PROBE_PROMPT = "Reply with exactly the word OK. Do not run any command and do not read any file."
+EXIT_PROBE_LIMITED, EXIT_PROBE_FAILED, EXIT_PROBE_UNKNOWN = 5, 6, 7
+PROBE_OK, PROBE_LIMITED, PROBE_FAILED, PROBE_UNKNOWN = "ok", "limited", "failed", "unknown"
 
 
 def _read(path):
@@ -401,6 +413,34 @@ def run(args):
     return finish(args, number, output, code, timed_out, extra)
 
 
+def probe(args):
+    """(outcome, detail). One minimal real Codex call, BEFORE any reservation.
+
+    Four outcomes, never collapsed: `ok` is a delivered message at exit 0 (a
+    429 Codex retried and then got past is still ok); `limited` is a failed
+    call whose error or stderr names a limit, or a limit recorded by the round
+    before (`review_limit.recorded`, no call made); `failed` is any other
+    failure, quoted; `unknown` is no answer within the probe's timeout."""
+    exe = shutil.which("codex")
+    if not exe:
+        return PROBE_FAILED, "codex is not on PATH"
+    timeout = args.probe_timeout
+    cmd = command_for("codex", exe, args.root, PROBE_PROMPT, args.model, args.effort)
+    stdout, stderr, code, timed_out = launch(cmd, args.root, timeout)
+    _write_atomic(os.path.join(args.scratch, "probe-events.jsonl"), stdout)
+    _write_atomic(os.path.join(args.scratch, "probe-stderr.txt"), stderr)
+    message, error = review_verdict.codex_final_message(stdout)
+    if code == 0 and not timed_out and (message or "").strip():
+        return PROBE_OK, message.strip().splitlines()[0][:120]
+    line = review_limit.limit_line(error or "", stderr)
+    if line:
+        return PROBE_LIMITED, line
+    if timed_out:
+        return PROBE_UNKNOWN, f"no answer within {timeout}s"
+    tail = (stderr or "").strip().splitlines()[-1:] or [f"exit {code}"]
+    return PROBE_FAILED, error or tail[0]
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", default=".")
@@ -416,6 +456,8 @@ def main(argv):
     parser.add_argument("--round", type=int)
     parser.add_argument("--output")
     parser.add_argument("--exit-code", type=int)
+    parser.add_argument("--probe", action="store_true")
+    parser.add_argument("--probe-timeout", type=int, default=PROBE_TIMEOUT)
     args = parser.parse_args(argv)
     args.root = os.path.abspath(args.root)
     args.scratch = os.path.abspath(args.scratch)
@@ -423,6 +465,18 @@ def main(argv):
 
     try:
         review_ledger.check_ticket(args.ticket)
+        if args.probe:
+            if args.provider != "codex":
+                parser.error("--probe is for the codex provider only")
+            if args.reserve_only or args.round is not None:
+                parser.error("--probe reserves nothing; it takes neither --reserve-only "
+                             "nor --round")
+            outcome, detail = probe(args)
+            print(f"PROBE={outcome}")
+            print("PROBE_DETAIL=" + " ".join(str(detail).splitlines()))
+            return {PROBE_OK: EXIT_CLEAN, PROBE_LIMITED: EXIT_PROBE_LIMITED,
+                    PROBE_FAILED: EXIT_PROBE_FAILED,
+                    PROBE_UNKNOWN: EXIT_PROBE_UNKNOWN}[outcome]
         if args.provider == "claude":
             if args.reserve_only:
                 return run(args)
