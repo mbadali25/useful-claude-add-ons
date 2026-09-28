@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@7d217751
+anchor: useful-claude-add-ons@8cabe586
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -927,3 +927,17 @@ in this range (`git log 6c497a14..7d217751` over both still returns `ecf69e43` a
 the README pin landmine stands as written; `README.md:12`/`:18` still pin `6c497a14`. Version
 1.0.49 at `.claude-plugin/marketplace.json:218` and `plugin/PLUGINS.md:14`; `:217` and `:17` still
 state 36 commands (`ls plugin/crew/commands/*.md` is 36). Nothing was executed for this note.
+
+## Re-anchor provenance - `7d217751` + `f96e9ec9` -> `8cabe586`, 2026-09-27 (T-0075 post-merge fixes, merges T-0077's main)
+
+`8cabe586` is T-0075's crew 1.0.50 bump. Between `7d217751` and it: `ed7cb36c` (the stray line
+step 6 left in `crew_config_menu.py:940`, a restore-line test's assertion, and the widening-warning
+mutation re-anchored in `sabotage.py`, each found by the first full suite run after the build), a
+1.0.48/1.0.49 step-back and re-set (`b80db8e1`, `81ed193c`), `3ebddc74` merging origin/main
+`f96e9ec9` (T-0077 landed as 1.0.49: Windows directory handles in `crew_tracker.py`,
+`crew_autopilot._rel`, their tests and mutations, three `plugin/crew/README.md` lines and its
+`CHANGELOG.md` entry; main's notes were not refreshed for it) and the bump. Citations into the
+paths `git diff --name-only 7d217751 8cabe586` names were mapped with `git diff -U0` and each
+moved one checked by content at `8cabe586`; none of this note's line citations moved; the install scripts and
+`README.md` did not change. Version 1.0.50 at `.claude-plugin/marketplace.json:218` and
+`plugin/PLUGINS.md:14`; `:217` and `:17` still state 36 commands. Nothing was executed for this note.

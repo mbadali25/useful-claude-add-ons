@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@7d217751
+anchor: useful-claude-add-ons@8cabe586
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -1015,3 +1015,17 @@ the troubleshooting guide's source changed (`docs/guides/crew/src/troubleshootin
 `/crew:config` delete sentence) and its HTML, DOCX and PDF were rebuilt at `cb67a6ef`;
 `CHANGELOG.md` carries T-0075's successor entry first. `docs/diagrams/data-flow-crew-config.mmd` is
 refreshed in the same change. Nothing was executed for this note.
+
+## Re-anchor provenance - `7d217751` + `f96e9ec9` -> `8cabe586`, 2026-09-27 (T-0075 post-merge fixes, merges T-0077's main)
+
+`8cabe586` is T-0075's crew 1.0.50 bump. Between `7d217751` and it: `ed7cb36c` (the stray line
+step 6 left in `crew_config_menu.py:940`, a restore-line test's assertion, and the widening-warning
+mutation re-anchored in `sabotage.py`, each found by the first full suite run after the build), a
+1.0.48/1.0.49 step-back and re-set (`b80db8e1`, `81ed193c`), `3ebddc74` merging origin/main
+`f96e9ec9` (T-0077 landed as 1.0.49: Windows directory handles in `crew_tracker.py`,
+`crew_autopilot._rel`, their tests and mutations, three `plugin/crew/README.md` lines and its
+`CHANGELOG.md` entry; main's notes were not refreshed for it) and the bump. Citations into the
+paths `git diff --name-only 7d217751 8cabe586` names were mapped with `git diff -U0` and each
+moved one checked by content at `8cabe586`; `plugin/crew/README.md:2169` holds (T-0077's three README lines are above it and
+net zero); `CHANGELOG.md` gained T-0077's entry after T-0075's and T-0024's. The three crew
+diagrams were re-anchored to `8cabe586` in the same change. Nothing was executed for this note.

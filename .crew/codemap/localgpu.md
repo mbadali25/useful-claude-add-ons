@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@7d217751
+anchor: useful-claude-add-ons@8cabe586
 verified: 2026-09-27
 
 # localgpu
@@ -1221,3 +1221,16 @@ checked against the tree it was written for (`git blame` on this note gives the 
 at `7d217751` with `sed -n`/`grep -n`; the provider re-export `crew_config.py:127-128` -> `:128-129` (one import line
 above it); the rest are by name. Nothing under `plugin/localgpu/` changed; its marketplace entry is
 still `0.1.20`. Nothing was executed for this note.
+
+## Re-anchor provenance - `7d217751` + `f96e9ec9` -> `8cabe586`, 2026-09-27 (T-0075 post-merge fixes, merges T-0077's main)
+
+`8cabe586` is T-0075's crew 1.0.50 bump. Between `7d217751` and it: `ed7cb36c` (the stray line
+step 6 left in `crew_config_menu.py:940`, a restore-line test's assertion, and the widening-warning
+mutation re-anchored in `sabotage.py`, each found by the first full suite run after the build), a
+1.0.48/1.0.49 step-back and re-set (`b80db8e1`, `81ed193c`), `3ebddc74` merging origin/main
+`f96e9ec9` (T-0077 landed as 1.0.49: Windows directory handles in `crew_tracker.py`,
+`crew_autopilot._rel`, their tests and mutations, three `plugin/crew/README.md` lines and its
+`CHANGELOG.md` entry; main's notes were not refreshed for it) and the bump. Citations into the
+paths `git diff --name-only 7d217751 8cabe586` names were mapped with `git diff -U0` and each
+moved one checked by content at `8cabe586`; none of this note's citations moved (`crew_config.py` did not change in this
+range). Nothing under `plugin/localgpu/` changed. Nothing was executed for this note.

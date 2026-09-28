@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@7d217751 on 2026-09-27. Verify before trusting.
+%% Generated from useful-claude-add-ons@8cabe586 on 2026-09-27. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_config_files.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
@@ -188,6 +188,10 @@
 %% crew_config_files.update_json (lock, compare-and-swap), the planner-probed menu choices, save's
 %% --expect digests, the two-phase delete by one rename, and restore on the shared restorable().
 %% Leaf counts re-executed at 7d217751: 122 / 68 / 54 / 0.
+%% Re-anchored 7d217751 -> 8cabe586 (T-0075's post-merge fix, its merge of main f96e9ec9 with
+%% T-0077, crew 1.0.50): crew_config_menu.py lost one stray line at :940, below every Menu node's
+%% citation (main() is now :942, not drawn); crew_tracker.py gained T-0077's Windows handles from
+%% :299, below resolve() :210, which TRKREAD cites and which holds. Nothing redrawn.
 %% How one config value reaches a run, and what may set it where.
 %% --
 %% RE-ANCHORED after crew 1.0 (previously 60c79407). Every function/line cited

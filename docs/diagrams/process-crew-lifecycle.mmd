@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@8de3c669 on 2026-09-27. Verify before trusting.
+%% Generated from useful-claude-add-ons@8cabe586 on 2026-09-27. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -84,6 +84,9 @@
 %% both kept. Main changed none of approve.md, crew_ticket.py or approval_hook.py since
 %% d276b268 and T-0024 changed no tracker-bearing command file, so every node's line
 %% citation holds on the merged tree (checked by script against both sides' content).
+%% Re-anchored 8de3c669 -> 8cabe586 (T-0075, crew 1.0.50, after its merges of main d2fbd408 and
+%% f96e9ec9): of the Anchors paths only crew_tracker.py changed (T-0077's Windows directory
+%% handles, inserted from :299 and :1061); no node cites a line in it, so nothing was redrawn.
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):

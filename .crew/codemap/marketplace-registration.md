@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@7d217751
+anchor: useful-claude-add-ons@8cabe586
 verified: 2026-09-27
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -47,8 +47,8 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.49** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
-and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `7d217751`, T-0075's bump one past main after its merge of `d2fbd408`); it was 1.0.48 at `d2fbd408` (T-0024's bump `8de3c669`) and on that merge (`748a823d`), 1.0.49 on T-0075's branch at `ca667718`, T-0075's re-set after review round 1; 1.0.48 at `23371afb`, T-0075's bump on its merge of main `67caa4b8`; it
+`rule-of-two`. `crew` is now **1.0.50** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `8cabe586`, T-0075's bump one past main after its merge of `f96e9ec9`); it was 1.0.49 at `f96e9ec9` (T-0077's re-bump `fc289446`) and on T-0075's branch at `7d217751` and `81ed193c`, 1.0.48 at `d2fbd408` (T-0024's bump `8de3c669`) and on that merge (`748a823d`), 1.0.49 on T-0075's branch at `ca667718`, T-0075's re-set after review round 1; 1.0.48 at `23371afb`, T-0075's bump on its merge of main `67caa4b8`; it
 was 1.0.47 at `67caa4b8` (T-0018's re-bump `65bb3330` on its merge of main `bebbb97f`) and on T-0075's branch at `f7163410`, 1.0.46 at `bebbb97f` (T-0023's bump `e463ca53`), at T-0018's first landing bump `fbc27b49` and on T-0075's branch at `e95e5964`, 1.0.45 at `db14619c` (T-0021, bumped again for a CI fix), 1.0.44 on T-0018's branch at `0c7f6b84`, 1.0.43 on T-0023's branch at `a1acd9b7` and on T-0018's at `39f8f59f`, 1.0.44 at `12682e41` and on T-0075's branch at `d2444be9`, 1.0.43 at `f0b12ee6` (T-0042) and on T-0021's branch at `c2ae46ab`, 1.0.42 at `2b18f7ab` (1.0.46 on T-0021's branch until its merge of main), 1.0.41 at `07ca3972` and on T-0005's branch, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
@@ -825,3 +825,17 @@ at `7d217751` with `sed -n`/`grep -n`; the crew version statement now reads 1.0.
 `plugin/PLUGINS.md:14`), 1.0.48 at `d2fbd408` and on the merge; `:217` still states 36 commands.
 `.crew/verify.json`'s doc rule `:69-78` holds. `python3 scripts/check-marketplace.py` at `7d217751`:
 `marketplace: 34 skills, 5 plugins`, `all checks passed`.
+
+## Re-anchor provenance - `7d217751` + `f96e9ec9` -> `8cabe586`, 2026-09-27 (T-0075 post-merge fixes, merges T-0077's main)
+
+`8cabe586` is T-0075's crew 1.0.50 bump. Between `7d217751` and it: `ed7cb36c` (the stray line
+step 6 left in `crew_config_menu.py:940`, a restore-line test's assertion, and the widening-warning
+mutation re-anchored in `sabotage.py`, each found by the first full suite run after the build), a
+1.0.48/1.0.49 step-back and re-set (`b80db8e1`, `81ed193c`), `3ebddc74` merging origin/main
+`f96e9ec9` (T-0077 landed as 1.0.49: Windows directory handles in `crew_tracker.py`,
+`crew_autopilot._rel`, their tests and mutations, three `plugin/crew/README.md` lines and its
+`CHANGELOG.md` entry; main's notes were not refreshed for it) and the bump. Citations into the
+paths `git diff --name-only 7d217751 8cabe586` names were mapped with `git diff -U0` and each
+moved one checked by content at `8cabe586`; the crew version statement reads 1.0.50 at `8cabe586`; `:217` still
+states 36 commands (main's T-0077 description said 35; the merge kept T-0075's). `python3
+scripts/check-marketplace.py` at `8cabe586`: `marketplace: 34 skills, 5 plugins`, `all checks passed`.
