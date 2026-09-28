@@ -245,6 +245,27 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 1.0.48: Windows holds a vault write's directories in place (T-0077).**
+  Bumped `1.0.47 -> 1.0.48`.
+  - **The bug.** On Windows, `crew_tracker.py` had no directory pinning: `_DIR_FD` is POSIX-only. Its fallback
+    re-checked `realpath(folder)`, which a directory renamed away and replaced by another passes. So a vault, board
+    directory or note directory swapped after the checks was written into, not refused. This was a fail-open guard.
+  - **The fix.** Windows now opens a handle on the vault and on every directory down to the target. Each handle has
+    `FILE_LIST_DIRECTORY` access, shares read and write but **not** delete, and uses
+    `FILE_FLAG_OPEN_REPARSE_POINT`. The handles are held for the length of the write, and the OS refuses to rename any
+    of those directories while they are open.
+  - **What it refuses.** Each handle is refused rather than trusted when it is a reparse point, not a directory, the
+    wrong vault, or has no file id ("could not tell"). A path re-check still runs at the same three points.
+  - **Other platforms.** A platform that can neither pin by fd nor hold by handle now refuses the write, instead of
+    re-checking a path.
+  - **The swap tests on Windows.** The three `board_dir_moved_out` cases and both note-dir cases now assert that the
+    swap is refused by the OS, that the write lands in the vault, and that no `.tmp` is left anywhere.
+  - **`crew_autopilot._rel`.** It no longer raises ValueError when an evidence path is on a different Windows drive
+    than the repo; it falls back to the path itself.
+  - **T-0071 #7, two Windows-only tracker tests made portable:**
+    - `test_board_keeps_its_mode` skips on Windows, which has no group/other mode bits.
+    - `test_resolve_compares_the_effective_vault` compares the repr'd path the message prints.
+  - Eight new sabotage mutations go red, and the removed `_parent_check` mutation is replaced.
 - **`crew` 1.0.43: auto-resume closes T-0006's review round 4 (T-0042).**
   Bumped `1.0.42 -> 1.0.43` (`1.0.41 -> 1.0.42` on its branch; 1.0.42 went to T-0005).
   - FIX: a `resume-state.json` whose directory cannot be searched was read

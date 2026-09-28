@@ -167,7 +167,13 @@ _INDEX_ID = re.compile(r"^[A-Z][A-Z0-9]*-[0-9]+$")
 
 
 def _rel(top, path):
-    return os.path.relpath(path, top).replace("\\", "/")
+    """`path` relative to `top` for evidence lines, or `path` itself when there
+    is no relative form: on Windows a path on another drive than `top` makes
+    `os.path.relpath` raise ValueError (T-0077)."""
+    try:
+        return os.path.relpath(path, top).replace("\\", "/")
+    except ValueError:
+        return path.replace("\\", "/")
 
 
 def _index_rows(top):
