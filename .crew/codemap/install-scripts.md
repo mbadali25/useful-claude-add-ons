@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@65bb3330
+anchor: useful-claude-add-ons@8de3c669
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -825,3 +825,17 @@ Re-verified per-path from `f8671fdc` to `45345812` for T-0024's review round 3 (
 cited paths `.claude-plugin/marketplace.json` (`:218` only), `plugin/PLUGINS.md` (`:14` only) and
 `plugin/crew/README.md` (two sentences edited in place; `:2263`/`:2274` hold) changed. Neither
 install script, `README.md` nor `BUDGETS.md` changed.
+
+## Re-anchor provenance - `65bb3330` + `474aea8b` -> `8de3c669`, 2026-09-27 (T-0024 lands on T-0018's main)
+
+`affa22a5` merges T-0024's reviewed head `474aea8b` (review round 4 FINDINGS, owner-accepted) into
+main `67caa4b8` (T-0018 landed as crew 1.0.47, PR #245), and `8de3c669` bumps crew to 1.0.48.
+The two sides share no source file: T-0024 changed `approval_hook.py`, both approval-hook wrappers,
+`crew_ticket.py`, `commands/approve.md` and their tests; both sides changed `CHANGELOG.md`,
+`.crew/verify.json`, `plugin/crew/README.md` (merged cleanly), `plugin/crew/tests/sabotage.py`,
+`plugin/crew/BUDGETS.md`, the version files and the refresh artifacts. The conflicting provenance
+sections keep both sides, main's first.
+This note cites `.crew/verify.json`, `plugin/crew/README.md` and `sabotage.py` by name only or
+in its provenance history; `plugin/PLUGINS.md` `:14` now reads 1.0.48 and `plugin/crew/BUDGETS.md`
+`:11` 18,885 lines across 126 files, both changed in place. No body citation moved. Nothing was
+executed for this note.

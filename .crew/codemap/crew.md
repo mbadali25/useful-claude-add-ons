@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@65bb3330
+anchor: useful-claude-add-ons@8de3c669
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -1984,3 +1984,20 @@ files and `CHANGELOG.md`. Re-read at `45345812`:
   `approval_digest` `:558`, `status` `:585` hold.
 - `CHANGELOG.md` - the 1.0.45 entry at the top, so `:142` -> `:154`, same text.
 - `marketplace.json` - `:218` is 1.0.45. `approve.md` did not change.
+
+## Re-anchor provenance - `65bb3330` + `474aea8b` -> `8de3c669`, 2026-09-27 (T-0024 lands on T-0018's main)
+
+`affa22a5` merges T-0024's reviewed head `474aea8b` (review round 4 FINDINGS, owner-accepted) into
+main `67caa4b8` (T-0018 landed as crew 1.0.47, PR #245), and `8de3c669` bumps crew to 1.0.48.
+The two sides share no source file: T-0024 changed `approval_hook.py`, both approval-hook wrappers,
+`crew_ticket.py`, `commands/approve.md` and their tests; both sides changed `CHANGELOG.md`,
+`.crew/verify.json`, `plugin/crew/README.md` (merged cleanly), `plugin/crew/tests/sabotage.py`,
+`plugin/crew/BUDGETS.md`, the version files and the refresh artifacts. The conflicting provenance
+sections keep both sides, main's first.
+Every body citation into a file either side changed was checked on `8de3c669` against both
+sides' content at the same line (a script comparing `git show` at `67caa4b8` and `474aea8b` with the
+merged tree). Corrected here: crew's version is 1.0.48 (`:218`, `plugin.json:3`); T-0004's
+CHANGELOG "117 -> 119" is `:608-609`, T-0024's four entries now sitting above it; T-0024's branch
+range is added to the anchor history at the top. The `/crew:approve` row's `approve.md`,
+`approval_hook.py` and `crew_ticket.py` citations are T-0024's and hold (main changed none of those
+files). No test suite was executed for this note.

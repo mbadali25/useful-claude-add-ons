@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@65bb3330
+anchor: useful-claude-add-ons@8de3c669
 verified: 2026-09-27
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -722,3 +722,17 @@ cited paths `.claude-plugin/marketplace.json` (`:218` 1.0.45), `plugin/PLUGINS.m
 `plugin/crew/.claude-plugin/plugin.json`, `CHANGELOG.md` and `plugin/crew/README.md` (two
 group-approval sentences, in place; `:2263`/`:2274` hold) changed; `BUDGETS.md` did not (18,202
 still measures). `python3 scripts/check-marketplace.py` at `45345812`: `all checks passed`.
+
+## Re-anchor provenance - `65bb3330` + `474aea8b` -> `8de3c669`, 2026-09-27 (T-0024 lands on T-0018's main)
+
+`affa22a5` merges T-0024's reviewed head `474aea8b` (review round 4 FINDINGS, owner-accepted) into
+main `67caa4b8` (T-0018 landed as crew 1.0.47, PR #245), and `8de3c669` bumps crew to 1.0.48.
+The two sides share no source file: T-0024 changed `approval_hook.py`, both approval-hook wrappers,
+`crew_ticket.py`, `commands/approve.md` and their tests; both sides changed `CHANGELOG.md`,
+`.crew/verify.json`, `plugin/crew/README.md` (merged cleanly), `plugin/crew/tests/sabotage.py`,
+`plugin/crew/BUDGETS.md`, the version files and the refresh artifacts. The conflicting provenance
+sections keep both sides, main's first.
+Corrected here: `crew` is 1.0.48 (`.claude-plugin/marketplace.json:218`, changed in place, so
+`:217`'s counts hold); `plugin/crew/BUDGETS.md:11` is 18,885 across 126, recomputed from the
+merged index and re-measured by `check-marketplace.py` (`all checks passed`). No other body citation
+moved. No test suite was executed for this note.
