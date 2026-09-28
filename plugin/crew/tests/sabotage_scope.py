@@ -22,12 +22,14 @@ GUARD_PS1 = os.path.join(_S, "scope-guard.ps1")
 AUDIT_SH = os.path.join(_S, "completion-audit.sh")
 AUDIT_PS1 = os.path.join(_S, "completion-audit.ps1")
 HOOK_SH = os.path.join(_S, "approval-hook.sh")
+MERGED_MAIN = os.path.join(_S, "merged_main.py")
 
 _SG = "tests/test_scope_guard.py::"
 _CA = "tests/test_completion_audit.py::"
 _CT = "tests/test_crew_ticket.py::"
 _AH = "tests/test_approval_hook.py::"
 _AD = "tests/test_approval_digest.py::"
+_MM = "tests/test_merged_main.py::"
 
 SCOPE_MUTATIONS = (
     ("the scope guard allows an edit with no approved plan", GUARD,
@@ -349,4 +351,34 @@ SCOPE_MUTATIONS = (
      '    cut = data.find(b"\\n")\n',
      _AD + "test_body_status_line_after_a_non_lf_break_stales_approval"
      "[bare-cr-trailing-space]"),
+    # --- T-0100: paths identical to merged main (merged_main.py, the audit) ----
+    # Each run by hand against the tracked file, restored with `git checkout`.
+    ("MERGED MAIN: a merge older than the ticket start still applies", MERGED_MAIN,
+     "    if before:\n",
+     "    if before and False:\n",
+     _MM + "test_no_merge_past_the_start_changes_nothing"),
+    ("MERGED MAIN: no integration ref falls through to merge-base HEAD HEAD", MERGED_MAIN,
+     '    if not ref:\n        return {"ref": None,',
+     '    ref = ref or "HEAD"\n    if False:\n        return {"ref": None,',
+     _MM + "test_could_not_tell_drops_nothing[no-ref]"),
+    ("MERGED MAIN: HEAD on the integration branch still applies", MERGED_MAIN,
+     '    if branch in (ref, ref[len("origin/"):] if ref.startswith("origin/") else ref):\n',
+     "    if False:\n",
+     _MM + "test_head_on_the_integration_branch_never_applies"),
+    ("MERGED MAIN: keep drops nothing", MERGED_MAIN,
+     "    return sorted(set(since_base) & set(since_merged))\n",
+     "    return sorted(set(since_base))\n",
+     _CA + "test_paths_identical_to_merged_main_are_not_out_of_scope[module]"),
+    ("MERGED MAIN: keep drops what differs from merged main instead", MERGED_MAIN,
+     "    return sorted(set(since_base) & set(since_merged))\n",
+     "    return sorted(set(since_base) - set(since_merged))\n",
+     _CA + "test_a_ticket_edit_on_top_of_merged_mains_edit_stays_flagged[module]"),
+    ("the audit drops an untracked file after a merge of main", AUDIT,
+     '    since_merged = worktree_changes(top, merged["commit"], _ONLY[1:]) | untracked\n',
+     '    since_merged = worktree_changes(top, merged["commit"], _ONLY[1:])\n',
+     _CA + "test_an_untracked_out_of_touch_file_after_a_merge_of_main_still_blocks"),
+    ("the audit never passes the merged commit on", AUDIT,
+     "        every, paths = _changed(top, base, merged)\n",
+     "        every, paths = _changed(top, base, None)\n",
+     _CA + "test_paths_identical_to_merged_main_are_not_out_of_scope[module]"),
 )

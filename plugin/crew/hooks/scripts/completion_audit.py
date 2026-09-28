@@ -16,6 +16,20 @@ path listing, not the review bundle. Renames arrive with both ends and BOTH
 must be in scope: a rename moves a file out of one path as much as into
 another.
 
+MERGED MAIN (T-0100). After the ticket merges its integration branch, the
+files main changed in between differ from the recorded start too, and are not
+the ticket's. `merged_main.resolve` names the merged commit
+(`git merge-base HEAD <ref>`) and `merged_main.keep` leaves out every path
+byte-identical to it in the working state -- the same rule, from the same
+module, that `review_patch.compute` applies to the bundle, so the reviewer and
+this audit judge the same changed set. A ticket edit on top of main's edit to
+the same file stays, and so does any edit after the merge. The verdict names
+the merged commit and how many paths it did not count. When the merged commit
+cannot be told (no integration ref, detached HEAD, git gave no answer) nothing
+is left out and the verdict says `merged main: could not tell`. Only `audit`
+narrows: `changed_paths` without `merged` still answers "what did this branch
+change" for `crew_refresh_check.ticket_freshness`.
+
 The user's index is never rewritten. `git diff` -- the porcelain this used
 until T-0008 -- refreshes the index's stat cache and WRITES `.git/index`
 whenever a tracked file is stat-dirty but unchanged, and neither
@@ -67,6 +81,7 @@ import subprocess
 import sys
 
 import crew_ticket
+import merged_main
 import scope_base
 
 MAX_LINES = 6
@@ -150,15 +165,25 @@ def worktree_changes(top, sha, pathspec, literal=False):
     return paths | (set(suspects) - _unchanged(top, suspects))
 
 
-def changed_paths(top, base):
+def changed_paths(top, base, merged=None):
     """Every path the tree changed since `base`, both ends of a rename or
     copy. Names, plus the hash of a stat-dirty file -- never the review
     bundle, and never a write to the index."""
+    return _changed(top, base, merged)[1]
+
+
+def _changed(top, base, merged):
+    """`(every path changed since base, the ones kept)`. `merged` is
+    `merged_main.resolve`'s answer or None; only an applying one narrows, and
+    an untracked path is never identical to a merged commit's tracked one."""
     sha = _git_fields(top, ["rev-parse", "--verify", base + "^{commit}"])[0].strip()
-    paths = worktree_changes(top, sha, _ONLY[1:])
-    paths.update(p for p in _git_fields(top, ["ls-files", "--others", "--exclude-standard",
-                                              "-z"] + _ONLY) if p)
-    return sorted(paths)
+    untracked = {p for p in _git_fields(top, ["ls-files", "--others", "--exclude-standard",
+                                              "-z"] + _ONLY) if p}
+    paths = worktree_changes(top, sha, _ONLY[1:]) | untracked
+    if not (merged and merged.get("applies")):
+        return sorted(paths), sorted(paths)
+    since_merged = worktree_changes(top, merged["commit"], _ONLY[1:]) | untracked
+    return sorted(paths), merged_main.keep(paths, since_merged)
 
 
 def shown(path):
@@ -188,23 +213,27 @@ def _outside_refresh_artifacts(top, paths, approval):
 
 
 def audit(root, ticket):
-    """(ok, lines). `lines` explains a failure; empty on a pass."""
+    """(ok, lines). `lines` explains a failure; on a pass it is the merged-main
+    line when paths identical to merged main were not counted, else empty."""
     top = crew_ticket.toplevel(root)
     if not top:
         return False, [f"completion audit: {root} is not a git repository; cannot audit"]
     base, source, reason = scope_base.resolve(top, ticket)
     if not base:
         return False, [f"completion audit: no scope base for {ticket} ({reason})"]
+    merged = merged_main.resolve(top, base)
     try:
-        paths = changed_paths(top, base)
+        every, paths = _changed(top, base, merged)
     except RuntimeError as exc:
         return False, [f"completion audit: could not diff the tree: {shown(str(exc))}"]
+    extra = _merged_lines(merged, len(every) - len(paths))
+    passed = extra if merged["applies"] and len(every) > len(paths) else []
     # ONE read of spec.md: the hash check, the Touch below and the refresh
     # allowance all share the bytes.
     approval = crew_ticket.accepted(top, ticket)
     paths = _outside_refresh_artifacts(top, paths, approval)
     if not paths:
-        return True, []
+        return True, passed
     note = "" if source == scope_base.RECORDED else " (base is a fallback: shows MORE)"
     if approval["status"] != "approved":
         return False, [f"COMPLETION AUDIT: {ticket}'s Touch is not approved "
@@ -212,17 +241,31 @@ def audit(root, ticket):
                        f"  Changed since {base[:12]}{note}: "
                        + " ".join(shown(p) for p in paths[:8])
                        + (" ..." if len(paths) > 8 else ""),
+                       *extra,
                        f"  Ask the user to type `/crew:approve {ticket}`."]
     outside = [p for p in paths if not crew_ticket.in_touch(p, approval["touch"])]
     if not outside:
-        return True, []
+        return True, passed
     listed = " ".join(shown(p) for p in outside[:8]) + (
         f" (+{len(outside) - 8} more)" if len(outside) > 8 else "")
     return False, [f"COMPLETION AUDIT: {len(outside)} changed path(s) outside {ticket}'s "
                    f"spec ## Touch{note}:",
                    f"  {listed}",
+                   *extra,
                    "  Revert them, or amend spec.md ## Touch and have the user type",
                    f"  `/crew:approve {ticket}`. Shell-made writes count."]
+
+
+def _merged_lines(merged, dropped):
+    """The verdict's `merged main` line: the commit and what it did not count,
+    or could-not-tell. Empty when there was no merge to account for."""
+    if merged["applies"]:
+        return [f"  merged main {merged['commit'][:12]} ({merged['ref']}): {dropped} path(s) "
+                "identical to it not counted"]
+    if merged["commit"] is None:
+        return [f"  merged main: {merged_main.UNKNOWN} - "
+                f"{shown(merged_main.bare_reason(merged))}; every changed path counted"]
+    return []
 
 
 def _payload():
@@ -292,6 +335,7 @@ def main(argv):
         ok, lines = False, [f"completion audit: {exc}"]
     if ok:
         print(f"completion audit: every change is inside {args.ticket}'s spec ## Touch")
+        print("".join(line + "\n" for line in physical(lines)), end="")
         return 0
     print("\n".join(physical(lines)))
     return 1

@@ -9,6 +9,7 @@ by the shell never reaches PreToolUse.
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 
@@ -18,6 +19,7 @@ import context  # noqa: F401  pylint: disable=unused-import
 import completion_audit
 import crew_fixtures
 import crew_ticket
+import merged_main_fixtures
 from review_fixtures import git
 from scope_fixtures import (FLAVOUR_MATRIX, FLAVOURS, PWSH, SCRIPTS, make_repo, make_ticket,
                             needs_pwsh, ready, run_hook, stop)
@@ -614,3 +616,103 @@ def test_the_provably_off_readers_are_byte_for_byte_twins():
         _sh_function("completion-audit", "_scope_provably_off")
     assert _ps_function("scope-guard", "Test-ScopeProvablyOff") == \
         _ps_function("completion-audit", "Test-ScopeProvablyOff")
+
+
+# --- merged main (T-0100) --------------------------------------------------------------
+# The ticket branch is cut from origin/main, commits in Touch, then merges main after
+# main changed five out-of-Touch paths. Those paths are byte-identical to the merged
+# commit and are not the ticket's; every edit the ticket makes on top of them still is.
+
+_MAIN_OUT_OF_TOUCH = (("write", "other/keep.py", "x = 1\nmain_line = 2\n"),
+                      ("write", "other/new.py", "added = 'by main'\n"),
+                      ("delete", "secret/x.py"),
+                      ("rename", "other/r_old.py", "other/r_new.py"))
+_MERGED_IN = ("other/keep.py", "other/new.py", "other/r_new.py", "other/r_old.py",
+              "secret/x.py")
+
+
+def _merged_repo(tmp_path, ticket_commits=True):
+    """`(clone, merged commit)`: `make_repo`'s layout as the upstream, a clone on
+    `T-1` with its base recorded, main advanced on out-of-Touch paths and merged."""
+    upstream = make_repo(tmp_path, mode="block", name="upstream")
+    merged_main_fixtures.write(upstream, "other/r_old.py", "renamed = 'by main'\n")
+    git(upstream, "add", "-A")
+    git(upstream, "commit", "-qm", "a file main renames")
+    root = merged_main_fixtures.clone(upstream, tmp_path)
+    (root / ".crew").mkdir()
+    shutil.copy(upstream / ".crew" / "config.json", root / ".crew" / "config.json")
+    ready(root)
+    if ticket_commits:
+        merged_main_fixtures.ticket_commit(root, "src/app.py", "x = 2, the ticket's\n")
+    merged_main_fixtures.advance_main(upstream, *_MAIN_OUT_OF_TOUCH)
+    return root, merged_main_fixtures.merge_main(root)
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_paths_identical_to_merged_main_are_not_out_of_scope(flavour, tmp_path):
+    root, _ = _merged_repo(tmp_path)
+
+    code, out, err = _audit(flavour, root, stop(root))
+
+    assert (code, out, err) == (0, "", "")
+
+
+def test_check_names_the_merged_commit_and_what_it_did_not_count(tmp_path):
+    root, merged = _merged_repo(tmp_path)
+
+    done = _check(root)
+
+    assert (done.returncode, done.stdout.splitlines()) == (0, [
+        "completion audit: every change is inside T-1's spec ## Touch",
+        f"  merged main {merged[:12]} (origin/main): 5 path(s) identical to it not counted"])
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+def test_a_ticket_edit_on_top_of_merged_mains_edit_stays_flagged(flavour, tmp_path):
+    root, _ = _merged_repo(tmp_path)
+    merged_main_fixtures.ticket_commit(root, "other/keep.py",
+                                       "x = 1\nmain_line = 2\nticket_line = 3\n")
+
+    code, _, err = _audit(flavour, root, stop(root))
+
+    assert (code, "other/keep.py" in err) == (2, True)
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+def test_an_out_of_touch_edit_after_a_merge_of_main_stays_flagged(flavour, tmp_path):
+    root, _ = _merged_repo(tmp_path)
+    merged_main_fixtures.ticket_commit(root, "other/after.py", "after = 'the merge'\n")
+
+    code, _, err = _audit(flavour, root, stop(root))
+
+    assert (code, "other/after.py" in err, "other/new.py" in err) == (2, True, False)
+
+
+def test_an_untracked_out_of_touch_file_after_a_merge_of_main_still_blocks(tmp_path):
+    root, _ = _merged_repo(tmp_path)
+    merged_main_fixtures.write(root, "other/untracked.py", "u = 'never added'\n")
+
+    code, _, err = _audit("module", root, stop(root))
+
+    assert (code, "other/untracked.py" in err) == (2, True)
+
+
+def test_could_not_tell_counts_every_path_and_says_so(tmp_path):
+    root, _ = _merged_repo(tmp_path)
+    git(root, "checkout", "-q", "--detach")
+
+    code, _, err = _audit("module", root, stop(root))
+
+    assert (code, "merged main: could not tell" in err,
+            [p for p in _MERGED_IN if p not in err], len(err.splitlines()) <= 6) == (
+                2, True, [], True)
+
+
+def test_a_fast_forward_to_main_drops_everything_committed_and_keeps_dirty_edits(tmp_path):
+    root, merged = _merged_repo(tmp_path, ticket_commits=False)
+    merged_main_fixtures.write(root, "other/keep.py", "x = 1\nmain_line = 2\ndirty = 3\n")
+
+    code, _, err = _audit("module", root, stop(root))
+
+    assert (git(root, "rev-parse", "HEAD") == merged, code, "other/keep.py" in err,
+            [p for p in _MERGED_IN[1:] if p in err]) == (True, 2, True, [])
