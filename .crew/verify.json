@@ -345,12 +345,12 @@
                 "plugin/crew/tests/test_review_contracts.py", "plugin/crew/tests/test_review_canary.py",
                 "plugin/crew/tests/test_review_refund.py", "plugin/crew/tests/test_external_tool_formats.py",
                 "plugin/crew/tests/test_status.py", "plugin/crew/docs/external-tool-formats.md"],
-      "seconds": 8,
+      "seconds": 10,
       "run": ["python3 scripts/check-tooling-pr.py",
               "python3 scripts/_test/tooling-pr.py",
               "python3 -m pytest plugin/crew/tests/test_review_golden.py plugin/crew/tests/test_review_contracts.py plugin/crew/tests/test_review_canary.py plugin/crew/tests/test_review_refund.py plugin/crew/tests/test_external_tool_formats.py plugin/crew/tests/test_status.py -q"],
       "reach": "local",
-      "why": "T-0087: a change to the review/gate harness replays real reviewer output (the golden corpus), checks every format seam (producer-to-consumer contracts), runs a canary review end to end, and refuses feature work riding along (scripts/check-tooling-pr.py; owner 2026-09-28: tooling PRs carry no feature work). paths are the checker's HARNESS and SEAM globs plus every suite this rule runs and the external-tool-formats doc, so an edit to a suite or to a seam consumer the contracts pin runs them too (review round 1 FIX), pinned by test_verify_rule_paths_cover_the_harness_its_seams_and_suites. seconds measured 2026-09-28 on the Linux host (20 CPUs): checker plus its suite 0.6s, the five pytest files 6.6s; re-time rather than trusting it. The checker exits 77 (SKIP, NOT VERIFIED) where origin/main is not a ref. reach: local - throwaway git repos and a stub reviewer; no network call (the live Codex probe is opt-in, CREW_PROBE_LIVE=1, and not run here)." }
+      "why": "T-0087: a change to the review/gate harness replays real reviewer output (the golden corpus), checks every format seam (producer-to-consumer contracts), runs a canary review end to end, and refuses feature work riding along (scripts/check-tooling-pr.py; owner 2026-09-28: tooling PRs carry no feature work). paths are the checker's HARNESS and SEAM globs plus every suite this rule runs and the external-tool-formats doc, so an edit to a suite or to a seam consumer the contracts pin runs them too (review round 1 FIX), pinned by test_verify_rule_paths_cover_the_harness_its_seams_and_suites. seconds measured 2026-09-28 16:27 CDT on the Linux host (20 CPUs, load average 5.2-5.4, under heavy-run) after review round 1: checker plus its suite (17 cases) 0.9s, the six pytest files 8.9s (143 passed, 2 skipped), 9.8s in all, rounded up to 10; before it 0.6s and 6.6s for five files. Re-time rather than trusting it. The checker exits 77 (SKIP, NOT VERIFIED) where origin/main is not a ref. reach: local - throwaway git repos and a stub reviewer; no network call (the live Codex probe is opt-in, CREW_PROBE_LIVE=1, and not run here)." }
   ],
 
   "default": ["bash _verify/smoke.sh"],
