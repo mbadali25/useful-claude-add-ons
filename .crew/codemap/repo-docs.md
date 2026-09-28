@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@8de3c669
+anchor: useful-claude-add-ons@a6e81869
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -931,3 +931,16 @@ Corrected here: the `docs/runbooks/INDEX.md` sentence is `plugin/crew/README.md:
 group-approval paragraph added eight lines above it); `.crew/verify.json` gains T-0024's rule 30 at
 `:320-327`, after T-0023's rule 29 `:310-318`, whose last line gained only a trailing comma. Rules
 above it did not move. No test suite was executed for this note.
+
+## Re-anchor provenance - `8de3c669` -> `a6e81869`, 2026-09-27 (T-0079 on its branch)
+
+`T-0079-read` was cut from `67caa4b8`, merged main `d2fbd408` (T-0024 landed; its refresh `fdc54ce9`
+changed refresh artifacts only) in `f034ef5c`, and carries T-0079's commits through `a6e81869`
+(crew 1.0.49). `git diff --name-only 8de3c669 a6e81869`, refresh artifacts aside, returns T-0079's
+files only: `review_verdict.py`, `review_prompt.py`, `review_run.py`, their tests and
+`sabotage_review.py`, `agents/reviewer.md`, `plugin/crew/README.md` (line-neutral), `CHANGELOG.md`
+and the three version files. Every body citation into those files was compared by script between
+`8de3c669` and `a6e81869` at the same line.
+Of the cited paths, `.claude-plugin/marketplace.json` (`:218` 1.0.49, in place),
+`plugin/PLUGINS.md` (`:14` 1.0.49, in place) and `CHANGELOG.md` (T-0079's entry at the top; cited
+without a line here) changed; no citation moved. No test suite was executed for this note.

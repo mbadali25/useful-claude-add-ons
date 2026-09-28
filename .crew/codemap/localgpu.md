@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@8de3c669
+anchor: useful-claude-add-ons@a6e81869
 verified: 2026-09-27
 
 # localgpu
@@ -1153,3 +1153,16 @@ Nothing under `plugin/localgpu/` changed on either side. This note cites `.crew/
 `plugin/crew/README.md` by name only; the refresh check named it because T-0024's approval rule was
 appended as rule 30 and the README gained its group-approval paragraph. No citation moved. Nothing
 was executed for this note.
+
+## Re-anchor provenance - `8de3c669` -> `a6e81869`, 2026-09-27 (T-0079 on its branch)
+
+`T-0079-read` was cut from `67caa4b8`, merged main `d2fbd408` (T-0024 landed; its refresh `fdc54ce9`
+changed refresh artifacts only) in `f034ef5c`, and carries T-0079's commits through `a6e81869`
+(crew 1.0.49). `git diff --name-only 8de3c669 a6e81869`, refresh artifacts aside, returns T-0079's
+files only: `review_verdict.py`, `review_prompt.py`, `review_run.py`, their tests and
+`sabotage_review.py`, `agents/reviewer.md`, `plugin/crew/README.md` (line-neutral), `CHANGELOG.md`
+and the three version files. Every body citation into those files was compared by script between
+`8de3c669` and `a6e81869` at the same line.
+Nothing under `plugin/localgpu/` changed. This note cites `plugin/crew/README.md` by name
+only; the refresh check named it because T-0079 reworded the README's review-verdict row in place.
+No citation moved. Nothing was executed for this note.

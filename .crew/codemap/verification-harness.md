@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@8de3c669
+anchor: useful-claude-add-ons@a6e81869
 verified: 2026-09-27
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -1324,3 +1324,16 @@ by rules 11 and 30. `sabotage.py` imports `sabotage_approval` at `:80`, after ma
 and route `:79`, so the `MUTATIONS +=` statement is `:3051-3053`: `REFRESH_MUTATIONS` on `:3052`,
 and resume, autopilot, tracker, route and approval on `:3053`. Every other body citation was
 checked against both sides' content by script and holds. No test suite was executed for this note.
+
+## Re-anchor provenance - `8de3c669` -> `a6e81869`, 2026-09-27 (T-0079 on its branch)
+
+`T-0079-read` was cut from `67caa4b8`, merged main `d2fbd408` (T-0024 landed; its refresh `fdc54ce9`
+changed refresh artifacts only) in `f034ef5c`, and carries T-0079's commits through `a6e81869`
+(crew 1.0.49). `git diff --name-only 8de3c669 a6e81869`, refresh artifacts aside, returns T-0079's
+files only: `review_verdict.py`, `review_prompt.py`, `review_run.py`, their tests and
+`sabotage_review.py`, `agents/reviewer.md`, `plugin/crew/README.md` (line-neutral), `CHANGELOG.md`
+and the three version files. Every body citation into those files was compared by script between
+`8de3c669` and `a6e81869` at the same line.
+Of the cited paths, `.claude-plugin/marketplace.json` (`:218` 1.0.49, in place) and
+`plugin/PLUGINS.md` (`:14` 1.0.49, in place) changed; no citation moved. No test suite was executed
+for this note.

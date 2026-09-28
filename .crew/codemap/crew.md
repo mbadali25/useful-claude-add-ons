@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@8de3c669
+anchor: useful-claude-add-ons@a6e81869
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -33,7 +33,8 @@ on T-0021's branch, from `c35edda5` to
 `7b667587` for T-0021 and to `385eadd5` and `bcb77ce2` for its review rounds 1
 and 2; and to `c2ae46ab` for its review round 3 and merge of main; on T-0024's branch
 from `6f96e627` to `a2802526`, then to `32223b8a` for its review round 1, `f8671fdc` for
-its successor step 6 and `45345812` for its review round 3. See the last sections.
+its successor step 6 and `45345812` for its review round 3; on T-0079's branch from
+`8de3c669` to `a6e81869`. See the last sections.
 
 # crew
 
@@ -55,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.48, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.49, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -2017,3 +2018,19 @@ CHANGELOG "117 -> 119" is `:608-609`, T-0024's four entries now sitting above it
 range is added to the anchor history at the top. The `/crew:approve` row's `approve.md`,
 `approval_hook.py` and `crew_ticket.py` citations are T-0024's and hold (main changed none of those
 files). No test suite was executed for this note.
+
+## Re-anchor provenance - `8de3c669` -> `a6e81869`, 2026-09-27 (T-0079 on its branch)
+
+`T-0079-read` was cut from `67caa4b8`, merged main `d2fbd408` (T-0024 landed; its refresh `fdc54ce9`
+changed refresh artifacts only) in `f034ef5c`, and carries T-0079's commits through `a6e81869`
+(crew 1.0.49). `git diff --name-only 8de3c669 a6e81869`, refresh artifacts aside, returns T-0079's
+files only: `review_verdict.py`, `review_prompt.py`, `review_run.py`, their tests and
+`sabotage_review.py`, `agents/reviewer.md`, `plugin/crew/README.md` (line-neutral), `CHANGELOG.md`
+and the three version files. Every body citation into those files was compared by script between
+`8de3c669` and `a6e81869` at the same line.
+Corrected here: crew's version is 1.0.49 (`:218`, `plugin.json:3`, and the body sentence citing
+them); T-0004's CHANGELOG "117 -> 119" is `:649-650`, T-0079's entry sitting above it. The
+DERIVED T-0079 review bullet was written against `a6e81869` and its citations re-read there with
+`sed -n`; it now also records the newline-only split (the U+2028 amendment). T-0079's branch
+range is added to the anchor history at the top. Every other citation held. No test suite was
+executed for this note.
