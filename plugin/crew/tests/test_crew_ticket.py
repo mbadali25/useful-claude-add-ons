@@ -525,3 +525,206 @@ def test_a_round_from_before_the_successor_cannot_be_recorded(repo):
     with pytest.raises(rl.LedgerError):
         rl.record(str(repo), "T-1", 2, {"verdict": "CLEAN", "provider": "codex",
                                         "bundle_sha256": "x", "base": "y"})
+
+
+# --- T-0024: approve bound to expected hashes, and precheck ----------------------------
+
+def _shas(repo, ticket="T-1"):
+    folder = repo / ".work" / "tickets" / ticket
+    return (hashlib.sha256((folder / "plan.md").read_bytes()).hexdigest(),
+            hashlib.sha256((folder / "spec.md").read_bytes()).hexdigest())
+
+
+def _receipt_path(repo, ticket="T-1"):
+    return pathlib.Path(common_dir(repo), "crew", "tickets", ticket, "approval.json")
+
+
+def test_approve_with_matching_expect_records(repo):
+    make_ticket(repo)
+
+    receipt, _ = crew_ticket.approve(str(repo), "T-1", by="owner", expect=_shas(repo))
+
+    assert (receipt["plan_sha256"], receipt["spec_sha256"]) == _shas(repo)
+
+
+@pytest.mark.parametrize("name", ["spec.md", "plan.md"])
+def test_approve_with_changed_spec_refuses_and_writes_nothing(repo, name):
+    make_ticket(repo)
+    expected = _shas(repo)
+    target = repo / ".work" / "tickets" / "T-1" / name
+    target.write_text(target.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    with pytest.raises(crew_ticket.TicketError, match=f"{name} changed since the approval"):
+        crew_ticket.approve(str(repo), "T-1", by="owner", expect=expected)
+
+    assert not _receipt_path(repo).exists()
+
+
+def test_approve_with_changed_plan_refuses_and_writes_nothing(repo):
+    make_ticket(repo)
+    expected = _shas(repo)
+    _plan(repo, "## Step 1\nFiles: src/app.py\nTest: other\nRisk: low\n")
+
+    with pytest.raises(crew_ticket.TicketError, match="T-1: plan.md changed"):
+        crew_ticket.approve(str(repo), "T-1", by="owner", expect=expected)
+
+    assert not _receipt_path(repo).exists()
+
+
+@pytest.mark.parametrize("expect", [("a" * 64,), ["a" * 64, None], "ab"])
+def test_approve_with_a_malformed_expect_refuses(repo, expect):
+    make_ticket(repo)
+
+    with pytest.raises(crew_ticket.TicketError, match="expect"):
+        crew_ticket.approve(str(repo), "T-1", by="owner", expect=expect)
+
+    assert not _receipt_path(repo).exists()
+
+
+def test_approve_without_expect_is_unchanged(repo):
+    make_ticket(repo)
+    _plan(repo, "## Step 1\nFiles: src/app.py\nTest: other\nRisk: low\n")
+
+    receipt, _ = crew_ticket.approve(str(repo), "T-1", by="owner")
+
+    assert (receipt["plan_sha256"], receipt["spec_sha256"]) == _shas(repo)
+
+
+def test_precheck_of_a_valid_ticket_has_no_problems(repo):
+    make_ticket(repo)
+
+    result = crew_ticket.precheck(str(repo), "T-1")
+
+    assert result == {"ticket": "T-1", "problems": [], "plan_sha256": _shas(repo)[0],
+                      "spec_sha256": _shas(repo)[1]}
+
+
+def test_precheck_names_every_problem(repo):
+    make_ticket(repo, files=["other/keep.py"])
+    spec = repo / ".work" / "tickets" / "T-1" / "spec.md"
+    spec.write_text(spec.read_text(encoding="utf-8").replace("## Unknowns\nNone.\n", ""),
+                    encoding="utf-8")
+
+    problems = crew_ticket.precheck(str(repo), "T-1")["problems"]
+
+    assert [any("Unknowns" in p for p in problems),
+            any("outside spec ## Touch" in p for p in problems)] == [True, True]
+
+
+@pytest.mark.parametrize("ticket,needle", [("../x", "not a plain id"),
+                                           ("T-9", "no ticket folder")])
+def test_precheck_bad_id_or_missing_folder(repo, ticket, needle):
+    result = crew_ticket.precheck(str(repo), ticket)
+
+    assert (needle in " ".join(result["problems"]), result["plan_sha256"]) == (True, None)
+
+
+@pytest.mark.parametrize("row,closed", [("| T-1 | done | x |", True),
+                                        ("| T-1 | merged | x |", True),
+                                        ("| T-1 | Closed | x |", True),
+                                        ("- [x] T-1 widget", True),
+                                        ("| T-1 | in-progress | x |", False),
+                                        ("| T-2 | done | T-1 |", False),
+                                        ("- T-1 widget", False)])
+def test_precheck_closed_index_row(repo, row, closed):
+    make_ticket(repo)
+    (repo / ".work" / "INDEX.md").write_text(f"# Work\n\n{row}\n", encoding="utf-8")
+
+    problems = crew_ticket.precheck(str(repo), "T-1")["problems"]
+
+    assert any("closed in .work/INDEX.md" in p for p in problems) is closed
+
+
+# Review round 2: the id is matched case-insensitively and whole, for every id
+# `_TICKET_RE` accepts -- crew_state's matcher knows only upper-case
+# prefix-number keys, so a lower-case or suffixed id read as open.
+@pytest.mark.parametrize("ticket,row,closed", [
+    ("t-0050", "T-0050 | done | high | x", True),
+    ("t-0050", "| T-0050 | Merged | x |", True),
+    ("t-0050", "- [x] T-0050 widget", True),
+    ("T-0050", "t-0050 | closed | x", True),
+    ("T-0050-fix", "T-0050-fix | done | x", True),
+    ("T-0050-fix", "| t-0050-FIX | shipped | x |", True),
+    ("rel.1", "REL.1 | complete | x", True),
+    ("T-0050-fix", "T-0050 | done | x", False),
+    ("t-0050", "T-0050-fix | done | x", False),
+    ("t-0050", "T-0050 | in-progress | x", False),
+    ("t-0050", "T-0051 | done | t-0050 follow-up", False),
+    ("t-0050", "- T-0050 widget", False),
+])
+def test_precheck_closed_row_any_case_or_suffix(repo, ticket, row, closed):
+    make_ticket(repo, ticket, activate=False)
+    (repo / ".work" / "INDEX.md").write_text(f"# Work\n\n{row}\n", encoding="utf-8")
+
+    problems = crew_ticket.precheck(str(repo), ticket)["problems"]
+
+    assert (any("closed in .work/INDEX.md" in p for p in problems),
+            any("could not tell" in p for p in problems)) == (closed, False)
+
+
+@pytest.mark.parametrize("row", ["| T-0050 |", "t-0050 |", "| t-0050 |  | x |"])
+def test_precheck_a_row_with_no_status_is_could_not_tell(repo, row):
+    make_ticket(repo, "t-0050", activate=False)
+    (repo / ".work" / "INDEX.md").write_text(f"{row}\n", encoding="utf-8")
+
+    problems = crew_ticket.precheck(str(repo), "t-0050")["problems"]
+
+    assert any("could not tell" in p and "t-0050" in p for p in problems), problems
+
+
+# Review round 3: the row's id cell is its first single-token cell holding a
+# letter and a digit (an index column such as `1` is skipped), matched whole --
+# a trailing `-` or `.` is part of a valid id, never trimmed in a table. A row
+# naming the ticket as a whole cell that is not its id cell cannot be told.
+@pytest.mark.parametrize("ticket,row,closed", [
+    ("T-1", "| 1 | T-1 | done |", True),
+    ("T-1", "| 12 | t-1 | Merged | x |", True),
+    ("T-1", "T-1- | done | x", False),
+    ("T-1-", "T-1 | done | x", False),
+    ("T-1-", "T-1- | done | x", True),
+    ("T-1", "T-1. | done | x", False),
+    ("T-1", "- [x] T-1. widget", True),
+])
+def test_precheck_the_id_cell_is_found_and_matched_whole(repo, ticket, row, closed):
+    make_ticket(repo, ticket, activate=False)
+    (repo / ".work" / "INDEX.md").write_text(f"{row}\n", encoding="utf-8")
+
+    problems = crew_ticket.precheck(str(repo), ticket)["problems"]
+
+    assert (any("closed in .work/INDEX.md" in p for p in problems),
+            any("could not tell" in p for p in problems)) == (closed, False)
+
+
+@pytest.mark.parametrize("row", ["| T-2 | done | T-1 |", "| v2 | T-1 | done |"])
+def test_precheck_a_whole_cell_that_is_not_the_id_cell_is_could_not_tell(repo, row):
+    make_ticket(repo, "T-1", activate=False)
+    (repo / ".work" / "INDEX.md").write_text(f"{row}\n", encoding="utf-8")
+
+    problems = crew_ticket.precheck(str(repo), "T-1")["problems"]
+
+    assert any("could not tell" in p for p in problems), problems
+
+
+def test_precheck_unreadable_index_is_a_problem_not_open(repo):
+    make_ticket(repo)
+    (repo / ".work" / "INDEX.md").mkdir()
+
+    problems = crew_ticket.precheck(str(repo), "T-1")["problems"]
+
+    assert any("could not read .work/INDEX.md" in p for p in problems)
+
+
+def test_precheck_corrupt_receipt(repo):
+    make_ticket(repo)
+    _receipt_path(repo).parent.mkdir(parents=True)
+    _receipt_path(repo).write_text("{", encoding="utf-8")
+
+    problems = crew_ticket.precheck(str(repo), "T-1")["problems"]
+
+    assert any("approval receipt" in p and "unreadable" in p for p in problems)
+
+
+def test_precheck_outside_git_is_a_problem(tmp_path):
+    result = crew_ticket.precheck(str(tmp_path), "T-1")
+
+    assert "not a git repository" in " ".join(result["problems"])

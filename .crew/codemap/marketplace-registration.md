@@ -293,6 +293,9 @@ against synthetic fixtures and never reads this repo's own docs.
   Re-measured on T-0018's merge of main `bebbb97f` into T-0018-land: 18,859 across 126 files on
   `:11`, recomputed from the merged index rather than taken from either side (main's `bebbb97f`
   read 18,864 across 126; T-0018-land's `55f59b04` read 18,795 across 126), matching.
+  Re-measured on T-0024's landing merge of `474aea8b` into main `67caa4b8`: 18,885 across 126 files
+  on `:11`, recomputed from the merged index rather than taken from either side (main's `67caa4b8`
+  read 18,859 across 126; T-0024's `474aea8b` read 18,202 across 121), matching.
 - **`MARKETPLACE.md`** was not re-read for a community-plugin or marketplace
   count of its own; only `README.md:231`'s prose was checked and found to no
   longer state a specific number.
@@ -690,3 +693,32 @@ Corrected here: crew is 1.0.47 at `.claude-plugin/marketplace.json:218`,
 reads 18,859 lines across 126 files, and the measurement (`git ls-files 'plugin/crew/*.md'`,
 `splitlines()` per file) returns 18859 over 126. `python3 scripts/check-marketplace.py` at
 `65bb3330`: `marketplace: 34 skills, 5 plugins`, `all checks passed`.
+
+Re-verified per-path from `6f96e627` to `a2802526` for T-0024 (group approval, crew 1.0.42): of the
+cited paths, `.claude-plugin/marketplace.json` (`:218` version 1.0.42; `:217`'s counts unchanged),
+`plugin/PLUGINS.md` (`:14` version only), `plugin/crew/.claude-plugin/plugin.json` (version only),
+`plugin/crew/BUDGETS.md` (`:11`, 18,200 / 121, re-measured with `git ls-files 'plugin/crew/*.md'`
+and `splitlines()` per file, matching), `.crew/verify.json` (rule 27 appended, 28 rules; the doc
+rule at `:69-78` is unchanged), `CHANGELOG.md` and `plugin/crew/README.md` changed. No install
+script, `scripts/check-marketplace.py`, `CLAUDE.md`, `README.md` or `INSTALLATION.md` changed.
+`python3 scripts/check-marketplace.py` at `a2802526`: `marketplace: 34 skills, 5 plugins`,
+`all checks passed`.
+
+Re-verified per-path from `a2802526` to `32223b8a` for T-0024's review round 1 (crew 1.0.43): of the
+cited paths only `.claude-plugin/marketplace.json` (`:218` 1.0.43), `plugin/PLUGINS.md` (`:14`),
+`plugin/crew/.claude-plugin/plugin.json` and `CHANGELOG.md` changed; `BUDGETS.md` did not (no
+`plugin/crew/*.md` changed). `python3 scripts/check-marketplace.py` at `32223b8a`: `all checks
+passed`.
+
+Re-verified per-path from `32223b8a` to `f8671fdc` for T-0024's successor step 6 (crew 1.0.44): of
+the cited paths `.claude-plugin/marketplace.json` (`:218` 1.0.44), `plugin/PLUGINS.md` (`:14`),
+`plugin/crew/.claude-plugin/plugin.json`, `CHANGELOG.md`, `plugin/crew/README.md` (group-approval
+prose only; the `35 commands` claim `:2263` and `4 agents` `:2274` did not move) and
+`plugin/crew/BUDGETS.md` (`:11`, 18,202 / 121, re-measured and matching) changed.
+`python3 scripts/check-marketplace.py` at `f8671fdc`: `all checks passed`.
+
+Re-verified per-path from `f8671fdc` to `45345812` for T-0024's review round 3 (crew 1.0.45): of the
+cited paths `.claude-plugin/marketplace.json` (`:218` 1.0.45), `plugin/PLUGINS.md` (`:14`),
+`plugin/crew/.claude-plugin/plugin.json`, `CHANGELOG.md` and `plugin/crew/README.md` (two
+group-approval sentences, in place; `:2263`/`:2274` hold) changed; `BUDGETS.md` did not (18,202
+still measures). `python3 scripts/check-marketplace.py` at `45345812`: `all checks passed`.

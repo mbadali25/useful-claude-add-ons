@@ -62,6 +62,23 @@
 %% (brainstorm.md:35-37, fix.md:29-30) instead of carrying on into the ticket
 %% folder. brainstorm.md kept its line count; fix.md gained one line, so its
 %% citations from :30 on moved +1 (re-mapped with a line diff against c2ae46ab).
+%% Re-drawn for T-0024 at a2802526 (group approval, crew 1.0.42): of the anchored
+%% paths approve.md and crew_ticket.py changed. approve.md gained the group relay
+%% after :26 (:27-41); :5, :9, :12-13 and :15 hold. crew_ticket.py changed only
+%% from :676 down (approve(expect=) at :686, precheck at :765), so :530-571 and
+%% :605-626 hold. One node and two edges added: a group request (several ids, a
+%% range, or the plain-text form) is blocked as a PENDING list and recorded only
+%% by the user's own /crew:approve --confirm, all or none (approve.md:27-32;
+%% plugin/crew/hooks/scripts/approval_hook.py:334 pending, :406 confirm, re-read at
+%% 32223b8a after T-0024's review round 1; no anchored path changed there).
+%% Re-anchored for T-0024's successor step 6 at f8671fdc: approve.md's relay is now
+%% :27-43 (:5, :9, :12-13, :15 hold); crew_ticket.py changed from :744 down
+%% (precheck :793), so :530-571 and :605-626 hold; approval_hook.py's pending and
+%% confirm are now :359 and :431. No node or edge changed: the group path still
+%% reads PENDING list -> the user's own /crew:approve --confirm -> all or none.
+%% Re-anchored for T-0024's review round 3 at 45345812: of the anchored paths only
+%% crew_ticket.py changed, from :744 down (precheck :810), so :530-571 and
+%% :605-626 hold; approval_hook.py's pending and confirm are :361 and :433.
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):
@@ -162,6 +179,8 @@ flowchart TB
         ap0 --> ap1{"approval-hook (UserPromptSubmit)<br/>hooks.json:14; approve.md:9"}
         ap1 -- refused --> apx([prompt blocked, reason shown<br/>:15])
         ap1 -- recorded --> ap2["approval.json = digest(spec.md, plan.md),<br/>header status value normalised<br/>approved_via user-prompt<br/>:12-13"]
+        ap1 -- "several ids, a range,<br/>or plain text" --> apg["PENDING list, nothing recorded;<br/>user's own /crew:approve --confirm<br/>records one receipt per ticket, or none<br/>approve.md:27-32"]
+        apg -- "confirmed, every hash unchanged" --> ap2
     end
 
     ap2 --> planned["spec.md header 'status: planned'<br/>keeps the approval,<br/>crew_tracker.py move --to planned<br/>plan.md:59-62"]

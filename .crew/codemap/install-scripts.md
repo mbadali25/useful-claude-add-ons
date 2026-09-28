@@ -800,3 +800,28 @@ Of the cited paths, `.claude-plugin/marketplace.json` (`:218` 1.0.47; `:217` unc
 recomputed on the merge) and `plugin/crew/README.md` changed. Both install scripts, the root
 `README.md` and `scripts/check-marketplace.py` did not change on either side, so their citations
 stand. Neither install script was executed.
+
+Re-verified per-path from `6f96e627` to `a2802526` for T-0024 (group approval, crew 1.0.42): of the
+cited paths `.claude-plugin/marketplace.json` (crew `version` `:218`, now 1.0.42; `:217` unchanged),
+`plugin/PLUGINS.md` (`:14` version only), `plugin/crew/BUDGETS.md` (marker still `:10`; `:11` now
+reads 18,200 lines across 121 files, re-measured and matching `check-marketplace.py`) and
+`plugin/crew/README.md` (the "Scope and approval" section grew, so the `35 commands` claim is now at
+`:2263` and `4 agents` at `:2274`, re-grepped; `ls plugin/crew/commands/*.md` is still 35) changed.
+Neither install script, `README.md`, `INSTALLATION.md` nor `scripts/check-marketplace.py` changed,
+so their citations stand. The README pin landmine still holds: `README.md:12` and `:18` read
+`6c497a14`, and `git log 6c497a14..a2802526` over both scripts still returns only `ecf69e43`. T-0004
+has since merged to `main` (`1e0706ac`), so the re-pin that bullet calls due after that merge is now
+due and was not done by T-0024, whose Touch excludes `README.md`. Neither install script was
+executed.
+
+Re-verified per-path from `a2802526` to `f8671fdc` for T-0024's review round 1 and successor step 6
+(crew 1.0.43, 1.0.44): of the cited paths `.claude-plugin/marketplace.json` (`:218` 1.0.44; `:217`
+unchanged), `plugin/PLUGINS.md` (`:14` only), `plugin/crew/BUDGETS.md` (`:11`, 18,202 lines across
+121 files, re-measured) and `plugin/crew/README.md` (group-approval prose only; the `35 commands`
+claim `:2263` and `4 agents` `:2274` did not move, re-grepped) changed. Neither install script,
+`README.md` nor `INSTALLATION.md` changed; the README pin landmine stands as recorded above.
+
+Re-verified per-path from `f8671fdc` to `45345812` for T-0024's review round 3 (crew 1.0.45): of the
+cited paths `.claude-plugin/marketplace.json` (`:218` only), `plugin/PLUGINS.md` (`:14` only) and
+`plugin/crew/README.md` (two sentences edited in place; `:2263`/`:2274` hold) changed. Neither
+install script, `README.md` nor `BUDGETS.md` changed.
