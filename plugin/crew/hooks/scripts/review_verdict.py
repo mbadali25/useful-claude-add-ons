@@ -47,6 +47,11 @@ completed, so a Codex turn that failed is INCOMPLETE even when its process
 exited 0. A non-blank line of that stream that is not a JSON object is an
 error too: the stream is only trustworthy whole, and skipping what cannot be
 read would let a garbled stream with a final CLEAN still read as CLEAN.
+
+Reviewer output and the event stream are split on "\\n" only, never
+`str.splitlines()`: its extra breaks (U+2028, U+2029, U+0085 and the C0
+separators) cut a Codex event mid-JSON, which scored T-0072 round 4
+INCOMPLETE. A "\\r\\n" end is stripped with the rest of the line's whitespace.
 """
 import json
 import posixpath
@@ -86,7 +91,7 @@ def parse(text, exit_code, timed_out=False, expected_parts=()):
     counts = {sev: 0 for sev in SEVERITIES}
     findings, unparseable, read = [], [], []
     clean_lines = 0
-    for raw in (text or "").splitlines():
+    for raw in (text or "").split("\n"):
         line = raw.strip()
         if not line:
             continue
@@ -156,7 +161,7 @@ def codex_final_message(jsonl):
     the last agent message, or None. `error` is None only when a turn
     completed and no failure event was seen."""
     message, completed, error = None, False, None
-    for line in (jsonl or "").splitlines():
+    for line in (jsonl or "").split("\n"):
         line = line.strip()
         if not line:
             continue

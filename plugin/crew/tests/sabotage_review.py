@@ -373,4 +373,24 @@ REVIEW_FIX_MUTATIONS = (
         ("tests/test_webtest_guard.py::"
          "test_review_prompt_hands_over_every_row_through_a_file_past_the_inline_limit"),
     ),
+    (
+        # splitlines() also breaks at U+2028 and the C0 separators, cutting a
+        # verdict line in two (T-0079 amendment).
+        "the verdict parser splits reviewer output with splitlines again",
+        REVIEW_VERDICT,
+        '    for raw in (text or "").split("\\n"):\n',
+        '    for raw in (text or "").splitlines():\n',
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_verdict_line_holding_a_unicode_line_break_is_one_line"),
+    ),
+    (
+        # A raw U+2028 inside a Codex event's JSON cut it mid-object and scored
+        # T-0072 round 4 INCOMPLETE.
+        "the Codex event reader splits with splitlines again",
+        REVIEW_VERDICT,
+        '    for line in (jsonl or "").split("\\n"):\n',
+        '    for line in (jsonl or "").splitlines():\n',
+        ("tests/test_review_verdict.py::"
+         "test_codex_final_message_an_event_holding_a_unicode_line_break_parses_intact"),
+    ),
 )

@@ -15,6 +15,13 @@ import review_verdict as rv
 PARTS = ("part-001-of-002.patch", "part-002-of-002.patch")
 ACKS = "READ|part-001-of-002.patch\nREAD|part-002-of-002.patch\n"
 LISTED = ("/s/b/part-001-of-002.patch", "/s/b/part-002-of-002.patch")
+# Every break str.splitlines() honours beyond "\n" and "\r". Codex prints the
+# first three raw inside JSON strings, as json.dumps(ensure_ascii=False) does;
+# it escapes the C0 controls, so those reach only the verdict text raw.
+UNICODE_BREAKS = (" ", " ", "\u0085", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e")
+JSON_RAW_BREAKS = (" ", " ", "\u0085")
+BREAK_IDS = {" ": "U+2028", " ": "U+2029", "\u0085": "U+0085", "\x0b": "VT",
+             "\x0c": "FF", "\x1c": "FS", "\x1d": "GS", "\x1e": "RS"}
 
 
 def _acks(tokens):
@@ -185,8 +192,29 @@ def test_parse_a_finding_whose_repro_contains_a_pipe_is_findings():
     assert result["verdict"] == rv.FINDINGS
 
 
+@pytest.mark.parametrize("sep", UNICODE_BREAKS, ids=[BREAK_IDS[s] for s in UNICODE_BREAKS])
+def test_parse_a_verdict_line_holding_a_unicode_line_break_is_one_line(sep):
+    """splitlines() cut this line in two and scored the halves unparseable;
+    reviewer output is split on "\\n" only (T-0079 amendment)."""
+    line = f"BLOCK|a.py:1|one{sep}two|repro"
+
+    result = rv.parse(ACKS + line + "\n", 0, expected_parts=PARTS)
+
+    assert (result["verdict"], result["findings"], result["reasons"]) == (rv.FINDINGS, [line], [])
+
+
+def test_parse_crlf_line_ends_still_parse():
+    result = rv.parse(ACKS.replace("\n", "\r\n") + "CLEAN\r\n", 0, expected_parts=PARTS)
+
+    assert result["verdict"] == rv.CLEAN
+
+
 def _stream(*events):
     return "\n".join(json.dumps(e) for e in events)
+
+
+def _raw_stream(*events):
+    return "\n".join(json.dumps(e, ensure_ascii=False) for e in events)
 
 
 def test_codex_final_message_reads_the_last_agent_message_of_a_completed_turn():
@@ -230,3 +258,24 @@ def test_codex_final_message_an_unparseable_event_line_is_an_error(garbage):
     ) + "\n" + garbage + "\n" + _stream({"type": "turn.completed"})
 
     assert rv.codex_final_message(stream)[1] is not None
+
+
+@pytest.mark.parametrize("sep", JSON_RAW_BREAKS, ids=[BREAK_IDS[s] for s in JSON_RAW_BREAKS])
+def test_codex_final_message_an_event_holding_a_unicode_line_break_parses_intact(sep):
+    """T-0072 round 4: a raw U+2028 inside an event's JSON string cut the
+    event in two under splitlines(), and the round read INCOMPLETE."""
+    message = f"BLOCK|a.py:1|one{sep}two|repro"
+    stream = _raw_stream(
+        {"type": "item.completed", "item": {"type": "agent_message", "text": message}},
+        {"type": "turn.completed"})
+
+    assert (sep in stream, rv.codex_final_message(stream)) == (True, (message, None))
+
+
+def test_codex_final_message_tolerates_crlf_line_ends():
+    stream = "\r\n".join(json.dumps(e) for e in (
+        {"type": "item.completed", "item": {"type": "agent_message", "text": "draft"}},
+        {"type": "item.completed", "item": {"type": "agent_message", "text": "CLEAN"}},
+        {"type": "turn.completed"}))
+
+    assert rv.codex_final_message(stream) == ("CLEAN", None)
