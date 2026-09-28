@@ -8,6 +8,7 @@ before write, back up before remove -- because that order is the feature.
 """
 import json
 import os
+import shlex
 import subprocess
 import sys
 
@@ -524,31 +525,31 @@ def test_delete_writes_backup_first(tmp_path, monkeypatch):
     root, gpath = _repo(tmp_path)
     original = open(_config(root), "rb").read()
     seen = []
-    real_remove = os.remove
+    real_move = crew_config_files.move_aside
 
-    def _checking_remove(path):
-        backup = os.path.join(root, ".crew", f"config.json.bak-{_TS}")
-        seen.append(os.path.exists(backup)
-                    and open(backup, "rb").read() == original)
-        return real_remove(path)
-    monkeypatch.setattr(menu.os, "remove", _checking_remove)
+    def _checking_move(src, dest):
+        got = real_move(src, dest)
+        seen.append((os.path.exists(src), open(dest, "rb").read() == original))
+        return got
+    monkeypatch.setattr(crew_config_files, "move_aside", _checking_move)
 
     code = menu.delete_repo_config(root, "repo", True, now=_now(),
                                    global_path=gpath)
 
-    assert (code, seen, os.path.exists(_config(root))) == (0, [True], False)
+    assert (code, seen, os.path.exists(_config(root))) == (0, [(False, True)], False)
 
 
-def test_delete_refuses_when_backup_fails(tmp_path, monkeypatch):
+def test_delete_refuses_when_the_move_fails(tmp_path, monkeypatch):
     root, gpath = _repo(tmp_path)
+    before = open(_config(root), "rb").read()
 
     def _fail(*_args, **_kwargs):
-        raise OSError("no space left on device")
-    monkeypatch.setattr(menu.shutil, "copy2", _fail)
+        raise OSError("read-only file system")
+    monkeypatch.setattr(crew_config_files, "move_aside", _fail)
     code = menu.delete_repo_config(root, "repo", True, now=_now(),
                                    global_path=gpath)
 
-    assert (code, os.path.exists(_config(root))) == (2, True)
+    assert (code, open(_config(root), "rb").read(), _backups(root)) == (2, before, [])
 
 
 def test_delete_backup_name_never_collides(tmp_path):
@@ -566,60 +567,223 @@ def test_delete_backup_name_never_collides(tmp_path):
     assert open(os.path.join(crew_dir, "config.json.broken"), "rb").read() == b"broken"
 
 
-def test_delete_prints_restore_command_that_works(tmp_path, capsys):
-    root, gpath = _repo(tmp_path, {"tracker": "jira"})
-    original = open(_config(root), "rb").read()
+_BOM = b"\xef\xbb\xbf"
+_UNRESTORABLE = {"notjson": b"{not json", "empty": b"", "emptyobject": b"{}",
+                 "array": b"[1]", "bom-notjson": _BOM + b"{nope"}
 
+
+def _write_config(root, data):
+    with open(_config(root), "wb") as handle:
+        handle.write(data)
+
+
+@pytest.mark.parametrize("state", sorted(_UNRESTORABLE))
+def test_delete_refuses_a_config_restore_would_refuse(tmp_path, capsys, state):
+    root, gpath = _repo(tmp_path)
+    _write_config(root, _UNRESTORABLE[state])
+
+    code = menu.delete_repo_config(root, "repo", True, now=_now(),
+                                   global_path=gpath)
+
+    err = capsys.readouterr().err
+    assert (code, open(_config(root), "rb").read(), _backups(root)) == (
+        2, _UNRESTORABLE[state], [])
+    assert "config.json.broken" in err and "by hand" in err
+
+
+_PREDICATE_TABLE = dict(_UNRESTORABLE, **{
+    "object": b'{"tracker": "jira"}\n', "bom": _BOM + b'{"tracker": "jira"}\n',
+    "crlf": b'{\r\n  "tracker": "jira"\r\n}\r\n', "string": b'"x"',
+    "null": b"null", "whitespace": b" \n"})
+
+
+def test_delete_and_restore_share_one_predicate(tmp_path, capsys):
+    root, gpath = _repo(tmp_path)
+    backup = os.path.join(root, ".crew", f"config.json.bak-{_TS}")
+    verdicts = {}
+
+    for name, data in sorted(_PREDICATE_TABLE.items()):
+        _write_config(root, data)
+        deleted = menu.delete_repo_config(root, "repo", False, now=_now(),
+                                          global_path=gpath)
+        with open(backup, "wb") as handle:
+            handle.write(data)
+        restored = menu.restore_repo_config(root, backup, False, now=_now())
+        verdicts[name] = (deleted, restored)
+    capsys.readouterr()
+
+    assert {n: d == r for n, (d, r) in verdicts.items()} == {
+        n: True for n in _PREDICATE_TABLE}
+    assert {n for n, (d, _r) in verdicts.items() if d == 0} == {
+        "object", "bom", "crlf"}
+
+
+def test_delete_backs_up_by_rename(tmp_path, monkeypatch):
+    import shutil  # pylint: disable=import-outside-toplevel
+    root, gpath = _repo(tmp_path)
+    inode = os.stat(_config(root)).st_ino
+
+    def _fail(*_args, **_kwargs):
+        raise OSError("a copy is not how this backs up")
+    monkeypatch.setattr(shutil, "copy2", _fail)
+    monkeypatch.setattr(shutil, "copyfile", _fail)
+    code = menu.delete_repo_config(root, "repo", True, now=_now(),
+                                   global_path=gpath)
+
+    backup = os.path.join(root, ".crew", f"config.json.bak-{_TS}")
+    assert (code, os.path.exists(_config(root))) == (0, False)
+    if os.name != "nt":
+        assert os.stat(backup).st_ino == inode
+
+
+def test_delete_refuses_when_the_file_changed_after_the_plan(tmp_path, capsys):
+    root, gpath = _repo(tmp_path)
+    plan = menu.plan_delete(root, gpath)
+    newer = b'{"tracker": "sdp", "x-new": 1}\n'
+    _write_config(root, newer)
+
+    code = menu.apply_delete(root, plan, "repo", now=_now())
+
+    assert (code, open(_config(root), "rb").read(), _backups(root)) == (2, newer, [])
+    assert "changed since the preview" in capsys.readouterr().err
+
+
+def test_delete_refuses_while_the_lock_is_held(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(crew_config_files, "LOCK_WAIT_SECONDS", 0.1)
+    root, gpath = _repo(tmp_path)
+    before = open(_config(root), "rb").read()
+    with open(_config(root) + ".lock", "w", encoding="utf-8") as handle:
+        handle.write("4242")
+
+    code = menu.delete_repo_config(root, "repo", True, now=_now(),
+                                   global_path=gpath)
+
+    assert (code, open(_config(root), "rb").read(), _backups(root)) == (2, before, [])
+    assert "config.json.lock" in capsys.readouterr().err
+
+
+def test_delete_then_restore_is_byte_identical_with_bom_and_crlf(tmp_path, capsys):
+    root, gpath = _repo(tmp_path)
+    text = json.dumps(dict(crew_config.default_config(), tracker="jira"), indent=2)
+    original = _BOM + text.replace("\n", "\r\n").encode("utf-8") + b"\r\n"
+    _write_config(root, original)
     menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
-    line = [ln for ln in capsys.readouterr().out.splitlines()
-            if "restore-repo" in ln][-1]
-    command = line.split("restore: ", 1)[1]
-    run = subprocess.run(command, shell=True, capture_output=True, text=True,
-                         check=False)
+    backup = os.path.join(root, ".crew", f"config.json.bak-{_TS}")
 
-    assert run.returncode == 0, run.stderr
-    assert open(_config(root), "rb").read() == original
+    code = menu.restore_repo_config(root, backup, True, now=_now())
+
+    capsys.readouterr()
+    assert (code, open(_config(root), "rb").read()) == (0, original)
 
 
-def test_windows_restore_command_is_cmd_safe():
-    parts = ["C:\\Py 3\\python.exe", "C:\\r p\\crew_config_menu.py", "--root",
-             "C:\\r p", "restore-repo", "--from",
-             "C:\\r p\\.crew\\config.json.bak-X", "--apply"]
-
-    command = menu._shell_command(parts, windows=True)  # pylint: disable=protected-access
-
-    assert command == ('"C:/Py 3/python.exe" "C:/r p/crew_config_menu.py" '
-                       '"--root" "C:/r p" "restore-repo" "--from" '
-                       '"C:/r p/.crew/config.json.bak-X" "--apply"')
+def _preview(root, gpath, capsys):
+    menu.delete_repo_config(root, None, False, now=_now(), global_path=gpath)
+    return capsys.readouterr().out
 
 
-def test_windows_form_of_the_restore_command_runs(tmp_path, monkeypatch, capsys):
-    root, gpath = _repo(tmp_path, {"tracker": "jira"})
-    original = open(_config(root), "rb").read()
-    monkeypatch.setattr(menu, "_ON_WINDOWS", True)
+@pytest.mark.parametrize("leaf,line", [
+    ("x-local", "x-local: 1 -> (removed)"),
+    ("foo.bar", "foo.bar: 2 -> (removed)"),
+    ("tracker", 'tracker: "jira" -> "files"'),
+])
+def test_delete_preview_lists_every_leaf_of_the_file(tmp_path, capsys, leaf, line):
+    root, gpath = _repo(tmp_path, {"x-local": 1, "foo": {"bar": 2},
+                                   "tracker": "jira"})
 
-    menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
-    command = [ln for ln in capsys.readouterr().out.splitlines()
-               if "restore-repo" in ln][-1].split("restore: ", 1)[1]
-    run = subprocess.run(command, shell=True, capture_output=True, text=True,
-                         check=False)
+    rows = {r["path"]: r for r in menu.plan_delete(root, gpath)["rows"]}
+    out = _preview(root, gpath, capsys)
 
-    assert ("'" in command, run.returncode) == (False, 0), run.stderr
-    assert open(_config(root), "rb").read() == original
+    assert line in out
+    assert rows[leaf].get("removed", False) is (leaf != "tracker")
 
 
-def test_restore_command_survives_a_path_with_a_space_and_a_quote(tmp_path, capsys):
+def test_delete_preview_names_platform_as_re_detected(tmp_path, capsys):
+    root, gpath = _repo(tmp_path, {"platform.os": "linux",
+                                   "platform.shell": "bash", "tracker": "jira"})
+
+    out = _preview(root, gpath, capsys)
+
+    group = out.split("re-detected by platform-sync at the next SessionStart", 1)
+    assert len(group) == 2
+    assert "platform.os" in group[1] and "platform.os" not in group[0]
+    assert "platform.os: \"linux\" -> null" not in out
+    assert 'tracker: "jira" -> "files"' in out
+
+
+_WIN_PARTS = ("C:\\Py 3\\python.exe", "C:\\r p\\crew_config_menu.py", "--root",
+              "C:\\r p", "restore-repo", "--from",
+              "C:\\r p\\.crew\\config.json.bak-X", "--apply")
+
+
+def test_restore_command_forms():
+    posix = ("/usr/bin/python3", "/r p's/m.py", "--root", "/r p's")
+
+    win = menu.command_forms(_WIN_PARTS)
+    nix = menu.command_forms(posix)
+
+    assert set(win) == {"sh", "cmd", "powershell"}
+    assert nix["sh"] == " ".join(shlex.quote(p) for p in posix)
+    assert win["cmd"] == ('"C:/Py 3/python.exe" "C:/r p/crew_config_menu.py" '
+                          '"--root" "C:/r p" "restore-repo" "--from" '
+                          '"C:/r p/.crew/config.json.bak-X" "--apply"')
+    assert "'" not in win["cmd"]
+    assert nix["powershell"] == ("& '/usr/bin/python3' '/r p''s/m.py' "
+                                 "'--root' '/r p''s'")
+
+
+def test_restore_lines_warn_about_percent_in_the_cmd_form(tmp_path):
+    plain = menu.restore_lines(str(tmp_path / "repo"), str(tmp_path / "b"))
+    percent = menu.restore_lines(str(tmp_path / "100% r"), str(tmp_path / "b"))
+
+    assert [ln.split(":", 1)[0] for ln in plain] == [
+        "restore (sh)", "restore (cmd)", "restore (PowerShell)"]
+    assert any("%" in ln and "warning" in ln for ln in percent)
+    assert not any("warning" in ln for ln in plain)
+
+
+def _restore_form(capsys, name):
+    out = capsys.readouterr().out
+    return [ln for ln in out.splitlines()
+            if ln.startswith(f"restore ({name}): ")][-1].split(": ", 1)[1]
+
+
+def test_restore_command_runs_in_the_host_shell(tmp_path, capsys):
     root, gpath = _repo(tmp_path / "my repo's", {"tracker": "jira"})
     original = open(_config(root), "rb").read()
-
     menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
-    command = [ln for ln in capsys.readouterr().out.splitlines()
-               if "restore-repo" in ln][-1].split("restore: ", 1)[1]
+    command = _restore_form(capsys, "cmd" if os.name == "nt" else "sh")
+
     run = subprocess.run(command, shell=True, capture_output=True, text=True,
                          check=False)
 
     assert run.returncode == 0, run.stderr
     assert open(_config(root), "rb").read() == original
+
+
+def test_restore_command_runs_in_powershell(tmp_path, capsys):
+    pwsh = crew_fixtures.resolve_pwsh()
+    if pwsh is None:
+        pytest.skip("no pwsh on this machine: the PowerShell form is not run")
+    root, gpath = _repo(tmp_path / "my repo's", {"tracker": "jira"})
+    original = open(_config(root), "rb").read()
+    menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
+    command = _restore_form(capsys, "PowerShell")
+
+    run = subprocess.run([pwsh, "-NoProfile", "-Command", command],
+                         capture_output=True, text=True, check=False)
+
+    assert run.returncode == 0, run.stderr + run.stdout
+    assert open(_config(root), "rb").read() == original
+
+
+def test_delete_prints_all_three_restore_lines(tmp_path, capsys):
+    root, gpath = _repo(tmp_path)
+
+    menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
+
+    out = capsys.readouterr().out
+    assert [n for n in ("sh", "cmd", "PowerShell")
+            if f"restore ({n}): " in out] == ["sh", "cmd", "PowerShell"]
 
 
 def test_delete_preview_names_what_changes(tmp_path, capsys):
@@ -667,17 +831,6 @@ def test_delete_really_does_not_widen_a_held_guard(tmp_path):
     after = crew_config.resolve_guard(root, "forcePush", gpath)["effective"]
 
     assert (before, gap, after) == ("block", "block", "block")
-
-
-def test_delete_preview_skips_platform_owned_leaves(tmp_path, capsys):
-    root, gpath = _repo(tmp_path, {"platform.os": "linux",
-                                   "platform.shell": "bash", "tracker": "jira"})
-
-    menu.delete_repo_config(root, None, False, now=_now(), global_path=gpath)
-
-    out = capsys.readouterr().out
-    assert ("platform.os:" in out, "platform.shell:" in out) == (False, False)
-    assert 'tracker: "jira" -> "files"' in out
 
 
 def test_delete_leaves_crew_json(tmp_path):

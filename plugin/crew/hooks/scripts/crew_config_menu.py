@@ -36,7 +36,6 @@ import datetime
 import json
 import os
 import shlex
-import shutil
 import sys
 import tempfile
 
@@ -124,10 +123,6 @@ RECOMMENDATIONS = {
 
 NO_PIN = {}
 LAYERS = ("machine", "repo")
-# The restore command is printed for the shell `subprocess.run(shell=True)`
-# uses here: cmd.exe on Windows, sh elsewhere. A module constant so a test can
-# exercise the Windows form on any host.
-_ON_WINDOWS = os.name == "nt"
 
 
 def area_of(dotted):
@@ -559,16 +554,6 @@ def _free_backup(root, now):
     return candidate
 
 
-def _backup(src, dest):
-    """Copy, fsync, byte-compare. Raises OSError on any failure."""
-    shutil.copy2(src, dest)
-    with open(dest, "rb+") as handle:
-        os.fsync(handle.fileno())
-    with open(src, "rb") as a, open(dest, "rb") as b:
-        if a.read() != b.read():
-            raise OSError(f"backup {dest} does not match {src}")
-
-
 def _post_heal_rows(root, global_path):
     """`explain_config` rows as they will read once platform-sync has healed
     the deleted file with the built-in defaults: the same resolver, run on a
@@ -592,18 +577,36 @@ def _widens(dotted, before, after):
     return crew_config._consent_widening(dotted, after)  # pylint: disable=protected-access
 
 
-def delete_preview(root, global_path=None):
-    """What deleting `.crew/config.json` changes, as `{path, before, after,
-    widens}` rows. `before` is what is in force now; `after` is what platform-
-    sync's heal leaves in force. Ratcheted keys follow the ratchet: an absent
-    repo value is the floor, so a repo narrowing under a wider machine value
-    does not widen on delete unless the DEFAULT is wider (`guards.roleWrites`,
-    `change.requireForProduction`); such a held key is a row carrying
-    `heldAgainst` (the wider machine value) and `before == after`, so the
-    preview names it rather than leaving it out. `platform.*` is skipped:
-    platform detection rewrites it in the same SessionStart as the heal."""
+def _file_leaves(parsed, known):
+    """The file's own leaves that no known leaf covers: unknown keys, and
+    anything under a key the defaults do not hold. A leaf under a known open
+    table (`qa.roles.review.provider`) is that table's row, not its own."""
+    out = []
+    for dotted in crew_config.leaf_paths(parsed):
+        if dotted in known or any(dotted.startswith(k + ".") for k in known):
+            continue
+        out.append(dotted)
+    return out
+
+
+def delete_preview(root, parsed, global_path=None):
+    """What deleting `.crew/config.json` changes, walking the FILE's own
+    leaves as well as the known ones, so the preview is the whole of what the
+    delete removes.
+
+    Rows: `{path, before, after, widens}` for a known key whose value changes;
+    `before == after` plus `heldAgainst` for a ratcheted key a repo narrowing
+    keeps in force anyway (an absent repo value is the floor; `guards.
+    roleWrites` and `change.requireForProduction` widen because their DEFAULT
+    is wider); `removed: True` for a leaf crew does not know (preserved by
+    every write, removed with the file); `redetected: True` for `platform.*`,
+    which the same SessionStart that heals the file re-detects from this
+    machine -- a "becomes null" row would be a change that never happens.
+    `before` is what is in force now, `after` what platform-sync's heal leaves.
+    """
     defaults = crew_config.default_config()
-    repo_raw = crew_state.load_config(root)
+    known = crew_config.leaf_paths(defaults)
+    known_set = set(known)
     now = {row["path"]: row["value"] for row in
            crew_config.explain_config(root, global_path)}
     later = {path: row["value"] for path, row in
@@ -611,24 +614,28 @@ def delete_preview(root, global_path=None):
     global_kept, _ = crew_config.filter_global(
         crew_config.read_global_config(global_path))
     rows = []
-    for dotted in crew_config.leaf_paths(defaults):
+    for dotted in known + _file_leaves(parsed, known_set):
+        held = _dig(parsed, dotted)
         if dotted.split(".", 1)[0] == "platform":
-            # The same SessionStart that heals the file goes on to platform
-            # detection, which writes these back from this machine; a
-            # "becomes null" row would be a change that never happens.
+            if held is not crew_config._MISSING:  # pylint: disable=protected-access
+                rows.append({"path": dotted, "before": held, "after": held,
+                             "widens": False, "redetected": True})
+            continue
+        if dotted not in known_set:
+            rows.append({"path": dotted, "before": held, "after": None,
+                         "widens": False, "removed": True})
             continue
         if dotted in now:
             before, after = now[dotted], later.get(dotted)
         else:
-            held = _dig(repo_raw, dotted)
             if held is crew_config._MISSING:  # pylint: disable=protected-access
                 continue
             before, after = held, _unmissing(_dig(defaults, dotted))
         if _key(before) == _key(after):
-            held = _held_by_ratchet(dotted, repo_raw, global_kept, before)
-            if held is not None:
+            holder = _held_by_ratchet(dotted, parsed, global_kept, before)
+            if holder is not None:
                 rows.append({"path": dotted, "before": before, "after": after,
-                             "widens": False, "heldAgainst": held})
+                             "widens": False, "heldAgainst": holder})
             continue
         rows.append({"path": dotted, "before": before, "after": after,
                      "widens": _widens(dotted, before, after)})
@@ -659,8 +666,9 @@ DELETE_NOTICE = (
     "  - At the next SessionStart, platform-sync (crew_platform.heal_config) "
     "recreates .crew/config.json from the built-in defaults, because .crew/ "
     "still exists. The rows above are that state.",
-    "  - platform.* is not listed: the same SessionStart re-detects it from "
-    "this machine and writes it back.",
+    "  - The file is not copied: it is MOVED to the backup name in one "
+    "rename, under the config lock, and compared with what this preview "
+    "read. A file that changed since is put back and nothing is deleted.",
     "  - Only .crew/config.json is removed. .crew/crew.json, verify.json, the "
     "codemap, backups and ticket state are untouched.",
 )
@@ -668,12 +676,18 @@ DELETE_NOTICE = (
 
 def _print_preview(root, rows):
     print(f"delete {crew_config.repo_config_path(root)} - what changes:")
-    changed = [row for row in rows if "heldAgainst" not in row]
+    changed = [row for row in rows if not {"heldAgainst", "removed",
+                                           "redetected"} & set(row)]
     for row in changed:
         mark = "  !" if row["widens"] else ""
         print(f"  {row['path']}: {json.dumps(row['before'])} -> "
               f"{json.dumps(row['after'])}{mark}")
-    if not changed:
+    for row in rows:
+        if row.get("removed"):
+            print(f"  {row['path']}: {json.dumps(row['before'])} -> (removed) "
+                  "- not a crew setting; kept by every write, removed with "
+                  "the file")
+    if not changed and not any(row.get("removed") for row in rows):
         print("  no setting changes value")
     for row in rows:
         if "heldAgainst" in row:
@@ -681,123 +695,198 @@ def _print_preview(root, rows):
                   f"machine-global {json.dumps(row['heldAgainst'])} does not "
                   "widen it: this key ratchets, and an absent repo value is "
                   "the default, which is the floor")
+    redetected = [row for row in rows if row.get("redetected")]
+    if redetected:
+        print("re-detected by platform-sync at the next SessionStart "
+              "(written back from this machine, not reset):")
+        for row in redetected:
+            print(f"  {row['path']}: now {json.dumps(row['before'])}")
     for line in DELETE_NOTICE:
         print(line)
 
 
-def _shell_command(parts, windows):
-    """`parts` as one command line for `subprocess.run(shell=True)`'s shell.
+def command_forms(parts):
+    """`parts` as one command line per shell, every form always given.
 
-    POSIX: `shlex.quote`. Windows: cmd.exe does not honour single quotes, so
-    each part is double-quoted, with its backslashes turned to forward
-    slashes -- Python and every Windows API accept them, and a double-quoted
-    forward-slash path reads the same in cmd.exe and in Git Bash, where a
-    backslash inside double quotes can escape. A Windows path cannot contain
-    `"`, so the quoting cannot be broken from inside."""
-    if windows:
-        return " ".join('"' + part.replace("\\", "/") + '"' for part in parts)
-    return " ".join(shlex.quote(part) for part in parts)
-
-
-def _script_command(root, *args):
-    return _shell_command((sys.executable, os.path.abspath(__file__), "--root",
-                           os.path.abspath(root)) + args, _ON_WINDOWS)
-
-
-def delete_repo_config(root, confirm, apply, now=None, global_path=None):
-    """Preview, then (typed name + `apply`) back up, verify, and delete.
-
-    Order is the safety: the confirmation, then a copy to a fresh
-    `config.json.bak-<UTC>` that is fsynced and byte-compared, and only then
-    `os.remove`. Any failure before the remove leaves the file in place and
-    exits 2. Returns 0 on a delete or a confirmed dry run.
+    `sh`: `shlex.quote`. `cmd`: cmd.exe does not honour single quotes, so each
+    part is double-quoted with its backslashes turned to forward slashes --
+    Python and every Windows API accept them, and a Windows path cannot
+    contain `"`. `powershell`: the call operator and single-quoted parts, a
+    `'` inside doubled (PowerShell's only escape in a single-quoted string).
     """
+    return {
+        "sh": " ".join(shlex.quote(part) for part in parts),
+        "cmd": " ".join('"' + part.replace("\\", "/") + '"' for part in parts),
+        "powershell": "& " + " ".join("'" + part.replace("'", "''") + "'"
+                                      for part in parts),
+    }
+
+
+def restore_lines(root, backup):
+    """The three labelled restore lines delete prints, plus a warning when the
+    cmd form holds a `%` (cmd.exe may expand it as a variable, and no escape
+    survives both interactive and batch use)."""
+    forms = command_forms((sys.executable, os.path.abspath(__file__), "--root",
+                           os.path.abspath(root), "restore-repo", "--from",
+                           os.path.abspath(backup), "--apply"))
+    lines = [f"restore (sh): {forms['sh']}", f"restore (cmd): {forms['cmd']}"]
+    if "%" in forms["cmd"]:
+        lines.append("  warning: the cmd line contains %, which cmd.exe may "
+                     "expand as a variable; use the sh or PowerShell line")
+    lines.append(f"restore (PowerShell): {forms['powershell']}")
+    return lines
+
+
+class DeleteRefused(Exception):
+    """The repo config cannot be deleted as it stands; nothing was touched."""
+
+
+def plan_delete(root, global_path=None):
+    """Phase one: read and HOLD the file's bytes, refusing a file `restorable`
+    rejects (a restore could not take it back), and build the preview.
+
+    `{"path", "held", "digest", "parsed", "rows", "name"}`."""
     path = crew_config.repo_config_path(root)
-    if not os.path.isfile(path):
-        print(f"no {path} to delete", file=sys.stderr)
-        return 2
-    _print_preview(root, delete_preview(root, global_path))
-    name = repo_name(root)
-    if confirm != name:
-        why = "no confirmation" if confirm is None else f"{confirm!r} is not the repo name"
-        print(f"refused ({why}): type the repo name to confirm - "
-              f"--confirm {name}", file=sys.stderr)
-        return 2
-    backup = _free_backup(root, now)
-    if not apply:
-        print(f"would back up to {backup}, verify it, then delete {path} "
-              "(dry run; add --apply)")
-        return 0
     try:
-        _backup(path, backup)
-    except OSError as exc:
-        print(f"refused: the backup could not be written and verified ({exc}); "
-              f"{path} left in place", file=sys.stderr)
+        parsed, held = crew_config_files.read_strict(path)
+    except crew_config_files.Unreadable as exc:
+        if exc.kind == "absent":
+            raise DeleteRefused(f"no {path} to delete") from exc
+        raise DeleteRefused(
+            f"{exc}. A restore could not take this file back, so it is not "
+            "deleted. platform-sync backs an unreadable config up to "
+            "config.json.broken and heals it at the next SessionStart; or "
+            "remove it by hand") from exc
+    return {"path": path, "held": held, "digest": crew_config_files.digest(held),
+            "parsed": parsed, "rows": delete_preview(root, parsed, global_path),
+            "name": repo_name(root)}
+
+
+def apply_delete(root, plan, confirm, now=None):
+    """Phase two: the typed name, then, under the config lock, ONE rename of
+    the file to a fresh `config.json.bak-<UTC>` (the backup is the original
+    inode: no copy, no moment the bytes are at neither name), then compare
+    the moved bytes with the held ones. A mismatch means the file changed
+    since the preview: it is renamed straight back and nothing is deleted.
+    Returns an exit code: 0 deleted, 2 refused (file in place), 1 a foreign
+    writer interleaved (both files kept, both named)."""
+    path = plan["path"]
+    if confirm != plan["name"]:
+        why = ("no confirmation" if confirm is None
+               else f"{confirm!r} is not the repo name")
+        print(f"refused ({why}): type the repo name to confirm - "
+              f"--confirm {plan['name']}", file=sys.stderr)
         return 2
-    os.remove(path)
-    print(f"backed up to {backup} (verified) and deleted {path}")
-    print("restore: " + _script_command(root, "restore-repo", "--from",
-                                        os.path.abspath(backup), "--apply"))
+    try:
+        with crew_config_files.Lock(path):
+            backup = _free_backup(root, now)
+            got = crew_config_files.move_aside(path, backup)
+            if got != plan["held"]:
+                if os.path.lexists(path):
+                    print(f"refused: {path} changed since the preview and a "
+                          f"new file appeared there too; the moved one is at "
+                          f"{backup}. Check both.", file=sys.stderr)
+                    return 1
+                os.replace(backup, path)
+                print(f"refused: {path} changed since the preview; it is back "
+                      "in place and nothing was deleted. Re-run the preview.",
+                      file=sys.stderr)
+                return 2
+    except crew_config_files.Busy as exc:
+        print(f"refused: {exc}; {path} left in place", file=sys.stderr)
+        return 2
+    except OSError as exc:
+        print(f"refused: {path} could not be moved to a backup ({exc}); left "
+              "in place", file=sys.stderr)
+        return 2
+    if os.path.lexists(path):
+        print(f"note: a new {path} appeared after the move; the original is "
+              f"at {backup}", file=sys.stderr)
+        return 1
+    print(f"backed up to {backup} (the original file, moved) and deleted {path}")
+    for line in restore_lines(root, backup):
+        print(line)
     return 0
 
 
+def delete_repo_config(root, confirm, apply, now=None, global_path=None):
+    """Preview (phase one), then with the typed name and `apply`, the
+    compare-and-delete (phase two). Returns 0 on a delete or a confirmed dry
+    run, 2 on a refusal."""
+    try:
+        plan = plan_delete(root, global_path)
+    except DeleteRefused as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 2
+    _print_preview(root, plan["rows"])
+    if not apply:
+        if confirm != plan["name"]:
+            return apply_delete(root, plan, confirm, now)
+        print(f"would move {plan['path']} to {_free_backup(root, now)} (the "
+              "backup is the file itself), compare it with what this preview "
+              "read, and report it deleted (dry run; add --apply)")
+        return 0
+    return apply_delete(root, plan, confirm, now)
+
+
 def _valid_backup(root, backup):
+    """`(problem, data)`: the location and name rules, then `restorable` on
+    the bytes -- the predicate delete refuses by, so the two cannot drift."""
     crew_dir = os.path.realpath(os.path.join(root, ".crew"))
     real = os.path.realpath(backup)
     if os.path.dirname(real) != crew_dir:
-        return f"{backup} is not in {crew_dir}"
+        return f"{backup} is not in {crew_dir}", None
     if not os.path.basename(real).startswith(BACKUP_PREFIX):
-        return f"{backup} is not named {BACKUP_PREFIX}*"
+        return f"{backup} is not named {BACKUP_PREFIX}*", None
     try:
-        with open(real, encoding="utf-8-sig") as handle:
-            parsed = json.load(handle)
-    except (OSError, ValueError) as exc:
-        return f"{backup} does not parse ({exc})"
-    if not isinstance(parsed, dict) or not parsed:
-        return f"{backup} is not a config (empty or not a JSON object)"
-    return None
+        with open(real, "rb") as handle:
+            data = handle.read()
+    except OSError as exc:
+        return f"{backup} cannot be read ({exc})", None
+    problem = crew_config_files.restorable(data)
+    if problem:
+        return f"{backup} {problem}; not a config a restore puts back", None
+    return None, data
 
 
 def restore_repo_config(root, backup, apply, now=None):
-    """Copy a `config.json.bak-*` back to `.crew/config.json`.
+    """Put a `config.json.bak-*` back as `.crew/config.json`, byte for byte.
 
-    A config already there (platform-sync's healed defaults, most often) is
-    backed up to a fresh `.bak-` first, so a restore never destroys a file
-    either. The copy is sibling-then-replace, like every crew config write.
+    Under the config lock: a config already there (platform-sync's healed
+    defaults, most often) is MOVED aside to a fresh `.bak-` first, so a
+    restore never destroys a file either; then the backup's bytes are written
+    sibling-then-replace and read back and compared.
     """
-    problem = _valid_backup(root, backup)
+    problem, data = _valid_backup(root, backup)
     if problem:
         print(f"refused: {problem}", file=sys.stderr)
         return 2
     path = crew_config.repo_config_path(root)
-    exists = os.path.isfile(path)
+    exists = os.path.lexists(path)
     if not apply:
         print(f"would restore {backup} to {path}"
-              + (" (backing up the current file first)" if exists else "")
+              + (" (moving the current file aside first)" if exists else "")
               + " (dry run; add --apply)")
         return 0
-    if exists:
-        saved = _free_backup(root, now)
-        try:
-            _backup(path, saved)
-        except OSError as exc:
-            print(f"refused: could not back up the current {path} ({exc})",
-                  file=sys.stderr)
-            return 2
-        print(f"backed up the current file to {saved}")
-    with open(backup, "rb") as handle:
-        data = handle.read()
-    tmp = f"{path}.{os.getpid()}.tmp"
     try:
-        with open(tmp, "wb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp, path)
-    except BaseException:
-        if os.path.exists(tmp):
-            os.remove(tmp)
-        raise
+        with crew_config_files.Lock(path):
+            if os.path.lexists(path):
+                saved = _free_backup(root, now)
+                crew_config_files.move_aside(path, saved)
+                print(f"moved the current file aside to {saved}")
+            crew_config_files.replace_bytes(path, data)
+            with open(path, "rb") as handle:
+                back = handle.read()
+    except crew_config_files.Busy as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 2
+    except OSError as exc:
+        print(f"refused: could not restore {path} ({exc})", file=sys.stderr)
+        return 2
+    if back != data:
+        print(f"{path} does not read back as {backup}; compare them by hand",
+              file=sys.stderr)
+        return 1
     print(f"restored {backup} to {path}")
     return 0
 
