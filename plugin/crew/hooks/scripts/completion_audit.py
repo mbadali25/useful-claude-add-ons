@@ -169,21 +169,17 @@ def changed_paths(top, base, merged=None):
     """Every path the tree changed since `base`, both ends of a rename or
     copy. Names, plus the hash of a stat-dirty file -- never the review
     bundle, and never a write to the index."""
-    return _changed(top, base, merged)[1]
-
-
-def _changed(top, base, merged):
-    """`(every path changed since base, the ones kept)`. `merged` is
-    `merged_main.resolve`'s answer or None; only an applying one narrows, and
-    an untracked path is never identical to a merged commit's tracked one."""
+    # `merged` is `merged_main.resolve`'s answer or None (T-0100): only an
+    # applying one narrows, and an untracked path is never identical to a
+    # merged commit's tracked one, so it is re-added on both sides.
     sha = _git_fields(top, ["rev-parse", "--verify", base + "^{commit}"])[0].strip()
     untracked = {p for p in _git_fields(top, ["ls-files", "--others", "--exclude-standard",
                                               "-z"] + _ONLY) if p}
     paths = worktree_changes(top, sha, _ONLY[1:]) | untracked
     if not (merged and merged.get("applies")):
-        return sorted(paths), sorted(paths)
+        return sorted(paths)
     since_merged = worktree_changes(top, merged["commit"], _ONLY[1:]) | untracked
-    return sorted(paths), merged_main.keep(paths, since_merged)
+    return merged_main.keep(paths, since_merged)
 
 
 def shown(path):
@@ -223,11 +219,13 @@ def audit(root, ticket):
         return False, [f"completion audit: no scope base for {ticket} ({reason})"]
     merged = merged_main.resolve(top, base)
     try:
-        every, paths = _changed(top, base, merged)
+        paths = changed_paths(top, base, merged)
+        # One more listing, only when a merge applies, to count what it left out.
+        dropped = len(changed_paths(top, base)) - len(paths) if merged["applies"] else 0
     except RuntimeError as exc:
         return False, [f"completion audit: could not diff the tree: {shown(str(exc))}"]
-    extra = _merged_lines(merged, len(every) - len(paths))
-    passed = extra if merged["applies"] and len(every) > len(paths) else []
+    extra = _merged_lines(merged, dropped)
+    passed = extra if merged["applies"] and dropped else []
     # ONE read of spec.md: the hash check, the Touch below and the refresh
     # allowance all share the bytes.
     approval = crew_ticket.accepted(top, ticket)

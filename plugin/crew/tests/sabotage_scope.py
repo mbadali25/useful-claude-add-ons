@@ -378,7 +378,7 @@ SCOPE_MUTATIONS = (
      '    since_merged = worktree_changes(top, merged["commit"], _ONLY[1:])\n',
      _CA + "test_an_untracked_out_of_touch_file_after_a_merge_of_main_still_blocks"),
     ("the audit never passes the merged commit on", AUDIT,
-     "        every, paths = _changed(top, base, merged)\n",
-     "        every, paths = _changed(top, base, None)\n",
+     "        paths = changed_paths(top, base, merged)\n",
+     "        paths = changed_paths(top, base, None)\n",
      _CA + "test_paths_identical_to_merged_main_are_not_out_of_scope[module]"),
 )
