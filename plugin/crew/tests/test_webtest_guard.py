@@ -639,7 +639,7 @@ def test_rules_the_auth_rule_watches_storage_state_files(repo, path):
     assert any(_gate_matches(path, p) for p in auth_rule["paths"])
 
 
-def _review(repo, tmp_path, base, reads_extra=(), after_bundle=None):
+def _review(repo, tmp_path, base, reads_extra=(), after_bundle=None, read=lambda part: part["name"]):
     """Cut a real bundle, reserve a round, and hand finish() a CLEAN reviewer
     answer that READ every part. Returns (exit_code, review.json)."""
     scratch = str(tmp_path / "scratch")
@@ -649,7 +649,7 @@ def _review(repo, tmp_path, base, reads_extra=(), after_bundle=None):
     if after_bundle:
         after_bundle()
     _ok, number, _msg = review_ledger.reserve(repo, TICKET, "codex")
-    output = "\n".join([f"READ|{p['name']}" for p in manifest["parts"]]
+    output = "\n".join([f"READ|{read(p)}" for p in manifest["parts"]]
                        + [f"READ|{name}" for name in reads_extra] + ["CLEAN"])
     args = types.SimpleNamespace(root=repo, ticket=TICKET, manifest=manifest_path, provider="codex",
                                  model="", work_dir=None, scratch=scratch)
@@ -755,11 +755,28 @@ def test_review_prompt_removes_a_previous_rounds_overflow_file(repo, tmp_path):
     assert not os.path.exists(tmp_path / review_prompt.WEBTEST_FINDINGS_FILE)
 
 
-@pytest.mark.parametrize("reads, expected", [((), 3), ((review_prompt.WEBTEST_FINDINGS_FILE,), 0)])
-def test_review_the_overflow_file_needs_its_own_read(repo, tmp_path, reads, expected):
+def test_review_reads_written_as_the_listed_paths_are_clean(repo, tmp_path):
+    """The prompt lists each part by its full path; a reviewer that READs
+    those paths back is CLEAN (T-0009 round 4 read 22 of 22 missing)."""
+    base = _base(repo)
+    _write(repo, "src/app.ts", "export const a = 1;\n")
+
+    code, review = _review(repo, tmp_path, base, read=lambda part: part["path"])
+
+    assert (code, review["verdict"], review["parts_missing"]) == (0, "CLEAN", [])
+
+
+@pytest.mark.parametrize("read_as, expected", [
+    ("none", 3), ("bare-name", 0), ("scratch-path", 0), ("other-dir", 3)])
+def test_review_the_overflow_file_needs_its_own_read(repo, tmp_path, read_as, expected):
     base = _base(repo)
     _write(repo, "playwright.config.ts", "export default {};\n")
     _write(str(tmp_path / "scratch"), review_prompt.WEBTEST_FINDINGS_FILE, "rows\n")
+    reads = {"none": (),
+             "bare-name": (review_prompt.WEBTEST_FINDINGS_FILE,),
+             "scratch-path": (str(tmp_path / "scratch" / review_prompt.WEBTEST_FINDINGS_FILE),),
+             "other-dir": (str(tmp_path / "elsewhere" / review_prompt.WEBTEST_FINDINGS_FILE),),
+             }[read_as]
 
     code, _review_json = _review(repo, tmp_path, base, reads_extra=reads)
 
