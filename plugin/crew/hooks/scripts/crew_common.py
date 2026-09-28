@@ -1,4 +1,4 @@
-"""The three readers every crew script shares, and nothing else.
+"""The three readers every crew script shares, and the repo-config resolver.
 
 Split out of `crew_state.py` in 0.16.21 along with the endpoint ledger, which
 had taken that module to pylint's `max-module-lines=3300` with five lines to
@@ -7,7 +7,13 @@ need them: putting them in `crew_endpoints` would make `crew_state` import a
 git timeout from a module named for endpoints, and putting them in
 `crew_state` would make the import run both ways.
 
-`crew_state` re-exports all three, so `crew_config` and
+`repo_config_dir` (T-0088) names the `.crew/` directory the repo config is read
+from: the repository's own, or, in a linked worktree with no config of its
+own, the main checkout's. Every Python reader of `.crew/config.json` or
+`.crew/crew.json` opens `repo_config_file(root, name)` instead of joining the
+path itself.
+
+`crew_state` re-exports the three readers, so `crew_config` and
 `crew_upgrade` keep reaching them as `crew_state.read_text` and friends.
 
 Standard library only, and every read fails soft, for the reason `crew_state`
@@ -15,6 +21,7 @@ does: this runs from a SessionStart hook, where an exception breaks every
 session opened in the repository.
 """
 
+import os
 import subprocess
 
 GIT_TIMEOUT = 10
@@ -78,3 +85,66 @@ def dict_or_empty(value):
     From a SessionStart hook that breaks every session opened in the repo.
     """
     return value if isinstance(value, dict) else {}
+
+
+# --- the repo config's directory (T-0088) ---------------------------------------------
+
+CONFIG_NAMES = ("crew.json", "config.json")
+SOURCE_OWN, SOURCE_MAIN, SOURCE_UNKNOWN = "own", "main checkout", "unknown"
+
+
+def repo_config_dir(root):
+    """(crew_dir, source, detail): the `.crew/` directory the repo config is read
+    from. Own files win whole; a linked worktree with neither file reads the main
+    checkout's; never merged; `unknown` when git cannot tell (see T-0088).
+
+    `.crew/*` is gitignored, so a lane made with `git worktree add` starts with
+    no config and, before this, read the defaults instead of the owner's
+    settings (T-0072's gate: `scope.allowCliApproval` read False).
+
+    `root` is a top-level: `.git` is looked for at `root` itself, so a
+    subdirectory reads as `own` and inherits nothing. `.git` a directory, or
+    missing, is `own` with no subprocess. `.git` a file is a linked worktree or
+    a submodule; git names the common directory, and a submodule (git-dir ==
+    common-dir) or a bare common directory (not named `.git`) has no main
+    checkout, so it is `own` too. When git cannot answer, the source is
+    `unknown`: nothing is inherited, and `detail` says why, so a caller shows
+    that rather than an absent config. `detail` is the main checkout's path
+    when the source is `main checkout`.
+    """
+    own = os.path.join(root, ".crew")
+    if any(os.path.lexists(os.path.join(own, name)) for name in CONFIG_NAMES):
+        return own, SOURCE_OWN, ""
+    if not os.path.isfile(os.path.join(root, ".git")):
+        return own, SOURCE_OWN, ""
+    out = git_out(root, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir")
+    lines = (out or "").splitlines()
+    if len(lines) != 2:
+        return own, SOURCE_UNKNOWN, (
+            "this looks like a linked worktree, but git could not name its main checkout")
+    real_git, real_common = (os.path.realpath(p) for p in lines)
+    if os.path.normcase(real_git) == os.path.normcase(real_common) \
+            or os.path.basename(real_common) != ".git":
+        return own, SOURCE_OWN, ""
+    main = os.path.join(os.path.dirname(real_common), ".crew")
+    if any(os.path.lexists(os.path.join(main, name)) for name in CONFIG_NAMES):
+        return main, SOURCE_MAIN, os.path.dirname(real_common)
+    return own, SOURCE_OWN, ""
+
+
+def repo_config_file(root, name="config.json"):
+    """`<the resolved .crew/>/<name>`: the path every repo-config reader opens."""
+    return os.path.join(repo_config_dir(root)[0], name)
+
+
+def repo_config_source_line(root):
+    """One line for /crew:status and /crew:config naming the file in force;
+    empty when the repo reads its own `.crew/`."""
+    crew_dir, source, detail = repo_config_dir(root)
+    if source == SOURCE_MAIN:
+        path = os.path.join(crew_dir, "config.json")
+        return (f"inherited from the main checkout ({path}) - this worktree has no crew "
+                "config of its own; never merged")
+    if source == SOURCE_UNKNOWN:
+        return f"could not tell ({detail}) - read only this worktree's own .crew/"
+    return ""
