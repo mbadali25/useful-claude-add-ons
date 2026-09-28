@@ -49,6 +49,7 @@ import re
 import sys
 import time
 
+import crew_common
 from crew_common import dict_or_empty, git_out, read_text
 import crew_incident
 import crew_recall
@@ -121,7 +122,7 @@ def log_path(root):
 def load_crew_config(root):
     """The repo's crew config: 1.0's `.crew/crew.json`, else 0.x's `config.json`."""
     for name in ("crew.json", "config.json"):
-        text = read_text(os.path.join(root, ".crew", name))
+        text = read_text(crew_common.repo_config_file(root, name))
         if text is None:
             continue
         try:

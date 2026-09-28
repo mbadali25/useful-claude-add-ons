@@ -88,6 +88,7 @@ import shutil
 import sys
 import time
 
+import crew_common
 import crew_state
 
 sys.path.insert(0, os.path.join(
@@ -1257,7 +1258,7 @@ def production_declaration(root, name):
     and reports it; this is what makes that report true.
     """
     key = PROD_DECL_KEYS[name]
-    path = os.path.join(root, ".crew", "config.json")
+    path = crew_common.repo_config_file(root, "config.json")
     try:
         with open(path, encoding="utf-8-sig", errors="replace") as handle:
             raw = handle.read()
