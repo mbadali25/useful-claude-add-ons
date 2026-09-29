@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@bbd9a66d
-verified: 2026-09-28
+anchor: useful-claude-add-ons@2eb3599d
+verified: 2026-09-29
 
 # localgpu
 
@@ -1459,3 +1459,17 @@ so the merged tree is `6b89c1df` plus that README change). `08eeaa3e` adds the r
 `plugin/crew/tests/test_crew_autopilot_policy.py`. `bbd9a66d` re-sets crew 1.0.61. Each edited line kept its
 number (the parentheses and comments were added in place) except in `test_crew_autopilot_policy.py`, whose
 import block lost one line; no note cites that file by line. Re-anchor only; nothing was executed for this note.
+
+## Re-anchor provenance - `bbd9a66d` -> `2eb3599d`, 2026-09-29 (T-0504, crew 1.0.62)
+
+T-0504 (crew runs its own bookkeeping; a move off an in-flight ticket is the owner's prompt) builds on
+origin/main `8ab733d7` (crew 1.0.61): `activation_policy` / `closed_for_repoint` / `repoint_question` in
+`plugin/crew/hooks/scripts/crew_autopilot.py`, `_activation_refusal` and `_parser` in
+`plugin/crew/hooks/scripts/crew_ticket.py`, the pointer refusal in `plugin/crew/hooks/scripts/scope_guard.py`,
+`parse_repoint` / `_repoint` in `plugin/crew/hooks/scripts/approval_hook.py`, both approval-hook wrappers'
+pre-filters, the broken-pointer text in `plugin/crew/hooks/scripts/completion_audit.py`, the command files,
+README, CONFIG.md §20, the tests and sabotage rows, `.crew/verify.json` paths (rules 25, 27, 31) and why
+texts; `ce4838ea` sets crew 1.0.62. Every body `path:N` citation was mapped from `bbd9a66d` to `2eb3599d` through
+a `difflib` line diff (`/root/crew-tmp/t-0504/citemap2.py`, machine-local); a bare `:N` was rewritten only
+when a backticked identifier beside it was found at that line, and every other moved one was read with `grep
+-n` and set by hand. No citation in this note moved. Re-anchor only; nothing was executed for this note.

@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@bbd9a66d on 2026-09-29. Verify before trusting.
+%% Generated from useful-claude-add-ons@2eb3599d on 2026-09-29. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -214,8 +214,9 @@ flowchart TB
         ap0 --> ap1{"approval-hook (UserPromptSubmit)<br/>hooks.json:14; approve.md:9"}
         ap1 -- refused --> apx([prompt blocked, reason shown<br/>:15])
         ap1 -- recorded --> ap2["approval.json = digest(spec.md, plan.md),<br/>header status value normalised<br/>approved_via user-prompt<br/>:12-13"]
-        ap1 -- "several ids, a range,<br/>or plain text" --> apg["PENDING list, nothing recorded;<br/>user's own /crew:approve --confirm<br/>records one receipt per ticket, or none<br/>approve.md:27-32"]
+        ap1 -- "several ids, a range,<br/>or plain text" --> apg["PENDING list, nothing recorded;<br/>user's own /crew:approve --confirm<br/>records one receipt per ticket, or none<br/>approve.md:30-35"]
         apg -- "confirmed, every hash unchanged" --> ap2
+        ap1 -- "the owner's own<br/>/crew:autopilot id (T-0504)" --> aprp["re-points this worktree's active ticket,<br/>names the one it left; the session's own<br/>move off an in-flight ticket is refused<br/>approve.md:18-19"]
     end
 
     ap2 --> planned["spec.md header 'status: planned'<br/>keeps the approval,<br/>crew_tracker.py move --to planned<br/>plan.md:59-62"]
@@ -276,3 +277,11 @@ flowchart TB
 %% Re-anchored d7c7c75c -> bbd9a66d (T-0010 landing branch, crew 1.0.61): of the Anchors paths only
 %% crew_ticket.py changed, one line in place (a noqa: BLE001 beside the broad-except disable in the
 %% autopilot-policy check), so every line number above holds. No node or edge changed.
+%% Re-anchored bbd9a66d -> 2eb3599d (T-0504, crew 1.0.62): of the Anchors paths approve.md,
+%% crew_ticket.py and completion_audit.py changed. approve.md gained a two-line paragraph at :18-19, three lines with its blank (the hook
+%% also carries the owner's /crew:autopilot <id> re-point), so the relay is :30-46 and the group
+%% lines :30-35; :5, :9, :12-13 and :15 hold. crew_ticket.py moved by 8 from the top (shlex import,
+%% the active-ticket docstring note): approval_digest :570, status() :597, approve :731. The Stop
+%% audit's broken-pointer text changed in place (the owner's /crew:autopilot <id>, no CLI). New
+%% edge ap1 -> aprp: the owner's own /crew:autopilot id re-points the worktree; the session's move
+%% off an in-flight ticket is refused by the scope guard. No other node or edge changed.
