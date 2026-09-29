@@ -296,8 +296,8 @@ def test_missing_projects_are_advisory_gap_lines_and_exit_0(web, capsys):
             [line.split(" - ")[0] for line in _gaps(out)],
             all(s in axe for s in ("name: 'axe'", "testMatch: /.*\\.axe\\.spec\\.ts/",
                                    "devices['Desktop Chrome']")),
-            all(s in visual for s in (f"process.env.{webtest_guard.IMAGE_ENV} === "
-                                      f"'{webtest_guard.PINNED_IMAGE}'", "name: 'visual'"))) == (
+            all(s in visual for s in ((f"process.env.{webtest_guard.IMAGE_ENV} === "
+                                       f"'{webtest_guard.PINNED_IMAGE}'"), "name: 'visual'"))) == (
         0, True, ["playwright.config.ts lacks the 'setup' project",
                   "playwright.config.ts lacks the 'axe' project",
                   "playwright.config.ts lacks the 'visual' project"], True, True)
@@ -327,8 +327,8 @@ def test_a_visual_project_without_the_image_gate_is_one_gap_naming_the_gate(web,
     gaps = _gaps(capsys.readouterr().out)
     assert (list(gaps), any(f"process.env.{webtest_guard.IMAGE_ENV}" in s
                             for s in next(iter(gaps.values())))) == (
-        [f"playwright.config.ts lacks the visual project's gate on {webtest_guard.PINNED_IMAGE}"
-         " - wrap the existing 'visual' entry in:"], True)
+        [(f"playwright.config.ts lacks the visual project's gate on {webtest_guard.PINNED_IMAGE}"
+          " - wrap the existing 'visual' entry in:")], True)
 
 
 @pytest.mark.parametrize("projects, depends", [
@@ -406,7 +406,7 @@ def test_init_agents_is_pinned_to_the_verified_playwright(web, capsys, monkeypat
 
 # ---- T-0104: multi-module repositories (aws-ops report items 1-5)
 
-MODULE_NA = ("no playwright.config.*, angular.json, or Playwright in package.json")
+MODULE_NA = "no playwright.config.*, angular.json, or Playwright in package.json"
 
 
 def _modules_tree(root):
@@ -622,7 +622,42 @@ def test_no_baselines_means_the_plain_visual_snippet(tmp_path, monkeypatch, caps
 
 # CONFIG_TS rendered at origin/main 2693d0fa (crew 1.0.59) for a non-Angular
 # repository: a credentialed repository must still get exactly this.
-CONFIG_TS_2693D0FA = "import { defineConfig, devices } from '@playwright/test';\n\nconst CI = !!process.env.CI;\nconst PINNED_IMAGE = 'mcr.microsoft.com/playwright:v1.63.0-noble';\nconst inPinnedImage = process.env.CREW_PLAYWRIGHT_IMAGE === PINNED_IMAGE;\nconst authFile = 'playwright/.auth/user.json';\nconst browser = { ...devices['Desktop Chrome'], storageState: authFile };\n\nexport default defineConfig({\n  testDir: './tests',\n  fullyParallel: true,\n  forbidOnly: CI,\n  retries: CI ? 2 : 0,\n  reporter: CI ? 'blob' : 'html',\n  snapshotPathTemplate: '{testDir}/__screenshots__/{projectName}/{platform}/{testFilePath}/{arg}{ext}',\n  expect: { toHaveScreenshot: { animations: 'disabled', maxDiffPixelRatio: 0.01 } },\n  use: {\n    baseURL: process.env.BASE_URL ?? 'http://localhost:3000',\n    trace: 'on-first-retry',\n    testIdAttribute: 'data-testid',\n  },\n  projects: [\n    { name: 'setup', testMatch: /.*\\.setup\\.ts/ },\n    {\n      name: 'chromium',\n      use: browser,\n      dependencies: ['setup'],\n      testIgnore: [/.*\\.axe\\.spec\\.ts/, /.*\\.visual\\.spec\\.ts/],\n    },\n    { name: 'axe', testMatch: /.*\\.axe\\.spec\\.ts/, use: browser, dependencies: ['setup'] },\n    ...(inPinnedImage\n      ? [{ name: 'visual', testMatch: /.*\\.visual\\.spec\\.ts/, use: browser, dependencies: ['setup'] }]\n      : []),\n  ],\n});\n"
+CONFIG_TS_2693D0FA = '''import { defineConfig, devices } from '@playwright/test';
+
+const CI = !!process.env.CI;
+const PINNED_IMAGE = 'mcr.microsoft.com/playwright:v1.63.0-noble';
+const inPinnedImage = process.env.CREW_PLAYWRIGHT_IMAGE === PINNED_IMAGE;
+const authFile = 'playwright/.auth/user.json';
+const browser = { ...devices['Desktop Chrome'], storageState: authFile };
+
+export default defineConfig({
+  testDir: './tests',
+  fullyParallel: true,
+  forbidOnly: CI,
+  retries: CI ? 2 : 0,
+  reporter: CI ? 'blob' : 'html',
+  snapshotPathTemplate: '{testDir}/__screenshots__/{projectName}/{platform}/{testFilePath}/{arg}{ext}',
+  expect: { toHaveScreenshot: { animations: 'disabled', maxDiffPixelRatio: 0.01 } },
+  use: {
+    baseURL: process.env.BASE_URL ?? 'http://localhost:3000',
+    trace: 'on-first-retry',
+    testIdAttribute: 'data-testid',
+  },
+  projects: [
+    { name: 'setup', testMatch: /.*\\.setup\\.ts/ },
+    {
+      name: 'chromium',
+      use: browser,
+      dependencies: ['setup'],
+      testIgnore: [/.*\\.axe\\.spec\\.ts/, /.*\\.visual\\.spec\\.ts/],
+    },
+    { name: 'axe', testMatch: /.*\\.axe\\.spec\\.ts/, use: browser, dependencies: ['setup'] },
+    ...(inPinnedImage
+      ? [{ name: 'visual', testMatch: /.*\\.visual\\.spec\\.ts/, use: browser, dependencies: ['setup'] }]
+      : []),
+  ],
+});
+'''
 
 
 def test_fresh_config_template_is_unchanged_when_no_baselines(web):

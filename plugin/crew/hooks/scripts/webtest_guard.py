@@ -588,8 +588,8 @@ def module_dir(root, module):
 def check_auth_leak(root, module=None):
     project = module_dir(root, module)
     if project is None:
-        return EXIT_UNKNOWN, [f"webtest auth-leak: UNKNOWN -- --module {module} is not a "
-                              "directory under --root; not a pass"]
+        return EXIT_UNKNOWN, [(f"webtest auth-leak: UNKNOWN -- --module {module} is not a "
+                               "directory under --root; not a pass")]
     tracked = crew_common.git_out(root, "-c", "core.quotePath=false", "ls-files")
     if tracked is None:
         return EXIT_UNKNOWN, ["webtest auth-leak: UNKNOWN -- git ls-files failed; not a pass"]
@@ -697,8 +697,8 @@ def check_visual(root, extra=(), runner=subprocess.call, module=None):
         return _unverified(f"container, but no Playwright image browser store {BROWSERS_DIR}")
     project = module_dir(root, module)
     if project is None:
-        return EXIT_UNKNOWN, [f"webtest visual: UNKNOWN -- --module {module} is not a directory "
-                              "under --root; not a pass"]
+        return EXIT_UNKNOWN, [(f"webtest visual: UNKNOWN -- --module {module} is not a "
+                               "directory under --root; not a pass")]
     version = installed_playwright(project)
     if version != PINNED_PLAYWRIGHT:
         return EXIT_FINDING, [f"webtest visual: @playwright/test is {version or 'not installed'}, "

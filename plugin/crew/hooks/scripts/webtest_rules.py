@@ -97,8 +97,8 @@ def omitted(root, module=None):
     named = {toks[i + 2][1] for i in range(len(toks) - 2)
              if toks[i][1] == "name" and toks[i + 1][1] == ":" and toks[i + 2][0] == "str"}
     scaffold = f"webtest_scaffold.py --module {module}" if module else "webtest_scaffold.py"
-    return [(rule, f"webtest rules: omitted the {rule} rule - no '{rule}' project in "
-                   f"{_prefix(module, names[0])} ({scaffold} prints the gap)")
+    return [(rule, (f"webtest rules: omitted the {rule} rule - no '{rule}' project in "
+                    f"{_prefix(module, names[0])} ({scaffold} prints the gap)"))
             for rule in ("axe", "visual") if rule not in named]
 
 

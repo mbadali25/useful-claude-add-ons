@@ -426,7 +426,7 @@ def baselines(project, scan, named):
         return owner, (f"{len(paths)} baseline(s) under {where} are named for project '{owner}' "
                        f"(e.g. {paths[0]}); the template keeps them")
     if matched:
-        example = sorted(p for paths in matched.values() for p in paths)[0]
+        example = min(p for paths in matched.values() for p in paths)
         return None, (f"baselines under {where} are named for several projects "
                       f"({', '.join(sorted(matched))}) (e.g. {example}); {unset}")
     if unmatched:
@@ -446,15 +446,15 @@ def gap_lines(key, config, named, baseline):
     if key == "axe":
         return f"{paste}:", [f"{{ name: 'axe', testMatch: /.*\\.axe\\.spec\\.ts/, {browser}{deps} }},"]
     if key == "gate":
-        return (f"{config} lacks the visual project's gate on {webtest_guard.PINNED_IMAGE} - wrap "
-                "the existing 'visual' entry in:", [f"{gate} ? [", "  <the existing 'visual' entry>",
-                                                    "] : []),"])
+        return ((f"{config} lacks the visual project's gate on {webtest_guard.PINNED_IMAGE} - "
+                 "wrap the existing 'visual' entry in:"),
+                [f"{gate} ? [", "  <the existing 'visual' entry>", "] : []),"])
     owner, sentence = baseline
     template = (f", snapshotPathTemplate: '{{snapshotDir}}/{{testFileDir}}/{{testFileName}}"
                 f"-snapshots/{{arg}}-{owner}-{{platform}}{{ext}}'" if owner else "")
     return (f"{paste}{' (' + sentence + ')' if sentence else ''}:",
-            [gate, f"  ? [{{ name: 'visual', testMatch: /.*\\.visual\\.spec\\.ts/, {browser}{deps}"
-                   f"{template} }}]", "  : []),"])
+            [gate, (f"  ? [{{ name: 'visual', testMatch: /.*\\.visual\\.spec\\.ts/, {browser}{deps}"
+                    f"{template} }}]"), "  : []),"])
 
 
 def credentials_recorded(root, config_text):
@@ -504,8 +504,8 @@ def plan(root, windows, module=None):
                       "create"))
     if problem:
         items.append(("refuse", "module", existing, None,
-                      f"testDir {problem} - could not tell where tests are collected; "
-                      "auth.setup.ts, fixtures/axe.ts, home.axe.spec.ts not written"))
+                      (f"testDir {problem} - could not tell where tests are collected; "
+                       "auth.setup.ts, fixtures/axe.ts, home.axe.spec.ts not written")))
     else:
         for name, body in (("auth.setup.ts", AUTH_SETUP_TS), ("fixtures/axe.ts", AXE_FIXTURE_TS),
                            ("home.axe.spec.ts", AXE_SPEC_TS)):
@@ -513,8 +513,8 @@ def plan(root, windows, module=None):
             if os.path.exists(os.path.join(project, *rel.split("/"))):
                 items.append(("keep", "module", rel, None, "exists - kept"))
             elif name == "auth.setup.ts" and not creds:
-                items.append(("skip", "module", rel, None, f"no credentials recorded ({why}) - "
-                              "see crew-verification; nothing written"))
+                items.append(("skip", "module", rel, None, (f"no credentials recorded ({why}) - "
+                                                             "see crew-verification; nothing written")))
             else:
                 items.append(("write", "module", rel, body, "create"))
     if existing:
