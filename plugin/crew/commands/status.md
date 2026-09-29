@@ -28,7 +28,7 @@ summary above or below it, and do not pad it with advice.
 | `config` | `.crew/crew.json` (1.0) or `.crew/config.json` (0.20) | JSON unreadable |
 | `roster` | `agents` in crew.json, or `roles` measured against the 1.0 four | - |
 | `tickets` / `open` | `.work/tickets/`, `.work/INDEX.md` | - |
-| `review` | review ledgers under the git common dir, newest three | a ledger that will not parse |
+| `review` | review ledgers under the git common dir, newest three: state, rounds used of the budget, and refunded tool-failure rounds (`review_ledger.summary`) | a ledger that will not parse |
 | `verify` | `.crew/.verify-gate.record.json`, counted by status | record unreadable |
 | `codemap` | anchors checked by path diff, as `crew_freshness.read_knowledge` does | no git |
 | `metrics` | `.crew/metrics.jsonl`, else `.crew/metrics.md` | - |

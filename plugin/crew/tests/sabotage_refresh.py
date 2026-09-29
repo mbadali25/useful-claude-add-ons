@@ -48,6 +48,35 @@ _DEMOTE = '        if item["status"] in (FRESH, STALE):\n'
 _RECORD_DOUBT = "        doubt = _named_behind(top, base, ticket)\n"
 VERIFY = os.path.join(os.path.dirname(os.path.dirname(CREW)), ".crew", "verify.json")
 
+
+def _scope_guard_rule_span():
+    """verify.json from rule 27's scope_guard.py line through rule 31's entry,
+    and the same span with scope_guard.py dropped from both.
+
+    Rule 31 (T-0087) lists scope_guard.py as well, so dropping it from rule 27
+    alone leaves it covered and the mutation stays green. `apply_mutation`
+    patches one contiguous, unique span, so the span is read from the file:
+    both rules have to lose it for coverage to truly disappear (owner, spec
+    amendment 2026-09-28). Unreadable or reshaped -> ("", ""), an anchor that
+    is never present, which the harness reports rather than passing.
+    """
+    line27 = '                "plugin/crew/hooks/scripts/scope_guard.py",\n'
+    entry31 = '"plugin/crew/hooks/scripts/scope_guard.py", '
+    try:
+        with open(VERIFY, encoding="utf-8", newline="") as fh:
+            text = fh.read()
+    except OSError:
+        return "", ""
+    start = text.find(line27)
+    end = text.find(entry31, start + len(line27)) if start >= 0 else -1
+    if end < 0:
+        return "", ""
+    span = text[start:end + len(entry31)]
+    return span, span[len(line27):-len(entry31)]
+
+
+_SCOPE_GUARD_FIND, _SCOPE_GUARD_REPLACE = _scope_guard_rule_span()
+
 REFRESH_MUTATIONS = (
     ("the refresh check reports fresh whatever the artifacts say", CHECK,
      '    result = {"status": overall, "reason": f"scope base {base[:12]} ({why})", "stop": None,\n',
@@ -241,6 +270,6 @@ REFRESH_MUTATIONS = (
      "    if True:\n        return path\n",
      _CAI + "test_a_stat_dirty_file_whose_name_starts_with_a_quote_is_not_a_change"),
     ("an edit to scope_guard.py runs no pytest rule", VERIFY,
-     '                "plugin/crew/hooks/scripts/scope_guard.py",\n', "",
+     _SCOPE_GUARD_FIND, _SCOPE_GUARD_REPLACE,
      _T + "test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule[scope_guard.py]"),
 )

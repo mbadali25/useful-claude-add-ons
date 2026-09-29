@@ -107,7 +107,8 @@ until you approve again.
 
 ## After two review rounds: a successor plan
 
-If a ticket uses both review rounds without an accepted receipt, it moves to `NEEDS_REPLAN`.
+If a ticket uses both review rounds without an accepted receipt (refunded tool-failure rounds do
+not count), it moves to `NEEDS_REPLAN`.
 Write a different plan and approve it. `approve` reports `review may continue`, and the ledger
 gives the new plan two fresh rounds. Approving the same plan again is refused and exits with
 status 3.

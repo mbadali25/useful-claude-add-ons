@@ -1,0 +1,13 @@
+{
+  "counts": {
+    "BLOCK": 3,
+    "FIX": 6,
+    "NIT": 0
+  },
+  "delivered": true,
+  "failure_class": null,
+  "origin": "uca-t0075/T-0075-build--arV1Bd",
+  "parts_missing": [],
+  "read_form": "bare",
+  "verdict": "FINDINGS"
+}

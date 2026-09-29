@@ -87,6 +87,9 @@
 %% cited by section only (T-0042's lines are in §14a). crew_resume.settings :172 holds.
 %% T-0042 adds no config key (crew_config.py, both templates and crew_state.py are
 %% byte-identical to main at 53f5482c), so main's 121 / 67 / 54 stand; not re-executed here.
+%% Re-anchored 0f488706 -> b5c37635 (T-0087, crew 1.0.52): of the Anchors paths only
+%% CLAUDE.md changed (the tooling-alone bullet, +7 lines from :40); every CLAUDE.md citation
+%% here is in the history lines above, kept as history. No node or edge changed.
 
 %% Merged 2b18f7ab + bcb77ce2 -> c2ae46ab (T-0021 review round 3 and its merge of main, crew
 %% 1.0.43): of the Anchors paths only CONFIG.md (T-0021's tracker and obsidian.* rows; the
@@ -339,6 +342,9 @@
 %% Re-anchored a4eb2f55 -> 0f488706 (T-0072 review round 5): of the Anchors paths only CONFIG.md
 %% changed (one section 20 sentence re-worded in place at :2331-2333, no line added: --json is one
 %% line); it is cited here by section only. No count, node or edge changed.
+%% Re-anchored b5c37635 -> c8cc69ec (T-0087 merged main c426c018, T-0076, crew 1.0.53): of the Anchors
+%% paths only crew_context.py changed (+4 lines at :1086 in emit); this diagram cites load_crew_config
+%% :121-132 there, above the insert, re-read unchanged. No node or edge changed.
 %% Re-anchored 0f488706 -> 051f9e85 (T-0091): of the Anchors paths only CLAUDE.md changed (the
 %% Landmines truncating-open paragraph, :185-212, later lines +10); no node or edge draws on it, and
 %% the comments above cite no CLAUDE.md line past :79. No count, node or edge changed.
@@ -359,6 +365,15 @@
 %% :3072 -> :3071, update_json :343 -> :350). ISG, MERGED, WRITE, RWRITE and FLOCK gain round 5's
 %% leaf rules, open-table rule, OSError refusal and PID-write cleanup; no edge changed. Leaf counts
 %% re-executed at 3648f59a: 123 / 68.
+%% Re-anchored c8cc69ec -> c0768d0e (T-0087 merged main f8b6c8d7, T-0091): of the Anchors paths only
+%% CLAUDE.md changed (T-0091's Landmines paragraph at :189, later lines +17); no node or edge draws on
+%% it and no comment here cites a CLAUDE.md line past :79. No count, node or edge changed.
+%% Re-anchored c0768d0e / 25d2de63 -> 379ab5e6 (T-0087 merged onto 6387ab49, crew 1.0.55): of the
+%% Anchors paths none changed between c0768d0e and 379ab5e6 (git diff --name-only), and both notes
+%% above hold on the merged tree. No count, node or edge changed.
+%% Re-anchored 379ab5e6 -> 17fa035e (T-0087 review round 1): of the Anchors paths only CLAUDE.md
+%% changed (the tooling-alone bullet gained two lines at :41-44, later lines +2); no node or edge
+%% draws on it and no comment here cites a CLAUDE.md line past :79. No count, node or edge changed.
 flowchart TB
 
     subgraph Sources["Three sources, lowest precedence first"]
