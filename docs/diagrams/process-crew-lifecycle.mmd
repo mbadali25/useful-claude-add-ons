@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@bbd9a66d on 2026-09-29. Verify before trusting.
+%% Generated from useful-claude-add-ons@6375524b on 2026-09-29. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -291,3 +291,10 @@ flowchart TB
 %% Re-anchored d7c7c75c -> bbd9a66d (T-0010 landing branch, crew 1.0.61): of the Anchors paths only
 %% crew_ticket.py changed, one line in place (a noqa: BLE001 beside the broad-except disable in the
 %% autopilot-policy check), so every line number above holds. No node or edge changed.
+%% Merged bbd9a66d + f79e9f58 -> 6375524b (T-0094 merges main 8ab733d7, then review round 2's
+%% successor, crew 1.0.62): of the Anchors paths done.md, implement.md and completion_audit.py
+%% changed on T-0094's side only (unchanged since f79e9f58: completion_audit.py:246-257 and
+%% implement.md:15-18, :96, :110 hold, compared by script), crew_refresh_check.py gained six
+%% lines in _rule_verdict (an unreadable rule is could-not-tell), cited by name only here, and
+%% crew_ticket.py is main's (approval_digest :562, status() :589, approve :723, :742-744 hold).
+%% No node or edge changed.
