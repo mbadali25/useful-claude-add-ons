@@ -324,8 +324,10 @@ contract itself. This section is what goes wrong with the approval and the audit
   against the ticket's scope base (<code>scope_base.resolve</code> — the commit the ticket started from) across
   committed, staged, unstaged and untracked changes, so a shell-made write is caught here even
   though nothing blocked it at the time. A file byte-identical to main as last merged is not
-  counted; a <code>merged main: could not tell</code> line (detached HEAD, no <code>origin/main</code>) means every
-  merged-in file was counted, so check out the ticket branch and rerun.
+  counted; a <code>merged main: could not tell</code> line (a detached HEAD, none of <code>origin/HEAD</code>,
+  <code>origin/main</code> and <code>main</code> naming a commit, or a git error) means every merged-in file was
+  counted, so check out the ticket branch and rerun. A missing <code>origin/main</code> alone is not that:
+  a local <code>main</code> is used instead.
   <strong>Check it directly, without waiting for a Stop:</strong></p>
 </li>
 </ul>
