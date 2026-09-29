@@ -534,6 +534,7 @@ loses the most time to.
    or `std:none` if it printed that the gate did not apply, or stood down in an incident.
 7. `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py proposals --root . --ticket "$TICKET" --scratch "$SCRATCH" --round <N>`,
    then fill each finding's row as the `crew-standards` skill says; I approve or reject each.
+   An INCOMPLETE round's `out.txt` is refused (exit 1, nothing written): report that, not "no findings".
 8. Name every specialist from step 0 that ran, every one that a matched rule asked for but you
    skipped, and every one that a matched rule named but that **is not installed on this machine**.
    A review that quietly dropped the `dba` pass on a migration reads exactly like one that had

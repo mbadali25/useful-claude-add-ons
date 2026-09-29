@@ -64,9 +64,13 @@ After the tests, docs and refresh, before `/crew:review`:
    or duplicated id, or no recorded scope base. A recorded start that is gone
    or no longer an ancestor of HEAD stamps against the same merge-base
    fallback `/crew:review` bundles with, and says `(fallback)` on its output
-   line; with no default branch to fall back to it refuses, and it names
-   `scope_base.py --record` only when no record exists, since `--record` never
-   overwrites one. On a complete record it writes
+   line; so does a start first recorded on a branch already past the default
+   branch, which `--record` wrote as the merge-base, a guess. With no default
+   branch to fall back to it refuses, and it names `scope_base.py --record`
+   only when no record exists, since `--record` never overwrites one. A
+   `.crew/.scope-base` that cannot be read is refused without naming
+   `--record`, which would rewrite it with this ticket's entry alone; repair it
+   by hand. On a complete record it writes
    `<!-- stamp: bundle=... standards=... base=... -->` under the header:
    the review bundle's sha256 (`review_patch.compute` on the ticket's scope
    base, so staged, unstaged and untracked content count) and the standards
@@ -79,8 +83,9 @@ last fix.
 
 ## At /crew:review: the gate, the checklist, the proposals
 
-- **Gate.** `review_run.py` refuses to reserve a round (exit 2, nothing spent)
-  when the self-check is missing, unreadable, incomplete, unstamped, or stamped
+- **Gate.** A spent review budget is refused first (exit 4), since no
+  self-check can change it. Otherwise `review_run.py` refuses to reserve a
+  round (exit 2, nothing spent) when the self-check is missing, unreadable, incomplete, unstamped, or stamped
   for another bundle or another standards set. It applies to a ticket with an
   approval receipt, or whose receipt cannot be proven absent. In an active
   incident (`/crew:emergency`) it stands down and logs a `standards-selfcheck`
@@ -93,6 +98,8 @@ last fix.
   --ticket <id> --scratch <dir> --round <N>` writes
   `.work/tickets/<id>/standards-proposals-r<N>.md`: every BLOCK/FIX line
   verbatim, each with Covered by, Self-check said and Proposal to fill. The
+  An `out.txt` the verdict parser calls INCOMPLETE (empty, a line it cannot
+  read, neither CLEAN nor a finding) is refused and nothing is written. The
   owner approves or rejects each proposal. An approved one is written into
   `.crew/standards.md` by hand, or filed as a crew ticket for the plugin set.
   Nothing is added to any standards file automatically.
@@ -102,8 +109,10 @@ last fix.
 `/crew:review` records its metrics row with `(r<N>, std:<first 8 of the
 digest>)` in the reviewer cell, or `std:none` when the gate stood down or did
 not apply. `crew_standards.py metric --root .` prints first-round BLOCK+FIX
-per ticket before (no `std:` token) and after (a `std:` token), with count,
-median and mean. Rows whose round cannot be read count as unknown and are on
-neither side; fewer than `crew_metrics.MIN_BASELINE_KNOWN` tickets on a side
+per ticket before (no `std:` token) and after (`std:<8 hex>`), with count,
+median and mean. `std:none` rows (the gate did not apply) and rows whose
+`std:` token is neither are counted and on neither side, so a post-change row
+never lands in the baseline. Rows whose round cannot be read count as unknown
+and are on neither side; fewer than `crew_metrics.MIN_BASELINE_KNOWN` tickets on a side
 reads "not enough data". `--record` appends one summary line with no `|`, so
 the existing metrics readers skip it.

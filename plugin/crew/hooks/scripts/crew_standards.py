@@ -85,7 +85,8 @@ _FIELD_RE = re.compile(r"^\*\*(" + "|".join(re.escape(f) for f in FIELDS) + r")\
 _STAMP_RE = re.compile(r"^<!-- stamp: bundle=([0-9a-f]{64}) standards=([0-9a-f]{64}) "
                        r"base=([0-9a-f]{40}) -->$")
 _ROW_RE = re.compile(r"^\|(.*)\|\s*$")
-_STD_TOKEN_RE = re.compile(r"\bstd:[0-9a-f]{8}\b")
+_STD_TOKEN_RE = re.compile(r"\bstd:([^\s,;)|]*)")
+_STD_DIGEST_RE = re.compile(r"[0-9a-f]{8}")
 
 
 def references_dir():
@@ -433,12 +434,26 @@ def record_problems(rows, found):
     return problems
 
 
-def _has_scope_entry(root, ticket):
-    """True when `.crew/.scope-base` holds an entry for `ticket` that
-    `scope_base.record` would keep, so naming `--record` would change nothing."""
+def _scope_entry(root, ticket):
+    """(has_entry, unreadable): whether `.crew/.scope-base` holds an entry for
+    `ticket` that `scope_base.record` would keep, so naming `--record` would
+    change nothing; and why the record could not be read, or None.
+
+    `scope_base.read_record` returns None for an absent record and for one it
+    cannot read alike. The two are told apart here, because `--record` over an
+    unreadable record rewrites the whole file with this ticket's entry alone and
+    drops every other ticket's recorded start (GEN-01: could not tell is not
+    absent)."""
     import scope_base  # pylint: disable=import-outside-toplevel
-    entry = (scope_base.read_record(root) or {}).get(ticket)
-    return isinstance(entry, dict) and isinstance(entry.get("base"), str) and bool(entry["base"])
+    raw, why = _read_bytes(os.path.join(root, scope_base.RECORD))
+    if raw is None:
+        return False, (None if why == "absent" else why)
+    record = scope_base.read_record(root)
+    if record is None:
+        return False, "does not parse as a JSON object"
+    entry = record.get(ticket)
+    return (isinstance(entry, dict) and isinstance(entry.get("base"), str)
+            and bool(entry["base"])), None
 
 
 def _scope(root, ticket):
@@ -450,17 +465,28 @@ def _scope(root, ticket):
     used (its commit is gone, or no longer an ancestor of HEAD) resolves to the
     merge-base with the default branch, which is what /crew:review bundles
     against too; that base is used and `note` says "(fallback)" with resolve's
-    reason, for every line derived from it (GEN-01). `--record` keeps an
-    existing entry, so it is named only when there is no entry; a base resolved
-    to HEAD alone (no default branch) is refused."""
+    reason, for every line derived from it (GEN-01). A start first recorded on
+    a branch already past the default branch is the merge-base, recorded as a
+    guess (`record-fallback`); it is used, and marked the same way. `--record`
+    keeps an existing entry, so it is named only when there is no entry, and
+    never over a record that cannot be read, which it would rewrite with this
+    ticket's entry alone; a base resolved to HEAD alone (no default branch) is
+    refused."""
     import review_patch  # pylint: disable=import-outside-toplevel
     import scope_base  # pylint: disable=import-outside-toplevel
+    has_entry, unreadable = _scope_entry(root, ticket)
+    if unreadable:
+        return None, None, [f"the scope base record {scope_base.RECORD} cannot be read "
+                            f"({unreadable}); recording a start now would rewrite it with "
+                            f"{ticket}'s entry alone and drop every other ticket's, so repair "
+                            "it by hand first"], None
     base, source, why = scope_base.resolve(root, ticket)
     note = None
-    has_entry = _has_scope_entry(root, ticket)
-    if source == "merge-base" and base and has_entry:
+    if source == "record-fallback" and base:
+        note = why
+    elif source == "merge-base" and base and has_entry:
         note = f"(fallback) {why}"
-    elif source not in (scope_base.RECORDED, "record-fallback") or not base:
+    elif source != scope_base.RECORDED or not base:
         if has_entry:
             return None, None, [f"the scope base for {ticket} cannot be used ({why}); an "
                                 "existing record is never overwritten, so recording again "
@@ -509,7 +535,15 @@ def stamp(root, ticket, refs_dir=None):
     """(exit_code, lines). Refuses on any problem; writes nothing then. The
     rows are validated from one read and those same bytes are written back
     with the stamp; a record that changed during the compute is refused, not
-    stamped (GEN-03: the authorizing fact is read once)."""
+    stamped.
+
+    That re-read is not a GEN-03 binding, and is not claimed as one: the
+    filesystem offers no compare-and-swap on a file's content, so an edit
+    landing between the re-read and `os.replace` is overwritten. GEN-03 asks
+    for the missing binding and the window to be named: this is the window,
+    accepted as a risk because the only writer is the author's own editor on
+    this checkout, and the loss is visible (the edit is gone from the file
+    and the next stamp or gate reads what is there)."""
     raw, rows, _, problems = _read_selfcheck_raw(root, ticket)
     base, manifest, scope_problems, note = _scope(root, ticket)
     problems += scope_problems
@@ -665,15 +699,25 @@ def checklist_block(root, manifest, refs_dir=None):
 def proposals(root, ticket, scratch, round_no):
     """(exit_code, lines). One section per BLOCK/FIX line of the round's
     out.txt, verbatim, for the owner to rule on. Writes only the proposals
-    file, with an exclusive create; never a set file."""
+    file, with an exclusive create; never a set file.
+
+    An out.txt the verdict parser calls INCOMPLETE -- empty, a line it cannot
+    read (a finding inside a code fence or behind a bullet), neither CLEAN nor
+    a finding -- is refused and nothing is written: "could not tell" never
+    becomes "no findings", and the exclusive create is left free for the
+    corrected run (GEN-01)."""
     import review_verdict  # pylint: disable=import-outside-toplevel
     source = os.path.join(scratch, "out.txt")
     raw, why = _read_bytes(source)
     if raw is None:
         return 1, [f"proposals: {source} {'does not exist' if why == 'absent' else why}"]
     text = raw.decode("utf-8", errors="replace")
-    findings = [line for line in review_verdict.parse(text, 0)["findings"]
-                if not line.startswith("NIT|")]
+    parsed = review_verdict.parse(text, 0)
+    if parsed["verdict"] == review_verdict.INCOMPLETE:
+        return 1, [f"proposals: {source} is {review_verdict.INCOMPLETE}, so which findings it "
+                   "holds is not known; nothing written"] + [
+                       f"proposals:   {reason}" for reason in parsed["reasons"]]
+    findings = [line for line in parsed["findings"] if not line.startswith("NIT|")]
     name = f"standards-proposals-r{round_no}.md"
     path = os.path.join(root, ".work", "tickets", crew_ticket.check_ticket(ticket), name)
     body = [f"# {ticket} standards proposals, review round {round_no}", "",
@@ -702,13 +746,32 @@ def _side(values, floor):
             "mean": round(statistics.mean(values), 2), "enough": len(values) >= floor}
 
 
+def _std_side(reviewer):
+    """"before" (no `std:` token), "after" (`std:<8 hex>`), "std_none"
+    (`std:none`: the gate stood down or did not apply, so the row is after the
+    change but had no self-check), or "std_unreadable" (a `std:` token that is
+    neither). Only "before" and "after" are measured; the other two are
+    counted and on neither side, so a post-change row never lands in the
+    baseline (GEN-01)."""
+    match = _STD_TOKEN_RE.search(reviewer or "")
+    if not match:
+        return "before"
+    if _STD_DIGEST_RE.fullmatch(match.group(1)):
+        return "after"
+    if match.group(1) == "none":
+        return "std_none"
+    return "std_unreadable"
+
+
 def metric_summary(text):
-    """First-round BLOCK+FIX per ticket, before (no std: token) and after."""
+    """First-round BLOCK+FIX per ticket, before (no std: token) and after
+    (a std:<8 hex> token); std:none and unreadable std: rows on neither side."""
     import crew_metrics  # pylint: disable=import-outside-toplevel
     import crew_migrate  # pylint: disable=import-outside-toplevel
     rows, _ = crew_migrate.metrics_rows(text or "")
     per = {"before": {}, "after": {}}
     unknown_round = unscored = 0
+    neither = {"std_none": 0, "std_unreadable": 0}
     for index, row in enumerate(rows):
         if row["reviewRound"] == crew_migrate.UNKNOWN:
             unknown_round += 1
@@ -718,13 +781,16 @@ def metric_summary(text):
         if crew_migrate.UNKNOWN in (row["block"], row["fix"]):
             unscored += 1
             continue
-        side = "after" if _STD_TOKEN_RE.search(row["reviewer"] or "") else "before"
+        side = _std_side(row["reviewer"])
+        if side in neither:
+            neither[side] += 1
+            continue
         key = row["ticketId"] if row["ticketId"] != crew_migrate.UNKNOWN else ("row", index)
         per[side][key] = per[side].get(key, 0) + row["block"] + row["fix"]
     floor = crew_metrics.MIN_BASELINE_KNOWN
     return {"before": _side(list(per["before"].values()), floor),
             "after": _side(list(per["after"].values()), floor),
-            "unknown_round": unknown_round, "unscored": unscored, "floor": floor}
+            "unknown_round": unknown_round, "unscored": unscored, "floor": floor, **neither}
 
 
 def _side_text(name, side, floor):
@@ -748,13 +814,16 @@ def metric(root, record=False, today=None):
              "  " + _side_text("before (no std: token)", found["before"], floor),
              "  " + _side_text("after (std: token)", found["after"], floor),
              f"  unknown-round rows {found['unknown_round']} (on neither side); first-round rows "
-             f"with no BLOCK/FIX count {found['unscored']}"]
+             f"with no BLOCK/FIX count {found['unscored']}",
+             f"  std:none rows {found['std_none']} (the gate did not apply; on neither side); "
+             f"unreadable std: tokens {found['std_unreadable']} (on neither side)"]
     if record:
         today = today or datetime.date.today().isoformat()
         line = (f"standards-metric {today}: first-round BLOCK+FIX "
                 f"{_side_text('before', found['before'], floor)}, "
                 f"{_side_text('after', found['after'], floor)}, "
-                f"unknown-round rows {found['unknown_round']}")
+                f"unknown-round rows {found['unknown_round']}, std:none rows {found['std_none']}, "
+                f"unreadable std: tokens {found['std_unreadable']}")
         line = line.replace("|", "/")
         prefix = "" if not text or text.endswith("\n") else "\n"
         os.makedirs(os.path.dirname(path), exist_ok=True)

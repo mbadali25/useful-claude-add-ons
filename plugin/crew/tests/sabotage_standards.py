@@ -24,6 +24,15 @@ malformed row, an unparseable stamp line, a second stamp line, a repeated
 field, a repeated front matter key, Supplements in a plugin set, two plugin
 files sharing a set, no GEN set, and a set file defining no standard. And
 review.md's exit-2 paragraph losing the self-check refusal.
+
+Review round 3 added nine. A start `--record` wrote as the merge-base guess
+refused by the stamp, or used without "(fallback)"; an unreadable
+`.crew/.scope-base` read as no record (and a record that does not parse
+read as readable), so the refusal named the `--record` that would rewrite
+it; proposals written from an INCOMPLETE out.txt; a `std:none` row and an
+unreadable `std:` token each counted in the metric's baseline; the
+self-check gate answering before a spent review budget; and GEN-07 citing only
+two of the three change sets it names.
 """
 import os
 
@@ -31,6 +40,7 @@ CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STANDARDS = os.path.join(CREW, "hooks", "scripts", "crew_standards.py")
 REVIEW_RUN = os.path.join(CREW, "hooks", "scripts", "review_run.py")
 REVIEW_MD = os.path.join(CREW, "commands", "review.md")
+GENERIC = os.path.join(CREW, "skills", "crew-standards", "references", "generic.md")
 
 STANDARDS_MUTATIONS = (
     (
@@ -156,8 +166,8 @@ STANDARDS_MUTATIONS = (
     (
         "an unusable record refuses again",
         STANDARDS,
-        "    if source == \"merge-base\" and base and has_entry:\n",
-        "    if False:\n",
+        "    elif source == \"merge-base\" and base and has_entry:\n",
+        "    elif False:\n",
         ("tests/test_crew_standards.py::"
          "test_stamp_scope_fallback_when_the_record_is_unusable"),
     ),
@@ -304,5 +314,78 @@ STANDARDS_MUTATIONS = (
         ("cause. Exit 2 means nothing launched (not on PATH) and no round was spent; walk\n"
          "to the next eligible provider.\n"),
         "tests/test_lifecycle_commands.py::test_commands_name_the_standards_steps",
+    ),
+    (
+        "a start recorded as a merge-base guess refuses the stamp",
+        STANDARDS,
+        "    if source == \"record-fallback\" and base:\n",
+        "    if False:\n",
+        "tests/test_crew_standards.py::test_stamp_marks_a_record_written_as_a_fallback",
+    ),
+    (
+        "a start recorded as a merge-base guess is not marked",
+        STANDARDS,
+        "        note = why\n",
+        "        note = None\n",
+        "tests/test_crew_standards.py::test_stamp_marks_a_record_written_as_a_fallback",
+    ),
+    (
+        "an unreadable scope record reads as no record",
+        STANDARDS,
+        "    if unreadable:\n",
+        "    if False:\n",
+        ("tests/test_crew_standards.py::"
+         "test_stamp_refuses_an_unreadable_scope_record_without_naming_record"),
+    ),
+    (
+        "a scope record that does not parse reads as readable",
+        STANDARDS,
+        "        return False, \"does not parse as a JSON object\"\n",
+        "        return False, None\n",
+        ("tests/test_crew_standards.py::"
+         "test_stamp_refuses_an_unreadable_scope_record_without_naming_record"),
+    ),
+    (
+        "proposals are written from an INCOMPLETE output",
+        STANDARDS,
+        "    if parsed[\"verdict\"] == review_verdict.INCOMPLETE:\n",
+        "    if False:\n",
+        ("tests/test_crew_standards.py::"
+         "test_proposals_refuses_an_incomplete_output_and_writes_nothing"),
+    ),
+    (
+        "a std:none row counts in the baseline",
+        STANDARDS,
+        "    if match.group(1) == \"none\":\n"
+        "        return \"std_none\"\n",
+        "    if match.group(1) == \"none\":\n"
+        "        return \"before\"\n",
+        ("tests/test_crew_standards.py::"
+         "test_metric_keeps_a_row_without_a_digest_out_of_the_baseline"),
+    ),
+    (
+        "an unreadable std: token counts in the baseline",
+        STANDARDS,
+        "    return \"std_unreadable\"\n",
+        "    return \"before\"\n",
+        ("tests/test_crew_standards.py::"
+         "test_metric_keeps_a_row_without_a_digest_out_of_the_baseline"),
+    ),
+    (
+        "the self-check gate answers before a spent budget",
+        REVIEW_RUN,
+        "    if not (ledger.get(\"state\") == review_ledger.NEEDS_REPLAN\n"
+        "            or ledger.get(\"rounds_left\") == 0):\n",
+        "    if True:\n",
+        ("tests/test_review_run_standards.py::"
+         "test_run_reports_a_spent_budget_before_the_selfcheck"),
+    ),
+    (
+        "GEN-07 cites two of its three change sets",
+        GENERIC,
+        "- main(B1-B3) r3 @8b8a4028+dirty, FIX `plugin/crew/skills/crew-graph/",
+        "- (B1-B3) r3 @8b8a4028+dirty, FIX `plugin/crew/skills/crew-graph/",
+        ("tests/test_crew_standards.py::"
+         "test_every_generic_standard_cites_three_of_its_change_sets"),
     ),
 )

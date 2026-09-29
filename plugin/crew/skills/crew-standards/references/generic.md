@@ -10,7 +10,9 @@ earned by BLOCK/FIX findings from at least three distinct reviewed change sets; 
 lives in the repository overlay that found it. Findings are cited by ticket, review round, reviewed
 head (`@sha`; `+dirty` means the reviewed bytes were not at that commit) and the reviewer's quoted
 claim, cut with `[...]`. `main(pmunnamed)`, `main(T1-T4)` and `main(B1-B3)` are three reviews of crew's
-`main` that predate ticket numbering. A self-check's examples are examples of its class, not its
+`main` that predate ticket numbering; the last two share the head `@8b8a4028+dirty` and are distinct by
+their bundles (different bytes, and main(B1-B3)'s carries four files and whole branches main(T1-T4)'s
+does not), not by the head. A self-check's examples are examples of its class, not its
 definition: when a standard fires on a fix, run its self-check over the fixed line's whole class again.
 
 ## GEN-01 Unknown stays unknown
@@ -132,6 +134,9 @@ original after writing a copy; two files written in sequence as one save.
   a check-then-replace race, so a backup created after `lexists` is overwritten and lost"
 - T-0075 r2 @b4911045, BLOCK `plugin/crew/hooks/scripts/crew_config_menu.py:664`: "A concurrent config
   replacement after backup verification is deleted without being backed up [...]"
+- T-0030 r1 @e2a23f08, FIX `plugin/crew/hooks/scripts/crew_coord.py:323`: "update_identity does a
+  read-modify-write of <git-common-dir>/crew/coord-identity.json with no lock. [...] concurrent claim or
+  recover calls from two worktrees lose each other's entries."
 
 
 ## GEN-03 The irreversible action carries what was checked
@@ -430,6 +435,11 @@ fallback path; any producer whose output another command consumes.
   empty, or non-object configs, then prints a restore command that restore-repo refuses [...]"
 - main(T1-T4) r2 @8b8a4028+dirty, BLOCK `plugin/crew/commands/review.md:459`: "The Claude fallback is never
   given the manifest-built patch, so dirty and untracked content can still receive a false CLEAN"
+- main(B1-B3) r3 @8b8a4028+dirty, FIX `plugin/crew/skills/crew-graph/scripts/crew_upgrade.py:1321`: "The
+  report-only path emits full migration claims for changes it never writes, including “roles added” and
+  “schema 7 -> 7 ... added” keys". A distinct change set from main(T1-T4) at the same dirty head: the
+  cited line is in the report-only branch (`:1315-1324` of that review's bundle), and main(T1-T4)'s
+  bundle adds none of those lines to the same file.
 
 
 ## GEN-08 Portable across Windows and POSIX

@@ -415,9 +415,16 @@ def run(args):
             return EXIT_USAGE
         prompt = prompt_argument(os.path.join(args.scratch, "prompt.txt"))
 
-    refused = standards_gate(args)
-    if refused is not None:
-        return refused
+    # A spent budget is a precondition already known to fail (GEN-03): the
+    # self-check cannot change it, so the budget refusal below answers first
+    # rather than sending the author to answer and restamp for nothing.
+    # `reserve` re-reads the ledger under its lock and is what refuses.
+    ledger = review_ledger.status(args.root, args.ticket)
+    if not (ledger.get("state") == review_ledger.NEEDS_REPLAN
+            or ledger.get("rounds_left") == 0):
+        refused = standards_gate(args)
+        if refused is not None:
+            return refused
 
     ok, number, message = review_ledger.reserve(args.root, args.ticket, args.provider,
                                                 args.model)

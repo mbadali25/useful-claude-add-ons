@@ -228,6 +228,22 @@ def test_every_generic_standard_names_three_change_sets():
             True, True, True), (std["id"], line)
 
 
+def test_every_generic_standard_cites_three_of_its_change_sets():
+    """The admission rule's evidence is visible in the shipped file: at least
+    three of the change sets a standard names are each cited in its Earned
+    by, so a count of names alone cannot admit it (review round 3)."""
+    parsed, _, _ = cs.parse_set(os.path.join(_REFS, "generic.md"))
+
+    short = {}
+    for std in parsed["standards"]:
+        names = [n.strip() for n in std["fields"]["Change sets"].partition(":")[2].split(",")]
+        cited = [n for n in names if f"- {n} r" in std["fields"]["Earned by"]]
+        if len(cited) < 3:
+            short[std["id"]] = cited
+
+    assert short == {}
+
+
 def test_shipped_sets_cite_nothing_local_only():
     offenders = []
     for name in sorted(os.listdir(_REFS)):
@@ -946,3 +962,127 @@ def test_refusal_branch_empty_set(tmp_path, refs):
         _set_file("EMP", ["**"], ""), encoding="utf-8"))
 
     assert (code, "references/empty.md: defines no standard" in text) == (1, True), text
+
+
+# ---- review round 3: a recorded guess, an unreadable record, proposals, std:none --
+
+def _record_fallback_repo(tmp_path):
+    """A repo on branch `feat`, one commit past `main`, whose T-1 entry was
+    first recorded there, so `scope_base.record` wrote the merge-base marked
+    `from: merge-base with main` (round 3 FIX 1's reproduction)."""
+    import scope_base  # pylint: disable=import-outside-toplevel
+    repo = init_repo(tmp_path / "repo")
+    git(repo, "checkout", "-qb", "feat")
+    _commit(repo, "feat1.txt", "f1\n")
+    assert scope_base.record(str(repo), "T-1")[1] == "recorded-fallback"
+    _approve_fixture(repo)
+    return repo
+
+
+def test_stamp_marks_a_record_written_as_a_fallback(tmp_path, refs):
+    import scope_base  # pylint: disable=import-outside-toplevel
+    repo = _record_fallback_repo(tmp_path)
+    base, source, _ = scope_base.resolve(str(repo), "T-1")
+
+    init_code, init_lines = cs.init(str(repo), "T-1", refs_dir=str(refs))
+    _answer_all(repo)
+    code, lines = cs.stamp(str(repo), "T-1", refs_dir=str(refs))
+    sets_code, sets_lines = cs._sets(str(repo), "T-1", refs_dir=str(refs))  # pylint: disable=protected-access
+
+    _, seal, _ = cs.read_selfcheck(str(repo), "T-1")
+    marked = [any("(fallback)" in line and base[:12] in line for line in out)
+              for out in (init_lines, lines, sets_lines)]
+    assert (source, init_code, code, sets_code, (seal or {}).get("base") == base, marked) == (
+        "record-fallback", 0, 0, 0, True, [True, True, True]), (init_lines, lines, sets_lines)
+
+
+_BROKEN_SCOPE_RECORDS = {"not-json": b"{", "not-an-object": b"[]\n"}
+
+
+@pytest.mark.parametrize("shape", sorted(_BROKEN_SCOPE_RECORDS))
+def test_stamp_refuses_an_unreadable_scope_record_without_naming_record(tmp_path, refs, shape):
+    import scope_base  # pylint: disable=import-outside-toplevel
+    repo = _scoped_repo(tmp_path)
+    scope_base.record(str(repo), "T-2")
+    cs.init(str(repo), "T-1", refs_dir=str(refs))
+    _answer_all(repo)
+    record = repo / ".crew" / ".scope-base"
+    record.write_bytes(_BROKEN_SCOPE_RECORDS[shape])
+
+    code, lines = cs.stamp(str(repo), "T-1", refs_dir=str(refs))
+    init_code, init_lines = cs.init(str(repo), "T-9", refs_dir=str(refs))
+
+    text = "\n".join(lines + init_lines)
+    assert (code, init_code, text.count("cannot be read"), "--record" in text,
+            record.read_bytes() == _BROKEN_SCOPE_RECORDS[shape]) == (
+        1, 1, 2, False, True), text
+
+
+_INCOMPLETE_OUTPUTS = {
+    "empty": "",
+    "bullet": "READ|part-001-of-001.patch\n- BLOCK|a.py:1|first breaks|run it\n",
+    "fenced": "READ|part-001-of-001.patch\n```\nBLOCK|a.py:1|first breaks|run it\n```\n",
+    "neither": "READ|part-001-of-001.patch\n",
+}
+
+
+@pytest.mark.parametrize("shape", sorted(_INCOMPLETE_OUTPUTS))
+def test_proposals_refuses_an_incomplete_output_and_writes_nothing(tmp_path, shape):
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (scratch / "out.txt").write_text(_INCOMPLETE_OUTPUTS[shape], encoding="utf-8")
+    root = tmp_path / "root"
+    root.mkdir()
+    args = ("proposals", "--root", str(root), "--ticket", "T-1", "--scratch", str(scratch),
+            "--round", "1")
+
+    first = _cli(*args)
+    written = (root / ".work" / "tickets" / "T-1" / "standards-proposals-r1.md").exists()
+    (scratch / "out.txt").write_text(_OUT, encoding="utf-8")
+    second = _cli(*args)
+
+    assert (first.returncode, "INCOMPLETE" in first.stderr, written, second.returncode) == (
+        1, True, False, 0), (first.stdout, first.stderr, second.stderr)
+
+
+@pytest.mark.parametrize("out", ["READ|part-001-of-001.patch\nCLEAN\n",
+                                 "READ|part-001-of-001.patch\nNIT|d.py:4|style|none\n"])
+def test_proposals_writes_a_round_with_no_block_or_fix(tmp_path, out):
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (scratch / "out.txt").write_text(out, encoding="utf-8")
+    root = tmp_path / "root"
+    root.mkdir()
+
+    result = _cli("proposals", "--root", str(root), "--ticket", "T-1", "--scratch",
+                  str(scratch), "--round", "1")
+
+    text = (root / ".work" / "tickets" / "T-1" / "standards-proposals-r1.md").read_text(
+        encoding="utf-8")
+    assert (result.returncode, "No BLOCK or FIX finding in this round." in text) == (
+        0, True), result.stderr
+
+
+@pytest.mark.parametrize("token, key", [("std:none", "std_none"),
+                                        ("std:0123abcd99", "std_unreadable"),
+                                        ("std:", "std_unreadable"),
+                                        ("std:0123ABCD", "std_unreadable")])
+def test_metric_keeps_a_row_without_a_digest_out_of_the_baseline(tmp_path, token, key):
+    _metrics(tmp_path, _many("T", 10, "codex (r1, high)", 1, 1)
+             + [("T-99", f"codex (r1, {token})", 9, 9)])
+
+    found = cs.metric_summary((tmp_path / ".crew" / "metrics.md").read_text(encoding="utf-8"))
+
+    assert ((found["before"]["n"], found["before"]["median"]), found["after"]["n"],
+            found[key]) == ((10, 2), 0, 1)
+
+
+def test_metric_prints_the_rows_on_neither_side(tmp_path):
+    _metrics(tmp_path, _many("T", 3, "codex (r1, high)", 1, 1)
+             + [("T-98", "codex (r1, std:none)", 9, 9), ("T-99", "codex (r1, std:zz)", 9, 9)])
+
+    code, lines = cs.metric(str(tmp_path))
+
+    text = "\n".join(lines)
+    assert (code, "std:none rows 1" in text, "unreadable std: tokens 1" in text) == (
+        0, True, True), text

@@ -40,6 +40,16 @@ All notable changes to this repository are documented here. Format follows [Keep
   a self-check edited after stamping; a broken effective set refused by `init`, `stamp` and the gate;
   twelve more refusal branches of the guard, each asserted by its own message; and `review.md`'s
   exit-2 self-check refusal text.
+- **Review round 3's fixes.** A start `scope_base.py --record` wrote as the merge-base (the branch was
+  already past the default branch) now says `(fallback)` on every `init`, `stamp` and `sets` line; a
+  `.crew/.scope-base` that cannot be read is refused without naming `--record`, which would rewrite it
+  with one ticket's entry. `proposals` refuses an `out.txt` the verdict parser calls INCOMPLETE and
+  writes nothing, so a lost review output never reads as "no findings". The metric keeps `std:none`
+  rows and unreadable `std:` tokens on neither side, counted, instead of in the baseline.
+  `review_run.py` answers a spent review budget (exit 4) before the self-check gate. GEN-02 and GEN-07
+  each cite a third change set in their Earned by, and a test holds every GEN standard to citing three.
+  The stamp's docstring names its remaining write window instead of claiming GEN-03. Rule 31 of
+  `.crew/verify.json` also runs on the scripts the stamp, gate, proposals and metric read.
 - No version bump on the build branch (REPO-03 as amended): the number is set on the land branch at
   push time, one patch above `origin/main` then, and this heading gains it there.
 

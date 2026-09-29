@@ -295,3 +295,22 @@ def test_run_refuses_a_broken_effective_set(repo, tmp_path):
 
     assert (result.returncode, "review-run: self-check: .crew/standards.md: not UTF-8" in
             result.stderr, _ledger_snapshot(repo) == before) == (2, True, True), result.stderr
+
+
+@pytest.mark.parametrize("provider", sorted(_PROVIDERS))
+@pytest.mark.parametrize("spent", ["budget-spent", "needs-replan"])
+def test_run_reports_a_spent_budget_before_the_selfcheck(repo, tmp_path, provider, spent):
+    for _ in range(2):
+        assert rl.reserve(str(repo), TICKET, "claude")[0]
+    if spent == "needs-replan":
+        assert not rl.reserve(str(repo), TICKET, "claude")[0]
+    _selfcheck(repo, "missing")
+    scratch = tmp_path / "scratch"
+    _bundle(repo, scratch)
+    fakes = fake_reviewer_bin(tmp_path / "bin")
+
+    result = _run(repo, scratch, fakes, provider, *_PROVIDERS[provider])
+
+    assert (result.returncode, "review budget exhausted" in result.stderr,
+            "self-check" in result.stderr, rl.status(str(repo), TICKET)["state"]) == (
+        4, True, False, rl.NEEDS_REPLAN), result.stderr
