@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@7fc61de6
+anchor: useful-claude-add-ons@fcb061a2
 verified: 2026-09-29
 
 ## Re-derive provenance
@@ -1030,7 +1030,7 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   The scope guard (`_refresh_artifact`,
   `plugin/crew/hooks/scripts/scope_guard.py:186-197`) and the completion audit
   (`_outside_refresh_artifacts`,
-  `plugin/crew/hooks/scripts/completion_audit.py:235-245`) let a ticket write
+  `plugin/crew/hooks/scripts/completion_audit.py:255-265`) let a ticket write
   those paths without a Touch entry **only while its approval is current**;
   with no current approval nothing is exempt.
 - Tests: `plugin/crew/tests/test_refresh_check.py`,
@@ -1153,8 +1153,8 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   `/crew:review` and `/crew:done` depend on — were located but not opened,
   except for the exclusion below.
 - DERIVED (T-0092, crew 1.0.54): `EXCLUDED` and `_EXCLUDE_SPEC`
-  (`plugin/crew/hooks/scripts/review_patch.py:124`,
-  `plugin/crew/hooks/scripts/review_patch.py:125`) name `.work/` and the
+  (`plugin/crew/hooks/scripts/review_patch.py:128`,
+  `plugin/crew/hooks/scripts/review_patch.py:129`) name `.work/` and the
   generated `graphify-out/`, root-anchored, on every diff and listing but
   never on `git add`; the manifest's `excluded` is `list(EXCLUDED)`.
   `_bundle_block` prints that list as `excluded (never in the bundle): ...`,
@@ -1170,29 +1170,42 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   (`plugin/crew/hooks/scripts/merged_main.py:101`) is the one drop rule: a
   path stays when it differs from the start AND from the merged commit.
   `review_patch._ticket_base_tree`
-  (`plugin/crew/hooks/scripts/review_patch.py:248`) builds the synthetic base
+  (`plugin/crew/hooks/scripts/review_patch.py:252`) builds the synthetic base
   tree (the start's tree with each dropped path set to its working-state
   entry, and each kept path main changed since the fork -- the merge-base of
-  the start and the merged commit, `plugin/crew/hooks/scripts/review_patch.py:273`
+  the start and the merged commit, `plugin/crew/hooks/scripts/review_patch.py:277`
   -- set to the merged commit's entry, so main's lines are context; one second
   temporary index) that `compute` diffs from
-  (`plugin/crew/hooks/scripts/review_patch.py:392`); the manifest carries
+  (`plugin/crew/hooks/scripts/review_patch.py:405`); the manifest carries
   `merged_main` (with `dropped` and `diffed_from_merged`) and `bundle_base_tree`
-  (`plugin/crew/hooks/scripts/review_patch.py:430`). The completion audit
+  (`plugin/crew/hooks/scripts/review_patch.py:443`). `merged_main.fork` is
+  that merge-base, recorded at `plugin/crew/hooks/scripts/review_patch.py:278`;
+  when git gives no answer it is null with a `fork_reason`
+  (`plugin/crew/hooks/scripts/review_patch.py:283`), every path main also
+  changed stays diffed from the start, and `_merged_field`
+  (`plugin/crew/hooks/scripts/review_patch.py:539`) prints
+  `diffed-from-merged=could-not-tell` (T-0100 successor). The completion audit
   applies the same rule in `changed_paths(top, base, merged)`
-  (`plugin/crew/hooks/scripts/completion_audit.py:169`), where `_as_merged`
-  (`plugin/crew/hooks/scripts/completion_audit.py:188`) keeps an untracked
+  (`plugin/crew/hooks/scripts/completion_audit.py:173`), where `_as_merged`
+  (`plugin/crew/hooks/scripts/completion_audit.py:194`) keeps an untracked
   path whose disk bytes and mode are the merged commit's entry out of the
-  since-merged set, as the bundle's `add -A` drops it; called from `audit`
-  (`plugin/crew/hooks/scripts/completion_audit.py:259`), which prints its
+  since-merged set, as the bundle's `add -A` drops it; the mode is the one
+  `git add` records, `_disk_mode`
+  (`plugin/crew/hooks/scripts/completion_audit.py:231`): the execute bit only
+  when `core.fileMode`, read once by `_file_mode`
+  (`plugin/crew/hooks/scripts/completion_audit.py:224`), is not false; called from `audit`
+  (`plugin/crew/hooks/scripts/completion_audit.py:279`), which prints its
   `merged main` line from `_merged_lines`
-  (`plugin/crew/hooks/scripts/completion_audit.py:296`) on a failure, on an
+  (`plugin/crew/hooks/scripts/completion_audit.py:316`) on a failure, on an
   applying pass, and on a could-not-tell pass
-  (`plugin/crew/hooks/scripts/completion_audit.py:267`); `changed_paths`
+  (`plugin/crew/hooks/scripts/completion_audit.py:287`); `changed_paths`
   without `merged` is unchanged for `crew_refresh_check`. The prompt's
   `merged main:` line is `_merged_main_line`
-  (`plugin/crew/hooks/scripts/review_prompt.py:93`), and the receipt check's
-  note `_merged_note` (`plugin/crew/hooks/scripts/review_ledger.py:367`).
+  (`plugin/crew/hooks/scripts/review_prompt.py:93`), which appends
+  `_fork_clause` (`plugin/crew/hooks/scripts/review_prompt.py:124`) on a null
+  fork, and the receipt check's note `_merged_note`
+  (`plugin/crew/hooks/scripts/review_ledger.py:367`), which adds
+  `; fork: could not tell` there (`plugin/crew/hooks/scripts/review_ledger.py:381`).
 - DERIVED (T-0079): the READ-line rule of the review verdict is
   `review_verdict._covers` (`plugin/crew/hooks/scripts/review_verdict.py:79`):
   a READ token counts for a part when, `\` read as `/` and `normpath`ed, it
@@ -1201,7 +1214,7 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   The prompt quotes `review_verdict.READ_FORM`
   (`plugin/crew/hooks/scripts/review_verdict.py:70`) in `_bundle_block`
   (`plugin/crew/hooks/scripts/review_prompt.py:86`) and on the webtest
-  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:264`), and
+  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:277`), and
   `review_run.finish` hands `parse` the manifest `path`s
   (`plugin/crew/hooks/scripts/review_run.py:315`) and the overflow file's
   scratch path (`plugin/crew/hooks/scripts/review_run.py:317`). `parse` and
@@ -2532,3 +2545,5 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 **Re-anchored `cdd5f0ec` -> `14ad3075` on 2026-09-29 (T-0100 review round 1 fixes, crew 1.0.60).** `14ad3075` is T-0100's crew 1.0.60 re-set on `T-0100-build`, after the round-1 fixes `d9d3f117` (a path main also changed is diffed from the merged commit; the audit's untracked-identical rule and its could-not-tell pass line), `7c0d1052` (docs and these notes), `cc731a74` (the troubleshooting guide rebuilt) and the version round trip `7fc84c24`. Every body citation of the form `path:line`, and each bare `:N` carried from the last path named in its paragraph, into a file changed between `cdd5f0ec` and `14ad3075` was mapped by script (difflib equal blocks) and each one that did not map to itself was read with `sed -n`. Moved and re-read: `completion_audit.py:198-208` -> `:235-245` (`_outside_refresh_artifacts`), `review_patch.py:121`/`:122` -> `:124`/`:125` (`EXCLUDED`, `_EXCLUDE_SPEC`), `review_prompt.py:261` -> `:264`; the T-0100 DERIVED bullet was rewritten for the round-1 behaviour (diffed-from-merged paths, `_as_merged`, the could-not-tell pass line) with every citation read at `14ad3075`. Claims moved: that bullet's. Nothing else was executed for this note.
 
 **Re-anchored `14ad3075` -> `7fc61de6` on 2026-09-29 (T-0100 merged onto main `2693d0fa`, crew 1.0.60).** `7fc61de6` is the merge commit on `T-0100-build` that brought in origin/main `2693d0fa` (`17d057db`, "README: re-pin install URLs to T-0075's merge (e878cc31)"), a clean merge that changes only `README.md`. `crew_refresh_check.py` at `7fc61de6` named `README.md` as the only change this map documents; that change rewrites `:12` and `:18` in place (the two install-URL pins, `6c497a14` -> `e878cc31`) with no line added or removed, so every `README.md:N` citation maps to itself. No claim moved. Nothing else was executed for this note.
+
+**Re-anchored `7fc61de6` -> `fcb061a2` on 2026-09-29 (T-0100 successor, review round 2 fixes, crew 1.0.60).** `fcb061a2` is `T-0100-build` after the successor fixes for review round 2: `e9e72f66` (the audit judges an untracked merged-in path by the mode `git add` records, `core.fileMode`), `6d798577` (a failed fork lookup is could-not-tell in the manifest, stderr, prompt and receipt note), `8d59859c` (README, troubleshooting guide rebuilt, CHANGELOG), the version round trip `405693ad`/`f5efde46` (crew 1.0.60 re-set as the last plugin/crew commit; net no change to the version files) and `fcb061a2` (the lifecycle diagram's provenance note). `git diff --name-only 7fc61de6..fcb061a2` over the paths this map cites, refresh artifacts aside, names `completion_audit.py`, `review_patch.py`, `review_prompt.py`, `review_ledger.py`, the four suites and two sabotage tables T-0100 edited, `plugin/crew/README.md`, `CHANGELOG.md` and the troubleshooting guide. Every body citation of the form `path:line`, and each bare `:N` carried from the last path named in its paragraph, into those files was mapped by script (difflib equal blocks, provenance notes skipped: they cite the lines of the commits they name); thirteen moved and each was read at `fcb061a2` with `sed -n`: `completion_audit.py:235-245` -> `:255-265` (`_outside_refresh_artifacts`), `:169` -> `:173`, `:188` -> `:194`, `:259` -> `:279`, `:267` -> `:287`, `:296` -> `:316`; `review_patch.py:124`/`:125` -> `:128`/`:129`, `:248` -> `:252`, `:273` -> `:277`, `:392` -> `:405`, `:430` -> `:443`; `review_prompt.py:264` -> `:277`. The T-0100 DERIVED bullet gained the successor's lines (`_disk_mode`/`_file_mode` and `core.fileMode`; `merged_main.fork`/`fork_reason`, `_merged_field`, `_fork_clause`, the receipt note's `fork: could not tell`), every citation read at `fcb061a2`. Claims moved: that bullet's. `CHANGELOG.md` citations in body paragraphs that name the commit they were read at were left as written. `plugin/crew/README.md:723`, `:761` and `:842` were edited in place (a sentence appended each, no line added), so a citation of them still points at the same paragraph. Nothing else was executed for this note.
