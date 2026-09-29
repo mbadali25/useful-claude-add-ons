@@ -35,7 +35,12 @@ the payload in, so the two shells cannot disagree.
    reach them, and `/crew:done` refuses until they are current, yet no
    ticket's Touch names them -- without this, the refresh the lifecycle
    demands is the write the guard refuses (T-0008, review round 1). The
-   match is whole path segments on the normalised path (`.crew/codemapX` is
+   guard admits the whole dir, not the shape: a write-time check sees one
+   Edit of a multi-Edit refresh (claims first, `anchor:` last) and would
+   refuse the legitimate intermediate state. Whether what reaches the tree
+   is a re-anchor or a regeneration of an artifact this ticket's changes
+   reach is the completion audit's judgement
+   (`crew_refresh_check.artifact_verdicts`, T-0094). The match is whole path segments on the normalised path (`.crew/codemapX` is
    not the code map, `..` is collapsed first), and BOTH the real and the
    named path must be artifacts, so a link inside `.crew/codemap/` cannot
    carry a write anywhere else. A configured dir resolving to the repository

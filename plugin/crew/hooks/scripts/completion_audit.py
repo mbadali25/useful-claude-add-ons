@@ -35,10 +35,20 @@ otherwise add lines), and the whole message is capped at six PHYSICAL lines.
 
 A path passes when it is inside the active ticket's `spec.md ## Touch`, read
 from the same bytes the approval hash was checked against -- or, for that
-same approved ticket, one of the refresh-artifact paths
-(`crew_refresh_check.REFRESH_ARTIFACT_PATHS`: the code map, the diagrams
-dir, `graph.out`, `.claude/rules/`), which `/crew:implement` step 6's
-refreshes write and no Touch names. When the ticket's
+same approved ticket, a changed refresh artifact (under
+`crew_refresh_check.REFRESH_ARTIFACT_PATHS`: the code map, the diagrams dir,
+`graph.out`, `.claude/rules/`) that `crew_refresh_check.artifact_verdicts`
+admits: a path the ticket changed since its base reaches it, and the edit is
+a re-anchor (a map's `anchor:` or a diagram's provenance sha moved to a
+commit behind HEAD; INDEX.md rows of such maps) or a regeneration (a rule
+equal to `crew_instructions.expected_rules`, the graph after a code change).
+That is what `/crew:implement` step 6's refreshes write and no Touch names
+(T-0094). Any other artifact edit -- a map claim changed without a
+re-anchor, a hand-edited rule, a map nothing changed reaches -- is judged
+against Touch, and its listing carries the reason in brackets
+(`[anchor did not move]`); a verdict git could not reach is
+`[could not tell: ...]` and never admits. The audit judges shape and reach,
+not truth: a re-anchored map's claims stay the reviewer's. When the ticket's
 approval is not current or did not come from the user's prompt
 (`crew_ticket.accepted`: stale, none, or a `cli` receipt without
 `scope.allowCliApproval`), Touch itself is unapproved, so every changed path
@@ -174,17 +184,39 @@ def physical(lines):
     return "\n".join(lines).splitlines()[:MAX_LINES]
 
 
-def _outside_refresh_artifacts(top, paths, approval):
-    """`paths` minus the refresh artifacts (`crew_refresh_check.
-    REFRESH_ARTIFACT_PATHS`) -- only when the ticket holds a current approval
-    from the user's prompt, the condition that gates Touch
-    (`crew_ticket.accepted`: a `cli` receipt only with
-    `scope.allowCliApproval`). Without that approval nothing is exempt."""
-    if approval["status"] != "approved":
-        return paths
+def _verdicts(top, base, paths):
+    """`crew_refresh_check.artifact_verdicts` for the refresh artifacts among
+    `paths`, {} when there are none. The reach is `changed_paths` itself --
+    every path changed since `base`, un-narrowed. Deliberately NOT gated on
+    approval: the one approval gate is `_outside_refresh_artifacts`', so the
+    verdicts can never stand in for it. A listing git could not give is
+    could-not-tell for every artifact, never admitted."""
     import crew_refresh_check  # pylint: disable=import-outside-toplevel
     dirs = crew_refresh_check.refresh_artifact_paths(top)
-    return [p for p in paths if not crew_refresh_check.is_refresh_artifact(p, dirs)]
+    artifacts = [p for p in paths if crew_refresh_check.is_refresh_artifact(p, dirs)]
+    if not artifacts:
+        return {}
+    return crew_refresh_check.artifact_verdicts(top, base, paths, artifacts)
+
+
+def _outside_refresh_artifacts(top, paths, approval, verdicts):
+    """`paths` minus the refresh artifacts `verdicts` admits (`True`) -- only
+    when the ticket holds a current approval from the user's prompt, the
+    condition that gates Touch (`crew_ticket.accepted`: a `cli` receipt only
+    with `scope.allowCliApproval`). Without that approval nothing is exempt.
+    An artifact with no verdict, a refused one and a could-not-tell one all
+    stay: fail closed."""
+    if approval["status"] != "approved":
+        return paths
+    return [p for p in paths if verdicts.get(p, (False, ""))[0] is not True]
+
+
+def _entry(path, verdicts):
+    """`path` as the listing shows it, with the reason a refresh artifact was
+    not admitted in brackets."""
+    if path in verdicts:
+        return f"{shown(path)} [{shown(verdicts[path][1])}]"
+    return shown(path)
 
 
 def audit(root, ticket):
@@ -202,7 +234,8 @@ def audit(root, ticket):
     # ONE read of spec.md: the hash check, the Touch below and the refresh
     # allowance all share the bytes.
     approval = crew_ticket.accepted(top, ticket)
-    paths = _outside_refresh_artifacts(top, paths, approval)
+    verdicts = _verdicts(top, base, paths)
+    paths = _outside_refresh_artifacts(top, paths, approval, verdicts)
     if not paths:
         return True, []
     note = "" if source == scope_base.RECORDED else " (base is a fallback: shows MORE)"
@@ -216,7 +249,7 @@ def audit(root, ticket):
     outside = [p for p in paths if not crew_ticket.in_touch(p, approval["touch"])]
     if not outside:
         return True, []
-    listed = " ".join(shown(p) for p in outside[:8]) + (
+    listed = " ".join(_entry(p, verdicts) for p in outside[:8]) + (
         f" (+{len(outside) - 8} more)" if len(outside) > 8 else "")
     return False, [f"COMPLETION AUDIT: {len(outside)} changed path(s) outside {ticket}'s "
                    f"spec ## Touch{note}:",

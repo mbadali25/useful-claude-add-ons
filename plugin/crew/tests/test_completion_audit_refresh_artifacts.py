@@ -67,23 +67,31 @@ def _refresh_everything(repo):
 
 # --- must-block -----------------------------------------------------------------
 
-def test_an_unapproved_ticket_cannot_leave_a_refresh_artifact_changed(repo):
-    make_ticket(repo)
-    _write(repo, ".crew/codemap/crew.md")
+# The two approval-gate cases perform a REAL refresh (T-0094): one that
+# `artifact_verdicts` admits, so only the approval gate in
+# `_outside_refresh_artifacts` keeps it listed -- a refresh the verdicts
+# refuse anyway would stay listed with that gate removed, and the
+# `_AUDIT_GATE` sabotage entries would survive.
 
-    ok, lines = completion_audit.audit(str(repo), "T-1")
+def test_an_unapproved_ticket_cannot_leave_a_refresh_artifact_changed(tmp_path):
+    root, _base = anchored_repo(tmp_path)
+    os.remove(crew_ticket.approval_path(str(root), "T-1"))
+    refreshed(root)
 
-    assert (ok, ".crew/codemap/crew.md" in "\n".join(lines)) == (False, True), lines
+    ok, lines = completion_audit.audit(str(root), "T-1")
+
+    assert (ok, ".crew/codemap/app.md" in "\n".join(lines)) == (False, True), lines
 
 
-def test_a_cli_approval_cannot_leave_a_refresh_artifact_changed(repo):
-    make_ticket(repo)
-    crew_ticket.approve(str(repo), "T-1", by="session")
-    _write(repo, ".crew/codemap/crew.md")
+def test_a_cli_approval_cannot_leave_a_refresh_artifact_changed(tmp_path):
+    root, _base = anchored_repo(tmp_path)
+    crew_ticket.approve(str(root), "T-1", by="session")
+    refreshed(root)
 
-    ok, lines = completion_audit.audit(str(repo), "T-1")
+    ok, lines = completion_audit.audit(str(root), "T-1")
 
-    assert (ok, "/crew:approve T-1" in "\n".join(lines)) == (False, True), lines
+    assert (ok, "/crew:approve T-1" in "\n".join(lines),
+            ".crew/codemap/app.md" in "\n".join(lines)) == (False, True, True), lines
 
 
 def test_a_stale_approval_cannot_leave_a_refresh_artifact_changed(repo):
@@ -143,7 +151,7 @@ def test_a_map_edited_without_moving_its_anchor_fails_the_audit(tmp_path):
 
 def test_a_refresh_that_no_changed_path_reaches_fails_the_audit(tmp_path):
     root, _base = anchored_repo(tmp_path)
-    git(root, "revert", "--no-edit", "-q", "HEAD")
+    git(root, "revert", "--no-edit", "HEAD")
     write(root, "src/other.py", "y = 1\n")
     git(root, "add", "-A")
     git(root, "commit", "-qm", "ticket edit elsewhere")
@@ -165,7 +173,7 @@ def test_a_hand_edited_rule_fails_the_audit(tmp_path):
 
 def test_a_graph_rebuild_with_no_code_change_fails_the_audit(tmp_path):
     root, _base = anchored_repo(tmp_path, touch=("src/**", "docs/x.md"))
-    git(root, "revert", "--no-edit", "-q", "HEAD")
+    git(root, "revert", "--no-edit", "HEAD")
     write(root, "docs/x.md", "prose\n")
     git(root, "add", "-A")
     git(root, "commit", "-qm", "docs only")
