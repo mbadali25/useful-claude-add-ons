@@ -16,15 +16,27 @@ A guard class: must-allow and must-block cases both, and every rung has a
 mutation in `sabotage_refresh.py` after the `# T-0094` marker that turns one
 of these red.
 """
-import pytest
-
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_instructions
 import crew_refresh_check
+import pytest
 from crew_fixtures import head_sha
-from refresh_fixtures import (DIAGRAM, GRAPH, INDEX, MAP, RENDERED, RULE, anchored_repo,
-                              index_row_append, map_text, read, rebuild_graph,
-                              re_anchor_diagram, re_anchor_map, write)
+from refresh_fixtures import (
+    DIAGRAM,
+    GRAPH,
+    INDEX,
+    MAP,
+    RENDERED,
+    RULE,
+    anchored_repo,
+    index_row_append,
+    map_text,
+    re_anchor_diagram,
+    re_anchor_map,
+    read,
+    rebuild_graph,
+    write,
+)
 from review_fixtures import git
 
 REACH = ["src/app.py"]

@@ -665,7 +665,7 @@ def artifact_verdicts(top, base, reach, artifacts, cfg=None):
         for rel in [p for p in artifacts if kinds[p] == kind]:
             try:
                 out[rel] = fn(rel)
-            except Exception as exc:  # pylint: disable=broad-except
+            except Exception as exc:  # noqa: BLE001  pylint: disable=broad-except
                 out[rel] = (None, f"{COULD_NOT_TELL}: {type(exc).__name__} while judging it")
 
     judge("map", lambda rel: _map_verdict(top, base, rel, reach))
@@ -704,7 +704,7 @@ def _expected_rules(top):
     try:
         import crew_instructions  # pylint: disable=import-outside-toplevel
         rendered = crew_instructions.expected_rules(top)
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001  pylint: disable=broad-except
         return f"expected_rules raised {type(exc).__name__}"
     return {os.path.normcase(os.path.normpath(k)): v for k, v in rendered.items()}
 

@@ -299,8 +299,8 @@ REFRESH_MUTATIONS = (
      _TA + "test_a_git_failure_while_judging_a_map_is_could_not_tell"),
     ("release bookkeeping is dropped from the admission reach", CHECK,
      "    reach = sorted(p for p in dict.fromkeys(reach) if not any(_reaches(o, p) for o in own))\n",
-     "    reach = sorted(p for p in dict.fromkeys(reach)\n"
-     "                   if not _bookkeeping(p) and not any(_reaches(o, p) for o in own))\n",
+     ("    reach = sorted(p for p in dict.fromkeys(reach)\n"
+      "                   if not _bookkeeping(p) and not any(_reaches(o, p) for o in own))\n"),
      _TA + "test_a_version_bump_reaches_the_map_citing_the_manifest"),
     ("the audit drops every artifact whatever its verdict", AUDIT,
      _AUDIT_ADMIT, "    return [p for p in paths if p not in verdicts]\n",
