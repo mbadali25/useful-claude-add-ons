@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.55: tooling reliability — tool-failure refunds, golden replay, seam contracts, a canary review (T-0087)
+### Added — `crew` 1.0.60: tooling reliability — tool-failure refunds, golden replay, seam contracts, a canary review (T-0087)
 
 A tooling change: this release carries no feature work.
 
@@ -16,7 +16,7 @@ A tooling change: this release carries no feature work.
   Anything else is `reviewer`. Only `tool` is refunded, automatically, at most
   `REFUND_LIMIT` (2) times per plan; a third is recorded with `refund_refused`
   and counts. These are never refunded: `reviewer` and `tree` rounds, a round
-  with no recorded result, and ledger rows from before 1.0.55. The two-round
+  with no recorded result, and ledger rows from before 1.0.60. The two-round
   `BUDGET`, the exit codes, the READ rule and the grader are unchanged, and a
   successor plan still starts both counts afresh.
 - **Where it shows.** Ledger rows carry `failure_class`, `refunded` and
@@ -72,7 +72,7 @@ A tooling change: this release carries no feature work.
   rule 31's paths. The six on the checker and `verify.json` are added only where
   those repo files exist. All twenty-five go RED.
 
-### Fixed — `crew` 1.0.55 (T-0087)
+### Fixed — `crew` 1.0.60 (T-0087)
 
 - Importing `verify_record` no longer reconfigures `sys.stdout`; that now
   happens in its `main`.
@@ -93,9 +93,9 @@ A tooling change: this release carries no feature work.
   UNKNOWN in `/crew:status` instead of crashing it. `check-tooling-pr.py`
   reads a worktree rename's (` R`) source path. The guides no longer call a
   rerun after a refund free: only the failed round is given back.
-- Bumped `1.0.54 -> 1.0.55` (1.0.52 on its branch; re-set to 1.0.53 after
-  merging main's 1.0.52, T-0076, and to 1.0.55 after merging main's 1.0.54,
-  T-0092).
+- Bumped `1.0.59 -> 1.0.60` (1.0.52 on its branch; re-set to 1.0.53 after
+  merging main's 1.0.52, T-0076, to 1.0.55 after merging main's 1.0.54,
+  T-0092, and to 1.0.60 at landing, after main's 1.0.59, T-0075).
 
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 
