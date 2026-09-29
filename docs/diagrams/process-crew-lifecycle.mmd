@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@07bcaf3b on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@001f8a78 on 2026-09-29. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -186,6 +186,10 @@
 %% and review.md:25-29, :441, :446-450, :452, :484 hold (compared by script). The gate now
 %% proves 'no approval receipt' with an lstat and gates on any other lookup error; the
 %% rv0 edge's 'no approval receipt' still reads true. No node or edge changed.
+%% Re-anchored 07bcaf3b -> 001f8a78 (T-0085 successor, review round 2's fixes): of the Anchors
+%% paths only crew_standards.py changed (_scope's merge-base fallback for a kept but unusable
+%% scope record); implement.md and review.md are unchanged, so implement.md:105-109 and
+%% review.md:25-29, :441, :446-450, :452, :484 hold. No node or edge changed.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
