@@ -207,9 +207,9 @@ PROCEDURE_STOPS = (
 # A person, unless the T-0010 policy named says otherwise; `human` always stops.
 HUMAN_STOPS = (
     ("brainstorm", "/crew:brainstorm and direction approval are a human dialogue"),
-    ("plan-approval", "plan approval: the human types /crew:approve <id>, unless "
-                      "autopilot.approval allows `crew_autopilot.py approve` "
-                      "(needs scope.allowCliApproval: true)"),
+    ("plan-approval", ("plan approval: the human types /crew:approve <id>, unless "
+                       "autopilot.approval allows `crew_autopilot.py approve` "
+                       "(needs scope.allowCliApproval: true)")),
     ("review-acceptance", "accepting review FINDINGS is the owner's, at every setting"),
     ("open-questions", "an open question in direction.md, spec.md or plan.md is answered "
                        "by a person, unless autopilot.questions takes the researched "
@@ -749,9 +749,9 @@ def settings(root):
                 "maxPhases": crew_state.AUTOPILOT_DEFAULTS["maxPhases"],
                 "saw": None, "deploy": "none", "deploySaw": None,
                 "approval": UNKNOWN, "questions": UNKNOWN,
-                "warnings": [f"{cause}, so autopilot.approval and autopilot.questions "
-                             "could not be told (both read as unknown, which never "
-                             "approves or takes an answer) and autopilot reads as off"]}
+                "warnings": [(f"{cause}, so autopilot.approval and autopilot.questions "
+                              "could not be told (both read as unknown, which never "
+                              "approves or takes an answer) and autopilot reads as off")]}
     return _settings_at(top)
 
 
@@ -1015,7 +1015,7 @@ def approval_policy(root, ticket):
         policy, risk, warnings = _decision(top, ticket, "approval")
         allowed = crew_ticket.cli_approval_allowed(top)
         ledger = review_ledger.status(top, ticket).get("state")
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         return {"allow": False, "policy": UNKNOWN, "risk": "high", "known": False,
                 "warnings": [], "reason": (f"could not tell whether autopilot may approve "
                                            f"({type(exc).__name__}: {exc})")}
@@ -1050,7 +1050,7 @@ def question_policy(root, ticket):
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     try:
         policy, risk, warnings = _decision(top, ticket, "questions")
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         return {"action": STOP, "policy": UNKNOWN, "risk": "high", "known": False,
                 "warnings": [], "reason": (f"could not tell the questions policy "
                                            f"({type(exc).__name__}: {exc})")}
@@ -1579,7 +1579,7 @@ def _policy_main(args):
         else:
             result = questions_check(args.root, args.ticket)
             code, text = (0 if result["valid"] else 1), questions_text(result)
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         code, text = 1, _one_line(f"refused: {_failure(exc)}")
         result = {"code": code, "text": text}
     sys.stdout.write((json.dumps(result, indent=2) if args.json else text) + "\n")

@@ -798,10 +798,10 @@ POLICY_MUTATIONS = (
      '    if False:\n        return "scope.allowCliApproval',
      _CT + "test_autopilot_receipt_needs_allow_cli_even_when_the_policy_says_yes"),
     ("accepted reads a policy it cannot import as a yes", TICKET,
-     "    except Exception as exc:  # pylint: disable=broad-except\n"
-     '        return (f"whether autopilot.approval',
-     "    except Exception as exc:  # pylint: disable=broad-except\n"
-     '        return None and (f"whether autopilot.approval',
+     ("    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except\n"
+      '        return (f"whether autopilot.approval'),
+     ("    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except\n"
+      '        return None and (f"whether autopilot.approval'),
      _CT + "test_autopilot_receipt_demoted_when_policy_module_missing"),
     ("the guard allows autopilot approve whatever the policy says", GUARD,
      '    if isinstance(decision, dict) and decision.get("allow") is True:\n',
@@ -817,10 +817,10 @@ POLICY_MUTATIONS = (
      _SG + "test_autopilot_approve_that_is_not_the_bare_command_is_refused"
      "[python3 hooks/scripts/crew_autopilot.py approve --root . --ticket T-1; rm x-module]"),
     ("the guard reads a policy crash as a yes", GUARD,
-     "    except Exception as exc:  # pylint: disable=broad-except\n"
-     '        return (f"could not tell whether autopilot.approval',
-     "    except Exception as exc:  # pylint: disable=broad-except\n"
-     '        return None and (f"could not tell whether autopilot.approval',
+     ("    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except\n"
+      '        return (f"could not tell whether autopilot.approval'),
+     ("    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except\n"
+      '        return None and (f"could not tell whether autopilot.approval'),
      _SG + "test_a_policy_that_cannot_be_told_is_refused"),
     ("autopilot approves through the owner's group confirm", TICKET,
      "    if via == AUTOPILOT and expect is not None:\n",
@@ -838,58 +838,58 @@ POLICY_MUTATIONS = (
     # read-only module. approve is the only writer; route and status are T-0018's.
     ("a read-only subcommand writes", AUTOPILOT,
      '    crew_json = _read_json(os.path.join(top, ".crew", "crew.json"))\n',
-     '    os.makedirs(os.path.join(top, ".work"), exist_ok=True)\n'
-     '    open(os.path.join(top, ".work", "settings-ran"), "a").close()\n'
-     '    crew_json = _read_json(os.path.join(top, ".crew", "crew.json"))\n',
+     ('    os.makedirs(os.path.join(top, ".work"), exist_ok=True)\n'
+      '    open(os.path.join(top, ".work", "settings-ran"), "a").close()\n'
+      '    crew_json = _read_json(os.path.join(top, ".crew", "crew.json"))\n'),
      _P + "test_approve_is_the_only_writing_subcommand"),
     ("deploy-allowed writes (T-0072's subcommand under T-0010's only-writer rule)", AUTOPILOT,
      '    elif args.action == "deploy-allowed":\n        text, json_text, report = _cli_deploy(args)\n',
-     '    elif args.action == "deploy-allowed":\n'
-     '        open(os.path.join(args.root, ".work", "deploy-ran"), "a").close()\n'
-     '        text, json_text, report = _cli_deploy(args)\n',
+     ('    elif args.action == "deploy-allowed":\n'
+      '        open(os.path.join(args.root, ".work", "deploy-ran"), "a").close()\n'
+      '        text, json_text, report = _cli_deploy(args)\n'),
      _P + "test_approve_is_the_only_writing_subcommand"),
     ("approve writes beside the receipt", AUTOPILOT,
      "        top, ticket, by=f\"autopilot:{got['policy']}\", via=crew_ticket.AUTOPILOT)\n",
-     "        top, ticket, by=f\"autopilot:{got['policy']}\", via=crew_ticket.AUTOPILOT)\n"
-     '    open(os.path.join(crew_ticket.ticket_dir(top, ticket), "approved"), "w").close()\n',
+     ("        top, ticket, by=f\"autopilot:{got['policy']}\", via=crew_ticket.AUTOPILOT)\n"
+      '    open(os.path.join(crew_ticket.ticket_dir(top, ticket), "approved"), "w").close()\n'),
      _P + "test_approve_is_the_only_writing_subcommand"),
     ("a refused approve still writes", AUTOPILOT,
      "        return 2, f\"refused: {got['reason']}; {human}\"\n",
-     '        crew_ticket.approve(top, ticket, by="refused", via=crew_ticket.CLI)\n'
-     "        return 2, f\"refused: {got['reason']}; {human}\"\n",
+     ('        crew_ticket.approve(top, ticket, by="refused", via=crew_ticket.CLI)\n'
+      "        return 2, f\"refused: {got['reason']}; {human}\"\n"),
      _P + "test_approve_refused_writes_nothing"),
     ("status reads the policy", AUTOPILOT,
      '    return f"owner - types {command}" if command else "owner - see the phase reason"\n',
-     '    if phase == "approve":\n'
-     "        return f\"owner - {_approval_hint(top, result['ticket'])}\"\n"
-     '    return f"owner - types {command}" if command else "owner - see the phase reason"\n',
+     ('    if phase == "approve":\n'
+      "        return f\"owner - {_approval_hint(top, result['ticket'])}\"\n"
+      '    return f"owner - types {command}" if command else "owner - see the phase reason"\n'),
      _S + "test_route_and_status_unaffected_by_approval_policy[self]"),
     ("approve becomes a command subcommand", AUTOPILOT,
      'SUBCOMMANDS = ("status", "run", "assign", "goal", "focus")\n',
      'SUBCOMMANDS = ("status", "run", "assign", "goal", "focus", "approve")\n',
      _R + "test_policy_subcommands_are_not_command_subcommands"),
     ("the command says nothing approves", COMMAND,
-     "Nothing here accepts a review or skips a phase, and nothing approves except\n"
-     "section 3's `approve`, under the approval policy; it writes `approval.json`, "
-     "`scope-tickets.json`\n",
+     ("Nothing here accepts a review or skips a phase, and nothing approves except\n"
+      "section 3's `approve`, under the approval policy; it writes `approval.json`, "
+      "`scope-tickets.json`\n"),
      "Nothing here approves, accepts a review, or skips a phase.\n",
      _P + "test_command_states_the_approve_exception"),
     # ---- T-0010 review round 3 (T-0010-solo--V7Q7fm): the BLOCK, both FIXes,
     # and each one's neighbour
     ("BLOCK: the module docstring says approve writes only approval.json", AUTOPILOT,
-     "`<git-common-dir>/crew/`: `approval.json`; `scope-tickets.json`, the scope\n"
-     "ramp's list, on a ticket's first approval; and, when the review ledger is\n",
+     ("`<git-common-dir>/crew/`: `approval.json`; `scope-tickets.json`, the scope\n"
+      "ramp's list, on a ticket's first approval; and, when the review ledger is\n"),
      "`<git-common-dir>/crew/`: `approval.json` and nothing else; when the review ledger is\n",
      _P + "test_every_statement_of_the_exception_names_what_approve_writes"),
     ("BLOCK: the command drops the ledger's successor continuation", COMMAND,
-     "on a ticket's first approval, and a distinct successor plan's NEEDS_REPLAN -> IN_REVIEW "
-     "ledger move.\n",
+     ("on a ticket's first approval, and a distinct successor plan's NEEDS_REPLAN -> IN_REVIEW "
+      "ledger move.\n"),
      "on a ticket's first approval.\n",
      _P + "test_every_statement_of_the_exception_names_what_approve_writes"),
     ("BLOCK: README says approve writes only the approval receipt", README,
      "— except `approve`, and only when `autopilot.approval` allows it",
-     "— except `approve`, which writes only the approval receipt, and only when "
-     "`autopilot.approval` allows it",
+     ("— except `approve`, which writes only the approval receipt, and only when "
+      "`autopilot.approval` allows it"),
      _P + "test_no_statement_of_the_exception_says_approve_writes_only_the_receipt"),
     ("approve of a successor plan leaves the ledger NEEDS_REPLAN", TICKET,
      "    if ledger.get(\"state\") == review_ledger.NEEDS_REPLAN:\n",

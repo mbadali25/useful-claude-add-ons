@@ -16,11 +16,10 @@ import os
 import subprocess
 import sys
 
-import pytest
-
-import context  # noqa: F401  pylint: disable=unused-import
+import context  # pylint: disable=unused-import
 import crew_autopilot
 import crew_ticket
+import pytest
 import review_ledger
 from scope_fixtures import PLAN, SPEC, approve_as_user, make_repo
 
@@ -474,7 +473,7 @@ def test_questions_file_recommendation_not_first_invalid(tmp_path):
 
 def test_questions_file_one_option_invalid(tmp_path):
     root = _repo(tmp_path)
-    _questions(root, GOOD_QUESTIONS.split("### Option B")[0])
+    _questions(root, GOOD_QUESTIONS.split("### Option B", maxsplit=1)[0])
 
     got = _check(root)
 

@@ -658,7 +658,7 @@ def _autopilot_refusal(top, ticket):
         return "scope.allowCliApproval is not exactly true"
     try:
         decision = _autopilot_policy(top, ticket)
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         return (f"whether autopilot.approval still allows it could not be told "
                 f"({type(exc).__name__})")
     if isinstance(decision, dict) and decision.get("allow") is True:

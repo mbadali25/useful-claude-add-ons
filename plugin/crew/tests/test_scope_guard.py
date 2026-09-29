@@ -430,8 +430,8 @@ def test_crew_ticket_approve_stays_refused_under_every_policy(flavour, repo):
 @pytest.mark.parametrize("approval,risk,command", [
     ("risk", "low", _AUTOPILOT),
     ("self", "high", _AUTOPILOT),
-    ("self", None, "python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py "
-                   "approve --root . --ticket T-1"),
+    ("self", None, ("python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py "
+                    "approve --root . --ticket T-1")),
     ("risk", "low", "python3 hooks/scripts/crew_autopilot.py approve --ticket T-1"),
 ])
 def test_autopilot_approve_bare_command_is_allowed_when_the_policy_says_yes(

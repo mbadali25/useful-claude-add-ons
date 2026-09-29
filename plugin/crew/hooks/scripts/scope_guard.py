@@ -245,7 +245,7 @@ def _autopilot_refusal(command, top):
     try:
         import crew_autopilot  # pylint: disable=import-outside-toplevel
         decision = crew_autopilot.approval_policy(top, ticket) if top else None
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         return (f"could not tell whether autopilot.approval allows {ticket} "
                 f"({type(exc).__name__}); only the user's /crew:approve approves")
     if isinstance(decision, dict) and decision.get("allow") is True:
