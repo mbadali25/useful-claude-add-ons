@@ -11,10 +11,10 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.0.55<!-- claim: plugin-version:crew --> |
+| **Version** | 1.0.59<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 4 agents, 35 commands, 29 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
+| **Registers** | 4 agents, 36 commands, 29 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -128,7 +128,8 @@ to CI or to branch protection.
 | `/crew:autopilot [ticket id]` | Resume one ticket from the handoff and drive it through the lifecycle until a human is needed - off until `autopilot.mode: plan`; approval and review acceptance always stop; `autopilot.deploy` (default `none`) says where a deploy may run unattended - production only with `environments.prodUnattended` true in both layers |
 | `/crew:brainstorm <what needs doing>` | Brainstorm a request into an approved direction, before it becomes a spec |
 | `/crew:change <new \| status <id> \| close <id> \| list>` | File, check and close a change request — SDP, Jira or local |
-| `/crew:config [--show]` | Show where every crew setting comes from, and guide the machine-global config |
+| `/crew:config [--show \| --models]` | Show where every crew setting comes from; with no argument, a menu that sets the machine or repo config and deletes the repo config with a backup |
+| `/crew:config-setup` | Set up crew config from a menu - machine or repo layer, dry run then apply, or delete the repo config |
 | `/crew:debug <the symptom, or a ticket id, e.g. "login 500s after deploy" or T-0042>` | Find the cause of a defect before anyone proposes a fix |
 | `/crew:diagram <architecture \| data-flow <area> \| process <name> \| sequence <flow> \| refresh>` | Create or refresh diagrams from the actual code |
 | `/crew:docs [--audit]` | Update the documents this change should touch — and only those |

@@ -1,5 +1,5 @@
-%% Generated from useful-claude-add-ons@17fa035e on 2026-09-28. Verify before trusting.
-%% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py
+%% Generated from useful-claude-add-ons@3648f59a on 2026-09-28. Verify before trusting.
+%% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_config_files.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
 %% re-read. The 're-read at 6c497a14' statements below remain true of f2bb919b by that diff.
@@ -107,6 +107,17 @@
 %% :172, crew_context load_crew_config :121-132, crew_tracker resolve() :210, re-read).
 %% CONFIG.md changed on both sides and is cited by section only; T-0042's lines are in §14a,
 %% T-0021's in the tracker and obsidian.* rows, and the section headings are unchanged.
+%% Re-anchored 12682e41 -> e95e5964 (T-0075 merges main db14619c, crew 1.0.46): of the Anchors
+%% paths only crew_config.py and CONFIG.md changed since 12682e41, both on T-0075's side, and
+%% crew_config_menu.py is new (added to the Anchors line). crew_config.py changed only below
+%% _RATCHETED (:2548 onward), so every read-side and ratchet citation holds; the Write
+%% subgraph's lines were re-taken with grep -n at e95e5964 (plan_global_write :2548 -> :2606,
+%% is_global_path check :2574 -> :2632, merge :2583 -> :2644, validate_providers check :2595 ->
+%% :2656, _widens call :2629 -> :2690, write_global_config :2635 -> :2696, tmp/replace
+%% :2661-2668 -> :2722-2729). NEW nodes: the enum check (_value_problems :2586, now on both
+%% writers), the repo writer (plan_repo_write :2891 / write_repo_config :2946, --set --repo) and
+%% the menu's save / delete-repo (crew_config_menu.py). Leaf counts re-executed: 121 / 67, 14
+%% ratcheted - no key added. crew_tracker.py (T-0021) did not change on T-0075's side.
 %% On T-0021's branch (history, kept):
 %% re-read. The 're-read at 6c497a14' statements below remain true of f2bb919b by that diff.
 %% Re-anchored f2bb919b -> 7b667587 (T-0021): of the 13 Anchors paths three changed.
@@ -148,6 +159,65 @@
 %% so each side's citations stand; crew_context.py changed on both, and this diagram cites only
 %% load_crew_config :121-132, above both hunks (re-read). CONFIG.md changed on both sides and is
 %% cited by section only. Counts re-executed on the merge: 122 / 68 / 54 / 0.
+%% Re-anchored e463ca53 -> 81685adf (T-0079 merges T-0077's f96e9ec9, crew 1.0.50): of the
+%% Anchors paths only crew_tracker.py changed (`git diff --name-only`), by T-0077's
+%% ba2ee465 alone - the Windows directory hold, below resolve() and inside the vault-write
+%% path. No node cites a line or behaviour in that hunk, so nothing below was redrawn.
+
+%% Merged e95e5964 + e463ca53 -> f7163410 (T-0075 merges T-0023's main bebbb97f, crew 1.0.47): of
+%% the Anchors paths crew_config.py and CONFIG.md changed on both sides. T-0023's `route` blocks
+%% (+8 at :382-389, +3 at :561-563) sit above every T-0075 hunk, so each T-0075 citation (the
+%% Write, RepoWrite and ENUM nodes) moved +11 and was re-read by content: plan_global_write
+%% :2617, is_global_path :701, GlobalWriteRefused :2193, _value_problems :2597, enum_values
+%% :2559, _widens :2260, write_global_config :2707 (os.replace block :2733-2740),
+%% RepoWriteRefused :2754, REPO_REFUSED :2765, REPO_VETO_ONLY :2786, _REPO_WIDENING :2790,
+%% repo_widens :2832, _read_repo_strict :2873, plan_repo_write :2902, write_repo_config :2957.
+%% Main's citations (the Ratchet section, :859, :2444) hold. crew_config_menu.py changed on
+%% T-0075's side only. Counts re-executed on the merge: 122 / 68 / 54 / 0.
+%% Re-anchored f7163410 -> 764f6018 (T-0075 review round 1, crew 1.0.48): of the Anchors paths
+%% crew_config.py, crew_config_menu.py and CONFIG.md changed, all on T-0075's side. crew_config.py
+%% gained is_repo_veto (:2789) below REPO_VETO_ONLY (:2786), so every citation above :2786 holds and
+%% the RepoWrite subgraph's were mapped by a line diff and re-read with grep -n (plan_repo_write
+%% :2902 -> :2911, _read_repo_strict :2873 -> :2882, repo_widens :2832 -> :2841, _REPO_WIDENING
+%% :2790 -> :2799, write_repo_config :2957 -> :2966, tmp :2973 -> :2982). The Menu nodes were
+%% re-taken (menu_spec :285, choices :181, save :401, delete_repo_config :634) and redrawn for the
+%% round-1 behaviour. CONFIG.md is cited by section only. Leaf counts unchanged: no key added.
+%% Re-anchored 764f6018 + 8de3c669 -> 7d217751 (T-0075 successor build, merges T-0024's main
+%% d2fbd408, crew 1.0.49): of the Anchors paths crew_config.py, crew_config_menu.py and CONFIG.md
+%% changed, all on T-0075's side (T-0024 touched none of them), and crew_config_files.py is new
+%% (added to the Anchors line). crew_config.py gained one import (+1 from :91) and the conflict
+%% class (+4 from :2198), so every citation below :2583 outside the write side moved +1 or +5 and
+%% was re-read by symbol (default_config :241, default_global_config :394, _prune :653,
+%% filter_global :679, read_global_config :721, resolve_config :774 with its merges :807-812,
+%% resolve_guard :1084, layer_state :905, _RATCHETED :2449-2561; resolve_ratcheted is :816 and
+%% its effective_ratcheted call :860 (:859 before; the :804 this diagram carried for
+%% resolve_ratcheted was already stale at 764f6018, where it sat at :815, as E2 below said). The Write, RepoWrite and Menu subgraphs were redrawn from the source for the successor
+%% design: per-leaf judgement and the merged-file check shared by both planners, both writers on
+%% crew_config_files.update_json (lock, compare-and-swap), the planner-probed menu choices, save's
+%% --expect digests, the two-phase delete by one rename, and restore on the shared restorable().
+%% Leaf counts re-executed at 7d217751: 122 / 68 / 54 / 0.
+%% Re-anchored 7d217751 -> 8cabe586 (T-0075's post-merge fix, its merge of main f96e9ec9 with
+%% T-0077, crew 1.0.50): crew_config_menu.py lost one stray line at :940, below every Menu node's
+%% citation (main() is now :942, not drawn); crew_tracker.py gained T-0077's Windows handles from
+%% :299, below resolve() :210, which TRKREAD cites and which holds. Nothing redrawn.
+%% Re-derived 8cabe586 + 81685adf -> 3724731b (T-0075 review round 3, its merge of main e6e10432,
+%% crew 1.0.51): of the Anchors paths crew_config.py (from :2567 on), crew_config_files.py,
+%% crew_config_menu.py and CONFIG.md changed. The Write, Files, RepoWrite and Menu subgraphs were
+%% redrawn from the source at 3724731b: assignments/_plan_on, _content_problem, machine_view and
+%% --expect-global, ABSENT, move_no_clobber/create_bytes/read_restorable, _plan_both and the
+%% preview-bound delete. Every other node cites a line above :2567 or a file that did not change.
+%% Re-anchored 3724731b + 9631c707 -> 938e3b11 (T-0075 review round 4, its merge of main f54af3fa
+%% with T-0072, crew 1.0.52): of the Anchors paths crew_config.py, crew_config_files.py,
+%% crew_config_menu.py, crew_state.py and CONFIG.md changed. crew_config.py +3 at :206 (the qa.order
+%% shape check in validate_providers, which :177 still names) and -2 at :239, so every cited line
+%% from :241 on moved +1 (re-taken with grep -n at 938e3b11: default_config :242, read_global_config
+%% :722, plan_global_write :2838, plan_repo_write :3046, write_repo_config :3072, _RATCHETED :2450).
+%% The Files and Menu nodes were redrawn from the source at 938e3b11: machine_lock replaces
+%% lock_if_dir and is always taken, before the repo Lock; a foreign file met by a move keeps its
+%% *.moving name (Displaced, exit 1); delete re-reads the machine digest inside both locks;
+%% re-detected is _redetected() (crew_platform.DERIVED_KEYS). crew_state.py changed line-neutral at
+%% :1086-1090 (T-0072's autopilot.deploy: AUTOPILOT_DEFAULTS stays :1090, DEF's 123 leaves count
+%% it); CONFIG.md is cited by section only in the drawn nodes. Checked by a script mapping each cited line from 3724731b and sed -n on each target.
 %% How one config value reaches a run, and what may set it where.
 %% --
 %% RE-ANCHORED after crew 1.0 (previously 60c79407). Every function/line cited
@@ -185,11 +255,11 @@
 %%     onlyRepos/onlySessions are read from the machine layer ONLY (:177-178);
 %%     a repo's own copy of either is never consulted, though it IS a
 %%     global-settable leaf (see the Split section) and so is visible to
-%%     `/crew:config --show` under crew_config.py:1621-1622's
+%%     `/crew:config --show` under crew_config.py:1622-1623's
 %%     AUTOCLEAR_MACHINE_ONLY_KEYS reporting rule.
 %%  4. crew_autoclear_setup.py is the ONLY writer of `context.autoClear.*`
 %%     into the global file, and it does NOT reimplement the write: it calls
-%%     crew_config.write_global_config() (:2646, pre-existing sibling-then-
+%%     crew_config.write_global_config() (:2820, pre-existing sibling-then-
 %%     rename with fsync, unchanged since 0.16.7 - NOT new at this anchor).
 %%     What IS new is `_require_global_readable` (:107-114), called BEFORE
 %%     every write, which raises `GlobalConfigUnreadable` when the global
@@ -287,6 +357,14 @@
 %% Re-anchored c192b83d / 3c4f1a68 -> 25d2de63 (T-0092 merged onto f8b6c8d7, T-0091, crew 1.0.53):
 %% both notes above hold on the merged tree - T-0091's CLAUDE.md citations and T-0076's crew_context.py
 %% +4 at :1086, below :121-132. No count, node or edge changed.
+%% Re-anchored 938e3b11 / 25d2de63 -> 3648f59a (T-0075 review round 5 and its merge of main 6387ab49,
+%% T-0092, crew 1.0.55): the notes above from both lines hold on the merged tree. Of the Anchors
+%% paths, crew_config.py, crew_config_files.py and CONFIG.md changed on T-0075's side (steps 18-22);
+%% every crew_config.py and crew_config_files.py line cited below was re-mapped by a line diff from
+%% 938e3b11 and spot-read with grep -n (e.g. plan_global_write :2838 -> :2846, write_repo_config
+%% :3072 -> :3071, update_json :343 -> :350). ISG, MERGED, WRITE, RWRITE and FLOCK gain round 5's
+%% leaf rules, open-table rule, OSError refusal and PID-write cleanup; no edge changed. Leaf counts
+%% re-executed at 3648f59a: 123 / 68.
 %% Re-anchored c8cc69ec -> c0768d0e (T-0087 merged main f8b6c8d7, T-0091): of the Anchors paths only
 %% CLAUDE.md changed (T-0091's Landmines paragraph at :189, later lines +17); no node or edge draws on
 %% it and no comment here cites a CLAUDE.md line past :79. No count, node or edge changed.
@@ -300,24 +378,24 @@ flowchart TB
 
     subgraph Sources["Three sources, lowest precedence first"]
         direction TB
-        DEF["default_config()<br/>plugin/crew/hooks/scripts/crew_config.py:240<br/><b>123 leaves</b> (executed, this pass)<br/>composed from crew_state's PM_DEFAULTS<br/>:1100, QA_DEFAULTS :1147, DEV_DEFAULTS<br/>:1156, WORKTREE_DEFAULTS :1183, CONTEXT_DEFAULTS<br/>:732, RESUME_DEFAULTS :695, AUTOPILOT_DEFAULTS :1090 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS<br/>:48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS<br/>:222, CLOUD_DEFAULTS :239 - repo-only,<br/>ENVIRONMENTS_DEFAULTS :251 - nonProd repo-only), and<br/>crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK<br/>:107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK<br/>:173 / CHANGE_BLOCK :203"]
-        GLB[("~/.claude/crew/config.json<br/>read_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:720<br/><i>never raises</i> - absent, malformed or<br/>non-object all return {}, because this is<br/>reached from a SessionStart hook")]
+        DEF["default_config()<br/>plugin/crew/hooks/scripts/crew_config.py:243<br/><b>123 leaves</b> (executed, this pass)<br/>composed from crew_state's PM_DEFAULTS<br/>:1101, QA_DEFAULTS :1148, DEV_DEFAULTS<br/>:1157, WORKTREE_DEFAULTS :1184, CONTEXT_DEFAULTS<br/>:733, RESUME_DEFAULTS :696, AUTOPILOT_DEFAULTS :1091 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS<br/>:48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS<br/>:222, CLOUD_DEFAULTS :240 - repo-only,<br/>ENVIRONMENTS_DEFAULTS :252 - nonProd repo-only), and<br/>crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK<br/>:107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK<br/>:173 / CHANGE_BLOCK :203"]
+        GLB[("~/.claude/crew/config.json<br/>read_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:723<br/><i>never raises</i> - absent, malformed or<br/>non-object all return {}, because this is<br/>reached from a SessionStart hook")]
         REPO[(".crew/config.json - schema 7<br/>crew_state.load_config()<br/>plugin/crew/hooks/scripts/crew_state.py:266<br/>NOT the same file crew_context.py reads<br/>first - see the TwoFiles section below")]
     end
 
     subgraph Gate["The global layer is filtered BEFORE it is merged"]
         direction TB
-        TMPL["default_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:393<br/><b>68 leaves</b> (executed, this pass) across<br/><b>17 blocks</b>: qa, dev, worktree, secondOpinion,<br/>memory (2 of 5 repo leaves), notify, pm,<br/>context.autoClear (8 of 9 - unsafeFocus is<br/>excluded, see AutoClear below), resume, docs,<br/>bitbucket, github, install, guards (all TEN<br/>names), environments (prodUnattended only),<br/>change, route - the single definition both<br/>rules below are enforced against"]
-        PRUNE["_prune()<br/>plugin/crew/hooks/scripts/crew_config.py:652<br/>keeps only keys present in the template.<br/>Descends structurally, so naming a block<br/>grants only the leaves under it."]
-        FILT["filter_global()<br/>plugin/crew/hooks/scripts/crew_config.py:678<br/>returns (kept, ignored)"]
+        TMPL["default_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:396<br/><b>68 leaves</b> (executed, this pass) across<br/><b>17 blocks</b>: qa, dev, worktree, secondOpinion,<br/>memory (2 of 5 repo leaves), notify, pm,<br/>context.autoClear (8 of 9 - unsafeFocus is<br/>excluded, see AutoClear below), resume, docs,<br/>bitbucket, github, install, guards (all TEN<br/>names), environments (prodUnattended only),<br/>change, route - the single definition both<br/>rules below are enforced against"]
+        PRUNE["_prune()<br/>plugin/crew/hooks/scripts/crew_config.py:655<br/>keeps only keys present in the template.<br/>Descends structurally, so naming a block<br/>grants only the leaves under it."]
+        FILT["filter_global()<br/>plugin/crew/hooks/scripts/crew_config.py:681<br/>returns (kept, ignored)"]
     end
 
-    subgraph Merge["resolve_config() - plugin/crew/hooks/scripts/crew_config.py:773 - the single resolver"]
+    subgraph Merge["resolve_config() - plugin/crew/hooks/scripts/crew_config.py:776 - the single resolver"]
         direction TB
-        NULLS["without_null_shadows()<br/>plugin/crew/hooks/scripts/crew_config.py:629<br/>drops a repo <i>null</i> ONLY where the global<br/>layer supplies a real value."]
-        M1["merge_defaults(default_config(), global)<br/>call: crew_config.py:806<br/>def: plugin/crew/hooks/scripts/crew_state.py:1333"]
-        M2["merge_defaults(that, repo)<br/>call: crew_config.py:807"]
-        SCHEMA{"schema<br/>lifted OUT of the merge<br/>crew_config.py:808-811"}
+        NULLS["without_null_shadows()<br/>plugin/crew/hooks/scripts/crew_config.py:632<br/>drops a repo <i>null</i> ONLY where the global<br/>layer supplies a real value."]
+        M1["merge_defaults(default_config(), global)<br/>call: crew_config.py:809<br/>def: plugin/crew/hooks/scripts/crew_state.py:1333"]
+        M2["merge_defaults(that, repo)<br/>call: crew_config.py:810"]
+        SCHEMA{"schema<br/>lifted OUT of the merge<br/>crew_config.py:811-814"}
         OUT(["resolved config<br/><i>repo beats global beats default</i><br/>this is ONLY .crew/config.json's precedence -<br/>autoClear's own read path bypasses it, below"])
     end
 
@@ -334,42 +412,88 @@ flowchart TB
     SCHEMA -->|"in repo file: use it"| OUT
     SCHEMA -->|"absent: pop it entirely"| OUT
 
-    subgraph Write["The WRITE side - /crew:config --set"]
+    subgraph Write["The WRITE side - /crew:config --set, and the menu's Save (machine layer)"]
         direction TB
-        PLAN["plan_global_write()<br/>plugin/crew/hooks/scripts/crew_config.py:2559<br/><i>pure</i>; returns (merged, changes)"]
-        ISG{"is_global_path()<br/>crew_config.py:701, checked at :2585"}
-        REFUSE>"GlobalWriteRefused (class :2193)<br/>names the path AND lists every allowed one"]
-        VAL{"validate_providers()<br/>crew_config.py:176, checked at :2606"}
-        PERR>"ProviderError (class :172)<br/>a VALUE check, not a path check"]
-        MERGEW["merge, never replace - crew_config.py:2594<br/>keys the file already holds that<br/>the update does not name survive<br/>byte-for-byte"]
-        WIDEN["_widens()<br/>plugin/crew/hooks/scripts/crew_config.py:2260<br/>called at :2640. RANK, not equality."]
-        WRITE["write_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:2646<br/>the only function in crew that writes<br/>outside the repo. Sibling-then-rename<br/>with the PID in the tmp name, fsync<br/>before os.replace :2672-2679 - PRE-EXISTING<br/>since 0.16.7, not new at this anchor"]
+        PLAN["plan_global_write()<br/>plugin/crew/hooks/scripts/crew_config.py:2846<br/><i>pure</i>; on global_snapshot() :2797, which REFUSES<br/>an unparsable or non-object machine file<br/>instead of merging onto {} (absent = ABSENT)"]
+        ISG{"per LEAF: leaf_updates() :2584, value_allowed() :2700<br/>MACHINE_REFUSED :2620 (consent keys, inside a<br/>whole-block value too), is_global_path() :704,<br/>a block emptied or replaced, null_means() :2657<br/>(an enum key's null refused), enum_values() :2566;<br/>round 5: a path under a leaf or an object<br/>at a leaf :2708-2716"}
+        REFUSE>"GlobalWriteRefused (class :2196)<br/>names the path AND lists every allowed one"]
+        MERGED{"merged_problems() :2759 - the FILE the write<br/>produces, every known leaf by _content_problem()<br/>:2732: an enum value outside its values, a consent<br/>key (machine), an armed veto key (repo), a key under<br/>or an object at a leaf :2745-2748 refuses an<br/>unrelated write (pre-existing), then<br/>validate_providers() :177 on the merged file<br/>(qa.order a list, qa/dev.roles and each pin<br/>an object or null :206-237)"}
+        WIDEN["_plan_on() :2813 writes assignments() :2603 -<br/>the judged leaves (a block's siblings survive;<br/>one whole pin per role) - marking each leaf with<br/>_widens() plugin/crew/hooks/scripts/crew_config.py:2267.<br/>RANK, not equality."]
+        WRITE["write_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:2865<br/>the only function in crew that writes outside<br/>the repo. Re-plans on the bytes read under the<br/>lock; --expect DIGEST|absent refuses a changed<br/>file (GlobalWriteConflict :2200); any other<br/>OSError (directory, lock, write) is<br/>GlobalWriteRefused :2888, exit 2"]
     end
 
     PLAN --> ISG
-    ISG -->|"not in the template"| REFUSE
-    ISG -->|allowed| VAL
-    VAL -->|"bad provider name"| PERR
-    VAL -->|ok| MERGEW
-    MERGEW --> WIDEN
+    ISG -->|"refused leaf"| REFUSE
+    ISG -->|ok| MERGED
+    MERGED -->|"bad value in the merged file"| REFUSE
+    MERGED -->|ok| WIDEN
     WIDEN --> WRITE
-    WRITE --> GLB
     TMPL -.->|"the SAME object the read side prunes to"| ISG
+
+    subgraph Files["NEW (T-0075): the one file layer - plugin/crew/hooks/scripts/crew_config_files.py"]
+        direction TB
+        FLOCK["Lock :90 - O_CREAT|O_EXCL &lt;path&gt;.lock holding<br/>the PID (a failed PID write removes it, :120-127);<br/>Busy :63 after LOCK_WAIT_SECONDS :43.<br/>Serialises crew's writers, not a hand edit.<br/>machine_lock() :259 is the machine file's Lock,<br/>ALWAYS taken (creates ~/.claude/crew/, never the<br/>file), before any repo Lock - one nesting order"]
+        FUPD["update_json() :350 - inside the lock: read_strict()<br/>:167 (absent / unparsable / empty / notobject),<br/>state_digest() :229 (ABSENT :50 for no file)<br/>compared with expect (Conflict :67), mutate,<br/>replace_text() :338 (sibling, fsync, os.replace,<br/>CRLF and BOM kept)"]
+        FMOVE["move_no_clobber() :452 - a rename that NEVER<br/>replaces its destination: os.link, then<br/>_unlink_source() :404 renames the source to a<br/>reserved name and removes it only when it IS the<br/>linked inode; a foreign file is linked back and its<br/>*.moving name KEPT (Displaced :71, exit 1; the link<br/>to the backup is never undone after the rename).<br/>move_aside() :494 (the backup IS the inode),<br/>create_bytes() :503"]
+        FREST["read_restorable() :185 - a REGULAR file that<br/>restorable() :157 accepts: the ONE read delete<br/>refuses by and restore accepts by"]
+        FLOCK --- FUPD
+    end
+
+    WRITE --> FUPD
+    FUPD --> GLB
+
+    subgraph RepoWrite["NEW (T-0075): the repo writer - /crew:config --set --repo, the only path into .crew/config.json"]
+        direction TB
+        RPLAN["plan_repo_write()<br/>plugin/crew/hooks/scripts/crew_config.py:3045<br/>on repo_snapshot() :3033 (refuses a missing or<br/>malformed file rather than creating one) and<br/>machine_view() :3064 (the machine file and its<br/>digest, one read)"]
+        RREF>"RepoWriteRefused (class :2897)<br/>REPO_REFUSED :2912 - platform, schema,<br/>scope.mode, scope.allowCliApproval, the<br/>machine-only autoClear paths; a block emptied or<br/>replaced is refused (is_repo_path :2969);<br/>REPO_VETO_ONLY :2933 takes only false / null<br/>(by identity, is_repo_veto :2936)"]
+        RWIDEN["repo_widens() :2977 - the ratchet against<br/>what is in force, plus _REPO_WIDENING :2946;<br/>a repo value held down by the machine layer<br/>is named, not marked as a widening"]
+        RWRITE["write_repo_config()<br/>plugin/crew/hooks/scripts/crew_config.py:3071<br/>the same compare-and-swap (RepoWriteConflict<br/>:2901), and --expect-global binds the machine<br/>file under its lock; never creates the file;<br/>an OSError is RepoWriteRefused :3102, exit 2"]
+        RPLAN -->|"refused leaf, or a bad value in the merged file"| RREF
+        RPLAN --> RWIDEN --> RWRITE
+    end
+
+    RWRITE --> FUPD
+    FUPD --> REPO
+    ISG -.->|"the same per-leaf judgement and merged-file check"| RPLAN
+
+    subgraph Menu["NEW (T-0075): the /crew:config menu - plugin/crew/hooks/scripts/crew_config_menu.py"]
+        direction TB
+        MSPEC["menu_spec() :315<br/>rows = leaf_paths(default_global_config())<br/>(machine, plus platform.* and schema read-only)<br/>/ leaf_paths(default_config()) (repo); returns<br/>the layer file's digest"]
+        MCHOICE["choices() :213 - a value is offered only when<br/>_probe_for() :168 accepts it: the layer's own<br/>planner on one snapshot, with the --pending set<br/>plus the candidate; all refused = a read-only row<br/>naming the key to fix"]
+        MSAVE["save() :478<br/>_plan_both() :444 plans BOTH layers before writing<br/>either (the repo against the machine as this Save<br/>leaves it), prints the machine digest whenever<br/>anything changes, checks every given --expect-*<br/>before either write and binds each writer, the<br/>repo write to the machine digest too"]
+        MPLAN["plan_delete() :798 - holds the file's bytes, its<br/>digest, the machine digest and machinePath; refuses what<br/>read_restorable() refuses (a symlink included);<br/>delete_preview() :635 walks the file's OWN leaves<br/>too (removed / re-detected - only the platform keys<br/>platform-sync writes, _redetected() :627 - / held<br/>by the ratchet)"]
+        MDEL["apply_delete() :850 - typed repo name AND both<br/>preview digests (_unbound() :834), then under<br/>machine_lock and then the repo Lock the machine<br/>digest AGAIN (changed: exit 2, nothing deleted),<br/>move_aside() to .crew/config.json.bak-UTC,<br/>compare with the held bytes (changed: moved back<br/>no-clobber, nothing deleted); prints three restore<br/>lines, sh / cmd / PowerShell (restore_lines :771)"]
+        MREST["restore_repo_config() :959 - _valid_backup()<br/>:943 then read_restorable(); under the Lock moves<br/>any current file aside (Displaced: exit 1, every<br/>path named), create_bytes() (never over a file<br/>that appeared), reads back"]
+        MSPEC --> MCHOICE
+        MCHOICE --> MSAVE
+        MPLAN --> MDEL
+    end
+
+    TMPL -.->|"machine rows"| MSPEC
+    MCHOICE -.->|"probe"| PLAN
+    MCHOICE -.->|"probe"| RPLAN
+    MSAVE -->|"machine changes"| PLAN
+    MSAVE -->|"repo changes"| RPLAN
+    MDEL --> FMOVE
+    MREST --> FMOVE
+    FMOVE -.->|"backup, then delete"| REPO
+    FREST -.-> MPLAN
+    FREST -.-> MREST
 
     subgraph Ratchet["Two DIFFERENT ratchet tables, not one - 14 write-side, 13 read-side"]
         direction TB
-        RG["<b>READ side: crew_guards.RATCHETED_KEYS</b><br/>plugin/crew/hooks/scripts/crew_guards.py:522-549<br/><b>13 keys</b> (executed + len()'d, this pass):<br/>install.policy, change.requireForProduction,<br/>environments.prodUnattended (T-0005),<br/>and all TEN guards.* - terraformApply, forcePush,<br/>adminMerge, mergeGate, cloudDestructive,<br/>sqlDestructive, prodDatabase, prodServer,<br/>roleWrites, <b>cloudGuard (new)</b>.<br/>Consumed by crew_config.resolve_ratcheted() :804<br/>via crew_guards.effective_ratcheted() :564, called<br/>at crew_config.py:859"]
-        RC["<b>WRITE side: crew_config._RATCHETED</b><br/>plugin/crew/hooks/scripts/crew_config.py:2444<br/>(extended through :2556)<br/><b>14 keys</b>: the same thirteen PLUS pm.authority.<br/>pm.authority is still NOT in RATCHETED_KEYS -<br/>it resolves by ordinary precedence and only<br/>needs a widening NOTE when /crew:config writes it"]
+        RG["<b>READ side: crew_guards.RATCHETED_KEYS</b><br/>plugin/crew/hooks/scripts/crew_guards.py:522-549<br/><b>13 keys</b> (executed + len()'d, this pass):<br/>install.policy, change.requireForProduction,<br/>environments.prodUnattended (T-0005),<br/>and all TEN guards.* - terraformApply, forcePush,<br/>adminMerge, mergeGate, cloudDestructive,<br/>sqlDestructive, prodDatabase, prodServer,<br/>roleWrites, <b>cloudGuard (new)</b>.<br/>Consumed by crew_config.resolve_ratcheted() :817<br/>via crew_guards.effective_ratcheted() :564, called<br/>at crew_config.py:862"]
+        RC["<b>WRITE side: crew_config._RATCHETED</b><br/>plugin/crew/hooks/scripts/crew_config.py:2451<br/>(extended through :2563)<br/><b>14 keys</b>: the same thirteen PLUS pm.authority.<br/>pm.authority is still NOT in RATCHETED_KEYS -<br/>it resolves by ordinary precedence and only<br/>needs a widening NOTE when /crew:config writes it"]
         RSHAPE["Confirmed by import + diff + type(), not<br/>asserted: 13-key intersection, pm.authority the<br/>only difference (`set(_RATCHETED) -<br/>set(RATCHETED_KEYS) == {'pm.authority'}`), and<br/>the tuple field order STILL differs -- (function,<br/>function, dict) here, (tuple, function, function)<br/>there -- so the two still cannot be collapsed<br/>into one table as written"]
         RG --- RC --- RSHAPE
     end
 
     WIDEN -.-> Ratchet
-    ISG -.->|"resolve_ratcheted / resolve_guard :1083<br/>read the crew_guards table instead"| Ratchet
+    ISG -.->|"resolve_ratcheted :817 / resolve_guard :1085<br/>read the crew_guards table instead"| Ratchet
 
     subgraph Corrupt["A corrupt config file is its own state, and it BEATS the ratchet"]
         direction TB
-        LS["crew_config.layer_state(path)<br/>plugin/crew/hooks/scripts/crew_config.py:904<br/>classifies ONE config file, either layer<br/>(cloud=True / environments=True - the cloud<br/>guard's reads only - also call a malformed<br/>cloud / environments block corrupt):<br/><b>absent</b> - nothing there (os.path.lexists false,<br/>so a DANGLING SYMLINK is corrupt, not absent).<br/><b>corrupt</b> - present but not the shape this key<br/>needs: unreadable, invalid JSON, not an object, or<br/>an object where <i>#quot;guards#quot; in parsed</i> and guards<br/>is not itself a dict (an EXPLICIT null is corrupt,<br/>not an unset key).<br/><b>ok</b> - everything else"]
+        LS["crew_config.layer_state(path)<br/>plugin/crew/hooks/scripts/crew_config.py:907<br/>classifies ONE config file, either layer<br/>(cloud=True / environments=True - the cloud<br/>guard's reads only - also call a malformed<br/>cloud / environments block corrupt):<br/><b>absent</b> - nothing there (os.path.lexists false,<br/>so a DANGLING SYMLINK is corrupt, not absent).<br/><b>corrupt</b> - present but not the shape this key<br/>needs: unreadable, invalid JSON, not an object, or<br/>an object where <i>#quot;guards#quot; in parsed</i> and guards<br/>is not itself a dict (an EXPLICIT null is corrupt,<br/>not an unset key).<br/><b>ok</b> - everything else"]
         FORCE["plugin/crew/hooks/scripts/role_write_guard.py<br/>calls layer_state for BOTH layers at :760-761,<br/>ORs them into forced_by_corruption :762, and sets<br/>policy = #quot;block#quot; UNCONDITIONALLY at :764-765 --<br/>BEFORE the <i>elif policy == #quot;off#quot;: return 0</i><br/>early exit at :766-767"]
         LS --> FORCE
     end
@@ -438,7 +562,7 @@ flowchart TB
     subgraph Except["Thirteen keys do NOT follow the precedence above (read-side ratchet)"]
         direction TB
         E1["<b>Every key in crew_guards.RATCHETED_KEYS :522-549 --<br/>install.policy, change.requireForProduction,<br/>environments.prodUnattended and all TEN guards.* -- resolves by the LOWER rank, not<br/>by repo-beats-global.</b> CONFIG.md section 15 covers<br/>install.policy, section 16 the guards, section 18<br/>guards.roleWrites; environments.* is a subsection<br/>of section 16."]
-        E2["The effective value at each key is the <b>lower-ranked<br/>of the two layers</b> - crew_guards.effective_ratcheted<br/>:564, reached through crew_config.resolve_ratcheted<br/>:815."]
+        E2["The effective value at each key is the <b>lower-ranked<br/>of the two layers</b> - crew_guards.effective_ratcheted<br/>:564, reached through crew_config.resolve_ratcheted<br/>:816."]
         E3["Why: crew reads config out of CLONED repositories.<br/>A repo shipping install.policy: auto, or<br/>guards.cloudGuard: report, would, under precedence,<br/>override a machine owner who chose manual or off."]
         E4["Absent counts as the narrowest tier on either side<br/>for ELEVEN of the thirteen, so the WIDEST grant requires<br/>BOTH layers to agree."]
         E5["<b>guards.roleWrites and guards.cloudGuard are the two<br/>exceptions to E4, and the only keys here whose<br/>DEFAULT is not their FLOOR.</b> ROLE_WRITE_POLICIES is<br/>(block, report, off); ROLE_WRITE_DEFAULT is <b>off</b>,<br/>the WIDEST tier, for both names - cloudGuard reuses<br/>roleWrites' own normalise/rank functions rather than<br/>growing a second copy (crew_guards.py:450-487,<br/>guard_tiers() :490-504)."]

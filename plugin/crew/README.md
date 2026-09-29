@@ -909,7 +909,7 @@ layers, lowest precedence first:
 |---|---|---|
 | Built-in defaults | `hooks/scripts/crew_config.py`'s `default_config()` | Nothing — this is code, not a file |
 | Global | `~/.claude/crew/config.json` | `/crew:config` — a guided walkthrough that shows the plan first and writes only after a yes. It is also the only thing in crew that writes outside the repository. Hand-editing still works. |
-| Repo | `.crew/config.json` | `/crew:init` (first write); `platform-sync` (the `platform` block, and the whole file when it heals — see §3) |
+| Repo | `.crew/config.json` | `/crew:init` (first write); `platform-sync` (the `platform` block, and the whole file when it heals — see §3); the `/crew:config` menu (`crew_config.py --set ... --repo`, `crew_config_menu.py save`) |
 
 Repo overrides global overrides built-in defaults, merged recursively with
 `crew_state.merge_defaults` — the same policy `/crew:upgrade` uses to bring a
@@ -982,6 +982,130 @@ A global file that is missing, empty, or fails to parse is treated exactly
 like an absent one — the same reasoning `_read_config_strict` documents for
 the repo side — so a typo in your global config degrades one repo's settings
 to defaults rather than breaking every session on the machine.
+
+### The `/crew:config` menu — set either layer, or delete the repo config
+
+`/crew:config` with no argument, and its alias `/crew:config-setup`, open a
+menu (`skills/crew-setup/config-menu.md`, backed by
+`hooks/scripts/crew_config_menu.py`). Pick the **layer** — this machine's
+`~/.claude/crew/config.json` or this repo's `.crew/config.json` — then an
+**area** (models, autopilot, guards, notify, memory and tracker, auto-clear,
+other), then a **setting**, then a **value from a list**. Each value shows the
+current effective value, the layer that decided it, and the recommendation
+first; the owner never has to type one.
+
+- **Data-driven.** The rows are `crew_config.py`'s own key lists
+  (`default_global_config()` for the machine layer, `default_config()` for the
+  repo), so a key added to crew appears with no menu edit, and a committed test
+  runs every offered value through the writer. The machine layer also lists
+  `platform.*` and `schema` read-only, and an absent or unparseable
+  `.crew/config.json` makes every repo row read-only with the writer's own
+  refusal as the reason.
+- **Offered means accepted.** Every candidate value is probed through the
+  layer's own planner on the file Save would produce, the pending set
+  included (`spec --pending`). A row no value can pass — a bad value already
+  in the file, such as an unknown `qa.provider` — is read-only with the
+  planner's reason, which names the key to fix first.
+- **Selection only, Save once per layer.** Picks collect in a pending set that
+  spans areas and both layers. Save validates **both** layers before writing
+  either, shows the dry-run diff with `!` widening lines and "held down by the
+  machine-global layer" lines, then writes each changed layer once. A write
+  that fails or is refused after validation (the file changed underneath)
+  reports which layer landed and which did not. The dry run prints each
+  changed layer's `digest:`, and the machine digest whenever anything
+  changes, since a repo value's widening marks are judged against the
+  machine file (as this Save leaves it); `absent` names a file that does not
+  exist. `--apply --expect-machine/--expect-repo` checks both before either
+  write and binds each writer to them, the repo write to the machine digest
+  too, so a file another session changed or created since the dry run is
+  refused, never merged over. Discard writes nothing.
+- **One validated repo writer.** `crew_config.py --set PATH=JSON --repo
+  [--apply]` (`plan_repo_write` / `write_repo_config`) merges, refuses unknown
+  keys, takes a whole-block value leaf by leaf (as the machine writer does),
+  checks enum values, validates providers, writes
+  atomically and keeps the file's line ending and BOM. It refuses `platform.*`
+  (platform-sync owns it), `schema`, and `context.autoClear.onlyRepos` /
+  `.onlySessions` (read from the machine file only), and takes only a veto
+  (`false`) or `null` for `context.autoClear.enabled` and `resume.auto` —
+  exactly those, by identity, so `0` is refused.
+- **Both writers judge per leaf, write per leaf, and judge the whole file.**
+  Each update is expanded to its leaves, so a whole-block value such as
+  `context={"autoClear": {"unsafeFocus": true}}` cannot carry a refused key
+  past the machine writer, and each leaf is written on its own: the block's
+  untouched siblings (unknown keys included) survive, and a widening is
+  marked on the leaf that widens. A role-table value (`qa.roles`) is written
+  one whole pin per role, the other pins kept. `null` is accepted only where
+  the layer gives it a meaning: at the repo layer it inherits the machine
+  value for a machine-settable key, or clears a veto; an open key is unset;
+  an enum key at the machine layer refuses it. Then the merged file is
+  checked, every known leaf: a bad enum value, a consent key in the machine
+  file, or an armed veto-only key in the repo file already there refuses an
+  unrelated write, naming the key to fix first. Nothing goes under a leaf
+  and no object sits at one; `qa.roles` / `dev.roles` and their entries are
+  objects or `null`, so `qa.roles=1` is refused rather than wiping every pin.
+- **Both writers are compare-and-swap.** Read, merge and replace happen inside
+  an `O_CREAT|O_EXCL` lock file beside the config (`config.json.lock`, 3 s
+  wait, then a refusal naming the lock and its PID), so two sessions never
+  merge against stale snapshots; `--set` prints `digest:` (`absent` for no
+  file) and `--apply --expect <digest|absent>` refuses a file that changed,
+  or appeared, since; `--set --repo` also prints `machine digest:` and takes
+  `--expect-global`. A malformed machine file is refused rather than
+  overwritten from `{}`. An OS error (a lock, the machine directory, the
+  write) is a refusal with exit 2, never a traceback.
+- **`crew_config_files.py` is the one file layer** under both writers, delete
+  and restore: the lock, the strict read, the `restorable` predicate and the
+  regular-file read delete and restore share, the digest, the atomic
+  replace, and the no-clobber move: a rename that never replaces an existing
+  destination, by the rename itself rather than a check before it.
+- **`scope.*` is refused on purpose.** `scope.mode` and
+  `scope.allowCliApproval` are the scope guard's trust root, and
+  `.crew/config.json` is untracked, so the completion audit (which diffs
+  tracked files) would never see a one-command write that disarmed it. They
+  stay a hand edit by the owner or `/crew:init`, shown read-only in the menu.
+- **Delete the repo config.** Two phases. The preview reads and holds the
+  file's bytes and walks its own leaves: a `!` on anything that widens
+  (`scope.mode` returning to `off` included), `-> (removed)` for a key crew
+  does not know, a `stays` line for a ratcheted key the repo narrowed under a
+  wider machine value (deleting does not widen it), and the `platform.*`
+  keys platform-sync writes (`crew_platform.DERIVED_KEYS`) in a "re-detected
+  by platform-sync" group, which promises no value: a key it finds none for on
+  this machine is left unset. Any other `platform.*` key is `-> (removed)`.
+  Then the `repo digest:` and
+  `machine digest:` it was built from. A file a restore could not take back
+  (unparsable, empty, `{}`, not an object, or not a regular file, such as a
+  symlink) is refused: that is platform-sync's to heal, or the owner's to
+  remove by hand. The delete requires the typed repo name (the checkout's
+  `git rev-parse --show-toplevel` basename) and both preview digests
+  (`--expect-repo`, `--expect-machine`), so it is the delete the preview
+  showed; then, under the machine lock and then the repo config lock (crew's
+  one nesting order), it reads the machine digest again (a machine write since
+  the preview refuses, exit 2, nothing deleted),
+  moves the file to `.crew/config.json.bak-<UTC timestamp>` in one rename —
+  the backup is the original, never a copy — and compares the moved bytes
+  with the held ones: a file that changed since the preview is moved straight
+  back, never over a file saved in between, and nothing is deleted. A file
+  another writer puts at `.crew/config.json` during the rename is never
+  unlinked: it keeps a second name, `*.moving`, and the command exits 1
+  naming the backup, the config and that name — nothing is lost. It prints the restore command three ways,
+  `restore (sh):`, `restore (cmd):` and `restore (PowerShell):`
+  (`crew_config_menu.py restore-repo --from <backup> --apply`); each form is
+  executed by a test, and restore accepts exactly what delete does, exiting 1
+  the same way when another writer interleaves with its move-aside. Until the next
+  SessionStart there is no config, so `isCrew` is false and every hook that
+  gates on it stands down; then platform-sync's heal recreates the built-in
+  defaults. `.crew/crew.json`, `verify.json`, backups and ticket state are
+  untouched.
+- **Headless.** With no way to ask, `crew_config_menu.py spec --layer
+  <layer>` prints the plan and a write needs the explicit
+  `save --changes '<json>' --apply --expect-machine/--expect-repo <digest>` or
+  `delete-repo --confirm <name> --apply --expect-repo <digest>
+  --expect-machine <digest>`.
+
+Both writers now refuse a value outside the key's own tier or provider list
+(`pm.authority`, `pm.ticketGranularity`, `qa.provider`, `dev.provider` and every
+ratcheted key), refuse `null` for one of those at the machine layer, and refuse
+a `--set` value that is not JSON. Before T-0075 a global `--set
+pm.authority=bogus` was written and then read as `report-only`.
 
 ### §11b. `guards` — the guardrails you can turn down, per machine
 
@@ -2524,11 +2648,12 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:model` | Report the resolved provider and model for every role, and which family would be reviewing which — see §12 |
 | `/crew:status [--memory]` | Read-only status in at most 40 lines - config, roster, tickets, review budget, gate, codemap, handoff; `--memory` adds the context hook's stats |
 | `/crew:migrate [--preview\|--apply\|--rollback <dir>]` | crew 1.0: one-time move of `.crew/config.json` to `.crew/crew.json`, tickets and tracker caches to `.work/tickets/<id>/`, `metrics.md` to `metrics.jsonl`; previews first, backs up, applies atomically, rolls back |
-| `/crew:config [--show]` | Show where every setting comes from, and walk the machine-global config — see §11 |
+| `/crew:config [--show\|--models]` | Show where every setting comes from; with no argument, the menu that sets the machine or repo config from a list and deletes the repo config with a backup — see §11 |
+| `/crew:config-setup` | The `/crew:config` menu under its own name — see §11 |
 | `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
 | `/crew:change <new\|status <id>\|close <id>\|list>` | File a change request into SDP, Jira or `.work/changes/`, one process either way. `new` refuses to file while any of the template's questions 1–9 is unanswered or a placeholder and names which; `close` refuses without the post-change validation results — see §24b |
 
-35 commands.<!-- claim: plugin-commands:crew -->
+36 commands.<!-- claim: plugin-commands:crew -->
 
 ### Agents
 
