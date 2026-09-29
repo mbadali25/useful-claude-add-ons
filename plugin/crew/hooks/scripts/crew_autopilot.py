@@ -220,8 +220,12 @@ HUMAN_STOPS = (
 )
 
 # T-0018: the command's subcommands. A later ticket adds its name to AVAILABLE
-# and drops it from ARRIVES when it replaces the router's stop.
-SUBCOMMANDS = ("status", "run", "assign", "goal", "focus", "wave")
+# and drops it from ARRIVES when it replaces the router's stop. T-0029's `wave`
+# is appended on its own line, last, so T-0010's sabotage anchor on the line
+# above (sabotage_autopilot.py, "approve becomes a command subcommand") stays
+# exact.
+SUBCOMMANDS = ("status", "run", "assign", "goal", "focus")
+SUBCOMMANDS += ("wave",)
 AVAILABLE = frozenset({"status", "run", "wave"})
 ARRIVES = {"assign": "T-0019", "goal": "T-0012", "focus": "T-0020"}
 GOAL_FLAG = "--goal"

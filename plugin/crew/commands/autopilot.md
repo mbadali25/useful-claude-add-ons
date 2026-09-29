@@ -4,12 +4,12 @@ argument-hint: "[status|run|assign|goal|focus|wave] [ticket id | --goal <slug> |
 allowed-tools: Read, Write, Edit, Bash, Agent, Skill
 ---
 
-Subcommands `status`, `run`, `assign`, `goal`, `focus`, `wave`; a bare ticket id or nothing is `run`: drive one ticket
-through spec, plan, approval, implement, refresh, review and done, following each phase command's procedure here in
-the order `crew_autopilot.py next` names from disk, stopping when a phase needs a person. Nothing here accepts a
-review or skips a phase, and nothing approves except section 3's `approve`, under the approval policy; it writes
-`approval.json`, `scope-tickets.json` on a ticket's first approval, and a distinct successor plan's NEEDS_REPLAN ->
-IN_REVIEW ledger move.
+Subcommands `status`, `run`, `assign`, `goal`, `focus`, `wave`; a bare ticket id or nothing is `run`: drive
+one ticket through spec, plan, approval, implement, refresh, review and done, following each phase
+command's procedure here in the order `crew_autopilot.py next` names from disk, stopping when a
+phase needs a person. Nothing here accepts a review or skips a phase, and nothing approves except
+section 3's `approve`, under the approval policy; it writes `approval.json`, `scope-tickets.json`
+on a ticket's first approval, and a distinct successor plan's NEEDS_REPLAN -> IN_REVIEW ledger move.
 
 ## 0. Route
 
