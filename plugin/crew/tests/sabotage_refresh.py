@@ -18,6 +18,13 @@ measured, and three "could not tell" cases read as fresh. Review round 3
 recorded base trusted with the ticket's commits behind it, an artifact
 keeping a measured status under a base that may hide the change, a quoted
 name breaking the audit's hash, and a guard module with no pytest rule.
+T-0094 added the ones after its marker: each test of `artifact_verdicts`'
+reach-and-shape admission (reach, anchor moved, ancestor, in the base, INDEX
+rows, rule bytes and removal, graph, rendered diagram, could-not-tell,
+bookkeeping in the reach) removed or widened, and the audit ignoring the
+verdicts, admitting a could-not-tell one, or dropping the reason. Its two
+approval-gate tests now perform a refresh the verdicts admit, so the
+`_AUDIT_GATE` entries stay red with the verdicts in place.
 A mutation listed twice with different tests is on purpose: dropping the
 approval condition must fail the unapproved, the `cli` and the stale case
 each, not just whichever runs first.
@@ -33,11 +40,13 @@ _T = "tests/test_refresh_check.py::"
 _SG = "tests/test_scope_guard_refresh_artifacts.py::"
 _CA = "tests/test_completion_audit_refresh_artifacts.py::"
 _CAI = "tests/test_completion_audit.py::"
+_TA = "tests/test_refresh_admission.py::"
 
 _WORKTREE_DIFF = ("        return sorted(completion_audit.worktree_changes(root, sha, list(paths), "
                   "literal=True))\n")
 _GUARD_GATE = '    if approval["status"] != "approved":\n        return False\n    if real_rel'
 _AUDIT_GATE = '    if approval["status"] != "approved":\n        return paths\n'
+_AUDIT_ADMIT = '    return [p for p in paths if verdicts.get(p, (False, ""))[0] is not True]\n'
 # The pre-round-2 listing exactly (review round 3's NIT on :182): newline-split
 # through `_git_lines`, so a name git C-quotes never matches. Dropping only
 # `-z` would leave one unsplit string, which fails every name, quoted or not.
@@ -243,4 +252,64 @@ REFRESH_MUTATIONS = (
     ("an edit to scope_guard.py runs no pytest rule", VERIFY,
      '                "plugin/crew/hooks/scripts/scope_guard.py",\n', "",
      _T + "test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule[scope_guard.py]"),
+    # T-0094 (reach-gated, re-anchor-shaped admission)
+    ("a re-anchored map no changed path reaches is admitted", CHECK,
+     "    if not _reached(_cited(before) + _cited(after), reach):\n",
+     "    if False:\n",
+     _TA + "test_a_re_anchored_map_no_changed_path_reaches_is_refused"),
+    ("a map edited without moving its anchor is admitted", CHECK,
+     "    if was and was[0] == now[0]:\n",
+     "    if False:\n",
+     _TA + "test_a_map_edited_without_moving_its_anchor_is_refused"),
+    ("an anchor on a commit HEAD cannot reach is admitted", CHECK,
+     "    if not ancestor:\n",
+     "    if False:\n",
+     _TA + "test_a_map_anchored_to_a_commit_not_reachable_from_head_is_refused"),
+    ("a map absent from the base reads as a re-anchor", CHECK,
+     '    if state == "absent":\n        return None, None, (False, "new file, not a re-anchor")\n',
+     '    if state == "absent":\n        before, state = "", "ok"\n',
+     _TA + "test_a_new_map_is_not_a_re_anchor"),
+    ("an INDEX.md line that is no row passes as one", CHECK,
+     "            if not row or row.group(1) not in admitted:\n",
+     "            if row and row.group(1) not in admitted:\n",
+     _TA + "test_an_index_edit_outside_a_re_anchored_row_is_refused"),
+    ("a rule's bytes are not compared with expected_rules", CHECK,
+     "        if read_text(path) == expected.get(key):\n",
+     "        if True:\n",
+     _TA + "test_a_hand_edited_rule_is_refused"),
+    ("a removed rule is admitted without the generated marker", CHECK,
+     "    if state == \"ok\" and crew_instructions.MARKER in before[:2000]:\n",
+     "    if state == \"ok\":\n",
+     _TA + "test_a_rule_removed_that_was_not_generated_is_refused"),
+    ("a rule removed while its map still expects it is admitted", CHECK,
+     "    if key in expected:\n",
+     "    if False:\n",
+     _TA + "test_a_rule_removed_while_its_map_still_expects_it_is_refused"),
+    ("the graph is admitted with no code change", CHECK,
+     '    judge("graph", lambda rel: (True, "rebuilt after a code change") if code\n',
+     '    judge("graph", lambda rel: (True, "rebuilt after a code change") if True\n',
+     _TA + "test_a_graph_rebuild_with_no_code_change_is_refused"),
+    ("a rendered diagram is admitted without its source", CHECK,
+     '        if kinds.get(source) == "diagram" and out.get(source, (False,))[0] is True:\n',
+     "        if True:\n",
+     _TA + "test_a_rendered_diagram_whose_source_was_not_re_anchored_is_refused"),
+    ("could-not-tell on a map collapses into admitted", CHECK,
+     '        return None, None, (None, f"{COULD_NOT_TELL}: base copy {state}")\n',
+     '        return None, None, (True, f"{COULD_NOT_TELL}: base copy {state}")\n',
+     _TA + "test_a_git_failure_while_judging_a_map_is_could_not_tell"),
+    ("release bookkeeping is dropped from the admission reach", CHECK,
+     "    reach = sorted(p for p in dict.fromkeys(reach) if not any(_reaches(o, p) for o in own))\n",
+     "    reach = sorted(p for p in dict.fromkeys(reach)\n"
+     "                   if not _bookkeeping(p) and not any(_reaches(o, p) for o in own))\n",
+     _TA + "test_a_version_bump_reaches_the_map_citing_the_manifest"),
+    ("the audit drops every artifact whatever its verdict", AUDIT,
+     _AUDIT_ADMIT, "    return [p for p in paths if p not in verdicts]\n",
+     _CA + "test_a_map_edited_without_moving_its_anchor_fails_the_audit"),
+    ("the audit admits a could-not-tell verdict", AUDIT,
+     _AUDIT_ADMIT, _AUDIT_ADMIT.replace("is not True", "is False"),
+     _CA + "test_a_could_not_tell_verdict_fails_the_audit_and_says_so"),
+    ("the audit does not print why an artifact was refused", AUDIT,
+     '        return f"{shown(path)} [{shown(verdicts[path][1])}]"\n',
+     "        return shown(path)\n",
+     _CA + "test_a_could_not_tell_verdict_fails_the_audit_and_says_so"),
 )
