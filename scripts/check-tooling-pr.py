@@ -51,7 +51,7 @@ import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "plugin", "crew", "hooks", "scripts"))
-import crew_ticket  # noqa: E402  pylint: disable=wrong-import-position
+import crew_ticket  # pylint: disable=wrong-import-position
 
 EXIT_MISSING = 77
 
@@ -168,9 +168,9 @@ def _matches(path: str, globs: tuple[str, ...]) -> bool:
 def check(root: str) -> tuple[int, list[str]]:
     """(exit code, output lines) for the branch checked out at `root`."""
     if _git(root, "rev-parse", "--verify", "-q", "origin/main").returncode != 0:
-        return EXIT_MISSING, ["TOOL MISSING: origin/main is not a ref here, so the "
-                              "tooling-alone check DID NOT RUN. This is a missing ref, "
-                              "not a pass."]
+        return EXIT_MISSING, [("TOOL MISSING: origin/main is not a ref here, so the "
+                               "tooling-alone check DID NOT RUN. This is a missing ref, "
+                               "not a pass.")]
     try:
         paths = changed_paths(root)
         declared = declared_seams(root)
@@ -188,14 +188,14 @@ def judge(paths: list[str], declared: set[str]) -> tuple[int, list[str]]:
     outside = [p for p in paths if not _matches(p, HARNESS + ALONGSIDE) and p not in seams]
     if outside:
         undeclared = [p for p in outside if _matches(p, SEAM)]
-        hint = ([f"  (a seam consumer rides along only when a lane commit declares it: "
-                 f"`{TRAILER}: <path>`; undeclared: {', '.join(undeclared)})"]
+        hint = ([(f"  (a seam consumer rides along only when a lane commit declares it: "
+                  f"`{TRAILER}: <path>`; undeclared: {', '.join(undeclared)})")]
                 if undeclared else [])
-        return 1, (["tooling-pr: FAIL - a tooling change carries feature work; "
-                    "land these separately:"] + [f"  {p}" for p in outside] + hint)
+        return 1, ([("tooling-pr: FAIL - a tooling change carries feature work; "
+                     "land these separately:")] + [f"  {p}" for p in outside] + hint)
     tail = f", {len(seams)} declared seam consumer(s)" if seams else ""
-    return 0, [f"tooling-pr: OK - {len(harness)} harness path(s){tail}, "
-               "nothing outside tooling"]
+    return 0, [(f"tooling-pr: OK - {len(harness)} harness path(s){tail}, "
+                "nothing outside tooling")]
 
 
 def main(argv: list[str]) -> int:

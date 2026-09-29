@@ -52,7 +52,7 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "hooks", "scripts"))
-import review_verdict  # noqa: E402  pylint: disable=wrong-import-position
+import review_verdict  # pylint: disable=wrong-import-position
 
 DEFAULT_SOURCE = "/repos/personal"
 DEFAULT_OUT = os.path.join(HERE, "golden", "review")

@@ -14,9 +14,8 @@ import re
 import shutil
 import subprocess
 
-import pytest
-
 import context  # noqa: F401  pylint: disable=unused-import
+import pytest
 import review_run
 import review_verdict as rv
 
@@ -78,7 +77,7 @@ def test_the_doc_cites_a_source_for_every_tool(tool):
     section = _sections(_doc()).get(tool, "")
 
     assert "https://" in section, f"## {tool} cites no source"
-    assert re.search(r"^Probed:", section, re.M), f"## {tool} has no Probed: line"
+    assert re.search(r"^Probed:", section, re.MULTILINE), f"## {tool} has no Probed: line"
 
 
 def test_installed_codex_exec_help_lists_the_flags_crew_passes():

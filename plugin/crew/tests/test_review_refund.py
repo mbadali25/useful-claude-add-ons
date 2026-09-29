@@ -10,10 +10,9 @@ Only `tool` is refunded, at most `review_ledger.REFUND_LIMIT` times per plan
 import json
 import os
 
-import pytest
-
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_ticket
+import pytest
 import review_fixtures
 import review_ledger as rl
 import review_verdict as rv

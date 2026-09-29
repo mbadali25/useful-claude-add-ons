@@ -271,8 +271,8 @@ def reserve(root, ticket, provider, model=None):
                        "provider": provider, "model": model or None, "pid": os.getpid()})
         data["state"] = IN_REVIEW
         return data, (True, number,
-                      f"round {number} reserved ({_charged(data)} of {BUDGET} budget rounds "
-                      f"used, {_refunded(data)} refunded)")
+                      (f"round {number} reserved ({_charged(data)} of {BUDGET} budget rounds "
+                       f"used, {_refunded(data)} refunded)"))
 
     return _mutate(root, ticket, change)
 

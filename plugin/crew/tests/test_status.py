@@ -9,10 +9,9 @@ import os
 import subprocess
 import sys
 
-import pytest
-
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_status
+import pytest
 import review_ledger
 from crew_fixtures import make_repo
 
@@ -225,7 +224,7 @@ def _ledger_text(root, text):
 @pytest.mark.parametrize("successors", ['{"x": 1}', "[1]", '"abc"', "[{}, null]"])
 def test_status_review_line_for_malformed_successors_is_unknown(tmp_path, successors):
     root = make_repo(tmp_path)
-    _ledger_text(root, '{"state": "REVIEWED", "rounds": [], "successors": %s}' % successors)
+    _ledger_text(root, f'{{"state": "REVIEWED", "rounds": [], "successors": {successors}}}')
 
     done = _run(root)
 

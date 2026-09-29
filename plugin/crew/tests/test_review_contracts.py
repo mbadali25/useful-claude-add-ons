@@ -17,13 +17,12 @@ import subprocess
 import sys
 import types
 
-import pytest
-
-import context  # noqa: F401  pylint: disable=unused-import
+import context  # pylint: disable=unused-import
 import crew_autopilot
 import crew_resume
 import crew_status
 import crew_ticket
+import pytest
 import review_ledger
 import review_patch
 import review_prompt
@@ -136,7 +135,7 @@ def test_every_prose_statement_of_the_finding_line_is_the_parsers(doc):
 def _grader():
     text = _read("evals", "qa-reviewer-stays-read-only", "graders", "verdict-format.md")
     front = text.split("---")[1]
-    raw = re.search(r"^pattern:\s*'(.*)'\s*$", front, re.M).group(1)
+    raw = re.search(r"^pattern:\s*'(.*)'\s*$", front, re.MULTILINE).group(1)
     return re.compile(raw)
 
 

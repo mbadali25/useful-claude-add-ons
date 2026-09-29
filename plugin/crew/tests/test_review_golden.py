@@ -16,10 +16,9 @@ import json
 import os
 import re
 
-import pytest
-
 import context  # noqa: F401  pylint: disable=unused-import
 import golden_build
+import pytest
 import review_verdict as rv
 
 GOLDEN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "golden", "review")
