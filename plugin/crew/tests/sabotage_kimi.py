@@ -47,8 +47,30 @@ _QUOTA_BRANCH = (
     "            or '\"status_code\":429' in (stdout or \"\").replace(\" \", \"\"):\n"
     '        return "rate-limited", "the Kimi CLI answered with a quota or rate limit"\n')
 
-_KEYS = '    snapshot = {HEAD_KEY: head, INDEX_KEY: hashlib.sha256(staged).hexdigest()}\n    listed = [(entry[:2].decode("ascii", "replace"), entry[3:])\n              for entry in status.split(b"\\0") if len(entry) >= 4]\n    listed += [("--", entry.split(b"\\t", 1)[1]) for entry in staged.split(b"\\0")\n               if b"\\t" in entry]\n    seen = set()\n    for code, raw in listed:\n        rel = os.fsdecode(raw).rstrip("/")\n        if rel in seen:\n            continue  # status listed it first, with its code\n        seen.add(rel)\n'
-_KEYS_OLD = '    snapshot = {":HEAD": head, ":index": hashlib.sha256(staged).hexdigest()}\n    listed = [(entry[:2].decode("ascii", "replace"), entry[3:])\n              for entry in status.split(b"\\0") if len(entry) >= 4]\n    listed += [("--", entry.split(b"\\t", 1)[1]) for entry in staged.split(b"\\0")\n               if b"\\t" in entry]\n    for code, raw in listed:\n        rel = os.fsdecode(raw).rstrip("/")\n        if rel in snapshot:\n            continue  # status listed it first, with its code\n'
+# Round 4 FIX 3: the metadata keys and the separate `seen` set, reverted together to
+# the `:HEAD`/`:index` keys that collided with tracked files of those names.
+_KEYS = (
+    '    snapshot = {HEAD_KEY: head, INDEX_KEY: hashlib.sha256(staged).hexdigest()}\n'
+    '    listed = [(entry[:2].decode("ascii", "replace"), entry[3:])\n'
+    '              for entry in status.split(b"\\0") if len(entry) >= 4]\n'
+    '    listed += [("--", entry.split(b"\\t", 1)[1]) for entry in staged.split(b"\\0")\n'
+    '               if b"\\t" in entry]\n'
+    '    seen = set()\n'
+    '    for code, raw in listed:\n'
+    '        rel = os.fsdecode(raw).rstrip("/")\n'
+    '        if rel in seen:\n'
+    '            continue  # status listed it first, with its code\n'
+    '        seen.add(rel)\n')
+_KEYS_OLD = (
+    '    snapshot = {":HEAD": head, ":index": hashlib.sha256(staged).hexdigest()}\n'
+    '    listed = [(entry[:2].decode("ascii", "replace"), entry[3:])\n'
+    '              for entry in status.split(b"\\0") if len(entry) >= 4]\n'
+    '    listed += [("--", entry.split(b"\\t", 1)[1]) for entry in staged.split(b"\\0")\n'
+    '               if b"\\t" in entry]\n'
+    '    for code, raw in listed:\n'
+    '        rel = os.fsdecode(raw).rstrip("/")\n'
+    '        if rel in snapshot:\n'
+    '            continue  # status listed it first, with its code\n')
 
 KIMI_MUTATIONS = (
     # --- the probe: "could not tell" must never become `ok` ---------------
