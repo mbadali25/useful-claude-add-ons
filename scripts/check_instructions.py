@@ -36,7 +36,9 @@ gates, file by file:
                                  missing, orphaned), plus AGENTS.md and
                                  .codex/. A hand-written file at a generated
                                  path is reported under its own label, not as
-                                 drift. None committed here at present --
+                                 drift, and the advisory `anchor ...` lines
+                                 rules --check prints are dropped, never
+                                 quoted as drift. None committed here at present --
                                  /crew:onboard and /crew:migrate generate them
                                  in a CONSUMING repo -- so this is a no-op
                                  here, and tested on fixtures
@@ -478,6 +480,12 @@ def _tracked_generated_files() -> list[str]:
 # crew_instructions.py's `--check` wording for a hand-written file sitting at
 # a path a generated file needs (`_hand_written` there).
 HAND_WRITTEN_COLLISION = "hand-written file blocks generated output:"
+# `rules --check`'s advisory lines about code-map anchors that need re-check
+# (T-0501). Advice, never drift: dropped before the drift list is built. A
+# literal copy of crew_instructions.ANCHOR_ADVISORY_PREFIXES, the source of
+# truth; test_rules_anchor_advice.py and instruction-budgets.py hold the two
+# equal.
+ANCHOR_ADVISORY_PREFIXES = ("anchor behind:", "anchor unresolvable:", "anchors: could not tell")
 
 
 def check_generated_drift(fail) -> None:
@@ -508,7 +516,8 @@ def check_generated_drift(fail) -> None:
         # nobody "fixes" it by regenerating over someone's hand-written file.
         collisions = [line for line in lines if line.startswith(HAND_WRITTEN_COLLISION)]
         drift = [line for line in lines if line not in collisions
-                 and not line.startswith("hand-written, left alone")]
+                 and not line.startswith("hand-written, left alone")
+                 and not line.startswith(ANCHOR_ADVISORY_PREFIXES)]
         for line in collisions:
             fail(f"generated {kind}: hand-written file, not drift - "
                  f"{line[len(HAND_WRITTEN_COLLISION):].strip()} has no crew:generated "
