@@ -48,8 +48,9 @@ in `.crew/config.json` turns it on. Note `maxPhases`, `deploy` (CONFIG.md §20; 
 `approval` and `questions`. `resume` with no ticket tries the handoff's `resume:` line (only when its `branch:`
 and `head:` match this checkout), then this worktree's active ticket, then `.work/INDEX.md` only when one ticket is
 open. Print the `source`, every `fell through:` and any `disagreement:` line (disk wins).
-`stop=1`: print the reason and stop - that includes a ticket that is not this worktree's
-active one. `activate=1` (no pointer is set): run
+`stop=1`: print the reason and stop; off another in-flight ticket it recommends that one, and the owner
+types `/crew:autopilot <ticket>` to move the worktree - never run `crew_ticket.py activate` for that.
+`activate=1` (no pointer, or one on a ticket an accepted review closed): run
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py activate --root . --ticket <ticket>`
 so the scope guard judges edits by it. Never pick from `## Next action`.
 
@@ -60,8 +61,7 @@ python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py next --root . \
   --ticket <ticket> --phases-run N --last-command "LAST"
 ```
 
-It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`.
-No output, a traceback or a non-zero exit is a stop.
+It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`. No output, a traceback or a non-zero exit is a stop.
 - `stop=0` - announce `phase <p>: <c>` and follow that command's `commands/*.md` here, or run a
   refresh command (`/crew:onboard --refresh`, `/crew:diagram refresh`, `graphify update .`) as
   named and commit it. Then `LAST=<c>`, `N+=1`, again.
@@ -93,9 +93,9 @@ accepted review (that stales the receipt): `next` enforces it.
 A person: `brainstorm` (no approved direction) and `review-acceptance` (FINDINGS are the
 owner's, at every setting); `plan-approval` and `open-questions` are a person unless section 3's
 policy allows. `next` enforces from disk, every turn: `needs-replan`, `needs-replan-or-revert`,
-`unknown-ledger`, `failed-validate`, `direction-unknown`, `unsettled-artifact`, `ticket-mismatch`,
-`max-phases`, `no-progress`. This procedure: `review-verdict`, `failed-done-check`,
-`failed-phase`. No deploy (T-0005), merge or PR (T-0011), new ticket (T-0012), lane or writer.
+`unknown-ledger`, `failed-validate`, `direction-unknown`, `unsettled-artifact`, `ticket-mismatch`
+(the owner types `/crew:autopilot <id>`), `max-phases`, `no-progress`. This procedure: `review-verdict`,
+`failed-done-check`, `failed-phase`. No deploy (T-0005), merge or PR (T-0011), new ticket (T-0012), lane or writer.
 Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
 - `offboard-role` - offboarding a role, or removing one from the roster.
 - `delete-map` - deleting a codemap file or a diagram.

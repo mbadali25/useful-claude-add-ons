@@ -50,7 +50,9 @@ the payload in, so the two shells cannot disagree.
 A shell command is not judged against Touch (the Stop audit does that, from
 the tree). It is refused, in every mode but `off`, when its text invokes
 `crew_ticket.py approve`, names the approval hook script, or names
-`<git-common-dir>/crew/` alongside a redirect or a writing command. Each check
+`<git-common-dir>/crew/` alongside a redirect or a writing command, or when it
+runs `crew_ticket.py activate` or `deactivate` in a move the session may not
+make (T-0504, below). Each check
 reads the text as written and with its line continuations joined (bash's
 backslash-newline deleted, PowerShell's backtick-newline a space), so a
 continuation cannot split an approval across the newline a check stops at; a
@@ -62,6 +64,17 @@ and only as the whole command `python3 [-B] <path>/crew_autopilot.py approve
 and only while `crew_autopilot.approval_policy` says yes for that ticket in
 this worktree (which needs `scope.allowCliApproval: true`). Any other command
 naming it is refused; a policy that cannot be told refuses too.
+
+`crew_ticket.py activate|deactivate` (T-0504) moves the active-ticket
+pointer this guard and the Stop audit judge edits by. Its arguments are read
+by crew_ticket's own parser (`--ticket=T-2`, `--tick T-2` read as the CLI
+reads them), against `--root`, or the payload's cwd without one, and
+`crew_autopilot.activation_policy` decides: allowed with no pointer, with the
+pointer already on the target, or with it on a ticket closed by an accepted
+review AND done; refused off an open ticket, or when anything -- the text,
+a variable, a directory change, the ledger, the spec, the pointer -- cannot
+be told. The refusal names the owner's `/crew:autopilot <id>` prompt, which
+the prompt hook carries out; it never hands out the CLI.
 
 That is a
 textual check, not a shell parser: it stops drift and accidental bypass, and
@@ -121,6 +134,12 @@ _AUTOPILOT_BARE_RE = re.compile(
     r"[ \t]*python3?(?:[ \t]+-B)?[ \t]+[\w./\\:~${}-]*crew_autopilot\.py[ \t]+approve"
     r"(?:[ \t]+--root[ \t]+\.)?[ \t]+--ticket[ \t]+([A-Z][A-Z0-9]*-[0-9]+)[ \t]*")
 _HOOK_RE = re.compile(r"approval[_-]hook(?:\.py|\.sh|\.ps1)?\b", re.IGNORECASE)
+# T-0504: a `crew_ticket` call and the rest of its simple command; one whose
+# text moves the active-ticket pointer is judged by crew_ticket's own parser.
+_TICKET_CALL_RE = re.compile(r"crew_ticket(?:\.py)?\b([^\n;&|]*)", re.IGNORECASE)
+_MOVES_POINTER_RE = re.compile(r"\b(?:de)?activate\b", re.IGNORECASE)
+APPROVAL_HINT = ("  Approval is recorded when the USER types `/crew:approve <id>`;",
+                 "  ask them to, rather than running it for them.")
 # A line continuation: bash's backslash-newline, which the shell deletes (so it
 # can split a word), and PowerShell's backtick-newline, which reads as a space.
 _BASH_CONTINUATION_RE = re.compile(r"\\\r?\n")
@@ -254,6 +273,28 @@ def _autopilot_refusal(command, top):
     return f"autopilot.approval does not allow {ticket}: {reason}"
 
 
+class _PointerRefusal(str):
+    """A refusal to move the active-ticket pointer: its text, plus the hint
+    lines that name the owner's `/crew:autopilot <id>` prompt (T-0504)."""
+    hint = ()
+
+
+def _pointer_refusal(args_text, before, cwd):
+    """Why one `crew_ticket.py activate|deactivate` call is refused, or None
+    (`crew_ticket._activation_refusal` decides; module docstring)."""
+    found = crew_ticket._activation_refusal(args_text, before, cwd)  # pylint: disable=protected-access
+    if found is None:
+        return None
+    refusal = _PointerRefusal(f"it moves this worktree's active-ticket pointer, and "
+                              f"{found['reason']}")
+    target, active = found.get("target") or "<id>", found.get("active")
+    refusal.hint = (
+        f"  Only the owner moves it: they type `/crew:autopilot {target}`, and the prompt "
+        "hook re-points this worktree.",) + ((
+        f"  Recommended: finish {active} first - /crew:autopilot {active}.",) if active else ())
+    return refusal
+
+
 def _joined(command):
     """`command` as written, as bash joins its continuations, and as
     PowerShell does -- every check runs on all three, so a newline that only
@@ -262,23 +303,24 @@ def _joined(command):
     return command, bash, _PS_CONTINUATION_RE.sub(" ", command)
 
 
-def shell_refusal(command, common, top=None):
+def shell_refusal(command, common, top=None, cwd=None):
     """Why a Bash/PowerShell `command` is refused, or None (module docstring,
     "Bash and PowerShell"). Textual on purpose, and conservative: a benign
     command that names crew's state beside a writing word is refused too.
     `top` is the worktree whose autopilot policy judges `crew_autopilot.py
-    approve`; without it that command is refused. Every reading `_joined`
-    gives is judged; the first refusal wins."""
+    approve`; without it that command is refused. `cwd` (default `top`) is
+    where a `crew_ticket.py activate|deactivate` without an absolute --root
+    runs. Every reading `_joined` gives is judged; the first refusal wins."""
     if not isinstance(command, str):
         return None
     for reading in _joined(command):
-        reason = _reading_refusal(reading, command, common, top)
+        reason = _reading_refusal(reading, command, common, top, cwd or top)
         if reason:
             return reason
     return None
 
 
-def _reading_refusal(command, written, common, top):
+def _reading_refusal(command, written, common, top, cwd=None):
     """Why one reading (`_joined`) of the shell command `written` is refused,
     or None. The autopilot bare-command rule judges `written` as written, so
     a line continuation never makes an approve bare."""
@@ -288,6 +330,11 @@ def _reading_refusal(command, written, common, top):
         return _autopilot_refusal(written, top)
     if _HOOK_RE.search(command):
         return "it names the approval hook, which only the user's prompt may drive"
+    for call in _TICKET_CALL_RE.finditer(command):
+        if _MOVES_POINTER_RE.search(call.group(1)):
+            refusal = _pointer_refusal(call.group(1), command[:call.start()], cwd or top)
+            if refusal:
+                return refusal
     state = os.path.join(common, "crew") if common else None
     folded = os.path.normcase(command).replace("\\", "/")
     names_state = bool(_DOTGIT_CREW_RE.search(command)) or bool(
@@ -327,8 +374,8 @@ def _broken_pointer(top, root, source):
     _log(top, mode, "block" if mode == "block" else "report", None, "-", reason)
     if mode == "block":
         return _deny([f"SCOPE GUARD: refused -- {reason}.",
-                      "  Point it at a real ticket: `crew_ticket.py activate --ticket <id>`,",
-                      f"  or clear it: `crew_ticket.py deactivate`. ({why})"])
+                      "  The owner re-points it by typing `/crew:autopilot <id>`; the session "
+                      f"may not. ({why})"])
     return _note(f"scope-guard (report, would block): {reason}. ({why})")
 
 
@@ -351,13 +398,13 @@ def decide(data):
     if tool in SHELLS:
         tool_input = data.get("tool_input")
         command = tool_input.get("command") if isinstance(tool_input, dict) else None
-        reason = shell_refusal(command, common, top)
+        cwd = os.path.abspath(root)
+        reason = shell_refusal(command, common, top, cwd)
         if reason is None:
             return 0
         _log(top, configured, "block", None, "-", f"{tool}: {reason}")
-        return _deny([f"SCOPE GUARD: refused this {tool} command -- {reason}.",
-                      "  Approval is recorded when the USER types `/crew:approve <id>`;",
-                      "  ask them to, rather than running it for them."])
+        return _deny([f"SCOPE GUARD: refused this {tool} command -- {reason}."]
+                     + list(getattr(reason, "hint", None) or APPROVAL_HINT))
     state = os.path.join(common, "crew") if common else None
     paths = targets(data)
     base = os.path.abspath(root)

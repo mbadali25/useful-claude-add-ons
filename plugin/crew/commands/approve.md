@@ -15,6 +15,9 @@ that prompt, read `.work/tickets/$1/spec.md` and `plan.md` once, and either:
 - **refused** it and blocked the prompt, saying why ("/crew:approve was NOT
   recorded -- ...") - in which case you are probably not reading this at all.
 
+The same hook also re-points this worktree when the user types `/crew:autopilot <id>`:
+moving the active ticket off one in flight is theirs; never do it yourself.
+
 Your whole job here is to relay that result in one or two sentences:
 
 - Recorded: say so, and that `/crew:implement $1` can start. Any later edit to

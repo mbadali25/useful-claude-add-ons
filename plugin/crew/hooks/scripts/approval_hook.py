@@ -68,6 +68,26 @@ prompt that STARTS with one is refused: an approval is one line.
   to the user, which is the point: the user asked for an approval and must
   see that none was recorded.
 
+## The re-point (T-0504)
+
+The same hook carries the owner's one move the session may not make: moving
+this worktree's active-ticket pointer off a ticket that is in flight (the
+scope guard refuses the session's `crew_ticket.py activate|deactivate` for
+it; `crew_autopilot.activation_policy`). When the prompt is exactly
+`/crew:autopilot <id>` or `/crew:autopilot run <id>` -- RAW, or EXPANDED with
+one `<command-name>/crew:autopilot</command-name>` and one `<command-args>`
+and nothing outside the top-level tags -- on one line, `<id>` a plain ticket
+id that is not a subcommand, the hook writes `<git-common-dir>/crew/active-ticket`
+for this worktree and nothing else, and adds context naming the ticket it
+left and that ticket's state. Silent, writing nothing, exit 0: `<id>` has no
+`.work/tickets/<id>/` folder (autopilot's own route answers that), or the
+pointer already names it. Never a re-point: `status <id>`, `assign`, `goal`,
+`focus`, `--goal`, bare `/crew:autopilot`, a mention mid-sentence, a nested
+or unclosed tag, a multi-line paste. A pointer write that fails blocks the
+prompt (exit 2) saying nothing changed. A payload that mentions
+`crew:autopilot` and does not parse passes (exit 0): unlike an approval,
+nothing was asked of this hook that the command itself will not report.
+
 The session can still pipe a forged payload into this script through its
 shell; `scope_guard.py` refuses a Bash/PowerShell command naming it, which
 stops drift, not a deliberate forgery (README "Scope and approval").
@@ -84,12 +104,18 @@ import uuid
 import crew_ticket
 
 COMMAND = "crew:approve"
+AUTOPILOT = "crew:autopilot"
+# `crew_autopilot.SUBCOMMANDS`, copied rather than imported so a prompt that
+# is not a re-point never loads the autopilot module.
+AUTOPILOT_SUBCOMMANDS = ("status", "run", "assign", "goal", "focus")
 CONFIRM_TOKEN = "--confirm"
 MAX_GROUP = 20
 PENDING_TTL = 600
 NONE, SINGLE, GROUP, CONFIRM, REFUSE = "none", "single", "group", "confirm", "refuse"
 _RAW_RE = re.compile(r"^\s*/crew:approve(?:\s+(.*?))?\s*$", re.DOTALL)
 _NAME_RE = re.compile(r"\s*/?crew:approve\s*")
+_AUTOPILOT_RAW_RE = re.compile(r"^\s*/crew:autopilot(?:\s+(.*?))?\s*$", re.DOTALL)
+_AUTOPILOT_NAME_RE = re.compile(r"\s*/?crew:autopilot\s*")
 # The expanded form's tags, read at the prompt's TOP level only: a tag's
 # content runs to the first matching close, so a `<command-name>` inside a
 # `<command-message>` is content, never a command (review round 2).
@@ -165,6 +191,41 @@ def parse(prompt, root=None):
                                                 "type the command alone")
                 return _one_line_only(_slash(args[0], "expanded", root), args[0])
     return _plain(prompt, root)
+
+
+def parse_repoint(prompt):
+    """The ticket the owner's own `/crew:autopilot <id>` (or `run <id>`)
+    prompt names, or None for any other prompt (module docstring, "The
+    re-point"). Top-level tags only, nothing outside them, one line."""
+    if not isinstance(prompt, str) or AUTOPILOT not in prompt:
+        return None
+    raw = _AUTOPILOT_RAW_RE.match(prompt)
+    if raw:
+        if _BREAK_RE.search(prompt.strip()):
+            return None
+        args = raw.group(1) or ""
+    elif prompt.lstrip().startswith("<command-"):
+        tags, outside = _top_level(prompt)
+        if outside.strip() or _ANY_TAG_RE.search(outside) \
+                or any(_ANY_TAG_RE.search(content) for _, content in tags):
+            return None
+        names = [content for tag, content in tags if tag == "name"]
+        found = [content for tag, content in tags if tag == "args"]
+        if len(names) != 1 or not _AUTOPILOT_NAME_RE.fullmatch(names[0]) or len(found) != 1 \
+                or _BREAK_RE.search(found[0].strip()):
+            return None
+        args = found[0]
+    else:
+        return None
+    tokens = args.split()
+    if len(tokens) == 2 and tokens[0] == "run":
+        tokens = tokens[1:]
+    if len(tokens) != 1:
+        return None
+    ticket = tokens[0]
+    if ticket in AUTOPILOT_SUBCOMMANDS or not crew_ticket._TICKET_RE.match(ticket):  # pylint: disable=protected-access
+        return None
+    return ticket
 
 
 def _top_level(prompt):
@@ -545,6 +606,33 @@ def _partly(root, items, index, recorded, attempt, exc):
     return 2
 
 
+def _repoint(root, ticket):
+    """Carry out the owner's `/crew:autopilot <ticket>`: move this worktree's
+    active-ticket pointer to `ticket` and say what it left. Silent when there
+    is no ticket folder or the pointer already names it."""
+    try:
+        top = crew_ticket.toplevel(root)
+        if not top or not os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
+            return 0
+        active, where, broken = crew_ticket.resolve_active(top)
+        if where == "active-ticket" and active == ticket:
+            return 0
+        try:
+            import crew_autopilot  # pylint: disable=import-outside-toplevel
+            state = crew_autopilot.activation_policy(top, ticket).get("reason")
+        except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+            state = f"its state could not be told ({type(exc).__name__})"
+        crew_ticket.activate(top, ticket)
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        sys.stderr.write(f"crew: /crew:autopilot {ticket} could not re-point this worktree "
+                         f"-- {type(exc).__name__}: {_one_line(exc)}; nothing changed\n")
+        return 2
+    left = ("a broken pointer" if broken else
+            active if where == "active-ticket" else "no ticket")
+    return _emit(f"crew: the owner re-pointed this worktree to {ticket} from their own "
+                 f"/crew:autopilot prompt; {left} was active ({_one_line(state)}).")
+
+
 def handle(data):
     """Exit code for one UserPromptSubmit payload. Writes its own output."""
     if not isinstance(data, dict) or data.get("hook_event_name") != "UserPromptSubmit":
@@ -553,7 +641,8 @@ def handle(data):
     root = os.path.abspath(root or os.environ.get("CLAUDE_PROJECT_DIR") or ".")
     request = parse(data.get("prompt"), root)
     if request.kind == NONE:
-        return 0
+        ticket = parse_repoint(data.get("prompt"))
+        return _repoint(root, ticket) if ticket else 0
     if request.kind == SINGLE:
         return _single(root, data, request.ids[0])
     if request.kind == GROUP:

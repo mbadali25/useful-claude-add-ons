@@ -100,17 +100,17 @@ AUTOPILOT_MUTATIONS = (
      "    if False:\n",
      _T + "test_resume_handoff_ticket_without_a_folder_falls_through"),
     ("a ticket other than the active one is driven", AUTOPILOT,
-     '    if where == "active-ticket" and active != ticket:\n',
-     "    if False:\n",
+     '    moves = where == "active-ticket" and active != ticket\n',
+     "    moves = False\n",
      _T + "test_resume_handoff_disagreeing_with_the_active_pointer_stops"),
     ("the driven ticket is never activated", AUTOPILOT,
-     '"activate": where != "active-ticket"}',
+     '"activate": where != "active-ticket" or moves}',
      '"activate": False}',
      _T + "test_resume_from_handoff_line"),
     ("the command never activates the ticket", COMMAND,
-     "`activate=1` (no pointer is set)",
-     "(no pointer is set)",
-     _T + "test_command_activates_the_ticket_only_without_a_pointer"),
+     "`activate=1` (no pointer, or one on a ticket an accepted review closed)",
+     "(no pointer, or one on a ticket an accepted review closed)",
+     _T + "test_command_activates_on_activate_1_and_names_the_owner_prompt_on_a_mismatch"),
     ("stale-after-review writes crew state", AUTOPILOT,
      "        return answer(\"stale-after-review\", True, ",
      "        os.close(os.open(os.path.join(crew_ticket.state_dir(top), \"x\"), "
@@ -527,8 +527,8 @@ STATUS_MUTATIONS = (
      "    if False:\n        return _repoint(",
      _S + "test_status_ticket_mismatch_waits_on_repointing"),
     ("a broken pointer reads as autopilot activating", AUTOPILOT,
-     "    if broken:\n        return (\"owner - fixes the broken",
-     "    if False:\n        return (\"owner - fixes the broken",
+     "    if broken:\n        return (f\"owner - the active-ticket pointer is broken",
+     "    if False:\n        return (f\"owner - the active-ticket pointer is broken",
      _S + "test_status_broken_pointer_waits_on_the_owner_fixing_it"),
     ("an unset pointer tells the owner to re-point", AUTOPILOT,
      '    if where != "active-ticket":\n        return f"autopilot - run',
@@ -592,8 +592,8 @@ STATUS_MUTATIONS = (
      "    if False:\n",
      _S + "test_status_repoint_never_offers_a_closed_ticket"),
     ("an active ticket whose phase could not be read is offered as open", AUTOPILOT,
-     "    if closed is None:\n",
-     "    if False:\n",
+     '    if closed is None:\n        return f"could not tell whether {active} is still open',
+     '    if False:\n        return f"could not tell whether {active} is still open',
      _S + "test_status_repoint_says_unknown_when_the_active_phase_raises"),
     # Round 3's FIX and NIT lines (T-0018-router--3YKWjw), one per new guard branch.
     ("status prints a rounds count for a ledger whose state is UNKNOWN", AUTOPILOT,
@@ -672,6 +672,24 @@ STATUS_MUTATIONS = (
 )
 
 AUTOPILOT_MUTATIONS += STATUS_MUTATIONS
+
+# T-0504: the active-ticket pointer. resume, next and status name the owner's
+# `/crew:autopilot <id>` prompt, never the CLI, and never move off an open ticket.
+REPOINT_MUTATIONS = (
+    ("resume activates over an open ticket", AUTOPILOT,
+     '        if not decision["allow"]:\n            return stopped(source,',
+     '        if False:\n            return stopped(source,',
+     _T + "test_resume_argument_off_an_open_pointer_stops_with_the_owner_prompt"),
+    ("status hands the owner the CLI again", AUTOPILOT,
+     '    move = f"type {_drive(ticket)} to move this worktree to {ticket}"\n',
+     '    move = f"crew_ticket.py activate --ticket {ticket}, or runs {_drive(active)},"\n',
+     _S + "test_no_stop_or_waiting_line_hands_out_the_cli_or_a_trailing_comma"),
+    ("next's mismatch hands the owner the CLI again", AUTOPILOT,
+     '            f"owner types {_drive(ticket)} to move this worktree to {ticket}"))\n',
+     '            f"human runs crew_ticket.py activate --ticket {ticket}"))\n',
+     _T + "test_next_mismatch_names_the_owner_prompt"),
+)
+AUTOPILOT_MUTATIONS += REPOINT_MUTATIONS
 
 # ---- T-0010: the approval and questions policies. One per refusing branch;
 # each names the test that must go red. Registered in sabotage.py beside
@@ -932,4 +950,24 @@ POLICY_MUTATIONS = (
      "def _line(**fields):\n",
      "def _one_line(value):\n    return value\n\n\ndef _line(**fields):\n",
      "tests/test_crew_autopilot.py::test_module_defines_each_function_once"),
+)
+
+# T-0504: activation_policy's could-not-tell rows. POLICY_MUTATIONS because
+# their tests are test_crew_autopilot_policy.py's (the anchor test's rule).
+POLICY_MUTATIONS += (
+    ("a re-point closure probe that raised reads as closed", AUTOPILOT,
+     '        notes.append(f"its review ledger could not be read ({type(exc).__name__}: {exc})")\n'
+     '        return None\n',
+     '        notes.append(f"its review ledger could not be read ({type(exc).__name__}: {exc})")\n'
+     '        return True\n',
+     _P + "test_activation_policy_that_raises_refuses"),
+    ("an unreadable spec reads as closed for a re-point", AUTOPILOT,
+     '        notes.append("its spec.md exists and could not be read")\n        return None\n',
+     '        notes.append("its spec.md exists and could not be read")\n        return True\n',
+     _P + "test_activation_unreadable_spec_refuses_as_could_not_tell"),
+    ("a merged ticket's stale bundle hash keeps it open for a re-point", AUTOPILOT,
+     "    kind = receipt.get(\"kind\") if isinstance(receipt, dict) else None\n",
+     "    kind = (receipt.get(\"kind\") if isinstance(receipt, dict)\n"
+     "            and review_ledger.check_receipt(top, ticket)[0] else None)\n",
+     _P + "test_closed_for_repoint_ignores_a_stale_bundle_hash"),
 )

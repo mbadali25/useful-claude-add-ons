@@ -348,11 +348,13 @@ def test_autopilot_mid_sentence_does_not_repoint(repo, text):
 
 
 @pytest.mark.parametrize("text", [
-    ("<command-message><command-name>/crew:autopilot</command-name></command-message>\n"
-     "<command-name>/crew:autopilot</command-name>\n<command-args>T-2</command-args>"),
-    ("<command-name>/crew:autopilot</command-name>\n<command-args>T-2</command-args>\n"
-     "and more words"),
-    "<command-name>/crew:autopilot</command-name>\n<command-args>T-2\nT-3</command-args>",
+    pytest.param("<command-message><command-name>/crew:autopilot</command-name>"
+                 "</command-message>\n<command-name>/crew:autopilot</command-name>\n"
+                 "<command-args>T-2</command-args>", id="nested"),
+    pytest.param("<command-name>/crew:autopilot</command-name>\n"
+                 "<command-args>T-2</command-args>\nand more words", id="text-outside"),
+    pytest.param("<command-name>/crew:autopilot</command-name>\n"
+                 "<command-args>T-2\nT-3</command-args>", id="broken-args"),
 ])
 def test_autopilot_nested_command_tag_does_not_repoint(repo, text):
     _pointed(repo)

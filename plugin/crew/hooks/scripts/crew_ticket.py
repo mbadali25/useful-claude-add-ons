@@ -96,6 +96,13 @@ back to INDEX.md and never reads as "no active ticket": `resolve_active`
 reports it as broken, and the guard and the audit refuse under `block`. A
 stale or planted pointer must not be the way every write gets through.
 
+`activate` and `deactivate` are plain writers here, with no policy check (tests
+and CI call them). Who may run them is the scope guard's shell check
+(`scope_guard.py`, T-0504): the session only where the move cannot widen
+scope (`crew_autopilot.activation_policy`); a move off an in-flight ticket is
+the owner's, typed as `/crew:autopilot <id>` and carried out by the prompt
+hook (`approval_hook.py`).
+
 ## Scope mode
 
 `scope.mode` in `.crew/config.json`: `off` (the default -- the hooks do
@@ -127,6 +134,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 
@@ -1017,14 +1025,87 @@ def touch_for(top, ticket):
 
 # --- CLI ------------------------------------------------------------------------------
 
-def main(argv):
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+class _QuietParser(argparse.ArgumentParser):
+    """The CLI's parser for judging a command's text: an error raises instead
+    of printing usage and exiting (the scope guard reads it, T-0504)."""
+
+    def error(self, message):
+        raise TicketError(message)
+
+
+def _parser(cls=argparse.ArgumentParser):
+    parser = cls(description=__doc__.splitlines()[0], add_help=cls is not _QuietParser)
     parser.add_argument("action", choices=("validate", "approve", "status", "activate",
                                            "deactivate", "active", "touch"))
     parser.add_argument("--root", default=".")
     parser.add_argument("--ticket")
     parser.add_argument("--by", help="who is approving (default: git user.name)")
-    args = parser.parse_args(argv)
+    return parser
+
+
+# A directory change earlier in the command: a relative --root (or none) no
+# longer names the payload's worktree, so which pointer moves cannot be told.
+_CD_RE = re.compile(r"(?:^|[\s;&|(`{])(?:cd|pushd|popd|chdir|set-location|push-location|sl)"
+                    r"(?=[\s;&|)]|$)", re.IGNORECASE)
+_UNRESOLVED_RE = re.compile(r"[$`%]")
+
+
+def _activation_policy(top, ticket, verb):
+    """`crew_autopilot.activation_policy`, imported lazily (it imports this
+    module). Raises whatever the import or the call raises."""
+    import crew_autopilot  # pylint: disable=import-outside-toplevel
+    return crew_autopilot.activation_policy(top, ticket, verb)
+
+
+def _activation_refusal(args_text, before, cwd):
+    """Why the session may not run this `crew_ticket.py activate|deactivate`
+    (T-0504), as `{"reason", "active", "target"}`, or None when the move
+    cannot widen scope. `args_text` is the command text after the script
+    name, up to the end of its simple command; `before` is the command text
+    ahead of it; `cwd` the payload's working directory. The arguments are read
+    by this CLI's own parser, so `--ticket=T-2` and `--tick T-2` read as the
+    CLI reads them. Could not tell -- text that does not split, a parser
+    error, a variable, a directory change, a policy that raised or answered
+    anything but a plain yes -- is a refusal, never a yes."""
+    here = toplevel(cwd) if cwd else None
+    in_flight = resolve_active(here)[0] if here else None
+
+    def refuse(reason, active=in_flight, target=None):
+        return {"reason": reason, "active": active, "target": target}
+
+    text = args_text[1:] if args_text[:1] in "\"'" else args_text
+    try:
+        args, _extra = _parser(_QuietParser).parse_known_args(shlex.split(text))
+    except (ValueError, TicketError) as exc:
+        return refuse(f"could not tell what this crew_ticket.py call does ({exc})")
+    if args.action not in ("activate", "deactivate"):
+        return None
+    target = args.ticket if args.action == "activate" else None
+    root = args.root
+    if _UNRESOLVED_RE.search(root) or (not os.path.isabs(root) and _CD_RE.search(before)):
+        return refuse(f"could not tell which worktree's pointer --root {root!r} names "
+                      "(a variable or a directory change); could not tell which worktree",
+                      target=target)
+    root = root if os.path.isabs(root) else os.path.join(cwd or ".", root)
+    top = toplevel(root)
+    if not top:
+        return None
+    try:
+        decision = _activation_policy(top, args.ticket, args.action)
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        return refuse(f"could not tell whether the pointer may move ({type(exc).__name__})",
+                      target=target)
+    if not isinstance(decision, dict):
+        return refuse("could not tell whether the pointer may move (no answer)", target=target)
+    if decision.get("allow") is True:
+        return None
+    target = target if isinstance(target, str) and _TICKET_RE.match(target) else None
+    return refuse(decision.get("reason") or "could not tell (no reason given)",
+                  active=decision.get("active") or in_flight, target=target)
+
+
+def main(argv):
+    args = _parser().parse_args(argv)
     root = os.path.abspath(args.root)
     try:
         if args.action == "deactivate":
@@ -1051,8 +1132,10 @@ def main(argv):
             print("\n".join(touch_for(top, args.ticket)))
             return 0
         if args.action == "activate":
+            was, where, _broken = resolve_active(root)
             activate(root, args.ticket)
-            print(f"crew-ticket: {args.ticket} is the active ticket for this worktree")
+            left = f" (was {was})" if where == "active-ticket" and was != args.ticket else ""
+            print(f"crew-ticket: {args.ticket} is the active ticket for this worktree{left}")
             return 0
         if args.action == "status":
             result = status(root, args.ticket)

@@ -907,7 +907,7 @@ def test_status_repoint_offers_run_for_an_active_ticket_named_like_a_subcommand(
     got = crew_autopilot.status(str(root), T)
     routed = crew_autopilot.route_args(str(root), f"{word}{name}")
 
-    assert (got["waiting"].endswith(f", or runs /crew:autopilot {word}{name}"),
+    assert (f"type /crew:autopilot {word}{name} to finish it" in got["waiting"],
             routed["sub"], routed["ticket"], routed["stop"]) == (True, "run", name, False)
 
 

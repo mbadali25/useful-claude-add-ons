@@ -57,6 +57,21 @@ takes (`self` or `risk` -- the one in force when it was taken, so a later
 policy change does not void an honest record), and only while the policy in
 force says `take`. Exit 0 valid, 1 not.
 
+## activation_policy -- who moves the active-ticket pointer (T-0504)
+
+A third policy, reading no config key. The session may move this worktree's
+pointer only where the move cannot widen scope: no pointer yet, the pointer
+already on the target, or the pointer on a ticket `closed_for_repoint` calls
+closed -- an ACCEPTED review ledger with a `clean` or `owner-accepted`
+receipt (the ledger is under `<git-common-dir>/crew/`, which the scope guard
+refuses to the session) AND INDEX.md or the spec header saying done. INDEX
+or spec alone is not closed: the session can write both. Every other move --
+off an open ticket, or one whose closure could not be told -- is the owner's:
+they type `/crew:autopilot <id>` and the prompt hook (`approval_hook.py`)
+re-points. The scope guard's shell check refuses the session's
+`crew_ticket.py activate|deactivate` for it; `resume`, `next` and `status`
+name that prompt, never the CLI.
+
 ## next -- the phase from disk, first match wins
 
   no direction.md                        brainstorm          stop
@@ -113,9 +128,12 @@ not landed)" -- never skipped.
 A handoff that cannot be used falls through with its reason recorded; the
 `## Next action` prose is never guessed from. When the handoff's command
 disagrees with the phase on disk, disk wins and the disagreement is reported.
-A ticket that differs from this worktree's active-ticket pointer stops, naming
-both: the scope guard and the completion audit judge edits by the pointer.
-With no pointer, `activate` tells the command to set it to the ticket it drives.
+A ticket that differs from this worktree's active-ticket pointer is judged by
+`activation_policy` (above): the scope guard and the completion audit judge
+edits by the pointer. With no pointer, or a pointer on a ticket closed by an
+accepted review, `activate` tells the command to set it to the ticket it
+drives; any other pointer stops, recommending the active ticket and naming the
+owner's `/crew:autopilot <id>` prompt, never the CLI.
 
 Exit 0 always, but for `approve` and `questions-check` (above); the answer is
 in the output. An exception inside `next` or `resume` prints `stop=1` with its reason: a crash is "cannot tell", never
@@ -561,7 +579,7 @@ def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
             f"ticket mismatch: the scope guard and completion audit judge edits by "
             f"{active or 'no ticket'} ({where}), not {ticket}, so {result['command']} would "
             f"run under the wrong approval and Touch - run crew_autopilot.py resume, or the "
-            f"human runs crew_ticket.py activate --ticket {ticket}"))
+            f"owner types {_drive(ticket)} to move this worktree to {ticket}"))
     if max_phases is not None and phases_run >= max_phases:
         return dict(result, stop=True, reason=(
             f"autopilot.maxPhases ({max_phases}) reached after {phases_run} phases; next "
@@ -665,7 +683,8 @@ def resume_target(root, ticket=None, policy=True):
         active, where, broken = crew_ticket.resolve_active(top)
         if broken:
             return stopped("active-ticket", f"{where}; a broken pointer is not guessed "
-                           "past - fix it with crew_ticket.py activate")
+                           f"past - the owner types {AUTOPILOT} <id> to re-point this "
+                           "worktree")
         if where == "active-ticket":
             ticket, source = active, "active-ticket"
         else:
@@ -680,22 +699,29 @@ def resume_target(root, ticket=None, policy=True):
                                "folder - start one with /crew:brainstorm")
             ticket, source = candidates[0], ".work/INDEX.md"
     active, where, broken = crew_ticket.resolve_active(top)
+    reason = f"{ticket} from {source}"
     if broken:
         return stopped("active-ticket", f"{where}; a broken pointer is not guessed past - "
-                       "fix it with crew_ticket.py activate")
-    if where == "active-ticket" and active != ticket:
-        return stopped(source, f"{source} names {ticket}, but this worktree's active ticket "
-                       f"is {active}, and the scope guard and completion audit judge edits "
-                       f"by {active}'s approval and Touch. Run /crew:autopilot {active}, or "
-                       f"the human re-points it: crew_ticket.py activate --ticket {ticket}")
+                       f"the owner types {_drive(ticket)} to re-point this worktree to "
+                       f"{ticket}")
+    moves = where == "active-ticket" and active != ticket
+    if moves:
+        decision = activation_policy(top, ticket)
+        if not decision["allow"]:
+            return stopped(source, f"{source} names {ticket}, but this worktree's active "
+                           f"ticket is {active}, and the scope guard and completion audit "
+                           f"judge edits by its approval and Touch: "
+                           f"{repoint_question(top, active, ticket, decision)}")
+        reason = (f"{reason}; re-points this worktree from {active} "
+                  f"({decision['reason']})")
     disk = next_phase(top, ticket, policy=policy)
     disagreement = ""
     if hint and not hint.startswith(AUTOPILOT + " ") and hint != disk["command"]:
         disagreement = (f"the handoff says {hint}, the disk says "
                         f"{disk['command'] or disk['phase']}; disk wins")
     return {"ticket": ticket, "source": source, "stop": False, "hint": hint,
-            "disagreement": disagreement, "reason": f"{ticket} from {source}",
-            "fallthrough": fallthrough, "next": disk, "activate": where != "active-ticket"}
+            "disagreement": disagreement, "reason": reason, "fallthrough": fallthrough,
+            "next": disk, "activate": where != "active-ticket" or moves}
 
 
 def _read_json(path):
@@ -1070,6 +1096,110 @@ def question_policy(root, ticket):
                                f"{_risk_words(risk)}")
 
 
+# T-0504: who may move this worktree's active-ticket pointer. The pointer is what
+# the scope guard and the Stop audit judge edits by, so a move that could widen
+# scope is the owner's; every other move is the session's own bookkeeping.
+REPOINT_RECEIPTS = ("clean", "owner-accepted")
+ACTIVATION_VERBS = ("activate", "deactivate")
+
+
+def closed_for_repoint(root, ticket, notes=None):
+    """Whether `ticket` is closed by a fact the session cannot write: True
+    only when its review ledger (under `<git-common-dir>/crew/`, which the
+    scope guard refuses to the session) is ACCEPTED with a `clean` or
+    `owner-accepted` receipt AND `_closed` says INDEX.md or its spec header
+    says done. None is could not tell -- an unreadable ledger or spec, or a
+    probe that raised -- and never reads as closed. False otherwise, INDEX or
+    spec alone included: both are the session's to edit. Never reads
+    `review_ledger.check_receipt`, which fails for every merged ticket once
+    the tree moves on. `notes`, when a list, gets one line saying why."""
+    notes = [] if notes is None else notes
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    try:
+        ledger = review_ledger.status(top, ticket)
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        notes.append(f"its review ledger could not be read ({type(exc).__name__}: {exc})")
+        return None
+    state = ledger.get("state")
+    unreadable = state == review_ledger.UNKNOWN
+    if unreadable:
+        notes.append("its review ledger is unreadable")
+        return None
+    receipt = ledger.get("receipt")
+    kind = receipt.get("kind") if isinstance(receipt, dict) else None
+    if state != review_ledger.ACCEPTED or kind not in REPOINT_RECEIPTS:
+        notes.append(f"no accepted review receipt: its ledger is {state}")
+        return False
+    try:
+        closed = _closed(top, ticket)
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        notes.append(f"whether it is done could not be read ({type(exc).__name__}: {exc})")
+        return None
+    if closed is None:
+        notes.append("its spec.md exists and could not be read")
+        return None
+    if not closed:
+        notes.append(f"its review receipt is {kind}, but neither .work/INDEX.md nor its "
+                     "spec header says done")
+        return False
+    where = ("INDEX.md " + _index_status(top, ticket)
+             if _index_status(top, ticket) in INDEX_DONE else "spec header done")
+    notes.append(f"ledger receipt {kind}, {where}")
+    return True
+
+
+def activation_policy(root, ticket=None, verb="activate"):
+    """`{"allow", "case", "active", "verb", "reason"}` -- whether the SESSION
+    may run `crew_ticket.py <verb>` here (`ticket` is the one `activate`
+    names). Reads no config key: `autopilot.approval` and
+    `scope.allowCliApproval` do not gate it, and the scope guard skips it
+    under `scope.mode: off` like its other shell refusals. The cases:
+
+      no-pointer  no active-ticket entry for this worktree  allow
+      same        the pointer already names `ticket`         allow (activate)
+      closed      `closed_for_repoint` says True             allow
+      open        it says False                              refuse: the owner's
+      unknown     it says None, the ticket is unusable, or   refuse: could not tell
+                  anything raised
+      broken      the pointer cannot be honoured             refuse
+
+    A refusal is the owner's move: they type `/crew:autopilot <id>`, which the
+    prompt hook (`approval_hook.py`) carries out."""
+    result = {"allow": False, "case": UNKNOWN, "active": None, "verb": verb, "reason": ""}
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    try:
+        if verb not in ACTIVATION_VERBS:
+            return dict(result, reason=f"could not tell what {verb!r} does to the pointer")
+        if verb == "activate" and (not isinstance(ticket, str)
+                                   or not crew_ticket._TICKET_RE.match(ticket)):  # pylint: disable=protected-access
+            return dict(result, reason=(f"could not tell which ticket to activate "
+                                        f"({ticket!r} is not a plain ticket id)"))
+        active, where, broken = crew_ticket.resolve_active(top)
+        result["active"] = active
+        if broken:
+            return dict(result, case="broken", reason=(
+                f"could not tell which ticket is in flight: {where}"))
+        if where != "active-ticket":
+            return dict(result, allow=True, case="no-pointer", reason=(
+                "no active-ticket pointer for this worktree"
+                + ("; nothing to clear" if verb == "deactivate" else "")))
+        if verb == "activate" and active == ticket:
+            return dict(result, allow=True, case="same",
+                        reason=f"the pointer already names {ticket}")
+        notes = []
+        closed = closed_for_repoint(top, active, notes)
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        return dict(result, allow=False, case=UNKNOWN, reason=(
+            f"could not tell whether the pointer may move ({type(exc).__name__}: {exc})"))
+    why = notes[-1] if notes else "no reason recorded"
+    if closed is True:
+        return dict(result, allow=True, case="closed", reason=f"{active} is closed ({why})")
+    if closed is None:
+        return dict(result, case=UNKNOWN, reason=(
+            f"could not tell whether {active} is closed ({why}); it stays in flight"))
+    return dict(result, case="open", reason=f"{active} is in flight in this worktree ({why})")
+
+
 # `status`'s approve and open-questions sentences: fixed text, so the report
 # reads the same under every autopilot.approval and autopilot.questions value
 # (T-0018's status reads no policy; `next` names the policy's route instead).
@@ -1381,23 +1511,43 @@ def _waiting(top, result, bare):
 
 def _repoint(top, ticket):
     """Who clears a stop `next_phase` made on the active pointer, not the phase:
-    its `command` is what autopilot would run, never what the owner types."""
+    its `command` is what autopilot would run, never what the owner types.
+    `activation_policy` decides: a move the session may make is autopilot's,
+    any other is the owner's `/crew:autopilot <id>` prompt (T-0504)."""
     active, where, broken = crew_ticket.resolve_active(top)
     if broken:
-        return ("owner - fixes the broken active-ticket pointer: "
-                f"crew_ticket.py activate --ticket {ticket}")
+        return (f"owner - the active-ticket pointer is broken ({where}): type "
+                f"{_drive(ticket)} to re-point this worktree to {ticket}")
     if where != "active-ticket":
         return f"autopilot - run {_drive(ticket)} to continue; it activates {ticket} first"
-    repoint = f"owner - re-points this worktree: crew_ticket.py activate --ticket {ticket}"
+    decision = activation_policy(top, ticket)
+    if decision["allow"]:
+        return (f"autopilot - run {_drive(ticket)} to continue; it re-points this worktree "
+                f"from {active} first ({decision['reason']})")
+    return f"owner - {repoint_question(top, active, ticket, decision)}"
+
+
+def repoint_question(top, active, ticket, decision):
+    """The owner's question when `activation_policy` refuses moving this
+    worktree from `active` to `ticket`: why, the recommendation, and the
+    prompt that moves it. Each command is followed by words, never by
+    punctuation a paste would carry. Finishing `active` is recommended only
+    while it reads as open; a ticket marked done without an accepted review,
+    or one whose state cannot be read, is not offered."""
+    move = f"type {_drive(ticket)} to move this worktree to {ticket}"
     try:
         closed = _closed(top, active)
     except Exception:  # pylint: disable=broad-except
         closed = None
+    if decision.get("case") == UNKNOWN:
+        return f"{decision.get('reason')} - {move}"
     if closed is None:
-        return f"{repoint} (could not tell whether {active} is still open)"
+        return f"could not tell whether {active} is still open - {move}"
     if closed:
-        return f"{repoint} ({active} is closed)"
-    return f"{repoint}, or runs {_drive(active)}"
+        return (f"{active} is marked done but no accepted review closes it "
+                f"({decision.get('reason')}) - {move}")
+    return (f"{active} is in flight in this worktree; recommended: type {_drive(active)} "
+            f"to finish it, or {move}")
 
 
 def _drive(ticket):

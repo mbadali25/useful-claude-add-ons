@@ -255,8 +255,8 @@ def stop_hook(data):
         mode, why = crew_ticket.effective_mode(root, None)
         ok, lines = False, [f"COMPLETION AUDIT: the active-ticket pointer is broken "
                             f"({shown(source)}); nothing can be audited against a ticket.",
-                            "  Fix it with `crew_ticket.py activate --ticket <id>` or "
-                            "`crew_ticket.py deactivate`."]
+                            "  The owner re-points it by typing `/crew:autopilot <id>`; "
+                            "nothing here is audited until then."]
     elif not ticket:
         return 0
     else:

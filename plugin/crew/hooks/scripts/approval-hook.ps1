@@ -206,9 +206,10 @@ if ($stdinBytes.Length -ge 3 -and $stdinBytes[0] -eq 0xEF -and
 }
 $raw = [System.Text.Encoding]::UTF8.GetString($stdinBytes)
 
-# The common case is a prompt that is not an approval: leave before any
-# python is looked for.
-if ($raw -notmatch '(?i)approve') { exit 0 }
+# The common case is a prompt that is not an approval or the owner's
+# `/crew:autopilot <id>` re-point (T-0504): leave before any python is looked
+# for. With no usable python only `crew:approve` blocks.
+if ($raw -notmatch '(?i)approve|crew:autopilot') { exit 0 }
 
 $py = Resolve-CrewPython
 if (-not $py) {

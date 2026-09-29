@@ -22,6 +22,7 @@ GUARD_PS1 = os.path.join(_S, "scope-guard.ps1")
 AUDIT_SH = os.path.join(_S, "completion-audit.sh")
 AUDIT_PS1 = os.path.join(_S, "completion-audit.ps1")
 HOOK_SH = os.path.join(_S, "approval-hook.sh")
+AUTOPILOT = os.path.join(_S, "crew_autopilot.py")
 
 _SG = "tests/test_scope_guard.py::"
 _CA = "tests/test_completion_audit.py::"
@@ -349,4 +350,38 @@ SCOPE_MUTATIONS = (
      '    cut = data.find(b"\\n")\n',
      _AD + "test_body_status_line_after_a_non_lf_break_stales_approval"
      "[bare-cr-trailing-space]"),
+    # --- T-0504: moving the active-ticket pointer off an in-flight ticket -----------
+    ("POINTER: the guard no longer judges crew_ticket.py activate", GUARD,
+     "        if _MOVES_POINTER_RE.search(call.group(1)):\n",
+     "        if False:\n",
+     _SG + "test_activate_off_an_open_ticket_is_refused[block-module]"),
+    ("POINTER: only the first crew_ticket call in a command is judged", GUARD,
+     "    for call in _TICKET_CALL_RE.finditer(command):\n",
+     "    for call in list(_TICKET_CALL_RE.finditer(command))[:1]:\n",
+     _SG + "test_activate_in_another_shape_is_refused[second-command-module]"),
+    ("POINTER: a corrupt ledger reads as closed for a re-point", AUTOPILOT,
+     '        notes.append("its review ledger is unreadable")\n        return None\n',
+     '        notes.append("its review ledger is unreadable")\n        return True\n',
+     _SG + "test_activate_off_a_ticket_with_a_corrupt_ledger_is_refused[block-module]"),
+    ("POINTER: INDEX done alone closes a ticket for a re-point", AUTOPILOT,
+     "    if state != review_ledger.ACCEPTED or kind not in REPOINT_RECEIPTS:\n",
+     "    if False:\n",
+     _SG + "test_activate_off_a_ticket_closed_in_index_only_is_refused[block-module]"),
+    ("POINTER: a directory change before the call is not judged", TICKET,
+     "(not os.path.isabs(root) and _CD_RE.search(before))",
+     "(not os.path.isabs(root) and False)",
+     _SG + "test_activate_after_a_directory_change_is_refused_as_could_not_tell"
+     "[cd ../elsewhere && python3 hooks/scripts/crew_ticket.py activate --ticket T-2-module]"),
+    ("POINTER: --root is ignored and the payload's worktree judged", TICKET,
+     "    root = root if os.path.isabs(root) else os.path.join(cwd or \".\", root)\n",
+     "    root = cwd or \".\"\n",
+     _SG + "test_activate_naming_another_worktrees_root_is_judged_there[module]"),
+    ("POINTER: the broken-pointer message hands the owner the CLI again", GUARD,
+     '"  The owner re-points it by typing `/crew:autopilot <id>`; the session "',
+     '"  Point it at a real ticket: `crew_ticket.py activate --ticket <id>`; the session "',
+     _SG + "test_broken_pointer_message_names_the_owner_prompt_not_the_cli"),
+    ("POINTER: the audit's broken-pointer message hands out the CLI again", AUDIT,
+     '"  The owner re-points it by typing `/crew:autopilot <id>`; "',
+     '"  Fix it with `crew_ticket.py activate --ticket <id>`; "',
+     _CA + "test_a_broken_active_ticket_pointer_blocks_the_stop[module]"),
 )

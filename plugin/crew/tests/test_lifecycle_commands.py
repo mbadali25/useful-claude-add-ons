@@ -87,7 +87,7 @@ EXPECTED_CLI = {
                 'crew_metrics.py record --ticket "$1"'),
     "fix.md": ("`/crew:approve <id>`",),
     "approve.md": ("Never run `crew_ticket.py approve` yourself",
-                   "also re-points this worktree when you type `/crew:autopilot <id>`"),
+                   "also re-points this worktree when the user types `/crew:autopilot <id>`"),
     "autopilot.md": ("crew_autopilot.py settings --root .",
                      "crew_autopilot.py resume --root .",
                      "crew_autopilot.py next --root .",
