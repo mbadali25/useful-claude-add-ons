@@ -801,20 +801,18 @@ def test_classify_cli(capsys):
     assert capsys.readouterr().out.startswith("bash: ")
 
 
-class Clock:
-    """`timer()` plus a `runner` that advances it by a per-script cost, so each
-    side's net forks/writes seconds come out exactly."""
+class Shells:
+    """A `runner` standing in for Git Bash, pwsh and WSL. Each timing script
+    measures itself inside its shell and prints `start end`; this prints a pair
+    whose difference is the side's cost, so the numbers come out exactly and
+    no launcher start-up can leak into them."""
 
-    # WSL's fork loop is the same script at either location, so its cost is too.
     COSTS = {"gitbash": (1.70, 0.13), "pwsh": (0.93, 0.051), "wsl": (0.03, 0.70), "wsl-ext4": (0.03, 0.007)}
 
-    def __init__(self, costs=None):
-        self.now = 100.0
+    def __init__(self, costs=None, decimal="."):
         self.calls = []
         self.costs = costs or self.COSTS
-
-    def timer(self):
-        return self.now
+        self.decimal = decimal
 
     def runner(self, argv, timeout):
         self.calls.append(list(argv))
@@ -826,8 +824,9 @@ class Clock:
         else:
             side = "wsl-ext4" if "mktemp" in script else "wsl"
         forks, writes = self.costs[side]
-        self.now += 0.5 + (forks if "-lt 50" in script else writes if "-lt 200" in script else 0.0)
-        return 0, b"", b""
+        cost = forks if "-lt 50" in script else writes
+        pair = f"{1727000000.25:.6f} {1727000000.25 + cost:.6f}".replace(".", self.decimal)
+        return 0, (pair + "\n").encode(), b""
 
 
 def _measure_setup(monkeypatch, tmp_path):
@@ -839,10 +838,10 @@ def _measure_setup(monkeypatch, tmp_path):
 
 def test_measure_reports_every_side(monkeypatch, tmp_path):
     root = _measure_setup(monkeypatch, tmp_path)
-    clock = Clock()
-    result = crew_shell.measure(root, runner=clock.runner, timer=clock.timer)
+    clock = Shells()
+    result = crew_shell.measure(root, runner=clock.runner)
     assert result["host"] and result["date"] and result["location"] == "windows-drive"
-    for side, (forks, writes) in Clock.COSTS.items():
+    for side, (forks, writes) in Shells.COSTS.items():
         assert result["sides"][side] == {"forks": pytest.approx(forks), "writes": pytest.approx(writes)}, side
     assert result["verdict"] == "gitbash-faster"  # WSL on /mnt loses on writes
     assert not [name for name in os.listdir(root) if name.startswith(".crew-shell-measure")]
@@ -852,18 +851,17 @@ def test_measure_reports_every_side(monkeypatch, tmp_path):
 
 def test_measure_wsl_faster_needs_both_forks_and_writes(monkeypatch, tmp_path):
     root = _measure_setup(monkeypatch, tmp_path)
-    costs = dict(Clock.COSTS, wsl=(0.03, 0.05))
-    clock = Clock(costs)
-    assert crew_shell.measure(root, runner=clock.runner, timer=clock.timer)["verdict"] == "wsl-faster"
+    costs = dict(Shells.COSTS, wsl=(0.03, 0.05))
+    clock = Shells(costs)
+    assert crew_shell.measure(root, runner=clock.runner)["verdict"] == "wsl-faster"
 
 
 def test_measure_write_stores_it_and_decide_reads_it(monkeypatch, tmp_path, capsys):
     root = _measure_setup(monkeypatch, tmp_path)
     monkeypatch.setattr(crew_shell, "load_cache", REAL_LOAD_CACHE)
     crew_shell.write_cache({"state": "usable", "distro": "Ubuntu-24.04", "detail": "seeded"})
-    clock = Clock(dict(Clock.COSTS, wsl=(0.03, 0.05)))
+    clock = Shells(dict(Shells.COSTS, wsl=(0.03, 0.05)))
     monkeypatch.setattr(crew_shell, "capture", clock.runner)
-    monkeypatch.setattr(crew_shell.time, "perf_counter", clock.timer)
     assert crew_shell.main(["measure", "--write", "--root", root]) == 0
     assert "wsl-faster" in capsys.readouterr().out
     with open(crew_shell.probe_path(), encoding="utf-8") as handle:
@@ -874,18 +872,64 @@ def test_measure_write_stores_it_and_decide_reads_it(monkeypatch, tmp_path, caps
 
 def test_measure_off_windows_runs_nothing(monkeypatch, tmp_path):
     monkeypatch.setattr(crew_shell, "host_os", lambda *a, **k: "linux")
-    assert crew_shell.measure(str(tmp_path), runner=_forbidden, timer=_forbidden) == {
+    assert crew_shell.measure(str(tmp_path), runner=_forbidden) == {
         "state": "n/a", "detail": "not native Windows"}
 
 
 def test_measure_side_failure_is_an_error_not_a_number(monkeypatch, tmp_path):
     root = _measure_setup(monkeypatch, tmp_path)
-    clock = Clock()
+    clock = Shells()
 
     def runner(argv, timeout):
         if argv[0] == "wsl.exe":
             raise OSError("wsl gone")
         return clock.runner(argv, timeout)
-    result = crew_shell.measure(root, runner=runner, timer=clock.timer)
+    result = crew_shell.measure(root, runner=runner)
     assert "wsl gone" in result["sides"]["wsl"]["error"]
+    assert result["verdict"] == "unknown"
+
+
+def test_measure_cli_names_a_root_it_cannot_reach(monkeypatch, tmp_path, capsys):
+    """Found on dadeush-desktop: a `\\\\wsl.localhost\\` root that had gone away
+    (WSL cleared /tmp on a VM restart) died in `tempfile.mkdtemp` with a
+    traceback. It is reported and exits 2, and nothing is measured."""
+    _measure_setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(crew_shell, "capture", _forbidden)
+    assert crew_shell.main(["measure", "--root", str(tmp_path / "gone")]) == 2
+    err = capsys.readouterr().err
+    assert "gone" in err and "Traceback" not in err
+
+
+def test_measure_times_inside_each_shell(monkeypatch, tmp_path):
+    """The launcher's own start-up (wsl.exe's is larger and noisier than 50
+    WSL forks) must never be subtracted into a result: each script reads its
+    own clock, bash's `$EPOCHREALTIME` and pwsh's Stopwatch."""
+    root = _measure_setup(monkeypatch, tmp_path)
+    clock = Shells()
+    crew_shell.measure(root, runner=clock.runner)
+    for argv in clock.calls:
+        script = argv[-1]
+        assert ("Stopwatch" in script) if argv[0] == PWSH7 else (script.count("$EPOCHREALTIME") == 2), script
+
+
+def test_measure_reads_a_comma_decimal_locale(monkeypatch, tmp_path):
+    root = _measure_setup(monkeypatch, tmp_path)
+    result = crew_shell.measure(root, runner=Shells(decimal=",").runner)
+    assert result["sides"]["gitbash"] == {"forks": pytest.approx(1.70), "writes": pytest.approx(0.13)}
+
+
+@pytest.mark.parametrize("out", [b"", b" \n", b"not a number\n", b"1727000001.0 1727000000.0\n"])
+def test_measure_unreadable_timing_is_an_error_not_a_number(monkeypatch, tmp_path, out):
+    """An empty `$EPOCHREALTIME` (bash older than 5), garbage, or a clock that
+    ran backwards is `could not tell`, never zero, and the verdict is unknown."""
+    root = _measure_setup(monkeypatch, tmp_path)
+    clock = Shells()
+
+    def runner(argv, timeout):
+        if argv[0] == "wsl.exe":
+            clock.calls.append(list(argv))
+            return 0, out, b""
+        return clock.runner(argv, timeout)
+    result = crew_shell.measure(root, runner=runner)
+    assert "error" in result["sides"]["wsl"]
     assert result["verdict"] == "unknown"

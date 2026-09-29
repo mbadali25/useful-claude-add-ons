@@ -32,7 +32,6 @@ import shlex
 import shutil
 import subprocess
 import sys
-import time
 
 MODES = ("auto", "wsl", "powershell", "gitbash")
 
@@ -623,29 +622,49 @@ def run(cmd, root=".", runner=None, execute=None):
 # --- measure --------------------------------------------------------------------------
 
 FORKS, WRITES = 50, 200
-_BASH_FORKS = f"i=0; while [ $i -lt {FORKS} ]; do /usr/bin/true; i=$((i+1)); done"
-_BASH_WRITES = "i=0; while [ $i -lt " + str(WRITES) + " ]; do echo x > \"$d/f$i\"; i=$((i+1)); done"
-_PWSH_FORKS = f"for ($i=0; $i -lt {FORKS}; $i++) {{ & $env:ComSpec /d /c rem }}"
-_PWSH_WRITES = f"for ($i=0; $i -lt {WRITES}; $i++) {{ [IO.File]::WriteAllText(\"$d\\f$i\", 'x') }}"
+# Each script reads its own clock around the loop and prints `start end`, so
+# the launcher's start-up is never in the number. wsl.exe's start-up is larger
+# and noisier than 50 WSL forks: timed from outside, WSL's fork cost came out
+# as zero once start-up was subtracted, which is a subtraction artifact, not a
+# measurement. bash reads `$EPOCHREALTIME` (bash 5; no fork), pwsh a Stopwatch.
+_BASH_T0, _BASH_T1 = "s=$EPOCHREALTIME; ", '; e=$EPOCHREALTIME; echo "$s $e"'
+_BASH_FORK_LOOP = f"i=0; while [ $i -lt {FORKS} ]; do /usr/bin/true; i=$((i+1)); done"
+_BASH_WRITE_LOOP = "i=0; while [ $i -lt " + str(WRITES) + " ]; do echo x > \"$d/f$i\"; i=$((i+1)); done"
+_BASH_FORKS = _BASH_T0 + _BASH_FORK_LOOP + _BASH_T1
+_BASH_WRITES = _BASH_T0 + _BASH_WRITE_LOOP + _BASH_T1  # `d` is set by the caller
+_EXT4_WRITES = ('d=$(mktemp -d); ' + _BASH_T0 + _BASH_WRITE_LOOP
+                + '; e=$EPOCHREALTIME; rm -rf "$d"; echo "$s $e"')
+_PWSH_T0 = "$w = [Diagnostics.Stopwatch]::StartNew(); "
+_PWSH_T1 = "; '0 ' + $w.Elapsed.TotalSeconds.ToString([Globalization.CultureInfo]::InvariantCulture)"
+_PWSH_FORKS = _PWSH_T0 + f"for ($i=0; $i -lt {FORKS}; $i++) {{ & $env:ComSpec /d /c rem }}" + _PWSH_T1
+_PWSH_WRITES = (_PWSH_T0 + f"for ($i=0; $i -lt {WRITES}; $i++) {{ [IO.File]::WriteAllText(\"$d\\f$i\", 'x') }}"
+                + _PWSH_T1)
 
 
-def _timed(runner, timer, argv, timeout=120):
-    start = timer()
-    code, _, err = runner(argv, timeout)
-    elapsed = timer() - start
+def _elapsed(runner, argv, timeout=300):
+    """Seconds the script measured itself, from its last `start end` line.
+    Anything unreadable raises: an unreadable timing is not zero."""
+    code, out, err = runner(argv, timeout)
     if code != 0:
         raise RuntimeError(f"exit {code}: {decode(err).strip()[:200]}")
-    return elapsed
-
-
-def _side(runner, timer, prefix, scripts):
-    """`{"forks": s, "writes": s}` net of the shell's own start-up, or
-    `{"error": ...}`. A side that failed is an error, never a number."""
-    base, forks, writes = scripts
+    lines = [line.strip() for line in decode(out).splitlines() if line.strip()]
+    shown = lines[-1] if lines else "empty output"
+    parts = shown.replace(",", ".").split()
     try:
-        startup = _timed(runner, timer, prefix + [base])
-        return {"forks": round(max(0.0, _timed(runner, timer, prefix + [forks]) - startup), 4),
-                "writes": round(max(0.0, _timed(runner, timer, prefix + [writes]) - startup), 4)}
+        start, end = (float(part) for part in parts)
+    except ValueError as exc:
+        raise ValueError(f"could not read the shell's own timing from {shown!r}") from exc
+    if end < start:
+        raise ValueError(f"the shell's clock ran backwards: {shown!r}")
+    return end - start
+
+
+def _side(runner, prefix, forks, writes):
+    """`{"forks": s, "writes": s}` as the shell timed them, or `{"error": ...}`.
+    A side that failed or could not be read is an error, never a number."""
+    try:
+        return {"forks": round(_elapsed(runner, prefix + [forks]), 4),
+                "writes": round(_elapsed(runner, prefix + [writes]), 4)}
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
         return {"error": str(exc) or type(exc).__name__}
 
@@ -658,7 +677,7 @@ def _verdict(sides):
     return "wsl-faster" if faster else "gitbash-faster"
 
 
-def measure(root, runner=None, timer=None, cache=None, cfg=None):
+def measure(root, runner=None, cache=None, cfg=None):
     """50 forks and 200 small writes for Git Bash, pwsh and WSL, at the repo's
     own location, plus WSL's ext4 as the in-WSL clone reference when the repo
     is on a Windows drive. Off native Windows: `n/a`, nothing run."""
@@ -668,7 +687,6 @@ def measure(root, runner=None, timer=None, cache=None, cfg=None):
     import socket
     import tempfile
     runner = runner or capture
-    timer = timer or time.perf_counter
     root = _absolute(root)
     cfg = settings(root) if cfg is None else cfg
     cache = effective_probe(load_cache() if cache is None else cache, cfg)
@@ -680,16 +698,15 @@ def measure(root, runner=None, timer=None, cache=None, cfg=None):
         if bash:
             d_bash = os.path.join(work, "gitbash").replace("\\", "/")
             os.makedirs(d_bash)
-            sides["gitbash"] = _side(runner, timer, [bash, "-c"],
-                                     (":", _BASH_FORKS, f"d='{d_bash}'; " + _BASH_WRITES))
+            sides["gitbash"] = _side(runner, [bash, "-c"], _BASH_FORKS, f"d='{d_bash}'; " + _BASH_WRITES)
         else:
             sides["gitbash"] = {"error": why}
         pwsh, why = resolve_pwsh()
         if pwsh:
             d_pwsh = os.path.join(work, "pwsh")
             os.makedirs(d_pwsh)
-            sides["pwsh"] = _side(runner, timer, [pwsh, "-NoProfile", "-NonInteractive", "-Command"],
-                                  ("exit 0", _PWSH_FORKS, f"$d = '{d_pwsh}'; " + _PWSH_WRITES))
+            sides["pwsh"] = _side(runner, [pwsh, "-NoProfile", "-NonInteractive", "-Command"],
+                                  _PWSH_FORKS, f"$d = '{d_pwsh}'; " + _PWSH_WRITES)
         else:
             sides["pwsh"] = {"error": why}
         distro = cache.get("distro")
@@ -702,11 +719,9 @@ def measure(root, runner=None, timer=None, cache=None, cfg=None):
                 sides["wsl"] = {"error": why}
             else:
                 os.makedirs(os.path.join(work, "wsl"))
-                sides["wsl"] = _side(runner, timer, prefix, (":", _BASH_FORKS, f"d='{d_wsl}'; " + _BASH_WRITES))
+                sides["wsl"] = _side(runner, prefix, _BASH_FORKS, f"d='{d_wsl}'; " + _BASH_WRITES)
             if location == "windows-drive":
-                sides["wsl-ext4"] = _side(runner, timer, prefix, (
-                    'd=$(mktemp -d); rm -rf "$d"', _BASH_FORKS,
-                    'd=$(mktemp -d); ' + _BASH_WRITES + '; rm -rf "$d"'))
+                sides["wsl-ext4"] = _side(runner, prefix, _BASH_FORKS, _EXT4_WRITES)
     finally:
         shutil.rmtree(work, ignore_errors=True)
     return {"host": socket.gethostname(), "date": datetime.date.today().isoformat(), "root": root,
@@ -795,6 +810,9 @@ def _command_text(parts):
 
 
 def _cmd_measure(args):
+    if on_windows() and not os.path.isdir(_absolute(args.root)):
+        print(f"crew-shell: cannot measure {args.root}: not a directory this machine can reach", file=sys.stderr)
+        return 2
     result = measure(args.root)
     if result.get("state") == "n/a":
         print("crew-shell: not native Windows - nothing to measure")
