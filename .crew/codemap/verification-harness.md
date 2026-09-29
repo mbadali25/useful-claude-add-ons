@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@835ce179
+anchor: useful-claude-add-ons@59bc44e5
 verified: 2026-09-29
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -1753,3 +1753,5 @@ files in place, `plugin/crew/tests/sabotage_autopilot.py` (+98 appended), and ne
 Every body citation of the form `path:line` into those files was mapped by a line diff from `8ab733d7`
 (script) and the bare `:N` ones after a changed file's mention were listed the same way; lines inside
 dated provenance notes are left as history at their own commit. Moved in the body: rule 27 `:298-308` (and its `paths`/`run` text: `crew_ticket.py` and T-0019's two suites), rules 28-31 `:309-315`, `:316-323`, `:324-332`, `:334-341`; rule 11's `header_line`/`parse_risk` `:515-533`, and its gap sentence (rule 27 now names `crew_ticket.py`). `plugin/crew/tests/sabotage.py` is unchanged, so its `:77` / `:3054` citations hold. No suite was run for this note.
+
+**Re-anchored `835ce179` -> `59bc44e5` on 2026-09-29 (T-0019).** `59bc44e5` re-measures `.crew/verify.json` rule 27 in place (`seconds` 18 -> 19 and its `why`, 18.8s / 623 passed at `32cb1aa3`; same line count, so `:298-308` and every later rule range hold). `32cb1aa3` and `4e03afa6` between them are this refresh and the graph rebuild. No other cited path changed. Nothing else was executed for this note.

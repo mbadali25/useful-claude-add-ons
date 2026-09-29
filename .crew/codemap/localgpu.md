@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@835ce179
+anchor: useful-claude-add-ons@59bc44e5
 verified: 2026-09-29
 
 # localgpu
@@ -1476,3 +1476,5 @@ files in place, `plugin/crew/tests/sabotage_autopilot.py` (+98 appended), and ne
 Every body citation of the form `path:line` into those files was mapped by a line diff from `8ab733d7`
 (script) and the bare `:N` ones after a changed file's mention were listed the same way; lines inside
 dated provenance notes are left as history at their own commit. Nothing under `plugin/localgpu/` changed; the only cited lines that differ are the version files and `plugin/crew/BUDGETS.md:11`, changed in place. Nothing was executed for this note.
+
+**Re-anchored `835ce179` -> `59bc44e5` on 2026-09-29 (T-0019).** `59bc44e5` re-measures `.crew/verify.json` rule 27 in place (`seconds` 18 -> 19 and its `why`, 18.8s / 623 passed at `32cb1aa3`; same line count, so `:298-308` and every later rule range hold). `32cb1aa3` and `4e03afa6` between them are this refresh and the graph rebuild. No other cited path changed. Nothing else was executed for this note.

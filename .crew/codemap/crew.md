@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@835ce179
+anchor: useful-claude-add-ons@59bc44e5
 verified: 2026-09-29
 
 ## Re-derive provenance
@@ -2814,3 +2814,5 @@ files in place, `plugin/crew/tests/sabotage_autopilot.py` (+98 appended), and ne
 Every body citation of the form `path:line` into those files was mapped by a line diff from `8ab733d7`
 (script) and the bare `:N` ones after a changed file's mention were listed the same way; lines inside
 dated provenance notes are left as history at their own commit. Moved and corrected in the body: the autopilot router and status sentences (`crew_autopilot.py` `route_args` `:1302`, `status` `:1499`, `main` `:1638`, `_cli_deploy` `:1607`), `crew_ticket.py`'s `AUTOPILOT` `:159`, `approve` `:738`, `parse_risk` `:524`, `precheck` `:873` (it read `:810`, stale before T-0019), and the rule 27-32 ranges; a new T-0019 paragraph cites `mint` `:1201` and its helpers, re-read with `grep -n`. The tracker section gains the measured `_atomic_update` race and `mint`'s lock. Nothing was executed for this note beyond `grep -n` and the line-diff script.
+
+**Re-anchored `835ce179` -> `59bc44e5` on 2026-09-29 (T-0019).** `59bc44e5` re-measures `.crew/verify.json` rule 27 in place (`seconds` 18 -> 19 and its `why`, 18.8s / 623 passed at `32cb1aa3`; same line count, so `:298-308` and every later rule range hold). `32cb1aa3` and `4e03afa6` between them are this refresh and the graph rebuild. No other cited path changed. Nothing else was executed for this note.
