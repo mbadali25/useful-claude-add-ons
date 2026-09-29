@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@3648f59a
-verified: 2026-09-28
+anchor: useful-claude-add-ons@d7084bd1
+verified: 2026-09-29
 
 ## Re-derive provenance
 
@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 36 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.59 (T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.60 (T-0030's bump at `10b916e7`, one past main's 1.0.59 after its merge of `2693d0fa`; 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -268,7 +268,7 @@ Re-executed on T-0075's merge of `bebbb97f` (T-0023 landed): 122 / 68 / 54 / 0 -
 config leaf; unchanged again on its merges of `67caa4b8`, `d2fbd408` and `e6e10432`. Re-executed on
 T-0075's merge of `f54af3fa` (T-0072 landed): 123 / 68 / 55 / 0, T-0072's `autopilot.deploy`.
 `plugin/crew/tests/test_crew_config.py:286` asserts 123. T-0004's `CHANGELOG.md` entry
-now says "117 -> 119" (`:928-929` at `3648f59a`, after T-0075's merge of `6387ab49` put T-0090's, T-0089's and T-0092's entries above it and its round-5 fixes grew its own; `:825-826` at `938e3b11`, after T-0075's round-4 fixes grew its own entry; `:807-808` on T-0075's merge of `f54af3fa`, after T-0072's entry went in above it; `:759-760` at `3724731b`, after T-0075's merge of `e6e10432` put T-0079's entry above it and its round-3 fix grew its own; `:653-654` at `f54af3fa`; `:699-700` since T-0075's merge of `5050ea3b` put shipstation's entry above it, `:688-689` after its merge of `f96e9ec9` put T-0077's entry above it, `:666-667` on T-0075's merge of `d2fbd408`; `:608-609` at `d2fbd408`, before T-0075's entry went in above it; `:545-546` on T-0075's branch before that merge; `:515-516` at `67caa4b8`, before T-0024's four entries and T-0075's went in above it;
+now says "117 -> 119" (`:1076-1077` on T-0030's branch at `d7084bd1`, after it moved T-0030's entry to the top; `:942-943` at main `2693d0fa`; `:928-929` at `3648f59a`, after T-0075's merge of `6387ab49` put T-0090's, T-0089's and T-0092's entries above it and its round-5 fixes grew its own; `:825-826` at `938e3b11`, after T-0075's round-4 fixes grew its own entry; `:807-808` on T-0075's merge of `f54af3fa`, after T-0072's entry went in above it; `:759-760` at `3724731b`, after T-0075's merge of `e6e10432` put T-0079's entry above it and its round-3 fix grew its own; `:653-654` at `f54af3fa`; `:699-700` since T-0075's merge of `5050ea3b` put shipstation's entry above it, `:688-689` after its merge of `f96e9ec9` put T-0077's entry above it, `:666-667` on T-0075's merge of `d2fbd408`; `:608-609` at `d2fbd408`, before T-0075's entry went in above it; `:545-546` on T-0075's branch before that merge; `:515-516` at `67caa4b8`, before T-0024's four entries and T-0075's went in above it;
 `:436-437` at `bebbb97f`, before T-0018's; `:390-391` at `db14619c`, before T-0023's; `:276-277` at `f0b12ee6`, before T-0021's; `:228-229` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this
 paragraph was first written. T-0005's entry states no leaf count; T-0023's says 121 -> 122; T-0072's says 122 -> 123.
 
@@ -744,7 +744,7 @@ is emitted). No new hook and no new skill: `plugin/crew/hooks/hooks.json` is
 unchanged. Tests: `plugin/crew/tests/test_crew_route.py`,
 `plugin/crew/tests/test_crew_route_hook.py`; mutations
 `plugin/crew/tests/sabotage_route.py` (registered at
-`plugin/crew/tests/sabotage.py:79`); `.crew/verify.json` rule 29 (`:315-323`);
+`plugin/crew/tests/sabotage.py:80`; `:79` on main `2693d0fa`, before T-0030's `sabotage_coord` import at `:72`); `.crew/verify.json` rule 29 (`:315-323`);
 T-0024's group-approval rule 30 (`:325-332`) follows it.
 
 **`deploy_allowed` (T-0072, crew 1.0.51).** DERIVED at `80326b1d` (T-0072's review-round-4 redesign, `35733d76`); lines re-read after its merge of T-0077 (`a4eb2f55`, `_rel` +6 at `:170`) and its review-round-5 fix (`0f488706`, `_resolve_root` +4).
@@ -1041,6 +1041,59 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   `scope_guard.py`, `completion_audit.py`, `crew_freshness.py` and
   `scope_base.py` with their own suites, to one pytest rule. Confirmed
   present, **not run and not read** by this note.
+
+## Cross-session claims (T-0030, crew 1.0.60)
+
+`plugin/crew/hooks/scripts/crew_coord.py` keeps claims on a git branch,
+`crew-coord/<channel>`, on a shared remote (`claims/<repo>__<id>.json` plus an
+append-only `log.jsonl`). Like `crew_refresh_check.py` it is a CLI, not a hook:
+`plugin/crew/hooks/hooks.json` is unchanged. Writes are plumbing on the fetched
+tip and a plain push (`Channel.write`, `crew_coord.py:704`; the push argv is
+`Channel.push_argv`, `:701`), never forced, run `--no-verify` to `PUSH_REMOTE`
+(`:183`), a remote `Channel.push_env` (`:662`) defines only through
+`GIT_CONFIG_COUNT`, so no remote-tracking ref is written and no URL reaches
+argv; since review round 6 `push_env` returns None - and `write` reports
+`unknown` with nothing pushed - when any `_PUSH_REMOTE_KEYS` (`:187`) probe
+exits anything but 0 (values) or 1 (absent). Recovery (`assess_recovery`,
+`:1136`) adopts only a same-machine, same-worktree claim the local
+`<git-common-dir>/crew/coord-identity.json` (rewritten under `_locked`,
+`:517`) names, whose `heartbeat_at` is older than the TTL (`is_stale`,
+`:1098`) and whose pid is provably gone on Linux (`_linux_probe`, `:286`) or
+Windows (`_windows_probe`, `:329`); a probe that cannot tell reads alive, and
+on Linux `probe_holder` (`:411`) reads gone only from the PID namespace the
+claim recorded, which `holder_pidns` (`:399`) records only when the pid was
+visible at claim time. A holder is compared by `same_holder` (`:442`); the
+heartbeat lock is keyed by `holder_tag` (`:1280`); `Channel.fetch` (`:575`)
+takes only the exact channel ref from `ls-remote`. The `<repo>` half of a key
+is derived (`repo_key`, `:1006`, `owner_name`, `:864`): origin's URL from
+`git remote get-url origin`, so insteadOf applies. A local path, or the path a
+`file://` URL names (`_local_path`, `:769`: percent-decoded, empty or
+`localhost` authority only), is made absolute against the worktree and
+resolved by `_resolved` (`:994`) through `_git_opens` (`:976`), which applies
+`enter_repo`'s suffix order `_GIT_SUFFIXES` (`:937`, git v2.53.0
+`setup.c`), follows a gitfile and takes a linked worktree's git directory to
+its common one, then `realpath`; its segments (`_local_segments`, `:821`) keep
+their case and `.git`, and the key is led by `_LOCAL_MARK` (`:176`, `file_`).
+A network URL is split by `_split_url` (`:800`) into its lowercased host and
+every path segment, `.git` dropped from the last, and one with no host left is
+could-not-tell. Each part is written by `_key_part` (`:754`; every byte outside
+`[a-z0-9-]` as `_` + two hex digits) and joined by '.'; every Azure DevOps form
+gives `dev.azure.com`, org, project, repo through `_azure_parts` (`:836`) and
+`_azure_part` (`:743`), whose markers are compared only after decoding. A URL
+the key cannot be told from, a relative path passed to `owner_name` alone, a
+failing or empty `git config` probe of origin, or a failing
+`crew_ticket.common_dir` in `_fallback_repo` (`:921`) raises `UnknownKey`, exit
+3, and only `git config` exit 1 falls back to the main worktree's directory
+name; `parse_ticket` (`:1041`) upper-cases the id; `ttl_minutes` (`:1204`)
+refuses a `coord.ttlMinutes` outside 0 to `MAX_TTL_MINUTES` (`:161`, 10080);
+a recommended command withholds peer values that fail the key rule
+(`_command_part`, `:1060`). Tests in `plugin/crew/tests/test_crew_coord.py`,
+mutations in `plugin/crew/tests/sabotage_coord.py` (`COORD_MUTATIONS`, 94 by
+`len()` at `d7084bd1`, imported at `plugin/crew/tests/sabotage.py:72` and
+appended at `:3056`), both mapped by `.crew/verify.json:333-339` (rule 31, the
+last rule). DERIVED from the source at this anchor. `/crew:autopilot`'s resume
+step does not call it; the README section "Cross-session claims" carries that
+instruction instead.
 
 `docs/diagrams/process-crew-lifecycle.mmd` drew `/crew:done` as "all three
 or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
@@ -2491,3 +2544,5 @@ hold. Nothing else was executed for this note.
 The writers-and-menu section was re-derived from the source at `3648f59a`: `_shape`'s `under` kind (`crew_config.py:2639`), the two leaf rules in `value_allowed` (`:2708`) and `_content_problem` (`:2745-2748`), the open-table rule in `validate_providers`' one pin loop (`:223-237`), the writers' `OSError` boundary (`:2888`, `:3102`) and `Lock`'s PID-write cleanup (`crew_config_files.py:120-127`). `crew_config.py` moved +1 from `:204` (so `default_config` `:243`, `default_global_config` `:396`, `_RATCHETED` `:2451-2563` with its steps `:2466`, `:2479`, `:2490`, `:2500`, `:2536`, `:2559`, `:1263`, `:384`), then by the docstring trims and the new rules below `:2566` (`leaf_updates` `:2584`, `value_allowed` `:2700`, `plan_global_write` `:2846`, `write_global_config` `:2865`, `plan_repo_write` `:3045`, `write_repo_config` `:3071`), each re-taken with `grep -n`; `crew_config_files.py` +7 from `:120` (`update_json` `:350`). `test_crew_config.py:284` -> `:286`. The CHANGELOG "117 -> 119" citation gains `:928-929` at `3648f59a`. The version sentence moves to 1.0.55. Leaves re-executed: 123 / 68. `CONFIG_MENU_MUTATIONS` is 112 by `len()`. `wc -l crew_config.py` is 3399.
 
 Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `938e3b11` for a line in T-0075's copy of this note and from `6387ab49` for a line only in main's, to the tree at `3648f59a` (difflib equal blocks); every citation that did not map to itself was read with `sed -n` / `grep -n`. The script attributes some bare `:N` to the wrong file (a `.crew/verify.json` range after a test-file mention, a `check-marketplace.py` range after a `PLUGINS.md` mention, a `SKILL.md` in another skill); those were read and hold. A citation inside a list of per-commit positions keeps its commit's line; only the current position is added. Nothing else was executed for this note.
+
+**Re-anchored `3648f59a` -> `d7084bd1` on 2026-09-29 (T-0030 merges main `2693d0fa`, crew 1.0.60).** `2693d0fa` is origin/main (crew 1.0.59) as merged into `T-0030-coord` by `e14bc6ab`, whose code-map, rules and graph conflicts took main's side; `233eac6a` is T-0030's review-round-6 fixes (`crew_coord.py`, `test_crew_coord.py`, `sabotage_coord.py`, `plugin/crew/README.md`), `10b916e7` its crew 1.0.60 bump (`plugin.json`, `marketplace.json`, `plugin/PLUGINS.md`, `CHANGELOG.md` - T-0030's entry moved to the top of [Unreleased] - `plugin/crew/BUDGETS.md`, `.crew/verify.json`), and `d7084bd1` moves T-0030's `crew_coord.py` rule to the end of `.crew/verify.json` (rule 31, `:333-339`), so rules 26-30 keep main's lines. `plugin/crew/tests/sabotage.py` gains the `sabotage_coord` import at `:72` (every later import +1) and `+ COORD_MUTATIONS` on the `MUTATIONS +=` statement, now `:3053-3056`. Every body citation of the form `path:line`, and every bare `:N` carried from the last path named in its paragraph, into a file changed between `2693d0fa` and `d7084bd1` was mapped by script (difflib equal blocks) and every one that did not map to itself was read with `sed -n` / `grep -n`. Moved here: the version sentence (1.0.60), `sabotage.py:79` -> `:80` in the routing section, and the T-0004 `CHANGELOG.md` "117 -> 119" position (`:1076-1077`, current position added, history kept). The "Cross-session claims (T-0030, crew 1.0.60)" section is re-derived from `crew_coord.py` at `d7084bd1`, each symbol's line re-taken with `grep -n`. Version-file lines changed in place and citations inside provenance notes are left as their commit's. Nothing was executed for this note beyond that mapping and those reads.

@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@3648f59a
-verified: 2026-09-28
+anchor: useful-claude-add-ons@d7084bd1
+verified: 2026-09-29
 
 # localgpu
 
@@ -1340,3 +1340,5 @@ hold. Nothing else was executed for this note.
 No body citation moved: this note's body cites `plugin/localgpu/` and crew's config reader by section; the `crew_config.py`, `CONFIG.md` and `README.md` lines it names sit inside dated provenance notes and keep their commit's line.
 
 Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `938e3b11` for a line in T-0075's copy of this note and from `6387ab49` for a line only in main's, to the tree at `3648f59a` (difflib equal blocks); every citation that did not map to itself was read with `sed -n` / `grep -n`. The script attributes some bare `:N` to the wrong file (a `.crew/verify.json` range after a test-file mention, a `check-marketplace.py` range after a `PLUGINS.md` mention, a `SKILL.md` in another skill); those were read and hold. A citation inside a list of per-commit positions keeps its commit's line; only the current position is added. Nothing else was executed for this note.
+
+**Re-anchored `3648f59a` -> `d7084bd1` on 2026-09-29 (T-0030 merges main `2693d0fa`, crew 1.0.60).** `2693d0fa` is origin/main (crew 1.0.59) as merged into `T-0030-coord` by `e14bc6ab`, whose code-map, rules and graph conflicts took main's side; `233eac6a` is T-0030's review-round-6 fixes (`crew_coord.py`, `test_crew_coord.py`, `sabotage_coord.py`, `plugin/crew/README.md`), `10b916e7` its crew 1.0.60 bump (`plugin.json`, `marketplace.json`, `plugin/PLUGINS.md`, `CHANGELOG.md` - T-0030's entry moved to the top of [Unreleased] - `plugin/crew/BUDGETS.md`, `.crew/verify.json`), and `d7084bd1` moves T-0030's `crew_coord.py` rule to the end of `.crew/verify.json` (rule 31, `:333-339`), so rules 26-30 keep main's lines. `plugin/crew/tests/sabotage.py` gains the `sabotage_coord` import at `:72` (every later import +1) and `+ COORD_MUTATIONS` on the `MUTATIONS +=` statement, now `:3053-3056`. Every body citation of the form `path:line`, and every bare `:N` carried from the last path named in its paragraph, into a file changed between `2693d0fa` and `d7084bd1` was mapped by script (difflib equal blocks) and every one that did not map to itself was read with `sed -n` / `grep -n`. No body citation moved: every differing citation is a version-file or `plugin/crew/BUDGETS.md:11` line changed in place inside a dated provenance note, left as history. Nothing under `plugin/localgpu/` changed. Nothing was executed for this note beyond that mapping and those reads.
