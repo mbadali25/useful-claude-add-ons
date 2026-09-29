@@ -70,7 +70,9 @@ ticket's spec.Touch. File it to `TODO.md`, not to the diff.
 
 Run the checks your changed paths map to in `.crew/verify.json`, or
 `./_verify/smoke.sh` when there is no map. Fix and rerun on red. A changed
-path mapping to no rule gets one before you finish (step 6).
+path mapping to no rule gets one before you finish (step 6). On native Windows,
+run each check through `crew_shell.py run -- "<command>"` and quote its
+`crew-shell:` route line (crew-setup/platform.md).
 
 ## 5. Specialists, endpoints, coverage
 

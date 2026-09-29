@@ -38,6 +38,12 @@ does not keep a separate ledger file the way upstream's does.
    the end - a later step's passing test does not tell you an earlier one's
    assumption was ever validated.
 
+On native Windows, run each step's test through
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_shell.py run -- "<test command>"`
+and repeat its `crew-shell:` route line in your report. It picks the shell from
+`shellRoute.mode`; see "Choosing the shell route on Windows" in
+`crew-setup/platform.md`. Elsewhere, run the command as written.
+
 ## Rulings, not stalls
 
 Conflicts, ambiguities and plan defects get decided, not escalated by

@@ -87,9 +87,18 @@ credentials do not cross the boundary (a Windows `aws` is not the WSL `aws`) -
 and offer moving the clone inside WSL, which removes the problem rather than
 wrapping it.
 
+**On native Windows, pick the shell route.** Run
+`crew_shell.py probe --write`. When the state is `usable`, also run
+`crew_shell.py measure --write`. Report the state and the numbers, then ask
+which `shellRoute.mode` I want (`auto`, `wsl`, `powershell` or `gitbash`) and
+whether I want the in-WSL clone it offers. On `not-installed`, print the
+recommendation it gives and never run it. See "Choosing the shell route on
+Windows" in `crew-setup/platform.md`.
+
 **Done when:** platform recorded, every tool the repo needs resolved to a form
-that runs on this machine, and any CRLF or filesystem issue either fixed or
-explicitly accepted by me.
+that runs on this machine, any CRLF or filesystem issue either fixed or
+explicitly accepted by me, and on native Windows the shell route probed,
+measured when WSL is usable, and its mode chosen.
 
 ## Phase 1 — Config and structure
 

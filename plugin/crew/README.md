@@ -99,6 +99,17 @@ even on Windows. See
 the harness matches CI. Native Windows works but doubles the surface area for no
 benefit unless the application genuinely requires it.
 
+**On native Windows, crew picks a shell route for its long-running jobs.** The
+per-step tests and verify-map checks in `/crew:implement`, and graphify builds,
+run through `crew_shell.py run`. It routes by `shellRoute.mode` (`auto`, `wsl`,
+`powershell` or `gitbash`) and prints one `crew-shell:` line naming the route
+and why. `auto` uses WSL2 when it is usable and either the repo lives inside
+WSL or a measurement showed WSL faster for this repo. Otherwise it runs plain
+argv directly and bash syntax in Git Bash. A bash string never goes to pwsh.
+`/crew:status` shows the route on a `shell` line. Hooks do not change, and
+nothing changes on Linux, macOS or inside WSL. See "Choosing the shell route on
+Windows" in `skills/crew-setup/platform.md`.
+
 ### The three WSL problems worth knowing before they cost you an hour
 
 **Repo location decides your test runtime.** A clone under `/mnt/c/...` sits on

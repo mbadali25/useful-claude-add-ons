@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@136f4b33
+anchor: useful-claude-add-ons@8f85657a
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -234,8 +234,8 @@ landed) into T-0023, module resolved from this checkout
 
 | | Leaves | Source |
 |---|---|---|
-| `default_config()` | **123** | `plugin/crew/hooks/scripts/crew_config.py:240` |
-| `default_global_config()` | **68** | `plugin/crew/hooks/scripts/crew_config.py:393` |
+| `default_config()` | **125** | `plugin/crew/hooks/scripts/crew_config.py:240` |
+| `default_global_config()` | **70** | `plugin/crew/hooks/scripts/crew_config.py:401` |
 | repo-only | **55** | the set difference |
 
 Treat these as a fact about one commit, not a standing figure. Re-measure
@@ -263,8 +263,10 @@ T-0024's landing merge adds no leaf (it changes neither template nor `crew_confi
 Re-executed on T-0072's merge of `bebbb97f`: 123 / 68 / 55 / 0 - T-0072 added
 `autopilot.deploy` to `default_config()` only. Re-executed on T-0072's merge of `67caa4b8`
 (T-0018 landed): 123 / 68 / 55 / 0 - T-0018 added no config leaf. Re-executed at `80326b1d`
-(T-0072 on top of T-0024's `8de3c669`): 123 / 68 / 55 / 0.
-`plugin/crew/tests/test_crew_config.py:282` asserts 123. T-0004's `CHANGELOG.md` entry now says
+(T-0072 on top of T-0024's `8de3c669`): 123 / 68 / 55 / 0. Re-executed on T-0040's branch
+(off `6387ab49`): 125 / 70 / 55 / 0 - T-0040 added `shellRoute.mode` and `shellRoute.distro`
+to both `default_config()` (`:335`) and `default_global_config()` (`:575`), so repo-only is
+unchanged. `plugin/crew/tests/test_crew_config.py:294` asserts 125. T-0004's `CHANGELOG.md` entry now says
 "117 -> 119" (`:653-654`; `:608-609` at `8de3c669`, before T-0072's entry went in above it; `:515-516` at `67caa4b8`, before T-0024's four entries went in above it; `:436-437` at `bebbb97f`, before T-0018's entry went in above it; `:390-391` at `db14619c`, before T-0023's; `:276-277` at `f0b12ee6`, before T-0021's; `:228-229` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this
 paragraph was first written. T-0005's entry states no leaf count; T-0023's says 121 -> 122; T-0072's says 122 -> 123.
 
@@ -341,15 +343,15 @@ before the subcommand (`crew_guards.tf_skip_options` `:1541`, used by `_terrafor
 `:1540`), so `terragrunt --working-dir infra destroy` is a destroy, and `_unwrap` reads a listed
 wrapper's options as GNU getopt does (`crew_guards.skip_wrapper_options` `:1560`). DERIVED from the code cited.
 
-**The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2444-2556`)
-now holds 14 keys**, built in seven steps (a literal dict of two at `:2444`, four `.update()`
-calls at `:2459`, `:2472`, `:2483` and `:2493`, and two single-key assignments at `:2529` and
-`:2552`) rather than one table: `pm.authority`, `install.policy`, the 6 `GUARD_NAMES` keys, the 2
+**The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2456-2568`)
+now holds 14 keys**, built in seven steps (a literal dict of two at `:2456`, four `.update()`
+calls at `:2471`, `:2484`, `:2495` and `:2505`, and two single-key assignments at `:2541` and
+`:2564`) rather than one table: `pm.authority`, `install.policy`, the 6 `GUARD_NAMES` keys, the 2
 `PROD_GUARD_NAMES` keys, `guards.roleWrites`, `guards.cloudGuard`,
 `change.requireForProduction` and `environments.prodUnattended` (T-0005) =
 2 + 6 + 2 + 1 + 1 + 1 + 1 = 14. Counted by reading the construction sites and confirmed with
 `len(crew_config._RATCHETED)` on the T-0005 landing merge and again on T-0023's merge of main
-(14), not by trusting the literal alone — the literal at `:2444-2455` holds only 2. (Before T-0005 this said "five steps" for 13 keys; the
+(14), not by trusting the literal alone — the literal at `:2456-2467` holds only 2. (Before T-0005 this said "five steps" for 13 keys; the
 sites were already six then — the literal, four `.update()` calls and one assignment.) The
 same key is registered in `crew_guards.RATCHETED_KEYS`
 (`plugin/crew/hooks/scripts/crew_guards.py:545-549`). `autopilot.*` is not ratcheted
@@ -364,7 +366,7 @@ they disagree:
 - `crew_config.py` (used by `verify-gate.sh`, `promote-gate.sh`,
   `role-write-guard.ps1`'s config lookups, and everything the ratchet/guard
   machinery above touches) reads **only** `.crew/config.json`
-  (`plugin/crew/hooks/scripts/crew_config.py:1260`, and the module's own
+  (`plugin/crew/hooks/scripts/crew_config.py:1272`, and the module's own
   docstring at `:1` — "Owns the single definition of a fresh
   `.crew/config.json`").
 - `crew_context.py`'s `load_crew_config`
@@ -572,7 +574,7 @@ a module importing it keeps its own setting. `main` registers `deploy-allowed` a
 (T-0072; the policy itself is the `deploy_allowed` paragraph below). Defaults live in
 `crew_state.AUTOPILOT_DEFAULTS` (`plugin/crew/hooks/scripts/crew_state.py:1090`,
 `{"mode": "off", "maxPhases": 12, "deploy": "none"}`), deep-copied into `default_config()`
-(`plugin/crew/hooks/scripts/crew_config.py:381`). It registers no hook -
+(`plugin/crew/hooks/scripts/crew_config.py:389`). It registers no hook -
 `plugin/crew/hooks/hooks.json` is unchanged since `a0c0847e`.
 
 `crew_ticket.parse_risk` (`plugin/crew/hooks/scripts/crew_ticket.py:505`)
@@ -649,6 +651,35 @@ through `_safe_text` the same way. Tests `plugin/crew/tests/test_crew_autopilot_
 one-root, probe and layer cases); mutations `DEPLOY_MUTATIONS` in
 `plugin/crew/tests/sabotage_autopilot.py` (`:170`, 64 entries by `len(DEPLOY_MUTATIONS)` at `0f488706`), appended to
 `AUTOPILOT_MUTATIONS` at `:473`.
+
+## The Windows shell route (T-0040)
+
+DERIVED at `8f85657a` (T-0040's branch), read in full. `plugin/crew/hooks/scripts/crew_shell.py` (857 lines)
+picks the shell crew's long-running jobs run in on native Windows. It is a CLI
+(`probe`, `measure`, `classify`, `run`; `main` at `:834`) and a library for
+`crew_status.py`. It imports no crew module at import time. No hook calls it:
+`plugin/crew/hooks/hooks.json` and `crew_platform.py` are unchanged. `host_os` (`:60`) gives
+`windows`, `windows-bash`, `linux`, `macos`, `wsl` or `other`, and `on_windows` (`:83`) gates
+everything: off native Windows `probe` returns `n/a`, `status_line` returns None, and `run`
+(`:583`) execs `["bash", "-c", cmd]` with no config read and no message. The preference is
+`shellRoute.mode`/`.distro` in both config layers (`plugin/crew/hooks/scripts/crew_config.py:335`
+and `:575`), read through `resolve_config` by `settings` (`:399`). `mode` (`:420`) reads an
+unrecognised value as `auto` and names it. The probe (`:297`) runs only `wsl.exe --list
+--verbose` and one `command -v python3; command -v git` in the default `*` distro (or
+`shellRoute.distro`). It decodes UTF-16LE with `decode` (`:124`) and returns `usable`,
+`not-installed`, `no-distro`, `wsl1-only`, `no-python3`, `no-git`, `broken` or `unknown`. A
+runner that raises is `unknown` through `_call` (`:283`), never `not-installed`. The answer is
+cached machine-locally at `probe_path` (`:358`), beside `crew_state.GLOBAL_CONFIG_PATH` and
+resolved at call time. `write_cache` (`:380`) computes the text first, then temp file and
+`os.replace`, LF. `classify` (`:149`) proves plain argv or returns bash, and `METACHARACTERS`
+(`:42`) and `SHELL_WORDS` (`:44`) are its lists. `decide` (`:487`) is the pure route table.
+`resolve_pwsh` (`:193`) and `resolve_gitbash` (`:212`) resolve absolutely and refuse WSL's
+System32 launcher (`_is_launcher`, `:204`). `measure` (`:661`) times 50 forks and 200 writes
+per side net of start-up. `status_line` (`:727`) reads config and the cache only, and
+`plugin/crew/hooks/scripts/crew_status.py:208` calls it and appends it after the `verify` line. Tests:
+`plugin/crew/tests/test_crew_shell.py`, `plugin/crew/tests/test_status.py`. Mutations:
+`plugin/crew/tests/sabotage_shell.py` (`SHELL_MUTATIONS`, 11 entries, registered at
+`plugin/crew/tests/sabotage.py:81`). The `.crew/verify.json` rule is the last in the map.
 
 ## verify-gate's temp-file rule capture
 
@@ -867,7 +898,7 @@ Obsidian vault). A CLI the commands call, not a hook.
   the next free id on `id taken`, stop on any other failed `create`, and
   create the ticket folder only after a `create` that succeeded;
   `jira-sync.md` and `sdp-sync.md` honour `--to`; `crew_status.py` prints its
-  tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:63`).
+  tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:64`).
 - Tests: `plugin/crew/tests/test_crew_tracker.py`, fixtures under
   `plugin/crew/tests/tracker_fixtures/`, 87 mutations (81 until T-0077 added six) in
   `plugin/crew/tests/sabotage_tracker.py` (two of them RED only as root: the
@@ -923,9 +954,9 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
 - `plugin/crew/hooks/scripts/crew_state.py:996` — `TRIGGERS`, a 15-entry
   tuple, unchanged in membership and order from the previous anchor.
 - `plugin/crew/hooks/scripts/crew_state.py:2901` — `evaluate_triggers`.
-- `plugin/crew/hooks/scripts/crew_config.py:240` / `:393` —
+- `plugin/crew/hooks/scripts/crew_config.py:240` / `:401` —
   `default_config()` / `default_global_config()`.
-- `plugin/crew/hooks/scripts/crew_config.py:2444` — `_RATCHETED`, the
+- `plugin/crew/hooks/scripts/crew_config.py:2456` — `_RATCHETED`, the
   14-key ratchet table (seven construction steps).
 - `plugin/crew/hooks/scripts/role_write_guard.py:539` — `classify`, the
   decision function; `:684` — `main()`.
@@ -2138,3 +2169,5 @@ this note beyond the citation script and the tuple count.
 **Re-anchored `c192b83d` / `3c4f1a68` -> `25d2de63` on 2026-09-28 (T-0092 merged onto `f8b6c8d7`, T-0091, crew 1.0.53).** `25d2de63` merges origin/main `f8b6c8d7` (T-0091 landed at `c192b83d`: `CLAUDE.md`'s Landmines paragraph and a `TODO.md` entry, no plugin bumped) into `T-0092-build`. The code-map, INDEX, rules, diagram and graph conflicts were resolved mechanically - both sides' provenance notes kept, main's first; the anchor taken from this note. Every body citation of the form `path:line` was compared by script twice: `c192b83d` -> `25d2de63` differs only on T-0092's own lines (the exclusion, the re-pointed `review_prompt.py` lines, `plugin/crew/README.md:842` in place, the version lines), and `3c4f1a68` -> `25d2de63` only on T-0091's `CLAUDE.md` lines, which T-0091's own notes above cite at `c192b83d`, and on `TODO.md:5048`, cited in T-0092's notes above as that commit's line: T-0091's three added lines move the bullet to `:5051`. Nothing was executed for this note.
 
 **Re-anchored `25d2de63` -> `136f4b33` on 2026-09-28 (T-0092 merged onto `ff59160f`, T-0089, crew 1.0.54).** `e2220836` merges origin/main `ff59160f` (T-0089 landed as crew 1.0.53 at `0f526a8c`: `plugin/crew/tests/test_role_write_guard.py` fixtures and a `CHANGELOG.md` entry) into `T-0092-build`; the merge was clean. `136f4b33` re-bumps crew to 1.0.54 and moves T-0092's `1.0.53` mentions (`review_patch.py`'s docstring, `plugin/crew/README.md:842`, `TODO.md:5051`, the two test-file comments, its `CHANGELOG.md` heading) to 1.0.54, all in place. Every body citation of the form `path:line` into a file changed between `25d2de63` and `136f4b33` was compared by script: the only differences are version-file lines changed in place, `plugin/crew/README.md:842` in place, and lines cited inside dated provenance notes (`CHANGELOG.md`, which T-0089's entry shifts by 12 lines below `:80`, and `TODO.md:5048`), left as history at their own commit. No citation into `test_role_write_guard.py` exists here. The version sentence and the T-0092 DERIVED bullet move to 1.0.54. Nothing was executed for this note.
+
+**Re-anchored `136f4b33` -> `8f85657a` on 2026-09-28 (T-0040).** `8f85657a` is T-0040's step-8 commit on `T-0040-shell-routes`, cut from main `6387ab49`. `git diff --name-only 136f4b33 8f85657a` over every path this note cites returns, outside the code maps, only T-0040's files: `crew_config.py` (the `shellRoute` block, +8 after `:327` and +4 after `:563`), `crew_status.py` (+1 import, +5 after the verify line), `sabotage.py` (+1 import at `:81`, the concatenation), `crew-setup/SKILL.md` (the inline copy), both templates, `test_crew_config.py`, `test_status.py`, and the new `crew_shell.py`, `sabotage_shell.py` and `test_crew_shell.py`. Every body citation of the form `path:line` into those files was mapped through `git diff -U0` by script and re-read: moved and re-cited are `crew_config.py` `:393` -> `:401`, `:1260` -> `:1272`, `:381` -> `:389`, the ratchet construction sites `:2444`-`:2556` -> `:2456`-`:2568` (bare citations included), `crew_status.py:63` -> `:64`, and `test_crew_config.py:282` -> `:294`. The leaf counts were re-executed (125 / 70 / 55 / 0) and the Windows shell route section is new. Lines cited inside dated provenance notes are left as history at their own commit. Only the leaf-count functions and the citation script were executed for this note.

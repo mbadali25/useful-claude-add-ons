@@ -44,6 +44,10 @@ below. Confirm with `graphify --version`.
 graphify . --no-viz --code-only
 ```
 
+On native Windows, run it as
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_shell.py run -- "graphify . --no-viz --code-only"`
+and quote the `crew-shell:` route line (see `crew-setup/platform.md`).
+
 This is the default, always. Both flags matter and neither is optional:
 
 - **`--code-only`** skips docs, papers, and images. Without it, graphify

@@ -29,6 +29,9 @@ changed in 0.16.0 and both are silent if unmentioned:
   a repo's own `.crew/config.json`, which is why step 1's `source` column
   exists.
 
+On native Windows the walkthrough also probes WSL (`crew_shell.py probe --write`)
+and offers `shellRoute.mode`: `auto`, `wsl`, `powershell` or `gitbash`.
+
 This command works with no repo in mind: `--root` is optional, and with no
 `.crew/config.json` the `repo` layer is simply empty. Run it from anywhere.
 

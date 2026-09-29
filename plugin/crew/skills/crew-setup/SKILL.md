@@ -51,7 +51,9 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/platform.md` whenever the platform
 result is Windows or WSL. Three things there change whether the setup works at
 all: repo location under WSL (an order of magnitude in test runtime), `localhost`
 not reaching the Windows host under WSL2, and CRLF line endings breaking shell
-scripts with a misleading error.
+scripts with a misleading error. On native Windows it also covers choosing the
+shell route (`shellRoute.mode`: `auto`, `wsl`, `powershell`, `gitbash`), which
+`crew_shell.py probe --write` and `measure --write` inform.
 
 Report what it found and what you propose to create. Wait for approval.
 
