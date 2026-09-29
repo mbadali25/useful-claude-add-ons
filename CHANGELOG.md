@@ -236,6 +236,104 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 1.0.61: `/crew:autopilot` approval and questions policies (T-0010).**
+  Bumped `1.0.59 -> 1.0.61` (1.0.43, 1.0.44, 1.0.48, 1.0.50, 1.0.51, 1.0.55 and 1.0.60 on its branch; main gave 1.0.43
+  to T-0042, and T-0018, T-0024, T-0077, T-0079, T-0072, T-0076, T-0089, T-0092 and T-0075 landed first as
+  1.0.47, 1.0.48, 1.0.49, 1.0.50, 1.0.51, 1.0.52, 1.0.53, 1.0.54 and 1.0.59). Landed as 1.0.61, not 1.0.60,
+  because the landing branch's lint fixes (ruff I001, RUF100, ISC004 and BLE001 `noqa`s, pylint C0207;
+  mechanical, no behaviour change) changed `plugin/crew/` after 1.0.60 was set.
+  - **The one exception to T-0018's read-only autopilot (owner decision,
+    2026-09-27).** `crew_autopilot.py` is read-only except `approve`, and
+    only when `approval_policy` allows under the configured policy; `approve`
+    writes what `crew_ticket.approve` writes for every route: `approval.json`,
+    `scope-tickets.json` on a ticket's first approval, and, for a distinct
+    successor plan, the review ledger moved NEEDS_REPLAN -> IN_REVIEW. `next`,
+    `resume`, `settings`, `stops`,
+    `route`, `status`, `questions-check` and T-0072's `deploy-allowed` write
+    nothing (tested: a snapshot
+    of the worktree and `<git-common-dir>/crew/` is byte-identical after each,
+    and `approve` adds exactly `approval.json` and, on a ticket's first
+    approval, the scope ramp's `scope-tickets.json`, which `crew_ticket.approve`
+    writes for every route). T-0018's `route` and `status` read no policy and
+    its `SUBCOMMANDS` are unchanged; `approve` and `questions-check` are script
+    subcommands in the same dispatch. `commands/autopilot.md`, the module
+    docstring, README, CONFIG.md §20, the PLUGINS.md rows and the
+    daily-workflow and troubleshooting guides state the exception where
+    T-0018's text said nothing approves. `test_lifecycle_commands.py`'s
+    autopilot.md budget moves from 100 to 110 lines (T-0018's comment gave
+    T-0010 part of the 20-line reserve), leaving 10 for T-0012, T-0019 and
+    T-0020.
+  - Review round 4 (rejected; successor plan): the carve-out names `approve`'s
+    three writes (`approval.json`, `scope-tickets.json` on a ticket's first
+    approval, and the NEEDS_REPLAN -> IN_REVIEW ledger continuation for a
+    distinct successor plan). Three FIXes, each test-first with a
+    POLICY_MUTATIONS entry: a `.crew/config.json` that exists but is not a
+    readable JSON object, or an `autopilot` value that is not an object, reads
+    both policies as `unknown` (could not tell) instead of the default `risk` -
+    `approval_policy` refuses it in its own branch before `self` and `risk`,
+    `question_policy` stops, `settings` warns and reads `mode` as `off`, and an
+    `autopilot` receipt is demoted; an absent file or block still reads the
+    defaults. `crew_autopilot.py settings` prints `approval` and `questions` on
+    a second text line as well as in `--json`; its first line stays T-0072's
+    `mode maxPhases deploy`, which `test_crew_autopilot_deploy.py` pins
+    exactly. The duplicate `_one_line` is gone
+    (pylint E0102), pinned by a test that no module-level name is defined twice.
+  - A group confirm is owner-only (carried from T-0024's hand-off: T-0024
+    landed first without it). `crew_ticket.approve` refuses `via=autopilot`
+    with an `expect` before `expect` is validated and before anything is
+    written; the owner's own group confirm and autopilot's one-ticket approval
+    still record. Three tests in `test_crew_ticket.py`, two POLICY_MUTATIONS,
+    and README and CONFIG.md say so.
+  - Review round 3's BLOCK and two FIXes: every statement of the exception
+    (module and `approve` docstrings, `commands/autopilot.md`, README, CONFIG.md,
+    the daily-workflow guide, the code map) names what `approve` writes instead
+    of "only the approval receipt"; `status` reads no approval or questions
+    policy (`next_phase(..., policy=False)`), so its approve and open-questions
+    lines read the same under every setting and no longer name the autopilot
+    route while waiting on the owner; and README's phase table states the policy
+    route at `approve`. Tests pin each, with a POLICY_MUTATIONS entry per fix.
+  - Review round 2's two FIXes (filed as T-0078): `commands/autopilot.md`
+    states the `questions.md` shape `questions-check` enforces (`## Q<n>`, a
+    `Research:` line, 2-4 `### Option <id>` blocks, the first
+    `(recommended)`, each with `Cost:`, and `taken: Option <id> by autopilot
+    (<policy>)`), and `.crew/verify.json` maps `commands/autopilot.md` to
+    `test_crew_autopilot_policy.py`. Six more POLICY_MUTATIONS, each red on
+    its named test.
+  Two repo-only keys, `autopilot.approval`
+  and `autopilot.questions` (`human|self|risk`, default `risk`; any other value
+  reads as `human`, with a warning, and `human` always stops).
+  - `crew_autopilot.approval_policy` allows only when `scope.allowCliApproval`
+    is exactly `true` (at every setting) and the review ledger is readable
+    (NEEDS_REPLAN included: a distinct successor plan is its only way out, and
+    the ledger refuses one approved before); then `self` at any risk, `risk`
+    only on a spec header saying `risk: low` (unknown reads `high`). `crew_autopilot.py approve
+    --root . --ticket <id>` (armed only) writes `approved_via: "autopilot"` and
+    prints `self-approved <id> under approval=<policy>, risk=<risk>`; a refusal
+    exits 2 with `refused: <why>`. `crew_ticket.approve` refuses an `autopilot`
+    receipt the policy denies, and `crew_ticket.accepted` re-asks the policy on
+    every read, so a spec edit, `approval: human` or `allowCliApproval: false`
+    demotes it; an unimportable policy demotes it too.
+  - `scope_guard.py` allows exactly the bare `python3 [-B] <path>/crew_autopilot.py
+    approve [--root .] --ticket <ID>`, only while the policy says yes; any other
+    command naming it, and every `crew_ticket.py approve`, stays refused. Every
+    shell check also reads the command with its line continuations joined
+    (bash backslash-newline, PowerShell backtick-newline), so a continuation
+    cannot carry an approve past the newline a check stops at.
+  - `crew_autopilot.question_policy` (`take|stop`) and `crew_autopilot.py
+    questions-check`, which validates `.work/tickets/<id>/questions.md` (a
+    `Research:` line, 2-4 options, the recommendation first, a `Cost:` each)
+    and refuses a `taken:` line naming a policy that never takes (`human`, or
+    not a policy) or any `taken:` while the policy in force says `stop`; the
+    recorded policy is history, so a later `risk`/`self` switch does not void
+    it. `next` names the policy's answer at the `approve` and `open-questions`
+    stops.
+  - Accepting review FINDINGS stays the owner's at every setting.
+    `sabotage_autopilot.py`'s POLICY_MUTATIONS (one per refusing branch) are
+    registered in `sabotage.py`. `commands/autopilot.md` runs both at the
+    `approve` and `open-questions` phases: a `stop=1` at either phase runs
+    its policy first instead of stopping. Config leaf count 123 -> 125 (both
+    keys repo-only; 122 -> 124 before T-0072's `autopilot.deploy` landed first).
+
 - **`crew` 1.0.59: `/crew:config` menu mode and `/crew:config-setup` (T-0075).**
   Landed as 1.0.59, not 1.0.55, after four landing-branch changes, each needing its
   own bump. 1.0.59: `_probe_for`'s refused-snapshot probe closed over `exc`, which

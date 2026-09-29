@@ -592,3 +592,16 @@ def test_render_is_one_bounded_line_whatever_the_fields(decision, tail):
 
 def test_the_line_bound_fits_the_turn_budget():
     assert crew_route.MAX_LINE_CHARS < crew_context.TURN_CHARS
+
+
+# --- T-0010: the policy subcommands are crew_autopilot.py's, not the command's --
+
+def test_policy_subcommands_are_not_command_subcommands(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    make_ticket(root)
+
+    got = [crew_autopilot.route_args(str(root), text)["stop"]
+           for text in ("approve T-1", "questions-check T-1")]
+
+    assert (crew_autopilot.SUBCOMMANDS, got) == (
+        ("status", "run", "assign", "goal", "focus"), [True, True])

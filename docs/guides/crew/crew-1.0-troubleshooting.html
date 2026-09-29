@@ -306,10 +306,12 @@ contract itself. This section is what goes wrong with the approval and the audit
   stale immediately</strong> — that is deliberate: an edited spec cannot silently widen what the guard
   accepts. Only a receipt from the user's own prompt counts by default; a <code>cli</code>-sourced receipt
   (written by <code>crew_ticket.py approve</code> directly, for tests/CI) is accepted only when
-  <code>.crew/config.json</code> sets <code>scope.allowCliApproval: true</code>.
-  <strong>Fix:</strong> re-approve. The user types <code>/crew:approve &lt;id&gt;</code> again — nothing else can write the
-  receipt; <code>scope_guard.py</code> refuses a Write/Edit under <code>&lt;git-common-dir&gt;/crew/</code> in every mode but
-  <code>off</code>, so a session cannot forge or refresh its own approval.</p>
+  <code>.crew/config.json</code> sets <code>scope.allowCliApproval: true</code>, and an <code>autopilot</code> receipt (from
+  <code>crew_autopilot.py approve</code>) only while that is true and <code>autopilot.approval</code> still allows it.
+  <strong>Fix:</strong> re-approve. The user types <code>/crew:approve &lt;id&gt;</code> again — the only other route is
+  <code>/crew:autopilot</code> under an opted-in <code>autopilot.approval</code>; <code>scope_guard.py</code> refuses a Write/Edit
+  under <code>&lt;git-common-dir&gt;/crew/</code> in every mode but <code>off</code>, so a session cannot forge or refresh its
+  own approval.</p>
 <ul>
 <li>
 <p><strong>Symptom: you need to touch one more path mid-ticket.</strong>
@@ -555,7 +557,7 @@ but returns immediately without judging anything; "off" for <code>verifyGate</co
 <td><code>scope.allowCliApproval</code></td>
 <td>repo only</td>
 <td>bool</td>
-<td><code>false</code>: only a <code>/crew:approve</code> typed by the user counts</td>
+<td><code>false</code>: only a <code>/crew:approve</code> typed by the user counts (no <code>cli</code> or <code>autopilot</code> receipt)</td>
 </tr>
 <tr>
 <td><code>verifyGate</code></td>
