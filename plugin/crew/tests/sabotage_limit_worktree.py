@@ -37,10 +37,10 @@ LIMIT_WORKTREE_MUTATIONS = (
      '        return PROBE_OK, "timed out"\n',
      _L + "test_probe_timeout_is_unknown_not_ok"),
     ("any probe failure is classed limited", RUN,
-     '    line = review_limit.limit_line(error or "", stderr)\n    if line:\n'
-     "        return PROBE_LIMITED, line\n",
-     '    line = review_limit.limit_line(error or "", stderr) or (error or "failed")\n'
-     "    if line:\n        return PROBE_LIMITED, line\n",
+     ('    line = review_limit.limit_line(error or "", stderr)\n    if line:\n'
+     "        return PROBE_LIMITED, line\n"),
+     ('    line = review_limit.limit_line(error or "", stderr) or (error or "failed")\n'
+     "    if line:\n        return PROBE_LIMITED, line\n"),
      _L + "test_probe_other_failure_is_failed_not_limited"),
     ("a mid-round limit is not recorded", RUN,
      '            review_limit.record(args.root, args.ticket, number, "codex", args.model, limit)\n',
@@ -60,8 +60,8 @@ LIMIT_WORKTREE_MUTATIONS = (
      _W + "test_worktree_own_config_wins_and_is_never_merged"),
     ("own-ness checks config.json only", COMMON,
      _OWN_FIND,
-     '    if any(os.path.lexists(os.path.join(own, name)) for name in ("config.json",)):\n'
-     '        return own, SOURCE_OWN, ""\n',
+     ('    if any(os.path.lexists(os.path.join(own, name)) for name in ("config.json",)):\n'
+     '        return own, SOURCE_OWN, ""\n'),
      _W + "test_worktree_with_only_crew_json_does_not_inherit_config_json"),
     ("a git failure collapses to own", COMMON,
      "        return own, SOURCE_UNKNOWN, problem\n",
@@ -82,28 +82,28 @@ LIMIT_WORKTREE_MUTATIONS = (
      _W + "test_heal_config_creates_nothing_when_git_could_not_tell"),
     ("the resolver passes --path-format again", COMMON,
      '    out = git_out(root, "rev-parse", "--git-dir", "--git-common-dir")\n',
-     '    out = git_out(root, "rev-parse", "--path-format=absolute", "--git-dir", '
-     '"--git-common-dir")\n',
+     ('    out = git_out(root, "rev-parse", "--path-format=absolute", "--git-dir", '
+     '"--git-common-dir")\n'),
      _W + "test_resolver_works_on_a_git_without_path_format"),
     ("an unwritable marker escapes the round", RUN,
      "        except OSError as exc:\n            then = (",
      "        except ValueError as exc:\n            then = (",
      _L + "test_unwritable_limit_marker_still_finishes_the_round"),
     ("the marker goes back beside the ledgers", LIMIT,
-     '    return os.path.join(review_ledger.common_dir(root), "crew", MARKER_DIR,\n'
-     '                        review_ledger.check_ticket(ticket) + ".json")\n',
-     '    return os.path.join(review_ledger.common_dir(root), "crew", "review",\n'
-     '                        review_ledger.check_ticket(ticket) + ".limit.json")\n',
+     ('    return os.path.join(review_ledger.common_dir(root), "crew", MARKER_DIR,\n'
+     '                        review_ledger.check_ticket(ticket) + ".json")\n'),
+     ('    return os.path.join(review_ledger.common_dir(root), "crew", "review",\n'
+     '                        review_ledger.check_ticket(ticket) + ".limit.json")\n'),
      _L + "test_limit_marker_is_not_listed_as_a_review_ledger"),
     ("the marker overwrites a dotted ticket's ledger", LIMIT,
-     '    return os.path.join(review_ledger.common_dir(root), "crew", MARKER_DIR,\n'
-     '                        review_ledger.check_ticket(ticket) + ".json")\n',
-     '    return os.path.join(review_ledger.common_dir(root), "crew", "review",\n'
-     '                        review_ledger.check_ticket(ticket) + ".limit.json")\n',
+     ('    return os.path.join(review_ledger.common_dir(root), "crew", MARKER_DIR,\n'
+     '                        review_ledger.check_ticket(ticket) + ".json")\n'),
+     ('    return os.path.join(review_ledger.common_dir(root), "crew", "review",\n'
+     '                        review_ledger.check_ticket(ticket) + ".limit.json")\n'),
      _L + "test_a_ticket_named_like_a_marker_keeps_its_own_ledger"),
     ("the marker's shape check is dropped", LIMIT,
-     "    if not isinstance(number, int) or isinstance(number, bool) \\\n"
-     "            or not isinstance(error, str) or not error.strip():\n",
+     ("    if not isinstance(number, int) or isinstance(number, bool) \\\n"
+     "            or not isinstance(error, str) or not error.strip():\n"),
      "    if False:\n",
      _L + "test_malformed_limit_marker_falls_back_to_a_live_probe"),
     ("a round of true passes for round 1", LIMIT,
@@ -111,13 +111,13 @@ LIMIT_WORKTREE_MUTATIONS = (
      "    if not isinstance(number, int) \\\n",
      _L + "test_malformed_limit_marker_falls_back_to_a_live_probe[round-true]"),
     ("status says nothing about a shadowed main config", COMMON,
-     "    shadowed = shadowed_main_config(root)\n    if shadowed:\n"
-     "        return shadow_note(shadowed)\n",
+     ("    shadowed = shadowed_main_config(root)\n    if shadowed:\n"
+     "        return shadow_note(shadowed)\n"),
      "",
      _W + "test_status_names_the_main_config_a_worktree_own_config_shadows"),
     ("a shadow is reported when the main checkout has no config", COMMON,
-     "    if any(os.path.lexists(os.path.join(main, name)) for name in CONFIG_NAMES):\n"
-     "        return main\n",
+     ("    if any(os.path.lexists(os.path.join(main, name)) for name in CONFIG_NAMES):\n"
+     "        return main\n"),
      "    if True:\n        return main\n",
      _W + "test_status_has_no_shadow_line_when_nothing_is_shadowed[worktree-main-has-none]"),
 )

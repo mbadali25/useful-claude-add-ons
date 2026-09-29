@@ -113,11 +113,11 @@ if __name__ == "__main__":
     # Before the sibling imports: the direct CLI is read-only too.
     sys.dont_write_bytecode = True
 
+import crew_common
 import crew_config
 import crew_state
 import crew_ticket
 import review_ledger
-import crew_common
 from crew_common import git_out, read_text
 
 AUTOPILOT = "/crew:autopilot"

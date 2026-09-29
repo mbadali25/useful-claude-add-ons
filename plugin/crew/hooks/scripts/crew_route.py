@@ -53,9 +53,9 @@ import re
 import sys
 
 import crew_autopilot
+import crew_common
 import crew_config
 import crew_state
-import crew_common
 import crew_ticket
 from crew_common import read_text
 

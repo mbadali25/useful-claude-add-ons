@@ -17,7 +17,8 @@ import textwrap
 
 import pytest
 
-import context  # noqa: F401  pylint: disable=unused-import
+# isort: split
+import context  # pylint: disable=unused-import
 import crew_status
 import review_ledger
 import review_limit
