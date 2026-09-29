@@ -828,11 +828,11 @@ def _scan_meta_text(*, date_str, started_at, completed_at, manifest, manifest_pa
 
 def _load_run_manifest(path):
     """A routine run's `run-manifest.json`, or ValueError/OSError when the
-    file is missing, is not JSON, or has no `cells` list."""
+    file is missing, is not JSON, or has no `cells` list (bad input, never TypeError)."""
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
     if not isinstance(data, dict) or not isinstance(data.get("cells"), list):
-        raise ValueError(f"{path}: not a run manifest (no 'cells' list)")
+        raise ValueError(f"{path}: not a run manifest (no 'cells' list)")  # noqa: TRY004
     return data
 
 

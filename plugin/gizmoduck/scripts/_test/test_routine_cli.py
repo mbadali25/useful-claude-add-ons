@@ -45,9 +45,15 @@ import sys
 from pathlib import Path
 
 import pytest
-
-from test_routine_orchestration import (FakeAdapter, FakeRegistry, _declines_without_confirm,
-                                        _finding, _ok, _raises, _times_out)
+from test_routine_orchestration import (
+    FakeAdapter,
+    FakeRegistry,
+    _declines_without_confirm,
+    _finding,
+    _ok,
+    _raises,
+    _times_out,
+)
 
 _SCRIPT = Path(__file__).resolve().parent.parent / "gizmoduck.py"
 _DATE = datetime.date(2026, 9, 29)
@@ -263,9 +269,9 @@ def test_atomic_write_leaves_the_original_when_the_write_raises(gz, tmp_path, mo
 _BAD_MANIFESTS = {
     "no-auth": ("targets:\n  - {name: a, kind: web, url: 'https://a.invalid/'}\n",
                 "authorized_by"),
-    "duplicate-name": ("authorized_by: t\ntargets:\n"
-                       "  - {name: a, kind: web, url: 'https://a.invalid/'}\n"
-                       "  - {name: a, kind: web, url: 'https://b.invalid/'}\n",
+    "duplicate-name": (("authorized_by: t\ntargets:\n"
+                        "  - {name: a, kind: web, url: 'https://a.invalid/'}\n"
+                        "  - {name: a, kind: web, url: 'https://b.invalid/'}\n"),
                        "duplicate target name 'a'"),
     "unknown-kind": ("authorized_by: t\ntargets:\n  - {name: a, kind: spaceship, url: x}\n",
                      "unknown target kind 'spaceship'"),
