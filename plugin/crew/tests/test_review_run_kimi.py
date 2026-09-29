@@ -505,32 +505,35 @@ def _crew_repo(repo, crew_json=None):
 
 def test_run_kimi_a_reviewer_that_moves_graph_out_is_incomplete(repo, tmp_path):
     """Round 2: graph.out was read AFTER the review, from the tree the reviewer
-    could write, so writing `.crew/crew.json` = {"graph":{"out":".crew"}}
-    excused every other write under `.crew/`."""
+    could write, so writing `.crew/crew.json` = {"graph":{"out":"<dir>"}}
+    excused every other write under that directory. Since round 4 `.crew`
+    itself can no longer be graph.out, so the reviewer here moves it to `gen`."""
     _crew_repo(repo)
 
     result, review = _run(repo, tmp_path, FAKE_KIMI_PUT=json.dumps({
-        ".crew/crew.json": '{"graph": {"out": ".crew"}}\n',
+        ".crew/crew.json": '{"graph": {"out": "gen"}}\n',
         ".crew/config.json": '{"a": 2}\n',
-        ".crew/verify.json": '{"rules": ["weakened"]}\n'}))
+        "gen/fix.py": "FIXED = True\n"}))
 
     assert (result.returncode, review["verdict"]) == (3, "INCOMPLETE")
     reason = next(r for r in review["reasons"] if "working tree changed" in r)
-    assert [p for p in (".crew/crew.json", ".crew/config.json", ".crew/verify.json")
+    assert [p for p in (".crew/crew.json", ".crew/config.json", "gen/fix.py")
             if p not in reason] == []
 
 
 @pytest.mark.parametrize("name", ["config.json", "crew.json"])
-def test_run_kimi_a_crew_config_write_counts_even_under_graph_out(repo, tmp_path, name):
-    """A reviewer that writes crew config is itself a change, even when the
-    configured graph.out already contains `.crew/`."""
+def test_run_kimi_a_crew_config_write_counts_even_under_graph_out(repo, name):
+    """A reviewer that writes crew config is itself a change, even under a
+    graph.out that contains `.crew/`. `graph_out` refuses such a directory
+    since round 4, so this holds `reviewer_changes` to it directly."""
     _crew_repo(repo, crew_json='{"graph": {"out": ".crew"}}\n')
+    before = review_run.tree_fingerprint(str(repo))
+    (repo / ".crew" / name).write_text('{"b": 1}\n', encoding="utf-8")
 
-    result, review = _run(repo, tmp_path,
-                          FAKE_KIMI_PUT=json.dumps({f".crew/{name}": '{"b": 1}\n'}))
+    changed, _set_aside = review_run.reviewer_changes(
+        before, review_run.tree_fingerprint(str(repo)), ".crew")
 
-    assert (result.returncode, review["verdict"]) == (3, "INCOMPLETE")
-    assert any(f".crew/{name}" in r for r in review["reasons"])
+    assert f".crew/{name}" in changed
 
 
 def test_run_kimi_graph_out_is_resolved_once_before_the_probe(repo, tmp_path, monkeypatch,
