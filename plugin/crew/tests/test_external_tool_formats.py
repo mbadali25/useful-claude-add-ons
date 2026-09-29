@@ -101,18 +101,71 @@ def test_installed_gh_pr_review_help_lists_the_flags_review_md_uses():
         assert flag in text, flag
 
 
+def _wsl_list(extra, drop=()):
+    env = {k: v for k, v in dict(os.environ, **extra).items() if k not in drop}
+    return subprocess.run(["wsl.exe", "--list", "--quiet"], capture_output=True,
+                          stdin=subprocess.DEVNULL, timeout=60, check=False, env=env)
+
+
+def _probe_wsl_encoding():
+    """A host with wsl.exe and no distribution lists nothing either way (the
+    hosted Windows runner, PR #260): that is "could not tell", so it skips
+    saying so. It never passes, and a real encoding change still fails."""
+    default = _wsl_list({}, drop=("WSL_UTF8",))
+    utf8 = _wsl_list({"WSL_UTF8": "1"})
+    for proc in (default, utf8):
+        out = proc.stdout or b""
+        if proc.returncode != 0 or not out.strip(b"\x00\r\n "):
+            pytest.skip(f"wsl.exe is on PATH but listed no distribution (exit {proc.returncode}, "
+                        f"{len(out)} bytes): its output encoding was researched, not probed")
+
+    assert b"\x00" in default.stdout
+    assert b"\x00" not in utf8.stdout
+
+
 def test_wsl_list_is_utf16_unless_wsl_utf8():
     if not shutil.which("wsl.exe"):
         pytest.skip("wsl.exe is not on PATH here (not Windows or WSL interop): "
                     "its output encoding was researched, not probed")
 
-    def raw(extra):
-        env = dict(os.environ, **extra)
-        return subprocess.run(["wsl.exe", "--list", "--quiet"], capture_output=True,
-                              stdin=subprocess.DEVNULL, timeout=60, check=False, env=env).stdout
+    _probe_wsl_encoding()
 
-    assert b"\x00" in raw({"WSL_UTF8": ""})
-    assert b"\x00" not in raw({"WSL_UTF8": "1"})
+
+def _fake_wsl(answers):
+    def run(cmd, **kwargs):
+        rc, out = answers(kwargs.get("env") or {})
+        return subprocess.CompletedProcess(cmd, rc, out, b"")
+    return run
+
+
+@pytest.mark.parametrize("rc,out", [(1, b""), (0, b""), (0, b"\x00\r\x00\n\x00")])
+def test_wsl_probe_skips_when_no_distribution_answers(monkeypatch, rc, out):
+    monkeypatch.setattr(shutil, "which", lambda name: "wsl.exe")
+    monkeypatch.setattr(subprocess, "run", _fake_wsl(lambda env: (rc, out)))
+
+    with pytest.raises(pytest.skip.Exception) as skipped:
+        _probe_wsl_encoding()
+
+    assert "listed no distribution" in str(skipped.value)
+    assert f"exit {rc}" in str(skipped.value)
+
+
+def test_wsl_probe_asserts_the_encoding_when_a_distribution_answers(monkeypatch):
+    def answers(env):
+        if env.get("WSL_UTF8") == "1":
+            return 0, b"Ubuntu\n"
+        return 0, "Ubuntu\r\n".encode("utf-16-le")
+    monkeypatch.setattr(subprocess, "run", _fake_wsl(answers))
+
+    _probe_wsl_encoding()
+
+
+def test_wsl_probe_fails_when_wsl_utf8_does_not_change_the_encoding(monkeypatch):
+    monkeypatch.setattr(subprocess, "run",
+                        _fake_wsl(lambda env: (0, "Ubuntu\r\n".encode("utf-16-le"))))
+
+    with pytest.raises(AssertionError):
+        _probe_wsl_encoding()
 
 
 def test_live_codex_stream_parses(tmp_path):
