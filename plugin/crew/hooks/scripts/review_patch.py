@@ -281,7 +281,7 @@ def _ticket_base_tree(root, base_sha, working_tree, tmp_dir):
         # unknown is said wherever the answer reaches: manifest, stderr, prompt,
         # receipt note -- never an empty `diffed_from_merged` passing as "none".
         merged["fork_reason"] = (
-            f"could not tell: git merge-base {base_sha[:12]} {merged['commit'][:12]} gave no "
+            f"could not tell: git merge-base {base_sha[:12]} {merged['commit']:.12} gave no "
             "answer; paths main also changed are diffed from the start, so main's lines "
             "there read as the ticket's")
     by_main = ({e["path"]: e for e in
