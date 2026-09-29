@@ -4,24 +4,44 @@ scope guard does (`crew_ticket.accepted`: current, and from the user's prompt
 unless `scope.allowCliApproval`). A BLOCKING hook, so must-block and
 must-allow cases both.
 
-The fixture un-ignores `.crew/codemap/` the way this repository's own
+T-0094 narrowed what the approval admits: a changed artifact passes without
+Touch only when a path the ticket changed reaches it and the edit is a
+re-anchor or a regeneration (`crew_refresh_check.artifact_verdicts`, unit-tested
+in `test_refresh_admission.py`). So the must-allow half runs on
+`refresh_fixtures.refreshed`, the shape `8bbb26d9` wrote in this repository,
+and no longer on the bytes `refreshed` written over each artifact -- a map with
+no anchor, a rule that is not `expected_rules` and a graph with no code change
+are now must-block inputs, and the T-0094 block below asserts the audit names
+the reason for each.
+
+The fixtures un-ignore `.crew/codemap/` the way this repository's own
 `.gitignore` does (`.crew/*` then `!.crew/codemap/`); without that, a codemap
 write is invisible to git and to the audit, and the codemap cases would pass
 while testing nothing.
 
 `sabotage_refresh.py` drops the approval condition, and the unapproved and
-cli must-block cases go red.
+cli must-block cases go red; its `# T-0094` entries make the audit ignore the
+verdicts or drop the reason, and the T-0094 must-block cases go red.
 """
 import json
+import os
+import subprocess
+import sys
 
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import completion_audit
+import crew_refresh_check
 import crew_ticket
+from crew_fixtures import head_sha
+from refresh_fixtures import (MAP, RULE, anchored_repo, map_text, read, rebuild_graph,
+                              re_anchor_map, refreshed, write)
 from review_fixtures import git
-from scope_fixtures import FLAVOURS, make_repo, make_ticket, ready, run_hook, stop
+from scope_fixtures import SCRIPTS, FLAVOURS, make_repo, make_ticket, ready, run_hook, stop
 
+APP = MAP.format(name="app")
+APP_RULE = RULE.format(name="app")
 ARTIFACTS = [".crew/codemap/crew.md", "docs/diagrams/architecture.mmd",
              "graphify-out/graph.json", ".claude/rules/crew.md"]
 
@@ -108,40 +128,143 @@ def test_an_artifact_beside_an_out_of_scope_change_still_fails(repo):
     assert (ok, "other/keep.py" in "\n".join(lines)) == (False, True), lines
 
 
+# --- must-block: a refresh artifact of the wrong shape or reach (T-0094) ---------
+
+def test_a_map_edited_without_moving_its_anchor_fails_the_audit(tmp_path):
+    root, _base = anchored_repo(tmp_path)
+    write(root, APP, read(root, APP).replace("x is one", "x is two"))
+
+    ok, lines = completion_audit.audit(str(root), "T-1")
+
+    assert (ok, lines[0].startswith("COMPLETION AUDIT: 1 changed path(s) outside T-1's "
+                                    "spec ## Touch"),
+            ".crew/codemap/app.md [anchor did not move]" in lines[1]) == (False, True, True), lines
+
+
+def test_a_refresh_that_no_changed_path_reaches_fails_the_audit(tmp_path):
+    root, _base = anchored_repo(tmp_path)
+    git(root, "revert", "--no-edit", "-q", "HEAD")
+    write(root, "src/other.py", "y = 1\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "ticket edit elsewhere")
+    re_anchor_map(root, "app", head_sha(root, 40), cites=("src/app.py:1",))
+
+    ok, lines = completion_audit.audit(str(root), "T-1")
+
+    assert (ok, "[no changed path reaches it]" in "\n".join(lines)) == (False, True), lines
+
+
+def test_a_hand_edited_rule_fails_the_audit(tmp_path):
+    root, _base = anchored_repo(tmp_path)
+    write(root, APP_RULE, read(root, APP_RULE) + "- a hand-written landmine\n")
+
+    ok, lines = completion_audit.audit(str(root), "T-1")
+
+    assert (ok, APP_RULE + " [bytes differ" in "\n".join(lines)) == (False, True), lines
+
+
+def test_a_graph_rebuild_with_no_code_change_fails_the_audit(tmp_path):
+    root, _base = anchored_repo(tmp_path, touch=("src/**", "docs/x.md"))
+    git(root, "revert", "--no-edit", "-q", "HEAD")
+    write(root, "docs/x.md", "prose\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "docs only")
+    rebuild_graph(root, head_sha(root, 40))
+
+    ok, lines = completion_audit.audit(str(root), "T-1")
+
+    assert (ok, "[graph changed with no code change" in "\n".join(lines)) == (False, True), lines
+
+
+def test_a_could_not_tell_verdict_fails_the_audit_and_says_so(tmp_path, monkeypatch):
+    root, _base = anchored_repo(tmp_path)
+    re_anchor_map(root, "app", head_sha(root, 40))
+    monkeypatch.setattr(crew_refresh_check, "_git_rc", lambda *a, **k: None)
+
+    ok, lines = completion_audit.audit(str(root), "T-1")
+
+    assert (ok, "[could not tell:" in "\n".join(lines)) == (False, True), lines
+
+
+def test_the_message_stays_inside_six_lines_with_many_refused_artifacts(tmp_path):
+    root, _base = anchored_repo(tmp_path)
+    for n in range(10):
+        write(root, f".crew/codemap/m{n}.md", map_text(f"m{n}", None, ("src/app.py:1",), "x"))
+
+    ok, lines = completion_audit.audit(str(root), "T-1")
+
+    assert (ok, len(completion_audit.physical(lines)), len(lines)) == (False, len(lines), 4), lines
+
+
+def test_an_intermediate_stop_mid_refresh_is_told_the_anchor_did_not_move(tmp_path):
+    root, _base = anchored_repo(tmp_path)
+    write(root, APP, read(root, APP).replace("x is one", "x is two"))
+
+    code, _out, err = run_hook("module", "completion_audit", stop(root), root)
+
+    assert (code, "anchor did not move" in err) == (2, True), err
+
+
 # --- must-allow -----------------------------------------------------------------
 
-@pytest.mark.parametrize("rel", ARTIFACTS)
-def test_an_approved_ticket_passes_with_each_refresh_artifact_changed(repo, rel):
-    ready(repo)
-    _write(repo, rel)
-
-    assert completion_audit.audit(str(repo), "T-1") == (True, [])
+def _pass_lines(lines):
+    """A pass: no lines -- or, once T-0100 lands, only its `merged main` lines."""
+    return all(line.startswith("  merged main") for line in lines)
 
 
-def test_committed_refreshes_pass_too(repo):
-    ready(repo)
-    _refresh_everything(repo)
-    git(repo, "add", "-A")
-    git(repo, "commit", "-qm", "refresh the artifacts")
+def test_an_approved_ticket_passes_with_a_real_refresh(tmp_path):
+    root, _base = anchored_repo(tmp_path)
+    refreshed(root)
 
-    assert completion_audit.audit(str(repo), "T-1") == (True, [])
+    ok, lines = completion_audit.audit(str(root), "T-1")
+
+    assert (ok, _pass_lines(lines)) == (True, True), lines
+
+
+def test_committed_refreshes_pass_too(tmp_path):
+    root, _base = anchored_repo(tmp_path)
+    refreshed(root)
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "refresh the artifacts")
+
+    ok, lines = completion_audit.audit(str(root), "T-1")
+
+    assert (ok, _pass_lines(lines)) == (True, True), lines
 
 
 def test_a_cli_approval_passes_when_the_config_allows_it(repo):
+    write(repo, APP, map_text("app", head_sha(repo, 40), ("src/app.py:1",), "x is one"))
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "a map, before the ticket starts")
     (repo / ".crew" / "config.json").write_text(
         json.dumps({"scope": {"mode": "block", "allowCliApproval": True}}), encoding="utf-8")
     make_ticket(repo)
     crew_ticket.approve(str(repo), "T-1", by="ci")
-    _write(repo, ".crew/codemap/crew.md")
+    subprocess.run([sys.executable, os.path.join(SCRIPTS, "scope_base.py"), "--root", str(repo),
+                    "--record", "T-1"], check=True, capture_output=True, stdin=subprocess.DEVNULL)
+    write(repo, "src/app.py", "x = 2\n")
+    git(repo, "commit", "-qam", "ticket edit")
+    re_anchor_map(repo, "app", head_sha(repo, 40))
 
-    assert completion_audit.audit(str(repo), "T-1") == (True, [])
+    ok, lines = completion_audit.audit(str(repo), "T-1")
+
+    assert (ok, _pass_lines(lines)) == (True, True), lines
 
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
-def test_the_stop_hook_lets_an_approved_refresh_through(flavour, repo):
-    ready(repo)
-    _refresh_everything(repo)
+def test_the_stop_hook_lets_an_approved_refresh_through(flavour, tmp_path):
+    root, _base = anchored_repo(tmp_path)
+    refreshed(root)
 
-    code, out, err = run_hook(flavour, "completion_audit", stop(repo), repo)
+    code, out, err = run_hook(flavour, "completion_audit", stop(root), root)
 
     assert (code, out, err) == (0, "", "")
+
+
+def test_a_refused_artifact_named_in_touch_passes(tmp_path):
+    root, _base = anchored_repo(tmp_path, touch=("src/**", ".crew/codemap/**"))
+    write(root, APP, read(root, APP).replace("x is one", "x is two"))
+
+    ok, lines = completion_audit.audit(str(root), "T-1")
+
+    assert (ok, _pass_lines(lines)) == (True, True), lines
