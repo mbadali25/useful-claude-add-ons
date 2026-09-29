@@ -1,6 +1,6 @@
 ---
 description: Drive Playwright's Test Agents inside the ticket lifecycle - a healer skip is a finding, never accepted
-argument-hint: "<ticket id> [--stage spec|implement|heal|evidence]"
+argument-hint: "<ticket id> [--stage spec|implement|heal|evidence] [--module <dir>]"
 allowed-tools: Read, Edit, Write, Bash, Grep, Glob, Agent
 ---
 
@@ -14,7 +14,8 @@ Background: `docs/review/07-web-testing-research.md` section 2.
 
 ## 0. Preconditions - stop and say which one failed
 
-- A `playwright.config.*` at the root. None: point at `/crew:init`'s web phase
+- A `playwright.config.*` at the root, or in the module `--module <dir>` names
+  (agents stay at the root). None: point at `/crew:init`'s web phase
   (`webtest_scaffold.py`) and stop.
 - `.claude/agents/playwright-test-planner.md`, `-generator.md`, `-healer.md`.
   Missing: same pointer. They must be regenerated on every Playwright upgrade.
@@ -25,7 +26,8 @@ Background: `docs/review/07-web-testing-research.md` section 2.
 
 Run after `/crew:spec $1`, before `/crew:plan $1`. Read the spec's
 `## Acceptance checks` and dispatch `playwright-test-planner` with exactly:
-those checks, the seed test (`tests/seed.spec.ts`), and the output path
+those checks, the seed test (`<testDir>/seed.spec.ts` in the module, else
+`tests/seed.spec.ts`), and the output path
 `specs/$1.md`. It needs the app running; if it is not, say so and stop rather
 than letting it plan against an error page.
 
@@ -68,11 +70,11 @@ could not tell - say so; it is not a pass.
 ## 4. `--stage evidence` - what the reviewer gets
 
 ```bash
-npx playwright test --reporter=blob
+npx playwright test --reporter=blob     # both npx lines: in the module, with --module
 npx playwright merge-reports --reporter html ./blob-report
-python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/webtest_guard.py" auth-leak --root .
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/webtest_guard.py" auth-leak --root . [--module "<dir>"]
 python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/webtest_guard.py" skips --root . --ticket "$1"
-python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/webtest_guard.py" visual --root .
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/webtest_guard.py" visual --root . [--module "<dir>"]
 ```
 
 Quote each exit code. `visual` exits 77 off the pinned image
@@ -101,11 +103,12 @@ the round FINDINGS, never CLEAN, and `review.json` carries them as
 ## 5. The verify rules
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/webtest_rules.py"
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/webtest_rules.py" --root . [--module <dir>]
 ```
 
 prints the canonical rules - suite exit code, merge-reports, axe with zero
-violations, auth-leak, healer skips, visual-in-image-only. Merge them through
+violations, auth-leak, healer skips, visual-in-image-only; a rule the config
+has no project for is omitted and named on stderr. Merge them through
 `/crew:verify`; do not hand-write variants.
 
 ## Report

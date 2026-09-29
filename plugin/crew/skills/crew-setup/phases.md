@@ -382,6 +382,8 @@ npx playwright test --list
 
 For a web project, `/crew:init`'s web phase (`webtest_scaffold.py`) does the
 scaffolding in one confirmed step; run it instead of hand-writing the config.
+A root with no config of its own lists the web modules below it, and the
+scaffold runs once per module with `--module <dir>`.
 
 Chromium alone unless there is evidence of a browser-specific bug. Then write specs
 for the two or three flows where breakage is expensive, plus visual baselines

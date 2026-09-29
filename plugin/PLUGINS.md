@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.0.59<!-- claim: plugin-version:crew --> |
+| **Version** | 1.0.60<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents, 36 commands, 29 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
@@ -158,7 +158,7 @@ to CI or to branch protection.
 | `/crew:ticket <what needs doing>` | Removed in crew 1.0 - use /crew:spec |
 | `/crew:upgrade` | Bring a pre-0.20 crew config up to the 0.20 schema so /crew:migrate can move it to 1.0 |
 | `/crew:verify [--refresh] [--price]` | Build or refresh the verification map from evidence |
-| `/crew:webtest <ticket id> [--stage spec\|implement\|heal\|evidence]` | Drive Playwright's Test Agents inside the ticket lifecycle - a healer skip is a finding, never accepted |
+| `/crew:webtest <ticket id> [--stage spec\|implement\|heal\|evidence] [--module <dir>]` | Drive Playwright's Test Agents inside the ticket lifecycle - a healer skip is a finding, never accepted |
 | `/crew:work <ticket id>` | Removed in crew 1.0 - use /crew:implement |
 
 First run in a new repository: `/crew:init`, then `/crew:onboard`, then `/crew:verify`. A 0.20 repository runs `/crew:migrate --preview` first.
@@ -382,7 +382,10 @@ Per phase, what it produces and what going wrong looks like:
   Chromium only unless there is evidence of a browser-specific bug, and with
   Playwright installed and confirmed by `npx playwright test --list` before any
   spec is written. Explicitly `n/a` when there is no UI; otherwise **gated** on
-  `npx playwright test` passing **with no agent attached**. Wrong looks like
+  `npx playwright test` passing **with no agent attached**. A repository root
+  that is not a web project has its modules detected (three levels down) and
+  each is scaffolded with `--module <dir>`: tests under that module's
+  `testDir`, session files at the root. Wrong looks like
   chasing exhaustive coverage instead of the handful of flows that matter, or
   skipping it for a repo that does have a UI because it is the path of least
   resistance.

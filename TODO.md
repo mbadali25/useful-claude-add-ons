@@ -4,6 +4,21 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- **crew: a crew-owned sibling Playwright config, if T-0104's advisory `gap` snippets prove
+  not enough** (T-0104 direction Option C). `webtest_scaffold.py` never writes into an existing
+  config, so a missing `setup`/`axe`/`visual` project is printed as a paste-ready snippet
+  (`plugin/crew/hooks/scripts/webtest_scaffold.py::gap_lines`, called from `::plan`). A
+  `playwright.crew.config.ts` importing the user's config and appending the three projects would
+  close the gap without a paste, but depends on the base config's export shape (a function export
+  or a non-array `projects` breaks it) and doubles the configs a reader reconciles. Build only on
+  evidence that the snippets are not being applied.
+- **crew: the Claude-fallback reviewer runs with the session's hooks.** `/crew:review`'s step 2c
+  (`plugin/crew/commands/review.md:449`) invokes the `crew:reviewer` subagent inside the session,
+  so its Stop hook fires on the reviewer's output; on 2026-09-29 that replaced T-0085 round 2's
+  output and made the round INCOMPLETE. Lanes now run the fallback headless with
+  `claude -p ... --settings '{"disableAllHooks": true}'` by hand (owner 2026-09-29); crew's own
+  invocation has no equivalent. No ticket held this when T-0104 was implemented
+  (`grep disableAllHooks .work/INDEX.md` empty on 2026-09-29).
 - **Not done, follow-up to T-0006**: `resume.auto` has no narrowing. `context.autoClear` can be
   narrowed on the machine to `onlyRepos` / `onlySessions` (`crew_autocycle.in_scope`);
   `resume.auto` arms every crew repo the machine file reaches, and a repo can only veto it

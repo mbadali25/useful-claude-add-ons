@@ -112,7 +112,10 @@ forcing the rest of the ticket through a path that no longer fits it.
 
 For a ticket whose acceptance criteria describe UI behaviour (the `stack-web` skill
 triggers on `playwright.config.*`, `@playwright/test`, or an Angular e2e suite),
-`/crew:webtest` sits inside the normal eight phases rather than replacing them:
+`/crew:webtest` sits inside the normal eight phases rather than replacing them. When
+the Playwright config lives in a module below the repository root, pass
+`--module <dir>`: the agents stay at the root, the seed test and specs come from the
+module, and the guards read that module's config:
 
 1. **Planner.** `playwright-test-planner` reads the ticket's acceptance criteria and
    writes `specs/<ticket>.md` — what to test, not code yet.

@@ -1177,9 +1177,43 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   (`plugin/crew/hooks/scripts/review_verdict.py:94`,
   `plugin/crew/hooks/scripts/review_verdict.py:164`). The rest of
   `review_prompt.py`, `review_run.py` and `review_verdict.py` was not opened.
-- `webtest_guard.py`, `webtest_rules.py`, `webtest_scaffold.py` — new
-  scripts since the previous anchor, backing `/crew:webtest` — were located
-  but not opened.
+- `webtest_guard.py`, `webtest_rules.py`, `webtest_scaffold.py` back
+  `/crew:init`'s web phase and `/crew:webtest`; only the module handling
+  below was read (T-0104), the rest of each file was not opened.
+- DERIVED (T-0104, crew 1.0.60): `webtest_scaffold.find_modules`
+  (`plugin/crew/hooks/scripts/webtest_scaffold.py:194`) walks at most
+  `MODULE_DEPTH` levels below a non-web `--root`, skipping `node_modules`
+  and dot-directories and never descending into a directory `detect` names;
+  `resolve_module` (`plugin/crew/hooks/scripts/webtest_scaffold.py:224`)
+  refuses an absolute, `..`, missing or non-web `--module`. `plan`
+  (`plugin/crew/hooks/scripts/webtest_scaffold.py:488`) tags each item
+  `module` (config, the three test files under `test_dir`'s top-level
+  `testDir`, `.gitignore`) or `root` (`.mcp.json`, `.codex/config.toml`);
+  `test_dir` (`plugin/crew/hooks/scripts/webtest_scaffold.py:384`) returns a
+  problem, never a fallback, for a value it cannot read, and `plan` then
+  writes no test file and exits 1. `config_gaps`
+  (`plugin/crew/hooks/scripts/webtest_scaffold.py:313`) and `gap_lines`
+  (`plugin/crew/hooks/scripts/webtest_scaffold.py:438`) turn a missing
+  project into an advisory `gap` line with a snippet (exit 0); `baselines`
+  (`plugin/crew/hooks/scripts/webtest_scaffold.py:404`) names the one
+  declared project every `*-snapshots/` file is named for, or says it could
+  not. `credentials_recorded`
+  (`plugin/crew/hooks/scripts/webtest_scaffold.py:460`) is `.crew/secrets.md`
+  at `--root` or a declared `storageState`, and gates the auth file and
+  `fresh_config`'s auth pieces
+  (`plugin/crew/hooks/scripts/webtest_scaffold.py:471`). `agent_cmd`
+  (`plugin/crew/hooks/scripts/webtest_scaffold.py:583`) adds
+  `--config=<module>/<config>`; `run_agents` still runs at `--root`
+  (`plugin/crew/hooks/scripts/webtest_scaffold.py:589`).
+  `webtest_rules.rules(module=)`
+  (`plugin/crew/hooks/scripts/webtest_rules.py:105`) prefixes paths, wraps
+  `npx` in `(cd <module> && ...)` and drops the rules `omitted`
+  (`plugin/crew/hooks/scripts/webtest_rules.py:85`) names;
+  `webtest_guard.check_auth_leak(module=)`
+  (`plugin/crew/hooks/scripts/webtest_guard.py:588`) and `check_visual`
+  (`plugin/crew/hooks/scripts/webtest_guard.py:684`) read the module through
+  `module_dir` (`plugin/crew/hooks/scripts/webtest_guard.py:575`) while git
+  and `.crew/config.json` stay at `--root`.
 - `crew_change.py`, `crew_incident.py`, `crew_platform.py`, `crew_ticket.py`,
   `crew_status.py`, `crew_metrics.py`, `crew_recall.py` were read only at
   their module docstrings, not their function bodies (`crew_ticket.parse_risk`

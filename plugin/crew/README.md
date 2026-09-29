@@ -2632,7 +2632,7 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:handoff` | Write the handoff note before clearing |
 | `/crew:diagram <type>` | Architecture, data-flow, process and sequence diagrams |
 | `/crew:verify` | Build or refresh the change-to-check map; creates `_verify/` if the repo has no check directory |
-| `/crew:webtest <id> [--stage spec\|implement\|heal\|evidence]` | Drive Playwright's Test Agents inside the ticket lifecycle; a healer skip is a finding, and the trace and axe results go to the reviewer |
+| `/crew:webtest <id> [--stage spec\|implement\|heal\|evidence] [--module <dir>]` | Drive Playwright's Test Agents inside the ticket lifecycle; a healer skip is a finding, and the trace and axe results go to the reviewer |
 | `/crew:promote <env> [--dry-run\|--status]` | Promote development -> qa -> production with deploy, smoke, regression and post-soak verification as separate gates |
 | `/crew:survey [area]` | Research gaps, produce ranked findings with options |
 | `/crew:jira-sync <KEY> [--push --to <status>]` | Sync one issue with the local cache |
