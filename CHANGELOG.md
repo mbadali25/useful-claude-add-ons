@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.55: build-time development standards and a required pre-review self-check (T-0085)
+### Added — `crew`: build-time development standards and a required pre-review self-check (T-0085)
 
 - **New `crew-standards` skill.** `references/generic.md` ships GEN-01 to GEN-12,
   crew-generic standards mined from 224 BLOCK/FIX findings in crew's own QA reviews;
@@ -26,9 +26,14 @@ All notable changes to this repository are documented here. Format follows [Keep
 - `.crew/standards.md` joins the `.crew/` un-ignore list in `.gitignore`, the shipped
   crew-setup template and every document that states it. ADR 0004 records the
   decision. crew bundles 30 skills.
-- Bumped `1.0.54 -> 1.0.55`, provisional on the build branch so the version-drift check in
-  `scripts/check-marketplace.py` passes; the number is re-set at land, one patch above
-  `origin/main` then (`.crew/standards.md` REPO-03).
+- **The loop's first owner-approved amendments**, from this ticket's own review round 1:
+  GEN-01 now says "absent" needs ENOENT on the leaf under a readable parent (a non-directory or
+  unreadable parent is unknown) and that a could-not-tell branch emits the superset it announces;
+  GEN-04 maps each named mutation to a sabotage entry by label, not count, and wants a red test for
+  every refusal branch replaced with `pass`; this repository's REPO-03 puts the version bump on the
+  land branch only.
+- No version bump on the build branch (REPO-03 as amended): the number is set on the land branch at
+  push time, one patch above `origin/main` then, and this heading gains it there.
 
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 

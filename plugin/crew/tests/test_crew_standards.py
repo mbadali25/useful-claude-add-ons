@@ -239,6 +239,45 @@ def test_shipped_sets_cite_nothing_local_only():
     assert offenders == []
 
 
+# The owner accepted three amendments from review round 1's proposals
+# (.work/tickets/T-0085/standards-proposals-r1.md, "Owner decision", 2026-09-28):
+# #2 and #3 into GEN-01, #4 into REPO-03, #6 into GEN-04.
+_ROUND_1_AMENDMENTS = [
+    ("generic.md", "GEN-01", "Rule", "leaf is missing (ENOENT) and its parent is readable"),
+    ("generic.md", "GEN-01", "Rule", "emits the safe superset it announces"),
+    ("generic.md", "GEN-01", "Self-check", "a parent that is not a directory"),
+    ("generic.md", "GEN-01", "Rule", "a test compares the message against what was emitted"),
+    ("generic.md", "GEN-04", "Rule", "by label, not by count"),
+    ("generic.md", "GEN-04", "Rule", "replaced with `pass`"),
+    ("overlay", "REPO-03", "Rule", "the build branch carries none"),
+    ("overlay", "REPO-03", "Rule", "has changed since version"),
+    ("overlay", "REPO-03", "Rule", "not a finding"),
+]
+
+
+def _shipped_standard(where, sid):
+    if where == "overlay":
+        path, required = os.path.join(_REPO_ROOT, cs.OVERLAY_REL), cs.OVERLAY_FIELDS
+    else:
+        path, required = os.path.join(_REFS, where), cs.PLUGIN_FIELDS
+    parsed, _, _ = cs.parse_set(path, required=required)
+    return next(s for s in parsed["standards"] if s["id"] == sid)
+
+
+@pytest.mark.parametrize("where, sid, field, phrase", _ROUND_1_AMENDMENTS,
+                         ids=[f"{a[1]}-{a[3][:24]}" for a in _ROUND_1_AMENDMENTS])
+def test_owner_accepted_amendment_is_in_its_standard(where, sid, field, phrase):
+    text = " ".join(_shipped_standard(where, sid)["fields"][field].split())
+
+    assert phrase in text
+
+
+def test_repo_03_no_longer_asks_for_a_build_branch_bump():
+    rule = _shipped_standard("overlay", "REPO-03")["fields"]["Rule"]
+
+    assert "provisional" not in rule.lower()
+
+
 def test_overlay_file_parses():
     found = cs.effective_set(_REPO_ROOT, ["plugin/crew/x.py"])
 

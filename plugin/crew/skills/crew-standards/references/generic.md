@@ -19,7 +19,10 @@ definition: when a standard fires on a fix, run its self-check over the fixed li
 and reaches the verdict unchanged. It never becomes absent, gone, default policy, fresh, green or
 success. An absence signal proves absence only when the probe could see: ENOENT from a filesystem that
 may not be mounted, ESRCH from inside a pid namespace, `lexists` False after a `PermissionError` on a
-parent, or empty output from a failed command is could-not-tell. Two probes that disagree give unknown.
+parent, or empty output from a failed command is could-not-tell. "Absent" is proven only when the leaf
+is missing (ENOENT) and its parent is readable; a failed read whose leaf `lexists()` is False because
+the parent is not a directory or cannot be read is unknown. A could-not-tell branch emits the safe
+superset it announces, and a test compares the message against what was emitted. Two probes that disagree give unknown.
 A partial result (short write, truncated read, partial exit status) is not success. Any failure,
 malformed input included, reaches the caller as unknown and never raises, and the fail-closed path
 cannot itself raise.
@@ -42,8 +45,9 @@ values; decoding with `errors="replace"`.
    result from success and from genuine absence? Pass: yes, every site.
 2. For every absence signal (ENOENT, ESRCH, `lexists`/`exists` False, empty output): does it prove the
    thing is absent, or only that this probe cannot see it (procfs not mounted, `hidepid`, a pid
-   namespace, `PermissionError` on a parent)? Where two probes disagree, is the result unknown? Pass:
-   each is proven absent or returns unknown.
+   namespace, `PermissionError` on a parent, a parent that is not a directory, so the lookup fails
+   with `ENOTDIR`)? Where two probes disagree, is the result unknown? Pass: each is proven absent (the
+   leaf is ENOENT under a readable parent) or returns unknown.
 3. For every helper the diff calls whose result has an absent, none or default state: open the helper
    and confirm that state excludes could-not-look. A comparison against one bad value (`== "corrupt"`)
    also treats unknown as bad. Pass: yes for each helper, by reading its body.
@@ -54,6 +58,8 @@ values; decoding with `errors="replace"`.
    untrusted objects, a path join on bytes)? Pass: no, or it is wrapped.
 6. Feed malformed data (valid JSON/TOML of the wrong shape) to each new reader. Pass: unknown, no
    traceback.
+7. For every could-not-tell branch that announces a fallback ("only the always-on sets are listed"):
+   does it emit that fallback, and does a test compare the message against what was emitted? Pass: yes.
    Example starting grep, not the definition: `except|or \{\}|\.get\(|lexists|exists\(|returncode|errors="replace"|== "(corrupt|absent|missing)"|os\.write`.
 
 **Earned by.**
@@ -77,6 +83,14 @@ values; decoding with `errors="replace"`.
 - main(T1-T4) r2 @8b8a4028+dirty, FIX `plugin/crew/hooks/scripts/pm_journal.py:181` (file removed in
   c3bd8dfd): "A short os.write is treated as success and the only source copy is deleted, permanently
   truncating the journal entry"
+- Amendment, owner-approved 2026-09-28 from T-0085 review round 1's proposals 2 and 3 (not in the
+  mined count above): T-0085 r1 @8ab20e16, FIX `plugin/crew/hooks/scripts/crew_standards.py:506`:
+  "gate_applies treats read_approval's "absent" as "no receipt, gate does not apply".
+  `crew_ticket._read_json` returns "absent" whenever `lexists` is False after a failed read, including
+  an unreadable or non-directory parent. [...]"; T-0085 r1 @8ab20e16, FIX
+  `plugin/crew/hooks/scripts/crew_standards.py:571`: "When the manifest has no usable file lists,
+  checklist_block prints "only the always-on sets are listed" and returns without listing a single
+  standard. [...]"
 
 **Source.** https://docs.python.org/3/library/os.html, `os.write`: "Return the number of bytes actually
 written." (self-check 4; re-read raw 2026-09-28).
@@ -182,7 +196,9 @@ request head must match to allow merge" (self-check 1's example; re-read raw 202
 launch's argv and env, a report line only `main()` prints, a positive path) has a test that goes red
 when it is removed or weakened. Every guard also has a must-allow test that goes red when it over-fires
 on a legitimate input. The mutations are run before review and recorded, not left for the reviewer.
-Tests assert the property on the real shape of the input, not a proxy.
+The self-check evidence maps each mutation an acceptance check names to a sabotage entry by label, not
+by count, and every refusal branch in a new guard has at least one test that fails when the branch is
+replaced with `pass`. Tests assert the property on the real shape of the input, not a proxy.
 
 **Why.** 15 findings, 8 change sets, of tests that could not fail. Crew's repository CLAUDE.md, "Stop and ask", already
 requires, for a blocking hook, "a committed regression suite with must-block and must-allow cases,
@@ -211,6 +227,10 @@ for every mutation.
    literal, an unreadable but stale lock, a write by a known other party). Pass: the test goes red when
    the guard is widened to refuse it.
 4. Does any fixture already fail for a reason other than the one under test? Pass: no.
+5. For each mutation the spec's acceptance checks name: the label of the sabotage entry that makes it
+   (a count of entries is not evidence). For each refusal branch in a new guard: replace the branch
+   with `pass` and name the test that goes red. Pass: every named mutation has a labelled entry, and
+   every refusal branch a red test.
 
 **Earned by.**
 - T-0016 r2 @57656e34, BLOCK `plugin/crew/hooks/scripts/crew_autocycle.py:658`: "The new guard "window has
@@ -231,6 +251,10 @@ for every mutation.
   classified as deployments and denied, preventing inspection of CLI usage"; T-0003 r2 @d43fed8b, FIX
   `plugin/crew/hooks/scripts/crew_endpoints.py:361`: "A stale lock whose content cannot be read is now never
   taken over, so the ledger stays wedged [...]"
+- Amendment, owner-approved 2026-09-28 from T-0085 review round 1's proposal 6 (not in the mined count
+  above): T-0085 r1 @8ab20e16, FIX `plugin/crew/tests/sabotage_standards.py:17`: "The acceptance check
+  requires an "overlay may drop a plugin id" mutation. None of the 8 mutations targets the overlay
+  plugin-id guards [...]. The reuse guard has no test at all [...]"
 
 
 ## GEN-05 Recognise a narrow allowlist; everything else is could-not-tell

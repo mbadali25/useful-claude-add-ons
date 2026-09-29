@@ -72,23 +72,25 @@ assume-unchanged. [...]"
 
 ## REPO-03 Release bookkeeping for this marketplace
 
-**Rule.** The version is set at LAND, after the review receipt, one patch above `origin/main`'s version at
-land time (T-0043 `spec.md:29`: "The number is set on the land branch: one patch above origin/main's crew
-version at land time"; `spec.md:34`: "The version bump on the land branch comes after the review
-receipt"). Until then a build branch that changes plugin content carries a PROVISIONAL bump, one patch
-above the `origin/main` it last merged: `scripts/check-marketplace.py`'s version-drift check fails a branch
-whose plugin files differ from the commit that set its declared version, and a branch declaring main's
-version over different content is the stale-copy bug CLAUDE.md's first stop-and-ask names. The
-provisional number is re-derived at land, never trusted. At implement, check only that plugin content
-changed, that the provisional bump keeps `check-marketplace.py` exiting 0, and that the land-time re-set
-is planned. At land: greater than `origin/main`'s version, declared by no open PR branch and no other worktree's
-`plugin.json`, the branch rebased on current main, CHANGELOG edits add sections and never rename a
-heading, `python3 scripts/check-marketplace.py` exits 0.
+**Rule.** The version bump lands on the land branch at push time, after the review receipt, one patch
+above `origin/main`'s version then (T-0043 `spec.md:29`: "The number is set on the land branch: one patch
+above origin/main's crew version at land time"; `spec.md:34`: "The version bump on the land branch comes
+after the review receipt"), and the build branch carries none: it declares the version of the
+`origin/main` it last merged, whatever its plugin content. So `scripts/check-marketplace.py`'s
+version-drift check reports `<plugin>: <source>/ has changed since version <X> was set` on a build branch
+that changes plugin content; that is expected until landing and is not a finding. The stale-copy bug
+CLAUDE.md's first stop-and-ask names is closed at land, where the bump is made and the same check must
+exit 0. At implement, check only that plugin content changed, that the build branch declares main's
+version (no bump), and that the land-time bump is planned. At land: greater than `origin/main`'s version,
+declared by no open PR branch and no other worktree's `plugin.json`, the branch rebased on current main,
+CHANGELOG edits add sections and never rename a heading, `python3 scripts/check-marketplace.py` exits 0.
 
 **Why.** `claude plugin update` compares declared versions, not contents (CLAUDE.md "Stop and ask").
 6 findings, 5 change sets, but every check names this repository's files, so it is overlay by nature.
 
-**Self-check.** At land: `git fetch origin && git show origin/main:plugin/crew/.claude-plugin/plugin.json`
+**Self-check.** On the build branch: `git diff origin/main -- plugin/crew/.claude-plugin/plugin.json
+.claude-plugin/marketplace.json` shows no version line (no bump); a version-drift report from
+`check-marketplace.py` is expected there. At land: `git fetch origin && git show origin/main:plugin/crew/.claude-plugin/plugin.json`
 (branch is greater); `gh pr list --state open` plus each worktree's `plugin.json` (not already declared);
 `git merge-base --is-ancestor origin/main HEAD` exits 0; `python3 scripts/check-marketplace.py` exits 0;
 `git diff origin/main...HEAD -- CHANGELOG.md` shows no removed `###` heading.
@@ -99,7 +101,11 @@ longer sits one patch above current main [...]"; T-0001 r2 @eb7866f2, BLOCK `.cl
 @cf3bc0d8, FIX `CHANGELOG.md:7`: "The hunk replaces the existing `### Changed` heading [...]". T-0016 r1
 @1275d2c4, FIX `plugin/crew/.claude-plugin/plugin.json:3` is kept with a note: its premise, "the plan
 assigned this ticket 1.0.40", is the plan-assigned version scheme that T-0043's land-time rule
-superseded.
+superseded. Amendment, owner-approved 2026-09-28 from T-0085 review round 1's proposal 4: T-0085 r1
+@8ab20e16, FIX `plugin/crew/.claude-plugin/plugin.json:3`: "The build branch sets crew to 1.0.55, as do
+marketplace.json:218, PLUGINS.md:14 and a versioned CHANGELOG heading. It went through 1.0.52, then 1.0.53,
+then 1.0.55. This contradicts the spec Exclusion ("Version bump is not set at implement") [...]"; the
+provisional build-branch bump the rule used to ask for is withdrawn.
 
 ## Supplements GEN-08
 
