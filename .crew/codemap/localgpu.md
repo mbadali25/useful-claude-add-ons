@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@bbd9a66d
-verified: 2026-09-28
+anchor: useful-claude-add-ons@8730119f
+verified: 2026-09-29
 
 # localgpu
 
@@ -1461,3 +1461,5 @@ number (the parentheses and comments were added in place) except in `test_crew_a
 import block lost one line; no note cites that file by line. Re-anchor only; nothing was executed for this note.
 
 **Re-anchored `3648f59a` -> `0da787d3` on 2026-09-29 (T-0107, gizmoduck 0.5.4). Current despite the lag.** `crew_refresh_check.py` named README.md as changed since the anchor. T-0107 edits exactly one line of each, in place (`git diff --numstat 2693d0fa 0da787d3 -- README.md plugin/README.md` is `1 1` for both): the gizmoduck catalog row, `README.md:875` and `plugin/README.md:415`, gains one clause naming the routine. No line shifted, and a script over every `README.md:N[-M]` citation in `.crew/codemap/` found none covering either line. `plugin/PLUGINS.md` changes only at `:441`, `:446`, `:451` and `:470` (+2 lines after it), and no note cites a `PLUGINS.md` line at or after `:441`. No claim re-read; nothing was executed for this note.
+
+**Re-anchored `bbd9a66d` -> `8730119f` on 2026-09-29 (T-0107 merges origin/main `8ab733d7`). Current despite the lag.** `8730119f` merges origin/main (T-0010 landed, crew 1.0.61, main's anchor `bbd9a66d`) into `T-0107-build`; the conflicts were this header and the provenance tail, resolved mechanically - main's anchor taken, both sides' provenance kept, main's first. `git diff --numstat bbd9a66d 8730119f -- README.md plugin/README.md` is `1 1` for each: T-0107's gizmoduck catalog row, still `README.md:875` and `plugin/README.md:415`, edited in place. No citation outside provenance covers either line, and `plugin/PLUGINS.md` changes only at `:441`, `:446`, `:451` and `:470` (+2 after it), where no note cites a line. Nothing was executed for this note.
