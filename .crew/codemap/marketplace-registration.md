@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@ea764992
+anchor: useful-claude-add-ons@f79e9f58
 verified: 2026-09-28
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -965,3 +965,7 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 T-0094 is built on origin/main `2693d0fa`: `3648f59a` plus T-0075's landing branch (crew 1.0.56-1.0.59) and `17d057db`, the README re-pin. T-0094's commits `be023596`..`ea764992` bump crew to 1.0.60 in `plugin/crew/.claude-plugin/plugin.json:3`, `.claude-plugin/marketplace.json:218` and `plugin/PLUGINS.md:14` (in place), re-measure `plugin/crew/BUDGETS.md:11` (19,426 -> 19,432 across 128 files, in place, under the owner's 2026-09-28 standing rule), and grow `.crew/verify.json` rule 25, which this note does not cite by line outside provenance (its doc rule `:69-78` did not move). Corrected here: the crew version sentence and the BUDGETS re-measure. No count this note states changed: 39 entries, 34 skills, 5 plugins (`check-marketplace.py`: "marketplace: 34 skills, 5 plugins").
 
 Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `3648f59a` to the tree at `ea764992` (difflib equal blocks); the only non-self mappings were the three version lines and `BUDGETS.md:11`, each changed in place and read with `sed -n`. Nothing else was executed for this note beyond `check-marketplace.py`.
+
+## Re-anchor provenance - `ea764992` -> `f79e9f58`, 2026-09-29 (T-0094 review round 1)
+
+`f79e9f58` ends T-0094's review-round-1 fixes (`abe87bc2`..`f79e9f58`). Of the paths this map cites, `.crew/verify.json` (rule 25's `seconds` and `why`, in place), `plugin/crew/README.md` (one refresh-admission paragraph reworded in place) changed; no citation here moved (checked by script, every `path:N` compared line by line from `ea764992` to `f79e9f58`, then the hits read). No claim changed.

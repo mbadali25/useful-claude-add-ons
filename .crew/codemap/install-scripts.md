@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@ea764992
+anchor: useful-claude-add-ons@f79e9f58
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -1052,3 +1052,7 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 T-0094 is built on origin/main `2693d0fa`: `3648f59a` plus T-0075's landing branch (crew 1.0.56-1.0.59) and `17d057db`, which re-pinned `README.md:12`/`:18` to `e878cc31`. The paths this note cites that T-0094 changed are `.crew/verify.json` (rule 25 grew three lines; no rule position is cited here outside provenance) and `plugin/crew/README.md` (not cited by line outside provenance), plus the version files, whose crew lines changed in place. The Landmines bullet on the install-URL pin is corrected: it is current at `ea764992` (`git log e878cc31..ea764992` over both install scripts is empty), and its stale-pin history is kept below that sentence.
 
 Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `3648f59a` to the tree at `ea764992` (difflib equal blocks); the only non-self mappings were `README.md:12` and `:18`, changed in place by the re-pin, read with `sed -n`. Nothing else was executed for this note.
+
+## Re-anchor provenance - `ea764992` -> `f79e9f58`, 2026-09-29 (T-0094 review round 1)
+
+`f79e9f58` ends T-0094's review-round-1 fixes (`abe87bc2`..`f79e9f58`). Of the paths this map cites, `.crew/verify.json` (rule 25's `seconds` and `why`, in place), `plugin/crew/README.md` (one refresh-admission paragraph reworded in place) changed; no citation here moved (checked by script, every `path:N` compared line by line from `ea764992` to `f79e9f58`, then the hits read). No claim changed.

@@ -2,9 +2,9 @@
 paths:
   - "plugin/crew/**"
 ---
-<!-- crew:generated source=.crew/codemap/crew.md sha256=5c385323e402abff -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/crew.md sha256=d32682116d7bc7f2 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # crew
-Code map anchor `50061215`; if it is behind HEAD, re-check with `git diff --name-only 50061215..HEAD -- <cited paths>`.
+Code map anchor `f79e9f58`; if it is behind HEAD, re-check with `git diff --name-only f79e9f58..HEAD -- <cited paths>`.
 Covers: The crew plugin after 1.0: hooks, the four agents, commands, skills inventory, config layering and leaf counts, and how crew_freshness.py reads this very directory.
 ## Entry points
 - `plugin/crew/hooks/scripts/crew_state.py:996` — `TRIGGERS`, a 15-entry tuple, unchanged in membership and order from the previous anchor.
@@ -20,7 +20,7 @@ Covers: The crew plugin after 1.0: hooks, the four agents, commands, skills inve
 - `plugin/crew/hooks/scripts/crew_context.py:121` — `load_crew_config`, the one function that reads `crew.json` before `config.json`.
 - `plugin/crew/hooks/scripts/crew_autoclear_setup.py` — no single `main()` confirmed at a specific line this pass; called with subcommands (`plan-windows-default`, `apply-migrate`) from the three sites named above.
 - `plugin/crew/hooks/scripts/crew_resume.py:667` — `decide`, read-only; `main()` is the `decide` / `record` / `precompact` CLI.
-- `plugin/crew/hooks/scripts/crew_refresh_check.py:895` — `ticket_freshness`, the library entry point; `main()` at `:995`; `artifact_verdicts` at `:636`, the audit's admission (T-0094).
+- `plugin/crew/hooks/scripts/crew_refresh_check.py:950` — `ticket_freshness`, the library entry point; `main()` at `:1050`; `artifact_verdicts` at `:682`, the audit's admission (T-0094).
 - `plugin/crew/hooks/scripts/crew_autopilot.py:500` — `next_phase`, read-only; `main()` at `:1225` is the `next` / `resume` / `settings` / `stops` / `route` / `status` / `deploy-allowed` CLI `plugin/crew/commands/autopi...
 - `plugin/crew/hooks/scripts/crew_route.py:210` — `decide`, read-only route / ask / none for a prompt; `main()` at `:332` is the `settings` / `decide` CLI.
 - `plugin/crew/hooks/scripts/crew_endpoints.py:566` — `declare_endpoint`, the only writer of *declared* records.

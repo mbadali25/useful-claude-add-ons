@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@50061215
+anchor: useful-claude-add-ons@f79e9f58
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -1149,3 +1149,7 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 ## Re-anchor provenance - `ea764992` -> `50061215`, 2026-09-29 (T-0094 lint)
 
 `50061215` is T-0094's lint commit: `scope_guard.py`'s rule-6 docstring rewrapped (one line longer, pylint C0301), the two could-not-tell `except Exception` lines in `crew_refresh_check.py` marked `noqa: BLE001` in place, one `sabotage_refresh.py` replace string parenthesised in place (ISC004), and `test_refresh_admission.py`'s imports sorted (I001). No body citation moved. Checked by the same citation-mapping script, `ea764992` -> `50061215`. Nothing else was executed for this note.
+
+## Re-anchor provenance - `50061215` -> `f79e9f58`, 2026-09-29 (T-0094 review round 1)
+
+`f79e9f58` ends T-0094's review-round-1 fixes (`abe87bc2`..`f79e9f58`). Of the paths this map cites, `.crew/verify.json` (rule 25's `seconds` and `why`, in place), `plugin/crew/README.md` (one refresh-admission paragraph reworded in place), `plugin/crew/commands/implement.md` step 6 and `docs/guides/crew/src/daily-workflow-scope.md` (one phrase each, in place) and the rebuilt daily-workflow guide changed; no citation here moved (checked by script, every `path:N` compared line by line from `50061215` to `f79e9f58`, then the hits read). No claim changed.

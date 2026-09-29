@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@ea764992
+anchor: useful-claude-add-ons@f79e9f58
 verified: 2026-09-28
 
 # localgpu
@@ -1346,3 +1346,7 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 T-0094 is built on origin/main `2693d0fa`: `3648f59a` plus T-0075's landing branch (crew 1.0.56-1.0.59: `crew_config_files.py`, `crew_config_menu.py`, `test_config_menu.py`, `sabotage_config.py`) and `17d057db`, the README re-pin. T-0094's commits `be023596`..`ea764992` change crew's refresh-artifact admission (`crew_refresh_check.py`, `completion_audit.py`, `scope_guard.py`'s docstring, their tests), `plugin/crew/README.md`, `.crew/verify.json` rule 25 and the version files. This note reaches them only through its citations of `.crew/verify.json` and `plugin/crew/README.md`, neither cited by line outside provenance, and describes `plugin/localgpu/`, which no commit in `3648f59a..ea764992` touches (`git diff --name-only 3648f59a ea764992 -- plugin/localgpu` is empty).
 
 No body citation moved: checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `3648f59a` to the tree at `ea764992` (difflib equal blocks). Nothing else was executed for this note.
+
+## Re-anchor provenance - `ea764992` -> `f79e9f58`, 2026-09-29 (T-0094 review round 1)
+
+`f79e9f58` ends T-0094's review-round-1 fixes (`abe87bc2`..`f79e9f58`). Of the paths this map cites, `.crew/verify.json` (rule 25's `seconds` and `why`, in place), `plugin/crew/README.md` (one refresh-admission paragraph reworded in place) changed; no citation here moved (checked by script, every `path:N` compared line by line from `ea764992` to `f79e9f58`, then the hits read). No claim changed.

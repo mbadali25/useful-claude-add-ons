@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@50061215
+anchor: useful-claude-add-ons@f79e9f58
 verified: 2026-09-28
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -179,7 +179,7 @@ Notable rules, re-read directly:
   modules (six since T-0094) stops matching a pytest rule. The check can refuse `/crew:done`, so its `why`
   names must-refuse and must-allow cases, and says `implement.md`/`done.md` are
   mapped here because these tests carry their ordering checks. Its mutations
-  live in `plugin/crew/tests/sabotage_refresh.py` (`REFRESH_MUTATIONS`, `:60`),
+  live in `plugin/crew/tests/sabotage_refresh.py` (`REFRESH_MUTATIONS`, `:67`),
   imported by `plugin/crew/tests/sabotage.py:75` and appended to `MUTATIONS` at
   `:3053` (in the `MUTATIONS +=` statement at `:3052-3055`) — the same sibling-module pattern as the other `sabotage_*.py`
   lists, because `sabotage.py` sits at `.pylintrc`'s max-module-lines. Every
@@ -1562,3 +1562,7 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 ## Re-anchor provenance - `ea764992` -> `50061215`, 2026-09-29 (T-0094 lint)
 
 `50061215` is T-0094's lint commit: `scope_guard.py`'s rule-6 docstring rewrapped (one line longer, pylint C0301), the two could-not-tell `except Exception` lines in `crew_refresh_check.py` marked `noqa: BLE001` in place, one `sabotage_refresh.py` replace string parenthesised in place (ISC004), and `test_refresh_admission.py`'s imports sorted (I001). No body citation moved. Checked by the same citation-mapping script, `ea764992` -> `50061215`. Nothing else was executed for this note.
+
+## Re-anchor provenance - `50061215` -> `f79e9f58`, 2026-09-29 (T-0094 review round 1)
+
+`f79e9f58` ends T-0094's review-round-1 fixes (`abe87bc2`..`f79e9f58`). `.crew/verify.json` rule 25 changes in place: `seconds` 51 -> 65 (`:285`) and its `why` (`:288`) now prices the observed high and says the rule is chronically deferred at the default 60s Stop budget; rule 25's description here is re-derived to match (that edit rode in `f79e9f58` itself, whose subject names only the code comment). `sabotage_refresh.py`'s constants grow, so `REFRESH_MUTATIONS` moves `:60` -> `:67` (updated). Every other rule position holds (the verify.json edit is line-neutral). Checked by the same script as the crew map's note, then read; nothing else was executed for this note.

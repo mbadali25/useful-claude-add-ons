@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@50061215
+anchor: useful-claude-add-ons@f79e9f58
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -1010,13 +1010,13 @@ question: are the code maps, diagrams and code graph that THIS ticket's
 changed paths reach still current (module docstring, `:1-8`)? It narrows
 `crew_freshness.py`'s per-artifact questions to the paths the ticket changed
 (`plugin/crew/hooks/scripts/scope_base.py` `resolve` plus `completion_audit.changed_paths`, minus
-`RELEASE_BOOKKEEPING`, `:228`), so a raw anchor lag is not staleness; each
-artifact reads `fresh`/`stale`/`unknown` (`:197-199`) with the refresh command
+`RELEASE_BOOKKEEPING`, `:233`), so a raw anchor lag is not staleness; each
+artifact reads `fresh`/`stale`/`unknown` (`:202-204`) with the refresh command
 to run, documents read `not measured`, and a scope base that hides or may
 hide the change - a fallback, or (since review round 3) a recorded base with
-a commit behind it naming the ticket (`_named_behind`, `:856`) - makes the
+a commit behind it naming the ticket (`_named_behind`, `:911`) - makes the
 whole answer `unknown`, and every artifact measured against that base with it
-(`_unconfirmed`, `:873`; `ticket_freshness`, `:895`). It is a CLI the
+(`_unconfirmed`, `:928`; `ticket_freshness`, `:950`). It is a CLI the
 commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 `f2bb919b`.
 
@@ -1025,27 +1025,34 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   refresh, commits, and re-runs until `fresh`; a `stop` ends the loop.
 - `/crew:done` Check 4 (`plugin/crew/commands/done.md:50-61`) runs it again
   and refuses on `stale` or `unknown` without refreshing (`:56-59`).
-- `REFRESH_ARTIFACT_PATHS` (`plugin/crew/hooks/scripts/crew_refresh_check.py:213-218`: the code map,
+- `REFRESH_ARTIFACT_PATHS` (`plugin/crew/hooks/scripts/crew_refresh_check.py:218-223`: the code map,
   `docs.diagramsDir`, `graph.out`, `.claude/rules`) is the one definition.
   The scope guard (`_refresh_artifact`,
   `plugin/crew/hooks/scripts/scope_guard.py:192-203`) lets a ticket write
   under those dirs without a Touch entry **only while its approval is
   current** - a path test, because a write-time check sees one Edit of a
   multi-Edit refresh. Since T-0094 (crew 1.0.60) the completion audit is
-  narrower: `_verdicts` (`plugin/crew/hooks/scripts/completion_audit.py:187`)
-  asks `artifact_verdicts` (`plugin/crew/hooks/scripts/crew_refresh_check.py:636`)
-  for every changed artifact, and `_outside_refresh_artifacts` (`:202-211` in
-  `completion_audit.py`) keeps the approval gate and drops only a `True`
-  verdict; `_entry` (`:214`) prints a refused one's reason in brackets. A
-  `True` needs a changed path to reach the artifact (reach = every path
-  changed since the base, release bookkeeping kept, `:653-656` in
-  `crew_refresh_check.py`) and a re-anchor or regeneration shape: a map's
-  `anchor:` moved to a commit behind HEAD (`_map_verdict` `:554`, `_sha_moved`
-  `:493`), INDEX rows of admitted maps only (`_index_verdict` `:564`), a
-  diagram's provenance sha moved the same way (`_diagram_verdict` `:581`), a
-  rendered file beside an admitted source (`_rendered_verdict` `:690`), a rule
-  equal to `crew_instructions.expected_rules` (`_rule_verdict` `:599`), the
-  graph after a code change. `None` (`COULD_NOT_TELL`, `:443`) never admits.
+  narrower: `_outside_refresh_artifacts`
+  (`plugin/crew/hooks/scripts/completion_audit.py:210-221`) is the one approval
+  gate - with no current approval it returns every path and judges nothing -
+  and otherwise asks `_verdicts` (`:187`), which asks `artifact_verdicts`
+  (`plugin/crew/hooks/scripts/crew_refresh_check.py:682`) for every changed
+  artifact and fails closed (nothing admitted) if that raises, and drops only a
+  `True` verdict; `_entry` (`:224` in `completion_audit.py`) prints a refused
+  one's reason in brackets. A `True` needs a changed path to reach the artifact
+  through its BASE copy's citations (reach = every path changed since the base,
+  release bookkeeping dropped except `ADMISSION_BOOKKEEPING`, a plugin
+  manifest, `:246` and `:700-709` in `crew_refresh_check.py`; the graph's code
+  test reads the whole reach) and a re-anchor or regeneration shape: a map's
+  `anchor:` moved forward to a commit behind HEAD (`_map_verdict` `:596`,
+  `_sha_moved` `:504`, `_moved_from` `:533`: an unchanged anchor text never
+  moved, a base anchor git cannot resolve is could-not-tell, one on HEAD's
+  history must be behind the new one), INDEX rows of admitted maps only,
+  deleted lines included (`_index_verdict` `:607`), a diagram's provenance sha
+  moved the same way (`_diagram_verdict` `:626`), a rendered file beside an
+  admitted source (`_rendered_verdict` `:739`), a rule equal to
+  `crew_instructions.expected_rules` (`_rule_verdict` `:645`), the graph after
+  a code change. `None` (`COULD_NOT_TELL`, `:454`) never admits.
   With no current approval nothing is exempt.
 - Tests: `plugin/crew/tests/test_refresh_check.py`,
   `plugin/crew/tests/test_scope_guard_refresh_artifacts.py`,
@@ -1093,8 +1100,8 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   above.
 - `plugin/crew/hooks/scripts/crew_resume.py:667` — `decide`, read-only;
   `main()` is the `decide` / `record` / `precompact` CLI.
-- `plugin/crew/hooks/scripts/crew_refresh_check.py:895` — `ticket_freshness`,
-  the library entry point; `main()` at `:995`; `artifact_verdicts` at `:636`,
+- `plugin/crew/hooks/scripts/crew_refresh_check.py:950` — `ticket_freshness`,
+  the library entry point; `main()` at `:1050`; `artifact_verdicts` at `:682`,
   the audit's admission (T-0094).
 - `plugin/crew/hooks/scripts/crew_autopilot.py:500` — `next_phase`, read-only;
   `main()` at `:1225` is the `next` / `resume` / `settings` / `stops` /
@@ -2521,3 +2528,7 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 ## Re-anchor provenance - `ea764992` -> `50061215`, 2026-09-29 (T-0094 lint)
 
 `50061215` is T-0094's lint commit: `scope_guard.py`'s rule-6 docstring rewrapped (one line longer, pylint C0301), the two could-not-tell `except Exception` lines in `crew_refresh_check.py` marked `noqa: BLE001` in place, one `sabotage_refresh.py` replace string parenthesised in place (ISC004), and `test_refresh_admission.py`'s imports sorted (I001). `_refresh_artifact` moves `scope_guard.py:191-202` -> `:192-203`, re-derived above; no other body citation moved. Checked by the same citation-mapping script, `ea764992` -> `50061215`. Nothing else was executed for this note.
+
+## Re-anchor provenance - `50061215` -> `f79e9f58`, 2026-09-29 (T-0094 review round 1)
+
+`f79e9f58` is the last of T-0094's review-round-1 fix commits (`abe87bc2`..`f79e9f58`): `crew_refresh_check.py` gains `ADMISSION_BOOKKEEPING` and `_in_admission_reach`, reads a map's reach from its base copy only, splits `_sha_moved` into it and `_moved_from` (three-valued base anchor, forward-only), judges INDEX.md's deleted lines, and narrows the RELEASE_BOOKKEEPING comment in place; `completion_audit.py`'s `_outside_refresh_artifacts` now computes the verdicts itself, after the approval gate, and `_verdicts` fails closed on a raise; the refresh suites, `refresh_fixtures.py` and `sabotage_refresh.py` grow; `.crew/verify.json` rule 25 is re-priced in place (`:285`, `:288`); `README.md`, `implement.md` and `daily-workflow-scope.md` are reworded in place. Re-derived here: the artifact refresh check section (`REFRESH_ARTIFACT_PATHS` `:218-223`, the audit's gate and admission bullet with every `crew_refresh_check.py` and `completion_audit.py` position in it, `RELEASE_BOOKKEEPING` `:233`, the status constants `:202-204`, `_named_behind` `:911`, `_unconfirmed` `:928`, `ticket_freshness` `:950`, `main()` `:1050`, `artifact_verdicts` `:682`). Checked by script (every `path:N`, and every `:N` in a paragraph naming a changed file, compared line by line between `50061215` and `f79e9f58`), then each hit read; hits inside earlier provenance sections are history and left as written. Nothing was executed for this note beyond that script.
