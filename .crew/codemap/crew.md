@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@bbd9a66d
-verified: 2026-09-28
+anchor: useful-claude-add-ons@a7f9c5e4
+verified: 2026-09-29
 
 ## Re-derive provenance
 
@@ -488,7 +488,7 @@ first (a `Displaced` move-aside exits 1 with every path named), writes the bytes
 Tests: `plugin/crew/tests/test_config_files.py`, `plugin/crew/tests/test_config_menu.py`,
 `plugin/crew/tests/test_crew_config.py`; 98 mutations in `plugin/crew/tests/sabotage_config.py`
 (`CONFIG_MENU_MUTATIONS`, `len()` at `938e3b11`: 50 through review round 2, 31 for round 3, 17
-for round 4; registered in `sabotage.py:80`, appended at `:3055`); `.crew/verify.json` rule 7
+for round 4; registered in `sabotage.py:80`, appended at `:3056`); `.crew/verify.json` rule 7
 (`:129-144`) maps all of them plus the three modules.
 
 ## `.crew/config.json` vs `.crew/crew.json` — the open 1.0.x authority question
@@ -783,7 +783,7 @@ gives - the command as written and with line continuations joined (`_BASH_CONTIN
 Tests `plugin/crew/tests/test_crew_autopilot_policy.py` plus new cases in `test_crew_ticket.py`,
 `test_scope_guard.py`, `test_crew_autopilot_status.py` and `test_crew_route.py`; mutations
 `POLICY_MUTATIONS` in `sabotage_autopilot.py` (55 by `len()` on T-0010-solo's merge of `e878cc31`, `plugin/crew/tests/sabotage_autopilot.py:687`),
-registered at `plugin/crew/tests/sabotage.py:77` and `:3055`; `.crew/verify.json` rule 28
+registered at `plugin/crew/tests/sabotage.py:77` and `:3056`; `.crew/verify.json` rule 28
 (`:307-313`), which also maps `commands/autopilot.md` since review round 2.
 
 ## Plain-text lifecycle routing (T-0023, crew 1.0.43)
@@ -817,7 +817,7 @@ unchanged. Tests: `plugin/crew/tests/test_crew_route.py`,
 `plugin/crew/tests/test_crew_route_hook.py`; mutations
 `plugin/crew/tests/sabotage_route.py` (registered at
 `plugin/crew/tests/sabotage.py:79`); `.crew/verify.json` rule 31 (`:322-330`),
-then T-0024's approval rule 32 (`:332-339`), the last; T-0010's policy rule 29 (`:307-313`)
+then T-0024's approval rule 32 (`:332-339`) and T-0085's standards rule 33 (`:340-352`), the last; T-0010's policy rule 29 (`:307-313`)
 sits after T-0072's autopilot rule 28 (`:298-306`).
 
 **`deploy_allowed` (T-0072, crew 1.0.51).** DERIVED at `80326b1d` (T-0072's review-round-4 redesign, `35733d76`); lines re-read after its merge of T-0077 (`a4eb2f55`, `_rel` +6 at `:170`) and its review-round-5 fix (`0f488706`, `_resolve_root` +4), and again at `d7c7c75c` on T-0010-solo's merge of `6387ab49`, where T-0010's code above it moved every line (re-read by `grep -n` per symbol).
@@ -1124,61 +1124,72 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
 DERIVED at `22399a9c`, read in full: `plugin/crew/hooks/scripts/crew_standards.py`, the
 `standards_gate` hunk of `review_run.py` and the block tuple of `review_prompt.py`. Line
 numbers re-read at `07bcaf3b` (review round 1 fixes), where `crew_standards.py` was read in
-full again, and re-read again for the successor plan's round-2 fixes (from the committed
-`crew_standards.py`, `grep -n '^def '`), where `_scope` gained the merge-base fallback.
+full again, re-read for the successor plan's round-2 fixes, where `_scope` gained the
+merge-base fallback, and re-read on T-0085's merge of main `8ab733d7` (`grep -n '^def '` on the
+merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in full.
 
-- **Sets.** `parse_set` (`plugin/crew/hooks/scripts/crew_standards.py:143`) reads a `---`
-  front matter (`set`, `applies-to` as JSON, `_front_matter` `:110`), `## <ID> <name>`
+- **Sets.** `parse_set` (`plugin/crew/hooks/scripts/crew_standards.py:144`) reads a `---`
+  front matter (`set`, `applies-to` as JSON, `_front_matter` `:111`), `## <ID> <name>`
   headings whose prefix must equal the set, `## Supplements <ID>` sections, and the bold
   fields in `FIELDS` (`:73`); plugin sets need `PLUGIN_FIELDS` (`:74`), the overlay only
   Rule and Self-check. Any other `## ` heading is a problem, not prose. `_plugin_sets`
-  (`:233`) refuses a plugin set that carries Supplements, repeats a set name, or names
+  (`:234`) refuses a plugin set that carries Supplements, repeats a set name, or names
   itself `REPO`, the overlay's set.
-- **Effective set.** `effective_set` (`:260`): every `*.md` under
+- **Effective set.** `effective_set` (`:261`): every `*.md` under
   `plugin/crew/skills/crew-standards/references/` whose `applies-to` holds `"**"` or matches
-  a changed file through `crew_ticket.glob_match` (`_applies` `:226`), GEN first, then the
+  a changed file through `crew_ticket.glob_match` (`_applies` `:227`), GEN first, then the
   overlay `OVERLAY_REL` (`:70`). Only `FileNotFoundError` on the overlay is `absent`
-  (`_read_bytes` `:99`); any other read error, a decode error, a wrong set, a reused plugin
+  (`_read_bytes` `:100`); any other read error, a decode error, a wrong set, a reused plugin
   id or a Supplements naming no plugin standard is `unknown` with a problem. The digest
   covers each included file's set name and bytes, and the overlay's absence.
-- **Self-check.** `init` (`:493`) exclusive-creates `.work/tickets/<id>/selfcheck.md`;
-  `record_problems` (`:412`) refuses a missing, duplicate or unknown row, a status outside
-  `STATUSES` (`:77`) and placeholder evidence; `stamp` (`:508`) validates the rows from one
-  read (`_read_selfcheck_raw` `:368`), resolves the ticket's scope base (`_scope` `:444`):
-  a recorded start as recorded; a kept record that is gone or no longer an ancestor of HEAD
-  as `scope_base.resolve`'s merge-base, the base `/crew:review` bundles against, with a
-  `(fallback)` note on the output line (`_noted` `:479`); no entry at all, or the HEAD-only
-  fallback, refused, naming `--record` only when `_has_scope_entry` (`:436`) finds no entry
-  (`--record` keeps an existing one). It takes `review_patch.compute`'s
+- **Self-check.** `init` (`:519`) exclusive-creates `.work/tickets/<id>/selfcheck.md`;
+  `record_problems` (`:413`) refuses a missing, duplicate or unknown row, a status outside
+  `STATUSES` (`:77`) and placeholder evidence; `stamp` (`:534`) validates the rows from one
+  read (`_read_selfcheck_raw` `:369`), resolves the ticket's scope base (`_scope` `:459`):
+  a recorded start as recorded; a start `scope_base` recorded as a merge-base guess
+  (`record-fallback`) used and marked with its reason; a kept record that is gone or no
+  longer an ancestor of HEAD as `scope_base.resolve`'s merge-base, the base `/crew:review`
+  bundles against, with a `(fallback)` note on every output line derived from it (`_noted`
+  `:505`); no entry at all, or the HEAD-only fallback, refused, naming `--record` only when
+  `_scope_entry` (`:437`) finds no entry (`--record` keeps an existing one). A
+  `.crew/.scope-base` that exists but cannot be read or parsed is refused without naming
+  `--record`, which would rewrite it with this ticket's entry alone (`_scope_entry` tells it
+  from an absent record through `_read_bytes`). It takes `review_patch.compute`'s
   `bundle_sha256` over it, refuses if the file's bytes changed meanwhile, and writes
   `_STAMP_RE`'s line (`:85`) under the header through a temp file and `os.replace`
-  (`_write_replacing` `:327`).
+  (`_write_replacing` `:328`); `stamp`'s docstring names the remaining window between that
+  re-read and the replace as an accepted risk, not a GEN-03 binding.
 - **Gate.** `review_run.run` calls `standards_gate`
-  (`plugin/crew/hooks/scripts/review_run.py:378`) at `:418`, before
-  `review_ledger.reserve` (`:422`), for every provider. `crew_standards.review_gate`
-  (`:604`) applies unless `gate_applies` (`:542`) proves there is no approval receipt: only
+  (`plugin/crew/hooks/scripts/review_run.py:378`) at `:425`, before
+  `review_ledger.reserve` (`:429`), for every provider, unless `review_ledger.status` already
+  reads `NEEDS_REPLAN` or no rounds left: then the budget refusal answers first and the
+  self-check is not asked for (review round 3). `crew_standards.review_gate`
+  (`:638`) applies unless `gate_applies` (`:576`) proves there is no approval receipt: only
   an `lstat` `FileNotFoundError` is "absent" (a printed "not required" note); a corrupt
   receipt, a failed lookup or any other `OSError` (a non-directory or unreadable parent)
-  gates, with a "could not tell" note. It reads the manifest, and `_gate` (`:576`, behind
-  `gate_problems` `:570`) re-checks the record's completeness and compares the stamp's bundle and standards digest; on a pass the
+  gates, with a "could not tell" note. It reads the manifest, and `_gate` (`:610`, behind
+  `gate_problems` `:604`) re-checks the record's completeness and compares the stamp's bundle and standards digest; on a pass the
   note carries `std:<first 8 of the digest>` for the metrics row. Problems return
   `EXIT_USAGE` (`review_run.py:400`) unless `crew_incident.read_state` is active, which logs
   a `standards-selfcheck` skip (`:391`) and reserves.
 - **Checklist.** `review_prompt.build` puts `crew_standards.checklist_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:264`, defined at `crew_standards.py:630`)
+  (`plugin/crew/hooks/scripts/review_prompt.py:264`, defined at `crew_standards.py:664`)
   after the test receipts; it never reads `selfcheck.md`. When the manifest's file lists
   are unusable it lists the always-on sets (those whose `applies-to` holds `"**"`) under an
   `UNKNOWN:` line.
-- **Loop and metric.** `proposals` (`:665`) exclusive-creates
-  `standards-proposals-r<N>.md` from `review_verdict.parse`'s findings, NIT dropped;
-  `metric_summary` (`:705`) groups round-1 rows from `crew_migrate.metrics_rows` by ticket,
-  splits on `_STD_TOKEN_RE` (`:88`), and keeps unknown rounds on neither side; `metric
-  --record` (`:737`) appends a line with no `|`.
+- **Loop and metric.** `proposals` (`:699`) exclusive-creates
+  `standards-proposals-r<N>.md` from `review_verdict.parse`'s findings, NIT dropped, and
+  refuses an out.txt the parser calls INCOMPLETE, writing nothing; `metric_summary` (`:766`)
+  groups round-1 rows from `crew_migrate.metrics_rows` by ticket and sides each row with
+  `_std_side` (`:749`, on `_STD_TOKEN_RE` `:88`): no token is before, `std:<8 hex>` after,
+  and `std:none` or any other `std:` value is counted on neither side, as are unknown
+  rounds; `metric --record` (`:803`) appends a line with no `|`.
 - **Tests.** `plugin/crew/tests/test_crew_standards.py`, `test_review_run_standards.py`,
-  `test_review_prompt.py`, `test_lifecycle_commands.py`; thirty-three mutations in
-  `plugin/crew/tests/sabotage_standards.py` (`STANDARDS_MUTATIONS` `:35`; fourteen through
-  review round 1, nineteen from round 2), appended in `plugin/crew/tests/sabotage.py` at `:3056`;
-  `.crew/verify.json`'s last rule runs them. JUDGEMENT: the approval-receipt condition is
+  `test_review_prompt.py`, `test_lifecycle_commands.py`; forty-two mutations in
+  `plugin/crew/tests/sabotage_standards.py` (`STANDARDS_MUTATIONS` `:45`; fourteen through
+  review round 1, nineteen from round 2, nine from round 3), appended in
+  `plugin/crew/tests/sabotage.py` at `:3056`; `.crew/verify.json`'s last rule runs them.
+  JUDGEMENT: the approval-receipt condition is
   the one way a ticket reaches review without the gate; it exists because the pre-existing
   review_run tests run tickets with no receipt, and a ticket without one cannot pass
   `/crew:done`.
@@ -2867,3 +2878,5 @@ import block lost one line; no note cites that file by line. Re-anchor only; not
 **Re-anchored `e3f5fa49` -> `001f8a78` on 2026-09-29 (T-0085 successor plan, review round 2's fixes).** `bc3602df`..`001f8a78` change `plugin/crew/hooks/scripts/crew_standards.py` (`_scope` gains the merge-base fallback for a kept but unusable scope record, `_has_scope_entry` and `_noted` are new, so every definition from `_scope` down moves by +8 to +30 lines), its tests (`test_crew_standards.py`, `test_review_run_standards.py`, `test_lifecycle_commands.py`) and `plugin/crew/tests/sabotage_standards.py` (nineteen new entries; `STANDARDS_MUTATIONS` moves `:21` -> `:35`), `plugin/crew/skills/crew-standards/SKILL.md` (step 3, +5 lines), `plugin/crew/README.md` (one table row, in place), `CHANGELOG.md` (one bullet in T-0085's section, so every line below it moves +8) and `plugin/crew/BUDGETS.md:11` (the count, in place). Every `path:N` citation in this note into those files was mapped by script (difflib equal blocks; a same-size in-place replacement counts as the same line) from `e3f5fa49` to `001f8a78`; the only citations that moved are `CHANGELOG.md:N` ones inside earlier dated provenance sections, left as history. The "Development standards and the pre-review self-check (T-0085)" section was re-derived from the committed `crew_standards.py` (`grep -n '^def '`), its `_scope` claim rewritten for the fallback and its mutation count set to thirty-three. Paragraphs dated before this one describe the tree at their own anchor and were not rewritten. No suite was executed for this note.
 
 **Re-anchored `001f8a78` -> `61ecbf3c` on 2026-09-29 (T-0085, pylint E1136 in two tests).** `61ecbf3c` changes only `plugin/crew/tests/test_crew_standards.py` and `test_review_run_standards.py` (two stamp reads become None-safe), which this note cites by name only. No citation moved. No suite was executed for this note.
+
+**Re-anchored `61ecbf3c` / `bbd9a66d` -> `a7f9c5e4` on 2026-09-29 (T-0085 merges main `8ab733d7`, T-0010 landed as crew 1.0.61).** `a7f9c5e4` merges origin/main `8ab733d7` (T-0010 landed as crew 1.0.61) into `T-0085-build` after T-0085's review round 3 fixes (`33521aa4`), with mechanical conflicts only: crew version lines take main's 1.0.61 with T-0085's 30 skills (the build branch carries no bump, REPO-03 as amended), `plugin/crew/tests/sabotage.py` registers `POLICY_MUTATIONS`, `APPROVAL_MUTATIONS`, `CONFIG_MENU_MUTATIONS` and `STANDARDS_MUTATIONS` on `:3056`, anchors, provenance (both sides kept, main's first), INDEX history cells, version sentences, diagram headers, generated rules and graph. Every body `path:N` citation was traced to the side whose copy of this note carries its line (`33521aa4` or `8ab733d7`) and mapped from that side's anchor to `a7f9c5e4` through a difflib line diff (`/root/crew-tmp/t-0085/citemap.py`, machine-local; only cited files that changed; a bare file name resolved when unique in `git ls-files`); each citation that did not map to itself was read with `sed -n` / `grep -n`, and the script's misattributed bare `:N` (a `sabotage_autopilot.py` or `crew_ticket.py` line after another file's name, a history list's earlier positions) were read and hold. Moved: `sabotage.py`'s config-menu and policy registrations `:3055` -> `:3056`; the routing section's rule list gains T-0085's standards rule 33 (`:340-352`) as the last. The "Development standards and the pre-review self-check (T-0085)" section was re-derived for review round 3 from the merged tree (`grep -n '^def '` and the `33521aa4` hunks read in full): `_scope_entry` (`:437`) replaces `_has_scope_entry` and refuses an unreadable `.crew/.scope-base` without naming `--record`, a `record-fallback` start is marked, `proposals` refuses an INCOMPLETE out.txt, `_std_side` (`:749`) keeps `std:none` and unreadable tokens on neither side, `review_run.run` answers a spent budget before the gate (`:425`, reserve `:429`), and `STANDARDS_MUTATIONS` (`:45`) holds forty-two. The counts sentence reads 36 commands and 30 skills and the version 1.0.61, with the build branch's no-bump note. Paragraphs dated before this one describe the tree at their own anchor and were not rewritten. No suite was executed for this note.
