@@ -2,10 +2,10 @@
 # Dry-run checks for scripts/merge_gate.sh.
 #
 # No network, no credentials, no real config: merge_gate.sh resolves its
-# transport through BB_CMD, so every test up to the last section points that at
+# transport through BB_CMD, so every test before the transport section points that at
 # _test/stub_bb.sh and feeds it canned responses.
 #
-# The final section is the exception and is deliberate: it runs the real bb.sh,
+# The transport section is the exception and is deliberate: it runs the real bb.sh,
 # because a fixture stub can never show whether the shipped file is invocable at
 # all. It strips BITBUCKET_EMAIL and BITBUCKET_API_TOKEN from bb.sh's
 # environment, so bb.sh stops at its own auth guard before curl. Still no
@@ -16,6 +16,9 @@
 # branch_match_kind schemes, that a failed export validation deletes nothing,
 # that a restore never reuses a recorded id, and that a plan-limited write is
 # reported as its own state instead of collapsing into "applied" or "failed".
+#
+# The last section, after the transport one, runs no script at all: it greps
+# the skill's docs and the two catalog rows (T-0503's documentation invariants).
 #
 # Creates nothing outside its own mktemp -d.
 set -uo pipefail
@@ -402,6 +405,69 @@ OUT="$(cat "$CASE_DIR/out")"; ERR="$(cat "$CASE_DIR/err")"
 want_nonzero_rc "the default transport still fails without credentials"
 want_missing "the default transport is not blocked by the executable bit" "$ERR" "Permission denied"
 want_contains "it failed on bb.sh's auth guard instead" "$ERR" "$GUARD_TEXT"
+
+echo "== documentation invariants (T-0503) =="
+# The aws-ops report of 2026-09-28 (items 18-20) named three API behaviours the
+# skill's docs were silent on: variables GETs read back without the trailing
+# slash, repository access tokens being UI-only on Cloud, and reviewers on a
+# Bitbucket PR. These cases keep those entries, the trailing slash itself, and
+# the two catalog rows from drifting apart. No network: they read only files in
+# this repo. Each pattern was checked RED on the docs before the entries existed,
+# so none of them passes on the docs' silence.
+SKILL_DIR="$HERE/../.."
+SKILL_MD="$SKILL_DIR/SKILL.md"
+API_MD="$SKILL_DIR/references/api.md"
+ROOT_README="$HERE/../../../../README.md"
+SKILLS_README="$HERE/../../../README.md"
+
+if grep -qF 'pipelines_config/variables/' "$SKILL_MD"; then
+  pass "SKILL.md: variables GET is written with the trailing slash"
+else
+  fail "SKILL.md: variables GET is written with the trailing slash"
+fi
+if grep -qi 'could not tell' "$SKILL_MD"; then
+  pass "SKILL.md: an empty values list from the slash-less path is could-not-tell"
+else
+  fail "SKILL.md: an empty values list from the slash-less path is could-not-tell"
+fi
+if grep -qF 'effective-default-reviewers' "$SKILL_MD"; then
+  pass "SKILL.md: default reviewers are named"
+else
+  fail "SKILL.md: default reviewers are named"
+fi
+if grep -qF 'Data Center' "$SKILL_MD"; then
+  pass "SKILL.md: the access-token create endpoint is placed on Data Center"
+else
+  fail "SKILL.md: the access-token create endpoint is placed on Data Center"
+fi
+if grep -qF 'pipelines_config/variables/' "$API_MD" \
+  && grep -qF 'deployments_config/environments/{environment_uuid}/variables/' "$API_MD"; then
+  pass "api.md: both variables paths carry the trailing slash"
+else
+  fail "api.md: both variables paths carry the trailing slash"
+fi
+if grep -qF 'default-reviewers/{target_username}' "$API_MD" \
+  && grep -qF 'effective-default-reviewers' "$API_MD"; then
+  pass "api.md: default-reviewer endpoints are listed"
+else
+  fail "api.md: default-reviewer endpoints are listed"
+fi
+# A token-shaped literal: Atlassian API tokens start ATATT, and the placeholder
+# SKILL.md uses (ATATT...) is far shorter than 20 characters after the prefix.
+if grep -rEq 'ATATT[A-Za-z0-9_-]{20,}|ATCTT[A-Za-z0-9_-]{20,}' "$SKILL_DIR"; then
+  fail "no token-shaped value anywhere under skills/bitbucket/"
+else
+  pass "no token-shaped value anywhere under skills/bitbucket/"
+fi
+# The two catalogs differ only in the link target; an empty row on either side
+# is a failure, not a match.
+ROW_ROOT="$(grep -F '[`bitbucket`](skills/bitbucket)' "$ROOT_README" | sed 's#](skills/bitbucket)#](bitbucket)#')"
+ROW_SKILLS="$(grep -F '[`bitbucket`](bitbucket)' "$SKILLS_README")"
+if [ -n "$ROW_ROOT" ] && [ "$ROW_ROOT" = "$ROW_SKILLS" ]; then
+  pass "README.md and skills/README.md carry the same bitbucket row"
+else
+  fail "README.md and skills/README.md carry the same bitbucket row"
+fi
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
