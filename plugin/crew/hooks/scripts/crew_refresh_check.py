@@ -126,19 +126,22 @@ each with an observable answer: did a path the ticket changed REACH it, and is
 the edit a RE-ANCHOR or a REGENERATION.
 
   map       `.crew/codemap/<name>.md` (not INDEX, UPGRADE or MIGRATION): in
-            the base tree and on disk, a citation in the base or working copy
-            reaches a changed path, and `anchor:` moved from the base's value
-            to a commit that is HEAD or behind it (a base anchor that names no
-            commit -- a squash merge -- is moved from by any qualifying one).
+            the base tree and on disk, a citation in the BASE copy reaches a
+            changed path (an edit cannot cite its way in), and `anchor:`
+            moved forward from the base's value to a commit that is HEAD or
+            behind it (a base anchor that names no commit, or one off HEAD's
+            history -- a squash merge -- is moved from by any qualifying
+            one; an unchanged anchor text never moved).
             Claims, `path:line` numbers and prose may change with it: that is
             what a refresh writes (`8bbb26d9`); an edit whose anchor did not
             move is not.
   INDEX.md  every line that differs from the base is the row of a map
             admitted in the same call.
   diagram   a source (`.mmd`, `.mermaid`) under `docs.diagramsDir`: reached
-            through its `%% Anchors:` line (none: any code path), and its
-            provenance sha moved as a map's anchor must. A rendered file is
-            admitted beside a same-stem source admitted in the same call.
+            through its base copy's `%% Anchors:` line (none: any code
+            path), and its provenance sha moved as a map's anchor must. A
+            rendered file is admitted beside a same-stem source admitted in
+            the same call.
   rule      `.claude/rules/<name>.md` whose bytes equal
             `crew_instructions.expected_rules` -- regeneration, whatever the
             map did -- or one removed that carried the generated marker and
@@ -147,11 +150,13 @@ the edit a RE-ANCHOR or a REGENERATION.
 
 Anything else under those dirs is `False`: judged against Touch like any
 other path. The reach is every path changed since the scope base, merged-in
-main paths included and RELEASE_BOOKKEEPING KEPT -- a version bump reaches the
-map citing plugin.json -- so it is wider than `ticket_freshness`'s staleness
-reach on purpose. `None` is could-not-tell (git could not run, a base copy or
-the config unreadable, the rule renderer raised): its own value, judged
-against Touch, never collapsed into admitted, and its reason says so.
+main paths included, and of RELEASE_BOOKKEEPING only ADMISSION_BOOKKEEPING --
+a plugin manifest's version bump reaches the map citing it; CHANGELOG.md,
+marketplace.json and the rest change on every release and would reach nearly
+every map. The graph's "code change" is read from the whole reach. `None`
+is could-not-tell (git could not run or could not answer, a base copy or the
+config unreadable, the rule renderer raised): its own value, judged against
+Touch, never collapsed into admitted, and its reason says so.
 
 It judges shape and reach, never truth: a re-anchored map may still carry a
 wrong claim, and that stays the reviewer's (the maps stay in the review
@@ -233,6 +238,12 @@ RELEASE_BOOKKEEPING = (
     "**/.claude-plugin/plugin.json",
     "plugin/*/BUDGETS.md",
 )
+# The one piece of RELEASE_BOOKKEEPING a map's admission reach keeps
+# (T-0094 review round 1): a plugin manifest's version bump reaches the map
+# citing it. The rest -- CHANGELOG.md, TODO.md, PLUGINS.md, BUDGETS.md, the
+# marketplace manifest -- changes on every release and most maps cite one,
+# so keeping them would make nearly every map reached by every ticket.
+ADMISSION_BOOKKEEPING = ("**/.claude-plugin/plugin.json",)
 
 # A backticked, path-shaped citation in a code map: an optional leading dot
 # (`.claude-plugin/`, `.crew/`, `.github/` -- `crew_freshness._CITED_PATH_RE`
@@ -459,11 +470,11 @@ def _git_rc(root, *args):
         return None
 
 
-def _is_ancestor(root, sha):
+def _is_ancestor(root, sha, of="HEAD"):
     """True / False / None: `merge-base --is-ancestor` exits 0 when `sha` is
-    HEAD or behind it, 1 when not, anything else on an error -- which is
+    `of` or behind it, 1 when not, anything else on an error -- which is
     could-not-tell, never "no" (git-merge-base(1))."""
-    return {0: True, 1: False}.get(_git_rc(root, "merge-base", "--is-ancestor", sha, "HEAD"))
+    return {0: True, 1: False}.get(_git_rc(root, "merge-base", "--is-ancestor", sha, of))
 
 
 def _base_text(root, base, rel):
@@ -492,12 +503,13 @@ def _base_text(root, base, rel):
 
 def _sha_moved(root, old, new):
     """(True | False | None, reason): `new` names a commit, that commit is
-    HEAD or behind it, and it is not the commit `old` names. An `old` that
-    is absent or names no commit cannot be compared with, so any `new` that
-    qualifies has moved (a squash merge drops the commit a refresh
-    anchored to)."""
+    HEAD or behind it, and it is a move FORWARD from the commit `old` names
+    (`_moved_from`). An anchor whose text did not change has not moved,
+    whatever git can or cannot say about it."""
     if not new:
         return False, "no anchor: line"
+    if old == new:
+        return False, "anchor did not move"
     code = _git_rc(root, "cat-file", "-e", new + "^{commit}")
     if code is None:
         return None, f"{COULD_NOT_TELL}: git could not run"
@@ -513,9 +525,39 @@ def _sha_moved(root, old, new):
     now = _git_lines(root, "rev-parse", "--verify", new + "^{commit}")
     if not now:
         return None, f"{COULD_NOT_TELL}: git could not resolve {new[:12]}"
-    was = _git_lines(root, "rev-parse", "--verify", old + "^{commit}") if old else None
-    if was and was[0] == now[0]:
+    if not old:
+        return True, "re-anchored"
+    return _moved_from(root, old, now[0])
+
+
+def _moved_from(root, old, now):
+    """Has the anchor moved forward from `old` to the resolved commit `now`?
+    Three-valued like everything here: a git that cannot say is
+    could-not-tell, never "moved" (review round 1). An `old` that names no
+    commit, or one off HEAD's history, cannot be behind anything, so any
+    qualifying `now` has moved (a squash merge drops, or strands, the commit
+    a refresh anchored to). An `old` on HEAD's history must be behind `now`:
+    no refresh anchors backwards."""
+    code = _git_rc(root, "cat-file", "-e", old + "^{commit}")
+    if code == 128:
+        return True, "re-anchored"
+    if code != 0:
+        return None, f"{COULD_NOT_TELL}: git could not read the base anchor {old[:12]}"
+    was = _git_lines(root, "rev-parse", "--verify", old + "^{commit}")
+    if not was:
+        return None, f"{COULD_NOT_TELL}: git could not resolve the base anchor {old[:12]}"
+    if was[0] == now:
         return False, "anchor did not move"
+    behind_head = _is_ancestor(root, was[0])
+    if behind_head is None:
+        return None, f"{COULD_NOT_TELL}: git could not say whether {old[:12]} is behind HEAD"
+    if not behind_head:
+        return True, "re-anchored"
+    forward = _is_ancestor(root, was[0], now)
+    if forward is None:
+        return None, f"{COULD_NOT_TELL}: git could not say whether {now[:12]} follows {old[:12]}"
+    if not forward:
+        return False, f"anchor moved from {old[:12]} to {now[:12]}, not forward"
     return True, "re-anchored"
 
 
@@ -555,7 +597,8 @@ def _map_verdict(top, base, rel, reach):
     before, after, early = _texts(top, base, rel)
     if early:
         return early
-    if not _reached(_cited(before) + _cited(after), reach):
+    # The BASE copy's citations only: an edit cannot cite its way into reach.
+    if not _reached(_cited(before), reach):
         return False, "no changed path reaches it"
     was, now = _ANCHOR_RE.search(before), _ANCHOR_RE.search(after)
     return _sha_moved(top, was.group(1) if was else None, now.group(1) if now else None)
@@ -570,11 +613,13 @@ def _index_verdict(top, base, rel, admitted):
                                                        autojunk=False).get_opcodes():
         if tag == "equal":
             continue
-        for number, line in [(j + 1, new[j]) for j in range(j1, j2)] + \
-                            [(i + 1, old[i]) for i in range(i1, i2)]:
+        # Both sides: a pure deletion has no new-side line at all.
+        lines = [(f"line {j + 1}", new[j]) for j in range(j1, j2)]
+        lines += [(f"base line {i + 1}", old[i]) for i in range(i1, i2)]
+        for where, line in lines:
             row = _INDEX_ROW_RE.match(line)
             if not row or row.group(1) not in admitted:
-                return False, f"INDEX.md line {number} is not the row of a re-anchored map"
+                return False, f"INDEX.md {where} is not the row of a re-anchored map"
     return True, "rows of re-anchored maps only"
 
 
@@ -582,11 +627,12 @@ def _diagram_verdict(top, base, rel, reach, code):
     before, after, early = _texts(top, base, rel)
     if early:
         return early
-    declared = _declared(after)
-    if declared is None and _declared(before) is None:
+    # The BASE copy's `%% Anchors:` only, as for a map's citations.
+    declared = _declared(before)
+    if declared is None:
         reached = code
     else:
-        reached = _reached((declared or []) + (_declared(before) or []), reach)
+        reached = _reached(declared, reach)
     if not reached:
         return False, "no changed path reaches it"
     now = _DIAGRAM_ANCHOR_RE.search(after)
@@ -639,7 +685,8 @@ def artifact_verdicts(top, base, reach, artifacts, cfg=None):
     False = judged against Touch, None = could not tell (judged against
     Touch; the reason starts with COULD_NOT_TELL). `reach` is every path
     changed since `base`; the artifact dirs and `.work` are removed from it
-    here and RELEASE_BOOKKEEPING is KEPT (module docstring). `cfg` defaults
+    here, and so is RELEASE_BOOKKEEPING except ADMISSION_BOOKKEEPING for
+    maps and diagrams (module docstring). `cfg` defaults
     to this repo's crew config; one that exists and cannot be read leaves
     every artifact could-not-tell, as it does `ticket_freshness`."""
     artifacts = list(dict.fromkeys(artifacts))
@@ -650,14 +697,16 @@ def artifact_verdicts(top, base, reach, artifacts, cfg=None):
                     for p in artifacts}
     dirs = refresh_artifact_paths(top, cfg)
     own = dirs + [".work"]
-    # Bookkeeping stays in: a version bump is a change that reaches the map
-    # citing plugin.json. The one difference from `ticket_freshness`'s
-    # `changed`, which drops it because it stales nothing.
     reach = sorted(p for p in dict.fromkeys(reach) if not any(_reaches(o, p) for o in own))
     graph_out = _graph_out(top, cfg)
     diagrams = _relative(top, contained_path(top, _diagrams_dir(cfg), DIAGRAMS_DIR_DEFAULT))
     diagrams = diagrams if diagrams in dirs else None
-    code = [p for p in reach if not _is_noncode(p, graph_out)]
+    # The graph: any code path, bookkeeping included (graphify rebuilds on
+    # every commit). Maps and diagrams: a manifest bump reaches the map
+    # citing it, the rest of the bookkeeping reaches nothing.
+    graph_code = [p for p in reach if not _is_noncode(p, graph_out)]
+    reach = [p for p in reach if _in_admission_reach(p)]
+    code = [p for p in graph_code if p in reach]
     kinds = {p: _kind(p, dirs, diagrams, graph_out) for p in artifacts}
     out = {}
 
@@ -681,7 +730,7 @@ def artifact_verdicts(top, base, reach, artifacts, cfg=None):
             judge("rule", lambda rel: (None, f"{COULD_NOT_TELL}: {expected}"))
         else:
             judge("rule", lambda rel: _rule_verdict(top, base, rel, expected))
-    judge("graph", lambda rel: (True, "rebuilt after a code change") if code
+    judge("graph", lambda rel: (True, "rebuilt after a code change") if graph_code
           else (False, "graph changed with no code change since the base"))
     judge("other", lambda rel: (False, "not a refresh artifact of a kind the audit admits"))
     return out
@@ -711,6 +760,12 @@ def _expected_rules(top):
 
 def _bookkeeping(path):
     return any(crew_ticket.glob_match(path, glob) for glob in RELEASE_BOOKKEEPING)
+
+
+def _in_admission_reach(path):
+    """Can a change to `path` reach a map or a diagram in `artifact_verdicts`?"""
+    return not _bookkeeping(path) or any(crew_ticket.glob_match(path, glob)
+                                         for glob in ADMISSION_BOOKKEEPING)
 
 
 def _is_noncode(path, graph_out):

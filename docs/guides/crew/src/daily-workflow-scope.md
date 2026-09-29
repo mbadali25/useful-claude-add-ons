@@ -91,7 +91,7 @@ both ends of a rename. If any changed path is outside Touch, the audit blocks th
 the paths in six lines or fewer. It never blocks the continuation it caused.
 
 A changed refresh artifact passes the audit only when a path the ticket changed reaches it and the
-edit is a re-anchor (the `anchor:` or provenance sha moved to a commit on this branch) or a
+edit is a re-anchor (the `anchor:` or provenance sha moved forward to a commit on this branch) or a
 regeneration (`.claude/rules/` as `crew_instructions.py rules` writes them, the graph after a code
 change). A map claim edited without a re-anchor is listed with `[anchor did not move]`, and
 belongs in Touch if that is what the ticket means to do. When git cannot answer, the listing says

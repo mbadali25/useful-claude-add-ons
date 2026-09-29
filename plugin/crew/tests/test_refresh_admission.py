@@ -141,22 +141,48 @@ def test_a_graph_rebuilt_after_a_code_change_is_admitted(anchored):
     assert [got[g][0] for g in GRAPH] == [True, True], got
 
 
-def test_a_version_bump_reaches_the_map_citing_the_manifest(anchored):
-    root, base = anchored
-    re_anchor_map(root, "app", head_sha(root, 40), cites=(".claude-plugin/plugin.json:3",))
+@pytest.mark.parametrize("manifest", [".claude-plugin/plugin.json",
+                                      "plugin/crew/.claude-plugin/plugin.json"])
+def test_a_version_bump_reaches_the_map_citing_the_manifest(tmp_path, manifest):
+    root, base = anchored_repo(tmp_path, cites=(manifest + ":3",))
+    re_anchor_map(root, "app", head_sha(root, 40), cites=(manifest + ":3",))
 
-    got = _judged(root, base, [".claude-plugin/plugin.json"], APP, "re-anchored")
+    got = _judged(root, base, [manifest], APP, "re-anchored")
 
     assert got[:2] == (True, True), got
 
 
-def test_a_merged_in_main_path_in_the_reach_admits_the_map_it_reaches(anchored):
-    root, base = anchored
+def test_a_merged_in_main_path_in_the_reach_admits_the_map_it_reaches(tmp_path):
+    root, base = anchored_repo(tmp_path, cites=("other/keep.py:1",))
     re_anchor_map(root, "app", head_sha(root, 40), cites=("other/keep.py:1",))
 
     got = _judged(root, base, ["other/keep.py"], APP, "re-anchored")
 
     assert got[:2] == (True, True), got
+
+
+def test_a_map_re_anchored_forward_to_a_commit_behind_head_is_admitted(anchored):
+    root, base = anchored
+    re_anchor_map(root, "app", base)
+
+    assert _judged(root, base, REACH, APP, "re-anchored")[:2] == (True, True)
+
+
+def test_a_map_whose_base_anchor_is_off_heads_history_is_admitted_when_re_anchored(tmp_path):
+    """A squash merge leaves the commit a refresh anchored to in the object
+    store but off HEAD's history: nothing to be behind, so any qualifying
+    anchor has moved -- the case "names no commit" covers once it is gone."""
+    root, base = anchored_repo(tmp_path, map_anchor="side")
+    re_anchor_map(root, "app", head_sha(root, 40))
+
+    assert _judged(root, base, REACH, APP, "re-anchored")[:2] == (True, True)
+
+
+def test_a_diagram_with_no_anchors_line_is_reached_by_any_code_change(tmp_path):
+    root, base = anchored_repo(tmp_path, diagram_anchors=None)
+    re_anchor_diagram(root, "flow", head_sha(root, 40))
+
+    assert _judged(root, base, ["other/keep.py"], FLOW, "re-anchored")[:2] == (True, True)
 
 
 def test_changelog_is_a_code_path_for_the_graph(anchored):
@@ -201,6 +227,79 @@ def test_a_map_anchored_to_a_commit_not_reachable_from_head_is_refused(anchored)
     assert got[:2] == (False, True), got
 
 
+@pytest.mark.parametrize("bookkeeping", ["CHANGELOG.md", "TODO.md", "plugin/PLUGINS.md",
+                                         ".claude-plugin/marketplace.json",
+                                         "plugin/crew/BUDGETS.md"])
+def test_release_bookkeeping_other_than_a_manifest_reaches_no_map(tmp_path, bookkeeping):
+    """Every release rewrites these and most maps cite one, so a reach that
+    kept them would reach nearly every map on every ticket (review round 1)."""
+    root, base = anchored_repo(tmp_path, cites=(bookkeeping + ":1",))
+    re_anchor_map(root, "app", head_sha(root, 40), cites=(bookkeeping + ":1",))
+
+    got = _judged(root, base, [bookkeeping], APP, "no changed path reaches it")
+
+    assert got[:2] == (False, True), got
+
+
+def test_a_citation_the_edit_adds_does_not_make_the_map_reached(anchored):
+    """Reach is read from the BASE copy: an edit cannot cite its way in."""
+    root, base = anchored
+    re_anchor_map(root, "app", head_sha(root, 40), cites=("other/keep.py:1",))
+
+    got = _judged(root, base, ["other/keep.py"], APP, "no changed path reaches it")
+
+    assert got[:2] == (False, True), got
+
+
+def test_a_map_anchored_backwards_is_refused(anchored):
+    root, base = anchored
+    older = git(root, "rev-parse", base + "~2").strip()
+    re_anchor_map(root, "app", older)
+
+    got = _judged(root, base, REACH, APP, "not forward")
+
+    assert got[:2] == (False, True), got
+
+
+def test_a_map_re_anchored_to_the_same_commit_by_another_name_is_refused(anchored):
+    root, base = anchored
+    first = git(root, "rev-parse", base + "~1").strip()
+    re_anchor_map(root, "app", first[:12])
+
+    assert _judged(root, base, REACH, APP, "anchor did not move")[:2] == (False, True)
+
+
+def test_an_unchanged_anchor_git_cannot_resolve_is_not_a_move(anchored, monkeypatch):
+    """Review round 1: a failed `rev-parse` of the base anchor read as "the
+    anchor moved". An anchor whose text did not change has not moved,
+    whatever git says."""
+    root, base = anchored
+    first = git(root, "rev-parse", base + "~1").strip()
+    write(root, APP, read(root, APP).replace("x is one", "x is two"))
+    real = crew_refresh_check._git_lines  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_refresh_check, "_git_lines",
+                        lambda r, *a: None if first + "^{commit}" in a else real(r, *a))
+
+    assert _judged(root, base, REACH, APP, "anchor did not move")[:2] == (False, True)
+
+
+@pytest.mark.parametrize("fails", ["rev-parse", "cat-file"])
+def test_a_base_anchor_git_cannot_resolve_is_could_not_tell(anchored, monkeypatch, fails):
+    """The neighbour: the anchor TEXT changed (a short name for the same
+    commit), so only git can say whether it moved -- and it cannot."""
+    root, base = anchored
+    first = git(root, "rev-parse", base + "~1").strip()
+    re_anchor_map(root, "app", first[:12])
+    name = "_git_lines" if fails == "rev-parse" else "_git_rc"
+    real = getattr(crew_refresh_check, name)
+    monkeypatch.setattr(crew_refresh_check, name,
+                        lambda r, *a: None if first + "^{commit}" in a else real(r, *a))
+
+    verdict, reason = _verdict(root, base, REACH, APP)
+
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL)) == (None, True), reason
+
+
 def test_a_map_anchored_to_no_commit_is_refused(anchored):
     root, base = anchored
     re_anchor_map(root, "app", "deadbeefdead")
@@ -236,6 +335,29 @@ def test_a_map_named_in_not_subsystems_is_judged_by_touch(anchored):
     write(root, rel, f"anchor: r@{head_sha(root, 40)}\n`src/app.py:1`\n")
 
     assert _judged(root, base, REACH, rel, "not a subsystem map")[:2] == (False, True)
+
+
+OTHER_ROW = "| [`other.md`](other.md) | `00000000` | first pass | other |\n"
+
+
+@pytest.mark.parametrize("deleted", ["One row per subsystem map.\n", OTHER_ROW])
+def test_an_index_line_deleted_outside_a_re_anchored_row_is_refused(tmp_path, deleted):
+    """A pure deletion has no new-side line, so only the base side can
+    refuse it (review round 1): the header prose, or another map's row."""
+    root, base = anchored_repo(tmp_path)
+    write(root, INDEX, read(root, INDEX) + OTHER_ROW)
+    git(root, "commit", "-qam", "a second row")
+    base = head_sha(root, 40)
+    git(root, "commit", "-q", "--allow-empty", "-m", "ticket edit")
+    head = head_sha(root, 40)
+    re_anchor_map(root, "app", head)
+    index_row_append(root, "app", f"re-anchored to `{head[:8]}`")
+    write(root, INDEX, read(root, INDEX).replace(deleted, ""))
+
+    got = _verdicts(root, base, REACH, [APP, INDEX])
+
+    assert (got[APP][0], got[INDEX][0], "INDEX.md base line" in got[INDEX][1]) == (
+        True, False, True), got
 
 
 @pytest.mark.parametrize("edit", ["header-prose", "row-of-an-unjudged-map"])
@@ -279,6 +401,24 @@ def test_a_rule_removed_that_was_not_generated_is_refused(tmp_path):
     git(root, "rm", "-q", rel)
 
     got = _judged(root, base, REACH, rel, "removed, but it was not generated")
+
+    assert got[:2] == (False, True), got
+
+
+def test_a_re_anchored_diagram_no_changed_path_reaches_is_refused(anchored):
+    root, base = anchored
+    re_anchor_diagram(root, "flow", head_sha(root, 40))
+
+    got = _judged(root, base, ["other/keep.py"], FLOW, "no changed path reaches it")
+
+    assert got[:2] == (False, True), got
+
+
+def test_a_diagram_with_no_anchors_line_is_refused_with_no_code_change(tmp_path):
+    root, base = anchored_repo(tmp_path, diagram_anchors=None)
+    re_anchor_diagram(root, "flow", head_sha(root, 40))
+
+    got = _judged(root, base, ["docs/x.md"], FLOW, "no changed path reaches it")
 
     assert got[:2] == (False, True), got
 
@@ -332,6 +472,25 @@ def test_an_unreadable_base_copy_is_could_not_tell(anchored, monkeypatch):
     monkeypatch.setattr(crew_refresh_check, "_base_text", lambda *a, **k: (None, "error: boom"))
 
     verdict, reason = _verdict(root, base, REACH, APP)
+
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL)) == (None, True), reason
+
+
+@pytest.mark.parametrize("rule", ["removed", "regenerated"])
+def test_a_rule_renderer_that_raises_is_could_not_tell(anchored, monkeypatch, rule):
+    root, base = anchored
+    if rule == "removed":
+        git(root, "rm", "-q", APP_RULE)
+    else:
+        write(root, APP, read(root, APP).replace("x is one", "x is two"))
+        crew_instructions.rules(str(root))
+
+    def boom(_root):
+        raise RuntimeError("renderer broke")
+
+    monkeypatch.setattr(crew_instructions, "expected_rules", boom)
+
+    verdict, reason = _verdict(root, base, REACH, APP_RULE)
 
     assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL)) == (None, True), reason
 

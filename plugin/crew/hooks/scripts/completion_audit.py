@@ -187,28 +187,38 @@ def physical(lines):
 def _verdicts(top, base, paths):
     """`crew_refresh_check.artifact_verdicts` for the refresh artifacts among
     `paths`, {} when there are none. The reach is `changed_paths` itself --
-    every path changed since `base`, un-narrowed. Deliberately NOT gated on
-    approval: the one approval gate is `_outside_refresh_artifacts`', so the
-    verdicts can never stand in for it. A listing git could not give is
-    could-not-tell for every artifact, never admitted."""
+    every path changed since `base`, un-narrowed. Called only for an
+    approved ticket (`_outside_refresh_artifacts`). A step that raises is
+    could-not-tell, never admitted and never a traceback out of `--check`:
+    every artifact when the verdicts raised, and {} -- nothing admitted --
+    when not even the artifact dirs could be resolved."""
     import crew_refresh_check  # pylint: disable=import-outside-toplevel
-    dirs = crew_refresh_check.refresh_artifact_paths(top)
-    artifacts = [p for p in paths if crew_refresh_check.is_refresh_artifact(p, dirs)]
+    try:
+        dirs = crew_refresh_check.refresh_artifact_paths(top)
+        artifacts = [p for p in paths if crew_refresh_check.is_refresh_artifact(p, dirs)]
+    except Exception:  # noqa: BLE001  pylint: disable=broad-except
+        return {}
     if not artifacts:
         return {}
-    return crew_refresh_check.artifact_verdicts(top, base, paths, artifacts)
+    try:
+        return crew_refresh_check.artifact_verdicts(top, base, paths, artifacts)
+    except Exception as exc:  # noqa: BLE001  pylint: disable=broad-except
+        why = f"{crew_refresh_check.COULD_NOT_TELL}: {type(exc).__name__} while judging it"
+        return {p: (None, why) for p in artifacts}
 
 
-def _outside_refresh_artifacts(top, paths, approval, verdicts):
-    """`paths` minus the refresh artifacts `verdicts` admits (`True`) -- only
-    when the ticket holds a current approval from the user's prompt, the
-    condition that gates Touch (`crew_ticket.accepted`: a `cli` receipt only
-    with `scope.allowCliApproval`). Without that approval nothing is exempt.
-    An artifact with no verdict, a refused one and a could-not-tell one all
-    stay: fail closed."""
+def _outside_refresh_artifacts(top, base, paths, approval):
+    """(`paths` minus the refresh artifacts the verdicts admit (`True`), the
+    verdicts) -- only when the ticket holds a current approval from the
+    user's prompt, the condition that gates Touch (`crew_ticket.accepted`: a
+    `cli` receipt only with `scope.allowCliApproval`). Without that approval
+    nothing is exempt and nothing is judged: the one approval gate, so the
+    verdicts can never stand in for it. An artifact with no verdict, a
+    refused one and a could-not-tell one all stay: fail closed."""
     if approval["status"] != "approved":
-        return paths
-    return [p for p in paths if verdicts.get(p, (False, ""))[0] is not True]
+        return paths, {}
+    verdicts = _verdicts(top, base, paths)
+    return [p for p in paths if verdicts.get(p, (False, ""))[0] is not True], verdicts
 
 
 def _entry(path, verdicts):
@@ -234,8 +244,7 @@ def audit(root, ticket):
     # ONE read of spec.md: the hash check, the Touch below and the refresh
     # allowance all share the bytes.
     approval = crew_ticket.accepted(top, ticket)
-    verdicts = _verdicts(top, base, paths)
-    paths = _outside_refresh_artifacts(top, paths, approval, verdicts)
+    paths, verdicts = _outside_refresh_artifacts(top, base, paths, approval)
     if not paths:
         return True, []
     note = "" if source == scope_base.RECORDED else " (base is a fallback: shows MORE)"

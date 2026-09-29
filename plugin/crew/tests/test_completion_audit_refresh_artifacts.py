@@ -19,8 +19,8 @@ The fixtures un-ignore `.crew/codemap/` the way this repository's own
 write is invisible to git and to the audit, and the codemap cases would pass
 while testing nothing.
 
-`sabotage_refresh.py` drops the approval condition, and the unapproved and
-cli must-block cases go red; its `# T-0094` entries make the audit ignore the
+`sabotage_refresh.py` drops the approval condition, and the unapproved, cli
+and stale must-block cases go red; its `# T-0094` entries make the audit ignore the
 verdicts or drop the reason, and the T-0094 must-block cases go red.
 """
 import json
@@ -67,7 +67,7 @@ def _refresh_everything(repo):
 
 # --- must-block -----------------------------------------------------------------
 
-# The two approval-gate cases perform a REAL refresh (T-0094): one that
+# The three approval-gate cases perform a REAL refresh (T-0094): one that
 # `artifact_verdicts` admits, so only the approval gate in
 # `_outside_refresh_artifacts` keeps it listed -- a refresh the verdicts
 # refuse anyway would stay listed with that gate removed, and the
@@ -94,15 +94,31 @@ def test_a_cli_approval_cannot_leave_a_refresh_artifact_changed(tmp_path):
             ".crew/codemap/app.md" in "\n".join(lines)) == (False, True, True), lines
 
 
-def test_a_stale_approval_cannot_leave_a_refresh_artifact_changed(repo):
-    ready(repo)
-    spec = repo / ".work" / "tickets" / "T-1" / "spec.md"
+def test_a_stale_approval_cannot_leave_a_refresh_artifact_changed(tmp_path):
+    root, _base = anchored_repo(tmp_path)
+    spec = root / ".work" / "tickets" / "T-1" / "spec.md"
     spec.write_text(spec.read_text(encoding="utf-8") + "\n- `other/**`\n", encoding="utf-8")
-    _write(repo, "docs/diagrams/architecture.mmd")
+    refreshed(root)
 
-    ok, _ = completion_audit.audit(str(repo), "T-1")
+    ok, lines = completion_audit.audit(str(root), "T-1")
 
-    assert ok is False
+    assert (ok, "not approved" in lines[0],
+            ".crew/codemap/app.md" in "\n".join(lines)) == (False, True, True), lines
+
+
+def test_an_unapproved_ticket_is_never_judged_for_reach_or_shape(tmp_path, monkeypatch):
+    """Review round 1 NIT: without a current approval nothing is admitted, so
+    the verdicts are not computed at all."""
+    root, _base = anchored_repo(tmp_path)
+    os.remove(crew_ticket.approval_path(str(root), "T-1"))
+    refreshed(root)
+    calls = []
+    monkeypatch.setattr(crew_refresh_check, "artifact_verdicts",
+                        lambda *a, **k: calls.append(a) or {})
+
+    completion_audit.audit(str(root), "T-1")
+
+    assert calls == []
 
 
 @pytest.mark.parametrize("rel", ["docs/diagrams-old/a.mmd", "graphify-outX/graph.json",
@@ -192,6 +208,42 @@ def test_a_could_not_tell_verdict_fails_the_audit_and_says_so(tmp_path, monkeypa
     ok, lines = completion_audit.audit(str(root), "T-1")
 
     assert (ok, "[could not tell:" in "\n".join(lines)) == (False, True), lines
+
+
+def test_a_bookkeeping_bump_does_not_admit_a_rewrite_of_the_map_citing_it(tmp_path):
+    """Review round 1: a ticket changing `src/app.py` and CHANGELOG.md rewrote
+    another map citing CHANGELOG.md and moved its anchor, and was admitted."""
+    rel = MAP.format(name="notes")
+    root, _base = anchored_repo(tmp_path, touch=("src/**", "CHANGELOG.md"), extra={
+        rel: map_text("notes", "deadbeefdead", ("CHANGELOG.md:1",), "the release notes")})
+    write(root, "CHANGELOG.md", "# Changelog\n- 1.0.1\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "bump")
+    refreshed(root)
+    write(root, rel, map_text("notes", head_sha(root, 40), ("CHANGELOG.md:1",), "REWRITTEN"))
+
+    ok, lines = completion_audit.audit(str(root), "T-1")
+
+    assert (ok, rel + " [no changed path reaches it]" in "\n".join(lines)) == (
+        False, True), lines
+
+
+@pytest.mark.parametrize("raises", ["refresh_artifact_paths", "artifact_verdicts"])
+def test_a_verdict_step_that_raises_fails_the_audit_closed(tmp_path, monkeypatch, raises):
+    """Review round 1 NIT: `--check` catches only TicketError, so a raise in
+    the verdict step would escape as a traceback. It is could-not-tell:
+    nothing admitted, and the audit still answers."""
+    root, _base = anchored_repo(tmp_path)
+    refreshed(root)
+
+    def boom(*_a, **_k):
+        raise RuntimeError("broke")
+
+    monkeypatch.setattr(crew_refresh_check, raises, boom)
+
+    ok, lines = completion_audit.audit(str(root), "T-1")
+
+    assert (ok, ".crew/codemap/app.md" in "\n".join(lines)) == (False, True), lines
 
 
 def test_the_message_stays_inside_six_lines_with_many_refused_artifacts(tmp_path):

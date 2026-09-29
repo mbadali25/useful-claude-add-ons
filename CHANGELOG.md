@@ -10,11 +10,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   `REFRESH_ARTIFACT_PATHS`) judges each changed refresh artifact of an approved
   ticket, and `completion_audit.audit` — the Stop hook and `/crew:done` check 3
   — admits it without Touch only on `True`. A code map must be in the base and
-  on disk, cite a path the ticket changed since its scope base (release
-  bookkeeping and merged-in main paths included, so a version bump reaches the
-  map citing `plugin.json`), and have its `anchor:` moved to a commit that is
-  HEAD or behind it; `INDEX.md` passes when every differing line is the row of
-  such a map; a diagram source is reached through `%% Anchors:` and its
+  on disk, its base copy must cite a path the ticket changed since its scope
+  base (merged-in main paths included; of the release bookkeeping only a
+  `.claude-plugin/plugin.json`, so a version bump reaches the map citing it,
+  while `CHANGELOG.md`, `marketplace.json` and the rest reach nothing), and its
+  `anchor:` must have moved forward to a commit that is HEAD or behind it;
+  `INDEX.md` passes when every differing line, deleted ones included, is the
+  row of such a map; a diagram source is reached through its base copy's
+  `%% Anchors:` and its
   provenance sha must move the same way, and a rendered diagram passes beside
   its admitted same-stem source; a `.claude/rules/` file passes when its bytes
   equal `crew_instructions.expected_rules` (or a generated rule no map expects
@@ -35,11 +38,22 @@ All notable changes to this repository are documented here. Format follows [Keep
   map is in Touch; re-anchor it or name it. The PreToolUse scope guard is
   unchanged: it still admits the artifact dirs for an approved ticket, because
   a write-time check sees one Edit of a multi-Edit refresh.
-- **Sabotage.** Fifteen entries after the `# T-0094` marker in
-  `plugin/crew/tests/sabotage_refresh.py`, each run by hand against the tracked
-  file and confirmed RED with the file restored byte-identical, plus the two
-  existing approval-gate entries, whose tests now perform an admitted refresh
-  so they stay RED with the verdicts in place.
+- **Review round 1 (same-family Claude reviewer).** A diagram's reach and its
+  no-`Anchors` branch gained failing controls; a base anchor git cannot
+  resolve is `could not tell` (an unchanged anchor text is simply "did not
+  move") instead of "moved"; an anchor moved backwards is refused; INDEX.md's
+  deleted lines are judged too; the reach no longer keeps every release
+  bookkeeping file, and citations are read from the base copy only, so a claim
+  rewrite of a map citing `CHANGELOG.md` is no longer admitted on a ticket
+  that bumped it; an unapproved ticket's artifacts are not judged at all, and
+  a verdict step that raises fails the audit closed instead of escaping
+  `--check` as a traceback.
+- **Sabotage.** Entries after the `# T-0094` marker in
+  `plugin/crew/tests/sabotage_refresh.py` (fifteen, then sixteen more and the
+  stale-approval gate case after review round 1), each run by hand against the
+  tracked file and confirmed RED with the file restored byte-identical, plus
+  the approval-gate entries, whose tests now perform an admitted refresh so
+  they stay RED with the verdicts in place.
 
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 

@@ -22,9 +22,15 @@ T-0094 added the ones after its marker: each test of `artifact_verdicts`'
 reach-and-shape admission (reach, anchor moved, ancestor, in the base, INDEX
 rows, rule bytes and removal, graph, rendered diagram, could-not-tell,
 bookkeeping in the reach) removed or widened, and the audit ignoring the
-verdicts, admitting a could-not-tell one, or dropping the reason. Its two
+verdicts, admitting a could-not-tell one, or dropping the reason. Its
 approval-gate tests now perform a refresh the verdicts admit, so the
-`_AUDIT_GATE` entries stay red with the verdicts in place.
+`_AUDIT_GATE` entries stay red with the verdicts in place. T-0094 review
+round 1 added the ones after its marker: a diagram's reach and no-Anchors
+branch, a base anchor git cannot resolve read as moved, a backwards anchor,
+INDEX.md's deleted lines, every bookkeeping file or an added citation in the
+reach, the rule renderer raising, the verdicts judged without approval, and a
+verdict step's raise escaping the audit -- plus the stale-approval case the
+round found no longer tested the gate.
 A mutation listed twice with different tests is on purpose: dropping the
 approval condition must fail the unapproved, the `cli` and the stale case
 each, not just whichever runs first.
@@ -45,8 +51,9 @@ _TA = "tests/test_refresh_admission.py::"
 _WORKTREE_DIFF = ("        return sorted(completion_audit.worktree_changes(root, sha, list(paths), "
                   "literal=True))\n")
 _GUARD_GATE = '    if approval["status"] != "approved":\n        return False\n    if real_rel'
-_AUDIT_GATE = '    if approval["status"] != "approved":\n        return paths\n'
-_AUDIT_ADMIT = '    return [p for p in paths if verdicts.get(p, (False, ""))[0] is not True]\n'
+_AUDIT_GATE = '    if approval["status"] != "approved":\n        return paths, {}\n'
+_AUDIT_ADMIT = ('    return [p for p in paths if verdicts.get(p, (False, ""))[0] is not True], '
+                'verdicts\n')
 # The pre-round-2 listing exactly (review round 3's NIT on :182): newline-split
 # through `_git_lines`, so a name git C-quotes never matches. Dropping only
 # `-z` would leave one unsplit string, which fails every name, quoted or not.
@@ -169,6 +176,9 @@ REFRESH_MUTATIONS = (
     ("the audit's artifact allowance ignores approval (cli receipt)", AUDIT,
      _AUDIT_GATE, _AUDIT_GATE.replace('approval["status"] != "approved"', "False"),
      _CA + "test_a_cli_approval_cannot_leave_a_refresh_artifact_changed"),
+    ("the audit's artifact allowance ignores approval (stale)", AUDIT,
+     _AUDIT_GATE, _AUDIT_GATE.replace('approval["status"] != "approved"', "False"),
+     _CA + "test_a_stale_approval_cannot_leave_a_refresh_artifact_changed"),
     ("the audit lists paths with `git diff`, which rewrites the index", AUDIT,
      '    fields = _git_fields(top, ["diff-index", "--raw", "-z", "-M", sha, "--"] + pathspec,\n',
      '    fields = _git_fields(top, ["diff", "--raw", "-z", "-M", sha, "--"] + pathspec,\n',
@@ -254,13 +264,13 @@ REFRESH_MUTATIONS = (
      _T + "test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule[scope_guard.py]"),
     # T-0094 (reach-gated, re-anchor-shaped admission)
     ("a re-anchored map no changed path reaches is admitted", CHECK,
-     "    if not _reached(_cited(before) + _cited(after), reach):\n",
+     "    if not _reached(_cited(before), reach):\n",
      "    if False:\n",
      _TA + "test_a_re_anchored_map_no_changed_path_reaches_is_refused"),
-    ("a map edited without moving its anchor is admitted", CHECK,
-     "    if was and was[0] == now[0]:\n",
+    ("a map re-anchored to the same commit by another name is admitted", CHECK,
+     "    if was[0] == now:\n",
      "    if False:\n",
-     _TA + "test_a_map_edited_without_moving_its_anchor_is_refused"),
+     _TA + "test_a_map_re_anchored_to_the_same_commit_by_another_name_is_refused"),
     ("an anchor on a commit HEAD cannot reach is admitted", CHECK,
      "    if not ancestor:\n",
      "    if False:\n",
@@ -286,7 +296,7 @@ REFRESH_MUTATIONS = (
      "    if False:\n",
      _TA + "test_a_rule_removed_while_its_map_still_expects_it_is_refused"),
     ("the graph is admitted with no code change", CHECK,
-     '    judge("graph", lambda rel: (True, "rebuilt after a code change") if code\n',
+     '    judge("graph", lambda rel: (True, "rebuilt after a code change") if graph_code\n',
      '    judge("graph", lambda rel: (True, "rebuilt after a code change") if True\n',
      _TA + "test_a_graph_rebuild_with_no_code_change_is_refused"),
     ("a rendered diagram is admitted without its source", CHECK,
@@ -297,17 +307,83 @@ REFRESH_MUTATIONS = (
      '        return None, None, (None, f"{COULD_NOT_TELL}: base copy {state}")\n',
      '        return None, None, (True, f"{COULD_NOT_TELL}: base copy {state}")\n',
      _TA + "test_a_git_failure_while_judging_a_map_is_could_not_tell"),
-    ("release bookkeeping is dropped from the admission reach", CHECK,
-     "    reach = sorted(p for p in dict.fromkeys(reach) if not any(_reaches(o, p) for o in own))\n",
-     ("    reach = sorted(p for p in dict.fromkeys(reach)\n"
-      "                   if not _bookkeeping(p) and not any(_reaches(o, p) for o in own))\n"),
-     _TA + "test_a_version_bump_reaches_the_map_citing_the_manifest"),
+    ("a manifest bump is dropped from the admission reach", CHECK,
+     "    return not _bookkeeping(path) or any(crew_ticket.glob_match(path, glob)\n",
+     "    return not _bookkeeping(path) and any(crew_ticket.glob_match(path, glob)\n",
+     _TA + "test_a_version_bump_reaches_the_map_citing_the_manifest[.claude-plugin/plugin.json]"),
     ("the audit drops every artifact whatever its verdict", AUDIT,
-     _AUDIT_ADMIT, "    return [p for p in paths if p not in verdicts]\n",
+     _AUDIT_ADMIT, "    return [p for p in paths if p not in verdicts], verdicts\n",
      _CA + "test_a_map_edited_without_moving_its_anchor_fails_the_audit"),
     ("the audit admits a could-not-tell verdict", AUDIT,
      _AUDIT_ADMIT, _AUDIT_ADMIT.replace("is not True", "is False"),
      _CA + "test_a_could_not_tell_verdict_fails_the_audit_and_says_so"),
+    # T-0094 review round 1
+    ("a re-anchored diagram no changed path reaches is admitted", CHECK,
+     "        reached = _reached(declared, reach)\n    if not reached:\n",
+     "        reached = _reached(declared, reach)\n    if False:\n",
+     _TA + "test_a_re_anchored_diagram_no_changed_path_reaches_is_refused"),
+    ("a diagram with no Anchors line is reached by any change, code or not", CHECK,
+     "        reached = code\n",
+     "        reached = reach\n",
+     _TA + "test_a_diagram_with_no_anchors_line_is_refused_with_no_code_change"),
+    ("a diagram with no Anchors line is reached by nothing", CHECK,
+     "        reached = code\n",
+     "        reached = []\n",
+     _TA + "test_a_diagram_with_no_anchors_line_is_reached_by_any_code_change"),
+    ("an unchanged anchor git cannot resolve reads as moved", CHECK,
+     '    if old == new:\n        return False, "anchor did not move"\n',
+     '    if False:\n        return False, "anchor did not move"\n',
+     _TA + "test_an_unchanged_anchor_git_cannot_resolve_is_not_a_move"),
+    ("a base anchor git cannot resolve reads as moved", CHECK,
+     '        return None, f"{COULD_NOT_TELL}: git could not resolve the base anchor {old[:12]}"\n',
+     '        return True, f"{COULD_NOT_TELL}: git could not resolve the base anchor {old[:12]}"\n',
+     _TA + "test_a_base_anchor_git_cannot_resolve_is_could_not_tell[rev-parse]"),
+    ("a base anchor git cannot read reads as moved", CHECK,
+     '        return None, f"{COULD_NOT_TELL}: git could not read the base anchor {old[:12]}"\n',
+     '        return True, f"{COULD_NOT_TELL}: git could not read the base anchor {old[:12]}"\n',
+     _TA + "test_a_base_anchor_git_cannot_resolve_is_could_not_tell[cat-file]"),
+    ("an anchor moved backwards is admitted", CHECK,
+     "    if not forward:\n",
+     "    if False:\n",
+     _TA + "test_a_map_anchored_backwards_is_refused"),
+    ("a base anchor off HEAD's history is never moved from", CHECK,
+     '    if not behind_head:\n        return True, "re-anchored"\n',
+     '    if not behind_head:\n        return False, "re-anchored"\n',
+     _TA + "test_a_map_whose_base_anchor_is_off_heads_history_is_admitted_when_re_anchored"),
+    ("a citation the edit adds makes the map reached", CHECK,
+     "    if not _reached(_cited(before), reach):\n",
+     "    if not _reached(_cited(before) + _cited(after), reach):\n",
+     _TA + "test_a_citation_the_edit_adds_does_not_make_the_map_reached"),
+    ("all release bookkeeping reaches a map", CHECK,
+     "    return not _bookkeeping(path) or any(crew_ticket.glob_match(path, glob)\n",
+     "    return True or any(crew_ticket.glob_match(path, glob)\n",
+     _TA + "test_release_bookkeeping_other_than_a_manifest_reaches_no_map[CHANGELOG.md]"),
+    ("all release bookkeeping reaches a map, through the audit", CHECK,
+     "    return not _bookkeeping(path) or any(crew_ticket.glob_match(path, glob)\n",
+     "    return True or any(crew_ticket.glob_match(path, glob)\n",
+     _CA + "test_a_bookkeeping_bump_does_not_admit_a_rewrite_of_the_map_citing_it"),
+    ("a deleted INDEX.md line is never judged", CHECK,
+     '        lines += [(f"base line {i + 1}", old[i]) for i in range(i1, i2)]\n',
+     "        lines += []\n",
+     _TA + "test_an_index_line_deleted_outside_a_re_anchored_row_is_refused["
+     "| [`other.md`](other.md) | `00000000` | first pass | other |\n]"),
+    ("a rule renderer that raises reads as expecting nothing", CHECK,
+     '        return f"expected_rules raised {type(exc).__name__}"\n',
+     "        return {}\n",
+     _TA + "test_a_rule_renderer_that_raises_is_could_not_tell[removed]"),
+    ("the audit judges an unapproved ticket's artifacts", AUDIT,
+     _AUDIT_GATE, '    if False:\n        return paths, {}\n',
+     _CA + "test_an_unapproved_ticket_is_never_judged_for_reach_or_shape"),
+    ("a verdict step that raises escapes the audit", AUDIT,
+     ('    except Exception as exc:  # noqa: BLE001  pylint: disable=broad-except\n'
+      '        why = f"{crew_refresh_check.COULD_NOT_TELL}'),
+     ('    except ValueError as exc:  # noqa: BLE001  pylint: disable=broad-except\n'
+      '        why = f"{crew_refresh_check.COULD_NOT_TELL}'),
+     _CA + "test_a_verdict_step_that_raises_fails_the_audit_closed[artifact_verdicts]"),
+    ("artifact dirs that cannot be resolved escape the audit", AUDIT,
+     "    except Exception:  # noqa: BLE001  pylint: disable=broad-except\n        return {}\n",
+     "    except ValueError:  # noqa: BLE001  pylint: disable=broad-except\n        return {}\n",
+     _CA + "test_a_verdict_step_that_raises_fails_the_audit_closed[refresh_artifact_paths]"),
     ("the audit does not print why an artifact was refused", AUDIT,
      '        return f"{shown(path)} [{shown(verdicts[path][1])}]"\n',
      "        return shown(path)\n",

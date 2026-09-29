@@ -60,9 +60,11 @@ def _index(anchor):
             f"| [`app.md`](app.md) | `{anchor[:8]}` | first pass | the app |\n")
 
 
-def _diagram(anchor):
-    return (f"%% Generated from r@{anchor} on 2026-09-28.\n%% Anchors: src/app.py\n"
-            "flowchart LR\n  a --> b\n")
+def _diagram(anchor, anchors="src/app.py"):
+    """A diagram source; `anchors` None leaves out the `%% Anchors:` line, so
+    any code path reaches it."""
+    declared = f"%% Anchors: {anchors}\n" if anchors is not None else ""
+    return f"%% Generated from r@{anchor} on 2026-09-28.\n{declared}flowchart LR\n  a --> b\n"
 
 
 def _graph(root, sha):
@@ -70,26 +72,41 @@ def _graph(root, sha):
     write(root, GRAPH[1], f"# report {sha}\n")
 
 
-def anchored_repo(tmp_path, touch=("src/**",), map_anchor=None, extra=None):
+def _side_commit(root, start):
+    """A commit on a branch off `start` that HEAD never reaches; back on main."""
+    git(root, "checkout", "-q", "-b", "side", start)
+    write(root, "other/side.py", "s = 1\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "side commit")
+    side = head_sha(root, 40)
+    git(root, "checkout", "-q", "main")
+    return side
+
+
+def anchored_repo(tmp_path, touch=("src/**",), map_anchor=None, extra=None,
+                  cites=("src/app.py:1",), diagram_anchors="src/app.py"):
     """(root, base). A `scope_fixtures.make_repo` repo with `.crew/codemap/`
     un-ignored, whose BASE commit holds the code map `app.md` (explicit
     `paths: src/**`, anchored at the commit before the base unless
-    `map_anchor` says otherwise, citing `src/app.py:1`), INDEX.md with its
-    row, the rule `crew_instructions.rules` writes for it, a diagram source
-    anchored the same way with `%% Anchors: src/app.py`, a rendered diagram
-    beside it and both graph files, plus any `extra` {rel: text}. The ticket
-    T-1 is then made, approved as the user and its base recorded, and one
-    commit edits `src/app.py`."""
+    `map_anchor` says otherwise -- `"side"` anchors it to a commit on a
+    branch HEAD never reaches -- citing `cites`), INDEX.md with its row, the
+    rule `crew_instructions.rules` writes for it, a diagram source anchored
+    the same way with `%% Anchors: <diagram_anchors>` (None: no Anchors
+    line), a rendered diagram beside it and both graph files, plus any
+    `extra` {rel: text}. The ticket T-1 is then made, approved as the user
+    and its base recorded, and one commit edits `src/app.py`."""
     root = scope_fixtures.make_repo(tmp_path, mode="block")
     write(root, ".gitignore", ".work/\n.crew/*\n!.crew/codemap/\n")
     git(root, "commit", "-qam", "un-ignore the code map")
     first = head_sha(root, 40)
+    if map_anchor == "side":
+        map_anchor = _side_commit(root, first)
     write(root, MAP.format(name="app"),
-          map_text("app", map_anchor or first, ("src/app.py:1",), "x is one"))
+          map_text("app", map_anchor or first, cites, "x is one"))
     write(root, INDEX, _index(first))
     _problems, written = crew_instructions.rules(str(root))
     assert written == [os.path.join(".claude", "rules", "app.md")], written
-    write(root, DIAGRAM.format(name="flow"), _diagram(first))
+    write(root, DIAGRAM.format(name="flow"), _diagram(first, diagram_anchors))
     write(root, RENDERED, f"<svg><!-- {first} --></svg>\n")
     _graph(root, first)
     for rel, text in (extra or {}).items():

@@ -101,7 +101,7 @@ re-run until it says `fresh` — an `unknown` whose anchor names no commit (a
 squash-merged branch) included: the refresh re-anchors it. These writes need no
 Touch entry when they are what a refresh writes: the completion audit admits an
 artifact a path you changed reaches, as a re-anchor (`anchor:` or provenance sha
-moved behind HEAD; INDEX rows of those maps) or a regeneration (`crew_instructions.py
+moved forward, to HEAD or behind it; INDEX rows of those maps) or a regeneration (`crew_instructions.py
 rules`, the graph after a code change); anything else there needs Touch, and the
 audit names the reason. A `stop` ends the loop, on an artifact line (a
 missing tool, git unable to diff) or on the top line (a base that hides or may hide the
