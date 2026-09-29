@@ -168,6 +168,39 @@ def test_wsl_probe_fails_when_wsl_utf8_does_not_change_the_encoding(monkeypatch)
         _probe_wsl_encoding()
 
 
+@pytest.mark.parametrize("exe,inline", [
+    ("C:\\npm\\codex.cmd", False),
+    ("C:\\npm\\copilot.CMD", False),
+    ("codex.bat", False),
+    ("/usr/local/bin/codex", True),
+    ("C:\\bin\\codex.exe", True),
+    (None, True),
+])
+def test_a_batch_shim_never_gets_the_prompt_inline(tmp_path, capsys, exe, inline):
+    path = tmp_path / "prompt.txt"
+    text = "Review this.\nList every part.\nThen the verdict.\n"
+    path.write_text(text, encoding="utf-8", newline="\n")
+
+    argument = review_run.prompt_argument(str(path), exe)
+
+    if inline:
+        assert argument == text
+    else:
+        assert "\n" not in argument
+        assert str(path) in argument and "Read that file" in argument
+        assert "batch shim" in capsys.readouterr().err
+
+
+def test_an_over_limit_prompt_says_over_limit_even_through_a_shim(tmp_path, capsys):
+    path = tmp_path / "prompt.txt"
+    path.write_text("x" * (review_run.INLINE_PROMPT_LIMIT + 1), encoding="utf-8")
+
+    argument = review_run.prompt_argument(str(path), "codex.cmd")
+
+    assert str(path) in argument and "Read that file" in argument
+    assert "over the inline limit" in capsys.readouterr().err
+
+
 def test_live_codex_stream_parses(tmp_path):
     if os.environ.get("CREW_PROBE_LIVE") != "1":
         pytest.skip("live Codex probe is opt-in: set CREW_PROBE_LIVE=1 (it spends a real call)")

@@ -23,8 +23,10 @@ PROVIDERS.
 A provider binary that is not on PATH is refused BEFORE reservation: nothing
 was launched, so nothing is spent.
 
-The prompt is passed inline when it fits a Windows command line; otherwise the
-argument tells the reviewer to read `prompt.txt`, and says so on stderr.
+The prompt is passed inline when it fits a Windows command line and the
+provider is not a batch-file shim (cmd.exe ends a `.cmd`/`.bat` command line
+at the first line break); otherwise the argument tells the reviewer to read
+`prompt.txt`, and says so on stderr.
 
 Before the verdict, every bundle part is re-read and checked against the
 manifest's size and sha256 for it, and the parts together against
@@ -90,6 +92,10 @@ DEFAULT_TIMEOUT = 1800
 POST_KILL_TIMEOUT = 5
 # Windows' CreateProcess limit is 32767 characters for the whole command line.
 INLINE_PROMPT_LIMIT = 24000
+# cmd.exe ends a batch file's command line at the first line break, so a
+# provider resolved to one of these (an npm-installed codex.cmd or copilot.cmd)
+# is never handed a multi-line prompt inline (T-0087, PR #260's Windows job).
+BATCH_SHIM_SUFFIXES = (".cmd", ".bat")
 LAUNCHED = ("codex", "copilot")
 
 
@@ -122,12 +128,27 @@ def _write_atomic(path, text):
     os.replace(tmp, path)
 
 
-def prompt_argument(prompt_path):
+def through_batch_shim(exe):
+    """True when `exe` is a Windows batch file (an npm shim is one): cmd.exe
+    ends a batch file's command line at the first line break, so a
+    multi-line argument never reaches the program behind it intact."""
+    return os.path.splitext(exe or "")[1].lower() in BATCH_SHIM_SUFFIXES
+
+
+def prompt_argument(prompt_path, exe=None):
+    """`exe` is the resolved provider binary. The prompt goes inline only when
+    it fits INLINE_PROMPT_LIMIT and `exe` is not a batch shim; otherwise the
+    argument is a one-line pointer to `prompt_path`, said on stderr."""
     text = _read(prompt_path)
-    if len(text) <= INLINE_PROMPT_LIMIT:
+    if len(text) <= INLINE_PROMPT_LIMIT and not through_batch_shim(exe):
         return text
-    sys.stderr.write(f"review-run: prompt is {len(text)} chars, over the inline limit; "
-                     f"the reviewer is told to read {prompt_path}\n")
+    if len(text) > INLINE_PROMPT_LIMIT:
+        sys.stderr.write(f"review-run: prompt is {len(text)} chars, over the inline limit; "
+                         f"the reviewer is told to read {prompt_path}\n")
+    else:
+        sys.stderr.write(f"review-run: {os.path.basename(exe)} is a batch shim and cmd.exe ends "
+                         "its arguments at the first line break; the reviewer is told to read "
+                         f"{prompt_path}\n")
     return (f"Your complete instructions are in the file {prompt_path}. Read that file in "
             "full first and follow it exactly; it is the whole task.")
 
@@ -407,7 +428,7 @@ def run(args):
             sys.stderr.write(f"review-run: {args.provider} is not on PATH; nothing launched, "
                              "no round spent\n")
             return EXIT_USAGE
-        prompt = prompt_argument(os.path.join(args.scratch, "prompt.txt"))
+        prompt = prompt_argument(os.path.join(args.scratch, "prompt.txt"), exe)
 
     ok, number, message = review_ledger.reserve(args.root, args.ticket, args.provider,
                                                 args.model)
