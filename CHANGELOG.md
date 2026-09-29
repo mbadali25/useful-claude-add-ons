@@ -4,6 +4,44 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.62: `/crew:autopilot assign` and `crew_ticket.py mint` (T-0019)
+
+- **What changed.** `crew_ticket.mint(root, title, status="ready", direction=None)`
+  (CLI `crew_ticket.py mint --root . --title <t> [--status ready|direction]
+  [--direction-file <f>]`) is the one way code creates a ticket: one past the
+  highest `T-` number over `.work/tickets/` folders and `.work/INDEX.md` rows,
+  claimed with an exclusive `os.mkdir`, direction.md written complete or not at
+  all (temp file, fsync, `os.replace`), and only then the INDEX row (and, under
+  `obsidian`, the note and Kanban card) through `crew_tracker.create`, then
+  `move` to `ready`. A tracker `id taken` takes the next id; any other failure
+  releases the folder and refuses; `jira`, `sdp`, no tracker and could-not-tell
+  refuse before anything is claimed. `crew_ticket.py assign --root .
+  --direction-file .work/autopilot/<f>` checks a staging file (under
+  `.work/autopilot/`, symlinks resolved; `title:`, `risk:`, and the four
+  `/crew:brainstorm` sections, none empty) and that autopilot is armed, then
+  mints exactly one `ready` ticket whose direction.md starts with an
+  `origin: /crew:autopilot assign` provenance line. `/crew:autopilot assign
+  <work>` researches the work into that file, runs `assign`, and drives the
+  ticket as `run` does. The router makes `assign` available and stops
+  `route --args 'assign <text>'` so the work is never read as a ticket or put
+  on a shell line.
+- **Approval.** An assigned ticket is approved under `autopilot.approval` like
+  any other (the owner's 2026-09-26 "Follow the policy"); the origin line
+  changes no policy answer (`test_origin_line_changes_no_policy`, and a
+  sabotage entry that puts an origin rule back). `crew_autopilot.py` stays
+  read-only but for `approve`: `assign` and `mint` are `crew_ticket.py`'s.
+- **Concurrency.** The tracker's replace re-reads before it writes, but a write
+  that lands between that re-read and the replace is lost; `mint` therefore
+  serialises its tracker calls on `.work/INDEX.md.lock`, and 8 concurrent
+  mints give 8 distinct ids, folders and rows (measured on Linux).
+- **Unchanged.** `crew_tracker.py`; `/crew:brainstorm`'s and `/crew:fix`'s prose
+  id pick (moving them onto `mint` is a follow-up); T-0010's policies. The
+  `autopilot.md` budget: T-0019 took 4 lines (114 of 120), leaving T-0012 and
+  T-0020 6.
+- **Sabotage.** 17 `ASSIGN_MUTATIONS` in `plugin/crew/tests/sabotage_autopilot.py`,
+  appended to `AUTOPILOT_MUTATIONS`.
+- Bumped `1.0.61 -> 1.0.62`.
+
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 
 - **What changed.** `review_patch.py`'s `EXCLUDED` is now `(".work/",

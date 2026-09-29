@@ -933,3 +933,101 @@ POLICY_MUTATIONS = (
      "def _one_line(value):\n    return value\n\n\ndef _line(**fields):\n",
      "tests/test_crew_autopilot.py::test_module_defines_each_function_once"),
 )
+
+# ---- T-0019: `crew_ticket.mint`, `crew_ticket.assign` and the `assign` route.
+# One per refusing branch, each red on its named test, plus one in the
+# allowing direction: an origin rule put back into approval_policy, which the
+# owner removed on 2026-09-26 ("Follow the policy"). Appended to
+# AUTOPILOT_MUTATIONS, which sabotage.py registers, the way STATUS_MUTATIONS
+# is; test_crew_autopilot.py holds every anchor to exactly one match.
+_M = "tests/test_crew_ticket_mint.py::"
+_A = "tests/test_crew_autopilot_assign.py::"
+
+ASSIGN_MUTATIONS = (
+    ("mint: the folder claim is not exclusive", TICKET,
+     "            os.mkdir(folder)\n",
+     "            os.makedirs(folder, exist_ok=True)\n",
+     _M + "test_mint_skips_existing_folder"),
+    ("mint: INDEX rows are dropped from the id scan", TICKET,
+     '    for line in (text or "").splitlines():\n        found = _MINT_ROW_RE.search(line)\n',
+     '    for line in []:\n        found = _MINT_ROW_RE.search(line)\n',
+     _M + "test_mint_never_takes_an_index_only_id"),
+    ("mint: a tracker `id taken` reads as a written row", TICKET,
+     '        return "taken", report\n',
+     '        return "written", report\n',
+     _M + "test_mint_moves_on_when_the_tracker_says_id_taken"),
+    ("mint: the title check is skipped", TICKET,
+     "    problem = _mint_title_problem(title)\n    if problem:\n",
+     "    problem = _mint_title_problem(title)\n    if False:\n",
+     _M + "test_mint_rejects_bad_title[a|b]"),
+    ("mint: the status check is skipped", TICKET,
+     "    if status not in MINT_STATUSES:\n",
+     "    if False:\n",
+     _M + "test_mint_rejects_unknown_status"),
+    ("mint: the tracker is asked before the direction is written", TICKET,
+     "    if direction is not None:\n        try:\n            _mint_write_direction(",
+     ("    crew_tracker.create(top, ticket, title)\n"
+      "    if direction is not None:\n        try:\n            _mint_write_direction("),
+     _M + "test_mint_half_written_direction_leaves_no_ticket"),
+    ("mint: an unreadable INDEX reads as no rows", TICKET,
+     "    if text is None and os.path.lexists(index):\n",
+     "    if False:\n",
+     _M + "test_mint_unreadable_index_refuses"),
+    ("mint: the tracker-kind gate is skipped", TICKET,
+     "    _mint_gate(top)\n",
+     "    pass\n",
+     _M + "test_mint_refuses_under_a_delegated_or_unknown_tracker[jira]"),
+    ("mint: a failed create leaves the folder behind", TICKET,
+     "f\"{'; '.join(lines)}{_mint_release(folder)}\")",
+     "f\"{'; '.join(lines)}\")",
+     _M + "test_mint_failed_tracker_create_leaves_no_ticket"),
+    ("assign: mints without its staging-file check", TICKET,
+     "    if problems:\n        raise TicketError(f\"{direction_file}: \"",
+     "    if False:\n        raise TicketError(f\"{direction_file}: \"",
+     _A + "test_assign_refuses_missing_section_and_mints_nothing[ask]"),
+    ("assign: an empty section is accepted", TICKET,
+     "        elif not found[name]:\n",
+     "        elif False:\n",
+     _A + "test_assign_refuses_empty_ask"),
+    ("assign: the armed check is skipped", TICKET,
+     "    if not _assign_armed(top):\n",
+     "    if False:\n",
+     _A + "test_assign_refuses_when_not_armed"),
+    ("assign: the staging-path check is skipped", TICKET,
+     "    if not real.startswith(staging + os.sep):\n",
+     "    if False:\n",
+     _A + "test_assign_refuses_direction_file_outside_staging[/tmp/x.md]"),
+    ("assign: an unknown risk is written low", TICKET,
+     '        risk = "high"\n',
+     '        risk = "low"\n',
+     _A + "test_assign_unknown_risk_is_high"),
+    ("route: assign's text is read as a run", AUTOPILOT,
+     '    if words[:1] == ["assign"] and len(words) > 1:\n',
+     "    if False:\n",
+     _A + "test_route_args_assign_with_text_refuses"),
+    # The allowing direction: the 2026-09-25 origin rule, put back.
+    ("approval_policy: an assigned ticket always waits for the human", AUTOPILOT,
+     ('    top = crew_ticket.toplevel(root) or os.path.abspath(root)\n    try:\n'
+      '        policy, risk, warnings = _decision(top, ticket, "approval")\n'),
+     ('    top = crew_ticket.toplevel(root) or os.path.abspath(root)\n'
+      '    if crew_ticket.ORIGIN_ASSIGN in (read_text(os.path.join(\n'
+      '            crew_ticket.ticket_dir(top, ticket), "direction.md")) or ""):\n'
+      '        return {"allow": False, "policy": HUMAN, "risk": "high", "known": False,\n'
+      '                "warnings": [], "reason": "an assigned ticket waits for the human"}\n'
+      '    try:\n'
+      '        policy, risk, warnings = _decision(top, ticket, "approval")\n'),
+     _A + "test_assigned_ticket_self_approved_under_self"),
+    ("approval_policy: the origin line changes the answer", AUTOPILOT,
+     ('    top = crew_ticket.toplevel(root) or os.path.abspath(root)\n    try:\n'
+      '        policy, risk, warnings = _decision(top, ticket, "approval")\n'),
+     ('    top = crew_ticket.toplevel(root) or os.path.abspath(root)\n'
+      '    if crew_ticket.ORIGIN_ASSIGN in (read_text(os.path.join(\n'
+      '            crew_ticket.ticket_dir(top, ticket), "direction.md")) or ""):\n'
+      '        return {"allow": False, "policy": HUMAN, "risk": "high", "known": False,\n'
+      '                "warnings": [], "reason": "an assigned ticket waits for the human"}\n'
+      '    try:\n'
+      '        policy, risk, warnings = _decision(top, ticket, "approval")\n'),
+     _A + "test_origin_line_changes_no_policy[self]"),
+)
+
+AUTOPILOT_MUTATIONS += ASSIGN_MUTATIONS

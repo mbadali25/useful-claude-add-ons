@@ -86,8 +86,7 @@ def test_route_unknown_word_refuses(tmp_path, token):
         "", True, True)
 
 
-@pytest.mark.parametrize("name,ticket", [("assign", "T-0019"), ("goal", "T-0012"),
-                                         ("focus", "T-0020")])
+@pytest.mark.parametrize("name,ticket", [("goal", "T-0012"), ("focus", "T-0020")])
 def test_route_unavailable_names_its_ticket(tmp_path, name, ticket):
     root = make_repo(tmp_path, mode="off")
 
@@ -172,8 +171,7 @@ def test_route_args_run_goal_arrives_with_its_ticket(tmp_path):
     (["--first", "--goal"], "sub=run stop=1 reason=run --goal <slug> arrives with T-0012"),
     (["--first", "stauts"], "sub= stop=1 reason=unknown subcommand; one of "
                             "status|run|assign|goal|focus"),
-    (["--first", "assign"], "sub=assign stop=1 reason=/crew:autopilot assign arrives with "
-                            "T-0019"),
+    (["--first", "assign"], "sub=assign stop=0 reason="),
     (["--args", "--goal"], "sub=run stop=1 ticket= reason=run --goal <slug> arrives with "
                            "T-0012"),
     (["--args", "-h"], "sub= stop=1 ticket= reason=unknown subcommand"),

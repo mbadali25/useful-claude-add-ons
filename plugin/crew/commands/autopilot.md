@@ -1,6 +1,6 @@
 ---
-description: Report a ticket's standing (status), or drive it through the lifecycle until a human is needed (run)
-argument-hint: "[status|run|assign|goal|focus] [ticket id | --goal <slug>]"
+description: Report a ticket's standing (status), drive it until a human is needed (run), or mint one from free text (assign)
+argument-hint: "[status|run|assign|goal|focus] [ticket id | --goal <slug> | assign's work]"
 allowed-tools: Read, Write, Edit, Bash, Agent, Skill
 ---
 
@@ -13,7 +13,8 @@ on a ticket's first approval, and a distinct successor plan's NEEDS_REPLAN -> IN
 
 ## 0. Route
 
-If the arguments hold a quote, `$`, a backtick or a backslash, stop without
+If the first word is exactly `assign`, run `crew_autopilot.py route --root . --first assign` in place of this shell line
+(the rest is the work: never a shell argument). If the arguments hold a quote, `$`, a backtick or a backslash, stop without
 running anything: no subcommand or ticket id has one. Otherwise:
 
 ```bash
@@ -21,9 +22,9 @@ python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route --root . 
 ```
 
 It prints `sub=<s> stop=<0|1> ticket=<t> reason=<r>`. Anything but a `sub=` line - no output,
-a traceback, a non-zero exit - is a stop. `stop=1`: print the reason and stop (an unknown word is
-never read as a ticket; `assign`, `goal`, `focus` arrive with T-0019, T-0012, T-0020). `sub=status`:
-section 1 only. `sub=run`: sections 2 to 5. `<ticket>` is route's `ticket=`, never re-read from the
+a traceback, a non-zero exit - is a stop. `stop=1`: print the reason and stop (an unknown word is never read as a
+ticket; `goal`, `focus` arrive with T-0012, T-0020). `sub=status`: section 1 only. `sub=run`: sections 2 to 5.
+`sub=assign`: the assign lines. `<ticket>` is route's `ticket=`, never re-read from the
 arguments; from `resume` on, `<ticket>` is the `ticket=` resume printed.
 
 ## 1. status
@@ -60,8 +61,7 @@ python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py next --root . \
   --ticket <ticket> --phases-run N --last-command "LAST"
 ```
 
-It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`.
-No output, a traceback or a non-zero exit is a stop.
+It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`. No output, a traceback or a non-zero exit is a stop.
 - `stop=0` - announce `phase <p>: <c>` and follow that command's `commands/*.md` here, or run a
   refresh command (`/crew:onboard --refresh`, `/crew:diagram refresh`, `graphify update .`) as
   named and commit it. Then `LAST=<c>`, `N+=1`, again.
@@ -95,7 +95,7 @@ owner's, at every setting); `plan-approval` and `open-questions` are a person un
 policy allows. `next` enforces from disk, every turn: `needs-replan`, `needs-replan-or-revert`,
 `unknown-ledger`, `failed-validate`, `direction-unknown`, `unsettled-artifact`, `ticket-mismatch`,
 `max-phases`, `no-progress`. This procedure: `review-verdict`, `failed-done-check`,
-`failed-phase`. No deploy (T-0005), merge or PR (T-0011), new ticket (T-0012), lane or writer.
+`failed-phase`. No deploy (T-0005), merge or PR (T-0011), new ticket (T-0012; `assign` mints one), lane or writer.
 Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
 - `offboard-role` - offboarding a role, or removing one from the roster.
 - `delete-map` - deleting a codemap file or a diagram.
@@ -108,3 +108,7 @@ When context-watch asks for a handoff: finish the step in hand, run `/crew:hando
 `resume: /crew:autopilot <ticket>` (T-0006's grammar) and `branch:`/`head:` on their own lines,
 then stop. Report the ticket and its source, each phase run with its command, every
 `self-approved` and `taken:` line, where `next` stopped, why, and the command the human types next.
+
+`assign <text>` (T-0019): research the text (crew:explorer, crew:researcher) into `.work/autopilot/assign-<n>.md` with `title:`, `risk: low|med|high`, then `## Ask`
+holding the text verbatim, `## Options`, `## Recommendation` and `## Open questions` (or `none`); run `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py assign --root . --direction-file .work/autopilot/assign-<n>.md`.
+`ticket=<id>`: announce `assigned <id>` and run sections 2 to 5 with that ticket (its approval is section 3's policy). Anything else - `refused:`, no output, a traceback - print it and stop: nothing was minted.

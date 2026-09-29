@@ -115,6 +115,20 @@ also covers everything under it as a directory. This is deliberately NOT
 `scope_report.gate_matches` (python fnmatch, where `*` consumes `/`): Touch
 is an allow-list, and a `*` that silently spans directories widens it.
 
+## Minting (T-0019)
+
+`mint` is the one way code creates a ticket: one past the highest `T-`
+number over `.work/tickets/` folders and INDEX rows, claimed by an exclusive
+`os.mkdir`, direction.md written complete or not at all, and only then the
+INDEX row (and, under obsidian, the vault note and Kanban card) through
+`crew_tracker.create`, then `move` to `ready`. `mint` never opens INDEX for
+writing itself. A tracker `id taken` releases the folder and takes the next
+id; any other failure releases it and raises. Under jira, sdp, no tracker or
+a tracker that could not tell, it refuses before claiming anything.
+`assign` is `/crew:autopilot assign`'s: it checks a staging file under
+`.work/autopilot/` and that autopilot is armed, then mints once. Both live
+here, not in `crew_autopilot.py`, whose one writer stays `approve`.
+
 Exit codes: 0 ok / approved; 1 refused, invalid, stale or none; 2 usage;
 3 approved, but the review ledger refused the successor plan.
 """
@@ -129,6 +143,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 import crew_common
 
@@ -1015,17 +1030,366 @@ def touch_for(top, ticket):
     return entries
 
 
+# --- minting (T-0019) ------------------------------------------------------------------
+
+MINT_STATUSES = ("ready", "direction")
+MINT_ATTEMPTS = 20
+TITLE_MAX = 120
+# A `.work/tickets/` folder that holds a `T-` number, and (below) an INDEX
+# line's first `T-<n>`, the id cell of every row crew writes. [0-9], not \d,
+# which is any Unicode digit. `mint` makes `T-` plus at least 4 digits.
+_MINT_FOLDER_RE = re.compile(r"T-([0-9]+)\Z")
+_MINT_ROW_RE = re.compile(r"(?<![A-Z0-9])T-([0-9]+)")
+_MINT_KINDS = ("files", "obsidian")
+_MINT_RETRY_PAUSE = 0.02
+_MINT_LOCK_WAIT = 30.0
+
+
+def _mint_taken(top):
+    """The `T-` numbers held by `.work/tickets/T-*` folders and by the first
+    `T-<n>` of every INDEX line. An INDEX or tickets folder that exists but
+    cannot be read raises: could not tell is a refusal, never "nothing
+    taken". An absent one holds nothing (the tracker creates INDEX)."""
+    taken = set()
+    tickets = os.path.join(top, ".work", "tickets")
+    try:
+        names = os.listdir(tickets)
+    except FileNotFoundError:
+        names = []
+    except OSError as exc:
+        raise TicketError(f".work/tickets could not be listed ({exc.strerror or exc}); "
+                          "which ids are taken cannot be told") from exc
+    for name in names:
+        found = _MINT_FOLDER_RE.match(name)
+        if found:
+            taken.add(int(found.group(1)))
+    index = os.path.join(top, ".work", "INDEX.md")
+    text = crew_common.read_text(index)
+    if text is None and os.path.lexists(index):
+        raise TicketError(".work/INDEX.md exists but could not be read; which ids are "
+                          "taken cannot be told")
+    for line in (text or "").splitlines():
+        found = _MINT_ROW_RE.search(line)
+        if found:
+            taken.add(int(found.group(1)))
+    return taken
+
+
+def _mint_gate(top):
+    """Refuse unless the tracker is one whose `create` writes the row here."""
+    import crew_tracker  # pylint: disable=import-outside-toplevel
+    info = crew_tracker.resolve(top)
+    kind = info["kind"]
+    if kind not in _MINT_KINDS:
+        detail = "; ".join(info.get("problems") or [])
+        raise TicketError(
+            f"tracker is {kind}{f' ({detail})' if detail else ''}: mint writes a ticket only "
+            f"under a files or obsidian tracker, whose create writes the INDEX row; follow "
+            f"brainstorm.md step 1 instead")
+
+
+def _mint_title_problem(title):
+    import crew_tracker  # pylint: disable=import-outside-toplevel
+    if not isinstance(title, str) or not title.strip():
+        return "the title is empty"
+    if len(title) > TITLE_MAX:
+        return f"the title is {len(title)} characters, over {TITLE_MAX}"
+    if not crew_tracker.title_ok(title):
+        return "the title must be one line with no '|'"
+    return None
+
+
+def _mint_write_direction(folder, ticket, body):
+    """direction.md complete or not at all: the whole text is built first,
+    written to a temp file, fsynced, then `os.replace`d. On any failure the
+    temp and the direction are removed and the error re-raised."""
+    text = f"# {ticket} direction\n{body}" + ("" if body.endswith("\n") else "\n")
+    data = text.encode("utf-8")
+    path = os.path.join(folder, "direction.md")
+    tmp = f"{path}.{os.getpid()}.tmp"
+    try:
+        with open(tmp, "xb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        for stale in (tmp, path):
+            try:
+                os.remove(stale)
+            except OSError:
+                pass
+        raise
+
+
+def _mint_release(folder):
+    """Take back a claimed folder: its direction.md, then the folder itself.
+    Only what mint wrote; a folder someone else wrote into stays, and the
+    returned text says so."""
+    try:
+        os.remove(os.path.join(folder, "direction.md"))
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        return f"; {folder}/direction.md could not be removed ({exc.strerror or exc})"
+    try:
+        os.rmdir(folder)
+    except OSError as exc:
+        return f"; {folder} could not be removed ({exc.strerror or exc})"
+    return ""
+
+
+def _mint_lines(crew_tracker, report):
+    return [crew_tracker._line(r) for r in report["results"]]  # pylint: disable=protected-access
+
+
+def _mint_failures(crew_tracker, report):
+    """`tracker: <line>` for each half of `report` that did not update."""
+    return [f"tracker: {line}" for r, line in zip(report["results"], _mint_lines(crew_tracker, report))
+            if crew_tracker._EXIT.get(r["state"], 0)]  # pylint: disable=protected-access
+
+
+def _mint_row(top, ticket, title):
+    """(outcome, report): `written`, `taken` or `failed` for one `create`.
+    The row is written when the files half reports `updated`; a later half
+    failing (the board, under obsidian) is then a warning, never an unwind of
+    a row that cannot be atomically taken back."""
+    import crew_tracker  # pylint: disable=import-outside-toplevel
+    report = crew_tracker.create(top, ticket, title)
+    results = report["results"]
+    if any(r["backend"] == "files" and r["state"] == crew_tracker.UPDATED for r in results):
+        return "written", report
+    if any(str(r.get("reason") or "").startswith(crew_tracker.TAKEN) for r in results):
+        return "taken", report
+    return "failed", report
+
+
+def _mint_claim(top, ticket, title, folder, direction):
+    """`(outcome, warnings)` for a folder already claimed: the direction, then
+    the tracker row, retried while the tracker fails for a reason other than
+    `id taken`. Serialised across mints by a lock beside INDEX: the tracker's
+    replace re-reads before it writes, but a write landing between that
+    re-read and the replace is lost, so two mints never call it at once."""
+    import crew_config_files  # pylint: disable=import-outside-toplevel
+    import crew_tracker  # pylint: disable=import-outside-toplevel
+    if direction is not None:
+        try:
+            _mint_write_direction(folder, ticket, direction)
+        except BaseException:
+            _mint_release(folder)
+            raise
+    report = None
+    try:
+        with crew_config_files.Lock(os.path.join(top, ".work", "INDEX.md"), _MINT_LOCK_WAIT):
+            for _ in range(MINT_ATTEMPTS):
+                outcome, report = _mint_row(top, ticket, title)
+                if outcome != "failed":
+                    break
+                time.sleep(_MINT_RETRY_PAUSE)
+    except crew_config_files.Busy as exc:
+        raise TicketError(f"{ticket} claimed but not minted: {exc}"
+                          f"{_mint_release(folder)}") from exc
+    lines = _mint_lines(crew_tracker, report)
+    if outcome == "taken":
+        return "taken", lines
+    if outcome == "failed":
+        raise TicketError(f"{ticket} claimed but its tracker row was not written: "
+                          f"{'; '.join(lines)}{_mint_release(folder)}")
+    return "written", _mint_failures(crew_tracker, report)
+
+
+def mint(root, title, status="ready", direction=None):
+    """Create one ticket: `{"ticket", "folder", "status", "warnings"}`.
+
+    The id is one past the highest `T-` number over `.work/tickets/` folders
+    and INDEX rows, claimed by an exclusive `os.mkdir` (a folder that exists
+    is skipped). `direction`, a body, is written to direction.md under a
+    `# <id> direction` header before the tracker is asked; then
+    `crew_tracker.create` writes the INDEX row (and, under obsidian, the note
+    and card) and, for `ready`, `crew_tracker.move` moves it there. A tracker
+    `id taken` releases the folder and takes the next id; a direction write
+    that raises, or a `create` that keeps failing, releases the folder and
+    raises. A failed move leaves the ticket at `direction`, with a warning.
+    Refused before anything is claimed: a bad title or status, an unreadable
+    INDEX, a tracker whose create does not write the row here."""
+    if status not in MINT_STATUSES:
+        raise TicketError(f"status {status!r} is not one of {'|'.join(MINT_STATUSES)}")
+    problem = _mint_title_problem(title)
+    if problem:
+        raise TicketError(problem)
+    if direction is not None and not isinstance(direction, str):
+        raise TicketError("the direction must be text")
+    top = os.path.realpath(toplevel(root) or os.path.abspath(root))
+    _mint_gate(top)
+    import crew_tracker  # pylint: disable=import-outside-toplevel
+    tickets = os.path.join(top, ".work", "tickets")
+    os.makedirs(tickets, exist_ok=True)
+    number = 0
+    for _ in range(MINT_ATTEMPTS):
+        number = max(_mint_taken(top) | {number}) + 1
+        ticket = f"T-{number:04d}"
+        folder = os.path.join(tickets, ticket)
+        try:
+            os.mkdir(folder)
+        except FileExistsError:
+            continue
+        outcome, warnings = _mint_claim(top, ticket, title, folder, direction)
+        if outcome == "taken":
+            _mint_release(folder)
+            continue
+        state = "direction"
+        if status == "ready":
+            report = crew_tracker.move(top, ticket, "ready")
+            if crew_tracker.exit_code(report) == 0:
+                state = "ready"
+            else:
+                warnings += _mint_failures(crew_tracker, report)
+        return {"ticket": ticket, "folder": folder, "status": state, "warnings": warnings}
+    raise TicketError(f"no free ticket id after {MINT_ATTEMPTS} attempts (last tried "
+                      f"T-{number:04d}); nothing was minted")
+
+
+# --- /crew:autopilot assign (T-0019) ---------------------------------------------------
+
+# Provenance only: nothing that grants or refuses an approval reads it (the
+# owner's 2026-09-26 "Follow the policy"; test_origin_line_changes_no_policy).
+ORIGIN_ASSIGN = "origin: /crew:autopilot assign"
+STAGING = ".work/autopilot"
+ASSIGN_SECTIONS = ("ask", "options", "recommendation", "open questions")
+RISKS = ("low", "med", "high")
+_FIELD_RE = re.compile(r"^(title|risk):[ \t]*(.*?)\s*$")
+
+
+def check_direction(text):
+    """`(fields, problems)` for a staging file. `fields` holds `title` and
+    `risk` (lower-cased), each the first `title:` / `risk:` line before the
+    first `## ` heading -- never a line inside `## Ask`, which is the owner's
+    text verbatim. `problems` names a missing or empty title and each of the
+    four sections that is absent or empty."""
+    fields, problems = {"title": None, "risk": None}, []
+    for line in (text or "").splitlines():
+        if _HEADING_RE.match(line):
+            break
+        found = _FIELD_RE.match(line)
+        if found and fields[found.group(1)] is None:
+            fields[found.group(1)] = found.group(2)
+    if fields["risk"] is not None:
+        fields["risk"] = fields["risk"].lower()
+    if not fields["title"]:
+        problems.append("no title: line (or an empty one) before the first ## heading")
+    found = sections(text)
+    for name in ASSIGN_SECTIONS:
+        if name not in found:
+            problems.append(f"no ## {name} section")
+        elif not found[name]:
+            problems.append(f"## {name} is empty")
+    return fields, problems
+
+
+def _assign_armed(top):
+    """Whether autopilot is armed, imported lazily (crew_autopilot imports
+    this module). Could not tell is a refusal naming the cause."""
+    try:
+        import crew_autopilot  # pylint: disable=import-outside-toplevel
+        got = crew_autopilot.settings(top)
+    except Exception as exc:  # pylint: disable=broad-except
+        raise TicketError(f"whether autopilot is armed could not be told "
+                          f"({type(exc).__name__}: {exc}); nothing was minted") from exc
+    return isinstance(got, dict) and got.get("armed") is True
+
+
+def assign(root, direction_file):
+    """`/crew:autopilot assign`'s one write: `{"ticket", "folder", "status",
+    "risk", "warnings"}`. Refused, with nothing minted, when the file is not
+    under `<top>/.work/autopilot/` (resolved, symlinks followed), autopilot is
+    not armed, or `check_direction` finds a problem. Then `mint` exactly once,
+    `ready`, with the origin line, `title:`, `risk:` and the file's sections
+    as the direction. Writes no receipt: approval is `autopilot.approval`'s,
+    through `crew_autopilot.py approve`, like any other ticket's."""
+    top = os.path.realpath(toplevel(root) or os.path.abspath(root))
+    staging = os.path.join(top, *STAGING.split("/"))
+    os.makedirs(staging, exist_ok=True)
+    staging = os.path.realpath(staging)
+    path = direction_file if os.path.isabs(direction_file) else os.path.join(root, direction_file)
+    real = os.path.realpath(path)
+    if not real.startswith(staging + os.sep):
+        raise TicketError(f"{direction_file} is not under {STAGING}/ (it resolves to {real}); "
+                          "nothing was minted")
+    if not _assign_armed(top):
+        raise TicketError("autopilot is not armed (autopilot.mode is not plan in "
+                          ".crew/config.json); nothing was minted")
+    try:
+        with open(real, encoding="utf-8") as handle:
+            text = handle.read()
+    except (OSError, ValueError) as exc:
+        raise TicketError(f"{direction_file} could not be read ({type(exc).__name__}: "
+                          f"{exc}); nothing was minted") from exc
+    fields, problems = check_direction(text)
+    if problems:
+        raise TicketError(f"{direction_file}: " + "; ".join(problems) + "; nothing was minted")
+    warnings, risk = [], fields["risk"]
+    if risk not in RISKS:
+        warnings.append(f"risk: {risk!r} is not {'|'.join(RISKS)}; written as high")
+        risk = "high"
+    start = next(i for i, line in enumerate(text.splitlines(keepends=True))
+                 if _HEADING_RE.match(line.rstrip("\r\n")) and not line.startswith("###"))
+    rest = "".join(text.splitlines(keepends=True)[start:])
+    body = f"{ORIGIN_ASSIGN}\ntitle: {fields['title']}\nrisk: {risk}\n\n{rest}"
+    got = mint(top, fields["title"], status="ready", direction=body)
+    return dict(got, risk=risk, warnings=warnings + got["warnings"])
+
+
 # --- CLI ------------------------------------------------------------------------------
+
+def _mint_main(parser, args, root):
+    """`mint` and `assign`: `ticket=<id>` (assign adds ` risk=<r>`) and each
+    `warning:`, exit 0; `refused: <why>`, exit 1. The scope guard refuses a
+    shell command naming `crew_ticket` with the word "approve", so a caller
+    holding free text (assign, T-0012's goal) passes it in a file, never as
+    an argument: assign has no --title, and reads title and risk from the file."""
+    try:
+        if args.action == "assign":
+            if not args.direction_file:
+                parser.error("assign needs --direction-file <staging file>")
+            got = assign(root, os.path.abspath(args.direction_file))
+            print(f"ticket={got['ticket']} risk={got['risk']}")
+        else:
+            if args.title is None:
+                parser.error("mint needs --title <title>")
+            body = None
+            if args.direction_file:
+                try:
+                    with open(args.direction_file, encoding="utf-8") as handle:
+                        body = handle.read()
+                except (OSError, ValueError) as exc:
+                    raise TicketError(f"{args.direction_file} could not be read "
+                                      f"({type(exc).__name__}: {exc})") from exc
+            got = mint(root, args.title, status=args.mint_status, direction=body)
+            print(f"ticket={got['ticket']}")
+    except (TicketError, OSError) as exc:
+        print(f"refused: {exc}")
+        return 1
+    for warning in got["warnings"]:
+        print(f"warning: {warning}")
+    return 0
+
 
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("action", choices=("validate", "approve", "status", "activate",
-                                           "deactivate", "active", "touch"))
+                                           "deactivate", "active", "touch", "mint", "assign"))
     parser.add_argument("--root", default=".")
     parser.add_argument("--ticket")
     parser.add_argument("--by", help="who is approving (default: git user.name)")
+    parser.add_argument("--title", help="mint: the new ticket's title")
+    parser.add_argument("--status", dest="mint_status", default="ready",
+                        choices=MINT_STATUSES, help="mint: the new row's status")
+    parser.add_argument("--direction-file",
+                        help="mint: a direction body to write; assign: the staging file")
     args = parser.parse_args(argv)
     root = os.path.abspath(args.root)
+    if args.action in ("mint", "assign"):
+        return _mint_main(parser, args, root)
     try:
         if args.action == "deactivate":
             deactivate(root)

@@ -219,8 +219,8 @@ HUMAN_STOPS = (
 # T-0018: the command's subcommands. A later ticket adds its name to AVAILABLE
 # and drops it from ARRIVES when it replaces the router's stop.
 SUBCOMMANDS = ("status", "run", "assign", "goal", "focus")
-AVAILABLE = frozenset({"status", "run"})
-ARRIVES = {"assign": "T-0019", "goal": "T-0012", "focus": "T-0020"}
+AVAILABLE = frozenset({"status", "run", "assign"})
+ARRIVES = {"goal": "T-0012", "focus": "T-0020"}
 GOAL_FLAG = "--goal"
 UNKNOWN_SUB = ("unknown subcommand; one of " + "|".join(SUBCOMMANDS)
                + ", or a ticket id")
@@ -1293,6 +1293,10 @@ def route(root, first):
 
 NOT_A_TICKET = ("not a ticket id: at most one, INDEX-shaped (T-0018) or naming an "
                 "existing .work/tickets/<id>/")
+# T-0019: the words after `assign` are the owner's work, never a ticket and
+# never a shell argument; only a bare `assign` routes.
+ASSIGN_TEXT = ("assign's text never goes through the shell: run crew_autopilot.py route "
+               "--root . --first assign and follow the command's assign lines")
 
 
 def route_args(root, text):
@@ -1306,6 +1310,8 @@ def route_args(root, text):
     got = dict(route(top, words[0] if words else ""), ticket="")
     if got["stop"]:
         return got
+    if words[:1] == ["assign"] and len(words) > 1:
+        return dict(got, stop=True, reason=ASSIGN_TEXT)
     rest = words[1:] if words and words[0] in SUBCOMMANDS else words
     if words[:1] == ["run"] and rest[:1] == [GOAL_FLAG]:
         return dict(route(top, GOAL_FLAG), ticket="")
