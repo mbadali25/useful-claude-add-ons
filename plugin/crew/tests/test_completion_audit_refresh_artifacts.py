@@ -210,6 +210,23 @@ def test_a_could_not_tell_verdict_fails_the_audit_and_says_so(tmp_path, monkeypa
     assert (ok, "[could not tell:" in "\n".join(lines)) == (False, True), lines
 
 
+def test_an_unreadable_rule_fails_the_audit_as_could_not_tell(tmp_path):
+    """Review round 2's repro: a dangling symlink under `.claude/rules/` that
+    no map expects was admitted as `regenerated`, and the audit passed a path
+    outside Touch."""
+    root, _base = anchored_repo(tmp_path)
+    ghost = root / ".claude" / "rules" / "ghost.md"
+    try:
+        os.symlink(str(root / "nonexistent"), str(ghost))
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"cannot create a symlink here: {exc}")
+
+    ok, lines = completion_audit.audit(str(root), "T-1")
+
+    assert (ok, ".claude/rules/ghost.md [could not tell:" in "\n".join(lines)) == (
+        False, True), lines
+
+
 def test_a_bookkeeping_bump_does_not_admit_a_rewrite_of_the_map_citing_it(tmp_path):
     """Review round 1: a ticket changing `src/app.py` and CHANGELOG.md rewrote
     another map citing CHANGELOG.md and moved its anchor, and was admitted."""

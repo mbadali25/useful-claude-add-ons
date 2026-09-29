@@ -646,7 +646,13 @@ def _rule_verdict(top, base, rel, expected):
     path = os.path.join(top, *rel.split("/"))
     key = os.path.normcase(os.path.normpath(path))
     if os.path.lexists(path):
-        if read_text(path) == expected.get(key):
+        # Read once, and a None is could-not-tell BEFORE any comparison: an
+        # unreadable rule no map expects compared None == None and was
+        # admitted as regenerated (review round 2).
+        text = read_text(path)
+        if text is None:
+            return None, f"{COULD_NOT_TELL}: could not read {rel}"
+        if text == expected.get(key):
             return True, "regenerated"
         return False, ("bytes differ from expected_rules (regenerate with "
                        "crew_instructions.py rules)")

@@ -284,7 +284,7 @@ REFRESH_MUTATIONS = (
      "            if row and row.group(1) not in admitted:\n",
      _TA + "test_an_index_edit_outside_a_re_anchored_row_is_refused"),
     ("a rule's bytes are not compared with expected_rules", CHECK,
-     "        if read_text(path) == expected.get(key):\n",
+     "        if text == expected.get(key):\n",
      "        if True:\n",
      _TA + "test_a_hand_edited_rule_is_refused"),
     ("a removed rule is admitted without the generated marker", CHECK,
@@ -387,4 +387,13 @@ REFRESH_MUTATIONS = (
      '        return f"{shown(path)} [{shown(verdicts[path][1])}]"\n',
      "        return shown(path)\n",
      _CA + "test_a_could_not_tell_verdict_fails_the_audit_and_says_so"),
+    # T-0094 review round 2
+    ("an unreadable rule no map expects is admitted as regenerated", CHECK,
+     '        if text is None:\n            return None, f"{COULD_NOT_TELL}: could not read {rel}"\n',
+     '        if False:\n            return None, f"{COULD_NOT_TELL}: could not read {rel}"\n',
+     _TA + "test_an_unreadable_rule_is_could_not_tell[unexpected]"),
+    ("an unreadable rule a map expects reads as bytes differ", CHECK,
+     '            return None, f"{COULD_NOT_TELL}: could not read {rel}"\n',
+     '            return False, "bytes differ"\n',
+     _TA + "test_an_unreadable_rule_is_could_not_tell[expected]"),
 )

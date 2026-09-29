@@ -16,6 +16,8 @@ A guard class: must-allow and must-block cases both, and every rung has a
 mutation in `sabotage_refresh.py` after the `# T-0094` marker that turns one
 of these red.
 """
+import os
+
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_instructions
 import crew_refresh_check
@@ -59,6 +61,26 @@ def _judged(root, base, reach, rel, expected):
     wrong reason fail differently."""
     verdict, reason = _verdict(root, base, reach, rel)
     return verdict, expected in reason, reason
+
+
+def _failing_git(monkeypatch, name, match, result):
+    """Patch crew_refresh_check.<name> (`_git_rc` or `_git_lines`) to return
+    `result` (None, or an exit code such as 129) for the one call whose args
+    satisfy `match(args)`, and delegate every other call to the real helper."""
+    real = getattr(crew_refresh_check, name)
+    monkeypatch.setattr(crew_refresh_check, name,
+                        lambda r, *a: result if match(a) else real(r, *a))
+
+
+def _dangling(root, rel):
+    """A symlink at `rel` to a path that does not exist: `os.path.lexists` is
+    True, `read_text` returns None. Skipped where symlinks cannot be made."""
+    path = root.joinpath(*rel.split("/"))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.symlink(os.path.join(str(root), "nonexistent"), str(path))
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"cannot create a symlink here: {exc}")
 
 
 @pytest.fixture(name="anchored")
@@ -513,3 +535,23 @@ def test_a_file_under_an_artifact_dir_of_no_admitted_kind_is_refused(anchored):
     write(root, rel, "scratch\n")
 
     assert _verdict(root, base, REACH, rel)[0] is False
+
+
+# --- could not tell (review round 2) -------------------------------------------
+
+@pytest.mark.parametrize("case", ["unexpected", "expected"])
+def test_an_unreadable_rule_is_could_not_tell(anchored, case):
+    """Review round 2: `read_text` returned None for a rule file that exists,
+    and `None == expected.get(key)` admitted one no map expects as
+    `regenerated` and called one a map expects `bytes differ`."""
+    root, base = anchored
+    if case == "unexpected":
+        rel = RULE.format(name="ghost")
+    else:
+        rel = APP_RULE
+        root.joinpath(*rel.split("/")).unlink()
+    _dangling(root, rel)
+
+    verdict, reason = _verdict(root, base, REACH, rel)
+
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL)) == (None, True), reason
