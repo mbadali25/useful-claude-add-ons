@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.55: tooling reliability — tool-failure refunds, golden replay, seam contracts, a canary review (T-0087)
+### Added — `crew` 1.0.62: tooling reliability — tool-failure refunds, golden replay, seam contracts, a canary review (T-0087)
 
 A tooling change: this release carries no feature work.
 
@@ -73,7 +73,7 @@ A tooling change: this release carries no feature work.
   and the corpus's `-text` attribute. The six on the checker and `verify.json` are added only where
   those repo files exist. All twenty-eight go RED.
 
-### Fixed — `crew` 1.0.55 (T-0087)
+### Fixed — `crew` 1.0.62 (T-0087)
 
 - Importing `verify_record` no longer reconfigures `sys.stdout`; that now
   happens in its `main`.
@@ -106,9 +106,10 @@ A tooling change: this release carries no feature work.
 - The golden review corpus is checked out byte-exact: a nested
   `plugin/crew/tests/golden/.gitattributes` sets `* -text`, so an autocrlf
   checkout no longer rewrites it to CRLF.
-- Bumped `1.0.54 -> 1.0.55` (1.0.52 on its branch; re-set to 1.0.53 after
-  merging main's 1.0.52, T-0076, and to 1.0.55 after merging main's 1.0.54,
-  T-0092).
+- Bumped `1.0.61 -> 1.0.62` (1.0.52 on its branch; re-set to 1.0.53 after
+  merging main's 1.0.52, T-0076, to 1.0.55 after merging main's 1.0.54,
+  T-0092, and to 1.0.62 after merging main's 1.0.61, T-0010; T-0075 landed
+  as 1.0.59 in between).
 
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 
