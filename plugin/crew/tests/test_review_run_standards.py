@@ -59,8 +59,23 @@ def _bundle(repo, scratch):
         encoding="utf-8")
 
 
-def _selfcheck(repo, state="current"):
-    """missing | unreadable | incomplete | unstamped | current."""
+_EDITS_AFTER_STAMPING = {
+    "drop-row": (lambda t: re.sub(r"^\| GEN-03 .*\n", "", t, flags=re.M), "GEN-03: no row"),
+    "placeholder": (lambda t: re.sub(r"^\| GEN-03 \| n/a \| .*\|$", "| GEN-03 | n/a | TBD |",
+                                     t, flags=re.M), "GEN-03: n/a needs a reason"),
+    "bad-status": (lambda t: t.replace("| GEN-03 | n/a |", "| GEN-03 | maybe |"),
+                   "GEN-03: status 'maybe' is not addressed or n/a"),
+    "new-reason": (lambda t: re.sub(r"^\| GEN-03 \| n/a \| .*\|$",
+                                    "| GEN-03 | n/a | one text file, no shared state |",
+                                    t, flags=re.M), None),
+}
+
+
+def _selfcheck(repo, state="current", edit=None):
+    """missing | unreadable | incomplete | unstamped | current |
+    stamped-then-edited (stamp a complete record, then apply `edit`, one of
+    `_EDITS_AFTER_STAMPING`: `.work/` is outside the bundle, so the stamp
+    stays current and only the gate's completeness re-check can see it)."""
     path = repo / ".work" / "tickets" / TICKET / "selfcheck.md"
     if state == "missing":
         return path
@@ -74,9 +89,13 @@ def _selfcheck(repo, state="current"):
     if state == "incomplete":
         text = re.sub(r"^\| GEN-03 .*\n", "", text, flags=re.M)
     path.write_text(text, encoding="utf-8")
-    if state == "current":
+    if state in ("current", "stamped-then-edited"):
         code, lines = cs.stamp(str(repo), TICKET)
         assert code == 0, lines
+    if state == "stamped-then-edited":
+        edited = _EDITS_AFTER_STAMPING[edit][0](path.read_text(encoding="utf-8"))
+        assert edited != path.read_text(encoding="utf-8"), edit
+        path.write_text(edited, encoding="utf-8")
     return path
 
 
@@ -225,3 +244,33 @@ def test_run_refuses_an_unreadable_manifest(repo, tmp_path):
 
     assert (result.returncode, "manifest" in result.stderr,
             rl.status(str(repo), TICKET)["rounds_used"]) == (2, True, 0)
+
+
+_REFUSING_EDITS = sorted(k for k, v in _EDITS_AFTER_STAMPING.items() if v[1])
+
+
+@pytest.mark.parametrize("provider", sorted(_PROVIDERS))
+@pytest.mark.parametrize("edit", _REFUSING_EDITS)
+def test_run_refuses_a_selfcheck_edited_after_stamping(repo, tmp_path, provider, edit):
+    _selfcheck(repo, "stamped-then-edited", edit)
+    scratch = tmp_path / "scratch"
+    _bundle(repo, scratch)
+    fakes = fake_reviewer_bin(tmp_path / "bin")
+    before = _ledger_snapshot(repo)
+
+    result = _run(repo, scratch, fakes, provider, *_PROVIDERS[provider])
+
+    own = f"review-run: self-check: {_EDITS_AFTER_STAMPING[edit][1]}"
+    assert (result.returncode, own in result.stderr, _ledger_snapshot(repo) == before) == (
+        2, True, True), result.stderr
+
+
+def test_run_reserves_after_an_edit_that_keeps_the_record_complete(repo, tmp_path):
+    _selfcheck(repo, "stamped-then-edited", "new-reason")
+    scratch = tmp_path / "scratch"
+    _bundle(repo, scratch)
+    fakes = fake_reviewer_bin(tmp_path / "bin")
+
+    result = _run(repo, scratch, fakes, "claude", "--reserve-only")
+
+    assert (result.returncode, result.stdout.strip()) == (0, "ROUND=1"), result.stderr

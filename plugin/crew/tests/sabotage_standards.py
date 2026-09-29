@@ -155,4 +155,12 @@ STANDARDS_MUTATIONS = (
         ("tests/test_crew_standards.py::"
          "test_stamp_refusal_never_names_a_record_that_would_be_kept"),
     ),
+    (
+        "the gate skips the completeness re-check",
+        STANDARDS,
+        "    if not read_problems or rows:\n",
+        "    if False:\n",
+        ("tests/test_review_run_standards.py::"
+         "test_run_refuses_a_selfcheck_edited_after_stamping"),
+    ),
 )
