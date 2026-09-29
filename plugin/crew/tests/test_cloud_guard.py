@@ -326,6 +326,40 @@ MUST_BLOCK = [
      "terraform apply -some-new-option -help", "terraformApply"),
     ("tf-help-after-dashdash", "Bash", "terraform apply -- -help",
      "terraformApply"),
+    # T-0005 review round 2. An unquoted heredoc body is expanded by the
+    # shell that reads it, so a substitution in it runs whatever the heredoc
+    # is fed to -- `cat` included.
+    ("heredoc-subst-destroy", "Bash",
+     "cat <<EOF\n$(terraform destroy -auto-approve)\nEOF", "terraformApply"),
+    ("heredoc-subst-ws-delete", "Bash",
+     "cat <<EOF\n$(terraform workspace delete production)\nEOF",
+     "terraformApply"),
+    ("heredoc-backtick-destroy", "Bash",
+     "cat <<EOF\n`terraform destroy -auto-approve`\nEOF", "terraformApply"),
+    ("heredoc-param-default-destroy", "Bash",
+     "cat <<EOF\n${x:=$(terraform destroy -auto-approve)}\nEOF",
+     "terraformApply"),
+    ("heredoc-arith-destroy", "Bash",
+     "cat <<EOF\n$(( $(terraform destroy -auto-approve) ))\nEOF",
+     "terraformApply"),
+    # Bash joins a backslash-newline before it looks for the delimiter of an
+    # unquoted heredoc, so `E\<newline>OF` ends it and the next line runs.
+    ("heredoc-continued-delimiter", "Bash",
+     "cat <<EOF\nE\\\nOF\nterraform destroy -auto-approve\nEOF\n",
+     "terraformApply"),
+    # `EOF\r` ends a heredoc only where bash ignores CR, so both readings
+    # are judged: here the one that does not end it runs the destroy.
+    ("heredoc-cr-delimiter", "Bash",
+     "cat <<EOF\nEOF\r\n'\nEOF\nterraform destroy -auto-approve\n'\n",
+     "terraformApply"),
+    ("param-default-destroy", "Bash",
+     "echo ${x:=$(terraform destroy -auto-approve)}", "terraformApply"),
+    ("arith-nested-destroy", "Bash",
+     "echo $(( $(terraform destroy -auto-approve) ))", "terraformApply"),
+    ("comsub-of-subshell-destroy", "Bash",
+     "echo $((terraform destroy -auto-approve) )", "terraformApply"),
+    ("procsub-of-subshell-destroy", "Bash",
+     "cat <((terraform destroy -auto-approve))", "terraformApply"),
 ]
 
 MUST_ALLOW = [
@@ -342,16 +376,16 @@ MUST_ALLOW = [
     ("git-push", "Bash", "git push"),
     ("git-push-upstream", "Bash", "git push -u origin feature/x"),
     ("commit-message", "Bash",
-     'git commit -m "terraform destroy, DROP TABLE, git push --force"'),
+     'git commit -m "aws ec2 terminate-instances, DROP TABLE, git push -f"'),
     ("echo-words", "Bash", "echo aws ec2 terminate-instances"),
-    ("grep-words", "Bash", "grep -rn 'terraform apply' docs/"),
+    ("grep-words", "Bash", "grep -rn 'aws s3 rb' docs/"),
     # A `;` inside a comment would split off a command if the comment were
     # not read as one -- which is what makes these two cases load-bearing.
-    ("bash-comment", "Bash", "ls  # then; terraform destroy"),
+    ("bash-comment", "Bash", "ls  # then; aws s3 rb s3://bucket"),
     ("gh-merge", "Bash", "gh pr merge 12 --squash"),
     ("ps-tf-plan", "PowerShell", "Get-ChildItem; terraform plan"),
     ("ps-comment", "PowerShell",
-     'Write-Output "terraform destroy" # then; terraform destroy'),
+     'Write-Output "git push --force" # then; git push --force'),
     ("ps-select", "PowerShell",
      "Invoke-Sqlcmd -Query \"SELECT 'DROP' AS s\" -ServerInstance s"),
     ("ps-git-push", "PowerShell", "git push origin main"),
@@ -368,11 +402,13 @@ MUST_ALLOW = [
     ("ps-invoke-sqlcmd-backslash", "PowerShell",
      "Invoke-Sqlcmd -Query \"SELECT 'C:\\' AS p, 'DROP' AS s\""),
     ("bash-c-dashdash-plan", "Bash", "bash -c -- 'terraform plan'"),
+    ("bash-c-dashdash-plan-plain", "Bash", "bash -c -- terraform plan"),
     ("az-option-before-read-verb", "Bash",
      "az group --subscription dev show -n rg"),
     ("xargs-git-add", "Bash", "git ls-files -m | xargs git add"),
     ("xargs-rm", "Bash", "find . -name '*.tmp' | xargs rm"),
     ("xargs-terraform-fmt", "Bash", "ls *.tf | xargs terraform fmt"),
+    ("xargs-terraform-fmt-plain", "Bash", "ls main.tf | xargs terraform fmt"),
     ("xargs-sh-literal-script", "Bash",
      "ls | xargs sh -c 'echo \"$@\"' _"),
     ("shallow-nesting", "Bash", "echo $(echo $(echo $(ls)))"),
@@ -394,7 +430,52 @@ MUST_ALLOW = [
      "terraform apply -var-file x.tfvars -help"),
     ("tf-help-after-bool-option", "Bash",
      "terraform destroy -auto-approve -help"),
+    # A quoted heredoc delimiter -- any part of it -- keeps the body literal.
+    ("heredoc-quoted-subst", "Bash",
+     "cat <<'EOF'\n$(aws s3 rb s3://bucket)\nEOF"),
+    ("heredoc-partly-quoted-subst", "Bash",
+     'cat <<E"O"F\n$(aws s3 rb s3://bucket)\nEOF'),
+    ("heredoc-escaped-subst", "Bash",
+     "cat <<EOF\n\\$(aws s3 rb s3://bucket)\nEOF"),
+    ("arith-plain", "Bash", "echo $(( (1 + 2) * 3 ))"),
 ]
+
+# Step 8 (T-0005): these were in MUST_ALLOW until crew read terraform lines
+# through the literal-word allowlist. Each names terraform on a line that
+# carries a quote, a comment, a glob or a heredoc, so crew could not tell
+# what it runs: refused under the default `block`, asked about under `ask`.
+# MUST_ALLOW above keeps each shape with the terraform words swapped for
+# another rule's, so the lexer behaviour it pinned is still pinned. Review
+# round 5 moved `bash-c-dashdash-plan` and `xargs-terraform-fmt` back to
+# MUST_ALLOW as they were: `plan` and `fmt` change nothing, so their quoting
+# is not gated.
+COULD_NOT_TELL = [
+    # The same two shapes with a subcommand that is not read-only.
+    ("was-bash-c-dashdash-taint", "Bash",
+     "bash -c -- 'terraform taint aws_instance.a'"),
+    ("was-xargs-terraform-taint", "Bash", "ls *.tf | xargs terraform taint"),
+]
+
+# Step 9 (T-0005): Step 8 refused these too, because a word on each dequoted
+# to terraform. None RUNS terraform -- a message, a search, a comment, a
+# heredoc body that stays literal -- so the gate, which now reads the command
+# word, hands them back to the lexer, and the lexer allows them. Step 10 gave
+# PowerShell the same command-word rule, so its comment case moved here.
+NO_LONGER_GATED = [
+    ("was-ps-comment", "PowerShell",
+     'Write-Output "terraform destroy" # then; terraform destroy'),
+    ("was-commit-message", "Bash",
+     'git commit -m "terraform destroy, DROP TABLE, git push --force"'),
+    ("was-grep-words", "Bash", "grep -rn 'terraform apply' docs/"),
+    ("was-bash-comment", "Bash", "ls  # then; terraform destroy"),
+    ("was-heredoc-quoted-subst", "Bash",
+     "cat <<'EOF'\n$(terraform destroy -auto-approve)\nEOF"),
+    ("was-heredoc-partly-quoted-subst", "Bash",
+     'cat <<E"O"F\n$(terraform destroy -auto-approve)\nEOF'),
+    ("was-heredoc-escaped-subst", "Bash",
+     "cat <<EOF\n\\$(terraform destroy -auto-approve)\nEOF"),
+]
+
 
 # Identity cases: (id, tool, command, repo cfg, global cfg, extra env,
 # expected decision, rule the reason must name).
@@ -582,6 +663,44 @@ def test_must_allow_bash(tmp_path, case):
 @pytest.mark.parametrize("case", _A_SHELL)
 def test_must_allow_pwsh(tmp_path, case):
     _allow("pwsh", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", MUST_BLOCK, ids=_B_IDS)
+def test_the_lexer_still_judges_every_must_block_case(case):
+    """Step 8's allowlist denies most unusual terraform lines before the
+    lexer's answer matters, which would let a lexer regression hide behind
+    it. So each must-block case is also judged by the lexer alone: the
+    findings `scan` returns, the allowlist's own set aside."""
+    _id, tool, command, rule = case
+    shell = "powershell" if tool == "PowerShell" else "bash"
+    ctx = {"cd": False, "switch": False, "engaged": False}
+    rules = {f.rule for f in cloud_guard.scan(shell, command, ctx=ctx)
+             if (f.scope or {}).get("op") != cloud_guard.OP_UNREADABLE_LINE}
+    assert rule in rules, (command, rules)
+
+
+@pytest.mark.parametrize("case", COULD_NOT_TELL,
+                         ids=[c[0] for c in COULD_NOT_TELL])
+def test_could_not_tell_is_refused_under_block(tmp_path, case):
+    _block("python", tmp_path, case + ("terraformApply",))
+
+
+@pytest.mark.parametrize("case", COULD_NOT_TELL,
+                         ids=[c[0] for c in COULD_NOT_TELL])
+def test_could_not_tell_is_asked_under_ask(tmp_path, case):
+    _id, tool, command = case
+    _fixture(tmp_path, {"guards": {"cloudGuard": "block",
+                                   "terraformApply": "ask"}},
+             {"guards": {"terraformApply": "ask"}})
+    decision, reason, code, err = run_hook("python", tmp_path, tool, command)
+    assert (decision, code) == ("ask", 0), (reason, err)
+    assert "plain literal" in reason, reason
+
+
+@pytest.mark.parametrize("case", NO_LONGER_GATED,
+                         ids=[c[0] for c in NO_LONGER_GATED])
+def test_a_line_that_runs_no_terraform_is_not_gated(tmp_path, case):
+    _allow("python", tmp_path, case)
 
 
 @pytest.mark.parametrize("case", IDENTITY, ids=_I_IDS)
@@ -1156,10 +1275,16 @@ def test_pinned_vars_are_one_list_in_all_three_places():
 
 def test_scan_does_not_judge_words_inside_arguments():
     """The reason the previous command guard was removed: it matched words
-    anywhere. Nothing an argument SAYS is a finding."""
+    anywhere. Nothing an argument SAYS is a finding of the rule it names.
+    Since T-0005 Step 8 a quoted terraform word does make the LINE one crew
+    could not tell (`test_could_not_tell_is_refused_under_block`); that
+    finding says the words were unreadable, never that a destroy was seen,
+    so it is set aside here."""
     for command in ('git commit -m "terraform destroy"',
                     "echo DROP TABLE users | tee notes.txt",
                     "gh pr comment 3 --body 'az group delete ran'"):
-        rules = {f.rule for f in cloud_guard.scan("bash", command)}
+        rules = {f.rule for f in cloud_guard.scan("bash", command)
+                 if (f.scope or {}).get("op")
+                 != cloud_guard.OP_UNREADABLE_LINE}
         assert not rules & {"terraformApply", "cloudDestructive",
                             "sqlDestructive", "forcePush"}, command

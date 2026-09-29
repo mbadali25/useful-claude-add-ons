@@ -183,6 +183,10 @@
     "awsRegions": [],
     "azureSubscriptions": []
   },
+  "environments": {
+    "nonProd": [],
+    "prodUnattended": false
+  },
   "change": {
     "requester": null,
     "implementor": null,
@@ -198,9 +202,13 @@
   "autopilot": {
     "mode": "off",
     "maxPhases": 12,
+    "deploy": "none",
     "approval": "risk",
     "questions": "risk",
     "maxLanes": null,
     "reviewPolicy": "stop"
+  },
+  "route": {
+    "enabled": false
   }
 }

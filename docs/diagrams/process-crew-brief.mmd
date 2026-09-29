@@ -1,12 +1,32 @@
-%% Generated from useful-claude-add-ons@136517df on 2026-09-26. Verify before trusting.
-%% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md
+%% Generated from useful-claude-add-ons@cd106b8b on 2026-09-28. Verify before trusting.
+%% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
 %% re-read at f2bb919b (repo-relative): plugin/crew/hooks/hooks.json:3-10,
 %% plugin/crew/hooks/scripts/handoff-read.sh:34 :41 :42 :44,
 %% plugin/crew/hooks/scripts/crew_context.py:121-123 :833 :839 :909,
-%% plugin/crew/hooks/scripts/crew_state.py:643, plugin/crew/hooks/scripts/crew_status.py:200,
+%% plugin/crew/hooks/scripts/crew_state.py:643, plugin/crew/hooks/scripts/crew_status.py:207,
 %% plugin/crew/commands/status.md:14, plugin/crew/hooks/scripts/crew_platform.py:229 :507 :537.
+%% Re-anchored f2bb919b -> 7b667587 (T-0021): of the Anchors paths crew_state.py and
+%% crew_status.py changed. crew_state.py's cited lines (:643, :761, :846-901, :941-945,
+%% :967) did not move (`git diff -U0`, re-read). crew_status.py moved: the HANDOFF
+%% check :200 -> :207, the report lines :185-209 -> :192-216; its tracker line now comes
+%% from crew_tracker.resolve (crew_status.py:63), which reads crew.json AND config.json
+%% and prints `could not tell` when they disagree.
+%% Re-anchored 7b667587 -> 385eadd5 (T-0021 review round 1): of the Anchors paths only
+%% crew_tracker.py changed, and no node cites a line in it; crew_status.py:63 (the
+%% tracker line through crew_tracker.resolve) did not change.
+%% Re-anchored 385eadd5 -> bcb77ce2 (T-0021 review round 2): of the Anchors paths only
+%% crew_tracker.py changed; still no node cites a line in it, and crew_status.py:63
+%% did not change.
+%% Merged 2b18f7ab + bcb77ce2 -> c2ae46ab (T-0021 review round 3 and its merge of main): of
+%% the Anchors paths crew_status.py and crew_tracker.py changed on T-0021's side. On the merged
+%% tree crew_status.py's _tracker_line is :63, the HANDOFF check :207 and collect()'s report
+%% lines :192-216 (re-read with grep -n / sed -n); main's :185-209 in the note below is
+%% corrected to that. crew_context.py and crew_resume.py did not change on T-0021's side.
+%% No node cites a line in crew_tracker.py.
+%% Re-anchored c2ae46ab -> d276b268 (T-0021 review round 4): of the Anchors paths only
+%% crew_tracker.py changed; no node cites a line in it, and crew_status.py:63 did not change.
 %% The body below keeps the drawing's own shorthand (basename:line); the Anchors line
 %% names each basename's full path.
 %% Drawn in the diagrams-crew-1.0 worktree, uncommitted there; committed on T-0015-refresh.
@@ -26,12 +46,75 @@
 %% Re-anchored 2bb92f32 -> 07ca3972 (T-0004): of the Anchors paths only crew_state.py
 %% changed - AUTOPILOT_DEFAULTS, 8 lines inserted at :1081, below every line cited here.
 %% :643, :771, :856-911, :951-955 and :977 re-read with sed -n at 07ca3972; none moved.
-%% Re-anchored 6f96e627 -> 926522f7 (T-0010): of the Anchors paths only crew_state.py changed -
-%% AUTOPILOT_DEFAULTS (:1091) gained two keys and a comment, below every line cited here;
-%% :643, :771, :856-911, :951-955 and :977 compared byte for byte through the line diff; none moved.
-%% Re-anchored 926522f7 -> 136517df (T-0029): of the Anchors paths only crew_state.py changed -
-%% AUTOPILOT_DEFAULTS (:1095-1096) gained two keys and a comment, below every line cited here;
-%% :643, :771, :856-911, :951-955 and :977 compared byte for byte through the line diff; none moved.
+%% Re-anchored f2bb919b -> fc54def6 (T-0005, on its own branch): of the Anchors paths only crew_state.py
+%% changed - three import lines at :74 and :102-103 - so its four citations below moved by +3
+%% (:643 -> :646 STALE_HANDOFF_DEFAULTS, :846-901 -> :849-904, :761 -> :764, :967 -> :970),
+%% each re-read by content. The T-0015 spot-read list above keeps its f2bb919b numbers.
+%% Merged 07ca3972 + fc54def6 (T-0005 landing, crew 1.0.42): of the Anchors paths only
+%% crew_state.py differs from 07ca3972, by T-0005's three import lines, so :643 -> :646,
+%% :856-911 -> :859-914, :771 -> :774, :977 -> :980, :951-955 -> :954-958 (mapped with a line
+%% diff and re-read with sed -n on the merged tree). Every other Anchors path is unchanged.
+%% Anchored at 2b18f7ab, the crew 1.0.42 bump on top of that merge (4ed4b763), which changed
+%% none of the Anchors paths.
+%% On T-0042's branch: re-anchored 6f96e627 -> 068db4ff (T-0042, crew 1.0.42): 6f96e627..1e0706ac touched refresh
+%% artifacts only; of the Anchors paths, 1e0706ac..068db4ff changed crew_context.py and
+%% crew_resume.py. crew_context.py gained record_handoff_author (the :601 hunk, 1 -> 32 lines) and
+%% _record_author_logged (+14 after :951), plus three one-line hunks, so :925 -> :959,
+%% :931-934 -> :966-969, :816-827 -> :850-861, :828 -> :862, :604 -> :638, :835-836 ->
+%% :869-870, :627 -> :661, :653 -> :687, :843-845 -> :877-879, :846-858 -> :880-892,
+%% :859 -> :893, :1002 -> :1051; :121-132 holds. Each re-read with sed -n at 068db4ff.
+%% crew_resume.decide now also waits unless the note was written by this session
+%% (handoff-author.json: compact by session_id, clear by the claude process), drawn in cc6.
+%% crew_state.py, hooks.json and the other Anchors paths did not change.
+%% Re-anchored 068db4ff -> 07eefac5 (T-0042 review round 1): of the Anchors paths only
+%% crew_resume.py changed (record_author's lock and write failures drop handoff-author.json),
+%% and it is cited by function name only (crew_resume.decide), so no line citation moved and
+%% cc6 still holds: a dropped record reads as no record, which waits.
+%% Merged 2b18f7ab + 07eefac5 at 53f5482c (T-0042 merges main 502cb137, crew 1.0.43): of the
+%% Anchors paths crew_state.py changed on main only (T-0005's three imports, so the Stale rule
+%% lines take main's :646, :859-914, :774, :980, :954-958) and crew_context.py / crew_resume.py
+%% on T-0042 only (crew_context lines take the branch's :959 ... :1051, unchanged since
+%% 07eefac5, re-read with sed -n at 53f5482c). crew_resume.py is cited by function name only; its
+%% partial-state fix makes decide wait on a resume-state.json missing worktrees, consumed or
+%% last, which cc6's wait edge already covers. No node or edge changed.
+
+%% Re-anchored 07ca3972 -> eba11657 (T-0023): of the Anchors paths only crew_context.py changed -
+%% route_item (plain-text lifecycle routing, UserPromptSubmit only) inserted at :801-831 and its
+%% call at :902-904, so every SessionStart line cited here moved by +31 or +34: :925 -> :959,
+%% :931-934 -> :965-968, :816-827 -> :847-858, :828 -> :859, :835-836 -> :866-867, :843-845 ->
+%% :874-876, :846-858 -> :877-889, :859 -> :890, :1002 -> :1037 (mapped by line diff, each
+%% re-read). :121-132, :604, :627 and :653 are above the hunks and hold. Nothing drawn here
+%% changed: the route line is a UserPromptSubmit item, never a SessionStart one.
+%% Merged 2b18f7ab + 488053fc (T-0023's merge of main 502cb137, 3c968175): of the Anchors paths
+%% crew_state.py changed on T-0005's side only and crew_context.py on T-0023's only, so main's
+%% crew_state citations (:646, :859-914, :774, :980, :954-958) and T-0023's crew_context ones
+%% (:959, :965-968, :847-858, :859, :866-867, :874-876, :877-889, :890, :1037) both stand on the
+%% merged tree (re-read with sed -n). Anchored at a1acd9b7 (crew 1.0.43 re-set and rule 28's
+%% re-price), neither of which touches an Anchors path.
+%% Merged db14619c + ad74ed35 -> e463ca53 (T-0023 lands on T-0021's main, crew 1.0.46): of the
+%% Anchors paths only crew_context.py changed on both sides. Main's citations were mapped by a
+%% line diff db14619c -> merged tree (T-0023's route_item hunk sits above the SessionStart path):
+%% :959 -> :993, :966-969 -> :1000-1003, :850-861 -> :881-892, :862 -> :893, :869-870 ->
+%% :900-901, :877-879 -> :908-910, :880-892 -> :911-923, :893 -> :924, :1051 -> :1086; T-0023's
+%% side maps to the same lines. :121-132, :638, :661 and :687 are above both hunks and hold.
+%% crew_state.py, crew_status.py, crew_platform.py, handoff-read.sh, hooks.json and status.md
+%% are byte-identical to main's, so their citations stand. Each moved line re-read with sed -n.
+%% On T-0010-solo's branch (history, kept):
+%% On T-0010-solo's branch: Re-anchored 2b18f7ab -> 50e67586 (T-0010-solo): of the Anchors paths only crew_state.py changed,
+%% four lines at AUTOPILOT_DEFAULTS (:1090 -> :1094), below every line cited here (:646, :774,
+%% :859-914, :980 hold, compared with the anchor tree). No node or edge moved.
+%% Merged 53f5482c + 50e67586 at 89c9ee9a (T-0010-solo merges main f0b12ee6, crew 1.0.44): of the
+%% Anchors paths crew_state.py changed on T-0010 only, below every line cited here (:646, :774,
+%% :859-914, :980 hold), and crew_context.py / crew_resume.py on T-0042 only (:959 ... :1051
+%% hold, re-read with sed -n at 89c9ee9a). No node or edge changed.
+%% Merged 67caa4b8 (e463ca53's lines) + 89c9ee9a at c817782f (T-0010-solo merges T-0018's main,
+%% crew 1.0.48): of the Anchors paths only crew_state.py changed on T-0010's side (+4 at
+%% AUTOPILOT_DEFAULTS :1094), below every crew_state line cited here (:646, :774, :859-914,
+%% :954-958, :980 hold); crew_context.py, crew_resume.py and crew_status.py are main's, unchanged
+%% by T-0010, so main's citations stand (re-read with sed -n at c817782f). No node or edge changed.
+%% Re-anchored e463ca53 -> 8cabe586 (T-0075, crew 1.0.50, after its merges of main d2fbd408 and
+%% f96e9ec9): of the Anchors paths only crew_tracker.py changed (T-0077's Windows directory
+%% handles, inserted from :299 and :1061); no node cites a line in it, so nothing was redrawn.
 %% What crew 1.0 does when a session starts, and what /crew:status reads.
 %% --
 %% REDRAWN for crew 1.0. The 0.20 version of this file drew the PM session-start
@@ -48,23 +131,51 @@
 %% crew_platform.py:507-530 silent without a config or .crew/; :537 claim;
 %%   :547-563 heal_config (refuses without .crew/, :229); :566-584 writes
 %%   changed platform fields, prints only on change.
-%% crew_context.py:925 no .crew/ directory -> emits nothing; :121-132 reads
-%%   crew.json else config.json; :931-934 inject:false -> incident banner only;
-%%   :816-827 branch@HEAD, incident banner, codemap-behind line; :828 stale
-%%   verdict + archive (_handoff_verdict :604); :835-836 auto-resume decision
-%%   (resume_decision :627, crew_resume.decide; `off` unless armed and source is
-%%   clear/compact); :843-845 startup -> pointer + next action; :846-858 other
-%%   sources -> full note, next action first, then the auto-resume line; :859 no
-%%   note but a resume line -> that line alone; :1002 JSON additionalContext.
-%% Stale rule: crew_state.py:643 (72h / 3 commits), :856-911, archived to
-%%   .crew/handoffs/ (:771, :977), never deleted; never raises (:951-955).
-%% /crew:status: commands/status.md:14 -> crew_status.py; :185-209 report lines.
+%% crew_context.py:993 no .crew/ directory -> emits nothing; :121-132 reads
+%%   crew.json else config.json; :1000-1003 inject:false -> incident banner only;
+%%   :881-892 branch@HEAD, incident banner, codemap-behind line; :893 stale
+%%   verdict + archive (_handoff_verdict :638); :900-901 auto-resume decision
+%%   (resume_decision :661, crew_resume.decide; `off` unless armed and source is
+%%   clear/compact); :908-910 startup -> pointer + next action; :911-923 other
+%%   sources -> full note, next action first, then the auto-resume line; :924 no
+%%   note but a resume line -> that line alone; :1090 JSON additionalContext.
+%% Stale rule: crew_state.py:646 (72h / 3 commits), :859-914, archived to
+%%   .crew/handoffs/ (:774, :980), never deleted; never raises (:954-958).
+%% /crew:status: commands/status.md:14 -> crew_status.py; :192-216 report lines.
 %% --
 %% Dashed '?' edges: handoff-read reads only config.json (:44), never crew.json,
 %% so a 1.0-only repo with inject:false gets no handoff from either hook -
 %% traced in the sh flavour only; the ps1 body was not read past :241.
-%% /crew:status checks the fixed path .work/HANDOFF.md (crew_status.py:200),
+%% /crew:status checks the fixed path .work/HANDOFF.md (crew_status.py:207),
 %% not context.handoffPath, and does not apply the stale rule.
+%% Re-anchored 53f5482c -> d3a1c77e (T-0072, crew 1.0.44): of the Anchors paths only
+%% crew_state.py changed, line-neutral at :1084-1090 (AUTOPILOT_DEFAULTS); every crew_state.py
+%% line cited below (:646, :774, :859-914, :980) is above that hunk and did not move.
+%% Re-anchored e463ca53 -> 715a8c2f (T-0072 merged onto bebbb97f, crew 1.0.47): of the Anchors
+%% paths only crew_state.py differs from main, line-neutral at :1086-1090; every crew_state.py
+%% line cited here is above that hunk and did not move. Nothing below was redrawn.
+%% Re-anchored 715a8c2f -> a4eb2f55 (T-0072 merged onto 5050ea3b, T-0077, crew 1.0.50): of the
+%% Anchors paths only crew_tracker.py changed (T-0077); no node cites a line in it, and
+%% crew_status.py:63 did not change. No node or edge changed.
+%% Re-anchored 8cabe586 -> 938e3b11 (T-0075 review round 4, its merge of main f54af3fa with T-0072,
+%% crew 1.0.52): of the Anchors paths only crew_state.py changed since 8cabe586, T-0072's
+%% line-neutral AUTOPILOT_DEFAULTS hunk at :1086-1090; every crew_state.py line cited here is above
+%% it and did not move (checked with git diff -U0). Nothing below was redrawn.
+%% Re-anchored a4eb2f55 -> 3c4f1a68 (T-0092 merged onto c426c018, T-0076, crew 1.0.53): of the
+%% Anchors paths only crew_context.py changed - T-0076's byte-exact LF, +4 lines inside emit(),
+%% so its JSON write moves :1086 -> :1090 (re-read with sed -n; the note above and the out node
+%% now say :1090). Every other cited crew_context.py line is above :1086. No node or edge changed.
+%% Merged 3c4f1a68's lines + c817782f at d7c7c75c (T-0010-solo merges main 6387ab49, crew 1.0.55):
+%% of the Anchors paths crew_state.py changed on T-0010's side only below every line cited here
+%% (its hunks start at :1087), and crew_context.py on main's side only (T-0076's :1090 stands).
+%% No node or edge changed.
+%% Re-anchored 938e3b11 / 3c4f1a68 -> 3648f59a (T-0075 review round 5 and its merge of main 6387ab49,
+%% crew 1.0.55): every Anchors path is byte-identical to main 6387ab49 (git diff --name-only
+%% empty), so the 3c4f1a68 note above covers crew_context.py, the one path that moved since
+%% 938e3b11. Nothing redrawn.
+%% Merged d7c7c75c + 3648f59a -> cd106b8b (T-0010-solo merges T-0075's main e878cc31, crew 1.0.60): of the
+%% Anchors paths only crew_state.py differs from main, by T-0010's +4 at AUTOPILOT_DEFAULTS (:1094), below
+%% every crew_state line cited here (:643, :646, :774 hold). No node or edge changed.
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
     start --> reg["hooks.json:3-10<br/>3 SessionStart pairs, sh + ps1, no matcher<br/>each claims per session+source"]
@@ -91,32 +202,32 @@ flowchart TB
     end
 
     subgraph crewContext["crew-context (crew_context.py)"]
-        CC --> cc1{".crew/ directory?<br/>:925"}
+        CC --> cc1{".crew/ directory?<br/>:993"}
         cc1 -- no --> ccx([emit nothing])
         cc1 -- yes --> cc2["read crew.json else config.json<br/>:121-132"]
-        cc2 --> cc3{"memory.inject?<br/>:931-934"}
+        cc2 --> cc3{"memory.inject?<br/>:1000-1003"}
         cc3 -- off --> cc4[incident banner only]
-        cc3 -- on --> cc5["branch@HEAD, incident banner,<br/>codemap-behind line<br/>:816-827"]
-        cc5 --> stale{"handoff stale?<br/>72h / 3 commits / branch<br/>crew_state.py:643, :856-911"}
-        stale -- yes --> arch["archive to .crew/handoffs/<br/>never delete<br/>crew_state.py:771, :977"]
+        cc3 -- on --> cc5["branch@HEAD, incident banner,<br/>codemap-behind line<br/>:881-892"]
+        cc5 --> stale{"handoff stale?<br/>72h / 3 commits / branch<br/>crew_state.py:646, :859-914"}
+        stale -- yes --> arch["archive to .crew/handoffs/<br/>never delete<br/>crew_state.py:774, :980"]
         stale -- no --> cc6
         arch --> cc6
-        stale -. "stale but the move failed:<br/>note stays, stale passed on (:828)" .-> cc6
-        cc6{"auto-resume armed?<br/>machine resume.auto true, no repo veto<br/>source clear / manual compact<br/>:835, crew_resume.decide"}
+        stale -. "stale but the move failed:<br/>note stays, stale passed on (:893)" .-> cc6
+        cc6{"auto-resume armed?<br/>machine resume.auto true, no repo veto<br/>source clear / manual compact<br/>note written by this session (T-0042)<br/>:900, crew_resume.decide"}
         cc6 -- "no (off)" --> src{"source?"}
-        cc6 -- "run / wait" --> rs1["one line: ready to run the re-rendered command,<br/>or did not start: reason<br/>resume_line :653, never initialUserMessage"]
+        cc6 -- "run / wait" --> rs1["one line: ready to run the re-rendered command,<br/>or did not start: reason<br/>resume_line :687, never initialUserMessage"]
         rs1 --> src
-        src -- startup --> ptr["pointer + next action<br/>:843-845"]
-        src -- "resume/clear/compact/fork" --> full["full note, next action first,<br/>then the auto-resume line<br/>:846-858"]
+        src -- startup --> ptr["pointer + next action<br/>:908-910"]
+        src -- "resume/clear/compact/fork" --> full["full note, next action first,<br/>then the auto-resume line<br/>:911-923"]
     end
 
-    ptr --> out(["additionalContext JSON<br/>:1002"])
+    ptr --> out(["additionalContext JSON<br/>:1090"])
     full --> out
     cc4 --> out
 
     hr3 -. "? 1.0-only repo (crew.json, no config.json)<br/>with inject:false gets no handoff" .-> hrx
 
     subgraph status["/crew:status (on demand)"]
-        st1["status.md:14<br/>crew_status.py --root ."] --> st2["git header, config file, roster,<br/>tickets, review ledgers, verify,<br/>codemap freshness, metrics,<br/>handoff, interrupted migrate<br/>:185-209"]
-        st2 -. "? checks fixed .work/HANDOFF.md (:200),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
+        st1["status.md:14<br/>crew_status.py --root ."] --> st2["git header, config file, roster,<br/>tracker (crew_tracker.resolve, :63),<br/>tickets, review ledgers, verify,<br/>codemap freshness, metrics,<br/>handoff, interrupted migrate<br/>:192-216"]
+        st2 -. "? checks fixed .work/HANDOFF.md (:207),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
     end

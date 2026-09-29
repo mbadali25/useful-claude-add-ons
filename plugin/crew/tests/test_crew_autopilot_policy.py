@@ -16,11 +16,10 @@ import os
 import subprocess
 import sys
 
-import pytest
-
-import context  # noqa: F401  pylint: disable=unused-import
+import context  # pylint: disable=unused-import
 import crew_autopilot
 import crew_ticket
+import pytest
 import review_ledger
 from scope_fixtures import PLAN, SPEC, approve_as_user, make_repo
 
@@ -177,19 +176,63 @@ def test_approval_default_is_risk(tmp_path):
     assert (got["policy"], got["allow"]) == ("risk", True)
 
 
-@pytest.mark.parametrize("state", [review_ledger.NEEDS_REPLAN, "corrupt"])
-def test_approval_refuses_when_the_review_budget_is_spent_or_unreadable(tmp_path, state):
+def test_approval_refuses_when_the_review_ledger_is_unreadable(tmp_path):
     root = _repo(tmp_path, approval="self")
-    if state == "corrupt":
-        path = review_ledger.ledger_path(str(root), T)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        _write(path, "{not json")
-    else:
-        _ledger(root, [], state)
+    path = review_ledger.ledger_path(str(root), T)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    _write(path, "{not json")
 
     got = crew_autopilot.approval_policy(str(root), T)
 
-    assert (got["allow"], "review" in got["reason"]) == (False, True)
+    assert (got["allow"], "review ledger" in got["reason"]) == (False, True)
+
+
+def _needs_replan_with_a_successor_plan(tmp_path, approval="self", risk="low"):
+    """T-1 approved by the user, its review budget spent (NEEDS_REPLAN), then
+    plan.md rewritten: the distinct successor plan that is the way out."""
+    root = _repo(tmp_path, approval=approval, risk=risk)
+    approve_as_user(root, T)
+    _ledger(root, [], review_ledger.NEEDS_REPLAN)
+    _write(root / ".work" / "tickets" / T / "plan.md",
+           PLAN.format(files="src/app.py") + "\nA successor plan, after the budget ran out.\n")
+    return root
+
+
+@pytest.mark.parametrize("risk", RISKS)
+def test_approval_self_allows_a_successor_plan_under_needs_replan(tmp_path, risk):
+    root = _needs_replan_with_a_successor_plan(tmp_path, risk=risk)
+
+    got = crew_autopilot.approval_policy(str(root), T)
+
+    assert got["allow"] is True
+
+
+def test_approval_risk_still_refuses_a_high_successor_plan_under_needs_replan(tmp_path):
+    root = _needs_replan_with_a_successor_plan(tmp_path, approval="risk", risk="high")
+
+    got = crew_autopilot.approval_policy(str(root), T)
+
+    assert (got["allow"], "risk: high" in got["reason"]) == (False, True)
+
+
+def test_autopilot_approve_of_a_successor_plan_continues_needs_replan(tmp_path):
+    root = _needs_replan_with_a_successor_plan(tmp_path)
+
+    done = _cli(root, "approve", "--ticket", T)
+
+    assert (done.returncode, done.stdout.startswith(f"self-approved {T}"),
+            review_ledger.status(str(root), T)["state"]) == (0, True, review_ledger.IN_REVIEW)
+
+
+def test_autopilot_approve_of_the_same_plan_leaves_needs_replan(tmp_path):
+    root = _repo(tmp_path, approval="self")
+    approve_as_user(root, T)
+    _ledger(root, [], review_ledger.NEEDS_REPLAN)
+
+    done = _cli(root, "approve", "--ticket", T)
+
+    assert (done.returncode, "NEEDS_REPLAN" in done.stdout,
+            review_ledger.status(str(root), T)["state"]) == (3, True, review_ledger.NEEDS_REPLAN)
 
 
 def test_approval_with_no_spec_denies_under_risk(tmp_path):
@@ -430,7 +473,7 @@ def test_questions_file_recommendation_not_first_invalid(tmp_path):
 
 def test_questions_file_one_option_invalid(tmp_path):
     root = _repo(tmp_path)
-    _questions(root, GOOD_QUESTIONS.split("### Option B")[0])
+    _questions(root, GOOD_QUESTIONS.split("### Option B", maxsplit=1)[0])
 
     got = _check(root)
 
@@ -485,11 +528,13 @@ def test_questions_file_taken_under_self_valid_and_reported(tmp_path):
                                             ("risk", None)])
 def test_questions_file_taken_while_the_policy_stops_invalid(tmp_path, questions, risk):
     root = _repo(tmp_path, questions=questions, risk=risk)
-    _questions(root, GOOD_QUESTIONS + f"\ntaken: Option A by autopilot ({questions})\n")
+    _questions(root, GOOD_QUESTIONS + "\ntaken: Option A by autopilot (self)\n")
 
     got = _check(root)
 
-    assert (got["valid"], got["action"]) == (False, "stop")
+    assert (got["valid"], got["action"],
+            any("the questions policy says stop" in p for p in got["problems"])) == (
+        False, "stop", True)
 
 
 def test_questions_file_taken_non_recommended_invalid(tmp_path):
@@ -501,13 +546,39 @@ def test_questions_file_taken_non_recommended_invalid(tmp_path):
     assert (got["valid"], any("recommended" in p for p in got["problems"])) == (False, True)
 
 
-def test_questions_file_taken_naming_another_policy_invalid(tmp_path):
-    root = _repo(tmp_path, questions="self")
-    _questions(root, GOOD_QUESTIONS + "\ntaken: Option A by autopilot (risk)\n")
+SECOND_QUESTION = """
+## Q2: Which port?
+Research: crew:explorer found src/app.py binds 8080; crew:researcher: none needed.
+
+### Option A (recommended): keep 8080
+Cost: none.
+
+### Option B: 443
+Cost: root to bind it.
+"""
+
+
+@pytest.mark.parametrize("taken_under,questions,risk", [("risk", "self", "high"),
+                                                        ("self", "risk", "low")])
+def test_questions_file_taken_under_an_earlier_policy_that_took_stays_valid(
+        tmp_path, taken_under, questions, risk):
+    root = _repo(tmp_path, questions=questions, risk=risk)
+    _questions(root, GOOD_QUESTIONS + f"\ntaken: Option A by autopilot ({taken_under})\n"
+               + SECOND_QUESTION)
 
     got = _check(root)
 
-    assert got["valid"] is False
+    assert (got["valid"], got["questions"], got["action"]) == (True, 2, "take")
+
+
+@pytest.mark.parametrize("taken_under", ["human", "yolo"])
+def test_questions_file_taken_naming_a_policy_that_never_takes_invalid(tmp_path, taken_under):
+    root = _repo(tmp_path, questions="self")
+    _questions(root, GOOD_QUESTIONS + f"\ntaken: Option A by autopilot ({taken_under})\n")
+
+    got = _check(root)
+
+    assert (got["valid"], any("never takes" in p for p in got["problems"])) == (False, True)
 
 
 def test_questions_check_cli_prints_action_first_then_taken(tmp_path):
@@ -546,6 +617,14 @@ def test_command_routes_approval_through_policy():
         True, True, False, True)
 
 
+def test_command_sends_a_stop_at_approve_or_open_questions_to_the_policy_first():
+    flat = " ".join(_command_text().split())
+
+    assert ("- `stop=1` with `phase=approve` or `phase=open-questions` - not yet a stop" in flat,
+            "- any other `stop=1` - print the phase" in flat,
+            "Anything but a `stop=0` line" in flat) == (True, True, False)
+
+
 def test_command_reports_every_self_approval_and_answer_by_name():
     flat = " ".join(_command_text().split())
 
@@ -566,3 +645,284 @@ def test_policy_sabotage_is_registered_with_sabotage_py():
     from sabotage_autopilot import POLICY_MUTATIONS  # pylint: disable=import-outside-toplevel
 
     assert [m[0] for m in POLICY_MUTATIONS if m not in sabotage.MUTATIONS] == []
+
+
+# --- step 6: the approve exception to T-0018's read-only module ---------------
+
+_REPO = os.path.dirname(os.path.dirname(_ROOT))
+
+
+def _files(root):
+    """{path: (size, sha256)} for every file in the worktree (not `.git`) and
+    under `<git-common-dir>/crew/`."""
+    import hashlib  # pylint: disable=import-outside-toplevel
+    found = {}
+    walks = [str(root), os.path.join(crew_ticket.common_dir(str(root)), "crew")]
+    for base, dirs, names in (entry for top in walks for entry in os.walk(top)):
+        dirs[:] = [d for d in dirs if d != ".git"]
+        for name in names:
+            path = os.path.join(base, name)
+            with open(path, "rb") as handle:
+                data = handle.read()
+            found[path] = (len(data), hashlib.sha256(data).hexdigest())
+    return found
+
+
+READ_ONLY_RUNS = (("next", "--ticket", T), ("resume",), ("settings",), ("stops",),
+                  ("route", "--args", f"status {T}"), ("status",),
+                  ("questions-check", "--ticket", T),
+                  ("deploy-allowed", "--env", "staging", "--class", "nonProd"))
+
+
+def _main(root, action, *rest):
+    argv = [action] + ([] if action == "stops" else ["--root", str(root)]) + list(rest)
+    return crew_autopilot.main(argv)
+
+
+def test_approve_is_the_only_writing_subcommand(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "0")
+    root = _repo(tmp_path, approval="self", risk="low")
+    _questions(root, GOOD_QUESTIONS)
+    before = _files(root)
+
+    for run in READ_ONLY_RUNS:
+        _main(root, *run)
+    after_reads = _files(root)
+    code = _main(root, "approve", "--ticket", T)
+    after = _files(root)
+    capsys.readouterr()
+
+    added = sorted(set(after) - set(before))
+    # The receipt is what crew_ticket.approve writes for every route: the
+    # approval and, on a ticket's first approval, the scope ramp's list.
+    receipt = sorted([crew_ticket.approval_path(str(root), T),
+                      os.path.join(crew_ticket.state_dir(str(root)), "scope-tickets.json")])
+    assert (after_reads == before, code, added,
+            {p: v for p, v in after.items() if p in before} == before) == (
+        True, 0, receipt, True)
+
+
+def test_approve_refused_writes_nothing(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "0")
+    root = _repo(tmp_path, approval="human", risk="low")
+    before = _files(root)
+
+    code = _main(root, "approve", "--ticket", T)
+    capsys.readouterr()
+
+    assert (code, _files(root) == before) == (2, True)
+
+
+def test_command_states_the_approve_exception():
+    flat = " ".join(_command_text().split())
+
+    assert ("Nothing here approves" in flat,
+            "only the human types `/crew:approve <ticket>`" in flat,
+            "nothing approves except section 3's `approve`, under the approval policy" in flat,
+            "`plan-approval` and `open-questions` are a person unless section 3's policy "
+            "allows" in flat) == (False, False, True, True)
+
+
+def test_module_docstring_states_the_approve_exception():
+    doc = crew_autopilot.__doc__
+    usage = doc.split("\n\n")[1]
+    flat = " ".join(doc.split())
+
+    assert ("never approves" in flat,
+            "Read-only except `approve`, and only when `approval_policy` allows under the "
+            "configured policy; it never accepts a review." in flat,
+            "crew_autopilot.py approve --root . --ticket <id>" in usage,
+            "crew_autopilot.py questions-check --root . --ticket <id>" in usage) == (
+        False, True, True, True)
+
+
+# Review round 3's BLOCK: every statement of the exception names what approve
+# writes -- what crew_ticket.approve writes for every route -- never "only the
+# approval receipt". Each file is where the exception is stated.
+APPROVE_WRITES = ("`approval.json`", "`scope-tickets.json`", "on a ticket's first approval",
+                  "NEEDS_REPLAN -> IN_REVIEW")
+UNDERSTATED = ("writes only the approval receipt", "receipt and nothing else",
+               "The one write this module makes")
+
+
+def _exception_statements():
+    def read(*parts):
+        with open(os.path.join(*parts), encoding="utf-8") as handle:
+            return handle.read()
+    return {"crew_autopilot.py docstring": crew_autopilot.__doc__,
+            "crew_autopilot.approve docstring": crew_autopilot.approve.__doc__,
+            "commands/autopilot.md": _command_text(),
+            "README.md": read(_ROOT, "README.md"),
+            "CONFIG.md": read(_ROOT, "CONFIG.md"),
+            "daily-workflow-scope.md": read(_REPO, "docs", "guides", "crew", "src",
+                                            "daily-workflow-scope.md")}
+
+
+def test_every_statement_of_the_exception_names_what_approve_writes():
+    missing = {name: [w for w in APPROVE_WRITES if w not in " ".join(text.split())]
+               for name, text in _exception_statements().items()}
+
+    assert {name: gaps for name, gaps in missing.items() if gaps} == {}
+
+
+def test_no_statement_of_the_exception_says_approve_writes_only_the_receipt():
+    found = {name: [w for w in UNDERSTATED if w in " ".join(text.split())]
+             for name, text in _exception_statements().items()}
+
+    assert {name: hits for name, hits in found.items() if hits} == {}
+
+
+def test_approve_of_a_successor_plan_writes_the_receipt_and_moves_the_ledger(
+        tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "0")
+    root = _needs_replan_with_a_successor_plan(tmp_path)
+    ledger = review_ledger.ledger_path(str(root), T)
+    before = _files(root)
+
+    code = _main(root, "approve", "--ticket", T)
+    after = _files(root)
+    capsys.readouterr()
+
+    changed = sorted(p for p in set(before) | set(after) if before.get(p) != after.get(p))
+    assert (code, changed, review_ledger.status(str(root), T)["state"]) == (
+        0, sorted([crew_ticket.approval_path(str(root), T), ledger]), review_ledger.IN_REVIEW)
+
+
+def test_readme_phase_table_names_the_policy_route_at_approve():
+    with open(os.path.join(_ROOT, "README.md"), encoding="utf-8") as handle:
+        rows = [line for line in handle.read().splitlines()
+                if line.startswith("| approval not accepted")]
+
+    assert (len(rows), "`autopilot.approval`" in rows[0],
+            "`crew_autopilot.py approve`" in rows[0], "`/crew:approve <id>`" in rows[0],
+            "`scope.allowCliApproval: true`" in rows[0]) == (1, True, True, True, True)
+
+
+def test_command_states_questions_file_shape():
+    flat = " ".join(_command_text().split())
+    required = ("`## Q<n>: <question>`", "`Research:`", "2-4 `### Option <id>`",
+                f"`{crew_autopilot.RECOMMENDED}`", "`Cost:`",
+                "`taken: Option <id> by autopilot (<policy>)`")
+
+    assert [literal for literal in required if literal not in flat] == []
+
+
+def test_verify_maps_autopilot_command_to_policy_suite():
+    import fnmatch  # pylint: disable=import-outside-toplevel
+    with open(os.path.join(_REPO, ".crew", "verify.json"), encoding="utf-8") as handle:
+        rules = json.load(handle)["rules"]
+    target = "plugin/crew/commands/autopilot.md"
+
+    runs = [" ".join(rule.get("run") or []) for rule in rules
+            if any(fnmatch.fnmatchcase(target, path) for path in rule.get("paths") or [])]
+
+    assert any("test_crew_autopilot_policy.py" in run for run in runs), runs
+
+
+# --- step 7: review round 4's three FIXes ---------------------------------------
+# An unreadable `.crew/config.json`, or an `autopilot` value that is not an
+# object, is could-not-tell: both policies read `unknown`, never the default
+# `risk`. Absence is known and still reads the defaults.
+
+def _raw_config(root, text):
+    _write(root / ".crew" / "config.json", text)
+
+
+@pytest.mark.parametrize("text", ["{bad", "[]"])
+def test_settings_unreadable_config_reads_policies_unknown(tmp_path, text):
+    root = _repo(tmp_path, approval="self", questions="self")
+    _raw_config(root, text)
+
+    got = crew_autopilot.settings(str(root))
+
+    assert (got["approval"], got["questions"], got["mode"],
+            any(".crew/config.json" in w and "could not" in w for w in got["warnings"])) == (
+        "unknown", "unknown", "off", True)
+
+
+@pytest.mark.parametrize("value", [["x"], "self", 1, True])
+def test_settings_non_object_autopilot_reads_policies_unknown(tmp_path, value):
+    root = _repo(tmp_path)
+    _raw_config(root, json.dumps({"scope": {"allowCliApproval": True}, "autopilot": value}))
+
+    got = crew_autopilot.settings(str(root))
+
+    assert (got["approval"], got["questions"], got["mode"],
+            any("not an object" in w and repr(value) in w for w in got["warnings"])) == (
+        "unknown", "unknown", "off", True)
+
+
+def test_question_policy_stops_when_config_unreadable(tmp_path):
+    root = _repo(tmp_path, questions="self", risk="low")
+    _raw_config(root, "{bad")
+
+    got = crew_autopilot.question_policy(str(root), T)
+
+    assert (got["action"], got["policy"], "could not tell" in got["reason"]) == (
+        "stop", "unknown", True)
+
+
+def test_question_policy_stops_when_autopilot_not_an_object(tmp_path):
+    root = _repo(tmp_path, risk="low")
+    _raw_config(root, json.dumps({"scope": {"allowCliApproval": True}, "autopilot": ["x"]}))
+
+    got = crew_autopilot.question_policy(str(root), T)
+
+    assert (got["action"], got["policy"], "could not tell" in got["reason"]) == (
+        "stop", "unknown", True)
+
+
+def test_approval_policy_refuses_when_autopilot_not_an_object(tmp_path):
+    root = _repo(tmp_path, risk="low")
+    _raw_config(root, json.dumps({"scope": {"allowCliApproval": True}, "autopilot": ["x"]}))
+
+    got = crew_autopilot.approval_policy(str(root), T)
+
+    assert (got["allow"], got["policy"], "could not tell" in got["reason"]) == (
+        False, "unknown", True)
+
+
+def test_approval_policy_refuses_an_unknown_policy_before_the_risk_branch(tmp_path,
+                                                                          monkeypatch):
+    root = _repo(tmp_path, risk="low")
+    monkeypatch.setattr(crew_autopilot, "settings", lambda _root: {
+        "mode": "off", "armed": False, "maxPhases": 12, "approval": "unknown",
+        "questions": "unknown", "saw": None,
+        "warnings": ["autopilot.approval could not be told (a test)"]})
+
+    got = crew_autopilot.approval_policy(str(root), T)
+
+    assert (got["allow"], got["policy"]) == (False, "unknown")
+
+
+@pytest.mark.parametrize("config", [None, {"scope": {"allowCliApproval": True}},
+                                    {"scope": {"allowCliApproval": True}, "autopilot": None}])
+def test_settings_absent_config_or_block_reads_defaults(tmp_path, config):
+    root = _repo(tmp_path)
+    path = root / ".crew" / "config.json"
+    if config is None:
+        path.unlink()
+    else:
+        _raw_config(root, json.dumps(config))
+
+    got = crew_autopilot.settings(str(root))
+
+    assert (got["approval"], got["questions"], got["warnings"]) == ("risk", "risk", [])
+
+
+@pytest.mark.parametrize("approval,questions", [("self", "human"), ("human", "self")])
+def test_settings_cli_text_prints_both_policies(tmp_path, approval, questions):
+    root = _repo(tmp_path, approval=approval, questions=questions)
+
+    out = _cli(root, "settings").stdout
+
+    assert out.splitlines()[1] == f"approval={approval} questions={questions}"
+
+
+@pytest.mark.parametrize("approval,questions", [("self", "human"), ("human", "self")])
+def test_settings_cli_json_prints_both_policies(tmp_path, approval, questions):
+    root = _repo(tmp_path, approval=approval, questions=questions)
+
+    got = json.loads(_cli(root, "settings", "--json").stdout)
+
+    assert (got["approval"], got["questions"]) == (approval, questions)

@@ -10,6 +10,7 @@ repository is built under tmp_path; nothing touches the real one or
 ~/.claude. `sabotage_autopilot.STATUS_MUTATIONS` mutates the must-refuse and
 must-say-unknown branches to prove these tests can fail.
 """
+import json
 import os
 import re
 import shlex
@@ -276,6 +277,23 @@ def test_status_ledger_without_a_rounds_count_is_unknown(tmp_path, monkeypatch):
     assert got["review"] == "unknown (ledger unreadable)"
 
 
+def test_status_ledger_on_another_drive_is_still_reported(tmp_path, monkeypatch):
+    """T-0077: `os.path.relpath` raises when the path and the repo are on
+    different Windows drives (pytest's tmp on D:, a checkout on C:). Simulated
+    here so it runs everywhere: the status is still the ledger's outcome."""
+    root = _approved(tmp_path)
+    monkeypatch.setattr(review_ledger, "status", lambda *_a: {
+        "ticket": T, "path": "p", "state": review_ledger.IN_REVIEW, "budget": 2})
+
+    def across_drives(path, start=os.curdir):
+        raise ValueError(f"path is on mount 'C:', start on mount 'D:' ({path!r}, {start!r})")
+    monkeypatch.setattr(crew_autopilot.os.path, "relpath", across_drives)
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert got["review"] == "unknown (ledger unreadable)"
+
+
 def test_status_ledger_that_says_unknown_prints_no_rounds_count(tmp_path):
     root = _approved(tmp_path)
     _ledger(root, [], state="UNKNOWN")
@@ -330,6 +348,12 @@ def _unreadable_handoff(root, monkeypatch, how):
     if how == "directory":
         os.makedirs(str(root / ".work" / "HANDOFF.md"))
         return
+    if how in ("dangling", "loop"):
+        # An entry open() cannot follow: FileNotFoundError for a dangling link,
+        # ELOOP for a loop. Either is there, so neither is absent.
+        os.symlink("missing" if how == "dangling" else "HANDOFF.md",
+                   str(root / ".work" / "HANDOFF.md"))
+        return
     _handoff(root, f"resume: /crew:autopilot {T}")
     real = open
 
@@ -340,7 +364,7 @@ def _unreadable_handoff(root, monkeypatch, how):
     monkeypatch.setattr(crew_autopilot, "open", deny, raising=False)
 
 
-@pytest.mark.parametrize("how", ["denied", "directory"])
+@pytest.mark.parametrize("how", ["denied", "directory", "dangling", "loop"])
 def test_status_resume_line_unknown_when_the_handoff_cannot_be_read(tmp_path, monkeypatch,
                                                                     how):
     root = _approved(tmp_path)
@@ -351,7 +375,7 @@ def test_status_resume_line_unknown_when_the_handoff_cannot_be_read(tmp_path, mo
     assert got["resume_line"] == crew_autopilot.HANDOFF_UNREADABLE
 
 
-@pytest.mark.parametrize("how", ["denied", "directory"])
+@pytest.mark.parametrize("how", ["denied", "directory", "dangling", "loop"])
 def test_resume_falls_through_saying_the_handoff_could_not_be_read(tmp_path, monkeypatch, how):
     root = _approved(tmp_path)
     crew_ticket.activate(str(root), T)
@@ -360,6 +384,31 @@ def test_resume_falls_through_saying_the_handoff_could_not_be_read(tmp_path, mon
     got = crew_autopilot.resume_target(str(root))
 
     assert (got["ticket"], got["fallthrough"][0]) == (T, crew_autopilot.HANDOFF_UNREADABLE)
+
+
+def test_status_resume_line_usable_through_a_symlinked_handoff(tmp_path):
+    root = _approved(tmp_path)
+    _handoff(root, f"resume: /crew:autopilot {T}")
+    os.replace(str(root / ".work" / "HANDOFF.md"), str(root / ".work" / "handoff-real.md"))
+    os.symlink("handoff-real.md", str(root / ".work" / "HANDOFF.md"))
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert got["resume_line"] == f"/crew:autopilot {T} (usable)"
+
+
+@pytest.mark.parametrize("work,want", [
+    ("dangling", crew_autopilot.HANDOFF_UNREADABLE),
+    ("absent", crew_autopilot.HANDOFF_ABSENT),
+])
+def test_read_handoff_unknown_when_work_is_a_dangling_symlink(tmp_path, work, want):
+    root = make_repo(tmp_path, mode="off")
+    if work == "dangling":
+        os.symlink("missing", str(root / ".work"))
+
+    got = crew_autopilot._read_handoff(str(root))  # pylint: disable=protected-access
+
+    assert got == (None, want)
 
 
 def test_status_resume_line_unavailable_without_crew_resume(tmp_path, monkeypatch):
@@ -561,6 +610,59 @@ def test_status_resume_line_unknown_when_resume_target_raises(tmp_path, monkeypa
         False, False, True)
 
 
+@pytest.mark.parametrize("change,reason", [
+    ("branch", "its branch: does not match this checkout"),
+    ("head", "its head: does not match this checkout"),
+    ("folder", "its ticket has no .work/tickets/ folder"),
+])
+def test_status_resume_line_checks_the_handoff_it_read_not_the_one_resume_read(
+        tmp_path, change, reason):
+    """HANDOFF.md rewritten between `resume_target`'s read and `_resume_line`'s:
+    the same ticket, but this read fails a check `resume_target` never saw."""
+    root = _approved(tmp_path)
+    _handoff(root, f"resume: /crew:autopilot {T}")
+    top = crew_ticket.toplevel(str(root))
+    bare = crew_autopilot.resume_target(top)
+    if change == "folder":
+        shutil.rmtree(str(root / ".work" / "tickets" / T))
+    else:
+        _handoff(root, f"resume: /crew:autopilot {T}",
+                 **{change: "elsewhere" if change == "branch" else "0123456789"})
+
+    line = crew_autopilot._resume_line(top, bare)  # pylint: disable=protected-access
+
+    assert (bare["ticket"], line) == (T, f"not usable: /crew:autopilot {T} - {reason}")
+
+
+def test_status_resume_line_not_usable_when_resume_took_the_ticket_from_elsewhere(tmp_path):
+    """HANDOFF.md rewritten the other way: `resume_target`'s read fell through
+    and took the same ticket from the active pointer; this read passes every
+    check, but bare `/crew:autopilot` did not take the handoff."""
+    root = _approved(tmp_path)
+    crew_ticket.activate(str(root), T)
+    _handoff(root, f"resume: /crew:autopilot {T}", head="0123456789")
+    top = crew_ticket.toplevel(str(root))
+    bare = crew_autopilot.resume_target(top)
+    _handoff(root, f"resume: /crew:autopilot {T}")
+
+    line = crew_autopilot._resume_line(top, bare)  # pylint: disable=protected-access
+
+    assert (bare["ticket"], bare["source"] != "handoff", line) == (
+        T, True, f"not usable: /crew:autopilot {T} - bare /crew:autopilot does not take it")
+
+
+def test_status_resume_line_usable_when_the_handoff_is_rewritten_unchanged(tmp_path):
+    root = _approved(tmp_path)
+    _handoff(root, f"resume: /crew:autopilot {T}")
+    top = crew_ticket.toplevel(str(root))
+    bare = crew_autopilot.resume_target(top)
+    _handoff(root, f"resume: /crew:autopilot {T}")
+
+    line = crew_autopilot._resume_line(top, bare)  # pylint: disable=protected-access
+
+    assert line == f"/crew:autopilot {T} (usable)"
+
+
 def test_status_continue_names_this_ticket_when_bare_autopilot_would_not(tmp_path):
     root = _two_tickets(tmp_path, activate="T-1")
     approve_as_user(root, "T-1")
@@ -648,6 +750,113 @@ def test_status_repoint_says_unknown_when_the_active_phase_raises(tmp_path, monk
             "could not tell whether T-2" in got["waiting"]) == (True, False, True)
 
 
+def _deny_spec(monkeypatch, ticket):
+    """`ticket`'s spec.md exists and cannot be read. chmod denies nothing to
+    root, which these sessions run as, so the denial is injected into the
+    reader `crew_ticket.read_contract` uses."""
+    real = open
+    target = os.path.join(".work", "tickets", ticket, "spec.md")
+
+    def deny(path, *args, **kwargs):
+        if os.path.normpath(str(path)).endswith(target):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real(path, *args, **kwargs)
+    monkeypatch.setattr(crew_ticket, "open", deny, raising=False)
+
+
+def test_status_repoint_unreadable_active_spec_is_could_not_tell(tmp_path, monkeypatch):
+    root = _two_tickets(tmp_path, activate="T-2")
+    approve_as_user(root, T)
+    _deny_spec(monkeypatch, "T-2")
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert (f"crew_ticket.py activate --ticket {T}" in got["waiting"],
+            "or runs /crew:autopilot T-2" in got["waiting"],
+            "could not tell whether T-2 is still open" in got["waiting"]) == (True, False, True)
+
+
+@pytest.mark.parametrize("spec", ["readable", "absent"])
+def test_status_repoint_offers_an_open_active_ticket_whose_spec_reads_or_is_absent(
+        tmp_path, spec):
+    root = _two_tickets(tmp_path, activate="T-2")
+    approve_as_user(root, T)
+    if spec == "absent":
+        os.remove(str(root / ".work" / "tickets" / "T-2" / "spec.md"))
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert (got["waiting"].endswith("or runs /crew:autopilot T-2"),
+            "could not tell" in got["waiting"]) == (True, False)
+
+
+def _index_reads(monkeypatch, ticket):
+    """INDEX.md rows parse INDEX-shaped ids only (`crew_state._TICKET_RE`), so
+    a ticket named like a subcommand never gets past direction-approval on
+    disk. Its status cell is read as `spec` here so the drive suggestions
+    after that phase can be reached at all."""
+    real = crew_autopilot._index_status  # pylint: disable=protected-access
+
+    def status_cell(top, name):
+        return "spec" if name == ticket else real(top, name)
+    monkeypatch.setattr(crew_autopilot, "_index_status", status_cell)
+
+
+def _subcommand_ticket(tmp_path, monkeypatch, name, activate=True):
+    root = make_repo(tmp_path, mode="off")
+    for ticket in (name, "T-2"):
+        _ticket(root, ticket=ticket)
+    _index(root, "T-2 | spec | high | r | two")
+    _index_reads(monkeypatch, name)
+    approve_as_user(root, name)
+    if activate:
+        crew_ticket.activate(str(root), name)
+    return root
+
+
+@pytest.mark.parametrize("name", list(crew_autopilot.SUBCOMMANDS) + [T])
+def test_status_suggests_run_for_a_ticket_named_like_a_subcommand(tmp_path, monkeypatch, name):
+    root = _subcommand_ticket(tmp_path, monkeypatch, name)
+    _handoff(root, "resume: /crew:autopilot T-2")
+    word = "run " if name in crew_autopilot.SUBCOMMANDS else ""
+
+    got = crew_autopilot.status(str(root), name)
+    routed = crew_autopilot.route_args(str(root), f"{word}{name}")
+
+    assert (got["stop"], got["waiting"], routed["sub"], routed["ticket"], routed["stop"]) == (
+        False, f"autopilot - run /crew:autopilot {word}{name} to continue", "run", name, False)
+
+
+@pytest.mark.parametrize("name", ["status", "focus", T])
+def test_status_activating_suggestion_runs_a_ticket_named_like_a_subcommand(
+        tmp_path, monkeypatch, name):
+    root = _subcommand_ticket(tmp_path, monkeypatch, name, activate=False)
+    word = "run " if name in crew_autopilot.SUBCOMMANDS else ""
+
+    got = crew_autopilot.status(str(root), name)
+
+    assert (got["stop"], got["waiting"]) == (
+        True, f"autopilot - run /crew:autopilot {word}{name} to continue; it activates "
+              f"{name} first")
+
+
+@pytest.mark.parametrize("name", ["status", "assign", "T-3"])
+def test_status_repoint_offers_run_for_an_active_ticket_named_like_a_subcommand(
+        tmp_path, monkeypatch, name):
+    root = _two_tickets(tmp_path)
+    _ticket(root, ticket=name)
+    _index(root, "T-1 | spec | high | r | one", "T-2 | spec | high | r | two")
+    crew_ticket.activate(str(root), name)
+    approve_as_user(root, T)
+    word = "run " if name in crew_autopilot.SUBCOMMANDS else ""
+
+    got = crew_autopilot.status(str(root), T)
+    routed = crew_autopilot.route_args(str(root), f"{word}{name}")
+
+    assert (got["waiting"].endswith(f", or runs /crew:autopilot {word}{name}"),
+            routed["sub"], routed["ticket"], routed["stop"]) == (True, "run", name, False)
+
+
 def _git_state(root):
     index = os.path.join(str(root), ".git", "index")
     return _snapshot(root), os.stat(index).st_mtime_ns
@@ -705,6 +914,41 @@ def test_status_as_the_command_runs_it_writes_no_bytecode(tmp_path):
         True, True, [])
 
 
+def _bytecode_env():
+    return {k: v for k, v in os.environ.items()
+            if k not in ("PYTHONDONTWRITEBYTECODE", "PYTHONPYCACHEPREFIX")}
+
+
+def _bytecode(plugin):
+    return [os.path.join(base, name) for base, dirs, files in os.walk(str(plugin))
+            for name in dirs + files if name == "__pycache__" or name.endswith(".pyc")]
+
+
+def test_status_direct_cli_writes_no_bytecode(tmp_path):
+    root = _approved(tmp_path / "repo")
+    plugin = _plugin_copy(tmp_path)
+    script = os.path.join(str(plugin), "hooks", "scripts", "crew_autopilot.py")
+
+    out = subprocess.run([sys.executable, script, "status", "--root", str(root)],
+                         cwd=str(root), env=_bytecode_env(), capture_output=True, text=True,
+                         check=False, stdin=subprocess.DEVNULL).stdout
+
+    assert ("ticket: " in out, _bytecode(plugin)) == (True, [])
+
+
+def test_importing_crew_autopilot_leaves_bytecode_setting_alone(tmp_path):
+    plugin = _plugin_copy(tmp_path)
+    scripts = os.path.join(str(plugin), "hooks", "scripts")
+    probe = ("import sys; sys.path.insert(0, sys.argv[1]); import crew_autopilot; "
+             "print(sys.dont_write_bytecode)")
+
+    out = subprocess.run([sys.executable, "-c", probe, scripts], cwd=str(tmp_path),
+                         env=_bytecode_env(), capture_output=True, text=True, check=False,
+                         stdin=subprocess.DEVNULL)
+
+    assert (out.returncode, out.stdout.strip()) == (0, "False")
+
+
 def test_every_autopilot_invocation_in_command_skips_bytecode():
     lines = [line.strip() for line in _command_text().splitlines()
              if "crew_autopilot.py " in line and "${CLAUDE_PLUGIN_ROOT}" in line]
@@ -725,6 +969,24 @@ def test_status_at_most_12_lines(tmp_path, monkeypatch, capsys):
     lines = capsys.readouterr().out.splitlines()
     assert (code, len(lines), lines[-1].startswith("(+")) == (
         0, crew_autopilot.STATUS_MAX_LINES, True)
+
+
+@pytest.mark.parametrize("how", ["ordinary", "raises"])
+def test_status_json_at_most_12_lines(tmp_path, monkeypatch, capsys, how):
+    root = _two_tickets(tmp_path)
+    _handoff(root, "resume: /crew:autopilot T-1", head="0123456789")
+    monkeypatch.setattr(crew_autopilot, "settings", lambda _root: {
+        "mode": "off", "armed": False, "maxPhases": 12, "saw": None,
+        "warnings": [f"w{n}" for n in range(10)]})
+    if how == "raises":
+        monkeypatch.setattr(crew_autopilot, "status", _raise)
+
+    code = crew_autopilot.main(["status", "--root", str(root), "--json"])
+
+    out = capsys.readouterr().out
+    kept = len(json.loads(out).get("warnings", []))
+    assert (code, len(out.splitlines()) <= crew_autopilot.STATUS_MAX_LINES, kept) == (
+        0, True, 10 if how == "ordinary" else 0)
 
 
 def test_status_folds_a_multiline_reason_into_one_line(tmp_path):
@@ -848,3 +1110,63 @@ def test_every_status_sabotage_anchor_is_present_exactly_once():
         prefix, name = test.split("::")
         assert (prefix, callable(globals().get(name))) == (
             "tests/test_crew_autopilot_status.py", True), label
+
+
+# --- T-0010: route and status are untouched by the approval policy -------------
+
+ROUTE_ARGS = ("", "status", "run T-1", "T-1", "status T-1")
+
+
+@pytest.mark.parametrize("policy", ["human", "self", "risk"])
+def test_route_and_status_unaffected_by_approval_policy(tmp_path, policy):
+    from test_crew_autopilot_policy import _repo  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, approval=policy, risk="low")
+    config = root / ".crew" / "config.json"
+    with_policy = config.read_text(encoding="utf-8")
+    before = _git_state(root)
+    code, lines = _lines(root)
+    after = _git_state(root)
+    routed = [crew_autopilot.route_args(str(root), text) for text in ROUTE_ARGS]
+    _write(config, json.dumps({"scope": json.loads(with_policy)["scope"]}))
+
+    plain = [crew_autopilot.route_args(str(root), text) for text in ROUTE_ARGS]
+
+    assert (code, _field(lines, "waiting on"), after == before, routed == plain) == (
+        0, f"waiting on: owner - types /crew:approve {T}", True, True)
+
+
+def _status_under(root, config, key, value, ticket):
+    """status's text with `autopilot.<key>` set to `value` in `config`."""
+    settings = json.loads(config.read_text(encoding="utf-8"))
+    settings["autopilot"][key] = value
+    _write(config, json.dumps(settings))
+    return crew_autopilot.status_text(crew_autopilot.status(str(root), ticket))
+
+
+@pytest.mark.parametrize("ticket", [None, T])
+@pytest.mark.parametrize("policy", ["self", "risk"])
+def test_status_at_approve_reads_the_same_under_an_allowing_policy(tmp_path, policy, ticket):
+    from test_crew_autopilot_policy import _repo  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, approval="human", risk="low")
+    config = root / ".crew" / "config.json"
+    human = _status_under(root, config, "approval", "human", ticket)
+
+    allowing = _status_under(root, config, "approval", policy, ticket)
+
+    assert (allowing == human, "crew_autopilot.py approve" in allowing,
+            f"waiting on: owner - types /crew:approve {T}" in allowing) == (True, False, True)
+
+
+@pytest.mark.parametrize("ticket", [None, T])
+def test_status_at_open_questions_reads_the_same_under_every_questions_policy(tmp_path,
+                                                                             ticket):
+    from test_crew_autopilot_policy import _repo  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, questions="human", risk="low")
+    _write(root / ".work" / "tickets" / T / "direction.md",
+           "go\n\n## Open questions\n- which database?\n")
+    config = root / ".crew" / "config.json"
+    texts = [_status_under(root, config, "questions", value, ticket)
+             for value in ("human", "self", "risk")]
+
+    assert (texts[1:] == texts[:1] * 2, "action=" in texts[0],
+            "phase: open-questions, stopped" in texts[0]) == (True, False, True)

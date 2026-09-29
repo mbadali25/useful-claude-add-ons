@@ -1,6 +1,6 @@
 # mcp-servers
-anchor: useful-claude-add-ons@f2bb919b
-verified: 2026-09-25
+anchor: useful-claude-add-ons@3648f59a
+verified: 2026-09-28
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
 ## Does
@@ -34,6 +34,18 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
 ## Calls out to
 - Microsoft Graph and the Intune / O365 admin endpoints, via the shared client in
   `mcp-servers/packages/core/src/graphClient.ts`.
+- **DERIVED: `GraphClient` sends its Bearer token only to its base URL's origin** (T-0090, 0.2.1).
+  `pinToOrigin` (`mcp-servers/packages/core/src/graphClient.ts:64`) compares parsed scheme, host
+  and port against the base and refuses userinfo and non-absolute URLs, throwing
+  `GraphOriginError` (`:30`); the refused URL is named by `describeRefused` (`:48`) as scheme and
+  host only, never `url.origin`, which is the inner Graph origin for a `blob:` URL and `null` for a
+  non-special scheme. It is applied to the FINAL URL in
+  `buildUrl` (`:166`, pin at `:168`, so a relative path concatenated off a path-less base is caught
+  too) and to every page in `getAllPages` (`:246`, pin at `:257`), both before `getToken`
+  (`request()` builds the URL at `:197`, then acquires the token at `:198`). Redirects are not
+  pinned: Node's `fetch` strips `Authorization` on a cross-origin redirect (measured Node 22.22.1,
+  T-0090 spec). Must-block / must-allow cases live in
+  `mcp-servers/packages/core/test/graphClient.test.ts`.
 - Azure identity providers through **two** separate paths: the admin credential chain at
   `mcp-servers/packages/core/src/adminAuth.ts:48` (`graph`, `intune`, `o365-admin`), and the
   device-code-only user credential at `mcp-servers/packages/core/src/auth.ts:66` (`o365-user`).
@@ -44,7 +56,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
   `this.resolved` and never retries an earlier, higher-priority link. Deliberate - the comment at
   `:44-46` says so - but fixing `MS_ADMIN_CLIENT_SECRET` after `cli` or `device` has won changes
   nothing until restart, and nothing tells you that. Re-verified unchanged 2026-09-06 at
-  `1f97e51c`; still open as `TODO.md:110` (item 2; was `:80` at `6c497a14` and `:51` before that, each
+  `1f97e51c`; still open as `TODO.md:189` (item 2; was `:110` at `f2bb919b`, `:80` at `6c497a14` and `:51` before that, each
   move an insertion earlier in the file - re-read at `f2bb919b` on 2026-09-25, same heading and body).
 - **`scopesOverride` silently broadens a narrow scope request.**
   `mcp-servers/packages/core/src/adminAuth.ts:29-36` (the field and its doc comment), `:127`
@@ -52,7 +64,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
   `device` (`mcp-servers/packages/core/src/adminAuth.ts:149-158` - no `scopesOverride` key, and the
   comment at `:155-158` says why) honours caller-supplied delegated scopes. Code that requests a
   narrow scope and receives `.default` did not fail - it was never asked. Re-verified unchanged
-  2026-09-06 at `1f97e51c`; still open as `TODO.md:121` (item 3; was `:91`, and `:62` before that - re-read at
+  2026-09-06 at `1f97e51c`; still open as `TODO.md:200` (item 3; was `:121` at `f2bb919b`, `:91`, and `:62` before that - re-read at
   `f2bb919b` on 2026-09-25, same heading and body).
 - **`dist/` is what runs, `src/` is what you edit.** Editing a `.ts` file and then *starting a
   server* leaves the stale compiled JS in place and the change does not take effect. Nothing guards
@@ -66,7 +78,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
     `core/dist` is still stale.
   - **Equal mtimes are stale, not fresh** (`:96-97`, reasoning at `:82-94`). The commit message for
     `4e2bfb78` states the opposite ("Equal timestamps count as fresh"); the shipped code and
-    `TODO.md:202-209` (was `:172-179`, and `:143-150` before that; re-read at `f2bb919b` on 2026-09-25, same reasoning)
+    `TODO.md:281-288` (was `:202-209` at `f2bb919b`, `:172-179`, and `:143-150` before that; re-read at `f2bb919b` on 2026-09-25, same reasoning)
     are the later, correct account. Trust the code.
   - An unreadable directory throws rather than returning mtime `0` (`:44-51`), because `0` compares
     older than everything and would read as fresh.
@@ -78,16 +90,17 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
   at `:55-61`). The two `adminAuth` landmines above therefore do **not** apply to it. The other
   three all call `buildAdminCredential` (`mcp-servers/packages/core/src/adminAuth.ts:176`).
 - **Each server pins an exact core version, not a range.** All four carry
-  `"@badali404/mcp-ms-core": "0.2.0"` at line `:29` of their own `package.json`, and core is at
-  `0.2.0` (`mcp-servers/packages/core/package.json:3`). A core-only bump reaches nobody until all
+  `"@badali404/mcp-ms-core": "0.2.1"` at line `:29` of their own `package.json`, and core is at
+  `0.2.1` (`mcp-servers/packages/core/package.json:3`). A core-only bump reaches nobody until all
   four servers republish.
 
 ## Unverified
 - All four `cli.ts` files were read at this anchor, but only their first ~25 lines. Each package's
   `src/index.ts` (where `createServer` and the tool list live) and each
   `mcp-servers/packages/*/test/tools.test.ts` were not opened.
-- The bodies of `mcp-servers/packages/core/src/jwt.ts`, `doctor.ts`, `toolResult.ts` and
-  `graphClient.ts` were not read; their roles come from the README and from import sites.
+- The bodies of `mcp-servers/packages/core/src/jwt.ts` and `doctor.ts` were not read; their roles
+  come from the README and from import sites. (`graphClient.ts` and `toolResult.ts` were read in
+  full at `79127fa1` for T-0090.)
 - `mcp-servers/packages/core/test/adminAuth.test.ts` exists and is offline/mocked, which answers "is
   adminAuth covered" - but it was not run here, so it is not known to pass at this anchor.
 - **This worktree's `dist/` is stale right now** (measured 2026-09-06 by importing `checkPackage`
@@ -297,3 +310,59 @@ returns `.claude-plugin/marketplace.json` and `TODO.md`; `mcp-servers/` is untou
   provenance entries above keep the numbers they recorded.
 
 Not re-verified at this pass: nothing under `mcp-servers/` was built, installed or executed.
+
+**Re-anchored `f2bb919b` -> `79127fa1` on 2026-09-28 (T-0090, the Graph token origin pin, on
+`T-0090-build`).** Per-path check:
+
+```
+git diff --name-only f2bb919b 79127fa1 -- mcp-servers/ TODO.md .claude-plugin/marketplace.json
+```
+returns `.claude-plugin/marketplace.json`, `TODO.md` and ten `mcp-servers/` files - T-0090's
+`graphClient.ts`, `index.ts`, `graphClient.test.ts`, the five `package.json` files (version `:3`
+and each server's core pin `:29`, in place), `package-lock.json` and `README.md`.
+
+- `graphClient.ts` was read in full and the origin-pin bullet under "Calls out to" added, each line
+  re-read with `grep -n` at `79127fa1`; it is no longer in the Unverified not-read list.
+- The exact-pin landmine now reads 0.2.1 (`package.json:3` in core, `:29` in each server, in place;
+  `:25` pretest and core's `:11`/`:26` did not move).
+- `TODO.md` grew ahead of every citation here: item 2's heading is now `:189`, item 3's `:200`,
+  and the unreadable-directory / equal-timestamps paragraph `:281-288` - byte-identical to
+  `f2bb919b`'s `:202-209` (`diff` over both ranges, empty). Corrected in the body.
+- `grep -c mcp-servers .claude-plugin/marketplace.json` still returns **0**.
+
+Executed for this pass: `npm --prefix mcp-servers test` and the T-0090 hand
+sabotage of the pin. The `## Unverified` dist-staleness line is still a 2026-09-06 measurement of
+one machine.
+(Corrected at the next pass: this line first said "65 pass / 0 fail", which is the core suite
+alone - `npm --prefix mcp-servers test` runs six `node --test` suites and each prints its own
+`# pass` line.)
+
+**Re-anchored `79127fa1` -> `eb4c4fa8` on 2026-09-28 (T-0090 review round 1 fix).**
+```
+git diff --name-only 79127fa1 eb4c4fa8 -- mcp-servers/ TODO.md .claude-plugin/marketplace.json
+```
+returns two files, `mcp-servers/packages/core/src/graphClient.ts` and its test. `describeRefused`
+was inserted at `:42-50`, so every `graphClient.ts` citation from `pinToOrigin` down moved by +10
+(re-read with `grep -n` at `eb4c4fa8`); `GraphOriginError` `:30` did not move. The
+"origins only" clause above was false after this change and is corrected in place.
+
+Executed for this pass: `npm --prefix mcp-servers test`, exit 0 - `check-dist-fresh` 14/0,
+`o365-user` 6/0, `o365-admin` 7/0, `intune` 6/0, `msgraph` 6/0, `core` 69/0 (108 pass in all).
+Re-measure by reading every `# pass` line of that run, not by counting `test(` in source: the
+tables in `graphClient.test.ts` generate their tests in loops.
+
+(Corrected at the T-0090 landing: the `f2bb919b` -> `79127fa1` paragraph first said "eleven
+`mcp-servers/` files"; the list it gives and `git diff --name-only f2bb919b 79127fa1 -- mcp-servers/ | wc -l`
+are both 10. Review round 2 FIX, owner-accepted, fixed at this re-anchor.)
+
+**Re-anchored `eb4c4fa8` -> `b2553d26` on 2026-09-28 (T-0090 landing).** `b2553d26` is `T-0090-land`'s
+merge of the reviewed `T-0090-build` (`631d3317`) onto main `ff59160f`.
+```
+git diff --name-only eb4c4fa8 b2553d26 -- mcp-servers/ TODO.md .claude-plugin/marketplace.json
+```
+returns `.claude-plugin/marketplace.json` (crew's version line only) and `TODO.md` (one hunk at
+`:4470`, below every citation here); nothing under `mcp-servers/`. `TODO.md:189`, `:200` and
+`:281` re-read, unchanged; `grep -c mcp-servers .claude-plugin/marketplace.json` is still **0**.
+No citation moved.
+
+**Re-anchored `b2553d26` -> `3648f59a` on 2026-09-28 (T-0075 review round 5, merge of `6387ab49`).** `git diff --name-only b2553d26 3648f59a -- mcp-servers/ README.md TODO.md .claude-plugin/marketplace.json` returns `README.md` (T-0075: crew's slash-command count 35 -> 36 at `:168` and `:874`, in place), `TODO.md` (T-0092's entry at `:5051`, below every citation here) and `.claude-plugin/marketplace.json` (crew's lines only); nothing under `mcp-servers/`. `TODO.md:189`, `:200` and `:281` re-read, unchanged; `grep -c mcp-servers .claude-plugin/marketplace.json` is still **0**. No citation moved.

@@ -5,9 +5,12 @@
     python3 crew_autopilot.py resume --root . [--ticket <id>] [--json]
     python3 crew_autopilot.py settings --root . [--json]
     python3 crew_autopilot.py stops [--json]
+    python3 crew_autopilot.py deploy-allowed --root . --env <name> --class <class>
+                                             [--json]
     python3 crew_autopilot.py route --root . --args "<the command's arguments>" [--json]
     python3 crew_autopilot.py route --root . --first <token> [--json]
     python3 crew_autopilot.py status --root . [--ticket <id>] [--json]
+                                     (at most 12 lines; --json is one line)
     python3 crew_autopilot.py approve --root . --ticket <id>
     python3 crew_autopilot.py questions-check --root . --ticket <id> [--json]
 
@@ -15,7 +18,17 @@ T-0004. The lifecycle is prose commands (spec, plan, implement, review,
 done); `/crew:autopilot` follows each one's procedure in-session. This module
 is what names the NEXT one, from files on disk and nothing else, so a skipped
 phase is visible and a phase that cannot be told stops. Read-only except
-`approve` (T-0010, below); it never accepts a review, at any setting.
+`approve`, and only when `approval_policy` allows under the configured policy;
+it never accepts a review. That is the single exception (T-0010, below):
+`next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check` and
+T-0072's `deploy-allowed` write no file. `approve` writes exactly what
+`crew_ticket.approve` writes for every approval route, `/crew:approve` included,
+all under `<git-common-dir>/crew/`: `approval.json`; `scope-tickets.json`, the scope
+ramp's list, on a ticket's first approval; and, when the review ledger is
+NEEDS_REPLAN and the plan is a distinct successor, the ledger itself, moved
+NEEDS_REPLAN -> IN_REVIEW (the successor continuation). Run as a script it writes no
+bytecode either, however it is invoked (`-B` or not); a module that imports it
+keeps its own bytecode setting.
 
 ## approve and questions-check -- the two policies (T-0010)
 
@@ -24,7 +37,8 @@ phase is visible and a phase that cannot be told stops. Read-only except
 
 `approval_policy` allows only when `scope.allowCliApproval` is exactly
 `true` in `.crew/config.json` -- at every setting -- and the review ledger is
-neither NEEDS_REPLAN (a successor plan is the human's) nor unreadable; then
+readable (a NEEDS_REPLAN one included: a distinct successor plan is its only
+way out, and the ledger refuses a plan approved before); then
 `human` never allows, `self` allows any risk, `risk` only a spec header that
 says `risk: low`. An absent or unparseable risk is `high`
 (`crew_ticket.parse_risk`), never `low`. `approve` also needs autopilot
@@ -38,8 +52,10 @@ the researched recommendation or `stop` -- with no `allowCliApproval` rule.
 `questions-check` validates `.work/tickets/<id>/questions.md` (the shape is
 QUESTIONS_SHAPE, printed when it fails) and prints `valid= action= policy=
 risk=`, then one `taken:` line per question autopilot answered. A `taken:`
-line is valid only for the recommended option, under the policy in force, and
-only when that policy says `take`. Exit 0 valid, 1 not.
+line is valid only for the recommended option, only naming a policy that
+takes (`self` or `risk` -- the one in force when it was taken, so a later
+policy change does not void an honest record), and only while the policy in
+force says `take`. Exit 0 valid, 1 not.
 
 ## next -- the phase from disk, first match wins
 
@@ -53,7 +69,7 @@ only when that policy says `take`. Exit 0 valid, 1 not.
   spec fails crew_ticket.validate        spec                stop
   no plan.md                             plan                /crew:plan <id>
   plan fails crew_ticket.validate        plan                stop
-  approval not accepted                  approve             stop, the human types it
+  approval not accepted                  approve             stop, unless the policy allows
   review ledger UNKNOWN                  review              stop
   review ledger NEEDS_REPLAN             replan              stop
   no review round under this plan        implement           /crew:implement <id>
@@ -74,8 +90,8 @@ outside `crew_ticket.STATUS_VALUES` -- stops, with a reason saying only the
 header changed.
 
 Refresh runs after implement and before every review round, never after an
-accepted receipt: a review bundle excludes only `.work/`
-(`review_patch.py`), so a refresh written after review stales the receipt and
+accepted receipt: a review bundle excludes only `.work/` and `graphify-out/`
+(`review_patch.py`), so a codemap, diagram or rules refresh stales the receipt and
 `/crew:done` refuses. T-0008's `crew_refresh_check.ticket_freshness` judges
 the artifacts. A `stale` one is refreshed with the command it names. An
 `unknown` one is refreshed only in T-0008's orphaned-anchor case (the anchor
@@ -101,9 +117,27 @@ A ticket that differs from this worktree's active-ticket pointer stops, naming
 both: the scope guard and the completion audit judge edits by the pointer.
 With no pointer, `activate` tells the command to set it to the ticket it drives.
 
-Exit 0 always; the answer is in the output. An exception inside `next` or
-`resume` prints `stop=1` with its reason: a crash is "cannot tell", never
+Exit 0 always, but for `approve` and `questions-check` (above); the answer is
+in the output. An exception inside `next` or `resume` prints `stop=1` with its reason: a crash is "cannot tell", never
 silence the command could read as permission.
+
+## deploy-allowed -- may autopilot deploy here without asking (T-0072)
+
+`deploy_allowed` answers `allow`, `ask` or `refuse` for one environment. It
+resolves the checkout root ONCE, as text, refusing when it cannot, and judges
+only that root (`root` in the result). Each probe answers present, absent or
+could-not-tell; could-not-tell never reads as absent. First match wins: an
+incident file present or could-not-tell refuses; an unusable name, a class not
+`nonProd`/`prod`, or a config layer could-not-tell or not ok asks; autopilot
+off or `deploy: none` asks; `nonProd` allows under `nonprod`/`all`; `prod`
+only under `all` with `environments.prodUnattended` true in BOTH layers and
+`guards.cloudGuard` a plain `block`. A crash asks. The CLI prints one line per
+stream (`--json` too), and `verdict=ask` even for a crash it cannot describe.
+
+The consumer (T-0045, not built here) calls it immediately before each
+dispatch, passes the class from T-0005's classifier, proceeds only on the exact
+verdict `allow`, and persists every non-empty `report`. `allow` is necessary,
+not sufficient: T-0009's hook, promote-gate and every other gate still decide.
 """
 import argparse
 import importlib
@@ -112,6 +146,10 @@ import os
 import re
 import sys
 
+if __name__ == "__main__":
+    # Before the sibling imports: the direct CLI writes no bytecode either.
+    sys.dont_write_bytecode = True
+
 import crew_config
 import crew_state
 import crew_ticket
@@ -119,6 +157,8 @@ import review_ledger
 from crew_common import git_out, read_text
 
 AUTOPILOT = "/crew:autopilot"
+# `autopilot.deploy` (T-0072): where a deploy may run without asking.
+DEPLOY_VALUES = ("none", "nonprod", "all")
 UNAVAILABLE = "unavailable"
 FRESH = "fresh"
 STALE = "stale"
@@ -170,9 +210,9 @@ PROCEDURE_STOPS = (
 # A person, unless the T-0010 policy named says otherwise; `human` always stops.
 HUMAN_STOPS = (
     ("brainstorm", "/crew:brainstorm and direction approval are a human dialogue"),
-    ("plan-approval", "plan approval: the human types /crew:approve <id>, unless "
-                      "autopilot.approval allows `crew_autopilot.py approve` "
-                      "(needs scope.allowCliApproval: true)"),
+    ("plan-approval", ("plan approval: the human types /crew:approve <id>, unless "
+                       "autopilot.approval allows `crew_autopilot.py approve` "
+                       "(needs scope.allowCliApproval: true)")),
     ("review-acceptance", "accepting review FINDINGS is the owner's, at every setting"),
     ("open-questions", "an open question in direction.md, spec.md or plan.md is answered "
                        "by a person, unless autopilot.questions takes the researched "
@@ -197,7 +237,13 @@ WAVE_ARGS = ("wave takes nothing, `--set <slug>` ([a-z0-9][a-z0-9-]{0,63}), or o
 
 
 def _rel(top, path):
-    return os.path.relpath(path, top).replace("\\", "/")
+    """`path` relative to `top` for evidence lines, or `path` itself when there
+    is no relative form: on Windows a path on another drive than `top` makes
+    `os.path.relpath` raise ValueError (T-0077)."""
+    try:
+        return os.path.relpath(path, top).replace("\\", "/")
+    except ValueError:
+        return path.replace("\\", "/")
 
 
 def _index_rows(top):
@@ -362,8 +408,10 @@ def _header_only_change(contract, receipt):
     return None
 
 
-def _phase(root, ticket):
-    """`next`'s phase table (module docstring), with no session guard."""
+def _phase(root, ticket, policy=True):
+    """`next`'s phase table (module docstring), with no session guard.
+    `policy=False` is `status`'s read: the approve and open-questions reasons
+    then name no policy, so status reads the same under every setting."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     folder = crew_ticket.ticket_dir(top, ticket)
     evidence = []
@@ -406,7 +454,7 @@ def _phase(root, ticket):
         return answer("open-questions", True, "unanswered under ## Open questions: "
                       + "; ".join(f"{name}: {item}" for name, item in questions[:4])
                       + " - a person answers (write `none - <answer>` or check it `[x]`). "
-                      + _question_hint(top, ticket))
+                      + (_question_hint(top, ticket) if policy else POLICY_FREE_QUESTIONS))
     if contract["spec.md"] is None:
         return answer("spec", False, "no spec.md", f"/crew:spec {ticket}")
     spec_only = crew_ticket.validate(top, ticket, {"spec.md": contract["spec.md"],
@@ -431,8 +479,9 @@ def _phase(root, ticket):
             f"`status: {_header_status(crew_ticket._text(contract['spec.md']))}`), an edit "  # pylint: disable=protected-access
             "T-0026's approval digest keeps only for a receipt written since T-0026 and a "
             "value in crew_ticket.STATUS_VALUES; this one is older or the value is not")
-        return answer("approve", True, f"{why}. {_approval_hint(top, ticket)}",
-                      f"/crew:approve {ticket}")
+        hint = (_approval_hint(top, ticket) if policy
+                else POLICY_FREE_APPROVE.format(ticket=ticket))
+        return answer("approve", True, f"{why}. {hint}", f"/crew:approve {ticket}")
     return _review_phase(top, ticket, evidence, answer)
 
 
@@ -452,7 +501,8 @@ def _review_phase(top, ticket, evidence, answer):
                       "UNKNOWN (unreadable): the rounds spent cannot be counted")
     if ledger["state"] == review_ledger.NEEDS_REPLAN:
         return answer("replan", True, f"{ticket} is NEEDS_REPLAN: the review budget is "
-                      "spent; a successor plan needs the human's /crew:approve",
+                      "spent; a different plan continues it once approved (the approve "
+                      "phase and autopilot.approval decide by whom)",
                       f"/crew:plan {ticket}")
     rounds = _current_rounds(ledger)
     if not rounds:
@@ -499,15 +549,17 @@ def _review_phase(top, ticket, evidence, answer):
     return answer("done", False, f"{message}; artifacts fresh", f"/crew:done {ticket}")
 
 
-def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None):
+def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
+               policy=True):
     """`{"ticket", "phase", "stop", "reason", "command", "evidence"}`. A
     `stop` phase's `command` is what the HUMAN types, never run by autopilot.
     `max_phases` and `last_command` are the session's count and the command it
     last ran: reaching the count, or being handed the same command again, stops.
     So does a phase that would run while `crew_ticket.resolve_active` -- what
-    the scope guard reads -- names another ticket, none, or a broken pointer."""
+    the scope guard reads -- names another ticket, none, or a broken pointer.
+    `policy=False` is `status`'s: see `_phase`."""
     crew_ticket.check_ticket(ticket)
-    result = _phase(root, ticket)
+    result = _phase(root, ticket, policy)
     if result["stop"]:
         return result
     active, where, broken = crew_ticket.resolve_active(
@@ -536,13 +588,18 @@ HANDOFF_UNREADABLE = "unknown - .work/HANDOFF.md exists but could not be read"
 def _read_handoff(top):
     """(text, why_not): `.work/HANDOFF.md`'s text, or None with why. Only a
     file that is not there is absent; one that is there and cannot be read
-    -- denied, a directory -- is unknown, never absent (read_text says None
-    for both)."""
+    -- denied, a directory, a dangling or looping symlink, or a `.work` that
+    is a dangling symlink -- is unknown, never absent (read_text says None
+    for all of them)."""
+    work = os.path.join(top, ".work")
+    path = os.path.join(work, "HANDOFF.md")
     try:
-        with open(os.path.join(top, ".work", "HANDOFF.md"), "r", encoding="utf-8-sig",
-                  errors="replace") as handle:
+        with open(path, "r", encoding="utf-8-sig", errors="replace") as handle:
             return handle.read(), ""
     except FileNotFoundError:
+        # open() follows links: a dangling one raises this too, but its entry is there.
+        if os.path.lexists(path) or (os.path.lexists(work) and not os.path.isdir(work)):
+            return None, HANDOFF_UNREADABLE
         return None, HANDOFF_ABSENT
     except (OSError, ValueError):
         return None, HANDOFF_UNREADABLE
@@ -588,10 +645,11 @@ def _handoff_ticket(top):
     return arg, (render(parsed) if callable(render) else f"{command} {arg}"), None, ""
 
 
-def resume_target(root, ticket=None):
+def resume_target(root, ticket=None, policy=True):
     """`{"ticket", "source", "stop", "hint", "disagreement", "reason",
     "fallthrough", "next", "activate"}` -- see the module docstring's order.
-    `ticket` is the command's `$1`; it is still held to the active pointer."""
+    `ticket` is the command's `$1`; it is still held to the active pointer.
+    `policy=False` is `status`'s: see `_phase`."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     fallthrough = []
 
@@ -638,7 +696,7 @@ def resume_target(root, ticket=None):
                        f"is {active}, and the scope guard and completion audit judge edits "
                        f"by {active}'s approval and Touch. Run /crew:autopilot {active}, or "
                        f"the human re-points it: crew_ticket.py activate --ticket {ticket}")
-    disk = next_phase(top, ticket)
+    disk = next_phase(top, ticket, policy=policy)
     disagreement = ""
     if hint and not hint.startswith(AUTOPILOT + " ") and hint != disk["command"]:
         disagreement = (f"the handoff says {hint}, the disk says "
@@ -658,14 +716,56 @@ def _read_json(path):
         return None
 
 
+def _unreadable_autopilot(top):
+    """Why the repo's `autopilot` block cannot be told, or "" when it can.
+    `crew_config.resolve_config` collapses a malformed file, and
+    `merge_defaults` a non-object block, to the defaults; this reads the raw
+    file first so neither collapse is taken for a configured value."""
+    data, state = crew_ticket._read_json(  # pylint: disable=protected-access
+        os.path.join(top, ".crew", "config.json"))
+    if state == "corrupt":
+        return ".crew/config.json exists but could not be read as JSON"
+    if state == "ok" and not isinstance(data, dict):
+        return (f".crew/config.json is {type(data).__name__}, not a JSON object, so it "
+                "could not be read")
+    block = data.get("autopilot") if state == "ok" else None
+    if block is not None and not isinstance(block, dict):
+        return f"autopilot in .crew/config.json is {block!r}, not an object"
+    return ""
+
+
 def settings(root):
-    """`{"mode", "armed", "maxPhases", "approval", "questions", "saw",
-    "warnings"}`. Read through `crew_config.resolve_config` --
+    """`{"mode", "armed", "maxPhases", "saw", "deploy", "deploySaw", "approval",
+    "questions", "warnings"}`. Read through `crew_config.resolve_config` --
     `.crew/config.json` over the defaults, the file
     `crew_ticket.cli_approval_allowed` reads. `mode` arms only when it is
     exactly the string `plan`; `maxPhases` must be a positive int, else 12;
-    `approval` and `questions` must be one of POLICIES, else `human`."""
+    `deploy` is exactly one of DEPLOY_VALUES, else `none`; `approval` and
+    `questions` must be one of POLICIES, else `human`.
+
+    A `.crew/config.json` that is present but unreadable, or an `autopilot`
+    value that is not an object, is could-not-tell: both policies read
+    UNKNOWN, `mode` reads `off`, `deploy` reads `none`, and a warning names
+    the cause. That is never the default `risk`, which `resolve_config` would
+    otherwise hand back for both. An absent file or an absent (or null) block
+    is known and reads the defaults. `deploy_allowed` reads `_settings_at`,
+    after its own per-layer checks, not this."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    cause = _unreadable_autopilot(top)
+    if cause:
+        return {"mode": "off", "armed": False,
+                "maxPhases": crew_state.AUTOPILOT_DEFAULTS["maxPhases"],
+                "saw": None, "deploy": "none", "deploySaw": None,
+                "approval": UNKNOWN, "questions": UNKNOWN,
+                "warnings": [(f"{cause}, so autopilot.approval and autopilot.questions "
+                              "could not be told (both read as unknown, which never "
+                              "approves or takes an answer) and autopilot reads as off")]}
+    return _settings_at(top)
+
+
+def _settings_at(top):
+    """`settings` for a checkout root already resolved: no lookup of its own,
+    so `deploy_allowed` reads the settings of the one root it judged."""
     block = crew_config.resolve_config(top).get("autopilot")
     block = block if isinstance(block, dict) else {}
     warnings = []
@@ -680,6 +780,15 @@ def settings(root):
         warnings.append(f"autopilot.maxPhases is {limit!r}, not a positive integer; "
                         f"using {default}")
         limit = default
+    deploy_saw = block.get("deploy", "none")
+    deploy = deploy_saw if _exact(deploy_saw, DEPLOY_VALUES) else "none"
+    if deploy != deploy_saw:
+        warnings.append(f"autopilot.deploy is {deploy_saw!r}: only the exact strings "
+                        "'nonprod' and 'all' arm it, so it reads as none")
+    if deploy != "none":
+        warnings.append(f"autopilot.deploy is {deploy!r}, but nothing in this crew version "
+                        "dispatches a deploy: T-0045 consumes it; deploy-allowed answers "
+                        "the policy only")
     crew_json = _read_json(os.path.join(top, ".crew", "crew.json"))
     if isinstance(crew_json, dict) and "autopilot" in crew_json \
             and "autopilot" not in crew_state.load_config(top):
@@ -690,8 +799,167 @@ def settings(root):
         policies[key], warning = _policy_setting(block, key)
         warnings += [warning] if warning else []
     return {"mode": "plan" if armed else "off", "armed": armed, "maxPhases": limit,
+            "saw": mode, "deploy": deploy, "deploySaw": deploy_saw,
             "approval": policies["approval"], "questions": policies["questions"],
-            "saw": mode, "warnings": warnings}
+            "warnings": warnings}
+
+
+def _exact(value, allowed):
+    """`value` is one of the strings in `allowed`, compared as a string: `True`
+    and `1` compare equal to nothing here, and neither does `"All"`."""
+    return isinstance(value, str) and value in allowed
+
+
+def _probe(path):
+    """`("present" | "absent" | "could-not-tell", detail)` for one path: the
+    only place this module asks whether a path exists. The try holds the one
+    `os.lstat`. Only a missing file (or a missing directory on the way) is
+    absent; anything else raised -- PermissionError, ELOOP, a NUL, a crash --
+    could not tell, and never reads as absent (`os.path.lexists` would)."""
+    try:
+        os.lstat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return "absent", ""
+    except Exception as exc:  # pylint: disable=broad-except
+        return "could-not-tell", type(exc).__name__
+    return "present", ""
+
+
+def _resolve_root(root):
+    """`(top, "")`, or `(None, problem)`: the checkout root, looked up ONCE
+    per `deploy_allowed` and passed to everything after it. The try holds the
+    one lookup, so its failure is never mistaken for a missing file. A root
+    that is not text (a bytes path) is a problem too: every path after this
+    joins str parts onto it, and that join must not be able to raise."""
+    try:
+        top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    except Exception as exc:  # pylint: disable=broad-except
+        return None, f"could not find the checkout ({type(exc).__name__})"
+    if not isinstance(top, str):
+        return None, f"could not find the checkout (a {type(top).__name__} path, not text)"
+    return top, ""
+
+
+def _layer_problem(label, path):
+    """Why the `label` config layer at `path` cannot be relied on, or `""`
+    when it is absent or ok. `layer_state` is asked only about a path the
+    probe saw present, so its `absent` (a `lexists` that could not tell) is a
+    contradiction and asks, never a layer nobody set."""
+    state, detail = _probe(path)
+    if state == "absent":
+        return ""
+    if state != "present":
+        return f"could not tell whether the {label} config layer can be read ({detail})"
+    if crew_config.layer_state(path, environments=True) != "ok":
+        return f"could not read the {label} config layer"
+    return ""
+
+
+def _decide(top, env_name, env_class, machine_path):
+    """`(verdict, reason, deploy)`, the Design table's rows 1-11 in order, for
+    the root `top` that `deploy_allowed` resolved; never looks it up again.
+    The incident probe runs first, ahead of the `cloud_guard` import: a
+    failure after it asks, and asking would downgrade an emergency's refusal."""
+    state, detail = _probe(os.path.join(top, ".crew", "incident.json"))
+    if state == "present":
+        return "refuse", "an emergency may be active (.crew/incident.json exists)", None
+    if state != "absent":
+        return "refuse", f"could not tell whether an emergency is active ({detail})", None
+    import cloud_guard  # pylint: disable=import-outside-toplevel
+    if not isinstance(env_name, str) or not env_name.strip() or not env_name.isprintable():
+        return "ask", f"could not tell which environment: {_safe_text(env_name)}", None
+    known = (cloud_guard.ENV_NONPROD, cloud_guard.ENV_PROD)
+    cls = env_class if isinstance(env_class, str) else ""
+    if cls not in known:
+        return "ask", (f"crew could not classify {env_name} "
+                       f"(class {_safe_text(env_class)})"), None
+    layers = (("repo", os.path.join(top, ".crew", "config.json")),
+              ("machine", machine_path))
+    for label, path in layers:
+        problem = _layer_problem(label, path)
+        if problem:
+            return "ask", problem, None
+    current = _settings_at(top)
+    deploy = current["deploy"]
+    if not current["armed"]:
+        return "ask", "autopilot.mode is not plan", deploy
+    if deploy == "none":
+        return "ask", "autopilot.deploy is none", deploy
+    if cls == cloud_guard.ENV_NONPROD:
+        return "allow", f"autopilot.deploy={deploy} allows nonProd", deploy
+    if deploy != "all":
+        return "ask", "autopilot.deploy is nonprod; production needs all", deploy
+    ratchet = crew_config.resolve_ratcheted(top, "environments.prodUnattended",
+                                            path=machine_path)
+    if ratchet["effective"] is not True:
+        short = [name for name, key in (("repo", "repo"), ("machine", "global"))
+                 if ratchet[key] is not True]
+        where = " and ".join(short) or f"held down by {ratchet['heldDownBy']}"
+        return "ask", (f"environments.prodUnattended is not true in the {where} config "
+                       "layer; production needs true in both"), deploy
+    mode = cloud_guard.resolve_mode(top)
+    if mode != ("block", ""):
+        note = f": {mode[1]}" if mode[1] else ""
+        return "ask", (f"guards.cloudGuard is {mode[0]}{note}, so T-0009's guard is not "
+                       "armed to enforce the dispatch"), deploy
+    return "allow", ("autopilot.deploy=all and environments.prodUnattended=true in both "
+                     "config layers (repo and machine), guards.cloudGuard=block"), deploy
+
+
+def _safe_text(value, render=repr):
+    """`render(value)`, or a placeholder naming its type when that raises: a
+    value crew cannot print is still one it can name in a reason."""
+    try:
+        return render(value)
+    except Exception:  # pylint: disable=broad-except
+        return f"<unprintable {type(value).__name__}>"
+
+
+def _crash_reason(exc):
+    return (f"crew_autopilot raised {type(exc).__name__}: {_safe_text(exc, str)} - "
+            "cannot tell, so ask")
+
+
+def _env_label(env_name):
+    usable = isinstance(env_name, str) and env_name.strip() and env_name.isprintable()
+    return env_name if usable else _safe_text(env_name)
+
+
+def _deploy_report(env_name, verdict, reason, env_class):
+    """The line every production decision carries, `""` for any other class."""
+    if env_class != "prod":
+        return ""
+    return f"unattended production: {_env_label(env_name)} {verdict} - {reason}"
+
+
+def deploy_allowed(root, env_name, env_class):
+    """`{"verdict", "reason", "report", "env", "envClass", "deploy", "root"}`
+    for one environment: may autopilot deploy there without asking a person?
+    Read-only and never raises; "could not tell" asks and an emergency
+    refuses. The checkout root is resolved once, here, and `root` names it. See
+    the module docstring's `deploy-allowed` section for the rows and the
+    consumer contract."""
+    top, problem = _resolve_root(root)
+    machine_path = crew_config.GLOBAL_CONFIG_PATH
+    deploy = None
+    try:
+        if problem:
+            verdict, reason = "refuse", f"could not tell whether an emergency is active: {problem}"
+        else:
+            verdict, reason, deploy = _decide(top, env_name, env_class, machine_path)
+    except Exception as exc:  # pylint: disable=broad-except
+        # A crash cannot tell whether production is allowed: it asks.
+        verdict, reason = "ask", _crash_reason(exc)
+    try:
+        report = _deploy_report(env_name, verdict, reason, env_class)
+    except Exception as exc:  # pylint: disable=broad-except
+        # Which environment, or whether it is production, cannot be told: the
+        # decision asks (a refusal stays one, with its reason) and is reported.
+        if verdict != "refuse":
+            verdict, reason = "ask", _crash_reason(exc)
+        report = f"unattended production: <unnamed environment> {verdict} - {reason}"
+    return {"verdict": verdict, "reason": reason, "report": report,
+            "env": env_name, "envClass": env_class, "deploy": deploy, "root": top}
 
 
 # --- T-0010: the approval and questions policies ------------------------------
@@ -745,28 +1013,33 @@ def approval_policy(root, ticket):
     """`{"allow", "policy", "risk", "known", "reason", "warnings"}` -- whether
     autopilot may approve `ticket`'s plan itself. Never allows unless
     `scope.allowCliApproval` is exactly true, at any setting; `human` never,
-    `self` at any risk, `risk` only on a known `risk: low`. A review ledger
-    that is NEEDS_REPLAN or unreadable refuses too: a successor plan after a
-    spent budget is the human's. Anything that cannot be told refuses."""
+    `self` at any risk, `risk` only on a known `risk: low`. A NEEDS_REPLAN
+    ledger is no refusal: approving a distinct successor plan is the only way
+    out of it, and `crew_ticket.approve` hands that plan to
+    `review_ledger.continue_with_successor_plan`, which refuses one approved
+    before. An unreadable ledger refuses, like anything that cannot be told."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     try:
         policy, risk, warnings = _decision(top, ticket, "approval")
         allowed = crew_ticket.cli_approval_allowed(top)
         ledger = review_ledger.status(top, ticket).get("state")
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         return {"allow": False, "policy": UNKNOWN, "risk": "high", "known": False,
                 "warnings": [], "reason": (f"could not tell whether autopilot may approve "
                                            f"({type(exc).__name__}: {exc})")}
     result = {"allow": False, "policy": policy, "risk": risk["risk"],
               "known": risk["known"], "warnings": warnings}
-    if not allowed:
+    if policy == UNKNOWN:
+        why = (f"could not tell autopilot.approval ({'; '.join(warnings) or 'unreadable'}); "
+               "the human approves")
+    elif not allowed:
         why = (f"{ALLOW_CLI} is not exactly true in .crew/config.json, so no approval but "
                "the human's counts")
     elif policy == HUMAN:
         why = "autopilot.approval is human: plan approval always waits for the owner"
-    elif ledger in (review_ledger.NEEDS_REPLAN, review_ledger.UNKNOWN):
-        why = (f"the review ledger is {ledger}: a plan after a spent or unreadable review "
-               "budget is the human's to approve")
+    elif ledger == review_ledger.UNKNOWN:
+        why = ("the review ledger is unreadable, so whether this plan may continue review "
+               "cannot be told; the human approves")
     elif policy == SELF:
         return dict(result, allow=True, reason=f"autopilot.approval is self ({_risk_words(risk)})")
     elif risk["known"] and risk["risk"] == "low":
@@ -785,12 +1058,15 @@ def question_policy(root, ticket):
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     try:
         policy, risk, warnings = _decision(top, ticket, "questions")
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         return {"action": STOP, "policy": UNKNOWN, "risk": "high", "known": False,
                 "warnings": [], "reason": (f"could not tell the questions policy "
                                            f"({type(exc).__name__}: {exc})")}
     result = {"action": STOP, "policy": policy, "risk": risk["risk"],
               "known": risk["known"], "warnings": warnings}
+    if policy == UNKNOWN:
+        return dict(result, reason=(f"could not tell autopilot.questions "
+                                    f"({'; '.join(warnings) or 'unreadable'}): a person answers"))
     if policy == SELF:
         return dict(result, action=TAKE, reason="autopilot.questions is self")
     if policy == RISK and risk["known"] and risk["risk"] == "low":
@@ -800,6 +1076,17 @@ def question_policy(root, ticket):
         return dict(result, reason="autopilot.questions is human: a person answers")
     return dict(result, reason=f"autopilot.questions is risk and the spec has "
                                f"{_risk_words(risk)}")
+
+
+# `status`'s approve and open-questions sentences: fixed text, so the report
+# reads the same under every autopilot.approval and autopilot.questions value
+# (T-0018's status reads no policy; `next` names the policy's route instead).
+POLICY_FREE_APPROVE = ("The human types /crew:approve {ticket}. status reads no approval "
+                       "policy: crew_autopilot.py settings shows whether autopilot.approval "
+                       "lets /crew:autopilot approve it instead")
+POLICY_FREE_QUESTIONS = ("status reads no questions policy: crew_autopilot.py settings shows "
+                         "whether autopilot.questions lets /crew:autopilot research and "
+                         "answer them instead")
 
 
 def _approval_hint(top, ticket):
@@ -818,9 +1105,12 @@ def _question_hint(top, ticket):
 
 
 def approve(root, ticket):
-    """(exit code, text). The one write this module makes: an `autopilot`
-    receipt, only when autopilot is armed and `approval_policy` allows.
-    `crew_ticket.approve` asks `approval_policy` again before it writes."""
+    """(exit code, text). This module's one writing path, only when autopilot
+    is armed and `approval_policy` allows: `crew_ticket.approve` with
+    `via=autopilot`, which asks `approval_policy` again and then writes
+    `approval.json`, `scope-tickets.json` on a ticket's first approval, and,
+    for a distinct successor plan under a NEEDS_REPLAN ledger, the ledger
+    moved NEEDS_REPLAN -> IN_REVIEW. Exit 3 when that continuation refused."""
     crew_ticket.check_ticket(ticket)
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     human = f"the human types /crew:approve {ticket}"
@@ -830,7 +1120,7 @@ def approve(root, ticket):
     got = approval_policy(top, ticket)
     if not got["allow"]:
         return 2, f"refused: {got['reason']}; {human}"
-    receipt, successor = crew_ticket.approve(
+    _receipt, successor = crew_ticket.approve(
         top, ticket, by=f"autopilot:{got['policy']}", via=crew_ticket.AUTOPILOT)
     text = (f"self-approved {ticket} under approval={got['policy']}, "
             f"risk={got['risk'] if got['known'] else 'unknown (high)'}")
@@ -889,7 +1179,10 @@ def _question_blocks(text):
 
 def _question_problems(block, decision):
     """(problems, taken) for one `## Q<n>` section, judged against the
-    questions policy in force (`decision`, from `question_policy`)."""
+    questions policy in force (`decision`, from `question_policy`). A `taken:`
+    line's `(<policy>)` records the policy that took it, which may differ from
+    today's: it must name one that takes (`self` or `risk`), and today's must
+    say `take`."""
     number, title, preamble, options, taken = block
     name, problems = f"Q{number}", []
     if not title:
@@ -916,9 +1209,11 @@ def _question_problems(block, decision):
         oid, policy = form.groups()
         if not options or oid != options[0][0]:
             problems.append(f"{name}: taken Option {oid}, not the recommended option")
-        if policy != decision["policy"]:
-            problems.append(f"{name}: taken under {policy}, but autopilot.questions is "
-                            f"{decision['policy']}")
+        # The name is history: the policy that took it then. It must be one
+        # that can take at all; whether taking is allowed NOW is the next check.
+        if policy not in (SELF, RISK):
+            problems.append(f"{name}: taken under {policy!r}, a policy that never takes "
+                            f"(only {SELF} or {RISK} does)")
         if decision["action"] != TAKE:
             problems.append(f"{name}: taken, but the questions policy says stop: "
                             f"{decision['reason']}")
@@ -930,7 +1225,8 @@ def questions_check(root, ticket):
     """`{"valid", "action", "policy", "risk", "known", "reason", "warnings",
     "questions", "taken", "problems"}` for `.work/tickets/<id>/questions.md`.
     Valid only when every question has the QUESTIONS_SHAPE and every
-    `taken:` line is one the questions policy in force permits."""
+    `taken:` line names a policy that takes, while the policy in force says
+    `take` (`_question_problems`)."""
     crew_ticket.check_ticket(ticket)
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     decision = question_policy(top, ticket)
@@ -1077,9 +1373,10 @@ def _reserved_round(top, ticket):
 
 def _bare(top):
     """What bare `/crew:autopilot` would take: `resume_target(top)`, or None
-    when it raised -- could not tell, which is never read as agreeing."""
+    when it raised -- could not tell, which is never read as agreeing. Read
+    with no policy, as everything status composes is."""
     try:
-        return resume_target(top)
+        return resume_target(top, policy=False)
     except Exception:  # pylint: disable=broad-except
         return None
 
@@ -1104,9 +1401,9 @@ def _waiting(top, result, bare):
         # is named only when it would drive this same ticket.
         if _takes(bare, result["ticket"]):
             return f"autopilot - run {AUTOPILOT} to continue"
-        return f"autopilot - run {AUTOPILOT} {result['ticket']} to continue"
+        return f"autopilot - run {_drive(result['ticket'])} to continue"
     try:
-        guard = not _phase(top, result["ticket"])["stop"]
+        guard = not _phase(top, result["ticket"], policy=False)["stop"]
     except Exception:  # pylint: disable=broad-except
         return "unknown (could not tell which check stopped the phase)"
     if guard:
@@ -1122,7 +1419,7 @@ def _repoint(top, ticket):
         return ("owner - fixes the broken active-ticket pointer: "
                 f"crew_ticket.py activate --ticket {ticket}")
     if where != "active-ticket":
-        return f"autopilot - run {AUTOPILOT} {ticket} to continue; it activates {ticket} first"
+        return f"autopilot - run {_drive(ticket)} to continue; it activates {ticket} first"
     repoint = f"owner - re-points this worktree: crew_ticket.py activate --ticket {ticket}"
     try:
         closed = _closed(top, active)
@@ -1132,7 +1429,16 @@ def _repoint(top, ticket):
         return f"{repoint} (could not tell whether {active} is still open)"
     if closed:
         return f"{repoint} ({active} is closed)"
-    return f"{repoint}, or runs {AUTOPILOT} {active}"
+    return f"{repoint}, or runs {_drive(active)}"
+
+
+def _drive(ticket):
+    """The command that drives `ticket`. `route` reads a SUBCOMMANDS name as
+    the subcommand, so a ticket named like one is driven as `run <id>`; every
+    other id keeps the bare `/crew:autopilot <id>` form."""
+    if ticket in SUBCOMMANDS:
+        return f"{AUTOPILOT} run {ticket}"
+    return f"{AUTOPILOT} {ticket}"
 
 
 def _closed(top, ticket):
@@ -1142,6 +1448,11 @@ def _closed(top, ticket):
     if _index_status(top, ticket) in INDEX_DONE:
         return True
     spec = crew_ticket.read_contract(top, ticket)["spec.md"]
+    # read_contract returns None for a spec it could not read as well as for an
+    # absent one; only absence says "not closed".
+    if spec is None and os.path.lexists(os.path.join(crew_ticket.ticket_dir(top, ticket),
+                                                     "spec.md")):
+        return None
     return spec is not None and _header_status(
         crew_ticket._text(spec)) == "done"  # pylint: disable=protected-access
 
@@ -1188,13 +1499,11 @@ def _resume_line(top, bare):
     if bare is None:
         return f"{rendered} (unknown: resume_target raised, so whether it is usable " \
                "could not be told)"
-    taken = _takes(bare, parsed.get("arg"), "handoff")
-    if taken:
-        return f"{rendered} (usable)"
     if parsed.get("command") == AUTOPILOT and parsed.get("kind") == "goal":
         return f"not usable: {rendered} - goal resume arrives with {ARRIVES['goal']}"
-    # Not taken. The reason: `_handoff_ticket`'s fall-through checks in its
-    # order, in fixed text, then the stop `resume_target` made after taking it.
+    # `_handoff_ticket`'s checks in its order, in fixed text, on THIS read's
+    # text: `bare` came from an earlier read the file may have been rewritten
+    # since, so it vouches for the ticket only after these pass.
     if parsed.get("kind") != "ticket" or not parsed.get("arg"):
         return f"not usable: {rendered} - it names no ticket"
     branch = crew_state._HANDOFF_BRANCH_RE.search(text)  # pylint: disable=protected-access
@@ -1206,6 +1515,8 @@ def _resume_line(top, bare):
         return f"not usable: {rendered} - its head: does not match this checkout"
     if not _existing_ticket(top, parsed["arg"]):
         return f"not usable: {rendered} - its ticket has no .work/tickets/ folder"
+    if _takes(bare, parsed.get("arg"), "handoff"):
+        return f"{rendered} (usable)"
     if bare.get("stop"):
         return f"not usable: {rendered} - {bare.get('reason') or 'resume_target stopped'}"
     return f"not usable: {rendered} - bare {AUTOPILOT} does not take it"
@@ -1216,21 +1527,23 @@ def status(root, ticket=None):
     "command", "stop", "phase_reason", "waiting", "review", "resume_line",
     "fallthrough", "disagreement"}`. Read-only: composes `settings`,
     `resume_target` (or `next_phase` for an argument), `review_ledger.status`
-    and `crew_resume`. Whatever it cannot tell reads `unknown`."""
+    and `crew_resume`. Whatever it cannot tell reads `unknown`. It reads no
+    approval or questions policy (`policy=False`): its lines are the same
+    under every setting, and `next` is what names the policy's route."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     conf = settings(top)
     if ticket:
         crew_ticket.check_ticket(ticket)
         if os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
             pick = {"ticket": ticket, "source": "argument", "reason": "", "fallthrough": [],
-                    "disagreement": "", "next": next_phase(top, ticket)}
+                    "disagreement": "", "next": next_phase(top, ticket, policy=False)}
         else:
             pick = {"ticket": None, "source": "argument", "fallthrough": [],
                     "disagreement": "", "next": None,
                     "reason": f"{ticket} has no .work/tickets/ folder"}
         bare = _bare(top)
     else:
-        pick = bare = resume_target(top)
+        pick = bare = resume_target(top, policy=False)
     disk = pick.get("next") or {}
     found = pick.get("ticket")
     return {"mode": conf["mode"], "maxPhases": conf["maxPhases"], "warnings": conf["warnings"],
@@ -1277,9 +1590,11 @@ def status_text(result):
 
 
 def _failure(exc):
+    """A `next`/`resume`/`status` crash as text, even when `str(exc)` raises."""
     if isinstance(exc, crew_ticket.TicketError):
-        return str(exc)
-    return f"crew_autopilot raised {type(exc).__name__}: {exc} - cannot tell, so stop"
+        return _safe_text(exc, str)
+    return (f"crew_autopilot raised {type(exc).__name__}: {_safe_text(exc, str)} - "
+            "cannot tell, so stop")
 
 
 def _line(**fields):
@@ -1296,11 +1611,54 @@ def _policy_main(args):
         else:
             result = questions_check(args.root, args.ticket)
             code, text = (0 if result["valid"] else 1), questions_text(result)
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         code, text = 1, _one_line(f"refused: {_failure(exc)}")
         result = {"code": code, "text": text}
     sys.stdout.write((json.dumps(result, indent=2) if args.json else text) + "\n")
     return code
+
+
+def _cli_value(value, token=False):
+    """`value` as one field of deploy-allowed's one line: itself when it is a
+    printable string (for a `token`, non-empty with no whitespace either),
+    else its repr, which escapes every line break. So nothing the CLI was
+    handed, and no exception text, can print a second line to read as a
+    verdict (review round 3)."""
+    text = value if isinstance(value, str) else _safe_text(value)
+    plain = text.isprintable() and not (token and (not text or any(
+        char.isspace() for char in text)))
+    return text if plain else _safe_text(text)
+
+
+def _cli_deploy(args):
+    """deploy-allowed's `(text, json_text, report)`; never raises. Stage 1
+    builds all three from `deploy_allowed` inside one try. Stage 2, on any
+    exception from stage 1 (a raise, a result missing a key, a value JSON
+    cannot dump), builds them from the literal verdict `ask`; the exception
+    only decorates the reason, and one that cannot be described gets a
+    constant."""
+    try:
+        result = deploy_allowed(args.root, args.env, args.env_class)
+        text = _line(**{"verdict": result["verdict"],
+                        "env": _cli_value(result["env"], token=True),
+                        "class": _cli_value(result["envClass"], token=True),
+                        "reason": _cli_value(result["reason"])})
+        report = _cli_value(result["report"]) if result["report"] else ""
+        return text, json.dumps(result), report
+    except Exception as exc:  # pylint: disable=broad-except
+        # deploy_allowed never raises; if stage 1 does, that cannot tell: ask.
+        try:
+            reason = _crash_reason(exc)
+        except Exception:  # pylint: disable=broad-except
+            reason = ("crew_autopilot raised an exception it could not describe - "
+                      "cannot tell, so ask")
+    env, cls = _cli_value(args.env, token=True), _cli_value(args.env_class, token=True)
+    text = _line(**{"verdict": "ask", "env": env, "class": cls, "reason": _cli_value(reason)})
+    report = (f"unattended production: {env} ask - {_cli_value(reason)}"
+              if args.env_class == "prod" else "")
+    return text, json.dumps({"verdict": "ask", "reason": reason, "report": report,
+                             "env": args.env, "envClass": args.env_class, "deploy": None,
+                             "root": None}), report
 
 
 def main(argv):
@@ -1321,6 +1679,12 @@ def main(argv):
     given.add_argument("--first", default=None)
     sub.choices["next"].add_argument("--phases-run", type=int, default=0)
     sub.choices["next"].add_argument("--last-command", default="")
+    deploy = sub.add_parser("deploy-allowed")
+    deploy.add_argument("--json", action="store_true")
+    deploy.add_argument("--root", default=".")
+    deploy.add_argument("--env", required=True)
+    # No `choices`: a class crew does not know reaches deploy_allowed and asks.
+    deploy.add_argument("--class", dest="env_class", required=True)
     argv = list(argv)
     if argv[:1] == ["route"]:
         # `--goal` or `-h` is a value here, never an option: `--args=<v>`.
@@ -1332,7 +1696,8 @@ def main(argv):
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
-    # Read-only: git must not even refresh the index's stat cache.
+    # Read-only but for approve's receipt: git must not even refresh the index's
+    # stat cache.
     os.environ["GIT_OPTIONAL_LOCKS"] = "0"
     if args.action in ("approve", "questions-check"):
         return _policy_main(args)
@@ -1359,8 +1724,16 @@ def main(argv):
                          for kind, rows in result.items() for row in rows)
     elif args.action == "settings":
         result = settings(args.root)
-        text = "\n".join([_line(mode=result["mode"], maxPhases=result["maxPhases"])]
+        text = "\n".join([_line(mode=result["mode"], maxPhases=result["maxPhases"],
+                                deploy=result["deploy"])]
+                         + [_line(approval=result["approval"], questions=result["questions"])]
                          + [f"warning: {w}" for w in result["warnings"]])
+    elif args.action == "deploy-allowed":
+        text, json_text, report = _cli_deploy(args)
+        if report:
+            sys.stderr.write(report + "\n")
+        if args.json:
+            text = json_text
     elif args.action == "resume":
         try:
             result = resume_target(args.root, args.ticket or None)
@@ -1385,7 +1758,10 @@ def main(argv):
                       "command": "", "reason": _failure(exc), "evidence": []}
         text = _line(phase=result["phase"], stop=int(result["stop"]),
                      command=result["command"], reason=result["reason"])
-    sys.stdout.write((json.dumps(result, indent=2) if args.json else text) + "\n")
+    if args.json and args.action != "deploy-allowed":
+        # status holds STATUS_MAX_LINES as JSON too: one line, nothing dropped.
+        text = json.dumps(result, indent=None if args.action == "status" else 2)
+    sys.stdout.write(text + "\n")
     return 0
 
 

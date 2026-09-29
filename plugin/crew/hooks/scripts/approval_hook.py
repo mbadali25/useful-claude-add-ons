@@ -89,11 +89,14 @@ MAX_GROUP = 20
 PENDING_TTL = 600
 NONE, SINGLE, GROUP, CONFIRM, REFUSE = "none", "single", "group", "confirm", "refuse"
 _RAW_RE = re.compile(r"^\s*/crew:approve(?:\s+(.*?))?\s*$", re.DOTALL)
-_NAME_RE = re.compile(r"<command-name>\s*/?crew:approve\s*</command-name>")
-_ARGS_RE = re.compile(r"<command-args>(.*?)</command-args>", re.DOTALL)
-# The whole expanded form. A group or a confirm in it carries nothing else:
-# text outside these tags is text the user did not type as the command.
-_TAGS_RE = re.compile(r"<command-(message|name|args)>.*?</command-\1>", re.DOTALL)
+_NAME_RE = re.compile(r"\s*/?crew:approve\s*")
+# The expanded form's tags, read at the prompt's TOP level only: a tag's
+# content runs to the first matching close, so a `<command-name>` inside a
+# `<command-message>` is content, never a command (review round 2).
+_TOP_TAG_RE = re.compile(r"<command-(message|name|args)>(.*?)</command-\1>", re.DOTALL)
+_ANY_TAG_RE = re.compile(r"</?command-(?:message|name|args)>")
+# Commas separate ids only BETWEEN two of them: `T-1,T-2`, `T-1, T-2`.
+_COMMA_LIST_RE = re.compile(r"[^\s,]+(?:\s*,\s*[^\s,]+|\s+[^\s,]+)*")
 # Every break `str.splitlines` honours. An approval is one line: a newline in
 # it is a paste, and a paste can carry ids the user did not type.
 _BREAK_RE = re.compile("[\n\r\x0b\x0c\x1c-\x1e\x85\u2028\u2029]")
@@ -142,17 +145,38 @@ def parse(prompt, root=None):
                 return _refusal("slash", "an approval must be one line")
             return _one_line_only(_slash(raw.group(1), "slash", root), prompt)
         if prompt.lstrip().startswith("<command-"):
-            names, args = _NAME_RE.findall(prompt), _ARGS_RE.findall(prompt)
-            if len(names) == 1 and len(args) == 1:
+            tags, outside = _top_level(prompt)
+            if any(_ANY_TAG_RE.search(content) for _, content in tags) \
+                    or _ANY_TAG_RE.search(outside):
+                return _refusal("expanded", "a command tag is nested inside another (or left "
+                                            "unclosed): an approval must be the prompt's own "
+                                            "command, never an example or a quoted message")
+            names = [content for tag, content in tags if tag == "name"]
+            args = [content for tag, content in tags if tag == "args"]
+            if len(names) == 1 and _NAME_RE.fullmatch(names[0]) and len(args) == 1:
                 # No separate break check here: a break inside the args splits
                 # them into two tokens, so it can only reach _one_line_only as
                 # a group, a range or a refused --confirm -- never a single id.
-                request = _one_line_only(_slash(args[0], "expanded", root), args[0])
-                if request.kind in (GROUP, CONFIRM) and _TAGS_RE.sub("", prompt).strip():
+                # Nothing outside the tags, whatever the request -- a single id
+                # too (review round 3): an example wrapper around the command
+                # is text outside them, and must not approve.
+                if outside.strip():
                     return _refusal("expanded", "an approval must carry no other text: "
                                                 "type the command alone")
-                return request
+                return _one_line_only(_slash(args[0], "expanded", root), args[0])
     return _plain(prompt, root)
+
+
+def _top_level(prompt):
+    """`(tags, outside)`: the prompt's outermost `<command-*>` tags as
+    `(tag, content)` pairs in order, and the text outside all of them."""
+    tags, outside, pos = [], [], 0
+    for found in _TOP_TAG_RE.finditer(prompt):
+        outside.append(prompt[pos:found.start()])
+        tags.append((found.group(1), found.group(2)))
+        pos = found.end()
+    outside.append(prompt[pos:])
+    return tags, "".join(outside)
 
 
 def _one_line_only(request, text):
@@ -169,6 +193,9 @@ def _slash(text, form, root):
     tokens = [t for t in re.split(r"[\s,]+", text or "") if t]
     if not tokens:
         return _refusal(form, _USAGE)
+    if "," in text and not _COMMA_LIST_RE.fullmatch(text.strip()):
+        return _refusal(form, "a comma goes only between two ids (/crew:approve T-1,T-2); "
+                              "nothing before the first or after the last")
     if CONFIRM_TOKEN in tokens:
         if tokens != [CONFIRM_TOKEN]:
             return _refusal(form, "--confirm takes nothing else on the line: type "
@@ -448,7 +475,10 @@ def _confirm(root, data):
         except Exception as exc:  # pylint: disable=broad-except
             # ANY failure, not only a TicketError: an OSError escaping to
             # main() would say "NOT recorded" over receipts already written.
-            return _partly(root, items, index, recorded, before, exc)
+            mine = {"approved_via": crew_ticket.USER_PROMPT, "session_id": session,
+                    "prompt_id": data.get("prompt_id"),
+                    "plan_sha256": item["plan_sha256"], "spec_sha256": item["spec_sha256"]}
+            return _partly(root, items, index, recorded, (before, mine), exc)
         recorded.append(item["ticket"])
         clauses.append(f"{item['ticket']}: plan {receipt['plan_sha256'][:12]}, spec "
                        f"{receipt['spec_sha256'][:12]}, approved_via user-prompt."
@@ -470,17 +500,38 @@ def _receipt_count(root, ticket):
     return len(history) if isinstance(history, list) else None
 
 
-def _partly(root, items, index, recorded, before, exc):
+def _wrote(root, ticket, before, mine):
+    """Whether THIS confirm's entry is in `ticket`'s receipt history: True,
+    False, or None ("could not tell") when the receipt cannot be read. Keyed
+    by the confirm's own session, prompt and hashes, among the entries added
+    since `before` -- never by history growth, which another session's
+    approval of the same ticket also causes (review round 2)."""
+    try:
+        receipt, state = crew_ticket.read_approval(root, ticket)
+    except (crew_ticket.TicketError, OSError):
+        return None
+    if state == "absent":
+        return False
+    history = receipt.get("history") if state == "ok" else None
+    if not isinstance(history, list):
+        return None
+    added = history[before:] if isinstance(before, int) else history
+    return any(isinstance(entry, dict) and all(entry.get(k) == v for k, v in mine.items())
+               for entry in added)
+
+
+def _partly(root, items, index, recorded, attempt, exc):
     """A confirm failed on `items[index]` after `recorded` were written. Say
     which tickets hold a receipt from this confirm, which do not, and which
     cannot be told -- the failing ticket's receipt may have been written
     before the failure (the ledger step runs after the write)."""
     ticket = items[index]["ticket"]
-    after = _receipt_count(root, ticket)
+    before, mine = attempt
+    wrote = _wrote(root, ticket, before, mine)
     recorded, unknown = list(recorded), []
-    if before is None or after is None:
+    if wrote is None:
         unknown.append(ticket)
-    elif after > before:
+    elif wrote:
         recorded.append(ticket)
     missing = [i["ticket"] for i in items[index:] if i["ticket"] not in recorded + unknown]
     why = _one_line(exc) if isinstance(exc, crew_ticket.TicketError) \

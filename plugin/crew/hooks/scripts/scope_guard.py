@@ -50,7 +50,11 @@ the payload in, so the two shells cannot disagree.
 A shell command is not judged against Touch (the Stop audit does that, from
 the tree). It is refused, in every mode but `off`, when its text invokes
 `crew_ticket.py approve`, names the approval hook script, or names
-`<git-common-dir>/crew/` alongside a redirect or a writing command.
+`<git-common-dir>/crew/` alongside a redirect or a writing command. Each check
+reads the text as written and with its line continuations joined (bash's
+backslash-newline deleted, PowerShell's backtick-newline a space), so a
+continuation cannot split an approval across the newline a check stops at; a
+bare newline still separates commands.
 
 `crew_autopilot.py approve` (T-0010) is the one approval a session may run,
 and only as the whole command `python3 [-B] <path>/crew_autopilot.py approve
@@ -132,6 +136,10 @@ _ADMIN_MERGE_RE = re.compile(r"\bgh\b[^\n;&|]*\bpr\b[^\n;&|]*\bmerge\b[^\n;&|]*-
 LANE_REFUSAL = ("a lane may not accept, reject or admin-merge; that is the owner's, from the "
                 "main session")
 _HOOK_RE = re.compile(r"approval[_-]hook(?:\.py|\.sh|\.ps1)?\b", re.IGNORECASE)
+# A line continuation: bash's backslash-newline, which the shell deletes (so it
+# can split a word), and PowerShell's backtick-newline, which reads as a space.
+_BASH_CONTINUATION_RE = re.compile(r"\\\r?\n")
+_PS_CONTINUATION_RE = re.compile(r"`\r?\n")
 _DOTGIT_CREW_RE = re.compile(r"\.git[\\/]+crew\b|git-common-dir\b.*\bcrew\b",
                              re.IGNORECASE | re.DOTALL)
 # A redirect (not into /dev/null, $null or another descriptor), or a word
@@ -252,7 +260,7 @@ def _autopilot_refusal(command, top):
     try:
         import crew_autopilot  # pylint: disable=import-outside-toplevel
         decision = crew_autopilot.approval_policy(top, ticket) if top else None
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         return (f"could not tell whether autopilot.approval allows {ticket} "
                 f"({type(exc).__name__}); only the user's /crew:approve approves")
     if isinstance(decision, dict) and decision.get("allow") is True:
@@ -261,22 +269,42 @@ def _autopilot_refusal(command, top):
     return f"autopilot.approval does not allow {ticket}: {reason}"
 
 
+def _joined(command):
+    """`command` as written, as bash joins its continuations, and as
+    PowerShell does -- every check runs on all three, so a newline that only
+    continues the line never ends the span a check reads."""
+    bash = _BASH_CONTINUATION_RE.sub("", command)
+    return command, bash, _PS_CONTINUATION_RE.sub(" ", command)
+
+
 def shell_refusal(command, common, top=None, agent_type=None):
     """Why a Bash/PowerShell `command` is refused, or None (module docstring,
     "Bash and PowerShell"). Textual on purpose, and conservative: a benign
     command that names crew's state beside a writing word is refused too.
     `top` is the worktree whose autopilot policy judges `crew_autopilot.py
     approve`; without it that command is refused. `agent_type`, when a
-    non-empty string, is a subagent: the never-list is refused too."""
+    non-empty string, is a subagent: the never-list is refused too. Every
+    reading `_joined` gives is judged; the first refusal wins."""
     if not isinstance(command, str):
         return None
+    for reading in _joined(command):
+        reason = _reading_refusal(reading, command, common, top, agent_type)
+        if reason:
+            return reason
+    return None
+
+
+def _reading_refusal(command, written, common, top, agent_type=None):
+    """Why one reading (`_joined`) of the shell command `written` is refused,
+    or None. The autopilot bare-command rule judges `written` as written, so
+    a line continuation never makes an approve bare."""
     if isinstance(agent_type, str) and agent_type.strip() and (
             _ACCEPT_RE.search(command) or _ADMIN_MERGE_RE.search(command)):
         return LANE_REFUSAL
     if _APPROVE_RE.search(command):
         return "it runs `crew_ticket.py approve`; approval comes from the user's own prompt"
     if _AUTOPILOT_APPROVE_RE.search(command):
-        return _autopilot_refusal(command, top)
+        return _autopilot_refusal(written, top)
     if _HOOK_RE.search(command):
         return "it names the approval hook, which only the user's prompt may drive"
     state = os.path.join(common, "crew") if common else None

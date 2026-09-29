@@ -158,10 +158,12 @@ contract itself. This section is what goes wrong with the approval and the audit
   stale immediately** — that is deliberate: an edited spec cannot silently widen what the guard
   accepts. Only a receipt from the user's own prompt counts by default; a `cli`-sourced receipt
   (written by `crew_ticket.py approve` directly, for tests/CI) is accepted only when
-  `.crew/config.json` sets `scope.allowCliApproval: true`.
-  **Fix:** re-approve. The user types `/crew:approve <id>` again — nothing else can write the
-  receipt; `scope_guard.py` refuses a Write/Edit under `<git-common-dir>/crew/` in every mode but
-  `off`, so a session cannot forge or refresh its own approval.
+  `.crew/config.json` sets `scope.allowCliApproval: true`, and an `autopilot` receipt (from
+  `crew_autopilot.py approve`) only while that is true and `autopilot.approval` still allows it.
+  **Fix:** re-approve. The user types `/crew:approve <id>` again — the only other route is
+  `/crew:autopilot` under an opted-in `autopilot.approval`; `scope_guard.py` refuses a Write/Edit
+  under `<git-common-dir>/crew/` in every mode but `off`, so a session cannot forge or refresh its
+  own approval.
 
 - **Symptom: you need to touch one more path mid-ticket.**
   **Fix:** amend `spec.md`'s `## Touch` (widen it), then approve again. There is no partial-approve;
@@ -279,6 +281,29 @@ See [Memory and Obsidian](memory-and-obsidian.md) for setup. What goes wrong day
   `inbox/pending-reflect.md` (no host suffix) is still read if present, so an old backlog drains
   rather than being stranded — it is just never written again.
 
+- **Symptom: `/crew:brainstorm` or `/crew:fix` stops because `create` refused a ticket id.**
+  On the Obsidian ticket board, `crew_tracker.py create` refuses an id it cannot
+  prove is yours, and prints one of four lines (paths and ids here are examples).
+  The first three begin `id taken`, and brainstorm and fix then take the next
+  free id on their own. For any other refusal they stop and show you the line.
+
+    - **Another repo owns it.**
+      `obsidian: could not update: id taken: T-0060 on Board.md belongs to another repo (https://example.invalid/team/app, per T-0060.md), not this one (https://example.invalid/other/app): give this repo its own obsidian.boardDir`
+      **Fix:** two repos share one board. Give each repo its own `obsidian.boardDir`.
+    - **Nobody can tell who owns it.**
+      `obsidian: could not update: id taken: could not tell whose card T-0042 is (no T-0042.md note names its repo-id); if it is this repo's, put 'repo-id: https://example.invalid/other/app' in T-0042.md`
+      **Fix:** if the card is yours, add the line it names to the note (see "The
+      ticket board" in [Memory and Obsidian](memory-and-obsidian.md)). If it is not
+      yours, let brainstorm take the next id.
+    - **Another session in this repo holds it.**
+      `files: could not update: id taken: T-0050 is already ready "Fix tests"`
+      **Fix:** none needed; `.work/INDEX.md` already has that ticket. This check
+      runs before the vault is opened, so it wins even when the vault is missing.
+    - **Crew cannot tell which repo this is.**
+      `obsidian: could not update: could not tell this repo's identity: git gave neither an origin URL nor a common dir for <repo path>`
+      **Fix:** run crew inside a git checkout. `git rev-parse --git-common-dir`
+      must answer there.
+
 ## Auto wrap-up, clear and resume
 
 See [Auto wrap-up, clear and resume](auto-cycle.md) for the full cycle that lets a long session
@@ -336,7 +361,7 @@ but returns immediately without judging anything; "off" for `verifyGate` means t
 | `guards.terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive` | both layers, ratchets | `block`/`ask`/`allow` | there is no "off" — `allow` is the most permissive tier, still logged |
 | `guards.prodDatabase`, `guards.prodServer` | both layers, ratchets | `none`/`read`/`full` | `none` is both the default and the floor |
 | `scope.mode` | repo only | `off`/`report`/`block`/`auto` | `off`: neither the edit guard nor the completion audit runs |
-| `scope.allowCliApproval` | repo only | bool | `false`: only a `/crew:approve` typed by the user counts |
+| `scope.allowCliApproval` | repo only | bool | `false`: only a `/crew:approve` typed by the user counts (no `cli` or `autopilot` receipt) |
 | `verifyGate` | repo only | bool | `false`: the Stop verify gate does not run at all |
 | `context.enabled` | both layers | bool | `false`: `context-watch.sh` (the Stop nag) does nothing |
 | `context.autoClear.enabled`, `autoWrapUp` | both layers | bool | each independently disables one leg of the wrap-up/clear loop |
@@ -347,7 +372,12 @@ but returns immediately without judging anything; "off" for `verifyGate` means t
 `~/.claude/crew/config.json` is the machine-global layer; `.crew/config.json` is per-repo and wins
 where both speak. A **ratcheted** key (marked above) can only be *narrowed* by the repo relative to
 the machine-global value, never widened — a repo cloned from someone else cannot silently loosen a
-guard the machine owner set to `block`. `/crew:config` shows where each setting actually came from.
+guard the machine owner set to `block`. `/crew:config --show` shows where each setting actually came
+from, and `/crew:config` with no argument (alias `/crew:config-setup`) sets either layer from a menu:
+it marks a repo value that widens a guard with `!`, and names a repo value the machine layer holds
+down. The same menu can delete a repo's `.crew/config.json`: it moves the file to a backup in one
+rename, compares it with what the preview read (a file that changed since is put back and nothing
+is deleted), and prints the command that restores it for sh, cmd and PowerShell.
 
 ## Web testing
 

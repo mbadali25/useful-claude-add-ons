@@ -109,6 +109,9 @@
     "roleWrites": "off",
     "cloudGuard": "off"
   },
+  "environments": {
+    "prodUnattended": false
+  },
   "change": {
     "requester": null,
     "implementor": null,
@@ -116,5 +119,8 @@
     "sdpTemplate": "Change Management Request",
     "jiraIssueType": "Change",
     "category": null
+  },
+  "route": {
+    "enabled": false
   }
 }
