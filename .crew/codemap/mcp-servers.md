@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@3648f59a
+anchor: useful-claude-add-ons@9e38a891
 verified: 2026-09-28
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -366,3 +366,9 @@ returns `.claude-plugin/marketplace.json` (crew's version line only) and `TODO.m
 No citation moved.
 
 **Re-anchored `b2553d26` -> `3648f59a` on 2026-09-28 (T-0075 review round 5, merge of `6387ab49`).** `git diff --name-only b2553d26 3648f59a -- mcp-servers/ README.md TODO.md .claude-plugin/marketplace.json` returns `README.md` (T-0075: crew's slash-command count 35 -> 36 at `:168` and `:874`, in place), `TODO.md` (T-0092's entry at `:5051`, below every citation here) and `.claude-plugin/marketplace.json` (crew's lines only); nothing under `mcp-servers/`. `TODO.md:189`, `:200` and `:281` re-read, unchanged; `grep -c mcp-servers .claude-plugin/marketplace.json` is still **0**. No citation moved.
+
+## Re-anchor provenance - `3648f59a` -> `9e38a891`, 2026-09-29 (`T-0087-build` merges T-0010's `8ab733d7`)
+
+`git diff --name-only 3648f59a 9e38a891` over the paths this note cites returns only `README.md`,
+`CLAUDE.md`, `plugin/crew/README.md`, `plugin/crew/BUDGETS.md` and `scripts/check-tooling-pr.py`,
+each cited here by name, never by line; nothing under `mcp-servers/` changed. Re-anchor only: no claim below moved and nothing was executed for this note.

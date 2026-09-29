@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@bbd9a66d
+anchor: useful-claude-add-ons@9e38a891
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -1210,3 +1210,33 @@ import block lost one line; no note cites that file by line. Re-anchor only; not
 **Re-anchored `136f4b33` / `c0768d0e` -> `379ab5e6` on 2026-09-28 (T-0087 merged onto `6387ab49`, crew 1.0.55).** `01dd3854` merges origin/main `6387ab49` into `T-0087-build`: T-0089 (crew 1.0.53, `plugin/crew/tests/test_role_write_guard.py`), T-0090 (mcp-servers 0.2.1: `SECURITY.md`, ten files under `mcp-servers/`) and T-0092 (crew 1.0.54: `graphify-out/` left out of review bundles - `review_patch.py`, `review_prompt.py`, `completion_audit.py`'s comment, `crew_autopilot.py`'s docstring, `commands/review.md`, `plugin/crew/README.md`, `TODO.md`, three test files). `379ab5e6` re-bumps crew to 1.0.55, one past main's 1.0.54, and moves T-0087's `1.0.53` mentions (`plugin/crew/README.md:743`, its `CHANGELOG.md` entry) to 1.0.55 in place. The code-map, INDEX, diagram, rules and graph conflicts were resolved mechanically - both sides' provenance notes kept, main's first; the version sentence, `.claude/rules/` and `graphify-out/` taken from main and then refreshed. Every body citation of the form `path:line` was re-mapped by script (difflib over each cited file, from the anchor of the side `git blame` puts the note line on, both anchors for a line common to both, never guessed): none moved in this map. Citations the script could not map, or where the two sides' anchors disagree on a line common to both, were not re-read here and are unchanged; they predate this merge (for example `CHANGELOG.md`'s "117 -> 119" is cited at `:653-654` on both sides and sits at `:891-892`), and this pass only re-anchors.
 
 **Re-anchored `379ab5e6` -> `17fa035e` on 2026-09-28 (T-0087 review round 1, crew 1.0.55 unchanged - not yet released).** `bbe68e85` fixes review round 1: autopilot lets a refunded round's `/crew:review` rerun past its no-progress stop, rule 31 triggers on its suites and seam consumers, `scripts/check-tooling-pr.py` admits no production code or prompt alongside the harness (a `SEAM` consumer only with a `Tooling-seam:` trailer), `golden_build.redact` bounds both sides of a match, a malformed `successors` loads as corrupt, `review_run.py`'s summary line counts charged rounds, a worktree rename is parsed, and the guides stop calling a post-refund rerun free; `17fa035e` re-prices rule 31. `git diff --name-only 379ab5e6 17fa035e`, refresh artifacts aside, returns those scripts, their tests, one golden fixture, `.crew/verify.json`, `CLAUDE.md`, `CHANGELOG.md`, `plugin/crew/README.md`, `plugin/crew/BUDGETS.md`, `commands/autopilot.md`, `commands/review.md` and the troubleshooting guide. Body citations of the form `path:line` into those files were re-mapped by script (difflib over each cited file from `379ab5e6` to `bbe68e85`, only for note lines committed before this pass, never guessed): none moved in this map.
+
+## Re-anchor provenance - `bbd9a66d` + `17fa035e` -> `9e38a891`, 2026-09-29 (`T-0087-build` merges T-0010's `8ab733d7`)
+
+`0fc7f609` merges origin/main `8ab733d7` (T-0010 landed as crew 1.0.61, its code maps anchored
+`bbd9a66d`) into `T-0087-build` `674bc4e5` (T-0087's Windows-portability successor plan, Steps 1-5
+built; its maps anchored `17fa035e`). After it, `ae448309` renames T-0087's harness rule to rule 32
+in text and re-measures `plugin/crew/BUDGETS.md` (19,666 lines across 129 files), `167f69a0` says
+the refund ships in 1.0.62 (README, CHANGELOG), `e537e4ce` re-sets crew 1.0.62, one past main, and
+`9e38a891` rebuilds the daily-workflow and troubleshooting guides from their merged sources. The code
+conflicts were `crew_autopilot.next_phase` (main's `policy` argument plus T-0087's refunded-rerun
+pop), `sabotage.py`'s `MUTATIONS +=` line and `test_crew_autopilot.py` (both sides kept) and the
+README's Stops line (main's text plus T-0087's refunded-review clause). The artifact conflicts took
+main's side for body text and kept both sides' provenance, main's first. Every body `path:N`
+citation was traced to the side whose copy of this note carries its line (`674bc4e5` or
+`8ab733d7`) and mapped to this tree with a `difflib` line diff (`/root/crew-tmp/t-0010/citemap.py`
+and `/root/crew-tmp/t-0087/citeapply.py`, machine-local). The script takes a bare `:N` as the last
+path on its line; each misattribution it produced (a `crew_autopilot.py` line after a
+`review_ledger.py` or `commands/autopilot.md` mention, a `.crew/verify.json` range after a
+`sabotage.py` one, a historical `at <sha>` README line) was reverted or re-read by symbol with
+`grep -n`. `crew_autopilot.py` is 1751 lines: T-0087's refund hunks add 16 lines from `:522`, so
+main's citations at or past `:522` moved by 6 to 16 (`next_phase` `:556`, `settings` `:745`,
+`deploy_allowed` `:943`, `main` `:1648`) and nothing above it moved. T-0087's `sabotage_tooling`
+import at `plugin/crew/tests/sabotage.py:82` puts the `MUTATIONS +=` statement at `:3053-3056`
+(refresh `:3054`; resume, autopilot, tracker and route `:3055`; policy, approval, config and tooling
+`:3056`). `.crew/verify.json` is 33 rules and 370 lines: T-0087's harness rule is rule 32 at
+`:340-365`, after T-0024's rule 31 at `:332-339`. Nothing was executed for this note; the suites ran
+with the build.
+
+No install script, `INSTALLATION.md` or `scripts/check-marketplace.py` changed in the merge beyond
+main's own edits; the version files changed in place (1.0.62). Neither install script was executed.
