@@ -811,3 +811,138 @@ def test_stamp_refuses_a_broken_effective_set(tmp_path, refs):
     text = "\n".join(lines)
     assert (code, ".crew/standards.md: not UTF-8" in text, path.read_bytes() == before) == (
         1, True, True), text
+
+
+# ---- review round 2 FIX 3: every other refusal branch, each by its own text ------
+# Each test reaches its refusal through the caller that must refuse (`stamp`
+# exit 1, or `review_gate`'s problems) and asserts that branch's own message,
+# so one branch's test cannot pass on another branch's refusal.
+
+def _stamp_after(tmp_path, refs, break_it):
+    """A complete record for a scoped repo, then `break_it(repo, path)`, then
+    `stamp`. Returns (code, joined lines)."""
+    repo = _scoped_repo(tmp_path)
+    cs.init(str(repo), "T-1", refs_dir=str(refs))
+    path = _answer_all(repo)
+    break_it(repo, path)
+    code, lines = cs.stamp(str(repo), "T-1", refs_dir=str(refs))
+    return code, "\n".join(lines)
+
+
+def _edit(path, old, new):
+    text = path.read_text(encoding="utf-8")
+    assert text.count(old) == 1, old
+    path.write_text(text.replace(old, new), encoding="utf-8")
+
+
+def test_refusal_branch_gate_applies_lookup_error(tmp_path, refs, monkeypatch):
+    import crew_ticket  # pylint: disable=import-outside-toplevel
+    import review_patch  # pylint: disable=import-outside-toplevel
+    repo = _scoped_repo(tmp_path)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(review_patch.compute(
+        str(repo), git(repo, "rev-list", "--max-parents=0", "HEAD"))[0]), encoding="utf-8")
+
+    def refuse(*_args, **_kwargs):
+        raise crew_ticket.TicketError("lookup broke")
+
+    monkeypatch.setattr(crew_ticket, "read_approval", refuse)
+    applies, note = cs.gate_applies(str(repo), "T-1")
+    problems, _ = cs.review_gate(str(repo), "T-1", str(manifest_path), refs_dir=str(refs))
+
+    assert (applies, "could not be looked up" in (note or ""),
+            any("no self-check at" in p for p in problems)) == (True, True, True), (note, problems)
+
+
+def test_refusal_branch_manifest_not_an_object(tmp_path, refs):
+    repo = _scoped_repo(tmp_path)
+    _approve_fixture(repo)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text("[]", encoding="utf-8")
+
+    problems, _ = cs.review_gate(str(repo), "T-1", str(manifest_path), refs_dir=str(refs))
+
+    assert any("is not an object" in p for p in problems), problems
+
+
+def test_refusal_branch_nothing_to_review(tmp_path, refs):
+    import scope_base  # pylint: disable=import-outside-toplevel
+    repo = init_repo(tmp_path / "repo")
+    exclude = repo / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    exclude.write_text(".crew/\n", encoding="utf-8")
+    scope_base.record(str(repo), "T-1")
+    ticket_dir = repo / ".work" / "tickets" / "T-1"
+    ticket_dir.mkdir(parents=True)
+    (ticket_dir / "selfcheck.md").write_text(
+        "# T-1 self-check\n\n| ID | Status | Evidence or reason |\n|---|---|---|\n"
+        "| GEN-01 | n/a | none of it |\n| GEN-02 | n/a | none of it |\n", encoding="utf-8")
+
+    code, lines = cs.stamp(str(repo), "T-1", refs_dir=str(refs))
+
+    assert (code, any("nothing to review" in line for line in lines)) == (1, True), lines
+
+
+def test_refusal_branch_malformed_row(tmp_path, refs):
+    code, text = _stamp_after(tmp_path, refs, lambda repo, path: path.write_text(
+        path.read_text(encoding="utf-8") + "| GEN-01 | addressed |\n", encoding="utf-8"))
+
+    assert (code, "is not | <ID> | <status> | <evidence or reason> |" in text) == (1, True), text
+
+
+def test_refusal_branch_unparseable_stamp(tmp_path, refs):
+    code, text = _stamp_after(tmp_path, refs, lambda repo, path: path.write_text(
+        path.read_text(encoding="utf-8") + "<!-- stamp: bundle=xyz -->\n", encoding="utf-8"))
+
+    assert (code, "the stamp line does not parse" in text) == (1, True), text
+
+
+def test_refusal_branch_second_stamp(tmp_path, refs):
+    line = f"<!-- stamp: bundle={'a' * 64} standards={'b' * 64} base={'c' * 40} -->\n"
+    code, text = _stamp_after(tmp_path, refs, lambda repo, path: path.write_text(
+        path.read_text(encoding="utf-8") + line + line, encoding="utf-8"))
+
+    assert (code, "carries 2 stamp lines" in text) == (1, True), text
+
+
+def test_refusal_branch_repeated_field(tmp_path, refs):
+    code, text = _stamp_after(tmp_path, refs, lambda repo, path: _edit(
+        refs / "generic.md", "## GEN-02 Two\n\n**Rule.** Do the thing.",
+        "## GEN-02 Two\n\n**Rule.** Do the thing.\n\n**Rule.** Again."))
+
+    assert (code, "GEN-02 repeats **Rule.**" in text) == (1, True), text
+
+
+def test_refusal_branch_repeated_front_matter_key(tmp_path, refs):
+    code, text = _stamp_after(tmp_path, refs, lambda repo, path: _edit(
+        refs / "generic.md", "set: GEN\n", "set: GEN\nset: GEN\n"))
+
+    assert (code, "front matter repeats 'set'" in text) == (1, True), text
+
+
+def test_refusal_branch_plugin_set_supplements(tmp_path, refs):
+    code, text = _stamp_after(tmp_path, refs, lambda repo, path: (refs / "php.md").write_text(
+        (refs / "php.md").read_text(encoding="utf-8") + "\n## Supplements GEN-01\n\ntext\n",
+        encoding="utf-8"))
+
+    assert (code, "a plugin set may not carry Supplements" in text) == (1, True), text
+
+
+def test_refusal_branch_duplicate_plugin_set(tmp_path, refs):
+    code, text = _stamp_after(tmp_path, refs, lambda repo, path: (refs / "php2.md").write_text(
+        _set_file("PHP", ["**/*.php"], _standard("PHP-02", "Again")), encoding="utf-8"))
+
+    assert (code, "set PHP is also references/php.md" in text) == (1, True), text
+
+
+def test_refusal_branch_no_gen_set(tmp_path, refs):
+    code, text = _stamp_after(tmp_path, refs, lambda repo, path: (refs / "generic.md").unlink())
+
+    assert (code, "has no set GEN" in text) == (1, True), text
+
+
+def test_refusal_branch_empty_set(tmp_path, refs):
+    code, text = _stamp_after(tmp_path, refs, lambda repo, path: (refs / "empty.md").write_text(
+        _set_file("EMP", ["**"], ""), encoding="utf-8"))
+
+    assert (code, "references/empty.md: defines no standard" in text) == (1, True), text

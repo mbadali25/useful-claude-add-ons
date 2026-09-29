@@ -187,4 +187,96 @@ STANDARDS_MUTATIONS = (
         "    rows, seal, read_problems = read_selfcheck(root, ticket)\n",
         "tests/test_review_run_standards.py::test_run_refuses_a_broken_effective_set",
     ),
+    (
+        'the approval lookup error reads as no receipt',
+        STANDARDS,
+        ("    except crew_ticket.TicketError as exc:\n"
+         "        return True, f\"the approval receipt could not be looked up ({exc}); "
+         "gating anyway\"\n"),
+        ("    except crew_ticket.TicketError as exc:\n"
+         "        return False, \"x\"\n"),
+        'tests/test_crew_standards.py::test_refusal_branch_gate_applies_lookup_error',
+    ),
+    (
+        'a manifest that is not an object is read anyway',
+        STANDARDS,
+        '    if not isinstance(manifest, dict):\n',
+        '    if False:\n',
+        'tests/test_crew_standards.py::test_refusal_branch_manifest_not_an_object',
+    ),
+    (
+        'the stamp stamps an empty change',
+        STANDARDS,
+        '        if not manifest.get("bundle_sha256"):\n',
+        '        if False:\n',
+        'tests/test_crew_standards.py::test_refusal_branch_nothing_to_review',
+    ),
+    (
+        'a malformed self-check row is skipped silently',
+        STANDARDS,
+        ("        if len(cells) < 3 or not _ID_RE.match(cells[0]):\n"
+         "            problems.append("),
+        ("        if len(cells) < 3 or not _ID_RE.match(cells[0]):\n"
+         "            continue\n"
+         "            problems.append("),
+        'tests/test_crew_standards.py::test_refusal_branch_malformed_row',
+    ),
+    (
+        'an unparseable stamp line is ignored',
+        STANDARDS,
+        ("            if not match:\n"
+         "                problems.append(f\"line {number}: the stamp line does not parse\")\n"),
+        ("            if not match:\n"
+         "                pass\n"),
+        'tests/test_crew_standards.py::test_refusal_branch_unparseable_stamp',
+    ),
+    (
+        'a second stamp line is allowed',
+        STANDARDS,
+        '    if len(stamps) > 1:\n',
+        '    if False:\n',
+        'tests/test_crew_standards.py::test_refusal_branch_second_stamp',
+    ),
+    (
+        'a set file may repeat a field',
+        STANDARDS,
+        '            if field in current[1]["fields"]:\n',
+        '            if False:\n',
+        'tests/test_crew_standards.py::test_refusal_branch_repeated_field',
+    ),
+    (
+        'a set file may repeat a front matter key',
+        STANDARDS,
+        '        if key in meta:\n',
+        '        if False:\n',
+        'tests/test_crew_standards.py::test_refusal_branch_repeated_front_matter_key',
+    ),
+    (
+        'a plugin set may carry Supplements',
+        STANDARDS,
+        '        if parsed["supplements"]:\n',
+        '        if False:\n',
+        'tests/test_crew_standards.py::test_refusal_branch_plugin_set_supplements',
+    ),
+    (
+        'two plugin files may share a set',
+        STANDARDS,
+        '        if parsed["set"] in owners:\n',
+        '        if False:\n',
+        'tests/test_crew_standards.py::test_refusal_branch_duplicate_plugin_set',
+    ),
+    (
+        'the plugin sets may lack GEN',
+        STANDARDS,
+        '    if "GEN" not in owners:\n',
+        '    if False:\n',
+        'tests/test_crew_standards.py::test_refusal_branch_no_gen_set',
+    ),
+    (
+        'a set file may define no standard',
+        STANDARDS,
+        '    if not standards and not supplements:\n',
+        '    if False:\n',
+        'tests/test_crew_standards.py::test_refusal_branch_empty_set',
+    ),
 )
