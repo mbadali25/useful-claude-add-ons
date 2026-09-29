@@ -25,14 +25,32 @@ gains missing `mcpServers` keys, `.codex/config.toml` gains missing
 `.mcp.json` that does not parse is reported and left alone. Every write is
 computed in full first, then staged as a temp and `os.replace`d.
 
-An existing `playwright.config.*` is kept, and READ: when it lacks the
-`setup`, `axe` or `visual` project, or the visual project's gate on the
-pinned image, the missing pieces are named and the run exits 1 -- the verify
-rules this installs run those projects, so a config without them is not a
-success.
+An existing `playwright.config.*` is kept, and READ. Its top-level
+`testDir` decides where the three test files go: a string literal, or a name
+bound to exactly one; absent means Playwright's default (the config's own
+directory), so `tests/` is still collected. Any other value -- a call, an
+env lookup, an absolute path, one that leaves the config's directory -- is
+"could not tell": no test file is written, the `skip` line says why, and the
+run exits 1. When the config lacks the `setup`, `axe` or `visual` project, or
+the visual project's gate on the pinned image, each is an advisory `gap`
+line followed by a snippet to paste into `projects: [...]` -- the scaffold
+never writes into a config it did not create, so a gap is advice and does
+not change the exit code. Where `*-snapshots/` baselines under `testDir` are
+all named for one declared project (`<arg>-<project>-<platform>.png`, the
+default layout), the visual snippet carries a `snapshotPathTemplate` that
+keeps finding them; baselines named for no declared project, or for several,
+are reported and the template is left out.
+
+Credentials: the auth setup file -- and, in a config this creates, the
+`setup` project, `storageState` and `dependencies: ['setup']` -- exist only
+when credentials are recorded: `.crew/secrets.md` at `--root`, or a
+`storageState` the existing config already declares. Otherwise a `skip` line
+says so, `setup` is not reported as a gap, and the exit code is unaffected.
 
 Test Agents: `npx -y --package=@playwright/test@<PINNED_PLAYWRIGHT> playwright
-init-agents --loop=claude` and `--loop=codex` run on apply unless every one of
+init-agents --loop=claude` and `--loop=codex` run at `--root` (with
+`--config=<module>/<config>` for a module, so the seed test lands in the
+module's `testDir`) on apply unless every one of
 the planner, generator and healer files under `.claude/agents/` exists. The
 `--package` pin means npx fetches exactly the release crew verifies, never
 whatever is current, even before the pinned `npm i` has run. Every file
@@ -43,7 +61,9 @@ writes its own `.mcp.json`, so the file's bytes are captured before and, if
 any server that was there is gone or changed after, the original is put back
 with only the NEW servers added.
 
-Exit codes: 0 done (or nothing to do); 1 something was refused or failed; 2 usage.
+Exit codes: 0 done, nothing to do, or only advisory `gap`/`skip` lines; 1
+something was refused (a `--module`, a `testDir` it could not read, a
+`.mcp.json` left alone) or failed; 2 usage.
 """
 import argparse
 import json
@@ -66,14 +86,14 @@ IGNORE_LINES = ("/playwright/.auth/", "/test-results/", "/playwright-report/", "
 MODULE_DEPTH = 3
 MODULE_SKIP = ("node_modules",)
 MARKERS = "no playwright.config.*, angular.json, or Playwright in package.json"
+VALUE_END = frozenset((",", "}", ")", ";"))
 
 CONFIG_TS = """import { defineConfig, devices } from '@playwright/test';
 
 const CI = !!process.env.CI;
 const PINNED_IMAGE = '%(image)s';
 const inPinnedImage = process.env.%(env)s === PINNED_IMAGE;
-const authFile = 'playwright/.auth/user.json';
-const browser = { ...devices['Desktop Chrome'], storageState: authFile };
+%(auth_const)sconst browser = { ...devices['Desktop Chrome']%(state)s };
 
 export default defineConfig({
   testDir: './tests',
@@ -89,16 +109,14 @@ export default defineConfig({
     testIdAttribute: 'data-testid',
   },
   projects: [
-    { name: 'setup', testMatch: /.*\\.setup\\.ts/ },
-    {
+%(setup_project)s    {
       name: 'chromium',
       use: browser,
-      dependencies: ['setup'],
-      testIgnore: [/.*\\.axe\\.spec\\.ts/, /.*\\.visual\\.spec\\.ts/],
+%(deps_line)s      testIgnore: [/.*\\.axe\\.spec\\.ts/, /.*\\.visual\\.spec\\.ts/],
     },
-    { name: 'axe', testMatch: /.*\\.axe\\.spec\\.ts/, use: browser, dependencies: ['setup'] },
+    { name: 'axe', testMatch: /.*\\.axe\\.spec\\.ts/, use: browser%(deps)s },
     ...(inPinnedImage
-      ? [{ name: 'visual', testMatch: /.*\\.visual\\.spec\\.ts/, use: browser, dependencies: ['setup'] }]
+      ? [{ name: 'visual', testMatch: /.*\\.visual\\.spec\\.ts/, use: browser%(deps)s }]
       : []),
   ],
 });
@@ -285,16 +303,181 @@ def merge_ignore(text):
     return (text or "") + sep + "\n".join(added) + "\n", added
 
 
-def config_gaps(text):
-    """What an existing config lacks of what crew's rules run: each missing
-    project by name, and the visual project's gate on the pinned image."""
+def project_names(text):
+    """Every `name: '<literal>'` in a config: its projects, by name."""
     toks = webtest_guard.tokens(text)
-    named = {toks[i + 2][1] for i in range(len(toks) - 2)
-             if toks[i][1] == "name" and toks[i + 1][1] == ":" and toks[i + 2][0] == "str"}
-    gaps = [f"'{p}' project" for p in REQUIRED_PROJECTS if p not in named]
-    if webtest_guard.PINNED_IMAGE not in text:
-        gaps.append(f"the visual project's gate on {webtest_guard.PINNED_IMAGE}")
+    return {toks[i + 2][1] for i in range(len(toks) - 2)
+            if toks[i][1] == "name" and toks[i + 1][1] == ":" and toks[i + 2][0] == "str"}
+
+
+def config_gaps(text, credentials=True):
+    """What an existing config lacks of what crew's rules run: each missing
+    project by name (`setup` only when credentials are recorded), and
+    `gate` when a `visual` project exists without the pinned-image gate."""
+    named = project_names(text)
+    gaps = [p for p in REQUIRED_PROJECTS if p not in named and (p != "setup" or credentials)]
+    if "visual" in named and webtest_guard.PINNED_IMAGE not in text:
+        gaps.append("gate")
     return gaps
+
+
+def _tok(toks, i):
+    return toks[i] if 0 <= i < len(toks) else (None, None, None)
+
+
+def _bindings(toks):
+    """{name: [literal or None, ...]} for every `const/let/var NAME = ...`."""
+    consts = {}
+    for i, (kind, value, _line) in enumerate(toks):
+        if kind == "id" and value in ("const", "let", "var") and _tok(toks, i + 2)[1] == "=":
+            name, rhs, end = _tok(toks, i + 1)[1], _tok(toks, i + 3), _tok(toks, i + 4)
+            literal = rhs[0] == "str" and (end[1] in VALUE_END or end[0] in ("id", None))
+            consts.setdefault(name, []).append(rhs[1] if literal else None)
+    return consts
+
+
+def _testdir_exprs(toks):
+    """[(depth, expr tokens)] for each `testDir:` / `{ testDir }`; depth
+    counts the `{` and `[` around it, so the config object itself is 1."""
+    out, depth = [], 0
+    for i, (kind, value, _line) in enumerate(toks):
+        if kind == "p" and value in ("{", "["):
+            depth += 1
+        elif kind == "p" and value in ("}", "]"):
+            depth -= 1
+        if kind not in ("id", "str") or value != "testDir":
+            continue
+        nxt = _tok(toks, i + 1)
+        if nxt[1] == ":":
+            j, inner, expr = i + 2, 0, []
+            while j < len(toks) and not (inner == 0 and toks[j][1] in VALUE_END):
+                inner += {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}.get(toks[j][1], 0)
+                expr.append(toks[j])
+                j += 1
+            out.append((depth, expr))
+        elif kind == "id" and _tok(toks, i - 1)[1] in ("{", ",") and nxt[1] in (",", "}"):
+            out.append((depth, [toks[i]]))
+    return out
+
+
+def _testdir_value(expr, consts):
+    """(literal, problem) for one `testDir` expression."""
+    snippet = " ".join(t[1] for t in expr[:8]) or "(empty)"
+    value = None
+    if len(expr) == 1 and expr[0][0] == "str" and "${}" not in expr[0][1]:
+        value = expr[0][1]
+    elif len(expr) == 1 and expr[0][0] == "id":
+        bound = consts.get(expr[0][1], [None])
+        if None not in bound and len(set(bound)) == 1:
+            value = bound[0]
+    if value is None:
+        return None, f"`{snippet}` is not a string literal or a name bound to exactly one"
+    value = re.sub(r"/+", "/", value.replace("\\", "/"))
+    if value.startswith("/") or re.match(r"^[A-Za-z]:", value):
+        return None, f"`{snippet}` is absolute"
+    parts = [p for p in value.split("/") if p not in ("", ".")]
+    if ".." in parts:
+        return None, f"`{snippet}` leaves the config's directory"
+    return "/".join(parts), None
+
+
+def test_dir(text):
+    """(rel, problem) for a config's top-level `testDir`. (None, None) when
+    it has none -- or names the config's own directory -- which is
+    Playwright's default. `problem` says why the value could not be read;
+    it is never replaced by a guess."""
+    toks = webtest_guard.tokens(text)
+    top = [expr for depth, expr in _testdir_exprs(toks) if depth == 1]
+    if not top:
+        return None, None
+    consts = _bindings(toks)
+    values = [_testdir_value(expr, consts) for expr in top]
+    problems = [problem for _value, problem in values if problem]
+    if problems:
+        return None, problems[0]
+    found = {value for value, _problem in values}
+    if len(found) > 1:
+        return None, f"is set {len(top)} times to different values ({', '.join(sorted(found))})"
+    return (found.pop() or None), None
+
+
+def baselines(project, scan, named):
+    """(project_name_or_None, sentence_or_None) for the `*-snapshots/`
+    baselines under `<project>/<scan>`: the one declared project they are all
+    named for, and the sentence the visual gap line carries."""
+    top = os.path.join(project, *scan.split("/")) if scan else project
+    where = scan or "."
+    matched, unmatched = {}, []
+    names = sorted(named, key=len, reverse=True)
+    for base, dirs, files in os.walk(top):
+        dirs[:] = sorted(d for d in dirs if d not in MODULE_SKIP and not d.startswith("."))
+        rel = os.path.relpath(base, project).replace(os.sep, "/")
+        if not any(seg.endswith("-snapshots") for seg in rel.split("/")):
+            continue
+        for name in sorted(files):
+            path = f"{rel}/{name}"
+            stem = os.path.splitext(name)[0]
+            owner = next((n for n in names
+                          if re.search(rf"-{re.escape(n)}-(?:linux|darwin|win32)$", stem)), None)
+            (matched.setdefault(owner, []) if owner else unmatched).append(path)
+    unset = "snapshotPathTemplate left unset - check them by hand before adding the project"
+    if len(matched) == 1:
+        owner, paths = next(iter(matched.items()))
+        return owner, (f"{len(paths)} baseline(s) under {where} are named for project '{owner}' "
+                       f"(e.g. {paths[0]}); the template keeps them")
+    if matched:
+        example = sorted(p for paths in matched.values() for p in paths)[0]
+        return None, (f"baselines under {where} are named for several projects "
+                      f"({', '.join(sorted(matched))}) (e.g. {example}); {unset}")
+    if unmatched:
+        return None, (f"baselines exist under {where} but none is named for a project this config "
+                      f"declares (e.g. {unmatched[0]}); {unset}")
+    return None, None
+
+
+def gap_lines(key, config, named, baseline):
+    """(line, snippet lines) for one gap `config_gaps` named."""
+    deps = ", dependencies: ['setup']" if "setup" in named else ""
+    browser = "use: { ...devices['Desktop Chrome'] }"
+    gate = f"...(process.env.{webtest_guard.IMAGE_ENV} === '{webtest_guard.PINNED_IMAGE}'"
+    paste = f"{config} lacks the '{key}' project - paste into projects[]"
+    if key == "setup":
+        return f"{paste}:", ["{ name: 'setup', testMatch: /.*\\.setup\\.ts/ },"]
+    if key == "axe":
+        return f"{paste}:", [f"{{ name: 'axe', testMatch: /.*\\.axe\\.spec\\.ts/, {browser}{deps} }},"]
+    if key == "gate":
+        return (f"{config} lacks the visual project's gate on {webtest_guard.PINNED_IMAGE} - wrap "
+                "the existing 'visual' entry in:", [f"{gate} ? [", "  <the existing 'visual' entry>",
+                                                    "] : []),"])
+    owner, sentence = baseline
+    template = (f", snapshotPathTemplate: '{{snapshotDir}}/{{testFileDir}}/{{testFileName}}"
+                f"-snapshots/{{arg}}-{owner}-{{platform}}{{ext}}'" if owner else "")
+    return (f"{paste}{' (' + sentence + ')' if sentence else ''}:",
+            [gate, f"  ? [{{ name: 'visual', testMatch: /.*\\.visual\\.spec\\.ts/, {browser}{deps}"
+                   f"{template} }}]", "  : []),"])
+
+
+def credentials_recorded(root, config_text):
+    """(recorded, reason): `.crew/secrets.md` at `root`, or a storageState the
+    config already declares (a literal or not). Nothing else is inferred."""
+    if os.path.isfile(os.path.join(root, ".crew", "secrets.md")):
+        return True, f".crew/secrets.md at {root}"
+    paths, unresolved = webtest_guard.storage_state_values(config_text or "")
+    if paths or unresolved:
+        return True, "storageState declared in the config"
+    return False, f".crew/secrets.md absent at {root}; no storageState in the config"
+
+
+def fresh_config(angular, credentials):
+    """CONFIG_TS for a repository with no config; the auth pieces only with
+    credentials (with them, byte-identical to crew 1.0.59's template)."""
+    auth = {"auth_const": "const authFile = 'playwright/.auth/user.json';\n",
+            "state": ", storageState: authFile",
+            "setup_project": "    { name: 'setup', testMatch: /.*\\.setup\\.ts/ },\n",
+            "deps_line": "      dependencies: ['setup'],\n", "deps": ", dependencies: ['setup']"}
+    return CONFIG_TS % dict({k: v if credentials else "" for k, v in auth.items()},
+                            image=webtest_guard.PINNED_IMAGE, env=webtest_guard.IMAGE_ENV,
+                            base_url="http://localhost:4200" if angular else "http://localhost:3000")
 
 
 def _existing_config(root):
@@ -302,37 +485,55 @@ def _existing_config(root):
     return names[0] if names else None
 
 
-def plan(root, windows):
-    """[(rel, new_text_or_None, note)]. None text = nothing to write."""
-    angular = os.path.exists(os.path.join(root, "angular.json"))
-    existing = _existing_config(root)
-    has_config = existing is not None
-    config = CONFIG_TS % {"image": webtest_guard.PINNED_IMAGE, "env": webtest_guard.IMAGE_ENV,
-                          "base_url": "http://localhost:4200" if angular else "http://localhost:3000"}
+def plan(root, windows, module=None):
+    """[(kind, where, rel, text, note)]: kind write/keep/skip/refuse/gap,
+    where `module` (the web project) or `root` (what a session loads). A
+    gap's rel is its whole line and its text the snippet."""
+    project = os.path.join(root, *module.split("/")) if module else root
+    angular = os.path.exists(os.path.join(project, "angular.json"))
+    existing = _existing_config(project)
+    text = _read(os.path.join(project, existing)) if existing else None
+    creds, why = credentials_recorded(root, text)
+    literal, problem = test_dir(text) if existing else (None, None)
+    base = literal or "tests"
     items = []
-    whole = (("playwright.config.ts", config, has_config),
-             ("tests/auth.setup.ts", AUTH_SETUP_TS, False),
-             ("tests/fixtures/axe.ts", AXE_FIXTURE_TS, False),
-             ("tests/home.axe.spec.ts", AXE_SPEC_TS, False))
-    for rel, text, skip in whole:
-        if skip:
-            gaps = config_gaps(_read(os.path.join(root, existing)) or "")
-            items.append((existing, None, "exists - kept" if not gaps else
-                          f"exists - kept, but MISSING {'; '.join(gaps)} -- add them "
-                          "(the verify rules run these projects)"))
-        elif os.path.exists(os.path.join(root, rel)):
-            items.append((rel, None, "exists - kept"))
-        else:
-            items.append((rel, text, "create"))
-    text, added = merge_ignore(_read(os.path.join(root, ".gitignore")))
-    items.append((".gitignore", text, f"add {', '.join(added)}" if added else "already ignores"))
+    if existing:
+        items.append(("keep", "module", existing, None, "exists - kept"))
+    else:
+        items.append(("write", "module", "playwright.config.ts", fresh_config(angular, creds),
+                      "create"))
+    if problem:
+        items.append(("refuse", "module", existing, None,
+                      f"testDir {problem} - could not tell where tests are collected; "
+                      "auth.setup.ts, fixtures/axe.ts, home.axe.spec.ts not written"))
+    else:
+        for name, body in (("auth.setup.ts", AUTH_SETUP_TS), ("fixtures/axe.ts", AXE_FIXTURE_TS),
+                           ("home.axe.spec.ts", AXE_SPEC_TS)):
+            rel = f"{base}/{name}"
+            if os.path.exists(os.path.join(project, *rel.split("/"))):
+                items.append(("keep", "module", rel, None, "exists - kept"))
+            elif name == "auth.setup.ts" and not creds:
+                items.append(("skip", "module", rel, None, f"no credentials recorded ({why}) - "
+                              "see crew-verification; nothing written"))
+            else:
+                items.append(("write", "module", rel, body, "create"))
+    if existing:
+        named = project_names(text or "")
+        config = f"{module}/{existing}" if module else existing
+        baseline = baselines(project, literal or "", named)
+        for key in config_gaps(text or "", creds):
+            line, snippet = gap_lines(key, config, named, baseline)
+            items.append(("gap", "module", line, "\n".join(snippet), None))
+    new, added = merge_ignore(_read(os.path.join(project, ".gitignore")))
+    items.append(("write" if new else "keep", "module", ".gitignore", new,
+                  f"add {', '.join(added)}" if added else "already ignores"))
     servers = mcp_servers(windows)
-    text, added, problem = merge_mcp(_read(os.path.join(root, ".mcp.json")), servers)
-    items.append((".mcp.json", text, problem or (f"add {', '.join(added)}" if added
-                                                  else "servers present - kept")))
-    text, added = merge_codex(_read(os.path.join(root, ".codex", "config.toml")), servers)
-    items.append((".codex/config.toml", text, f"add {', '.join(added)}" if added
-                  else "servers present - kept"))
+    new, added, bad = merge_mcp(_read(os.path.join(root, ".mcp.json")), servers)
+    items.append(("write" if new else "keep", "root", ".mcp.json", new,
+                  bad or (f"add {', '.join(added)}" if added else "servers present - kept")))
+    new, added = merge_codex(_read(os.path.join(root, ".codex", "config.toml")), servers)
+    items.append(("write" if new else "keep", "root", ".codex/config.toml", new,
+                  f"add {', '.join(added)}" if added else "servers present - kept"))
     return items
 
 
@@ -379,8 +580,15 @@ def _restore_agents(root, snapshot):
     return out
 
 
-def run_agents(root, windows, runner=subprocess.call):
-    """Lines to report. `runner` is injectable so tests never run npx."""
+def agent_cmd(loop, config_rel=None):
+    """The init-agents command for one loop; `config_rel` (a module's config,
+    relative to the root it runs in) puts the seed test in that module."""
+    return list(INIT_AGENTS) + [f"--loop={loop}"] + ([f"--config={config_rel}"] if config_rel else [])
+
+
+def run_agents(root, windows, config_rel=None, runner=subprocess.call):
+    """Lines to report. `runner` is injectable so tests never run npx; it
+    stays the last keyword so a test's `__defaults__` stub binds it."""
     missing = missing_agents(root)
     if not missing:
         return ["  keep    Test Agents (planner, generator and healer all exist)"], True
@@ -389,7 +597,7 @@ def run_agents(root, windows, runner=subprocess.call):
     before = _read(mcp_path)
     out, ok = [f"  missing {', '.join(missing)}"], True
     for loop in ("claude", "codex"):
-        cmd = list(INIT_AGENTS) + [f"--loop={loop}"]
+        cmd = agent_cmd(loop, config_rel)
         rc = runner((["cmd", "/c"] if windows else []) + cmd, cwd=root)
         out.append(f"  {'ran' if rc == 0 else 'FAILED'}     {' '.join(cmd)} (exit {rc})")
         ok = ok and rc == 0
@@ -440,27 +648,37 @@ def main(argv):
     mode = "apply" if args.apply else "dry run"
     print(f"webtest scaffold ({mode}): web project detected by {reason} in {module or '.'}; "
           f"session files at {root}")
-    items = plan(project, args.windows)
+    items = plan(root, args.windows, module)
     ok = True
-    for rel, text, note in items:
-        if text is None:
-            print(f"  keep    {rel}: {note}")
-            ok = ok and "left alone" not in note and "MISSING" not in note
+    for kind, where, rel, text, note in items:
+        label = f"{module}/{rel}" if module and where == "module" else rel
+        if kind == "gap":
+            print("\n".join([f"  gap     {rel}"] + [f"          {s}" for s in text.splitlines()]))
             continue
-        print(f"  write   {rel}: {note}")
+        if kind in ("skip", "refuse"):
+            print(f"  skip    {label}: {note}")
+            ok = ok and kind != "refuse"
+            continue
+        if kind == "keep":
+            print(f"  keep    {label}: {note}")
+            ok = ok and "left alone" not in note
+            continue
+        print(f"  write   {label}: {note}")
         if args.apply:
-            _write(project, rel, text)
+            _write(project if where == "module" else root, rel, text)
+    config_rel = f"{module}/{_existing_config(project) or 'playwright.config.ts'}" if module else None
     if args.apply:
-        lines, agents_ok = run_agents(project, args.windows)
+        lines, agents_ok = run_agents(root, args.windows, config_rel)
         ok = ok and agents_ok
     elif not missing_agents(root):
         lines = ["  keep    Test Agents (planner, generator and healer all exist)"]
     else:
         lines = [f"  missing {', '.join(missing_agents(root))}"] + [
-            f"  run     {' '.join(INIT_AGENTS)} --loop={loop}" for loop in ("claude", "codex")]
+            f"  run     {' '.join(agent_cmd(loop, config_rel))}" for loop in ("claude", "codex")]
     print("\n".join(lines))
-    print(f"next: npm i -D @playwright/test@{webtest_guard.PINNED_PLAYWRIGHT} "
-          "@axe-core/playwright@4.13.0 && npx playwright install --with-deps chromium")
+    npm = (f"npm i -D @playwright/test@{webtest_guard.PINNED_PLAYWRIGHT} "
+           "@axe-core/playwright@4.13.0 && npx playwright install --with-deps chromium")
+    print(f"next: (cd {module} && {npm})" if module else f"next: {npm}")
     return 0 if ok else 1
 
 
