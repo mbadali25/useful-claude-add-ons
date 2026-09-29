@@ -673,3 +673,109 @@ def test_stamp_refuses_a_record_that_changes_while_stamping(tmp_path, refs, monk
     after = path.read_bytes()
     assert (code, any("changed while" in line for line in lines), after.endswith(b"\xff\n"),
             b"<!-- stamp:" in after) == (1, True, True, False), lines
+
+
+# ---- review round 2 FIX 1: a record the stamp cannot use --------------------------
+
+def _approve_fixture(repo, ticket="T-1"):
+    import crew_ticket  # pylint: disable=import-outside-toplevel
+    path = crew_ticket.approval_path(str(repo), ticket)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({"ticket": ticket, "approved_by": "fixture"}, fh)
+
+
+def _commit(repo, name, text):
+    (repo / name).write_text(text, encoding="utf-8")
+    git(repo, "add", name)
+    git(repo, "commit", "-qm", name)
+
+
+def _write_scope_record(repo, ticket, sha):
+    (repo / ".crew").mkdir(exist_ok=True)
+    (repo / ".crew" / ".scope-base").write_text(
+        json.dumps({ticket: {"base": sha, "from": "HEAD", "recordedAt": "2026-09-29T00:00:00"}}),
+        encoding="utf-8")
+
+
+def _unusable_record_repo(tmp_path, shape):
+    """A repo on branch `feat` off `main` whose T-1 record cannot be used:
+    `not-ancestor` is round 2's reproduction (record at the branch's start,
+    `git reset --hard HEAD~2`, commit again); `missing` names a commit this
+    clone does not have. Returns (repo, the reason resolve gives)."""
+    import scope_base  # pylint: disable=import-outside-toplevel
+    repo = init_repo(tmp_path / "repo")
+    _commit(repo, "main1.txt", "m1\n")
+    _commit(repo, "main2.txt", "m2\n")
+    git(repo, "checkout", "-qb", "feat")
+    if shape == "not-ancestor":
+        assert scope_base.record(str(repo), "T-1")[1] == "recorded"
+        _commit(repo, "feat1.txt", "f1\n")
+        git(repo, "reset", "-q", "--hard", "HEAD~2")
+        reason = "no longer an ancestor of HEAD"
+    else:
+        _write_scope_record(repo, "T-1", "0123456789abcdef0123456789abcdef01234567")
+        reason = "not in this clone"
+    _commit(repo, "feat2.txt", "f2\n")
+    return repo, reason
+
+
+@pytest.mark.parametrize("shape", ["not-ancestor", "missing"])
+def test_stamp_scope_fallback_when_the_record_is_unusable(tmp_path, refs, shape):
+    import review_patch  # pylint: disable=import-outside-toplevel
+    import scope_base  # pylint: disable=import-outside-toplevel
+    repo, reason = _unusable_record_repo(tmp_path, shape)
+    _approve_fixture(repo)
+    base, source, _ = scope_base.resolve(str(repo), "T-1")
+
+    init_code, init_lines = cs.init(str(repo), "T-1", refs_dir=str(refs))
+    _answer_all(repo)
+    code, lines = cs.stamp(str(repo), "T-1", refs_dir=str(refs))
+
+    _, seal, _ = cs.read_selfcheck(str(repo), "T-1")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(review_patch.compute(str(repo), base)[0]),
+                             encoding="utf-8")
+    gate, _ = cs.review_gate(str(repo), "T-1", str(manifest_path), refs_dir=str(refs))
+    marked = [any("(fallback)" in line and reason in line for line in out)
+              for out in (init_lines, lines)]
+    assert (source, init_code, code, (seal or {}).get("base") == base, marked, gate) == (
+        "merge-base", 0, 0, True, [True, True], []), (init_lines, lines, gate)
+
+
+def test_stamp_without_a_scope_base_names_a_remedy_that_works(tmp_path, refs):
+    import scope_base  # pylint: disable=import-outside-toplevel
+    repo = init_repo(tmp_path / "repo")
+    ticket_dir = repo / ".work" / "tickets" / "T-1"
+    ticket_dir.mkdir(parents=True)
+    (repo / "x.txt").write_text("x\n", encoding="utf-8")
+    (ticket_dir / "selfcheck.md").write_text(
+        "# T-1 self-check\n\n| ID | Status | Evidence or reason |\n|---|---|---|\n"
+        "| GEN-01 | n/a | none of it |\n| GEN-02 | n/a | none of it |\n", encoding="utf-8")
+
+    first, first_lines = cs.stamp(str(repo), "T-1", refs_dir=str(refs))
+    scope_base.record(str(repo), "T-1")
+    second, second_lines = cs.stamp(str(repo), "T-1", refs_dir=str(refs))
+
+    named = any("scope_base.py --root . --record T-1" in line for line in first_lines)
+    assert (first, named, second) == (1, True, 0), (first_lines, second_lines)
+
+
+def test_stamp_refusal_never_names_a_record_that_would_be_kept(tmp_path, refs):
+    import scope_base  # pylint: disable=import-outside-toplevel
+    repo = init_repo(tmp_path / "repo")
+    git(repo, "branch", "-m", "main", "feat")
+    _write_scope_record(repo, "T-1", "0123456789abcdef0123456789abcdef01234567")
+    _commit(repo, "feat.txt", "f\n")
+    source = scope_base.resolve(str(repo), "T-1")[1]
+    ticket_dir = repo / ".work" / "tickets" / "T-1"
+    ticket_dir.mkdir(parents=True)
+    (ticket_dir / "selfcheck.md").write_text(
+        "# T-1 self-check\n\n| ID | Status | Evidence or reason |\n|---|---|---|\n"
+        "| GEN-01 | n/a | none of it |\n| GEN-02 | n/a | none of it |\n", encoding="utf-8")
+
+    code, lines = cs.stamp(str(repo), "T-1", refs_dir=str(refs))
+
+    text = "\n".join(lines)
+    assert (source, code, "not in this clone" in text, "--record" in text) == (
+        "head", 1, True, False), text

@@ -433,21 +433,51 @@ def record_problems(rows, found):
     return problems
 
 
+def _has_scope_entry(root, ticket):
+    """True when `.crew/.scope-base` holds an entry for `ticket` that
+    `scope_base.record` would keep, so naming `--record` would change nothing."""
+    import scope_base  # pylint: disable=import-outside-toplevel
+    entry = (scope_base.read_record(root) or {}).get(ticket)
+    return isinstance(entry, dict) and isinstance(entry.get("base"), str) and bool(entry["base"])
+
+
 def _scope(root, ticket):
-    """(base, manifest, problems): the ticket's recorded scope base and
-    review_patch.compute's manifest for it -- the same function on the same
-    base /crew:review bundles with."""
+    """(base, manifest, problems, note): the base `scope_base.py --base`
+    resolves for the ticket and review_patch.compute's manifest for it -- the
+    same function on the same base /crew:review bundles with (GEN-07).
+
+    A recorded start is used as recorded. A record that exists but cannot be
+    used (its commit is gone, or no longer an ancestor of HEAD) resolves to the
+    merge-base with the default branch, which is what /crew:review bundles
+    against too; that base is used and `note` says "(fallback)" with resolve's
+    reason, for every line derived from it (GEN-01). `--record` keeps an
+    existing entry, so it is named only when there is no entry; a base resolved
+    to HEAD alone (no default branch) is refused."""
     import review_patch  # pylint: disable=import-outside-toplevel
     import scope_base  # pylint: disable=import-outside-toplevel
     base, source, why = scope_base.resolve(root, ticket)
-    if source not in (scope_base.RECORDED, "record-fallback") or not base:
+    note = None
+    has_entry = _has_scope_entry(root, ticket)
+    if source == "merge-base" and base and has_entry:
+        note = f"(fallback) {why}"
+    elif source not in (scope_base.RECORDED, "record-fallback") or not base:
+        if has_entry:
+            return None, None, [f"the scope base for {ticket} cannot be used ({why}); an "
+                                "existing record is never overwritten, so recording again "
+                                "changes nothing: restore that commit, or fetch the default "
+                                "branch so a merge-base fallback exists"], None
         return None, None, [f"no scope base recorded for {ticket} ({why}); run "
-                            f"scope_base.py --root . --record {ticket} (/crew:implement step 1)"]
+                            f"scope_base.py --root . --record {ticket} "
+                            "(/crew:implement step 1)"], None
     try:
         manifest = review_patch.compute(root, base)[0]
     except RuntimeError as exc:
-        return base, None, [f"the review bundle could not be built: {exc}"]
-    return base, manifest, []
+        return base, None, [f"the review bundle could not be built: {exc}"], note
+    return base, manifest, [], note
+
+
+def _noted(line, base, note):
+    return f"{line}; scope base {base[:12]} is {note}" if note else line
 
 
 def changed_files(manifest):
@@ -462,7 +492,7 @@ def changed_files(manifest):
 
 def init(root, ticket, refs_dir=None):
     """(exit_code, lines)."""
-    _, manifest, problems = _scope(root, ticket)
+    base, manifest, problems, note = _scope(root, ticket)
     if problems:
         return 1, problems
     found = effective_set(root, changed_files(manifest), refs_dir)
@@ -471,8 +501,8 @@ def init(root, ticket, refs_dir=None):
     path = selfcheck_path(root, ticket)
     if not _create_exclusive(path, selfcheck_template(ticket, found)):
         return 1, [f".work/tickets/{ticket}/{SELFCHECK_NAME} already exists; left unchanged"]
-    return 0, [f"self-check: wrote .work/tickets/{ticket}/{SELFCHECK_NAME} with "
-               f"{len(found['standards'])} rows", summary_line(found)]
+    return 0, [_noted(f"self-check: wrote .work/tickets/{ticket}/{SELFCHECK_NAME} with "
+                      f"{len(found['standards'])} rows", base, note), summary_line(found)]
 
 
 def stamp(root, ticket, refs_dir=None):
@@ -481,7 +511,7 @@ def stamp(root, ticket, refs_dir=None):
     with the stamp; a record that changed during the compute is refused, not
     stamped (GEN-03: the authorizing fact is read once)."""
     raw, rows, _, problems = _read_selfcheck_raw(root, ticket)
-    base, manifest, scope_problems = _scope(root, ticket)
+    base, manifest, scope_problems, note = _scope(root, ticket)
     problems += scope_problems
     found = None
     if manifest is not None:
@@ -502,9 +532,9 @@ def stamp(root, ticket, refs_dir=None):
     line = (f"<!-- stamp: bundle={manifest['bundle_sha256']} standards={found['digest']} "
             f"base={base} -->")
     _write_replacing(path, "\n".join(lines[:1] + [line] + lines[1:]))
-    return 0, [f"self-check: stamped {len(rows)} rows for bundle "
-               f"{manifest['bundle_sha256'][:12]}, standards {found['digest'][:8]}, "
-               f"base {base[:12]}"]
+    return 0, [_noted(f"self-check: stamped {len(rows)} rows for bundle "
+                      f"{manifest['bundle_sha256'][:12]}, standards {found['digest'][:8]}, "
+                      f"base {base[:12]}", base, note)]
 
 
 # ---- the review gate --------------------------------------------------------------
@@ -737,11 +767,11 @@ def metric(root, record=False, today=None):
 # ---- CLI ---------------------------------------------------------------------------
 
 def _sets(root, ticket, refs_dir=None):
-    _, manifest, problems = _scope(root, ticket)
+    base, manifest, problems, note = _scope(root, ticket)
     if problems:
         return 1, problems
     found = effective_set(root, changed_files(manifest), refs_dir)
-    lines = [summary_line(found)]
+    lines = [_noted(summary_line(found), base, note)]
     lines += [f"{s['id']} {s['name']} ({s['source']})" for s in found["standards"]]
     lines += [f"PROBLEM: {p}" for p in found["problems"]]
     return (1 if found["problems"] else 0), lines

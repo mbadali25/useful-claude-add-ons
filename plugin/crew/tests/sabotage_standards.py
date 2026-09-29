@@ -139,4 +139,20 @@ STANDARDS_MUTATIONS = (
         ("tests/test_crew_standards.py::"
          "test_stamp_refuses_a_record_that_changes_while_stamping"),
     ),
+    (
+        "an unusable record refuses again",
+        STANDARDS,
+        "    if source == \"merge-base\" and base and has_entry:\n",
+        "    if False:\n",
+        ("tests/test_crew_standards.py::"
+         "test_stamp_scope_fallback_when_the_record_is_unusable"),
+    ),
+    (
+        "the refusal names --record over a kept entry",
+        STANDARDS,
+        "        if has_entry:\n",
+        "        if False:\n",
+        ("tests/test_crew_standards.py::"
+         "test_stamp_refusal_never_names_a_record_that_would_be_kept"),
+    ),
 )
