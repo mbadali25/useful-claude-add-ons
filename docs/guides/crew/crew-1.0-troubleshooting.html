@@ -327,7 +327,12 @@ contract itself. This section is what goes wrong with the approval and the audit
   counted; a <code>merged main: could not tell</code> line (a detached HEAD, none of <code>origin/HEAD</code>,
   <code>origin/main</code> and <code>main</code> naming a commit, or a git error) means every merged-in file was
   counted, so check out the ticket branch and rerun. A missing <code>origin/main</code> alone is not that:
-  a local <code>main</code> is used instead.
+  a local <code>main</code> is used instead. An untracked merged-in file (after <code>git rm --cached</code>) is main's
+  only when <code>git add</code> would record it identically: with <code>core.fileMode=false</code> its execute bit is
+  ignored, as git ignores it. On the review side, <code>diffed-from-merged=could-not-tell</code> (or
+  <code>fork: could not tell</code> from <code>--check-receipt</code>) means <code>git merge-base &lt;start&gt; &lt;merged&gt;</code> gave no
+  answer, so a file main also changed shows main's lines as the ticket's: fetch, check the start
+  commit still exists, and rebuild.
   <strong>Check it directly, without waiting for a Stop:</strong></p>
 </li>
 </ul>

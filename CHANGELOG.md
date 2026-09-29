@@ -55,6 +55,25 @@ All notable changes to this repository are documented here. Format follows [Keep
   nothing-to-review lines, the prompt lines and both receipt notes. Each was
   run in the foreground against the tracked file, seen RED on an assertion,
   and restored with `git checkout --` to its HEAD blob.
+- **Successor (round 2).** Two FIXes from the second review round.
+  `completion_audit.py` judges an untracked merged-in path by the mode
+  `git add` would record: the execute bit counts only when `core.fileMode` is
+  not false (unset or unreadable reads true, so a mismatch is counted, never
+  dropped; measured on git 2.53: 100644 under `false` whatever the bit), so the
+  audit and the bundle's `add -A` agree under both settings, and the mode half
+  of the identity test now has a failing control. `review_patch.py` records the
+  fork lookup: `merged_main.fork` is `git merge-base <start> <merged>`, or
+  `null` with a `fork_reason` when git gives no answer; then paths main also
+  changed are still diffed from the start (more shown, never less), and the
+  stderr summary (`diffed-from-merged=could-not-tell`), the prompt's
+  `merged main:` line and `--check-receipt`'s `fork: could not tell` all say
+  so. A manifest without the key, from an older crew, reads as before. The
+  step-2 exit-2 `echo` in `review.md` is kept (its old text is false in the
+  merged-main exit-2 case), permitted by a spec amendment and pinned by a test.
+  Sabotage entries (l)-(q): the identity test reduced to the blob id,
+  `core.fileMode` ignored, `fork_reason` never written, the stderr count
+  printed on a failed lookup, the prompt clause dropped, the receipt note
+  dropped; each run by hand, RED on an assertion, restored to its HEAD blob.
 - Bumped `1.0.59 -> 1.0.60` (1.0.55 on its branch, re-set after merging main's
   1.0.59, T-0075).
 
