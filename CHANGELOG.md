@@ -26,7 +26,18 @@ All notable changes to this repository are documented here. Format follows [Keep
   the inference checks this repo's suppressions show firing (`no-member`,
   `not-callable`, `arguments-differ`, `possibly-used-before-assignment`,
   `cyclic-import`), and it does not read `# pylint: disable=` pragmas.
-- **Unchanged.** Every check's selection and pass/fail rule; `seconds` in
+- **Ruff now runs in CI.** No workflow ran it, while verify.json told readers
+  "CI still runs it"; the local gate skips it where ruff is absent. `pylint.yml`
+  gains a `ruff` job (`ruff~=0.16.0`, one Python: ruff does not execute what it
+  checks). `ruff.toml` now names `select = ["E4", "E7", "E9", "F"]` — the
+  default set it was baselined on — because ruff 0.16 widened the default and
+  an unpinned `ruff check .` reported 1493 findings on untouched code. Under
+  that set, 0.15.22 and 0.16.9 both found the same nine that had landed
+  unseen: eight deliberate `E402` in `crew_status.py` (bytecode is disabled
+  before the imports; now `# noqa: E402`, the repo's convention) and one `E713`
+  in `cloud_guard.py` (`not x in y` -> `x not in y`, identical semantics; its
+  suites pass 1761/0, and inverting the line turns four RED).
+- **Unchanged.** Every other check's selection and pass/fail rule; `seconds` in
   verify.json (those are measurements on the maintainer's machine — re-price
   with `verify-gate.sh --price`).
 - **Sabotage.** `test_conftest_git_isolation.py` runs commits and tags under a

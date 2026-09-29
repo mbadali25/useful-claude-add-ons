@@ -2120,7 +2120,7 @@ def _pwsh_moves(args):
     directory: `-WorkingDirectory DIR` or any abbreviation PowerShell binds
     to it (`-wo`, `-work`, ...), its alias `-wd`, with `-`, `--` or `/`."""
     for arg in args:
-        if not arg[:1] in ("-", "/"):
+        if arg[:1] not in ("-", "/"):
             continue
         name = arg.lstrip("-/").split(":", 1)[0].lower()
         if name == "wd" or (len(name) >= 2
