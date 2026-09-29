@@ -250,3 +250,36 @@ def test_review_kimi_paragraph_names_what_is_set_aside():
 
     assert [t for t in ("graph.out", ".idea/", ".vscode/", ".crew/guard.log",
                         ".crew/.autoclear.log", "__pycache__") if t not in para] == []
+
+
+# --- review round 4 (T-0028): the exit code and the fingerprint facts ------------
+
+
+def _probe_changed_code():
+    found = re.findall(r"^EXIT_PROBE_CHANGED = (\d+)$",
+                       _read("hooks", "scripts", "review_run.py"), re.MULTILINE)
+    assert len(found) == 1, found
+    return found[0]
+
+
+def test_review_md_names_the_probe_changed_exit_code():
+    """An exit code review.md does not name reads as "not run", and walks to
+    the next provider against a tree the probe changed."""
+    body = _read("commands", "review.md")
+    code = _probe_changed_code()
+    status = next(line for line in body.splitlines() if line.startswith("REVIEW_STATUS=$?"))
+
+    assert f"{code} kimi probe changed the tree" in status
+    assert (f"Exit {code} means the Kimi probe changed the working tree; stop and report the "
+            "named paths, do not walk to the next provider") in body
+
+
+@pytest.mark.parametrize("doc", [("commands", "review.md"),
+                                 ("skills", "crew-providers", "SKILL.md")])
+def test_kimi_prose_states_the_round_4_fingerprint_facts(doc):
+    text = " ".join(_read(*doc).split())
+
+    assert [t for t in ("permission bits", "symlink", "never opened",
+                        "outside the repository is could-not-tell",
+                        "`GRAPH_REPORT.md`", "never reserved unprobed")
+            if t not in text] == [], doc

@@ -238,7 +238,7 @@ first surviving provider that passes its probe:
 | Provider | Probe | Runs |
 |---|---|---|
 | `codex` | `command -v codex` | step 2a |
-| `kimi` | none here — `review_run.py` runs `kimi_probe.py` itself before reserving; do not run it separately (a second live request). Exit 2 names a state other than `ok`: skip | step 2e |
+| `kimi` | none here — `review_run.py` runs `kimi_probe.py` itself before reserving; do not run it separately (a second live request). Exit 2 names a state other than `ok`: skip. Exit 5, the probe changed the tree: stop | step 2e |
 | `copilot` | `command -v copilot` **and** `qa.copilot.model` is set | step 2b |
 | `claude` | always passes | step 2c |
 
@@ -429,18 +429,19 @@ EOF
 ```
 
 **Step 2a — Codex, 2b — Copilot, 2e — Kimi.** `review_run.py` reserves the round, then launches the reviewer with stdin closed (a real run hung on stdin), then computes the verdict and writes `.work/tickets/$TICKET/review.json`. Codex runs as `codex exec --json --sandbox read-only`, read from its event stream, so a failed turn is INCOMPLETE even at exit 0. Copilot keeps `--deny-tool write --deny-tool shell`: a reviewer that can edit the code can "fix" a defect instead of reporting it. Empty model/effort pass no flag.
-Kimi reads the same `$SCRATCH/prompt.txt`, byte-identical per this file's invariant; `review_run.py` runs `kimi_probe.py` BEFORE reserving (one tiny request, never a round), and since `kimi -p` cannot be made read-only by a flag, a working tree that changed from before the probe to after the review makes the round INCOMPLETE, naming the paths. Set aside: `graph.out` (graphify's background rebuild), and, only while gitignored before and after, `.idea/`, `.vscode/`, `.crew/guard.log`, `.crew/.autoclear.log` and context-watch's markers, which crew's own hooks or an IDE write mid-review. Tool caches such as `__pycache__` and the verify gate's `.crew/` files still count: a later run reads them back. Empty `QA_KIMI_MODEL` means the CLI's `default_model`.
+Kimi reads the same `$SCRATCH/prompt.txt`, byte-identical per this file's invariant; `review_run.py` runs `kimi_probe.py` BEFORE reserving (one tiny request, never a round), and since `kimi -p` cannot be made read-only by a flag, a working tree that changed from before the probe to after the review makes the round INCOMPLETE, naming the paths. The fingerprint hashes each file's contents and permission bits (a chmod counts under `core.filemode=false`), digests a symlink with its target and what it resolves to (a link to a directory outside the repository is could-not-tell), and records a FIFO, socket or device, never opened. A Kimi round is never reserved unprobed: when the ledger's status shows no round left, `review_run.py` exits 4 before the probe. Set aside: `graph.out` (graphify's background rebuild) unless it is or lies under `.crew`, contains a `.crew`, or holds a tracked file other than `graph.json` and `GRAPH_REPORT.md`, and, only while gitignored before and after, `.idea/`, `.vscode/`, `.crew/guard.log`, `.crew/.autoclear.log` and context-watch's markers, which crew's own hooks or an IDE write mid-review. Tool caches such as `__pycache__` and the verify gate's `.crew/` files still count: a later run reads them back. Empty `QA_KIMI_MODEL` means the CLI's `default_model`.
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
   --scratch "$SCRATCH" --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT"
 # or: --provider copilot --model "$QA_COPILOT_MODEL"
 # or: --provider kimi --model "$QA_KIMI_MODEL"
-REVIEW_STATUS=$?   # 0 CLEAN, 1 FINDINGS, 3 INCOMPLETE, 4 NEEDS_REPLAN, 2 not run
+REVIEW_STATUS=$?   # 0 CLEAN, 1 FINDINGS, 3 INCOMPLETE, 4 NEEDS_REPLAN, 2 not run, 5 kimi probe changed the tree
 ```
 
 `reasoningEffort` accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; Codex rejects a wrong one with an HTTP 400. Copilot exiting non-zero with `Access denied by policy settings` is org or enterprise policy — report that exact cause.
 Exit 2 means nothing launched (not on PATH, or a kimi probe state other than `ok`, which the message names: `kimi probe: rate-limited - ...`) and no round was spent; announce it and walk to the next eligible provider.
+Exit 5 means the Kimi probe changed the working tree; stop and report the named paths, do not walk to the next provider. No round was spent, but the tree is no longer the one the bundle was built from.
 
 **Step 2c — Claude fallback.** Invoke the `crew:reviewer` subagent with the
 SAME bundle 2a and 2b just read: the exact `$SCRATCH/prompt.txt` content —

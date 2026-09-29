@@ -340,21 +340,28 @@ lives in the alias's `default_effort` in `~/.kimi-code/config.toml`.
 
 **Probe before a round is spent.** `kimi_probe.py` answers `ok`,
 `not-installed`, `not-authenticated`, `rate-limited` or `unknown`; only `ok`
-launches, and `review_run.py` runs it before the round is reserved -- skipped
-when the ledger shows no round left. The live stage spends one tiny request;
+launches, and `review_run.py` runs it before the round is reserved. A Kimi
+round is never reserved unprobed: when the ledger's status shows no round
+left, it exits 4 before the probe. The live stage spends one tiny request;
 do not run it separately before `review_run.py`, which would spend two.
 
 **Read-only is not a flag here.** `kimi -p` forces permission mode `auto`. Every
 `kimi` call crew makes, the probe included, passes an agent file allowing only
 Read, Grep and Glob (Write, Edit and Bash disallowed) and an empty
 `--skills-dir`; the probe runs in a throwaway directory. The working tree is
-fingerprinted before the probe and after the review: the CONTENTS of every
-tracked file (whatever `git status` says of it), of untracked and gitignored
-files, and of nested repositories and submodules. A probe that changed it spends
-no round, and a review that changed it is INCOMPLETE, naming the paths.
+fingerprinted before the probe and after the review: the CONTENTS and
+permission bits of every tracked file (whatever `git status` says of it, so a
+chmod counts under `core.filemode=false`), of untracked and gitignored files,
+and of nested repositories and submodules. A symlink is digested with its
+target and what it resolves to; a link to a directory outside the repository is
+could-not-tell. A FIFO, socket or device is recorded and never opened. A probe
+that changed it, whatever it answered, exits 5 with no round spent: stop and
+report the paths rather than walk to the next provider. A review that changed
+it is INCOMPLETE, naming the paths.
 Whatever a call leaves running in its process group is killed before the tree
-is checked. Set aside: `graph.out` (graphify's background rebuild), and, only
-while gitignored throughout, `.idea/`, `.vscode/`, `.crew/guard.log`,
+is checked. Set aside: `graph.out` (graphify's background rebuild) unless it
+is or lies under `.crew`, contains a `.crew`, or holds a tracked file other than
+`graph.json` and `GRAPH_REPORT.md`, and, only while gitignored throughout, `.idea/`, `.vscode/`, `.crew/guard.log`,
 `.crew/.autoclear.log` and context-watch's markers. Tool caches such as
 `__pycache__` and the verify gate's `.crew/` files still count, because a later
 run reads them back. Not caught by either control: a write outside the repo,
