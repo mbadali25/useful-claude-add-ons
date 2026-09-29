@@ -124,7 +124,8 @@ def test_a_broken_active_ticket_pointer_blocks_the_stop(flavour, repo):
 
     code, _, err = _audit(flavour, repo, stop(repo))
 
-    assert (code, "pointer is broken" in err) == (2, True)
+    assert (code, "pointer is broken" in err, "/crew:autopilot <id>" in err,
+            "crew_ticket.py" in err) == (2, True, True, False)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="NTFS rejects a newline in a filename; "

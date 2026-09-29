@@ -882,3 +882,29 @@ def test_autopilot_single_ticket_approval_still_records_under_an_allowing_policy
 
     assert (receipt["approved_via"], crew_ticket.accepted(str(repo), "T-1")["status"]) == (
         "autopilot", "approved")
+
+
+# --- T-0504: the CLI stays a plain writer; it says what it left ------------------------
+
+def test_activate_cli_prints_what_it_left(tmp_path):
+    root = make_repo(tmp_path)
+    make_ticket(root, "T-1")
+    make_ticket(root, "T-2", activate=False)
+
+    done = _cli(root, "activate", "--ticket", "T-2")
+
+    assert (done.returncode, done.stdout.strip()) == (
+        0, "crew-ticket: T-2 is the active ticket for this worktree (was T-1)")
+
+
+def test_activate_cli_is_still_a_plain_writer(tmp_path):
+    """No policy in the CLI: it moves off an open ticket when run. Owner-only
+    is the scope guard's shell check (scope_guard.py), so tests and CI keep a
+    writer, and scope.mode off keeps today's behaviour."""
+    root = make_repo(tmp_path)
+    make_ticket(root, "T-1")
+    make_ticket(root, "T-2", activate=False)
+
+    _cli(root, "activate", "--ticket", "T-2")
+
+    assert crew_ticket.resolve_active(str(root))[0] == "T-2"

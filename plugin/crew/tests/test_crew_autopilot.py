@@ -25,7 +25,7 @@ import crew_state
 import crew_ticket
 import review_ledger
 from review_fixtures import git
-from scope_fixtures import PLAN, SPEC, approve_as_user, make_repo
+from scope_fixtures import PLAN, SPEC, accepted_ledger, approve_as_user, make_repo
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _SCRIPT = os.path.join(_ROOT, "hooks", "scripts", "crew_autopilot.py")
@@ -915,6 +915,49 @@ def test_resume_argument_disagreeing_with_the_active_pointer_stops(tmp_path):
     assert (got["ticket"], got["stop"], got["source"]) == (None, True, "argument")
 
 
+def test_resume_argument_off_a_ledger_closed_pointer_activates(tmp_path):
+    root = _two_tickets(tmp_path, activate="T-2")
+    _index(root, "T-1 | spec | high | r | one", "T-2 | done | high | r | two")
+    accepted_ledger(root, "T-2")
+
+    got = crew_autopilot.resume_target(str(root), ticket="T-1")
+
+    assert (got["ticket"], got["stop"], got["activate"], "T-2 is closed" in got["reason"]) == (
+        "T-1", False, True, True)
+
+
+def test_resume_argument_off_an_open_pointer_stops_with_the_owner_prompt(tmp_path):
+    root = _two_tickets(tmp_path, activate="T-2")
+
+    got = crew_autopilot.resume_target(str(root), ticket="T-1")
+
+    assert (got["stop"], got["activate"], "type /crew:autopilot T-2 to finish it" in got["reason"],
+            "type /crew:autopilot T-1 to move this worktree" in got["reason"],
+            "crew_ticket.py" in got["reason"]) == (True, False, True, True, False)
+
+
+def test_resume_broken_pointer_names_the_owner_prompt(tmp_path):
+    root = _two_tickets(tmp_path, activate="T-2")
+    for name in ("direction.md", "spec.md", "plan.md"):
+        (root / ".work" / "tickets" / "T-2" / name).unlink()
+    (root / ".work" / "tickets" / "T-2").rmdir()
+
+    got = crew_autopilot.resume_target(str(root), ticket="T-1")
+
+    assert (got["stop"], "/crew:autopilot T-1" in got["reason"],
+            "crew_ticket.py" in got["reason"]) == (True, True, False)
+
+
+def test_next_mismatch_names_the_owner_prompt(tmp_path):
+    root = _two_tickets(tmp_path, activate="T-2")
+    approve_as_user(root, "T-1")
+
+    got = crew_autopilot.next_phase(str(root), "T-1")
+
+    assert (got["stop"], "/crew:autopilot T-1" in got["reason"],
+            "crew_ticket.py" in got["reason"]) == (True, True, False)
+
+
 def test_resume_argument_with_no_pointer_is_activated(tmp_path):
     root = _two_tickets(tmp_path)
 
@@ -1169,10 +1212,13 @@ def test_command_ends_the_review_phase_at_the_verdict():
             "back through `next`" in text) == (True, True, True)
 
 
-def test_command_activates_the_ticket_only_without_a_pointer():
-    text = _command_text()
+def test_command_activates_on_activate_1_and_names_the_owner_prompt_on_a_mismatch():
+    text = " ".join(_command_text().split())
     assert ("activate=1" in text, "crew_ticket.py activate --root . --ticket <ticket>" in text,
-            "resume --root . --ticket <ticket>" in text) == (True, True, True)
+            "resume --root . --ticket <ticket>" in text,
+            "the owner types `/crew:autopilot <ticket>`" in text,
+            "never run `crew_ticket.py activate` for that" in text,
+            "the human runs crew_ticket.py" in text) == (True, True, True, True, True, False)
 
 
 def test_command_says_the_status_edit_keeps_the_approval():

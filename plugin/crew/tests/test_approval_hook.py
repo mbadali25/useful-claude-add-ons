@@ -186,7 +186,7 @@ def _no_python_env(tmp_path, root):
 
 @pytest.mark.parametrize("shell", ["sh", "ps1"])
 @pytest.mark.parametrize("text,expected", [("/crew:approve T-1", 2), ("hello", 0),
-                                           ("approve T-1", 0),
+                                           ("approve T-1", 0), ("/crew:autopilot T-1", 0),
                                            ("does the reviewer approve this?", 0)])
 def test_without_python_only_an_approve_prompt_is_blocked(tmp_path, repo, shell, text,
                                                           expected):
@@ -231,3 +231,170 @@ def test_the_flavour_guard_is_the_first_executable_statement():
 @pytest.mark.parametrize("name", ["approval-hook.sh", "approval-hook.ps1", "approval_hook.py"])
 def test_every_new_file_is_lf_only(name):
     assert b"\r" not in pathlib.Path(SCRIPTS, name).read_bytes()
+
+
+# --- T-0504: the owner's `/crew:autopilot <id>` re-points this worktree ------------------
+# The one move off an in-flight ticket the session may not make (scope_guard refuses its
+# crew_ticket.py activate for it) is carried out here, from the prompt the owner typed.
+
+def _pointed(repo, active="T-1"):
+    """T-1 and T-2 with folders; this worktree's pointer on `active`."""
+    make_ticket(repo, "T-1", activate=False)
+    make_ticket(repo, "T-2", activate=False)
+    if active:
+        crew_ticket.activate(str(repo), active)
+    return repo
+
+
+def _pointer(repo):
+    return crew_ticket.resolve_active(str(repo))[0]
+
+
+def _context(out):
+    return json.loads(out)["hookSpecificOutput"]["additionalContext"]
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+def test_the_owners_autopilot_prompt_repoints_the_worktree(flavour, repo):
+    _pointed(repo)
+
+    code, out, _ = _hook(flavour, repo, prompt(repo, "/crew:autopilot T-2"))
+
+    assert (code, _pointer(repo), "T-2" in _context(out), "T-1" in _context(out)) == (
+        0, "T-2", True, True)
+
+
+@pytest.mark.parametrize("flavour", ["sh", "ps1"])
+def test_the_bash_prefilter_passes_crew_autopilot_to_python(flavour, repo):
+    _pointed(repo)
+
+    code, _, _ = _hook(flavour, repo, prompt(repo, "/crew:autopilot T-2"))
+
+    assert (code, _pointer(repo)) == (0, "T-2")
+
+
+def test_run_form_repoints(repo):
+    _pointed(repo)
+
+    code = approval_hook.handle(prompt(repo, "  /crew:autopilot run T-2  \n"))
+
+    assert (code, _pointer(repo)) == (0, "T-2")
+
+
+def test_expanded_autopilot_form_repoints(repo):
+    _pointed(repo)
+    text = ("<command-message>crew:autopilot is running</command-message>\n"
+            "<command-name>/crew:autopilot</command-name>\n<command-args>T-2</command-args>")
+
+    code = approval_hook.handle(prompt(repo, text))
+
+    assert (code, _pointer(repo)) == (0, "T-2")
+
+
+def test_autopilot_prompt_with_no_pointer_activates(repo):
+    _pointed(repo, active=None)
+
+    code = approval_hook.handle(prompt(repo, "/crew:autopilot T-2"))
+
+    assert (code, _pointer(repo)) == (0, "T-2")
+
+
+def test_autopilot_prompt_on_the_active_ticket_writes_nothing(repo, capsys):
+    _pointed(repo, active="T-2")
+    pointer = pathlib.Path(common_dir(repo), "crew", "active-ticket")
+    before = pointer.stat().st_mtime_ns
+
+    code = approval_hook.handle(prompt(repo, "/crew:autopilot T-2"))
+
+    assert (code, pointer.stat().st_mtime_ns, capsys.readouterr().out) == (0, before, "")
+
+
+def test_autopilot_status_does_not_repoint(repo):
+    _pointed(repo)
+
+    code = approval_hook.handle(prompt(repo, "/crew:autopilot status T-2"))
+
+    assert (code, _pointer(repo)) == (0, "T-1")
+
+
+def test_bare_autopilot_does_not_repoint(repo):
+    _pointed(repo)
+
+    code = approval_hook.handle(prompt(repo, "/crew:autopilot"))
+
+    assert (code, _pointer(repo)) == (0, "T-1")
+
+
+@pytest.mark.parametrize("text", ["/crew:autopilot assign T-2", "/crew:autopilot goal T-2",
+                                  "/crew:autopilot focus T-2", "/crew:autopilot --goal T-2",
+                                  "/crew:autopilot run", "/crew:autopilot T-2 T-3",
+                                  "/crew:autopilot run T-2 now"])
+def test_autopilot_subcommands_do_not_repoint(repo, text):
+    _pointed(repo)
+
+    code = approval_hook.handle(prompt(repo, text))
+
+    assert (code, _pointer(repo)) == (0, "T-1")
+
+
+@pytest.mark.parametrize("text", ["please run /crew:autopilot T-2", "try `/crew:autopilot T-2`",
+                                  "I think /crew:autopilot T-2 is next"])
+def test_autopilot_mid_sentence_does_not_repoint(repo, text):
+    _pointed(repo)
+
+    code = approval_hook.handle(prompt(repo, text))
+
+    assert (code, _pointer(repo)) == (0, "T-1")
+
+
+@pytest.mark.parametrize("text", [
+    ("<command-message><command-name>/crew:autopilot</command-name></command-message>\n"
+     "<command-name>/crew:autopilot</command-name>\n<command-args>T-2</command-args>"),
+    ("<command-name>/crew:autopilot</command-name>\n<command-args>T-2</command-args>\n"
+     "and more words"),
+    "<command-name>/crew:autopilot</command-name>\n<command-args>T-2\nT-3</command-args>",
+])
+def test_autopilot_nested_command_tag_does_not_repoint(repo, text):
+    _pointed(repo)
+
+    code = approval_hook.handle(prompt(repo, text))
+
+    assert (code, _pointer(repo)) == (0, "T-1")
+
+
+def test_autopilot_multiline_paste_does_not_repoint(repo):
+    _pointed(repo)
+
+    code = approval_hook.handle(prompt(repo, "/crew:autopilot T-2\n/crew:autopilot T-1"))
+
+    assert (code, _pointer(repo)) == (0, "T-1")
+
+
+def test_autopilot_id_without_a_folder_is_left_to_autopilot(repo, capsys):
+    _pointed(repo)
+
+    code = approval_hook.handle(prompt(repo, "/crew:autopilot T-9"))
+
+    assert (code, _pointer(repo), capsys.readouterr().out) == (0, "T-1", "")
+
+
+def test_autopilot_pointer_write_failure_blocks_the_prompt(repo, monkeypatch, capsys):
+    _pointed(repo)
+
+    def boom(_path, _data):
+        raise OSError("disk full")
+    monkeypatch.setattr(crew_ticket, "_write_json", boom)
+
+    code = approval_hook.handle(prompt(repo, "/crew:autopilot T-2"))
+
+    assert (code, _pointer(repo), "could not re-point" in capsys.readouterr().err) == (
+        2, "T-1", True)
+
+
+def test_an_approve_prompt_is_not_a_repoint(repo):
+    _pointed(repo)
+
+    code = approval_hook.handle(prompt(repo, "/crew:approve T-2"))
+
+    assert (code, _pointer(repo), _receipt(repo, "T-2")["approved_via"]) == (
+        0, "T-1", "user-prompt")

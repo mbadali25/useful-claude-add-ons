@@ -24,7 +24,7 @@ import context  # noqa: F401  pylint: disable=unused-import
 import crew_autopilot
 import crew_ticket
 import review_ledger
-from scope_fixtures import approve_as_user, make_repo
+from scope_fixtures import accepted_ledger, approve_as_user, make_repo
 from test_crew_autopilot import (_COMMAND, _SCRIPT, _approved, _handoff, _index, _ledger, _round,
                                  _snapshot, _spec_text, _ticket, _two_tickets, _write)
 
@@ -489,9 +489,23 @@ def test_status_ticket_mismatch_waits_on_repointing(tmp_path):
     got = crew_autopilot.status(str(root), T)
 
     assert (got["stop"], got["waiting"].startswith("owner - "),
-            f"crew_ticket.py activate --ticket {T}" in got["waiting"],
-            "/crew:autopilot T-2" in got["waiting"], "/crew:implement" in got["waiting"]) == (
-        True, True, True, True, False)
+            "crew_ticket.py" in got["waiting"],
+            "type /crew:autopilot T-2 to finish it" in got["waiting"],
+            f"type /crew:autopilot {T} to move this worktree to {T}" in got["waiting"],
+            "/crew:implement" in got["waiting"]) == (True, True, False, True, True, False)
+
+
+def test_status_repoint_off_a_ledger_closed_ticket_is_autopilots(tmp_path):
+    root = _two_tickets(tmp_path, activate="T-2")
+    approve_as_user(root, T)
+    _index(root, "T-1 | spec | high | r | one", "T-2 | done | high | r | two")
+    accepted_ledger(root, "T-2")
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert (got["waiting"].startswith(f"autopilot - run /crew:autopilot {T}"),
+            "T-2 is closed" in got["waiting"], "crew_ticket.py" in got["waiting"]) == (
+        True, True, False)
 
 
 def test_status_unset_pointer_waits_on_autopilot_activating(tmp_path):
@@ -514,7 +528,8 @@ def test_status_broken_pointer_waits_on_the_owner_fixing_it(tmp_path):
     got = crew_autopilot.status(str(root), T)
 
     assert (got["stop"], got["waiting"].startswith("owner - "), "broken" in got["waiting"],
-            "/crew:implement" in got["waiting"]) == (True, True, True, False)
+            "/crew:implement" in got["waiting"], "crew_ticket.py" in got["waiting"],
+            f"type /crew:autopilot {T}" in got["waiting"]) == (True, True, True, False, False, True)
 
 
 def test_status_waiting_is_unknown_when_the_phase_check_raises(tmp_path, monkeypatch):
@@ -710,8 +725,9 @@ def test_status_repoint_never_offers_a_closed_ticket(tmp_path):
     got = crew_autopilot.status(str(root), T)
 
     assert (got["waiting"].startswith("owner - "),
-            f"crew_ticket.py activate --ticket {T}" in got["waiting"],
-            "/crew:autopilot T-2" in got["waiting"]) == (True, True, False)
+            f"type /crew:autopilot {T} to move" in got["waiting"],
+            "/crew:autopilot T-2" in got["waiting"], "crew_ticket.py" in got["waiting"]) == (
+        True, True, False, False)
 
 
 @pytest.mark.parametrize("closing", ["index", "header"])
@@ -727,9 +743,9 @@ def test_status_repoint_never_offers_a_closed_ticket_without_a_direction(tmp_pat
 
     got = crew_autopilot.status(str(root), T)
 
-    assert (f"crew_ticket.py activate --ticket {T}" in got["waiting"],
+    assert (f"type /crew:autopilot {T} to move" in got["waiting"],
             "/crew:autopilot T-2" in got["waiting"],
-            "T-2 is closed" in got["waiting"]) == (True, False, True)
+            "no accepted review" in got["waiting"]) == (True, False, True)
 
 
 def test_status_repoint_says_unknown_when_the_active_phase_raises(tmp_path, monkeypatch):
@@ -745,7 +761,7 @@ def test_status_repoint_says_unknown_when_the_active_phase_raises(tmp_path, monk
 
     got = crew_autopilot.status(str(root), T)
 
-    assert (f"crew_ticket.py activate --ticket {T}" in got["waiting"],
+    assert (f"type /crew:autopilot {T} to move" in got["waiting"],
             "/crew:autopilot T-2" in got["waiting"],
             "could not tell whether T-2" in got["waiting"]) == (True, False, True)
 
@@ -771,8 +787,8 @@ def test_status_repoint_unreadable_active_spec_is_could_not_tell(tmp_path, monke
 
     got = crew_autopilot.status(str(root), T)
 
-    assert (f"crew_ticket.py activate --ticket {T}" in got["waiting"],
-            "or runs /crew:autopilot T-2" in got["waiting"],
+    assert (f"type /crew:autopilot {T} to move" in got["waiting"],
+            "/crew:autopilot T-2" in got["waiting"],
             "could not tell whether T-2 is still open" in got["waiting"]) == (True, False, True)
 
 
@@ -786,8 +802,46 @@ def test_status_repoint_offers_an_open_active_ticket_whose_spec_reads_or_is_abse
 
     got = crew_autopilot.status(str(root), T)
 
-    assert (got["waiting"].endswith("or runs /crew:autopilot T-2"),
+    assert ("type /crew:autopilot T-2 to finish it" in got["waiting"],
             "could not tell" in got["waiting"]) == (True, False)
+
+
+_HANDS_OUT_THE_CLI = re.compile(r"crew_ticket\.py (?:de)?activate")
+_COMMA_AFTER_A_COMMAND = re.compile(r"/crew:autopilot \S+,")
+
+
+def _repoint_outputs(tmp_path, monkeypatch):
+    """Every stop/waiting line the re-point cases produce: open, closed in
+    INDEX only, closed by ledger, unreadable spec, broken pointer."""
+    lines = []
+    for number, case in enumerate(("open", "index", "ledger", "unreadable", "broken")):
+        root = _two_tickets(tmp_path / str(number), activate="T-2")
+        approve_as_user(root, T)
+        if case in ("index", "ledger"):
+            _index(root, "T-1 | spec | high | r | one", "T-2 | done | high | r | two")
+        if case == "ledger":
+            accepted_ledger(root, "T-2")
+        if case == "broken":
+            for name in ("direction.md", "spec.md", "plan.md"):
+                (root / ".work" / "tickets" / "T-2" / name).unlink()
+            (root / ".work" / "tickets" / "T-2").rmdir()
+        with monkeypatch.context() as patch:
+            if case == "unreadable":
+                _deny_spec(patch, "T-2")
+            lines.append(crew_autopilot.status(str(root), T)["waiting"])
+            lines.append(crew_autopilot.resume_target(str(root), ticket=T)["reason"])
+            lines.append(crew_autopilot.resume_target(str(root))["reason"])
+            lines.append(crew_autopilot.next_phase(str(root), T)["reason"])
+    return lines
+
+
+def test_no_stop_or_waiting_line_hands_out_the_cli_or_a_trailing_comma(tmp_path, monkeypatch):
+    lines = _repoint_outputs(tmp_path, monkeypatch)
+
+    bad = [line for line in lines
+           if _HANDS_OUT_THE_CLI.search(line) or _COMMA_AFTER_A_COMMAND.search(line)]
+
+    assert bad == []
 
 
 def _index_reads(monkeypatch, ticket):
