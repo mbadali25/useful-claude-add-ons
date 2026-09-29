@@ -1,14 +1,34 @@
 #!/usr/bin/env python3
-"""gizmoduck - run Nuclei and turn its JSONL output into a report or SDP tickets.
-Cross-platform (Windows + Linux/WSL), stdlib only.
+"""gizmoduck - run Nuclei, or the whole scanner routine from a manifest, and turn the
+output into a report or SDP tickets.
+Cross-platform (Windows + Linux/WSL), stdlib only - except `routine`, which imports
+routine.py (and so PyYAML) lazily, inside that command alone.
 
 Only scan assets you own or have explicit written permission to test.
 
 Usage:
   gizmoduck.py scan    <target|targets.txt> [--severity critical,high,medium] [--out findings.jsonl] [--extra "..."]
+  gizmoduck.py routine <manifest.yaml> [--out DIR | --scan-root MODULE_DIR [--date YYYY-MM-DD]]
+                       [--replace] [--confirm-active] [--title "..."] [--min-severity medium]
+                       # every scanner the manifest resolves (checkov, trivy, dependency-check,
+                       # semgrep, ZAP, testssl, nmap, nikto; sqlmap only on a target whose
+                       # options.sqlmap is true AND with --confirm-active named),
+                       # then findings.jsonl, run-manifest.json, report.md/.html(/.pdf) and
+                       # scan-meta.json in DIR (default routine-out/) or in
+                       # MODULE_DIR/docs/security-scans/YYYY-MM-DD/. A directory already
+                       # holding a scan-meta.json is refused unless --replace is named.
+                       # Exit 0: every cell ran. Exit 4: every output was written but some
+                       # cell did not run - NOT a clean result; the last stdout line is
+                       # GIZMODUCK_ROUTINE_INCOMPLETE. Exit 2: usage or manifest error,
+                       # nothing written. scan-meta.json and report.* are written
+                       # complete-then-renamed; routine.py's own findings.jsonl,
+                       # run-manifest.json and each tool's native output are not.
   gizmoduck.py summary <findings.jsonl>
   gizmoduck.py parse   <findings.jsonl> [--min-severity info|low|medium|high|critical]
   gizmoduck.py report  <findings.jsonl> [--min-severity medium] [--format md|html|pdf] [--out FILE] [--title "..."]
+                       [--run-manifest run-manifest.json]
+                       # --run-manifest: a routine run's manifest, so the report carries its
+                       # coverage table; ignored for plain Nuclei findings.
                        # itemises Critical/High/Medium; Low and Info are counted only.
                        # --min-severity raises that floor, never lowers it.
   gizmoduck.py tickets <findings.jsonl> [--min-severity high] [--yes DIGEST]
@@ -26,6 +46,7 @@ Usage:
 A "target" is a URL (https://site) or a host/IP; a targets file has one per line.
 """
 import argparse
+import datetime
 import hashlib
 import json
 import os
@@ -34,6 +55,7 @@ import subprocess
 import sys
 import tempfile
 from collections import defaultdict
+from pathlib import Path
 
 SEV_NUM = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0, "unknown": 0}
 SEV_NAME = {4: "Critical", 3: "High", 2: "Medium", 1: "Low", 0: "Info"}
@@ -692,6 +714,229 @@ def html_to_pdf(html_str, out_path):
         return False
 
 
+# ---------------------------------------------------------------------------
+# `routine`: the front door to routine.run_routine (T-0107)
+# ---------------------------------------------------------------------------
+
+# Exit status of a routine run that wrote every output but where at least one
+# (target, tool) cell did not run. Deliberately distinct from 0: a partial
+# run is not a clean run, and a scheduler reading only the status must be
+# able to tell the two apart without parsing the report.
+ROUTINE_INCOMPLETE_EXIT = 4
+# The last stdout line of an incomplete run, for callers that read output
+# rather than the status (the same shape as GIZMODUCK_CONFIRMATION_REQUIRED).
+ROUTINE_MARKER = "GIZMODUCK_ROUTINE_INCOMPLETE"
+SCAN_META_SCHEMA = 1
+# Every file a routine run owns in its output directory. `--replace` removes
+# these (and the per-target subdirectories) before rerunning into it.
+ROUTINE_FILES = ("scan-meta.json", "findings.jsonl", "run-manifest.json",
+                 "report.md", "report.html", "report.pdf")
+_ROUTINE_DEFAULT_OUT = "routine-out"
+
+
+def _atomic_write_text(path, text):
+    """Write `text` to a sibling temp file, then os.replace it over `path`.
+
+    `text` must be complete before this is called. A plain
+    `with open(path, "w")` truncates `path` at open time, before the payload
+    exists, so a write that raises leaves a zero-byte file where the earlier
+    run's evidence was (project CLAUDE.md, the `open(p, "w")` landmine).
+    Here a failure costs the temp file and nothing else: `path` holds either
+    the old bytes or the new ones, never neither."""
+    tmp = f"{path}.tmp-{os.getpid()}"
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
+def _gizmoduck_version():
+    """The plugin version from `.claude-plugin/plugin.json` beside `scripts/`,
+    or None when that file is absent or unreadable - a vendored copy of
+    `scripts/` alone carries no version, and "could not tell" is recorded as
+    null rather than guessed."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                        ".claude-plugin", "plugin.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data.get("version")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def _status_family(status):
+    """`ran`, `ran(safe)`, `ran(baseline+active)` -> "ran"; `error:<why>` ->
+    "error"; `skipped-missing` / `skipped-active` stay themselves."""
+    if status.startswith("ran"):
+        return "ran"
+    if status.startswith("error:"):
+        return "error"
+    return status
+
+
+def _coverage_summary(run_manifest):
+    """Cell counts by status family, and whether coverage was complete.
+
+    Complete means every cell ran. A run with no cells at all is NOT
+    complete: zero tools having run is otherwise indistinguishable from a
+    clean scan, which is the exact failure the coverage table exists to
+    stop. `ran_with_scan_errors` counts cells that ran but whose adapter
+    reported scan errors of its own (testssl's WARN/FATAL entries): those
+    cells ran, so they do not make the run incomplete, but a caller that
+    wants to treat them as degraded can see how many there were."""
+    cells = run_manifest.get("cells") or []
+    by_status = {}
+    for c in cells:
+        fam = _status_family(c.get("status", ""))
+        by_status[fam] = by_status.get(fam, 0) + 1
+    complete = bool(cells) and all(c.get("status", "").startswith("ran") for c in cells)
+    scan_errors = sum(1 for c in cells
+                      if c.get("status", "").startswith("ran") and c.get("errors"))
+    return {"cells": len(cells), "by_status": by_status, "complete": complete,
+            "ran_with_scan_errors": scan_errors}
+
+
+def _scan_meta_text(*, date_str, started_at, completed_at, manifest, manifest_path,
+                    coverage, findings, confirm, files):
+    """The complete `scan-meta.json` text (schema 1). Only what gizmoduck
+    actually knows: nothing it was not told (reachability, a module URL) is
+    invented."""
+    import routine
+    s = cmd_summary(findings)
+    meta = {
+        "schema": SCAN_META_SCHEMA,
+        "gizmoduck_version": _gizmoduck_version(),
+        "date": date_str,
+        "started_at": started_at,
+        "completed_at": completed_at,
+        "authorized_by": manifest.authorized_by,
+        "manifest": manifest_path,
+        "confirm_active": bool(confirm),
+        "targets": [{"name": t.name, "kind": t.kind, "location": routine._location(t)}
+                    for t in manifest.targets],
+        "coverage": coverage,
+        "findings": {"total": s["total_instances"], "by_severity": s["by_severity"]},
+        "files": files,
+    }
+    return json.dumps(meta, indent=2, sort_keys=True) + "\n"
+
+
+def _load_run_manifest(path):
+    """A routine run's `run-manifest.json`, or ValueError/OSError when the
+    file is missing, is not JSON, or has no `cells` list."""
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    if not isinstance(data, dict) or not isinstance(data.get("cells"), list):
+        raise ValueError(f"{path}: not a run manifest (no 'cells' list)")
+    return data
+
+
+def _utc_now():
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def _clear_earlier_run(outdir):
+    """`--replace`: remove an earlier run's files and per-target native output.
+
+    scan-meta.json is left in place on purpose: it is replaced atomically, as
+    the LAST write of the new run, so until the new run has finished the
+    directory still says which run its evidence belongs to rather than
+    holding no scan-meta.json at all."""
+    for name in ROUTINE_FILES:
+        if name != "scan-meta.json" and (outdir / name).exists():
+            (outdir / name).unlink()
+    for child in outdir.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child)
+
+
+def cmd_routine(manifest_path, out, *, scan_root=None, date=None, replace=False,
+                confirm=False, title=None, min_sev=REPORT_DETAIL_FLOOR, registry=None):
+    """Run every scanner a manifest resolves, then write the report set.
+
+    Returns 0 when every (target, tool) cell ran, ROUTINE_INCOMPLETE_EXIT (4)
+    when every output was written but some cell did not run, and 2 when
+    nothing was written (a refused manifest, or an output directory that
+    already holds an earlier run's scan-meta.json without `replace`).
+
+    `routine` needs PyYAML, so it is imported here rather than at module top:
+    every other command stays stdlib-only. `registry` is run_routine's own
+    test seam, passed straight through - no test runs a real scanner.
+    sqlmap's two gates stay routine.py's: `options.sqlmap` makes a target a
+    candidate, and only `confirm` (the `--confirm-active` flag, by name) lets
+    it fire."""
+    import routine
+
+    try:
+        manifest = routine.load_manifest(manifest_path, registry=registry)
+    except (routine.AuthorizationError, ValueError, OSError, routine.yaml.YAMLError) as exc:
+        print(f"routine: manifest refused: {exc}", file=sys.stderr)
+        return 2
+
+    date = date or _utc_now().date()
+    date_str = date.isoformat()
+    if scan_root:
+        outdir = Path(scan_root) / "docs" / "security-scans" / date_str
+    else:
+        outdir = Path(out)
+
+    meta_path = outdir / "scan-meta.json"
+    if meta_path.exists():
+        if not replace:
+            print(f"routine: {meta_path} already exists - this directory holds an earlier "
+                  f"run's evidence; pass --replace to overwrite it, or choose another "
+                  f"--out/--date", file=sys.stderr)
+            return 2
+        _clear_earlier_run(outdir)
+
+    started_at = _utc_now().isoformat()
+    run_manifest = routine.run_routine(manifest, outdir, registry=registry,
+                                       confirm=confirm).to_dict()
+
+    findings = load(str(outdir / "findings.jsonl"))
+    title = title or f"Security scan routine {date_str}"
+    md = cmd_report(findings, min_sev, title, run_manifest=run_manifest)
+    html = render_html(findings, min_sev, title, run_manifest=run_manifest)
+    _atomic_write_text(outdir / "report.md", md)
+    _atomic_write_text(outdir / "report.html", html)
+    pdf_path = outdir / "report.pdf"
+    pdf_ok = html_to_pdf(html, str(pdf_path))
+    if not pdf_ok:
+        print("routine: no PDF renderer (wkhtmltopdf or weasyprint) - report.pdf not "
+              "written; report.html is complete", file=sys.stderr)
+        if pdf_path.exists():
+            pdf_path.unlink()
+
+    coverage = _coverage_summary(run_manifest)
+    files = {"findings": "findings.jsonl", "run_manifest": "run-manifest.json",
+             "report_md": "report.md", "report_html": "report.html",
+             "report_pdf": "report.pdf" if pdf_ok else None}
+    text = _scan_meta_text(date_str=date_str, started_at=started_at,
+                           completed_at=_utc_now().isoformat(), manifest=manifest,
+                           manifest_path=manifest_path, coverage=coverage,
+                           findings=findings, confirm=confirm, files=files)
+    _atomic_write_text(meta_path, text)
+
+    safe_print(f"wrote {outdir}")
+    for fam, n in sorted(coverage["by_status"].items()):
+        safe_print(f"  {fam}: {n}")
+    if not coverage["complete"]:
+        if coverage["cells"]:
+            not_ran = sum(n for fam, n in coverage["by_status"].items() if fam != "ran")
+            why = (f"{not_ran} of {coverage['cells']} cells did not run - see the Coverage "
+                   f"table in report.md")
+        else:
+            why = "0 of 0 cells ran - the manifest resolved no scanner for any target"
+        safe_print(f"{ROUTINE_MARKER}: {why}; this is not a clean result")
+        return ROUTINE_INCOMPLETE_EXIT
+    return 0
+
+
 def cmd_tickets(findings, min_sev):
     """Build the SDP-ready ticket records. Does not create anything and does not gate -
     the gate lives in main(), between this and whatever calls the SDP tools."""
@@ -854,11 +1099,14 @@ def main():
     # `--y`/`--ye` satisfy `--yes` below, since no other flag starts with `y` -
     # the gate must be asked for by name, not by whatever prefix happens to be
     # unambiguous today.
-    p = argparse.ArgumentParser(description="Gizmoduck: run Nuclei and process its output.",
+    p = argparse.ArgumentParser(description="Gizmoduck: run Nuclei, or the whole scanner routine "
+                                            "from a manifest, and process the output.",
                                  allow_abbrev=False)
     p.add_argument("command",
-                   choices=["scan", "summary", "parse", "report", "tickets", "diff", "doctor", "update"])
-    p.add_argument("target", nargs="?", help="target/host/URL/file, or findings.jsonl")
+                   choices=["scan", "routine", "summary", "parse", "report", "tickets", "diff",
+                            "doctor", "update"])
+    p.add_argument("target", nargs="?",
+                   help="target/host/URL/file, findings.jsonl, or (routine) the manifest YAML")
     p.add_argument("baseline2", nargs="?", help="for diff: the newer findings.jsonl")
     # No default here. It is resolved per command below, because one default
     # cannot be right for both: `parse`/`summary` want everything, while
@@ -889,14 +1137,34 @@ def main():
                         "mismatched digest is refused, never treated as a bare "
                         "go-ahead (default is gated; this flag does not mean "
                         "unattended-only)")
+    p.add_argument("--run-manifest", metavar="RUN_MANIFEST_JSON", default=None,
+                   help="report only: a routine run's run-manifest.json, so the report "
+                        "renders its coverage table (which tools ran, were missing, or failed)")
+    p.add_argument("--scan-root", metavar="MODULE_DIR", default=None,
+                   help="routine only: write into MODULE_DIR/docs/security-scans/YYYY-MM-DD/ "
+                        "instead of --out")
+    p.add_argument("--date", metavar="YYYY-MM-DD", default=None,
+                   help="routine only, with --scan-root: the dated directory's date "
+                        "(default: today, UTC)")
+    p.add_argument("--replace", action="store_true",
+                   help="routine only: overwrite an output directory that already holds an "
+                        "earlier run's scan-meta.json (refused without this)")
+    # sqlmap sends attack traffic. Asked for by name (allow_abbrev=False
+    # above): a manifest's `options.sqlmap: true` only makes a target a
+    # candidate, and without this flag that cell records `skipped-active`.
+    p.add_argument("--confirm-active", action="store_true",
+                   help="routine only: let sqlmap fire on targets whose manifest entry sets "
+                        "options.sqlmap true - asked for by name; without it those cells "
+                        "record skipped-active")
     a = p.parse_args()
 
     # `command` is positional and `target`/`baseline2` are not, so argparse
     # accepts `scan` with no target and the failure surfaces later as a
     # TypeError or a confusing open() error on None. Say what is missing.
     if a.command not in ("doctor", "update") and not a.target:
-        p.error(f"{a.command} needs a "
-                f"{'target (URL, host, or a file of targets)' if a.command == 'scan' else 'findings.jsonl path'}")
+        needs = {"scan": "target (URL, host, or a file of targets)",
+                 "routine": "manifest (a targets YAML with authorized_by and targets)"}
+        p.error(f"{a.command} needs a {needs.get(a.command, 'findings.jsonl path')}")
     if a.command == "diff" and not a.baseline2:
         p.error("diff needs two findings files: <baseline.jsonl> <current.jsonl>")
     # `--yes` is a top-level flag (argparse has no per-subcommand parsers here),
@@ -905,6 +1173,27 @@ def main():
     # something, since --yes is the one flag in this tool that changes behaviour.
     if a.yes and a.command != "tickets":
         p.error(f"--yes only applies to the 'tickets' command, not '{a.command}'")
+    # The same rule for the routine-only flags and report's --run-manifest:
+    # a flag silently ignored by the command it was typed on reads as if it
+    # did something - and --confirm-active is the one that fires sqlmap.
+    for flag, value in (("--scan-root", a.scan_root), ("--date", a.date),
+                        ("--replace", a.replace), ("--confirm-active", a.confirm_active)):
+        if value and a.command != "routine":
+            p.error(f"{flag} only applies to the 'routine' command, not '{a.command}'")
+    if a.run_manifest and a.command != "report":
+        p.error(f"--run-manifest only applies to the 'report' command, not '{a.command}'")
+    routine_date = None
+    if a.command == "routine":
+        if a.scan_root and a.out:
+            p.error("--scan-root and --out name the output directory two ways; pass one")
+        if a.date and not a.scan_root:
+            p.error("--date only shapes the --scan-root layout; with --out the directory "
+                    "is yours to name")
+        if a.date:
+            try:
+                routine_date = datetime.date.fromisoformat(a.date)
+            except ValueError:
+                p.error(f"--date must be YYYY-MM-DD, not {a.date!r}")
 
     # Per command, matching what each command file passes, because one default
     # cannot be right for all of them. `report` and `tickets` are High and above
@@ -915,7 +1204,7 @@ def main():
     # `report` defaults to medium so the report itemises Critical/High/Medium -
     # see REPORT_DETAIL_FLOOR. `tickets` stays at high on purpose: a Medium is
     # worth reading in a report without being worth a ticket of its own.
-    _FLOORS = {"report": "medium", "tickets": "high", "diff": "low"}
+    _FLOORS = {"report": "medium", "routine": "medium", "tickets": "high", "diff": "low"}
     min_sev = SEV_NUM[a.min_severity or _FLOORS.get(a.command, "info")]
 
     if a.command == "doctor":
@@ -931,6 +1220,11 @@ def main():
         title = a.title if a.title != "Nuclei Vulnerability Report" else "Scan Diff"
         safe_print(cmd_diff(a.target, a.baseline2, min_sev, title))
         return
+    if a.command == "routine":
+        title = a.title if a.title != "Nuclei Vulnerability Report" else None
+        sys.exit(cmd_routine(a.target, a.out or _ROUTINE_DEFAULT_OUT, scan_root=a.scan_root,
+                             date=routine_date, replace=a.replace, confirm=a.confirm_active,
+                             title=title, min_sev=min_sev))
 
     findings = load(a.target)
 
@@ -980,8 +1274,14 @@ def main():
                 sys.exit(3)
         safe_print(json.dumps(records, indent=2))
     elif a.command == "report":
+        run_manifest = None
+        if a.run_manifest:
+            try:
+                run_manifest = _load_run_manifest(a.run_manifest)
+            except (OSError, ValueError) as exc:
+                p.error(f"--run-manifest: {exc}")
         if a.format == "md":
-            md = cmd_report(findings, min_sev, a.title)
+            md = cmd_report(findings, min_sev, a.title, run_manifest=run_manifest)
             if a.out:
                 write_text(a.out, md)
                 safe_print(f"wrote {a.out}")
@@ -989,11 +1289,11 @@ def main():
                 safe_print(md)
         elif a.format == "html":
             out = a.out or "nuclei-report.html"
-            write_text(out, render_html(findings, min_sev, a.title))
+            write_text(out, render_html(findings, min_sev, a.title, run_manifest=run_manifest))
             safe_print(f"wrote {out}")
         elif a.format == "pdf":
             out = a.out or "nuclei-report.pdf"
-            doc = render_html(findings, min_sev, a.title)
+            doc = render_html(findings, min_sev, a.title, run_manifest=run_manifest)
             if html_to_pdf(doc, out):
                 safe_print(f"wrote {out}")
             else:
