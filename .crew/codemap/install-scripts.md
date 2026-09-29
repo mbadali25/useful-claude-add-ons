@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@bbd9a66d
+anchor: useful-claude-add-ons@a4b4f223
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -1196,3 +1196,9 @@ so the merged tree is `6b89c1df` plus that README change). `08eeaa3e` adds the r
 `plugin/crew/tests/test_crew_autopilot_policy.py`. `bbd9a66d` re-sets crew 1.0.61. Each edited line kept its
 number (the parentheses and comments were added in place) except in `test_crew_autopilot_policy.py`, whose
 import block lost one line; no note cites that file by line. Re-anchor only; nothing was executed for this note.
+
+## Re-anchor provenance - `bbd9a66d` -> `a4b4f223`, 2026-09-29 (T-0501)
+
+T-0501's branch off origin/main `8ab733d7` (crew 1.0.61): `fb0ecbb1` adds `rules`' advisory anchor lines and
+`check_instructions.py`'s prefix filter, `17de8f3f` the docs, verify rules 32-33 and sabotage entries,
+`a4b4f223` bumps crew to 1.0.62. Of this note's cited paths only `.crew/verify.json` changed: two rules appended after every line this note cites (`:341-352`) and rule 24's `why` extended in place at `:268`, so every `.crew/verify.json:<n>` citation here holds. `plugin/crew/BUDGETS.md:11`'s claim changed in place (19,502 lines), no line moved; the version files changed in place (1.0.62 at `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`). Re-anchor only; nothing was executed for this note.

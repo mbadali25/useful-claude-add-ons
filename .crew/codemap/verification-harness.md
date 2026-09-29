@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@bbd9a66d
+anchor: useful-claude-add-ons@a4b4f223
 verified: 2026-09-28
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -433,41 +433,43 @@ skills, 5 plugins`, `all checks passed`, rc 0.
 
 ## `scripts/check_instructions.py` — new since the previous anchor, CI-only
 
-**DERIVED, read in full at this anchor.** 721 lines, absent at `5d1fc5fd`.
+**DERIVED, read in full at this anchor.** 730 lines (721 before T-0501's prefix filter), absent at `5d1fc5fd`.
 Gates crew 1.0's instruction-surface budgets file by file, per its own module
-docstring (`:1-59`): a 120-line command-file budget
-(`COMMAND_MAX_LINES`, `:76`) with `plugin/crew/.budget-allowance.json` as the
+docstring (`:1-61`): a 120-line command-file budget
+(`COMMAND_MAX_LINES`, `:78`) with `plugin/crew/.budget-allowance.json` as the
 only sanctioned exception; no file outside that allowance may grow past its
 recorded line count, and no listed ceiling may be *raised* in the same change
 that grows the file unless its `reason` is rewritten to an explicit
-`"raised: <why>"` string (`RAISED_REASON_RE`, `:97`) — checked against the
+`"raised: <why>"` string (`RAISED_REASON_RE`, `:99`) — checked against the
 allowance file as committed at the merge-base with the default branch, or
-`--base <ref>` (`check_allowance_no_silent_raise`, `:334`); frontmatter
+`--base <ref>` (`check_allowance_no_silent_raise`, `:336`); frontmatter
 presence; generated-file drift (a no-op today — none is committed in this
 repo, per its own docstring, but tested against fixtures); a maintained
 **stale-name scan**, inverted from the pattern the marketplace checker uses —
-`STALE_NAMES` (`:98-106`, eight pre-1.0 names: `qa-reviewer`, `/crew:work`,
+`STALE_NAMES` (`:100-108`, eight pre-1.0 names: `qa-reviewer`, `/crew:work`,
 `/crew:ticket`, `/crew:pm`, `/crew:roster`, `/crew:scale`, `pm-journal`,
 `pm-pulse`) is scanned across **every** `plugin/crew/*.md` file (and
-`AGENTS.md`) by default, and `LEGACY_STALE_NAME_FILES` (`:118-...`, a
+`AGENTS.md`) by default, and `LEGACY_STALE_NAME_FILES` (`:120-...`, a
 maintained allowlist of pre-1.0 or held files permitted to mention one) is
 what is *exempt* — a new 1.0 file nobody remembers to list is checked, not
-silently skipped, which the comment at `:109-117` states was the opposite of
+silently skipped, which the comment at `:111-119` states was the opposite of
 the previous convention's failure mode; broken `${CLAUDE_PLUGIN_ROOT}` /
 Markdown-link references; and typed policy IDs — every `guards.<name>`
-reference is checked against `crew_guards.ALL_GUARD_NAMES` (`:653`, the one
+reference is checked against `crew_guards.ALL_GUARD_NAMES` (`:662`, the one
 place those names are declared).
 
-`rel()` (`:195-202`) is POSIX-relative by construction: `os.path.relpath`
+`rel()` (`:197-204`) is POSIX-relative by construction: `os.path.relpath`
 joined with the OS separator and then `.replace(os.sep, "/")`, because every
 path-keyed lookup this script does (`.budget-allowance.json`'s keys,
 `LEGACY_STALE_NAME_FILES`) is committed with `/` — a bare `os.path.relpath` on
 Windows would silently miss every lookup rather than raise, per the
 function's own docstring.
 
-**Not wired into `.crew/verify.json` or the local Stop gate at all.** Its only
-entry point is `.github/workflows/instruction-budgets.yml`, a dedicated
-3.11/3.12/3.13 matrix job. Re-run this pass, read-only against this
+**Not wired into `.crew/verify.json` or the local Stop gate at all** - until T-0501: rule 33
+(`.crew/verify.json:348-352`) now runs its regression suite, `scripts/_test/instruction-budgets.py`
+(66 passed, 0 failed on T-0501's branch), for a change to either file; `check_instructions.py`
+itself is still CI-only. Its CI entry point is `.github/workflows/instruction-budgets.yml`, a
+dedicated 3.11/3.12/3.13 matrix job. Re-run this pass, read-only against this
 checkout: `python3 scripts/check_instructions.py` → `instruction budgets: all
 checks passed`, rc 0; `python3 scripts/_test/instruction-budgets.py` (its
 sabotage suite, which builds throwaway fixtures under a temp dir and never
@@ -552,7 +554,7 @@ set on Ubuntu.
 - `scripts/check-marketplace.py:518` — `check_versions`.
 - `scripts/check-marketplace.py:564`, `:673` — `count_crew_markdown_lines`,
   `check_self_claims`.
-- `scripts/check_instructions.py:685` — `main()`, nine checks.
+- `scripts/check_instructions.py:694` — `main()`, nine checks.
 - `.github/workflows/instruction-budgets.yml:40-62` — the `github.event.before`
   base-sha fix for a `push` to `main`.
 
@@ -1755,3 +1757,9 @@ so the merged tree is `6b89c1df` plus that README change). `08eeaa3e` adds the r
 `plugin/crew/tests/test_crew_autopilot_policy.py`. `bbd9a66d` re-sets crew 1.0.61. Each edited line kept its
 number (the parentheses and comments were added in place) except in `test_crew_autopilot_policy.py`, whose
 import block lost one line; no note cites that file by line. Re-anchor only; nothing was executed for this note.
+
+## Re-anchor provenance - `bbd9a66d` -> `a4b4f223`, 2026-09-29 (T-0501)
+
+T-0501's branch off origin/main `8ab733d7` (crew 1.0.61): `fb0ecbb1` adds `rules`' advisory anchor lines and
+`check_instructions.py`'s prefix filter, `17de8f3f` the docs, verify rules 32-33 and sabotage entries,
+`a4b4f223` bumps crew to 1.0.62. `.crew/verify.json` gained rules 32 and 33 (`:341-352`) and rule 24's `why` one sentence in place, so it is 357 lines and 34 rules; this note's rule list gains both and rule 24's bullet the sentence. `scripts/check_instructions.py` grew nine lines (the prefix constant and filter, docstring), so the "`scripts/check_instructions.py`" section's cites were re-found by content (`main()` now `:694`, `ALL_GUARD_NAMES` `:662`) and its "not wired into the Stop gate" sentence now names rule 33. `python3 scripts/_test/instruction-budgets.py` -> 66 passed, 0 failed; `python3 scripts/check_instructions.py` -> all checks passed.

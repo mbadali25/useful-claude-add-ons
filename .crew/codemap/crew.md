@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@bbd9a66d
+anchor: useful-claude-add-ons@a4b4f223
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 36 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.61 (T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.62 (T-0501's bump `a4b4f223`, one past main's 1.0.61 at `8ab733d7`; 1.0.61 was T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -580,9 +580,9 @@ and gets nothing created.
 - `crew_autoclear_setup.py` is called from **three** places, confirmed by
   grep and by reading each call site: `/crew:init`'s Phase 1
   (`plugin/crew/skills/crew-setup/phases.md:182-188`, `plan-windows-default`),
-  `/crew:onboard` (`plugin/crew/commands/onboard.md:199`, the identical
+  `/crew:onboard` (`plugin/crew/commands/onboard.md:201`, the identical
   helper, "so a repo onboarded standalone gets the identical question"),
-  and `/crew:migrate` (`plugin/crew/commands/migrate.md:78`,
+  and `/crew:migrate` (`plugin/crew/commands/migrate.md:81`,
   `apply-migrate`).
 
 ## Auto-resume after `/clear` (T-0006, crew 1.0.40; T-0042, crew 1.0.43)
@@ -2781,3 +2781,9 @@ so the merged tree is `6b89c1df` plus that README change). `08eeaa3e` adds the r
 `plugin/crew/tests/test_crew_autopilot_policy.py`. `bbd9a66d` re-sets crew 1.0.61. Each edited line kept its
 number (the parentheses and comments were added in place) except in `test_crew_autopilot_policy.py`, whose
 import block lost one line; no note cites that file by line. Re-anchor only; nothing was executed for this note.
+
+## Re-anchor provenance - `bbd9a66d` -> `a4b4f223`, 2026-09-29 (T-0501)
+
+T-0501's branch off origin/main `8ab733d7` (crew 1.0.61): `fb0ecbb1` adds `rules`' advisory anchor lines and
+`check_instructions.py`'s prefix filter, `17de8f3f` the docs, verify rules 32-33 and sabotage entries,
+`a4b4f223` bumps crew to 1.0.62. `plugin/crew/hooks/scripts/crew_instructions.py` gained `ANCHOR_ADVISORY_PREFIXES`, `WARN_STATES`, `_rule_subsystems`, `anchor_lines` and `_anchor_summary`; the "`.claude/rules/` - generated from this directory" section re-derives its five cites and describes them. `plugin/crew/commands/onboard.md` grew two lines in step 6 and `migrate.md` six in its preview/apply paragraphs, so the `crew_autoclear_setup.py` call-site cites moved to `onboard.md:201` and `migrate.md:81` (re-found by content). The version sentence reads 1.0.62. Nothing was executed for this note beyond `crew_instructions.py rules`.
