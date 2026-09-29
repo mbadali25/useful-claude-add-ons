@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@14ad3075 on 2026-09-29. Verify before trusting.
+%% Generated from useful-claude-add-ons@f5efde46 on 2026-09-29. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -155,7 +155,7 @@
 %% 1's single `status:` value from STATUS_VALUES, and status() compares that
 %% digest (:605-626); any other byte change still reads `stale`, and the
 %% completion audit still refuses to judge scope on anything but `approved`
-%% (plugin/crew/hooks/scripts/completion_audit.py:270-282). A receipt with no
+%% (plugin/crew/hooks/scripts/completion_audit.py:290-302). A receipt with no
 %% `digest` field is compared raw and stales once on its first status edit.
 %% Re-anchored 8de3c669 -> a4eb2f55 (T-0072 merged onto 5050ea3b, T-0077, crew 1.0.50): of the
 %% Anchors paths only crew_tracker.py changed (T-0077's Windows directory holds); it is cited
@@ -173,6 +173,12 @@
 %% :328-332) and one echo line, line-neutral, so review.md:25-29, :449 hold (compared by
 %% script). Check 3 now leaves out paths identical to merged main, which no node here
 %% draws. No node or edge changed.
+%% Re-anchored 753719dc -> f5efde46 (T-0100 successor, crew 1.0.60). This records the moves
+%% the 14ad3075 header re-anchor left unnoted, and this step's: completion_audit.py's approval
+%% block :231-243 (753719dc) -> :270-282 (14ad3075, round-1 fixes) -> :290-302 (f5efde46,
+%% the core.fileMode read), and its refresh allowance :198-208 -> :235-245 -> :255-265; both
+%% ranges mapped line for line by script (difflib). Of the Anchors paths only completion_audit.py
+%% changed 14ad3075..f5efde46. No node or edge changed.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
