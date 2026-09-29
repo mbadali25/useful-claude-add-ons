@@ -274,3 +274,24 @@ def test_run_reserves_after_an_edit_that_keeps_the_record_complete(repo, tmp_pat
     result = _run(repo, scratch, fakes, "claude", "--reserve-only")
 
     assert (result.returncode, result.stdout.strip()) == (0, "ROUND=1"), result.stderr
+
+
+_SOUND_OVERLAY = ('---\nset: REPO\napplies-to: ["**"]\n---\n\n## REPO-01 Local\n\n**Rule.** r\n\n'
+                  "**Self-check.** s\n")
+
+
+def test_run_refuses_a_broken_effective_set(repo, tmp_path):
+    overlay = repo / ".crew" / "standards.md"
+    overlay.parent.mkdir(exist_ok=True)
+    overlay.write_text(_SOUND_OVERLAY, encoding="utf-8")
+    _selfcheck(repo)
+    overlay.write_bytes(b"---\nset: REPO\napplies-to: [\"**\"]\n---\n\xff\xfe\n")
+    scratch = tmp_path / "scratch"
+    _bundle(repo, scratch)
+    fakes = fake_reviewer_bin(tmp_path / "bin")
+    before = _ledger_snapshot(repo)
+
+    result = _run(repo, scratch, fakes, "claude", "--reserve-only")
+
+    assert (result.returncode, "review-run: self-check: .crew/standards.md: not UTF-8" in
+            result.stderr, _ledger_snapshot(repo) == before) == (2, True, True), result.stderr

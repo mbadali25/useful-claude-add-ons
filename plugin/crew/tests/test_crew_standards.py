@@ -779,3 +779,35 @@ def test_stamp_refusal_never_names_a_record_that_would_be_kept(tmp_path, refs):
     text = "\n".join(lines)
     assert (source, code, "not in this clone" in text, "--record" in text) == (
         "head", 1, True, False), text
+
+
+# ---- review round 2 FIX 2: each caller refuses a broken effective set ------------
+
+_NOT_UTF8_OVERLAY = b"---\nset: REPO\napplies-to: [\"**\"]\n---\n\xff\xfe\n"
+
+
+def test_init_refuses_a_broken_effective_set(tmp_path, refs):
+    repo = _scoped_repo(tmp_path)
+    _write_overlay(repo, raw=_NOT_UTF8_OVERLAY)
+
+    code, lines = cs.init(str(repo), "T-1", refs_dir=str(refs))
+
+    text = "\n".join(lines)
+    assert (code, ".crew/standards.md: not UTF-8" in text,
+            (repo / ".work" / "tickets" / "T-1" / "selfcheck.md").exists()) == (
+        1, True, False), text
+
+
+def test_stamp_refuses_a_broken_effective_set(tmp_path, refs):
+    repo = _scoped_repo(tmp_path)
+    _write_overlay(repo)
+    cs.init(str(repo), "T-1", refs_dir=str(refs))
+    path = _answer_all(repo)
+    before = path.read_bytes()
+    _write_overlay(repo, raw=_NOT_UTF8_OVERLAY)
+
+    code, lines = cs.stamp(str(repo), "T-1", refs_dir=str(refs))
+
+    text = "\n".join(lines)
+    assert (code, ".crew/standards.md: not UTF-8" in text, path.read_bytes() == before) == (
+        1, True, True), text

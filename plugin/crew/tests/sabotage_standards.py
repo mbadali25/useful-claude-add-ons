@@ -163,4 +163,28 @@ STANDARDS_MUTATIONS = (
         ("tests/test_review_run_standards.py::"
          "test_run_refuses_a_selfcheck_edited_after_stamping"),
     ),
+    (
+        "init ignores a broken set",
+        STANDARDS,
+        "    if found[\"problems\"]:\n"
+        "        return 1, [\"the effective standards set could not be read:\"] + "
+        "found[\"problems\"]\n",
+        "",
+        "tests/test_crew_standards.py::test_init_refuses_a_broken_effective_set",
+    ),
+    (
+        "stamp ignores a broken set",
+        STANDARDS,
+        "        problems += found[\"problems\"] + record_problems(rows, found)\n",
+        "        problems += record_problems(rows, found)\n",
+        "tests/test_crew_standards.py::test_stamp_refuses_a_broken_effective_set",
+    ),
+    (
+        "the gate ignores a broken set",
+        STANDARDS,
+        "    problems += found[\"problems\"]\n"
+        "    rows, seal, read_problems = read_selfcheck(root, ticket)\n",
+        "    rows, seal, read_problems = read_selfcheck(root, ticket)\n",
+        "tests/test_review_run_standards.py::test_run_refuses_a_broken_effective_set",
+    ),
 )
