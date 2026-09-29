@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@3648f59a
-verified: 2026-09-28
+anchor: useful-claude-add-ons@fe1834b1
+verified: 2026-09-29
 
 ## Re-derive provenance
 
@@ -352,7 +352,7 @@ listing the directory.
   resolves to stale.
 
 - **`TODO.md`'s `render.sh` entry is still open, still un-CLOSED, re-located
-  rather than assumed at its old line.** Now at `TODO.md:1201` (`:1190` at
+  rather than assumed at its old line.** Now at `TODO.md:1216` (`:1201` at `2693d0fa`, `:1190` at
   `1e0706ac`, `:1122` at
   `f2bb919b`, `:1092` at `6c497a14`, `:1061` before that; the file grew 3645 -> 4714 lines, +1069,
   in the `5d1fc5fd..6c497a14` range, and 30 more lines landed after its
@@ -1134,3 +1134,9 @@ hold. Nothing else was executed for this note.
 `plugin/crew/README.md`'s runbook-index sentence moves `:2196` -> `:2199` (round 5's three README lines above it), added at the head of its per-commit list. No other body citation moved.
 
 Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `938e3b11` for a line in T-0075's copy of this note and from `6387ab49` for a line only in main's, to the tree at `3648f59a` (difflib equal blocks); every citation that did not map to itself was read with `sed -n` / `grep -n`. The script attributes some bare `:N` to the wrong file (a `.crew/verify.json` range after a test-file mention, a `check-marketplace.py` range after a `PLUGINS.md` mention, a `SKILL.md` in another skill); those were read and hold. A citation inside a list of per-commit positions keeps its commit's line; only the current position is added. Nothing else was executed for this note.
+
+## Re-anchor provenance - `3648f59a` -> `fe1834b1`, 2026-09-29 (T-0104, crew 1.0.60)
+
+`3648f59a..fe1834b1` is origin/main's `3648f59a..2693d0fa` (T-0075's landing as #258 `e878cc31`, crew 1.0.59, and the README re-pin `17d057db`, #259) followed by T-0104's own commits `53665204`, `bd3f7953`, `d5d59fae`, `37726645` and `fe1834b1` (the webtest scaffold for multi-module repositories, crew 1.0.60: `webtest_scaffold.py`, `webtest_rules.py`, `webtest_guard.py`, their tests and `sabotage_webtest.py`, `commands/init.md`, `commands/webtest.md`, `crew-setup/phases.md`, `stack-web/SKILL.md`, `README.md`'s `/crew:webtest` row, `plugin/PLUGINS.md`, two guide sources and their built outputs, `CHANGELOG.md`, `TODO.md`, `.crew/verify.json` rule 31, `plugin/crew/BUDGETS.md:11` and the three version files).
+
+Body citations moved: `TODO.md`'s `render.sh` entry is now `:1216` (T-0104's two bullets sit at the top of `TODO.md`); the diagram header lines are unchanged at `fe1834b1`. Corrected here, not re-derived: the body's "`README.md:12` and `:18` still read `6c497a14fc06612732241d2b13eee4fea41996f5`" is a dated reading; at `fe1834b1` both lines pin `e878cc31e00a7acb480fc17dd8afdcaf40c91f2d` (T-0075's landing merge, re-pinned by `17d057db`, #259). Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `3648f59a` to the tree at `fe1834b1` (difflib equal blocks); every citation that did not map to itself was read with `sed -n` / `grep -n`. The script attributes some bare `:N` to the wrong file (a `role_write_guard.py` range after a `TODO.md` mention, a `check-marketplace.py` range after a `marketplace.json` mention); those were read and hold. A citation inside a list of per-commit positions keeps its commit's line; only the current position is added. Nothing else was executed for this note.
