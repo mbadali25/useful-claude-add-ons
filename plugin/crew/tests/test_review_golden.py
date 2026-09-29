@@ -15,6 +15,7 @@ import glob
 import json
 import os
 import re
+import subprocess
 
 import pytest
 
@@ -78,6 +79,42 @@ STREAMS = [f for f in FIXTURES if os.path.exists(os.path.join(f, "events.jsonl")
 def test_golden_codex_stream_yields_its_out_txt(folder):
     assert rv.codex_final_message(_text(folder, "events.jsonl")) == (
         _text(folder, "out.txt"), None)
+
+
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
+    __file__)))))
+ATTRIBUTES = "plugin/crew/tests/golden/.gitattributes"
+
+
+def _corpus_files():
+    return sorted(os.path.relpath(p, REPO).replace(os.sep, "/")
+                  for p in glob.glob(os.path.join(GOLDEN, "**", "*"), recursive=True)
+                  if os.path.isfile(p))
+
+
+def test_golden_corpus_is_checked_out_without_line_ending_conversion():
+    files = _corpus_files()
+    proc = subprocess.run(["git", "check-attr", "text", "--"] + files, cwd=REPO,
+                          capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                          check=False)
+
+    assert proc.returncode == 0, proc.stderr
+    converted = [line for line in proc.stdout.splitlines() if not line.endswith(": text: unset")]
+    assert files and not converted, (
+        f"{len(converted)} corpus file(s) are not -text; {ATTRIBUTES} must hold `* -text` "
+        f"so an autocrlf checkout replays the corpus byte-exact: {converted[:3]}")
+
+
+def test_golden_corpus_files_carry_no_carriage_return():
+    with_cr = []
+    for rel in _corpus_files():
+        with open(os.path.join(REPO, rel), "rb") as fh:
+            if b"\r" in fh.read():
+                with_cr.append(rel)
+
+    assert not with_cr, (
+        f"{len(with_cr)} corpus file(s) hold a CR; the committed blobs hold none, so an "
+        f"autocrlf checkout without {ATTRIBUTES} is the known cause: {with_cr[:3]}")
 
 
 def test_golden_corpus_covers_the_shapes_that_broke():
