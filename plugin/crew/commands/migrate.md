@@ -22,8 +22,8 @@ Preview writes nothing. Show me its output verbatim and point out:
 - every `skip` line - a file that was not imported, and why;
 - every `retireable` line - an original left in place that 1.0 no longer reads;
 - every `note` line - notably `pm.authority: autonomous`, which 1.0 keeps under
-  `retired.pm` and records in `crew.json` `notes` as "autopilot arrives in
-  1.1.0". Say plainly that nothing will dispatch on its own until then.
+  `retired.pm` and records in `crew.json` `notes`: it arms nothing, and
+  `/crew:autopilot` is its successor, off until `autopilot.mode: plan`.
 
 Then list the path-scoped rules apply will generate from the code map:
 

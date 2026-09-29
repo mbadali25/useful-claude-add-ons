@@ -297,7 +297,7 @@ def test_the_ratchet_is_one_table_covering_install_policy_and_all_four_guards():
         "guards.prodServer", "guards.roleWrites",
         "guards.cloudDestructive", "guards.sqlDestructive",
         "guards.cloudGuard",
-        "change.requireForProduction"}
+        "change.requireForProduction", "environments.prodUnattended"}
     # The cloud guard's switch shares `roleWrites`' vocabulary and split
     # default; it must never be normalised through `block`/`ask`/`allow`.
     assert crew_state.RATCHETED_KEYS["guards.cloudGuard"][0] == (

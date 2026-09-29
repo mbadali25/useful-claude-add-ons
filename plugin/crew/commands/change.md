@@ -12,9 +12,9 @@ one is the wording, and neither restates the other.
 
 ## 0. The backend, first
 
-Read `tracker` from the effective config, through `/crew:config` rather than
-out of `.crew/config.json`, because a machine-global file can set keys the repo
-file would not show.
+Read the tracker kind with `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py resolve --root .`,
+which reads `.crew/crew.json` and `.crew/config.json` alike; `could not tell`
+is a stop - show me its line, never pick one.
 
 | `tracker` | Backend |
 |---|---|

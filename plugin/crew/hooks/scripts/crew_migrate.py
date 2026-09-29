@@ -33,7 +33,8 @@ crew.json alone -- that inverse is what the round-trip test asserts.
 
 A setting 1.0 carries but no longer acts on is also said out loud: crew.json
 gains a `notes` list and the report a `note` line. Today that is one case,
-`pm.authority: autonomous` -> "autopilot arrives in 1.1.0".
+`pm.authority: autonomous` -> "/crew:autopilot drives one ticket; set
+autopilot.mode: plan to enable".
 
 | config.json (<= 7) | crew.json (1)            | Note |
 |--------------------|--------------------------|------|
@@ -119,10 +120,11 @@ MAPPING = (
 ROSTER = ("explorer", "reviewer", "security", "researcher")
 RENAMED = {"qa-reviewer": "reviewer"}
 # `pm.authority: autonomous` moves under `retired.pm` with the rest of the PM
-# block, and nothing in 1.0 dispatches on its own. Said in the report and in
-# crew.json, never dropped silently.
-AUTOPILOT_NOTE = ("pm.authority: autonomous - autopilot arrives in 1.1.0; until then "
-                  "nothing dispatches without you (kept under retired.pm)")
+# block and arms nothing: `/crew:autopilot` (T-0004) is the successor, off
+# until `autopilot.mode: plan` is set in `.crew/config.json`. Said in the report
+# and in crew.json, never dropped silently.
+AUTOPILOT_NOTE = ("pm.authority: autonomous - /crew:autopilot drives one ticket; set "
+                  "autopilot.mode: plan to enable (kept under retired.pm)")
 
 # `LETTERS-digits`, the shape the rest of crew recognises as a ticket id
 # (crew_state._TICKET_RE). Anchored, so it doubles as a path-safety check: an
