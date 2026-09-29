@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@bbd9a66d
-verified: 2026-09-28
+anchor: useful-claude-add-ons@835ce179
+verified: 2026-09-29
 
 ## Re-derive provenance
 
@@ -300,7 +300,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:2204` (on T-0010-solo's merge of `e878cc31`; `:2080` on T-0010-solo at `d7c7c75c`, `:2072` at `c817782f`, `:2069` at `89c9ee9a`, `:2058` at `50e67586`; `:2199` at `3648f59a`, T-0075's round-5 docs after its merge of `6387ab49`; `:2196` at `938e3b11`, T-0075's round-4 docs after its merge of `f54af3fa`; `:2187` at `3724731b`, T-0075 after its merge of `e6e10432`; `:2169` on T-0075's merge of `d2fbd408`; `:2075` at `d2fbd408`, `:1812` on T-0024's branch at `45345812`, `:2161` on T-0075's branch at `763eaeff`, `:2127` at `764f6018`, `:2067` at `67caa4b8`, `:2102` on T-0075's `f7163410`, `:2052` at `bebbb97f`, `:2079` on T-0075's `e95e5964`, `:2044` on T-0018's first landing merge at `fbc27b49`, `:2029` at `db14619c`, `:1959` on T-0018's branch at `e6b696fb`, `:1953` at T-0023's `a1acd9b7`, `:2015` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1944` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:2210` (since T-0019's six Autopilot lines above it; `:2204` on T-0010-solo's merge of `e878cc31`; `:2080` on T-0010-solo at `d7c7c75c`, `:2072` at `c817782f`, `:2069` at `89c9ee9a`, `:2058` at `50e67586`; `:2199` at `3648f59a`, T-0075's round-5 docs after its merge of `6387ab49`; `:2196` at `938e3b11`, T-0075's round-4 docs after its merge of `f54af3fa`; `:2187` at `3724731b`, T-0075 after its merge of `e6e10432`; `:2169` on T-0075's merge of `d2fbd408`; `:2075` at `d2fbd408`, `:1812` on T-0024's branch at `45345812`, `:2161` on T-0075's branch at `763eaeff`, `:2127` at `764f6018`, `:2067` at `67caa4b8`, `:2102` on T-0075's `f7163410`, `:2052` at `bebbb97f`, `:2079` on T-0075's `e95e5964`, `:2044` on T-0018's first landing merge at `fbc27b49`, `:2029` at `db14619c`, `:1959` on T-0018's branch at `e6b696fb`, `:1953` at T-0023's `a1acd9b7`, `:2015` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1944` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -420,21 +420,23 @@ listing the directory.
   `plugin/crew/tests/test_approval_digest.py` run that test file and
   `test_crew_ticket.py`. T-0005 inserted another mid-list (`:117-127`, the cloud-guard suites).
   Since `a0c0847e` T-0006's rule sits at `:282-292` (`:270-280` before T-0005 merged)
-  and T-0004 appended a last one (`:293-301` since T-0018 widened it; `:293-300` on main before that,
-  `:281-288` before T-0005 merged): `crew_autopilot.py`, `commands/autopilot.md`,
-  `test_crew_autopilot.py`, `test_crew_autopilot_status.py` (T-0018) and
-  `sabotage_autopilot.py` run `test_crew_autopilot.py`, `test_crew_autopilot_status.py` and
-  `test_lifecycle_commands.py`. T-0010's rule 28 follows it (`:302-308` since T-0010-solo merged
+  and T-0004 appended a last one (`:298-308` since T-0019 added `crew_ticket.py` and its two suites,
+  re-read at T-0019's version commit; `:293-301` since T-0018 widened it; `:293-300` on main before that,
+  `:281-288` before T-0005 merged): `crew_autopilot.py`, `crew_ticket.py` (T-0019), `commands/autopilot.md`,
+  `test_crew_autopilot.py`, `test_crew_autopilot_status.py` (T-0018), `test_crew_autopilot_deploy.py`
+  (T-0072), `test_crew_ticket_mint.py` and `test_crew_autopilot_assign.py` (T-0019) and
+  `sabotage_autopilot.py` run those test files (bar the sabotage module) plus
+  `test_lifecycle_commands.py`. T-0010's rule 28 follows it (`:309-315` since T-0019; `:302-308` since T-0010-solo merged
   `67caa4b8`; `:301-306` on its branch): `crew_autopilot.py`, `commands/autopilot.md` (since review
   round 2) and `test_crew_autopilot_policy.py` run that file plus `test_scope_guard.py`. T-0021's
-  merge of main put its rule after those (`:309-316` since T-0010's merge; `:302-309` after T-0018
+  merge of main put its rule after those (`:316-323` since T-0019; `:309-316` since T-0010's merge; `:302-309` after T-0018
   landed, `:301-308` before that, `:262-269` on its branch before the merge): `crew_tracker.py`,
   `test_crew_tracker.py`, `sabotage_tracker.py` and the board fixtures run
-  `test_crew_tracker.py`. T-0023 appended rule 30 last (`:317-325` since T-0010's rule 28 went in
+  `test_crew_tracker.py`. T-0023 appended rule 30 last (`:324-332` since T-0019; `:317-325` since T-0010's rule 28 went in
   above it; `:310-318` on main since T-0018 landed, `:309-317` before): `crew_route.py`,
   `crew_context.py`, their two test files and `sabotage_route.py` run `test_crew_route.py`,
   `test_crew_route_hook.py` and `test_crew_context.py`.
-  T-0024 appended rule 31 last (`:327-334` since T-0010's merge of `6387ab49`, `:342-349` after its
+  T-0024 appended rule 31 last (`:334-341` since T-0019; `:327-334` since T-0010's merge of `6387ab49`, `:342-349` after its
   merge of `f96e9ec9`; `:320-327` on main; rule 27 at `:290-297` on its branch): `approval_hook.py`, both approval-hook
   wrappers, `crew_ticket.py`, `test_approval_hook.py`, `test_approval_group.py` and
   `sabotage_approval.py` run `test_approval_hook.py`, `test_approval_group.py` and
@@ -1288,3 +1290,20 @@ so the merged tree is `6b89c1df` plus that README change). `08eeaa3e` adds the r
 `plugin/crew/tests/test_crew_autopilot_policy.py`. `bbd9a66d` re-sets crew 1.0.61. Each edited line kept its
 number (the parentheses and comments were added in place) except in `test_crew_autopilot_policy.py`, whose
 import block lost one line; no note cites that file by line. Re-anchor only; nothing was executed for this note.
+
+## Re-anchor provenance - `bbd9a66d` -> `835ce179`, 2026-09-29 (T-0019, crew 1.0.62)
+
+`T-0019-assign` is cut from origin/main `8ab733d7` (T-0010 landed; past `bbd9a66d` only refresh artifacts).
+`32419204` adds `/crew:autopilot assign` and `crew_ticket.py mint`; `835ce179` sets crew 1.0.62. Changed:
+`plugin/crew/hooks/scripts/crew_ticket.py` (+15 in the docstring and imports, so every line from `:130`
+moves by 15; `mint`/`assign` appended after `touch_for`), `plugin/crew/hooks/scripts/crew_autopilot.py`
+(+4 after `route`, +2 in `route_args`: lines past `:1296` move by 4, past `:1311` by 6),
+`plugin/crew/commands/autopilot.md` (section 0 +1, section 3 -1, +4 at the end; 114 lines),
+`plugin/crew/README.md` (+6 in the Autopilot section, so lines past `:812` move by 6),
+`plugin/crew/CONFIG.md` (+2 at `:2388`, +1 at `:2444`), `.crew/verify.json` (rule 27 +2 paths lines, so
+rules 28-31 move by 2), `CHANGELOG.md` (+38 at the top), `plugin/crew/BUDGETS.md:11` and the version
+files in place, `plugin/crew/tests/sabotage_autopilot.py` (+98 appended), and new
+`plugin/crew/tests/test_crew_ticket_mint.py` and `plugin/crew/tests/test_crew_autopilot_assign.py`.
+Every body citation of the form `path:line` into those files was mapped by a line diff from `8ab733d7`
+(script) and the bare `:N` ones after a changed file's mention were listed the same way; lines inside
+dated provenance notes are left as history at their own commit. Moved in the body: `plugin/crew/README.md:2204` -> `:2210` (the runbooks-index sentence, re-read with `grep -n`) and the verify-rule ranges in the rule list (rule 27 `:298-308`, then `:309-315`, `:316-323`, `:324-332`, `:334-341`). Nothing was executed for this note.

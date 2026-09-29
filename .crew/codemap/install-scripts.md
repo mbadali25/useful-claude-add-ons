@@ -1,6 +1,6 @@
 # install-scripts
-anchor: useful-claude-add-ons@bbd9a66d
-verified: 2026-09-28
+anchor: useful-claude-add-ons@835ce179
+verified: 2026-09-29
 
 ## Re-derive provenance
 
@@ -1196,3 +1196,20 @@ so the merged tree is `6b89c1df` plus that README change). `08eeaa3e` adds the r
 `plugin/crew/tests/test_crew_autopilot_policy.py`. `bbd9a66d` re-sets crew 1.0.61. Each edited line kept its
 number (the parentheses and comments were added in place) except in `test_crew_autopilot_policy.py`, whose
 import block lost one line; no note cites that file by line. Re-anchor only; nothing was executed for this note.
+
+## Re-anchor provenance - `bbd9a66d` -> `835ce179`, 2026-09-29 (T-0019, crew 1.0.62)
+
+`T-0019-assign` is cut from origin/main `8ab733d7` (T-0010 landed; past `bbd9a66d` only refresh artifacts).
+`32419204` adds `/crew:autopilot assign` and `crew_ticket.py mint`; `835ce179` sets crew 1.0.62. Changed:
+`plugin/crew/hooks/scripts/crew_ticket.py` (+15 in the docstring and imports, so every line from `:130`
+moves by 15; `mint`/`assign` appended after `touch_for`), `plugin/crew/hooks/scripts/crew_autopilot.py`
+(+4 after `route`, +2 in `route_args`: lines past `:1296` move by 4, past `:1311` by 6),
+`plugin/crew/commands/autopilot.md` (section 0 +1, section 3 -1, +4 at the end; 114 lines),
+`plugin/crew/README.md` (+6 in the Autopilot section, so lines past `:812` move by 6),
+`plugin/crew/CONFIG.md` (+2 at `:2388`, +1 at `:2444`), `.crew/verify.json` (rule 27 +2 paths lines, so
+rules 28-31 move by 2), `CHANGELOG.md` (+38 at the top), `plugin/crew/BUDGETS.md:11` and the version
+files in place, `plugin/crew/tests/sabotage_autopilot.py` (+98 appended), and new
+`plugin/crew/tests/test_crew_ticket_mint.py` and `plugin/crew/tests/test_crew_autopilot_assign.py`.
+Every body citation of the form `path:line` into those files was mapped by a line diff from `8ab733d7`
+(script) and the bare `:N` ones after a changed file's mention were listed the same way; lines inside
+dated provenance notes are left as history at their own commit. Neither install script, `README.md`, `INSTALLATION.md` nor `scripts/check-marketplace.py` changed; the only cited lines that differ are the version files and `plugin/crew/BUDGETS.md:11`, changed in place. Neither install script was executed.

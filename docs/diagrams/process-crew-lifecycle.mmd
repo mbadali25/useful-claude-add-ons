@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@bbd9a66d on 2026-09-29. Verify before trusting.
+%% Generated from useful-claude-add-ons@835ce179 on 2026-09-29. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -276,3 +276,10 @@ flowchart TB
 %% Re-anchored d7c7c75c -> bbd9a66d (T-0010 landing branch, crew 1.0.61): of the Anchors paths only
 %% crew_ticket.py changed, one line in place (a noqa: BLE001 beside the broad-except disable in the
 %% autopilot-policy check), so every line number above holds. No node or edge changed.
+%% Re-anchored bbd9a66d -> 835ce179 (T-0019, crew 1.0.62): of the Anchors paths only crew_ticket.py
+%% changed - +15 lines in the module docstring and imports (T-0019's "Minting" paragraph), then
+%% mint/assign appended after touch_for. So approval_digest is at :577, status() at :604 and approve
+%% at :738 (re-grepped), the digest block cited at :534-575 above is now :549-590 and the group
+%% confirm refusal :757-759. mint creates a ticket (folder + direction.md, then crew_tracker create
+%% and move --to ready) for /crew:autopilot assign, which this diagram does not draw; the
+%% brainstorm node's tracker create is unchanged. No node or edge changed.
