@@ -156,6 +156,32 @@
 %% so each side's citations stand; crew_context.py changed on both, and this diagram cites only
 %% load_crew_config :121-132, above both hunks (re-read). CONFIG.md changed on both sides and is
 %% cited by section only. Counts re-executed on the merge: 122 / 68 / 54 / 0.
+%% On T-0010-solo's branch (history, kept):
+%% On T-0010-solo's branch: Re-anchored 2b18f7ab -> 50e67586 (T-0010-solo, crew 1.0.43): of the Anchors paths crew_state.py
+%% and CONFIG.md changed. crew_state.py: AUTOPILOT_DEFAULTS grew a comment and the
+%% `approval`/`questions` keys (:1090 -> :1094); every cited line after it moved by 4 (PM_DEFAULTS
+%% :1104, QA_DEFAULTS :1151, DEV_DEFAULTS :1160, WORKTREE_DEFAULTS :1187, merge_defaults :1337),
+%% each compared line for line with the anchor tree. Leaf counts re-executed: 123 / 67 / 56 / 0.
+%% CONFIG.md gained §20 rows and prose, cited by section only. No edge moved.
+%% Merged 53f5482c + 50e67586 at 89c9ee9a (T-0010-solo merges main f0b12ee6, crew 1.0.44): of the
+%% Anchors paths crew_state.py changed on T-0010 only (its +4 lines above stand: :1094, :1104,
+%% :1151, :1160, :1187, :1337) and crew_context.py on T-0042 only (:121-132 holds); CONFIG.md
+%% changed on both, cited by section only (T-0042's lines in §14a, T-0010's in §20).
+%% crew_resume.settings :172 holds. Leaf counts 123 / 67 / 56 / 0 stand (T-0042 adds no key;
+%% test_crew_config.py:280 asserts 123). No node or edge changed.
+%% Re-anchored 89c9ee9a -> 8314d670 (T-0010 review round 1 fixes): of the Anchors paths only
+%% CONFIG.md changed - two §20 sentences on the approval ledger and `taken:` lines, cited by
+%% section only. No config key or leaf changed (123 / 67 / 56 / 0 stand). No node or edge changed.
+%% Merged e463ca53's lines + 8314d670 at c817782f (T-0010-solo merges T-0018's main 67caa4b8,
+%% crew 1.0.48): crew_state.py changed on T-0010's side only (+4 at AUTOPILOT_DEFAULTS :1094:
+%% PM_DEFAULTS :1104, QA_DEFAULTS :1151, DEV_DEFAULTS :1160, WORKTREE_DEFAULTS :1187,
+%% merge_defaults :1337); crew_config.py, crew_tracker.py and crew_context.py are main's, unchanged
+%% by T-0010 (without_null_shadows :629, read_global_config :720, merge calls :806-807 hold).
+%% CONFIG.md changed on both sides, cited by section only. Leaf counts re-executed at c817782f:
+%% 124 / 68 / 56 / 0 (T-0010's two repo-only autopilot keys on T-0023's 122 / 68 / 54).
+%% Re-anchored c817782f -> 926443d8 (T-0010 review round 3 fixes): of the Anchors paths only
+%% CONFIG.md changed - its §20 one-writer paragraph names what approve writes, cited by section
+%% only. No config key or leaf changed (124 / 68 / 56 / 0 stand). No node or edge changed.
 %% Re-anchored e463ca53 -> 81685adf (T-0079 merges T-0077's f96e9ec9, crew 1.0.50): of the
 %% Anchors paths only crew_tracker.py changed (`git diff --name-only`), by T-0077's
 %% ba2ee465 alone - the Windows directory hold, below resolve() and inside the vault-write
@@ -283,8 +309,9 @@
 %%     require python to take effect; a restricted role's write is ALWAYS
 %%     blocked with no python on PATH.
 %% --
-%% METHODOLOGY: leaf counts below (123 / 68 / 55 on T-0072's merge of main - T-0072's `autopilot.deploy`,
-%% repo-only; 122 / 68 / 54 on T-0023's merge of main - T-0023's `route.enabled`,
+%% METHODOLOGY: leaf counts below (125 / 68 / 57 at d7c7c75c - T-0010's two repo-only autopilot
+%% keys on T-0072's 123 / 68 / 55, whose `autopilot.deploy` is repo-only too; 124 / 68 / 56 at
+%% c817782f on T-0010-solo; 122 / 68 / 54 on T-0023's merge of main - T-0023's `route.enabled`,
 %% both layers; 121 / 67 / 54 on the T-0005 landing merge; 119 / 66 / 53 at
 %% 07ca3972 - T-0004's `autopilot`, repo-only; 118 / 66 / 52 at T-0005's fc54def6 -
 %% environments.prodUnattended in both, environments.nonProd repo-only; 117 / 66 / 51 at
@@ -359,6 +386,13 @@
 %% :3072 -> :3071, update_json :343 -> :350). ISG, MERGED, WRITE, RWRITE and FLOCK gain round 5's
 %% leaf rules, open-table rule, OSError refusal and PID-write cleanup; no edge changed. Leaf counts
 %% re-executed at 3648f59a: 123 / 68.
+%% Merged d7c7c75c + 3648f59a -> cd106b8b (T-0010-solo merges T-0075's main e878cc31, crew 1.0.60): of the
+%% Anchors paths crew_config.py, crew_config_menu.py and crew_config_files.py are main's (T-0010 changes
+%% none of them), so T-0075's citations stand; crew_state.py carries T-0010's +4 at AUTOPILOT_DEFAULTS
+%% :1094, so DEF reads PM_DEFAULTS :1105, QA_DEFAULTS :1152, DEV_DEFAULTS :1161, WORKTREE_DEFAULTS :1188
+%% and merge_defaults :1338 (re-read with grep -n); CONTEXT_DEFAULTS :732, RESUME_DEFAULTS :695,
+%% CLOUD_DEFAULTS :239 and ENVIRONMENTS_DEFAULTS :251 re-read too. Leaf counts re-executed: 125 / 68 / 57 / 0.
+%% CONFIG.md is cited by section only. No node or edge changed.
 %% Re-anchored 3648f59a -> cdd5f0ec (T-0100 merged onto e878cc31, T-0075 landed as crew 1.0.59; T-0100
 %% re-bumped to crew 1.0.60): of the Anchors paths only crew_config.py, crew_config_files.py and
 %% crew_config_menu.py changed, all by T-0075's landing commits (T-0100 touched none). crew_config.py
@@ -371,7 +405,7 @@ flowchart TB
 
     subgraph Sources["Three sources, lowest precedence first"]
         direction TB
-        DEF["default_config()<br/>plugin/crew/hooks/scripts/crew_config.py:243<br/><b>123 leaves</b> (executed, this pass)<br/>composed from crew_state's PM_DEFAULTS<br/>:1101, QA_DEFAULTS :1148, DEV_DEFAULTS<br/>:1157, WORKTREE_DEFAULTS :1184, CONTEXT_DEFAULTS<br/>:733, RESUME_DEFAULTS :696, AUTOPILOT_DEFAULTS :1091 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS<br/>:48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS<br/>:222, CLOUD_DEFAULTS :240 - repo-only,<br/>ENVIRONMENTS_DEFAULTS :252 - nonProd repo-only), and<br/>crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK<br/>:107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK<br/>:173 / CHANGE_BLOCK :203"]
+        DEF["default_config()<br/>plugin/crew/hooks/scripts/crew_config.py:243<br/><b>125 leaves</b> (executed, this pass)<br/>composed from crew_state's PM_DEFAULTS<br/>:1105, QA_DEFAULTS :1152, DEV_DEFAULTS<br/>:1161, WORKTREE_DEFAULTS :1188, CONTEXT_DEFAULTS<br/>:732, RESUME_DEFAULTS :695, AUTOPILOT_DEFAULTS :1094 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS<br/>:48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS<br/>:222, CLOUD_DEFAULTS :239 - repo-only,<br/>ENVIRONMENTS_DEFAULTS :251 - nonProd repo-only), and<br/>crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK<br/>:107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK<br/>:173 / CHANGE_BLOCK :203"]
         GLB[("~/.claude/crew/config.json<br/>read_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:723<br/><i>never raises</i> - absent, malformed or<br/>non-object all return {}, because this is<br/>reached from a SessionStart hook")]
         REPO[(".crew/config.json - schema 7<br/>crew_state.load_config()<br/>plugin/crew/hooks/scripts/crew_state.py:266<br/>NOT the same file crew_context.py reads<br/>first - see the TwoFiles section below")]
     end
@@ -386,7 +420,7 @@ flowchart TB
     subgraph Merge["resolve_config() - plugin/crew/hooks/scripts/crew_config.py:776 - the single resolver"]
         direction TB
         NULLS["without_null_shadows()<br/>plugin/crew/hooks/scripts/crew_config.py:632<br/>drops a repo <i>null</i> ONLY where the global<br/>layer supplies a real value."]
-        M1["merge_defaults(default_config(), global)<br/>call: crew_config.py:809<br/>def: plugin/crew/hooks/scripts/crew_state.py:1333"]
+        M1["merge_defaults(default_config(), global)<br/>call: crew_config.py:809<br/>def: plugin/crew/hooks/scripts/crew_state.py:1338"]
         M2["merge_defaults(that, repo)<br/>call: crew_config.py:810"]
         SCHEMA{"schema<br/>lifted OUT of the merge<br/>crew_config.py:811-814"}
         OUT(["resolved config<br/><i>repo beats global beats default</i><br/>this is ONLY .crew/config.json's precedence -<br/>autoClear's own read path bypasses it, below"])
@@ -544,8 +578,8 @@ flowchart TB
     subgraph Split["What may be set where - measured, not asserted (executed this pass)"]
         direction TB
         S1["<b>68 global-settable</b> leaves, across seventeen<br/>blocks: qa, dev, worktree, secondOpinion, memory,<br/>notify, pm, context.autoClear, docs, bitbucket,<br/>github, install, guards (all TEN), change,<br/>resume (T-0006: machine opt-in, repo may only veto),<br/>environments (prodUnattended only, T-0005),<br/>route (T-0023: route.enabled, repo beats machine -<br/>read by crew_route.settings through resolve_config)"]
-        S2["<b>55 repo-only</b> leaves (set difference, executed),<br/>environments.nonProd among them (T-0005).<br/>Whole blocks absent from the global template:<br/>autopilot, cloud, emergency, graph, jira, obsidian, platform,<br/>production, roles, schema, scope, sdp, tier,<br/>tracker, verifyGate - <b>cloud and scope are NEW<br/>repo-only blocks since the previous anchor</b><br/>(cloud identity pins, the T3 scope guard);<br/><b>autopilot is NEW at 07ca3972</b> (T-0004,<br/>mode + maxPhases, CONFIG.md §20; deploy<br/>added by T-0072)"]
-        S3["<b>Counts are executed, not read by eye.</b><br/>123 repo-template / 68 global / 55 repo-only on<br/>T-0072's merge of main (122 / 68 / 54 on T-0023's merge of main, 121 / 67 / 54 on the T-0005 landing merge, 120 / 67 / 53<br/>at T-0023's eba11657, 119 / 66 / 53 at 07ca3972, 118 / 66 / 52 at fc54def6,<br/>117 / 66 / 51 at 6d35ef8c, 116 / 65 / 51 at 6c497a14); .crew/codemap/crew.md agrees and gives<br/>the re-measure command."]
+        S2["<b>57 repo-only</b> leaves (set difference, executed),<br/>environments.nonProd (T-0005), autopilot.deploy (T-0072) and autopilot.approval/questions (T-0010) among them.<br/>Whole blocks absent from the global template:<br/>autopilot, cloud, emergency, graph, jira, obsidian, platform,<br/>production, roles, schema, scope, sdp, tier,<br/>tracker, verifyGate - <b>cloud and scope are NEW<br/>repo-only blocks since the previous anchor</b><br/>(cloud identity pins, the T3 scope guard);<br/><b>autopilot is NEW at 07ca3972</b> (T-0004,<br/>mode + maxPhases, CONFIG.md §20; deploy<br/>added by T-0072, approval + questions by T-0010)"]
+        S3["<b>Counts are executed, not read by eye.</b><br/>125 repo-template / 68 global / 57 repo-only at<br/>d7c7c75c, T-0010-solo's merge of 6387ab49 (123 / 68 / 55 on T-0072's merge of main, 124 / 68 / 56 at c817782f on T-0010-solo, 122 / 68 / 54 on T-0023's merge of main, 121 / 67 / 54 on the T-0005 landing merge, 120 / 67 / 53<br/>at T-0023's eba11657, 119 / 66 / 53 at 07ca3972, 118 / 66 / 52 at fc54def6,<br/>117 / 66 / 51 at 6d35ef8c, 116 / 65 / 51 at 6c497a14); .crew/codemap/crew.md agrees and gives<br/>the re-measure command."]
         S4["<b>Consent is not capability.</b><br/>context.autoClear.unsafeFocus is excluded from the<br/>global template on purpose (AUTOCLEAR_CONSENT_KEYS,<br/>crew_state.py:708) - a Wayland focus-typing risk<br/>accepted once must not arm for every repo."]
         S1 --- S2 --- S3 --- S4
     end
@@ -565,3 +599,15 @@ flowchart TB
 
     OUT -.-> Except
     WIDEN -.->|"14 keys ratchet on write (E1's 13,<br/>plus pm.authority for the widening notice only)"| Except
+%% Re-anchored 926443d8 -> 50a275ea (T-0010's successor merges f96e9ec9, crew 1.0.50): of the
+%% anchored paths only CONFIG.md changed - the autopilot.approval/questions rows and the
+%% "Which file" paragraph say an unreadable config or non-object autopilot block reads unknown
+%% and what `settings` prints; cited by section only. No leaf was added (124). No node or edge moved.
+%% Merged 25d2de63's lines + 50a275ea/360c4029 at d7c7c75c (T-0010-solo merges main 6387ab49 -
+%% T-0072, T-0076, T-0089, T-0092 landed - crew 1.0.55): of the anchored paths crew_state.py
+%% changed on both sides - T-0072's `deploy` and T-0010's `approval`/`questions` now share
+%% AUTOPILOT_DEFAULTS (:1094-1095), so every cited line after it is main's +5 (PM_DEFAULTS :1105,
+%% QA_DEFAULTS :1152, DEV_DEFAULTS :1161, WORKTREE_DEFAULTS :1188), re-read with grep -n;
+%% crew_context.py changed on main only (T-0076), cited lines mapped by a line diff; CONFIG.md on
+%% both, cited by section only. Leaf counts re-executed at d7c7c75c: 125 / 68 / 57 / 0. The DEF,
+%% S2 and S3 nodes carry the new counts; no edge moved.

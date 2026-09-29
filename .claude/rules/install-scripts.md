@@ -3,7 +3,7 @@ paths:
   - "plugin/crew/**"
   - "scripts/**"
 ---
-<!-- crew:generated source=.crew/codemap/install-scripts.md sha256=d6bb7d1314a41448 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/install-scripts.md sha256=83d05d02e7eb637f -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # install-scripts
 Code map anchor `fcb061a2`; if it is behind HEAD, re-check with `git diff --name-only fcb061a2..HEAD -- <cited paths>`.
 Covers: The install-prerequisites.{sh,ps1} matched pair: catalog parity, the pick_fit/Format-PickerLine no-bypass rule, idempotency branches, and hook-plugins-default-off on both sides.
