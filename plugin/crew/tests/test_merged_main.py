@@ -5,6 +5,8 @@ to leave out a path byte-identical to it (T-0100).
 The unknown never collapses into "nothing merged" or "everything merged":
 each could-not-tell cause drops nothing and says so.
 """
+import os
+
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
@@ -163,6 +165,37 @@ def test_the_bundle_and_the_audit_agree_on_a_merged_in_path_removed_from_the_ind
     merge_main(root)
     git(root, "rm", "-q", "--cached", "m.txt")
     write(root, "m.txt", content)
+    top, base = str(root), sha["base"]
+
+    manifest, _, _ = review_patch.compute(top, base)
+    audited = completion_audit.changed_paths(top, base, merged_main.resolve(top, base))
+
+    bundled = set()
+    for key in ("committed_files", "staged_files", "unstaged_files", "untracked_files"):
+        bundled.update(manifest[key])
+    assert (bundled == set(audited), "m.txt" in audited) == (True, counted)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="NTFS carries no execute bit git can see, so "
+                    "every file reads 100644 there")
+@pytest.mark.parametrize("exec_bit,file_mode,counted", [
+    (True, "true", True), (True, "false", False), (False, "true", False),
+    (False, "false", False)], ids=["exec-filemode-true", "exec-filemode-false",
+                                   "noexec-filemode-true", "noexec-filemode-false"])
+def test_the_bundle_and_the_audit_agree_on_the_mode_of_a_merged_in_path_removed_from_the_index(
+        tmp_path, exec_bit, file_mode, counted):
+    """Content identical to merged main, so only the mode can tell. The bundle's
+    `add -A` records the execute bit only when core.fileMode is not false; the audit
+    must judge the same way, or the reviewer and the audit see different sets."""
+    root, upstream, sha = build(tmp_path)
+    ticket_commit(root, "src/t.txt", "ticket line\n")
+    advance_main(upstream)
+    merge_main(root)
+    git(root, "rm", "-q", "--cached", "m.txt")
+    git(root, "config", "core.fileMode", file_mode)
+    path = root / "m.txt"
+    mode = path.stat().st_mode
+    path.chmod(mode | 0o111 if exec_bit else mode & ~0o111)
     top, base = str(root), sha["base"]
 
     manifest, _, _ = review_patch.compute(top, base)

@@ -22,7 +22,10 @@ the ticket's. `merged_main.resolve` names the merged commit
 (`git merge-base HEAD <ref>`) and `merged_main.keep` leaves out every path
 byte-identical to it in the working state -- the same rule, from the same
 module, that `review_patch.compute` applies to the bundle, so the reviewer and
-this audit judge the same changed set. A ticket edit on top of main's edit to
+this audit judge the same changed set. An untracked merged-in path (taken out of
+the index by `git rm --cached`) is identical only when its bytes AND the mode
+`git add` would record match the merged entry; that mode carries the execute
+bit only when `core.fileMode` is not false, as the bundle's `add -A` does. A ticket edit on top of main's edit to
 the same file stays, and so does any edit after the merge. The verdict names
 the merged commit and how many paths it did not count. When the merged commit
 cannot be told (no integration ref, detached HEAD, git gave no answer) nothing
@@ -81,6 +84,7 @@ import stat
 import subprocess
 import sys
 
+import crew_common
 import crew_ticket
 import merged_main
 import scope_base
@@ -172,9 +176,11 @@ def changed_paths(top, base, merged=None):
     bundle, and never a write to the index."""
     # `merged` is `merged_main.resolve`'s answer or None (T-0100): only an
     # applying one narrows. An untracked path is re-added on both sides, except
-    # one whose bytes and mode on disk ARE the merged commit's entry (a merged-in
-    # path taken out of the index by `git rm --cached`): the review bundle's
-    # `add -A` stages it back identical and drops it, so the audit does too.
+    # one whose bytes on disk, and the mode `git add` would record for it
+    # (core.fileMode decides whether the execute bit counts), ARE the merged
+    # commit's entry (a merged-in path taken out of the index by `git rm --cached`):
+    # the review bundle's `add -A` stages it back identical and drops it, so the
+    # audit does too.
     sha = _git_fields(top, ["rev-parse", "--verify", base + "^{commit}"])[0].strip()
     untracked = {p for p in _git_fields(top, ["ls-files", "--others", "--exclude-standard",
                                               "-z"] + _ONLY) if p}
@@ -187,7 +193,8 @@ def changed_paths(top, base, merged=None):
 
 def _as_merged(top, commit, untracked):
     """The `untracked` paths whose file on disk is byte- and mode-identical to
-    `commit`'s entry for it. Hashed through `--stdin-paths` without `-w`, as
+    `commit`'s entry for it, the mode being the one `git add` would record
+    (`_disk_mode`). Hashed through `--stdin-paths` without `-w`, as
     `_unchanged` does; a symlink, or a name `--stdin-paths` cannot carry, is
     never identical."""
     names = sorted(p for p in untracked if "\n" not in p and "\r" not in p
@@ -209,14 +216,27 @@ def _as_merged(top, commit, untracked):
     listing = "".join(_stdin_path(p) + "\n" for p in names).encode(
         "utf-8", errors="surrogateescape")
     hashes = _git_fields(top, ["hash-object", "--stdin-paths"], data=listing)[0].split()
+    file_mode = _file_mode(top)
     return {p for p, oid in zip(names, hashes)
-            if (oid, _disk_mode(os.path.join(top, p))) == (entries[p][1], entries[p][0])}
+            if (oid, _disk_mode(top, p, file_mode)) == (entries[p][1], entries[p][0])}
 
 
-def _disk_mode(path):
-    """The blob mode `git add` records for the regular file at `path`: the
-    owner's execute bit (NTFS has none git can see)."""
-    return "100755" if os.name != "nt" and os.stat(path).st_mode & stat.S_IXUSR else "100644"
+def _file_mode(top):
+    """`core.fileMode` as git reads it: unset, unreadable or anything but `false`
+    reads true -- the conservative side, where an execute-bit mismatch is
+    counted, never dropped."""
+    return crew_common.git_out(top, "config", "--type=bool", "--get", "core.fileMode") != "false"
+
+
+def _disk_mode(top, path, file_mode):
+    """The blob mode `git add` records for the regular file at `path` when the
+    index has no entry for it: 100755 only when the owner's execute bit is set
+    AND `core.fileMode` is not false (`file_mode`, read once per audit by
+    `_file_mode`; measured, git 2.53: 100644 under false whatever the bit).
+    NTFS has no execute bit git can see: always 100644."""
+    if os.name == "nt" or not file_mode:
+        return "100644"
+    return "100755" if os.stat(os.path.join(top, path)).st_mode & stat.S_IXUSR else "100644"
 
 
 def shown(path):

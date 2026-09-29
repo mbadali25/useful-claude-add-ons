@@ -739,3 +739,66 @@ def test_a_fast_forward_to_main_drops_everything_committed_and_keeps_dirty_edits
 
     assert (git(root, "rev-parse", "HEAD") == merged, code, "other/keep.py" in err,
             [p for p in _MERGED_IN[1:] if p in err]) == (True, 2, True, [])
+
+
+# The mode `git add` records for a path the index has no entry for: the execute bit only
+# when core.fileMode is not false (measured, git 2.53: 100644 under false, 100755 under
+# true). The review bundle's `add -A` records exactly that, so the audit judges by it too.
+_GIT_ADD_MODES = [(True, "true", True), (True, "false", False),
+                  (False, "true", False), (False, "false", False)]
+_GIT_ADD_IDS = ["exec-filemode-true", "exec-filemode-false",
+                "noexec-filemode-true", "noexec-filemode-false"]
+_NO_EXEC_BIT = pytest.mark.skipif(os.name == "nt", reason="NTFS carries no execute bit "
+                                  "git can see, so every file reads 100644 there")
+
+
+def _untracked_merged_in(tmp_path, main_exec=False):
+    """`_merged_repo` with main's added `other/new.py` (100755 when `main_exec`) taken
+    out of the index by `git rm --cached`, its content left identical on disk."""
+    root, _ = _merged_repo(tmp_path)
+    if main_exec:
+        upstream = tmp_path / "upstream"
+        git(upstream, "update-index", "--chmod=+x", "other/new.py")
+        git(upstream, "commit", "-qm", "main makes other/new.py executable")
+        merged_main_fixtures.merge_main(root)
+    git(root, "rm", "-q", "--cached", "other/new.py")
+    return root
+
+
+def _set_modes(root, exec_bit, file_mode):
+    git(root, "config", "core.fileMode", file_mode)
+    path = root / "other" / "new.py"
+    mode = path.stat().st_mode
+    path.chmod(mode | 0o111 if exec_bit else mode & ~0o111)
+
+
+@_NO_EXEC_BIT
+@pytest.mark.parametrize("exec_bit,file_mode,counted", _GIT_ADD_MODES, ids=_GIT_ADD_IDS)
+@pytest.mark.parametrize("flavour", ["module"])
+def test_an_untracked_merged_in_path_is_judged_by_the_mode_git_add_records(
+        flavour, tmp_path, exec_bit, file_mode, counted):
+    """Main added `other/new.py` 100644. Identical bytes on disk are main's file only when
+    `git add` would record 100644 too: an execute bit it would record is the ticket's."""
+    root = _untracked_merged_in(tmp_path)
+    _set_modes(root, exec_bit, file_mode)
+
+    done = _check(root)
+
+    assert (flavour, done.returncode, "other/new.py" in done.stdout,
+            "5 path(s) identical to it not counted" in done.stdout) == (
+                "module", int(counted), counted, not counted)
+
+
+@_NO_EXEC_BIT
+@pytest.mark.parametrize("file_mode", ["true", "false"])
+def test_an_untracked_merged_in_executable_is_counted_when_git_add_records_it_644(
+        tmp_path, file_mode):
+    """The mirror: main added it 100755 and the disk copy has no execute bit. `git add`
+    records 100644 under either core.fileMode (false never records 100755 for a path
+    the index lacks), so it differs from main's entry and is counted."""
+    root = _untracked_merged_in(tmp_path, main_exec=True)
+    _set_modes(root, False, file_mode)
+
+    done = _check(root)
+
+    assert (done.returncode, "other/new.py" in done.stdout) == (1, True)

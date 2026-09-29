@@ -420,6 +420,17 @@ SCOPE_MUTATIONS = (
      "    return set(names) or {p for p, oid in zip(names, hashes)\n",
      _MM + "test_the_bundle_and_the_audit_agree_on_a_merged_in_path_removed_from_the_index"
      "[edited]"),
+    # --- T-0100 successor (round 2): the mode half, and core.fileMode ------------
+    ("the audit judges an untracked merged-in path by its blob id alone", AUDIT,
+     "            if (oid, _disk_mode(top, p, file_mode)) == (entries[p][1], entries[p][0])}\n",
+     "            if oid == entries[p][1]}\n",
+     _CA + "test_an_untracked_merged_in_path_is_judged_by_the_mode_git_add_records"
+     "[module-exec-filemode-true]"),
+    ("the audit reads the execute bit whatever core.fileMode says", AUDIT,
+     "    file_mode = _file_mode(top)\n",
+     "    file_mode = True\n",
+     _CA + "test_an_untracked_merged_in_path_is_judged_by_the_mode_git_add_records"
+     "[module-exec-filemode-false]"),
     ("MERGED MAIN: keep drops nothing, through the bash audit", MERGED_MAIN,
      "    return sorted(set(since_base) & set(since_merged))\n",
      "    return sorted(set(since_base))\n",
