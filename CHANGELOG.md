@@ -6,12 +6,13 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.60: the Kimi Code CLI is a crew provider (T-0028). BEHAVIOUR
+- **`crew` 1.0.62: the Kimi Code CLI is a crew provider (T-0028). BEHAVIOUR
   CHANGE: the default `qa.order` now tries Kimi second -
   `["codex", "kimi", "copilot", "claude"]`** - so on a machine with `kimi` on
   PATH and a repo with no explicit `qa.order`, `/crew:review` reaches Kimi
-  before Copilot and the Claude fallback. Bumped `1.0.59 -> 1.0.60` (1.0.44
-  on its branch; re-set after merging main's 1.0.59).
+  before Copilot and the Claude fallback. Bumped `1.0.61 -> 1.0.62` (1.0.44
+  on its branch; 1.0.60 after merging main's 1.0.59; re-set after merging
+  main's 1.0.61).
   - **Review round 4's fingerprint and probe fixes.** A file's digest carries
     its permission bits; a symlink counts with what it resolves to, and a link
     to a directory outside the repository is could-not-tell; a FIFO, socket
