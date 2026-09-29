@@ -117,6 +117,49 @@ records a refresh cannot stale the artifact it refreshed or another one.
 Code-path tests use `GRAPH_NONCODE_PATHS`, the deny-list `crew_freshness`
 uses for the same purpose.
 
+## What is admitted without Touch (T-0094)
+
+The guard's allowance is a path test; the completion audit's is narrower.
+`artifact_verdicts` judges each changed artifact of an approved ticket, and
+`completion_audit.audit` admits it without Touch only on `True`. Two questions,
+each with an observable answer: did a path the ticket changed REACH it, and is
+the edit a RE-ANCHOR or a REGENERATION.
+
+  map       `.crew/codemap/<name>.md` (not INDEX, UPGRADE or MIGRATION): in
+            the base tree and on disk, a citation in the base or working copy
+            reaches a changed path, and `anchor:` moved from the base's value
+            to a commit that is HEAD or behind it (a base anchor that names no
+            commit -- a squash merge -- is moved from by any qualifying one).
+            Claims, `path:line` numbers and prose may change with it: that is
+            what a refresh writes (`8bbb26d9`); an edit whose anchor did not
+            move is not.
+  INDEX.md  every line that differs from the base is the row of a map
+            admitted in the same call.
+  diagram   a source (`.mmd`, `.mermaid`) under `docs.diagramsDir`: reached
+            through its `%% Anchors:` line (none: any code path), and its
+            provenance sha moved as a map's anchor must. A rendered file is
+            admitted beside a same-stem source admitted in the same call.
+  rule      `.claude/rules/<name>.md` whose bytes equal
+            `crew_instructions.expected_rules` -- regeneration, whatever the
+            map did -- or one removed that carried the generated marker and
+            that no map expects any more.
+  graph     anything under `graph.out`, when the ticket changed a code path.
+
+Anything else under those dirs is `False`: judged against Touch like any
+other path. The reach is every path changed since the scope base, merged-in
+main paths included and RELEASE_BOOKKEEPING KEPT -- a version bump reaches the
+map citing plugin.json -- so it is wider than `ticket_freshness`'s staleness
+reach on purpose. `None` is could-not-tell (git could not run, a base copy or
+the config unreadable, the rule renderer raised): its own value, judged
+against Touch, never collapsed into admitted, and its reason says so.
+
+It judges shape and reach, never truth: a re-anchored map may still carry a
+wrong claim, and that stays the reviewer's (the maps stay in the review
+bundle). The PreToolUse guard keeps admitting the whole dirs, because a
+write-time check sees one Edit of a multi-Edit refresh -- claims first,
+`anchor:` last -- and would refuse the legitimate intermediate state; the
+tree-level audit is where reach and shape are judged.
+
 Never writes a file, the index included, for a library caller (T-0004
 imports `ticket_freshness`) as much as for main(): the working-tree diffs go
 through `completion_audit.worktree_changes` (`git diff-index` plus a hash of
@@ -124,17 +167,19 @@ any stat-dirty file), because `git diff` rewrites .git/index for a stat-dirty
 file even under `--no-optional-locks`. Standard library only.
 """
 import argparse
+import difflib
 import fnmatch
 import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 
 import completion_audit
 import crew_ticket
 import scope_base
-from crew_common import dict_or_empty, git_out, read_text
+from crew_common import GIT_TIMEOUT, dict_or_empty, git_out, read_text
 from crew_freshness import (
     DIAGRAMS_DIR_DEFAULT,
     GRAPH_NONCODE_PATHS,
@@ -177,7 +222,9 @@ REFRESH_ARTIFACT_PATHS = (
 # their own. TODO.md is here for the same reason: `/crew:done` check 3 has
 # every ticket file its findings there, and most maps cite it, so filing one
 # item used to stale every map citing it. A code path cited beside it still
-# stales the map. Segment globs, `crew_ticket.glob_match`'s dialect.
+# stales the map. Segment globs, `crew_ticket.glob_match`'s dialect. KEPT in
+# `artifact_verdicts`' admission reach, so a version bump admits the
+# re-anchored map citing plugin.json (T-0094).
 RELEASE_BOOKKEEPING = (
     "CHANGELOG.md",
     "TODO.md",
@@ -388,6 +435,278 @@ def is_refresh_artifact(rel, dirs):
         if len(folded) > len(stem) and folded[:len(stem)] == stem:
             return True
     return False
+
+
+# --------------------------------------------------------------------------
+# What is admitted without Touch (T-0094; module docstring)
+
+COULD_NOT_TELL = "could not tell"
+
+# `crew_context.index_covers`'s row regex, the origin: the INDEX.md row of
+# `<name>.md`. Only the name is captured here; a re-anchor rewrites the row's
+# anchor and Last pass cells, so the whole row is the line that differs.
+_INDEX_ROW_RE = re.compile(r"^\|\s*\[`?([A-Za-z0-9_.-]+)\.md`?\]\([^)]*\)\s*\|")
+
+
+def _git_rc(root, *args):
+    """git's return code, or None when git could not run at all."""
+    try:
+        return subprocess.run(
+            ["git", "-C", root, "--no-optional-locks", "--literal-pathspecs", *args],
+            capture_output=True, stdin=subprocess.DEVNULL, timeout=GIT_TIMEOUT,
+            check=False).returncode
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _is_ancestor(root, sha):
+    """True / False / None: `merge-base --is-ancestor` exits 0 when `sha` is
+    HEAD or behind it, 1 when not, anything else on an error -- which is
+    could-not-tell, never "no" (git-merge-base(1))."""
+    return {0: True, 1: False}.get(_git_rc(root, "merge-base", "--is-ancestor", sha, "HEAD"))
+
+
+def _base_text(root, base, rel):
+    """(text, "ok"), (None, "absent") when `rel` is not in `base`'s tree, or
+    (None, "error: <why>"). `git_out` returns None on ANY failure, so the
+    tree is asked first: absent and unreadable are different answers."""
+    spec = f"{base}:{rel}"
+    code = _git_rc(root, "cat-file", "-e", spec)
+    if code is None:
+        return None, "error: git could not run"
+    if code in (1, 128):
+        return None, "absent"
+    if code != 0:
+        return None, f"error: git exited {code}"
+    try:
+        done = subprocess.run(["git", "-C", root, "--no-optional-locks", "show", spec],
+                              capture_output=True, stdin=subprocess.DEVNULL,
+                              timeout=GIT_TIMEOUT, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None, "error: could not read"
+    if done.returncode != 0:
+        return None, "error: could not read"
+    # Decoded as `read_text` decodes the working copy: a BOM is stripped.
+    return done.stdout.decode("utf-8-sig", errors="replace"), "ok"
+
+
+def _sha_moved(root, old, new):
+    """(True | False | None, reason): `new` names a commit, that commit is
+    HEAD or behind it, and it is not the commit `old` names. An `old` that
+    is absent or names no commit cannot be compared with, so any `new` that
+    qualifies has moved (a squash merge drops the commit a refresh
+    anchored to)."""
+    if not new:
+        return False, "no anchor: line"
+    code = _git_rc(root, "cat-file", "-e", new + "^{commit}")
+    if code is None:
+        return None, f"{COULD_NOT_TELL}: git could not run"
+    if code == 128:
+        return False, f"anchor {new} names no commit"
+    if code != 0:
+        return None, f"{COULD_NOT_TELL}: git exited {code} reading anchor {new}"
+    ancestor = _is_ancestor(root, new)
+    if ancestor is None:
+        return None, f"{COULD_NOT_TELL}: git could not say whether {new[:12]} is behind HEAD"
+    if not ancestor:
+        return False, f"anchor {new[:12]} is not reachable from HEAD"
+    now = _git_lines(root, "rev-parse", "--verify", new + "^{commit}")
+    if not now:
+        return None, f"{COULD_NOT_TELL}: git could not resolve {new[:12]}"
+    was = _git_lines(root, "rev-parse", "--verify", old + "^{commit}") if old else None
+    if was and was[0] == now[0]:
+        return False, "anchor did not move"
+    return True, "re-anchored"
+
+
+def _graph_out(top, cfg):
+    """`graph.out` resolved as `crew_freshness._read_graph` resolves it,
+    without reading the graph."""
+    out = dict_or_empty(cfg.get("graph")).get("out")
+    if not isinstance(out, str) or not out:
+        out = GRAPH_OUT_DEFAULT
+    return _relative(top, contained_path(top, out, GRAPH_OUT_DEFAULT))
+
+
+def _cited(text):
+    """Every path-shaped citation in a map (`_codemaps`'s filter)."""
+    return [c for c in dict.fromkeys(_CITATION_RE.findall(text or ""))
+            if "/" in c or "." in c]
+
+
+def _texts(top, base, rel):
+    """(base_text, work_text, None), or (None, None, (verdict, reason)) when
+    the pair cannot be a re-anchor or cannot be read."""
+    before, state = _base_text(top, base, rel)
+    if state == "absent":
+        return None, None, (False, "new file, not a re-anchor")
+    if state != "ok":
+        return None, None, (None, f"{COULD_NOT_TELL}: base copy {state}")
+    path = os.path.join(top, *rel.split("/"))
+    if not os.path.lexists(path):
+        return None, None, (False, "deleted, not a re-anchor")
+    after = read_text(path)
+    if after is None:
+        return None, None, (None, f"{COULD_NOT_TELL}: could not read {rel}")
+    return before, after, None
+
+
+def _map_verdict(top, base, rel, reach):
+    before, after, early = _texts(top, base, rel)
+    if early:
+        return early
+    if not _reached(_cited(before) + _cited(after), reach):
+        return False, "no changed path reaches it"
+    was, now = _ANCHOR_RE.search(before), _ANCHOR_RE.search(after)
+    return _sha_moved(top, was.group(1) if was else None, now.group(1) if now else None)
+
+
+def _index_verdict(top, base, rel, admitted):
+    before, after, early = _texts(top, base, rel)
+    if early:
+        return early
+    old, new = before.splitlines(), after.splitlines()
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, old, new,
+                                                       autojunk=False).get_opcodes():
+        if tag == "equal":
+            continue
+        for number, line in [(j + 1, new[j]) for j in range(j1, j2)] + \
+                            [(i + 1, old[i]) for i in range(i1, i2)]:
+            row = _INDEX_ROW_RE.match(line)
+            if not row or row.group(1) not in admitted:
+                return False, f"INDEX.md line {number} is not the row of a re-anchored map"
+    return True, "rows of re-anchored maps only"
+
+
+def _diagram_verdict(top, base, rel, reach, code):
+    before, after, early = _texts(top, base, rel)
+    if early:
+        return early
+    declared = _declared(after)
+    if declared is None and _declared(before) is None:
+        reached = code
+    else:
+        reached = _reached((declared or []) + (_declared(before) or []), reach)
+    if not reached:
+        return False, "no changed path reaches it"
+    now = _DIAGRAM_ANCHOR_RE.search(after)
+    if not now:
+        return False, "no provenance line"
+    was = _DIAGRAM_ANCHOR_RE.search(before)
+    return _sha_moved(top, was.group(1) if was else None, now.group(1))
+
+
+def _rule_verdict(top, base, rel, expected):
+    path = os.path.join(top, *rel.split("/"))
+    key = os.path.normcase(os.path.normpath(path))
+    if os.path.lexists(path):
+        if read_text(path) == expected.get(key):
+            return True, "regenerated"
+        return False, ("bytes differ from expected_rules (regenerate with "
+                       "crew_instructions.py rules)")
+    if key in expected:
+        return False, "removed, but a map still expects it"
+    import crew_instructions  # pylint: disable=import-outside-toplevel
+    before, state = _base_text(top, base, rel)
+    if state == "ok" and crew_instructions.MARKER in before[:2000]:
+        return True, "a generated rule no map expects, removed"
+    if state in ("ok", "absent"):
+        return False, "removed, but it was not generated"
+    return None, f"{COULD_NOT_TELL}: base copy {state}"
+
+
+def _kind(rel, dirs, diagrams, graph_out):
+    """Which admission rule judges `rel`: map, index, not-subsystem, diagram,
+    rendered, rule, graph, or other."""
+    parts = rel.split("/")
+    parent, name = "/".join(parts[:-1]), parts[-1]
+    if parent == ".crew/codemap" and name.endswith(".md"):
+        if name == "INDEX.md":
+            return "index"
+        return "not-subsystem" if name in _NOT_SUBSYSTEMS else "map"
+    if diagrams and _reaches(diagrams, rel):
+        return "diagram" if os.path.splitext(name)[1].lower() in _DIAGRAM_EXTS else "rendered"
+    if parent == ".claude/rules" and name.endswith(".md"):
+        return "rule"
+    if graph_out in dirs and _reaches(graph_out, rel):
+        return "graph"
+    return "other"
+
+
+def artifact_verdicts(top, base, reach, artifacts, cfg=None):
+    """{rel: (verdict, reason)} for every path in `artifacts` (changed paths
+    `is_refresh_artifact` accepts). verdict True = admitted without Touch,
+    False = judged against Touch, None = could not tell (judged against
+    Touch; the reason starts with COULD_NOT_TELL). `reach` is every path
+    changed since `base`; the artifact dirs and `.work` are removed from it
+    here and RELEASE_BOOKKEEPING is KEPT (module docstring). `cfg` defaults
+    to this repo's crew config; one that exists and cannot be read leaves
+    every artifact could-not-tell, as it does `ticket_freshness`."""
+    artifacts = list(dict.fromkeys(artifacts))
+    if cfg is None:
+        cfg, unreadable = _read_config(top)
+        if cfg is None:
+            return {p: (None, f"{COULD_NOT_TELL}: config unreadable: {unreadable}")
+                    for p in artifacts}
+    dirs = refresh_artifact_paths(top, cfg)
+    own = dirs + [".work"]
+    # Bookkeeping stays in: a version bump is a change that reaches the map
+    # citing plugin.json. The one difference from `ticket_freshness`'s
+    # `changed`, which drops it because it stales nothing.
+    reach = sorted(p for p in dict.fromkeys(reach) if not any(_reaches(o, p) for o in own))
+    graph_out = _graph_out(top, cfg)
+    diagrams = _relative(top, contained_path(top, _diagrams_dir(cfg), DIAGRAMS_DIR_DEFAULT))
+    diagrams = diagrams if diagrams in dirs else None
+    code = [p for p in reach if not _is_noncode(p, graph_out)]
+    kinds = {p: _kind(p, dirs, diagrams, graph_out) for p in artifacts}
+    out = {}
+
+    def judge(kind, fn):
+        for rel in [p for p in artifacts if kinds[p] == kind]:
+            try:
+                out[rel] = fn(rel)
+            except Exception as exc:  # pylint: disable=broad-except
+                out[rel] = (None, f"{COULD_NOT_TELL}: {type(exc).__name__} while judging it")
+
+    judge("map", lambda rel: _map_verdict(top, base, rel, reach))
+    admitted = {p.rsplit("/", 1)[1][:-len(".md")] for p in artifacts
+                if kinds[p] == "map" and out[p][0] is True}
+    judge("index", lambda rel: _index_verdict(top, base, rel, admitted))
+    judge("not-subsystem", lambda rel: (False, "not a subsystem map"))
+    judge("diagram", lambda rel: _diagram_verdict(top, base, rel, reach, code))
+    judge("rendered", lambda rel: _rendered_verdict(rel, kinds, out))
+    if any(kinds[p] == "rule" for p in artifacts):
+        expected = _expected_rules(top)
+        if isinstance(expected, str):
+            judge("rule", lambda rel: (None, f"{COULD_NOT_TELL}: {expected}"))
+        else:
+            judge("rule", lambda rel: _rule_verdict(top, base, rel, expected))
+    judge("graph", lambda rel: (True, "rebuilt after a code change") if code
+          else (False, "graph changed with no code change since the base"))
+    judge("other", lambda rel: (False, "not a refresh artifact of a kind the audit admits"))
+    return out
+
+
+def _rendered_verdict(rel, kinds, out):
+    """A rendered diagram is admitted beside its same-stem source, in the same
+    dir, when that source changed and was admitted."""
+    stem = os.path.splitext(rel)[0]
+    for source in (stem + ext for ext in _DIAGRAM_EXTS):
+        if kinds.get(source) == "diagram" and out.get(source, (False,))[0] is True:
+            return True, f"rendered beside the re-anchored {source.rsplit('/', 1)[-1]}"
+    name = stem.rsplit("/", 1)[-1]
+    return False, f"rendered file whose source {name}.mmd was not re-anchored"
+
+
+def _expected_rules(top):
+    """`crew_instructions.expected_rules`, keyed by normalised absolute path,
+    or a string saying why it could not be rendered."""
+    try:
+        import crew_instructions  # pylint: disable=import-outside-toplevel
+        rendered = crew_instructions.expected_rules(top)
+    except Exception as exc:  # pylint: disable=broad-except
+        return f"expected_rules raised {type(exc).__name__}"
+    return {os.path.normcase(os.path.normpath(k)): v for k, v in rendered.items()}
 
 
 def _bookkeeping(path):
