@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@8f85657a on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@33c833c8 on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_shell.py
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
@@ -289,6 +289,9 @@
 %% write_global_config :2658, _RATCHETED :2456). The leaf counts were re-executed: 125 / 70 / 55,
 %% fourth figure 0, 18 global blocks - shellRoute.mode and shellRoute.distro are in both layers.
 %% crew_shell.py is new on the Anchors line; the ShellRoute subgraph is the one node group added.
+%% Re-anchored 8f85657a -> 33c833c8 (T-0040 step 11): of the Anchors paths only crew_shell.py
+%% changed (measure re-timed inside each shell); decide :487 -> :486 and status_line :727 -> :742,
+%% re-read with grep -n. No count, node or edge changed.
 flowchart TB
 
     subgraph Sources["Three sources, lowest precedence first"]
@@ -430,7 +433,7 @@ flowchart TB
         direction TB
         SR["shellRoute.mode / shellRoute.distro<br/>both layers, plugin/crew/hooks/scripts/crew_config.py:335 / :575<br/>read by crew_shell.settings through resolve_config;<br/>an unrecognised mode reads as auto and is named"]
         SRC[("~/.claude/crew/shell-route.json<br/>crew_shell.probe_path() - the machine-local probe cache<br/>written only by probe --write and measure --write;<br/>NOT a config layer, never merged")]
-        SRD["crew_shell.decide() / status_line()<br/>plugin/crew/hooks/scripts/crew_shell.py:487 / :727<br/>native Windows only - off Windows, plain bash -c"]
+        SRD["crew_shell.decide() / status_line()<br/>plugin/crew/hooks/scripts/crew_shell.py:486 / :742<br/>native Windows only - off Windows, plain bash -c"]
         SR --> SRD
         SRC --> SRD
     end

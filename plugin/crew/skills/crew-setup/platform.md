@@ -255,6 +255,31 @@ real job, so `auto` uses direct exec, the cheaper one, and not pwsh.
 subshell+pipe round trips 20.4 s against 0.28 s; 200 small writes 4.43 s on
 `/mnt/c` against 0.062 s on WSL's ext4.
 
+`dadeush-desktop` again, 2026-09-28, through `crew_shell.py measure` itself (T-0040's
+native acceptance run; three runs each, range shown; each shell times its own loop):
+
+| Side | 50 forks | 200 small writes |
+|---|---|---|
+| Git Bash, repo on `C:` | 1.61-1.72 s | 0.073-0.082 s |
+| pwsh, repo on `C:` | 0.88-0.91 s | 0.057-0.059 s |
+| WSL2 on `/mnt/c` | 0.027-0.030 s | 0.40-0.43 s |
+| WSL2 ext4 (`mktemp -d`) | 0.028 s | 0.0055-0.0079 s |
+| Git Bash, repo in WSL via `\\wsl.localhost\` | 1.34-1.36 s | 1.45-1.52 s |
+| pwsh, repo in WSL via `\\wsl.localhost\` | 0.90-0.94 s | 0.36-0.38 s |
+| WSL2, repo in WSL (ext4) | 0.027-0.028 s | 0.0049-0.0057 s |
+
+Verdicts: the `C:` checkout is `gitbash-faster` (WSL loses on writes through `/mnt/c`), so
+`auto` does not route it to WSL; the in-WSL clone is `wsl-faster`. `run` was exercised once per
+mode on a `D:` checkout: `auto` ran pytest direct, `gitbash` and `powershell` ran it through
+their shells (242 passed each), `powershell` sent `bash .../render.sh` to Git Bash with the
+line `powershell requested; job is bash syntax -> gitbash`, and `wsl` routed to WSL, where the
+job failed with `No module named pytest`: the WSL preflight checks only the first word
+(`python3`), not a `-m` module. `wsl.exe --cd` took `/mnt/d/...` with a space in it and
+`/home/...` for a `\\wsl.localhost\` root. From Git Bash, pass a WSL root as
+`//wsl.localhost/<distro>/...`: a leading `\\` reaches Python as a single `\`. MSYS leaves a
+one-argument command string alone unless the whole string starts with `/`. `dadeush-lenovo`
+and `dadeush-legion` were not measured through `crew_shell.py`.
+
 Legion's Git Bash fork cost is 16-21x desktop's. That spread is why `auto`
 consults a per-machine measurement and not a constant. It is also why a
 Windows-drive repo goes to WSL only when measured: on desktop, WSL on `/mnt/c`
