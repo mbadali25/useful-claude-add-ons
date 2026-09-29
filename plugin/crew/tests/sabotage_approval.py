@@ -331,7 +331,7 @@ APPROVAL_MUTATIONS = (
     ("REPOINT: the hook re-points on a multi-line paste", HOOK,
      "        if _BREAK_RE.search(prompt.strip()):\n            return None\n",
      "        if False:\n            return None\n",
-     _AH + "test_autopilot_multiline_paste_does_not_repoint"),
+     _AH + "test_autopilot_multiline_paste_does_not_repoint[id-on-the-next-line]"),
     ("REPOINT: the hook re-points on text around the expanded command", HOOK,
      "        if outside.strip() or _ANY_TAG_RE.search(outside) \\\n",
      "        if _ANY_TAG_RE.search(outside) \\\n",

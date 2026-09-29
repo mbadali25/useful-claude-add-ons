@@ -364,10 +364,15 @@ def test_autopilot_nested_command_tag_does_not_repoint(repo, text):
     assert (code, _pointer(repo)) == (0, "T-1")
 
 
-def test_autopilot_multiline_paste_does_not_repoint(repo):
+@pytest.mark.parametrize("text", [
+    pytest.param("/crew:autopilot T-2\n/crew:autopilot T-1", id="two-commands"),
+    pytest.param("/crew:autopilot\nT-2", id="id-on-the-next-line"),
+    pytest.param("/crew:autopilot run\nT-2", id="run-then-id-on-the-next-line"),
+])
+def test_autopilot_multiline_paste_does_not_repoint(repo, text):
     _pointed(repo)
 
-    code = approval_hook.handle(prompt(repo, "/crew:autopilot T-2\n/crew:autopilot T-1"))
+    code = approval_hook.handle(prompt(repo, text))
 
     assert (code, _pointer(repo)) == (0, "T-1")
 
