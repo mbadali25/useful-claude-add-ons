@@ -369,5 +369,13 @@ status 3.</p>
 <code>deactivate</code> clears it, and <code>active</code> prints it. Without a setting, crew uses the open ticket in
 <code>.work/INDEX.md</code> if <code>.work/tickets/&lt;id&gt;/</code> exists. With no active ticket, the edit guard only
 protects approval and ledger state, and the completion audit does nothing.</p>
+<p>Who moves it depends on whether the move can widen scope. <code>/crew:autopilot</code> sets it itself when
+the worktree has no active ticket, when it already names the ticket, or when it names a ticket
+closed by an accepted review (a <code>clean</code> or <code>owner-accepted</code> receipt in the review ledger, plus
+<code>done</code> in <code>.work/INDEX.md</code> or the spec header). Moving off a ticket that is still in flight is
+yours: type <code>/crew:autopilot &lt;id&gt;</code>, and crew's prompt hook re-points this worktree and says which
+ticket it left. The edit guard refuses the session's own <code>activate</code> or <code>deactivate</code> for that move
+under every mode but <code>off</code>, and autopilot's stops recommend finishing the in-flight ticket rather
+than telling you to run a script.</p>
 </body>
 </html>
