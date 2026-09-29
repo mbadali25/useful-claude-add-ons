@@ -478,11 +478,10 @@ rather than about the prompt.
 
 Read ONLY `$SCRATCH/out.txt` and the `review:` lines. Never load the diff back into your context.
 **The verdict is the script's, not yours**: CLEAN only for exactly `CLEAN` at exit 0 with every part
-acknowledged; any BLOCK/FIX/NIT is FINDINGS; a non-zero exit, empty or unparseable output, a skipped
-part or a timeout is INCOMPLETE — never report INCOMPLETE as clean. An INCOMPLETE is classed `tool`,
-`reviewer` or `tree`; only a `tool` round (no intact answer: timeout, bad exit, empty output, a
-failed Codex stream) is refunded, up to two per plan, as its `review:` line says. The rerun is a
-new round, charged unless it is a tool failure too.
+acknowledged; any BLOCK/FIX/NIT is FINDINGS; a non-zero exit, empty or unparseable output, a skipped part or a
+timeout is INCOMPLETE — never report INCOMPLETE as clean. An INCOMPLETE is classed `tool`, `reviewer` or `tree`;
+only a `tool` round (no intact answer: timeout, bad exit, empty output, a failed Codex stream) is refunded, up
+to two per plan, as its `review:` line says. The rerun is a new round, charged unless it is a tool failure too.
 
 **Step 2d — re-run the failing control, do not read about it.** If the diff
 adds or edits a test, guard, assertion or smoke step, the author is expected to
