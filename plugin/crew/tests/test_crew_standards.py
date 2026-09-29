@@ -418,14 +418,14 @@ def test_stamp_binds_the_review_bundle(tmp_path, refs):
     cs.init(str(repo), "T-1", refs_dir=str(refs))
     _answer_all(repo)
     cs.stamp(str(repo), "T-1", refs_dir=str(refs))
-    _, seal, _ = cs.read_selfcheck(str(repo), "T-1")
+    seal = cs.read_selfcheck(str(repo), "T-1")[1] or {}
     base = scope_base.resolve(str(repo), "T-1")[0]
 
     now = review_patch.compute(str(repo), base)[0]["bundle_sha256"]
     (repo / "staged.txt").write_text("edited after stamping\n", encoding="utf-8")
     later = review_patch.compute(str(repo), base)[0]["bundle_sha256"]
 
-    assert (seal["bundle"] == now, seal["bundle"] != later, seal["base"] == base) == (
+    assert (seal.get("bundle") == now, seal.get("bundle") != later, seal.get("base") == base) == (
         True, True, True)
 
 

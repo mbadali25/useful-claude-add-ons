@@ -178,9 +178,9 @@ def test_run_reserves_with_current_selfcheck(repo, tmp_path):
 
     result = _run(repo, scratch, fakes, "claude", "--reserve-only")
 
-    _, seal, _ = cs.read_selfcheck(str(repo), TICKET)
+    seal = cs.read_selfcheck(str(repo), TICKET)[1] or {}
     assert (result.returncode, result.stdout.strip(),
-            f"std:{seal['standards'][:8]}" in result.stderr) == (0, "ROUND=1", True), (
+            f"std:{seal.get('standards', 'no-stamp')[:8]}" in result.stderr) == (0, "ROUND=1", True), (
         result.stderr)
 
 
