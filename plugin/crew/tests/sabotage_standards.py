@@ -11,6 +11,19 @@ could-not-tell reading, and both halves of the stamp's binding. Review round
 standard no plugin set has, a plugin set claiming the overlay's set name, an
 approval receipt that cannot be proven absent, a checklist built from unusable
 file lists, and a self-check that changes while it is being stamped.
+
+Review round 2 added nineteen. The scope base: a kept record that no longer
+resolves (its commit gone, or no longer an ancestor of HEAD) refused again
+instead of stamping against the merge-base fallback `/crew:review` bundles
+with, and the refusal naming `--record` over an entry `--record` would keep.
+The gate's completeness re-check of a record edited after stamping. A broken
+effective set ignored by `init`, by `stamp`, and by the gate. Twelve further
+refusal branches, each pinned by its own message: an approval lookup error read
+as no receipt, a manifest that is not an object, an empty change stamped, a
+malformed row, an unparseable stamp line, a second stamp line, a repeated
+field, a repeated front matter key, Supplements in a plugin set, two plugin
+files sharing a set, no GEN set, and a set file defining no standard. And
+review.md's exit-2 paragraph losing the self-check refusal.
 """
 import os
 
