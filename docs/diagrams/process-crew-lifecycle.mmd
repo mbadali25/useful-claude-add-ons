@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@f5efde46 on 2026-09-29. Verify before trusting.
+%% Generated from useful-claude-add-ons@4aa05915 on 2026-09-29. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -193,6 +193,13 @@
 %% the core.fileMode read), and its refresh allowance :198-208 -> :235-245 -> :255-265; both
 %% ranges mapped line for line by script (difflib). Of the Anchors paths only completion_audit.py
 %% changed 14ad3075..f5efde46. No node or edge changed.
+%% Merged f5efde46 + bbd9a66d -> 4aa05915 (T-0100 merges main 8ab733d7, T-0010 landed as crew
+%% 1.0.61; T-0100 re-set to crew 1.0.62): both sides' notes kept, main's first. Every body line is
+%% main's except T-0100's done.md and completion_audit.py lines (the check 3/4 nodes, done.md:64 and
+%% completion_audit.py:290-302), which neither side's other commits moved: of the Anchors paths
+%% f5efde46..4aa05915 changed only crew_ticket.py (T-0010's), and bbd9a66d..4aa05915 only done.md,
+%% review.md and completion_audit.py (T-0100's). crew_ticket.py:534-575 and :609-630 map from both
+%% sides to the same lines (difflib). No node or edge changed.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
