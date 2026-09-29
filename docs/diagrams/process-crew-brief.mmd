@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@3648f59a on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@f36e5c3b on 2026-09-29. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
@@ -168,6 +168,11 @@
 %% Re-anchored c8cc69ec / 3c4f1a68 -> 379ab5e6 (T-0087 merged onto 6387ab49, crew 1.0.55): of the
 %% Anchors paths none changed between c8cc69ec and 379ab5e6 (git diff --name-only); T-0087's
 %% crew_status.py and status.md lines cited above were already current at c8cc69ec. No node or edge changed.
+%% Re-anchored 3648f59a / 17fa035e -> f36e5c3b (T-0087 landing merge of 2693d0fa, crew 1.0.60): of the
+%% Anchors paths, crew_status.py and commands/status.md changed on T-0087's side only (the refund line);
+%% the merge brought no change to them from main. The st2 node's collect() range, still :192-216 after
+%% the 379ab5e6 re-anchor (T-0087 review round 2 NIT), now reads :200-224 (collect at :200, the HANDOFF
+%% check at :215, return at :224, re-read with sed -n). No node or edge otherwise changed.
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
     start --> reg["hooks.json:3-10<br/>3 SessionStart pairs, sh + ps1, no matcher<br/>each claims per session+source"]
@@ -220,6 +225,6 @@ flowchart TB
     hr3 -. "? 1.0-only repo (crew.json, no config.json)<br/>with inject:false gets no handoff" .-> hrx
 
     subgraph status["/crew:status (on demand)"]
-        st1["status.md:14<br/>crew_status.py --root ."] --> st2["git header, config file, roster,<br/>tracker (crew_tracker.resolve, :65),<br/>tickets, review ledgers, verify,<br/>codemap freshness, metrics,<br/>handoff, interrupted migrate<br/>:192-216"]
+        st1["status.md:14<br/>crew_status.py --root ."] --> st2["git header, config file, roster,<br/>tracker (crew_tracker.resolve, :65),<br/>tickets, review ledgers, verify,<br/>codemap freshness, metrics,<br/>handoff, interrupted migrate<br/>:200-224"]
         st2 -. "? checks fixed .work/HANDOFF.md (:215),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
     end
