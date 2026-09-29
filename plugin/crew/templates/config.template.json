@@ -202,7 +202,9 @@
   "autopilot": {
     "mode": "off",
     "maxPhases": 12,
-    "deploy": "none"
+    "deploy": "none",
+    "approval": "risk",
+    "questions": "risk"
   },
   "route": {
     "enabled": false
