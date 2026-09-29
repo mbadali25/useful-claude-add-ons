@@ -58,7 +58,7 @@ A tooling change: this release carries no feature work.
   `commands/autopilot.md`) ride along only when a lane commit declares each with
   a `Tooling-seam: <path>` trailer. It diffs from the merge base, so a merge of
   main does not count, and exits 77 (NOT VERIFIED) without `origin/main`. Its
-  suite is `scripts/_test/tooling-pr.py`. `.crew/verify.json` rule 31 runs the
+  suite is `scripts/_test/tooling-pr.py`. `.crew/verify.json` rule 32 runs the
   checker, the corpus, the contracts, the canary and `test_status.py` whenever
   a harness path, a seam consumer, one of those suites or
   `external-tool-formats.md` changes, and CLAUDE.md states the rule.
@@ -66,21 +66,22 @@ A tooling change: this release carries no feature work.
   covers Codex CLI's `--json` events (`exec_events.rs`), `wsl.exe`'s UTF-16LE
   output and `gh`'s exit codes and review flags, each with its URL, read date
   and probe record. It is held to crew's call sites by `test_external_tool_formats.py`.
-- **Twenty-five sabotage entries** (`tests/sabotage_tooling.py`) cover the
+- **Twenty-eight sabotage entries** (`tests/sabotage_tooling.py`) cover the
   refund, the budget, the golden replay and its redaction, the manifest,
-  status, autopilot, the gate record, the canary, the tooling-alone checker and
-  rule 31's paths. The six on the checker and `verify.json` are added only where
-  those repo files exist. All twenty-five go RED.
+  status, autopilot, the gate record, the canary, the tooling-alone checker,
+  rule 32's paths, the batch-shim prompt, the WSL probe's no-distribution skip
+  and the corpus's `-text` attribute. The six on the checker and `verify.json` are added only where
+  those repo files exist. All twenty-eight go RED.
 
 ### Fixed — `crew` 1.0.55 (T-0087)
 
 - Importing `verify_record` no longer reconfigures `sys.stdout`; that now
   happens in its `main`.
 - The sabotage entry "an edit to scope_guard.py runs no pytest rule" now drops
-  `scope_guard.py` from rule 31 as well as rule 27. Rule 31 lists it too, so
+  `scope_guard.py` from rule 32 as well as rule 27. Rule 32 lists it too, so
   dropping it from rule 27 alone left it covered and the entry stayed green
   (`STILL GREEN -- TEST IS VACUOUS`).
-- `plugin/crew/BUDGETS.md`'s Markdown line count is re-measured: 19,598 lines
+- `plugin/crew/BUDGETS.md`'s Markdown line count is re-measured: 19,666 lines
   across 129 files.
 - `scripts/check-tooling-pr.py` allows `plugin/crew/BUDGETS.md` alongside a
   harness change: its line count moves with every crew doc edit. It refused this

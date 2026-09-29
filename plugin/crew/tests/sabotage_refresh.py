@@ -50,11 +50,12 @@ VERIFY = os.path.join(os.path.dirname(os.path.dirname(CREW)), ".crew", "verify.j
 
 
 def _scope_guard_rule_span():
-    """verify.json from rule 27's scope_guard.py line through rule 31's entry,
+    """verify.json from rule 27's scope_guard.py line through rule 32's entry,
     and the same span with scope_guard.py dropped from both.
 
-    Rule 31 (T-0087) lists scope_guard.py as well, so dropping it from rule 27
-    alone leaves it covered and the mutation stays green. `apply_mutation`
+    Rule 32 (T-0087; rule 31 before T-0010's rule 28 landed) lists
+    scope_guard.py as well, so dropping it from rule 27 alone leaves it
+    covered and the mutation stays green. `apply_mutation`
     patches one contiguous, unique span, so the span is read from the file:
     both rules have to lose it for coverage to truly disappear (owner, spec
     amendment 2026-09-28). Unreadable or reshaped -> ("", ""), an anchor that

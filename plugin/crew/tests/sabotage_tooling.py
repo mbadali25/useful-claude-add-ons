@@ -261,7 +261,7 @@ if os.path.isfile(CHECKER) and os.path.isfile(VERIFY_JSON):
         ),
         (
             # (x) Round-1 FIX: the harness rule stops triggering on a suite it runs.
-            "rule 31 stops triggering on test_status.py",
+            "rule 32 stops triggering on test_status.py",
             VERIFY_JSON,
             '"plugin/crew/tests/test_status.py", "plugin/crew/docs/external-tool-formats.md"],',
             '"plugin/crew/docs/external-tool-formats.md"],',
@@ -269,7 +269,7 @@ if os.path.isfile(CHECKER) and os.path.isfile(VERIFY_JSON):
         ),
         (
             # (y) ... or stops running the status suite at all.
-            "rule 31 stops running test_status.py",
+            "rule 32 stops running test_status.py",
             VERIFY_JSON,
             ' plugin/crew/tests/test_status.py -q"]',
             ' -q"]',
