@@ -4,6 +4,50 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.62: `rules` says when it generates from a code map whose anchor needs re-check (T-0501)
+
+- **What changed.** `crew_instructions.py rules` and `rules --check` print, after
+  the `wrote`/`stale:`/`missing:`/`orphan:`/`hand-written` lines, one advisory line
+  per code-map note a rule is rendered from whose `crew_context.anchor_state` is
+  `behind` or `unresolvable`: `anchor behind: <subsystem> - anchor <sha>; re-check
+  with git diff --name-only <sha>..HEAD -- <cited paths>, or refresh with
+  /crew:onboard --refresh <subsystem>`, `anchor unresolvable: <subsystem> - anchor
+  <sha> names no commit here; ...` or `... - no anchor recorded; ...`, and one
+  `anchors: could not tell - no git HEAD under <root>; <n> rule(s) come from code
+  maps whose anchors were not checked` when there is no HEAD. `rules: up to date`
+  gains ` - rules match the code map; N code map(s) need re-check (anchor lines
+  above)` or ` - rules match the code map; anchors not checked (no git HEAD)`.
+  `scripts/check_instructions.py`'s drift parser drops the three
+  `ANCHOR_ADVISORY_PREFIXES` so an anchor line is never quoted as drift.
+  `.crew/verify.json` gains rules 32 (the generator's pytest suites, which no
+  rule reached before) and 33 (`scripts/_test/instruction-budgets.py`).
+- **Why.** aws-ops follow-up report item 14: `rules` wrote 8 `.claude/rules/*.md`
+  while the session-start hook reported 4 of those subsystems' anchors as needing
+  re-check, and neither `rules` nor `rules --check` said so; `/crew:migrate`'s
+  steps did not mention it either.
+- **Unchanged.** The classifier is SessionStart's own (`anchor_state` with
+  `rev-parse --short=8 HEAD`), so the two surfaces name the same notes. The
+  generated rule bytes, `render_rule` and `rule_digest` (the state is printed,
+  never rendered in, so rule 24's sync check keeps its fixpoint); exit codes (1 =
+  drift only); `rules()`'s return contract; `agents` and `codex` output. No flag,
+  no strict mode. A note that yields no rule file is not reported by `rules`.
+- **Docs.** `/crew:migrate` preview and apply and `/crew:onboard` step 6 say what
+  the lines mean and what to do (`/crew:onboard --refresh <subsystem>` and re-run,
+  or record it); the memory-and-obsidian guide's path-scoped-rules bullet, rebuilt
+  to HTML, DOCX and PDF with LibreOffice; `.crew/codemap/crew.md` and
+  `verification-harness.md`; rule 24's `why`.
+- **Sabotage.** Two entries in `plugin/crew/tests/sabotage_context.py`, each run by
+  hand through `sabotage.py`'s `apply_mutation`/`run_test`/`restore` against the
+  tracked file and confirmed RED, the file restored to its HEAD blob after each:
+  `WARN_STATES` without `behind` reds
+  `test_rules_names_a_note_whose_cited_path_changed_since_its_anchor` (its
+  neighbour `test_an_unresolvable_anchor_is_its_own_line` stays green under it),
+  and no-HEAD returning `[], 0` reds `test_no_git_head_is_could_not_tell_not_silence`.
+  A third, by hand: dropping `check_instructions.py`'s prefix filter reds three
+  `instruction-budgets.py` cases, `edited-behind`'s "exactly one problem and no
+  'anchor' line" among them.
+- Bumped `1.0.61 -> 1.0.62`.
+
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 
 - **What changed.** `review_patch.py`'s `EXCLUDED` is now `(".work/",
