@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@14ad3075
+anchor: useful-claude-add-ons@7fc61de6
 verified: 2026-09-29
 
 ## Re-derive provenance
@@ -262,8 +262,12 @@ listing the directory.
   held. Not fixed here — outside this note's write scope; reported so the
   fix targets the right passage.
 
-- **`README.md`'s install-URL pin is stale again at this anchor, as its
-  history said it would be.** `README.md:12`/`:18` still read
+- **`README.md`'s install-URL pin went stale again after `6c497a14`, as its
+  history said it would, and is current at this anchor.** At `7fc61de6`
+  `README.md:12`/`:18` pin `e878cc31` (`17d057db`, merged from main
+  `2693d0fa`) and `git log --oneline e878cc31..7fc61de6 --
+  scripts/install-prerequisites.sh scripts/install-prerequisites.ps1` is
+  empty (DERIVED, re-read at `7fc61de6`). Before that, `README.md:12`/`:18` read
   `6c497a14fc06612732241d2b13eee4fea41996f5` at `07ca3972` (re-read), set by
   #226 (`86931b29`); it was current through `a0c0847e`, but `git log
   --oneline 6c497a14..07ca3972 -- scripts/install-prerequisites.sh
@@ -1140,3 +1144,5 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 **Re-anchored `3648f59a` -> `cdd5f0ec` on 2026-09-28 (T-0100 merged onto `e878cc31`, crew 1.0.60).** `cdd5f0ec` is T-0100's crew 1.0.60 version commit on `T-0100-build`, after `1c662b13` merged origin/main `e878cc31` (T-0075 landed as crew 1.0.59) with mechanical conflicts only (version files, the BUDGETS claim, the graph and troubleshooting-guide binaries taken from main; anchors from main with both sides' provenance notes kept, main's first; INDEX rows from main; rules regenerated). Every body citation of the form `path:line` into a file changed between `3648f59a` and `cdd5f0ec` was compared by script: the only differences are version-file lines, `plugin/crew/BUDGETS.md:11` and `plugin/crew/README.md:842` in place, `docs/diagrams/data-flow-crew-config.mmd:1-2` (its header, re-anchored in place) and lines inside dated provenance notes. No claim moved. Nothing was executed for this note.
 
 **Re-anchored `cdd5f0ec` -> `14ad3075` on 2026-09-29 (T-0100 review round 1 fixes, crew 1.0.60).** `14ad3075` is T-0100's crew 1.0.60 re-set on `T-0100-build`, after the round-1 fixes `d9d3f117` (a path main also changed is diffed from the merged commit; the audit's untracked-identical rule and its could-not-tell pass line), `7c0d1052` (docs and these notes), `cc731a74` (the troubleshooting guide rebuilt) and the version round trip `7fc84c24`. Every body citation of the form `path:line`, and each bare `:N` carried from the last path named in its paragraph, into a file changed between `cdd5f0ec` and `14ad3075` was mapped by script (difflib equal blocks) and each one that did not map to itself was read with `sed -n`. None moved (`data-flow-crew-config.mmd:1` is its header line, re-anchored in `7e862bf8`). No claim moved. Nothing else was executed for this note.
+
+**Re-anchored `14ad3075` -> `7fc61de6` on 2026-09-29 (T-0100 merged onto main `2693d0fa`, crew 1.0.60).** `7fc61de6` is the merge commit on `T-0100-build` that brought in origin/main `2693d0fa` (`17d057db`, "README: re-pin install URLs to T-0075's merge (e878cc31)"), a clean merge that changes only `README.md`. `crew_refresh_check.py` at `7fc61de6` named `README.md` as the only change this map documents; that change rewrites `:12` and `:18` in place (the two install-URL pins, `6c497a14` -> `e878cc31`) with no line added or removed, so every `README.md:N` citation maps to itself. Claim moved: the README pin bullet said the pin is stale at this anchor; it now says it is current (`e878cc31`), re-read the same way as `install-scripts.md`'s landmine. Nothing else was executed for this note.

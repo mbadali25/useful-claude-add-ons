@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@14ad3075
+anchor: useful-claude-add-ons@7fc61de6
 verified: 2026-09-29
 
 ## Re-derive provenance
@@ -206,11 +206,13 @@ through their own package managers.
   `curl | bash` taken from the README runs scripts that differ from the ones
   this note describes only in that menu label. DERIVED (re-read at
   `e95e5964`). T-0004 merged without the re-pin. T-0075 IS merged at this
-  anchor (main `e878cc31`, crew 1.0.59, reached through `1c662b13`) and
-  `README.md:12`/`:18` here still pin `6c497a14`, so at this anchor the
-  re-pin is due, per CLAUDE.md's promotion step; it landed on main after
-  the merged commit, as `17d057db` ("README: re-pin install URLs to T-0075's
-  merge (e878cc31)"), which this branch has not merged. It was
+  anchor (main `e878cc31`, crew 1.0.59, reached through `1c662b13`), and so
+  is its re-pin: `17d057db` ("README: re-pin install URLs to T-0075's merge
+  (e878cc31)", main `2693d0fa`, merged here by `7fc61de6`), so
+  `README.md:12`/`:18` pin `e878cc31e00a7acb480fc17dd8afdcaf40c91f2d` and
+  `git log --oneline e878cc31..7fc61de6 -- scripts/install-prerequisites.sh
+  scripts/install-prerequisites.ps1` is empty: the pin is CURRENT at this
+  anchor. DERIVED (re-read at `7fc61de6`). It was
   current at `f2bb919b` (re-pinned by #226, `86931b29`, "README: re-pin
   install URLs to crew 1.0 merge (6c497a14)"). At `6c497a14` this bullet recorded the pin as STALE at
   `5d1fc5fd`, missing the merged `web-testing` row, `lsp-plugins`,
@@ -1050,3 +1052,5 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 **Re-anchored `3648f59a` -> `cdd5f0ec` on 2026-09-28 (T-0100 merged onto `e878cc31`, crew 1.0.60).** `cdd5f0ec` is T-0100's crew 1.0.60 version commit on `T-0100-build`, after `1c662b13` merged origin/main `e878cc31` (T-0075 landed as crew 1.0.59) with mechanical conflicts only (version files, the BUDGETS claim, the graph and troubleshooting-guide binaries taken from main; anchors from main with both sides' provenance notes kept, main's first; INDEX rows from main; rules regenerated). Every body citation of the form `path:line` into a file changed between `3648f59a` and `cdd5f0ec` was compared by script: the only differences are version-file lines, `plugin/crew/BUDGETS.md:11` and `plugin/crew/README.md:842` in place, and lines inside dated provenance notes, left as history. No claim moved. Nothing was executed for this note.
 
 **Re-anchored `cdd5f0ec` -> `14ad3075` on 2026-09-29 (T-0100 review round 1 fixes, crew 1.0.60).** `14ad3075` is T-0100's crew 1.0.60 re-set on `T-0100-build`, after the round-1 fixes `d9d3f117` (a path main also changed is diffed from the merged commit; the audit's untracked-identical rule and its could-not-tell pass line), `7c0d1052` (docs and these notes), `cc731a74` (the troubleshooting guide rebuilt) and the version round trip `7fc84c24`. Every body citation of the form `path:line`, and each bare `:N` carried from the last path named in its paragraph, into a file changed between `cdd5f0ec` and `14ad3075` was mapped by script (difflib equal blocks) and each one that did not map to itself was read with `sed -n`. None moved. Claim moved: the landmine said T-0075 was not merged at this anchor, false since `1c662b13` merged `e878cc31`; it now says the re-pin is due here and landed on main as `17d057db`, which this branch has not merged (the last re-anchor's "No claim moved" was wrong). Nothing else was executed for this note.
+
+**Re-anchored `14ad3075` -> `7fc61de6` on 2026-09-29 (T-0100 merged onto main `2693d0fa`, crew 1.0.60).** `7fc61de6` is the merge commit on `T-0100-build` that brought in origin/main `2693d0fa` (`17d057db`, "README: re-pin install URLs to T-0075's merge (e878cc31)"), a clean merge that changes only `README.md`. `crew_refresh_check.py` at `7fc61de6` named `README.md` as the only change this map documents; that change rewrites `:12` and `:18` in place (the two install-URL pins, `6c497a14` -> `e878cc31`) with no line added or removed, so every `README.md:N` citation maps to itself. Claim moved: the README pin landmine said `README.md:12`/`:18` still pin `6c497a14` here and that this branch had not merged `17d057db`; it now says the pin is current (`e878cc31`) at this anchor, re-read with `sed -n` and `git log --oneline e878cc31..7fc61de6 -- scripts/install-prerequisites.sh scripts/install-prerequisites.ps1` (empty). Nothing else was executed for this note.
