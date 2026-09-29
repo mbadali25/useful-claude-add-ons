@@ -353,21 +353,24 @@ def test_a_failed_create_stops_before_the_folder(name):
 
 
 # T-0085: the build-time standards reach the commands that apply them. Exact
-# strings, and one ordering control: the stamp sits before the review, so a
-# self-check moved after `/crew:review $1` (a text mutation that keeps the
-# words) still goes red.
+# strings, matched on whitespace-normalised text, and one ordering control: the
+# stamp sits before the review, so a self-check moved after `/crew:review $1`
+# (a text mutation that keeps the words) still goes red. review.md's two
+# refusal strings are in the exit-2 paragraph only T-0085 wrote; main's
+# pre-T-0085 paragraph carries neither (review round 2 FIX 4).
 _STANDARDS_STEPS = {
     "implement.md": ("crew_standards.py stamp --root . --ticket $1", "crew-standards"),
     "plan.md": ("Standards:",),
     "review.md": ('crew_standards.py proposals --root . --ticket "$TICKET"', "std:",
-                  "2 not run"),
+                  "`review-run: self-check: ...`",
+                  "run the `crew_standards.py stamp` it names"),
     "fix.md": ("self-check",),
 }
 
 
 @pytest.mark.parametrize("name", sorted(_STANDARDS_STEPS))
 def test_commands_name_the_standards_steps(name):
-    text = _read(os.path.join(COMMANDS, name))
+    text = " ".join(_read(os.path.join(COMMANDS, name)).split())
 
     missing = [s for s in _STANDARDS_STEPS[name] if s not in text]
 
