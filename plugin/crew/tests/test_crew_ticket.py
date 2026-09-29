@@ -908,3 +908,12 @@ def test_activate_cli_is_still_a_plain_writer(tmp_path):
     _cli(root, "activate", "--ticket", "T-2")
 
     assert crew_ticket.resolve_active(str(root))[0] == "T-2"
+
+
+@pytest.mark.parametrize("action", ["activate", "validate", "status"])
+def test_a_cli_action_without_a_ticket_says_which_is_missing(tmp_path, action):
+    root = make_repo(tmp_path)
+
+    done = _cli(root, action)
+
+    assert (done.returncode, f"{action} needs --ticket <id>" in done.stderr) == (2, True)
