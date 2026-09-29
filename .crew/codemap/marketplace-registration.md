@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@f36e5c3b
+anchor: useful-claude-add-ons@5cf11bc9
 verified: 2026-09-29
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -977,3 +977,7 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 `7a277073` merges the reviewed `T-0087-build` @ `0ef73f74` (review round 2 owner-accepted) into origin/main `2693d0fa` (T-0075 landed as crew 1.0.59). `bec3156f` bumps crew to 1.0.60; `1adbf2a9` fixes the 17 ruff findings new in T-0087's own files (the owner's fix-at-land rule: import-block reorders in five test files, parenthesised concatenations in `review_ledger.py` and `scripts/check-tooling-pr.py`, one f-string, two exec bits); `7eb47aec` and `f36e5c3b` step the version back and re-set 1.0.60 so the bump follows those fixes. The merge kept both lines' provenance; current-state lines in conflict took main's text with the merged tree's values. Every `path:N` citation in the body was then mapped from the side its line came from (`git blame HEAD`: main `2693d0fa`, `T-0087-build` `0ef73f74`, or the merge-base `6387ab49`) onto `f36e5c3b` by a line diff, and each proposed move was read in context: a move on a history figure (`at <sha>`) or on a number the script attributed to the wrong path was refused, and a citation the diff could not map was re-read on the merged tree.
 
 No citation moved. Set at the merge: the version sentence (1.0.60). Re-read and unchanged: `.claude-plugin/marketplace.json:217`/`:218`, `plugin/PLUGINS.md:14` and `:17`, `plugin/README.md:414`, `scripts/install-prerequisites.sh:1391`, `plugin/crew/BUDGETS.md:11` (now 19,543 lines across 129 files). The `:329-380`/`:383-410` pair is `scripts/check-marketplace.py`'s, which neither side changed.
+
+## Re-anchor provenance - `f36e5c3b` -> `5cf11bc9`, 2026-09-29 (T-0087 landing, `review.md` reflow)
+
+`3527f789` re-wraps the last six lines of `plugin/crew/commands/review.md`'s step-2c verdict paragraph into five (words unchanged) so the file is back within its 551-line instruction allowance; `96b89c59` and `5cf11bc9` step the version back and re-set 1.0.60 after it. Of the paths this note cites only `review.md` changed (`git diff --name-only f36e5c3b 5cf11bc9`: that file, `plugin/crew/BUDGETS.md`'s `:11` figure, now 19,542, and the three version files, 1.0.60 again). Lines `:480-485` became `:480-484` and every later line moved up by one; no body citation here points into `review.md` at or past `:480` (scripted line diff, none moved).

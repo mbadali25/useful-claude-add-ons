@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@17fa035e on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@5cf11bc9 on 2026-09-29. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -182,6 +182,10 @@
 %% changed - the refund sentence no longer calls the rerun free and runs one line longer, so
 %% :482-484 -> :482-485, :503-504 -> :504-505, :508 -> :509 and :511 -> :512 (re-read with sed -n);
 %% :25-29, :440, :449 and :480 are unchanged. No node or edge changed.
+%% Re-anchored 17fa035e -> 5cf11bc9 (T-0087 landing on main 2693d0fa, crew 1.0.60): of the Anchors paths only
+%% commands/review.md changed after 17fa035e on this line (the landing reflow of its step-2c paragraph,
+%% :480-485 -> :480-484, words unchanged); no node, edge or comment cites review.md at or past :480.
+%% Main's side brought no change to any Anchors path (refresh check: fresh at f36e5c3b). Nothing redrawn.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
