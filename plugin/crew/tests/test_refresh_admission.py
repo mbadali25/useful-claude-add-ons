@@ -142,7 +142,8 @@ def test_a_graph_rebuilt_after_a_code_change_is_admitted(anchored):
 
 
 @pytest.mark.parametrize("manifest", [".claude-plugin/plugin.json",
-                                      "plugin/crew/.claude-plugin/plugin.json"])
+                                      "plugin/crew/.claude-plugin/plugin.json"],
+                         ids=["root", "plugin"])
 def test_a_version_bump_reaches_the_map_citing_the_manifest(tmp_path, manifest):
     root, base = anchored_repo(tmp_path, cites=(manifest + ":3",))
     re_anchor_map(root, "app", head_sha(root, 40), cites=(manifest + ":3",))
@@ -340,7 +341,8 @@ def test_a_map_named_in_not_subsystems_is_judged_by_touch(anchored):
 OTHER_ROW = "| [`other.md`](other.md) | `00000000` | first pass | other |\n"
 
 
-@pytest.mark.parametrize("deleted", ["One row per subsystem map.\n", OTHER_ROW])
+@pytest.mark.parametrize("deleted", ["One row per subsystem map.\n", OTHER_ROW],
+                         ids=["header-prose", "another-maps-row"])
 def test_an_index_line_deleted_outside_a_re_anchored_row_is_refused(tmp_path, deleted):
     """A pure deletion has no new-side line, so only the base side can
     refuse it (review round 1): the header prose, or another map's row."""

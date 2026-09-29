@@ -310,7 +310,7 @@ REFRESH_MUTATIONS = (
     ("a manifest bump is dropped from the admission reach", CHECK,
      "    return not _bookkeeping(path) or any(crew_ticket.glob_match(path, glob)\n",
      "    return not _bookkeeping(path) and any(crew_ticket.glob_match(path, glob)\n",
-     _TA + "test_a_version_bump_reaches_the_map_citing_the_manifest[.claude-plugin/plugin.json]"),
+     _TA + "test_a_version_bump_reaches_the_map_citing_the_manifest[root]"),
     ("the audit drops every artifact whatever its verdict", AUDIT,
      _AUDIT_ADMIT, "    return [p for p in paths if p not in verdicts], verdicts\n",
      _CA + "test_a_map_edited_without_moving_its_anchor_fails_the_audit"),
@@ -365,8 +365,7 @@ REFRESH_MUTATIONS = (
     ("a deleted INDEX.md line is never judged", CHECK,
      '        lines += [(f"base line {i + 1}", old[i]) for i in range(i1, i2)]\n',
      "        lines += []\n",
-     _TA + "test_an_index_line_deleted_outside_a_re_anchored_row_is_refused["
-     "| [`other.md`](other.md) | `00000000` | first pass | other |\n]"),
+     _TA + "test_an_index_line_deleted_outside_a_re_anchored_row_is_refused[another-maps-row]"),
     ("a rule renderer that raises reads as expecting nothing", CHECK,
      '        return f"expected_rules raised {type(exc).__name__}"\n',
      "        return {}\n",
