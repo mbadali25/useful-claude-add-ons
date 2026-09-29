@@ -1,17 +1,17 @@
 # Graph Report - useful-claude-add-ons-aa9d50-T-0028-kimi  (2026-09-29)
 
 ## Corpus Check
-- 970 files · ~2,197,651 words
+- 970 files · ~2,197,753 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 61 file(s) not represented in the graph (top: (none) 33, .mmd 8, .jsonl 4)
 
 ## Summary
-- 19954 nodes · 40771 edges · 925 communities (755 shown, 170 thin omitted)
-- Extraction: 92% EXTRACTED · 8% INFERRED · 0% AMBIGUOUS · INFERRED: 3074 edges (avg confidence: 0.92)
+- 19954 nodes · 40772 edges · 925 communities (755 shown, 170 thin omitted)
+- Extraction: 92% EXTRACTED · 8% INFERRED · 0% AMBIGUOUS · INFERRED: 3075 edges (avg confidence: 0.92)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `d1c60257`
+- Built from commit: `6b18e270`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
