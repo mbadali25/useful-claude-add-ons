@@ -1,7 +1,7 @@
 # Graph Report - uca-t0088-land  (2026-09-29)
 
 ## Corpus Check
-- 968 files · ~2,188,578 words
+- 968 files · ~2,188,703 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 59 file(s) not represented in the graph (top: (none) 33, .mmd 8, .csv 4)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `277104e1`
+- Built from commit: `65554b79`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -2696,7 +2696,7 @@ Nodes (14): endpoint(), ollama(), fixture, A proxy pointed at the real Ollama an
 
 ### Community 449 - "repo_config_dir"
 Cohesion: 0.12
-Nodes (21): Changed — `crew` 1.0.60: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088), Linked worktrees read the main checkout's config (T-0088, crew 1.0.53), 1. The two layers, In a linked worktree, _main_checkout(), (main_root, problem): the main checkout of the linked worktree at `root`, or…, The main checkout's `.crew/` when `root` is a linked worktree whose OWN config…, One line for /crew:status and /crew:config naming the file in force; empty when… (+13 more)
+Nodes (21): Changed — `crew` 1.0.61: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088), Linked worktrees read the main checkout's config (T-0088, crew 1.0.53), 1. The two layers, In a linked worktree, _main_checkout(), (main_root, problem): the main checkout of the linked worktree at `root`, or…, The main checkout's `.crew/` when `root` is a linked worktree whose OWN config…, One line for /crew:status and /crew:config naming the file in force; empty when… (+13 more)
 
 ### Community 450 - "Apps: Win32/LOB deployment and troubleshooting"
 Cohesion: 0.29
