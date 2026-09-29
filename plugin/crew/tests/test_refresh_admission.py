@@ -17,6 +17,7 @@ mutation in `sabotage_refresh.py` after the `# T-0094` marker that turns one
 of these red.
 """
 import os
+import re
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_instructions
@@ -555,3 +556,77 @@ def test_an_unreadable_rule_is_could_not_tell(anchored, case):
     verdict, reason = _verdict(root, base, REACH, rel)
 
     assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL)) == (None, True), reason
+
+
+# Review round 2: every could-not-tell branch of `_sha_moved`, `_moved_from`
+# and `_rule_verdict` has a control. Each patch fails ONE git call and lets the
+# rest run, and each asserts its branch's own reason text, so an earlier branch
+# answering for it fails the test too. These pass on correct code; the round-2
+# entries in `sabotage_refresh.py` turn each one red.
+
+def _args_are(*want):
+    return lambda args: tuple(args) == want
+
+
+@pytest.mark.parametrize("case", ["cat-file-none", "cat-file-129", "ancestor-129",
+                                  "ancestor-none", "rev-parse"])
+def test_a_new_anchor_git_cannot_judge_is_could_not_tell(anchored, monkeypatch, case):
+    root, base = anchored
+    new = head_sha(root, 40)
+    re_anchor_map(root, "app", new)
+    cat_file = _args_are("cat-file", "-e", new + "^{commit}")
+    ancestor = _args_are("merge-base", "--is-ancestor", new, "HEAD")
+    name, match, result, text = {
+        "cat-file-none": ("_git_rc", cat_file, None, "git could not run"),
+        "cat-file-129": ("_git_rc", cat_file, 129, "git exited 129 reading anchor"),
+        "ancestor-129": ("_git_rc", ancestor, 129, "is behind HEAD"),
+        "ancestor-none": ("_git_rc", ancestor, None, "is behind HEAD"),
+        "rev-parse": ("_git_lines", _args_are("rev-parse", "--verify", new + "^{commit}"),
+                      None, "could not resolve"),
+    }[case]
+    _failing_git(monkeypatch, name, match, result)
+
+    verdict, reason = _verdict(root, base, REACH, APP)
+
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL),
+            text in reason) == (None, True, True), reason
+
+
+@pytest.mark.parametrize("case", ["behind-head", "forward"])
+def test_a_moved_anchor_git_cannot_order_is_could_not_tell(anchored, monkeypatch, case):
+    root, base = anchored
+    new = head_sha(root, 40)
+    old = re.search(r"anchor: r@([0-9a-f]+)", read(root, APP)).group(1)
+    was = git(root, "rev-parse", "--verify", old + "^{commit}").strip()
+    re_anchor_map(root, "app", new)
+    of, text = {"behind-head": ("HEAD", f"whether {old[:12]} is behind HEAD"),
+                "forward": (new, f"whether {new[:12]} follows {old[:12]}")}[case]
+    _failing_git(monkeypatch, "_git_rc", _args_are("merge-base", "--is-ancestor", was, of), 129)
+
+    verdict, reason = _verdict(root, base, REACH, APP)
+
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL),
+            text in reason) == (None, True, True), reason
+
+
+def test_the_moved_anchor_fixture_reaches_the_ordering_branches(anchored):
+    """The two cases above test nothing unless the base anchor is on HEAD's
+    history and is not HEAD: `_moved_from` returns before its ordering
+    branches otherwise."""
+    root, _base = anchored
+    old = re.search(r"anchor: r@([0-9a-f]+)", read(root, APP)).group(1)
+    on_history = crew_refresh_check._is_ancestor(str(root), old)  # pylint: disable=protected-access
+
+    assert (on_history, old != head_sha(root, 40)) == (True, True)
+
+
+def test_a_removed_rule_whose_base_copy_git_cannot_read_is_could_not_tell(tmp_path, monkeypatch):
+    rel = RULE.format(name="hand")
+    root, base = anchored_repo(tmp_path, extra={rel: "# hand\nwritten by a person\n"})
+    git(root, "rm", "-q", rel)
+    _failing_git(monkeypatch, "_git_rc", _args_are("cat-file", "-e", f"{base}:{rel}"), 129)
+
+    verdict, reason = _verdict(root, base, REACH, rel)
+
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL),
+            "base copy error: git exited 129" in reason) == (None, True, True), reason
