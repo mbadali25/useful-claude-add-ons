@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@24ca5046 on 2026-09-29. Verify before trusting.
+%% Generated from useful-claude-add-ons@b4f39fd3 on 2026-09-29. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_config_files.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_common.py
 %% T-0088: the REPO node now names the linked-worktree source - crew_state.load_config
 %% (plugin/crew/hooks/scripts/crew_state.py:267) reads crew_common.repo_config_file, and
@@ -393,14 +393,15 @@
 %% Re-anchored fe80f69d -> 68e106f5 (T-0088 re-bumps crew to 1.0.56): of the Anchors paths only
 %% CONFIG.md changed - T-0088's own version mentions (:117, :135, :141, 1.0.55 -> 1.0.56, in place);
 %% CONFIG.md is cited by name only. No node or edge changed.
-%% Re-anchored 68e106f5 / 3648f59a -> 24ca5046 (T-0088 landing: merge of main 2693d0fa, T-0075 as crew
-%% 1.0.59, then crew 1.0.60 and the landing-branch lint fixes): the notes above from both lines hold on
-%% the merged tree. Of the Anchors paths crew_config.py, crew_common.py and CONFIG.md changed on both
-%% sides; crew_config_files.py, crew_config_menu.py, crew_state.py, crew_context.py, crew_autocycle.py,
-%% crew_tracker.py and role_write_guard.py on one (git diff --name-only against each); every crew_config.py line cited here was re-read at 24ca5046 with grep -n (default_config :244,
+%% Re-anchored 68e106f5 / 3648f59a -> b4f39fd3 (T-0088 landing: merge of main 2693d0fa, T-0075 as crew
+%% 1.0.59, then crew 1.0.60 and 1.0.61 for the landing-branch lint fixes): the notes above from both
+%% lines hold on the merged tree. Of the Anchors paths crew_config.py, crew_common.py and CONFIG.md
+%% changed on both sides; crew_config_files.py, crew_config_menu.py, crew_state.py, crew_context.py,
+%% crew_autocycle.py, crew_tracker.py and role_write_guard.py on one (git diff --name-only against
+%% each); every crew_config.py line cited here was re-read at b4f39fd3 with grep -n (default_config :244,
 %% resolve_config :777, plan_global_write :2862, plan_repo_write :3062, write_repo_config :3088). The
 %% landing pragma in crew_config.py replaced a blank line, so nothing moved after the merge. Leaf counts
-%% re-executed at 24ca5046: 123 / 68. No node or edge changed at landing.
+%% re-executed at b4f39fd3: 123 / 68. No node or edge changed at landing.
 flowchart TB
 
     subgraph Sources["Three sources, lowest precedence first"]
