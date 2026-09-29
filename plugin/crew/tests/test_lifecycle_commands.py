@@ -104,15 +104,18 @@ def test_command_names_exact_cli(name, snippets):
 
 # T-0018: autopilot.md holds the router and `status` in 100 of the 120, so
 # T-0010's approval branch, T-0012's `goal`, T-0019's `assign` and T-0020's
-# `focus` have about 5 lines each. Past this, detail moves into
-# crew_autopilot.py output (or a backing skill, which is the owner's call).
-AUTOPILOT_MAX_LINES = 100
+# `focus` have about 5 lines each. T-0010 took 10: its approve exception and
+# the questions.md shape round 2 asked for (owner decision, 2026-09-27), which
+# leaves T-0012, T-0019 and T-0020 10 lines between them. Past this, detail
+# moves into crew_autopilot.py output (or a backing skill, which is the
+# owner's call).
+AUTOPILOT_MAX_LINES = 110
 
 
-def test_autopilot_command_at_most_100_lines():
+def test_autopilot_command_at_most_110_lines():
     lines = _line_count(_read(os.path.join(COMMANDS, "autopilot.md")))
 
-    assert (lines <= AUTOPILOT_MAX_LINES, MAX_LINES - AUTOPILOT_MAX_LINES) == (True, 20), (
+    assert (lines <= AUTOPILOT_MAX_LINES, MAX_LINES - AUTOPILOT_MAX_LINES) == (True, 10), (
         f"autopilot.md: {lines} lines, budget {AUTOPILOT_MAX_LINES}")
 
 
