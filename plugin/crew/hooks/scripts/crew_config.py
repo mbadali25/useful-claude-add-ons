@@ -75,7 +75,7 @@ prints.
 per ROLE, which provider and model back it, which family that speaks as,
 whether the self-review guard is barring it, and which fallback is armed.
 """
-
+# pylint: disable=too-many-lines  # over 3400 after T-0088; the split is a T-0088 follow-up ticket
 import argparse
 import collections
 import copy
