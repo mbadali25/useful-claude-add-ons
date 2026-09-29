@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.62: faster QA harness — parallel pylint and pytest, unsigned fixture commits
+### Changed — `crew` 1.0.63: faster QA harness — parallel pylint and pytest, unsigned fixture commits
 
 - **What changed.** `pylint.yml` and the `**/*.py` rule in `.crew/verify.json`
   run `pylint -j <os.cpu_count()>`; the `test` job in `pytest-crew.yml` installs
@@ -37,6 +37,17 @@ All notable changes to this repository are documented here. Format follows [Keep
   before the imports; now `# noqa: E402`, the repo's convention) and one `E713`
   in `cloud_guard.py` (`not x in y` -> `x not in y`, identical semantics; its
   suites pass 1761/0, and inverting the line turns four RED).
+- **Wall-clock tests stay serial.** Nine crew tests (12 items) assert elapsed
+  time against a real bound — a hook's timeout, a probe's deadline. Under
+  `-n auto` in the first CI run, `test_near_deadline_candidates_then_a_hang_stay_within_the_hook_timeout`
+  read `ps1=10.25s` against its 10s bound on 2 of 6 jobs. The bound is the
+  hook's real timeout, so it was not loosened. The tests carry a new
+  `wallclock` marker (crew's `conftest.py`), and every parallel caller now runs
+  `-n auto -m "not wallclock"` first and then `-m wallclock` serially.
+- **Version.** 1.0.62 was set in the first commit; the Ruff fixes then changed
+  crew files under it, which `check-marketplace.py` rightly refused in CI. It
+  had passed locally only because the check ran before those files were
+  committed. Hence 1.0.63.
 - **Unchanged.** Every other check's selection and pass/fail rule; `seconds` in
   verify.json (those are measurements on the maintainer's machine — re-price
   with `verify-gate.sh --price`).
