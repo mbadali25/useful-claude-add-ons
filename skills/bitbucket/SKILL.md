@@ -3,11 +3,11 @@ name: bitbucket
 description: >
   Work with Atlassian Bitbucket Cloud from Claude Code: authenticate git over HTTPS
   with Atlassian API tokens, commit and push changes, and interact with the Bitbucket
-  REST API 2.0 (pull requests, pipelines, comments, branches, repos). Use this skill
-  whenever the user mentions Bitbucket, bitbucket.org, a Bitbucket workspace/repo,
-  pull requests on Bitbucket, Bitbucket Pipelines, or hits authentication errors
-  (401/403/410) pushing or cloning from bitbucket.org — even if they only say
-  "push my code" and the git remote points at bitbucket.org.
+  REST API 2.0 (pull requests, default reviewers, pipelines, pipeline and deployment
+  variables, comments, branches, repos). Use this skill whenever the user mentions Bitbucket,
+  bitbucket.org, a Bitbucket workspace/repo, pull requests on Bitbucket, Bitbucket Pipelines,
+  a pipeline or deployment variable that reads as absent, adding reviewers to a Bitbucket PR,
+  a repository access token, or hits authentication errors (401/403/410) pushing or cloning from bitbucket.org — even if they only say "push my code" and the git remote points at bitbucket.org.
 ---
 
 # Bitbucket Cloud
@@ -174,9 +174,88 @@ Offline checks for the script: `scripts/_test/merge_gate.sh`.
 **"Review comments on PR #12"**
 `GET repositories/{ws}/{repo}/pullrequests/12/comments` — summarize unresolved ones.
 
+**"Add reviewers to PR #12"** / **"who reviews here?"**
+1. Bitbucket has no CODEOWNERS file and no `--reviewer` flag, so the GitHub habit
+   of reading CODEOWNERS and passing `gh pr create --reviewer` has no twin here.
+   Reviewers come from the repo's *default reviewers*, which Bitbucket adds to
+   every new PR. List them with
+   `bash scripts/bb.sh GET "repositories/$BITBUCKET_WORKSPACE/my-repo/effective-default-reviewers"`
+   — the repo's own plus those inherited from its project
+   ([Atlassian](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/#api-repositories-workspace-repo-slug-effective-default-reviewers-get)).
+   An HTTP 200 whose `values` is empty means none are configured: report "this
+   repo has no default reviewers", never "the call failed".
+2. To add a reviewer to an open PR, read then write. `GET .../pullrequests/12`
+   first — Atlassian: "the API only includes this list on a pull request's `self`
+   URL", so a PR read from the list endpoint carries no reviewers to extend. Then `PUT .../pullrequests/12`
+   with the existing `title` and the existing `reviewers` plus
+   `{"uuid": "{new-uuid}"}`. Atlassian's text for that PUT names only branches
+   and description ([Atlassian](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/#api-repositories-workspace-repo-slug-pullrequests-pull-request-id-put))
+   and does not say whether `reviewers` replaces or merges, so always send the
+   full list.
+3. Reported 2026-09-28, not reproduced here: that PUT returned HTTP 200 with the
+   description preserved.
+4. Reviewer uuids: `values[].uuid` from `effective-default-reviewers`, or
+   `GET workspaces/{ws}/members`. Payload shapes: `references/api.md`.
+
+## Pipeline and deployment variables: read back with the trailing slash
+
+```bash
+bash scripts/bb.sh GET "repositories/$BITBUCKET_WORKSPACE/my-repo/pipelines_config/variables/"
+bash scripts/bb.sh GET "repositories/$BITBUCKET_WORKSPACE/my-repo/deployments_config/environments/{environment_uuid}/variables/"
+```
+
+Environment uuids come from `GET repositories/{ws}/{repo}/environments`.
+
+**An empty `values` from either path written WITHOUT the trailing slash is
+"could not tell", not "absent".** Confirm with the trailing-slash call, or the
+repository's Pipelines settings page, before reporting a variable missing.
+
+Reported 2026-09-28, not reproduced here: the slash-less GET returned HTTP 200
+with `"values": []` while variables existed, and the trailing-slash form listed
+them. Atlassian documents both paths without a slash
+([repository variables](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pipelines/#api-repositories-workspace-repo-slug-pipelines-config-variables-get),
+[environment variables](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pipelines/#api-repositories-workspace-repo-slug-deployments-config-environments-environment-uuid-variables-get)),
+so this is a gap between the documented path and observed behaviour, and the
+slash costs nothing either way.
+
+A `secured` variable is a different symptom: it is listed, but its `value`
+comes back empty by design — Atlassian's schema: "The value will never be
+exposed in the logs or the REST API." Create and update payloads:
+`references/api.md`.
+
+## Repository access tokens are UI-only on Cloud
+
+Bitbucket Cloud's REST API has no endpoint to create, list or rotate access
+tokens: Atlassian's OpenAPI description of the Cloud API
+(`https://developer.atlassian.com/cloud/bitbucket/swagger.v3.json`) has no path
+containing "token" (checked 2026-09-29). Create a repository access token in
+the UI — Repository settings > Security > Access tokens > Create access token —
+and "The token is only displayed once and can't be retrieved later"
+([Atlassian](https://support.atlassian.com/bitbucket-cloud/docs/create-a-repository-access-token/)).
+
+The REST create endpoint that turns up in searches — "Create repository HTTP
+token", `PUT /rest/access-tokens/latest/projects/{projectKey}/repos/{repositorySlug}`
+— is Bitbucket Data Center's, not Cloud's
+([Atlassian](https://developer.atlassian.com/server/bitbucket/rest/v1000/api-group-access-tokens/)).
+Reported 2026-09-28, not reproduced here: access-token endpoints return 404 on
+`api.bitbucket.org`. Do not build a workflow that creates one from a session:
+ask the user to create it, and to put the value into an environment variable or
+the git credential helper exactly as `BITBUCKET_API_TOKEN` above — never into
+the conversation (see Safety rails).
+
 ## Safety rails
 
 - Never echo `$BITBUCKET_API_TOKEN` in output, logs, or committed files.
+- Never ask a user to paste a token-creation or rotation page, or its HTML,
+  into the conversation. The "Access token rotated" dialog was reported
+  2026-09-28 (not reproduced here) to carry the value three times in the page
+  source; a user did paste it and a live token landed in chat. Ask for the
+  value to go into the env var or the credential helper instead.
+- A token that has appeared in chat, a log or a commit is leaked: revoke it and
+  create a new one. Atlassian: "create a new token and consider revoking the
+  old token"
+  ([source](https://support.atlassian.com/bitbucket-cloud/docs/create-a-repository-access-token/)).
+  Do not keep using it because it still works.
 - Never force-push (`--force`) or delete branches without explicit user confirmation.
 - Merging or declining PRs via the API is destructive — confirm with the user first.
 - `merge_gate.sh disable` deletes branch restrictions. Confirm with the user
