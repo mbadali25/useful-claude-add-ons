@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@ea764992
+anchor: useful-claude-add-ons@50061215
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -1145,3 +1145,7 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 T-0094 is built on origin/main `2693d0fa`: `3648f59a` plus T-0075's landing branch (crew 1.0.56-1.0.59) and `17d057db`, which re-pinned `README.md:12`/`:18` to `e878cc31`. T-0094's commits `be023596`..`ea764992` change `plugin/crew/README.md` (three sentences on the refresh-artifact admission, each rewritten in place, so `:2199` holds), `plugin/crew/commands/implement.md` step 6 and `done.md` check 3, `docs/guides/crew/src/daily-workflow-scope.md` with the rebuilt daily-workflow HTML, DOCX and PDF (the guide set and its build are unchanged), `.crew/verify.json` rule 25 (three more paths and a new test file; later rules move down three lines), `CHANGELOG.md` and the version files. Corrected here: the install-URL pin bullet (current at `ea764992`) and the rule-25 sentence (T-0094's module and suite).
 
 Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `3648f59a` to the tree at `ea764992` (difflib equal blocks); the only non-self mappings were `README.md:12` and `:18`, changed in place by the re-pin, read with `sed -n`. Nothing else was executed for this note.
+
+## Re-anchor provenance - `ea764992` -> `50061215`, 2026-09-29 (T-0094 lint)
+
+`50061215` is T-0094's lint commit: `scope_guard.py`'s rule-6 docstring rewrapped (one line longer, pylint C0301), the two could-not-tell `except Exception` lines in `crew_refresh_check.py` marked `noqa: BLE001` in place, one `sabotage_refresh.py` replace string parenthesised in place (ISC004), and `test_refresh_admission.py`'s imports sorted (I001). No body citation moved. Checked by the same citation-mapping script, `ea764992` -> `50061215`. Nothing else was executed for this note.

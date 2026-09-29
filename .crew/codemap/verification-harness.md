@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@ea764992
+anchor: useful-claude-add-ons@50061215
 verified: 2026-09-28
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -1556,3 +1556,7 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 T-0094 is built on origin/main `2693d0fa` (`3648f59a` plus T-0075's landing branch, crew 1.0.56-1.0.59, and the README re-pin `17d057db`). Its commits `be023596`..`ea764992` add `crew_refresh_check.artifact_verdicts` and route the completion audit through it, add `plugin/crew/tests/test_refresh_admission.py` and `plugin/crew/tests/refresh_fixtures.py`, append fifteen entries to `plugin/crew/tests/sabotage_refresh.py` (its constants grow, so `REFRESH_MUTATIONS` moves `:51` -> `:60`), add `crew_instructions.py` to `test_refresh_check.py`'s `_GUARD_MODULES`, and grow `.crew/verify.json` rule 25 by three paths plus a new `run` file, `seconds` 32 -> 51 and a rewritten `why` (`:269-285` -> `:269-288`; every later rule moves down three lines). Re-derived here: rule 25's description and every rule 26-30 position; the per-commit lists keep their lines and gain the current one first.
 
 Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `3648f59a` to the working tree at `ea764992` (difflib equal blocks), then reading each citation that did not map to itself with `sed -n`. The rule-27/28/29 bare ranges the script attributed to `.crew/verify.json` inside those per-commit lists are older positions and stay as history. Nothing was executed for this note beyond the ticket's own suite runs.
+
+## Re-anchor provenance - `ea764992` -> `50061215`, 2026-09-29 (T-0094 lint)
+
+`50061215` is T-0094's lint commit: `scope_guard.py`'s rule-6 docstring rewrapped (one line longer, pylint C0301), the two could-not-tell `except Exception` lines in `crew_refresh_check.py` marked `noqa: BLE001` in place, one `sabotage_refresh.py` replace string parenthesised in place (ISC004), and `test_refresh_admission.py`'s imports sorted (I001). No body citation moved. Checked by the same citation-mapping script, `ea764992` -> `50061215`. Nothing else was executed for this note.

@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@ea764992
+anchor: useful-claude-add-ons@50061215
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -1028,7 +1028,7 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 - `REFRESH_ARTIFACT_PATHS` (`plugin/crew/hooks/scripts/crew_refresh_check.py:213-218`: the code map,
   `docs.diagramsDir`, `graph.out`, `.claude/rules`) is the one definition.
   The scope guard (`_refresh_artifact`,
-  `plugin/crew/hooks/scripts/scope_guard.py:191-202`) lets a ticket write
+  `plugin/crew/hooks/scripts/scope_guard.py:192-203`) lets a ticket write
   under those dirs without a Touch entry **only while its approval is
   current** - a path test, because a write-time check sees one Edit of a
   multi-Edit refresh. Since T-0094 (crew 1.0.60) the completion audit is
@@ -2517,3 +2517,7 @@ T-0094 is built on origin/main `2693d0fa`, which is `3648f59a` plus T-0075's lan
 Re-derived here: the artifact refresh check section (`REFRESH_ARTIFACT_PATHS`, the guard/audit split and the per-kind admission, the tests and rule 25), its bare `crew_refresh_check.py` positions (`:228`, `:197-199`, `:856`, `:873`, `:895`, `:995`), `/crew:done`'s check 4 (`:50-61`, `:56-59`), step 6 (`:89-113`), the version sentence, the `CHANGELOG.md` position of T-0004's "117 -> 119", the shifted verify rules 26-30, and the T-0075-landing moves in `crew_config.py` (`:3046`, `:3072`), `crew_config_files.py` (`:104`, `:364`) and `crew_config_menu.py` (`:1051`), which T-0075's landing did not re-anchor.
 
 Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `3648f59a` to the working tree at `ea764992` (difflib equal blocks), then reading each citation that did not map to itself with `sed -n` / `grep -n`. Version-file lines changed in place (`plugin.json:3`, `marketplace.json:218`). A citation inside a list of per-commit positions keeps its commit's line; only the current position is added. The new sentences were read from the source at `ea764992`; the suites were run by the ticket (`test_refresh_admission.py` 32 passed), not by this note.
+
+## Re-anchor provenance - `ea764992` -> `50061215`, 2026-09-29 (T-0094 lint)
+
+`50061215` is T-0094's lint commit: `scope_guard.py`'s rule-6 docstring rewrapped (one line longer, pylint C0301), the two could-not-tell `except Exception` lines in `crew_refresh_check.py` marked `noqa: BLE001` in place, one `sabotage_refresh.py` replace string parenthesised in place (ISC004), and `test_refresh_admission.py`'s imports sorted (I001). `_refresh_artifact` moves `scope_guard.py:191-202` -> `:192-203`, re-derived above; no other body citation moved. Checked by the same citation-mapping script, `ea764992` -> `50061215`. Nothing else was executed for this note.

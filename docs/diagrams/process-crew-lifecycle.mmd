@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@ea764992 on 2026-09-29. Verify before trusting.
+%% Generated from useful-claude-add-ons@50061215 on 2026-09-29. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -173,6 +173,8 @@
 %% :107-118 -> :109-120; completion_audit.py's unapproved branch is :236-248 (the audit now
 %% asks crew_refresh_check.artifact_verdicts before judging Touch, :237-238). The check-3 node
 %% now names the refresh-artifact admission; no edge changed. Compared by script, then read.
+%% Re-anchored ea764992 -> 50061215 (T-0094 lint): of the Anchors paths only crew_refresh_check.py
+%% changed (two noqa comments, in place); no line cited here moved. No node or edge changed.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
