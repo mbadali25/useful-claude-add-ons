@@ -577,7 +577,7 @@ KIMI_MUTATIONS = (
      "tests/test_review_verdict.py::test_kimi_final_message_a_non_string_text_part_is_malformed"),
     ("kimi_final_message: splitlines() cuts an event again (the merge with main)",
      VERDICT,
-     '    for line in (jsonl or "").split("\\n"):\n'
+     '    for line in (jsonl or "").split("\\n"):  # "\\n" only, as codex_final_message\n'
      "        line = line.strip()\n"
      "        if not line:\n"
      "            continue\n"

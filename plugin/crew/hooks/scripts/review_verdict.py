@@ -243,7 +243,7 @@ def kimi_final_message(jsonl):
     exit status is therefore still required: `parse` makes non-zero
     INCOMPLETE."""
     message, error = None, None
-    for line in (jsonl or "").split("\n"):
+    for line in (jsonl or "").split("\n"):  # "\n" only, as codex_final_message
         line = line.strip()
         if not line:
             continue
