@@ -350,7 +350,7 @@
                 "plugin/crew/tests/test_review_contracts.py", "plugin/crew/tests/test_review_canary.py",
                 "plugin/crew/tests/test_review_refund.py", "plugin/crew/tests/test_external_tool_formats.py",
                 "plugin/crew/tests/test_status.py", "plugin/crew/docs/external-tool-formats.md"],
-      "seconds": 10,
+      "seconds": 12,
       "run": ["python3 scripts/check-tooling-pr.py",
               "python3 scripts/_test/tooling-pr.py",
               "python3 -m pytest plugin/crew/tests/test_review_golden.py plugin/crew/tests/test_review_contracts.py plugin/crew/tests/test_review_canary.py plugin/crew/tests/test_review_refund.py plugin/crew/tests/test_external_tool_formats.py plugin/crew/tests/test_status.py -q"],

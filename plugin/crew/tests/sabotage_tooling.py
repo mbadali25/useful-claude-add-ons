@@ -17,6 +17,8 @@ CREW_STATUS = os.path.join(SCRIPTS, "crew_status.py")
 CREW_AUTOPILOT = os.path.join(SCRIPTS, "crew_autopilot.py")
 VERIFY_RECORD = os.path.join(SCRIPTS, "verify_record.py")
 GOLDEN_BUILD = os.path.join(CREW, "tests", "golden_build.py")
+FORMATS_TEST = os.path.join(CREW, "tests", "test_external_tool_formats.py")
+GOLDEN_ATTRIBUTES = os.path.join(CREW, "tests", "golden", ".gitattributes")
 REPO = os.path.dirname(os.path.dirname(CREW))
 CHECKER = os.path.join(REPO, "scripts", "check-tooling-pr.py")
 VERIFY_JSON = os.path.join(REPO, ".crew", "verify.json")
@@ -186,6 +188,33 @@ TOOLING_MUTATIONS = (
         '        text = re.sub(r"(?<![A-Za-z0-9_-])" + re.escape(host) + r"(?![A-Za-z0-9_-])",\n',
         '        text = re.sub(re.escape(host) + r"(?![A-Za-z0-9_-])",\n',
         "tests/test_review_golden.py::test_redact_leaves_prose_that_only_contains_a_machine_string",
+    ),
+    (
+        # (z) Successor plan (Windows, PR #260): a batch-shim reviewer is
+        # handed the multi-line prompt inline again, which cmd.exe cuts.
+        "a batch-shim reviewer gets the prompt inline",
+        REVIEW_RUN,
+        "    if len(text) <= INLINE_PROMPT_LIMIT and not through_batch_shim(exe):\n",
+        "    if len(text) <= INLINE_PROMPT_LIMIT:\n",
+        "tests/test_external_tool_formats.py::test_a_batch_shim_never_gets_the_prompt_inline",
+    ),
+    (
+        # (aa) A WSL that listed no distribution is judged as a wrong
+        # encoding again instead of skipping as "could not tell".
+        "the WSL probe no longer skips when no distribution answered",
+        FORMATS_TEST,
+        '        if proc.returncode != 0 or not out.strip(b"\\x00\\r\\n "):\n',
+        "        if False:\n",
+        "tests/test_external_tool_formats.py::test_wsl_probe_skips_when_no_distribution_answers",
+    ),
+    (
+        # (ab) The golden corpus is converted on an autocrlf checkout again.
+        "the golden corpus loses its -text attribute",
+        GOLDEN_ATTRIBUTES,
+        "* -text\n",
+        "* text\n",
+        ("tests/test_review_golden.py::"
+         "test_golden_corpus_is_checked_out_without_line_ending_conversion"),
     ),
 )
 

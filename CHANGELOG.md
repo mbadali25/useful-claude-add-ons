@@ -80,8 +80,8 @@ A tooling change: this release carries no feature work.
   `scope_guard.py` from rule 31 as well as rule 27. Rule 31 lists it too, so
   dropping it from rule 27 alone left it covered and the entry stayed green
   (`STILL GREEN -- TEST IS VACUOUS`).
-- `plugin/crew/BUDGETS.md`'s Markdown line count is re-measured: 19,056 lines
-  across 127 files.
+- `plugin/crew/BUDGETS.md`'s Markdown line count is re-measured: 19,598 lines
+  across 129 files.
 - `scripts/check-tooling-pr.py` allows `plugin/crew/BUDGETS.md` alongside a
   harness change: its line count moves with every crew doc edit. It refused this
   branch's own re-measure until then; `scripts/_test/tooling-pr.py` gains the
@@ -93,6 +93,18 @@ A tooling change: this release carries no feature work.
   UNKNOWN in `/crew:status` instead of crashing it. `check-tooling-pr.py`
   reads a worktree rename's (` R`) source path. The guides no longer call a
   rerun after a refund free: only the failed round is given back.
+- Windows (PR #260's `windows-latest` job): `review_run` no longer hands a
+  reviewer resolved to a batch-file shim (`.cmd`/`.bat`, which is how npm
+  installs `codex` and `copilot` on Windows) its prompt inline. cmd.exe ended
+  the argument at the first line break, so a real Codex or Copilot behind the
+  shim got only the prompt's first line. Such a provider now gets the
+  one-line pointer to `prompt.txt`, and stderr says why.
+- The `wsl.exe` encoding probe skips, saying `listed no distribution`, on a
+  host with `wsl.exe` and no WSL distribution, where it used to fail as a
+  wrong encoding. A distribution that answers is still checked.
+- The golden review corpus is checked out byte-exact: a nested
+  `plugin/crew/tests/golden/.gitattributes` sets `* -text`, so an autocrlf
+  checkout no longer rewrites it to CRLF.
 - Bumped `1.0.54 -> 1.0.55` (1.0.52 on its branch; re-set to 1.0.53 after
   merging main's 1.0.52, T-0076, and to 1.0.55 after merging main's 1.0.54,
   T-0092).

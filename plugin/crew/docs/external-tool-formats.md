@@ -7,14 +7,16 @@ where the fact comes from, and what was probed on which host. Every fact
 carries its source and the date it was read. When a tool's output changes,
 this page is the first thing to check, and
 `plugin/crew/tests/test_external_tool_formats.py` holds crew's call sites and
-the golden corpus to it (T-0087).
+the golden corpus to it (T-0087). Two Windows facts crew's launch and its
+golden corpus depend on, batch-file shims and the corpus checkout, follow the
+three tools.
 
 A probe that could not run is recorded as "not probed", with the reason.
 It is never a pass.
 
 ## Codex CLI
 
-**What crew calls.** `review_run.command_for` (`plugin/crew/hooks/scripts/review_run.py:135-143`)
+**What crew calls.** `review_run.command_for` (`plugin/crew/hooks/scripts/review_run.py:156-164`)
 runs `codex exec` with these flags and nothing else:
 
 | Flag | Meaning |
@@ -59,7 +61,7 @@ raw U+2028 (`plugin/crew/tests/golden/review/uca-t0072--T-0072-build--2BJpY8/eve
 `agent_message` item's text. It counts a turn as complete only on
 `turn.completed`. A `turn.failed`, an `error` event or an unparseable line is
 an error, and a stream with no completed turn is also an error. The verdict
-parser (`review_run.py:421`) turns any of those into INCOMPLETE of class
+parser (`review_run.py:351`) turns any of those into INCOMPLETE of class
 `tool`, which is refunded. Every event and item type in the committed corpus is
 one of the documented types (`test_golden_codex_events_use_documented_types`).
 On 2026-09-28, the 26 local streams used only `thread.started`, `turn.started`,
@@ -89,7 +91,61 @@ consideration (Craig Loewen in https://github.com/containers/podman/issues/26527
 citing https://github.com/microsoft/WSL/issues/13093, both read 2026-09-28).
 crew does not set it. It strips NULs instead, which works under either encoding.
 
-Probed: not probed. The T-0087 host is Linux (Ubuntu) with no `wsl.exe`, so `test_wsl_list_is_utf16_unless_wsl_utf8` skips visibly there. It runs on a Windows or WSL-interop host.
+**A host with no distribution.** The hosted `windows-latest` runner has
+`wsl.exe` on PATH and no WSL distribution installed, so `wsl.exe --list --quiet`
+prints nothing under either encoding (PR #260, run 36538308986, where the
+probe's first assertion read `assert b'\x00' in b''`). That is "could not
+tell", not a wrong encoding: `_probe_wsl_encoding` in
+`plugin/crew/tests/test_external_tool_formats.py` skips with `listed no
+distribution` and the exit code whenever either listing exits non-zero or holds
+nothing but NULs and line ends, and still fails when a distribution answers and
+`WSL_UTF8=1` does not change the encoding.
+
+Probed: not probed. The T-0087 host is Linux (Ubuntu) with no `wsl.exe`, so `test_wsl_list_is_utf16_unless_wsl_utf8` skips visibly there. The hosted Windows runner has `wsl.exe` but no distribution, so it skips there too, saying so. It runs for real on a Windows host with a distribution installed.
+
+## Windows batch shims
+
+**What crew calls.** On Windows, `shutil.which("codex")` or `shutil.which("copilot")`
+resolves an npm-installed CLI to its `.cmd` shim. `review_run.through_batch_shim`
+(`plugin/crew/hooks/scripts/review_run.py:131`) names a provider whose resolved
+path ends `.cmd` or `.bat` (`BATCH_SHIM_SUFFIXES`, `:98`), and
+`review_run.prompt_argument` (`:138`) never hands such a provider the prompt
+inline: it passes the one-line pointer to `prompt.txt` that an over-limit prompt
+already gets, and says why on stderr.
+
+**The format.** A batch file is not an executable: to run one, CreateProcess
+must start the command interpreter, `cmd.exe /c` plus the batch file's name
+(https://learn.microsoft.com/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw,
+read 2026-09-29). npm on Windows, and every tool installed with
+`npm install -g`, is such a batch file
+(https://learn.microsoft.com/azure/devops/pipelines/tasks/reference/cmd-line-v2?view=azure-pipelines,
+read 2026-09-29). Python's `subprocess` says a `.bat` or `.cmd` may be launched
+in a system shell whatever arguments are passed, so the arguments are parsed by
+shell rules without Python's escaping
+(https://docs.python.org/3/library/subprocess.html, "Security Considerations",
+read 2026-09-29). cmd.exe also caps the command line of a batch file at 8191
+characters, below crew's 24000-character `INLINE_PROMPT_LIMIT`
+(https://learn.microsoft.com/troubleshoot/windows-client/shell-experience/command-line-string-limitation,
+read 2026-09-29). None of those pages states in so many words that cmd.exe ends
+a batch file's arguments at the first line break; that part is what the probe
+below showed.
+
+Probed: the hosted `windows-latest` runner, PR #260 (run 36538308986, 2026-09-29). With the prompt passed inline through the test stub's `codex.cmd`, both inline canaries in `plugin/crew/tests/test_review_canary.py` reported `no READ line for 16 of 16 bundle part(s)`: the stub received only the prompt's first line. The over-limit canary, which passes the one-line pointer, passed on the same runner.
+
+## Golden corpus checkout
+
+`plugin/crew/tests/golden/review/` is a byte-exact replay of real reviewer
+output, and the committed blobs hold LF and no CR. An autocrlf checkout rewrote
+it to CRLF on PR #260's Windows job, so
+`test_golden_codex_stream_yields_its_out_txt` compared a stream's `\n` lines
+with an `out.txt` ending `\r\n`. `plugin/crew/tests/golden/.gitattributes`
+holds `* -text`, which turns off end-of-line conversion for the corpus only
+(https://git-scm.com/docs/gitattributes, "Unsetting the text attribute",
+read 2026-09-29).
+`test_golden_corpus_is_checked_out_without_line_ending_conversion` pins the
+attribute and `test_golden_corpus_files_carry_no_carriage_return` pins the bytes.
+
+Probed: a `core.autocrlf=true` clone on the T-0087 host (Linux), 2026-09-29. Without the attribute, `out.txt` came out with `\r\n` and the CI assertion failed there. With it, the corpus came out LF only and both golden and canary suites passed.
 
 ## gh
 
