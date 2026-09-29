@@ -4,6 +4,30 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.62: `/crew:autopilot wave` (T-0029)
+
+- **What.** `hooks/scripts/crew_wave.py` runs an owner-designed, approved set of tickets as parallel
+  lanes: `set` records `.work/autopilot/<slug>.json`; `plan` (read-only) names each ticket
+  `eligible` or `refused: <reason>`, the Touch-disjoint wave under `autopilot.maxLanes`, the later
+  waves and a provisional landing order; `start` writes lane files and prints one `Agent` launch
+  per lane with `isolation: worktree`, the only launch the wave allows; `lane-init` refuses to run
+  outside an isolated worktree under `<main>/.claude/worktrees/`, copies the ticket folder and
+  `.crew/config.json` in, and requires the approval and `scope.mode: block` there; `lane-prompt`,
+  `lane-done`, `collect` (one batch: lane states, questions recommendation first, the exact
+  `/crew:approve` lines, the landing order) and `cleanup` (merged, clean lanes only; never
+  `--force`, never `branch -D`). New config: `autopilot.maxLanes` (default the resolved
+  `pm.maxDispatches`, which it can only lower) and `autopilot.reviewPolicy`
+  (`stop|clean-only|fix-and-rereview`, default `stop`). New stop `scope-not-enforcing`.
+- **Behaviour changes.** The scope guard now refuses `review_ledger.py --accept|--reject` (and
+  every abbreviation of them) and `gh pr merge --admin` from any subagent (a payload carrying
+  `agent_type`), judged on every reading of the command (as written, bash-joined and
+  PowerShell-joined); the main session is unchanged. `review_ledger.py` no longer accepts
+  abbreviated flags (`allow_abbrev=False`): `--acc` is now an error, not `--accept`.
+  `/crew:autopilot wave` refuses to run unless `scope.mode` is `block` for every lane ticket.
+  Mutations in `tests/sabotage_wave.py`.
+- Bumped `1.0.61 -> 1.0.62` (no version on its branch; set one past origin/main's 1.0.61, T-0010,
+  after merging main).
+
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 
 - **What changed.** `review_patch.py`'s `EXCLUDED` is now `(".work/",
