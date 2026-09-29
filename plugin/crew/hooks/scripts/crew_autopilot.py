@@ -117,6 +117,7 @@ import crew_config
 import crew_state
 import crew_ticket
 import review_ledger
+import crew_common
 from crew_common import git_out, read_text
 
 AUTOPILOT = "/crew:autopilot"
@@ -696,7 +697,7 @@ def _settings_at(top):
         warnings.append(f"autopilot.deploy is {deploy!r}, but nothing in this crew version "
                         "dispatches a deploy: T-0045 consumes it; deploy-allowed answers "
                         "the policy only")
-    crew_json = _read_json(os.path.join(top, ".crew", "crew.json"))
+    crew_json = _read_json(crew_common.repo_config_file(top, "crew.json"))
     if isinstance(crew_json, dict) and "autopilot" in crew_json \
             and "autopilot" not in crew_state.load_config(top):
         warnings.append("autopilot is set in .crew/crew.json, which crew does not read "
@@ -774,7 +775,7 @@ def _decide(top, env_name, env_class, machine_path):
     if cls not in known:
         return "ask", (f"crew could not classify {env_name} "
                        f"(class {_safe_text(env_class)})"), None
-    layers = (("repo", os.path.join(top, ".crew", "config.json")),
+    layers = (("repo", crew_common.repo_config_file(top, "config.json")),
               ("machine", machine_path))
     for label, path in layers:
         problem = _layer_problem(label, path)

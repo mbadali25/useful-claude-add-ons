@@ -29,6 +29,7 @@ import json
 import os
 import subprocess
 
+import crew_common
 import crew_freshness
 import crew_migrate
 import crew_tracker
@@ -68,8 +69,17 @@ def _tracker_line(root):
 
 
 def _config_lines(root):
-    crew = _json(os.path.join(root, ".crew", "crew.json"))
-    legacy = _json(os.path.join(root, ".crew", "config.json"))
+    crew = _json(crew_common.repo_config_file(root, "crew.json"))
+    legacy = _json(crew_common.repo_config_file(root, "config.json"))
+    lines, cfg = _config_lines_for(root, crew, legacy)
+    # Which file is in force, when it is not simply this checkout's (T-0088).
+    source = crew_common.repo_config_source_line(root)
+    if source:
+        lines.insert(1, f"config   {source}")
+    return lines, cfg
+
+
+def _config_lines_for(root, crew, legacy):
     if crew is not None and not isinstance(crew, dict):
         return ["config   .crew/crew.json unreadable - status cannot tell the setup"], {}
     if isinstance(crew, dict):

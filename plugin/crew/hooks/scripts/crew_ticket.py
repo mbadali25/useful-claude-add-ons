@@ -633,8 +633,9 @@ def status(root, ticket):
 
 def cli_approval_allowed(top):
     """True only when `.crew/config.json` parses and sets
-    `scope.allowCliApproval` to exactly `true`."""
-    data, state = _read_json(os.path.join(top, ".crew", "config.json"))
+    `scope.allowCliApproval` to exactly `true`. In a linked worktree with no
+    config of its own that is the main checkout's file (T-0088)."""
+    data, state = _read_json(crew_common.repo_config_file(top, "config.json"))
     scope = data.get("scope") if state == "ok" and isinstance(data, dict) else None
     return isinstance(scope, dict) and scope.get("allowCliApproval") is True
 
@@ -921,7 +922,7 @@ def active_ticket(root):
 def configured_mode(top):
     """(value, why). `value` is one of MODES; a corrupt config or an unknown
     value is `block`, with the reason."""
-    path = os.path.join(top, ".crew", "config.json")
+    path = crew_common.repo_config_file(top, "config.json")
     data, state = _read_json(path)
     if state == "absent":
         return "off", "no .crew/config.json"

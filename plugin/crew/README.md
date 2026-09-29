@@ -927,6 +927,36 @@ Two things never go through this layering, on purpose:
   defaults — never a merge that could smuggle a global preference into a
   file every teammate who clones the repo will also read.
 
+**In a linked git worktree.** `.crew/*` is gitignored, so a lane made with
+`git worktree add` starts with no `.crew/config.json` or `.crew/crew.json`. Since
+crew 1.0.60 (T-0088) such a worktree reads the **main checkout's** repo config,
+found through `git rev-parse --git-common-dir` (`crew_common.repo_config_dir`).
+A worktree with either file of its own reads only its own files: they win whole,
+even when partial, and are **never merged** with the main checkout's. When `.git`
+is a file but git cannot name the main checkout, the source is `unknown`,
+nothing is inherited, and `/crew:status` and `/crew:config --explain` say so
+rather than showing the config as simply absent. A submodule, or a bare common
+directory, is its own repo. Inheritance is read-only: no writer (`/crew:init`,
+the heal path, `platform-sync`, `/crew:migrate`, the auto-clear setup) ever
+writes the main checkout's file, and the heal path no longer creates a default
+config in an inheriting worktree, because that default would shadow the owner's
+(nor in one where git could not tell; it asks again next session).
+
+**A lane made before 1.0.60 still reads its own file.** Every SessionStart heal
+on crew 1.0.59 or earlier wrote a default `.crew/config.json` into a lane that
+had none, and that file wins whole. `/crew:status` and `/crew:config --explain`
+say so (`... the main checkout's (<path>) is not read ...`); if the lane's file is
+a default nobody edited, delete it (and `.crew/crew.json`) to inherit.
+
+**Behaviour change:** every Python guard in a lane worktree now reads the owner's
+settings where it read the built-in defaults before - `guards.forcePush: allow`
+instead of `block`, `scope.mode`, `scope.allowCliApproval`, `roleWrites` and
+`cloudGuard` the same way. Ratcheted guard keys still take the narrower of repo
+and machine-global. A lane that wants its own guards writes its own
+`.crew/config.json`, and that file then wins whole. **Not yet covered:** the shell
+and PowerShell readers of `.crew/config.json` (`verify-gate.sh`, `_common.sh`, `notify.sh`, `handoff-read.sh`, `handoff-write.sh`, `promote-gate.ps1`, `scope-guard.ps1`, `cloud-guard.ps1` and `auto-clear.ps1`) still read only the
+worktree's own file.
+
 ### `/crew:config` — see where a value comes from, and set the global file
 
 ```
@@ -1418,7 +1448,9 @@ Put `codex` on your `PATH` and set `qa.provider` to `auto` or `codex`. `/crew:re
 
 `auto` is the shipped default, so a machine with `codex` installed gets Codex review without configuring anything.
 
-Without Codex, `/crew:review` walks `qa.order` — `["codex", "copilot", "claude"]` by default — and takes the first provider that probes clean, announcing every one it skipped and why.
+Without Codex, `/crew:review` walks `qa.order` — `["codex", "copilot", "claude"]` by default — and takes the first provider whose probe answers — a real call for Codex (`review_run.py --probe`), not just `command -v` — announcing every one it skipped and why.
+
+When that Codex call fails on a usage limit, rate limit or quota (Codex's own messages, cited in `hooks/scripts/review_limit.py`), the round runs on the `reviewer` fallback instead, pinned or not, announced as `same-family (codex limit)` with the error quoted. A limit hit in the middle of a round is recorded beside the review ledger, so the next round goes to Claude without another call; the one after probes Codex again (T-0088).
 
 GitHub Copilot is the middle rung, and it earns its place for one reason: it is a gateway to model families nothing else here reaches. Pin `qa.copilot.model` to a Google model such as `gemini-3.7-flash` and the reviewer is genuinely independent of both the author and Codex. Confirm the name against Copilot's current catalog rather than copying one from documentation - the names churn, and a stale one fails at startup with `Model "<name>" from --model flag is not available`. Leave it unset and Copilot is **skipped entirely** — its own default is `claude-sonnet-4.6`, the author's family, so an unpinned Copilot would be a same-family review wearing an independent one's costume. That is worse than the fallback below, which at least admits what it is.
 
@@ -2622,7 +2654,7 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:done <id>` | Close a ticket: accepted review receipt, clean verify gate, passing completion audit and current artifacts, or no close |
 | `/crew:fix <one sentence>` | The light path — every lifecycle phase present, each compressed to one step |
 | `/crew:autopilot [status\|run] [<id>]` | `run` (or a bare id, or nothing): drive one ticket through the lifecycle until a person is needed; with no id, resume from the handoff's `resume:` line, the active ticket, or the one open ticket. Off until `autopilot.mode: plan`. `status`: a read-only 12-line report. `assign`, `goal`, `focus` arrive with T-0019, T-0012, T-0020 — see "Autopilot" |
-| `/crew:review` | Independent QA — Codex, then Copilot, then Claude: the first that probes clean |
+| `/crew:review` | Independent QA — Codex, then Copilot, then Claude: the first that probes clean (a real call for Codex; a Codex usage limit runs Claude) |
 | `/crew:onboard [--refresh <area>]` | Build or refresh the code map |
 | `/crew:reference [--api\|--features\|--audit]` | Enumerate the API and features into `docs/reference/`, anchored to `file:line` |
 | `/crew:init` | Guided phased setup, resumable |
@@ -2655,7 +2687,7 @@ CONFIG.md §17 has the table and the reasoning.
 | Agent | Tools | Model | Tier | Role |
 |---|---|---|---|---|
 | `explorer` | read-only | `opus` | 0 | Maps code, returns summaries not contents |
-| `reviewer` | read-only + Bash | `opus` | 0 | Hostile review; the last rung of `qa.order`, reached when neither Codex nor Copilot probes clean. Renamed from `qa-reviewer` in 1.0 |
+| `reviewer` | read-only + Bash | `opus` | 0 | Hostile review; the last rung of `qa.order`, reached when neither Codex nor Copilot probes clean, or when Codex's probe hits a usage limit. Renamed from `qa-reviewer` in 1.0 |
 | `security` | read-only + Bash | `sonnet` | 1 | Exploitable defects in the diff |
 | `researcher` | read-only + web | `sonnet` | 2 | External research only. Every claim carries its source |
 

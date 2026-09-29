@@ -1,5 +1,8 @@
-%% Generated from useful-claude-add-ons@c99e31f6 on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@fe80f69d on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
+%% T-0088: the review subgraph gained the Codex probe node (rvp) and its three edges, read from
+%% plugin/crew/commands/review.md:239 (the probe table row, which also carries the limit rule)
+%% and :447 (the mid-round record); no other node was redrawn.
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
 %% NEW in T-0015. Drawn from the command files themselves, each read in full at
@@ -160,11 +163,25 @@
 %% Re-anchored 8de3c669 -> a4eb2f55 (T-0072 merged onto 5050ea3b, T-0077, crew 1.0.50): of the
 %% Anchors paths only crew_tracker.py changed (T-0077's Windows directory holds); it is cited
 %% by name only, and every command-file line cited here is unchanged. No node or edge changed.
+%% Re-anchored a4eb2f55 -> a43acd56 (T-0088, crew 1.0.53, after merging origin/main c426c018): of
+%% the Anchors paths commands/review.md changed in place (the codex probe row :239, the limit
+%% sentence :447, steps 3.6 and 3.8; no line added), which the T-0088 note above cites and which
+%% moved no other review.md citation; crew_refresh_check.py, crew_ticket.py and crew_tracker.py
+%% changed (the resolver import) and are cited by name only. No other node or edge changed.
 %% Re-anchored a4eb2f55 -> c99e31f6 (T-0092, crew 1.0.52): of the Anchors paths review.md
 %% (:328-332, one comment reflowed in place) and completion_audit.py (:74-75, one comment in
 %% place) changed, both line-neutral; review.md:25-29, :449 and completion_audit.py:177-187,
 %% :204-215 hold (compared by script). The bundle now also leaves out graphify-out/, which no
 %% node here names. No node or edge changed.
+%% Re-anchored a43acd56 / c99e31f6 -> 0339bf3c (T-0088 merges origin/main 6387ab49, T-0092 landing, and
+%% re-bumps crew to 1.0.55): both notes above hold on the merged tree - git diff a43acd56 0339bf3c on
+%% review.md is the one hunk at :325-335 and on completion_audit.py the one at :71-78, both T-0092's and
+%% line-neutral, so review.md:25-29, :239, :447, :449 and completion_audit.py:177-187, :204-215 hold.
+%% No node or edge changed.
+%% Re-anchored 0339bf3c -> fe80f69d (T-0088 review round 1 fixes): of the Anchors paths only
+%% commands/review.md changed, in place (the codex probe row at :239, the probe line that opens
+%% Step 2's bundle block at :323, the mid-round record at :447 - now in review-limit/). Every
+%% review.md line cited here holds. No node or edge changed.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
@@ -222,7 +239,11 @@ flowchart TB
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
-        im5 --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle<br/>review.md:25-29, :449"]
+        im5 --> rvp{"probe codex (review_run.py --probe)<br/>one real call, nothing reserved<br/>review.md:239"}
+        rvp -- "ok (exit 0) -> 2a" --> rv1
+        rvp -- "limited (exit 5) -> 2c same-family,<br/>error quoted - review.md:239" --> rv1
+        rvp -- "failed / unknown (6 / 7):<br/>skip Codex, or hard-fail if pinned" --> rv1
+        rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle<br/>review.md:25-29, :449<br/>a limit mid-round is recorded for the next round :447"]
         rv1 --> rv2{"verdict (the script's)<br/>:440, :481"}
         rv2 -- CLEAN --> rcpt["receipt written<br/>:511"]
         rv2 -- FINDINGS --> rv3{"fix, or<br/>user accepts?<br/>:504, :508"}
