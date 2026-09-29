@@ -479,8 +479,8 @@ REVIEW_FIX_MUTATIONS = (
     (
         "the reviewer is not told which paths are diffed from merged main",
         REVIEW_PROMPT,
-        '                   f"lines there are context: {\', \'.join(against)}" if against else ""))\n',
-        '                   f"lines there are context: {\', \'.join(against)}" if False else ""))\n',
+        '                   f"lines there are context: {\', \'.join(against)}" if against else "")\n',
+        '                   f"lines there are context: {\', \'.join(against)}" if False else "")\n',
         "tests/test_review_prompt.py::test_build_names_the_merged_main_line"
         "[applies-diffed-from-merged]",
     ),
@@ -516,10 +516,42 @@ REVIEW_FIX_MUTATIONS = (
     (
         "a stale receipt does not name the merged commit",
         REVIEW_LEDGER,
-        '        return f"; merged main: {merged[\'commit\'][:12]} ({count} path(s) identical to it '
-        'left out)"\n',
+        '        return (f"; merged main: {merged[\'commit\'][:12]} ({count} path(s) identical to it "\n'
+        '                f"left out){fork}")\n',
         '        return ""\n',
         "tests/test_review_receipt.py::"
         "test_check_receipt_is_stale_when_a_merge_of_main_changes_a_reviewed_path",
+    ),
+    # T-0100 successor (review round 2): a failed fork lookup is could-not-tell in
+    # every line derived from it -- manifest, stderr, prompt, receipt note.
+    (
+        "a failed fork lookup leaves no fork_reason in the manifest",
+        REVIEW_PATCH,
+        '    if not fork:\n        # The more-inclusive bundle stays',
+        '    if False:\n        # The more-inclusive bundle stays',
+        "tests/test_review_patch.py::test_a_failed_fork_lookup_is_could_not_tell",
+    ),
+    (
+        "review-patch's stderr prints a count when the fork lookup failed",
+        REVIEW_PATCH,
+        '        against = ("could-not-tell" if merged.get("fork", "") is None\n',
+        '        against = ("could-not-tell" if False\n',
+        "tests/test_review_patch.py::test_a_failed_fork_lookup_is_could_not_tell",
+    ),
+    (
+        "the reviewer is not told the fork lookup failed",
+        REVIEW_PROMPT,
+        '                + _fork_clause(merged))\n',
+        '                + "")\n',
+        "tests/test_review_prompt.py::test_build_names_the_merged_main_line"
+        "[applies-fork-could-not-tell]",
+    ),
+    (
+        "the receipt note is silent on a failed fork lookup",
+        REVIEW_LEDGER,
+        '    fork = "; fork: could not tell" if merged.get("fork", "") is None else ""\n',
+        '    fork = ""\n',
+        "tests/test_review_receipt.py::"
+        "test_check_receipt_says_could_not_tell_when_the_fork_lookup_fails",
     ),
 )

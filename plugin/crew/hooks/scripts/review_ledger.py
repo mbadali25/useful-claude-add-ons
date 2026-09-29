@@ -376,9 +376,13 @@ def _merged_note(merged, stale):
     if not merged.get("applies"):
         return ""
     count = len(merged.get("dropped") or [])
+    # A failed fork lookup (`fork` recorded as null) is could-not-tell on both
+    # lines; a manifest without the key, rebuilt by an older crew, reads as before.
+    fork = "; fork: could not tell" if merged.get("fork", "") is None else ""
     if stale:
-        return f"; merged main: {merged['commit'][:12]} ({count} path(s) identical to it left out)"
-    return f" ({count} path(s) identical to merged main left out)" if count else ""
+        return (f"; merged main: {merged['commit'][:12]} ({count} path(s) identical to it "
+                f"left out){fork}")
+    return (f" ({count} path(s) identical to merged main left out)" if count else "") + fork
 
 
 def check_receipt(root, ticket):

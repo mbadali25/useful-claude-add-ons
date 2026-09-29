@@ -77,8 +77,12 @@ main's edit to the same file stays, diffed from the MERGED commit's version of
 that file (main's lines are context, only the ticket's are `+`/`-`); every
 path main did not change since the ticket forked from it is diffed from the
 start. The manifest records `merged_main` (ref, commit, applies, reason,
-dropped, diffed_from_merged) and `bundle_base_tree`; `base` stays the start. Could-not-tell drops nothing and
-says so. The synthetic tree, not a pathspec of the kept paths: that pathspec
+fork, dropped, diffed_from_merged) and `bundle_base_tree`; `base` stays the
+start. `fork` is that merge-base, or null when git gave no answer: then every
+path main also changed is diffed from the start (more shown, never less), and
+`fork_reason`, the stderr field `diffed-from-merged=could-not-tell`, the
+prompt and the receipt note all say main's lines there may read as the
+ticket's. Could-not-tell drops nothing and says so. The synthetic tree, not a pathspec of the kept paths: that pathspec
 can run past Windows' ~32 KB command line, and `git diff` has no
 `--pathspec-from-file`. It is built in a second temporary index, never the
 real one.
@@ -271,6 +275,15 @@ def _ticket_base_tree(root, base_sha, working_tree, tmp_dir):
     # from main), so a ticket commit before a later-recorded start never reads
     # as main's. No fork, no rewrite: the start's entry shows more, never less.
     fork = crew_common.git_out(root, "merge-base", base_sha, merged["commit"])
+    merged = dict(merged, fork=fork or None)
+    if not fork:
+        # The more-inclusive bundle stays (the start's entry shows more), but the
+        # unknown is said wherever the answer reaches: manifest, stderr, prompt,
+        # receipt note -- never an empty `diffed_from_merged` passing as "none".
+        merged["fork_reason"] = (
+            f"could not tell: git merge-base {base_sha[:12]} {merged['commit'][:12]} gave no "
+            "answer; paths main also changed are diffed from the start, so main's lines "
+            "there read as the ticket's")
     by_main = ({e["path"]: e for e in
                 _parse_raw(_run_raw(root, raw + [fork, merged["commit"]] + only))}
                if fork else {})
@@ -526,8 +539,10 @@ def main(argv):
 def _merged_field(merged):
     """The summary line's `merged-main=` field."""
     if merged["applies"]:
+        against = ("could-not-tell" if merged.get("fork", "") is None
+                   else len(merged.get("diffed_from_merged") or []))
         return (f" merged-main={merged['commit'][:12]} dropped={len(merged['dropped'])}"
-                f" diffed-from-merged={len(merged.get('diffed_from_merged') or [])}")
+                f" diffed-from-merged={against}")
     return " merged-main=could-not-tell" if merged["commit"] is None else " merged-main=none"
 
 

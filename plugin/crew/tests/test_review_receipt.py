@@ -403,3 +403,28 @@ def test_check_receipt_stale_message_says_could_not_tell(tmp_path):
 
     assert (result.returncode, "merged main: could not tell" in result.stdout) == (
         1, True), result.stdout
+
+
+@pytest.mark.parametrize("stale", [False, True], ids=["current", "stale"])
+def test_check_receipt_says_could_not_tell_when_the_fork_lookup_fails(
+        tmp_path, monkeypatch, stale):
+    """Review round 2: a rebuild whose `git merge-base <start> <merged>` gave no
+    answer diffs main's paths from the start; the receipt line says the fork was
+    unknown on a current receipt and on a stale one alike."""
+    root, upstream = _reviewed_clone(tmp_path)
+    merged_main_fixtures.advance_main(upstream, *merged_main_fixtures.MAIN_EDITS[:4])
+    merged_main_fixtures.merge_main(root)
+    if stale:
+        merged_main_fixtures.write(root, "feature.txt", "feature v2, edited after review\n")
+    real = review_patch.crew_common.git_out
+
+    def fake(top, *args):
+        fork_lookup = args[:1] == ("merge-base",) and len(args) == 3 and args[1] != "HEAD"
+        return None if fork_lookup else real(top, *args)
+
+    monkeypatch.setattr(review_patch.crew_common, "git_out", fake)
+
+    ok, message = rl.check_receipt(str(root), "T1")
+
+    assert (ok, "receipt is stale" in message, message.endswith("; fork: could not tell")) == (
+        not stale, stale, True), message

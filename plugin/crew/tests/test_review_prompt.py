@@ -104,6 +104,16 @@ def test_sections_keeps_nested_headings_inside_their_parent():
      (f"  merged main: {'c' * 12} (origin/main) - 1 path(s) identical to it left out: "
       "m.txt; 1 path(s) main also changed diffed from it, so main's lines there are "
       "context: src/shared.py")),
+    ({"ref": "origin/main", "commit": "c" * 40, "applies": True, "reason": "merged",
+      "dropped": ["m.txt"], "diffed_from_merged": [], "fork": None,
+      "fork_reason": (f"could not tell: git merge-base {'a' * 12} {'c' * 12} gave no answer; "
+                      "paths main also changed are diffed from the start, so main's lines "
+                      "there read as the ticket's")},
+     (f"  merged main: {'c' * 12} (origin/main) - 1 path(s) identical to it left out: "
+      f"m.txt; could not tell which paths main also changed (git merge-base {'a' * 12} "
+      f"{'c' * 12} gave no answer; paths main also changed are diffed from the start, so "
+      "main's lines there read as the ticket's), so main's lines there may read as the "
+      "ticket's")),
     ({"ref": "origin/main", "commit": "b" * 40, "applies": False, "dropped": [],
       "reason": "no merge of origin/main past the ticket start; nothing dropped"},
      ("  merged main: none since the ticket start "
@@ -112,8 +122,8 @@ def test_sections_keeps_nested_headings_inside_their_parent():
       "reason": "could not tell: HEAD is detached; nothing dropped"},
      "  merged main: could not tell - HEAD is detached; nothing left out"),
     (None, "  merged main: not recorded"),
-], ids=["applies", "applies-diffed-from-merged", "none", "could-not-tell",
-        "not-recorded"])
+], ids=["applies", "applies-diffed-from-merged", "applies-fork-could-not-tell", "none",
+        "could-not-tell", "not-recorded"])
 def test_build_names_the_merged_main_line(repo, merged, line):
     """T-0100: a reviewer is told which merged commit the bundle left paths
     identical to, and an unknown or unrecorded answer is stated, not silent."""

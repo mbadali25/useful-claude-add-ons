@@ -503,7 +503,7 @@ def test_merged_main_paths_leave_the_bundle(tmp_path):
             [s for s in (b"m v2", b"m2.txt", b"gone.txt", b"r_old.txt", b"r_new.txt")
              if s in patch]) == (True, True, [])
     assert {k: v for k, v in m["merged_main"].items() if k != "reason"} == {
-        "ref": "origin/main", "commit": merged, "applies": True,
+        "ref": "origin/main", "commit": merged, "applies": True, "fork": base,
         "dropped": merged_main_fixtures.DROPPED, "diffed_from_merged": ["src/shared.py"]}
     assert (m["base"], m["committed_files"]) == (base, ["src/shared.py", "src/t.txt"])
     assert [e["path"] for e in m["entries"] if e["path"] in merged_main_fixtures.DROPPED
@@ -532,11 +532,55 @@ def test_a_ticket_edit_on_top_of_merged_mains_edit_stays_in_the_bundle(tmp_path)
     ticket's line as `+` (review round 1: `+main_line` read as the ticket's)."""
     root, base, _ = _merged_fixture(tmp_path)
 
-    _, patch, _ = review_patch.compute(str(root), base)
+    manifest, patch, _ = review_patch.compute(str(root), base)
 
     shared = patch.split(b"diff --git a/src/shared.py")[1].split(b"diff --git")[0]
     assert (b"+ticket_line = 3" in shared, b"\n main_line = 2" in shared,
             b"+main_line = 2" in shared) == (True, True, False)
+    assert (manifest["merged_main"]["fork"], "fork_reason" in manifest["merged_main"]) == (
+        _git(root, "merge-base", base, manifest["merged_main"]["commit"]), False)
+
+
+def _fork_lookup_fails(monkeypatch, base, merged):
+    """`git merge-base <start> <merged>` gives no answer; every other git call,
+    `merged_main.resolve`'s `merge-base HEAD <ref>` included, still answers."""
+    real = review_patch.crew_common.git_out
+
+    def fake(root, *args):
+        return None if args == ("merge-base", base, merged) else real(root, *args)
+
+    monkeypatch.setattr(review_patch.crew_common, "git_out", fake)
+
+
+def test_a_failed_fork_lookup_is_could_not_tell(tmp_path, monkeypatch, capsys):
+    """Review round 2: with no fork, every path main also changed is diffed from
+    the start (the more-inclusive bundle, kept), and that is said -- an empty
+    `diffed_from_merged` must never pass as "main changed none of them"."""
+    root, base, merged = _merged_fixture(tmp_path)
+    _fork_lookup_fails(monkeypatch, base, merged)
+
+    manifest, patch, _ = review_patch.compute(str(root), base)
+    code = review_patch.main(["--root", str(root), "--base", base,
+                              "--out", str(tmp_path / "diff.txt"),
+                              "--manifest", str(tmp_path / "manifest.json")])
+
+    got = manifest["merged_main"]
+    shared = patch.split(b"diff --git a/src/shared.py")[1].split(b"diff --git")[0]
+    assert (got["applies"], got["fork"], got["fork_reason"].startswith(
+        "could not tell: git merge-base"), base[:12] in got["fork_reason"],
+            merged[:12] in got["fork_reason"], got["diffed_from_merged"],
+            b"+main_line = 2" in shared) == (True, None, True, True, True, [], True)
+    assert (code, " diffed-from-merged=could-not-tell" in capsys.readouterr().err) == (0, True)
+
+
+def test_review_md_step_2_echo_names_why():
+    """Review round 2 NIT, resolved by the spec amendment and pinned here: in the
+    merged-main exit-2 case HEAD need not match $BASE, so the echo defers to
+    review-patch's own line instead of claiming it."""
+    text = pathlib.Path(_ROOT, "commands", "review.md").read_text(encoding="utf-8")
+
+    assert (text.count('echo "nothing to review since $BASE: review-patch\'s line above says '
+                       'why"'), "HEAD matches $BASE and the tree is clean" in text) == (1, False)
 
 
 def test_a_start_after_the_fork_diffs_only_mains_paths_from_the_merged_commit(tmp_path):
