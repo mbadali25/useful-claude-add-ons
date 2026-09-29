@@ -13,8 +13,10 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_ticket
-from scope_fixtures import (FLAVOUR_MATRIX, FLAVOURS, common_dir, edit, make_repo,
-                            make_ticket, ready, run_hook)
+from review_fixtures import git
+from scope_fixtures import (FLAVOUR_MATRIX, FLAVOURS, accepted_ledger, common_dir,
+                            corrupt_ledger, edit, index, make_repo, make_ticket, ready,
+                            run_hook, spec_done)
 
 # Every test runs the module flavour by default. Five run `sh` and `ps1` by
 # default too -- the per-shell parity sample: a block, an allow, a malformed
@@ -647,3 +649,235 @@ def test_touch_is_judged_from_the_bytes_the_approval_hashed(flavour, repo, monke
     code = scope_guard.decide(edit(repo, repo / "other" / "keep.py"))
 
     assert code == 2
+
+
+# --- T-0504: who moves the active-ticket pointer ------------------------------------
+# A move off an in-flight ticket (case D) is the owner's: the session is refused and
+# told the owner types `/crew:autopilot <id>`. A move that cannot widen scope (no
+# pointer, the same ticket, a ticket closed by an accepted review AND done) is allowed.
+
+_ACTIVATE_T2 = "python3 hooks/scripts/crew_ticket.py activate --ticket T-2"
+_DEACTIVATE = "python3 hooks/scripts/crew_ticket.py deactivate"
+MODES = ("block", "report")
+
+
+def _in_flight(tmp_path, mode="block", status="in-progress"):
+    """T-1 active and approved (INDEX `status`), T-2 made and not active."""
+    root = make_repo(tmp_path, mode=mode)
+    ready(root)
+    make_ticket(root, "T-2", activate=False)
+    index(root, [("T-1", status), ("T-2", "ready")])
+    return root
+
+
+def _refused_for_the_owner(code, err, active, target):
+    return (code, active in err, f"/crew:autopilot {target}" in err,
+            "crew_ticket.py activate" in err, "crew_ticket.py deactivate" in err)
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+@pytest.mark.parametrize("mode", MODES)
+def test_activate_off_an_open_ticket_is_refused(flavour, tmp_path, mode):
+    root = _in_flight(tmp_path, mode)
+
+    code, _, err = _shell(flavour, root, _ACTIVATE_T2)
+
+    assert _refused_for_the_owner(code, err, "T-1", "T-2") == (2, True, True, False, False)
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+@pytest.mark.parametrize("mode", MODES)
+def test_activate_off_a_ticket_closed_in_index_only_is_refused(flavour, tmp_path, mode):
+    root = _in_flight(tmp_path, mode, status="done")
+
+    code, _, err = _shell(flavour, root, _ACTIVATE_T2)
+
+    assert _refused_for_the_owner(code, err, "T-1", "T-2") == (2, True, True, False, False)
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+@pytest.mark.parametrize("mode", MODES)
+def test_activate_off_a_ticket_closed_in_spec_only_is_refused(flavour, tmp_path, mode):
+    root = _in_flight(tmp_path, mode)
+    spec_done(root, "T-1")
+
+    code, _, err = _shell(flavour, root, _ACTIVATE_T2)
+
+    assert _refused_for_the_owner(code, err, "T-1", "T-2") == (2, True, True, False, False)
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+@pytest.mark.parametrize("mode", MODES)
+def test_activate_off_a_ticket_with_a_corrupt_ledger_is_refused(flavour, tmp_path, mode):
+    root = _in_flight(tmp_path, mode, status="done")
+    corrupt_ledger(root, "T-1")
+
+    code, _, err = _shell(flavour, root, _ACTIVATE_T2)
+
+    assert (_refused_for_the_owner(code, err, "T-1", "T-2"), "could not tell" in err) == (
+        (2, True, True, False, False), True)
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+@pytest.mark.parametrize("mode", MODES)
+def test_deactivate_of_an_open_ticket_is_refused(flavour, tmp_path, mode):
+    root = _in_flight(tmp_path, mode)
+
+    code, _, err = _shell(flavour, root, _DEACTIVATE)
+
+    assert _refused_for_the_owner(code, err, "T-1", "<id>") == (2, True, True, False, False)
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+@pytest.mark.parametrize("command", [
+    "python3 hooks/scripts/crew_ticket.py activate",
+    "python3 hooks/scripts/crew_ticket.py activate --ticket $T",
+    "python3 hooks/scripts/crew_ticket.py activate --ticket \"$(cat t)\"",
+    "python3 hooks/scripts/crew_ticket.py activate --ticket 'T-2",
+])
+def test_activate_without_a_ticket_is_refused_as_could_not_tell(flavour, tmp_path, command):
+    root = _in_flight(tmp_path)
+
+    code, _, err = _shell(flavour, root, command)
+
+    assert (code, "could not tell" in err, "crew_ticket.py activate" in err) == (
+        2, True, False)
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+def test_activate_naming_another_worktrees_root_is_judged_there(flavour, tmp_path):
+    root = make_repo(tmp_path, mode="block")
+    make_ticket(root, "T-2", activate=False)
+    other = tmp_path / "other"
+    git(root, "worktree", "add", "-q", str(other))
+    (other / ".crew").mkdir(exist_ok=True)
+    (other / ".crew" / "config.json").write_text(json.dumps({"scope": {"mode": "block"}}),
+                                                 encoding="utf-8")
+    make_ticket(other, "T-9")
+    make_ticket(other, "T-2", activate=False)
+
+    code, _, err = _shell(flavour, root, "python3 hooks/scripts/crew_ticket.py activate "
+                                         f"--root {other} --ticket T-2")
+
+    assert _refused_for_the_owner(code, err, "T-9", "T-2") == (2, True, True, False, False)
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+@pytest.mark.parametrize("tool,command", [
+    pytest.param("Bash", "python3 hooks/scripts/crew_ticket.py acti\\\nvate --ticket T-2",
+                 id="bash-continuation"),
+    pytest.param("PowerShell", "& python crew_ticket.py activate --ticket T-2", id="ps"),
+    pytest.param("PowerShell", "& python crew_ticket.py `\n  activate --ticket T-2",
+                 id="ps-continuation"),
+    pytest.param("Bash", "python3 hooks/scripts/crew_ticket.py activate --ticket=T-2",
+                 id="equals"),
+    pytest.param("Bash", "python3 hooks/scripts/crew_ticket.py activate --tick T-2",
+                 id="abbreviated-option"),
+    pytest.param("Bash", "python3 hooks/scripts/crew_ticket.py active; "
+                         "python3 hooks/scripts/crew_ticket.py activate --ticket T-2",
+                 id="second-command"),
+    pytest.param("Bash", "bash -c 'python3 hooks/scripts/crew_ticket.py activate --ticket T-2'",
+                 id="bash-c"),
+])
+def test_activate_in_another_shape_is_refused(flavour, tmp_path, tool, command):
+    root = _in_flight(tmp_path)
+
+    code, _, err = _shell(flavour, root, command, tool)
+
+    assert (code, "T-1" in err, "crew_ticket.py activate" in err) == (2, True, False)
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+@pytest.mark.parametrize("command", [
+    "cd ../elsewhere && python3 hooks/scripts/crew_ticket.py activate --ticket T-2",
+    "pushd ../elsewhere; python3 hooks/scripts/crew_ticket.py deactivate",
+])
+def test_activate_after_a_directory_change_is_refused_as_could_not_tell(flavour, tmp_path,
+                                                                     command):
+    root = make_repo(tmp_path, mode="block")
+    make_ticket(root, "T-2", activate=False)
+
+    code, _, err = _shell(flavour, root, command)
+
+    assert (code, "could not tell which worktree" in err) == (2, True)
+
+
+def test_broken_pointer_message_names_the_owner_prompt_not_the_cli(tmp_path):
+    root = make_repo(tmp_path, mode="block")
+    make_ticket(root, "T-1", activate=False)
+    pointer = os.path.join(common_dir(root), "crew", "active-ticket")
+    os.makedirs(os.path.dirname(pointer), exist_ok=True)
+    pathlib.Path(pointer).write_text(
+        json.dumps({crew_ticket.toplevel(str(root)): "T-9"}), encoding="utf-8")
+
+    code, _, err = _guard("module", root, edit(root, root / "src" / "app.py"))
+
+    assert (code, "/crew:autopilot <id>" in err, "crew_ticket.py" in err) == (2, True, False)
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+def test_activate_with_no_pointer_is_allowed(flavour, tmp_path):
+    root = make_repo(tmp_path, mode="block")
+    make_ticket(root, "T-1", activate=False)
+    make_ticket(root, "T-2", activate=False)
+
+    code, out, err = _shell(flavour, root, _ACTIVATE_T2)
+
+    assert (code, out, err) == (0, "", "")
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+@pytest.mark.parametrize("kind", ["clean", "owner-accepted"])
+def test_activate_off_a_ledger_closed_ticket_is_allowed(flavour, tmp_path, kind):
+    root = _in_flight(tmp_path, status="done")
+    accepted_ledger(root, "T-1", kind)
+
+    code, out, err = _shell(flavour, root, _ACTIVATE_T2)
+
+    assert (code, out, err) == (0, "", "")
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+def test_deactivate_with_no_pointer_is_allowed(flavour, tmp_path):
+    root = make_repo(tmp_path, mode="block")
+    make_ticket(root, "T-1", activate=False)
+
+    code, out, err = _shell(flavour, root, _DEACTIVATE)
+
+    assert (code, out, err) == (0, "", "")
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+def test_deactivate_off_a_ledger_closed_ticket_is_allowed(flavour, tmp_path):
+    root = _in_flight(tmp_path, status="done")
+    accepted_ledger(root, "T-1")
+
+    code, out, err = _shell(flavour, root, _DEACTIVATE)
+
+    assert (code, out, err) == (0, "", "")
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+@pytest.mark.parametrize("command", [
+    "python3 hooks/scripts/crew_ticket.py active",
+    "python3 hooks/scripts/crew_ticket.py status --ticket T-2",
+    "python3 hooks/scripts/crew_ticket.py activate --ticket T-1",
+    "python3 hooks/scripts/crew_ticket.py activate --root . --ticket T-1",
+])
+def test_pointer_reads_and_a_same_ticket_activate_are_allowed_in_flight(flavour, tmp_path,
+                                                                      command):
+    root = _in_flight(tmp_path)
+
+    code, out, err = _shell(flavour, root, command)
+
+    assert (code, out, err) == (0, "", "")
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+@pytest.mark.parametrize("command", [_ACTIVATE_T2, _DEACTIVATE])
+def test_activate_is_allowed_when_scope_is_off(flavour, tmp_path, command):
+    root = _in_flight(tmp_path, mode="off")
+
+    code, _, _ = _shell(flavour, root, command)
+
+    assert code == 0

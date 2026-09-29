@@ -99,6 +99,51 @@ def approve_as_user(root, ticket="T-1"):
     assert code == 0, f"approval_hook refused {ticket}"
 
 
+def accepted_ledger(root, ticket="T-1", kind="clean"):
+    """`ticket`'s review ledger ACCEPTED through review_ledger's own writers:
+    one reserved round recorded CLEAN (`kind="clean"`), or recorded FINDINGS
+    and then owner-accepted (`kind="owner-accepted"`). The recorded bundle hash
+    is "0"*64, which no tree rebuilds -- a merged ticket's shape (T-0504)."""
+    import review_ledger  # pylint: disable=import-outside-toplevel
+    ok, number, message = review_ledger.reserve(str(root), ticket, "claude")
+    assert ok, message
+    review_ledger.record(str(root), ticket, number, {
+        "verdict": "CLEAN" if kind == "clean" else "FINDINGS", "provider": "claude",
+        "model": None, "bundle_sha256": "0" * 64, "base": "HEAD", "head": "HEAD"})
+    if kind == "owner-accepted":
+        saved = review_ledger._current_hash  # pylint: disable=protected-access
+        review_ledger._current_hash = lambda _root, _base: "0" * 64  # pylint: disable=protected-access
+        try:
+            review_ledger.accept(str(root), ticket, by="owner")
+        finally:
+            review_ledger._current_hash = saved  # pylint: disable=protected-access
+
+
+def corrupt_ledger(root, ticket="T-1"):
+    """`ticket`'s review ledger present and unreadable (state UNKNOWN)."""
+    import review_ledger  # pylint: disable=import-outside-toplevel
+    path = review_ledger.ledger_path(str(root), ticket)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("{")
+
+
+def index(root, rows):
+    """Write `.work/INDEX.md` with one `id | status | ...` row per (id, status)."""
+    text = "".join(f"{ticket} | {status} | low | r | title\n" for ticket, status in rows)
+    path = root / ".work" / "INDEX.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def spec_done(root, ticket="T-1"):
+    """Rewrite `ticket`'s spec header to say `status: done`."""
+    path = root / ".work" / "tickets" / ticket / "spec.md"
+    first, rest = path.read_text(encoding="utf-8").split("\n", 1)
+    path.write_text(f"{first} title          status: done   risk: low\n{rest}",
+                    encoding="utf-8")
+
+
 def prompt(root, text, session="sess-1"):
     return {"hook_event_name": "UserPromptSubmit", "prompt": text, "cwd": str(root),
             "session_id": session, "prompt_id": "p-1"}

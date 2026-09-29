@@ -21,7 +21,8 @@ import crew_autopilot
 import crew_ticket
 import pytest
 import review_ledger
-from scope_fixtures import PLAN, SPEC, approve_as_user, make_repo
+from scope_fixtures import (PLAN, SPEC, accepted_ledger, approve_as_user, corrupt_ledger,
+                            index, make_repo, make_ticket, spec_done)
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _SCRIPT = os.path.join(_ROOT, "hooks", "scripts", "crew_autopilot.py")
@@ -926,3 +927,192 @@ def test_settings_cli_json_prints_both_policies(tmp_path, approval, questions):
     got = json.loads(_cli(root, "settings", "--json").stdout)
 
     assert (got["approval"], got["questions"]) == (approval, questions)
+
+
+# --- T-0504: activation_policy -- who may move the active-ticket pointer -------
+
+def _pointed(tmp_path, active="T-1", status="in-progress"):
+    """T-1 and T-2 with folders, INDEX rows (T-1 at `status`), and this
+    worktree's pointer on `active` (None: no pointer)."""
+    root = make_repo(tmp_path, mode="block")
+    for ticket in ("T-1", "T-2"):
+        make_ticket(root, ticket, activate=False)
+    index(root, [("T-1", status), ("T-2", "ready")])
+    if active:
+        crew_ticket.activate(str(root), active)
+    return root
+
+
+def _activation(root, ticket="T-2", verb="activate"):
+    return crew_autopilot.activation_policy(str(root), ticket, verb)
+
+
+def _deny_spec(monkeypatch, ticket):
+    """`ticket`'s spec.md exists and cannot be read (root reads through chmod,
+    so the denial is injected into the reader read_contract uses)."""
+    real = open
+    target = os.path.join(".work", "tickets", ticket, "spec.md")
+
+    def deny(path, *args, **kwargs):
+        if os.path.normpath(str(path)).endswith(target):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real(path, *args, **kwargs)
+    monkeypatch.setattr(crew_ticket, "open", deny, raising=False)
+
+
+def test_activation_no_pointer_allows(tmp_path):
+    got = _activation(_pointed(tmp_path, active=None))
+
+    assert (got["allow"], got["case"]) == (True, "no-pointer")
+
+
+def test_activation_same_ticket_allows(tmp_path):
+    got = _activation(_pointed(tmp_path, active="T-2"))
+
+    assert (got["allow"], got["case"]) == (True, "same")
+
+
+@pytest.mark.parametrize("kind", ["clean", "owner-accepted"])
+def test_activation_closed_by_ledger_and_index_allows(tmp_path, kind):
+    root = _pointed(tmp_path, status="done")
+    accepted_ledger(root, "T-1", kind)
+
+    got = _activation(root)
+
+    assert (got["allow"], got["case"], kind in got["reason"]) == (True, "closed", True)
+
+
+def test_activation_closed_by_ledger_and_spec_header_allows(tmp_path):
+    root = _pointed(tmp_path, status="review")
+    accepted_ledger(root, "T-1")
+    spec_done(root, "T-1")
+
+    got = _activation(root)
+
+    assert (got["allow"], got["case"]) == (True, "closed")
+
+
+def test_activation_open_ticket_refuses(tmp_path):
+    got = _activation(_pointed(tmp_path))
+
+    assert (got["allow"], got["case"], got["active"], "in flight" in got["reason"]) == (
+        False, "open", "T-1", True)
+
+
+def test_activation_index_done_without_ledger_refuses(tmp_path):
+    got = _activation(_pointed(tmp_path, status="done"))
+
+    assert (got["allow"], got["case"]) == (False, "open")
+
+
+def test_activation_spec_done_without_ledger_refuses(tmp_path):
+    root = _pointed(tmp_path)
+    spec_done(root, "T-1")
+
+    got = _activation(root)
+
+    assert (got["allow"], got["case"]) == (False, "open")
+
+
+def test_activation_ledger_only_without_index_or_spec_refuses(tmp_path):
+    root = _pointed(tmp_path)
+    accepted_ledger(root, "T-1")
+
+    got = _activation(root)
+
+    assert (got["allow"], got["case"]) == (False, "open")
+
+
+def test_activation_unknown_ledger_refuses_as_could_not_tell(tmp_path):
+    root = _pointed(tmp_path, status="done")
+    corrupt_ledger(root, "T-1")
+
+    got = _activation(root)
+
+    assert (got["allow"], got["case"], got["reason"].startswith("could not tell")) == (
+        False, "unknown", True)
+
+
+def test_activation_unreadable_spec_refuses_as_could_not_tell(tmp_path, monkeypatch):
+    root = _pointed(tmp_path, status="review")
+    accepted_ledger(root, "T-1")
+    _deny_spec(monkeypatch, "T-1")
+
+    got = _activation(root)
+
+    assert (got["allow"], got["case"], "could not tell" in got["reason"]) == (
+        False, "unknown", True)
+
+
+def test_activation_broken_pointer_refuses(tmp_path):
+    root = _pointed(tmp_path)
+    crew_ticket._write_json(  # pylint: disable=protected-access
+        os.path.join(crew_ticket.state_dir(str(root)), "active-ticket"),
+        {crew_ticket.toplevel(str(root)): "T-9"})
+
+    got = _activation(root)
+
+    assert (got["allow"], got["case"]) == (False, "broken")
+
+
+def test_activation_needs_replan_ledger_refuses(tmp_path):
+    root = _pointed(tmp_path, status="done")
+    path = review_ledger.ledger_path(str(root), "T-1")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    _write(path, json.dumps({"ticket": "T-1", "budget": 2, "rounds": [], "refused": [],
+                             "state": "NEEDS_REPLAN", "receipt": None}))
+
+    got = _activation(root)
+
+    assert (got["allow"], got["case"]) == (False, "open")
+
+
+@pytest.mark.parametrize("ticket", [None, "", "$T", "../T-2"])
+def test_activation_without_a_usable_ticket_refuses_as_could_not_tell(tmp_path, ticket):
+    got = _activation(_pointed(tmp_path, active=None), ticket=ticket)
+
+    assert (got["allow"], got["case"], got["reason"].startswith("could not tell")) == (
+        False, "unknown", True)
+
+
+@pytest.mark.parametrize("setup,allow,case", [
+    ("none", True, "no-pointer"), ("closed", True, "closed"), ("open", False, "open"),
+    ("unknown", False, "unknown"), ("broken", False, "broken")])
+def test_deactivate_uses_the_same_table(tmp_path, setup, allow, case):
+    root = _pointed(tmp_path, active=None if setup == "none" else "T-1",
+                    status="done" if setup in ("closed", "unknown") else "in-progress")
+    if setup == "closed":
+        accepted_ledger(root, "T-1")
+    elif setup == "unknown":
+        corrupt_ledger(root, "T-1")
+    elif setup == "broken":
+        crew_ticket._write_json(  # pylint: disable=protected-access
+            os.path.join(crew_ticket.state_dir(str(root)), "active-ticket"),
+            {crew_ticket.toplevel(str(root)): "T-9"})
+
+    got = _activation(root, ticket=None, verb="deactivate")
+
+    assert (got["allow"], got["case"]) == (allow, case)
+
+
+def test_closed_for_repoint_ignores_a_stale_bundle_hash(tmp_path):
+    root = _pointed(tmp_path, status="done")
+    accepted_ledger(root, "T-1")
+
+    got = crew_autopilot.closed_for_repoint(str(root), "T-1")
+
+    assert (got, review_ledger.check_receipt(str(root), "T-1")[0]) == (True, False)
+
+
+def test_activation_policy_that_raises_refuses(tmp_path, monkeypatch):
+    root = _pointed(tmp_path, status="done")
+    accepted_ledger(root, "T-1")
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("disk on fire")
+    monkeypatch.setattr(review_ledger, "status", boom)
+
+    got = _activation(root)
+
+    assert (got["allow"], got["case"], "could not tell" in got["reason"]) == (
+        False, "unknown", True)
