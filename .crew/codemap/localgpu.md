@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@bbd9a66d
-verified: 2026-09-28
+anchor: useful-claude-add-ons@96cce555
+verified: 2026-09-29
 
 # localgpu
 
@@ -512,10 +512,10 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   **Checked against the code, corrected after QA:**
   `plugin/crew/hooks/scripts/crew_config.py:128-129` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1437-1438` since T-0010's four `AUTOPILOT_DEFAULTS`
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1441-1442` since T-0010's four `AUTOPILOT_DEFAULTS`
   lines (T-0010-solo's merge of `67caa4b8`; `:1432-1433` at `65bb3330`; `:1430-1431` on main before
   T-0005's three import lines merged in, re-numbered
-  from `:1504-1505` by crew 1.0 - see the re-anchor entries below; same two
+  from `:1508-1509` by crew 1.0 - see the re-anchor entries below; same two
   lines, `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")`, byte-identical).
   So `crew.md`'s own attribution to `crew_config.py` names the re-export, not
@@ -757,7 +757,7 @@ never matches and has to be counted on its own):
   `:646`, `:651`, `:676`, cited in shorthand),
   `plugin/localgpu/mcp/_version.py:10-13`, `:31-32`,
   `plugin/crew/hooks/scripts/crew_config.py:126-127`,
-  `plugin/crew/hooks/scripts/crew_state.py:1504-1505`, and, both written out
+  `plugin/crew/hooks/scripts/crew_state.py:1508-1509`, and, both written out
   in full rather than one of them in shorthand,
   `scripts/check-marketplace.py:160-170` and `scripts/check-marketplace.py:169`.
   The first version of this bullet said 9 and listed 7 (both wrong, an
@@ -812,7 +812,7 @@ For the record, what was wrong and how it was found:
    Re-read `crew_config.py`: `DEV_PROVIDERS`/`QA_PROVIDERS` there are a
    re-export (`plugin/crew/hooks/scripts/crew_config.py:126-127`,
    `DEV_PROVIDERS = crew_state.DEV_PROVIDERS`), not the definition — that is
-   `plugin/crew/hooks/scripts/crew_state.py:1504-1505`. Also narrowed the
+   `plugin/crew/hooks/scripts/crew_state.py:1508-1509`. Also narrowed the
    "read only past the opening constraint (lines 1-32)" claim: this pass
    read through line 40, which is where the code block with the tuples ends.
 5. **Version-number subtraction presented as a count.** "Stable across those
@@ -885,7 +885,7 @@ sentence around it staying correct.
    .crew/codemap/localgpu.md`, which now returns nothing) to either full
    repo-relative paths or prose describing the shape without reproducing it.
 2. **FIX — the "12 new citations" method did not reproduce 12.** The bullet
-   said `plugin/crew/hooks/scripts/crew_state.py:1504-1505` fell outside the
+   said `plugin/crew/hooks/scripts/crew_state.py:1508-1509` fell outside the
    `plugin/` regex the rest of the section used and was "tallied separately"
    — it does not; that path starts with `plugin/crew/`, which the regex
    already matches, and the citation was already in that regex's output. And
@@ -1459,3 +1459,22 @@ so the merged tree is `6b89c1df` plus that README change). `08eeaa3e` adds the r
 `plugin/crew/tests/test_crew_autopilot_policy.py`. `bbd9a66d` re-sets crew 1.0.61. Each edited line kept its
 number (the parentheses and comments were added in place) except in `test_crew_autopilot_policy.py`, whose
 import block lost one line; no note cites that file by line. Re-anchor only; nothing was executed for this note.
+
+## Re-anchor provenance - `bbd9a66d` -> `96cce555`, 2026-09-29 (T-0029 merges T-0010's main `8ab733d7`)
+
+`ed669d19` merges origin/main `8ab733d7` (T-0010 landed as crew 1.0.61; this note's `bbd9a66d` is
+on main's side, and nothing a note cites changed between `bbd9a66d` and `8ab733d7`) into T-0029-wave,
+resolved as main's tree plus T-0029's own patch; `c428ebab` keeps T-0010's pinned `autopilot.md` intro
+and `SUBCOMMANDS` line exact; `37bf02f9` re-measures `plugin/crew/BUDGETS.md` (19,502
+lines across 128 files) and adds T-0029's `CHANGELOG.md` entry at the top of `[Unreleased]` (+24);
+`96cce555` sets crew 1.0.62, one past main. `git diff --name-only bbd9a66d 96cce555`, outside the
+refresh artifacts, is T-0029's files only: `crew_wave.py`, `crew_autopilot.py` (+38: the
+`scope-not-enforcing` stop, the router's `wave` lines, `_wave_args`), `crew_state.py` (+4 at
+`AUTOPILOT_DEFAULTS`), `scope_guard.py` (+15 for the never-list, +1 in `_reading_refusal`'s check),
+`review_ledger.py` (`allow_abbrev=False`, line-neutral), `commands/autopilot.md` (still 110 lines;
+paragraphs reflowed and `## 6. wave` added), `CONFIG.md` (+2 rows in each autopilot table),
+`README.md`, `crew-setup/SKILL.md`, `config.template.json`, `.crew/verify.json` (rule appended last),
+`sabotage.py` (+1 import, the `MUTATIONS +=` list now `:3053-3056`), the version files and the
+tests. Every body `path:N` citation into those files was mapped from `bbd9a66d` to `96cce555` with a
+`difflib` line diff (`/root/crew-tmp/t-0029/citemap.py`, machine-local; provenance sections left
+as history); a bare `:N` the mapper attributed to the wrong file was re-derived with `grep -n` instead. Nothing was executed for this note.

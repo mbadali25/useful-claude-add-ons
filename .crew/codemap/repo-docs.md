@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@bbd9a66d
-verified: 2026-09-28
+anchor: useful-claude-add-ons@96cce555
+verified: 2026-09-29
 
 ## Re-derive provenance
 
@@ -300,7 +300,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:2204` (on T-0010-solo's merge of `e878cc31`; `:2080` on T-0010-solo at `d7c7c75c`, `:2072` at `c817782f`, `:2069` at `89c9ee9a`, `:2058` at `50e67586`; `:2199` at `3648f59a`, T-0075's round-5 docs after its merge of `6387ab49`; `:2196` at `938e3b11`, T-0075's round-4 docs after its merge of `f54af3fa`; `:2187` at `3724731b`, T-0075 after its merge of `e6e10432`; `:2169` on T-0075's merge of `d2fbd408`; `:2075` at `d2fbd408`, `:1812` on T-0024's branch at `45345812`, `:2161` on T-0075's branch at `763eaeff`, `:2127` at `764f6018`, `:2067` at `67caa4b8`, `:2102` on T-0075's `f7163410`, `:2052` at `bebbb97f`, `:2079` on T-0075's `e95e5964`, `:2044` on T-0018's first landing merge at `fbc27b49`, `:2029` at `db14619c`, `:1959` on T-0018's branch at `e6b696fb`, `:1953` at T-0023's `a1acd9b7`, `:2015` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1944` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:2207` (on T-0029's merge of `8ab733d7`; `:2204` on T-0010-solo's merge of `e878cc31`; `:2080` on T-0010-solo at `d7c7c75c`, `:2072` at `c817782f`, `:2069` at `89c9ee9a`, `:2058` at `50e67586`; `:2199` at `3648f59a`, T-0075's round-5 docs after its merge of `6387ab49`; `:2196` at `938e3b11`, T-0075's round-4 docs after its merge of `f54af3fa`; `:2187` at `3724731b`, T-0075 after its merge of `e6e10432`; `:2169` on T-0075's merge of `d2fbd408`; `:2075` at `d2fbd408`, `:1812` on T-0024's branch at `45345812`, `:2161` on T-0075's branch at `763eaeff`, `:2127` at `764f6018`, `:2067` at `67caa4b8`, `:2102` on T-0075's `f7163410`, `:2052` at `bebbb97f`, `:2079` on T-0075's `e95e5964`, `:2044` on T-0018's first landing merge at `fbc27b49`, `:2029` at `db14619c`, `:1959` on T-0018's branch at `e6b696fb`, `:1953` at T-0023's `a1acd9b7`, `:2015` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1944` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -1288,3 +1288,22 @@ so the merged tree is `6b89c1df` plus that README change). `08eeaa3e` adds the r
 `plugin/crew/tests/test_crew_autopilot_policy.py`. `bbd9a66d` re-sets crew 1.0.61. Each edited line kept its
 number (the parentheses and comments were added in place) except in `test_crew_autopilot_policy.py`, whose
 import block lost one line; no note cites that file by line. Re-anchor only; nothing was executed for this note.
+
+## Re-anchor provenance - `bbd9a66d` -> `96cce555`, 2026-09-29 (T-0029 merges T-0010's main `8ab733d7`)
+
+`ed669d19` merges origin/main `8ab733d7` (T-0010 landed as crew 1.0.61; this note's `bbd9a66d` is
+on main's side, and nothing a note cites changed between `bbd9a66d` and `8ab733d7`) into T-0029-wave,
+resolved as main's tree plus T-0029's own patch; `c428ebab` keeps T-0010's pinned `autopilot.md` intro
+and `SUBCOMMANDS` line exact; `37bf02f9` re-measures `plugin/crew/BUDGETS.md` (19,502
+lines across 128 files) and adds T-0029's `CHANGELOG.md` entry at the top of `[Unreleased]` (+24);
+`96cce555` sets crew 1.0.62, one past main. `git diff --name-only bbd9a66d 96cce555`, outside the
+refresh artifacts, is T-0029's files only: `crew_wave.py`, `crew_autopilot.py` (+38: the
+`scope-not-enforcing` stop, the router's `wave` lines, `_wave_args`), `crew_state.py` (+4 at
+`AUTOPILOT_DEFAULTS`), `scope_guard.py` (+15 for the never-list, +1 in `_reading_refusal`'s check),
+`review_ledger.py` (`allow_abbrev=False`, line-neutral), `commands/autopilot.md` (still 110 lines;
+paragraphs reflowed and `## 6. wave` added), `CONFIG.md` (+2 rows in each autopilot table),
+`README.md`, `crew-setup/SKILL.md`, `config.template.json`, `.crew/verify.json` (rule appended last),
+`sabotage.py` (+1 import, the `MUTATIONS +=` list now `:3053-3056`), the version files and the
+tests. Every body `path:N` citation into those files was mapped from `bbd9a66d` to `96cce555` with a
+`difflib` line diff (`/root/crew-tmp/t-0029/citemap.py`, machine-local; provenance sections left
+as history); a bare `:N` the mapper attributed to the wrong file was re-derived with `grep -n` instead. Nothing was executed for this note.
