@@ -35,7 +35,20 @@ Official docs: https://developer.atlassian.com/cloud/bitbucket/rest/
     "reviewers": [{"uuid": "{user-uuid}"}]
   }
   ```
-- `PUT  repositories/{ws}/{repo}/pullrequests/{id}` — update title/description/reviewers
+- `PUT  repositories/{ws}/{repo}/pullrequests/{id}` — update. Atlassian's text names
+  branches and description, and "Only open pull requests can be mutated"
+  ([Atlassian](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/#api-repositories-workspace-repo-slug-pullrequests-pull-request-id-put)).
+  To add reviewers, read-modify-write: `GET .../pullrequests/{id}` first (the
+  `reviewers` list is only on the PR's own `self` URL, not on the list endpoint),
+  then PUT the existing title with the existing reviewers plus the new one:
+  ```json
+  {"title": "<existing title>",
+   "reviewers": [{"uuid": "{existing-uuid}"}, {"uuid": "{new-uuid}"}]}
+  ```
+  Atlassian does not state whether `reviewers` replaces or merges, or whether
+  `title` is required, so send both, and the full list. Reported 2026-09-28,
+  not reproduced here: a PUT of `{"title": ..., "reviewers": [{"uuid": ...}]}`
+  returned HTTP 200 with the description preserved.
 - `GET  repositories/{ws}/{repo}/pullrequests/{id}/diff` — raw diff (not JSON)
 - `POST repositories/{ws}/{repo}/pullrequests/{id}/approve` — approve
 - `DELETE repositories/{ws}/{repo}/pullrequests/{id}/approve` — revoke approval
@@ -45,6 +58,30 @@ Official docs: https://developer.atlassian.com/cloud/bitbucket/rest/
   ```
   Strategies: `merge_commit`, `squash`, `fast_forward`
 - `POST repositories/{ws}/{repo}/pullrequests/{id}/decline` — decline (**confirm first**)
+
+### Default reviewers
+
+There is no CODEOWNERS equivalent and `gh pr create --reviewer` has no twin:
+Bitbucket adds a repo's default reviewers to every new PR.
+
+- `GET repositories/{ws}/{repo}/default-reviewers` — the repo-level list
+  ([Atlassian](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/#api-repositories-workspace-repo-slug-default-reviewers-get)).
+- `GET repositories/{ws}/{repo}/effective-default-reviewers` — "both default
+  reviewers defined at the repository level as well as those inherited from its
+  project"
+  ([Atlassian](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/#api-repositories-workspace-repo-slug-effective-default-reviewers-get)).
+  HTTP 200 with an empty `values` means none are configured — not an error.
+- `GET|PUT|DELETE repositories/{ws}/{repo}/default-reviewers/{target_username}` —
+  one user. GET: "A 404 indicates that that specified user is not a default
+  reviewer." PUT: "This method is idempotent."
+  ([Atlassian](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/#api-repositories-workspace-repo-slug-default-reviewers-target-username-put)).
+- Project level: `GET workspaces/{ws}/projects/{project_key}/default-reviewers`
+  and `GET|PUT|DELETE workspaces/{ws}/projects/{project_key}/default-reviewers/{selected_user}`.
+- Scopes (API token / OAuth): reads `read:pullrequest:bitbucket` (OAuth
+  `pullrequest`; `project:admin` for the project-level list);
+  repo-level PUT and DELETE `admin:repository:bitbucket` (`repository:admin`);
+  project-level PUT `admin:project:bitbucket` (`project:admin`).
+- Reviewer uuids: `values[].uuid` from the lists above, or `GET workspaces/{ws}/members`.
 
 ## PR comments
 - `GET  repositories/{ws}/{repo}/pullrequests/{id}/comments`
@@ -69,6 +106,32 @@ Official docs: https://developer.atlassian.com/cloud/bitbucket/rest/
   ```json
   {"target": {"type": "pipeline_ref_target", "ref_type": "branch", "ref_name": "main"}}
   ```
+
+## Pipeline and deployment variables
+- `GET repositories/{ws}/{repo}/pipelines_config/variables/` — repository variables
+  ([Atlassian](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pipelines/#api-repositories-workspace-repo-slug-pipelines-config-variables-get)).
+- `GET repositories/{ws}/{repo}/deployments_config/environments/{environment_uuid}/variables/` —
+  one deployment environment's variables
+  ([Atlassian](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pipelines/#api-repositories-workspace-repo-slug-deployments-config-environments-environment-uuid-variables-get)).
+- **Write the trailing slash on both GETs.** Reported 2026-09-28, not
+  reproduced here: without it the API answered HTTP 200 with `"values": []`
+  while variables existed, and with it they listed. Atlassian documents both
+  paths without the slash, so an empty list from the slash-less path is
+  "could not tell"; the trailing-slash call or the Pipelines settings page
+  confirms.
+- `GET repositories/{ws}/{repo}/environments` — environment uuids.
+- `POST` on either variables path — create:
+  ```json
+  {"key": "NAME", "value": "text", "secured": true}
+  ```
+  Atlassian's schema: `key` "The unique name of the variable."; `value` "If the
+  variable is secured, this will be empty."; `secured` "The value will never be
+  exposed in the logs or the REST API." A secured variable is listed with an
+  empty `value` — that is not the slash symptom above.
+- `PUT|DELETE repositories/{ws}/{repo}/pipelines_config/variables/{variable_uuid}`
+  (GET too) and `PUT|DELETE .../deployments_config/environments/{environment_uuid}/variables/{variable_uuid}`.
+- Scopes (API token / OAuth): reads `read:pipeline:bitbucket` (`pipeline`);
+  writes `admin:pipeline:bitbucket` (`pipeline:variable`).
 
 ## Commit statuses (build badges on commits)
 - `GET  repositories/{ws}/{repo}/commit/{hash}/statuses`
@@ -195,3 +258,10 @@ pass `--branch`.
   — remember to URL-encode.
 - User identifiers are UUIDs (`{...}`), not usernames, in most write payloads.
 - Rate limits: 1,000 req/hr for most authenticated endpoints; back off on 429.
+- `*_config/variables` GETs: use the trailing slash; `values: []` without it
+  proves nothing (see "Pipeline and deployment variables").
+- Repository, project and workspace access tokens have no Cloud REST endpoint
+  (the `access-tokens` create endpoint is Data Center's): create them in the UI;
+  a repository token is shown once.
+  Never ask for the creation or rotation page to be pasted (SKILL.md, Safety
+  rails).
