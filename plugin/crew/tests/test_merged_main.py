@@ -87,8 +87,12 @@ def _merge_base_fails(monkeypatch, _root):
     monkeypatch.setattr(crew_common, "git_out", fake)
 
 
-@pytest.mark.parametrize("cause", [_no_ref, _detached, _merge_base_fails],
-                         ids=["no-ref", "detached-head", "merge-base-fails"])
+def _is_ancestor_fails(monkeypatch, _root):
+    monkeypatch.setattr(merged_main, "_is_ancestor", lambda root, older, newer: None)
+
+
+@pytest.mark.parametrize("cause", [_no_ref, _detached, _merge_base_fails, _is_ancestor_fails],
+                         ids=["no-ref", "detached-head", "merge-base-fails", "is-ancestor-fails"])
 def test_could_not_tell_drops_nothing(tmp_path, monkeypatch, cause):
     root, upstream, sha = build(tmp_path)
     ticket_commit(root, "src/t.txt", "ticket line\n")
@@ -100,6 +104,21 @@ def test_could_not_tell_drops_nothing(tmp_path, monkeypatch, cause):
 
     assert (got["applies"], got["commit"], got["reason"].startswith("could not tell")) == (
         False, None, True)
+
+
+def test_is_ancestor_answers_true_false_and_none_when_git_cannot(tmp_path):
+    """Neighbour of the is-ancestor-fails cause: a real git error (a sha
+    that names no commit) is None, never False."""
+    root, upstream, sha = build(tmp_path)
+    head = ticket_commit(root, "src/t.txt", "ticket line\n")
+    advance_main(upstream)
+    git(root, "fetch", "-q", "origin")
+
+    got = (merged_main._is_ancestor(str(root), sha["base"], head),  # pylint: disable=protected-access
+           merged_main._is_ancestor(str(root), head, sha["base"]),  # pylint: disable=protected-access
+           merged_main._is_ancestor(str(root), "f" * 40, head))  # pylint: disable=protected-access
+
+    assert got == (True, False, None)
 
 
 def test_keep_is_the_intersection():
@@ -128,3 +147,28 @@ def test_the_bundle_and_the_audit_name_the_same_changed_paths(tmp_path):
     for key in ("committed_files", "staged_files", "unstaged_files", "untracked_files"):
         bundled.update(manifest[key])
     assert (bundled, bundled & set(DROPPED)) == (set(audited), set())
+
+
+@pytest.mark.parametrize("content,counted", [("m v2, a longer line from main\n", False),
+                                             ("m v3, the ticket's own edit\n", True)],
+                         ids=["identical-to-merged", "edited"])
+def test_the_bundle_and_the_audit_agree_on_a_merged_in_path_removed_from_the_index(
+        tmp_path, content, counted):
+    """`git rm --cached` on a merged-in path leaves it untracked on disk. The
+    bundle stages it again (`add -A`), so both consumers judge its bytes:
+    identical to the merged commit drops from both, edited stays in both."""
+    root, upstream, sha = build(tmp_path)
+    ticket_commit(root, "src/t.txt", "ticket line\n")
+    advance_main(upstream)
+    merge_main(root)
+    git(root, "rm", "-q", "--cached", "m.txt")
+    write(root, "m.txt", content)
+    top, base = str(root), sha["base"]
+
+    manifest, _, _ = review_patch.compute(top, base)
+    audited = completion_audit.changed_paths(top, base, merged_main.resolve(top, base))
+
+    bundled = set()
+    for key in ("committed_files", "staged_files", "unstaged_files", "untracked_files"):
+        bundled.update(manifest[key])
+    assert (bundled == set(audited), "m.txt" in audited) == (True, counted)

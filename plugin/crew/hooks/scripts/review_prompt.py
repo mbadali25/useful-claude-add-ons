@@ -108,9 +108,12 @@ def _merged_main_line(merged):
         return "  merged main: not recorded"
     if merged.get("applies"):
         dropped = merged.get("dropped") or []
+        against = merged.get("diffed_from_merged") or []
         return (f"  merged main: {str(merged.get('commit'))[:12]} ({merged.get('ref')}) - "
                 f"{len(dropped)} path(s) identical to it left out: "
-                f"{', '.join(dropped) if dropped else 'none'}")
+                f"{', '.join(dropped) if dropped else 'none'}"
+                + (f"; {len(against)} path(s) main also changed diffed from it, so main's "
+                   f"lines there are context: {', '.join(against)}" if against else ""))
     if merged.get("commit") is None:
         return (f"  merged main: {merged_main.UNKNOWN} - {merged_main.bare_reason(merged)}; "
                 "nothing left out")

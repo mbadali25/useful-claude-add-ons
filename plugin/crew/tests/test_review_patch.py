@@ -504,34 +504,59 @@ def test_merged_main_paths_leave_the_bundle(tmp_path):
              if s in patch]) == (True, True, [])
     assert {k: v for k, v in m["merged_main"].items() if k != "reason"} == {
         "ref": "origin/main", "commit": merged, "applies": True,
-        "dropped": merged_main_fixtures.DROPPED}
+        "dropped": merged_main_fixtures.DROPPED, "diffed_from_merged": ["src/shared.py"]}
     assert (m["base"], m["committed_files"]) == (base, ["src/shared.py", "src/t.txt"])
     assert [e["path"] for e in m["entries"] if e["path"] in merged_main_fixtures.DROPPED
             or e["old_path"] in merged_main_fixtures.DROPPED] == []
-    assert f"merged-main={merged[:12]} dropped=5" in result.stderr
+    assert f"merged-main={merged[:12]} dropped=5 diffed-from-merged=1" in result.stderr
 
 
 def test_the_bundle_is_byte_identical_to_the_pathspec_form(tmp_path):
-    root, base, _ = _merged_fixture(tmp_path)
+    """The kept paths diffed from the merged commit: the start's content for
+    every path main left alone, main's for the one it changed too."""
+    root, base, merged = _merged_fixture(tmp_path)
     manifest, patch, _ = review_patch.compute(str(root), base)
     tree = _working_tree_id(root, tmp_path)
     kept = ["other/x.py", "src/shared.py", "src/t.txt", "src/untracked.txt"]
 
     expected = subprocess.run(
         ["git", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", "--full-index",
-         base, tree, "--"] + kept, cwd=root, check=True, capture_output=True,
+         merged, tree, "--"] + kept, cwd=root, check=True, capture_output=True,
         stdin=subprocess.DEVNULL).stdout
 
     assert (manifest["merged_main"]["applies"], patch) == (True, expected)
 
 
 def test_a_ticket_edit_on_top_of_merged_mains_edit_stays_in_the_bundle(tmp_path):
+    """The hunk shows main's already-landed line as context and only the
+    ticket's line as `+` (review round 1: `+main_line` read as the ticket's)."""
     root, base, _ = _merged_fixture(tmp_path)
 
     _, patch, _ = review_patch.compute(str(root), base)
 
     shared = patch.split(b"diff --git a/src/shared.py")[1].split(b"diff --git")[0]
-    assert (b"+ticket_line = 3" in shared, b"+main_line = 2" in shared) == (True, True)
+    assert (b"+ticket_line = 3" in shared, b"\n main_line = 2" in shared,
+            b"+main_line = 2" in shared) == (True, True, False)
+
+
+def test_a_start_after_the_fork_diffs_only_mains_paths_from_the_merged_commit(tmp_path):
+    """Neighbour: a start recorded after a ticket commit is not an ancestor of
+    the merged commit. What the ticket did before its start is not main's, so
+    that file is still diffed from the start; main's file is still diffed from
+    the merged commit."""
+    root, upstream, _ = merged_main_fixtures.build(tmp_path)
+    base = merged_main_fixtures.ticket_commit(root, "src/t.txt", "ticket line\n")
+    merged_main_fixtures.advance_main(upstream)
+    merged_main_fixtures.merge_main(root)
+    merged_main_fixtures.ticket_commit(root, "src/t.txt", "ticket line\nsecond, after\n")
+    merged_main_fixtures.ticket_commit(root, "src/shared.py", _SHARED_ON_TOP)
+
+    manifest, patch, _ = review_patch.compute(str(root), base)
+
+    own = patch.split(b"diff --git a/src/t.txt")[1].split(b"diff --git")[0]
+    assert (manifest["merged_main"]["diffed_from_merged"], b"\n ticket line" in own,
+            b"+ticket line" in own, b"+second, after" in own) == (
+                ["src/shared.py"], True, False, True)
 
 
 def test_no_merge_of_main_leaves_the_bundle_unchanged(tmp_path):

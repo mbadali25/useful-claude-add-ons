@@ -77,6 +77,7 @@ whatever `scope.mode` says, prints the verdict, and exits 0 only on a pass.
 import argparse
 import json
 import os
+import stat
 import subprocess
 import sys
 
@@ -170,8 +171,10 @@ def changed_paths(top, base, merged=None):
     copy. Names, plus the hash of a stat-dirty file -- never the review
     bundle, and never a write to the index."""
     # `merged` is `merged_main.resolve`'s answer or None (T-0100): only an
-    # applying one narrows, and an untracked path is never identical to a
-    # merged commit's tracked one, so it is re-added on both sides.
+    # applying one narrows. An untracked path is re-added on both sides, except
+    # one whose bytes and mode on disk ARE the merged commit's entry (a merged-in
+    # path taken out of the index by `git rm --cached`): the review bundle's
+    # `add -A` stages it back identical and drops it, so the audit does too.
     sha = _git_fields(top, ["rev-parse", "--verify", base + "^{commit}"])[0].strip()
     untracked = {p for p in _git_fields(top, ["ls-files", "--others", "--exclude-standard",
                                               "-z"] + _ONLY) if p}
@@ -179,7 +182,41 @@ def changed_paths(top, base, merged=None):
     if not (merged and merged.get("applies")):
         return sorted(paths)
     since_merged = worktree_changes(top, merged["commit"], _ONLY[1:]) | untracked
-    return merged_main.keep(paths, since_merged)
+    return merged_main.keep(paths, since_merged - _as_merged(top, merged["commit"], untracked))
+
+
+def _as_merged(top, commit, untracked):
+    """The `untracked` paths whose file on disk is byte- and mode-identical to
+    `commit`'s entry for it. Hashed through `--stdin-paths` without `-w`, as
+    `_unchanged` does; a symlink, or a name `--stdin-paths` cannot carry, is
+    never identical."""
+    names = sorted(p for p in untracked if "\n" not in p and "\r" not in p
+                   and os.path.isfile(os.path.join(top, p))
+                   and not os.path.islink(os.path.join(top, p)))
+    if not names:
+        return set()
+    # The whole tree, filtered here: no pathspec of N names on the command line.
+    wanted, entries = set(names), {}
+    for field in _git_fields(top, ["ls-tree", "-r", "-z", "--full-tree", commit]):
+        meta, _, path = field.partition("\t")
+        if path in wanted and len(meta.split()) == 3:
+            mode, kind, oid = meta.split()
+            if kind == "blob":
+                entries[path] = (mode, oid)
+    names = [p for p in names if p in entries]
+    if not names:
+        return set()
+    listing = "".join(_stdin_path(p) + "\n" for p in names).encode(
+        "utf-8", errors="surrogateescape")
+    hashes = _git_fields(top, ["hash-object", "--stdin-paths"], data=listing)[0].split()
+    return {p for p, oid in zip(names, hashes)
+            if (oid, _disk_mode(os.path.join(top, p))) == (entries[p][1], entries[p][0])}
+
+
+def _disk_mode(path):
+    """The blob mode `git add` records for the regular file at `path`: the
+    owner's execute bit (NTFS has none git can see)."""
+    return "100755" if os.name != "nt" and os.stat(path).st_mode & stat.S_IXUSR else "100644"
 
 
 def shown(path):
@@ -225,7 +262,9 @@ def audit(root, ticket):
     except RuntimeError as exc:
         return False, [f"completion audit: could not diff the tree: {shown(str(exc))}"]
     extra = _merged_lines(merged, dropped)
-    passed = extra if merged["applies"] and dropped else []
+    # A pass states the answer too: the count when a merge applied, and
+    # could-not-tell always (review round 1: a silent pass hid the unknown).
+    passed = extra if (merged["applies"] and dropped) or merged["commit"] is None else []
     # ONE read of spec.md: the hash check, the Touch below and the refresh
     # allowance all share the bytes.
     approval = crew_ticket.accepted(top, ticket)

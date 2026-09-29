@@ -631,9 +631,10 @@ _MERGED_IN = ("other/keep.py", "other/new.py", "other/r_new.py", "other/r_old.py
               "secret/x.py")
 
 
-def _merged_repo(tmp_path, ticket_commits=True):
+def _merged_repo(tmp_path, ticket_commits=True, main_edits=_MAIN_OUT_OF_TOUCH):
     """`(clone, merged commit)`: `make_repo`'s layout as the upstream, a clone on
-    `T-1` with its base recorded, main advanced on out-of-Touch paths and merged."""
+    `T-1` with its base recorded, main advanced (out-of-Touch paths by default)
+    and merged."""
     upstream = make_repo(tmp_path, mode="block", name="upstream")
     merged_main_fixtures.write(upstream, "other/r_old.py", "renamed = 'by main'\n")
     git(upstream, "add", "-A")
@@ -644,7 +645,7 @@ def _merged_repo(tmp_path, ticket_commits=True):
     ready(root)
     if ticket_commits:
         merged_main_fixtures.ticket_commit(root, "src/app.py", "x = 2, the ticket's\n")
-    merged_main_fixtures.advance_main(upstream, *_MAIN_OUT_OF_TOUCH)
+    merged_main_fixtures.advance_main(upstream, *main_edits)
     return root, merged_main_fixtures.merge_main(root)
 
 
@@ -665,6 +666,28 @@ def test_check_names_the_merged_commit_and_what_it_did_not_count(tmp_path):
     assert (done.returncode, done.stdout.splitlines()) == (0, [
         "completion audit: every change is inside T-1's spec ## Touch",
         f"  merged main {merged[:12]} (origin/main): 5 path(s) identical to it not counted"])
+
+
+_MAIN_IN_TOUCH = (("write", "src/by_main.py", "added = 'by main, inside Touch'\n"),)
+
+
+@pytest.mark.parametrize("detach,line", [
+    (True, "  merged main: could not tell - HEAD is detached, so which commits since the "
+           "start are origin/main's cannot be told; every changed path counted"),
+    (False, "  merged main {merged} (origin/main): 1 path(s) identical to it not counted"),
+], ids=["could-not-tell", "applies"])
+def test_a_passing_check_states_the_merged_main_answer(tmp_path, detach, line):
+    """A pass is not silent about merged main either: could-not-tell is said on
+    the pass line's verdict too (review round 1), as the applying count is."""
+    root, merged = _merged_repo(tmp_path, main_edits=_MAIN_IN_TOUCH)
+    if detach:
+        git(root, "checkout", "-q", "--detach")
+
+    done = _check(root)
+
+    assert (done.returncode, done.stdout.splitlines()) == (0, [
+        "completion audit: every change is inside T-1's spec ## Touch",
+        line.format(merged=merged[:12])])
 
 
 @pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)

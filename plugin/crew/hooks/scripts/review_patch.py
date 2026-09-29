@@ -72,10 +72,12 @@ tickets. The bundle now diffs from a SYNTHETIC base tree -- the start commit's
 tree with each path that is byte-identical, in the working state, to the
 merged commit (`merged_main.resolve` / `merged_main.keep`, the rule the
 completion audit shares) set to its working-state entry -- so those paths
-drop out of the patch, `entries` and every file list, while a ticket edit on
-top of main's edit to the same file stays, diffed from the start. The manifest
-records `merged_main` (ref, commit, applies, reason, dropped) and
-`bundle_base_tree`; `base` stays the start. Could-not-tell drops nothing and
+drop out of the patch, `entries` and every file list. A ticket edit on top of
+main's edit to the same file stays, diffed from the MERGED commit's version of
+that file (main's lines are context, only the ticket's are `+`/`-`); every
+path main did not change since the ticket forked from it is diffed from the
+start. The manifest records `merged_main` (ref, commit, applies, reason,
+dropped, diffed_from_merged) and `bundle_base_tree`; `base` stays the start. Could-not-tell drops nothing and
 says so. The synthetic tree, not a pathspec of the kept paths: that pathspec
 can run past Windows' ~32 KB command line, and `git diff` has no
 `--pathspec-from-file`. It is built in a second temporary index, never the
@@ -102,6 +104,7 @@ import subprocess
 import sys
 import tempfile
 
+import crew_common
 import merged_main
 import webtest_guard
 
@@ -243,16 +246,18 @@ def _entries(root, base_sha, tree):
 
 
 def _ticket_base_tree(root, base_sha, working_tree, tmp_dir):
-    """`(tree, merged, dropped)`: the tree the bundle diffs from. The start
-    commit's tree, unless a merge of main applies and some path is identical
-    to the merged commit in the working state; then that tree with each such
-    path set to its `working_tree` entry (absent when the working state has
-    none), written from a second temporary index. `dropped` is those
-    `--raw` entries, sorted by path."""
+    """`(tree, merged, dropped, against)`: the tree the bundle diffs from. The
+    start commit's tree, unless a merge of main applies; then that tree with
+    each path identical to the merged commit in the working state set to its
+    `working_tree` entry (absent when the working state has none), and each
+    path main changed since the ticket forked from it that the working state
+    changes again set to the merged commit's entry -- so main's lines read as
+    context and only the ticket's as `+`/`-`. Written from a second temporary
+    index. `dropped` and `against` are those `--raw` entries, sorted by path."""
     merged = merged_main.resolve(root, base_sha)
     base_tree = _run(root, ["rev-parse", base_sha + "^{tree}"]).strip()
     if not merged["applies"]:
-        return base_tree, merged, []
+        return base_tree, merged, [], []
     only = ["--", "."] + _EXCLUDE_SPEC
     raw = ["diff", "--raw", "-z", "--no-renames", "--no-abbrev"]
     since_base = _parse_raw(_run_raw(root, raw + [base_sha, working_tree] + only))
@@ -261,17 +266,26 @@ def _ticket_base_tree(root, base_sha, working_tree, tmp_dir):
     kept = set(merged_main.keep([e["path"] for e in since_base], since_merged))
     dropped = sorted((e for e in since_base if e["path"] not in kept),
                      key=lambda e: e["path"])
-    if not dropped:
-        return base_tree, merged, []
+    # What main changed since the ticket forked from it: the merge-base of the
+    # start and the merged commit (the start itself when the ticket was cut
+    # from main), so a ticket commit before a later-recorded start never reads
+    # as main's. No fork, no rewrite: the start's entry shows more, never less.
+    fork = crew_common.git_out(root, "merge-base", base_sha, merged["commit"])
+    by_main = ({e["path"]: e for e in
+                _parse_raw(_run_raw(root, raw + [fork, merged["commit"]] + only))}
+               if fork else {})
+    against = sorted((by_main[p] for p in kept if p in by_main), key=lambda e: e["path"])
+    if not dropped and not against:
+        return base_tree, merged, [], []
     env = {"GIT_INDEX_FILE": os.path.join(tmp_dir, "index2")}
     _run(root, ["read-tree", base_sha], env=env)
-    # One `--index-info` record per dropped path: its working-state mode and
-    # blob, or mode 0 (remove) when the working state has no such path.
+    # One `--index-info` record per rewritten path: the new side's mode and
+    # blob, or mode 0 (remove) when that side has no such path.
     info = "".join(f"{e['new_mode']} {e['new_id']}\t{e['path']}\0" if e["new_mode"] != "000000"
-                   else f"0 {e['new_id']}\t{e['path']}\0" for e in dropped)
+                   else f"0 {e['new_id']}\t{e['path']}\0" for e in dropped + against)
     _run_raw(root, ["update-index", "-z", "--index-info"], env=env,
              data=info.encode("utf-8", errors="surrogateescape"))
-    return _run(root, ["write-tree"], env=env).strip(), merged, dropped
+    return _run(root, ["write-tree"], env=env).strip(), merged, dropped, against
 
 
 def split_parts(data, max_bytes):
@@ -365,8 +379,10 @@ def compute(root, base, max_part_bytes=DEFAULT_MAX_PART_BYTES):
         _run(root, ["add", "-A", "--", "."], env=env)
         working_tree = _run(root, ["write-tree"], env=env).strip()
         # T-0100: the start's tree, with every path identical to merged main
-        # already at its working-state content (module docstring).
-        tree, merged, dropped = _ticket_base_tree(root, base_sha, working_tree, tmp_dir)
+        # already at its working-state content and every path main also
+        # changed at the merged commit's (module docstring).
+        tree, merged, dropped, against = _ticket_base_tree(root, base_sha, working_tree,
+                                                           tmp_dir)
 
         # ONE diff: base -> the full working state (committed range, staged,
         # unstaged and untracked all folded into the tree `write-tree` just
@@ -411,7 +427,8 @@ def compute(root, base, max_part_bytes=DEFAULT_MAX_PART_BYTES):
         "binary_files": [e["path"] for e in entries if e["binary"]],
         "submodules": [e["path"] for e in entries if e["submodule"]],
         "excluded": list(EXCLUDED),
-        "merged_main": dict(merged, dropped=sorted(gone)),
+        "merged_main": dict(merged, dropped=sorted(gone),
+                            diffed_from_merged=[e["path"] for e in against]),
         "bundle_base_tree": tree,
         "patch_bytes": len(patch),
         "max_part_bytes": max_part_bytes,
@@ -509,7 +526,8 @@ def main(argv):
 def _merged_field(merged):
     """The summary line's `merged-main=` field."""
     if merged["applies"]:
-        return f" merged-main={merged['commit'][:12]} dropped={len(merged['dropped'])}"
+        return (f" merged-main={merged['commit'][:12]} dropped={len(merged['dropped'])}"
+                f" diffed-from-merged={len(merged.get('diffed_from_merged') or [])}")
     return " merged-main=could-not-tell" if merged["commit"] is None else " merged-main=none"
 
 
