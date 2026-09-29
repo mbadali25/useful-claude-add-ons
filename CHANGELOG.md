@@ -15,7 +15,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   (`crew_fixtures.unsigned_git_env`).
 - **Why (measured 2026-09-29, 4-CPU Linux container).** pylint over every tracked
   file: 148s serial, 34s at `-j 4`, identical findings. crew's default set:
-  923s serial, 281s at `-n 4` (6393 passed, 453 skipped both ways). The serial
+  923s serial, 281s at `-n 4` (6393 passed, 453 skipped both ways), 229s at
+  `-n 4` with fixture signing off (6400 passed: the seven new tests). The serial
   run held one core at ~33%: it is subprocess-bound, which is why workers pay.
   Fixture commits were running the developer's signing program: 83 ms a commit
   signed against 7 ms unsigned, and a gpg host with a pinentry can prompt.
