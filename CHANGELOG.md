@@ -4,6 +4,54 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.62: crew runs its own bookkeeping; a move off an in-flight ticket is the owner's prompt (T-0504)
+
+- **Why.** The owner, 2026-09-29: "The crew plugin and other repos keep asking
+  me to run a Python script or a command. I thought it was going to
+  auto-approve itself for me." The command pasted was
+  `crew_ticket.py activate --root . --ticket T-0003,` — the trailing comma is
+  crew's own text: `status`'s `_repoint` line ended
+  `crew_ticket.py activate --ticket T-0003, or runs /crew:autopilot T-000N`.
+- **What changed.** `crew_autopilot.activation_policy` decides who may move the
+  worktree's active-ticket pointer, reading no config key. The session (and
+  `/crew:autopilot`, which now does it itself) may when there is no pointer,
+  when it already names the ticket, or when it names a ticket closed by a fact
+  the session cannot write — `closed_for_repoint`: an ACCEPTED review ledger
+  with a `clean` or `owner-accepted` receipt AND `done` in INDEX.md or the spec
+  header (never `check_receipt`, which fails for every merged ticket). Every
+  other move is the owner's: they type `/crew:autopilot <id>`. `resume`,
+  `next` and `status` recommend finishing the in-flight ticket and name that
+  prompt; no line tells anyone to run `crew_ticket.py activate`, and no command
+  is followed by a comma. `crew_ticket.py activate` prints `(was <id>)`.
+- **Guard change (a blocking decision).** `scope_guard.py`'s shell check refuses
+  the session's `crew_ticket.py activate|deactivate` off an open ticket, or one
+  whose closure, ticket, worktree (`$VAR`, a `cd` before a relative `--root`)
+  or command text cannot be told, in every mode but `off`. The arguments are
+  read by crew_ticket's own argparse parser (`--ticket=T-2`, `--tick T-2`),
+  every `crew_ticket` call in a command is judged, and each `_joined` reading
+  (bash and PowerShell continuations). The refusal names `/crew:autopilot <id>`
+  and recommends finishing the in-flight ticket. The broken-pointer messages
+  of the guard and the Stop audit name the same prompt instead of the CLI.
+- **Hook extension, no new hook.** `approval_hook.py` (the existing
+  UserPromptSubmit hook) also re-points this worktree when the owner's prompt is
+  exactly `/crew:autopilot <id>` or `run <id>`, RAW or EXPANDED, one line, and
+  the ticket has a folder; it adds context naming the ticket it left. `status`,
+  `assign`, `goal`, `focus`, `--goal`, bare, mid-sentence, nested-tag and
+  multi-line prompts never re-point. Both wrappers' pre-filters pass
+  `crew:autopilot`; with no python it passes unblocked. `hooks.json` unchanged.
+- **Docs.** README (scripts and hooks rows, "Who moves the active ticket",
+  "Letting crew run its own scripts without a prompt" with `permissions.allow`
+  entries for Linux/macOS, Git Bash and PowerShell — written nowhere by crew),
+  CONFIG.md §20, `commands/autopilot.md` step 2 and section 4 (still 110
+  lines), `commands/approve.md`, PLUGINS.md, both guides.
+- **Unchanged.** The CLI stays a plain writer; `_closed` keeps its reading for
+  `status`; approval behaviour is byte-identical; `/crew:done` gains no
+  deactivate. The owner's box ran 1.0.59: self-approval (T-0010) needs
+  `claude plugin update crew` to 1.0.61 or later.
+- **Sabotage.** New rows in `sabotage_scope.py`, `sabotage_autopilot.py`
+  (`REPOINT_MUTATIONS`) and `sabotage_approval.py`, each naming one test.
+- Bumped `1.0.61 -> 1.0.62`.
+
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 
 - **What changed.** `review_patch.py`'s `EXCLUDED` is now `(".work/",

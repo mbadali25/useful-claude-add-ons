@@ -138,3 +138,12 @@ If the config file does not parse, or `scope.mode` has an unknown value, crew tr
 `deactivate` clears it, and `active` prints it. Without a setting, crew uses the open ticket in
 `.work/INDEX.md` if `.work/tickets/<id>/` exists. With no active ticket, the edit guard only
 protects approval and ledger state, and the completion audit does nothing.
+
+Who moves it depends on whether the move can widen scope. `/crew:autopilot` sets it itself when
+the worktree has no active ticket, when it already names the ticket, or when it names a ticket
+closed by an accepted review (a `clean` or `owner-accepted` receipt in the review ledger, plus
+`done` in `.work/INDEX.md` or the spec header). Moving off a ticket that is still in flight is
+yours: type `/crew:autopilot <id>`, and crew's prompt hook re-points this worktree and says which
+ticket it left. The edit guard refuses the session's own `activate` or `deactivate` for that move
+under every mode but `off`, and autopilot's stops recommend finishing the in-flight ticket rather
+than telling you to run a script.
