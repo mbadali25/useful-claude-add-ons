@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@3648f59a
+anchor: useful-claude-add-ons@24ca5046
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -581,7 +581,7 @@ saw the built-in defaults instead of the owner's settings.
   `role_write_guard.py`, `crew_autocycle.py`, `webtest_guard.py`, `crew_tracker.py`,
   `crew_incident.py` and `crew_ticket.py` (scope mode and CLI approval). The contract is executable:
   `test_no_module_reads_repo_config_outside_the_resolver`
-  (`plugin/crew/tests/test_worktree_config.py:248`) fails on any module that joins a repo config
+  (`plugin/crew/tests/test_worktree_config.py:259`) fails on any module that joins a repo config
   path itself. The shell and PowerShell readers (`verify-gate.sh`, `_common.sh`, `notify.sh`, the
   handoff scripts, `promote-gate.ps1`, `scope-guard.ps1`, `cloud-guard.ps1`, `auto-clear.ps1`) are
   **not** routed - named in `CHANGELOG.md`'s T-0088 entry as the follow-up.

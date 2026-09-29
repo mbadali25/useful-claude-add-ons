@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@3648f59a on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@24ca5046 on 2026-09-29. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
@@ -170,6 +170,10 @@
 %% changed; the merged origin/main commits touched no other Anchors path (git diff --name-only).
 %% ps1-ps3 moved +7 and are re-cited, mapped by a line diff (a43acd56 -> fe80f69d) and re-read with
 %% sed -n. No node or edge changed.
+%% Re-anchored fe80f69d / 3648f59a -> 24ca5046 (T-0088 landing: merge of main 2693d0fa, T-0075 as crew
+%% 1.0.59, then crew 1.0.60): against T-0088's reviewed head 88dc0cc7 only commands/status.md changed
+%% of the Anchors paths (git diff --name-only), its config row's version text in place, so :14 holds.
+%% The notes above from both lines hold on the merged tree. Nothing redrawn.
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
     start --> reg["hooks.json:3-10<br/>3 SessionStart pairs, sh + ps1, no matcher<br/>each claims per session+source"]
