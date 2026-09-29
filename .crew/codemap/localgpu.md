@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@cdd5f0ec
-verified: 2026-09-28
+anchor: useful-claude-add-ons@14ad3075
+verified: 2026-09-29
 
 # localgpu
 
@@ -1344,3 +1344,5 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 **Re-anchored `136f4b33` -> `753719dc` on 2026-09-28 (T-0100, crew 1.0.55).** `753719dc` is T-0100's last pre-refresh commit on `T-0100-build`, cut from main `6387ab49` (T-0092 landed as crew 1.0.54); `f6ff7c6f` is its crew 1.0.55 version commit; after it `90442603` touches only `.crew/verify.json` (rule 25's new paths moved onto existing lines) and `TODO.md` (the follow-up moved to the end), both line-neutral against `6387ab49`, and `753719dc` routes `completion_audit.audit` back through `changed_paths` (a sabotage entry had gone vacuous) with its sabotage anchor. No body citation of the form `path:line` points into a file changed between `136f4b33` and `753719dc` (compared by script). No claim moved. Nothing was executed for this note.
 
 **Re-anchored `3648f59a` -> `cdd5f0ec` on 2026-09-28 (T-0100 merged onto `e878cc31`, crew 1.0.60).** `cdd5f0ec` is T-0100's crew 1.0.60 version commit on `T-0100-build`, after `1c662b13` merged origin/main `e878cc31` (T-0075 landed as crew 1.0.59) with mechanical conflicts only (version files, the BUDGETS claim, the graph and troubleshooting-guide binaries taken from main; anchors from main with both sides' provenance notes kept, main's first; INDEX rows from main; rules regenerated). Every body citation of the form `path:line` into a file changed between `3648f59a` and `cdd5f0ec` was compared by script: none moved. No claim moved. Nothing was executed for this note.
+
+**Re-anchored `cdd5f0ec` -> `14ad3075` on 2026-09-29 (T-0100 review round 1 fixes, crew 1.0.60).** `14ad3075` is T-0100's crew 1.0.60 re-set on `T-0100-build`, after the round-1 fixes `d9d3f117` (a path main also changed is diffed from the merged commit; the audit's untracked-identical rule and its could-not-tell pass line), `7c0d1052` (docs and these notes), `cc731a74` (the troubleshooting guide rebuilt) and the version round trip `7fc84c24`. Every body citation of the form `path:line`, and each bare `:N` carried from the last path named in its paragraph, into a file changed between `cdd5f0ec` and `14ad3075` was mapped by script (difflib equal blocks) and each one that did not map to itself was read with `sed -n`. None moved. No claim moved. Nothing else was executed for this note.

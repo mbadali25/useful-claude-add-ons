@@ -3,9 +3,9 @@ paths:
   - "scripts/**"
   - "plugin/PLUGINS.md"
 ---
-<!-- crew:generated source=.crew/codemap/marketplace-registration.md sha256=4b5c392f7ac4c628 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/marketplace-registration.md sha256=dda8b9d81757675b -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # marketplace-registration
-Code map anchor `cdd5f0ec`; if it is behind HEAD, re-check with `git diff --name-only cdd5f0ec..HEAD -- <cited paths>`.
+Code map anchor `14ad3075`; if it is behind HEAD, re-check with `git diff --name-only 14ad3075..HEAD -- <cited paths>`.
 Covers: The marketplace itself: what registers a skill vs. a plugin, the two install scripts, and the two separate version-check paths (check-marketplace.py vs. _verify/smoke.sh).
 ## Entry points
 - `.claude-plugin/marketplace.json:217` — crew's `description`, now correct against disk on every measured count.

@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@cdd5f0ec
-verified: 2026-09-28
+anchor: useful-claude-add-ons@14ad3075
+verified: 2026-09-29
 
 ## Re-derive provenance
 
@@ -1030,7 +1030,7 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   The scope guard (`_refresh_artifact`,
   `plugin/crew/hooks/scripts/scope_guard.py:186-197`) and the completion audit
   (`_outside_refresh_artifacts`,
-  `plugin/crew/hooks/scripts/completion_audit.py:198-208`) let a ticket write
+  `plugin/crew/hooks/scripts/completion_audit.py:235-245`) let a ticket write
   those paths without a Touch entry **only while its approval is current**;
   with no current approval nothing is exempt.
 - Tests: `plugin/crew/tests/test_refresh_check.py`,
@@ -1153,8 +1153,8 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   `/crew:review` and `/crew:done` depend on — were located but not opened,
   except for the exclusion below.
 - DERIVED (T-0092, crew 1.0.54): `EXCLUDED` and `_EXCLUDE_SPEC`
-  (`plugin/crew/hooks/scripts/review_patch.py:121`,
-  `plugin/crew/hooks/scripts/review_patch.py:122`) name `.work/` and the
+  (`plugin/crew/hooks/scripts/review_patch.py:124`,
+  `plugin/crew/hooks/scripts/review_patch.py:125`) name `.work/` and the
   generated `graphify-out/`, root-anchored, on every diff and listing but
   never on `git add`; the manifest's `excluded` is `list(EXCLUDED)`.
   `_bundle_block` prints that list as `excluded (never in the bundle): ...`,
@@ -1201,7 +1201,7 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   The prompt quotes `review_verdict.READ_FORM`
   (`plugin/crew/hooks/scripts/review_verdict.py:70`) in `_bundle_block`
   (`plugin/crew/hooks/scripts/review_prompt.py:86`) and on the webtest
-  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:261`), and
+  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:264`), and
   `review_run.finish` hands `parse` the manifest `path`s
   (`plugin/crew/hooks/scripts/review_run.py:315`) and the overflow file's
   scratch path (`plugin/crew/hooks/scripts/review_run.py:317`). `parse` and
@@ -2528,3 +2528,5 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 **Re-anchored `136f4b33` -> `753719dc` on 2026-09-28 (T-0100, crew 1.0.55).** `753719dc` is T-0100's last pre-refresh commit on `T-0100-build`, cut from main `6387ab49` (T-0092 landed as crew 1.0.54); `f6ff7c6f` is its crew 1.0.55 version commit; after it `90442603` touches only `.crew/verify.json` (rule 25's new paths moved onto existing lines) and `TODO.md` (the follow-up moved to the end), both line-neutral against `6387ab49`, and `753719dc` routes `completion_audit.audit` back through `changed_paths` (a sabotage entry had gone vacuous) with its sabotage anchor. Every body citation of the form `path:line` into a file changed between `136f4b33` and `753719dc` was compared by script (the anchor's lines against `753719dc`'s): the ones that moved are re-pointed here - `plugin/crew/commands/done.md` gained three lines inside check 3 (check 4 `:46-57` -> `:49-60`, `:52-55` -> `:55-58`, the tracker call `:63` -> `:66`), `plugin/crew/hooks/scripts/completion_audit.py`'s `_outside_refresh_artifacts` `:177-187` -> `:198-208`, `plugin/crew/hooks/scripts/review_patch.py`'s `EXCLUDED` / `_EXCLUDE_SPEC` `:104-105` -> `:121-122`, `plugin/crew/hooks/scripts/review_prompt.py` `:85` -> `:86`, `:89` -> `:90`, `:243` -> `:261`; `.crew/verify.json:264-280` is still rule 25, changed in place. A new DERIVED bullet names `merged_main.py`, the synthetic base tree, the audit filter, the prompt line and the receipt note. The version sentence moves to 1.0.55. The other differences are version-file lines, `plugin/crew/BUDGETS.md:11` and `plugin/crew/README.md:842` changed in place, and `CHANGELOG.md` lines (+65 at its top) cited only inside dated provenance notes, left as history at their own commit. Suites were run for the code this note describes (T-0100's implement phase), not for this note.
 
 **Re-anchored `3648f59a` -> `cdd5f0ec` on 2026-09-28 (T-0100 merged onto `e878cc31`, crew 1.0.60).** `cdd5f0ec` is T-0100's crew 1.0.60 version commit on `T-0100-build`, after `1c662b13` merged origin/main `e878cc31` (T-0075 landed as crew 1.0.59) with mechanical conflicts only (version files, the BUDGETS claim, the graph and troubleshooting-guide binaries taken from main; anchors from main with both sides' provenance notes kept, main's first; INDEX rows from main; rules regenerated). Every body citation of the form `path:line` into a file changed between `3648f59a` and `cdd5f0ec` was compared by script. T-0075's landing commits moved `plugin/crew/hooks/scripts/crew_config.py` (+1 at `:2889`, so `:2891` and below move +1: `plan_repo_write` `:3045` -> `:3046`, `write_repo_config` `:3071` -> `:3072`, `_terraform_verdict` `:2975` -> `:2976`), `plugin/crew/hooks/scripts/crew_config_files.py` (+14 at `:82`, the `Displaced` refusal: `Lock` `:90` -> `:104`, `update_json` `:350` -> `:364`, and every cited line from `:82` on) and `plugin/crew/hooks/scripts/crew_config_menu.py` (+1 at `:183`, +1 at `:194`, +1 at `:905`: `main` `:1048` -> `:1051`); 47 body citations into those three files were re-pointed by a line map, each checked by comparing the anchor's line with the new one, and the ones inside dated provenance notes left as history. T-0100's own citations (review pipeline, merged main, completion audit, `plugin/crew/commands/done.md`) hold from `753719dc` - main touched none of those files. The version sentence moves to 1.0.60. Nothing was executed for this note.
+
+**Re-anchored `cdd5f0ec` -> `14ad3075` on 2026-09-29 (T-0100 review round 1 fixes, crew 1.0.60).** `14ad3075` is T-0100's crew 1.0.60 re-set on `T-0100-build`, after the round-1 fixes `d9d3f117` (a path main also changed is diffed from the merged commit; the audit's untracked-identical rule and its could-not-tell pass line), `7c0d1052` (docs and these notes), `cc731a74` (the troubleshooting guide rebuilt) and the version round trip `7fc84c24`. Every body citation of the form `path:line`, and each bare `:N` carried from the last path named in its paragraph, into a file changed between `cdd5f0ec` and `14ad3075` was mapped by script (difflib equal blocks) and each one that did not map to itself was read with `sed -n`. Moved and re-read: `completion_audit.py:198-208` -> `:235-245` (`_outside_refresh_artifacts`), `review_patch.py:121`/`:122` -> `:124`/`:125` (`EXCLUDED`, `_EXCLUDE_SPEC`), `review_prompt.py:261` -> `:264`; the T-0100 DERIVED bullet was rewritten for the round-1 behaviour (diffed-from-merged paths, `_as_merged`, the could-not-tell pass line) with every citation read at `14ad3075`. Claims moved: that bullet's. Nothing else was executed for this note.
