@@ -2087,22 +2087,39 @@ give `github_2ecom.owner.repo`; `https://gitlab.com/group/sub/repo.git` gives
 names a ticket alike, and two different repositories never do — not on
 different hosts, not in different groups with the same last two names, and
 not where a dot inside a name would otherwise read as a separator
-(`team/a.b/repo` and `team/a/b.repo` are two keys). A local path or `file://`
-URL gives `file_` and its segments; a relative path is read against the
-worktree git runs in, as git reads it, and every local path is made real
-(`..` and symlinks resolved), so `remote.git` from `/srv/work` and
-`/srv/work/remote.git` are one key. Every Azure DevOps form of one repository gives
+(`team/a.b/repo` and `team/a/b.repo` are two keys). A network URL keeps that
+lowercasing and `.git` stripping because a hosting service serves those
+spellings as one repository; a local one does not. A local path, or the path
+a `file://` URL names (percent-decoded as git decodes it, with an empty or
+`localhost` host), gives `file_` and its segments **with their case and any
+`.git` kept**, because on a case-sensitive filesystem `Repo.git` and
+`repo.git` are two directories, and `repo` beside `repo.git` is two
+repositories anywhere. The path keyed is the repository git itself opens for
+it: a relative path is read against the worktree git runs in, then git's own
+suffix order is applied (`<path>/.git`, `<path>`, `<path>.git/.git`,
+`<path>.git` — `enter_repo` in git's `setup.c`, read at v2.53.0), a gitfile is
+followed and a linked worktree's git directory is taken to its common one, and
+the result is made real (`..` and symlinks resolved). So `remote.git` from
+`/srv/work`, `/srv/work/remote.git/`, `/srv/work/remote` when only
+`remote.git` exists, and `file:///srv/work/remote.git` are one key, and a
+path that is not a repository here is keyed as written. Every Azure DevOps form of one repository gives
 `dev_2eazure_2ecom.<org>.<project>.<repo>`: `https://dev.azure.com/<org>/<project>/_git/<repo>`,
 `https://dev.azure.com/<org>/_git/<repo>` (a project's default repository,
 whose name is the project's, so project = repo),
 `<org>.visualstudio.com/[DefaultCollection/][<project>/]_git/<repo>` and
 `ssh.dev.azure.com:v3/<org>/<project>/<repo>` — each name percent-decoded and
 lowercased, then written like any other part, so `My%20Project` and
-`My-Project` stay two projects. An origin the key cannot be told
+`My-Project` stay two projects. The markers `_git`, `v3` and
+`DefaultCollection` are compared after that decoding too, so `%5Fgit` is
+`_git`. An origin the key cannot be told
 from reads `unknown` (exit 3) and nothing is written: an Azure DevOps URL that
 fits none of those forms or whose names are not UTF-8, a path segment that is
 not letters, digits, `.`, `_`, `-`, a key over 128 characters, a URL with no
-path, an empty `origin` URL, or a `get-url` that fails. That includes an
+path, a network URL with no host once any user and port are dropped
+(`https:///owner/repo`, `https://user@/owner/repo`, `https://:443/owner/repo`,
+`ssh:///owner/repo` — never read as a local path), a `file://` URL naming
+another host or not percent-encoded UTF-8, an empty `origin` URL, or a
+`get-url` that fails. That includes an
 on-premises Azure DevOps Server URL
 (`https://server/tfs/<collection>/<project>/_git/<repo>`), whose `_git`
 segment is outside the rule. It never falls back to a directory name, which
@@ -2127,7 +2144,11 @@ two holders.
   and receivepack, and never its fetch or push refspecs or `mirror`: git
   writes no remote-tracking ref, no local ref moves, and
   no URL — or a token inside one — appears in the process's arguments. A
-  remote with several push URLs reads `unknown`. It runs with `--no-verify`,
+  remote with several push URLs reads `unknown`, and so does one whose push
+  configuration cannot be read: each of those keys is read with
+  `git config --get-all`, where exit 1 means the key is absent and any other
+  failure is `unknown` with nothing pushed, never a missing pushurl that would
+  send the claim to the fetch URL. It runs with `--no-verify`,
   so the repo's pre-push hook (husky, lefthook) never runs on a claim or a
   heartbeat. A rejected push
   re-fetches, re-applies the change — a peer's claim that landed in between is

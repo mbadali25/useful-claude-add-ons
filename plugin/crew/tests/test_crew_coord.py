@@ -11,6 +11,7 @@ into tmp_path for every case, so the heartbeat's log and lock never reach the
 real temp directory.
 """
 import argparse
+import ast
 import builtins
 import datetime
 import json
@@ -85,11 +86,18 @@ def _configure(root):
 
 # git runs `<sshCommand> [options] <host> "<program> '<path>'"`. This serves
 # <bare> (its first argument) for any host and path: `git-upload-pack` and
-# `git-receive-pack` run as `git upload-pack` / `git receive-pack`, and any
-# other program (a remote's receivepack) is run as given.
+# `git-receive-pack` run as `git upload-pack` / `git receive-pack`, a program
+# whose name ends in `.py` (a remote's receivepack) runs through this Python,
+# and any other program is run as given. Nothing it runs may be a `#!`
+# script: native Windows Python cannot start one directly.
 FAKE_SSH = """import shlex, subprocess, sys
 program = shlex.split(sys.argv[-1])[0]
-argv = ["git", program[4:]] if program in ("git-upload-pack", "git-receive-pack") else [program]
+if program in ("git-upload-pack", "git-receive-pack"):
+    argv = ["git", program[4:]]
+elif program.endswith(".py"):
+    argv = [sys.executable, program]
+else:
+    argv = [program]
 sys.exit(subprocess.call(argv + [sys.argv[1]]))
 """
 
@@ -501,10 +509,12 @@ def test_push_refuses_when_the_push_remote_name_is_taken(capsys, monkeypatch, wt
 
 def test_push_carries_the_remotes_receivepack_but_never_mirror(capsys, monkeypatch, tmp_path, wt, remote):
     marker = tmp_path / "receivepack-ran"
-    wrapper = tmp_path / "receive-pack"
-    wrapper.write_text(f"#!/bin/sh\ntouch '{marker}'\nexec git-receive-pack \"$@\"\n", encoding="utf-8")
-    wrapper.chmod(0o755)
-    git(wt, "config", "remote.origin.receivepack", str(wrapper))
+    wrapper = tmp_path / "receive-pack.py"
+    wrapper.write_text("import pathlib, subprocess, sys\n"
+                       f"pathlib.Path({os.fspath(marker)!r}).touch()\n"
+                       "sys.exit(subprocess.call(['git', 'receive-pack'] + sys.argv[1:]))\n",
+                       encoding="utf-8", newline="\n")
+    git(wt, "config", "remote.origin.receivepack", os.fspath(wrapper).replace("\\", "/"))
     git(wt, "config", "remote.origin.mirror", "true")
     _session(monkeypatch, "sess-a")
 
@@ -1703,8 +1713,8 @@ def test_repo_key_is_origins_host_and_path_lowercased(url):
 
 
 @pytest.mark.parametrize("url, expected", [
-    ("/srv/git/Owner/Repo-A.git", "file_.srv.git.owner.repo-a"),
-    ("file:///srv/git/Owner/Repo-A.git", "file_.srv.git.owner.repo-a"),
+    ("/srv/git/Owner/Repo-A.git", "file_.srv.git._4fwner._52epo-_41_2egit"),
+    ("file:///srv/git/Owner/Repo-A.git", "file_.srv.git._4fwner._52epo-_41_2egit"),
     ("https://gitlab.com/groupA/sub/repo.git", "gitlab_2ecom.groupa.sub.repo"),
     ("git@gitlab.com:groupA/sub/repo.git", "gitlab_2ecom.groupa.sub.repo"),
     ("https://gitlab.com/team/a.b/my_repo.git", "gitlab_2ecom.team.a_2eb.my_5frepo"),
@@ -2233,3 +2243,344 @@ def test_the_directory_fallback_is_could_not_tell_when_git_cannot_name_the_main_
 
     assert code == crew_coord.EXIT_UNKNOWN and "git-common-dir" in out.out, out
     assert _remote_files(remote) is None
+
+
+# --- successor plan: review round 6 (T-0030-coord--dtqJtS) ---------------------
+
+_resolved = crew_coord._resolved  # pylint: disable=protected-access
+PUSH_KEYS = crew_coord._PUSH_REMOTE_KEYS  # pylint: disable=protected-access
+
+def _bare(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(path)], check=True,
+                   capture_output=True, stdin=subprocess.DEVNULL)
+    return path
+
+
+def _coord(root, remote):
+    """A coordination remote of its own, `coord`, so origin only names the
+    repository the key is derived from."""
+    git(root, "remote", "add", "coord", str(remote))
+
+
+def _run_coord(capsys, root, cmd="claim", ticket="T-1"):
+    code = crew_coord.main([cmd, "--root", str(root), "--remote", "coord", "--channel", CHANNEL,
+                            "--ticket", ticket, "--no-heartbeat"])
+    out = capsys.readouterr()
+    return code, out.out + out.err
+
+
+def _claims(remote):
+    return sorted(name for name in (_remote_files(remote) or {}) if name.startswith("claims/"))
+
+
+def _symlink_or_skip(link, target):
+    if os.name == "nt":
+        pytest.skip("symlinks need privileges on Windows -- NOT tested there")
+    os.symlink(target, link)
+
+
+# Step 2 (FIX crew_coord.py:889): a file:// origin is the local path it names.
+
+@pytest.mark.parametrize("spell", ["file", "localhost", "encoded"])
+def test_a_file_url_origin_resolves_like_the_local_path_it_names(tmp_path, spell):
+    real = _bare(tmp_path / "real" / "coord.git")
+    _symlink_or_skip(tmp_path / "alias", tmp_path / "real")
+    path = os.fspath(tmp_path / "alias" / "coord.git").replace("\\", "/")
+    url = {"file": "file://" + path, "localhost": "file://localhost" + path,
+           "encoded": "file://" + path.replace("coord.git", "coord%2Egit")}[spell]
+
+    got = _resolved(url, str(tmp_path))
+
+    assert got == _resolved(str(real), str(tmp_path)) == os.path.realpath(real)
+
+
+def test_a_file_url_and_a_plain_path_to_one_remote_are_one_claim(capsys, monkeypatch, tmp_path, wt, wt_b, remote):
+    _symlink_or_skip(tmp_path / "alias", tmp_path)
+    _set_origin(wt, "file://" + os.fspath(tmp_path / "alias" / "remote.git"))
+    _set_origin(wt_b, str(remote))
+    expected = crew_coord.owner_name(os.path.realpath(remote))[0]
+    _session(monkeypatch, "sess-1")
+    first = _run(capsys, wt, "claim", ticket="T-1")
+    _session(monkeypatch, "sess-2")
+
+    code, out = _run(capsys, wt_b, "claim", ticket="T-1")
+
+    if expected is None:
+        assert (first[0], code) == (crew_coord.EXIT_UNKNOWN, crew_coord.EXIT_UNKNOWN), out
+        return
+    assert first[0] == 0 and code == crew_coord.EXIT_REFUSED and "sess-1" in out, (first[1], out)
+    assert _claims(remote) == [f"claims/{expected}__T-1.json"]
+
+
+def test_a_file_url_and_a_plain_path_to_two_remotes_are_two_claims(capsys, monkeypatch, tmp_path, wt, wt_b,
+                                                                   remote):
+    one, two = _bare(tmp_path / "o1.git"), _bare(tmp_path / "o2.git")
+    for root, url in ((wt, "file://" + os.fspath(one)), (wt_b, str(two))):
+        _set_origin(root, url)
+        _coord(root, remote)
+    _session(monkeypatch, "sess-1")
+    first = _run_coord(capsys, wt)
+    _session(monkeypatch, "sess-2")
+
+    code, out = _run_coord(capsys, wt_b)
+
+    assert (first[0], code) == (0, 0), (first[1], out)
+    assert len(_claims(remote)) == 2
+
+
+@pytest.mark.parametrize("url", ["file://example.test/srv/git/repo.git", "file:///srv/git/%FF.git"],
+                         ids=["remote-host", "not-utf-8"])
+def test_a_file_url_that_names_no_local_path_is_could_not_tell(url):
+    key, why = crew_coord.owner_name(url)
+
+    assert key is None and "file://" in why
+
+
+# Step 3 (FIX crew_coord.py:816): Azure DevOps markers compared after decoding.
+
+@pytest.mark.parametrize("plain, encoded", [
+    ("https://org.visualstudio.com/DefaultCollection/_git/Repo",
+     "https://org.visualstudio.com/%44efaultCollection/_git/Repo"),
+    ("https://org.visualstudio.com/_git/Repo", "https://org.visualstudio.com/%5Fgit/Repo"),
+    ("https://dev.azure.com/Org/Proj/_git/Repo", "https://dev.azure.com/Org/Proj/%5fgit/Repo"),
+    ("git@ssh.dev.azure.com:v3/Org/Proj/Repo", "git@ssh.dev.azure.com:%76%33/Org/Proj/Repo"),
+], ids=["default-collection", "visualstudio-_git", "dev-azure-_git", "ssh-v3"])
+def test_an_encoded_azure_devops_marker_is_the_marker(plain, encoded):
+    assert crew_coord.owner_name(encoded) == crew_coord.owner_name(plain)
+    assert crew_coord.owner_name(plain)[0]
+
+
+@pytest.mark.parametrize("plain, encoded", [
+    ("https://org.visualstudio.com/DefaultCollection/_git/Repo",
+     "https://org.visualstudio.com/%44efaultCollection/_git/Repo"),
+    ("https://org.visualstudio.com/_git/Repo", "https://org.visualstudio.com/%5Fgit/Repo"),
+], ids=["default-collection", "_git"])
+def test_an_encoded_azure_devops_marker_is_one_claim(capsys, monkeypatch, wt, wt_b, remote, plain, encoded):
+    for root, url in ((wt, plain), (wt_b, encoded)):
+        _route(root, remote, url)
+        _set_origin(root, url)
+    _origin_reads(monkeypatch, {wt: plain, wt_b: encoded})
+    _session(monkeypatch, "sess-1")
+    assert _run(capsys, wt, "claim", ticket="T-1")[0] == 0
+    _session(monkeypatch, "sess-2")
+
+    code, out = _run(capsys, wt_b, "claim", ticket="T-1")
+
+    assert code == crew_coord.EXIT_REFUSED and "sess-1" in out, out
+    assert _claims(remote) == [f"claims/{AZURE_DEFAULT}__T-1.json"]
+
+
+@pytest.mark.parametrize("url", ["https://org.visualstudio.com/%FF/_git/Repo",
+                                 "https://dev.azure.com/Org/Proj/%FF/Repo"], ids=["name", "marker-position"])
+def test_an_azure_devops_segment_that_does_not_decode_is_could_not_tell(url):
+    key, why = crew_coord.owner_name(url)
+
+    assert key is None and "not percent-encoded UTF-8" in why
+
+
+# Step 4 (FIX crew_coord.py:862): local-origin keys keep case and `.git`.
+
+def _case_sensitive(tmp_path):
+    probe = tmp_path / "CaseProbe"
+    probe.mkdir()
+    return not (tmp_path / "caseprobe").exists()
+
+
+@pytest.mark.parametrize("first, second", [
+    ("/srv/git/Repo.git", "/srv/git/repo.git"),
+    ("/srv/git/repo", "/srv/git/repo.git"),
+], ids=["case", "dot-git"])
+def test_a_local_key_keeps_case_and_dot_git(first, second):
+    one, two = crew_coord.owner_name(first), crew_coord.owner_name(second)
+
+    assert one[0] and two[0] and one != two
+
+
+@pytest.mark.parametrize("names", [("Repo.git", "repo.git"), ("repo", "repo.git")], ids=["case", "dot-git"])
+def test_two_local_repositories_never_share_a_claim(capsys, monkeypatch, tmp_path, wt, wt_b, remote, names):
+    if names[0].lower() == names[1].lower() and not _case_sensitive(tmp_path):
+        pytest.skip("this filesystem is case-insensitive: Repo.git and repo.git are one directory here")
+    one, two = _bare(tmp_path / "g" / names[0]), _bare(tmp_path / "g" / names[1])
+    for root, origin in ((wt, one), (wt_b, two)):
+        _set_origin(root, str(origin))
+        _coord(root, remote)
+    _session(monkeypatch, "sess-1")
+    first = _run_coord(capsys, wt)
+    _session(monkeypatch, "sess-2")
+
+    code, out = _run_coord(capsys, wt_b)
+
+    assert (first[0], code) == (0, 0), (first[1], out)
+    assert len(_claims(remote)) == 2
+
+
+@pytest.mark.parametrize("how", ["trailing-slash", "dot-dot", "symlink", "no-dot-git", "worktree-dot-git"])
+def test_every_spelling_of_one_local_repository_resolves_to_one_path(tmp_path, remote, how):
+    seed = tmp_path / "seed"
+    spelled, same = {
+        "trailing-slash": (f"{remote}/", remote),
+        "dot-dot": (os.fspath(tmp_path / "seed" / ".." / "remote.git"), remote),
+        "symlink": (None, remote),
+        "no-dot-git": (os.fspath(tmp_path / "remote"), remote),
+        "worktree-dot-git": (os.fspath(seed / ".git"), seed),
+    }[how]
+    if how == "symlink":
+        _symlink_or_skip(tmp_path / "link", tmp_path)
+        spelled = os.fspath(tmp_path / "link" / "remote.git")
+
+    got = _resolved(spelled, str(tmp_path))
+
+    assert got == _resolved(str(same), str(tmp_path))
+
+
+def test_a_linked_worktree_origin_is_its_main_repository(tmp_path, remote):
+    seed = tmp_path / "seed"
+    linked = tmp_path / "seed-linked"
+    git(seed, "worktree", "add", "-q", "-b", "side", str(linked))
+
+    got = _resolved(str(linked), str(tmp_path))
+
+    assert got == _resolved(str(seed), str(tmp_path)) == os.path.realpath(seed / ".git")
+
+
+def test_git_itself_opens_the_suffix_the_key_resolves(tmp_path, remote):
+    """The suffix order is enter_repo's (setup.c, git v2.53.0); this checks
+    it against the git on PATH: `git ls-remote <tmp>/remote` opens
+    remote.git, and so does the key."""
+    listed = subprocess.run(["git", "ls-remote", str(tmp_path / "remote")], capture_output=True, text=True,
+                            check=False, stdin=subprocess.DEVNULL)
+
+    got = _resolved(str(tmp_path / "remote"), str(tmp_path))
+
+    assert listed.returncode == 0, listed.stderr
+    assert got == os.path.realpath(remote)
+
+
+# Step 5 (FIX crew_coord.py:783): a network URL with no host is could-not-tell.
+
+NO_HOST = ["https:///owner/repo", "ssh:///owner/repo", "https://user@/owner/repo", "https://:443/owner/repo"]
+
+
+@pytest.mark.parametrize("url", NO_HOST, ids=["https", "ssh", "user-only", "port-only"])
+def test_a_network_url_with_no_host_is_could_not_tell(url):
+    key, why = crew_coord.owner_name(url)
+
+    assert key is None and "names no host" in why and "<name>/<name>" in why
+
+
+@pytest.mark.parametrize("url", NO_HOST, ids=["https", "ssh", "user-only", "port-only"])
+def test_a_claim_under_a_network_origin_with_no_host_is_could_not_tell(capsys, monkeypatch, wt, remote, url):
+    _set_origin(wt, url)
+    _coord(wt, remote)
+    _session(monkeypatch, "sess-1")
+
+    code, out = _run_coord(capsys, wt)
+
+    assert code == crew_coord.EXIT_UNKNOWN and "names no host" in out, out
+    assert _remote_files(remote) is None
+
+
+@pytest.mark.parametrize("url, expected", [("https://github.com/owner/repo", "github_2ecom.owner.repo"),
+                                           ("file:///srv/git/repo.git", "file_.srv.git.repo_2egit")],
+                         ids=["github", "file-url"])
+def test_a_url_with_a_host_or_a_file_url_still_has_its_key(url, expected):
+    assert crew_coord.owner_name(url) == (expected, None)
+
+
+# Step 6 (FIX crew_coord.py:683): a failed push-config probe is unknown, never absent.
+
+def _probe_fails(monkeypatch, key, code, pushurl="/intended.git"):
+    real = crew_coord.run_git
+
+    def fake(root, args, **kwargs):
+        if list(args) == ["config", "--get-all", f"remote.origin.{key}"]:
+            return crew_coord.GitRun(code, b"", "fatal: bad config line 1")
+        if list(args) == ["remote", "get-url", "--push", "--all", "origin"] and pushurl:
+            return crew_coord.GitRun(0, f"{pushurl}\n".encode(), "")
+        return real(root, args, **kwargs)
+    monkeypatch.setattr(crew_coord, "run_git", fake)
+
+
+@pytest.mark.parametrize("code", [128, 3, 127], ids=["128", "3", "git-could-not-run"])
+def test_a_failed_pushurl_probe_is_unknown_and_nothing_is_pushed(capsys, monkeypatch, wt, remote, calls, code):
+    _probe_fails(monkeypatch, "pushurl", code)
+    _session(monkeypatch, "sess-a")
+
+    got, out = _run(capsys, wt, "claim")
+
+    assert got == crew_coord.EXIT_UNKNOWN, out
+    assert not _pushes(calls)
+    assert _remote_files(remote) is None
+
+
+@pytest.mark.parametrize("key", [k for k in PUSH_KEYS if k != "pushurl"])
+def test_any_failed_push_config_probe_is_unknown(capsys, monkeypatch, wt, remote, calls, key):
+    _probe_fails(monkeypatch, key, 128, pushurl=None)
+    _session(monkeypatch, "sess-a")
+
+    got, out = _run(capsys, wt, "claim")
+
+    assert got == crew_coord.EXIT_UNKNOWN, out
+    assert not _pushes(calls)
+
+
+def test_absent_optional_push_keys_still_push_to_the_url(capsys, monkeypatch, wt, remote, calls):
+    probes = []
+    real = crew_coord.run_git
+
+    def spy(root, args, **kwargs):
+        done = real(root, args, **kwargs)
+        if list(args[:2]) == ["config", "--get-all"] and args[2].startswith("remote.origin."):
+            probes.append((args[2], done.code))
+        return done
+    monkeypatch.setattr(crew_coord, "run_git", spy)
+    _session(monkeypatch, "sess-a")
+
+    got, out = _run(capsys, wt, "claim")
+
+    assert got == 0, out
+    assert _claim_file(remote)["holder"]["session"] == "sess-a"
+    assert {name: code for name, code in probes if name != "remote.origin.url"} == {
+        f"remote.origin.{k}": 1 for k in PUSH_KEYS if k != "url"}
+
+
+# Step 7 (FIX test_crew_coord.py:505): the fake ssh never runs a shebang script.
+
+def _literal_head(node):
+    if isinstance(node, ast.JoinedStr) and node.values:
+        node = node.values[0]
+    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else ""
+
+
+def _fake_ssh_programs(function):
+    """(name, lineno, text) for every file `function` writes and then hands to
+    the fake ssh as a program: the variable named in a `git(..., "config",
+    "<...>.receivepack" | "<...>.uploadpack", <value>)` call, matched to that
+    variable's `.write_text(<literal>)`."""
+    handed, written = set(), []
+    for node in ast.walk(function):
+        if not isinstance(node, ast.Call):
+            continue
+        heads = [_literal_head(arg) for arg in node.args]
+        if (isinstance(node.func, ast.Name) and node.func.id == "git"
+                and any(h.endswith((".receivepack", ".uploadpack")) for h in heads)):
+            handed |= {n.id for n in ast.walk(node.args[-1]) if isinstance(n, ast.Name)}
+        if (isinstance(node.func, ast.Attribute) and node.func.attr == "write_text"
+                and isinstance(node.func.value, ast.Name) and node.args):
+            written.append((node.func.value.id, node.lineno, _literal_head(node.args[0])))
+    return [w for w in written if w[0] in handed]
+
+
+def test_no_fixture_hands_the_fake_ssh_a_shebang_script():
+    """native Windows Python cannot start a `#!` script, so every program
+    this module writes for the fake ssh to run is Python (run through
+    sys.executable). Git hooks are not in scope: git starts those itself,
+    through its own shell on Windows."""
+    with open(__file__, encoding="utf-8") as handle:
+        tree = ast.parse(handle.read())
+    functions = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
+    programs = [p for f in functions for p in _fake_ssh_programs(f)]
+
+    assert programs, "the scan found no program handed to the fake ssh; it is not reading what it must"
+    assert not [p for p in programs if p[2].startswith("#" + "!")], programs

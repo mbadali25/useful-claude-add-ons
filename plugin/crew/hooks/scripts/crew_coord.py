@@ -668,8 +668,11 @@ class Channel:
         the credential helpers exactly as for the real remote. The URL travels
         in the environment, never in argv, which other local users can read
         (/proc/<pid>/cmdline) -- a CI remote often carries a token in its URL.
-        None when the remote has no push URL or several, or when PUSH_REMOTE
-        is a configured remote's name. Needs git 2.31 (GIT_CONFIG_COUNT); an
+        None when the remote has no push URL or several, when PUSH_REMOTE
+        is a configured remote's name, or when any _PUSH_REMOTE_KEYS probe
+        fails: exit 0 is the key's values and exit 1 is the key absent, and
+        anything else (or git failing to start) could have been a pushurl or
+        receivepack the push would silently drop. Needs git 2.31 (GIT_CONFIG_COUNT); an
         older git finds no such remote and the push reads `unknown`."""
         listed = run_git(self.root, ["remote", "get-url", "--push", "--all", self.remote])
         urls = [u for u in listed.out.decode("utf-8", "replace").splitlines() if u.strip()]
@@ -681,6 +684,8 @@ class Channel:
         pairs = []
         for key in _PUSH_REMOTE_KEYS:
             got = run_git(self.root, ["config", "--get-all", f"remote.{self.remote}.{key}"])
+            if got.code not in (0, 1):
+                return None
             pairs += [(f"remote.{PUSH_REMOTE}.{key}", value)
                       for value in got.out.decode("utf-8", "replace").splitlines() if value]
         if not any(key.endswith((".url", ".pushurl")) for key, _ in pairs):
@@ -704,8 +709,9 @@ class Channel:
         last = ""
         push_env = self.push_env()
         if push_env is None:
-            return Result("unknown", f"unknown - {self.remote} does not have exactly one push URL (or "
-                                     f"{PUSH_REMOTE} is taken as a remote name); nothing was written")
+            return Result("unknown", f"unknown - {self.remote} does not have exactly one push URL, its push "
+                                     f"configuration could not be read, or {PUSH_REMOTE} is taken as a remote "
+                                     "name; nothing was written")
         for _ in range(1 + MAX_RETRIES):
             tip, state, why = self.fetch()
             if state == "failed":
@@ -761,34 +767,63 @@ _ABSOLUTE_RE = re.compile(r"^(?:[A-Za-z]:)?[/\\]")
 
 
 def _local_path(url):
-    """origin's URL as the filesystem path git reads it as -- not
-    scheme://, not scp-like `[user@]host:path` -- else None."""
+    """(path, why): origin's URL as the filesystem path git reads it as, or
+    (None, None) for a network URL (scheme:// other than file://, or scp-like
+    `[user@]host:path`). A file:// URL is the local path it names, read as
+    git's parse_connect_url reads it (connect.c, git v2.53.0): the whole URL
+    percent-decoded, then everything after the authority, or the authority
+    itself when it is a drive (`file://C:/x`); a Windows `/C:/x` loses its
+    leading '/'. (None, why) for a file:// URL whose authority is not empty
+    or `localhost`, or whose path is not percent-encoded UTF-8: which
+    directory that names cannot be told here, and a guess would give one
+    repository two keys."""
     text = (url or "").strip()
-    if _SCHEME_RE.match(text) or (_SCP_RE.match(text) and not _DRIVE_RE.match(text)):
-        return None
-    return text
+    found = _SCHEME_RE.match(text)
+    if found and found.group(1).lower() == "file":
+        _, authority, path = found.groups()
+        try:
+            authority, path = (urllib.parse.unquote_to_bytes(p).decode("utf-8") for p in (authority, path))
+        except UnicodeDecodeError:
+            return None, "origin's file:// URL is not percent-encoded UTF-8"
+        if re.fullmatch(r"[A-Za-z]:", authority):
+            path, authority = authority + path, ""
+        if authority.lower() not in ("", "localhost"):
+            return None, (f"origin's file:// URL names the host {safe(authority, 80)!r}, and which directory "
+                          "that is cannot be told here")
+        path = path[1:] if re.match(r"^/[A-Za-z]:[/\\]", path) else path
+        return (path, None) if path else (None, "origin's file:// URL names no path")
+    if found or (_SCP_RE.match(text) and not _DRIVE_RE.match(text)):
+        return None, None
+    return text, None
 
 
 def _split_url(url):
-    """(host, path segments) of a remote URL -- https/ssh/file://, scp-like
-    `[user@]host:path` (read the same as `ssh://[user@]host/path`), or a local
-    path. The host is lowercased with userinfo and port dropped, and '' for a
-    local path or file://; the last segment loses a trailing `.git`.
-    Credentials in the URL are never kept."""
+    """(host, path segments) of a network remote URL -- https/ssh, or
+    scp-like `[user@]host:path` (read the same as `ssh://[user@]host/path`).
+    The host is lowercased with userinfo and port dropped ('' when nothing is
+    left, which owner_name refuses); the last segment loses a trailing `.git`,
+    because a hosting service serves both spellings as one repository.
+    Credentials in the URL are never kept. A local path or file:// URL is
+    _local_segments' job, not this one's."""
     text = (url or "").strip()
     found = _SCHEME_RE.match(text)
-    scp = _SCP_RE.match(text)
     if found:
-        scheme, authority, path = found.groups()
-        host = "" if scheme.lower() == "file" else re.sub(r":[0-9]*$", "", authority.rpartition("@")[2])
-    elif scp and not _DRIVE_RE.match(text):
-        host, path = scp.groups()
+        _, authority, path = found.groups()
+        host = re.sub(r":[0-9]*$", "", authority.rpartition("@")[2])
     else:
-        host, path = "", re.sub(r"^([A-Za-z]):(?=[/\\])", r"\1", text)
+        host, path = _SCP_RE.match(text).groups()
     segments = [p for p in re.split(r"[/\\]+", path) if p]
     if segments:
         segments[-1] = re.sub(r"\.git$", "", segments[-1], flags=re.IGNORECASE)
     return host.lower(), segments
+
+
+def _local_segments(path):
+    """The path segments of a local path, exactly as written: case kept and
+    `.git` kept, because on a case-sensitive filesystem `Repo.git` and
+    `repo.git` are two directories, and `repo` beside `repo.git` is two
+    repositories anywhere. A drive's ':' is dropped (`C:\\x` gives `C`, `x`)."""
+    return [p for p in re.split(r"[/\\]+", re.sub(r"^([A-Za-z]):(?=[/\\])", r"\1", path)) if p]
 
 
 def _url_shape(host, segments):
@@ -802,8 +837,12 @@ def _azure_parts(host, segments):
     """(org, project, repo) of an Azure DevOps URL, or None when the URL is on
     an Azure DevOps host but fits none of its forms. A project's default
     repository leaves the project out (`<org>/_git/<repo>`, `_git/<repo>` on
-    <org>.visualstudio.com); it has the project's name, so project = repo."""
-    low = [s.lower() for s in segments]
+    <org>.visualstudio.com); it has the project's name, so project = repo.
+    The markers (`_git`, `v3`, `DefaultCollection`) are compared only after
+    each segment is percent-decoded as Azure reads it (_azure_part), so
+    `%5Fgit` is `_git` and `%44efaultCollection` is `DefaultCollection`;
+    owner_name refuses a segment that does not decode before this runs."""
+    low = [_azure_part(s) for s in segments]
     if host == "dev.azure.com":
         if len(low) == 3 and low[1] == "_git":
             return segments[0], segments[2], segments[2]
@@ -813,10 +852,11 @@ def _azure_parts(host, segments):
     if host in ("ssh.dev.azure.com", "vs-ssh.visualstudio.com"):
         return tuple(segments[1:]) if len(low) == 4 and low[0] == "v3" else None
     org = host[:-len(".visualstudio.com")]
-    rest = segments[1:] if low and low[0] == "defaultcollection" else segments
-    if len(rest) == 2 and rest[0].lower() == "_git":
+    skip = 1 if low and low[0] == "defaultcollection" else 0
+    rest, marks = segments[skip:], low[skip:]
+    if len(rest) == 2 and marks[0] == "_git":
         return org, rest[1], rest[1]
-    if len(rest) == 3 and rest[1].lower() == "_git":
+    if len(rest) == 3 and marks[1] == "_git":
         return org, rest[0], rest[2]
     return None
 
@@ -828,9 +868,12 @@ def owner_name(url):
     gives `gitlab_2ecom.groupa.a_2eb.repo`), so two different repositories
     never share a key -- not across hosts or groups, and not where a '.'
     inside a name would have read as a separator -- while the https, ssh and
-    scp forms of one repository do. An absolute local path or file:// URL
-    gives `file_` and its segments (a lone trailing '_' no _key_part output
-    ends with, so it never meets a host); a relative path is could-not-tell
+    scp forms of one repository do. A network URL with no host once userinfo
+    and port are dropped (`https:///x`, `https://user@/x`) is could-not-tell,
+    never a local path. An absolute local path or file:// URL gives `file_`
+    and its segments with their case and any `.git` kept (a lone trailing
+    '_' no _key_part output ends with, so it never meets a host); a relative
+    path is could-not-tell
     here, because it names a repository only against the worktree git reads
     it from (repo_key resolves it first). Every Azure DevOps form of one
     repository -- https dev.azure.com and <org>.visualstudio.com, with or
@@ -839,13 +882,21 @@ def owner_name(url):
     lowercased; an Azure DevOps URL that fits none of them is could-not-tell.
     So is a segment the key rule refuses: the key is never a guess and never
     falls back to a directory name."""
-    host, segments = _split_url(url)
-    local = _local_path(url)
-    if local and not _ABSOLUTE_RE.match(local):
+    local, bad = _local_path(url)
+    if bad:
+        return None, bad
+    if local is not None and not _ABSOLUTE_RE.match(local):
         return None, "origin's URL is a relative path, which names a repository only against a worktree"
+    host, segments = ("", _local_segments(local)) if local is not None else _split_url(url)
+    if local is None and not host:
+        return None, (f"origin's URL has the shape {_url_shape(host, segments)}, which names no host: it is "
+                      "neither a local path nor a network repository")
     if not segments:
         return None, f"origin's URL has the shape {_url_shape(host, segments)}, which names no repository"
     if host == "dev.azure.com" or host == "ssh.dev.azure.com" or host.endswith(".visualstudio.com"):
+        if None in [_azure_part(s) for s in segments]:
+            return None, (f"origin's URL has the shape {_url_shape(host, segments)}, and a name in it "
+                          "is not percent-encoded UTF-8")
         found = _azure_parts(host, segments)
         if found is None:
             return None, f"origin's URL has the shape {_url_shape(host, segments)}, which fits no Azure DevOps form"
@@ -859,7 +910,7 @@ def owner_name(url):
         if not all(p.isascii() and _valid_part(p.lower(), _OWNER_NAME_PART_RE) for p in raw):
             return None, (f"origin's URL has the shape {_url_shape(host, segments)}, and a part of it is not "
                           "letters, digits, '.', '_', '-' (at most 64)")
-        parts = ([] if host else [_LOCAL_MARK]) + [_key_part(p.lower()) for p in raw]
+        parts = [_key_part(p.lower()) for p in raw] if host else [_LOCAL_MARK] + [_key_part(p) for p in raw]
     key = ".".join(parts)
     if not _valid_part(key, _REPO_RE):
         return None, (f"origin's URL has the shape {_url_shape(host, segments)}, and its key would pass "
@@ -880,13 +931,76 @@ def _fallback_repo(top):
     return name if _valid_part(name, _REPO_RE) else None
 
 
+# enter_repo()'s suffix order for a path that is not a repository as given
+# (setup.c, git v2.53.0): the first of these that is a regular file (a
+# gitfile) or a git directory is what git opens.
+_GIT_SUFFIXES = ("/.git", "", ".git/.git", ".git")
+
+
+def _is_git_directory(path):
+    """setup.c's is_git_directory, as far as the key needs it: a HEAD, and
+    `objects` and `refs` under the common directory (`commondir` when the
+    directory has one)."""
+    head = os.path.join(path, "HEAD")
+    if not (os.path.isfile(head) or os.path.islink(head)):
+        return False
+    common = _common_of(path)
+    return bool(common) and os.path.isdir(os.path.join(common, "objects")) and os.path.isdir(
+        os.path.join(common, "refs"))
+
+
+def _common_of(gitdir):
+    """A git directory's common directory: its `commondir` file's target
+    (a linked worktree's gitdir), else itself. None when that file exists and
+    cannot be read."""
+    try:
+        with open(os.path.join(gitdir, "commondir"), encoding="utf-8") as handle:
+            return os.path.join(gitdir, handle.read().strip())
+    except FileNotFoundError:
+        return gitdir
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _gitfile_target(path):
+    """The `gitdir: <dir>` a gitfile names, against the gitfile's directory;
+    None when it is not one."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            line = handle.readline().strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+    return os.path.join(os.path.dirname(path), line[len("gitdir:"):].strip()) if line.startswith("gitdir:") else None
+
+
+def _git_opens(path):
+    """The repository git opens for a local path, as enter_repo finds it:
+    trailing separators dropped, then the first of _GIT_SUFFIXES that is a
+    gitfile (followed to its gitdir) or a git directory, then that
+    directory's common directory, so a linked worktree and its main worktree
+    are one repository. The path itself when none is: git would fail to open
+    it, and the key is still that path, never a guess at another one."""
+    base = path.rstrip("/\\") or path
+    for suffix in _GIT_SUFFIXES:
+        candidate = base + suffix
+        if os.path.isfile(candidate):
+            gitdir = _gitfile_target(candidate)
+            return (_common_of(gitdir) or gitdir) if gitdir else candidate
+        if os.path.isdir(candidate) and _is_git_directory(candidate):
+            return _common_of(candidate) or candidate
+    return base
+
+
 def _resolved(url, top):
-    """origin's URL with a local path made absolute and real the way git
-    reads it: a relative path against the worktree git runs in (`top`), then
-    `..`, `.` and symlinks resolved, so every spelling of one local
-    repository is one path. Any other URL is returned as it is."""
-    local = _local_path(url)
-    return os.path.realpath(os.path.join(top, local)) if local else url
+    """origin's URL with a local path -- or the local path a file:// URL
+    names -- made absolute and real the way git reads it: a relative path
+    against the worktree git runs in (`top`), then the repository git opens
+    for it (_git_opens: `repo` that is not one opens `repo.git`), then `..`,
+    `.` and symlinks resolved, so every spelling of one local repository is
+    one path and two directories are two. Any other URL, and a file:// URL
+    owner_name must refuse, is returned as it is."""
+    local, _ = _local_path(url)
+    return os.path.realpath(_git_opens(os.path.join(top, local))) if local else url
 
 
 def repo_key(top):

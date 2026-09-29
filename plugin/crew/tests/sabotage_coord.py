@@ -24,13 +24,19 @@ never reads as a separator, Azure DevOps names kept distinct (not hyphenated,
 not UTF-8-replaced), a local path's own marker, a relative path refused alone
 and resolved against the worktree (symlinks too), a failing or empty origin
 probe and an unknown main worktree read as could-not-tell, and a TTL bounded
-before it is converted to float.
+before it is converted to float. The last block is review round 6's
+(T-0030-coord--dtqJtS), fixed under the successor plan: a file:// origin read
+as the local path it names (and refused for another host), Azure DevOps
+markers compared after decoding, local keys keeping case and `.git`, git's own
+suffix order, a network URL with no host, a failed push-config probe, and the
+fake ssh never starting a `#!` script (a mutation of the test module itself).
 """
 import os
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COORD = os.path.join(CREW, "hooks", "scripts", "crew_coord.py")
 _T = "tests/test_crew_coord.py::"
+TEST_MODULE = os.path.join(CREW, "tests", "test_crew_coord.py")
 
 COORD_MUTATIONS = (
     ("crew_coord pushes with --force-with-lease", COORD,
@@ -370,11 +376,11 @@ COORD_MUTATIONS = (
      '        return urllib.parse.unquote_to_bytes(part).decode("utf-8", "replace").lower()\n',
      _T + "test_repo_key_is_could_not_tell_for_a_segment_the_key_rule_refuses[azure-not-utf-8]"),
     ("crew_coord keys a local path like a host", COORD,
-     "        parts = ([] if host else [_LOCAL_MARK]) + [_key_part(p.lower()) for p in raw]\n",
-     "        parts = [_key_part(p.lower()) for p in raw]\n",
+     "        parts = [_key_part(p.lower()) for p in raw] if host else [_LOCAL_MARK] + [_key_part(p) for p in raw]\n",
+     "        parts = [_key_part(p.lower()) for p in raw] if host else [_key_part(p) for p in raw]\n",
      _T + "test_repo_key_tells_different_repositories_apart[local-path-named-like-a-host]"),
     ("crew_coord keys a relative path as it is", COORD,
-     "    if local and not _ABSOLUTE_RE.match(local):\n",
+     "    if local is not None and not _ABSOLUTE_RE.match(local):\n",
      "    if False:\n",
      _T + "test_a_relative_path_alone_is_could_not_tell"),
     ("crew_coord never resolves a local origin against the worktree", COORD,
@@ -382,8 +388,8 @@ COORD_MUTATIONS = (
      '        name, why = owner_name(got.out.decode("utf-8", "replace").strip())\n',
      _T + "test_every_spelling_of_a_local_origin_is_one_claim[relative]"),
     ("crew_coord leaves a local origin's symlinks unresolved", COORD,
-     "    return os.path.realpath(os.path.join(top, local)) if local else url\n",
-     "    return os.path.abspath(os.path.join(top, local)) if local else url\n",
+     "    return os.path.realpath(_git_opens(os.path.join(top, local))) if local else url\n",
+     "    return os.path.abspath(_git_opens(os.path.join(top, local))) if local else url\n",
      _T + "test_every_spelling_of_a_local_origin_is_one_claim[symlink]"),
     ("crew_coord reads a failed origin probe as no origin", COORD,
      "    if has_url.code != 1 or has_url.out.strip():\n",
@@ -401,4 +407,47 @@ COORD_MUTATIONS = (
      "            or value <= 0 or value > MAX_TTL_MINUTES or not math.isfinite(value)):\n",
      "            or not math.isfinite(value) or value <= 0 or value > MAX_TTL_MINUTES):\n",
      _T + "test_ttl_outside_0_to_10080_is_a_config_error_before_any_fetch[10**400]"),
+    # --- review round 6 (successor plan) ---
+    ("crew_coord leaves a file:// origin unresolved", COORD,
+     "    local, _ = _local_path(url)\n",
+     '    local, _ = _local_path(url) if not url.lower().startswith("file:") else (None, None)\n',
+     _T + "test_a_file_url_and_a_plain_path_to_one_remote_are_one_claim"),
+    ("crew_coord reads a file:// URL on another host as a local path", COORD,
+     '        if authority.lower() not in ("", "localhost"):\n',
+     "        if False:\n",
+     _T + "test_a_file_url_that_names_no_local_path_is_could_not_tell[remote-host]"),
+    ("crew_coord compares Azure DevOps markers before decoding", COORD,
+     "    low = [_azure_part(s) for s in segments]\n",
+     "    low = [s.lower() for s in segments]\n",
+     _T + "test_an_encoded_azure_devops_marker_is_one_claim[default-collection]"),
+    ("crew_coord reads an undecodable Azure DevOps segment as a form mismatch", COORD,
+     "        if None in [_azure_part(s) for s in segments]:\n",
+     "        if False:\n",
+     _T + "test_an_azure_devops_segment_that_does_not_decode_is_could_not_tell[marker-position]"),
+    ("crew_coord lowercases a local key again", COORD,
+     "        parts = [_key_part(p.lower()) for p in raw] if host else [_LOCAL_MARK] + [_key_part(p) for p in raw]\n",
+     "        parts = [_key_part(p.lower()) for p in raw] if host else [_LOCAL_MARK] + [_key_part(p.lower()) "
+     "for p in raw]\n",
+     _T + "test_two_local_repositories_never_share_a_claim[case]"),
+    ("crew_coord strips .git from a local key again", COORD,
+     "        parts = [_key_part(p.lower()) for p in raw] if host else [_LOCAL_MARK] + [_key_part(p) for p in raw]\n",
+     "        parts = [_key_part(p.lower()) for p in raw] if host else [_LOCAL_MARK] + [_key_part(re.sub("
+     "r\"\\.git$\", \"\", p)) for p in raw]\n",
+     _T + "test_two_local_repositories_never_share_a_claim[dot-git]"),
+    ("crew_coord keys a local path without git's suffix order", COORD,
+     "    return os.path.realpath(_git_opens(os.path.join(top, local))) if local else url\n",
+     "    return os.path.realpath(os.path.join(top, local)) if local else url\n",
+     _T + "test_git_itself_opens_the_suffix_the_key_resolves"),
+    ("crew_coord reads a network URL with no host as a local path", COORD,
+     "    if local is None and not host:\n",
+     "    if False:\n",
+     _T + "test_a_claim_under_a_network_origin_with_no_host_is_could_not_tell[https]"),
+    ("crew_coord reads a failed push-config probe as the key absent", COORD,
+     "            if got.code not in (0, 1):\n",
+     "            if False:\n",
+     _T + "test_a_failed_pushurl_probe_is_unknown_and_nothing_is_pushed[128]"),
+    ("the fake ssh starts a receivepack script directly", TEST_MODULE,
+     'elif program.endswith(".py"):\n',
+     "elif False:\n",
+     _T + "test_push_carries_the_remotes_receivepack_but_never_mirror"),
 )
