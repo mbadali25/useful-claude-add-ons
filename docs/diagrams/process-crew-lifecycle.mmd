@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@c99e31f6 on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@d7c7c75c on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -84,6 +84,20 @@
 %% both kept. Main changed none of approve.md, crew_ticket.py or approval_hook.py since
 %% d276b268 and T-0024 changed no tracker-bearing command file, so every node's line
 %% citation holds on the merged tree (checked by script against both sides' content).
+
+%% On T-0010-solo's branch (history, kept):
+%% Re-anchored for T-0010 at 50e67586 (T-0010-solo, crew 1.0.43): of the anchored paths only
+%% crew_ticket.py changed - the `autopilot` via (4 lines at :141-144) moved approval_digest
+%% :530-571 -> :534-575 and status()'s compare :605-626 -> :609-630 (compared line for line).
+%% T-0010 adds a second approval route, `crew_autopilot.py approve` under autopilot.approval
+%% (always behind scope.allowCliApproval: true), reached only from /crew:autopilot; no command
+%% file drawn here changed, so no node or edge moved.
+%% Merged d276b268's lines + 50e67586 at c817782f (T-0010-solo merges T-0018's main 67caa4b8,
+%% crew 1.0.48): of the anchored paths crew_ticket.py changed on T-0010's side (the `autopilot`
+%% via, +4 above the digest: approval_digest's block :534-575 and status()'s compare :609-630,
+%% mapped by a line diff from f0b12ee6 and re-read); the command files drawn here are unchanged by
+%% T-0010. The approve node still draws the human route; T-0010's `crew_autopilot.py approve` is
+%% reached only from /crew:autopilot under autopilot.approval (scope.allowCliApproval: true).
 %% Re-anchored 8de3c669 -> 81685adf (T-0079 merges T-0077's f96e9ec9, crew 1.0.50): of the
 %% Anchors paths only crew_tracker.py changed (`git diff --name-only`), by T-0077's
 %% ba2ee465 alone - the Windows directory hold, below resolve() and inside the vault-write
@@ -151,9 +165,9 @@
 %% done.md:61 (`status: done`). Until T-0026 the receipt hashed both files whole,
 %% so each left it stale; the done.md case was seen live on 2026-09-25. A
 %% `crew-approval/2` receipt now binds approval_digest
-%% (plugin/crew/hooks/scripts/crew_ticket.py:530-571), which normalises only line
+%% (plugin/crew/hooks/scripts/crew_ticket.py:534-575), which normalises only line
 %% 1's single `status:` value from STATUS_VALUES, and status() compares that
-%% digest (:605-626); any other byte change still reads `stale`, and the
+%% digest (:609-630); any other byte change still reads `stale`, and the
 %% completion audit still refuses to judge scope on anything but `approved`
 %% (plugin/crew/hooks/scripts/completion_audit.py:204-215). A receipt with no
 %% `digest` field is compared raw and stales once on its first status edit.
@@ -249,3 +263,13 @@ flowchart TB
     fix -. "same /crew:approve,<br/>/crew:review, /crew:done" .-> ap0
 
     stop["Stop hooks every turn:<br/>verify-gate, completion-audit<br/>hooks.json:58, :62"] -.- im2
+%% Re-anchored for T-0010's successor at 50a275ea (T-0010-solo merges f96e9ec9, crew 1.0.50):
+%% both sides' notes kept, main's first. crew_ticket.py is the only anchored path either side
+%% changed: approval_digest is at :562 and status() at :589 (re-grepped), approve at :723. The
+%% approve node still draws the human route and the owner's group confirm; T-0010's
+%% `crew_autopilot.py approve` is reached only from /crew:autopilot, and crew_ticket.approve
+%% refuses it outright when it carries a group confirm's hashes (:742-744). No node or edge moved.
+%% Merged c99e31f6's lines + 50a275ea at d7c7c75c (T-0010-solo merges main 6387ab49, crew 1.0.55):
+%% of the Anchors paths review.md and completion_audit.py changed on main's side only (T-0092's
+%% graphify-out/ exclusion, main's lines kept), crew_ticket.py on T-0010's side only (unchanged
+%% since 50a275ea: approval_digest :562, status() :589, approve :723). No node or edge changed.
