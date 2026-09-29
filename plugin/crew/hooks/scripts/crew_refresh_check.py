@@ -227,9 +227,9 @@ REFRESH_ARTIFACT_PATHS = (
 # their own. TODO.md is here for the same reason: `/crew:done` check 3 has
 # every ticket file its findings there, and most maps cite it, so filing one
 # item used to stale every map citing it. A code path cited beside it still
-# stales the map. Segment globs, `crew_ticket.glob_match`'s dialect. KEPT in
-# `artifact_verdicts`' admission reach, so a version bump admits the
-# re-anchored map citing plugin.json (T-0094).
+# stales the map. Segment globs, `crew_ticket.glob_match`'s dialect. Of these
+# only ADMISSION_BOOKKEEPING stays in `artifact_verdicts`' admission reach,
+# so a version bump admits the re-anchored map citing plugin.json (T-0094).
 RELEASE_BOOKKEEPING = (
     "CHANGELOG.md",
     "TODO.md",

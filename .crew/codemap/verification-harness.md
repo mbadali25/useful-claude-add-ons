@@ -166,12 +166,14 @@ Notable rules, re-read directly:
   `test_scope_guard.py`, `test_completion_audit.py` and `test_scope_base.py`,
   and since T-0094 `crew_instructions.py`, `plugin/crew/tests/test_refresh_admission.py`
   and `plugin/crew/tests/refresh_fixtures.py`
-  → `python3 -m pytest` over those seven test files, priced 51s (its `why`,
-  `:288`, records 50.7s measured at load 6.6-7 and 64.4s at load 9 by T-0094,
-  31.8s before it — claims read, not re-timed by this note). `crew_freshness.py` is on rule 8 too. At the default 60s
-  Stop budget rule 25 (51s) plus rule 15 (38s) do not fit together, so a
-  `.py` edit on these paths has one of them deferred at Stop (JUDGEMENT,
-  from the two `seconds` values, not observed). A test,
+  → `python3 -m pytest` over those seven test files, priced 65s since T-0094
+  review round 1 (its `why`, `:288`, records 51.2s at load 4.5-5.4 after the
+  round-1 fixes, 50.7s at load 6.6-7 and 64.4s at load 9, and prices the high
+  end; 31.8s before T-0094 — claims read, not re-timed by this note). `crew_freshness.py` is on rule 8 too. At the default 60s
+  Stop budget rule 25 (65s) cannot fit on its own, so at Stop it is
+  chronically deferred and checked by `verify-gate --all` (JUDGEMENT, from
+  the `seconds` value and `verify-gate.sh`'s over-budget comment, not
+  observed). A test,
   `test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule` in
   `plugin/crew/tests/test_refresh_check.py`, fails if any of the five
   modules (six since T-0094) stops matching a pytest rule. The check can refuse `/crew:done`, so its `why`
