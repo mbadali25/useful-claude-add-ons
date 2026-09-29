@@ -32,6 +32,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   GEN-04 maps each named mutation to a sabotage entry by label, not count, and wants a red test for
   every refusal branch replaced with `pass`; this repository's REPO-03 puts the version bump on the
   land branch only.
+- **Review round 2's fixes.** A recorded scope base that is gone or no longer an ancestor of HEAD
+  (a rewritten branch) no longer blocks `stamp` for good: it stamps against the same merge-base
+  fallback `/crew:review` bundles with, marked `(fallback)` on its line, and a refusal names
+  `scope_base.py --record` only when there is no record for `--record` to write. New must-block
+  tests, each with a `sabotage_standards.py` mutation naming it: the gate's completeness re-check of
+  a self-check edited after stamping; a broken effective set refused by `init`, `stamp` and the gate;
+  twelve more refusal branches of the guard, each asserted by its own message; and `review.md`'s
+  exit-2 self-check refusal text.
 - No version bump on the build branch (REPO-03 as amended): the number is set on the land branch at
   push time, one patch above `origin/main` then, and this heading gains it there.
 

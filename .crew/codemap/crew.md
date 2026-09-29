@@ -1051,7 +1051,8 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
 DERIVED at `22399a9c`, read in full: `plugin/crew/hooks/scripts/crew_standards.py`, the
 `standards_gate` hunk of `review_run.py` and the block tuple of `review_prompt.py`. Line
 numbers re-read at `07bcaf3b` (review round 1 fixes), where `crew_standards.py` was read in
-full again.
+full again, and re-read again for the successor plan's round-2 fixes (from the committed
+`crew_standards.py`, `grep -n '^def '`), where `_scope` gained the merge-base fallback.
 
 - **Sets.** `parse_set` (`plugin/crew/hooks/scripts/crew_standards.py:143`) reads a `---`
   front matter (`set`, `applies-to` as JSON, `_front_matter` `:110`), `## <ID> <name>`
@@ -1067,38 +1068,43 @@ full again.
   (`_read_bytes` `:99`); any other read error, a decode error, a wrong set, a reused plugin
   id or a Supplements naming no plugin standard is `unknown` with a problem. The digest
   covers each included file's set name and bytes, and the overlay's absence.
-- **Self-check.** `init` (`:463`) exclusive-creates `.work/tickets/<id>/selfcheck.md`;
+- **Self-check.** `init` (`:493`) exclusive-creates `.work/tickets/<id>/selfcheck.md`;
   `record_problems` (`:412`) refuses a missing, duplicate or unknown row, a status outside
-  `STATUSES` (`:77`) and placeholder evidence; `stamp` (`:478`) validates the rows from one
-  read (`_read_selfcheck_raw` `:368`), resolves the ticket's recorded scope base (`_scope`
-  `:436`, refusing the merge-base and HEAD fallbacks), takes `review_patch.compute`'s
+  `STATUSES` (`:77`) and placeholder evidence; `stamp` (`:508`) validates the rows from one
+  read (`_read_selfcheck_raw` `:368`), resolves the ticket's scope base (`_scope` `:444`):
+  a recorded start as recorded; a kept record that is gone or no longer an ancestor of HEAD
+  as `scope_base.resolve`'s merge-base, the base `/crew:review` bundles against, with a
+  `(fallback)` note on the output line (`_noted` `:479`); no entry at all, or the HEAD-only
+  fallback, refused, naming `--record` only when `_has_scope_entry` (`:436`) finds no entry
+  (`--record` keeps an existing one). It takes `review_patch.compute`'s
   `bundle_sha256` over it, refuses if the file's bytes changed meanwhile, and writes
   `_STAMP_RE`'s line (`:85`) under the header through a temp file and `os.replace`
   (`_write_replacing` `:327`).
 - **Gate.** `review_run.run` calls `standards_gate`
   (`plugin/crew/hooks/scripts/review_run.py:378`) at `:418`, before
   `review_ledger.reserve` (`:422`), for every provider. `crew_standards.review_gate`
-  (`:574`) applies unless `gate_applies` (`:512`) proves there is no approval receipt: only
+  (`:604`) applies unless `gate_applies` (`:542`) proves there is no approval receipt: only
   an `lstat` `FileNotFoundError` is "absent" (a printed "not required" note); a corrupt
   receipt, a failed lookup or any other `OSError` (a non-directory or unreadable parent)
-  gates, with a "could not tell" note. It reads the manifest, and `_gate` (`:546`, behind
-  `gate_problems` `:540`) compares the stamp's bundle and standards digest; on a pass the
+  gates, with a "could not tell" note. It reads the manifest, and `_gate` (`:576`, behind
+  `gate_problems` `:570`) re-checks the record's completeness and compares the stamp's bundle and standards digest; on a pass the
   note carries `std:<first 8 of the digest>` for the metrics row. Problems return
   `EXIT_USAGE` (`review_run.py:400`) unless `crew_incident.read_state` is active, which logs
   a `standards-selfcheck` skip (`:391`) and reserves.
 - **Checklist.** `review_prompt.build` puts `crew_standards.checklist_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:264`, defined at `crew_standards.py:600`)
+  (`plugin/crew/hooks/scripts/review_prompt.py:264`, defined at `crew_standards.py:630`)
   after the test receipts; it never reads `selfcheck.md`. When the manifest's file lists
   are unusable it lists the always-on sets (those whose `applies-to` holds `"**"`) under an
   `UNKNOWN:` line.
-- **Loop and metric.** `proposals` (`:635`) exclusive-creates
+- **Loop and metric.** `proposals` (`:665`) exclusive-creates
   `standards-proposals-r<N>.md` from `review_verdict.parse`'s findings, NIT dropped;
-  `metric_summary` (`:675`) groups round-1 rows from `crew_migrate.metrics_rows` by ticket,
+  `metric_summary` (`:705`) groups round-1 rows from `crew_migrate.metrics_rows` by ticket,
   splits on `_STD_TOKEN_RE` (`:88`), and keeps unknown rounds on neither side; `metric
-  --record` (`:707`) appends a line with no `|`.
+  --record` (`:737`) appends a line with no `|`.
 - **Tests.** `plugin/crew/tests/test_crew_standards.py`, `test_review_run_standards.py`,
-  `test_review_prompt.py`; fourteen mutations in `plugin/crew/tests/sabotage_standards.py`
-  (`STANDARDS_MUTATIONS` `:21`), appended in `plugin/crew/tests/sabotage.py` at `:3055`;
+  `test_review_prompt.py`, `test_lifecycle_commands.py`; thirty-three mutations in
+  `plugin/crew/tests/sabotage_standards.py` (`STANDARDS_MUTATIONS` `:35`; fourteen through
+  review round 1, nineteen from round 2), appended in `plugin/crew/tests/sabotage.py` at `:3056`;
   `.crew/verify.json`'s last rule runs them. JUDGEMENT: the approval-receipt condition is
   the one way a ticket reaches review without the gate; it exists because the pre-existing
   review_run tests run tickets with no receipt, and a ticket without one cannot pass

@@ -61,7 +61,12 @@ After the tests, docs and refresh, before `/crew:review`:
    Placeholders (`TBD`, `-`, `<evidence>`) are refused.
 3. `crew_standards.py stamp --root . --ticket <id>` refuses (exit 1, each
    problem named) a missing row, an unknown status, a placeholder, an unknown
-   or duplicated id, or no recorded scope base. On a complete record it writes
+   or duplicated id, or no recorded scope base. A recorded start that is gone
+   or no longer an ancestor of HEAD stamps against the same merge-base
+   fallback `/crew:review` bundles with, and says `(fallback)` on its output
+   line; with no default branch to fall back to it refuses, and it names
+   `scope_base.py --record` only when no record exists, since `--record` never
+   overwrites one. On a complete record it writes
    `<!-- stamp: bundle=... standards=... base=... -->` under the header:
    the review bundle's sha256 (`review_patch.compute` on the ticket's scope
    base, so staged, unstaged and untracked content count) and the standards

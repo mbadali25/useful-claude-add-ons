@@ -94,8 +94,8 @@ per-construct definition of "gone," rather than file-existence).
 ## Does
 Holds the repo's hand-written documentation — Mermaid diagram sources under
 `docs/diagrams/`, planning artifacts under `docs/superpowers/`, review notes
-under `docs/review/`, ADRs under `docs/adr/` (three, unchanged from the
-previous anchor), rendered per-topic guides under `docs/guides/*/` (see
+under `docs/review/`, ADRs under `docs/adr/` (four: T-0085 added
+`0004-build-time-development-standards.md`; re-checked with `ls docs/adr/`), rendered per-topic guides under `docs/guides/*/` (see
 below — restructured in this range), one operational runbook, handoff notes,
 and the top-level `CHANGELOG.md`. Nothing under `docs/` is generated except
 the rendered diagram images (`docs/diagrams/out/`) and the rendered guide
@@ -327,12 +327,12 @@ listing the directory.
   human-authored; the two files remain unrelated despite the shared
   basename.
 
-- **`docs/adr/` still exists, unchanged in count (three) since it was first
-  found.** `docs/adr/0001-promote-stays-unarmed.md` (unchanged, closed by the
-  per-path check), `0002-no-chatgpt-mcp-server.md` (accepted 2026-09-14) and
+- **`docs/adr/` still exists and holds four ADRs, the fourth T-0085's.**
+  `docs/adr/0001-promote-stays-unarmed.md` (unchanged, closed by the
+  per-path check), `0002-no-chatgpt-mcp-server.md` (accepted 2026-09-14),
   `0003-crew-departs-from-three-community-best-practices.md` (accepted
-  2026-09-17) — the latter two were already present at the previous anchor
-  and are not new in this range. `CLAUDE.md:147` still reads "Decisions in
+  2026-09-17) and `0004-build-time-development-standards.md` (T-0085, the
+  build-time development standards); re-checked with `ls docs/adr/`. `CLAUDE.md:147` still reads "Decisions in
   `docs/adr/`" at `adf8d1dd` (re-grepped; `CLAUDE.md` changed in
   `f2bb919b..adf8d1dd`, but only its `crew_freshness.py` line citations).
 - **`docs/review/`'s existence is itself a mild instance of the same gap
