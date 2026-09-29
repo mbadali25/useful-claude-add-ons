@@ -16,7 +16,7 @@ A tooling change: this release carries no feature work.
   Anything else is `reviewer`. Only `tool` is refunded, automatically, at most
   `REFUND_LIMIT` (2) times per plan; a third is recorded with `refund_refused`
   and counts. These are never refunded: `reviewer` and `tree` rounds, a round
-  with no recorded result, and ledger rows from before 1.0.55. The two-round
+  with no recorded result, and ledger rows from before 1.0.62. The two-round
   `BUDGET`, the exit codes, the READ rule and the grader are unchanged, and a
   successor plan still starts both counts afresh.
 - **Where it shows.** Ledger rows carry `failure_class`, `refunded` and
