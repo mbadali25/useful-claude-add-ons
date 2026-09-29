@@ -4,6 +4,43 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.60: the completion audit admits a refresh artifact only as a re-anchor or regeneration the ticket's change reaches (T-0094)
+
+- **What changed.** `crew_refresh_check.artifact_verdicts` (beside
+  `REFRESH_ARTIFACT_PATHS`) judges each changed refresh artifact of an approved
+  ticket, and `completion_audit.audit` — the Stop hook and `/crew:done` check 3
+  — admits it without Touch only on `True`. A code map must be in the base and
+  on disk, cite a path the ticket changed since its scope base (release
+  bookkeeping and merged-in main paths included, so a version bump reaches the
+  map citing `plugin.json`), and have its `anchor:` moved to a commit that is
+  HEAD or behind it; `INDEX.md` passes when every differing line is the row of
+  such a map; a diagram source is reached through `%% Anchors:` and its
+  provenance sha must move the same way, and a rendered diagram passes beside
+  its admitted same-stem source; a `.claude/rules/` file passes when its bytes
+  equal `crew_instructions.expected_rules` (or a generated rule no map expects
+  was removed); the graph dir passes when a code path changed. Anything else
+  there is judged against Touch and listed with its reason in brackets
+  (`[anchor did not move]`, `[no changed path reaches it]`, `[bytes differ from
+  expected_rules ...]`, `[graph changed with no code change since the base]`);
+  a verdict git, a base copy, the config or the rule renderer could not give is
+  `[could not tell: ...]` and never admits. The audit judges shape and reach,
+  not truth.
+- **Why.** The owner's standing rule (2026-09-28): a ticket may re-anchor and
+  regenerate the artifacts its own changes staled, "re-anchor/regenerate only,
+  never a content rewrite". Both checks were a path test, so an approved ticket
+  could rewrite any map, hand-edit a generated rule or rewrite an unrelated
+  diagram; and T-0090's reviewer, not a check, was what raised the question.
+- **Behaviour change.** An edit to a map's claims without moving its `anchor:`
+  (what `93da92af` did to two version sentences) now fails the audit unless the
+  map is in Touch; re-anchor it or name it. The PreToolUse scope guard is
+  unchanged: it still admits the artifact dirs for an approved ticket, because
+  a write-time check sees one Edit of a multi-Edit refresh.
+- **Sabotage.** Fifteen entries after the `# T-0094` marker in
+  `plugin/crew/tests/sabotage_refresh.py`, each run by hand against the tracked
+  file and confirmed RED with the file restored byte-identical, plus the two
+  existing approval-gate entries, whose tests now perform an admitted refresh
+  so they stay RED with the verdicts in place.
+
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 
 - **What changed.** `review_patch.py`'s `EXCLUDED` is now `(".work/",
