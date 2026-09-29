@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@bbd9a66d on 2026-09-29. Verify before trusting.
+%% Generated from useful-claude-add-ons@63afa2b0 on 2026-09-29. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -179,6 +179,11 @@
 %% place) changed, both line-neutral; review.md:25-29, :449 and completion_audit.py:177-187,
 %% :204-215 hold (compared by script). The bundle now also leaves out graphify-out/, which no
 %% node here names. No node or edge changed.
+%% Re-anchored c99e31f6 + 2693d0fa -> 2bb0d198 (T-0028 merges main 2693d0fa, review round 4, crew
+%% 1.0.60): of the Anchors paths only review.md changed on T-0028's side, at :2 (the description
+%% names Kimi) and from :215 down (step 1b's strike row, the probe table, step 2e); the cited
+%% review.md:25-29 is above every hunk and unchanged (git diff -U0 2693d0fa 2bb0d198). No node or
+%% edge changed.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
@@ -276,3 +281,6 @@ flowchart TB
 %% Re-anchored d7c7c75c -> bbd9a66d (T-0010 landing branch, crew 1.0.61): of the Anchors paths only
 %% crew_ticket.py changed, one line in place (a noqa: BLE001 beside the broad-except disable in the
 %% autopilot-policy check), so every line number above holds. No node or edge changed.
+%% Merged 3f2ff64f + 8ab733d7 -> 63afa2b0 (T-0028 merges T-0010's main 8ab733d7, crew 1.0.62): of the
+%% Anchors paths review.md changed on T-0028's side only (from :215 down) and crew_ticket.py on main's
+%% side only; the cited review.md:25-29 is above every T-0028 hunk and holds. No node or edge changed.

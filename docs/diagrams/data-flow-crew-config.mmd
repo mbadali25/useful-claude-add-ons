@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@cd106b8b on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@63afa2b0 on 2026-09-29. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_config_files.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
@@ -278,7 +278,7 @@
 %%     onlyRepos/onlySessions are read from the machine layer ONLY (:177-178);
 %%     a repo's own copy of either is never consulted, though it IS a
 %%     global-settable leaf (see the Split section) and so is visible to
-%%     `/crew:config --show` under crew_config.py:1622-1623's
+%%     `/crew:config --show` under crew_config.py:1626's
 %%     AUTOCLEAR_MACHINE_ONLY_KEYS reporting rule.
 %%  4. crew_autoclear_setup.py is the ONLY writer of `context.autoClear.*`
 %%     into the global file, and it does NOT reimplement the write: it calls
@@ -393,18 +393,35 @@
 %% and merge_defaults :1338 (re-read with grep -n); CONTEXT_DEFAULTS :732, RESUME_DEFAULTS :695,
 %% CLOUD_DEFAULTS :239 and ENVIRONMENTS_DEFAULTS :251 re-read too. Leaf counts re-executed: 125 / 68 / 57 / 0.
 %% CONFIG.md is cited by section only. No node or edge changed.
+%% Re-anchored 3648f59a + 2693d0fa -> 2bb0d198 (T-0028 merges main 2693d0fa, review round 4, crew
+%% 1.0.60): of the Anchors paths, crew_config.py, crew_state.py and CONFIG.md changed on T-0028's
+%% side (the Kimi Code provider: kimi in both provider tuples, qa.kimi / dev.kimi, the new qa.order).
+%% Every crew_config.py and crew_state.py line cited below was re-taken with grep -n at 2bb0d198:
+%% crew_config.py moved +1 from :244 (default_config :243 -> :244, plan_global_write :2846 ->
+%% :2847); plan_repo_write, repo_snapshot, write_repo_config and RepoWriteConflict were already one
+%% line behind at 2693d0fa (T-0075's landing commits) and move +2 (:3045 -> :3047); the
+%% AUTOCLEAR_MACHINE_ONLY_KEYS rule is :1626; crew_state.merge_defaults :1333 -> :1340. Leaf counts
+%% re-executed at 2bb0d198: 125 / 70 (qa.kimi.model and dev.kimi.model in both). No node or edge
+%% changed shape.
+%% Merged 3f2ff64f + 8ab733d7 -> 63afa2b0 (T-0028 merges T-0010's main 8ab733d7, crew 1.0.62): of the
+%% Anchors paths, crew_config.py matches main's numbering again after T-0028's 72175c17 (a comment
+%% reflowed to keep the module at pylint's 3400 lines): default_config :243, without_null_shadows :632,
+%% read_global_config :723, merge calls :809-810, schema :811-814. crew_state.py carries T-0010's +5 at
+%% AUTOPILOT_DEFAULTS :1094 and T-0028's Kimi lines below it: PM_DEFAULTS :1105, QA_DEFAULTS :1157,
+%% DEV_DEFAULTS :1167, WORKTREE_DEFAULTS :1195, merge_defaults :1345 (re-read with grep -n). Leaf counts
+%% re-executed: 127 / 70 / 57 / 0. No node or edge changed shape.
 flowchart TB
 
     subgraph Sources["Three sources, lowest precedence first"]
         direction TB
-        DEF["default_config()<br/>plugin/crew/hooks/scripts/crew_config.py:243<br/><b>125 leaves</b> (executed, this pass)<br/>composed from crew_state's PM_DEFAULTS<br/>:1105, QA_DEFAULTS :1152, DEV_DEFAULTS<br/>:1161, WORKTREE_DEFAULTS :1188, CONTEXT_DEFAULTS<br/>:732, RESUME_DEFAULTS :695, AUTOPILOT_DEFAULTS :1094 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS<br/>:48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS<br/>:222, CLOUD_DEFAULTS :239 - repo-only,<br/>ENVIRONMENTS_DEFAULTS :251 - nonProd repo-only), and<br/>crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK<br/>:107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK<br/>:173 / CHANGE_BLOCK :203"]
+        DEF["default_config()<br/>plugin/crew/hooks/scripts/crew_config.py:243<br/><b>127 leaves</b> (executed, this pass)<br/>composed from crew_state's PM_DEFAULTS<br/>:1105, QA_DEFAULTS :1157, DEV_DEFAULTS<br/>:1167, WORKTREE_DEFAULTS :1195, CONTEXT_DEFAULTS<br/>:732, RESUME_DEFAULTS :695, AUTOPILOT_DEFAULTS :1094 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS<br/>:48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS<br/>:222, CLOUD_DEFAULTS :239 - repo-only,<br/>ENVIRONMENTS_DEFAULTS :251 - nonProd repo-only), and<br/>crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK<br/>:107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK<br/>:173 / CHANGE_BLOCK :203"]
         GLB[("~/.claude/crew/config.json<br/>read_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:723<br/><i>never raises</i> - absent, malformed or<br/>non-object all return {}, because this is<br/>reached from a SessionStart hook")]
         REPO[(".crew/config.json - schema 7<br/>crew_state.load_config()<br/>plugin/crew/hooks/scripts/crew_state.py:266<br/>NOT the same file crew_context.py reads<br/>first - see the TwoFiles section below")]
     end
 
     subgraph Gate["The global layer is filtered BEFORE it is merged"]
         direction TB
-        TMPL["default_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:396<br/><b>68 leaves</b> (executed, this pass) across<br/><b>17 blocks</b>: qa, dev, worktree, secondOpinion,<br/>memory (2 of 5 repo leaves), notify, pm,<br/>context.autoClear (8 of 9 - unsafeFocus is<br/>excluded, see AutoClear below), resume, docs,<br/>bitbucket, github, install, guards (all TEN<br/>names), environments (prodUnattended only),<br/>change, route - the single definition both<br/>rules below are enforced against"]
+        TMPL["default_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:396<br/><b>70 leaves</b> (executed, this pass) across<br/><b>17 blocks</b>: qa, dev, worktree, secondOpinion,<br/>memory (2 of 5 repo leaves), notify, pm,<br/>context.autoClear (8 of 9 - unsafeFocus is<br/>excluded, see AutoClear below), resume, docs,<br/>bitbucket, github, install, guards (all TEN<br/>names), environments (prodUnattended only),<br/>change, route - the single definition both<br/>rules below are enforced against"]
         PRUNE["_prune()<br/>plugin/crew/hooks/scripts/crew_config.py:655<br/>keeps only keys present in the template.<br/>Descends structurally, so naming a block<br/>grants only the leaves under it."]
         FILT["filter_global()<br/>plugin/crew/hooks/scripts/crew_config.py:681<br/>returns (kept, ignored)"]
     end
@@ -412,7 +429,7 @@ flowchart TB
     subgraph Merge["resolve_config() - plugin/crew/hooks/scripts/crew_config.py:776 - the single resolver"]
         direction TB
         NULLS["without_null_shadows()<br/>plugin/crew/hooks/scripts/crew_config.py:632<br/>drops a repo <i>null</i> ONLY where the global<br/>layer supplies a real value."]
-        M1["merge_defaults(default_config(), global)<br/>call: crew_config.py:809<br/>def: plugin/crew/hooks/scripts/crew_state.py:1338"]
+        M1["merge_defaults(default_config(), global)<br/>call: crew_config.py:809<br/>def: plugin/crew/hooks/scripts/crew_state.py:1345"]
         M2["merge_defaults(that, repo)<br/>call: crew_config.py:810"]
         SCHEMA{"schema<br/>lifted OUT of the merge<br/>crew_config.py:811-814"}
         OUT(["resolved config<br/><i>repo beats global beats default</i><br/>this is ONLY .crew/config.json's precedence -<br/>autoClear's own read path bypasses it, below"])
@@ -463,10 +480,10 @@ flowchart TB
 
     subgraph RepoWrite["NEW (T-0075): the repo writer - /crew:config --set --repo, the only path into .crew/config.json"]
         direction TB
-        RPLAN["plan_repo_write()<br/>plugin/crew/hooks/scripts/crew_config.py:3045<br/>on repo_snapshot() :3033 (refuses a missing or<br/>malformed file rather than creating one) and<br/>machine_view() :3064 (the machine file and its<br/>digest, one read)"]
+        RPLAN["plan_repo_write()<br/>plugin/crew/hooks/scripts/crew_config.py:3046<br/>on repo_snapshot() :3034 (refuses a missing or<br/>malformed file rather than creating one) and<br/>machine_view() :3065 (the machine file and its<br/>digest, one read)"]
         RREF>"RepoWriteRefused (class :2897)<br/>REPO_REFUSED :2912 - platform, schema,<br/>scope.mode, scope.allowCliApproval, the<br/>machine-only autoClear paths; a block emptied or<br/>replaced is refused (is_repo_path :2969);<br/>REPO_VETO_ONLY :2933 takes only false / null<br/>(by identity, is_repo_veto :2936)"]
         RWIDEN["repo_widens() :2977 - the ratchet against<br/>what is in force, plus _REPO_WIDENING :2946;<br/>a repo value held down by the machine layer<br/>is named, not marked as a widening"]
-        RWRITE["write_repo_config()<br/>plugin/crew/hooks/scripts/crew_config.py:3071<br/>the same compare-and-swap (RepoWriteConflict<br/>:2901), and --expect-global binds the machine<br/>file under its lock; never creates the file;<br/>an OSError is RepoWriteRefused :3102, exit 2"]
+        RWRITE["write_repo_config()<br/>plugin/crew/hooks/scripts/crew_config.py:3072<br/>the same compare-and-swap (RepoWriteConflict<br/>:2902), and --expect-global binds the machine<br/>file under its lock; never creates the file;<br/>an OSError is RepoWriteRefused :3104, exit 2"]
         RPLAN -->|"refused leaf, or a bad value in the merged file"| RREF
         RPLAN --> RWIDEN --> RWRITE
     end

@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@bbd9a66d
-verified: 2026-09-28
+anchor: useful-claude-add-ons@63afa2b0
+verified: 2026-09-29
 
 # localgpu
 
@@ -512,8 +512,8 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   **Checked against the code, corrected after QA:**
   `plugin/crew/hooks/scripts/crew_config.py:128-129` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1437-1438` since T-0010's four `AUTOPILOT_DEFAULTS`
-  lines (T-0010-solo's merge of `67caa4b8`; `:1432-1433` at `65bb3330`; `:1430-1431` on main before
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1447-1448` since T-0028's merge of `8ab733d7` (crew 1.0.62, `63afa2b0`); both tuples gain `"kimi"` in T-0028 - `plugin/localgpu/README.md:275-276` and `plugin/localgpu/commands/crew.md:30` still say three names, a T-0028 follow-up in `TODO.md` - (`:1442-1443` at T-0028's `2bb0d198`; `:1437-1438` on main at `8ab733d7`, since T-0010's four `AUTOPILOT_DEFAULTS`
+  lines (T-0010-solo's merge of `67caa4b8`); `:1432-1433` at `2693d0fa` and `65bb3330`; `:1430-1431` on main before
   T-0005's three import lines merged in, re-numbered
   from `:1504-1505` by crew 1.0 - see the re-anchor entries below; same two
   lines, `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
@@ -1459,3 +1459,30 @@ so the merged tree is `6b89c1df` plus that README change). `08eeaa3e` adds the r
 `plugin/crew/tests/test_crew_autopilot_policy.py`. `bbd9a66d` re-sets crew 1.0.61. Each edited line kept its
 number (the parentheses and comments were added in place) except in `test_crew_autopilot_policy.py`, whose
 import block lost one line; no note cites that file by line. Re-anchor only; nothing was executed for this note.
+
+## Re-anchor provenance - `3648f59a` + `2693d0fa` -> `2bb0d198`, 2026-09-29 (T-0028 merges main, review round 4 fixes, crew 1.0.60)
+
+`git diff --name-only 2693d0fa 2bb0d198`, refresh artifacts aside, returns T-0028's own files: the Kimi Code provider (`kimi_probe.py`, `review_run.py`, `review_verdict.py`, `crew_state.py`, `crew_config.py`, the templates, `CONFIG.md`, `README.md`, `review.md`, `model.md`, the crew-providers and crew-setup skills, `providers.sh`, the tests and fixtures, `sabotage.py`, `sabotage_kimi.py`), `.crew/verify.json`, `CHANGELOG.md`, `TODO.md`, `plugin/crew/BUDGETS.md` and the three version files (crew 1.0.60). This note's maps took main's side of the merge (`a307dfaa`), so its claims were checked against `2693d0fa`'s tree and then carried to `2bb0d198`: every body citation of the form `path:N`, and every bare `:N` carried from the last path named in its paragraph, into a file in that list was mapped by script through `git diff -U0 2693d0fa 2bb0d198` (and, for `.crew/verify.json`, through `817acf60` -> `2bb0d198`, which moved the Kimi rule last). Citations inside provenance sections, and citations followed by `at`/`on`/`before`/`since <commit or ticket>`, are history and were left alone. Every citation whose own line changed was read with `sed -n` / `grep -n`, and so was each bare `:N` the script attributed to the wrong file (three `role_write_guard.py` lines attributed to `TODO.md` were put back).
+
+The provider-tuple citation moves to `plugin/crew/hooks/scripts/crew_state.py:1442-1443`, where both tuples now end in `"kimi"`; `plugin/localgpu/README.md:275-276` and `plugin/localgpu/commands/crew.md:30` still describe three providers, which `TODO.md`'s T-0028 follow-up (f) records (outside T-0028's Touch). The other `crew_state.py` citation that moved is history and keeps its commit's line. Nothing was executed for this note beyond the scripts named here and `python3 scripts/check-marketplace.py`.
+
+## Re-anchor provenance - `3f2ff64f` + `bbd9a66d` -> `63afa2b0`, 2026-09-29 (T-0028 merges T-0010's main `8ab733d7`)
+
+`8db3ebe7` merges origin/main `8ab733d7` (T-0010 landed as crew 1.0.61, its code maps anchored
+`bbd9a66d`) into `T-0028-kimi` at `72175c17`, which had reflowed one comment in
+`plugin/crew/hooks/scripts/crew_config.py` to keep that module at pylint's 3400-line limit, so every
+`crew_config.py` line past `:131` sits one above its `3f2ff64f` number and back on main's numbering.
+`63afa2b0` re-sets crew 1.0.62, one past main. The merge commit took main's side of the refresh
+artifacts; this note was then re-merged three-way from `2693d0fa`, T-0028's side at `3f2ff64f` and
+main's at `8ab733d7`, both sides' provenance kept, main's first. The code both sides changed is
+`plugin/crew/hooks/scripts/crew_state.py` (T-0010's +5 at `AUTOPILOT_DEFAULTS`, T-0028's Kimi lines
+below it), `.crew/verify.json` (T-0010's policy rule 28 among main's rules, T-0028's rule-7 path and
+its Kimi rule last), `plugin/crew/tests/sabotage.py` (`MUTATIONS` now ends `:3056`),
+`plugin/crew/tests/test_crew_config.py` and the release files. The conflicting hunks were resolved by
+hand and their citations re-taken on `63afa2b0` with `grep -n` / `sed -n`. Every other body `path:N`
+citation was then traced to the side whose copy of this note carries its line and mapped to
+`63afa2b0` through a `difflib` line diff (`/root/crew-tmp/t-0028/rewrite.py` and `ccfix.py`,
+machine-local, after T-0010's `citemap.py`); each one that moved was read at `63afa2b0`, and the
+history chains (a citation followed by `at`, `on`, `since`, `before` or `->`) were left as written.
+
+Re-anchor only for this map's own claims; nothing was executed for this note.
