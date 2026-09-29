@@ -5100,3 +5100,8 @@ Pre-existing on `origin/main` at `9de3afe5` (measured by scanning each command w
 - **`find ... -exec terraform destroy \;` / `-execdir terraform apply p.tfplan \;` are never judged.** `find` is not unwrapped, so the command behind `-exec`/`-execdir` is not read; `-execdir` also runs it in each match's directory.
 - **`terragrunt --working-dir DIR destroy` is never judged.** A terragrunt global flag before the subcommand hides the verb from `_terraform_destructive`; the flag after the verb is recognised.
 - **PowerShell `Start-Process terraform -ArgumentList destroy` (and `-WorkingDirectory`) is never judged.** `Start-Process` is not unwrapped.
+
+## gizmoduck: follow-ups filed by T-0107 (the routine CLI, 2026-09-29)
+
+- **gizmoduck/crew: the routine's dated `docs/security-scans/<date>/` layout does not satisfy crew's endpoint ledger.** The ledger reads a flat `docs/security-scans/<ep-id>.md` (`plugin/crew/hooks/scripts/crew_endpoints.py:1008-1012`) and confirms it through `_artifact_confirms_scan` (`:1163`). A bridge - the ledger accepting a dated directory holding `report.md` with the `**Total finding instances:**` marker, or the routine also writing `<ep-id>.md` - is a crew change with its own bump.
+- **`docs/guides/gizmoduck/*.{html,docx,pdf}` describe gizmoduck with no routine CLI** (`docs/guides/gizmoduck/gizmoduck-technical-reference.html:146` still says the routine "has no slash command or skill entry point") and have no tracked source. Rebuild them with doc-builder from `plugin/gizmoduck/README.md` once the routine has been used in anger.

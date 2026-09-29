@@ -4,6 +4,42 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `gizmoduck` 0.5.4: `routine` subcommand and the dated docs/security-scans layout (T-0107)
+
+- **What changed.** `gizmoduck.py routine <manifest.yaml>` calls routine.py's
+  existing `load_manifest` and `run_routine`, then renders the combined report
+  with its coverage table from the run's own `findings.jsonl` and
+  `run-manifest.json`. Output goes to `--out DIR` (default `routine-out/`) or,
+  with `--scan-root MODULE_DIR [--date YYYY-MM-DD]`, to
+  `MODULE_DIR/docs/security-scans/YYYY-MM-DD/`, holding `findings.jsonl`,
+  `run-manifest.json`, `report.md`, `report.html`, `report.pdf` when a renderer
+  is present, and `scan-meta.json` (gizmoduck's own schema 1: version,
+  timestamps, `authorized_by`, targets, coverage counts and `complete`, finding
+  counts, the file names). `report` gains `--run-manifest run-manifest.json`, so
+  a routine run re-renders with its coverage table.
+- **Why.** aws-ops report items 8 and 12: `run_routine` was the only path to
+  checkov, trivy, dependency-check, semgrep, ZAP, testssl, nmap, nikto and sqlmap
+  and nothing shipped called it, so only nuclei was runnable headless; and
+  nothing wrote the dated layout. The reporter vendored a pinned copy of the
+  scripts to work around both.
+- **Exit codes.** 0 when every cell ran; 4 when every output was written but some
+  cell did not run (the last stdout line starts `GIZMODUCK_ROUTINE_INCOMPLETE:`;
+  a run with no cells is not complete); 2 for a usage or manifest error, with
+  nothing written. Findings never change the status.
+- **Gates.** sqlmap's two gates are routine.py's and unchanged: `options.sqlmap`
+  makes a target a candidate, and `--confirm-active`, asked for by name, lets it
+  fire. A directory already holding a `scan-meta.json` is refused without
+  `--replace`. `scan-meta.json` and `report.*` are written complete-then-renamed.
+  Every routine-only flag, and `--run-manifest`, is refused on any other command.
+- **Unchanged.** The flat Nuclei report, byte for byte; every other subcommand
+  stays stdlib-only (`routine` imports routine.py, and so PyYAML, lazily); no
+  slash command; no hook; crew's endpoint-ledger path `docs/security-scans/<ep-id>.md`
+  is untouched, and the dated layout does not satisfy it (follow-up in `TODO.md`).
+- **Sabotage.** Seven entries plus the atomic helper's neighbour, each run by hand
+  against the tracked `gizmoduck.py` and confirmed RED
+  (`plugin/gizmoduck/scripts/_test/test_routine_cli.py`'s docstring lists them).
+- gizmoduck 0.5.3 -> 0.5.4 (`plugin.json`, `marketplace.json`, `plugin/PLUGINS.md`).
+
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 
 - **What changed.** `review_patch.py`'s `EXCLUDED` is now `(".work/",
