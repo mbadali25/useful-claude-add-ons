@@ -32,4 +32,9 @@ jobs:
         # Config is .pylintrc at the repo root; it documents why each disabled
         # check doesn't fit a repo of standalone skill scripts. Third-party deps
         # are deliberately not installed -- see ignored-modules there.
-        pylint $(git ls-files '*.py')
+        # -j: one worker per CPU. Measured 2026-09-29 on a 4-CPU container:
+        # 148s serial, 34s at -j 4, byte-identical findings (duplicate-code,
+        # the one check -j changes, is disabled in .pylintrc). The count comes
+        # from os.cpu_count() rather than `-j 0` because pylint's own
+        # detection read that same container as 1 CPU and ran serially.
+        pylint -j "$(python -c 'import os; print(os.cpu_count() or 1)')" $(git ls-files '*.py')

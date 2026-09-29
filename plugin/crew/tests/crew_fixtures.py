@@ -46,6 +46,30 @@ _AMBIENT_GATE_TRACKER = None
 # specific read failed" (pid gone, or gone-and-reused), never "no /proc".
 _PROC_SUPPORTED = os.path.isdir("/proc")
 
+# The git config every test process pins, whatever the developer's global
+# file says (see conftest's `_no_real_global_config`).
+UNSIGNED_GIT_PINS = (("commit.gpgsign", "false"), ("tag.gpgsign", "false"))
+
+
+def unsigned_git_env(environ):
+    """The GIT_CONFIG_COUNT/KEY/VALUE variables that pin UNSIGNED_GIT_PINS on
+    top of `environ`, APPENDED after any entries it already carries -- never
+    written from slot 0. A runner that exports its own entries (a cloud
+    container here carries three: URL rewrites and credential.interactive)
+    keeps every one of them. An unparseable or negative count is read as 0
+    and replaced: git refuses to run under one at all (`error: bogus count in
+    GIT_CONFIG_COUNT`), so there is nothing in it to preserve."""
+    try:
+        base = max(int(environ.get("GIT_CONFIG_COUNT", "0")), 0)
+    except ValueError:
+        base = 0
+    env = {}
+    for i, (key, value) in enumerate(UNSIGNED_GIT_PINS, start=base):
+        env[f"GIT_CONFIG_KEY_{i}"] = key
+        env[f"GIT_CONFIG_VALUE_{i}"] = value
+    env["GIT_CONFIG_COUNT"] = str(base + len(UNSIGNED_GIT_PINS))
+    return env
+
 
 def _proc_start_ticks(pid):
     """The kernel's process-start-time field for `pid`, as a string, or

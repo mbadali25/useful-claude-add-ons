@@ -4,6 +4,34 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.62: faster QA harness — parallel pylint and pytest, unsigned fixture commits
+
+- **What changed.** `pylint.yml` and the `**/*.py` rule in `.crew/verify.json`
+  run `pylint -j <os.cpu_count()>`; the `test` job in `pytest-crew.yml` installs
+  `pytest-xdist` and runs `-n auto`; verify.json's whole-suite crew rule uses
+  `-n auto` when `xdist` imports and runs serially when it does not. crew's
+  `conftest.py` pins `commit.gpgsign=false` / `tag.gpgsign=false` for every test
+  through `GIT_CONFIG_COUNT`, appended after the runner's own entries
+  (`crew_fixtures.unsigned_git_env`).
+- **Why (measured 2026-09-29, 4-CPU Linux container).** pylint over every tracked
+  file: 148s serial, 34s at `-j 4`, identical findings. crew's default set:
+  923s serial, 281s at `-n 4` (6393 passed, 453 skipped both ways). The serial
+  run held one core at ~33%: it is subprocess-bound, which is why workers pay.
+  Fixture commits were running the developer's signing program: 83 ms a commit
+  signed against 7 ms unsigned, and a gpg host with a pinentry can prompt.
+- **Not `-j 0`.** pylint's own CPU detection read that container as 1 CPU and
+  ran serially (151s at `-j 0`), so the count comes from `os.cpu_count()`.
+- **Not Ruff in place of pylint.** Ruff already runs. It has no equivalent for
+  the inference checks this repo's suppressions show firing (`no-member`,
+  `not-callable`, `arguments-differ`, `possibly-used-before-assignment`,
+  `cyclic-import`), and it does not read `# pylint: disable=` pragmas.
+- **Unchanged.** Every check's selection and pass/fail rule; `seconds` in
+  verify.json (those are measurements on the maintainer's machine — re-price
+  with `verify-gate.sh --price`).
+- **Sabotage.** `test_conftest_git_isolation.py` runs commits and tags under a
+  global config whose signer is `/bin/false`; with the conftest loop removed
+  both go RED (`fatal: failed to write commit object`), restored GREEN.
+
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 
 - **What changed.** `review_patch.py`'s `EXCLUDED` is now `(".work/",
