@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@bbd9a66d
-verified: 2026-09-28
+anchor: useful-claude-add-ons@d1872b60
+verified: 2026-09-29
 
 ## Re-derive provenance
 
@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 36 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.61 (T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.62 (T-0104's re-set `d1872b60`, one past main's 1.0.61 after merging `8ab733d7`; 1.0.61 at T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -274,7 +274,7 @@ read 124. Re-executed on T-0010-solo's merge of `6387ab49` (T-0072 landed), at `
 57 / 0 - T-0072's `autopilot.deploy` and T-0010's two keys, all repo-only. Re-executed on T-0010-solo's merge of
 `e878cc31` (T-0075 landed as crew 1.0.59): 125 / 68 / 57 / 0 - T-0075 added no config leaf.
 `plugin/crew/tests/test_crew_config.py:288` asserts 125. T-0004's `CHANGELOG.md` entry
-now says "117 -> 119" (`:1039` on T-0010-solo's merge of `e878cc31`, T-0075's entry and
+now says "117 -> 119" (`:1085` at `d1872b60`, T-0104's entry above it; `:1039` on T-0010-solo's merge of `e878cc31`, T-0075's entry and
 T-0010's above it; `:915-916` on T-0010-solo at `d7c7c75c`; `:928-929` at `3648f59a`, after T-0075's merge of `6387ab49` put T-0090's, T-0089's and T-0092's entries above it and its round-5 fixes grew its own; `:825-826` at `938e3b11`, after T-0075's round-4 fixes grew its own entry; `:807-808` on T-0075's merge of `f54af3fa`, after T-0072's entry went in above it; `:759-760` at `3724731b`, after T-0075's merge of `e6e10432` put T-0079's entry above it and its round-3 fix grew its own; `:653-654` at `f54af3fa`; `:699-700` since T-0075's merge of `5050ea3b` put shipstation's entry above it, `:688-689` after its merge of `f96e9ec9` put T-0077's entry above it, `:666-667` on T-0075's merge of `d2fbd408`; `:608-609` at `d2fbd408`, before T-0075's entry went in above it; `:545-546` on T-0075's branch before that merge; `:515-516` at `67caa4b8`, before T-0024's four entries and T-0075's went in above it;
 `:436-437` at `bebbb97f`, before T-0018's; `:390-391` at `db14619c`, before T-0023's; `:276-277` at `f0b12ee6`, before T-0021's; `:228-229` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this
 paragraph was first written. T-0005's entry states no leaf count; T-0023's says 121 -> 122; T-0072's says 122 -> 123;
@@ -510,7 +510,7 @@ they disagree:
   `config.json`".
 - Only `/crew:migrate` (`crew_migrate.py`, `--apply`) ever writes
   `.crew/crew.json`; `/crew:init` still writes only `.crew/config.json`
-  (`TODO.md:3963`, "T2 (lane D, additive) deferred items", filed
+  (`TODO.md:3978`, "T2 (lane D, additive) deferred items", filed
   2026-09-23, still open at this anchor; it was `:3854` at `6c497a14`,
   `:3884` at `f2bb919b` and `:3952` at `1e0706ac`). `crew_migrate.py`'s own module
   docstring (`:1-4`) frames this as "one-time move of a 0.20 crew setup onto
@@ -1252,9 +1252,43 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   (`plugin/crew/hooks/scripts/review_verdict.py:94`,
   `plugin/crew/hooks/scripts/review_verdict.py:164`). The rest of
   `review_prompt.py`, `review_run.py` and `review_verdict.py` was not opened.
-- `webtest_guard.py`, `webtest_rules.py`, `webtest_scaffold.py` — new
-  scripts since the previous anchor, backing `/crew:webtest` — were located
-  but not opened.
+- `webtest_guard.py`, `webtest_rules.py`, `webtest_scaffold.py` back
+  `/crew:init`'s web phase and `/crew:webtest`; only the module handling
+  below was read (T-0104), the rest of each file was not opened.
+- DERIVED (T-0104, crew 1.0.60): `webtest_scaffold.find_modules`
+  (`plugin/crew/hooks/scripts/webtest_scaffold.py:194`) walks at most
+  `MODULE_DEPTH` levels below a non-web `--root`, skipping `node_modules`
+  and dot-directories and never descending into a directory `detect` names;
+  `resolve_module` (`plugin/crew/hooks/scripts/webtest_scaffold.py:224`)
+  refuses an absolute, `..`, missing or non-web `--module`. `plan`
+  (`plugin/crew/hooks/scripts/webtest_scaffold.py:488`) tags each item
+  `module` (config, the three test files under `test_dir`'s top-level
+  `testDir`, `.gitignore`) or `root` (`.mcp.json`, `.codex/config.toml`);
+  `test_dir` (`plugin/crew/hooks/scripts/webtest_scaffold.py:384`) returns a
+  problem, never a fallback, for a value it cannot read, and `plan` then
+  writes no test file and exits 1. `config_gaps`
+  (`plugin/crew/hooks/scripts/webtest_scaffold.py:313`) and `gap_lines`
+  (`plugin/crew/hooks/scripts/webtest_scaffold.py:438`) turn a missing
+  project into an advisory `gap` line with a snippet (exit 0); `baselines`
+  (`plugin/crew/hooks/scripts/webtest_scaffold.py:404`) names the one
+  declared project every `*-snapshots/` file is named for, or says it could
+  not. `credentials_recorded`
+  (`plugin/crew/hooks/scripts/webtest_scaffold.py:460`) is `.crew/secrets.md`
+  at `--root` or a declared `storageState`, and gates the auth file and
+  `fresh_config`'s auth pieces
+  (`plugin/crew/hooks/scripts/webtest_scaffold.py:471`). `agent_cmd`
+  (`plugin/crew/hooks/scripts/webtest_scaffold.py:583`) adds
+  `--config=<module>/<config>`; `run_agents` still runs at `--root`
+  (`plugin/crew/hooks/scripts/webtest_scaffold.py:589`).
+  `webtest_rules.rules(module=)`
+  (`plugin/crew/hooks/scripts/webtest_rules.py:105`) prefixes paths, wraps
+  `npx` in `(cd <module> && ...)` and drops the rules `omitted`
+  (`plugin/crew/hooks/scripts/webtest_rules.py:85`) names;
+  `webtest_guard.check_auth_leak(module=)`
+  (`plugin/crew/hooks/scripts/webtest_guard.py:588`) and `check_visual`
+  (`plugin/crew/hooks/scripts/webtest_guard.py:684`) read the module through
+  `module_dir` (`plugin/crew/hooks/scripts/webtest_guard.py:575`) while git
+  and `.crew/config.json` stay at `--root`.
 - `crew_change.py`, `crew_incident.py`, `crew_platform.py`, `crew_ticket.py`,
   `crew_status.py`, `crew_metrics.py`, `crew_recall.py` were read only at
   their module docstrings, not their function bodies (`crew_ticket.parse_risk`
@@ -2771,3 +2805,9 @@ so the merged tree is `6b89c1df` plus that README change). `08eeaa3e` adds the r
 `plugin/crew/tests/test_crew_autopilot_policy.py`. `bbd9a66d` re-sets crew 1.0.61. Each edited line kept its
 number (the parentheses and comments were added in place) except in `test_crew_autopilot_policy.py`, whose
 import block lost one line; no note cites that file by line. Re-anchor only; nothing was executed for this note.
+
+## Re-anchor provenance - `bbd9a66d` -> `d1872b60`, 2026-09-29 (T-0104, crew 1.0.62)
+
+`bbd9a66d..d1872b60` is T-0010's landing (`13b6596e`, `02510075`: refresh artifacts only), merged into `T-0104-build` by `4f2de306` (origin/main `8ab733d7`), and T-0104's own commits: the webtest scaffold for multi-module repositories (`53665204`, `bd3f7953`, `d5d59fae`, `37726645`, `fe1834b1`: `webtest_scaffold.py`, `webtest_rules.py`, `webtest_guard.py`, their tests and `sabotage_webtest.py`, `commands/init.md`, `commands/webtest.md`, `crew-setup/phases.md`, `stack-web/SKILL.md`, `README.md`'s `/crew:webtest` row, `plugin/PLUGINS.md`, two guide sources and their built outputs, `CHANGELOG.md`, `TODO.md`, and `.crew/verify.json`'s new last rule, index 32 after the merge), the guide rebuild `5501aa76`, and the crew 1.0.62 re-set `d1872b60` (`plugin.json`, `marketplace.json`, `plugin/PLUGINS.md`, `CHANGELOG.md`'s heading, `plugin/crew/BUDGETS.md:11` at 19,517 lines across 128 files). T-0104's earlier re-anchor (`3648f59a` -> `fe1834b1`) was superseded by the merge, which took origin/main's copy of this note; its DERIVED bullet on the webtest scripts is re-applied at `d1872b60`.
+
+Body citations re-pointed: `TODO.md:3978` (T-0104's two follow-up bullets sit at the top of `TODO.md`); T-0004's `CHANGELOG.md` leaf-count line gains `:1085` at `d1872b60`. The version sentence moves to 1.0.62. The T-0104 DERIVED bullet under "Unverified at this anchor" cites the three webtest scripts at `d1872b60` (unchanged since `fe1834b1`; `git diff --stat fe1834b1 d1872b60 -- plugin/crew/hooks/scripts/webtest_*.py` is empty). Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `bbd9a66d` to the tree at `d1872b60` (difflib equal blocks); every citation that did not map to itself was read with `sed -n` / `grep -n`. The script attributes some bare `:N` to the wrong file (a `role_write_guard.py` range after a `TODO.md` mention, a `check-marketplace.py` range after a `marketplace.json` mention); those were read and hold. A citation inside a list of per-commit positions keeps its commit's line; only the current position is added. Nothing else was executed for this note.

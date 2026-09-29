@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@bbd9a66d
-verified: 2026-09-28
+anchor: useful-claude-add-ons@d1872b60
+verified: 2026-09-29
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -1731,3 +1731,9 @@ so the merged tree is `6b89c1df` plus that README change). `08eeaa3e` adds the r
 `plugin/crew/tests/test_crew_autopilot_policy.py`. `bbd9a66d` re-sets crew 1.0.61. Each edited line kept its
 number (the parentheses and comments were added in place) except in `test_crew_autopilot_policy.py`, whose
 import block lost one line; no note cites that file by line. Re-anchor only; nothing was executed for this note.
+
+## Re-anchor provenance - `bbd9a66d` -> `d1872b60`, 2026-09-29 (T-0104, crew 1.0.62)
+
+`bbd9a66d..d1872b60` is T-0010's landing (`13b6596e`, `02510075`: refresh artifacts only), merged into `T-0104-build` by `4f2de306` (origin/main `8ab733d7`), and T-0104's own commits: the webtest scaffold for multi-module repositories (`53665204`, `bd3f7953`, `d5d59fae`, `37726645`, `fe1834b1`: `webtest_scaffold.py`, `webtest_rules.py`, `webtest_guard.py`, their tests and `sabotage_webtest.py`, `commands/init.md`, `commands/webtest.md`, `crew-setup/phases.md`, `stack-web/SKILL.md`, `README.md`'s `/crew:webtest` row, `plugin/PLUGINS.md`, two guide sources and their built outputs, `CHANGELOG.md`, `TODO.md`, and `.crew/verify.json`'s new last rule, index 32 after the merge), the guide rebuild `5501aa76`, and the crew 1.0.62 re-set `d1872b60` (`plugin.json`, `marketplace.json`, `plugin/PLUGINS.md`, `CHANGELOG.md`'s heading, `plugin/crew/BUDGETS.md:11` at 19,517 lines across 128 files). T-0104's earlier re-anchor (`3648f59a` -> `fe1834b1`) was superseded by the merge, which took origin/main's copy of this note; its DERIVED bullet on the webtest scripts is re-applied at `d1872b60`.
+
+No body citation moved: `.crew/verify.json:332-339` (rule 30) holds; its last line changed in place (a comma) when T-0104 appended its rule after the last one. New: rule 32 at `d1872b60` (the webtest scripts and their suites, `test_webtest_scaffold.py`, `test_webtest_guard.py`, `test_webtest_podman.py`), 4 s measured through heavy-run. Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `bbd9a66d` to the tree at `d1872b60` (difflib equal blocks); every citation that did not map to itself was read with `sed -n` / `grep -n`. The script attributes some bare `:N` to the wrong file (a `role_write_guard.py` range after a `TODO.md` mention, a `check-marketplace.py` range after a `marketplace.json` mention); those were read and hold. A citation inside a list of per-commit positions keeps its commit's line; only the current position is added. Nothing else was executed for this note.
