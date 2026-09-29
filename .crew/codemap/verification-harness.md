@@ -37,9 +37,11 @@ including the slow version-drift walk `_verify/smoke.sh` skips), and
 them and is wired into CI but not into the local Stop gate: see
 "`scripts/check_instructions.py`" below.
 
-## `.crew/verify.json` — 31 rules, up from 30
+## `.crew/verify.json` — 34 rules, up from 32
 
-**DERIVED, read in full via `json.load` on T-0010-solo's merge of `e878cc31` (T-0075 landed as
+**DERIVED, read in full via `json.load` on T-0501's branch (off `8ab733d7`, crew 1.0.61), where
+T-0501's rules 32 and 33 make it 357 lines and 34 rules; the rest of this paragraph is as
+measured on T-0010-solo's merge of `e878cc31` (T-0075 landed as
 crew 1.0.59), where T-0010's policy rule and T-0075's five rule-7 paths make it 345 lines.** 345 lines,
 **32** rules (32 and 339 lines on T-0010-solo at `50a275ea`, 31 and 330 at `c817782f`, 29 and 311 before its first merge; 31 and 337 lines at `7d217751` on T-0075's branch; 31 and 335 lines on T-0075's merge of `d2fbd408`, 31 and 332 lines at `d2fbd408`, 30 and 326 on T-0075's branch at `763eaeff`, 30 and 323 lines at `67caa4b8`, 28 and 302 on T-0024's branch at `45345812`, 325 on T-0075's branch at `f7163410`, 30 and 322 lines at `bebbb97f`, 29 at `db14619c` and on T-0023's merge of `502cb137`, 28 on the T-0005 landing `2b18f7ab` and at T-0023's `eba11657`, 27 at `07ca3972`, 26 at `a0c0847e`, 25 at `8ebbdedc`, at T-0006's `2bb92f32` and at T-0005's
 `a26ad8c0`, 24 at `c35edda5`, 23 at `f2bb919b`, 22 at `6c497a14`, 21 at `5d1fc5fd`) plus a `default`
@@ -157,7 +159,11 @@ Notable rules, re-read directly:
   every matched rule (`verify-gate.sh:920`, `rule_order`, "matched rule
   indices"), so rule 23's "DELIBERATELY UNCHECKED" `why` no longer describes
   what happens to a codemap edit: any `.crew/codemap/` change without a
-  regenerated `.claude/rules/` now fails the Stop gate.
+  regenerated `.claude/rules/` now fails the Stop gate. Since T-0501 (crew
+  1.0.62) the command also prints advisory `anchor behind:` /
+  `anchor unresolvable:` / `anchors: could not tell` lines, and its `why`
+  says so: they never change its exit code, so this rule still passes on a
+  stale-but-synced codemap by design.
 - **Rule 25**, new at `adf8d1dd` (`.crew/verify.json:269-285`, T-0008; rule 24 until T-0005's rule 6 merged in): `paths`
   `plugin/crew/hooks/scripts/crew_refresh_check.py`, its three test files,
   `plugin/crew/tests/sabotage_refresh.py`, and `plugin/crew/commands/implement.md`
@@ -267,6 +273,22 @@ Notable rules, re-read directly:
   `len()` at `45345812` — count them there, the `why` states no number), imported by
   `plugin/crew/tests/sabotage.py:81` and appended at `:3055` (`:80` and `:3054` before T-0075's `sabotage_config` import). `crew_ticket.py` is named by
   rules 11 and 31 both (T-0010's owner-only refusal in `crew_ticket.approve` runs under both).
+- **Rule 32**, new on T-0501's branch (`.crew/verify.json:341-347`, T-0501): `paths`
+  `crew_instructions.py`, `test_crew_instructions.py`, `test_rules_generation_path.py`,
+  `test_rules_anchor_advice.py` and `sabotage_context.py` → `python3 -m pytest
+  plugin/crew/tests/test_crew_instructions.py plugin/crew/tests/test_rules_generation_path.py
+  plugin/crew/tests/test_rules_anchor_advice.py -q`, priced 3s. Before it those files
+  matched only rule 0 (check-marketplace) and rule 15 (lint), so a generator change reached no
+  test through the Stop gate. `test_rules_anchor_advice.py` holds the must-print (behind,
+  unresolvable, no HEAD) and must-not (current, `agents`/`codex`, a note with no rule) cases and
+  the parity with SessionStart's classifier; `sabotage_context.py`'s two T-0501 entries red on it.
+- **Rule 33**, new on T-0501's branch (`.crew/verify.json:348-352`, T-0501): `paths`
+  `scripts/check_instructions.py` and `scripts/_test/instruction-budgets.py` → `python3
+  scripts/_test/instruction-budgets.py`, priced 2s. `check_instructions.py` parses
+  `rules --check`'s stdout and drops the advisory anchor prefixes; the suite's `behind` and
+  `edited-behind` stages are its must-not-fail and must-fail-correctly cases, and its parity case
+  holds the prefix tuple equal to `crew_instructions.ANCHOR_ADVISORY_PREFIXES`. CI runs the same
+  suite (`instruction-budgets.yml`); this rule makes the Stop gate run it too.
 
 **Still unresolved at this anchor:** a declared `seconds` figure is only
 overwritten by measurement when the rule carries *no* `seconds` at all
@@ -519,6 +541,8 @@ set on Ubuntu.
   `plugin/crew/tests/sabotage.py:79`, `:3054` — `sabotage_route.py`'s registration.
 - `.crew/verify.json:332-339` (rule 31) — the T-0024 group-approval suite;
   `plugin/crew/tests/sabotage.py:81`, `:3055` — `sabotage_approval.py`'s registration.
+- `.crew/verify.json:341-347` (rule 32) and `:348-352` (rule 33) — T-0501's generator and
+  budget-checker suites; `sabotage_context.py`'s `CONTEXT_MUTATIONS` carries rule 32's entries.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
   `plugin/crew/CONFIG.md:2373-2380` — the descoped per-rule process-group kill,
   documented as a standing limitation.

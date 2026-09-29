@@ -303,7 +303,13 @@ The code map also reaches a session with no hook at all, as
   `crew_instructions.py rules`. `/crew:migrate` lists the rules in its preview
   and writes them after `--apply`. Each rule is at most 30 lines: a `paths:`
   list, the note's landmines, and the sha256 of the note it came from. A
-  hand-written file already at that path is reported and left alone.
+  hand-written file already at that path is reported and left alone. Since
+  crew 1.0.62 both commands also print one `anchor behind:` or
+  `anchor unresolvable:` line per note they render a rule from whose anchor
+  needs re-check - the same classification as session-start's "Anchors to
+  re-check" line - or `anchors: could not tell` when there is no git HEAD.
+  They are advisory only: the exit codes and the generated files are
+  unchanged, and a note that yields no rule is not reported here.
 - **Loaded by Claude Code when a matching path is touched.** Claude Code's
   memory docs say a `paths:` rule loads when Claude reads a file matching one
   of its patterns, so a subsystem's landmines arrive only in sessions that

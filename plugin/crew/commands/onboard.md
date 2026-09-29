@@ -177,8 +177,10 @@ python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_instructions.py" rules --root 
 
 It writes `.claude/rules/<subsystem>.md` (≤30 lines, `paths:`-scoped, source hash) from each
 note. Report every `wrote` and `removed` line. A `hand-written, left alone` line is a collision:
-report it, never overwrite or rename it yourself. Commit the rules with the notes; CI checks them
-for drift.
+report it, never overwrite or rename it yourself. An `anchor behind:` or `anchor unresolvable:`
+line names a note whose anchor needs re-check (session-start's set; `anchors: could not tell` = no
+git HEAD): `--refresh <subsystem>` and re-run, or say so in the commit. It never changes the exit
+code. Commit the rules with the notes; CI checks them for drift.
 
 ## Then make the knowledge executable
 

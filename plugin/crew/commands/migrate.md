@@ -32,8 +32,11 @@ python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_instructions.py" rules --root 
 ```
 
 It writes nothing. Each `missing:` or `stale:` line is a `.claude/rules/` file apply will write,
-each `orphan:` one it will remove, each `hand-written` line a file it will leave alone. Exit 1 here
-means only that there is something to generate.
+each `orphan:` one it will remove, each `hand-written` line a file it will leave alone. An
+`anchor behind:` or `anchor unresolvable:` line names a code map whose anchor needs re-check before
+a rule is generated from it (session-start's "Anchors to re-check" set); `anchors: could not tell`
+means no git HEAD to compare against. None changes the exit code: exit 1 here means only that
+there is something to generate.
 
 Then ask whether to apply. Do not apply in the same turn as the preview.
 
@@ -88,9 +91,12 @@ Then generate the rules the preview listed, and show the output verbatim:
 python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_instructions.py" rules --root .
 ```
 
-A `hand-written, left alone` line is a collision to report, never to overwrite. These files are
-derived from `.crew/codemap/`, which migrate does not change, so they are outside the backup
-manifest and rollback leaves them; `/crew:onboard` regenerates them.
+A `hand-written, left alone` line is a collision to report, never to overwrite. The same
+`anchor behind:` / `anchor unresolvable:` lines mean the rules were generated from those maps as
+they stand: refresh with `/crew:onboard --refresh <subsystem>` and re-run, or say so where you
+record the generation.
+These files are derived from `.crew/codemap/`, which migrate does not change, so they are outside
+the backup manifest and rollback leaves them; `/crew:onboard` regenerates them.
 
 ## Rollback
 

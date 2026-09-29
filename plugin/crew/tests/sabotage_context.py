@@ -18,6 +18,7 @@ HANDOFF_PS1 = os.path.join(SCRIPTS, "handoff-read.ps1")
 _FIXES = "tests/test_crew_context_fixes.py::"
 _WRAP = "tests/test_crew_context_wrappers.py::"
 _INSTR = "tests/test_crew_instructions.py::"
+_ADVICE = "tests/test_rules_anchor_advice.py::"
 _OFF = "  # pylint: disable=using-constant-test\n"
 
 # The T6 review round: one per finding that changed code. The .ps1 ones need
@@ -200,4 +201,17 @@ CONTEXT_MUTATIONS = (
         ("tests/test_crew_context.py::"
          "test_emit_writes_lf_even_through_a_crlf_translating_stdout"),
     ),
+    # T-0501: the two ways `rules`' anchor advice collapses into the
+    # safe-looking value -- a behind note folded away, and no HEAD printing
+    # nothing instead of could-not-tell.
+    ("rules folds a behind anchor into silence",
+     INSTRUCTIONS,
+     'WARN_STATES = ("behind", "unresolvable")\n',
+     'WARN_STATES = ("unresolvable",)\n',
+     _ADVICE + "test_rules_names_a_note_whose_cited_path_changed_since_its_anchor"),
+    ("rules with no git HEAD says nothing instead of could-not-tell",
+     INSTRUCTIONS,
+     '    if head is None:\n        return [f"anchors: could not tell',
+     '    if head is None:\n        return [], 0\n        return [f"anchors: could not tell',
+     _ADVICE + "test_no_git_head_is_could_not_tell_not_silence"),
 ) + REVIEW_FIX_CONTEXT_MUTATIONS

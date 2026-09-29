@@ -4,7 +4,7 @@ paths:
   - "_verify/smoke.sh"
   - "scripts/check-marketplace.py"
 ---
-<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=9370b5b9628086ea -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=9272b7320dc950cf -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # verification-harness
 Code map anchor `bbd9a66d`; if it is behind HEAD, re-check with `git diff --name-only bbd9a66d..HEAD -- <cited paths>`.
 Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and .crew/verify.json — what each actually runs, and where they overlap or don't. .crew/verify.json is tracked; its own anchor field (:3) is stale at 5238be3d, independent of this note's anchor.
@@ -23,8 +23,8 @@ Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and 
 - `.crew/verify.json:314-321` (rule 29) — the T-0021 tracker suite; `plugin/crew/tests/sabotage.py:78`, `:3054` — `sabotage_tracker.py`'s registration.
 - `.crew/verify.json:322-330` (rule 30) — the T-0023 plain-text routing suite; `plugin/crew/tests/sabotage.py:79`, `:3054` — `sabotage_route.py`'s registration.
 - `.crew/verify.json:332-339` (rule 31) — the T-0024 group-approval suite; `plugin/crew/tests/sabotage.py:81`, `:3055` — `sabotage_approval.py`'s registration.
+- `.crew/verify.json:341-347` (rule 32) and `:348-352` (rule 33) — T-0501's generator and budget-checker suites; `sabotage_context.py`'s `CONTEXT_MUTATIONS` carries rule 32's entries.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` / `plugin/crew/CONFIG.md:2373-2380` — the descoped per-rule process-group kill, documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` — `Resolve-CrewBash` refusal rather than a re-resolving hang.
 - `scripts/check-marketplace.py:1639` — `main()`, sixteen checks.
-- `scripts/check-marketplace.py:518` — `check_versions`.
 Full note: `.crew/codemap/verification-harness.md`.

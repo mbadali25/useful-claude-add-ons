@@ -952,16 +952,26 @@ plus `.crew/verify.json`.
 
 New on main since `6c497a14` (#227, #228). `python3 plugin/crew/hooks/scripts/crew_instructions.py
 rules --root .` writes one `.claude/rules/<subsystem>.md` per code-map note that yields any paths
-(`expected_rules`, `plugin/crew/hooks/scripts/crew_instructions.py:169`; `render_rule`, `:123`):
+(`expected_rules`, `plugin/crew/hooks/scripts/crew_instructions.py:190`; `render_rule`, `:132`):
 a `paths:` frontmatter derived from the note's own citations, a `crew:generated` marker carrying
-the sha256 of everything the rule is rendered from (`rule_digest`, `:105`), the note's anchor,
+the sha256 of everything the rule is rendered from (`rule_digest`, `:114`), the note's anchor,
 INDEX.md's Covers cell for it, and the note's Landmines headlines (else its Entry points), capped at
-`RULES_MAX_LINES` = 30 (`:81`). `--check` (`rules`, `:191`) writes nothing and reports each rule
+`RULES_MAX_LINES` = 30 (`:85`). `--check` (`rules`, `:208`) writes nothing and reports each rule
 file missing, stale or orphaned; a hand-written file at a generated path is never overwritten and
 fails `--check`. `.crew/verify.json` rule 24 (`.crew/verify.json:268`) runs `--check` for any change under
 `.claude/rules/**` or `.crew/codemap/**`, so **a code-map edit without a regeneration fails the Stop
 gate** - see `verification-harness.md`. DERIVED from the source above; the command was run by
 T-0015 against this refresh.
+
+Since T-0501 (crew 1.0.62) both modes also print advisory lines about the notes a rule is rendered
+from (`_rule_subsystems`, `:178`): `anchor_lines` (`:243`) runs `crew_context.anchor_state` - the
+classifier and `rev-parse --short=8 HEAD` behind SessionStart's "Anchors to re-check" - and prints
+one `anchor behind:` / `anchor unresolvable:` line per note in `WARN_STATES`, or one
+`anchors: could not tell` line when there is no git HEAD; `main()` prints them after the drift
+lines and appends `_anchor_summary` (`:280`) to `up to date` (`:922`). The state is printed, never
+rendered into the rule, so `rule_digest` and rule 24's fixpoint are unchanged, and the exit code
+still means drift only. `scripts/check_instructions.py`'s `check_generated_drift` drops the same
+`ANCHOR_ADVISORY_PREFIXES` before it quotes drift. DERIVED from the source above.
 
 ## The tracker interface (T-0021, crew 1.0.43)
 
