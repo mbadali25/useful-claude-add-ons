@@ -2,10 +2,21 @@
 
     python3 webtest_scaffold.py --root .            # dry run (default): writes nothing
     python3 webtest_scaffold.py --root . --apply    # create what is missing
+    python3 webtest_scaffold.py --root . --module apps/web [--apply]
 
 Runs only when the repository looks like a web project: a `playwright.config.*`,
 an `angular.json`, or a `package.json` naming `@playwright/test` or
-`playwright`. Otherwise it prints `n/a` and exits 0.
+`playwright`. Otherwise it prints `n/a`, lists every MODULE below `--root`
+that is one (at most `MODULE_DEPTH` levels down, never inside `node_modules`
+or a dot-directory, never below a module already found) with the
+`--module <dir>` to scaffold it, states the depth searched, and exits 0.
+
+`--module <dir>` (one per run, relative to `--root`) scaffolds that module:
+what belongs to the test suite -- reading the existing config, the test
+files, the `.gitignore` lines -- lands in the module; what a session loads --
+`.mcp.json`, `.codex/config.toml`, `.claude/agents/` -- lands at `--root`,
+the directory a session starts in. A value that is absolute, climbs out of
+`--root`, does not exist, or is not a web project is refused (exit 1).
 
 NEVER OVERWRITES. Each whole file is created only when absent. Three files are
 merged instead, and only by ADDING: `.gitignore` gains missing lines, `.mcp.json`
@@ -37,6 +48,7 @@ Exit codes: 0 done (or nothing to do); 1 something was refused or failed; 2 usag
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -51,6 +63,9 @@ INIT_AGENTS = ("npx", "-y", f"--package=@playwright/test@{webtest_guard.PINNED_P
                "playwright", "init-agents")
 REQUIRED_PROJECTS = ("setup", "axe", "visual")
 IGNORE_LINES = ("/playwright/.auth/", "/test-results/", "/playwright-report/", "/blob-report/")
+MODULE_DEPTH = 3
+MODULE_SKIP = ("node_modules",)
+MARKERS = "no playwright.config.*, angular.json, or Playwright in package.json"
 
 CONFIG_TS = """import { defineConfig, devices } from '@playwright/test';
 
@@ -156,6 +171,57 @@ def detect(root):
         if name in deps:
             return f"package.json ({name})"
     return None
+
+
+def find_modules(root, depth=MODULE_DEPTH):
+    """[(rel, reason)] for every web project below `root`, at most `depth`
+    levels down: never inside `MODULE_SKIP` or a dot-directory, and never
+    below a directory that is itself one. `rel` uses forward slashes."""
+    found = []
+
+    def walk(path, rel, level):
+        try:
+            entries = sorted(os.scandir(path), key=lambda e: e.name)
+        except OSError:
+            return
+        for entry in entries:
+            if entry.name in MODULE_SKIP or entry.name.startswith("."):
+                continue
+            if not entry.is_dir(follow_symlinks=False):
+                continue
+            sub = f"{rel}/{entry.name}" if rel else entry.name
+            try:
+                reason = detect(entry.path)
+            except OSError:
+                reason = None
+            if reason:
+                found.append((sub, reason))
+            elif level < depth:
+                walk(entry.path, sub, level + 1)
+
+    walk(root, "", 1)
+    return sorted(found)
+
+
+def resolve_module(root, value):
+    """(rel, problem): `value` as a forward-slash path under `root`, or why
+    it is refused. `rel` None with no problem means `--root` itself."""
+    rel = value.replace("\\", "/")
+    if os.path.isabs(value) or rel.startswith("/") or re.match(r"^[A-Za-z]:", rel):
+        return None, "is absolute"
+    parts = [p for p in rel.split("/") if p not in ("", ".")]
+    if ".." in parts:
+        return None, "is not relative to --root"
+    if not parts:
+        return None, None
+    path = os.path.join(root, *parts)
+    if not os.path.exists(path):
+        return None, "does not exist"
+    if not os.path.isdir(path):
+        return None, "is not a directory"
+    if detect(path) is None:
+        return None, f"is not a web project ({MARKERS})"
+    return "/".join(parts), None
 
 
 def _npx(windows, *args):
@@ -349,18 +415,32 @@ def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", default=".")
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--module", help="a web project below --root; module-scoped files go "
+                                         "there, session files stay at --root")
     parser.add_argument("--windows", action="store_true", default=os.name == "nt",
                         help="write cmd /c MCP wrappers (default: this host is Windows)")
     args = parser.parse_args(argv)
     root = os.path.abspath(args.root)
-    reason = detect(root)
+    module = None
+    if args.module is not None:
+        module, problem = resolve_module(root, args.module)
+        if problem:
+            print(f"webtest scaffold: refused: --module {args.module} {problem}")
+            return 1
+    project = os.path.join(root, *module.split("/")) if module else root
+    reason = detect(project)
     if not reason:
-        print("webtest scaffold: n/a - no playwright.config.*, angular.json, or Playwright "
-              "in package.json")
+        print(f"webtest scaffold: n/a at {root} - {MARKERS}")
+        found = find_modules(root)
+        skipped = "node_modules and dot-directories"
+        print("\n".join([f"  module  {rel} ({why}) -> --module {rel}" for rel, why in found] + [
+            f"  searched {MODULE_DEPTH} directory levels below --root, skipping {skipped}"
+            if found else f"  no module found within {MODULE_DEPTH} levels (skipping {skipped})"]))
         return 0
     mode = "apply" if args.apply else "dry run"
-    print(f"webtest scaffold ({mode}): web project detected by {reason}")
-    items = plan(root, args.windows)
+    print(f"webtest scaffold ({mode}): web project detected by {reason} in {module or '.'}; "
+          f"session files at {root}")
+    items = plan(project, args.windows)
     ok = True
     for rel, text, note in items:
         if text is None:
@@ -369,9 +449,9 @@ def main(argv):
             continue
         print(f"  write   {rel}: {note}")
         if args.apply:
-            _write(root, rel, text)
+            _write(project, rel, text)
     if args.apply:
-        lines, agents_ok = run_agents(root, args.windows)
+        lines, agents_ok = run_agents(project, args.windows)
         ok = ok and agents_ok
     elif not missing_agents(root):
         lines = ["  keep    Test Agents (planner, generator and healer all exist)"]

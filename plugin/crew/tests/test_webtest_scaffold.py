@@ -288,3 +288,94 @@ def test_init_agents_is_pinned_to_the_verified_playwright(web, capsys, monkeypat
 
     pin = f"--package=@playwright/test@{webtest_guard.PINNED_PLAYWRIGHT}"
     assert ([c[:4] for c in calls], pin in dry) == ([["npx", "-y", pin, "playwright"]] * 2, True)
+
+
+# ---- T-0104: multi-module repositories (aws-ops report items 1-5)
+
+MODULE_NA = ("no playwright.config.*, angular.json, or Playwright in package.json")
+
+
+def _modules_tree(root):
+    _write(root, "mod-a/playwright.config.ts", "export default { projects: [{ name: 'chromium' }] };\n")
+    _write(root, "mod-a/e2e/package.json", json.dumps({"devDependencies": {"playwright": "1"}}))
+    _write(root, "apps/mod-b/angular.json", "{}")
+    _write(root, "pkgs/scope/mod-c/package.json",
+           json.dumps({"devDependencies": {"@playwright/test": "1.63.0"}}))
+    _write(root, "node_modules/x/playwright.config.ts", "")
+    _write(root, ".hidden/playwright.config.ts", "")
+
+
+@pytest.fixture(name="modules")
+def _modules(tmp_path, monkeypatch):
+    root = str(tmp_path / "repo")
+    os.makedirs(root)
+    _modules_tree(root)
+    calls = []
+
+    def _fake_npx(cmd, cwd):
+        calls.append((cmd, cwd))
+        for role in ("planner", "generator", "healer"):
+            if not os.path.exists(os.path.join(cwd, ".claude", "agents", f"playwright-test-{role}.md")):
+                _write(cwd, f".claude/agents/playwright-test-{role}.md", "generated")
+        return 0
+    monkeypatch.setattr(webtest_scaffold.run_agents, "__defaults__", (_fake_npx,))
+    return root, calls
+
+
+def test_a_root_without_a_web_project_lists_its_modules_with_the_command_to_scaffold_each(
+        modules, capsys):
+    root, _calls = modules
+
+    code = webtest_scaffold.main(["--root", root])
+
+    lines = capsys.readouterr().out.splitlines()
+    assert (code, lines) == (0, [
+        f"webtest scaffold: n/a at {root} - {MODULE_NA}",
+        "  module  apps/mod-b (angular.json) -> --module apps/mod-b",
+        "  module  mod-a (playwright.config.ts) -> --module mod-a",
+        "  module  pkgs/scope/mod-c (package.json (@playwright/test)) -> --module pkgs/scope/mod-c",
+        "  searched 3 directory levels below --root, skipping node_modules and dot-directories"])
+
+
+def test_a_root_with_no_module_says_none_found_and_the_depth(tmp_path, capsys):
+    _write(str(tmp_path), "a/b/c/d/playwright.config.ts", "")
+
+    code = webtest_scaffold.main(["--root", str(tmp_path)])
+
+    assert (code, capsys.readouterr().out.splitlines()[1:]) == (
+        0, ["  no module found within 3 levels (skipping node_modules and dot-directories)"])
+
+
+def test_module_search_does_not_descend_into_a_detected_module(modules):
+    root, _calls = modules
+
+    assert [rel for rel, _reason in webtest_scaffold.find_modules(root)] == [
+        "apps/mod-b", "mod-a", "pkgs/scope/mod-c"]
+
+
+@pytest.mark.parametrize("value, reason", [
+    ("../x", "is not relative to --root"),
+    ("/abs", "is absolute"),
+    ("C:\\abs", "is absolute"),
+    ("missing", "does not exist"),
+    ("not-web", "is not a web project (" + MODULE_NA + ")"),
+])
+def test_module_must_be_a_relative_web_project_under_root(modules, capsys, value, reason):
+    root, calls = modules
+    os.makedirs(os.path.join(root, "not-web"))
+    before = _snapshot(root)
+
+    code = webtest_scaffold.main(["--root", root, "--module", value, "--apply"])
+
+    assert (code, f"refused: --module {value} {reason}" in capsys.readouterr().out,
+            _snapshot(root), calls) == (1, True, before, [])
+
+
+def test_module_apply_reports_the_module_and_the_root(modules, capsys):
+    root, _calls = modules
+
+    webtest_scaffold.main(["--root", root, "--module", "mod-a", "--apply"])
+
+    assert capsys.readouterr().out.splitlines()[0] == (
+        "webtest scaffold (apply): web project detected by playwright.config.ts in mod-a; "
+        f"session files at {root}")
