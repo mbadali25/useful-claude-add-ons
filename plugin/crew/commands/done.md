@@ -58,10 +58,11 @@ commit, then `/crew:review $1` again, then rerun this command. Documents read
 
 ## On all four passing
 
-1. Set `.work/tickets/$1/spec.md`'s header to `status: done`. Update
-   `.work/INDEX.md`'s row to match (files and Obsidian modes), or push the
-   tracker item to its closed state (Jira, ServiceDesk Plus) the way
-   `/crew:work`'s old step 13 did. <!-- deliberate -->
+1. Set `.work/tickets/$1/spec.md`'s header to `status: done`; changing only
+   that value keeps the approval, so the checks above stay true. Then move the
+   tracker: `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket "$1" --to done`.
+   Print its lines verbatim; on exit 3 run the command it printed (Jira, SDP);
+   on exit 1 tell me `tracker not updated: <reason>` — done still stands.
 2. Append this ticket's row to `.crew/metrics.jsonl` with the metrics
    harness. Anything it cannot measure is written `UNKNOWN`, never `0`:
 

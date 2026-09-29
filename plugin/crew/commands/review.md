@@ -328,11 +328,11 @@ as though it were a preference.
 # derivation can disagree with the first, and then the staleness verdict was
 # about a different range than the diff the reviewer actually read.
 #
-# review_patch.py builds ONE bundle: committed range PLUS staged, unstaged and
-# untracked changes, with renames, modes, binaries and submodules in the
-# manifest, split into parts (never truncated) and hashed. `git diff
-# "$BASE"...HEAD` alone gave a 0-byte patch on a dirty tree (found by Codex,
-# `docs/review/03-codex-review.md`). The real index is never written.
+# review_patch.py builds ONE bundle: committed range PLUS staged, unstaged and untracked
+# changes, never `.work/` or generated `graphify-out/` (the manifest's `excluded`), with
+# renames, modes, binaries and submodules in the manifest, split into parts (never
+# truncated) and hashed. `git diff "$BASE"...HEAD` alone gave a 0-byte patch on a dirty
+# tree (found by Codex, `docs/review/03-codex-review.md`). The real index is never written.
 MANIFEST="$SCRATCH/manifest.json"
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_patch.py \
   --root . --base "$BASE" --out "$SCRATCH/diff.txt" --manifest "$MANIFEST"

@@ -127,10 +127,18 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **65**
-leaves. `leaf_paths(default_config())` yields **116**, so **51** are repo-only.
-For all 116, `filter_global` and `plan_global_write` agree on whether the path is
-settable. (63 / 114 before the Windows burn-in added
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **68**
+leaves. `leaf_paths(default_config())` yields **123**, so **55** are repo-only.
+For all 123, `filter_global` and `plan_global_write` agree on whether the path is
+settable. (122 / 67 / 55 on T-0072's branch, which added the repo-only
+`autopilot.deploy`; 122 / 68 / 54 on main after T-0023 added `route.enabled` to
+both layers; 121 / 67 / 54 before either.
+66 / 119 before crew 1.0.42 merged T-0005, which added
+`environments.prodUnattended` to both layers and the repo-only
+`environments.nonProd`; this paragraph said 117 at that point, not counting
+T-0004's repo-only `autopilot.mode` and `autopilot.maxPhases`. 65 / 116 before
+T-0006 added `resume.auto` to both layers, §14a;
+63 / 114 before the Windows burn-in added
 `context.autoClear.onlyRepos` and `onlySessions` to both layers; this paragraph
 still said 60 / 106 at that point, so the cloud-guard and scope-guard keys had
 moved the counts without it. 45 / 86 before schema 6 added the six `guards.*`, the two
@@ -294,6 +302,11 @@ of that last sentence. Four entries, id and description verbatim:
 | `delete-map` | deleting a codemap file or a diagram |
 | `rewrite-metrics` | rewriting `.crew/metrics.md` |
 | `git-destruction` | destroying git history or tracked work - force-push, branch delete, history rewrite, or `rm` of a tracked file |
+
+Since 1.0.41 the list also binds `/crew:autopilot` (§20): `commands/autopilot.md`
+names every id, and `test_crew_autopilot.py::test_command_names_every_autonomous_stop`
+iterates this tuple against that file, so an id added here without the command
+naming it fails the suite.
 
 `_WIDENING_NOTES` is keyed on **every** member of `AUTHORITIES` on purpose, so a
 tier added without a note is a `KeyError` at the point of use rather than a
@@ -597,7 +610,7 @@ test in `tests/test_promote_merge_gate.py`. `preset` is on this list because
 promote names it only to say it binds to nothing.
 
 `jira.project` is the one on this list that most looks like it should work.
-`/crew:jira-sync` gates on `tracker == "jira"` (`commands/jira-sync.md`) and
+`/crew:jira-sync` gates on `crew_tracker.py resolve` saying `jira` (`commands/jira-sync.md`) and
 then caches `jira.cloudId` — a key `default_config()` does not declare
 at all, and that nothing reads back either. So the Jira block ships two keys and
 crew consumes neither. `jira.cloudId` is counted in §12.3 rather than here,
@@ -618,7 +631,6 @@ them:
 
 | Key(s) | Consumer |
 |---|---|
-| `obsidian.columns.*` (five keys) | `commands/obsidian-sync.md`, which instructs: "Read the names from `obsidian.columns` rather than hardcoding them" |
 | `sdp.portal`, `sdp.noteVisibility`, `sdp.closeOnDone` | `commands/sdp-sync.md` |
 | `secondOpinion.provider`, `.sendsCode`, `.keyEnv` | `agents/planner.md`, `commands/plan.md`, `skills/crew-providers/SKILL.md` |
 | `docs.reportTheme` | `skills/crew-house-style/SKILL.md`, with a committed regression test in `tests/test_docs_routing.py` that binds it to the findings-report genre |
@@ -627,7 +639,12 @@ them:
 
 ---
 
-## 10. Global-settable keys — all 60
+## 10. Global-settable keys — 68
+
+68 measured (`leaf_paths(default_global_config())`, crew 1.0.46); the table
+below lists 64 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
+`guards.sqlDestructive` and `environments.prodUnattended` (§16) are
+global-settable and not tabled here.
 
 Settable in **either** layer; repo wins — **except `install.policy`, the
 seven `guards.*` and `change.requireForProduction`, where the narrower of the
@@ -706,6 +723,8 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 | `change.sdpTemplate` | string, see §17 | `"Change Management Request"` |
 | `change.jiraIssueType` | string, see §17 | `"Change"` |
 | `change.category` | string or `null`, see §17 | `null` |
+| `resume.auto` | `true` or `null`; **only the machine layer can arm it**, a repo `false` vetoes it (§14a) | `null` |
+| `route.enabled` | boolean; only the JSON value `true` arms it, and a repo value wins over the machine one (§21) | `false` |
 
 `crew_state.QA_PROVIDERS` and `DEV_PROVIDERS` are both
 `["claude", "codex", "copilot", "kimi"]` (dumped by execution). `qa.provider`
@@ -739,20 +758,20 @@ repository or one checkout.
 | `schema` | integer | `7` | see §4 |
 | `tier` | integer | `0` | `crew_state.collect` |
 | `roles` | list (a leaf) | `["explorer", "reviewer"]` | `crew_state.collect` |
-| `tracker` | string | `"files"` | `crew_state.py`, `commands/brainstorm.md`, `commands/spec.md` |
+| `tracker` | string (0.20 `config.json`); `tracker.kind` in 1.0 `crew.json` | `"files"` | `crew_tracker.resolve` (`hooks/scripts/crew_tracker.py`) reads both shapes and answers `could not tell` when they disagree; the lifecycle commands, the sync commands and `crew_status.py` all go through it |
 | `jira.project` | string or `null` | `null` | **no consumer found**, §9 |
 | `jira.cloudId` | string or `null` | `null` | written by `commands/jira-sync.md`; **read by nothing**, §9 |
 | `sdp.portal` | string or `null` | `null` | prose, §9 |
 | `sdp.noteVisibility` | string | `"private"` | prose, §9 |
 | `sdp.closeOnDone` | boolean | `false` | prose, §9 |
-| `obsidian.vaultPath` | path or `null` | `null` | `commands/obsidian-sync.md` |
-| `obsidian.boardDir` | path or `null` | `null` | `commands/obsidian-sync.md` |
-| `obsidian.board` | filename | `"Board.md"` | `commands/obsidian-sync.md` |
-| `obsidian.columns.backlog` | string | `"Backlog"` | prose, §9 |
-| `obsidian.columns.ready` | string | `"Ready"` | prose, §9 |
-| `obsidian.columns.inProgress` | string | `"In Progress"` | prose, §9 |
-| `obsidian.columns.review` | string | `"Review"` | prose, §9 |
-| `obsidian.columns.done` | string | `"Done"` | prose, §9 |
+| `obsidian.vaultPath` | path or `null` | `null` | `crew_tracker.py` (falls back to `memory.vaultPath`; must hold `.obsidian/`) |
+| `obsidian.boardDir` | path or `null` | `null` | `crew_tracker.py` (relative, no `..`) |
+| `obsidian.board` | filename | `"Board.md"` | `crew_tracker.py` (a bare file name) |
+| `obsidian.columns.backlog` | string | `"Backlog"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
+| `obsidian.columns.ready` | string | `"Ready"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
+| `obsidian.columns.inProgress` | string | `"In Progress"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
+| `obsidian.columns.review` | string | `"Review"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
+| `obsidian.columns.done` | string | `"Done"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
 | `verifyGate` | boolean | `true` | `hooks/scripts/verify-gate.sh` |
 | `verify.stopBudgetSeconds` | integer | `60` | `hooks/scripts/verify-gate.sh`, `verify-gate.ps1` |
 | `context.enabled` | boolean | `true` | `hooks/scripts/context-watch.ps1` |
@@ -781,6 +800,9 @@ repository or one checkout.
 | `graph.out` | path | `"graphify-out"` | `crew_state.py` |
 | `graph.mode` | string | `"code-only"` | **no consumer found**, §9 |
 | `graph.commitHook` | boolean | `false` | **no consumer found**, §9 |
+| `autopilot.mode` | `"off"` or `"plan"` | `"off"` | `crew_autopilot.settings` — only the exact string `plan` arms `/crew:autopilot`, §20 |
+| `autopilot.maxPhases` | positive integer | `12` | `crew_autopilot.settings`, read by `crew_autopilot.next_phase`, §20 |
+| `autopilot.deploy` | `"none"`, `"nonprod"` or `"all"` | `"none"` | `crew_autopilot.settings` and `crew_autopilot.deploy_allowed` — where a deploy may run without asking; production also needs `environments.prodUnattended`, §20 |
 
 `context.reserveTokens: null` means *off*, and survives as `null` — this is the
 case `null_shadows` is deliberately narrow to protect (§1).
@@ -1026,6 +1048,111 @@ the block, and covered by a test that goes red if the exclusion is dropped —
 because dropping it is the tidy-up a future reader will reach for.
 
 
+## 14a. `resume.auto` — auto-resume after `/clear`, armed by the machine only
+
+T-0006. When it is armed, a SessionStart after `/clear` or a manual
+`/compact` reads the handoff's `resume:` line and works out whether that
+command may be resumed (`crew_resume.py::decide`). **Nothing starts on its
+own yet**: the 2026-09-25 spike (Claude Code 2.1.282) proved an interactive
+session drops SessionStart `initialUserMessage`, so the context hook names
+the exact command and the reason it did not start, and the human presses
+Enter or types it. T-0013 is the typing fallback.
+
+| Where | Value | Effect |
+|---|---|---|
+| `~/.claude/crew/config.json` | `"resume": {"auto": true}` (the boolean) | arms it — the ONLY place it can be switched on |
+| `~/.claude/crew/config.json` | absent, `null`, `false`, `"true"` (a string), anything else | off |
+| `.crew/crew.json` **or** `.crew/config.json` | `false` | vetoes a machine `true`, from either file |
+| `.crew/crew.json` or `.crew/config.json` | `true` | **nothing** — a repo can veto, never grant |
+
+A cloned repo must not be able to start unattended work on someone else's
+machine, so `crew_resume.py::settings` reads the arming value from the
+machine file alone and the repo files only for a veto — the rule
+`context.autoClear.enabled` follows (`crew_autocycle.py::settings`).
+`resolve_config`'s repo-over-global precedence is deliberately not used.
+Both repo files are read because the hooks' config split is real: the guards
+read `.crew/config.json` and `/crew:migrate` writes `.crew/crew.json`. A
+malformed machine file is off; a malformed repo file vetoes nothing.
+
+**`context.autoResume` stays unread.** It defaulted `true` historically and is
+still `true` in old configs; reviving it would have armed every one of them.
+`resume.auto` is a new key so that no existing config can arm it.
+
+When armed, a `startup` or `resume` source is `off` and adds nothing to the
+injected context. On `clear` and `compact`, `decide` returns `wait` — with
+the reason in the injected context — for: a `compact` whose PreCompact was not a typed `/compact` (both `handoff-write`
+flavours record the trigger per session, in a repo with either
+`.crew/config.json` or `.crew/crew.json`, and remove the session's previous
+record first, without needing python, so a compact whose own record never
+lands is not manual; absent, unreadable, older than 600 s, or not replaceable is not manual,
+and records and orphaned `.tmp` files older than a day are pruned); no handoff, or one archived
+as stale, or one judged stale that could not be archived; the handoff is the
+automatic PreCompact skeleton (its Changed files list is bare `git` output, so
+a file named `resume: ...` would otherwise be read as the line); no `resume:`
+line, `resume: none`, or a line the grammar refuses; a `branch:` or `head:`
+that does not match the checkout; a missing `.work/tickets/<id>/` or
+`.work/autopilot/<slug>.json`; a command not installed in the plugin; a
+`handoff-author.json` that could not be read; no record of which session wrote
+this handoff; the handoff changed since its author session wrote it; the
+handoff was written by another session; this session's process could not be
+identified; a `<git-common-dir>/crew/resume-state.json` that cannot be read,
+is not the shape `record_run` writes, or whose directory cannot be searched
+(an unknown, never "nothing resumed"; fix the permissions or move it aside to
+reset); a handoff already passed to `record_run`; a progress fingerprint that
+cannot be computed (an unreadable `.work/INDEX.md`, one whose directory
+cannot be searched, or an unlistable ticket directory counts as "cannot be
+computed", never as progress); and the same command a second time with no
+progress since. A `decide` that raises is `wait` with reason `internal
+error`, and the handoff is still injected.
+
+**Which session wrote the note (T-0042).** On an armed machine, a
+PostToolUse Write, Edit or MultiEdit of the configured handoff makes the
+context hook record `{sha256, session_id, process, at}` for this worktree in
+`<git-common-dir>/crew/handoff-author.json` (temp file then `os.replace`,
+under a lock; before the `memory.inject` gate, so injection off still binds).
+An unarmed machine writes no such file. `decide` then waits unless the note's
+sha matches the record and: after `compact`, the payload's `session_id` equals
+the recorded one (it is stable across `/compact`); after `clear`, the Claude
+Code process does (`session_id` changes across `/clear`). The process is the
+nearest ancestor whose `/proc/<pid>/comm` is exactly `claude`, identified by
+pid and start time (T-0042 spike, Claude Code 2.1.283). With no `/proc` —
+native Windows, macOS — the process is unknown and every `clear` waits with
+"this session's process could not be identified"; `compact` is unaffected.
+A note written without Write/Edit/MultiEdit (by Bash, by hand, or before the
+machine was armed) has no record and waits. A recorder that cannot read the
+note, or whose write fails, leaves no entry for the worktree, never the
+previous one.
+
+**The stuck marker.** When a PreCompact can neither remove nor blank this
+session's old record (python's `write_precompact_record`, or either shell
+flavour's keyed removal), it leaves `precompact-<key>.stuck` beside it, and a
+`compact` for that session is not manual while the marker exists or cannot be
+stat'ed. The next record that lands clears it; one older than a day is pruned
+with the records. `.stuck` is not `.json`, so the shells' `precompact-*.json`
+sweeps never remove it. The `os.access` check stays as a second refusal.
+
+**Accepted risks.** A full disk or quota can let an old record survive with no
+marker: if the record cannot be replaced and the marker cannot be created
+while the directory is still writable, an old `manual` record lives for up to
+600 s. The same holds when the PreCompact payload has no readable session id
+(the `precompact-*.json` sweep can fail with no key to mark). Two sessions
+writing the handoff in the same instant can attribute it to the wrong one;
+the record hashes the bytes it reads under a lock, which narrows the window
+but does not close it.
+
+**Unchanged, and reported to the owner:** a malformed repo file still vetoes
+nothing. It is the same class as round 4's FIX (an unreadable veto reads as no
+veto), but T-0006's approved plan chose it, so T-0042 reports it rather than
+changing it; TODO.md tracks the decision. The `crew_resume.py decide` CLI applies
+`crew_state.handoff_staleness` itself, read-only, and waits on a stale note.
+`record_run` asks the consumed-once and loop guards again under its lock and
+refuses (`ok: false`) a handoff already recorded, the same command with no
+progress, a run with no fingerprint, or a state file it cannot read, which it
+never overwrites: of two senders holding the same `run`, only the first may type.
+If the opt-in cannot even be confirmed (the module or the machine file cannot
+be read), the answer is `off`, so an unarmed machine sees exactly the
+pre-T-0006 output.
+
 ## 15. `install.policy`
 
 What crew may do when a skill it routes to is **not installed**. Added by schema
@@ -1132,6 +1259,8 @@ earn its own section: see §18, not the tables immediately below.
 | `cloud.awsProfiles` | list of globs | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
 | `cloud.awsRegions` | list of globs | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
 | `cloud.azureSubscriptions` | list of globs (id or name) | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
+| `environments.nonProd` | list of globs | `[]` | **repo only** | `cloud_guard.py::environments_config` |
+| `environments.prodUnattended` | `true` \| `false` | `false` | both, **true only when both say `true`** | `cloud_guard.py::environments_config`, `crew_autopilot.deploy_allowed` |
 
 Read one with `crew_config.py --guard <name> [--json]`, which prints the
 decision, both layers' values and which one is holding it down. The two shell
@@ -1315,6 +1444,172 @@ which is not on the command line, so crew genuinely cannot tell — and
 substituting a guess is the "unknown wearing the label of a check that
 happened" failure this file keeps returning to.
 
+### `environments.*` — which terraform targets may run unattended (crew 1.0.42)
+
+Read by the cloud guard alone, and only while `guards.cloudGuard` is armed. It
+lets `terraform`/`tofu apply` of a **non-destroying saved plan**, and
+`workspace new` / `workspace select -or-create`, run with nobody attending
+when the target is non-production — and keeps a destroy from ever doing so.
+
+```json
+{ "environments": { "nonProd": ["dev", "qa", "staging", "*-staging"],
+                    "prodUnattended": false } }
+```
+
+**Three environment values, never two.** `nonProd` is a name matching a
+`nonProd` glob (fnmatch, case-insensitive). `prod` is a name matching none.
+`unknown` is everything crew cannot settle: no signal, a signal that is not a
+literal (`TF_WORKSPACE=$WS`), signals that classify differently, or an
+`environments` block it cannot read. **`unknown` is narrower than `prod`**:
+`prodUnattended` allows `prod`, and nothing allows `unknown` unattended.
+
+The names come from, and must all agree after classification:
+`TF_WORKSPACE` (inline, `env`, `export`, `$env:`, then the hook's own
+environment); else a literal `workspace select|new X` earlier in the same
+command; else `<payload cwd>/<-chdir>/<TF_DATA_DIR or .terraform>/environment`
+— used only when nothing in the command changes directory or switches
+workspace, and a **missing file is unknown, not `default`** (terraform writes
+no file for `default`, measured on 1.16.3, so the default workspace is always
+unknown this way). Plus `-var environment=X` / `TF_VAR_environment`, and a
+saved plan's sidecar. `-var-file`, `*.tfvars` and HCL are never read.
+
+A directory change in **any** spelling makes the workspace file unusable:
+`cd`/`pushd`/`Set-Location`, `env -C DIR`/`-CDIR`/`--chdir=DIR`, `sudo
+-D`/`--chdir`/`-R`, `wsl --cd`/`~`, `pwsh -WorkingDirectory`/`-wd`, `parallel
+--wd`, `chroot`/`unshare -w`/`nsenter -w`, a sourced file or `.ps1`, and .NET's
+`CurrentDirectory`. An environment change crew cannot read makes
+`TF_WORKSPACE` itself unknown: `source`/`.` of a file, `export $(...)`, `eval`
+or `iex` of text built at run time (or fed from the pipeline), `set -a`,
+`read`, any PowerShell `env:` drive write or `SetEnvironmentVariable`, and an
+`||` chain (the next command runs only if this one failed). A plan, sidecar,
+workspace file or `azureProfile.json` that is not a regular file (a FIFO, a
+device) is never read: it is unknown, not a hang past the hook's budget.
+
+**A terraform line is judged only when every word on it is a plain
+literal.** Before any of the reading below, the raw command text is checked:
+if it names `terraform`, `terragrunt` or `tofu` anywhere — each word read with
+its quotes and escapes taken out, `$'...'` decoded, an expansion read as "could
+be anything" and a brace list expanded — then every word must match
+`^[A-Za-z0-9_./:=@%+,-]+$` and every operator between words must be `;`,
+`&&`, `||`, `|`, `&`, `>`, `>>`, `>&`, `&>`, `<` (PowerShell's `*>` too).
+Otherwise the line is **could not tell** — a quote, `$`, backquote,
+backslash, glob, brace, `<(`, heredoc, here-string, comment or control
+character on it, or a PowerShell `@` splat — and it is asked about when someone attends, denied when
+nobody does and denied under `block`; a live one-shot marker for that exact
+text still lets it through under `ask`/`allow`. Nothing else below is
+consulted for it (guard.log policy `could-not-tell`). Unusual quoting on a
+terraform line is asked about, not allowed; unattended, it is refused — which
+includes `terraform apply "p.tfplan"`, `terraform plan 2>$null` and a commit
+message that quotes the word terraform. Plain lines are read exactly as
+before.
+
+**Destroy is `yes`, `no` or `unknown`, and unknown counts as yes.** `yes`:
+`destroy`, `apply -destroy`, `apply -replace`, `run-all destroy`, `workspace
+delete`, a saved plan whose sidecar lists a delete. `no`: only a saved plan
+whose sidecar lists none, `workspace new`, `select -or-create`. Everything
+else is `unknown` — an apply with no saved plan, any terragrunt apply, a plan
+with no sidecar, a stale one (the plan's sha256 changed), a malformed or
+unreadable one, a plan path that is not a literal, a plan over 64 MiB, and a
+saved-plan apply that is **not the only command** in the invocation. The plan
+is hashed when the hook runs, before the command does, so anything beside the
+apply — `terraform plan -out`, `cp`, a nested shell, an output redirect to
+anything but `/dev/null`, a command substitution anywhere the shell runs one
+(an unquoted heredoc body, `${...}`, `$((...))`) — could replace the plan
+after crew read it. A quoted heredoc (`<<'EOF'`) is literal and counts for
+nothing; PowerShell's `2>&1` is a redirection, not a command. Run the plan
+and summarize steps first, then the apply on its own.
+
+**The sidecar.** The hook cannot run `terraform show` (15 seconds, and it
+must not run terraform at all), so a saved plan is summarised first, outside
+it:
+
+```bash
+terraform plan -out p.tfplan
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tfplan.py" summarize p.tfplan
+terraform apply p.tfplan    # a separate command, on its own
+```
+
+`summarize` writes `.crew/tfplan/<sha256 of the plan bytes>.json` with the
+workspace, the `environment` variable and every address whose actions include
+`delete`. The workspace is the one the **plan** is bound to, read out of the
+plan file itself (its `backend.workspace`), never `workspace show` — a plan
+made under `TF_WORKSPACE=production` in a directory with staging selected is
+a production plan. When it cannot be read it is `null`, which the hook reads
+as unknown. It writes nothing when `show` fails or times out, and never creates
+`.crew/`. A plan with no changes has no `resource_changes` at all and is
+refused, so its apply asks.
+
+**The decision**, applied after `guards.terraformApply` has been ratcheted:
+
+| policy | destroy yes/unknown | nonProd | prod, `prodUnattended` both layers | prod | unknown env |
+|---|---|---|---|---|---|
+| `block` | deny | deny | deny | deny | deny |
+| `ask`, no live marker | ask | **allow**, logged | **allow**, logged + on screen | ask | ask |
+| `ask`, live marker | allow (that command) | allow | allow | allow | allow |
+| `allow` | **ask — BREAKING in 1.0.42** | allow | allow | allow | allow |
+
+`ask` is denied when nobody is attending, as everywhere in this guard. The
+guard.log policy column says why: `env:nonProd:<name>`,
+`env:prod-unattended:<name>`, `env:prod:<name>`, `env:unknown`, `destroy:ask`,
+and `could-not-tell` for a terraform line that is not all plain literals
+(asked under `ask` and `allow` whatever its environment, denied under `block`).
+"A terraform line" means one that runs terraform, terragrunt or tofu as a
+command -- its command word, or a command inside `bash -c`, `eval`, `pwsh -c`
+or a substitution -- not one that mentions the word in a message, a search or
+a file name (README, "Cloud guard"); PowerShell lines follow the same rule. A
+line that runs terraform in a way the parser does not follow (an alias, a
+binary the same line copies or links and runs by its new name, zsh's
+`=terraform`, a script runner such as `flock` or `ssh`, PowerShell's
+`Set-Alias` or `Start-Process`) is `could-not-tell` even when every word is
+plain; a read-only subcommand (`plan`, `show`, `output`, `fmt`, ...) and the
+arguments of a program that is not terraform (`cp -r terraform
+"$BACKUP_DIR"`) are not gated for their quoting. Options before the
+subcommand are skipped as terraform and terragrunt read them (`terragrunt
+--working-dir infra destroy` is a destroy).
+
+**What the guard does not catch.** It catches terraform, terragrunt and tofu
+written directly: bare or path-qualified, behind the listed wrappers, inside
+`bash|sh|zsh -c` and `eval`, with global options before the subcommand, and
+PowerShell's `&`, `.`, `terraform.exe` and `Start-Process`. It does not try to
+catch a program renamed by alias, function, symlink or copy, `env -S` escape
+strings, BusyBox applets, git `!` aliases, an interpreter (`python -c`, `node
+-e`), a script file, a wrapper it does not list (`strace`, `aws-vault exec`),
+a program that runs another (`git bisect run`, `rg --pre`) or a container's
+entrypoint. No command-line guard can: unattended work must run interpreters
+and scripts. The real boundary is the credentials an unattended run holds,
+which is T-0044. README, "What the guard does not catch", lists the commands.
+
+**The always-stops.** A destroy is never applied unattended at any setting —
+`terraformApply: allow` and `prodUnattended: true` included. So is an apply of
+a plan crew cannot read, which means **`terraform apply -auto-approve` with no
+saved plan now asks under `allow`**. Approve one command with the
+`.approved-guard-terraformApply-<hash>` marker the refusal names, or summarise
+a saved plan. An unknown environment is never unattended either.
+
+**`prodUnattended` ratchets, and only the literal `true` counts.** It is true
+only when the repo's `.crew/config.json` **and** the machine-global file both
+say `true`; `"true"`, `1` and `null` are false. A cloned repo cannot grant
+itself unattended production. `nonProd` is **repo only**, for `production.*`'s
+reason — `staging` names one workspace in one checkout — so `filter_global`
+prunes and reports a global list. A malformed block (`nonProd: "dev"`, a
+non-bool `prodUnattended`) makes every environment unknown and forces an armed
+guard to `block` mode.
+
+**At the defaults nothing changes except the destroy rule.** With `nonProd`
+empty and `prodUnattended` false, every name is `prod` or `unknown` and `ask`
+asks as before. `workspace delete` is a destroy, so it is a finding in every
+armed state, the layer engaged or not. `workspace new|select -or-create` are
+judged only once the layer is engaged (a `nonProd` glob, or `prodUnattended`
+true); then they are **new** findings: denied under `block`, and under `ask`
+denied unattended for a prod or unknown target.
+
+**Not a promotion gate.** `prodUnattended` does not stand down
+`promote-gate.sh`'s `requireHuman` (`promote-gate.sh`, the `requireHuman`
+check), which still applies independently: fully unattended production also
+needs that off. `.crew/verify.json` stays promote-gate's list of environments;
+`crew_config.py --check` warns when a `nonProd` glob covers one it marks
+`requireHuman: true`.
+
 ### The ratchet is one table, not five copies
 
 `install.policy` shipped its ratchet as a bespoke `effective_install_policy`
@@ -1340,6 +1635,119 @@ An unknown value fails closed to `block` on whichever layer carries it
 (`normalise_guard_policy`), and both sides are normalised **before** they are
 ranked — so a typo costs capability rather than granting it, and a widening
 *from* an unknown still reads as a widening.
+
+### Writing the repo layer, and the enum check both writers share
+
+`/crew:config`'s menu (T-0075) writes `.crew/config.json` through one path,
+`crew_config.plan_repo_write` / `write_repo_config` (CLI
+`crew_config.py --set PATH=JSON --repo [--apply]`). It does not change what
+either layer means on read; it marks what a repo edit changes **in force**:
+
+- A **ratcheted** key compares `effective_ratcheted` before and after, by rank.
+  Repo `guards.forcePush` `block` -> `allow` under a machine `allow` prints
+  `! guards.forcePush widens to`; the same edit under a machine `block` does
+  not widen, and prints `held down by the machine-global layer at block`
+  instead.
+- `pm.authority` resolves by precedence, so its before-value is the repo's own,
+  else the machine's, ranked by `_RATCHETED`.
+- Three repo-only consents are marked by value: `context.autoClear.unsafeFocus:
+  true`, `autopilot.mode: "plan"` and `verifyGate: false`
+  (`crew_config._REPO_WIDENING`).
+
+Every update is judged per LEAF (`crew_config.leaf_updates`, recursive), by
+the one predicate both planners and the menu share, `value_allowed(dotted,
+layer, value)`: a whole-block value is expanded, so
+`context={"autoClear": {"unsafeFocus": true}}` is judged as
+`context.autoClear.unsafeFocus` and refused at the machine layer
+(`MACHINE_REFUSED` names the two consent keys), and one good leaf does not
+carry a bad one. A block set to `{}`, or replaced by a scalar, is refused off
+an open table (`guards: {}` refused, `qa.roles.review: {}` is "no pin").
+
+Each judged leaf is also what is WRITTEN (`crew_config.assignments`, review
+round 3): a block value is written leaf by leaf, so the block's untouched
+siblings, unknown keys included, survive, and a widening is marked on the leaf
+that widens (`{"guards": {"forcePush": "allow"}}` prints
+`! guards.forcePush widens to`). A value at an open role table (`qa.roles`,
+`dev.roles`) is written one ENTRY at a time, each entry a whole pin, so the
+other roles' pins survive and a new pin never inherits the old one's model.
+
+It refuses, naming the key and the reason: a path that is not a leaf of
+`default_config()` (unknown keys, and a block emptied or replaced by a scalar,
+such as `scope: {}`, that would drop a leaf the per-key rules guard),
+`platform.*`, `schema`,
+`scope.mode`, `scope.allowCliApproval`, `context.autoClear.onlyRepos` /
+`.onlySessions`, and anything but exactly `false` or `null` for
+`context.autoClear.enabled` or `resume.auto` (only the machine file arms
+those). That test is by identity (`crew_config.is_repo_veto`), not `in (False,
+None)`: `0 == False` in Python, and the readers (`crew_autocycle`,
+`crew_resume`) compare with `is False`, so a written `0` would veto nothing. It
+refuses to write when the file is absent or does not parse, rather than
+creating a config from one key or overwriting the only copy -- and the menu
+reads the file the same strict way, so over an absent or unparseable
+`.crew/config.json` every repo row is read-only with that refusal as its
+reason, rather than offered and then refused at Save.
+
+**Enum values are checked on both writers.** `crew_config.enum_values` returns
+the tuple each reader normalises against — the `RATCHETED_KEYS` tiers,
+`AUTHORITIES`, `TICKET_GRANULARITIES`, `auto` + `QA_PROVIDERS`, and
+`DEV_PROVIDERS` — and a value outside it is refused. This is a behaviour
+change for the global `--set`: it used to write `pm.authority: "bogus"` and
+read it back as `report-only`.
+
+**The null rule** (`crew_config.null_means`). At the repo layer a `null` on a
+veto-only key clears the veto, and on a key the machine file may set it
+inherits the machine value (`without_null_shadows` drops it on read); either
+layer, a `null` on an open key (no tuple) is unset. A `null` on an enum key at
+the machine layer is refused: it is outside every tuple its reader normalises
+against. A legacy `null` already in a file is tolerated; the rule judges what
+is being written now. Each change carries its meaning (`null`), and the dry
+run prints it.
+
+**The merged file is judged whole** (`crew_config.merged_problems`): every
+untouched known leaf of the file the write would produce is checked for what
+its presence means at that layer (`_content_problem`): an enum value outside
+its tuple (a legacy `null` tolerated), a consent key (`MACHINE_REFUSED`) in
+the machine file, and a veto-only key holding anything but `false`/`null` in
+the repo file. One already there refuses an unrelated write as `pre-existing
+...`: an enum value says `fix that key first` (it can be fixed in the same
+write), the other two `remove it by hand first` (no crew writer sets or
+removes them). Unknown keys are never judged. JUDGEMENT: refusals of a write
+are not refusals of content, so a `REPO_REFUSED` key in the repo file
+(`/crew:init` and platform-sync write them) and a repo-only key in the
+machine file (pruned by `filter_global` on every read) do not block a write.
+Then `validate_providers` runs on the merged file at both layers, wrapped as
+the layer's refusal. `qa.order` must be a list of QA providers or `null`: any
+other shape (`1`, `true`, `"codex"`, an object) is refused at both layers with
+exit 2, never a traceback, including when it is already in the file an
+unrelated write merges onto (the menu then shows the rows it blocks read-only,
+naming `qa.order`). A path past a template leaf (`pm.authority.a`) and an
+object at a leaf (`pm.authority={"a": 1}`, `notify.chatId={}`) are refused at
+both layers, on the update and when already in the file (`pre-existing`,
+fixable in the same write). `qa.roles` and `dev.roles`, and each entry under
+them, must be an object or `null`: a string, number, boolean or array there is
+refused with exit 2 at both layers, the file included, since the reader drops
+it and `qa.roles=1` would silently wipe every pin.
+
+**Compare-and-swap, both files.** `write_global_config` and
+`write_repo_config` re-run their plan on the bytes read inside
+`crew_config_files.update_json`: an `O_CREAT|O_EXCL` lock file beside the
+config (`<file>.lock`, the review ledger's construction; 3 s wait, then a
+refusal naming the lock and the PID inside it), a strict read, and a
+sibling-fsync-replace that keeps CRLF and a UTF-8 BOM. `--set` prints the
+digest (sha256) of the bytes it planned against, `absent` when there is no
+file, and `--apply --expect <digest|absent>` refuses a file that changed, or
+appeared, since (`RepoWriteConflict` / `GlobalWriteConflict`, subclasses of
+the refusals, so every existing `except` still catches them). Without
+`--expect` the merge is onto the file under the lock. A repo write's widening
+marks read the machine file, so `--set --repo` also prints `machine digest:`
+and `--expect-global <digest|absent>` binds it: `write_repo_config` reads the
+machine file once under the machine lock (always taken, creating its
+directory when absent, never the file; taken before the repo lock, the one
+nesting order) and refuses one that changed since. The machine writer now refuses an unparsable or non-object global file
+instead of replacing it from the read path's `{}` collapse. A foreign writer
+(an editor's save) is not serialised by the lock. An OS error from either
+lock, the machine directory or the write itself is refused with exit 2,
+nothing written and the path named, never a traceback.
 
 ### One resolver, two flavours
 
@@ -1970,3 +2378,120 @@ Rule output is still captured through a temp file rather than a pipe, so a
 backgrounded grandchild cannot wedge the gate's own read of that rule's
 output (see `verify-gate.sh`'s rule-loop comment) — what is gone is the
 gate reaching in afterward to kill what a rule left running.
+
+---
+
+## 20. `autopilot` — `/crew:autopilot`, off until `plan`
+
+`/crew:autopilot` (T-0004, since 1.0.41) drives one ticket through the
+lifecycle phases `crew_autopilot.next_phase` names from disk, following each
+phase command's procedure in-session, and stops wherever a person is needed.
+Its block is **repo only**: absent from `default_global_config()`, so
+`filter_global` prunes it from the machine file. Whether one checkout may be
+driven is a fact about that checkout.
+
+| Key | Default | Read by | What an unexpected value does |
+|---|---|---|---|
+| `autopilot.mode` | `"off"` | `crew_autopilot.settings`, through `crew_config.resolve_config` | Only the exact string `"plan"` arms it. `"Plan"`, `"plan "`, `true`, `"on"`, `null` — anything else — reads as `off`, and `settings` prints which value it saw. A typo must not arm a driver. |
+| `autopilot.maxPhases` | `12` | `crew_autopilot.settings`; `next_phase` stops once the session's phase count reaches it | Anything but a positive integer (`0`, `-3`, `"12"`, `true`, `2.5`) reads as `12`, with a warning. |
+| `autopilot.deploy` | `"none"` | `crew_autopilot.settings`; `crew_autopilot.deploy_allowed` (T-0072) | Only the exact strings `"none"`, `"nonprod"` and `"all"` are read as themselves. `"All"`, `"all "`, `"prod"`, `true`, `1`, `null` — anything else — read as `none`, with a warning naming the value. Set only in the machine file, it takes effect nowhere (repo only). |
+
+**Which file.** `.crew/config.json`, through `resolve_config` — the file
+`crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
+adds reads the same one. `/crew:migrate` writes `.crew/crew.json`, which crew
+does not read for this key; an `autopilot` block found only there is reported
+by `settings` ("move it to .crew/config.json") rather than read as `off` with
+no word.
+
+**What arming it does not change.** Plan approval, review acceptance,
+brainstorm and open questions always stop for a person in this version; every
+`AUTONOMOUS_STOPS` id (§5) binds it; no guard, hook, review budget or
+completion audit is relaxed. `pm.authority: autonomous` from 0.20 arms nothing —
+`/crew:migrate` keeps it under `retired.pm` and its note points here.
+
+**Production without asking (T-0072).** `autopilot.deploy` says where a deploy
+may run with no person asked: `none` (the default) nowhere, `nonprod` in a
+`nonProd` environment only, `all` in production too. Production needs **two
+opt-ins**: `autopilot.deploy: all` in the repo's `.crew/config.json`, **and**
+`environments.prodUnattended: true` in **both** config layers (§16, the
+ratchet: a repo cannot grant it alone, and neither can the machine file). It
+also needs `guards.cloudGuard` to resolve to a plain `block`, so T-0009's guard
+is armed to enforce the dispatch. `crew_autopilot.deploy_allowed(root, env,
+class)` answers, first match wins:
+
+| Condition | Verdict |
+|---|---|
+| the checkout cannot be found (the lookup raised), `.crew/incident.json` exists in any form, or its path cannot be checked for any reason | `refuse` — an emergency may be active |
+| the environment name is blank, not a string, or not printable | `ask` — could not tell which environment |
+| the class is not exactly `nonProd` or `prod` (T-0005's classes; `unknown` included) | `ask` — crew could not classify it |
+| either config layer could not be checked (its path cannot be stat'ed for any reason but a missing file), or is present and not ok (unreadable, not JSON, a bad `guards` or `environments` block) | `ask` — could not read that layer |
+| `autopilot.mode` is not `plan`, or `autopilot.deploy` is `none` | `ask` |
+| `nonProd`, with `nonprod` or `all` | `allow` |
+| `prod`, with `nonprod` | `ask` |
+| `prod`, with `all`, and `prodUnattended` not `true` in both layers | `ask`, naming the layer |
+| `prod`, with `all`, and `guards.cloudGuard` not a plain `block` (a fail-closed `block` with a note included) | `ask` |
+| `prod`, with `all`, otherwise | `allow` |
+
+The checkout root is resolved **once** per answer, and that one root is what
+the incident check, both layers and every row judge; the result names it
+(`root`). Every path is probed for present, absent or could-not-tell, and
+could-not-tell never reads as absent: it refuses for the incident file and
+asks for a config layer. A crash inside the decision asks, and so does one
+building its report or printing a value it was handed; the CLI prints
+`verdict=ask` even for a crash it cannot describe. The incident check runs
+before anything that can fail to import, so a crash never turns an
+emergency's `refuse` into `ask`. Every production decision — `allow`, `ask`
+or `refuse` — carries a report line naming the environment
+(`unattended production: <env> <verdict> - <reason>`). The CLI is
+`crew_autopilot.py deploy-allowed --root . --env <name> --class <class>
+[--json]`: the verdict line (or one line of JSON) on stdout, the report on
+stderr, exit 0. Each is one line, the verdict first: a value that is not plain
+printable text (a class or environment holding whitespace included) prints as
+its repr, so no input can add a line a consumer would read as a second verdict.
+
+**Inert until T-0045.** Nothing in this crew version dispatches a deploy, so
+`settings` warns whenever `autopilot.deploy` is not `none`. The consumer
+(T-0045) calls `deploy_allowed` immediately before each dispatch, passes the
+class from T-0005's classifier, proceeds only on the exact verdict `allow`
+(anything else — `ask`, `refuse`, no answer, a non-zero exit — stops), and
+persists every report. `allow` is necessary, not sufficient: T-0009's hook,
+promote-gate (`requireHuman`, the post-deploy proof) and every other gate
+still decide.
+
+---
+
+## 21. `route` — plain-text lifecycle routing, off until `true`
+
+`route.enabled` (T-0023, since 1.0.46) lets a short plain-text prompt reach a
+lifecycle command. When it is on, crew's UserPromptSubmit context hook
+(`crew_context.route_item`) calls `crew_route.decide` on the prompt and, unless
+the answer is `none`, puts one line FIRST in the turn's context: the
+`/crew:<command> <ticket>` whose procedure Claude should run through the Skill
+tool, or a request to ask the user which ticket. The hook runs nothing and
+blocks nothing; the command's own checks still decide. The table of phrases,
+the three outcomes and what never routes are in the plugin README's
+"Plain-text lifecycle" section; `crew_route.PHRASES` is the single definition.
+
+| Key | Default | Read by | What an unexpected value does |
+|---|---|---|---|
+| `route.enabled` | `false` | `crew_route.settings`, through `crew_config.resolve_config` | Only the JSON value `true` arms it. `"true"`, `1`, `"yes"`, `"on"` — anything else — reads as off, and `settings` names the value it saw. A `route` that is not an object, in either file, is ignored by the merge and reported. |
+
+**Which file.** `.crew/config.json` over the machine-global
+`~/.claude/crew/config.json` over the default — `resolve_config`'s ordinary
+precedence. The context hook's own `memory.inject` switch is read from
+`.crew/crew.json` first (`crew_context.load_crew_config`), but this key is not:
+a `route` block found only in `.crew/crew.json` is reported by
+`python3 crew_route.py settings --root .` ("move it to .crew/config.json")
+rather than read as off with no word.
+
+**A machine-wide `true` reaches only repos whose file leaves the key out.**
+`/crew:init` writes the whole template, which carries `"route": {"enabled":
+false}`, and the repo layer wins. In a repo set up that way, delete the key
+from `.crew/config.json` or set it `true` there.
+
+**What arming it does not change.** Routing never approves: no phrase routes
+to `/crew:approve`, a `continue` whose next step is approval asks instead, and
+`commands/approve.md` sets `disable-model-invocation: true` besides. Under
+`--harness codex` no line is emitted, because the Skill tool it names does not
+exist there. With `memory.inject: false` the hook emits nothing, route line
+included.

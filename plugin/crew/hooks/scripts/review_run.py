@@ -720,9 +720,12 @@ def webtest_check(root, ticket, manifest):
 def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     """Verdict -> ledger -> review.json. Returns the process exit code."""
     manifest = json.loads(_read(args.manifest))
-    parts = [p["name"] for p in manifest.get("parts") or []]
+    # The parts as the prompt lists them -- full paths -- so a READ line that
+    # echoes the listed path counts (T-0079). A part with no path falls back to
+    # its name, which review_verdict still matches exactly.
+    parts = [p.get("path") or p["name"] for p in manifest.get("parts") or []]
     if os.path.exists(os.path.join(args.scratch, review_prompt.WEBTEST_FINDINGS_FILE)):
-        parts.append(review_prompt.WEBTEST_FINDINGS_FILE)
+        parts.append(os.path.join(args.scratch, review_prompt.WEBTEST_FINDINGS_FILE))
     rows, webtest_record, webtest_reasons = webtest_check(args.root, args.ticket, manifest)
     extra_reasons = list(extra_reasons) + bundle_problems(manifest)
     extra_reasons += webtest_reasons

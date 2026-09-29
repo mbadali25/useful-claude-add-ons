@@ -28,7 +28,32 @@ cleanly, clear, and pick up where it stopped.
    once one exists, and nothing here makes auto-compact happen sooner, later, or at all.
 3. **Resume.** The new session starts with the handoff and its next action already in context,
    within the 3,000-character resume budget. Nothing starts working unprompted: crew does not use
-   `initialUserMessage`, so you press Enter to continue.
+   `initialUserMessage`, so you press Enter to continue. Claude Code 2.1.282 drops it in an
+   interactive session anyway (spike, 2026-09-25): it is honoured by `claude -p` only.
+
+   With **`resume.auto: true`** in the machine-global config, the handoff after `/clear` or a manual
+   `/compact` also names the exact next command, read from the note's `resume:` line
+   (`resume: /crew:done T-0001`): `Auto-resume: ready to run /crew:done T-0001.` — or
+   `Auto-resume did not start: <reason>.` when a check refuses it. It still does not start on its
+   own: you press Enter or type it, until T-0013 types it where the terminal can be identified. The
+   refusal reasons are: compact was not a manual /compact; no handoff note, or it was archived as
+   stale, or is stale and could not be archived; the handoff is the automatic PreCompact skeleton;
+   no resume line, `resume: none`, or a line the grammar refuses (a second line, trailing text, an
+   unknown command, or an excluded one such as `/crew:approve`); the note's `branch:` or `head:`
+   does not match the checkout; the ticket directory or goal file is missing; the command is not
+   installed; `handoff-author.json` could not be read; no record of which session wrote this
+   handoff; the handoff changed since its author session wrote it; the handoff was written by
+   another session; this session's process could not be identified (always on a host without
+   `/proc`, such as native Windows or macOS); the record of past auto-resumes (`resume-state.json`)
+   could not be read, or its directory cannot be searched; this handoff was already resumed; the
+   progress fingerprint could not be computed; the same command with no progress since the last
+   auto-resume; `internal error` (the decision itself failed, and the handoff is still injected).
+   Never on a plain `startup`.
+
+   A note resumes only in the session that wrote it. Write it with the Write tool (as
+   `/crew:handoff` does): the context hook then records which session and which Claude Code process
+   wrote it. After `/compact` the session must match; after `/clear` the process must, so a `/clear`
+   in another terminal on the same worktree waits. A note written by Bash or by hand waits.
 
 ## Turning it on and off
 
@@ -43,12 +68,18 @@ in the machine-global config, because it drives this machine's keyboard:
 | same | `context.autoClear.delaySeconds` | `3` | wait before typing, so the prompt exists |
 | same | `context.autoClear.minHandoffLines` | `5` | a shorter handoff counts as a stub |
 | `.crew/config.json` (the repo) | `context.autoClear.enabled` | `false` | switches auto-clear off in this repo. A repo can switch it off, but `true` here does not switch it on. |
+| `~/.claude/crew/config.json` | `resume.auto` | `true` | names the next command from the handoff's `resume:` line after `/clear` or a manual `/compact` (off by default) |
+| `.crew/crew.json` or `.crew/config.json` (the repo) | `resume.auto` | `false` | vetoes auto-resume in this repo. `true` here does not switch it on. |
 | `.crew/config.json` | `context.autoWrapUp` | `false` | replaces the wrap-up instruction with a plain handoff request. It still blocks once. |
 | `.crew/config.json` | `context.enabled` | `false` | turns off the whole context watcher, wrap-up included |
 | `.crew/config.json` | `memory.inject` | `false` | `handoff-read` prints the handoff for you to read, without extracting the next action. `context.autoResume` is no longer read. |
 
-`/crew:config` shows where each value comes from and walks you through the global file. To turn the
-cycle off on a machine, set `context.autoClear.enabled` to `false` or delete the key.
+`/crew:config --show` shows where each value comes from. `/crew:config` with no argument (or
+`/crew:config-setup`) opens a menu that sets either file from a list of values, with a dry run
+before anything is written. To turn the cycle off on a machine, set `context.autoClear.enabled` to
+`false` or delete the key. In a repo the menu offers only the veto (`false`) or `null` for
+`context.autoClear.enabled` and `resume.auto`, and shows `onlyRepos`/`onlySessions` read-only,
+because only the machine file can arm or narrow them.
 
 ### Arming one scratch repo while other sessions are live
 

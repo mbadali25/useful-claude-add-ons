@@ -30,9 +30,9 @@ fact a subset; it never accepts one that is wider.
 ## The approval receipt
 
 `approve` writes `<git-common-dir>/crew/tickets/<id>/approval.json`:
-`{plan_sha256, spec_sha256, approved_at, approved_by, approved_via,
-history}`. The receipt lives in the common git directory, outside every
-worktree, and `scope_guard.py` refuses any Write/Edit under
+`{plan_sha256, spec_sha256, plan_digest, spec_digest, digest, approved_at,
+approved_by, approved_via, history}`. The receipt lives in the common git
+directory, outside every worktree, and `scope_guard.py` refuses any Write/Edit under
 `<git-common-dir>/crew/` in every mode but `off` -- so an Edit cannot forge or
 refresh it.
 
@@ -55,9 +55,24 @@ is never approved unvalidated. `status` likewise hashes the bytes it parses
 Touch from and returns that Touch: a caller never pairs one read's approval
 with another read's scope.
 
-`status` is `approved` (both hashes match the files now), `stale` (either
+`status` is `approved` (both files match the receipt now), `stale` (either
 file changed since approval) or `none`. Editing spec.md or plan.md after
-approval makes it stale; amending scope is edit + approve again.
+approval makes it stale -- except the header's `status:` value, below;
+amending scope is edit + approve again.
+
+## The approval digest (T-0026)
+
+One edit does not stale it: the lifecycle commands moving the header's
+`status:` VALUE (spec -> planned -> review -> done). `plan_digest` and
+`spec_digest` are `approval_digest` of each file, which replaces that value --
+and nothing else -- with a placeholder, and only when line 1 is a `# ` header
+holding exactly one `status:` whose value is in STATUS_VALUES (`_canonical`).
+Any other byte, the `risk:` and the title included, stales it as before.
+`plan_sha256`/`spec_sha256` stay the raw full-file sha256: the review ledger's
+successor-plan identity reads them unchanged. A receipt with no `digest` key
+(written before this) is compared raw, so it verifies on unchanged files and
+goes stale once on its first status edit. A `digest` naming any other scheme,
+or a `/2` receipt missing a digest field, is `stale` -- never a raw fallback.
 
 ## Successor plans
 
@@ -123,6 +138,19 @@ MODES = ("off", "report", "block", "auto")
 RAMP_TICKETS = 10
 USER_PROMPT = "user-prompt"
 CLI = "cli"
+# The approval digest (T-0026). The header's status value is the one thing it
+# normalises, and only a value from this closed list; see `_canonical`.
+STATUS_VALUES = ("spec", "planned", "approved", "in-progress", "review", "done", "merged")
+DIGEST_SCHEME = "crew-approval/2"
+_STATUS_PLACEHOLDER = b"<status>"
+_BOM = b"\xef\xbb\xbf"
+_STATUS_ALTERNATION = b"|".join(re.escape(v.encode("ascii")) for v in STATUS_VALUES)
+_STATUS_RE = re.compile(rb"(?<=[ \t])status:[ \t]+(" + _STATUS_ALTERNATION + rb")(?=[ \t]|\Z)")
+# Where line 1 ends: every break `str.splitlines` honours, as UTF-8 bytes, so
+# `_canonical`'s line 1 is the one `sections` and `parse_touch` read. Splitting
+# on `\n` alone made a bare-CR spec one long line 1 (T-0026 review round 3).
+_LINE_BREAK_RE = re.compile(rb"[\n\r\x0b\x0c\x1c-\x1e]|\xc2\x85|\xe2\x80[\xa8\xa9]")
+_V1 = object()  # `status`'s marker for a receipt with no `digest` key at all
 
 _TICKET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 _HEADING_RE = re.compile(r"^##\s+(.+?)\s*#*\s*$")
@@ -460,10 +488,85 @@ def validate(top, ticket, contract=None):
     return problems
 
 
+# --- the spec header --------------------------------------------------------------
+
+_RISK_RE = re.compile(r"\brisk:\s*(low|med|high)(?=\s|$)", re.IGNORECASE)
+
+
+def header_line(spec_text):
+    """The spec's first `# ` line -- the template's `# <id> <title>
+    status: spec   risk: low|med|high` (commands/spec.md) -- or ''."""
+    for line in (spec_text or "").splitlines():
+        if line.startswith("# "):
+            return line
+    return ""
+
+
+def parse_risk(spec_text):
+    """`{"risk", "known"}` from the header line ONLY; a `risk:` in the body
+    does not count. Absent, empty or unrecognised (`risk: lo`, `risk: LOW!`)
+    reads as `high` with `known` False, never `low`: the policy that will
+    trust this (T-0010) must not have an unknown collapse into the permissive
+    value -- root CLAUDE.md's recurring bug."""
+    header = header_line(spec_text)
+    found = _RISK_RE.search(header)
+    if found:
+        return {"risk": found.group(1).lower(), "known": True}
+    return {"risk": "high", "known": False}
+
+
 # --- approval --------------------------------------------------------------------
 
 def _sha(data):
     return hashlib.sha256(data).hexdigest() if data is not None else None
+
+
+def _line_one_end(data):
+    """The offset of the first line break in `data`, or -1 when it has none."""
+    match = _LINE_BREAK_RE.search(data)
+    return -1 if match is None else match.start()
+
+
+def _canonical(data):
+    """`(bytes, normalised)`: `data` with the header's status VALUE replaced by
+    `_STATUS_PLACEHOLDER`, or `data` untouched and False.
+
+    Only line 1 is examined -- the bytes before the first line break, where a
+    break is anything `str.splitlines` splits on (`\n`, `\r`, `\r\n`, `\x0b`,
+    `\x0c`, `\x1c`-`\x1e`, U+0085, U+2028, U+2029). So it is the line the spec
+    parser reads as line 1 whatever the file's line endings, mixed ones
+    included. It must start with `# ` (after an optional UTF-8 BOM), hold
+    exactly one `status:` counted case-insensitively, and that one must be the
+    token `status:<spaces/tabs><value>` with `value` in STATUS_VALUES followed
+    by a space, a tab or the end of the line. Anything else -- no token, two,
+    an unknown value, a header that moved -- normalises nothing, so the edit
+    that caused it stales the approval."""
+    cut = _line_one_end(data)
+    head, rest = (data, b"") if cut < 0 else (data[:cut], data[cut:])
+    body = head.removeprefix(_BOM)
+    if not body.startswith(b"# "):
+        return data, False
+    if head.lower().count(b"status:") != 1:
+        return data, False
+    match = _STATUS_RE.search(head)
+    if match is None:
+        return data, False
+    start, end = match.span(1)
+    return head[:start] + _STATUS_PLACEHOLDER + head[end:] + rest, True
+
+
+def approval_digest(data):
+    """The `crew-approval/2` digest of one file's bytes, or None for None.
+
+    sha256 over the scheme, a NUL, whether the header was normalised, a NUL,
+    then the canonical bytes. The flag is domain separation: a raw file that
+    happens to hold the placeholder text can never equal a normalised one."""
+    if data is None:
+        return None
+    canonical, normalised = _canonical(data)
+    flag = b"normalised" if normalised else b"raw"
+    return hashlib.sha256(DIGEST_SCHEME.encode("ascii") + b"\0" + flag + b"\0"
+                          + canonical).hexdigest()
 
 
 def current_hashes(top, ticket):
@@ -499,9 +602,23 @@ def status(root, ticket):
         return {"status": "none", "why": f"the approval receipt for {ticket} is unreadable",
                 "receipt": None, "touch": []}
     contract = read_contract(top, ticket)
+    scheme = receipt.get("digest", _V1)
+    if scheme is _V1:
+        measure, keys = _sha, ("plan_sha256", "spec_sha256")
+    elif scheme == DIGEST_SCHEME:
+        measure, keys = approval_digest, ("plan_digest", "spec_digest")
+        unusable = [k for k in keys if not isinstance(receipt.get(k), str)]
+        if unusable:
+            return {"status": "stale", "receipt": receipt, "touch": [],
+                    "why": (f"the approval receipt has no usable {' or '.join(unusable)}; "
+                            "approve again")}
+    else:
+        return {"status": "stale", "receipt": receipt, "touch": [],
+                "why": (f"approval receipt digest scheme {scheme!r} is not one this "
+                        "crew reads; approve again")}
     changed = [name for name, now, then in (
-        ("plan.md", _sha(contract["plan.md"]), receipt.get("plan_sha256")),
-        ("spec.md", _sha(contract["spec.md"]), receipt.get("spec_sha256")))
+        ("plan.md", measure(contract["plan.md"]), receipt.get(keys[0])),
+        ("spec.md", measure(contract["spec.md"]), receipt.get(keys[1])))
         if not now or now != then]
     if changed:
         return {"status": "stale", "receipt": receipt, "touch": [],
@@ -559,20 +676,40 @@ def _register_ramp(root, ticket):
         _write_json(path, {"tickets": tickets})
 
 
-def approve(root, ticket, by=None, via=CLI, session=None, prompt_id=None):
+def _expected_pair(expect):
+    if (not isinstance(expect, (tuple, list)) or len(expect) != 2
+            or not all(isinstance(v, str) and v for v in expect)):
+        raise TicketError(f"expect must be (plan_sha256, spec_sha256), not {expect!r}")
+    return expect
+
+
+def approve(root, ticket, by=None, via=CLI, session=None, prompt_id=None, expect=None):
     """Validate, then write the receipt. Returns `(receipt, successor)`;
     `successor` is None when the review ledger is not NEEDS_REPLAN, else
     `(allowed, reason)` from the ledger seam.
 
     spec.md and plan.md are read once; the bytes validated are the bytes
     hashed. `via` is `cli` (this module's CLI, tests, CI) or `user-prompt`
-    (`approval_hook.py`, which also passes the prompt's session and id)."""
+    (`approval_hook.py`, which also passes the prompt's session and id).
+
+    `expect`, when given, is the `(plan_sha256, spec_sha256)` the user
+    confirmed (T-0024's group confirm). Bytes that hash to anything else are
+    refused before anything is written: the receipt is bound to the version
+    the user saw, never to a later edit."""
     if via not in (CLI, USER_PROMPT):
         raise TicketError(f"approved_via {via!r} is not {CLI} or {USER_PROMPT}")
+    if expect is not None:
+        expect = _expected_pair(expect)
     top = toplevel(root)
     if not top:
         raise TicketError(f"{root} is not a git repository")
     contract = read_contract(top, ticket)
+    if expect is not None:
+        moved = [name for name, want in (("spec.md", expect[1]), ("plan.md", expect[0]))
+                 if _sha(contract[name]) != want]
+        if moved:
+            raise TicketError(f"{ticket}: {' and '.join(moved)} changed since the "
+                              "approval was requested")
     problems = validate(top, ticket, contract)
     if problems:
         raise TicketError("not approved -- the contract does not validate:\n  "
@@ -586,6 +723,8 @@ def approve(root, ticket, by=None, via=CLI, session=None, prompt_id=None):
                           "unreadable; inspect it and remove it by hand before approving")
     history = list((previous or {}).get("history") or [])
     entry = {"plan_sha256": plan_sha, "spec_sha256": spec_sha,
+             "plan_digest": approval_digest(contract["plan.md"]),
+             "spec_digest": approval_digest(contract["spec.md"]), "digest": DIGEST_SCHEME,
              "approved_at": _now(), "approved_by": (by or "").strip() or _default_approver(root),
              "approved_via": via}
     if via == USER_PROMPT:
@@ -600,6 +739,107 @@ def approve(root, ticket, by=None, via=CLI, session=None, prompt_id=None):
     if ledger.get("state") == review_ledger.NEEDS_REPLAN:
         successor = review_ledger.continue_with_successor_plan(root, ticket, plan_sha)
     return receipt, successor
+
+
+_INDEX_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def _cell_id(cell):
+    """The cell's content when it is one id-shaped token -- a letter and a
+    digit, so an index column such as `1` or a word such as `done` is not --
+    casefolded; else None. Backticks and bold marks around it are ignored."""
+    text = cell.strip().strip("`*").strip()
+    if _INDEX_TOKEN_RE.fullmatch(text) and re.search(r"[A-Za-z]", text) \
+            and re.search(r"\d", text):
+        return text.casefold()
+    return None
+
+
+def _prose_names(line, key):
+    """True when prose `line` names the ticket (casefolded `key`) as a whole
+    token in any case. One sentence-final `.` is read as punctuation; a
+    trailing `-` never is, since `T-1-` is a different valid id."""
+    return any(tok.casefold() == key or (tok.endswith(".") and tok[:-1].casefold() == key)
+               for tok in _INDEX_TOKEN_RE.findall(line))
+
+
+def _index_closed(top, ticket):
+    """`(closed, why)` from `.work/INDEX.md`: True, False, or None ("could not
+    tell", with `why`). Its own matcher, not crew_state's: that one knows only
+    upper-case prefix-number keys, so a lower-case or suffixed id -- both
+    valid `_TICKET_RE` ids -- read as open (review round 2). A table row's id
+    cell is its first id-shaped cell (`_cell_id`), matched whole and in any
+    case; its status is the next cell. A row naming the ticket as a whole
+    cell that is NOT its id cell, or with no status cell, cannot be told
+    (review round 3). A prose line closes it with a `crew_state._DONE_RE`
+    marker, the rule `crew_autopilot._is_open` applies."""
+    import crew_state  # pylint: disable=import-outside-toplevel
+    path = os.path.join(top, ".work", "INDEX.md")
+    text = crew_common.read_text(path)
+    if text is None:
+        if os.path.lexists(path):
+            return None, "could not read .work/INDEX.md"
+        return False, None
+    key, unknown = ticket.casefold(), None
+    for line in text.splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        # Two bars make a table row; one makes a row only when the first
+        # cell is an id (`t-0050 |`), so a prose line with a stray bar still
+        # gets the prose rule.
+        table = line.count("|") >= 2 or (line.count("|") == 1 and _cell_id(cells[0]))
+        if table:
+            ids = [(i, _cell_id(c)) for i, c in enumerate(cells) if _cell_id(c)]
+            first = ids[0] if ids else None
+            if first and first[1] == key:
+                status = cells[first[0] + 1].lower() if first[0] + 1 < len(cells) else ""
+                if status in crew_state._TABLE_DONE_WORDS:  # pylint: disable=protected-access
+                    return True, None
+                if not status:
+                    unknown = f"its row {line.strip()!r} has no status cell"
+            elif any(cid == key for _, cid in ids):
+                unknown = (f"row {line.strip()!r} names it in a cell that is not the "
+                           "row's id cell")
+            continue
+        if _prose_names(line, key) and crew_state._DONE_RE.search(line):  # pylint: disable=protected-access
+            return True, None
+    if unknown:
+        return None, unknown
+    return False, None
+
+
+def precheck(root, ticket):
+    """`{"ticket", "problems", "plan_sha256", "spec_sha256"}`: whether `ticket`
+    could be approved now, from ONE `read_contract`. The hashes are of the
+    bytes checked, None when there is nothing to hash. Every problem is
+    listed, not the first: a group approval names each one (T-0024)."""
+    result = {"ticket": ticket, "problems": [], "plan_sha256": None, "spec_sha256": None}
+    problems = result["problems"]
+    try:
+        check_ticket(ticket)
+    except TicketError as exc:
+        problems.append(str(exc))
+        return result
+    top = toplevel(root)
+    if not top:
+        problems.append(f"{root} is not a git repository")
+        return result
+    if not os.path.isdir(ticket_dir(top, ticket)):
+        problems.append(f"no ticket folder .work/tickets/{ticket}/")
+        return result
+    contract = read_contract(top, ticket)
+    result["plan_sha256"], result["spec_sha256"] = _sha(contract["plan.md"]), \
+        _sha(contract["spec.md"])
+    problems.extend(validate(top, ticket, contract))
+    closed, why = _index_closed(top, ticket)
+    if closed is None:
+        problems.append(f"could not tell from .work/INDEX.md whether {ticket} is closed ({why})")
+    elif closed:
+        problems.append(f"{ticket} is closed in .work/INDEX.md")
+    _, state = read_approval(root, ticket)
+    if state == "corrupt":
+        problems.append(f"the approval receipt at {approval_path(root, ticket)} is "
+                        "unreadable; inspect it and remove it by hand before approving")
+    return result
 
 
 def earlier_plan_hashes(root, ticket):

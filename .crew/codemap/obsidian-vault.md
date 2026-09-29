@@ -1,6 +1,6 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@f2bb919b
-verified: 2026-09-25
+anchor: useful-claude-add-ons@3648f59a
+verified: 2026-09-28
 
 ## Does
 Turns one or more Obsidian vaults into Claude Code's durable memory: a PostToolUse guard that
@@ -331,11 +331,14 @@ violation visible at all. (JUDGEMENT.)
   because they were never tracked as files at all - they were marketplace-only entries removed in
   the same commit). `vault-automation` never existed as a path in this repo either (`git log
   --diff-filter=D --all -- '*vault-automation*'` finds nothing) - if it was a real thing, it left no
-  trace under that name here, and this note does not assert it existed. What *is* still here and
-  unchanged: this repo's `CLAUDE.md` "Two vault systems on one host" memory entry, describing
-  `obsidian-vault` (this plugin) and a separate personal vault tooling as different systems on the
-  same machine - that boundary still stands; only the two named skills were removed. (DERIVED for
-  the removal; the "vault-automation" non-finding is a negative result, not a confirmed prior
+  trace under that name here, and this note does not assert it existed. What *is* still recorded,
+  but not in this repo: a "Two vault systems on one host" entry describing `obsidian-vault` (this
+  plugin) and a separate personal vault tooling as different systems on the same machine lives in
+  the operator's untracked Claude Code auto-memory (`two-vault-systems-one-host.md`), **not** in this
+  repo's `CLAUDE.md` - `git grep 'Two vault systems'` at `07ca3972` finds it in no tracked file but
+  this note, and it was absent from `CLAUDE.md` at `f2bb919b` too, so the earlier wording was wrong
+  when written rather than drifted. That boundary still stands; only the two named skills were
+  removed. (DERIVED for the removal and the location; the "vault-automation" non-finding is a negative result, not a confirmed prior
   existence.)
 - **A refused capture is now a distinct, named outcome, not a queued garbage line.** `main()`
   (`plugin/obsidian-vault/hooks/scripts/vault_capture.py:119-146`) refuses to queue anything when
@@ -933,3 +936,29 @@ carries a live claim here: the marketplace hunk is crew's `version` on `:218` al
 `README.md` changed only its two install-URL pins (`:12`, `:18`), and this note names it only as an
 exempt basename; `CHANGELOG.md` gained crew 1.0.26-1.0.28 entries, and no `CHANGELOG.md:<n>`
 citation appears in this note. No claim moved.
+
+**Re-anchored `f2bb919b` -> `07ca3972` on 2026-09-26 (T-0004).** `git diff --name-only f2bb919b..HEAD
+-- <every tracked path this note cites> plugin/obsidian-vault/` returns `.claude-plugin/marketplace.json`,
+`CHANGELOG.md`, `CLAUDE.md` and `README.md`, and nothing under `plugin/obsidian-vault/` or crew's
+`role-write-guard.*`/`hooks.json`. The marketplace hunk is crew's description and `version` alone
+(+2/-2, no line shift), so `.claude-plugin/marketplace.json:234-237` still reads `obsidian-vault`
+`0.4.14` (re-read). `README.md` changed only crew's slash-command count (34 -> 35) at `:168` and
+`:874`; this note names it only as an exempt basename. `CLAUDE.md` changed only three
+`crew_freshness.py` line numbers in its Memory section; this note cites `crew_freshness.py` without
+a line. `CHANGELOG.md` gained entries and has no `CHANGELOG.md:<n>` citation here. **One claim
+corrected, and it was wrong when written, not drifted:** the Landmines bullet on the retired
+`claude-memories-*` skills placed the "Two vault systems on one host" entry in this repo's
+`CLAUDE.md`; it is in no tracked file (`git grep`, at both commits) and lives in the operator's
+untracked auto-memory. The suite was not re-run this pass.
+
+**Re-anchored `6f96e627` -> `d2444be9` on 2026-09-27 (T-0075).** `git diff --name-only 6f96e627
+d2444be9 -- <every tracked path this note cites> plugin/obsidian-vault/` returns `README.md` alone:
+crew's slash-command count (35 -> 36) in place at `:168` and `:874`, no line shift. This note names
+`README.md` only as an exempt basename. Nothing under `plugin/obsidian-vault/` changed. The suite was
+not re-run this pass.
+
+**Re-anchored `6f96e627` -> `051f9e85` on 2026-09-28 (T-0091).** `051f9e85` is T-0091's one commit on `T-0091-build`, off main `f54af3fa`. `git diff --name-only 6f96e627 f54af3fa -- <every tracked path this note cites>` is empty; `f54af3fa..051f9e85` changes only `CLAUDE.md` (the Landmines truncating-`open` entry's measurement paragraph, now `:185-212`, +28/-18, so every later line moves +10) and `TODO.md` (one entry closed at `:4473`, three lines appended at `:4480-4482`). This note cites `CLAUDE.md` without a line (its exempt basename and the Lessons section by name). No claim moved. Nothing was executed.
+
+**Re-anchored `051f9e85` -> `c192b83d` on 2026-09-28 (T-0091 review round 1).** `c192b83d` is T-0091's review-round-1 fix on `T-0091-build`. `git diff --name-only 051f9e85 c192b83d` returns only `CLAUDE.md`: the same Landmines truncating-`open` measurement paragraph, now `:185-219` (+16/-9, so every later line moves +7; lines above `:192` are byte-identical). This note cites `CLAUDE.md` without a line. No claim moved. Nothing was executed.
+
+**Re-anchored `d2444be9` / `c192b83d` -> `3648f59a` on 2026-09-28 (T-0075 review round 5, merge of `6387ab49`).** The merge kept both lines' notes (T-0075's `d2444be9` paragraph first, main's T-0091 paragraphs after it). `git diff --name-only c192b83d 3648f59a -- <every tracked path this note cites> plugin/obsidian-vault/` returns `.claude-plugin/marketplace.json` (crew's description and version lines, in place), `CHANGELOG.md`, `README.md` (crew's slash-command count 35 -> 36 at `:168` and `:874`, in place; the `d2444be9` note above) and `TODO.md` (T-0092's entry at `:5051`, below every citation here). `.claude-plugin/marketplace.json:234-237` re-read: the `obsidian-vault` entry, `0.4.14`, matching `plugin/obsidian-vault/.claude-plugin/plugin.json:3`. Nothing under `plugin/obsidian-vault/` changed. No claim moved. Nothing was executed.
