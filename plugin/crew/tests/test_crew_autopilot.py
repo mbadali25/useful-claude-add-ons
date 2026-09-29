@@ -1135,7 +1135,8 @@ def test_stops_lists_every_autonomous_stop():
 def test_autopilot_defaults_are_the_config_block():
     import crew_config  # pylint: disable=import-outside-toplevel
     assert crew_config.default_config()["autopilot"] == {
-        "mode": "off", "maxPhases": 12, "deploy": "none"}
+        "mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk",
+        "questions": "risk"}
 
 
 # --- step 6: the command -----------------------------------------------------
@@ -1188,7 +1189,7 @@ def test_command_leaves_accept_and_pr_review_to_the_human():
 
 def test_command_reads_no_answer_as_a_stop():
     text = " ".join(_command_text().split())
-    assert "Anything but a `stop=0` line" in text
+    assert "No output, a traceback or a non-zero exit is a stop" in text
 
 
 def test_code_enforced_stops_are_not_procedure_stops():
@@ -1201,8 +1202,11 @@ def test_command_never_types_approve():
     text = _command_text()
     approving = [line for line in text.splitlines()
                  if "/crew:approve" in line and "human" not in line.lower()]
-    assert ("crew_ticket.py approve" in text, "approval.json" in text, approving) == (
-        False, False, [])
+    # T-0010 review round 3: the one `approval.json` is the exception sentence
+    # naming what section 3's `approve` script writes -- never a file to write.
+    rest = text.replace("it writes `approval.json`, `scope-tickets.json`", "", 1)
+    assert ("crew_ticket.py approve" in text, "approval.json" in rest, approving,
+            text.count("approval.json")) == (False, False, [], 1)
 
 
 def test_command_drives_through_the_cli_and_writes_the_resume_line():
@@ -1222,6 +1226,17 @@ def test_every_autopilot_sabotage_anchor_is_present_exactly_once():
         assert test.startswith(("tests/test_crew_autopilot.py::",
                                 "tests/test_crew_autopilot_deploy.py::",
                                 "tests/test_crew_autopilot_status.py::")), label
+    # T-0010's POLICY_MUTATIONS, the approve exception's six included: they
+    # share these targets, so an anchor either list moves must stay unique.
+    from sabotage_autopilot import POLICY_MUTATIONS  # pylint: disable=import-outside-toplevel
+    for label, target, find, _replace, test in POLICY_MUTATIONS:
+        with open(target, encoding="utf-8") as handle:
+            assert handle.read().count(find) == 1, label
+        assert test.startswith(("tests/test_crew_autopilot_policy.py::",
+                                "tests/test_crew_autopilot.py::",
+                                "tests/test_crew_autopilot_status.py::",
+                                "tests/test_crew_route.py::", "tests/test_crew_ticket.py::",
+                                "tests/test_scope_guard.py::")), label
 
 
 def test_status_sabotage_is_registered_with_sabotage_py():
@@ -1291,3 +1306,13 @@ def test_next_unrefunded_rerun_after_review_is_still_no_progress(tmp_path, monke
     got = _next(root, phases_run=1, last_command=f"/crew:review {T}", max_phases=12)
 
     assert (got["stop"], got["reason"].startswith("no progress")) == (True, True)
+
+
+def test_module_defines_each_function_once():
+    import ast  # pylint: disable=import-outside-toplevel
+    with open(_SCRIPT, encoding="utf-8") as handle:
+        tree = ast.parse(handle.read())
+    names = [node.name for node in tree.body
+             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+
+    assert sorted({n for n in names if names.count(n) > 1}) == []

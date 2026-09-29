@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@3648f59a on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@cd106b8b on 2026-09-28. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
@@ -104,6 +104,19 @@
 %% side maps to the same lines. :121-132, :638, :661 and :687 are above both hunks and hold.
 %% crew_state.py, crew_status.py, crew_platform.py, handoff-read.sh, hooks.json and status.md
 %% are byte-identical to main's, so their citations stand. Each moved line re-read with sed -n.
+%% On T-0010-solo's branch (history, kept):
+%% On T-0010-solo's branch: Re-anchored 2b18f7ab -> 50e67586 (T-0010-solo): of the Anchors paths only crew_state.py changed,
+%% four lines at AUTOPILOT_DEFAULTS (:1090 -> :1094), below every line cited here (:646, :774,
+%% :859-914, :980 hold, compared with the anchor tree). No node or edge moved.
+%% Merged 53f5482c + 50e67586 at 89c9ee9a (T-0010-solo merges main f0b12ee6, crew 1.0.44): of the
+%% Anchors paths crew_state.py changed on T-0010 only, below every line cited here (:646, :774,
+%% :859-914, :980 hold), and crew_context.py / crew_resume.py on T-0042 only (:959 ... :1051
+%% hold, re-read with sed -n at 89c9ee9a). No node or edge changed.
+%% Merged 67caa4b8 (e463ca53's lines) + 89c9ee9a at c817782f (T-0010-solo merges T-0018's main,
+%% crew 1.0.48): of the Anchors paths only crew_state.py changed on T-0010's side (+4 at
+%% AUTOPILOT_DEFAULTS :1094), below every crew_state line cited here (:646, :774, :859-914,
+%% :954-958, :980 hold); crew_context.py, crew_resume.py and crew_status.py are main's, unchanged
+%% by T-0010, so main's citations stand (re-read with sed -n at c817782f). No node or edge changed.
 %% Re-anchored e463ca53 -> 8cabe586 (T-0075, crew 1.0.50, after its merges of main d2fbd408 and
 %% f96e9ec9): of the Anchors paths only crew_tracker.py changed (T-0077's Windows directory
 %% handles, inserted from :299 and :1061); no node cites a line in it, so nothing was redrawn.
@@ -157,10 +170,17 @@
 %% Anchors paths only crew_context.py changed - T-0076's byte-exact LF, +4 lines inside emit(),
 %% so its JSON write moves :1086 -> :1090 (re-read with sed -n; the note above and the out node
 %% now say :1090). Every other cited crew_context.py line is above :1086. No node or edge changed.
+%% Merged 3c4f1a68's lines + c817782f at d7c7c75c (T-0010-solo merges main 6387ab49, crew 1.0.55):
+%% of the Anchors paths crew_state.py changed on T-0010's side only below every line cited here
+%% (its hunks start at :1087), and crew_context.py on main's side only (T-0076's :1090 stands).
+%% No node or edge changed.
 %% Re-anchored 938e3b11 / 3c4f1a68 -> 3648f59a (T-0075 review round 5 and its merge of main 6387ab49,
 %% crew 1.0.55): every Anchors path is byte-identical to main 6387ab49 (git diff --name-only
 %% empty), so the 3c4f1a68 note above covers crew_context.py, the one path that moved since
 %% 938e3b11. Nothing redrawn.
+%% Merged d7c7c75c + 3648f59a -> cd106b8b (T-0010-solo merges T-0075's main e878cc31, crew 1.0.60): of the
+%% Anchors paths only crew_state.py differs from main, by T-0010's +4 at AUTOPILOT_DEFAULTS (:1094), below
+%% every crew_state line cited here (:643, :646, :774 hold). No node or edge changed.
 %% Re-anchored b5c37635 -> c8cc69ec (T-0087 merged main c426c018, T-0076, crew 1.0.53): of the Anchors
 %% paths only crew_context.py changed - emit() now forces LF stdout (+4 lines at :1086), so the
 %% additionalContext write :1086 -> :1090 (re-read with sed -n); :121-132, :881-924 and :993-1003 are
