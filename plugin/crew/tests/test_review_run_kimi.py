@@ -220,7 +220,7 @@ def test_tree_fingerprint_sees_a_move_of_head_alone(repo):
     git(repo, "commit", "-q", "--allow-empty", "-m", "reviewer was here")
 
     assert review_run.reviewer_changes(before, review_run.tree_fingerprint(str(repo)),
-                                       None)[0] == [":HEAD"]
+                                       None)[0] == [review_run.HEAD_KEY]
 
 
 def test_tree_fingerprint_outside_a_repository_is_none(tmp_path):
@@ -395,10 +395,11 @@ def test_run_kimi_probe_is_read_only_and_runs_outside_the_repo(repo, tmp_path):
 def test_run_kimi_probe_that_writes_the_tree_spends_no_round(repo, tmp_path):
     """The `before` fingerprint is taken BEFORE the probe, so a probe call
     that wrote into the repository is seen -- and refused before any round is
-    reserved."""
+    reserved, with EXIT_PROBE_CHANGED (round 4), never the exit 2 that walks
+    on to the next provider."""
     result, review = _run(repo, tmp_path, FAKE_KIMI_PROBE_WRITE=str(repo / "seed.txt"))
 
-    assert (result.returncode, review) == (2, None)
+    assert (result.returncode, review) == (review_run.EXIT_PROBE_CHANGED, None)
     assert "seed.txt" in result.stderr
     assert rl.status(str(repo), "T1")["rounds"] == []
 
@@ -431,28 +432,58 @@ def test_run_kimi_with_the_budget_spent_spends_no_probe_request(repo, tmp_path):
     assert (result.returncode, dump.exists()) == (4, False)
 
 
-def test_run_kimi_probes_after_the_reservation_when_the_status_was_stale(
+def test_run_kimi_with_no_round_in_the_status_is_refused_before_reserve(
         repo, tmp_path, monkeypatch, capsys):
-    """The neighbour of skipping the probe on a spent budget: the status read
-    is unlocked, so a round can still be granted. The probe then runs after the
-    reservation, and a failing one makes the round INCOMPLETE rather than
-    launching an unprobed reviewer."""
+    """Round 4 FIX 5 (review_run.py:896): the unlocked status said no round was
+    left, yet `reserve` would have granted one (a successor plan landed in
+    between), and a failing probe then spent that round. A Kimi round is never
+    reserved unprobed: the status refuses first, and nothing is reserved."""
     scratch, work = tmp_path / "scratch", tmp_path / "work"
     _bundle(repo, scratch)
     fakes = fake_kimi_bin(tmp_path / "bin")
+    dump = tmp_path / "dump.jsonl"
     monkeypatch.setenv("PATH", str(fakes) + os.pathsep + os.environ.get("PATH", ""))
     monkeypatch.setenv("KIMI_CODE_HOME", str(kimi_home(tmp_path / "kimi-home")))
     monkeypatch.setenv("FAKE_KIMI_PROBE", "quota:exceeded_current_quota_error")
+    monkeypatch.setenv("FAKE_KIMI_DUMP", str(dump))
+    real_status = rl.status
     monkeypatch.setattr(review_run.review_ledger, "status",
                         lambda *_a: {"state": rl.NEEDS_REPLAN, "rounds_left": 0})
 
     code = review_run.main(["--root", str(repo), "--ticket", "T1", "--scratch", str(scratch),
                             "--provider", "kimi", "--model", "k3", "--work-dir", str(work)])
-    review = json.loads((work / "review.json").read_text(encoding="utf-8"))
+    err = capsys.readouterr().err
+
+    assert (code, real_status(str(repo), "T1")["rounds"], dump.exists(),
+            (work / "review.json").exists()) == (review_run.EXIT_REFUSED, [], False, False)
+    assert "no round left per the ledger's status" in err
+
+
+def test_run_kimi_probes_before_it_reserves(repo, tmp_path, monkeypatch, capsys):
+    """Must-allow for FIX 5: with a round available the probe runs BEFORE
+    `reserve`, and an `ok` probe still launches the review."""
+    scratch, work = tmp_path / "scratch", tmp_path / "work"
+    _bundle(repo, scratch)
+    fakes = fake_kimi_bin(tmp_path / "bin")
+    dump = tmp_path / "dump.jsonl"
+    monkeypatch.setenv("PATH", str(fakes) + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setenv("KIMI_CODE_HOME", str(kimi_home(tmp_path / "kimi-home")))
+    monkeypatch.setenv("FAKE_KIMI_DUMP", str(dump))
+    real, calls_at_reserve = review_run.review_ledger.reserve, []
+
+    def reserve(*args):
+        calls_at_reserve.append(len(dump.read_text(encoding="utf-8").splitlines())
+                                if dump.exists() else 0)
+        return real(*args)
+
+    monkeypatch.setattr(review_run.review_ledger, "reserve", reserve)
+
+    code = review_run.main(["--root", str(repo), "--ticket", "T1", "--scratch", str(scratch),
+                            "--provider", "kimi", "--model", "k3", "--work-dir", str(work)])
     capsys.readouterr()
 
-    assert (code, review["verdict"]) == (3, "INCOMPLETE")
-    assert any("rate-limited" in r for r in review["reasons"])
+    assert (code, calls_at_reserve, len(dump.read_text(encoding="utf-8").splitlines())) == (
+        review_run.EXIT_CLEAN, [1], 2)
 
 
 # --- round 2 FIX review_run.py:301: graph.out is resolved before the review -----
@@ -545,7 +576,7 @@ def test_run_kimi_unreadable_file_spends_no_probe_and_no_round(repo, tmp_path, m
     monkeypatch.setenv("FAKE_KIMI_DUMP", str(dump))
     real = review_run._path_digest  # pylint: disable=protected-access
     monkeypatch.setattr(review_run, "_path_digest",
-                        lambda p: None if os.path.basename(p) == ".env" else real(p))
+                        lambda p, *a: None if os.path.basename(p) == ".env" else real(p, *a))
 
     code = review_run.main(["--root", str(repo), "--ticket", "T1", "--scratch", str(scratch),
                             "--provider", "kimi", "--model", "k3", "--work-dir", str(work)])
@@ -850,7 +881,8 @@ def test_tree_fingerprint_reads_a_worktree_rename_as_two_paths(repo):
 
     snapshot = review_run.tree_fingerprint(str(repo))
 
-    assert sorted(k for k in snapshot if not k.startswith(":")) == [
+    assert sorted(k for k in snapshot
+                  if k not in (review_run.HEAD_KEY, review_run.INDEX_KEY)) == [
         "change.txt", "moved.txt", "seed.txt"]
     assert snapshot["seed.txt"].endswith(" missing")
 
@@ -1003,3 +1035,334 @@ def test_run_kimi_a_probe_survivor_that_will_not_die_spends_no_round(repo, tmp_p
 
     assert (code, rl.status(str(repo), "T1")["rounds"]) == (2, [])
     assert "kimi probe: unknown" in err
+
+
+# --- review round 4 (T-0028) ---------------------------------------------------------
+# One must-block and one must-allow case per FIX; sabotage_kimi.py turns each
+# must-block case red.
+
+_POSIX_ONLY = pytest.mark.skipif(os.name == "nt", reason="POSIX file modes, FIFOs and "
+                                                         "':' in file names")
+
+
+def _symlink_or_skip(target, link):
+    try:
+        os.symlink(target, link)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"cannot create a symlink here: {exc}")
+
+
+# FIX 1 (review_run.py:459): graph.out is never a directory that holds checks.
+
+
+def test_run_kimi_a_crew_graph_out_sets_nothing_aside(repo, tmp_path):
+    """graph.out configured as `.crew` BEFORE the round: a rewrite of the
+    tracked `.crew/verify.json` was set aside as a graph rebuild."""
+    _crew_repo(repo, crew_json='{"graph": {"out": ".crew"}}\n')
+
+    result, review = _run(repo, tmp_path, FAKE_KIMI_PUT=json.dumps({
+        ".crew/verify.json": '{"rules": ["weakened"]}\n'}))
+
+    assert (result.returncode, review["verdict"]) == (3, "INCOMPLETE")
+    assert any(".crew/verify.json" in r for r in review["reasons"])
+
+
+def _graph_config(repo, value, tracked=(), untracked=()):
+    """graph.out set in an ignored `.crew/config.json`, as in this repository,
+    so `.crew/` holds no tracked file unless `tracked` puts one there."""
+    (repo / ".gitignore").write_text(".crew/config.json\n", encoding="utf-8")
+    (repo / ".crew").mkdir(exist_ok=True)
+    (repo / ".crew" / "config.json").write_text(json.dumps({"graph": {"out": value}}) + "\n",
+                                                encoding="utf-8")
+    for rel in tracked:
+        path = repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("x\n", encoding="utf-8")
+    git(repo, "add", ".gitignore", ".crew", *tracked)
+    git(repo, "commit", "-qm", "graph config")
+    for rel in untracked:
+        path = repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("x\n", encoding="utf-8")
+
+
+@pytest.mark.parametrize("value,tracked,untracked", [
+    (".crew", (), ()),
+    (".crew/graph", (), (".crew/graph/graph.json",)),
+    ("pkg", ("pkg/graph.json",), ("pkg/sub/.crew/config.json",)),
+    ("gen", ("gen/graph.json", "gen/app.py"), ()),
+], ids=["is-crew", "under-crew", "contains-crew", "holds-a-tracked-file"])
+def test_graph_out_that_could_hold_a_check_input_is_none(repo, value, tracked, untracked):
+    _graph_config(repo, value, tracked, untracked)
+
+    assert review_run.graph_out(str(repo)) is None
+
+
+@pytest.mark.parametrize("value,tracked", [
+    ("graphify-out", ("graphify-out/graph.json", "graphify-out/GRAPH_REPORT.md")),
+    ("docs/graph", ("docs/graph/graph.json",)),
+    ("graphify-out", ()),
+], ids=["default-with-both-tracked", "configured", "default-empty"])
+def test_graph_out_that_holds_only_the_graph_is_set_aside(repo, value, tracked):
+    _graph_config(repo, value, tracked, ("graphify-out/cache/x", "docs/graph/cache/x"))
+
+    assert review_run.graph_out(str(repo)) == value
+
+
+def test_run_kimi_a_crew_graph_out_with_nothing_tracked_in_it_sets_nothing_aside(repo,
+                                                                                tmp_path):
+    """The `.crew` branch alone: an ignored `.crew/config.json` names `.crew`,
+    no file under it is tracked, and the reviewer forges a gate input."""
+    _graph_config(repo, ".crew")
+
+    result, review = _run(repo, tmp_path, FAKE_KIMI_WRITES=".crew/.verify-verified-at")
+
+    assert (result.returncode, review["verdict"]) == (3, "INCOMPLETE")
+    assert any(".crew/.verify-verified-at" in r for r in review["reasons"])
+
+
+def test_run_kimi_default_graph_out_still_sets_its_cache_aside(repo, tmp_path):
+    _graph_repo(repo)
+
+    result, review = _run(repo, tmp_path, FAKE_KIMI_WRITES="graphify-out/graph.json,"
+                                                           "graphify-out/cache/x")
+
+    assert (result.returncode, review["verdict"]) == (0, "CLEAN"), review["reasons"]
+
+
+# FIX 2 (review_run.py:221): a symlink is digested with its target.
+
+
+def test_run_kimi_an_edit_through_a_tracked_symlink_is_incomplete(repo, tmp_path):
+    """Tracked `app.py` -> ignored `.vscode/app.py`: the link's own digest
+    never moved, and the target is ignored IDE state, so the edit was set
+    aside and the round read CLEAN."""
+    (repo / ".gitignore").write_text(".vscode/\n", encoding="utf-8")
+    (repo / ".vscode").mkdir()
+    (repo / ".vscode" / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    _symlink_or_skip(os.path.join(".vscode", "app.py"), repo / "app.py")
+    git(repo, "add", ".gitignore", "app.py")
+    git(repo, "commit", "-qm", "link")
+
+    result, review = _run(repo, tmp_path, FAKE_KIMI_WRITES=".vscode/app.py")
+
+    assert (result.returncode, review["verdict"]) == (3, "INCOMPLETE")
+    reason = next(r for r in review["reasons"] if "working tree changed" in r)
+    assert "app.py" in reason.replace(".vscode/app.py", "")
+
+
+def test_tree_fingerprint_an_unchanged_symlink_and_target_compare_equal(repo):
+    (repo / "target.txt").write_text("t\n", encoding="utf-8")
+    (repo / "d").mkdir()
+    (repo / "d" / "f.txt").write_text("f\n", encoding="utf-8")
+    _symlink_or_skip("target.txt", repo / "file-link")
+    _symlink_or_skip("d", repo / "dir-link")
+    _symlink_or_skip("nowhere", repo / "dangling")
+
+    before = review_run.tree_fingerprint(str(repo))
+
+    assert before is not None and before == review_run.tree_fingerprint(str(repo))
+    assert "missing" in before["dangling"]
+
+
+def test_tree_fingerprint_sees_an_edit_through_a_directory_symlink(repo):
+    (repo / "d").mkdir()
+    (repo / "d" / "f.txt").write_text("f\n", encoding="utf-8")
+    _symlink_or_skip("d", repo / "dir-link")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "dir link")
+    before = review_run.tree_fingerprint(str(repo))
+
+    (repo / "d" / "f.txt").write_text("FIXED\n", encoding="utf-8")
+
+    assert "dir-link" in review_run.reviewer_changes(
+        before, review_run.tree_fingerprint(str(repo)), None)[0]
+
+
+def test_tree_fingerprint_a_link_to_a_directory_outside_the_repo_is_could_not_tell(
+        repo, tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    _symlink_or_skip(str(outside), repo / "out-link")
+    problems = []
+
+    assert review_run.tree_fingerprint(str(repo), problems) is None
+    assert any("out-link" in p for p in problems), problems
+
+
+# FIX 3 (review_run.py:334): the metadata keys cannot collide with a path.
+
+
+@_POSIX_ONLY
+def test_run_kimi_files_named_like_the_metadata_keys_are_hashed(repo, tmp_path):
+    (repo / ":HEAD").write_text("h\n", encoding="utf-8")
+    (repo / ":index").write_text("i\n", encoding="utf-8")
+    git(repo, "add", ":(literal):HEAD", ":(literal):index")
+    git(repo, "commit", "-qm", "odd names")
+
+    result, review = _run(repo, tmp_path, FAKE_KIMI_PUT=json.dumps({
+        ":HEAD": "FIXED\n", ":index": "FIXED\n"}))
+
+    assert (result.returncode, review["verdict"]) == (3, "INCOMPLETE")
+    reason = next(r for r in review["reasons"] if "working tree changed" in r)
+    assert ":HEAD" in reason and ":index" in reason
+
+
+def test_metadata_keys_hold_a_nul_no_git_path_can():
+    assert (review_run.HEAD_KEY, review_run.INDEX_KEY) == ("\0HEAD", "\0index")
+
+
+# FIX 4 (review_run.py:224): permission bits count.
+
+
+@_POSIX_ONLY
+def test_run_kimi_a_chmod_under_filemode_false_is_incomplete(repo, tmp_path):
+    (repo / "run.sh").write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
+    os.chmod(repo / "run.sh", 0o644)
+    git(repo, "config", "core.filemode", "false")
+    git(repo, "add", "run.sh")
+    git(repo, "commit", "-qm", "script")
+
+    result, review = _run(repo, tmp_path, FAKE_KIMI_CHMOD="run.sh")
+
+    assert (result.returncode, review["verdict"]) == (3, "INCOMPLETE")
+    assert any("run.sh" in r for r in review["reasons"])
+
+
+# FIX 6 (review_run.py:629): a PermissionError from killpg is could-not-tell.
+
+
+def test_stop_survivors_a_kill_refused_with_permission_error_is_could_not_tell(monkeypatch):
+    if os.name == "nt":
+        pytest.skip("no process group is probed on Windows")
+
+    def refuse(*_a):
+        raise PermissionError("not ours")
+
+    monkeypatch.setattr(review_run, "_group_alive", lambda _pgid: True)
+    monkeypatch.setattr(review_run.os, "killpg", refuse)
+
+    assert review_run.stop_survivors([12345]) == (False, review_run.KIMI_SURVIVOR_UNKNOWN)
+
+
+def test_stop_survivors_a_group_already_gone_is_nothing_left_running(monkeypatch):
+    if os.name == "nt":
+        pytest.skip("no process group is probed on Windows")
+
+    def gone(*_a):
+        raise ProcessLookupError
+
+    monkeypatch.setattr(review_run, "_group_alive", lambda _pgid: True)
+    monkeypatch.setattr(review_run.os, "killpg", gone)
+
+    assert review_run.stop_survivors([12345]) == (False, None)
+
+
+@pytest.mark.parametrize("error,alive", [(PermissionError, True), (ProcessLookupError, False)])
+def test_group_alive_without_proc_reads_a_permission_error_as_alive(monkeypatch, error, alive):
+    real_isdir = os.path.isdir
+
+    def killpg(*_a):
+        raise error
+
+    monkeypatch.setattr(review_run.os.path, "isdir",
+                        lambda p: False if p == "/proc/self" else real_isdir(p))
+    monkeypatch.setattr(review_run.os, "killpg", killpg, raising=False)
+
+    assert review_run._group_alive(12345) is alive  # pylint: disable=protected-access
+
+
+def _main_with_a_refused_kill(repo, tmp_path, monkeypatch, capsys, from_call):
+    scratch, work = tmp_path / "scratch", tmp_path / "work"
+    _bundle(repo, scratch)
+    fakes = fake_kimi_bin(tmp_path / "bin")
+    monkeypatch.setenv("PATH", str(fakes) + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setenv("KIMI_CODE_HOME", str(kimi_home(tmp_path / "kimi-home")))
+    calls = []
+
+    def alive(_pgid):
+        calls.append(_pgid)
+        return len(calls) >= from_call
+
+    def refuse(*_a):
+        raise PermissionError("not ours")
+
+    monkeypatch.setattr(review_run, "_group_alive", alive)
+    monkeypatch.setattr(review_run.os, "killpg", refuse)
+    code = review_run.main(["--root", str(repo), "--ticket", "T1", "--scratch", str(scratch),
+                            "--provider", "kimi", "--model", "k3", "--work-dir", str(work)])
+    err = capsys.readouterr().err
+    review_path = work / "review.json"
+    return code, err, json.loads(review_path.read_text(encoding="utf-8")) \
+        if review_path.exists() else None
+
+
+@_POSIX_ONLY
+def test_run_kimi_a_review_kill_refused_is_incomplete(repo, tmp_path, monkeypatch, capsys):
+    code, _err, review = _main_with_a_refused_kill(repo, tmp_path, monkeypatch, capsys, 2)
+
+    assert (code, review["verdict"]) == (3, "INCOMPLETE")
+    assert review_run.KIMI_SURVIVOR_UNKNOWN in review["reasons"]
+
+
+@_POSIX_ONLY
+def test_run_kimi_a_probe_kill_refused_is_unknown_and_spends_no_round(repo, tmp_path,
+                                                                     monkeypatch, capsys):
+    code, err, review = _main_with_a_refused_kill(repo, tmp_path, monkeypatch, capsys, 1)
+
+    assert (code, review, rl.status(str(repo), "T1")["rounds"]) == (2, None, [])
+    assert "kimi probe: unknown" in err
+
+
+# FIX 7 (review_run.py:792): a failing probe that wrote the tree.
+
+
+def test_run_kimi_a_failing_probe_that_wrote_the_tree_exits_probe_changed(repo, tmp_path):
+    result, review = _run(repo, tmp_path, probe="quota:exceeded_current_quota_error",
+                          FAKE_KIMI_PROBE_WRITE=str(repo / "seed.txt"))
+
+    assert (result.returncode, review) == (review_run.EXIT_PROBE_CHANGED, None)
+    assert "seed.txt" in result.stderr
+    assert rl.status(str(repo), "T1")["rounds"] == []
+
+
+def test_every_exit_code_is_distinct():
+    codes = {name: value for name, value in vars(review_run).items()
+             if name.startswith("EXIT_")}
+
+    assert len(set(codes.values())) == len(codes) and codes["EXIT_PROBE_CHANGED"] == 5, codes
+
+
+# FIX 8 (review_run.py:225): a special file is recorded, never opened.
+
+_FINGERPRINT_ONLY = (
+    "import sys; sys.path.insert(0, sys.argv[1]); import review_run; "
+    "print(review_run.tree_fingerprint(sys.argv[2]) is not None)")
+
+
+@_POSIX_ONLY
+def test_tree_fingerprint_never_opens_a_fifo(repo, tmp_path):
+    """A FIFO inside an uninitialised submodule directory: the walk reached
+    `_path_digest`, whose open blocked with no deadline."""
+    _submodule(repo, tmp_path)
+    git(repo, "submodule", "deinit", "-q", "-f", "lib")
+    os.mkfifo(repo / "lib" / "pipe")
+
+    done = subprocess.run([sys.executable, "-c", _FINGERPRINT_ONLY, _SCRIPTS, str(repo)],
+                          capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                          timeout=10, check=False)
+    before = review_run.tree_fingerprint(str(repo))
+    os.remove(repo / "lib" / "pipe")
+    (repo / "lib" / "pipe").write_text("now a file\n", encoding="utf-8")
+
+    assert done.stdout.strip() == "True", done.stderr
+    assert review_run.reviewer_changes(before, review_run.tree_fingerprint(str(repo)),
+                                       None)[0] == ["lib"]
+
+
+def test_path_digest_of_regular_files_links_and_directories(repo):
+    (repo / "d").mkdir()
+    digest = review_run._path_digest  # pylint: disable=protected-access
+
+    assert (digest(str(repo / "d")), digest(str(repo / "nope"))) == ("dir", "missing")
+    assert digest(str(repo / "seed.txt")) == digest(str(repo / "seed.txt"))

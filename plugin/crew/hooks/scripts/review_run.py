@@ -19,8 +19,9 @@ PROVIDERS.
            stdin closed, env from `kimi_probe.kimi_env` (no infinite retry, no
            KIMI_MODEL_* overrides). `kimi_probe.probe` runs BEFORE the round
            is reserved: any state but `ok` exits 2, names the state, and
-           spends nothing -- and is skipped when the ledger already shows no
-           round left, since the reservation would refuse anyway. Prompt mode
+           spends nothing. When the ledger's status already shows no round
+           left, the run exits 4 before any probe or reservation: a Kimi
+           round is never reserved unprobed. Prompt mode
            FORCES Kimi's permission mode to `auto` (2.1.1 refuses `-p` with
            --plan/--auto/--yolo), so no flag makes it read-only. Two controls
            stand in, for the probe call as for the review: the agent file
@@ -28,8 +29,9 @@ PROVIDERS.
            the working tree is fingerprinted BEFORE THE PROBE and after the
            review exits. A tree that cannot be fingerprinted before the probe
            exits 2 (`unknown`) with no probe request and no round spent. A
-           probe that changed it exits 2 with no round spent; a review that
-           changed it is INCOMPLETE, naming the paths. Each call runs in a
+           probe that changed it, whatever it answered, exits 5
+           (EXIT_PROBE_CHANGED) naming the paths, with no round spent; a
+           review that changed it is INCOMPLETE, naming the paths. Each call runs in a
            process group of its own, and whatever it leaves running there
            after it exits is killed before the tree is fingerprinted
            (`stop_survivors`); one that cannot be stopped is "could not tell".
@@ -77,7 +79,9 @@ rows into `webtest-findings.txt` in the scratch directory, that file is an
 expected READ like a bundle part.
 
 Exit codes: 0 CLEAN; 1 FINDINGS; 3 INCOMPLETE; 4 budget refused
-(NEEDS_REPLAN); 2 usage or setup error.
+(NEEDS_REPLAN, or no round left per the status, before a Kimi probe); 2 usage
+or setup error; 5 the Kimi probe changed the working tree (stop and report
+the named paths; do not walk to the next provider).
 """
 import argparse
 import datetime
@@ -102,6 +106,11 @@ import review_verdict
 import webtest_guard
 
 EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, EXIT_INCOMPLETE, EXIT_REFUSED = 0, 1, 2, 3, 4
+# The Kimi probe changed the working tree (round 4 of T-0028). No round was
+# reserved, but the tree is no longer the one the bundle was built from, so
+# /crew:review stops and reports the named paths -- it must never walk on to
+# the next provider, as it does on EXIT_USAGE.
+EXIT_PROBE_CHANGED = 5
 DEFAULT_TIMEOUT = 1800
 # Bound on the follow-up `communicate()` after a kill, below. Not the same
 # knob as --timeout: this one exists so a descendant that escaped the kill
@@ -150,9 +159,20 @@ CREW_MARKERS = (".crew/.handoff-requested", ".crew/.autoclear-sent")
 # (judgement, not measured). Tracked files do not rely on git's answer at all:
 # every one is hashed (see `tree_fingerprint`).
 GIT_OVERRIDES = ("-c", "core.fsmonitor=false")
-# A nested repository is fingerprinted by recursion; deeper than this is
-# "could not tell".
+# A nested repository is fingerprinted by recursion, and a symlink is followed
+# to what it resolves to; deeper than this is "could not tell".
 NESTED_DEPTH = 8
+# The fingerprint's own entries. A NUL cannot occur in a git path, so no file
+# can collide with them (round 4 of T-0028: tracked files named `:HEAD` and
+# `:index` were never hashed, because those were the keys).
+HEAD_KEY, INDEX_KEY = "\0HEAD", "\0index"
+_META_SHOWN = {HEAD_KEY: "(HEAD)", INDEX_KEY: "(the index)"}
+# Opening a regular file never blocks and never follows a link swapped in
+# after the lstat (round 4: a FIFO blocked the walk with no deadline).
+_READ_FLAGS = (os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
+               | getattr(os, "O_BINARY", 0))
+# What graph.out may hold as a TRACKED file and still be set aside.
+GRAPH_FILES = ("graph.json", "GRAPH_REPORT.md")
 # Crew config: a reviewer write here always counts, even under graph.out -- it
 # is where graph.out itself is configured.
 CREW_CONFIG_PATHS = (".crew/crew.json", ".crew/config.json")
@@ -210,38 +230,88 @@ def _git_bytes(root, args, env):
     return done.stdout if done.returncode == 0 else None
 
 
-def _path_digest(path):
-    """What is at `path` now, without following a symlink: a content sha256,
-    `link:<target>`, `dir`, or `missing`. None when it exists and cannot be
-    read -- an unreadable file is "could not tell", and two of those must not
-    compare equal as "unchanged"."""
+def _inside(real, top):
+    """True when the resolved `real` lies strictly inside the resolved `top`."""
+    try:
+        return real != top and os.path.commonpath([real, top]) == top
+    except ValueError:  # another drive on Windows
+        return False
+
+
+def _link_digest(path, root, depth):
+    """`link:<target>` and, after a NUL, the digest of what the link resolves
+    to (round 4 of T-0028: a tracked link into ignored IDE state let its
+    target change unseen, because only the target STRING was hashed): a
+    regular file's content and mode, a directory inside `root` walked,
+    `missing` when it dangles. None -- could not tell -- for a directory
+    outside `root` (or with no `root` to check it against), or past
+    NESTED_DEPTH links."""
+    target = os.readlink(path)
+    if depth >= NESTED_DEPTH:
+        return None
+    try:
+        info = os.stat(path)
+    except FileNotFoundError:
+        return f"link:{target}\0missing"
+    real = os.path.realpath(path)
+    if stat.S_ISDIR(info.st_mode):
+        if not root or not _inside(real, os.path.realpath(root)):
+            return None
+        resolved = _walk_digest(real, root, depth + 1)
+    else:
+        resolved = _path_digest(real, root, depth + 1)
+    return None if resolved is None else f"link:{target}\0{resolved}"
+
+
+def _path_digest(path, root=None, _depth=0):
+    """What is at `path` now, never opening anything but a regular file:
+
+      a regular file  `<content sha256>:<permission bits, octal>` -- the bits
+                      so a chmod counts even where core.filemode=false hides
+                      it from git (round 4 of T-0028)
+      a symlink       `_link_digest`: its target and what it resolves to
+      a directory     `dir`
+      anything else   `special:<S_IFMT, octal>` -- a FIFO, socket or device is
+                      recorded from `lstat` and never opened, so a FIFO cannot
+                      block the walk (round 4)
+      nothing there   `missing`
+
+    None when it exists and cannot be read: an unreadable file is "could not
+    tell", and two of those must not compare equal as "unchanged"."""
     try:
         mode = os.lstat(path).st_mode
         if stat.S_ISLNK(mode):
-            return "link:" + os.readlink(path)
+            return _link_digest(path, root, _depth)
         if stat.S_ISDIR(mode):
             return "dir"
-        digest = hashlib.sha256()
-        with open(path, "rb") as fh:
+        if not stat.S_ISREG(mode):
+            return f"special:{stat.S_IFMT(mode):o}"
+        fd = os.open(path, _READ_FLAGS)
+        with os.fdopen(fd, "rb") as fh:
+            opened = os.fstat(fh.fileno()).st_mode
+            if not stat.S_ISREG(opened):
+                return f"special:{stat.S_IFMT(opened):o}"
+            digest = hashlib.sha256()
             for block in iter(lambda: fh.read(1 << 20), b""):
                 digest.update(block)
-        return digest.hexdigest()
+        return f"{digest.hexdigest()}:{stat.S_IMODE(opened):o}"
     except FileNotFoundError:
         return "missing"
     except OSError:
         return None
 
 
-def _walk_digest(path):
+def _walk_digest(path, root=None, _depth=0):
     """A directory's contents, walked without following a symlink: a sha256
-    over each entry's relative path and `_path_digest`. None when an entry
-    cannot be read or the walk itself fails."""
+    over each entry's relative path and `_path_digest` (so a link inside is
+    digested with what it resolves to). None when an entry cannot be read or
+    the walk itself fails."""
     rows, failed = [], []
     for top, dirs, files in os.walk(path, onerror=failed.append):
         dirs.sort()
         for name in sorted(dirs + files):
             full = os.path.join(top, name)
-            digest = _path_digest(full)
+            digest = _path_digest(full, root, _depth)
             if digest is None:
                 return None
             rows.append(f"{os.path.relpath(full, path)}\0{digest}")
@@ -258,11 +328,11 @@ def _entry_digest(root, rel, problems, depth):
     there -- and any other directory (an uninitialised submodule, whose files
     no `git status` mode lists) is walked."""
     path = os.path.join(root, rel)
-    digest = _path_digest(path)
+    digest = _path_digest(path, root)
     if digest != "dir":
         return digest
     if not os.path.lexists(os.path.join(path, ".git")):
-        return _walk_digest(path)
+        return _walk_digest(path, root)
     top = crew_common.git_out(path, "rev-parse", "--show-toplevel")
     if depth >= NESTED_DEPTH or not top or \
             os.path.normcase(os.path.realpath(top)) != os.path.normcase(os.path.realpath(path)):
@@ -278,8 +348,9 @@ def _entry_digest(root, rel, problems, depth):
 
 
 def tree_fingerprint(root, problems=None, _depth=0):
-    """The working tree's state as `{path: "<XY> <content digest>"}`, plus
-    `:HEAD` and `:index` -- or None when it cannot be taken.
+    """The working tree's state as `{path: "<XY> <digest>"}` (`_path_digest`:
+    content and mode bits, a link with its target, a special file never
+    opened), plus HEAD_KEY and INDEX_KEY -- or None when it cannot be taken.
 
     EVERY TRACKED FILE is in it, contents hashed, whatever `git status` says
     of it (`git ls-files --stage`, code `--` when status did not list it).
@@ -293,9 +364,10 @@ def tree_fingerprint(root, problems=None, _depth=0):
     the directory; `--no-renames` keeps each entry one path). Round 1 found
     the earlier digest hashed only an untracked file's status LINE and skipped
     ignored files. A directory is fingerprinted as the nested repository or
-    submodule it is, or walked (`_entry_digest`). `:HEAD` is there so a
-    reviewer that COMMITTED its edit is seen, `:index` (every staged entry,
-    blob id included) so one that only staged is. `.work/` is excluded at the
+    submodule it is, or walked (`_entry_digest`). HEAD_KEY is there so a
+    reviewer that COMMITTED its edit is seen, INDEX_KEY (every staged entry,
+    blob id included) so one that only staged is; both hold a NUL, so no path
+    can collide with them (round 4). `.work/` is excluded at the
     top level -- the scratch directory, review.json and the handoff live
     there. Taken with GIT_OPTIONAL_LOCKS=0 so taking it cannot itself change
     the index.
@@ -324,15 +396,17 @@ def tree_fingerprint(root, problems=None, _depth=0):
     if status is None or staged is None:
         unknown("git status or git ls-files failed or timed out")
         return None
-    snapshot = {":HEAD": head, ":index": hashlib.sha256(staged).hexdigest()}
+    snapshot = {HEAD_KEY: head, INDEX_KEY: hashlib.sha256(staged).hexdigest()}
     listed = [(entry[:2].decode("ascii", "replace"), entry[3:])
               for entry in status.split(b"\0") if len(entry) >= 4]
     listed += [("--", entry.split(b"\t", 1)[1]) for entry in staged.split(b"\0")
                if b"\t" in entry]
+    seen = set()
     for code, raw in listed:
         rel = os.fsdecode(raw).rstrip("/")
-        if rel in snapshot:
+        if rel in seen:
             continue  # status listed it first, with its code
+        seen.add(rel)
         digest = _entry_digest(root, rel, problems, _depth)
         if digest is None:
             unknown(f"{rel} exists and cannot be read")
@@ -349,7 +423,12 @@ def graph_out(root):
     wrong-typed value is `graphify-out`; `contained_path` keeps it inside the
     repository. None when it lands on the root or in `.git`, or a symlink
     moves it -- an exemption for one generated directory must never widen to
-    the tree."""
+    the tree. None too, since round 4 of T-0028, when the directory could
+    hold a check input: it is `.crew` or lies under a `.crew`, it contains a
+    `.crew`, or it holds a tracked file other than GRAPH_FILES (read with
+    `git ls-files` beside the "before" fingerprint; a git that does not answer
+    is None as well). graph.out set to `.crew` had excused a rewrite of
+    `.crew/verify.json`."""
     top = os.path.realpath(root)
     cfg = {}
     for name in ("crew.json", "config.json"):
@@ -371,6 +450,16 @@ def graph_out(root):
         return None
     rel = os.path.relpath(real, top).replace("\\", "/")
     if rel in ("", ".") or rel.split("/", 1)[0] in ("..", ".git"):
+        return None
+    if ".crew" in rel.split("/"):
+        return None
+    for _dir, dirs, _files in os.walk(real):
+        if ".crew" in dirs:
+            return None
+    tracked = _git_bytes(top, ["ls-files", "-z", "--", ":(literal)" + rel],
+                         dict(os.environ, GIT_OPTIONAL_LOCKS="0"))
+    if tracked is None or any(os.fsdecode(name) not in (f"{rel}/{f}" for f in GRAPH_FILES)
+                              for name in tracked.split(b"\0") if name):
         return None
     return rel
 
@@ -450,11 +539,12 @@ def reviewer_changes(before, after, graph):
     reported: graph.out is generated, holds no code under review, and is
     overwritten by the next rebuild, so a write there fixes nothing. Every
     other path, the code map and the diagrams included, still counts, and
-    `:HEAD` and `:index` always do."""
+    HEAD_KEY and INDEX_KEY always do. `graph_out` refuses a directory that
+    could hold a check input (round 4)."""
     changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
     set_aside = []
     for path in changed:
-        if path.startswith(":") or path in CREW_CONFIG_PATHS:
+        if path in (HEAD_KEY, INDEX_KEY) or path in CREW_CONFIG_PATHS:
             continue
         if graph and _under(path, graph):
             set_aside.append(path)
@@ -464,7 +554,7 @@ def reviewer_changes(before, after, graph):
 
 
 def _named(paths):
-    shown = ", ".join(paths[:CHANGED_SHOWN])
+    shown = ", ".join(_META_SHOWN.get(p, p) for p in paths[:CHANGED_SHOWN])
     more = len(paths) - CHANGED_SHOWN
     return shown + (f" and {more} more" if more > 0 else "")
 
@@ -605,8 +695,10 @@ def _group_alive(pgid):
         return False
     try:
         os.killpg(pgid, 0)
-    except (ProcessLookupError, PermissionError):
+    except ProcessLookupError:
         return False
+    except PermissionError:
+        return True  # round 4 of T-0028: a member we may not signal is alive
     return True
 
 
@@ -616,7 +708,8 @@ def stop_survivors(started):
     it started can write after the "after" fingerprint (round 3 of T-0028: a
     backgrounded `sleep 2; echo fix >> seed.txt` landed after a CLEAN round).
 
-    (killed, unknown_reason). The group is signalled only after `_group_alive`
+    (killed, unknown_reason); a kill refused with PermissionError is
+    (False, KIMI_SURVIVOR_UNKNOWN). The group is signalled only after `_group_alive`
     has just found a live member: while a group has members its id is not
     handed to a new process, so the bare number still names this group --
     the hazard `launch`'s timeout path guards against is a group that has
@@ -626,8 +719,11 @@ def stop_survivors(started):
         return False, None
     try:
         os.killpg(started[0], signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
-        return False, None
+    except ProcessLookupError:
+        return False, None  # the group emptied between the probe and the kill
+    except PermissionError:
+        # Round 4 of T-0028: a member we may not signal is not "no survivor".
+        return False, KIMI_SURVIVOR_UNKNOWN
     deadline = time.monotonic() + POST_KILL_TIMEOUT
     while _group_alive(started[0]):
         if time.monotonic() >= deadline:
@@ -790,21 +886,28 @@ def _probe_runner(cmd, env, timeout, cwd):
 def _probe_kimi(args, before):
     """Run the probe. None when the review may go on (the binary and alias it
     resolved are then `args.kimi_exe` and `args.launched_model`); otherwise
-    the refusal message. A probe that changed the tree is refused too."""
+    (exit code, refusal message). The tree is fingerprinted after the probe
+    WHATEVER it answered (round 4 of T-0028: a failing probe that wrote
+    returned EXIT_USAGE, and /crew:review walked on to the next provider
+    against a tree the probe had changed): a change is EXIT_PROBE_CHANGED."""
     probed = kimi_probe.probe(args.model or None, runner=_probe_runner)
-    if not kimi_probe.launchable(probed["state"]):
-        return f"kimi probe: {probed['state']} - {probed['reason']}"
+    answer = f"kimi probe: {probed['state']} - {probed['reason']}"
     problems = []
     mid = tree_fingerprint(args.root, problems)
     if mid is None:
         # Round 3 NIT: this used to fall through as "clean" and reserve, so
         # the round was spent as INCOMPLETE when nothing had been launched.
-        return (f"kimi probe: unknown - the tree could not be fingerprinted after the probe: "
-                f"{'; '.join(problems) or 'no reason given'}")
+        return EXIT_USAGE, (f"kimi probe: unknown - the tree could not be fingerprinted "
+                            f"after the probe: {'; '.join(problems) or 'no reason given'} "
+                            f"(the probe answered: {answer})")
     if before is not None:
         changed, _set_aside = reviewer_changes(before, mid, args.graph_out)
         if changed:
-            return f"{KIMI_PROBE_CHANGED}: {_named(changed)}"
+            return EXIT_PROBE_CHANGED, (f"{KIMI_PROBE_CHANGED}: {_named(changed)} (the probe "
+                                        f"answered: {answer}); stop and report these paths, "
+                                        "do not walk to the next provider")
+    if not kimi_probe.launchable(probed["state"]):
+        return EXIT_USAGE, answer
     args.kimi_exe, args.launched_model = probed["exe"], probed["alias"]
     return None
 
@@ -846,7 +949,6 @@ def _run_kimi(args, number, prompt, before):
 
 def run(args):
     exe = prompt = before = None
-    probed = False
     if args.provider in LAUNCHED:
         if args.provider == "copilot" and not args.model:
             sys.stderr.write("review-run: copilot needs --model (qa.copilot.model); an "
@@ -858,6 +960,15 @@ def run(args):
                              "nothing launched, no round spent\n")
             return EXIT_USAGE
         if args.provider == "kimi":
+            # A Kimi round is never reserved unprobed (round 4 of T-0028: the
+            # unlocked status said none was left, a successor plan landed, and
+            # the probe that then ran after `reserve` spent the round). So the
+            # status refuses first, before any probe request.
+            if not _round_available(args.root, args.ticket):
+                sys.stderr.write("review-run: kimi: no round left per the ledger's status; "
+                                 "re-run once a successor plan is approved; nothing "
+                                 "launched, no round spent\n")
+                return EXIT_REFUSED
             # The fingerprint comes FIRST: the probe is a Kimi call too, so it
             # is inside the watched window. graph.out is resolved with it, from
             # the tree as it is BEFORE any Kimi call could write it. A "before"
@@ -873,13 +984,11 @@ def run(args):
                                  f"{'; '.join(problems) or 'no reason given'}; nothing "
                                  "launched, no round spent\n")
                 return EXIT_USAGE
-            if _round_available(args.root, args.ticket):
-                refusal = _probe_kimi(args, before)
-                if refusal:
-                    sys.stderr.write(f"review-run: {refusal}; nothing launched, no round "
-                                     "spent\n")
-                    return EXIT_USAGE
-                probed = True
+            refusal = _probe_kimi(args, before)
+            if refusal:
+                sys.stderr.write(f"review-run: {refusal[1]}; nothing launched, no round "
+                                 "spent\n")
+                return refusal[0]
         prompt = prompt_argument(os.path.join(args.scratch, "prompt.txt"))
 
     ok, number, message = review_ledger.reserve(args.root, args.ticket, args.provider,
@@ -892,14 +1001,6 @@ def run(args):
         return EXIT_CLEAN
 
     if args.provider == "kimi":
-        if not probed:
-            # The unlocked status said no round was left, yet one was granted
-            # (a successor plan landed in between). Never launch unprobed: the
-            # round is already spent, so a failing probe ends it INCOMPLETE.
-            refusal = _probe_kimi(args, before)
-            if refusal:
-                return finish(args, number, "", None, False,
-                              [f"{refusal} (probed after the reservation)"])
         return _run_kimi(args, number, prompt, before)
     extra = []
     cmd = command_for(args.provider, exe, args.root, prompt, args.model, args.effort)

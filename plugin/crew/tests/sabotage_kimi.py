@@ -47,6 +47,9 @@ _QUOTA_BRANCH = (
     "            or '\"status_code\":429' in (stdout or \"\").replace(\" \", \"\"):\n"
     '        return "rate-limited", "the Kimi CLI answered with a quota or rate limit"\n')
 
+_KEYS = '    snapshot = {HEAD_KEY: head, INDEX_KEY: hashlib.sha256(staged).hexdigest()}\n    listed = [(entry[:2].decode("ascii", "replace"), entry[3:])\n              for entry in status.split(b"\\0") if len(entry) >= 4]\n    listed += [("--", entry.split(b"\\t", 1)[1]) for entry in staged.split(b"\\0")\n               if b"\\t" in entry]\n    seen = set()\n    for code, raw in listed:\n        rel = os.fsdecode(raw).rstrip("/")\n        if rel in seen:\n            continue  # status listed it first, with its code\n        seen.add(rel)\n'
+_KEYS_OLD = '    snapshot = {":HEAD": head, ":index": hashlib.sha256(staged).hexdigest()}\n    listed = [(entry[:2].decode("ascii", "replace"), entry[3:])\n              for entry in status.split(b"\\0") if len(entry) >= 4]\n    listed += [("--", entry.split(b"\\t", 1)[1]) for entry in staged.split(b"\\0")\n               if b"\\t" in entry]\n    for code, raw in listed:\n        rel = os.fsdecode(raw).rstrip("/")\n        if rel in snapshot:\n            continue  # status listed it first, with its code\n'
+
 KIMI_MUTATIONS = (
     # --- the probe: "could not tell" must never become `ok` ---------------
     ("kimi probe: unrecognised output collapses into ok",
@@ -76,7 +79,7 @@ KIMI_MUTATIONS = (
      _P + "test_probe_no_config_is_not_authenticated"),
     ("kimi probe: the stored-credential check is skipped",
      PROBE,
-     "    if not _credential_present(config, alias, home):",
+     "    if not present:",
      "    if False:",
      _P + "test_probe_no_credential_is_not_authenticated"),
     ("kimi probe: tomllib missing reads as ok",
@@ -154,8 +157,8 @@ KIMI_MUTATIONS = (
      _R + "test_run_kimi_tree_change_is_incomplete"),
     ("review_run: the tree fingerprint forgets HEAD",
      RUN,
-     '    snapshot = {":HEAD": head, ":index"',
-     '    snapshot = {":index"',
+     '    snapshot = {HEAD_KEY: head, INDEX_KEY',
+     '    snapshot = {INDEX_KEY',
      _R + "test_tree_fingerprint_sees_a_move_of_head_alone"),
     ("review_run: an unfingerprintable tree reads as unchanged",
      RUN,
@@ -183,8 +186,8 @@ KIMI_MUTATIONS = (
      _R + "test_tree_fingerprint_sees_untracked_and_ignored_contents"),
     ("review_run: a staged-only change is not in the fingerprint",
      RUN,
-     '    snapshot = {":HEAD": head, ":index": hashlib.sha256(staged).hexdigest()}',
-     '    snapshot = {":HEAD": head}',
+     '    snapshot = {HEAD_KEY: head, INDEX_KEY: hashlib.sha256(staged).hexdigest()}',
+     '    snapshot = {HEAD_KEY: head}',
      _R + "test_tree_fingerprint_sees_untracked_and_ignored_contents"),
     ("review_run: a git that cannot start or hangs raises instead of None",
      RUN,
@@ -221,8 +224,8 @@ KIMI_MUTATIONS = (
      _R + "test_run_kimi_a_reviewer_that_moves_graph_out_is_incomplete"),
     ("review_run: crew config under graph.out is set aside",
      RUN,
-     '        if path.startswith(":") or path in CREW_CONFIG_PATHS:',
-     '        if path.startswith(":"):',
+     '        if path in (HEAD_KEY, INDEX_KEY) or path in CREW_CONFIG_PATHS:',
+     '        if path in (HEAD_KEY, INDEX_KEY):',
      _R + "test_run_kimi_a_crew_config_write_counts_even_under_graph_out"),
     # --- round 2 FIX review_run.py:623: no before fingerprint, nothing spent --
     ("review_run: an unfingerprintable tree still probes and reserves",
@@ -304,7 +307,7 @@ KIMI_MUTATIONS = (
      _R + "test_tree_fingerprint_sees_an_edit_inside_a_nested_repository"),
     ("review_run: a directory with no .git is the constant `dir`",
      RUN,
-     "        return _walk_digest(path)",
+     "        return _walk_digest(path, root)",
      "        return digest",
      _R + "test_tree_fingerprint_sees_a_write_into_an_uninitialised_submodule"),
     ("review_run: a .git that walks up to the parent is fingerprinted anyway",
@@ -390,18 +393,18 @@ KIMI_MUTATIONS = (
      _P + "test_probe_runs_with_the_review_read_only_controls_outside_the_cwd"),
     ("review_run: a probe that wrote the tree still reserves a round",
      RUN,
-     "        if changed:\n            return f\"{KIMI_PROBE_CHANGED}",
-     "        if False:\n            return f\"{KIMI_PROBE_CHANGED}",
+     "        if changed:\n            return EXIT_PROBE_CHANGED, (",
+     "        if False:\n            return EXIT_PROBE_CHANGED, (",
      _R + "test_run_kimi_probe_that_writes_the_tree_spends_no_round"),
     ("review_run: the before-fingerprint is taken after the probe again",
      RUN,
-     "                refusal = _probe_kimi(args, before)\n"
-     "                if refusal:\n"
-     "                    sys.stderr.write(",
-     "                refusal = _probe_kimi(args, None)\n"
-     "                before = tree_fingerprint(args.root)\n"
-     "                if refusal:\n"
-     "                    sys.stderr.write(",
+     "            refusal = _probe_kimi(args, before)\n"
+     "            if refusal:\n"
+     "                sys.stderr.write(",
+     "            refusal = _probe_kimi(args, None)\n"
+     "            before = tree_fingerprint(args.root)\n"
+     "            if refusal:\n"
+     "                sys.stderr.write(",
      _R + "test_run_kimi_probe_that_writes_the_tree_spends_no_round"),
     ("kimi agent file allows write tools",
      PROBE,
@@ -429,13 +432,6 @@ KIMI_MUTATIONS = (
      "            and status.get(\"rounds_left\", 0) > 0)",
      "            or True)",
      _R + "test_run_kimi_with_the_budget_spent_spends_no_probe_request"),
-    ("review_run: a round granted after a stale status launches unprobed",
-     RUN,
-     "            refusal = _probe_kimi(args, before)\n            if refusal:\n"
-     "                return finish(",
-     "            refusal = None\n            args.kimi_exe = args.launched_model = 'x'\n"
-     "            if refusal:\n                return finish(",
-     _R + "test_run_kimi_probes_after_the_reservation_when_the_status_was_stale"),
     # --- round 1 FIX test_kimi_docs.py:103 and the prose/map fixes ----------------
     ("providers.sh: the kimi probe runs on every call, the if left in place",
      PROVIDERS_SH,
@@ -479,4 +475,130 @@ KIMI_MUTATIONS = (
      '        if event.get("role") in ("assistant", "meta"):',
      "tests/test_review_verdict.py::"
      "test_kimi_final_message_ignores_a_meta_line_carrying_string_content"),
+    # --- review round 4 (T-0028): one entry per FIX branch -------------------
+    ("review_run: graph.out may be .crew or lie under a .crew again (round 4 FIX 1)",
+     RUN,
+     '    if ".crew" in rel.split("/"):\n        return None\n',
+     "",
+     _R + "test_graph_out_that_could_hold_a_check_input_is_none"),
+    ("review_run: a .crew graph.out sets a forged gate input aside (round 4 FIX 1)",
+     RUN,
+     '    if ".crew" in rel.split("/"):\n        return None\n',
+     "",
+     _R + "test_run_kimi_a_crew_graph_out_with_nothing_tracked_in_it_sets_nothing_aside"),
+    ("review.md: exit 5 is not named, so it reads as not run (round 4 FIX 7)",
+     REVIEW_MD,
+     "Exit 5 means the Kimi probe changed the working tree; stop and report the named paths",
+     "Exit 5 means the Kimi probe changed the working tree; report the named paths",
+     _D + "test_review_md_names_the_probe_changed_exit_code"),
+    ("review_run: graph.out may contain a .crew again (round 4 FIX 1)",
+     RUN,
+     '        if ".crew" in dirs:\n            return None\n',
+     "        pass\n",
+     _R + "test_graph_out_that_could_hold_a_check_input_is_none"),
+    ("review_run: graph.out may hold a tracked check input again (round 4 FIX 1)",
+     RUN,
+     "    if tracked is None or any(os.fsdecode(name) not in",
+     "    if tracked is None and any(os.fsdecode(name) not in",
+     _R + "test_graph_out_that_could_hold_a_check_input_is_none"),
+    ("review_run: a symlink is digested by its target string only (round 4 FIX 2)",
+     RUN,
+     "            return _link_digest(path, root, _depth)\n",
+     '            return "link:" + os.readlink(path)\n',
+     _R + "test_run_kimi_an_edit_through_a_tracked_symlink_is_incomplete"),
+    ("review_run: a link to a directory outside the repo is walked (round 4 FIX 2)",
+     RUN,
+     "        if not root or not _inside(real, os.path.realpath(root)):\n            return None\n",
+     "",
+     _R + "test_tree_fingerprint_a_link_to_a_directory_outside_the_repo_is_could_not_tell"),
+    ("review_run: the metadata keys are :HEAD and :index again (round 4 FIX 3)",
+     RUN,
+     _KEYS,
+     _KEYS_OLD,
+     _R + "test_run_kimi_files_named_like_the_metadata_keys_are_hashed"),
+    ("review_run: a file's digest drops its mode bits (round 4 FIX 4)",
+     RUN,
+     '        return f"{digest.hexdigest()}:{stat.S_IMODE(opened):o}"',
+     "        return digest.hexdigest()",
+     _R + "test_run_kimi_a_chmod_under_filemode_false_is_incomplete"),
+    ("review_run: a Kimi round is reserved when the status says none (round 4 FIX 5)",
+     RUN,
+     "            if not _round_available(args.root, args.ticket):\n",
+     "            if False:\n",
+     _R + "test_run_kimi_with_no_round_in_the_status_is_refused_before_reserve"),
+    ("review_run: a kill refused with PermissionError reads as gone (round 4 FIX 6)",
+     RUN,
+     "        return False, KIMI_SURVIVOR_UNKNOWN\n",
+     "        return False, None\n",
+     _R + "test_stop_survivors_a_kill_refused_with_permission_error_is_could_not_tell"),
+    ("review_run: a group we may not signal reads as empty (round 4 FIX 6)",
+     RUN,
+     "        return True  # round 4 of T-0028: a member we may not signal is alive\n",
+     "        return False\n",
+     _R + "test_group_alive_without_proc_reads_a_permission_error_as_alive"),
+    ("review_run: a failing probe returns before the post-probe fingerprint (round 4 FIX 7)",
+     RUN,
+     "    problems = []\n    mid = tree_fingerprint(args.root, problems)\n",
+     '    if not kimi_probe.launchable(probed["state"]):\n'
+     "        return EXIT_USAGE, answer\n"
+     "    problems = []\n    mid = tree_fingerprint(args.root, problems)\n",
+     _R + "test_run_kimi_a_failing_probe_that_wrote_the_tree_exits_probe_changed"),
+    ("review_run: a FIFO is opened to be hashed (round 4 FIX 8)",
+     RUN,
+     "        if not stat.S_ISREG(mode):\n"
+     '            return f"special:{stat.S_IFMT(mode):o}"\n'
+     "        fd = os.open(path, _READ_FLAGS)\n",
+     "        fd = os.open(path, os.O_RDONLY)\n",
+     _R + "test_tree_fingerprint_never_opens_a_fifo"),
+    ("kimi probe: a non-string provider reaches providers.get (round 4 FIX 9)",
+     PROBE,
+     "        if not isinstance(ref, str):\n"
+     "            # Round 4 of T-0028: an array or inline table reached\n"
+     "            # `providers.get` and raised TypeError.\n"
+     "            unnamed = True\n"
+     "            continue\n",
+     "",
+     _P + "test_probe_a_provider_reference_that_is_not_a_name_is_unknown"),
+    ("kimi probe: the credential check takes a non-string provider (round 4 FIX 9)",
+     PROBE,
+     '    ref = _table(_table(config.get("models")).get(alias)).get("provider")\n'
+     "    if not isinstance(ref, str):\n        return None\n",
+     '    ref = _table(_table(config.get("models")).get(alias)).get("provider")\n',
+     _P + "test_resolve_alias_and_the_credential_check_refuse_a_non_string_provider"),
+    ("kimi probe: a relative exe is kept (round 4 FIX 10)",
+     PROBE,
+     "    exe = os.path.abspath(exe)\n",
+     "",
+     _P + "test_probe_through_a_relative_path_entry_launches_the_absolute_exe"),
+    ("kimi_final_message: a non-string text part is joined (round 4 FIX 11)",
+     VERDICT,
+     "        if not all(isinstance(text, str) for text in texts):\n            return None\n",
+     "",
+     "tests/test_review_verdict.py::test_kimi_final_message_a_non_string_text_part_is_malformed"),
+    ("kimi_final_message: splitlines() cuts an event again (the merge with main)",
+     VERDICT,
+     '    for line in (jsonl or "").split("\\n"):\n'
+     "        line = line.strip()\n"
+     "        if not line:\n"
+     "            continue\n"
+     "        try:\n"
+     "            event = json.loads(line)\n"
+     "        except ValueError:\n"
+     "            event = None\n"
+     "        if not isinstance(event, dict):\n"
+     "            if error is None:\n"
+     '                error = f"unparseable Kimi event line',
+     '    for line in (jsonl or "").splitlines():\n'
+     "        line = line.strip()\n"
+     "        if not line:\n"
+     "            continue\n"
+     "        try:\n"
+     "            event = json.loads(line)\n"
+     "        except ValueError:\n"
+     "            event = None\n"
+     "        if not isinstance(event, dict):\n"
+     "            if error is None:\n"
+     '                error = f"unparseable Kimi event line',
+     "tests/test_review_verdict.py::"
+     "test_kimi_final_message_an_event_holding_a_unicode_line_break_parses_intact"),
 )

@@ -196,12 +196,18 @@ def codex_final_message(jsonl):
 
 def _kimi_text(content):
     """Assistant `content` as text: a string, or a list of `{"type": "text",
-    "text": ...}` parts joined. Anything else is no text."""
+    "text": ...}` parts joined. None when a text part's `text` is not a string
+    -- a malformed message (round 4 of T-0028: joining it raised TypeError, so
+    the probe's classify and the review's finish crashed instead of reading
+    unknown and INCOMPLETE). Anything else is no text."""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        return "".join(p.get("text") or "" for p in content
-                       if isinstance(p, dict) and p.get("type") == "text")
+        texts = [p.get("text") for p in content
+                 if isinstance(p, dict) and p.get("type") == "text"]
+        if not all(isinstance(text, str) for text in texts):
+            return None
+        return "".join(texts)
     return ""
 
 
@@ -237,7 +243,7 @@ def kimi_final_message(jsonl):
     exit status is therefore still required: `parse` makes non-zero
     INCOMPLETE."""
     message, error = None, None
-    for line in (jsonl or "").splitlines():
+    for line in (jsonl or "").split("\n"):
         line = line.strip()
         if not line:
             continue
@@ -254,7 +260,10 @@ def kimi_final_message(jsonl):
             error = failure
         if event.get("role") == "assistant":
             text = _kimi_text(event.get("content"))
-            if text.strip():
+            if text is None:
+                if error is None:
+                    error = "malformed content part"
+            elif text.strip():
                 message = text
     if error is None and message is None:
         error = "the Kimi event stream has no assistant message"

@@ -358,3 +358,53 @@ def test_kimi_final_message_parses_the_captured_fixture():
         stream = fh.read()
 
     assert rv.kimi_final_message(stream) == ("PROBE_OK", None)
+
+
+# --- the merge with main: `kimi_final_message` splits on "\n" only ------------
+
+
+@pytest.mark.parametrize("sep", JSON_RAW_BREAKS, ids=[BREAK_IDS[s] for s in JSON_RAW_BREAKS])
+def test_kimi_final_message_an_event_holding_a_unicode_line_break_parses_intact(sep):
+    """Main's T-0072 round-4 rule, reaching the Kimi parser at the merge: a raw
+    U+2028 inside an event's JSON string must not cut the event in two."""
+    message = f"BLOCK|a.py:1|one{sep}two|repro"
+    stream = "\n".join(json.dumps(e, ensure_ascii=False) for e in (
+        {"role": "meta", "type": "system.version", "version": "2.1.1"},
+        {"role": "assistant", "content": message}))
+
+    assert (sep in stream, rv.kimi_final_message(stream)) == (True, (message, None))
+
+
+def test_kimi_final_message_tolerates_crlf_line_ends():
+    stream = "\r\n".join(json.dumps(e) for e in (
+        {"role": "assistant", "content": "draft"},
+        {"role": "assistant", "content": "CLEAN"}))
+
+    assert rv.kimi_final_message(stream) == ("CLEAN", None)
+
+
+# --- review round 4 FIX review_verdict.py:170: a non-string text part ----------
+
+
+@pytest.mark.parametrize("text", [1, None, ["x"], {"t": "x"}, True],
+                         ids=["int", "null", "list", "dict", "bool"])
+def test_kimi_final_message_a_non_string_text_part_is_malformed(text):
+    stream = _kimi({"role": "assistant", "content": [{"type": "text", "text": text}]})
+
+    message, error = rv.kimi_final_message(stream)
+
+    assert (message, error) == (None, "malformed content part")
+
+
+def test_kimi_final_message_a_malformed_part_beside_a_good_one_is_still_malformed():
+    stream = _kimi({"role": "assistant", "content": [{"type": "text", "text": "CLEAN"},
+                                                     {"type": "text", "text": 1}]})
+
+    assert rv.kimi_final_message(stream)[1] == "malformed content part"
+
+
+def test_kimi_final_message_string_text_parts_still_join():
+    stream = _kimi({"role": "assistant", "content": [{"type": "text", "text": "CL"},
+                                                     {"type": "text", "text": "EAN"}]})
+
+    assert rv.kimi_final_message(stream) == ("CLEAN", None)

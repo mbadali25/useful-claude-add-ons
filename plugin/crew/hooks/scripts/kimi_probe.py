@@ -71,6 +71,7 @@ PROBE_PROMPT = "Reply with exactly: PROBE_OK"
 PROBE_MARKER = "PROBE_OK"
 DEFAULT_TIMEOUT = 60
 AGENT_FILE = "kimi-reviewer.md"
+PROVIDER_NOT_A_NAME = "the model's provider reference is not a name"
 NO_SKILLS = "kimi-no-skills"
 
 _AUTH_MARKERS = re.compile(
@@ -174,19 +175,31 @@ def resolve_alias(config, model_id):
             return None, ("unknown", "default_model names an alias config.toml does "
                                      "not define")
         candidates = [default]
-    types = []
+    types, unnamed = [], False
     for alias in candidates:
-        kind = _table(providers.get(_table(models[alias]).get("provider"))).get("type")
+        ref = _table(models[alias]).get("provider")
+        if not isinstance(ref, str):
+            # Round 4 of T-0028: an array or inline table reached
+            # `providers.get` and raised TypeError.
+            unnamed = True
+            continue
+        kind = _table(providers.get(ref)).get("type")
         if kind == "kimi":
             return alias, None
         types.append(str(kind))
+    if unnamed:
+        return None, ("unknown", PROVIDER_NOT_A_NAME)
     return None, ("unknown", "family cannot be proven: alias routes to provider type "
                              + ", ".join(sorted(set(types))))
 
 
 def _credential_present(config, alias, home):
-    provider = _table(_table(config.get("providers")).get(
-        _table(_table(config.get("models")).get(alias)).get("provider")))
+    """True or False; None when the alias's provider reference is not a name,
+    which is "could not tell", never "no credential"."""
+    ref = _table(_table(config.get("models")).get(alias)).get("provider")
+    if not isinstance(ref, str):
+        return None
+    provider = _table(_table(config.get("providers")).get(ref))
     key = provider.get("api_key")
     if isinstance(key, str) and key.strip():
         return True
@@ -243,6 +256,10 @@ def probe(model_id=None, which=shutil.which, home=None, runner=None,
     exe = which("kimi")
     if not exe:
         return _result("not-installed", "`kimi` is not on PATH")
+    # Round 4 of T-0028: a relative PATH entry gave `bin/kimi`, which does not
+    # resolve from the probe's temporary directory. Made absolute against the
+    # cwd `which` searched from; the review launches this same path.
+    exe = os.path.abspath(exe)
     home = home or kimi_home()
     path = os.path.join(home, "config.toml")
     if not os.path.isfile(path):
@@ -260,7 +277,10 @@ def probe(model_id=None, which=shutil.which, home=None, runner=None,
     alias, refusal = resolve_alias(config, model_id)
     if refusal:
         return _result(refusal[0], refusal[1], exe=exe)
-    if not _credential_present(config, alias, home):
+    present = _credential_present(config, alias, home)
+    if present is None:
+        return _result("unknown", PROVIDER_NOT_A_NAME, alias=alias, exe=exe)
+    if not present:
         return _result("not-authenticated", "the provider has no api_key and no stored "
                                             "OAuth credential - run `kimi login`",
                        alias=alias, exe=exe)

@@ -289,3 +289,71 @@ def test_classify_probe_ok_beside_a_failed_turn_is_not_ok():
          "error": {"code": "provider.error", "message": "429 rate_limit_reached_error"}}))
 
     assert kimi_probe.classify(stdout, "", 0, False)[0] == "rate-limited"
+
+
+# --- review round 4 FIX kimi_probe.py:179: a provider reference that is not a name --
+
+
+def _odd_provider_home(tmp_path, value):
+    home = kimi_home(tmp_path / "odd")
+    text = (home / "config.toml").read_text(encoding="utf-8")
+    text = text.replace('[models."kimi-code/k3"]\nprovider = "managed:kimi-code"',
+                        f'[models."kimi-code/k3"]\nprovider = {value}')
+    assert f"provider = {value}" in text
+    (home / "config.toml").write_text(text, encoding="utf-8", newline="\n")
+    return str(home)
+
+
+@pytest.mark.parametrize("value", ['["x"]', "{ x = 1 }"], ids=["array", "inline-table"])
+def test_probe_a_provider_reference_that_is_not_a_name_is_unknown(fake, tmp_path, monkeypatch,
+                                                                  value):
+    result = _probe(fake, _odd_provider_home(tmp_path, value), monkeypatch)
+
+    assert result["state"] == "unknown"
+    assert "provider reference is not a name" in result["reason"]
+
+
+@pytest.mark.parametrize("value", [["x"], {"x": 1}, 7], ids=["list", "dict", "int"])
+def test_resolve_alias_and_the_credential_check_refuse_a_non_string_provider(value):
+    config = {"models": {"a": {"provider": value, "model": "k3"}},
+              "providers": {"p": {"type": "kimi", "api_key": "k"}}}
+
+    assert kimi_probe.resolve_alias(config, "k3") == (
+        None, ("unknown", "the model's provider reference is not a name"))
+    assert kimi_probe._credential_present(config, "a", "/nonexistent") is None  # pylint: disable=protected-access
+
+
+def test_resolve_alias_a_string_provider_of_type_kimi_still_resolves():
+    config = {"models": {"a": {"provider": "p", "model": "k3"}},
+              "providers": {"p": {"type": "kimi", "api_key": "k"}}}
+
+    assert kimi_probe.resolve_alias(config, "k3") == ("a", None)
+
+
+# --- review round 4 FIX kimi_probe.py:269: a relative PATH entry --------------------
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the POSIX fake kimi is run by its shebang")
+def test_probe_through_a_relative_path_entry_launches_the_absolute_exe(tmp_path, home,
+                                                                       monkeypatch):
+    fake_kimi_bin(tmp_path / "bin")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", "bin" + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setenv("FAKE_KIMI_PROBE", "ok")
+
+    result = kimi_probe.probe("k3", home=home)
+
+    assert (result["state"], result["exe"]) == ("ok", str(tmp_path / "bin" / "kimi"))
+
+
+def test_probe_an_absolute_path_entry_is_unchanged(fake, home, monkeypatch):
+    assert _probe(fake, home, monkeypatch)["exe"] == fake
+
+
+# --- review round 4 FIX review_verdict.py:170: a non-string text part ------------
+
+
+def test_classify_a_non_string_text_part_is_unknown():
+    stdout = json.dumps({"role": "assistant", "content": [{"type": "text", "text": 1}]}) + "\n"
+
+    assert kimi_probe.classify(stdout, "", 0, False)[0] == "unknown"
