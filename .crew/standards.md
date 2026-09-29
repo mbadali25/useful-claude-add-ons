@@ -75,12 +75,11 @@ assume-unchanged. [...]"
 **Rule.** The version is set at LAND, after the review receipt, one patch above `origin/main`'s version at
 land time (T-0043 `spec.md:29`: "The number is set on the land branch: one patch above origin/main's crew
 version at land time"; `spec.md:34`: "The version bump on the land branch comes after the review
-receipt"). Until then a build branch that changes plugin content carries a PROVISIONAL bump above
-`origin/main`'s version: `scripts/check-marketplace.py`'s version-drift check fails a branch whose plugin
-files differ from the commit that set its declared version, and a branch declaring main's version over
-different content is the stale-copy bug CLAUDE.md's first stop-and-ask names. Because the check compares
-against the commit that set the version, every later commit that changes plugin content, a review-fix
-round included, moves the provisional number again; it means nothing until land re-derives it. At implement, check only that plugin content
+receipt"). Until then a build branch that changes plugin content carries a PROVISIONAL bump, one patch
+above the `origin/main` it last merged: `scripts/check-marketplace.py`'s version-drift check fails a branch
+whose plugin files differ from the commit that set its declared version, and a branch declaring main's
+version over different content is the stale-copy bug CLAUDE.md's first stop-and-ask names. The
+provisional number is re-derived at land, never trusted. At implement, check only that plugin content
 changed, that the provisional bump keeps `check-marketplace.py` exiting 0, and that the land-time re-set
 is planned. At land: greater than `origin/main`'s version, declared by no open PR branch and no other worktree's
 `plugin.json`, the branch rebased on current main, CHANGELOG edits add sections and never rename a
