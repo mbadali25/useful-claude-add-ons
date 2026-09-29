@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@cd106b8b
+anchor: useful-claude-add-ons@bbd9a66d
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 36 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.60 (T-0010, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.61 (T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -2758,3 +2758,16 @@ policy rule sentences (`.crew/verify.json` `:298-306`, `:307-313`, tracker `:314
 approval `:332-339`; `POLICY_MUTATIONS` 55 by `len()`, appended at `plugin/crew/tests/sabotage.py:3055`),
 and `evaluate_triggers` (`crew_state.py:2906`) with `default_config` / `default_global_config`
 (`crew_config.py:243` / `:396`). Nothing else was executed for this note.
+
+## Re-anchor provenance - `cd106b8b` -> `bbd9a66d`, 2026-09-29 (T-0010 landing branch)
+
+`T-0010-land` merges T-0010-solo `6b89c1df` into origin/main `2693d0fa` (README re-pin only past `e878cc31`,
+so the merged tree is `6b89c1df` plus that README change). `08eeaa3e` adds the ruff fix-at-land lint fixes
+(owner standing rule 2026-09-28; owner decision 2026-09-29 "Fix at land"): ISC004 parentheses in
+`plugin/crew/hooks/scripts/crew_autopilot.py`, `plugin/crew/tests/sabotage_autopilot.py` and
+`plugin/crew/tests/test_scope_guard.py`; `# noqa: BLE001` on five fail-closed broad excepts in
+`plugin/crew/hooks/scripts/crew_autopilot.py`, `plugin/crew/hooks/scripts/crew_ticket.py` and
+`plugin/crew/hooks/scripts/scope_guard.py`; an I001/RUF100/C0207 fix in
+`plugin/crew/tests/test_crew_autopilot_policy.py`. `bbd9a66d` re-sets crew 1.0.61. Each edited line kept its
+number (the parentheses and comments were added in place) except in `test_crew_autopilot_policy.py`, whose
+import block lost one line; no note cites that file by line. Re-anchor only; nothing was executed for this note.

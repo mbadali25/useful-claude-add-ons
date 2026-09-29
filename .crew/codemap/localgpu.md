@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@cd106b8b
+anchor: useful-claude-add-ons@bbd9a66d
 verified: 2026-09-28
 
 # localgpu
@@ -1446,3 +1446,16 @@ note carries its line (`07032fc7` or `e878cc31`) and mapped to `cd106b8b` throug
 that misattribution (a `crew_ticket.py` or `review_ledger.py` line after another file's mention) and hold.
 
 Nothing under `plugin/localgpu/` changed on either side. Nothing was executed for this note.
+
+## Re-anchor provenance - `cd106b8b` -> `bbd9a66d`, 2026-09-29 (T-0010 landing branch)
+
+`T-0010-land` merges T-0010-solo `6b89c1df` into origin/main `2693d0fa` (README re-pin only past `e878cc31`,
+so the merged tree is `6b89c1df` plus that README change). `08eeaa3e` adds the ruff fix-at-land lint fixes
+(owner standing rule 2026-09-28; owner decision 2026-09-29 "Fix at land"): ISC004 parentheses in
+`plugin/crew/hooks/scripts/crew_autopilot.py`, `plugin/crew/tests/sabotage_autopilot.py` and
+`plugin/crew/tests/test_scope_guard.py`; `# noqa: BLE001` on five fail-closed broad excepts in
+`plugin/crew/hooks/scripts/crew_autopilot.py`, `plugin/crew/hooks/scripts/crew_ticket.py` and
+`plugin/crew/hooks/scripts/scope_guard.py`; an I001/RUF100/C0207 fix in
+`plugin/crew/tests/test_crew_autopilot_policy.py`. `bbd9a66d` re-sets crew 1.0.61. Each edited line kept its
+number (the parentheses and comments were added in place) except in `test_crew_autopilot_policy.py`, whose
+import block lost one line; no note cites that file by line. Re-anchor only; nothing was executed for this note.
