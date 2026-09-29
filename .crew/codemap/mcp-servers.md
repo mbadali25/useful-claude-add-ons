@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@3648f59a
+anchor: useful-claude-add-ons@05413bbe
 verified: 2026-09-28
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -366,3 +366,7 @@ returns `.claude-plugin/marketplace.json` (crew's version line only) and `TODO.m
 No citation moved.
 
 **Re-anchored `b2553d26` -> `3648f59a` on 2026-09-28 (T-0075 review round 5, merge of `6387ab49`).** `git diff --name-only b2553d26 3648f59a -- mcp-servers/ README.md TODO.md .claude-plugin/marketplace.json` returns `README.md` (T-0075: crew's slash-command count 35 -> 36 at `:168` and `:874`, in place), `TODO.md` (T-0092's entry at `:5051`, below every citation here) and `.claude-plugin/marketplace.json` (crew's lines only); nothing under `mcp-servers/`. `TODO.md:189`, `:200` and `:281` re-read, unchanged; `grep -c mcp-servers .claude-plugin/marketplace.json` is still **0**. No citation moved.
+
+## Re-anchor provenance - `3648f59a` -> `05413bbe`, 2026-09-29 (T-0503, bitbucket 1.2.3)
+
+`git diff --name-only 3648f59a..05413bbe` over this note's cited paths returns only `README.md`, where T-0503 rewrote the `bitbucket` catalog row's Use cases cell in place (one line each, `README.md:815`, `skills/README.md:76`); no line count changed, so no `README.md` citation here moved. The rest of T-0503 is `skills/bitbucket/SKILL.md`, `skills/bitbucket/references/api.md`, `CHANGELOG.md` (one Unreleased entry at the top) and the `bitbucket` version line in `.claude-plugin/marketplace.json`. Re-anchor only, under the refresh-artifact standing rule (owner 2026-09-28); nothing was executed for this note.

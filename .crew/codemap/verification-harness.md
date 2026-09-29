@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@bbd9a66d
+anchor: useful-claude-add-ons@05413bbe
 verified: 2026-09-28
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -1731,3 +1731,7 @@ so the merged tree is `6b89c1df` plus that README change). `08eeaa3e` adds the r
 `plugin/crew/tests/test_crew_autopilot_policy.py`. `bbd9a66d` re-sets crew 1.0.61. Each edited line kept its
 number (the parentheses and comments were added in place) except in `test_crew_autopilot_policy.py`, whose
 import block lost one line; no note cites that file by line. Re-anchor only; nothing was executed for this note.
+
+## Re-anchor provenance - `bbd9a66d` -> `05413bbe`, 2026-09-29 (T-0503, bitbucket 1.2.3)
+
+`git diff --name-only bbd9a66d..05413bbe` over this note's cited paths returns only `README.md`, where T-0503 rewrote the `bitbucket` catalog row's Use cases cell in place (one line each, `README.md:815`, `skills/README.md:76`); no line count changed, so no `README.md` citation here moved. `skills/bitbucket/scripts/_test/merge_gate.sh` gained an eight-case documentation-invariants section before its summary line and two header-comment edits; this note cites it by path only (the `shell-suites.yml` paragraph), so no citation moved. The rest of T-0503 is `skills/bitbucket/SKILL.md`, `skills/bitbucket/references/api.md`, `CHANGELOG.md` (one Unreleased entry at the top) and the `bitbucket` version line in `.claude-plugin/marketplace.json`. Re-anchor only, under the refresh-artifact standing rule (owner 2026-09-28); nothing was executed for this note.
