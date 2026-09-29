@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@a4b4f223
+anchor: useful-claude-add-ons@65825263
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 36 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.62 (T-0501's bump `a4b4f223`, one past main's 1.0.61 at `8ab733d7`; 1.0.61 was T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.62 (T-0501's bump `65825263`, re-applied after its lint commit; first set at `a4b4f223`, one past main's 1.0.61 at `8ab733d7`; 1.0.61 was T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -968,7 +968,7 @@ from (`_rule_subsystems`, `:178`): `anchor_lines` (`:243`) runs `crew_context.an
 classifier and `rev-parse --short=8 HEAD` behind SessionStart's "Anchors to re-check" - and prints
 one `anchor behind:` / `anchor unresolvable:` line per note in `WARN_STATES`, or one
 `anchors: could not tell` line when there is no git HEAD; `main()` prints them after the drift
-lines and appends `_anchor_summary` (`:280`) to `up to date` (`:922`). The state is printed, never
+lines and appends `_anchor_summary` (`:281`) to `up to date` (`:923`). The state is printed, never
 rendered into the rule, so `rule_digest` and rule 24's fixpoint are unchanged, and the exit code
 still means drift only. `scripts/check_instructions.py`'s `check_generated_drift` drops the same
 `ANCHOR_ADVISORY_PREFIXES` before it quotes drift. DERIVED from the source above.
@@ -2787,3 +2787,7 @@ import block lost one line; no note cites that file by line. Re-anchor only; not
 T-0501's branch off origin/main `8ab733d7` (crew 1.0.61): `fb0ecbb1` adds `rules`' advisory anchor lines and
 `check_instructions.py`'s prefix filter, `17de8f3f` the docs, verify rules 32-33 and sabotage entries,
 `a4b4f223` bumps crew to 1.0.62. `plugin/crew/hooks/scripts/crew_instructions.py` gained `ANCHOR_ADVISORY_PREFIXES`, `WARN_STATES`, `_rule_subsystems`, `anchor_lines` and `_anchor_summary`; the "`.claude/rules/` - generated from this directory" section re-derives its five cites and describes them. `plugin/crew/commands/onboard.md` grew two lines in step 6 and `migrate.md` six in its preview/apply paragraphs, so the `crew_autoclear_setup.py` call-site cites moved to `onboard.md:201` and `migrate.md:81` (re-found by content). The version sentence reads 1.0.62. Nothing was executed for this note beyond `crew_instructions.py rules`.
+
+## Re-anchor provenance - `a4b4f223` -> `65825263`, 2026-09-29 (T-0501)
+
+`003e5be5` fixes the new code's ruff findings: in `plugin/crew/hooks/scripts/crew_instructions.py` `anchor_lines`' no-HEAD return builds its line in a local first (one line longer), so `_anchor_summary` moved to `:281` and `up to date` to `:923`; `plugin/crew/tests/sabotage_context.py`'s no-HEAD entry anchors on the new text; `plugin/crew/tests/test_rules_anchor_advice.py` is lint-only. `fc2cc706` reverts the bump and `65825263` re-applies it unchanged, so the bump is the last `plugin/crew/` commit. Cites re-found with `grep -n`; nothing executed for this note.
