@@ -21,8 +21,17 @@ import crew_autopilot
 import crew_ticket
 import pytest
 import review_ledger
-from scope_fixtures import (PLAN, SPEC, accepted_ledger, approve_as_user, corrupt_ledger,
-                            index, make_repo, make_ticket, spec_done)
+from scope_fixtures import (
+    PLAN,
+    SPEC,
+    accepted_ledger,
+    approve_as_user,
+    corrupt_ledger,
+    index,
+    make_repo,
+    make_ticket,
+    spec_done,
+)
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _SCRIPT = os.path.join(_ROOT, "hooks", "scripts", "crew_autopilot.py")

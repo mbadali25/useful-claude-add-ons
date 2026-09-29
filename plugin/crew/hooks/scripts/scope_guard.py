@@ -288,10 +288,11 @@ def _pointer_refusal(args_text, before, cwd):
     refusal = _PointerRefusal(f"it moves this worktree's active-ticket pointer, and "
                               f"{found['reason']}")
     target, active = found.get("target") or "<id>", found.get("active")
-    refusal.hint = (
-        f"  Only the owner moves it: they type `/crew:autopilot {target}`, and the prompt "
-        "hook re-points this worktree.",) + ((
-        f"  Recommended: finish {active} first - /crew:autopilot {active}.",) if active else ())
+    hint = [(f"  Only the owner moves it: they type `/crew:autopilot {target}`, and the "
+             "prompt hook re-points this worktree.")]
+    if active:
+        hint.append(f"  Recommended: finish {active} first - /crew:autopilot {active}.")
+    refusal.hint = tuple(hint)
     return refusal
 
 
@@ -374,8 +375,8 @@ def _broken_pointer(top, root, source):
     _log(top, mode, "block" if mode == "block" else "report", None, "-", reason)
     if mode == "block":
         return _deny([f"SCOPE GUARD: refused -- {reason}.",
-                      "  The owner re-points it by typing `/crew:autopilot <id>`; the session "
-                      f"may not. ({why})"])
+                      ("  The owner re-points it by typing `/crew:autopilot <id>`; the session "
+                       f"may not. ({why})")])
     return _note(f"scope-guard (report, would block): {reason}. ({why})")
 
 

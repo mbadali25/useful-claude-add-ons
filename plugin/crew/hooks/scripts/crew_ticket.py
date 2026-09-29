@@ -1105,7 +1105,8 @@ def _activation_refusal(args_text, before, cwd):
 
 
 def main(argv):
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
     root = os.path.abspath(args.root)
     try:
         if args.action == "deactivate":

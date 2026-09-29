@@ -956,10 +956,10 @@ POLICY_MUTATIONS = (
 # their tests are test_crew_autopilot_policy.py's (the anchor test's rule).
 POLICY_MUTATIONS += (
     ("a re-point closure probe that raised reads as closed", AUTOPILOT,
-     '        notes.append(f"its review ledger could not be read ({type(exc).__name__}: {exc})")\n'
-     '        return None\n',
-     '        notes.append(f"its review ledger could not be read ({type(exc).__name__}: {exc})")\n'
-     '        return True\n',
+     ('        notes.append(f"its review ledger could not be read ({type(exc).__name__}: {exc})")\n'
+      '        return None\n'),
+     ('        notes.append(f"its review ledger could not be read ({type(exc).__name__}: {exc})")\n'
+      '        return True\n'),
      _P + "test_activation_policy_that_raises_refuses"),
     ("an unreadable spec reads as closed for a re-point", AUTOPILOT,
      '        notes.append("its spec.md exists and could not be read")\n        return None\n',
@@ -967,7 +967,7 @@ POLICY_MUTATIONS += (
      _P + "test_activation_unreadable_spec_refuses_as_could_not_tell"),
     ("a merged ticket's stale bundle hash keeps it open for a re-point", AUTOPILOT,
      "    kind = receipt.get(\"kind\") if isinstance(receipt, dict) else None\n",
-     "    kind = (receipt.get(\"kind\") if isinstance(receipt, dict)\n"
-     "            and review_ledger.check_receipt(top, ticket)[0] else None)\n",
+     ("    kind = (receipt.get(\"kind\") if isinstance(receipt, dict)\n"
+      "            and review_ledger.check_receipt(top, ticket)[0] else None)\n"),
      _P + "test_closed_for_repoint_ignores_a_stale_bundle_hash"),
 )
