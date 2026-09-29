@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@3648f59a on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@2bb0d198 on 2026-09-29. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
@@ -156,6 +156,11 @@
 %% crew 1.0.55): every Anchors path is byte-identical to main 6387ab49 (git diff --name-only
 %% empty), so the 3c4f1a68 note above covers crew_context.py, the one path that moved since
 %% 938e3b11. Nothing redrawn.
+%% Re-anchored 3648f59a + 2693d0fa -> 2bb0d198 (T-0028 merges main 2693d0fa, review round 4, crew
+%% 1.0.60): of the Anchors paths only crew_state.py changed on T-0028's side, and only at or below
+%% :1147 (the Kimi defaults, the provider tuples, family()); every crew_state.py line cited here
+%% (:643, :646, :774, :859-914, :980) is above that and unchanged (git diff -U0 2693d0fa 2bb0d198).
+%% No node or edge changed.
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
     start --> reg["hooks.json:3-10<br/>3 SessionStart pairs, sh + ps1, no matcher<br/>each claims per session+source"]

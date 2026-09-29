@@ -1,6 +1,6 @@
 # install-scripts
-anchor: useful-claude-add-ons@3648f59a
-verified: 2026-09-28
+anchor: useful-claude-add-ons@2bb0d198
+verified: 2026-09-29
 
 ## Re-derive provenance
 
@@ -1041,3 +1041,9 @@ hold. Nothing else was executed for this note.
 No body citation moved: the files this note cites that changed are `CHANGELOG.md`, `README.md`, `CONFIG.md`, `BUDGETS.md`, `crew_config.py` and `test_crew_config.py` (none cited by line outside provenance) and the version files, whose crew lines changed in place.
 
 Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `938e3b11` for a line in T-0075's copy of this note and from `6387ab49` for a line only in main's, to the tree at `3648f59a` (difflib equal blocks); every citation that did not map to itself was read with `sed -n` / `grep -n`. The script attributes some bare `:N` to the wrong file (a `.crew/verify.json` range after a test-file mention, a `check-marketplace.py` range after a `PLUGINS.md` mention, a `SKILL.md` in another skill); those were read and hold. A citation inside a list of per-commit positions keeps its commit's line; only the current position is added. Nothing else was executed for this note.
+
+## Re-anchor provenance - `3648f59a` + `2693d0fa` -> `2bb0d198`, 2026-09-29 (T-0028 merges main, review round 4 fixes, crew 1.0.60)
+
+`git diff --name-only 2693d0fa 2bb0d198`, refresh artifacts aside, returns T-0028's own files: the Kimi Code provider (`kimi_probe.py`, `review_run.py`, `review_verdict.py`, `crew_state.py`, `crew_config.py`, the templates, `CONFIG.md`, `README.md`, `review.md`, `model.md`, the crew-providers and crew-setup skills, `providers.sh`, the tests and fixtures, `sabotage.py`, `sabotage_kimi.py`), `.crew/verify.json`, `CHANGELOG.md`, `TODO.md`, `plugin/crew/BUDGETS.md` and the three version files (crew 1.0.60). This note's maps took main's side of the merge (`a307dfaa`), so its claims were checked against `2693d0fa`'s tree and then carried to `2bb0d198`: every body citation of the form `path:N`, and every bare `:N` carried from the last path named in its paragraph, into a file in that list was mapped by script through `git diff -U0 2693d0fa 2bb0d198` (and, for `.crew/verify.json`, through `817acf60` -> `2bb0d198`, which moved the Kimi rule last). Citations inside provenance sections, and citations followed by `at`/`on`/`before`/`since <commit or ticket>`, are history and were left alone. Every citation whose own line changed was read with `sed -n` / `grep -n`, and so was each bare `:N` the script attributed to the wrong file (three `role_write_guard.py` lines attributed to `TODO.md` were put back).
+
+No live citation in this note into a T-0028 path moved: T-0028's one `plugin/crew/README.md` hunk replaces `:1421` with the Kimi paragraph at `:1421-1423` (+2 lines), and every `plugin/crew/README.md` line this note cites past it is history inside a dated provenance note; the version and `BUDGETS.md` sites are cited the same way. `plugin/crew/BUDGETS.md:11` now reads 19,528 lines across 129 files; the three version sites read 1.0.60. Nothing was executed for this note beyond the scripts named here and `python3 scripts/check-marketplace.py`.
