@@ -20,14 +20,15 @@ import sys
 
 import pytest
 
-import context  # noqa: F401  pylint: disable=unused-import
+# isort: split
+import cloud_guard
+import context  # pylint: disable=unused-import
 import crew_common
 import crew_config
 import crew_platform
 import crew_state
 import crew_status
 import crew_ticket
-import cloud_guard
 from review_fixtures import git, init_repo
 from scope_fixtures import edit, make_repo, ready, run_hook
 
@@ -204,7 +205,17 @@ ALLOWED = {
     "crew_route.py": (1, "a message label naming the repo layer"),
     "role_write_guard.py": (1, "a message label naming the corrupt layer"),
     "crew_autocycle.py": (1, "the wrap-up marker `.crew/<prefix><key>`, not the config"),
-    "crew_config.py": (1, "the guard approval marker `.crew/<prefix><name>-<digest>`"),
+    # crew_config.py, one reason per site:
+    # - the guard approval marker `.crew/<prefix><name>-<digest>`, not the config;
+    # - repo_config_path: the repo writer's own ./.crew/config.json target and label;
+    # - the `.crew/crew.json` legacy-file notice after a repo write, not a config read.
+    "crew_config.py": (3, "approval marker, the repo writer's own path, crew.json notice"),
+    # crew_config_menu.py, one reason per site:
+    # - `crewJson`: whether the legacy `.crew/crew.json` exists, shown as a label;
+    # - the same crew.json notice after a menu Save, not a config read;
+    # - the delete path's backup file name `.crew/<BACKUP_PREFIX><stamp>`, own path;
+    # - the scratch repo's config.json written to preview the post-heal rows.
+    "crew_config_menu.py": (4, "crew.json label and notice, own backup path, scratch heal"),
     "crew_status.py": (1, "the metrics file `.crew/<metrics name>`, not the config"),
 }
 
