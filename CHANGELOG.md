@@ -4,6 +4,140 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.60: cross-session claims on a git-backed coordination record (T-0030)
+
+- **`crew` 1.0.60: cross-session claims on a git-backed coordination record
+  (T-0030).** Built as 1.0.43 on a branch cut at 1.0.38; merged with
+  origin/main at 1.0.59 and set one patch past it. New `hooks/scripts/crew_coord.py`: sessions
+  on one or several machines share a channel, the branch
+  `crew-coord/<channel>` on a shared remote, holding
+  `claims/<repo>__<id>.json` and an append-only `log.jsonl`. `claim`,
+  `heartbeat`, `release`, `done`, `release --break --by <name>`, `recover` and
+  a read-only `status`.
+  - Writes are git plumbing on the freshly fetched tip (`hash-object`,
+    `mktree`, `commit-tree -p <tip>`; other files on the channel keep their
+    mode) and a plain `git push --no-verify` to `crew-coord--push`, a remote
+    defined only in the push's environment (`GIT_CONFIG_COUNT`) with the real
+    remote's URLs and no fetch refspec: never `--force`, `-f`,
+    `--force-with-lease` or a `+` refspec, no pre-push hook, no
+    remote-tracking ref written, and no URL in argv. A rejected push re-fetches,
+    re-applies and retries at most 3 times, then reports
+    `unknown - could not push`. No checkout, working tree, index, `.work/`,
+    `HEAD`, FETCH_HEAD or local ref is touched (tested); a fetch that fails
+    reads `unknown` and a claim is refused on it.
+  - The TTL is 30 minutes (`coord.ttlMinutes`); `claim` starts a detached
+    heartbeat that pushes every 10 minutes while `CLAUDE_PID` lives. A stale
+    `working` claim reads `owner unknown (last heartbeat <age>)`, never free.
+    One heartbeat loop per claim; its log and lock sit in a private per-user
+    temp directory (0700, log 0600, no symlink followed).
+    A corrupt claim reads `unknown`, never skipped. Only the holder releases;
+    only the owner breaks, from a terminal outside Claude Code and with
+    `--by` (a spoofable signal, documented as a rule, not enforcement).
+  - Recovery after a session id change adopts only a claim from this machine
+    and worktree whose holder the local identity file
+    (`<git-common-dir>/crew/coord-identity.json`) names and whose pid is
+    provably gone. A check that cannot tell reads alive. Measured on Linux
+    (a live pid whose `/proc` cannot be read reads alive) and on Windows
+    (`OpenProcess` limited query: only error 87 is gone, an opened handle is
+    gone only with a nonzero exit time, creation time compared with the
+    recorded start; measured elevated, one host); macOS always reads
+    "cannot tell" and goes to the owner. The identity file is rewritten under
+    a lock. `status` lists such claims first.
+  - Not measured: whether `/clear` keeps `CLAUDE_PID`. If it does, `recover`
+    refuses (`pid <n> is alive`) and the old heartbeat keeps the claim fresh,
+    so the owner breaks it; the README says so.
+  - Peer-written fields print with `[peer-written]` on every line that carries
+    them, refusals included, and control, bidi-format and U+2028/U+2029
+    characters become `?`. The messaging token is removed from the process
+    environment at entry, so no git child, hook or credential helper sees it,
+    and URL credentials in git's errors are redacted.
+  - Review round 2 fixes. On Linux a pid reads gone only from the PID
+    namespace recorded at claim time (`holder.pidns`): under bubblewrap's
+    `--unshare-pid`, which Claude Code's sandbox uses, a live pid is invisible,
+    so a namespace that differs or cannot be read cannot tell and is never
+    adopted (tested with a real `bwrap`). A holder is session id, machine,
+    worktree and pid (with its start time): the same session id from another
+    process or worktree is refused, never silently reclaimed. The heartbeat
+    lock is keyed by holder, so a new holder's loop is not stopped by an old
+    holder's sleeping one. `ls-remote` output is matched on the exact channel
+    ref. A recommended command carries peer-written values only when they
+    pass the key's rule, else `<unsafe value withheld>`. The `<repo>` half of
+    a key is derived from origin's owner/name, lowercased (`owner.name`),
+    falling back to the main worktree's directory name with the reason
+    printed; `--ticket <id>` suffices, and a given `<repo>` must match.
+    **Breaking for 1.0.43 callers:** a free-text `<repo>` is refused. The
+    README names `coord-identity.json.lock`.
+  - Review round 3 fixes. Recovery's deciding signal is now the heartbeat:
+    `recover` adopts only a claim whose `heartbeat_at` is older than the TTL,
+    so a live holder's claim never qualifies, whatever its pid reads; the pid
+    check can only refuse, and one that cannot tell still reads alive. A
+    claim records its PID namespace only when `CLAUDE_PID` was visible from
+    it, because bubblewrap reuses namespace ids and a sandbox's namespace
+    would vouch for a `gone` that means nothing (tested with a real `bwrap`).
+    The heartbeat lock is keyed by every field of the holder, worktree
+    included. The ticket half of a key is upper-cased, so `t-0030` and
+    `T-0030` are one key. Azure DevOps https (`<project>/_git/<repo>`) and
+    ssh (`v3/<org>/<project>/<repo>`) origins both give `project.repo`. A
+    `coord.ttlMinutes` of `NaN` or `Infinity` warns and uses 30.
+  - Review round 4 fixes. The `<repo>` half of a key is read with
+    `git remote get-url origin`, so `url.<base>.insteadOf` applies and an
+    alias clone shares the full-URL clone's key. The key is now the host and
+    every path segment (`github.com.owner.repo`, `gitlab.com.group.sub.repo`),
+    so repositories on different hosts or groups no longer share one, and
+    every Azure DevOps form of one repository — including a project's default
+    repository addressed without the project (`<org>/_git/<repo>`,
+    `<org>.visualstudio.com/[DefaultCollection/]_git/<repo>`) — gives
+    `dev.azure.com.<org>.<project>.<repo>`. An origin the key cannot be told
+    from (an Azure DevOps URL fitting no form, a segment outside the key's
+    rule, an on-premises `/tfs/` URL, a failing `get-url`) exits 3 with
+    nothing written, never a directory-name fallback. `coord.ttlMinutes`
+    outside 0 to 10080 is a config error (exit 2) before any fetch or push,
+    replacing round 3's warn-and-use-30. **Breaking against earlier builds of
+    this branch:** keys change from `owner.repo` to `host.owner.repo`, so a
+    claim written by one of them is not found under its new key.
+  - Review round 5 fixes. Each part of the key is now written so it reads
+    back one way only — every byte outside `a-z`, `0-9`, `-` becomes `_` and
+    two hex digits (`github_2ecom.owner.repo`) — so a `.` inside a name no
+    longer reads as a separator (`team/a.b/repo` and `team/a/b.repo` were one
+    key, and a claim in one blocked the other), and Azure DevOps names are
+    percent-decoded and lowercased but no longer hyphenated (`My%20Project`
+    and `My-Project` were one key); a name that is not UTF-8 is could-not-tell.
+    A local path's key starts `file_`, so it never meets a host's. A relative
+    local `origin` is read against the worktree, as git reads it, and every
+    local path is made real, so `remote.git` from `/srv/work` and
+    `/srv/work/remote.git` share one key instead of granting two holders. A
+    `git config` probe of `origin` that fails, an empty `origin` URL, or a
+    `git rev-parse --git-common-dir` that fails is could-not-tell (exit 3),
+    never the directory-name fallback. A `coord.ttlMinutes` too large for a
+    float (`10**400`) is the usual config error, not an `OverflowError`. The
+    heartbeat tests no longer call `os.getuid()` or `signal.SIGKILL`, which
+    Windows lacks. **Breaking against earlier builds of this branch:** every
+    key changes spelling (`github.com.owner.repo` becomes
+    `github_2ecom.owner.repo`), so a claim written by one of them is not
+    found under its new key.
+  - Review round 6 fixes (successor plan, after the owner rejected round 6
+    and ordered a narrow successor). A `file://` origin is the local path it
+    names — percent-decoded as git decodes it, with an empty or `localhost`
+    host (any other host is could-not-tell) — resolved like a plain path, so
+    `file:///var/run/x.git` and `/run/x.git` are one key when `/var/run` links
+    to `/run`. Azure DevOps markers are compared after percent-decoding, so
+    `%44efaultCollection` and `%5Fgit` no longer make a second key. A local
+    key keeps its case and `.git` (`Repo.git` and `repo.git`, or `repo` and
+    `repo.git`, are two repositories) and keys the repository git itself
+    opens, in `enter_repo`'s suffix order (git v2.53.0 `setup.c`), with a
+    linked worktree taken to its common git directory. A network URL with no
+    host (`https:///owner/repo`, `https://user@/x`, `https://:443/x`) is
+    could-not-tell, never a local key. A push-config probe that fails (exit
+    other than 0 or 1) reads `unknown` and nothing is pushed, instead of
+    dropping a configured pushurl. The test stand-in ssh runs its receivepack
+    wrapper as Python, never as a `#!` script, which native Windows Python
+    cannot start. **Breaking against earlier builds of this branch:** local
+    keys change spelling (case and `.git` kept).
+  - 275 cases in `tests/test_crew_coord.py` against a local bare remote;
+    94 mutations in `tests/sabotage_coord.py`, registered in `sabotage.py`.
+    The `/crew:autopilot` resume-step line is pending T-0004; until then the
+    README says to run `crew_coord.py status` first after `/clear`.
+
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 
 - **What changed.** `review_patch.py`'s `EXCLUDED` is now `(".work/",
@@ -1051,120 +1185,6 @@ All notable changes to this repository are documented here. Format follows [Keep
   no behaviour change.
 
 ### Added
-
-- **`crew` 1.0.43: cross-session claims on a git-backed coordination record
-  (T-0030).** Bumped `1.0.38 -> 1.0.43` (1.0.39-1.0.42 are left to the
-  lanes landing beside this one). New `hooks/scripts/crew_coord.py`: sessions
-  on one or several machines share a channel, the branch
-  `crew-coord/<channel>` on a shared remote, holding
-  `claims/<repo>__<id>.json` and an append-only `log.jsonl`. `claim`,
-  `heartbeat`, `release`, `done`, `release --break --by <name>`, `recover` and
-  a read-only `status`.
-  - Writes are git plumbing on the freshly fetched tip (`hash-object`,
-    `mktree`, `commit-tree -p <tip>`; other files on the channel keep their
-    mode) and a plain `git push --no-verify` to `crew-coord--push`, a remote
-    defined only in the push's environment (`GIT_CONFIG_COUNT`) with the real
-    remote's URLs and no fetch refspec: never `--force`, `-f`,
-    `--force-with-lease` or a `+` refspec, no pre-push hook, no
-    remote-tracking ref written, and no URL in argv. A rejected push re-fetches,
-    re-applies and retries at most 3 times, then reports
-    `unknown - could not push`. No checkout, working tree, index, `.work/`,
-    `HEAD`, FETCH_HEAD or local ref is touched (tested); a fetch that fails
-    reads `unknown` and a claim is refused on it.
-  - The TTL is 30 minutes (`coord.ttlMinutes`); `claim` starts a detached
-    heartbeat that pushes every 10 minutes while `CLAUDE_PID` lives. A stale
-    `working` claim reads `owner unknown (last heartbeat <age>)`, never free.
-    One heartbeat loop per claim; its log and lock sit in a private per-user
-    temp directory (0700, log 0600, no symlink followed).
-    A corrupt claim reads `unknown`, never skipped. Only the holder releases;
-    only the owner breaks, from a terminal outside Claude Code and with
-    `--by` (a spoofable signal, documented as a rule, not enforcement).
-  - Recovery after a session id change adopts only a claim from this machine
-    and worktree whose holder the local identity file
-    (`<git-common-dir>/crew/coord-identity.json`) names and whose pid is
-    provably gone. A check that cannot tell reads alive. Measured on Linux
-    (a live pid whose `/proc` cannot be read reads alive) and on Windows
-    (`OpenProcess` limited query: only error 87 is gone, an opened handle is
-    gone only with a nonzero exit time, creation time compared with the
-    recorded start; measured elevated, one host); macOS always reads
-    "cannot tell" and goes to the owner. The identity file is rewritten under
-    a lock. `status` lists such claims first.
-  - Not measured: whether `/clear` keeps `CLAUDE_PID`. If it does, `recover`
-    refuses (`pid <n> is alive`) and the old heartbeat keeps the claim fresh,
-    so the owner breaks it; the README says so.
-  - Peer-written fields print with `[peer-written]` on every line that carries
-    them, refusals included, and control, bidi-format and U+2028/U+2029
-    characters become `?`. The messaging token is removed from the process
-    environment at entry, so no git child, hook or credential helper sees it,
-    and URL credentials in git's errors are redacted.
-  - Review round 2 fixes. On Linux a pid reads gone only from the PID
-    namespace recorded at claim time (`holder.pidns`): under bubblewrap's
-    `--unshare-pid`, which Claude Code's sandbox uses, a live pid is invisible,
-    so a namespace that differs or cannot be read cannot tell and is never
-    adopted (tested with a real `bwrap`). A holder is session id, machine,
-    worktree and pid (with its start time): the same session id from another
-    process or worktree is refused, never silently reclaimed. The heartbeat
-    lock is keyed by holder, so a new holder's loop is not stopped by an old
-    holder's sleeping one. `ls-remote` output is matched on the exact channel
-    ref. A recommended command carries peer-written values only when they
-    pass the key's rule, else `<unsafe value withheld>`. The `<repo>` half of
-    a key is derived from origin's owner/name, lowercased (`owner.name`),
-    falling back to the main worktree's directory name with the reason
-    printed; `--ticket <id>` suffices, and a given `<repo>` must match.
-    **Breaking for 1.0.43 callers:** a free-text `<repo>` is refused. The
-    README names `coord-identity.json.lock`.
-  - Review round 3 fixes. Recovery's deciding signal is now the heartbeat:
-    `recover` adopts only a claim whose `heartbeat_at` is older than the TTL,
-    so a live holder's claim never qualifies, whatever its pid reads; the pid
-    check can only refuse, and one that cannot tell still reads alive. A
-    claim records its PID namespace only when `CLAUDE_PID` was visible from
-    it, because bubblewrap reuses namespace ids and a sandbox's namespace
-    would vouch for a `gone` that means nothing (tested with a real `bwrap`).
-    The heartbeat lock is keyed by every field of the holder, worktree
-    included. The ticket half of a key is upper-cased, so `t-0030` and
-    `T-0030` are one key. Azure DevOps https (`<project>/_git/<repo>`) and
-    ssh (`v3/<org>/<project>/<repo>`) origins both give `project.repo`. A
-    `coord.ttlMinutes` of `NaN` or `Infinity` warns and uses 30.
-  - Review round 4 fixes. The `<repo>` half of a key is read with
-    `git remote get-url origin`, so `url.<base>.insteadOf` applies and an
-    alias clone shares the full-URL clone's key. The key is now the host and
-    every path segment (`github.com.owner.repo`, `gitlab.com.group.sub.repo`),
-    so repositories on different hosts or groups no longer share one, and
-    every Azure DevOps form of one repository — including a project's default
-    repository addressed without the project (`<org>/_git/<repo>`,
-    `<org>.visualstudio.com/[DefaultCollection/]_git/<repo>`) — gives
-    `dev.azure.com.<org>.<project>.<repo>`. An origin the key cannot be told
-    from (an Azure DevOps URL fitting no form, a segment outside the key's
-    rule, an on-premises `/tfs/` URL, a failing `get-url`) exits 3 with
-    nothing written, never a directory-name fallback. `coord.ttlMinutes`
-    outside 0 to 10080 is a config error (exit 2) before any fetch or push,
-    replacing round 3's warn-and-use-30. **Breaking against earlier builds of
-    this branch:** keys change from `owner.repo` to `host.owner.repo`, so a
-    claim written by one of them is not found under its new key.
-  - Review round 5 fixes. Each part of the key is now written so it reads
-    back one way only — every byte outside `a-z`, `0-9`, `-` becomes `_` and
-    two hex digits (`github_2ecom.owner.repo`) — so a `.` inside a name no
-    longer reads as a separator (`team/a.b/repo` and `team/a/b.repo` were one
-    key, and a claim in one blocked the other), and Azure DevOps names are
-    percent-decoded and lowercased but no longer hyphenated (`My%20Project`
-    and `My-Project` were one key); a name that is not UTF-8 is could-not-tell.
-    A local path's key starts `file_`, so it never meets a host's. A relative
-    local `origin` is read against the worktree, as git reads it, and every
-    local path is made real, so `remote.git` from `/srv/work` and
-    `/srv/work/remote.git` share one key instead of granting two holders. A
-    `git config` probe of `origin` that fails, an empty `origin` URL, or a
-    `git rev-parse --git-common-dir` that fails is could-not-tell (exit 3),
-    never the directory-name fallback. A `coord.ttlMinutes` too large for a
-    float (`10**400`) is the usual config error, not an `OverflowError`. The
-    heartbeat tests no longer call `os.getuid()` or `signal.SIGKILL`, which
-    Windows lacks. **Breaking against earlier builds of this branch:** every
-    key changes spelling (`github.com.owner.repo` becomes
-    `github_2ecom.owner.repo`), so a claim written by one of them is not
-    found under its new key.
-  - 229 cases in `tests/test_crew_coord.py` against a local bare remote;
-    84 mutations in `tests/sabotage_coord.py`, registered in `sabotage.py`.
-    The `/crew:autopilot` resume-step line is pending T-0004; until then the
-    README says to run `crew_coord.py status` first after `/clear`.
 
 - **`crew` 1.0.37: the code maps, diagrams and code graph a ticket's changes
   reach must be current before `/crew:done` (T-0008).** Bumped
