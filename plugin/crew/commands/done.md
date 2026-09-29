@@ -42,8 +42,8 @@ Diffs the whole tree against this ticket's scope base, the same way the Stop
 hook's scope audit does, but as a pre-close confirmation rather than a
 per-turn block. A path byte-identical to the merged integration commit (after
 a merge of main) is not counted; the verdict's `merged main` line names that
-commit and the count, and `merged main: could not tell` means every path was
-counted. A non-zero exit names the out-of-scope path; file it to
+commit and the count, and `merged main: could not tell` (on a pass too) means
+every path was counted. A non-zero exit names the out-of-scope path; file it to
 `TODO.md`, not to this ticket, and rerun.
 
 ## Check 4 — artifacts are current

@@ -13,11 +13,18 @@ All notable changes to this repository are documented here. Format follows [Keep
   byte-identical to that commit. `review_patch.py` diffs from a synthetic base
   tree (the start's tree with each such path set to its working-state entry,
   built in a second temporary index), so the patch, `entries` and every file
-  list drop those paths; the manifest gains `merged_main` (ref, commit,
-  applies, reason, dropped) and `bundle_base_tree`, `base` stays the recorded
+  list drop those paths. A file main changed that the ticket changes again is
+  diffed from the merged commit's version instead of the start's, so main's
+  lines are context and only the ticket's are `+`/`-` (review round 1: the
+  first build showed main's landed lines as the ticket's additions). The
+  manifest gains `merged_main` (ref, commit, applies, reason, dropped,
+  diffed_from_merged) and `bundle_base_tree`, `base` stays the recorded
   start, and the stderr summary carries `merged-main=`. `completion_audit.py`
-  leaves the same paths out and its verdict prints `merged main <sha>
-  (<ref>): <n> path(s) identical to it not counted`. The reviewer's prompt
+  leaves the same paths out, including a merged-in path taken out of the
+  index (`git rm --cached`) whose file on disk is still the merged commit's,
+  which the bundle's `add -A` stages back and drops; its verdict prints
+  `merged main <sha> (<ref>): <n> path(s) identical to it not counted`, and
+  `merged main: could not tell` on a pass as well as a failure. The reviewer's prompt
   prints a `merged main:` line; `--check-receipt` names the merged commit.
 - **Why.** Both diffed from the ticket's recorded start, so after a merge of
   main T-0092's round-2 bundle re-carried three landed tickets and its
@@ -28,7 +35,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   prompt, audit verdict and receipt check each say `could not tell`.
 - **Receipt.** A merge of main that touches no reviewed path keeps an
   accepted receipt current (the line says how many paths it left out); one
-  that changes a reviewed path stales it and names the merged commit. A
+  that changes a reviewed path stales it, conflict or not (that file's diff
+  now starts from main's version), and names the merged commit. A
   receipt recorded before 1.0.60 on a branch that had already merged main
   reads stale once. The same fix landing byte-identical on main and on the
   ticket drops out of both.
@@ -37,11 +45,16 @@ All notable changes to this repository are documented here. Format follows [Keep
   the new argument (the refresh check's caller), Touch membership, the
   refresh-artifact allowance, `scope_base.py`, and `scope_base.py --changed` /
   `scope_report.py` (filed to `TODO.md`).
-- **Sabotage.** Eleven entries across `plugin/crew/tests/sabotage_scope.py` and
-  `sabotage_review.py`: the ancestor test, the could-not-tell fall-through, the
-  on-main test, `keep` unfiltered and widened, the audit's untracked re-add and
-  its `merged` argument, the bundle's patch and `entries` bases, the prompt line
-  and the receipt note. Each run by hand against the tracked file and seen RED.
+- **Sabotage.** 33 entries across `plugin/crew/tests/sabotage_scope.py` and
+  `sabotage_review.py`, one or more for every merged-main check: each
+  could-not-tell cause (no ref, detached HEAD, merge-base and is-ancestor
+  failing), the ancestor and on-main tests, the fast-forward, `keep` unfiltered
+  and widened through the module, bash and PowerShell audits, the audit's
+  untracked handling both ways, its `merged` argument and both verdict lines,
+  the bundle's patch, `entries`, merged-commit and fork bases, the summary and
+  nothing-to-review lines, the prompt lines and both receipt notes. Each was
+  run in the foreground against the tracked file, seen RED on an assertion,
+  and restored with `git checkout --` to its HEAD blob.
 - Bumped `1.0.59 -> 1.0.60` (1.0.55 on its branch, re-set after merging main's
   1.0.59, T-0075).
 

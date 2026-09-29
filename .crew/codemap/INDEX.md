@@ -188,7 +188,7 @@ line diff and re-read on the merged tree, and those six notes moved to `a1acd9b7
 records it).
 T-0023's merge of `db14619c` (`c68b40bd`, T-0042 and T-0021 landed) joins the two lines again: all
 six moved to `e463ca53`, the crew 1.0.46 bump on top of the merge, after the same per-path
-re-verify (each note's last section records it). `obsidian-vault.md` stays at `6f96e627`.
+re-verify (each note's last section records it). `obsidian-vault.md` stays at `6f96e627` on that line.
 On T-0072's branch (`autopilot.deploy`) the same six went to `d3a1c77e` and then `e30af7f9`
 (review round 1); T-0072's merge of `bebbb97f` (`e658bb04`) joins its line to this one: all six
 moved to `715a8c2f`, the crew 1.0.47 bump on top of the merge, after a per-path re-verify of
@@ -199,7 +199,6 @@ after the same per-path re-verify of both sides' citations (each note's last sec
 T-0072's review-round-3 fix (`53855ea5`) moved the same six there after a per-path re-verify of
 every citation into a file it changed (each note's last section records it).
 
-re-verify (each note's last section records it). `obsidian-vault.md` stays at `6f96e627` on that line.
 T-0075's merge of `bebbb97f` (`96b7e59c`, T-0023 landed) joins the two lines once more: the same six
 moved to `f7163410`, T-0075's crew 1.0.47 bump on top of the merge. The conflicting provenance
 sections keep both sides, main's first; each body citation into a file both sides changed was

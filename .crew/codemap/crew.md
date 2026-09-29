@@ -1170,17 +1170,25 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   (`plugin/crew/hooks/scripts/merged_main.py:101`) is the one drop rule: a
   path stays when it differs from the start AND from the merged commit.
   `review_patch._ticket_base_tree`
-  (`plugin/crew/hooks/scripts/review_patch.py:245`) builds the synthetic base
+  (`plugin/crew/hooks/scripts/review_patch.py:248`) builds the synthetic base
   tree (the start's tree with each dropped path set to its working-state
-  entry, in a second temporary index) that `compute` diffs from
-  (`plugin/crew/hooks/scripts/review_patch.py:369`); the manifest carries
-  `merged_main` and `bundle_base_tree`
-  (`plugin/crew/hooks/scripts/review_patch.py:414`). The completion audit
+  entry, and each kept path main changed since the fork -- the merge-base of
+  the start and the merged commit, `plugin/crew/hooks/scripts/review_patch.py:273`
+  -- set to the merged commit's entry, so main's lines are context; one second
+  temporary index) that `compute` diffs from
+  (`plugin/crew/hooks/scripts/review_patch.py:392`); the manifest carries
+  `merged_main` (with `dropped` and `diffed_from_merged`) and `bundle_base_tree`
+  (`plugin/crew/hooks/scripts/review_patch.py:430`). The completion audit
   applies the same rule in `changed_paths(top, base, merged)`
-  (`plugin/crew/hooks/scripts/completion_audit.py:168`), called from `audit`
-  (`plugin/crew/hooks/scripts/completion_audit.py:222`), and prints its
+  (`plugin/crew/hooks/scripts/completion_audit.py:169`), where `_as_merged`
+  (`plugin/crew/hooks/scripts/completion_audit.py:188`) keeps an untracked
+  path whose disk bytes and mode are the merged commit's entry out of the
+  since-merged set, as the bundle's `add -A` drops it; called from `audit`
+  (`plugin/crew/hooks/scripts/completion_audit.py:259`), which prints its
   `merged main` line from `_merged_lines`
-  (`plugin/crew/hooks/scripts/completion_audit.py:257`); `changed_paths`
+  (`plugin/crew/hooks/scripts/completion_audit.py:296`) on a failure, on an
+  applying pass, and on a could-not-tell pass
+  (`plugin/crew/hooks/scripts/completion_audit.py:267`); `changed_paths`
   without `merged` is unchanged for `crew_refresh_check`. The prompt's
   `merged main:` line is `_merged_main_line`
   (`plugin/crew/hooks/scripts/review_prompt.py:93`), and the receipt check's

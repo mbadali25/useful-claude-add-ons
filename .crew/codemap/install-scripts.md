@@ -205,9 +205,12 @@ through their own package managers.
   label, `34 commands` -> `36 commands` (35 at T-0004, 36 at T-0075). So a
   `curl | bash` taken from the README runs scripts that differ from the ones
   this note describes only in that menu label. DERIVED (re-read at
-  `e95e5964`). T-0004 merged without the re-pin, and T-0075 is not merged at
-  this anchor (branch `T-0075-build`), so the re-pin is due after that merge,
-  per CLAUDE.md's promotion step. It was
+  `e95e5964`). T-0004 merged without the re-pin. T-0075 IS merged at this
+  anchor (main `e878cc31`, crew 1.0.59, reached through `1c662b13`) and
+  `README.md:12`/`:18` here still pin `6c497a14`, so at this anchor the
+  re-pin is due, per CLAUDE.md's promotion step; it landed on main after
+  the merged commit, as `17d057db` ("README: re-pin install URLs to T-0075's
+  merge (e878cc31)"), which this branch has not merged. It was
   current at `f2bb919b` (re-pinned by #226, `86931b29`, "README: re-pin
   install URLs to crew 1.0 merge (6c497a14)"). At `6c497a14` this bullet recorded the pin as STALE at
   `5d1fc5fd`, missing the merged `web-testing` row, `lsp-plugins`,
