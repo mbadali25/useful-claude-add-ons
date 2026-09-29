@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@3648f59a
+anchor: useful-claude-add-ons@ea764992
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -195,8 +195,13 @@ through their own package managers.
 
 ## Landmines
 
-- **`README.md`'s install-URL pin is STALE again at this anchor, by one
-  line per script.** `README.md:12` and `:18` still read
+- **`README.md`'s install-URL pin is current at this anchor.** `README.md:12`
+  and `:18` read `e878cc31e00a7acb480fc17dd8afdcaf40c91f2d` (re-pinned by
+  `17d057db` after T-0075 merged as `e878cc31`; re-read at `ea764992`), and
+  `git log --oneline e878cc31..ea764992 -- scripts/install-prerequisites.sh
+  scripts/install-prerequisites.ps1` is empty. DERIVED. The history below is
+  what the bullet said at earlier anchors: the pin was STALE there, by one
+  line per script. `README.md:12` and `:18` still read
   `6c497a14fc06612732241d2b13eee4fea41996f5` (re-read at `07ca3972`), but
   `git log --oneline 6c497a14..e95e5964 -- scripts/install-prerequisites.sh
   scripts/install-prerequisites.ps1` now returns `ecf69e43` (crew 1.0.41,
@@ -1041,3 +1046,9 @@ hold. Nothing else was executed for this note.
 No body citation moved: the files this note cites that changed are `CHANGELOG.md`, `README.md`, `CONFIG.md`, `BUDGETS.md`, `crew_config.py` and `test_crew_config.py` (none cited by line outside provenance) and the version files, whose crew lines changed in place.
 
 Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `938e3b11` for a line in T-0075's copy of this note and from `6387ab49` for a line only in main's, to the tree at `3648f59a` (difflib equal blocks); every citation that did not map to itself was read with `sed -n` / `grep -n`. The script attributes some bare `:N` to the wrong file (a `.crew/verify.json` range after a test-file mention, a `check-marketplace.py` range after a `PLUGINS.md` mention, a `SKILL.md` in another skill); those were read and hold. A citation inside a list of per-commit positions keeps its commit's line; only the current position is added. Nothing else was executed for this note.
+
+## Re-anchor provenance - `3648f59a` -> `ea764992`, 2026-09-29 (T-0094)
+
+T-0094 is built on origin/main `2693d0fa`: `3648f59a` plus T-0075's landing branch (crew 1.0.56-1.0.59) and `17d057db`, which re-pinned `README.md:12`/`:18` to `e878cc31`. The paths this note cites that T-0094 changed are `.crew/verify.json` (rule 25 grew three lines; no rule position is cited here outside provenance) and `plugin/crew/README.md` (not cited by line outside provenance), plus the version files, whose crew lines changed in place. The Landmines bullet on the install-URL pin is corrected: it is current at `ea764992` (`git log e878cc31..ea764992` over both install scripts is empty), and its stale-pin history is kept below that sentence.
+
+Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `3648f59a` to the tree at `ea764992` (difflib equal blocks); the only non-self mappings were `README.md:12` and `:18`, changed in place by the re-pin, read with `sed -n`. Nothing else was executed for this note.

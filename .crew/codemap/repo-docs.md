@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@3648f59a
+anchor: useful-claude-add-ons@ea764992
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -262,8 +262,12 @@ listing the directory.
   held. Not fixed here — outside this note's write scope; reported so the
   fix targets the right passage.
 
-- **`README.md`'s install-URL pin is stale again at this anchor, as its
-  history said it would be.** `README.md:12`/`:18` still read
+- **`README.md`'s install-URL pin is current at this anchor.** `README.md:12`/`:18`
+  read `e878cc31e00a7acb480fc17dd8afdcaf40c91f2d` at `ea764992` (re-read), set by
+  `17d057db` after T-0075 merged, and no install-script commit follows it
+  (`install-scripts.md` owns the mechanics). What the bullet said at earlier
+  anchors, when it was stale again as its history said it would be:
+  `README.md:12`/`:18` still read
   `6c497a14fc06612732241d2b13eee4fea41996f5` at `07ca3972` (re-read), set by
   #226 (`86931b29`); it was current through `a0c0847e`, but `git log
   --oneline 6c497a14..07ca3972 -- scripts/install-prerequisites.sh
@@ -411,9 +415,10 @@ listing the directory.
   Since `f2bb919b` another follows it (`:264-280`, T-0008): changes to
   `plugin/crew/hooks/scripts/crew_refresh_check.py`, its tests,
   `plugin/crew/commands/implement.md` or `plugin/crew/commands/done.md` -
-  and since review round 3 `scope_guard.py`, `completion_audit.py`,
-  `crew_freshness.py` and `scope_base.py` - run the three refresh-artifact
-  pytest files plus `test_scope_guard.py`, `test_completion_audit.py` and
+  since review round 3 `scope_guard.py`, `completion_audit.py`,
+  `crew_freshness.py` and `scope_base.py`, and since T-0094
+  `crew_instructions.py` - run the three refresh-artifact pytest files and
+  T-0094's `test_refresh_admission.py` plus `test_scope_guard.py`, `test_completion_audit.py` and
   `test_scope_base.py`. Since `c35edda5` a third was inserted mid-list
   (`:179-184` on the T-0005 landing merge, `:167-172` when T-0026 added it):
   `plugin/crew/hooks/scripts/crew_ticket.py` and
@@ -1134,3 +1139,9 @@ hold. Nothing else was executed for this note.
 `plugin/crew/README.md`'s runbook-index sentence moves `:2196` -> `:2199` (round 5's three README lines above it), added at the head of its per-commit list. No other body citation moved.
 
 Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `938e3b11` for a line in T-0075's copy of this note and from `6387ab49` for a line only in main's, to the tree at `3648f59a` (difflib equal blocks); every citation that did not map to itself was read with `sed -n` / `grep -n`. The script attributes some bare `:N` to the wrong file (a `.crew/verify.json` range after a test-file mention, a `check-marketplace.py` range after a `PLUGINS.md` mention, a `SKILL.md` in another skill); those were read and hold. A citation inside a list of per-commit positions keeps its commit's line; only the current position is added. Nothing else was executed for this note.
+
+## Re-anchor provenance - `3648f59a` -> `ea764992`, 2026-09-29 (T-0094)
+
+T-0094 is built on origin/main `2693d0fa`: `3648f59a` plus T-0075's landing branch (crew 1.0.56-1.0.59) and `17d057db`, which re-pinned `README.md:12`/`:18` to `e878cc31`. T-0094's commits `be023596`..`ea764992` change `plugin/crew/README.md` (three sentences on the refresh-artifact admission, each rewritten in place, so `:2199` holds), `plugin/crew/commands/implement.md` step 6 and `done.md` check 3, `docs/guides/crew/src/daily-workflow-scope.md` with the rebuilt daily-workflow HTML, DOCX and PDF (the guide set and its build are unchanged), `.crew/verify.json` rule 25 (three more paths and a new test file; later rules move down three lines), `CHANGELOG.md` and the version files. Corrected here: the install-URL pin bullet (current at `ea764992`) and the rule-25 sentence (T-0094's module and suite).
+
+Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `3648f59a` to the tree at `ea764992` (difflib equal blocks); the only non-self mappings were `README.md:12` and `:18`, changed in place by the re-pin, read with `sed -n`. Nothing else was executed for this note.

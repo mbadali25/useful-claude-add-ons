@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@3648f59a
+anchor: useful-claude-add-ons@ea764992
 verified: 2026-09-28
 
 # localgpu
@@ -1340,3 +1340,9 @@ hold. Nothing else was executed for this note.
 No body citation moved: this note's body cites `plugin/localgpu/` and crew's config reader by section; the `crew_config.py`, `CONFIG.md` and `README.md` lines it names sit inside dated provenance notes and keep their commit's line.
 
 Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `938e3b11` for a line in T-0075's copy of this note and from `6387ab49` for a line only in main's, to the tree at `3648f59a` (difflib equal blocks); every citation that did not map to itself was read with `sed -n` / `grep -n`. The script attributes some bare `:N` to the wrong file (a `.crew/verify.json` range after a test-file mention, a `check-marketplace.py` range after a `PLUGINS.md` mention, a `SKILL.md` in another skill); those were read and hold. A citation inside a list of per-commit positions keeps its commit's line; only the current position is added. Nothing else was executed for this note.
+
+## Re-anchor provenance - `3648f59a` -> `ea764992`, 2026-09-29 (T-0094)
+
+T-0094 is built on origin/main `2693d0fa`: `3648f59a` plus T-0075's landing branch (crew 1.0.56-1.0.59: `crew_config_files.py`, `crew_config_menu.py`, `test_config_menu.py`, `sabotage_config.py`) and `17d057db`, the README re-pin. T-0094's commits `be023596`..`ea764992` change crew's refresh-artifact admission (`crew_refresh_check.py`, `completion_audit.py`, `scope_guard.py`'s docstring, their tests), `plugin/crew/README.md`, `.crew/verify.json` rule 25 and the version files. This note reaches them only through its citations of `.crew/verify.json` and `plugin/crew/README.md`, neither cited by line outside provenance, and describes `plugin/localgpu/`, which no commit in `3648f59a..ea764992` touches (`git diff --name-only 3648f59a ea764992 -- plugin/localgpu` is empty).
+
+No body citation moved: checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `3648f59a` to the tree at `ea764992` (difflib equal blocks). Nothing else was executed for this note.

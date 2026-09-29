@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@3648f59a
+anchor: useful-claude-add-ons@ea764992
 verified: 2026-09-28
 
 ## Re-derive provenance
@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 36 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.59 (T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.60 (T-0094's bump, one past main's 1.0.59; T-0075's landing bumps before it: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -145,7 +145,7 @@ draws it:
 | `/crew:approve` (`plugin/crew/commands/approve.md:5`, `disable-model-invocation: true`) | Typed by the user only: the UserPromptSubmit `approval-hook` records `<git-common-dir>/crew/tickets/<id>/approval.json`, bound to the digest of `spec.md` and `plan.md` (`:7-16`; since T-0026 a `crew-approval/2` digest that normalises only the header's status value, so the lifecycle's status edits keep the approval); the command body only relays the result. Since T-0024 (crew 1.0.42) several ids, a range `T-0010..T-0012` or the one plain-text form `approve T-1 through T-3` record nothing on that prompt: the hook blocks it with a PENDING list bound to each ticket's hashes, and only the user's own one-line `/crew:approve --confirm` (same session, within `PENDING_TTL`) records one receipt per ticket, or none (`plugin/crew/hooks/scripts/approval_hook.py:361`, `:433`; relay at `approve.md:27-43`). Since 1.0.44 only the prompt's own top-level command counts (a command tag nested in another is refused, and the expanded form carries nothing outside its tags, for a single id too since 1.0.45), commas go only between ids, and the closed-row check matches the id whole and in any case (`crew_ticket.py` `precheck` `:810`; the row's id cell is its first id-shaped cell) | new in 1.0 |
 | `/crew:implement` (`plugin/crew/commands/implement.md:8-9`) | Implements an approved plan, then tests/docs/review; loads `crew-execute` (adapted from `superpowers:executing-plans`) | `/crew:work` |
 | `/crew:review` (`plugin/crew/commands/review.md`) | Independent QA review of the working diff (Codex, Copilot, or the `crew:reviewer` Claude fallback) | (unchanged name; internals rewritten) |
-| `/crew:done` (`plugin/crew/commands/done.md:7-8`) | Closes a ticket; four checks (review receipt, clean verify gate, passing completion audit, current artifacts), any one failing refuses the close, no partial close. Check 4 (`:46-57`, since crew 1.0.36) runs `crew_refresh_check.py` and refuses on any `stale` or `unknown` line **without refreshing** - a write there would stale check 1's receipt (`:52-55`) | new in 1.0 |
+| `/crew:done` (`plugin/crew/commands/done.md:7-8`) | Closes a ticket; four checks (review receipt, clean verify gate, passing completion audit, current artifacts), any one failing refuses the close, no partial close. Check 4 (`:50-61`, since crew 1.0.36) runs `crew_refresh_check.py` and refuses on any `stale` or `unknown` line **without refreshing** - a write there would stale check 1's receipt (`:56-59`) | new in 1.0 |
 
 `/crew:ticket` and `/crew:work` are now **removal stubs with no behaviour**
 (`plugin/crew/commands/ticket.md`, `plugin/crew/commands/work.md`, each a
@@ -268,7 +268,7 @@ Re-executed on T-0075's merge of `bebbb97f` (T-0023 landed): 122 / 68 / 54 / 0 -
 config leaf; unchanged again on its merges of `67caa4b8`, `d2fbd408` and `e6e10432`. Re-executed on
 T-0075's merge of `f54af3fa` (T-0072 landed): 123 / 68 / 55 / 0, T-0072's `autopilot.deploy`.
 `plugin/crew/tests/test_crew_config.py:286` asserts 123. T-0004's `CHANGELOG.md` entry
-now says "117 -> 119" (`:928-929` at `3648f59a`, after T-0075's merge of `6387ab49` put T-0090's, T-0089's and T-0092's entries above it and its round-5 fixes grew its own; `:825-826` at `938e3b11`, after T-0075's round-4 fixes grew its own entry; `:807-808` on T-0075's merge of `f54af3fa`, after T-0072's entry went in above it; `:759-760` at `3724731b`, after T-0075's merge of `e6e10432` put T-0079's entry above it and its round-3 fix grew its own; `:653-654` at `f54af3fa`; `:699-700` since T-0075's merge of `5050ea3b` put shipstation's entry above it, `:688-689` after its merge of `f96e9ec9` put T-0077's entry above it, `:666-667` on T-0075's merge of `d2fbd408`; `:608-609` at `d2fbd408`, before T-0075's entry went in above it; `:545-546` on T-0075's branch before that merge; `:515-516` at `67caa4b8`, before T-0024's four entries and T-0075's went in above it;
+now says "117 -> 119" (`:979-980` at `ea764992`, after T-0094's entry went in above it; `:928-929` at `3648f59a`, after T-0075's merge of `6387ab49` put T-0090's, T-0089's and T-0092's entries above it and its round-5 fixes grew its own; `:825-826` at `938e3b11`, after T-0075's round-4 fixes grew its own entry; `:807-808` on T-0075's merge of `f54af3fa`, after T-0072's entry went in above it; `:759-760` at `3724731b`, after T-0075's merge of `e6e10432` put T-0079's entry above it and its round-3 fix grew its own; `:653-654` at `f54af3fa`; `:699-700` since T-0075's merge of `5050ea3b` put shipstation's entry above it, `:688-689` after its merge of `f96e9ec9` put T-0077's entry above it, `:666-667` on T-0075's merge of `d2fbd408`; `:608-609` at `d2fbd408`, before T-0075's entry went in above it; `:545-546` on T-0075's branch before that merge; `:515-516` at `67caa4b8`, before T-0024's four entries and T-0075's went in above it;
 `:436-437` at `bebbb97f`, before T-0018's; `:390-391` at `db14619c`, before T-0023's; `:276-277` at `f0b12ee6`, before T-0021's; `:228-229` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this
 paragraph was first written. T-0005's entry states no leaf count; T-0023's says 121 -> 122; T-0072's says 122 -> 123.
 
@@ -368,7 +368,7 @@ nothing else writes either file on the menu's behalf. Each round-2, round-3, rou
 closed by where the check sits, not by a patch at the call site.
 
 - **One file layer, `plugin/crew/hooks/scripts/crew_config_files.py` (new, no crew imports).**
-  `Lock` (`:90`) is an `O_CREAT|O_EXCL` `<path>.lock` beside the config holding the PID (a failed PID write
+  `Lock` (`:104`, `:90` before T-0075's landing added `os_error_text`) is an `O_CREAT|O_EXCL` `<path>.lock` beside the config holding the PID (a failed PID write
   removes the lock file before re-raising, `:120-127`, round 5), waiting
   `LOCK_WAIT_SECONDS` (`:43`) then raising `Busy` (`:63`); it serialises crew's own writers, not a
   hand edit. `read_strict` (`:167`) is the four-case read (`Unreadable.kind` `absent`,
@@ -637,7 +637,7 @@ the same `_already` (`:439`) `decide` uses, so of two senders holding one `run`
 only the first gets `ok`. Tests: `plugin/crew/tests/test_crew_resume.py`,
 `plugin/crew/tests/test_crew_resume_hook.py`; mutations
 `plugin/crew/tests/sabotage_resume.py` (72 by `len(RESUME_MUTATIONS)` at `53f5482c`); `.crew/verify.json`
-rule 26 (`:287-297`).
+rule 26 (`:290-300`, `:287-297` before T-0094 grew rule 25).
 
 ## `/crew:autopilot` (T-0004, crew 1.0.41)
 
@@ -711,7 +711,7 @@ names T-0010 as the consumer). Tests: `plugin/crew/tests/test_crew_autopilot.py`
 `plugin/crew/tests/test_crew_autopilot_status.py`,
 `plugin/crew/tests/test_lifecycle_commands.py`; mutations
 `plugin/crew/tests/sabotage_autopilot.py` (`STATUS_MUTATIONS` appended to
-`AUTOPILOT_MUTATIONS`); `.crew/verify.json` rule 27 (`:298-306`); T-0021's tracker rule 28,
+`AUTOPILOT_MUTATIONS`); `.crew/verify.json` rule 27 (`:301-309`, `:298-306` before T-0094 grew rule 25); T-0021's tracker rule 28,
 T-0023's routing rule 29 and T-0024's group-approval rule 30 follow it. Confirmed present, **not run** by this note.
 
 ## Plain-text lifecycle routing (T-0023, crew 1.0.43)
@@ -744,8 +744,8 @@ is emitted). No new hook and no new skill: `plugin/crew/hooks/hooks.json` is
 unchanged. Tests: `plugin/crew/tests/test_crew_route.py`,
 `plugin/crew/tests/test_crew_route_hook.py`; mutations
 `plugin/crew/tests/sabotage_route.py` (registered at
-`plugin/crew/tests/sabotage.py:79`); `.crew/verify.json` rule 29 (`:315-323`);
-T-0024's group-approval rule 30 (`:325-332`) follows it.
+`plugin/crew/tests/sabotage.py:79`); `.crew/verify.json` rule 29 (`:318-326`, `:315-323` before T-0094);
+T-0024's group-approval rule 30 (`:328-335`, `:325-332` before T-0094) follows it.
 
 **`deploy_allowed` (T-0072, crew 1.0.51).** DERIVED at `80326b1d` (T-0072's review-round-4 redesign, `35733d76`); lines re-read after its merge of T-0077 (`a4eb2f55`, `_rel` +6 at `:170`) and its review-round-5 fix (`0f488706`, `_resolve_root` +4).
 `crew_autopilot.deploy_allowed` (`plugin/crew/hooks/scripts/crew_autopilot.py:836`) is the policy
@@ -999,7 +999,7 @@ Obsidian vault). A CLI the commands call, not a hook.
 - Tests: `plugin/crew/tests/test_crew_tracker.py`, fixtures under
   `plugin/crew/tests/tracker_fixtures/`, 87 mutations (by `len()` at `8cabe586`; 81 before T-0077) in
   `plugin/crew/tests/sabotage_tracker.py` (two of them RED only as root: the
-  owner tests skip without it); one `.crew/verify.json` rule (`:307-314`; `:305-312` on T-0075's branch before its rule-7 paths, `:302-309` on main at `67caa4b8`, `:301-308` before T-0018 landed).
+  owner tests skip without it); one `.crew/verify.json` rule (`:310-317`; `:307-314` before T-0094 grew rule 25, `:305-312` on T-0075's branch before its rule-7 paths, `:302-309` on main at `67caa4b8`, `:301-308` before T-0018 landed).
   JUDGEMENT: the Kanban plugin's acceptance of the edited board was checked by
   byte comparison only, never by opening Obsidian.
 
@@ -1010,36 +1010,53 @@ question: are the code maps, diagrams and code graph that THIS ticket's
 changed paths reach still current (module docstring, `:1-8`)? It narrows
 `crew_freshness.py`'s per-artifact questions to the paths the ticket changed
 (`plugin/crew/hooks/scripts/scope_base.py` `resolve` plus `completion_audit.changed_paths`, minus
-`RELEASE_BOOKKEEPING`, `:181`), so a raw anchor lag is not staleness; each
-artifact reads `fresh`/`stale`/`unknown` (`:152-154`) with the refresh command
+`RELEASE_BOOKKEEPING`, `:228`), so a raw anchor lag is not staleness; each
+artifact reads `fresh`/`stale`/`unknown` (`:197-199`) with the refresh command
 to run, documents read `not measured`, and a scope base that hides or may
 hide the change - a fallback, or (since review round 3) a recorded base with
-a commit behind it naming the ticket (`_named_behind`, `:537`) - makes the
+a commit behind it naming the ticket (`_named_behind`, `:856`) - makes the
 whole answer `unknown`, and every artifact measured against that base with it
-(`_unconfirmed`, `:554`; `ticket_freshness`, `:576`). It is a CLI the
+(`_unconfirmed`, `:873`; `ticket_freshness`, `:895`). It is a CLI the
 commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 `f2bb919b`.
 
-- `/crew:implement` step 6 (`plugin/crew/commands/implement.md:89-111`) runs
+- `/crew:implement` step 6 (`plugin/crew/commands/implement.md:89-113`) runs
   it after `/crew:docs` and before `/crew:review` (`:96`), runs each named
   refresh, commits, and re-runs until `fresh`; a `stop` ends the loop.
-- `/crew:done` Check 4 (`plugin/crew/commands/done.md:46-57`) runs it again
-  and refuses on `stale` or `unknown` without refreshing (`:52-55`).
-- `REFRESH_ARTIFACT_PATHS` (`plugin/crew/hooks/scripts/crew_refresh_check.py:168-173`: the code map,
+- `/crew:done` Check 4 (`plugin/crew/commands/done.md:50-61`) runs it again
+  and refuses on `stale` or `unknown` without refreshing (`:56-59`).
+- `REFRESH_ARTIFACT_PATHS` (`plugin/crew/hooks/scripts/crew_refresh_check.py:213-218`: the code map,
   `docs.diagramsDir`, `graph.out`, `.claude/rules`) is the one definition.
   The scope guard (`_refresh_artifact`,
-  `plugin/crew/hooks/scripts/scope_guard.py:186-197`) and the completion audit
-  (`_outside_refresh_artifacts`,
-  `plugin/crew/hooks/scripts/completion_audit.py:177-187`) let a ticket write
-  those paths without a Touch entry **only while its approval is current**;
-  with no current approval nothing is exempt.
+  `plugin/crew/hooks/scripts/scope_guard.py:191-202`) lets a ticket write
+  under those dirs without a Touch entry **only while its approval is
+  current** - a path test, because a write-time check sees one Edit of a
+  multi-Edit refresh. Since T-0094 (crew 1.0.60) the completion audit is
+  narrower: `_verdicts` (`plugin/crew/hooks/scripts/completion_audit.py:187`)
+  asks `artifact_verdicts` (`plugin/crew/hooks/scripts/crew_refresh_check.py:636`)
+  for every changed artifact, and `_outside_refresh_artifacts` (`:202-211` in
+  `completion_audit.py`) keeps the approval gate and drops only a `True`
+  verdict; `_entry` (`:214`) prints a refused one's reason in brackets. A
+  `True` needs a changed path to reach the artifact (reach = every path
+  changed since the base, release bookkeeping kept, `:653-656` in
+  `crew_refresh_check.py`) and a re-anchor or regeneration shape: a map's
+  `anchor:` moved to a commit behind HEAD (`_map_verdict` `:554`, `_sha_moved`
+  `:493`), INDEX rows of admitted maps only (`_index_verdict` `:564`), a
+  diagram's provenance sha moved the same way (`_diagram_verdict` `:581`), a
+  rendered file beside an admitted source (`_rendered_verdict` `:690`), a rule
+  equal to `crew_instructions.expected_rules` (`_rule_verdict` `:599`), the
+  graph after a code change. `None` (`COULD_NOT_TELL`, `:443`) never admits.
+  With no current approval nothing is exempt.
 - Tests: `plugin/crew/tests/test_refresh_check.py`,
   `plugin/crew/tests/test_scope_guard_refresh_artifacts.py`,
-  `plugin/crew/tests/test_completion_audit_refresh_artifacts.py`, with mutations in
-  `plugin/crew/tests/sabotage_refresh.py`; `.crew/verify.json:269-285` (rule
-  25) maps them, `implement.md`, `done.md`, and since review round 3
+  `plugin/crew/tests/test_completion_audit_refresh_artifacts.py`, and since
+  T-0094 `plugin/crew/tests/test_refresh_admission.py` on the shared
+  `plugin/crew/tests/refresh_fixtures.py`, with mutations in
+  `plugin/crew/tests/sabotage_refresh.py`; `.crew/verify.json:269-288` (rule
+  25) maps them, `implement.md`, `done.md`, since review round 3
   `scope_guard.py`, `completion_audit.py`, `crew_freshness.py` and
-  `scope_base.py` with their own suites, to one pytest rule. Confirmed
+  `scope_base.py` with their own suites, and since T-0094 `crew_instructions.py`,
+  to one pytest rule. Confirmed
   present, **not run and not read** by this note.
 
 `docs/diagrams/process-crew-lifecycle.mmd` drew `/crew:done` as "all three
@@ -1055,11 +1072,11 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   `default_config()` / `default_global_config()`.
 - `plugin/crew/hooks/scripts/crew_config.py:2451` — `_RATCHETED`, the
   14-key ratchet table (seven construction steps).
-- `plugin/crew/hooks/scripts/crew_config.py:3045` / `:3071` — `plan_repo_write` /
+- `plugin/crew/hooks/scripts/crew_config.py:3046` / `:3072` — `plan_repo_write` /
   `write_repo_config`, the one repo-layer writer (T-0075); `:2846` / `:2865` — the machine pair.
-- `plugin/crew/hooks/scripts/crew_config_files.py:350` — `update_json`, the lock and
+- `plugin/crew/hooks/scripts/crew_config_files.py:364` — `update_json`, the lock and
   compare-and-swap both writers stand on (T-0075).
-- `plugin/crew/hooks/scripts/crew_config_menu.py:1048` — `main()`, the `spec` / `save` /
+- `plugin/crew/hooks/scripts/crew_config_menu.py:1051` — `main()`, the `spec` / `save` /
   `delete-repo` / `restore-repo` CLI the `/crew:config` menu calls.
 - `plugin/crew/hooks/scripts/role_write_guard.py:539` — `classify`, the
   decision function; `:684` — `main()`.
@@ -1076,8 +1093,9 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   above.
 - `plugin/crew/hooks/scripts/crew_resume.py:667` — `decide`, read-only;
   `main()` is the `decide` / `record` / `precompact` CLI.
-- `plugin/crew/hooks/scripts/crew_refresh_check.py:576` — `ticket_freshness`,
-  the library entry point; `main()` at `:676`.
+- `plugin/crew/hooks/scripts/crew_refresh_check.py:895` — `ticket_freshness`,
+  the library entry point; `main()` at `:995`; `artifact_verdicts` at `:636`,
+  the audit's admission (T-0094).
 - `plugin/crew/hooks/scripts/crew_autopilot.py:500` — `next_phase`, read-only;
   `main()` at `:1225` is the `next` / `resume` / `settings` / `stops` /
   `route` / `status` / `deploy-allowed` CLI `plugin/crew/commands/autopilot.md` calls.
@@ -2491,3 +2509,11 @@ hold. Nothing else was executed for this note.
 The writers-and-menu section was re-derived from the source at `3648f59a`: `_shape`'s `under` kind (`crew_config.py:2639`), the two leaf rules in `value_allowed` (`:2708`) and `_content_problem` (`:2745-2748`), the open-table rule in `validate_providers`' one pin loop (`:223-237`), the writers' `OSError` boundary (`:2888`, `:3102`) and `Lock`'s PID-write cleanup (`crew_config_files.py:120-127`). `crew_config.py` moved +1 from `:204` (so `default_config` `:243`, `default_global_config` `:396`, `_RATCHETED` `:2451-2563` with its steps `:2466`, `:2479`, `:2490`, `:2500`, `:2536`, `:2559`, `:1263`, `:384`), then by the docstring trims and the new rules below `:2566` (`leaf_updates` `:2584`, `value_allowed` `:2700`, `plan_global_write` `:2846`, `write_global_config` `:2865`, `plan_repo_write` `:3045`, `write_repo_config` `:3071`), each re-taken with `grep -n`; `crew_config_files.py` +7 from `:120` (`update_json` `:350`). `test_crew_config.py:284` -> `:286`. The CHANGELOG "117 -> 119" citation gains `:928-929` at `3648f59a`. The version sentence moves to 1.0.55. Leaves re-executed: 123 / 68. `CONFIG_MENU_MUTATIONS` is 112 by `len()`. `wc -l crew_config.py` is 3399.
 
 Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `938e3b11` for a line in T-0075's copy of this note and from `6387ab49` for a line only in main's, to the tree at `3648f59a` (difflib equal blocks); every citation that did not map to itself was read with `sed -n` / `grep -n`. The script attributes some bare `:N` to the wrong file (a `.crew/verify.json` range after a test-file mention, a `check-marketplace.py` range after a `PLUGINS.md` mention, a `SKILL.md` in another skill); those were read and hold. A citation inside a list of per-commit positions keeps its commit's line; only the current position is added. Nothing else was executed for this note.
+
+## Re-anchor provenance - `3648f59a` -> `ea764992`, 2026-09-29 (T-0094)
+
+T-0094 is built on origin/main `2693d0fa`, which is `3648f59a` plus T-0075's landing branch (`bf51a807`..`93da92af`: crew 1.0.56-1.0.59, `crew_config_files.os_error_text`, the `test_config_menu.py` pylint disable, the refused-snapshot probe, two sabotage entries), its graph refresh and rules regeneration, and the README re-pin `17d057db`. T-0094's own commits `be023596`..`ea764992` add `artifact_verdicts` to `crew_refresh_check.py`, route `completion_audit.audit` through it, reword `scope_guard.py`'s rule 6, add `test_refresh_admission.py` and `refresh_fixtures.py`, rewrite the approval-gate and must-allow cases of `test_completion_audit_refresh_artifacts.py`, append fifteen `sabotage_refresh.py` entries, grow `.crew/verify.json` rule 25 by three paths (every later rule moves down three lines), and change `README.md`, `implement.md` step 6, `done.md` check 3, the daily-workflow guide, `CHANGELOG.md` and the version files (crew 1.0.60).
+
+Re-derived here: the artifact refresh check section (`REFRESH_ARTIFACT_PATHS`, the guard/audit split and the per-kind admission, the tests and rule 25), its bare `crew_refresh_check.py` positions (`:228`, `:197-199`, `:856`, `:873`, `:895`, `:995`), `/crew:done`'s check 4 (`:50-61`, `:56-59`), step 6 (`:89-113`), the version sentence, the `CHANGELOG.md` position of T-0004's "117 -> 119", the shifted verify rules 26-30, and the T-0075-landing moves in `crew_config.py` (`:3046`, `:3072`), `crew_config_files.py` (`:104`, `:364`) and `crew_config_menu.py` (`:1051`), which T-0075's landing did not re-anchor.
+
+Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `3648f59a` to the working tree at `ea764992` (difflib equal blocks), then reading each citation that did not map to itself with `sed -n` / `grep -n`. Version-file lines changed in place (`plugin.json:3`, `marketplace.json:218`). A citation inside a list of per-commit positions keeps its commit's line; only the current position is added. The new sentences were read from the source at `ea764992`; the suites were run by the ticket (`test_refresh_admission.py` 32 passed), not by this note.
