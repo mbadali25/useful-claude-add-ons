@@ -211,6 +211,129 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 1.0.59: `/crew:config` menu mode and `/crew:config-setup` (T-0075).**
+  Landed as 1.0.59, not 1.0.55, after four landing-branch changes, each needing its
+  own bump. 1.0.59: `_probe_for`'s refused-snapshot probe closed over `exc`, which
+  the except block unbinds (ruff F821), so calling it raised NameError; it now keeps
+  the message in a local. Latent: `menu_spec` never calls a refused probe. Found when
+  ruff was installed locally (owner decision 2026-09-28, "Fix at land"). 1.0.58: the two round-5 sabotage entries in `sabotage_config.py` re-anchored
+  to the 1.0.57 refusal text. 1.0.56: a file-level `# pylint: disable=consider-using-with` in
+  `plugin/crew/tests/test_config_menu.py` (owner decision 2026-09-28, "Disable at
+  land"; the `with` rewrite is a follow-up). 1.0.57: the config writers' and the
+  menu's OS-error refusals name paths as written. `str(OSError)` repr()'d the
+  filename, doubling every backslash in a Windows path, so three T-0075 tests
+  failed on Windows. `crew_config_files.os_error_text` is now used at
+  `write_global_config`, `write_repo_config` and `apply_delete`. The message text
+  changes; exit codes and writes do not. Diagnosed natively by win-repo-2 (owner
+  decision 2026-09-28, "Production fix at land").
+  Bumped one past origin/main (1.0.54, T-0092) as the last `plugin/crew/` commit;
+  the build earlier declared 1.0.44, 1.0.46, 1.0.47, 1.0.48, 1.0.49, 1.0.50,
+  1.0.51 and 1.0.52, each given to another ticket on main first. This entry describes the successor design
+  written after review round 2 was rejected by the owner, with review round 3's
+  fixes.
+  - `/crew:config` with no argument, and the new alias `/crew:config-setup`,
+    open a menu (`skills/crew-setup/config-menu.md`): pick the machine or repo
+    layer, an area, a setting, then a value from a list showing the current
+    value, the layer that decided it, and the recommendation first. Picks
+    collect in a pending set; Save validates both layers, shows the dry-run
+    diff with each layer's digest (`absent` for no file; the machine digest
+    whenever anything changes, since a repo value's widening marks read it),
+    and writes each changed layer once, with `--expect-machine/--expect-repo`
+    refusing a file that changed, or appeared, since the dry run. Discard
+    writes nothing.
+  - New `hooks/scripts/crew_config_menu.py` (`spec [--pending]`, `save`,
+    `delete-repo`, `restore-repo`). The rows are `crew_config.py`'s own key
+    lists, so a new key appears with no menu edit, and every candidate value
+    is probed through the layer's own planner on the file Save would produce:
+    a value is offered only when Save accepts it, and a row blocked by a bad
+    value already in the file is read-only with a reason naming that key.
+  - New `hooks/scripts/crew_config_files.py`, the one file layer under both
+    writers, delete and restore: an `O_CREAT|O_EXCL` lock beside the config,
+    the strict four-case read, the `restorable` predicate and the regular-file
+    read delete and restore share, the digest (`absent` for no file), the
+    atomic replace keeping CRLF and a BOM, and the no-clobber move: a rename
+    that never replaces an existing destination, by the rename itself.
+  - New repo writer `crew_config.plan_repo_write` / `write_repo_config`, CLI
+    `crew_config.py --set PATH=JSON --repo [--apply [--expect DIGEST]]`: merge,
+    leaf keys only, `!` on a widening (ratchet by what is in force,
+    `pm.authority`, `unsafeFocus: true`, `autopilot.mode: plan`,
+    `verifyGate: false`) and a "held down by the machine-global layer" line.
+    It refuses `platform.*`, `schema`, `scope.mode`, `scope.allowCliApproval`
+    and `context.autoClear.onlyRepos`/`.onlySessions`; `context.autoClear.enabled`
+    and `resume.auto` take only `false` or `null`, by identity.
+  - Both writers judge every LEAF of an update (a whole-block value included)
+    and write exactly those leaves (the block's other keys survive; a role
+    table is written one whole pin per role, the other pins kept), apply the
+    null rule (repo: inherit the machine value or clear a veto; open key:
+    unset; an enum key at the machine layer: refused), judge the merged file's
+    every known leaf (a bad enum value, a consent key in the machine file or
+    an armed veto-only key in the repo file already there refuses an unrelated
+    write), and are compare-and-swap: plan re-run under the lock, `--set`
+    prints `digest:`, `--apply --expect <digest|absent>` refuses a changed
+    file, and `--set --repo` also binds the machine file (`machine digest:`,
+    `--expect-global`).
+  - Delete the repo config in two phases: the preview holds the file's bytes
+    and walks its own leaves (`-> (removed)` for unknown keys, `platform.*` as
+    re-detected, `!` on what widens, `stays` for a held ratcheted key); a file
+    a restore could not take back (a symlink included) is refused; with the
+    typed repo name and the preview's two digests (`--expect-repo`,
+    `--expect-machine`, so the apply is the delete the preview showed) the file
+    is moved to `.crew/config.json.bak-<UTC>` in one no-clobber rename under
+    the lock and compared with the held bytes (a changed file is moved back,
+    never over a file saved in between, and nothing is deleted); three restore
+    lines are printed (sh, cmd, PowerShell), each executed by a test, and
+    restore accepts exactly what delete does, never replacing a file that
+    appears while it runs.
+  - Every CLI entry validates its input shape and refuses with exit 2, never a
+    traceback.
+  - **Behaviour changes:** `crew_config.py --set` on the machine-global file now
+    refuses a value outside the key's own values (`pm.authority`,
+    `pm.ticketGranularity`, `qa.provider`, `dev.provider`, every ratcheted key),
+    refuses `null` for one of those, refuses a consent key inside a whole-block
+    value, refuses a write when the merged file holds a bad enum value
+    elsewhere, refuses a value that is not JSON (a bare `act` used to be
+    written as a string), refuses to write over an unparsable or non-object
+    machine file instead of replacing it from `{}`, and refuses any write while
+    the machine file holds a consent key (remove it by hand first). A block
+    value (`guards='{"forcePush": "ask"}'`) now merges leaf by leaf instead of
+    replacing the block, and a `qa.roles` / `dev.roles` value now sets only the
+    roles it names (set a role to `{}` to clear its pin).
+  - Review round 4's fixes (owner: "Reject, narrow fix"):
+    - A move never unlinks a name that may be a foreign file's last: a file
+      that replaced the source during the no-clobber move is put back and a
+      second name for it (`*.moving`) is kept, and the link to the backup is
+      never undone once the source was renamed. Delete and restore then exit
+      1 naming every path; nothing is lost.
+    - Delete takes the machine lock and then the repo lock (crew's one
+      order), and reads the machine digest again inside them: a machine write
+      since the preview refuses with exit 2. The machine lock is always taken,
+      creating its directory when absent (never the file), by delete and by
+      the repo writer.
+    - `qa.order` must be a list or `null`: any other shape is refused with
+      exit 2 at both layers, a value already in the file included, instead of
+      a `TypeError` traceback; the menu shows the rows it blocks read-only.
+    - The delete preview marks as re-detected only the `platform.*` keys
+      platform-sync writes (`crew_platform.DERIVED_KEYS`), and no longer
+      promises a value is written back; any other `platform.*` key is a
+      `-> (removed)` row.
+  - Review round 5's fixes (owner: "Fix them now"):
+    - Nothing goes under a leaf and no object sits at one: `pm.authority={"a": 1}`,
+      `pm.authority.a=1` and `notify.chatId={}` are refused at both layers with
+      exit 2, and such a value already in either file is named `pre-existing`
+      (fixable in the same write); the menu shows the rows it blocks read-only.
+    - `qa.roles` / `dev.roles` and each entry under them must be an object or
+      `null`: `qa.roles=1`, `qa.roles.review="codex"` and `dev.roles=[]` are
+      refused at both layers, in the file included, instead of being written
+      and dropped on read (`qa.roles=1` wiped every pin).
+    - An OS error from either lock, the machine directory or the write is a
+      refusal with exit 2 at both layers, naming the path, never a traceback;
+      a lock file whose PID write fails is removed before the error is raised.
+  - 112 sabotage mutations in `tests/sabotage_config.py`: the 22 from the first
+    build and review round 1 and the 28 for review round 2's findings (all
+    re-anchored where the code moved), 31 for review round 3's findings and
+    their neighbouring cases, 17 for review round 4's, and 14 for review
+    round 5's.
+
 - **`shipstation` 1.1.1: reach for V2 when changing orders in bulk.** Bumped `1.0.0 -> 1.1.1`.
   `SKILL.md` gains a *Bulk order changes* section: every V1 order is a V2 shipment
   (`se-<orderId>`), so find in V1 and act through `POST /v2/fulfillments` in batches of 100

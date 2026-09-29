@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@b82035e6
+anchor: useful-claude-add-ons@3648f59a
 verified: 2026-09-28
 
 ## Does
@@ -951,10 +951,18 @@ corrected, and it was wrong when written, not drifted:** the Landmines bullet on
 `CLAUDE.md`; it is in no tracked file (`git grep`, at both commits) and lives in the operator's
 untracked auto-memory. The suite was not re-run this pass.
 
+**Re-anchored `6f96e627` -> `d2444be9` on 2026-09-27 (T-0075).** `git diff --name-only 6f96e627
+d2444be9 -- <every tracked path this note cites> plugin/obsidian-vault/` returns `README.md` alone:
+crew's slash-command count (35 -> 36) in place at `:168` and `:874`, no line shift. This note names
+`README.md` only as an exempt basename. Nothing under `plugin/obsidian-vault/` changed. The suite was
+not re-run this pass.
+
 **Re-anchored `6f96e627` -> `22399a9c` on 2026-09-28 (T-0085, crew 1.0.52).** `git diff --name-only 6f96e627 22399a9c` over the paths this note cites returns `.claude-plugin/marketplace.json`, `CHANGELOG.md`, `CLAUDE.md` and `README.md`: crew's version and description, crew skills figures and changelog entries from T-0072, T-0079 and T-0085, and T-0085's ignore-policy paragraph in `CLAUDE.md`. Nothing under `plugin/obsidian-vault/` changed. The one line citation into them, the `obsidian-vault` entry at `.claude-plugin/marketplace.json:234-237`, was re-read at both commits: identical, still `0.4.14`. Nothing was executed for this note.
 
 **Re-anchored `6f96e627` -> `051f9e85` on 2026-09-28 (T-0091).** `051f9e85` is T-0091's one commit on `T-0091-build`, off main `f54af3fa`. `git diff --name-only 6f96e627 f54af3fa -- <every tracked path this note cites>` is empty; `f54af3fa..051f9e85` changes only `CLAUDE.md` (the Landmines truncating-`open` entry's measurement paragraph, now `:185-212`, +28/-18, so every later line moves +10) and `TODO.md` (one entry closed at `:4473`, three lines appended at `:4480-4482`). This note cites `CLAUDE.md` without a line (its exempt basename and the Lessons section by name). No claim moved. Nothing was executed.
 
 **Re-anchored `051f9e85` -> `c192b83d` on 2026-09-28 (T-0091 review round 1).** `c192b83d` is T-0091's review-round-1 fix on `T-0091-build`. `git diff --name-only 051f9e85 c192b83d` returns only `CLAUDE.md`: the same Landmines truncating-`open` measurement paragraph, now `:185-219` (+16/-9, so every later line moves +7; lines above `:192` are byte-identical). This note cites `CLAUDE.md` without a line. No claim moved. Nothing was executed.
+
+**Re-anchored `d2444be9` / `c192b83d` -> `3648f59a` on 2026-09-28 (T-0075 review round 5, merge of `6387ab49`).** The merge kept both lines' notes (T-0075's `d2444be9` paragraph first, main's T-0091 paragraphs after it). `git diff --name-only c192b83d 3648f59a -- <every tracked path this note cites> plugin/obsidian-vault/` returns `.claude-plugin/marketplace.json` (crew's description and version lines, in place), `CHANGELOG.md`, `README.md` (crew's slash-command count 35 -> 36 at `:168` and `:874`, in place; the `d2444be9` note above) and `TODO.md` (T-0092's entry at `:5051`, below every citation here). `.claude-plugin/marketplace.json:234-237` re-read: the `obsidian-vault` entry, `0.4.14`, matching `plugin/obsidian-vault/.claude-plugin/plugin.json:3`. Nothing under `plugin/obsidian-vault/` changed. No claim moved. Nothing was executed.
 
 **Re-anchored `22399a9c` -> `b82035e6` on 2026-09-28 (T-0085 merges main `f8b6c8d7`, T-0091).** `17b70570` merged origin/main `f8b6c8d7` into `T-0085-build` (mechanical conflicts only: anchors, provenance paragraphs, INDEX history cells, generated rules and graph); `b82035e6` moves the crew skills claim at `plugin/README.md:414` and `INSTALLATION.md:252` from 29 to 30 (spec Touch amendment). Of the paths this note cites, `git diff --name-only 22399a9c b82035e6` returns only `CLAUDE.md`. `CLAUDE.md`'s change is T-0091's Landmines truncating-`open` paragraph, whose citations were moved on main's side and merged in, plus T-0085's four-line ignore-policy reflow, which shifts no line. Every `CLAUDE.md:N`, `INSTALLATION.md:N` and `plugin/README.md:N` citation was compared by script against its text at `2aa49bb8`, `c192b83d` and HEAD; none needed moving: every `CLAUDE.md:N` citation here reads the same text at HEAD as at main's `c192b83d`, where T-0091 already moved them. No suite was executed for this note.

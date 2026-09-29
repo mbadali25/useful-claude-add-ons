@@ -117,10 +117,12 @@ and show the table. It names, per setting, the layer that decided it - `repo`,
 a global file, say so now rather than letting them find out when crew behaves
 differently from what they set up.
 
-Then offer `/crew:config` in one line: it walks the machine-global file at
-`~/.claude/crew/config.json`, which sets defaults for every crew repo here.
-Offer it; do not run it as part of this phase and never write `~/.claude`
-without being asked. `global-config.md` beside this file has the walkthrough.
+Then offer `/crew:config` in one line: its menu (also `/crew:config-setup`)
+sets the machine-global file at `~/.claude/crew/config.json`, which sets
+defaults for every crew repo here, or this repo's own file, from a list of
+values. Offer it; do not run it as part of this phase and never write
+`~/.claude` without being asked. `config-menu.md` beside this file has the
+menu and `global-config.md` the walkthrough it cites.
 
 Create
 `.crew/`, `.work/`, `docs/adr/`, `_verify/` from template (README.md, smoke.sh,
