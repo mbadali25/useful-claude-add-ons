@@ -211,7 +211,7 @@ CONTEXT_MUTATIONS = (
      _ADVICE + "test_rules_names_a_note_whose_cited_path_changed_since_its_anchor"),
     ("rules with no git HEAD says nothing instead of could-not-tell",
      INSTRUCTIONS,
-     '    if head is None:\n        return [f"anchors: could not tell',
-     '    if head is None:\n        return [], 0\n        return [f"anchors: could not tell',
+     '    if head is None:\n        unchecked = (f"anchors: could not tell',
+     '    if head is None:\n        return [], 0\n        unchecked = (f"anchors: could not tell',
      _ADVICE + "test_no_git_head_is_could_not_tell_not_silence"),
 ) + REVIEW_FIX_CONTEXT_MUTATIONS

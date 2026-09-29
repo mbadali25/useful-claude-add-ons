@@ -258,8 +258,9 @@ def anchor_lines(root):
         return [], 0
     head = crew_context.git_out(root, "rev-parse", "--short=8", "HEAD")
     if head is None:
-        return [f"anchors: could not tell - no git HEAD under {root}; {len(rendered)} rule(s)"
-                " come from code maps whose anchors were not checked"], None
+        unchecked = (f"anchors: could not tell - no git HEAD under {root}; {len(rendered)} rule(s)"
+                     " come from code maps whose anchors were not checked")
+        return [unchecked], None
     lines = []
     for sub, _ in rendered:
         state = crew_context.anchor_state(root, sub, head)

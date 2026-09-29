@@ -33,11 +33,10 @@ import os
 import re
 import shutil
 
-import pytest
-
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_context
 import crew_instructions as ci
+import pytest
 from context_fixtures import git, make_repo
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -147,8 +146,8 @@ def test_rules_check_prints_the_same_anchor_lines_and_still_exits_0(tmp_path, ca
 
     assert code == 0
     assert lines == [_behind_line(root, "alpha"),
-                     "rules: up to date - rules match the code map; "
-                     "1 code map(s) need re-check (anchor lines above)"]
+                     ("rules: up to date - rules match the code map; "
+                      "1 code map(s) need re-check (anchor lines above)")]
 
 
 def test_rules_prints_drift_before_anchor_lines_and_exits_1_on_drift_only(tmp_path, capsys):
@@ -186,8 +185,8 @@ def test_an_unresolvable_anchor_is_its_own_line(tmp_path, capsys):
     code, lines = _run(["rules", "--root", str(root)], capsys)
 
     assert code == 0
-    assert _advisory(lines) == [f"anchor unresolvable: beta - anchor {'d' * 40} names no "
-                                "commit here; refresh with /crew:onboard --refresh beta"]
+    assert _advisory(lines) == [(f"anchor unresolvable: beta - anchor {'d' * 40} names no "
+                                 "commit here; refresh with /crew:onboard --refresh beta")]
     _no_advisory_reads_as_drift(lines)
 
 
@@ -198,8 +197,8 @@ def test_a_note_with_no_anchor_line_is_unresolvable_not_silent(tmp_path, capsys)
     code, lines = _run(["rules", "--root", str(root)], capsys)
 
     assert code == 0
-    assert _advisory(lines) == ["anchor unresolvable: beta - no anchor recorded; "
-                                "refresh with /crew:onboard --refresh beta"]
+    assert _advisory(lines) == [("anchor unresolvable: beta - no anchor recorded; "
+                                 "refresh with /crew:onboard --refresh beta")]
 
 
 def test_no_git_head_is_could_not_tell_not_silence(tmp_path, capsys):
@@ -248,7 +247,7 @@ def test_a_note_with_no_rule_is_not_reported(tmp_path, capsys):
     _, lines = _run(["rules", "--root", str(root)], capsys)
 
     assert not any("delta" in line for line in _advisory(lines))
-    delta = [s for s in crew_context.subsystems(str(root)) if s["name"] == "delta"][0]
+    delta = next(s for s in crew_context.subsystems(str(root)) if s["name"] == "delta")
     assert crew_context.anchor_state(str(root), delta, _head(root)) == "unresolvable"
 
 
