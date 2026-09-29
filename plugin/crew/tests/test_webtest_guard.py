@@ -786,3 +786,114 @@ def test_review_the_overflow_file_needs_its_own_read(repo, tmp_path, read_as, ex
     code, _review_json = _review(repo, tmp_path, base, reads_extra=reads)
 
     assert code == expected
+
+
+# ---- T-0104: --module (a web project below the repository root)
+
+MOD_CONFIG = ("export default { use: { storageState: %s }, projects: [{ name: 'setup' }, "
+              "{ name: 'chromium' }, { name: 'axe' }, { name: 'visual' }] };\n")
+
+
+@pytest.mark.parametrize("declared, expected", [
+    (True, (0, [])),
+    (False, (1, ["  mod-a/playwright.config.ts: storageState: someCall ( )"])),
+])
+def test_auth_leak_module_reads_the_modules_config_and_the_roots_declaration(repo, declared,
+                                                                             expected):
+    _write(repo, "mod-a/playwright.config.ts", MOD_CONFIG % "someCall()")
+    if declared:
+        _write(repo, ".crew/config.json",
+               json.dumps({"webtest": {"storageState": "mod-a/state/user.json"}}))
+
+    code, lines = webtest_guard.check_auth_leak(repo, module="mod-a")
+
+    assert (code, [ln for ln in lines if ln.startswith("  ")]) == expected
+
+
+def test_auth_leak_module_names_a_tracked_storage_state_by_its_repo_path(repo):
+    _write(repo, "mod-a/playwright.config.ts", MOD_CONFIG % "'state/user.json'")
+    _write(repo, "mod-a/state/user.json", "{}")
+    _git(repo, "add", "-f", "mod-a/playwright.config.ts", "mod-a/state/user.json")
+
+    code, lines = webtest_guard.check_auth_leak(repo, module="mod-a")
+
+    assert (code, "  mod-a/state/user.json" in lines) == (1, True)
+
+
+@pytest.mark.parametrize("module", ["missing", "../outside"])
+def test_auth_leak_module_must_exist_under_root(repo, module):
+    code, lines = webtest_guard.check_auth_leak(repo, module=module)
+
+    assert (code, "not a pass" in lines[0]) == (2, True)
+
+
+@pytest.mark.parametrize("where, expected", [("mod-a", (0, "mod-a")), ("", (1, None))])
+def test_visual_module_reads_the_modules_node_modules_and_runs_there(repo, monkeypatch, where,
+                                                                     expected):
+    os.makedirs(os.path.join(repo, "mod-a"))
+    _in_image(os.path.join(repo, where) if where else repo, monkeypatch,
+              webtest_guard.PINNED_PLAYWRIGHT)
+    cwds = []
+
+    code, _lines = webtest_guard.check_visual(
+        repo, runner=lambda *a, **k: cwds.append(k["cwd"]) or 0, module="mod-a")
+
+    assert (code, os.path.relpath(cwds[0], repo) if cwds else None) == expected
+
+
+def test_visual_module_off_the_pinned_image_is_still_unverified(repo, monkeypatch):
+    monkeypatch.delenv(webtest_guard.IMAGE_ENV, raising=False)
+    os.makedirs(os.path.join(repo, "mod-a"))
+    ran = []
+
+    code, lines = webtest_guard.check_visual(repo, runner=lambda *a, **k: ran.append(a) or 0,
+                                             module="mod-a")
+
+    assert (code, "UNVERIFIED" in lines[0], ran) == (77, True, [])
+
+
+def test_rules_module_prefixes_paths_and_runs_from_the_module(repo):
+    _write(repo, "mod-a/playwright.config.ts", MOD_CONFIG % "'state/user.json'")
+
+    rules = webtest_rules.rules(root=repo, module="mod-a")
+
+    guard = webtest_rules.GUARD
+    assert ([r["run"] for r in rules], {r["reach"] for r in rules}, rules[0]["paths"],
+            rules[3]["paths"], [p in rules[2]["paths"] for p in (
+                "mod-a/playwright/**", "mod-a/**/.auth/**", ".crew/config.json",
+                "mod-a/state/user.json", "playwright/**")]) == (
+        [["(cd mod-a && npx playwright test --reporter=blob)",
+          "(cd mod-a && npx playwright merge-reports --reporter html ./blob-report)"],
+         ["(cd mod-a && npx playwright test --project=axe --reporter=line)"],
+         [f"{guard} auth-leak --root . --module mod-a"],
+         [f"{guard} skips --root ."],
+         [f"{guard} visual --root . --module mod-a"]],
+        {"local"}, [f"mod-a/{p}" for p in webtest_rules.DEFAULT_PATHS],
+        list(webtest_rules.SPEC_PATHS), [True, True, True, True, False])
+
+
+@pytest.mark.parametrize("projects, count, omitted", [
+    ("{ name: 'chromium' }", 3, ["axe", "visual"]),
+    ("{ name: 'chromium' }, { name: 'axe' }, { name: 'visual' }", 5, []),
+])
+def test_rules_omit_axe_and_visual_when_the_config_lacks_them(repo, capsys, projects, count,
+                                                              omitted):
+    _write(repo, "mod-a/playwright.config.ts", f"export default {{ projects: [{projects}] }};\n")
+
+    webtest_rules.main(["--root", repo, "--module", "mod-a"])
+
+    out = capsys.readouterr()
+    assert (len(json.loads(out.out)["rules"]), out.err.splitlines()) == (count, [
+        f"webtest rules: omitted the {name} rule - no '{name}' project in "
+        "mod-a/playwright.config.ts (webtest_scaffold.py --module mod-a prints the gap)"
+        for name in omitted])
+
+
+def test_rules_cli_module_flag(repo, capsys):
+    _write(repo, "mod-a/playwright.config.ts", MOD_CONFIG % "'state/user.json'")
+
+    webtest_rules.main(["--root", repo, "--module", "mod-a"])
+
+    rules = json.loads(capsys.readouterr().out)["rules"]
+    assert (rules[0]["paths"][0], rules[2]["run"][0].endswith("--module mod-a")) == (
+        "mod-a/playwright.config.*", True)

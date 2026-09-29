@@ -1,8 +1,8 @@
 """Web-testing checks crew enforces in code, not in prose.
 
     python3 webtest_guard.py skips     --root . [--ticket ID] [--base SHA]
-    python3 webtest_guard.py auth-leak --root .
-    python3 webtest_guard.py visual    --root . [-- <extra playwright args>]
+    python3 webtest_guard.py auth-leak --root . [--module DIR]
+    python3 webtest_guard.py visual    --root . [--module DIR] [-- <extra playwright args>]
     python3 webtest_guard.py artifacts --root .
 
 Each is a check a `verify.json` rule calls (`webtest_rules.py` emits those
@@ -55,6 +55,12 @@ the config, so the check FAILS CLOSED unless the repository's
 `.crew/config.json` declares the paths as `webtest.storageState` (a string or
 a list of them).
 
+`--module DIR` (a web project below `--root`, as `webtest_scaffold.py
+--module` scaffolds it) reads that module's `playwright.config.*` and names
+its storageState paths repo-relative (`DIR/<path>`), while `git ls-files` and
+the `.crew/config.json` declaration stay at `--root`. A `DIR` that is not a
+directory under `--root` is could-not-tell (exit 2), never a pass.
+
 ## visual -- inside the pinned image, or UNVERIFIED
 
 Screenshots rendered on Windows and on Linux CI differ, so baselines are only
@@ -72,6 +78,7 @@ that is not `PINNED_PLAYWRIGHT` fails rather than skips, since that is a real
 misconfiguration, not an absent one. What was verified is printed. Off the
 image it also says how to get there: the `docker run` / `podman run` line for
 the pinned image with whichever runtime is on PATH, or that neither is.
+`--module DIR` reads `DIR/node_modules` and runs the visual project in `DIR`.
 
 ## artifacts
 
@@ -565,11 +572,32 @@ def config_auth_paths(root):
     return sorted(paths), unresolved
 
 
-def check_auth_leak(root):
+def module_dir(root, module):
+    """`<root>/<module>` when `module` names a directory under `root` (no
+    absolute path, no `..`), `root` itself for no module, else None."""
+    if not module:
+        return root
+    rel = module.replace("\\", "/")
+    parts = [p for p in rel.split("/") if p not in ("", ".")]
+    if os.path.isabs(module) or rel.startswith("/") or ".." in parts:
+        return None
+    path = os.path.join(root, *parts)
+    return path if os.path.isdir(path) else None
+
+
+def check_auth_leak(root, module=None):
+    project = module_dir(root, module)
+    if project is None:
+        return EXIT_UNKNOWN, [f"webtest auth-leak: UNKNOWN -- --module {module} is not a "
+                              "directory under --root; not a pass"]
     tracked = crew_common.git_out(root, "-c", "core.quotePath=false", "ls-files")
     if tracked is None:
         return EXIT_UNKNOWN, ["webtest auth-leak: UNKNOWN -- git ls-files failed; not a pass"]
-    found, unresolved = config_auth_paths(root)
+    found, unresolved = config_auth_paths(project)
+    if project != root:
+        prefix = "/".join(p for p in module.replace("\\", "/").split("/") if p not in ("", "."))
+        found = [f"{prefix}/{p}" for p in found]
+        unresolved = [f"{prefix}/{u}" for u in unresolved]
     declared = declared_storage_state(root)
     named = set(found) | set(declared)
     leaks = [p for p in tracked.splitlines()
@@ -653,7 +681,7 @@ def _unverified(why, off_image=False):
                        f"{PINNED_IMAGE}; skipped here ({why})"] + hint
 
 
-def check_visual(root, extra=(), runner=subprocess.call):
+def check_visual(root, extra=(), runner=subprocess.call, module=None):
     image = os.environ.get(IMAGE_ENV, "")
     if not sys.platform.startswith("linux"):
         return _unverified(sys.platform, off_image=True)
@@ -667,11 +695,15 @@ def check_visual(root, extra=(), runner=subprocess.call):
                            off_image=True)
     if not os.path.isdir(BROWSERS_DIR):
         return _unverified(f"container, but no Playwright image browser store {BROWSERS_DIR}")
-    version = installed_playwright(root)
+    project = module_dir(root, module)
+    if project is None:
+        return EXIT_UNKNOWN, [f"webtest visual: UNKNOWN -- --module {module} is not a directory "
+                              "under --root; not a pass"]
+    version = installed_playwright(project)
     if version != PINNED_PLAYWRIGHT:
         return EXIT_FINDING, [f"webtest visual: @playwright/test is {version or 'not installed'}, "
                               f"the image is {PINNED_PLAYWRIGHT}; baselines would not compare"]
-    chromium = expected_chromium(root)
+    chromium = expected_chromium(project)
     if chromium is None:
         return _unverified("cannot read node_modules/playwright-core/browsers.json, so the "
                            "image's browsers cannot be matched to the pinned release")
@@ -679,8 +711,8 @@ def check_visual(root, extra=(), runner=subprocess.call):
         return _unverified(f"{BROWSERS_DIR} has no {chromium}, the browser "
                            f"{PINNED_PLAYWRIGHT} renders with -- not the pinned image")
     verified = (f"verified: {', '.join(markers)}; {BROWSERS_DIR}/{chromium}; "
-                f"@playwright/test {version}")
-    rc = runner(["npx", "playwright", "test", "--project=visual"] + list(extra), cwd=root)
+                f"@playwright/test {version}{' in ' + module if module else ''}")
+    rc = runner(["npx", "playwright", "test", "--project=visual"] + list(extra), cwd=project)
     # A real run cannot SKIP: 77 from playwright is a failure, not an absent environment.
     code = EXIT_OK if rc == 0 else EXIT_FINDING
     return code, [f"webtest visual: {verified}",
@@ -729,6 +761,10 @@ def main(argv):
     parser.add_argument("--root", default=".")
     parser.add_argument("--ticket")
     parser.add_argument("--base")
+    parser.add_argument("--module", help="auth-leak and visual only: a web project below --root "
+                                         "whose playwright config and node_modules are read; git "
+                                         "and .crew/config.json stay at --root (skips and "
+                                         "artifacts ignore it)")
     argv = list(argv)
     extra = argv[argv.index("--") + 1:] if "--" in argv else []
     args = parser.parse_args(argv[:argv.index("--")] if "--" in argv else argv)
@@ -742,9 +778,9 @@ def main(argv):
     if args.check == "skips":
         code, lines = check_skips(root, args.ticket, args.base)
     elif args.check == "auth-leak":
-        code, lines = check_auth_leak(root)
+        code, lines = check_auth_leak(root, args.module)
     else:
-        code, lines = check_visual(root, extra)
+        code, lines = check_visual(root, extra, module=args.module)
     stream = sys.stdout if code == EXIT_OK else sys.stderr
     for line in lines:
         print(line, file=stream)
