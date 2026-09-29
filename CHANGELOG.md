@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.60: the completion audit admits a refresh artifact only as a re-anchor or regeneration the ticket's change reaches (T-0094)
+### Changed — `crew` 1.0.62: the completion audit admits a refresh artifact only as a re-anchor or regeneration the ticket's change reaches (T-0094)
 
 - **What changed.** `crew_refresh_check.artifact_verdicts` (beside
   `REFRESH_ARTIFACT_PATHS`) judges each changed refresh artifact of an approved
@@ -48,12 +48,29 @@ All notable changes to this repository are documented here. Format follows [Keep
   that bumped it; an unapproved ticket's artifacts are not judged at all, and
   a verdict step that raises fails the audit closed instead of escaping
   `--check` as a traceback.
-- **Sabotage.** Entries after the `# T-0094` marker in
-  `plugin/crew/tests/sabotage_refresh.py` (fifteen, then sixteen more and the
-  stale-approval gate case after review round 1), each run by hand against the
-  tracked file and confirmed RED with the file restored byte-identical, plus
-  the approval-gate entries, whose tests now perform an admitted refresh so
-  they stay RED with the verdicts in place.
+- **Review round 2 (owner-rejected, successor plan).** A rule file that
+  exists but cannot be read (a dangling symlink) is `could not tell`: it was
+  admitted as `regenerated` when no map expected it (`None == None`) and read
+  as `bytes differ` when one did. Every could-not-tell branch of `_sha_moved`,
+  `_moved_from` and `_rule_verdict` now has a failing control (one git call
+  failed per case, each asserting its branch's own reason). `.crew/verify.json`
+  rule 25 (priced 65s, over the 60s Stop budget alone) is split: the
+  admission suite `test_refresh_admission.py` is its own rule 32 (12s, runs
+  at Stop beside rules 0 and 15: 9 + 12 + 38 = 59), and rule 25 is priced 58s
+  (46.4s measured at load 2.5, x1.25); its `why` now says first that rules 0
+  and 15 take 47s of the budget on any hook-script edit, so rule 25 is still
+  deferred at Stop and runs under `verify-gate --all`.
+  The round's third FIX, a `verify-gate --all` record, is made at the gate on
+  the final head, not in the diff.
+- **Sabotage.** In `plugin/crew/tests/sabotage_refresh.py`, fifteen entries
+  after the `# T-0094` marker, sixteen after `# T-0094 review round 1` and nine
+  after `# T-0094 review round 2` (counted by `ast`), each run by hand against
+  the tracked file and confirmed RED with the file restored byte-identical,
+  plus the approval-gate entries, whose tests now perform an admitted refresh
+  so they stay RED with the verdicts in place; review round 1's stale-approval
+  fix is a test change those entries cover.
+- **Version.** 1.0.60 on T-0094's branch; T-0010 landed first as 1.0.61 (its own
+  branch had used 1.0.60 too), so this lands as 1.0.62.
 
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 

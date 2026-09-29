@@ -18,19 +18,23 @@ measured, and three "could not tell" cases read as fresh. Review round 3
 recorded base trusted with the ticket's commits behind it, an artifact
 keeping a measured status under a base that may hide the change, a quoted
 name breaking the audit's hash, and a guard module with no pytest rule.
-T-0094 added the ones after its marker: each test of `artifact_verdicts`'
+T-0094 added the fifteen after its marker: each test of `artifact_verdicts`'
 reach-and-shape admission (reach, anchor moved, ancestor, in the base, INDEX
 rows, rule bytes and removal, graph, rendered diagram, could-not-tell,
 bookkeeping in the reach) removed or widened, and the audit ignoring the
 verdicts, admitting a could-not-tell one, or dropping the reason. Its
 approval-gate tests now perform a refresh the verdicts admit, so the
 `_AUDIT_GATE` entries stay red with the verdicts in place. T-0094 review
-round 1 added the ones after its marker: a diagram's reach and no-Anchors
+round 1 added the sixteen after its marker: a diagram's reach and no-Anchors
 branch, a base anchor git cannot resolve read as moved, a backwards anchor,
 INDEX.md's deleted lines, every bookkeeping file or an added citation in the
 reach, the rule renderer raising, the verdicts judged without approval, and a
 verdict step's raise escaping the audit -- plus the stale-approval case the
-round found no longer tested the gate.
+round found no longer tested the gate (a test change: the `_AUDIT_GATE`
+entries above are its mutations). T-0094 review round 2 added the nine after
+its marker: an unreadable rule file admitted as regenerated or read as "bytes
+differ", and each could-not-tell branch of `_sha_moved`, `_moved_from` and
+`_rule_verdict` read as a move.
 A mutation listed twice with different tests is on purpose: dropping the
 approval condition must fail the unapproved, the `cli` and the stale case
 each, not just whichever runs first.
@@ -317,6 +321,10 @@ REFRESH_MUTATIONS = (
     ("the audit admits a could-not-tell verdict", AUDIT,
      _AUDIT_ADMIT, _AUDIT_ADMIT.replace("is not True", "is False"),
      _CA + "test_a_could_not_tell_verdict_fails_the_audit_and_says_so"),
+    ("the audit does not print why an artifact was refused", AUDIT,
+     '        return f"{shown(path)} [{shown(verdicts[path][1])}]"\n',
+     "        return shown(path)\n",
+     _CA + "test_a_could_not_tell_verdict_fails_the_audit_and_says_so"),
     # T-0094 review round 1
     ("a re-anchored diagram no changed path reaches is admitted", CHECK,
      "        reached = _reached(declared, reach)\n    if not reached:\n",
@@ -383,10 +391,6 @@ REFRESH_MUTATIONS = (
      "    except Exception:  # noqa: BLE001  pylint: disable=broad-except\n        return {}\n",
      "    except ValueError:  # noqa: BLE001  pylint: disable=broad-except\n        return {}\n",
      _CA + "test_a_verdict_step_that_raises_fails_the_audit_closed[refresh_artifact_paths]"),
-    ("the audit does not print why an artifact was refused", AUDIT,
-     '        return f"{shown(path)} [{shown(verdicts[path][1])}]"\n',
-     "        return shown(path)\n",
-     _CA + "test_a_could_not_tell_verdict_fails_the_audit_and_says_so"),
     # T-0094 review round 2
     ("an unreadable rule no map expects is admitted as regenerated", CHECK,
      '        if text is None:\n            return None, f"{COULD_NOT_TELL}: could not read {rel}"\n',

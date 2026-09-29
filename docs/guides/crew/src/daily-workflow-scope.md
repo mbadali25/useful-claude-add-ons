@@ -100,8 +100,8 @@ A changed refresh artifact passes the audit only when a path the ticket changed 
 edit is a re-anchor (the `anchor:` or provenance sha moved forward to a commit on this branch) or a
 regeneration (`.claude/rules/` as `crew_instructions.py rules` writes them, the graph after a code
 change). A map claim edited without a re-anchor is listed with `[anchor did not move]`, and
-belongs in Touch if that is what the ticket means to do. When git cannot answer, the listing says
-`[could not tell: ...]`, and that never passes. `/crew:done` runs the same check:
+belongs in Touch if that is what the ticket means to do. When git cannot answer, or a rule file
+cannot be read, the listing says `[could not tell: ...]`, and that never passes. `/crew:done` runs the same check:
 
 ```bash
 python3 <crew>/hooks/scripts/completion_audit.py --check --ticket T-0042
