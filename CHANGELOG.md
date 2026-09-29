@@ -6,11 +6,25 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.44: the Kimi Code CLI is a crew provider (T-0028). BEHAVIOUR
+- **`crew` 1.0.60: the Kimi Code CLI is a crew provider (T-0028). BEHAVIOUR
   CHANGE: the default `qa.order` now tries Kimi second -
   `["codex", "kimi", "copilot", "claude"]`** - so on a machine with `kimi` on
   PATH and a repo with no explicit `qa.order`, `/crew:review` reaches Kimi
-  before Copilot and the Claude fallback. Bumped `1.0.38 -> 1.0.44`.
+  before Copilot and the Claude fallback. Bumped `1.0.59 -> 1.0.60` (1.0.44
+  on its branch; re-set after merging main's 1.0.59).
+  - **Review round 4's fingerprint and probe fixes.** A file's digest carries
+    its permission bits; a symlink counts with what it resolves to, and a link
+    to a directory outside the repository is could-not-tell; a FIFO, socket
+    or device is recorded and never opened; the metadata keys hold a NUL, so
+    no file can collide with them; `graph.out` is not set aside when it is or
+    lies under `.crew`, contains a `.crew`, or holds a tracked file other than
+    `graph.json` and `GRAPH_REPORT.md`; a `killpg` PermissionError is
+    could-not-tell; a non-string provider reference or text part reads
+    `unknown` instead of raising; the probe launches an absolute `kimi`.
+  - **New exit code: `review_run.py` exits 5 (`EXIT_PROBE_CHANGED`) when the
+    Kimi probe changed the working tree, whatever it answered** - no round is
+    spent, and `/crew:review` stops and reports the paths instead of walking
+    to the next provider (exit 2) against a tree the bundle no longer matches.
   - **`kimi` is in `QA_PROVIDERS` and `DEV_PROVIDERS`**, so every
     `qa.roles.<r>` and `dev.roles.<r>` slot accepts a
     `{"provider": "kimi", "model": ...}` pin. The owner's ids are `k3`,
@@ -25,8 +39,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   - **New probe, `hooks/scripts/kimi_probe.py`**: `ok`, `not-installed`,
     `not-authenticated`, `rate-limited` or `unknown`, each its own value; only
     `ok` launches. `review_run.py --provider kimi` runs it BEFORE the round is
-    reserved, so a quota or auth failure spends no round, and skips it when
-    the ledger already shows no round left. The live stage spends one tiny
+    reserved, so a quota or auth failure spends no round. When the ledger's
+    status already shows no round left it exits 4 before any probe or
+    reservation: a Kimi round is never reserved unprobed. The live stage spends one tiny
     request; `review.md` no longer runs the probe a second time. A 429 the
     CLI retried and then completed reads `ok`, as the review parser reads it;
     a 429 that ended the call is still `rate-limited`.
