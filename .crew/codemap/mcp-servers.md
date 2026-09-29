@@ -1,6 +1,6 @@
 # mcp-servers
-anchor: useful-claude-add-ons@3648f59a
-verified: 2026-09-28
+anchor: useful-claude-add-ons@0da787d3
+verified: 2026-09-29
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
 ## Does
@@ -366,3 +366,5 @@ returns `.claude-plugin/marketplace.json` (crew's version line only) and `TODO.m
 No citation moved.
 
 **Re-anchored `b2553d26` -> `3648f59a` on 2026-09-28 (T-0075 review round 5, merge of `6387ab49`).** `git diff --name-only b2553d26 3648f59a -- mcp-servers/ README.md TODO.md .claude-plugin/marketplace.json` returns `README.md` (T-0075: crew's slash-command count 35 -> 36 at `:168` and `:874`, in place), `TODO.md` (T-0092's entry at `:5051`, below every citation here) and `.claude-plugin/marketplace.json` (crew's lines only); nothing under `mcp-servers/`. `TODO.md:189`, `:200` and `:281` re-read, unchanged; `grep -c mcp-servers .claude-plugin/marketplace.json` is still **0**. No citation moved.
+
+**Re-anchored `3648f59a` -> `0da787d3` on 2026-09-29 (T-0107, gizmoduck 0.5.4). Current despite the lag.** `crew_refresh_check.py` named README.md as changed since the anchor. T-0107 edits exactly one line of each, in place (`git diff --numstat 2693d0fa 0da787d3 -- README.md plugin/README.md` is `1 1` for both): the gizmoduck catalog row, `README.md:875` and `plugin/README.md:415`, gains one clause naming the routine. No line shifted, and a script over every `README.md:N[-M]` citation in `.crew/codemap/` found none covering either line. `plugin/PLUGINS.md` changes only at `:441`, `:446`, `:451` and `:470` (+2 lines after it), and no note cites a `PLUGINS.md` line at or after `:441`. No claim re-read; nothing was executed for this note.

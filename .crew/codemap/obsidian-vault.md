@@ -1,6 +1,6 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@3648f59a
-verified: 2026-09-28
+anchor: useful-claude-add-ons@0da787d3
+verified: 2026-09-29
 
 ## Does
 Turns one or more Obsidian vaults into Claude Code's durable memory: a PostToolUse guard that
@@ -962,3 +962,5 @@ not re-run this pass.
 **Re-anchored `051f9e85` -> `c192b83d` on 2026-09-28 (T-0091 review round 1).** `c192b83d` is T-0091's review-round-1 fix on `T-0091-build`. `git diff --name-only 051f9e85 c192b83d` returns only `CLAUDE.md`: the same Landmines truncating-`open` measurement paragraph, now `:185-219` (+16/-9, so every later line moves +7; lines above `:192` are byte-identical). This note cites `CLAUDE.md` without a line. No claim moved. Nothing was executed.
 
 **Re-anchored `d2444be9` / `c192b83d` -> `3648f59a` on 2026-09-28 (T-0075 review round 5, merge of `6387ab49`).** The merge kept both lines' notes (T-0075's `d2444be9` paragraph first, main's T-0091 paragraphs after it). `git diff --name-only c192b83d 3648f59a -- <every tracked path this note cites> plugin/obsidian-vault/` returns `.claude-plugin/marketplace.json` (crew's description and version lines, in place), `CHANGELOG.md`, `README.md` (crew's slash-command count 35 -> 36 at `:168` and `:874`, in place; the `d2444be9` note above) and `TODO.md` (T-0092's entry at `:5051`, below every citation here). `.claude-plugin/marketplace.json:234-237` re-read: the `obsidian-vault` entry, `0.4.14`, matching `plugin/obsidian-vault/.claude-plugin/plugin.json:3`. Nothing under `plugin/obsidian-vault/` changed. No claim moved. Nothing was executed.
+
+**Re-anchored `3648f59a` -> `0da787d3` on 2026-09-29 (T-0107, gizmoduck 0.5.4). Current despite the lag.** `crew_refresh_check.py` named README.md as changed since the anchor. T-0107 edits exactly one line of each, in place (`git diff --numstat 2693d0fa 0da787d3 -- README.md plugin/README.md` is `1 1` for both): the gizmoduck catalog row, `README.md:875` and `plugin/README.md:415`, gains one clause naming the routine. No line shifted, and a script over every `README.md:N[-M]` citation in `.crew/codemap/` found none covering either line. `plugin/PLUGINS.md` changes only at `:441`, `:446`, `:451` and `:470` (+2 lines after it), and no note cites a `PLUGINS.md` line at or after `:441`. No claim re-read; nothing was executed for this note.

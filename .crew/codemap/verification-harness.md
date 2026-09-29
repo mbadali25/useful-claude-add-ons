@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@3648f59a
-verified: 2026-09-28
+anchor: useful-claude-add-ons@0da787d3
+verified: 2026-09-29
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -1548,3 +1548,5 @@ hold. Nothing else was executed for this note.
 `plugin/crew/CONFIG.md:2363-2370` (the descoped per-rule process-group kill, cited twice) moves to `:2371-2378` (round 5's eight CONFIG.md lines above it). `.crew/verify.json` rule 7 (`:129-144`) is unchanged. No other body citation moved.
 
 Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `938e3b11` for a line in T-0075's copy of this note and from `6387ab49` for a line only in main's, to the tree at `3648f59a` (difflib equal blocks); every citation that did not map to itself was read with `sed -n` / `grep -n`. The script attributes some bare `:N` to the wrong file (a `.crew/verify.json` range after a test-file mention, a `check-marketplace.py` range after a `PLUGINS.md` mention, a `SKILL.md` in another skill); those were read and hold. A citation inside a list of per-commit positions keeps its commit's line; only the current position is added. Nothing else was executed for this note.
+
+**Re-anchored `3648f59a` -> `0da787d3` on 2026-09-29 (T-0107, gizmoduck 0.5.4). Current despite the lag.** `crew_refresh_check.py` named README.md as changed since the anchor. T-0107 edits exactly one line of each, in place (`git diff --numstat 2693d0fa 0da787d3 -- README.md plugin/README.md` is `1 1` for both): the gizmoduck catalog row, `README.md:875` and `plugin/README.md:415`, gains one clause naming the routine. No line shifted, and a script over every `README.md:N[-M]` citation in `.crew/codemap/` found none covering either line. `plugin/PLUGINS.md` changes only at `:441`, `:446`, `:451` and `:470` (+2 lines after it), and no note cites a `PLUGINS.md` line at or after `:441`. No claim re-read; nothing was executed for this note.
