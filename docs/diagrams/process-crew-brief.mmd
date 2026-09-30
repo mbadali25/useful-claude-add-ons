@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@e2b9371d on 2026-09-30. Verify before trusting.
+%% Generated from useful-claude-add-ons@dd87af57 on 2026-09-30. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
@@ -193,6 +193,10 @@
 %% :63 and :192-216 are its lines, not status.md's) -> :64, :202-226. handoff-read.sh unchanged.
 %% NOT redrawn: /crew:status now prints a second config line in a linked worktree (T-0088);
 %% no node or edge changed.
+%% Merged e2b9371d + main's copy -> dd87af57 (T-0100 merges main 301e478a, T-0085 landed as crew 1.0.75;
+%% T-0100 re-set to crew 1.0.76): the provenance hunk kept both sides' notes (main's first). Every
+%% body line is T-0100's or common; each citation was mapped by a difflib line diff from 52c7e505 to
+%% dd87af57 and none moved. No node or edge changed.
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
     start --> reg["hooks.json:3-10<br/>3 SessionStart pairs, sh + ps1, no matcher<br/>each claims per session+source"]

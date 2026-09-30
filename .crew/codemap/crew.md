@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@e4421926
+anchor: useful-claude-add-ons@dd87af57
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -785,7 +785,7 @@ gives - the command as written and with line continuations joined (`_BASH_CONTIN
 Tests `plugin/crew/tests/test_crew_autopilot_policy.py` plus new cases in `test_crew_ticket.py`,
 `test_scope_guard.py`, `test_crew_autopilot_status.py` and `test_crew_route.py`; mutations
 `POLICY_MUTATIONS` in `sabotage_autopilot.py` (55 by `len()` on T-0010-solo's merge of `e878cc31`, `plugin/crew/tests/sabotage_autopilot.py:687`),
-registered at `plugin/crew/tests/sabotage.py:77` and `:3057`; `.crew/verify.json` rule 28
+registered at `plugin/crew/tests/sabotage.py:77` and `:3058`; `.crew/verify.json` rule 28
 (`:307-313`), which also maps `commands/autopilot.md` since review round 2.
 
 ## Plain-text lifecycle routing (T-0023, crew 1.0.43)
@@ -1181,7 +1181,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `EXIT_USAGE` (`review_run.py:503`) unless `crew_incident.read_state` is active, which logs
   a `standards-selfcheck` skip (`:494`) and reserves.
 - **Checklist.** `review_prompt.build` puts `crew_standards.checklist_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:264`, defined at `crew_standards.py:664`)
+  (`plugin/crew/hooks/scripts/review_prompt.py:298`, defined at `crew_standards.py:664`)
   after the test receipts; it never reads `selfcheck.md`. When the manifest's file lists
   are unusable it lists the always-on sets (those whose `applies-to` holds `"**"`) under an
   `UNKNOWN:` line.
@@ -1318,7 +1318,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   never on `git add`; the manifest's `excluded` is `list(EXCLUDED)`.
   `_bundle_block` prints that list as `excluded (never in the bundle): ...`,
   or `excluded: none recorded` when the manifest has none
-  (`plugin/crew/hooks/scripts/review_prompt.py:90`).
+  (`plugin/crew/hooks/scripts/review_prompt.py:97`).
 - DERIVED (T-0100, crew 1.0.60): `merged_main.resolve`
   (`plugin/crew/hooks/scripts/merged_main.py:65`) names the latest merged
   integration commit, `git merge-base HEAD <ref>` with `<ref>` from
@@ -1360,8 +1360,8 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   (`plugin/crew/hooks/scripts/completion_audit.py:287`); `changed_paths`
   without `merged` is unchanged for `crew_refresh_check`. The prompt's
   `merged main:` line is `_merged_main_line`
-  (`plugin/crew/hooks/scripts/review_prompt.py:93`), which appends
-  `_fork_clause` (`plugin/crew/hooks/scripts/review_prompt.py:124`) on a null
+  (`plugin/crew/hooks/scripts/review_prompt.py:100`), which appends
+  `_fork_clause` (`plugin/crew/hooks/scripts/review_prompt.py:131`) on a null
   fork, and the receipt check's note `_merged_note`
   (`plugin/crew/hooks/scripts/review_ledger.py:367`), which adds
   `; fork: could not tell` there (`plugin/crew/hooks/scripts/review_ledger.py:381`).
@@ -1372,11 +1372,11 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `parse` applies it at `plugin/crew/hooks/scripts/review_verdict.py:124`.
   The prompt quotes `review_verdict.READ_FORM`
   (`plugin/crew/hooks/scripts/review_verdict.py:70`) in `_bundle_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:86`) and on the webtest
-  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:277`), and
+  (`plugin/crew/hooks/scripts/review_prompt.py:93`) and on the webtest
+  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:284`), and
   `review_run.finish` hands `parse` the manifest `path`s
-  (`plugin/crew/hooks/scripts/review_run.py:350`) and the overflow file's
-  scratch path (`plugin/crew/hooks/scripts/review_run.py:352`). `parse` and
+  (`plugin/crew/hooks/scripts/review_run.py:370`) and the overflow file's
+  scratch path (`plugin/crew/hooks/scripts/review_run.py:372`). `parse` and
   `codex_final_message` split reviewer output on `\n` only, never
   `str.splitlines()`, whose U+2028 break cut a Codex event mid-JSON
   (`plugin/crew/hooks/scripts/review_verdict.py:94`,
@@ -2965,3 +2965,5 @@ import block lost one line; no note cites that file by line. Re-anchor only; not
 **Re-anchored `5053f6b7` -> `e2b9371d` on 2026-09-30 (T-0100 merges main `a61a6f38`, T-0088 landed as crew 1.0.69; crew 1.0.70 re-set).** `cec11ed5` merges origin/main `a61a6f38` (#263-#267 and T-0088's landing, crew 1.0.62-1.0.69) into `T-0100-build`; `4ba3b166` names 1.0.70 in T-0100's `CHANGELOG.md` entry and re-measures `plugin/crew/BUDGETS.md:11` in place; `e2b9371d` sets crew 1.0.70, the last plugin/crew commit (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`, in place). No conflict in this map (main changed none of the six maps T-0100 anchors after `8ab733d7`). 113 citations moved and were re-pointed; 17 moved history entries were left. Hand edits: the `CHANGELOG.md` "117 -> 119" chain gains its current line `:1228` at its head; `crew_config.py`'s config read is `:1264` and now goes through `crew_common.repo_config_file` (`plugin/crew/hooks/scripts/crew_common.py:175-177`, T-0088: the main checkout's `.crew/` in a linked worktree with none of its own), and `crew_route.settings`' `crew.json` read `:322-325` likewise; `.crew/verify.json` rule 32 (`:332-339`, unchanged) is no longer the last rule (main's `:340-346`, `:347-354`, `:355-360` follow); the version sentence reads 1.0.70. Changed in place, no line moved: `.claude-plugin/marketplace.json:217-218` (description's skill count 29 -> 30, version) and `plugin/crew/.claude-plugin/plugin.json:3`; `plugin/crew/tests/sabotage.py`'s appended line is `:3057` in a `MUTATIONS +=` statement now `:3054-3059` (main added `LIMIT_WORKTREE_MUTATIONS` and `QA_AUDIT_MUTATIONS`). Every body citation outside provenance notes (`path:N`, and a bare `:N` taken as the last path named in its paragraph) into a file changed `5053f6b7..e2b9371d` was mapped with a `difflib` line diff (`/root/crew-tmp/t-0100/remap5.py`, machine-local); a citation followed by `at`/`on`/`before`/`until`/`since`/`after` or preceded by `was`/`were` is history and was left as written. A cited line whose text did not change was not re-read. Nothing else was executed for this note.
 
 **Re-anchored `e2b9371d` -> `e4421926` on 2026-09-30 (T-0100 merges main `6813749b`, T-0097 landed as crew 1.0.70; crew 1.0.71 re-set).** `2ea5cfe6` merges origin/main `6813749b` (T-0097 landed as crew 1.0.70: the `.ps1` hook scripts' python probe, `plugin/crew/tests/sabotage_scope.py`, `plugin/crew/tests/test_ps1_python_probe.py`); its two conflicts (`sabotage_scope.py`, `CHANGELOG.md`) kept both sides. `a1000e24` names 1.0.71 in T-0100's `CHANGELOG.md` entry; `e4421926` sets crew 1.0.71 (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`, in place). Body citations into files changed `e2b9371d..e4421926` were mapped the same way as the note above (`/root/crew-tmp/t-0100/remap5.py`), history left as written. One moved and was re-pointed: `plugin/crew/hooks/scripts/handoff-write.ps1:327-328` -> `:330-331` (T-0097's probe lines above it). The `CHANGELOG.md` "117 -> 119" chain gains `:1242` at its head; the version sentence reads 1.0.71. Nothing else was executed for this note.
+
+**Merged `e4421926` + `5c9a9db2` -> `dd87af57` on 2026-09-30 (T-0100 merges main `301e478a`, T-0085 landed as crew 1.0.75; crew 1.0.76 re-set).** `58487cf3` merges origin/main `301e478a` (T-0085 landed as crew 1.0.75 at `5c9a9db2`, then #276 and #277) into `T-0100-build`; its code conflicts were `review_prompt.py`'s imports and `test_review_prompt.py` (both sides kept). In this map the anchor and provenance hunks kept both sides' notes (main's first) and each content hunk was combined by hand. every body citation outside provenance notes was traced line by line to the side whose copy of this map carries that line (T-0100's at `52c7e505`, main's at `301e478a`, cited against `5c9a9db2`) and mapped from that side's commit to `dd87af57` through a `difflib` line diff (`/root/crew-tmp/t-0100/remap7.py`, machine-local); a citation followed by `at`/`on`/`before`/`until`/`since`/`after` or preceded by `was`/`were` is history and was left as written. `dd87af57` sets crew 1.0.76, the last plugin/crew commit (version lines in place). 9 citations moved and were re-pointed (among them `review_prompt.py`'s T-0100 lines, now below T-0085's `crew_standards` import and checklist, and `review_run.py:370`/`:372`). Combined by hand: the version sentence (1.0.76, both histories), the `crew_route` clause on main's numbers, and the `.crew/verify.json` rule list (`:332-339`, `:340-346`, `:347-354`, `:355-360`, T-0085's `:361-373` the last, each re-read at `dd87af57`). Nothing else was executed for this note.

@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@e2b9371d on 2026-09-30. Verify before trusting.
+%% Generated from useful-claude-add-ons@dd87af57 on 2026-09-30. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -257,6 +257,12 @@
 %% in place, exit 5 added to its status comment; :481, :511 hold). NOT redrawn: main's crew
 %% 1.0.65 review preflight (no round reserved on a tree the verify gate has not passed, exit 5)
 %% and T-0088's Codex probe/limit fallback; no node or edge changed.
+%% Merged e2b9371d + 5c9a9db2 -> dd87af57 (T-0100 merges main 301e478a, T-0085 landed as crew 1.0.75;
+%% T-0100 re-set to crew 1.0.76): both sides' notes kept, main's first. The plan, implement and review
+%% nodes are main's T-0085 redraw (standards self-check, preflight pf0), their citations mapped from
+%% 5c9a9db2 by a difflib line diff and none moved (T-0100 changed no line they cite); the done nodes
+%% dn5/dn4 carry T-0100's done.md lines (:49-60, :62-73, check 3's merged-main lines above them),
+%% mapped from 52c7e505, and hold. No node or edge changed beyond main's redraw.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}

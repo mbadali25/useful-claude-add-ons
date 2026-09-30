@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@e2b9371d on 2026-09-30. Verify before trusting.
+%% Generated from useful-claude-add-ons@dd87af57 on 2026-09-30. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_config_files.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
@@ -456,6 +456,11 @@
 %% (125). NOT redrawn: T-0088 makes crew_config/crew_route read .crew/ through
 %% crew_common.repo_config_file (the main checkout's in a linked worktree with none of its own);
 %% no node or edge changed.
+%% Merged e2b9371d + main's copy -> dd87af57 (T-0100 merges main 301e478a, T-0085 landed as crew 1.0.75;
+%% T-0100 re-set to crew 1.0.76): the header and provenance hunks kept both sides' notes (main's first).
+%% Every body line is T-0100's or common to both copies; each citation was mapped by a difflib line
+%% diff from 52c7e505 to dd87af57 (diag-map.py and bare-map.py, machine-local) and none moved. Of the
+%% Anchors paths only CLAUDE.md changed (#276), which no node cites by line. No node or edge changed.
 flowchart TB
 
     subgraph Sources["Three sources, lowest precedence first"]
