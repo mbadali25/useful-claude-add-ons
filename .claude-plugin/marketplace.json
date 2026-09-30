@@ -113,7 +113,7 @@
       "name": "mailgun",
       "source": "./skills/mailgun",
       "description": "Operate a Mailgun account through its API - send and receive email, read events, delivery reports and stats, and configure domains, routes, webhooks, templates, suppressions and lists.",
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "name": "mermaid-svg-bitbucket",

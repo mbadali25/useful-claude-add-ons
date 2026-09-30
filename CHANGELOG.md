@@ -13,6 +13,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   and is registered in `marketplace.json`, both catalog tables,
   `INSTALLATION.md` and both install scripts. Skill content unchanged; the
   marketplace goes from 34 to 35 skills.
+  Then `1.0.0 -> 1.0.1`: a lint-only pass on `scripts/mg.py` (split imports,
+  `encoding="utf-8"`, `with` blocks, `rsplit(maxsplit=1)`, one wrapped line)
+  so the required pylint and ruff jobs pass; no behaviour change intended.
 
 - **`crew` 1.0.85: the Kimi Code CLI is a crew provider (T-0028, the feature
   half). BEHAVIOUR CHANGE: the default `qa.order` now lists Kimi second -
