@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@6375524b
-verified: 2026-09-28
+anchor: useful-claude-add-ons@f5d0f1b1
+verified: 2026-09-30
 
 ## Re-derive provenance
 
@@ -322,7 +322,7 @@ listing the directory.
   `.crew/config.json` (machine-local, gitignored) is absent from this fresh
   worktree, so its `handoffPath` value could not be re-read here; the
   fallback default is confirmed instead, directly in code:
-  `plugin/crew/hooks/scripts/crew_autocycle.py:180` returns
+  `plugin/crew/hooks/scripts/crew_autocycle.py:182` returns
   `".work/HANDOFF.md"` when no config value is set. `docs/HANDOFF.md` is
   human-authored; the two files remain unrelated despite the shared
   basename.
@@ -349,7 +349,7 @@ listing the directory.
   `:273`, `read_diagrams` at `:472`, the `sha[:7] == head[:7]` comparisons at
   `:429` and `:512`, and the `_diagram_paths` call site inside `read_diagrams`
   at `:518` (was `:522`). Re-exported through
-  `plugin/crew/hooks/scripts/crew_state.py:132`/`:136`/`:139`/`:142`
+  `plugin/crew/hooks/scripts/crew_state.py:133`/`:137`/`:140`/`:143`
   (`_ANCHOR_RE`, `_DIAGRAM_ANCHOR_RE`, `_NOT_SUBSYSTEMS`, `_diagram_paths`).
   A diagram with no anchor header, or one whose anchor is old AND whose
   `%% Anchors:` paths have moved, still counts as `behind`; unknown still
@@ -1311,3 +1311,7 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 ## Re-anchor provenance - `bbd9a66d` + `f79e9f58` -> `6375524b`, 2026-09-29 (T-0094 merges `8ab733d7`; review round 2's successor)
 
 `f050cd47` merges origin/main `8ab733d7` (T-0010 landed as crew 1.0.61, its code maps anchored `bbd9a66d`) into T-0094-build at `ca5b1f35` (T-0094's side anchored `f79e9f58`, plus review round 2's FIX 1 `da1532d6` and FIX 2 `ca5b1f35`). The artifact conflicts were anchor, version, provenance and cited-line text only: both sides' provenance kept, main's first; INDEX history columns joined; body hunks resolved to main's lines except T-0094's own refresh-admission paragraph and refresh-check entry point. After it, `157237c2` splits `.crew/verify.json` rule 25 (the admission suite is rule 32 at `:342-349`, rule 25 `:269-287`, every later rule moves by the merged and split lengths), restates the sabotage counts in `plugin/crew/tests/sabotage_refresh.py`, and edits `plugin/crew/README.md` and `docs/guides/crew/src/daily-workflow-scope.md` in place; `ef5b4c89` re-measures `plugin/crew/BUDGETS.md` (19,500 lines across 128 files); `fc348c89` sets crew 1.0.62; `6375524b` rebuilds the daily-workflow guide. `git diff --name-only bbd9a66d 6375524b`, refresh artifacts aside, is T-0094's files only: `.claude-plugin/marketplace.json`, `.crew/verify.json`, `CHANGELOG.md`, the daily-workflow guide and its source, `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/BUDGETS.md`, `plugin/crew/README.md`, `commands/done.md`, `commands/implement.md`, `completion_audit.py`, `crew_refresh_check.py`, `scope_guard.py` and T-0094's five test files. Every body `path:N` citation was traced to the side whose copy of this note carries its line (`8ab733d7` or `ca5b1f35`) and mapped to HEAD with a `difflib` line diff (`/root/crew-tmp/t-0094/cite_map_merge.py`, machine-local); each that did not map to itself was read with `sed -n` / `grep -n`. The script takes a bare `:N` as the last path named on its line, so some flags were that misattribution and hold; a history position ("before", "at <sha>", "since ...") was left as written. No body citation moved (the flags were bare `:N` misattributions); the daily-workflow guide was rebuilt from its merged source with `docs/guides/crew/src/build.py --guide daily-workflow` (LibreOffice 26.2.5.2, not Word). Nothing else was executed for this note.
+
+## Re-anchor provenance - `6375524b` -> `f5d0f1b1`, 2026-09-30 (T-0094 merges `a61a6f38`, crew 1.0.70)
+
+`0cd952b2` merges origin/main `a61a6f38` (T-0088 landed as crew 1.0.69, after #263-#267: crew 1.0.62-1.0.68, the review gate `review_gate.py`, the `crew-qa-standards` skill, parallel CI and `CLAUDE.md`'s evidence moved to `docs/claude-md-evidence.md`) into T-0094-build at `d331c192`. Its conflicts were the version lines, `CHANGELOG.md` (both entries kept, T-0094's first), `.crew/verify.json` (T-0094's rule 32 kept, main's three new rules after it as 33-35), `crew_refresh_check.py`'s imports (both kept) and `plugin/crew/BUDGETS.md` (re-measured, 19,921 lines across 132 files); no code map, diagram or rule file conflicted (main's maps were still at `bbd9a66d`, but for `obsidian-vault.md`). `f5d0f1b1` sets crew 1.0.70, one past main's 1.0.69. Per-path: `git diff --name-only 6375524b f5d0f1b1 -- <the 73 tracked paths this note cites>` returns `.claude-plugin/marketplace.json`, `.crew/verify.json`, `CHANGELOG.md`, `CLAUDE.md`, `INSTALLATION.md`, `README.md`, `docs/guides/crew/src/troubleshooting.md`, `plugin/PLUGINS.md`, `plugin/README.md`, `plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/BUDGETS.md`, `plugin/crew/CONFIG.md`, `plugin/crew/README.md`, `plugin/crew/commands/review.md`, `plugin/crew/hooks/scripts/crew_autocycle.py`, `plugin/crew/hooks/scripts/crew_autopilot.py`, `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_context.py`, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `plugin/crew/hooks/scripts/crew_state.py`, `plugin/crew/hooks/scripts/crew_ticket.py`, `plugin/crew/tests/sabotage.py`, `plugin/crew/tests/sabotage_autopilot.py`. Citations were re-mapped by a `difflib` line diff from each cited file's copy at the old anchor to `f5d0f1b1` (`/root/crew-tmp/t-0094/cite_apply2.py`, `cite_ident.py`, `cite_explicit.py`, machine-local): an explicit `path:N`, and a bare `:N` whose file is the one named before it in the paragraph, or the one whose old line carries the identifier beside the citation; every mapped line is text-identical at both ends. History positions ("at <sha>", "before", "on <branch>", "it was") and the provenance sections were left as written; a bare `:N` the scripts attributed to the wrong file was found by that identifier check and put back. Main restructured `CLAUDE.md` (150 lines; the Lessons evidence moved to the new `docs/claude-md-evidence.md`) and added `.claude/skills/steward/SKILL.md`; neither is described by this note beyond the citations it already carried, and the `CLAUDE.md:147` lines dated `adf8d1dd` are left as written. No doc under `docs/` other than the new evidence file and the crew guide sources changed. Nothing was executed for this note.

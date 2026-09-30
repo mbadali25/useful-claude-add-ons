@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@6375524b on 2026-09-29. Verify before trusting.
+%% Generated from useful-claude-add-ons@f5d0f1b1 on 2026-09-30. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -298,3 +298,9 @@ flowchart TB
 %% lines in _rule_verdict (an unreadable rule is could-not-tell), cited by name only here, and
 %% crew_ticket.py is main's (approval_digest :562, status() :589, approve :723, :742-744 hold).
 %% No node or edge changed.
+%% Re-anchored 6375524b -> f5d0f1b1 (T-0094 merges main a61a6f38, T-0088 landed as crew 1.0.69; crew
+%% 1.0.70): of the Anchors paths review.md changed in place only (eight lines, line count unchanged:
+%% the Codex probe row, exit 5 "gate red" beside REVIEW_STATUS at :440, the empty-ROUND line, the
+%% Codex-limit metrics wording), crew_refresh_check.py gained one import line (cited by name only
+%% here), crew_ticket.py and crew_tracker.py moved by main's config-resolver lines (not cited by line
+%% here). Every node cites a command file, none of which moved. No node or edge changed.
