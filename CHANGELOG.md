@@ -50,7 +50,46 @@ All notable changes to this repository are documented here. Format follows [Keep
   The shell and PowerShell readers (`verify-gate.sh`, `_common.sh`,
   `notify.sh`, the handoff scripts, `promote-gate.ps1`, `scope-guard.ps1`,
   `cloud-guard.ps1`, `auto-clear.ps1`) are not routed yet.
-- Bumped `1.0.65 -> 1.0.68` (1.0.52 on its branch; re-set to 1.0.53 after merging main's 1.0.52, T-0076, to 1.0.55 after merging main's 1.0.54, T-0092, to 1.0.56 for its review round 1 fixes, to 1.0.60 at landing after merging main's 1.0.59, T-0075, and to 1.0.61 for three landing-branch changes: the six T-0075 own-path sites allowlisted in `test_worktree_config.py` (owner decision 2026-09-29), ruff's mechanical fixes on this ticket's own files (I001, RUF100, ISC004) and a file-level `# pylint: disable=too-many-lines` in `crew_config.py`, 3417 lines against the 3400 limit (owner decision 2026-09-29, "Disable at land + split ticket"; the split is a follow-up); to 1.0.65 after merging main's 1.0.64, to 1.0.67 after merging main's 1.0.65, skipping 1.0.66, which #267 holds, and to 1.0.68 for the `review_gate.py` allowlist entry and its lane test; main's 1.0.55-1.0.59 are T-0075's, 1.0.60-1.0.61 T-0010's (#261), 1.0.62-1.0.64 #263's and 1.0.65 #264's, not this entry's). The "since 1.0.61" and "1.0.59 or earlier" wording in `CONFIG.md`, the crew README, `commands/config.md`, `crew_common.py` and the troubleshooting guide now reads 1.0.68 and 1.0.67: every release before this one lacks T-0088.
+- Bumped `1.0.67 -> 1.0.68` (1.0.52 on its branch; re-set to 1.0.53 after merging main's 1.0.52, T-0076, to 1.0.55 after merging main's 1.0.54, T-0092, to 1.0.56 for its review round 1 fixes, to 1.0.60 at landing after merging main's 1.0.59, T-0075, and to 1.0.61 for three landing-branch changes: the six T-0075 own-path sites allowlisted in `test_worktree_config.py` (owner decision 2026-09-29), ruff's mechanical fixes on this ticket's own files (I001, RUF100, ISC004) and a file-level `# pylint: disable=too-many-lines` in `crew_config.py`, 3417 lines against the 3400 limit (owner decision 2026-09-29, "Disable at land + split ticket"; the split is a follow-up); to 1.0.65 after merging main's 1.0.64, to 1.0.67 after merging main's 1.0.65, and to 1.0.68 for the `review_gate.py` allowlist entry and its lane test, which stays above main's 1.0.67 (#267, merged first); main's 1.0.55-1.0.59 are T-0075's, 1.0.60-1.0.61 T-0010's (#261), 1.0.62-1.0.64 #263's, 1.0.65 #264's and 1.0.67 #267's, not this entry's). The "since 1.0.61" and "1.0.59 or earlier" wording in `CONFIG.md`, the crew README, `commands/config.md`, `crew_common.py` and the troubleshooting guide now reads 1.0.68 and 1.0.67: every release before this one lacks T-0088.
+
+### Added — `crew` 1.0.67: `crew-qa-standards` — harness and QA-review standards, and an audit that checks them
+
+- **What.** A new bundled skill (30 now). `references/harness.md` (H1-H11) and
+  `references/review.md` (R1-R12) state each rule once, with the measurement
+  that earned it in #263-#266 and how to check and apply it per stack (Python,
+  PHP, .NET, Java). `references/steward-template.md` gives a repo its PR-loop
+  skill. H8 carries the cloud setup-script lines that install the gate's tools (pwsh,
+  pytest, pytest-xdist, pinned pylint and Ruff); H10 says a version bump rides the commit
+  that changes the content; R12 is the PR report format (Summary, Measured with ref and
+  machine, Verification, Not verified).
+- **Audit.** `scripts/qa_audit.py` is report-only and stdlib-only. Each audited
+  rule (H2-H7, R9, R11) comes back PASS, GAP, N/A or **UNKNOWN**. A pytest
+  behind a wrapper it cannot follow, or a check that raised, is UNKNOWN, never
+  PASS. `--strict` exits 1 on GAP or UNKNOWN, and `--json` is available.
+- **Wired in.** `crew-setup` Phase 5 runs the audit, and "Done when" now
+  requires every GAP fixed or recorded in `.crew/STATUS.md`.
+  `crew-verification`'s cost discipline points at H2-H5.
+- **Found by its own first run here.** CI's Windows default-set step ran the
+  `wallclock` tests under `-n auto`. It now splits them out like the Linux job.
+  Two false positives from that first run were fixed and pinned by tests:
+  - `python -m pytest` read as a `-m pytest` marker selection.
+  - Small serial suites flagged as H2 gaps. Measured, 137 tests took 0.57s
+    serially and 0.9s at `-n 4`, so under 200 test functions serial is correct.
+- **Tests.** `test_qa_audit.py` (32): must-GAP and must-PASS per check, plus
+  N/A and UNKNOWN cases. **Sabotage:** five entries in `sabotage_qa.py`,
+  registered in `sabotage.py`, all RED through its apply/run/restore.
+- **Counts.** The skill count went from 29 to 30 in the six places
+  `check-marketplace.py` named. `BUDGETS.md`'s Markdown total was
+  re-measured (19,786 lines, 132 files).
+- **Not audited.** H1, H8-H11, R1-R8 and R10 need a reader. Other stacks' tools
+  are documented, not detected.
+- **Test race fixed (H4/H11).** `test_auto_cycle.py`'s delay test polled for its
+  shim's log file to exist, but `>>` creates the file before `cut` writes, and
+  under `-n auto` CI read it in that gap (`assert '' == '1'`, `test (3.13)`).
+  It now waits for content. Reproduced first by widening the gap to 0.3s (4 of
+  12 cases red), then 12/12 green with the fix.
+- Bumped `1.0.65 -> 1.0.67` (1.0.66 on its branch; 1.0.67 for the race fix,
+  a second `plugin/crew/` commit after 1.0.66 was set). #262 holds 1.0.68.
 
 ### Changed — `crew` 1.0.65: gate first — no review round on a tree the verify gate has not passed
 
