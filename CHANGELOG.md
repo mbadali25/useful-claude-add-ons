@@ -4,6 +4,18 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.81: sabotage entries for the python-free bin fixture's dedupe (L-0531)
+
+- Two mutations of `plugin/crew/tests/crew_fixtures.py::link_path_dirs`
+  (L-0529), carried in `sabotage_qa.py`'s tuple because `sabotage.py` is at
+  max-module-lines: the realpath skip removed goes RED on
+  `test_a_dir_already_linked_through_an_alias_is_not_listed_again`, and
+  `lexists` turned back into `exists` goes RED on
+  `test_a_dangling_entry_in_the_first_dir_still_shadows_the_same_name_later`.
+  Split from L-0529 because `sabotage*.py` is review/gate harness and lands
+  in a tooling-only PR (`scripts/check-tooling-pr.py`).
+- Bumped `crew` `1.0.80 -> 1.0.81`.
+
 ### Fixed — `crew` 1.0.80 and `obsidian-vault` 0.4.15: the python-free bin fixtures tolerate a name two PATH dirs share (L-0529)
 
 - The first self-hosted CI run (36735895881, Ubuntu 26.04) failed 42 tests
