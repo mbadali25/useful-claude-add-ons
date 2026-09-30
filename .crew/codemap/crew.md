@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@5c9a9db2
+anchor: useful-claude-add-ons@e8482046
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 36 commands, 31 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.75 (T-0085's landing: 1.0.70 at its merge of main's 1.0.69 at `a61a6f38`, 1.0.71 after one landing-branch sabotage anchor commit, 1.0.72 after rewrapping `commands/review.md` to its line allowance, 1.0.73 at its catch-up merge of main's 1.0.70 at `6813749b` (#268, T-0097), 1.0.74 for the Windows fail-open fix in `gate_applies` at `9b6b0da7`, 1.0.75 for re-targeting the sabotage entry that fix made vacuous; whose 1.0.62-1.0.69 are #263-#267 and T-0088; before that 1.0.61, T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`; T-0085's build branch declares main's version and carries no bump of its own until land, `.crew/standards.md` REPO-03), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.76 (T-0028's re-set `e8482046`, one past main's 1.0.75 after merging `301e478a` and `9af34e57`; 1.0.75 is T-0085's landing: 1.0.70 at its merge of main's 1.0.69 at `a61a6f38`, 1.0.71 after one landing-branch sabotage anchor commit, 1.0.72 after rewrapping `commands/review.md` to its line allowance, 1.0.73 at its catch-up merge of main's 1.0.70 at `6813749b` (#268, T-0097), 1.0.74 for the Windows fail-open fix in `gate_applies` at `9b6b0da7`, 1.0.75 for re-targeting the sabotage entry that fix made vacuous; whose 1.0.62-1.0.69 are #263-#267 and T-0088; before that 1.0.61, T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`; T-0085's build branch declares main's version and carries no bump of its own until land, `.crew/standards.md` REPO-03), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -153,7 +153,7 @@ draws it:
 — confirmed by reading both files in full, not merely their frontmatter.
 
 `review.md` dispatches `crew:reviewer` at this anchor
-(`plugin/crew/commands/review.md:447,461`), **not** the pre-1.0
+(`plugin/crew/commands/review.md:453,461`), **not** the pre-1.0
 `qa-reviewer` — `TODO.md`'s "T2 (lane D) deferred items" entry recorded this
 as an open item ("`review.md` still dispatches `qa-reviewer`; switch to
 `reviewer` in T4") but the code at `6c497a14` shows it already done; a
@@ -787,7 +787,7 @@ gives - the command as written and with line continuations joined (`_BASH_CONTIN
 Tests `plugin/crew/tests/test_crew_autopilot_policy.py` plus new cases in `test_crew_ticket.py`,
 `test_scope_guard.py`, `test_crew_autopilot_status.py` and `test_crew_route.py`; mutations
 `POLICY_MUTATIONS` in `sabotage_autopilot.py` (55 by `len()` on T-0010-solo's merge of `e878cc31`, `plugin/crew/tests/sabotage_autopilot.py:687`),
-registered at `plugin/crew/tests/sabotage.py:77` and `:3058`; `.crew/verify.json` rule 28
+registered at `plugin/crew/tests/sabotage.py:77` and `:3059`; `.crew/verify.json` rule 28
 (`:308-314`), which also maps `commands/autopilot.md` since review round 2.
 
 ## Plain-text lifecycle routing (T-0023, crew 1.0.43)
@@ -820,9 +820,9 @@ is emitted). No new hook and no new skill: `plugin/crew/hooks/hooks.json` is
 unchanged. Tests: `plugin/crew/tests/test_crew_route.py`,
 `plugin/crew/tests/test_crew_route_hook.py`; mutations
 `plugin/crew/tests/sabotage_route.py` (registered at
-`plugin/crew/tests/sabotage.py:79`); `.crew/verify.json` rule 31 (`:322-330`),
-then T-0024's approval rule 32 (`:332-339`) and T-0085's standards rule 33 (`:361-373`), the last; T-0010's policy rule 29 (`:307-313`)
-sits after T-0072's autopilot rule 28 (`:298-306`).
+`plugin/crew/tests/sabotage.py:79`); `.crew/verify.json` rule 31 (`:323-331`),
+then T-0024's approval rule 32 (`:333-340`) and T-0085's standards rule 33 (`:362-374`) and T-0028's Kimi rule (`:376-394`), the last; T-0010's policy rule 29 (`:308-314`)
+sits after T-0072's autopilot rule 28 (`:299-307`).
 
 **`deploy_allowed` (T-0072, crew 1.0.51).** DERIVED at `80326b1d` (T-0072's review-round-4 redesign, `35733d76`); lines re-read after its merge of T-0077 (`a4eb2f55`, `_rel` +6 at `:170`) and its review-round-5 fix (`0f488706`, `_resolve_root` +4), and again at `d7c7c75c` on T-0010-solo's merge of `6387ab49`, where T-0010's code above it moved every line (re-read by `grep -n` per symbol).
 `crew_autopilot.deploy_allowed` (`plugin/crew/hooks/scripts/crew_autopilot.py:930`) is the policy
@@ -1164,21 +1164,21 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   (`_write_replacing` `:329`); `stamp`'s docstring names the remaining window between that
   re-read and the replace as an accepted risk, not a GEN-03 binding.
 - **Gate.** `review_run.run` first calls main's `preflight`
-  (`plugin/crew/hooks/scripts/review_run.py:454`, at `:521`; #264): a CLEAN receipt covering the
+  (`plugin/crew/hooks/scripts/review_run.py:1048`, at `:1147`; #264): a CLEAN receipt covering the
   bundle answers CLEAN with no round and no self-check, and a verify gate that has not passed
   the tree is refused with exit 5 before the self-check is asked for (owner decision
   2026-09-30, "Preflight first"; `test_preflight_answers_before_the_selfcheck_is_asked_for`).
-  Only then does it call `standards_gate` (`:481`) at `:532`, before
-  `review_ledger.reserve` (`:536`), for every provider, unless `review_ledger.status` already
+  Only then does it call `standards_gate` (`:481`) at `:1158`, before
+  `review_ledger.reserve` (`:1162`), for every provider, unless `review_ledger.status` already
   reads `NEEDS_REPLAN` or no rounds left: then the budget refusal answers first and the
   self-check is not asked for (review round 3). `crew_standards.review_gate`
-  (`:663`) applies unless `gate_applies` (`:597`) proves there is no approval receipt: only
+  (`:1291`) applies unless `gate_applies` (`:1225`) proves there is no approval receipt: only
   an `lstat` `FileNotFoundError` whose nearest existing ancestor is a directory
-  (`_ancestor_problem` `:577`; Windows answers a lookup under a regular file with
+  (`_ancestor_problem` `:1205`; Windows answers a lookup under a regular file with
   `FileNotFoundError`, fixed at T-0085's land) is "absent" (a printed "not required" note); a corrupt
   receipt, a failed lookup or any other `OSError` (a non-directory or unreadable parent)
-  gates, with a "could not tell" note. It reads the manifest, and `_gate` (`:635`, behind
-  `gate_problems` `:629`) re-checks the record's completeness and compares the stamp's bundle and standards digest; on a pass the
+  gates, with a "could not tell" note. It reads the manifest, and `_gate` (`:1263`, behind
+  `gate_problems` `:1257`) re-checks the record's completeness and compares the stamp's bundle and standards digest; on a pass the
   note carries `std:<first 8 of the digest>` for the metrics row. Problems return
   `EXIT_USAGE` (`review_run.py:503`) unless `crew_incident.read_state` is active, which logs
   a `standards-selfcheck` skip (`:494`) and reserves.
@@ -1199,7 +1199,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `plugin/crew/tests/sabotage_standards.py` (`STANDARDS_MUTATIONS` `:48`; fourteen through
   review round 1, nineteen from round 2, nine from round 3, one at land: the preflight-order
   swap), appended in
-  `plugin/crew/tests/sabotage.py` at `:3061`; `.crew/verify.json`'s last rule runs them.
+  `plugin/crew/tests/sabotage.py` at `:3062`; `.crew/verify.json`'s standards rule (`:362-374`, the last but T-0028's Kimi rule) runs them.
   JUDGEMENT: the approval-receipt condition is
   the one way a ticket reaches review without the gate; it exists because the pre-existing
   review_run tests run tickets with no receipt, and a ticket without one cannot pass
@@ -1226,22 +1226,22 @@ citations named `crew_config.py` where the lines are `crew_state.py`'s, correcte
   The read-only agent file is written by `write_agent_file` (`:113`) for the
   probe and the review alike; `kimi_env` (`:104`) drops the retry and
   `KIMI_MODEL_*` overrides.
-- **The review launch.** `review_run.run` (`plugin/crew/hooks/scripts/review_run.py:1056`)
+- **The review launch.** `review_run.run` (`plugin/crew/hooks/scripts/review_run.py:1103`)
   refuses with exit 4 before any probe when the ledger's status shows no round
-  left (`:1073`), fingerprints the tree, resolves `graph_out` (`:455`) once,
-  then runs `_probe_kimi` (`:932`) BEFORE `reserve`; a probe that changed the
-  tree, whatever it answered, is `EXIT_PROBE_CHANGED` = 8 (`:144`; 5 before the merge of
+  left (`:1120`), fingerprints the tree, resolves `graph_out` (`:476`) once,
+  then runs `_probe_kimi` (`:953`) BEFORE `reserve`; a probe that changed the
+  tree, whatever it answered, is `EXIT_PROBE_CHANGED` = 8 (`:165`; 5 before the merge of
   `a61a6f38`, whose `EXIT_UNVERIFIED` is 5). The probe also runs before main's #264
-  `preflight` (`:1027`: a CLEAN receipt, then the verify gate), as Codex's `--probe`
-  runs before its round; `graph_out` reads `graph.out` through
+  `preflight` (`:1048`: a CLEAN receipt, then the verify gate) and T-0085's
+  `standards_gate` (`:1077`, merged at `7939cc46`), as Codex's `--probe` runs before its round; `graph_out` reads `graph.out` through
   `crew_common.repo_config_dir`, so a lane with no config of its own uses the main
   checkout's, and `unknown` sets nothing aside.
-  `_run_kimi` (`:961`) launches, stops survivors (`stop_survivors`, `:748`),
-  and compares fingerprints through `reviewer_changes` (`:539`).
-- **The fingerprint.** `tree_fingerprint` (`:387`) keys its own entries with
-  NUL-prefixed `HEAD_KEY`/`INDEX_KEY` (`:199`); `_path_digest` (`:303`)
+  `_run_kimi` (`:982`) launches, stops survivors (`stop_survivors`, `:769`),
+  and compares fingerprints through `reviewer_changes` (`:560`).
+- **The fingerprint.** `tree_fingerprint` (`:408`) keys its own entries with
+  NUL-prefixed `HEAD_KEY`/`INDEX_KEY` (`:220`); `_path_digest` (`:324`)
   records content and mode bits, a special file without opening it, and a
-  symlink through `_link_digest` (`:278`).
+  symlink through `_link_digest` (`:299`).
 - **The parse.** `review_verdict.kimi_final_message`
   (`plugin/crew/hooks/scripts/review_verdict.py:230`); a non-string text part
   is malformed (`_kimi_text`, `:197`).
@@ -1249,8 +1249,8 @@ citations named `crew_config.py` where the lines are `crew_state.py`'s, correcte
   `plugin/crew/tests/test_review_run_kimi.py`, `plugin/crew/tests/test_kimi_docs.py`
   and the Kimi block of `plugin/crew/tests/test_review_verdict.py`; mutations in
   `plugin/crew/tests/sabotage_kimi.py`, registered at
-  `plugin/crew/tests/sabotage.py:84` and appended at `:3061`; the
-  `.crew/verify.json` rule, rule 36 (`.crew/verify.json:363-381`), appended last.
+  `plugin/crew/tests/sabotage.py:85` and appended at `:3063`; the
+  `.crew/verify.json` rule, rule 36 (`.crew/verify.json:376-394`), appended last.
 
 ## Entry points
 
@@ -1375,11 +1375,11 @@ citations named `crew_config.py` where the lines are `crew_state.py`'s, correcte
   `parse` applies it at `plugin/crew/hooks/scripts/review_verdict.py:125`.
   The prompt quotes `review_verdict.READ_FORM`
   (`plugin/crew/hooks/scripts/review_verdict.py:71`) in `_bundle_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:85`) and on the webtest
-  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:243`), and
+  (`plugin/crew/hooks/scripts/review_prompt.py:92`) and on the webtest
+  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:250`), and
   `review_run.finish` hands `parse` the manifest `path`s
-  (`plugin/crew/hooks/scripts/review_run.py:865`) and the overflow file's
-  scratch path (`plugin/crew/hooks/scripts/review_run.py:867`). `parse`,
+  (`plugin/crew/hooks/scripts/review_run.py:886`) and the overflow file's
+  scratch path (`plugin/crew/hooks/scripts/review_run.py:888`). `parse`,
   `codex_final_message` and, since T-0028's merge of main, `kimi_final_message`
   split reviewer output on `\n` only, never `str.splitlines()`, whose U+2028
   break cut a Codex event mid-JSON
@@ -3010,3 +3010,23 @@ Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite
 
 `ab7ba9fc` then re-times the Kimi rule in `.crew/verify.json` (`"seconds"` and `"why"`
 only, lines 378 and 381, 52 -> 59 s), which moves no line and no claim here; anchored there.
+
+## Re-anchor provenance - `9831ba47` + `9af34e57` -> `e8482046`, 2026-09-30 (T-0028 merges main `301e478a` and `9af34e57`, crew 1.0.76)
+
+`7939cc46` merges origin/main `301e478a` (crew 1.0.75: T-0085's standards self-check #269, T-0097
+#268, #276, #277) into `T-0028-kimi` at `9831ba47`, and `a88111e2` merges `9af34e57` (#279, CI
+triggers; crew stays 1.0.75); both mechanical. `e8482046` re-sets crew 1.0.76, the last
+`plugin/crew/` commit (the approved plan's Step 7; `.crew/standards.md` REPO-03, landed with
+T-0085, would leave the build branch at main's version - noted for the owner, not decided here).
+In this note's conflicting hunks, a side that changed only numbers yielded to the other, appended
+provenance keeps main's then T-0028's, and the rest took main's text. Every body citation into a
+file changed since was then mapped by a `difflib` line diff from the side whose copy of this note
+holds that exact line (`9831ba47` for T-0028's, `9af34e57` for main's; both when both hold it, and
+a disagreement is re-read), with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local); a
+bare `:N` goes to the last path named before it. Provenance and history citations were left as
+written. A cited line whose text changed was re-read and its claim corrected: the version is 1.0.76 (`.claude-plugin/marketplace.json:218`), T-0085's standards rule
+is `.crew/verify.json:362-374` and T-0028's Kimi rule the last at `:376-394`,
+`STANDARDS_MUTATIONS` and `KIMI_MUTATIONS` are appended at `plugin/crew/tests/sabotage.py:3062` and
+`:3063`, and a Kimi round is probed, preflighted, self-checked (`standards_gate`,
+`plugin/crew/hooks/scripts/review_run.py:1077`) and only then reserved.
+Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.

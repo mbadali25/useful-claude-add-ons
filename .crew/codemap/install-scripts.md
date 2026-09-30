@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@5c9a9db2
+anchor: useful-claude-add-ons@e8482046
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -1277,3 +1277,19 @@ Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite
 
 `ab7ba9fc` then re-times the Kimi rule in `.crew/verify.json` (`"seconds"` and `"why"`
 only, lines 378 and 381, 52 -> 59 s), which moves no line and no claim here; anchored there.
+
+## Re-anchor provenance - `9831ba47` + `9af34e57` -> `e8482046`, 2026-09-30 (T-0028 merges main `301e478a` and `9af34e57`, crew 1.0.76)
+
+`7939cc46` merges origin/main `301e478a` (crew 1.0.75: T-0085's standards self-check #269, T-0097
+#268, #276, #277) into `T-0028-kimi` at `9831ba47`, and `a88111e2` merges `9af34e57` (#279, CI
+triggers; crew stays 1.0.75); both mechanical. `e8482046` re-sets crew 1.0.76, the last
+`plugin/crew/` commit (the approved plan's Step 7; `.crew/standards.md` REPO-03, landed with
+T-0085, would leave the build branch at main's version - noted for the owner, not decided here).
+In this note's conflicting hunks, a side that changed only numbers yielded to the other, appended
+provenance keeps main's then T-0028's, and the rest took main's text. Every body citation into a
+file changed since was then mapped by a `difflib` line diff from the side whose copy of this note
+holds that exact line (`9831ba47` for T-0028's, `9af34e57` for main's; both when both hold it, and
+a disagreement is re-read), with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local); a
+bare `:N` goes to the last path named before it. Provenance and history citations were left as
+written. A cited line whose text changed was re-read and its claim corrected; no cited line in this note changed text beyond that.
+Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.

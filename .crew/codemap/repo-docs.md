@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@5c9a9db2
+anchor: useful-claude-add-ons@e8482046
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -304,7 +304,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:2254` (on T-0085's landing merge of main `a61a6f38`; `:2222` on T-0085's merge of main `8ab733d7`; `:2217` on T-0085's merge of main `2693d0fa`; `:2093` on T-0085's branch at `8abf7ffe`; `:2204` on T-0010-solo's merge of `e878cc31`; `:2080` on T-0010-solo at `d7c7c75c`, `:2072` at `c817782f`, `:2069` at `89c9ee9a`, `:2058` at `50e67586`; `:2199` at `3648f59a`, T-0075's round-5 docs after its merge of `6387ab49`; `:2196` at `938e3b11`, T-0075's round-4 docs after its merge of `f54af3fa`; `:2187` at `3724731b`, T-0075 after its merge of `e6e10432`; `:2169` on T-0075's merge of `d2fbd408`; `:2075` at `d2fbd408`, `:1812` on T-0024's branch at `45345812`, `:2161` on T-0075's branch at `763eaeff`, `:2127` at `764f6018`, `:2067` at `67caa4b8`, `:2102` on T-0075's `f7163410`, `:2052` at `bebbb97f`, `:2079` on T-0075's `e95e5964`, `:2044` on T-0018's first landing merge at `fbc27b49`, `:2029` at `db14619c`, `:1959` on T-0018's branch at `e6b696fb`, `:1985` at T-0023's `a1acd9b7`, `:2047` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1976` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1826` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1789` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:2256` (on T-0085's landing merge of main `a61a6f38`; `:2222` on T-0085's merge of main `8ab733d7`; `:2217` on T-0085's merge of main `2693d0fa`; `:2093` on T-0085's branch at `8abf7ffe`; `:2204` on T-0010-solo's merge of `e878cc31`; `:2080` on T-0010-solo at `d7c7c75c`, `:2072` at `c817782f`, `:2069` at `89c9ee9a`, `:2058` at `50e67586`; `:2199` at `3648f59a`, T-0075's round-5 docs after its merge of `6387ab49`; `:2196` at `938e3b11`, T-0075's round-4 docs after its merge of `f54af3fa`; `:2187` at `3724731b`, T-0075 after its merge of `e6e10432`; `:2169` on T-0075's merge of `d2fbd408`; `:2075` at `d2fbd408`, `:1812` on T-0024's branch at `45345812`, `:2161` on T-0075's branch at `763eaeff`, `:2127` at `764f6018`, `:2067` at `67caa4b8`, `:2102` on T-0075's `f7163410`, `:2052` at `bebbb97f`, `:2079` on T-0075's `e95e5964`, `:2044` on T-0018's first landing merge at `fbc27b49`, `:2029` at `db14619c`, `:1959` on T-0018's branch at `e6b696fb`, `:1985` at T-0023's `a1acd9b7`, `:2047` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1976` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1826` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1789` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -1370,3 +1370,19 @@ Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite
 
 `ab7ba9fc` then re-times the Kimi rule in `.crew/verify.json` (`"seconds"` and `"why"`
 only, lines 378 and 381, 52 -> 59 s), which moves no line and no claim here; anchored there.
+
+## Re-anchor provenance - `9831ba47` + `9af34e57` -> `e8482046`, 2026-09-30 (T-0028 merges main `301e478a` and `9af34e57`, crew 1.0.76)
+
+`7939cc46` merges origin/main `301e478a` (crew 1.0.75: T-0085's standards self-check #269, T-0097
+#268, #276, #277) into `T-0028-kimi` at `9831ba47`, and `a88111e2` merges `9af34e57` (#279, CI
+triggers; crew stays 1.0.75); both mechanical. `e8482046` re-sets crew 1.0.76, the last
+`plugin/crew/` commit (the approved plan's Step 7; `.crew/standards.md` REPO-03, landed with
+T-0085, would leave the build branch at main's version - noted for the owner, not decided here).
+In this note's conflicting hunks, a side that changed only numbers yielded to the other, appended
+provenance keeps main's then T-0028's, and the rest took main's text. Every body citation into a
+file changed since was then mapped by a `difflib` line diff from the side whose copy of this note
+holds that exact line (`9831ba47` for T-0028's, `9af34e57` for main's; both when both hold it, and
+a disagreement is re-read), with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local); a
+bare `:N` goes to the last path named before it. Provenance and history citations were left as
+written. A cited line whose text changed was re-read and its claim corrected; no cited line in this note changed text beyond that.
+Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
