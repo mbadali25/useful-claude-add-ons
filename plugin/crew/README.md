@@ -934,7 +934,7 @@ Two things never go through this layering, on purpose:
 
 **In a linked git worktree.** `.crew/*` is gitignored, so a lane made with
 `git worktree add` starts with no `.crew/config.json` or `.crew/crew.json`. Since
-crew 1.0.67 (T-0088) such a worktree reads the **main checkout's** repo config,
+crew 1.0.68 (T-0088) such a worktree reads the **main checkout's** repo config,
 found through `git rev-parse --git-common-dir` (`crew_common.repo_config_dir`).
 A worktree with either file of its own reads only its own files: they win whole,
 even when partial, and are **never merged** with the main checkout's. When `.git`
@@ -947,8 +947,8 @@ writes the main checkout's file, and the heal path no longer creates a default
 config in an inheriting worktree, because that default would shadow the owner's
 (nor in one where git could not tell; it asks again next session).
 
-**A lane made before 1.0.67 still reads its own file.** Every SessionStart heal
-on crew 1.0.66 or earlier wrote a default `.crew/config.json` into a lane that
+**A lane made before 1.0.68 still reads its own file.** Every SessionStart heal
+on crew 1.0.67 or earlier wrote a default `.crew/config.json` into a lane that
 had none, and that file wins whole. `/crew:status` and `/crew:config --explain`
 say so (`... the main checkout's (<path>) is not read ...`); if the lane's file is
 a default nobody edited, delete it (and `.crew/crew.json`) to inherit.

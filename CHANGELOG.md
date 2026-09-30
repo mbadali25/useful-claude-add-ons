@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.67: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088)
+### Changed — `crew` 1.0.68: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088)
 
 - **`/crew:review` probes Codex with a real call.** `review_run.py --probe` makes
   one minimal Codex call, with the round's own model and effort, before any
@@ -36,7 +36,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   call no longer passes `--path-format`, which git before 2.31 echoed back as
   an extra line and read as `unknown`.
 - **Existing lanes do not inherit until their heal-written default is
-  deleted.** Every SessionStart on crew 1.0.66 or earlier wrote a default
+  deleted.** Every SessionStart on crew 1.0.67 or earlier wrote a default
   `.crew/config.json` into a lane worktree that had none, and that file is the
   lane's own config, which wins whole. `/crew:status` and `/crew:config
   --explain` now say so on a lane whose own config shadows the main
@@ -50,7 +50,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   The shell and PowerShell readers (`verify-gate.sh`, `_common.sh`,
   `notify.sh`, the handoff scripts, `promote-gate.ps1`, `scope-guard.ps1`,
   `cloud-guard.ps1`, `auto-clear.ps1`) are not routed yet.
-- Bumped `1.0.65 -> 1.0.67` (1.0.52 on its branch; re-set to 1.0.53 after merging main's 1.0.52, T-0076, to 1.0.55 after merging main's 1.0.54, T-0092, to 1.0.56 for its review round 1 fixes, to 1.0.60 at landing after merging main's 1.0.59, T-0075, and to 1.0.61 for three landing-branch changes: the six T-0075 own-path sites allowlisted in `test_worktree_config.py` (owner decision 2026-09-29), ruff's mechanical fixes on this ticket's own files (I001, RUF100, ISC004) and a file-level `# pylint: disable=too-many-lines` in `crew_config.py`, 3417 lines against the 3400 limit (owner decision 2026-09-29, "Disable at land + split ticket"; the split is a follow-up); to 1.0.65 after merging main's 1.0.64, and to 1.0.67 after merging main's 1.0.65, skipping 1.0.66, which #267 holds; main's 1.0.55-1.0.59 are T-0075's, 1.0.60-1.0.61 T-0010's (#261), 1.0.62-1.0.64 #263's and 1.0.65 #264's, not this entry's). The "since 1.0.61" and "1.0.59 or earlier" wording in `CONFIG.md`, the crew README, `commands/config.md`, `crew_common.py` and the troubleshooting guide now reads 1.0.67 and 1.0.66: every release before this one lacks T-0088.
+- Bumped `1.0.65 -> 1.0.68` (1.0.52 on its branch; re-set to 1.0.53 after merging main's 1.0.52, T-0076, to 1.0.55 after merging main's 1.0.54, T-0092, to 1.0.56 for its review round 1 fixes, to 1.0.60 at landing after merging main's 1.0.59, T-0075, and to 1.0.61 for three landing-branch changes: the six T-0075 own-path sites allowlisted in `test_worktree_config.py` (owner decision 2026-09-29), ruff's mechanical fixes on this ticket's own files (I001, RUF100, ISC004) and a file-level `# pylint: disable=too-many-lines` in `crew_config.py`, 3417 lines against the 3400 limit (owner decision 2026-09-29, "Disable at land + split ticket"; the split is a follow-up); to 1.0.65 after merging main's 1.0.64, to 1.0.67 after merging main's 1.0.65, skipping 1.0.66, which #267 holds, and to 1.0.68 for the `review_gate.py` allowlist entry and its lane test; main's 1.0.55-1.0.59 are T-0075's, 1.0.60-1.0.61 T-0010's (#261), 1.0.62-1.0.64 #263's and 1.0.65 #264's, not this entry's). The "since 1.0.61" and "1.0.59 or earlier" wording in `CONFIG.md`, the crew README, `commands/config.md`, `crew_common.py` and the troubleshooting guide now reads 1.0.68 and 1.0.67: every release before this one lacks T-0088.
 
 ### Changed — `crew` 1.0.65: gate first — no review round on a tree the verify gate has not passed
 
