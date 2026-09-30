@@ -142,26 +142,136 @@ function Write-CrewIncidentSkip([string]$Gate, [string]$Detail) {
 $incident = Test-CrewIncidentActive
 
 $cfg = $vm.environments.$envName
-$sha = (git rev-parse --short HEAD 2>$null)
 $problems = New-Object System.Collections.Generic.List[string]
+$sha = $null
 
-if (-not $sha) {
-  $why = "not a git repository - cannot establish what is being deployed."
+# One refusal path for the tree checks below: a recorded skip during an
+# incident, a block otherwise. Twin of block() in promote-gate.sh.
+function Stop-Promotion([string]$Why) {
+  $at = if ($script:sha) { $script:sha } else { "unknown-sha" }
   if ($incident) {
-    Write-CrewIncidentSkip "promote" "$envName at unknown-sha: $why"
+    Write-CrewIncidentSkip "promote" "$envName at ${at}: $Why"
     exit 0
   }
-  [Console]::Error.WriteLine("PROMOTION BLOCKED ($envName): $why")
+  [Console]::Error.WriteLine("PROMOTION BLOCKED ($envName): $Why")
   exit 2
 }
-if ((git status --porcelain 2>$null)) {
-  $why = "the working tree is dirty. You would be deploying $sha plus changes that are in no commit and no review."
-  if ($incident) {
-    Write-CrewIncidentSkip "promote" "$envName at ${sha}: $why"
-    exit 0
+
+# WHICH tree (T-0505). Twin of the block in promote-gate.sh, whose header
+# carries the full reasoning: the sha and the clean-tree check come from the
+# tree the deploy RUNS FROM - the payload `cwd` (else the project dir), moved
+# by a leading `cd`/`Set-Location` chain, named by any `git -C <dir>` - which
+# must be a worktree of the SAME repository. Policy and state (.crew/verify.json,
+# .work/PROMOTIONS.md, .crew/.approved-*, the rollback runbook, the incident
+# files, .crew/.deploy-in-flight) stay in the project dir: they are
+# per-checkout, gitignored state that a fresh worktree lacks and a throwaway
+# one can forge. The rules here are PowerShell's, because this flavour judges
+# PowerShell-tool commands; the branch between the twins is the tool.
+$projectTop = (git rev-parse --show-toplevel 2>$null)
+if (-not $projectTop) { Stop-Promotion "not a git repository - cannot establish what is being deployed." }
+
+function Resolve-Dir([string]$Base, [string]$Tok) {
+  $t = $Tok
+  if ($t -eq '~') { $t = $HOME }
+  elseif ($t.StartsWith('~/') -or $t.StartsWith('~\')) { $t = Join-Path $HOME $t.Substring(2) }
+  $candidate = if ([System.IO.Path]::IsPathRooted($t)) { $t } else { Join-Path $Base $t }
+  if (-not (Test-Path -LiteralPath $candidate -PathType Container)) { return $null }
+  return (Resolve-Path -LiteralPath $candidate).ProviderPath
+}
+# The common dir identifies the repository: every linked worktree shares it.
+function Get-CommonDir([string]$Dir) {
+  $c = (git -C $Dir rev-parse --git-common-dir 2>$null)
+  if (-not $c) { return $null }
+  $p = if ([System.IO.Path]::IsPathRooted($c)) { $c } else { Join-Path $Dir $c }
+  if (-not (Test-Path -LiteralPath $p)) { return $null }
+  return ((Resolve-Path -LiteralPath $p).ProviderPath).TrimEnd('\', '/')
+}
+
+$base = (Get-Location).ProviderPath
+if (-not [string]::IsNullOrWhiteSpace($d.cwd)) {
+  $base = Resolve-Dir $base "$($d.cwd)"
+  if (-not $base) { Stop-Promotion "the command runs from '$($d.cwd)', which does not exist, so it is not inside a git worktree - cannot establish what is being deployed." }
+}
+
+# A token: double-quoted, single-quoted, or a word; `)` ends a word so
+# `$(git -C dir rev-parse HEAD)` reads `dir`. `$` or a backtick in anything but
+# single quotes is expanded by PowerShell, so the gate cannot know it.
+$tokenRx = '(?:"([^"]*)"|''([^'']*)''|([^\s;&|()]+))'
+function Get-TokenValue($m, [int]$first) {
+  if ($m.Groups[$first + 1].Success) { return @($m.Groups[$first + 1].Value, $false) }
+  $v = if ($m.Groups[$first].Success) { $m.Groups[$first].Value } else { $m.Groups[$first + 2].Value }
+  return @($v, ($v.Contains('$') -or $v.Contains('`')))
+}
+$cdRx = [regex]('\G\s*(?:cd|chdir|sl|Set-Location|pushd|Push-Location)(?:\s+-(?:Literal)?Path)?\s+' + $tokenRx + '\s*(?:&&|;)')
+$pos = 0
+while ($true) {
+  $m = $cdRx.Match($cmd, $pos)
+  if (-not $m.Success) { break }
+  $val = Get-TokenValue $m 1
+  if ($val[1] -or $val[0] -eq '-') { Stop-Promotion "cannot tell which directory the deploy runs from: '$($val[0])' is expanded by the shell, and the gate will not guess what it names. Use a literal path." }
+  $next = Resolve-Dir $base $val[0]
+  if (-not $next) { Stop-Promotion "cannot tell which directory the deploy runs from: 'cd $($val[0])' does not resolve from '$base'." }
+  $base = $next
+  $pos = $m.Index + $m.Length
+}
+# A directory change AFTER the leading chain, or git pointed at a repository
+# by --git-dir/--work-tree/GIT_DIR: the deploy may read a tree the chain does
+# not name, so refuse rather than judge the wrong one.
+$mid = [regex]::Match($cmd.Substring($pos), '(?:^|[;&|(`]|\$\()\s*(?:cd|chdir|sl|Set-Location|pushd|Push-Location)\b', 'IgnoreCase')
+if ($mid.Success) {
+  Stop-Promotion "cannot tell which directory the deploy runs from: the command changes directory after it starts ('$($mid.Value.Trim())'). Put the cd first - 'cd <dir>; <deploy>' - so the gate judges the tree the deploy runs in."
+}
+$gitDir = [regex]::Match($cmd, '--git-dir\b|--work-tree\b|\bGIT_DIR\b|\bGIT_WORK_TREE\b')
+if ($gitDir.Success) {
+  Stop-Promotion "cannot tell which tree the deploy reads: '$($gitDir.Value)' points git at a repository by a route the gate does not follow. Use 'cd <dir>;' or 'git -C <dir>'."
+}
+$trees = New-Object System.Collections.Generic.List[string]
+$bare = $false
+$gitRx = [regex]('(?:^|(?<=[\s(;&|/`]))git\b((?:\s+-c\s+\S+)*)(\s+-C\s*' + $tokenRx + ')?')
+foreach ($m in $gitRx.Matches($cmd)) {
+  if (-not $m.Groups[2].Success) { $bare = $true; continue }
+  $val = Get-TokenValue $m 3
+  if ($val[1]) { Stop-Promotion "cannot tell which directory the deploy runs from: '$($val[0])' is expanded by the shell, and the gate will not guess what it names. Use a literal path." }
+  $dir = Resolve-Dir $base $val[0]
+  if (-not $dir) { Stop-Promotion "cannot tell which directory the deploy runs from: 'git -C $($val[0])' does not resolve from '$base'." }
+  $trees.Add($dir)
+}
+if ($trees.Count -eq 0 -or $bare) { $trees.Add($base) }
+
+$tree = $null
+foreach ($dir in $trees) {
+  $top = (git -C $dir rev-parse --show-toplevel 2>$null)
+  if (-not $top) { Stop-Promotion "the deploy runs from '$dir', which is not inside a git worktree - cannot establish what is being deployed." }
+  if (-not $tree) { $tree = $top }
+  elseif ($top -ne $tree) { Stop-Promotion "the deploy command names more than one tree ('$tree' and '$top'), so which sha is being deployed is ambiguous. Run it from one tree." }
+}
+
+if ((Get-CommonDir $tree) -ne (Get-CommonDir $projectTop)) {
+  Stop-Promotion "the deploy runs from '$tree', which is a worktree of a different repository than this project ('$projectTop'). Its sha has no PASS row, marker or map here."
+}
+
+$sha = (git -C $tree rev-parse --short HEAD 2>$null)
+$full = (git -C $tree rev-parse HEAD 2>$null)
+if (-not $sha) { Stop-Promotion "'$tree' has no commit at HEAD - cannot establish what is being deployed." }
+
+# The deploy map is read from the project dir, whose dirt no longer blocks a
+# worktree deploy. An uncommitted edit to it must not become policy.
+if ((git status --porcelain -- .crew/verify.json 2>$null)) {
+  Stop-Promotion ".crew/verify.json in the project dir ('$projectTop') has uncommitted edits. The deploy map is policy; commit the change (it is then reviewed like any other) or revert it."
+}
+
+if ((git -C $tree status --porcelain 2>$null)) {
+  Stop-Promotion "the tree this deploy runs from ('$tree') is dirty. You would be deploying $sha plus changes that are in no commit and no review. Commit or stash there first."
+}
+
+# A literal sha must be the tree's HEAD; a hex token naming no commit here is
+# not a sha and is left alone.
+foreach ($m in [regex]::Matches($cmd, '(?<![0-9A-Za-z])[0-9a-fA-F]{7,40}(?![0-9A-Za-z])')) {
+  $h = $m.Value
+  $resolved = (git -C $tree rev-parse -q --verify "$h^{commit}" 2>$null)
+  if ($resolved -and $resolved -ne $full) {
+    Stop-Promotion "the command names commit '$h', but the tree it runs from ('$tree') is at $sha. The gate checks the sha being deployed; run it from a tree at '$h', or drop the literal."
   }
-  [Console]::Error.WriteLine("PROMOTION BLOCKED ($envName): $why")
-  exit 2
 }
 
 # requires: an all-pass row for THIS sha
