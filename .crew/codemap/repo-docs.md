@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@14b52c91
+anchor: useful-claude-add-ons@0c3508e9
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -176,8 +176,8 @@ listing the directory.
 - **The self-stated skill/hook/agent counts are now internally consistent
   everywhere this note checked, for the first time across this note's
   history.** `README.md:46`/`:154` (`<!-- claim: skills-count -->`) states
-  **34** skills; `python3 scripts/check-marketplace.py` confirms `marketplace:
-  34 skills, 5 plugins / all checks passed`. `plugin/README.md:414`'s crew row
+  **35** skills since L-0561 registered `skills/mailgun` (34 before); `python3
+  scripts/check-marketplace.py` confirms `marketplace: 35 skills, 5 plugins / all checks passed`. `plugin/README.md:414`'s crew row
   (`<!-- claim: plugin-skills:crew -->`), `plugin/PLUGINS.md:17`, the
   `.claude-plugin/marketplace.json` `crew` description, and both install
   scripts' `PLUGIN_NAME` crew rows all read **4 agents, 36 commands, 29
@@ -1474,3 +1474,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `14bb59ef` -> `8bf710ed` on 2026-09-30 (L-0520 PR 1 review round 1 fixes).** `git diff --name-only 14bb59ef 8bf710ed` returns crew_train.py, done.md and README.md (edits in place), BUDGETS.md, two tests and the version files; path-qualified citations outside dated provenance were moved by a line diff (`/root/crew-tmp/l-0520/tools/l0520_remap.py`). No suite was executed for this note.
 
 **Re-anchored `8bf710ed` -> `14b52c91` on 2026-09-30 (L-0520 PR 1 merges main bd4b2f30 (T-0028 #288, crew 1.0.85, and the mailgun skill), crew 1.0.86).**  No suite was executed for this note.
+
+**Re-anchored `14b52c91` -> `0c3508e9` on 2026-09-30 (L-0520 PR 1 merges main f7caa37d (L-0561 #289: mailgun registered as skills/mailgun 1.0.1, both install scripts, README, INSTALLATION.md), crew stays 1.0.86).**  No suite was executed for this note.

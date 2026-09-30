@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@14b52c91
+anchor: useful-claude-add-ons@0c3508e9
 verified: 2026-09-30
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -68,8 +68,8 @@ against disk:
 | skills | 31 | `find plugin/crew/skills -maxdepth 1 -mindepth 1 -type d` → 31 (T-0085 added `crew-standards`, #267 `crew-qa-standards`; both read 30 on their own branches, 31 from T-0085's landing merge) | same sites, each `<!-- claim: plugin-skills:crew -->`-marked; **at `22399a9c` `INSTALLATION.md:252` and `plugin/README.md:414` still read 29** (outside T-0085's Touch), so `check_self_claims` fails on both; both read 30 from `b82035e6` (the Touch amendment) and the check passes |
 | hook entries | 34 | walking `plugin/crew/hooks/hooks.json`'s 8 events → 34 command entries | same sites |
 
-Both install scripts' own crew catalog row (`scripts/install-prerequisites.sh:1391`,
-`scripts/install-prerequisites.ps1:1174`) states "4 agents, 36 commands" and
+Both install scripts' own crew catalog row (`scripts/install-prerequisites.sh:1393`,
+`scripts/install-prerequisites.ps1:1175`) states "4 agents, 36 commands" and
 matches too — `CATALOG_CLAIMS` (below) checks exactly this pair for exactly
 this reason. Every number in the table above was re-derived from the
 filesystem this pass, not read off a previous version of this note or off the
@@ -119,12 +119,12 @@ two tables is, like an unmarked number anywhere else, not checked.
 | Marketplace entry | `.claude-plugin/marketplace.json` (one flat array, split by `source` prefix only) | same file |
 | Catalog doc | `skills/README.md` — header `:73`, first row `:75` (both moved from `:87`/`:89`) | `plugin/PLUGINS.md` (a `## \`name\`` section) **and** `plugin/README.md` (a table row) |
 | Root README | linked under `skills/{name}` | linked under `plugin/{name}` |
-| `.sh` install script | `SKILL_KEYS`/`SKILL_NAME`/`SKILL_SPEC`, `scripts/install-prerequisites.sh:1298-...` | `PLUGIN_KEYS`/`PLUGIN_NAME`/`PLUGIN_SPEC`, `scripts/install-prerequisites.sh:1383-1393` |
-| `.ps1` install script | `$script:SkillCatalog`, `scripts/install-prerequisites.ps1:1127` | `$script:PluginCatalog`, `scripts/install-prerequisites.ps1:1173` |
+| `.sh` install script | `SKILL_KEYS`/`SKILL_NAME`/`SKILL_SPEC`, `scripts/install-prerequisites.sh:1298-...` | `PLUGIN_KEYS`/`PLUGIN_NAME`/`PLUGIN_SPEC`, `scripts/install-prerequisites.sh:1385-1395` |
+| `.ps1` install script | `$script:SkillCatalog`, `scripts/install-prerequisites.ps1:1127` | `$script:PluginCatalog`, `scripts/install-prerequisites.ps1:1174` |
 | Own manifest version | none | `plugin/<name>/.claude-plugin/plugin.json`, bumped in lockstep with the marketplace entry |
 
-Both install-script catalog rows for `crew` (`scripts/install-prerequisites.sh:1391`,
-`scripts/install-prerequisites.ps1:1174`) both read "4 agents, 36 commands,
+Both install-script catalog rows for `crew` (`scripts/install-prerequisites.sh:1393`,
+`scripts/install-prerequisites.ps1:1175`) both read "4 agents, 36 commands,
 safety hooks", matching `PLUGIN_KEYS` order
 (`crew`, `gizmoduck`, `localgpu`, `obsidian-vault`, `rule-of-two`) against
 `marketplace.json`'s own plugin ordering — `check_catalogs`
@@ -151,20 +151,20 @@ sub-picker groups: `own-skills`, `repo-plugins`, and two the marketplace
 never touches — `team` (`TEAM_KEYS`/`$script:TeamCatalog`) and `community`
 (`COMMUNITY_KEYS`/`$script:CommunityCatalog`).
 
-- **`TEAM_KEYS`** (`scripts/install-prerequisites.sh:1422`) is unchanged at
+- **`TEAM_KEYS`** (`scripts/install-prerequisites.sh:1424`) is unchanged at
   **four**: `superpowers`, `frontend-design`, `excalidraw-generator`,
   `github` — all four resolving through `claude-plugins-official`.
-- **`COMMUNITY_KEYS`** (`scripts/install-prerequisites.sh:1448-1450`) is
+- **`COMMUNITY_KEYS`** (`scripts/install-prerequisites.sh:1450-1452`) is
   **eight**: `adhd-output-style`, `azure-tools`, `anthropic-office-skills`,
   `agent-browser`, `ppt-master`, `voltagent-infra`, `voltagent-qa-sec`,
   `eli5` — resolving through **five** distinct marketplace names
   (`claude-settings`, `agent-browser`, `ppt-master`, `voltagent-subagents`,
   `claude-community`), confirmed by reading `COMMUNITY_SPEC`
-  (`:1461-1470`). The comment at `scripts/install-prerequisites.sh:1440-1441`
+  (`:1461-1470`). The comment at `scripts/install-prerequisites.sh:1442-1443`
   still states explicitly that the local name is `claude-community`, not
   `claude-plugins-community`.
 
-`$script:CommunityCatalog` (`scripts/install-prerequisites.ps1:1205`) and
+`$script:CommunityCatalog` (`scripts/install-prerequisites.ps1:1206`) and
 `$script:TeamCatalog` (`:1188`) agree with the `.sh` arrays — the matched-pair
 check (`check_group_parity`) still passes, and still says nothing about
 whether either array's *content* is accurate, since nothing in
@@ -1290,3 +1290,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `14bb59ef` -> `8bf710ed` on 2026-09-30 (L-0520 PR 1 review round 1 fixes).** `git diff --name-only 14bb59ef 8bf710ed` returns crew_train.py, done.md and README.md (edits in place), BUDGETS.md, two tests and the version files; path-qualified citations outside dated provenance were moved by a line diff (`/root/crew-tmp/l-0520/tools/l0520_remap.py`). No suite was executed for this note.
 
 **Re-anchored `8bf710ed` -> `14b52c91` on 2026-09-30 (L-0520 PR 1 merges main bd4b2f30 (T-0028 #288, crew 1.0.85, and the mailgun skill), crew 1.0.86).**  No suite was executed for this note.
+
+**Re-anchored `14b52c91` -> `0c3508e9` on 2026-09-30 (L-0520 PR 1 merges main f7caa37d (L-0561 #289: mailgun registered as skills/mailgun 1.0.1, both install scripts, README, INSTALLATION.md), crew stays 1.0.86).**  No suite was executed for this note.
