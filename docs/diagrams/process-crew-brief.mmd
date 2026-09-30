@@ -1,12 +1,12 @@
-%% Generated from useful-claude-add-ons@9e38a891 on 2026-09-29. Verify before trusting.
+%% Generated from useful-claude-add-ons@78b7080a on 2026-09-30. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
 %% re-read at f2bb919b (repo-relative): plugin/crew/hooks/hooks.json:3-10,
 %% plugin/crew/hooks/scripts/handoff-read.sh:34 :41 :42 :44,
-%% plugin/crew/hooks/scripts/crew_context.py:121-123 :833 :839 :909,
-%% plugin/crew/hooks/scripts/crew_state.py:643, plugin/crew/hooks/scripts/crew_status.py:215,
-%% plugin/crew/commands/status.md:14, plugin/crew/hooks/scripts/crew_platform.py:229 :507 :537.
+%% plugin/crew/hooks/scripts/crew_context.py:122-124 :833 :839 :909,
+%% plugin/crew/hooks/scripts/crew_state.py:646, plugin/crew/hooks/scripts/crew_status.py:225,
+%% plugin/crew/commands/status.md:14, plugin/crew/hooks/scripts/crew_platform.py:230 :507 :537.
 %% Re-anchored f2bb919b -> 7b667587 (T-0021): of the Anchors paths crew_state.py and
 %% crew_status.py changed. crew_state.py's cited lines (:643, :761, :846-901, :941-945,
 %% :967) did not move (`git diff -U0`, re-read). crew_status.py moved: the HANDOFF
@@ -192,6 +192,11 @@
 %% Anchors paths only crew_status.py and commands/status.md differ from main's side, by T-0087's review
 %% lines; the merged file is T-0087's, so crew_status.py:215 (HANDOFF check), :65 (_tracker_line) and
 %% status.md:14 cited above hold (re-read with grep -n). No node or edge changed.
+%% Merged 9e38a891 + a61a6f38 -> 78b7080a (T-0087-build merges T-0088's main a61a6f38, crew 1.0.70):
+%% of the Anchors paths, crew_context.py, crew_state.py, crew_status.py, crew_platform.py, crew_resume.py,
+%% crew_tracker.py and commands/status.md differ from T-0087's side; the header's crew_context.py:122-124, crew_state.py:646, crew_status.py:225 and
+%% crew_platform.py:230 were re-mapped by script (difflib from cb9b79b1). Bare :N citations inside
+%% nodes name no file and were not re-read here. No node or edge changed.
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
     start --> reg["hooks.json:3-10<br/>3 SessionStart pairs, sh + ps1, no matcher<br/>each claims per session+source"]
