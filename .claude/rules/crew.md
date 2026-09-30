@@ -2,7 +2,7 @@
 paths:
   - "plugin/crew/**"
 ---
-<!-- crew:generated source=.crew/codemap/crew.md sha256=ab8202fd5d35f331 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/crew.md sha256=540e475a004bbddb -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # crew
 Code map anchor `1f21f73b`; if it is behind HEAD, re-check with `git diff --name-only 1f21f73b..HEAD -- <cited paths>`.
 Covers: The crew plugin after 1.0: hooks, the four agents, commands, skills inventory, config layering and leaf counts, and how crew_freshness.py reads this very directory.
@@ -20,7 +20,7 @@ Covers: The crew plugin after 1.0: hooks, the four agents, commands, skills inve
 - `plugin/crew/hooks/scripts/crew_context.py:122` — `load_crew_config`, the one function that reads `crew.json` before `config.json`.
 - `plugin/crew/hooks/scripts/crew_autoclear_setup.py` — no single `main()` confirmed at a specific line this pass; called with subcommands (`plan-windows-default`, `apply-migrate`) from the three sites named above.
 - `plugin/crew/hooks/scripts/crew_resume.py:668` — `decide`, read-only; `main()` is the `decide` / `record` / `precompact` CLI.
-- `plugin/crew/hooks/scripts/crew_refresh_check.py:1263` — `ticket_freshness`, the library entry point; `main()` at `:1363`; `artifact_verdicts` at `:970`, the audit's admission (T-0094).
+- `plugin/crew/hooks/scripts/crew_refresh_check.py:1263` — `ticket_freshness`, the library entry point; `main()` at `:1363`; `artifact_verdicts` at `:970`, the admission judgement (T-0094) that L-0540 wires into the audit.
 - `plugin/crew/hooks/scripts/crew_autopilot.py:559` — `next_phase`, read-only; `main()` at `:1635` is the `next` / `resume` / `settings` / `stops` / `route` / `status` / `deploy-allowed` / `approve` / `questions-check`...
 - `plugin/crew/hooks/scripts/crew_route.py:211` — `decide`, read-only route / ask / none for a prompt; `main()` at `:333` is the `settings` / `decide` CLI.
 - `plugin/crew/hooks/scripts/crew_endpoints.py:566` — `declare_endpoint`, the only writer of *declared* records.

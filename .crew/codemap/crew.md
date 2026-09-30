@@ -1315,7 +1315,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `main()` is the `decide` / `record` / `precompact` CLI.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:1263` — `ticket_freshness`,
   the library entry point; `main()` at `:1363`; `artifact_verdicts` at `:970`,
-  the audit's admission (T-0094).
+  the admission judgement (T-0094) that L-0540 wires into the audit.
 - `plugin/crew/hooks/scripts/crew_autopilot.py:559` — `next_phase`, read-only;
   `main()` at `:1635` is the `next` / `resume` / `settings` / `stops` /
   `route` / `status` / `deploy-allowed` / `approve` / `questions-check` CLI
