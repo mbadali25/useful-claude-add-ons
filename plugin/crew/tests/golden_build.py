@@ -26,8 +26,11 @@ email address other than @example.com / noreply / `git@<host>` to `<EMAIL>`.
 The same function redacts `out.txt` and `parts.json`, so a READ line and the
 part it names stay equal. A fixture whose redacted text still matches a leak
 pattern (a machine path, the host name, an email other than @example.com /
-noreply, an `sk-`/`ghp_`/`gho_`/`github_pat_`/`AKIA`/`xox?-` token, a PEM
-header, a `Bearer` token) is REFUSED: nothing is written for it and its id and
+noreply, including one straight after a JSON escape, an `sk-` token with
+hyphenated segments (`sk-proj-`, `sk-ant-`), a `ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_`/
+`github_pat_` GitHub token, an `AKIA`/`ASIA` AWS key, a `xox?-` Slack token, an
+`AIza` Google key, an `sk_live_`/`rk_live_` Stripe key, an `npm_` or `glpat-`
+token, a PEM header, a `Bearer` token) is REFUSED: nothing is written for it and its id and
 pattern are printed (a refusal is the check working, not an error). The
 expected verdict is computed from the redacted text
 and must equal the unredacted text's, or the fixture is a mismatch.
@@ -67,17 +70,25 @@ _STOP = r"[^/\s\"'`]+"
 _START = r"(?:(?<![A-Za-z0-9_.-])|(?<=\\[nrt]))"
 LEAKS = (
     ("machine path", re.compile(r"/repos/|/root/|/home/|/Users/|C:\\Users\\|\\\\Users\\\\")),
-    ("sk- token", re.compile(r"(?<![A-Za-z0-9])sk-[A-Za-z0-9]{20}")),
-    ("GitHub token", re.compile(r"(?<![A-Za-z0-9])gh[po]_[A-Za-z0-9]{20}|github_pat_")),
-    ("AWS key", re.compile(r"AKIA[0-9A-Z]{16}")),
-    ("Slack token", re.compile(r"xox[bap]-")),
+    # `sk-proj-...`, `sk-ant-api03-...`: segments joined by `-` and `_`.
+    ("sk- token", re.compile(r"(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}")),
+    ("GitHub token", re.compile(r"(?<![A-Za-z0-9])gh[pousr]_[A-Za-z0-9]{20,}|github_pat_")),
+    ("AWS key", re.compile(r"(?<![A-Z0-9])(?:AKIA|ASIA)[0-9A-Z]{16}")),
+    ("Slack token", re.compile(r"xox[abposr]-")),
+    ("Google API key", re.compile(r"AIza[0-9A-Za-z_-]{35}")),
+    ("Stripe key", re.compile(r"(?<![A-Za-z0-9])[rs]k_(?:live|test)_[A-Za-z0-9]{16,}")),
+    ("npm token", re.compile(r"(?<![A-Za-z0-9])npm_[A-Za-z0-9]{36}")),
+    ("GitLab token", re.compile(r"(?<![A-Za-z0-9])glpat-[A-Za-z0-9_-]{20}")),
     ("PEM header", re.compile(r"-----BEGIN")),
     ("Bearer token", re.compile(r"Bearer [A-Za-z0-9]")),
 )
-# An address starts at a word boundary that is not a JSON escape (`\n+@x.y` in
-# an event stream is a newline then `+@x.y`, not an address).
-EMAIL = re.compile(r"(?<![\\A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*"
-                   r"\.[A-Za-z]{2,}")
+# An address starts at a word boundary, or straight after a JSON escape
+# (`\nalice@corp.com`, `\u003calice@corp.com`) when it starts with a letter or
+# digit -- so `\n+@x.y` in an event stream stays a newline then `+@x.y`, not an
+# address (review round 5).
+EMAIL = re.compile(r"(?:(?<![\\A-Za-z0-9._%+-])|(?<=\\[nrt])(?=[A-Za-z0-9])"
+                   r"|(?<=\\u[0-9A-Fa-f]{4})(?=[A-Za-z0-9]))"
+                   r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
 
 
 def allowed_address(found):

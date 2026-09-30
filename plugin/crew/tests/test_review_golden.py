@@ -27,19 +27,12 @@ GOLDEN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "golden", "rev
 FIXTURES = sorted(glob.glob(os.path.join(GOLDEN, "*", "")))
 SIZE_BOUND = 1_500_000
 
-# The same patterns golden_build.py refuses a fixture on.
+# The patterns golden_build.py refuses a fixture on -- the builder's own, not
+# a copy: a second list kept the builder's gaps and could not catch them
+# (review round 5).
 MACHINE_PATHS = ("/repos/", "/root/", "/home/", "/Users/", "C:\\Users\\", "\\\\Users\\\\")
-SECRETS = (
-    re.compile(r"(?<![A-Za-z0-9])sk-[A-Za-z0-9]{20}"),
-    re.compile(r"(?<![A-Za-z0-9])gh[po]_[A-Za-z0-9]{20}"),
-    re.compile(r"github_pat_"),
-    re.compile(r"AKIA[0-9A-Z]{16}"),
-    re.compile(r"xox[bap]-"),
-    re.compile(r"-----BEGIN"),
-    re.compile(r"Bearer [A-Za-z0-9]"),
-)
-EMAIL = re.compile(r"(?<![\\A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*"
-                   r"\.[A-Za-z]{2,}")
+SECRETS = tuple(pattern for name, pattern in golden_build.LEAKS if name != "machine path")
+EMAIL = golden_build.EMAIL
 
 
 def _text(folder, name):
@@ -140,8 +133,7 @@ def test_golden_corpus_holds_no_machine_paths_or_secrets():
         name = os.path.relpath(path, GOLDEN)
         leaks += [(name, p) for p in MACHINE_PATHS if p in text]
         leaks += [(name, s.pattern) for s in SECRETS if s.search(text)]
-        leaks += [(name, m) for m in EMAIL.findall(text)
-                  if not (m.endswith("@example.com") or "noreply" in m or m.startswith("git@"))]
+        leaks += [(name, m) for m in EMAIL.findall(text) if not golden_build.allowed_address(m)]
     assert not leaks, leaks
 
 
@@ -187,3 +179,45 @@ def test_redact_still_replaces_whole_machine_strings(monkeypatch, text, want):
     monkeypatch.setattr(golden_build.socket, "gethostname", lambda: "box")
 
     assert golden_build.redact(text, "/repos/personal/x") == want
+
+
+# Review round 5 BLOCK: a person's address straight after a JSON escape, and
+# key shapes with hyphenated or underscored segments, went through as clean.
+_A36 = "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
+_SECRET_SHAPES = [
+    "x\\nalice@corp.com", "\\talice@corp.com", "\\u003calice@corp.com\\u003e",
+    "sk-proj-" + "abcdefghijklmnopqrstuvwxyzABCDEF", "sk-proj-abc_DEF-" + _A36[:24],
+    "sk-ant-api03-" + "Ab_cD-eF" * 5, "sk-" + _A36[:24],
+    "ghp_" + _A36, "gho_" + _A36, "ghu_" + _A36, "ghs_" + _A36, "ghr_" + _A36,
+    "github_pat_11AB", "AKIA" + "ABCDEFGHIJ012345", "ASIA" + "ABCDEFGHIJ012345",
+    "AIza" + _A36[:35], "sk_live_" + _A36[:24], "rk_live_" + _A36[:24], "npm_" + _A36,
+    "glpat-" + _A36[:20], "xoxb-1", "xoxp-1", "-----BEGIN OPENSSH PRIVATE KEY-----",
+    "Bearer eyJ",
+]
+_NOT_SECRETS = [
+    "git@github.com:owner/repo.git", "\\n@pytest.mark.parametrize", "\\n+@x.y",
+    "noreply@anthropic.com", "dev@example.com", "task-runner and risk-free", "sk-short",
+    "the ask-" + "abcdefghijklmnopqrstuvwxyzabcd", "AKIAshort",
+]
+
+
+@pytest.mark.parametrize("text", _SECRET_SHAPES)
+def test_leak_refuses_every_secret_shape(monkeypatch, text):
+    monkeypatch.setattr(golden_build.socket, "gethostname", lambda: "zz-no-such-host")
+
+    assert golden_build.leak(text) is not None
+
+
+@pytest.mark.parametrize("text", _NOT_SECRETS)
+def test_leak_allows_what_is_not_a_secret(monkeypatch, text):
+    monkeypatch.setattr(golden_build.socket, "gethostname", lambda: "zz-no-such-host")
+
+    assert golden_build.leak(text) is None
+
+
+def test_redact_replaces_an_address_after_a_json_escape(monkeypatch):
+    monkeypatch.setattr(golden_build.socket, "gethostname", lambda: "zz-no-such-host")
+
+    got = golden_build.redact("x\\nalice@corp.com y", "/nowhere")
+
+    assert ("<EMAIL>" in got, "alice@" in got) == (True, False)
