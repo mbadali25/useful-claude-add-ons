@@ -630,3 +630,126 @@ def test_a_removed_rule_whose_base_copy_git_cannot_read_is_could_not_tell(tmp_pa
 
     assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL),
             "base copy error: git exited 129" in reason) == (None, True, True), reason
+
+
+# --- review round 3 -------------------------------------------------------------
+# Nothing moves from a base with no anchor; INDEX.md and a rule are judged by
+# the bytes git sees change, not by decoded, newline-normalised text. Each
+# must-block case has an entry after the round-3 marker in `sabotage_refresh.py`.
+
+BARE_DIAGRAM = "%% Anchors: src/app.py\nflowchart LR\n  a --> b\n"
+
+
+@pytest.mark.parametrize("kind", ["map", "diagram"])
+def test_an_anchor_added_where_the_base_copy_had_none_is_refused(tmp_path, kind):
+    if kind == "map":
+        rel = MAP.format(name="bare")
+        before = map_text("bare", None, ("src/app.py:1",), "x is one")
+    else:
+        rel = DIAGRAM.format(name="bare")
+        before = BARE_DIAGRAM
+    root, base = anchored_repo(tmp_path, extra={rel: before})
+    head = head_sha(root, 40)
+    if kind == "map":
+        write(root, rel, map_text("bare", head, ("src/app.py:2",), "x is two"))
+    else:
+        write(root, rel, f"%% Generated from r@{head} on 2026-09-30.\n{before}")
+
+    got = _judged(root, base, REACH, rel, "the base copy has no anchor")
+
+    assert got[:2] == (False, True), got
+
+
+BYTE_EDITS = {
+    "final-newline-removed": lambda data: data[:-1],
+    "crlf": lambda data: data.replace(b"\n", b"\r\n"),
+    "bom": lambda data: b"\xef\xbb\xbf" + data,
+}
+
+
+def _edit_bytes(root, rel, edit):
+    path = root.joinpath(*rel.split("/"))
+    path.write_bytes(BYTE_EDITS[edit](path.read_bytes()))
+
+
+@pytest.mark.parametrize("edit", list(BYTE_EDITS))
+def test_an_index_byte_edit_with_no_re_anchored_map_is_refused(anchored, edit):
+    root, base = anchored
+    _edit_bytes(root, INDEX, edit)
+
+    got = _verdicts(root, base, REACH, [INDEX])[INDEX]
+
+    assert (got[0], "INDEX.md" in got[1]) == (False, True), got
+
+
+@pytest.mark.skipif(os.name == "nt", reason="core.fileMode is false on Windows")
+def test_an_index_mode_change_with_no_re_anchored_map_is_refused(anchored):
+    root, base = anchored
+    path = root.joinpath(*INDEX.split("/"))
+    path.chmod(path.stat().st_mode | 0o111)
+
+    got = _judged(root, base, REACH, INDEX, "mode")
+
+    assert got[:2] == (False, True), got
+
+
+@pytest.mark.parametrize("edit", ["crlf", "bom"])
+def test_a_rule_whose_bytes_are_not_the_generated_bytes_is_refused(anchored, edit):
+    root, base = anchored
+    _edit_bytes(root, APP_RULE, edit)
+
+    got = _judged(root, base, REACH, APP_RULE, "bytes differ from expected_rules")
+
+    assert got[:2] == (False, True), got
+
+
+@pytest.mark.parametrize("rel", [INDEX, APP_RULE], ids=["index", "rule"])
+def test_a_crlf_checkout_under_autocrlf_is_judged_as_git_stores_it(anchored, rel):
+    """The must-allow neighbour: Git for Windows' default `core.autocrlf=true`
+    checks text out as CRLF and stores it as LF, so a CRLF working copy of a
+    real refresh is the refresh."""
+    root, base = anchored
+    git(root, "config", "core.autocrlf", "true")
+    head = head_sha(root, 40)
+    re_anchor_map(root, "app", head)
+    index_row_append(root, "app", f"re-anchored to `{head[:8]}`")
+    crew_instructions.rules(str(root))
+    _edit_bytes(root, rel, "crlf")
+
+    got = _verdicts(root, base, REACH, [APP, rel])
+
+    assert (got[APP][0], got[rel][0]) == (True, True), got
+
+
+def _failing_out(monkeypatch, first, result):
+    """Patch `_git_out` to return `result` for the one call whose first arg is
+    `first`, delegating every other call."""
+    real = crew_refresh_check._git_out  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_refresh_check, "_git_out",
+                        lambda r, *a, **k: result if a[0] == first else real(r, *a, **k))
+
+
+@pytest.mark.parametrize("result", [(None, b""), (129, b"")], ids=["none", "129"])
+def test_an_index_git_cannot_diff_is_could_not_tell(anchored, monkeypatch, result):
+    root, base = anchored
+    head = head_sha(root, 40)
+    re_anchor_map(root, "app", head)
+    index_row_append(root, "app", f"re-anchored to `{head[:8]}`")
+    _failing_out(monkeypatch, "diff", result)
+
+    verdict, reason = _verdicts(root, base, REACH, [APP, INDEX])[INDEX]
+
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL),
+            "git diff" in reason) == (None, True, True), reason
+
+
+@pytest.mark.parametrize("result", [(None, b""), (129, b"")], ids=["none", "129"])
+def test_a_rule_git_cannot_hash_is_could_not_tell(anchored, monkeypatch, result):
+    root, base = anchored
+    _edit_bytes(root, APP_RULE, "crlf")
+    _failing_out(monkeypatch, "hash-object", result)
+
+    verdict, reason = _verdict(root, base, REACH, APP_RULE)
+
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL),
+            "could not hash" in reason) == (None, True, True), reason

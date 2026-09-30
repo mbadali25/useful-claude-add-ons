@@ -14,13 +14,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   base (merged-in main paths included; of the release bookkeeping only a
   `.claude-plugin/plugin.json`, so a version bump reaches the map citing it,
   while `CHANGELOG.md`, `marketplace.json` and the rest reach nothing), and its
-  `anchor:` must have moved forward to a commit that is HEAD or behind it;
-  `INDEX.md` passes when every differing line, deleted ones included, is the
-  row of such a map; a diagram source is reached through its base copy's
+  `anchor:` must have moved forward from the base copy's anchor to a commit
+  that is HEAD or behind it; `INDEX.md` passes when every line git's own diff
+  shows changed, deleted ones included, is the row of such a map; a diagram source is reached through its base copy's
   `%% Anchors:` and its
   provenance sha must move the same way, and a rendered diagram passes beside
   its admitted same-stem source; a `.claude/rules/` file passes when its bytes
-  equal `crew_instructions.expected_rules` (or a generated rule no map expects
+  (or, under git's line-ending filters, the blob git would store) equal
+  `crew_instructions.expected_rules` (or a generated rule no map expects
   was removed); the graph dir passes when a code path changed. Anything else
   there is judged against Touch and listed with its reason in brackets
   (`[anchor did not move]`, `[no changed path reaches it]`, `[bytes differ from
@@ -62,9 +63,21 @@ All notable changes to this repository are documented here. Format follows [Keep
   deferred at Stop and runs under `verify-gate --all`.
   The round's third FIX, a `verify-gate --all` record, is made at the gate on
   the final head, not in the diff.
+- **Review round 3 (Codex).** An `anchor:` or provenance line ADDED to a base
+  copy that had none is refused (`the base copy has no anchor, so nothing
+  moved from it`); it was admitted as `re-anchored`. `INDEX.md` is judged from
+  `git diff -U0 <base> -- INDEX.md`, not from `read_text` lines, which dropped
+  the final newline, CRs and a BOM, so a byte-only edit differed on no line and
+  was admitted; a mode change on it is refused, and a diff git cannot give is
+  `could not tell`. A rule is compared as bytes, then as the blob git would
+  store (`git hash-object --path --stdin`), so a CRLF or BOM rewrite is refused
+  while a CRLF checkout under `core.autocrlf=true` is still the regenerated
+  rule; a hash git cannot give is `could not tell`. The code map's counts and
+  version sentence now say 30 skills and 1.0.70.
 - **Sabotage.** In `plugin/crew/tests/sabotage_refresh.py`, fifteen entries
-  after the `# T-0094` marker, sixteen after `# T-0094 review round 1` and nine
-  after `# T-0094 review round 2` (counted by `ast`), each run by hand against
+  after the `# T-0094` marker, sixteen after `# T-0094 review round 1`, nine
+  after `# T-0094 review round 2` and twelve after `# T-0094 review round 3`
+  (counted by `ast`), each run by hand against
   the tracked file and confirmed RED with the file restored byte-identical,
   plus the approval-gate entries, whose tests now perform an admitted refresh
   so they stay RED with the verdicts in place; review round 1's stale-approval

@@ -34,7 +34,12 @@ round found no longer tested the gate (a test change: the `_AUDIT_GATE`
 entries above are its mutations). T-0094 review round 2 added the nine after
 its marker: an unreadable rule file admitted as regenerated or read as "bytes
 differ", and each could-not-tell branch of `_sha_moved`, `_moved_from` and
-`_rule_verdict` read as a move.
+`_rule_verdict` read as a move. T-0094 review round 3 added the twelve after
+its marker: an anchor or provenance line added to a base copy with none read
+as moved, INDEX.md judged as decoded lines (blind to a removed final newline,
+CRLF and a BOM) or with a mode change or a failed diff admitted, and a rule
+compared as decoded text, admitted when git would store it differently or
+could not hash it, or refused as a CRLF checkout under core.autocrlf.
 A mutation listed twice with different tests is on purpose: dropping the
 approval condition must fail the unapproved, the `cli` and the stale case
 each, not just whichever runs first.
@@ -56,6 +61,9 @@ _WORKTREE_DIFF = ("        return sorted(completion_audit.worktree_changes(root,
                   "literal=True))\n")
 _GUARD_GATE = '    if approval["status"] != "approved":\n        return False\n    if real_rel'
 _AUDIT_GATE = '    if approval["status"] != "approved":\n        return paths, {}\n'
+_INDEX_LINES = "    lines, mode = _diff_lines(out)\n"
+_INDEX_DECODED = ("    lines, mode = [(f\"line {j + 1}\", t) for j, t in enumerate(_after.splitlines())"
+                  " if t not in _before.splitlines()], False\n")
 _AUDIT_ADMIT = ('    return [p for p in paths if verdicts.get(p, (False, ""))[0] is not True], '
                 'verdicts\n')
 # The pre-round-2 listing exactly (review round 3's NIT on :182): newline-split
@@ -284,12 +292,12 @@ REFRESH_MUTATIONS = (
      '    if state == "absent":\n        before, state = "", "ok"\n',
      _TA + "test_a_new_map_is_not_a_re_anchor"),
     ("an INDEX.md line that is no row passes as one", CHECK,
-     "            if not row or row.group(1) not in admitted:\n",
-     "            if row and row.group(1) not in admitted:\n",
+     "        if not row or row.group(1) not in admitted:\n",
+     "        if row and row.group(1) not in admitted:\n",
      _TA + "test_an_index_edit_outside_a_re_anchored_row_is_refused"),
     ("a rule's bytes are not compared with expected_rules", CHECK,
-     "        if text == expected.get(key):\n",
-     "        if True:\n",
+     "            if data == want:\n",
+     "            if True:\n",
      _TA + "test_a_hand_edited_rule_is_refused"),
     ("a removed rule is admitted without the generated marker", CHECK,
      "    if state == \"ok\" and crew_instructions.MARKER in before[:2000]:\n",
@@ -371,8 +379,8 @@ REFRESH_MUTATIONS = (
      "    return True or any(crew_ticket.glob_match(path, glob)\n",
      _CA + "test_a_bookkeeping_bump_does_not_admit_a_rewrite_of_the_map_citing_it"),
     ("a deleted INDEX.md line is never judged", CHECK,
-     '        lines += [(f"base line {i + 1}", old[i]) for i in range(i1, i2)]\n',
-     "        lines += []\n",
+     '            removed.append((f"base line {old}", raw[1:].decode("utf-8", "surrogateescape")))\n',
+     "            pass\n",
      _TA + "test_an_index_line_deleted_outside_a_re_anchored_row_is_refused[another-maps-row]"),
     ("a rule renderer that raises reads as expecting nothing", CHECK,
      '        return f"expected_rules raised {type(exc).__name__}"\n',
@@ -392,8 +400,8 @@ REFRESH_MUTATIONS = (
      "    except ValueError:  # noqa: BLE001  pylint: disable=broad-except\n        return {}\n",
      _CA + "test_a_verdict_step_that_raises_fails_the_audit_closed[refresh_artifact_paths]"),
     # T-0094 review round 2
-    ("an unreadable rule no map expects is admitted as regenerated", CHECK,
-     '        if text is None:\n            return None, f"{COULD_NOT_TELL}: could not read {rel}"\n',
+    ("an unreadable rule no map expects is judged as if read", CHECK,
+     '        if data is None:\n            return None, f"{COULD_NOT_TELL}: could not read {rel}"\n',
      '        if False:\n            return None, f"{COULD_NOT_TELL}: could not read {rel}"\n',
      _TA + "test_an_unreadable_rule_is_could_not_tell[unexpected]"),
     ("an unreadable rule a map expects reads as bytes differ", CHECK,
@@ -428,4 +436,50 @@ REFRESH_MUTATIONS = (
      '    return None, f"{COULD_NOT_TELL}: base copy {state}"\n',
      '    return True, "a generated rule no map expects, removed"\n',
      _TA + "test_a_removed_rule_whose_base_copy_git_cannot_read_is_could_not_tell"),
+    # T-0094 review round 3
+    ("an anchor added where the base map had none reads as moved", CHECK,
+     '        return False, "the base copy has no anchor, so nothing moved from it"\n',
+     '        return True, "re-anchored"\n',
+     _TA + "test_an_anchor_added_where_the_base_copy_had_none_is_refused[map]"),
+    ("provenance added where the base diagram had none reads as moved", CHECK,
+     '        return False, "the base copy has no anchor, so nothing moved from it"\n',
+     '        return True, "re-anchored"\n',
+     _TA + "test_an_anchor_added_where_the_base_copy_had_none_is_refused[diagram]"),
+    ("INDEX.md compared as decoded lines, blind to a removed final newline", CHECK,
+     _INDEX_LINES, _INDEX_DECODED,
+     _TA + "test_an_index_byte_edit_with_no_re_anchored_map_is_refused[final-newline-removed]"),
+    ("INDEX.md compared as decoded lines, blind to CRLF", CHECK,
+     _INDEX_LINES, _INDEX_DECODED,
+     _TA + "test_an_index_byte_edit_with_no_re_anchored_map_is_refused[crlf]"),
+    ("INDEX.md compared as decoded lines, blind to a BOM", CHECK,
+     _INDEX_LINES, _INDEX_DECODED,
+     _TA + "test_an_index_byte_edit_with_no_re_anchored_map_is_refused[bom]"),
+    ("an INDEX.md mode change is admitted", CHECK,
+     "    if mode:\n",
+     "    if False:\n",
+     _TA + "test_an_index_mode_change_with_no_re_anchored_map_is_refused"),
+    ("a git diff of INDEX.md that failed reads as rows only", CHECK,
+     "    if code != 0:\n        why = ",
+     "    if False:\n        why = ",
+     _TA + "test_an_index_git_cannot_diff_is_could_not_tell[129]"),
+    ("a rule compared as decoded text, blind to CRLF", CHECK,
+     "            if data == want:\n",
+     "            if read_text(path) == expected.get(key):\n",
+     _TA + "test_a_rule_whose_bytes_are_not_the_generated_bytes_is_refused[crlf]"),
+    ("a rule compared as decoded text, blind to a BOM", CHECK,
+     "            if data == want:\n",
+     "            if read_text(path) == expected.get(key):\n",
+     _TA + "test_a_rule_whose_bytes_are_not_the_generated_bytes_is_refused[bom]"),
+    ("a rule git stores differently is admitted", CHECK,
+     "            if got == wanted:\n",
+     "            if True:\n",
+     _TA + "test_a_rule_whose_bytes_are_not_the_generated_bytes_is_refused[crlf]"),
+    ("a CRLF checkout of a regenerated rule under autocrlf is refused", CHECK,
+     "            if got == wanted:\n",
+     "            if False:\n",
+     _TA + "test_a_crlf_checkout_under_autocrlf_is_judged_as_git_stores_it[rule]"),
+    ("a rule git cannot hash is admitted", CHECK,
+     '                return None, f"{COULD_NOT_TELL}: git could not hash {rel}"\n',
+     '                return True, "regenerated"\n',
+     _TA + "test_a_rule_git_cannot_hash_is_could_not_tell[129]"),
 )

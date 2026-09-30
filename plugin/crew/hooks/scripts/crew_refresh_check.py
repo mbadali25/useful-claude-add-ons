@@ -131,19 +131,24 @@ the edit a RE-ANCHOR or a REGENERATION.
             moved forward from the base's value to a commit that is HEAD or
             behind it (a base anchor that names no commit, or one off HEAD's
             history -- a squash merge -- is moved from by any qualifying
-            one; an unchanged anchor text never moved).
+            one; an unchanged anchor text never moved, and nothing moved
+            from a base copy with no anchor at all).
             Claims, `path:line` numbers and prose may change with it: that is
             what a refresh writes (`8bbb26d9`); an edit whose anchor did not
             move is not.
-  INDEX.md  every line that differs from the base is the row of a map
-            admitted in the same call.
+  INDEX.md  every line git's diff against the base shows changed (its
+            terminator included, so a CR, a BOM or a dropped final newline
+            counts) is the row of a map admitted in the same call; a mode
+            change is refused.
   diagram   a source (`.mmd`, `.mermaid`) under `docs.diagramsDir`: reached
             through its base copy's `%% Anchors:` line (none: any code
             path), and its provenance sha moved as a map's anchor must. A
             rendered file is admitted beside a same-stem source admitted in
             the same call.
   rule      `.claude/rules/<name>.md` whose bytes equal
-            `crew_instructions.expected_rules` -- regeneration, whatever the
+            `crew_instructions.expected_rules`, or whose blob git would store
+            (clean filters applied: a CRLF checkout under core.autocrlf)
+            equals that text's -- regeneration, whatever the
             map did -- or one removed that carried the generated marker and
             that no map expects any more.
   graph     anything under `graph.out`, when the ticket changed a code path.
@@ -172,7 +177,6 @@ any stat-dirty file), because `git diff` rewrites .git/index for a stat-dirty
 file even under `--no-optional-locks`. Standard library only.
 """
 import argparse
-import difflib
 import fnmatch
 import json
 import os
@@ -471,6 +475,19 @@ def _git_rc(root, *args):
         return None
 
 
+def _git_out(root, *args, data=None):
+    """(return code, stdout bytes), or (None, b"") when git could not run.
+    `data`, when given, is git's stdin."""
+    feed = {"input": data} if data is not None else {"stdin": subprocess.DEVNULL}
+    try:
+        done = subprocess.run(
+            ["git", "-C", root, "--no-optional-locks", "--literal-pathspecs", *args],
+            capture_output=True, timeout=GIT_TIMEOUT, check=False, **feed)
+    except (OSError, subprocess.SubprocessError):
+        return None, b""
+    return done.returncode, done.stdout
+
+
 def _is_ancestor(root, sha, of="HEAD"):
     """True / False / None: `merge-base --is-ancestor` exits 0 when `sha` is
     `of` or behind it, 1 when not, anything else on an error -- which is
@@ -511,6 +528,9 @@ def _sha_moved(root, old, new):
         return False, "no anchor: line"
     if old == new:
         return False, "anchor did not move"
+    if not old:
+        # Review round 3: an anchor ADDED is a content edit, not a re-anchor.
+        return False, "the base copy has no anchor, so nothing moved from it"
     code = _git_rc(root, "cat-file", "-e", new + "^{commit}")
     if code is None:
         return None, f"{COULD_NOT_TELL}: git could not run"
@@ -526,8 +546,6 @@ def _sha_moved(root, old, new):
     now = _git_lines(root, "rev-parse", "--verify", new + "^{commit}")
     if not now:
         return None, f"{COULD_NOT_TELL}: git could not resolve {new[:12]}"
-    if not old:
-        return True, "re-anchored"
     return _moved_from(root, old, now[0])
 
 
@@ -605,22 +623,52 @@ def _map_verdict(top, base, rel, reach):
     return _sha_moved(top, was.group(1) if was else None, now.group(1) if now else None)
 
 
+_HUNK_RE = re.compile(rb"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+
+def _diff_lines(out):
+    """(lines, mode) from a `git diff -U0` of one path: every added line as
+    ("line <n>", text) then every removed one as ("base line <n>", text),
+    each with its terminator (a CR survives; a missing final newline makes
+    the last line differ), and whether the diff changes the file's mode."""
+    added, removed, mode, old, new = [], [], False, 0, 0
+    hunk = None
+    for raw in out.split(b"\n"):
+        head = _HUNK_RE.match(raw)
+        if head:
+            hunk, old, new = True, int(head.group(1)), int(head.group(2))
+        elif hunk is None:
+            mode = mode or raw.startswith((b"old mode ", b"new mode "))
+        elif raw.startswith(b"+"):
+            added.append((f"line {new}", raw[1:].decode("utf-8", "surrogateescape")))
+            new += 1
+        elif raw.startswith(b"-"):
+            # Both sides: a pure deletion has no new-side line at all.
+            removed.append((f"base line {old}", raw[1:].decode("utf-8", "surrogateescape")))
+            old += 1
+    return added + removed, mode
+
+
 def _index_verdict(top, base, rel, admitted):
-    before, after, early = _texts(top, base, rel)
+    _before, _after, early = _texts(top, base, rel)
     if early:
         return early
-    old, new = before.splitlines(), after.splitlines()
-    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, old, new,
-                                                       autojunk=False).get_opcodes():
-        if tag == "equal":
-            continue
-        # Both sides: a pure deletion has no new-side line at all.
-        lines = [(f"line {j + 1}", new[j]) for j in range(j1, j2)]
-        lines += [(f"base line {i + 1}", old[i]) for i in range(i1, i2)]
-        for where, line in lines:
-            row = _INDEX_ROW_RE.match(line)
-            if not row or row.group(1) not in admitted:
-                return False, f"INDEX.md {where} is not the row of a re-anchored map"
+    # The lines git sees change, from git's own diff of the base against the
+    # working tree with its filters applied -- not a diff of decoded text,
+    # which `read_text` strips of CRs, a BOM and the final newline (review
+    # round 3), so a byte-only edit differed on no line and was admitted.
+    code, out = _git_out(top, "diff", "--no-ext-diff", "--no-textconv", "--no-color",
+                         "--no-renames", "--text", "-U0", base, "--", rel)
+    if code != 0:
+        why = "could not run" if code is None else f"exited {code}"
+        return None, f"{COULD_NOT_TELL}: git diff of {rel} {why}"
+    lines, mode = _diff_lines(out)
+    if mode:
+        return False, "INDEX.md's mode changed, which no re-anchor does"
+    for where, line in lines:
+        row = _INDEX_ROW_RE.match(line)
+        if not row or row.group(1) not in admitted:
+            return False, f"INDEX.md {where} is not the row of a re-anchored map"
     return True, "rows of re-anchored maps only"
 
 
@@ -650,11 +698,23 @@ def _rule_verdict(top, base, rel, expected):
         # Read once, and a None is could-not-tell BEFORE any comparison: an
         # unreadable rule no map expects compared None == None and was
         # admitted as regenerated (review round 2).
-        text = read_text(path)
-        if text is None:
+        data = _read_bytes(path)
+        if data is None:
             return None, f"{COULD_NOT_TELL}: could not read {rel}"
-        if text == expected.get(key):
-            return True, "regenerated"
+        want = expected.get(key)
+        if want is not None:
+            # BYTES, as `crew_instructions._write` writes them: decoded text
+            # hid a CRLF and a BOM (review round 3).
+            want = want.encode("utf-8")
+            if data == want:
+                return True, "regenerated"
+            # ...and as git stores them, so a CRLF checkout under
+            # core.autocrlf is still the regenerated rule.
+            got, wanted = _stored_blob(top, rel, data), _stored_blob(top, rel, want)
+            if got is None or wanted is None:
+                return None, f"{COULD_NOT_TELL}: git could not hash {rel}"
+            if got == wanted:
+                return True, "regenerated (as git stores it)"
         return False, ("bytes differ from expected_rules (regenerate with "
                        "crew_instructions.py rules)")
     if key in expected:
@@ -666,6 +726,23 @@ def _rule_verdict(top, base, rel, expected):
     if state in ("ok", "absent"):
         return False, "removed, but it was not generated"
     return None, f"{COULD_NOT_TELL}: base copy {state}"
+
+
+def _read_bytes(path):
+    try:
+        with open(path, "rb") as handle:
+            return handle.read()
+    except (OSError, ValueError):
+        return None
+
+
+def _stored_blob(top, rel, data):
+    """The object id git would store for `data` at `rel`, its clean filters
+    (core.autocrlf, eol attributes) applied, or None. Hashes only: no object
+    is written."""
+    code, out = _git_out(top, "hash-object", f"--path={rel}", "--stdin", data=data)
+    oid = out.decode("ascii", "replace").strip()
+    return oid if code == 0 and oid else None
 
 
 def _kind(rel, dirs, diagrams, graph_out):
