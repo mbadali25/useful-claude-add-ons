@@ -1,6 +1,6 @@
 # mcp-servers
-anchor: useful-claude-add-ons@3648f59a
-verified: 2026-09-28
+anchor: useful-claude-add-ons@463caad3
+verified: 2026-09-30
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
 ## Does
@@ -366,3 +366,22 @@ returns `.claude-plugin/marketplace.json` (crew's version line only) and `TODO.m
 No citation moved.
 
 **Re-anchored `b2553d26` -> `3648f59a` on 2026-09-28 (T-0075 review round 5, merge of `6387ab49`).** `git diff --name-only b2553d26 3648f59a -- mcp-servers/ README.md TODO.md .claude-plugin/marketplace.json` returns `README.md` (T-0075: crew's slash-command count 35 -> 36 at `:168` and `:874`, in place), `TODO.md` (T-0092's entry at `:5051`, below every citation here) and `.claude-plugin/marketplace.json` (crew's lines only); nothing under `mcp-servers/`. `TODO.md:189`, `:200` and `:281` re-read, unchanged; `grep -c mcp-servers .claude-plugin/marketplace.json` is still **0**. No citation moved.
+
+## Re-anchor provenance - `3648f59a` -> `463caad3`, 2026-09-30 (T-0501 merges main `a61a6f38`, crew 1.0.70)
+
+`52d7c058` merges origin/main `a61a6f38` into T-0501-build: T-0088 (a Codex limit falls back to
+Claude, `review_limit.py`; lane worktrees read the main checkout's config through
+`crew_common.repo_config_dir`, crew 1.0.69) and #263-#267 (the faster QA harness and CI ruff,
+1.0.62-1.0.64; gate-first review, `review_gate.py`, 1.0.65; `crew-qa-standards`, 1.0.66-1.0.67;
+CLAUDE.md's evidence moved to `docs/claude-md-evidence.md`). Its conflicts were version lines,
+`CHANGELOG.md` and `.crew/verify.json` (both sides kept, T-0501's two rules after main's three).
+`38cec3bf` moves T-0501's version mentions to 1.0.70 and its rules to 35-36; `463caad3` bumps
+crew to 1.0.70, the last `plugin/crew/` commit. Every body citation (provenance sections and
+history phrases - a `:N` "at <sha>", "was", "->" - left as written) into a file changed since
+this note's anchor was mapped onto `463caad3` by a line diff (`git show <anchor>:<path>` against
+`HEAD`); a bare `:N` was attributed to the file whose anchor-side line holds the identifier named
+beside it, or to the last path named before it, and a definition was re-taken with `grep -n` on
+its def, class or assignment line. A cited line whose text changed in place was re-read and its
+claim corrected: of its cited paths only `README.md`, `TODO.md` and crew's lines in
+`.claude-plugin/marketplace.json` changed, and no body citation into them moved. Nothing under
+`mcp-servers/` changed. Nothing was executed for this note.

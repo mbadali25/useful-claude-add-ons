@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@a4b4f223
-verified: 2026-09-28
+anchor: useful-claude-add-ons@463caad3
+verified: 2026-09-30
 
 ## Re-derive provenance
 
@@ -180,14 +180,14 @@ listing the directory.
   34 skills, 5 plugins / all checks passed`. `plugin/README.md:414`'s crew row
   (`<!-- claim: plugin-skills:crew -->`), `plugin/PLUGINS.md:17`, the
   `.claude-plugin/marketplace.json` `crew` description, and both install
-  scripts' `PLUGIN_NAME` crew rows all read **4 agents, 36 commands, 29
-  skills, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events** at
+  scripts' `PLUGIN_NAME` crew rows all read **4 agents, 36 commands, 30
+  skills (29 until main's crew 1.0.66 added `crew-qa-standards`; re-read at `463caad3`), 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events** at
   `e95e5964` (34 commands until T-0004 added `commands/autopilot.md`, 35
   until T-0075 added `commands/config-setup.md`; every site listed here was
   bumped in `ecf69e43` and again in `a77a42d6`, and `README.md:168`/`:874`
   carry the same 36) —
   independently re-derived from the filesystem (`ls plugin/crew/agents/*.md`
-  = 4, `commands/*.md` = 36, `skills/*/` = 29) and from `hooks.json` (parsed
+  = 4, `commands/*.md` = 36, `skills/*/` = 30) and from `hooks.json` (parsed
   with `json.load`: 34 entries, 8 distinct event names, 26 unique `command`
   strings), not cross-quoted from any one of the docs. This is the same
   five/six-site figure this note's previous anchors repeatedly found
@@ -195,7 +195,7 @@ listing the directory.
   history); at `6c497a14` it does not disagree anywhere this note checked.
   **At `07ca3972` one site disagrees again:** `INSTALLATION.md:252` (a file
   unchanged since `a0c0847e`) still reads "34 slash commands" for crew. Its
-  `<!-- claim: plugin-skills:crew -->` marker binds the skills figure (29,
+  `<!-- claim: plugin-skills:crew -->` marker binds the skills figure (30 at `463caad3`,
   correct), not the command count, so `check_self_claims` does not catch it.
 - `SKILL_KEYS` dropped **36 -> 34**: `claude-memories-canvas` and
   `claude-memories-vault` removed from both install scripts' catalogs and
@@ -300,7 +300,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:2204` (on T-0010-solo's merge of `e878cc31`; `:2080` on T-0010-solo at `d7c7c75c`, `:2072` at `c817782f`, `:2069` at `89c9ee9a`, `:2058` at `50e67586`; `:2199` at `3648f59a`, T-0075's round-5 docs after its merge of `6387ab49`; `:2196` at `938e3b11`, T-0075's round-4 docs after its merge of `f54af3fa`; `:2187` at `3724731b`, T-0075 after its merge of `e6e10432`; `:2169` on T-0075's merge of `d2fbd408`; `:2075` at `d2fbd408`, `:1812` on T-0024's branch at `45345812`, `:2161` on T-0075's branch at `763eaeff`, `:2127` at `764f6018`, `:2067` at `67caa4b8`, `:2102` on T-0075's `f7163410`, `:2052` at `bebbb97f`, `:2079` on T-0075's `e95e5964`, `:2044` on T-0018's first landing merge at `fbc27b49`, `:2029` at `db14619c`, `:1959` on T-0018's branch at `e6b696fb`, `:1953` at T-0023's `a1acd9b7`, `:2015` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1944` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:2236` (on T-0010-solo's merge of `e878cc31`; `:2080` on T-0010-solo at `d7c7c75c`, `:2072` at `c817782f`, `:2069` at `89c9ee9a`, `:2058` at `50e67586`; `:2199` at `3648f59a`, T-0075's round-5 docs after its merge of `6387ab49`; `:2196` at `938e3b11`, T-0075's round-4 docs after its merge of `f54af3fa`; `:2187` at `3724731b`, T-0075 after its merge of `e6e10432`; `:2169` on T-0075's merge of `d2fbd408`; `:2075` at `d2fbd408`, `:1812` on T-0024's branch at `45345812`, `:2161` on T-0075's branch at `763eaeff`, `:2127` at `764f6018`, `:2067` at `67caa4b8`, `:2102` on T-0075's `f7163410`, `:2052` at `bebbb97f`, `:2079` on T-0075's `e95e5964`, `:2044` on T-0018's first landing merge at `fbc27b49`, `:2029` at `db14619c`, `:1959` on T-0018's branch at `e6b696fb`, `:1953` at T-0023's `a1acd9b7`, `:2015` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1944` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -318,7 +318,7 @@ listing the directory.
   `.crew/config.json` (machine-local, gitignored) is absent from this fresh
   worktree, so its `handoffPath` value could not be re-read here; the
   fallback default is confirmed instead, directly in code:
-  `plugin/crew/hooks/scripts/crew_autocycle.py:180` returns
+  `plugin/crew/hooks/scripts/crew_autocycle.py:182` returns
   `".work/HANDOFF.md"` when no config value is set. `docs/HANDOFF.md` is
   human-authored; the two files remain unrelated despite the shared
   basename.
@@ -328,7 +328,7 @@ listing the directory.
   per-path check), `0002-no-chatgpt-mcp-server.md` (accepted 2026-09-14) and
   `0003-crew-departs-from-three-community-best-practices.md` (accepted
   2026-09-17) — the latter two were already present at the previous anchor
-  and are not new in this range. `CLAUDE.md:147` still reads "Decisions in
+  and are not new in this range. `CLAUDE.md:92` still reads "Decisions in
   `docs/adr/`" at `adf8d1dd` (re-grepped; `CLAUDE.md` changed in
   `f2bb919b..adf8d1dd`, but only its `crew_freshness.py` line citations).
 - **`docs/review/`'s existence is itself a mild instance of the same gap
@@ -345,7 +345,7 @@ listing the directory.
   `:273`, `read_diagrams` at `:472`, the `sha[:7] == head[:7]` comparisons at
   `:429` and `:512`, and the `_diagram_paths` call site inside `read_diagrams`
   at `:518` (was `:522`). Re-exported through
-  `plugin/crew/hooks/scripts/crew_state.py:132`/`:136`/`:139`/`:142`
+  `plugin/crew/hooks/scripts/crew_state.py:133`/`:137`/`:140`/`:143`
   (`_ANCHOR_RE`, `_DIAGRAM_ANCHOR_RE`, `_NOT_SUBSYSTEMS`, `_diagram_paths`).
   A diagram with no anchor header, or one whose anchor is old AND whose
   `%% Anchors:` paths have moved, still counts as `behind`; unknown still
@@ -457,7 +457,7 @@ listing the directory.
 - `docs/review/*`'s nine documents were not read beyond their titles and the
   one quoted cross-review row; whether other rows record further
   never-filed decisions was not checked file by file.
-- `CLAUDE.md` beyond its `:147` "Decisions in `docs/adr/`" line (re-confirmed
+- `CLAUDE.md` beyond its `:92` "Decisions in `docs/adr/`" line (re-confirmed
   at `adf8d1dd`) was not re-derived end to end; this note's business with it
   is narrow.
 - `crew-docs/SKILL.md`'s retired-role references (`/crew:work`,
@@ -1294,3 +1294,25 @@ import block lost one line; no note cites that file by line. Re-anchor only; not
 T-0501's branch off origin/main `8ab733d7` (crew 1.0.61): `fb0ecbb1` adds `rules`' advisory anchor lines and
 `check_instructions.py`'s prefix filter, `17de8f3f` the docs, verify rules 32-33 and sabotage entries,
 `a4b4f223` bumps crew to 1.0.62. Of this note's cited paths only `.crew/verify.json` changed: two rules appended after every line this note cites (`:341-352`) and rule 24's `why` extended in place at `:268`, so every `.crew/verify.json:<n>` citation here holds. `plugin/crew/BUDGETS.md:11`'s claim changed in place (19,502 lines), no line moved; the version files changed in place (1.0.62 at `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`). Re-anchor only; nothing was executed for this note.
+
+## Re-anchor provenance - `a4b4f223` -> `463caad3`, 2026-09-30 (T-0501 merges main `a61a6f38`, crew 1.0.70)
+
+`52d7c058` merges origin/main `a61a6f38` into T-0501-build: T-0088 (a Codex limit falls back to
+Claude, `review_limit.py`; lane worktrees read the main checkout's config through
+`crew_common.repo_config_dir`, crew 1.0.69) and #263-#267 (the faster QA harness and CI ruff,
+1.0.62-1.0.64; gate-first review, `review_gate.py`, 1.0.65; `crew-qa-standards`, 1.0.66-1.0.67;
+CLAUDE.md's evidence moved to `docs/claude-md-evidence.md`). Its conflicts were version lines,
+`CHANGELOG.md` and `.crew/verify.json` (both sides kept, T-0501's two rules after main's three).
+`38cec3bf` moves T-0501's version mentions to 1.0.70 and its rules to 35-36; `463caad3` bumps
+crew to 1.0.70, the last `plugin/crew/` commit. Every body citation (provenance sections and
+history phrases - a `:N` "at <sha>", "was", "->" - left as written) into a file changed since
+this note's anchor was mapped onto `463caad3` by a line diff (`git show <anchor>:<path>` against
+`HEAD`); a bare `:N` was attributed to the file whose anchor-side line holds the identifier named
+beside it, or to the last path named before it, and a definition was re-taken with `grep -n` on
+its def, class or assignment line. A cited line whose text changed in place was re-read and its
+claim corrected: the runbooks mention is `plugin/crew/README.md:2236`,
+`crew_autocycle.py:180` -> `:182`, the re-exports `crew_state.py:133`/`:137`/`:140`/`:143`,
+CLAUDE.md's "Decisions in `docs/adr/`" line `:92` after main's rewrite, and the crew skills
+figure 30 at every site this note lists. The three guide sources changed (T-0088's troubleshooting
+and working-with-codex, T-0501's memory guide) and are cited by section only. Nothing was
+executed for this note.

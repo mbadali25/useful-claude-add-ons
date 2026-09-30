@@ -1,6 +1,6 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@b4f39fd3
-verified: 2026-09-28
+anchor: useful-claude-add-ons@463caad3
+verified: 2026-09-30
 
 ## Does
 Turns one or more Obsidian vaults into Claude Code's durable memory: a PostToolUse guard that
@@ -970,3 +970,25 @@ not re-run this pass.
 **Re-anchored `6caa1872` -> `fe80f69d` on 2026-09-28 (T-0088 review round 1 fixes, crew 1.0.55 unchanged).** `c3624af6` fixes the round's four FIX and three NIT findings (`crew_common.py`, `crew_platform.py`, `crew_config.py`, `review_run.py`, `review_limit.py`, their tests and sabotage entries, and the docs that describe them: `plugin/crew/CONFIG.md` +10 below `:126`, `plugin/crew/README.md` +7 below `:942`, `commands/review.md` in place, `CHANGELOG.md`, the troubleshooting and working-with-codex guides, `BUDGETS.md:11` in place); `fe80f69d` rebuilds the two guides. Every body citation of the form `path:line` into those files was compared by script (`/root/crew-tmp/t-0088/cites.py`, local), including the seven into `crew_platform.py`, all above its +7 at `:239`: each holds; `BUDGETS.md:11` (the count, in place) and `CHANGELOG.md` lines inside dated provenance notes are left as history. Nothing was executed for this note.
 
 **Re-anchored `fe80f69d` -> `68e106f5` on 2026-09-28 (T-0088 re-bumps crew to 1.0.56 for its review round 1 fixes).** `68e106f5` sets the version files (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`) to 1.0.56 and moves T-0088's own current-version mentions (`plugin/crew/CONFIG.md:117`, `:135`, `:141`, `plugin/crew/README.md:932`, `:945`, `docs/guides/crew/src/troubleshooting.md:166`, `:170` and the rebuilt troubleshooting HTML/DOCX/PDF) and its `CHANGELOG.md` heading and bump line to 1.0.56, all in place: `git diff --numstat fe80f69d 68e106f5` shows equal added and removed counts for every text file. No cited line moved. Nothing was executed for this note.
+
+## Re-anchor provenance - `b4f39fd3` -> `463caad3`, 2026-09-30 (T-0501 merges main `a61a6f38`, crew 1.0.70)
+
+`52d7c058` merges origin/main `a61a6f38` into T-0501-build: T-0088 (a Codex limit falls back to
+Claude, `review_limit.py`; lane worktrees read the main checkout's config through
+`crew_common.repo_config_dir`, crew 1.0.69) and #263-#267 (the faster QA harness and CI ruff,
+1.0.62-1.0.64; gate-first review, `review_gate.py`, 1.0.65; `crew-qa-standards`, 1.0.66-1.0.67;
+CLAUDE.md's evidence moved to `docs/claude-md-evidence.md`). Its conflicts were version lines,
+`CHANGELOG.md` and `.crew/verify.json` (both sides kept, T-0501's two rules after main's three).
+`38cec3bf` moves T-0501's version mentions to 1.0.70 and its rules to 35-36; `463caad3` bumps
+crew to 1.0.70, the last `plugin/crew/` commit. Every body citation (provenance sections and
+history phrases - a `:N` "at <sha>", "was", "->" - left as written) into a file changed since
+this note's anchor was mapped onto `463caad3` by a line diff (`git show <anchor>:<path>` against
+`HEAD`); a bare `:N` was attributed to the file whose anchor-side line holds the identifier named
+beside it, or to the last path named before it, and a definition was re-taken with `grep -n` on
+its def, class or assignment line. A cited line whose text changed in place was re-read and its
+claim corrected: of its cited paths `.claude-plugin/marketplace.json`, `CHANGELOG.md`,
+`CLAUDE.md`, `README.md`, `TODO.md`, `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`,
+`plugin/crew/BUDGETS.md`, `plugin/crew/CONFIG.md`, `plugin/crew/README.md`, the troubleshooting
+guide source, `crew_common.py` and `review_run.py` changed, and no body citation
+into them moved (the `:39` near `CLAUDE.md` is `vault_guard.py`'s, unchanged). Nothing under
+`plugin/obsidian-vault/` changed. Nothing was executed for this note.

@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@a4b4f223
-verified: 2026-09-28
+anchor: useful-claude-add-ons@463caad3
+verified: 2026-09-30
 
 # localgpu
 
@@ -510,9 +510,9 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")` quoted at `:33-34`.
   **Checked against the code, corrected after QA:**
-  `plugin/crew/hooks/scripts/crew_config.py:128-129` only re-exports
+  `plugin/crew/hooks/scripts/crew_config.py:129-130` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1437-1438` since T-0010's four `AUTOPILOT_DEFAULTS`
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1440-1441` since T-0010's four `AUTOPILOT_DEFAULTS`
   lines (T-0010-solo's merge of `67caa4b8`; `:1432-1433` at `65bb3330`; `:1430-1431` on main before
   T-0005's three import lines merged in, re-numbered
   from `:1504-1505` by crew 1.0 - see the re-anchor entries below; same two
@@ -1465,3 +1465,22 @@ import block lost one line; no note cites that file by line. Re-anchor only; not
 T-0501's branch off origin/main `8ab733d7` (crew 1.0.61): `fb0ecbb1` adds `rules`' advisory anchor lines and
 `check_instructions.py`'s prefix filter, `17de8f3f` the docs, verify rules 32-33 and sabotage entries,
 `a4b4f223` bumps crew to 1.0.62. Of this note's cited paths only `.crew/verify.json` changed: two rules appended after every line this note cites (`:341-352`) and rule 24's `why` extended in place at `:268`, so every `.crew/verify.json:<n>` citation here holds. `plugin/crew/BUDGETS.md:11`'s claim changed in place (19,502 lines), no line moved; the version files changed in place (1.0.62 at `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`). Re-anchor only; nothing was executed for this note.
+
+## Re-anchor provenance - `a4b4f223` -> `463caad3`, 2026-09-30 (T-0501 merges main `a61a6f38`, crew 1.0.70)
+
+`52d7c058` merges origin/main `a61a6f38` into T-0501-build: T-0088 (a Codex limit falls back to
+Claude, `review_limit.py`; lane worktrees read the main checkout's config through
+`crew_common.repo_config_dir`, crew 1.0.69) and #263-#267 (the faster QA harness and CI ruff,
+1.0.62-1.0.64; gate-first review, `review_gate.py`, 1.0.65; `crew-qa-standards`, 1.0.66-1.0.67;
+CLAUDE.md's evidence moved to `docs/claude-md-evidence.md`). Its conflicts were version lines,
+`CHANGELOG.md` and `.crew/verify.json` (both sides kept, T-0501's two rules after main's three).
+`38cec3bf` moves T-0501's version mentions to 1.0.70 and its rules to 35-36; `463caad3` bumps
+crew to 1.0.70, the last `plugin/crew/` commit. Every body citation (provenance sections and
+history phrases - a `:N` "at <sha>", "was", "->" - left as written) into a file changed since
+this note's anchor was mapped onto `463caad3` by a line diff (`git show <anchor>:<path>` against
+`HEAD`); a bare `:N` was attributed to the file whose anchor-side line holds the identifier named
+beside it, or to the last path named before it, and a definition was re-taken with `grep -n` on
+its def, class or assignment line. A cited line whose text changed in place was re-read and its
+claim corrected: `crew_config.py`'s provider re-export is `:129-130` (T-0088's `import
+crew_common` above it) and the tuples are defined at `crew_state.py:1440-1441` (+3). Nothing
+under `plugin/localgpu/` changed. No test suite was executed for this note.

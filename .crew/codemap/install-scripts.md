@@ -1,6 +1,6 @@
 # install-scripts
-anchor: useful-claude-add-ons@a4b4f223
-verified: 2026-09-28
+anchor: useful-claude-add-ons@463caad3
+verified: 2026-09-30
 
 ## Re-derive provenance
 
@@ -224,7 +224,7 @@ through their own package managers.
   merely re-synced.** All of the following read **4 agents, 36 commands** (34
   until `ecf69e43` added `/crew:autopilot`, 35 until T-0075 added
   `/crew:config-setup`; re-read at `e95e5964`) (or
-  the plugin-level 29 skills / 34 hook entries across 8 events figures that go
+  the plugin-level 30 skills (29 until main's crew 1.0.66 added `crew-qa-standards`) / 34 hook entries across 8 events figures that go
   with them), checked directly rather than cross-quoted from one another:
   `.claude-plugin/marketplace.json`'s `crew` description (parsed with
   `json.load`); `plugin/PLUGINS.md:17`; `plugin/README.md:414`'s crew row;
@@ -234,7 +234,7 @@ through their own package managers.
   filesystem rather than trusted: `ls plugin/crew/agents/*.md` = 4 (explorer,
   researcher, reviewer, security — no PM, no scribe: the roster cut this
   repo's own memory already names), `ls plugin/crew/commands/*.md` = 36,
-  `ls -d plugin/crew/skills/*/` = 29, and `hooks.json` parsed with `json.load`
+  `ls -d plugin/crew/skills/*/` = 30, and `hooks.json` parsed with `json.load`
   = 34 entries across 8 events (`{PostToolUse, PreToolUse, UserPromptSubmit,
   PreCompact, Notification, Stop, SessionStart, SubagentStart}`), 26 unique
   `command` strings (13 scripts × two shells). `python3
@@ -1202,3 +1202,23 @@ import block lost one line; no note cites that file by line. Re-anchor only; not
 T-0501's branch off origin/main `8ab733d7` (crew 1.0.61): `fb0ecbb1` adds `rules`' advisory anchor lines and
 `check_instructions.py`'s prefix filter, `17de8f3f` the docs, verify rules 32-33 and sabotage entries,
 `a4b4f223` bumps crew to 1.0.62. Of this note's cited paths only `.crew/verify.json` changed: two rules appended after every line this note cites (`:341-352`) and rule 24's `why` extended in place at `:268`, so every `.crew/verify.json:<n>` citation here holds. `plugin/crew/BUDGETS.md:11`'s claim changed in place (19,502 lines), no line moved; the version files changed in place (1.0.62 at `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`). Re-anchor only; nothing was executed for this note.
+
+## Re-anchor provenance - `a4b4f223` -> `463caad3`, 2026-09-30 (T-0501 merges main `a61a6f38`, crew 1.0.70)
+
+`52d7c058` merges origin/main `a61a6f38` into T-0501-build: T-0088 (a Codex limit falls back to
+Claude, `review_limit.py`; lane worktrees read the main checkout's config through
+`crew_common.repo_config_dir`, crew 1.0.69) and #263-#267 (the faster QA harness and CI ruff,
+1.0.62-1.0.64; gate-first review, `review_gate.py`, 1.0.65; `crew-qa-standards`, 1.0.66-1.0.67;
+CLAUDE.md's evidence moved to `docs/claude-md-evidence.md`). Its conflicts were version lines,
+`CHANGELOG.md` and `.crew/verify.json` (both sides kept, T-0501's two rules after main's three).
+`38cec3bf` moves T-0501's version mentions to 1.0.70 and its rules to 35-36; `463caad3` bumps
+crew to 1.0.70, the last `plugin/crew/` commit. Every body citation (provenance sections and
+history phrases - a `:N` "at <sha>", "was", "->" - left as written) into a file changed since
+this note's anchor was mapped onto `463caad3` by a line diff (`git show <anchor>:<path>` against
+`HEAD`); a bare `:N` was attributed to the file whose anchor-side line holds the identifier named
+beside it, or to the last path named before it, and a definition was re-taken with `grep -n` on
+its def, class or assignment line. A cited line whose text changed in place was re-read and its
+claim corrected: the plugin-level skills figure is 30 at every
+marked site (`plugin/PLUGINS.md:17`, `plugin/README.md:414`, the marketplace description) and
+`ls -d plugin/crew/skills/*/` returns 30; both install scripts did not change, so their
+citations stand. Neither install script was executed.
