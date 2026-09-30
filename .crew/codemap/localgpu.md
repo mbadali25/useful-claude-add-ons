@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@96cce555
-verified: 2026-09-29
+anchor: useful-claude-add-ons@85739e7e
+verified: 2026-09-30
 
 # localgpu
 
@@ -510,9 +510,9 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")` quoted at `:33-34`.
   **Checked against the code, corrected after QA:**
-  `plugin/crew/hooks/scripts/crew_config.py:128-129` only re-exports
+  `plugin/crew/hooks/scripts/crew_config.py:129-130` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1441-1442` since T-0010's four `AUTOPILOT_DEFAULTS`
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1444-1445` since T-0010's four `AUTOPILOT_DEFAULTS`
   lines (T-0010-solo's merge of `67caa4b8`; `:1432-1433` at `65bb3330`; `:1430-1431` on main before
   T-0005's three import lines merged in, re-numbered
   from `:1508-1509` by crew 1.0 - see the re-anchor entries below; same two
@@ -756,8 +756,8 @@ never matches and has to be counted on its own):
   `plugin/localgpu/mcp/store.py:620-674` (and its internal `:637`, `:639-648`,
   `:646`, `:651`, `:676`, cited in shorthand),
   `plugin/localgpu/mcp/_version.py:10-13`, `:31-32`,
-  `plugin/crew/hooks/scripts/crew_config.py:126-127`,
-  `plugin/crew/hooks/scripts/crew_state.py:1508-1509`, and, both written out
+  `plugin/crew/hooks/scripts/crew_config.py:127-128`,
+  `plugin/crew/hooks/scripts/crew_state.py:1511-1512`, and, both written out
   in full rather than one of them in shorthand,
   `scripts/check-marketplace.py:160-170` and `scripts/check-marketplace.py:169`.
   The first version of this bullet said 9 and listed 7 (both wrong, an
@@ -810,9 +810,9 @@ For the record, what was wrong and how it was found:
    tuples were cited at `plugin/localgpu/commands/crew.md:29-30` (that is the
    prose sentence introducing them); the literal tuples are at `:33-34`.
    Re-read `crew_config.py`: `DEV_PROVIDERS`/`QA_PROVIDERS` there are a
-   re-export (`plugin/crew/hooks/scripts/crew_config.py:126-127`,
+   re-export (`plugin/crew/hooks/scripts/crew_config.py:127-128`,
    `DEV_PROVIDERS = crew_state.DEV_PROVIDERS`), not the definition — that is
-   `plugin/crew/hooks/scripts/crew_state.py:1508-1509`. Also narrowed the
+   `plugin/crew/hooks/scripts/crew_state.py:1511-1512`. Also narrowed the
    "read only past the opening constraint (lines 1-32)" claim: this pass
    read through line 40, which is where the code block with the tuples ends.
 5. **Version-number subtraction presented as a count.** "Stable across those
@@ -885,7 +885,7 @@ sentence around it staying correct.
    .crew/codemap/localgpu.md`, which now returns nothing) to either full
    repo-relative paths or prose describing the shape without reproducing it.
 2. **FIX — the "12 new citations" method did not reproduce 12.** The bullet
-   said `plugin/crew/hooks/scripts/crew_state.py:1508-1509` fell outside the
+   said `plugin/crew/hooks/scripts/crew_state.py:1511-1512` fell outside the
    `plugin/` regex the rest of the section used and was "tallied separately"
    — it does not; that path starts with `plugin/crew/`, which the regex
    already matches, and the citation was already in that regex's output. And
@@ -1478,3 +1478,5 @@ paragraphs reflowed and `## 6. wave` added), `CONFIG.md` (+2 rows in each autopi
 tests. Every body `path:N` citation into those files was mapped from `bbd9a66d` to `96cce555` with a
 `difflib` line diff (`/root/crew-tmp/t-0029/citemap.py`, machine-local; provenance sections left
 as history); a bare `:N` the mapper attributed to the wrong file was re-derived with `grep -n` instead. Nothing was executed for this note.
+
+**Re-anchored `96cce555` -> `85739e7e` on 2026-09-30 (T-0029, on its merge of main `a61a6f38`).** `85739e7e` is T-0029's crew 1.0.70 version commit, after `0e432bec` merged origin/main `a61a6f38` (T-0088 landed as crew 1.0.69, with PRs #263-#267 before it: the QA harness, gate-first review, the steward and CLAUDE.md changes and the new `crew-qa-standards` skill). Nothing under `plugin/localgpu/` changed. The seven full-path citations into crew files (`crew_config.py` +1, `crew_state.py` +3, from main's T-0088 `crew_common` import and T-0029's merge) were mapped with a line diff and moved, each re-read; the version and count lines this note mentions moved in place.

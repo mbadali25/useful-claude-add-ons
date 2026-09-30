@@ -1,6 +1,6 @@
 # mcp-servers
-anchor: useful-claude-add-ons@96cce555
-verified: 2026-09-29
+anchor: useful-claude-add-ons@85739e7e
+verified: 2026-09-30
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
 ## Does
@@ -368,3 +368,5 @@ No citation moved.
 **Re-anchored `b2553d26` -> `3648f59a` on 2026-09-28 (T-0075 review round 5, merge of `6387ab49`).** `git diff --name-only b2553d26 3648f59a -- mcp-servers/ README.md TODO.md .claude-plugin/marketplace.json` returns `README.md` (T-0075: crew's slash-command count 35 -> 36 at `:168` and `:874`, in place), `TODO.md` (T-0092's entry at `:5051`, below every citation here) and `.claude-plugin/marketplace.json` (crew's lines only); nothing under `mcp-servers/`. `TODO.md:189`, `:200` and `:281` re-read, unchanged; `grep -c mcp-servers .claude-plugin/marketplace.json` is still **0**. No citation moved.
 
 **Re-anchored `3648f59a` -> `96cce555` on 2026-09-29 (T-0029, on its merge of main `8ab733d7`).** `git diff --name-only 3648f59a 96cce555 -- mcp-servers/ plugin/obsidian-vault/ README.md TODO.md CHANGELOG.md .claude-plugin/marketplace.json` returns `README.md` (the install URLs re-pinned to `e878cc31` at `:12` and `:18`, in place), `TODO.md` and `CHANGELOG.md` (entries added by main's T-0010, T-0092 and T-0075 landings and T-0029's own) and `.claude-plugin/marketplace.json` (crew's version line only); nothing under the subsystem's own directory. A `difflib` line diff of each over this note's body citations moved none. No citation moved.
+
+**Re-anchored `96cce555` -> `85739e7e` on 2026-09-30 (T-0029, on its merge of main `a61a6f38`).** `85739e7e` is T-0029's crew 1.0.70 version commit, after `0e432bec` merged origin/main `a61a6f38` (T-0088 landed as crew 1.0.69, with PRs #263-#267 before it: the QA harness, gate-first review, the steward and CLAUDE.md changes and the new `crew-qa-standards` skill). `git diff --name-only 96cce555 85739e7e` over this note's paths returns `.claude-plugin/marketplace.json` (crew's lines only), `CHANGELOG.md` (entries added at the top) and `README.md` (crew's skill count, in place); nothing under `mcp-servers/`. No citation moved.

@@ -1,6 +1,6 @@
 # install-scripts
-anchor: useful-claude-add-ons@96cce555
-verified: 2026-09-29
+anchor: useful-claude-add-ons@85739e7e
+verified: 2026-09-30
 
 ## Re-derive provenance
 
@@ -224,7 +224,8 @@ through their own package managers.
   merely re-synced.** All of the following read **4 agents, 36 commands** (34
   until `ecf69e43` added `/crew:autopilot`, 35 until T-0075 added
   `/crew:config-setup`; re-read at `e95e5964`) (or
-  the plugin-level 29 skills / 34 hook entries across 8 events figures that go
+  the plugin-level 30 skills (29 until main's #267 added `crew-qa-standards`, re-read at
+  `85739e7e`) / 34 hook entries across 8 events figures that go
   with them), checked directly rather than cross-quoted from one another:
   `.claude-plugin/marketplace.json`'s `crew` description (parsed with
   `json.load`); `plugin/PLUGINS.md:17`; `plugin/README.md:414`'s crew row;
@@ -1215,3 +1216,5 @@ paragraphs reflowed and `## 6. wave` added), `CONFIG.md` (+2 rows in each autopi
 tests. Every body `path:N` citation into those files was mapped from `bbd9a66d` to `96cce555` with a
 `difflib` line diff (`/root/crew-tmp/t-0029/citemap.py`, machine-local; provenance sections left
 as history); a bare `:N` the mapper attributed to the wrong file was re-derived with `grep -n` instead. Nothing was executed for this note.
+
+**Re-anchored `96cce555` -> `85739e7e` on 2026-09-30 (T-0029, on its merge of main `a61a6f38`).** `85739e7e` is T-0029's crew 1.0.70 version commit, after `0e432bec` merged origin/main `a61a6f38` (T-0088 landed as crew 1.0.69, with PRs #263-#267 before it: the QA harness, gate-first review, the steward and CLAUDE.md changes and the new `crew-qa-standards` skill). Of the paths this note cites, `scripts/` and both install scripts are unchanged; what moved is main's and T-0029's release bookkeeping: `.claude-plugin/marketplace.json` (`:217` now says 30 bundled skills, `:218` 1.0.70), `plugin/PLUGINS.md` (`:14` 1.0.70, `:17` 30 skills), `plugin/crew/BUDGETS.md` (`:11` 19,923 lines across 132 files), `README.md`/`INSTALLATION.md`/`plugin/README.md` (the crew skill count 29 -> 30 in place) and `plugin/crew/README.md` (+32 lines above the cited sections; body citations into it re-mapped by line diff). The plugin-level skills figure above now reads 30. No citation into either install script moved.

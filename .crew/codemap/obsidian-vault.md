@@ -1,6 +1,6 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@b4f39fd3
-verified: 2026-09-28
+anchor: useful-claude-add-ons@85739e7e
+verified: 2026-09-30
 
 ## Does
 Turns one or more Obsidian vaults into Claude Code's durable memory: a PostToolUse guard that
@@ -972,3 +972,5 @@ not re-run this pass.
 **Re-anchored `fe80f69d` -> `68e106f5` on 2026-09-28 (T-0088 re-bumps crew to 1.0.56 for its review round 1 fixes).** `68e106f5` sets the version files (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`) to 1.0.56 and moves T-0088's own current-version mentions (`plugin/crew/CONFIG.md:117`, `:135`, `:141`, `plugin/crew/README.md:932`, `:945`, `docs/guides/crew/src/troubleshooting.md:166`, `:170` and the rebuilt troubleshooting HTML/DOCX/PDF) and its `CHANGELOG.md` heading and bump line to 1.0.56, all in place: `git diff --numstat fe80f69d 68e106f5` shows equal added and removed counts for every text file. No cited line moved. Nothing was executed for this note.
 
 **Re-anchored `3648f59a` -> `96cce555` on 2026-09-29 (T-0029, on its merge of main `8ab733d7`).** `git diff --name-only 3648f59a 96cce555 -- mcp-servers/ plugin/obsidian-vault/ README.md TODO.md CHANGELOG.md .claude-plugin/marketplace.json` returns `README.md` (the install URLs re-pinned to `e878cc31` at `:12` and `:18`, in place), `TODO.md` and `CHANGELOG.md` (entries added by main's T-0010, T-0092 and T-0075 landings and T-0029's own) and `.claude-plugin/marketplace.json` (crew's version line only); nothing under the subsystem's own directory. A `difflib` line diff of each over this note's body citations moved none. No citation moved.
+
+**Re-anchored `b4f39fd3` -> `85739e7e` on 2026-09-30 (T-0029, on its merge of main `a61a6f38`).** `85739e7e` is T-0029's crew 1.0.70 version commit, after `0e432bec` merged origin/main `a61a6f38` (T-0088 landed as crew 1.0.69, with PRs #263-#267 before it: the QA harness, gate-first review, the steward and CLAUDE.md changes and the new `crew-qa-standards` skill). The header took main's `b4f39fd3` on the merge (both sides had re-anchored this note; both history paragraphs are kept above, main's first). `git diff --name-only b4f39fd3 85739e7e -- mcp-servers/ plugin/obsidian-vault/` is empty; of the other cited paths `README.md`, `CLAUDE.md`, `TODO.md`, `CHANGELOG.md`, `plugin/crew/CONFIG.md`, `plugin/crew/README.md`, `docs/guides/crew/src/troubleshooting.md` and the crew version files (`.claude-plugin/marketplace.json`, `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`) changed; a `difflib` line diff of each over this note's body citations moved none. No citation moved.
