@@ -30,6 +30,20 @@ All notable changes to this repository are documented here. Format follows [Keep
 - Bumped `1.0.69 -> 1.0.70` (no version on its branch; 1.0.62 was set one past T-0010's 1.0.61,
   then re-set one past origin/main's 1.0.69, T-0088, after merging main).
 
+### Fixed — `crew` 1.0.70: a silent python candidate no longer writes a red error block on every Windows hook (T-0097)
+
+- **What changed.** `Resolve-CrewPython`, which is byte-identical in all 11 PowerShell hook carriers
+  (role-write-guard, completion-audit, scope-guard, approval-hook, crew-context, platform-sync, cloud-guard,
+  verify-gate, handoff-read, notify, handoff-write), now parses a candidate's probe answer only when there is one:
+  `$probe = if ($line) { $line | ConvertFrom-Json } else { $null }`.
+- **Why.** A candidate that printed nothing left `$line` null. Piping `$null` into `ConvertFrom-Json` is a
+  NON-terminating binding error that the probe's `try` never catches, so it reached stderr as an error record on
+  every hook, even though the candidate was correctly rejected and the right interpreter was chosen.
+- **Unchanged.** Candidate order, the probe's acceptance rule, and the result for every candidate that answers.
+- **Tests.** `test_ps1_python_probe.py::test_a_silent_candidate_is_rejected_without_writing_to_stderr` asserts
+  the real interpreter is chosen and stderr is empty. The sabotage entry "PROBE: a silent candidate's null answer
+  is piped into ConvertFrom-Json" (`sabotage_scope.py`) goes RED.
+
 ### Changed — `crew` 1.0.69: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088)
 
 - **`/crew:review` probes Codex with a real call.** `review_run.py --probe` makes
