@@ -344,6 +344,22 @@ contract itself. This section is what goes wrong with the approval and the audit
   amending scope is edit-then-approve, same as any other spec change.</p>
 </li>
 <li>
+<p><strong>Symptom: a <code>/crew:autopilot wave</code> lane stops on "a lane may not accept, reject or
+  admin-merge".</strong>
+  This is the subagent never-list, and it is working as designed. When the hook payload carries a
+  non-empty <code>agent_type</code> — every wave lane is a subagent — <code>scope_guard.py</code> refuses, in every
+  <code>scope.mode</code> but <code>off</code>, any shell command that runs <code>review_ledger.py --accept</code> or <code>--reject</code>
+  (and every abbreviation argparse would once have expanded to them, <code>--a</code> up to <code>--accept</code>, <code>--rej</code>
+  up to <code>--reject</code>) or <code>gh pr merge ... --admin</code>. <code>crew_ticket.py approve</code> stays refused for everyone,
+  lane or not. The refusal is logged to <code>.crew/guard.log</code> as <code>lane-never-list</code>. <code>review_ledger.py</code>
+  also parses with <code>allow_abbrev=False</code>, so <code>--acc</code> is an argparse error that changes no ledger,
+  from any session. A lane may still run <code>review_ledger.py --status</code>/<code>--reserve</code> and
+  <code>review_run.py --reserve-only</code>/<code>--round N</code>, and write inside its own worktree's Touch.
+  <strong>Fix:</strong> none in the lane. It writes the decision as a question and stops; <code>crew_wave.py collect</code>
+  shows it to the owner, who accepts, rejects or merges from the main session, where no
+  <code>agent_type</code> is present and nothing on this list is refused.</p>
+</li>
+<li>
 <p><strong>Symptom: <code>/crew:done</code> refuses on "out of scope" for a file the edit guard never saw.</strong>
   This is the Stop-time completion audit (<code>completion_audit.py</code>), not the edit guard. The edit guard
   only sees <code>Write</code>/<code>Edit</code>/<code>MultiEdit</code>/<code>NotebookEdit</code> tool calls; a <code>sed -i</code>, a redirect, a
