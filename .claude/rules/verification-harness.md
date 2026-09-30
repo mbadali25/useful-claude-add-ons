@@ -4,10 +4,10 @@ paths:
   - "_verify/smoke.sh"
   - "scripts/check-marketplace.py"
 ---
-<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=eb992510fa7a3197 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=125268261160452d -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # verification-harness
-Code map anchor `68659749`; if it is behind HEAD, re-check with `git diff --name-only 68659749..HEAD -- <cited paths>`.
-Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and .crew/verify.json — what each actually runs, and where they overlap or don't. .crew/verify.json is tracked; its own anchor field (:3) is stale at 5238be3d, independent of this note's anchor.; then to 68659749 (T-0505 merges main d1462bbd, L-0529)
+Code map anchor `7867e893`; if it is behind HEAD, re-check with `git diff --name-only 7867e893..HEAD -- <cited paths>`.
+Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and .crew/verify.json — what each actually runs, and where they overlap or don't. .crew/verify.json is tracked; its own anchor field (:3) is stale at 5238be3d, independent of this note's anchor.; then to 68659749 (T-0505 merges main d1462bbd, L-0529); then to 7867e893 (T-0505 pre-review hardening)
 ## Entry points
 - `.crew/verify.json:170-175` (rule 9) — the whole-suite pytest rule and its 377s pricing.
 - `.crew/verify.json:118-128` (rule 6) — the T-0005 cloud-guard suites.

@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@68659749
+anchor: useful-claude-add-ons@7867e893
 verified: 2026-09-30
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -109,6 +109,10 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
   working tree on one machine, not about the repo, and it means `npm test -w packages/<anything>`
   here would exit 1 at `pretest` until `npm run build` is run from `mcp-servers/`. (JUDGEMENT: this
   is the guard working, not a defect.)
+
+## Re-anchor provenance - `68659749` -> `7867e893`, 2026-09-30 (T-0505 pre-review hardening)
+
+`git diff --name-only 68659749 7867e893` returns `CHANGELOG.md` (one word, in place), both promote-gate flavours (the committed-map read is could-not-tell on any failure; the parser's output is UTF-8) and two test files. `promote-gate.sh:79` (the `crew_py` call) was re-read and has not moved; no other cited line moved. Nothing was executed for this note.
 
 ## Re-anchor provenance - `da6c62c1` -> `68659749`, 2026-09-30 (T-0505 merges main `d1462bbd`, L-0529)
 

@@ -3,10 +3,10 @@ paths:
   - "plugin/obsidian-vault/**"
   - "plugin/crew/**"
 ---
-<!-- crew:generated source=.crew/codemap/obsidian-vault.md sha256=93ef8a752e7f4a1c -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/obsidian-vault.md sha256=082a99ae125382bc -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # obsidian-vault
-Code map anchor `68659749`; if it is behind HEAD, re-check with `git diff --name-only 68659749..HEAD -- <cited paths>`.
-Covers: The obsidian-vault plugin: four hook events registered as bash+PowerShell pairs, the three guard checks and their unequal defaults, the two differently-sized exemption sets, and per-vault MCP registration. The guard is PostToolUse, so it reports a bad write rather than blocking it.; then to 68659749 (T-0505 merges main d1462bbd, L-0529)
+Code map anchor `7867e893`; if it is behind HEAD, re-check with `git diff --name-only 7867e893..HEAD -- <cited paths>`.
+Covers: The obsidian-vault plugin: four hook events registered as bash+PowerShell pairs, the three guard checks and their unequal defaults, the two differently-sized exemption sets, and per-vault MCP registration. The guard is PostToolUse, so it reports a bad write rather than blocking it.; then to 68659749 (T-0505 merges main d1462bbd, L-0529); then to 7867e893 (T-0505 pre-review hardening)
 ## Landmines
 - The three guard checks do not ship the same way.
 - The guard only ever sees the DEFAULT vault.

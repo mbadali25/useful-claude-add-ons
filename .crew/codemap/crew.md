@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@68659749
+anchor: useful-claude-add-ons@7867e893
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -1428,6 +1428,10 @@ two disagree. The other subsystem notes in `.crew/codemap/` cover their own
 areas; `INDEX.md` is the table of contents. The `6c497a14` re-derivation left
 its anchor column to the integrator; T-0015 re-filled that column from
 `grep -m1 '^anchor:'` when it re-anchored every note to `f2bb919b`.
+
+## Re-anchor provenance - `68659749` -> `7867e893`, 2026-09-30 (T-0505 pre-review hardening)
+
+`git diff --name-only 68659749 7867e893` returns `CHANGELOG.md` (one word, in place), both promote-gate flavours (the committed-map read is could-not-tell on any failure; the parser's output is UTF-8) and two test files. `promote-gate.sh:79` (the `crew_py` call) was re-read and has not moved; no other cited line moved. Nothing was executed for this note.
 
 ## Re-anchor provenance - `da6c62c1` -> `68659749`, 2026-09-30 (T-0505 merges main `d1462bbd`, L-0529)
 

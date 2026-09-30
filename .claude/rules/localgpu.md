@@ -3,10 +3,10 @@ paths:
   - "plugin/crew/**"
   - "plugin/localgpu/**"
 ---
-<!-- crew:generated source=.crew/codemap/localgpu.md sha256=d7ca9dc039f7c598 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/localgpu.md sha256=4cf039bc64d27ab5 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # localgpu
-Code map anchor `68659749`; if it is behind HEAD, re-check with `git diff --name-only 68659749..HEAD -- <cited paths>`.
-Covers: The localgpu plugin: its two independent process trees, the shared-Ollama constraint that drives OLLAMA_MAX_LOADED_MODELS=1, the embed-model mismatch guard, .mcp.json provisioning, and the bootstrap.sh/bootstrap.ps1 parity verdict. Records that plugin/localgpu/commands/crew.md's role table names eleven crew roles that crew 1.0 deleted.; then to 68659749 (T-0505 merges main d1462bbd, L-0529)
+Code map anchor `7867e893`; if it is behind HEAD, re-check with `git diff --name-only 7867e893..HEAD -- <cited paths>`.
+Covers: The localgpu plugin: its two independent process trees, the shared-Ollama constraint that drives OLLAMA_MAX_LOADED_MODELS=1, the embed-model mismatch guard, .mcp.json provisioning, and the bootstrap.sh/bootstrap.ps1 parity verdict. Records that plugin/localgpu/commands/crew.md's role table names eleven crew roles that crew 1.0 deleted.; then to 68659749 (T-0505 merges main d1462bbd, L-0529); then to 7867e893 (T-0505 pre-review hardening)
 ## Entry points
 - `plugin/localgpu/mcp/server.py:253` — `main()`, which calls `mcp.run("stdio")` at `:254`.
 - `plugin/localgpu/mcp/server.py:73` — `search_code`, MCP tool

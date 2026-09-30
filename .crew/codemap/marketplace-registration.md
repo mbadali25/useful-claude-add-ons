@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@68659749
+anchor: useful-claude-add-ons@7867e893
 verified: 2026-09-30
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -311,6 +311,10 @@ against synthetic fixtures and never reads this repo's own docs.
 - **The install scripts' full array contents** (every `SKILL_KEYS` entry, not
   just the crew/plugin rows) were not diffed line by line against `5d1fc5fd`;
   only the catalog *mechanism* and the crew-specific rows were re-measured.
+
+## Re-anchor provenance - `68659749` -> `7867e893`, 2026-09-30 (T-0505 pre-review hardening)
+
+`git diff --name-only 68659749 7867e893` returns `CHANGELOG.md` (one word, in place), both promote-gate flavours (the committed-map read is could-not-tell on any failure; the parser's output is UTF-8) and two test files. `promote-gate.sh:79` (the `crew_py` call) was re-read and has not moved; no other cited line moved. Nothing was executed for this note.
 
 ## Re-anchor provenance - `da6c62c1` -> `68659749`, 2026-09-30 (T-0505 merges main `d1462bbd`, L-0529)
 
