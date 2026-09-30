@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@17d0b1d2
+anchor: useful-claude-add-ons@c43a54c1
 verified: 2026-09-30
 
 # localgpu
@@ -512,10 +512,12 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   **Checked against the code, corrected after QA:**
   `plugin/crew/hooks/scripts/crew_config.py:129-130` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1440-1441` since T-0010's four `AUTOPILOT_DEFAULTS`
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1450-1451` on T-0028 at `c43a54c1`, where both
+  tuples end in `"kimi"`, so the literal tuples localgpu quotes at `:33-34` are stale there
+  (`TODO.md`'s T-0028 item (f)); `:1440-1441` before T-0028, since T-0010's four `AUTOPILOT_DEFAULTS`
   lines (T-0010-solo's merge of `67caa4b8`; `:1432-1433` at `65bb3330`; `:1430-1431` on main before
   T-0005's three import lines merged in, re-numbered
-  from `:1507-1508` by crew 1.0 - see the re-anchor entries below; same two
+  from `:1540-1541` by crew 1.0 - see the re-anchor entries below; same two
   lines, `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")`, byte-identical).
   So `crew.md`'s own attribution to `crew_config.py` names the re-export, not
@@ -757,7 +759,7 @@ never matches and has to be counted on its own):
   `:646`, `:651`, `:676`, cited in shorthand),
   `plugin/localgpu/mcp/_version.py:10-13`, `:31-32`,
   `plugin/crew/hooks/scripts/crew_config.py:127-128`,
-  `plugin/crew/hooks/scripts/crew_state.py:1507-1508`, and, both written out
+  `plugin/crew/hooks/scripts/crew_state.py:1540-1541`, and, both written out
   in full rather than one of them in shorthand,
   `scripts/check-marketplace.py:160-170` and `scripts/check-marketplace.py:169`.
   The first version of this bullet said 9 and listed 7 (both wrong, an
@@ -812,7 +814,7 @@ For the record, what was wrong and how it was found:
    Re-read `crew_config.py`: `DEV_PROVIDERS`/`QA_PROVIDERS` there are a
    re-export (`plugin/crew/hooks/scripts/crew_config.py:127-128`,
    `DEV_PROVIDERS = crew_state.DEV_PROVIDERS`), not the definition — that is
-   `plugin/crew/hooks/scripts/crew_state.py:1507-1508`. Also narrowed the
+   `plugin/crew/hooks/scripts/crew_state.py:1540-1541`. Also narrowed the
    "read only past the opening constraint (lines 1-32)" claim: this pass
    read through line 40, which is where the code block with the tuples ends.
 5. **Version-number subtraction presented as a count.** "Stable across those
@@ -885,7 +887,7 @@ sentence around it staying correct.
    .crew/codemap/localgpu.md`, which now returns nothing) to either full
    repo-relative paths or prose describing the shape without reproducing it.
 2. **FIX — the "12 new citations" method did not reproduce 12.** The bullet
-   said `plugin/crew/hooks/scripts/crew_state.py:1507-1508` fell outside the
+   said `plugin/crew/hooks/scripts/crew_state.py:1540-1541` fell outside the
    `plugin/` regex the rest of the section used and was "tallied separately"
    — it does not; that path starts with `plugin/crew/`, which the regex
    already matches, and the citation was already in that regex's output. And
@@ -1595,3 +1597,15 @@ No body citation moved: checked by a script mapping every `path:N` citation outs
 **Re-anchored `65abeb8d` -> `1f21f73b` on 2026-09-30 (T-0094 review round 7: `902fb96a`..`91da43bc` code and tests, docs, guide rebuilt, crew 1.0.78 un-set and re-set as `1f21f73b`).** `git diff --name-only 65abeb8d 1f21f73b` returns `CHANGELOG.md`, `docs/guides/crew/crew-1.0-daily-workflow.docx`, `docs/guides/crew/crew-1.0-daily-workflow.html`, `docs/guides/crew/crew-1.0-daily-workflow.pdf`, `docs/guides/crew/src/daily-workflow-scope.md`, `plugin/crew/README.md`, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `plugin/crew/tests/test_refresh_admission.py`. No body citation in this map names a line that moved. No suite was executed for this note.
 
 **Re-anchored `1f21f73b` (T-0094) / main -> `17d0b1d2` on 2026-09-30 (T-0094 merges origin/main `d1462bbd`, L-0529 landed as crew 1.0.80 (#283), and re-sets crew 1.0.81 in the merge commit).** `git diff --name-only 79ef56c4 17d0b1d2`, refresh artifacts aside, returns `.claude-plugin/marketplace.json`, `CHANGELOG.md`, `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/README.md`, `plugin/crew/tests/crew_fixtures.py`, `plugin/crew/tests/test_context_watch_python_resolver.py`, `plugin/crew/tests/test_event_claim_crash_safety.py`, `plugin/crew/tests/test_path_link_farm.py`, `plugin/crew/tests/test_ps1_python_probe.py`, `plugin/obsidian-vault/.claude-plugin/plugin.json`, `plugin/obsidian-vault/hooks/scripts/_test/test_python_probe_proof.py`: main's L-0529 files plus the version statements. The merge's conflicts were version lines and the generated rules' stamps; main's body lines kept. No body citation moved (checked with `/root/crew-tmp/t-0094/cite_map_merge.py`, `MAIN_REV=origin/main`, `OURS_REV=79ef56c4`; its only flags are history positions in verification-harness.md's per-commit lists, left as written). No suite was executed for this note.
+
+## Re-anchor provenance - main `6a8c60b1` -> `c43a54c1`, 2026-09-30 (T-0028, feature half, crew 1.0.84)
+
+T-0028 (the Kimi Code provider, feature half after the owner's split; the review launch is L-0527)
+merged origin/main `6a8c60b1` (L-0531 #284 and T-0099 #278, crew 1.0.83) with rerere disabled, taking main's code
+maps. The branch differs from main only in the Kimi provider's feature files (`crew_state.py`,
+`crew_config.py` with the launch gate, `kimi_probe.py`, the templates, provider docs and tests,
+`.crew/verify.json`, the release files). This note is main's copy; every body citation into a
+changed file was mapped by a `difflib` line diff from `6a8c60b1` to `c43a54c1` with
+`/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local), each moved citation landing on the
+same line text. The provider tuples now carry `kimi` (`crew_state.py:1450-1451`), re-read with `grep -n`. T-0028's earlier branch provenance is in git history. Re-anchor
+only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
