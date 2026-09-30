@@ -2168,22 +2168,18 @@ def _spellings(tmp_path, remote, how):
 
 @pytest.mark.parametrize("how", ["relative", "dot-dot", "symlink"])
 def test_every_spelling_of_a_local_origin_is_one_claim(capsys, monkeypatch, tmp_path, wt, wt_b, remote, how):
-    """Where the runner's temp path gives a key over 128 characters (a deep
-    Windows temp directory), both claims must be could-not-tell instead --
-    still never two holders."""
+    """Skipped, never passed unchecked, where the runner's temp path gives a
+    key over 128 characters (a deep Windows or macOS temp directory); that
+    refusal is test_a_local_key_over_128_characters_is_could_not_tell's."""
     _set_origin(wt, _spellings(tmp_path, remote, how))
     _set_origin(wt_b, str(remote))
-    expected = crew_coord.owner_name(os.path.realpath(remote))[0]
+    expected = _key_or_skip(remote, tmp_path)[0]
     _session(monkeypatch, "sess-1")
     first = _run(capsys, wt, "claim", ticket="T-1")
     _session(monkeypatch, "sess-2")
 
     code, out = _run(capsys, wt_b, "claim", ticket="T-1")
 
-    if expected is None:
-        assert (first[0], code) == (crew_coord.EXIT_UNKNOWN, crew_coord.EXIT_UNKNOWN), out
-        assert _remote_files(remote) is None
-        return
     assert first[0] == 0 and code == crew_coord.EXIT_REFUSED, (first[1], out)
     assert sorted(_remote_files(remote)) == [f"claims/{expected}__T-1.json", "log.jsonl"]
 
@@ -2191,12 +2187,8 @@ def test_every_spelling_of_a_local_origin_is_one_claim(capsys, monkeypatch, tmp_
 def test_a_relative_origin_is_read_from_the_worktree_it_is_run_in(monkeypatch, tmp_path, wt):
     _set_origin(wt, "../remote.git")
     monkeypatch.chdir(tmp_path / "tmp")
-    expected = crew_coord.owner_name(os.path.realpath(tmp_path / "remote.git"))[0]
+    expected = _key_or_skip(tmp_path / "remote.git", tmp_path)[0]
 
-    if expected is None:
-        with pytest.raises(crew_coord.UnknownKey):
-            crew_coord.repo_key(os.path.realpath(wt))
-        return
     assert crew_coord.repo_key(os.path.realpath(wt)) == (expected, None)
 
 
@@ -2299,16 +2291,13 @@ def test_a_file_url_and_a_plain_path_to_one_remote_are_one_claim(capsys, monkeyp
     _symlink_or_skip(tmp_path / "alias", tmp_path)
     _set_origin(wt, "file://" + os.fspath(tmp_path / "alias" / "remote.git"))
     _set_origin(wt_b, str(remote))
-    expected = crew_coord.owner_name(os.path.realpath(remote))[0]
+    expected = _key_or_skip(remote, tmp_path)[0]
     _session(monkeypatch, "sess-1")
     first = _run(capsys, wt, "claim", ticket="T-1")
     _session(monkeypatch, "sess-2")
 
     code, out = _run(capsys, wt_b, "claim", ticket="T-1")
 
-    if expected is None:
-        assert (first[0], code) == (crew_coord.EXIT_UNKNOWN, crew_coord.EXIT_UNKNOWN), out
-        return
     assert first[0] == 0 and code == crew_coord.EXIT_REFUSED and "sess-1" in out, (first[1], out)
     assert _claims(remote) == [f"claims/{expected}__T-1.json"]
 
@@ -2584,3 +2573,172 @@ def test_no_fixture_hands_the_fake_ssh_a_shebang_script():
 
     assert programs, "the scan found no program handed to the fake ssh; it is not reading what it must"
     assert not [p for p in programs if p[2].startswith("#" + "!")], programs
+
+
+# --- review round 7 (T-0030-coord--0BhHm8) -------------------------------------
+
+def _key_or_skip(path, top):
+    key, why = crew_coord.owner_name(_resolved(str(path), str(top)))
+    if key is None and "128 characters" in why:
+        pytest.skip(f"this temp path's key passes 128 characters, so no claim can run under it: {why}")
+    return key, why
+
+
+def test_a_local_key_over_128_characters_is_could_not_tell(capsys, monkeypatch, tmp_path, wt, remote):
+    _set_origin(wt, "/" + "d" * 130 + "/coord.git")
+    _session(monkeypatch, "sess-1")
+
+    code, out = _run(capsys, wt, "claim", ticket="T-1")
+
+    assert code == crew_coord.EXIT_UNKNOWN and "128 characters" in out and _remote_files(remote) is None, out
+
+
+def _clone_of(source, path):
+    subprocess.run(["git", "clone", "-q", str(source), str(path)], check=True, capture_output=True,
+                   stdin=subprocess.DEVNULL)
+    _configure(path)
+    return path
+
+
+# FIX crew_coord.py:990: the directory git opens for a non-bare repository or
+# a linked worktree is `<path>/.git`, and that segment (or any other name a
+# filesystem allows, such as a dot-directory or a space) still has a key.
+
+@pytest.mark.parametrize("how", ["non-bare", "dot-git", "linked-worktree", "dot-directory", "space"])
+def test_every_local_repository_git_opens_has_a_key(tmp_path, remote, how):
+    seed = tmp_path / "seed"
+    if how == "linked-worktree":
+        git(seed, "worktree", "add", "-q", "-b", "side", str(tmp_path / "linked"))
+    path = {"non-bare": seed, "dot-git": seed / ".git", "linked-worktree": tmp_path / "linked",
+            "dot-directory": _bare(tmp_path / ".hidden" / "coord.git"),
+            "space": _bare(tmp_path / "with space" / "coord.git")}[how]
+
+    key, why = _key_or_skip(path, tmp_path)
+
+    assert key and why is None, why
+    if how in ("dot-git", "linked-worktree"):
+        assert key == _key_or_skip(seed, tmp_path)[0]
+
+
+def test_a_clone_of_a_non_bare_local_repository_can_claim(capsys, monkeypatch, tmp_path, remote):
+    clone = _clone_of(tmp_path / "seed", tmp_path / "clone")
+    _coord(clone, remote)
+    key = _key_or_skip(tmp_path / "seed", tmp_path)[0]
+    _session(monkeypatch, "sess-1")
+
+    code, out = _run_coord(capsys, clone)
+
+    assert code == 0, out
+    assert _claims(remote) == [f"claims/{key}__T-1.json"]
+
+
+def test_two_spellings_of_one_non_bare_origin_are_one_claim(capsys, monkeypatch, tmp_path, wt, wt_b, remote):
+    _key_or_skip(tmp_path / "seed", tmp_path)
+    for root, origin in ((wt, tmp_path / "seed"), (wt_b, tmp_path / "seed" / ".git")):
+        _set_origin(root, str(origin))
+        _coord(root, remote)
+    _session(monkeypatch, "sess-1")
+    first = _run_coord(capsys, wt)
+    _session(monkeypatch, "sess-2")
+
+    code, out = _run_coord(capsys, wt_b)
+
+    assert first[0] == 0 and code == crew_coord.EXIT_REFUSED and "sess-1" in out, (first[1], out)
+    assert len(_claims(remote)) == 1
+
+
+@pytest.mark.parametrize("segment", ["bad�name", "bad\udcffname"], ids=["replaced", "surrogate"])
+def test_a_local_segment_that_is_not_utf8_is_could_not_tell(segment):
+    key, why = crew_coord.owner_name(f"/srv/{segment}/coord.git")
+
+    assert key is None and "not UTF-8" in why
+
+
+# FIX crew_coord.py:1003: on a case-insensitive volume, the key is the case on
+# disk. posixpath.realpath (macOS) keeps the case as typed; this simulates that
+# volume for one entry: `alias` differs from `real` only in case, resolves to
+# the same directory, is not listed, and realpath leaves it as written.
+
+def _case_insensitive_entry(monkeypatch, alias, real, listable=True):
+    _symlink_or_skip(alias, real.name)
+    listdir, realpath = os.listdir, os.path.realpath
+
+    def fake_listdir(path="."):
+        if os.path.abspath(os.fspath(path)) == os.fspath(alias.parent):
+            if not listable:
+                raise PermissionError(13, "Permission denied", os.fspath(path))
+            return [n for n in listdir(path) if n != alias.name]
+        return listdir(path)
+
+    def fake_realpath(path, *args, **kwargs):
+        if os.path.abspath(os.fspath(path)) == os.fspath(alias):
+            return os.fspath(alias)
+        return realpath(path, *args, **kwargs)
+    monkeypatch.setattr(os, "listdir", fake_listdir)
+    monkeypatch.setattr(os.path, "realpath", fake_realpath)
+
+
+def test_two_case_spellings_on_a_case_insensitive_volume_are_one_claim(capsys, monkeypatch, tmp_path, wt, wt_b,
+                                                                       remote):
+    real = _bare(tmp_path / "g" / "Coord.git")
+    key = _key_or_skip(real, tmp_path)[0]
+    for root, origin in ((wt, real), (wt_b, tmp_path / "g" / "coord.git")):
+        _set_origin(root, str(origin))
+        _coord(root, remote)
+    _case_insensitive_entry(monkeypatch, tmp_path / "g" / "coord.git", real)
+    _session(monkeypatch, "sess-1")
+    first = _run_coord(capsys, wt)
+    _session(monkeypatch, "sess-2")
+
+    code, out = _run_coord(capsys, wt_b)
+
+    assert first[0] == 0 and code == crew_coord.EXIT_REFUSED and "sess-1" in out, (first[1], out)
+    assert _claims(remote) == [f"claims/{key}__T-1.json"]
+
+
+def test_an_unlistable_directory_keys_as_written_where_case_matters(tmp_path, monkeypatch):
+    real = _bare(tmp_path / "g" / "coord.git")
+    listdir = os.listdir
+
+    def fake_listdir(path="."):
+        if os.path.abspath(os.fspath(path)) == os.fspath(real.parent):
+            raise PermissionError(13, "Permission denied", os.fspath(path))
+        return listdir(path)
+    monkeypatch.setattr(os, "listdir", fake_listdir)
+
+    got = _resolved(str(real), str(tmp_path))
+
+    assert got == os.path.realpath(real)
+
+
+def test_an_unlistable_directory_where_case_does_not_matter_is_could_not_tell(tmp_path, monkeypatch):
+    real = _bare(tmp_path / "g" / "coord.git")
+    _case_insensitive_entry(monkeypatch, tmp_path / "g" / "COORD.GIT", real, listable=False)
+
+    with pytest.raises(crew_coord.UnknownKey, match="spelling on disk cannot be told"):
+        _resolved(str(real), str(tmp_path))
+
+
+# NIT crew_coord.py:976: git expands a leading `~` in a local origin (enter_repo),
+# so `~/coord.git` is one repository from every worktree, not one per worktree.
+
+def test_a_tilde_origin_is_one_claim_from_every_worktree(capsys, monkeypatch, tmp_path, wt, wt_b, remote):
+    home = tmp_path / "home"
+    target = _bare(home / "coord.git")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    key = _key_or_skip(target, tmp_path)[0]
+    listed = subprocess.run(["git", "ls-remote", "~/coord.git"], cwd=wt, capture_output=True, text=True,
+                            check=False, stdin=subprocess.DEVNULL)
+    for root in (wt, wt_b):
+        _set_origin(root, "~/coord.git")
+        _coord(root, remote)
+    _session(monkeypatch, "sess-1")
+    first = _run_coord(capsys, wt)
+    _session(monkeypatch, "sess-2")
+
+    code, out = _run_coord(capsys, wt_b)
+
+    assert listed.returncode == 0, listed.stderr
+    assert first[0] == 0 and code == crew_coord.EXIT_REFUSED and "sess-1" in out, (first[1], out)
+    assert _claims(remote) == [f"claims/{key}__T-1.json"]

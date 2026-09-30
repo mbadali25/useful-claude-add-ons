@@ -826,6 +826,19 @@ def _local_segments(path):
     return [p for p in re.split(r"[/\\]+", re.sub(r"^([A-Za-z]):(?=[/\\])", r"\1", path)) if p]
 
 
+def _utf8(name):
+    """A local path segment is keyed by its UTF-8 bytes, whatever they are, so
+    it is refused only when it has none: a U+FFFD (git's output decoded with
+    replacement, where two different names read alike) or a lone surrogate."""
+    if "\ufffd" in name:
+        return False
+    try:
+        name.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def _url_shape(host, segments):
     """The URL's shape for a could-not-tell message: the host, and each path
     segment as `<name>` except the markers the key rules read."""
@@ -872,8 +885,10 @@ def owner_name(url):
     and port are dropped (`https:///x`, `https://user@/x`) is could-not-tell,
     never a local path. An absolute local path or file:// URL gives `file_`
     and its segments with their case and any `.git` kept (a lone trailing
-    '_' no _key_part output ends with, so it never meets a host); a relative
-    path is could-not-tell
+    '_' no _key_part output ends with, so it never meets a host), whatever
+    name a filesystem allows in them -- `.git`, a dot-directory, a space --
+    because _key_part writes each byte one way; only a segment that is not
+    UTF-8 is could-not-tell. A relative path is could-not-tell
     here, because it names a repository only against the worktree git reads
     it from (repo_key resolves it first). Every Azure DevOps form of one
     repository -- https dev.azure.com and <org>.visualstudio.com, with or
@@ -905,12 +920,16 @@ def owner_name(url):
             return None, (f"origin's URL has the shape {_url_shape(host, segments)}, and a name in it "
                           "is not percent-encoded UTF-8")
         parts = [_key_part(p) for p in ["dev.azure.com"] + names]
-    else:
-        raw = ([host] if host else []) + segments
-        if not all(p.isascii() and _valid_part(p.lower(), _OWNER_NAME_PART_RE) for p in raw):
+    elif host:
+        if not all(p.isascii() and _valid_part(p.lower(), _OWNER_NAME_PART_RE) for p in [host] + segments):
             return None, (f"origin's URL has the shape {_url_shape(host, segments)}, and a part of it is not "
                           "letters, digits, '.', '_', '-' (at most 64)")
-        parts = [_key_part(p.lower()) for p in raw] if host else [_LOCAL_MARK] + [_key_part(p) for p in raw]
+        parts = [_key_part(p.lower()) for p in [host] + segments]
+    else:
+        if not all(_utf8(p) for p in segments):
+            return None, (f"origin's path has the shape {_url_shape(host, segments)}, and a name in it is not "
+                          "UTF-8, so which directory it names cannot be told")
+        parts = [_LOCAL_MARK] + [_key_part(p) for p in segments]
     key = ".".join(parts)
     if not _valid_part(key, _REPO_RE):
         return None, (f"origin's URL has the shape {_url_shape(host, segments)}, and its key would pass "
@@ -993,14 +1012,74 @@ def _git_opens(path):
 
 def _resolved(url, top):
     """origin's URL with a local path -- or the local path a file:// URL
-    names -- made absolute and real the way git reads it: a relative path
-    against the worktree git runs in (`top`), then the repository git opens
-    for it (_git_opens: `repo` that is not one opens `repo.git`), then `..`,
-    `.` and symlinks resolved, so every spelling of one local repository is
-    one path and two directories are two. Any other URL, and a file:// URL
-    owner_name must refuse, is returned as it is."""
+    names -- made absolute and real the way git reads it: a leading `~` or
+    `~user` expanded (enter_repo does), a relative path against the worktree
+    git runs in (`top`), then the repository git opens for it (_git_opens:
+    `repo` that is not one opens `repo.git`), then `..`, `.` and symlinks
+    resolved, then each component spelled as it is on disk (_on_disk_case),
+    so every spelling of one local repository is one path and two
+    directories are two. Any other URL, and a file:// URL owner_name must
+    refuse, is returned as it is."""
     local, _ = _local_path(url)
-    return os.path.realpath(_git_opens(os.path.join(top, local))) if local else url
+    if not local:
+        return url
+    return _on_disk_case(os.path.realpath(_git_opens(os.path.join(top, os.path.expanduser(local)))))
+
+
+def _same_file(one, two):
+    try:
+        return os.path.samefile(one, two)
+    except OSError:
+        return False
+
+
+def _folded(name):
+    return unicodedata.normalize("NFD", unicodedata.normalize("NFD", name).casefold())
+
+
+def _listed_name(directory, part):
+    """The name `directory` lists for its entry `part`: `part` itself when it
+    is listed, else the one listed name that folds to it (case and Unicode
+    form) and is the same file -- on a case-insensitive volume, the spelling
+    on disk. A directory that cannot be listed keeps `part` when its
+    case-swapped spelling is not the same file (case matters there, so the
+    spelling is the name). UnknownKey when the name on disk cannot be told."""
+    target = os.path.join(directory, part)
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        swapped = part.swapcase()
+        if swapped == part or not _same_file(os.path.join(directory, swapped), target):
+            return part
+        names = None
+    if names is not None and part in names:
+        return part
+    same = [n for n in names or () if _folded(n) == _folded(part) and _same_file(os.path.join(directory, n), target)]
+    if len(same) != 1:
+        raise UnknownKey(f"cannot derive this repository's key: origin names {safe(target)!r}, and its "
+                         "spelling on disk cannot be told (its directory cannot be listed or lists no one name "
+                         "for it, and case does not matter there); nothing was read or written")
+    return same[0]
+
+
+def _on_disk_case(path):
+    """An absolute, real `path` with every component spelled as its directory
+    lists it (_listed_name). realpath does this on Windows but not on macOS,
+    where `/x/Coord.git` and `/x/coord.git` name one directory on a default
+    (case-insensitive) volume and would be two keys, so two holders of one
+    ticket. From the first component that does not exist the rest is kept as
+    written: git cannot open that path, and the key is the path as given."""
+    drive, rest = os.path.splitdrive(path)
+    seps = os.sep + (os.altsep or "")
+    if not rest.startswith(tuple(seps)):
+        return path
+    current = drive + os.sep
+    parts = [p for p in re.split(f"[{re.escape(seps)}]+", rest) if p]
+    for index, part in enumerate(parts):
+        if not os.path.lexists(os.path.join(current, part)):
+            return os.path.join(current, *parts[index:])
+        current = os.path.join(current, _listed_name(current, part))
+    return current
 
 
 def repo_key(top):

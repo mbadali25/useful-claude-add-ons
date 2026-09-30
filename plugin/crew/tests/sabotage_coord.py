@@ -30,6 +30,12 @@ as the local path it names (and refused for another host), Azure DevOps
 markers compared after decoding, local keys keeping case and `.git`, git's own
 suffix order, a network URL with no host, a failed push-config probe, and the
 fake ssh never starting a `#!` script (a mutation of the test module itself).
+The last block is review round 7's (T-0030-coord--0BhHm8): a `#!` program
+handed to the fake ssh (the scanner's own failing control), a local segment
+such as `.git` keyed rather than refused while one that is not UTF-8 is still
+refused, the on-disk case on a case-insensitive volume and its unlistable
+branch, a `~` origin expanded before it is joined onto the worktree, and a
+local key over 128 characters refused (the temp-path tests skip there).
 """
 import os
 
@@ -336,8 +342,8 @@ COORD_MUTATIONS = (
      "            return segments[0], segments[0], segments[2]\n",
      _T + "test_every_azure_devops_form_of_a_default_repository_is_one_claim"),
     ("crew_coord keys by the last two path segments", COORD,
-     "        raw = ([host] if host else []) + segments\n",
-     "        raw = segments[-2:]\n",
+     "        parts = [_key_part(p.lower()) for p in [host] + segments]\n",
+     "        parts = [_key_part(p.lower()) for p in segments[-2:]]\n",
      _T + "test_repo_key_tells_different_repositories_apart[gitlab-groups]"),
     ("crew_coord drops the ttlMinutes upper bound", COORD,
      "            or value <= 0 or value > MAX_TTL_MINUTES or not math.isfinite(value)):\n",
@@ -376,8 +382,8 @@ COORD_MUTATIONS = (
      '        return urllib.parse.unquote_to_bytes(part).decode("utf-8", "replace").lower()\n',
      _T + "test_repo_key_is_could_not_tell_for_a_segment_the_key_rule_refuses[azure-not-utf-8]"),
     ("crew_coord keys a local path like a host", COORD,
-     "        parts = [_key_part(p.lower()) for p in raw] if host else [_LOCAL_MARK] + [_key_part(p) for p in raw]\n",
-     "        parts = [_key_part(p.lower()) for p in raw] if host else [_key_part(p) for p in raw]\n",
+     "        parts = [_LOCAL_MARK] + [_key_part(p) for p in segments]\n",
+     "        parts = [_key_part(p) for p in segments]\n",
      _T + "test_repo_key_tells_different_repositories_apart[local-path-named-like-a-host]"),
     ("crew_coord keys a relative path as it is", COORD,
      "    if local is not None and not _ABSOLUTE_RE.match(local):\n",
@@ -388,8 +394,8 @@ COORD_MUTATIONS = (
      '        name, why = owner_name(got.out.decode("utf-8", "replace").strip())\n',
      _T + "test_every_spelling_of_a_local_origin_is_one_claim[relative]"),
     ("crew_coord leaves a local origin's symlinks unresolved", COORD,
-     "    return os.path.realpath(_git_opens(os.path.join(top, local))) if local else url\n",
-     "    return os.path.abspath(_git_opens(os.path.join(top, local))) if local else url\n",
+     "    return _on_disk_case(os.path.realpath(_git_opens(",
+     "    return _on_disk_case(os.path.abspath(_git_opens(",
      _T + "test_every_spelling_of_a_local_origin_is_one_claim[symlink]"),
     ("crew_coord reads a failed origin probe as no origin", COORD,
      "    if has_url.code != 1 or has_url.out.strip():\n",
@@ -425,18 +431,16 @@ COORD_MUTATIONS = (
      "        if False:\n",
      _T + "test_an_azure_devops_segment_that_does_not_decode_is_could_not_tell[marker-position]"),
     ("crew_coord lowercases a local key again", COORD,
-     "        parts = [_key_part(p.lower()) for p in raw] if host else [_LOCAL_MARK] + [_key_part(p) for p in raw]\n",
-     "        parts = [_key_part(p.lower()) for p in raw] if host else [_LOCAL_MARK] + [_key_part(p.lower()) "
-     "for p in raw]\n",
+     "        parts = [_LOCAL_MARK] + [_key_part(p) for p in segments]\n",
+     "        parts = [_LOCAL_MARK] + [_key_part(p.lower()) for p in segments]\n",
      _T + "test_two_local_repositories_never_share_a_claim[case]"),
     ("crew_coord strips .git from a local key again", COORD,
-     "        parts = [_key_part(p.lower()) for p in raw] if host else [_LOCAL_MARK] + [_key_part(p) for p in raw]\n",
-     "        parts = [_key_part(p.lower()) for p in raw] if host else [_LOCAL_MARK] + [_key_part(re.sub("
-     "r\"\\.git$\", \"\", p)) for p in raw]\n",
+     "        parts = [_LOCAL_MARK] + [_key_part(p) for p in segments]\n",
+     "        parts = [_LOCAL_MARK] + [_key_part(re.sub(r\"\\.git$\", \"\", p)) for p in segments]\n",
      _T + "test_two_local_repositories_never_share_a_claim[dot-git]"),
     ("crew_coord keys a local path without git's suffix order", COORD,
-     "    return os.path.realpath(_git_opens(os.path.join(top, local))) if local else url\n",
-     "    return os.path.realpath(os.path.join(top, local)) if local else url\n",
+     "    return _on_disk_case(os.path.realpath(_git_opens(os.path.join(top, os.path.expanduser(local)))))\n",
+     "    return _on_disk_case(os.path.realpath(os.path.join(top, os.path.expanduser(local))))\n",
      _T + "test_git_itself_opens_the_suffix_the_key_resolves"),
     ("crew_coord reads a network URL with no host as a local path", COORD,
      "    if local is None and not host:\n",
@@ -450,4 +454,33 @@ COORD_MUTATIONS = (
      'elif program.endswith(".py"):\n',
      "elif False:\n",
      _T + "test_push_carries_the_remotes_receivepack_but_never_mirror"),
+    # --- review round 7 (T-0030-coord--0BhHm8) ---
+    ("a fixture hands the fake ssh a #! receivepack script", TEST_MODULE,
+     '    wrapper.write_text("import pathlib, subprocess, sys\\n"\n',
+     '    wrapper.write_text("#!/bin/sh\\n" "import pathlib, subprocess, sys\\n"\n',
+     _T + "test_no_fixture_hands_the_fake_ssh_a_shebang_script"),
+    ("crew_coord refuses a local segment the host rule refuses", COORD,
+     "        if not all(_utf8(p) for p in segments):\n",
+     "        if not all(_utf8(p) and _valid_part(p.lower(), _OWNER_NAME_PART_RE) for p in segments):\n",
+     _T + "test_a_clone_of_a_non_bare_local_repository_can_claim"),
+    ("crew_coord keys a local segment git decoded with replacement", COORD,
+     '    if "\\ufffd" in name:\n        return False\n',
+     "",
+     _T + "test_a_local_segment_that_is_not_utf8_is_could_not_tell[replaced]"),
+    ("crew_coord keeps a local path's case as typed", COORD,
+     "        current = os.path.join(current, _listed_name(current, part))\n",
+     "        current = os.path.join(current, part)\n",
+     _T + "test_two_case_spellings_on_a_case_insensitive_volume_are_one_claim"),
+    ("crew_coord keeps the typed case when the directory cannot be listed", COORD,
+     "        names = None\n",
+     "        return part\n",
+     _T + "test_an_unlistable_directory_where_case_does_not_matter_is_could_not_tell"),
+    ("crew_coord joins a ~ origin onto each worktree", COORD,
+     "os.path.join(top, os.path.expanduser(local))",
+     "os.path.join(top, local)",
+     _T + "test_a_tilde_origin_is_one_claim_from_every_worktree"),
+    ("crew_coord keys a local path whose key passes 128 characters", COORD,
+     "    if not _valid_part(key, _REPO_RE):\n",
+     "    if not _valid_part(key[:128], _REPO_RE):\n",
+     _T + "test_a_local_key_over_128_characters_is_could_not_tell"),
 )

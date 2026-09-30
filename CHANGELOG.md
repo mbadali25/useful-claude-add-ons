@@ -65,7 +65,7 @@ All notable changes to this repository are documented here. Format follows [Keep
     a key is derived from origin's owner/name, lowercased (`owner.name`),
     falling back to the main worktree's directory name with the reason
     printed; `--ticket <id>` suffices, and a given `<repo>` must match.
-    **Breaking for 1.0.43 callers:** a free-text `<repo>` is refused. The
+    **Breaking against earlier builds of this branch:** a free-text `<repo>` is refused. The
     README names `coord-identity.json.lock`.
   - Review round 3 fixes. Recovery's deciding signal is now the heartbeat:
     `recover` adopts only a claim whose `heartbeat_at` is older than the TTL,
@@ -133,8 +133,21 @@ All notable changes to this repository are documented here. Format follows [Keep
     wrapper as Python, never as a `#!` script, which native Windows Python
     cannot start. **Breaking against earlier builds of this branch:** local
     keys change spelling (case and `.git` kept).
-  - 275 cases in `tests/test_crew_coord.py` against a local bare remote;
-    94 mutations in `tests/sabotage_coord.py`, registered in `sabotage.py`.
+  - Review round 7 fixes. A non-bare local repository or a linked worktree as
+    `origin` is keyed and claimable: git opens `<path>/.git` there, and a
+    local path segment may now be any name the filesystem allows (`.git`, a
+    dot-directory, a space); only one that is not UTF-8 is could-not-tell.
+    Each component of a local key is spelled as its directory lists it, so on
+    a case-insensitive volume (macOS's default, where `realpath` keeps the
+    typed case) `Coord.git` and `coord.git` are one key, not two holders of
+    one ticket; a component whose directory cannot be listed, where its case
+    does not matter, is could-not-tell. A leading `~` in a local `origin` is
+    expanded as git expands it, so `~/coord.git` is one key from every
+    worktree. The fake-ssh `#!` scanner has a failing control in
+    `sabotage_coord.py`. The README no longer says `crew_coord.py` has been
+    in crew since 1.0.43, a version that never shipped it.
+  - 289 cases in `tests/test_crew_coord.py` against a local bare remote;
+    101 mutations in `tests/sabotage_coord.py`, registered in `sabotage.py`.
     The `/crew:autopilot` resume-step line is pending T-0004; until then the
     README says to run `crew_coord.py status` first after `/clear`.
 

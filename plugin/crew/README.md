@@ -2055,7 +2055,7 @@ secret that reached it.
 
 ### Cross-session claims (`crew_coord.py`)
 
-Since 1.0.43. When several sessions — same or different repositories, same or
+Since 1.0.60. When several sessions — same or different repositories, same or
 different machines — work one backlog, each **claims** a ticket before working
 it, so two sessions never hold the same one. The record is not in `.work/`
 (ignored and per worktree) but on a git branch, `crew-coord/<channel>`, on a
@@ -2094,15 +2094,23 @@ a `file://` URL names (percent-decoded as git decodes it, with an empty or
 `localhost` host), gives `file_` and its segments **with their case and any
 `.git` kept**, because on a case-sensitive filesystem `Repo.git` and
 `repo.git` are two directories, and `repo` beside `repo.git` is two
-repositories anywhere. The path keyed is the repository git itself opens for
-it: a relative path is read against the worktree git runs in, then git's own
+repositories anywhere. A local segment may be any name the filesystem allows
+(`.git`, a dot-directory, a space); only one that is not UTF-8 reads
+`unknown`. The path keyed is the repository git itself opens for
+it: a leading `~` or `~user` is expanded as git expands it, a relative path is
+read against the worktree git runs in, then git's own
 suffix order is applied (`<path>/.git`, `<path>`, `<path>.git/.git`,
 `<path>.git` — `enter_repo` in git's `setup.c`, read at v2.53.0), a gitfile is
 followed and a linked worktree's git directory is taken to its common one, and
-the result is made real (`..` and symlinks resolved). So `remote.git` from
-`/srv/work`, `/srv/work/remote.git/`, `/srv/work/remote` when only
-`remote.git` exists, and `file:///srv/work/remote.git` are one key, and a
-path that is not a repository here is keyed as written. Every Azure DevOps form of one repository gives
+the result is made real (`..` and symlinks resolved) and each component is
+spelled as its directory lists it, so on a case-insensitive volume (macOS and
+Windows defaults) the case on disk is keyed, not the case typed. So
+`remote.git` from `/srv/work`, `/srv/work/remote.git/`, `/srv/work/remote`
+when only `remote.git` exists, and `file:///srv/work/remote.git` are one key;
+a non-bare `/srv/src` and its `/srv/src/.git` are one key; and a path that is
+not a repository here is keyed as written. A component whose directory cannot
+be listed, on a volume where its case does not matter, reads `unknown`,
+because its spelling on disk cannot be told. Every Azure DevOps form of one repository gives
 `dev_2eazure_2ecom.<org>.<project>.<repo>`: `https://dev.azure.com/<org>/<project>/_git/<repo>`,
 `https://dev.azure.com/<org>/_git/<repo>` (a project's default repository,
 whose name is the project's, so project = repo),
@@ -2113,8 +2121,9 @@ lowercased, then written like any other part, so `My%20Project` and
 `DefaultCollection` are compared after that decoding too, so `%5Fgit` is
 `_git`. An origin the key cannot be told
 from reads `unknown` (exit 3) and nothing is written: an Azure DevOps URL that
-fits none of those forms or whose names are not UTF-8, a path segment that is
-not letters, digits, `.`, `_`, `-`, a key over 128 characters, a URL with no
+fits none of those forms or whose names are not UTF-8, a network URL's host or
+path segment that is not letters, digits, `.`, `_`, `-`, a local path segment
+that is not UTF-8, a key over 128 characters, a URL with no
 path, a network URL with no host once any user and port are dropped
 (`https:///owner/repo`, `https://user@/owner/repo`, `https://:443/owner/repo`,
 `ssh:///owner/repo` — never read as a local path), a `file://` URL naming
