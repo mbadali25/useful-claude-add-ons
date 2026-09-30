@@ -635,6 +635,9 @@ def test_ps1_marks_an_unknown_provider_claim_sent_not_orphaned(tmp_path):
         "it 'claimed' forever")
 
 
+# wallclock (T-0110): an elapsed-time bound, so it runs serially, never under -n.
+# Native -n auto (20 workers): took=[3.09, 4.78] and [4.35, 5.85] against the grace; serially it passes.
+@pytest.mark.wallclock
 @needs_bash
 @needs_pwsh
 def test_an_unknown_provider_does_not_orphan_the_twin(tmp_path):

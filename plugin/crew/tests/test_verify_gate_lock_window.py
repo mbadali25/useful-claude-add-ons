@@ -122,6 +122,9 @@ def _lock(root):
     return root / ".crew" / ".verify-gate.lock"
 
 
+# wallclock (T-0110): an elapsed-time bound, so it runs serially, never under -n.
+# Native -n auto (20 workers): "the holder published no token/deadline within 12s"; serially it passes.
+@pytest.mark.wallclock
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_a_rule_longer_than_the_ttl_keeps_its_lock(flavour, tmp_path):
     """MUST-ALLOW, and the defect itself: the holder is still working, well
@@ -250,6 +253,9 @@ def test_a_lock_with_no_deadline_falls_back_to_the_age_window(flavour, tmp_path)
     )
 
 
+# wallclock (T-0110): an elapsed-time bound, so it runs serially, never under -n.
+# Native -n auto (20 workers): the fresh token aged past the TTL before the gate read it; serially it passes.
+@pytest.mark.wallclock
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_a_fresh_lock_with_no_deadline_still_backs_off(flavour, tmp_path):
     """The other half of the fallback: inside the age window, still held."""
@@ -468,6 +474,9 @@ def _published_window(flavour, tmp_path, env_ttl):
     return deadline - now
 
 
+# wallclock (T-0110): an elapsed-time bound, so it runs serially, never under -n.
+# Native -n auto (20 workers): a 6s window (> 5): the deadline moved between the rule's two reads; serially it passes.
+@pytest.mark.wallclock
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_lock_ttl_env_var_narrows_the_window(flavour, tmp_path):
     """Sanity check for the seam's intended direction: a smaller value is
