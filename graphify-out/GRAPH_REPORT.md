@@ -1,7 +1,7 @@
 # Graph Report - uca-t0085-land  (2026-09-30)
 
 ## Corpus Check
-- 989 files · ~2,264,480 words
+- 989 files · ~2,265,077 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 59 file(s) not represented in the graph (top: (none) 33, .mmd 8, .csv 4)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `5b7dc176`
+- Built from commit: `32b12dfa`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -1086,7 +1086,7 @@ Nodes (60): Fixed, Second QA round, same day — each finding right about its ta
 
 ### Community 44 - "crew_standards.py"
 Cohesion: 0.07
-Nodes (78): Added — `crew` 1.0.74: build-time development standards and a required pre-review self-check (T-0085), Development standards and the pre-review self-check (T-0085), Re-anchor provenance - `cd106b8b` -> `bbd9a66d`, 2026-09-29 (T-0010 landing branch), Re-anchor provenance - `cd106b8b` -> `bbd9a66d`, 2026-09-29 (T-0010 landing branch), Re-anchor provenance - `cd106b8b` -> `bbd9a66d`, 2026-09-29 (T-0010 landing branch), Re-anchor provenance - `cd106b8b` -> `bbd9a66d`, 2026-09-29 (T-0010 landing branch), Re-anchor provenance, Re-anchor provenance — 60c79407 -> 6c497a14, 2026-09-25 (crew 1.0, PR #225). Re-derive provenance. (+70 more)
+Nodes (78): Added — `crew` 1.0.75: build-time development standards and a required pre-review self-check (T-0085), Development standards and the pre-review self-check (T-0085), Re-anchor provenance - `cd106b8b` -> `bbd9a66d`, 2026-09-29 (T-0010 landing branch), Re-anchor provenance - `cd106b8b` -> `bbd9a66d`, 2026-09-29 (T-0010 landing branch), Re-anchor provenance - `cd106b8b` -> `bbd9a66d`, 2026-09-29 (T-0010 landing branch), Re-anchor provenance - `cd106b8b` -> `bbd9a66d`, 2026-09-29 (T-0010 landing branch), Re-anchor provenance, Re-anchor provenance — 60c79407 -> 6c497a14, 2026-09-25 (crew 1.0, PR #225). Re-derive provenance. (+70 more)
 
 ### Community 45 - "test_auto_clear.py"
 Cohesion: 0.06
@@ -4004,8 +4004,8 @@ _Questions this graph is uniquely positioned to answer:_
   _High betweenness centrality (0.022) - this node is a cross-community bridge._
 - **Why does `VectorStore` connect `VectorStore` to `indexer.py`, `Indexer`, `search_code`, `store.py`?**
   _High betweenness centrality (0.017) - this node is a cross-community bridge._
-- **Why does `Verification harness` connect `Verification harness` to `scope_guard.py`, `repo-docs`, `crew_standards.py`, `_phase`, `test_crew_autopilot_status.py`, `crew`, `_cli`, `test_completion_audit.py`, `Re-anchor provenance - `65bb3330` + `474aea8b` -> `8de3c669`, 2026-09-27 (T-0024 lands on T-0018's main)`, `check_self_claims`, `check-marketplace.py`?**
-  _High betweenness centrality (0.011) - this node is a cross-community bridge._
+- **Why does `Re-anchor provenance` connect `crew_standards.py` to `.device`, `mcp-servers`, `check-dist-fresh.test.mjs`, `graphClient.ts`, `read_text`?**
+  _High betweenness centrality (0.012) - this node is a cross-community bridge._
 - **What connects `ci-status.sh script`, `name`, `private` to the rest of the system?**
   _2942 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `test_role_write_guard.py` be split into smaller, more focused modules?**
