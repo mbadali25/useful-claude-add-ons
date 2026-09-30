@@ -836,6 +836,8 @@ repository or one checkout.
 | `autopilot.mode` | `"off"` or `"plan"` | `"off"` | `crew_autopilot.settings` — only the exact string `plan` arms `/crew:autopilot`, §20 |
 | `autopilot.maxPhases` | positive integer | `12` | `crew_autopilot.settings`, read by `crew_autopilot.next_phase`, §20 |
 | `autopilot.deploy` | `"none"`, `"nonprod"` or `"all"` | `"none"` | `crew_autopilot.settings` and `crew_autopilot.deploy_allowed` — where a deploy may run without asking; production also needs `environments.prodUnattended`, §20 |
+| `autopilot.approval` | `"human"`, `"self"` or `"risk"` | `"risk"` | `crew_autopilot.approval_policy`, read by `crew_autopilot.py approve`, `crew_ticket.accepted` and `scope_guard.py`, §20 |
+| `autopilot.questions` | `"human"`, `"self"` or `"risk"` | `"risk"` | `crew_autopilot.question_policy`, read by `crew_autopilot.py questions-check` and `next`, §20 |
 
 `context.reserveTokens: null` means *off*, and survives as `null` — this is the
 case `null_shadows` is deliberately narrow to protect (§1).
@@ -2428,18 +2430,69 @@ driven is a fact about that checkout.
 | `autopilot.mode` | `"off"` | `crew_autopilot.settings`, through `crew_config.resolve_config` | Only the exact string `"plan"` arms it. `"Plan"`, `"plan "`, `true`, `"on"`, `null` — anything else — reads as `off`, and `settings` prints which value it saw. A typo must not arm a driver. |
 | `autopilot.maxPhases` | `12` | `crew_autopilot.settings`; `next_phase` stops once the session's phase count reaches it | Anything but a positive integer (`0`, `-3`, `"12"`, `true`, `2.5`) reads as `12`, with a warning. |
 | `autopilot.deploy` | `"none"` | `crew_autopilot.settings`; `crew_autopilot.deploy_allowed` (T-0072) | Only the exact strings `"none"`, `"nonprod"` and `"all"` are read as themselves. `"All"`, `"all "`, `"prod"`, `true`, `1`, `null` — anything else — read as `none`, with a warning naming the value. Set only in the machine file, it takes effect nowhere (repo only). |
+| `autopilot.approval` | `"risk"` | `crew_autopilot.approval_policy` (T-0010): whether `crew_autopilot.py approve` may record the plan approval itself | Anything but exactly `human`, `self` or `risk` (`"Self"`, `true`, `null`) reads as `human`, with a warning. `human` always stops. A `.crew/config.json` that exists but is not a readable JSON object, or an `autopilot` value that is not an object, reads as `unknown` (could not tell): `approve` refuses, and `mode` reads `off`. An absent file or block reads the default. |
+| `autopilot.questions` | `"risk"` | `crew_autopilot.question_policy` (T-0010): whether autopilot takes the researched recommendation for an open question | Same: anything else reads as `human`, which always stops; an unreadable config or non-object block reads as `unknown`, and a question stops. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
 adds reads the same one. `/crew:migrate` writes `.crew/crew.json`, which crew
 does not read for this key; an `autopilot` block found only there is reported
 by `settings` ("move it to .crew/config.json") rather than read as `off` with
-no word.
+no word. `settings` prints `mode`, `maxPhases` and `deploy` on its first text
+line, `approval` and `questions` on its second, and all five with `--json`.
 
-**What arming it does not change.** Plan approval, review acceptance,
-brainstorm and open questions always stop for a person in this version; every
-`AUTONOMOUS_STOPS` id (§5) binds it; no guard, hook, review budget or
-completion audit is relaxed. `pm.authority: autonomous` from 0.20 arms nothing —
+**The two policies (T-0010).** `autopilot.approval` decides the
+plan-approval phase: `human` always stops for `/crew:approve`; `self` lets
+`crew_autopilot.py approve --root . --ticket <id>` record the approval at any
+risk; `risk` does so only when the spec's header line says `risk: low` (an
+absent or unparseable risk is `high`, never `low`). At **every** setting the
+approval also needs `scope.allowCliApproval` exactly `true`, autopilot armed,
+and a readable review ledger. A NEEDS_REPLAN ledger does not refuse: approving
+a different successor plan is the only way out of it, and the ledger still
+refuses a plan approved before (`approve` then exits 3 and says so). The
+receipt says `approved_via:
+"autopilot"` and `approved_by: "autopilot:<policy>"`, and `crew_ticket.accepted`
+re-asks the policy on every read: turn the policy to `human`, set
+`allowCliApproval` false, or edit the spec, and the scope guard and the
+completion audit stop honouring it. The scope guard allows exactly the bare
+command `python3 [-B] <path>/crew_autopilot.py approve [--root .] --ticket <ID>`
+and only while the policy says yes; `crew_ticket.py approve` stays refused.
+`autopilot.questions` decides an open question: autopilot researches it
+(crew:explorer for the repo, crew:researcher outside), writes
+`.work/tickets/<id>/questions.md` (2-4 options per question, the
+recommendation first, each with a `Cost:` line, and a `Research:` line), and
+`crew_autopilot.py questions-check` validates it and says `take` or `stop`.
+`self` takes the recommendation, `risk` only on `risk: low`, `human` stops; a
+`taken: Option <id> by autopilot (<policy>)` line records each one under the
+policy that took it. The check refuses a `taken:` line naming a policy that
+never takes (only `self` or `risk` does), and any `taken:` line while the
+policy in force says `stop`; switching between `self` and `risk` later does
+not void an earlier honest record. Every
+self-approval and every taken answer is reported by name. Autopilot approves one
+ticket at a time: a group approval and its `/crew:approve --confirm` stay the
+owner's, and `crew_ticket.approve` refuses an `autopilot` approval carrying a
+group's hashes.
+
+**The one writer.** `crew_autopilot.py` is read-only except `approve`, and
+only when `autopilot.approval` allows it. `approve` writes exactly what
+`crew_ticket.approve` writes for every approval route, all under
+`<git-common-dir>/crew/`: `approval.json`; the scope ramp's
+`scope-tickets.json` on a ticket's first approval; and, when the review ledger
+is NEEDS_REPLAN and the plan is a distinct successor, the ledger itself, moved
+NEEDS_REPLAN -> IN_REVIEW (the successor continuation, a fresh review budget).
+`next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check` and
+T-0072's `deploy-allowed` write nothing, and T-0018's `route` and `status` read no policy of their own:
+`status`'s lines, the approve and open-questions reasons included, read the
+same under every setting, and at the approve phase it names
+`/crew:approve <id>`; `next` is what names the policy's route. The one policy
+effect `status` shows is `crew_ticket.accepted`'s: an `autopilot` receipt
+stands only while the policy still allows it.
+
+**What arming it does not change.** Review acceptance and brainstorm always
+stop for a person, at every setting — accepting review FINDINGS
+(`review_ledger.py --accept`) is never automatic; every
+`AUTONOMOUS_STOPS` id (§5) binds it; no hook, review budget or completion
+audit is relaxed. `pm.authority: autonomous` from 0.20 arms nothing —
 `/crew:migrate` keeps it under `retired.pm` and its note points here.
 
 **Production without asking (T-0072).** `autopilot.deploy` says where a deploy

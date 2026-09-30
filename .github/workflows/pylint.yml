@@ -32,4 +32,34 @@ jobs:
         # Config is .pylintrc at the repo root; it documents why each disabled
         # check doesn't fit a repo of standalone skill scripts. Third-party deps
         # are deliberately not installed -- see ignored-modules there.
-        pylint $(git ls-files '*.py')
+        # -j: one worker per CPU. Measured 2026-09-29 on a 4-CPU container:
+        # 148s serial, 34s at -j 4, byte-identical findings (duplicate-code,
+        # the one check -j changes, is disabled in .pylintrc). The count comes
+        # from os.cpu_count() rather than `-j 0` because pylint's own
+        # detection read that same container as 1 CPU and ran serially.
+        pylint -j "$(python -c 'import os; print(os.cpu_count() or 1)')" $(git ls-files '*.py')
+
+  ruff:
+    # Until crew 1.0.62 no workflow ran ruff, while .crew/verify.json told every
+    # reader "CI still runs it". The local gate skips it (exit 77) wherever ruff
+    # is not installed, so nothing caught nine findings that landed in shipped
+    # crew scripts. One job, not a matrix: ruff does not execute the code it
+    # checks, so the interpreter version does not change its result.
+    #
+    # Pinned like pylint above. ruff.toml also names its rule set explicitly
+    # (`select`), because ruff 0.16 widened the DEFAULT set and an unpinned
+    # install with no `select` reported 1493 findings on untouched code.
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.13"
+    - name: Install ruff
+      run: |
+        python -m pip install --upgrade pip
+        pip install 'ruff~=0.16.0'
+    - name: Ruff
+      run: |
+        ruff --version
+        ruff check .

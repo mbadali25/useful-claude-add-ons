@@ -24,16 +24,16 @@ import sys
 sys.dont_write_bytecode = True
 
 # pylint: disable=wrong-import-position
-import argparse
-import json
-import os
-import subprocess
+import argparse  # noqa: E402
+import json  # noqa: E402
+import os  # noqa: E402
+import subprocess  # noqa: E402
 
-import crew_common
-import crew_freshness
-import crew_migrate
-import crew_tracker
-from crew_common import read_text
+import crew_common  # noqa: E402
+import crew_freshness  # noqa: E402
+import crew_migrate  # noqa: E402
+import crew_tracker  # noqa: E402
+from crew_common import read_text  # noqa: E402
 
 MAX_LINES = 40
 HERE = os.path.dirname(os.path.abspath(__file__))

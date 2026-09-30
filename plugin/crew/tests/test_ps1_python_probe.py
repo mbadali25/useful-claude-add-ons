@@ -439,6 +439,7 @@ def _many_hung(tmp_path, count, name="python3"):
 
 @needs_pwsh
 @needs_bash
+@pytest.mark.wallclock
 def test_an_overall_deadline_bounds_several_hung_candidates(tmp_path):
     """Four candidates at the per-candidate 3s bound cost 12s+ before even
     reaching a real python further down PATH -- past the shortest hook
@@ -495,6 +496,7 @@ def _hang_forever(directory, names=("python3",)):
 
 @needs_pwsh
 @needs_bash
+@pytest.mark.wallclock
 def test_near_deadline_candidates_then_a_hang_stay_within_the_hook_timeout(tmp_path):
     """Four candidates that each fail after 1.8s (7.2s total, comfortably
     under the 8s deadline) followed by one that hangs. Before the fix the

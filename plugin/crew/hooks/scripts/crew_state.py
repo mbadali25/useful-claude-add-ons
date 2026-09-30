@@ -1090,7 +1090,12 @@ AUTONOMOUS_STOPS = (
 # `deploy` (T-0072) is exactly `none`, `nonprod` or `all`, else `none`, and is
 # read by crew_autopilot.deploy_allowed. Every AUTONOMOUS_STOPS entry above
 # binds it too: commands/autopilot.md names each, a test iterates the tuple.
-AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none"}
+# `approval` and `questions` (T-0010) are `human|self|risk`: what autopilot
+# does at plan approval and at an open question. `risk` acts only on a spec
+# header saying `risk: low`; any other value reads as `human`, and approval
+# needs `scope.allowCliApproval: true` besides (crew_autopilot.approval_policy).
+AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk",
+                      "questions": "risk"}
 
 # How many tickets one session's work becomes. The default is `system`: one
 # session is one ticket, and a second ticket is opened only when the work
