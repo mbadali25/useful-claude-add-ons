@@ -467,7 +467,16 @@ def _fmt_elapsed(seconds):
 
 def preflight(args):
     """None to go on and reserve a round, or the exit code to stop with
-    having reserved nothing. See BEFORE ANY ROUND IS RESERVED above."""
+    having reserved nothing. See BEFORE ANY ROUND IS RESERVED above:
+    questions 1 and 2 (`_receipt_and_gate`), then 3 (`train_gate`)."""
+    short = _receipt_and_gate(args)
+    if short is not None:
+        return short
+    return train_gate(args)
+
+
+def _receipt_and_gate(args):
+    """Questions 1 and 2: None to go on, or the exit code to stop with."""
     ok, message = review_ledger.check_receipt(args.root, args.ticket)
     data, _ = review_ledger._load(review_ledger.ledger_path(args.root, args.ticket))  # pylint: disable=protected-access
     if ok and (data.get("receipt") or {}).get("kind") == "clean":
@@ -559,9 +568,6 @@ def run(args):
     short = preflight(args)
     if short is not None:
         return short
-    waiting = train_gate(args)
-    if waiting is not None:
-        return waiting
 
     # A spent budget is a precondition already known to fail (GEN-03): the
     # self-check cannot change it, so the budget refusal below answers first
