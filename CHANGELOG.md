@@ -4,6 +4,27 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.0.83: the review prompt tells a known-empty exclusion list from an unrecorded one (T-0099)
+
+- **What changed.** `_bundle_block` in `review_prompt.py` now checks the shape of `manifest["excluded"]`
+  before printing it, instead of treating any falsy value as "none recorded":
+  `isinstance(excluded, list) and all(isinstance(p, str) and p.strip() for p in excluded)`. Three lines
+  now come out of three different inputs: a non-empty list of non-blank strings prints
+  `excluded (never in the bundle): a, b`; an empty list `[]` prints `excluded (never in the bundle): none`;
+  a missing `excluded` key, or a value that is anything but a list of non-blank strings (not a list, a
+  blank/whitespace entry, a non-string entry), prints `excluded: not recorded by this manifest (unknown)`.
+- **Why.** The old code used `excluded` truthiness alone, so `[]` (a manifest that positively recorded
+  "nothing was excluded") and a manifest that never populated the key at all both printed as
+  `excluded: none recorded` — the reviewer read a manifest that couldn't say as one that had already
+  said no. Flagged at T-0092 review round 2 as a NIT and deferred; fixed here.
+- **Unchanged.** `_bundle_block`'s other lines (manifest path, renames, mode changes), the manifest
+  schema itself, and every caller of `_bundle_block`.
+- **Tests.** `test_review_prompt.py` covers all three states: a populated list, `[]`, and a missing/malformed
+  key. Sabotage (`sabotage_review.py`) carries three matching mutations, confirmed RED at land: reverting to
+  bare truthiness ("the review prompt stops naming the excluded paths"), collapsing `[]` back into the
+  unknown branch ("an empty exclusion list prints as unknown"), and accepting a blank entry as a known
+  list ("a blank exclusion entry reads as a known list").
+
 ### Added — `crew` 1.0.82: sabotage entries for the python-free bin fixture's dedupe (L-0531)
 
 - Two mutations of `plugin/crew/tests/crew_fixtures.py::link_path_dirs`
