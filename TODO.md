@@ -13,7 +13,26 @@ be wrong can be closed on evidence.
   train position, small PRs first, and the machine-local lane scripts calling `acquire`,
   `catch-up`, `check-land` and `release --merged`; (3) tighter specs - an `## Accepted limits`
   section carried into `plugin/crew/hooks/scripts/review_prompt.py`'s brief as "do not re-open".
-
+- **T-0028 follow-ups (Kimi Code provider).**
+  (a) A pre-reserve probe for `copilot`, as codex has had since T-0088 (`review_run.py --probe`)
+  and kimi gets with L-0527. (b) `qa.kimi.reasoningEffort` once a per-invocation effort lever is measured;
+  the only candidate, `KIMI_MODEL_THINKING_EFFORT`, is unverified against a config alias, and
+  `kimi_env` drops every `KIMI_MODEL_*` today. (c) The review launch itself
+  is L-0527 (tooling only, cut from main after this ticket merges); its follow-ups (a
+  fingerprint for codex and copilot, codex stream-error redaction, writes inside `.git`) are
+  recorded there. (d) `/crew:plan` dispatching to a `dev.roles.planner` pin -
+  a follow-up ticket, id to be recorded here when it is filed. (e)
+  `plugin/crew/agents/reviewer.md:27` still names the old order `(codex, copilot, claude)`.
+  (f) Review round 1 NIT, outside T-0028's Touch: `plugin/localgpu/README.md:275` and
+  `plugin/localgpu/commands/crew.md:30` still state crew's `qa.order` default as
+  `["codex", "copilot", "claude"]` and say `/crew:model` validates "exactly those three names";
+  both are false since crew 1.0.44 (`grep -n 'three names' plugin/localgpu/README.md
+  plugin/localgpu/commands/crew.md`). A localgpu version bump comes with the fix. (g) Review
+  round 1 NIT: `.crew/codemap/install-scripts.md`'s re-verify prose cites enough `plugin/crew`
+  files that `crew_context.derive_paths` returns `['scripts/**', 'plugin/crew/**']`, so
+  `.claude/rules/install-scripts.md:4` loads the install-script landmines in every
+  `plugin/crew/**` session; trim the citations at the next `/crew:onboard --refresh
+  install-scripts`.
 - **Not done, follow-up to T-0006**: `resume.auto` has no narrowing. `context.autoClear` can be
   narrowed on the machine to `onlyRepos` / `onlySessions` (`crew_autocycle.in_scope`);
   `resume.auto` arms every crew repo the machine file reaches, and a repo can only veto it

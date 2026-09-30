@@ -31,6 +31,76 @@ All notable changes to this repository are documented here. Format follows [Keep
 - The delta gate, scheduling and the spec's accepted-limits section are proposed follow-ups
   (TODO.md), not in this release.
 
+### Added
+
+- **`crew` 1.0.85: the Kimi Code CLI is a crew provider (T-0028, the feature
+  half). BEHAVIOUR CHANGE: the default `qa.order` now lists Kimi second -
+  `["codex", "kimi", "copilot", "claude"]`.** `/crew:review` does not launch
+  Kimi yet: that wiring is crew's review harness, and lands on its own as
+  L-0527 (tooling-only PRs carry no feature work, T-0087's rule). **The launch
+  gate** keeps the new rung from changing what a review does today:
+  `crew_config.order_candidates` offers a `qa.order` provider only when
+  `/crew:review` can launch it - `crew_config.review_launchable()`, which is
+  `review_run.LAUNCHED` plus the in-session `claude` - so `/crew:model` and the
+  `/crew:review` walk report Kimi as `no - /crew:review cannot launch kimi yet`
+  and go on to the next rung. The gate names no provider: L-0527 adding `kimi`
+  to `review_run.LAUNCHED` is what makes it eligible; an unreadable list is
+  could-not-tell and admits nothing. (`review_run.py --provider kimi` itself
+  still exits 2 until then, nothing launched.) Bumped `1.0.83 -> 1.0.85` (1.0.44 on its
+  branch; 1.0.60 after merging main's 1.0.59; 1.0.62 after main's 1.0.61;
+  1.0.70 after main's 1.0.69; 1.0.76 after main's 1.0.75; 1.0.77 after
+  main's 1.0.76, T-0087; 1.0.78 after main's 1.0.77, T-0086; 1.0.79 after
+  the round-6 fixes; 1.0.83 after merging main's 1.0.80, L-0529, 1.0.83 again after
+  merging main's 1.0.81, T-0094; 1.0.85 after merging main's 1.0.83, L-0531
+  and T-0099, since T-0505 targets 1.0.84).
+  - **`kimi` is in `QA_PROVIDERS` and `DEV_PROVIDERS`**, so every
+    `qa.roles.<r>` and `dev.roles.<r>` slot accepts a
+    `{"provider": "kimi", "model": ...}` pin that validates, reports in
+    `/crew:model` and is family-guarded. The owner's ids are `k3`,
+    `kimi-for-coding` and `kimi-for-coding-highspeed`; they are displayed,
+    never an allowlist. No role pin ships; `/crew:model` offers the table.
+  - **Family token `kimi`, fixed by provider.** `family("kimi", <any model>)`
+    is `kimi` before the model is read - `k3` would otherwise parse as `k` and
+    clear Kimi to review Kimi - and it equals a Copilot `kimi-*` pin's family,
+    so each bars the other. A bare Kimi Code id served by another provider
+    (`k3` through Codex or Copilot) is `kimi` too: a model whose leading
+    letters are exactly `k` followed by a digit.
+  - **New probe, `hooks/scripts/kimi_probe.py`**: `ok`, `not-installed`,
+    `not-authenticated`, `rate-limited` or `unknown`, each its own value; only
+    `ok` is launchable. Could-not-tell never becomes an answer: an unreadable
+    credentials directory or `config.toml` (only ENOENT proves absence), a
+    `config.toml` that is not a regular file, a scratch directory that cannot
+    be made, unrecognised output, a timeout, an id no `type = "kimi"` alias
+    serves, and any answer other than exactly `PROBE_OK` are `unknown`. A 429
+    the CLI retried and then completed reads `ok`; a 429 that ended the call is
+    `rate-limited`. A wrong-shaped `api_key` or `oauth` entry in config.toml is
+    `unknown`, not `not-authenticated`; the probe refuses (`unknown`) when the
+    temporary directory lies inside a repository, where the CLI could discover
+    that repository's instructions. Round 7: a non-string `default_model` is
+    `unknown`; only the provider's own stored credential
+    (`credentials/<name>.json` for `key = "oauth/<name>"`, as Kimi Code 2.1.1
+    stores it) counts as a login, and an OAuth entry it cannot locate is
+    `unknown`; each output pipe is capped at 1 MiB (past it is `unknown`,
+    nothing more held in memory); config.toml is opened once, non-blocking,
+    checked and read through that handle (at most 1 MiB). Every wait is bounded: a timed-out probe's process group is
+    killed and the follow-up read has its own bound, so a descendant holding a
+    pipe cannot hang it. The live stage spends one tiny request, in a throwaway
+    directory, with a Read/Grep/Glob-only `--agent-file` and an empty
+    `--skills-dir` (`kimi -p` forces permission mode `auto`), a scrubbed env,
+    and stderr redacted. `providers.sh --probe-kimi` runs it; without the flag
+    it only reports the CLI.
+  - **The stream-json parser, `kimi_probe.final_message`, is tested against a
+    real run.** `tests/fixtures/kimi-stream-2.1.1/ok.jsonl` is the owner's one
+    captured `kimi -p` call (2026-09-25, session id redacted). Only a
+    `role: assistant` line is read; a non-object content member is malformed;
+    a `turn.step.retrying` event is never a failure. Tool-call, retry, 401,
+    quota and failed-turn records remain uncaptured.
+  - `qa.kimi.model` / `dev.kimi.model` (default `null`); no
+    `reasoningEffort` key. `model.md`, `crew-providers` and `providers.sh`
+    document it. `templates/config.template.json` and `global.template.json`
+    are regenerated from `default_config()` / `default_global_config()`, so
+    `/crew:init` writes the `kimi` blocks and the new order.
+
 ### Fixed — `crew` 1.0.83: the review prompt tells a known-empty exclusion list from an unrecorded one (T-0099)
 
 - **What changed.** `_bundle_block` in `review_prompt.py` now checks the shape of `manifest["excluded"]`
