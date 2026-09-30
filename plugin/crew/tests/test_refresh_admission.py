@@ -1358,6 +1358,53 @@ def test_a_dir_swapped_to_a_symlink_just_before_the_open_is_refused(tmp_path, mo
     assert (swapped, got[sub][0], "symlink" in got[sub][1]) == ([True], False, True), got
 
 
+# --- W-0116 -----------------------------------------------------------------------
+# Where `os.open` takes no dir_fd (Windows), a directory swapped to a link
+# after the realpath check is opened through; lstat of the final component
+# follows the same link, so only the descriptor's own final path tells.
+
+def _no_dir_fd_with_final_path(monkeypatch, final):
+    monkeypatch.setattr(os, "supports_dir_fd", set())
+    monkeypatch.setattr(crew_refresh_check, "_FINAL_PATH", final)
+
+
+def test_a_descriptor_whose_final_path_is_elsewhere_is_refused(anchored, tmp_path, monkeypatch):
+    root, base = anchored
+    rel, good, companions = _admitted_shape(root, "map")
+    root.joinpath(*rel.split("/")).write_bytes(good)
+    _no_dir_fd_with_final_path(monkeypatch, lambda fd: str(tmp_path / "outside" / "app.md"))
+
+    got = _verdicts(root, base, REACH, companions + [rel])
+
+    assert (got[rel][0], "symlink" in got[rel][1]) == (False, True), got
+
+
+def test_a_descriptor_whose_final_path_cannot_be_read_is_could_not_tell(anchored, monkeypatch):
+    root, base = anchored
+    rel, good, companions = _admitted_shape(root, "map")
+    root.joinpath(*rel.split("/")).write_bytes(good)
+    _no_dir_fd_with_final_path(monkeypatch, lambda fd: None)
+
+    verdict, reason = _verdicts(root, base, REACH, companions + [rel])[rel]
+
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL)) == (None, True), reason
+
+
+def test_a_descriptor_whose_final_path_is_the_checked_path_is_admitted(anchored, monkeypatch):
+    """The control: the lookup answering with the path the checks proved,
+    spelled in another case, admits."""
+    root, base = anchored
+    rel, good, companions = _admitted_shape(root, "map")
+    root.joinpath(*rel.split("/")).write_bytes(good)
+    named = os.path.join(os.path.realpath(str(root)), *rel.split("/"))
+    _no_dir_fd_with_final_path(monkeypatch, lambda fd: named.swapcase() if os.name == "nt"
+                               else named)
+
+    got = _verdicts(root, base, REACH, companions + [rel])
+
+    assert got[rel][0] is True, got
+
+
 def test_a_base_whose_tree_git_cannot_read_is_could_not_tell(anchored):
     """Round 7 FIX: `cat-file -e <base>:<path>` exits 128 for a missing path
     AND for a base git cannot read, and both read "absent" -> "new file"."""
