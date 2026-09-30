@@ -1,6 +1,7 @@
 """A repository whose refresh artifacts are anchored, and the refresh that
-re-anchors them, shared by `test_refresh_admission.py` and
-`test_completion_audit_refresh_artifacts.py` (T-0094).
+re-anchors them, for `test_refresh_admission.py` (T-0094) and, once L-0540
+wires the completion audit to `artifact_verdicts`, its
+`test_completion_audit_refresh_artifacts.py` (split by the owner, 2026-09-30).
 
 The refresh `refreshed` performs is the shape `8bbb26d9` (T-0075) wrote in
 this repository, not "the anchor line only": the map's `anchor:` moves AND its

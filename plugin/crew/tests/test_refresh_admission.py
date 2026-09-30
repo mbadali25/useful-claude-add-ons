@@ -13,8 +13,10 @@ verdict, None, and never admits. It judges shape and reach, never truth: a
 re-anchored map may still say something wrong, and that is the reviewer's.
 
 A guard class: must-allow and must-block cases both, and every rung has a
-mutation in `sabotage_refresh.py` after the `# T-0094` marker that turns one
-of these red.
+mutation after the `# T-0094` marker of `sabotage_refresh.py` that turns one
+of these red. Those entries are harness files (`scripts/check-tooling-pr.py`),
+so they land with L-0540, split from T-0094 by the owner on 2026-09-30;
+each was hand-run RED against this file (`.work/tickets/T-0094/sabotage-run.md`).
 """
 import errno
 import os
@@ -565,7 +567,7 @@ def test_an_unreadable_rule_is_could_not_tell(anchored, case):
 # and `_rule_verdict` has a control. Each patch fails ONE git call and lets the
 # rest run, and each asserts its branch's own reason text, so an earlier branch
 # answering for it fails the test too. These pass on correct code; the round-2
-# entries in `sabotage_refresh.py` turn each one red.
+# entries of `sabotage_refresh.py` (landing with L-0540) turn each one red.
 
 def _args_are(*want):
     return lambda args: tuple(args) == want
@@ -638,7 +640,8 @@ def test_a_removed_rule_whose_base_copy_git_cannot_read_is_could_not_tell(tmp_pa
 # --- review round 3 -------------------------------------------------------------
 # Nothing moves from a base with no anchor; INDEX.md and a rule are judged by
 # the bytes git sees change, not by decoded, newline-normalised text. Each
-# must-block case has an entry after the round-3 marker in `sabotage_refresh.py`.
+# must-block case has an entry after the round-3 marker of `sabotage_refresh.py`
+# (landing with L-0540).
 
 BARE_DIAGRAM = "%% Anchors: src/app.py\nflowchart LR\n  a --> b\n"
 
