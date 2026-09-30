@@ -1398,8 +1398,10 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   generated `graphify-out/`, root-anchored, on every diff and listing but
   never on `git add`; the manifest's `excluded` is `list(EXCLUDED)`.
   `_bundle_block` prints that list as `excluded (never in the bundle): ...`,
-  or `excluded: none recorded` when the manifest has none
-  (`plugin/crew/hooks/scripts/review_prompt.py:97`).
+  an empty list as `excluded (never in the bundle): none`, and a missing
+  key or anything but a list of non-blank strings as
+  `excluded: not recorded by this manifest (unknown)` (T-0099)
+  (`plugin/crew/hooks/scripts/review_prompt.py:100`).
 - DERIVED (T-0079): the READ-line rule of the review verdict is
   `review_verdict._covers` (`plugin/crew/hooks/scripts/review_verdict.py:99`):
   a READ token counts for a part when, `\` read as `/` and `normpath`ed, it
