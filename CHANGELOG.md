@@ -4,6 +4,48 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.65: gate first — no review round on a tree the verify gate has not passed
+
+- **What changed.** `review_run.py` now answers two questions before it
+  reserves a round (`preflight`). First: does a CLEAN receipt already cover this
+  exact bundle (`review_ledger.check_receipt`, the check `/crew:done` uses)? Then
+  no round is spent, and the verdict is that receipt's CLEAN, said as such; the
+  Claude path prints `ALREADY_CLEAN=1` in place of `ROUND=`. Owner-accepted
+  FINDINGS do not short-circuit. Second: has the verify gate passed this tree
+  (new `review_gate.py`)? If not, or if that can't be told, the review exits
+  **5**, reserves nothing, and names why. `--allow-unverified` reviews anyway
+  and records `gate.overridden`.
+- **What counts as passed.** Not the gate's exit status: 0 also means stood
+  down, backed off a lock, or nothing to check. Instead, what a full clean pass
+  leaves behind: `.crew/.verify-verified-at` at HEAD, and either nothing
+  material differs from HEAD or `.crew/.verify-gate.fingerprint` equals the
+  tree's digest now, from `verify_fingerprint.fingerprint` over the gate's own
+  Stop-mode changed set. An UNVERIFIED reason appends what the gate's record
+  still lists (for example `SKIP (rc 77, environment absent)`), so a gate that
+  can never pass on a machine missing a tool says so.
+- **Timing.** Every review.json carries `elapsed_s` (reservation to verdict,
+  from the ledger's timestamps; `None` when unknown, never 0) and `gate`. The
+  `review:` summary line prints `gate=` and `elapsed=`.
+- **Why.** A round is one of two per ticket and is never refunded. Spending
+  one on a tree its own tests fail is the costliest way to learn it is red.
+- **verify.json.** A new rule maps `review_*.py`, `verify_fingerprint.py`,
+  `commands/review.md` and the review tests to `pytest test_review_*.py`
+  (41s, 190 passed, measured here). Until now only the whole-suite rule
+  reached them, and that rule is permanently over the Stop budget.
+- **review.md** documents exit 5 and `ALREADY_CLEAN=1` by rewriting three
+  existing lines in place. It stays at its 551-line allowance.
+- **Tests.** `test_review_gate.py` (29): must-block, must-allow, and an
+  invariant table that runs the real `verify-gate.sh` and asserts
+  `gate_state` agrees on five tree shapes and disagrees after four kinds of
+  change. **Sabotage:** eight entries in `sabotage_review.py`, each run
+  through `sabotage.py`'s own apply/run/restore and confirmed RED, files
+  restored byte-identical.
+- **Known limit.** A rule that is permanently over the Stop budget (the
+  whole-suite rule here) never runs at Stop, yet the gate still writes its
+  fingerprint, so this preflight passes a tree that rule never checked. That
+  is the Stop gate's own standard, unchanged; the reviewer still sees the rule
+  listed NOT VERIFIED in the contract's receipts block.
+
 ### Changed — `crew` 1.0.64: faster QA harness — parallel pylint and pytest, unsigned fixture commits
 
 - **What changed.** `pylint.yml` and the `**/*.py` rule in `.crew/verify.json`
