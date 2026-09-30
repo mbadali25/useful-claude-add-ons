@@ -265,6 +265,7 @@ def test_a_lock_with_no_deadline_falls_back_to_the_age_window(flavour, tmp_path)
 _FRESH_TTL = "60"
 
 
+@pytest.mark.wallclock
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_a_fresh_lock_with_no_deadline_still_backs_off(flavour, tmp_path):
     """The other half of the fallback: inside the age window, still held."""
