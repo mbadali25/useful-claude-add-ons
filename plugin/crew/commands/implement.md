@@ -19,11 +19,9 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py validate --ticket $1
 ```
 
 **This command refuses to edit anything unless that call reports the plan
-approved.** No approval, a stale one (the plan changed after approval), or no
-plan at all — stop, say which, and point at `/crew:plan $1` or
-`/crew:plan $1 --approve`. Do not proceed "since the plan looks fine" — the
-receipt, not your read of the plan, is what the completion audit checks
-later.
+approved.** No approval, a stale one (the plan changed since) or no plan: stop,
+say which, and point at `/crew:plan $1` or `/crew:plan $1 --approve`. The
+receipt, not your read of the plan, is what the completion audit checks later.
 
 ## 1. Record where this ticket starts
 
@@ -68,9 +66,8 @@ ticket's spec.Touch. File it to `TODO.md`, not to the diff.
 
 ## 4. Verify
 
-Run the checks your changed paths map to in `.crew/verify.json`, or
-`./_verify/smoke.sh` when there is no map. Fix and rerun on red. A changed
-path mapping to no rule gets one before you finish (step 6).
+Run the checks your changed paths map to in `.crew/verify.json` (no map: `./_verify/smoke.sh`).
+Fix and rerun on red. A changed path mapping to no rule gets one before you finish (step 6).
 
 ## 5. Specialists, endpoints, coverage
 
@@ -106,9 +103,14 @@ rules`, the graph after a code change); anything else there needs Touch, and the
 audit names the reason. A `stop` ends the loop, on an artifact line (a
 missing tool, git unable to diff) or on the top line (a base that hides or may hide the
 change, an unreadable config): report it. Documents read `not measured`, never a
-pass. Commit the refresh before `/crew:review $1` builds its bundle. Set `spec.md`'s header
-to `status: review` — that edit keeps the approval: the digest normalises only
-the header's status value — and run
+pass. Commit the refresh before `/crew:review $1` builds its bundle.
+Then the **required self-check** (`crew-standards` skill): run
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py init --root . --ticket $1`, answer
+every row of `.work/tickets/$1/selfcheck.md` (addressed with evidence, or n/a with a reason), then run
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py stamp --root . --ticket $1`
+until it exits 0. `/crew:review` refuses without a current stamp; any later edit re-stamps.
+Set `spec.md`'s header to `status: review` — that edit keeps the approval: the
+digest normalises only the header's status value — and run
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket $1 --to review`,
 handled as in step 1: the Review lane means the review is outstanding.
 **Then, last, `/crew:review $1`** — its receipt covers the refreshes; a later one stales it.

@@ -109,7 +109,7 @@ uses <code>crew:explorer</code> to pin down <code>path:line</code> evidence, and
 <code>spec.md</code> with Intent, Exclusions, Evidence, Unknowns, Touch and Acceptance.
 <code>.work/INDEX.md</code> gets a row.</p>
 <p><strong>3. Plan.</strong> You type <code>/crew:plan T-0091</code>. The session reads <code>spec.md</code>, writes
-one step per unit of work in <code>plan.md</code> (Files/Test/Risk each), checks every
+one step per unit of work in <code>plan.md</code> (Files/Test/Risk/Standards each), checks every
 Files: entry against the spec's Touch globs, and enters <strong>plan mode</strong> to show
 you the whole thing. You review it. On your yes, it asks you to type
 <code>/crew:approve T-0091</code>. crew's prompt hook sees that you typed it and writes
@@ -125,11 +125,21 @@ Touch globs before it happens, not after.</p>
 <p><strong>5–6. Tests and docs.</strong> Coverage lands as part of implementing the plan's
 steps. <code>/crew:docs</code> runs next and usually says "none" — most tickets touch no
 document that needs updating.</p>
-<p><strong>7. Review.</strong> <code>/crew:implement</code> calls <code>/crew:review T-0091</code> last, after tests
-and docs. Codex reviews the bundle (or Copilot, or the Claude fallback,
+<p><strong>6b. The standards self-check.</strong> Before the review, the session answers every
+development standard in the effective set (crew's generic GEN standards, any
+per-language set a changed file matches, and this repository's
+<code>.crew/standards.md</code> overlay) in <code>.work/tickets/T-0091/selfcheck.md</code>:
+<code>addressed</code> with evidence, or <code>n/a</code> with a reason. <code>crew_standards.py stamp</code>
+refuses an incomplete answer sheet and binds a complete one to the exact
+review bundle, so any later edit needs a new stamp.</p>
+<p><strong>7. Review.</strong> <code>/crew:implement</code> calls <code>/crew:review T-0091</code> last, after tests,
+docs and the self-check; without a current stamp the review refuses before it
+spends a round. Codex reviews the bundle (or Copilot, or the Claude fallback,
 whichever survives the author-family strike), reports BLOCK/FIX/NIT lines,
 and you fix the BLOCKs. Two rounds total, ticket-wide — a third is refused and
-the ticket becomes <code>NEEDS_REPLAN</code>.</p>
+the ticket becomes <code>NEEDS_REPLAN</code>. Each round's findings go into a
+<code>standards-proposals-r&lt;N&gt;.md</code> file, one row per finding; you approve or reject
+each proposed standard, and nothing is added to a standards file on its own.</p>
 <p><strong>8. Done.</strong> You type <code>/crew:done T-0091</code>. Three checks, all required: the
 review receipt rebuilds clean, the verify gate is clean, and the completion
 audit (the whole tree diffed against the scope base) finds nothing outside
@@ -231,6 +241,11 @@ reasons unrelated to the change under test. Outside that image the visual rule r
 <td>a write is blocked outside Touch</td>
 <td>the file isn't in the spec's declared scope</td>
 <td>amend <code>spec.md</code>'s Touch and re-approve the plan, or don't make the edit</td>
+</tr>
+<tr>
+<td><code>/crew:review</code> exits 2 with <code>review-run: self-check: ...</code></td>
+<td>the standards self-check is missing, incomplete, or stamped for an earlier state of the change</td>
+<td>answer <code>.work/tickets/&lt;id&gt;/selfcheck.md</code>, run <code>crew_standards.py stamp --root . --ticket &lt;id&gt;</code>, rebuild the bundle and run the round again; no round was spent</td>
 </tr>
 <tr>
 <td><code>/crew:done</code> reports <code>NEEDS_REPLAN</code></td>

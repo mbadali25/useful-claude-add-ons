@@ -164,7 +164,10 @@ function Resolve-CrewPython {
           try { $null = $proc.WaitForExit(2000) } catch { }
         } elseif ($proc.ExitCode -eq 0 -and $outTask.Wait(1000)) {
           $line = @(($outTask.Result -split "`r?`n") | Where-Object { $_.Trim() })[-1]
-          $probe = $line | ConvertFrom-Json
+          # An empty answer leaves $line null, and piping $null into ConvertFrom-Json is a
+          # NON-terminating binding error this try never catches: it reached stderr as a red
+          # error block on every hook, though the candidate was rightly rejected (T-0097).
+          $probe = if ($line) { $line | ConvertFrom-Json } else { $null }
           $v = @($probe.v)
           if ($probe.impl -in @('cpython', 'pypy') -and $v.Count -ge 2 -and
               ($v[0] -is [long] -or $v[0] -is [int]) -and ($v[1] -is [long] -or $v[1] -is [int]) -and

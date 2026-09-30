@@ -3,12 +3,12 @@ paths:
   - "plugin/crew/**"
   - "scripts/**"
 ---
-<!-- crew:generated source=.crew/codemap/install-scripts.md sha256=da6b6c116bdca026 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/install-scripts.md sha256=c5716c802e34b7d6 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # install-scripts
-Code map anchor `0c19512c`; if it is behind HEAD, re-check with `git diff --name-only 0c19512c..HEAD -- <cited paths>`.
+Code map anchor `5c9a9db2`; if it is behind HEAD, re-check with `git diff --name-only 5c9a9db2..HEAD -- <cited paths>`.
 Covers: The install-prerequisites.{sh,ps1} matched pair: catalog parity, the pick_fit/Format-PickerLine no-bypass rule, idempotency branches, and hook-plugins-default-off on both sides.
 ## Landmines
-- `README.md`'s install-URL pin is current at this anchor.
+- `README.md`'s install-URL pin is STALE again at this anchor, by one line per script.
 - The five-way crew count disagreement this note tracked for several anchors is fully resolved and re-confirmed independently correct, not merely re-synced.
 - `mcp_launcher_resolves` is unchanged; `add_or_refresh_mcp_server` is a new and stricter sibling, not a replacement.
 - Nothing may bypass `pick_fit` / `Format-PickerLine`.
