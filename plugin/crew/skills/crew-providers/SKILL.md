@@ -349,41 +349,40 @@ The Kimi Code CLI is a first-class provider (`kimi` in `QA_PROVIDERS` and
 it. Then `kimi login` once (OAuth; crew never reads the credential).
 
 Model ids (owner-supplied): `k3`, `kimi-for-coding`, `kimi-for-coding-highspeed`.
-Set `qa.kimi.model` / `dev.kimi.model` to one, or leave it null for the CLI's
-`default_model`. `-m` takes a config.toml alias, so crew resolves the id to the
-alias served by a `type = "kimi"` provider. There is no `reasoningEffort`: effort
-lives in the alias's `default_effort` in `~/.kimi-code/config.toml`.
+Set `qa.kimi.model` / `dev.kimi.model` to one, or null for the CLI's
+`default_model`; crew resolves the id to the config.toml alias (`-m` takes an
+alias) served by a `type = "kimi"` provider. No `reasoningEffort`: effort lives
+in the alias's `default_effort` in `~/.kimi-code/config.toml`.
 
-**Probe before a round is spent.** `kimi_probe.py` answers `ok`,
-`not-installed`, `not-authenticated`, `rate-limited` or `unknown`; only `ok`
-launches, and `review_run.py` runs it before the round is reserved. A Kimi
-round is never reserved unprobed: when the ledger's status shows no round
-left, it exits 4 before the probe. The live stage spends one tiny request;
-do not run it separately before `review_run.py`, which would spend two.
+**Probe before a round is spent.** `kimi_probe.py` answers `ok`, `not-installed`,
+`not-authenticated`, `rate-limited` or `unknown`; only `ok` launches.
+`review_run.py` runs it before the verify-gate preflight and before reserving, as
+Codex's `--probe` runs first; a Kimi round is never reserved unprobed (no round
+left per the ledger's status exits 4 before the probe). The live stage spends one
+tiny request, so do not run it separately first.
 
-**Read-only is not a flag here.** `kimi -p` forces permission mode `auto`. Every
-`kimi` call crew makes, the probe included, passes an agent file allowing only
-Read, Grep and Glob (Write, Edit and Bash disallowed) and an empty
-`--skills-dir`; the probe runs in a throwaway directory. The working tree is
-fingerprinted before the probe and after the review: the CONTENTS and
-permission bits of every tracked file (whatever `git status` says of it, so a
-chmod counts under `core.filemode=false`), of untracked and gitignored files,
-and of nested repositories and submodules. A symlink is digested with its
-target and what it resolves to; a link to a directory outside the repository is
-could-not-tell. A FIFO, socket or device is recorded and never opened. A probe
-that changed it, whatever it answered, exits 5 with no round spent: stop and
-report the paths rather than walk to the next provider. A review that changed
-it is INCOMPLETE, naming the paths.
-Whatever a call leaves running in its process group is killed before the tree
-is checked. Set aside: `graph.out` (graphify's background rebuild) unless it
-is or lies under `.crew`, contains a `.crew`, or holds a tracked file other than
-`graph.json` and `GRAPH_REPORT.md`, and, only while gitignored throughout, `.idea/`, `.vscode/`, `.crew/guard.log`,
-`.crew/.autoclear.log` and context-watch's markers. Tool caches such as
-`__pycache__` and the verify gate's `.crew/` files still count, because a later
-run reads them back. Not caught by either control: a write outside the repo,
-a change inside `.git` beyond HEAD and the index, a process that left its
-process group (`setsid`), and on Windows, any process left running. Offered pins and the rest:
-`alternative-providers.md`.
+**Read-only is not a flag here.** `kimi -p` forces permission mode `auto`, so every
+`kimi` call, the probe included (in a throwaway directory), passes an agent file
+allowing only Read, Grep and Glob, and an empty `--skills-dir`. The working tree is
+fingerprinted before the probe and after the review: the CONTENTS and permission
+bits of every tracked file (whatever `git status` says, so a chmod counts under
+`core.filemode=false`), of untracked and gitignored files, and of nested
+repositories and submodules. A symlink is digested with its target and what it
+resolves to; a link to a directory outside the repository is could-not-tell. A FIFO,
+socket or device is recorded and never opened. A probe that changed it, whatever it
+answered, exits 8 with no round spent: stop and report the paths, do not walk on. A
+review that changed it is INCOMPLETE, naming the paths. What a call leaves running
+in its process group is killed before the check. Set aside: `graph.out` (graphify's
+background rebuild; a lane with no config of its own reads the main checkout's)
+unless it is or lies under `.crew`, contains a `.crew`, or holds a tracked file
+other than `graph.json` and `GRAPH_REPORT.md`; and, only while gitignored
+throughout, `.idea/`, `.vscode/`, `.crew/guard.log`, `.crew/.autoclear.log` and
+context-watch's markers. Tool caches such as `__pycache__` and the verify gate's
+`.crew/` files still count: a later run reads them back. Not caught: a write outside
+the repo, a change inside `.git` beyond HEAD and the index, a process that left its
+process group (`setsid`), and on Windows any process left running.
+`alternative-providers.md`: the offered pin table, Kimi through Codex (the API-key
+route), and a private second opinion on local hardware.
 
 ## Gemini (design second opinion)
 
@@ -427,12 +426,6 @@ If your organisation prohibits sending anything to an unpaid third party, set
 accept single-opinion planning. Both are legitimate. Say which one is in effect.
 
 ---
-
-## Kimi, and local models
-
-Read `alternative-providers.md` for Kimi through Codex (the API-key route),
-the offered Kimi Code pin table, and running a private second opinion on
-local hardware.
 
 ## An external implementer (`dev.provider`)
 

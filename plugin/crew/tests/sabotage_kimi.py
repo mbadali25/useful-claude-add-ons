@@ -15,10 +15,27 @@ VERDICT = os.path.join(SCRIPTS, "review_verdict.py")
 STATE = os.path.join(SCRIPTS, "crew_state.py")
 PROVIDERS_SH = os.path.join(CREW, "skills", "crew-setup", "scripts", "providers.sh")
 REVIEW_MD = os.path.join(CREW, "commands", "review.md")
+SKILL_MD = os.path.join(CREW, "skills", "crew-providers", "SKILL.md")
 VERIFY = os.path.join(os.path.dirname(os.path.dirname(CREW)), ".crew", "verify.json")
 _P = "tests/test_kimi_probe.py::"
 _R = "tests/test_review_run_kimi.py::"
 _D = "tests/test_kimi_docs.py::"
+_W = "tests/test_worktree_config.py::"
+# Successor 2026-09-30: the gate preflight ignores --allow-unverified.
+_ALLOW = ("        if args.allow_unverified:\n"
+          '            sys.stderr.write(f"review-run: gate {state}: {reason}. Reviewing anyway "\n')
+_ALLOW_OFF = ("        if False:  # sabotage\n"
+              '            sys.stderr.write(f"review-run: gate {state}: {reason}. Reviewing anyway "\n')
+# Successor 2026-09-30: graph_out reads only the worktree's own .crew/ again.
+_RESOLVED = ("    crew_dir, source, _detail = crew_common.repo_config_dir(top)\n"
+             "    if source == crew_common.SOURCE_UNKNOWN:\n"
+             "        return None\n"
+             "    cfg = {}\n"
+             "    for name in crew_common.CONFIG_NAMES:\n"
+             "        text = crew_common.read_text(os.path.join(crew_dir, name))\n")
+_OWN_PATH = ("    cfg = {}\n"
+             '    for name in ("crew.json", "config.json"):\n'
+             '        text = crew_common.read_text(os.path.join(top, ".crew", name))\n')
 _HEAD_CHECK = ('    if not head:\n'
                '        unknown("HEAD could not be read (not a git repository?)")\n'
                '        return None\n')
@@ -623,4 +640,37 @@ KIMI_MUTATIONS = (
      '                error = f"unparseable Kimi event line',
      "tests/test_review_verdict.py::"
      "test_kimi_final_message_an_event_holding_a_unicode_line_break_parses_intact"),
+    # --- successor 2026-09-30 (owner "Adapt, probe then preflight") ---------------
+    ("review_run: main's gate preflight runs before the Kimi probe (successor (1))",
+     RUN,
+     '        if args.provider == "kimi":\n'
+     "            # A Kimi round is never reserved unprobed",
+     '        if args.provider == "kimi":\n'
+     "            short = preflight(args)\n"
+     "            if short is not None:\n"
+     "                return short\n"
+     "            # A Kimi round is never reserved unprobed",
+     _R + "test_run_kimi_probes_before_the_gate_preflight"),
+    ("review_run: preflight ignores --allow-unverified (successor (2), graph.out moved)",
+     RUN, _ALLOW, _ALLOW_OFF,
+     _R + "test_run_kimi_a_reviewer_that_moves_graph_out_is_incomplete"),
+    ("review_run: preflight ignores --allow-unverified (successor (2), .crew graph.out)",
+     RUN, _ALLOW, _ALLOW_OFF,
+     _R + "test_run_kimi_a_crew_graph_out_sets_nothing_aside"),
+    ("review_run: graph_out reads the lane's own .crew/ again (successor (3))",
+     RUN, _RESOLVED, _OWN_PATH,
+     _W + "test_graph_out_in_a_lane_reads_the_main_checkouts_config"),
+    ("review_run: graph_out's own-path read is back, uncounted (successor (3)/(4))",
+     RUN, _RESOLVED, _OWN_PATH,
+     _W + "test_no_module_reads_repo_config_outside_the_resolver"),
+    ("review_run: an unknown config source still sets graph.out aside (successor (3))",
+     RUN,
+     "    if source == crew_common.SOURCE_UNKNOWN:\n        return None\n    cfg = {}\n",
+     "    cfg = {}\n",
+     _W + "test_graph_out_is_none_when_git_could_not_tell_whose_config"),
+    ("crew-providers SKILL.md names the pre-merge probe-changed exit 5 again",
+     SKILL_MD,
+     "answered, exits 8 with no round spent",
+     "answered, exits 5 with no round spent",
+     _D + "test_crew_providers_names_the_probe_changed_exit_code"),
 )

@@ -283,3 +283,13 @@ def test_kimi_prose_states_the_round_4_fingerprint_facts(doc):
                         "outside the repository is could-not-tell",
                         "`GRAPH_REPORT.md`", "never reserved unprobed")
             if t not in text] == [], doc
+
+
+
+def test_crew_providers_names_the_probe_changed_exit_code():
+    """The a61a6f38 merge renumbered EXIT_PROBE_CHANGED 5 -> 8 (main's
+    EXIT_UNVERIFIED is 5); SKILL.md kept "exits 5", which /crew:review reads as
+    the gate refusing the tree."""
+    text = " ".join(_read("skills", "crew-providers", "SKILL.md").split())
+
+    assert f"exits {_probe_changed_code()} with no round spent" in text

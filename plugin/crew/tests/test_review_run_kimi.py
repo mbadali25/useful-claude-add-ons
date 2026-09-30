@@ -47,7 +47,7 @@ def _bundle(repo, scratch, prompt=None):
                                         newline="\n")
 
 
-def _run(repo, tmp_path, probe="ok", mode="clean", model="k3", **env_extra):
+def _run(repo, tmp_path, probe="ok", mode="clean", model="k3", args=(), **env_extra):
     scratch, work = tmp_path / "scratch", tmp_path / "work"
     if not (scratch / "prompt.txt").exists():
         _bundle(repo, scratch)
@@ -57,7 +57,8 @@ def _run(repo, tmp_path, probe="ok", mode="clean", model="k3", **env_extra):
                         KIMI_CODE_HOME=str(home), **env_extra)
     result = subprocess.run(
         [sys.executable, _RUN, "--root", str(repo), "--ticket", "T1", "--scratch",
-         str(scratch), "--provider", "kimi", "--model", model, "--work-dir", str(work)],
+         str(scratch), "--provider", "kimi", "--model", model, "--work-dir", str(work),
+         *args],
         capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False, env=env,
         timeout=120)
     review_path = work / "review.json"
@@ -486,6 +487,61 @@ def test_run_kimi_probes_before_it_reserves(repo, tmp_path, monkeypatch, capsys)
         review_run.EXIT_CLEAN, [1], 2)
 
 
+
+# --- successor 2026-09-30 (1): the Kimi probe, then main's #264 preflight, then reserve -
+
+
+def _gated(repo):
+    """A tracked `.crew/verify.json` and no clean pass recorded, so
+    review_gate reads the tree UNVERIFIED: the verify gate has not passed it."""
+    (repo / ".crew").mkdir(exist_ok=True)
+    (repo / ".crew" / "verify.json").write_text('{"rules": []}\n', encoding="utf-8")
+    git(repo, "add", ".crew/verify.json")
+    git(repo, "commit", "-qm", "verify map")
+    return repo
+
+
+def test_run_kimi_probes_before_the_gate_preflight(repo, tmp_path):
+    """Must-block: the order is the Kimi probe, then the gate, as Codex's
+    `--probe` runs before its round. A rate-limited Kimi on a tree the gate
+    has not passed is skipped (exit 2, walk to the next provider), not
+    refused as unverified (5), which would stop the walk for every provider."""
+    dump = tmp_path / "dump.jsonl"
+    _gated(repo)
+
+    result, review = _run(repo, tmp_path, probe="quota:exceeded_current_quota_error",
+                          FAKE_KIMI_DUMP=str(dump))
+
+    assert (result.returncode, "rate-limited" in result.stderr, review) == (2, True, None), \
+        result.stderr
+    assert (len(dump.read_text(encoding="utf-8").splitlines()),
+            rl.status(str(repo), "T1")["rounds"]) == (1, [])
+
+
+def test_run_kimi_an_ok_probe_on_an_unverified_tree_reserves_nothing(repo, tmp_path):
+    """Must-allow: the probe answers ok, then the gate refuses (5) with no
+    round reserved and no review call."""
+    dump = tmp_path / "dump.jsonl"
+    _gated(repo)
+
+    result, review = _run(repo, tmp_path, FAKE_KIMI_DUMP=str(dump))
+
+    assert (result.returncode, review, len(dump.read_text(encoding="utf-8").splitlines()),
+            rl.status(str(repo), "T1")["rounds"]) == (review_run.EXIT_UNVERIFIED, None, 1, []), \
+        result.stderr
+
+
+def test_run_kimi_an_ok_probe_with_allow_unverified_launches(repo, tmp_path):
+    """Must-allow: `--allow-unverified` reviews the unverified tree, and
+    review.json records the override."""
+    _gated(repo)
+
+    result, review = _run(repo, tmp_path, args=("--allow-unverified",))
+
+    assert (result.returncode, review["verdict"], review["gate"]["overridden"]) == (
+        review_run.EXIT_CLEAN, "CLEAN", True), result.stderr
+
+
 # --- round 2 FIX review_run.py:301: graph.out is resolved before the review -----
 
 
@@ -510,7 +566,7 @@ def test_run_kimi_a_reviewer_that_moves_graph_out_is_incomplete(repo, tmp_path):
     itself can no longer be graph.out, so the reviewer here moves it to `gen`."""
     _crew_repo(repo)
 
-    result, review = _run(repo, tmp_path, FAKE_KIMI_PUT=json.dumps({
+    result, review = _run(repo, tmp_path, args=("--allow-unverified",), FAKE_KIMI_PUT=json.dumps({
         ".crew/crew.json": '{"graph": {"out": "gen"}}\n',
         ".crew/config.json": '{"a": 2}\n',
         "gen/fix.py": "FIXED = True\n"}))
@@ -1063,7 +1119,7 @@ def test_run_kimi_a_crew_graph_out_sets_nothing_aside(repo, tmp_path):
     tracked `.crew/verify.json` was set aside as a graph rebuild."""
     _crew_repo(repo, crew_json='{"graph": {"out": ".crew"}}\n')
 
-    result, review = _run(repo, tmp_path, FAKE_KIMI_PUT=json.dumps({
+    result, review = _run(repo, tmp_path, args=("--allow-unverified",), FAKE_KIMI_PUT=json.dumps({
         ".crew/verify.json": '{"rules": ["weakened"]}\n'}))
 
     assert (result.returncode, review["verdict"]) == (3, "INCOMPLETE")

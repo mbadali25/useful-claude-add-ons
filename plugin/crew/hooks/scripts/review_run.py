@@ -456,7 +456,10 @@ def graph_out(root):
     """`graph.out` as a repo-relative, `/`-separated directory, or None.
 
     Resolved the way `crew_freshness._read_graph` and `crew_refresh_check`
-    resolve it: `.crew/crew.json`, else `.crew/config.json`; a missing or
+    resolve it: `crew.json`, else `config.json`, in the `.crew/` that
+    `crew_common.repo_config_dir` names -- so a linked lane worktree with no
+    config of its own reads the main checkout's -- and None when that
+    resolver answers `unknown` (nothing set aside); a missing or
     wrong-typed value is `graphify-out`; `contained_path` keeps it inside the
     repository. None when it lands on the root or in `.git`, or a symlink
     moves it -- an exemption for one generated directory must never widen to
@@ -467,9 +470,12 @@ def graph_out(root):
     is None as well). graph.out set to `.crew` had excused a rewrite of
     `.crew/verify.json`."""
     top = os.path.realpath(root)
+    crew_dir, source, _detail = crew_common.repo_config_dir(top)
+    if source == crew_common.SOURCE_UNKNOWN:
+        return None
     cfg = {}
-    for name in ("crew.json", "config.json"):
-        text = crew_common.read_text(os.path.join(top, ".crew", name))
+    for name in crew_common.CONFIG_NAMES:
+        text = crew_common.read_text(os.path.join(crew_dir, name))
         if text is None:
             continue
         try:
@@ -1020,7 +1026,9 @@ def _fmt_elapsed(seconds):
 
 def preflight(args):
     """None to go on and reserve a round, or the exit code to stop with
-    having reserved nothing. See BEFORE ANY ROUND IS RESERVED above."""
+    having reserved nothing. See BEFORE ANY ROUND IS RESERVED above. For
+    Kimi the probe has already run before these two questions, as Codex's
+    `--probe` runs before its round (T-0028, owner 2026-09-30)."""
     ok, message = review_ledger.check_receipt(args.root, args.ticket)
     data, _ = review_ledger._load(review_ledger.ledger_path(args.root, args.ticket))  # pylint: disable=protected-access
     if ok and (data.get("receipt") or {}).get("kind") == "clean":
