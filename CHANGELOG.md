@@ -6,13 +6,13 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.70: the Kimi Code CLI is a crew provider (T-0028). BEHAVIOUR
+- **`crew` 1.0.76: the Kimi Code CLI is a crew provider (T-0028). BEHAVIOUR
   CHANGE: the default `qa.order` now tries Kimi second -
   `["codex", "kimi", "copilot", "claude"]`** - so on a machine with `kimi` on
   PATH and a repo with no explicit `qa.order`, `/crew:review` reaches Kimi
-  before Copilot and the Claude fallback. Bumped `1.0.69 -> 1.0.70` (1.0.44
+  before Copilot and the Claude fallback. Bumped `1.0.75 -> 1.0.76` (1.0.44
   on its branch; 1.0.60 after merging main's 1.0.59; 1.0.62 after main's
-  1.0.61; re-set after merging main's 1.0.69).
+  1.0.61; 1.0.70 after main's 1.0.69; re-set after merging main's 1.0.75).
   - **Review round 4's fingerprint and probe fixes.** A file's digest carries
     its permission bits; a symlink counts with what it resolves to, and a link
     to a directory outside the repository is could-not-tell; a FIFO, socket
@@ -28,7 +28,7 @@ All notable changes to this repository are documented here. Format follows [Keep
     to the next provider (exit 2) against a tree the bundle no longer matches.
   - **Adapted to main's #264 preflight and T-0088's lane config (1.0.70).**
     The Kimi probe runs first, then the preflight (a CLEAN receipt, then the
-    verify gate), then `reserve`, as Codex's `--probe` runs before its round:
+    verify gate), then T-0085's standards self-check, then `reserve`, as Codex's `--probe` runs before its round:
     a Kimi that is not `ok` exits 2 even on a tree the gate has not passed,
     and an `ok` one on such a tree exits 5 with nothing reserved.
     `graph.out` is read through `crew_common.repo_config_dir`, so a lane
