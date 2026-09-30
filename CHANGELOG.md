@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.62: webtest scaffold for multi-module repositories (T-0104)
+### Changed — `crew` 1.0.70: webtest scaffold for multi-module repositories (T-0104)
 
 - **What changed.** `webtest_scaffold.py` at a root that is not a web project
   lists every web module below it (three levels, `node_modules` and
