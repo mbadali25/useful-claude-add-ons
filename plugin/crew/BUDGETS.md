@@ -8,7 +8,7 @@ checked.
 ## Plugin Markdown total
 
 <!-- claim: crew-markdown-lines -->
-`git ls-files 'plugin/crew/*.md'` currently totals 20,707 lines across 134 files (including this
+`git ls-files 'plugin/crew/*.md'` currently totals 20,879 lines across 135 files (including this
 file). Target: ≤6,000 lines (`docs/review/04-redesign.md`). This number moves every time a tracked
 `plugin/crew/*.md` file is added, removed or resized — including this one — so re-measure rather
 than trusting it; the marker above is what keeps that honest.

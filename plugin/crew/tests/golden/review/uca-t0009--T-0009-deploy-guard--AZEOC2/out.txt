@@ -1,0 +1,31 @@
+READ|part-001-of-026.patch
+READ|part-002-of-026.patch
+READ|part-003-of-026.patch
+READ|part-004-of-026.patch
+READ|part-005-of-026.patch
+READ|part-006-of-026.patch
+READ|part-007-of-026.patch
+READ|part-008-of-026.patch
+READ|part-009-of-026.patch
+READ|part-010-of-026.patch
+READ|part-011-of-026.patch
+READ|part-012-of-026.patch
+READ|part-013-of-026.patch
+READ|part-014-of-026.patch
+READ|part-015-of-026.patch
+READ|part-016-of-026.patch
+READ|part-017-of-026.patch
+READ|part-018-of-026.patch
+READ|part-019-of-026.patch
+READ|part-020-of-026.patch
+READ|part-021-of-026.patch
+READ|part-022-of-026.patch
+READ|part-023-of-026.patch
+READ|part-024-of-026.patch
+READ|part-025-of-026.patch
+READ|part-026-of-026.patch
+BLOCK|plugin/crew/hooks/scripts/crew_guards.py:1948|Bracket-only globs escape the expansion check, allowing production unattended as staging|Arm cloudGuard, set deployWorkflow=ask in both layers, map deploy.yml to input:environment, and mark staging nonProd. Create a file named -fenvironment=production; run `gh workflow run deploy.yml -f environment=staging [-]fenvironment=production` unattended. Bash expands the final argument into a production field; the guard allows and logs staging.
+BLOCK|plugin/crew/hooks/scripts/cloud_guard.py:681|The stdin uncertainty check ignores `0>&3`, trusting a staging body that a later descriptor duplication replaces with production|With the armed ask/staging configuration above, run `exec 3< <(echo '{"environment":"production"}'); gh workflow run deploy.yml --json <<< '{"environment":"staging"}' 0>&3` unattended. The guard allows staging; gh receives production.
+BLOCK|plugin/crew/hooks/scripts/cloud_guard.py:2927|Rewritable stdin loses its uncertainty when recursively scanned as a shell script, allowing a filtered production dispatch|With the armed ask/staging configuration above, run `echo 'gh workflow run deploy.yml -f environment=staging' | sed s/staging/production/ | bash` unattended. The guard classifies staging and allows; the nested shell executes the production dispatch.
+BLOCK|plugin/crew/hooks/scripts/crew_guards.py:2444|Approval keys omit stdin source paths and pipeline transformations, so approval for one command authorizes a different deployment|With deploy.yml mapped to input:environment and deployWorkflow=ask, obtain and create the approval marker for `gh workflow run deploy.yml --json < prod-one.json`. Run `gh workflow run deploy.yml --json < prod-two.json` unattended. Both commands generate the same marker, so the second deployment runs without its own approval.
+FIX|plugin/crew/hooks/scripts/crew_guards.py:2305|Help requests are classified as deployments and denied, preventing inspection of CLI usage|Arm cloudGuard, configure any workflow mapping, and run `gh workflow run --help` unattended. The guard denies an unknown-environment deployment, although gh only prints help and exits successfully.
