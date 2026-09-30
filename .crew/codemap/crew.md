@@ -1091,9 +1091,9 @@ changed paths reach still current (module docstring, `:1-8`)? It narrows
 artifact reads `fresh`/`stale`/`unknown` (`:207-209`) with the refresh command
 to run, documents read `not measured`, and a scope base that hides or may
 hide the change - a fallback, or (since review round 3) a recorded base with
-a commit behind it naming the ticket (`_named_behind`, `:1028`) - makes the
+a commit behind it naming the ticket (`_named_behind`, `:1053`) - makes the
 whole answer `unknown`, and every artifact measured against that base with it
-(`_unconfirmed`, `:1045`; `ticket_freshness`, `:1067`). It is a CLI the
+(`_unconfirmed`, `:1070`; `ticket_freshness`, `:1092`). It is a CLI the
 commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 `f2bb919b`.
 
@@ -1113,7 +1113,7 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   (`plugin/crew/hooks/scripts/completion_audit.py:225-236`) is the one approval
   gate - with no current approval it returns every path and judges nothing -
   and otherwise asks `_verdicts` (`:188`), which asks `artifact_verdicts`
-  (`plugin/crew/hooks/scripts/crew_refresh_check.py:793`) for every changed
+  (`plugin/crew/hooks/scripts/crew_refresh_check.py:818`) for every changed
   artifact and fails closed (nothing admitted, every artifact could-not-tell)
   if that raises - and, since review round 4, when the artifact dirs
   themselves cannot be resolved, every default-dir artifact carries the
@@ -1123,28 +1123,32 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   one's reason in brackets. A `True` needs a changed path to reach the artifact
   through its BASE copy's citations (reach = every path changed since the base,
   release bookkeeping dropped except `ADMISSION_BOOKKEEPING`, a plugin
-  manifest, `:251` and `:811-820` in `crew_refresh_check.py`; the graph's code
+  manifest, `:251` and `:836-845` in `crew_refresh_check.py`; the graph's code
   test reads the whole reach) and a re-anchor or regeneration shape: a map's
   `anchor:` moved forward from the base copy's anchor to a commit behind HEAD
-  (`_map_verdict` `:642`, `_sha_moved` `:522`, `_moved_from` `:573`: an
+  (`_map_verdict` `:664`, `_sha_moved` `:541`, `_moved_from` `:592`: an
   unchanged anchor text never moved, an anchor added to a base copy with none
   did not move either (review round 3), a base anchor git cannot resolve is
   could-not-tell, a base anchor `cat-file` cannot find counts as moved only
-  when `_names_no_commit` (`:552`, review round 4) proves no commit or tag
+  when `_names_no_commit` (`:571`, review round 4) proves no commit or tag
   carries that prefix - an ambiguous short anchor is could-not-tell -, one on HEAD's history must be behind the new one), INDEX rows
   of admitted maps only, deleted lines included, read from `git diff -U0
   <base> -- INDEX.md` so a changed terminator, a BOM or a mode change counts
-  (`_index_verdict` `:679`, `_diff_lines` `:656`, since review round 3), a
-  diagram's provenance sha moved the same way (`_diagram_verdict` `:702`), a
+  (`_index_verdict` `:701`, `_diff_lines` `:678`, since review round 3), a
+  diagram's provenance sha moved the same way (`_diagram_verdict` `:724`), a
   rendered file beside an admitted same-stem source, its extension compared
-  case-folded as `_kind` classifies it (`_rendered_verdict` `:850`, review
+  case-folded as `_kind` classifies it (`_rendered_verdict` `:875`, review
   round 4), a rule
   whose bytes equal `crew_instructions.expected_rules`, or whose blob git would
-  store does (`_rule_verdict` `:721`, `_stored_blob` `:766`: a CRLF checkout
+  store does (`_rule_verdict` `:743`, `_stored_blob` `:791`: a CRLF checkout
   under `core.autocrlf` passes, a CRLF or BOM rewrite does not, since review
   round 3; a rule file that exists but cannot be read is could-not-tell before
-  any comparison, `:728-730`, since review round 2), the graph after a code
-  change. `None` (`COULD_NOT_TELL`, `:459`) never admits.
+  any comparison, `:753-755`, since review round 2), the graph after a code
+  change. `None` (`COULD_NOT_TELL`, `:478`) never admits. Since review round 5
+  whether the config, a rule or a map exists is `_present` (`:327`), lstat's
+  errno rather than `os.path.lexists`: only ENOENT or ENOTDIR is absent, and a
+  directory the hook user cannot search is could-not-tell (`_read_config`
+  `:300`, `_texts` `:644`, `_rule_verdict` `:743`).
   With no current approval nothing is exempt.
 - Tests: `plugin/crew/tests/test_refresh_check.py`,
   `plugin/crew/tests/test_scope_guard_refresh_artifacts.py`,
@@ -1164,7 +1168,11 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   `test_a_base_anchor_whose_candidates_git_cannot_type_is_could_not_tell`,
   `test_an_ambiguous_new_anchor_is_refused`, the case-folded rendered-diagram pair and its
   two must-block neighbours, and
-  `test_artifact_dirs_that_cannot_be_resolved_fail_the_audit_as_could_not_tell` in the audit suite)
+  `test_artifact_dirs_that_cannot_be_resolved_fail_the_audit_as_could_not_tell` in the audit suite;
+  review round 5 added `test_a_config_whose_presence_cannot_be_proven_is_judged_by_its_errno`,
+  `test_a_generated_rule_whose_absence_cannot_be_proven_is_could_not_tell` and
+  `test_a_map_whose_presence_cannot_be_proven_is_could_not_tell`, lstat failing EACCES under
+  the dir, with the not-a-dir and truly-removed must-allow neighbours)
   `plugin/crew/tests/refresh_fixtures.py`, with mutations in
   `plugin/crew/tests/sabotage_refresh.py`; `.crew/verify.json:269-287` (rule
   25) maps them, `implement.md`, `done.md`, since review round 3
@@ -1292,8 +1300,8 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   above.
 - `plugin/crew/hooks/scripts/crew_resume.py:668` — `decide`, read-only;
   `main()` is the `decide` / `record` / `precompact` CLI.
-- `plugin/crew/hooks/scripts/crew_refresh_check.py:1067` — `ticket_freshness`,
-  the library entry point; `main()` at `:1167`; `artifact_verdicts` at `:793`,
+- `plugin/crew/hooks/scripts/crew_refresh_check.py:1092` — `ticket_freshness`,
+  the library entry point; `main()` at `:1192`; `artifact_verdicts` at `:818`,
   the audit's admission (T-0094).
 - `plugin/crew/hooks/scripts/crew_autopilot.py:545` — `next_phase`, read-only;
   `main()` at `:1635` is the `next` / `resume` / `settings` / `stops` /
