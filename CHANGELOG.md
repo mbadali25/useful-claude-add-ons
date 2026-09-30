@@ -4,6 +4,38 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.66: `crew-qa-standards` — harness and QA-review standards, and an audit that checks them
+
+- **What.** A new bundled skill (30 now). `references/harness.md` (H1-H11) and
+  `references/review.md` (R1-R12) state each rule once, with the measurement
+  that earned it in #263-#266 and how to check and apply it per stack (Python,
+  PHP, .NET, Java). `references/steward-template.md` gives a repo its PR-loop
+  skill. H8 carries the cloud setup-script lines that install the gate's tools (pwsh,
+  pytest, pytest-xdist, pinned pylint and Ruff); H10 says a version bump rides the commit
+  that changes the content; R12 is the PR report format (Summary, Measured with ref and
+  machine, Verification, Not verified).
+- **Audit.** `scripts/qa_audit.py` is report-only and stdlib-only. Each audited
+  rule (H2-H7, R9, R11) comes back PASS, GAP, N/A or **UNKNOWN**. A pytest
+  behind a wrapper it cannot follow, or a check that raised, is UNKNOWN, never
+  PASS. `--strict` exits 1 on GAP or UNKNOWN, and `--json` is available.
+- **Wired in.** `crew-setup` Phase 5 runs the audit, and "Done when" now
+  requires every GAP fixed or recorded in `.crew/STATUS.md`.
+  `crew-verification`'s cost discipline points at H2-H5.
+- **Found by its own first run here.** CI's Windows default-set step ran the
+  `wallclock` tests under `-n auto`. It now splits them out like the Linux job.
+  Two false positives from that first run were fixed and pinned by tests:
+  - `python -m pytest` read as a `-m pytest` marker selection.
+  - Small serial suites flagged as H2 gaps. Measured, 137 tests took 0.57s
+    serially and 0.9s at `-n 4`, so under 200 test functions serial is correct.
+- **Tests.** `test_qa_audit.py` (32): must-GAP and must-PASS per check, plus
+  N/A and UNKNOWN cases. **Sabotage:** five entries in `sabotage_qa.py`,
+  registered in `sabotage.py`, all RED through its apply/run/restore.
+- **Counts.** The skill count went from 29 to 30 in the six places
+  `check-marketplace.py` named. `BUDGETS.md`'s Markdown total was
+  re-measured (19,786 lines, 132 files).
+- **Not audited.** H1, H8-H11, R1-R8 and R10 need a reader. Other stacks' tools
+  are documented, not detected.
+
 ### Changed — `crew` 1.0.65: gate first — no review round on a tree the verify gate has not passed
 
 - **What changed.** `review_run.py` now answers two questions before it
