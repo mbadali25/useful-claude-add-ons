@@ -164,7 +164,15 @@ jobs:
       # -- so without this step those PowerShell parity cases never execute
       # on this runner. Windows-only: ubuntu already gets this set from the
       # `test` job, so running it again here would be pure duplication.
+      #
+      # `-m "not wallclock"` for the same reason as the `test` job's crew
+      # step: those tests assert elapsed time against a real bound and run in
+      # the step below, serially. Found by crew-qa-standards' own audit (H3),
+      # which this step failed until this line.
       if: matrix.os == 'windows-latest'
-      run: python -m pytest plugin/crew/tests -n auto -v
+      run: python -m pytest plugin/crew/tests -n auto -m "not wallclock" -v
+    - name: Run crew's wall-clock-bounded tests serially (Windows)
+      if: matrix.os == 'windows-latest'
+      run: python -m pytest plugin/crew/tests -m wallclock -v
     - name: Run crew's slow set (the full per-shell hook matrix)
       run: python -m pytest plugin/crew/tests -m slow -n auto -v
