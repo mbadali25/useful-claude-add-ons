@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@9c84df76
+anchor: useful-claude-add-ons@21c31318
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 36 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.62 (T-0019's bump `835ce179` on T-0019-assign, one past main's 1.0.61; 1.0.61 is T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.63 (T-0019's re-bump `21c31318` for review round 1's fixes; 1.0.62 was its bump `835ce179` on T-0019-assign, one past main's 1.0.61; 1.0.61 is T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -789,7 +789,7 @@ Tests `plugin/crew/tests/test_crew_autopilot_policy.py` plus new cases in `test_
 registered at `plugin/crew/tests/sabotage.py:77` and `:3055`; `.crew/verify.json` rule 28
 (`:309-315`), which also maps `commands/autopilot.md` since review round 2.
 
-**T-0019 (`/crew:autopilot assign` and `crew_ticket.mint`, DERIVED on T-0019-assign, crew 1.0.62, re-read after review round 1).**
+**T-0019 (`/crew:autopilot assign` and `crew_ticket.mint`, DERIVED on T-0019-assign, crew 1.0.62, re-read after review round 1 at crew 1.0.63).**
 `mint` (`plugin/crew/hooks/scripts/crew_ticket.py:1260`) refuses a status outside `MINT_STATUSES`,
 a bad title (`_mint_title_problem`, `:1091`) and, through `_mint_gate` (`:1078`), any tracker kind
 but `files`/`obsidian` before anything is written; takes one past `_mint_taken` (`:1048`, folders and
@@ -2823,3 +2823,5 @@ dated provenance notes are left as history at their own commit. Moved and correc
 **Re-anchored `835ce179` -> `59bc44e5` on 2026-09-29 (T-0019).** `59bc44e5` re-measures `.crew/verify.json` rule 27 in place (`seconds` 18 -> 19 and its `why`, 18.8s / 623 passed at `32cb1aa3`; same line count, so `:298-308` and every later rule range hold). `32cb1aa3` and `4e03afa6` between them are this refresh and the graph rebuild. No other cited path changed. Nothing else was executed for this note.
 
 **Re-anchored `59bc44e5` -> `9c84df76` on 2026-09-30 (T-0019 review round 1).** `2692e166` fixes round 1's three FIX and five NIT lines: `plugin/crew/hooks/scripts/crew_ticket.py` gains `_mint_indexed`, `_mint_create` and `_mint_ready` above `_mint_claim` (+54 from `:1167` down, so `mint` `:1201` -> `:1260`, `check_direction` `:1263` -> `:1315`, `assign` `:1301` -> `:1355`), `plugin/crew/commands/autopilot.md` rewrites section 0's three lines in place (`:16-18`, still 114 lines), `plugin/crew/README.md` changes `:802`, `:815` and `:819` in place, `CHANGELOG.md` gains eleven lines at `:37`, `plugin/crew/tests/sabotage_autopilot.py` re-points two STATUS_MUTATIONS anchors in place (`:566`, `:630`) and appends 13 ASSIGN_MUTATIONS after `:1030`, and the two T-0019 suites grow. `9c84df76` re-measures `.crew/verify.json` rule 27 in place (`seconds` 19 -> 26 and its `why`; same line count, so every rule range holds). Every `path:line` citation into those files was listed by grep; the only ones past a changed line are crew.md's T-0019 paragraph and tracker-callers line (re-read and corrected in `2692e166`) and `CHANGELOG.md` lines inside dated notes, left as history at their own commit. Nothing was executed for this note.
+
+**Re-anchored `9c84df76` -> `21c31318` on 2026-09-30 (T-0019 review round 1, crew 1.0.63).** `21c31318` bumps crew 1.0.62 -> 1.0.63 in place: `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14` (the `plugin-version:crew` claim), `plugin/crew/README.md:809` ("since 1.0.63") and the CHANGELOG entry's heading and bump line (`CHANGELOG.md:7`, `:54`); no line moved. crew.md's and marketplace-registration.md's version sentences now read 1.0.63. Nothing was executed for this note.
