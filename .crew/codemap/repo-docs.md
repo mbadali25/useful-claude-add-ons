@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@5053f6b7
-verified: 2026-09-29
+anchor: useful-claude-add-ons@e2b9371d
+verified: 2026-09-30
 
 ## Re-derive provenance
 
@@ -304,7 +304,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:2204` (on T-0010-solo's merge of `e878cc31`; `:2080` on T-0010-solo at `d7c7c75c`, `:2072` at `c817782f`, `:2069` at `89c9ee9a`, `:2058` at `50e67586`; `:2199` at `3648f59a`, T-0075's round-5 docs after its merge of `6387ab49`; `:2196` at `938e3b11`, T-0075's round-4 docs after its merge of `f54af3fa`; `:2187` at `3724731b`, T-0075 after its merge of `e6e10432`; `:2169` on T-0075's merge of `d2fbd408`; `:2075` at `d2fbd408`, `:1812` on T-0024's branch at `45345812`, `:2161` on T-0075's branch at `763eaeff`, `:2127` at `764f6018`, `:2067` at `67caa4b8`, `:2102` on T-0075's `f7163410`, `:2052` at `bebbb97f`, `:2079` on T-0075's `e95e5964`, `:2044` on T-0018's first landing merge at `fbc27b49`, `:2029` at `db14619c`, `:1959` on T-0018's branch at `e6b696fb`, `:1953` at T-0023's `a1acd9b7`, `:2015` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1944` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:2236` (since T-0100's merge of `a61a6f38`; `:2204` on T-0010-solo's merge of `e878cc31`; `:2080` on T-0010-solo at `d7c7c75c`, `:2072` at `c817782f`, `:2069` at `89c9ee9a`, `:2058` at `50e67586`; `:2199` at `3648f59a`, T-0075's round-5 docs after its merge of `6387ab49`; `:2196` at `938e3b11`, T-0075's round-4 docs after its merge of `f54af3fa`; `:2187` at `3724731b`, T-0075 after its merge of `e6e10432`; `:2169` on T-0075's merge of `d2fbd408`; `:2075` at `d2fbd408`, `:1812` on T-0024's branch at `45345812`, `:2161` on T-0075's branch at `763eaeff`, `:2127` at `764f6018`, `:2067` at `67caa4b8`, `:2102` on T-0075's `f7163410`, `:2052` at `bebbb97f`, `:2079` on T-0075's `e95e5964`, `:2044` on T-0018's first landing merge at `fbc27b49`, `:2029` at `db14619c`, `:1959` on T-0018's branch at `e6b696fb`, `:1953` at T-0023's `a1acd9b7`, `:2015` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1944` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -322,7 +322,7 @@ listing the directory.
   `.crew/config.json` (machine-local, gitignored) is absent from this fresh
   worktree, so its `handoffPath` value could not be re-read here; the
   fallback default is confirmed instead, directly in code:
-  `plugin/crew/hooks/scripts/crew_autocycle.py:180` returns
+  `plugin/crew/hooks/scripts/crew_autocycle.py:182` returns
   `".work/HANDOFF.md"` when no config value is set. `docs/HANDOFF.md` is
   human-authored; the two files remain unrelated despite the shared
   basename.
@@ -332,7 +332,7 @@ listing the directory.
   per-path check), `0002-no-chatgpt-mcp-server.md` (accepted 2026-09-14) and
   `0003-crew-departs-from-three-community-best-practices.md` (accepted
   2026-09-17) — the latter two were already present at the previous anchor
-  and are not new in this range. `CLAUDE.md:147` still reads "Decisions in
+  and are not new in this range. `CLAUDE.md:92` still reads "Decisions in
   `docs/adr/`" at `adf8d1dd` (re-grepped; `CLAUDE.md` changed in
   `f2bb919b..adf8d1dd`, but only its `crew_freshness.py` line citations).
 - **`docs/review/`'s existence is itself a mild instance of the same gap
@@ -349,7 +349,7 @@ listing the directory.
   `:273`, `read_diagrams` at `:472`, the `sha[:7] == head[:7]` comparisons at
   `:429` and `:512`, and the `_diagram_paths` call site inside `read_diagrams`
   at `:518` (was `:522`). Re-exported through
-  `plugin/crew/hooks/scripts/crew_state.py:132`/`:136`/`:139`/`:142`
+  `plugin/crew/hooks/scripts/crew_state.py:133`/`:137`/`:140`/`:143`
   (`_ANCHOR_RE`, `_DIAGRAM_ANCHOR_RE`, `_NOT_SUBSYSTEMS`, `_diagram_paths`).
   A diagram with no anchor header, or one whose anchor is old AND whose
   `%% Anchors:` paths have moved, still counts as `behind`; unknown still
@@ -461,7 +461,7 @@ listing the directory.
 - `docs/review/*`'s nine documents were not read beyond their titles and the
   one quoted cross-review row; whether other rows record further
   never-filed decisions was not checked file by file.
-- `CLAUDE.md` beyond its `:147` "Decisions in `docs/adr/`" line (re-confirmed
+- `CLAUDE.md` beyond its `:92` "Decisions in `docs/adr/`" line (re-confirmed
   at `adf8d1dd`) was not re-derived end to end; this note's business with it
   is narrow.
 - `crew-docs/SKILL.md`'s retired-role references (`/crew:work`,
@@ -1306,3 +1306,5 @@ import block lost one line; no note cites that file by line. Re-anchor only; not
 **Re-anchored `fcb061a2` + `bbd9a66d` -> `4aa05915` on 2026-09-29 (T-0100 merges main `8ab733d7`, T-0010 landed as crew 1.0.61; T-0100 re-set to crew 1.0.62).** `59fe33fb` merges origin/main `8ab733d7` into `T-0100-build` `dbdac4b2`; `0b3ac21e` re-measures `plugin/crew/BUDGETS.md` and names 1.0.62 in the CHANGELOG entry, and `4aa05915` re-sets crew 1.0.62, the last plugin/crew commit. No code file conflicted; this map's conflicts were its anchor, provenance notes, resolved with both sides' provenance kept, main's first, and T-0100's anchor carried until this note. Every body citation (`path:N`, and a bare `:N` taken as the last path named in its paragraph) was traced to the side whose copy of this map carries its line (`dbdac4b2`, anchored `fcb061a2`, or `8ab733d7`, anchored `bbd9a66d`) and mapped to `4aa05915` through a `difflib` line diff (`/root/crew-tmp/t-0100/merge-cite.py`, machine-local); a citation followed by `at <sha>`, and every provenance note, was left as written. No body citation moved; `docs/diagrams/data-flow-crew-config.mmd:1-2` holds (line 1 is the header, re-anchored to `4aa05915` in place). Nothing else was executed for this note.
 
 **Re-anchored `4aa05915` -> `5053f6b7` on 2026-09-29 (T-0100 pylint fix, crew 1.0.62 re-set).** `5f89c181` rewrites `plugin/crew/hooks/scripts/review_patch.py:284` in place (the `fork_reason` f-string names the merged commit through a `:.12` format spec instead of a `[:12]` slice, so pylint as CI stops reporting E1136 unsubscriptable-object; the text it produces is unchanged), and `ab18d5a9`/`5053f6b7` are the version round trip that re-sets crew 1.0.62 as the last plugin/crew commit (net no change to the version files). `git diff --name-only 4aa05915..5053f6b7` over the paths this map cites, refresh artifacts aside, names only `review_patch.py`; no line was added or removed there, so every `review_patch.py:N` citation maps to itself. No claim moved. Nothing else was executed for this note.
+
+**Re-anchored `5053f6b7` -> `e2b9371d` on 2026-09-30 (T-0100 merges main `a61a6f38`, T-0088 landed as crew 1.0.69; crew 1.0.70 re-set).** `cec11ed5` merges origin/main `a61a6f38` (#263-#267 and T-0088's landing, crew 1.0.62-1.0.69) into `T-0100-build`; `4ba3b166` names 1.0.70 in T-0100's `CHANGELOG.md` entry and re-measures `plugin/crew/BUDGETS.md:11` in place; `e2b9371d` sets crew 1.0.70, the last plugin/crew commit (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`, in place). No conflict in this map. 7 citations moved and were re-pointed; 39 moved history entries were left, and the `docs/runbooks/INDEX.md` chain gains its current `plugin/crew/README.md:2236` at its head. `README.md:168`, `:874`, `INSTALLATION.md:252`, `plugin/PLUGINS.md:17` and `plugin/README.md:414` changed in place (crew's skill count 29 -> 30). Every body citation outside provenance notes (`path:N`, and a bare `:N` taken as the last path named in its paragraph) into a file changed `5053f6b7..e2b9371d` was mapped with a `difflib` line diff (`/root/crew-tmp/t-0100/remap5.py`, machine-local); a citation followed by `at`/`on`/`before`/`until`/`since`/`after` or preceded by `was`/`were` is history and was left as written. A cited line whose text did not change was not re-read. Nothing else was executed for this note.

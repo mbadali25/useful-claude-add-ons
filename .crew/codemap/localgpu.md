@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@5053f6b7
-verified: 2026-09-29
+anchor: useful-claude-add-ons@e2b9371d
+verified: 2026-09-30
 
 # localgpu
 
@@ -510,12 +510,12 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")` quoted at `:33-34`.
   **Checked against the code, corrected after QA:**
-  `plugin/crew/hooks/scripts/crew_config.py:128-129` only re-exports
+  `plugin/crew/hooks/scripts/crew_config.py:129-130` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1437-1438` since T-0010's four `AUTOPILOT_DEFAULTS`
-  lines (T-0010-solo's merge of `67caa4b8`; `:1432-1433` at `65bb3330`; `:1430-1431` on main before
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1440-1441` since T-0100's merge of `a61a6f38` (`:1437-1438` since T-0010's four `AUTOPILOT_DEFAULTS`
+  lines, T-0010-solo's merge of `67caa4b8`; `:1432-1433` at `65bb3330`; `:1430-1431` on main before
   T-0005's three import lines merged in, re-numbered
-  from `:1504-1505` by crew 1.0 - see the re-anchor entries below; same two
+  from `:1507-1508` by crew 1.0 - see the re-anchor entries below; same two
   lines, `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")`, byte-identical).
   So `crew.md`'s own attribution to `crew_config.py` names the re-export, not
@@ -756,8 +756,8 @@ never matches and has to be counted on its own):
   `plugin/localgpu/mcp/store.py:620-674` (and its internal `:637`, `:639-648`,
   `:646`, `:651`, `:676`, cited in shorthand),
   `plugin/localgpu/mcp/_version.py:10-13`, `:31-32`,
-  `plugin/crew/hooks/scripts/crew_config.py:126-127`,
-  `plugin/crew/hooks/scripts/crew_state.py:1504-1505`, and, both written out
+  `plugin/crew/hooks/scripts/crew_config.py:127-128`,
+  `plugin/crew/hooks/scripts/crew_state.py:1507-1508`, and, both written out
   in full rather than one of them in shorthand,
   `scripts/check-marketplace.py:160-170` and `scripts/check-marketplace.py:169`.
   The first version of this bullet said 9 and listed 7 (both wrong, an
@@ -810,9 +810,9 @@ For the record, what was wrong and how it was found:
    tuples were cited at `plugin/localgpu/commands/crew.md:29-30` (that is the
    prose sentence introducing them); the literal tuples are at `:33-34`.
    Re-read `crew_config.py`: `DEV_PROVIDERS`/`QA_PROVIDERS` there are a
-   re-export (`plugin/crew/hooks/scripts/crew_config.py:126-127`,
+   re-export (`plugin/crew/hooks/scripts/crew_config.py:127-128`,
    `DEV_PROVIDERS = crew_state.DEV_PROVIDERS`), not the definition — that is
-   `plugin/crew/hooks/scripts/crew_state.py:1504-1505`. Also narrowed the
+   `plugin/crew/hooks/scripts/crew_state.py:1507-1508`. Also narrowed the
    "read only past the opening constraint (lines 1-32)" claim: this pass
    read through line 40, which is where the code block with the tuples ends.
 5. **Version-number subtraction presented as a count.** "Stable across those
@@ -885,7 +885,7 @@ sentence around it staying correct.
    .crew/codemap/localgpu.md`, which now returns nothing) to either full
    repo-relative paths or prose describing the shape without reproducing it.
 2. **FIX — the "12 new citations" method did not reproduce 12.** The bullet
-   said `plugin/crew/hooks/scripts/crew_state.py:1504-1505` fell outside the
+   said `plugin/crew/hooks/scripts/crew_state.py:1507-1508` fell outside the
    `plugin/` regex the rest of the section used and was "tallied separately"
    — it does not; that path starts with `plugin/crew/`, which the regex
    already matches, and the citation was already in that regex's output. And
@@ -1473,3 +1473,5 @@ import block lost one line; no note cites that file by line. Re-anchor only; not
 **Re-anchored `fcb061a2` + `bbd9a66d` -> `4aa05915` on 2026-09-29 (T-0100 merges main `8ab733d7`, T-0010 landed as crew 1.0.61; T-0100 re-set to crew 1.0.62).** `59fe33fb` merges origin/main `8ab733d7` into `T-0100-build` `dbdac4b2`; `0b3ac21e` re-measures `plugin/crew/BUDGETS.md` and names 1.0.62 in the CHANGELOG entry, and `4aa05915` re-sets crew 1.0.62, the last plugin/crew commit. No code file conflicted; this map's conflicts were its anchor, provenance notes, resolved with both sides' provenance kept, main's first, and T-0100's anchor carried until this note. Every body citation (`path:N`, and a bare `:N` taken as the last path named in its paragraph) was traced to the side whose copy of this map carries its line (`dbdac4b2`, anchored `fcb061a2`, or `8ab733d7`, anchored `bbd9a66d`) and mapped to `4aa05915` through a `difflib` line diff (`/root/crew-tmp/t-0100/merge-cite.py`, machine-local); a citation followed by `at <sha>`, and every provenance note, was left as written. No body citation moved. Nothing else was executed for this note.
 
 **Re-anchored `4aa05915` -> `5053f6b7` on 2026-09-29 (T-0100 pylint fix, crew 1.0.62 re-set).** `5f89c181` rewrites `plugin/crew/hooks/scripts/review_patch.py:284` in place (the `fork_reason` f-string names the merged commit through a `:.12` format spec instead of a `[:12]` slice, so pylint as CI stops reporting E1136 unsubscriptable-object; the text it produces is unchanged), and `ab18d5a9`/`5053f6b7` are the version round trip that re-sets crew 1.0.62 as the last plugin/crew commit (net no change to the version files). `git diff --name-only 4aa05915..5053f6b7` over the paths this map cites, refresh artifacts aside, names only `review_patch.py`; no line was added or removed there, so every `review_patch.py:N` citation maps to itself. No claim moved. Nothing else was executed for this note.
+
+**Re-anchored `5053f6b7` -> `e2b9371d` on 2026-09-30 (T-0100 merges main `a61a6f38`, T-0088 landed as crew 1.0.69; crew 1.0.70 re-set).** `cec11ed5` merges origin/main `a61a6f38` (#263-#267 and T-0088's landing, crew 1.0.62-1.0.69) into `T-0100-build`; `4ba3b166` names 1.0.70 in T-0100's `CHANGELOG.md` entry and re-measures `plugin/crew/BUDGETS.md:11` in place; `e2b9371d` sets crew 1.0.70, the last plugin/crew commit (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`, in place). No conflict in this map. 7 citations moved and were re-pointed; 3 moved history entries were left, and the `DEV_PROVIDERS`/`QA_PROVIDERS` chain gains its current `plugin/crew/hooks/scripts/crew_state.py:1440-1441` at its head (same two lines, byte-identical). Every body citation outside provenance notes (`path:N`, and a bare `:N` taken as the last path named in its paragraph) into a file changed `5053f6b7..e2b9371d` was mapped with a `difflib` line diff (`/root/crew-tmp/t-0100/remap5.py`, machine-local); a citation followed by `at`/`on`/`before`/`until`/`since`/`after` or preceded by `was`/`were` is history and was left as written. A cited line whose text did not change was not re-read. Nothing else was executed for this note.

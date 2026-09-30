@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@4aa05915 on 2026-09-29. Verify before trusting.
+%% Generated from useful-claude-add-ons@e2b9371d on 2026-09-30. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -200,6 +200,13 @@
 %% f5efde46..4aa05915 changed only crew_ticket.py (T-0010's), and bbd9a66d..4aa05915 only done.md,
 %% review.md and completion_audit.py (T-0100's). crew_ticket.py:534-575 and :609-630 map from both
 %% sides to the same lines (difflib). No node or edge changed.
+%% Re-anchored 4aa05915 -> e2b9371d (T-0100 merges main a61a6f38, T-0088 landed as crew 1.0.69;
+%% T-0100 re-set to crew 1.0.70): no conflict in this file. Of the Anchors paths review.md,
+%% crew_refresh_check.py, crew_ticket.py and crew_tracker.py changed; every node citation into
+%% them was mapped by a difflib line diff from 4aa05915 and none moved (review.md :440 rewritten
+%% in place, exit 5 added to its status comment; :481, :511 hold). NOT redrawn: main's crew
+%% 1.0.65 review preflight (no round reserved on a tree the verify gate has not passed, exit 5)
+%% and T-0088's Codex probe/limit fallback; no node or edge changed.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}

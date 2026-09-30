@@ -1,6 +1,6 @@
 # install-scripts
-anchor: useful-claude-add-ons@5053f6b7
-verified: 2026-09-29
+anchor: useful-claude-add-ons@e2b9371d
+verified: 2026-09-30
 
 ## Re-derive provenance
 
@@ -1215,3 +1215,5 @@ import block lost one line; no note cites that file by line. Re-anchor only; not
 **Re-anchored `fcb061a2` + `bbd9a66d` -> `4aa05915` on 2026-09-29 (T-0100 merges main `8ab733d7`, T-0010 landed as crew 1.0.61; T-0100 re-set to crew 1.0.62).** `59fe33fb` merges origin/main `8ab733d7` into `T-0100-build` `dbdac4b2`; `0b3ac21e` re-measures `plugin/crew/BUDGETS.md` and names 1.0.62 in the CHANGELOG entry, and `4aa05915` re-sets crew 1.0.62, the last plugin/crew commit. No code file conflicted; this map's conflicts were its anchor, provenance notes, resolved with both sides' provenance kept, main's first, and T-0100's anchor carried until this note. Every body citation (`path:N`, and a bare `:N` taken as the last path named in its paragraph) was traced to the side whose copy of this map carries its line (`dbdac4b2`, anchored `fcb061a2`, or `8ab733d7`, anchored `bbd9a66d`) and mapped to `4aa05915` through a `difflib` line diff (`/root/crew-tmp/t-0100/merge-cite.py`, machine-local); a citation followed by `at <sha>`, and every provenance note, was left as written. No body citation moved. Nothing else was executed for this note.
 
 **Re-anchored `4aa05915` -> `5053f6b7` on 2026-09-29 (T-0100 pylint fix, crew 1.0.62 re-set).** `5f89c181` rewrites `plugin/crew/hooks/scripts/review_patch.py:284` in place (the `fork_reason` f-string names the merged commit through a `:.12` format spec instead of a `[:12]` slice, so pylint as CI stops reporting E1136 unsubscriptable-object; the text it produces is unchanged), and `ab18d5a9`/`5053f6b7` are the version round trip that re-sets crew 1.0.62 as the last plugin/crew commit (net no change to the version files). `git diff --name-only 4aa05915..5053f6b7` over the paths this map cites, refresh artifacts aside, names only `review_patch.py`; no line was added or removed there, so every `review_patch.py:N` citation maps to itself. No claim moved. Nothing else was executed for this note.
+
+**Re-anchored `5053f6b7` -> `e2b9371d` on 2026-09-30 (T-0100 merges main `a61a6f38`, T-0088 landed as crew 1.0.69; crew 1.0.70 re-set).** `cec11ed5` merges origin/main `a61a6f38` (#263-#267 and T-0088's landing, crew 1.0.62-1.0.69) into `T-0100-build`; `4ba3b166` names 1.0.70 in T-0100's `CHANGELOG.md` entry and re-measures `plugin/crew/BUDGETS.md:11` in place; `e2b9371d` sets crew 1.0.70, the last plugin/crew commit (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`, in place). No conflict in this map. No citation moved; `plugin/PLUGINS.md:17` and `plugin/README.md:414` changed in place (crew's skill count 29 -> 30, main's #267). Nothing else was executed for this note.

@@ -1,6 +1,6 @@
 # mcp-servers
-anchor: useful-claude-add-ons@7fc61de6
-verified: 2026-09-29
+anchor: useful-claude-add-ons@e2b9371d
+verified: 2026-09-30
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
 ## Does
@@ -368,3 +368,5 @@ No citation moved.
 **Re-anchored `b2553d26` -> `3648f59a` on 2026-09-28 (T-0075 review round 5, merge of `6387ab49`).** `git diff --name-only b2553d26 3648f59a -- mcp-servers/ README.md TODO.md .claude-plugin/marketplace.json` returns `README.md` (T-0075: crew's slash-command count 35 -> 36 at `:168` and `:874`, in place), `TODO.md` (T-0092's entry at `:5051`, below every citation here) and `.claude-plugin/marketplace.json` (crew's lines only); nothing under `mcp-servers/`. `TODO.md:189`, `:200` and `:281` re-read, unchanged; `grep -c mcp-servers .claude-plugin/marketplace.json` is still **0**. No citation moved.
 
 **Re-anchored `3648f59a` -> `7fc61de6` on 2026-09-29 (T-0100 merged onto main `2693d0fa`, crew 1.0.60).** `7fc61de6` is the merge commit on `T-0100-build` that brought in origin/main `2693d0fa` (`17d057db`, "README: re-pin install URLs to T-0075's merge (e878cc31)"), a clean merge that changes only `README.md`. `crew_refresh_check.py` at `7fc61de6` named `README.md` as the only change this map documents; that change rewrites `:12` and `:18` in place (the two install-URL pins, `6c497a14` -> `e878cc31`) with no line added or removed, so every `README.md:N` citation maps to itself. No claim moved. Nothing else was executed for this note.
+
+**Re-anchored `7fc61de6` -> `e2b9371d` on 2026-09-30 (T-0100 merges main `a61a6f38`, T-0088 landed as crew 1.0.69; crew 1.0.70 re-set).** `cec11ed5` merges origin/main `a61a6f38` (#263-#267 and T-0088's landing, crew 1.0.62-1.0.69) into `T-0100-build`; `4ba3b166` names 1.0.70 in T-0100's `CHANGELOG.md` entry and re-measures `plugin/crew/BUDGETS.md:11` in place; `e2b9371d` sets crew 1.0.70, the last plugin/crew commit (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`, in place). `crew_refresh_check.py` named `README.md` as the only documented path changed since `7fc61de6`; no citation into it moved. Nothing else was executed for this note.

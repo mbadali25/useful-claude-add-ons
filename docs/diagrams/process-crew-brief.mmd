@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@cd106b8b on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@e2b9371d on 2026-09-30. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
@@ -176,6 +176,18 @@
 %% Merged d7c7c75c + 3648f59a -> cd106b8b (T-0010-solo merges T-0075's main e878cc31, crew 1.0.60): of the
 %% Anchors paths only crew_state.py differs from main, by T-0010's +4 at AUTOPILOT_DEFAULTS (:1094), below
 %% every crew_state line cited here (:643, :646, :774 hold). No node or edge changed.
+%% Re-anchored cd106b8b -> e2b9371d (T-0100 merges main a61a6f38, T-0088 landed as crew 1.0.69;
+%% T-0100 re-set to crew 1.0.70): no conflict in this file. Of the Anchors paths crew_platform.py
+%% (T-0088's inheriting-worktree guard, +15 above main()), crew_context.py (+1), crew_resume.py,
+%% crew_state.py (+3), crew_status.py (+10 above collect) and commands/status.md changed.
+%% Re-pointed by a difflib line map from cd106b8b, each landing on the same text: heal_config
+%% :547-563 -> :562-578, platform fields :566-584 -> :581-599, load_crew_config :121-132 ->
+%% :122-133, codemap-behind :881-892 -> :882-893, pointer :908-910 -> :909-911, resume_line :687
+%% -> :688, additionalContext :1090 -> :1091, crew_tracker :911-923 -> :913-925, crew_state
+%% :646 -> :649, :859-914 -> :862-917, :774 -> :777, :980 -> :983, crew_status.py (st2's bare
+%% :63 and :192-216 are its lines, not status.md's) -> :64, :202-226. handoff-read.sh unchanged.
+%% NOT redrawn: /crew:status now prints a second config line in a linked worktree (T-0088);
+%% no node or edge changed.
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
     start --> reg["hooks.json:3-10<br/>3 SessionStart pairs, sh + ps1, no matcher<br/>each claims per session+source"]
@@ -197,37 +209,37 @@ flowchart TB
     subgraph platformSync["platform-sync (crew_platform.py)"]
         PS --> ps1{"config or .crew/?<br/>:507-530"}
         ps1 -- no --> psx([exit 0, silent])
-        ps1 -- yes --> ps2["heal_config if broken<br/>:547-563"]
-        ps2 --> ps3["detect machine,<br/>write changed platform fields<br/>:566-584"]
+        ps1 -- yes --> ps2["heal_config if broken<br/>:562-578"]
+        ps2 --> ps3["detect machine,<br/>write changed platform fields<br/>:581-599"]
     end
 
     subgraph crewContext["crew-context (crew_context.py)"]
         CC --> cc1{".crew/ directory?<br/>:993"}
         cc1 -- no --> ccx([emit nothing])
-        cc1 -- yes --> cc2["read crew.json else config.json<br/>:121-132"]
+        cc1 -- yes --> cc2["read crew.json else config.json<br/>:122-133"]
         cc2 --> cc3{"memory.inject?<br/>:1000-1003"}
         cc3 -- off --> cc4[incident banner only]
-        cc3 -- on --> cc5["branch@HEAD, incident banner,<br/>codemap-behind line<br/>:881-892"]
-        cc5 --> stale{"handoff stale?<br/>72h / 3 commits / branch<br/>crew_state.py:646, :859-914"}
-        stale -- yes --> arch["archive to .crew/handoffs/<br/>never delete<br/>crew_state.py:774, :980"]
+        cc3 -- on --> cc5["branch@HEAD, incident banner,<br/>codemap-behind line<br/>:882-893"]
+        cc5 --> stale{"handoff stale?<br/>72h / 3 commits / branch<br/>crew_state.py:649, :862-917"}
+        stale -- yes --> arch["archive to .crew/handoffs/<br/>never delete<br/>crew_state.py:777, :983"]
         stale -- no --> cc6
         arch --> cc6
         stale -. "stale but the move failed:<br/>note stays, stale passed on (:893)" .-> cc6
         cc6{"auto-resume armed?<br/>machine resume.auto true, no repo veto<br/>source clear / manual compact<br/>note written by this session (T-0042)<br/>:900, crew_resume.decide"}
         cc6 -- "no (off)" --> src{"source?"}
-        cc6 -- "run / wait" --> rs1["one line: ready to run the re-rendered command,<br/>or did not start: reason<br/>resume_line :687, never initialUserMessage"]
+        cc6 -- "run / wait" --> rs1["one line: ready to run the re-rendered command,<br/>or did not start: reason<br/>resume_line :688, never initialUserMessage"]
         rs1 --> src
-        src -- startup --> ptr["pointer + next action<br/>:908-910"]
-        src -- "resume/clear/compact/fork" --> full["full note, next action first,<br/>then the auto-resume line<br/>:911-923"]
+        src -- startup --> ptr["pointer + next action<br/>:909-911"]
+        src -- "resume/clear/compact/fork" --> full["full note, next action first,<br/>then the auto-resume line<br/>:913-925"]
     end
 
-    ptr --> out(["additionalContext JSON<br/>:1090"])
+    ptr --> out(["additionalContext JSON<br/>:1091"])
     full --> out
     cc4 --> out
 
     hr3 -. "? 1.0-only repo (crew.json, no config.json)<br/>with inject:false gets no handoff" .-> hrx
 
     subgraph status["/crew:status (on demand)"]
-        st1["status.md:14<br/>crew_status.py --root ."] --> st2["git header, config file, roster,<br/>tracker (crew_tracker.resolve, :63),<br/>tickets, review ledgers, verify,<br/>codemap freshness, metrics,<br/>handoff, interrupted migrate<br/>:192-216"]
+        st1["status.md:14<br/>crew_status.py --root ."] --> st2["git header, config file, roster,<br/>tracker (crew_tracker.resolve, :64),<br/>tickets, review ledgers, verify,<br/>codemap freshness, metrics,<br/>handoff, interrupted migrate<br/>:202-226"]
         st2 -. "? checks fixed .work/HANDOFF.md (:207),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
     end
