@@ -1,10 +1,13 @@
 """The ticket-contract block of the review prompt: every piece is either
 present or stated as MISSING, never silently omitted."""
+import json
+import os
 import re
 
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_train
 import review_prompt as rp
 import review_verdict
 from review_fixtures import git, init_repo
@@ -150,3 +153,41 @@ def test_prompt_lists_the_overlay_and_its_supplements(repo):
     text = rp.build(str(repo), "T9", LISTED)
 
     assert ("REPO-01 Local rule" in text, "LOCAL-SUPPLEMENT-TEXT" in text) == (True, True)
+
+
+def _merge_log(repo, rows=None, raw=None):
+    path = crew_train.merge_log_path(str(repo), "T9")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    text = raw if raw is not None else "".join(json.dumps(r) + "\n" for r in rows)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    return path
+
+
+def test_prompt_lists_rerere_replayed_files(repo):
+    _merge_log(repo, [
+        {"outcome": "merged", "base": "main", "base_sha": "a" * 40, "rerere_replayed": []},
+        {"outcome": "rerere-resolved", "base": "main", "base_sha": "b" * 40,
+         "rerere_replayed": ["src/x.py", "src/y.py"]}])
+
+    text = rp.build(str(repo), "T9", MANIFEST)
+
+    assert "== Catch-up merges (rerere) ==" in text
+    assert "  src/x.py (main@bbbbbbbbbbbb): replayed by rerere" in text
+    assert "  src/y.py (main@bbbbbbbbbbbb): replayed by rerere" in text
+    assert "review it as a change in this diff" in text
+
+
+def test_prompt_has_no_catch_up_block_without_a_log(repo):
+    text = rp.build(str(repo), "T9", MANIFEST)
+
+    assert "Catch-up merges" not in text
+
+
+def test_prompt_marks_an_unreadable_merge_log(repo):
+    path = _merge_log(repo, raw="{not json\n")
+
+    text = rp.build(str(repo), "T9", MANIFEST)
+
+    assert "== Catch-up merges (rerere) ==" in text
+    assert f"UNREADABLE: {path}:1 does not parse" in text

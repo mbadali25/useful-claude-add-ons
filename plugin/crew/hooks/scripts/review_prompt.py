@@ -31,6 +31,13 @@ has none" from "nobody passed it"; a line saying which is the difference.
     handed over: past WEBTEST_FINDINGS_MAX the full list goes to
     `webtest-findings.txt` beside `--out`, with its own READ acknowledgement.
 
+  - catch-up merges (L-0520): every file rerere replayed in a catch-up merge
+    `crew_train.py catch-up` recorded in the ticket's merge log
+    (`<git-common-dir>/crew/train/merge-log/<id>.jsonl`), each marked as a
+    change to review -- a replayed resolution is still a change to gate. No
+    block when there is no log or nothing was replayed; an unreadable log is
+    written `UNREADABLE: ...`.
+
 The codemap landmines are gathered by `review.md` itself (its existing step)
 and are not repeated here.
 
@@ -44,6 +51,7 @@ import subprocess
 import sys
 
 import crew_standards
+import crew_train
 import review_verdict
 
 SPEC_SECTIONS = ("Intent", "Exclusions", "Evidence", "Unknowns", "Acceptance checks")
@@ -257,10 +265,32 @@ def _webtest_block(root, ticket, manifest, out_dir=None):
     return out
 
 
+def _catch_up_block(root, ticket):
+    """Rerere-replayed files from the ticket's catch-up merges, or None."""
+    try:
+        rows, where, why = crew_train.read_merge_log(root, ticket)
+    except (crew_train.TrainError, ValueError, RuntimeError) as exc:
+        rows, where, why = [], "could not tell", str(exc)
+    title = "== Catch-up merges (rerere) =="
+    if where == "could not tell":
+        return [title, f"UNREADABLE: {why}; whether rerere replayed a resolution into this "
+                       "diff is UNKNOWN - review every merge resolution as a change."]
+    out = []
+    for row in rows:
+        base = f"{row.get('base')}@{str(row.get('base_sha'))[:12]}"
+        out += [f"  {path} ({base}): replayed by rerere from an earlier resolution - review it "
+                "as a change in this diff" for path in row.get("rerere_replayed") or []]
+    if not out:
+        return None
+    return [title, "A catch-up merge (crew_train.py catch-up) replayed these recorded conflict "
+                   "resolutions; nobody re-resolved them by hand this time:"] + out
+
+
 def build(root, ticket, manifest, out_dir=None):
     lines = []
     for block in (_bundle_block(manifest), _spec_block(root, ticket),
                   _plan_block(root, ticket), _receipts_block(root, manifest),
+                  _catch_up_block(root, ticket),
                   crew_standards.checklist_block(root, manifest),
                   _webtest_block(root, ticket, manifest, out_dir)):
         if not block:

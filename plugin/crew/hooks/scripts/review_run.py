@@ -30,7 +30,7 @@ PATH is not being able to review: a logged-out or rate-limited Codex resolves
 on PATH and fails at the first call (T-0088).
 
 STANDARDS SELF-CHECK (T-0085). Also before reservation, and AFTER `preflight`
-(question 3 below), for every provider
+and `train_gate` (question 4 below), for every provider
 (`claude --reserve-only` included): a ticket with an approval receipt must
 have `.work/tickets/<id>/selfcheck.md` complete and stamped for exactly this
 manifest's `bundle_sha256` and the effective standards digest
@@ -69,8 +69,8 @@ whether or not the reviewer carried it. When the prompt overflowed its inline
 rows into `webtest-findings.txt` in the scratch directory, that file is an
 expected READ like a bundle part.
 
-BEFORE ANY ROUND IS RESERVED, three questions, in this order (`preflight`,
-then `standards_gate`):
+BEFORE ANY ROUND IS RESERVED, four questions, in this order (`preflight`,
+then `train_gate`, then `standards_gate`):
 
   1. Does a CLEAN receipt already cover this exact bundle
      (`review_ledger.check_receipt`, the check `/crew:done` gates on)? Then
@@ -84,7 +84,15 @@ then `standards_gate`):
      would refuse for free is the most expensive way to find out it is red.
      `--allow-unverified` reviews it anyway, and review.json says it did.
      No verify map, or a gate stood down, proceeds and says so.
-  3. Only then (`standards_gate`, T-0085): is the standards self-check
+  3. Once the clone's merge train is armed (`train_gate`, L-0520;
+     `crew_train.py arm`): does this ticket hold the train? `crew_train.
+     acquire` holds it unless an overlapping ticket on the same base holds it
+     or queued first, or the base moved in this ticket's Touch paths and has
+     not been merged in. Waiting, `merge <base> first`, an unreadable train
+     state or any failure inside the step is exit 6, no round spent. Not
+     armed: nothing is printed and nothing changes. A CLEAN receipt (1) and an
+     unverified gate (2) answer first.
+  4. Only then (`standards_gate`, T-0085): is the standards self-check
      complete and stamped for this bundle? Missing or stale is exit 2, no
      round spent -- see STANDARDS SELF-CHECK above. A CLEAN receipt (1) never
      asks for a self-check, and an unverified gate (2) is refused with exit 5
@@ -95,9 +103,13 @@ and `elapsed_s` (reservation to verdict, from the ledger's own timestamps), and
 the `review:` summary line prints both.
 
 Exit codes: 0 CLEAN; 1 FINDINGS; 3 INCOMPLETE; 4 budget refused
-(NEEDS_REPLAN); 5 not run, verify gate not green (no round spent); 2 usage or
-setup error, or the standards self-check missing or stale -- not run, no round
-spent. Exit 5 (gate) is decided before exit 2 (self-check) is asked for.
+(NEEDS_REPLAN); 5 not run, verify gate not green (no round spent); 6 not run,
+the merge train is held by an overlapping ticket, the base must be merged
+first, or the train could not be read (no round spent; only when armed); 2
+usage or setup error, or the standards self-check missing or stale -- not run,
+no round spent. Exit 5 (gate) is decided before exit 6 (train), and both
+before exit 2 (self-check) is asked for. (`--probe`'s own exit 6 is its
+`failed` outcome; a probe reserves nothing and never reaches the train.)
 """
 import argparse
 import datetime
@@ -113,6 +125,7 @@ import crew_common
 import crew_incident
 import crew_standards
 import crew_state
+import crew_train
 import review_gate
 import review_ledger
 import review_limit
@@ -123,6 +136,7 @@ import webtest_guard
 
 EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, EXIT_INCOMPLETE, EXIT_REFUSED = 0, 1, 2, 3, 4
 EXIT_UNVERIFIED = 5
+EXIT_TRAIN = 6
 DEFAULT_TIMEOUT = 1800
 # Bound on the follow-up `communicate()` after a kill, below. Not the same
 # knob as --timeout: this one exists so a descendant that escaped the kill
@@ -478,6 +492,30 @@ def preflight(args):
     return None
 
 
+def train_gate(args):
+    """None to go on and reserve; EXIT_TRAIN to refuse with nothing spent.
+    See question 3 above. An unarmed clone returns None and prints nothing."""
+    try:
+        _state, where, why = crew_train.load(args.root)
+        if where == "absent":
+            return None
+        if where != "ok":
+            sys.stderr.write(f"review-run: train: could not tell ({why}); no round reserved\n")
+            return EXIT_TRAIN
+        code, lines = crew_train.acquire(args.root, args.ticket)
+    except Exception as exc:  # pylint: disable=broad-except
+        sys.stderr.write(f"review-run: train: could not tell ({type(exc).__name__}: {exc}); "
+                         "no round reserved\n")
+        return EXIT_TRAIN
+    for line in lines:
+        sys.stderr.write(f"review-run: train: {line}\n")
+    if code != crew_train.EXIT_OK:
+        sys.stderr.write("review-run: train: no round reserved; the gate round runs once "
+                         "this ticket holds the train (crew_train.py status)\n")
+        return EXIT_TRAIN
+    return None
+
+
 def standards_gate(args):
     """None to go on and reserve; EXIT_USAGE to refuse with nothing spent.
 
@@ -521,6 +559,9 @@ def run(args):
     short = preflight(args)
     if short is not None:
         return short
+    waiting = train_gate(args)
+    if waiting is not None:
+        return waiting
 
     # A spent budget is a precondition already known to fail (GEN-03): the
     # self-check cannot change it, so the budget refusal below answers first
