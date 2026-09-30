@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@85739e7e
+anchor: useful-claude-add-ons@a94de1c2
 verified: 2026-09-30
 
 # localgpu
@@ -1480,3 +1480,5 @@ tests. Every body `path:N` citation into those files was mapped from `bbd9a66d` 
 as history); a bare `:N` the mapper attributed to the wrong file was re-derived with `grep -n` instead. Nothing was executed for this note.
 
 **Re-anchored `96cce555` -> `85739e7e` on 2026-09-30 (T-0029, on its merge of main `a61a6f38`).** `85739e7e` is T-0029's crew 1.0.70 version commit, after `0e432bec` merged origin/main `a61a6f38` (T-0088 landed as crew 1.0.69, with PRs #263-#267 before it: the QA harness, gate-first review, the steward and CLAUDE.md changes and the new `crew-qa-standards` skill). Nothing under `plugin/localgpu/` changed. The seven full-path citations into crew files (`crew_config.py` +1, `crew_state.py` +3, from main's T-0088 `crew_common` import and T-0029's merge) were mapped with a line diff and moved, each re-read; the version and count lines this note mentions moved in place.
+
+**Re-anchored `85739e7e` -> `a94de1c2` on 2026-09-30 (T-0029).** `a94de1c2` is T-0029's owner-directed fix (2026-09-30, "Route the read + 1 allowlist"): `crew_wave.scope_enforcing` reads the repo config through `crew_common.repo_config_file`. `git diff --name-only 85739e7e a94de1c2` is `CHANGELOG.md`, `plugin/crew/README.md` (one line rewritten in place at `:879`, no line moved), `plugin/crew/hooks/scripts/crew_wave.py` (+2 in `scope_enforcing`'s docstring, every line from old `:148` down moved by 2), `plugin/crew/tests/sabotage_wave.py`, `plugin/crew/tests/test_crew_wave.py` and `plugin/crew/tests/test_worktree_config.py` (appends and one insertion; no citation in these notes carries a line into them). This note cites none of the moved lines; its `plugin/crew/README.md` citations are unchanged. Re-anchor only; nothing was executed for this note.

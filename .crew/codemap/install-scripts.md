@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@85739e7e
+anchor: useful-claude-add-ons@a94de1c2
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -1218,3 +1218,5 @@ tests. Every body `path:N` citation into those files was mapped from `bbd9a66d` 
 as history); a bare `:N` the mapper attributed to the wrong file was re-derived with `grep -n` instead. Nothing was executed for this note.
 
 **Re-anchored `96cce555` -> `85739e7e` on 2026-09-30 (T-0029, on its merge of main `a61a6f38`).** `85739e7e` is T-0029's crew 1.0.70 version commit, after `0e432bec` merged origin/main `a61a6f38` (T-0088 landed as crew 1.0.69, with PRs #263-#267 before it: the QA harness, gate-first review, the steward and CLAUDE.md changes and the new `crew-qa-standards` skill). Of the paths this note cites, `scripts/` and both install scripts are unchanged; what moved is main's and T-0029's release bookkeeping: `.claude-plugin/marketplace.json` (`:217` now says 30 bundled skills, `:218` 1.0.70), `plugin/PLUGINS.md` (`:14` 1.0.70, `:17` 30 skills), `plugin/crew/BUDGETS.md` (`:11` 19,923 lines across 132 files), `README.md`/`INSTALLATION.md`/`plugin/README.md` (the crew skill count 29 -> 30 in place) and `plugin/crew/README.md` (+32 lines above the cited sections; body citations into it re-mapped by line diff). The plugin-level skills figure above now reads 30. No citation into either install script moved.
+
+**Re-anchored `85739e7e` -> `a94de1c2` on 2026-09-30 (T-0029).** `a94de1c2` is T-0029's owner-directed fix (2026-09-30, "Route the read + 1 allowlist"): `crew_wave.scope_enforcing` reads the repo config through `crew_common.repo_config_file`. `git diff --name-only 85739e7e a94de1c2` is `CHANGELOG.md`, `plugin/crew/README.md` (one line rewritten in place at `:879`, no line moved), `plugin/crew/hooks/scripts/crew_wave.py` (+2 in `scope_enforcing`'s docstring, every line from old `:148` down moved by 2), `plugin/crew/tests/sabotage_wave.py`, `plugin/crew/tests/test_crew_wave.py` and `plugin/crew/tests/test_worktree_config.py` (appends and one insertion; no citation in these notes carries a line into them). This note cites none of the moved lines; its `plugin/crew/README.md` citations are unchanged. Re-anchor only; nothing was executed for this note.

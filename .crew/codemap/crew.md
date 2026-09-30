@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@85739e7e
+anchor: useful-claude-add-ons@a94de1c2
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -795,29 +795,31 @@ registered at `plugin/crew/tests/sabotage.py:77` and `:3058`; `.crew/verify.json
 (`:307-313`), which also maps `commands/autopilot.md` since review round 2.
 
 **T-0029 (`/crew:autopilot wave`, crew 1.0.70 since its merge of `a61a6f38` at `85739e7e`, 1.0.62
-before; DERIVED at `96cce555`, after merging main's `8ab733d7`, citations re-mapped at `85739e7e`).** `plugin/crew/hooks/scripts/crew_wave.py` (1081 lines) runs an approved set as
+before; DERIVED at `96cce555`, after merging main's `8ab733d7`, citations re-mapped at `85739e7e`).** `plugin/crew/hooks/scripts/crew_wave.py` (1083 lines) runs an approved set as
 parallel lanes. `settings` (`:111`) caps `autopilot.maxLanes` at the resolved `pm.maxDispatches`
 and reads any `reviewPolicy` outside `REVIEW_POLICIES` (`:70`) as `stop`; `scope_enforcing`
-(`:144`) is the `scope-not-enforcing` stop - the config must parse, raw `scope.mode` must be
+(`:144`) is the `scope-not-enforcing` stop - the config, read through
+`crew_common.repo_config_file` (`:153`, so a linked worktree with no config of its own reads the main
+checkout's and its own wins whole), must parse, raw `scope.mode` must be
 `block` or `auto`, and `crew_ticket.effective_mode` must be `block` for every lane ticket.
-`write_set`/`read_set` (`:182`, `:220`) keep `.work/autopilot/<slug>.json`; a set file of the
-wrong shape reads `corrupt`, never empty. `plan` (`:378`) is read-only: `_judge` (`:359`) takes
-approval from `crew_ticket.accepted`, status from the INDEX row (`_status_refusal`, `:264`) and
-dependencies from the set file or the row's `(depends on ...)` (`_deps`, `:278`; unparseable is
-`unknown` and refused), then `touch_overlaps` (`:330`) and `maxLanes` push tickets to later waves;
-the landing order bumps origin/main's crew patch in set order (`_main_version`, `:334`). `start`
-(`:535`) writes `pending` lane files and `start.json`, prints one `Agent` launch per lane with
-`isolation: worktree` (`LAUNCH`, `:440`) and hands a reserved, unrecorded round back as
-`--resume-round` (`_reserved_round`, `:505`) instead of reserving. `lane_init` (`:638`) is the
-lane's first command: `_init_refusal` (`:603`) refuses the main checkout, anything outside
-`<main>/.claude/worktrees/` (`AGENT_DIR`, `:439`), a worktree another lane file names and a ticket
+`write_set`/`read_set` (`:184`, `:222`) keep `.work/autopilot/<slug>.json`; a set file of the
+wrong shape reads `corrupt`, never empty. `plan` (`:380`) is read-only: `_judge` (`:361`) takes
+approval from `crew_ticket.accepted`, status from the INDEX row (`_status_refusal`, `:266`) and
+dependencies from the set file or the row's `(depends on ...)` (`_deps`, `:280`; unparseable is
+`unknown` and refused), then `touch_overlaps` (`:332`) and `maxLanes` push tickets to later waves;
+the landing order bumps origin/main's crew patch in set order (`_main_version`, `:336`). `start`
+(`:537`) writes `pending` lane files and `start.json`, prints one `Agent` launch per lane with
+`isolation: worktree` (`LAUNCH`, `:442`) and hands a reserved, unrecorded round back as
+`--resume-round` (`_reserved_round`, `:507`) instead of reserving. `lane_init` (`:640`) is the
+lane's first command: `_init_refusal` (`:605`) refuses the main checkout, anything outside
+`<main>/.claude/worktrees/` (`AGENT_DIR`, `:441`), a worktree another lane file names and a ticket
 branch held elsewhere; it then checks out or creates `<id>-wave` at the recorded base, copies the
 ticket folder and `.crew/config.json` byte-identical, and activates only if `accepted` says
-`approved` and `scope_enforcing` holds in the worktree. `lane_prompt` (`:697`) renders absolute
-script paths and no accept, reject, approve or merge command; `lane_done` (`:761`) writes one of
-`STATES` (`:71`). `collect` (`:823`) reads a missing or unreadable lane as `unknown` and an
-`owner-accepted` receipt newer than `start.json`'s snapshot as `failed`; `cleanup` (`:941`,
-`_clean_lane` `:909`) removes only a clean worktree whose branch and HEAD are on origin's default
+`approved` and `scope_enforcing` holds in the worktree. `lane_prompt` (`:699`) renders absolute
+script paths and no accept, reject, approve or merge command; `lane_done` (`:763`) writes one of
+`STATES` (`:71`). `collect` (`:825`) reads a missing or unreadable lane as `unknown` and an
+`owner-accepted` receipt newer than `start.json`'s snapshot as `failed`; `cleanup` (`:943`,
+`_clean_lane` `:911`) removes only a clean worktree whose branch and HEAD are on origin's default
 branch, with `git worktree remove` (no `--force`) and `git branch -d`. The scope guard's
 subagent never-list: `_ACCEPT_RE` and `_ADMIN_MERGE_RE`
 (`plugin/crew/hooks/scripts/scope_guard.py:132-135`) apply in `_reading_refusal` (`:297`), so on
@@ -2842,3 +2844,5 @@ citation re-derived by symbol with `grep -n`; `questions_check` `:1228`, `QUESTI
 executed for this note beyond the leaf count.
 
 **Re-anchored `96cce555` -> `85739e7e` on 2026-09-30 (T-0029, on its merge of main `a61a6f38`).** `85739e7e` is T-0029's crew 1.0.70 version commit, after `0e432bec` merged origin/main `a61a6f38` (T-0088 landed as crew 1.0.69, with PRs #263-#267 before it: the QA harness, gate-first review, the steward and CLAUDE.md changes and the new `crew-qa-standards` skill). Every full-path body citation into a file changed since `96cce555` was mapped with a `difflib` line diff and moved where its line is identical (48, mostly `crew_state.py` +3, `crew_config.py` +1/+16, `crew_autopilot.py` +3, `crew_context.py`/`crew_resume.py`/`crew_route.py`/`role_write_guard.py` +1, `review_run.py` +35); the changed ones were re-read by hand: `crew_config.py:1264` now reads the config through `crew_common.repo_config_file` (T-0088; the Config-readers bullet says so), `plan_repo_write`/`write_repo_config` `:3062`/`:3088` and the machine pair `:2862`/`:2881` (both were cited one line early before this pass), `cloud_guard.py`'s `_literal_gate` call `:2834`, `sabotage.py`'s `MUTATIONS +=` registrations (`POLICY` `:3058`, `WAVE` `:3060`), the `crew` description's 30 skills and the version line 1.0.70. `.crew/verify.json`'s T-0029 rules did not move (main appended three rules after them). Shorthand citations in the per-anchor history sections were left as recorded, since each names the commit it was true at. Leaf counts re-executed at `85739e7e`: 127 / 68 / 59 / 0, unchanged. No suite was run by this note.
+
+**Re-anchored `85739e7e` -> `a94de1c2` on 2026-09-30 (T-0029).** `a94de1c2` is T-0029's owner-directed fix (2026-09-30, "Route the read + 1 allowlist"): `crew_wave.scope_enforcing` reads the repo config through `crew_common.repo_config_file`. `git diff --name-only 85739e7e a94de1c2` is `CHANGELOG.md`, `plugin/crew/README.md` (one line rewritten in place at `:879`, no line moved), `plugin/crew/hooks/scripts/crew_wave.py` (+2 in `scope_enforcing`'s docstring, every line from old `:148` down moved by 2), `plugin/crew/tests/sabotage_wave.py`, `plugin/crew/tests/test_crew_wave.py` and `plugin/crew/tests/test_worktree_config.py` (appends and one insertion; no citation in these notes carries a line into them). In this note the T-0029 paragraph's `crew_wave.py` citations were shifted by the line diff and each re-read with `sed -n` (every one lands on the symbol it names), the line count is 1083, and the `scope_enforcing` sentence now names the routed read (`:153`). Nothing was executed for this note.
