@@ -1,5 +1,7 @@
 """The ticket-contract block of the review prompt: every piece is either
 present or stated as MISSING, never silently omitted."""
+import re
+
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
@@ -92,3 +94,59 @@ def test_sections_keeps_nested_headings_inside_their_parent():
     found = rp.sections("# T\n## Intent\nfoo\n### detail\nbar\n## Exclusions\nnone\n")
 
     assert found["intent"] == "foo\n### detail\nbar"
+
+
+# ---- the development standards checklist (T-0085) ----------------------------------
+
+LISTED = dict(MANIFEST, committed_files=["a.py"], staged_files=[], unstaged_files=[],
+              untracked_files=[])
+WITHHELD = ("The author ran these as a self-check; the answers are withheld so you judge "
+            "applicability yourself.")
+UNBOUNDED = "This list does not bound the review: report a defect outside it the same way."
+
+
+def test_prompt_carries_the_standards_checklist(repo):
+    text = rp.build(str(repo), "T9", LISTED)
+
+    block = text[text.index("== Development standards checklist (appendix) =="):]
+    ids = re.findall(r"^(GEN-\d\d) ", block, flags=re.M)
+    assert (text.index("== Test receipts (verify gate) ==") < text.index(block[:20]),
+            ids, WITHHELD in block, UNBOUNDED in block,
+            "Where a probe, read, parse, import or subprocess can fail" in block,
+            "For every `except`, fallback and default in the diff" in block) == (
+        True, [f"GEN-{n:02d}" for n in range(1, 13)], True, True, True, True)
+
+
+def test_prompt_never_carries_selfcheck_answers(repo):
+    ticket = repo / ".work" / "tickets" / "T9"
+    ticket.mkdir(parents=True)
+    (ticket / "selfcheck.md").write_text(
+        "# T9 self-check\n\n| ID | Status | Evidence or reason |\n|---|---|---|\n"
+        "| GEN-01 | addressed | SELFCHECK-ANSWER-7f3a |\n", encoding="utf-8")
+
+    text = rp.build(str(repo), "T9", LISTED)
+
+    assert "SELFCHECK-ANSWER-7f3a" not in text
+
+
+def test_prompt_says_unreadable_overlay(repo):
+    (repo / ".crew").mkdir(exist_ok=True)
+    (repo / ".crew" / "standards.md").write_bytes(b"\xff\xfe not utf-8")
+
+    text = rp.build(str(repo), "T9", LISTED)
+
+    block = text[text.index("== Development standards checklist (appendix) =="):]
+    assert (bool(re.search(r"^UNREADABLE: \.crew/standards\.md", block, flags=re.M)),
+            "GEN-01 " in block) == (True, True)
+
+
+def test_prompt_lists_the_overlay_and_its_supplements(repo):
+    (repo / ".crew").mkdir(exist_ok=True)
+    (repo / ".crew" / "standards.md").write_text(
+        '---\nset: REPO\napplies-to: ["**"]\n---\n\n## REPO-01 Local rule\n\n**Rule.** local r\n\n'
+        "**Self-check.** local s\n\n## Supplements GEN-01\n\nLOCAL-SUPPLEMENT-TEXT\n",
+        encoding="utf-8")
+
+    text = rp.build(str(repo), "T9", LISTED)
+
+    assert ("REPO-01 Local rule" in text, "LOCAL-SUPPLEMENT-TEXT" in text) == (True, True)

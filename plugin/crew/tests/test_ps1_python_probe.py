@@ -134,14 +134,18 @@ def _tools(tmp_path):
     return tools
 
 
-def _print_python(path_entries, stem="completion-audit"):
+def _print_python_run(path_entries, stem="completion-audit"):
     env = dict(os.environ, OS="Windows_NT", PATH=os.pathsep.join(map(str, path_entries)))
     done = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File",
                            str(SCRIPTS / (stem + ".ps1")), "-PrintPython"],
                           env=env, stdin=subprocess.DEVNULL, capture_output=True,
                           text=True, check=False, timeout=60)
     assert done.returncode == 0, done.stderr
-    return done.stdout.strip()
+    return done
+
+
+def _print_python(path_entries, stem="completion-audit"):
+    return _print_python_run(path_entries, stem).stdout.strip()
 
 
 def _bash_resolver(fn, path_entries):
@@ -310,6 +314,24 @@ def test_a_broken_alias_falls_through_to_a_real_python_of_the_same_name(tmp_path
     _working(real, ("python",))
 
     assert _print_python([apps, real, _tools(tmp_path)]) == REAL
+
+
+@needs_pwsh
+def test_a_silent_candidate_is_rejected_without_writing_to_stderr(tmp_path):
+    """T-0097: a candidate that exits 0 and prints nothing leaves `$line` null,
+    and `$null | ConvertFrom-Json` is a NON-terminating binding error the
+    probe's `try` never catches, so every hook on such a host printed a red
+    "Cannot bind argument to parameter 'InputObject'" block while resolving
+    correctly. The silent candidate must be rejected quietly: the working
+    interpreter behind it wins, and stderr stays empty."""
+    silent = tmp_path / "silent"
+    _stub(silent, "python3", "exit 0", win_body="exit /b 0")
+    real = tmp_path / "real"
+    _working(real, ("python",))
+
+    done = _print_python_run([silent, real, _tools(tmp_path)])
+
+    assert (done.stdout.strip(), done.stderr) == (REAL, "")
 
 
 @needs_pwsh
