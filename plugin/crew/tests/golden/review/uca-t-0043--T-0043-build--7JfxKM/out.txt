@@ -1,0 +1,20 @@
+READ|part-001-of-017.patch
+READ|part-002-of-017.patch
+READ|part-003-of-017.patch
+READ|part-004-of-017.patch
+READ|part-005-of-017.patch
+READ|part-006-of-017.patch
+READ|part-007-of-017.patch
+READ|part-008-of-017.patch
+READ|part-009-of-017.patch
+READ|part-010-of-017.patch
+READ|part-011-of-017.patch
+READ|part-012-of-017.patch
+READ|part-013-of-017.patch
+READ|part-014-of-017.patch
+READ|part-015-of-017.patch
+READ|part-016-of-017.patch
+READ|part-017-of-017.patch
+FIX|plugin/crew/hooks/scripts/crew_autopilot.py:235|A shorter delimiter prematurely closes a longer fence; the actual closing fence then hides subsequent open questions.|_open_items('````markdown\n```\n````\n## Open questions\n- which DB?\n') returns [] instead of ['which DB?'].
+FIX|plugin/crew/hooks/scripts/crew_autopilot.py:238|Inline code at the start of a line is mistaken for an unclosed block fence, bypassing the open-questions stop.|_open_items('```example```\n\n## Open questions\n- which DB?\n') returns []; the previous implementation detects the question.
+FIX|.crew/codemap/crew.md:450|The new leading backtick quotation triggers graphify's fence scanner, removing all subsequent sections from the refreshed graph, including Entry points and the artifact refresh check.|extract_markdown(Path('.crew/codemap/crew.md')) produces 12 nodes; prefixing this line with prose in memory produces 32. The committed graph already lost 19 existing nodes from this file.

@@ -1,0 +1,30 @@
+READ|part-001-of-024.patch
+READ|part-002-of-024.patch
+READ|part-003-of-024.patch
+READ|part-004-of-024.patch
+READ|part-005-of-024.patch
+READ|part-006-of-024.patch
+READ|part-007-of-024.patch
+READ|part-008-of-024.patch
+READ|part-009-of-024.patch
+READ|part-010-of-024.patch
+READ|part-011-of-024.patch
+READ|part-012-of-024.patch
+READ|part-013-of-024.patch
+READ|part-014-of-024.patch
+READ|part-015-of-024.patch
+READ|part-016-of-024.patch
+READ|part-017-of-024.patch
+READ|part-018-of-024.patch
+READ|part-019-of-024.patch
+READ|part-020-of-024.patch
+READ|part-021-of-024.patch
+READ|part-022-of-024.patch
+READ|part-023-of-024.patch
+READ|part-024-of-024.patch
+BLOCK|plugin/crew/hooks/scripts/crew_autopilot.py:344|Unescaped tabs in check names defeat exact knownFailures matching and can hide pending states.|Stub _run_gh as (1, "check\tfail\tfail\t1m\turl\t\n", ""); read_checks reduces the failing name "check\tfail" to "check", and knownFailures=["check"] permits merge. [gh emits fields unescaped](https://raw.githubusercontent.com/cli/go-gh/v2.6.0/pkg/tableprinter/table.go).
+BLOCK|plugin/crew/hooks/scripts/crew_autopilot.py:535|The merge's expected HEAD is captured after CI, so it can authorize another commit using the previous commit's checks.|Return passing checks for A, then make an empty commit B and push it before HEAD is sampled; the unchanged tree keeps the receipt valid, and ship invokes merge with --match-head-commit B without reading B's checks.
+BLOCK|plugin/crew/hooks/scripts/crew_autopilot.py:539|The final receipt check can accept a replacement ledger while the merge uses the previous ledger's cross-family reviews.|After the last poll reads GPT reviews, replace the ledger with current Claude-only successor-plan reviews before check_receipt returns true; ship merges the high-risk ticket and reports the old GPT family.
+BLOCK|plugin/crew/hooks/scripts/crew_autopilot.py:557|A local HEAD change after validation is not detected; the PR can merge while its head differs from this checkout's HEAD.|Have read_merge_queue change local HEAD from A to B before returning False, leaving the PR at A; ship merges A with --match-head-commit A despite local HEAD being B.
+FIX|plugin/crew/hooks/scripts/crew_autopilot.py:493|A valid receipt for uncommitted changes can authorize shipping an older, different committed tree.|Obtain a CLEAN receipt covering a dirty working tree, complete done, and run ship with passing CI on HEAD; check_receipt validates the working tree, but push and merge ship HEAD without the reviewed edits.
+FIX|plugin/crew/hooks/scripts/crew_autopilot.py:557|The queue preflight still races with gh's queue detection, allowing a queued squash after ship reports stop.|Return False from read_merge_queue, then enable a squash merge queue before gh reads the PR; gh queues it, and the subsequent OPEN response stops ship without cancelling the queued merge. [gh merge implementation](https://raw.githubusercontent.com/cli/cli/v2.46.0/pkg/cmd/pr/merge/merge.go).

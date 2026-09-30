@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.76: the merge train - gate+land serialised per overlapping Touch set (L-0520)
+### Added — `crew` 1.0.77: the merge train - gate+land serialised per overlapping Touch set (L-0520)
 
 - **New `hooks/scripts/crew_train.py`.** One locked queue per clone under
   `<git-common-dir>/crew/train/`, armed per clone with `crew_train.py arm` (no config key; an
@@ -29,6 +29,133 @@ All notable changes to this repository are documented here. Format follows [Keep
   `/crew:done` gains "Landing through the merge train"; `/crew:review` names exit 6.
 - Sabotage rows S1-S15 (`plugin/crew/tests/sabotage_train.py`). The delta gate, scheduling and
   the spec's accepted-limits section are proposed follow-ups (TODO.md), not in this release.
+
+### Added — `crew` 1.0.76: tooling reliability — tool-failure refunds, golden replay, seam contracts, a canary review (T-0087)
+
+A tooling change: this release carries no feature work.
+
+- **A round the tool lost is refunded.** An INCOMPLETE review round is classed
+  by `review_verdict.failure_class`, from facts rather than reason text, in this
+  order. A bundle or web-test report that changed under the reviewer is `tree`.
+  Otherwise an answer that never arrived intact (a timeout, an unknown or
+  non-zero exit, empty output, a failed or unreadable Codex stream) is `tool`.
+  Anything else is `reviewer`. Only `tool` is refunded, automatically, at most
+  `REFUND_LIMIT` (2) times per plan; a third is recorded with `refund_refused`
+  and counts. These are never refunded: `reviewer` and `tree` rounds, a round
+  with no recorded result, and ledger rows from before 1.0.76. The two-round
+  `BUDGET`, the exit codes, the READ rule and the grader are unchanged, and a
+  successor plan still starts both counts afresh.
+- **Where it shows.** Ledger rows carry `failure_class`, `refunded` and
+  `refund_refused`. `review.json` carries the same fields. `review_run.py`
+  prints `review: round N was a tool failure (...); refunded - ...` or
+  `NOT refunded - ...`, and `/crew:status` reads `1/2 rounds used, 1 refunded`
+  through `review_ledger.summary`. The summary line counts the budget the way
+  the ledger charges it (`round 3, 1 of 2 budget rounds used, 2 refunded`),
+  never `round 3/2`. Autopilot sends a refunded round back to review (refresh
+  first) instead of stopping, even straight after `/crew:review`: the
+  no-progress stop does not apply to that review rerun (a refresh before it
+  that leaves its artifact stale still stops), and `REFUND_LIMIT` and
+  `maxPhases` bound it. This is the review-side twin of
+  T-0082's gate rule: a killed, hung or timed-out run is "could not tell",
+  never a pass.
+- **Golden corpus of real reviewer output.** 41 real `out.txt` from this
+  machine's reviews are committed under `plugin/crew/tests/golden/review/`, plus
+  one Codex `--json` stream carrying raw U+2028. Absolute paths are normalised
+  to `<ROOT>`/`<HOME>`/`<TMP>`, the host name to `<HOST>` and a person's email
+  address to `<EMAIL>`; nothing else changes. The builder refuses any fixture
+  that still matches a leak pattern. `test_review_golden.py` replays each
+  fixture through the parser. `golden_build.py --check-local` replays every
+  local review and stream without writing anything.
+- **One definition per seam, producer to consumer.** `review_patch.MANIFEST_KEYS`
+  and `PART_KEYS`, `review_verdict.VERDICTS` and `FINDING_FORM`, and
+  `verify_record.read_record` (now the one gate-record reader for
+  `review_prompt.py` and `crew_status.py`). `test_review_contracts.py` feeds each
+  producer's real output to its real consumer.
+- **Canary review.** `test_review_canary.py` runs `review_patch.py`,
+  `review_prompt.py` and `review_run.py` end to end. The stub reviewer's new
+  `golden` mode replays the real stream, and the stub reads an over-limit
+  prompt from its file as a real reviewer does.
+- **Tooling PRs land alone.** `scripts/check-tooling-pr.py` refuses a branch
+  that changes a review/gate harness path and also carries feature work. The
+  harness includes the reviewer's prompts (`commands/review.md`,
+  `agents/reviewer.md`, the `qa-reviewer-stays-read-only` eval). Tests, docs,
+  version files, the code map and the graph may ride along; no production code
+  and no other prompt may. The few files that read a harness format
+  (`crew_status.py`, `crew_autopilot.py`, `crew_resume.py`, `commands/status.md`,
+  `commands/autopilot.md`) ride along only when a lane commit declares each with
+  a `Tooling-seam: <path>` trailer. It diffs from the merge base, so a merge of
+  main does not count, and exits 77 (NOT VERIFIED) without `origin/main`. Its
+  suite is `scripts/_test/tooling-pr.py`. `.crew/verify.json` rule 36 runs the
+  checker, the corpus, the contracts, the canary and `test_status.py` whenever
+  a harness path, a seam consumer, one of those suites or
+  `external-tool-formats.md` changes, and CLAUDE.md states the rule.
+- **External tool formats, cited and probed.** `plugin/crew/docs/external-tool-formats.md`
+  covers Codex CLI's `--json` events (`exec_events.rs`), `wsl.exe`'s UTF-16LE
+  output and `gh`'s exit codes and review flags, each with its URL, read date
+  and probe record. It is held to crew's call sites by `test_external_tool_formats.py`.
+- **Thirty-five sabotage entries** (`tests/sabotage_tooling.py`) cover the
+  refund, the budget, the golden replay and its redaction, the manifest,
+  status, autopilot, the gate record, the canary, the tooling-alone checker,
+  rule 36's paths, the batch-shim prompt, the WSL probe's no-distribution skip
+  and the corpus's `-text` attribute. The six on the checker and `verify.json` are added only where
+  those repo files exist. All thirty-five go RED.
+
+### Fixed — `crew` 1.0.76 (T-0087)
+
+- Importing `verify_record` no longer reconfigures `sys.stdout`; that now
+  happens in its `main`.
+- The sabotage entry "an edit to scope_guard.py runs no pytest rule" now drops
+  `scope_guard.py` from rule 36 as well as rule 27. Rule 36 lists it too, so
+  dropping it from rule 27 alone left it covered and the entry stayed green
+  (`STILL GREEN -- TEST IS VACUOUS`).
+- `plugin/crew/BUDGETS.md`'s Markdown line count is re-measured: 20,879 lines
+  across 135 files.
+- `scripts/check-tooling-pr.py` allows `plugin/crew/BUDGETS.md` alongside a
+  harness change: its line count moves with every crew doc edit. It refused this
+  branch's own re-measure until then; `scripts/_test/tooling-pr.py` gains the
+  must-allow case.
+- Review round 1: `golden_build.redact` needs a boundary on both sides of a
+  path or the host name, so it no longer rewrites prose (`symlink/root race`
+  had become `symlink<HOME> race` in one committed fixture, now restored from
+  a rebuild). A ledger whose `successors` is not a list of objects reads as
+  UNKNOWN in `/crew:status` instead of crashing it. `check-tooling-pr.py`
+  reads a worktree rename's (` R`) source path. The guides no longer call a
+  rerun after a refund free: only the failed round is given back.
+- Windows (PR #260's `windows-latest` job): `review_run` no longer hands a
+  reviewer resolved to a batch-file shim (`.cmd`/`.bat`, which is how npm
+  installs `codex` and `copilot` on Windows) its prompt inline. cmd.exe ended
+  the argument at the first line break, so a real Codex or Copilot behind the
+  shim got only the prompt's first line. Such a provider now gets the
+  one-line pointer to `prompt.txt`, and stderr says why.
+- The `wsl.exe` encoding probe skips, saying `listed no distribution`, on a
+  host with `wsl.exe` and no WSL distribution, where it used to fail as a
+  wrong encoding. A distribution that answers is still checked.
+- The golden review corpus is checked out byte-exact: a nested
+  `plugin/crew/tests/golden/.gitattributes` sets `* -text`, so an autocrlf
+  checkout no longer rewrites it to CRLF.
+- Review round 4: a refunded round no longer exempts every next phase from
+  autopilot's no-progress stop, only the `/crew:review` rerun. A refresh that
+  ran and left its artifact stale (`graphify update .` named again) repeated
+  instead of stopping.
+- Review round 5: the golden corpus's leak check refuses a person's address
+  straight after a JSON escape (`\nalice@corp.com`, `\u003c...`) and the key
+  shapes it missed: `sk-proj-`/`sk-ant-` segments, `ghu_`/`ghs_`/`ghr_`,
+  `ASIA`, `AIza`, `sk_live_`/`rk_live_`, `npm_` and `glpat-`. The corpus test
+  reads the builder's patterns instead of a second copy with the same gaps.
+  The committed corpus was re-scanned with the fixed check: no hit.
+- Review round 5: a review ledger whose `successors` is `{}`, `0`, `""`,
+  `false` or `null`, or whose latest `after_round` is missing, not an integer,
+  a boolean or outside its rounds, reads UNKNOWN and refuses a reservation. It
+  used to read as a plan with no successor, a normal budget.
+- Review round 6: the committed-corpus test runs the builder's own
+  `golden_build.leak` on every fixture, so a fixture holding this machine's
+  host name fails it; before, the test re-checked the patterns itself and
+  never looked for the host name.
+- Bumped `1.0.75 -> 1.0.76` (1.0.52 on its branch; re-set to 1.0.53 after
+  merging main's 1.0.52, T-0076, to 1.0.55 after merging main's 1.0.54,
+  T-0092, to 1.0.62 after merging main's 1.0.61, T-0010, to 1.0.70 after
+  merging main's 1.0.69, T-0088, and to 1.0.76 after merging main's 1.0.75,
+  T-0085; T-0075 landed as 1.0.59 in between).
 
 ### Added — `crew` 1.0.75: build-time development standards and a required pre-review self-check (T-0085)
 
