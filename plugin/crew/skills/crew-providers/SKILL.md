@@ -367,8 +367,9 @@ only Read, Grep and Glob, and an empty `--skills-dir`.
 **`/crew:review` does not launch Kimi yet.** The launch - the probe before the
 round is reserved, and a working-tree fingerprint to catch a reviewer that edits
 instead of reporting - is crew's review harness, and lands on its own as L-0527.
-Until then `review_run.py` refuses `--provider kimi` (exit 2, nothing spent) and
-the walk moves on; a pin to kimi validates and is family-guarded.
+Until then the launch gate skips it: `crew_config.review_launchable()` (the one
+coupling, `review_run.LAUNCHED` plus `claude`) leaves Kimi ineligible in the
+`qa.order` walk; a pin to kimi validates and is family-guarded.
 `alternative-providers.md`: the offered pin table, Kimi through Codex (the API-key
 route), and a private second opinion on local hardware.
 

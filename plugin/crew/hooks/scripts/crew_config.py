@@ -1852,7 +1852,30 @@ def inspect_global(root, path=None):
 # --- What actually backs each role -----------------------------------------
 
 
-def order_candidates(cfg, author, which=None, probe=None):
+def review_launchable():
+    """The providers `/crew:review` can actually run: `review_run.LAUNCHED` plus the
+    in-session `claude` subagent, as a frozenset; None when that list could not be read.
+
+    THE LAUNCH GATE (T-0028, owner 2026-09-30). This is the one coupling between the
+    provider table and the review harness, kept to a single named list on purpose:
+    `order_candidates` refuses a `qa.order` entry this set does not name, so a provider
+    that validates and is first in the walk (Kimi, second in the default order since
+    crew 1.0.78) is never offered to a review nothing can launch. The gate names no
+    provider: adding one to `review_run.LAUNCHED` (L-0527 adds `kimi`) is the whole
+    change that makes it eligible. `test_launch_gate_agrees_with_review_run` pins it.
+    Could-not-tell (the import fails, or the list is not a tuple of names) is None,
+    and the caller reads None as "not launchable", never as "everything launches"."""
+    try:
+        import review_run  # pylint: disable=import-outside-toplevel
+    except Exception:  # pylint: disable=broad-except  # any import failure is could-not-tell
+        return None
+    launched = getattr(review_run, "LAUNCHED", None)
+    if not isinstance(launched, tuple) or not all(isinstance(p, str) for p in launched):
+        return None
+    return frozenset(launched) | {"claude"}
+
+
+def order_candidates(cfg, author, which=None, probe=None, launchable=None):
     """Which of `qa.order` could actually review a diff `author` wrote. Pure.
 
     The per-role table answers "what is each role pinned to". It does NOT
@@ -1869,7 +1892,8 @@ def order_candidates(cfg, author, which=None, probe=None):
     `{"provider", "model", "family", "onPath", "eligible", "why"}`. `why` is
     None when the candidate is eligible and otherwise names the single reason
     it is not, in the order the walk itself would find them: not a provider
-    QA recognises, then absent from PATH, then family unknown, then same
+    QA recognises, then not launchable by `/crew:review` (`review_launchable`,
+    the launch gate), then absent from PATH, then family unknown, then same
     family as the author, then a failed probe. A `copilot` with no
     `qa.copilot.model` has NO knowable family -- that is why the walkthroughs
     insist on pinning it before Copilot may review at all.
@@ -1891,6 +1915,9 @@ def order_candidates(cfg, author, which=None, probe=None):
     does with its real round trip.
     """
     which = shutil.which if which is None else which
+    # The launch gate: `launchable` is the set `/crew:review` can run (default
+    # `review_launchable()`); None there is could-not-tell, and nothing passes it.
+    launchable = review_launchable() if launchable is None else launchable
     # `author` is a single family, an iterable of them, or None -- plural
     # because a stale dispatch record strikes two. See
     # `crew_state.author_families`.
@@ -1914,6 +1941,10 @@ def order_candidates(cfg, author, which=None, probe=None):
             on_path = bool(which(provider))
         if provider not in QA_PROVIDERS:
             why = f"`{provider}` is not a provider QA recognises"
+        elif launchable is None:
+            why = "could not tell whether /crew:review can launch it (review_run.LAUNCHED unreadable)"
+        elif provider not in launchable:
+            why = f"/crew:review cannot launch `{provider}` yet (not in review_run.LAUNCHED)"
         elif not on_path:
             why = "not on PATH"
         elif fam is None:

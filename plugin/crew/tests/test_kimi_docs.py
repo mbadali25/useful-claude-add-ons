@@ -160,3 +160,12 @@ def test_every_file_this_module_reads_is_mapped_to_it():
                            if any(_gate_matches(f"plugin/crew/{rel}", p) for p in r["paths"]))]
 
     assert (len(read) >= 3, unmapped) == (True, [])
+
+
+def test_the_kimi_verify_rule_is_timed_not_a_placeholder():
+    """Round 6 FIX 4: the Kimi rule shipped saying its seconds were a placeholder."""
+    with open(os.path.join(CREW, "..", "..", ".crew", "verify.json"), encoding="utf-8") as fh:
+        rules = json.load(fh)["rules"]
+    rule = next(r for r in rules if "plugin/crew/hooks/scripts/kimi_probe.py" in r["paths"])
+
+    assert "placeholder" not in rule["why"] and "timed" in rule["why"].lower()

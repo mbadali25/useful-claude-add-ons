@@ -10,10 +10,16 @@ All notable changes to this repository are documented here. Format follows [Keep
   half). BEHAVIOUR CHANGE: the default `qa.order` now lists Kimi second -
   `["codex", "kimi", "copilot", "claude"]`.** `/crew:review` does not launch
   Kimi yet: that wiring is crew's review harness, and lands on its own as
-  L-0527 (tooling-only PRs carry no feature work, T-0087's rule). Until then
-  `review_run.py` refuses `--provider kimi` (exit 2, nothing launched, no round
-  spent) and the walk moves on to the next provider, so the new rung changes
-  nothing a review does today. Bumped `1.0.77 -> 1.0.78` (1.0.44 on its
+  L-0527 (tooling-only PRs carry no feature work, T-0087's rule). **The launch
+  gate** keeps the new rung from changing what a review does today:
+  `crew_config.order_candidates` offers a `qa.order` provider only when
+  `/crew:review` can launch it - `crew_config.review_launchable()`, which is
+  `review_run.LAUNCHED` plus the in-session `claude` - so `/crew:model` and the
+  `/crew:review` walk report Kimi as `no - /crew:review cannot launch kimi yet`
+  and go on to the next rung. The gate names no provider: L-0527 adding `kimi`
+  to `review_run.LAUNCHED` is what makes it eligible; an unreadable list is
+  could-not-tell and admits nothing. (`review_run.py --provider kimi` itself
+  still exits 2 until then, nothing launched.) Bumped `1.0.77 -> 1.0.78` (1.0.44 on its
   branch; 1.0.60 after merging main's 1.0.59; 1.0.62 after main's 1.0.61;
   1.0.70 after main's 1.0.69; 1.0.76 after main's 1.0.75; 1.0.77 after
   main's 1.0.76, T-0087; re-set after merging main's 1.0.77, T-0086).
@@ -37,7 +43,10 @@ All notable changes to this repository are documented here. Format follows [Keep
     be made, unrecognised output, a timeout, an id no `type = "kimi"` alias
     serves, and any answer other than exactly `PROBE_OK` are `unknown`. A 429
     the CLI retried and then completed reads `ok`; a 429 that ended the call is
-    `rate-limited`. Every wait is bounded: a timed-out probe's process group is
+    `rate-limited`. A wrong-shaped `api_key` or `oauth` entry in config.toml is
+    `unknown`, not `not-authenticated`; the probe refuses (`unknown`) when the
+    temporary directory lies inside a repository, where the CLI could discover
+    that repository's instructions. Every wait is bounded: a timed-out probe's process group is
     killed and the follow-up read has its own bound, so a descendant holding a
     pipe cannot hang it. The live stage spends one tiny request, in a throwaway
     directory, with a Read/Grep/Glob-only `--agent-file` and an empty

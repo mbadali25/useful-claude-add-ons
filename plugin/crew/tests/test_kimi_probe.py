@@ -433,3 +433,55 @@ def test_probe_that_cannot_create_its_scratch_directory_is_unknown(fake, home, m
     result = _probe(fake, home, monkeypatch)
 
     assert (result["state"], "scratch directory" in result["reason"]) == ("unknown", True)
+
+
+# --- review round 6 (T-0028) ------------------------------------------------------
+
+
+@pytest.mark.parametrize("api_key,oauth", [("1", 'storage = "file"'), ('""', None)],
+                         ids=["api-key-not-a-string", "oauth-not-a-table"])
+def test_probe_a_wrong_shaped_credential_field_is_unknown(fake, tmp_path, monkeypatch,
+                                                          api_key, oauth):
+    """Round 6 FIX 2: api_key = 1 or oauth = "file" is malformed config, not proven
+    absence of a credential."""
+    home = kimi_home(tmp_path / "shape", credential=False)
+    text = (home / "config.toml").read_text(encoding="utf-8")
+    text = text.replace('api_key = ""', f"api_key = {api_key}")
+    if oauth is None:
+        text = text.replace('[providers."managed:kimi-code".oauth]\nstorage = "file"\n'
+                            'key = "oauth/kimi-code"', "")
+        text = text.replace(f"api_key = {api_key}", f"api_key = {api_key}\noauth = \"file\"")
+    (home / "config.toml").write_text(text, encoding="utf-8")
+
+    result = _probe(fake, str(home), monkeypatch)
+
+    assert result["state"] == "unknown", result
+
+
+def test_probe_an_empty_api_key_and_no_oauth_is_still_not_authenticated(fake, tmp_path,
+                                                                        monkeypatch):
+    """must-allow: an empty api_key and no oauth block is a known absence."""
+    home = kimi_home(tmp_path / "none", credential=False)
+    text = (home / "config.toml").read_text(encoding="utf-8")
+    text = text.replace('[providers."managed:kimi-code".oauth]\nstorage = "file"\n'
+                        'key = "oauth/kimi-code"', "")
+    (home / "config.toml").write_text(text, encoding="utf-8")
+
+    assert _probe(fake, str(home), monkeypatch)["state"] == "not-authenticated"
+
+
+def test_probe_refuses_a_scratch_directory_inside_a_repository(fake, home, monkeypatch,
+                                                               tmp_path):
+    """Round 6 FIX 3: with TMPDIR inside a repository the throwaway directory would sit
+    under it, where the CLI can discover that repository's instructions."""
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "tmp").mkdir()
+    monkeypatch.setattr(kimi_probe.tempfile, "tempdir", str(repo / "tmp"))
+    calls = []
+
+    result = _probe(fake, home, monkeypatch, runner=lambda *a, **k: calls.append(a))
+
+    assert (result["state"], calls) == ("unknown", [])
+    assert "inside a repository" in result["reason"]
+    assert list((repo / "tmp").iterdir()) == []

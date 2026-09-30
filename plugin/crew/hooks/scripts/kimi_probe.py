@@ -304,10 +304,16 @@ def _credential_state(config, alias, home):
         return None, PROVIDER_NOT_A_NAME
     provider = _table(_table(config.get("providers")).get(ref))
     key = provider.get("api_key")
+    if key is not None and not isinstance(key, str):
+        # Round 6 of T-0028: a malformed field is could-not-tell, not "no credential".
+        return None, "the provider's api_key is not a string"
     if isinstance(key, str) and key.strip():
         return True, None
-    if not isinstance(provider.get("oauth"), dict):
+    oauth = provider.get("oauth")
+    if oauth is None:
         return False, None
+    if not isinstance(oauth, dict):
+        return None, "the provider's oauth entry is not a table"
     folder = os.path.join(home, "credentials")
     try:
         names = os.listdir(folder)
@@ -317,6 +323,25 @@ def _credential_state(config, alias, home):
         return None, (f"the Kimi credentials directory could not be read "
                       f"({type(exc).__name__})")
     return any(os.path.isfile(os.path.join(folder, n)) for n in names), None
+
+
+def _inside_a_repository(path):
+    """True when `path` or any directory above it holds a `.git` (a directory or a
+    worktree's file). Resolved first, so a symlinked TMPDIR is judged where it lands.
+    A `.git` that cannot be checked counts as present: could-not-tell is refused."""
+    here = os.path.realpath(path)
+    while True:
+        try:
+            os.lstat(os.path.join(here, ".git"))
+            return True
+        except FileNotFoundError:
+            pass
+        except OSError:
+            return True
+        parent = os.path.dirname(here)
+        if parent == here:
+            return False
+        here = parent
 
 
 def _run(cmd, env, timeout, cwd=None):
@@ -436,8 +461,14 @@ def probe(model_id=None, which=shutil.which, home=None, runner=None,
         return _result("not-authenticated", "the provider has no api_key and no stored "
                                             "OAuth credential - run `kimi login`",
                        alias=alias, exe=exe)
+    base = tempfile.gettempdir()
+    if _inside_a_repository(base):
+        # Round 6 of T-0028: under a repository the CLI can discover that
+        # repository's instructions, which is what the throwaway directory avoids.
+        return _result("unknown", f"the temporary directory {base} is inside a repository; "
+                                  "set TMPDIR outside it", alias=alias, exe=exe)
     try:
-        workdir = tempfile.mkdtemp(prefix="crew-kimi-probe-")
+        workdir = tempfile.mkdtemp(prefix="crew-kimi-probe-", dir=base)
     except OSError as exc:  # round 5 of T-0028: no scratch directory is `unknown`
         return _result("unknown", f"the probe could not create its scratch directory "
                                   f"({type(exc).__name__})", alias=alias, exe=exe)
