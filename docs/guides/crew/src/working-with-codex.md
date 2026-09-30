@@ -63,6 +63,33 @@ those.
 
 A review that exits non-zero or prints nothing is INCOMPLETE, never CLEAN.
 
+## When Codex hits a usage limit
+
+Having `codex` on `PATH` does not mean it can review: a logged-out, rate-limited or out-of-credits
+Codex is installed and fails at the first call. So `/crew:review` makes one minimal real call first,
+before it reserves a round, with the round's own model and effort:
+
+```bash
+python3 "$S/review_run.py" --root . --ticket <id> --scratch <dir> --provider codex \
+  --model <model> --effort <effort> --probe
+```
+
+It prints `PROBE=<outcome>` and `PROBE_DETAIL=<the answer or the quoted error>` and exits `0` (ok),
+`5` (limited), `6` (failed) or `7` (unknown: no answer within 120 s). Nothing is reserved either way.
+`limited` means the call failed and its error matched one of Codex's own limit messages (usage limit,
+out of credits, spend cap, rate limit, quota, a plan without Codex, or a retry limit on HTTP 429),
+listed with their `error.rs` lines in `hooks/scripts/review_limit.py`. On `limited` the round runs on
+the Claude reviewer - even when `qa.provider` pins `codex` - announced as `same-family (codex limit)`
+with the error quoted, because it is not an independent review.
+
+A limit hit in the middle of a round leaves that round INCOMPLETE and prints
+`review: codex usage limit in round N: ...`. It is recorded in
+`<git-common-dir>/crew/review-limit/<ticket>.json`, so the next `/crew:review` answers `limited` from
+the record without calling Codex again. Once that next round is reserved the record stops applying,
+and the round after it probes Codex live. The record is written after the round's verdict: when it
+cannot be written the round still ends INCOMPLETE (exit 3), the line says `could not record it (...)`,
+and the next probe calls Codex live instead.
+
 ## What is proven, and what is only configured
 
 Run the probe. The sample below shows the probe's format with this build's values. The
