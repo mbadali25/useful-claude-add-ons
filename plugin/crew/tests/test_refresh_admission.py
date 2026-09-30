@@ -489,7 +489,10 @@ def test_a_graph_rebuild_with_no_code_change_is_refused(anchored):
 def test_a_git_failure_while_judging_a_map_is_could_not_tell(anchored, monkeypatch):
     root, base = anchored
     re_anchor_map(root, "app", head_sha(root, 40))
+    # Git cannot run at all: since review round 7 the base copy is looked up
+    # with `ls-tree` through `_git_out`, so both helpers fail.
     monkeypatch.setattr(crew_refresh_check, "_git_rc", lambda *a, **k: None)
+    monkeypatch.setattr(crew_refresh_check, "_git_out", lambda *a, **k: (None, b""))
 
     verdict, reason = _verdict(root, base, REACH, APP)
 
@@ -1117,6 +1120,15 @@ def test_an_artifact_under_a_symlinked_dir_is_refused(tmp_path):
         pytest.skip(f"cannot create a symlink here: {exc}")
 
     assert _judged(root, base, REACH, sub, "symlink")[:2] == (False, True)
+
+
+def test_an_artifact_under_a_symlinked_dir_is_refused_where_open_takes_no_dir_fd(tmp_path,
+                                                                                monkeypatch):
+    """Windows' shape: `os.open` takes no dir_fd, so `_read_regular` opens the
+    path directly and a symlinked (or junctioned) directory along it is
+    caught only by `_on_disk`'s realpath comparison."""
+    monkeypatch.setattr(os, "supports_dir_fd", set())
+    test_an_artifact_under_a_symlinked_dir_is_refused(tmp_path)
 
 
 @pytest.mark.parametrize("kind", ["map", "diagram", "rule"])
