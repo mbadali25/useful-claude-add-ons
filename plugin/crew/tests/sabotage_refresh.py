@@ -40,6 +40,11 @@ as moved, INDEX.md judged as decoded lines (blind to a removed final newline,
 CRLF and a BOM) or with a mode change or a failed diff admitted, and a rule
 compared as decoded text, admitted when git would store it differently or
 could not hash it, or refused as a CRLF checkout under core.autocrlf.
+T-0094 review round 4 added the eight after its marker: an ambiguous short
+base anchor (or one git cannot disambiguate or type) read as naming no
+commit, a rendered diagram paired only with a lower-case source extension or
+with another stem's source, and artifact dirs that cannot be resolved
+dropping the could-not-tell reason (or every path, when the defaults raise).
 A mutation listed twice with different tests is on purpose: dropping the
 approval condition must fail the unapproved, the `cli` and the stale case
 each, not just whichever runs first.

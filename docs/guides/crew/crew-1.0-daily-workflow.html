@@ -337,8 +337,9 @@ the paths in six lines or fewer. It never blocks the continuation it caused.</p>
 edit is a re-anchor (the <code>anchor:</code> or provenance sha moved forward to a commit on this branch) or a
 regeneration (<code>.claude/rules/</code> as <code>crew_instructions.py rules</code> writes them, the graph after a code
 change). A map claim edited without a re-anchor is listed with <code>[anchor did not move]</code>, and
-belongs in Touch if that is what the ticket means to do. When git cannot answer, or a rule file
-cannot be read, the listing says <code>[could not tell: ...]</code>, and that never passes. <code>/crew:done</code> runs the same check:</p>
+belongs in Touch if that is what the ticket means to do. When git cannot answer, a rule file
+cannot be read, a short base anchor is ambiguous (two commits share it), or the artifact dirs
+cannot be resolved, the listing says <code>[could not tell: ...]</code>, and that never passes. <code>/crew:done</code> runs the same check:</p>
 <pre><code class="language-bash">python3 &lt;crew&gt;/hooks/scripts/completion_audit.py --check --ticket T-0042
 </code></pre>
 <p>The audit sees what git sees. Gitignored files, including everything under <code>.crew/</code>, and <code>.work/</code>
