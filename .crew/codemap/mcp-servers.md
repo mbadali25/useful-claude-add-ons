@@ -1,6 +1,6 @@
 # mcp-servers
-anchor: useful-claude-add-ons@3648f59a
-verified: 2026-09-28
+anchor: useful-claude-add-ons@bd68ce88
+verified: 2026-09-30
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
 ## Does
@@ -366,3 +366,20 @@ returns `.claude-plugin/marketplace.json` (crew's version line only) and `TODO.m
 No citation moved.
 
 **Re-anchored `b2553d26` -> `3648f59a` on 2026-09-28 (T-0075 review round 5, merge of `6387ab49`).** `git diff --name-only b2553d26 3648f59a -- mcp-servers/ README.md TODO.md .claude-plugin/marketplace.json` returns `README.md` (T-0075: crew's slash-command count 35 -> 36 at `:168` and `:874`, in place), `TODO.md` (T-0092's entry at `:5051`, below every citation here) and `.claude-plugin/marketplace.json` (crew's lines only); nothing under `mcp-servers/`. `TODO.md:189`, `:200` and `:281` re-read, unchanged; `grep -c mcp-servers .claude-plugin/marketplace.json` is still **0**. No citation moved.
+
+## Re-anchor provenance - `2f7899a0` + `a61a6f38` -> `bd68ce88`, 2026-09-30 (T-0028 merges main `a61a6f38`, successor adaptations, crew 1.0.70)
+
+`27e321aa` merges origin/main `a61a6f38` (crew 1.0.69: T-0088's Codex-limit fallback and
+`crew_common.repo_config_dir` lane-config resolver, #263-#267's QA harness, `review_gate.py`
+preflight and `crew-qa-standards`) into `T-0028-kimi` at `2f7899a0`, with the 12-file textual
+resolution saved at `9a3ad3de` re-read hunk by hunk; `EXIT_PROBE_CHANGED` moves 5 -> 8.
+`cba50c93` adds the owner's five successor adaptations (probe before the gate preflight,
+`--allow-unverified` in two fingerprint tests, `graph_out` through `repo_config_dir`, the
+`test_worktree_config.py` ALLOWED entry, crew-providers SKILL.md at 499 lines) and `bd68ce88`
+re-sets crew 1.0.70, the last `plugin/crew/` commit. Every body citation into a file changed
+between `2f7899a0` and `bd68ce88` was mapped by a `difflib` line diff
+(`/root/crew-tmp/t-0028/refresh/reanchor.py`, machine-local); a bare `:N` goes to the last path
+named before it in its paragraph. Provenance sections and history citations (followed by `at`,
+`on`, `since`, `before`, `was` or `->`) were left as written. A cited line whose text changed
+was re-read and its claim corrected; no cited line in this note changed text.
+Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.

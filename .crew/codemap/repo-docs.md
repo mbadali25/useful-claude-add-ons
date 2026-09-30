@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@63afa2b0
-verified: 2026-09-29
+anchor: useful-claude-add-ons@bd68ce88
+verified: 2026-09-30
 
 ## Re-derive provenance
 
@@ -318,7 +318,7 @@ listing the directory.
   `.crew/config.json` (machine-local, gitignored) is absent from this fresh
   worktree, so its `handoffPath` value could not be re-read here; the
   fallback default is confirmed instead, directly in code:
-  `plugin/crew/hooks/scripts/crew_autocycle.py:180` returns
+  `plugin/crew/hooks/scripts/crew_autocycle.py:182` returns
   `".work/HANDOFF.md"` when no config value is set. `docs/HANDOFF.md` is
   human-authored; the two files remain unrelated despite the shared
   basename.
@@ -345,7 +345,7 @@ listing the directory.
   `:273`, `read_diagrams` at `:472`, the `sha[:7] == head[:7]` comparisons at
   `:429` and `:512`, and the `_diagram_paths` call site inside `read_diagrams`
   at `:518` (was `:522`). Re-exported through
-  `plugin/crew/hooks/scripts/crew_state.py:132`/`:136`/`:139`/`:142`
+  `plugin/crew/hooks/scripts/crew_state.py:133`/`:137`/`:140`/`:143`
   (`_ANCHOR_RE`, `_DIAGRAM_ANCHOR_RE`, `_NOT_SUBSYSTEMS`, `_diagram_paths`).
   A diagram with no anchor header, or one whose anchor is old AND whose
   `%% Anchors:` paths have moved, still counts as `behind`; unknown still
@@ -1315,3 +1315,20 @@ machine-local, after T-0010's `citemap.py`); each one that moved was read at `63
 history chains (a citation followed by `at`, `on`, `since`, `before` or `->`) were left as written.
 
 Re-anchor only for this map's own claims; nothing was executed for this note.
+
+## Re-anchor provenance - `2f7899a0` + `a61a6f38` -> `bd68ce88`, 2026-09-30 (T-0028 merges main `a61a6f38`, successor adaptations, crew 1.0.70)
+
+`27e321aa` merges origin/main `a61a6f38` (crew 1.0.69: T-0088's Codex-limit fallback and
+`crew_common.repo_config_dir` lane-config resolver, #263-#267's QA harness, `review_gate.py`
+preflight and `crew-qa-standards`) into `T-0028-kimi` at `2f7899a0`, with the 12-file textual
+resolution saved at `9a3ad3de` re-read hunk by hunk; `EXIT_PROBE_CHANGED` moves 5 -> 8.
+`cba50c93` adds the owner's five successor adaptations (probe before the gate preflight,
+`--allow-unverified` in two fingerprint tests, `graph_out` through `repo_config_dir`, the
+`test_worktree_config.py` ALLOWED entry, crew-providers SKILL.md at 499 lines) and `bd68ce88`
+re-sets crew 1.0.70, the last `plugin/crew/` commit. Every body citation into a file changed
+between `2f7899a0` and `bd68ce88` was mapped by a `difflib` line diff
+(`/root/crew-tmp/t-0028/refresh/reanchor.py`, machine-local); a bare `:N` goes to the last path
+named before it in its paragraph. Provenance sections and history citations (followed by `at`,
+`on`, `since`, `before`, `was` or `->`) were left as written. A cited line whose text changed
+was re-read and its claim corrected; no cited line in this note changed text.
+Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.

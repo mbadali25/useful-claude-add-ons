@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@63afa2b0
-verified: 2026-09-29
+anchor: useful-claude-add-ons@bd68ce88
+verified: 2026-09-30
 
 # localgpu
 
@@ -510,9 +510,9 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")` quoted at `:33-34`.
   **Checked against the code, corrected after QA:**
-  `plugin/crew/hooks/scripts/crew_config.py:128-129` only re-exports
+  `plugin/crew/hooks/scripts/crew_config.py:129-130` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1447-1448` since T-0028's merge of `8ab733d7` (crew 1.0.62, `63afa2b0`); both tuples gain `"kimi"` in T-0028 - `plugin/localgpu/README.md:275-276` and `plugin/localgpu/commands/crew.md:30` still say three names, a T-0028 follow-up in `TODO.md` - (`:1442-1443` at T-0028's `2bb0d198`; `:1437-1438` on main at `8ab733d7`, since T-0010's four `AUTOPILOT_DEFAULTS`
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1450-1451` since T-0028's merge of `8ab733d7` (crew 1.0.62, `63afa2b0`); both tuples gain `"kimi"` in T-0028 - `plugin/localgpu/README.md:275-276` and `plugin/localgpu/commands/crew.md:30` still say three names, a T-0028 follow-up in `TODO.md` - (`:1442-1443` at T-0028's `2bb0d198`; `:1437-1438` on main at `8ab733d7`, since T-0010's four `AUTOPILOT_DEFAULTS`
   lines (T-0010-solo's merge of `67caa4b8`); `:1432-1433` at `2693d0fa` and `65bb3330`; `:1430-1431` on main before
   T-0005's three import lines merged in, re-numbered
   from `:1504-1505` by crew 1.0 - see the re-anchor entries below; same two
@@ -756,8 +756,8 @@ never matches and has to be counted on its own):
   `plugin/localgpu/mcp/store.py:620-674` (and its internal `:637`, `:639-648`,
   `:646`, `:651`, `:676`, cited in shorthand),
   `plugin/localgpu/mcp/_version.py:10-13`, `:31-32`,
-  `plugin/crew/hooks/scripts/crew_config.py:126-127`,
-  `plugin/crew/hooks/scripts/crew_state.py:1504-1505`, and, both written out
+  `plugin/crew/hooks/scripts/crew_config.py:127-128`,
+  `plugin/crew/hooks/scripts/crew_state.py:1507-1508`, and, both written out
   in full rather than one of them in shorthand,
   `scripts/check-marketplace.py:160-170` and `scripts/check-marketplace.py:169`.
   The first version of this bullet said 9 and listed 7 (both wrong, an
@@ -810,9 +810,9 @@ For the record, what was wrong and how it was found:
    tuples were cited at `plugin/localgpu/commands/crew.md:29-30` (that is the
    prose sentence introducing them); the literal tuples are at `:33-34`.
    Re-read `crew_config.py`: `DEV_PROVIDERS`/`QA_PROVIDERS` there are a
-   re-export (`plugin/crew/hooks/scripts/crew_config.py:126-127`,
+   re-export (`plugin/crew/hooks/scripts/crew_config.py:127-128`,
    `DEV_PROVIDERS = crew_state.DEV_PROVIDERS`), not the definition — that is
-   `plugin/crew/hooks/scripts/crew_state.py:1504-1505`. Also narrowed the
+   `plugin/crew/hooks/scripts/crew_state.py:1507-1508`. Also narrowed the
    "read only past the opening constraint (lines 1-32)" claim: this pass
    read through line 40, which is where the code block with the tuples ends.
 5. **Version-number subtraction presented as a count.** "Stable across those
@@ -885,7 +885,7 @@ sentence around it staying correct.
    .crew/codemap/localgpu.md`, which now returns nothing) to either full
    repo-relative paths or prose describing the shape without reproducing it.
 2. **FIX — the "12 new citations" method did not reproduce 12.** The bullet
-   said `plugin/crew/hooks/scripts/crew_state.py:1504-1505` fell outside the
+   said `plugin/crew/hooks/scripts/crew_state.py:1507-1508` fell outside the
    `plugin/` regex the rest of the section used and was "tallied separately"
    — it does not; that path starts with `plugin/crew/`, which the regex
    already matches, and the citation was already in that regex's output. And
@@ -1486,3 +1486,20 @@ machine-local, after T-0010's `citemap.py`); each one that moved was read at `63
 history chains (a citation followed by `at`, `on`, `since`, `before` or `->`) were left as written.
 
 Re-anchor only for this map's own claims; nothing was executed for this note.
+
+## Re-anchor provenance - `2f7899a0` + `a61a6f38` -> `bd68ce88`, 2026-09-30 (T-0028 merges main `a61a6f38`, successor adaptations, crew 1.0.70)
+
+`27e321aa` merges origin/main `a61a6f38` (crew 1.0.69: T-0088's Codex-limit fallback and
+`crew_common.repo_config_dir` lane-config resolver, #263-#267's QA harness, `review_gate.py`
+preflight and `crew-qa-standards`) into `T-0028-kimi` at `2f7899a0`, with the 12-file textual
+resolution saved at `9a3ad3de` re-read hunk by hunk; `EXIT_PROBE_CHANGED` moves 5 -> 8.
+`cba50c93` adds the owner's five successor adaptations (probe before the gate preflight,
+`--allow-unverified` in two fingerprint tests, `graph_out` through `repo_config_dir`, the
+`test_worktree_config.py` ALLOWED entry, crew-providers SKILL.md at 499 lines) and `bd68ce88`
+re-sets crew 1.0.70, the last `plugin/crew/` commit. Every body citation into a file changed
+between `2f7899a0` and `bd68ce88` was mapped by a `difflib` line diff
+(`/root/crew-tmp/t-0028/refresh/reanchor.py`, machine-local); a bare `:N` goes to the last path
+named before it in its paragraph. Provenance sections and history citations (followed by `at`,
+`on`, `since`, `before`, `was` or `->`) were left as written. A cited line whose text changed
+was re-read and its claim corrected; no cited line in this note changed text.
+Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.

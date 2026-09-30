@@ -1,6 +1,6 @@
 # install-scripts
-anchor: useful-claude-add-ons@63afa2b0
-verified: 2026-09-29
+anchor: useful-claude-add-ons@bd68ce88
+verified: 2026-09-30
 
 ## Re-derive provenance
 
@@ -224,7 +224,7 @@ through their own package managers.
   merely re-synced.** All of the following read **4 agents, 36 commands** (34
   until `ecf69e43` added `/crew:autopilot`, 35 until T-0075 added
   `/crew:config-setup`; re-read at `e95e5964`) (or
-  the plugin-level 29 skills / 34 hook entries across 8 events figures that go
+  the plugin-level 30 skills (29 before main's `crew-qa-standards`, re-read at `bd68ce88`) / 34 hook entries across 8 events figures that go
   with them), checked directly rather than cross-quoted from one another:
   `.claude-plugin/marketplace.json`'s `crew` description (parsed with
   `json.load`); `plugin/PLUGINS.md:17`; `plugin/README.md:414`'s crew row;
@@ -1223,3 +1223,20 @@ machine-local, after T-0010's `citemap.py`); each one that moved was read at `63
 history chains (a citation followed by `at`, `on`, `since`, `before` or `->`) were left as written.
 
 Re-anchor only for this map's own claims; nothing was executed for this note.
+
+## Re-anchor provenance - `2f7899a0` + `a61a6f38` -> `bd68ce88`, 2026-09-30 (T-0028 merges main `a61a6f38`, successor adaptations, crew 1.0.70)
+
+`27e321aa` merges origin/main `a61a6f38` (crew 1.0.69: T-0088's Codex-limit fallback and
+`crew_common.repo_config_dir` lane-config resolver, #263-#267's QA harness, `review_gate.py`
+preflight and `crew-qa-standards`) into `T-0028-kimi` at `2f7899a0`, with the 12-file textual
+resolution saved at `9a3ad3de` re-read hunk by hunk; `EXIT_PROBE_CHANGED` moves 5 -> 8.
+`cba50c93` adds the owner's five successor adaptations (probe before the gate preflight,
+`--allow-unverified` in two fingerprint tests, `graph_out` through `repo_config_dir`, the
+`test_worktree_config.py` ALLOWED entry, crew-providers SKILL.md at 499 lines) and `bd68ce88`
+re-sets crew 1.0.70, the last `plugin/crew/` commit. Every body citation into a file changed
+between `2f7899a0` and `bd68ce88` was mapped by a `difflib` line diff
+(`/root/crew-tmp/t-0028/refresh/reanchor.py`, machine-local); a bare `:N` goes to the last path
+named before it in its paragraph. Provenance sections and history citations (followed by `at`,
+`on`, `since`, `before`, `was` or `->`) were left as written. A cited line whose text changed
+was re-read and its claim corrected: the crew skills count those sites state is 30.
+Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
