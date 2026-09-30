@@ -96,11 +96,13 @@ PROMOTE_TREE_MUTATIONS = (
     ("_promote_tree.py reads git -C inside quoted text again", TREE,
      '        if not live[m.start()]:\n',
      '        if False:\n',
-     _T + "test_git_forms_outside_the_allowlist_are_could_not_tell[sh-deploy-dev --note \"x git -C {wt} rev-parse HEAD\"]"),
+     _T + "test_git_forms_outside_the_allowlist_are_could_not_tell"
+     "[sh-deploy-dev --note \"x git -C {wt} rev-parse HEAD\"]"),
     ("_promote_tree.py accepts any git global option", TREE,
      '        if expands or text not in _GIT_FLAGS:\n',
      '        if expands:\n',
-     _T + "test_git_forms_outside_the_allowlist_are_could_not_tell[sh-deploy-dev --ref $(git --bare -C {wt} rev-parse HEAD)]"),
+     _T + "test_git_forms_outside_the_allowlist_are_could_not_tell"
+     "[sh-deploy-dev --ref $(git --bare -C {wt} rev-parse HEAD)]"),
     ("_promote_tree.py loses --no-pager from the allowlist", TREE,
      '_GIT_FLAGS = {"--no-pager", ',
      '_GIT_FLAGS = {',
@@ -116,7 +118,8 @@ PROMOTE_TREE_MUTATIONS = (
     ("promote-gate.ps1 reads git -C inside quoted text again", PS1,
      '  if (-not $live[$m.Index]) {',
      '  if ($false) {',
-     _T + "test_git_forms_outside_the_allowlist_are_could_not_tell[ps1-deploy-dev --note \"x git -C {wt} rev-parse HEAD\"]"),
+     _T + "test_git_forms_outside_the_allowlist_are_could_not_tell"
+     "[ps1-deploy-dev --note \"x git -C {wt} rev-parse HEAD\"]"),
     ("promote-gate.ps1 reads a failed git status as clean", PS1,
      '  if ($LASTEXITCODE -ne 0) { Stop-Promotion "could not read git status',
      '  if ($false) { Stop-Promotion "could not read git status',
