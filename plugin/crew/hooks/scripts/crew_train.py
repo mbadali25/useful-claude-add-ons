@@ -6,8 +6,10 @@ catch-up merge and a fresh gate round every time. The owner's rule
 (2026-09-30): serialise the GATE+LAND stage, not coding. One queue per
 overlapping Touch set; the head of it merges the base, gates, lands, and
 releases; disjoint Touch sets never wait on each other. Nothing on the
-implement path consults this module: only `review_run.py` (a gate round) and
-`review_prompt.py` (the reviewer's brief) import it.
+implement path consults this module; `test_crew_train.py` allows only
+`review_run.py` (a gate round) and `review_prompt.py` (the reviewer's brief) to
+import it, and in this release neither does yet: lanes call the CLI before the
+gate round, and those two callers are L-0526.
 
 STATE. `<git-common-dir>/crew/train/`, shared by every worktree of one clone:
   state.json            {"schema": 1, "armed_at", "armed_by", "seq", "order",
@@ -20,8 +22,9 @@ STATE. `<git-common-dir>/crew/train/`, shared by every worktree of one clone:
 `scope_guard.py` already refuses Write/Edit, and obvious shell writes, under
 `<git-common-dir>/crew/`. Lanes in separate CLONES do not share a train.
 
-ARMED PER CLONE. `arm` creates state.json with O_CREAT|O_EXCL. Without it the
-train is off and `review_run.py` behaves exactly as before; `disarm` refuses
+ARMED PER CLONE. `arm` publishes a complete state.json with `os.link`, which
+fails if it exists. Without it the train is off and every verb but `arm`,
+`status`, `catch-up` and `merge-log` says `train not armed`; `disarm` refuses
 while any entry exists. There is no config key.
 
 THE HOLD RULE. An entry (one ticket on one base) may hold iff no HOLDING entry
@@ -64,8 +67,8 @@ covers the tree that lands. `catch-up` is the one catch-up: `git merge
 never `--global`, never switching the extension on). It never commits a
 conflicted or rerere-resolved merge: replayed files are staged and listed, the
 merge is left for the lane to inspect and commit, and the merge log names
-them so `review_prompt.py` can show the reviewer. A replayed resolution is
-still a change to gate.
+them (`merge-log`), for the reviewer. A replayed resolution is still a change
+to gate.
 
 LAND. `check-land` requires, in order: the train readable; this worktree's
 entry holding; the base fetched; `git merge-tree --write-tree <base> HEAD`
@@ -615,8 +618,8 @@ def arm(root, by=None):
             os.remove(tmp)
         except OSError:
             pass
-    return EXIT_OK, [f"train armed: {path}; review_run.py now takes the train before a "
-                     "gate round in every worktree of this clone"]
+    return EXIT_OK, [f"train armed: {path}; every worktree of this clone now queues "
+                     "gate+land through it (acquire before each gate round)"]
 
 
 def disarm(root):
@@ -634,7 +637,7 @@ def disarm(root):
             return EXIT_REFUSED, [f"train has entries ({', '.join(e['ticket'] for e in state['entries'])}); "
                                   "release them first"]
         os.remove(path)
-    return EXIT_OK, ["train disarmed; review_run.py no longer consults it"]
+    return EXIT_OK, ["train disarmed"]
 
 
 def _snapshot(root, ticket, base, lane):

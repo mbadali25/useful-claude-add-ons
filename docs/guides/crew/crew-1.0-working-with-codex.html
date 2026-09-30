@@ -169,16 +169,6 @@ approval receipt is told the gate does not apply, and during a declared incident
 (<code>/crew:emergency</code>) the gate stands down and logs the skip. The self-check is asked for last: a
 CLEAN receipt that already covers the bundle answers CLEAN without it, and a tree the verify gate
 has not passed is refused (exit 5) before it.</p>
-<p>When parallel lanes share one clone and its <strong>merge train</strong> is armed (<code>crew_train.py arm</code>,
-L-0520), <code>review_run.py</code> also takes the train before it launches Codex or reserves a round: after
-the CLEAN-receipt short-circuit and the verify gate, before the self-check. A round for a ticket
-whose Touch overlaps a ticket already holding the train (or queued ahead of it on the same base),
-or whose base moved in its Touch paths and was not merged in, exits <strong>6</strong> with no round spent and
-names the blocker and the colliding paths; <code>crew_train.py status</code> shows the queue. Codex never sees
-a tree the train would not land. A clone that was never armed reviews exactly as before. When a
-catch-up merge (<code>crew_train.py catch-up</code>) replayed a recorded conflict resolution through git
-rerere, the prompt Codex reads lists each replayed file under <code>== Catch-up merges (rerere) ==</code> as a
-change to review.</p>
 <h2 id="when-codex-hits-a-usage-limit">When Codex Hits a Usage Limit</h2>
 <p>Having <code>codex</code> on <code>PATH</code> does not mean it can review: a logged-out, rate-limited or out-of-credits
 Codex is installed and fails at the first call. So <code>/crew:review</code> makes one minimal real call first,

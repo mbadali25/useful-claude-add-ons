@@ -15,20 +15,21 @@ All notable changes to this repository are documented here. Format follows [Keep
   Touch overlaps everything; an unreadable state, a failed git call or a lock held past its wait
   is could-not-tell (exit 3). Every wait is logged with its colliding paths; stale holds are
   reported (`stale?:`) and released only by `release --force --by <who> --reason <text>`.
-- **`review_run.py` takes the train before reserving a gate round** once the clone is armed:
-  waiting behind an overlapping ticket, a base that moved in this ticket's Touch and was not
-  merged in, or an unreadable train is the new **exit 6**, no round spent. No hook is added.
+- **Advisory in this release.** Lanes (or you) call `crew_train.py acquire` before the gate
+  round; `review_run.py` refusing the round itself (exit 6) and the review prompt's rerere block
+  are L-0526, a separate tooling PR (owner 2026-09-30: tooling PRs carry no feature work). No hook
+  is added.
 - **`crew_train.py catch-up`** merges the base (never a rebase) after making `rerere.enabled`
   and `rerere.autoupdate` true in the worktree (`--worktree` or `--local`, never `--global`),
-  never commits a conflicted or rerere-resolved merge, and records each catch-up in a merge log;
-  the review prompt lists every rerere-replayed file as a change to review.
+  never commits a conflicted or rerere-resolved merge, and records each catch-up (with the files
+  rerere replayed) in a merge log that `crew_train.py merge-log` prints.
 - **`crew_train.py check-land`** refuses unless the ticket holds the train, `git merge-tree` is
   clean, the base has not moved in Touch paths, and HEAD carries a current review receipt and a
   green verify gate; then it prints `gh pr merge <n> --merge --match-head-commit <sha>` (crew
   never merges). `release --merged <sha>` tells every overlapping lane to merge the base.
-  `/crew:done` gains "Landing through the merge train"; `/crew:review` names exit 6.
-- Sabotage rows S1-S15 (`plugin/crew/tests/sabotage_train.py`). The delta gate, scheduling and
-  the spec's accepted-limits section are proposed follow-ups (TODO.md), not in this release.
+  `/crew:done` gains "Landing through the merge train".
+- The delta gate, scheduling and the spec's accepted-limits section are proposed follow-ups
+  (TODO.md), not in this release.
 
 ### Added — `crew` 1.0.76: tooling reliability — tool-failure refunds, golden replay, seam contracts, a canary review (T-0087)
 

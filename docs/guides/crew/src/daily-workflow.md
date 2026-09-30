@@ -78,12 +78,12 @@ the ticket becomes `NEEDS_REPLAN`. Each round's findings go into a
 each proposed standard, and nothing is added to a standards file on its own.
 
 With parallel lanes in one clone, arm its **merge train** once (`crew_train.py arm`, L-0520).
-Lanes still implement at the same time, overlapping Touch or not; only gate and land queue. The
-review round takes the train first: a ticket whose Touch overlaps one already holding it waits
-(the review exits 6, no round spent) and gates next, in the order the lanes reached their gate,
-while a ticket with a disjoint Touch gates at once. Catch up with `crew_train.py catch-up --ticket
+Lanes still implement at the same time, overlapping Touch or not; only gate and land queue.
+Before the review round, `crew_train.py acquire --ticket T-0091` takes the train: a ticket whose
+Touch overlaps one already holding it waits (exit 1, colliding paths named) and gates next, in the
+order the lanes reached their gate, while a ticket with a disjoint Touch gates at once. Catch up with `crew_train.py catch-up --ticket
 T-0091` - a `git merge` of the base, never a rebase, with git rerere on so a conflict resolved
-once replays next time (the replayed files are staged, listed, and shown to the reviewer).
+once replays next time (the replayed files are staged and listed; show them to the reviewer).
 
 **8. Done.** You type `/crew:done T-0091`. Three checks, all required: the
 review receipt rebuilds clean, the verify gate is clean, and the completion

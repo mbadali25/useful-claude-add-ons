@@ -81,17 +81,6 @@ approval receipt is told the gate does not apply, and during a declared incident
 CLEAN receipt that already covers the bundle answers CLEAN without it, and a tree the verify gate
 has not passed is refused (exit 5) before it.
 
-When parallel lanes share one clone and its **merge train** is armed (`crew_train.py arm`,
-L-0520), `review_run.py` also takes the train before it launches Codex or reserves a round: after
-the CLEAN-receipt short-circuit and the verify gate, before the self-check. A round for a ticket
-whose Touch overlaps a ticket already holding the train (or queued ahead of it on the same base),
-or whose base moved in its Touch paths and was not merged in, exits **6** with no round spent and
-names the blocker and the colliding paths; `crew_train.py status` shows the queue. Codex never sees
-a tree the train would not land. A clone that was never armed reviews exactly as before. When a
-catch-up merge (`crew_train.py catch-up`) replayed a recorded conflict resolution through git
-rerere, the prompt Codex reads lists each replayed file under `== Catch-up merges (rerere) ==` as a
-change to review.
-
 ## When Codex hits a usage limit
 
 Having `codex` on `PATH` does not mean it can review: a logged-out, rate-limited or out-of-credits
