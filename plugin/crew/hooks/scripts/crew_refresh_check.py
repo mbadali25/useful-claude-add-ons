@@ -549,17 +549,44 @@ def _sha_moved(root, old, new):
     return _moved_from(root, old, now[0])
 
 
+def _names_no_commit(root, old):
+    """Did `cat-file -e <old>^{commit}`'s exit 128 mean the anchor names no
+    commit? Git exits 128 for a missing name AND for a short one two
+    commit-ish objects share (review round 4), so this is True only when
+    proven: `git rev-parse --disambiguate=<old>` lists no object that
+    `git cat-file -t` types as commit or tag. Every length is asked, not only
+    short ones: 40 hex is a prefix in a sha256 repository. None
+    (could-not-tell) when git cannot answer; False when a commit or tag IS
+    listed (ambiguous, or it resolves after all)."""
+    listed = _git_lines(root, "rev-parse", "--disambiguate=" + old)
+    if listed is None:
+        return None
+    for oid in listed:
+        kind = _git_lines(root, "cat-file", "-t", oid)
+        if not kind:
+            return None
+        if kind[0] in ("commit", "tag"):
+            return False
+    return True
+
+
 def _moved_from(root, old, now):
     """Has the anchor moved forward from `old` to the resolved commit `now`?
     Three-valued like everything here: a git that cannot say is
-    could-not-tell, never "moved" (review round 1). An `old` that names no
-    commit, or one off HEAD's history, cannot be behind anything, so any
+    could-not-tell, never "moved" (review round 1). An `old` proven to name
+    no commit (`_names_no_commit`: an ambiguous short one is could-not-tell,
+    review round 4), or one off HEAD's history, cannot be behind anything, so any
     qualifying `now` has moved (a squash merge drops, or strands, the commit
     a refresh anchored to). An `old` on HEAD's history must be behind `now`:
     no refresh anchors backwards."""
     code = _git_rc(root, "cat-file", "-e", old + "^{commit}")
     if code == 128:
-        return True, "re-anchored"
+        missing = _names_no_commit(root, old)
+        if missing is None:
+            return None, f"{COULD_NOT_TELL}: git could not say whether {old[:12]} names a commit"
+        if missing:
+            return True, "re-anchored"
+        return None, f"{COULD_NOT_TELL}: base anchor {old[:12]} is ambiguous"
     if code != 0:
         return None, f"{COULD_NOT_TELL}: git could not read the base anchor {old[:12]}"
     was = _git_lines(root, "rev-parse", "--verify", old + "^{commit}")

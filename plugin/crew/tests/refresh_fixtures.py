@@ -14,6 +14,7 @@ Plain functions, no pytest fixtures: each suite calls them with its own
 `tmp_path`. Everything is built under that path; nothing touches the real
 repository.
 """
+import hashlib
 import json
 import os
 import re
@@ -84,7 +85,7 @@ def _side_commit(root, start):
 
 
 def anchored_repo(tmp_path, touch=("src/**",), map_anchor=None, extra=None,
-                  cites=("src/app.py:1",), diagram_anchors="src/app.py"):
+                  cites=("src/app.py:1",), diagram_anchors="src/app.py", diagram_ext=".mmd"):
     """(root, base). A `scope_fixtures.make_repo` repo with `.crew/codemap/`
     un-ignored, whose BASE commit holds the code map `app.md` (explicit
     `paths: src/**`, anchored at the commit before the base unless
@@ -93,8 +94,10 @@ def anchored_repo(tmp_path, touch=("src/**",), map_anchor=None, extra=None,
     rule `crew_instructions.rules` writes for it, a diagram source anchored
     the same way with `%% Anchors: <diagram_anchors>` (None: no Anchors
     line), a rendered diagram beside it and both graph files, plus any
-    `extra` {rel: text}. The ticket T-1 is then made, approved as the user
-    and its base recorded, and one commit edits `src/app.py`."""
+    `extra` {rel: text}. The diagram source is `docs/diagrams/flow<diagram_ext>`
+    (review round 4: `.MMD` proves the pairing is case-folded). The ticket
+    T-1 is then made, approved as the user and its base recorded, and one
+    commit edits `src/app.py`."""
     root = scope_fixtures.make_repo(tmp_path, mode="block")
     write(root, ".gitignore", ".work/\n.crew/*\n!.crew/codemap/\n")
     git(root, "commit", "-qam", "un-ignore the code map")
@@ -106,7 +109,7 @@ def anchored_repo(tmp_path, touch=("src/**",), map_anchor=None, extra=None,
     write(root, INDEX, _index(first))
     _problems, written = crew_instructions.rules(str(root))
     assert written == [os.path.join(".claude", "rules", "app.md")], written
-    write(root, DIAGRAM.format(name="flow"), _diagram(first, diagram_anchors))
+    write(root, _diagram_rel("flow", diagram_ext), _diagram(first, diagram_anchors))
     write(root, RENDERED, f"<svg><!-- {first} --></svg>\n")
     _graph(root, first)
     for rel, text in (extra or {}).items():
@@ -140,9 +143,13 @@ def index_row_append(root, name, clause):
     write(root, INDEX, "\n".join(out) + "\n")
 
 
-def re_anchor_diagram(root, name, sha):
+def _diagram_rel(name, ext):
+    return DIAGRAM.format(name=name)[:-len(".mmd")] + ext
+
+
+def re_anchor_diagram(root, name, sha, ext=".mmd"):
     """Move the `%% Generated from` sha to `sha` and add a provenance line."""
-    rel = DIAGRAM.format(name=name)
+    rel = _diagram_rel(name, ext)
     text = re.sub(r"(%% Generated from r@)[0-9a-f]+", lambda m: m.group(1) + sha,
                   read(root, rel), count=1)
     write(root, rel, text + f"%% Re-anchored at {sha[:8]}\n")
@@ -162,3 +169,25 @@ def refreshed(root):
     write(root, RENDERED, f"<svg><!-- {head} --></svg>\n")
     rebuild_graph(root, head)
     return head
+
+
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+
+def ambiguous_commit_prefix(length=7, limit=2_000_000):
+    """(prefix, [body_a, body_b]): two raw commit bodies (the empty tree, a
+    fixed author and date, messages `n<i>`) whose sha1 share their first
+    `length` hex digits, found by a bounded, deterministic birthday search in
+    hashlib (no git). Written into a repo with
+    `git hash-object -t commit -w --stdin`; the caller asserts git's sha equals
+    the computed one. A search that finds nothing fails loudly, never skips."""
+    seen = {}
+    for i in range(limit):
+        body = (f"tree {EMPTY_TREE}\nauthor t <t@t> 0 +0000\n"
+                f"committer t <t@t> 0 +0000\n\nn{i}\n").encode()
+        sha = hashlib.sha1(b"commit %d\0" % len(body) + body).hexdigest()
+        prefix = sha[:length]
+        if prefix in seen:
+            return prefix, [seen[prefix], body]
+        seen[prefix] = body
+    raise AssertionError(f"no {length}-hex sha1 collision in {limit} candidates")

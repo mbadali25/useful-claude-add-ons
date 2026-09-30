@@ -18,6 +18,7 @@ of these red.
 """
 import os
 import re
+import subprocess
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_instructions
@@ -31,6 +32,7 @@ from refresh_fixtures import (
     MAP,
     RENDERED,
     RULE,
+    ambiguous_commit_prefix,
     anchored_repo,
     index_row_append,
     map_text,
@@ -753,3 +755,76 @@ def test_a_rule_git_cannot_hash_is_could_not_tell(anchored, monkeypatch, result)
 
     assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL),
             "could not hash" in reason) == (None, True, True), reason
+
+
+# --- review round 4 (owner-rejected, narrow successor) --------------------------
+# Real git, not a patched exit code: the defect is what `cat-file -e`'s exit
+# 128 means, and only git can show that a short anchor two commits share is
+# refused as AMBIGUOUS with the same exit as one that names nothing.
+
+def _ambiguous_objects(root, prefix, bodies):
+    """Write both commit bodies into `root`'s object store; assert each sha
+    git computes starts with `prefix` and that `cat-file -e <prefix>^{commit}`
+    exits 128 saying `ambiguous` (the finding's premise, measured here)."""
+    for body in bodies:
+        done = subprocess.run(["git", "-C", str(root), "hash-object", "-t", "commit",
+                               "-w", "--stdin"], input=body, capture_output=True, check=True)
+        assert done.stdout.decode().strip().startswith(prefix), done.stdout
+    probe = subprocess.run(["git", "-C", str(root), "cat-file", "-e", prefix + "^{commit}"],
+                           capture_output=True, check=False)
+    assert (probe.returncode, b"ambiguous" in probe.stderr) == (128, True), probe
+
+
+def test_an_ambiguous_base_anchor_is_could_not_tell(tmp_path):
+    prefix, bodies = ambiguous_commit_prefix()
+    root, base = anchored_repo(tmp_path, map_anchor=prefix)
+    _ambiguous_objects(root, prefix, bodies)
+    re_anchor_map(root, "app", head_sha(root, 40))
+
+    verdict, reason = _verdict(root, base, REACH, APP)
+
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL),
+            "ambiguous" in reason) == (None, True, True), reason
+
+
+def test_a_base_anchor_git_cannot_disambiguate_is_could_not_tell(tmp_path, monkeypatch):
+    root, base = anchored_repo(tmp_path, map_anchor="deadbeefdead")
+    re_anchor_map(root, "app", head_sha(root, 40))
+    _failing_git(monkeypatch, "_git_lines", _args_are("rev-parse", "--disambiguate=deadbeefdead"),
+                 None)
+
+    verdict, reason = _verdict(root, base, REACH, APP)
+
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL),
+            "names a commit" in reason) == (None, True, True), reason
+
+
+def test_a_base_anchor_whose_candidates_git_cannot_type_is_could_not_tell(tmp_path, monkeypatch):
+    prefix, bodies = ambiguous_commit_prefix()
+    root, base = anchored_repo(tmp_path, map_anchor=prefix)
+    _ambiguous_objects(root, prefix, bodies)
+    re_anchor_map(root, "app", head_sha(root, 40))
+    monkeypatch.setattr(crew_refresh_check, "_git_lines", _typing_fails(
+        crew_refresh_check._git_lines))  # pylint: disable=protected-access
+
+    verdict, reason = _verdict(root, base, REACH, APP)
+
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL),
+            "names a commit" in reason) == (None, True, True), reason
+
+
+def _typing_fails(real):
+    return lambda r, *a: None if a[:2] == ("cat-file", "-t") else real(r, *a)
+
+
+def test_an_ambiguous_new_anchor_is_refused(tmp_path):
+    """The neighbour (a control): the map re-anchored TO a prefix two commits
+    share. `_sha_moved`'s own exit-128 branch must not admit it."""
+    prefix, bodies = ambiguous_commit_prefix()
+    root, base = anchored_repo(tmp_path)
+    _ambiguous_objects(root, prefix, bodies)
+    re_anchor_map(root, "app", prefix)
+
+    verdict, reason = _verdict(root, base, REACH, APP)
+
+    assert verdict is not True, reason
