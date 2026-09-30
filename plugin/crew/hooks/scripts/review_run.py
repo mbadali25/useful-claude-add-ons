@@ -29,6 +29,17 @@ failed, 7 unknown (timed out). /crew:review runs it before step 2a. Being on
 PATH is not being able to review: a logged-out or rate-limited Codex resolves
 on PATH and fails at the first call (T-0088).
 
+STANDARDS SELF-CHECK (T-0085). Also before reservation, and AFTER `preflight`
+(question 3 below), for every provider
+(`claude --reserve-only` included): a ticket with an approval receipt must
+have `.work/tickets/<id>/selfcheck.md` complete and stamped for exactly this
+manifest's `bundle_sha256` and the effective standards digest
+(`crew_standards.review_gate`). Missing, unreadable, incomplete, unstamped or
+stale is exit 2 with each problem named and no round spent. A ticket with no
+approval receipt never ran /crew:implement or /crew:fix, so the gate says it
+does not apply; an active incident stands it down and logs a
+`standards-selfcheck` skip.
+
 The prompt is passed inline when it fits a Windows command line; otherwise the
 argument tells the reviewer to read `prompt.txt`, and says so on stderr.
 
@@ -58,7 +69,8 @@ whether or not the reviewer carried it. When the prompt overflowed its inline
 rows into `webtest-findings.txt` in the scratch directory, that file is an
 expected READ like a bundle part.
 
-BEFORE ANY ROUND IS RESERVED, two questions, in this order (`preflight`):
+BEFORE ANY ROUND IS RESERVED, three questions, in this order (`preflight`,
+then `standards_gate`):
 
   1. Does a CLEAN receipt already cover this exact bundle
      (`review_ledger.check_receipt`, the check `/crew:done` gates on)? Then
@@ -72,14 +84,20 @@ BEFORE ANY ROUND IS RESERVED, two questions, in this order (`preflight`):
      would refuse for free is the most expensive way to find out it is red.
      `--allow-unverified` reviews it anyway, and review.json says it did.
      No verify map, or a gate stood down, proceeds and says so.
+  3. Only then (`standards_gate`, T-0085): is the standards self-check
+     complete and stamped for this bundle? Missing or stale is exit 2, no
+     round spent -- see STANDARDS SELF-CHECK above. A CLEAN receipt (1) never
+     asks for a self-check, and an unverified gate (2) is refused with exit 5
+     before one is asked for.
 
 Every round's review.json carries `gate` (the state observed at verdict time)
 and `elapsed_s` (reservation to verdict, from the ledger's own timestamps), and
 the `review:` summary line prints both.
 
 Exit codes: 0 CLEAN; 1 FINDINGS; 3 INCOMPLETE; 4 budget refused
-(NEEDS_REPLAN); 5 not run, gate not green (no round spent); 2 usage or setup
-error.
+(NEEDS_REPLAN); 5 not run, verify gate not green (no round spent); 2 usage or
+setup error, or the standards self-check missing or stale -- not run, no round
+spent. Exit 5 (gate) is decided before exit 2 (self-check) is asked for.
 """
 import argparse
 import datetime
@@ -92,6 +110,8 @@ import subprocess
 import sys
 
 import crew_common
+import crew_incident
+import crew_standards
 import crew_state
 import review_gate
 import review_ledger
@@ -458,6 +478,32 @@ def preflight(args):
     return None
 
 
+def standards_gate(args):
+    """None to go on and reserve; EXIT_USAGE to refuse with nothing spent.
+
+    The required standards self-check (T-0085, `crew_standards.py`) must be
+    complete and stamped for exactly this bundle and this standards set. In an
+    active incident the gate stands down and logs the skip, as verify-gate.sh
+    does for its own."""
+    problems, note = crew_standards.review_gate(args.root, args.ticket, args.manifest)
+    if note:
+        sys.stderr.write(f"review-run: {note}\n")
+    if problems:
+        incident = crew_incident.read_state(args.root, crew_state.load_config(args.root))
+        if incident["active"]:
+            crew_incident.log_skip(args.root, "standards-selfcheck", "; ".join(problems))
+            sys.stderr.write(f"review-run: incident {incident['id']} is active; the standards "
+                             "self-check stands down and the skip is logged\n")
+            return None
+        for problem in problems:
+            sys.stderr.write(f"review-run: self-check: {problem}\n")
+        sys.stderr.write("review-run: answer .work/tickets/<id>/selfcheck.md, then run "
+                         f"crew_standards.py stamp --root . --ticket {args.ticket}; nothing "
+                         "launched, no round spent\n")
+        return EXIT_USAGE
+    return None
+
+
 def run(args):
     exe = prompt = None
     if args.provider in LAUNCHED:
@@ -475,6 +521,18 @@ def run(args):
     short = preflight(args)
     if short is not None:
         return short
+
+    # A spent budget is a precondition already known to fail (GEN-03): the
+    # self-check cannot change it, so the budget refusal below answers first
+    # rather than sending the author to answer and restamp for nothing.
+    # `reserve` re-reads the ledger under its lock and is what refuses.
+    ledger = review_ledger.status(args.root, args.ticket)
+    if not (ledger.get("state") == review_ledger.NEEDS_REPLAN
+            or ledger.get("rounds_left") == 0):
+        refused = standards_gate(args)
+        if refused is not None:
+            return refused
+
     ok, number, message = review_ledger.reserve(args.root, args.ticket, args.provider,
                                                 args.model)
     sys.stderr.write(f"review-run: {message}\n")
