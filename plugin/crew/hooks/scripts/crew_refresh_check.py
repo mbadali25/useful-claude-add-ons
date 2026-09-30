@@ -532,14 +532,10 @@ def _base_text(root, base, rel):
     (None, "error: <why>"). `git_out` returns None on ANY failure, so the
     tree is asked first: absent and unreadable are different answers.
     Review round 7: `cat-file -e <base>:<rel>` exits 128 for a missing path
-    AND for a base git cannot read, so the base's tree is proven readable
-    first and the path is then looked up in its listing."""
+    AND for a base git cannot read, so the path is looked up in the base's
+    listing instead: `ls-tree` exits 0 with no entry for a missing path and
+    non-zero for a base it cannot read."""
     spec = f"{base}:{rel}"
-    code = _git_rc(root, "cat-file", "-e", f"{base}^{{tree}}")
-    if code is None:
-        return None, "error: git could not run"
-    if code != 0:
-        return None, f"error: git cannot read base {base[:12]}'s tree (exit {code})"
     code, out = _git_out(root, "ls-tree", "-z", base, "--", rel)
     if code != 0:
         why = "could not run" if code is None else f"exited {code}"

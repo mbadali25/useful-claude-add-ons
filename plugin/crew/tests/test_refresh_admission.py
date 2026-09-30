@@ -649,13 +649,13 @@ def test_a_removed_rule_whose_base_copy_git_cannot_read_is_could_not_tell(tmp_pa
     rel = RULE.format(name="hand")
     root, base = anchored_repo(tmp_path, extra={rel: "# hand\nwritten by a person\n"})
     git(root, "rm", "-q", rel)
-    # Review round 7 asks for the base's tree before the path (`_base_text`).
-    _failing_git(monkeypatch, "_git_rc", _args_are("cat-file", "-e", f"{base}^{{tree}}"), 129)
+    # Review round 7 looks the path up in the base's listing (`_base_text`).
+    _failing_out(monkeypatch, "ls-tree", (129, b""))
 
     verdict, reason = _verdict(root, base, REACH, rel)
 
     assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL),
-            "(exit 129)" in reason) == (None, True, True), reason
+            "exited 129" in reason) == (None, True, True), reason
 
 
 # --- review round 3 -------------------------------------------------------------
