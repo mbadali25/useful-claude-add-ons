@@ -474,11 +474,11 @@ violation visible at all. (JUDGEMENT.)
   (`66 passed, 1 skip`, pre-dating the three-way `sh_suite` split and the new `SKIP` counter) was
   **not re-measured this pass** - re-running it needs `pwsh` actually absent from PATH, not merely
   reasoned about, and that was not done here.
-- Plugin version is `0.4.14` in both places that must agree:
+- Plugin version is `0.4.15` (L-0529: `_test/test_python_probe_proof.py::tools` dedupes PATH dirs by realpath and names by `lexists`) in both places that must agree:
   `plugin/obsidian-vault/.claude-plugin/plugin.json:3` and the `obsidian-vault` entry in
   `.claude-plugin/marketplace.json:234-237` (was `:248`; re-numbered by the marketplace-wide catalog
   changes in crew 1.0, including the removal of the `claude-memories-canvas` and
-  `claude-memories-vault` entries above it - see Landmines). (DERIVED - `0.3.16` -> `0.4.14` between
+  `claude-memories-vault` entries above it - see Landmines). (DERIVED - `0.3.16` -> `0.4.14` -> `0.4.15` between
   anchors; both places still agree, checked byte-for-byte.)
 
 ## Unverified

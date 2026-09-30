@@ -2,7 +2,7 @@
 paths:
   - "plugin/crew/**"
 ---
-<!-- crew:generated source=.crew/codemap/crew.md sha256=540e475a004bbddb -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/crew.md sha256=16b9774975e490ca -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # crew
 Code map anchor `1f21f73b`; if it is behind HEAD, re-check with `git diff --name-only 1f21f73b..HEAD -- <cited paths>`.
 Covers: The crew plugin after 1.0: hooks, the four agents, commands, skills inventory, config layering and leaf counts, and how crew_freshness.py reads this very directory.

@@ -4,6 +4,31 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.0.80 and `obsidian-vault` 0.4.15: the python-free bin fixtures tolerate a name two PATH dirs share (L-0529)
+
+- The first self-hosted CI run (36735895881, Ubuntu 26.04) failed 42 tests
+  per `test` leg with `FileExistsError: [Errno 17] File exists:
+  '/bin/grub-ntldr-img' -> '.../tools/grub-ntldr-img'`. The fixtures that
+  link `/usr/bin` and `/bin` into one directory skipped a name already
+  linked with `Path.exists()`, which follows the link. With `/bin -> usr/bin`
+  the second pass revisits every name, and `/usr/bin/grub-ntldr-img` is a
+  relative link whose target is not installed there, so its farm link read
+  as absent and was linked twice. GitHub-hosted images carry no dangling
+  entry in `/usr/bin`, so the bug stayed hidden there.
+- One shared helper, `crew_fixtures.link_path_dirs`, now skips a source dir
+  whose realpath was already linked and a name that `os.path.lexists` in the
+  farm, so the first dir holding a name wins, as in PATH lookup.
+  `test_ps1_python_probe.py::_tools`, `test_event_claim_crash_safety.py::_tools`
+  and `test_context_watch_python_resolver.py::_python_free_path` call it;
+  `plugin/obsidian-vault/hooks/scripts/_test/test_python_probe_proof.py::tools`
+  carries the same two checks inline.
+- Regression: `plugin/crew/tests/test_path_link_farm.py` (a dir symlinked to
+  another holding a dangling relative link; two distinct dirs holding one
+  name, first wins) and `check_tools_tolerates_duplicate_names` in the
+  obsidian-vault suite. Test fixtures only; no hook or script changed.
+- Bumped `crew` `1.0.77 -> 1.0.80` (1.0.78 and 1.0.79 are declared by open
+  branches, T-0099 and T-0505) and `obsidian-vault` `0.4.14 -> 0.4.15`.
+
 ### Added — `crew` 1.0.77: the Python development standards set (T-0086, slice 1)
 
 - **`crew-standards/references/python.md`, set `PYTHON`, `applies-to: ["**/*.py"]`**:
@@ -29,7 +54,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   before this lands gets a new standards digest when it merges main: `init` never
   overwrites an existing `selfcheck.md`, so add the PYTHON rows by hand and re-stamp.
 
-### Changed — `crew` 1.0.78: the completion audit admits a refresh artifact only as a re-anchor or regeneration the ticket's change reaches (T-0094)
+### Changed — `crew` 1.0.81: the completion audit admits a refresh artifact only as a re-anchor or regeneration the ticket's change reaches (T-0094)
 
 - **What changed.** `crew_refresh_check.artifact_verdicts` (beside
   `REFRESH_ARTIFACT_PATHS`) judges each changed refresh artifact of an approved
@@ -137,6 +162,12 @@ All notable changes to this repository are documented here. Format follows [Keep
   ambiguous NEW short anchor is `could not tell`, as a base one already was,
   and the base copy is looked up with `git ls-tree`, so a base git cannot
   read is `could not tell` rather than "new file".
+- **Review round 8 (owner-accepted, fixes moved to L-0540).** Two BLOCKs are
+  open and are L-0540's must-fix before it wires `artifact_verdicts` into the
+  audit: an artifact removed from the git index but left in the working tree
+  gets `True`, and where `os.open` takes no `dir_fd` (Windows) a directory
+  swapped to a junction after the realpath check is still read. Nothing calls
+  `artifact_verdicts` until then.
 - **Split (owner, 2026-09-30).** Under the tooling-PR rule
   (`scripts/check-tooling-pr.py`), `completion_audit.py`'s wiring to
   `artifact_verdicts`, `scope_guard.py`'s rule-6 docstring, their
@@ -163,7 +194,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   1.0.72-1.0.75 (T-0085 at 1.0.75), merged in with the round-4 successor, so
   it was 1.0.76; main then took 1.0.76 for T-0087 (#281), merged in before review
   round 6, so it was 1.0.77; main then took 1.0.77 for T-0086 (#282), merged in
-  with the round-6 successor, so this is 1.0.78.
+  with the round-6 successor, so it was 1.0.78; main then took 1.0.80 for L-0529
+  (#283; 1.0.79 declared by an open branch), merged in before landing, so this
+  is 1.0.81.
 
 ### Added — `crew` 1.0.76: tooling reliability — tool-failure refunds, golden replay, seam contracts, a canary review (T-0087)
 
