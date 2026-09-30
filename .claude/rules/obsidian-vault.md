@@ -2,9 +2,9 @@
 paths:
   - "plugin/obsidian-vault/**"
 ---
-<!-- crew:generated source=.crew/codemap/obsidian-vault.md sha256=8a7af3a43a8eb201 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/obsidian-vault.md sha256=fd89cafc323e39ea -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # obsidian-vault
-Code map anchor `c04dd2ef`; if it is behind HEAD, re-check with `git diff --name-only c04dd2ef..HEAD -- <cited paths>`.
+Code map anchor `8a89a596`; if it is behind HEAD, re-check with `git diff --name-only 8a89a596..HEAD -- <cited paths>`.
 Covers: The obsidian-vault plugin: four hook events registered as bash+PowerShell pairs, the three guard checks and their unequal defaults, the two differently-sized exemption sets, and per-vault MCP registration. The guard is PostToolUse, so it reports a bad write rather than blocking it.
 ## Landmines
 - The three guard checks do not ship the same way.

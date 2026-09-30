@@ -4,9 +4,9 @@ paths:
   - "_verify/smoke.sh"
   - "scripts/check-marketplace.py"
 ---
-<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=771c6ec20bee78e0 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=e04ad2ffed800d79 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # verification-harness
-Code map anchor `c04dd2ef`; if it is behind HEAD, re-check with `git diff --name-only c04dd2ef..HEAD -- <cited paths>`.
+Code map anchor `8a89a596`; if it is behind HEAD, re-check with `git diff --name-only 8a89a596..HEAD -- <cited paths>`.
 Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and .crew/verify.json — what each actually runs, and where they overlap or don't. .crew/verify.json is tracked; its own anchor field (:3) is stale at 5238be3d, independent of this note's anchor.
 ## Entry points
 - `.crew/verify.json:169-174` (rule 9) — the whole-suite pytest rule and its 377s pricing.
@@ -25,6 +25,6 @@ Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and 
 - `.crew/verify.json:332-339` (rule 31) — the T-0024 group-approval suite; `plugin/crew/tests/sabotage.py:81`, `:3058` — `sabotage_approval.py`'s registration.
 - `.crew/verify.json:361-373` (rule 32) — the T-0085 standards suite; `plugin/crew/tests/sabotage.py:84`, `:3061` — `sabotage_standards.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` / `plugin/crew/CONFIG.md:2408-2415` — the descoped per-rule process-group kill, documented as a standing limitation.
-- `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` — `Resolve-CrewBash` refusal rather than a re-resolving hang.
+- `plugin/crew/hooks/scripts/verify-gate.ps1:825-835`, `:1665-1674` — `Resolve-CrewBash` refusal rather than a re-resolving hang.
 - `scripts/check-marketplace.py:1639` — `main()`, sixteen checks.
 Full note: `.crew/codemap/verification-harness.md`.
