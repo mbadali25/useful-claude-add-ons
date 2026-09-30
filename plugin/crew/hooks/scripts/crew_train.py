@@ -92,8 +92,10 @@ import getpass
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
+import tempfile
 import sys
 import time
 import uuid
@@ -163,14 +165,32 @@ def _owner():
 
 # --- git -------------------------------------------------------------------------------
 
+def _git_exe():
+    """git as an absolute path (PYTHON-06), or None when it is not on PATH."""
+    found = shutil.which("git")
+    return os.path.abspath(found) if found else None
+
+
+def _git_env():
+    """The child's environment, built here (PYTHON-08): never a credential
+    prompt (a fetch that needs one fails, which is could-not-tell), and no
+    optional index locks taken by read-only calls."""
+    return dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_OPTIONAL_LOCKS="0")
+
+
 def _git(root, *args, timeout=GIT_TIMEOUT):
     """(code, stdout, stderr); code None when git could not be started. Never
     raises: `crew_common.git_out` folds "git said no" into "could not run",
-    and merge-tree's exit 1 (conflicts) versus >1 (error) matters here."""
+    and merge-tree's exit 1 (conflicts) versus >1 (error) matters here.
+    Output is decoded as UTF-8 with `surrogateescape`, so a path git prints
+    in another encoding round-trips unchanged (PYTHON-01)."""
+    exe = _git_exe()
+    if not exe:
+        return None, "", "git is not on PATH"
     try:
-        done = subprocess.run(["git", "-C", root] + list(args), capture_output=True,
-                              text=True, check=False, timeout=timeout,
-                              stdin=subprocess.DEVNULL)
+        done = subprocess.run([exe, "-C", root] + list(args), capture_output=True,
+                              encoding="utf-8", errors="surrogateescape", check=False,
+                              timeout=timeout, stdin=subprocess.DEVNULL, env=_git_env())
     except (OSError, subprocess.SubprocessError) as exc:
         return None, "", str(exc)
     return done.returncode, done.stdout, done.stderr
@@ -185,8 +205,15 @@ def _git_ok(root, *args):
     return out
 
 
+def _records(text):
+    """Split on "\n" only, a trailing "\r" stripped (PYTHON-03): never
+    `splitlines()`, which also breaks inside a record on U+2028, `\x85` and
+    the other characters it treats as line ends."""
+    return [line[:-1] if line.endswith("\r") else line for line in (text or "").split("\n")]
+
+
 def _lines(text):
-    return [line for line in (text or "").splitlines() if line.strip()]
+    return [line for line in _records(text) if line.strip()]
 
 
 def _top(root):
@@ -320,11 +347,20 @@ def load(root):
 
 
 def _save(path, data):
+    """Replace `path` whole (PYTHON-04): full text first, a private temp in
+    the same directory, fsync, `os.replace`; the temp is removed if the
+    replace did not happen. Held under the state lock (GEN-02)."""
     text = json.dumps(data, indent=2, sort_keys=True) + "\n"
-    tmp = f"{path}.{os.getpid()}.tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write(text)
-    os.replace(tmp, path)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".state-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    finally:
+        if os.path.lexists(tmp):
+            os.remove(tmp)
 
 
 class _Lock:
@@ -411,7 +447,7 @@ def read_events(root, after=0):
     except OSError as exc:
         return [], [f"{path} cannot be read: {exc}"]
     found, problems = [], []
-    for number, line in enumerate(text.splitlines(), 1):
+    for number, line in enumerate(_records(text), 1):
         if not line.strip():
             continue
         try:
@@ -577,6 +613,8 @@ def _notices(root, state, entry):
             continue
         if event.get("kind") == "merged":
             paths = event.get("paths")
+            if not (isinstance(paths, list) and all(isinstance(p, str) for p in paths)):
+                paths = None  # missing or malformed: told to everyone (PYTHON-10)
             hit = paths is None or any(meets_touch(p, entry.get("touch")) for p in paths)
             shown = "(paths unreadable)" if paths is None else ", ".join(
                 p for p in paths if meets_touch(p, entry.get("touch")))
@@ -584,6 +622,11 @@ def _notices(root, state, entry):
                 out.append(f"{entry['ticket']}: {event['ticket']} merged "
                            f"{str(event.get('sha'))[:12]} touching {shown} - merge "
                            f"{event.get('base')} now")
+        elif not (event.get("touch") is None or (isinstance(event.get("touch"), list) and all(
+                isinstance(t, str) for t in event["touch"]))):
+            out.append(f"{entry['ticket']}: {event.get('ticket')}'s hold was force-released by "
+                       f"{event.get('by')} ({event.get('reason')}), its Touch unreadable - check "
+                       "the base before you gate")
         elif touch_overlap(entry.get("touch"), event.get("touch")):
             out.append(f"{entry['ticket']}: {event['ticket']}'s hold was force-released by "
                        f"{event.get('by')} ({event.get('reason')}) - check the base before "
@@ -607,6 +650,8 @@ def arm(root, by=None):
     try:
         with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
         # os.link: the complete file appears at once or not at all, and it
         # fails if state.json already exists (GEN-02) -- no reader ever sees a
         # created-but-empty state.json.
@@ -842,7 +887,7 @@ def catch_up(root, ticket, base=None, fetch=True, lane=None):
         conflicted = _lines(_git_ok(top, "diff", "--name-only", "--diff-filter=U"))
         staged = set(_lines(_git_ok(top, "diff", "--name-only", "--cached")))
         said = [m.group(1) for m in (_REPLAYED_RE.match(x.strip())
-                                     for x in (out + "\n" + err).splitlines()) if m]
+                                     for x in _records(out + "\n" + err)) if m]
         replayed = sorted({p for p in said if p in staged and p not in conflicted})
         if code == 0:
             outcome = "up-to-date" if _head(top) == head_before else "merged"
@@ -890,7 +935,7 @@ def read_merge_log(root, ticket):
     except OSError as exc:
         return [], "could not tell", f"{path} cannot be read: {exc}"
     rows = []
-    for number, line in enumerate(text.splitlines(), 1):
+    for number, line in enumerate(_records(text), 1):
         if not line.strip():
             continue
         try:
@@ -929,7 +974,7 @@ def _merge_tree(top, base):
         return []
     if code == 1:
         names = []
-        for line in (out or "").splitlines()[1:]:
+        for line in _records(out)[1:]:
             if not line.strip():
                 break
             if line not in names:

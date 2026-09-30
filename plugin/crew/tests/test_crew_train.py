@@ -33,6 +33,7 @@ def _isolated_git(tmp_path, monkeypatch):
     glob = home / ".gitconfig"
     glob.write_text("[user]\n\tname = t\n\temail = t@example.com\n", encoding="utf-8")
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(glob))
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     return glob
@@ -697,6 +698,83 @@ def test_catch_up_unreadable_conflict_list_is_could_not_tell(repo, capsys, monke
 
     assert code == 3 and "could not tell" in out, out
     assert _merge_log(repo, "T-1")[-1]["outcome"] == "could not tell"
+
+
+# --- hardening: the PYTHON standards (T-0086) -----------------------------------------
+
+def test_events_split_only_on_newline(repo, capsys):
+    _arm(capsys, repo)
+    path = os.path.join(crew_train.train_dir(str(repo)), "events.jsonl")
+    raw = '{"kind": "release", "seq": 1, "ticket": "T-9", "note": "a\u2028b\x85c"}'
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(raw + "\n")
+
+    events, problems = crew_train.read_events(str(repo))
+
+    assert problems == [] and [e["ticket"] for e in events] == ["T-9"], (events, problems)
+
+
+def test_merge_log_splits_only_on_newline(repo):
+    path = crew_train.merge_log_path(str(repo), "T-1")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write('{"outcome": "merged", "note": "x\u2029y"}\n')
+
+    rows = _merge_log(repo, "T-1")
+
+    assert [r["outcome"] for r in rows] == ["merged"]
+
+
+def test_failed_state_replace_leaves_state_and_no_temp(repo, capsys, monkeypatch):
+    _spec(repo, "T-1", ["a.txt"])
+    _arm(capsys, repo)
+    folder = crew_train.train_dir(str(repo))
+    with open(os.path.join(folder, "state.json"), encoding="utf-8") as fh:
+        before = fh.read()
+
+    def refuse(_src, _dst):
+        raise PermissionError(13, "held open", _dst)
+    monkeypatch.setattr(crew_train.os, "replace", refuse)
+    with pytest.raises(PermissionError):
+        crew_train.enqueue(str(repo), "T-1")
+
+    with open(os.path.join(folder, "state.json"), encoding="utf-8") as fh:
+        assert fh.read() == before
+    assert sorted(n for n in os.listdir(folder) if n != "events.jsonl") == ["state.json"]
+
+
+@pytest.mark.parametrize("bad", [{"paths": "a.txt"}, {"paths": [1]}, {"touch": "a.txt"}])
+def test_malformed_event_fields_broadcast_as_unreadable(repo, capsys, bad):
+    _spec(repo, "T-2", ["zz/only.txt"])
+    _arm(capsys, repo)
+    assert _cli(capsys, repo, "enqueue", "--ticket", "T-2")[0] == 0
+    path = os.path.join(crew_train.train_dir(str(repo)), "events.jsonl")
+    event = {"kind": "merged" if "paths" in bad else "force-release", "seq": 99,
+             "ticket": "T-1", "sha": "abc", "base": "main", "by": "o", "reason": "r"}
+    event.update(bad)
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(event) + "\n")
+
+    code, out = _cli(capsys, repo, "status")
+
+    assert code == 0 and "T-2: T-1" in out and "unreadable" in out, out
+
+
+def test_git_is_resolved_and_decoded_explicitly(repo, monkeypatch):
+    seen = {}
+    real = crew_train.subprocess.run
+
+    def spy(argv, **kwargs):
+        seen["argv0"], seen["kwargs"] = argv[0], kwargs
+        return real(argv, **kwargs)  # pylint: disable=subprocess-run-check
+    monkeypatch.setattr(crew_train.subprocess, "run", spy)
+
+    code, _out, _err = crew_train._git(str(repo), "rev-parse", "HEAD")  # pylint: disable=protected-access
+
+    assert code == 0 and os.path.isabs(seen["argv0"])
+    assert seen["kwargs"]["encoding"] == "utf-8"
+    assert seen["kwargs"]["errors"] == "surrogateescape"
+    assert seen["kwargs"]["env"]["GIT_TERMINAL_PROMPT"] == "0"
 
 
 # --- structure -----------------------------------------------------------------------
