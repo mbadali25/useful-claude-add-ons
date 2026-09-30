@@ -26,6 +26,15 @@ All notable changes to this repository are documented here. Format follows [Keep
     Kimi probe changed the working tree, whatever it answered** - no round is
     spent, and `/crew:review` stops and reports the paths instead of walking
     to the next provider (exit 2) against a tree the bundle no longer matches.
+  - **Adapted to main's #264 preflight and T-0088's lane config (1.0.70).**
+    The Kimi probe runs first, then the preflight (a CLEAN receipt, then the
+    verify gate), then `reserve`, as Codex's `--probe` runs before its round:
+    a Kimi that is not `ok` exits 2 even on a tree the gate has not passed,
+    and an `ok` one on such a tree exits 5 with nothing reserved.
+    `graph.out` is read through `crew_common.repo_config_dir`, so a lane
+    worktree with no config of its own sets aside the main checkout's
+    `graph.out`, and a source git cannot tell sets nothing aside.
+    `EXIT_PROBE_CHANGED` is 8, since main's `EXIT_UNVERIFIED` is 5.
   - **`kimi` is in `QA_PROVIDERS` and `DEV_PROVIDERS`**, so every
     `qa.roles.<r>` and `dev.roles.<r>` slot accepts a
     `{"provider": "kimi", "model": ...}` pin. The owner's ids are `k3`,
