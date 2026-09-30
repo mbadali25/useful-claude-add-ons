@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@e8482046
+anchor: useful-claude-add-ons@1d73001b
 verified: 2026-09-30
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -1858,3 +1858,14 @@ written. A cited line whose text changed was re-read and its claim corrected: T-
 copy, under T-0028's rule-7 path) and T-0028's Kimi rule the last at `:376-394`; their mutations
 are appended at `plugin/crew/tests/sabotage.py:3062` and `:3063`.
 Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
+
+## Re-anchor provenance - `e8482046` -> `1d73001b`, 2026-09-30 (T-0028 review round 5 fixes, crew 1.0.76)
+
+`d4ba89f5` fixes review round 5's eight FIX findings (`kimi_probe.py`, `review_run.py`,
+`review_verdict.py`, `commands/review.md`, their tests and `sabotage_kimi.py`) and `1d73001b`
+re-sets crew 1.0.76 as the last `plugin/crew/` commit. The only documented path of this note
+that moved is `plugin/crew/commands/review.md`, whose Kimi row and exit-2 sentence changed text
+in place without moving a line; body citations were mapped by `difflib` from `e8482046` to
+`1d73001b` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local), and none in this note
+moved. Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was
+executed for this note.

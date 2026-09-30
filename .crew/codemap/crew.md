@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@e8482046
+anchor: useful-claude-add-ons@1d73001b
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -1164,21 +1164,21 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   (`_write_replacing` `:329`); `stamp`'s docstring names the remaining window between that
   re-read and the replace as an accepted risk, not a GEN-03 binding.
 - **Gate.** `review_run.run` first calls main's `preflight`
-  (`plugin/crew/hooks/scripts/review_run.py:1048`, at `:1147`; #264): a CLEAN receipt covering the
+  (`plugin/crew/hooks/scripts/review_run.py:1055`, at `:1154`; #264): a CLEAN receipt covering the
   bundle answers CLEAN with no round and no self-check, and a verify gate that has not passed
   the tree is refused with exit 5 before the self-check is asked for (owner decision
   2026-09-30, "Preflight first"; `test_preflight_answers_before_the_selfcheck_is_asked_for`).
-  Only then does it call `standards_gate` (`:481`) at `:1158`, before
-  `review_ledger.reserve` (`:1162`), for every provider, unless `review_ledger.status` already
+  Only then does it call `standards_gate` (`:481`) at `:1165`, before
+  `review_ledger.reserve` (`:1169`), for every provider, unless `review_ledger.status` already
   reads `NEEDS_REPLAN` or no rounds left: then the budget refusal answers first and the
   self-check is not asked for (review round 3). `crew_standards.review_gate`
-  (`:1291`) applies unless `gate_applies` (`:1225`) proves there is no approval receipt: only
+  (`:1298`) applies unless `gate_applies` (`:1232`) proves there is no approval receipt: only
   an `lstat` `FileNotFoundError` whose nearest existing ancestor is a directory
-  (`_ancestor_problem` `:1205`; Windows answers a lookup under a regular file with
+  (`_ancestor_problem` `:1212`; Windows answers a lookup under a regular file with
   `FileNotFoundError`, fixed at T-0085's land) is "absent" (a printed "not required" note); a corrupt
   receipt, a failed lookup or any other `OSError` (a non-directory or unreadable parent)
-  gates, with a "could not tell" note. It reads the manifest, and `_gate` (`:1263`, behind
-  `gate_problems` `:1257`) re-checks the record's completeness and compares the stamp's bundle and standards digest; on a pass the
+  gates, with a "could not tell" note. It reads the manifest, and `_gate` (`:1270`, behind
+  `gate_problems` `:1264`) re-checks the record's completeness and compares the stamp's bundle and standards digest; on a pass the
   note carries `std:<first 8 of the digest>` for the metrics row. Problems return
   `EXIT_USAGE` (`review_run.py:503`) unless `crew_incident.read_state` is active, which logs
   a `standards-selfcheck` skip (`:494`) and reserves.
@@ -1219,31 +1219,36 @@ citations named `crew_config.py` where the lines are `crew_state.py`'s, correcte
   with `qa.kimi` / `dev.kimi` blocks holding only `model`
   (`plugin/crew/hooks/scripts/crew_state.py:1166`, `:1175`).
 - **The probe.** `plugin/crew/hooks/scripts/kimi_probe.py`: five states
-  (`:69`), only `ok` launchable (`:93`), the alias resolved from
-  `config.toml` by a `type = "kimi"` provider (`resolve_alias`, `:156`), one
-  live call classified by `classify` (`:226`) inside `probe` (`:253`), which
+  (`:70`), only `ok` launchable (`:94`), the alias resolved from
+  `config.toml` by a `type = "kimi"` provider (`resolve_alias`, `:157`), one
+  live call classified by `classify` (`:239`) inside `probe` (`:267`), which
   makes the resolved `kimi` absolute before it runs in a temporary directory.
-  The read-only agent file is written by `write_agent_file` (`:113`) for the
-  probe and the review alike; `kimi_env` (`:104`) drops the retry and
+  Only ENOENT proves no `config.toml` or no stored credential; a lookup that
+  fails otherwise, a `config.toml` that is not a regular file, a scratch
+  directory that cannot be made, or an answer other than exactly `PROBE_OK`
+  is `unknown`.
+  The read-only agent file is written by `write_agent_file` (`:114`) for the
+  probe and the review alike; `kimi_env` (`:105`) drops the retry and
   `KIMI_MODEL_*` overrides.
-- **The review launch.** `review_run.run` (`plugin/crew/hooks/scripts/review_run.py:1103`)
+- **The review launch.** `review_run.run` (`plugin/crew/hooks/scripts/review_run.py:1110`)
   refuses with exit 4 before any probe when the ledger's status shows no round
-  left (`:1120`), fingerprints the tree, resolves `graph_out` (`:476`) once,
-  then runs `_probe_kimi` (`:953`) BEFORE `reserve`; a probe that changed the
+  left (`:1127`), fingerprints the tree, resolves `graph_out` (`:476`) once,
+  then runs `_probe_kimi` (`:960`) BEFORE `reserve`; a probe that changed the
   tree, whatever it answered, is `EXIT_PROBE_CHANGED` = 8 (`:165`; 5 before the merge of
   `a61a6f38`, whose `EXIT_UNVERIFIED` is 5). The probe also runs before main's #264
-  `preflight` (`:1048`: a CLEAN receipt, then the verify gate) and T-0085's
-  `standards_gate` (`:1077`, merged at `7939cc46`), as Codex's `--probe` runs before its round; `graph_out` reads `graph.out` through
+  `preflight` (`:1055`: a CLEAN receipt, then the verify gate) and T-0085's
+  `standards_gate` (`:1084`, merged at `7939cc46`), as Codex's `--probe` runs before its round; `graph_out` reads `graph.out` through
   `crew_common.repo_config_dir`, so a lane with no config of its own uses the main
-  checkout's, and `unknown` sets nothing aside.
-  `_run_kimi` (`:982`) launches, stops survivors (`stop_survivors`, `:769`),
-  and compares fingerprints through `reviewer_changes` (`:560`).
+  checkout's, and `unknown` sets nothing aside, as does a config file that
+  exists but cannot be read, is not valid JSON, or is not an object.
+  `_run_kimi` (`:989`) launches, stops survivors (`stop_survivors`, `:776`),
+  and compares fingerprints through `reviewer_changes` (`:567`).
 - **The fingerprint.** `tree_fingerprint` (`:408`) keys its own entries with
   NUL-prefixed `HEAD_KEY`/`INDEX_KEY` (`:220`); `_path_digest` (`:324`)
   records content and mode bits, a special file without opening it, and a
   symlink through `_link_digest` (`:299`).
 - **The parse.** `review_verdict.kimi_final_message`
-  (`plugin/crew/hooks/scripts/review_verdict.py:230`); a non-string text part
+  (`plugin/crew/hooks/scripts/review_verdict.py:237`); a non-string text part
   is malformed (`_kimi_text`, `:197`).
 - **Tests and gate.** `plugin/crew/tests/test_kimi_probe.py`,
   `plugin/crew/tests/test_review_run_kimi.py`, `plugin/crew/tests/test_kimi_docs.py`
@@ -1378,14 +1383,14 @@ citations named `crew_config.py` where the lines are `crew_state.py`'s, correcte
   (`plugin/crew/hooks/scripts/review_prompt.py:92`) and on the webtest
   overflow line (`plugin/crew/hooks/scripts/review_prompt.py:250`), and
   `review_run.finish` hands `parse` the manifest `path`s
-  (`plugin/crew/hooks/scripts/review_run.py:886`) and the overflow file's
-  scratch path (`plugin/crew/hooks/scripts/review_run.py:888`). `parse`,
+  (`plugin/crew/hooks/scripts/review_run.py:893`) and the overflow file's
+  scratch path (`plugin/crew/hooks/scripts/review_run.py:895`). `parse`,
   `codex_final_message` and, since T-0028's merge of main, `kimi_final_message`
   split reviewer output on `\n` only, never `str.splitlines()`, whose U+2028
   break cut a Codex event mid-JSON
   (`plugin/crew/hooks/scripts/review_verdict.py:95`,
   `plugin/crew/hooks/scripts/review_verdict.py:165`,
-  `plugin/crew/hooks/scripts/review_verdict.py:246`). The rest of
+  `plugin/crew/hooks/scripts/review_verdict.py:253`). The rest of
   `review_prompt.py`, `review_run.py` and `review_verdict.py` was not opened.
 - `webtest_guard.py`, `webtest_rules.py`, `webtest_scaffold.py` — new
   scripts since the previous anchor, backing `/crew:webtest` — were located
@@ -3028,5 +3033,18 @@ written. A cited line whose text changed was re-read and its claim corrected: th
 is `.crew/verify.json:362-374` and T-0028's Kimi rule the last at `:376-394`,
 `STANDARDS_MUTATIONS` and `KIMI_MUTATIONS` are appended at `plugin/crew/tests/sabotage.py:3062` and
 `:3063`, and a Kimi round is probed, preflighted, self-checked (`standards_gate`,
-`plugin/crew/hooks/scripts/review_run.py:1077`) and only then reserved.
+`plugin/crew/hooks/scripts/review_run.py:1084`) and only then reserved.
 Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
+
+## Re-anchor provenance - `e8482046` -> `1d73001b`, 2026-09-30 (T-0028 review round 5 fixes, crew 1.0.76)
+
+`d4ba89f5` fixes review round 5's eight FIX findings and `1d73001b` re-sets crew 1.0.76 as the
+last `plugin/crew/` commit. Body citations into `kimi_probe.py`, `review_run.py` and
+`review_verdict.py` were mapped by a `difflib` line diff from `e8482046` to `1d73001b` with
+`/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local): 29 moved, every one onto the same
+line text. Two claims were added from the code at `1d73001b`: the probe's could-not-tell cases
+(an unreadable credentials directory or `config.toml`, a `config.toml` that is not a regular
+file, a scratch directory that cannot be made, an answer other than exactly `PROBE_OK`), and
+`graph_out` returning None for a config that exists but cannot be read, is not valid JSON, or is
+not an object. Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite
+was executed for this note.
