@@ -114,7 +114,7 @@ files on migration rather than only resolving them for a read
 
 ### In a linked worktree
 
-Since crew 1.0.61 (T-0088) every Python reader of the repo config opens
+Since crew 1.0.67 (T-0088) every Python reader of the repo config opens
 `crew_common.repo_config_file(root, name)`, which resolves the `.crew/`
 directory in this order:
 
@@ -132,13 +132,13 @@ directory in this order:
    is read (nothing inherited), and `/crew:status` and `/crew:config --explain`
    print that git could not tell.
 
-**A lane made before crew 1.0.61 has a config of its own already.** Every
-SessionStart heal on crew 1.0.59 or earlier wrote a default `.crew/config.json`
+**A lane made before crew 1.0.67 has a config of its own already.** Every
+SessionStart heal on crew 1.0.66 or earlier wrote a default `.crew/config.json`
 into a lane worktree that had none, so rule 1 applies and nothing is inherited.
 `/crew:status` and `/crew:config --explain` name that case: a linked worktree
 whose own file is in force while the main checkout also has one prints `the
 main checkout's (<path>) is not read`. If the lane's file is a default nobody
-edited, delete it (and `.crew/crew.json`, if present) to inherit; from 1.0.61
+edited, delete it (and `.crew/crew.json`, if present) to inherit; from 1.0.67
 the heal path creates nothing there again.
 
 The writers never follow it: `crew_platform` (heal and `platform-sync`),

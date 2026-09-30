@@ -58,8 +58,28 @@ whether or not the reviewer carried it. When the prompt overflowed its inline
 rows into `webtest-findings.txt` in the scratch directory, that file is an
 expected READ like a bundle part.
 
+BEFORE ANY ROUND IS RESERVED, two questions, in this order (`preflight`):
+
+  1. Does a CLEAN receipt already cover this exact bundle
+     (`review_ledger.check_receipt`, the check `/crew:done` gates on)? Then
+     nothing has changed since a clean review, so no round is spent: the
+     verdict is that receipt's CLEAN, said as such. An owner-accepted
+     FINDINGS receipt does not short-circuit -- that is a person's call about
+     one round, not a clean review of the tree.
+  2. Has the verify gate passed on this tree (`review_gate.gate_state`)? A
+     tree it has not passed, or one whose state could not be read, is refused
+     with exit 5 and no round spent: a reviewer's opinion on code the gate
+     would refuse for free is the most expensive way to find out it is red.
+     `--allow-unverified` reviews it anyway, and review.json says it did.
+     No verify map, or a gate stood down, proceeds and says so.
+
+Every round's review.json carries `gate` (the state observed at verdict time)
+and `elapsed_s` (reservation to verdict, from the ledger's own timestamps), and
+the `review:` summary line prints both.
+
 Exit codes: 0 CLEAN; 1 FINDINGS; 3 INCOMPLETE; 4 budget refused
-(NEEDS_REPLAN); 2 usage or setup error.
+(NEEDS_REPLAN); 5 not run, gate not green (no round spent); 2 usage or setup
+error.
 """
 import argparse
 import datetime
@@ -73,6 +93,7 @@ import sys
 
 import crew_common
 import crew_state
+import review_gate
 import review_ledger
 import review_limit
 import review_patch
@@ -81,6 +102,7 @@ import review_verdict
 import webtest_guard
 
 EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, EXIT_INCOMPLETE, EXIT_REFUSED = 0, 1, 2, 3, 4
+EXIT_UNVERIFIED = 5
 DEFAULT_TIMEOUT = 1800
 # Bound on the follow-up `communicate()` after a kill, below. Not the same
 # knob as --timeout: this one exists so a descendant that escaped the kill
@@ -95,6 +117,7 @@ PROBE_TIMEOUT = 120
 PROBE_PROMPT = "Reply with exactly the word OK. Do not run any command and do not read any file."
 EXIT_PROBE_LIMITED, EXIT_PROBE_FAILED, EXIT_PROBE_UNKNOWN = 5, 6, 7
 PROBE_OK, PROBE_LIMITED, PROBE_FAILED, PROBE_UNKNOWN = "ok", "limited", "failed", "unknown"
+VERIFY_GATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "verify-gate.sh")
 
 
 def _read(path):
@@ -352,12 +375,14 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
         "exit_code": exit_code, "timed_out": timed_out,
         "webtest_findings": rows, "webtest_check": webtest_record,
         "webtest_verdict": webtest_verdict,
+        "gate": gate_record(args),
         "written_at": datetime.datetime.now(datetime.timezone.utc).isoformat(
             timespec="seconds"),
     }
     # Ledger first: it refuses a round that was never reserved or already
     # has a result, and a refused record must not leave a review.json behind.
     state = review_ledger.record(args.root, args.ticket, number, review)
+    review["elapsed_s"] = round_elapsed(args.root, args.ticket, number)
     work_dir = args.work_dir or os.path.join(args.root, ".work", "tickets", args.ticket)
     _write_atomic(os.path.join(work_dir, "review.json"),
                   json.dumps(review, indent=2, sort_keys=True) + "\n")
@@ -365,13 +390,72 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     print(f"review: {result['verdict']} round {number}/{review_ledger.BUDGET} "
           f"({counts['BLOCK']} BLOCK, {counts['FIX']} FIX, {counts['NIT']} NIT) "
           f"{args.provider}/{args.model or 'default'} family={review['model_family']} "
-          f"ledger={state}")
+          f"ledger={state} gate={review['gate']['state']} "
+          f"elapsed={_fmt_elapsed(review['elapsed_s'])}")
     for reason in result["reasons"]:
         print(f"review: INCOMPLETE because {reason}")
     if webtest_verdict:
         print(f"review: {result['verdict']} because {webtest_verdict}")
     return {review_verdict.CLEAN: EXIT_CLEAN, review_verdict.FINDINGS: EXIT_FINDINGS}.get(
         result["verdict"], EXIT_INCOMPLETE)
+
+
+def gate_record(args):
+    """The gate state for review.json: observed now, plus whether this round
+    was told to go ahead regardless."""
+    state, reason = review_gate.gate_state(args.root)
+    return {"state": state, "reason": reason,
+            "overridden": bool(getattr(args, "allow_unverified", False))
+            and state in (review_gate.UNVERIFIED, review_gate.UNKNOWN)}
+
+
+def round_elapsed(root, ticket, number):
+    """Seconds from the round's reservation to its recorded verdict, read from
+    the ledger's own `reserved_at` / `completed_at`. None when either is
+    missing or unparseable -- an unknown duration, never a zero one."""
+    data, state = review_ledger._load(review_ledger.ledger_path(root, ticket))  # pylint: disable=protected-access
+    if state != "ok":
+        return None
+    for row in data.get("rounds") or []:
+        if isinstance(row, dict) and row.get("round") == number:
+            try:
+                start = datetime.datetime.fromisoformat(row["reserved_at"])
+                end = datetime.datetime.fromisoformat(row["completed_at"])
+            except (KeyError, TypeError, ValueError):
+                return None
+            return max(int((end - start).total_seconds()), 0)
+    return None
+
+
+def _fmt_elapsed(seconds):
+    return "unknown" if seconds is None else f"{seconds}s"
+
+
+def preflight(args):
+    """None to go on and reserve a round, or the exit code to stop with
+    having reserved nothing. See BEFORE ANY ROUND IS RESERVED above."""
+    ok, message = review_ledger.check_receipt(args.root, args.ticket)
+    data, _ = review_ledger._load(review_ledger.ledger_path(args.root, args.ticket))  # pylint: disable=protected-access
+    if ok and (data.get("receipt") or {}).get("kind") == "clean":
+        print(f"review: CLEAN from the existing receipt ({message}) - nothing in the bundle "
+              "changed since that clean round, so no round was spent")
+        if args.provider not in LAUNCHED:
+            print("ALREADY_CLEAN=1")
+        return EXIT_CLEAN
+    state, reason = review_gate.gate_state(args.root)
+    if state in (review_gate.UNVERIFIED, review_gate.UNKNOWN):
+        if args.allow_unverified:
+            sys.stderr.write(f"review-run: gate {state}: {reason}. Reviewing anyway "
+                             "(--allow-unverified); review.json records the override\n")
+            return None
+        sys.stderr.write(
+            f"review-run: gate {state}: {reason}. No round reserved. Run the verify gate on "
+            f"this tree first (bash \"{VERIFY_GATE}\" </dev/null, or end the turn so the "
+            "Stop gate runs), then review again. "
+            "--allow-unverified reviews it anyway and records that it did.\n")
+        return EXIT_UNVERIFIED
+    sys.stderr.write(f"review-run: gate {state}: {reason}\n")
+    return None
 
 
 def run(args):
@@ -388,6 +472,9 @@ def run(args):
             return EXIT_USAGE
         prompt = prompt_argument(os.path.join(args.scratch, "prompt.txt"))
 
+    short = preflight(args)
+    if short is not None:
+        return short
     ok, number, message = review_ledger.reserve(args.root, args.ticket, args.provider,
                                                 args.model)
     sys.stderr.write(f"review-run: {message}\n")
@@ -478,6 +565,9 @@ def main(argv):
     parser.add_argument("--exit-code", type=int)
     parser.add_argument("--probe", action="store_true")
     parser.add_argument("--probe-timeout", type=int, default=PROBE_TIMEOUT)
+    parser.add_argument("--allow-unverified", action="store_true",
+                        help="review a tree the verify gate has not passed; recorded in "
+                             "review.json as gate.overridden")
     args = parser.parse_args(argv)
     args.root = os.path.abspath(args.root)
     args.scratch = os.path.abspath(args.scratch)
