@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@2697bf67 on 2026-09-30. Verify before trusting.
+%% Generated from useful-claude-add-ons@1f21f73b on 2026-09-30. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -150,10 +150,11 @@
 %%     round writes its receipt itself.
 %%   plugin/crew/commands/done.md:7 all four checks must pass; :10-13 check 1
 %%     review receipt (--check-receipt); :21-27 check 2 verify gate via
-%%     crew_status.py; :35-38 check 3 completion audit; :46-57 check 4
-%%     crew_refresh_check.py (:49), read-only, refuses on stale/unknown and never
-%%     refreshes; :59-65 all pass -> spec.md `status: done`, keeping the approval
-%%     (:61-62), then crew_tracker.py move --to done (:63); :70 crew_metrics record.
+%%     crew_status.py; :35-38 check 3 completion audit (:43-48: a refresh artifact
+%%     not admitted is listed with its reason); :50-61 check 4
+%%     crew_refresh_check.py (:53), read-only, refuses on stale/unknown and never
+%%     refreshes; :63-69 all pass -> spec.md `status: done`, keeping the approval
+%%     (:65-66), then crew_tracker.py move --to done (:67); :74 crew_metrics record.
 %%     Stop hooks: plugin/crew/hooks/hooks.json:58 (verify-gate.sh), :62 (completion-audit.sh).
 %%   plugin/crew/commands/fix.md:2 the light path - every phase, each compressed
 %%     to one step; :27 crew_tracker.py create (`id taken` -> next free id, :28-29;
@@ -326,9 +327,9 @@ flowchart TB
     subgraph done["/crew:done - all four or nothing<br/>done.md:7"]
         rcpt --> dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
         dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py<br/>:21-27"}
-        dn2 -- pass --> dn3{"3 completion audit<br/>:35-38"}
-        dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:46-57"}
-        dn5 -- fresh --> dn4["spec.md 'status: done' (keeps the approval),<br/>crew_tracker.py move --to done,<br/>crew_metrics record<br/>:59-70"]
+        dn2 -- pass --> dn3{"3 completion audit<br/>(refresh artifacts: re-anchor or<br/>regeneration the change reaches)<br/>:35-48"}
+        dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:50-61"}
+        dn5 -- fresh --> dn4["spec.md 'status: done' (keeps the approval),<br/>crew_tracker.py move --to done,<br/>crew_metrics record<br/>:63-74"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
@@ -367,3 +368,33 @@ flowchart TB
 %% and unchanged; review_run.py's preflight moved :454 -> :508, its call :521 -> :575 and the
 %% budget-first block :525-535 -> :579-589 (T-0087's failure-class docstring and refund code above
 %% them), re-read with grep -n. No node or edge changed.
+%% Re-anchored 9b6b0da7 (main) / 2255fb4d (T-0094) -> 1b9e4bfe (T-0094 merges main 9af34e57, T-0085
+%% landed as crew 1.0.75; review round 4's successor, crew 1.0.76): main's drawing kept (the
+%% standards self-check between the refresh and the review), both sides' notes kept, main's first.
+%% Of the Anchors paths, done.md, implement.md (step 6's admission sentence), completion_audit.py and
+%% crew_refresh_check.py changed on T-0094's side only; done.md's nodes and its line block take
+%% T-0094's positions (check 3 :35-48 lists a refused refresh artifact with its reason, check 4
+%% :50-61, all four :63-74), implement.md's nodes hold at main's lines (validate :18-24, refresh
+%% check :93; step 6 is :86-116). No node or edge added or removed.
+%% Re-anchored 1b9e4bfe -> 8a15557b: of the Anchors paths only implement.md changed, step 6 rewrapped to
+%% its 120-line budget (wording unchanged); validate :18-24 and the refresh check :93 hold, step 6 is
+%% :86-115. No node or edge changed.
+%% Re-anchored 8a15557b -> a0c171c7 (T-0094 review round 5): of the Anchors paths only
+%% crew_refresh_check.py changed (_present new; lstat errno proves absence). No node cites its lines;
+%% implement.md and done.md are unchanged. No node or edge changed.
+%% Re-anchored a0c171c7 (T-0094) / 2697bf67 (main) -> a0db0703 (T-0094 merges main a7524aac, T-0087
+%% landed as crew 1.0.76; crew 1.0.77): header conflict only, both sides' notes kept, main's first. Of
+%% the Anchors paths, review.md and review_run.py changed on main's side only (none since 2697bf67),
+%% done.md, implement.md, completion_audit.py and crew_refresh_check.py on T-0094's only, so each
+%% side's cited lines stand. No node or edge changed.
+%% Re-anchored a0db0703 -> 65abeb8d (T-0094 merges main 549cda24, T-0086 landed as crew 1.0.77;
+%% the owner's split puts completion_audit.py back to main's at c974f997; review round 6's successor;
+%% crew 1.0.78): of the Anchors paths, completion_audit.py is main's again (T-0094's audit wiring is
+%% L-0540's) and crew_refresh_check.py gained _on_disk, _graph_verdict and _claims; this diagram cites
+%% no line of either that moved (checked with cite_map_merge.py, MAIN_REV=origin/main, OURS_REV=b4d87187),
+%% Node dn3 quotes done.md check 3 (:35-48), whose text T-0094 keeps (commands are outside the
+%% tooling-PR rule's ALONGSIDE, so L-0540 cannot carry it); the audit applies it once L-0540 lands.
+%% No node or edge changed.
+%% Re-anchored 65abeb8d -> 1f21f73b (T-0094 review round 7): of the Anchors paths only crew_refresh_check.py
+%% changed (_read_regular new, the functions below it moved); this diagram cites no line of it.
+%% No node or edge changed.
