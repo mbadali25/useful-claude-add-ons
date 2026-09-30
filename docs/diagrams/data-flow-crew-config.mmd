@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@07ecfbd6 on 2026-09-30. Verify before trusting.
+%% Generated from useful-claude-add-ons@bfc3adeb on 2026-09-30. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_config_files.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
@@ -481,12 +481,12 @@ flowchart TB
 
     subgraph Write["The WRITE side - /crew:config --set, and the menu's Save (machine layer)"]
         direction TB
-        PLAN["plan_global_write()<br/>plugin/crew/hooks/scripts/crew_config.py:2862<br/><i>pure</i>; on global_snapshot() :2797, which REFUSES<br/>an unparsable or non-object machine file<br/>instead of merging onto {} (absent = ABSENT)"]
+        PLAN["plan_global_write()<br/>plugin/crew/hooks/scripts/crew_config.py:2893<br/><i>pure</i>; on global_snapshot() :2797, which REFUSES<br/>an unparsable or non-object machine file<br/>instead of merging onto {} (absent = ABSENT)"]
         ISG{"per LEAF: leaf_updates() :2584, value_allowed() :2700<br/>MACHINE_REFUSED :2620 (consent keys, inside a<br/>whole-block value too), is_global_path() :704,<br/>a block emptied or replaced, null_means() :2657<br/>(an enum key's null refused), enum_values() :2566;<br/>round 5: a path under a leaf or an object<br/>at a leaf :2708-2716"}
         REFUSE>"GlobalWriteRefused (class :2196)<br/>names the path AND lists every allowed one"]
         MERGED{"merged_problems() :2759 - the FILE the write<br/>produces, every known leaf by _content_problem()<br/>:2732: an enum value outside its values, a consent<br/>key (machine), an armed veto key (repo), a key under<br/>or an object at a leaf :2745-2748 refuses an<br/>unrelated write (pre-existing), then<br/>validate_providers() :177 on the merged file<br/>(qa.order a list, qa/dev.roles and each pin<br/>an object or null :206-237)"}
-        WIDEN["_plan_on() :2813 writes assignments() :2603 -<br/>the judged leaves (a block's siblings survive;<br/>one whole pin per role) - marking each leaf with<br/>_widens() plugin/crew/hooks/scripts/crew_config.py:2283.<br/>RANK, not equality."]
-        WRITE["write_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:2881<br/>the only function in crew that writes outside<br/>the repo. Re-plans on the bytes read under the<br/>lock; --expect DIGEST|absent refuses a changed<br/>file (GlobalWriteConflict :2200); any other<br/>OSError (directory, lock, write) is<br/>GlobalWriteRefused :2888, exit 2"]
+        WIDEN["_plan_on() :2813 writes assignments() :2603 -<br/>the judged leaves (a block's siblings survive;<br/>one whole pin per role) - marking each leaf with<br/>_widens() plugin/crew/hooks/scripts/crew_config.py:2314.<br/>RANK, not equality."]
+        WRITE["write_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:2912<br/>the only function in crew that writes outside<br/>the repo. Re-plans on the bytes read under the<br/>lock; --expect DIGEST|absent refuses a changed<br/>file (GlobalWriteConflict :2200); any other<br/>OSError (directory, lock, write) is<br/>GlobalWriteRefused :2888, exit 2"]
     end
 
     PLAN --> ISG
@@ -511,10 +511,10 @@ flowchart TB
 
     subgraph RepoWrite["NEW (T-0075): the repo writer - /crew:config --set --repo, the only path into .crew/config.json"]
         direction TB
-        RPLAN["plan_repo_write()<br/>plugin/crew/hooks/scripts/crew_config.py:3062<br/>on repo_snapshot() :3034 (refuses a missing or<br/>malformed file rather than creating one) and<br/>machine_view() :3065 (the machine file and its<br/>digest, one read)"]
+        RPLAN["plan_repo_write()<br/>plugin/crew/hooks/scripts/crew_config.py:3093<br/>on repo_snapshot() :3034 (refuses a missing or<br/>malformed file rather than creating one) and<br/>machine_view() :3065 (the machine file and its<br/>digest, one read)"]
         RREF>"RepoWriteRefused (class :2898)<br/>REPO_REFUSED :2913 - platform, schema,<br/>scope.mode, scope.allowCliApproval, the<br/>machine-only autoClear paths; a block emptied or<br/>replaced is refused (is_repo_path :2970);<br/>REPO_VETO_ONLY :2934 takes only false / null<br/>(by identity, is_repo_veto :2937)"]
         RWIDEN["repo_widens() :2978 - the ratchet against<br/>what is in force, plus _REPO_WIDENING :2947;<br/>a repo value held down by the machine layer<br/>is named, not marked as a widening"]
-        RWRITE["write_repo_config()<br/>plugin/crew/hooks/scripts/crew_config.py:3088<br/>the same compare-and-swap (RepoWriteConflict<br/>:2902), and --expect-global binds the machine<br/>file under its lock; never creates the file;<br/>an OSError is RepoWriteRefused :3103, exit 2"]
+        RWRITE["write_repo_config()<br/>plugin/crew/hooks/scripts/crew_config.py:3119<br/>the same compare-and-swap (RepoWriteConflict<br/>:2902), and --expect-global binds the machine<br/>file under its lock; never creates the file;<br/>an OSError is RepoWriteRefused :3103, exit 2"]
         RPLAN -->|"refused leaf, or a bad value in the merged file"| RREF
         RPLAN --> RWIDEN --> RWRITE
     end
@@ -550,7 +550,7 @@ flowchart TB
     subgraph Ratchet["Two DIFFERENT ratchet tables, not one - 14 write-side, 13 read-side"]
         direction TB
         RG["<b>READ side: crew_guards.RATCHETED_KEYS</b><br/>plugin/crew/hooks/scripts/crew_guards.py:522-549<br/><b>13 keys</b> (executed + len()'d, this pass):<br/>install.policy, change.requireForProduction,<br/>environments.prodUnattended (T-0005),<br/>and all TEN guards.* - terraformApply, forcePush,<br/>adminMerge, mergeGate, cloudDestructive,<br/>sqlDestructive, prodDatabase, prodServer,<br/>roleWrites, <b>cloudGuard (new)</b>.<br/>Consumed by crew_config.resolve_ratcheted() :817<br/>via crew_guards.effective_ratcheted() :564, called<br/>at crew_config.py:863"]
-        RC["<b>WRITE side: crew_config._RATCHETED</b><br/>plugin/crew/hooks/scripts/crew_config.py:2467<br/>(extended through :2563)<br/><b>14 keys</b>: the same thirteen PLUS pm.authority.<br/>pm.authority is still NOT in RATCHETED_KEYS -<br/>it resolves by ordinary precedence and only<br/>needs a widening NOTE when /crew:config writes it"]
+        RC["<b>WRITE side: crew_config._RATCHETED</b><br/>plugin/crew/hooks/scripts/crew_config.py:2498<br/>(extended through :2563)<br/><b>14 keys</b>: the same thirteen PLUS pm.authority.<br/>pm.authority is still NOT in RATCHETED_KEYS -<br/>it resolves by ordinary precedence and only<br/>needs a widening NOTE when /crew:config writes it"]
         RSHAPE["Confirmed by import + diff + type(), not<br/>asserted: 13-key intersection, pm.authority the<br/>only difference (`set(_RATCHETED) -<br/>set(RATCHETED_KEYS) == {'pm.authority'}`), and<br/>the tuple field order STILL differs -- (function,<br/>function, dict) here, (tuple, function, function)<br/>there -- so the two still cannot be collapsed<br/>into one table as written"]
         RG --- RC --- RSHAPE
     end
@@ -666,3 +666,6 @@ flowchart TB
 %% main 549cda24 -> 07ecfbd6 (T-0028 feature half, crew 1.0.78): citations into crew_state.py and
 %% crew_config.py mapped by difflib (reanchor2.py), each onto the same line text. The Kimi
 %% provider is not drawn. No node or edge changed.
+%% 07ecfbd6 -> bfc3adeb (T-0028 round-6 fixes, launch gate, crew 1.0.79): crew_config.py citations
+%% mapped by difflib (reanchor2.py), each onto the same line text. The launch gate is not drawn.
+%% No node or edge changed.

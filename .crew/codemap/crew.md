@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@07ecfbd6
+anchor: useful-claude-add-ons@bfc3adeb
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 36 commands, 31 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.78 (T-0028's re-set at `07ecfbd6`, one past main's 1.0.77, T-0086's landing #282, which this note on main still read as 1.0.75; main's 1.0.76 is T-0087's landing #281; 1.0.75 is T-0085's landing: 1.0.70 at its merge of main's 1.0.69 at `a61a6f38`, 1.0.71 after one landing-branch sabotage anchor commit, 1.0.72 after rewrapping `commands/review.md` to its line allowance, 1.0.73 at its catch-up merge of main's 1.0.70 at `6813749b` (#268, T-0097), 1.0.74 for the Windows fail-open fix in `gate_applies` at `9b6b0da7`, 1.0.75 for re-targeting the sabotage entry that fix made vacuous; whose 1.0.62-1.0.69 are #263-#267 and T-0088; before that 1.0.61, T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`; T-0085's build branch declares main's version and carries no bump of its own until land, `.crew/standards.md` REPO-03), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.79 (T-0028's re-set at `bfc3adeb`, the next free patch past main's 1.0.77 since open PRs #278 and #283 declare 1.0.78 and 1.0.80; 1.0.78 at `07ecfbd6`, one past main's 1.0.77, T-0086's landing #282, which this note on main still read as 1.0.75; main's 1.0.76 is T-0087's landing #281; 1.0.75 is T-0085's landing: 1.0.70 at its merge of main's 1.0.69 at `a61a6f38`, 1.0.71 after one landing-branch sabotage anchor commit, 1.0.72 after rewrapping `commands/review.md` to its line allowance, 1.0.73 at its catch-up merge of main's 1.0.70 at `6813749b` (#268, T-0097), 1.0.74 for the Windows fail-open fix in `gate_applies` at `9b6b0da7`, 1.0.75 for re-targeting the sabotage entry that fix made vacuous; whose 1.0.62-1.0.69 are #263-#267 and T-0088; before that 1.0.61, T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`; T-0085's build branch declares main's version and carries no bump of its own until land, `.crew/standards.md` REPO-03), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -354,15 +354,15 @@ before the subcommand (`crew_guards.tf_skip_options` `:1541`, used by `_terrafor
 `:1540`), so `terragrunt --working-dir infra destroy` is a destroy, and `_unwrap` reads a listed
 wrapper's options as GNU getopt does (`crew_guards.skip_wrapper_options` `:1560`). DERIVED from the code cited.
 
-**The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2467-2579`)
-now holds 14 keys**, built in seven steps (a literal dict of two at `:2467`, four `.update()`
-calls at `:2482`, `:2495`, `:2506` and `:2516`, and two single-key assignments at `:2552` and
-`:2575`) rather than one table: `pm.authority`, `install.policy`, the 6 `GUARD_NAMES` keys, the 2
+**The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2498-2610`)
+now holds 14 keys**, built in seven steps (a literal dict of two at `:2498`, four `.update()`
+calls at `:2513`, `:2526`, `:2537` and `:2547`, and two single-key assignments at `:2583` and
+`:2606`) rather than one table: `pm.authority`, `install.policy`, the 6 `GUARD_NAMES` keys, the 2
 `PROD_GUARD_NAMES` keys, `guards.roleWrites`, `guards.cloudGuard`,
 `change.requireForProduction` and `environments.prodUnattended` (T-0005) =
 2 + 6 + 2 + 1 + 1 + 1 + 1 = 14. Counted by reading the construction sites and confirmed with
 `len(crew_config._RATCHETED)` on the T-0005 landing merge and again on T-0023's merge of main
-(14), not by trusting the literal alone — the literal at `:2467-2478` holds only 2. (Before T-0005 this said "five steps" for 13 keys; the
+(14), not by trusting the literal alone — the literal at `:2498-2509` holds only 2. (Before T-0005 this said "five steps" for 13 keys; the
 sites were already six then — the literal, four `.update()` calls and one assignment.) The
 same key is registered in `crew_guards.RATCHETED_KEYS`
 (`plugin/crew/hooks/scripts/crew_guards.py:545-549`). `autopilot.*` is not ratcheted
@@ -1217,17 +1217,25 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   about `kimi`, presence only.
 - **DERIVED**: `plugin/crew/hooks/scripts/kimi_probe.py` has five states (`:75`), only `ok`
   launchable (`:188`); `resolve_alias` (`:251`) maps an id to the config.toml alias served by a
-  `type = "kimi"` provider; `probe` (`:395`) runs one live call in a throwaway directory with the
+  `type = "kimi"` provider; `probe` (`:420`) runs one live call in a throwaway directory with the
   read-only agent file (`write_agent_file`, `:208`; `read_only_flags`, `:230`) and a scrubbed env
-  (`kimi_env`, `:199`), and `classify` (`:367`) reads its stream through `final_message`
+  (`kimi_env`, `:199`), and `classify` (`:392`) reads its stream through `final_message`
   (`:145`), the stream-json parser, which lives here so the review harness can import it. A
   timed-out probe's process group is killed and the follow-up read is bounded (`_run`).
 - **DERIVED**: nothing launches Kimi for a review yet. `review_run.py`'s `--provider` choices are
   `codex`, `copilot` and `claude` (`plugin/crew/hooks/scripts/review_run.py:669`), so
   `--provider kimi` exits 2 before anything runs; `commands/review.md` has no Kimi row. That
   wiring is L-0527 (tooling only), cut from main after T-0028 merges.
-- **JUDGEMENT**: until L-0527, a `qa.order` walk that reaches `kimi` moves on without spending a
-  round, so the default-order change has no effect on a review.
+- **DERIVED**: the launch gate. `crew_config.review_launchable`
+  (`plugin/crew/hooks/scripts/crew_config.py:1855`) is `review_run.LAUNCHED` plus the in-session
+  `claude`, None when that list cannot be read; `order_candidates` (`:1878`) refuses a `qa.order`
+  provider outside it ("/crew:review cannot launch `kimi` yet") and None admits nothing. It is the
+  one coupling between the provider table and the review harness, pinned by
+  `test_launch_gate_agrees_with_review_run` in `plugin/crew/tests/test_provider_table.py`; L-0527
+  adding `kimi` to `LAUNCHED` makes Kimi eligible with no crew_config change.
+- **DERIVED**: `probe` refuses (`unknown`) when the temporary directory lies inside a repository
+  (`_inside_a_repository`, `plugin/crew/hooks/scripts/kimi_probe.py:328`), and a wrong-shaped
+  `api_key` or `oauth` entry in config.toml is `unknown`.
 
 ## Entry points
 
@@ -1236,10 +1244,10 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
 - `plugin/crew/hooks/scripts/crew_state.py:2942` — `evaluate_triggers`.
 - `plugin/crew/hooks/scripts/crew_config.py:244` / `:397` —
   `default_config()` / `default_global_config()`.
-- `plugin/crew/hooks/scripts/crew_config.py:2467` — `_RATCHETED`, the
+- `plugin/crew/hooks/scripts/crew_config.py:2498` — `_RATCHETED`, the
   14-key ratchet table (seven construction steps).
-- `plugin/crew/hooks/scripts/crew_config.py:3062` / `:3088` — `plan_repo_write` /
-  `write_repo_config`, the one repo-layer writer (T-0075); `:2862` / `:2881` — the machine pair.
+- `plugin/crew/hooks/scripts/crew_config.py:3093` / `:3119` — `plan_repo_write` /
+  `write_repo_config`, the one repo-layer writer (T-0075); `:2893` / `:2912` — the machine pair.
 - `plugin/crew/hooks/scripts/crew_config_files.py:364` — `update_json`, the lock and
   compare-and-swap both writers stand on (T-0075).
 - `plugin/crew/hooks/scripts/crew_config_menu.py:1051` — `main()`, the `spec` / `save` /
@@ -3059,3 +3067,12 @@ citation lands on the same line text. It gains the Kimi provider section (the fe
 rules 36-37's spans were re-read with `grep -n`. T-0028's earlier provenance on its
 branch is in git history (branch `L-0527-source`). Re-anchor only (owner refresh-artifact
 standing rule, 2026-09-28); no test suite was executed for this note.
+
+## Re-anchor provenance - `07ecfbd6` -> `bfc3adeb`, 2026-09-30 (T-0028 round-6 fixes and the launch gate, crew 1.0.79)
+
+`66c0ba0e` fixes review round 6's four FIXes and adds the launch gate (`crew_config.py`,
+`kimi_probe.py`, their tests, `.crew/verify.json`'s Kimi rule timing, CHANGELOG, README,
+crew-providers SKILL.md); `bfc3adeb` re-sets crew 1.0.79. Body citations were mapped by `difflib`
+from `e8f41b09` to `bfc3adeb` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local),
+each moved citation landing on the same line text. It gains the launch-gate claim and the two probe refusals, read from the code with `grep -n`. Re-anchor only (owner
+refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.

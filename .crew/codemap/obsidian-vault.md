@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@07ecfbd6
+anchor: useful-claude-add-ons@bfc3adeb
 verified: 2026-09-30
 
 ## Does
@@ -1045,3 +1045,12 @@ to `07ecfbd6` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local),
 citation lands on the same line text. T-0028's earlier provenance on its
 branch is in git history (branch `L-0527-source`). Re-anchor only (owner refresh-artifact
 standing rule, 2026-09-28); no test suite was executed for this note.
+
+## Re-anchor provenance - `07ecfbd6` -> `bfc3adeb`, 2026-09-30 (T-0028 round-6 fixes and the launch gate, crew 1.0.79)
+
+`66c0ba0e` fixes review round 6's four FIXes and adds the launch gate (`crew_config.py`,
+`kimi_probe.py`, their tests, `.crew/verify.json`'s Kimi rule timing, CHANGELOG, README,
+crew-providers SKILL.md); `bfc3adeb` re-sets crew 1.0.79. Body citations were mapped by `difflib`
+from `e8f41b09` to `bfc3adeb` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local),
+each moved citation landing on the same line text. Re-anchor only (owner
+refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
