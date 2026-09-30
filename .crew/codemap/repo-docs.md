@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@38b220cf
+anchor: useful-claude-add-ons@da6c62c1
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -764,7 +764,7 @@ c2ae46ab` returns only T-0021's files (its code, commands, tests, fixtures, rele
 was re-mapped from the side of the merge its line came from (`git blame`: main's lines against
 `2b18f7ab`, T-0021's against `bcb77ce2`) with a line diff, and each one whose line moved or changed
 was re-read at `c2ae46ab`. Corrected here: the `docs/runbooks/INDEX.md` sentence in
-`plugin/crew/README.md` is `:2006`; the tracker rule is recorded at `.crew/verify.json:301-308`. No
+`plugin/crew/README.md` is `:2006`; the tracker rule is recorded at `.crew/verify.json:302-309`. No
 command or suite was executed for this note.
 
 ## Re-anchor provenance - `c2ae46ab` -> `d276b268`, 2026-09-27 (T-0021 review round 4)
@@ -1015,7 +1015,7 @@ the version files, `BUDGETS.md`, README, CONFIG.md, the tests and sabotage modul
 `.crew/verify.json` (rule 28 inserted at `:302-308`, so rules 29 and 30 moved down by 7).
 
 The verify rules this note lists were renumbered by hand (T-0010's rule 28 at
-`.crew/verify.json:302-308`, tracker `:309-316`, routing `:317-325`); `plugin/crew/README.md:2090`
+`.crew/verify.json:303-309`, tracker `:309-316`, routing `:317-325`); `plugin/crew/README.md:2090`
 is unmoved. The two rebuilt guides (daily-workflow, troubleshooting) are T-0010's approve-exception
 sentences, rebuilt with `docs/guides/crew/src/build.py`.
 
@@ -1392,3 +1392,15 @@ In this note: the runbook-index README citation is `plugin/crew/README.md:2227` 
 **Re-anchored `fb292689` -> `f2cf0508` on 2026-09-30 (T-0086's merge of main `b601d450`, #280 L-0521: opt-in self-hosted runners).** `git diff --name-only fb292689 f2cf0508` returns, outside refresh artifacts, only `.github/workflows/pytest-crew.yml` (the `test` and `crew-shell-matrix` `runs-on` expressions) and `AGENTS.md` (one inserted paragraph after `:50`). No map cites `AGENTS.md:NN` or `.github/workflows/pytest-crew.yml:NN`; the one claim about those jobs' runner placement is verification-harness.md's, which main's own L-0521 commit already updated and the merge carries. No citation moved. No suite was executed for this note.
 
 **Re-anchored `f2cf0508` -> `38b220cf` on 2026-09-30 (T-0086 review round 2's FIXes, merge of main `a7524aac` (T-0087, crew 1.0.76) as `142421d0`, crew 1.0.77).** `27387d83` fixes round 2: `plugin/crew/skills/crew-standards/references/python.md` (PYTHON-01's EncodingWarning quote whole, +1 line; PYTHON-03's splitlines table escapes U+2028/U+2029), `plugin/crew/tests/test_crew_standards.py` (two tests before `test_python_set_applies_to_python_files_only`), `plugin/crew/tests/sabotage_standards.py` (four docstring lines, two entries; `STANDARDS_MUTATIONS` `:57` -> `:61`, 51 by `len()`), `plugin/crew/BUDGETS.md` and `CHANGELOG.md`. `142421d0` merges main's T-0087 with a merge commit; its map conflicts were mechanical: anchors took T-0086's side, provenance hunks kept both (main's first), and one-line hunks differing only in numbers took theirs plus T-0086's own shift (ours + theirs - base, per number); INDEX rows keep main's history cell plus T-0086's additions; `sabotage.py`'s import `:84` -> `:85` and append `:3061` -> `:3062` were set in the body. `38b220cf` sets crew 1.0.77 (`plugin/crew/.claude-plugin/plugin.json:3`, `.claude-plugin/marketplace.json:218`, `plugin/PLUGINS.md:14`). BUDGETS.md re-measured at 21,421 lines across 136 files. No suite was executed for this note.
+
+## Re-anchor provenance - `7c88bf3d` -> `401f6e0f`, 2026-09-30 (T-0505 promote-gate effective tree, after merging main `a7524aac`)
+
+`680e6783` merged origin/main `b601d450` (L-0521) on T-0087's side; this branch then carries T-0505 (`0a24dca4`..`2fd449a3`, `d1055b07`, `401f6e0f`) and `b5e5f73a`, its merge of origin/main `a7524aac` (T-0087 landed). T-0505 makes promote-gate (`.sh` and `.ps1`) judge the tree the deploy runs from - the payload `cwd`, a leading `cd` chain, git's global `-C` inside `$(...)`, parsed by a new `_promote_tree.py` - while the deployment map, the promotion log and the approval markers stay in the project dir; it adds two test files and a sabotage module (one import line in `sabotage.py`), rule 4's new path and test in `.crew/verify.json`, and promote docs (CHANGELOG +32 lines at the top, one CONFIG.md sentence +2, crew README, `promote.md`, INSTALLATION, PLUGINS, the troubleshooting guide, BUDGETS' count in place). crew stays 1.0.76 on this branch. A difflib re-map of every explicit `path:line` citation from `7c88bf3d` to `401f6e0f` moved only `.crew/verify.json` citations, +1 (rule 4 gained a path line); BUDGETS' `:11` changed in place. No claim here describes promote-gate. Re-anchor only: nothing was executed for this note.
+
+## Re-anchor provenance - `401f6e0f` -> `6a44587f`, 2026-09-30 (T-0505)
+
+`git diff --name-only 401f6e0f 6a44587f` outside the refresh artifacts returns only `plugin/crew/tests/sabotage_promote.py`: two sabotage target ids wrapped under the line limit, no behaviour and no line this note cites. No citation moved. Nothing was executed for this note.
+
+## Re-anchor provenance - `38b220cf` -> `da6c62c1`, 2026-09-30 (T-0505 replayed onto main's maps after merging `549cda24`)
+
+`a8b00168` merged origin/main `549cda24` (T-0086, crew 1.0.77) and took main's side of every code map, INDEX, the generated rules and the graph, discarding this branch's `401f6e0f` / `6a44587f` refresh; `da6c62c1` then set crew 1.0.79, re-measured BUDGETS.md in place, renamed the T-0505 mutation module to `promote_tree_mutations.py` (not wired into `sabotage.py`) and reverted `sabotage.py` to main's. Main's note is the base here; T-0505's two earlier sections follow main's, kept as history, except that their `sabotage.py` claims (one new import line, citations +1) no longer hold: `sabotage.py` is identical to main's, so main's `sabotage.py` citations stand unchanged. A difflib re-map of every path-qualified `path:line` citation from `38b220cf` to `da6c62c1` moved `.crew/verify.json` citations +1 past rule 4's new path line, CONFIG.md +2 past T-0505's sentence (`:1644-1646`) and CHANGELOG.md +34 (T-0505's entry on top); version lines and in-place edits (marketplace.json, plugin.json, PLUGINS.md, BUDGETS.md, INSTALLATION.md) keep their numbers. Two `.crew/verify.json` citations moved +1. Nothing was executed for this note.
