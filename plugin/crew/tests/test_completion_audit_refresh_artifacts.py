@@ -260,7 +260,26 @@ def test_a_verdict_step_that_raises_fails_the_audit_closed(tmp_path, monkeypatch
 
     ok, lines = completion_audit.audit(str(root), "T-1")
 
-    assert (ok, ".crew/codemap/app.md" in "\n".join(lines)) == (False, True), lines
+    assert (ok, ".crew/codemap/app.md [could not tell:" in "\n".join(lines)) == (
+        False, True), lines
+
+
+def test_artifact_dirs_that_cannot_be_resolved_fail_the_audit_as_could_not_tell(tmp_path):
+    """Review round 4: a raise resolving the artifact dirs (here `graph.out`
+    holding an escaped NUL, which `realpath` refuses) fails closed WITH the
+    could-not-tell reason, never as a bare path."""
+    root, _base = anchored_repo(tmp_path)
+    write(root, APP, read(root, APP).replace("x is one", "x is two"))
+    config = root / ".crew" / "config.json"
+    cfg = json.loads(config.read_text(encoding="utf-8")) if config.exists() else {}
+    cfg.setdefault("graph", {})["out"] = "graphify-out\u0000"
+    config.write_text(json.dumps(cfg), encoding="utf-8")
+    with pytest.raises(ValueError):
+        crew_refresh_check.refresh_artifact_paths(str(root))
+
+    ok, lines = completion_audit.audit(str(root), "T-1")
+
+    assert (ok, APP + " [could not tell:" in "\n".join(lines)) == (False, True), lines
 
 
 def test_the_message_stays_inside_six_lines_with_many_refused_artifacts(tmp_path):

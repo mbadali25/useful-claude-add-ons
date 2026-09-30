@@ -828,3 +828,41 @@ def test_an_ambiguous_new_anchor_is_refused(tmp_path):
     verdict, reason = _verdict(root, base, REACH, APP)
 
     assert verdict is not True, reason
+
+
+@pytest.mark.parametrize("ext", [".mmd", ".MMD"])
+def test_a_rendered_diagram_beside_an_admitted_source_is_admitted_whatever_its_case(tmp_path, ext):
+    """`_kind` judges `flow.MMD` a diagram source (its extension case-folded),
+    so the rendered file beside it pairs with it the same way."""
+    root, base = anchored_repo(tmp_path, diagram_ext=ext)
+    head = head_sha(root, 40)
+    source = FLOW[:-len(".mmd")] + ext
+    re_anchor_diagram(root, "flow", head, ext=ext)
+    write(root, RENDERED, f"<svg><!-- {head} --></svg>\n")
+
+    got = _verdicts(root, base, REACH, [source, RENDERED])
+
+    assert (got[source][0], got[RENDERED][0]) == (True, True), got
+
+
+def test_a_rendered_diagram_whose_upper_case_source_was_not_re_anchored_is_refused(tmp_path):
+    root, base = anchored_repo(tmp_path, diagram_ext=".MMD")
+    write(root, RENDERED, "<svg><!-- redrawn by hand --></svg>\n")
+
+    verdict, reason = _verdict(root, base, REACH, RENDERED)
+
+    assert verdict is False, reason
+
+
+def test_a_rendered_diagram_is_not_paired_with_another_stems_admitted_source(tmp_path):
+    """The neighbour of the case-folded pairing: `other.svg` has no source,
+    and the admitted `flow.mmd` beside it is not its pair."""
+    other = "docs/diagrams/other.svg"
+    root, base = anchored_repo(tmp_path, extra={other: "<svg><!-- base --></svg>\n"})
+    head = head_sha(root, 40)
+    re_anchor_diagram(root, "flow", head)
+    write(root, other, f"<svg><!-- {head} --></svg>\n")
+
+    got = _verdicts(root, base, REACH, [FLOW, other])
+
+    assert (got[FLOW][0], got[other][0]) == (True, False), got

@@ -47,7 +47,8 @@ That is what `/crew:implement` step 6's refreshes write and no Touch names
 re-anchor, a hand-edited rule, a map nothing changed reaches -- is judged
 against Touch, and its listing carries the reason in brackets
 (`[anchor did not move]`); a verdict git could not reach is
-`[could not tell: ...]` and never admits. The audit judges shape and reach,
+`[could not tell: ...]` and never admits -- so is every artifact when the
+artifact dirs themselves cannot be resolved (review round 4). The audit judges shape and reach,
 not truth: a re-anchored map's claims stay the reviewer's. When the ticket's
 approval is not current or did not come from the user's prompt
 (`crew_ticket.accepted`: stale, none, or a `cli` receipt without
@@ -190,14 +191,18 @@ def _verdicts(top, base, paths):
     every path changed since `base`, un-narrowed. Called only for an
     approved ticket (`_outside_refresh_artifacts`). A step that raises is
     could-not-tell, never admitted and never a traceback out of `--check`:
-    every artifact when the verdicts raised, and {} -- nothing admitted --
-    when not even the artifact dirs could be resolved."""
+    every artifact when the verdicts raised, and -- when the configured
+    artifact dirs cannot be resolved -- every path that is an artifact under
+    the DEFAULT dirs, or every path when even those raise (review round 4:
+    the reason stays on the listing, never a bare path)."""
     import crew_refresh_check  # pylint: disable=import-outside-toplevel
     try:
         dirs = crew_refresh_check.refresh_artifact_paths(top)
         artifacts = [p for p in paths if crew_refresh_check.is_refresh_artifact(p, dirs)]
-    except Exception:  # noqa: BLE001  pylint: disable=broad-except
-        return {}
+    except Exception as exc:  # noqa: BLE001  pylint: disable=broad-except
+        why = (f"{crew_refresh_check.COULD_NOT_TELL}: {type(exc).__name__} "
+               "resolving the refresh artifact dirs")
+        return {p: (None, why) for p in _default_artifacts(crew_refresh_check, top, paths)}
     if not artifacts:
         return {}
     try:
@@ -205,6 +210,16 @@ def _verdicts(top, base, paths):
     except Exception as exc:  # noqa: BLE001  pylint: disable=broad-except
         why = f"{crew_refresh_check.COULD_NOT_TELL}: {type(exc).__name__} while judging it"
         return {p: (None, why) for p in artifacts}
+
+
+def _default_artifacts(crew_refresh_check, top, paths):
+    """The paths that are refresh artifacts under the default dirs (config
+    ignored), or all of `paths` when even that raises."""
+    try:
+        dirs = crew_refresh_check.refresh_artifact_paths(top, {})
+        return [p for p in paths if crew_refresh_check.is_refresh_artifact(p, dirs)]
+    except Exception:  # noqa: BLE001  pylint: disable=broad-except
+        return list(paths)
 
 
 def _outside_refresh_artifacts(top, base, paths, approval):

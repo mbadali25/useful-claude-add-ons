@@ -849,10 +849,16 @@ def artifact_verdicts(top, base, reach, artifacts, cfg=None):
 
 def _rendered_verdict(rel, kinds, out):
     """A rendered diagram is admitted beside its same-stem source, in the same
-    dir, when that source changed and was admitted."""
+    dir (the source's extension compared case-folded), when that source
+    changed and was admitted."""
     stem = os.path.splitext(rel)[0]
-    for source in (stem + ext for ext in _DIAGRAM_EXTS):
-        if kinds.get(source) == "diagram" and out.get(source, (False,))[0] is True:
+    # Paired as `_kind` classifies a source: by stem, the extension
+    # case-folded (review round 4: `flow.MMD` is a source, so is its pair).
+    sources = [p for p, k in kinds.items() if k == "diagram"
+               and os.path.splitext(p)[0] == stem
+               and os.path.splitext(p)[1].lower() in _DIAGRAM_EXTS]
+    for source in sources:
+        if out.get(source, (False,))[0] is True:
             return True, f"rendered beside the re-anchored {source.rsplit('/', 1)[-1]}"
     name = stem.rsplit("/", 1)[-1]
     return False, f"rendered file whose source {name}.mmd was not re-anchored"
