@@ -19,6 +19,7 @@ import sys
 import time
 import uuid
 
+import crew_common
 import crew_incident
 
 # The endpoint ledger is its own module now, the three shared readers are a
@@ -264,8 +265,10 @@ def _table_status(line, ticket_text):
 
 
 def load_config(root):
-    """Parse .crew/config.json. Returns {} when absent, malformed, or not a dict."""
-    text = read_text(os.path.join(root, ".crew", "config.json"))
+    """Parse .crew/config.json -- the main checkout's in a linked worktree with no
+    config of its own (`crew_common.repo_config_dir`). Returns {} when absent,
+    malformed, or not a dict."""
+    text = read_text(crew_common.repo_config_file(root, "config.json"))
     if text is None:
         return {}
     try:
