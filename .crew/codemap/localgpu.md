@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@8711b602
+anchor: useful-claude-add-ons@38b220cf
 verified: 2026-09-30
 
 # localgpu
@@ -512,12 +512,10 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   **Checked against the code, corrected after QA:**
   `plugin/crew/hooks/scripts/crew_config.py:129-130` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1450-1451` on T-0028 at `8711b602`, where both
-  tuples end in `"kimi"`, so the literal tuples localgpu quotes at `:33-34` are stale there
-  (`TODO.md`'s T-0028 item (f)); `:1440-1441` before T-0028, since T-0010's four `AUTOPILOT_DEFAULTS`
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1440-1441` since T-0010's four `AUTOPILOT_DEFAULTS`
   lines (T-0010-solo's merge of `67caa4b8`; `:1432-1433` at `65bb3330`; `:1430-1431` on main before
   T-0005's three import lines merged in, re-numbered
-  from `:1540-1541` by crew 1.0 - see the re-anchor entries below; same two
+  from `:1507-1508` by crew 1.0 - see the re-anchor entries below; same two
   lines, `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")`, byte-identical).
   So `crew.md`'s own attribution to `crew_config.py` names the re-export, not
@@ -759,7 +757,7 @@ never matches and has to be counted on its own):
   `:646`, `:651`, `:676`, cited in shorthand),
   `plugin/localgpu/mcp/_version.py:10-13`, `:31-32`,
   `plugin/crew/hooks/scripts/crew_config.py:127-128`,
-  `plugin/crew/hooks/scripts/crew_state.py:1540-1541`, and, both written out
+  `plugin/crew/hooks/scripts/crew_state.py:1507-1508`, and, both written out
   in full rather than one of them in shorthand,
   `scripts/check-marketplace.py:160-170` and `scripts/check-marketplace.py:169`.
   The first version of this bullet said 9 and listed 7 (both wrong, an
@@ -814,7 +812,7 @@ For the record, what was wrong and how it was found:
    Re-read `crew_config.py`: `DEV_PROVIDERS`/`QA_PROVIDERS` there are a
    re-export (`plugin/crew/hooks/scripts/crew_config.py:127-128`,
    `DEV_PROVIDERS = crew_state.DEV_PROVIDERS`), not the definition — that is
-   `plugin/crew/hooks/scripts/crew_state.py:1540-1541`. Also narrowed the
+   `plugin/crew/hooks/scripts/crew_state.py:1507-1508`. Also narrowed the
    "read only past the opening constraint (lines 1-32)" claim: this pass
    read through line 40, which is where the code block with the tuples ends.
 5. **Version-number subtraction presented as a count.** "Stable across those
@@ -887,7 +885,7 @@ sentence around it staying correct.
    .crew/codemap/localgpu.md`, which now returns nothing) to either full
    repo-relative paths or prose describing the shape without reproducing it.
 2. **FIX — the "12 new citations" method did not reproduce 12.** The bullet
-   said `plugin/crew/hooks/scripts/crew_state.py:1540-1541` fell outside the
+   said `plugin/crew/hooks/scripts/crew_state.py:1507-1508` fell outside the
    `plugin/` regex the rest of the section used and was "tallied separately"
    — it does not; that path starts with `plugin/crew/`, which the regex
    already matches, and the citation was already in that regex's output. And
@@ -1553,15 +1551,11 @@ Nothing under `plugin/localgpu/` changed on either side. Nothing was executed fo
 
 `cff30f72` makes the committed-corpus test in `plugin/crew/tests/test_review_golden.py` run `golden_build.leak` on every fixture (host name included), adds `test_corpus_leak_check_refuses_a_planted_host_name`, and adds sabotage entries (ah)-(ai) to `plugin/crew/tests/sabotage_tooling.py`; its CHANGELOG bullet moved later CHANGELOG lines by 4, and the CHANGELOG citations above were re-mapped by script (difflib `45f32c3c` -> `7c88bf3d`). `49ed9a29` / `7c88bf3d` step crew back and re-set 1.0.76. No other cited line moved. Re-anchor only: nothing was executed for this note.
 
-## Re-anchor provenance - main `a7524aac` -> `8711b602`, 2026-09-30 (T-0028, feature half, crew 1.0.77)
+**Re-anchored `5c9a9db2` -> `06cb9b51` on 2026-09-30 (T-0086 slice 1: the Python standards set, on main `301e478a`).** `git diff --name-only 5c9a9db2 06cb9b51` over this note's paths returns T-0086's files - `plugin/crew/skills/crew-standards/references/python.md` (new, set PYTHON), `plugin/crew/skills/crew-standards/SKILL.md`, `plugin/crew/skills/stack-python/SKILL.md`, `plugin/crew/tests/test_crew_standards.py` (four new tests), `plugin/crew/tests/sabotage_standards.py` (three entries), `plugin/crew/README.md`, `plugin/PLUGINS.md` (rows only), `plugin/crew/BUDGETS.md` (count only) and `CHANGELOG.md` (T-0086's entry on top) - plus main's own commits since `5c9a9db2`. Path-qualified citations into changed files were moved by a line diff (`/root/crew-tmp/t-0086/remap.py`, 9 moved); `plugin/crew/BUDGETS.md:10-11` citations stay on the claim line, whose number changed in place. No suite was executed for this note.
+**Re-anchored `06cb9b51` -> `35100955` on 2026-09-30 (T-0086's merge of main `9af34e57`, #279: CI triggers, concurrency, PR CI on Python 3.12 only).** `git diff --name-only 06cb9b51 35100955` returns, outside refresh artifacts, only `.github/workflows/*.yml`, `AGENTS.md` and `.crew/verify.json` (one line rewritten in place, line count unchanged). No `AGENTS.md:NN` citation exists in any map, and no claim outside verification-harness.md states the CI trigger shape (checked by grep for `push, pull_request`, `six workflows`, `three Python versions`, `windows-latest`), so no citation moved. No suite was executed for this note.
 
-T-0028 merged origin/main `a7524aac` (T-0087 #281, crew 1.0.76) and was then split by the owner
-("Split into 2 PRs"): its review-harness half moved to L-0527, and the branch now differs from main
-only in the Kimi provider's feature files (`crew_state.py`, `crew_config.py`, `kimi_probe.py`, the
-templates, provider docs and tests, `.crew/verify.json`, the release files). This note was taken
-from main's copy (the branch's own copy carried citations into harness code this PR no longer
-changes) and every body citation into a changed file was mapped by a `difflib` line diff from
-`a7524aac` to `8711b602` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local); each
-moved citation lands on the same line text. The provider tuples now carry `kimi` (`crew_state.py:1450-1451`), re-read with `grep -n`. T-0028's earlier provenance on its branch
-is in git history (branch `L-0527-source`). Re-anchor only (owner refresh-artifact standing rule,
-2026-09-28); no test suite was executed for this note.
+**Re-anchored `35100955` -> `fb292689` on 2026-09-30 (T-0086 review round 1's FIX: PYTHON-07's finding count).** `git diff --name-only 35100955 fb292689` returns only `plugin/crew/skills/crew-standards/references/python.md` (PYTHON-07's Why, `6` -> `7` in place, line count unchanged), `plugin/crew/tests/test_crew_standards.py` (two tests and a pinned table inserted after `:302`) and `plugin/crew/tests/sabotage_standards.py` (four docstring lines after `:43`, two entries at the end; `STANDARDS_MUTATIONS` `:54` -> `:57`, 49 entries by `len()`). Every `path:N` citation into those files sits inside an earlier dated provenance paragraph, left as history. No suite was executed for this note.
+
+**Re-anchored `fb292689` -> `f2cf0508` on 2026-09-30 (T-0086's merge of main `b601d450`, #280 L-0521: opt-in self-hosted runners).** `git diff --name-only fb292689 f2cf0508` returns, outside refresh artifacts, only `.github/workflows/pytest-crew.yml` (the `test` and `crew-shell-matrix` `runs-on` expressions) and `AGENTS.md` (one inserted paragraph after `:50`). No map cites `AGENTS.md:NN` or `.github/workflows/pytest-crew.yml:NN`; the one claim about those jobs' runner placement is verification-harness.md's, which main's own L-0521 commit already updated and the merge carries. No citation moved. No suite was executed for this note.
+
+**Re-anchored `f2cf0508` -> `38b220cf` on 2026-09-30 (T-0086 review round 2's FIXes, merge of main `a7524aac` (T-0087, crew 1.0.76) as `142421d0`, crew 1.0.77).** `27387d83` fixes round 2: `plugin/crew/skills/crew-standards/references/python.md` (PYTHON-01's EncodingWarning quote whole, +1 line; PYTHON-03's splitlines table escapes U+2028/U+2029), `plugin/crew/tests/test_crew_standards.py` (two tests before `test_python_set_applies_to_python_files_only`), `plugin/crew/tests/sabotage_standards.py` (four docstring lines, two entries; `STANDARDS_MUTATIONS` `:57` -> `:61`, 51 by `len()`), `plugin/crew/BUDGETS.md` and `CHANGELOG.md`. `142421d0` merges main's T-0087 with a merge commit; its map conflicts were mechanical: anchors took T-0086's side, provenance hunks kept both (main's first), and one-line hunks differing only in numbers took theirs plus T-0086's own shift (ours + theirs - base, per number); INDEX rows keep main's history cell plus T-0086's additions; `sabotage.py`'s import `:84` -> `:85` and append `:3061` -> `:3062` were set in the body. `38b220cf` sets crew 1.0.77 (`plugin/crew/.claude-plugin/plugin.json:3`, `.claude-plugin/marketplace.json:218`, `plugin/PLUGINS.md:14`). BUDGETS.md re-measured at 21,421 lines across 136 files. No suite was executed for this note.

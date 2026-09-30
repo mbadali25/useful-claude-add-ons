@@ -6,17 +6,17 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.77: the Kimi Code CLI is a crew provider (T-0028, the feature
+- **`crew` 1.0.78: the Kimi Code CLI is a crew provider (T-0028, the feature
   half). BEHAVIOUR CHANGE: the default `qa.order` now lists Kimi second -
   `["codex", "kimi", "copilot", "claude"]`.** `/crew:review` does not launch
   Kimi yet: that wiring is crew's review harness, and lands on its own as
   L-0527 (tooling-only PRs carry no feature work, T-0087's rule). Until then
   `review_run.py` refuses `--provider kimi` (exit 2, nothing launched, no round
   spent) and the walk moves on to the next provider, so the new rung changes
-  nothing a review does today. Bumped `1.0.76 -> 1.0.77` (1.0.44 on its
+  nothing a review does today. Bumped `1.0.77 -> 1.0.78` (1.0.44 on its
   branch; 1.0.60 after merging main's 1.0.59; 1.0.62 after main's 1.0.61;
-  1.0.70 after main's 1.0.69; 1.0.76 after main's 1.0.75; re-set after
-  merging main's 1.0.76, T-0087).
+  1.0.70 after main's 1.0.69; 1.0.76 after main's 1.0.75; 1.0.77 after
+  main's 1.0.76, T-0087; re-set after merging main's 1.0.77, T-0086).
   - **`kimi` is in `QA_PROVIDERS` and `DEV_PROVIDERS`**, so every
     `qa.roles.<r>` and `dev.roles.<r>` slot accepts a
     `{"provider": "kimi", "model": ...}` pin that validates, reports in
@@ -53,6 +53,31 @@ All notable changes to this repository are documented here. Format follows [Keep
     document it. `templates/config.template.json` and `global.template.json`
     are regenerated from `default_config()` / `default_global_config()`, so
     `/crew:init` writes the `kimi` blocks and the new order.
+
+### Added — `crew` 1.0.77: the Python development standards set (T-0086, slice 1)
+
+- **`crew-standards/references/python.md`, set `PYTHON`, `applies-to: ["**/*.py"]`**:
+  nine standards (PYTHON-01, -03, -04, -06, -07, -08, -10, -11, -13) on T-0085's
+  loader, unchanged - text encoding and newlines, record splitting, replace-not-rewrite,
+  child launch, bounded waits, child environments, parsed-data shape, narrow `try`
+  bodies, path canonicalisation. Each is earned by findings from at least three
+  distinct reviewed change sets (a crew review round, or a fix commit whose message or
+  CHANGELOG entry records the review), cites them, and quotes docs.python.org 3.14.7 as
+  Source, every sentence re-read from the raw page.
+- **Eight candidates are listed in `stack-python`, not gated** (PYTHON-02, -05, -09,
+  -12, -14 to -17): each lacks a third reviewed change set. PYTHON-14 and -15 were
+  drafted as standards and moved when their third citation (a TheHomeDepot commit, and
+  a commit "found by running the code") proved not to be a review.
+- New tests: the set parses with exactly the admitted ids, every stack standard names
+  and cites three change sets and its Why states that count, each PYTHON Why's finding
+  count matches the findings it enumerates, no stack set holds a character
+  `splitlines()` counts as a line and `wc -l` does not, no PYTHON Source quote is cut
+  with `[...]`, the set applies to `.py` changes only, and no shipped set cites a
+  machine-local note; seven sabotage entries.
+- **Behaviour change:** any change touching a `.py` file now answers the nine PYTHON
+  rows in its self-check (12 GEN + 9 PYTHON, plus the overlay's). A ticket stamped
+  before this lands gets a new standards digest when it merges main: `init` never
+  overwrites an existing `selfcheck.md`, so add the PYTHON rows by hand and re-stamp.
 
 ### Added — `crew` 1.0.76: tooling reliability — tool-failure refunds, golden replay, seam contracts, a canary review (T-0087)
 
