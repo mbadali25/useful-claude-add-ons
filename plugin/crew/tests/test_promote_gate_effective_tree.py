@@ -564,3 +564,17 @@ def test_git_dash_C_outside_a_substitution_on_the_run_tree_is_fine(flavour, repo
     code, err = run_gate(flavour, repo, f"deploy-dev && git -C {repo.wt} status",
                          cwd=repo.wt)
     assert code == 0, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_an_unreadable_committed_map_is_could_not_tell_while_the_map_is_dirty(flavour, repo):
+    """GEN-01 on the committed-map read: a dirty map whose committed copy does
+    not parse must not read as "the command matched nothing"."""
+    path = repo.main / ".crew" / "verify.json"
+    path.write_text("{ not json", encoding="utf-8")
+    _git(repo.main, "commit", "-qam", "break the map")
+    doc = json.loads(json.dumps(_VERIFY))
+    doc["environments"]["development"]["deploy"] = "renamed-away"
+    path.write_text(json.dumps(doc) + "\n", encoding="utf-8")
+    code, err = run_gate(flavour, repo, "deploy-dev", cwd=repo.wt)
+    assert code == 2, err

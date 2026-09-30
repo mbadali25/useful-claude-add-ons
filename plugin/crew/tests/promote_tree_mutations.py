@@ -142,4 +142,12 @@ PROMOTE_TREE_MUTATIONS = (
      '  if ($inSub[$m.Index]) { $trees.Add($dir) } else { $runDirs.Add($dir) }\n',
      '  $trees.Add($dir)\n',
      _T + "test_git_dash_C_outside_a_substitution_does_not_name_the_sha[ps1]"),
+    ("promote-gate.sh reads an unreadable committed map as matching nothing", SH,
+     '        unreadable(f"the committed .crew/verify.json does not parse as JSON: {exc}", 3)\n',
+     '        sys.exit(0)\n',
+     _T + "test_an_unreadable_committed_map_is_could_not_tell_while_the_map_is_dirty[sh]"),
+    ("promote-gate.ps1 reads an unreadable committed map as matching nothing", PS1,
+     '  catch { Deny-UnreadableMap "the committed .crew/verify.json does not parse: $($_.Exception.Message)" }\n',
+     '  catch { exit 0 }\n',
+     _T + "test_an_unreadable_committed_map_is_could_not_tell_while_the_map_is_dirty[ps1]"),
 )

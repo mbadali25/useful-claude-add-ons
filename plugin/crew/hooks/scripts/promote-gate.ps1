@@ -40,20 +40,6 @@ if (-not $mapPresent) {
 } elseif ((git ls-files --others --exclude-standard -- .crew/verify.json 2>$null)) {
   $mapDirty = "untracked - in no commit"
 }
-$envName = $null
-if ($mapDirty -and $headMap) {
-  try {
-    $committed = ((git cat-file blob $headMap 2>$null) -join "`n") | ConvertFrom-Json -ErrorAction Stop
-    foreach ($p in $committed.environments.PSObject.Properties) {
-      $declared = @($p.Value.deploy) | Where-Object { $_ -is [string] -and $_ }
-      foreach ($dep in $declared) {
-        if ($cmd.Contains($dep) -or $dep.Contains($cmd)) { $envName = $p.Name; break }
-      }
-      if ($envName) { break }
-    }
-  } catch { $envName = $null }
-  if (-not $envName -and -not $mapPresent) { exit 0 }
-}
 
 # Every way the map can be unreadable ends here, in one message, because the
 # reader's next action is the same for all of them: look at the file.
@@ -85,6 +71,29 @@ function Deny-UnreadableMap([string]$Why) {
 # here. That asymmetry is safe in the direction that matters - this flavour
 # still runs every check below on a map it could read - and closing it would
 # mean shipping a second JSON parser.
+# A dirty map is matched against the committed one too. A committed map that
+# cannot be read or has no readable environments is could-not-tell: with the
+# working map dirty, "matched nothing" would be a guess.
+$envName = $null
+if ($mapDirty -and $headMap) {
+  $blob = (git cat-file blob $headMap 2>$null)
+  if ($LASTEXITCODE -ne 0) { Deny-UnreadableMap "the committed .crew/verify.json could not be read (git cat-file exited $LASTEXITCODE)." }
+  try { $committed = ($blob -join "`n") | ConvertFrom-Json -ErrorAction Stop }
+  catch { Deny-UnreadableMap "the committed .crew/verify.json does not parse: $($_.Exception.Message)" }
+  $committedEnvs = $committed.PSObject.Properties['environments']
+  if (-not $committedEnvs -or $committedEnvs.Value -isnot [System.Management.Automation.PSCustomObject]) {
+    Deny-UnreadableMap "the committed .crew/verify.json holds no object of environments."
+  }
+  foreach ($p in $committedEnvs.Value.PSObject.Properties) {
+    $declared = @($p.Value.deploy) | Where-Object { $_ -is [string] -and $_ }
+    foreach ($dep in $declared) {
+      if ($cmd.Contains($dep) -or $dep.Contains($cmd)) { $envName = $p.Name; break }
+    }
+    if ($envName) { break }
+  }
+  if (-not $envName -and -not $mapPresent) { exit 0 }
+}
+
 if ($mapPresent) {
 try {
   $vm = Get-Content .crew/verify.json -Raw -ErrorAction Stop | ConvertFrom-Json

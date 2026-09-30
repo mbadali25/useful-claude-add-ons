@@ -118,8 +118,13 @@ RUN_CWD=$(crew_strip_cr "$RUN_CWD")
 # environment - which is precisely what could not be determined here. There is
 # nothing to record and nothing to stand down.
 ENVNAME=$(CREW_HEAD_MAP="$HEAD_MAP" CREW_MAP_DIRTY="$MAP_DIRTY" "$PY" - "$CMD" <<'PY'
-import json, os, subprocess, sys
+import json, os, shutil, subprocess, sys
 cmd = sys.argv[1]
+
+
+def unreadable(why, status):
+    print(why, file=sys.stderr)
+    sys.exit(status)
 
 
 def matches(envs):
@@ -137,24 +142,35 @@ def matches(envs):
     return None
 
 
-# A dirty map is matched against the committed one too (T-0505).
+# A dirty map is matched against the committed one too (T-0505). A committed
+# map that cannot be read or has no readable environments is could-not-tell,
+# status 3: with the working map dirty, "matched nothing" would be a guess.
 if os.environ.get("CREW_MAP_DIRTY") and os.environ.get("CREW_HEAD_MAP"):
+    git = shutil.which("git")
+    if git is None:
+        unreadable("the deploy map is uncommitted and git is not on PATH, so the "
+                   "committed map cannot be read to compare with", 3)
     try:
-        blob = subprocess.run(["git", "cat-file", "blob", os.environ["CREW_HEAD_MAP"]],
-                              capture_output=True, check=True).stdout
-        committed = json.loads(blob.decode("utf-8-sig", errors="replace"))
-        hit = matches(committed.get("environments") or {}) if isinstance(committed, dict) else None
-    except (OSError, subprocess.CalledProcessError, ValueError, AttributeError):
-        hit = None
+        proc = subprocess.run([git, "cat-file", "blob", os.environ["CREW_HEAD_MAP"]],
+                              capture_output=True, check=False, timeout=10,
+                              stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        unreadable(f"the committed .crew/verify.json could not be read: {exc}", 3)
+    if proc.returncode != 0:
+        unreadable("the committed .crew/verify.json could not be read "
+                   f"(git cat-file exited {proc.returncode})", 3)
+    try:
+        committed = json.loads(proc.stdout.decode("utf-8-sig", errors="replace"))
+    except ValueError as exc:
+        unreadable(f"the committed .crew/verify.json does not parse as JSON: {exc}", 3)
+    committed_envs = committed.get("environments", {}) if isinstance(committed, dict) else None
+    if not isinstance(committed_envs, dict):
+        unreadable("the committed .crew/verify.json holds no object of environments", 3)
+    hit = matches(committed_envs)
     if hit:
         print(hit); sys.exit(0)
     if not os.path.exists(".crew/verify.json"):
         sys.exit(0)
-
-
-def unreadable(why, status):
-    print(why, file=sys.stderr)
-    sys.exit(status)
 
 
 try:
@@ -256,7 +272,7 @@ if [ -n "$RUN_CWD" ]; then
   BASE=$(resolve_dir "$BASE" "$RUN_CWD")
   [ -z "$BASE" ] && block "the command runs from '$RUN_CWD', which does not exist, so it is not inside a git worktree - cannot establish what is being deployed."
 fi
-RECORDS=$("$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_tree.py" "$CMD") \
+RECORDS=$(PYTHONIOENCODING=utf-8 "$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_tree.py" "$CMD") \
   || block "the deploy command could not be parsed for the directory it runs from (_promote_tree.py failed). This is not a pass."
 TREES=()
 RUNDIRS=()

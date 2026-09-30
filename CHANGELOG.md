@@ -33,7 +33,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   over only for `requireHuman` or a genuinely interactive step, as a question
   with a recommendation.
 - New must-block / must-allow suite for both flavours
-  (`test_promote_gate_effective_tree.py`) and twenty-eight mutations in
+  (`test_promote_gate_effective_tree.py`) and thirty mutations in
   `promote_tree_mutations.py`, run through sabotage.py's machinery; wiring them
   into `sabotage.py` is a separate tooling PR (`check-tooling-pr.py`).
   After updating, run `claude plugin update crew` and restart the session.
