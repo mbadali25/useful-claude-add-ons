@@ -155,6 +155,23 @@ def test_any_change_after_the_pass_is_unverified(tmp_path, edit):
 
 
 @needs_bash
+def test_a_lane_follows_its_own_gate_not_the_main_checkouts_stand_down(tmp_path):
+    # verify-gate.sh reads the worktree's own .crew/config.json (T-0088 left the
+    # shell readers unrouted; T-0096 routes them). Routing gate_state alone would
+    # call this lane's live, red gate "stood down" and review a red tree. When
+    # T-0096 lands, this test goes red: flip it and route both together.
+    main = _repo(tmp_path, config='{"verifyGate": false}')
+    lane = tmp_path / "lane"
+    git(main, "worktree", "add", "-q", "-b", "lane", str(lane))
+    (lane / ".crew").mkdir()
+    (lane / ".crew" / "verify.json").write_text(json.dumps(_map(run="exit 1")),
+                                                encoding="utf-8")
+    (lane / "feature.txt").write_text("feature v1\n", encoding="utf-8")
+    assert _gate(lane).returncode == 2
+    assert _state(lane) == review_gate.UNVERIFIED
+
+
+@needs_bash
 def test_a_failing_gate_leaves_the_tree_unverified(tmp_path):
     root = _repo(tmp_path, verify_map=_map(run="exit 1"))
     assert _gate(root).returncode == 2

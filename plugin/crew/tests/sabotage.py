@@ -79,6 +79,7 @@ from sabotage_tracker import TRACKER_MUTATIONS
 from sabotage_route import ROUTE_MUTATIONS
 from sabotage_config import CONFIG_MENU_MUTATIONS
 from sabotage_approval import APPROVAL_MUTATIONS
+from sabotage_limit_worktree import LIMIT_WORKTREE_MUTATIONS
 from sabotage_qa import QA_AUDIT_MUTATIONS
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
@@ -3054,6 +3055,7 @@ MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS +
               + AUTOCYCLE_MUTATIONS + WEBTEST_MUTATIONS + EVENT_CLAIM_MUTATIONS + REFRESH_MUTATIONS
               + RESUME_MUTATIONS + AUTOPILOT_MUTATIONS + TRACKER_MUTATIONS + ROUTE_MUTATIONS
               + POLICY_MUTATIONS + APPROVAL_MUTATIONS + CONFIG_MENU_MUTATIONS
+              + LIMIT_WORKTREE_MUTATIONS
               + QA_AUDIT_MUTATIONS)
 
 # pytest's own exit codes (documented, not this file's invention): 0 all

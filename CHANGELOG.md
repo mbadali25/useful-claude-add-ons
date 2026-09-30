@@ -4,6 +4,54 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.69: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088)
+
+- **`/crew:review` probes Codex with a real call.** `review_run.py --probe` makes
+  one minimal Codex call, with the round's own model and effort, before any
+  round is reserved, and exits `0` ok, `5` limited, `6` failed or `7` unknown
+  (no answer in 120 s). `command -v codex` said only that the CLI was
+  installed; a logged-out or limited Codex passed it and failed at the first
+  call.
+- **A Codex usage limit runs the round on Claude** (owner, 2026-09-28: "if we
+  hit a codex limit please use claude ads the reviewer"), pinned or not,
+  announced as `same-family (codex limit)` with the error quoted. The limit
+  patterns are Codex's own messages from `openai/codex` `error.rs`, each cited
+  in `hooks/scripts/review_limit.py`; "model at capacity" and "high demand" are
+  not limits. A limit hit mid-round leaves that round INCOMPLETE and is
+  recorded in `<git-common-dir>/crew/review-limit/<ticket>.json` (not the
+  ledgers' folder, which `/crew:status` lists), so the next round goes to
+  Claude without another call; the round after probes Codex live. The record
+  is written after the round's verdict, and one that cannot be written says so
+  and leaves the round's INCOMPLETE record and exit 3 intact. No refund: a
+  limit round is spent as before (T-0087 covers that).
+- **A linked worktree with no crew config reads the main checkout's.** Every
+  Python reader of `.crew/config.json`/`.crew/crew.json` goes through
+  `crew_common.repo_config_dir`, found with `git rev-parse --git-common-dir`.
+  A worktree's own files win whole and are never merged; a git failure reads
+  as `unknown` and inherits nothing. `/crew:status` prints the inherited
+  source and `/crew:config --explain`/`--models` start with
+  `repo layer: <path> (<source>)`. The heal path no longer writes a default
+  config into an inheriting worktree, where it would shadow the owner's, nor
+  into one where git could not tell (it asks again next session). The git
+  call no longer passes `--path-format`, which git before 2.31 echoed back as
+  an extra line and read as `unknown`.
+- **Existing lanes do not inherit until their heal-written default is
+  deleted.** Every SessionStart on crew 1.0.68 or earlier wrote a default
+  `.crew/config.json` into a lane worktree that had none, and that file is the
+  lane's own config, which wins whole. `/crew:status` and `/crew:config
+  --explain` now say so on a lane whose own config shadows the main
+  checkout's (`... the main checkout's (<path>) is not read ...`). If that
+  file is a default you never edited, delete the lane's
+  `.crew/config.json` (and `.crew/crew.json`) and it inherits from then on.
+- **Behaviour change:** Python guards in a lane worktree now follow the
+  owner's settings (`guards.*`, `scope.mode`, `scope.allowCliApproval`,
+  `roleWrites`, `cloudGuard`) where they read the built-in defaults before;
+  ratcheted guard keys still take the narrower of repo and machine-global.
+  The shell and PowerShell readers (`verify-gate.sh`, `_common.sh`,
+  `notify.sh`, the handoff scripts, `promote-gate.ps1`, `scope-guard.ps1`,
+  `cloud-guard.ps1`, `auto-clear.ps1`) are not routed yet.
+- Bumped `1.0.67 -> 1.0.69` (1.0.52 on its branch; re-set to 1.0.53 after merging main's 1.0.52, T-0076, to 1.0.55 after merging main's 1.0.54, T-0092, to 1.0.56 for its review round 1 fixes, to 1.0.60 at landing after merging main's 1.0.59, T-0075, and to 1.0.61 for three landing-branch changes: the six T-0075 own-path sites allowlisted in `test_worktree_config.py` (owner decision 2026-09-29), ruff's mechanical fixes on this ticket's own files (I001, RUF100, ISC004) and a file-level `# pylint: disable=too-many-lines` in `crew_config.py`, 3417 lines against the 3400 limit (owner decision 2026-09-29, "Disable at land + split ticket"; the split is a follow-up); to 1.0.65 after merging main's 1.0.64, to 1.0.67 after merging main's 1.0.65, and to 1.0.68 for the `review_gate.py` allowlist entry and its lane test, and to 1.0.69 after merging main's 1.0.67 (#267, merged first); main's 1.0.55-1.0.59 are T-0075's, 1.0.60-1.0.61 T-0010's (#261), 1.0.62-1.0.64 #263's, 1.0.65 #264's and 1.0.67 #267's, not this entry's). The "since 1.0.61" and "1.0.59 or earlier" wording in `CONFIG.md`, the crew README, `commands/config.md`, `crew_common.py` and the troubleshooting guide now reads 1.0.69 and 1.0.68: every release before this one lacks T-0088.
+
 ### Added — `crew` 1.0.67: `crew-qa-standards` — harness and QA-review standards, and an audit that checks them
 
 - **What.** A new bundled skill (30 now). `references/harness.md` (H1-H11) and
