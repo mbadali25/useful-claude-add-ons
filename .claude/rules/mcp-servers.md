@@ -3,9 +3,9 @@ paths:
   - "mcp-servers/packages/**"
   - "mcp-servers/scripts/**"
 ---
-<!-- crew:generated source=.crew/codemap/mcp-servers.md sha256=f1fc662a29a8cb92 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/mcp-servers.md sha256=18465bc3df141c58 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # mcp-servers
-Code map anchor `fb292689`; if it is behind HEAD, re-check with `git diff --name-only fb292689..HEAD -- <cited paths>`.
+Code map anchor `f2cf0508`; if it is behind HEAD, re-check with `git diff --name-only f2cf0508..HEAD -- <cited paths>`.
 Covers: The TypeScript monorepo — four stdio MCP servers over one shared core. Holds the two recorded adminAuth.ts defects (TODO items 2 and 3), still open. GraphClient sends its token only to its base origin (T-0090). Not a marketplace plugin; nothing registers it.
 ## Landmines
 - The credential chain caches its winner for the process lifetime.
