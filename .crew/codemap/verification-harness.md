@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@bd68ce88
+anchor: useful-claude-add-ons@ab7ba9fc
 verified: 2026-09-30
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -1781,3 +1781,6 @@ and `KIMI_MUTATIONS` alone at `:3061`. `.crew/verify.json` holds 36 rules, the K
 at `:363-381`, `default` `:384`, `unmapped` `:385`; the "At `63afa2b0`" paragraph is left as
 the history it states.
 Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
+
+`ab7ba9fc` then re-times the Kimi rule in `.crew/verify.json` (`"seconds"` and `"why"`
+only, lines 378 and 381, 52 -> 59 s), which moves no line and no claim here; anchored there.

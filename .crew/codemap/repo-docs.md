@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@bd68ce88
+anchor: useful-claude-add-ons@ab7ba9fc
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -1332,3 +1332,6 @@ named before it in its paragraph. Provenance sections and history citations (fol
 `on`, `since`, `before`, `was` or `->`) were left as written. A cited line whose text changed
 was re-read and its claim corrected; no cited line in this note changed text.
 Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
+
+`ab7ba9fc` then re-times the Kimi rule in `.crew/verify.json` (`"seconds"` and `"why"`
+only, lines 378 and 381, 52 -> 59 s), which moves no line and no claim here; anchored there.

@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@bd68ce88
+anchor: useful-claude-add-ons@ab7ba9fc
 verified: 2026-09-30
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -1152,3 +1152,6 @@ was re-read and its claim corrected: crew is 1.0.70 (`.claude-plugin/marketplace
 20,011 lines across 133 files, which `count_crew_markdown_lines()` returns;
 `python3 scripts/check-marketplace.py` passes.
 Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
+
+`ab7ba9fc` then re-times the Kimi rule in `.crew/verify.json` (`"seconds"` and `"why"`
+only, lines 378 and 381, 52 -> 59 s), which moves no line and no claim here; anchored there.

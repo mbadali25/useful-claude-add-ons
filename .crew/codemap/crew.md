@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@bd68ce88
+anchor: useful-claude-add-ons@ab7ba9fc
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -2876,3 +2876,6 @@ main's `crew-qa-standards`), `crew_config.py:1264` and `crew_route.py:322` now r
 corrected to `crew_config.py:3062`. Not described by this note, and left for a `--refresh crew`:
 T-0088's limit fallback, `review_gate.py` and `crew-qa-standards` with `qa_audit.py`.
 Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
+
+`ab7ba9fc` then re-times the Kimi rule in `.crew/verify.json` (`"seconds"` and `"why"`
+only, lines 378 and 381, 52 -> 59 s), which moves no line and no claim here; anchored there.
