@@ -182,8 +182,10 @@ the per-step test runs and verification-map checks in `/crew:implement`, and
 the graphify build.
 
 ```
-python3 hooks/scripts/crew_shell.py run -- "<command>"
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_shell.py" run -- "<command>"
 ```
+
+On Git Bash without `python3`, use `python` or `py -3` with the same arguments.
 
 It prints one `crew-shell:` line on stderr naming the route and why, then runs
 the job and returns its exit code. The route comes from `shellRoute.mode`,
@@ -210,24 +212,37 @@ stated on the route line.
 WSL2 is usable. It checks for `wsl.exe`, reads `wsl.exe --list --verbose`
 (UTF-16LE unless `WSL_UTF8=1`), and takes the default `*` distro unless
 `shellRoute.distro` names one. It never picks a distro by list order. It then
-checks WSL2 and `command -v python3; command -v git` inside that distro. The
+checks WSL2 and `command -v python3; command -v git` inside that distro, under
+`bash -lc`, the login shell a routed job runs in: a non-login `sh -c` misses
+`$HOME/.local/bin`, where `pip --user` and `pipx` put tools. The
 states are `usable`, `not-installed`, `no-distro`, `wsl1-only`, `no-python3`,
-`no-git`, `broken` (the error quoted verbatim) and `unknown` (the probe itself
-could not run). `unknown` is never read as `not-installed`. The answer goes to
+`no-git`, `broken` (the error quoted verbatim, joined onto one line) and
+`unknown` (the probe itself could not run). `unknown` is never read as `not-installed`. The answer goes to
 `~/.claude/crew/shell-route.json`, a machine-local cache. The probe never
 installs, updates or sets a default version.
 
 **The argv classifier.** A job runs with no shell only when the classifier can
 prove it is plain argv: no shell metacharacter (`| & ; < > ( ) $` backtick
 `* ? [ ] { } ~ ! #`, quotes, backslash, newline), no `sh -c`, `bash x`, `cd`,
-`source` or env assignment, no token starting with `/` (such a path is valid
-only once MSYS converts it), no `*.sh` first word, and an `argv[0]` that
-resolves. `python3` and `python` as `argv[0]` become the interpreter already
+`source` or env assignment, no token that starts with or embeds a POSIX path
+(`/c/x`, `--root=/c/x`, `-I/c/x`, `a:/b`, `x,/y`; such a path is valid only
+once MSYS converts it, so direct exec and Git Bash would pass different
+arguments; a drive letter such as `C:/` and a URL such as `https://` are
+fine), no `*.sh` first word, and an `argv[0]` that resolves. `python3` and `python` as `argv[0]` become the interpreter already
 running `crew_shell.py`, because on native Windows `python3` can be a
 WindowsApps alias that prints a Store prompt and exits 9009. Anything the
 classifier cannot prove goes to bash. `crew_shell.py classify -- "<command>"`
 prints the verdict and the reason. A bash string is never handed to pwsh, and
-crew never translates a bash job into PowerShell.
+crew never translates a bash job into PowerShell. On the `powershell` route
+each argument is single-quoted with `'` and U+2018 to U+201B doubled (pwsh
+reads all five as single quotes), and a program that cannot start exits 1
+with `crew-shell:` and the reason on stderr, never 0.
+
+**The WSL preflight.** Before a job goes to WSL, `run` checks its first word
+with `command -v` under `bash -lc` inside the distro and, for `python3 -m
+<module>`, that the distro's python imports the module. When either is
+missing, `auto` falls to the direct-or-Git-Bash split and says why, and `wsl`
+refuses with exit 3.
 
 **Absolute resolution.** A bare `bash` from a process whose PATH does not start
 with Git's directories reaches `C:\Windows\System32\bash.exe`, which is WSL's
@@ -273,8 +288,12 @@ Verdicts: the `C:` checkout is `gitbash-faster` (WSL loses on writes through `/m
 mode on a `D:` checkout: `auto` ran pytest direct, `gitbash` and `powershell` ran it through
 their shells (242 passed each), `powershell` sent `bash .../render.sh` to Git Bash with the
 line `powershell requested; job is bash syntax -> gitbash`, and `wsl` routed to WSL, where the
-job failed with `No module named pytest`: the WSL preflight checks only the first word
-(`python3`), not a `-m` module. `wsl.exe --cd` took `/mnt/d/...` with a space in it and
+job failed with `No module named pytest`: the preflight then checked only the first word
+(`python3`), so a distro missing the job's module read as a failed check. That refuted the
+spec's claim that a missing tool was resolved by design; the preflight now also checks
+`-m <module>` importability and runs under `bash -lc` (see "The WSL preflight"), so that job
+refuses with exit 3 under `wsl`, naming the module, and runs direct under `auto`. That is
+fixture-tested; the native run was not repeated. `wsl.exe --cd` took `/mnt/d/...` with a space in it and
 `/home/...` for a `\\wsl.localhost\` root. From Git Bash, pass a WSL root as
 `//wsl.localhost/<distro>/...`: a leading `\\` reaches Python as a single `\`. MSYS leaves a
 one-argument command string alone unless the whole string starts with `/`. `dadeush-lenovo`
