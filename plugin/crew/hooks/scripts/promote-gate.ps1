@@ -20,7 +20,40 @@ if ([string]::IsNullOrWhiteSpace($cmd)) { exit 0 }
 
 $root = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $root -ErrorAction SilentlyContinue
-if (-not (Test-Path .crew/verify.json)) { exit 0 }
+
+# T-0505, the twin of promote-gate.sh's block: "no map" means none in the
+# working copy AND none committed; an uncommitted change to the map (edit,
+# deletion, untracked file) is found by comparing `git hash-object` with HEAD's
+# blob, which skip-worktree/assume-unchanged cannot silence, and a dirty map is
+# matched against the committed one too, so renaming the deploy command in an
+# uncommitted edit cannot make it match nothing.
+$headMap = (git rev-parse -q --verify "HEAD:./.crew/verify.json" 2>$null)
+$mapDirty = $null
+$mapPresent = Test-Path .crew/verify.json
+if (-not $mapPresent) {
+  if (-not $headMap) { exit 0 }
+  $mapDirty = "deleted, and committed at HEAD"
+} elseif ($headMap) {
+  $workMap = (git hash-object -- .crew/verify.json 2>$null)
+  if (-not $workMap) { $mapDirty = "could not be hashed to compare with HEAD" }
+  elseif ($workMap -ne $headMap) { $mapDirty = "differs from HEAD" }
+} elseif ((git ls-files --others --exclude-standard -- .crew/verify.json 2>$null)) {
+  $mapDirty = "untracked - in no commit"
+}
+$envName = $null
+if ($mapDirty -and $headMap) {
+  try {
+    $committed = ((git cat-file blob $headMap 2>$null) -join "`n") | ConvertFrom-Json -ErrorAction Stop
+    foreach ($p in $committed.environments.PSObject.Properties) {
+      $declared = @($p.Value.deploy) | Where-Object { $_ -is [string] -and $_ }
+      foreach ($dep in $declared) {
+        if ($cmd.Contains($dep) -or $dep.Contains($cmd)) { $envName = $p.Name; break }
+      }
+      if ($envName) { break }
+    }
+  } catch { $envName = $null }
+  if (-not $envName -and -not $mapPresent) { exit 0 }
+}
 
 # Every way the map can be unreadable ends here, in one message, because the
 # reader's next action is the same for all of them: look at the file.
@@ -52,6 +85,7 @@ function Deny-UnreadableMap([string]$Why) {
 # here. That asymmetry is safe in the direction that matters - this flavour
 # still runs every check below on a map it could read - and closing it would
 # mean shipping a second JSON parser.
+if ($mapPresent) {
 try {
   $vm = Get-Content .crew/verify.json -Raw -ErrorAction Stop | ConvertFrom-Json
 } catch {
@@ -66,14 +100,14 @@ if ($vm -isnot [System.Management.Automation.PSCustomObject]) {
   Deny-UnreadableMap ".crew/verify.json does not hold a JSON object."
 }
 $envProperty = $vm.PSObject.Properties['environments']
-if (-not $envProperty) { exit 0 }
-if ($envProperty.Value -isnot [System.Management.Automation.PSCustomObject]) {
+if (-not $envProperty -and -not $envName) { exit 0 }
+if ($envProperty -and $envProperty.Value -isnot [System.Management.Automation.PSCustomObject]) {
   Deny-UnreadableMap "``environments`` in .crew/verify.json is not an object, so no environment can be read out of it."
 }
 
 # Which environment does this command deploy to?
-$envName = $null
 foreach ($p in $vm.environments.PSObject.Properties) {
+  if ($envName) { break }
   if ($p.Value -isnot [System.Management.Automation.PSCustomObject]) {
     Deny-UnreadableMap "environment ``$($p.Name)`` in .crew/verify.json is not an object."
   }
@@ -92,6 +126,7 @@ foreach ($p in $vm.environments.PSObject.Properties) {
     }
   }
   if ($envName) { break }
+}
 }
 if (-not $envName) { exit 0 }
 
@@ -167,6 +202,9 @@ function Stop-Promotion([string]$Why) {
 # per-checkout, gitignored state that a fresh worktree lacks and a throwaway
 # one can forge. The rules here are PowerShell's, because this flavour judges
 # PowerShell-tool commands; the branch between the twins is the tool.
+if ($mapDirty) {
+  Stop-Promotion ".crew/verify.json in the project dir ($((Get-Location).ProviderPath)) has uncommitted changes: it $mapDirty. The deploy map is policy; commit the change (it is then reviewed like any other) or revert it."
+}
 $projectTop = (git rev-parse --show-toplevel 2>$null)
 if (-not $projectTop) { Stop-Promotion "not a git repository - cannot establish what is being deployed." }
 
@@ -202,7 +240,7 @@ function Get-TokenValue($m, [int]$first) {
   $v = if ($m.Groups[$first].Success) { $m.Groups[$first].Value } else { $m.Groups[$first + 2].Value }
   return @($v, ($v.Contains('$') -or $v.Contains('`')))
 }
-$cdRx = [regex]('\G\s*(?:cd|chdir|sl|Set-Location|pushd|Push-Location)(?:\s+-(?:Literal)?Path)?\s+' + $tokenRx + '\s*(?:&&|;)')
+$cdRx = New-Object System.Text.RegularExpressions.Regex(('\G\s*(?:cd|chdir|sl|Set-Location|pushd|Push-Location)(?:\s+-(?:Literal)?Path)?\s+' + $tokenRx + '\s*(?:&&|;)'), 'IgnoreCase')
 $pos = 0
 while ($true) {
   $m = $cdRx.Match($cmd, $pos)
@@ -228,34 +266,91 @@ $gitDir = [regex]::Match($cmd, '--git-dir\b|--work-tree\b|\bGIT_DIR\b|\bGIT_WORK
 if ($gitDir.Success) {
   Stop-Promotion "cannot tell which tree the deploy reads: '$($gitDir.Value)' points git at a repository by a route the gate does not follow. Use 'cd <dir>;' or 'git -C <dir>'."
 }
+# Other tools that change directory for what they run - env -C/--chdir,
+# make -C/--directory, Start-Process -WorkingDirectory - are could-not-tell,
+# not the deploy's tree: the deploy process still runs in the chain's directory.
+$toolDir = [regex]::Match($cmd, '(?:^|(?<=[\s(;&|/`''"]))(?:env\b[^;&|\n]*?\s(?:-C|--chdir\b)|g?make\b[^;&|\n]*?\s(?:-C|--directory\b))|-WorkingDirectory\b', 'IgnoreCase')
+if ($toolDir.Success) {
+  Stop-Promotion "cannot tell which directory the deploy runs from: the command changes directory after it starts ('$($toolDir.Value.Trim())'). Put the cd first - 'cd <dir>; <deploy>' - so the gate judges the tree the deploy runs in."
+}
+
+# Which characters does the shell EXECUTE? Unquoted text and `$(...)`, even
+# inside double quotes; not single-quoted text nor the literal part of double
+# quotes, where `git -C x` is only words (Codex r1). Twin of executed() in
+# _promote_tree.py, with PowerShell's backtick as the escape character.
+function Get-Executed([string]$s) {
+  $out = New-Object bool[] $s.Length
+  $stack = New-Object System.Collections.Generic.List[string]
+  $stack.Add('U')
+  $i = 0
+  while ($i -lt $s.Length) {
+    $c = $s[$i]; $top = $stack[$stack.Count - 1]
+    $out[$i] = ($top -eq 'U' -or $top -eq 'X')
+    if ($top -eq 'S') {
+      if ($c -eq "'") { $stack.RemoveAt($stack.Count - 1) }
+    } elseif ($c -eq '`') {
+      if ($i + 1 -lt $s.Length) { $out[$i + 1] = $out[$i] }
+      $i += 2; continue
+    } elseif ($top -eq 'D' -and $c -eq '"') {
+      $stack.RemoveAt($stack.Count - 1)
+    } elseif ($c -eq '$' -and $i + 1 -lt $s.Length -and $s[$i + 1] -eq '(') {
+      $stack.Add('X'); $out[$i + 1] = $true; $i += 2; continue
+    } elseif (($top -eq 'U' -or $top -eq 'X') -and $c -eq "'") {
+      $stack.Add('S'); $out[$i] = $false
+    } elseif (($top -eq 'U' -or $top -eq 'X') -and $c -eq '"') {
+      $stack.Add('D'); $out[$i] = $false
+    } elseif ($top -eq 'X' -and $c -eq ')') {
+      $stack.RemoveAt($stack.Count - 1)
+    }
+    $i++
+  }
+  return ,$out
+}
+$live = Get-Executed $cmd
+
+# git's GLOBAL options after each `git` word: -C <dir> once, -c <k=v>, a short
+# no-value allowlist; anything else before the subcommand is could-not-tell.
+$gitFlags = @('--no-pager', '-P', '--paginate', '-p', '--no-replace-objects', '--literal-pathspecs', '--no-optional-locks', '--no-lazy-fetch')
+$argRx = [regex]('\G\s+' + $tokenRx)
 $trees = New-Object System.Collections.Generic.List[string]
 $bare = $false
-$gitRx = [regex]('(?:^|(?<=[\s(;&|/`]))git\b((?:\s+-c\s+\S+)*)(\s+-C\s*' + $tokenRx + ')?')
-foreach ($m in $gitRx.Matches($cmd)) {
-  if (-not $m.Groups[2].Success) { $bare = $true; continue }
-  $val = Get-TokenValue $m 3
-  if ($val[1]) { Stop-Promotion "cannot tell which directory the deploy runs from: '$($val[0])' is expanded by the shell, and the gate will not guess what it names. Use a literal path." }
-  $dir = Resolve-Dir $base $val[0]
-  if (-not $dir) { Stop-Promotion "cannot tell which directory the deploy runs from: 'git -C $($val[0])' does not resolve from '$base'." }
+$notSure = "is not a form the gate reads with certainty (a shell-expanded path, an unlisted git option, git inside quoted text), and it will not guess. Use a literal 'cd <dir>;' or 'git -C <dir>'."
+foreach ($m in [regex]::Matches($cmd, '(?:^|(?<=[\s(;&|/`''"]))git(?:\.exe)?(?=$|[\s;&|)''"`])', 'IgnoreCase')) {
+  if (-not $live[$m.Index]) { Stop-Promotion "cannot tell which directory the deploy runs from: 'git' inside quoted text $notSure" }
+  $p2 = $m.Index + $m.Length
+  $dirs = New-Object System.Collections.Generic.List[string]
+  while ($true) {
+    $a = $argRx.Match($cmd, $p2)
+    if (-not $a.Success) { break }
+    $v = Get-TokenValue $a 1
+    if ($v[1]) { Stop-Promotion "cannot tell which directory the deploy runs from: 'git $($v[0])' $notSure" }
+    if (-not $v[0].StartsWith('-')) { break }
+    if ($v[0] -ceq '-C' -or $v[0] -ceq '-c') {
+      $b = $argRx.Match($cmd, $a.Index + $a.Length)
+      if (-not $b.Success) { Stop-Promotion "cannot tell which directory the deploy runs from: 'git $($v[0])' with no value $notSure" }
+      $bv = Get-TokenValue $b 1
+      if ($v[0] -ceq '-C') {
+        if ($bv[1] -or $bv[0] -eq '-') { Stop-Promotion "cannot tell which directory the deploy runs from: '$($bv[0])' $notSure" }
+        $dirs.Add($bv[0])
+      }
+      $p2 = $b.Index + $b.Length; continue
+    }
+    if ($v[0].StartsWith('--git-dir') -or $v[0].StartsWith('--work-tree')) { Stop-Promotion "cannot tell which tree the deploy reads: '$($v[0])' points git at a repository by a route the gate does not follow. Use 'cd <dir>;' or 'git -C <dir>'." }
+    if ($gitFlags -cnotcontains $v[0]) { Stop-Promotion "cannot tell which directory the deploy runs from: 'git global option $($v[0])' $notSure" }
+    $p2 = $a.Index + $a.Length
+  }
+  if ($dirs.Count -gt 1) { Stop-Promotion "cannot tell which directory the deploy runs from: git -C given more than once $notSure" }
+  if ($dirs.Count -eq 0) { $bare = $true; continue }
+  $dir = Resolve-Dir $base $dirs[0]
+  if (-not $dir) { Stop-Promotion "cannot tell which directory the deploy runs from: 'git -C $($dirs[0])' does not resolve from '$base'." }
   $trees.Add($dir)
 }
-# Other tools that take a directory, as in _promote_tree.py: `env -C`/`make -C`
-# in the same simple command, and the long flags that mean "run there" -
-# PowerShell's own -WorkingDirectory among them.
-$dirRxs = @(
-  [regex]('(?:^|(?<=[\s(;&|/`''"]))(?:env|make|gmake)\b[^;&|\n]*?\s-C\s*' + $tokenRx),
-  [regex]('(?:^|(?<=\s))(?:--chdir|--cwd|--directory|-WorkingDirectory)(?:=|:|\s+)' + $tokenRx)
-)
-foreach ($rx in $dirRxs) {
-  foreach ($m in $rx.Matches($cmd)) {
-    $val = Get-TokenValue $m 1
-    if ($val[1]) { Stop-Promotion "cannot tell which directory the deploy runs from: '$($val[0])' is expanded by the shell, and the gate will not guess what it names. Use a literal path." }
-    $dir = Resolve-Dir $base $val[0]
-    if (-not $dir) { Stop-Promotion "cannot tell which directory the deploy runs from: '$($val[0])' does not resolve from '$base'." }
-    $trees.Add($dir)
-  }
-}
+# The sha comes from git -C's tree when there is one; the chain's directory is
+# ALSO where the deploy process runs, so it is checked for dirt and repository
+# below whatever -C says (Codex r1).
 if ($trees.Count -eq 0 -or $bare) { $trees.Add($base) }
+$runTop = (git -C $base rev-parse --show-toplevel 2>$null)
+if (-not $runTop) { Stop-Promotion "the deploy runs from '$base', which is not inside a git worktree - cannot establish what is being deployed." }
 
 $tree = $null
 foreach ($dir in $trees) {
@@ -274,20 +369,29 @@ if (-not $treeCommon -or -not $projectCommon) {
 if ($treeCommon -ne $projectCommon) {
   Stop-Promotion "the deploy runs from '$tree', which is a worktree of a different repository than this project ('$projectTop'). Its sha has no PASS row, marker or map here."
 }
+if ($runTop -ne $tree -and (Get-CommonDir $runTop) -ne $projectCommon) {
+  Stop-Promotion "the deploy process runs in '$runTop', which is not a worktree of this project ('$projectTop')."
+}
 
 $sha = (git -C $tree rev-parse --short HEAD 2>$null)
 $full = (git -C $tree rev-parse HEAD 2>$null)
 if (-not $sha) { Stop-Promotion "'$tree' has no commit at HEAD - cannot establish what is being deployed." }
 
-# The deploy map is read from the project dir, whose dirt no longer blocks a
-# worktree deploy. An uncommitted edit to it must not become policy.
-if ((git status --porcelain -- .crew/verify.json 2>$null)) {
-  Stop-Promotion ".crew/verify.json in the project dir ('$projectTop') has uncommitted edits. The deploy map is policy; commit the change (it is then reviewed like any other) or revert it."
+# Clean: the tree deployed and the tree the deploy runs in. A status that
+# FAILS is could-not-tell; untracked files are listed whatever config says;
+# skip-worktree/assume-unchanged entries hide edits from status (Codex r1).
+function Assert-Clean([string]$Dir) {
+  $st = (git -C $Dir status --porcelain --untracked-files=all --ignore-submodules=none 2>$null)
+  if ($LASTEXITCODE -ne 0) { Stop-Promotion "could not read git status in '$Dir', so the gate cannot tell whether it is clean. This is not a pass." }
+  if ($st) { Stop-Promotion "the tree this deploy runs from ('$Dir') is dirty. You would be deploying $sha plus changes that are in no commit and no review. Commit or stash there first." }
+  $flags = (git -C $Dir ls-files -v 2>$null)
+  if ($LASTEXITCODE -ne 0) { Stop-Promotion "could not read the index of '$Dir', so the gate cannot tell whether it is clean. This is not a pass." }
+  if (@($flags | Where-Object { $_ -cmatch '^[a-zS]' }).Count -gt 0) {
+    Stop-Promotion "'$Dir' has index entries flagged skip-worktree or assume-unchanged, which hide changes from git status. Clear them (git update-index --no-skip-worktree / --no-assume-unchanged) before deploying."
+  }
 }
-
-if ((git -C $tree status --porcelain 2>$null)) {
-  Stop-Promotion "the tree this deploy runs from ('$tree') is dirty. You would be deploying $sha plus changes that are in no commit and no review. Commit or stash there first."
-}
+Assert-Clean $tree
+if ($runTop -ne $tree) { Assert-Clean $runTop }
 
 # A literal sha must be the tree's HEAD; a hex token naming no commit here is
 # not a sha and is left alone.
@@ -370,7 +474,7 @@ if ($problems.Count -gt 0 -and $incident) {
 }
 
 if ($problems.Count -gt 0) {
-  [Console]::Error.WriteLine("PROMOTION BLOCKED ($envName, sha $sha):")
+  [Console]::Error.WriteLine("PROMOTION BLOCKED ($envName, sha $sha, tree $tree):")
   $problems | ForEach-Object { [Console]::Error.WriteLine("  - $_") }
   [Console]::Error.WriteLine("")
   [Console]::Error.WriteLine("These are the pre-deploy gates from .crew/verify.json. Fix them, or set")

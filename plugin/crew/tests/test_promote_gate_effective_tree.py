@@ -208,12 +208,23 @@ def test_a_leading_cd_into_a_clean_worktree_deploys_from_a_dirty_main(flavour, r
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
 def test_git_dash_C_names_the_tree_being_deployed(flavour, repo):
-    repo.dirty_main()
     code, err = run_gate(
         flavour, repo, f"deploy-dev --ref $(git -C {repo.wt} rev-parse HEAD)",
         cwd=repo.main)
     assert code == 0, err
     assert repo.in_flight() == f"development {repo.wt_sha}"
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_git_dash_C_does_not_launder_the_dirty_tree_the_deploy_runs_in(flavour, repo):
+    """Codex r1: `-C` names the sha, but the deploy process still runs in the
+    payload cwd -- whose dirt must still block."""
+    repo.dirty_main()
+    code, err = run_gate(
+        flavour, repo, f"deploy-dev --ref $(git -C {repo.wt} rev-parse HEAD)",
+        cwd=repo.main)
+    assert code == 2, err
+    assert "dirty" in err, err
 
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
@@ -378,23 +389,143 @@ def test_git_dir_pointing_elsewhere_blocks(flavour, repo):
     assert "--git-dir" in err, err
 
 
+@pytest.mark.parametrize("command", [
+    "env -C {wt} deploy-dev",
+    "env --chdir={wt} deploy-dev",
+    "make -C {wt} deploy-dev",
+])
 @pytest.mark.parametrize("flavour", FLAVOURS)
-def test_env_dash_C_names_the_tree_being_deployed(flavour, repo):
-    """Allow reading of a directory flag the parser recognises."""
+def test_a_tool_that_changes_directory_is_could_not_tell(flavour, repo, command):
+    """Codex r1: `env -C` and friends change the directory for what they run,
+    so they are refused rather than read as the deploy's tree."""
+    code, err = run_gate(flavour, repo, command.format(wt=repo.wt), cwd=repo.main)
+    assert code == 2, err
+    assert "changes directory after it starts" in err, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_an_application_directory_option_is_not_the_deploys_tree(flavour, repo):
+    """Codex r1: `--directory` belongs to the program it is passed to; the
+    deploy still runs in the (dirty) payload cwd."""
     repo.dirty_main()
-    code, err = run_gate(flavour, repo, f"env -C {repo.wt} deploy-dev",
+    code, err = run_gate(flavour, repo, f"deploy-dev --directory {repo.wt}",
                          cwd=repo.main)
+    assert code == 2, err
+    assert "dirty" in err, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_git_global_options_before_dash_C_still_name_the_tree(flavour, repo):
+    """Codex r1: `git --no-pager -C <wt>` was read as a bare git, so the main
+    checkout's PASS row admitted the worktree's unpromoted sha."""
+    repo.promotions(("development", repo.main_sha))
+    code, err = run_gate(
+        flavour, repo,
+        f"deploy-qa --ref $(git --no-pager -C {repo.wt} rev-parse HEAD)",
+        cwd=repo.main)
+    assert code == 2, err
+    assert f"no all-pass row for sha {repo.wt_sha}" in err, err
+
+
+@pytest.mark.parametrize("command", [
+    "deploy-dev --ref $(git --bare -C {wt} rev-parse HEAD)",
+    "deploy-dev --ref $(git -C {wt} -C . rev-parse HEAD)",
+    'deploy-dev --note "x git -C {wt} rev-parse HEAD"',
+])
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_git_forms_outside_the_allowlist_are_could_not_tell(flavour, repo, command):
+    code, err = run_gate(flavour, repo, command.format(wt=repo.wt), cwd=repo.main)
+    assert code == 2, err
+    assert "reads with certainty" in err, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_quoted_command_substitution_is_still_read(flavour, repo):
+    """Allow reading of the quote rule: `"$(git -C <wt> ...)"` IS executed."""
+    code, err = run_gate(
+        flavour, repo, f'deploy-dev --ref "$(git -C {repo.wt} rev-parse HEAD)"',
+        cwd=repo.main)
     assert code == 0, err
     assert repo.in_flight() == f"development {repo.wt_sha}"
 
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
-def test_a_long_chdir_flag_into_another_repository_blocks(flavour, repo):
-    """Deny reading of the same flag family."""
-    code, err = run_gate(flavour, repo, f"env --chdir={repo.foreign} deploy-dev",
-                         cwd=repo.main)
+def test_an_uncommitted_rename_of_the_deploy_command_still_blocks(flavour, repo):
+    """Codex r1: renaming the declared command in an uncommitted edit made the
+    working map match nothing, so the gate exited 0 before any check."""
+    path = repo.main / ".crew" / "verify.json"
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    doc["environments"]["development"]["deploy"] = "renamed-away"
+    path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+    code, err = run_gate(flavour, repo, "deploy-dev", cwd=repo.wt)
     assert code == 2, err
-    assert "different repository" in err, err
+    assert "uncommitted" in err, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_an_uncommitted_deletion_of_the_map_is_not_an_opt_out(flavour, repo):
+    _git(repo.main, "rm", "-q", ".crew/verify.json")
+    code, err = run_gate(flavour, repo, "deploy-dev", cwd=repo.wt)
+    assert code == 2, err
+    assert "deleted" in err, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_deleted_map_does_not_gate_commands_it_never_declared(flavour, repo):
+    """Control: a deleted map blocks only commands the committed map declares."""
+    _git(repo.main, "rm", "-q", ".crew/verify.json")
+    code, err = run_gate(flavour, repo, "echo hello", cwd=repo.wt)
+    assert code == 0, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_skip_worktree_does_not_hide_an_uncommitted_map_edit(flavour, repo):
+    path = repo.main / ".crew" / "verify.json"
+    _git(repo.main, "update-index", "--skip-worktree", ".crew/verify.json")
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    del doc["environments"]["qa"]["requires"]
+    path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+    code, err = run_gate(flavour, repo, "deploy-qa", cwd=repo.wt)
+    assert code == 2, err
+    assert "uncommitted" in err, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_skip_worktree_in_the_deployed_tree_blocks(flavour, repo):
+    _git(repo.wt, "update-index", "--skip-worktree", "feature.txt")
+    (repo.wt / "feature.txt").write_text("hidden edit\n", encoding="utf-8")
+    code, err = run_gate(flavour, repo, "deploy-dev", cwd=repo.wt)
+    assert code == 2, err
+    assert "skip-worktree" in err, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_an_unreadable_status_is_not_clean(flavour, repo):
+    """Codex r1: a failed `git status` printed nothing and read as clean."""
+    index = _git(repo.wt, "rev-parse", "--git-path", "index")
+    index_path = pathlib.Path(index)
+    if not index_path.is_absolute():
+        index_path = repo.wt / index_path
+    index_path.write_bytes(b"not an index")
+    code, err = run_gate(flavour, repo, "deploy-dev", cwd=repo.wt)
+    assert code == 2, err
+    assert "could not read" in err, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_policy_block_names_the_tree_it_judged(flavour, repo):
+    code, err = run_gate(flavour, repo, "deploy-qa", cwd=repo.wt)
+    assert code == 2, err
+    assert _WT_NAME in err and repo.wt_sha in err, err
+
+
+@pytest.mark.skipif(_PWSH is None, reason="no PowerShell 7 on this machine")
+def test_powershell_directory_changes_are_case_insensitive(repo):
+    repo.dirty_main()
+    code, err = run_gate("ps1", repo, f"SET-LOCATION {repo.wt}; deploy-dev",
+                         cwd=repo.main)
+    assert code == 0, err
+    assert repo.in_flight() == f"development {repo.wt_sha}"
 
 
 @pytest.mark.parametrize("command", [
