@@ -67,12 +67,12 @@ A tooling change: this release carries no feature work.
   covers Codex CLI's `--json` events (`exec_events.rs`), `wsl.exe`'s UTF-16LE
   output and `gh`'s exit codes and review flags, each with its URL, read date
   and probe record. It is held to crew's call sites by `test_external_tool_formats.py`.
-- **Twenty-nine sabotage entries** (`tests/sabotage_tooling.py`) cover the
+- **Thirty-three sabotage entries** (`tests/sabotage_tooling.py`) cover the
   refund, the budget, the golden replay and its redaction, the manifest,
   status, autopilot, the gate record, the canary, the tooling-alone checker,
   rule 35's paths, the batch-shim prompt, the WSL probe's no-distribution skip
   and the corpus's `-text` attribute. The six on the checker and `verify.json` are added only where
-  those repo files exist. All twenty-nine go RED.
+  those repo files exist. All thirty-three go RED.
 
 ### Fixed — `crew` 1.0.70 (T-0087)
 
@@ -111,6 +111,16 @@ A tooling change: this release carries no feature work.
   autopilot's no-progress stop, only the `/crew:review` rerun. A refresh that
   ran and left its artifact stale (`graphify update .` named again) repeated
   instead of stopping.
+- Review round 5: the golden corpus's leak check refuses a person's address
+  straight after a JSON escape (`\nalice@corp.com`, `\u003c...`) and the key
+  shapes it missed: `sk-proj-`/`sk-ant-` segments, `ghu_`/`ghs_`/`ghr_`,
+  `ASIA`, `AIza`, `sk_live_`/`rk_live_`, `npm_` and `glpat-`. The corpus test
+  reads the builder's patterns instead of a second copy with the same gaps.
+  The committed corpus was re-scanned with the fixed check: no hit.
+- Review round 5: a review ledger whose `successors` is `{}`, `0`, `""`,
+  `false` or `null`, or whose latest `after_round` is missing, not an integer,
+  a boolean or outside its rounds, reads UNKNOWN and refuses a reservation. It
+  used to read as a plan with no successor, a normal budget.
 - Bumped `1.0.69 -> 1.0.70` (1.0.52 on its branch; re-set to 1.0.53 after
   merging main's 1.0.52, T-0076, to 1.0.55 after merging main's 1.0.54,
   T-0092, to 1.0.62 after merging main's 1.0.61, T-0010, and to 1.0.70 after

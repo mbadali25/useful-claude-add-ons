@@ -226,6 +226,38 @@ TOOLING_MUTATIONS = (
         ("tests/test_crew_autopilot.py::"
          "test_next_refunded_round_with_a_refresh_still_stale_is_no_progress"),
     ),
+    (
+        # (ad) Round-5 BLOCK: `sk-proj-`/`sk-ant-` keys pass the leak check again.
+        "the sk- leak pattern loses its hyphenated segments",
+        GOLDEN_BUILD,
+        '    ("sk- token", re.compile(r"(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}")),\n',
+        '    ("sk- token", re.compile(r"(?<![A-Za-z0-9])sk-[A-Za-z0-9]{20}")),\n',
+        "tests/test_review_golden.py::test_leak_refuses_every_secret_shape",
+    ),
+    (
+        # (ae) Round-5 BLOCK: an address right after a JSON escape passes again.
+        "an address after a JSON escape is not an address again",
+        GOLDEN_BUILD,
+        'EMAIL = re.compile(r"(?:(?<![\\\\A-Za-z0-9._%+-])|(?<=\\\\[nrt])(?=[A-Za-z0-9])"\n',
+        'EMAIL = re.compile(r"(?:(?<![\\\\A-Za-z0-9._%+-])|(?!x)x"\n',
+        "tests/test_review_golden.py::test_redact_replaces_an_address_after_a_json_escape",
+    ),
+    (
+        # (af) Round-5 FIX: a falsey non-list `successors` reads as "no successor".
+        "a falsey successors collapses to no successor plan",
+        REVIEW_LEDGER,
+        '    successors = data.get("successors", [])\n',
+        '    successors = data.get("successors") or []\n',
+        "tests/test_review_ledger.py::test_a_wrong_typed_successors_path_reads_unknown",
+    ),
+    (
+        # (ag) ... or a wrong-typed `after_round` reads as boundary 0.
+        "a wrong-typed after_round reads as boundary 0",
+        REVIEW_LEDGER,
+        '    if successors:\n        after = successors[-1].get("after_round")\n',
+        '    if False:\n        after = successors[-1].get("after_round")\n',
+        "tests/test_review_ledger.py::test_a_wrong_typed_successors_path_reads_unknown",
+    ),
 )
 
 # Outside the plugin: present only in the marketplace repo, never in an
