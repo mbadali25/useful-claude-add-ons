@@ -1,0 +1,26 @@
+READ|part-001-of-022.patch
+READ|part-002-of-022.patch
+READ|part-003-of-022.patch
+READ|part-004-of-022.patch
+READ|part-005-of-022.patch
+READ|part-006-of-022.patch
+READ|part-007-of-022.patch
+READ|part-008-of-022.patch
+READ|part-009-of-022.patch
+READ|part-010-of-022.patch
+READ|part-011-of-022.patch
+READ|part-012-of-022.patch
+READ|part-013-of-022.patch
+READ|part-014-of-022.patch
+READ|part-015-of-022.patch
+READ|part-016-of-022.patch
+READ|part-017-of-022.patch
+READ|part-018-of-022.patch
+READ|part-019-of-022.patch
+READ|part-020-of-022.patch
+READ|part-021-of-022.patch
+READ|part-022-of-022.patch
+FIX|plugin/crew/hooks/scripts/crew_autopilot.py:727|The ledger veto violates the required `self`-approves-any-risk policy and prevents autopilot from approving the distinct successor plan that is the only route out of NEEDS_REPLAN.|Configure `autopilot.approval: self` and `scope.allowCliApproval: true`, create a valid changed plan with a NEEDS_REPLAN ledger, then call `approval_policy`; it returns `allow: false` and `approve` exits 2.
+FIX|plugin/crew/hooks/scripts/scope_guard.py:114|The detector excludes newlines, so a shell-continuation invocation reaches execution without passing the required whole-command matcher or its bare-command refusal.|In block mode submit a Bash command with a backslash-newline between `crew_autopilot.py` and `approve`; `_AUTOPILOT_APPROVE_RE.search` is false and `shell_refusal` returns no refusal.
+FIX|plugin/crew/commands/autopilot.md:46|The unconditional rule that every result other than `stop=0` stops contradicts the later approval/question procedure, while `next` deliberately returns `stop=1` for both phases; literal execution therefore stops before either new policy can act.|Use a low-risk ticket with self-approval enabled and run `next`; it prints `phase=approve stop=1`, so lines 46-50 require stopping instead of running the helper specified at line 60.
+FIX|plugin/crew/hooks/scripts/crew_autopilot.py:879|Historical `taken:` records are compared with the current policy, so changing policy invalidates honest prior answers and prevents later questions from being processed.|Record Q1 under `questions=risk` as `taken: Option A by autopilot (risk)`, switch to `questions=self`, add a valid Q2, and run `questions-check`; Q1 makes the whole file invalid even though both policies authorize taking the recommendation.

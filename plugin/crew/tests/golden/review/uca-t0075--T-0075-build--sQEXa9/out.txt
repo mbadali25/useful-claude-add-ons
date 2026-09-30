@@ -1,0 +1,52 @@
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-001-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-002-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-003-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-004-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-005-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-006-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-007-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-008-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-009-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-010-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-011-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-012-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-013-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-014-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-015-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-016-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-017-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-018-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-019-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-020-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-021-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-022-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-023-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-024-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-025-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-026-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-027-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-028-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-029-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-030-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-031-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-032-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-033-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-034-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-035-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-036-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-037-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-038-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-039-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-040-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-041-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-042-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-043-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-044-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-045-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-046-of-047.patch
+READ|<ROOT>/.work/review/T-0075-build--sQEXa9/diff.txt.parts/part-047-of-047.patch
+BLOCK|.crew/verify.json:129|required final-gate evidence is absent, so rule 17 and the changed config suites have no recorded acceptance result|`test -e .crew/.verify-gate.record.json` fails and `python3 plugin/crew/hooks/scripts/verify_record.py report` produces no per-rule record
+BLOCK|plugin/crew/hooks/scripts/crew_config_files.py:421|the POSIX no-clobber move can still delete a foreign writer's bytes after restoring them to the source|replace `src` with file F1 after the initial hard link, then replace the restored `src` with F2 after line 416 but before line 421; removing `parked` drops F1's last link, leaving only the original backup and F2
+BLOCK|plugin/crew/hooks/scripts/crew_config_menu.py:856|delete checks the preview's machine digest before taking only the repo lock, so a machine write in the gap changes the reviewed post-delete semantics without stopping deletion|pause after `_unbound`, change the machine-global file, then resume `apply_delete`; it deletes the repo config successfully although the preview's widening/held-down results are stale
+FIX|plugin/crew/hooks/scripts/crew_config.py:206|a valid JSON value for `qa.order` can raise an uncaught TypeError instead of being accepted or refused, violating the no-traceback CLI boundary|run `crew_config.py --set 'qa.order=1'`; `validate_providers` executes `for name in 1` and crashes at dry run in both layers
+FIX|plugin/crew/hooks/scripts/crew_config_menu.py:654|unknown leaves under `platform` are falsely promised as re-detected even though heal writes only the default/derived platform keys and removes them|add `"platform":{"x-local":1}` to a valid repo config and preview deletion; `platform.x-local` is marked re-detected, but delete followed by SessionStart healing removes it

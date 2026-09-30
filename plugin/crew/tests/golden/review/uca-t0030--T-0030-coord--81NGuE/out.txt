@@ -1,0 +1,43 @@
+READ|part-001-of-033.patch
+READ|part-002-of-033.patch
+READ|part-003-of-033.patch
+READ|part-004-of-033.patch
+READ|part-005-of-033.patch
+READ|part-006-of-033.patch
+READ|part-007-of-033.patch
+READ|part-008-of-033.patch
+READ|part-009-of-033.patch
+READ|part-010-of-033.patch
+READ|part-011-of-033.patch
+READ|part-012-of-033.patch
+READ|part-013-of-033.patch
+READ|part-014-of-033.patch
+READ|part-015-of-033.patch
+READ|part-016-of-033.patch
+READ|part-017-of-033.patch
+READ|part-018-of-033.patch
+READ|part-019-of-033.patch
+READ|part-020-of-033.patch
+READ|part-021-of-033.patch
+READ|part-022-of-033.patch
+READ|part-023-of-033.patch
+READ|part-024-of-033.patch
+READ|part-025-of-033.patch
+READ|part-026-of-033.patch
+READ|part-027-of-033.patch
+READ|part-028-of-033.patch
+READ|part-029-of-033.patch
+READ|part-030-of-033.patch
+READ|part-031-of-033.patch
+READ|part-032-of-033.patch
+READ|part-033-of-033.patch
+BLOCK|plugin/crew/hooks/scripts/crew_coord.py:235|_linux_probe treats ProcessLookupError as proof the pid is gone (measured=True), but Claude Code's own Linux sandbox runs every Bash command under bubblewrap with an unconditional --unshare-pid (the installed binary <HOME>/.local/share/claude/versions/2.1.283 pushes "--unshare-pid" before --proc /proc). Inside that pid namespace, os.kill(CLAUDE_PID, 0) raises ESRCH for a LIVE process. With the sandbox on, recover therefore adopts a live session's claim whenever the identity file names it (two sessions in one worktree gives two holders), and every heartbeat-loop exits on its first tick with 'watched pid is gone', so every claim goes stale after the TTL. The check cannot tell here, but it reads gone. spike.md still marks the Linux PID proof (sections 2, 4, 5) NOT YET RUN, yet README and CHANGELOG say 'measured on Linux'. One fix: before trusting 'gone', require probe_pid(own CLAUDE_PID) to read alive, and record pid_start=None at claim time as unverifiable.|Start a live process P, then run `bwrap --unshare-pid --dev-bind / / --proc /proc python3 -c "import crew_coord; print(crew_coord.probe_pid(P))"`. It prints PidProbe(state='gone', start=None, measured=True); outside the namespace the same call prints alive (reproduced).
+FIX|plugin/crew/hooks/scripts/crew_coord.py:1004|The heartbeat lock is keyed only by channel and ticket (heartbeat_path), not by holder. When the previous holder's loop is still sleeping, it still holds the lock, so the new holder's loop exits at once with 'another heartbeat loop already runs'. The old loop then exits at its next tick ('no longer working for this session'), and the new claim has no heartbeat at all. Its holder is alive, yet it reads 'owner unknown' after the TTL. This hits release followed by a claim by another session within one interval (10 min), recover soon after a crash (the dead holder's loop sleeps up to 600 s), and a crash-resume reclaim. The comment at :943-945 assumes the lock holder is the same claim.|With ttlMinutes 3 (interval 60 s): session A (live pid P1) runs claim, then release; session B (live pid P2) runs claim on the same ticket. At 5 s the log shows 'another heartbeat loop already runs ... exiting' for B. At 60 s A's loop exits with 'refused: only the holder may heartbeat'. At 75 s pgrep finds no heartbeat-loop while P2 is still alive (reproduced).
+FIX|plugin/crew/hooks/scripts/crew_coord.py:784|Holder identity is compared by session id alone, so a second live process carrying the same CLAUDE_CODE_SESSION_ID takes over a working claim as a silent 'reclaim', from another pid or another worktree. Running `claude --resume <id>` while the original is still open does this. The first process still believes it holds the ticket, and its heartbeat keeps the claim fresh. That is two holders of one ticket. The same session-only test decides _holder_change (:860) and recover (:928).|With CLAUDE_CODE_SESSION_ID=sess-x: claim r:T-2 from wt with live CLAUDE_PID=P1, then claim r:T-2 from wt2 with live CLAUDE_PID=P2. Both exit 0 ('reclaimed ...'), and the claim now names pid P2 and worktree wt2 while P1 is still alive (reproduced).
+FIX|plugin/crew/hooks/scripts/crew_coord.py:473|`git ls-remote --refs <remote> refs/heads/crew-coord/<c>` matches by tail, so any remote ref ending in /refs/heads/crew-coord/<c> is listed too, and the first line wins. When such a ref sorts first, fetch() takes its tip, cat-file -e passes if the object is local, and status reads an unrelated tree. It prints an empty channel with exit 0 while claims are working: a read presented as current instead of unknown. Anyone with push access to any branch can hide every claim this way, and every claim then fails as 'could not push'. The code should require the listed refname to equal self.ref exactly.|Push any commit to refs/heads/a/refs/heads/crew-coord/t on the remote, then run status --channel t. It prints 'tip 8584a2b3c0b9' (main's commit) with no claim lines and exit 0, while the real branch holds a working claims/r__T-1.json. The next claim then ends 'unknown - could not push ... after 4 attempts' (reproduced).
+FIX|plugin/crew/hooks/scripts/crew_coord.py:728|_presented builds the recommended command from the peer-written claim['repo'] and claim['ticket'] without safe(). Only the key is sanitised, and parse_claim only checks that repo__ticket equals the file name, which a peer controls. So a peer who writes this host's machine and worktree into a claim (both are visible in other claims) gets it presented. A U+2028 in repo then splits the status line, and the first half carries no [peer-written] label. Shell metacharacters also land verbatim in the 'recommended: the owner runs crew_coord.py release --break ... --ticket <repo>:<id>' command the owner is told to run.|Raw-write claims/x;touch<U+2028>PWNED;#__T-1.json with repo 'x;touch\u2028PWNED;#', ticket T-1, state working, and machine and worktree set to this host and wt. Run status. Line 3 ends '--ticket x;touch' with no [peer-written]. Line 4 begins 'PWNED;#:T-1 from a terminal ...' (reproduced).
+FIX|plugin/crew/hooks/scripts/crew_coord.py:617|The <repo> half of the claim key is free text. It is never canonicalised or derived from the repository, and neither the README nor --help says what to pass. Sessions naming one repository differently (worktree directory name vs repo name, or letter case) each get their own claim file, so one ticket gets several concurrent holders. This repo's own worktrees are named uca-t00xx while the main checkout is useful-claude-add-ons.|On one channel, sess-1 claims uca:T-0030, sess-2 claims useful-claude-add-ons:T-0030, and sess-3 claims UCA:t-0030. All three exit 0, and status lists three working holders for the same ticket (reproduced).
+FIX|plugin/crew/tests/test_crew_coord.py:743|The corrupt-claim case {"state": "working", "holder": {}} also lacks claimed_at and heartbeat_at, so it is refused by the timestamp check whatever parse_claim does with the holder. The holder-validation branch (crew_coord.py:645-646) therefore has a test that cannot fail. Without it, a working claim with valid timestamps and a bad holder crashes status, claim and recover with an uncaught KeyError or TypeError, and exits 1, which reads as 'refused', not 'unknown'.|In a scratch copy, delete crew_coord.py:645-646 (the _valid_holder check) and run pytest test_crew_coord.py. Result: 110 passed (reproduced).
+NIT|plugin/crew/tests/test_crew_coord.py:583|The must-block test for --break without the owner signal sets CLAUDECODE and CLAUDE_CODE_SESSION_ID together, so neither half of owner_signal() (crew_coord.py:349) is tested alone. Dropping either condition leaves the suite green.|In a scratch copy, change owner_signal to `return "CLAUDE_CODE_SESSION_ID" not in os.environ` (and separately to check only CLAUDECODE). Each gives 110 passed (reproduced).
+NIT|plugin/crew/hooks/scripts/crew_coord.py:1012|The heartbeat loop's pid-reuse exit (a start time different from the first probe) has no test. Removing it leaves the suite green, and a recycled CLAUDE_PID would then keep a dead session's claim fresh indefinitely.|In a scratch copy, change :1012 to `if probe.state == "gone":` and run pytest test_crew_coord.py. Result: 110 passed (reproduced).
+NIT|plugin/crew/tests/test_crew_coord.py:280|The isolation snapshot excludes coord-identity.json.lock as well as the identity file. That hides a persistent new file the code creates in <git-common-dir>/crew/ (crew_coord.py:431) beyond the one write the plan allows there (coord-identity.json, plus its per-pid .tmp). The test was widened to fit the code, the same shape as round 1's tracking-ref finding.|Run claim in the fixture, then `ls $(git rev-parse --git-common-dir)/crew/`. It lists coord-identity.json.lock, which stays after every command.

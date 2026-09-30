@@ -1,12 +1,12 @@
-%% Generated from useful-claude-add-ons@cd106b8b on 2026-09-28. Verify before trusting.
+%% Generated from useful-claude-add-ons@78b7080a on 2026-09-30. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
 %% re-read at f2bb919b (repo-relative): plugin/crew/hooks/hooks.json:3-10,
 %% plugin/crew/hooks/scripts/handoff-read.sh:34 :41 :42 :44,
-%% plugin/crew/hooks/scripts/crew_context.py:121-123 :833 :839 :909,
-%% plugin/crew/hooks/scripts/crew_state.py:643, plugin/crew/hooks/scripts/crew_status.py:207,
-%% plugin/crew/commands/status.md:14, plugin/crew/hooks/scripts/crew_platform.py:229 :507 :537.
+%% plugin/crew/hooks/scripts/crew_context.py:122-124 :833 :839 :909,
+%% plugin/crew/hooks/scripts/crew_state.py:646, plugin/crew/hooks/scripts/crew_status.py:225,
+%% plugin/crew/commands/status.md:14, plugin/crew/hooks/scripts/crew_platform.py:230 :507 :537.
 %% Re-anchored f2bb919b -> 7b667587 (T-0021): of the Anchors paths crew_state.py and
 %% crew_status.py changed. crew_state.py's cited lines (:643, :761, :846-901, :941-945,
 %% :967) did not move (`git diff -U0`, re-read). crew_status.py moved: the HANDOFF
@@ -77,6 +77,11 @@
 %% 07eefac5, re-read with sed -n at 53f5482c). crew_resume.py is cited by function name only; its
 %% partial-state fix makes decide wait on a resume-state.json missing worktrees, consumed or
 %% last, which cc6's wait edge already covers. No node or edge changed.
+%% Re-anchored a4eb2f55 -> b5c37635 (T-0087, crew 1.0.52): of the Anchors paths
+%% crew_status.py changed (T-0087's refund-aware review lines and the shared gate-record
+%% reader): _tracker_line :63 -> :65, the HANDOFF check :207 -> :215, the report lines
+%% :192-216 -> :200-224, re-mapped by script and re-read. commands/status.md's review row
+%% changed in place (:14 holds). No node or edge changed.
 
 %% Re-anchored 07ca3972 -> eba11657 (T-0023): of the Anchors paths only crew_context.py changed -
 %% route_item (plain-text lifecycle routing, UserPromptSubmit only) inserted at :801-831 and its
@@ -138,15 +143,15 @@
 %%   (resume_decision :661, crew_resume.decide; `off` unless armed and source is
 %%   clear/compact); :908-910 startup -> pointer + next action; :911-923 other
 %%   sources -> full note, next action first, then the auto-resume line; :924 no
-%%   note but a resume line -> that line alone; :1090 JSON additionalContext.
+%%   note but a resume line -> that line alone; :1090 JSON additionalContext (LF stdout, :1086-1089).
 %% Stale rule: crew_state.py:646 (72h / 3 commits), :859-914, archived to
 %%   .crew/handoffs/ (:774, :980), never deleted; never raises (:954-958).
-%% /crew:status: commands/status.md:14 -> crew_status.py; :192-216 report lines.
+%% /crew:status: commands/status.md:14 -> crew_status.py; :200-224 report lines.
 %% --
 %% Dashed '?' edges: handoff-read reads only config.json (:44), never crew.json,
 %% so a 1.0-only repo with inject:false gets no handoff from either hook -
 %% traced in the sh flavour only; the ps1 body was not read past :241.
-%% /crew:status checks the fixed path .work/HANDOFF.md (crew_status.py:207),
+%% /crew:status checks the fixed path .work/HANDOFF.md (crew_status.py:215),
 %% not context.handoffPath, and does not apply the stale rule.
 %% Re-anchored 53f5482c -> d3a1c77e (T-0072, crew 1.0.44): of the Anchors paths only
 %% crew_state.py changed, line-neutral at :1084-1090 (AUTOPILOT_DEFAULTS); every crew_state.py
@@ -176,6 +181,22 @@
 %% Merged d7c7c75c + 3648f59a -> cd106b8b (T-0010-solo merges T-0075's main e878cc31, crew 1.0.60): of the
 %% Anchors paths only crew_state.py differs from main, by T-0010's +4 at AUTOPILOT_DEFAULTS (:1094), below
 %% every crew_state line cited here (:643, :646, :774 hold). No node or edge changed.
+%% Re-anchored b5c37635 -> c8cc69ec (T-0087 merged main c426c018, T-0076, crew 1.0.53): of the Anchors
+%% paths only crew_context.py changed - emit() now forces LF stdout (+4 lines at :1086), so the
+%% additionalContext write :1086 -> :1090 (re-read with sed -n); :121-132, :881-924 and :993-1003 are
+%% above it and unchanged. No node or edge changed.
+%% Re-anchored c8cc69ec / 3c4f1a68 -> 379ab5e6 (T-0087 merged onto 6387ab49, crew 1.0.55): of the
+%% Anchors paths none changed between c8cc69ec and 379ab5e6 (git diff --name-only); T-0087's
+%% crew_status.py and status.md lines cited above were already current at c8cc69ec. No node or edge changed.
+%% Merged cd106b8b + 17fa035e -> 9e38a891 (T-0087-build merges T-0010's main 8ab733d7, crew 1.0.62): of the
+%% Anchors paths only crew_status.py and commands/status.md differ from main's side, by T-0087's review
+%% lines; the merged file is T-0087's, so crew_status.py:215 (HANDOFF check), :65 (_tracker_line) and
+%% status.md:14 cited above hold (re-read with grep -n). No node or edge changed.
+%% Merged 9e38a891 + a61a6f38 -> 78b7080a (T-0087-build merges T-0088's main a61a6f38, crew 1.0.70):
+%% of the Anchors paths, crew_context.py, crew_state.py, crew_status.py, crew_platform.py, crew_resume.py,
+%% crew_tracker.py and commands/status.md differ from T-0087's side; the header's crew_context.py:122-124, crew_state.py:646, crew_status.py:225 and
+%% crew_platform.py:230 were re-mapped by script (difflib from cb9b79b1). Bare :N citations inside
+%% nodes name no file and were not re-read here. No node or edge changed.
 
 %% Re-anchored a4eb2f55 -> 2aa49bb8 (T-0085 merged onto main c426c018, T-0076, crew 1.0.53): of the
 %% Anchors paths only crew_context.py changed - T-0076 added four lines inside emit() (:1086-1089,
@@ -233,6 +254,6 @@ flowchart TB
     hr3 -. "? 1.0-only repo (crew.json, no config.json)<br/>with inject:false gets no handoff" .-> hrx
 
     subgraph status["/crew:status (on demand)"]
-        st1["status.md:14<br/>crew_status.py --root ."] --> st2["git header, config file, roster,<br/>tracker (crew_tracker.resolve, :63),<br/>tickets, review ledgers, verify,<br/>codemap freshness, metrics,<br/>handoff, interrupted migrate<br/>:192-216"]
-        st2 -. "? checks fixed .work/HANDOFF.md (:207),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
+        st1["status.md:14<br/>crew_status.py --root ."] --> st2["git header, config file, roster,<br/>tracker (crew_tracker.resolve, :65),<br/>tickets, review ledgers, verify,<br/>codemap freshness, metrics,<br/>handoff, interrupted migrate<br/>:192-216"]
+        st2 -. "? checks fixed .work/HANDOFF.md (:215),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
     end

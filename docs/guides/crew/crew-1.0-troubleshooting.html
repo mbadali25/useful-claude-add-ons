@@ -272,8 +272,26 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   approve</code> on a <code>NEEDS_REPLAN</code> ticket opens a fresh budget of two rounds counted from the successor
   plan; the rounds already spent stay in the ledger and are not erased.</p>
 <ul>
-<li><strong>Symptom: <code>/crew:done</code> refuses with a receipt error.</strong>
-  <strong>Check:</strong></li>
+<li>
+<p><strong>Symptom: a round came back <code>INCOMPLETE</code>.</strong>
+  <strong>Check:</strong> the <code>review:</code> lines, or <code>failure_class</code> in <code>.work/tickets/&lt;id&gt;/review.json</code>. An
+  INCOMPLETE round has one of three classes. <code>tool</code> means the answer never arrived intact: a
+  timeout, a bad or unknown exit, empty output, or a failed Codex stream. <code>tree</code> means a bundle part
+  or web-test report changed under the reviewer. <code>reviewer</code> means the output arrived and broke the
+  contract.
+  <strong>Fix:</strong> a <code>tool</code> round is refunded automatically, up to two per plan. The line reads
+  <code>review: round N was a tool failure (...); refunded</code>. Only the failed round is given back: the
+  rerun <code>/crew:review</code> reserves a new round, charged like any other unless it is a tool failure
+  too, so a ticket with one charged round that reruns and gets FINDINGS has spent the budget. If
+  Codex is out of quota, use the next eligible provider. A third tool failure under
+  one plan reads <code>NOT refunded - refund limit 2 per plan reached</code> and counts. A <code>reviewer</code> or <code>tree</code>
+  round always counts. Rebuild the bundle (tree), or rerun and read what the reviewer wrote
+  (reviewer).</p>
+</li>
+<li>
+<p><strong>Symptom: <code>/crew:done</code> refuses with a receipt error.</strong>
+  <strong>Check:</strong></p>
+</li>
 </ul>
 <pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --check-receipt
 </code></pre>
@@ -393,10 +411,15 @@ every literal sha the command names. <code>.crew/verify.json</code>, <code>.work
   not carry over.</li>
 <li><strong>"the command names commit '...', but the tree it runs from ... is at ..."</strong>: a literal
   <code>ref=&lt;sha&gt;</code> that is not the tree's HEAD. Deploy from a tree at that sha, or drop the literal.</li>
-<li><strong>"changes directory after it starts"</strong>, <strong>"names more than one tree"</strong>, <strong>"cannot tell which
-  directory"</strong> or <strong><code>--git-dir</code></strong>: the gate will not guess. Put a single literal <code>cd &lt;dir&gt; &amp;&amp;</code>
-  first.</li>
-<li><strong>".crew/verify.json in the project dir ... has uncommitted edits"</strong>: commit or revert the map;
+<li><strong>"changes directory after it starts"</strong> (a later <code>cd</code>, <code>bash -c 'cd ...'</code>, <code>env -C</code>, <code>make -C</code>),
+  <strong>"names more than one tree"</strong>, <strong>"not a form the gate reads with certainty"</strong> or <strong><code>--git-dir</code></strong>:
+  the gate will not guess. Put a single literal <code>cd &lt;dir&gt; &amp;&amp;</code> first, or use <code>git -C &lt;dir&gt;</code> - and
+  note the directory the command itself runs in must be clean too.</li>
+<li><strong>"index entries flagged skip-worktree or assume-unchanged"</strong>: those flags hide edits from
+  <code>git status</code>; clear them in the tree being deployed.</li>
+<li><strong>"has uncommitted changes: it ..."</strong> also fires when the map is deleted or untracked, or edited
+  under skip-worktree: the gate compares the file with HEAD's copy, not with <code>git status</code>.</li>
+<li><strong>".crew/verify.json in the project dir ... has uncommitted changes"</strong>: commit or revert the map;
   an uncommitted map is not policy.</li>
 <li>Never route around a block by running the deploy yourself with <code>!</code>. <code>/crew:promote</code> fixes the
   precondition the message names and asks you only for a <code>requireHuman</code> yes or a genuinely

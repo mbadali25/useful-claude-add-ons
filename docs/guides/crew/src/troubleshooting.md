@@ -122,6 +122,21 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   approve` on a `NEEDS_REPLAN` ticket opens a fresh budget of two rounds counted from the successor
   plan; the rounds already spent stay in the ledger and are not erased.
 
+- **Symptom: a round came back `INCOMPLETE`.**
+  **Check:** the `review:` lines, or `failure_class` in `.work/tickets/<id>/review.json`. An
+  INCOMPLETE round has one of three classes. `tool` means the answer never arrived intact: a
+  timeout, a bad or unknown exit, empty output, or a failed Codex stream. `tree` means a bundle part
+  or web-test report changed under the reviewer. `reviewer` means the output arrived and broke the
+  contract.
+  **Fix:** a `tool` round is refunded automatically, up to two per plan. The line reads
+  `review: round N was a tool failure (...); refunded`. Only the failed round is given back: the
+  rerun `/crew:review` reserves a new round, charged like any other unless it is a tool failure
+  too, so a ticket with one charged round that reruns and gets FINDINGS has spent the budget. If
+  Codex is out of quota, use the next eligible provider. A third tool failure under
+  one plan reads `NOT refunded - refund limit 2 per plan reached` and counts. A `reviewer` or `tree`
+  round always counts. Rebuild the bundle (tree), or rerun and read what the reviewer wrote
+  (reviewer).
+
 - **Symptom: `/crew:done` refuses with a receipt error.**
   **Check:**
   ```bash
@@ -239,10 +254,15 @@ every literal sha the command names. `.crew/verify.json`, `.work/PROMOTIONS.md` 
   not carry over.
 - **"the command names commit '...', but the tree it runs from ... is at ..."**: a literal
   `ref=<sha>` that is not the tree's HEAD. Deploy from a tree at that sha, or drop the literal.
-- **"changes directory after it starts"**, **"names more than one tree"**, **"cannot tell which
-  directory"** or **`--git-dir`**: the gate will not guess. Put a single literal `cd <dir> &&`
-  first.
-- **".crew/verify.json in the project dir ... has uncommitted edits"**: commit or revert the map;
+- **"changes directory after it starts"** (a later `cd`, `bash -c 'cd ...'`, `env -C`, `make -C`),
+  **"names more than one tree"**, **"not a form the gate reads with certainty"** or **`--git-dir`**:
+  the gate will not guess. Put a single literal `cd <dir> &&` first, or use `git -C <dir>` - and
+  note the directory the command itself runs in must be clean too.
+- **"index entries flagged skip-worktree or assume-unchanged"**: those flags hide edits from
+  `git status`; clear them in the tree being deployed.
+- **"has uncommitted changes: it ..."** also fires when the map is deleted or untracked, or edited
+  under skip-worktree: the gate compares the file with HEAD's copy, not with `git status`.
+- **".crew/verify.json in the project dir ... has uncommitted changes"**: commit or revert the map;
   an uncommitted map is not policy.
 - Never route around a block by running the deploy yourself with `!`. `/crew:promote` fixes the
   precondition the message names and asks you only for a `requireHuman` yes or a genuinely
