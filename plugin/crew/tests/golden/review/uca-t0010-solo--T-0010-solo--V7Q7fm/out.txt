@@ -1,0 +1,25 @@
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-001-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-002-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-003-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-004-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-005-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-006-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-007-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-008-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-009-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-010-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-011-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-012-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-013-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-014-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-015-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-016-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-017-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-018-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-019-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-020-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-021-of-022.patch
+READ|<ROOT>/.work/review/T-0010-solo--V7Q7fm/diff.txt.parts/part-022-of-022.patch
+BLOCK|plugin/crew/hooks/scripts/crew_autopilot.py:850|approve is not the sole-receipt writer promised by the amendment: crew_ticket.approve also creates scope-tickets.json and can mutate a NEEDS_REPLAN ledger, changing guard ramp and review state|On a ticket's first allowed autopilot approval, snapshot the common crew directory before and after; approval.json and scope-tickets.json are added. With a distinct successor plan and NEEDS_REPLAN ledger, run approve and observe the ledger change to IN_REVIEW.
+FIX|plugin/crew/hooks/scripts/crew_autopilot.py:1239|status delegates to policy-aware next_phase, so T-0018 status is no longer policy-independent and can contradict itself by saying autopilot will approve while waiting on the owner to type /crew:approve|Create an unapproved low-risk ticket with allowCliApproval true, compare status under approval human and self; the phase reason changes under self to the autopilot approve route while the waiting line remains owner - types /crew:approve.
+FIX|plugin/crew/README.md:818|The phase table still states that every unaccepted approval stops for the human, contradicting the new self/risk policy path and the documented exception|Configure approval self, arm autopilot, and enable allowCliApproval; next names crew_autopilot.py approve, while this table tells the operator that they must type /crew:approve.

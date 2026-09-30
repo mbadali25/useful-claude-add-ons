@@ -472,18 +472,18 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TI
 
 An empty `ROUND` means do not dispatch: a refusal (budget spent, exit 5 above, or the self-check as in 2a), or `ALREADY_CLEAN=1`, a CLEAN receipt already covering this bundle.
 
-The fallback is genuinely weaker than a different family: the same model family
-reviewing itself finds fewer defects. Tell me when it is what ran, so I review
-harder myself.
+The fallback is genuinely weaker than a different family: the same model family reviewing itself
+finds fewer defects. Tell me when it is what ran, so I review harder myself.
 
-**The shared prompt is written in step 2**, before any provider runs. Do not
-re-word it per provider: identical instructions are what make a differing
-defect count a fact about the model rather than about the prompt.
+**The shared prompt is written in step 2**, before any provider runs. Do not re-word it per
+provider: identical instructions are what make a differing defect count a fact about the model
+rather than about the prompt.
 
 Read ONLY `$SCRATCH/out.txt` and the `review:` lines. Never load the diff back into your context.
 **The verdict is the script's, not yours**: CLEAN only for exactly `CLEAN` at exit 0 with every
 part acknowledged; any BLOCK/FIX/NIT is FINDINGS; a non-zero exit, empty or unparseable output, a
-skipped part or a timeout is INCOMPLETE — never report INCOMPLETE as clean.
+skipped part or a timeout is INCOMPLETE — never report INCOMPLETE as clean. Only a `tool` INCOMPLETE
+(no intact answer) is refunded, up to two per plan, as its `review:` line says; its rerun is a new round.
 
 **Step 2d — re-run the failing control, do not read about it.** If the diff adds or edits a test,
 guard, assertion or smoke step, the author is expected to have broken it on purpose and shown it go
@@ -500,8 +500,8 @@ loses the most time to.
    by re-deriving it: base, head, branch, whether the tree was dirty, and
    which category (committed / staged / unstaged / untracked) each changed
    file fell into is the one record of what was actually reviewed.
-2. Fix all BLOCK items. Rerun `./_verify/smoke.sh`. Rerun this review once —
-   round 2 is the last. A refusal (exit 4, `NEEDS_REPLAN`) is terminal in this
+2. Fix all BLOCK items. Rerun `./_verify/smoke.sh`. Rerun this review once — round 2 is the last,
+   counting only rounds not refunded. A refusal (exit 4, `NEEDS_REPLAN`) is terminal in this
    release: stop, say so, and replan the ticket; there is no third round.
 3. If you disagree with a finding, say so explicitly and let me decide. If I
    accept FINDINGS as they stand, record it — the receipt names who and when:

@@ -1,0 +1,30 @@
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-001-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-002-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-003-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-004-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-005-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-006-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-007-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-008-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-009-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-010-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-011-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-012-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-013-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-014-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-015-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-016-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-017-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-018-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-019-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-020-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-021-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-022-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-023-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-024-of-025.patch
+READ|<ROOT>/.work/review/T-0010-solo--VIAeTG/diff.txt.parts/part-025-of-025.patch
+BLOCK|CHANGELOG.md:32|The branch continued after round 3 returned a BLOCK and two FIXes, although the owner authorized exactly one additional round and required every non-CLEAN verdict to stop needs-owner with no fixes or fourth round|Compare .work/review/T-0010-solo--V7Q7fm/out.txt with git log; the review contains BLOCK/FIX lines and commit caabb005 plus later version and refresh commits apply fixes afterward.
+BLOCK|plugin/crew/hooks/scripts/crew_autopilot.py:871|approve violates the amendment's sole-receipt write boundary by calling crew_ticket.approve, which also creates scope-tickets.json and can mutate a NEEDS_REPLAN ledger|Run an allowed first autopilot approval and compare the common crew directory before and after; both approval.json and scope-tickets.json appear. Repeat with a distinct successor plan under NEEDS_REPLAN and observe the ledger move to IN_REVIEW.
+FIX|plugin/crew/hooks/scripts/crew_autopilot.py:691|An unreadable config or non-object autopilot block collapses to the default risk questions policy, so question_policy reports take for a low-risk ticket even though the configured policy could not be determined|Replace .crew/config.json with invalid JSON, or set autopilot to a list, then call question_policy for a risk-low ticket; it returns action=take, policy=risk with no warning instead of stopping as unknown.
+FIX|plugin/crew/hooks/scripts/crew_autopilot.py:1402|The settings CLI discards the two new policy values, contradicting documentation and leaving operators unable to see which approval and question policies are in force|Run crew_autopilot.py settings under approval=self, questions=human and again under approval=human, questions=self; both print only mode and maxPhases.
+FIX|plugin/crew/hooks/scripts/crew_autopilot.py:1326|_one_line is defined twice at module scope, so the repository's required pylint gate reports function-redefined|Run python3 -m pylint plugin/crew/hooks/scripts/crew_autopilot.py; E0102 points to the second definition at line 1326 and the gate exits nonzero.
