@@ -242,7 +242,7 @@ the "passing" and "retry now" paths included. Opening a path the code did not cr
 regular file first (`os.stat` and `stat.S_ISREG`, or `O_NONBLOCK`), because opening a FIFO blocks. A
 network or subprocess read has a byte cap.
 
-**Why.** 6 findings across 5 change sets: a post-kill `communicate()` that could block forever and a
+**Why.** 7 findings across 5 change sets: a post-kill `communicate()` that could block forever and a
 pid-reuse kill; a retry loop on `time.time()` that spun forever and a stale-lock loop that skipped its
 deadline; a passing poll that skipped the timeout check and merged late; a fingerprint walk that blocked
 on a FIFO; an unbounded HTTP response read.

@@ -300,6 +300,51 @@ def test_every_stack_standard_names_and_cites_three_change_sets(name):
     assert {sid: found for sid, found in short.items() if found} == {}
 
 
+_WHY_COUNT_RE = re.compile(r"\b(\d+) findings? across (\d+) change\s+sets\b")
+
+
+@pytest.mark.parametrize("name", _STACK_SETS)
+def test_every_stack_standard_why_states_its_change_set_count(name):
+    """A Why's "N findings across M change sets" names the same M as its
+    Change sets line, and N is at least M: one finding per change set is the floor."""
+    parsed, problems, _ = cs.parse_set(os.path.join(_REFS, name))
+    assert parsed is not None, problems
+
+    wrong = {}
+    for std in parsed["standards"]:
+        claim = _WHY_COUNT_RE.search(std["fields"]["Why"])
+        listed = std["fields"]["Change sets"].partition(":")[0].strip()
+        if claim is None:
+            wrong[std["id"]] = "Why states no 'N findings across M change sets'"
+        elif claim.group(2) != listed or int(claim.group(1)) < int(claim.group(2)):
+            wrong[std["id"]] = f"Why {claim.group(0)!r}, Change sets {listed}"
+
+    assert wrong == {}
+
+
+# Each count below was taken by hand from the defects the standard's own Why
+# enumerates, and each enumerated defect was matched to a quoted finding in its
+# Earned by (review round 1, FIX python.md:245: PYTHON-07 said 6 and listed 7).
+# A new or edited standard updates this table with a fresh count, never a copy
+# of the number the Why already states.
+_PYTHON_FINDINGS = {
+    "PYTHON-01": 3, "PYTHON-03": 3, "PYTHON-04": 4, "PYTHON-06": 3, "PYTHON-07": 7,
+    "PYTHON-08": 6, "PYTHON-10": 4, "PYTHON-11": 5, "PYTHON-13": 5,
+}
+
+
+def test_python_why_finding_counts_match_their_enumerations():
+    parsed, problems, _ = cs.parse_set(os.path.join(_REFS, "python.md"))
+    assert parsed is not None, problems
+
+    stated = {}
+    for std in parsed["standards"]:
+        claim = _WHY_COUNT_RE.search(std["fields"]["Why"])
+        stated[std["id"]] = int(claim.group(1)) if claim else None
+
+    assert stated == _PYTHON_FINDINGS
+
+
 def test_python_set_applies_to_python_files_only():
     def applies(files):
         return "PYTHON" in cs.effective_set(_REPO_ROOT, files)["sets"]

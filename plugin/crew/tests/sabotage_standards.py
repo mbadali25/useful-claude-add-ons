@@ -40,7 +40,10 @@ the self-check gate asked before main's #264 preflight (the order swapped).
 T-0086 (the Python set, slice 1) added three: `references/python.md`'s
 `applies-to` narrowed so a `.py` change no longer draws the PYTHON set, a
 PYTHON standard naming only two change sets, and a candidate id (PYTHON-14)
-shipped in place of an admitted standard.
+shipped in place of an admitted standard. Its review round 1 FIX added two:
+PYTHON-07's Why claiming six findings where it enumerates seven, and the
+neighbouring half of that claim, a Why naming fewer change sets than its
+Change sets line.
 """
 import os
 
@@ -447,5 +450,21 @@ STANDARDS_MUTATIONS = (
         "## PYTHON-14 ",
         ("tests/test_crew_standards.py::"
          "test_python_set_parses_with_every_field"),
+    ),
+    (
+        "PYTHON-07's Why claims six findings again",
+        PYTHON_SET,
+        "**Why.** 7 findings across 5 change sets: a post-kill",
+        "**Why.** 6 findings across 5 change sets: a post-kill",
+        ("tests/test_crew_standards.py::"
+         "test_python_why_finding_counts_match_their_enumerations"),
+    ),
+    (
+        "PYTHON-13's Why names three change sets beside a Change sets line of four",
+        PYTHON_SET,
+        "**Why.** 5 findings across 4 change sets: a junction-redirected",
+        "**Why.** 5 findings across 3 change sets: a junction-redirected",
+        ("tests/test_crew_standards.py::"
+         "test_every_stack_standard_why_states_its_change_set_count[python.md]"),
     ),
 )
