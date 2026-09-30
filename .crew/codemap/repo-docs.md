@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@bfc3adeb
+anchor: useful-claude-add-ons@124bcd93
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -1412,4 +1412,14 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 crew-providers SKILL.md); `bfc3adeb` re-sets crew 1.0.79. Body citations were mapped by `difflib`
 from `e8f41b09` to `bfc3adeb` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local),
 each moved citation landing on the same line text. Re-anchor only (owner
+refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
+
+## Re-anchor provenance - `bfc3adeb` + main `d1462bbd` -> `124bcd93`, 2026-09-30 (T-0028 merges main, L-0529 #283, crew 1.0.83)
+
+`07b23863` merges origin/main `d1462bbd` (L-0529 #283: python-free bin fixtures, crew 1.0.80,
+obsidian-vault 0.4.15) into `T-0028-kimi` at `d9f30319`, with rerere disabled; the version files
+and the conflicting rules took main's side and `124bcd93` re-sets crew 1.0.83. Every body citation
+into a file changed since either side was checked with `/root/crew-tmp/t-0028/refresh/reanchor2.py`
+(machine-local, `difflib` from `d9f30319` and from `d1462bbd`): none moved; the only changed cited
+lines are the version and BUDGETS.md figures, re-read. Re-anchor only (owner
 refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
