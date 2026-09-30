@@ -81,11 +81,11 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_metrics.py record --ticket "$1"
 
 ## Landing through the merge train
 
-Only when `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_train.py status`
+Only when `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_train.py" status`
 prints `armed: yes` (L-0520; parallel lanes in one clone). Crew never merges:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_train.py check-land --ticket "$1" --pr <PR>
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_train.py" check-land --ticket "$1" --pr <PR>
 ```
 
 It refuses unless this ticket holds the train, `git merge-tree` is clean, the

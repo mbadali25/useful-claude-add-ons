@@ -317,6 +317,15 @@ def _entry_problem(entry):
     if touch is not None and not (isinstance(touch, list)
                                   and all(isinstance(t, str) for t in touch)):
         return f"{entry['ticket']}'s touch is neither null nor a list of strings"
+    last = entry.get("last_seen")
+    if not isinstance(last, int) or isinstance(last, bool):
+        return f"{entry['ticket']}'s last_seen is not an integer"
+    for key in ("lane", "head", "touch_source", "enqueued_at", "owner"):
+        if not isinstance(entry.get(key), str):
+            return f"{entry['ticket']}'s {key} is not a string"
+    for key in ("acquired_at", "branch"):
+        if entry.get(key) is not None and not isinstance(entry.get(key), str):
+            return f"{entry['ticket']}'s {key} is neither null nor a string"
     return None
 
 
@@ -422,17 +431,23 @@ def _mutate(root, change):
             raise TrainError(f"could not tell: {why}")
         events = []
         result = change(state, events)
-        if events:
-            lines = []
-            for event in events:
-                state["seq"] += 1
-                event.setdefault("time", _now())
-                event["seq"] = state["seq"]
-                lines.append(json.dumps(event, sort_keys=True))
-            text = "\n".join(lines) + "\n"
-            with open(_events_path(root), "a", encoding="utf-8", newline="\n") as fh:
-                fh.write(text)
-        _save(path, state)
+        lines = []
+        for event in events:
+            state["seq"] += 1
+            event.setdefault("time", _now())
+            event["seq"] = state["seq"]
+            lines.append(json.dumps(event, sort_keys=True))
+        # State first, then its events: a save that fails leaves no event
+        # behind and the next mutation reuses nothing; an append that fails
+        # after a good save leaves a gap in seq, never a duplicate.
+        try:
+            _save(path, state)
+            if lines:
+                text = "\n".join(lines) + "\n"
+                with open(_events_path(root), "a", encoding="utf-8", newline="\n") as fh:
+                    fh.write(text)
+        except OSError as exc:
+            raise TrainError(f"could not tell: writing {path} or its events failed: {exc}") from exc
     return result
 
 
@@ -783,7 +798,8 @@ def release(root, ticket, base=None, merged=None, force=False, by=None, reason=N
 def status(root, as_json=False):
     state, where, why = load(root)
     if where == "absent":
-        return EXIT_OK, [json.dumps({"armed": False, "entries": []}) if as_json else "armed: no"]
+        return EXIT_OK, [json.dumps({"armed": False, "entries": [], "notices": []}) if as_json
+                         else "armed: no"]
     if where != "ok":
         raise TrainError(f"could not tell: {why}")
     top = _top(root)
@@ -797,7 +813,9 @@ def status(root, as_json=False):
     state = _mutate(root, change)
     if as_json:
         return EXIT_OK, [json.dumps({"armed": True, "armed_at": state.get("armed_at"),
-                                     "entries": state["entries"]}, sort_keys=True)]
+                                     "entries": state["entries"],
+                                     "notices": [n for t in sorted(notices) for n in notices[t]]},
+                                    sort_keys=True)]
     lines = [f"armed: yes (since {state.get('armed_at')}, by {state.get('armed_by')})"]
     for base in sorted({e.get("base") for e in state["entries"]}):
         lines.append(f"base {base}:")
@@ -866,7 +884,7 @@ def catch_up(root, ticket, base=None, fetch=True, lane=None):
     if _git(top, "rev-parse", "-q", "--verify", "MERGE_HEAD")[0] == 0:
         return EXIT_REFUSED, ["a merge is already in progress here (MERGE_HEAD); finish it "
                               "(git commit --no-edit) or git merge --abort first"]
-    dirty = _lines(_git_ok(top, "status", "--porcelain", "--untracked-files=no", "--",
+    dirty = _lines(_git_ok(top, "status", "--porcelain", "--untracked-files=normal", "--",
                            ".", ":(exclude).work"))
     if dirty:
         return EXIT_REFUSED, ["working tree is dirty; commit or stash first:"] + \
@@ -1002,6 +1020,9 @@ def check_land(root, ticket, base=None, pr=None, fetch=True):
         return EXIT_REFUSED, [f"{ticket} does not hold the train from this worktree ({held}); "
                               f"crew_train.py acquire --ticket {ticket} first"]
     base = entry["base"]
+    # HEAD is read ONCE, before any check, and every check below judges it;
+    # the final step refuses if HEAD moved meanwhile (GEN-03).
+    head = _head(top)
     lines = [_fetch(top, base) if fetch else f"{base}: not fetched (--no-fetch)"]
     conflicts = _merge_tree(top, base)
     if conflicts:
@@ -1027,9 +1048,19 @@ def check_land(root, ticket, base=None, pr=None, fetch=True):
     if gate not in (review_gate.VERIFIED, review_gate.NO_GATE):
         return EXIT_REFUSED, lines + [f"verify gate {gate}: {reason}"]
     lines.append(f"verify gate {gate}: {reason}")
-    head = _head(top)
 
     def change(fresh, events):
+        # Re-checked under the lock, at the moment LAND_OK is decided: the hold
+        # can be force-released and HEAD can move while the checks above ran.
+        now = next((e for e in fresh["entries"] if e.get("ticket") == ticket
+                    and e.get("base") == base), None)
+        if now is None or now.get("state") != "holding" or now.get("worktree") != top:
+            raise Refused(f"{ticket} lost its hold on {base} while check-land ran "
+                          f"({'no entry' if now is None else now.get('state')}); nothing to land "
+                          f"- crew_train.py acquire --ticket {ticket} and check again")
+        if _head(top) != head:
+            raise Refused(f"HEAD moved while check-land ran (checked {head[:12]}); gate the new "
+                          "head, then check-land again")
         events.append({"kind": "check-land", "ticket": ticket, "base": base, "head": head})
     _mutate(root, change)
     lines += [f"LAND_OK head={head}",

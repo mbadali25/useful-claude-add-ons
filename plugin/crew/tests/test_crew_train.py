@@ -735,12 +735,12 @@ def test_failed_state_replace_leaves_state_and_no_temp(repo, capsys, monkeypatch
     def refuse(_src, _dst):
         raise PermissionError(13, "held open", _dst)
     monkeypatch.setattr(crew_train.os, "replace", refuse)
-    with pytest.raises(PermissionError):
-        crew_train.enqueue(str(repo), "T-1")
+    code, out = _cli(capsys, repo, "acquire", "--ticket", "T-1")
 
+    assert code == 3 and "could not tell" in out and "Traceback" not in out, out
     with open(os.path.join(folder, "state.json"), encoding="utf-8") as fh:
         assert fh.read() == before
-    assert sorted(n for n in os.listdir(folder) if n != "events.jsonl") == ["state.json"]
+    assert sorted(os.listdir(folder)) == ["state.json"], "no temp, and no phantom event"
 
 
 @pytest.mark.parametrize("bad", [{"paths": "a.txt"}, {"paths": [1]}, {"touch": "a.txt"}])
@@ -775,6 +775,87 @@ def test_git_is_resolved_and_decoded_explicitly(repo, monkeypatch):
     assert seen["kwargs"]["encoding"] == "utf-8"
     assert seen["kwargs"]["errors"] == "surrogateescape"
     assert seen["kwargs"]["env"]["GIT_TERMINAL_PROMPT"] == "0"
+
+
+# --- review round 1 (codex) --------------------------------------------------------------
+
+def test_check_land_refuses_when_the_hold_is_lost_during_its_checks(repo, capsys, monkeypatch):
+    lane = _holding_lane(repo, capsys)
+    _passing_verdict(monkeypatch)
+
+    def steal(root):
+        assert crew_train.release(str(repo), "T-1", force=True, by="o", reason="r")[0] == 0
+        return review_gate.VERIFIED, "fixture"
+    monkeypatch.setattr(review_gate, "gate_state", steal)
+    code, out = _cli(capsys, lane, "check-land", "--ticket", "T-1", "--no-fetch")
+
+    assert code == 1 and "LAND_OK" not in out and "hold" in out, out
+
+
+def test_check_land_refuses_a_head_that_moved_during_its_checks(repo, capsys, monkeypatch):
+    lane = _holding_lane(repo, capsys)
+    _passing_verdict(monkeypatch)
+
+    def move(root):
+        _commit(lane, "late.txt", "late\n")
+        return review_gate.VERIFIED, "fixture"
+    monkeypatch.setattr(review_gate, "gate_state", move)
+    code, out = _cli(capsys, lane, "check-land", "--ticket", "T-1", "--no-fetch")
+
+    assert code == 1 and "LAND_OK" not in out and "HEAD moved" in out, out
+
+
+def test_status_json_carries_the_notices_it_consumes(repo, capsys):
+    lane = _worktree(repo, "wt1", "l1")
+    _spec(lane, "T-1", ["a.txt"])
+    _spec(repo, "T-2", ["a.txt"])
+    _arm(capsys, repo)
+    assert _cli(capsys, lane, "acquire", "--ticket", "T-1")[0] == 0
+    assert _cli(capsys, repo, "enqueue", "--ticket", "T-2")[0] == 0
+    assert _cli(capsys, lane, "release", "--ticket", "T-1", "--merged", "deadbeef")[0] == 0
+
+    code, out = _cli(capsys, repo, "status", "--json")
+
+    notices = json.loads(out)["notices"]
+    assert code == 0 and any("T-1 merged deadbeef" in n for n in notices), out
+
+
+def test_catch_up_refuses_untracked_files_outside_work(repo, capsys):
+    lane = _worktree(repo, "wt1", "l1")
+    _commit(repo, "theirs.txt", "x\n")
+    (lane / "stray.py").write_text("print(1)\n", encoding="utf-8")
+
+    code, out = _cli(capsys, lane, "catch-up", "--ticket", "T-1")
+
+    assert code == 1 and "dirty" in out and "stray.py" in out, out
+
+
+@pytest.mark.parametrize("field,value", [("last_seen", []), ("lane", 5), ("head", 7),
+                                         ("enqueued_at", 3), ("touch_source", None)])
+def test_malformed_entry_field_is_could_not_tell(repo, capsys, field, value):
+    _spec(repo, "T-1", ["a.txt"])
+    _arm(capsys, repo)
+    assert _cli(capsys, repo, "enqueue", "--ticket", "T-1")[0] == 0
+    path = os.path.join(crew_train.train_dir(str(repo)), "state.json")
+    with open(path, encoding="utf-8") as fh:
+        state = json.load(fh)
+    state["entries"][0][field] = value
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(state, fh)
+
+    code, out = _cli(capsys, repo, "status")
+
+    assert code == 3 and "could not tell" in out and field in out, out
+
+
+def test_done_quotes_the_plugin_root():
+    done = os.path.join(context._ROOT, "commands", "done.md")  # pylint: disable=protected-access
+    with open(done, encoding="utf-8") as fh:
+        text = fh.read()
+    section = text[text.index("## Landing through the merge train"):]
+
+    assert "python3 ${CLAUDE_PLUGIN_ROOT}" not in section
+    assert 'python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_train.py"' in section
 
 
 # --- structure -----------------------------------------------------------------------

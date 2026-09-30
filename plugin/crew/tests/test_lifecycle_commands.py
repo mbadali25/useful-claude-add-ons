@@ -397,8 +397,8 @@ def test_plan_template_and_skill_carry_a_standards_line():
             ("Standards:" in skill.split("```")[1])] == [True, True]
 
 
-_TRAIN_LANDING = ("## Landing through the merge train", "crew_train.py status",
-                  "armed: yes", 'crew_train.py check-land --ticket "$1"',
+_TRAIN_LANDING = ("## Landing through the merge train", "crew_train.py\" status",
+                  "armed: yes", 'crew_train.py" check-land --ticket "$1"',
                   "--match-head-commit", 'crew_train.py release --ticket "$1" --merged',
                   "crew_train.py catch-up", "Crew never merges")
 
