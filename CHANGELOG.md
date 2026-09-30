@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.70: `/crew:autopilot wave` (T-0029)
+### Added — `crew` 1.0.71: `/crew:autopilot wave` (T-0029)
 
 - **What.** `hooks/scripts/crew_wave.py` runs an owner-designed, approved set of tickets as parallel
   lanes: `set` records `.work/autopilot/<slug>.json`; `plan` (read-only) names each ticket
@@ -27,8 +27,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   abbreviated flags (`allow_abbrev=False`): `--acc` is now an error, not `--accept`.
   `/crew:autopilot wave` refuses to run unless `scope.mode` is `block` for every lane ticket.
   Mutations in `tests/sabotage_wave.py`.
-- Bumped `1.0.69 -> 1.0.70` (no version on its branch; 1.0.62 was set one past T-0010's 1.0.61,
-  then re-set one past origin/main's 1.0.69, T-0088, after merging main).
+- Bumped `1.0.70 -> 1.0.71` (no version on its branch; 1.0.62 was set one past T-0010's 1.0.61,
+  re-set one past origin/main's 1.0.69 (T-0088), then one past its 1.0.70 (T-0097), each after
+  merging main).
 
 ### Fixed — `crew` 1.0.70: a silent python candidate no longer writes a red error block on every Windows hook (T-0097)
 
