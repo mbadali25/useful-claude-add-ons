@@ -246,7 +246,13 @@ foreach ($dir in $trees) {
   elseif ($top -ne $tree) { Stop-Promotion "the deploy command names more than one tree ('$tree' and '$top'), so which sha is being deployed is ambiguous. Run it from one tree." }
 }
 
-if ((Get-CommonDir $tree) -ne (Get-CommonDir $projectTop)) {
+$treeCommon = Get-CommonDir $tree
+$projectCommon = Get-CommonDir $projectTop
+# Two failed lookups compare equal as two nulls; that is "could not tell".
+if (-not $treeCommon -or -not $projectCommon) {
+  Stop-Promotion "could not read the git common dir of '$tree' or of '$projectTop', so the gate cannot tell whether the deploy runs from this repository."
+}
+if ($treeCommon -ne $projectCommon) {
   Stop-Promotion "the deploy runs from '$tree', which is a worktree of a different repository than this project ('$projectTop'). Its sha has no PASS row, marker or map here."
 }
 

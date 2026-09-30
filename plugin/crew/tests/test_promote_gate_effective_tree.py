@@ -184,6 +184,20 @@ def test_a_clean_worktree_deploys_while_the_main_checkout_is_dirty(flavour, repo
 
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
+def test_the_tss_command_shape_deploys_from_the_worktree_it_runs_in(flavour, repo):
+    """The second repro verbatim in shape: `ref=$(git rev-parse HEAD)`
+    resolves in the command's own directory, the worktree."""
+    repo.dirty_main()
+    code, err = run_gate(
+        flavour, repo,
+        "deploy-dev -f site=tss -f environment=development "
+        "-f ref=$(git rev-parse HEAD) -f tooling_ref=development",
+        cwd=repo.wt)
+    assert code == 0, err
+    assert repo.in_flight() == f"development {repo.wt_sha}"
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
 def test_a_leading_cd_into_a_clean_worktree_deploys_from_a_dirty_main(flavour, repo):
     repo.dirty_main()
     code, err = run_gate(flavour, repo, _cd(flavour, repo.wt) + "deploy-dev",

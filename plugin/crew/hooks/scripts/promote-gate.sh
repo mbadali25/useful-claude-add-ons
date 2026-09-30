@@ -242,7 +242,14 @@ for D in "${TREES[@]}"; do
   fi
 done
 
-if [ "$(common_dir "$TREE")" != "$(common_dir "$PROJECT_TOP")" ]; then
+TREE_COMMON=$(common_dir "$TREE")
+PROJECT_COMMON=$(common_dir "$PROJECT_TOP")
+# Two failed lookups compare equal as two empty strings; that is not "same
+# repository", it is "could not tell".
+if [ -z "$TREE_COMMON" ] || [ -z "$PROJECT_COMMON" ]; then
+  block "could not read the git common dir of '$TREE' or of '$PROJECT_TOP', so the gate cannot tell whether the deploy runs from this repository."
+fi
+if [ "$TREE_COMMON" != "$PROJECT_COMMON" ]; then
   block "the deploy runs from '$TREE', which is a worktree of a different repository than this project ('$PROJECT_TOP'). Its sha has no PASS row, marker or map here."
 fi
 
