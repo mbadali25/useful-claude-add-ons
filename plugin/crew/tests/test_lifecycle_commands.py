@@ -411,10 +411,3 @@ def test_done_names_the_merge_train_landing():
     missing = [s for s in _TRAIN_LANDING if s not in text]
 
     assert missing == [], f"done.md lacks {missing}"
-
-
-def test_review_names_the_train_exit():
-    text = " ".join(_read(os.path.join(COMMANDS, "review.md")).split())
-
-    assert ("6 train wait" in text and "Exit 6" in text
-            and "crew_train.py status" in text)

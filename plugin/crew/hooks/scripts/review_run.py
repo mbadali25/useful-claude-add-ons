@@ -30,7 +30,7 @@ PATH is not being able to review: a logged-out or rate-limited Codex resolves
 on PATH and fails at the first call (T-0088).
 
 STANDARDS SELF-CHECK (T-0085). Also before reservation, and AFTER `preflight`
-and `train_gate` (question 4 below), for every provider
+(question 3 below), for every provider
 (`claude --reserve-only` included): a ticket with an approval receipt must
 have `.work/tickets/<id>/selfcheck.md` complete and stamped for exactly this
 manifest's `bundle_sha256` and the effective standards digest
@@ -79,8 +79,8 @@ review.json carries `failure_class`, and `refunded` / `refund_refused` as the
 ledger recorded them; a `review:` line says whether the round was refunded. A
 refunded round still exits 3.
 
-BEFORE ANY ROUND IS RESERVED, four questions, in this order (`preflight`,
-then `train_gate`, then `standards_gate`):
+BEFORE ANY ROUND IS RESERVED, three questions, in this order (`preflight`,
+then `standards_gate`):
 
   1. Does a CLEAN receipt already cover this exact bundle
      (`review_ledger.check_receipt`, the check `/crew:done` gates on)? Then
@@ -94,15 +94,7 @@ then `train_gate`, then `standards_gate`):
      would refuse for free is the most expensive way to find out it is red.
      `--allow-unverified` reviews it anyway, and review.json says it did.
      No verify map, or a gate stood down, proceeds and says so.
-  3. Once the clone's merge train is armed (`train_gate`, L-0520;
-     `crew_train.py arm`): does this ticket hold the train? `crew_train.
-     acquire` holds it unless an overlapping ticket on the same base holds it
-     or queued first, or the base moved in this ticket's Touch paths and has
-     not been merged in. Waiting, `merge <base> first`, an unreadable train
-     state or any failure inside the step is exit 6, no round spent. Not
-     armed: nothing is printed and nothing changes. A CLEAN receipt (1) and an
-     unverified gate (2) answer first.
-  4. Only then (`standards_gate`, T-0085): is the standards self-check
+  3. Only then (`standards_gate`, T-0085): is the standards self-check
      complete and stamped for this bundle? Missing or stale is exit 2, no
      round spent -- see STANDARDS SELF-CHECK above. A CLEAN receipt (1) never
      asks for a self-check, and an unverified gate (2) is refused with exit 5
@@ -113,13 +105,9 @@ and `elapsed_s` (reservation to verdict, from the ledger's own timestamps), and
 the `review:` summary line prints both.
 
 Exit codes: 0 CLEAN; 1 FINDINGS; 3 INCOMPLETE; 4 budget refused
-(NEEDS_REPLAN); 5 not run, verify gate not green (no round spent); 6 not run,
-the merge train is held by an overlapping ticket, the base must be merged
-first, or the train could not be read (no round spent; only when armed); 2
-usage or setup error, or the standards self-check missing or stale -- not run,
-no round spent. Exit 5 (gate) is decided before exit 6 (train), and both
-before exit 2 (self-check) is asked for. (`--probe`'s own exit 6 is its
-`failed` outcome; a probe reserves nothing and never reaches the train.)
+(NEEDS_REPLAN); 5 not run, verify gate not green (no round spent); 2 usage or
+setup error, or the standards self-check missing or stale -- not run, no round
+spent. Exit 5 (gate) is decided before exit 2 (self-check) is asked for.
 """
 import argparse
 import datetime
@@ -135,7 +123,6 @@ import crew_common
 import crew_incident
 import crew_standards
 import crew_state
-import crew_train
 import review_gate
 import review_ledger
 import review_limit
@@ -146,7 +133,6 @@ import webtest_guard
 
 EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, EXIT_INCOMPLETE, EXIT_REFUSED = 0, 1, 2, 3, 4
 EXIT_UNVERIFIED = 5
-EXIT_TRAIN = 6
 DEFAULT_TIMEOUT = 1800
 # Bound on the follow-up `communicate()` after a kill, below. Not the same
 # knob as --timeout: this one exists so a descendant that escaped the kill
@@ -521,16 +507,7 @@ def _fmt_elapsed(seconds):
 
 def preflight(args):
     """None to go on and reserve a round, or the exit code to stop with
-    having reserved nothing. See BEFORE ANY ROUND IS RESERVED above:
-    questions 1 and 2 (`_receipt_and_gate`), then 3 (`train_gate`)."""
-    short = _receipt_and_gate(args)
-    if short is not None:
-        return short
-    return train_gate(args)
-
-
-def _receipt_and_gate(args):
-    """Questions 1 and 2: None to go on, or the exit code to stop with."""
+    having reserved nothing. See BEFORE ANY ROUND IS RESERVED above."""
     ok, message = review_ledger.check_receipt(args.root, args.ticket)
     data, _ = review_ledger._load(review_ledger.ledger_path(args.root, args.ticket))  # pylint: disable=protected-access
     if ok and (data.get("receipt") or {}).get("kind") == "clean":
@@ -552,30 +529,6 @@ def _receipt_and_gate(args):
             "--allow-unverified reviews it anyway and records that it did.\n")
         return EXIT_UNVERIFIED
     sys.stderr.write(f"review-run: gate {state}: {reason}\n")
-    return None
-
-
-def train_gate(args):
-    """None to go on and reserve; EXIT_TRAIN to refuse with nothing spent.
-    See question 3 above. An unarmed clone returns None and prints nothing."""
-    try:
-        _state, where, why = crew_train.load(args.root)
-        if where == "absent":
-            return None
-        if where != "ok":
-            sys.stderr.write(f"review-run: train: could not tell ({why}); no round reserved\n")
-            return EXIT_TRAIN
-        code, lines = crew_train.acquire(args.root, args.ticket)
-    except Exception as exc:  # pylint: disable=broad-except
-        sys.stderr.write(f"review-run: train: could not tell ({type(exc).__name__}: {exc}); "
-                         "no round reserved\n")
-        return EXIT_TRAIN
-    for line in lines:
-        sys.stderr.write(f"review-run: train: {line}\n")
-    if code != crew_train.EXIT_OK:
-        sys.stderr.write("review-run: train: no round reserved; the gate round runs once "
-                         "this ticket holds the train (crew_train.py status)\n")
-        return EXIT_TRAIN
     return None
 
 

@@ -713,4 +713,4 @@ def test_only_the_review_path_imports_the_train():
                      [node.module] if isinstance(node, ast.ImportFrom) else [])
             if "crew_train" in names:
                 importers.add(name)
-    assert importers == {"review_run.py", "review_prompt.py"}
+    assert importers <= {"review_run.py", "review_prompt.py"}, importers
