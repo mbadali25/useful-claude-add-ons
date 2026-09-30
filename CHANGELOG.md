@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.62: the completion audit admits a refresh artifact only as a re-anchor or regeneration the ticket's change reaches (T-0094)
+### Changed — `crew` 1.0.70: the completion audit admits a refresh artifact only as a re-anchor or regeneration the ticket's change reaches (T-0094)
 
 - **What changed.** `crew_refresh_check.artifact_verdicts` (beside
   `REFRESH_ARTIFACT_PATHS`) judges each changed refresh artifact of an approved
@@ -70,7 +70,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   so they stay RED with the verdicts in place; review round 1's stale-approval
   fix is a test change those entries cover.
 - **Version.** 1.0.60 on T-0094's branch; T-0010 landed first as 1.0.61 (its own
-  branch had used 1.0.60 too), so this lands as 1.0.62.
+  branch had used 1.0.60 too), so it was re-set to 1.0.62; main then took
+  1.0.62-1.0.69 (#263-#267 and T-0088), so this lands as 1.0.70.
 
 ### Changed — `crew` 1.0.69: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088)
 
