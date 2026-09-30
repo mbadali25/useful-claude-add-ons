@@ -16,6 +16,7 @@ A guard class: must-allow and must-block cases both, and every rung has a
 mutation in `sabotage_refresh.py` after the `# T-0094` marker that turns one
 of these red.
 """
+import errno
 import os
 import re
 import subprocess
@@ -866,3 +867,82 @@ def test_a_rendered_diagram_is_not_paired_with_another_stems_admitted_source(tmp
     got = _verdicts(root, base, REACH, [FLOW, other])
 
     assert (got[FLOW][0], got[other][0]) == (True, False), got
+
+
+# --- review round 5 -------------------------------------------------------------
+# `os.path.lexists` answers False when lstat fails for ANY reason, so a parent
+# directory the hook user cannot search read as "absent": a config that names
+# the artifact dirs became the defaults, and a rule still on disk became a
+# removed one. Absence is proven only by ENOENT or ENOTDIR; any other failure
+# is could-not-tell. Root is exempt from search permission, so the denial is
+# simulated at the call lexists makes, with the errno a denied search returns.
+
+_LSTAT_ERRORS = {"denied": (PermissionError, errno.EACCES),
+                 "missing": (FileNotFoundError, errno.ENOENT),
+                 "not-a-dir": (NotADirectoryError, errno.ENOTDIR)}
+
+
+def _lstat_fails_under(monkeypatch, root, rel_dir, case):
+    """`os.lstat` raises `case`'s error for every path strictly inside
+    `rel_dir`, as the kernel does for a process that cannot search it."""
+    real = os.lstat
+    exc, code = _LSTAT_ERRORS[case]
+    prefix = os.path.join(str(root), *rel_dir.split("/")) + os.sep
+
+    def lstat(path, *args, **kwargs):
+        if isinstance(path, str) and path.startswith(prefix):
+            raise exc(code, os.strerror(code), path)
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "lstat", lstat)
+
+
+@pytest.mark.parametrize("case", ["denied", "not-a-dir"])
+def test_a_config_whose_presence_cannot_be_proven_is_judged_by_its_errno(
+        anchored, monkeypatch, case):
+    """Denied: the config names another diagrams dir, so judging `docs/diagrams`
+    as the default reads it into scope from nothing measured. Not-a-dir, the
+    neighbour: `.crew` is not a directory, so no config exists and the
+    defaults are right."""
+    root, base = anchored
+    write(root, ".crew/config.json", '{"docs": {"diagramsDir": "custom"}}\n')
+    re_anchor_diagram(root, "flow", head_sha(root, 40))
+    _lstat_fails_under(monkeypatch, root, ".crew", case)
+
+    verdict, reason = _verdict(root, base, REACH, FLOW)
+
+    want = (None, True) if case == "denied" else (True, False)
+    assert (verdict, "config unreadable" in reason) == want, reason
+
+
+OLD_RULE = RULE.format(name="old")
+
+
+@pytest.mark.parametrize("case", ["denied", "removed"])
+def test_a_generated_rule_whose_absence_cannot_be_proven_is_could_not_tell(tmp_path,
+                                                                        monkeypatch, case):
+    """Denied: the base-generated rule no map expects is still on disk, and a
+    denied search on `.claude/rules` read it as removed and admitted it.
+    Removed, the neighbour: truly gone, it is the admitted removal."""
+    root, base = anchored_repo(tmp_path, extra={OLD_RULE: f"<!-- {crew_instructions.MARKER} -->\n# old\n"})
+    if case == "denied":
+        _lstat_fails_under(monkeypatch, root, ".claude/rules", case)
+    else:
+        git(root, "rm", "-q", OLD_RULE)
+
+    verdict, reason = _verdict(root, base, REACH, OLD_RULE)
+
+    want = (None, True) if case == "denied" else (True, False)
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL)) == want, reason
+
+
+def test_a_map_whose_presence_cannot_be_proven_is_could_not_tell(anchored, monkeypatch):
+    """The third `lexists` in the module, `_texts`: a denied search on the
+    code map dir is not a deleted map."""
+    root, base = anchored
+    re_anchor_map(root, "app", head_sha(root, 40))
+    _lstat_fails_under(monkeypatch, root, ".crew/codemap", "denied")
+
+    verdict, reason = _verdict(root, base, REACH, APP)
+
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL)) == (None, True), reason

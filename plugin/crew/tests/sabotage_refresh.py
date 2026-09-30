@@ -45,6 +45,10 @@ base anchor (or one git cannot disambiguate or type) read as naming no
 commit, a rendered diagram paired only with a lower-case source extension or
 with another stem's source, and artifact dirs that cannot be resolved
 dropping the could-not-tell reason (or every path, when the defaults raise).
+T-0094 review round 5 added the five after its marker: a config, a rule or a
+map whose presence lstat cannot prove (a parent the hook user cannot search)
+read as absent, removed or deleted, and either proven-absence errno (ENOENT,
+ENOTDIR) read as could-not-tell.
 A mutation listed twice with different tests is on purpose: dropping the
 approval condition must fail the unapproved, the `cli` and the stale case
 each, not just whichever runs first.
@@ -522,4 +526,25 @@ REFRESH_MUTATIONS = (
      "        return list(paths)\n",
      "        return []\n",
      _CA + "test_a_verdict_step_that_raises_fails_the_audit_closed[refresh_artifact_paths]"),
+    # T-0094 review round 5
+    ("a config whose presence lstat cannot prove reads as absent", CHECK,
+     '            return None, f"could not tell whether .crew/{name} exists: {why}"\n',
+     "            continue\n",
+     _TA + "test_a_config_whose_presence_cannot_be_proven_is_judged_by_its_errno[denied]"),
+    ("a rule whose presence lstat cannot prove reads as removed", CHECK,
+     '        return None, f"{COULD_NOT_TELL}: whether {rel} exists: {why}"\n    if present:\n',
+     "        present = False\n    if present:\n",
+     _TA + "test_a_generated_rule_whose_absence_cannot_be_proven_is_could_not_tell[denied]"),
+    ("a map whose presence lstat cannot prove reads as deleted", CHECK,
+     '        return None, None, (None, f"{COULD_NOT_TELL}: whether {rel} exists: {why}")\n',
+     '        return None, None, (False, "deleted, not a re-anchor")\n',
+     _TA + "test_a_map_whose_presence_cannot_be_proven_is_could_not_tell"),
+    ("a parent that is not a directory is could-not-tell, not absent", CHECK,
+     '    except (FileNotFoundError, NotADirectoryError):\n        return False, ""\n',
+     '    except FileNotFoundError:\n        return False, ""\n',
+     _TA + "test_a_config_whose_presence_cannot_be_proven_is_judged_by_its_errno[not-a-dir]"),
+    ("a path lstat proves missing is could-not-tell, not removed", CHECK,
+     '    except (FileNotFoundError, NotADirectoryError):\n        return False, ""\n',
+     '    except (FileNotFoundError, NotADirectoryError):\n        return None, "absent"\n',
+     _TA + "test_a_generated_rule_whose_absence_cannot_be_proven_is_could_not_tell[removed]"),
 )

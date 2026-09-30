@@ -306,7 +306,10 @@ def _read_config(root):
     measured. The scope guard fails closed on the same file."""
     for name in ("crew.json", "config.json"):
         path = crew_common.repo_config_file(root, name)
-        if not os.path.lexists(path):
+        present, why = _present(path)
+        if present is None:
+            return None, f"could not tell whether .crew/{name} exists: {why}"
+        if not present:
             continue
         text = read_text(path)
         if text is None:
@@ -319,6 +322,22 @@ def _read_config(root):
             return None, f".crew/{name} is not a JSON object"
         return data, None
     return {}, None
+
+
+def _present(path):
+    """`(True, "")` or `(False, "")` when lstat proves `path` is there or is
+    not -- ENOENT, or ENOTDIR for a parent that is not a directory -- and
+    `(None, reason)` for any other failure. `os.path.lexists` answers False
+    for every failure, so a parent the hook user cannot search read as
+    absent: a config naming other artifact dirs became the defaults, and a
+    rule still on disk became a removed one (review round 5)."""
+    try:
+        os.lstat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return False, ""
+    except (OSError, ValueError) as exc:
+        return None, getattr(exc, "strerror", None) or type(exc).__name__
+    return True, ""
 
 
 def _listing(dirpath):
@@ -631,7 +650,10 @@ def _texts(top, base, rel):
     if state != "ok":
         return None, None, (None, f"{COULD_NOT_TELL}: base copy {state}")
     path = os.path.join(top, *rel.split("/"))
-    if not os.path.lexists(path):
+    present, why = _present(path)
+    if present is None:
+        return None, None, (None, f"{COULD_NOT_TELL}: whether {rel} exists: {why}")
+    if not present:
         return None, None, (False, "deleted, not a re-anchor")
     after = read_text(path)
     if after is None:
@@ -721,7 +743,10 @@ def _diagram_verdict(top, base, rel, reach, code):
 def _rule_verdict(top, base, rel, expected):
     path = os.path.join(top, *rel.split("/"))
     key = os.path.normcase(os.path.normpath(path))
-    if os.path.lexists(path):
+    present, why = _present(path)
+    if present is None:
+        return None, f"{COULD_NOT_TELL}: whether {rel} exists: {why}"
+    if present:
         # Read once, and a None is could-not-tell BEFORE any comparison: an
         # unreadable rule no map expects compared None == None and was
         # admitted as regenerated (review round 2).
