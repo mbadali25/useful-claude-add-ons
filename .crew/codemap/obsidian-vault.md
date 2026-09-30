@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@f4adf923
+anchor: useful-claude-add-ons@328fdf4a
 verified: 2026-09-30
 
 ## Does
@@ -1070,3 +1070,11 @@ only (owner refresh-artifact standing rule, 2026-09-28); no test suite was execu
 `PLUGINS.md`, the README's version mention and the CHANGELOG heading), because T-0505 targets
 1.0.84. No cited line moved; the version sentences were re-read. Re-anchor only (owner
 refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
+
+## Re-anchor provenance - `f4adf923` -> `328fdf4a`, 2026-09-30 (T-0028 round-7 fixes, crew 1.0.85 re-set)
+
+`233701d5` fixes review round 7's four FIXes in `kimi_probe.py` (the owner accepted round 7 and
+ordered the fixes); `328fdf4a` re-sets crew 1.0.85. Body citations were mapped by `difflib` from
+`ea90a4e4` to `328fdf4a` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local), each moved
+citation landing on the same line text. Re-anchor only (owner refresh-artifact
+standing rule, 2026-09-28); no test suite was executed for this note.

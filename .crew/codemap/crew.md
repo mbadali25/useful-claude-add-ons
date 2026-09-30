@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@f4adf923
+anchor: useful-claude-add-ons@328fdf4a
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 36 commands, 31 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.85 (T-0028's re-set at `f4adf923`, past main's 1.0.83 and skipping 1.0.84, which T-0505 targets; 1.0.84 at `c43a54c1`, one past main's 1.0.83 (T-0099 #278, after L-0531 #284 at 1.0.82), which this note on main still read as 1.0.81; 1.0.81 is T-0094's landing re-set, one past origin/main's 1.0.80 after T-0094 merged `d1462bbd`, L-0529's landing (#283); T-0094 was 1.0.78 at `65abeb8d`/`1f21f73b`, one past origin/main's 1.0.77 after T-0094 merged `549cda24`; main's 1.0.77 is T-0086's landing (#282); T-0094 was 1.0.77 at `a0db0703`, one past origin/main's 1.0.76 after T-0094 merged `a7524aac`; main's 1.0.76 is T-0087's landing (#281); T-0094 was 1.0.76 at `1b9e4bfe`, one past origin/main's 1.0.75 after T-0094 merged `9af34e57`; T-0094 was 1.0.71 at `0c19512c`, 1.0.70 at `f5d0f1b1` and 1.0.62 at `fc348c89` on its branch before; main's 1.0.75 is T-0085's landing: 1.0.70 at its merge of main's 1.0.69 at `a61a6f38`, 1.0.71 after one landing-branch sabotage anchor commit, 1.0.72 after rewrapping `commands/review.md` to its line allowance, 1.0.73 at its catch-up merge of main's 1.0.70 at `6813749b` (#268, T-0097), 1.0.74 for the Windows fail-open fix in `gate_applies` at `9b6b0da7`, 1.0.75 for re-targeting the sabotage entry that fix made vacuous; whose 1.0.62-1.0.69 are #263-#267 and T-0088; before that 1.0.61, T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`; T-0085's build branch declares main's version and carries no bump of its own until land, `.crew/standards.md` REPO-03), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.85 (T-0028's re-set at `328fdf4a` after the round-7 fixes, first set at `f4adf923`, past main's 1.0.83 and skipping 1.0.84, which T-0505 targets; 1.0.84 at `c43a54c1`, one past main's 1.0.83 (T-0099 #278, after L-0531 #284 at 1.0.82), which this note on main still read as 1.0.81; 1.0.81 is T-0094's landing re-set, one past origin/main's 1.0.80 after T-0094 merged `d1462bbd`, L-0529's landing (#283); T-0094 was 1.0.78 at `65abeb8d`/`1f21f73b`, one past origin/main's 1.0.77 after T-0094 merged `549cda24`; main's 1.0.77 is T-0086's landing (#282); T-0094 was 1.0.77 at `a0db0703`, one past origin/main's 1.0.76 after T-0094 merged `a7524aac`; main's 1.0.76 is T-0087's landing (#281); T-0094 was 1.0.76 at `1b9e4bfe`, one past origin/main's 1.0.75 after T-0094 merged `9af34e57`; T-0094 was 1.0.71 at `0c19512c`, 1.0.70 at `f5d0f1b1` and 1.0.62 at `fc348c89` on its branch before; main's 1.0.75 is T-0085's landing: 1.0.70 at its merge of main's 1.0.69 at `a61a6f38`, 1.0.71 after one landing-branch sabotage anchor commit, 1.0.72 after rewrapping `commands/review.md` to its line allowance, 1.0.73 at its catch-up merge of main's 1.0.70 at `6813749b` (#268, T-0097), 1.0.74 for the Windows fail-open fix in `gate_applies` at `9b6b0da7`, 1.0.75 for re-targeting the sabotage entry that fix made vacuous; whose 1.0.62-1.0.69 are #263-#267 and T-0088; before that 1.0.61, T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`; T-0085's build branch declares main's version and carries no bump of its own until land, `.crew/standards.md` REPO-03), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -1295,15 +1295,20 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   it reads the model (`:1496-1497`), since the Kimi Code id `k3` would otherwise read as family
   `k`. `crew_config.PATH_PROVIDERS` (`plugin/crew/hooks/scripts/crew_config.py:135`) asks `which`
   about `kimi`, presence only.
-- **DERIVED**: `plugin/crew/hooks/scripts/kimi_probe.py` has five states (`:75`), only `ok`
-  launchable (`:188`); `resolve_alias` (`:251`) maps an id to the config.toml alias served by a
-  `type = "kimi"` provider; `probe` (`:420`) runs one live call in a throwaway directory with the
-  read-only agent file (`write_agent_file`, `:208`; `read_only_flags`, `:230`) and a scrubbed env
-  (`kimi_env`, `:199`), and `classify` (`:392`) reads its stream through `final_message`
-  (`:145`), the stream-json parser, which lives here so the review harness can import it. A
+- **DERIVED**: `plugin/crew/hooks/scripts/kimi_probe.py` has five states (`:81`), only `ok`
+  launchable (`:194`); `resolve_alias` (`:257`) maps an id to the config.toml alias served by a
+  `type = "kimi"` provider; `probe` (`:506`) runs one live call in a throwaway directory with the
+  read-only agent file (`write_agent_file`, `:214`; `read_only_flags`, `:236`) and a scrubbed env
+  (`kimi_env`, `:205`), and `classify` (`:478`) reads its stream through `final_message`
+  (`:151`), the stream-json parser, which lives here so the review harness can import it. A
   timed-out probe's process group is killed and the follow-up read is bounded (`_run`). `probe`
   refuses (`unknown`) when the temporary directory lies inside a repository
-  (`_inside_a_repository`, `:328`), and a wrong-shaped `api_key` or `oauth` entry is `unknown`.
+  (`_inside_a_repository`, `:382`), and a wrong-shaped `api_key` or `oauth` entry is `unknown`.
+  Round 7: a non-string `default_model` is `unknown`; only the provider's own credential file
+  (`credentials/<name>.json` for `key = "oauth/<name>"`) counts as a login; each output pipe is
+  drained by `_CappedReader` (`:440`) keeping at most `OUTPUT_CAP`, past which the call is
+  `unknown`; config.toml is opened once, non-blocking, and checked and read through that handle
+  (`_read_config`, `:348`).
 - **DERIVED**: the launch gate. `crew_config.review_launchable`
   (`plugin/crew/hooks/scripts/crew_config.py:1855`) is `review_run.LAUNCHED` plus the in-session
   `claude`, None when that list cannot be read; `order_candidates` (`:1878`) refuses a `qa.order`
@@ -3197,3 +3202,12 @@ only (owner refresh-artifact standing rule, 2026-09-28); no test suite was execu
 `PLUGINS.md`, the README's version mention and the CHANGELOG heading), because T-0505 targets
 1.0.84. No cited line moved; the version sentences were re-read. Re-anchor only (owner
 refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
+
+## Re-anchor provenance - `f4adf923` -> `328fdf4a`, 2026-09-30 (T-0028 round-7 fixes, crew 1.0.85 re-set)
+
+`233701d5` fixes review round 7's four FIXes in `kimi_probe.py` (the owner accepted round 7 and
+ordered the fixes); `328fdf4a` re-sets crew 1.0.85. Body citations were mapped by `difflib` from
+`ea90a4e4` to `328fdf4a` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local), each moved
+citation landing on the same line text. It gains the round-7 probe claims (`_CappedReader`, `_read_config`, the credential file), read
+from the code with `grep -n`. Re-anchor only (owner refresh-artifact
+standing rule, 2026-09-28); no test suite was executed for this note.
