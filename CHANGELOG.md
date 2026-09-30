@@ -4,6 +4,40 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.70: autopilot leaves in-flight work alone (T-0049)
+
+- **In-flight markers.** New `hooks/scripts/crew_inflight.py` (`begin`,
+  `beat`, `end`, `status`, `pick`, `lane-lines`, and the owner's `clear`)
+  writes one marker per ticket under `<git-common-dir>/crew/inflight/`,
+  atomically and under a lock, so every worktree sees who is driving a ticket:
+  the runner (`autopilot`, `wave`, `workflow` or `agent`), its holder
+  (session, `CLAUDE_PID` with start time and PID namespace, machine, worktree)
+  and a heartbeat a detached beat loop refreshes every 10 minutes (TTL 30).
+  `status` answers `free`, `mine`, `live`, `stale`, `elsewhere` or `unknown`;
+  anything but free or mine is hands off, and could-not-tell is in flight,
+  never free. A reserved review round with no result, or another worktree for
+  the ticket with uncommitted changes, counts too. Stale is never taken over:
+  only `clear`, run by the owner from a terminal outside Claude Code (a prose
+  control, spoofable with `env -u`), removes a marker, and `--round N`
+  releases a reserved round for a relaunch.
+- **Two new stops.** `in-flight` joins `crew_state.AUTONOMOUS_STOPS`, and
+  `handover-elsewhere` joins `next`'s fixed stops. `crew_autopilot.py next
+  --runner <r>` (default `autopilot:<session>`) stops `in-flight` for live,
+  stale and unknown, naming the runner, the ticket and since when, and
+  `handover-elsewhere` with `cd <worktree>` when the last runner ended in
+  another checkout; a closed ticket still reads `closed`. `/crew:autopilot`
+  runs `begin` after it picks the ticket and `end` before every stop.
+- **Behaviour change:** a latest review round reserved with no result now
+  stops as `in-flight`, not `review`, whoever reserved it, until the owner
+  releases it with `crew_inflight.py clear --round N`. `next` also stops
+  `in-flight` when `CLAUDE_CODE_SESSION_ID` is absent: who is asking cannot be
+  told.
+- **One liveness proof.** T-0030's process-identity helpers (`probe_pid`,
+  `probe_holder`, `current_holder`, `same_holder`, the file lock, the private
+  temp directory) move verbatim into `hooks/scripts/crew_holder.py`, with a
+  new `processes_in` that reads `/proc/<pid>/cwd` on Linux only and answers
+  `unknown` anywhere it cannot see its own `CLAUDE_PID`.
+
 ### Changed — `crew` 1.0.69: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088)
 
 - **`/crew:review` probes Codex with a real call.** `review_run.py --probe` makes

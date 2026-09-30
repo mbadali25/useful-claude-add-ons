@@ -107,9 +107,10 @@ the key the incident was about.
 >   put a choice to you it takes the option it would have recommended and
 >   tells you which.
 >
-> Four things stop for an explicit yes whatever this is set to, `autonomous`
+> Five things stop for an explicit yes whatever this is set to, `autonomous`
 > included: offboarding a role, deleting a codemap or diagram, rewriting
-> `.crew/metrics.md`, and destroying git history or tracked work.
+> `.crew/metrics.md`, destroying git history or tracked work, and taking over,
+> clearing or driving a ticket another runner holds (T-0049's in-flight marker).
 
 Default `report-only` on any hesitation.
 
