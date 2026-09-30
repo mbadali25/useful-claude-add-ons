@@ -156,10 +156,19 @@ def _load(path):
     if not isinstance(data, dict) or not isinstance(data.get("rounds", []), list):
         return {}, "corrupt"
     # `_spent` and `_boundary` read the latest successor row: a `successors`
-    # that is not a list of objects is unreadable, never a crash (T-0087).
-    successors = data.get("successors") or []
+    # that is not a list of objects is unreadable, never a crash (T-0087). Any
+    # wrong type on that path -- `{}`, `0`, `""`, `false` or `null` for the
+    # list, an `after_round` that is missing, not an integer, a boolean, or
+    # outside the rounds it splits -- is unreadable too, never "no successor"
+    # or "boundary 0" (review round 5).
+    successors = data.get("successors", [])
     if not isinstance(successors, list) or not all(isinstance(s, dict) for s in successors):
         return {}, "corrupt"
+    if successors:
+        after = successors[-1].get("after_round")
+        if (not isinstance(after, int) or isinstance(after, bool)
+                or not 0 <= after <= len(data.get("rounds", []))):
+            return {}, "corrupt"
     return data, "ok"
 
 
