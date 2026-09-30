@@ -216,6 +216,16 @@ TOOLING_MUTATIONS = (
         ("tests/test_review_golden.py::"
          "test_golden_corpus_is_checked_out_without_line_ending_conversion"),
     ),
+    (
+        # (ac) Round-4 FIX: the refund marks every phase, so a refresh that
+        # left its artifact stale repeats forever instead of stopping.
+        "a refunded round exempts a stale refresh from no-progress",
+        CREW_AUTOPILOT,
+        '        return dict(found, refunded_rerun=found["phase"] == "review")\n',
+        "        return dict(found, refunded_rerun=True)\n",
+        ("tests/test_crew_autopilot.py::"
+         "test_next_refunded_round_with_a_refresh_still_stale_is_no_progress"),
+    ),
 )
 
 # Outside the plugin: present only in the marketplace repo, never in an

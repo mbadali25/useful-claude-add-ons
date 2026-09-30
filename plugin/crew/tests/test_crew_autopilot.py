@@ -1297,6 +1297,19 @@ def test_next_refunded_rerun_after_review_is_not_no_progress(tmp_path, monkeypat
         ["command", "evidence", "phase", "reason", "stop", "ticket"])
 
 
+def test_next_refunded_round_with_a_refresh_still_stale_is_no_progress(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [dict(_round(1, "INCOMPLETE"), refunded=True, failure_class="tool")],
+            state="REVIEWED")
+    _receipt_ok(monkeypatch, False)
+    _refresh(monkeypatch, "stale", command="graphify update .")
+
+    got = _next(root, phases_run=1, last_command="graphify update .", max_phases=12)
+
+    assert (got["phase"], got["stop"], got["reason"].startswith("no progress")) == (
+        "refresh", True, True)
+
+
 def test_next_unrefunded_rerun_after_review_is_still_no_progress(tmp_path, monkeypatch):
     root = _approved(tmp_path)
     _ledger(root, [_round(1, "CLEAN")], state="REVIEWED")

@@ -27,7 +27,8 @@ A tooling change: this release carries no feature work.
   the ledger charges it (`round 3, 1 of 2 budget rounds used, 2 refunded`),
   never `round 3/2`. Autopilot sends a refunded round back to review (refresh
   first) instead of stopping, even straight after `/crew:review`: the
-  no-progress stop does not apply to that rerun, and `REFUND_LIMIT` and
+  no-progress stop does not apply to that review rerun (a refresh before it
+  that leaves its artifact stale still stops), and `REFUND_LIMIT` and
   `maxPhases` bound it. This is the review-side twin of
   T-0082's gate rule: a killed, hung or timed-out run is "could not tell",
   never a pass.
@@ -66,12 +67,12 @@ A tooling change: this release carries no feature work.
   covers Codex CLI's `--json` events (`exec_events.rs`), `wsl.exe`'s UTF-16LE
   output and `gh`'s exit codes and review flags, each with its URL, read date
   and probe record. It is held to crew's call sites by `test_external_tool_formats.py`.
-- **Twenty-eight sabotage entries** (`tests/sabotage_tooling.py`) cover the
+- **Twenty-nine sabotage entries** (`tests/sabotage_tooling.py`) cover the
   refund, the budget, the golden replay and its redaction, the manifest,
   status, autopilot, the gate record, the canary, the tooling-alone checker,
   rule 35's paths, the batch-shim prompt, the WSL probe's no-distribution skip
   and the corpus's `-text` attribute. The six on the checker and `verify.json` are added only where
-  those repo files exist. All twenty-eight go RED.
+  those repo files exist. All twenty-nine go RED.
 
 ### Fixed — `crew` 1.0.70 (T-0087)
 
@@ -106,6 +107,10 @@ A tooling change: this release carries no feature work.
 - The golden review corpus is checked out byte-exact: a nested
   `plugin/crew/tests/golden/.gitattributes` sets `* -text`, so an autocrlf
   checkout no longer rewrites it to CRLF.
+- Review round 4: a refunded round no longer exempts every next phase from
+  autopilot's no-progress stop, only the `/crew:review` rerun. A refresh that
+  ran and left its artifact stale (`graphify update .` named again) repeated
+  instead of stopping.
 - Bumped `1.0.69 -> 1.0.70` (1.0.52 on its branch; re-set to 1.0.53 after
   merging main's 1.0.52, T-0076, to 1.0.55 after merging main's 1.0.54,
   T-0092, to 1.0.62 after merging main's 1.0.61, T-0010, and to 1.0.70 after

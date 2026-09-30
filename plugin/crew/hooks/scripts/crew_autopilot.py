@@ -522,10 +522,12 @@ def _review_phase(top, ticket, evidence, answer):
                       "human reverts the edit that staled the receipt, or replans")
     if latest.get("refunded") is True and not ok:
         # Marked so `next_phase` does not read this rerun as "no progress"
-        # (its docstring says what bounds it).
-        return dict(_toward_review(top, ticket, answer, ok, message,
-                                   f"round {latest.get('round')} was a tool failure and "
-                                   "was refunded; "), refunded_rerun=True)
+        # (its docstring says what bounds it). Only the review itself: a
+        # refresh that left its artifact stale is still no progress.
+        found = _toward_review(top, ticket, answer, ok, message,
+                               f"round {latest.get('round')} was a tool failure and "
+                               "was refunded; ")
+        return dict(found, refunded_rerun=found["phase"] == "review")
     if latest.get("verdict") != "CLEAN" and not ok:
         return answer("accept-review", True, f"round {latest.get('round')} is "
                       f"{latest.get('verdict') or 'without a verdict'}: the reviewer did not "
