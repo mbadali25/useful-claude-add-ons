@@ -236,7 +236,7 @@ first surviving provider that passes its probe:
 
 | Provider | Probe | Runs |
 |---|---|---|
-| `codex` | `command -v codex` | step 2a |
+| `codex` | `review_run.py ... --provider codex --probe`, run by the `case` line that opens Step 2's bundle block (after `$QA_MODEL`/`$QA_EFFORT` are set), which leaves `$PROBE_STATUS` and `$PROBE_DETAIL`: one minimal real call, no round reserved (`command -v` is not a probe: a logged-out or limited Codex is on `PATH` and fails at the first call) | exit 0 (ok): step 2a. Exit 6 (failed) or 7 (unknown, timed out): skip Codex with `PROBE_DETAIL` quoted - a pinned `codex` hard-fails, as before. Exit 5 (limited): **a Codex usage limit runs the round on Claude** - step 2c, pinned or not (owner, 2026-09-28: "if we hit a codex limit please use claude ads the reviewer"), announced `same-family (codex limit)`, not independent, with `PROBE_DETAIL` quoted verbatim; the round is spent like any other (a refund is T-0087's). The patterns are Codex's own messages, cited in `review_limit.py`. Any other exit is no answer about Codex (2 a usage error, 1 the probe crashed): stop and quote it; never read it as ok or as limited |
 | `copilot` | `command -v copilot` **and** `qa.copilot.model` is set | step 2b |
 | `claude` | always passes | step 2c |
 
@@ -320,7 +320,7 @@ the reason a rung was lost, rather than presenting the narrower candidate list
 as though it were a preference.
 
 ```bash
-
+case " $ELIGIBLE " in *" codex "*) PROBE_OUT=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" --scratch "$SCRATCH" --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT" --probe); PROBE_STATUS=$?; PROBE_DETAIL=$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^PROBE_DETAIL=//p'); echo "codex probe: exit $PROBE_STATUS - $PROBE_DETAIL";; *) PROBE_STATUS=; PROBE_DETAIL=;; esac  # T-0088: the Codex probe, only when codex is a candidate; $PROBE_STATUS picks Step 1's table row
 # $BASE comes from step 1a. Reuse it; do not recompute it here. A second
 # derivation can disagree with the first, and then the staleness verdict was
 # about a different range than the diff the reviewer actually read.
@@ -437,14 +437,14 @@ of reporting it. Empty model/effort pass no flag.
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
   --scratch "$SCRATCH" --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT"
 # or: --provider copilot --model "$QA_COPILOT_MODEL"
-REVIEW_STATUS=$?   # 0 CLEAN, 1 FINDINGS, 3 INCOMPLETE, 4 NEEDS_REPLAN, 2 not run
+REVIEW_STATUS=$?   # 0 CLEAN, 1 FINDINGS, 3 INCOMPLETE, 4 NEEDS_REPLAN, 5 gate red, 2 not run
 ```
 
 `reasoningEffort` accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`;
 Codex rejects a wrong one with an HTTP 400. Copilot exiting non-zero with `Access
 denied by policy settings` is org or enterprise policy — report that exact
-cause. Exit 2 means nothing launched (not on PATH) and no round was spent; walk
-to the next eligible provider.
+cause. Exit 2: nothing launched (not on PATH), no round spent; walk to the next
+provider. Exit 5 (`$REVIEW_STATUS`, not the probe's `$PROBE_STATUS` 5): the verify gate has not passed this tree, no round spent; every provider refuses it, so run the gate first (or pass `--allow-unverified` and say so). A Codex round whose call fails on a usage limit stays INCOMPLETE, prints `review: codex usage limit in round N: '<the error>'` and is recorded after the verdict, in `<git-common-dir>/crew/review-limit/<ticket>.json` (not the ledgers' folder, which `/crew:status` lists): the next probe answers `limited` from that record without a call, so the next round runs step 2c; the round after it probes Codex live again. A record that cannot be written prints `could not record it (...)` instead; the round is still INCOMPLETE (exit 3) and the next probe calls Codex live.
 
 **Step 2c — Claude fallback.** Invoke the `crew:reviewer` subagent with the
 SAME bundle 2a and 2b just read: the exact `$SCRATCH/prompt.txt` content —
@@ -467,7 +467,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TI
   --output "$SCRATCH/out.txt" --exit-code 0
 ```
 
-An empty `ROUND` is a refusal (budget spent): do not dispatch.
+An empty `ROUND` means do not dispatch: a refusal (budget spent, or exit 5 above), or `ALREADY_CLEAN=1`, a CLEAN receipt already covering this bundle.
 
 The fallback is genuinely weaker than a different family: the same model family
 reviewing itself finds fewer defects. Tell me when it is what ran, so I review
@@ -528,7 +528,7 @@ to.
    `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh review "<n> BLOCK, <n> FIX (<reviewer>)"`
    Counts only. Never the findings themselves — those stay in the repo.
 6. Append the result to `.crew/metrics.md`: `<date> | <ticket> | <reviewer> | <n BLOCK> | <n FIX>`
-   (counts from `review.json`; an INCOMPLETE round is recorded as INCOMPLETE, not as 0/0)
+   (counts from `review.json`; an INCOMPLETE round is recorded as INCOMPLETE, not as 0/0; a round a Codex limit sent to step 2c is `claude (same-family: codex limit)`, never a bare `claude`)
 7. Name every specialist from step 0 that ran, every one that a matched rule
    asked for but you skipped, and every one that a matched rule named but that
    **is not installed on this machine**. A review that quietly dropped the `dba`
@@ -542,7 +542,7 @@ to.
    or deleting the rule.
 8. Name the author family **and its source** in the same breath as the reviewer:
    `recorded dispatch <role>/<provider>/<model>`, `READ FROM CONFIG - no
-   dispatch recorded`, or `STALE RECORD - both families struck`. Which family
+   dispatch recorded`, or `STALE RECORD - both families struck` - and a Codex-limit round as `claude (same-family: codex limit)` with the probe's quoted `PROBE_DETAIL`. Which family
    was barred is only checkable by a reader who knows whether the bar rests on a
    fact or on a guess, and that is the whole difference this record exists to
    make visible.

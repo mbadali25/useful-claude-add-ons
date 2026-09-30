@@ -232,6 +232,7 @@ def test_run_timeout_is_incomplete(repo, tmp_path):
 
 @pytest.mark.skipif(shutil.which("setsid") is None, reason="needs setsid")
 @pytest.mark.skipif(os.name == "nt", reason="POSIX process semantics only")
+@pytest.mark.wallclock
 def test_run_timeout_survives_an_escaped_descendant_holding_the_pipe(repo, tmp_path):
     """BLOCK (Codex): the fake reviewer's `escape` mode exits immediately
     after forking a detached `setsid` grandchild that inherits its

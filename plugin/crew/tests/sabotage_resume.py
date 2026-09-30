@@ -40,7 +40,7 @@ RESUME_MUTATIONS = (
      '            _auto(_load(os.path.join(root, ".crew", n))) is True for n in ("crew.json", "config.json")):\n',
      _T + "test_repo_true_without_machine_opt_in_does_not_fire"),
     ("a repo `false` no longer vetoes the machine opt-in", RESUME,
-     '        if _auto(_load(os.path.join(root, ".crew", name))) is False:\n',
+     '        if _auto(_load(crew_common.repo_config_file(root, name))) is False:\n',
      '        if False:' + _OFF,
      _T + "test_repo_false_in_crew_json_vetoes"),
     ("the handoff's head: line is no longer matched against HEAD", RESUME,

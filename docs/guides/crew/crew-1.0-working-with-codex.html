@@ -152,6 +152,27 @@ this project's <code>.codex/config.toml</code>. Create <code>$CODEX_HOME/review.
 <code>$CODEX_HOME/work.config.toml</code> yourself and pass <code>--profile review</code>/<code>--profile work</code> against
 those.</p>
 <p>A review that exits non-zero or prints nothing is INCOMPLETE, never CLEAN.</p>
+<h2 id="when-codex-hits-a-usage-limit">When Codex Hits a Usage Limit</h2>
+<p>Having <code>codex</code> on <code>PATH</code> does not mean it can review: a logged-out, rate-limited or out-of-credits
+Codex is installed and fails at the first call. So <code>/crew:review</code> makes one minimal real call first,
+before it reserves a round, with the round's own model and effort:</p>
+<pre><code class="language-bash">python3 &quot;$S/review_run.py&quot; --root . --ticket &lt;id&gt; --scratch &lt;dir&gt; --provider codex \
+  --model &lt;model&gt; --effort &lt;effort&gt; --probe
+</code></pre>
+<p>It prints <code>PROBE=&lt;outcome&gt;</code> and <code>PROBE_DETAIL=&lt;the answer or the quoted error&gt;</code> and exits <code>0</code> (ok),
+<code>5</code> (limited), <code>6</code> (failed) or <code>7</code> (unknown: no answer within 120 s). Nothing is reserved either way.
+<code>limited</code> means the call failed and its error matched one of Codex's own limit messages (usage limit,
+out of credits, spend cap, rate limit, quota, a plan without Codex, or a retry limit on HTTP 429),
+listed with their <code>error.rs</code> lines in <code>hooks/scripts/review_limit.py</code>. On <code>limited</code> the round runs on
+the Claude reviewer - even when <code>qa.provider</code> pins <code>codex</code> - announced as <code>same-family (codex limit)</code>
+with the error quoted, because it is not an independent review.</p>
+<p>A limit hit in the middle of a round leaves that round INCOMPLETE and prints
+<code>review: codex usage limit in round N: ...</code>. It is recorded in
+<code>&lt;git-common-dir&gt;/crew/review-limit/&lt;ticket&gt;.json</code>, so the next <code>/crew:review</code> answers <code>limited</code> from
+the record without calling Codex again. Once that next round is reserved the record stops applying,
+and the round after it probes Codex live. The record is written after the round's verdict: when it
+cannot be written the round still ends INCOMPLETE (exit 3), the line says <code>could not record it (...)</code>,
+and the next probe calls Codex live instead.</p>
 <h2 id="what-is-proven-and-what-is-only-configured">What Is Proven, and What Is Only Configured</h2>
 <p>Run the probe. The sample below shows the probe's format with this build's values. The
 <code>hooks feature</code> value was measured with <code>codex features list</code>. The probe itself has only been

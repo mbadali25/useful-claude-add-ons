@@ -1538,6 +1538,7 @@ def test_a_second_thread_is_refused_while_the_first_holds_the_ledger(
     assert (tries["n"] > 1) == (exclusion == "os-lock-only")
 
 
+@pytest.mark.wallclock
 def test_a_second_process_is_refused_while_a_child_holds_the_ledger(
         tmp_path, monkeypatch):
     """The OS lock is what excludes another process -- the in-process mutex
@@ -1565,6 +1566,7 @@ def test_a_second_process_is_refused_while_a_child_holds_the_ledger(
         _kill(child)
 
 
+@pytest.mark.wallclock
 def test_a_killed_holder_releases_the_ledger_at_once(tmp_path):
     """A holder that dies without releasing -- SIGKILL on POSIX,
     TerminateProcess on Windows, both via `Popen.kill()` -- leaves nothing
@@ -1588,6 +1590,7 @@ def test_a_killed_holder_releases_the_ledger_at_once(tmp_path):
 
 
 @pytest.mark.parametrize("code", ["ENOLCK", "EOPNOTSUPP", "EINVAL"])
+@pytest.mark.wallclock
 def test_a_filesystem_that_cannot_lock_fails_closed_at_once(
         tmp_path, monkeypatch, code):
     """Some NFS/SMB/FUSE mounts refuse the lock outright. That must never
