@@ -63,6 +63,21 @@ those.
 
 A review that exits non-zero or prints nothing is INCOMPLETE, never CLEAN.
 
+The review prompt Codex reads ends with a **development standards checklist**: the rules and
+self-check questions of every standard that applies to the change (crew's generic set, any
+matching per-language set, and the repository's `.crew/standards.md` overlay). The author's own
+self-check answers are withheld from the prompt, so Codex judges each standard's applicability
+itself, and the prompt says the list does not bound the review: a defect outside it is reported
+the same way. Withheld from the prompt is not hidden: the answers stay in
+`.work/tickets/<id>/selfcheck.md`, which Codex, with read access to the checkout, could open; the
+prompt never names that file. For a ticket with an approval receipt (or one whose receipt cannot
+be proven absent), `review_run.py` will not launch Codex, or reserve a round, until the author's
+self-check is complete and stamped for the exact bundle Codex is about to read. A ticket with no
+approval receipt is told the gate does not apply, and during a declared incident
+(`/crew:emergency`) the gate stands down and logs the skip. The self-check is asked for last: a
+CLEAN receipt that already covers the bundle answers CLEAN without it, and a tree the verify gate
+has not passed is refused (exit 5) before it.
+
 ## When Codex hits a usage limit
 
 Having `codex` on `PATH` does not mean it can review: a logged-out, rate-limited or out-of-credits

@@ -2,7 +2,7 @@ name: crew plugin evals
 
 # Real model calls, billed to whoever's ANTHROPIC_API_KEY runs the job - not
 # a free structural check like the other workflows here, so this does NOT
-# use the repo's usual `on: [push, pull_request]`. It runs only on a PR that
+# use the repo's usual push-to-main + pull_request triggers. It runs only on a PR that
 # actually touches the plugin under test, and only when a repo secret named
 # ANTHROPIC_API_KEY exists; the skip step below prints why rather than
 # failing silently or leaving the check missing.
@@ -36,6 +36,13 @@ on:
       - 'scripts/run-plugin-evals.ps1'
       - '.github/workflows/plugin-evals.yml'
   workflow_dispatch: {}
+
+# Deliberately no push-to-main trigger: every run is billed. A new push to a
+# PR cancels its superseded (billed) run; a manual workflow_dispatch run gets
+# its own group via run_id and is never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   evals:
