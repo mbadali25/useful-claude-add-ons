@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.78: the Kimi Code CLI is a crew provider (T-0028, the feature
+- **`crew` 1.0.79: the Kimi Code CLI is a crew provider (T-0028, the feature
   half). BEHAVIOUR CHANGE: the default `qa.order` now lists Kimi second -
   `["codex", "kimi", "copilot", "claude"]`.** `/crew:review` does not launch
   Kimi yet: that wiring is crew's review harness, and lands on its own as
@@ -19,10 +19,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   and go on to the next rung. The gate names no provider: L-0527 adding `kimi`
   to `review_run.LAUNCHED` is what makes it eligible; an unreadable list is
   could-not-tell and admits nothing. (`review_run.py --provider kimi` itself
-  still exits 2 until then, nothing launched.) Bumped `1.0.77 -> 1.0.78` (1.0.44 on its
+  still exits 2 until then, nothing launched.) Bumped `1.0.77 -> 1.0.79` (1.0.44 on its
   branch; 1.0.60 after merging main's 1.0.59; 1.0.62 after main's 1.0.61;
   1.0.70 after main's 1.0.69; 1.0.76 after main's 1.0.75; 1.0.77 after
-  main's 1.0.76, T-0087; re-set after merging main's 1.0.77, T-0086).
+  main's 1.0.76, T-0087; 1.0.78 after main's 1.0.77, T-0086; 1.0.79 after
+  the round-6 fixes, 1.0.78 and 1.0.80 being held by open PRs #278 and #283).
   - **`kimi` is in `QA_PROVIDERS` and `DEV_PROVIDERS`**, so every
     `qa.roles.<r>` and `dev.roles.<r>` slot accepts a
     `{"provider": "kimi", "model": ...}` pin that validates, reports in
