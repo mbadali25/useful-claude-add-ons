@@ -357,7 +357,15 @@
       "seconds": 2,
       "run": ["python3 -m pytest plugin/crew/tests/test_qa_audit.py -q"],
       "reach": "local",
-      "why": "crew 1.0.67. qa_audit.py is the report-only audit behind crew-qa-standards: one must-GAP and one must-PASS case per audited rule, plus the N/A and UNKNOWN cases that keep an unfollowed wrapper or a raising check from reading as PASS, and the `python -m pytest` case the audit's first run got wrong. Every mutation in sabotage_qa.py goes red on its named test through sabotage.py. Under 1s of test time (32 passed) measured 2026-09-30 in a 4-CPU container; the 2 is process start-up with headroom. reach: local - every case writes a throwaway tree under tmp_path." }
+      "why": "crew 1.0.67. qa_audit.py is the report-only audit behind crew-qa-standards: one must-GAP and one must-PASS case per audited rule, plus the N/A and UNKNOWN cases that keep an unfollowed wrapper or a raising check from reading as PASS, and the `python -m pytest` case the audit's first run got wrong. Every mutation in sabotage_qa.py goes red on its named test through sabotage.py. Under 1s of test time (32 passed) measured 2026-09-30 in a 4-CPU container; the 2 is process start-up with headroom. reach: local - every case writes a throwaway tree under tmp_path." },
+
+    { "paths": ["plugin/crew/hooks/scripts/crew_setup_status.py", "plugin/crew/tests/test_setup_status.py",
+                "plugin/crew/tests/sabotage_setup_status.py", "plugin/crew/skills/crew-setup/phases.md",
+                "plugin/crew/commands/init.md", "plugin/crew/commands/migrate.md"],
+      "seconds": SECONDS_TBD,
+      "run": ["python3 -m pytest plugin/crew/tests/test_setup_status.py -q"],
+      "reach": "local",
+      "why": "crew 1.0.70 (T-0500). crew_setup_status.py is the read-only checker /crew:init and /crew:migrate run before resuming setup: a done row marked before its phase-rev marker, one in a STATUS.md with no crew: line (could not tell), and one whose note records a breakage are flagged; a heading without a marker, a missing table or an unknown state is exit 3. phases.md, init.md and migrate.md are listed because the suite reads their text - the markers, the format block's crew: line and the fenced checker calls it runs. Every mutation in sabotage_setup_status.py goes red on its named test through sabotage.py. TIMING_TBD reach: local - every case writes a throwaway tree under tmp_path." }
   ],
 
   "default": ["bash _verify/smoke.sh"],

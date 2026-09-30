@@ -10,9 +10,31 @@ Follow `${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/phases.md` exactly. It defines a
 nine phases, the status file format, and the rules about stopping between phases.
 
 Arguments: $ARGUMENTS
-- `--status` — print the phase table from `.crew/STATUS.md` and stop
+- `--status` — print the phase table from `.crew/STATUS.md`, then the checker's lines, and stop
 - `--phase N` — run that phase only, warning about incomplete prerequisites
-- no argument — resume at the first phase not marked `done`
+- no argument — run the checker, offer what it flags, then resume at the first phase not marked `done`
+
+## Before resuming
+
+For no argument and for `--status`, when `.crew/STATUS.md` exists, run the
+checker before choosing where to resume and show its lines verbatim. It writes
+nothing.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_setup_status.py" --root .
+```
+
+- exit 0 — nothing to re-verify.
+- exit 1 — each `phase N ... - re-verify` line is a `done` row whose definition
+  changed since it was marked, whose file does not say which crew it was marked
+  against, or whose note may record a breakage. Offer them one at a time, in the
+  order listed, before the first phase not marked `done`.
+- exit 3 — could not tell. Quote the line and stop; do not resume past a status
+  file the checker cannot read.
+
+Every rewrite of `.crew/STATUS.md` - after any phase, under every argument form -
+copies the version from the checker's `current crew:` line in as
+`crew: <version>` after `updated:`.
 
 After each phase, if `notify.provider` is configured, send one line:
 `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh phase "Phase N <state>"`

@@ -1119,6 +1119,40 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
 "all four or nothing" (its `:246` at `d7c7c75c`).
 
+## Setup status (T-0500, crew 1.0.70)
+
+DERIVED. `plugin/crew/hooks/scripts/crew_setup_status.py` is the read-only
+checker `/crew:init` and `/crew:migrate` run before resuming setup. It answers
+aws-ops report item 13: a 0.20 `.crew/STATUS.md` with all nine rows `done` left
+`/crew:init` nothing to resume.
+
+- `plugin/crew/hooks/scripts/crew_setup_status.py:37` sets
+  `sys.dont_write_bytecode`; the module is standard library only and opens no
+  file for writing. `:46-47` resolve `phases.md` and `plugin.json` from its own
+  path, so a cached install finds its own copies.
+- `:78` `phase_revs` reads each `## Phase N` heading's
+  `<!-- phase-rev: X.Y.Z -->` within the next three lines; none, or two, is
+  `SetupStatusError` (`:58`), exit 3 - never an unchecked phase.
+- `:98` `parse_status` takes the `crew:` stamp from above the table and the
+  rows from it; no table, or a state outside `STATES` (`:48`), is exit 3.
+- `:130` `flags_for` looks at `done` rows only: no stamp is "could not tell"
+  (never read as current), a stamp older than the marker is "definition
+  changed", compared as integer tuples (`:71` `_vtuple`), and a Notes cell
+  holding a `BREAKAGE_WORDS` entry (`:49`) is "may record a breakage".
+- `:157` `report` prints the header, one line per reason, `re-verify:` and the
+  `current crew:` line; exit 0 / 1 / 3 (`:55`). `:183` `main` is the CLI.
+- The rules it enforces are stated in `plugin/crew/skills/crew-setup/phases.md`
+  "How this works" (`:9-30`): run the checker, offer flagged rows first, the
+  breakage rule, and when to bump a marker; the `crew:` line is in the format
+  block (`:51`, `:65-67`). `plugin/crew/commands/init.md:24` and
+  `plugin/crew/commands/migrate.md:40` are the fenced calls
+  `plugin/crew/tests/test_setup_status.py` runs.
+
+JUDGEMENT. The breakage list is a substring heuristic: misses are expected,
+and `phases.md`'s prose rule, not the list, is the authority. Whether a marker
+is bumped on a material change is not checkable; the tests only hold each
+marker parsable and not past the plugin version.
+
 ## Entry points
 
 - `plugin/crew/hooks/scripts/crew_state.py:996` — `TRIGGERS`, a 15-entry
@@ -1159,6 +1193,8 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   route / ask / none for a prompt; `main()` at `:332` is the `settings` /
   `decide` CLI. Its hook caller is `crew_context.route_item`
   (`plugin/crew/hooks/scripts/crew_context.py:838`).
+- `plugin/crew/hooks/scripts/crew_setup_status.py:183` — `main()`, read-only;
+  `report` at `:157` is the library entry point (T-0500).
 - `plugin/crew/hooks/scripts/crew_endpoints.py:566` — `declare_endpoint`,
   the only writer of *declared* records. Not the only writer of
   `.crew/endpoints.json`, whatever its docstring says (`:569-570`):
@@ -1192,6 +1228,8 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   list at this anchor is still exactly three paths — `!.crew/codemap/`,
   `!.crew/endpoints.json`, `!.crew/verify.json` — confirmed by reading
   `.gitignore:279-330` directly; `metrics.jsonl` is not among them.
+- `.crew/STATUS.md` — read, never written, by `crew_setup_status.py`
+  (`plugin/crew/hooks/scripts/crew_setup_status.py:157`); the setup phases write it.
 - `.crew/endpoints.json` and its lock file `.crew/endpoints.json.oslock`
   (created on first use, never deleted); see above.
 

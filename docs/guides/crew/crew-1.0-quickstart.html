@@ -163,7 +163,9 @@ then <code>claude --version</code>.</p>
 </code></pre>
 <p>Init is phased and resumable: it detects the platform, writes the config, and
 asks before each change. Stop after the config phase if you are short on time;
-<code>/crew:init</code> picks up where it left off.</p>
+<code>/crew:init</code> picks up where it left off. If a phase you marked <code>done</code> has
+changed since, or its note records a breakage, init offers it again first -
+the checker's <code>phase N ... - re-verify</code> lines say why.</p>
 <p>Check: <code>/crew:status</code> now shows a <code>config</code> line naming a schema.</p>
 <p>Today <code>/crew:init</code> still writes the 0.20 <code>.crew/config.json</code>. Run step 4
 straight after it until init writes <code>.crew/crew.json</code> itself.</p>
@@ -177,7 +179,9 @@ straight after it until init writes <code>.crew/crew.json</code> itself.</p>
   directory per ticket under <code>.work/tickets/</code>);</li>
 <li>any config key it did not recognise, which is kept under <code>unmapped</code>, never
   dropped;</li>
-<li>the originals it leaves in place and you may retire later.</li>
+<li>the originals it leaves in place and you may retire later;</li>
+<li>every <code>done</code> setup phase that needs re-verifying (a 0.20 status file reads
+  <code>could not tell when marked</code> on all of them, once).</li>
 </ul>
 <p>Say yes, and it backs up to <code>.crew/backups/migrate-&lt;time&gt;/</code>, then applies. The
 line it ends with is your undo:</p>

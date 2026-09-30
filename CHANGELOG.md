@@ -4,6 +4,43 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.70: /crew:init and /crew:migrate flag done phases whose definition changed or whose note records a breakage (T-0500)
+
+- **What changed.** Every `## Phase` heading in `skills/crew-setup/phases.md`
+  carries `<!-- phase-rev: X.Y.Z -->`, the crew version its definition last
+  changed at materially (Phase 1 `1.0.43`, Phase 5 `1.0.66`, the rest
+  `1.0.25`), and `.crew/STATUS.md` gains a `crew: X.Y.Z` line after `updated:`,
+  written on every rewrite. The new read-only
+  `hooks/scripts/crew_setup_status.py` compares them and prints one
+  `phase N ... - re-verify` line per `done` row that was marked before its
+  phase's marker, that sits in a file with no `crew:` line (could not tell), or
+  whose note matches a short breakage list (`broken`, `failing`, `not working`,
+  `provider none`, `unreachable`, `never arrived`, `timed out`, `no longer`);
+  exit 0 nothing flagged, 1 flagged, 3 could not tell. `/crew:init` (no
+  argument and `--status`) runs it before choosing where to resume and offers
+  each flagged phase first; the `/crew:migrate` preview prints it.
+- **Why.** aws-ops report item 13: after `/crew:migrate`, a 0.20
+  `.crew/STATUS.md` marking all nine phases `done` left `/crew:init` nothing to
+  resume, so 1.0's Phase 6 web-scaffold step was never offered, and Phase 2
+  stayed `done` although its note recorded notify broken since 2026-08-27
+  (`notify.provider none`). A `done` row is a claim about one version of its
+  phase; nothing recorded which.
+- **Unchanged.** No automatic demotion - the checker never edits a row; no new
+  state value; `/crew:migrate --apply` does not stamp the file (that would claim
+  the rows were checked against 1.0); `crew_migrate.py` and `crew_status.py`
+  untouched; no hook added.
+- **Docs.** `phases.md` (resume rule, the breakage rule, the marker rule, the
+  `crew:` line in the format), `commands/init.md`, `commands/migrate.md`,
+  `skills/crew-setup/SKILL.md`, `plugin/crew/README.md`, `plugin/PLUGINS.md`
+  "Setup phase order", the quickstart guide (source and rebuilt HTML, DOCX,
+  PDF), `.crew/verify.json` rule 35, `.crew/codemap/crew.md` and
+  `verification-harness.md`. `CONFIG.md` and `docs/diagrams/` describe neither
+  STATUS.md nor the resume rule.
+- **Sabotage.** Six entries in `tests/sabotage_setup_status.py`, each run red by
+  hand: a missing stamp read as current, versions compared as strings, an empty
+  breakage list, a heading without a marker skipped, exit 0 whatever was
+  flagged, and the checker appending to STATUS.md.
+
 ### Changed — `crew` 1.0.69: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088)
 
 - **`/crew:review` probes Codex with a real call.** `review_run.py --probe` makes
