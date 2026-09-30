@@ -16,7 +16,7 @@ It is never a pass.
 
 ## Codex CLI
 
-**What crew calls.** `review_run.command_for` (`plugin/crew/hooks/scripts/review_run.py:211-221`)
+**What crew calls.** `review_run.command_for` (`plugin/crew/hooks/scripts/review_run.py:672-685`)
 runs `codex exec` with these flags and nothing else:
 
 | Flag | Meaning |
@@ -46,14 +46,14 @@ Item details are `#[serde(tag = "type", rename_all = "snake_case")]`.
 
 **Where the docs and the source diverge.** The source also defines item types
 `collab_tool_call` and `error`, and the docs page does not list them.
-`review_verdict.CODEX_ITEM_TYPES` (`plugin/crew/hooks/scripts/review_verdict.py:82`)
-follows the source. `CODEX_EVENT_TYPES` (`:80`) is the eight event names.
+`review_verdict.CODEX_ITEM_TYPES` (`plugin/crew/hooks/scripts/review_verdict.py:83`)
+follows the source. `CODEX_EVENT_TYPES` (`:81`) is the eight event names.
 
 **Line separators arrive raw.** serde_json escapes only bytes 0x00-0x1F, `"`
 and `\` (its `ESCAPE` table, https://github.com/serde-rs/json/blob/master/src/ser.rs,
 read 2026-09-28). So U+2028 and U+2029 inside a message reach the stream
 unescaped. Python's `str.splitlines()` splits on them and cuts one event in
-two. `review_verdict.codex_final_message` (`:192`) splits on `"\n"` only. That
+two. `review_verdict.codex_final_message` (`:193`) splits on `"\n"` only. That
 bug cost T-0072 its round 4. The golden corpus commits one stream that carries
 raw U+2028 (`plugin/crew/tests/golden/review/uca-t0072--T-0072-build--2BJpY8/events.jsonl`).
 
@@ -107,9 +107,9 @@ Probed: not probed. The T-0087 host is Linux (Ubuntu) with no `wsl.exe`, so `tes
 
 **What crew calls.** On Windows, `shutil.which("codex")` or `shutil.which("copilot")`
 resolves an npm-installed CLI to its `.cmd` shim. `review_run.through_batch_shim`
-(`plugin/crew/hooks/scripts/review_run.py:186`) names a provider whose resolved
-path ends `.cmd` or `.bat` (`BATCH_SHIM_SUFFIXES`, `:147`), and
-`review_run.prompt_argument` (`:193`) never hands such a provider the prompt
+(`plugin/crew/hooks/scripts/review_run.py:282`) names a provider whose resolved
+path ends `.cmd` or `.bat` (`BATCH_SHIM_SUFFIXES`, `:187`), and
+`review_run.prompt_argument` (`:289`) never hands such a provider the prompt
 inline: it passes the one-line pointer to `prompt.txt` that an over-limit prompt
 already gets, and says why on stderr.
 
@@ -149,10 +149,10 @@ Probed: a `core.autocrlf=true` clone on the T-0087 host (Linux), 2026-09-29. Wit
 
 ## gh
 
-**What crew calls.** `plugin/crew/commands/review.md:513-517` posts the review
+**What crew calls.** `plugin/crew/commands/review.md:514-518` posts the review
 outcome with `gh pr review <PR> --request-changes --body-file <out.txt>` when
 there is any BLOCK, and with `gh pr review <PR> --approve --body "<reviewer>: CLEAN"`
-when there is none. `plugin/crew/skills/crew-providers/SKILL.md:195` reads
+when there is none. `plugin/crew/skills/crew-providers/SKILL.md:198` reads
 `gh api orgs/<org>/copilot/billing --jq '.cli'`.
 
 **The format.** `gh` exits 0 on success, 1 on failure, 2 when cancelled and 4
