@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.62: tooling reliability — tool-failure refunds, golden replay, seam contracts, a canary review (T-0087)
+### Added — `crew` 1.0.70: tooling reliability — tool-failure refunds, golden replay, seam contracts, a canary review (T-0087)
 
 A tooling change: this release carries no feature work.
 
@@ -16,7 +16,7 @@ A tooling change: this release carries no feature work.
   Anything else is `reviewer`. Only `tool` is refunded, automatically, at most
   `REFUND_LIMIT` (2) times per plan; a third is recorded with `refund_refused`
   and counts. These are never refunded: `reviewer` and `tree` rounds, a round
-  with no recorded result, and ledger rows from before 1.0.62. The two-round
+  with no recorded result, and ledger rows from before 1.0.70. The two-round
   `BUDGET`, the exit codes, the READ rule and the grader are unchanged, and a
   successor plan still starts both counts afresh.
 - **Where it shows.** Ledger rows carry `failure_class`, `refunded` and
@@ -58,7 +58,7 @@ A tooling change: this release carries no feature work.
   `commands/autopilot.md`) ride along only when a lane commit declares each with
   a `Tooling-seam: <path>` trailer. It diffs from the merge base, so a merge of
   main does not count, and exits 77 (NOT VERIFIED) without `origin/main`. Its
-  suite is `scripts/_test/tooling-pr.py`. `.crew/verify.json` rule 32 runs the
+  suite is `scripts/_test/tooling-pr.py`. `.crew/verify.json` rule 35 runs the
   checker, the corpus, the contracts, the canary and `test_status.py` whenever
   a harness path, a seam consumer, one of those suites or
   `external-tool-formats.md` changes, and CLAUDE.md states the rule.
@@ -69,16 +69,16 @@ A tooling change: this release carries no feature work.
 - **Twenty-eight sabotage entries** (`tests/sabotage_tooling.py`) cover the
   refund, the budget, the golden replay and its redaction, the manifest,
   status, autopilot, the gate record, the canary, the tooling-alone checker,
-  rule 32's paths, the batch-shim prompt, the WSL probe's no-distribution skip
+  rule 35's paths, the batch-shim prompt, the WSL probe's no-distribution skip
   and the corpus's `-text` attribute. The six on the checker and `verify.json` are added only where
   those repo files exist. All twenty-eight go RED.
 
-### Fixed — `crew` 1.0.62 (T-0087)
+### Fixed — `crew` 1.0.70 (T-0087)
 
 - Importing `verify_record` no longer reconfigures `sys.stdout`; that now
   happens in its `main`.
 - The sabotage entry "an edit to scope_guard.py runs no pytest rule" now drops
-  `scope_guard.py` from rule 32 as well as rule 27. Rule 32 lists it too, so
+  `scope_guard.py` from rule 35 as well as rule 27. Rule 35 lists it too, so
   dropping it from rule 27 alone left it covered and the entry stayed green
   (`STILL GREEN -- TEST IS VACUOUS`).
 - `plugin/crew/BUDGETS.md`'s Markdown line count is re-measured: 19,666 lines
@@ -106,10 +106,11 @@ A tooling change: this release carries no feature work.
 - The golden review corpus is checked out byte-exact: a nested
   `plugin/crew/tests/golden/.gitattributes` sets `* -text`, so an autocrlf
   checkout no longer rewrites it to CRLF.
-- Bumped `1.0.61 -> 1.0.62` (1.0.52 on its branch; re-set to 1.0.53 after
+- Bumped `1.0.69 -> 1.0.70` (1.0.52 on its branch; re-set to 1.0.53 after
   merging main's 1.0.52, T-0076, to 1.0.55 after merging main's 1.0.54,
-  T-0092, and to 1.0.62 after merging main's 1.0.61, T-0010; T-0075 landed
-  as 1.0.59 in between).
+  T-0092, to 1.0.62 after merging main's 1.0.61, T-0010, and to 1.0.70 after
+  merging main's 1.0.69, T-0088; T-0075 landed as 1.0.59 in between).
+
 ### Changed — `crew` 1.0.69: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088)
 
 - **`/crew:review` probes Codex with a real call.** `review_run.py --probe` makes
