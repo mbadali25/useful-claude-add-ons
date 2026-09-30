@@ -117,6 +117,69 @@ records a refresh cannot stale the artifact it refreshed or another one.
 Code-path tests use `GRAPH_NONCODE_PATHS`, the deny-list `crew_freshness`
 uses for the same purpose.
 
+## What is admitted without Touch (T-0094)
+
+The guard's allowance is a path test; the completion audit's is narrower.
+`artifact_verdicts` judges each changed artifact of an approved ticket, and
+`completion_audit.audit` admits it without Touch only on `True` -- wired by
+L-0540, the harness half the owner split from T-0094 on 2026-09-30 (a
+tooling change lands alone); until it lands the audit admits the whole dirs
+as since 1.0.36. Two questions, each with an observable answer: did a path
+the ticket changed REACH it, and is the edit a RE-ANCHOR or a REGENERATION.
+
+Every kind that reads or admits a working-tree file first asks `_on_disk`
+(review round 6): the file must be a regular file, with no symlink at its
+path or along its dirs, whose mode git sees unchanged from the base copy
+and that git does not stage as a link (120000) or gitlink (160000); a
+deleted one is never a re-anchor or a regeneration. The kind comes from
+the MOST SPECIFIC artifact dir holding the path; two equally specific dirs
+are could-not-tell.
+
+  map       `.crew/codemap/<name>.md` (not INDEX, UPGRADE or MIGRATION): in
+            the base tree and on disk, a citation in the BASE copy reaches a
+            changed path (an edit cannot cite its way in), and `anchor:`
+            moved forward from the base's value to a commit that is HEAD or
+            behind it (a base anchor that names no commit, or one off HEAD's
+            history -- a squash merge -- is moved from by any qualifying
+            one; an unchanged anchor text never moved, and nothing moved
+            from a base copy with no anchor at all).
+            Claims, `path:line` numbers and prose may change with it: that is
+            what a refresh writes (`8bbb26d9`); an edit whose anchor did not
+            move is not.
+  INDEX.md  every line git's diff against the base shows changed (its
+            terminator included, so a CR, a BOM or a dropped final newline
+            counts) is the row of a map admitted in the same call; a mode
+            change is refused.
+  diagram   a source (`.mmd`, `.mermaid`) under `docs.diagramsDir`: reached
+            through its base copy's `%% Anchors:` line (none: any code
+            path), and its provenance sha moved as a map's anchor must. A
+            rendered file is admitted beside a same-stem source admitted in
+            the same call.
+  rule      `.claude/rules/<name>.md` whose bytes equal
+            `crew_instructions.expected_rules`, or whose blob git would store
+            (clean filters applied: a CRLF checkout under core.autocrlf)
+            equals that text's -- regeneration, whatever the
+            map did -- or one removed that carried the generated marker and
+            that no map expects any more.
+  graph     anything under `graph.out`, when the ticket changed a code path.
+
+Anything else under those dirs is `False`: judged against Touch like any
+other path. The reach is every path changed since the scope base, merged-in
+main paths included, and of RELEASE_BOOKKEEPING only ADMISSION_BOOKKEEPING --
+a plugin manifest's version bump reaches the map citing it; CHANGELOG.md,
+marketplace.json and the rest change on every release and would reach nearly
+every map. The graph's "code change" is read from the whole reach. `None`
+is could-not-tell (git could not run or could not answer, a base copy or the
+config unreadable, the rule renderer raised): its own value, judged against
+Touch, never collapsed into admitted, and its reason says so.
+
+It judges shape and reach, never truth: a re-anchored map may still carry a
+wrong claim, and that stays the reviewer's (the maps stay in the review
+bundle). The PreToolUse guard keeps admitting the whole dirs, because a
+write-time check sees one Edit of a multi-Edit refresh -- claims first,
+`anchor:` last -- and would refuse the legitimate intermediate state; the
+tree-level audit is where reach and shape are judged.
+
 Never writes a file, the index included, for a library caller (T-0004
 imports `ticket_freshness`) as much as for main(): the working-tree diffs go
 through `completion_audit.worktree_changes` (`git diff-index` plus a hash of
@@ -124,18 +187,22 @@ any stat-dirty file), because `git diff` rewrites .git/index for a stat-dirty
 file even under `--no-optional-locks`. Standard library only.
 """
 import argparse
+import errno
 import fnmatch
+import io
 import json
 import os
 import re
 import shutil
+import stat
+import subprocess
 import sys
 
 import completion_audit
 import crew_ticket
 import scope_base
 import crew_common
-from crew_common import dict_or_empty, git_out, read_text
+from crew_common import GIT_TIMEOUT, dict_or_empty, git_out, read_text
 from crew_freshness import (
     DIAGRAMS_DIR_DEFAULT,
     GRAPH_NONCODE_PATHS,
@@ -178,7 +245,9 @@ REFRESH_ARTIFACT_PATHS = (
 # their own. TODO.md is here for the same reason: `/crew:done` check 3 has
 # every ticket file its findings there, and most maps cite it, so filing one
 # item used to stale every map citing it. A code path cited beside it still
-# stales the map. Segment globs, `crew_ticket.glob_match`'s dialect.
+# stales the map. Segment globs, `crew_ticket.glob_match`'s dialect. Of these
+# only ADMISSION_BOOKKEEPING stays in `artifact_verdicts`' admission reach,
+# so a version bump admits the re-anchored map citing plugin.json (T-0094).
 RELEASE_BOOKKEEPING = (
     "CHANGELOG.md",
     "TODO.md",
@@ -187,6 +256,12 @@ RELEASE_BOOKKEEPING = (
     "**/.claude-plugin/plugin.json",
     "plugin/*/BUDGETS.md",
 )
+# The one piece of RELEASE_BOOKKEEPING a map's admission reach keeps
+# (T-0094 review round 1): a plugin manifest's version bump reaches the map
+# citing it. The rest -- CHANGELOG.md, TODO.md, PLUGINS.md, BUDGETS.md, the
+# marketplace manifest -- changes on every release and most maps cite one,
+# so keeping them would make nearly every map reached by every ticket.
+ADMISSION_BOOKKEEPING = ("**/.claude-plugin/plugin.json",)
 
 # A backticked, path-shaped citation in a code map: an optional leading dot
 # (`.claude-plugin/`, `.crew/`, `.github/` -- `crew_freshness._CITED_PATH_RE`
@@ -244,7 +319,10 @@ def _read_config(root):
     measured. The scope guard fails closed on the same file."""
     for name in ("crew.json", "config.json"):
         path = crew_common.repo_config_file(root, name)
-        if not os.path.lexists(path):
+        present, why = _present(path)
+        if present is None:
+            return None, f"could not tell whether .crew/{name} exists: {why}"
+        if not present:
             continue
         text = read_text(path)
         if text is None:
@@ -257,6 +335,22 @@ def _read_config(root):
             return None, f".crew/{name} is not a JSON object"
         return data, None
     return {}, None
+
+
+def _present(path):
+    """`(True, "")` or `(False, "")` when lstat proves `path` is there or is
+    not -- ENOENT, or ENOTDIR for a parent that is not a directory -- and
+    `(None, reason)` for any other failure. `os.path.lexists` answers False
+    for every failure, so a parent the hook user cannot search read as
+    absent: a config naming other artifact dirs became the defaults, and a
+    rule still on disk became a removed one (review round 5)."""
+    try:
+        os.lstat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return False, ""
+    except (OSError, ValueError) as exc:
+        return None, getattr(exc, "strerror", None) or type(exc).__name__
+    return True, ""
 
 
 def _listing(dirpath):
@@ -391,8 +485,600 @@ def is_refresh_artifact(rel, dirs):
     return False
 
 
+# --------------------------------------------------------------------------
+# What is admitted without Touch (T-0094; module docstring)
+
+COULD_NOT_TELL = "could not tell"
+
+# `crew_context.index_covers`'s row regex, the origin: the INDEX.md row of
+# `<name>.md`. Only the name is captured here; a re-anchor rewrites the row's
+# anchor and Last pass cells, so the whole row is the line that differs.
+_INDEX_ROW_RE = re.compile(r"^\|\s*\[`?([A-Za-z0-9_.-]+)\.md`?\]\([^)]*\)\s*\|")
+
+
+def _git_rc(root, *args):
+    """git's return code, or None when git could not run at all."""
+    try:
+        return subprocess.run(
+            ["git", "-C", root, "--no-optional-locks", "--literal-pathspecs", *args],
+            capture_output=True, stdin=subprocess.DEVNULL, timeout=GIT_TIMEOUT,
+            check=False).returncode
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _git_out(root, *args, data=None):
+    """(return code, stdout bytes), or (None, b"") when git could not run.
+    `data`, when given, is git's stdin."""
+    feed = {"input": data} if data is not None else {"stdin": subprocess.DEVNULL}
+    try:
+        done = subprocess.run(
+            ["git", "-C", root, "--no-optional-locks", "--literal-pathspecs", *args],
+            capture_output=True, timeout=GIT_TIMEOUT, check=False, **feed)
+    except (OSError, subprocess.SubprocessError):
+        return None, b""
+    return done.returncode, done.stdout
+
+
+def _is_ancestor(root, sha, of="HEAD"):
+    """True / False / None: `merge-base --is-ancestor` exits 0 when `sha` is
+    `of` or behind it, 1 when not, anything else on an error -- which is
+    could-not-tell, never "no" (git-merge-base(1))."""
+    return {0: True, 1: False}.get(_git_rc(root, "merge-base", "--is-ancestor", sha, of))
+
+
+def _base_text(root, base, rel):
+    """(text, "ok"), (None, "absent") when `rel` is not in `base`'s tree, or
+    (None, "error: <why>"). `git_out` returns None on ANY failure, so the
+    tree is asked first: absent and unreadable are different answers.
+    Review round 7: `cat-file -e <base>:<rel>` exits 128 for a missing path
+    AND for a base git cannot read, so the path is looked up in the base's
+    listing instead: `ls-tree` exits 0 with no entry for a missing path and
+    non-zero for a base it cannot read."""
+    spec = f"{base}:{rel}"
+    code, out = _git_out(root, "ls-tree", "-z", base, "--", rel)
+    if code != 0:
+        why = "could not run" if code is None else f"exited {code}"
+        return None, f"error: git ls-tree {why}"
+    if not out.strip(b"\0"):
+        return None, "absent"
+    try:
+        done = subprocess.run(["git", "-C", root, "--no-optional-locks", "show", spec],
+                              capture_output=True, stdin=subprocess.DEVNULL,
+                              timeout=GIT_TIMEOUT, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None, "error: could not read"
+    if done.returncode != 0:
+        return None, "error: could not read"
+    # Decoded as `read_text` decodes the working copy: a BOM is stripped.
+    return done.stdout.decode("utf-8-sig", errors="replace"), "ok"
+
+
+def _sha_moved(root, old, new):
+    """(True | False | None, reason): `new` names a commit, that commit is
+    HEAD or behind it, and it is a move FORWARD from the commit `old` names
+    (`_moved_from`). An anchor whose text did not change has not moved,
+    whatever git can or cannot say about it."""
+    if not new:
+        return False, "no anchor: line"
+    if old == new:
+        return False, "anchor did not move"
+    if not old:
+        # Review round 3: an anchor ADDED is a content edit, not a re-anchor.
+        return False, "the base copy has no anchor, so nothing moved from it"
+    code = _git_rc(root, "cat-file", "-e", new + "^{commit}")
+    if code is None:
+        return None, f"{COULD_NOT_TELL}: git could not run"
+    if code == 128:
+        # Review round 7: 128 is also a short anchor two commits share, as
+        # for the base anchor (`_names_no_commit`).
+        missing = _names_no_commit(root, new)
+        if missing is None:
+            return None, f"{COULD_NOT_TELL}: git could not say whether {new[:12]} names a commit"
+        if not missing:
+            return None, f"{COULD_NOT_TELL}: anchor {new[:12]} is ambiguous"
+        return False, f"anchor {new} names no commit"
+    if code != 0:
+        return None, f"{COULD_NOT_TELL}: git exited {code} reading anchor {new}"
+    ancestor = _is_ancestor(root, new)
+    if ancestor is None:
+        return None, f"{COULD_NOT_TELL}: git could not say whether {new[:12]} is behind HEAD"
+    if not ancestor:
+        return False, f"anchor {new[:12]} is not reachable from HEAD"
+    now = _git_lines(root, "rev-parse", "--verify", new + "^{commit}")
+    if not now:
+        return None, f"{COULD_NOT_TELL}: git could not resolve {new[:12]}"
+    return _moved_from(root, old, now[0])
+
+
+def _names_no_commit(root, old):
+    """Did `cat-file -e <old>^{commit}`'s exit 128 mean the anchor names no
+    commit? Git exits 128 for a missing name AND for a short one two
+    commit-ish objects share (review round 4), so this is True only when
+    proven: `git rev-parse --disambiguate=<old>` lists no object that
+    `git cat-file -t` types as commit or tag. Every length is asked, not only
+    short ones: 40 hex is a prefix in a sha256 repository. None
+    (could-not-tell) when git cannot answer; False when a commit or tag IS
+    listed (ambiguous, or it resolves after all)."""
+    listed = _git_lines(root, "rev-parse", "--disambiguate=" + old)
+    if listed is None:
+        return None
+    for oid in listed:
+        kind = _git_lines(root, "cat-file", "-t", oid)
+        if not kind:
+            return None
+        if kind[0] in ("commit", "tag"):
+            return False
+    return True
+
+
+def _moved_from(root, old, now):
+    """Has the anchor moved forward from `old` to the resolved commit `now`?
+    Three-valued like everything here: a git that cannot say is
+    could-not-tell, never "moved" (review round 1). An `old` proven to name
+    no commit (`_names_no_commit`: an ambiguous short one is could-not-tell,
+    review round 4), or one off HEAD's history, cannot be behind anything, so any
+    qualifying `now` has moved (a squash merge drops, or strands, the commit
+    a refresh anchored to). An `old` on HEAD's history must be behind `now`:
+    no refresh anchors backwards."""
+    code = _git_rc(root, "cat-file", "-e", old + "^{commit}")
+    if code == 128:
+        missing = _names_no_commit(root, old)
+        if missing is None:
+            return None, f"{COULD_NOT_TELL}: git could not say whether {old[:12]} names a commit"
+        if missing:
+            return True, "re-anchored"
+        return None, f"{COULD_NOT_TELL}: base anchor {old[:12]} is ambiguous"
+    if code != 0:
+        return None, f"{COULD_NOT_TELL}: git could not read the base anchor {old[:12]}"
+    was = _git_lines(root, "rev-parse", "--verify", old + "^{commit}")
+    if not was:
+        return None, f"{COULD_NOT_TELL}: git could not resolve the base anchor {old[:12]}"
+    if was[0] == now:
+        return False, "anchor did not move"
+    behind_head = _is_ancestor(root, was[0])
+    if behind_head is None:
+        return None, f"{COULD_NOT_TELL}: git could not say whether {old[:12]} is behind HEAD"
+    if not behind_head:
+        return True, "re-anchored"
+    forward = _is_ancestor(root, was[0], now)
+    if forward is None:
+        return None, f"{COULD_NOT_TELL}: git could not say whether {now[:12]} follows {old[:12]}"
+    if not forward:
+        return False, f"anchor moved from {old[:12]} to {now[:12]}, not forward"
+    return True, "re-anchored"
+
+
+def _graph_out(top, cfg):
+    """`graph.out` resolved as `crew_freshness._read_graph` resolves it,
+    without reading the graph."""
+    out = dict_or_empty(cfg.get("graph")).get("out")
+    if not isinstance(out, str) or not out:
+        out = GRAPH_OUT_DEFAULT
+    return _relative(top, contained_path(top, out, GRAPH_OUT_DEFAULT))
+
+
+def _cited(text):
+    """Every path-shaped citation in a map (`_codemaps`'s filter)."""
+    return [c for c in dict.fromkeys(_CITATION_RE.findall(text or ""))
+            if "/" in c or "." in c]
+
+
+def _texts(top, base, rel):
+    """(base_text, work_text, None), or (None, None, (verdict, reason)) when
+    the pair cannot be a re-anchor or cannot be read."""
+    before, state = _base_text(top, base, rel)
+    if state == "absent":
+        return None, None, (False, "new file, not a re-anchor")
+    if state != "ok":
+        return None, None, (None, f"{COULD_NOT_TELL}: base copy {state}")
+    early, data = _on_disk(top, base, rel, "deleted, not a re-anchor")
+    if early:
+        return None, None, early
+    # The bytes `_on_disk` read from the file it proved regular (review round
+    # 7), decoded as `read_text` decodes: utf-8-sig, universal newlines.
+    after = io.TextIOWrapper(io.BytesIO(data), encoding="utf-8-sig", errors="replace").read()
+    return before, after, None
+
+
+_LINK_MODES = ("120000", "160000")
+
+
+def _read_regular(top, rel):
+    """(bytes, None), or (None, "symlink" | "absent" | "not regular" | a
+    reason). The file is opened WITHOUT following a link at any component:
+    on POSIX each directory is opened relative to its parent with
+    O_NOFOLLOW, so a link swapped in anywhere after the lstat and realpath
+    checks fails the open instead of being read (review round 7). Where
+    `os.open` takes no dir_fd (Windows), the path is opened directly and the
+    descriptor's file must be the one lstat names."""
+    parts = rel.split("/")
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
+    fds = []
+    try:
+        if os.open in os.supports_dir_fd and nofollow:
+            directory = getattr(os, "O_DIRECTORY", 0)
+            fds.append(os.open(os.path.realpath(top), os.O_RDONLY | directory))
+            for part in parts[:-1]:
+                fds.append(os.open(part, os.O_RDONLY | directory | nofollow, dir_fd=fds[-1]))
+            fd = os.open(parts[-1], flags | nofollow, dir_fd=fds[-1])
+        else:
+            path = os.path.join(top, *parts)
+            fd = os.open(path, flags | nofollow)
+            fds.append(fd)
+            named, opened = os.lstat(path), os.fstat(fd)
+            if stat.S_ISLNK(named.st_mode) or (named.st_dev, named.st_ino) != (
+                    opened.st_dev, opened.st_ino):
+                return None, "symlink"
+        fds.append(fd)
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return None, "not regular"
+        chunks = []
+        while True:
+            chunk = os.read(fd, 1 << 16)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        return b"".join(chunks), None
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.ENOTDIR, getattr(errno, "EMLINK", -1)):
+            return None, "symlink"
+        if exc.errno == errno.ENOENT:
+            return None, "absent"
+        reason = exc.strerror or type(exc).__name__
+        return None, reason
+    finally:
+        for handle in dict.fromkeys(fds):
+            try:
+                os.close(handle)
+            except OSError:
+                pass
+
+
+_UNREAD = {"symlink": (False, "a symlink, which no refresh writes"),
+           "not regular": (False, "not a regular file, which no refresh writes")}
+
+
+def _on_disk(top, base, rel, deleted):
+    """(None, bytes) when `rel` is a regular file reached with no symlink
+    along its path and git sees the mode its base copy had -- the bytes are
+    that file's, read once through a descriptor opened without following a
+    link, before git is asked anything, and they are what the caller judges
+    (review round 7: a check-then-open by path read whatever a swap put
+    there). Otherwise ((verdict, reason), None). Review round 6: `read_text`
+    followed a symlink, so a map replaced by a link to external re-anchored
+    text was admitted while git stores only the link, and nothing asked
+    whether a rendered diagram or a graph file still existed. A refresh
+    writes regular files in place: a link at the path or along it, a changed
+    mode, or a missing file is not one. `deleted` is the reason for a file
+    lstat proves absent."""
+    path = os.path.join(top, *rel.split("/"))
+    try:
+        info = os.lstat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return (False, deleted), None
+    except (OSError, ValueError) as exc:
+        why = getattr(exc, "strerror", None) or type(exc).__name__
+        return (None, f"{COULD_NOT_TELL}: whether {rel} exists: {why}"), None
+    if stat.S_ISLNK(info.st_mode):
+        return _UNREAD["symlink"], None
+    if not stat.S_ISREG(info.st_mode):
+        return _UNREAD["not regular"], None
+    named = os.path.normcase(os.path.join(os.path.realpath(top), *rel.split("/")))
+    if os.path.normcase(os.path.realpath(path)) != named:
+        return (False, "reached through a symlink, which no refresh writes"), None
+    data, why = _read_regular(top, rel)
+    if data is None:
+        if why in _UNREAD:
+            return _UNREAD[why], None
+        if why == "absent":
+            return (False, deleted), None
+        return (None, f"{COULD_NOT_TELL}: could not read {rel}: {why}"), None
+    # The mode git sees against the base (the working tree, under
+    # core.fileMode), then the mode it stages: a `core.symlinks=false`
+    # checkout leaves a link as a regular file that git stores as 120000.
+    code, out = _git_out(top, "diff", "--no-ext-diff", "--raw", "--no-renames", "-z",
+                         base, "--", rel)
+    if code != 0:
+        why = "could not run" if code is None else f"exited {code}"
+        return (None, f"{COULD_NOT_TELL}: git diff --raw of {rel} {why}"), None
+    for record in out.split(b"\0"):
+        if record.startswith(b":"):
+            old, new = record[1:].decode("ascii", "replace").split(" ")[:2]
+            if "000000" not in (old, new) and old != new:
+                return (False, f"mode changed from {old} to {new}, which no refresh does"), None
+    code, out = _git_out(top, "ls-files", "-s", "-z", "--", rel)
+    if code != 0:
+        why = "could not run" if code is None else f"exited {code}"
+        return (None, f"{COULD_NOT_TELL}: git ls-files of {rel} {why}"), None
+    for record in out.split(b"\0"):
+        mode = record.decode("ascii", "replace").split(" ", 1)[0]
+        if mode in _LINK_MODES:
+            return (False, f"stored as {mode}, which no refresh writes"), None
+    return None, data
+
+
+def _map_verdict(top, base, rel, reach):
+    before, after, early = _texts(top, base, rel)
+    if early:
+        return early
+    # The BASE copy's citations only: an edit cannot cite its way into reach.
+    if not _reached(_cited(before), reach):
+        return False, "no changed path reaches it"
+    was, now = _ANCHOR_RE.search(before), _ANCHOR_RE.search(after)
+    return _sha_moved(top, was.group(1) if was else None, now.group(1) if now else None)
+
+
+_HUNK_RE = re.compile(rb"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+
+def _diff_lines(out):
+    """(lines, mode) from a `git diff -U0` of one path: every added line as
+    ("line <n>", text) then every removed one as ("base line <n>", text),
+    each with its terminator (a CR survives; a missing final newline makes
+    the last line differ), and whether the diff changes the file's mode."""
+    added, removed, mode, old, new = [], [], False, 0, 0
+    hunk = None
+    for raw in out.split(b"\n"):
+        head = _HUNK_RE.match(raw)
+        if head:
+            hunk, old, new = True, int(head.group(1)), int(head.group(2))
+        elif hunk is None:
+            mode = mode or raw.startswith((b"old mode ", b"new mode "))
+        elif raw.startswith(b"+"):
+            added.append((f"line {new}", raw[1:].decode("utf-8", "surrogateescape")))
+            new += 1
+        elif raw.startswith(b"-"):
+            # Both sides: a pure deletion has no new-side line at all.
+            removed.append((f"base line {old}", raw[1:].decode("utf-8", "surrogateescape")))
+            old += 1
+    return added + removed, mode
+
+
+def _index_verdict(top, base, rel, admitted):
+    _before, _after, early = _texts(top, base, rel)
+    if early:
+        return early
+    # The lines git sees change, from git's own diff of the base against the
+    # working tree with its filters applied -- not a diff of decoded text,
+    # which `read_text` strips of CRs, a BOM and the final newline (review
+    # round 3), so a byte-only edit differed on no line and was admitted.
+    code, out = _git_out(top, "diff", "--no-ext-diff", "--no-textconv", "--no-color",
+                         "--no-renames", "--text", "-U0", base, "--", rel)
+    if code != 0:
+        why = "could not run" if code is None else f"exited {code}"
+        return None, f"{COULD_NOT_TELL}: git diff of {rel} {why}"
+    # A mode change is refused before this, by `_on_disk` in `_texts`
+    # (review round 6 made that check every kind's; this branch was then
+    # unreachable, and its sabotage entry went green).
+    lines, _mode = _diff_lines(out)
+    for where, line in lines:
+        row = _INDEX_ROW_RE.match(line)
+        if not row or row.group(1) not in admitted:
+            return False, f"INDEX.md {where} is not the row of a re-anchored map"
+    return True, "rows of re-anchored maps only"
+
+
+def _diagram_verdict(top, base, rel, reach, code):
+    before, after, early = _texts(top, base, rel)
+    if early:
+        return early
+    # The BASE copy's `%% Anchors:` only, as for a map's citations.
+    declared = _declared(before)
+    if declared is None:
+        reached = code
+    else:
+        reached = _reached(declared, reach)
+    if not reached:
+        return False, "no changed path reaches it"
+    now = _DIAGRAM_ANCHOR_RE.search(after)
+    if not now:
+        return False, "no provenance line"
+    was = _DIAGRAM_ANCHOR_RE.search(before)
+    return _sha_moved(top, was.group(1) if was else None, now.group(1))
+
+
+def _rule_verdict(top, base, rel, expected):
+    path = os.path.join(top, *rel.split("/"))
+    key = os.path.normcase(os.path.normpath(path))
+    present, why = _present(path)
+    if present is None:
+        return None, f"{COULD_NOT_TELL}: whether {rel} exists: {why}"
+    if present:
+        # Read once, by `_on_disk`, and an unreadable file is could-not-tell
+        # BEFORE any comparison: an unreadable rule no map expects compared
+        # None == None and was admitted as regenerated (review round 2).
+        early, data = _on_disk(top, base, rel, "deleted, not a regeneration")
+        if early:
+            return early
+        want = expected.get(key)
+        if want is not None:
+            # BYTES, as `crew_instructions._write` writes them: decoded text
+            # hid a CRLF and a BOM (review round 3).
+            want = want.encode("utf-8")
+            if data == want:
+                return True, "regenerated"
+            # ...and as git stores them, so a CRLF checkout under
+            # core.autocrlf is still the regenerated rule.
+            got, wanted = _stored_blob(top, rel, data), _stored_blob(top, rel, want)
+            if got is None or wanted is None:
+                return None, f"{COULD_NOT_TELL}: git could not hash {rel}"
+            if got == wanted:
+                return True, "regenerated (as git stores it)"
+        return False, ("bytes differ from expected_rules (regenerate with "
+                       "crew_instructions.py rules)")
+    if key in expected:
+        return False, "removed, but a map still expects it"
+    import crew_instructions  # pylint: disable=import-outside-toplevel
+    before, state = _base_text(top, base, rel)
+    if state == "ok" and crew_instructions.MARKER in before[:2000]:
+        return True, "a generated rule no map expects, removed"
+    if state in ("ok", "absent"):
+        return False, "removed, but it was not generated"
+    return None, f"{COULD_NOT_TELL}: base copy {state}"
+
+
+def _stored_blob(top, rel, data):
+    """The object id git would store for `data` at `rel`, its clean filters
+    (core.autocrlf, eol attributes) applied, or None. Hashes only: no object
+    is written."""
+    code, out = _git_out(top, "hash-object", f"--path={rel}", "--stdin", data=data)
+    oid = out.decode("ascii", "replace").strip()
+    return oid if code == 0 and oid else None
+
+
+_CODEMAP_DIR, _RULES_DIR = REFRESH_ARTIFACT_PATHS[0][1], REFRESH_ARTIFACT_PATHS[3][1]
+
+
+def _claims(rel, dirs, diagrams, graph_out):
+    """[(dir, owner)] for every artifact dir in `dirs` that holds `rel`,
+    the most specific (most path segments) first."""
+    owners = ((_CODEMAP_DIR, "codemap"), (diagrams, "diagrams"), (_RULES_DIR, "rules"),
+              (graph_out, "graph"))
+    held = [(d, o) for d, o in owners if d and d in dirs and d != rel and _reaches(d, rel)]
+    return sorted(held, key=lambda claim: -len(claim[0].split("/")))
+
+
+def _kind(rel, dirs, diagrams, graph_out):
+    """Which admission rule judges `rel`: map, index, not-subsystem, diagram,
+    rendered, rule, graph, overlap, or other. The MOST SPECIFIC artifact dir
+    holding `rel` decides (review round 6: branch order classified graph
+    files under a nested `graph.out` as rendered diagrams); two equally
+    specific dirs are "overlap", which is could-not-tell."""
+    held = _claims(rel, dirs, diagrams, graph_out)
+    if not held:
+        return "other"
+    if len(held) > 1 and len(held[0][0].split("/")) == len(held[1][0].split("/")):
+        return "overlap"
+    owner = held[0][1]
+    parts = rel.split("/")
+    parent, name = "/".join(parts[:-1]), parts[-1]
+    if owner == "codemap":
+        if parent != _CODEMAP_DIR or not name.endswith(".md"):
+            return "other"
+        if name == "INDEX.md":
+            return "index"
+        return "not-subsystem" if name in _NOT_SUBSYSTEMS else "map"
+    if owner == "diagrams":
+        return "diagram" if os.path.splitext(name)[1].lower() in _DIAGRAM_EXTS else "rendered"
+    if owner == "rules":
+        return "rule" if parent == _RULES_DIR and name.endswith(".md") else "other"
+    return "graph"
+
+
+def artifact_verdicts(top, base, reach, artifacts, cfg=None):
+    """{rel: (verdict, reason)} for every path in `artifacts` (changed paths
+    `is_refresh_artifact` accepts). verdict True = admitted without Touch,
+    False = judged against Touch, None = could not tell (judged against
+    Touch; the reason starts with COULD_NOT_TELL). `reach` is every path
+    changed since `base`; the artifact dirs and `.work` are removed from it
+    here, and so is RELEASE_BOOKKEEPING except ADMISSION_BOOKKEEPING for
+    maps and diagrams (module docstring). `cfg` defaults
+    to this repo's crew config; one that exists and cannot be read leaves
+    every artifact could-not-tell, as it does `ticket_freshness`."""
+    artifacts = list(dict.fromkeys(artifacts))
+    if cfg is None:
+        cfg, unreadable = _read_config(top)
+        if cfg is None:
+            return {p: (None, f"{COULD_NOT_TELL}: config unreadable: {unreadable}")
+                    for p in artifacts}
+    dirs = refresh_artifact_paths(top, cfg)
+    own = dirs + [".work"]
+    reach = sorted(p for p in dict.fromkeys(reach) if not any(_reaches(o, p) for o in own))
+    graph_out = _graph_out(top, cfg)
+    diagrams = _relative(top, contained_path(top, _diagrams_dir(cfg), DIAGRAMS_DIR_DEFAULT))
+    diagrams = diagrams if diagrams in dirs else None
+    # The graph: any code path, bookkeeping included (graphify rebuilds on
+    # every commit). Maps and diagrams: a manifest bump reaches the map
+    # citing it, the rest of the bookkeeping reaches nothing.
+    graph_code = [p for p in reach if not _is_noncode(p, graph_out)]
+    reach = [p for p in reach if _in_admission_reach(p)]
+    code = [p for p in graph_code if p in reach]
+    kinds = {p: _kind(p, dirs, diagrams, graph_out) for p in artifacts}
+    out = {}
+
+    def judge(kind, fn):
+        for rel in [p for p in artifacts if kinds[p] == kind]:
+            try:
+                out[rel] = fn(rel)
+            except Exception as exc:  # noqa: BLE001  pylint: disable=broad-except
+                out[rel] = (None, f"{COULD_NOT_TELL}: {type(exc).__name__} while judging it")
+
+    judge("map", lambda rel: _map_verdict(top, base, rel, reach))
+    admitted = {p.rsplit("/", 1)[1][:-len(".md")] for p in artifacts
+                if kinds[p] == "map" and out[p][0] is True}
+    judge("index", lambda rel: _index_verdict(top, base, rel, admitted))
+    judge("not-subsystem", lambda rel: (False, "not a subsystem map"))
+    judge("diagram", lambda rel: _diagram_verdict(top, base, rel, reach, code))
+    judge("rendered", lambda rel: _rendered_verdict(top, base, rel, kinds, out))
+    if any(kinds[p] == "rule" for p in artifacts):
+        expected = _expected_rules(top)
+        if isinstance(expected, str):
+            judge("rule", lambda rel: (None, f"{COULD_NOT_TELL}: {expected}"))
+        else:
+            judge("rule", lambda rel: _rule_verdict(top, base, rel, expected))
+    judge("graph", lambda rel: _graph_verdict(top, base, rel, graph_code))
+    judge("overlap", lambda rel: (None, f"{COULD_NOT_TELL}: artifact dirs " + " and ".join(
+        f"{d} ({o})" for d, o in _claims(rel, dirs, diagrams, graph_out)[:2])
+        + " are equally specific and both hold it"))
+    judge("other", lambda rel: (False, "not a refresh artifact of a kind the audit admits"))
+    return out
+
+
+def _rendered_verdict(top, base, rel, kinds, out):
+    """A rendered diagram is admitted beside its same-stem source, in the same
+    dir (the source's extension compared case-folded), when that source
+    changed and was admitted -- and it is still a regular file on disk
+    (review round 6: a `git rm` of it was admitted). A new one, with no base
+    copy, may be what the regeneration wrote."""
+    early, _data = _on_disk(top, base, rel, "deleted, not a regeneration")
+    if early:
+        return early
+    stem = os.path.splitext(rel)[0]
+    # Paired as `_kind` classifies a source: by stem, the extension
+    # case-folded (review round 4: `flow.MMD` is a source, so is its pair).
+    sources = [p for p, k in kinds.items() if k == "diagram"
+               and os.path.splitext(p)[0] == stem
+               and os.path.splitext(p)[1].lower() in _DIAGRAM_EXTS]
+    for source in sources:
+        if out.get(source, (False,))[0] is True:
+            return True, f"rendered beside the re-anchored {source.rsplit('/', 1)[-1]}"
+    name = stem.rsplit("/", 1)[-1]
+    return False, f"rendered file whose source {name}.mmd was not re-anchored"
+
+
+def _graph_verdict(top, base, rel, graph_code):
+    """Anything under `graph.out` is admitted when the ticket changed a code
+    path and the file is still a regular file on disk (review round 6, the
+    rendered diagram's neighbour: a deleted graph file was admitted)."""
+    early, _data = _on_disk(top, base, rel, "deleted, not a regeneration")
+    if early:
+        return early
+    if graph_code:
+        return True, "rebuilt after a code change"
+    return False, "graph changed with no code change since the base"
+
+
+def _expected_rules(top):
+    """`crew_instructions.expected_rules`, keyed by normalised absolute path,
+    or a string saying why it could not be rendered."""
+    try:
+        import crew_instructions  # pylint: disable=import-outside-toplevel
+        rendered = crew_instructions.expected_rules(top)
+    except Exception as exc:  # noqa: BLE001  pylint: disable=broad-except
+        return f"expected_rules raised {type(exc).__name__}"
+    return {os.path.normcase(os.path.normpath(k)): v for k, v in rendered.items()}
+
+
 def _bookkeeping(path):
     return any(crew_ticket.glob_match(path, glob) for glob in RELEASE_BOOKKEEPING)
+
+
+def _in_admission_reach(path):
+    """Can a change to `path` reach a map or a diagram in `artifact_verdicts`?"""
+    return not _bookkeeping(path) or any(crew_ticket.glob_match(path, glob)
+                                         for glob in ADMISSION_BOOKKEEPING)
 
 
 def _is_noncode(path, graph_out):
