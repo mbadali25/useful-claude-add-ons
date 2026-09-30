@@ -313,9 +313,9 @@ STANDARDS_MUTATIONS = (
          "to the next eligible provider), or `review-run: self-check: ...` - the standards\n"
          "self-check is missing or stale for this bundle (every provider): answer\n"
          "`.work/tickets/$TICKET/selfcheck.md`, run the `crew_standards.py stamp` it names, "
-         "rebuild.\n"),
+         "rebuild."),
         ("cause. Exit 2 means nothing launched (not on PATH) and no round was spent; walk\n"
-         "to the next eligible provider.\n"),
+         "to the next eligible provider."),
         "tests/test_lifecycle_commands.py::test_commands_name_the_standards_steps",
     ),
     (
