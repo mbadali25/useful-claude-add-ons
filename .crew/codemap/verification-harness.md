@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@a94de1c2
+anchor: useful-claude-add-ons@8000d9de
 verified: 2026-09-30
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -541,7 +541,7 @@ set on Ubuntu.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
   `plugin/crew/CONFIG.md:2410-2417` — the descoped per-rule process-group kill,
   documented as a standing limitation.
-- `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` —
+- `plugin/crew/hooks/scripts/verify-gate.ps1:825-835`, `:1668-1677` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
 - `scripts/check-marketplace.py:1639` — `main()`, sixteen checks.
 - `scripts/check-marketplace.py:518` — `check_versions`.
@@ -1776,3 +1776,5 @@ executed for this note.
 **Re-anchored `96cce555` -> `85739e7e` on 2026-09-30 (T-0029, on its merge of main `a61a6f38`).** `85739e7e` is T-0029's crew 1.0.70 version commit, after `0e432bec` merged origin/main `a61a6f38` (T-0088 landed as crew 1.0.69, with PRs #263-#267 before it: the QA harness, gate-first review, the steward and CLAUDE.md changes and the new `crew-qa-standards` skill). `.crew/verify.json` gained main's three rules after T-0029's wave rule (`:350-370`): the section now says 36 rules, 375 lines, `default` `:373`, `unmapped` `:374`, and the wave-rule bullet names the three that follow it. `sabotage.py` gained two imports (`:82`, `:83`) above the wave import (now `:84`), so the `MUTATIONS +=` statement is `:3055-3060`: REFRESH `:3056`, resume/autopilot/tracker/route `:3057`, POLICY/APPROVAL/CONFIG_MENU `:3058`, LIMIT_WORKTREE `:3059`, QA_AUDIT and WAVE `:3060` - every body "appended at" re-pointed. The unknown-collapsing lesson is `CLAUDE.md:135` after main's #266 (`:250` before). Five full-path citations moved by line diff (`sabotage.py`, `plugin/crew/CONFIG.md`), each re-read. No suite was run by this note.
 
 **Re-anchored `85739e7e` -> `a94de1c2` on 2026-09-30 (T-0029).** `a94de1c2` is T-0029's owner-directed fix (2026-09-30, "Route the read + 1 allowlist"): `crew_wave.scope_enforcing` reads the repo config through `crew_common.repo_config_file`. `git diff --name-only 85739e7e a94de1c2` is `CHANGELOG.md`, `plugin/crew/README.md` (one line rewritten in place at `:879`, no line moved), `plugin/crew/hooks/scripts/crew_wave.py` (+2 in `scope_enforcing`'s docstring, every line from old `:148` down moved by 2), `plugin/crew/tests/sabotage_wave.py`, `plugin/crew/tests/test_crew_wave.py` and `plugin/crew/tests/test_worktree_config.py` (appends and one insertion; no citation in these notes carries a line into them). This note cites none of the moved lines; its `plugin/crew/README.md` citations are unchanged. Re-anchor only; nothing was executed for this note.
+
+**Re-anchored `a94de1c2` -> `8000d9de` on 2026-09-30 (T-0029, on its merge of main `6813749b`).** `e8e31556` merged origin/main `6813749b` (T-0097 landed as crew 1.0.70, #268: `Resolve-CrewPython` in the 11 PowerShell hook carriers parses a probe answer only when there is one, +3 lines each; `sabotage_scope.py` +6; `test_ps1_python_probe.py`; `CHANGELOG.md` +15 above T-0029's entry, conflict resolved keeping both) and `8000d9de` sets crew 1.0.71, one past main. `git diff --name-only a94de1c2 8000d9de` outside the refresh artifacts is those files plus the four version files, whose cited lines (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`) did not move. `CHANGELOG.md` line numbers cited in earlier provenance sections describe those anchors and are left as history. In this note `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` -> `:825-835`, `:1668-1677` (re-read: `Resolve-CrewBash` and the `-not $bashExe` refusal); `sabotage_scope.py` is cited by name only. Nothing was executed for this note.
