@@ -12,6 +12,7 @@ REVIEW_LEDGER = os.path.join(CREW, "hooks", "scripts", "review_ledger.py")
 REVIEW_RUN = os.path.join(CREW, "hooks", "scripts", "review_run.py")
 REVIEW_PATCH = os.path.join(CREW, "hooks", "scripts", "review_patch.py")
 REVIEW_PROMPT = os.path.join(CREW, "hooks", "scripts", "review_prompt.py")
+REVIEW_GATE = os.path.join(CREW, "hooks", "scripts", "review_gate.py")
 
 REVIEW_FIX_MUTATIONS = (
     # The T1 review-fix round. Each was also run by hand against the tracked
@@ -425,5 +426,79 @@ REVIEW_FIX_MUTATIONS = (
         '    for line in (jsonl or "").splitlines():\n',
         ("tests/test_review_verdict.py::"
          "test_codex_final_message_an_event_holding_a_unicode_line_break_parses_intact"),
+    ),
+    # crew 1.0.65: gate first, and no second round on an unchanged CLEAN
+    # bundle. Each was run by hand against the tracked file and confirmed RED.
+    (
+        # The preflight is skipped: a round is spent on a tree the gate has
+        # not passed, which is the whole cost this exists to avoid.
+        "review_run reserves a round without asking the gate",
+        REVIEW_RUN,
+        "    short = preflight(args)\n    if short is not None:\n        return short\n",
+        "    short = None\n",
+        ("tests/test_review_gate.py::"
+         "test_an_unverified_tree_is_refused_with_exit_5_and_no_round_spent"),
+    ),
+    (
+        # "Could not tell" reviews as though it were "passed".
+        "an UNKNOWN gate state is let through to a review",
+        REVIEW_RUN,
+        "    if state in (review_gate.UNVERIFIED, review_gate.UNKNOWN):\n        if args.allow_unverified:\n",
+        "    if state in (review_gate.UNVERIFIED,):\n        if args.allow_unverified:\n",
+        ("tests/test_review_gate.py::"
+         "test_an_unknown_gate_state_is_refused_like_an_unverified_one"),
+    ),
+    (
+        # An unreadable repository collapses into VERIFIED.
+        "gate_state reads an unreadable repository as VERIFIED",
+        REVIEW_GATE,
+        "        return UNKNOWN, str(exc)\n",
+        "        return VERIFIED, str(exc)\n",
+        "tests/test_review_gate.py::test_git_failing_is_unknown_not_verified",
+    ),
+    (
+        # The digest is never compared: any edit after a pass still reads
+        # as verified.
+        "gate_state stops comparing the fingerprint",
+        REVIEW_GATE,
+        "    if current != recorded:\n",
+        "    if False:\n",
+        "tests/test_review_gate.py::test_any_change_after_the_pass_is_unverified[content]",
+    ),
+    (
+        # A new untracked file is invisible to the changed set, so it is
+        # neither hashed nor noticed.
+        "gate_state's changed set drops untracked files",
+        REVIEW_GATE,
+        ('    text = _git(root, "diff", "--name-only", "HEAD") + "\\n" + \\\n'
+         '        _git(root, "ls-files", "--others", "--exclude-standard")\n'),
+        '    text = _git(root, "diff", "--name-only", "HEAD")\n',
+        "tests/test_review_gate.py::test_any_change_after_the_pass_is_unverified[new-untracked]",
+    ),
+    (
+        # Commits after the last pass are waved through.
+        "gate_state stops checking the marker against HEAD",
+        REVIEW_GATE,
+        "        if marker != head:\n",
+        "        if False:\n",
+        "tests/test_review_gate.py::test_a_marker_behind_head_is_unverified",
+    ),
+    (
+        # Must-allow: the gate's own marker counts as a change, so a clean
+        # tree the gate just passed is refused forever.
+        "gate_state counts the gate's own markers as material",
+        REVIEW_GATE,
+        "        if not verify_fingerprint._material(changed):  # pylint: disable=protected-access\n",
+        "        if not changed:\n",
+        "tests/test_review_gate.py::test_after_the_real_gate_passes_the_tree_is_verified[clean-tree]",
+    ),
+    (
+        # A person's acceptance of one round's FINDINGS stands in for a
+        # clean review of the tree.
+        "an owner-accepted receipt short-circuits a review",
+        REVIEW_RUN,
+        '    if ok and (data.get("receipt") or {}).get("kind") == "clean":\n',
+        "    if ok:\n",
+        "tests/test_review_gate.py::test_owner_accepted_findings_do_not_short_circuit",
     ),
 )
