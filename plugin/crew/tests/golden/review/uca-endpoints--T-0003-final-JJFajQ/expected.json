@@ -1,0 +1,13 @@
+{
+  "counts": {
+    "BLOCK": 2,
+    "FIX": 3,
+    "NIT": 1
+  },
+  "delivered": true,
+  "failure_class": null,
+  "origin": "uca-endpoints/T-0003-final-JJFajQ",
+  "parts_missing": [],
+  "read_form": "bare",
+  "verdict": "FINDINGS"
+}

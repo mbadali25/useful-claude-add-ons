@@ -1,0 +1,13 @@
+{
+  "counts": {
+    "BLOCK": 0,
+    "FIX": 4,
+    "NIT": 2
+  },
+  "delivered": true,
+  "failure_class": null,
+  "origin": "useful-claude-add-ons/T-0001-spec-templates-vmVkDU",
+  "parts_missing": [],
+  "read_form": "bare",
+  "verdict": "FINDINGS"
+}

@@ -144,8 +144,9 @@
 %%     Scope guard: plugin/crew/hooks/hooks.json:31 (scope-guard.sh, PreToolUse).
 %%   plugin/crew/commands/review.md:25-29 two rounds per ticket, a third is refused
 %%     -> NEEDS_REPLAN; :440 exit codes 0 CLEAN / 1 FINDINGS / 3 INCOMPLETE /
-%%     4 NEEDS_REPLAN / 2 not run; :449 Claude fallback; :481 the verdict is the
-%%     script's; :504 round 2 is the last; :508 --accept --by <who>; :511 a CLEAN
+%%     4 NEEDS_REPLAN / 2 not run; :449 Claude fallback; :480 the verdict is the
+%%     script's; :485-486 an INCOMPLETE's class and the tool-failure refund;
+%%     :504-505 round 2 is the last (rounds not refunded); :509 --accept --by <who>; :512 a CLEAN
 %%     round writes its receipt itself.
 %%   plugin/crew/commands/done.md:7 all four checks must pass; :10-13 check 1
 %%     review receipt (--check-receipt); :21-27 check 2 verify gate via
@@ -179,6 +180,22 @@
 %% place) changed, both line-neutral; review.md:25-29, :449 and completion_audit.py:177-187,
 %% :204-215 hold (compared by script). The bundle now also leaves out graphify-out/, which no
 %% node here names. No node or edge changed.
+%% Re-drawn for T-0087 (crew 1.0.52): review.md gained the INCOMPLETE classes and the
+%% tool-failure refund at :484-488, so :504/:508/:511 moved to :508/:513/:516 (re-read with
+%% sed -n), and the one INCOMPLETE edge became two: a refunded tool failure goes back to
+%% review without spending the budget (review_ledger._charged); a reviewer or tree round counts.
+%% Re-anchored b5c37635 -> 1da1233d (T-0087, crew 1.0.52): 4648581a reflowed review.md to its
+%% line allowance (no rule changed), so :481 -> :480, :484-488 -> :482-484, :508 -> :503-504,
+%% :513 -> :508 and :516 -> :511 (re-read with sed -n); :25-29, :440 and :449 are unchanged.
+%% No node or edge changed.
+%% Re-anchored 1da1233d / c99e31f6 -> 379ab5e6 (T-0087 merged onto 6387ab49, crew 1.0.55): of the
+%% Anchors paths review.md (:325-335) and completion_audit.py (:71-78) changed, T-0092's two
+%% line-neutral comment reflows; no line this diagram cites falls inside either hunk (diffed by
+%% script). No node or edge changed.
+%% Re-anchored 379ab5e6 -> 17fa035e (T-0087 review round 1): of the Anchors paths only review.md
+%% changed - the refund sentence no longer calls the rerun free and runs one line longer, so
+%% :482-484 -> :482-485, :503-504 -> :504-505, :508 -> :509 and :511 -> :512 (re-read with sed -n);
+%% :25-29, :440, :449 and :480 are unchanged. No node or edge changed.
 %% Re-drawn for T-0085 at 22399a9c (crew 1.0.52, from origin/main f54af3fa): the required
 %% standards self-check sits between the refresh and the review. implement.md step 0 and
 %% step 4 were compressed and step 6 gained the self-check (:105-109), so its citations
@@ -211,7 +228,7 @@
 %% :537 (proposals refuses an INCOMPLETE out.txt), below every review.md line cited here, so :25-29, :441,
 %% :446-450, :452, :484, :504, :508 and :511 hold (re-read with sed -n); review_run.run now reads the
 %% ledger first and skips the self-check gate when no round is left or the ledger reads NEEDS_REPLAN,
-%% drawn as the new im5 -> replan edge (review_run.py:525-535); crew_standards.py changed in _scope,
+%% drawn as the new im5 -> replan edge (review_run.py:525-535 at main, :579-589 after T-0087 merged it); crew_standards.py changed in _scope,
 %% proposals and the metric, which no node names. implement.md:105-109 and :110-113 hold. The
 %% "Status edits after approval" note's plan.md:59 / implement.md:108 were main's lines; on the merged
 %% tree they read plan.md:60 / implement.md:110 (T-0085's plan.md Standards: line and implement.md
@@ -293,12 +310,12 @@ flowchart TB
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
-        im5 --> pf0{"preflight first (#264):<br/>a CLEAN receipt covers this bundle?<br/>verify gate passed this tree?<br/>review_run.py:454, :521"}
+        im5 --> pf0{"preflight first (#264):<br/>a CLEAN receipt covers this bundle?<br/>verify gate passed this tree?<br/>review_run.py:508, :575"}
         pf0 -- "CLEAN receipt: CLEAN,<br/>no round, no self-check" --> rcpt
         pf0 -- "gate not passed or unknown:<br/>exit 5, no round spent,<br/>self-check not asked<br/>review.md:450" --> vg0["run the verify gate,<br/>then review again"]
         vg0 --> im5
         pf0 -- "go on" --> rv0{"self-check stamped for<br/>this bundle and standards set?<br/>review_run.py standards_gate"}
-        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no self-check asked<br/>review_run.py:525-535" --> replan
+        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no self-check asked<br/>review_run.py:579-589" --> replan
         rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:447-450" --> sc1
         rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle;<br/>prompt ends with the standards checklist<br/>review.md:25-29, :452"]
         rv1 --> rv2{"verdict (the script's)<br/>:441, :484"}
@@ -306,7 +323,8 @@ flowchart TB
         rv2 -- FINDINGS --> rv3{"fix, or<br/>user accepts?<br/>:504, :508"}
         rv3 -- accept --> rcpt
         rv3 -- "fix, round 2" --> rv1
-        rv2 -- "INCOMPLETE" --> rv1
+        rv2 -- "INCOMPLETE (tool failure: refunded, :485-486)" --> rv1
+        rv2 -- "INCOMPLETE (reviewer / tree): counts" --> rv1
         rv2 -- "third round refused" --> replan([NEEDS_REPLAN:<br/>back to /crew:plan])
     end
 
@@ -340,6 +358,21 @@ flowchart TB
 %% Re-anchored d7c7c75c -> bbd9a66d (T-0010 landing branch, crew 1.0.61): of the Anchors paths only
 %% crew_ticket.py changed, one line in place (a noqa: BLE001 beside the broad-except disable in the
 %% autopilot-policy check), so every line number above holds. No node or edge changed.
+%% Merged bbd9a66d + 17fa035e -> 9e38a891 (T-0087-build merges T-0010's main 8ab733d7, crew 1.0.62): of the
+%% Anchors paths only commands/review.md differs from main's side, T-0087's in-place INCOMPLETE-class
+%% lines (13 changed, line-neutral); review.md:25-29 and :449 hold (re-read). No node or edge changed.
+%% Merged 9e38a891 + a61a6f38 -> 78b7080a (T-0087-build merges T-0088's main a61a6f38, crew 1.0.70):
+%% of the Anchors paths, commands/review.md, crew_refresh_check.py, crew_ticket.py and crew_tracker.py
+%% differ from T-0087's side; review.md:25-29 and :449, crew_ticket.py:534-575, completion_audit.py:177-215,
+%% approval_hook.py:334, done.md and implement.md lines cited here map to themselves (difflib from
+%% cb9b79b1, checked). No node or edge changed.
+%% Merged 7b62e321 + 9af34e57 -> 2697bf67 (T-0087-build merges T-0085's main 9af34e57; crew 1.0.76): main's
+%% preflight and standards self-check nodes kept, T-0087's two INCOMPLETE edges kept. Of the Anchors
+%% paths review.md and review_run.py differ from main's side: review.md's refund sentence is now
+%% :485-486 (the edge and the :148 comment say so), every other review.md line cited here is main's
+%% and unchanged; review_run.py's preflight moved :454 -> :508, its call :521 -> :575 and the
+%% budget-first block :525-535 -> :579-589 (T-0087's failure-class docstring and refund code above
+%% them), re-read with grep -n. No node or edge changed.
 %% Merged 3f2ff64f + 8ab733d7 -> 63afa2b0 (T-0028 merges T-0010's main 8ab733d7, crew 1.0.62): of the
 %% Anchors paths review.md changed on T-0028's side only (from :215 down) and crew_ticket.py on main's
 %% side only; the cited review.md:25-29 is above every T-0028 hunk and holds. No node or edge changed.

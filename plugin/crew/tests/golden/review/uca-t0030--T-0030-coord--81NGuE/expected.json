@@ -1,0 +1,13 @@
+{
+  "counts": {
+    "BLOCK": 1,
+    "FIX": 6,
+    "NIT": 3
+  },
+  "delivered": true,
+  "failure_class": null,
+  "origin": "uca-t0030/T-0030-coord--81NGuE",
+  "parts_missing": [],
+  "read_form": "bare",
+  "verdict": "FINDINGS"
+}
