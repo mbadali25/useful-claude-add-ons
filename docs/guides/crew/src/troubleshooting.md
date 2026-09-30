@@ -169,6 +169,21 @@ contract itself. This section is what goes wrong with the approval and the audit
   **Fix:** amend `spec.md`'s `## Touch` (widen it), then approve again. There is no partial-approve;
   amending scope is edit-then-approve, same as any other spec change.
 
+- **Symptom: a `/crew:autopilot wave` lane stops on "a lane may not accept, reject or
+  admin-merge".**
+  This is the subagent never-list, and it is working as designed. When the hook payload carries a
+  non-empty `agent_type` — every wave lane is a subagent — `scope_guard.py` refuses, in every
+  `scope.mode` but `off`, any shell command that runs `review_ledger.py --accept` or `--reject`
+  (and every abbreviation argparse would once have expanded to them, `--a` up to `--accept`, `--rej`
+  up to `--reject`) or `gh pr merge ... --admin`. `crew_ticket.py approve` stays refused for everyone,
+  lane or not. The refusal is logged to `.crew/guard.log` as `lane-never-list`. `review_ledger.py`
+  also parses with `allow_abbrev=False`, so `--acc` is an argparse error that changes no ledger,
+  from any session. A lane may still run `review_ledger.py --status`/`--reserve` and
+  `review_run.py --reserve-only`/`--round N`, and write inside its own worktree's Touch.
+  **Fix:** none in the lane. It writes the decision as a question and stops; `crew_wave.py collect`
+  shows it to the owner, who accepts, rejects or merges from the main session, where no
+  `agent_type` is present and nothing on this list is refused.
+
 - **Symptom: `/crew:done` refuses on "out of scope" for a file the edit guard never saw.**
   This is the Stop-time completion audit (`completion_audit.py`), not the edit guard. The edit guard
   only sees `Write`/`Edit`/`MultiEdit`/`NotebookEdit` tool calls; a `sed -i`, a redirect, a
