@@ -57,6 +57,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -66,6 +67,10 @@ try:
     import tomllib as _tomllib  # Python 3.11+, stdlib
 except ImportError:  # pragma: no cover - exercised only on 3.8-3.10
     _tomllib = None
+
+# The bound on reading a killed probe's pipes (PYTHON-07); a descendant that
+# escaped the kill may still hold one open.
+POST_KILL_TIMEOUT = 5
 
 STATES = ("ok", "not-installed", "not-authenticated", "rate-limited", "unknown")
 PROBE_PROMPT = "Reply with exactly: PROBE_OK"
@@ -315,14 +320,48 @@ def _credential_state(config, alias, home):
 
 
 def _run(cmd, env, timeout, cwd=None):
-    """(stdout, stderr, exit_code, timed_out), stdin closed."""
+    """(stdout, stderr, exit_code, timed_out), stdin closed.
+
+    Every wait is bounded (PYTHON-07). `subprocess.run` re-reads the pipes with
+    no timeout after it kills a timed-out child on Windows, so a descendant that
+    escaped the kill and still holds a pipe would hang the probe. Here the child
+    leads its own process group (a new session on POSIX), the whole group is
+    killed while the leader is still unreaped, and the follow-up read has its
+    own bound. `errors="replace"`: the output is only classified, and a byte
+    that does not decode makes the text unrecognised, which reads `unknown`."""
+    group = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt"
+             else {"start_new_session": True})
+    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,  # pylint: disable=consider-using-with
+                            stderr=subprocess.PIPE, text=True, encoding="utf-8",
+                            errors="replace", env=env, cwd=cwd, **group)
     try:
-        done = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", env=env, cwd=cwd,
-                              timeout=timeout, check=False)
+        stdout, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
+        _kill_group(proc)
+        try:
+            proc.communicate(timeout=POST_KILL_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            pass
+        finally:
+            for pipe in (proc.stdout, proc.stderr):
+                if pipe:
+                    pipe.close()
         return "", "", None, True
-    return done.stdout, done.stderr, done.returncode, False
+    return stdout, stderr, proc.returncode, False
+
+
+def _kill_group(proc):
+    """Kill a timed-out probe and, on POSIX, its process group - by the
+    leader's pid only while it is unreaped, so a reused pid is never hit."""
+    if proc.poll() is not None:
+        return
+    try:
+        if os.name == "nt":
+            proc.kill()
+        else:
+            os.killpg(proc.pid, signal.SIGKILL)
+    except OSError:
+        pass
 
 
 def classify(stdout, stderr, code, timed_out, timeout=DEFAULT_TIMEOUT):

@@ -160,5 +160,3 @@ def test_every_file_this_module_reads_is_mapped_to_it():
                            if any(_gate_matches(f"plugin/crew/{rel}", p) for p in r["paths"]))]
 
     assert (len(read) >= 3, unmapped) == (True, [])
-
-

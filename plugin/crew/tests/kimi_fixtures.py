@@ -23,7 +23,8 @@ import textwrap
 # probe, then the review) with one environment:
 #   FAKE_KIMI_PROBE  how the probe call (prompt == "Reply with exactly:
 #                    PROBE_OK") answers: ok | 401 | nomodel | quota:<marker>
-#                    | garbage | nomarker | hang
+#                    | garbage | nomarker | hang | hang-child:<pidfile> (leaves a
+#                    descendant holding stdout, its pid written to <pidfile>)
 #   FAKE_KIMI_MODE   how a review call answers: clean | findings | turnfail
 #                    | turnfail-secret (the failure message carries a bearer
 #                    token) | write (appends to seed.txt, then answers clean)
@@ -102,6 +103,12 @@ if prompt == "Reply with exactly: PROBE_OK":
     elif mode == "nomarker":
         say({"role": "assistant", "content": "Sure! Here you go."})
     elif mode == "hang":
+        time.sleep(60)
+    elif mode.startswith("hang-child:"):
+        import subprocess
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])  # pylint: disable=consider-using-with
+        with open(mode.split(":", 1)[1], "w", encoding="utf-8") as fh:
+            fh.write(str(child.pid))
         time.sleep(60)
     sys.exit(0)
 mode = os.environ.get("FAKE_KIMI_MODE", "clean")

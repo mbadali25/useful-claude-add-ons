@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 import pytest
 import yaml
@@ -98,6 +99,33 @@ def test_probe_timeout_is_unknown(fake, home, monkeypatch):
     result = _probe(fake, home, monkeypatch, "hang", timeout=2)
 
     assert result["state"] == "unknown" and "2s" in result["reason"]
+
+
+def _alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    with open(f"/proc/{pid}/stat", encoding="utf-8") as fh:
+        return fh.read().split(")")[-1].split()[0] != "Z"
+
+
+@pytest.mark.skipif(os.name == "nt" or not os.path.isdir("/proc"),
+                    reason="process-group kill and /proc are POSIX")
+def test_probe_timeout_kills_a_descendant_that_holds_the_pipe(fake, home, monkeypatch, tmp_path):
+    """PYTHON-07: a timed-out probe's whole process group is killed, so a
+    descendant still holding stdout neither survives nor hangs the read."""
+    pidfile = tmp_path / "child.pid"
+
+    started = time.monotonic()
+    result = _probe(fake, home, monkeypatch, f"hang-child:{pidfile}", timeout=2)
+    elapsed = time.monotonic() - started
+    time.sleep(0.5)
+
+    assert result["state"] == "unknown" and elapsed < 2 + kimi_probe.POST_KILL_TIMEOUT
+    assert not _alive(int(pidfile.read_text(encoding="utf-8")))
 
 
 def test_probe_id_with_no_kimi_alias_is_unknown(fake, home, monkeypatch):

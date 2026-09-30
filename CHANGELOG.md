@@ -37,7 +37,9 @@ All notable changes to this repository are documented here. Format follows [Keep
     be made, unrecognised output, a timeout, an id no `type = "kimi"` alias
     serves, and any answer other than exactly `PROBE_OK` are `unknown`. A 429
     the CLI retried and then completed reads `ok`; a 429 that ended the call is
-    `rate-limited`. The live stage spends one tiny request, in a throwaway
+    `rate-limited`. Every wait is bounded: a timed-out probe's process group is
+    killed and the follow-up read has its own bound, so a descendant holding a
+    pipe cannot hang it. The live stage spends one tiny request, in a throwaway
     directory, with a Read/Grep/Glob-only `--agent-file` and an empty
     `--skills-dir` (`kimi -p` forces permission mode `auto`), a scrubbed env,
     and stderr redacted. `providers.sh --probe-kimi` runs it; without the flag
