@@ -36,6 +36,11 @@ two of the three change sets it names.
 
 The land branch (owner decision 2026-09-30, "Preflight first") added one:
 the self-check gate asked before main's #264 preflight (the order swapped).
+
+T-0086 (the Python set, slice 1) added three: `references/python.md`'s
+`applies-to` narrowed so a `.py` change no longer draws the PYTHON set, a
+PYTHON standard naming only two change sets, and a candidate id (PYTHON-14)
+shipped in place of an admitted standard.
 """
 import os
 
@@ -44,6 +49,7 @@ STANDARDS = os.path.join(CREW, "hooks", "scripts", "crew_standards.py")
 REVIEW_RUN = os.path.join(CREW, "hooks", "scripts", "review_run.py")
 REVIEW_MD = os.path.join(CREW, "commands", "review.md")
 GENERIC = os.path.join(CREW, "skills", "crew-standards", "references", "generic.md")
+PYTHON_SET = os.path.join(CREW, "skills", "crew-standards", "references", "python.md")
 
 STANDARDS_MUTATIONS = (
     (
@@ -417,5 +423,29 @@ STANDARDS_MUTATIONS = (
         "    # A spent budget",
         ("tests/test_review_run_standards.py::"
          "test_preflight_answers_before_the_selfcheck_is_asked_for"),
+    ),
+    (
+        "the Python set stops applying to .py files",
+        PYTHON_SET,
+        'applies-to: ["**/*.py"]\n',
+        'applies-to: ["**/*.pyx"]\n',
+        ("tests/test_crew_standards.py::"
+         "test_python_set_applies_to_python_files_only"),
+    ),
+    (
+        "PYTHON-03 names two change sets",
+        PYTHON_SET,
+        "**Change sets.** 3: T-0079, T-0030, T-0072\n",
+        "**Change sets.** 2: T-0079, T-0030\n",
+        ("tests/test_crew_standards.py::"
+         "test_every_stack_standard_names_and_cites_three_change_sets[python.md]"),
+    ),
+    (
+        "a candidate ships in place of an admitted standard",
+        PYTHON_SET,
+        "## PYTHON-13 ",
+        "## PYTHON-14 ",
+        ("tests/test_crew_standards.py::"
+         "test_python_set_parses_with_every_field"),
     ),
 )
