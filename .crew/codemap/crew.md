@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@f5d0f1b1
+anchor: useful-claude-add-ons@2255fb4d
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -1146,7 +1146,10 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   `test_a_new_anchor_git_cannot_judge_is_could_not_tell`,
   `test_a_moved_anchor_git_cannot_order_is_could_not_tell` and
   `test_a_removed_rule_whose_base_copy_git_cannot_read_is_could_not_tell` there, and
-  `test_an_unreadable_rule_fails_the_audit_as_could_not_tell` in the audit suite)
+  `test_an_unreadable_rule_fails_the_audit_as_could_not_tell` in the audit suite;
+  review round 3 added `test_an_anchor_added_where_the_base_copy_had_none_is_refused`,
+  the INDEX byte, mode and git-diff cases, the rule byte and git-hash cases, and
+  `test_a_crlf_checkout_under_autocrlf_is_judged_as_git_stores_it`, the must-allow neighbour)
   `plugin/crew/tests/refresh_fixtures.py`, with mutations in
   `plugin/crew/tests/sabotage_refresh.py`; `.crew/verify.json:269-287` (rule
   25) maps them, `implement.md`, `done.md`, since review round 3
@@ -1192,8 +1195,8 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   above.
 - `plugin/crew/hooks/scripts/crew_resume.py:668` — `decide`, read-only;
   `main()` is the `decide` / `record` / `precompact` CLI.
-- `plugin/crew/hooks/scripts/crew_refresh_check.py:957` — `ticket_freshness`,
-  the library entry point; `main()` at `:1057`; `artifact_verdicts` at `:689`,
+- `plugin/crew/hooks/scripts/crew_refresh_check.py:1034` — `ticket_freshness`,
+  the library entry point; `main()` at `:1134`; `artifact_verdicts` at `:766`,
   the audit's admission (T-0094).
 - `plugin/crew/hooks/scripts/crew_autopilot.py:545` — `next_phase`, read-only;
   `main()` at `:1635` is the `next` / `resume` / `settings` / `stops` /
@@ -2839,3 +2842,5 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 ## Re-anchor provenance - `6375524b` -> `f5d0f1b1`, 2026-09-30 (T-0094 merges `a61a6f38`, crew 1.0.70)
 
 `0cd952b2` merges origin/main `a61a6f38` (T-0088 landed as crew 1.0.69, after #263-#267: crew 1.0.62-1.0.68, the review gate `review_gate.py`, the `crew-qa-standards` skill, parallel CI and `CLAUDE.md`'s evidence moved to `docs/claude-md-evidence.md`) into T-0094-build at `d331c192`. Its conflicts were the version lines, `CHANGELOG.md` (both entries kept, T-0094's first), `.crew/verify.json` (T-0094's rule 32 kept, main's three new rules after it as 33-35), `crew_refresh_check.py`'s imports (both kept) and `plugin/crew/BUDGETS.md` (re-measured, 19,921 lines across 132 files); no code map, diagram or rule file conflicted (main's maps were still at `bbd9a66d`, but for `obsidian-vault.md`). `f5d0f1b1` sets crew 1.0.70, one past main's 1.0.69. Per-path: `git diff --name-only 6375524b f5d0f1b1 -- <the 105 tracked paths this note cites>` returns `.claude-plugin/marketplace.json`, `.crew/codemap/INDEX.md`, `.crew/verify.json`, `CHANGELOG.md`, `CLAUDE.md`, `INSTALLATION.md`, `README.md`, `docs/diagrams/process-crew-lifecycle.mmd`, `plugin/PLUGINS.md`, `plugin/README.md`, `plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/BUDGETS.md`, `plugin/crew/CONFIG.md`, `plugin/crew/README.md`, `plugin/crew/commands/review.md`, `plugin/crew/hooks/scripts/cloud_guard.py`, `plugin/crew/hooks/scripts/crew_autopilot.py`, `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_context.py`, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `plugin/crew/hooks/scripts/crew_resume.py`, `plugin/crew/hooks/scripts/crew_route.py`, `plugin/crew/hooks/scripts/crew_state.py`, `plugin/crew/hooks/scripts/crew_status.py`, `plugin/crew/hooks/scripts/crew_ticket.py`, `plugin/crew/hooks/scripts/crew_tracker.py`, `plugin/crew/hooks/scripts/review_run.py`, `plugin/crew/hooks/scripts/role_write_guard.py`, `plugin/crew/skills/crew-setup/phases.md`, `plugin/crew/tests/sabotage.py`, `plugin/crew/tests/sabotage_autopilot.py`, `plugin/crew/tests/sabotage_resume.py`, `plugin/crew/tests/test_context_watch_python_resolver.py`. Citations were re-mapped by a `difflib` line diff from each cited file's copy at the old anchor to `f5d0f1b1` (`/root/crew-tmp/t-0094/cite_apply2.py`, `cite_ident.py`, `cite_explicit.py`, machine-local): an explicit `path:N`, and a bare `:N` whose file is the one named before it in the paragraph, or the one whose old line carries the identifier beside the citation; every mapped line is text-identical at both ends. History positions ("at <sha>", "before", "on <branch>", "it was") and the provenance sections were left as written; a bare `:N` the scripts attributed to the wrong file was found by that identifier check and put back. Re-derived here: the counts table (skills 29 -> 30, `crew-qa-standards`) and the `marketplace.json:217`/`:218` version sentence (1.0.70); `crew_config.py:1264` now reads `.crew/config.json` through `crew_common.repo_config_file` (T-0088); rule 32 is no longer the last rule (rules 33-35 follow, `.crew/verify.json:350-370`); `sabotage.py`'s `MUTATIONS +=` line `:3057`; `_settings_at` `:761` and the autopilot/route `crew.json` warnings (`crew_autopilot.py:787-791`, `crew_route.py:322-325`); the tracker section's positions (`crew_tracker.py`, +2 near the top); the README's "since 1.0.70". Not described by this note (main's, not T-0094's): `review_limit.py` and the Codex-limit fallback, `review_gate.py`, `crew_common.repo_config_dir`'s linked-worktree fallback beyond the one line above, and `crew-qa-standards`' `qa_audit.py`.
+
+**Re-anchored `f5d0f1b1` -> `2255fb4d` on 2026-09-30 (T-0094 review round 3).** `2255fb4d` is T-0094's review-round-3 fix commit (Codex round 3 on `e0ccd3f7`: 0 BLOCK / 4 FIX). `git diff --name-only f5d0f1b1 2255fb4d` returns `.crew/codemap/crew.md`, `CHANGELOG.md`, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `plugin/crew/tests/sabotage_refresh.py` and `plugin/crew/tests/test_refresh_admission.py`; the two commits after `f5d0f1b1` before it are refresh artifacts only. Re-derived here: the refresh-artifact bullet (`REFRESH_ARTIFACT_PATHS` `:223-228`, `artifact_verdicts` `:766`, the reach `:784-793`, `_map_verdict` `:615`, `_sha_moved` `:522`, `_moved_from` `:552`, `_diff_lines` `:629`, `_index_verdict` `:652`, `_diagram_verdict` `:675`, `_rule_verdict` `:694` and its unreadable branch `:701-703`, `_stored_blob` `:739`, `_rendered_verdict` `:823`, `COULD_NOT_TELL` `:459`; `ADMISSION_BOOKKEEPING` is `:251`, where this note had said `:246` since before the merge), the entry-point line (`ticket_freshness` `:1034`, `main` `:1134`), the tests bullet (round 3's cases), and the counts table and version sentence (30 skills, 1.0.70: review round 3's FIX 4; the previous pass's provenance said both were re-derived and neither was). Each position read with `grep -n` at `2255fb4d`. No other body citation names a changed file by line.
