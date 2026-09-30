@@ -3,10 +3,10 @@ paths:
   - "plugin/crew/**"
   - "scripts/**"
 ---
-<!-- crew:generated source=.crew/codemap/install-scripts.md sha256=470742159b97bf57 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/install-scripts.md sha256=5d37b5d2832b4395 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # install-scripts
-Code map anchor `a7c29371`; if it is behind HEAD, re-check with `git diff --name-only a7c29371..HEAD -- <cited paths>`.
-Covers: The install-prerequisites.{sh,ps1} matched pair: catalog parity, the pick_fit/Format-PickerLine no-bypass rule, idempotency branches, and hook-plugins-default-off on both sides.; re-anchored to a7c29371 (L-0520, the merge train, crew 1.0.76)
+Code map anchor `f7ffc1d2`; if it is behind HEAD, re-check with `git diff --name-only f7ffc1d2..HEAD -- <cited paths>`.
+Covers: The install-prerequisites.{sh,ps1} matched pair: catalog parity, the pick_fit/Format-PickerLine no-bypass rule, idempotency branches, and hook-plugins-default-off on both sides.; re-anchored to a7c29371 (L-0520, the merge train, crew 1.0.76); re-anchored to f7ffc1d2 (L-0520 pre-review hardening)
 ## Landmines
 - `README.md`'s install-URL pin is STALE again at this anchor, by one line per script.
 - The five-way crew count disagreement this note tracked for several anchors is fully resolved and re-confirmed independently correct, not merely re-synced.
