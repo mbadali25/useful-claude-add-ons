@@ -1,7 +1,13 @@
-"""T-0505 promote-gate effective-tree mutations, appended to `sabotage.py`'s
-MUTATIONS. Kept apart for the reason the other `sabotage_*.py` files give:
-`sabotage.py` sits at `.pylintrc`'s max-module-lines. Run that file, not this
-one.
+"""T-0505 promote-gate effective-tree mutations, in `sabotage.py`'s tuple shape.
+
+NOT yet wired into `sabotage.py`: `scripts/check-tooling-pr.py` (owner rule,
+T-0087) makes `plugin/crew/tests/sabotage*.py` harness, and a harness change
+may not ride in a feature PR. So this file lives beside the tests, and a
+follow-up tooling PR appends `PROMOTE_TREE_MUTATIONS` to `sabotage.py`'s
+MUTATIONS. Until then run them with sabotage.py's own machinery:
+
+    cd plugin/crew/tests && python3 -c "import sabotage, promote_tree_mutations as m; \
+        sabotage.MUTATIONS = m.PROMOTE_TREE_MUTATIONS; raise SystemExit(sabotage.main())"
 
 Each puts back one way the gate judged the wrong tree, or one neighbour the
 fix opened, and names the must-block or must-allow case that has to go red.

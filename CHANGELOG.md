@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` (version set at land): promote-gate judges the tree the deploy runs from (T-0505)
+### Fixed — `crew` 1.0.79: promote-gate judges the tree the deploy runs from (T-0505)
 
 - **`promote-gate.sh` / `.ps1` read the deployed sha and the clean-tree check
   from the tree the deploy runs from**, not from `CLAUDE_PROJECT_DIR`: the
@@ -33,7 +33,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   over only for `requireHuman` or a genuinely interactive step, as a question
   with a recommendation.
 - New must-block / must-allow suite for both flavours
-  (`test_promote_gate_effective_tree.py`) and twenty-eight sabotage entries.
+  (`test_promote_gate_effective_tree.py`) and twenty-eight mutations in
+  `promote_tree_mutations.py`, run through sabotage.py's machinery; wiring them
+  into `sabotage.py` is a separate tooling PR (`check-tooling-pr.py`).
   After updating, run `claude plugin update crew` and restart the session.
 
 ### Added — `crew` 1.0.77: the Python development standards set (T-0086, slice 1)
