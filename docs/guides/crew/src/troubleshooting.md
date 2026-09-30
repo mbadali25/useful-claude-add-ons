@@ -150,6 +150,17 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   **Fix:** if the edit was deliberate, get the ticket reviewed again (spends the next round); if it
   was accidental, revert the edit and re-check.
 
+- **Symptom: Codex hit a usage limit.** The probe printed `PROBE=limited` (exit 5) with the
+  error on `PROBE_DETAIL=...`, or a round printed `review: codex usage limit in round N: ...`.
+  **Cause:** Codex's usage limit, rate limit, quota or spend cap - its own message is quoted.
+  **What happens:** that round runs on the Claude reviewer, announced as
+  `same-family (codex limit)` and not independent; the limit is recorded in
+  `<git-common-dir>/crew/review-limit/<ticket>.json` and applies to the next round only. The
+  round is spent like any other. To check Codex yourself without spending one:
+  ```bash
+  python3 "<crew>/hooks/scripts/review_run.py" --root . --ticket <id> --scratch <dir> \
+    --provider codex --probe
+  ```
 - **Symptom: you want to send a ticket back without spending the third round.**
   ```bash
   python3 "<crew>/hooks/scripts/review_ledger.py" --root . --ticket <id> --reject --by <who>
@@ -163,6 +174,19 @@ the ticket may change; `plan.md`'s `Files:` lines must each fall inside Touch. T
 session to that contract — see [Daily workflow: scope and approval](daily-workflow-scope.md) for the
 contract itself. This section is what goes wrong with the approval and the audit.
 
+- **Symptom: a lane worktree does not see my settings** (a CLI approval refused, `scope.mode`
+  read as `off`, guards at their defaults). `.crew/*` is gitignored, so `git worktree add` makes a
+  checkout with no crew config.
+  **Check:** `/crew:status` prints `config   inherited from the main checkout (<path>) ...` when
+  the worktree reads the main checkout's `.crew/config.json` (crew 1.0.69+, T-0088), and
+  `crew_config.py --root . --explain` starts with `repo layer: <path> (<source>)`.
+  **Cause and fix:** a worktree with its own `.crew/config.json` or `.crew/crew.json` reads only
+  those, never merged with the main checkout's - delete them to inherit. `/crew:status` names
+  that case: `... the main checkout's (<path>) is not read ...`. A lane made before 1.0.69 almost
+  always has one, a default that crew's SessionStart heal wrote there. `(unknown)` means git
+  could not name the main checkout; then no default is written either. The shell and PowerShell readers (`verify-gate.sh`,
+  `_common.sh`, `notify.sh`, the handoff scripts, `promote-gate.ps1`, `scope-guard.ps1`,
+  `cloud-guard.ps1`, `auto-clear.ps1`) do not inherit yet.
 - **Symptom: an edit inside Touch is still refused.**
   **Check:** approval status.
   ```bash

@@ -150,6 +150,7 @@ if __name__ == "__main__":
     # Before the sibling imports: the direct CLI writes no bytecode either.
     sys.dont_write_bytecode = True
 
+import crew_common
 import crew_config
 import crew_state
 import crew_ticket
@@ -728,9 +729,11 @@ def _unreadable_autopilot(top):
     """Why the repo's `autopilot` block cannot be told, or "" when it can.
     `crew_config.resolve_config` collapses a malformed file, and
     `merge_defaults` a non-object block, to the defaults; this reads the raw
-    file first so neither collapse is taken for a configured value."""
+    file first so neither collapse is taken for a configured value. The file is
+    `crew_common.repo_config_file`'s -- the one `resolve_config` reads, which in
+    a lane worktree is the main checkout's (T-0088)."""
     data, state = crew_ticket._read_json(  # pylint: disable=protected-access
-        os.path.join(top, ".crew", "config.json"))
+        crew_common.repo_config_file(top, "config.json"))
     if state == "corrupt":
         return ".crew/config.json exists but could not be read as JSON"
     if state == "ok" and not isinstance(data, dict):
@@ -797,7 +800,7 @@ def _settings_at(top):
         warnings.append(f"autopilot.deploy is {deploy!r}, but nothing in this crew version "
                         "dispatches a deploy: T-0045 consumes it; deploy-allowed answers "
                         "the policy only")
-    crew_json = _read_json(os.path.join(top, ".crew", "crew.json"))
+    crew_json = _read_json(crew_common.repo_config_file(top, "crew.json"))
     if isinstance(crew_json, dict) and "autopilot" in crew_json \
             and "autopilot" not in crew_state.load_config(top):
         warnings.append("autopilot is set in .crew/crew.json, which crew does not read "
@@ -881,7 +884,7 @@ def _decide(top, env_name, env_class, machine_path):
     if cls not in known:
         return "ask", (f"crew could not classify {env_name} "
                        f"(class {_safe_text(env_class)})"), None
-    layers = (("repo", os.path.join(top, ".crew", "config.json")),
+    layers = (("repo", crew_common.repo_config_file(top, "config.json")),
               ("machine", machine_path))
     for label, path in layers:
         problem = _layer_problem(label, path)

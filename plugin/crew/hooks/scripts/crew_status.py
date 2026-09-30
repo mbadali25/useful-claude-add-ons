@@ -24,17 +24,18 @@ import sys
 sys.dont_write_bytecode = True
 
 # pylint: disable=wrong-import-position
-import argparse
-import json
-import os
-import subprocess
+import argparse  # noqa: E402
+import json  # noqa: E402
+import os  # noqa: E402
+import subprocess  # noqa: E402
 
-import crew_freshness
-import crew_migrate
-import crew_tracker
-import review_ledger
-import verify_record
-from crew_common import read_text
+import crew_common  # noqa: E402
+import crew_freshness  # noqa: E402
+import crew_migrate  # noqa: E402
+import crew_tracker  # noqa: E402
+import review_ledger  # noqa: E402
+import verify_record  # noqa: E402
+from crew_common import read_text  # noqa: E402
 
 MAX_LINES = 40
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -70,8 +71,17 @@ def _tracker_line(root):
 
 
 def _config_lines(root):
-    crew = _json(os.path.join(root, ".crew", "crew.json"))
-    legacy = _json(os.path.join(root, ".crew", "config.json"))
+    crew = _json(crew_common.repo_config_file(root, "crew.json"))
+    legacy = _json(crew_common.repo_config_file(root, "config.json"))
+    lines, cfg = _config_lines_for(root, crew, legacy)
+    # Which file is in force, when it is not simply this checkout's (T-0088).
+    source = crew_common.repo_config_source_line(root)
+    if source:
+        lines.insert(1, f"config   {source}")
+    return lines, cfg
+
+
+def _config_lines_for(root, crew, legacy):
     if crew is not None and not isinstance(crew, dict):
         return ["config   .crew/crew.json unreadable - status cannot tell the setup"], {}
     if isinstance(crew, dict):

@@ -23,6 +23,12 @@ PROVIDERS.
 A provider binary that is not on PATH is refused BEFORE reservation: nothing
 was launched, so nothing is spent.
 
+`--probe` (codex only) makes one minimal real call and reserves nothing: exit
+0 ok, 5 limited (a usage/rate/quota limit, `review_limit.limit_line`), 6
+failed, 7 unknown (timed out). /crew:review runs it before step 2a. Being on
+PATH is not being able to review: a logged-out or rate-limited Codex resolves
+on PATH and fails at the first call (T-0088).
+
 The prompt is passed inline when it fits a Windows command line and the
 provider is not a batch-file shim (cmd.exe ends a `.cmd`/`.bat` command line
 at the first line break); otherwise the argument tells the reviewer to read
@@ -62,8 +68,28 @@ review.json carries `failure_class`, and `refunded` / `refund_refused` as the
 ledger recorded them; a `review:` line says whether the round was refunded. A
 refunded round still exits 3.
 
+BEFORE ANY ROUND IS RESERVED, two questions, in this order (`preflight`):
+
+  1. Does a CLEAN receipt already cover this exact bundle
+     (`review_ledger.check_receipt`, the check `/crew:done` gates on)? Then
+     nothing has changed since a clean review, so no round is spent: the
+     verdict is that receipt's CLEAN, said as such. An owner-accepted
+     FINDINGS receipt does not short-circuit -- that is a person's call about
+     one round, not a clean review of the tree.
+  2. Has the verify gate passed on this tree (`review_gate.gate_state`)? A
+     tree it has not passed, or one whose state could not be read, is refused
+     with exit 5 and no round spent: a reviewer's opinion on code the gate
+     would refuse for free is the most expensive way to find out it is red.
+     `--allow-unverified` reviews it anyway, and review.json says it did.
+     No verify map, or a gate stood down, proceeds and says so.
+
+Every round's review.json carries `gate` (the state observed at verdict time)
+and `elapsed_s` (reservation to verdict, from the ledger's own timestamps), and
+the `review:` summary line prints both.
+
 Exit codes: 0 CLEAN; 1 FINDINGS; 3 INCOMPLETE; 4 budget refused
-(NEEDS_REPLAN); 2 usage or setup error.
+(NEEDS_REPLAN); 5 not run, gate not green (no round spent); 2 usage or setup
+error.
 """
 import argparse
 import datetime
@@ -77,13 +103,16 @@ import sys
 
 import crew_common
 import crew_state
+import review_gate
 import review_ledger
+import review_limit
 import review_patch
 import review_prompt
 import review_verdict
 import webtest_guard
 
 EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, EXIT_INCOMPLETE, EXIT_REFUSED = 0, 1, 2, 3, 4
+EXIT_UNVERIFIED = 5
 DEFAULT_TIMEOUT = 1800
 # Bound on the follow-up `communicate()` after a kill, below. Not the same
 # knob as --timeout: this one exists so a descendant that escaped the kill
@@ -97,6 +126,12 @@ INLINE_PROMPT_LIMIT = 24000
 # is never handed a multi-line prompt inline (T-0087, PR #260's Windows job).
 BATCH_SHIM_SUFFIXES = (".cmd", ".bat")
 LAUNCHED = ("codex", "copilot")
+# The probe (T-0088): one minimal real Codex call, before any reservation.
+PROBE_TIMEOUT = 120
+PROBE_PROMPT = "Reply with exactly the word OK. Do not run any command and do not read any file."
+EXIT_PROBE_LIMITED, EXIT_PROBE_FAILED, EXIT_PROBE_UNKNOWN = 5, 6, 7
+PROBE_OK, PROBE_LIMITED, PROBE_FAILED, PROBE_UNKNOWN = "ok", "limited", "failed", "unknown"
+VERIFY_GATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "verify-gate.sh")
 
 
 def _read(path):
@@ -376,6 +411,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
         "exit_code": exit_code, "timed_out": timed_out,
         "webtest_findings": rows, "webtest_check": webtest_record,
         "webtest_verdict": webtest_verdict,
+        "gate": gate_record(args),
         "written_at": datetime.datetime.now(datetime.timezone.utc).isoformat(
             timespec="seconds"),
     }
@@ -387,6 +423,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     row = next((r for r in ledger.get("rounds") or [] if r.get("round") == number), {})
     review["refunded"] = row.get("refunded") is True
     review["refund_refused"] = row.get("refund_refused")
+    review["elapsed_s"] = round_elapsed(args.root, args.ticket, number)
     work_dir = args.work_dir or os.path.join(args.root, ".work", "tickets", args.ticket)
     _write_atomic(os.path.join(work_dir, "review.json"),
                   json.dumps(review, indent=2, sort_keys=True) + "\n")
@@ -399,7 +436,8 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     print(f"review: {result['verdict']} round {number}, {budget} "
           f"({counts['BLOCK']} BLOCK, {counts['FIX']} FIX, {counts['NIT']} NIT) "
           f"{args.provider}/{args.model or 'default'} family={review['model_family']} "
-          f"ledger={state}")
+          f"ledger={state} gate={review['gate']['state']} "
+          f"elapsed={_fmt_elapsed(review['elapsed_s'])}")
     for reason in result["reasons"]:
         print(f"review: INCOMPLETE because {reason}")
     if failure == review_verdict.TOOL and review["refunded"]:
@@ -416,6 +454,64 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
         result["verdict"], EXIT_INCOMPLETE)
 
 
+def gate_record(args):
+    """The gate state for review.json: observed now, plus whether this round
+    was told to go ahead regardless."""
+    state, reason = review_gate.gate_state(args.root)
+    return {"state": state, "reason": reason,
+            "overridden": bool(getattr(args, "allow_unverified", False))
+            and state in (review_gate.UNVERIFIED, review_gate.UNKNOWN)}
+
+
+def round_elapsed(root, ticket, number):
+    """Seconds from the round's reservation to its recorded verdict, read from
+    the ledger's own `reserved_at` / `completed_at`. None when either is
+    missing or unparseable -- an unknown duration, never a zero one."""
+    data, state = review_ledger._load(review_ledger.ledger_path(root, ticket))  # pylint: disable=protected-access
+    if state != "ok":
+        return None
+    for row in data.get("rounds") or []:
+        if isinstance(row, dict) and row.get("round") == number:
+            try:
+                start = datetime.datetime.fromisoformat(row["reserved_at"])
+                end = datetime.datetime.fromisoformat(row["completed_at"])
+            except (KeyError, TypeError, ValueError):
+                return None
+            return max(int((end - start).total_seconds()), 0)
+    return None
+
+
+def _fmt_elapsed(seconds):
+    return "unknown" if seconds is None else f"{seconds}s"
+
+
+def preflight(args):
+    """None to go on and reserve a round, or the exit code to stop with
+    having reserved nothing. See BEFORE ANY ROUND IS RESERVED above."""
+    ok, message = review_ledger.check_receipt(args.root, args.ticket)
+    data, _ = review_ledger._load(review_ledger.ledger_path(args.root, args.ticket))  # pylint: disable=protected-access
+    if ok and (data.get("receipt") or {}).get("kind") == "clean":
+        print(f"review: CLEAN from the existing receipt ({message}) - nothing in the bundle "
+              "changed since that clean round, so no round was spent")
+        if args.provider not in LAUNCHED:
+            print("ALREADY_CLEAN=1")
+        return EXIT_CLEAN
+    state, reason = review_gate.gate_state(args.root)
+    if state in (review_gate.UNVERIFIED, review_gate.UNKNOWN):
+        if args.allow_unverified:
+            sys.stderr.write(f"review-run: gate {state}: {reason}. Reviewing anyway "
+                             "(--allow-unverified); review.json records the override\n")
+            return None
+        sys.stderr.write(
+            f"review-run: gate {state}: {reason}. No round reserved. Run the verify gate on "
+            f"this tree first (bash \"{VERIFY_GATE}\" </dev/null, or end the turn so the "
+            "Stop gate runs), then review again. "
+            "--allow-unverified reviews it anyway and records that it did.\n")
+        return EXIT_UNVERIFIED
+    sys.stderr.write(f"review-run: gate {state}: {reason}\n")
+    return None
+
+
 def run(args):
     exe = prompt = None
     if args.provider in LAUNCHED:
@@ -430,6 +526,9 @@ def run(args):
             return EXIT_USAGE
         prompt = prompt_argument(os.path.join(args.scratch, "prompt.txt"), exe)
 
+    short = preflight(args)
+    if short is not None:
+        return short
     ok, number, message = review_ledger.reserve(args.root, args.ticket, args.provider,
                                                 args.model)
     sys.stderr.write(f"review-run: {message}\n")
@@ -442,17 +541,65 @@ def run(args):
     cmd = command_for(args.provider, exe, args.root, prompt, args.model, args.effort)
     stdout, stderr, code, timed_out = launch(cmd, args.root, args.timeout)
     extra = []
+    limit = None
     if args.provider == "codex":
         _write_atomic(os.path.join(args.scratch, "codex-events.jsonl"), stdout)
         message_text, error = review_verdict.codex_final_message(stdout)
         output = message_text or ""
         if error and not timed_out:
             extra.append(f"codex: {error}")
+        # Only a FAILED call is judged: a 429 Codex retried and got past leaves
+        # `error` events in a round that still delivered (T-0088).
+        if timed_out or code != 0 or not output.strip():
+            limit = review_limit.limit_line(error or "", stderr)
     else:
         output = stdout
     _write_atomic(os.path.join(args.scratch, "out.txt"), output)
     _write_atomic(os.path.join(args.scratch, "stderr.txt"), stderr)
-    return finish(args, number, output, code, timed_out, extra)
+    status = finish(args, number, output, code, timed_out, extra)
+    if limit:
+        # After finish, never before: the round's INCOMPLETE record is the
+        # ledger's, and a marker that cannot be written (disk full, a path that
+        # is not a directory) must not take it, or exit 3, down with it.
+        try:
+            review_limit.record(args.root, args.ticket, number, "codex", args.model, limit)
+            then = "the next round runs the Claude reviewer (same-family, not independent)"
+        except OSError as exc:
+            then = (f"could not record it ({exc}), so the next probe calls Codex live "
+                    "instead of answering limited from the record")
+        print(f"review: codex usage limit in round {number}: {limit!r}; {then}")
+    return status
+
+
+def probe(args):
+    """(outcome, detail). One minimal real Codex call, BEFORE any reservation.
+
+    Four outcomes, never collapsed: `ok` is a delivered message at exit 0 (a
+    429 Codex retried and then got past is still ok); `limited` is a failed
+    call whose error or stderr names a limit, or a limit recorded by the round
+    before (`review_limit.recorded`, no call made); `failed` is any other
+    failure, quoted; `unknown` is no answer within the probe's timeout."""
+    mark = review_limit.recorded(args.root, args.ticket)
+    if mark:
+        return PROBE_LIMITED, f"recorded in round {mark['round']}: {mark['error']}"
+    exe = shutil.which("codex")
+    if not exe:
+        return PROBE_FAILED, "codex is not on PATH"
+    timeout = args.probe_timeout
+    cmd = command_for("codex", exe, args.root, PROBE_PROMPT, args.model, args.effort)
+    stdout, stderr, code, timed_out = launch(cmd, args.root, timeout)
+    _write_atomic(os.path.join(args.scratch, "probe-events.jsonl"), stdout)
+    _write_atomic(os.path.join(args.scratch, "probe-stderr.txt"), stderr)
+    message, error = review_verdict.codex_final_message(stdout)
+    if code == 0 and not timed_out and (message or "").strip():
+        return PROBE_OK, message.strip().splitlines()[0][:120]
+    line = review_limit.limit_line(error or "", stderr)
+    if line:
+        return PROBE_LIMITED, line
+    if timed_out:
+        return PROBE_UNKNOWN, f"no answer within {timeout}s"
+    tail = (stderr or "").strip().splitlines()[-1:] or [f"exit {code}"]
+    return PROBE_FAILED, error or tail[0]
 
 
 def main(argv):
@@ -470,6 +617,11 @@ def main(argv):
     parser.add_argument("--round", type=int)
     parser.add_argument("--output")
     parser.add_argument("--exit-code", type=int)
+    parser.add_argument("--probe", action="store_true")
+    parser.add_argument("--probe-timeout", type=int, default=PROBE_TIMEOUT)
+    parser.add_argument("--allow-unverified", action="store_true",
+                        help="review a tree the verify gate has not passed; recorded in "
+                             "review.json as gate.overridden")
     args = parser.parse_args(argv)
     args.root = os.path.abspath(args.root)
     args.scratch = os.path.abspath(args.scratch)
@@ -477,6 +629,18 @@ def main(argv):
 
     try:
         review_ledger.check_ticket(args.ticket)
+        if args.probe:
+            if args.provider != "codex":
+                parser.error("--probe is for the codex provider only")
+            if args.reserve_only or args.round is not None:
+                parser.error("--probe reserves nothing; it takes neither --reserve-only "
+                             "nor --round")
+            outcome, detail = probe(args)
+            print(f"PROBE={outcome}")
+            print("PROBE_DETAIL=" + " ".join(str(detail).splitlines()))
+            return {PROBE_OK: EXIT_CLEAN, PROBE_LIMITED: EXIT_PROBE_LIMITED,
+                    PROBE_FAILED: EXIT_PROBE_FAILED,
+                    PROBE_UNKNOWN: EXIT_PROBE_UNKNOWN}[outcome]
         if args.provider == "claude":
             if args.reserve_only:
                 return run(args)

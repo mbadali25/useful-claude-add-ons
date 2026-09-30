@@ -282,6 +282,9 @@ Set it to `"warn"` only while first building the map.
 The map exists to run *fewer* checks, not more. If every rule runs the full
 suite, delete the map and just run the suite. Target under three minutes for a
 typical change; put the slow, broad checks in CI on the pull request instead.
+Before timing a rule's `seconds`, make the command itself fast: parallel test
+runner, wall-clock tests kept serial, a linter with an explicit job count
+(`crew-qa-standards`, H2-H5). Its audit checks the map's commands against CI.
 
 ---
 
