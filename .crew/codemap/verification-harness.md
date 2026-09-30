@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@5c9a9db2
+anchor: useful-claude-add-ons@37f4e807
 verified: 2026-09-30
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -549,7 +549,7 @@ set on Ubuntu.
 - `scripts/check-marketplace.py:564`, `:673` — `count_crew_markdown_lines`,
   `check_self_claims`.
 - `scripts/check_instructions.py:685` — `main()`, nine checks.
-- `.github/workflows/instruction-budgets.yml:40-62` — the `github.event.before`
+- `.github/workflows/instruction-budgets.yml:71-93` — the `github.event.before`
   base-sha fix for a `push` to `main`.
 
 ## Owns data
@@ -1781,3 +1781,5 @@ import block lost one line; no note cites that file by line. Re-anchor only; not
 **Re-anchored `8a89a596` -> `9b6b0da7` on 2026-09-30 (T-0085 landing: Windows fail-open fix, crew 1.0.74).** `git diff --name-only 58431f49 9b6b0da7` returns the crew version files, `CHANGELOG.md`, `plugin/crew/hooks/scripts/crew_standards.py` (`import stat`, new `_ancestor_problem` before `gate_applies`, which now proves a receipt absent only when the nearest existing ancestor is a directory), `plugin/crew/tests/test_crew_standards.py` (new `test_gate_applies_when_a_file_parent_is_reported_as_not_found`) and `plugin/crew/tests/sabotage_standards.py` (one entry). Path-qualified citations into those files were moved by a line diff (`/root/crew-tmp/t-0085/remap_merge.py`, 10 moved, 0 unmapped); `crew.md`'s bare `crew_standards.py` citations in its standards section were moved by the same diff (27). No suite was executed for this note.
 
 **Re-anchored `9b6b0da7` -> `5c9a9db2` on 2026-09-30 (T-0085 landing: sabotage entry re-targeted, crew 1.0.75).** `git diff --name-only 33da9c91 5c9a9db2` returns the crew version files, `CHANGELOG.md` and `plugin/crew/tests/sabotage_standards.py` (the "receipt that cannot be looked up" entry now flips `gate_applies`' `OSError` verdict). Path-qualified citations into those files were moved by a line diff (`/root/crew-tmp/t-0085/remap_merge.py`, 9 moved, 0 unmapped). No suite was executed for this note.
+
+**Re-anchored `5c9a9db2` -> `37f4e807` on 2026-09-30 (#279: CI triggers, concurrency, PR CI on Python 3.12 only).** `git diff --name-only 5c9a9db2 37f4e807` returns only `.github/workflows/*.yml`, `AGENTS.md` and `.crew/verify.json` outside refresh artifacts. The two CI claims above (instruction-budgets matrix, crew-shell-matrix legs) were rewritten for the new CI: push only on main, pull_request, workflow_dispatch and a 07:17 UTC nightly; on a PR only the 3.12 leg does work and 3.11/3.13 report a skipped pass; superseded PR runs are cancelled, main runs never; the Windows crew-shell-matrix leg is off since #277. Workflow citations were moved by a line diff (1 moved). No suite was executed for this note.

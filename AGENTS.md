@@ -37,7 +37,9 @@ The two CI jobs in `.github/workflows/pytest-crew.yml` split the same way:
 the `test` job runs the DEFAULT command above (no `-m`, no `--run-slow`),
 on `ubuntu-latest` across three Python versions on main pushes, manual dispatch and
 the nightly schedule (on a pull request only the 3.12 leg does work; 3.11 and 3.13
-report a skipped pass so the required check names stay satisfied), alongside
+report a skipped pass so the required check names stay satisfied; the nightly runs
+at 07:17 UTC; a newer push to a pull request cancels its older run, and a main run
+is never cancelled), alongside
 gizmoduck's and several skills' suites. The `crew-shell-matrix` job runs `-m slow`
 on `ubuntu-latest` — the full hook matrix the `test` job deselects; its
 `windows-latest` leg is disabled by #277 until win-repo-2's fix re-enables it, and
