@@ -20,14 +20,20 @@ All notable changes to this repository are documented here. Format follows [Keep
 - `.crew/verify.json`, `.work/PROMOTIONS.md`, the `.crew/.approved-*` markers
   and `.crew/.deploy-in-flight` stay in the project directory on purpose
   (per-checkout gitignored state a worktree lacks or could forge), so an
-  uncommitted edit to the project's `.crew/verify.json` now blocks.
+  uncommitted change to the project's `.crew/verify.json` now blocks any
+  command the working or committed map declares - an edit, a deletion or an
+  untracked map, compared with HEAD's blob so skip-worktree cannot hide it.
+- The directory the command runs in must be clean as well as the tree it
+  deploys; a `git status` that fails and skip-worktree/assume-unchanged
+  entries are refused; `env -C`/`make -C` and git forms outside a short
+  allowlist (including `git` in quoted text) are could-not-tell.
   `verify-gate` is unchanged and still matches the in-flight marker.
 - **`/crew:promote`** gains "When the gate blocks": fix the precondition the
   message names; never hand the owner a deploy so it skips the hook; hand one
   over only for `requireHuman` or a genuinely interactive step, as a question
   with a recommendation.
 - New must-block / must-allow suite for both flavours
-  (`test_promote_gate_effective_tree.py`) and twelve sabotage entries.
+  (`test_promote_gate_effective_tree.py`) and twenty-eight sabotage entries.
   After updating, run `claude plugin update crew` and restart the session.
 
 ### Added — `crew` 1.0.76: tooling reliability — tool-failure refunds, golden replay, seam contracts, a canary review (T-0087)

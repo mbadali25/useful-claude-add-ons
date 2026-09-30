@@ -509,7 +509,7 @@ def test_an_unreadable_status_is_not_clean(flavour, repo):
     index_path.write_bytes(b"not an index")
     code, err = run_gate(flavour, repo, "deploy-dev", cwd=repo.wt)
     assert code == 2, err
-    assert "could not read" in err, err
+    assert "could not read git status" in err, err
 
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
@@ -543,3 +543,24 @@ def test_a_cd_in_any_other_form_is_could_not_tell(flavour, repo, command):
                          cwd=repo.main)
     assert code == 2, err
     assert "changes directory after it starts" in err, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_git_dash_C_outside_a_substitution_does_not_name_the_sha(flavour, repo):
+    """Neighbour of Codex r1's quoted-text finding: `deploy; echo git -C <wt>`
+    runs git, but its output feeds the deploy nothing -- the deploy ships the
+    payload cwd's sha, so the worktree must not be what the gate judges."""
+    repo.promotions(("development", repo.wt_sha))
+    code, err = run_gate(
+        flavour, repo, f"deploy-qa; echo git -C {repo.wt} rev-parse HEAD",
+        cwd=repo.main)
+    assert code == 2, err
+    assert "outside a command substitution" in err, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_git_dash_C_outside_a_substitution_on_the_run_tree_is_fine(flavour, repo):
+    """Control: naming the tree the deploy runs in is harmless."""
+    code, err = run_gate(flavour, repo, f"deploy-dev && git -C {repo.wt} status",
+                         cwd=repo.wt)
+    assert code == 0, err

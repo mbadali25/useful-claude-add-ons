@@ -316,14 +316,21 @@ the deploy runs from**: every `requires` environment has an all-pass row in
 and that tree is clean. These cannot be skipped by deciding to skip them.
 
 The tree is the Bash call's `cwd`, moved by a leading `cd <dir> &&` chain and
-named by any `git -C <dir>` (or `env -C`, `make -C`, `--chdir`/`--cwd`/`--directory`). It must be a worktree of the same repository, every
-literal sha in the command must be its HEAD, and a command that changes
-directory after it starts, names two trees, or uses `--git-dir` is refused
-rather than guessed at. `.crew/verify.json`, `.work/PROMOTIONS.md`, the approval
+named by git's global `-C <dir>` inside `$(...)` (a `git -C` whose output feeds
+nothing may only name the tree the deploy runs in). It must be a worktree of the same
+repository and every literal sha in the command must be its HEAD; the directory
+the command itself runs in must be clean too, since that is where the deploy
+process runs. A command that changes directory after it starts (a later `cd`,
+`bash -c 'cd ...'`, `env -C`, `make -C`), names two trees, uses `--git-dir`,
+or puts `git` in a form the gate cannot read with certainty (an unlisted global
+option, quoted text) is refused rather than guessed at. Skip-worktree and
+assume-unchanged entries, and a `git status` that fails, are refused too. `.crew/verify.json`, `.work/PROMOTIONS.md`, the approval
 markers and `.crew/.deploy-in-flight` are read from the session's project
 directory on purpose: they are gitignored per-checkout state, so a fresh
 worktree has none of it and a throwaway one could hold a forged copy. For the
-same reason an uncommitted edit to the project's `.crew/verify.json` blocks.
+same reason an uncommitted change to the project's `.crew/verify.json` - an edit,
+a deletion, an untracked map, compared with HEAD's copy rather than with
+`git status` - blocks any command the working or the committed map declares.
 What it cannot see: a deploy script that changes directory itself, and what a
 workflow does with a branch-name ref (`ref=development`).
 

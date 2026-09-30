@@ -259,6 +259,7 @@ fi
 RECORDS=$("$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_tree.py" "$CMD") \
   || block "the deploy command could not be parsed for the directory it runs from (_promote_tree.py failed). This is not a pass."
 TREES=()
+RUNDIRS=()
 BARE=0
 HEXES=()
 while IFS=$'\t' read -r kind tok; do
@@ -273,6 +274,10 @@ while IFS=$'\t' read -r kind tok; do
       D=$(resolve_dir "$BASE" "$tok")
       [ -z "$D" ] && block "cannot tell which directory the deploy runs from: 'git -C $tok' does not resolve from '$BASE'."
       TREES+=("$D") ;;
+    Crun)
+      D=$(resolve_dir "$BASE" "$tok")
+      [ -z "$D" ] && block "cannot tell which directory the deploy runs from: 'git -C $tok' does not resolve from '$BASE'."
+      RUNDIRS+=("$D") ;;
     midcd)
       block "cannot tell which directory the deploy runs from: the command changes directory after it starts ('$tok'). Put the cd first - 'cd <dir> && <deploy>' - so the gate judges the tree the deploy runs in." ;;
     gitdir)
@@ -293,6 +298,14 @@ if [ "${#TREES[@]}" -eq 0 ] || [ "$BARE" -eq 1 ]; then
 fi
 RUN_TOP=$(git -C "$BASE" rev-parse --show-toplevel 2>/dev/null)
 [ -z "$RUN_TOP" ] && block "the deploy runs from '$BASE', which is not inside a git worktree - cannot establish what is being deployed."
+# A `git -C` outside a command substitution feeds the deploy nothing, so it
+# may only name the tree the deploy runs in (`deploy; echo git -C <wt>` must
+# not make the gate judge <wt> while the deploy ships the payload cwd's sha).
+for D in ${RUNDIRS[@]+"${RUNDIRS[@]}"}; do
+  if [ "$(git -C "$D" rev-parse --show-toplevel 2>/dev/null)" != "$RUN_TOP" ]; then
+    block "the command names 'git -C $D' outside a command substitution, which is not the tree the deploy runs in ('$RUN_TOP'). Use 'cd <dir> &&' so the deploy runs there, or '\$(git -C <dir> ...)' to feed it a sha."
+  fi
+done
 
 TREE=""
 for D in "${TREES[@]}"; do

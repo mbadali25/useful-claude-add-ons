@@ -2477,9 +2477,12 @@ checkout cannot wave a dirty or wrong-sha worktree through. `.crew/verify.json`,
 `.work/PROMOTIONS.md`, the approval markers and `.crew/.deploy-in-flight` are
 read from the session's project directory on purpose - they are gitignored
 per-checkout state that a fresh worktree lacks and a throwaway one could forge -
-so an uncommitted edit to the project's `.crew/verify.json` blocks too. A
-command that changes directory after it starts, names two trees, or uses
-`--git-dir` is refused rather than guessed at (T-0505). When the gate blocks,
+so an uncommitted change to the project's `.crew/verify.json` (edit, deletion,
+untracked, or hidden by skip-worktree - compared with HEAD's copy) blocks too.
+The directory the command runs in must also be clean. A command that changes
+directory after it starts (`env -C` and `make -C` included), names two trees,
+uses `--git-dir`, or puts `git` in a form the gate cannot read with certainty is
+refused rather than guessed at (T-0505). When the gate blocks,
 `/crew:promote` fixes the precondition it names; it never hands the owner the
 command to run past the hook.
 

@@ -280,12 +280,14 @@ if ($toolDir.Success) {
 # _promote_tree.py, with PowerShell's backtick as the escape character.
 function Get-Executed([string]$s) {
   $out = New-Object bool[] $s.Length
+  $sub = New-Object bool[] $s.Length
   $stack = New-Object System.Collections.Generic.List[string]
   $stack.Add('U')
   $i = 0
   while ($i -lt $s.Length) {
     $c = $s[$i]; $top = $stack[$stack.Count - 1]
     $out[$i] = ($top -eq 'U' -or $top -eq 'X')
+    $sub[$i] = ($top -eq 'X')
     if ($top -eq 'S') {
       if ($c -eq "'") { $stack.RemoveAt($stack.Count - 1) }
     } elseif ($c -eq '`') {
@@ -304,15 +306,18 @@ function Get-Executed([string]$s) {
     }
     $i++
   }
-  return ,$out
+  return @(, $out) + @(, $sub)
 }
-$live = Get-Executed $cmd
+$scan = Get-Executed $cmd
+$live = $scan[0]
+$inSub = $scan[1]
 
 # git's GLOBAL options after each `git` word: -C <dir> once, -c <k=v>, a short
 # no-value allowlist; anything else before the subcommand is could-not-tell.
 $gitFlags = @('--no-pager', '-P', '--paginate', '-p', '--no-replace-objects', '--literal-pathspecs', '--no-optional-locks', '--no-lazy-fetch')
 $argRx = [regex]('\G\s+' + $tokenRx)
 $trees = New-Object System.Collections.Generic.List[string]
+$runDirs = New-Object System.Collections.Generic.List[string]
 $bare = $false
 $notSure = "is not a form the gate reads with certainty (a shell-expanded path, an unlisted git option, git inside quoted text), and it will not guess. Use a literal 'cd <dir>;' or 'git -C <dir>'."
 foreach ($m in [regex]::Matches($cmd, '(?:^|(?<=[\s(;&|/`''"]))git(?:\.exe)?(?=$|[\s;&|)''"`])', 'IgnoreCase')) {
@@ -343,7 +348,9 @@ foreach ($m in [regex]::Matches($cmd, '(?:^|(?<=[\s(;&|/`''"]))git(?:\.exe)?(?=$
   if ($dirs.Count -eq 0) { $bare = $true; continue }
   $dir = Resolve-Dir $base $dirs[0]
   if (-not $dir) { Stop-Promotion "cannot tell which directory the deploy runs from: 'git -C $($dirs[0])' does not resolve from '$base'." }
-  $trees.Add($dir)
+  # Outside `$(...)` a git -C feeds the deploy nothing, so it may only name the
+  # tree the deploy runs in (checked below); inside, it names the sha.
+  if ($inSub[$m.Index]) { $trees.Add($dir) } else { $runDirs.Add($dir) }
 }
 # The sha comes from git -C's tree when there is one; the chain's directory is
 # ALSO where the deploy process runs, so it is checked for dirt and repository
@@ -351,6 +358,11 @@ foreach ($m in [regex]::Matches($cmd, '(?:^|(?<=[\s(;&|/`''"]))git(?:\.exe)?(?=$
 if ($trees.Count -eq 0 -or $bare) { $trees.Add($base) }
 $runTop = (git -C $base rev-parse --show-toplevel 2>$null)
 if (-not $runTop) { Stop-Promotion "the deploy runs from '$base', which is not inside a git worktree - cannot establish what is being deployed." }
+foreach ($dir in $runDirs) {
+  if ((git -C $dir rev-parse --show-toplevel 2>$null) -ne $runTop) {
+    Stop-Promotion "the command names 'git -C $dir' outside a command substitution, which is not the tree the deploy runs in ('$runTop'). Use 'cd <dir>;' so the deploy runs there, or '`$(git -C <dir> ...)' to feed it a sha."
+  }
+}
 
 $tree = $null
 foreach ($dir in $trees) {

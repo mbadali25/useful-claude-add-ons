@@ -9,8 +9,10 @@ the command, which python on Windows would get wrong.
 
 Kinds:
   cd    one step of the LEADING `cd <dir> &&` / `cd <dir>;` chain, in order
-  C     the directory of git's GLOBAL `-C <dir>` (before the subcommand), in
-        text the shell executes - unquoted, or inside `$(...)`/backticks
+  C     the directory of git's GLOBAL `-C <dir>` (before the subcommand)
+        inside `$(...)`/backticks, whose output feeds the command
+  Crun  the same outside a substitution: it must name the tree the deploy
+        runs in, since its output feeds nothing
   bare  a git invocation with no `-C`: it resolves in the chain's directory
   hex   a 7-40 character hex token, a candidate literal sha
   bad   anything the gate cannot read with certainty (GEN-05), so it refuses
@@ -32,8 +34,9 @@ import re
 import sys
 
 # A token: double-quoted, single-quoted, or a run of characters that ends the
-# word. `)` ends it too, so `$(git -C dir rev-parse HEAD)` reads `dir`.
-_TOKEN = r"""(?:"([^"]*)"|'([^']*)'|([^\s;&|()]+))"""
+# word. `)` and a backtick end it too, so `$(git -C dir rev-parse HEAD)` and
+# `` `git -C dir rev-parse HEAD` `` read `dir`.
+_TOKEN = r"""(?:"([^"]*)"|'([^']*)'|([^\s;&|()`]+))"""
 _CD = re.compile(r"\s*(?:cd|pushd)(?:\s+--)?\s+" + _TOKEN + r"\s*(?:&&|;)")
 # A directory change anywhere after the chain, as a WORD: after a separator,
 # whitespace, a quote (`bash -c 'cd x && deploy'`) or a brace, and followed by
@@ -72,13 +75,16 @@ def executed(command):
     inside `$(...)` or backticks, even within double quotes. False inside
     single quotes and inside the literal part of double quotes, where a
     `git -C x` is only text (Codex r1: `--note "git -C <wt>"` selected a tree
-    the deploy never ran in)."""
+    the deploy never ran in). The second list marks text inside `$(...)` or
+    backticks: only a `git -C` there FEEDS the command its output."""
     out = [True] * len(command)
+    sub = [False] * len(command)
     stack = ["U"]           # U unquoted, S single, D double, X $( ), B backtick
     i = 0
     while i < len(command):
         c, top = command[i], stack[-1]
         out[i] = top in ("U", "X", "B")
+        sub[i] = top in ("X", "B")
         if top == "S":
             if c == "'":
                 stack.pop()
@@ -109,7 +115,7 @@ def executed(command):
         elif top == "X" and c == ")":
             stack.pop()
         i += 1
-    return out
+    return out, sub
 
 
 def _git_records(command, m):
@@ -166,12 +172,16 @@ def records(command):
         out.append(("midcd", m.group(0).strip()))
     for m in _GITDIR.finditer(command):
         out.append(("gitdir", m.group(0)))
-    live = executed(command)
+    live, sub = executed(command)
     for m in _GIT.finditer(command):
         if not live[m.start()]:
             out.append(("bad", "git inside quoted text that the shell does not run"))
             continue
-        out.extend(_git_records(command, m))
+        # A `git -C` that is not inside a command substitution feeds the
+        # deploy nothing (`deploy; echo git -C <wt>`), so it may only name the
+        # tree the deploy runs in: kind `Crun`, checked by the gate.
+        for kind, text in _git_records(command, m):
+            out.append(("Crun" if kind == "C" and not sub[m.start()] else kind, text))
     for m in _HEX.finditer(command):
         out.append(("hex", m.group(0)))
     return out
