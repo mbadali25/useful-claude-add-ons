@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@38b220cf
+anchor: useful-claude-add-ons@fd269296
 verified: 2026-09-30
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -56,7 +56,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
   `this.resolved` and never retries an earlier, higher-priority link. Deliberate - the comment at
   `:44-46` says so - but fixing `MS_ADMIN_CLIENT_SECRET` after `cli` or `device` has won changes
   nothing until restart, and nothing tells you that. Re-verified unchanged 2026-09-06 at
-  `1f97e51c`; still open as `TODO.md:189` (item 2; was `:110` at `f2bb919b`, `:80` at `6c497a14` and `:51` before that, each
+  `1f97e51c`; still open as `TODO.md:199` (item 2; was `:110` at `f2bb919b`, `:80` at `6c497a14` and `:51` before that, each
   move an insertion earlier in the file - re-read at `f2bb919b` on 2026-09-25, same heading and body).
 - **`scopesOverride` silently broadens a narrow scope request.**
   `mcp-servers/packages/core/src/adminAuth.ts:29-36` (the field and its doc comment), `:127`
@@ -64,7 +64,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
   `device` (`mcp-servers/packages/core/src/adminAuth.ts:149-158` - no `scopesOverride` key, and the
   comment at `:155-158` says why) honours caller-supplied delegated scopes. Code that requests a
   narrow scope and receives `.default` did not fail - it was never asked. Re-verified unchanged
-  2026-09-06 at `1f97e51c`; still open as `TODO.md:200` (item 3; was `:121` at `f2bb919b`, `:91`, and `:62` before that - re-read at
+  2026-09-06 at `1f97e51c`; still open as `TODO.md:210` (item 3; was `:121` at `f2bb919b`, `:91`, and `:62` before that - re-read at
   `f2bb919b` on 2026-09-25, same heading and body).
 - **`dist/` is what runs, `src/` is what you edit.** Editing a `.ts` file and then *starting a
   server* leaves the stale compiled JS in place and the change does not take effect. Nothing guards
@@ -78,7 +78,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
     `core/dist` is still stale.
   - **Equal mtimes are stale, not fresh** (`:96-97`, reasoning at `:82-94`). The commit message for
     `4e2bfb78` states the opposite ("Equal timestamps count as fresh"); the shipped code and
-    `TODO.md:281-288` (was `:202-209` at `f2bb919b`, `:172-179`, and `:143-150` before that; re-read at `f2bb919b` on 2026-09-25, same reasoning)
+    `TODO.md:291-298` (was `:202-209` at `f2bb919b`, `:172-179`, and `:143-150` before that; re-read at `f2bb919b` on 2026-09-25, same reasoning)
     are the later, correct account. Trust the code.
   - An unreadable directory throws rather than returning mtime `0` (`:44-51`), because `0` compares
     older than everything and would read as fresh.
@@ -424,3 +424,5 @@ each cited here by name, never by line; nothing under `mcp-servers/` changed. Re
 **Re-anchored `fb292689` -> `f2cf0508` on 2026-09-30 (T-0086's merge of main `b601d450`, #280 L-0521: opt-in self-hosted runners).** `git diff --name-only fb292689 f2cf0508` returns, outside refresh artifacts, only `.github/workflows/pytest-crew.yml` (the `test` and `crew-shell-matrix` `runs-on` expressions) and `AGENTS.md` (one inserted paragraph after `:50`). No map cites `AGENTS.md:NN` or `.github/workflows/pytest-crew.yml:NN`; the one claim about those jobs' runner placement is verification-harness.md's, which main's own L-0521 commit already updated and the merge carries. No citation moved. No suite was executed for this note.
 
 **Re-anchored `f2cf0508` -> `38b220cf` on 2026-09-30 (T-0086 review round 2's FIXes, merge of main `a7524aac` (T-0087, crew 1.0.76) as `142421d0`, crew 1.0.77).** `27387d83` fixes round 2: `plugin/crew/skills/crew-standards/references/python.md` (PYTHON-01's EncodingWarning quote whole, +1 line; PYTHON-03's splitlines table escapes U+2028/U+2029), `plugin/crew/tests/test_crew_standards.py` (two tests before `test_python_set_applies_to_python_files_only`), `plugin/crew/tests/sabotage_standards.py` (four docstring lines, two entries; `STANDARDS_MUTATIONS` `:57` -> `:61`, 51 by `len()`), `plugin/crew/BUDGETS.md` and `CHANGELOG.md`. `142421d0` merges main's T-0087 with a merge commit; its map conflicts were mechanical: anchors took T-0086's side, provenance hunks kept both (main's first), and one-line hunks differing only in numbers took theirs plus T-0086's own shift (ours + theirs - base, per number); INDEX rows keep main's history cell plus T-0086's additions; `sabotage.py`'s import `:84` -> `:85` and append `:3061` -> `:3062` were set in the body. `38b220cf` sets crew 1.0.77 (`plugin/crew/.claude-plugin/plugin.json:3`, `.claude-plugin/marketplace.json:218`, `plugin/PLUGINS.md:14`). BUDGETS.md re-measured at 21,421 lines across 136 files. No suite was executed for this note.
+
+**Re-anchored `38b220cf` -> `fd269296` on 2026-09-30 (L-0520 PR 1, the merge train CLI, after merging main 549cda24).** `git diff --name-only 38b220cf fd269296` adds L-0520's PR 1 outside refresh artifacts (crew_train.py, done.md, README, two guides, CHANGELOG, TODO, BUDGETS.md in place, verify.json, two tests); path-qualified citations outside dated provenance were moved by a line diff (`/root/crew-tmp/l-0520/tools/l0520_remap.py`, machine-local). No suite was executed for this note.

@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@38b220cf
+anchor: useful-claude-add-ons@fd269296
 verified: 2026-09-30
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -287,7 +287,7 @@ Notable rules, re-read directly:
   `plugin/crew/tests/sabotage_standards.py` (`STANDARDS_MUTATIONS`, `:61`, 51 entries by `len()`
   on `T-0086-build` after its merge of `a7524aac` - main's 44, then T-0086's seven for the Python set; the `why` states no count), imported by `plugin/crew/tests/sabotage.py:85`
   and appended at `:3062`.
-- **Rule 36**, new in T-0087 (`.crew/verify.json:374-399` on `T-0087-build`'s merge of `9af34e57`, appended after T-0085's rule 35; rule 35 at `:361-386` on its merge of `a61a6f38`, appended after main's rules 32-34; rule 32 on its merge of `8ab733d7`, where T-0010's rule 28 put it last; rule 31 at `:328-353` on `T-0087-build` at `0ef73f74`): `paths` are the `HARNESS` globs
+- **Rule 36**, new in T-0087 (`.crew/verify.json:375-400` on `T-0087-build`'s merge of `9af34e57`, appended after T-0085's rule 35; rule 35 at `:361-386` on its merge of `a61a6f38`, appended after main's rules 32-34; rule 32 on its merge of `8ab733d7`, where T-0010's rule 28 put it last; rule 31 at `:328-353` on `T-0087-build` at `0ef73f74`): `paths` are the `HARNESS` globs
   of `scripts/check-tooling-pr.py` (the review/gate harness: `review_*.py`, both `verify-gate`
   flavours, `verify_record.py`, `verify_fingerprint.py`, `verify_price.py`, `crew_ticket.py`, the
   approval-hook, scope-guard and completion-audit triples, `scope_base.py`, `sabotage*.py`,
@@ -570,7 +570,7 @@ on `make up` and unsets it on `make down`.
   `plugin/crew/tests/sabotage.py:81`, `:3059` — `sabotage_approval.py`'s registration.
 - `.crew/verify.json:361-373` (rule 35) — the T-0085 standards suite;
   `plugin/crew/tests/sabotage.py:85`, `:3062` — `sabotage_standards.py`'s registration.
-- `.crew/verify.json:374-399` (rule 36) — the T-0087 harness rule; `scripts/check-tooling-pr.py`
+- `.crew/verify.json:375-400` (rule 36) — the T-0087 harness rule; `scripts/check-tooling-pr.py`
   and its suite `scripts/_test/tooling-pr.py`; `plugin/crew/tests/sabotage.py:82`, `:3061` —
   `sabotage_tooling.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
@@ -1895,3 +1895,5 @@ number) and every `sabotage.py` registration line were re-read on this tree.
 **Re-anchored `fb292689` -> `f2cf0508` on 2026-09-30 (T-0086's merge of main `b601d450`, #280 L-0521: opt-in self-hosted runners).** `git diff --name-only fb292689 f2cf0508` returns, outside refresh artifacts, only `.github/workflows/pytest-crew.yml` (the `test` and `crew-shell-matrix` `runs-on` expressions) and `AGENTS.md` (one inserted paragraph after `:50`). No map cites `AGENTS.md:NN` or `.github/workflows/pytest-crew.yml:NN`; the one claim about those jobs' runner placement is verification-harness.md's, which main's own L-0521 commit already updated and the merge carries. No citation moved. No suite was executed for this note.
 
 **Re-anchored `f2cf0508` -> `38b220cf` on 2026-09-30 (T-0086 review round 2's FIXes, merge of main `a7524aac` (T-0087, crew 1.0.76) as `142421d0`, crew 1.0.77).** `27387d83` fixes round 2: `plugin/crew/skills/crew-standards/references/python.md` (PYTHON-01's EncodingWarning quote whole, +1 line; PYTHON-03's splitlines table escapes U+2028/U+2029), `plugin/crew/tests/test_crew_standards.py` (two tests before `test_python_set_applies_to_python_files_only`), `plugin/crew/tests/sabotage_standards.py` (four docstring lines, two entries; `STANDARDS_MUTATIONS` `:57` -> `:61`, 51 by `len()`), `plugin/crew/BUDGETS.md` and `CHANGELOG.md`. `142421d0` merges main's T-0087 with a merge commit; its map conflicts were mechanical: anchors took T-0086's side, provenance hunks kept both (main's first), and one-line hunks differing only in numbers took theirs plus T-0086's own shift (ours + theirs - base, per number); INDEX rows keep main's history cell plus T-0086's additions; `sabotage.py`'s import `:84` -> `:85` and append `:3061` -> `:3062` were set in the body. `38b220cf` sets crew 1.0.77 (`plugin/crew/.claude-plugin/plugin.json:3`, `.claude-plugin/marketplace.json:218`, `plugin/PLUGINS.md:14`). BUDGETS.md re-measured at 21,421 lines across 136 files. No suite was executed for this note.
+
+**Re-anchored `38b220cf` -> `fd269296` on 2026-09-30 (L-0520 PR 1, the merge train CLI, after merging main 549cda24).** `git diff --name-only 38b220cf fd269296` adds L-0520's PR 1 outside refresh artifacts (crew_train.py, done.md, README, two guides, CHANGELOG, TODO, BUDGETS.md in place, verify.json, two tests); path-qualified citations outside dated provenance were moved by a line diff (`/root/crew-tmp/l-0520/tools/l0520_remap.py`, machine-local). No suite was executed for this note.
