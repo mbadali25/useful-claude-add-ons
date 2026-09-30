@@ -2055,7 +2055,7 @@ secret that reached it.
 
 ### Cross-session claims (`crew_coord.py`)
 
-Since 1.0.60. When several sessions — same or different repositories, same or
+Since 1.0.71. When several sessions — same or different repositories, same or
 different machines — work one backlog, each **claims** a ticket before working
 it, so two sessions never hold the same one. The record is not in `.work/`
 (ignored and per worktree) but on a git branch, `crew-coord/<channel>`, on a

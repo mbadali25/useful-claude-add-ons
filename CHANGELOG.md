@@ -4,11 +4,11 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.60: cross-session claims on a git-backed coordination record (T-0030)
+### Added — `crew` 1.0.71: cross-session claims on a git-backed coordination record (T-0030)
 
-- **`crew` 1.0.60: cross-session claims on a git-backed coordination record
+- **`crew` 1.0.71: cross-session claims on a git-backed coordination record
   (T-0030).** Built as 1.0.43 on a branch cut at 1.0.38; merged with
-  origin/main at 1.0.59 and set one patch past it. New `hooks/scripts/crew_coord.py`: sessions
+  origin/main at 1.0.59, then set past origin/main's 1.0.70 at review round 7 (Land re-bumps if main moves). New `hooks/scripts/crew_coord.py`: sessions
   on one or several machines share a channel, the branch
   `crew-coord/<channel>` on a shared remote, holding
   `claims/<repo>__<id>.json` and an append-only `log.jsonl`. `claim`,
