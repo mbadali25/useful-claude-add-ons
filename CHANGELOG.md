@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.62: `rules` says when it generates from a code map whose anchor needs re-check (T-0501)
+### Changed — `crew` 1.0.70: `rules` says when it generates from a code map whose anchor needs re-check (T-0501)
 
 - **What changed.** `crew_instructions.py rules` and `rules --check` print, after
   the `wrote`/`stale:`/`missing:`/`orphan:`/`hand-written` lines, one advisory line
@@ -19,8 +19,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   above)` or ` - rules match the code map; anchors not checked (no git HEAD)`.
   `scripts/check_instructions.py`'s drift parser drops the three
   `ANCHOR_ADVISORY_PREFIXES` so an anchor line is never quoted as drift.
-  `.crew/verify.json` gains rules 32 (the generator's pytest suites, which no
-  rule reached before) and 33 (`scripts/_test/instruction-budgets.py`).
+  `.crew/verify.json` gains rules 35 (the generator's pytest suites, which no
+  rule reached before) and 36 (`scripts/_test/instruction-budgets.py`).
 - **Why.** aws-ops follow-up report item 14: `rules` wrote 8 `.claude/rules/*.md`
   while the session-start hook reported 4 of those subsystems' anchors as needing
   re-check, and neither `rules` nor `rules --check` said so; `/crew:migrate`'s
@@ -46,7 +46,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   A third, by hand: dropping `check_instructions.py`'s prefix filter reds three
   `instruction-budgets.py` cases, `edited-behind`'s "exactly one problem and no
   'anchor' line" among them.
-- Bumped `1.0.61 -> 1.0.62`.
+- Bumped `1.0.69 -> 1.0.70` (1.0.62 on its branch; re-set after merging main's 1.0.69, T-0088).
 
 ### Changed — `crew` 1.0.69: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088)
 
