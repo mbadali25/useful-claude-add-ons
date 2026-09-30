@@ -51,6 +51,193 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Sabotage.** New rows in `sabotage_scope.py`, `sabotage_autopilot.py`
   (`REPOINT_MUTATIONS`) and `sabotage_approval.py`, each naming one test.
 - Bumped `1.0.61 -> 1.0.62`.
+### Changed — `crew` 1.0.69: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088)
+
+- **`/crew:review` probes Codex with a real call.** `review_run.py --probe` makes
+  one minimal Codex call, with the round's own model and effort, before any
+  round is reserved, and exits `0` ok, `5` limited, `6` failed or `7` unknown
+  (no answer in 120 s). `command -v codex` said only that the CLI was
+  installed; a logged-out or limited Codex passed it and failed at the first
+  call.
+- **A Codex usage limit runs the round on Claude** (owner, 2026-09-28: "if we
+  hit a codex limit please use claude ads the reviewer"), pinned or not,
+  announced as `same-family (codex limit)` with the error quoted. The limit
+  patterns are Codex's own messages from `openai/codex` `error.rs`, each cited
+  in `hooks/scripts/review_limit.py`; "model at capacity" and "high demand" are
+  not limits. A limit hit mid-round leaves that round INCOMPLETE and is
+  recorded in `<git-common-dir>/crew/review-limit/<ticket>.json` (not the
+  ledgers' folder, which `/crew:status` lists), so the next round goes to
+  Claude without another call; the round after probes Codex live. The record
+  is written after the round's verdict, and one that cannot be written says so
+  and leaves the round's INCOMPLETE record and exit 3 intact. No refund: a
+  limit round is spent as before (T-0087 covers that).
+- **A linked worktree with no crew config reads the main checkout's.** Every
+  Python reader of `.crew/config.json`/`.crew/crew.json` goes through
+  `crew_common.repo_config_dir`, found with `git rev-parse --git-common-dir`.
+  A worktree's own files win whole and are never merged; a git failure reads
+  as `unknown` and inherits nothing. `/crew:status` prints the inherited
+  source and `/crew:config --explain`/`--models` start with
+  `repo layer: <path> (<source>)`. The heal path no longer writes a default
+  config into an inheriting worktree, where it would shadow the owner's, nor
+  into one where git could not tell (it asks again next session). The git
+  call no longer passes `--path-format`, which git before 2.31 echoed back as
+  an extra line and read as `unknown`.
+- **Existing lanes do not inherit until their heal-written default is
+  deleted.** Every SessionStart on crew 1.0.68 or earlier wrote a default
+  `.crew/config.json` into a lane worktree that had none, and that file is the
+  lane's own config, which wins whole. `/crew:status` and `/crew:config
+  --explain` now say so on a lane whose own config shadows the main
+  checkout's (`... the main checkout's (<path>) is not read ...`). If that
+  file is a default you never edited, delete the lane's
+  `.crew/config.json` (and `.crew/crew.json`) and it inherits from then on.
+- **Behaviour change:** Python guards in a lane worktree now follow the
+  owner's settings (`guards.*`, `scope.mode`, `scope.allowCliApproval`,
+  `roleWrites`, `cloudGuard`) where they read the built-in defaults before;
+  ratcheted guard keys still take the narrower of repo and machine-global.
+  The shell and PowerShell readers (`verify-gate.sh`, `_common.sh`,
+  `notify.sh`, the handoff scripts, `promote-gate.ps1`, `scope-guard.ps1`,
+  `cloud-guard.ps1`, `auto-clear.ps1`) are not routed yet.
+- Bumped `1.0.67 -> 1.0.69` (1.0.52 on its branch; re-set to 1.0.53 after merging main's 1.0.52, T-0076, to 1.0.55 after merging main's 1.0.54, T-0092, to 1.0.56 for its review round 1 fixes, to 1.0.60 at landing after merging main's 1.0.59, T-0075, and to 1.0.61 for three landing-branch changes: the six T-0075 own-path sites allowlisted in `test_worktree_config.py` (owner decision 2026-09-29), ruff's mechanical fixes on this ticket's own files (I001, RUF100, ISC004) and a file-level `# pylint: disable=too-many-lines` in `crew_config.py`, 3417 lines against the 3400 limit (owner decision 2026-09-29, "Disable at land + split ticket"; the split is a follow-up); to 1.0.65 after merging main's 1.0.64, to 1.0.67 after merging main's 1.0.65, and to 1.0.68 for the `review_gate.py` allowlist entry and its lane test, and to 1.0.69 after merging main's 1.0.67 (#267, merged first); main's 1.0.55-1.0.59 are T-0075's, 1.0.60-1.0.61 T-0010's (#261), 1.0.62-1.0.64 #263's, 1.0.65 #264's and 1.0.67 #267's, not this entry's). The "since 1.0.61" and "1.0.59 or earlier" wording in `CONFIG.md`, the crew README, `commands/config.md`, `crew_common.py` and the troubleshooting guide now reads 1.0.69 and 1.0.68: every release before this one lacks T-0088.
+
+### Added — `crew` 1.0.67: `crew-qa-standards` — harness and QA-review standards, and an audit that checks them
+
+- **What.** A new bundled skill (30 now). `references/harness.md` (H1-H11) and
+  `references/review.md` (R1-R12) state each rule once, with the measurement
+  that earned it in #263-#266 and how to check and apply it per stack (Python,
+  PHP, .NET, Java). `references/steward-template.md` gives a repo its PR-loop
+  skill. H8 carries the cloud setup-script lines that install the gate's tools (pwsh,
+  pytest, pytest-xdist, pinned pylint and Ruff); H10 says a version bump rides the commit
+  that changes the content; R12 is the PR report format (Summary, Measured with ref and
+  machine, Verification, Not verified).
+- **Audit.** `scripts/qa_audit.py` is report-only and stdlib-only. Each audited
+  rule (H2-H7, R9, R11) comes back PASS, GAP, N/A or **UNKNOWN**. A pytest
+  behind a wrapper it cannot follow, or a check that raised, is UNKNOWN, never
+  PASS. `--strict` exits 1 on GAP or UNKNOWN, and `--json` is available.
+- **Wired in.** `crew-setup` Phase 5 runs the audit, and "Done when" now
+  requires every GAP fixed or recorded in `.crew/STATUS.md`.
+  `crew-verification`'s cost discipline points at H2-H5.
+- **Found by its own first run here.** CI's Windows default-set step ran the
+  `wallclock` tests under `-n auto`. It now splits them out like the Linux job.
+  Two false positives from that first run were fixed and pinned by tests:
+  - `python -m pytest` read as a `-m pytest` marker selection.
+  - Small serial suites flagged as H2 gaps. Measured, 137 tests took 0.57s
+    serially and 0.9s at `-n 4`, so under 200 test functions serial is correct.
+- **Tests.** `test_qa_audit.py` (32): must-GAP and must-PASS per check, plus
+  N/A and UNKNOWN cases. **Sabotage:** five entries in `sabotage_qa.py`,
+  registered in `sabotage.py`, all RED through its apply/run/restore.
+- **Counts.** The skill count went from 29 to 30 in the six places
+  `check-marketplace.py` named. `BUDGETS.md`'s Markdown total was
+  re-measured (19,786 lines, 132 files).
+- **Not audited.** H1, H8-H11, R1-R8 and R10 need a reader. Other stacks' tools
+  are documented, not detected.
+- **Test race fixed (H4/H11).** `test_auto_cycle.py`'s delay test polled for its
+  shim's log file to exist, but `>>` creates the file before `cut` writes, and
+  under `-n auto` CI read it in that gap (`assert '' == '1'`, `test (3.13)`).
+  It now waits for content. Reproduced first by widening the gap to 0.3s (4 of
+  12 cases red), then 12/12 green with the fix.
+- Bumped `1.0.65 -> 1.0.67` (1.0.66 on its branch; 1.0.67 for the race fix,
+  a second `plugin/crew/` commit after 1.0.66 was set). #262 holds 1.0.68.
+
+### Changed — `crew` 1.0.65: gate first — no review round on a tree the verify gate has not passed
+
+- **What changed.** `review_run.py` now answers two questions before it
+  reserves a round (`preflight`). First: does a CLEAN receipt already cover this
+  exact bundle (`review_ledger.check_receipt`, the check `/crew:done` uses)? Then
+  no round is spent, and the verdict is that receipt's CLEAN, said as such; the
+  Claude path prints `ALREADY_CLEAN=1` in place of `ROUND=`. Owner-accepted
+  FINDINGS do not short-circuit. Second: has the verify gate passed this tree
+  (new `review_gate.py`)? If not, or if that can't be told, the review exits
+  **5**, reserves nothing, and names why. `--allow-unverified` reviews anyway
+  and records `gate.overridden`.
+- **What counts as passed.** Not the gate's exit status: 0 also means stood
+  down, backed off a lock, or nothing to check. Instead, what a full clean pass
+  leaves behind: `.crew/.verify-verified-at` at HEAD, and either nothing
+  material differs from HEAD or `.crew/.verify-gate.fingerprint` equals the
+  tree's digest now, from `verify_fingerprint.fingerprint` over the gate's own
+  Stop-mode changed set. An UNVERIFIED reason appends what the gate's record
+  still lists (for example `SKIP (rc 77, environment absent)`), so a gate that
+  can never pass on a machine missing a tool says so.
+- **Timing.** Every review.json carries `elapsed_s` (reservation to verdict,
+  from the ledger's timestamps; `None` when unknown, never 0) and `gate`. The
+  `review:` summary line prints `gate=` and `elapsed=`.
+- **Why.** A round is one of two per ticket and is never refunded. Spending
+  one on a tree its own tests fail is the costliest way to learn it is red.
+- **verify.json.** A new rule maps `review_*.py`, `verify_fingerprint.py`,
+  `commands/review.md` and the review tests to `pytest test_review_*.py`
+  (41s, 190 passed, measured here). Until now only the whole-suite rule
+  reached them, and that rule is permanently over the Stop budget.
+- **review.md** documents exit 5 and `ALREADY_CLEAN=1` by rewriting three
+  existing lines in place. It stays at its 551-line allowance.
+- **Tests.** `test_review_gate.py` (29): must-block, must-allow, and an
+  invariant table that runs the real `verify-gate.sh` and asserts
+  `gate_state` agrees on five tree shapes and disagrees after four kinds of
+  change. **Sabotage:** eight entries in `sabotage_review.py`, each run
+  through `sabotage.py`'s own apply/run/restore and confirmed RED, files
+  restored byte-identical.
+- **Known limit.** A rule that is permanently over the Stop budget (the
+  whole-suite rule here) never runs at Stop, yet the gate still writes its
+  fingerprint, so this preflight passes a tree that rule never checked. That
+  is the Stop gate's own standard, unchanged; the reviewer still sees the rule
+  listed NOT VERIFIED in the contract's receipts block.
+
+### Changed — `crew` 1.0.64: faster QA harness — parallel pylint and pytest, unsigned fixture commits
+
+- **What changed.** `pylint.yml` and the `**/*.py` rule in `.crew/verify.json`
+  run `pylint -j <os.cpu_count()>`; the `test` job in `pytest-crew.yml` installs
+  `pytest-xdist` and runs `-n auto`; verify.json's whole-suite crew rule uses
+  `-n auto` when `xdist` imports and runs serially when it does not. crew's
+  `conftest.py` pins `commit.gpgsign=false` / `tag.gpgsign=false` for every test
+  through `GIT_CONFIG_COUNT`, appended after the runner's own entries
+  (`crew_fixtures.unsigned_git_env`).
+- **Why (measured 2026-09-29, 4-CPU Linux container).** pylint over every tracked
+  file: 148s serial, 34s at `-j 4`, identical findings. crew's default set:
+  923s serial, 281s at `-n 4` (6393 passed, 453 skipped both ways), 229s at
+  `-n 4` with fixture signing off (6400 passed: the seven new tests). The serial
+  run held one core at ~33%: it is subprocess-bound, which is why workers pay.
+  Fixture commits were running the developer's signing program: 83 ms a commit
+  signed against 7 ms unsigned, and a gpg host with a pinentry can prompt.
+- **Not `-j 0`.** pylint's own CPU detection read that container as 1 CPU and
+  ran serially (151s at `-j 0`), so the count comes from `os.cpu_count()`.
+- **Not Ruff in place of pylint.** Ruff already runs. It has no equivalent for
+  the inference checks this repo's suppressions show firing (`no-member`,
+  `not-callable`, `arguments-differ`, `possibly-used-before-assignment`,
+  `cyclic-import`), and it does not read `# pylint: disable=` pragmas.
+- **Ruff now runs in CI.** No workflow ran it, while verify.json told readers
+  "CI still runs it"; the local gate skips it where ruff is absent. `pylint.yml`
+  gains a `ruff` job (`ruff~=0.16.0`, one Python: ruff does not execute what it
+  checks). `ruff.toml` now names `select = ["E4", "E7", "E9", "F"]` — the
+  default set it was baselined on — because ruff 0.16 widened the default and
+  an unpinned `ruff check .` reported 1493 findings on untouched code. Under
+  that set, 0.15.22 and 0.16.9 both found the same nine that had landed
+  unseen: eight deliberate `E402` in `crew_status.py` (bytecode is disabled
+  before the imports; now `# noqa: E402`, the repo's convention) and one `E713`
+  in `cloud_guard.py` (`not x in y` -> `x not in y`, identical semantics; its
+  suites pass 1761/0, and inverting the line turns four RED).
+- **Wall-clock tests stay serial.** Nine crew tests (12 items) assert elapsed
+  time against a real bound — a hook's timeout, a probe's deadline. Under
+  `-n auto` in the first CI run, `test_near_deadline_candidates_then_a_hang_stay_within_the_hook_timeout`
+  read `ps1=10.25s` against its 10s bound on 2 of 6 jobs. The bound is the
+  hook's real timeout, so it was not loosened. The tests carry a new
+  `wallclock` marker (crew's `conftest.py`), and every parallel caller now runs
+  `-n auto -m "not wallclock"` first and then `-m wallclock` serially.
+- **No background git maintenance in fixtures.** `git commit` runs `git maintenance
+  run --auto`, which the runner's git 2.55 detaches; it was still writing
+  `.git/objects/maintenance.lock` while `test_refresh_check.py::test_check_writes_nothing`
+  snapshotted the fixture repo, which read as the tool under test writing. The
+  conftest pins now include `maintenance.auto=false` and `gc.auto=0`
+  (`crew_fixtures.FIXTURE_GIT_PINS`, helper renamed `fixture_git_env`); a
+  GIT_TRACE test proves a commit launches no maintenance, and goes RED without
+  the pins.
+- **Version.** 1.0.62 was set in the first commit; the Ruff fixes then changed
+  crew files under it, which `check-marketplace.py` rightly refused in CI. It
+  had passed locally only because the check ran before those files were
+  committed. Hence 1.0.63, and 1.0.64 for the maintenance pins.
+- **Unchanged.** Every other check's selection and pass/fail rule; `seconds` in
+  verify.json (those are measurements on the maintainer's machine — re-price
+  with `verify-gate.sh --price`).
+- **Sabotage.** `test_conftest_git_isolation.py` runs commits and tags under a
+  global config whose signer is `/bin/false`; with the conftest loop removed
+  both go RED (`fatal: failed to write commit object`), restored GREEN.
 
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 

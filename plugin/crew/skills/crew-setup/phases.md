@@ -344,6 +344,11 @@ them is half the value of this phase.
 - **Linters.** Per the `crew-lint` skill, add path-scoped rules for the languages
   actually present. Baseline existing findings so the gate starts green — a gate
   that starts red never becomes a gate.
+- **QA and harness standards.** Run the `crew-qa-standards` audit (report-only):
+  `python3 ${CLAUDE_PLUGIN_ROOT}/skills/crew-qa-standards/scripts/qa_audit.py --root .`.
+  For each GAP, apply the rule it names (measure first, per H1), or record in
+  `.crew/STATUS.md` why not. Report UNKNOWN rows as unknown. A new repo also gets
+  a steward skill from that skill's `references/steward-template.md`.
 - **Terraform.** If there are `.tf` files, set up terraform-docs and tflint per
   `crew-terraform`. Put the **`--output-check`** form in the gate, never the
   writing form: `terraform-docs markdown table . --output-file README.md
@@ -366,8 +371,8 @@ someone needed it. Fix them now, or delete the rule and record in
 `.crew/STATUS.md` that you did.
 
 **Done when:** rules cover the hot paths, each is verified, `"unmapped": "fail"`,
-`resolve-tools.sh` reports no MISSING tool, and linters run green on the current
-tree.
+`resolve-tools.sh` reports no MISSING tool, linters run green on the current
+tree, and every `qa_audit.py` GAP is fixed or recorded in `.crew/STATUS.md`.
 
 ## Phase 6 — Browser tests
 
