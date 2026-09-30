@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@bbd9a66d
-verified: 2026-09-28
+anchor: useful-claude-add-ons@8069a19e
+verified: 2026-09-30
 
 # localgpu
 
@@ -510,7 +510,7 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")` quoted at `:33-34`.
   **Checked against the code, corrected after QA:**
-  `plugin/crew/hooks/scripts/crew_config.py:128-129` only re-exports
+  `plugin/crew/hooks/scripts/crew_config.py:129-130` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
   *defined* at `plugin/crew/hooks/scripts/crew_state.py:1437-1438` since T-0010's four `AUTOPILOT_DEFAULTS`
   lines (T-0010-solo's merge of `67caa4b8`; `:1432-1433` at `65bb3330`; `:1430-1431` on main before
@@ -1459,3 +1459,15 @@ so the merged tree is `6b89c1df` plus that README change). `08eeaa3e` adds the r
 `plugin/crew/tests/test_crew_autopilot_policy.py`. `bbd9a66d` re-sets crew 1.0.61. Each edited line kept its
 number (the parentheses and comments were added in place) except in `test_crew_autopilot_policy.py`, whose
 import block lost one line; no note cites that file by line. Re-anchor only; nothing was executed for this note.
+
+## Re-anchor provenance - `bbd9a66d` -> `d1872b60`, 2026-09-29 (T-0104, crew 1.0.62)
+
+`bbd9a66d..d1872b60` is T-0010's landing (`13b6596e`, `02510075`: refresh artifacts only), merged into `T-0104-build` by `4f2de306` (origin/main `8ab733d7`), and T-0104's own commits: the webtest scaffold for multi-module repositories (`53665204`, `bd3f7953`, `d5d59fae`, `37726645`, `fe1834b1`: `webtest_scaffold.py`, `webtest_rules.py`, `webtest_guard.py`, their tests and `sabotage_webtest.py`, `commands/init.md`, `commands/webtest.md`, `crew-setup/phases.md`, `stack-web/SKILL.md`, `README.md`'s `/crew:webtest` row, `plugin/PLUGINS.md`, two guide sources and their built outputs, `CHANGELOG.md`, `TODO.md`, and `.crew/verify.json`'s new last rule, index 32 after the merge), the guide rebuild `5501aa76`, and the crew 1.0.62 re-set `d1872b60` (`plugin.json`, `marketplace.json`, `plugin/PLUGINS.md`, `CHANGELOG.md`'s heading, `plugin/crew/BUDGETS.md:11` at 19,517 lines across 128 files). T-0104's earlier re-anchor (`3648f59a` -> `fe1834b1`) was superseded by the merge, which took origin/main's copy of this note; its DERIVED bullet on the webtest scripts is re-applied at `d1872b60`.
+
+No body citation moved: the files this note documents that changed are `.crew/verify.json` (a rule appended), `plugin/crew/README.md` (the `/crew:webtest` row, changed in place) and `plugin/crew/tests/sabotage_webtest.py` (entries appended); none is cited by line in its body. Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `bbd9a66d` to the tree at `d1872b60` (difflib equal blocks); every citation that did not map to itself was read with `sed -n` / `grep -n`. The script attributes some bare `:N` to the wrong file (a `role_write_guard.py` range after a `TODO.md` mention, a `check-marketplace.py` range after a `marketplace.json` mention); those were read and hold. A citation inside a list of per-commit positions keeps its commit's line; only the current position is added. Nothing else was executed for this note.
+
+## Re-anchor provenance - `d1872b60` -> `8069a19e`, 2026-09-30 (T-0104 merges `a61a6f38`, crew 1.0.70)
+
+`d1872b60..8069a19e` is the merge `2cad26c5` of origin/main `a61a6f38` into `T-0104-build` - #263 (crew 1.0.62-1.0.64, CI and the parallel QA harness), #264 (crew 1.0.65, gate first: no review round on a tree the verify gate has not passed, `review_gate.py`), #265/#266 (the steward skill; `CLAUDE.md`'s evidence moved verbatim to `docs/claude-md-evidence.md`), #267 (crew 1.0.67, `crew-qa-standards`, the 30th crew skill) and T-0088 (#262, crew 1.0.68-1.0.69: the Codex probe and limit fallback in `/crew:review`, and `crew_common.repo_config_dir`, through which every Python reader of `.crew/config.json`/`.crew/crew.json` now resolves a linked worktree's missing config to the main checkout's) - and T-0104's crew 1.0.70 re-set `8069a19e` (`plugin.json`, `marketplace.json`, `plugin/PLUGINS.md`, `CHANGELOG.md`'s heading, `plugin/crew/BUDGETS.md:11` at 19,938 lines across 132 files). The merge's resolutions were mechanical: versions and `BUDGETS.md` main's then re-set, `CHANGELOG.md` both entries, `.crew/verify.json` main's rules 32-34 then T-0104's webtest rule as rule 35, `graphify-out/` main's then rebuilt. None of main's changes re-anchored this directory, so this pass covers them too.
+
+Five body citations re-pointed mechanically (`crew_config.py:129-130`'s re-export, and `crew_state.py` for the provider tuples, now `:1440-1441`); the numbered corrections list keeps the lines it was written against. Nothing under `plugin/localgpu/` changed in this range. Checked by the same script as the previous pass (every `path:N` outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, mapped from the old anchor to `8069a19e` by difflib equal blocks). A citation that mapped to identical line content was re-pointed mechanically; one that did not map, or that sits in a list of per-commit positions, was read with `sed -n` / `grep -n` and edited by hand, keeping history and adding only the current position. The script's known misattributions (a bare `:N` carried from the wrong file) were read and kept where they hold. Only the counts named below were executed; T-0088's behaviour is recorded where a cited line changed, not re-derived beyond it.

@@ -134,6 +134,9 @@ Check: `.work/tickets/<id>/` exists and `/crew:status` lists it under `open`.
 If your first ticket touches a web UI, `/crew:init`'s Phase 6 (Browser tests) installs
 Playwright and asks for two or three specs where breakage is expensive, plus visual
 baselines for the pages that matter — do that once, during setup, not per ticket.
+In a repository whose web apps live in subdirectories, Phase 6 lists each one it
+finds and scaffolds it with `--module <dir>`: the tests go under that app's own
+`testDir`, and the agent and MCP files stay at the repository root.
 From then on, work the ticket normally and type `/crew:webtest` where you would
 otherwise hand-write the spec file: it runs the planner -> generator -> healer loop
 against the ticket's acceptance criteria and hands the reviewer a trace and an

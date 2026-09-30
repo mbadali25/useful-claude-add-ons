@@ -1,6 +1,6 @@
 # mcp-servers
-anchor: useful-claude-add-ons@3648f59a
-verified: 2026-09-28
+anchor: useful-claude-add-ons@8069a19e
+verified: 2026-09-30
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
 ## Does
@@ -56,7 +56,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
   `this.resolved` and never retries an earlier, higher-priority link. Deliberate - the comment at
   `:44-46` says so - but fixing `MS_ADMIN_CLIENT_SECRET` after `cli` or `device` has won changes
   nothing until restart, and nothing tells you that. Re-verified unchanged 2026-09-06 at
-  `1f97e51c`; still open as `TODO.md:189` (item 2; was `:110` at `f2bb919b`, `:80` at `6c497a14` and `:51` before that, each
+  `1f97e51c`; still open as `TODO.md:204` (item 2; `:189` at `3648f59a`, was `:110` at `f2bb919b`, `:80` at `6c497a14` and `:51` before that, each
   move an insertion earlier in the file - re-read at `f2bb919b` on 2026-09-25, same heading and body).
 - **`scopesOverride` silently broadens a narrow scope request.**
   `mcp-servers/packages/core/src/adminAuth.ts:29-36` (the field and its doc comment), `:127`
@@ -64,7 +64,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
   `device` (`mcp-servers/packages/core/src/adminAuth.ts:149-158` - no `scopesOverride` key, and the
   comment at `:155-158` says why) honours caller-supplied delegated scopes. Code that requests a
   narrow scope and receives `.default` did not fail - it was never asked. Re-verified unchanged
-  2026-09-06 at `1f97e51c`; still open as `TODO.md:200` (item 3; was `:121` at `f2bb919b`, `:91`, and `:62` before that - re-read at
+  2026-09-06 at `1f97e51c`; still open as `TODO.md:215` (item 3; `:200` at `3648f59a`, was `:121` at `f2bb919b`, `:91`, and `:62` before that - re-read at
   `f2bb919b` on 2026-09-25, same heading and body).
 - **`dist/` is what runs, `src/` is what you edit.** Editing a `.ts` file and then *starting a
   server* leaves the stale compiled JS in place and the change does not take effect. Nothing guards
@@ -78,7 +78,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
     `core/dist` is still stale.
   - **Equal mtimes are stale, not fresh** (`:96-97`, reasoning at `:82-94`). The commit message for
     `4e2bfb78` states the opposite ("Equal timestamps count as fresh"); the shipped code and
-    `TODO.md:281-288` (was `:202-209` at `f2bb919b`, `:172-179`, and `:143-150` before that; re-read at `f2bb919b` on 2026-09-25, same reasoning)
+    `TODO.md:296-303` (`:281-288` at `3648f59a`, was `:202-209` at `f2bb919b`, `:172-179`, and `:143-150` before that; re-read at `f2bb919b` on 2026-09-25, same reasoning)
     are the later, correct account. Trust the code.
   - An unreadable directory throws rather than returning mtime `0` (`:44-51`), because `0` compares
     older than everything and would read as fresh.
@@ -366,3 +366,9 @@ returns `.claude-plugin/marketplace.json` (crew's version line only) and `TODO.m
 No citation moved.
 
 **Re-anchored `b2553d26` -> `3648f59a` on 2026-09-28 (T-0075 review round 5, merge of `6387ab49`).** `git diff --name-only b2553d26 3648f59a -- mcp-servers/ README.md TODO.md .claude-plugin/marketplace.json` returns `README.md` (T-0075: crew's slash-command count 35 -> 36 at `:168` and `:874`, in place), `TODO.md` (T-0092's entry at `:5051`, below every citation here) and `.claude-plugin/marketplace.json` (crew's lines only); nothing under `mcp-servers/`. `TODO.md:189`, `:200` and `:281` re-read, unchanged; `grep -c mcp-servers .claude-plugin/marketplace.json` is still **0**. No citation moved.
+
+## Re-anchor provenance - `3648f59a` -> `8069a19e`, 2026-09-30 (T-0104 merges `a61a6f38`, crew 1.0.70)
+
+`3648f59a..8069a19e` includes the merge `2cad26c5` of origin/main `a61a6f38` into `T-0104-build` - #263 (crew 1.0.62-1.0.64, CI and the parallel QA harness), #264 (crew 1.0.65, gate first: no review round on a tree the verify gate has not passed, `review_gate.py`), #265/#266 (the steward skill; `CLAUDE.md`'s evidence moved verbatim to `docs/claude-md-evidence.md`), #267 (crew 1.0.67, `crew-qa-standards`, the 30th crew skill) and T-0088 (#262, crew 1.0.68-1.0.69: the Codex probe and limit fallback in `/crew:review`, and `crew_common.repo_config_dir`, through which every Python reader of `.crew/config.json`/`.crew/crew.json` now resolves a linked worktree's missing config to the main checkout's) - and T-0104's crew 1.0.70 re-set `8069a19e` (`plugin.json`, `marketplace.json`, `plugin/PLUGINS.md`, `CHANGELOG.md`'s heading, `plugin/crew/BUDGETS.md:11` at 19,938 lines across 132 files). The merge's resolutions were mechanical: versions and `BUDGETS.md` main's then re-set, `CHANGELOG.md` both entries, `.crew/verify.json` main's rules 32-34 then T-0104's webtest rule as rule 35, `graphify-out/` main's then rebuilt. None of main's changes re-anchored this directory, so this pass covers them too.
+
+Of the files this note cites only `TODO.md` and `README.md` changed; nothing under `mcp-servers/` did (`git diff --stat 3648f59a 8069a19e -- mcp-servers/` is empty). The two `adminAuth.ts` items are still open at `TODO.md:204` and `:215`, and the dist-freshness reasoning is `TODO.md:296-303` (T-0104's two TODO bullets and main's entries above them); each re-read with `sed -n`. Checked by the same script as the previous pass (every `path:N` outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, mapped from the old anchor to `8069a19e` by difflib equal blocks). A citation that mapped to identical line content was re-pointed mechanically; one that did not map, or that sits in a list of per-commit positions, was read with `sed -n` / `grep -n` and edited by hand, keeping history and adding only the current position. The script's known misattributions (a bare `:N` carried from the wrong file) were read and kept where they hold. Only the counts named below were executed; T-0088's behaviour is recorded where a cited line changed, not re-derived beyond it.

@@ -75,7 +75,11 @@ mcr.microsoft.com/playwright:v1.63.0-noble npx playwright test --project=visual`
 runtime's marker (`/.dockerenv`, `/run/.containerenv`) is container evidence. `:Z` relabels the
 bind mount for SELinux (private, unshared with other containers); it is a documented no-op where
 SELinux is absent or permissive, so it does not regress a non-SELinux host. With neither
-runtime on the host, visual stays UNVERIFIED and the check says so, naming both. `/crew:webtest` drives the planner ->
+runtime on the host, visual stays UNVERIFIED and the check says so, naming both. For a web
+project below the repository root, `webtest_rules.py --root . --module <dir>` scopes the rules
+to it (paths prefixed, `npx` run from the module, `--module` on `auth-leak` and `visual`) and
+leaves out the axe or visual rule when that config has no such project, printing
+`webtest rules: omitted the <axe|visual> rule - ...` on stderr. `/crew:webtest` drives the planner ->
 generator -> healer loop against a ticket's acceptance criteria; see that command for the phase
 sequence.
 

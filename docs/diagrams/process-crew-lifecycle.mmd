@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@bbd9a66d on 2026-09-29. Verify before trusting.
+%% Generated from useful-claude-add-ons@8069a19e on 2026-09-30. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -276,3 +276,11 @@ flowchart TB
 %% Re-anchored d7c7c75c -> bbd9a66d (T-0010 landing branch, crew 1.0.61): of the Anchors paths only
 %% crew_ticket.py changed, one line in place (a noqa: BLE001 beside the broad-except disable in the
 %% autopilot-policy check), so every line number above holds. No node or edge changed.
+%% Re-anchored bbd9a66d -> 8069a19e (T-0104 merges main a61a6f38: T-0088, #263-#267; crew 1.0.70):
+%% of the Anchors paths review.md changed in place (seven hunks, line count unchanged, so :25-29,
+%% :440, :449, :481, :504, :508, :511 hold, re-read), and crew_refresh_check.py, crew_ticket.py and
+%% crew_tracker.py changed only to read config through crew_common.repo_config_file (+1 import
+%% each; crew_ticket's group-confirm refusal :742-744 -> :743-745, approve :723 -> :724;
+%% approval_digest :562 and status() :589 hold). NOT drawn: /crew:review's Codex probe (T-0088; a
+%% usage limit runs the round on the Claude fallback) and exit 5, the verify gate not passed on
+%% this tree, which spends no round (#264). No node or edge changed.

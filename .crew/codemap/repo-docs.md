@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@bbd9a66d
-verified: 2026-09-28
+anchor: useful-claude-add-ons@8069a19e
+verified: 2026-09-30
 
 ## Re-derive provenance
 
@@ -181,7 +181,8 @@ listing the directory.
   (`<!-- claim: plugin-skills:crew -->`), `plugin/PLUGINS.md:17`, the
   `.claude-plugin/marketplace.json` `crew` description, and both install
   scripts' `PLUGIN_NAME` crew rows all read **4 agents, 36 commands, 29
-  skills, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events** at
+  skills (30 since #267 added `crew-qa-standards`, re-read at `8069a19e` at
+  every marked site; the install scripts' rows state no skill count), 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events** at
   `e95e5964` (34 commands until T-0004 added `commands/autopilot.md`, 35
   until T-0075 added `commands/config-setup.md`; every site listed here was
   bumped in `ecf69e43` and again in `a77a42d6`, and `README.md:168`/`:874`
@@ -300,7 +301,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:2204` (on T-0010-solo's merge of `e878cc31`; `:2080` on T-0010-solo at `d7c7c75c`, `:2072` at `c817782f`, `:2069` at `89c9ee9a`, `:2058` at `50e67586`; `:2199` at `3648f59a`, T-0075's round-5 docs after its merge of `6387ab49`; `:2196` at `938e3b11`, T-0075's round-4 docs after its merge of `f54af3fa`; `:2187` at `3724731b`, T-0075 after its merge of `e6e10432`; `:2169` on T-0075's merge of `d2fbd408`; `:2075` at `d2fbd408`, `:1812` on T-0024's branch at `45345812`, `:2161` on T-0075's branch at `763eaeff`, `:2127` at `764f6018`, `:2067` at `67caa4b8`, `:2102` on T-0075's `f7163410`, `:2052` at `bebbb97f`, `:2079` on T-0075's `e95e5964`, `:2044` on T-0018's first landing merge at `fbc27b49`, `:2029` at `db14619c`, `:1959` on T-0018's branch at `e6b696fb`, `:1953` at T-0023's `a1acd9b7`, `:2015` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1944` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:2236` (at `8069a19e`, after merging `a61a6f38`; `:2204` on T-0010-solo's merge of `e878cc31`; `:2080` on T-0010-solo at `d7c7c75c`, `:2072` at `c817782f`, `:2069` at `89c9ee9a`, `:2058` at `50e67586`; `:2199` at `3648f59a`, T-0075's round-5 docs after its merge of `6387ab49`; `:2196` at `938e3b11`, T-0075's round-4 docs after its merge of `f54af3fa`; `:2187` at `3724731b`, T-0075 after its merge of `e6e10432`; `:2169` on T-0075's merge of `d2fbd408`; `:2075` at `d2fbd408`, `:1812` on T-0024's branch at `45345812`, `:2161` on T-0075's branch at `763eaeff`, `:2127` at `764f6018`, `:2067` at `67caa4b8`, `:2102` on T-0075's `f7163410`, `:2052` at `bebbb97f`, `:2079` on T-0075's `e95e5964`, `:2044` on T-0018's first landing merge at `fbc27b49`, `:2029` at `db14619c`, `:1959` on T-0018's branch at `e6b696fb`, `:1953` at T-0023's `a1acd9b7`, `:2015` at T-0021's `74f52fae`, `:2006` at `c2ae46ab`, `:1944` at T-0042's `f0b12ee6`, `:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -318,7 +319,7 @@ listing the directory.
   `.crew/config.json` (machine-local, gitignored) is absent from this fresh
   worktree, so its `handoffPath` value could not be re-read here; the
   fallback default is confirmed instead, directly in code:
-  `plugin/crew/hooks/scripts/crew_autocycle.py:180` returns
+  `plugin/crew/hooks/scripts/crew_autocycle.py:182` returns
   `".work/HANDOFF.md"` when no config value is set. `docs/HANDOFF.md` is
   human-authored; the two files remain unrelated despite the shared
   basename.
@@ -328,7 +329,7 @@ listing the directory.
   per-path check), `0002-no-chatgpt-mcp-server.md` (accepted 2026-09-14) and
   `0003-crew-departs-from-three-community-best-practices.md` (accepted
   2026-09-17) — the latter two were already present at the previous anchor
-  and are not new in this range. `CLAUDE.md:147` still reads "Decisions in
+  and are not new in this range. `CLAUDE.md:92` still reads "Decisions in
   `docs/adr/`" at `adf8d1dd` (re-grepped; `CLAUDE.md` changed in
   `f2bb919b..adf8d1dd`, but only its `crew_freshness.py` line citations).
 - **`docs/review/`'s existence is itself a mild instance of the same gap
@@ -345,14 +346,14 @@ listing the directory.
   `:273`, `read_diagrams` at `:472`, the `sha[:7] == head[:7]` comparisons at
   `:429` and `:512`, and the `_diagram_paths` call site inside `read_diagrams`
   at `:518` (was `:522`). Re-exported through
-  `plugin/crew/hooks/scripts/crew_state.py:132`/`:136`/`:139`/`:142`
+  `plugin/crew/hooks/scripts/crew_state.py:133`/`:137`/`:140`/`:143`
   (`_ANCHOR_RE`, `_DIAGRAM_ANCHOR_RE`, `_NOT_SUBSYSTEMS`, `_diagram_paths`).
   A diagram with no anchor header, or one whose anchor is old AND whose
   `%% Anchors:` paths have moved, still counts as `behind`; unknown still
   resolves to stale.
 
 - **`TODO.md`'s `render.sh` entry is still open, still un-CLOSED, re-located
-  rather than assumed at its old line.** Now at `TODO.md:1201` (`:1190` at
+  rather than assumed at its old line.** Now at `TODO.md:1216` (`:1201` at `8ab733d7`, `:1190` at
   `1e0706ac`, `:1122` at
   `f2bb919b`, `:1092` at `6c497a14`, `:1061` before that; the file grew 3645 -> 4714 lines, +1069,
   in the `5d1fc5fd..6c497a14` range, and 30 more lines landed after its
@@ -457,7 +458,7 @@ listing the directory.
 - `docs/review/*`'s nine documents were not read beyond their titles and the
   one quoted cross-review row; whether other rows record further
   never-filed decisions was not checked file by file.
-- `CLAUDE.md` beyond its `:147` "Decisions in `docs/adr/`" line (re-confirmed
+- `CLAUDE.md` beyond its `:92` "Decisions in `docs/adr/`" line (re-confirmed
   at `adf8d1dd`) was not re-derived end to end; this note's business with it
   is narrow.
 - `crew-docs/SKILL.md`'s retired-role references (`/crew:work`,
@@ -1288,3 +1289,15 @@ so the merged tree is `6b89c1df` plus that README change). `08eeaa3e` adds the r
 `plugin/crew/tests/test_crew_autopilot_policy.py`. `bbd9a66d` re-sets crew 1.0.61. Each edited line kept its
 number (the parentheses and comments were added in place) except in `test_crew_autopilot_policy.py`, whose
 import block lost one line; no note cites that file by line. Re-anchor only; nothing was executed for this note.
+
+## Re-anchor provenance - `bbd9a66d` -> `d1872b60`, 2026-09-29 (T-0104, crew 1.0.62)
+
+`bbd9a66d..d1872b60` is T-0010's landing (`13b6596e`, `02510075`: refresh artifacts only), merged into `T-0104-build` by `4f2de306` (origin/main `8ab733d7`), and T-0104's own commits: the webtest scaffold for multi-module repositories (`53665204`, `bd3f7953`, `d5d59fae`, `37726645`, `fe1834b1`: `webtest_scaffold.py`, `webtest_rules.py`, `webtest_guard.py`, their tests and `sabotage_webtest.py`, `commands/init.md`, `commands/webtest.md`, `crew-setup/phases.md`, `stack-web/SKILL.md`, `README.md`'s `/crew:webtest` row, `plugin/PLUGINS.md`, two guide sources and their built outputs, `CHANGELOG.md`, `TODO.md`, and `.crew/verify.json`'s new last rule, index 32 after the merge), the guide rebuild `5501aa76`, and the crew 1.0.62 re-set `d1872b60` (`plugin.json`, `marketplace.json`, `plugin/PLUGINS.md`, `CHANGELOG.md`'s heading, `plugin/crew/BUDGETS.md:11` at 19,517 lines across 128 files). T-0104's earlier re-anchor (`3648f59a` -> `fe1834b1`) was superseded by the merge, which took origin/main's copy of this note; its DERIVED bullet on the webtest scripts is re-applied at `d1872b60`.
+
+Body citation moved: `TODO.md`'s `render.sh` entry is now `:1216` (T-0104's two bullets sit at the top of `TODO.md`). Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from `bbd9a66d` to the tree at `d1872b60` (difflib equal blocks); every citation that did not map to itself was read with `sed -n` / `grep -n`. The script attributes some bare `:N` to the wrong file (a `role_write_guard.py` range after a `TODO.md` mention, a `check-marketplace.py` range after a `marketplace.json` mention); those were read and hold. A citation inside a list of per-commit positions keeps its commit's line; only the current position is added. Nothing else was executed for this note.
+
+## Re-anchor provenance - `d1872b60` -> `8069a19e`, 2026-09-30 (T-0104 merges `a61a6f38`, crew 1.0.70)
+
+`d1872b60..8069a19e` is the merge `2cad26c5` of origin/main `a61a6f38` into `T-0104-build` - #263 (crew 1.0.62-1.0.64, CI and the parallel QA harness), #264 (crew 1.0.65, gate first: no review round on a tree the verify gate has not passed, `review_gate.py`), #265/#266 (the steward skill; `CLAUDE.md`'s evidence moved verbatim to `docs/claude-md-evidence.md`), #267 (crew 1.0.67, `crew-qa-standards`, the 30th crew skill) and T-0088 (#262, crew 1.0.68-1.0.69: the Codex probe and limit fallback in `/crew:review`, and `crew_common.repo_config_dir`, through which every Python reader of `.crew/config.json`/`.crew/crew.json` now resolves a linked worktree's missing config to the main checkout's) - and T-0104's crew 1.0.70 re-set `8069a19e` (`plugin.json`, `marketplace.json`, `plugin/PLUGINS.md`, `CHANGELOG.md`'s heading, `plugin/crew/BUDGETS.md:11` at 19,938 lines across 132 files). The merge's resolutions were mechanical: versions and `BUDGETS.md` main's then re-set, `CHANGELOG.md` both entries, `.crew/verify.json` main's rules 32-34 then T-0104's webtest rule as rule 35, `graphify-out/` main's then rebuilt. None of main's changes re-anchored this directory, so this pass covers them too.
+
+Eight citations re-pointed mechanically, among them `CLAUDE.md:92` ("Decisions in `docs/adr/`", :147 before #266 cut the file), `plugin/crew/README.md:2236` (with `:2204` kept as history), `plugin/crew/CONFIG.md:2408-2415` and `crew_autocycle.py:182`. The skills figure at the marked sites is 30 since #267, said so where this note lists them. `CLAUDE.md`'s Memory, Landmines and Lessons evidence now lives in `docs/claude-md-evidence.md` (#266); this note's citations into those sections were not re-derived against the new file. Checked by the same script as the previous pass (every `path:N` outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, mapped from the old anchor to `8069a19e` by difflib equal blocks). A citation that mapped to identical line content was re-pointed mechanically; one that did not map, or that sits in a list of per-commit positions, was read with `sed -n` / `grep -n` and edited by hand, keeping history and adding only the current position. The script's known misattributions (a bare `:N` carried from the wrong file) were read and kept where they hold. Only the counts named below were executed; T-0088's behaviour is recorded where a cited line changed, not re-derived beyond it.

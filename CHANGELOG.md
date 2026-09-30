@@ -4,6 +4,52 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.70: webtest scaffold for multi-module repositories (T-0104)
+
+- **What changed.** `webtest_scaffold.py` at a root that is not a web project
+  lists every web module below it (three levels, `node_modules` and
+  dot-directories skipped, the depth printed) with the `--module <dir>` that
+  scaffolds it, instead of `n/a`. With `--module`, the config, test files and
+  `.gitignore` lines land in the module, and `.mcp.json`,
+  `.codex/config.toml` and `.claude/agents/` at the root, where a session
+  loads them; `init-agents` runs at the root with
+  `--config=<module>/<config>`, and `next:` runs npm in the module. The three
+  test files go under the existing config's top-level `testDir`. An existing
+  config's missing `setup`/`axe`/`visual` project (or the visual project's
+  image gate) is an advisory `gap` line with a snippet to paste, and exits 0;
+  where `*-snapshots/` baselines are all named for one declared project, the
+  visual snippet's `snapshotPathTemplate` keeps them. The auth setup file,
+  and a fresh config's `setup` project, `storageState` and
+  `dependencies: ['setup']`, exist only when `.crew/secrets.md` at the root or
+  a declared `storageState` records credentials. `webtest_rules.py --module`
+  scopes the five rules to the module (paths prefixed, `(cd <dir> && npx ...)`,
+  `--module` on `auth-leak` and `visual`) and omits the axe or visual rule,
+  on stderr, when the config has no such project; `webtest_guard.py
+  auth-leak|visual --module` read the module's config and `node_modules` while
+  git and `.crew/config.json` stay at the root. `/crew:init`'s web phase loops
+  over the detected modules one confirmed step each; `/crew:webtest` takes
+  `--module`.
+- **Why.** The aws-managed-services session's report (items 1-5): a
+  three-module repository read `n/a`; the dry run exited 1 on gaps `--apply`
+  can never close; test files went to `tests/` beside a Terraform harness
+  while every config collects `./e2e`; an auth project was written for a
+  federated-only app with no credentials; and the session files landed where
+  a root session never reads them.
+- **Could not tell, said so.** A `testDir` that is not a string literal (or a
+  name bound to exactly one), is absolute or leaves the config's directory
+  writes no test file, prints a `skip` line quoting it, and exits 1.
+  Baselines named for no declared project, or for several, leave the template
+  out and say to check them by hand. `--module` naming no directory under
+  the root is exit 2 from the guard (never a pass) and a refusal (exit 1)
+  from the scaffold.
+- **Unchanged.** The scaffold still never writes into a file it did not
+  create, and `.gitignore`/`.mcp.json`/`.codex/config.toml` stay add-only.
+  A credentialed repository with no config gets a byte-identical
+  `playwright.config.ts` (`test_fresh_config_template_is_unchanged_when_no_baselines`).
+  The pins, `skips` (repo-wide by design) and the no-module rule set.
+- **Sabotage.** Fifteen entries in `plugin/crew/tests/sabotage_webtest.py`,
+  (a)-(o), one per new branch.
+
 ### Changed — `crew` 1.0.69: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088)
 
 - **`/crew:review` probes Codex with a real call.** `review_run.py --probe` makes
