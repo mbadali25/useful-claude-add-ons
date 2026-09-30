@@ -134,6 +134,7 @@ import sys
 import completion_audit
 import crew_ticket
 import scope_base
+import crew_common
 from crew_common import dict_or_empty, git_out, read_text
 from crew_freshness import (
     DIAGRAMS_DIR_DEFAULT,
@@ -223,7 +224,7 @@ def _config(root):
     `crew_status` reads them in. Unreadable is {}: every key used here has a
     default, and a default is the documented layout."""
     for name in ("crew.json", "config.json"):
-        text = read_text(os.path.join(root, ".crew", name))
+        text = read_text(crew_common.repo_config_file(root, name))
         if text is None:
             continue
         try:
@@ -242,7 +243,7 @@ def _read_config(root):
     others reads the real ones as out of scope -- `fresh` from nothing
     measured. The scope guard fails closed on the same file."""
     for name in ("crew.json", "config.json"):
-        path = os.path.join(root, ".crew", name)
+        path = crew_common.repo_config_file(root, name)
         if not os.path.lexists(path):
             continue
         text = read_text(path)

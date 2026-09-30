@@ -66,6 +66,8 @@ import subprocess
 import sys
 import urllib.parse
 
+import crew_common
+
 KINDS = ("files", "obsidian", "jira", "sdp")
 COULD_NOT_TELL = "could not tell"
 NOT_CONFIGURED = "not configured"
@@ -121,7 +123,7 @@ def _load(root, name):
     """(dict or None, problem or None) for `.crew/<name>`; absent is (None, None)."""
     rel = f".crew/{name}"
     try:
-        with open(os.path.join(root, ".crew", name), encoding="utf-8-sig") as handle:
+        with open(crew_common.repo_config_file(root, name), encoding="utf-8-sig") as handle:
             text = handle.read()
     except FileNotFoundError:
         return None, None

@@ -1081,7 +1081,10 @@ def test_the_configured_delay_reaches_the_detached_senders_own_sleep_argument(tm
                             input=json.dumps(payload), capture_output=True, text=True,
                             timeout=5, check=False)
     deadline = time.time() + 5
-    while time.time() < deadline and not sleep_log.exists():
+    # Wait for the shim's WRITE, not the file: `>>` creates it before `cut`
+    # writes, and under a parallel run the read landed in that gap ('' == '1').
+    while time.time() < deadline and not (
+            sleep_log.exists() and sleep_log.read_text(encoding="utf-8").strip()):
         time.sleep(0.02)
 
     assert result.returncode == 0, result.stderr

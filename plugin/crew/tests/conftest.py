@@ -9,6 +9,7 @@ that specifically exercises the global layer overrides it again with its own
 scratch file; `monkeypatch` allows a later `setattr` to win within the same
 test and undoes everything at teardown regardless of ordering.
 """
+import os
 import re
 
 import pytest
@@ -20,6 +21,7 @@ import crew_state
 # discovery is by name in a conftest module's namespace, not by definition
 # site) -- see crew_fixtures.gate_processes's own docstring for what it does.
 from crew_fixtures import gate_processes  # noqa: F401  pylint: disable=unused-import
+from crew_fixtures import fixture_git_env
 
 
 @pytest.fixture(autouse=True)
@@ -60,6 +62,25 @@ def _no_real_global_config(tmp_path, monkeypatch):
     # and that still wins; this only removes the ambient value nobody declared.
     monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
 
+    # Third channel: the developer's GLOBAL git config reaches every fixture
+    # `git commit`, and with `commit.gpgsign=true` each one runs their signing
+    # program against their real key. Only context_fixtures.git opted out, by
+    # `-c`. Measured once, on an ssh-signing Linux container (2026-09-29):
+    # 83 ms a commit signed, 7 ms unsigned, paid by every module whose fixtures
+    # commit -- and on a gpg host with a pinentry, a suite that can stop and
+    # prompt for a passphrase. GIT_CONFIG_COUNT/KEY/VALUE
+    # (git >= 2.31) outranks every config file, so this holds whatever the
+    # global file says, and reaches any subprocess that inherits os.environ.
+    # A test that needs signing sets its own `-c` or env and still wins. The
+    # same pins stop git's background maintenance (see crew_fixtures).
+    #
+    # APPENDED after whatever GIT_CONFIG_COUNT the runner already carries,
+    # never written from slot 0: a cloud container here exports three entries
+    # of its own (URL rewrites, credential.interactive), and overwriting slots
+    # 0-1 while setting the count to 2 silently dropped all three.
+    for name, value in fixture_git_env(os.environ).items():
+        monkeypatch.setenv(name, value)
+
 
 # --- the `slow` marker: the full per-shell hook matrix ------------------------
 #
@@ -88,6 +109,18 @@ def pytest_configure(config):
         "markers",
         "slow: the full bash/pwsh driver matrix for a hook; deselected by "
         "default, run with -m slow or --run-slow")
+    # A test that asserts ELAPSED WALL-CLOCK against a real bound (a hook's
+    # timeout, a probe's deadline). Correct serially; under pytest-xdist the
+    # workers beside it take the CPU it is timing, and in crew 1.0.62's first
+    # CI run `test_near_deadline_candidates_then_a_hang_stay_within_the_hook_
+    # timeout` read ps1=10.25s against its 10s bound on 2 of 6 jobs. The bound
+    # is the hook's real timeout, so loosening it would weaken the check;
+    # instead every parallel caller runs `-m "not wallclock"` and then this set
+    # on its own, serially. Selected like any marker; `slow` handling is apart.
+    config.addinivalue_line(
+        "markers",
+        "wallclock: asserts elapsed time against a real bound; run serially, "
+        "never under -n (pytest-xdist)")
 
 
 _SLOW_TOKEN_RE = re.compile(r"(?<!\w)slow(?!\w)")
