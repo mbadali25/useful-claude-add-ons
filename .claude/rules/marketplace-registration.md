@@ -3,10 +3,10 @@ paths:
   - "scripts/**"
   - "plugin/PLUGINS.md"
 ---
-<!-- crew:generated source=.crew/codemap/marketplace-registration.md sha256=9739b4e9dce1a9dd -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/marketplace-registration.md sha256=bce14a83c6573d5f -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # marketplace-registration
-Code map anchor `f1ccd055`; if it is behind HEAD, re-check with `git diff --name-only f1ccd055..HEAD -- <cited paths>`.
-Covers: The marketplace itself: what registers a skill vs. a plugin, the two install scripts, and the two separate version-check paths (check-marketplace.py vs. _verify/smoke.sh).; then to e71ad41f (T-0505, after merging T-0094's main); then to f1ccd055 (T-0505 merges L-0531's main)
+Code map anchor `43d0efc8`; if it is behind HEAD, re-check with `git diff --name-only 43d0efc8..HEAD -- <cited paths>`.
+Covers: The marketplace itself: what registers a skill vs. a plugin, the two install scripts, and the two separate version-check paths (check-marketplace.py vs. _verify/smoke.sh).; then to e71ad41f (T-0505, after merging T-0094's main); then to f1ccd055 (T-0505 merges L-0531's main); then to 43d0efc8 (T-0505 merges T-0099's main)
 ## Entry points
 - `.claude-plugin/marketplace.json:217` — crew's `description`, now correct against disk on every measured count.
 - `scripts/check-marketplace.py:1639` — `main()`, sixteen checks in the same order as `verification-harness.md` records.

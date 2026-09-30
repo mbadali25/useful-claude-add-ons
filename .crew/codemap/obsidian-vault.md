@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@f1ccd055
+anchor: useful-claude-add-ons@43d0efc8
 verified: 2026-09-30
 
 ## Does
@@ -520,6 +520,10 @@ violation visible at all. (JUDGEMENT.)
   bash's process-group `kill -9`) is, like the WindowsApps stub before it, **MODELLED, not observed
   on a real Windows host** - this note repeats that caveat rather than treating the source reading
   as equivalent to a Windows run.
+
+## Re-anchor provenance - `f1ccd055` -> `43d0efc8`, 2026-09-30 (T-0505 merges main `6a8c60b1`, T-0099, crew 1.0.83)
+
+`git diff --name-only f1ccd055 43d0efc8` outside the refresh artifacts returns T-0099's `review_prompt.py` (+6 in `_bundle_block` from `:94`), its tests and sabotage entries, `CHANGELOG.md` (T-0099's entry, below T-0505's) and the version files (crew 1.0.84 on this branch, one past main's 1.0.83). The five `review_prompt.py` citations are exactly main's as T-0099 landed them; this merge did not re-derive them. No citation T-0505 owns moved. Nothing was executed for this note.
 
 ## Re-anchor provenance - `e71ad41f` -> `f1ccd055`, 2026-09-30 (T-0505 merges main `42af3fb7`, L-0531, crew 1.0.82)
 

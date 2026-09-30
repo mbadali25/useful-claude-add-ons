@@ -2,10 +2,10 @@
 paths:
   - "plugin/crew/**"
 ---
-<!-- crew:generated source=.crew/codemap/repo-docs.md sha256=04e2ce020929e14f -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/repo-docs.md sha256=067af0136f2a479e -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # repo-docs
-Code map anchor `f1ccd055`; if it is behind HEAD, re-check with `git diff --name-only f1ccd055..HEAD -- <cited paths>`.
-Covers: docs/ and CHANGELOG.md. Records that docs/adr/ holds four ADRs while accepted decisions under docs/review/ were never promoted to it, and that TODO.md's render.sh entry is still open though the cygpath -w fix is in source.; then to e71ad41f (T-0505, after merging T-0094's main); then to f1ccd055 (T-0505 merges L-0531's main)
+Code map anchor `43d0efc8`; if it is behind HEAD, re-check with `git diff --name-only 43d0efc8..HEAD -- <cited paths>`.
+Covers: docs/ and CHANGELOG.md. Records that docs/adr/ holds four ADRs while accepted decisions under docs/review/ were never promoted to it, and that TODO.md's render.sh entry is still open though the cygpath -w fix is in source.; then to e71ad41f (T-0505, after merging T-0094's main); then to f1ccd055 (T-0505 merges L-0531's main); then to 43d0efc8 (T-0505 merges T-0099's main)
 ## Landmines
 - `INSTALLATION.md`'s "Eight MCP servers" section describes a menu row that no longer exists, and this is new at this anchor — not carried forward from a previous pass.
 - `README.md`'s install-URL pin is current at this anchor.

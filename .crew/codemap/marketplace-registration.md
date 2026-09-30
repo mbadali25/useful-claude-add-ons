@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@f1ccd055
+anchor: useful-claude-add-ons@43d0efc8
 verified: 2026-09-30
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -319,6 +319,10 @@ against synthetic fixtures and never reads this repo's own docs.
 - **The install scripts' full array contents** (every `SKILL_KEYS` entry, not
   just the crew/plugin rows) were not diffed line by line against `5d1fc5fd`;
   only the catalog *mechanism* and the crew-specific rows were re-measured.
+
+## Re-anchor provenance - `f1ccd055` -> `43d0efc8`, 2026-09-30 (T-0505 merges main `6a8c60b1`, T-0099, crew 1.0.83)
+
+`git diff --name-only f1ccd055 43d0efc8` outside the refresh artifacts returns T-0099's `review_prompt.py` (+6 in `_bundle_block` from `:94`), its tests and sabotage entries, `CHANGELOG.md` (T-0099's entry, below T-0505's) and the version files (crew 1.0.84 on this branch, one past main's 1.0.83). The five `review_prompt.py` citations are exactly main's as T-0099 landed them; this merge did not re-derive them. No citation T-0505 owns moved. Nothing was executed for this note.
 
 ## Re-anchor provenance - `e71ad41f` -> `f1ccd055`, 2026-09-30 (T-0505 merges main `42af3fb7`, L-0531, crew 1.0.82)
 
