@@ -62,6 +62,8 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
+import crew_common
+
 MARKER_PREFIX = ".handoff-requested-"
 SENT_PREFIX = ".autoclear-sent-"
 # handoff-write.sh's PreCompact skeleton. It exists so a compaction never
@@ -145,7 +147,7 @@ def settings(root, global_path=None):
     compiled default with no record that anything was wrong -- an unknown
     collapsing into the safe-looking value, indistinguishable from an
     operator who genuinely wanted the default."""
-    repo_cfg = _load(os.path.join(root, ".crew", "config.json"))
+    repo_cfg = _load(crew_common.repo_config_file(root, "config.json"))
     repo = _block(repo_cfg, "context", "autoClear")
     machine = _block(_load(global_path or global_config_path()), "context", "autoClear")
     warnings = []

@@ -31,6 +31,8 @@ import json
 import os
 import time
 
+import crew_common
+
 STATE_PATH = ".crew/incident.json"
 SKIP_LOG_PATH = ".crew/incident-skips.log"
 ARCHIVE_DIR = ".crew/incidents"
@@ -428,7 +430,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     root = args.root or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
-    cfg = read_json(os.path.join(root, ".crew", "config.json"))
+    cfg = read_json(crew_common.repo_config_file(root, "config.json"))
 
     if args.action == "declare":
         if not args.summary.strip():

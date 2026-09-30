@@ -124,6 +124,7 @@ def test_only_one_of_two_racing_takeovers_wins(tmp_path):
     assert [emit for emit, _ in wins].count(True) == 1
 
 
+@pytest.mark.wallclock
 def test_a_loser_of_the_takeover_race_waits_instead_of_returning_false(tmp_path):
     """Codex r1 finding 1 (event_claim.py:230): a claimant that loses the
     O_EXCL race used to return False immediately. If the winner then
@@ -777,6 +778,7 @@ def test_the_ps1_probe_timeout_kills_the_launchers_child_too(tmp_path):
 
 @pytest.mark.skipif(not os.path.isdir("/proc"), reason="needs /proc to find the child")
 @needs_bash
+@pytest.mark.wallclock
 def test_the_bash_probe_is_bounded_and_kills_the_launchers_child_too(tmp_path):
     token = f"crew-probe-child-{tmp_path.name}"
     launcher = _launcher(tmp_path, token)

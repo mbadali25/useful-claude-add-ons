@@ -550,7 +550,7 @@ def declared_storage_state(root):
     """Paths the repository's `.crew/config.json` declares as
     `webtest.storageState` (a string or a list of strings)."""
     try:
-        cfg = json.loads(crew_common.read_text(os.path.join(root, ".crew", "config.json")) or "{}")
+        cfg = json.loads(crew_common.read_text(crew_common.repo_config_file(root, "config.json")) or "{}")
     except ValueError:
         return []
     value = (cfg.get("webtest") or {}).get("storageState") if isinstance(cfg, dict) else None
