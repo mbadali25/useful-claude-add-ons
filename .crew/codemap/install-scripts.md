@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@38b220cf
+anchor: useful-claude-add-ons@07ecfbd6
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -1301,3 +1301,15 @@ main's own edits; the version files changed in place (1.0.62). Neither install s
 **Re-anchored `fb292689` -> `f2cf0508` on 2026-09-30 (T-0086's merge of main `b601d450`, #280 L-0521: opt-in self-hosted runners).** `git diff --name-only fb292689 f2cf0508` returns, outside refresh artifacts, only `.github/workflows/pytest-crew.yml` (the `test` and `crew-shell-matrix` `runs-on` expressions) and `AGENTS.md` (one inserted paragraph after `:50`). No map cites `AGENTS.md:NN` or `.github/workflows/pytest-crew.yml:NN`; the one claim about those jobs' runner placement is verification-harness.md's, which main's own L-0521 commit already updated and the merge carries. No citation moved. No suite was executed for this note.
 
 **Re-anchored `f2cf0508` -> `38b220cf` on 2026-09-30 (T-0086 review round 2's FIXes, merge of main `a7524aac` (T-0087, crew 1.0.76) as `142421d0`, crew 1.0.77).** `27387d83` fixes round 2: `plugin/crew/skills/crew-standards/references/python.md` (PYTHON-01's EncodingWarning quote whole, +1 line; PYTHON-03's splitlines table escapes U+2028/U+2029), `plugin/crew/tests/test_crew_standards.py` (two tests before `test_python_set_applies_to_python_files_only`), `plugin/crew/tests/sabotage_standards.py` (four docstring lines, two entries; `STANDARDS_MUTATIONS` `:57` -> `:61`, 51 by `len()`), `plugin/crew/BUDGETS.md` and `CHANGELOG.md`. `142421d0` merges main's T-0087 with a merge commit; its map conflicts were mechanical: anchors took T-0086's side, provenance hunks kept both (main's first), and one-line hunks differing only in numbers took theirs plus T-0086's own shift (ours + theirs - base, per number); INDEX rows keep main's history cell plus T-0086's additions; `sabotage.py`'s import `:84` -> `:85` and append `:3061` -> `:3062` were set in the body. `38b220cf` sets crew 1.0.77 (`plugin/crew/.claude-plugin/plugin.json:3`, `.claude-plugin/marketplace.json:218`, `plugin/PLUGINS.md:14`). BUDGETS.md re-measured at 21,421 lines across 136 files. No suite was executed for this note.
+
+## Re-anchor provenance - main `549cda24` -> `07ecfbd6`, 2026-09-30 (T-0028, feature half, crew 1.0.78)
+
+T-0028 was split by the owner ("Split into 2 PRs"): its review-harness half moved to L-0527, and
+after merging origin/main `549cda24` (T-0086 #282, crew 1.0.77) the branch differs from main only
+in the Kimi provider's feature files (`crew_state.py`, `crew_config.py`, `kimi_probe.py`, the
+templates, provider docs and tests, `.crew/verify.json`, the release files). This note is main's
+copy; every body citation into a changed file was mapped by a `difflib` line diff from `549cda24`
+to `07ecfbd6` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local), and each moved
+citation lands on the same line text. T-0028's earlier provenance on its
+branch is in git history (branch `L-0527-source`). Re-anchor only (owner refresh-artifact
+standing rule, 2026-09-28); no test suite was executed for this note.

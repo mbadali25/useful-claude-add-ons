@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@38b220cf
+anchor: useful-claude-add-ons@07ecfbd6
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -304,7 +304,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:2259` (on T-0085's landing merge of main `a61a6f38`; `:2227` on T-0085's merge of main `8ab733d7`; `:2222` on T-0085's merge of main `2693d0fa`; `:2098` on T-0085's branch at `8abf7ffe`; `:2209` on T-0010-solo's merge of `e878cc31`; `:2085` on T-0010-solo at `d7c7c75c`, `:2077` at `c817782f`, `:2074` at `89c9ee9a`, `:2063` at `50e67586`; `:2204` at `3648f59a`, T-0075's round-5 docs after its merge of `6387ab49`; `:2201` at `938e3b11`, T-0075's round-4 docs after its merge of `f54af3fa`; `:2192` at `3724731b`, T-0075 after its merge of `e6e10432`; `:2174` on T-0075's merge of `d2fbd408`; `:2080` at `d2fbd408`, `:1817` on T-0024's branch at `45345812`, `:2166` on T-0075's branch at `763eaeff`, `:2132` at `764f6018`, `:2072` at `67caa4b8`, `:2107` on T-0075's `f7163410`, `:2057` at `bebbb97f`, `:2084` on T-0075's `e95e5964`, `:2049` on T-0018's first landing merge at `fbc27b49`, `:2034` at `db14619c`, `:1964` on T-0018's branch at `e6b696fb`, `:1990` at T-0023's `a1acd9b7`, `:2052` at T-0021's `74f52fae`, `:2011` at `c2ae46ab`, `:1981` at T-0042's `f0b12ee6`, `:1935` at `2b18f7ab`, `:1831` at T-0021's `bcb77ce2`, `:1809` at `07ca3972`, `:1764` at `a0c0847e`, `:1735` at `8ebbdedc`, `:1794` at T-0006's `2bb92f32`, `:1733` at `c35edda5`; on T-0005's branch `:1859` at `a26ad8c0`, `:1815` at `aa7f9841`, `:1800` at `1e210476`, `:1793` at `3a57b2d2`, `:1772` at `2170d72e`, `:1733` at `8d447a7d`; `:1730` at `f2bb919b`, `:1609` before that,
+  `plugin/crew/README.md:2261` (on T-0085's landing merge of main `a61a6f38`; `:2227` on T-0085's merge of main `8ab733d7`; `:2222` on T-0085's merge of main `2693d0fa`; `:2098` on T-0085's branch at `8abf7ffe`; `:2209` on T-0010-solo's merge of `e878cc31`; `:2085` on T-0010-solo at `d7c7c75c`, `:2077` at `c817782f`, `:2074` at `89c9ee9a`, `:2063` at `50e67586`; `:2204` at `3648f59a`, T-0075's round-5 docs after its merge of `6387ab49`; `:2201` at `938e3b11`, T-0075's round-4 docs after its merge of `f54af3fa`; `:2192` at `3724731b`, T-0075 after its merge of `e6e10432`; `:2174` on T-0075's merge of `d2fbd408`; `:2080` at `d2fbd408`, `:1817` on T-0024's branch at `45345812`, `:2166` on T-0075's branch at `763eaeff`, `:2132` at `764f6018`, `:2072` at `67caa4b8`, `:2107` on T-0075's `f7163410`, `:2057` at `bebbb97f`, `:2084` on T-0075's `e95e5964`, `:2049` on T-0018's first landing merge at `fbc27b49`, `:2034` at `db14619c`, `:1964` on T-0018's branch at `e6b696fb`, `:1990` at T-0023's `a1acd9b7`, `:2052` at T-0021's `74f52fae`, `:2011` at `c2ae46ab`, `:1981` at T-0042's `f0b12ee6`, `:1935` at `2b18f7ab`, `:1831` at T-0021's `bcb77ce2`, `:1809` at `07ca3972`, `:1764` at `a0c0847e`, `:1735` at `8ebbdedc`, `:1794` at T-0006's `2bb92f32`, `:1733` at `c35edda5`; on T-0005's branch `:1859` at `a26ad8c0`, `:1815` at `aa7f9841`, `:1800` at `1e210476`, `:1793` at `3a57b2d2`, `:1772` at `2170d72e`, `:1733` at `8d447a7d`; `:1730` at `f2bb919b`, `:1609` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -407,12 +407,12 @@ listing the directory.
   policy, not re-verified again at this pass) and is present in this fresh
   worktree. `verification-harness.md` owns this file's full contents; this
   note only records what changed in its own tracked citations. Since
-  `6c497a14` one rule was appended (`:265` on the T-0005 landing merge, where T-0026's rule and
-  T-0005's cloud-guard rule both sit above it; `:253` after T-0026 inserted a rule above it,
-  `:258` after T-0005 did the same and Step 8 added a path; `:246` after T-0008's review round 3
-  added a path above it; `:245` when #228 added it): `.claude/rules/**` and
+  `6c497a14` one rule was appended (`:266` on the T-0005 landing merge, where T-0026's rule and
+  T-0005's cloud-guard rule both sit above it; `:254` after T-0026 inserted a rule above it,
+  `:259` after T-0005 did the same and Step 8 added a path; `:247` after T-0008's review round 3
+  added a path above it; `:246` when #228 added it): `.claude/rules/**` and
   `.crew/codemap/**` now run `crew_instructions.py rules --root . --check`.
-  Since `f2bb919b` another follows it (`:264-280`, T-0008): changes to
+  Since `f2bb919b` another follows it (`:265-281`, T-0008): changes to
   `plugin/crew/hooks/scripts/crew_refresh_check.py`, its tests,
   `plugin/crew/commands/implement.md` or `plugin/crew/commands/done.md` -
   and since review round 3 `scope_guard.py`, `completion_audit.py`,
@@ -1392,3 +1392,15 @@ In this note: the runbook-index README citation is `plugin/crew/README.md:2227` 
 **Re-anchored `fb292689` -> `f2cf0508` on 2026-09-30 (T-0086's merge of main `b601d450`, #280 L-0521: opt-in self-hosted runners).** `git diff --name-only fb292689 f2cf0508` returns, outside refresh artifacts, only `.github/workflows/pytest-crew.yml` (the `test` and `crew-shell-matrix` `runs-on` expressions) and `AGENTS.md` (one inserted paragraph after `:50`). No map cites `AGENTS.md:NN` or `.github/workflows/pytest-crew.yml:NN`; the one claim about those jobs' runner placement is verification-harness.md's, which main's own L-0521 commit already updated and the merge carries. No citation moved. No suite was executed for this note.
 
 **Re-anchored `f2cf0508` -> `38b220cf` on 2026-09-30 (T-0086 review round 2's FIXes, merge of main `a7524aac` (T-0087, crew 1.0.76) as `142421d0`, crew 1.0.77).** `27387d83` fixes round 2: `plugin/crew/skills/crew-standards/references/python.md` (PYTHON-01's EncodingWarning quote whole, +1 line; PYTHON-03's splitlines table escapes U+2028/U+2029), `plugin/crew/tests/test_crew_standards.py` (two tests before `test_python_set_applies_to_python_files_only`), `plugin/crew/tests/sabotage_standards.py` (four docstring lines, two entries; `STANDARDS_MUTATIONS` `:57` -> `:61`, 51 by `len()`), `plugin/crew/BUDGETS.md` and `CHANGELOG.md`. `142421d0` merges main's T-0087 with a merge commit; its map conflicts were mechanical: anchors took T-0086's side, provenance hunks kept both (main's first), and one-line hunks differing only in numbers took theirs plus T-0086's own shift (ours + theirs - base, per number); INDEX rows keep main's history cell plus T-0086's additions; `sabotage.py`'s import `:84` -> `:85` and append `:3061` -> `:3062` were set in the body. `38b220cf` sets crew 1.0.77 (`plugin/crew/.claude-plugin/plugin.json:3`, `.claude-plugin/marketplace.json:218`, `plugin/PLUGINS.md:14`). BUDGETS.md re-measured at 21,421 lines across 136 files. No suite was executed for this note.
+
+## Re-anchor provenance - main `549cda24` -> `07ecfbd6`, 2026-09-30 (T-0028, feature half, crew 1.0.78)
+
+T-0028 was split by the owner ("Split into 2 PRs"): its review-harness half moved to L-0527, and
+after merging origin/main `549cda24` (T-0086 #282, crew 1.0.77) the branch differs from main only
+in the Kimi provider's feature files (`crew_state.py`, `crew_config.py`, `kimi_probe.py`, the
+templates, provider docs and tests, `.crew/verify.json`, the release files). This note is main's
+copy; every body citation into a changed file was mapped by a `difflib` line diff from `549cda24`
+to `07ecfbd6` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local), and each moved
+citation lands on the same line text. T-0028's earlier provenance on its
+branch is in git history (branch `L-0527-source`). Re-anchor only (owner refresh-artifact
+standing rule, 2026-09-28); no test suite was executed for this note.

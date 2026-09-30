@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@38b220cf
+anchor: useful-claude-add-ons@07ecfbd6
 verified: 2026-09-30
 
 # localgpu
@@ -512,10 +512,12 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   **Checked against the code, corrected after QA:**
   `plugin/crew/hooks/scripts/crew_config.py:129-130` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1440-1441` since T-0010's four `AUTOPILOT_DEFAULTS`
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1450-1451` on T-0028 at `07ecfbd6`, where both
+  tuples end in `"kimi"`, so the literal tuples localgpu quotes at `:33-34` are stale there
+  (`TODO.md`'s T-0028 item (f)); `:1440-1441` before T-0028, since T-0010's four `AUTOPILOT_DEFAULTS`
   lines (T-0010-solo's merge of `67caa4b8`; `:1432-1433` at `65bb3330`; `:1430-1431` on main before
   T-0005's three import lines merged in, re-numbered
-  from `:1507-1508` by crew 1.0 - see the re-anchor entries below; same two
+  from `:1540-1541` by crew 1.0 - see the re-anchor entries below; same two
   lines, `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")`, byte-identical).
   So `crew.md`'s own attribution to `crew_config.py` names the re-export, not
@@ -757,7 +759,7 @@ never matches and has to be counted on its own):
   `:646`, `:651`, `:676`, cited in shorthand),
   `plugin/localgpu/mcp/_version.py:10-13`, `:31-32`,
   `plugin/crew/hooks/scripts/crew_config.py:127-128`,
-  `plugin/crew/hooks/scripts/crew_state.py:1507-1508`, and, both written out
+  `plugin/crew/hooks/scripts/crew_state.py:1540-1541`, and, both written out
   in full rather than one of them in shorthand,
   `scripts/check-marketplace.py:160-170` and `scripts/check-marketplace.py:169`.
   The first version of this bullet said 9 and listed 7 (both wrong, an
@@ -812,7 +814,7 @@ For the record, what was wrong and how it was found:
    Re-read `crew_config.py`: `DEV_PROVIDERS`/`QA_PROVIDERS` there are a
    re-export (`plugin/crew/hooks/scripts/crew_config.py:127-128`,
    `DEV_PROVIDERS = crew_state.DEV_PROVIDERS`), not the definition — that is
-   `plugin/crew/hooks/scripts/crew_state.py:1507-1508`. Also narrowed the
+   `plugin/crew/hooks/scripts/crew_state.py:1540-1541`. Also narrowed the
    "read only past the opening constraint (lines 1-32)" claim: this pass
    read through line 40, which is where the code block with the tuples ends.
 5. **Version-number subtraction presented as a count.** "Stable across those
@@ -885,7 +887,7 @@ sentence around it staying correct.
    .crew/codemap/localgpu.md`, which now returns nothing) to either full
    repo-relative paths or prose describing the shape without reproducing it.
 2. **FIX — the "12 new citations" method did not reproduce 12.** The bullet
-   said `plugin/crew/hooks/scripts/crew_state.py:1507-1508` fell outside the
+   said `plugin/crew/hooks/scripts/crew_state.py:1540-1541` fell outside the
    `plugin/` regex the rest of the section used and was "tallied separately"
    — it does not; that path starts with `plugin/crew/`, which the regex
    already matches, and the citation was already in that regex's output. And
@@ -1559,3 +1561,15 @@ Nothing under `plugin/localgpu/` changed on either side. Nothing was executed fo
 **Re-anchored `fb292689` -> `f2cf0508` on 2026-09-30 (T-0086's merge of main `b601d450`, #280 L-0521: opt-in self-hosted runners).** `git diff --name-only fb292689 f2cf0508` returns, outside refresh artifacts, only `.github/workflows/pytest-crew.yml` (the `test` and `crew-shell-matrix` `runs-on` expressions) and `AGENTS.md` (one inserted paragraph after `:50`). No map cites `AGENTS.md:NN` or `.github/workflows/pytest-crew.yml:NN`; the one claim about those jobs' runner placement is verification-harness.md's, which main's own L-0521 commit already updated and the merge carries. No citation moved. No suite was executed for this note.
 
 **Re-anchored `f2cf0508` -> `38b220cf` on 2026-09-30 (T-0086 review round 2's FIXes, merge of main `a7524aac` (T-0087, crew 1.0.76) as `142421d0`, crew 1.0.77).** `27387d83` fixes round 2: `plugin/crew/skills/crew-standards/references/python.md` (PYTHON-01's EncodingWarning quote whole, +1 line; PYTHON-03's splitlines table escapes U+2028/U+2029), `plugin/crew/tests/test_crew_standards.py` (two tests before `test_python_set_applies_to_python_files_only`), `plugin/crew/tests/sabotage_standards.py` (four docstring lines, two entries; `STANDARDS_MUTATIONS` `:57` -> `:61`, 51 by `len()`), `plugin/crew/BUDGETS.md` and `CHANGELOG.md`. `142421d0` merges main's T-0087 with a merge commit; its map conflicts were mechanical: anchors took T-0086's side, provenance hunks kept both (main's first), and one-line hunks differing only in numbers took theirs plus T-0086's own shift (ours + theirs - base, per number); INDEX rows keep main's history cell plus T-0086's additions; `sabotage.py`'s import `:84` -> `:85` and append `:3061` -> `:3062` were set in the body. `38b220cf` sets crew 1.0.77 (`plugin/crew/.claude-plugin/plugin.json:3`, `.claude-plugin/marketplace.json:218`, `plugin/PLUGINS.md:14`). BUDGETS.md re-measured at 21,421 lines across 136 files. No suite was executed for this note.
+
+## Re-anchor provenance - main `549cda24` -> `07ecfbd6`, 2026-09-30 (T-0028, feature half, crew 1.0.78)
+
+T-0028 was split by the owner ("Split into 2 PRs"): its review-harness half moved to L-0527, and
+after merging origin/main `549cda24` (T-0086 #282, crew 1.0.77) the branch differs from main only
+in the Kimi provider's feature files (`crew_state.py`, `crew_config.py`, `kimi_probe.py`, the
+templates, provider docs and tests, `.crew/verify.json`, the release files). This note is main's
+copy; every body citation into a changed file was mapped by a `difflib` line diff from `549cda24`
+to `07ecfbd6` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local), and each moved
+citation lands on the same line text. The provider tuples now carry `kimi` (`crew_state.py:1450-1451`), re-read with `grep -n`. T-0028's earlier provenance on its
+branch is in git history (branch `L-0527-source`). Re-anchor only (owner refresh-artifact
+standing rule, 2026-09-28); no test suite was executed for this note.
