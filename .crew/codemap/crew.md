@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@8069a19e
+anchor: useful-claude-add-ons@50948fc1
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -1282,9 +1282,9 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   `--config=<module>/<config>`; `run_agents` still runs at `--root`
   (`plugin/crew/hooks/scripts/webtest_scaffold.py:589`).
   `webtest_rules.rules(module=)`
-  (`plugin/crew/hooks/scripts/webtest_rules.py:105`) prefixes paths, wraps
+  (`plugin/crew/hooks/scripts/webtest_rules.py:108`) prefixes paths, wraps
   `npx` in `(cd <module> && ...)` and drops the rules `omitted`
-  (`plugin/crew/hooks/scripts/webtest_rules.py:85`) names;
+  (`plugin/crew/hooks/scripts/webtest_rules.py:88`) names;
   `webtest_guard.check_auth_leak(module=)`
   (`plugin/crew/hooks/scripts/webtest_guard.py:588`) and `check_visual`
   (`plugin/crew/hooks/scripts/webtest_guard.py:684`) read the module through
@@ -2818,3 +2818,7 @@ Body citations re-pointed: `TODO.md:3978` (T-0104's two follow-up bullets sit at
 `d1872b60..8069a19e` is the merge `2cad26c5` of origin/main `a61a6f38` into `T-0104-build` - #263 (crew 1.0.62-1.0.64, CI and the parallel QA harness), #264 (crew 1.0.65, gate first: no review round on a tree the verify gate has not passed, `review_gate.py`), #265/#266 (the steward skill; `CLAUDE.md`'s evidence moved verbatim to `docs/claude-md-evidence.md`), #267 (crew 1.0.67, `crew-qa-standards`, the 30th crew skill) and T-0088 (#262, crew 1.0.68-1.0.69: the Codex probe and limit fallback in `/crew:review`, and `crew_common.repo_config_dir`, through which every Python reader of `.crew/config.json`/`.crew/crew.json` now resolves a linked worktree's missing config to the main checkout's) - and T-0104's crew 1.0.70 re-set `8069a19e` (`plugin.json`, `marketplace.json`, `plugin/PLUGINS.md`, `CHANGELOG.md`'s heading, `plugin/crew/BUDGETS.md:11` at 19,938 lines across 132 files). The merge's resolutions were mechanical: versions and `BUDGETS.md` main's then re-set, `CHANGELOG.md` both entries, `.crew/verify.json` main's rules 32-34 then T-0104's webtest rule as rule 35, `graphify-out/` main's then rebuilt. None of main's changes re-anchored this directory, so this pass covers them too.
 
 154 body citations re-pointed mechanically, most into `crew_config.py` (+1 at :91, +15 at :2136: the ratchet registry `_RATCHETED` :2451 -> :2467, the writers' `plan_global_write` :2862, `write_global_config` :2881), `crew_state.py` (+3 above the role tables: `ROLE_TIERS` :1254-1259, `PM_DEFAULTS` :1108-1121), `crew_autopilot.py` (+3), `crew_route.py`, `crew_resume.py`, `crew_context.py`, `cloud_guard.py`, `role_write_guard.py` (+1 each) and `sabotage.py` (the `MUTATIONS +=` statement is now :3054-3059). By hand: the inventory's skills row 29 -> 30 (`crew-qa-standards`) and `marketplace.json:217`'s description with it; the version sentence to 1.0.70; T-0004's leaf-count line gains `:1274`; `plan_repo_write` :3062 and `repo_snapshot` :3050 (both were one line above their defs since T-0075); `crew_config.py:1264` and `crew_route.py:322-325` now read through `crew_common.repo_config_file`, said so in place; `sabotage.py` registrations at :3057. Leaf counts re-executed: 125 / 68; `RATCHETED_KEYS` 13, `_RATCHETED` 14. Checked by the same script as the previous pass (every `path:N` outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, mapped from the old anchor to `8069a19e` by difflib equal blocks). A citation that mapped to identical line content was re-pointed mechanically; one that did not map, or that sits in a list of per-commit positions, was read with `sed -n` / `grep -n` and edited by hand, keeping history and adding only the current position. The script's known misattributions (a bare `:N` carried from the wrong file) were read and kept where they hold. Only the counts named below were executed; T-0088's behaviour is recorded where a cited line changed, not re-derived beyond it.
+
+## Re-anchor provenance - `8069a19e` -> `50948fc1`, 2026-09-30 (T-0104, crew 1.0.70)
+
+`50948fc1` routes `webtest_rules.py`'s second `.crew/config.json` literal through one constant, `CREW_CONFIG_GLOB` (+3 lines above `auth_paths`), so T-0088's resolver contract test counts one site. Body citations re-pointed: `webtest_rules.omitted` `:85` -> `:88`, `webtest_rules.rules` `:105` -> `:108`, each re-read with `grep -n`. No other file this note cites changed.
