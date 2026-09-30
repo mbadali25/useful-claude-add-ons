@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@59bc44e5
-verified: 2026-09-29
+anchor: useful-claude-add-ons@9c84df76
+verified: 2026-09-30
 
 ## Re-derive provenance
 
@@ -2821,3 +2821,5 @@ Every body citation of the form `path:line` into those files was mapped by a lin
 dated provenance notes are left as history at their own commit. Moved and corrected in the body: the autopilot router and status sentences (`crew_autopilot.py` `route_args` `:1302`, `status` `:1499`, `main` `:1638`, `_cli_deploy` `:1607`), `crew_ticket.py`'s `AUTOPILOT` `:159`, `approve` `:738`, `parse_risk` `:524`, `precheck` `:873` (it read `:810`, stale before T-0019), and the rule 27-32 ranges; a new T-0019 paragraph cites `mint` `:1201` and its helpers, re-read with `grep -n`. The tracker section gains the measured `_atomic_update` race and `mint`'s lock. Nothing was executed for this note beyond `grep -n` and the line-diff script.
 
 **Re-anchored `835ce179` -> `59bc44e5` on 2026-09-29 (T-0019).** `59bc44e5` re-measures `.crew/verify.json` rule 27 in place (`seconds` 18 -> 19 and its `why`, 18.8s / 623 passed at `32cb1aa3`; same line count, so `:298-308` and every later rule range hold). `32cb1aa3` and `4e03afa6` between them are this refresh and the graph rebuild. No other cited path changed. Nothing else was executed for this note.
+
+**Re-anchored `59bc44e5` -> `9c84df76` on 2026-09-30 (T-0019 review round 1).** `2692e166` fixes round 1's three FIX and five NIT lines: `plugin/crew/hooks/scripts/crew_ticket.py` gains `_mint_indexed`, `_mint_create` and `_mint_ready` above `_mint_claim` (+54 from `:1167` down, so `mint` `:1201` -> `:1260`, `check_direction` `:1263` -> `:1315`, `assign` `:1301` -> `:1355`), `plugin/crew/commands/autopilot.md` rewrites section 0's three lines in place (`:16-18`, still 114 lines), `plugin/crew/README.md` changes `:802`, `:815` and `:819` in place, `CHANGELOG.md` gains eleven lines at `:37`, `plugin/crew/tests/sabotage_autopilot.py` re-points two STATUS_MUTATIONS anchors in place (`:566`, `:630`) and appends 13 ASSIGN_MUTATIONS after `:1030`, and the two T-0019 suites grow. `9c84df76` re-measures `.crew/verify.json` rule 27 in place (`seconds` 19 -> 26 and its `why`; same line count, so every rule range holds). Every `path:line` citation into those files was listed by grep; the only ones past a changed line are crew.md's T-0019 paragraph and tracker-callers line (re-read and corrected in `2692e166`) and `CHANGELOG.md` lines inside dated notes, left as history at their own commit. Nothing was executed for this note.

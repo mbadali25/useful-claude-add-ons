@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@835ce179 on 2026-09-29. Verify before trusting.
+%% Generated from useful-claude-add-ons@9c84df76 on 2026-09-30. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -283,3 +283,6 @@ flowchart TB
 %% confirm refusal :757-759. mint creates a ticket (folder + direction.md, then crew_tracker create
 %% and move --to ready) for /crew:autopilot assign, which this diagram does not draw; the
 %% brainstorm node's tracker create is unchanged. No node or edge changed.
+%% Re-anchored 835ce179 -> 9c84df76 (T-0019 review round 1): of the Anchors paths only crew_ticket.py
+%% changed, from :1167 down (mint's INDEX lock now spans create and move; +54 lines), below every
+%% line this diagram cites (approval_digest :577, status() :604, approve :738 hold). No node or edge changed.
