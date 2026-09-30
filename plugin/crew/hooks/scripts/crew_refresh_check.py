@@ -182,6 +182,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 
@@ -649,16 +650,65 @@ def _texts(top, base, rel):
         return None, None, (False, "new file, not a re-anchor")
     if state != "ok":
         return None, None, (None, f"{COULD_NOT_TELL}: base copy {state}")
+    early = _on_disk(top, base, rel, "deleted, not a re-anchor")
+    if early:
+        return None, None, early
     path = os.path.join(top, *rel.split("/"))
-    present, why = _present(path)
-    if present is None:
-        return None, None, (None, f"{COULD_NOT_TELL}: whether {rel} exists: {why}")
-    if not present:
-        return None, None, (False, "deleted, not a re-anchor")
     after = read_text(path)
     if after is None:
         return None, None, (None, f"{COULD_NOT_TELL}: could not read {rel}")
     return before, after, None
+
+
+_LINK_MODES = ("120000", "160000")
+
+
+def _on_disk(top, base, rel, deleted):
+    """None when `rel` is a regular file reached with no symlink along its
+    path and git sees the mode its base copy had; otherwise (verdict,
+    reason). Review round 6: `read_text` followed a symlink, so a map
+    replaced by a link to external re-anchored text was admitted while git
+    stores only the link, and nothing asked whether a rendered diagram or a
+    graph file still existed. A refresh writes regular files in place: a
+    link at the path or along it, a changed mode, or a missing file is not
+    one. `deleted` is the reason for a file lstat proves absent."""
+    path = os.path.join(top, *rel.split("/"))
+    try:
+        info = os.lstat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return False, deleted
+    except (OSError, ValueError) as exc:
+        why = getattr(exc, "strerror", None) or type(exc).__name__
+        return None, f"{COULD_NOT_TELL}: whether {rel} exists: {why}"
+    if stat.S_ISLNK(info.st_mode):
+        return False, "a symlink, which no refresh writes"
+    if not stat.S_ISREG(info.st_mode):
+        return False, "not a regular file, which no refresh writes"
+    named = os.path.normcase(os.path.join(os.path.realpath(top), *rel.split("/")))
+    if os.path.normcase(os.path.realpath(path)) != named:
+        return False, "reached through a symlink, which no refresh writes"
+    # The mode git sees against the base (the working tree, under
+    # core.fileMode), then the mode it stages: a `core.symlinks=false`
+    # checkout leaves a link as a regular file that git stores as 120000.
+    code, out = _git_out(top, "diff", "--no-ext-diff", "--raw", "--no-renames", "-z",
+                         base, "--", rel)
+    if code != 0:
+        why = "could not run" if code is None else f"exited {code}"
+        return None, f"{COULD_NOT_TELL}: git diff --raw of {rel} {why}"
+    for record in out.split(b"\0"):
+        if record.startswith(b":"):
+            old, new = record[1:].decode("ascii", "replace").split(" ")[:2]
+            if "000000" not in (old, new) and old != new:
+                return False, f"mode changed from {old} to {new}, which no refresh does"
+    code, out = _git_out(top, "ls-files", "-s", "-z", "--", rel)
+    if code != 0:
+        why = "could not run" if code is None else f"exited {code}"
+        return None, f"{COULD_NOT_TELL}: git ls-files of {rel} {why}"
+    for record in out.split(b"\0"):
+        mode = record.decode("ascii", "replace").split(" ", 1)[0]
+        if mode in _LINK_MODES:
+            return False, f"stored as {mode}, which no refresh writes"
+    return None
 
 
 def _map_verdict(top, base, rel, reach):
@@ -747,6 +797,9 @@ def _rule_verdict(top, base, rel, expected):
     if present is None:
         return None, f"{COULD_NOT_TELL}: whether {rel} exists: {why}"
     if present:
+        early = _on_disk(top, base, rel, "deleted, not a regeneration")
+        if early:
+            return early
         # Read once, and a None is could-not-tell BEFORE any comparison: an
         # unreadable rule no map expects compared None == None and was
         # admitted as regenerated (review round 2).
@@ -797,22 +850,43 @@ def _stored_blob(top, rel, data):
     return oid if code == 0 and oid else None
 
 
+_CODEMAP_DIR, _RULES_DIR = REFRESH_ARTIFACT_PATHS[0][1], REFRESH_ARTIFACT_PATHS[3][1]
+
+
+def _claims(rel, dirs, diagrams, graph_out):
+    """[(dir, owner)] for every artifact dir in `dirs` that holds `rel`,
+    the most specific (most path segments) first."""
+    owners = ((_CODEMAP_DIR, "codemap"), (diagrams, "diagrams"), (_RULES_DIR, "rules"),
+              (graph_out, "graph"))
+    held = [(d, o) for d, o in owners if d and d in dirs and d != rel and _reaches(d, rel)]
+    return sorted(held, key=lambda claim: -len(claim[0].split("/")))
+
+
 def _kind(rel, dirs, diagrams, graph_out):
     """Which admission rule judges `rel`: map, index, not-subsystem, diagram,
-    rendered, rule, graph, or other."""
+    rendered, rule, graph, overlap, or other. The MOST SPECIFIC artifact dir
+    holding `rel` decides (review round 6: branch order classified graph
+    files under a nested `graph.out` as rendered diagrams); two equally
+    specific dirs are "overlap", which is could-not-tell."""
+    held = _claims(rel, dirs, diagrams, graph_out)
+    if not held:
+        return "other"
+    if len(held) > 1 and len(held[0][0].split("/")) == len(held[1][0].split("/")):
+        return "overlap"
+    owner = held[0][1]
     parts = rel.split("/")
     parent, name = "/".join(parts[:-1]), parts[-1]
-    if parent == ".crew/codemap" and name.endswith(".md"):
+    if owner == "codemap":
+        if parent != _CODEMAP_DIR or not name.endswith(".md"):
+            return "other"
         if name == "INDEX.md":
             return "index"
         return "not-subsystem" if name in _NOT_SUBSYSTEMS else "map"
-    if diagrams and _reaches(diagrams, rel):
+    if owner == "diagrams":
         return "diagram" if os.path.splitext(name)[1].lower() in _DIAGRAM_EXTS else "rendered"
-    if parent == ".claude/rules" and name.endswith(".md"):
-        return "rule"
-    if graph_out in dirs and _reaches(graph_out, rel):
-        return "graph"
-    return "other"
+    if owner == "rules":
+        return "rule" if parent == _RULES_DIR and name.endswith(".md") else "other"
+    return "graph"
 
 
 def artifact_verdicts(top, base, reach, artifacts, cfg=None):
@@ -859,23 +933,30 @@ def artifact_verdicts(top, base, reach, artifacts, cfg=None):
     judge("index", lambda rel: _index_verdict(top, base, rel, admitted))
     judge("not-subsystem", lambda rel: (False, "not a subsystem map"))
     judge("diagram", lambda rel: _diagram_verdict(top, base, rel, reach, code))
-    judge("rendered", lambda rel: _rendered_verdict(rel, kinds, out))
+    judge("rendered", lambda rel: _rendered_verdict(top, base, rel, kinds, out))
     if any(kinds[p] == "rule" for p in artifacts):
         expected = _expected_rules(top)
         if isinstance(expected, str):
             judge("rule", lambda rel: (None, f"{COULD_NOT_TELL}: {expected}"))
         else:
             judge("rule", lambda rel: _rule_verdict(top, base, rel, expected))
-    judge("graph", lambda rel: (True, "rebuilt after a code change") if graph_code
-          else (False, "graph changed with no code change since the base"))
+    judge("graph", lambda rel: _graph_verdict(top, base, rel, graph_code))
+    judge("overlap", lambda rel: (None, f"{COULD_NOT_TELL}: artifact dirs " + " and ".join(
+        f"{d} ({o})" for d, o in _claims(rel, dirs, diagrams, graph_out)[:2])
+        + " are equally specific and both hold it"))
     judge("other", lambda rel: (False, "not a refresh artifact of a kind the audit admits"))
     return out
 
 
-def _rendered_verdict(rel, kinds, out):
+def _rendered_verdict(top, base, rel, kinds, out):
     """A rendered diagram is admitted beside its same-stem source, in the same
     dir (the source's extension compared case-folded), when that source
-    changed and was admitted."""
+    changed and was admitted -- and it is still a regular file on disk
+    (review round 6: a `git rm` of it was admitted). A new one, with no base
+    copy, may be what the regeneration wrote."""
+    early = _on_disk(top, base, rel, "deleted, not a regeneration")
+    if early:
+        return early
     stem = os.path.splitext(rel)[0]
     # Paired as `_kind` classifies a source: by stem, the extension
     # case-folded (review round 4: `flow.MMD` is a source, so is its pair).
@@ -887,6 +968,18 @@ def _rendered_verdict(rel, kinds, out):
             return True, f"rendered beside the re-anchored {source.rsplit('/', 1)[-1]}"
     name = stem.rsplit("/", 1)[-1]
     return False, f"rendered file whose source {name}.mmd was not re-anchored"
+
+
+def _graph_verdict(top, base, rel, graph_code):
+    """Anything under `graph.out` is admitted when the ticket changed a code
+    path and the file is still a regular file on disk (review round 6, the
+    rendered diagram's neighbour: a deleted graph file was admitted)."""
+    early = _on_disk(top, base, rel, "deleted, not a regeneration")
+    if early:
+        return early
+    if graph_code:
+        return True, "rebuilt after a code change"
+    return False, "graph changed with no code change since the base"
 
 
 def _expected_rules(top):

@@ -546,10 +546,30 @@ def test_a_file_under_an_artifact_dir_of_no_admitted_kind_is_refused(anchored):
 # --- could not tell (review round 2) -------------------------------------------
 
 @pytest.mark.parametrize("case", ["unexpected", "expected"])
-def test_an_unreadable_rule_is_could_not_tell(anchored, case):
+def test_an_unreadable_rule_is_could_not_tell(anchored, monkeypatch, case):
     """Review round 2: `read_text` returned None for a rule file that exists,
     and `None == expected.get(key)` admitted one no map expects as
     `regenerated` and called one a map expects `bytes differ`."""
+    root, base = anchored
+    rel = RULE.format(name="ghost") if case == "unexpected" else APP_RULE
+    if case == "unexpected":
+        write(root, rel, "# ghost\n")
+    # A regular file the hook cannot read. Review round 6 refuses a symlink
+    # before it is read, so the dangling link this test used to read "cannot
+    # read" is now `test_a_dangling_symlink_rule_is_refused_as_a_symlink`.
+    real = crew_refresh_check._read_bytes  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_refresh_check, "_read_bytes",
+                        lambda path: None if path.endswith(rel.rsplit("/", 1)[1]) else real(path))
+
+    verdict, reason = _verdict(root, base, REACH, rel)
+
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL)) == (None, True), reason
+
+
+@pytest.mark.parametrize("case", ["unexpected", "expected"])
+def test_a_dangling_symlink_rule_is_refused_as_a_symlink(anchored, case):
+    """Round 2's mechanism for an unreadable rule, after round 6: a symlink
+    is refused before anything reads it, so it never admits either way."""
     root, base = anchored
     if case == "unexpected":
         rel = RULE.format(name="ghost")
@@ -560,7 +580,7 @@ def test_an_unreadable_rule_is_could_not_tell(anchored, case):
 
     verdict, reason = _verdict(root, base, REACH, rel)
 
-    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL)) == (None, True), reason
+    assert (verdict, "symlink" in reason) == (False, True), reason
 
 
 # Review round 2: every could-not-tell branch of `_sha_moved`, `_moved_from`
@@ -949,3 +969,245 @@ def test_a_map_whose_presence_cannot_be_proven_is_could_not_tell(anchored, monke
     verdict, reason = _verdict(root, base, REACH, APP)
 
     assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL)) == (None, True), reason
+
+
+# --- review round 6 -------------------------------------------------------------
+# A deleted artifact is never a regeneration (round 6 BLOCK at `_rendered_verdict`,
+# and the graph beside it); a symlink at or along an artifact's path, or a git
+# mode that differs from the base copy's, is never a re-anchor (round 6 BLOCK at
+# `_texts`, and every other kind that reads or admits a working-tree file);
+# overlapping artifact dirs classify by the most specific (round 6 FIX at `_kind`).
+# The sabotage entries for these land with L-0540's `sabotage_refresh.py`.
+
+def test_a_deleted_rendered_diagram_is_refused_beside_a_re_anchored_source(anchored):
+    root, base = anchored
+    re_anchor_diagram(root, "flow", head_sha(root, 40))
+    git(root, "rm", "-q", RENDERED)
+
+    got = _verdicts(root, base, REACH, [FLOW, RENDERED])
+
+    assert (got[FLOW][0], got[RENDERED][0], "deleted" in got[RENDERED][1]) == (
+        True, False, True), got
+
+
+@pytest.mark.parametrize("which", [0, 1], ids=["graph.json", "GRAPH_REPORT.md"])
+def test_a_deleted_graph_file_is_refused_after_a_code_change(anchored, which):
+    root, base = anchored
+    git(root, "rm", "-q", GRAPH[which])
+
+    assert _judged(root, base, REACH, GRAPH[which], "deleted")[:2] == (False, True)
+
+
+def test_a_new_rendered_diagram_beside_a_re_anchored_source_is_admitted(anchored):
+    """The neighbour that must stay open: a regeneration may create a
+    rendered file the base did not have."""
+    root, base = anchored
+    re_anchor_diagram(root, "flow", head_sha(root, 40))
+    png = "docs/diagrams/flow.png"
+    write(root, png, "png bytes\n")
+
+    got = _verdicts(root, base, REACH, [FLOW, png])
+
+    assert (got[FLOW][0], got[png][0]) == (True, True), got
+
+
+def _symlink_to_outside(root, rel, data, tmp_path):
+    """Replace `rel` with a symlink to a file outside the repository holding
+    `data` (bytes): the text the reviewer's bundle never shows."""
+    outside = tmp_path / "outside"
+    outside.mkdir(exist_ok=True)
+    target = outside / rel.replace("/", "_")
+    target.write_bytes(data)
+    path = root.joinpath(*rel.split("/"))
+    if path.exists() or path.is_symlink():
+        path.unlink()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.symlink(str(target), str(path))
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"cannot create a symlink here: {exc}")
+
+
+def _admitted_shape(root, kind):
+    """(rel, bytes, companions): the path, the bytes that kind admits as a
+    regular file here, and the artifacts judged beside it."""
+    head = head_sha(root, 40)
+    if kind == "map":
+        return APP, map_text("app", head, ("src/app.py:2",), "x is two").encode(), []
+    if kind == "index":
+        re_anchor_map(root, "app", head)
+        index_row_append(root, "app", f"re-anchored to `{head[:8]}`")
+        data = read(root, INDEX).encode()
+        return INDEX, data, [APP]
+    if kind == "diagram":
+        re_anchor_diagram(root, "flow", head)
+        return FLOW, read(root, FLOW).encode(), []
+    if kind == "rendered":
+        re_anchor_diagram(root, "flow", head)
+        return RENDERED, f"<svg><!-- {head} --></svg>\n".encode(), [FLOW]
+    if kind == "rule":
+        re_anchor_map(root, "app", head)
+        crew_instructions.rules(str(root))
+        return APP_RULE, root.joinpath(*APP_RULE.split("/")).read_bytes(), [APP]
+    rebuild_graph(root, head)
+    return GRAPH[0], read(root, GRAPH[0]).encode(), []
+
+
+KINDS = ["map", "index", "diagram", "rendered", "rule", "graph"]
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_a_symlinked_artifact_is_refused(anchored, tmp_path, kind):
+    """Round 6: `_texts` read through a symlink, so a regular artifact
+    replaced by a link to external re-anchored text was admitted while git
+    stores only the link target. Every kind that reads or admits a
+    working-tree file refuses one."""
+    root, base = anchored
+    rel, data, companions = _admitted_shape(root, kind)
+    _symlink_to_outside(root, rel, data, tmp_path)
+
+    got = _verdicts(root, base, REACH, companions + [rel])
+
+    assert (got[rel][0], "symlink" in got[rel][1]) == (False, True), got
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_the_same_artifact_as_a_regular_file_is_admitted(anchored, kind):
+    """The control for the test above: the same bytes, written in place."""
+    root, base = anchored
+    rel, data, companions = _admitted_shape(root, kind)
+    root.joinpath(*rel.split("/")).write_bytes(data)
+
+    got = _verdicts(root, base, REACH, companions + [rel])
+
+    assert got[rel][0] is True, got
+
+
+def test_an_artifact_under_a_symlinked_dir_is_refused(tmp_path):
+    sub = "docs/diagrams/sub/flow.mmd"
+    root, base = anchored_repo(tmp_path / "r", extra={
+        sub: "%% Generated from r@deadbeefdead on 2026-09-28.\n%% Anchors: src/app.py\n"
+             "flowchart LR\n  a --> b\n"})
+    outside = tmp_path / "outside" / "sub"
+    outside.mkdir(parents=True)
+    (outside / "flow.mmd").write_text(
+        f"%% Generated from r@{head_sha(root, 40)} on 2026-09-30.\n%% Anchors: src/app.py\n"
+        "flowchart LR\n  a --> b\n", encoding="utf-8")
+    git(root, "rm", "-rq", "docs/diagrams/sub")
+    try:
+        os.symlink(str(outside), str(root.joinpath("docs", "diagrams", "sub")))
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"cannot create a symlink here: {exc}")
+
+    assert _judged(root, base, REACH, sub, "symlink")[:2] == (False, True)
+
+
+@pytest.mark.parametrize("kind", ["map", "diagram", "rule"])
+def test_an_artifact_whose_git_mode_changed_is_refused(anchored, kind):
+    root, base = anchored
+    assert git(root, "config", "--bool", "core.fileMode").strip() == "true"
+    rel, data, companions = _admitted_shape(root, kind)
+    path = root.joinpath(*rel.split("/"))
+    path.write_bytes(data)
+    path.chmod(0o755)
+
+    got = _verdicts(root, base, REACH, companions + [rel])
+
+    assert (got[rel][0], "mode changed" in got[rel][1]) == (False, True), got
+
+
+def test_an_artifact_staged_as_a_symlink_is_refused(anchored):
+    """What a `core.symlinks=false` checkout leaves: a regular file in the
+    working tree that git stores as a link (mode 120000)."""
+    root, base = anchored
+    rel, data, _companions = _admitted_shape(root, "map")
+    root.joinpath(*rel.split("/")).write_bytes(data)
+    blob = git(root, "hash-object", "-w", rel).strip()
+    git(root, "update-index", "--cacheinfo", f"120000,{blob},{rel}")
+
+    assert _judged(root, base, REACH, rel, "stored as 120000")[:2] == (False, True)
+
+
+def test_a_git_mode_check_that_cannot_run_is_could_not_tell(anchored, monkeypatch):
+    root, base = anchored
+    re_anchor_map(root, "app", head_sha(root, 40))
+    real = crew_refresh_check._git_out  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_refresh_check, "_git_out",
+                        lambda r, *a, **k: (None, b"") if "--raw" in a else real(r, *a, **k))
+
+    verdict, reason = _verdict(root, base, REACH, APP)
+
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL)) == (None, True), reason
+
+
+def _cfg(**dirs):
+    cfg = {}
+    if "diagrams" in dirs:
+        cfg["docs"] = {"diagramsDir": dirs["diagrams"]}
+    if "graph" in dirs:
+        cfg["graph"] = {"out": dirs["graph"]}
+    return cfg
+
+
+def _judge_with(root, base, cfg, arts):
+    return crew_refresh_check.artifact_verdicts(str(root), base, REACH, arts, cfg=cfg)
+
+
+def test_graph_files_under_the_diagrams_dir_are_judged_as_graph(tmp_path):
+    """Round 6 FIX: with `docs.diagramsDir: docs` and `graph.out:
+    docs/graphify-out`, branch order classified the graph files as rendered
+    diagrams and refused them."""
+    nested = ["docs/graphify-out/graph.json", "docs/graphify-out/GRAPH_REPORT.md"]
+    root, base = anchored_repo(tmp_path, extra={nested[0]: '{"nodes": []}\n', nested[1]: "# r\n"})
+    write(root, nested[0], '{"nodes": [], "rebuilt": true}\n')
+    write(root, nested[1], "# r rebuilt\n")
+
+    got = _judge_with(root, base, _cfg(diagrams="docs", graph="docs/graphify-out"), nested)
+
+    assert [(got[p][0], "code change" in got[p][1]) for p in nested] == [(True, True)] * 2, got
+
+
+@pytest.mark.parametrize("case", ["diagrams-under-graph", "rules-under-diagrams",
+                                  "diagrams-under-codemap", "codemap-under-diagrams"])
+def test_overlapping_artifact_dirs_classify_by_the_most_specific(tmp_path, case):
+    """The neighbours of the FIX: whichever dir is nested in which, the
+    innermost decides the kind."""
+    head_rule = case == "rules-under-diagrams"
+    if case == "diagrams-under-codemap":
+        rel = ".crew/codemap/diagrams/flow.mmd"
+        root, base = anchored_repo(tmp_path, extra={
+            rel: "%% Generated from r@deadbeefdead on 2026-09-28.\n%% Anchors: src/app.py\n"
+                 "flowchart LR\n  a --> b\n"})
+        cfg = _cfg(diagrams=".crew/codemap/diagrams")
+        text = read(root, rel).replace("deadbeefdead", head_sha(root, 40))
+        write(root, rel, text)
+    else:
+        root, base = anchored_repo(tmp_path)
+        head = head_sha(root, 40)
+        cfg = {"diagrams-under-graph": _cfg(graph="docs", diagrams="docs/diagrams"),
+               "rules-under-diagrams": _cfg(diagrams=".claude"),
+               "codemap-under-diagrams": _cfg(diagrams=".crew")}[case]
+        re_anchor_map(root, "app", head)
+        if head_rule:
+            crew_instructions.rules(str(root))
+            rel = APP_RULE
+        elif case == "codemap-under-diagrams":
+            rel = APP
+        else:
+            re_anchor_diagram(root, "flow", head)
+            rel = FLOW
+
+    got = _judge_with(root, base, cfg, [APP, rel] if rel != APP else [APP])
+
+    assert got[rel][0] is True, got
+
+
+def test_equally_specific_artifact_dirs_are_could_not_tell(anchored):
+    root, base = anchored
+    re_anchor_diagram(root, "flow", head_sha(root, 40))
+
+    got = _judge_with(root, base, _cfg(diagrams="docs/diagrams", graph="docs/diagrams"), [FLOW])
+
+    verdict, reason = got[FLOW]
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL),
+            reason.count("docs/diagrams") >= 1, "graph" in reason) == (None, True, True, True), reason
