@@ -329,6 +329,14 @@ def default_config():
             "shell": None,
             "windowsHostIp": None,
         },
+        # T-0040. Which shell crew's long-running jobs run in on Windows, read
+        # by `crew_shell.py`. A preference, so it cannot live in `platform.*`:
+        # that block is derived and platform-sync rewrites it every
+        # SessionStart (`crew_platform.DERIVED_KEYS`). Modes: `auto`, `wsl`,
+        # `powershell`, `gitbash`. Not `route` below -- that is plain-text
+        # lifecycle routing of prompts to `/crew:` commands (`crew_route.py`);
+        # `shellRoute` picks the shell a job runs in.
+        "shellRoute": {"mode": "auto", "distro": None},
         "pm": copy.deepcopy(crew_state.PM_DEFAULTS),
         "graph": copy.deepcopy(crew_upgrade.GRAPH_BLOCK),
         "docs": copy.deepcopy(crew_upgrade.DOCS_BLOCK),
@@ -565,6 +573,10 @@ def default_global_config():
         # T-0023's routing switch, settable machine-wide (see the comment in
         # `default_config()` for why a repo file can still veto it).
         "route": {"enabled": False},
+        # T-0040. Which shell is fast is a fact about the machine (Git Bash's
+        # per-fork cost differs 16-21x between two of the owner's hosts), so
+        # the shell route is settable here; a repo may still override it.
+        "shellRoute": {"mode": "auto", "distro": None},
     }
 
 

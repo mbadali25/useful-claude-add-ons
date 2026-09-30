@@ -163,7 +163,7 @@
 %%     :75 one-step plan, still /crew:approve; :94 one review round.
 %% --
 %% Status edits after approval (T-0026): three steps edit spec.md's header status
-%% AFTER approval - plan.md:60 (`planned`), implement.md:110 (`review`) and
+%% AFTER approval - plan.md:60 (`planned`), implement.md:112 (`review`) and
 %% done.md:61 (`status: done`). Until T-0026 the receipt hashed both files whole,
 %% so each left it stale; the done.md case was seen live on 2026-09-25. A
 %% `crew-approval/2` receipt now binds approval_digest
@@ -398,3 +398,8 @@ flowchart TB
 %% Re-anchored 65abeb8d -> 1f21f73b (T-0094 review round 7): of the Anchors paths only crew_refresh_check.py
 %% changed (_read_regular new, the functions below it moved); this diagram cites no line of it.
 %% No node or edge changed.
+%% Merged 1f21f73b's lines on T-0040-land (T-0040's reviewed 913bec89 merged into main 6a8c60b1,
+%% crew 1.0.83): of the Anchors paths only commands/implement.md differs from main's side - T-0040's
+%% Windows sentence in step 4, +2 lines at :71-72 - so its lines past :70 move +2: the status-edit
+%% note above now reads implement.md:112 (re-read with sed -n); :15-18 and the im0 node's :18-24 are
+%% above it. Lines cited inside the dated notes above are as of their own commits. No node or edge changed.

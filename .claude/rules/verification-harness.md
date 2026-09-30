@@ -4,7 +4,7 @@ paths:
   - "_verify/smoke.sh"
   - "scripts/check-marketplace.py"
 ---
-<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=ab6d28327fb6da56 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=4b3633505369bf0d -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # verification-harness
 Code map anchor `17d0b1d2`; if it is behind HEAD, re-check with `git diff --name-only 17d0b1d2..HEAD -- <cited paths>`.
 Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and .crew/verify.json — what each actually runs, and where they overlap or don't. .crew/verify.json is tracked; its own anchor field (:3) is stale at 5238be3d, independent of this note's anchor.
@@ -26,5 +26,5 @@ Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and 
 - `.crew/verify.json:342-349` (rule 32) — T-0094's refresh-admission suite, split out of rule 25.
 - `.crew/verify.json:371-383` (rule 36) — the T-0085 standards suite; `plugin/crew/tests/sabotage.py:85`, `:3062` — `sabotage_standards.py`'s registration.
 - `.crew/verify.json:384-409` (rule 37) — the T-0087 harness rule; `scripts/check-tooling-pr.py` and its suite `scripts/_test/tooling-pr.py`; `plugin/crew/tests/sabotage.py:82`, `:3061` — `sabotage_tooling.py`'s registr...
-- `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` / `plugin/crew/CONFIG.md:2408-2415` — the descoped per-rule process-group kill, documented as a standing limitation.
+- `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` / `plugin/crew/CONFIG.md:2419-2426` — the descoped per-rule process-group kill, documented as a standing limitation.
 Full note: `.crew/codemap/verification-harness.md`.

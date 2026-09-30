@@ -828,6 +828,8 @@ repository or one checkout.
 | `platform.wsl` | boolean or `null` | `null` | `crew_platform.py` |
 | `platform.shell` | string or `null` | `null` | `crew_platform.py` |
 | `platform.windowsHostIp` | string or `null` | `null` | `crew_platform.py` |
+| `shellRoute.mode` | `"auto"`, `"wsl"`, `"powershell"` or `"gitbash"` | `"auto"` | `crew_shell.mode` — the shell crew's long-running jobs run in on native Windows; both layers; an unrecognised value reads as `auto` and is named on the route line and the `/crew:status` `shell` line |
+| `shellRoute.distro` | string or `null` | `null` | `crew_shell.configured_distro` — the WSL distro to probe and route to; `null` takes the default (`*`) distro, never one picked by list order |
 | `graph.enabled` | boolean | `true` | **no consumer found**, §9 |
 | `graph.tool` | string | `"graphify"` | **no consumer found**, §9 |
 | `graph.out` | path | `"graphify-out"` | `crew_state.py` |
@@ -846,6 +848,15 @@ case `null_shadows` is deliberately narrow to protect (§1).
 machine facts into the repo config. That is why it is repo-only despite
 describing a machine: the value records what *this checkout* resolved, and a
 global override would make every repo on the box report the first one's answer.
+
+`shellRoute.*` (T-0040) is a preference, not a detected fact, so it is not in
+`platform.*`: platform-sync rewrites `platform.shell` every SessionStart. It is
+settable on both layers, because which shell is fast is a fact about the
+machine and a repo may still override it. The probe's answer is not config: it
+lives in the machine-local cache `~/.claude/crew/shell-route.json`, written only
+by `crew_shell.py probe --write` and `measure --write`. `shellRoute` is not
+`route`: `route` routes plain-text prompts to `/crew:` commands, and
+`shellRoute` picks the shell a job runs in.
 
 ---
 

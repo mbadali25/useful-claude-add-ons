@@ -126,6 +126,10 @@
     "shell": null,
     "windowsHostIp": null
   },
+  "shellRoute": {
+    "mode": "auto",
+    "distro": null
+  },
   "pm": {
     "enabled": true,
     "mode": "adaptive",

@@ -202,6 +202,17 @@
 %% Anchors paths only crew_context.py changed - T-0076 added four lines inside emit() (:1086-1089,
 %% stdout reconfigured to LF), so the additionalContext write moved :1086 -> :1090; every other
 %% crew_context.py line cited here is above :1084 and unchanged. No other node or edge changed.
+%% Re-anchored 3c4f1a68 -> 8f85657a (T-0040, off main 6387ab49): of the Anchors paths only
+%% crew_status.py changed - +1 import line at :34 and +5 lines after the verify line (the
+%% Windows-only shell line) - so collect moves :192-216 -> :193-222, the tracker line's resolve
+%% :63 -> :64 and the HANDOFF check :207 -> :213 (re-read with sed -n). The st2 node names the
+%% new shell line; no node or edge was added.
+%% Merged 78b7080a + 8f85657a on T-0040-land (T-0040's reviewed 913bec89 merged into main 6a8c60b1,
+%% crew 1.0.83): of the Anchors paths only crew_status.py differs from main's side, by T-0040's
+%% crew_shell import (:35) and the Windows-only shell line (:224-228). Re-read with grep -n on
+%% the merged tree: collect :211-240, _tracker_line :67, the HANDOFF check :231; that also
+%% corrects main's st2 citations (:65, :215, :192-216), which predate T-0087's later crew_status.py
+%% edits. The st2 node takes T-0040's shell line; no node or edge was added.
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
     start --> reg["hooks.json:3-10<br/>3 SessionStart pairs, sh + ps1, no matcher<br/>each claims per session+source"]
@@ -254,6 +265,6 @@ flowchart TB
     hr3 -. "? 1.0-only repo (crew.json, no config.json)<br/>with inject:false gets no handoff" .-> hrx
 
     subgraph status["/crew:status (on demand)"]
-        st1["status.md:14<br/>crew_status.py --root ."] --> st2["git header, config file, roster,<br/>tracker (crew_tracker.resolve, :65),<br/>tickets, review ledgers, verify,<br/>codemap freshness, metrics,<br/>handoff, interrupted migrate<br/>:192-216"]
-        st2 -. "? checks fixed .work/HANDOFF.md (:215),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
+        st1["status.md:14<br/>crew_status.py --root ."] --> st2["git header, config file, roster,<br/>tracker (crew_tracker.resolve, :67),<br/>tickets, review ledgers, verify,<br/>shell (Windows only, T-0040),<br/>codemap freshness, metrics,<br/>handoff, interrupted migrate<br/>:211-240"]
+        st2 -. "? checks fixed .work/HANDOFF.md (:231),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
     end

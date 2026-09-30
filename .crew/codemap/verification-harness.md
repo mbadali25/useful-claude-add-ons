@@ -409,7 +409,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2408-2415` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2419-2426` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -620,7 +620,7 @@ their own, in both the `test` job and the Windows leg of `crew-shell-matrix`. Re
   and its suite `scripts/_test/tooling-pr.py`; `plugin/crew/tests/sabotage.py:82`, `:3061` —
   `sabotage_tooling.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
-  `plugin/crew/CONFIG.md:2408-2415` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2419-2426` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:825-835`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.

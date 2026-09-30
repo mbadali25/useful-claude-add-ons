@@ -12,6 +12,7 @@ import sys
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_shell
 import crew_status
 import review_ledger
 from crew_fixtures import make_repo
@@ -64,15 +65,97 @@ def test_status_is_read_only(tmp_path):
     assert (done.returncode, _stat_tree(root)) == (0, before)
 
 
+def test_status_is_read_only_with_the_windows_shell_line(tmp_path, monkeypatch):
+    """The subprocess test above shows the shell line only on a Windows host,
+    so the same property is measured here in-process with the line forced on:
+    the repo AND the machine-local cache directory are unchanged."""
+    root = _busy_repo(tmp_path)
+    monkeypatch.setattr(crew_shell, "host_os", lambda *a, **k: "windows-bash")
+    crew_shell.write_cache({"state": "usable", "distro": "Ubuntu-24.04", "detail": "ok"})
+    cache_dir = os.path.dirname(crew_shell.probe_path())
+    before = (_stat_tree(root), _stat_tree(cache_dir))
+
+    lines = crew_status.collect(str(root), memory=True)
+
+    assert any(line.startswith("shell    ") for line in lines)
+    assert (_stat_tree(root), _stat_tree(cache_dir)) == before
+
+
 def test_status_output_fits_forty_lines_on_a_busy_repo(tmp_path, monkeypatch, capsys):
     root = _busy_repo(tmp_path)
     stub = tmp_path / "crew_context.py"
     stub.write_text("for i in range(100):\n    print('stat line', i)\n", encoding="utf-8")
     monkeypatch.setattr(crew_status, "CONTEXT_SCRIPT", str(stub))
+    monkeypatch.setattr(crew_shell, "host_os", lambda *a, **k: "windows-bash")
 
     crew_status.main(["--root", str(root), "--memory"])
 
-    assert len(capsys.readouterr().out.splitlines()) <= 40
+    out = capsys.readouterr().out.splitlines()
+    assert len(out) <= 40
+    assert any(line.startswith("shell    ") for line in out)
+
+
+@pytest.mark.parametrize("host", ["linux", "macos", "wsl"])
+def test_status_has_no_shell_line_off_windows(tmp_path, monkeypatch, host):
+    root = make_repo(tmp_path)
+    monkeypatch.setattr(crew_shell, "host_os", lambda *a, **k: host)
+    without = crew_status.collect(str(root))
+    crew_shell.write_cache({"state": "usable", "distro": "Ubuntu-24.04", "detail": "ok"})
+
+    with_cache = crew_status.collect(str(root))
+
+    assert "\n".join(with_cache).encode() == "\n".join(without).encode()
+    assert not any(line.startswith("shell") for line in with_cache)
+
+
+PWSH7 = "C:/Program Files/PowerShell/7/pwsh.exe"
+_SPLIT = "direct (plain argv) / gitbash (bash syntax)"
+_INSTALL = "recommend `wsl --install -d Ubuntu` in an elevated shell, then reboot"
+
+
+@pytest.mark.parametrize("mode,cache,location,expected", [
+    ("auto", {"state": "usable", "distro": "Ubuntu-24.04", "detail": "ok"}, "wsl-fs",
+     "shell    auto -> wsl (Ubuntu-24.04) - WSL2 usable and the repo is inside WSL"),
+    ("auto", {"state": "not-installed", "detail": "wsl.exe is not on PATH"}, "windows-drive",
+     f"shell    auto -> {_SPLIT} - WSL not-installed (wsl.exe is not on PATH); {_INSTALL}"),
+    ("powershell", {"state": "usable", "distro": "Ubuntu-24.04", "detail": "ok"}, "windows-drive",
+     f"shell    powershell -> {PWSH7} (plain argv) / gitbash (bash syntax) - a bash string is never handed to pwsh"),
+    ("gitbash", {"state": "usable", "distro": "Ubuntu-24.04", "detail": "ok"}, "windows-drive",
+     "shell    gitbash -> gitbash - set by shellRoute.mode"),
+    ("auto", None, "windows-drive",
+     f"shell    auto -> {_SPLIT} - WSL never probed - run /crew:config"),
+    ("auto", {"state": "broken", "detail": "wsl.exe --list --verbose timed out after 15s"}, "windows-drive",
+     f"shell    auto -> {_SPLIT} - WSL broken (wsl.exe --list --verbose timed out after 15s)"),
+    ("native", {"state": "usable", "distro": "Ubuntu-24.04", "detail": "ok"}, "windows-drive",
+     f"shell    auto (shellRoute.mode 'native' is not a mode) -> {_SPLIT} - WSL usable but this repo is on a "
+     "Windows drive and not measured (crew_shell.py measure --write)"),
+])
+def test_status_shell_line_on_windows(tmp_path, monkeypatch, mode, cache, location, expected):
+    root = make_repo(tmp_path, config={"schema": 7, "shellRoute": {"mode": mode, "distro": None}})
+    monkeypatch.setattr(crew_shell, "host_os", lambda *a, **k: "windows-bash")
+    monkeypatch.setattr(crew_shell, "repo_location", lambda _root: location)
+    monkeypatch.setattr(crew_shell, "resolve_pwsh", lambda *a, **k: (PWSH7, "pwsh reason"))
+    if cache is not None:
+        crew_shell.write_cache(cache)
+
+    lines = crew_status.collect(str(root))
+
+    assert expected in lines
+    assert lines.index(expected) == next(i for i, line in enumerate(lines) if line.startswith("verify")) + 1
+
+
+def test_status_shell_line_runs_no_subprocess(tmp_path, monkeypatch):
+    root = make_repo(tmp_path)
+    monkeypatch.setattr(crew_shell, "host_os", lambda *a, **k: "windows-bash")
+
+    def forbidden(*_a, **_k):
+        raise AssertionError("status ran a subprocess")
+    for name in ("run", "Popen", "check_output", "call"):
+        monkeypatch.setattr(crew_shell.subprocess, name, forbidden)
+
+    line = crew_shell.status_line(str(root))
+
+    assert line.startswith("shell    auto -> ")
 
 
 def test_memory_without_context_hook_says_not_installed(tmp_path, monkeypatch):
