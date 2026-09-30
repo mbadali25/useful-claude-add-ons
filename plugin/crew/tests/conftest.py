@@ -108,6 +108,18 @@ def pytest_configure(config):
         "markers",
         "slow: the full bash/pwsh driver matrix for a hook; deselected by "
         "default, run with -m slow or --run-slow")
+    # A test that asserts ELAPSED WALL-CLOCK against a real bound (a hook's
+    # timeout, a probe's deadline). Correct serially; under pytest-xdist the
+    # workers beside it take the CPU it is timing, and in crew 1.0.62's first
+    # CI run `test_near_deadline_candidates_then_a_hang_stay_within_the_hook_
+    # timeout` read ps1=10.25s against its 10s bound on 2 of 6 jobs. The bound
+    # is the hook's real timeout, so loosening it would weaken the check;
+    # instead every parallel caller runs `-m "not wallclock"` and then this set
+    # on its own, serially. Selected like any marker; `slow` handling is apart.
+    config.addinivalue_line(
+        "markers",
+        "wallclock: asserts elapsed time against a real bound; run serially, "
+        "never under -n (pytest-xdist)")
 
 
 _SLOW_TOKEN_RE = re.compile(r"(?<!\w)slow(?!\w)")
