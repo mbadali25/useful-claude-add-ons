@@ -31,6 +31,7 @@ import crew_config
 import crew_config_files
 import crew_fixtures
 import crew_platform
+import crew_shell
 import crew_state
 import crew_upgrade
 
@@ -118,9 +119,12 @@ def test_shell_route_is_on_both_layers():
     """T-0040. Which shell is fast is a fact about the machine, and a repo may
     still override it, so `shellRoute` sits in both layers. It is a new block
     rather than a `platform.*` key because platform-sync rewrites `platform.*`
-    every SessionStart, and it is not the old draft name `wslRouting`."""
+    every SessionStart, and it is not the old draft name `wslRouting`. The repo
+    layer's `mode` is null so an untouched repo inherits the machine's (review
+    round 2 FIX 1); the machine layer spells out `auto`."""
+    assert crew_config.default_config()["shellRoute"] == {"mode": None, "distro": None}
+    assert crew_config.default_global_config()["shellRoute"] == {"mode": "auto", "distro": None}
     for layer in (crew_config.default_config(), crew_config.default_global_config()):
-        assert layer["shellRoute"] == {"mode": "auto", "distro": None}
         assert "wslRouting" not in layer
 
 
@@ -1495,6 +1499,8 @@ _NULLABLE_GLOBAL_KEYS = (
     ("qa", "codex", "model"),
     ("notify", "chatId"),
     ("secondOpinion", "model"),
+    # T-0040 review round 2 FIX 1: the template pinned `auto` here.
+    ("shellRoute", "mode"),
 )
 
 
@@ -1536,6 +1542,31 @@ def test_a_repo_null_does_not_shadow_a_global_value():
         merged = crew_state.merge_defaults(
             crew_state.merge_defaults(defaults, global_cfg), pruned)
         assert _dig_plain(merged, parts) == wanted, ".".join(parts)
+
+
+def test_a_template_repo_inherits_the_machine_shell_route(tmp_path, monkeypatch):
+    """T-0040 review round 2 FIX 1, its repro: set the machine-global
+    `shellRoute.mode` to `wsl`, initialise a repo from the template, and read
+    `resolve_config`. It returned `auto`: the template pinned it, so a repo
+    owner who chose nothing overrode the machine owner who did."""
+    _global(tmp_path, monkeypatch, contents={"shellRoute": {"mode": "wsl", "distro": "Debian"}})
+    root = crew_fixtures.make_repo(tmp_path, config=_committed_template(), git=False)
+    assert crew_config.resolve_config(str(root))["shellRoute"] == {"mode": "wsl", "distro": "Debian"}
+
+    # A choice the repo owner did make still wins.
+    chosen = copy.deepcopy(_committed_template())
+    chosen["shellRoute"]["mode"] = "gitbash"
+    other = crew_fixtures.make_repo(tmp_path / "other", config=chosen, git=False)
+    assert crew_config.resolve_config(str(other))["shellRoute"]["mode"] == "gitbash"
+
+
+def test_with_no_layer_setting_it_the_shell_route_reads_as_auto(tmp_path, monkeypatch):
+    """Null in the repo layer and no machine file: `crew_shell.mode` reads the
+    unset mode as `auto`, the behaviour the template used to spell out."""
+    _global(tmp_path, monkeypatch, contents=None)
+    root = crew_fixtures.make_repo(tmp_path, config=_committed_template(), git=False)
+    resolved = crew_config.resolve_config(str(root))
+    assert crew_shell.mode(resolved) == ("auto", None)
 
 
 def test_a_real_repo_value_still_beats_the_global():

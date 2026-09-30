@@ -269,12 +269,13 @@ TOOLS_CHECK = "command -v python3; command -v git"
 locate = shutil.which  # module-level so a test can replace it
 
 
-def _in_job_shell(distro, script):
+def _in_job_shell(distro, script, cwd=None):
     """`script` inside `distro` under `bash -lc`, the shell the job itself runs
     in (`wsl_argv`). A non-login `sh -c` misses the login-only PATH --
     `$HOME/.local/bin`, where `pip --user` and `pipx` put pytest and graphify
-    -- and would report a tool missing that the job would have found."""
-    return ["wsl.exe", "-d", distro, "-e", "bash", "-lc", script]
+    -- and would report a tool missing that the job would have found. `cwd` is
+    the job's own `--cd`, so a check about the job runs where the job will."""
+    return ["wsl.exe", "-d", distro] + (["--cd", cwd] if cwd else []) + ["-e", "bash", "-lc", script]
 
 # What the not-installed recommendation cites. Two hosts, two dates, two
 # procedures: reported side by side and never blended (spec, Evidence).
@@ -413,6 +414,11 @@ def load_cache():
         return {"state": "unknown", "detail": f"cache unreadable: {path}"}
     if not isinstance(data, dict) or not isinstance(data.get("state"), str):
         return {"state": "unknown", "detail": f"cache unreadable: {path}"}
+    distro = data.get("distro")
+    if data["state"] == "usable" and not (isinstance(distro, str) and distro):
+        # Review round 2: a `usable` that names no distro is an answer about
+        # no distro, and a WSL route would hand the launcher a null `-d`.
+        return {"state": "unknown", "detail": f"cache says usable but names no distro: {path}"}
     return data
 
 
@@ -482,10 +488,17 @@ def _repo_key(root):
 
 
 def measured_verdict(cache, root):
-    """`wsl-faster`, `gitbash-faster` or `none` for this repo."""
+    """`wsl-faster`, `gitbash-faster` or `none` for this repo. A measurement is
+    about the distro it timed: one whose `distro` is not the cache's current
+    distro -- a reprobe, or `shellRoute.distro` switched -- is `none`, never
+    another distro's verdict (review round 2)."""
     measured = cache.get("measured") if isinstance(cache, dict) else None
     entry = measured.get(_repo_key(root)) if isinstance(measured, dict) else None
-    verdict = entry.get("verdict") if isinstance(entry, dict) else None
+    if not isinstance(entry, dict):
+        return "none"
+    verdict, timed, current = entry.get("verdict"), entry.get("distro"), cache.get("distro")
+    if not (isinstance(timed, str) and isinstance(current, str) and timed.casefold() == current.casefold()):
+        return "none"
     return verdict if verdict in ("wsl-faster", "gitbash-faster") else "none"
 
 
@@ -631,17 +644,39 @@ MODULE_CHECK = ("import sys, importlib.util\n"
                 "sys.exit(0 if found else 2)\n")
 
 
+# CPython's options that take an argument (`python3 --help`): the word after
+# `-X` / `-W` is its value, not the script (review round 2). `-c` and `-m` end
+# the options; `-m`'s argument is the module.
+_PY_ARG_OPTIONS = "XW"
+_PY_LONG_ARG_OPTIONS = ("--check-hash-based-pycs",)
+
+
 def _python_module(rest):
     """The module a `python -m <mod>` job runs, from the words after the
-    interpreter, or None. Options before `-m` (`-u`, `-X x`) are skipped; the
-    first non-option word is a script, and a `-m` after it is the script's."""
-    for index, token in enumerate(rest):
-        if token == "-m":
-            return rest[index + 1] if index + 1 < len(rest) else None
-        if token.startswith("-m"):
-            return token[2:]
-        if not token.startswith("-"):
+    interpreter, or None. Options before `-m` are skipped, with the value of
+    one that takes an argument (`-X dev`, `-W error`, `-Xdev`); short flags may
+    be bundled (`-um pytest`, `-uX dev`). The first non-option word is a
+    script, and a `-m` after it is the script's; `-c` and `--` end the scan."""
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token == "--" or not token.startswith("-") or token == "-":
             return None
+        if token.startswith("--"):
+            index += 2 if token in _PY_LONG_ARG_OPTIONS else 1
+            continue
+        for pos, flag in enumerate(token[1:], start=1):
+            if flag in "mc" + _PY_ARG_OPTIONS:
+                value = token[pos + 1:]
+                if not value:
+                    index += 1
+                    value = rest[index] if index < len(rest) else None
+                if flag == "m":
+                    return value or None
+                if flag == "c" or value is None:
+                    return None
+                break
+        index += 1
     return None
 
 
@@ -665,11 +700,12 @@ def job_head(cmd):
     return None, None
 
 
-def _preflight(runner, distro, cmd):
+def _preflight(runner, distro, cmd, cwd):
     """None when the job's first word resolves inside WSL -- and, for
     `python3 -m <mod>`, when that python imports `<mod>` there -- else why not.
     Checking only `python3` sent `python3 -m pytest` to a distro with no pytest
-    (dadeush-desktop, T-0040's native run)."""
+    (dadeush-desktop, T-0040's native run). It runs in the job's `--cd`
+    directory (`cwd`), where `-m` finds a module that lives in the repo."""
     word, module = job_head(cmd)
     if word is None:
         return None
@@ -677,7 +713,7 @@ def _preflight(runner, distro, cmd):
     if module:
         check = " ".join(shlex.quote(part) for part in (word, "-c", MODULE_CHECK, module))
         script += f" >/dev/null || exit 1; exec {check}"
-    code, _, _, failed = _call(runner, _in_job_shell(distro, script), TOOLS_TIMEOUT)
+    code, _, _, failed = _call(runner, _in_job_shell(distro, script, cwd), TOOLS_TIMEOUT)
     if failed:
         return f"the WSL preflight for {word} failed: {failed[1]}"
     if code == 0:
@@ -746,7 +782,7 @@ def run(cmd, root=".", runner=None, execute=None):
     route, reason, code, wsl_cwd = route_for(cfg, cache, root, kind, pwsh)
     distro = cache.get("distro")
     if route == "wsl":
-        missing = _preflight(runner, distro, cmd)
+        missing = _preflight(runner, distro, cmd, wsl_cwd)
         if missing:
             route, reason, code = _wsl_unusable(normal, kind, missing)
     bash = None

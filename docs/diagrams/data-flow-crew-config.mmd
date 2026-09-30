@@ -465,6 +465,10 @@
 %% layer_state :908 -> :920), which also settles the bare citations the 78b7080a note left unread;
 %% crew_state.py, crew_guards.py and every other Anchors path is main's, so their citations stand.
 %% Leaf counts re-executed on the merged tree: 127 / 70 / 57 / 0, 18 global blocks. No edge changed.
+%% T-0040 review round 2 fixes on T-0040-land: default_config()'s shellRoute.mode is now null, so a
+%% template repo inherits the machine value (the comment above it rewritten line for line, so no
+%% crew_config.py line moved; leaf counts unchanged, 127 / 70 / 57 / 0). crew_shell.py grew 1020 ->
+%% 1056 lines: decide :547 -> :560 and status_line :887 -> :923 in SRD, re-read with grep -n.
 flowchart TB
 
     subgraph Sources["Three sources, lowest precedence first"]
@@ -652,7 +656,7 @@ flowchart TB
         direction TB
         SR["shellRoute.mode / shellRoute.distro<br/>both layers, plugin/crew/hooks/scripts/crew_config.py:339 / :579<br/>read by crew_shell.settings through resolve_config;<br/>an unrecognised mode reads as auto and is named"]
         SRC[("~/.claude/crew/shell-route.json<br/>crew_shell.probe_path() - the machine-local probe cache<br/>written only by probe --write and measure --write;<br/>NOT a config layer, never merged")]
-        SRD["crew_shell.decide() / status_line()<br/>plugin/crew/hooks/scripts/crew_shell.py:547 / :887<br/>native Windows only - off Windows, plain bash -c"]
+        SRD["crew_shell.decide() / status_line()<br/>plugin/crew/hooks/scripts/crew_shell.py:560 / :923<br/>native Windows only - off Windows, plain bash -c"]
         SR --> SRD
         SRC --> SRD
     end

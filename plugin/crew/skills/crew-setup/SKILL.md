@@ -156,7 +156,7 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "emergency": { "standDown": true, "ttlMinutes": 120, "maxTtlMinutes": 480 },
   "notify": { "provider": "none", "urlEnv": null, "tokenEnv": null, "chatId": null, "events": ["phase", "gate", "waiting"] },
   "platform": { "os": null, "wsl": null, "shell": null, "windowsHostIp": null },
-  "shellRoute": { "mode": "auto", "distro": null },
+  "shellRoute": { "mode": null, "distro": null },
   "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only", "ticketGranularity": "system", "maxDispatches": 3 },
   "graph": { "enabled": true, "tool": "graphify", "out": "graphify-out", "mode": "code-only", "commitHook": false },
   "docs": { "theme": null, "reportTheme": null },

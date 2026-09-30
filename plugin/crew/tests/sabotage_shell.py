@@ -69,4 +69,9 @@ SHELL_MUTATIONS = (
      "        if _embeds_posix_path(token):\n",
      "        if False:\n",
      _T + "test_classify_refuses_an_embedded_c_path"),
+    # Review round 2 (T-0040-LVY6bE).
+    ("a usable cache with no distro reaches the launcher", SHELL,
+     '    if data["state"] == "usable" and not (isinstance(distro, str) and distro):\n',
+     "    if False:\n",
+     _T + "test_a_usable_cache_without_a_distro_is_unknown"),
 )

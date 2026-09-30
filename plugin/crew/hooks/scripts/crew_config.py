@@ -329,14 +329,14 @@ def default_config():
             "shell": None,
             "windowsHostIp": None,
         },
-        # T-0040. Which shell crew's long-running jobs run in on Windows, read
-        # by `crew_shell.py`. A preference, so it cannot live in `platform.*`:
-        # that block is derived and platform-sync rewrites it every
-        # SessionStart (`crew_platform.DERIVED_KEYS`). Modes: `auto`, `wsl`,
-        # `powershell`, `gitbash`. Not `route` below -- that is plain-text
-        # lifecycle routing of prompts to `/crew:` commands (`crew_route.py`);
-        # `shellRoute` picks the shell a job runs in.
-        "shellRoute": {"mode": "auto", "distro": None},
+        # T-0040. Which shell crew's jobs run in on Windows (`crew_shell.py`).
+        # A preference, not in `platform.*`, which platform-sync rewrites every
+        # SessionStart. Not `route` (prompt routing, `crew_route.py`) either.
+        # Modes: `auto`, `wsl`, `powershell`, `gitbash`. `mode` is null here so
+        # a repo that chose nothing inherits the machine's value
+        # (`without_null_shadows`, review round 2); unset everywhere,
+        # `crew_shell.mode` reads it as `auto`.
+        "shellRoute": {"mode": None, "distro": None},
         "pm": copy.deepcopy(crew_state.PM_DEFAULTS),
         "graph": copy.deepcopy(crew_upgrade.GRAPH_BLOCK),
         "docs": copy.deepcopy(crew_upgrade.DOCS_BLOCK),

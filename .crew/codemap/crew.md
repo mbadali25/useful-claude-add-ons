@@ -278,7 +278,7 @@ Re-executed on T-0040's branch (off `6387ab49`): 125 / 70 / 55 / 0 - T-0040 adde
 `default_global_config()`, so repo-only is unchanged. Re-executed on T-0040's landing merge of
 `6a8c60b1`: 127 / 70 / 57 / 0 - T-0010's two repo-only keys and T-0040's two in both layers
 (`plugin/crew/hooks/scripts/crew_config.py:339` and `:579`).
-`plugin/crew/tests/test_crew_config.py:301` asserts 127. T-0004's `CHANGELOG.md` entry
+`plugin/crew/tests/test_crew_config.py:305` asserts 127. T-0004's `CHANGELOG.md` entry
 now says "117 -> 119" (`:1109` on T-0094's branch after its merge of `8ab733d7`, T-0094's entry and its review-round-2 bullets above T-0010's, re-read with `grep -n`; `:1041` at main `bbd9a66d`; `:993-994` at `62744965` on T-0094's branch before that merge; `:1039` on T-0010-solo's merge of `e878cc31`, T-0075's entry and
 T-0010's above it; `:915-916` on T-0010-solo at `d7c7c75c`; `:928-929` at `3648f59a`, after T-0075's merge of `6387ab49` put T-0090's, T-0089's and T-0092's entries above it and its round-5 fixes grew its own; `:825-826` at `938e3b11`, after T-0075's round-4 fixes grew its own entry; `:807-808` on T-0075's merge of `f54af3fa`, after T-0072's entry went in above it; `:759-760` at `3724731b`, after T-0075's merge of `e6e10432` put T-0079's entry above it and its round-3 fix grew its own; `:653-654` at `f54af3fa`; `:699-700` since T-0075's merge of `5050ea3b` put shipstation's entry above it, `:688-689` after its merge of `f96e9ec9` put T-0077's entry above it, `:666-667` on T-0075's merge of `d2fbd408`; `:608-609` at `d2fbd408`, before T-0075's entry went in above it; `:545-546` on T-0075's branch before that merge; `:515-516` at `67caa4b8`, before T-0024's four entries and T-0075's went in above it;
 `:436-437` at `bebbb97f`, before T-0018's; `:390-391` at `db14619c`, before T-0023's; `:276-277` at `f0b12ee6`, before T-0021's; `:228-229` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this
@@ -862,41 +862,49 @@ one-root, probe and layer cases); mutations `DEPLOY_MUTATIONS` in
 
 ## The Windows shell route (T-0040)
 
-DERIVED at `f05ed74e` (T-0040's branch, after review round 1), read in full. `plugin/crew/hooks/scripts/crew_shell.py` (1020 lines)
+DERIVED at `f05ed74e` (T-0040's branch, after review round 1), read in full; positions re-taken
+with `grep -n` on T-0040-land after review round 2's fixes. `plugin/crew/hooks/scripts/crew_shell.py` (1056 lines)
 picks the shell crew's long-running jobs run in on native Windows. It is a CLI
-(`probe`, `measure`, `classify`, `run`; `main` at `:997`) and a library for
+(`probe`, `measure`, `classify`, `run`; `main` at `:1033`) and a library for
 `crew_status.py`. It imports no crew module at import time. No hook calls it:
 `plugin/crew/hooks/hooks.json` and `crew_platform.py` are unchanged. `host_os` (`:59`) gives
 `windows`, `windows-bash`, `linux`, `macos`, `wsl` or `other`, and `on_windows` (`:82`) gates
 everything: off native Windows `probe` returns `n/a`, `status_line` returns None, and `run`
-(`:732`) execs `["bash", "-c", cmd]` with no config read and no message, mapping a
+(`:768`) execs `["bash", "-c", cmd]` with no config read and no message, mapping a
 signal-killed child's -N to 128+N as `bash -c` does. The preference is
 `shellRoute.mode`/`.distro` in both config layers (`plugin/crew/hooks/scripts/crew_config.py:339`
-and `:579`), read through `resolve_config` by `settings` (`:438`). `mode` (`:459`) reads an
-unrecognised value as `auto` and names it. The probe (`:336`) runs only `wsl.exe --list
+and `:579`), read through `resolve_config` by `settings` (`:444`). The repo layer's `mode`
+is null (review round 2), so a repo that chose nothing inherits the machine's value; `mode`
+(`:465`) reads an unset value as `auto`, and an unrecognised one as `auto` naming it. The probe
+(`:337`) runs only `wsl.exe --list
 --verbose` and one `command -v python3; command -v git` under `bash -lc` (`_in_job_shell`,
 `:272`, the job's own shell) in the default `*` distro (or `shellRoute.distro`). It decodes
-UTF-16LE with `decode` (`:123`), joins every detail onto one line (`one_line`, `:294`) and
+UTF-16LE with `decode` (`:123`), joins every detail onto one line (`one_line`, `:295`) and
 returns `usable`, `not-installed`, `no-distro`, `wsl1-only`, `no-python3`, `no-git`, `broken`
-or `unknown`. A runner that raises is `unknown` through `_call` (`:322`), never
-`not-installed`. The answer is cached machine-locally at `probe_path` (`:397`), beside
-`crew_state.GLOBAL_CONFIG_PATH` and resolved at call time. `write_cache` (`:419`) computes the
-text first, then temp file and `os.replace`, LF. `classify` (`:171`) proves plain argv or
+or `unknown`. A runner that raises is `unknown` through `_call` (`:323`), never
+`not-installed`. The answer is cached machine-locally at `probe_path` (`:398`), beside
+`crew_state.GLOBAL_CONFIG_PATH` and resolved at call time. `load_cache` (`:406`) reads an
+absent, unreadable or stateless cache, and a `usable` one that names no distro, as `unknown`.
+`write_cache` (`:425`) computes the
+text first, then temp file and `os.replace`, LF. `measured_verdict` (`:490`) takes a
+measurement only when its `distro` is the cache's current distro, so a reprobe or a switched
+`shellRoute.distro` never reuses another distro's verdict. `classify` (`:171`) proves plain argv or
 returns bash; `METACHARACTERS` (`:41`) and `SHELL_WORDS` (`:43`) are its lists and
 `_embeds_posix_path` (`:148`) refuses a token carrying a POSIX path after `=`, `,`, an option's
-letters, or a `:` that is not a drive letter or URL scheme. `decide` (`:547`) is the pure route
-table; `route_for` (`:710`) is `decide` plus the `to_wsl_path` distro check, the one decision
-path `run` and `status_line` share. `run` then adds the WSL preflight (`_preflight`, `:668`),
-which checks the first word and, for `python3 -m <mod>` (`job_head`, `:648`), that the module
-imports inside the distro. `pwsh_argv` (`:602`) doubles `'` and U+2018-U+201B and exits 1 when
+letters, or a `:` that is not a drive letter or URL scheme. `decide` (`:560`) is the pure route
+table; `route_for` (`:746`) is `decide` plus the `to_wsl_path` distro check, the one decision
+path `run` and `status_line` share. `run` then adds the WSL preflight (`_preflight`, `:703`),
+run under the job's own `--cd`, which checks the first word and, for `python3 -m <mod>`
+(`job_head`, `:683`; `_python_module`, `:654`, skips `-X`/`-W` and their values), that the module
+imports inside the distro. `pwsh_argv` (`:615`) doubles `'` and U+2018-U+201B and exits 1 when
 the program cannot start. `resolve_pwsh` (`:217`) and `resolve_gitbash` (`:236`) resolve
-absolutely and refuse WSL's System32 launcher (`_is_launcher`, `:228`). `measure` (`:825`)
+absolutely and refuse WSL's System32 launcher (`_is_launcher`, `:228`). `measure` (`:861`)
 times 50 forks and 200 writes per side, each shell reading its own clock (`$EPOCHREALTIME`, a
 pwsh Stopwatch) so no launcher start-up is in the number; an unreadable timing is an error,
-never zero. `status_line` (`:887`) reads config and the cache only, and
+never zero. `status_line` (`:923`) reads config and the cache only, and
 `plugin/crew/hooks/scripts/crew_status.py:226` calls it and appends it after the `verify` line. Tests:
 `plugin/crew/tests/test_crew_shell.py`, `plugin/crew/tests/test_status.py`. Mutations:
-`plugin/crew/tests/sabotage_shell.py` (`SHELL_MUTATIONS`, 13 entries, registered at
+`plugin/crew/tests/sabotage_shell.py` (`SHELL_MUTATIONS`, 14 entries, registered at
 `plugin/crew/tests/sabotage.py:86`). The `.crew/verify.json` rule is rule 38 (`:411-417`), the last in the map.
 
 ## verify-gate's temp-file rule capture

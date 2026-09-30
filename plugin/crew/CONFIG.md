@@ -828,7 +828,7 @@ repository or one checkout.
 | `platform.wsl` | boolean or `null` | `null` | `crew_platform.py` |
 | `platform.shell` | string or `null` | `null` | `crew_platform.py` |
 | `platform.windowsHostIp` | string or `null` | `null` | `crew_platform.py` |
-| `shellRoute.mode` | `"auto"`, `"wsl"`, `"powershell"` or `"gitbash"` | `"auto"` | `crew_shell.mode` — the shell crew's long-running jobs run in on native Windows; both layers; an unrecognised value reads as `auto` and is named on the route line and the `/crew:status` `shell` line |
+| `shellRoute.mode` | `"auto"`, `"wsl"`, `"powershell"`, `"gitbash"` or `null` | `null` (repo), `"auto"` (machine) | `crew_shell.mode` — the shell crew's long-running jobs run in on native Windows; both layers; a repo `null` inherits the machine value and unset everywhere reads as `auto`; an unrecognised value reads as `auto` and is named on the route line and the `/crew:status` `shell` line |
 | `shellRoute.distro` | string or `null` | `null` | `crew_shell.configured_distro` — the WSL distro to probe and route to; `null` takes the default (`*`) distro, never one picked by list order |
 | `graph.enabled` | boolean | `true` | **no consumer found**, §9 |
 | `graph.tool` | string | `"graphify"` | **no consumer found**, §9 |

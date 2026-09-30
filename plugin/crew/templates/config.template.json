@@ -127,7 +127,7 @@
     "windowsHostIp": null
   },
   "shellRoute": {
-    "mode": "auto",
+    "mode": null,
     "distro": null
   },
   "pm": {

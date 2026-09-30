@@ -508,7 +508,7 @@ def test_cache_write_is_atomic_and_lf(monkeypatch):
 
 
 def test_cache_replace_failure_leaves_no_tmp(monkeypatch):
-    crew_shell.write_cache({"state": "usable"})
+    crew_shell.write_cache({"state": "usable", "distro": "Ubuntu-24.04"})
     path = crew_shell.probe_path()
 
     def fail(*_a, **_k):
@@ -528,6 +528,23 @@ def test_load_cache_absent_or_unreadable_is_unknown():
         handle.write("{not json")
     cache = crew_shell.load_cache()
     assert cache["state"] == "unknown" and "unreadable" in cache["detail"]
+
+
+@pytest.mark.parametrize("cache", [{"state": "usable"}, {"state": "usable", "distro": None},
+                                   {"state": "usable", "distro": ""}, {"state": "usable", "distro": 7}])
+def test_a_usable_cache_without_a_distro_is_unknown(monkeypatch, capsys, cache):
+    """Review round 2 FIX 3: `{"state": "usable"}` alone passed as a probe, and a
+    WSL route then handed a null distro to the launcher, which raised. A usable
+    cache that names no distro is not an answer about any distro."""
+    crew_shell.write_cache(cache)
+    loaded = crew_shell.load_cache()
+    assert loaded["state"] == "unknown" and "distro" in loaded["detail"], loaded
+    _windows_run(monkeypatch, "wsl")
+    monkeypatch.setattr(crew_shell, "load_cache", REAL_LOAD_CACHE)
+    rec = Recorder()
+    assert crew_shell.run("python3 x.py", root=WIN_ROOT, runner=rec.runner, execute=rec.execute) == 3
+    assert rec.jobs == [] and rec.calls == []
+    assert "WSL unknown" in capsys.readouterr().err
 
 
 def test_not_installed_recommendation():
@@ -682,8 +699,10 @@ def test_run_argv_for_wsl(monkeypatch):
     assert rec.jobs == [(["wsl.exe", "-d", "Ubuntu-24.04", "--cd", "/mnt/c/repos/x", "-e", "bash", "-lc", cmd],
                          WIN_ROOT)]
     # The preflight runs in the job's own shell, `bash -lc`: a non-login `sh -c`
-    # misses the login-only PATH ($HOME/.local/bin) the job itself sees.
-    assert rec.calls == [["wsl.exe", "-d", "Ubuntu-24.04", "-e", "bash", "-lc", "command -v echo"]]
+    # misses the login-only PATH ($HOME/.local/bin) the job itself sees. And in
+    # the job's own directory (review round 2 FIX 5).
+    assert rec.calls == [["wsl.exe", "-d", "Ubuntu-24.04", "--cd", "/mnt/c/repos/x", "-e", "bash", "-lc",
+                          "command -v echo"]]
 
 
 def test_run_auto_routes_wsl_fs_repo_to_wsl(monkeypatch):
@@ -978,7 +997,7 @@ def test_measure_unreadable_timing_is_an_error_not_a_number(monkeypatch, tmp_pat
 # --- review round 1 (T-0040-Bdt4JE) ----------------------------------------------
 
 DEBIAN_ROOT = "\\\\wsl.localhost\\Debian\\home\\u\\r"
-MEASURED_WIN = {"measured": {os.path.normcase(WIN_ROOT): {"verdict": "wsl-faster"}}}
+MEASURED_WIN = {"measured": {os.path.normcase(WIN_ROOT): {"verdict": "wsl-faster", "distro": "Ubuntu-24.04"}}}
 
 
 def _run_route(rec):
@@ -1071,8 +1090,9 @@ def test_run_preflight_checks_a_python_module(monkeypatch, capsys):
     rec = Recorder(preflight_rc=2)
     assert crew_shell.run("python3 -m pytest x.py -q", root=WSL_ROOT, runner=rec.runner, execute=rec.execute) == 3
     assert rec.jobs == []
-    assert len(rec.calls) == 1 and rec.calls[0][:6] == ["wsl.exe", "-d", "Ubuntu-24.04", "-e", "bash", "-lc"]
-    assert "pytest" in rec.calls[0][6]
+    assert len(rec.calls) == 1 and rec.calls[0][:8] == ["wsl.exe", "-d", "Ubuntu-24.04", "--cd", "/home/u/r",
+                                                        "-e", "bash", "-lc"]
+    assert "pytest" in rec.calls[0][8]
     err = capsys.readouterr().err
     assert "module pytest is not importable by python3 inside Ubuntu-24.04" in err, err
 
@@ -1090,6 +1110,20 @@ def test_run_preflight_checks_a_python_module(monkeypatch, capsys):
     ("python3 -mpytest", "pytest"),
     ("python3 x.py -m pytest", None),
     ("graphify . -m x", None),
+    # Review round 2 FIX 4: `-X`, `-W` and `--check-hash-based-pycs` take an
+    # argument, which is not the script; `-c` ends the options like `-m` does.
+    ("python3 -X dev -m pytest", "pytest"),
+    ("python3 -W error -m pytest x.py", "pytest"),
+    ("python3 -X importtime -W ignore -u -m graphify .", "graphify"),
+    ("python3 -Xdev -Werror -m pytest", "pytest"),
+    ("python3 -uX dev -m pytest", "pytest"),
+    ("python3 -E -s -I -m pytest", "pytest"),
+    ("python3 --check-hash-based-pycs always -m pytest", "pytest"),
+    ("python3 -um pytest", "pytest"),
+    ("python3 -c 'import x' -m y", None),
+    ("python3 -X dev x.py -m pytest", None),
+    ("python3 -- -m pytest", None),
+    ("python3 -X", None),
 ])
 def test_preflight_names_the_module_only_for_python_dash_m(cmd, module):
     assert crew_shell.job_head(cmd) == (cmd.split()[0], module)
@@ -1101,6 +1135,68 @@ def test_module_check_script_exit_codes(module, code):
     done = subprocess.run([sys.executable, "-c", crew_shell.MODULE_CHECK, module], capture_output=True,
                           check=False, timeout=60)
     assert done.returncode == code, done.stderr
+
+
+def test_run_preflight_finds_a_module_after_an_option_with_an_argument(monkeypatch, capsys):
+    """Review round 2 FIX 4, its repro: `python3 -X dev -m pytest` with pytest
+    absent in WSL. The preflight read `dev` as the script, checked no module,
+    and the job died inside WSL as a failed check instead of being refused."""
+    _windows_run(monkeypatch, "wsl")
+    rec = Recorder(preflight_rc=2)
+    assert crew_shell.run("python3 -X dev -m pytest x.py", root=WSL_ROOT, runner=rec.runner,
+                          execute=rec.execute) == 3
+    assert rec.jobs == []
+    assert "module pytest is not importable by python3 inside Ubuntu-24.04" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("root,cwd", [(WIN_ROOT, "/mnt/c/repos/x"), (WSL_ROOT, "/home/u/r")])
+def test_run_preflight_runs_in_the_jobs_directory(monkeypatch, root, cwd):
+    """Review round 2 FIX 5, its repro: `run --root <repo> -- "python3 -m
+    <repo-local module>"` from another directory under wsl mode. The preflight
+    ran wherever wsl.exe started, so a module importable only from the repo
+    read as missing; it now runs under the same `--cd` as the job."""
+    _windows_run(monkeypatch, "wsl")
+    rec = Recorder()
+    assert crew_shell.run("python3 -m repo_local_mod", root=root, runner=rec.runner, execute=rec.execute) == 0
+    assert len(rec.calls) == 1
+    assert rec.calls[0][:8] == ["wsl.exe", "-d", "Ubuntu-24.04", "--cd", cwd, "-e", "bash", "-lc"]
+    assert rec.jobs[0][0][:5] == ["wsl.exe", "-d", "Ubuntu-24.04", "--cd", cwd]
+
+
+def test_a_measurement_is_keyed_to_the_distro_it_measured(monkeypatch, tmp_path):
+    """Review round 2 FIX 2, its repro: measure Ubuntu with a wsl-faster
+    verdict, set shellRoute.distro to Debian, run probe --write, and read the
+    auto route. The reprobe kept Ubuntu's measurement, so auto sent a
+    Windows-drive repo to a Debian nobody had measured."""
+    root = _measure_setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(crew_shell, "load_cache", REAL_LOAD_CACHE)
+    crew_shell.write_cache({"state": "usable", "distro": "Ubuntu-24.04", "detail": "seeded"})
+    monkeypatch.setattr(crew_shell, "capture", Shells(dict(Shells.COSTS, wsl=(0.03, 0.05))).runner)
+    assert crew_shell.main(["measure", "--write", "--root", root]) == 0
+    cfg = crew_shell.settings(root)
+    cache = crew_shell.effective_probe(crew_shell.load_cache(), cfg)
+    assert crew_shell.route_for(cfg, cache, root, "plain", None)[0] == "wsl"  # measured Ubuntu: wsl
+
+    debian = {"shellRoute": {"mode": "auto", "distro": "Debian"}}
+    monkeypatch.setattr(crew_shell, "settings", lambda _root: debian)
+    monkeypatch.setattr(crew_shell, "capture", FakeWsl(listing=_listing(extra=("Debian", "docker-desktop"))))
+    monkeypatch.setattr(crew_shell, "locate", _has_wsl)
+    assert crew_shell.main(["probe", "--write", "--root", root]) == 0
+    cache = crew_shell.effective_probe(crew_shell.load_cache(), debian)
+    assert (cache["state"], cache["distro"]) == ("usable", "Debian")
+    assert crew_shell.measured_verdict(cache, root) == "none"
+    route, reason, _, _ = crew_shell.route_for(debian, cache, root, "plain", None)
+    assert route == "direct" and "not measured" in reason, reason
+
+
+def test_measured_verdict_needs_the_same_distro():
+    key = os.path.normcase(WIN_ROOT)
+    entry = {"verdict": "wsl-faster", "distro": "Ubuntu-24.04"}
+    assert crew_shell.measured_verdict({"distro": "ubuntu-24.04", "measured": {key: entry}}, WIN_ROOT) == "wsl-faster"
+    assert crew_shell.measured_verdict({"distro": "Debian", "measured": {key: entry}}, WIN_ROOT) == "none"
+    assert crew_shell.measured_verdict({"distro": None, "measured": {key: entry}}, WIN_ROOT) == "none"
+    bare = {"verdict": "wsl-faster"}  # a measurement that names no distro is about no distro
+    assert crew_shell.measured_verdict({"distro": "Ubuntu-24.04", "measured": {key: bare}}, WIN_ROOT) == "none"
 
 
 def test_classify_refuses_an_embedded_c_path():
