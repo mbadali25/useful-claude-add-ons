@@ -6,7 +6,7 @@
     "below was TIMED on this machine before it was written down; the seconds in",
     "each `why` are measurements, not estimates. This file is TRACKED as of 2026-09-14:",
     ".gitignore un-ignores !.crew/verify.json, so this file DOES travel;",
-    "CI (six workflows, all on [push, pull_request] with NO path filters) is the",
+    "CI (push only on main, plus pull_request, workflow_dispatch and a nightly schedule where a matrix runs; PR runs 3.12 only - see #279) is the",
     "gate that everyone else gets; this map only makes the LOCAL Stop gate",
     "selective. Do not read it as the whole of this repo's verification.",
     "`unmapped` is `fail`, but be precise about what that buys: the first rule",

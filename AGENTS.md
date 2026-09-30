@@ -35,10 +35,13 @@ what most local runs and most changes need. To run the full matrix too, use
 
 The two CI jobs in `.github/workflows/pytest-crew.yml` split the same way:
 the `test` job runs the DEFAULT command above (no `-m`, no `--run-slow`),
-on `ubuntu-latest` across three Python versions, alongside gizmoduck's and
-several skills' suites. The `crew-shell-matrix` job runs `-m slow` on both
-`ubuntu-latest` and `windows-latest` — the full hook matrix the `test` job
-deselects — and, Windows only, also re-runs the plain default command
+on `ubuntu-latest` across three Python versions on main pushes, manual dispatch and
+the nightly schedule (on a pull request only the 3.12 leg does work; 3.11 and 3.13
+report a skipped pass so the required check names stay satisfied), alongside
+gizmoduck's and several skills' suites. The `crew-shell-matrix` job runs `-m slow`
+on `ubuntu-latest` — the full hook matrix the `test` job deselects; its
+`windows-latest` leg is disabled by #277 until win-repo-2's fix re-enables it, and
+when enabled it also re-runs the plain default command
 (`test` already covers that set, but only on ubuntu, so the PowerShell
 parity-sample cases never run natively anywhere else). Neither job
 substitutes for the other: a change to `conftest.py`'s slow-marker logic,

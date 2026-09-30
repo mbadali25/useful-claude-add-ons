@@ -445,7 +445,8 @@ function's own docstring.
 
 **Not wired into `.crew/verify.json` or the local Stop gate at all.** Its only
 entry point is `.github/workflows/instruction-budgets.yml`, a dedicated
-3.11/3.12/3.13 matrix job. Re-run this pass, read-only against this
+3.11/3.12/3.13 matrix job (all three legs on main pushes, dispatch and nightly; on a pull
+request only 3.12 does work, #279). Re-run this pass, read-only against this
 checkout: `python3 scripts/check_instructions.py` → `instruction budgets: all
 checks passed`, rc 0; `python3 scripts/_test/instruction-budgets.py` (its
 sabotage suite, which builds throwaway fixtures under a temp dir and never
@@ -485,7 +486,8 @@ suite at all — `pytest-crew.yml` runs pytest and cannot collect a `.sh` file
 executed by CI despite being committed and green. Each is its own step
 deliberately, so a failure names which suite went red rather than collapsing
 into one line. `pytest-crew.yml` gained a `crew-shell-matrix` job
-(`:112-161`) that runs on **both** `ubuntu-latest` and `windows-latest` — the
+(`:112-161`) that runs on `ubuntu-latest` (its `windows-latest` leg is disabled by #277
+until win-repo-2's fix re-enables it) — the
 `-m slow` full per-shell hook matrix on both, plus a Windows-only run of
 crew's default (parity-sample) set, since the `test` job above only runs that
 set on Ubuntu.
