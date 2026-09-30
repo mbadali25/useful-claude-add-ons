@@ -10,8 +10,17 @@ If they are not set, the file ~/.mailgun.env (KEY=value lines) is read.
 
 Run `python3 mg.py -h` for the command list.
 """
-import argparse, base64, json, mimetypes, os, re, sys, uuid
-import urllib.parse, urllib.request, urllib.error
+import argparse
+import base64
+import json
+import mimetypes
+import os
+import re
+import sys
+import uuid
+import urllib.parse
+import urllib.request
+import urllib.error
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 
@@ -23,11 +32,12 @@ OPS_FILE = os.path.join(HERE, "..", "references", "operations.json")
 def load_env():
     path = os.path.expanduser("~/.mailgun.env")
     if os.path.exists(path):
-        for line in open(path):
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 
 def cfg(name, required=True, default=None):
@@ -61,7 +71,8 @@ def multipart(fields, files):
         ctype = mimetypes.guess_type(path)[0] or "application/octet-stream"
         out += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"; "
                 f"filename=\"{name}\"\r\nContent-Type: {ctype}\r\n\r\n").encode()
-        out += open(path, "rb").read() + b"\r\n"
+        with open(path, "rb") as fh:
+            out += fh.read() + b"\r\n"
     out += f"--{boundary}--\r\n".encode()
     return bytes(out), f"multipart/form-data; boundary={boundary}"
 
@@ -129,7 +140,7 @@ def cmd_call(a):
     path = a.path
     for ph in ("{domain_name}", "{domain}", "{domainName}", "/domains/{name}"):
         if ph in path:
-            path = path.replace(ph, ph.replace(ph.strip("/").split("/")[-1], domain(a)))
+            path = path.replace(ph, ph.replace(ph.strip("/").rsplit("/", maxsplit=1)[-1], domain(a)))
     if re.search(r"{[^}]+}", path):
         sys.exit(f"Fill in the placeholders in the path: {path}")
     jb = json.loads(a.json) if a.json else None
@@ -138,7 +149,7 @@ def cmd_call(a):
 
 
 def load_ops():
-    return json.load(open(OPS_FILE))
+    return json.load(open(OPS_FILE, encoding="utf-8"))
 
 
 def cmd_find(a):
@@ -174,7 +185,11 @@ def cmd_send(a):
     if a.text:
         form.append(("text", a.text))
     if a.html:
-        html = open(a.html[1:]).read() if a.html.startswith("@") else a.html
+        if a.html.startswith("@"):
+            with open(a.html[1:], encoding="utf-8") as fh:
+                html = fh.read()
+        else:
+            html = a.html
         form.append(("html", html))
     if a.template:
         form.append(("template", a.template))
@@ -254,7 +269,8 @@ def cmd_read(a):
 def cmd_attachment(a):
     """Download an attachment URL (from `read --full`) to a file."""
     data = request("GET", a.url, accept="*/*", raw=True)
-    open(a.out, "wb").write(data)
+    with open(a.out, "wb") as fh:
+        fh.write(data)
     print(f"Saved {len(data)} bytes to {a.out}")
 
 
@@ -289,7 +305,8 @@ def cmd_logs(a):
     for e in items:
         ds = e.get("delivery-status") or {}
         status = f"{ds.get('code','')} {ds.get('message') or ds.get('description') or ''}".strip()
-        print(f"{e.get('@timestamp','')[:19]:20} {e.get('event',''):14} {str(e.get('recipient',''))[:34]:34} {status[:60]}")
+        print(f"{e.get('@timestamp','')[:19]:20} {e.get('event',''):14} "
+              f"{str(e.get('recipient',''))[:34]:34} {status[:60]}")
 
 
 DEFAULT_METRICS = ["accepted_count", "delivered_count", "failed_count", "permanent_failed_count",
