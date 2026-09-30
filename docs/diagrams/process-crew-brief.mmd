@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@bd68ce88 on 2026-09-30. Verify before trusting.
+%% Generated from useful-claude-add-ons@8711b602 on 2026-09-30. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
@@ -202,16 +202,6 @@
 %% Anchors paths only crew_context.py changed - T-0076 added four lines inside emit() (:1086-1089,
 %% stdout reconfigured to LF), so the additionalContext write moved :1086 -> :1090; every other
 %% crew_context.py line cited here is above :1084 and unchanged. No other node or edge changed.
-
-%% Re-anchored 3648f59a + 2693d0fa -> 2bb0d198 (T-0028 merges main 2693d0fa, review round 4, crew
-%% 1.0.60): of the Anchors paths only crew_state.py changed on T-0028's side, and only at or below
-%% :1147 (the Kimi defaults, the provider tuples, family()); every crew_state.py line cited here
-%% (:643, :646, :774, :859-914, :980) is above that and unchanged (git diff -U0 2693d0fa 2bb0d198).
-%% No node or edge changed.
-%% Merged 3f2ff64f + 8ab733d7 -> 63afa2b0 (T-0028 merges T-0010's main 8ab733d7, crew 1.0.62): of the
-%% Anchors paths only crew_state.py changed on either side, T-0010's +5 at AUTOPILOT_DEFAULTS (:1094) and
-%% T-0028's Kimi lines below it; every crew_state.py line cited here (:643, :646, :774, :859-914, :980)
-%% is above both and holds (re-read with sed -n). No node or edge changed.
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
     start --> reg["hooks.json:3-10<br/>3 SessionStart pairs, sh + ps1, no matcher<br/>each claims per session+source"]
@@ -267,7 +257,6 @@ flowchart TB
         st1["status.md:14<br/>crew_status.py --root ."] --> st2["git header, config file, roster,<br/>tracker (crew_tracker.resolve, :65),<br/>tickets, review ledgers, verify,<br/>codemap freshness, metrics,<br/>handoff, interrupted migrate<br/>:192-216"]
         st2 -. "? checks fixed .work/HANDOFF.md (:215),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
     end
-%% Merged 2f7899a0 + a61a6f38 -> bd68ce88 (T-0028 merges main a61a6f38, successor adaptations,
-%% crew 1.0.70): every body citation into a file changed since 2f7899a0 was mapped by a difflib
-%% line diff (/root/crew-tmp/t-0028/refresh/reanchor.py) and a moved one re-read; no cited line
-%% changed text. T-0088's repo_config_dir lane resolver is not drawn. No node or edge changed.
+%% main a7524aac -> 8711b602 (T-0028 feature half, crew 1.0.77): taken from main's copy; citations
+%% into crew_state.py and crew_config.py mapped by difflib (reanchor2.py), each onto the same line
+%% text. The Kimi provider is not drawn. No node or edge changed.

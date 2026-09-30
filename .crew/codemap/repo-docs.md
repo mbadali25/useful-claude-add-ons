@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@1d73001b
+anchor: useful-claude-add-ons@8711b602
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -304,7 +304,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:2261` (on T-0028's merge of main `a7524aac`; `:2259` on T-0085's landing merge of main `a61a6f38`; `:2227` on T-0085's merge of main `8ab733d7`; `:2222` on T-0085's merge of main `2693d0fa`; `:2098` on T-0085's branch at `8abf7ffe`; `:2209` on T-0010-solo's merge of `e878cc31`; `:2085` on T-0010-solo at `d7c7c75c`, `:2077` at `c817782f`, `:2074` at `89c9ee9a`, `:2063` at `50e67586`; `:2204` at `3648f59a`, T-0075's round-5 docs after its merge of `6387ab49`; `:2201` at `938e3b11`, T-0075's round-4 docs after its merge of `f54af3fa`; `:2192` at `3724731b`, T-0075 after its merge of `e6e10432`; `:2174` on T-0075's merge of `d2fbd408`; `:2080` at `d2fbd408`, `:1817` on T-0024's branch at `45345812`, `:2166` on T-0075's branch at `763eaeff`, `:2132` at `764f6018`, `:2072` at `67caa4b8`, `:2107` on T-0075's `f7163410`, `:2057` at `bebbb97f`, `:2084` on T-0075's `e95e5964`, `:2049` on T-0018's first landing merge at `fbc27b49`, `:2034` at `db14619c`, `:1964` on T-0018's branch at `e6b696fb`, `:1990` at T-0023's `a1acd9b7`, `:2052` at T-0021's `74f52fae`, `:2011` at `c2ae46ab`, `:1981` at T-0042's `f0b12ee6`, `:1935` at `2b18f7ab`, `:1831` at T-0021's `bcb77ce2`, `:1809` at `07ca3972`, `:1764` at `a0c0847e`, `:1735` at `8ebbdedc`, `:1794` at T-0006's `2bb92f32`, `:1733` at `c35edda5`; on T-0005's branch `:1859` at `a26ad8c0`, `:1815` at `aa7f9841`, `:1800` at `1e210476`, `:1793` at `3a57b2d2`, `:1772` at `2170d72e`, `:1733` at `8d447a7d`; `:1730` at `f2bb919b`, `:1609` before that,
+  `plugin/crew/README.md:2261` (on T-0085's landing merge of main `a61a6f38`; `:2227` on T-0085's merge of main `8ab733d7`; `:2222` on T-0085's merge of main `2693d0fa`; `:2098` on T-0085's branch at `8abf7ffe`; `:2209` on T-0010-solo's merge of `e878cc31`; `:2085` on T-0010-solo at `d7c7c75c`, `:2077` at `c817782f`, `:2074` at `89c9ee9a`, `:2063` at `50e67586`; `:2204` at `3648f59a`, T-0075's round-5 docs after its merge of `6387ab49`; `:2201` at `938e3b11`, T-0075's round-4 docs after its merge of `f54af3fa`; `:2192` at `3724731b`, T-0075 after its merge of `e6e10432`; `:2174` on T-0075's merge of `d2fbd408`; `:2080` at `d2fbd408`, `:1817` on T-0024's branch at `45345812`, `:2166` on T-0075's branch at `763eaeff`, `:2132` at `764f6018`, `:2072` at `67caa4b8`, `:2107` on T-0075's `f7163410`, `:2057` at `bebbb97f`, `:2084` on T-0075's `e95e5964`, `:2049` on T-0018's first landing merge at `fbc27b49`, `:2034` at `db14619c`, `:1964` on T-0018's branch at `e6b696fb`, `:1990` at T-0023's `a1acd9b7`, `:2052` at T-0021's `74f52fae`, `:2011` at `c2ae46ab`, `:1981` at T-0042's `f0b12ee6`, `:1935` at `2b18f7ab`, `:1831` at T-0021's `bcb77ce2`, `:1809` at `07ca3972`, `:1764` at `a0c0847e`, `:1735` at `8ebbdedc`, `:1794` at T-0006's `2bb92f32`, `:1733` at `c35edda5`; on T-0005's branch `:1859` at `a26ad8c0`, `:1815` at `aa7f9841`, `:1800` at `1e210476`, `:1793` at `3a57b2d2`, `:1772` at `2170d72e`, `:1733` at `8d447a7d`; `:1730` at `f2bb919b`, `:1609` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -356,7 +356,7 @@ listing the directory.
   resolves to stale.
 
 - **`TODO.md`'s `render.sh` entry is still open, still un-CLOSED, re-located
-  rather than assumed at its old line.** Now at `TODO.md:1224` at `2bb0d198` (`:1201` at `2693d0fa`, `:1190` at
+  rather than assumed at its old line.** Now at `TODO.md:1201` (`:1190` at
   `1e0706ac`, `:1122` at
   `f2bb919b`, `:1092` at `6c497a14`, `:1061` before that; the file grew 3645 -> 4714 lines, +1069,
   in the `5d1fc5fd..6c497a14` range, and 30 more lines landed after its
@@ -407,12 +407,12 @@ listing the directory.
   policy, not re-verified again at this pass) and is present in this fresh
   worktree. `verification-harness.md` owns this file's full contents; this
   note only records what changed in its own tracked citations. Since
-  `6c497a14` one rule was appended (`:265` on the T-0005 landing merge, where T-0026's rule and
-  T-0005's cloud-guard rule both sit above it; `:253` after T-0026 inserted a rule above it,
-  `:258` after T-0005 did the same and Step 8 added a path; `:246` after T-0008's review round 3
-  added a path above it; `:245` when #228 added it): `.claude/rules/**` and
+  `6c497a14` one rule was appended (`:266` on the T-0005 landing merge, where T-0026's rule and
+  T-0005's cloud-guard rule both sit above it; `:254` after T-0026 inserted a rule above it,
+  `:259` after T-0005 did the same and Step 8 added a path; `:247` after T-0008's review round 3
+  added a path above it; `:246` when #228 added it): `.claude/rules/**` and
   `.crew/codemap/**` now run `crew_instructions.py rules --root . --check`.
-  Since `f2bb919b` another follows it (`:264-280`, T-0008): changes to
+  Since `f2bb919b` another follows it (`:265-281`, T-0008): changes to
   `plugin/crew/hooks/scripts/crew_refresh_check.py`, its tests,
   `plugin/crew/commands/implement.md` or `plugin/crew/commands/done.md` -
   and since review round 3 `scope_guard.py`, `completion_audit.py`,
@@ -1384,76 +1384,15 @@ In this note: the runbook-index README citation is `plugin/crew/README.md:2227` 
 
 `cff30f72` makes the committed-corpus test in `plugin/crew/tests/test_review_golden.py` run `golden_build.leak` on every fixture (host name included), adds `test_corpus_leak_check_refuses_a_planted_host_name`, and adds sabotage entries (ah)-(ai) to `plugin/crew/tests/sabotage_tooling.py`; its CHANGELOG bullet moved later CHANGELOG lines by 4, and the CHANGELOG citations above were re-mapped by script (difflib `45f32c3c` -> `7c88bf3d`). `49ed9a29` / `7c88bf3d` step crew back and re-set 1.0.76. No other cited line moved. Re-anchor only: nothing was executed for this note.
 
-## Re-anchor provenance - `3648f59a` + `2693d0fa` -> `2bb0d198`, 2026-09-29 (T-0028 merges main, review round 4 fixes, crew 1.0.60)
+## Re-anchor provenance - main `a7524aac` -> `8711b602`, 2026-09-30 (T-0028, feature half, crew 1.0.77)
 
-`git diff --name-only 2693d0fa 2bb0d198`, refresh artifacts aside, returns T-0028's own files: the Kimi Code provider (`kimi_probe.py`, `review_run.py`, `review_verdict.py`, `crew_state.py`, `crew_config.py`, the templates, `CONFIG.md`, `README.md`, `review.md`, `model.md`, the crew-providers and crew-setup skills, `providers.sh`, the tests and fixtures, `sabotage.py`, `sabotage_kimi.py`), `.crew/verify.json`, `CHANGELOG.md`, `TODO.md`, `plugin/crew/BUDGETS.md` and the three version files (crew 1.0.60). This note's maps took main's side of the merge (`a307dfaa`), so its claims were checked against `2693d0fa`'s tree and then carried to `2bb0d198`: every body citation of the form `path:N`, and every bare `:N` carried from the last path named in its paragraph, into a file in that list was mapped by script through `git diff -U0 2693d0fa 2bb0d198` (and, for `.crew/verify.json`, through `817acf60` -> `2bb0d198`, which moved the Kimi rule last). Citations inside provenance sections, and citations followed by `at`/`on`/`before`/`since <commit or ticket>`, are history and were left alone. Every citation whose own line changed was read with `sed -n` / `grep -n`, and so was each bare `:N` the script attributed to the wrong file (three `role_write_guard.py` lines attributed to `TODO.md` were put back).
-
-The live `TODO.md:1201` citation moves to `:1224` (T-0028's follow-up entry at the top adds 23 lines); the positions listed after it are history and keep their commits' lines. `plugin/crew/README.md`: T-0028's one hunk replaces `:1421` with the Kimi paragraph at `:1421-1423` (+2 lines), so the live `:2199` citation of `docs/runbooks/INDEX.md` moves to `:2201`, prepended to its list of per-commit positions. Nothing was executed for this note beyond the scripts named here and `python3 scripts/check-marketplace.py`.
-
-## Re-anchor provenance - `3f2ff64f` + `bbd9a66d` -> `63afa2b0`, 2026-09-29 (T-0028 merges T-0010's main `8ab733d7`)
-
-`8db3ebe7` merges origin/main `8ab733d7` (T-0010 landed as crew 1.0.61, its code maps anchored
-`bbd9a66d`) into `T-0028-kimi` at `72175c17`, which had reflowed one comment in
-`plugin/crew/hooks/scripts/crew_config.py` to keep that module at pylint's 3400-line limit, so every
-`crew_config.py` line past `:131` sits one above its `3f2ff64f` number and back on main's numbering.
-`63afa2b0` re-sets crew 1.0.62, one past main. The merge commit took main's side of the refresh
-artifacts; this note was then re-merged three-way from `2693d0fa`, T-0028's side at `3f2ff64f` and
-main's at `8ab733d7`, both sides' provenance kept, main's first. The code both sides changed is
-`plugin/crew/hooks/scripts/crew_state.py` (T-0010's +5 at `AUTOPILOT_DEFAULTS`, T-0028's Kimi lines
-below it), `.crew/verify.json` (T-0010's policy rule 28 among main's rules, T-0028's rule-7 path and
-its Kimi rule last), `plugin/crew/tests/sabotage.py` (`MUTATIONS` now ends `:3056`),
-`plugin/crew/tests/test_crew_config.py` and the release files. The conflicting hunks were resolved by
-hand and their citations re-taken on `63afa2b0` with `grep -n` / `sed -n`. Every other body `path:N`
-citation was then traced to the side whose copy of this note carries its line and mapped to
-`63afa2b0` through a `difflib` line diff (`/root/crew-tmp/t-0028/rewrite.py` and `ccfix.py`,
-machine-local, after T-0010's `citemap.py`); each one that moved was read at `63afa2b0`, and the
-history chains (a citation followed by `at`, `on`, `since`, `before` or `->`) were left as written.
-
-Re-anchor only for this map's own claims; nothing was executed for this note.
-
-## Re-anchor provenance - `2f7899a0` + `a61a6f38` -> `bd68ce88`, 2026-09-30 (T-0028 merges main `a61a6f38`, successor adaptations, crew 1.0.70)
-
-`27e321aa` merges origin/main `a61a6f38` (crew 1.0.69: T-0088's Codex-limit fallback and
-`crew_common.repo_config_dir` lane-config resolver, #263-#267's QA harness, `review_gate.py`
-preflight and `crew-qa-standards`) into `T-0028-kimi` at `2f7899a0`, with the 12-file textual
-resolution saved at `9a3ad3de` re-read hunk by hunk; `EXIT_PROBE_CHANGED` moves 5 -> 8.
-`cba50c93` adds the owner's five successor adaptations (probe before the gate preflight,
-`--allow-unverified` in two fingerprint tests, `graph_out` through `repo_config_dir`, the
-`test_worktree_config.py` ALLOWED entry, crew-providers SKILL.md at 499 lines) and `bd68ce88`
-re-sets crew 1.0.70, the last `plugin/crew/` commit. Every body citation into a file changed
-between `2f7899a0` and `bd68ce88` was mapped by a `difflib` line diff
-(`/root/crew-tmp/t-0028/refresh/reanchor.py`, machine-local); a bare `:N` goes to the last path
-named before it in its paragraph. Provenance sections and history citations (followed by `at`,
-`on`, `since`, `before`, `was` or `->`) were left as written. A cited line whose text changed
-was re-read and its claim corrected; no cited line in this note changed text.
-Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
-
-`ab7ba9fc` then re-times the Kimi rule in `.crew/verify.json` (`"seconds"` and `"why"`
-only, lines 378 and 381, 52 -> 59 s), which moves no line and no claim here; anchored there.
-
-## Re-anchor provenance - `9831ba47` + `9af34e57` -> `e8482046`, 2026-09-30 (T-0028 merges main `301e478a` and `9af34e57`, crew 1.0.76)
-
-`7939cc46` merges origin/main `301e478a` (crew 1.0.75: T-0085's standards self-check #269, T-0097
-#268, #276, #277) into `T-0028-kimi` at `9831ba47`, and `a88111e2` merges `9af34e57` (#279, CI
-triggers; crew stays 1.0.75); both mechanical. `e8482046` re-sets crew 1.0.76, the last
-`plugin/crew/` commit (the approved plan's Step 7; `.crew/standards.md` REPO-03, landed with
-T-0085, would leave the build branch at main's version - noted for the owner, not decided here).
-In this note's conflicting hunks, a side that changed only numbers yielded to the other, appended
-provenance keeps main's then T-0028's, and the rest took main's text. Every body citation into a
-file changed since was then mapped by a `difflib` line diff from the side whose copy of this note
-holds that exact line (`9831ba47` for T-0028's, `9af34e57` for main's; both when both hold it, and
-a disagreement is re-read), with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local); a
-bare `:N` goes to the last path named before it. Provenance and history citations were left as
-written. A cited line whose text changed was re-read and its claim corrected; no cited line in this note changed text beyond that.
-Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
-
-## Re-anchor provenance - `e8482046` -> `1d73001b`, 2026-09-30 (T-0028 review round 5 fixes, crew 1.0.76)
-
-`d4ba89f5` fixes review round 5's eight FIX findings (`kimi_probe.py`, `review_run.py`,
-`review_verdict.py`, `commands/review.md`, their tests and `sabotage_kimi.py`) and `1d73001b`
-re-sets crew 1.0.76 as the last `plugin/crew/` commit. The only documented path of this note
-that moved is `plugin/crew/commands/review.md`, whose Kimi row and exit-2 sentence changed text
-in place without moving a line; body citations were mapped by `difflib` from `e8482046` to
-`1d73001b` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local), and none in this note
-moved. Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was
-executed for this note.
+T-0028 merged origin/main `a7524aac` (T-0087 #281, crew 1.0.76) and was then split by the owner
+("Split into 2 PRs"): its review-harness half moved to L-0527, and the branch now differs from main
+only in the Kimi provider's feature files (`crew_state.py`, `crew_config.py`, `kimi_probe.py`, the
+templates, provider docs and tests, `.crew/verify.json`, the release files). This note was taken
+from main's copy (the branch's own copy carried citations into harness code this PR no longer
+changes) and every body citation into a changed file was mapped by a `difflib` line diff from
+`a7524aac` to `8711b602` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local); each
+moved citation lands on the same line text. T-0028's earlier provenance on its branch
+is in git history (branch `L-0527-source`). Re-anchor only (owner refresh-artifact standing rule,
+2026-09-28); no test suite was executed for this note.

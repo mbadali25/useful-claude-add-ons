@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@1d73001b
+anchor: useful-claude-add-ons@8711b602
 verified: 2026-09-30
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -37,14 +37,11 @@ including the slow version-drift walk `_verify/smoke.sh` skips), and
 them and is wired into CI but not into the local Stop gate: see
 "`scripts/check_instructions.py`" below.
 
-## `.crew/verify.json` — 37 rules, up from 36
+## `.crew/verify.json` — 38 rules, up from 37
 
-**At `63afa2b0` (T-0028 after merging main `8ab733d7`): 33 rules in 365 lines** - main's 32 rules, T-0028's one added path in rule 7 (`plugin/crew/skills/crew-setup/SKILL.md`, so rule 7 spans `:129-145` and every later line sits one below main's copy), and T-0028's Kimi rule appended last as rule 32 (`.crew/verify.json:342-360`); `default` `:363`, `unmapped` `:364`. It was 32 rules in 358 lines at T-0028's `2bb0d198`, before this merge, with the Kimi rule at `:335-353`. The paragraph below is DERIVED on main's side and carried by the re-anchor notes at the end.
-
-**DERIVED, read in full via `json.load` on T-0028's merge of main `a7524aac` (T-0087 landed as
-crew 1.0.76): 425 lines, 38 rules** - main's 37 rules in 404 lines, T-0028's one added path in
-rule 7 (every later line sits one below main's copy), and T-0028's Kimi rule appended last as
-rule 37 (`.crew/verify.json:402-420`, after T-0087's harness rule 36 at `:375-400`).
+**DERIVED, read in full via `json.load` on T-0028 at `8711b602`: 419 lines, 38 rules.** Main's
+37 rules plus T-0028's one added path in rule 7 (`:129-145`) and its Kimi rule appended last as
+rule 37 (`:401-414`); `default` is `:417` and `unmapped` `:418`. The paragraph below is main's.
 
 **DERIVED, read in full via `json.load` on T-0087-build's merge of `9af34e57` (T-0085 landed as
 crew 1.0.75), where T-0085's standards rule 35 comes first and T-0087's harness rule (26 lines) is
@@ -64,11 +61,11 @@ of `8ab733d7`, rule 35 after its merge of `a61a6f38`) was appended last when `T-
 just grown: the broad `plugin/crew/hooks/**` / `plugin/crew/tests/**` shape
 this note previously described is gone, replaced by per-subsystem rules that
 name a handful of test files each — `crew_guards.py` (rule 5, and rule 6 since T-0005 Step 8),
-`cloud_guard.py` (rule 6, T-0005), `crew_config.py` (rule 7, `.crew/verify.json:129-145`; since T-0075 also `crew_config_menu.py`,
+`cloud_guard.py` (rule 6, T-0005), `crew_config.py` (rule 7, `.crew/verify.json:129-145` since T-0028 added `plugin/crew/skills/crew-setup/SKILL.md`; since T-0075 also `crew_config_menu.py`,
 `test_config_menu.py`, `sabotage_config.py`, `crew_config_files.py` and `test_config_files.py`,
-`:136-140`, whose `run` adds `test_config_menu.py` and `test_config_files.py`; the 50
+`:137-141`, whose `run` adds `test_config_menu.py` and `test_config_files.py`; the 50
 `CONFIG_MENU_MUTATIONS` (by `len()` at `7d217751`) are imported at `plugin/crew/tests/sabotage.py:80`
-and appended at `:3059`), the `crew_state.py` cluster (rule 8,
+and appended at `:3058`), the `crew_state.py` cluster (rule 8,
 eleven test modules), the whole-suite rule (rule 9), `crew_upgrade.py` (rule 10), `crew_ticket.py`'s
 approval digest (rule 11) and command/agent/skill frontmatter (rule 12) are each their own entry
 now, where the previous anchor
@@ -189,7 +186,7 @@ Notable rules, re-read directly:
   mapped here because these tests carry their ordering checks. Its mutations
   live in `plugin/crew/tests/sabotage_refresh.py` (`REFRESH_MUTATIONS`, `:81`),
   imported by `plugin/crew/tests/sabotage.py:75` and appended to `MUTATIONS` at
-  `:3057` (in the `MUTATIONS +=` statement at `:3056-3063`) — the same sibling-module pattern as the other `sabotage_*.py`
+  `:3056` (in the `MUTATIONS +=` statement at `:3055-3061`) — the same sibling-module pattern as the other `sabotage_*.py`
   lists, because `sabotage.py` sits at `.pylintrc`'s max-module-lines. Every
   rule-25 path also matches rule 0 and either rule 15 (the `.py` files) or
   rule 12 (the two commands), by `fnmatch`, the primitive `matches()` uses
@@ -226,7 +223,7 @@ Notable rules, re-read directly:
   held more); count them in the tuple. One of them targets `crew_ticket.py`'s `parse_risk`, a path rule 27
   does not name (see rules 11 and 31). `crew_autopilot.py` also matches rules 0, 15, 28 and 32 (T-0087's harness rule, as a seam
   consumer), `autopilot.md` rules 0, 12, 28 and 32.
-- **Rule 28**, new on T-0010-solo (`.crew/verify.json:308-314` since T-0028 merged main `8ab733d7` (its rule-7 path), `:307-313` since T-0010-solo merged `e878cc31`, `:302-308` since it merged
+- **Rule 28**, new on T-0010-solo (`.crew/verify.json:308-314` since T-0010-solo merged `e878cc31`, `:303-309` since it merged
   `67caa4b8`, `:301-306` on its branch before, T-0010): `paths` `crew_autopilot.py`, `commands/autopilot.md`
   (since review round 2's FIX) and `test_crew_autopilot_policy.py` → `python3 -m pytest
   plugin/crew/tests/test_crew_autopilot_policy.py plugin/crew/tests/test_scope_guard.py -q`,
@@ -235,13 +232,13 @@ Notable rules, re-read directly:
   `crew_autopilot.py approve` must-block/must-allow cases. Its mutations are `POLICY_MUTATIONS` at
   the end of `plugin/crew/tests/sabotage_autopilot.py` (`:687`, 55 entries: 39 after the first merge's six, then review round 3's eight, then the successor's two ported owner-only refusals and five round-4 fixes, then `deploy-allowed` writing on the merge of `6387ab49`),
   imported beside `AUTOPILOT_MUTATIONS` by `plugin/crew/tests/sabotage.py:77` and appended at
-  `:3059` (`:3056` at `63afa2b0`, before main's two lines from `a61a6f38` moved `KIMI_MUTATIONS` onto a line of its own; `:3055` before T-0028's `KIMI_MUTATIONS` joined that line); `test_crew_autopilot_policy.py` asserts each reaches `sabotage.MUTATIONS`. Several
+  `:3058`; `test_crew_autopilot_policy.py` asserts each reaches `sabotage.MUTATIONS`. Several
   target `crew_ticket.py` and `scope_guard.py`, paths this rule does not name (rules 11, 25 and
   31 do), and two (review round 3) target `plugin/crew/README.md`'s approve-exception sentence and
   phase-table row, which `test_crew_autopilot_policy.py` reads; the six from the merge name tests in `test_crew_autopilot_status.py` and
   `test_crew_route.py`, which rules 27 and 30 run, and one (round 4's `_one_line`) names
   `test_crew_autopilot.py`, which rule 27 runs.
-- **Rule 29**, new at `7b667587` (`.crew/verify.json:315-322` since T-0028's merge of `8ab733d7`, `:314-321` since T-0010's merge of `e878cc31` (T-0075's rule-7 paths), `:309-316` since T-0010's rule 28 went in above it, `:307-314` on main at `3648f59a`, `:302-309` after T-0018 widened rule 27, `:301-308` before, T-0021; rule 24 on its branch
+- **Rule 29**, new at `7b667587` (`.crew/verify.json:315-322` since T-0010's merge of `e878cc31` (T-0075's rule-7 paths), `:310-317` since T-0010's rule 28 went in above it, `:307-314` on main at `3648f59a`, `:303-310` after T-0018 widened rule 27, `:301-308` before, T-0021; rule 24 on its branch
   until the merge of main at `86ea912f` put it after rule 27, rule 28 until T-0010's merge): `paths`
   `plugin/crew/hooks/scripts/crew_tracker.py`, `plugin/crew/tests/test_crew_tracker.py`,
   `plugin/crew/tests/sabotage_tracker.py` and `plugin/crew/tests/tracker_fixtures/**` →
@@ -249,7 +246,7 @@ Notable rules, re-read directly:
   3.3s measured 2026-09-26 — a claim read, not re-timed here). Its mutations live in
   `plugin/crew/tests/sabotage_tracker.py` (`TRACKER_MUTATIONS`, 87 by `len()` at `8cabe586`: 81 after review rounds 3 and 4, six more net from T-0077),
   imported by `plugin/crew/tests/sabotage.py:78` and appended at `:3058`.
-- **Rule 30**, new at `eba11657` (`.crew/verify.json:323-331` since T-0028's merge of `8ab733d7`, `:322-330` since T-0010's merge of `e878cc31`, `:317-325` since T-0018 landed on T-0010-solo, `:315-323` on main at `3648f59a`, `:309-317` before, T-0023; rule 27 until T-0005's
+- **Rule 30**, new at `eba11657` (`.crew/verify.json:323-331` since T-0010's merge of `e878cc31`, `:318-326` since T-0018 landed on T-0010-solo, `:315-323` on main at `3648f59a`, `:309-317` before, T-0023; rule 27 until T-0005's
   rule 6 merged in, rule 28 until T-0021's tracker rule landed ahead of it, rule 29 until T-0010's merge): `paths`
   `crew_route.py`, `crew_context.py`, `test_crew_route.py`, `test_crew_route_hook.py` and
   `sabotage_route.py` → `python3 -m pytest plugin/crew/tests/test_crew_route.py
@@ -265,7 +262,7 @@ Notable rules, re-read directly:
   `test_crew_config.py` also checks, matches rules 0, 1 and 12 but not 7, so an edit to that copy
   alone runs no suite that compares it - a gap that predates T-0023 (T-0004 edited the same block)
   and is recorded here, not fixed.
-- **Rule 31**, new at `a2802526` (`.crew/verify.json:332-339` since T-0010's merge of `e878cc31`, `:327-334` since its merge of `f96e9ec9` put
+- **Rule 31**, new at `a2802526` (`.crew/verify.json:333-340` since T-0010's merge of `e878cc31`, `:328-335` since its merge of `f96e9ec9` put
   T-0010's rule 28 above it; `:325-332` on T-0075's branch; rule 30 at `:320-327` on main since T-0024's landing merge; rule 27 at
   `:290-297` on its branch until the merge of main put it after rule 29, T-0024): `paths`
   `approval_hook.py`, `approval-hook.sh`, `approval-hook.ps1`, `crew_ticket.py`,
@@ -279,7 +276,7 @@ Notable rules, re-read directly:
   `len()` at `45345812` — count them there, the `why` states no number), imported by
   `plugin/crew/tests/sabotage.py:81` and appended at `:3058` (`:80` and `:3054` before T-0075's `sabotage_config` import). `crew_ticket.py` is named by
   rules 11, 31, 35 and 36 (T-0010's owner-only refusal in `crew_ticket.approve` runs under 11 and 31; 35 is T-0085's standards rule, which names it for `gate_applies`' approval-receipt read; 36 is T-0087's harness rule).
-- **Rule 35**, new at `22399a9c` (`.crew/verify.json:361-373` on `T-0087-build`'s merge of `9af34e57`, where main numbers it 35; rule 32 in main's own note since T-0085 merged `8ab733d7`, rule 31 at `:333-345` on its branch at `33521aa4`, `:333-342` since it merged `2693d0fa`, `:328-337` before, T-0085): `paths`
+- **Rule 35**, new at `22399a9c` (`.crew/verify.json:361-373` on `T-0087-build`'s merge of `9af34e57`, where main numbers it 35; rule 32 in main's own note since T-0085 merged `8ab733d7`, rule 31 at `:333-345` on its branch at `33521aa4`, `:334-343` since it merged `2693d0fa`, `:328-337` before, T-0085): `paths`
   `crew_standards.py`, `review_run.py`, `review_prompt.py`, `plugin/crew/skills/crew-standards/**`,
   `.crew/standards.md`, `test_crew_standards.py`, `test_review_run_standards.py`,
   `test_review_prompt.py`, `sabotage_standards.py`, since review round 1 (`07bcaf3b`)
@@ -559,29 +556,30 @@ on `make up` and unsets it on `make down`.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1600-1705` /
   `verify-gate.ps1:1655-1789` — temp-file rule-output capture, 1 MiB tail cap,
   no-pipe fallback refusal.
-- `.crew/verify.json:268` (rule 24) — the `.claude/rules/` sync check.
-- `.crew/verify.json:269-285` (rule 25) — the T-0008 refresh-check suite;
+- `.crew/verify.json:269` (rule 24) — the `.claude/rules/` sync check.
+- `.crew/verify.json:270-286` (rule 25) — the T-0008 refresh-check suite;
   `plugin/crew/tests/sabotage.py:75`, `:3057` — `sabotage_refresh.py`'s
   registration.
-- `.crew/verify.json:287-297` (rule 26) — the T-0006 auto-resume suite;
+- `.crew/verify.json:288-298` (rule 26) — the T-0006 auto-resume suite;
   `plugin/crew/tests/sabotage.py:76`, `:3058` — `sabotage_resume.py`'s registration.
-- `.crew/verify.json:298-306` (rule 27) — the T-0004/T-0018/T-0072 autopilot suite;
+- `.crew/verify.json:299-307` (rule 27) — the T-0004/T-0018/T-0072 autopilot suite;
   `plugin/crew/tests/sabotage.py:77`, `:3058` — `sabotage_autopilot.py`'s registration.
-- `.crew/verify.json:307-313` (rule 28) — the T-0010 policy suite; `plugin/crew/tests/sabotage.py:77`,
+- `.crew/verify.json:308-314` (rule 28) — the T-0010 policy suite; `plugin/crew/tests/sabotage.py:77`,
   `:3058` register its `POLICY_MUTATIONS`.
-- `.crew/verify.json:314-321` (rule 29) — the T-0021 tracker suite;
+- `.crew/verify.json:315-322` (rule 29) — the T-0021 tracker suite;
   `plugin/crew/tests/sabotage.py:78`, `:3058` — `sabotage_tracker.py`'s registration.
-- `.crew/verify.json:322-330` (rule 30) — the T-0023 plain-text routing suite;
+- `.crew/verify.json:323-331` (rule 30) — the T-0023 plain-text routing suite;
   `plugin/crew/tests/sabotage.py:79`, `:3058` — `sabotage_route.py`'s registration.
-- `.crew/verify.json:332-339` (rule 31) — the T-0024 group-approval suite;
+- `.crew/verify.json:333-340` (rule 31) — the T-0024 group-approval suite;
   `plugin/crew/tests/sabotage.py:81`, `:3059` — `sabotage_approval.py`'s registration.
-- `.crew/verify.json:361-373` (rule 35) — the T-0085 standards suite;
+- `.crew/verify.json:362-374` (rule 35) — the T-0085 standards suite;
   `plugin/crew/tests/sabotage.py:85`, `:3062` — `sabotage_standards.py`'s registration.
-- `.crew/verify.json:374-399` (rule 36) — the T-0087 harness rule; `scripts/check-tooling-pr.py`
+- `.crew/verify.json:375-400` (rule 36) — the T-0087 harness rule; `scripts/check-tooling-pr.py`
   and its suite `scripts/_test/tooling-pr.py`; `plugin/crew/tests/sabotage.py:82`, `:3061` —
   `sabotage_tooling.py`'s registration.
-- `.crew/verify.json:376-394` (the last rule) — T-0028's Kimi suite;
-  `plugin/crew/tests/sabotage.py:85`, `:3063` — `sabotage_kimi.py`'s registration.
+- `.crew/verify.json:401-414` (rule 37) — T-0028's Kimi Code provider suite (`kimi_probe.py`,
+  its tests, `kimi_fixtures.py`, the fixture run and the provider docs); no sabotage entries,
+  since `sabotage*.py` is review harness and the probe's mutations land with L-0527.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
   `plugin/crew/CONFIG.md:2410-2417` — the descoped per-rule process-group kill,
   documented as a standing limitation.
@@ -1896,83 +1894,16 @@ number) and every `sabotage.py` registration line were re-read on this tree.
 
 `680e6783` merges origin/main `b601d450` (L-0521: opt-in self-hosted runners for the crew pytest `test` job and the `crew-shell-matrix` ubuntu leg, #280) into `T-0087-build`. Of the paths this note cites, only `AGENTS.md` changed (L-0521's runner paragraph); a difflib re-map of every `path:line` citation from `7c88bf3d` to `680e6783` moved none. The `verification-harness` note's own L-0521 paragraph came from main's side cleanly. Re-anchor only: nothing was executed for this note.
 
+## Re-anchor provenance - main `a7524aac` -> `8711b602`, 2026-09-30 (T-0028, feature half, crew 1.0.77)
 
-## Re-anchor provenance - `3648f59a` + `2693d0fa` -> `2bb0d198`, 2026-09-29 (T-0028 merges main, review round 4 fixes, crew 1.0.60)
-
-`git diff --name-only 2693d0fa 2bb0d198`, refresh artifacts aside, returns T-0028's own files: the Kimi Code provider (`kimi_probe.py`, `review_run.py`, `review_verdict.py`, `crew_state.py`, `crew_config.py`, the templates, `CONFIG.md`, `README.md`, `review.md`, `model.md`, the crew-providers and crew-setup skills, `providers.sh`, the tests and fixtures, `sabotage.py`, `sabotage_kimi.py`), `.crew/verify.json`, `CHANGELOG.md`, `TODO.md`, `plugin/crew/BUDGETS.md` and the three version files (crew 1.0.60). This note's maps took main's side of the merge (`a307dfaa`), so its claims were checked against `2693d0fa`'s tree and then carried to `2bb0d198`: every body citation of the form `path:N`, and every bare `:N` carried from the last path named in its paragraph, into a file in that list was mapped by script through `git diff -U0 2693d0fa 2bb0d198` (and, for `.crew/verify.json`, through `817acf60` -> `2bb0d198`, which moved the Kimi rule last). Citations inside provenance sections, and citations followed by `at`/`on`/`before`/`since <commit or ticket>`, are history and were left alone. Every citation whose own line changed was read with `sed -n` / `grep -n`, and so was each bare `:N` the script attributed to the wrong file (three `role_write_guard.py` lines attributed to `TODO.md` were put back).
-
-`.crew/verify.json` now holds **32** rules in 358 lines: T-0028 adds one path to rule 7 (`plugin/crew/skills/crew-setup/SKILL.md`, so rule 7 spans `:129-145` and every later line moves +1) and appends its Kimi rule last as rule 32 (`:335-353`, re-timed at 51.2s, 340 passed); `default` is `:356`, `unmapped` `:357`. Rules 26-31 keep their numbers and moved +1 (rule 26 `:288-298` ... rule 31 `:326-333`). `plugin/crew/tests/sabotage.py` gains `from sabotage_kimi import KIMI_MUTATIONS` at `:82` and appends `KIMI_MUTATIONS` on `:3056`, so the `MUTATIONS +=` statement spans `:3053-3056`. `plugin/crew/CONFIG.md`'s cited range moves to `:2373-2380` (two Kimi rows above it). Nothing was executed for this note beyond the scripts named here and `python3 scripts/check-marketplace.py`.
-
-## Re-anchor provenance - `3f2ff64f` + `bbd9a66d` -> `63afa2b0`, 2026-09-29 (T-0028 merges T-0010's main `8ab733d7`)
-
-`8db3ebe7` merges origin/main `8ab733d7` (T-0010 landed as crew 1.0.61, its code maps anchored
-`bbd9a66d`) into `T-0028-kimi` at `72175c17`, which had reflowed one comment in
-`plugin/crew/hooks/scripts/crew_config.py` to keep that module at pylint's 3400-line limit, so every
-`crew_config.py` line past `:131` sits one above its `3f2ff64f` number and back on main's numbering.
-`63afa2b0` re-sets crew 1.0.62, one past main. The merge commit took main's side of the refresh
-artifacts; this note was then re-merged three-way from `2693d0fa`, T-0028's side at `3f2ff64f` and
-main's at `8ab733d7`, both sides' provenance kept, main's first. The code both sides changed is
-`plugin/crew/hooks/scripts/crew_state.py` (T-0010's +5 at `AUTOPILOT_DEFAULTS`, T-0028's Kimi lines
-below it), `.crew/verify.json` (T-0010's policy rule 28 among main's rules, T-0028's rule-7 path and
-its Kimi rule last), `plugin/crew/tests/sabotage.py` (`MUTATIONS` now ends `:3056`),
-`plugin/crew/tests/test_crew_config.py` and the release files. The conflicting hunks were resolved by
-hand and their citations re-taken on `63afa2b0` with `grep -n` / `sed -n`. Every other body `path:N`
-citation was then traced to the side whose copy of this note carries its line and mapped to
-`63afa2b0` through a `difflib` line diff (`/root/crew-tmp/t-0028/rewrite.py` and `ccfix.py`,
-machine-local, after T-0010's `citemap.py`); each one that moved was read at `63afa2b0`, and the
-history chains (a citation followed by `at`, `on`, `since`, `before` or `->`) were left as written.
-
-`.crew/verify.json` spans were re-measured on `63afa2b0` by script (33 rules, 365 lines). Nothing else was executed for this note.
-
-## Re-anchor provenance - `2f7899a0` + `a61a6f38` -> `bd68ce88`, 2026-09-30 (T-0028 merges main `a61a6f38`, successor adaptations, crew 1.0.70)
-
-`27e321aa` merges origin/main `a61a6f38` (crew 1.0.69: T-0088's Codex-limit fallback and
-`crew_common.repo_config_dir` lane-config resolver, #263-#267's QA harness, `review_gate.py`
-preflight and `crew-qa-standards`) into `T-0028-kimi` at `2f7899a0`, with the 12-file textual
-resolution saved at `9a3ad3de` re-read hunk by hunk; `EXIT_PROBE_CHANGED` moves 5 -> 8.
-`cba50c93` adds the owner's five successor adaptations (probe before the gate preflight,
-`--allow-unverified` in two fingerprint tests, `graph_out` through `repo_config_dir`, the
-`test_worktree_config.py` ALLOWED entry, crew-providers SKILL.md at 499 lines) and `bd68ce88`
-re-sets crew 1.0.70, the last `plugin/crew/` commit. Every body citation into a file changed
-between `2f7899a0` and `bd68ce88` was mapped by a `difflib` line diff
-(`/root/crew-tmp/t-0028/refresh/reanchor.py`, machine-local); a bare `:N` goes to the last path
-named before it in its paragraph. Provenance sections and history citations (followed by `at`,
-`on`, `since`, `before`, `was` or `->`) were left as written. A cited line whose text changed
-was re-read and its claim corrected: the `MUTATIONS +=` statement is `plugin/crew/tests/sabotage.py:3055-3061`,
-with `POLICY_MUTATIONS`, `APPROVAL_MUTATIONS` and `CONFIG_MENU_MUTATIONS` appended at `:3058`
-and `KIMI_MUTATIONS` alone at `:3061`. `.crew/verify.json` holds 36 rules, the Kimi rule last
-at `:363-381`, `default` `:384`, `unmapped` `:385`; the "At `63afa2b0`" paragraph is left as
-the history it states.
-Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
-
-`ab7ba9fc` then re-times the Kimi rule in `.crew/verify.json` (`"seconds"` and `"why"`
-only, lines 378 and 381, 52 -> 59 s), which moves no line and no claim here; anchored there.
-
-## Re-anchor provenance - `9831ba47` + `9af34e57` -> `e8482046`, 2026-09-30 (T-0028 merges main `301e478a` and `9af34e57`, crew 1.0.76)
-
-`7939cc46` merges origin/main `301e478a` (crew 1.0.75: T-0085's standards self-check #269, T-0097
-#268, #276, #277) into `T-0028-kimi` at `9831ba47`, and `a88111e2` merges `9af34e57` (#279, CI
-triggers; crew stays 1.0.75); both mechanical. `e8482046` re-sets crew 1.0.76, the last
-`plugin/crew/` commit (the approved plan's Step 7; `.crew/standards.md` REPO-03, landed with
-T-0085, would leave the build branch at main's version - noted for the owner, not decided here).
-In this note's conflicting hunks, a side that changed only numbers yielded to the other, appended
-provenance keeps main's then T-0028's, and the rest took main's text. Every body citation into a
-file changed since was then mapped by a `difflib` line diff from the side whose copy of this note
-holds that exact line (`9831ba47` for T-0028's, `9af34e57` for main's; both when both hold it, and
-a disagreement is re-read), with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local); a
-bare `:N` goes to the last path named before it. Provenance and history citations were left as
-written. A cited line whose text changed was re-read and its claim corrected: T-0085's standards rule is `.crew/verify.json:362-374` (one below main's
-copy, under T-0028's rule-7 path) and T-0028's Kimi rule the last at `:376-394`; their mutations
-are appended at `plugin/crew/tests/sabotage.py:3062` and `:3063`.
-Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
-
-## Re-anchor provenance - `e8482046` -> `1d73001b`, 2026-09-30 (T-0028 review round 5 fixes, crew 1.0.76)
-
-`d4ba89f5` fixes review round 5's eight FIX findings (`kimi_probe.py`, `review_run.py`,
-`review_verdict.py`, `commands/review.md`, their tests and `sabotage_kimi.py`) and `1d73001b`
-re-sets crew 1.0.76 as the last `plugin/crew/` commit. The only documented path of this note
-that moved is `plugin/crew/commands/review.md`, whose Kimi row and exit-2 sentence changed text
-in place without moving a line; body citations were mapped by `difflib` from `e8482046` to
-`1d73001b` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local), and none in this note
-moved. Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was
-executed for this note.
+T-0028 merged origin/main `a7524aac` (T-0087 #281, crew 1.0.76) and was then split by the owner
+("Split into 2 PRs"): its review-harness half moved to L-0527, and the branch now differs from main
+only in the Kimi provider's feature files (`crew_state.py`, `crew_config.py`, `kimi_probe.py`, the
+templates, provider docs and tests, `.crew/verify.json`, the release files). This note was taken
+from main's copy (the branch's own copy carried citations into harness code this PR no longer
+changes) and every body citation into a changed file was mapped by a `difflib` line diff from
+`a7524aac` to `8711b602` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local); each
+moved citation lands on the same line text. It gains the 38-rule count and the Kimi rule 37 bullet, re-read with `json.load` and
+`grep -n`. T-0028's earlier provenance on its branch
+is in git history (branch `L-0527-source`). Re-anchor only (owner refresh-artifact standing rule,
+2026-09-28); no test suite was executed for this note.

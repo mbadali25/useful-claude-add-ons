@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@1d73001b
+anchor: useful-claude-add-ons@8711b602
 verified: 2026-09-30
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -47,7 +47,7 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.77** (T-0028's re-set after merging main's 1.0.76 at `a7524aac`, T-0087's landing; T-0028 was 1.0.76 at `e8482046` and `1d73001b`, one past main's 1.0.75; main's 1.0.76 is T-0087's re-set on `T-0087-build`, one past main's 1.0.75 after merging `9af34e57`, T-0085's landing; 1.0.70 at T-0087's re-set `90b71bbf`, one past main's 1.0.69 after merging `a61a6f38`; main's 1.0.75 is T-0085's landing: 1.0.70 at its merge of main's 1.0.69 at `a61a6f38`, 1.0.71 after one landing-branch sabotage anchor commit, 1.0.72 after rewrapping `commands/review.md` to its line allowance, 1.0.73 at its catch-up merge of main's 1.0.70 at `6813749b` (#268, T-0097), 1.0.74 for the Windows fail-open fix in `gate_applies` at `9b6b0da7`, 1.0.75 for re-targeting the sabotage entry that fix made vacuous; before that **1.0.61**, T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes; 1.0.60 at T-0010's re-set `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged main `e878cc31`; on T-0010-solo it was 1.0.55 at `d7c7c75c`, 1.0.51 at `360c4029` and 1.0.50 at `50a275ea`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 for the refused-probe F821 fix, 1.0.58 for re-anchored sabotage entries, 1.0.56 for the landing branch's pylint disable, 1.0.57 for the Windows path fix in the OS-error refusals; `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+`rule-of-two`. `crew` is now **1.0.77** (T-0028's re-set at `8711b602`, one past main's 1.0.76; main's 1.0.76 is T-0087's re-set on `T-0087-build`, one past main's 1.0.75 after merging `9af34e57`, T-0085's landing; 1.0.70 at T-0087's re-set `90b71bbf`, one past main's 1.0.69 after merging `a61a6f38`; main's 1.0.75 is T-0085's landing: 1.0.70 at its merge of main's 1.0.69 at `a61a6f38`, 1.0.71 after one landing-branch sabotage anchor commit, 1.0.72 after rewrapping `commands/review.md` to its line allowance, 1.0.73 at its catch-up merge of main's 1.0.70 at `6813749b` (#268, T-0097), 1.0.74 for the Windows fail-open fix in `gate_applies` at `9b6b0da7`, 1.0.75 for re-targeting the sabotage entry that fix made vacuous; before that **1.0.61**, T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes; 1.0.60 at T-0010's re-set `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged main `e878cc31`; on T-0010-solo it was 1.0.55 at `d7c7c75c`, 1.0.51 at `360c4029` and 1.0.50 at `50a275ea`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 for the refused-probe F821 fix, 1.0.58 for re-anchored sabotage entries, 1.0.56 for the landing branch's pylint disable, 1.0.57 for the Windows path fix in the OS-error refusals; `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
 and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `cd106b8b` and again on T-0085's merge of main `8ab733d7`: T-0085's build branch declares main's version and carries no bump of its own until land, `.crew/standards.md` REPO-03; on T-0085's branch it was 1.0.59 from its merge of `2693d0fa` to `33521aa4`, 1.0.56 at `8abf7ffe`, reverted by `0fd1bdf8`, 1.0.55 at `8a084c6c`, 1.0.53 at `2aa49bb8` and `b82035e6`, and 1.0.52 at `22399a9c`); it was 1.0.55 at `3648f59a`, T-0075's re-bump one past main after its merge of `6387ab49`; on T-0075's branch it was 1.0.52 at `938e3b11` (its re-bump after its merge of `f54af3fa`), 1.0.51 at `3724731b`, 1.0.50 at `8cabe586`, 1.0.49 at `7d217751`, `81ed193c` and `ca667718`, 1.0.48 at `23371afb`, 1.0.47 at `f7163410`, 1.0.46 at `e95e5964` and 1.0.44 at `d2444be9`; on main it was 1.0.54 at `6387ab49` and `2442d367` (T-0092's landing merge onto main `311dab8c`, whose 1.0.54 is T-0092's re-bump `136f4b33` after merging main `ff59160f`); it was 1.0.53 at main `311dab8c` and `ff59160f` (T-0089's landing bump `0f526a8c`) and at `3c4f1a68`, T-0092's re-bump after merging main `c426c018`; it was 1.0.52 at `c426c018` (T-0076's landing, `e329eb8f`) and at `c99e31f6`, T-0092's first bump; it was 1.0.51 at `9631c707`, T-0072's landing bump after its merge of `e6e10432`; it was 1.0.50 at `a4eb2f55`, T-0072's bump after its merge of `5050ea3b`, and at main `e6e10432`, T-0079's landing, bumped on T-0079's branch at `81685adf`, where it was 1.0.49 at `78215930`; it was 1.0.49 at `fc289446` (T-0077's landing bump) and on T-0072's branch at `80326b1d`, 1.0.48 at `8de3c669` (T-0024's landing bump) and on T-0072's branch at `21429244` and `996a0a9e`, 1.0.47 at `67caa4b8` after T-0018's re-bump `65bb3330` on its merge of
 main `bebbb97f` (`f458e752`), 1.0.47 on T-0072's branch at `715a8c2f`, 1.0.46 at `bebbb97f` and at that merge (T-0023's bump `e463ca53`) and at T-0018's first landing bump `fbc27b49`, 1.0.45 at `db14619c` (T-0021, bumped again for a CI fix), 1.0.44 on T-0018's branch at `0c7f6b84`, 1.0.43 on T-0023's branch at `a1acd9b7` and on T-0018's at `39f8f59f`, 1.0.44 at `12682e41`, 1.0.43 at `f0b12ee6` (T-0042) and on T-0021's branch at `c2ae46ab`, 1.0.42 at `2b18f7ab` (1.0.46 on T-0021's branch until its merge of main), 1.0.41 at `07ca3972` and on T-0005's branch, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
@@ -293,6 +293,9 @@ against synthetic fixtures and never reads this repo's own docs.
   Re-measured on T-0018's merge of main `bebbb97f` into T-0018-land: 18,859 across 126 files on
   `:11`, recomputed from the merged index rather than taken from either side (main's `bebbb97f`
   read 18,864 across 126; T-0018-land's `55f59b04` read 18,795 across 126), matching.
+  Re-measured on T-0028 at `8711b602`: 20,966 lines across 136 files on `:11` (T-0028's Kimi docs
+  and the fixture README; main's `a7524aac` read 20,879 across 135), matching;
+  `check-marketplace.py` passes it.
   Re-measured on T-0010-solo's merge of `f96e9ec9`, at `48b2820d`: 18,953 across 126 files on
   `:11`, recomputed from the merged tree with `git ls-files 'plugin/crew/*.md'` rather than taken
   from either side (main's `f96e9ec9` read 18,885 across 126; T-0010-solo's `216ee85f` read 18,923
@@ -1199,84 +1202,15 @@ In this note: the version sentence (1.0.62 at `.claude-plugin/marketplace.json:2
 
 `680e6783` merges origin/main `b601d450` (L-0521: opt-in self-hosted runners for the crew pytest `test` job and the `crew-shell-matrix` ubuntu leg, #280) into `T-0087-build`. Of the paths this note cites, only `AGENTS.md` changed (L-0521's runner paragraph); a difflib re-map of every `path:line` citation from `7c88bf3d` to `680e6783` moved none. The `verification-harness` note's own L-0521 paragraph came from main's side cleanly. Re-anchor only: nothing was executed for this note.
 
-## Re-anchor provenance - `3648f59a` + `2693d0fa` -> `2bb0d198`, 2026-09-29 (T-0028 merges main, review round 4 fixes, crew 1.0.60)
+## Re-anchor provenance - main `a7524aac` -> `8711b602`, 2026-09-30 (T-0028, feature half, crew 1.0.77)
 
-`git diff --name-only 2693d0fa 2bb0d198`, refresh artifacts aside, returns T-0028's own files: the Kimi Code provider (`kimi_probe.py`, `review_run.py`, `review_verdict.py`, `crew_state.py`, `crew_config.py`, the templates, `CONFIG.md`, `README.md`, `review.md`, `model.md`, the crew-providers and crew-setup skills, `providers.sh`, the tests and fixtures, `sabotage.py`, `sabotage_kimi.py`), `.crew/verify.json`, `CHANGELOG.md`, `TODO.md`, `plugin/crew/BUDGETS.md` and the three version files (crew 1.0.60). This note's maps took main's side of the merge (`a307dfaa`), so its claims were checked against `2693d0fa`'s tree and then carried to `2bb0d198`: every body citation of the form `path:N`, and every bare `:N` carried from the last path named in its paragraph, into a file in that list was mapped by script through `git diff -U0 2693d0fa 2bb0d198` (and, for `.crew/verify.json`, through `817acf60` -> `2bb0d198`, which moved the Kimi rule last). Citations inside provenance sections, and citations followed by `at`/`on`/`before`/`since <commit or ticket>`, are history and were left alone. Every citation whose own line changed was read with `sed -n` / `grep -n`, and so was each bare `:N` the script attributed to the wrong file (three `role_write_guard.py` lines attributed to `TODO.md` were put back).
-
-The version sentence moves to 1.0.60 (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`, all changed in place); `plugin/crew/BUDGETS.md:11` reads 19,528 lines across 129 files. Counts unchanged: 39 entries, 34 skills, 5 plugins (`python3 scripts/check-marketplace.py`: "marketplace: 34 skills, 5 plugins", "all checks passed"). Nothing was executed for this note beyond the scripts named here and `python3 scripts/check-marketplace.py`.
-
-## Re-anchor provenance - `3f2ff64f` + `bbd9a66d` -> `63afa2b0`, 2026-09-29 (T-0028 merges T-0010's main `8ab733d7`)
-
-`8db3ebe7` merges origin/main `8ab733d7` (T-0010 landed as crew 1.0.61, its code maps anchored
-`bbd9a66d`) into `T-0028-kimi` at `72175c17`, which had reflowed one comment in
-`plugin/crew/hooks/scripts/crew_config.py` to keep that module at pylint's 3400-line limit, so every
-`crew_config.py` line past `:131` sits one above its `3f2ff64f` number and back on main's numbering.
-`63afa2b0` re-sets crew 1.0.62, one past main. The merge commit took main's side of the refresh
-artifacts; this note was then re-merged three-way from `2693d0fa`, T-0028's side at `3f2ff64f` and
-main's at `8ab733d7`, both sides' provenance kept, main's first. The code both sides changed is
-`plugin/crew/hooks/scripts/crew_state.py` (T-0010's +5 at `AUTOPILOT_DEFAULTS`, T-0028's Kimi lines
-below it), `.crew/verify.json` (T-0010's policy rule 28 among main's rules, T-0028's rule-7 path and
-its Kimi rule last), `plugin/crew/tests/sabotage.py` (`MUTATIONS` now ends `:3056`),
-`plugin/crew/tests/test_crew_config.py` and the release files. The conflicting hunks were resolved by
-hand and their citations re-taken on `63afa2b0` with `grep -n` / `sed -n`. Every other body `path:N`
-citation was then traced to the side whose copy of this note carries its line and mapped to
-`63afa2b0` through a `difflib` line diff (`/root/crew-tmp/t-0028/rewrite.py` and `ccfix.py`,
-machine-local, after T-0010's `citemap.py`); each one that moved was read at `63afa2b0`, and the
-history chains (a citation followed by `at`, `on`, `since`, `before` or `->`) were left as written.
-
-Re-anchor only for this map's own claims; nothing was executed for this note.
-
-## Re-anchor provenance - `2f7899a0` + `a61a6f38` -> `bd68ce88`, 2026-09-30 (T-0028 merges main `a61a6f38`, successor adaptations, crew 1.0.70)
-
-`27e321aa` merges origin/main `a61a6f38` (crew 1.0.69: T-0088's Codex-limit fallback and
-`crew_common.repo_config_dir` lane-config resolver, #263-#267's QA harness, `review_gate.py`
-preflight and `crew-qa-standards`) into `T-0028-kimi` at `2f7899a0`, with the 12-file textual
-resolution saved at `9a3ad3de` re-read hunk by hunk; `EXIT_PROBE_CHANGED` moves 5 -> 8.
-`cba50c93` adds the owner's five successor adaptations (probe before the gate preflight,
-`--allow-unverified` in two fingerprint tests, `graph_out` through `repo_config_dir`, the
-`test_worktree_config.py` ALLOWED entry, crew-providers SKILL.md at 499 lines) and `bd68ce88`
-re-sets crew 1.0.70, the last `plugin/crew/` commit. Every body citation into a file changed
-between `2f7899a0` and `bd68ce88` was mapped by a `difflib` line diff
-(`/root/crew-tmp/t-0028/refresh/reanchor.py`, machine-local); a bare `:N` goes to the last path
-named before it in its paragraph. Provenance sections and history citations (followed by `at`,
-`on`, `since`, `before`, `was` or `->`) were left as written. A cited line whose text changed
-was re-read and its claim corrected: crew is 1.0.70 (`.claude-plugin/marketplace.json:218`,
-`plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`), and crew's description,
-`plugin/PLUGINS.md:17` and `plugin/README.md:414` state 30 skills, matching
-`find plugin/crew/skills -maxdepth 1 -mindepth 1 -type d`. `plugin/crew/BUDGETS.md:11` reads
-20,011 lines across 133 files, which `count_crew_markdown_lines()` returns;
-`python3 scripts/check-marketplace.py` passes.
-Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
-
-`ab7ba9fc` then re-times the Kimi rule in `.crew/verify.json` (`"seconds"` and `"why"`
-only, lines 378 and 381, 52 -> 59 s), which moves no line and no claim here; anchored there.
-
-## Re-anchor provenance - `9831ba47` + `9af34e57` -> `e8482046`, 2026-09-30 (T-0028 merges main `301e478a` and `9af34e57`, crew 1.0.76)
-
-`7939cc46` merges origin/main `301e478a` (crew 1.0.75: T-0085's standards self-check #269, T-0097
-#268, #276, #277) into `T-0028-kimi` at `9831ba47`, and `a88111e2` merges `9af34e57` (#279, CI
-triggers; crew stays 1.0.75); both mechanical. `e8482046` re-sets crew 1.0.76, the last
-`plugin/crew/` commit (the approved plan's Step 7; `.crew/standards.md` REPO-03, landed with
-T-0085, would leave the build branch at main's version - noted for the owner, not decided here).
-In this note's conflicting hunks, a side that changed only numbers yielded to the other, appended
-provenance keeps main's then T-0028's, and the rest took main's text. Every body citation into a
-file changed since was then mapped by a `difflib` line diff from the side whose copy of this note
-holds that exact line (`9831ba47` for T-0028's, `9af34e57` for main's; both when both hold it, and
-a disagreement is re-read), with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local); a
-bare `:N` goes to the last path named before it. Provenance and history citations were left as
-written. A cited line whose text changed was re-read and its claim corrected: crew is 1.0.76 at `.claude-plugin/marketplace.json:218`,
-`plugin/crew/.claude-plugin/plugin.json:3` and `plugin/PLUGINS.md:14`;
-`plugin/crew/BUDGETS.md:11` reads 20,806 lines across 135 files, which
-`count_crew_markdown_lines()` returns, and `python3 scripts/check-marketplace.py` passes.
-Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
-
-## Re-anchor provenance - `e8482046` -> `1d73001b`, 2026-09-30 (T-0028 review round 5 fixes, crew 1.0.76)
-
-`d4ba89f5` fixes review round 5's eight FIX findings (`kimi_probe.py`, `review_run.py`,
-`review_verdict.py`, `commands/review.md`, their tests and `sabotage_kimi.py`) and `1d73001b`
-re-sets crew 1.0.76 as the last `plugin/crew/` commit. The only documented path of this note
-that moved is `plugin/crew/commands/review.md`, whose Kimi row and exit-2 sentence changed text
-in place without moving a line; body citations were mapped by `difflib` from `e8482046` to
-`1d73001b` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local), and none in this note
-moved. Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was
-executed for this note.
+T-0028 merged origin/main `a7524aac` (T-0087 #281, crew 1.0.76) and was then split by the owner
+("Split into 2 PRs"): its review-harness half moved to L-0527, and the branch now differs from main
+only in the Kimi provider's feature files (`crew_state.py`, `crew_config.py`, `kimi_probe.py`, the
+templates, provider docs and tests, `.crew/verify.json`, the release files). This note was taken
+from main's copy (the branch's own copy carried citations into harness code this PR no longer
+changes) and every body citation into a changed file was mapped by a `difflib` line diff from
+`a7524aac` to `8711b602` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local); each
+moved citation lands on the same line text. crew is 1.0.77 and BUDGETS.md reads 20,966 across 136, both re-read. T-0028's earlier provenance on its branch
+is in git history (branch `L-0527-source`). Re-anchor only (owner refresh-artifact standing rule,
+2026-09-28); no test suite was executed for this note.

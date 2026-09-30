@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@1d73001b
+anchor: useful-claude-add-ons@8711b602
 verified: 2026-09-30
 
 ## Does
@@ -1025,46 +1025,15 @@ each cited here by name, never by line; nothing under `plugin/obsidian-vault/` c
 
 `680e6783` merges origin/main `b601d450` (L-0521: opt-in self-hosted runners for the crew pytest `test` job and the `crew-shell-matrix` ubuntu leg, #280) into `T-0087-build`. Of the paths this note cites, only `AGENTS.md` changed (L-0521's runner paragraph); a difflib re-map of every `path:line` citation from `7c88bf3d` to `680e6783` moved none. The `verification-harness` note's own L-0521 paragraph came from main's side cleanly. Re-anchor only: nothing was executed for this note.
 
-## Re-anchor provenance - `2f7899a0` + `a61a6f38` -> `bd68ce88`, 2026-09-30 (T-0028 merges main `a61a6f38`, successor adaptations, crew 1.0.70)
+## Re-anchor provenance - main `a7524aac` -> `8711b602`, 2026-09-30 (T-0028, feature half, crew 1.0.77)
 
-`27e321aa` merges origin/main `a61a6f38` (crew 1.0.69: T-0088's Codex-limit fallback and
-`crew_common.repo_config_dir` lane-config resolver, #263-#267's QA harness, `review_gate.py`
-preflight and `crew-qa-standards`) into `T-0028-kimi` at `2f7899a0`, with the 12-file textual
-resolution saved at `9a3ad3de` re-read hunk by hunk; `EXIT_PROBE_CHANGED` moves 5 -> 8.
-`cba50c93` adds the owner's five successor adaptations (probe before the gate preflight,
-`--allow-unverified` in two fingerprint tests, `graph_out` through `repo_config_dir`, the
-`test_worktree_config.py` ALLOWED entry, crew-providers SKILL.md at 499 lines) and `bd68ce88`
-re-sets crew 1.0.70, the last `plugin/crew/` commit. Every body citation into a file changed
-between `2f7899a0` and `bd68ce88` was mapped by a `difflib` line diff
-(`/root/crew-tmp/t-0028/refresh/reanchor.py`, machine-local); a bare `:N` goes to the last path
-named before it in its paragraph. Provenance sections and history citations (followed by `at`,
-`on`, `since`, `before`, `was` or `->`) were left as written. A cited line whose text changed
-was re-read and its claim corrected; no cited line in this note changed text.
-Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
-
-## Re-anchor provenance - `9831ba47` + `9af34e57` -> `e8482046`, 2026-09-30 (T-0028 merges main `301e478a` and `9af34e57`, crew 1.0.76)
-
-`7939cc46` merges origin/main `301e478a` (crew 1.0.75: T-0085's standards self-check #269, T-0097
-#268, #276, #277) into `T-0028-kimi` at `9831ba47`, and `a88111e2` merges `9af34e57` (#279, CI
-triggers; crew stays 1.0.75); both mechanical. `e8482046` re-sets crew 1.0.76, the last
-`plugin/crew/` commit (the approved plan's Step 7; `.crew/standards.md` REPO-03, landed with
-T-0085, would leave the build branch at main's version - noted for the owner, not decided here).
-In this note's conflicting hunks, a side that changed only numbers yielded to the other, appended
-provenance keeps main's then T-0028's, and the rest took main's text. Every body citation into a
-file changed since was then mapped by a `difflib` line diff from the side whose copy of this note
-holds that exact line (`9831ba47` for T-0028's, `9af34e57` for main's; both when both hold it, and
-a disagreement is re-read), with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local); a
-bare `:N` goes to the last path named before it. Provenance and history citations were left as
-written. A cited line whose text changed was re-read and its claim corrected; no cited line in this note changed text beyond that.
-Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
-
-## Re-anchor provenance - `e8482046` -> `1d73001b`, 2026-09-30 (T-0028 review round 5 fixes, crew 1.0.76)
-
-`d4ba89f5` fixes review round 5's eight FIX findings (`kimi_probe.py`, `review_run.py`,
-`review_verdict.py`, `commands/review.md`, their tests and `sabotage_kimi.py`) and `1d73001b`
-re-sets crew 1.0.76 as the last `plugin/crew/` commit. The only documented path of this note
-that moved is `plugin/crew/commands/review.md`, whose Kimi row and exit-2 sentence changed text
-in place without moving a line; body citations were mapped by `difflib` from `e8482046` to
-`1d73001b` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local), and none in this note
-moved. Re-anchor only (owner refresh-artifact standing rule, 2026-09-28); no test suite was
-executed for this note.
+T-0028 merged origin/main `a7524aac` (T-0087 #281, crew 1.0.76) and was then split by the owner
+("Split into 2 PRs"): its review-harness half moved to L-0527, and the branch now differs from main
+only in the Kimi provider's feature files (`crew_state.py`, `crew_config.py`, `kimi_probe.py`, the
+templates, provider docs and tests, `.crew/verify.json`, the release files). This note was taken
+from main's copy (the branch's own copy carried citations into harness code this PR no longer
+changes) and every body citation into a changed file was mapped by a `difflib` line diff from
+`a7524aac` to `8711b602` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local); each
+moved citation lands on the same line text. T-0028's earlier provenance on its branch
+is in git history (branch `L-0527-source`). Re-anchor only (owner refresh-artifact standing rule,
+2026-09-28); no test suite was executed for this note.

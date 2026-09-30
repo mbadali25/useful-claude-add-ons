@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@1d73001b on 2026-09-30. Verify before trusting.
+%% Generated from useful-claude-add-ons@8711b602 on 2026-09-30. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -246,12 +246,6 @@
 %% Re-anchored c04dd2ef -> 9b6b0da7 (T-0085 landing, crew 1.0.74): of the anchored paths only crew_standards.py
 %% changed (gate_applies proves absence only under a real directory; Windows fail-open fix). The
 %% diagram draws the self-check gate, not that branch. No node or edge changed.
-
-%% Re-anchored c99e31f6 + 2693d0fa -> 2bb0d198 (T-0028 merges main 2693d0fa, review round 4, crew
-%% 1.0.60): of the Anchors paths only review.md changed on T-0028's side, at :2 (the description
-%% names Kimi) and from :215 down (step 1b's strike row, the probe table, step 2e); the cited
-%% review.md:25-29 is above every hunk and unchanged (git diff -U0 2693d0fa 2bb0d198). No node or
-%% edge changed.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
@@ -373,18 +367,6 @@ flowchart TB
 %% and unchanged; review_run.py's preflight moved :454 -> :508, its call :521 -> :575 and the
 %% budget-first block :525-535 -> :579-589 (T-0087's failure-class docstring and refund code above
 %% them), re-read with grep -n. No node or edge changed.
-%% Merged 3f2ff64f + 8ab733d7 -> 63afa2b0 (T-0028 merges T-0010's main 8ab733d7, crew 1.0.62): of the
-%% Anchors paths review.md changed on T-0028's side only (from :215 down) and crew_ticket.py on main's
-%% side only; the cited review.md:25-29 is above every T-0028 hunk and holds. No node or edge changed.
-%% Merged 2f7899a0 + a61a6f38 -> bd68ce88 (T-0028 merges main a61a6f38, successor adaptations,
-%% crew 1.0.70): every body citation into a file changed since 2f7899a0 was mapped by a difflib
-%% line diff (/root/crew-tmp/t-0028/refresh/reanchor.py) and a moved one re-read; no cited line
-%% changed text. T-0088's repo_config_dir lane resolver is not drawn. No node or edge changed.
-%% Merged 9831ba47 + 9af34e57 -> e8482046 (T-0028 merges main 301e478a and 9af34e57, crew 1.0.76):
-%% every body citation into a file changed since was mapped by a difflib line diff from the
-%% side whose copy holds the line (/root/crew-tmp/t-0028/refresh/reanchor2.py); no cited line
-%% changed text. The Kimi probe's place ahead of preflight and the standards self-check is not
-%% drawn. No node or edge changed.
-%% e8482046 -> 1d73001b (T-0028 review round 5 fixes, crew 1.0.76): review.md's Kimi row and
-%% review_run.py's graph_out changed; citations mapped by difflib (reanchor2.py), none moved
-%% text. No node or edge changed.
+%% main a7524aac -> 8711b602 (T-0028 feature half, crew 1.0.77): taken from main's copy; citations
+%% into crew_state.py and crew_config.py mapped by difflib (reanchor2.py), each onto the same line
+%% text. The Kimi provider is not drawn. No node or edge changed.
