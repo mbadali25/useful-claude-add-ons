@@ -1,7 +1,7 @@
 # Graph Report - uca-t0030  (2026-09-30)
 
 ## Corpus Check
-- 967 files · ~2,202,605 words
+- 967 files · ~2,203,176 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 59 file(s) not represented in the graph (top: (none) 33, .mmd 8, .csv 4)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `a54117e8`
+- Built from commit: `d7cc1f32`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -429,7 +429,7 @@
 - test_rules_generation_path.py
 - crew_tracker.py
 - Configuration reference
-- Cross-session claims (T-0030, crew 1.0.60)
+- Cross-session claims (T-0030, crew 1.0.71)
 - _delete
 - test_approval_digest.py
 - parametrize
@@ -1791,7 +1791,7 @@ Nodes (11): compilerOptions, declaration, esModuleInterop, forceConsistentCasing
 
 ### Community 229 - "16. Context handoff"
 Cohesion: 0.12
-Nodes (16): Added — `crew` 1.0.60: cross-session claims on a git-backed coordination record (T-0030), 16. Context handoff, A `/clear` is not undoable, Auto-clear (off by default, opt-in per machine), Auto-resume (`resume.auto`, off by default), Auto-wrap-up (on by default since 0.19.52), Cross-session claims (`crew_coord.py`), Housekeeping (+8 more)
+Nodes (16): Added — `crew` 1.0.71: cross-session claims on a git-backed coordination record (T-0030), 16. Context handoff, A `/clear` is not undoable, Auto-clear (off by default, opt-in per machine), Auto-resume (`resume.auto`, off by default), Auto-wrap-up (on by default since 0.19.52), Cross-session claims (`crew_coord.py`), Housekeeping (+8 more)
 
 ### Community 230 - "_run"
 Cohesion: 0.21
@@ -2521,9 +2521,9 @@ Nodes (28): add_card(), _bare(), _board_lines(), _cards(), _checkbox(), _complet
 Cohesion: 0.20
 Nodes (9): Configuration reference, Cross-platform command notes, Environment variable overrides, Protecting the config file, Setting them, Troubleshooting, Verifying without touching the service desk, Where state lives (+1 more)
 
-### Community 414 - "Cross-session claims (T-0030, crew 1.0.60)"
+### Community 414 - "Cross-session claims (T-0030, crew 1.0.71)"
 Cohesion: 0.15
-Nodes (30): Cross-session claims (T-0030, crew 1.0.60), Re-anchor provenance - `938e3b11` + `136f4b33` -> `3648f59a`, 2026-09-28 (T-0075 review round 5, merge of `6387ab49`), Re-anchor provenance - `938e3b11` + `136f4b33` -> `3648f59a`, 2026-09-28 (T-0075 review round 5, merge of `6387ab49`), Re-anchor provenance - `938e3b11` + `2442d367` -> `3648f59a`, 2026-09-28 (T-0075 review round 5, merge of `6387ab49`), Re-anchor provenance - `938e3b11` + `136f4b33` -> `3648f59a`, 2026-09-28 (T-0075 review round 5, merge of `6387ab49`), Re-anchor provenance - `938e3b11` + `136f4b33` -> `3648f59a`, 2026-09-28 (T-0075 review round 5, merge of `6387ab49`), _azure_part(), _azure_parts() (+22 more)
+Nodes (30): Cross-session claims (T-0030, crew 1.0.71), Re-anchor provenance - `938e3b11` + `136f4b33` -> `3648f59a`, 2026-09-28 (T-0075 review round 5, merge of `6387ab49`), Re-anchor provenance - `938e3b11` + `136f4b33` -> `3648f59a`, 2026-09-28 (T-0075 review round 5, merge of `6387ab49`), Re-anchor provenance - `938e3b11` + `2442d367` -> `3648f59a`, 2026-09-28 (T-0075 review round 5, merge of `6387ab49`), Re-anchor provenance - `938e3b11` + `136f4b33` -> `3648f59a`, 2026-09-28 (T-0075 review round 5, merge of `6387ab49`), Re-anchor provenance - `938e3b11` + `136f4b33` -> `3648f59a`, 2026-09-28 (T-0075 review round 5, merge of `6387ab49`), _azure_part(), _azure_parts() (+22 more)
 
 ### Community 415 - "_delete"
 Cohesion: 0.09
@@ -3886,7 +3886,7 @@ Nodes (5): 2. No MCP server for ChatGPT; `codex:codex-rescue` as-is, Consequence
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `make_repo()` connect `make_repo` to `test_auto_clear_order.py`, `test_a_lock_call_error_that_is_not_unsupported_is_retried`, `test_auto_clear.py`, `test_context_watch_python_resolver.py`, `_vault_around_repo`, `_repo`, `test_provider_table.py`, `_sources`, `_global`, `test_refresh_check.py`, `test_context_watch_autoclear_visibility.py`, `Fixed`, `parametrize`, `test_context_watch.py`, `test_the_cli_announces_the_new_key_and_does_not_only_write_it_to_a_file`, `test_upgrade.py`, `test_crew_config.py`, `test_status.py`, `test_auto_clear_review_fixes.py`, `os`, `test_auto_cycle.py`, `test_role_write_guard.py`, `head_sha`, `test_endpoints.py`, `test_crew_tracker.py`, `make_repo`, `test_handoff_staleness.py`, `test_incident.py`, `_named_repo`, `_repo`, `_config_json`, `test_verify_absent_and_diagram_kind.py`, `crew Project Manager, Graph-Backed Onboarding, and v1 Upgrade — Implementation Plan`, `test_platform_sync.py`, `_repo`, `_plain_repo`, `_check`, `read_text`, `test_anchor_trigger_fixpoint.py`, `_snapshot`, `_cli`, `_make_vault`, `test_a_config_that_is_not_there_reads_absent_on_every_platform`, `_committed_template`?**
-  _High betweenness centrality (0.024) - this node is a cross-community bridge._
+  _High betweenness centrality (0.025) - this node is a cross-community bridge._
 - **Why does `TODO` connect `TODO` to `crew_ticket.py`, `crew_resume.py`, `test_completion_audit.py`, `Deferred by the PM, assign pass 2026-09-24 (10 dispatches, authority autonomous)`, `Found while fixing the 0.19.92 fingerprint/budget review items, NOT fixed`, `test_auto_clear.py`, `PM assign wave 2, 2026-09-24 - status corrections and new deferrals`, `agents`, `check_group_parity`, `_repo`, `test_provider_table.py`, `Troubleshooting`, `test_verify_gate_stop_gate_record.py`, `VectorStore`, `move`, `crew_endpoints.py`, `Filed 2026-09-23 by the crew PM, during the unnamed-PM fix, not fixed there`, `crew 1.0.x: Windows-only CI fixture failures (windows-latest, run 36086569186)`, `test_the_cli_announces_the_new_key_and_does_not_only_write_it_to_a_file`, `git_out`, `check_self_claims`, `test_auto_clear_review_fixes.py`, `Changed`, `in_scope`, `test_1_crlf_from_native_python_does_not_leak_an_inherited_credential`, `.device`, `_read_graph`, `write_text`, `collect`, `crew_autocycle.py`, `family`, `manager_config.py`, `crew_context.py`, `test_docs_routing.py`, `anthropic_proxy.py`, `run_gate`, `sync-updates.py`, `render_mermaid.py`, `sabotage.py`, `Document builder`, `test_verify_gate_python3_shim.py`, `init`, `read_text`?**
   _High betweenness centrality (0.016) - this node is a cross-community bridge._
 - **Why does `StubOllama` connect `StubOllama` to `test_ollama.py`, `.url`, `Notify (Telegram + email)`?**
