@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.79: the Kimi Code CLI is a crew provider (T-0028, the feature
+- **`crew` 1.0.81: the Kimi Code CLI is a crew provider (T-0028, the feature
   half). BEHAVIOUR CHANGE: the default `qa.order` now lists Kimi second -
   `["codex", "kimi", "copilot", "claude"]`.** `/crew:review` does not launch
   Kimi yet: that wiring is crew's review harness, and lands on its own as
@@ -19,11 +19,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   and go on to the next rung. The gate names no provider: L-0527 adding `kimi`
   to `review_run.LAUNCHED` is what makes it eligible; an unreadable list is
   could-not-tell and admits nothing. (`review_run.py --provider kimi` itself
-  still exits 2 until then, nothing launched.) Bumped `1.0.77 -> 1.0.79` (1.0.44 on its
+  still exits 2 until then, nothing launched.) Bumped `1.0.80 -> 1.0.81` (1.0.44 on its
   branch; 1.0.60 after merging main's 1.0.59; 1.0.62 after main's 1.0.61;
   1.0.70 after main's 1.0.69; 1.0.76 after main's 1.0.75; 1.0.77 after
   main's 1.0.76, T-0087; 1.0.78 after main's 1.0.77, T-0086; 1.0.79 after
-  the round-6 fixes, 1.0.78 and 1.0.80 being held by open PRs #278 and #283).
+  the round-6 fixes; re-set after merging main's 1.0.80, L-0529).
   - **`kimi` is in `QA_PROVIDERS` and `DEV_PROVIDERS`**, so every
     `qa.roles.<r>` and `dev.roles.<r>` slot accepts a
     `{"provider": "kimi", "model": ...}` pin that validates, reports in
@@ -65,6 +65,31 @@ All notable changes to this repository are documented here. Format follows [Keep
     document it. `templates/config.template.json` and `global.template.json`
     are regenerated from `default_config()` / `default_global_config()`, so
     `/crew:init` writes the `kimi` blocks and the new order.
+
+### Fixed — `crew` 1.0.80 and `obsidian-vault` 0.4.15: the python-free bin fixtures tolerate a name two PATH dirs share (L-0529)
+
+- The first self-hosted CI run (36735895881, Ubuntu 26.04) failed 42 tests
+  per `test` leg with `FileExistsError: [Errno 17] File exists:
+  '/bin/grub-ntldr-img' -> '.../tools/grub-ntldr-img'`. The fixtures that
+  link `/usr/bin` and `/bin` into one directory skipped a name already
+  linked with `Path.exists()`, which follows the link. With `/bin -> usr/bin`
+  the second pass revisits every name, and `/usr/bin/grub-ntldr-img` is a
+  relative link whose target is not installed there, so its farm link read
+  as absent and was linked twice. GitHub-hosted images carry no dangling
+  entry in `/usr/bin`, so the bug stayed hidden there.
+- One shared helper, `crew_fixtures.link_path_dirs`, now skips a source dir
+  whose realpath was already linked and a name that `os.path.lexists` in the
+  farm, so the first dir holding a name wins, as in PATH lookup.
+  `test_ps1_python_probe.py::_tools`, `test_event_claim_crash_safety.py::_tools`
+  and `test_context_watch_python_resolver.py::_python_free_path` call it;
+  `plugin/obsidian-vault/hooks/scripts/_test/test_python_probe_proof.py::tools`
+  carries the same two checks inline.
+- Regression: `plugin/crew/tests/test_path_link_farm.py` (a dir symlinked to
+  another holding a dangling relative link; two distinct dirs holding one
+  name, first wins) and `check_tools_tolerates_duplicate_names` in the
+  obsidian-vault suite. Test fixtures only; no hook or script changed.
+- Bumped `crew` `1.0.77 -> 1.0.80` (1.0.78 and 1.0.79 are declared by open
+  branches, T-0099 and T-0505) and `obsidian-vault` `0.4.14 -> 0.4.15`.
 
 ### Added — `crew` 1.0.77: the Python development standards set (T-0086, slice 1)
 

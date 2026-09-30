@@ -124,13 +124,7 @@ def _tools(tmp_path):
             return native
     tools = tmp_path / "tools"
     tools.mkdir()
-    for source in ("/usr/bin", "/bin"):
-        if not os.path.isdir(source):
-            continue
-        for name in os.listdir(source):
-            if name.startswith(("python", "py")) or (tools / name).exists():
-                continue
-            os.symlink(os.path.join(source, name), tools / name)
+    crew_fixtures.link_path_dirs(tools, skip=lambda name: name.startswith(("python", "py")))
     return tools
 
 
