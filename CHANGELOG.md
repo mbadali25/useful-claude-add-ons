@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.83: the Kimi Code CLI is a crew provider (T-0028, the feature
+- **`crew` 1.0.84: the Kimi Code CLI is a crew provider (T-0028, the feature
   half). BEHAVIOUR CHANGE: the default `qa.order` now lists Kimi second -
   `["codex", "kimi", "copilot", "claude"]`.** `/crew:review` does not launch
   Kimi yet: that wiring is crew's review harness, and lands on its own as
@@ -19,13 +19,13 @@ All notable changes to this repository are documented here. Format follows [Keep
   and go on to the next rung. The gate names no provider: L-0527 adding `kimi`
   to `review_run.LAUNCHED` is what makes it eligible; an unreadable list is
   could-not-tell and admits nothing. (`review_run.py --provider kimi` itself
-  still exits 2 until then, nothing launched.) Bumped `1.0.81 -> 1.0.83` (1.0.44 on its
+  still exits 2 until then, nothing launched.) Bumped `1.0.83 -> 1.0.84` (1.0.44 on its
   branch; 1.0.60 after merging main's 1.0.59; 1.0.62 after main's 1.0.61;
   1.0.70 after main's 1.0.69; 1.0.76 after main's 1.0.75; 1.0.77 after
   main's 1.0.76, T-0087; 1.0.78 after main's 1.0.77, T-0086; 1.0.79 after
-  the round-6 fixes; 1.0.83 after merging main's 1.0.80, L-0529, and re-set after
-  merging main's 1.0.81, T-0094, as the next free patch - 1.0.82 is declared
-  by T-0505's worktree).
+  the round-6 fixes; 1.0.83 after merging main's 1.0.80, L-0529, 1.0.83 again after
+  merging main's 1.0.81, T-0094; 1.0.84 after merging main's 1.0.83, L-0531
+  and T-0099).
   - **`kimi` is in `QA_PROVIDERS` and `DEV_PROVIDERS`**, so every
     `qa.roles.<r>` and `dev.roles.<r>` slot accepts a
     `{"provider": "kimi", "model": ...}` pin that validates, reports in
@@ -67,6 +67,41 @@ All notable changes to this repository are documented here. Format follows [Keep
     document it. `templates/config.template.json` and `global.template.json`
     are regenerated from `default_config()` / `default_global_config()`, so
     `/crew:init` writes the `kimi` blocks and the new order.
+
+### Fixed — `crew` 1.0.83: the review prompt tells a known-empty exclusion list from an unrecorded one (T-0099)
+
+- **What changed.** `_bundle_block` in `review_prompt.py` now checks the shape of `manifest["excluded"]`
+  before printing it, instead of treating any falsy value as "none recorded":
+  `isinstance(excluded, list) and all(isinstance(p, str) and p.strip() for p in excluded)`. Three lines
+  now come out of three different inputs: a non-empty list of non-blank strings prints
+  `excluded (never in the bundle): a, b`; an empty list `[]` prints `excluded (never in the bundle): none`;
+  a missing `excluded` key, or a value that is anything but a list of non-blank strings (not a list, a
+  blank/whitespace entry, a non-string entry), prints `excluded: not recorded by this manifest (unknown)`.
+- **Why.** The old code used `excluded` truthiness alone, so `[]` (a manifest that positively recorded
+  "nothing was excluded") and a manifest that never populated the key at all both printed as
+  `excluded: none recorded` — the reviewer read a manifest that couldn't say as one that had already
+  said no. Flagged at T-0092 review round 2 as a NIT and deferred; fixed here.
+- **Unchanged.** `_bundle_block`'s other lines (manifest path, renames, mode changes), the manifest
+  schema itself, and every caller of `_bundle_block`.
+- **Tests.** `test_review_prompt.py` covers all three states: a populated list, `[]`, and a missing/malformed
+  key. Sabotage (`sabotage_review.py`) carries three matching mutations, confirmed RED at land: reverting to
+  bare truthiness ("the review prompt stops naming the excluded paths"), collapsing `[]` back into the
+  unknown branch ("an empty exclusion list prints as unknown"), and accepting a blank entry as a known
+  list ("a blank exclusion entry reads as a known list").
+
+### Added — `crew` 1.0.82: sabotage entries for the python-free bin fixture's dedupe (L-0531)
+
+- Two mutations of `plugin/crew/tests/crew_fixtures.py::link_path_dirs`
+  (L-0529), carried in `sabotage_qa.py`'s tuple because `sabotage.py` is at
+  max-module-lines: the realpath skip removed goes RED on
+  `test_a_dir_already_linked_through_an_alias_is_not_listed_again`, and
+  `lexists` turned back into `exists` goes RED on
+  `test_a_dangling_entry_in_the_first_dir_still_shadows_the_same_name_later`.
+  Split from L-0529 because `sabotage*.py` is review/gate harness and lands
+  in a tooling-only PR (`scripts/check-tooling-pr.py`).
+- Verify rule 34 (`sabotage_qa.py`) now also runs `test_path_link_farm.py` and
+  the shipped-anchor check, so a lost anchor cannot pass the gate.
+- Bumped `crew` `1.0.81 -> 1.0.82` (1.0.81 is T-0094's).
 
 ### Fixed — `crew` 1.0.80 and `obsidian-vault` 0.4.15: the python-free bin fixtures tolerate a name two PATH dirs share (L-0529)
 
