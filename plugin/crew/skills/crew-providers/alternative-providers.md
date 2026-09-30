@@ -7,8 +7,9 @@ move._
 ## Kimi through Codex (a fifth family, no new provider)
 
 **Prefer the first-class route** when you have a Kimi Code plan: the Kimi Code
-CLI is its own provider (`--provider kimi`, SKILL.md "Kimi Code"), which reads
-the bundle files itself and keeps the review prompt byte-identical. This Codex
+CLI is its own provider (SKILL.md "Kimi Code"); its review launch, which reads
+the bundle files itself and keeps the review prompt byte-identical, lands as
+L-0527. This Codex
 recipe is still the right one with a pay-as-you-go `MOONSHOT_API_KEY` and no
 Kimi Code plan.
 

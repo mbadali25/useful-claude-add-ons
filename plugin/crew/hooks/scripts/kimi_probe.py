@@ -9,8 +9,10 @@ WHY IT EXISTS (T-0028). A provider on PATH is not a provider that can review:
 a logged-out or out-of-quota CLI resolves on PATH and then fails at the first
 call. `review_run.py` reserves a review round BEFORE it launches the reviewer,
 so a quota wall hit after reservation spends a round for nothing -- which is
-how a Codex quota error burned one. This probe runs BEFORE the round is
-reserved, and only `ok` may launch.
+how a Codex quota error burned one. This probe is built to run BEFORE the round
+is reserved, and only `ok` may launch. `review_run.py` does not launch Kimi yet:
+that wiring is the review harness's, and lands as L-0527 (tooling only).
+Until then the probe runs from `providers.sh --probe-kimi` or directly.
 
 THE STATES, each its own value:
 
@@ -35,13 +37,13 @@ The id is resolved to the alias whose `model` equals it and whose provider has
 `type = "kimi"`; the provider type is what proves the family is Kimi. An id
 given AS an alias is accepted as that alias.
 
-READ-ONLY, LIKE THE REVIEW. The live call gets the same controls as the
-review launch (`review_run.py`): `--agent-file` naming the agent that allows
+READ-ONLY. The live call gets the controls the review launch will get
+(L-0527): `--agent-file` naming the agent that allows
 Read, Grep and Glob and disallows Write, Edit and Bash, and an empty
 `--skills-dir`. It runs in a throwaway directory, removed afterwards, rather
 than in the caller's directory -- so it neither auto-loads that repository's
 AGENTS.md nor lands a stray relative write there. `write_agent_file` is the ONE
-definition of that agent; review_run.py calls it too.
+definition of that agent, for the review launch to reuse.
 
 SECRETS. The static stage reads config.toml for STRUCTURE only: whether a key
 is present, never its value, and nothing under `credentials/` is opened --
@@ -65,8 +67,6 @@ try:
 except ImportError:  # pragma: no cover - exercised only on 3.8-3.10
     _tomllib = None
 
-import review_verdict
-
 STATES = ("ok", "not-installed", "not-authenticated", "rate-limited", "unknown")
 PROBE_PROMPT = "Reply with exactly: PROBE_OK"
 PROBE_MARKER = "PROBE_OK"
@@ -89,6 +89,95 @@ _QUOTA_STATUS = re.compile(r'"status_code":\s*429\b|\b429\b')
 _SECRETS = re.compile(
     r"sk-[A-Za-z0-9_\-]{6,}|eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]*"
     r"|(?i:bearer)\s+\S+")
+
+
+
+# --- the Kimi stream-json parser -------------------------------------------
+# Here rather than in review_verdict.py: the probe is feature code and the review
+# harness is tooling (check-tooling-pr.py), so the harness imports this parser
+# when it launches Kimi (L-0527), never the other way round.
+
+def _kimi_text(content):
+    """Assistant `content` as text: a string, or a list of `{"type": "text",
+    "text": ...}` parts joined. None when a text part's `text` is not a string
+    -- a malformed message (round 4 of T-0028: joining it raised TypeError, so
+    the probe's classify crashed instead of reading unknown). Anything else is
+    no text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        # Round 5 of T-0028: a member that is not an object is malformed, not
+        # skipped -- CLEAN beside an unparseable part was accepted.
+        if not all(isinstance(p, dict) for p in content):
+            return None
+        texts = [p.get("text") for p in content if p.get("type") == "text"]
+        if not all(isinstance(text, str) for text in texts):
+            return None
+        return "".join(texts)
+    return ""
+
+
+def _kimi_error(event):
+    """The failure an event carries, or None. A `turn.step.retrying` meta
+    event is NOT one: the CLI retries and may still complete the turn, and
+    round 5 of T-0028 found one carrying its transient error as an object
+    read as terminal."""
+    if event.get("type") == "turn.step.retrying":
+        return None
+    detail = event.get("error")
+    if isinstance(detail, dict):
+        code, text = detail.get("code"), detail.get("message")
+        return f"{code}: {text or ''}".rstrip(": ") if code else str(text or "error")
+    if isinstance(detail, str) and detail:
+        return detail
+    kind = str(event.get("type") or "")
+    if event.get("role") == "meta" and (kind.endswith((".failed", ".error"))
+                                        or kind in ("error", "failed")):
+        return str(event.get("error_message") or event.get("message") or kind)
+    return None
+
+
+def final_message(jsonl):
+    """From `kimi -p ... --output-format stream-json` stdout, return
+    (message, error), the same contract as `review_verdict.codex_final_message`.
+
+    `message` is the last assistant text, or None. `error` is None only when
+    at least one assistant text arrived, every non-blank line parsed as a JSON
+    object, and no event carried a failure. Written against the shape the
+    2.1.1 bundle's PromptJsonWriter emits, and checked against the owner's
+    one captured run (tests/fixtures/kimi-stream-2.1.1/ok.jsonl). Only a
+    `role: assistant` line is read: that run ends on a `session.resume_hint`
+    meta line whose `content` is a string too. The stream has NO
+    turn-completed record, so completion cannot be proven from stdout alone,
+    and a thrown turn failure reaches stderr and the exit status instead. The
+    exit status is therefore still required: `classify` reads `ok` only at
+    exit 0."""
+    message, error = None, None
+    for line in (jsonl or "").split("\n"):  # "\n" only, as review_verdict.codex_final_message
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            event = None
+        if not isinstance(event, dict):
+            if error is None:
+                error = f"unparseable Kimi event line: {line[:120]!r}"
+            continue
+        failure = _kimi_error(event)
+        if failure and error is None:
+            error = failure
+        if event.get("role") == "assistant":
+            text = _kimi_text(event.get("content"))
+            if text is None:
+                if error is None:
+                    error = "malformed content part"
+            elif text.strip():
+                message = text
+    if error is None and message is None:
+        error = "the Kimi event stream has no assistant message"
+    return message, error
 
 
 def launchable(state):
@@ -242,13 +331,13 @@ def classify(stdout, stderr, code, timed_out, timeout=DEFAULT_TIMEOUT):
 
     PROBE_OK is read BEFORE the quota markers (round 2 of T-0028): the CLI
     retries a transient 429 (a `turn.step.retrying` record) and may then
-    finish the turn, which `review_verdict.kimi_final_message` reads as a
+    finish the turn, which `final_message` reads as a
     clean answer -- so must the probe. It counts only at exit 0 from a stream
     that carried no failure record; a 429 that ended the call still reads
     `rate-limited`."""
     if timed_out:
         return "unknown", f"the probe did not answer within {timeout}s"
-    message, error = review_verdict.kimi_final_message(stdout)
+    message, error = final_message(stdout)
     blob = f"{stdout}\n{stderr}"
     if _AUTH_MARKERS.search(blob) or _AUTH_STATUS.search(stderr or "") \
             or '"status_code":401' in (stdout or "").replace(" ", ""):

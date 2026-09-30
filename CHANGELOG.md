@@ -6,51 +6,21 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.77: the Kimi Code CLI is a crew provider (T-0028). BEHAVIOUR
-  CHANGE: the default `qa.order` now tries Kimi second -
-  `["codex", "kimi", "copilot", "claude"]`** - so on a machine with `kimi` on
-  PATH and a repo with no explicit `qa.order`, `/crew:review` reaches Kimi
-  before Copilot and the Claude fallback. Bumped `1.0.76 -> 1.0.77` (1.0.44
-  on its branch; 1.0.60 after merging main's 1.0.59; 1.0.62 after main's
-  1.0.61; 1.0.70 after main's 1.0.69; 1.0.76 after main's 1.0.75; re-set
-  after merging main's 1.0.76, T-0087).
-  - **Review round 4's fingerprint and probe fixes.** A file's digest carries
-    its permission bits; a symlink counts with what it resolves to, and a link
-    to a directory outside the repository is could-not-tell; a FIFO, socket
-    or device is recorded and never opened; the metadata keys hold a NUL, so
-    no file can collide with them; `graph.out` is not set aside when it is or
-    lies under `.crew`, contains a `.crew`, or holds a tracked file other than
-    `graph.json` and `GRAPH_REPORT.md`; a `killpg` PermissionError is
-    could-not-tell; a non-string provider reference or text part reads
-    `unknown` instead of raising; the probe launches an absolute `kimi`.
-  - **Review round 5's fixes: could-not-tell stays could-not-tell.** The
-    Kimi probe reads `unknown`, not `not-authenticated`, when the credentials
-    directory or `config.toml` cannot be read (only ENOENT proves absence) or
-    `config.toml` is not a regular file, and when it cannot create its
-    scratch directory (it raised); `ok` needs the answer to be exactly
-    `PROBE_OK`, so "not PROBE_OK" no longer authorises a launch. The stream
-    parser treats a non-object content member as malformed, and never reads
-    a `turn.step.retrying` event as a failure, even one carrying an `error`
-    object. `graph.out` sets nothing aside when the repository config exists
-    but cannot be read, is not valid JSON, or is not an object (it had fallen
-    back to `graphify-out`). `/crew:review` hard-fails a pinned `kimi` whose
-    probe fails, as it does a pinned `codex`, instead of walking on.
-  - **New exit code: `review_run.py` exits 8 (`EXIT_PROBE_CHANGED`) when the
-    Kimi probe changed the working tree, whatever it answered** - no round is
-    spent, and `/crew:review` stops and reports the paths instead of walking
-    to the next provider (exit 2) against a tree the bundle no longer matches.
-  - **Adapted to main's #264 preflight and T-0088's lane config (1.0.70).**
-    The Kimi probe runs first, then the preflight (a CLEAN receipt, then the
-    verify gate), then T-0085's standards self-check, then `reserve`, as Codex's `--probe` runs before its round:
-    a Kimi that is not `ok` exits 2 even on a tree the gate has not passed,
-    and an `ok` one on such a tree exits 5 with nothing reserved.
-    `graph.out` is read through `crew_common.repo_config_dir`, so a lane
-    worktree with no config of its own sets aside the main checkout's
-    `graph.out`, and a source git cannot tell sets nothing aside.
-    `EXIT_PROBE_CHANGED` is 8, since main's `EXIT_UNVERIFIED` is 5.
+- **`crew` 1.0.77: the Kimi Code CLI is a crew provider (T-0028, the feature
+  half). BEHAVIOUR CHANGE: the default `qa.order` now lists Kimi second -
+  `["codex", "kimi", "copilot", "claude"]`.** `/crew:review` does not launch
+  Kimi yet: that wiring is crew's review harness, and lands on its own as
+  L-0527 (tooling-only PRs carry no feature work, T-0087's rule). Until then
+  `review_run.py` refuses `--provider kimi` (exit 2, nothing launched, no round
+  spent) and the walk moves on to the next provider, so the new rung changes
+  nothing a review does today. Bumped `1.0.76 -> 1.0.77` (1.0.44 on its
+  branch; 1.0.60 after merging main's 1.0.59; 1.0.62 after main's 1.0.61;
+  1.0.70 after main's 1.0.69; 1.0.76 after main's 1.0.75; re-set after
+  merging main's 1.0.76, T-0087).
   - **`kimi` is in `QA_PROVIDERS` and `DEV_PROVIDERS`**, so every
     `qa.roles.<r>` and `dev.roles.<r>` slot accepts a
-    `{"provider": "kimi", "model": ...}` pin. The owner's ids are `k3`,
+    `{"provider": "kimi", "model": ...}` pin that validates, reports in
+    `/crew:model` and is family-guarded. The owner's ids are `k3`,
     `kimi-for-coding` and `kimi-for-coding-highspeed`; they are displayed,
     never an allowlist. No role pin ships; `/crew:model` offers the table.
   - **Family token `kimi`, fixed by provider.** `family("kimi", <any model>)`
@@ -61,57 +31,27 @@ All notable changes to this repository are documented here. Format follows [Keep
     letters are exactly `k` followed by a digit.
   - **New probe, `hooks/scripts/kimi_probe.py`**: `ok`, `not-installed`,
     `not-authenticated`, `rate-limited` or `unknown`, each its own value; only
-    `ok` launches. `review_run.py --provider kimi` runs it BEFORE the round is
-    reserved, so a quota or auth failure spends no round. When the ledger's
-    status already shows no round left it exits 4 before any probe or
-    reservation: a Kimi round is never reserved unprobed. The live stage spends one tiny
-    request; `review.md` no longer runs the probe a second time. A 429 the
-    CLI retried and then completed reads `ok`, as the review parser reads it;
-    a 429 that ended the call is still `rate-limited`.
-  - **Read-only without a flag.** `kimi -p` forces permission mode `auto`, so
-    every Kimi call - the probe too, in a throwaway directory - passes a
-    Read/Grep/Glob-only `--agent-file` (Write, Edit, Bash disallowed) and an
-    empty `--skills-dir`. The working tree is fingerprinted before the probe
-    and after the review, hashing the contents of untracked and gitignored
-    files as well as tracked ones, HEAD and the index; a changed tree - or
-    one git could not fingerprint, or a git that fails or hangs - makes the
-    round INCOMPLETE and names the paths, and a probe that changed it spends
-    no round. `graph.out` is set aside: graphify's background rebuild
-    rewrites it mid-review, and a write there fixes no code. It is resolved
-    once, before the probe, from the tree as it was - a reviewer that writes
-    `.crew/crew.json` can no longer move it - and a write to `.crew/crew.json`
-    or `.crew/config.json` always counts. Every tracked file's contents are
-    hashed whatever `git status` says, so a skip-worktree or assume-unchanged
-    flag, or a `.git/config` that stops git trusting ctime, hides no edit.
-    Nested repositories and submodules are fingerprinted in turn, and any
-    other directory is walked. Whatever a Kimi call leaves running in its
-    process group is killed before the tree is checked. Set aside while
-    gitignored before and after: IDE state (`.idea/`, `.vscode/`),
-    `.crew/guard.log`, `.crew/.autoclear.log` and context-watch's markers,
-    which crew's own hooks write mid-review. Tool caches are NOT set aside:
-    a `__pycache__` .pyc, a lint cache or a bundler cache is read back by the
-    next run. Every other ignored file, `.env` and the verify gate's
-    `.crew/` files included, still counts. A tree that cannot be fingerprinted before the
-    probe (an unreadable ignored file, say) stops there as
-    `unknown - cannot fingerprint the tree`, naming the path: no probe
-    request, no round. Not caught: a
-    write outside the repository, or inside `.git` beyond HEAD and the index.
-    Stream error text is redacted before it becomes a reason, and
-    `review.json` records the alias actually launched as `model_launched`.
+    `ok` is launchable. Could-not-tell never becomes an answer: an unreadable
+    credentials directory or `config.toml` (only ENOENT proves absence), a
+    `config.toml` that is not a regular file, a scratch directory that cannot
+    be made, unrecognised output, a timeout, an id no `type = "kimi"` alias
+    serves, and any answer other than exactly `PROBE_OK` are `unknown`. A 429
+    the CLI retried and then completed reads `ok`; a 429 that ended the call is
+    `rate-limited`. The live stage spends one tiny request, in a throwaway
+    directory, with a Read/Grep/Glob-only `--agent-file` and an empty
+    `--skills-dir` (`kimi -p` forces permission mode `auto`), a scrubbed env,
+    and stderr redacted. `providers.sh --probe-kimi` runs it; without the flag
+    it only reports the CLI.
+  - **The stream-json parser, `kimi_probe.final_message`, is tested against a
+    real run.** `tests/fixtures/kimi-stream-2.1.1/ok.jsonl` is the owner's one
+    captured `kimi -p` call (2026-09-25, session id redacted). Only a
+    `role: assistant` line is read; a non-object content member is malformed;
+    a `turn.step.retrying` event is never a failure. Tool-call, retry, 401,
+    quota and failed-turn records remain uncaptured.
   - `qa.kimi.model` / `dev.kimi.model` (default `null`); no
-    `reasoningEffort` key. `review.md` step 2e, `model.md`, `crew-providers`
-    and `providers.sh` (probe only with `--probe-kimi`) document it.
-  - **The stream-json parser is tested against a real run.**
-    `tests/fixtures/kimi-stream-2.1.1/ok.jsonl` is the owner's one captured
-    `kimi -p` call (2026-09-25, session id redacted): `system.version`, the
-    assistant text, then a `session.resume_hint` meta line whose `content` is
-    a string. Only the `role: assistant` line is read, and a test plus a
-    sabotage mutation hold that; the probe's `classify` is tested against the
-    captured stdout, stderr and exit status. The hand-written placeholder is
-    gone. Tool-call, retry, 401, quota and failed-turn records remain
-    uncaptured.
-  - `templates/config.template.json` and `global.template.json` are
-    regenerated from `default_config()` / `default_global_config()`, so
+    `reasoningEffort` key. `model.md`, `crew-providers` and `providers.sh`
+    document it. `templates/config.template.json` and `global.template.json`
+    are regenerated from `default_config()` / `default_global_config()`, so
     `/crew:init` writes the `kimi` blocks and the new order.
 
 ### Added — `crew` 1.0.76: tooling reliability — tool-failure refunds, golden replay, seam contracts, a canary review (T-0087)

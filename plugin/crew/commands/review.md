@@ -1,5 +1,5 @@
 ---
-description: Independent QA review of the current diff (Codex, Kimi, Copilot, or Claude - first that probes clean)
+description: Independent QA review of the current diff (Codex, Copilot, or Claude - first that probes clean)
 argument-hint: "[ticket id]"
 allowed-tools: Bash, Read, Agent
 ---
@@ -212,8 +212,7 @@ apply the same strike to the provider you are about to run. When the source is
 |---|---|
 | `claude` (default) | `claude` — the `reviewer` fallback |
 | `codex` | `codex` |
-| `kimi` | `kimi`, and any Copilot pin to a `kimi-*` model |
-| `copilot` | whichever family `dev.copilot.model` names — `gemini-*` strikes nothing here, `claude-*` strikes the fallback, `gpt-*` strikes Codex, `kimi-*` strikes Kimi |
+| `copilot` | whichever family `dev.copilot.model` names — `gemini-*` strikes nothing here, `claude-*` strikes the fallback, `gpt-*` strikes Codex |
 
 A family reviewing its own output agrees with itself, and that is the exact
 failure this command exists to catch. Apply the strike at review time. Do not
@@ -230,7 +229,7 @@ What is forbidden is letting a same-family review be *recorded* as an independen
 one. Announce it, and never write it to `.crew/metrics.md` as though a different
 family had looked.
 
-Then, if `qa.provider` names a provider (`codex`, `kimi`, `copilot`, `claude`), use that one
+Then, if `qa.provider` names a provider (`codex`, `copilot`, `claude`), use that one
 and **hard-fail if its probe fails** — a pinned provider that cannot run is an error,
 not a cue to fall back. If `qa.provider` is `auto`, walk `qa.order` and take the
 first surviving provider that passes its probe:
@@ -238,7 +237,6 @@ first surviving provider that passes its probe:
 | Provider | Probe | Runs |
 |---|---|---|
 | `codex` | `review_run.py ... --provider codex --probe`, run by the `case` line that opens Step 2's bundle block (after `$QA_MODEL`/`$QA_EFFORT` are set), which leaves `$PROBE_STATUS` and `$PROBE_DETAIL`: one minimal real call, no round reserved (`command -v` is not a probe: a logged-out or limited Codex is on `PATH` and fails at the first call) | exit 0 (ok): step 2a. Exit 6 (failed) or 7 (unknown, timed out): skip Codex with `PROBE_DETAIL` quoted - a pinned `codex` hard-fails, as before. Exit 5 (limited): **a Codex usage limit runs the round on Claude** - step 2c, pinned or not (owner, 2026-09-28: "if we hit a codex limit please use claude ads the reviewer"), announced `same-family (codex limit)`, not independent, with `PROBE_DETAIL` quoted verbatim; the round is spent like any other (a refund is T-0087's). The patterns are Codex's own messages, cited in `review_limit.py`. Any other exit is no answer about Codex (2 a usage error, 1 the probe crashed): stop and quote it; never read it as ok or as limited |
-| `kimi` | none here — `review_run.py` runs `kimi_probe.py` itself before reserving; do not run it separately (a second live request). Exit 2 names a state other than `ok`: skip it when `qa.provider` is `auto`; a pinned `kimi` hard-fails, as a pinned `codex` does. Exit 8, the probe changed the tree: stop | step 2e |
 | `copilot` | `command -v copilot` **and** `qa.copilot.model` is set | step 2b |
 | `claude` | always passes | step 2c |
 
@@ -288,7 +286,6 @@ print(block.get(field) or "")
 QA_MODEL=$(qm codex model)
 QA_EFFORT=$(qm codex reasoningEffort)
 QA_COPILOT_MODEL=$(qm copilot model)
-QA_KIMI_MODEL=$(qm kimi model)
 
 # The author families to strike, from the same report -- never re-derived from
 # dev.provider, which is a default a per-role pin may already have overridden.
@@ -429,15 +426,19 @@ $(cat "$SCRATCH/context.txt")
 EOF
 ```
 
-**Step 2a — Codex, 2b — Copilot, 2e — Kimi.** `review_run.py` reserves the round, then launches the reviewer with stdin closed (a real run hung on stdin), then computes the verdict and writes `.work/tickets/$TICKET/review.json`. Codex runs as `codex exec --json --sandbox read-only`, read from its event stream, so a failed turn is INCOMPLETE even at exit 0. Copilot keeps `--deny-tool write --deny-tool shell`: a reviewer that can edit the code can "fix" a defect instead of reporting it. Empty model/effort pass no flag.
-Kimi reads the same `$SCRATCH/prompt.txt`, byte-identical per this file's invariant; `review_run.py` runs `kimi_probe.py` BEFORE reserving (one tiny request, never a round), and since `kimi -p` cannot be made read-only by a flag, a working tree that changed from before the probe to after the review makes the round INCOMPLETE, naming the paths. The fingerprint hashes each file's contents and permission bits (a chmod counts under `core.filemode=false`), digests a symlink with its target and what it resolves to (a link to a directory outside the repository is could-not-tell), and records a FIFO, socket or device, never opened. A Kimi round is never reserved unprobed: when the ledger's status shows no round left, `review_run.py` exits 4 before the probe. For Kimi the probe also runs before the two preflight questions (a CLEAN receipt, then the verify gate), as Codex's `--probe` runs before its round: a Kimi that is not `ok` exits 2 and is skipped even on a tree the gate has not passed, and an `ok` one on such a tree exits 5 with no round reserved. Set aside: `graph.out` (graphify's background rebuild) unless it is or lies under `.crew`, contains a `.crew`, or holds a tracked file other than `graph.json` and `GRAPH_REPORT.md`, and, only while gitignored before and after, `.idea/`, `.vscode/`, `.crew/guard.log`, `.crew/.autoclear.log` and context-watch's markers, which crew's own hooks or an IDE write mid-review. Tool caches such as `__pycache__` and the verify gate's `.crew/` files still count: a later run reads them back. Empty `QA_KIMI_MODEL` means the CLI's `default_model`.
+**Step 2a — Codex, 2b — Copilot.** `review_run.py` reserves the round, then
+launches the reviewer with stdin closed (a real run hung on stdin), then
+computes the verdict and writes `.work/tickets/$TICKET/review.json`. Codex runs
+as `codex exec --json --sandbox read-only`, read from its event stream, so a
+failed turn is INCOMPLETE even at exit 0. Copilot keeps `--deny-tool write
+--deny-tool shell`: a reviewer that can edit the code can "fix" a defect instead
+of reporting it. Empty model/effort pass no flag.
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
   --scratch "$SCRATCH" --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT"
 # or: --provider copilot --model "$QA_COPILOT_MODEL"
-# or: --provider kimi --model "$QA_KIMI_MODEL"
-REVIEW_STATUS=$?   # 0 CLEAN, 1 FINDINGS, 3 INCOMPLETE, 4 NEEDS_REPLAN, 5 gate red, 2 not run, 8 kimi probe changed the tree
+REVIEW_STATUS=$?   # 0 CLEAN, 1 FINDINGS, 3 INCOMPLETE, 4 NEEDS_REPLAN, 5 gate red, 2 not run
 ```
 
 `reasoningEffort` accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`;
@@ -447,8 +448,6 @@ cause. Exit 2 means nothing launched and no round was spent: not on PATH (walk
 to the next eligible provider), or `review-run: self-check: ...` - the standards
 self-check is missing or stale for this bundle (every provider): answer
 `.work/tickets/$TICKET/selfcheck.md`, run the `crew_standards.py stamp` it names, rebuild. Exit 5 (`$REVIEW_STATUS`, not the probe's `$PROBE_STATUS` 5): the verify gate has not passed this tree, no round spent; every provider refuses it, so run the gate first (or pass `--allow-unverified` and say so). The order is fixed: a CLEAN receipt covering this bundle answers CLEAN first and asks for no self-check; an unverified gate is refused with exit 5 before the self-check is asked for; only then can exit 2 name a self-check problem. A Codex round whose call fails on a usage limit stays INCOMPLETE, prints `review: codex usage limit in round N: '<the error>'` and is recorded after the verdict, in `<git-common-dir>/crew/review-limit/<ticket>.json` (not the ledgers' folder, which `/crew:status` lists): the next probe answers `limited` from that record without a call, so the next round runs step 2c; the round after it probes Codex live again. A record that cannot be written prints `could not record it (...)` instead; the round is still INCOMPLETE (exit 3) and the next probe calls Codex live.
-Exit 2 from `--provider kimi` can also be a kimi probe state other than `ok`, which the message names (`kimi probe: rate-limited - ...`): no round spent; announce it and walk to the next provider, unless `qa.provider` pins `kimi`, which hard-fails instead.
-Exit 8 means the Kimi probe changed the working tree; stop and report the named paths, do not walk to the next provider. No round was spent, but the tree is no longer the one the bundle was built from.
 
 **Step 2c — Claude fallback.** Invoke the `crew:reviewer` subagent with the
 SAME bundle 2a and 2b just read: the exact `$SCRATCH/prompt.txt` content —

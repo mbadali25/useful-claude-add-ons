@@ -54,7 +54,6 @@ completed, so a Codex turn that failed is INCOMPLETE even when its process
 exited 0. A non-blank line of that stream that is not a JSON object is an
 error too: the stream is only trustworthy whole, and skipping what cannot be
 read would let a garbled stream with a final CLEAN still read as CLEAN.
-`kimi_final_message` does the same for the Kimi Code CLI's `stream-json`.
 
 Reviewer output and the event stream are split on "\\n" only, never
 `str.splitlines()`: its extra breaks (U+2028, U+2029, U+0085 and the C0
@@ -224,87 +223,4 @@ def codex_final_message(jsonl):
             error = str(detail.get("message") or kind)
     if error is None and not completed:
         error = "the Codex event stream has no completed turn"
-    return message, error
-
-
-def _kimi_text(content):
-    """Assistant `content` as text: a string, or a list of `{"type": "text",
-    "text": ...}` parts joined. None when a text part's `text` is not a string
-    -- a malformed message (round 4 of T-0028: joining it raised TypeError, so
-    the probe's classify and the review's finish crashed instead of reading
-    unknown and INCOMPLETE). Anything else is no text."""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        # Round 5 of T-0028: a member that is not an object is malformed, not
-        # skipped -- CLEAN beside an unparseable part was accepted.
-        if not all(isinstance(p, dict) for p in content):
-            return None
-        texts = [p.get("text") for p in content if p.get("type") == "text"]
-        if not all(isinstance(text, str) for text in texts):
-            return None
-        return "".join(texts)
-    return ""
-
-
-def _kimi_error(event):
-    """The failure an event carries, or None. A `turn.step.retrying` meta
-    event is NOT one: the CLI retries and may still complete the turn, and
-    round 5 of T-0028 found one carrying its transient error as an object
-    read as terminal."""
-    if event.get("type") == "turn.step.retrying":
-        return None
-    detail = event.get("error")
-    if isinstance(detail, dict):
-        code, text = detail.get("code"), detail.get("message")
-        return f"{code}: {text or ''}".rstrip(": ") if code else str(text or "error")
-    if isinstance(detail, str) and detail:
-        return detail
-    kind = str(event.get("type") or "")
-    if event.get("role") == "meta" and (kind.endswith((".failed", ".error"))
-                                        or kind in ("error", "failed")):
-        return str(event.get("error_message") or event.get("message") or kind)
-    return None
-
-
-def kimi_final_message(jsonl):
-    """From `kimi -p ... --output-format stream-json` stdout, return
-    (message, error), the same contract as `codex_final_message`.
-
-    `message` is the last assistant text, or None. `error` is None only when
-    at least one assistant text arrived, every non-blank line parsed as a JSON
-    object, and no event carried a failure. Written against the shape the
-    2.1.1 bundle's PromptJsonWriter emits, and checked against the owner's
-    one captured run (tests/fixtures/kimi-stream-2.1.1/ok.jsonl). Only a
-    `role: assistant` line is read: that run ends on a `session.resume_hint`
-    meta line whose `content` is a string too. The stream has NO
-    turn-completed record, so completion cannot be proven from stdout alone,
-    and a thrown turn failure reaches stderr and the exit status instead. The
-    exit status is therefore still required: `parse` makes non-zero
-    INCOMPLETE."""
-    message, error = None, None
-    for line in (jsonl or "").split("\n"):  # "\n" only, as codex_final_message
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            event = json.loads(line)
-        except ValueError:
-            event = None
-        if not isinstance(event, dict):
-            if error is None:
-                error = f"unparseable Kimi event line: {line[:120]!r}"
-            continue
-        failure = _kimi_error(event)
-        if failure and error is None:
-            error = failure
-        if event.get("role") == "assistant":
-            text = _kimi_text(event.get("content"))
-            if text is None:
-                if error is None:
-                    error = "malformed content part"
-            elif text.strip():
-                message = text
-    if error is None and message is None:
-        error = "the Kimi event stream has no assistant message"
     return message, error

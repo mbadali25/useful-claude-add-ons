@@ -29,7 +29,6 @@ import crew_platform
 import crew_state
 import crew_status
 import crew_ticket
-import review_run
 from review_fixtures import git, init_repo
 from scope_fixtures import edit, make_repo, ready, run_hook
 
@@ -222,8 +221,6 @@ ALLOWED = {
     # the worktree's own file, until T-0096 routes the shell gate; pinned by
     # test_review_gate.py's lane test.
     "review_gate.py": (1, "mirrors verify-gate.sh's own-file stand-down read (T-0096)"),
-    "review_run.py": (2, "CREW_CONFIG_PATHS: the fingerprint's two config path constants, "
-                         "never a config read"),
 }
 
 
@@ -387,28 +384,3 @@ def test_explain_names_the_main_config_a_worktree_own_config_shadows(tmp_path):
     in_wt = _explain(wt, "--explain").stdout
 
     assert "not read" in in_wt and str(main / ".crew") in in_wt
-
-
-# --- review_run.graph_out reads the resolved config (T-0028, owner 2026-09-30) ---------
-
-def test_graph_out_in_a_lane_reads_the_main_checkouts_config(tmp_path):
-    """Must-block: a linked worktree with no `.crew/` config of its own
-    resolves graph.out from the main checkout, as crew_freshness does."""
-    _main, wt = _lane(tmp_path, {"graph": {"out": "build/graph"}})
-
-    assert review_run.graph_out(str(wt)) == "build/graph"
-
-
-def test_graph_out_in_a_lane_with_its_own_config_reads_its_own(tmp_path):
-    _main, wt = _lane(tmp_path, {"graph": {"out": "build/graph"}})
-    _own(wt, "config.json", {"graph": {"out": "own/graph"}})
-
-    assert review_run.graph_out(str(wt)) == "own/graph"
-
-
-def test_graph_out_is_none_when_git_could_not_tell_whose_config(tmp_path, monkeypatch):
-    """`unknown` sets nothing aside: an excused directory is never guessed."""
-    _main, wt = _lane(tmp_path, {"graph": {"out": "build/graph"}})
-    monkeypatch.setattr(crew_common, "git_out", lambda *a: None)
-
-    assert review_run.graph_out(str(wt)) is None

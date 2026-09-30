@@ -15,7 +15,7 @@ captured files (this README names them, so it matches).
 The captured stream is three lines: a `{"role": "meta", "type":
 "system.version"}` record, the `{"role": "assistant", "content": "PROBE_OK"}`
 answer, then a `{"role": "meta", "type": "session.resume_hint"}` record whose
-`content` is a string too. `review_verdict.kimi_final_message` reads only the
+`content` is a string too. `kimi_probe.final_message` reads only the
 `role: assistant` line; `kimi_probe.classify` is tested against all three
 files.
 

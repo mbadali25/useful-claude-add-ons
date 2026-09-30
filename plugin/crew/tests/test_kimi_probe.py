@@ -1,6 +1,6 @@
 """kimi_probe.py: five distinct states, and only `ok` launches (T-0028).
 
-Every case runs against a fake `kimi` from review_fixtures.fake_kimi_bin and a
+Every case runs against a fake `kimi` from kimi_fixtures.fake_kimi_bin and a
 fixture KIMI_CODE_HOME under tmp_path. No test here calls the real Kimi CLI or
 reads the real `~/.kimi-code`.
 """
@@ -14,7 +14,7 @@ import yaml
 
 import context  # noqa: F401  pylint: disable=unused-import
 import kimi_probe
-from review_fixtures import fake_kimi_bin, kimi_home
+from kimi_fixtures import fake_kimi_bin, kimi_home
 
 _PROBE = os.path.join(context._ROOT, "hooks", "scripts",  # pylint: disable=protected-access
                       "kimi_probe.py")
@@ -245,21 +245,6 @@ def test_cli_exit_status_is_zero_only_for_ok(tmp_path, answer, code):
     assert result.returncode == code and result.stdout.startswith("kimi: ")
 
 
-def test_every_kimi_sabotage_anchor_is_present_exactly_once():
-    """The cheap standing check for sabotage_kimi.py's table: an edit that
-    moves a line a mutation aims at would otherwise leave that mutation
-    testing nothing until somebody paid for a full sabotage run."""
-    import sabotage_kimi  # pylint: disable=import-outside-toplevel
-
-    lost = []
-    for label, target, find, _replace, _test in sabotage_kimi.KIMI_MUTATIONS:
-        with open(target, encoding="utf-8", newline="") as handle:
-            if handle.read().count(find) != 1:
-                lost.append(label)
-
-    assert sabotage_kimi.KIMI_MUTATIONS and not lost, lost
-
-
 # --- round 2 NIT kimi_probe.py:223: PROBE_OK is read before the rate limit ------
 
 _RETRY_429 = json.dumps({"role": "meta", "type": "turn.step.retrying", "status_code": 429,
@@ -268,7 +253,7 @@ _RETRY_429 = json.dumps({"role": "meta", "type": "turn.step.retrying", "status_c
 
 def test_classify_a_retried_429_that_completed_is_ok():
     """The CLI retried a transient 429 and then finished the turn: the same
-    stream review_verdict.kimi_final_message reads as a clean answer."""
+    stream kimi_probe.final_message reads as a clean answer."""
     stdout = _RETRY_429 + "\n" + json.dumps({"role": "assistant", "content": "PROBE_OK"}) + "\n"
 
     assert kimi_probe.classify(stdout, "retrying after 429\n", 0, False)[0] == "ok"
@@ -350,7 +335,7 @@ def test_probe_an_absolute_path_entry_is_unchanged(fake, home, monkeypatch):
     assert _probe(fake, home, monkeypatch)["exe"] == fake
 
 
-# --- review round 4 FIX review_verdict.py:170: a non-string text part ------------
+# --- review round 4 FIX (the parser): a non-string text part -----------------------
 
 
 def test_classify_a_non_string_text_part_is_unknown():

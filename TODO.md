@@ -5,13 +5,13 @@ can be re-verified rather than re-discovered — and so an item that turns out t
 be wrong can be closed on evidence.
 
 - **T-0028 follow-ups (Kimi Code provider).**
-  (a) The same pre-reserve probe for `codex` and `copilot`: `plugin/crew/hooks/scripts/review_run.py`
-  still reserves a codex/copilot round on the strength of PATH alone, which is how the Codex quota
-  error burned one. (b) `qa.kimi.reasoningEffort` once a per-invocation effort lever is measured;
+  (a) A pre-reserve probe for `copilot`, as codex has had since T-0088 (`review_run.py --probe`)
+  and kimi gets with L-0527. (b) `qa.kimi.reasoningEffort` once a per-invocation effort lever is measured;
   the only candidate, `KIMI_MODEL_THINKING_EFFORT`, is unverified against a config alias, and
-  `kimi_env` drops every `KIMI_MODEL_*` today. (c) The working-tree fingerprint
-  (`review_run.tree_fingerprint`) for codex and copilot, which are also launched without a
-  write check beyond their own flags. (d) `/crew:plan` dispatching to a `dev.roles.planner` pin -
+  `kimi_env` drops every `KIMI_MODEL_*` today. (c) The review launch itself
+  is L-0527 (tooling only, cut from main after this ticket merges); its follow-ups (a
+  fingerprint for codex and copilot, codex stream-error redaction, writes inside `.git`) are
+  recorded there. (d) `/crew:plan` dispatching to a `dev.roles.planner` pin -
   a follow-up ticket, id to be recorded here when it is filed. (e)
   `plugin/crew/agents/reviewer.md:27` still names the old order `(codex, copilot, claude)`.
   (f) Review round 1 NIT, outside T-0028's Touch: `plugin/localgpu/README.md:275` and
@@ -23,10 +23,7 @@ be wrong can be closed on evidence.
   files that `crew_context.derive_paths` returns `['scripts/**', 'plugin/crew/**']`, so
   `.claude/rules/install-scripts.md:4` loads the install-script landmines in every
   `plugin/crew/**` session; trim the citations at the next `/crew:onboard --refresh
-  install-scripts`. (h) `review_run.py`'s codex path puts a stream error into review.json
-  reasons unredacted (`extra.append(f"codex: {error}")`); the kimi path redacts since round 2.
-  (i) The kimi tree fingerprint does not see a write inside `.git` beyond HEAD and the index
-  (a hook, a config) - `review_run.tree_fingerprint`'s docstring says so.
+  install-scripts`.
 - **Not done, follow-up to T-0006**: `resume.auto` has no narrowing. `context.autoClear` can be
   narrowed on the machine to `onlyRepos` / `onlySessions` (`crew_autocycle.in_scope`);
   `resume.auto` arms every crew repo the machine file reaches, and a repo can only veto it
