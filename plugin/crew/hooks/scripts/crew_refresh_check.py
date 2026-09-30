@@ -761,9 +761,10 @@ def _index_verdict(top, base, rel, admitted):
     if code != 0:
         why = "could not run" if code is None else f"exited {code}"
         return None, f"{COULD_NOT_TELL}: git diff of {rel} {why}"
-    lines, mode = _diff_lines(out)
-    if mode:
-        return False, "INDEX.md's mode changed, which no re-anchor does"
+    # A mode change is refused before this, by `_on_disk` in `_texts`
+    # (review round 6 made that check every kind's; this branch was then
+    # unreachable, and its sabotage entry went green).
+    lines, _mode = _diff_lines(out)
     for where, line in lines:
         row = _INDEX_ROW_RE.match(line)
         if not row or row.group(1) not in admitted:
