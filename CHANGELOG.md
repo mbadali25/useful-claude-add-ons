@@ -4,6 +4,76 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.75: build-time development standards and a required pre-review self-check (T-0085)
+
+- **New `crew-standards` skill.** `references/generic.md` ships GEN-01 to GEN-12,
+  crew-generic standards mined from 224 BLOCK/FIX findings in crew's own QA reviews;
+  each cites the findings that earned it and names at least three reviewed change
+  sets. A repository adds its own in a tracked overlay, `.crew/standards.md` (this
+  repository's holds REPO-01 to REPO-03 and four supplements); the overlay adds and
+  never removes. An unreadable or malformed overlay is could-not-tell, never absent.
+- **`/crew:plan`** steps carry a `Standards:` line; **`/crew:implement`** and
+  **`/crew:fix`** run a required self-check (`crew_standards.py init`, answer every
+  row, `crew_standards.py stamp`), bound to the review bundle's sha256 and the
+  standards digest.
+- **`review_run.py` refuses to reserve a round** (exit 2, nothing spent) without a
+  current stamp, for every provider; it applies to tickets with an approval receipt
+  and stands down, logged, in an active incident.
+- **The review prompt ends with the standards checklist**, without the author's
+  answers. After a round, `crew_standards.py proposals` writes the findings for the
+  owner to classify; `crew_standards.py metric` reports first-round BLOCK+FIX before
+  and after, split on the `std:` token the metrics row now carries.
+- `.crew/standards.md` joins the `.crew/` un-ignore list in `.gitignore`, the shipped
+  crew-setup template and every document that states it. ADR 0004 records the
+  decision. crew bundles 30 skills.
+- **The loop's first owner-approved amendments**, from this ticket's own review round 1:
+  GEN-01 now says "absent" needs ENOENT on the leaf under a readable parent (a non-directory or
+  unreadable parent is unknown) and that a could-not-tell branch emits the superset it announces;
+  GEN-04 maps each named mutation to a sabotage entry by label, not count, and wants a red test for
+  every refusal branch replaced with `pass`; this repository's REPO-03 puts the version bump on the
+  land branch only.
+- **Review round 2's fixes.** A recorded scope base that is gone or no longer an ancestor of HEAD
+  (a rewritten branch) no longer blocks `stamp` for good: it stamps against the same merge-base
+  fallback `/crew:review` bundles with, marked `(fallback)` on its line, and a refusal names
+  `scope_base.py --record` only when there is no record for `--record` to write. New must-block
+  tests, each with a `sabotage_standards.py` mutation naming it: the gate's completeness re-check of
+  a self-check edited after stamping; a broken effective set refused by `init`, `stamp` and the gate;
+  twelve more refusal branches of the guard, each asserted by its own message; and `review.md`'s
+  exit-2 self-check refusal text.
+- **Review round 3's fixes.** A start `scope_base.py --record` wrote as the merge-base (the branch was
+  already past the default branch) now says `(fallback)` on every `init`, `stamp` and `sets` line; a
+  `.crew/.scope-base` that cannot be read is refused without naming `--record`, which would rewrite it
+  with one ticket's entry. `proposals` refuses an `out.txt` the verdict parser calls INCOMPLETE and
+  writes nothing, so a lost review output never reads as "no findings". The metric keeps `std:none`
+  rows and unreadable `std:` tokens on neither side, counted, instead of in the baseline.
+  `review_run.py` answers a spent review budget (exit 4) before the self-check gate. GEN-02 and GEN-07
+  each cite a third change set in their Earned by, and a test holds every GEN standard to citing three.
+  The stamp's docstring names its remaining write window instead of claiming GEN-03. Rule 31 of
+  `.crew/verify.json` also runs on the scripts the stamp, gate, proposals and metric read.
+- Bumped `1.0.69 -> 1.0.75` on the land branch (REPO-03 as amended: no bump on the build branch):
+  1.0.70 at the merge of main's 1.0.69, 1.0.71 because a landing-branch commit then re-took one
+  `sabotage_standards.py` anchor under `plugin/crew/`, and 1.0.72 for rewrapping `commands/review.md`
+  back to its 551-line allowance (`check_instructions.py`), and 1.0.73 at the catch-up merge of main's
+  1.0.70 (#268, T-0097), which changed `plugin/crew/` after 1.0.72 was set.
+- **Windows fail-open fixed at land (owner 2026-09-30, "option 1").** On Windows a lookup under a
+  regular file raises `FileNotFoundError`, not `NotADirectoryError`, so `gate_applies` read a receipt
+  whose parent is a file as absent and skipped the self-check gate. `FileNotFoundError` now proves
+  absence only when the nearest existing ancestor is a directory; otherwise the gate says "could not
+  tell" and applies. `test_gate_applies_when_a_file_parent_is_reported_as_not_found` simulates the
+  Windows errno on every OS (the Windows CI leg is off until win-repo-2's fix), and a
+  `sabotage_standards.py` entry that drops the directory check goes RED. crew 1.0.74. The fix made the older
+  "receipt that cannot be looked up" entry vacuous (catching `OSError` there is now safe, because the
+  ancestor check still says "could not tell"), so it now flips the `OSError` branch's verdict instead and
+  goes RED again; crew 1.0.75.
+- **Landing changes decided by the owner (2026-09-30).** Merging main's #264 met T-0085's gate in
+  `review_run.py`: main's `preflight` runs first (a CLEAN receipt covering the bundle still answers
+  CLEAN with no round and no self-check; an unverified or unknown verify gate is refused with exit 5
+  before the self-check is asked for), then `standards_gate` just before `reserve()`, keeping its
+  spent-budget skip and incident stand-down. Exit 5 and exit 2 are documented side by side in the
+  module docstring and `commands/review.md`; a test pins the order and a sabotage entry that swaps it
+  goes red. Ruff `TRY004` and `DTZ011` in `crew_standards.py` carry a `noqa` with a one-line reason;
+  no behaviour change. Crew bundles 31 skills with main's `crew-qa-standards`.
+
 ### Fixed — `crew` 1.0.70: a silent python candidate no longer writes a red error block on every Windows hook (T-0097)
 
 - **What changed.** `Resolve-CrewPython`, which is byte-identical in all 11 PowerShell hook carriers
