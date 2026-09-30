@@ -56,6 +56,40 @@ def test_codex_command_passes_only_documented_flags():
     assert [f for f in flags if f"`{f}`" not in doc] == []
 
 
+_SCRIPTS = os.path.join(CREW, "hooks", "scripts")
+# `module.name` (`path/module.py:N`) or (`:N`), and (`NAME`, `:N`): a name
+# cited beside a line number. `:N` alone is in the module named, or the
+# last `.py` cited before it.
+_NAMED_CITE = re.compile(
+    r"`(?:(\w+)\.)?(\w+)`,?\s+\(`(?:([\w/.-]+\.py))?:(\d+)(?:-\d+)?`\)"
+    r"|\(`(\w+)`,\s+`:(\d+)`\)")
+
+
+def _named_citations(text):
+    last, found = None, []
+    for match in _NAMED_CITE.finditer(" ".join(text.split())):
+        module, name, path, line, bare_name, bare_line = match.groups()
+        if path:
+            last = os.path.join(os.path.dirname(os.path.dirname(CREW)), path)
+        elif module:
+            last = os.path.join(_SCRIPTS, module + ".py")
+        found.append((last, name or bare_name, int(line or bare_line)))
+    return found
+
+
+def test_named_citations_land_on_their_definitions():
+    cites = _named_citations(_doc())
+    wrong = []
+    for path, name, line in cites:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read().split("\n")
+        at = text[line - 1] if 0 < line <= len(text) else ""
+        if not re.match(rf"(?:def |class )?{re.escape(name)}\b", at):
+            wrong.append(f"{os.path.basename(path)}:{line} is not {name}: {at.strip()!r}")
+
+    assert (len(cites) >= 6, wrong) == (True, [])
+
+
 def test_golden_codex_events_use_documented_types():
     events, items = set(), set()
     for path in glob.glob(os.path.join(GOLDEN, "*", "events.jsonl")):
