@@ -302,6 +302,39 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
 <pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --reject --by &lt;who&gt;
 </code></pre>
 <p>Refuses on a ticket already <code>ACCEPTED</code> or already <code>NEEDS_REPLAN</code>.</p>
+<ul>
+<li><strong>Symptom: review exits 6, <code>train: waiting behind &lt;ticket&gt;</code>.</strong> The clone's merge train is armed
+  (L-0520) and an overlapping ticket holds it, or queued first on the same base. No round was
+  spent.
+  <strong>Check:</strong></li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/crew_train.py&quot; --root . status
+</code></pre>
+<p>Each waiting entry lists the ticket it is behind and every colliding pair (<code>&lt;mine&gt; x &lt;theirs&gt;</code>);
+  <code>touch: undeclared: &lt;why&gt;</code> means that ticket's spec has no usable <code>## Touch</code>, which overlaps
+  everything.
+  <strong>Fix:</strong> wait for the holder to land and release, then review again; fix an undeclared Touch in
+  the spec. <code>train: merge &lt;base&gt; first</code> means the base moved in this ticket's Touch: run
+  <code>crew_train.py catch-up --ticket &lt;id&gt;</code> and review the merged head. <code>train: could not tell</code> means
+  the train state could not be read — the message names the file; nothing is guessed.</p>
+<ul>
+<li><strong>Symptom: a lane holds the train and its session died.</strong> <code>status</code> prints <code>stale?:</code> beside it
+  (worktree missing, head already in the base, held for hours). Nothing releases it
+  automatically, by design.
+  <strong>Fix:</strong> once you are sure it is dead:</li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/crew_train.py&quot; --root . release --ticket &lt;id&gt; --force \
+  --by &lt;who&gt; --reason &quot;&lt;why&gt;&quot;
+</code></pre>
+<p>The release is logged as a <code>force-release</code> event that the other lanes see.</p>
+<ul>
+<li><strong>Symptom: <code>check-land</code> says the base moved in Touch paths.</strong> Another ticket landed changes to
+  paths this ticket touches after it was gated, so the verdict covers a different tree.
+  <strong>Fix:</strong> <code>crew_train.py catch-up --ticket &lt;id&gt;</code> (a merge; conflicts and rerere-replayed files
+  are listed and left staged for you to commit), gate the merged head again (<code>/crew:review</code>),
+  then <code>check-land</code> again. <code>merge-tree: HEAD conflicts with &lt;base&gt;</code> is the same fix with a
+  conflict to resolve first.</li>
+</ul>
 <h2 id="scope-approval-and-the-completion-audit">Scope: Approval and the Completion Audit</h2>
 <p>A ticket's contract lives in <code>.work/tickets/&lt;id&gt;/</code>: <code>spec.md</code>'s <code>## Touch</code> section names every path
 the ticket may change; <code>plan.md</code>'s <code>Files:</code> lines must each fall inside Touch. Two hooks hold a

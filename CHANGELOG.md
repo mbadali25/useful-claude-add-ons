@@ -4,6 +4,32 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.76: the merge train - gate+land serialised per overlapping Touch set (L-0520)
+
+- **New `hooks/scripts/crew_train.py`.** One locked queue per clone under
+  `<git-common-dir>/crew/train/`, armed per clone with `crew_train.py arm` (no config key; an
+  unarmed clone behaves exactly as before). A ticket holds the train only when no holder and no
+  earlier waiter on the same base has an overlapping Touch set, so overlapping tickets gate and
+  land one at a time while disjoint ones run at once, and lanes still implement in parallel.
+  Overlap is conservative (literal-prefix match; refresh artifacts not counted); an undeclared
+  Touch overlaps everything; an unreadable state, a failed git call or a lock held past its wait
+  is could-not-tell (exit 3). Every wait is logged with its colliding paths; stale holds are
+  reported (`stale?:`) and released only by `release --force --by <who> --reason <text>`.
+- **`review_run.py` takes the train before reserving a gate round** once the clone is armed:
+  waiting behind an overlapping ticket, a base that moved in this ticket's Touch and was not
+  merged in, or an unreadable train is the new **exit 6**, no round spent. No hook is added.
+- **`crew_train.py catch-up`** merges the base (never a rebase) after making `rerere.enabled`
+  and `rerere.autoupdate` true in the worktree (`--worktree` or `--local`, never `--global`),
+  never commits a conflicted or rerere-resolved merge, and records each catch-up in a merge log;
+  the review prompt lists every rerere-replayed file as a change to review.
+- **`crew_train.py check-land`** refuses unless the ticket holds the train, `git merge-tree` is
+  clean, the base has not moved in Touch paths, and HEAD carries a current review receipt and a
+  green verify gate; then it prints `gh pr merge <n> --merge --match-head-commit <sha>` (crew
+  never merges). `release --merged <sha>` tells every overlapping lane to merge the base.
+  `/crew:done` gains "Landing through the merge train"; `/crew:review` names exit 6.
+- Sabotage rows S1-S12 (`plugin/crew/tests/sabotage_train.py`). The delta gate, scheduling and
+  the spec's accepted-limits section are proposed follow-ups (TODO.md), not in this release.
+
 ### Added — `crew` 1.0.75: build-time development standards and a required pre-review self-check (T-0085)
 
 - **New `crew-standards` skill.** `references/generic.md` ships GEN-01 to GEN-12,

@@ -4,6 +4,16 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- **Proposed follow-ups to L-0520 (the merge train, slice 1)**, not filed as tickets: (1) a delta
+  gate - a review bundle of the interdiff since the gated sha plus the merge resolutions, a ledger
+  rule for delta rounds (owner question: does one spend the two-round budget), and
+  `crew_train.py check-land` accepting a delta receipt (today it accepts only a full receipt on
+  the merged head, `plugin/crew/hooks/scripts/crew_train.py::check_land`); (2) scheduling -
+  L-0515's dependency skip, phases only for owner-named tickets, `crew_autopilot.py` showing the
+  train position, small PRs first, and the machine-local lane scripts calling `acquire`,
+  `catch-up`, `check-land` and `release --merged`; (3) tighter specs - an `## Accepted limits`
+  section carried into `plugin/crew/hooks/scripts/review_prompt.py`'s brief as "do not re-open".
+
 - **Not done, follow-up to T-0006**: `resume.auto` has no narrowing. `context.autoClear` can be
   narrowed on the machine to `onlyRepos` / `onlySessions` (`crew_autocycle.in_scope`);
   `resume.auto` arms every crew repo the machine file reaches, and a repo can only veto it
