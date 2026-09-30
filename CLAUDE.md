@@ -7,7 +7,8 @@ hooks. Both register in `.claude-plugin/marketplace.json` — the root's is the 
 ## Commands - build, test, verify, regression, promote
 
 No build. `python3 scripts/check-marketplace.py` is the gate: every registration rule, both install
-scripts being a matched pair, hook quoting and exit codes, and version drift. Run it before pushing.
+scripts being a matched pair, hook quoting and exit codes, and version drift. Commit, then run it,
+then push: its version-drift check compares commits, so uncommitted plugin edits pass it locally.
 Per-path commands and promotion steps live in `.crew/verify.json` — that file is the mechanism, this
 one is the judgment. Do not restate its commands here.
 
