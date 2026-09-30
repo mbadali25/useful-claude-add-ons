@@ -74,7 +74,7 @@ def test_an_empty_exclusion_list_is_not_reported_as_unknown(repo):
 
 
 @pytest.mark.parametrize("value", [None, ".work/", [".work/", 3], {"a": 1},
-                                   [""], ["", ""], [".work/", ""]])
+                                   [""], ["", ""], [".work/", ""], [" "], ["\t"]])
 def test_a_malformed_exclusion_value_reads_as_unknown(repo, value):
     """T-0099: a value that is not a list of non-empty strings cannot say what
     was left out; a string must never be spelled out as a list of its
