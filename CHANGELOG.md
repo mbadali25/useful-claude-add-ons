@@ -6,6 +6,14 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`mailgun` 1.0.0: registered as `skills/mailgun` (L-0561).** bd4b2f30 added
+  it as `plugin/mailgun/` with no registration, which failed
+  `scripts/check-marketplace.py` and every PR's `check` job. It is one
+  `SKILL.md` plus `references/` and `scripts/mg.py`, so it moves to `skills/`
+  and is registered in `marketplace.json`, both catalog tables,
+  `INSTALLATION.md` and both install scripts. Skill content unchanged; the
+  marketplace goes from 34 to 35 skills.
+
 - **`crew` 1.0.85: the Kimi Code CLI is a crew provider (T-0028, the feature
   half). BEHAVIOUR CHANGE: the default `qa.order` now lists Kimi second -
   `["codex", "kimi", "copilot", "claude"]`.** `/crew:review` does not launch

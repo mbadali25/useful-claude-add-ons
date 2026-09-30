@@ -1142,6 +1142,7 @@ $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'intune-graph';            Selected = $true; Name = 'intune-graph            - Intune via Graph: devices, compliance, app deployment' }
     [pscustomobject]@{ Key = 'jira-manager';            Selected = $true; Name = 'jira-manager            - Jira Cloud REST API: JQL, create, transition, worklog' }
     [pscustomobject]@{ Key = 'knowbe4-admin';           Selected = $true; Name = 'knowbe4-admin           - KnowBe4 KSAT: SCIM sync diagnosis, reporting, writes' }
+    [pscustomobject]@{ Key = 'mailgun';                 Selected = $true; Name = 'mailgun                 - Mailgun API: send, receive, events, stats, domain config' }
     [pscustomobject]@{ Key = 'mermaid-svg-bitbucket';   Selected = $true; Name = 'mermaid-svg-bitbucket   - Pre-render Mermaid to SVG so Bitbucket displays it' }
     [pscustomobject]@{ Key = 'notify';                  Selected = $true; Name = 'notify                  - Ping your phone or inbox: Telegram bot (two-way) or email' }
     [pscustomobject]@{ Key = 'obsidian-canvas';         Selected = $true; Name = 'obsidian-canvas         - Obsidian .canvas files as JSON: maps, boards, diagrams' }
