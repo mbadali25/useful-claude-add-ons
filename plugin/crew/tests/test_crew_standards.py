@@ -255,6 +255,72 @@ def test_shipped_sets_cite_nothing_local_only():
     assert offenders == []
 
 
+# ---- T-0086: the per-language stack sets -------------------------------------------
+
+_ADMITTED_PYTHON = [f"PYTHON-{n:02d}" for n in (1, 3, 4, 6, 7, 8, 10, 11, 13)]
+_STACK_SETS = sorted(n for n in os.listdir(_REFS) if n.endswith(".md") and n != "generic.md")
+
+
+def test_python_set_parses_with_every_field():
+    parsed, problems, _ = cs.parse_set(os.path.join(_REFS, "python.md"))
+
+    assert parsed is not None, problems
+    assert (problems, parsed["set"], parsed["applies_to"],
+            [s["id"] for s in parsed["standards"]]) == (
+        [], "PYTHON", ["**/*.py"], _ADMITTED_PYTHON)
+
+
+def _change_set_problems(std):
+    count, _, names = std["fields"]["Change sets"].partition(":")
+    listed = [n.strip() for n in names.split(",") if n.strip()]
+    earned = std["fields"]["Earned by"].splitlines()
+    cited = [n for n in listed
+             if any(line.startswith(f"- {n} ") or f"`{n}`" in line for line in earned)]
+    problems = []
+    if not count.strip().isdigit() or int(count) < 3:
+        problems.append(f"count {count.strip()!r} is not a number of at least 3")
+    elif len(listed) != int(count):
+        problems.append(f"count {count.strip()} but {len(listed)} names")
+    if len(set(listed)) != len(listed):
+        problems.append("a name is repeated")
+    if len(cited) < 3:
+        problems.append(f"only {cited} cited in Earned by")
+    return problems
+
+
+@pytest.mark.parametrize("name", _STACK_SETS)
+def test_every_stack_standard_names_and_cites_three_change_sets(name):
+    """A stack set ships only standards earned by at least three distinct
+    reviewed change sets (crew-standards/SKILL.md), each visible in Earned by."""
+    parsed, problems, _ = cs.parse_set(os.path.join(_REFS, name))
+    assert parsed is not None, problems
+
+    short = {std["id"]: _change_set_problems(std) for std in parsed["standards"]}
+
+    assert {sid: found for sid, found in short.items() if found} == {}
+
+
+def test_python_set_applies_to_python_files_only():
+    def applies(files):
+        return "PYTHON" in cs.effective_set(_REPO_ROOT, files)["sets"]
+
+    assert (applies(["plugin/crew/hooks/scripts/x.py"]), applies(["setup.py"]),
+            applies(["README.md"]), applies(["plugin/crew/x.pyc"])) == (
+        True, True, False, False)
+
+
+def test_shipped_sets_cite_no_machine_local_note():
+    offenders = []
+    for name in sorted(os.listdir(_REFS)):
+        with open(os.path.join(_REFS, name), encoding="utf-8") as fh:
+            for number, line in enumerate(fh, 1):
+                if re.search(r"/repos/|claude-memories|wiki/concepts|/\.claude/projects/|auto-memory",
+                             line):
+                    offenders.append(f"{name}:{number}: {line.strip()[:80]}")
+
+    assert offenders == []
+
+
 # The owner accepted three amendments from review round 1's proposals
 # (.work/tickets/T-0085/standards-proposals-r1.md, "Owner decision", 2026-09-28):
 # #2 and #3 into GEN-01, #4 into REPO-03, #6 into GEN-04.
