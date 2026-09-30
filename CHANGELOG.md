@@ -4,6 +4,31 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.77: the Python development standards set (T-0086, slice 1)
+
+- **`crew-standards/references/python.md`, set `PYTHON`, `applies-to: ["**/*.py"]`**:
+  nine standards (PYTHON-01, -03, -04, -06, -07, -08, -10, -11, -13) on T-0085's
+  loader, unchanged - text encoding and newlines, record splitting, replace-not-rewrite,
+  child launch, bounded waits, child environments, parsed-data shape, narrow `try`
+  bodies, path canonicalisation. Each is earned by findings from at least three
+  distinct reviewed change sets (a crew review round, or a fix commit whose message or
+  CHANGELOG entry records the review), cites them, and quotes docs.python.org 3.14.7 as
+  Source, every sentence re-read from the raw page.
+- **Eight candidates are listed in `stack-python`, not gated** (PYTHON-02, -05, -09,
+  -12, -14 to -17): each lacks a third reviewed change set. PYTHON-14 and -15 were
+  drafted as standards and moved when their third citation (a TheHomeDepot commit, and
+  a commit "found by running the code") proved not to be a review.
+- New tests: the set parses with exactly the admitted ids, every stack standard names
+  and cites three change sets and its Why states that count, each PYTHON Why's finding
+  count matches the findings it enumerates, no stack set holds a character
+  `splitlines()` counts as a line and `wc -l` does not, no PYTHON Source quote is cut
+  with `[...]`, the set applies to `.py` changes only, and no shipped set cites a
+  machine-local note; seven sabotage entries.
+- **Behaviour change:** any change touching a `.py` file now answers the nine PYTHON
+  rows in its self-check (12 GEN + 9 PYTHON, plus the overlay's). A ticket stamped
+  before this lands gets a new standards digest when it merges main: `init` never
+  overwrites an existing `selfcheck.md`, so add the PYTHON rows by hand and re-stamp.
+
 ### Changed — `crew` 1.0.77: the completion audit admits a refresh artifact only as a re-anchor or regeneration the ticket's change reaches (T-0094)
 
 - **What changed.** `crew_refresh_check.artifact_verdicts` (beside

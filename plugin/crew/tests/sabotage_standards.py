@@ -36,6 +36,18 @@ two of the three change sets it names.
 
 The land branch (owner decision 2026-09-30, "Preflight first") added one:
 the self-check gate asked before main's #264 preflight (the order swapped).
+
+T-0086 (the Python set, slice 1) added three: `references/python.md`'s
+`applies-to` narrowed so a `.py` change no longer draws the PYTHON set, a
+PYTHON standard naming only two change sets, and a candidate id (PYTHON-14)
+shipped in place of an admitted standard. Its review round 1 FIX added two:
+PYTHON-07's Why claiming six findings where it enumerates seven, and the
+neighbouring half of that claim, a Why naming fewer change sets than its
+Change sets line.
+Its review round 2 FIX added two: a raw U+2028 back in PYTHON-03's
+splitlines table (a line to splitlines() and not to wc -l, so BUDGETS.md's
+total depended on the counter), and PYTHON-01's quote cut with [...] again
+(an elided span is not in the page the quote check reads).
 """
 import os
 
@@ -44,6 +56,7 @@ STANDARDS = os.path.join(CREW, "hooks", "scripts", "crew_standards.py")
 REVIEW_RUN = os.path.join(CREW, "hooks", "scripts", "review_run.py")
 REVIEW_MD = os.path.join(CREW, "commands", "review.md")
 GENERIC = os.path.join(CREW, "skills", "crew-standards", "references", "generic.md")
+PYTHON_SET = os.path.join(CREW, "skills", "crew-standards", "references", "python.md")
 
 STANDARDS_MUTATIONS = (
     (
@@ -417,5 +430,61 @@ STANDARDS_MUTATIONS = (
         "    # A spent budget",
         ("tests/test_review_run_standards.py::"
          "test_preflight_answers_before_the_selfcheck_is_asked_for"),
+    ),
+    (
+        "the Python set stops applying to .py files",
+        PYTHON_SET,
+        'applies-to: ["**/*.py"]\n',
+        'applies-to: ["**/*.pyx"]\n',
+        ("tests/test_crew_standards.py::"
+         "test_python_set_applies_to_python_files_only"),
+    ),
+    (
+        "PYTHON-03 names two change sets",
+        PYTHON_SET,
+        "**Change sets.** 3: T-0079, T-0030, T-0072\n",
+        "**Change sets.** 2: T-0079, T-0030\n",
+        ("tests/test_crew_standards.py::"
+         "test_every_stack_standard_names_and_cites_three_change_sets[python.md]"),
+    ),
+    (
+        "a candidate ships in place of an admitted standard",
+        PYTHON_SET,
+        "## PYTHON-13 ",
+        "## PYTHON-14 ",
+        ("tests/test_crew_standards.py::"
+         "test_python_set_parses_with_every_field"),
+    ),
+    (
+        "PYTHON-07's Why claims six findings again",
+        PYTHON_SET,
+        "**Why.** 7 findings across 5 change sets: a post-kill",
+        "**Why.** 6 findings across 5 change sets: a post-kill",
+        ("tests/test_crew_standards.py::"
+         "test_python_why_finding_counts_match_their_enumerations"),
+    ),
+    (
+        "PYTHON-13's Why names three change sets beside a Change sets line of four",
+        PYTHON_SET,
+        "**Why.** 5 findings across 4 change sets: a junction-redirected",
+        "**Why.** 5 findings across 3 change sets: a junction-redirected",
+        ("tests/test_crew_standards.py::"
+         "test_every_stack_standard_why_states_its_change_set_count[python.md]"),
+    ),
+    (
+        "PYTHON-03's splitlines table carries a raw U+2028 again",
+        PYTHON_SET,
+        "`\\x85`, `\\u2028` and",
+        "`\\x85`, `\u2028` and",
+        ("tests/test_crew_standards.py::"
+         "test_every_stack_set_line_count_is_the_same_by_newline_and_splitlines[python.md]"),
+    ),
+    (
+        "PYTHON-01's EncodingWarning quote is cut with [...] again",
+        PYTHON_SET,
+        "command line option or\n  set the PYTHONWARNDEFAULTENCODING environment variable, which",
+        "command line option\n  [...] which",
+        ("tests/test_crew_standards.py::"
+         "test_python_sources_quote_whole_spans_without_elision"),
     ),
 )
