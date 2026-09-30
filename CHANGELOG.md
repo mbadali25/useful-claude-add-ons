@@ -4,6 +4,51 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.86: Windows shell routes (T-0040)
+
+- **What it is.** `hooks/scripts/crew_shell.py` picks the shell crew's long-running jobs run in on
+  native Windows, and every Windows run of a verify check, a test suite or a graph build goes
+  through `crew_shell.py run -- "<command>"`, which prints one `crew-shell:` route line to stderr
+  and passes the job's exit code through. `/crew:implement` step 4 and the `crew-execute`,
+  `crew-graph` and `crew-setup` skills say so. Bumped `1.0.85 -> 1.0.86` (T-0040 never set a
+  version on its branch; this is one past main's 1.0.85, T-0028).
+- **Four modes, `shellRoute.mode`, in both config layers.** `auto` (the default) routes a job to
+  WSL2 when WSL is usable and the repo lives inside WSL, or sits on a Windows drive where a
+  measurement found WSL faster; otherwise a plain argv runs directly with no shell and anything
+  else runs in Git Bash. `wsl` routes to WSL or refuses (exit 3) - it never falls back.
+  `powershell` hands pwsh only a plain argv, each element quoted, and sends bash syntax to Git
+  Bash. `gitbash` always uses Git Bash. `shellRoute.distro` names the WSL distro; `null` takes
+  the default (`*`) distro, never one picked by list order. The repo template leaves `mode`
+  `null`, so a repo that chose nothing inherits the machine's value (review round 2).
+- **The argv classifier.** `classify` proves a command is a plain argv or calls it bash:
+  metacharacters, shell words, an assignment prefix, a path-looking argv0 and an embedded POSIX
+  path (`--root=/c/...`, which MSYS converts on the Git Bash route and direct exec does not) are
+  all bash. A leading `python3` becomes the running interpreter on the direct and pwsh routes.
+- **The WSL probe, cache and measurement.** `probe` runs only `wsl.exe --list --verbose` and one
+  `command -v python3; command -v git` in the job's own `bash -lc`, and answers `usable`,
+  `not-installed`, `no-distro`, `wsl1-only`, `no-python3`, `no-git`, `broken` or `unknown`; a
+  runner that raises is `unknown`, never `not-installed`, and nothing is ever installed. The
+  answer is cached machine-locally in `~/.claude/crew/shell-route.json` (`probe --write`), never
+  under a repo; a `usable` cache that names no distro reads as `unknown`. `measure` times 50
+  forks and 200 small writes per shell with each shell's own clock, and a verdict is used only
+  for the distro it measured. Before a WSL job, a preflight checks the first word - and, for
+  `python3 -m <mod>`, that the module imports - inside the distro, in the job's `--cd`.
+- **`/crew:status` shell line.** On native Windows `/crew:status` prints
+  `shell <mode> -> <route> - <why>`, taken from the same decision `run` makes; it runs no
+  `wsl.exe`, no pwsh and no git.
+- **Unchanged.** No hook calls `crew_shell.py`: `hooks.json`, every `hooks/scripts/*.sh` and
+  `*.ps1`, `crew_platform.py` and `verify-gate.sh` are byte-identical to main. Off native
+  Windows `run` is exactly `bash -c <cmd>` - no probe, no config read, no message - and the
+  status line is absent.
+- **Review.** Round 1 (Claude, same family): 1 BLOCK, 10 FIX, 2 NIT, owner-accepted and fixed.
+  Round 2 (Codex, independent): 1 BLOCK (this version bump), 5 FIX - the template pinning
+  `mode: auto`, a measurement reused across distros, a distro-less `usable` cache, the module
+  preflight missing `-m` after `-X dev` / `-W error`, and the preflight running outside the
+  job's `--cd` - owner-accepted and fixed at land.
+- **Tests.** `test_crew_shell.py`, `test_status.py` and `test_crew_config.py`; `sabotage_shell.py`
+  carries 14 mutations. No test calls a real `wsl.exe`, pwsh or Git Bash on a routed path.
+  `.crew/verify.json` rule 39 runs the suites.
+
 ### Added
 
 - **`crew` 1.0.85: the Kimi Code CLI is a crew provider (T-0028, the feature
