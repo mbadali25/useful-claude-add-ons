@@ -302,7 +302,12 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     assert "autopilot.deploy" in declared
     assert {"autopilot.approval", "autopilot.questions"} <= declared
     assert "shellRoute.mode" in declared and "shellRoute.distro" in declared
-    assert len(declared) == 127
+    # 127 with T-0028: `qa.kimi.model` and `dev.kimi.model`, measured after
+    # merging main's 125. 129 with T-0040's two and T-0028's two, measured
+    # by running this test on T-0040-land after merging main 844bfc36.
+    assert "qa.kimi.model" in declared
+    assert "dev.kimi.model" in declared
+    assert len(declared) == 129
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():
@@ -3066,3 +3071,32 @@ def test_set_cli_takes_absent_for_a_first_machine_write(tmp_path, capsys):
     assert "digest: absent" in out
     assert stale == 2 and "changed since it was read" in err
     assert json.loads(gpath.read_text(encoding="utf-8")) == {"x-other": 1}
+
+_CONFIG_MD_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), os.pardir, "CONFIG.md",
+)
+
+
+def _config_md_row(text, key):
+    rows = [line for line in text.splitlines()
+            if line.startswith(f"| `{key}` |")]
+    assert len(rows) == 1, (key, rows)
+    return rows[0]
+
+
+def test_config_md_and_setup_template_state_the_kimi_defaults():
+    """T-0028: CONFIG.md's global-key table carries `qa.kimi.model` and
+    `dev.kimi.model`, the new `qa.order` default, and `kimi` in both provider
+    enumerations -- the same values `default_config()` holds. The setup
+    template is compared in full by the test above."""
+    with open(_CONFIG_MD_PATH, encoding="utf-8") as handle:
+        text = handle.read()
+    defaults = crew_config.default_config()
+    order = json.dumps(defaults["qa"]["order"]).replace('","', '", "')
+
+    assert order in _config_md_row(text, "qa.order")
+    assert _config_md_row(text, "qa.kimi.model").endswith("| `null` |")
+    assert _config_md_row(text, "dev.kimi.model").endswith("| `null` |")
+    assert "`kimi`" in _config_md_row(text, "qa.provider")
+    assert "`kimi`" in _config_md_row(text, "dev.provider")
+    assert json.dumps(list(crew_config.QA_PROVIDERS)).replace('","', '", "') in text

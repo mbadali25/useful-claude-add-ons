@@ -2,16 +2,16 @@
 paths:
   - "plugin/crew/**"
 ---
-<!-- crew:generated source=.crew/codemap/crew.md sha256=7dbd356d5d889539 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/crew.md sha256=e8052576e535ae05 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # crew
-Code map anchor `3bb32980`; if it is behind HEAD, re-check with `git diff --name-only 3bb32980..HEAD -- <cited paths>`.
+Code map anchor `328fdf4a`; if it is behind HEAD, re-check with `git diff --name-only 328fdf4a..HEAD -- <cited paths>`.
 Covers: The crew plugin after 1.0: hooks, the four agents, commands, skills inventory, config layering and leaf counts, and how crew_freshness.py reads this very directory.
 ## Entry points
 - `plugin/crew/hooks/scripts/crew_state.py:999` — `TRIGGERS`, a 15-entry tuple, unchanged in membership and order from the previous anchor.
-- `plugin/crew/hooks/scripts/crew_state.py:2909` — `evaluate_triggers`.
+- `plugin/crew/hooks/scripts/crew_state.py:2942` — `evaluate_triggers`.
 - `plugin/crew/hooks/scripts/crew_config.py:244` / `:405` — `default_config()` / `default_global_config()`.
-- `plugin/crew/hooks/scripts/crew_config.py:2479` — `_RATCHETED`, the 14-key ratchet table (seven construction steps).
-- `plugin/crew/hooks/scripts/crew_config.py:3074` / `:3100` — `plan_repo_write` / `write_repo_config`, the one repo-layer writer (T-0075); `:2874` / `:2893` — the machine pair.
+- `plugin/crew/hooks/scripts/crew_config.py:2510` — `_RATCHETED`, the 14-key ratchet table (seven construction steps).
+- `plugin/crew/hooks/scripts/crew_config.py:3105` / `:3131` — `plan_repo_write` / `write_repo_config`, the one repo-layer writer (T-0075); `:2905` / `:2924` — the machine pair.
 - `plugin/crew/hooks/scripts/crew_config_files.py:364` — `update_json`, the lock and compare-and-swap both writers stand on (T-0075).
 - `plugin/crew/hooks/scripts/crew_config_menu.py:1051` — `main()`, the `spec` / `save` / `delete-repo` / `restore-repo` CLI the `/crew:config` menu calls.
 - `plugin/crew/hooks/scripts/role_write_guard.py:540` — `classify`, the decision function; `:685` — `main()`.
