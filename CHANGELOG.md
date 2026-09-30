@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.82: the merge train - gate+land serialised per overlapping Touch set (L-0520)
+### Added — `crew` 1.0.83: the merge train - gate+land serialised per overlapping Touch set (L-0520)
 
 - **New `hooks/scripts/crew_train.py`.** One locked queue per clone under
   `<git-common-dir>/crew/train/`, armed per clone with `crew_train.py arm` (no config key; an
@@ -30,6 +30,20 @@ All notable changes to this repository are documented here. Format follows [Keep
   `/crew:done` gains "Landing through the merge train".
 - The delta gate, scheduling and the spec's accepted-limits section are proposed follow-ups
   (TODO.md), not in this release.
+
+### Added — `crew` 1.0.82: sabotage entries for the python-free bin fixture's dedupe (L-0531)
+
+- Two mutations of `plugin/crew/tests/crew_fixtures.py::link_path_dirs`
+  (L-0529), carried in `sabotage_qa.py`'s tuple because `sabotage.py` is at
+  max-module-lines: the realpath skip removed goes RED on
+  `test_a_dir_already_linked_through_an_alias_is_not_listed_again`, and
+  `lexists` turned back into `exists` goes RED on
+  `test_a_dangling_entry_in_the_first_dir_still_shadows_the_same_name_later`.
+  Split from L-0529 because `sabotage*.py` is review/gate harness and lands
+  in a tooling-only PR (`scripts/check-tooling-pr.py`).
+- Verify rule 34 (`sabotage_qa.py`) now also runs `test_path_link_farm.py` and
+  the shipped-anchor check, so a lost anchor cannot pass the gate.
+- Bumped `crew` `1.0.81 -> 1.0.82` (1.0.81 is T-0094's).
 
 ### Fixed — `crew` 1.0.80 and `obsidian-vault` 0.4.15: the python-free bin fixtures tolerate a name two PATH dirs share (L-0529)
 
