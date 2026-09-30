@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.62: `/crew:autopilot assign` and `crew_ticket.py mint` (T-0019)
+### Added — `crew` 1.0.63: `/crew:autopilot assign` and `crew_ticket.py mint` (T-0019)
 
 - **What changed.** `crew_ticket.mint(root, title, status="ready", direction=None)`
   (CLI `crew_ticket.py mint --root . --title <t> [--status ready|direction]
@@ -51,7 +51,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   T-0020 6.
 - **Sabotage.** 30 `ASSIGN_MUTATIONS` in `plugin/crew/tests/sabotage_autopilot.py`,
   appended to `AUTOPILOT_MUTATIONS`.
-- Bumped `1.0.61 -> 1.0.62`.
+- Bumped `1.0.61 -> 1.0.62`, then `1.0.62 -> 1.0.63` for review round 1's fixes.
 
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 

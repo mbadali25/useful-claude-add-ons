@@ -806,7 +806,7 @@ A `.crew/config.json` that exists but does not parse, or a value outside those f
 | `status [<id>]` | Read-only report in at most 12 lines — below. Works whether or not autopilot is armed. |
 | `run [<id>]`, `<id>`, or nothing | Drives the ticket, as this section describes. `<id>` is an INDEX-shaped id (`T-0018`) or a folder under `.work/tickets/`. |
 | `run <id>` for an id named like a subcommand | A ticket whose id is `status`, `run`, `assign`, `goal` or `focus` is driven as `/crew:autopilot run <id>`, and `status` suggests it that way; the bare name routes to the subcommand. |
-| `assign <work>` | One ticket from free text, then driven (since 1.0.62, T-0019) — below. |
+| `assign <work>` | One ticket from free text, then driven (since 1.0.63, T-0019) — below. |
 | `goal`, `--goal <slug>` | Not yet: stops with "arrives with T-0012". |
 | `focus` | Not yet: stops with "arrives with T-0020". |
 
