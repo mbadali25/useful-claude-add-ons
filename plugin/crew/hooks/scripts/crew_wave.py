@@ -142,13 +142,15 @@ def settings(root):
 
 
 def scope_enforcing(root, tickets):
-    """(ok, reason). ok only when `.crew/config.json` parses and the scope
+    """(ok, reason). ok only when the repo config parses and the scope
     guard's effective mode is `block` for every ticket: a lane's writes are
-    judged by it and nothing else. Could not tell is not ok."""
+    judged by it and nothing else. Could not tell is not ok. The config is
+    read through crew_common.repo_config_file, as the guard reads it: a
+    linked worktree with no config of its own reads the main checkout's."""
     top = _top(root)
     stop = f"{SCOPE_STOP}: "
     fix = f"; the wave runs only under the scope guard -- {SCOPE_FIX}"
-    data, state = _read_json(os.path.join(top, ".crew", "config.json"))
+    data, state = _read_json(crew_common.repo_config_file(top))
     if state != "ok" or not isinstance(data, dict):
         return False, f"{stop}.crew/config.json is {state if state != 'ok' else 'not an object'}{fix}"
     scope = data.get("scope")

@@ -221,6 +221,8 @@ ALLOWED = {
     # the worktree's own file, until T-0096 routes the shell gate; pinned by
     # test_review_gate.py's lane test.
     "review_gate.py": (1, "mirrors verify-gate.sh's own-file stand-down read (T-0096)"),
+    "crew_wave.py": (1, ("lane-init's copy of the main checkout's own .crew/config.json "
+                         "into the lane, own paths")),
 }
 
 

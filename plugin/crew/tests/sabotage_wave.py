@@ -80,4 +80,8 @@ WAVE_MUTATIONS = (
      '    if _git(top, "branch", "-d", branch)[0] != 0:\n',
      '    if _git(top, "branch", "-D", branch)[0] != 0:\n',
      _W + "test_cleanup_never_force_deletes_a_branch"),
+    ("WAVE: scope_enforcing reads only the worktree's own config", WAVE,
+     "    data, state = _read_json(crew_common.repo_config_file(top))\n",
+     '    data, state = _read_json(os.path.join(top, ".crew", "config.json"))\n',
+     _W + "test_scope_enforcing_in_a_linked_worktree_reads_the_main_checkout_config"),
 )

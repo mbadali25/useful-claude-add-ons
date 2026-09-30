@@ -17,7 +17,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   `/crew:approve` lines, the landing order) and `cleanup` (merged, clean lanes only; never
   `--force`, never `branch -D`). New config: `autopilot.maxLanes` (default the resolved
   `pm.maxDispatches`, which it can only lower) and `autopilot.reviewPolicy`
-  (`stop|clean-only|fix-and-rereview`, default `stop`). New stop `scope-not-enforcing`.
+  (`stop|clean-only|fix-and-rereview`, default `stop`). New stop `scope-not-enforcing`, which
+  reads the repo config through `crew_common.repo_config_file` as the guard does: a linked
+  worktree with no config of its own is judged by the main checkout's.
 - **Behaviour changes.** The scope guard now refuses `review_ledger.py --accept|--reject` (and
   every abbreviation of them) and `gh pr merge --admin` from any subagent (a payload carrying
   `agent_type`), judged on every reading of the command (as written, bash-joined and

@@ -183,6 +183,29 @@ def test_scope_auto_past_its_ramp_is_enforcing(tmp_path):
     assert crew_wave.scope_enforcing(str(root), ["T-1"]) == (True, "")
 
 
+def _linked(root, tmp_path):
+    """A linked worktree of `root` with no `.crew/` config of its own."""
+    git(root, "worktree", "add", "-q", "-b", "lane", str(tmp_path / "wt"))
+    return tmp_path / "wt"
+
+
+def test_scope_enforcing_in_a_linked_worktree_reads_the_main_checkout_config(tmp_path):
+    root = _repo(tmp_path, mode="block")
+    wt = _linked(root, tmp_path)
+
+    assert crew_wave.scope_enforcing(str(wt), ["T-1"]) == (True, "")
+
+
+def test_scope_enforcing_in_a_linked_worktree_its_own_config_wins(tmp_path):
+    root = _repo(tmp_path, mode="block")
+    wt = _linked(root, tmp_path)
+    _config(wt, mode="off")
+
+    ok, reason = crew_wave.scope_enforcing(str(wt), ["T-1"])
+
+    assert (ok, "scope.mode is 'off'" in reason) == (False, True)
+
+
 def test_scope_stop_is_a_listed_autopilot_stop():
     assert crew_wave.SCOPE_STOP in [row["id"] for rows in crew_autopilot.stops().values()
                                     for row in rows]
