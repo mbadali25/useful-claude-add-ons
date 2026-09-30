@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.64: gate first — no review round on a tree the verify gate has not passed
+### Changed — `crew` 1.0.65: gate first — no review round on a tree the verify gate has not passed
 
 - **What changed.** `review_run.py` now answers two questions before it
   reserves a round (`preflight`). First: does a CLEAN receipt already cover this
@@ -46,7 +46,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   is the Stop gate's own standard, unchanged; the reviewer still sees the rule
   listed NOT VERIFIED in the contract's receipts block.
 
-### Changed — `crew` 1.0.63: faster QA harness — parallel pylint and pytest, unsigned fixture commits
+### Changed — `crew` 1.0.64: faster QA harness — parallel pylint and pytest, unsigned fixture commits
 
 - **What changed.** `pylint.yml` and the `**/*.py` rule in `.crew/verify.json`
   run `pylint -j <os.cpu_count()>`; the `test` job in `pytest-crew.yml` installs
@@ -86,10 +86,18 @@ All notable changes to this repository are documented here. Format follows [Keep
   hook's real timeout, so it was not loosened. The tests carry a new
   `wallclock` marker (crew's `conftest.py`), and every parallel caller now runs
   `-n auto -m "not wallclock"` first and then `-m wallclock` serially.
+- **No background git maintenance in fixtures.** `git commit` runs `git maintenance
+  run --auto`, which the runner's git 2.55 detaches; it was still writing
+  `.git/objects/maintenance.lock` while `test_refresh_check.py::test_check_writes_nothing`
+  snapshotted the fixture repo, which read as the tool under test writing. The
+  conftest pins now include `maintenance.auto=false` and `gc.auto=0`
+  (`crew_fixtures.FIXTURE_GIT_PINS`, helper renamed `fixture_git_env`); a
+  GIT_TRACE test proves a commit launches no maintenance, and goes RED without
+  the pins.
 - **Version.** 1.0.62 was set in the first commit; the Ruff fixes then changed
   crew files under it, which `check-marketplace.py` rightly refused in CI. It
   had passed locally only because the check ran before those files were
-  committed. Hence 1.0.63.
+  committed. Hence 1.0.63, and 1.0.64 for the maintenance pins.
 - **Unchanged.** Every other check's selection and pass/fail rule; `seconds` in
   verify.json (those are measurements on the maintainer's machine — re-price
   with `verify-gate.sh --price`).

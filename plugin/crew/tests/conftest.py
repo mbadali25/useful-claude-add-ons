@@ -21,7 +21,7 @@ import crew_state
 # discovery is by name in a conftest module's namespace, not by definition
 # site) -- see crew_fixtures.gate_processes's own docstring for what it does.
 from crew_fixtures import gate_processes  # noqa: F401  pylint: disable=unused-import
-from crew_fixtures import unsigned_git_env
+from crew_fixtures import fixture_git_env
 
 
 @pytest.fixture(autouse=True)
@@ -71,13 +71,14 @@ def _no_real_global_config(tmp_path, monkeypatch):
     # prompt for a passphrase. GIT_CONFIG_COUNT/KEY/VALUE
     # (git >= 2.31) outranks every config file, so this holds whatever the
     # global file says, and reaches any subprocess that inherits os.environ.
-    # A test that needs signing sets its own `-c` or env and still wins.
+    # A test that needs signing sets its own `-c` or env and still wins. The
+    # same pins stop git's background maintenance (see crew_fixtures).
     #
     # APPENDED after whatever GIT_CONFIG_COUNT the runner already carries,
     # never written from slot 0: a cloud container here exports three entries
     # of its own (URL rewrites, credential.interactive), and overwriting slots
     # 0-1 while setting the count to 2 silently dropped all three.
-    for name, value in unsigned_git_env(os.environ).items():
+    for name, value in fixture_git_env(os.environ).items():
         monkeypatch.setenv(name, value)
 
 

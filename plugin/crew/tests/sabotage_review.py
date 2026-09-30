@@ -427,7 +427,7 @@ REVIEW_FIX_MUTATIONS = (
         ("tests/test_review_verdict.py::"
          "test_codex_final_message_an_event_holding_a_unicode_line_break_parses_intact"),
     ),
-    # crew 1.0.64: gate first, and no second round on an unchanged CLEAN
+    # crew 1.0.65: gate first, and no second round on an unchanged CLEAN
     # bundle. Each was run by hand against the tracked file and confirmed RED.
     (
         # The preflight is skipped: a round is spent on a tree the gate has
