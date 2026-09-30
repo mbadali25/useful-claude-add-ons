@@ -1,0 +1,33 @@
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-001-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-002-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-003-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-004-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-005-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-006-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-007-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-008-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-009-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-010-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-011-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-012-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-013-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-014-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-015-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-016-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-017-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-018-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-019-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-020-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-021-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-022-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-023-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-024-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-025-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-026-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-027-of-028.patch
+READ|<ROOT>/.work/review/T-0072-build--MVQMAq/diff.txt.parts/part-028-of-028.patch
+BLOCK|.crew/verify.json:293|The required clean verify-gate pass is unevidenced: both .crew/.verify-verified-at and .crew/.verify-gate.record.json are missing, so the gate and sabotage acceptance cannot be certified|Run `test -f .crew/.verify-verified-at && test -f .crew/.verify-gate.record.json`; both checks fail
+FIX|plugin/crew/hooks/scripts/crew_autopilot.py:670|cloud_guard is imported before the first-match incident check, so a present emergency is downgraded from explicit refuse to ask if that import fails|Create .crew/incident.json, force importing cloud_guard to raise ImportError, and call deploy_allowed for class prod; it returns ask without calling _incident
+FIX|plugin/crew/hooks/scripts/crew_autopilot.py:738|The advertised never-raises boundary excludes report construction, so an invalid non-string environment whose repr fails escapes instead of returning ask|Pass an object whose `__repr__` raises as env_name with env_class="prod"; deploy_allowed raises RuntimeError
+FIX|plugin/crew/tests/test_crew_autopilot_deploy.py:411|The parity acceptance is incomplete: `problem` is asserted only for malformed repo prodUnattended values, not malformed machine values or the other unreadable/bad-JSON/non-object/nonProd problem fixtures|Make environments_config return an empty problem for a malformed machine layer while leaving prodUnattended false; this parity test remains green
+NIT|plugin/crew/tests/test_crew_autopilot_deploy.py:193|The PermissionError incident case is exercised only for prod although the acceptance check requires every incident form for both prod and nonProd|Collect the test cases; test_incident_unreadable_path_refuses has no env_class parameter and invokes only PROD

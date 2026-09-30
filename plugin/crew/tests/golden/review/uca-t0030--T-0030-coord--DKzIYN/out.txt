@@ -1,0 +1,39 @@
+READ|part-001-of-035.patch
+READ|part-002-of-035.patch
+READ|part-003-of-035.patch
+READ|part-004-of-035.patch
+READ|part-005-of-035.patch
+READ|part-006-of-035.patch
+READ|part-007-of-035.patch
+READ|part-008-of-035.patch
+READ|part-009-of-035.patch
+READ|part-010-of-035.patch
+READ|part-011-of-035.patch
+READ|part-012-of-035.patch
+READ|part-013-of-035.patch
+READ|part-014-of-035.patch
+READ|part-015-of-035.patch
+READ|part-016-of-035.patch
+READ|part-017-of-035.patch
+READ|part-018-of-035.patch
+READ|part-019-of-035.patch
+READ|part-020-of-035.patch
+READ|part-021-of-035.patch
+READ|part-022-of-035.patch
+READ|part-023-of-035.patch
+READ|part-024-of-035.patch
+READ|part-025-of-035.patch
+READ|part-026-of-035.patch
+READ|part-027-of-035.patch
+READ|part-028-of-035.patch
+READ|part-029-of-035.patch
+READ|part-030-of-035.patch
+READ|part-031-of-035.patch
+READ|part-032-of-035.patch
+READ|part-033-of-035.patch
+READ|part-034-of-035.patch
+READ|part-035-of-035.patch
+FIX|plugin/crew/hooks/scripts/crew_coord.py:735|The round-3 Azure DevOps fix is one step short of the next case. It handles `<project>/_git/<repo>` and ssh `v3/<org>/<project>/<repo>`, but a project's default repository can also be addressed as `<org>/_git/<repo>` (the project name is left out) and, on the old visualstudio.com host, as `DefaultCollection/_git/<repo>`. For those, `marks` takes whatever segment sits before `_git` as the project. So the https forms give `org.repo` or `defaultcollection.repo`, the ssh form of the same repository (`v3/Org/Repo/Repo`) gives `repo.repo`, and `https://org.visualstudio.com/_git/Repo` falls back to the directory name. One ticket ends up with three keys and three holders.|In a throwaway fixture, make three clones of one bare remote with origins (via insteadOf) `https://dev.azure.com/Org/_git/Repo`, `git@ssh.dev.azure.com:v3/Org/Repo/Repo` and `https://org.visualstudio.com/DefaultCollection/_git/Repo`. Sessions s1, s2 and s3 (each with a live CLAUDE_PID) each run `claim --channel t --ticket T-1 --no-heartbeat`. All three return rc=0, and `status` lists `org.repo__T-1`, `repo.repo__T-1` and `defaultcollection.repo__T-1` as working, each with a different holder (reproduced).
+FIX|plugin/crew/hooks/scripts/crew_coord.py:763|repo_key reads the raw `remote.origin.url` config value, so git's `url.<base>.insteadOf` rewriting is never applied. A clone whose origin is an insteadOf alias gets a different key from a clone that uses the full URL of the same repository, and one ticket gets two holders. `git remote get-url origin` returns the rewritten URL.|In a throwaway fixture, create bare `$F/Owner/Repo`. Clone a has origin `$F/Owner/Repo`. Clone b has `url."$F/Owner/".insteadOf ow:` and origin `ow:Repo` (`git -C b remote get-url origin` prints `$F/Owner/Repo`). s1 in a and s2 in b, each with a live pid, run `claim --channel t --ticket T-1 --no-heartbeat`. Both return rc=0, and the channel holds both `claims/owner.repo__T-1.json` and `claims/ow.repo__T-1.json` (reproduced).
+NIT|plugin/crew/hooks/scripts/crew_coord.py:1031|The round-3 NaN/Infinity fix has the same gap one step further on. ttl_minutes accepts any finite positive value, and a finite value above about 3e306 overflows `ttl * 60` to inf. `int(inf // 3)` then raises in _maybe_start_heartbeat after the claim was pushed, so a granted claim exits 1 with a traceback, which reads as refused. With that value is_stale can also never fire.|Write `{"coord":{"ttlMinutes":1e308}}` to wt/.crew/config.json and run `claim --channel t --ticket T-9` without --no-heartbeat. The output ends `ValueError: cannot convert float NaN to integer`, rc=1, and the remote's claims/owner.repo__T-9.json has `"state": "working"` (reproduced).
+NIT|plugin/crew/hooks/scripts/crew_coord.py:742|owner_name keeps only the last two path segments and drops the host, the GitLab parent groups and the Azure org. Different repositories therefore share a key: `gitlab.com/groupA/sub/repo` and `gitlab.com/groupB/sub/repo` both give `sub.repo`, `github.com/Owner/Repo` and `gitlab.com/Owner/Repo` both give `owner.repo`, and two Azure orgs with the same project and repo names collide. A ticket id held in one repository refuses the same id in the other, naming a holder from an unrelated repository.|`python3 -c "import crew_coord as c; print(c.owner_name('https://gitlab.com/groupA/sub/repo.git'), c.owner_name('https://gitlab.com/groupB/sub/repo.git'))"` from plugin/crew/hooks/scripts prints `('sub.repo', None) ('sub.repo', None)`.
