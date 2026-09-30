@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.72: build-time development standards and a required pre-review self-check (T-0085)
+### Added — `crew` 1.0.73: build-time development standards and a required pre-review self-check (T-0085)
 
 - **New `crew-standards` skill.** `references/generic.md` ships GEN-01 to GEN-12,
   crew-generic standards mined from 224 BLOCK/FIX findings in crew's own QA reviews;
@@ -50,10 +50,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   each cite a third change set in their Earned by, and a test holds every GEN standard to citing three.
   The stamp's docstring names its remaining write window instead of claiming GEN-03. Rule 31 of
   `.crew/verify.json` also runs on the scripts the stamp, gate, proposals and metric read.
-- Bumped `1.0.69 -> 1.0.72` on the land branch (REPO-03 as amended: no bump on the build branch):
+- Bumped `1.0.69 -> 1.0.73` on the land branch (REPO-03 as amended: no bump on the build branch):
   1.0.70 at the merge of main's 1.0.69, 1.0.71 because a landing-branch commit then re-took one
   `sabotage_standards.py` anchor under `plugin/crew/`, and 1.0.72 for rewrapping `commands/review.md`
-  back to its 551-line allowance (`check_instructions.py`).
+  back to its 551-line allowance (`check_instructions.py`), and 1.0.73 at the catch-up merge of main's
+  1.0.70 (#268, T-0097), which changed `plugin/crew/` after 1.0.72 was set.
 - **Landing changes decided by the owner (2026-09-30).** Merging main's #264 met T-0085's gate in
   `review_run.py`: main's `preflight` runs first (a CLEAN receipt covering the bundle still answers
   CLEAN with no round and no self-check; an unverified or unknown verify gate is refused with exit 5
@@ -62,6 +63,20 @@ All notable changes to this repository are documented here. Format follows [Keep
   module docstring and `commands/review.md`; a test pins the order and a sabotage entry that swaps it
   goes red. Ruff `TRY004` and `DTZ011` in `crew_standards.py` carry a `noqa` with a one-line reason;
   no behaviour change. Crew bundles 31 skills with main's `crew-qa-standards`.
+
+### Fixed — `crew` 1.0.70: a silent python candidate no longer writes a red error block on every Windows hook (T-0097)
+
+- **What changed.** `Resolve-CrewPython`, which is byte-identical in all 11 PowerShell hook carriers
+  (role-write-guard, completion-audit, scope-guard, approval-hook, crew-context, platform-sync, cloud-guard,
+  verify-gate, handoff-read, notify, handoff-write), now parses a candidate's probe answer only when there is one:
+  `$probe = if ($line) { $line | ConvertFrom-Json } else { $null }`.
+- **Why.** A candidate that printed nothing left `$line` null. Piping `$null` into `ConvertFrom-Json` is a
+  NON-terminating binding error that the probe's `try` never catches, so it reached stderr as an error record on
+  every hook, even though the candidate was correctly rejected and the right interpreter was chosen.
+- **Unchanged.** Candidate order, the probe's acceptance rule, and the result for every candidate that answers.
+- **Tests.** `test_ps1_python_probe.py::test_a_silent_candidate_is_rejected_without_writing_to_stderr` asserts
+  the real interpreter is chosen and stderr is empty. The sabotage entry "PROBE: a silent candidate's null answer
+  is piped into ConvertFrom-Json" (`sabotage_scope.py`) goes RED.
 
 ### Changed — `crew` 1.0.69: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088)
 
