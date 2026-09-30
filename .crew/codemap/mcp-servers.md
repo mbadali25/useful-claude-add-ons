@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@05413bbe
+anchor: useful-claude-add-ons@04511143
 verified: 2026-09-28
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -370,3 +370,7 @@ No citation moved.
 ## Re-anchor provenance - `3648f59a` -> `05413bbe`, 2026-09-29 (T-0503, bitbucket 1.2.3)
 
 `git diff --name-only 3648f59a..05413bbe` over this note's cited paths returns only `README.md`, where T-0503 rewrote the `bitbucket` catalog row's Use cases cell in place (one line each, `README.md:815`, `skills/README.md:76`); no line count changed, so no `README.md` citation here moved. The rest of T-0503 is `skills/bitbucket/SKILL.md`, `skills/bitbucket/references/api.md`, `CHANGELOG.md` (one Unreleased entry at the top) and the `bitbucket` version line in `.claude-plugin/marketplace.json`. Re-anchor only, under the refresh-artifact standing rule (owner 2026-09-28); nothing was executed for this note.
+
+## Re-anchor provenance - `05413bbe` -> `04511143`, 2026-09-30 (T-0503 merges origin/main `a61a6f38`)
+
+`git diff --name-only 05413bbe 04511143` over this note's cited paths returns only `README.md`, changed by origin/main (crew's skill count 29 -> 30 at `README.md:168`, in place). The one `README.md` citation here, `README.md:815` (the `bitbucket` row), reads the same line at `05413bbe` and at `04511143` (compared by script, 1 checked, 0 differ). Nothing under `mcp-servers/` changed. Re-anchor only, under the refresh-artifact standing rule (owner 2026-09-28); nothing was executed for this note.
