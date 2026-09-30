@@ -59,8 +59,11 @@ import webtest_guard
 DEFAULT_PATHS = ("playwright.config.*", "package.json", "package-lock.json",
                  "src/**", "tests/**", "e2e/**", "specs/**", "angular.json")
 SPEC_PATHS = tuple(f"**/*{ext}" for ext in webtest_guard.JS_EXTS)
+# A watched glob, not a read of the config (test_worktree_config.py's ALLOWED
+# counts this one site); it stays at the root when `--module` prefixes the rest.
+CREW_CONFIG_GLOB = ".crew/config.json"
 AUTH_PATHS = ("playwright/**", "playwright.config.*", ".gitignore", ".auth/**", "**/.auth/**",
-              "**/*storage*state*.json", "**/*storage*State*.json", ".crew/config.json")
+              "**/*storage*state*.json", "**/*storage*State*.json", CREW_CONFIG_GLOB)
 GUARD = ('python3 "${CLAUDE_PLUGIN_ROOT:?crew plugin root not set - run from the '
          'crew verify gate}/hooks/scripts/webtest_guard.py"')
 
@@ -78,7 +81,7 @@ def auth_paths(root=None, module=None):
         project = webtest_guard.module_dir(root, module)
         found = webtest_guard.config_auth_paths(project)[0] if project else []
         extra = [_prefix(module, p) for p in found] + webtest_guard.declared_storage_state(root)
-    base = [p if p == ".crew/config.json" else _prefix(module, p) for p in AUTH_PATHS]
+    base = [p if p == CREW_CONFIG_GLOB else _prefix(module, p) for p in AUTH_PATHS]
     return base + [p for p in sorted(set(extra)) if p not in base]
 
 
