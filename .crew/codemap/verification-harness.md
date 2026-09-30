@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@c43a54c1
+anchor: useful-claude-add-ons@f4adf923
 verified: 2026-09-30
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -2001,3 +2001,10 @@ changed file was mapped by a `difflib` line diff from `6a8c60b1` to `c43a54c1` w
 same line text. It gains the 39-rule count and the Kimi rule 38 bullet, re-read with `json.load`
 and `grep -n`. T-0028's earlier branch provenance is in git history. Re-anchor
 only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
+
+## Re-anchor provenance - `c43a54c1` -> `f4adf923`, 2026-09-30 (T-0028 re-sets crew 1.0.85)
+
+`f4adf923` changes only the release files (crew 1.0.84 -> 1.0.85: `plugin.json`, `marketplace.json`,
+`PLUGINS.md`, the README's version mention and the CHANGELOG heading), because T-0505 targets
+1.0.84. No cited line moved; the version sentences were re-read. Re-anchor only (owner
+refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
