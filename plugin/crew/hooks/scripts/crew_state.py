@@ -1082,6 +1082,11 @@ AUTONOMOUS_STOPS = (
     ("git-destruction",
      "destroying git history or tracked work - force-push, branch delete, "
      "history rewrite, or rm of a tracked file"),
+    # T-0049: another runner's ticket is left alone at every tier.
+    ("in-flight",
+     "taking over, clearing or driving a ticket another runner holds - a live, "
+     "stale or unreadable in-flight marker, a reserved review round with no "
+     "result, or a dirty worktree for the ticket"),
 )
 
 # `/crew:autopilot` (T-0004): drives one ticket through the lifecycle phases

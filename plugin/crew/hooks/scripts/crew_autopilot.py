@@ -1,7 +1,7 @@
 """`/crew:autopilot`'s reader: which ticket, which phase, and every stop.
 
     python3 crew_autopilot.py next --root . --ticket <id> [--phases-run N]
-                                   [--last-command CMD] [--json]
+                                   [--last-command CMD] [--runner R] [--json]
     python3 crew_autopilot.py resume --root . [--ticket <id>] [--json]
     python3 crew_autopilot.py settings --root . [--json]
     python3 crew_autopilot.py stops [--json]
@@ -73,7 +73,7 @@ force says `take`. Exit 0 valid, 1 not.
   review ledger UNKNOWN                  review              stop
   review ledger NEEDS_REPLAN             replan              stop
   no review round under this plan        implement           /crew:implement <id>
-  latest round still reserved            review              stop
+  latest round still reserved            in-flight           stop (T-0049, below)
   latest round FINDINGS, not accepted    accept-review       stop
   no receipt and no round left           review              stop, never a third reserve
   latest round INCOMPLETE                accept-review       stop
@@ -81,6 +81,13 @@ force says `take`. Exit 0 valid, 1 not.
   receipt not current, artifacts fresh   review              /crew:review <id>
   receipt current, artifacts stale       stale-after-review  stop, nothing written
   receipt current, artifacts fresh       done                /crew:done <id>
+
+Then T-0049: unless the phase is `closed`, `crew_inflight.holds` for the
+asking runner (`--runner`, default `autopilot:<session>`) decides whether it
+may drive: live, stale or unknown (an unreadable marker, a reserved round, a
+dirty worktree for the ticket, no session id, a crash) stops `in-flight`,
+naming the runner and since, with the owner's clear command for stale; a
+runner that ended in another checkout stops `handover-elsewhere`.
 
 `closed` sits right after the spec is read, not last: a ticket `/crew:done`
 closed is never re-driven because a later commit staled its receipt. The
@@ -152,6 +159,8 @@ if __name__ == "__main__":
 
 import crew_common
 import crew_config
+import crew_holder
+import crew_inflight
 import crew_state
 import crew_ticket
 import review_ledger
@@ -195,6 +204,7 @@ FIXED_STOPS = (
                           "approved"),
     ("unsettled-artifact", "an artifact is unknown for a cause a refresh cannot settle"),
     ("ticket-mismatch", "the ticket to drive is not this worktree's active ticket"),
+    ("handover-elsewhere", "the ticket's runner ended in another checkout: continue there"),
     ("max-phases", "autopilot.maxPhases phases have run in this invocation"),
     ("no-progress", "a phase ran and the files on disk still name the same command"),
 )
@@ -479,11 +489,9 @@ def _phase(root, ticket, policy=True):
 
 
 def _current_rounds(ledger):
-    """Rounds reserved under the current plan: after the latest successor."""
-    rounds = ledger.get("rounds") or []
-    successors = ledger.get("successors") or []
-    after = successors[-1].get("after_round", 0) if successors else 0
-    return rounds[after:] if isinstance(after, int) else rounds
+    """Rounds reserved under the current plan: after the latest successor.
+    One definition, `crew_inflight.current_rounds` (T-0049)."""
+    return crew_inflight.current_rounds(ledger)
 
 
 def _review_phase(top, ticket, evidence, answer):
@@ -542,17 +550,46 @@ def _review_phase(top, ticket, evidence, answer):
     return answer("done", False, f"{message}; artifacts fresh", f"/crew:done {ticket}")
 
 
+def _in_flight(root, ticket, result, runner):
+    """T-0049: `result` unchanged when this runner may drive `ticket`
+    (crew_inflight.holds says free or mine), else the `in-flight` stop naming
+    the runner, the ticket and since when -- or `handover-elsewhere`. A crash
+    inside is in flight (unknown), never the phase."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    try:
+        held = crew_inflight.holds(top, ticket, crew_holder.current_holder(top),
+                                   runner or crew_inflight.expand_runner("autopilot"))
+    except Exception as exc:  # pylint: disable=broad-except
+        held = {"state": crew_inflight.UNKNOWN, "reason": f"could not tell ({_failure(exc)})",
+                "runner": None, "since": None, "clear": ""}
+    if held["state"] in crew_inflight.GO:
+        return result
+    who = f"{held.get('runner') or 'no runner named'} since {held.get('since') or 'unknown'}"
+    if held["state"] == crew_inflight.ELSEWHERE:
+        return dict(result, phase="handover-elsewhere", stop=True, command="",
+                    reason=f"{ticket}: {held['reason']} ({who})")
+    return dict(result, phase="in-flight", stop=True, command=held.get("clear") or "",
+                reason=f"{ticket} is in flight ({held['state']}): {held['reason']} ({who}) - "
+                       "left alone; never taken over")
+
+
 def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
-               policy=True):
+               policy=True, runner=None):
     """`{"ticket", "phase", "stop", "reason", "command", "evidence"}`. A
     `stop` phase's `command` is what the HUMAN types, never run by autopilot.
     `max_phases` and `last_command` are the session's count and the command it
     last ran: reaching the count, or being handed the same command again, stops.
     So does a phase that would run while `crew_ticket.resolve_active` -- what
     the scope guard reads -- names another ticket, none, or a broken pointer.
-    `policy=False` is `status`'s: see `_phase`."""
+    `policy=False` is `status`'s: see `_phase`. After the phase, a ticket
+    another runner holds (T-0049, `crew_inflight.holds` for `runner`, default
+    `autopilot:<session>`) stops `in-flight` or `handover-elsewhere`; only a
+    `closed` ticket answers before that check. Writes nothing."""
     crew_ticket.check_ticket(ticket)
     result = _phase(root, ticket, policy)
+    if result["phase"] == "closed":
+        return result
+    result = _in_flight(root, ticket, result, runner)
     if result["stop"]:
         return result
     active, where, broken = crew_ticket.resolve_active(
@@ -1325,6 +1362,8 @@ WAITING = {phase: "owner" for phase in (
     "review", "replan", "implement", "accept-review", "refresh", "stale-after-review",
     "done")}
 WAITING["closed"] = "nobody"
+WAITING["in-flight"] = "runner"
+WAITING["handover-elsewhere"] = "owner"
 STATUS_MAX_LINES = 12
 # The states `review_ledger.status` reports for a ledger it could read. Its
 # UNKNOWN is also a string a file can hold, with a count computed beside it.
@@ -1365,8 +1404,10 @@ def _waiting(top, result, bare):
         return f"unknown (phase {phase!r} is not one status maps)"
     if who == "nobody":
         return "nobody - the ticket is closed"
-    if phase == "review" and result.get("stop") and _reserved_round(top, result["ticket"]):
+    if phase in ("review", "in-flight") and result.get("stop") and _reserved_round(top, result["ticket"]):
         return "reviewer - a round is reserved with no result"
+    if who == "runner":
+        return f"runner - {result.get('reason') or 'another runner holds it'}"
     if not result.get("stop"):
         # Bare `/crew:autopilot` reads the handoff before any argument, so it
         # is named only when it would drive this same ticket.
@@ -1650,6 +1691,8 @@ def main(argv):
     given.add_argument("--first", default=None)
     sub.choices["next"].add_argument("--phases-run", type=int, default=0)
     sub.choices["next"].add_argument("--last-command", default="")
+    sub.choices["next"].add_argument("--runner", default="autopilot",
+                                     help="the runner asking (T-0049): <kind>:<id>, or autopilot")
     deploy = sub.add_parser("deploy-allowed")
     deploy.add_argument("--json", action="store_true")
     deploy.add_argument("--root", default=".")
@@ -1720,7 +1763,8 @@ def main(argv):
         try:
             result = next_phase(args.root, args.ticket, args.phases_run,
                                 args.last_command or None,
-                                settings(args.root)["maxPhases"])
+                                settings(args.root)["maxPhases"],
+                                runner=crew_inflight.expand_runner(args.runner))
         except Exception as exc:  # pylint: disable=broad-except
             # A crash cannot tell the phase: it is a stop, never no answer.
             result = {"ticket": args.ticket, "phase": "invalid", "stop": True,

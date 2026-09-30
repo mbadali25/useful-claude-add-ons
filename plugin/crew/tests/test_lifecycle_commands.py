@@ -91,7 +91,9 @@ EXPECTED_CLI = {
                      "crew_autopilot.py resume --root .",
                      "crew_autopilot.py next --root .",
                      "crew_autopilot.py route --root .",
-                     "crew_autopilot.py status --root ."),
+                     "crew_autopilot.py status --root .",
+                     "crew_inflight.py begin --root .",
+                     "crew_inflight.py end --root ."),
 }
 
 

@@ -51,13 +51,14 @@ open. Print the `source`, every `fell through:` and any `disagreement:` line (di
 `stop=1`: print the reason and stop - that includes a ticket that is not this worktree's
 active one. `activate=1` (no pointer is set): run
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py activate --root . --ticket <ticket>`
-so the scope guard judges edits by it. Never pick from `## Next action`.
+so the scope guard judges edits by it. Never pick from `## Next action`. Then claim it (T-0049) with
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_inflight.py begin --root . --ticket <ticket> --runner autopilot`: non-zero is another runner's ticket - print its `result=` line and stop, never take it over.
 
 ## 3. The loop - keep `N` (phases run, from 0) and `LAST` (last command, empty)
 
 ```bash
 python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py next --root . \
-  --ticket <ticket> --phases-run N --last-command "LAST"
+  --ticket <ticket> --phases-run N --last-command "LAST" --runner autopilot
 ```
 
 It prints `phase=<p> stop=<0|1> command=<c> reason=<r>`.
@@ -90,16 +91,15 @@ accepted review (that stales the receipt): `next` enforces it.
 
 ## 4. Stops
 
-A person: `brainstorm` (no approved direction) and `review-acceptance` (FINDINGS are the
-owner's, at every setting); `plan-approval` and `open-questions` are a person unless section 3's
-policy allows. `next` enforces from disk, every turn: `needs-replan`, `needs-replan-or-revert`,
-`unknown-ledger`, `failed-validate`, `direction-unknown`, `unsettled-artifact`, `ticket-mismatch`,
-`max-phases`, `no-progress`. This procedure: `review-verdict`, `failed-done-check`,
-`failed-phase`. No deploy (T-0005), merge or PR (T-0011), new ticket (T-0012), lane or writer.
-Never without an explicit yes (`crew_state.AUTONOMOUS_STOPS`):
-- `offboard-role` - offboarding a role, or removing one from the roster.
-- `delete-map` - deleting a codemap file or a diagram.
-- `rewrite-metrics` - rewriting .crew/metrics.md.
+A person: `brainstorm` (no approved direction) and `review-acceptance` (FINDINGS are the owner's, at every setting);
+`plan-approval` and `open-questions` are a person unless section 3's policy allows. `next` enforces from disk, every
+turn: `needs-replan`, `needs-replan-or-revert`, `unknown-ledger`, `failed-validate`, `direction-unknown`,
+`unsettled-artifact`, `ticket-mismatch`, `handover-elsewhere` (continue in the checkout it names), `max-phases`,
+`no-progress`. This procedure: `review-verdict`, `failed-done-check`, `failed-phase`. No deploy (T-0005), merge or PR
+(T-0011), new ticket (T-0012), lane or writer. Before every stop and the report: `crew_inflight.py end --root .
+--ticket <ticket> --runner autopilot --outcome <phase>`. Never without an explicit yes
+(`crew_state.AUTONOMOUS_STOPS`): `offboard-role` (a role), `delete-map` (a codemap or diagram), `rewrite-metrics`
+(.crew/metrics.md), `in-flight` (driving, clearing or taking over a ticket another runner holds), and
 - `git-destruction` - force-push, branch delete, history rewrite, or rm of a tracked file.
 
 ## 5. Context runs low, and the report

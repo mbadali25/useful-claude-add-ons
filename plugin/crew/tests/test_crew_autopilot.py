@@ -36,6 +36,14 @@ HEADER = "status: spec   risk: high"
 
 # --- fixtures ----------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def _a_session(monkeypatch):
+    """T-0049: `next` stops `in-flight` when who is asking cannot be told (no
+    CLAUDE_CODE_SESSION_ID), so every case here runs as a session, as
+    autopilot does; test_crew_autopilot_inflight.py covers the absence."""
+    if not os.environ.get("CLAUDE_CODE_SESSION_ID"):
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "test-session")
+
 def _write(path, text):
     os.makedirs(os.path.dirname(str(path)), exist_ok=True)
     with open(str(path), "w", encoding="utf-8", newline="\n") as handle:
@@ -243,7 +251,9 @@ def test_next_unknown_ledger_stops(tmp_path):
 
     got = _next(root)
 
-    assert (got["phase"], got["stop"], "UNKNOWN" in got["reason"]) == ("review", True, True)
+    # T-0049: an unreadable ledger cannot say whether a round is reserved, so
+    # the ticket is in flight (could not tell), stopped before the phase.
+    assert (got["phase"], got["stop"], "ledger unreadable" in got["reason"]) == ("in-flight", True, True)
 
 
 def test_next_replan(tmp_path):
@@ -273,12 +283,15 @@ def test_next_implements_again_after_a_successor_plan(tmp_path):
 
 
 def test_next_reserved_round_stops(tmp_path):
+    """T-0049: a reserved round with no result is in flight -- a reviewer is
+    running or died, whoever reserved it -- so `next` stops `in-flight`, not
+    `review`, until the owner releases it with `crew_inflight.py clear --round`."""
     root = _approved(tmp_path)
     _ledger(root, [_round(1, status="reserved")])
 
     got = _next(root)
 
-    assert (got["phase"], got["stop"], "reserved" in got["reason"]) == ("review", True, True)
+    assert (got["phase"], got["stop"], "reserved" in got["reason"]) == ("in-flight", True, True)
 
 
 def test_next_accept_review(tmp_path):
