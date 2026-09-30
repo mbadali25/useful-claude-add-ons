@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@65abeb8d
+anchor: useful-claude-add-ons@1f21f73b
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -1102,7 +1102,7 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   refresh, commits, and re-runs until `fresh`; a `stop` ends the loop.
 - `/crew:done` Check 4 (`plugin/crew/commands/done.md:50-61`) runs it again
   and refuses on `stale` or `unknown` without refreshing (`:56-59`).
-- `REFRESH_ARTIFACT_PATHS` (`plugin/crew/hooks/scripts/crew_refresh_check.py:234-239`: the code map,
+- `REFRESH_ARTIFACT_PATHS` (`plugin/crew/hooks/scripts/crew_refresh_check.py:236-241`: the code map,
   `docs.diagramsDir`, `graph.out`, `.claude/rules`) is the one definition.
   The scope guard (`_refresh_artifact`,
   `plugin/crew/hooks/scripts/scope_guard.py:209-220`) lets a ticket write
@@ -1112,44 +1112,47 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   `_outside_refresh_artifacts` (`plugin/crew/hooks/scripts/completion_audit.py:177-187`)
   drops every refresh-artifact path when the approval is current and none
   otherwise. JUDGEMENT: T-0094 (crew 1.0.78) ships the narrower judgement,
-  `artifact_verdicts` (`plugin/crew/hooks/scripts/crew_refresh_check.py:903`), and
+  `artifact_verdicts` (`plugin/crew/hooks/scripts/crew_refresh_check.py:970`), and
   the owner split its wiring into the audit off to L-0540 on 2026-09-30 (a
   harness change lands alone, `scripts/check-tooling-pr.py`), so until L-0540
   lands nothing in the hooks calls it. It answers True / False / None per
   changed artifact. A `True` needs a changed path to reach the artifact
   through its BASE copy's citations (reach = every path changed since the base,
   release bookkeeping dropped except `ADMISSION_BOOKKEEPING`, a plugin
-  manifest, `:262` and `:921-930` in `crew_refresh_check.py`; the graph's code
+  manifest, `:264` and `:988-997` in `crew_refresh_check.py`; the graph's code
   test reads the whole reach) and a re-anchor or regeneration shape: a map's
   `anchor:` moved forward from the base copy's anchor to a commit behind HEAD
-  (`_map_verdict` `:724`, `_sha_moved` `:552`, `_moved_from` `:603`: an
+  (`_map_verdict` `:802`, `_sha_moved` `:557`, `_moved_from` `:615`: an
   unchanged anchor text never moved, an anchor added to a base copy with none
   did not move either (review round 3), a base anchor git cannot resolve is
   could-not-tell, a base anchor `cat-file` cannot find counts as moved only
-  when `_names_no_commit` (`:582`, review round 4) proves no commit or tag
+  when `_names_no_commit` (`:594`, review round 4) proves no commit or tag
   carries that prefix - an ambiguous short anchor is could-not-tell -, one on HEAD's history must be behind the new one), INDEX rows
   of admitted maps only, deleted lines included, read from `git diff -U0
   <base> -- INDEX.md` so a changed terminator or a BOM counts
-  (`_index_verdict` `:761`, `_diff_lines` `:738`, since review round 3), a
-  diagram's provenance sha moved the same way (`_diagram_verdict` `:785`), a
+  (`_index_verdict` `:839`, `_diff_lines` `:816`, since review round 3), a
+  diagram's provenance sha moved the same way (`_diagram_verdict` `:863`), a
   rendered file beside an admitted same-stem source, its extension compared
-  case-folded (`_rendered_verdict` `:962`, review round 4), a rule
+  case-folded (`_rendered_verdict` `:1029`, review round 4), a rule
   whose bytes equal `crew_instructions.expected_rules`, or whose blob git would
-  store does (`_rule_verdict` `:804`, `_stored_blob` `:855`: a CRLF checkout
+  store does (`_rule_verdict` `:882`, `_stored_blob` `:922`: a CRLF checkout
   under `core.autocrlf` passes, a CRLF or BOM rewrite does not, since review
   round 3; a rule file that exists but cannot be read is could-not-tell before
-  any comparison, `:817-819`, since review round 2), the graph after a code
-  change (`_graph_verdict` `:984`). `None` (`COULD_NOT_TELL`, `:489`) never
+  any comparison, in `_on_disk`, since review round 2), the graph after a code
+  change (`_graph_verdict` `:1051`). `None` (`COULD_NOT_TELL`, `:491`) never
   admits. Since review round 5 whether the config, a rule or a map exists is
-  `_present` (`:338`), lstat's errno rather than `os.path.lexists`: only
+  `_present` (`:340`), lstat's errno rather than `os.path.lexists`: only
   ENOENT or ENOTDIR is absent, and a directory the hook user cannot search is
-  could-not-tell (`_read_config` `:311`, `_texts` `:655`). Since review round 6
+  could-not-tell (`_read_config` `:313`, `_texts` `:667`). Since review round 6
   every kind that reads or admits a working-tree file first asks `_on_disk`
-  (`:676`): a deleted file, a symlink at the path or along its dirs, a git mode
+  (`:743`): a deleted file, a symlink at the path or along its dirs, a git mode
   different from the base copy's (`git diff --raw`, which is why INDEX.md's
   own mode branch is gone) or a 120000/160000 stage entry is refused; and the
   kind comes from the most specific artifact dir holding the path (`_claims`
-  `:867`, `_kind` `:876`), two equally specific ones being could-not-tell.
+  `:934`, `_kind` `:943`), two equally specific ones being could-not-tell. Since review round 7 `_on_disk`
+  judges the bytes `_read_regular` (`:687`) read once through a descriptor opened with
+  `O_NOFOLLOW` at every component, before any git call; an ambiguous new anchor is
+  could-not-tell, and `_base_text` (`:530`) looks the base copy up with `git ls-tree`.
   With no current approval nothing is exempt.
 - Tests: `plugin/crew/tests/test_refresh_check.py`,
   `plugin/crew/tests/test_scope_guard_refresh_artifacts.py`,
@@ -1310,8 +1313,8 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   above.
 - `plugin/crew/hooks/scripts/crew_resume.py:668` — `decide`, read-only;
   `main()` is the `decide` / `record` / `precompact` CLI.
-- `plugin/crew/hooks/scripts/crew_refresh_check.py:1196` — `ticket_freshness`,
-  the library entry point; `main()` at `:1296`; `artifact_verdicts` at `:903`,
+- `plugin/crew/hooks/scripts/crew_refresh_check.py:1263` — `ticket_freshness`,
+  the library entry point; `main()` at `:1363`; `artifact_verdicts` at `:970`,
   the audit's admission (T-0094).
 - `plugin/crew/hooks/scripts/crew_autopilot.py:559` — `next_phase`, read-only;
   `main()` at `:1635` is the `next` / `resume` / `settings` / `stops` /
@@ -3136,3 +3139,5 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 **Re-anchored `a0c171c7` (T-0094) / main -> `a0db0703` on 2026-09-30 (T-0094 merges origin/main `a7524aac`, T-0087 landed as crew 1.0.76, #281, and L-0521, #280; crew 1.0.77, before review round 6).** `f6f2c2f0` merges `a7524aac` into T-0094-build at `75565970`; `a0db0703` re-sets the version one past main's 1.0.76 (plugin.json, marketplace.json, `plugin/PLUGINS.md:14`, two README sentences, the CHANGELOG heading). The code maps conflicted on anchor, version, provenance and cited-line text only: both sides' provenance kept, main's first. In body hunks a citation into a file only one side changed takes that side's number (`crew_autopilot.py`, `review_ledger.py`, `sabotage.py` and `CLAUDE.md` main's; `crew_refresh_check.py` T-0094's); positions in files both sides changed (`.crew/verify.json`, `plugin/crew/tests/sabotage_refresh.py`) were re-measured on the merged tree: T-0087's harness rule is rule 37 at `.crew/verify.json:384-409`, after T-0094's rule 32; `REFRESH_MUTATIONS` is at `plugin/crew/tests/sabotage_refresh.py:119`; the CLAUDE.md Lessons line is `:144`. Checked by a script mapping every `path:N` citation outside provenance sections, and every bare `:N` carried from the last path named in its paragraph, from each side's anchor (`a0c171c7` and main's own) to `a0db0703` (difflib equal blocks): no citation outside those re-measured positions fails both mappings. Carried as main has them, not corrected here: main's own `crew_autopilot.py` body citations in `crew.md` that already lag main's tree by a few lines (e.g. `next_phase` `:556`, the def is at `:559`) - outside T-0094's change.
 
 **Re-anchored `a0db0703` (T-0094) / `38b220cf` (main) -> `65abeb8d` on 2026-09-30 (T-0094 merges origin/main `549cda24`, T-0086 landed as crew 1.0.77, #282, as `44407f8e`; the owner's split moves the harness half to L-0540 at `c974f997`; review round 6's successor `6ecb6403`..`b17266ed`; crew 1.0.78 at `65abeb8d`).** Per-path, `git diff --name-only a0db0703 65abeb8d` over this note's 148 cited, tracked paths returns `.claude-plugin/marketplace.json`, `.crew/codemap/INDEX.md`, `.crew/codemap/crew.md`, `CHANGELOG.md`, `docs/diagrams/process-crew-lifecycle.mmd`, `docs/guides/crew/src/daily-workflow-scope.md`, `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/BUDGETS.md`, `plugin/crew/README.md`, `plugin/crew/hooks/scripts/completion_audit.py`, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `plugin/crew/hooks/scripts/scope_guard.py`, `plugin/crew/skills/crew-standards/SKILL.md`, `plugin/crew/skills/crew-standards/references/python.md`, `plugin/crew/skills/stack-python/SKILL.md`, `plugin/crew/tests/refresh_fixtures.py`, `plugin/crew/tests/sabotage_refresh.py`, `plugin/crew/tests/sabotage_standards.py`, `plugin/crew/tests/test_completion_audit_refresh_artifacts.py`, `plugin/crew/tests/test_crew_standards.py`, `plugin/crew/tests/test_refresh_admission.py`; from main's side, `git diff --name-only 38b220cf 65abeb8d` over the same paths returns `.claude-plugin/marketplace.json`, `.crew/codemap/INDEX.md`, `.crew/codemap/crew.md`, `.crew/verify.json`, `CHANGELOG.md`, `docs/diagrams/process-crew-lifecycle.mmd`, `docs/guides/crew/src/daily-workflow-scope.md`, `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/BUDGETS.md`, `plugin/crew/README.md`, `plugin/crew/commands/done.md`, `plugin/crew/commands/implement.md`, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `plugin/crew/tests/refresh_fixtures.py`, `plugin/crew/tests/test_refresh_admission.py`, `plugin/crew/tests/test_refresh_check.py`. The merge's conflicts in this map were the anchor and provenance only (both kept, main's first). Re-derived here: the refresh-artifact bullet (`REFRESH_ARTIFACT_PATHS` `:234-239`; `scope_guard.py`'s `_refresh_artifact` `:209-220` and `completion_audit.py`'s `_outside_refresh_artifacts` `:177-187`, both main's again after the split; `artifact_verdicts` `:903` now has no caller in the hooks until L-0540, JUDGEMENT; every `crew_refresh_check.py` position in it, and round 6's `_on_disk` `:676`, `_graph_verdict` `:984`, `_claims` `:867`, `_kind` `:876`), its Tests bullet (round 6's tests; the audit suite's T-0094 cases marked as landing with L-0540), the T-0010 `scope_guard.py` citations (`:118-122`, `:237`, `:265`, `:281`, `:257`, `:126-127`: main's file, without T-0094's six rule-6 docstring lines), the entry-point bullet (`ticket_freshness` `:1196`, `main()` `:1296`, `artifact_verdicts` `:903`) and the version sentence (1.0.78). Citations were checked with `/root/crew-tmp/t-0094/cite_map_merge.py` (`MAIN_REV=origin/main`, `OURS_REV=b4d87187`, machine-local) and each position read with `grep -n`; history positions inside provenance and per-commit position lists were left as written. No suite was executed for this note.
+
+**Re-anchored `65abeb8d` -> `1f21f73b` on 2026-09-30 (T-0094 review round 7: `902fb96a`..`91da43bc` code and tests, docs, guide rebuilt, crew 1.0.78 un-set and re-set as `1f21f73b`).** `git diff --name-only 65abeb8d 1f21f73b` returns `CHANGELOG.md`, `docs/guides/crew/crew-1.0-daily-workflow.docx`, `docs/guides/crew/crew-1.0-daily-workflow.html`, `docs/guides/crew/crew-1.0-daily-workflow.pdf`, `docs/guides/crew/src/daily-workflow-scope.md`, `plugin/crew/README.md`, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `plugin/crew/tests/test_refresh_admission.py`. Re-derived here: the refresh-artifact bullet's `crew_refresh_check.py` positions (every function below `_base_text` moved: `_read_regular` is new at `:687`), round 7's sentence, and the entry-point bullet (`ticket_freshness` `:1263`, `main()` `:1363`, `artifact_verdicts` `:970`), each read with `grep -n`. No suite was executed for this note.
