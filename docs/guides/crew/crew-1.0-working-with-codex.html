@@ -151,7 +151,10 @@ a project one: <code>codex exec --help</code> (codex-cli 0.155.1) documents <cod
 this project's <code>.codex/config.toml</code>. Create <code>$CODEX_HOME/review.config.toml</code> /
 <code>$CODEX_HOME/work.config.toml</code> yourself and pass <code>--profile review</code>/<code>--profile work</code> against
 those.</p>
-<p>A review that exits non-zero or prints nothing is INCOMPLETE, never CLEAN.</p>
+<p>A review that exits non-zero, prints nothing, times out or ends in a failed turn is INCOMPLETE,
+never CLEAN. That is a tool failure, and the round is refunded automatically, up to two per plan
+(for example when Codex answers with its usage-limit <code>error</code> event). What crew relies on from
+Codex's <code>--json</code> stream is in <code>plugin/crew/docs/external-tool-formats.md</code>.</p>
 <h2 id="when-codex-hits-a-usage-limit">When Codex Hits a Usage Limit</h2>
 <p>Having <code>codex</code> on <code>PATH</code> does not mean it can review: a logged-out, rate-limited or out-of-credits
 Codex is installed and fails at the first call. So <code>/crew:review</code> makes one minimal real call first,
