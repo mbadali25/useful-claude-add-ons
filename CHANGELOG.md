@@ -29,7 +29,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   before this lands gets a new standards digest when it merges main: `init` never
   overwrites an existing `selfcheck.md`, so add the PYTHON rows by hand and re-stamp.
 
-### Changed — `crew` 1.0.77: the completion audit admits a refresh artifact only as a re-anchor or regeneration the ticket's change reaches (T-0094)
+### Changed — `crew` 1.0.78: the completion audit admits a refresh artifact only as a re-anchor or regeneration the ticket's change reaches (T-0094)
 
 - **What changed.** `crew_refresh_check.artifact_verdicts` (beside
   `REFRESH_ARTIFACT_PATHS`) judges each changed refresh artifact of an approved
@@ -118,11 +118,31 @@ All notable changes to this repository are documented here. Format follows [Keep
   map under such a directory is `could not tell` rather than "deleted". The
   round's third BLOCK, the `verify-gate` record, is made at the gate on the
   final head, not in the diff.
-- **Sabotage.** In `plugin/crew/tests/sabotage_refresh.py`, fifteen entries
+- **Review round 6 (owner-rejected, successor, split).** A rendered diagram
+  or graph file deleted beside an admitted source or after a code change is
+  refused (`[deleted, not a regeneration]`); every kind that reads or admits
+  a working-tree file refuses a symlink at its path or along its
+  directories, a git mode that differs from the base copy's, and a file git
+  stages as 120000 or 160000, so text outside the repository can no longer
+  pass as a re-anchor; and when two configured artifact dirs hold a path, the
+  most specific decides its kind (graph files under a `graph.out` nested in
+  `docs.diagramsDir` are judged as graph), two equally specific ones being
+  `could not tell`. INDEX.md's own mode branch is gone: the new check
+  refuses a mode change first, for every kind.
+- **Split (owner, 2026-09-30).** Under the tooling-PR rule
+  (`scripts/check-tooling-pr.py`), `completion_audit.py`'s wiring to
+  `artifact_verdicts`, `scope_guard.py`'s rule-6 docstring, their
+  refresh-artifact suite and every T-0094 entry of `sabotage_refresh.py`
+  land separately as L-0540. This release ships `artifact_verdicts`, its
+  tests and the docs; until L-0540 lands the completion audit still admits
+  the whole refresh-artifact dirs for an approved ticket, as since 1.0.36.
+- **Sabotage.** Filed with L-0540's `plugin/crew/tests/sabotage_refresh.py`
+  (a harness file): fifteen entries
   after the `# T-0094` marker, sixteen after `# T-0094 review round 1`, nine
   after `# T-0094 review round 2`, twelve after `# T-0094 review round 3`,
-  eight after `# T-0094 review round 4` and five after `# T-0094 review round 5`
-  (counted by `ast`), each run by hand against
+  eight after `# T-0094 review round 4`, five after `# T-0094 review round 5`
+  and twelve after `# T-0094 review round 6` (counted by `ast`), each run by
+  hand against
   the tracked file and confirmed RED with the file restored byte-identical,
   plus the approval-gate entries, whose tests now perform an admitted refresh
   so they stay RED with the verdicts in place; review round 1's stale-approval
@@ -134,7 +154,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   `plugin/crew/` after 1.0.70 was set, so it was 1.0.71; main then took
   1.0.72-1.0.75 (T-0085 at 1.0.75), merged in with the round-4 successor, so
   it was 1.0.76; main then took 1.0.76 for T-0087 (#281), merged in before review
-  round 6, so this is 1.0.77.
+  round 6, so it was 1.0.77; main then took 1.0.77 for T-0086 (#282), merged in
+  with the round-6 successor, so this is 1.0.78.
 
 ### Added — `crew` 1.0.76: tooling reliability — tool-failure refunds, golden replay, seam contracts, a canary review (T-0087)
 

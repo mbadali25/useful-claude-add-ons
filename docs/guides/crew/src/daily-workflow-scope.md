@@ -99,11 +99,15 @@ the paths in six lines or fewer. It never blocks the continuation it caused.
 A changed refresh artifact passes the audit only when a path the ticket changed reaches it and the
 edit is a re-anchor (the `anchor:` or provenance sha moved forward to a commit on this branch) or a
 regeneration (`.claude/rules/` as `crew_instructions.py rules` writes them, the graph after a code
-change). A map claim edited without a re-anchor is listed with `[anchor did not move]`, and
-belongs in Touch if that is what the ticket means to do. When git cannot answer, a rule file
+change). A deleted rendered diagram or graph file, a symlink at or along an artifact's path, or
+a file whose git mode changed never passes. A map claim edited without a re-anchor is listed with
+`[anchor did not move]`, and belongs in Touch if that is what the ticket means to do. When git cannot answer, a rule file
 cannot be read, a short base anchor is ambiguous (two commits share it), the artifact dirs
 cannot be resolved, or a directory the hook cannot search hides whether the config, a rule or a
-map exists, the listing says `[could not tell: ...]`, and that never passes. `/crew:done` runs the same check:
+map exists, or two configured artifact dirs are equally specific for a path, the listing says
+`[could not tell: ...]`, and that never passes. (These verdicts are `crew_refresh_check.py`'s;
+the audit applies them once L-0540 lands, and until then admits the artifact dirs for an approved
+ticket.) `/crew:done` runs the same check:
 
 ```bash
 python3 <crew>/hooks/scripts/completion_audit.py --check --ticket T-0042

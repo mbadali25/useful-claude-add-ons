@@ -121,9 +121,19 @@ uses for the same purpose.
 
 The guard's allowance is a path test; the completion audit's is narrower.
 `artifact_verdicts` judges each changed artifact of an approved ticket, and
-`completion_audit.audit` admits it without Touch only on `True`. Two questions,
-each with an observable answer: did a path the ticket changed REACH it, and is
-the edit a RE-ANCHOR or a REGENERATION.
+`completion_audit.audit` admits it without Touch only on `True` -- wired by
+L-0540, the harness half the owner split from T-0094 on 2026-09-30 (a
+tooling change lands alone); until it lands the audit admits the whole dirs
+as since 1.0.36. Two questions, each with an observable answer: did a path
+the ticket changed REACH it, and is the edit a RE-ANCHOR or a REGENERATION.
+
+Every kind that reads or admits a working-tree file first asks `_on_disk`
+(review round 6): the file must be a regular file, with no symlink at its
+path or along its dirs, whose mode git sees unchanged from the base copy
+and that git does not stage as a link (120000) or gitlink (160000); a
+deleted one is never a re-anchor or a regeneration. The kind comes from
+the MOST SPECIFIC artifact dir holding the path; two equally specific dirs
+are could-not-tell.
 
   map       `.crew/codemap/<name>.md` (not INDEX, UPGRADE or MIGRATION): in
             the base tree and on disk, a citation in the BASE copy reaches a
