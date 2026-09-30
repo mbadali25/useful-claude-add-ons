@@ -107,14 +107,14 @@ def _cmd(flavour):
     return [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1]
 
 
-def _env(root):
+def _env(root, ttl=_TTL):
     return dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
-                CREW_VERIFY_LOCK_TTL=_TTL)
+                CREW_VERIFY_LOCK_TTL=ttl)
 
 
-def _run(flavour, root):
+def _run(flavour, root, ttl=_TTL):
     return crew_fixtures.run_gate(
-        _cmd(flavour), input="{}", cwd=str(root), env=_env(root),
+        _cmd(flavour), input="{}", cwd=str(root), env=_env(root, ttl),
         capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
 
@@ -253,9 +253,18 @@ def test_a_lock_with_no_deadline_falls_back_to_the_age_window(flavour, tmp_path)
     )
 
 
-# wallclock (T-0110): an elapsed-time bound, so it runs serially, never under -n.
-# Native -n auto (20 workers): the fresh token aged past the TTL before the gate read it; serially it passes.
-@pytest.mark.wallclock
+# The window here is _FRESH_TTL, not _TTL. The token is stamped `now` and the
+# gate reads its age only after starting up: Git Bash or pwsh plus python
+# resolution. Against a 3s window that start-up WAS the margin, and it ran out
+# natively on Windows (T-0110): under -n auto (20 workers) in runs 1 and 2, and
+# once serially in the -m wallclock step, each reading "a lock with no deadline
+# but a token newer than the TTL is still held". The property is "inside the age
+# window, still held", not where the window's edge is; the stale half above sits
+# 600s past its 3s window for the same reason, and test_lock_ttl_env_var_* own
+# the TTL value itself.
+_FRESH_TTL = "60"
+
+
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_a_fresh_lock_with_no_deadline_still_backs_off(flavour, tmp_path):
     """The other half of the fallback: inside the age window, still held."""
@@ -266,7 +275,7 @@ def test_a_fresh_lock_with_no_deadline_still_backs_off(flavour, tmp_path):
     now = time.time()
     os.utime(lock / "token", (now, now))
 
-    result = _run(flavour, root)
+    result = _run(flavour, root, ttl=_FRESH_TTL)
     assert "backed off" in result.stderr, (
         "a lock with no deadline but a token newer than the TTL is still "
         "held. " + result.stderr
