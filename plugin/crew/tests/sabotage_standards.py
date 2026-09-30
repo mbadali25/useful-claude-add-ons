@@ -149,6 +149,14 @@ STANDARDS_MUTATIONS = (
          "test_gate_applies_when_the_receipt_cannot_be_looked_up"),
     ),
     (
+        "a file parent Windows reports as not-found reads as absent",
+        STANDARDS,
+        "        return None if stat.S_ISDIR(mode) else f\"{parent} is not a directory\"\n",
+        "        return None\n",
+        ("tests/test_crew_standards.py::"
+         "test_gate_applies_when_a_file_parent_is_reported_as_not_found"),
+    ),
+    (
         "the checklist lists nothing when the file lists are unusable",
         STANDARDS,
         "    if unknown:\n"

@@ -649,6 +649,27 @@ def test_gate_applies_when_the_receipt_cannot_be_looked_up(tmp_path, shape):
     assert (applies, "could not tell" in (note or "")) == (True, True), note
 
 
+@pytest.mark.parametrize("shape", ["ticket-dir-is-a-file", "tickets-dir-is-a-file"])
+def test_gate_applies_when_a_file_parent_is_reported_as_not_found(tmp_path, monkeypatch, shape):
+    """Windows answers a lookup under a regular file with FileNotFoundError, not
+    NotADirectoryError; simulated here so the case runs on every OS."""
+    repo = init_repo(tmp_path / "repo")
+    _break_receipt_path(repo, shape)
+    real_lstat = os.lstat
+
+    def lstat_as_windows(path, *args, **kwargs):
+        try:
+            return real_lstat(path, *args, **kwargs)
+        except NotADirectoryError as exc:
+            raise FileNotFoundError(2, "The system cannot find the path specified", path) from exc
+
+    monkeypatch.setattr(cs.os, "lstat", lstat_as_windows)
+
+    applies, note = cs.gate_applies(str(repo), "T-1")
+
+    assert (applies, "could not tell" in (note or "")) == (True, True), note
+
+
 def test_gate_does_not_apply_when_the_receipt_is_proven_absent(tmp_path):
     repo = init_repo(tmp_path / "repo")
 

@@ -62,6 +62,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import statistics
 import sys
 
@@ -573,6 +574,26 @@ def stamp(root, ticket, refs_dir=None):
 
 # ---- the review gate --------------------------------------------------------------
 
+def _ancestor_problem(path):
+    """None when the nearest existing ancestor of `path` is a directory, so a
+    FileNotFoundError on `path` proves it absent; otherwise why it does not.
+    Windows raises FileNotFoundError, not NotADirectoryError, for a path under
+    a regular file, so ENOENT alone does not prove absence there (GEN-01)."""
+    parent = os.path.dirname(path)
+    while True:
+        try:
+            mode = os.stat(parent).st_mode
+        except FileNotFoundError:
+            up = os.path.dirname(parent)
+            if up == parent:
+                return f"no ancestor of {path} exists"
+            parent = up
+            continue
+        except OSError as exc:
+            return f"{exc.__class__.__name__} on {parent}: {exc.strerror or exc}"
+        return None if stat.S_ISDIR(mode) else f"{parent} is not a directory"
+
+
 def gate_applies(root, ticket):
     """(applies, note). The self-check is required of /crew:implement and
     /crew:fix, which both refuse without an approval receipt; a ticket with no
@@ -592,6 +613,10 @@ def gate_applies(root, ticket):
     try:
         os.lstat(path)
     except FileNotFoundError:
+        why = _ancestor_problem(path)
+        if why:
+            return True, (f"could not tell whether {ticket} has an approval receipt ({why}); "
+                          "gating anyway")
         return False, (f"standards self-check not required: {ticket} has no approval receipt, "
                        "so /crew:implement and /crew:fix never ran for it")
     except OSError as exc:
