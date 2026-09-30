@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.81: sabotage entries for the python-free bin fixture's dedupe (L-0531)
+### Added — `crew` 1.0.82: sabotage entries for the python-free bin fixture's dedupe (L-0531)
 
 - Two mutations of `plugin/crew/tests/crew_fixtures.py::link_path_dirs`
   (L-0529), carried in `sabotage_qa.py`'s tuple because `sabotage.py` is at
@@ -14,7 +14,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   `test_a_dangling_entry_in_the_first_dir_still_shadows_the_same_name_later`.
   Split from L-0529 because `sabotage*.py` is review/gate harness and lands
   in a tooling-only PR (`scripts/check-tooling-pr.py`).
-- Bumped `crew` `1.0.80 -> 1.0.81`.
+- Verify rule 34 (`sabotage_qa.py`) now also runs `test_path_link_farm.py` and
+  the shipped-anchor check, so a lost anchor cannot pass the gate.
+- Bumped `crew` `1.0.81 -> 1.0.82` (1.0.81 is T-0094's).
 
 ### Fixed — `crew` 1.0.80 and `obsidian-vault` 0.4.15: the python-free bin fixtures tolerate a name two PATH dirs share (L-0529)
 
@@ -65,6 +67,150 @@ All notable changes to this repository are documented here. Format follows [Keep
   rows in its self-check (12 GEN + 9 PYTHON, plus the overlay's). A ticket stamped
   before this lands gets a new standards digest when it merges main: `init` never
   overwrites an existing `selfcheck.md`, so add the PYTHON rows by hand and re-stamp.
+
+### Changed — `crew` 1.0.81: the completion audit admits a refresh artifact only as a re-anchor or regeneration the ticket's change reaches (T-0094)
+
+- **What changed.** `crew_refresh_check.artifact_verdicts` (beside
+  `REFRESH_ARTIFACT_PATHS`) judges each changed refresh artifact of an approved
+  ticket, and `completion_audit.audit` — the Stop hook and `/crew:done` check 3
+  — admits it without Touch only on `True`. A code map must be in the base and
+  on disk, its base copy must cite a path the ticket changed since its scope
+  base (merged-in main paths included; of the release bookkeeping only a
+  `.claude-plugin/plugin.json`, so a version bump reaches the map citing it,
+  while `CHANGELOG.md`, `marketplace.json` and the rest reach nothing), and its
+  `anchor:` must have moved forward from the base copy's anchor to a commit
+  that is HEAD or behind it; `INDEX.md` passes when every line git's own diff
+  shows changed, deleted ones included, is the row of such a map; a diagram source is reached through its base copy's
+  `%% Anchors:` and its
+  provenance sha must move the same way, and a rendered diagram passes beside
+  its admitted same-stem source; a `.claude/rules/` file passes when its bytes
+  (or, under git's line-ending filters, the blob git would store) equal
+  `crew_instructions.expected_rules` (or a generated rule no map expects
+  was removed); the graph dir passes when a code path changed. Anything else
+  there is judged against Touch and listed with its reason in brackets
+  (`[anchor did not move]`, `[no changed path reaches it]`, `[bytes differ from
+  expected_rules ...]`, `[graph changed with no code change since the base]`);
+  a verdict git, a base copy, the config or the rule renderer could not give is
+  `[could not tell: ...]` and never admits. The audit judges shape and reach,
+  not truth.
+- **Why.** The owner's standing rule (2026-09-28): a ticket may re-anchor and
+  regenerate the artifacts its own changes staled, "re-anchor/regenerate only,
+  never a content rewrite". Both checks were a path test, so an approved ticket
+  could rewrite any map, hand-edit a generated rule or rewrite an unrelated
+  diagram; and T-0090's reviewer, not a check, was what raised the question.
+- **Behaviour change.** An edit to a map's claims without moving its `anchor:`
+  (what `93da92af` did to two version sentences) now fails the audit unless the
+  map is in Touch; re-anchor it or name it. The PreToolUse scope guard is
+  unchanged: it still admits the artifact dirs for an approved ticket, because
+  a write-time check sees one Edit of a multi-Edit refresh.
+- **Review round 1 (same-family Claude reviewer).** A diagram's reach and its
+  no-`Anchors` branch gained failing controls; a base anchor git cannot
+  resolve is `could not tell` (an unchanged anchor text is simply "did not
+  move") instead of "moved"; an anchor moved backwards is refused; INDEX.md's
+  deleted lines are judged too; the reach no longer keeps every release
+  bookkeeping file, and citations are read from the base copy only, so a claim
+  rewrite of a map citing `CHANGELOG.md` is no longer admitted on a ticket
+  that bumped it; an unapproved ticket's artifacts are not judged at all, and
+  a verdict step that raises fails the audit closed instead of escaping
+  `--check` as a traceback.
+- **Review round 2 (owner-rejected, successor plan).** A rule file that
+  exists but cannot be read (a dangling symlink) is `could not tell`: it was
+  admitted as `regenerated` when no map expected it (`None == None`) and read
+  as `bytes differ` when one did. Every could-not-tell branch of `_sha_moved`,
+  `_moved_from` and `_rule_verdict` now has a failing control (one git call
+  failed per case, each asserting its branch's own reason). `.crew/verify.json`
+  rule 25 (priced 65s, over the 60s Stop budget alone) is split: the
+  admission suite `test_refresh_admission.py` is its own rule 32 (12s, runs
+  at Stop beside rules 0 and 15: 9 + 12 + 38 = 59), and rule 25 is priced 58s
+  (46.4s measured at load 2.5, x1.25); its `why` now says first that rules 0
+  and 15 take 47s of the budget on any hook-script edit, so rule 25 is still
+  deferred at Stop and runs under `verify-gate --all`.
+  The round's third FIX, a `verify-gate --all` record, is made at the gate on
+  the final head, not in the diff.
+- **Review round 3 (Codex).** An `anchor:` or provenance line ADDED to a base
+  copy that had none is refused (`the base copy has no anchor, so nothing
+  moved from it`); it was admitted as `re-anchored`. `INDEX.md` is judged from
+  `git diff -U0 <base> -- INDEX.md`, not from `read_text` lines, which dropped
+  the final newline, CRs and a BOM, so a byte-only edit differed on no line and
+  was admitted; a mode change on it is refused, and a diff git cannot give is
+  `could not tell`. A rule is compared as bytes, then as the blob git would
+  store (`git hash-object --path --stdin`), so a CRLF or BOM rewrite is refused
+  while a CRLF checkout under `core.autocrlf=true` is still the regenerated
+  rule; a hash git cannot give is `could not tell`. The code map's counts and
+  version sentence now say 30 skills and the current version.
+- **Review round 4 (owner-rejected, successor).** An ambiguous short base
+  anchor is `could not tell`: git exits 128 for a prefix two commits share as
+  it does for one that names nothing, so `_names_no_commit` asks
+  `git rev-parse --disambiguate` and `git cat-file -t` and only a proven miss
+  counts as moved (a prefix that names nothing still does). A rendered diagram
+  pairs with its same-stem source whatever the case of the source's
+  extension, as `_kind` classifies it (`flow.MMD` beside `flow.svg`). A
+  failure resolving the artifact dirs (a `graph.out` holding a NUL) is
+  `could not tell` with its reason on every default-dir artifact, instead of a
+  bare path.
+- **Review round 5.** Whether the crew config, a rule or a map exists is
+  proven by `lstat`'s errno, not `os.path.lexists`, which answers `False` for
+  any failure: a parent directory the hook user cannot search read a config
+  naming other artifact dirs as absent (so the defaults were judged) and a
+  generated rule still on disk as removed (so it was admitted). Only `ENOENT`
+  or `ENOTDIR` proves absence; any other failure is `could not tell`, and a
+  map under such a directory is `could not tell` rather than "deleted". The
+  round's third BLOCK, the `verify-gate` record, is made at the gate on the
+  final head, not in the diff.
+- **Review round 6 (owner-rejected, successor, split).** A rendered diagram
+  or graph file deleted beside an admitted source or after a code change is
+  refused (`[deleted, not a regeneration]`); every kind that reads or admits
+  a working-tree file refuses a symlink at its path or along its
+  directories, a git mode that differs from the base copy's, and a file git
+  stages as 120000 or 160000, so text outside the repository can no longer
+  pass as a re-anchor; and when two configured artifact dirs hold a path, the
+  most specific decides its kind (graph files under a `graph.out` nested in
+  `docs.diagramsDir` are judged as graph), two equally specific ones being
+  `could not tell`. INDEX.md's own mode branch is gone: the new check
+  refuses a mode change first, for every kind.
+- **Review round 7.** The bytes judged are the bytes of the file the checks
+  proved regular: read once, before git is asked anything, through a
+  descriptor opened without following a link at any path component (on
+  POSIX each directory is opened relative to its parent with `O_NOFOLLOW`),
+  so a link swapped in after the checks is refused instead of read. An
+  ambiguous NEW short anchor is `could not tell`, as a base one already was,
+  and the base copy is looked up with `git ls-tree`, so a base git cannot
+  read is `could not tell` rather than "new file".
+- **Review round 8 (owner-accepted, fixes moved to L-0540).** Two BLOCKs are
+  open and are L-0540's must-fix before it wires `artifact_verdicts` into the
+  audit: an artifact removed from the git index but left in the working tree
+  gets `True`, and where `os.open` takes no `dir_fd` (Windows) a directory
+  swapped to a junction after the realpath check is still read. Nothing calls
+  `artifact_verdicts` until then.
+- **Split (owner, 2026-09-30).** Under the tooling-PR rule
+  (`scripts/check-tooling-pr.py`), `completion_audit.py`'s wiring to
+  `artifact_verdicts`, `scope_guard.py`'s rule-6 docstring, their
+  refresh-artifact suite and every T-0094 entry of `sabotage_refresh.py`
+  land separately as L-0540. This release ships `artifact_verdicts`, its
+  tests and the docs; until L-0540 lands the completion audit still admits
+  the whole refresh-artifact dirs for an approved ticket, as since 1.0.36.
+- **Sabotage.** Filed with L-0540's `plugin/crew/tests/sabotage_refresh.py`
+  (a harness file): fifteen entries
+  after the `# T-0094` marker, sixteen after `# T-0094 review round 1`, nine
+  after `# T-0094 review round 2`, twelve after `# T-0094 review round 3`,
+  eight after `# T-0094 review round 4`, five after `# T-0094 review round 5`,
+  twelve after `# T-0094 review round 6` and eight after `# T-0094 review
+  round 7` (counted by `ast`), each run by hand against
+  the tracked file and confirmed RED with the file restored byte-identical,
+  plus the approval-gate entries, whose tests now perform an admitted refresh
+  so they stay RED with the verdicts in place; review round 1's stale-approval
+  fix is a test change those entries cover.
+- **Version.** 1.0.60 on T-0094's branch; T-0010 landed first as 1.0.61 (its own
+  branch had used 1.0.60 too), so it was re-set to 1.0.62; main then took
+  1.0.62-1.0.69 (#263-#267 and T-0088), so it was re-set to 1.0.70; main then
+  took 1.0.70 for T-0097 (#268), and review round 3's fixes changed
+  `plugin/crew/` after 1.0.70 was set, so it was 1.0.71; main then took
+  1.0.72-1.0.75 (T-0085 at 1.0.75), merged in with the round-4 successor, so
+  it was 1.0.76; main then took 1.0.76 for T-0087 (#281), merged in before review
+  round 6, so it was 1.0.77; main then took 1.0.77 for T-0086 (#282), merged in
+  with the round-6 successor, so it was 1.0.78; main then took 1.0.80 for L-0529
+  (#283; 1.0.79 declared by an open branch), merged in before landing, so this
+  is 1.0.81.
 
 ### Added — `crew` 1.0.76: tooling reliability — tool-failure refunds, golden replay, seam contracts, a canary review (T-0087)
 
