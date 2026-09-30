@@ -610,6 +610,7 @@ def _hung_stub(directory):
     (_COMMON_SH, "crew_py_strict() {", "crew_py_strict"),
     (_GUARD_SH, "_resolve_role_write_python() {", "_resolve_role_write_python"),
 ])
+@pytest.mark.wallclock
 def test_the_final_probes_wait_is_capped_to_the_remaining_deadline(tmp_path, path, header, fn):
     """The review's own reproduction, sized for a fast test: four
     candidates that each fail after 1.8s (7.2s total, comfortably under the
