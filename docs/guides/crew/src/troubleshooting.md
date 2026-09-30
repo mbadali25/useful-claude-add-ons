@@ -122,6 +122,21 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   approve` on a `NEEDS_REPLAN` ticket opens a fresh budget of two rounds counted from the successor
   plan; the rounds already spent stay in the ledger and are not erased.
 
+- **Symptom: a round came back `INCOMPLETE`.**
+  **Check:** the `review:` lines, or `failure_class` in `.work/tickets/<id>/review.json`. An
+  INCOMPLETE round has one of three classes. `tool` means the answer never arrived intact: a
+  timeout, a bad or unknown exit, empty output, or a failed Codex stream. `tree` means a bundle part
+  or web-test report changed under the reviewer. `reviewer` means the output arrived and broke the
+  contract.
+  **Fix:** a `tool` round is refunded automatically, up to two per plan. The line reads
+  `review: round N was a tool failure (...); refunded`. Only the failed round is given back: the
+  rerun `/crew:review` reserves a new round, charged like any other unless it is a tool failure
+  too, so a ticket with one charged round that reruns and gets FINDINGS has spent the budget. If
+  Codex is out of quota, use the next eligible provider. A third tool failure under
+  one plan reads `NOT refunded - refund limit 2 per plan reached` and counts. A `reviewer` or `tree`
+  round always counts. Rebuild the bundle (tree), or rerun and read what the reviewer wrote
+  (reviewer).
+
 - **Symptom: `/crew:done` refuses with a receipt error.**
   **Check:**
   ```bash

@@ -61,7 +61,10 @@ this project's `.codex/config.toml`. Create `$CODEX_HOME/review.config.toml` /
 `$CODEX_HOME/work.config.toml` yourself and pass `--profile review`/`--profile work` against
 those.
 
-A review that exits non-zero or prints nothing is INCOMPLETE, never CLEAN.
+A review that exits non-zero, prints nothing, times out or ends in a failed turn is INCOMPLETE,
+never CLEAN. That is a tool failure, and the round is refunded automatically, up to two per plan
+(for example when Codex answers with its usage-limit `error` event). What crew relies on from
+Codex's `--json` stream is in `plugin/crew/docs/external-tool-formats.md`.
 
 The review prompt Codex reads ends with a **development standards checklist**: the rules and
 self-check questions of every standard that applies to the change (crew's generic set, any

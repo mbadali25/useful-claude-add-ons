@@ -49,6 +49,17 @@ parity-sample cases never run natively anywhere else). Neither job
 substitutes for the other: a change to `conftest.py`'s slow-marker logic,
 or to a hook only the matrix exercises, can pass one and still be wrong.
 
+Both jobs' `ubuntu-latest` placement is the default, not a fixed fact: when the
+repo variable `CREW_RUNNER` is `self-hosted`, the `test` job and the
+`crew-shell-matrix` ubuntu leg run on the owner's self-hosted pool
+(`[self-hosted, linux, x64, crew]`) instead; a `windows-latest` leg and every
+other job and workflow stay GitHub-hosted. Fork pull requests never reach the
+pool: this repo is public, so only non-PR events (push, schedule, manual
+dispatch) and pull requests from branches of this repo use it. The owner's runner playbook
+(mbadali25/github-runner-infra) sets the variable on `make up` and unsets it on
+`make down`, so required checks never wait on a torn-down pool. Unset, nothing
+changes.
+
 ## The rule that bites every change
 
 A content change needs a version bump everywhere that entry's version is

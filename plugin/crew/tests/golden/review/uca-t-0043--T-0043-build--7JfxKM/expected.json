@@ -1,0 +1,13 @@
+{
+  "counts": {
+    "BLOCK": 0,
+    "FIX": 3,
+    "NIT": 0
+  },
+  "delivered": true,
+  "failure_class": null,
+  "origin": "uca-t-0043/T-0043-build--7JfxKM",
+  "parts_missing": [],
+  "read_form": "bare",
+  "verdict": "FINDINGS"
+}
