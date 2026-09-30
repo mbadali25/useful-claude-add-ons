@@ -145,6 +145,29 @@ def _bash(reason):
     return "bash", None, reason
 
 
+def _embeds_posix_path(token):
+    """True when `token` carries a POSIX-absolute path after its first
+    character: after `=` or `,`, after an option's letters (`-I/x`,
+    `--isystem/x`), or after a `:` that is neither a drive letter (`C:/`) nor
+    a URL scheme (`https://`). MSYS converts such a path on the Git Bash route
+    and direct exec does not, so it is only safe in bash."""
+    for index in range(1, len(token)):
+        if token[index] != "/":
+            continue
+        before = token[index - 1]
+        if before in "=,":
+            return True
+        if token[0] == "-" and token[1:index].replace("-", "").isalpha():
+            return True
+        if before != ":" or token[index:index + 2] == "//":
+            continue
+        letter = index - 2
+        drive = letter >= 0 and token[letter].isalpha() and (letter == 0 or token[letter - 1] in "=,")
+        if not drive:
+            return True
+    return False
+
+
 def classify(cmd, which=shutil.which):
     """`("plain", argv, reason)` only when the command is provably plain argv,
     else `("bash", None, reason)` naming the first offending token."""
@@ -162,6 +185,8 @@ def classify(cmd, which=shutil.which):
             return _bash(f"token {token!r} has shell metacharacter {hit!r}")
         if token.startswith("/"):
             return _bash(f"token {token!r} is a POSIX path, valid only after MSYS converts it")
+        if _embeds_posix_path(token):
+            return _bash(f"token {token!r} embeds a POSIX path, valid only after MSYS converts it")
         if index == 0:
             if token in SHELL_WORDS:
                 return _bash(f"{token!r} is shell syntax")
@@ -243,6 +268,14 @@ TOOLS_TIMEOUT = 30  # covers a cold start of a `Stopped` VM
 TOOLS_CHECK = "command -v python3; command -v git"
 locate = shutil.which  # module-level so a test can replace it
 
+
+def _in_job_shell(distro, script):
+    """`script` inside `distro` under `bash -lc`, the shell the job itself runs
+    in (`wsl_argv`). A non-login `sh -c` misses the login-only PATH --
+    `$HOME/.local/bin`, where `pip --user` and `pipx` put pytest and graphify
+    -- and would report a tool missing that the job would have found."""
+    return ["wsl.exe", "-d", distro, "-e", "bash", "-lc", script]
+
 # What the not-installed recommendation cites. Two hosts, two dates, two
 # procedures: reported side by side and never blended (spec, Evidence).
 MEASURED = (
@@ -258,10 +291,17 @@ def _now():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def one_line(text):
+    """`wsl.exe` errors run over several lines (the message, then `Error
+    code: ...`). The route line and the `/crew:status` shell line are one line
+    each, so the lines are joined with `; `, every word kept."""
+    return "; ".join(line.strip() for line in str(text).splitlines() if line.strip())
+
+
 def _result(state, detail, **extra):
     import socket
     out = {"state": state, "distro": None, "version": None, "python3": None, "git": None,
-           "detail": detail, "probedAt": _now(), "host": socket.gethostname()}
+           "detail": one_line(detail), "probedAt": _now(), "host": socket.gethostname()}
     out.update(extra)
     return out
 
@@ -328,7 +368,7 @@ def probe(runner=None, which=None, distro=None):
     name, version = target[0], target[1]
     if version != "2":
         return _result("wsl1-only", f"distro {name} is WSL{version}, not WSL2", distro=name, version=version)
-    code, out, err, failed = _call(runner, ["wsl.exe", "-d", name, "-e", "sh", "-c", TOOLS_CHECK], TOOLS_TIMEOUT)
+    code, out, err, failed = _call(runner, _in_job_shell(name, TOOLS_CHECK), TOOLS_TIMEOUT)
     if failed:
         return _result(*failed, distro=name, version=version)
     if code not in (0, 1, 127):
@@ -460,6 +500,7 @@ def _wsl_state(probe_result):
     detail = (probe_result or {}).get("detail")
     if state == "unknown" and detail == "never probed":
         return "WSL never probed"
+    detail = one_line(detail) if detail else ""  # a cache written before details were one line
     return f"WSL {state}" + (f" ({detail})" if detail else "")
 
 
@@ -474,13 +515,33 @@ def _auto_why(probe_result, location, measured):
     return "WSL usable but the repo path has no WSL translation"
 
 
+PLAIN_TAIL, BASH_TAIL = "; plain argv -> direct", "; bash syntax -> gitbash"
+NOT_A_MODE = " is not a mode - read as auto; "
+
+
 def fallback(job_class, why):
     """`auto` without WSL: plain argv runs with no shell, anything else in Git
     Bash. Never pwsh -- on a real job the launcher is noise and direct exec is
     the cheaper of the two."""
     if job_class == "plain":
-        return "direct", f"{why}; plain argv -> direct", None
-    return "gitbash", f"{why}; bash syntax -> gitbash", None
+        return "direct", f"{why}{PLAIN_TAIL}", None
+    return "gitbash", f"{why}{BASH_TAIL}", None
+
+
+def _cause(reason):
+    """What forced a route, out of a `decide` / `route_for` reason: without the
+    bad-mode note, the mode prefix or the route tail. The status line shows
+    this, so it names the same cause the route line does."""
+    if NOT_A_MODE in reason:
+        reason = reason.split(NOT_A_MODE, 1)[1]
+    for prefix in ("auto: ", "shellRoute.mode wsl but "):
+        if reason.startswith(prefix):
+            reason = reason[len(prefix):]
+            break
+    for tail in (PLAIN_TAIL, BASH_TAIL, f" {REFUSED}, no fallback", f" {REFUSED}"):
+        if reason.endswith(tail):
+            return reason[:-len(tail)]
+    return reason
 
 
 def decide(mode_value, probe_result, location, measured, host, job_class, pwsh):
@@ -492,7 +553,7 @@ def decide(mode_value, probe_result, location, measured, host, job_class, pwsh):
         return "bash", "", None
     note = ""
     if mode_value not in MODES:
-        note = f"shellRoute.mode {mode_value!r} is not a mode - read as auto; "
+        note = f"shellRoute.mode {mode_value!r}{NOT_A_MODE}"
         mode_value = "auto"
     state = (probe_result or {}).get("state") or "unknown"
     distro = (probe_result or {}).get("distro")
@@ -528,11 +589,28 @@ def gitbash_argv(cmd, bash):
     return [bash, "-lc", cmd]
 
 
+# PowerShell closes a single-quoted string on any of these, not only `'`.
+PWSH_QUOTES = "'‘’‚‛"
+
+
+def _pwsh_quote(part):
+    for char in PWSH_QUOTES:
+        part = part.replace(char, char + char)
+    return "'" + part + "'"
+
+
 def pwsh_argv(argv, pwsh):
     """`argv` is the classified list, never a command string: each element is
-    single-quoted with `'` doubled, so pwsh sees literal arguments."""
-    quoted = " ".join("'" + part.replace("'", "''") + "'" for part in argv)
-    return [pwsh, "-NoProfile", "-NonInteractive", "-Command", f"& {quoted}; exit $LASTEXITCODE"]
+    single-quoted with every quote character pwsh knows (`'` and U+2018 to
+    U+201B) doubled, so pwsh sees literal arguments. A program that cannot
+    start is exit 1 with the reason on stderr: bare `exit $LASTEXITCODE` is
+    `exit $null` then, which is 0, and a check that never ran would pass.
+    Measured with pwsh 7 and 5.1 on dadeush-desktop, 2026-09-30."""
+    quoted = " ".join(_pwsh_quote(part) for part in argv)
+    return [pwsh, "-NoProfile", "-NonInteractive", "-Command",
+            f"$ErrorActionPreference = 'Stop'; try {{ & {quoted} }} catch {{ "
+            "[Console]::Error.WriteLine('crew-shell: ' + $_); exit 1 }; "
+            "if ($null -eq $LASTEXITCODE) { exit 1 }; exit $LASTEXITCODE"]
 
 
 def execute_job(argv, cwd):
@@ -543,67 +621,134 @@ def execute_job(argv, cwd):
 _BUILTINS = ("cd", "source", ".", "exec", "eval", "export", "set")
 
 
-def _first_word(cmd):
-    """The program a bash job starts with, for the WSL preflight, or None when
-    there is nothing to look up (a builtin, a path, an empty command)."""
+# Run by the job's own python inside WSL with the module name as argv[1]:
+# exit 0 when it imports from there, 2 when it does not.
+MODULE_CHECK = ("import sys, importlib.util\n"
+                "try:\n"
+                "    found = importlib.util.find_spec(sys.argv[1]) is not None\n"
+                "except (ImportError, ValueError):\n"
+                "    found = False\n"
+                "sys.exit(0 if found else 2)\n")
+
+
+def _python_module(rest):
+    """The module a `python -m <mod>` job runs, from the words after the
+    interpreter, or None. Options before `-m` (`-u`, `-X x`) are skipped; the
+    first non-option word is a script, and a `-m` after it is the script's."""
+    for index, token in enumerate(rest):
+        if token == "-m":
+            return rest[index + 1] if index + 1 < len(rest) else None
+        if token.startswith("-m"):
+            return token[2:]
+        if not token.startswith("-"):
+            return None
+    return None
+
+
+def job_head(cmd):
+    """`(program, module)` for the WSL preflight, read from the raw command
+    text before `classify` swaps `python3` for `sys.executable`. `program` is
+    None when there is nothing to look up (a builtin, a path, an empty
+    command); `module` is set only for `python3 -m <mod>` / `python -m <mod>`."""
     try:
         tokens = shlex.split(cmd)
     except ValueError:
         tokens = cmd.split()
-    for token in tokens:
+    for index, token in enumerate(tokens):
         token = token.lstrip("({")
         name = token.split("=", 1)[0]
         if not token or ("=" in token and name.isidentifier()):
             continue
         if token in _BUILTINS or "/" in token:
-            return None
-        return token
-    return None
+            return None, None
+        return token, (_python_module(tokens[index + 1:]) if token in PYTHONS else None)
+    return None, None
 
 
 def _preflight(runner, distro, cmd):
-    """None when the job's first word resolves inside WSL, else why not."""
-    word = _first_word(cmd)
+    """None when the job's first word resolves inside WSL -- and, for
+    `python3 -m <mod>`, when that python imports `<mod>` there -- else why not.
+    Checking only `python3` sent `python3 -m pytest` to a distro with no pytest
+    (dadeush-desktop, T-0040's native run)."""
+    word, module = job_head(cmd)
     if word is None:
         return None
-    argv = ["wsl.exe", "-d", distro, "-e", "sh", "-c", "command -v " + shlex.quote(word)]
-    code, _, _, failed = _call(runner, argv, TOOLS_TIMEOUT)
+    script = "command -v " + shlex.quote(word)
+    if module:
+        check = " ".join(shlex.quote(part) for part in (word, "-c", MODULE_CHECK, module))
+        script += f" >/dev/null || exit 1; exec {check}"
+    code, _, _, failed = _call(runner, _in_job_shell(distro, script), TOOLS_TIMEOUT)
     if failed:
         return f"the WSL preflight for {word} failed: {failed[1]}"
-    return None if code == 0 else f"{word} is not on PATH inside {distro}"
+    if code == 0:
+        return None
+    if module and code == 2:
+        return f"module {module} is not importable by {word} inside {distro}"
+    return f"{word} is not on PATH inside {distro}"
 
 
 def _absolute(root):
+    """`root` as an absolute Windows path. A Git Bash-form `/c/...` root (it
+    arrives unconverted under `MSYS_NO_PATHCONV=1`) becomes `C:\\...` first:
+    `abspath` would make it `C:\\c\\...`."""
+    match = _GITBASH_DRIVE.match(root)
+    if match:
+        return f"{match.group(1).upper()}:\\" + "\\".join(p for p in re.split(r"[\\/]+", match.group(2) or "") if p)
     if _DRIVE.match(root) or root.startswith(("\\\\", "//")):
         return root
     return os.path.abspath(root)
 
 
+def _wsl_unusable(mode_value, job_class, why):
+    """`wsl` refuses and never falls back; `auto` takes the direct-or-Git-Bash
+    split. `why` is the reason WSL cannot take this job."""
+    if mode_value == "wsl":
+        return "refuse", f"shellRoute.mode wsl but {why} {REFUSED}, no fallback", 3
+    return fallback(job_class, f"auto: WSL usable but {why}")
+
+
+def route_for(cfg, cache, root, job_class, pwsh):
+    """`(route, reason, exit, wsl_cwd)`: `decide`, then the translation of
+    `root` into the routed distro, which refuses another distro's
+    `\\\\wsl$\\` path. The one decision path `run` and `status_line` share, so
+    the status line can never name a route `run` would not take. Runs
+    nothing; `run` adds the job's WSL preflight on top."""
+    normal, _ = mode(cfg)
+    route, reason, code = decide(raw_mode(cfg), cache, repo_location(root), measured_verdict(cache, root), host_os(),
+                                 job_class, pwsh)
+    wsl_cwd = None
+    if route == "wsl":
+        wsl_cwd, why = to_wsl_path(root, cache.get("distro"))
+        if wsl_cwd is None:
+            route, reason, code = _wsl_unusable(normal, job_class, why)
+    return route, reason, code, wsl_cwd
+
+
+def _signal_status(code):
+    """subprocess reports a signal-killed child as -N; a shell says 128+N."""
+    return 128 - code if code < 0 else code
+
+
 def run(cmd, root=".", runner=None, execute=None):
     """Run `cmd` on the resolved route and return its exit code. Off native
     Windows this is exactly `bash -c <cmd>`: no probe, no config read, no
-    message."""
+    message, and a signal-killed job is 128+N, as `bash -c` reports it."""
     execute = execute or execute_job
     if not on_windows():
-        return execute(["bash", "-c", cmd], root)
+        return _signal_status(execute(["bash", "-c", cmd], root))
     runner = runner or capture
     root = _absolute(root)
     cfg = settings(root)
     normal, _ = mode(cfg)
     cache = effective_probe(load_cache(), cfg)
     kind, argv, creason = classify(cmd)
-    location = repo_location(root)
     pwsh = resolve_pwsh()[0] if normal == "powershell" else None
-    route, reason, code = decide(raw_mode(cfg), cache, location, measured_verdict(cache, root), host_os(), kind, pwsh)
+    route, reason, code, wsl_cwd = route_for(cfg, cache, root, kind, pwsh)
     distro = cache.get("distro")
-    wsl_cwd = None
     if route == "wsl":
-        wsl_cwd, why = to_wsl_path(root, distro)
-        missing = why if wsl_cwd is None else _preflight(runner, distro, cmd)
-        if missing and normal == "wsl":
-            route, reason, code = "refuse", f"shellRoute.mode wsl but {missing} {REFUSED}, no fallback", 3
-        elif missing:
-            route, reason, code = fallback(kind, f"auto: WSL usable but {missing}")
+        missing = _preflight(runner, distro, cmd)
+        if missing:
+            route, reason, code = _wsl_unusable(normal, kind, missing)
     bash = None
     if route == "gitbash":
         bash, why = resolve_gitbash(runner)
@@ -748,9 +893,6 @@ def status_line(root):
     normal, note = mode(cfg)
     shown = normal if note is None else f"{normal} (shellRoute.mode {raw_mode(cfg)!r} is not a mode)"
     cache = effective_probe(load_cache(), cfg)
-    location = repo_location(root)
-    measured = measured_verdict(cache, root)
-    distro = cache.get("distro")
     split = "direct (plain argv) / gitbash (bash syntax)"
     if normal == "gitbash":
         route, why = "gitbash", "set by shellRoute.mode"
@@ -760,16 +902,19 @@ def status_line(root):
             "refused for plain argv (exit 3) / gitbash (bash syntax)"
         why = "a bash string is never handed to pwsh" if pwsh else reason
     else:
-        chosen, _, _ = decide(normal, cache, location, measured, host_os(), "plain", None)
+        # `run`'s own decision for a plain-argv job, the distro check included.
+        chosen, reason, _, _ = route_for(cfg, cache, root, "plain", None)
         if chosen == "wsl":
-            route = f"wsl ({distro})"
-            why = "WSL2 usable and the repo is inside WSL" if location == "wsl-fs" else \
-                "WSL2 usable and measured faster than Git Bash for this repo"
-        elif normal == "wsl":
-            route, why = "refused (exit 3)", _wsl_state(cache) if cache.get("state") != "usable" else \
-                "the repo path has no WSL translation"
+            route = f"wsl ({cache.get('distro')})"
+            if normal == "wsl":
+                why = "set by shellRoute.mode; WSL2 usable"
+            elif repo_location(root) == "wsl-fs":
+                why = "WSL2 usable and the repo is inside WSL"
+            else:
+                why = "WSL2 usable and measured faster than Git Bash for this repo"
         else:
-            route, why = split, _auto_why(cache, location, measured)
+            route = "refused (exit 3)" if chosen == "refuse" else split
+            why = _cause(reason)
     state = cache.get("state")
     if normal in ("auto", "wsl") and state in ("not-installed", "no-distro"):
         why += "; recommend `wsl --install -d Ubuntu` in an elevated shell, then reboot"

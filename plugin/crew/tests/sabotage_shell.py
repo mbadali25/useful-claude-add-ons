@@ -58,4 +58,15 @@ SHELL_MUTATIONS = (
      "        if not _is_launcher(found):\n",
      "        if True:\n",
      _T + "test_resolve_gitbash_never_returns_wsl_launcher"),
+    # Review round 1 (T-0040-Bdt4JE).
+    ("the powershell launch failure exits 0", SHELL,
+     '            f"$ErrorActionPreference = \'Stop\'; try {{ & {quoted} }} catch {{ "\n'
+     "            \"[Console]::Error.WriteLine('crew-shell: ' + $_); exit 1 }; \"\n"
+     '            "if ($null -eq $LASTEXITCODE) { exit 1 }; exit $LASTEXITCODE"]\n',
+     '            f"& {quoted}; exit $LASTEXITCODE"]\n',
+     _T + "test_pwsh_launch_failure_is_not_exit_zero"),
+    ("the classifier accepts an embedded /c/ path", SHELL,
+     "        if _embeds_posix_path(token):\n",
+     "        if False:\n",
+     _T + "test_classify_refuses_an_embedded_c_path"),
 )

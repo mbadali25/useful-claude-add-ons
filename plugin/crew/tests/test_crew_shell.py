@@ -9,6 +9,7 @@ already points at a scratch path. The one real subprocess is the off-Windows
 """
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -76,6 +77,28 @@ MUST_BASH = (
     (". x", "'.'"),
     ("a\nb", "newline"),
     ("a\r\nb", "control"),
+    # An embedded POSIX path: MSYS converts it on the Git Bash route and direct
+    # exec does not, so the same job would get a different argv per route.
+    ("python3 x.py --root=/c/repos/x", "--root=/c/repos/x"),
+    ("a -I/c/x", "-I/c/x"),
+    ("a cache_dir=/tmp/y", "cache_dir=/tmp/y"),
+    ("a --path=C:/x:/c/y", "--path=C:/x:/c/y"),
+    ("a ab:/c/y", "ab:/c/y"),
+    ("a --list=a,/c/y", "--list=a,/c/y"),
+    ("a --isystem/usr/x", "--isystem/usr/x"),
+)
+
+# Tokens with `/`, `=` or `:` that MSYS leaves alone, so they stay plain: a
+# drive letter, a URL scheme, a relative path.
+MUST_PLAIN_WITH_SLASHES = (
+    "python3 x.py --root=C:/repos/x",
+    "python3 x.py C:/repos/x",
+    "python3 x.py --python=C:/Users/u/AppData/Local/Python/python.exe",
+    "python3 x.py --url=https://example.com/a/b",
+    "python3 x.py file:///c/x",
+    "python3 x.py plugin/crew/tests/x.py --out=build/x",
+    "python3 x.py --paths=C:/a,D:/b",
+    "python3 x.py x:/c/y",
 )
 
 
@@ -186,6 +209,13 @@ def test_classify_must_bash(cmd, token):
     kind, argv, reason = crew_shell.classify(cmd, which=_which_all)
     assert (kind, argv) == ("bash", None)
     assert token in reason, reason
+
+
+@pytest.mark.parametrize("cmd", MUST_PLAIN_WITH_SLASHES)
+def test_classify_keeps_drive_letters_and_urls_plain(cmd):
+    kind, argv, reason = crew_shell.classify(cmd, which=_which_all)
+    assert kind == "plain", reason
+    assert argv == [sys.executable] + cmd.split()[1:]
 
 
 @pytest.mark.parametrize("char", sorted(crew_shell.METACHARACTERS))
@@ -651,7 +681,9 @@ def test_run_argv_for_wsl(monkeypatch):
     assert crew_shell.run(cmd, root=WIN_ROOT, runner=rec.runner, execute=rec.execute) == 0
     assert rec.jobs == [(["wsl.exe", "-d", "Ubuntu-24.04", "--cd", "/mnt/c/repos/x", "-e", "bash", "-lc", cmd],
                          WIN_ROOT)]
-    assert rec.calls == [["wsl.exe", "-d", "Ubuntu-24.04", "-e", "sh", "-c", "command -v echo"]]
+    # The preflight runs in the job's own shell, `bash -lc`: a non-login `sh -c`
+    # misses the login-only PATH ($HOME/.local/bin) the job itself sees.
+    assert rec.calls == [["wsl.exe", "-d", "Ubuntu-24.04", "-e", "bash", "-lc", "command -v echo"]]
 
 
 def test_run_auto_routes_wsl_fs_repo_to_wsl(monkeypatch):
@@ -677,9 +709,17 @@ def test_run_argv_for_direct(monkeypatch):
     assert rec.calls == []
 
 
+def _pwsh_command(quoted):
+    """The -Command string around a quoted argv: a program that cannot start is
+    exit 1, never `exit $null` (which is 0)."""
+    return ("$ErrorActionPreference = 'Stop'; try { & " + quoted + " } catch { "
+            "[Console]::Error.WriteLine('crew-shell: ' + $_); exit 1 }; "
+            "if ($null -eq $LASTEXITCODE) { exit 1 }; exit $LASTEXITCODE")
+
+
 def test_pwsh_argv_quotes_each_element():
     assert crew_shell.pwsh_argv(["a", "b c", "it's"], PWSH7) == [
-        PWSH7, "-NoProfile", "-NonInteractive", "-Command", "& 'a' 'b c' 'it''s'; exit $LASTEXITCODE"]
+        PWSH7, "-NoProfile", "-NonInteractive", "-Command", _pwsh_command("'a' 'b c' 'it''s'")]
 
 
 def test_run_argv_for_powershell(monkeypatch):
@@ -688,7 +728,7 @@ def test_run_argv_for_powershell(monkeypatch):
     crew_shell.run("python3 -m pytest x.py", root=WIN_ROOT, runner=rec.runner, execute=rec.execute)
     quoted = sys.executable.replace("'", "''")
     assert rec.jobs == [([PWSH7, "-NoProfile", "-NonInteractive", "-Command",
-                          f"& '{quoted}' '-m' 'pytest' 'x.py'; exit $LASTEXITCODE"], WIN_ROOT)]
+                          _pwsh_command(f"'{quoted}' '-m' 'pytest' 'x.py'")], WIN_ROOT)]
 
 
 def test_run_powershell_without_pwsh_refuses(monkeypatch, capsys):
@@ -933,3 +973,226 @@ def test_measure_unreadable_timing_is_an_error_not_a_number(monkeypatch, tmp_pat
     result = crew_shell.measure(root, runner=runner)
     assert "error" in result["sides"]["wsl"]
     assert result["verdict"] == "unknown"
+
+
+# --- review round 1 (T-0040-Bdt4JE) ----------------------------------------------
+
+DEBIAN_ROOT = "\\\\wsl.localhost\\Debian\\home\\u\\r"
+MEASURED_WIN = {"measured": {os.path.normcase(WIN_ROOT): {"verdict": "wsl-faster"}}}
+
+
+def _run_route(rec):
+    """The route `run` took, read off the argv it executed."""
+    if not rec.jobs:
+        return "refuse"
+    program = rec.jobs[0][0][0]
+    return {"wsl.exe": "wsl", sys.executable: "direct", GITBASH: "gitbash", PWSH7: "powershell"}[program]
+
+
+def _status_route(line):
+    """The route the `/crew:status` shell line names for a plain-argv job."""
+    shown = line.split(" -> ", 1)[1]
+    for prefix, route in (("wsl (", "wsl"), ("direct", "direct"), ("gitbash", "gitbash"), (PWSH7, "powershell"),
+                          ("refused", "refuse")):
+        if shown.startswith(prefix):
+            return route
+    raise AssertionError(line)
+
+
+@pytest.mark.parametrize("mode", crew_shell.MODES)
+@pytest.mark.parametrize("state", ["usable", "not-installed", "broken"])
+@pytest.mark.parametrize("root", [WIN_ROOT, WSL_ROOT, DEBIAN_ROOT])
+@pytest.mark.parametrize("measured", [False, True])
+def test_status_line_and_run_take_the_same_route(monkeypatch, capsys, mode, state, root, measured):
+    """`status_line` reads `run`'s own decision, the distro check included,
+    so the two can never disagree about a plain-argv job."""
+    cache = {"state": state, "distro": "Ubuntu-24.04", "detail": "d"}
+    if measured:
+        cache.update(MEASURED_WIN)
+    _windows_run(monkeypatch, mode, cache=cache)
+    line = crew_shell.status_line(root)
+    rec = Recorder()
+    crew_shell.run("python3 x.py", root=root, runner=rec.runner, execute=rec.execute)
+    err = capsys.readouterr().err
+    assert _status_route(line) == _run_route(rec), (line, err)
+
+
+def test_status_line_names_another_distros_path(monkeypatch):
+    """Found in review: the status line said `auto -> wsl` for a repo inside a
+    distro other than the probed one, while `run` execs it directly."""
+    _windows_run(monkeypatch, "auto")
+    line = crew_shell.status_line(DEBIAN_ROOT)
+    assert " -> wsl" not in line, line
+    assert "Debian" in line and "Ubuntu-24.04" in line, line
+
+
+def test_status_line_says_the_mode_forced_wsl_not_a_measurement(monkeypatch):
+    _windows_run(monkeypatch, "wsl")
+    line = crew_shell.status_line("C:/repos/x")
+    assert " -> wsl (Ubuntu-24.04) - " in line, line
+    assert "measured" not in line and "shellRoute.mode" in line, line
+
+
+def test_status_line_says_a_measurement_chose_wsl(monkeypatch):
+    _windows_run(monkeypatch, "auto", cache=dict({"state": "usable", "distro": "Ubuntu-24.04"}, **MEASURED_WIN))
+    line = crew_shell.status_line(WIN_ROOT)
+    assert " -> wsl (Ubuntu-24.04) - " in line and "measured faster" in line, line
+
+
+MULTILINE_ERR = "Catastrophic failure\r\nError code: Wsl/Service/E_UNEXPECTED\r\n".encode("utf-16-le")
+
+
+def test_a_multiline_wsl_error_stays_one_line(windows, monkeypatch, capsys):  # pylint: disable=unused-argument
+    result = crew_shell.probe(runner=lambda _a, _t: (4294967295, b"", MULTILINE_ERR),
+                              which=lambda _n: "C:/Windows/System32/wsl.exe")
+    assert result["state"] == "broken"
+    assert len(result["detail"].splitlines()) == 1, result["detail"]
+    assert "Catastrophic failure" in result["detail"] and "Wsl/Service/E_UNEXPECTED" in result["detail"]
+    # A cache written before the fix still carries the raw multi-line detail.
+    for cache in (result, {"state": "broken", "detail": "Catastrophic failure\r\nError code: x\r\n"}):
+        _windows_run(monkeypatch, "auto", cache=cache)
+        line = crew_shell.status_line(WIN_ROOT)
+        assert len(line.splitlines()) == 1, line
+        crew_shell.run("python3 x.py", root=WIN_ROOT, runner=Recorder().runner, execute=Recorder().execute)
+        err = capsys.readouterr().err
+        assert len(err.splitlines()) == 1, err
+
+
+def test_probe_checks_tools_in_the_jobs_login_shell(windows):  # pylint: disable=unused-argument
+    runner = FakeWsl()
+    crew_shell.probe(runner=runner, which=_has_wsl)
+    assert runner.calls[1][:6] == ["wsl.exe", "-d", "Ubuntu-24.04", "-e", "bash", "-lc"]
+
+
+def test_run_preflight_checks_a_python_module(monkeypatch, capsys):
+    """Found on dadeush-desktop: `python3 -m pytest` routed to WSL, whose
+    python3 had no pytest, and died with `No module named pytest`."""
+    _windows_run(monkeypatch, "wsl")
+    rec = Recorder(preflight_rc=2)
+    assert crew_shell.run("python3 -m pytest x.py -q", root=WSL_ROOT, runner=rec.runner, execute=rec.execute) == 3
+    assert rec.jobs == []
+    assert len(rec.calls) == 1 and rec.calls[0][:6] == ["wsl.exe", "-d", "Ubuntu-24.04", "-e", "bash", "-lc"]
+    assert "pytest" in rec.calls[0][6]
+    err = capsys.readouterr().err
+    assert "module pytest is not importable by python3 inside Ubuntu-24.04" in err, err
+
+    _windows_run(monkeypatch, "auto")
+    rec = Recorder(preflight_rc=2)
+    crew_shell.run("python3 -m pytest x.py -q", root=WSL_ROOT, runner=rec.runner, execute=rec.execute)
+    assert rec.jobs == [([sys.executable, "-m", "pytest", "x.py", "-q"], WSL_ROOT)]
+    assert "not importable" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("cmd,module", [
+    ("python3 -m pytest x.py", "pytest"),
+    ("python -m pytest", "pytest"),
+    ("python3 -u -m graphify .", "graphify"),
+    ("python3 -mpytest", "pytest"),
+    ("python3 x.py -m pytest", None),
+    ("graphify . -m x", None),
+])
+def test_preflight_names_the_module_only_for_python_dash_m(cmd, module):
+    assert crew_shell.job_head(cmd) == (cmd.split()[0], module)
+
+
+@pytest.mark.parametrize("module,code", [("json", 0), ("os.path", 0), ("no_such_mod_t0040", 2),
+                                         ("no_such_pkg_t0040.sub", 2)])
+def test_module_check_script_exit_codes(module, code):
+    done = subprocess.run([sys.executable, "-c", crew_shell.MODULE_CHECK, module], capture_output=True,
+                          check=False, timeout=60)
+    assert done.returncode == code, done.stderr
+
+
+def test_classify_refuses_an_embedded_c_path():
+    kind, argv, reason = crew_shell.classify("python3 x.py --root=/c/repos/x", which=_which_all)
+    assert (kind, argv) == ("bash", None)
+    assert "--root=/c/repos/x" in reason and "POSIX path" in reason
+
+
+def test_pwsh_launch_failure_is_not_exit_zero():
+    """`exit $LASTEXITCODE` is `exit $null`, which is 0, when the program never
+    started. The -Command string must catch that and exit 1."""
+    command = crew_shell.pwsh_argv(["C:/nope/missing.exe", "x"], PWSH7)[-1]
+    assert command.startswith("$ErrorActionPreference = 'Stop'; try { & ")
+    assert "catch { [Console]::Error.WriteLine('crew-shell: ' + $_); exit 1 }" in command
+    assert command.endswith("if ($null -eq $LASTEXITCODE) { exit 1 }; exit $LASTEXITCODE")
+
+
+def test_pwsh_argv_doubles_every_single_quote_pwsh_knows():
+    """PowerShell reads U+2018-U+201B as single quotes too; each is doubled
+    like `'`, so it stays literal and never closes the quoted argument."""
+    command = crew_shell.pwsh_argv(["it\u2019s", "a\u2018b", "\u201a", "\u201b'x"], PWSH7)[-1]
+    assert "& 'it\u2019\u2019s' 'a\u2018\u2018b' '\u201a\u201a' '\u201b\u201b''x' }" in command
+
+
+REAL_SHELLS = [path for path in (PWSH7, PWSH51) if sys.platform == "win32" and os.path.isfile(path)]
+
+
+@pytest.mark.skipif(not REAL_SHELLS, reason="needs a real pwsh 7 or Windows PowerShell 5.1 on native Windows")
+@pytest.mark.parametrize("shell", REAL_SHELLS)
+def test_pwsh_argv_for_real(shell, tmp_path):
+    """Measured on dadeush-desktop, 2026-09-30, with pwsh 7 and 5.1: a missing
+    program and a zero-byte `.exe` both exited 0 before the fix."""
+    bad = tmp_path / "bad.exe"
+    bad.write_bytes(b"")
+    for argv in (["C:/nope/missing.exe", "x"], [str(bad), "x"]):
+        done = subprocess.run(crew_shell.pwsh_argv(argv, shell), capture_output=True, check=False, timeout=120)
+        assert done.returncode == 1, (argv, done.stderr)
+        assert b"crew-shell: " in done.stderr
+    echo = [sys.executable, "-c", "import sys; print(ascii(sys.argv[1:])); sys.exit(7)",
+            "it\u2019s", "a\u2018b", "\u201a", "\u201b'x", "o'k"]
+    done = subprocess.run(crew_shell.pwsh_argv(echo, shell), capture_output=True, check=False, timeout=120)
+    assert done.returncode == 7, done.stderr
+    assert done.stdout.decode().strip() == ascii(echo[3:])
+
+
+@pytest.mark.parametrize("host", ["linux", "macos", "wsl"])
+@pytest.mark.parametrize("signal_number", [2, 9, 15])
+def test_off_windows_signal_exit_is_128_plus_n(monkeypatch, host, signal_number):
+    """subprocess reports a signal-killed child as -N; `bash -c` reports 128+N."""
+    monkeypatch.setattr(crew_shell, "host_os", lambda *a, **k: host)
+    assert crew_shell.run("kill -TERM $$", root=".", execute=lambda _argv, _cwd: -signal_number) == \
+        128 + signal_number
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals")
+def test_off_windows_signal_exit_matches_bash_for_real():
+    want = subprocess.run(["bash", "-c", "bash -c 'kill -TERM $$'; echo $?"], capture_output=True, check=False)
+    assert crew_shell.run("kill -TERM $$", root=".") == int(want.stdout.decode().strip())
+
+
+def test_absolute_converts_a_git_bash_root():
+    """Under MSYS_NO_PATHCONV=1 `--root /c/repos/x` arrives as-is; abspath made
+    it `C:\\c\\repos\\x` and so `/mnt/c/c/repos/x` in WSL."""
+    root = crew_shell._absolute("/c/repos/x")  # pylint: disable=protected-access
+    assert root == "C:\\repos\\x"
+    assert crew_shell.to_wsl_path(root) == ("/mnt/c/repos/x", "")
+    assert crew_shell.repo_location(root) == "windows-drive"
+    assert crew_shell._absolute("/d") == "D:\\"  # pylint: disable=protected-access
+
+
+CREW_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(crew_shell.__file__))))
+
+
+def _crew_markdown():
+    for base, _dirs, files in os.walk(CREW_DIR):
+        for name in files:
+            if name.endswith(".md"):
+                yield os.path.join(base, name)
+
+
+def test_docs_invoke_crew_shell_the_way_git_bash_can_run():
+    """Git Bash has no python3 (or it is the WindowsApps alias that exits
+    9009), so every instruction to run crew_shell.py quotes the plugin root and
+    names the `python`/`py -3` fallback, as commands/status.md does."""
+    seen = 0
+    for path in _crew_markdown():
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        for number, line in enumerate(text.splitlines(), 1):
+            if not re.search(r'crew_shell\.py"?\s+run\b', line) or "python" not in line:
+                continue
+            seen += 1
+            assert 'python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_shell.py" run' in line, f"{path}:{number}"
+            assert "use `python` or `py -3` with the same arguments" in text, path
+    assert seen >= 3
