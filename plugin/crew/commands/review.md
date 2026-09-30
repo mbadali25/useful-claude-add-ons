@@ -343,7 +343,8 @@ elif [ "$PATCH_STATUS" -ne 0 ]; then
 fi
 
 # The ticket contract: bundle parts + READ acks, spec sections (Intent,
-# Exclusions, Evidence, Unknowns, Acceptance checks), plan, test receipts, web tests.
+# Exclusions, Evidence, Unknowns, Acceptance checks), plan, test receipts, the
+# standards checklist (never the author's self-check answers), web tests.
 # Anything absent is written as MISSING, never left out.
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_prompt.py --root . \
   --ticket "$TICKET" --manifest "$MANIFEST" --out "$SCRATCH/contract.txt"
@@ -443,8 +444,10 @@ REVIEW_STATUS=$?   # 0 CLEAN, 1 FINDINGS, 3 INCOMPLETE, 4 NEEDS_REPLAN, 5 gate r
 `reasoningEffort` accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`;
 Codex rejects a wrong one with an HTTP 400. Copilot exiting non-zero with `Access
 denied by policy settings` is org or enterprise policy — report that exact
-cause. Exit 2: nothing launched (not on PATH), no round spent; walk to the next
-provider. Exit 5 (`$REVIEW_STATUS`, not the probe's `$PROBE_STATUS` 5): the verify gate has not passed this tree, no round spent; every provider refuses it, so run the gate first (or pass `--allow-unverified` and say so). A Codex round whose call fails on a usage limit stays INCOMPLETE, prints `review: codex usage limit in round N: '<the error>'` and is recorded after the verdict, in `<git-common-dir>/crew/review-limit/<ticket>.json` (not the ledgers' folder, which `/crew:status` lists): the next probe answers `limited` from that record without a call, so the next round runs step 2c; the round after it probes Codex live again. A record that cannot be written prints `could not record it (...)` instead; the round is still INCOMPLETE (exit 3) and the next probe calls Codex live.
+cause. Exit 2 means nothing launched and no round was spent: not on PATH (walk
+to the next eligible provider), or `review-run: self-check: ...` - the standards
+self-check is missing or stale for this bundle (every provider): answer
+`.work/tickets/$TICKET/selfcheck.md`, run the `crew_standards.py stamp` it names, rebuild. Exit 5 (`$REVIEW_STATUS`, not the probe's `$PROBE_STATUS` 5): the verify gate has not passed this tree, no round spent; every provider refuses it, so run the gate first (or pass `--allow-unverified` and say so). The order is fixed: a CLEAN receipt covering this bundle answers CLEAN first and asks for no self-check; an unverified gate is refused with exit 5 before the self-check is asked for; only then can exit 2 name a self-check problem. A Codex round whose call fails on a usage limit stays INCOMPLETE, prints `review: codex usage limit in round N: '<the error>'` and is recorded after the verdict, in `<git-common-dir>/crew/review-limit/<ticket>.json` (not the ledgers' folder, which `/crew:status` lists): the next probe answers `limited` from that record without a call, so the next round runs step 2c; the round after it probes Codex live again. A record that cannot be written prints `could not record it (...)` instead; the round is still INCOMPLETE (exit 3) and the next probe calls Codex live.
 
 **Step 2c — Claude fallback.** Invoke the `crew:reviewer` subagent with the
 SAME bundle 2a and 2b just read: the exact `$SCRATCH/prompt.txt` content —
@@ -467,7 +470,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TI
   --output "$SCRATCH/out.txt" --exit-code 0
 ```
 
-An empty `ROUND` means do not dispatch: a refusal (budget spent, or exit 5 above), or `ALREADY_CLEAN=1`, a CLEAN receipt already covering this bundle.
+An empty `ROUND` means do not dispatch: a refusal (budget spent, exit 5 above, or the self-check as in 2a), or `ALREADY_CLEAN=1`, a CLEAN receipt already covering this bundle.
 
 The fallback is genuinely weaker than a different family: the same model family
 reviewing itself finds fewer defects. Tell me when it is what ran, so I review
@@ -477,22 +480,19 @@ harder myself.
 re-word it per provider: identical instructions are what make a differing
 defect count a fact about the model rather than about the prompt.
 
-Read ONLY `$SCRATCH/out.txt` and the `review:` lines. Never load the diff back
-into your context. **The verdict is the script's, not yours**: CLEAN only for
-exactly `CLEAN` at exit 0 with every part acknowledged; any BLOCK/FIX/NIT is
-FINDINGS; a non-zero exit, empty or unparseable output, a skipped part or a
-timeout is INCOMPLETE — never report INCOMPLETE as clean.
+Read ONLY `$SCRATCH/out.txt` and the `review:` lines. Never load the diff back into your context.
+**The verdict is the script's, not yours**: CLEAN only for exactly `CLEAN` at exit 0 with every
+part acknowledged; any BLOCK/FIX/NIT is FINDINGS; a non-zero exit, empty or unparseable output, a
+skipped part or a timeout is INCOMPLETE — never report INCOMPLETE as clean.
 
-**Step 2d — re-run the failing control, do not read about it.** If the diff
-adds or edits a test, guard, assertion or smoke step, the author is expected to
-have broken it on purpose and shown it go red. A pasted RED transcript is a
-claim about a mutation, not the mutation. Where the check is runnable here, run
-it yourself: revert the guard's condition (or delete the line it asserts on),
-run the check, confirm it fails with a message naming the thing under test,
-then restore. Report which controls you re-ran and which you could only take on
-the author's word. An unverified control is a BLOCK, not a NIT — a check that
-has never been shown to fail is the defect class this crew loses the most time
-to.
+**Step 2d — re-run the failing control, do not read about it.** If the diff adds or edits a test,
+guard, assertion or smoke step, the author is expected to have broken it on purpose and shown it go
+red. A pasted RED transcript is a claim about a mutation, not the mutation. Where the check is
+runnable here, run it yourself: revert the guard's condition (or delete the line it asserts on),
+run the check, confirm it fails with a message naming the thing under test, then restore. Report
+which controls you re-ran and which you could only take on the author's word. An unverified control
+is a BLOCK, not a NIT — a check that has never been shown to fail is the defect class this crew
+loses the most time to.
 
 **Step 3 — act.**
 1. Report every BLOCK and FIX line verbatim. Do not soften or argue before
@@ -508,44 +508,44 @@ to.
    `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py --ticket "$TICKET" --accept --by "<who>"`.
    Only the most recent round can be accepted, once, including round 2, and not
    once the ticket is `NEEDS_REPLAN` (a refused third reservation, or
-   `review_ledger.py --ticket "$TICKET" --reject --by "<who>"`). A CLEAN round writes its receipt itself. `review_ledger.py --ticket "$TICKET"
-   --check-receipt` rebuilds the bundle and fails if anything changed since.
-4. **Land the verdict as a review, not a comment.** If the change is on a
-   GitHub PR, post the outcome with `gh pr review` so it exists as an artifact
-   that tooling and branch protection can see:
+   `review_ledger.py --ticket "$TICKET" --reject --by "<who>"`). A CLEAN round writes its receipt itself. `review_ledger.py --ticket "$TICKET" --check-receipt` rebuilds the bundle and fails if anything changed since.
+4. **Land the verdict as a review, not a comment.** If the change is on a GitHub PR, post the outcome
+   with `gh pr review` so it exists as an artifact that tooling and branch protection can see:
 
    ```bash
    gh pr review <PR> --request-changes --body-file "$SCRATCH/out.txt"   # any BLOCK
    gh pr review <PR> --approve        --body "<reviewer>: CLEAN"        # no BLOCK
    ```
 
-   A verdict posted as `gh pr comment` is invisible to every mechanism that
-   could act on it: nothing distinguishes approved from blocked from
-   never-reviewed without a human reading threads, and an unprotected branch
-   cannot refuse a merge on the strength of a comment. Say which form you used.
+   A verdict posted as `gh pr comment` is invisible to every mechanism that could act on it: nothing
+   distinguishes approved from blocked from never-reviewed without a human reading threads, and an
+   unprotected branch cannot refuse a merge on the strength of a comment. Say which form you used.
    If the repo has no PR yet, say that instead of silently skipping the step.
 5. If `notify.provider` is not `none`, send one line:
    `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh review "<n> BLOCK, <n> FIX (<reviewer>)"`
    Counts only. Never the findings themselves — those stay in the repo.
 6. Append the result to `.crew/metrics.md`: `<date> | <ticket> | <reviewer> | <n BLOCK> | <n FIX>`
    (counts from `review.json`; an INCOMPLETE round is recorded as INCOMPLETE, not as 0/0; a round a Codex limit sent to step 2c is `claude (same-family: codex limit)`, never a bare `claude`)
-7. Name every specialist from step 0 that ran, every one that a matched rule
-   asked for but you skipped, and every one that a matched rule named but that
-   **is not installed on this machine**. A review that quietly dropped the `dba`
-   pass on a migration reads exactly like one that had nothing to find, and a
-   rule naming an agent this box does not have fails the same way while looking
-   even more normal — there is nothing to skip, so nothing feels skipped.
+   Reviewer cell: `(r<N>, std:<first 8 of the standards digest>)` — the `std:` token step 2a's
+   `review_run.py` printed on stderr (`review-run: standards self-check current (std:...)`) —
+   or `std:none` if it printed that the gate did not apply, or stood down in an incident.
+7. `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py proposals --root . --ticket "$TICKET" --scratch "$SCRATCH" --round <N>`,
+   then fill each finding's row as the `crew-standards` skill says; I approve or reject each.
+   An INCOMPLETE round's `out.txt` is refused (exit 1, nothing written): report that, not "no findings".
+8. Name every specialist from step 0 that ran, every one that a matched rule asked for but you
+   skipped, and every one that a matched rule named but that **is not installed on this machine**. A
+   review that quietly dropped the `dba` pass on a migration reads exactly like one that had nothing
+   to find, and a rule naming an agent this box does not have fails the same way while looking even
+   more normal — there is nothing to skip, so nothing feels skipped.
 
-   Record the not-installed ones in `.crew/metrics.md` too. `/crew:status` reads
-   that file, and "this rule has asked for `security-auditor` eleven times and
-   never got it" is exactly the evidence that should drive either installing it
-   or deleting the rule.
-8. Name the author family **and its source** in the same breath as the reviewer:
-   `recorded dispatch <role>/<provider>/<model>`, `READ FROM CONFIG - no
-   dispatch recorded`, or `STALE RECORD - both families struck` - and a Codex-limit round as `claude (same-family: codex limit)` with the probe's quoted `PROBE_DETAIL`. Which family
-   was barred is only checkable by a reader who knows whether the bar rests on a
-   fact or on a guess, and that is the whole difference this record exists to
-   make visible.
+   Record the not-installed ones in `.crew/metrics.md` too. `/crew:status` reads that file, and
+   "this rule has asked for `security-auditor` eleven times and never got it" is exactly the
+   evidence that should drive either installing it or deleting the rule.
+9. Name the author family **and its source** in the same breath as the reviewer: `recorded dispatch
+   <role>/<provider>/<model>`, `READ FROM CONFIG - no dispatch recorded`, or `STALE RECORD - both
+   families struck` - and a Codex-limit round as `claude (same-family: codex limit)` with the
+   probe's quoted `PROBE_DETAIL`. Which family was barred is only checkable by a reader who knows
+   whether the bar rests on a fact or on a guess, and that is the whole difference this record
+   exists to make visible.
 
-That metrics line is not bookkeeping. `/crew:status` reads it to show whether
-this setup is actually catching anything.
+That metrics line is not bookkeeping. `/crew:status` reads it to show whether this setup is actually catching anything.

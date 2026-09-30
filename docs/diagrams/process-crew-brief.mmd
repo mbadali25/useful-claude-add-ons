@@ -176,6 +176,11 @@
 %% Merged d7c7c75c + 3648f59a -> cd106b8b (T-0010-solo merges T-0075's main e878cc31, crew 1.0.60): of the
 %% Anchors paths only crew_state.py differs from main, by T-0010's +4 at AUTOPILOT_DEFAULTS (:1094), below
 %% every crew_state line cited here (:643, :646, :774 hold). No node or edge changed.
+
+%% Re-anchored a4eb2f55 -> 2aa49bb8 (T-0085 merged onto main c426c018, T-0076, crew 1.0.53): of the
+%% Anchors paths only crew_context.py changed - T-0076 added four lines inside emit() (:1086-1089,
+%% stdout reconfigured to LF), so the additionalContext write moved :1086 -> :1090; every other
+%% crew_context.py line cited here is above :1084 and unchanged. No other node or edge changed.
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
     start --> reg["hooks.json:3-10<br/>3 SessionStart pairs, sh + ps1, no matcher<br/>each claims per session+source"]

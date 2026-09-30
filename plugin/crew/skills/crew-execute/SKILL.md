@@ -71,6 +71,13 @@ Two branches, and only one applies at a time:
   `crew-debugging`'s Iron Law rather than patching the symptom the failing
   test happened to surface.
 
+## Before review: the self-check
+
+The last thing before `/crew:review` is the required standards self-check -
+the `crew-standards` skill says how. Answer every standard with evidence or a
+reason, then stamp it. A standard that fired on a fix is re-run over the
+fixed line's whole class, not only the line.
+
 ## Narration
 
 Between tool calls, narrate at most one short line. The test output and your
