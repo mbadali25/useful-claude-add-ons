@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@17d0b1d2
+anchor: useful-claude-add-ons@e71ad41f
 verified: 2026-09-30
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -109,6 +109,10 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
   working tree on one machine, not about the repo, and it means `npm test -w packages/<anything>`
   here would exit 1 at `pretest` until `npm run build` is run from `mcp-servers/`. (JUDGEMENT: this
   is the guard working, not a defect.)
+
+## Re-anchor provenance - `17d0b1d2` -> `e71ad41f`, 2026-09-30 (T-0505 merges main `42d5ef58`, T-0094, crew 1.0.81)
+
+The merge took main's side of every code map, INDEX row and generated rule, then re-applied T-0505's own changes: its earlier provenance sections (kept verbatim below, describing their own anchors); rule 4 runs ten pytest files and names `_promote_tree.py`, now on the `promote-gate.ps1` line (`.crew/verify.json:97`) so no later rule moves and main's verify.json citations stand; `promote-gate.sh:79` is the plain `crew_py` call; promote-gate is not a `crew_config.py` user; crew is 1.0.82 on this branch (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`). T-0505's CHANGELOG entry (34 lines) sits above main's, so main's `CHANGELOG.md` line citations moved +34 (ten). Nothing was executed for this note.
 
 ## Re-anchor provenance - `68659749` -> `7867e893`, 2026-09-30 (T-0505 pre-review hardening)
 
