@@ -5,7 +5,8 @@ taking it (`review_run.py`). Same tuple shape as `sabotage.py`'s MUTATIONS --
 
 Each one is a way two overlapping lanes could both reach gate+land, a land
 could go ahead on a verdict for a different tree, or a replayed resolution
-could reach the reviewer unseen. S1-S12 are the spec's acceptance rows.
+could reach the reviewer unseen. S1-S12 are the spec's acceptance rows; S13-S15
+cover the GEN-01/02/07 hardening added before review.
 """
 import os
 
@@ -71,4 +72,16 @@ TRAIN_MUTATIONS = (
      "    if code == 0:\n        return []\n    if code == 1:\n",
      "    if code in (0, 1):\n        return []\n    if code == 1:\n",
      _T + "test_check_land_refuses_merge_tree_conflict"),
+    ("S13 the lock is removed without checking its owner", TRAIN,
+     "            if mine:\n                os.remove(self.path)\n",
+     "            if mine or True:\n                os.remove(self.path)\n",
+     _T + "test_lock_release_verifies_its_owner"),
+    ("S14 a lookup under a non-directory proves the state absent", TRAIN,
+     "        if not stat.S_ISDIR(mode):\n",
+     "        if False:\n",
+     _T + "test_windows_style_not_found_under_a_file_is_could_not_tell"),
+    ("S15 a malformed train entry reads as ok", TRAIN,
+     "        problem = _entry_problem(entry)\n",
+     "        problem = None\n",
+     _T + "test_malformed_entry_is_could_not_tell"),
 )

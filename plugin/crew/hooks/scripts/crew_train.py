@@ -42,10 +42,15 @@ conflict in one still fails `merge-tree` at land.
 
 FAIL CLOSED. An undeclared Touch -- no spec.md, no `## Touch`, no bullet, a
 parse problem, unreadable bytes -- overlaps everything and is named
-`undeclared: <why>`. A state.json that exists but cannot be read, parsed or
-has an unknown schema, a lock still held after LOCK_WAIT_SECONDS, or a git
-call that fails is COULD NOT TELL: the verb exits 3 naming the path, and
-nothing reads it as "not armed" or "no holder". A lock is never broken by age
+`undeclared: <why>`. state.json is "not armed" only when it is proven missing
+(ENOENT under an ancestor that is a directory, `_absent`); one that cannot be
+looked up, read or parsed, has an unknown schema or a malformed entry, a lock
+still held after LOCK_WAIT_SECONDS, or a git call that fails is COULD NOT
+TELL: the verb exits 3 naming the path, and nothing reads it as "not armed"
+or "no holder". The lock is removed only while it still holds its owner's
+token; `arm` publishes a complete state.json with `os.link`. CLI values are
+checked before use: a ref (`--base`, `--merged`) may not start with `-`,
+`--pr` is digits, and no value carries a control character (exit 2). A lock is never broken by age
 (breaking locks by age is how two writers both win), and a stale-looking hold
 is reported as `stale?: <evidence>` and never released automatically:
 `release --force --by <who> --reason <text>` releases it and logs an event.
@@ -84,9 +89,11 @@ import getpass
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import time
+import uuid
 
 if __name__ == "__main__":
     # Before the sibling imports: the direct CLI writes no bytecode either.
@@ -106,6 +113,9 @@ REFRESH_PREFIXES = ((".crew", "codemap"), (".claude", "rules"), ("docs", "diagra
 UNDECLARED = "<undeclared>"
 NOTICE_KINDS = ("merged", "force-release")
 _REPLAYED_RE = re.compile(r"^(?:Resolved|Staged) '(.+)' using previous resolution\.$")
+_PR_RE = re.compile(r"^[0-9]{1,10}$")
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+STATES = ("waiting", "holding")
 
 
 class TrainError(RuntimeError):
@@ -114,6 +124,27 @@ class TrainError(RuntimeError):
 
 class NotArmed(RuntimeError):
     """The clone has no state.json: exit 1, `train not armed`."""
+
+
+class Refused(RuntimeError):
+    """A decided refusal raised from inside a mutation: exit 1."""
+
+
+class Usage(ValueError):
+    """A CLI value that is not acceptable: exit 2."""
+
+
+def _plain(value, name, ref=False):
+    """`value` unchanged when it is safe to store, print and pass to git; else
+    Usage. A ref (`--base`, `--merged`) may not start with `-`, so git never
+    reads it as an option, and carries no whitespace."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value or _CONTROL_RE.search(value):
+        raise Usage(f"--{name} {value!r}: empty or carries a control character")
+    if ref and (value.startswith("-") or re.search(r"\s", value)):
+        raise Usage(f"--{name} {value!r}: not a ref (it starts with '-' or holds whitespace)")
+    return value
 
 
 def _now():
@@ -163,10 +194,16 @@ def _top(root):
 
 
 def _base(top, base):
-    ref = base or scope_base._default_ref(top)  # pylint: disable=protected-access
+    ref = _plain(base, "base", ref=True) or scope_base._default_ref(top)  # pylint: disable=protected-access
     if not ref:
         raise TrainError("no base ref: none of origin/HEAD, origin/main, main names a "
                          "commit here; pass --base")
+    code, _out, err = _git(top, "rev-parse", "--verify", "--quiet", "--end-of-options",
+                           f"{ref}^{{commit}}")
+    if code == 1:
+        raise Usage(f"--base {ref!r} names no commit here")
+    if code != 0:
+        raise TrainError(f"could not tell whether {ref!r} names a commit: {err.strip()[:200]}")
     return ref
 
 
@@ -176,7 +213,7 @@ def _head(top):
 
 def _lane(top, lane):
     if lane:
-        return lane
+        return _plain(lane, "lane")
     code, out, _ = _git(top, "rev-parse", "--abbrev-ref", "HEAD")
     name = out.strip() if code == 0 else ""
     return name if name and name != "HEAD" else os.path.basename(top)
@@ -208,11 +245,60 @@ def _read_file(path):
         return fh.read()
 
 
+def _absent(path):
+    """(True, None) only when `path` is missing (ENOENT) under an ancestor
+    that is a readable directory; (False, None) when it exists; (None, why)
+    when that cannot be told (GEN-01)."""
+    try:
+        os.lstat(path)
+        return False, None
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        return None, f"{path} cannot be looked up: {exc}"
+    parent = os.path.dirname(path)
+    while True:
+        try:
+            mode = os.lstat(parent).st_mode
+        except FileNotFoundError:
+            up = os.path.dirname(parent)
+            if up == parent:
+                return None, f"no ancestor of {path} exists"
+            parent = up
+            continue
+        except OSError as exc:
+            return None, f"{parent} cannot be looked up: {exc}"
+        if not stat.S_ISDIR(mode):
+            return None, f"{parent} is not a directory, so {path} cannot be looked up"
+        return True, None
+
+
+def _entry_problem(entry):
+    if not isinstance(entry, dict):
+        return "an entry is not an object"
+    for key in ("ticket", "base", "worktree"):
+        if not isinstance(entry.get(key), str) or not entry.get(key):
+            return f"an entry's {key!r} is not a non-empty string"
+    if entry.get("state") not in STATES:
+        return f"{entry['ticket']}'s state {entry.get('state')!r} is not one of {STATES}"
+    if not isinstance(entry.get("order"), int) or isinstance(entry.get("order"), bool):
+        return f"{entry['ticket']}'s order is not an integer"
+    touch = entry.get("touch")
+    if touch is not None and not (isinstance(touch, list)
+                                  and all(isinstance(t, str) for t in touch)):
+        return f"{entry['ticket']}'s touch is neither null nor a list of strings"
+    return None
+
+
 def load(root):
     """(state, where, why): `where` is `absent`, `ok` or `could not tell`.
-    Only a state.json that does not exist at all is `absent`."""
+    Only a state.json proven missing (`_absent`) is `absent`; every entry is
+    shape-checked, and one malformed entry makes the whole state unknown."""
     path = _state_path(root)
-    if not os.path.lexists(path):
+    missing, why = _absent(path)
+    if missing is None:
+        return None, "could not tell", why
+    if missing:
         return None, "absent", f"{path} does not exist"
     try:
         data = json.loads(_read_file(path))
@@ -223,6 +309,10 @@ def load(root):
             or not isinstance(data.get("seq"), int):
         return None, "could not tell", (f"{path} is not a schema-{SCHEMA} train state "
                                         f"(schema {data.get('schema') if isinstance(data, dict) else None!r})")
+    for entry in data["entries"]:
+        problem = _entry_problem(entry)
+        if problem:
+            return None, "could not tell", f"{path}: entries: {problem}"
     return data, "ok", path
 
 
@@ -241,6 +331,7 @@ class _Lock:
 
     def __init__(self, path):
         self.path = path + ".lock"
+        self.token = f"{os.getpid()} {uuid.uuid4().hex}"
 
     def __enter__(self):
         deadline = time.monotonic() + LOCK_WAIT_SECONDS
@@ -257,13 +348,19 @@ class _Lock:
                 continue
             except OSError as exc:
                 raise TrainError(f"could not tell: train lock {self.path}: {exc}") from exc
-            os.write(fd, str(os.getpid()).encode())
-            os.close(fd)
+            try:
+                os.write(fd, self.token.encode())
+            finally:
+                os.close(fd)
             return self
 
     def __exit__(self, *exc):
+        """Remove the lock only while it still holds this instance's token."""
         try:
-            os.remove(self.path)
+            with open(self.path, encoding="utf-8") as fh:
+                mine = fh.read() == self.token
+            if mine:
+                os.remove(self.path)
         except OSError:
             pass
 
@@ -273,7 +370,10 @@ def _mutate(root, change):
     `events` is a list the change appends to; they are written with the next
     seq numbers, then state.json is replaced atomically."""
     path = _state_path(root)
-    if not os.path.lexists(path):
+    missing, why = _absent(path)
+    if missing is None:
+        raise TrainError(f"could not tell: {why}")
+    if missing:
         raise NotArmed("train not armed in this clone (crew_train.py arm arms it)")
     with _Lock(path):
         state, where, why = load(root)
@@ -455,8 +555,8 @@ def _upsert(state, top, ticket, base, lane, head, touch, source):
                  "last_seen": state["seq"]}
         state["entries"].append(entry)
     elif entry.get("worktree") != top and entry.get("state") == "holding":
-        raise TrainError(f"{ticket} on {base} is held from {entry.get('worktree')}, "
-                         f"not {top}; release it there, or release --force")
+        raise Refused(f"{ticket} on {base} is held from {entry.get('worktree')}, "
+                      f"not {top}; release it there, or release --force")
     code, out, _ = _git(top, "rev-parse", "--abbrev-ref", "HEAD")
     entry.update({"worktree": top, "lane": lane,
                   "branch": out.strip() if code == 0 else None, "head": head,
@@ -500,25 +600,40 @@ def arm(root, by=None):
     seq = max([e["seq"] for e in events] or [0])
     text = json.dumps({"schema": SCHEMA, "armed_at": _now(), "armed_by": by or _owner(),
                        "seq": seq, "order": 0, "entries": []}, indent=2, sort_keys=True) + "\n"
+    tmp = f"{path}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
     try:
-        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+        # os.link: the complete file appears at once or not at all, and it
+        # fails if state.json already exists (GEN-02) -- no reader ever sees a
+        # created-but-empty state.json.
+        os.link(tmp, path)
     except FileExistsError:
         return EXIT_REFUSED, [f"train already armed in this clone ({path})"]
-    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write(text)
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
     return EXIT_OK, [f"train armed: {path}; review_run.py now takes the train before a "
                      "gate round in every worktree of this clone"]
 
 
 def disarm(root):
-    def change(state, _events):
+    path = _state_path(root)
+    missing, why = _absent(path)
+    if missing is None:
+        raise TrainError(f"could not tell: {why}")
+    if missing:
+        raise NotArmed("train not armed in this clone; nothing to disarm")
+    with _Lock(path):
+        state, where, why = load(root)
+        if where != "ok":
+            raise TrainError(f"could not tell: {why}")
         if state["entries"]:
-            return [e["ticket"] for e in state["entries"]]
-        return None
-    busy = _mutate(root, change)
-    if busy:
-        return EXIT_REFUSED, [f"train has entries ({', '.join(busy)}); release them first"]
-    os.remove(_state_path(root))
+            return EXIT_REFUSED, [f"train has entries ({', '.join(e['ticket'] for e in state['entries'])}); "
+                                  "release them first"]
+        os.remove(path)
     return EXIT_OK, ["train disarmed; review_run.py no longer consults it"]
 
 
@@ -582,9 +697,11 @@ def release(root, ticket, base=None, merged=None, force=False, by=None, reason=N
     crew_ticket.check_ticket(ticket)
     if force and not (by and reason):
         return EXIT_USAGE, ["release --force needs --by <who> and --reason <text>"]
+    merged = _plain(merged, "merged", ref=True)
+    by, reason = _plain(by, "by"), _plain(reason, "reason")
     paths = None
     if merged:
-        code, out, _ = _git(top, "diff", "--name-only", f"{merged}^1", merged)
+        code, out, _ = _git(top, "diff", "--name-only", f"{merged}^1", merged, "--")
         paths = _lines(out) if code == 0 else None
 
     def change(state, events):
@@ -657,7 +774,10 @@ def status(root, as_json=False):
 
 def ensure_rerere(top):
     """Make rerere.enabled/autoupdate true for this worktree; the scope used."""
-    code, out, _ = _git(top, "config", "--get", "--bool", "extensions.worktreeConfig")
+    code, out, err = _git(top, "config", "--get", "--bool", "extensions.worktreeConfig")
+    if code not in (0, 1):
+        raise TrainError(f"could not tell whether extensions.worktreeConfig is on (git config "
+                         f"exit {code}: {err.strip()[:200]}); rerere was not configured")
     scope = "--worktree" if code == 0 and out.strip() == "true" else "--local"
     for key in ("rerere.enabled", "rerere.autoupdate"):
         _git_ok(top, "config", scope, key, "true")
@@ -709,23 +829,35 @@ def catch_up(root, ticket, base=None, fetch=True, lane=None):
     head_before = _head(top)
     base_sha = _git_ok(top, "rev-parse", f"{base}^{{commit}}").strip()
     code, out, err = _git(top, "merge", "--no-edit", base)
-    in_merge = _git(top, "rev-parse", "-q", "--verify", "MERGE_HEAD")[0] == 0
-    conflicted = _lines(_git(top, "diff", "--name-only", "--diff-filter=U")[1])
-    staged = set(_lines(_git(top, "diff", "--name-only", "--cached")[1]))
-    said = [m.group(1) for m in (_REPLAYED_RE.match(x.strip())
-                                 for x in (out + "\n" + err).splitlines()) if m]
-    replayed = sorted({p for p in said if p in staged and p not in conflicted})
-    if code == 0:
-        outcome = "up-to-date" if _head(top) == head_before else "merged"
-    elif in_merge:
-        outcome = "conflicted" if conflicted or not replayed else "rerere-resolved"
-    else:
-        outcome = "refused"
+    unknown = None
+    conflicted = replayed = None
+    try:
+        probe = _git(top, "rev-parse", "-q", "--verify", "MERGE_HEAD")[0]
+        if code is None or probe not in (0, 1):
+            raise TrainError(f"git merge exit {code}, MERGE_HEAD probe exit {probe}")
+        in_merge = probe == 0
+        conflicted = _lines(_git_ok(top, "diff", "--name-only", "--diff-filter=U"))
+        staged = set(_lines(_git_ok(top, "diff", "--name-only", "--cached")))
+        said = [m.group(1) for m in (_REPLAYED_RE.match(x.strip())
+                                     for x in (out + "\n" + err).splitlines()) if m]
+        replayed = sorted({p for p in said if p in staged and p not in conflicted})
+        if code == 0:
+            outcome = "up-to-date" if _head(top) == head_before else "merged"
+        elif in_merge:
+            outcome = "conflicted" if conflicted or not replayed else "rerere-resolved"
+        else:
+            outcome = "refused"
+    except TrainError as exc:
+        outcome, unknown = "could not tell", str(exc)
     _append_merge_log(root, ticket, {
         "time": _now(), "ticket": ticket, "lane": _lane(top, lane), "worktree": top,
         "head_before": head_before, "base": base, "base_sha": base_sha, "outcome": outcome,
         "conflicted": conflicted, "rerere_replayed": replayed, "rerere_config": scope})
     lines.append(f"catch-up {outcome}: git merge --no-edit {base} ({base_sha[:12]})")
+    if unknown:
+        lines.append(f"  could not tell what the merge left: {unknown}; inspect the worktree "
+                     "(git status) before anything else")
+        return EXIT_UNKNOWN, lines
     if replayed:
         lines.append(f"  rerere replayed (staged, review it as a change): {', '.join(replayed)}")
     if conflicted:
@@ -748,7 +880,10 @@ def read_merge_log(root, ticket):
     try:
         text = _read_file(path)
     except FileNotFoundError:
-        return [], "absent", f"{path} does not exist"
+        missing, why = _absent(path)
+        if missing:
+            return [], "absent", f"{path} does not exist"
+        return [], "could not tell", why or f"{path} appeared while it was read"
     except OSError as exc:
         return [], "could not tell", f"{path} cannot be read: {exc}"
     rows = []
@@ -804,6 +939,9 @@ def _merge_tree(top, base):
 def check_land(root, ticket, base=None, pr=None, fetch=True):
     top = _top(root)
     crew_ticket.check_ticket(ticket)
+    if pr is not None and not _PR_RE.match(str(pr)):
+        raise Usage(f"--pr {pr!r} is not a pull request number")
+    base = _plain(base, "base", ref=True)
     state, where, why = load(root)
     if where == "absent":
         raise NotArmed("train not armed in this clone; there is no hold to land under")
@@ -908,8 +1046,10 @@ def main(argv):
     args = _parser().parse_args(argv)
     try:
         code, lines = _dispatch(args)
-    except NotArmed as exc:
+    except (NotArmed, Refused) as exc:
         code, lines = EXIT_REFUSED, [str(exc)]
+    except Usage as exc:
+        code, lines = EXIT_USAGE, [str(exc)]
     except (TrainError, crew_ticket.TicketError) as exc:
         text = str(exc)
         code = EXIT_UNKNOWN if isinstance(exc, TrainError) else EXIT_USAGE

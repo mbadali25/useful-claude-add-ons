@@ -103,7 +103,7 @@ def _arm(capsys, repo):
 ])
 def test_touch_overlap_table(mine, theirs, overlaps):
     assert bool(crew_train.touch_overlap(mine, theirs)) is overlaps
-    assert bool(crew_train.touch_overlap(theirs, mine)) is overlaps
+    assert bool(crew_train.touch_overlap(theirs, mine)) is overlaps  # pylint: disable=arguments-out-of-order
 
 
 @pytest.mark.parametrize("source", ["no-spec", "no-touch", "no-bullet", "parse-problem",
@@ -404,6 +404,7 @@ def test_catch_up_never_writes_global_config(repo, capsys, _isolated_git, worktr
     else:
         assert "rerere" in shared.read_text(encoding="utf-8")
         assert not os.path.exists(own)
+        assert git(lane, "config", "--get", "extensions.worktreeConfig", check=False) == ""
 
 
 def test_catch_up_merges_and_never_commits_a_conflict(repo, capsys):
@@ -546,6 +547,156 @@ def test_check_land_on_old_git_is_could_not_tell(repo, capsys, monkeypatch):
     monkeypatch.setattr(crew_train, "_git", old_git)
     code, out = _cli(capsys, lane, "check-land", "--ticket", "T-1", "--no-fetch")
     assert code == 3 and "could not tell" in out and "merge-tree" in out, out
+
+
+# --- hardening: GEN-01/02/04/07 ------------------------------------------------------
+
+def test_train_dir_under_a_file_is_could_not_tell(repo, capsys):
+    crew = crew_ticket.state_dir(str(repo))
+    shutil.rmtree(crew, ignore_errors=True)
+    with open(crew, "w", encoding="utf-8") as fh:
+        fh.write("not a directory")
+    _spec(repo, "T-1", ["a.txt"])
+
+    assert crew_train.load(str(repo))[1] == "could not tell"
+    for verb in (["status"], ["acquire", "--ticket", "T-1"]):
+        code, out = _cli(capsys, repo, *verb)
+        assert code == 3 and "could not tell" in out, (verb, out)
+
+
+def test_windows_style_not_found_under_a_file_is_could_not_tell(repo, monkeypatch):
+    """Windows answers a lookup under a regular file with FileNotFoundError
+    (crew_standards' T-0085 land fix); only a directory ancestor proves absent."""
+    crew = crew_ticket.state_dir(str(repo))
+    shutil.rmtree(crew, ignore_errors=True)
+    with open(crew, "w", encoding="utf-8") as fh:
+        fh.write("not a directory")
+    real = os.lstat
+
+    def windows_lstat(path, *args, **kwargs):
+        try:
+            return real(path, *args, **kwargs)
+        except NotADirectoryError as exc:
+            raise FileNotFoundError(2, "not found", path) from exc
+    monkeypatch.setattr(os, "lstat", windows_lstat)
+
+    state, where, why = crew_train.load(str(repo))
+
+    assert (state, where) == (None, "could not tell") and "not a directory" in why, why
+
+
+@pytest.mark.parametrize("entry", [{"ticket": 5}, "T-1", {"ticket": "T-1", "base": "main",
+                                                           "state": "parked", "order": 1}])
+def test_malformed_entry_is_could_not_tell(repo, capsys, entry):
+    _arm(capsys, repo)
+    path = os.path.join(crew_train.train_dir(str(repo)), "state.json")
+    with open(path, encoding="utf-8") as fh:
+        state = json.load(fh)
+    state["entries"] = [entry]
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(state, fh)
+
+    code, out = _cli(capsys, repo, "status")
+
+    assert code == 3 and "could not tell" in out and "entries" in out, out
+
+
+@pytest.mark.parametrize("argv", [["acquire", "--ticket", "T-1", "--base=-x"],
+                                  ["acquire", "--ticket", "T-1", "--lane", "a\nb"],
+                                  ["release", "--ticket", "T-1", "--merged=--upload-pack=x"],
+                                  ["check-land", "--ticket", "T-1", "--pr", "42; rm -rf /"],
+                                  ["catch-up", "--ticket", "T-1", "--base", "main main"]])
+def test_bad_cli_values_are_usage_errors(repo, capsys, argv):
+    _spec(repo, "T-1", ["a.txt"])
+    _arm(capsys, repo)
+
+    code, out = _cli(capsys, repo, *argv)
+
+    assert code == 2, out
+
+
+def test_catch_up_refuses_a_merge_in_progress(repo, capsys):
+    lane = _conflicting_lane(repo)
+    assert _cli(capsys, lane, "catch-up", "--ticket", "T-1")[0] == 1
+
+    code, out = _cli(capsys, lane, "catch-up", "--ticket", "T-1")
+
+    assert code == 1 and "already in progress" in out, out
+
+
+def test_release_refusals(repo, capsys):
+    git(repo, "branch", "release")
+    _spec(repo, "T-1", ["a.txt"])
+    _arm(capsys, repo)
+    code, out = _cli(capsys, repo, "release", "--ticket", "T-9")
+    assert code == 1 and "no train entry" in out, out
+    assert _cli(capsys, repo, "enqueue", "--ticket", "T-1", "--base", "main")[0] == 0
+    assert _cli(capsys, repo, "enqueue", "--ticket", "T-1", "--base", "release")[0] == 0
+
+    code, out = _cli(capsys, repo, "release", "--ticket", "T-1")
+
+    assert code == 2 and "several bases" in out, out
+
+
+def test_acquire_of_a_ticket_held_elsewhere_is_refused(repo, capsys):
+    one, two = _worktree(repo, "wt1", "l1"), _worktree(repo, "wt2", "l2")
+    _spec(one, "T-1", ["a.txt"])
+    _spec(two, "T-1", ["a.txt"])
+    _arm(capsys, repo)
+    assert _cli(capsys, one, "acquire", "--ticket", "T-1")[0] == 0
+
+    code, out = _cli(capsys, two, "acquire", "--ticket", "T-1")
+
+    assert code == 1 and "held from" in out, out
+
+
+def test_lock_release_verifies_its_owner(repo, capsys):
+    _arm(capsys, repo)
+    path = os.path.join(crew_train.train_dir(str(repo)), "state.json")
+
+    with crew_train._Lock(path) as lock:  # pylint: disable=protected-access
+        with open(lock.path, "w", encoding="utf-8") as fh:
+            fh.write("someone else")
+
+    assert os.path.exists(path + ".lock")
+
+
+def test_arm_leaves_no_staging_file(repo, capsys):
+    _arm(capsys, repo)
+
+    names = sorted(os.listdir(crew_train.train_dir(str(repo))))
+
+    assert names == ["state.json"], names
+
+
+def _failing(monkeypatch, match):
+    real = crew_train._git  # pylint: disable=protected-access
+
+    def fake(root, *args, **kwargs):
+        if match(args):
+            return 128, "", "fatal: fixture failure"
+        return real(root, *args, **kwargs)
+    monkeypatch.setattr(crew_train, "_git", fake)
+
+
+def test_catch_up_rerere_probe_failure_is_could_not_tell(repo, capsys, monkeypatch):
+    lane = _worktree(repo, "wt1", "l1")
+    _failing(monkeypatch, lambda a: a[:1] == ("config",) and "extensions.worktreeConfig" in a)
+
+    code, out = _cli(capsys, lane, "catch-up", "--ticket", "T-1")
+
+    assert code == 3 and "could not tell" in out, out
+    assert git(lane, "config", "--get", "rerere.enabled", check=False) == ""
+
+
+def test_catch_up_unreadable_conflict_list_is_could_not_tell(repo, capsys, monkeypatch):
+    lane = _conflicting_lane(repo)
+    _failing(monkeypatch, lambda a: "--diff-filter=U" in a)
+
+    code, out = _cli(capsys, lane, "catch-up", "--ticket", "T-1")
+
+    assert code == 3 and "could not tell" in out, out
+    assert _merge_log(repo, "T-1")[-1]["outcome"] == "could not tell"
 
 
 # --- structure -----------------------------------------------------------------------

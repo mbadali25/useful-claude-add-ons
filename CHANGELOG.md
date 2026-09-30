@@ -27,7 +27,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   green verify gate; then it prints `gh pr merge <n> --merge --match-head-commit <sha>` (crew
   never merges). `release --merged <sha>` tells every overlapping lane to merge the base.
   `/crew:done` gains "Landing through the merge train"; `/crew:review` names exit 6.
-- Sabotage rows S1-S12 (`plugin/crew/tests/sabotage_train.py`). The delta gate, scheduling and
+- Sabotage rows S1-S15 (`plugin/crew/tests/sabotage_train.py`). The delta gate, scheduling and
   the spec's accepted-limits section are proposed follow-ups (TODO.md), not in this release.
 
 ### Added — `crew` 1.0.75: build-time development standards and a required pre-review self-check (T-0085)
