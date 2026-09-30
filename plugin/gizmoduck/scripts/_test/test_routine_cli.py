@@ -28,18 +28,45 @@ must go red):
   (c) confirm=True passed to run_routine unconditionally
       -> test_confirm_active_is_required_by_name
   (d) the atomic helper replaced by a plain open(path, "w")
-      -> test_scan_meta_write_is_complete_then_renamed
+      -> test_scan_meta_write_is_complete_then_renamed and
+         test_atomic_write_keeps_the_original_when_the_write_itself_fails
+         (both make the write itself fail half-way; failing only in
+         `_scan_meta_text` or only in os.replace cannot tell the two apart)
   (e) the output directory created before load_manifest
       -> test_manifest_errors_write_nothing[no-auth]
   (f) --run-manifest parsed and not passed to cmd_report
       -> test_report_run_manifest_renders_coverage
   (g) the exit-4 branch returning 0
       -> test_all_tools_missing_exits_4_end_to_end
+  (h) `--replace` removing every child directory again
+      -> test_replace_removes_only_the_directories_the_earlier_run_named and
+         test_replace_leaves_a_symlink_the_earlier_run_did_not_name
+         (neighbour test_replace_rewrites_the_set_and_removes_stale_target_dirs:
+         a named directory is still removed)
+  (i) an earlier scan-meta.json with no `targets` read as "nothing to remove",
+      or its target names trusted as paths
+      -> test_replace_refuses_when_it_cannot_tell_what_the_earlier_run_owns
+         [no-targets] / [nested]
+  (j) the earlier scan-meta.json kept until the new run finishes
+      -> test_an_interrupted_replace_leaves_no_scan_meta_from_the_earlier_run
+  (k) the manifest shape check dropped, or its plain-directory-name rule
+      -> test_manifest_errors_write_nothing (every wrong-type case) /
+         [dotdot-name] and [slash-name]
+  (l) the default date hard-coded, or the local date
+      -> test_scan_root_date_defaults_to_the_utc_date
+  (m) `import routine` outside its ImportError handler
+      -> test_routine_without_pyyaml_is_a_usage_error_naming_it
+  (n) a named target directory that is a symlink removed through
+      -> test_replace_refuses_a_target_directory_that_is_a_symlink
+  (o) _sanitised_env without PYTHONUSERBASE
+      -> test_sanitised_env_keeps_the_user_site
 """
 import datetime
 import importlib.util
 import json
 import os
+import shutil
+import site
 import subprocess
 import sys
 from pathlib import Path
@@ -209,11 +236,23 @@ def test_existing_scan_meta_refuses_without_replace(gz, fixture, tmp_path, capsy
     assert all(a.run_calls == [] for a in reg.ADAPTERS.values())
 
 
-def test_replace_rewrites_the_set_and_removes_stale_target_dirs(gz, fixture, tmp_path):
+def _earlier_run(gz, tmp_path, names=("site-a", "site-b")):
+    """A complete earlier run in `out/`, made by cmd_routine itself: the only
+    honest way to get a scan-meta.json that names the targets it owns."""
+    manifest = tmp_path / "earlier.yaml"
+    rows = "".join(f"  - {{name: {n}, kind: web, url: 'https://{n}.invalid/'}}\n" for n in names)
+    manifest.write_text(f"authorized_by: t\ntargets:\n{rows}", encoding="utf-8")
     out = tmp_path / "out"
-    (out / "old-target").mkdir(parents=True)
-    (out / "old-target" / "raw.txt").write_text("stale", encoding="utf-8")
-    (out / "scan-meta.json").write_text('{"schema": 0}', encoding="utf-8")
+    rc = gz.cmd_routine(str(manifest), str(out), registry=_registry(), date=_DATE, confirm=True)
+    assert rc == 0
+    for n in names:
+        (out / n).mkdir(exist_ok=True)
+        (out / n / "raw.txt").write_text("earlier", encoding="utf-8")
+    return out
+
+
+def test_replace_rewrites_the_set_and_removes_stale_target_dirs(gz, fixture, tmp_path):
+    out = _earlier_run(gz, tmp_path, names=("old-target",))
     (out / "report.pdf").write_bytes(b"stale pdf")
 
     rc = _run(gz, fixture, tmp_path, _registry(), confirm=True, replace=True)
@@ -221,34 +260,195 @@ def test_replace_rewrites_the_set_and_removes_stale_target_dirs(gz, fixture, tmp
     assert rc == 0
     assert not (out / "old-target").exists()
     assert not (out / "report.pdf").exists()
-    assert _meta(out)["schema"] == 1
+    assert [t["name"] for t in _meta(out)["targets"]] == ["site-a", "site-b"]
+
+
+def test_replace_removes_only_the_directories_the_earlier_run_named(gz, fixture, tmp_path):
+    out = _earlier_run(gz, tmp_path)
+    for mine in (".git", "plugin", "notes"):
+        (out / mine).mkdir()
+        (out / mine / "keep.txt").write_text(mine, encoding="utf-8")
+
+    rc = _run(gz, fixture, tmp_path, _registry(), confirm=True, replace=True)
+
+    assert rc == 0
+    assert not (out / "site-a" / "raw.txt").exists()
+    assert [(out / m / "keep.txt").read_text(encoding="utf-8")
+            for m in (".git", "plugin", "notes")] == [".git", "plugin", "notes"]
+
+
+_UNREADABLE_EARLIER_META = {
+    "not-json": b"SENTINEL",
+    "schema-0": b'{"schema": 0, "targets": [{"name": "site-a"}]}',
+    "no-targets": b'{"schema": 1}',
+    "targets-not-a-list": b'{"schema": 1, "targets": {"name": "site-a"}}',
+    "nameless-target": b'{"schema": 1, "targets": [{"kind": "web"}]}',
+    "dotdot": b'{"schema": 1, "targets": [{"name": ".."}]}',
+    "absolute": lambda tmp: json.dumps(
+        {"schema": 1, "targets": [{"name": str(tmp / "precious")}]}).encode(),
+    "nested": b'{"schema": 1, "targets": [{"name": "a/b"}]}',
+}
+
+
+@pytest.mark.parametrize("case", list(_UNREADABLE_EARLIER_META))
+def test_replace_refuses_when_it_cannot_tell_what_the_earlier_run_owns(gz, fixture, tmp_path,
+                                                                      capsys, case):
+    """An absolute name points into tmp_path, never at a system path: if this
+    refusal ever regresses, what gets removed is the test's own sentinel."""
+    out = tmp_path / "out"
+    (out / "site-a").mkdir(parents=True)
+    (out / "site-a" / "raw.txt").write_text("keep", encoding="utf-8")
+    (tmp_path / "precious").mkdir()
+    (tmp_path / "precious" / "keep.txt").write_text("keep", encoding="utf-8")
+    (out / "report.md").write_text("earlier report", encoding="utf-8")
+    earlier = _UNREADABLE_EARLIER_META[case]
+    earlier = earlier(tmp_path) if callable(earlier) else earlier
+    (out / "scan-meta.json").write_bytes(earlier)
+    reg = _registry()
+
+    rc = _run(gz, fixture, tmp_path, reg, confirm=True, replace=True)
+
+    assert rc == 2
+    assert "cannot tell which directories the earlier run owns" in capsys.readouterr().err
+    assert (out / "scan-meta.json").read_bytes() == earlier
+    assert (out / "report.md").read_text(encoding="utf-8") == "earlier report"
+    assert (out / "site-a" / "raw.txt").read_text(encoding="utf-8") == "keep"
+    assert (tmp_path / "precious" / "keep.txt").is_file()
+    assert all(a.run_calls == [] for a in reg.ADAPTERS.values())
+
+
+def _symlink_or_skip(link, target):
+    try:
+        os.symlink(target, link, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"cannot create a symlink here: {exc}")
+
+
+def test_replace_refuses_a_target_directory_that_is_a_symlink(gz, fixture, tmp_path, capsys):
+    out = _earlier_run(gz, tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "precious.txt").write_text("precious", encoding="utf-8")
+    shutil.rmtree(out / "site-b")
+    _symlink_or_skip(out / "site-b", elsewhere)
+
+    rc = _run(gz, fixture, tmp_path, _registry(), confirm=True, replace=True)
+
+    assert rc == 2
+    assert "is a symlink" in capsys.readouterr().err
+    assert (elsewhere / "precious.txt").read_text(encoding="utf-8") == "precious"
+    assert (out / "report.md").is_file()
+    assert (out / "site-a" / "raw.txt").is_file()
+    assert _meta(out)["coverage"]["complete"] is True
+
+
+def test_replace_leaves_a_symlink_the_earlier_run_did_not_name(gz, fixture, tmp_path):
+    out = _earlier_run(gz, tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "precious.txt").write_text("precious", encoding="utf-8")
+    _symlink_or_skip(out / "link", elsewhere)
+
+    rc = _run(gz, fixture, tmp_path, _registry(), confirm=True, replace=True)
+
+    assert rc == 0
+    assert (out / "link" / "precious.txt").read_text(encoding="utf-8") == "precious"
+
+
+def test_an_interrupted_replace_leaves_no_scan_meta_from_the_earlier_run(gz, fixture, tmp_path):
+    out = _earlier_run(gz, tmp_path)
+    assert _meta(out)["coverage"]["complete"] is True
+
+    def _interrupt(target, outdir, opts):
+        raise KeyboardInterrupt
+
+    reg = _registry(nuclei=FakeAdapter("nuclei", ["web", "host"], run_fn=_interrupt))
+    with pytest.raises(KeyboardInterrupt):
+        _run(gz, fixture, tmp_path, reg, confirm=True, replace=True)
+
+    assert not (out / "scan-meta.json").exists()
+    assert list(out.glob("scan-meta.json*")) == []
 
 
 def test_scan_root_builds_the_dated_path(gz, fixture, tmp_path):
     root = tmp_path / "module"
-    gz.cmd_routine(str(fixture("manifest-routine-cli.yaml")), None, scan_root=str(root),
-                   date=_DATE, registry=_registry(), confirm=True)
-    gz.cmd_routine(str(fixture("manifest-routine-cli.yaml")), None, scan_root=str(root),
-                   date=None, registry=_registry(), confirm=True)
+
+    rc = gz.cmd_routine(str(fixture("manifest-routine-cli.yaml")), None, scan_root=str(root),
+                        date=_DATE, registry=_registry(), confirm=True)
 
     dated = root / "docs" / "security-scans" / "2026-09-29"
-    assert (dated / "scan-meta.json").is_file()
+    assert rc == 0
     assert _meta(dated)["date"] == "2026-09-29"
-    today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
-    assert (root / "docs" / "security-scans" / today / "scan-meta.json").is_file()
+
+
+def test_scan_root_date_defaults_to_the_utc_date(gz, fixture, tmp_path, monkeypatch):
+    utc_now = datetime.datetime(2031, 1, 2, 0, 30, tzinfo=datetime.timezone.utc)
+    monkeypatch.setattr(gz, "_utc_now", lambda: utc_now)
+    root = tmp_path / "module"
+
+    rc = gz.cmd_routine(str(fixture("manifest-routine-cli.yaml")), None, scan_root=str(root),
+                        date=None, registry=_registry(), confirm=True)
+
+    assert rc == 0
+    assert _meta(root / "docs" / "security-scans" / "2031-01-02")["date"] == "2031-01-02"
+
+
+def _half_write_then_fail(gz, monkeypatch, basename):
+    """Make every write-mode `open` in gizmoduck whose file name starts with
+    `basename` write half its text and then raise ENOSPC, the way a full disk
+    does. It is injected as gizmoduck's own `open`, so it reaches whatever
+    open call the writer makes: the temp file of the atomic helper, or the
+    destination itself if that helper is ever replaced by a plain
+    `open(path, "w")`."""
+    real_open = open
+
+    class _HalfWriter:
+        def __init__(self, fh):
+            self._fh = fh
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self._fh.close()
+            return False
+
+        def write(self, text):
+            self._fh.write(text[: len(text) // 2])
+            self._fh.flush()
+            raise OSError(28, "No space left on device")
+
+    def _open(file, *args, **kwargs):
+        mode = args[0] if args else kwargs.get("mode", "r")
+        # The caller's own `with` closes it: this stands in for `open` itself.
+        fh = real_open(file, *args, **kwargs)  # pylint: disable=consider-using-with
+        if "w" in mode and Path(file).name.startswith(basename):
+            return _HalfWriter(fh)
+        return fh
+
+    monkeypatch.setattr(gz, "open", _open, raising=False)
 
 
 def test_scan_meta_write_is_complete_then_renamed(gz, fixture, tmp_path, monkeypatch):
     out = tmp_path / "out"
-    out.mkdir()
-    (out / "scan-meta.json").write_bytes(b"EARLIER RUN")
-    monkeypatch.setattr(gz, "_scan_meta_text", lambda **kw: 1 / 0)
+    _half_write_then_fail(gz, monkeypatch, "scan-meta.json")
 
-    with pytest.raises(ZeroDivisionError):
-        _run(gz, fixture, tmp_path, _registry(), confirm=True, replace=True)
+    with pytest.raises(OSError, match="No space left"):
+        _run(gz, fixture, tmp_path, _registry(), confirm=True)
 
-    assert (out / "scan-meta.json").read_bytes() == b"EARLIER RUN"
-    assert list(out.glob("scan-meta.json*")) == [out / "scan-meta.json"]
+    assert list(out.glob("scan-meta.json*")) == []
+
+
+def test_atomic_write_keeps_the_original_when_the_write_itself_fails(gz, tmp_path, monkeypatch):
+    target = tmp_path / "report.md"
+    target.write_bytes(b"ORIGINAL")
+    _half_write_then_fail(gz, monkeypatch, "report.md")
+
+    with pytest.raises(OSError, match="No space left"):
+        gz._atomic_write_text(target, "new text that never lands")
+
+    assert target.read_bytes() == b"ORIGINAL"
+    assert list(tmp_path.iterdir()) == [target]
 
 
 def test_atomic_write_leaves_the_original_when_the_write_raises(gz, tmp_path, monkeypatch):
@@ -278,6 +478,33 @@ _BAD_MANIFESTS = {
     "missing-location": ("authorized_by: t\ntargets:\n  - {name: a, kind: web}\n",
                          "missing its required 'url' field"),
     "bad-yaml": ("authorized_by: [\n", "while parsing"),
+    "top-level-list": ("- {name: a, kind: web, url: 'https://a.invalid/'}\n",
+                       "the manifest must be a mapping"),
+    "auth-not-a-string": ("authorized_by: 123\ntargets: []\n",
+                          "'authorized_by' must be a string"),
+    "targets-not-a-list": ("authorized_by: t\ntargets: {a: 1}\n", "'targets' must be a list"),
+    "target-not-a-mapping": ("authorized_by: t\ntargets: [foo]\n",
+                             "targets[0] must be a mapping"),
+    "no-name": ("authorized_by: t\ntargets:\n  - {kind: web, url: 'https://a.invalid/'}\n",
+                "targets[0] needs a 'name'"),
+    "int-name": ("authorized_by: t\ntargets:\n  - {name: 1, kind: web, url: 'https://a.invalid/'}\n",
+                 "targets[0] needs a 'name'"),
+    "dotdot-name": (("authorized_by: t\ntargets:\n"
+                     "  - {name: '..', kind: web, url: 'https://a.invalid/'}\n"),
+                    "targets[0] needs a 'name'"),
+    "slash-name": (("authorized_by: t\ntargets:\n"
+                    "  - {name: 'a/b', kind: web, url: 'https://a.invalid/'}\n"),
+                   "targets[0] needs a 'name'"),
+    "kind-not-a-string": ("authorized_by: t\ntargets:\n  - {name: a, kind: [web], url: x}\n",
+                          "targets[0] 'kind' must be a string"),
+    "url-not-a-string": ("authorized_by: t\ntargets:\n  - {name: a, kind: web, url: 5}\n",
+                         "targets[0] 'url' must be a string"),
+    "tools-not-a-list": (("authorized_by: t\ntargets:\n"
+                          "  - {name: a, kind: web, url: 'https://a.invalid/', tools: 5}\n"),
+                         "targets[0] 'tools' must be a list of tool names"),
+    "options-not-a-mapping": (("authorized_by: t\ntargets:\n"
+                               "  - {name: a, kind: web, url: 'https://a.invalid/', options: 5}\n"),
+                              "targets[0] 'options' must be a mapping"),
     "missing-file": (None, "No such file or directory"),
 }
 
@@ -299,6 +526,19 @@ def test_manifest_errors_write_nothing(gz, tmp_path, capsys, case):
     assert message in err
     assert not (tmp_path / "out").exists()
     assert all(a.run_calls == [] for a in reg.ADAPTERS.values())
+
+
+def test_routine_without_pyyaml_is_a_usage_error_naming_it(gz, fixture, tmp_path, capsys,
+                                                         monkeypatch):
+    monkeypatch.delitem(sys.modules, "routine", raising=False)
+    monkeypatch.setitem(sys.modules, "yaml", None)
+
+    rc = gz.cmd_routine(str(fixture("manifest-routine-cli.yaml")), str(tmp_path / "out"),
+                        registry=_registry(), date=_DATE)
+
+    assert rc == 2
+    assert "needs PyYAML" in capsys.readouterr().err
+    assert not (tmp_path / "out").exists()
 
 
 def test_a_manifest_with_no_targets_is_not_complete(gz, tmp_path, capsys):
@@ -427,7 +667,20 @@ def _sanitised_env(tmp_path):
     for var in ("GIZMODUCK_ZAP_HOME", "GIZMODUCK_NIKTO_PL", "GIZMODUCK_TESTSSL_SH",
                 "GIZMODUCK_MSYS2_BIN"):
         env.pop(var, None)
+    # HOME moved, so the user site would move with it and hide a PyYAML
+    # installed with `pip install --user`. Pin it where this interpreter found
+    # it. Scanners resolve through PATH, which stays empty.
+    env.setdefault("PYTHONUSERBASE", site.getuserbase())
     return env
+
+
+def test_sanitised_env_keeps_the_user_site(tmp_path):
+    probe = subprocess.run([sys.executable, "-c",
+                            "import site; print(site.getusersitepackages())"],
+                           capture_output=True, text=True, check=True,
+                           env=_sanitised_env(tmp_path), timeout=60)
+
+    assert probe.stdout.strip() == site.getusersitepackages()
 
 
 def _write_e2e_manifest(tmp_path):
@@ -450,6 +703,8 @@ def test_all_tools_missing_exits_4_end_to_end(tmp_path):
                             capture_output=True, text=True, check=False,
                             env=_sanitised_env(tmp_path), timeout=120)
 
+    assert (out / "run-manifest.json").is_file(), (
+        f"routine wrote no run-manifest.json (exit {result.returncode}): {result.stderr}")
     cells = list(_cells(out).values())
     assert {c["status"] for c in cells} == {"skipped-missing"}, (
         "a scanner resolved in the sanitised environment: " + repr(cells))

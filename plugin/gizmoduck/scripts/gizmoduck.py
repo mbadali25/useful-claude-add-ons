@@ -728,7 +728,8 @@ ROUTINE_INCOMPLETE_EXIT = 4
 ROUTINE_MARKER = "GIZMODUCK_ROUTINE_INCOMPLETE"
 SCAN_META_SCHEMA = 1
 # Every file a routine run owns in its output directory. `--replace` removes
-# these (and the per-target subdirectories) before rerunning into it.
+# these, and the per-target subdirectories the earlier scan-meta.json names,
+# before rerunning into it - nothing else in the directory.
 ROUTINE_FILES = ("scan-meta.json", "findings.jsonl", "run-manifest.json",
                  "report.md", "report.html", "report.pdf")
 _ROUTINE_DEFAULT_OUT = "routine-out"
@@ -840,19 +841,114 @@ def _utc_now():
     return datetime.datetime.now(datetime.timezone.utc)
 
 
-def _clear_earlier_run(outdir):
-    """`--replace`: remove an earlier run's files and per-target native output.
+def _is_plain_dir_name(name):
+    """True for a target name that is safe as `<out>/<name>/`: one path
+    component, never `.` or `..`, no separator (`/`, `\\`), no drive colon,
+    no NUL, no leading or trailing whitespace. The name becomes a directory
+    that `--replace` later removes, so anything that could resolve outside
+    the output directory is refused rather than trusted."""
+    return (isinstance(name, str) and name.strip() == name
+            and name not in ("", ".", "..")
+            and not any(c in name for c in "/\\:\0"))
 
-    scan-meta.json is left in place on purpose: it is replaced atomically, as
-    the LAST write of the new run, so until the new run has finished the
-    directory still says which run its evidence belongs to rather than
-    holding no scan-meta.json at all."""
-    for name in ROUTINE_FILES:
-        if name != "scan-meta.json" and (outdir / name).exists():
-            (outdir / name).unlink()
-    for child in outdir.iterdir():
+
+def _check_manifest_shape(path, yaml):
+    """Refuse, as ValueError, a manifest whose types load_manifest does not
+    check itself: a top-level list, a non-string `authorized_by`, `targets`
+    that is not a list, a target that is not a mapping, a target `name` that
+    is missing or not a plain directory name, and a `kind`, location, `tools`
+    or `options` of the wrong type. Without this those reach load_manifest or
+    run_routine as AttributeError / TypeError - exit 1 and a traceback, and
+    for a bad name an output directory already created."""
+    with open(path, encoding="utf-8") as fh:
+        data = yaml.safe_load(fh)
+    if data is None:
+        return
+    if not isinstance(data, dict):
+        raise ValueError(f"the manifest must be a mapping with 'authorized_by' and 'targets', "  # noqa: TRY004
+                         f"not a {type(data).__name__}")
+    auth = data.get("authorized_by")
+    if auth is not None and not isinstance(auth, str):
+        raise ValueError(f"'authorized_by' must be a string, not {auth!r}")
+    targets = data.get("targets")
+    if targets is not None and not isinstance(targets, list):
+        raise ValueError(f"'targets' must be a list, not a {type(targets).__name__}")
+    for i, raw in enumerate(targets or []):
+        if not isinstance(raw, dict):
+            raise ValueError(f"targets[{i}] must be a mapping (name, kind, location), "  # noqa: TRY004
+                             f"not {raw!r}")
+        name = raw.get("name")
+        if not _is_plain_dir_name(name):
+            raise ValueError(f"targets[{i}] needs a 'name' that is a plain directory name "
+                             f"(it becomes <out>/<name>/; no '/', '\\' or ':', no "
+                             f"leading or trailing space, not '.' or '..'), "
+                             f"not {name!r}")
+        if not isinstance(raw.get("kind"), str):
+            raise ValueError(f"targets[{i}] 'kind' must be a string, "  # noqa: TRY004
+                             f"not {raw.get('kind')!r}")
+        for key in ("url", "path", "host"):
+            if raw.get(key) is not None and not isinstance(raw[key], str):
+                raise ValueError(f"targets[{i}] '{key}' must be a string, not {raw[key]!r}")
+        tools = raw.get("tools")
+        if tools is not None and not (isinstance(tools, list)
+                                      and all(isinstance(t, str) for t in tools)):
+            raise ValueError(f"targets[{i}] 'tools' must be a list of tool names, "
+                             f"not {tools!r}")
+        options = raw.get("options")
+        if options is not None and not isinstance(options, dict):
+            raise ValueError(f"targets[{i}] 'options' must be a mapping, not {options!r}")
+
+
+def _earlier_run_dirs(outdir, meta_path):
+    """The per-target directories the earlier run in `outdir` owns, read from
+    its scan-meta.json, or ValueError naming why that cannot be told.
+
+    "Could not tell" is a refusal, never "remove nothing" or "remove every
+    directory": the output directory can be one the operator already owns (a
+    repo checkout, `--out .`), and only the names the earlier run recorded
+    are its to remove. A named directory that is a symlink is refused too -
+    removing through it would reach outside `outdir`."""
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"{meta_path} is not readable JSON ({exc})") from exc
+    if not isinstance(meta, dict) or meta.get("schema") != SCAN_META_SCHEMA:
+        raise ValueError(f"{meta_path} is not a schema-{SCAN_META_SCHEMA} scan-meta.json")
+    targets = meta.get("targets")
+    if not isinstance(targets, list):
+        raise ValueError(f"{meta_path} has no 'targets' list")  # noqa: TRY004
+    dirs = []
+    for t in targets:
+        name = t.get("name") if isinstance(t, dict) else None
+        if not _is_plain_dir_name(name):
+            raise ValueError(f"{meta_path} names a target {name!r} that is not a plain "
+                             f"directory name")
+        child = outdir / name
+        if child.is_symlink():
+            raise ValueError(f"{child} is a symlink; routine removes only real directories "
+                             f"it wrote")
         if child.is_dir():
-            shutil.rmtree(child)
+            dirs.append(child)
+    return dirs
+
+
+def _clear_earlier_run(outdir, meta_path, dirs):
+    """`--replace`: remove an earlier run's files and the per-target
+    directories `_earlier_run_dirs` resolved, and nothing else.
+
+    scan-meta.json goes FIRST. It is the run's completion record, written
+    last; once the files it describes start disappearing it must not survive
+    them, or a crash or Ctrl-C before the new run finishes leaves the old
+    record (`coverage.complete: true`, its findings total) beside a partial
+    new run or nothing at all, and the directory reads as a finished clean
+    run. With it gone, an interrupted replace looks exactly like an
+    interrupted first run: no scan-meta.json."""
+    meta_path.unlink()
+    for name in ROUTINE_FILES:
+        if (outdir / name).exists():
+            (outdir / name).unlink()
+    for child in dirs:
+        shutil.rmtree(child)
 
 
 def cmd_routine(manifest_path, out, *, scan_root=None, date=None, replace=False,
@@ -861,18 +957,27 @@ def cmd_routine(manifest_path, out, *, scan_root=None, date=None, replace=False,
 
     Returns 0 when every (target, tool) cell ran, ROUTINE_INCOMPLETE_EXIT (4)
     when every output was written but some cell did not run, and 2 when
-    nothing was written (a refused manifest, or an output directory that
-    already holds an earlier run's scan-meta.json without `replace`).
+    nothing was written: PyYAML missing, a refused manifest, an output
+    directory that already holds an earlier run's scan-meta.json without
+    `replace`, or a `replace` that cannot tell which directories the earlier
+    run owns.
 
     `routine` needs PyYAML, so it is imported here rather than at module top:
-    every other command stays stdlib-only. `registry` is run_routine's own
+    every other command stays stdlib-only, and a missing PyYAML is a usage
+    error naming it rather than a traceback. `registry` is run_routine's own
     test seam, passed straight through - no test runs a real scanner.
     sqlmap's two gates stay routine.py's: `options.sqlmap` makes a target a
     candidate, and only `confirm` (the `--confirm-active` flag, by name) lets
     it fire."""
-    import routine
+    try:
+        import routine
+    except ImportError as exc:
+        print(f"routine: needs PyYAML, which this interpreter cannot import ({exc}); install "
+              f"it with `{sys.executable} -m pip install pyyaml`", file=sys.stderr)
+        return 2
 
     try:
+        _check_manifest_shape(manifest_path, routine.yaml)
         manifest = routine.load_manifest(manifest_path, registry=registry)
     except (routine.AuthorizationError, ValueError, OSError, routine.yaml.YAMLError) as exc:
         print(f"routine: manifest refused: {exc}", file=sys.stderr)
@@ -892,7 +997,14 @@ def cmd_routine(manifest_path, out, *, scan_root=None, date=None, replace=False,
                   f"run's evidence; pass --replace to overwrite it, or choose another "
                   f"--out/--date", file=sys.stderr)
             return 2
-        _clear_earlier_run(outdir)
+        try:
+            dirs = _earlier_run_dirs(outdir, meta_path)
+        except ValueError as exc:
+            print(f"routine: --replace refused: cannot tell which directories the earlier run "
+                  f"owns - {exc}. Nothing was removed; move {outdir} aside or choose another "
+                  f"--out/--date", file=sys.stderr)
+            return 2
+        _clear_earlier_run(outdir, meta_path, dirs)
 
     started_at = _utc_now().isoformat()
     run_manifest = routine.run_routine(manifest, outdir, registry=registry,

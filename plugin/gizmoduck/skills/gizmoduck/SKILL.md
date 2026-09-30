@@ -130,7 +130,9 @@ These back the `/gizmoduck:*` commands; all use `gizmoduck.py`:
   scan-meta.json and the report with its coverage table (see the README's
   "Routine" section for the manifest format). Exit 4 means some cell did not run
   and the result is NOT clean - say so, never summarise it as a clean scan. A
-  directory that already holds a scan-meta.json is refused without `--replace`.
+  directory that already holds a scan-meta.json is refused without `--replace`,
+  which removes only that run's files and the target directories its
+  scan-meta.json names, and exits 2 removing nothing when it cannot tell.
   sqlmap needs `--confirm-active` by name, and only after the user has
   authorised active testing of that target.
 - **update** — `gizmoduck.py update` refreshes the Nuclei engine and templates.

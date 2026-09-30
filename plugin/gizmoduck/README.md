@@ -111,8 +111,11 @@ targets:
 
 Default tools per kind: `web` nuclei, zap, nikto, nmap, testssl; `host` nuclei, nmap,
 testssl; `iac` checkov, trivy; `deps` trivy, dependency-check; `code` semgrep. A manifest
-with no `authorized_by`, a duplicate `name`, an unknown `kind` or a target missing its
-location is refused before anything runs.
+with no `authorized_by`, a duplicate `name`, an unknown `kind`, a target missing its
+location, or a value of the wrong type is refused before anything runs, with exit 2. A `name`
+becomes the directory `<out>/<name>/`, so it must be a plain directory name: no `/`, `\`
+or `:`, no leading or trailing space, and not `.` or `..`. `routine` needs PyYAML; without
+it the command exits 2 and names it.
 
 Two output layouts, one of them per run:
 
@@ -152,8 +155,13 @@ not run, so **4 is not a clean result**; the last stdout line starts
 
 **A same-day rerun is refused.** A directory that already holds a `scan-meta.json` is an
 earlier run's evidence, so `routine` exits 2 without touching it unless `--replace` is named.
-`--replace` removes the earlier run's files and per-target directories, keeps the old
-`scan-meta.json` until the new one is complete, and then replaces it. `scan-meta.json` and
+`--replace` removes the earlier run's files and only the per-target directories its
+`scan-meta.json` names; anything else in the directory (a `.git`, your own files) is left
+alone. It removes that `scan-meta.json` first, so a replace interrupted part-way leaves no
+`scan-meta.json` at all, exactly like an interrupted first run, never the old one describing
+files that are gone. When it cannot tell which directories the earlier run owns (an
+unreadable or older `scan-meta.json`, a target name that is not a plain directory name, or a
+named directory that is a symlink) it exits 2 and removes nothing. `scan-meta.json` and
 `report.*` are written complete-then-renamed, never truncated in place.
 
 **sqlmap has two gates, and both stay.** `options.sqlmap: true` makes a target a candidate;
