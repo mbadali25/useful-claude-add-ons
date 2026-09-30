@@ -84,10 +84,20 @@ All notable changes to this repository are documented here. Format follows [Keep
   failure resolving the artifact dirs (a `graph.out` holding a NUL) is
   `could not tell` with its reason on every default-dir artifact, instead of a
   bare path.
+- **Review round 5.** Whether the crew config, a rule or a map exists is
+  proven by `lstat`'s errno, not `os.path.lexists`, which answers `False` for
+  any failure: a parent directory the hook user cannot search read a config
+  naming other artifact dirs as absent (so the defaults were judged) and a
+  generated rule still on disk as removed (so it was admitted). Only `ENOENT`
+  or `ENOTDIR` proves absence; any other failure is `could not tell`, and a
+  map under such a directory is `could not tell` rather than "deleted". The
+  round's third BLOCK, the `verify-gate` record, is made at the gate on the
+  final head, not in the diff.
 - **Sabotage.** In `plugin/crew/tests/sabotage_refresh.py`, fifteen entries
   after the `# T-0094` marker, sixteen after `# T-0094 review round 1`, nine
-  after `# T-0094 review round 2`, twelve after `# T-0094 review round 3` and
-  eight after `# T-0094 review round 4` (counted by `ast`), each run by hand against
+  after `# T-0094 review round 2`, twelve after `# T-0094 review round 3`,
+  eight after `# T-0094 review round 4` and five after `# T-0094 review round 5`
+  (counted by `ast`), each run by hand against
   the tracked file and confirmed RED with the file restored byte-identical,
   plus the approval-gate entries, whose tests now perform an admitted refresh
   so they stay RED with the verdicts in place; review round 1's stale-approval

@@ -101,8 +101,9 @@ edit is a re-anchor (the `anchor:` or provenance sha moved forward to a commit o
 regeneration (`.claude/rules/` as `crew_instructions.py rules` writes them, the graph after a code
 change). A map claim edited without a re-anchor is listed with `[anchor did not move]`, and
 belongs in Touch if that is what the ticket means to do. When git cannot answer, a rule file
-cannot be read, a short base anchor is ambiguous (two commits share it), or the artifact dirs
-cannot be resolved, the listing says `[could not tell: ...]`, and that never passes. `/crew:done` runs the same check:
+cannot be read, a short base anchor is ambiguous (two commits share it), the artifact dirs
+cannot be resolved, or a directory the hook cannot search hides whether the config, a rule or a
+map exists, the listing says `[could not tell: ...]`, and that never passes. `/crew:done` runs the same check:
 
 ```bash
 python3 <crew>/hooks/scripts/completion_audit.py --check --ticket T-0042
