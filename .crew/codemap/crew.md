@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@33c833c8
-verified: 2026-09-28
+anchor: useful-claude-add-ons@f05ed74e
+verified: 2026-09-30
 
 ## Re-derive provenance
 
@@ -654,32 +654,41 @@ one-root, probe and layer cases); mutations `DEPLOY_MUTATIONS` in
 
 ## The Windows shell route (T-0040)
 
-DERIVED at `33c833c8` (T-0040's branch), read in full. `plugin/crew/hooks/scripts/crew_shell.py` (875 lines)
+DERIVED at `f05ed74e` (T-0040's branch, after review round 1), read in full. `plugin/crew/hooks/scripts/crew_shell.py` (1020 lines)
 picks the shell crew's long-running jobs run in on native Windows. It is a CLI
-(`probe`, `measure`, `classify`, `run`; `main` at `:852`) and a library for
+(`probe`, `measure`, `classify`, `run`; `main` at `:997`) and a library for
 `crew_status.py`. It imports no crew module at import time. No hook calls it:
 `plugin/crew/hooks/hooks.json` and `crew_platform.py` are unchanged. `host_os` (`:59`) gives
 `windows`, `windows-bash`, `linux`, `macos`, `wsl` or `other`, and `on_windows` (`:82`) gates
 everything: off native Windows `probe` returns `n/a`, `status_line` returns None, and `run`
-(`:582`) execs `["bash", "-c", cmd]` with no config read and no message. The preference is
+(`:732`) execs `["bash", "-c", cmd]` with no config read and no message, mapping a
+signal-killed child's -N to 128+N as `bash -c` does. The preference is
 `shellRoute.mode`/`.distro` in both config layers (`plugin/crew/hooks/scripts/crew_config.py:335`
-and `:575`), read through `resolve_config` by `settings` (`:398`). `mode` (`:419`) reads an
-unrecognised value as `auto` and names it. The probe (`:296`) runs only `wsl.exe --list
---verbose` and one `command -v python3; command -v git` in the default `*` distro (or
-`shellRoute.distro`). It decodes UTF-16LE with `decode` (`:123`) and returns `usable`,
-`not-installed`, `no-distro`, `wsl1-only`, `no-python3`, `no-git`, `broken` or `unknown`. A
-runner that raises is `unknown` through `_call` (`:282`), never `not-installed`. The answer is
-cached machine-locally at `probe_path` (`:357`), beside `crew_state.GLOBAL_CONFIG_PATH` and
-resolved at call time. `write_cache` (`:379`) computes the text first, then temp file and
-`os.replace`, LF. `classify` (`:148`) proves plain argv or returns bash, and `METACHARACTERS`
-(`:41`) and `SHELL_WORDS` (`:43`) are its lists. `decide` (`:486`) is the pure route table.
-`resolve_pwsh` (`:192`) and `resolve_gitbash` (`:211`) resolve absolutely and refuse WSL's
-System32 launcher (`_is_launcher`, `:203`). `measure` (`:680`) times 50 forks and 200 writes
-per side, each shell reading its own clock (`$EPOCHREALTIME`, a pwsh Stopwatch) so no launcher
-start-up is in the number; an unreadable timing is an error, never zero. `status_line` (`:742`) reads config and the cache only, and
+and `:575`), read through `resolve_config` by `settings` (`:438`). `mode` (`:459`) reads an
+unrecognised value as `auto` and names it. The probe (`:336`) runs only `wsl.exe --list
+--verbose` and one `command -v python3; command -v git` under `bash -lc` (`_in_job_shell`,
+`:272`, the job's own shell) in the default `*` distro (or `shellRoute.distro`). It decodes
+UTF-16LE with `decode` (`:123`), joins every detail onto one line (`one_line`, `:294`) and
+returns `usable`, `not-installed`, `no-distro`, `wsl1-only`, `no-python3`, `no-git`, `broken`
+or `unknown`. A runner that raises is `unknown` through `_call` (`:322`), never
+`not-installed`. The answer is cached machine-locally at `probe_path` (`:397`), beside
+`crew_state.GLOBAL_CONFIG_PATH` and resolved at call time. `write_cache` (`:419`) computes the
+text first, then temp file and `os.replace`, LF. `classify` (`:171`) proves plain argv or
+returns bash; `METACHARACTERS` (`:41`) and `SHELL_WORDS` (`:43`) are its lists and
+`_embeds_posix_path` (`:148`) refuses a token carrying a POSIX path after `=`, `,`, an option's
+letters, or a `:` that is not a drive letter or URL scheme. `decide` (`:547`) is the pure route
+table; `route_for` (`:710`) is `decide` plus the `to_wsl_path` distro check, the one decision
+path `run` and `status_line` share. `run` then adds the WSL preflight (`_preflight`, `:668`),
+which checks the first word and, for `python3 -m <mod>` (`job_head`, `:648`), that the module
+imports inside the distro. `pwsh_argv` (`:602`) doubles `'` and U+2018-U+201B and exits 1 when
+the program cannot start. `resolve_pwsh` (`:217`) and `resolve_gitbash` (`:236`) resolve
+absolutely and refuse WSL's System32 launcher (`_is_launcher`, `:228`). `measure` (`:825`)
+times 50 forks and 200 writes per side, each shell reading its own clock (`$EPOCHREALTIME`, a
+pwsh Stopwatch) so no launcher start-up is in the number; an unreadable timing is an error,
+never zero. `status_line` (`:887`) reads config and the cache only, and
 `plugin/crew/hooks/scripts/crew_status.py:208` calls it and appends it after the `verify` line. Tests:
 `plugin/crew/tests/test_crew_shell.py`, `plugin/crew/tests/test_status.py`. Mutations:
-`plugin/crew/tests/sabotage_shell.py` (`SHELL_MUTATIONS`, 11 entries, registered at
+`plugin/crew/tests/sabotage_shell.py` (`SHELL_MUTATIONS`, 13 entries, registered at
 `plugin/crew/tests/sabotage.py:81`). The `.crew/verify.json` rule is the last in the map.
 
 ## verify-gate's temp-file rule capture
@@ -2172,3 +2181,5 @@ this note beyond the citation script and the tuple count.
 **Re-anchored `25d2de63` -> `136f4b33` on 2026-09-28 (T-0092 merged onto `ff59160f`, T-0089, crew 1.0.54).** `e2220836` merges origin/main `ff59160f` (T-0089 landed as crew 1.0.53 at `0f526a8c`: `plugin/crew/tests/test_role_write_guard.py` fixtures and a `CHANGELOG.md` entry) into `T-0092-build`; the merge was clean. `136f4b33` re-bumps crew to 1.0.54 and moves T-0092's `1.0.53` mentions (`review_patch.py`'s docstring, `plugin/crew/README.md:842`, `TODO.md:5051`, the two test-file comments, its `CHANGELOG.md` heading) to 1.0.54, all in place. Every body citation of the form `path:line` into a file changed between `25d2de63` and `136f4b33` was compared by script: the only differences are version-file lines changed in place, `plugin/crew/README.md:842` in place, and lines cited inside dated provenance notes (`CHANGELOG.md`, which T-0089's entry shifts by 12 lines below `:80`, and `TODO.md:5048`), left as history at their own commit. No citation into `test_role_write_guard.py` exists here. The version sentence and the T-0092 DERIVED bullet move to 1.0.54. Nothing was executed for this note.
 
 **Re-anchored `136f4b33` -> `8f85657a` -> `33c833c8` on 2026-09-28 (T-0040).** `8f85657a` is T-0040's step-8 commit on `T-0040-shell-routes`, cut from main `6387ab49`. `git diff --name-only 136f4b33 8f85657a` over every path this note cites returns, outside the code maps, only T-0040's files: `crew_config.py` (the `shellRoute` block, +8 after `:327` and +4 after `:563`), `crew_status.py` (+1 import, +5 after the verify line), `sabotage.py` (+1 import at `:81`, the concatenation), `crew-setup/SKILL.md` (the inline copy), both templates, `test_crew_config.py`, `test_status.py`, and the new `crew_shell.py`, `sabotage_shell.py` and `test_crew_shell.py`. Every body citation of the form `path:line` into those files was mapped through `git diff -U0` by script and re-read: moved and re-cited are `crew_config.py` `:393` -> `:401`, `:1260` -> `:1272`, `:381` -> `:389`, the ratchet construction sites `:2444`-`:2556` -> `:2456`-`:2568` (bare citations included), `crew_status.py:63` -> `:64`, and `test_crew_config.py:282` -> `:294`. The leaf counts were re-executed (125 / 70 / 55 / 0) and the Windows shell route section is new. Lines cited inside dated provenance notes are left as history at their own commit. Only the leaf-count functions and the citation script were executed for this note. Then `33c833c8`: step 11's native run reopened `measure` (`33c833c8`, in-shell timing, +18 lines in `crew_shell.py`); every `crew_shell.py` citation in the section above was re-taken by content with `grep -n`, and `git diff --name-only 8f85657a {SHA}` touches no other cited path except T-0040's docs: step 9's `phases.md` (+9 above `:180`) and `implement.md` (+2 above `:89`) moved two citations here, re-cited as `phases.md:189-195` and `implement.md:91-113` and re-read with `sed -n`.
+
+**Re-anchored `33c833c8` -> `f05ed74e` on 2026-09-30 (T-0040 review round 1, T-0040-Bdt4JE).** `git diff --name-only 33c833c8 f05ed74e`, refresh artifacts aside, returns `crew_shell.py`, `test_crew_shell.py`, `sabotage_shell.py`, `crew-execute/SKILL.md`, `crew-graph/SKILL.md`, `crew-setup/platform.md`, `BUDGETS.md` and `.crew/verify.json` (step 11's `seconds`). Of those, this note cites line numbers only in `crew_shell.py`, whose section above was re-taken symbol by symbol with `grep -n` at `f05ed74e` (the file grew 875 -> 1020 lines: `route_for`, `job_head`, `_embeds_posix_path`, `one_line`, `_in_job_shell` are new) and `BUDGETS.md:11`, which kept its line (only the count on it changed). `SHELL_MUTATIONS` went 11 -> 13 entries. Nothing was executed for this note beyond `grep -n` and the per-path diff.
