@@ -7,10 +7,6 @@
     "lines": 163,
     "reason": "T8: to trim"
   },
-  "plugin/crew/commands/implement.md": {
-    "lines": 122,
-    "reason": "raised: T-0040 step 4 gained a two-line native-Windows note that each check, suite or graph build runs through crew_shell.py run -- \"<command>\", 120 -> 122"
-  },
   "plugin/crew/commands/model.md": {
     "lines": 249,
     "reason": "T8: to trim"

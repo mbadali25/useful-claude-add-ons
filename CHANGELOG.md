@@ -4,15 +4,17 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.87: Windows shell routes (T-0040)
+### Added — `crew` 1.0.88: Windows shell routes (T-0040)
 
 - **What it is.** `hooks/scripts/crew_shell.py` picks the shell crew's long-running jobs run in on
   native Windows, and every Windows run of a verify check, a test suite or a graph build goes
   through `crew_shell.py run -- "<command>"`, which prints one `crew-shell:` route line to stderr
   and passes the job's exit code through. `/crew:implement` step 4 and the `crew-execute`,
-  `crew-graph` and `crew-setup` skills say so. Bumped `1.0.85 -> 1.0.87` (T-0040 never set a
-  version on its branch; it landed at 1.0.86, one past main's 1.0.85, T-0028; this corrects to
-  1.0.87 after the sabotage-entries split below, which changed crew content past that bump).
+  `crew-graph` and `crew-setup` skills say so. Bumped `1.0.85 -> 1.0.88` (T-0040 never set a
+  version on its branch; it landed at 1.0.86, one past main's 1.0.85, T-0028; 1.0.87 after the
+  sabotage-entries split below; 1.0.88 after PR CI's real leg - `check (3.12)`/`test (3.12)`,
+  which a PR only runs at 3.12 - caught a stale generated-rules hash and an over-budget
+  `implement.md` neither local run had exercised the same way).
 - **Four modes, `shellRoute.mode`, in both config layers.** `auto` (the default) routes a job to
   WSL2 when WSL is usable and the repo lives inside WSL, or sits on a Windows drive where a
   measurement found WSL faster; otherwise a plain argv runs directly with no shell and anything
@@ -53,6 +55,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   so shipping them alongside this feature would have failed that gate. No test calls a real
   `wsl.exe`, pwsh or Git Bash on a routed path. `.crew/verify.json`'s T-0040 rule runs the two
   feature suites; W-0115 restores the sabotage rule path and its mutation coverage.
+- **Landing-branch CI fixes.** `.claude/rules/crew.md` regenerated after a codemap correction
+  changed its source hash; `implement.md`'s step-4 native-Windows note reflowed (two paragraphs
+  re-wrapped, no wording lost) to stay at the 120-line command budget rather than growing an
+  allowance exception; `BUDGETS.md`'s `plugin/crew/*.md` line count corrected to 21,719 (moved
+  by the reflow, per this file's own "re-measure rather than trusting it" note).
 
 ### Added
 
