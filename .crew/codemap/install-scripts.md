@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@da6c62c1
+anchor: useful-claude-add-ons@68659749
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -389,6 +389,10 @@ through their own package managers.
 - `skill_preflight_path` / `Get-SkillPreflightPath`'s recursive search for an
   installed skill's `preflight.py` was not re-read at this pass; no installed
   skill directory was inspected.
+
+## Re-anchor provenance - `da6c62c1` -> `68659749`, 2026-09-30 (T-0505 merges main `d1462bbd`, L-0529)
+
+`git diff --name-only da6c62c1 68659749` outside the refresh artifacts returns L-0529's files (four crew tests, `crew_fixtures.py`, obsidian-vault's probe test and plugin.json, now 0.4.15) and the version files, edited in place: crew is 1.0.82 on this branch past main's 1.0.80 (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`). L-0529's CHANGELOG entry adds 25 lines below T-0505's, so every `CHANGELOG.md` line citation here moved +25 (nine, all in history sections). No other cited line moved. Nothing was executed for this note.
 
 ## Re-anchor provenance - `6c497a14` -> `f2bb919b`, 2026-09-25 (T-0015)
 
