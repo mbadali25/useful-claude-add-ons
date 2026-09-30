@@ -102,7 +102,7 @@ regeneration (`.claude/rules/` as `crew_instructions.py rules` writes them, the 
 change). A deleted rendered diagram or graph file, a symlink at or along an artifact's path, or
 a file whose git mode changed never passes. A map claim edited without a re-anchor is listed with
 `[anchor did not move]`, and belongs in Touch if that is what the ticket means to do. When git cannot answer, a rule file
-cannot be read, a short base anchor is ambiguous (two commits share it), the artifact dirs
+cannot be read, a short anchor is ambiguous (two commits share it), the artifact dirs
 cannot be resolved, or a directory the hook cannot search hides whether the config, a rule or a
 map exists, or two configured artifact dirs are equally specific for a path, the listing says
 `[could not tell: ...]`, and that never passes. (These verdicts are `crew_refresh_check.py`'s;

@@ -129,6 +129,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   `docs.diagramsDir` are judged as graph), two equally specific ones being
   `could not tell`. INDEX.md's own mode branch is gone: the new check
   refuses a mode change first, for every kind.
+- **Review round 7.** The bytes judged are the bytes of the file the checks
+  proved regular: read once, before git is asked anything, through a
+  descriptor opened without following a link at any path component (on
+  POSIX each directory is opened relative to its parent with `O_NOFOLLOW`),
+  so a link swapped in after the checks is refused instead of read. An
+  ambiguous NEW short anchor is `could not tell`, as a base one already was,
+  and the base copy is looked up with `git ls-tree`, so a base git cannot
+  read is `could not tell` rather than "new file".
 - **Split (owner, 2026-09-30).** Under the tooling-PR rule
   (`scripts/check-tooling-pr.py`), `completion_audit.py`'s wiring to
   `artifact_verdicts`, `scope_guard.py`'s rule-6 docstring, their
@@ -140,9 +148,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   (a harness file): fifteen entries
   after the `# T-0094` marker, sixteen after `# T-0094 review round 1`, nine
   after `# T-0094 review round 2`, twelve after `# T-0094 review round 3`,
-  eight after `# T-0094 review round 4`, five after `# T-0094 review round 5`
-  and twelve after `# T-0094 review round 6` (counted by `ast`), each run by
-  hand against
+  eight after `# T-0094 review round 4`, five after `# T-0094 review round 5`,
+  twelve after `# T-0094 review round 6` and eight after `# T-0094 review
+  round 7` (counted by `ast`), each run by hand against
   the tracked file and confirmed RED with the file restored byte-identical,
   plus the approval-gate entries, whose tests now perform an admitted refresh
   so they stay RED with the verdicts in place; review round 1's stale-approval
