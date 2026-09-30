@@ -1,6 +1,6 @@
-%% Generated from useful-claude-add-ons@9b6b0da7 on 2026-09-30. Verify before trusting.
-%% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py
-%% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
+%% Generated from useful-claude-add-ons@a7c29371 on 2026-09-30. Verify before trusting.
+%% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
+%% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review (through the merge train once armed) -> done (and land through the train).
 %% --
 %% NEW in T-0015. Drawn from the command files themselves, each read in full at
 %% f2bb919b (review.md read at its step headings and verdict/round lines only).
@@ -229,6 +229,15 @@
 %% Re-anchored c04dd2ef -> 9b6b0da7 (T-0085 landing, crew 1.0.74): of the anchored paths only crew_standards.py
 %% changed (gate_applies proves absence only under a real directory; Windows fail-open fix). The
 %% diagram draws the self-check gate, not that branch. No node or edge changed.
+%% Re-drawn 9b6b0da7 -> a7c29371 (L-0520, the merge train, crew 1.0.76): of the anchored paths review.md,
+%% done.md and review_run.py changed, and crew_train.py is new. review.md is in place (551 lines):
+%% :441's comment gains `6 train wait`, :450 gains the exit-6 sentence; :25-29, :447-449, :452, :484,
+%% :504, :508 and :511 hold. review_run.py: preflight :468 (called at :568) now ends in train_gate
+%% (:504), so a new tr0 node sits between pf0 and rv0 - once the clone's train is armed, an overlapping
+%% holder or earlier waiter, a base moved in Touch, or an unreadable train is exit 6 with no round
+%% spent; the budget refusal edge is now :571-581. done.md gains "Landing through the merge train"
+%% (:78-92): check-land, the printed gh pr merge --match-head-commit, release --merged; drawn as ln0-ln2
+%% after dn4. Lines :7-70 of done.md hold.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
@@ -287,12 +296,15 @@ flowchart TB
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
-        im5 --> pf0{"preflight first (#264):<br/>a CLEAN receipt covers this bundle?<br/>verify gate passed this tree?<br/>review_run.py:454, :521"}
+        im5 --> pf0{"preflight first (#264):<br/>a CLEAN receipt covers this bundle?<br/>verify gate passed this tree?<br/>review_run.py:468, :568"}
         pf0 -- "CLEAN receipt: CLEAN,<br/>no round, no self-check" --> rcpt
         pf0 -- "gate not passed or unknown:<br/>exit 5, no round spent,<br/>self-check not asked<br/>review.md:450" --> vg0["run the verify gate,<br/>then review again"]
         vg0 --> im5
-        pf0 -- "go on" --> rv0{"self-check stamped for<br/>this bundle and standards set?<br/>review_run.py standards_gate"}
-        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no self-check asked<br/>review_run.py:525-535" --> replan
+        pf0 -- "go on" --> tr0{"merge train armed? (L-0520)<br/>crew_train.acquire: no overlapping holder<br/>or earlier waiter, base merged in<br/>review_run.py:504"}
+        tr0 -- "not armed, or holding" --> rv0{"self-check stamped for<br/>this bundle and standards set?<br/>review_run.py standards_gate"}
+        tr0 -- "waiting / merge base first /<br/>could not tell: exit 6,<br/>no round spent<br/>review.md:450" --> tw0["wait for the holder to land,<br/>or crew_train.py catch-up (a merge,<br/>rerere on); then review again"]
+        tw0 --> im5
+        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no self-check asked<br/>review_run.py:571-581" --> replan
         rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:447-450" --> sc1
         rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle;<br/>prompt ends with the standards checklist<br/>review.md:25-29, :452"]
         rv1 --> rv2{"verdict (the script's)<br/>:441, :484"}
@@ -315,6 +327,10 @@ flowchart TB
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
         dn5 -- "stale / unknown" --> dnx
+        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:78-81"}
+        ln0 -- yes --> ln1{"crew_train.py check-land:<br/>holds the train, merge-tree clean,<br/>base unmoved in Touch, receipt + gate<br/>done.md:84-88"}
+        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge<br/>--merge --match-head-commit sha;<br/>then release --merged sha<br/>(crew never merges) :89-90"]
+        ln1 -- "refused: catch-up,<br/>gate the merged head again<br/>:91-92" --> im5
     end
 
     fix -.-> BR

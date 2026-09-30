@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@5c9a9db2
+anchor: useful-claude-add-ons@a7c29371
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 36 commands, 31 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.75 (T-0085's landing: 1.0.70 at its merge of main's 1.0.69 at `a61a6f38`, 1.0.71 after one landing-branch sabotage anchor commit, 1.0.72 after rewrapping `commands/review.md` to its line allowance, 1.0.73 at its catch-up merge of main's 1.0.70 at `6813749b` (#268, T-0097), 1.0.74 for the Windows fail-open fix in `gate_applies` at `9b6b0da7`, 1.0.75 for re-targeting the sabotage entry that fix made vacuous; whose 1.0.62-1.0.69 are #263-#267 and T-0088; before that 1.0.61, T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`; T-0085's build branch declares main's version and carries no bump of its own until land, `.crew/standards.md` REPO-03), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.76 (L-0520, the merge train, one past main's 1.0.75; before that T-0085's landing: 1.0.70 at its merge of main's 1.0.69 at `a61a6f38`, 1.0.71 after one landing-branch sabotage anchor commit, 1.0.72 after rewrapping `commands/review.md` to its line allowance, 1.0.73 at its catch-up merge of main's 1.0.70 at `6813749b` (#268, T-0097), 1.0.74 for the Windows fail-open fix in `gate_applies` at `9b6b0da7`, 1.0.75 for re-targeting the sabotage entry that fix made vacuous; whose 1.0.62-1.0.69 are #263-#267 and T-0088; before that 1.0.61, T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`; T-0085's build branch declares main's version and carries no bump of its own until land, `.crew/standards.md` REPO-03), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -511,7 +511,7 @@ they disagree:
   `config.json`".
 - Only `/crew:migrate` (`crew_migrate.py`, `--apply`) ever writes
   `.crew/crew.json`; `/crew:init` still writes only `.crew/config.json`
-  (`TODO.md:3963`, "T2 (lane D, additive) deferred items", filed
+  (`TODO.md:3973`, "T2 (lane D, additive) deferred items", filed
   2026-09-23, still open at this anchor; it was `:3854` at `6c497a14`,
   `:3884` at `f2bb919b` and `:3952` at `1e0706ac`). `crew_migrate.py`'s own module
   docstring (`:1-4`) frames this as "one-time move of a 0.20 crew setup onto
@@ -1161,12 +1161,14 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   (`_write_replacing` `:329`); `stamp`'s docstring names the remaining window between that
   re-read and the replace as an accepted risk, not a GEN-03 binding.
 - **Gate.** `review_run.run` first calls main's `preflight`
-  (`plugin/crew/hooks/scripts/review_run.py:454`, at `:521`; #264): a CLEAN receipt covering the
-  bundle answers CLEAN with no round and no self-check, and a verify gate that has not passed
-  the tree is refused with exit 5 before the self-check is asked for (owner decision
-  2026-09-30, "Preflight first"; `test_preflight_answers_before_the_selfcheck_is_asked_for`).
-  Only then does it call `standards_gate` (`:481`) at `:532`, before
-  `review_ledger.reserve` (`:536`), for every provider, unless `review_ledger.status` already
+  (`plugin/crew/hooks/scripts/review_run.py:468`, at `:568`; #264): its first half,
+  `_receipt_and_gate` (`:478`, the pre-L-0520 body), answers CLEAN from a CLEAN receipt covering
+  the bundle with no round and no self-check, and refuses a verify gate that has not passed the
+  tree with exit 5 before the self-check is asked for (owner decision 2026-09-30, "Preflight
+  first"; `test_preflight_answers_before_the_selfcheck_is_asked_for`); its second half is the
+  merge train's `train_gate` (`:504`, returned at `:475`; see "The merge train" below).
+  Only then does it call `standards_gate` (`:528`) at `:579`, before
+  `review_ledger.reserve` (`:583`), for every provider, unless `review_ledger.status` already
   reads `NEEDS_REPLAN` or no rounds left: then the budget refusal answers first and the
   self-check is not asked for (review round 3). `crew_standards.review_gate`
   (`:663`) applies unless `gate_applies` (`:597`) proves there is no approval receipt: only
@@ -1177,10 +1179,10 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   gates, with a "could not tell" note. It reads the manifest, and `_gate` (`:635`, behind
   `gate_problems` `:629`) re-checks the record's completeness and compares the stamp's bundle and standards digest; on a pass the
   note carries `std:<first 8 of the digest>` for the metrics row. Problems return
-  `EXIT_USAGE` (`review_run.py:503`) unless `crew_incident.read_state` is active, which logs
-  a `standards-selfcheck` skip (`:494`) and reserves.
+  `EXIT_USAGE` (`plugin/crew/hooks/scripts/review_run.py:550`) unless `crew_incident.read_state`
+  is active, which logs a `standards-selfcheck` skip (`:541`) and reserves.
 - **Checklist.** `review_prompt.build` puts `crew_standards.checklist_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:264`, defined at `crew_standards.py:664`)
+  (`plugin/crew/hooks/scripts/review_prompt.py:294`, defined at `crew_standards.py:664`)
   after the test receipts; it never reads `selfcheck.md`. When the manifest's file lists
   are unusable it lists the always-on sets (those whose `applies-to` holds `"**"`) under an
   `UNKNOWN:` line.
@@ -1196,11 +1198,61 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `plugin/crew/tests/sabotage_standards.py` (`STANDARDS_MUTATIONS` `:48`; fourteen through
   review round 1, nineteen from round 2, nine from round 3, one at land: the preflight-order
   swap), appended in
-  `plugin/crew/tests/sabotage.py` at `:3061`; `.crew/verify.json`'s last rule runs them.
+  `plugin/crew/tests/sabotage.py` at `:3062`; `.crew/verify.json`'s second-to-last rule runs
+  them (the last is L-0520's).
   JUDGEMENT: the approval-receipt condition is
   the one way a ticket reaches review without the gate; it exists because the pre-existing
   review_run tests run tickets with no receipt, and a ticket without one cannot pass
   `/crew:done`.
+
+## The merge train (L-0520, crew 1.0.76)
+
+DERIVED at this anchor from `plugin/crew/hooks/scripts/crew_train.py` (read in full) and the
+two callers.
+
+- **What it is.** One locked queue per clone serialising gate+land per overlapping Touch set;
+  lanes still implement in parallel. State under `<git-common-dir>/crew/train/` via `train_dir`
+  (`plugin/crew/hooks/scripts/crew_train.py:187`, on `crew_ticket.state_dir`): `state.json`
+  (`SCHEMA` `:100`), `events.jsonl` (`read_events` `:300`), `merge-log/<id>.jsonl`
+  (`merge_log_path` `:202`). No config key: `arm` (`:494`) creates `state.json` with
+  `O_CREAT|O_EXCL`; `disarm` (`:513`) refuses with entries.
+- **Fail closed.** `load` (`:211`) returns `absent` only when `state.json` does not exist;
+  unreadable, unparseable or wrong-schema is `could not tell`. `_Lock` (`:237`) is
+  `review_ledger._Lock`'s shape, `LOCK_WAIT_SECONDS` (`:101`), never removed for age;
+  `_mutate` (`:271`) refuses absent as `NotArmed` (exit 1) and anything else unreadable as
+  `TrainError` (exit 3), appends events with the next `seq`, then `os.replace`s the state.
+  `touch_of` (`:327`) returns `None` (overlaps everything) for any Touch that is not a readable,
+  problem-free, non-empty list.
+- **Overlap and the hold rule.** `_prefix` (`:348`) is the case-folded segments before the
+  first glob segment; `entries_overlap` (`:367`) is a segment-prefix test; `touch_overlap`
+  (`:373`) returns every colliding pair, refresh artifacts dropped by `effective` (`:362`,
+  `REFRESH_PREFIXES` `:104`). `_blockers` (`:434`) is every holder, and every earlier-ordered
+  waiter, on the same base with an overlapping Touch. `acquire` (`:543`) upserts the entry,
+  prints unseen notices (`_notices` `:467`), logs a `wait` event with each blocker's pairs, or
+  refuses `merge <base> first` when `_moved_paths` (`:390`) finds base commits touching Touch,
+  or holds and logs `acquire`. `_stale` (`:407`) is printed evidence only.
+- **Catch-up and land.** `catch_up` (`:693`) refuses an in-progress merge or a dirty tree
+  (`--untracked-files=no`, `.work/` excluded), fetches `<remote>/<branch>` bases (`_fetch`
+  `:673`), runs `ensure_rerere` (`:658`; `--worktree` only when `extensions.worktreeConfig` is
+  already true, else `--local`), `git merge --no-edit <base>`, and parses `Resolved`/`Staged
+  '<path>' using previous resolution.` (git 2.53 prints `Staged` under `rerere.autoupdate`)
+  against the staged set; it never commits a conflicted or rerere-resolved merge.
+  `check_land` (`:804`): hold, fetch, `_merge_tree` (`:788`, `--write-tree --name-only`; exit 1
+  lists conflicts, other codes are could-not-tell), moved-in-Touch, `review_ledger.check_receipt`,
+  `review_gate.gate_state`, then prints `LAND_OK` and the `gh pr merge ... --match-head-commit`
+  line and logs `check-land`. `release` (`:580`) logs `release`, `merged` (paths from
+  `<sha>^1..<sha>`, `null` when unreadable) or `force-release` (needs `--by` and `--reason`).
+- **Callers.** `review_run.train_gate` (`plugin/crew/hooks/scripts/review_run.py:504`): absent
+  returns None silently; anything else refuses with `EXIT_TRAIN` = 6, including any exception.
+  `review_prompt._catch_up_block` (`plugin/crew/hooks/scripts/review_prompt.py:268`, called at
+  `:293`) lists rerere-replayed files; an unreadable merge log is `UNREADABLE:`.
+  `plugin/crew/tests/test_crew_train.py` asserts by AST that only those two scripts import it.
+- **Tests.** `plugin/crew/tests/test_crew_train.py`, `test_review_run_train.py`,
+  `test_review_prompt.py` (catch-up block), `test_lifecycle_commands.py` (done.md, review.md);
+  twelve mutations S1-S12 in `plugin/crew/tests/sabotage_train.py` (`TRAIN_MUTATIONS`),
+  appended in `plugin/crew/tests/sabotage.py` at `:3062`; `.crew/verify.json`'s last rule.
+  JUDGEMENT: the machine-local lane scripts do not call it yet (L-0520's PR body lists the four
+  calls); until they do, only `review_run.py`'s exit 6 enforces the train.
 
 ## Entry points
 
@@ -1317,7 +1369,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   never on `git add`; the manifest's `excluded` is `list(EXCLUDED)`.
   `_bundle_block` prints that list as `excluded (never in the bundle): ...`,
   or `excluded: none recorded` when the manifest has none
-  (`plugin/crew/hooks/scripts/review_prompt.py:96`).
+  (`plugin/crew/hooks/scripts/review_prompt.py:104`).
 - DERIVED (T-0079): the READ-line rule of the review verdict is
   `review_verdict._covers` (`plugin/crew/hooks/scripts/review_verdict.py:79`):
   a READ token counts for a part when, `\` read as `/` and `normpath`ed, it
@@ -1325,11 +1377,11 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `parse` applies it at `plugin/crew/hooks/scripts/review_verdict.py:124`.
   The prompt quotes `review_verdict.READ_FORM`
   (`plugin/crew/hooks/scripts/review_verdict.py:70`) in `_bundle_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:92`) and on the webtest
-  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:250`), and
+  (`plugin/crew/hooks/scripts/review_prompt.py:100`) and on the webtest
+  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:258`), and
   `review_run.finish` hands `parse` the manifest `path`s
-  (`plugin/crew/hooks/scripts/review_run.py:370`) and the overflow file's
-  scratch path (`plugin/crew/hooks/scripts/review_run.py:372`). `parse` and
+  (`plugin/crew/hooks/scripts/review_run.py:384`) and the overflow file's
+  scratch path (`plugin/crew/hooks/scripts/review_run.py:386`). `parse` and
   `codex_final_message` split reviewer output on `\n` only, never
   `str.splitlines()`, whose U+2028 break cut a Codex event mid-JSON
   (`plugin/crew/hooks/scripts/review_verdict.py:94`,
@@ -2900,3 +2952,5 @@ import block lost one line; no note cites that file by line. Re-anchor only; not
 **Re-anchored `8a89a596` -> `9b6b0da7` on 2026-09-30 (T-0085 landing: Windows fail-open fix, crew 1.0.74).** `git diff --name-only 58431f49 9b6b0da7` returns the crew version files, `CHANGELOG.md`, `plugin/crew/hooks/scripts/crew_standards.py` (`import stat`, new `_ancestor_problem` before `gate_applies`, which now proves a receipt absent only when the nearest existing ancestor is a directory), `plugin/crew/tests/test_crew_standards.py` (new `test_gate_applies_when_a_file_parent_is_reported_as_not_found`) and `plugin/crew/tests/sabotage_standards.py` (one entry). Path-qualified citations into those files were moved by a line diff (`/root/crew-tmp/t-0085/remap_merge.py`, 10 moved, 0 unmapped); `crew.md`'s bare `crew_standards.py` citations in its standards section were moved by the same diff (27). No suite was executed for this note.
 
 **Re-anchored `9b6b0da7` -> `5c9a9db2` on 2026-09-30 (T-0085 landing: sabotage entry re-targeted, crew 1.0.75).** `git diff --name-only 33da9c91 5c9a9db2` returns the crew version files, `CHANGELOG.md` and `plugin/crew/tests/sabotage_standards.py` (the "receipt that cannot be looked up" entry now flips `gate_applies`' `OSError` verdict). Path-qualified citations into those files were moved by a line diff (`/root/crew-tmp/t-0085/remap_merge.py`, 9 moved, 0 unmapped). No suite was executed for this note.
+
+**Re-anchored `5c9a9db2` -> `a7c29371` on 2026-09-30 (L-0520: the merge train, crew 1.0.76).** `git diff --name-only 5c9a9db2 a7c29371` adds, outside refresh artifacts, main's commits up to `9af34e57` and L-0520's: the new `plugin/crew/hooks/scripts/crew_train.py`, `review_run.py` (`preflight` split, `train_gate`, `EXIT_TRAIN`, docstring), `review_prompt.py` (`_catch_up_block`), `plugin/crew/commands/review.md` (in place, still 551 lines) and `done.md` (a new section), `plugin/crew/README.md` (a new subsection after "You open the pull request", so lines below it move +13), the three guide sources and their rebuilt outputs, the version files, `CHANGELOG.md`, `TODO.md` (+10 near the top), `plugin/crew/BUDGETS.md:11` (the count, in place), `.crew/verify.json` (three `why`s extended in place, one rule appended) and the new tests. Path-qualified citations outside dated provenance paragraphs were moved by a line diff (difflib equal blocks, scratch script): 8 moved by the remap, plus the T-0085 Gate paragraph's citations (bare `:N` among them) rewritten by hand against `grep -n`. Citations inside earlier dated provenance paragraphs describe the tree at their own anchor and were not rewritten. The new section "The merge train (L-0520, crew 1.0.76)" was derived from `plugin/crew/hooks/scripts/crew_train.py` read in full at this anchor (`grep -n '^def '` for every cited definition), and the T-0085 Gate paragraph rewritten for `preflight`'s split into `_receipt_and_gate` then `train_gate`; the version sentence reads 1.0.76. No suite was executed for this note.
