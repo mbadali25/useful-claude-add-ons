@@ -4,7 +4,7 @@ paths:
   - "_verify/smoke.sh"
   - "scripts/check-marketplace.py"
 ---
-<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=3c8669cf6231a1ac -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=288cf96bbe5267c2 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # verification-harness
 Code map anchor `37f4e807`; if it is behind HEAD, re-check with `git diff --name-only 37f4e807..HEAD -- <cited paths>`.
 Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and .crew/verify.json — what each actually runs, and where they overlap or don't. .crew/verify.json is tracked; its own anchor field (:3) is stale at 5238be3d, independent of this note's anchor.
