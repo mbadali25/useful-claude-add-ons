@@ -75,7 +75,7 @@ prints.
 per ROLE, which provider and model back it, which family that speaks as,
 whether the self-review guard is barring it, and which fallback is armed.
 """
-
+# pylint: disable=too-many-lines  # over 3400 after T-0088; the split is a T-0088 follow-up ticket
 import argparse
 import collections
 import copy
@@ -88,6 +88,7 @@ import shutil
 import sys
 import time
 
+import crew_common
 import crew_config_files
 import crew_state
 
@@ -1260,7 +1261,7 @@ def production_declaration(root, name):
     and reports it; this is what makes that report true.
     """
     key = PROD_DECL_KEYS[name]
-    path = os.path.join(root, ".crew", "config.json")
+    path = crew_common.repo_config_file(root, "config.json")
     try:
         with open(path, encoding="utf-8-sig", errors="replace") as handle:
             raw = handle.read()
@@ -2132,7 +2133,22 @@ def role_status(row):
     return "eligible"
 
 
-def _print_models(report):
+def _repo_layer_line(root):
+    """`repo layer: <path> (<source>)` -- which `.crew/config.json` the repo
+    layer was read from; in a linked worktree with none of its own, the main
+    checkout's (T-0088)."""
+    crew_dir, source, detail = crew_common.repo_config_dir(root)
+    line = f"repo layer: {os.path.join(crew_dir, 'config.json')} ({source})"
+    if source == crew_common.SOURCE_UNKNOWN:
+        line += f" - {detail}"
+    shadowed = crew_common.shadowed_main_config(root) if source == crew_common.SOURCE_OWN else ""
+    if shadowed:
+        line += " - " + crew_common.shadow_note(shadowed)
+    return line
+
+
+def _print_models(report, root="."):
+    print(_repo_layer_line(root))
     # A fact about the CONFIG, printed ahead of anything role-shaped -- a
     # hand-edited file naming a provider nothing resolves is a problem with
     # what was read, not with any one row's resolution.
@@ -3143,7 +3159,8 @@ CREW_JSON_NOTICE = (
 # --- CLI -------------------------------------------------------------------
 
 
-def _print_explain(rows):
+def _print_explain(rows, root="."):
+    print(_repo_layer_line(root))
     width = max((len(r["path"]) for r in rows), default=4)
     print(f"{'key'.ljust(width)}  source    value")
     narrowed, ignored = [], []
@@ -3367,7 +3384,7 @@ def main(argv=None):
         if args.json:
             print(json.dumps(report, indent=2))
         else:
-            _print_models(report)
+            _print_models(report, args.root)
         return 0
 
     if args.check:
@@ -3392,7 +3409,7 @@ def main(argv=None):
     if args.json or not args.explain:
         print(json.dumps(rows, indent=2))
     else:
-        _print_explain(rows)
+        _print_explain(rows, args.root)
     return 0
 
 

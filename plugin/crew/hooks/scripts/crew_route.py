@@ -53,6 +53,7 @@ import re
 import sys
 
 import crew_autopilot
+import crew_common
 import crew_config
 import crew_state
 import crew_ticket
@@ -318,7 +319,7 @@ def settings(root):
         if "route" in layer and not isinstance(layer["route"], dict):
             warnings.append(f"route in {where} is {layer['route']!r}, not an object, so it "
                             "is ignored")
-    crew_json = _read_json(os.path.join(top, ".crew", "crew.json"))
+    crew_json = _read_json(crew_common.repo_config_file(top, "crew.json"))
     if isinstance(crew_json, dict) and "route" in crew_json and "route" not in repo:
         warnings.append("route is set in .crew/crew.json, which crew does not read for this "
                         "key; move it to .crew/config.json")

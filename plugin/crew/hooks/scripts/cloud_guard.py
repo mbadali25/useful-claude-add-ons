@@ -123,6 +123,7 @@ import stat
 import sys
 import time
 
+import crew_common
 import crew_config
 import crew_state
 from crew_guards import _head_name as _guards_head_name
@@ -2120,7 +2121,7 @@ def _pwsh_moves(args):
     directory: `-WorkingDirectory DIR` or any abbreviation PowerShell binds
     to it (`-wo`, `-work`, ...), its alias `-wd`, with `-`, `--` or `/`."""
     for arg in args:
-        if not arg[:1] in ("-", "/"):
+        if arg[:1] not in ("-", "/"):
             continue
         name = arg.lstrip("-/").split(":", 1)[0].lower()
         if name == "wd" or (len(name) >= 2
@@ -2501,7 +2502,7 @@ def cloud_pins(root):
     command through; a pin crew cannot read makes every cloud identity unknown.
     """
     empty = {key: [] for key in crew_state.CLOUD_DEFAULTS}
-    path = os.path.join(root, ".crew", "config.json")
+    path = crew_common.repo_config_file(root, "config.json")
     try:
         with open(path, encoding="utf-8-sig", errors="replace") as handle:
             raw = handle.read()
@@ -2535,7 +2536,7 @@ def environments_config(root):
     commands are not judged, exactly as before T-0005.
     """
     out = {"nonProd": [], "problem": ""}
-    path = os.path.join(root, ".crew", "config.json")
+    path = crew_common.repo_config_file(root, "config.json")
     try:
         with open(path, encoding="utf-8-sig", errors="replace") as handle:
             raw = handle.read()
@@ -3174,7 +3175,7 @@ def resolve_mode(root):
     invalid, not unpinned. An unarmed one stays off -- unlike unparseable
     JSON, a bad `cloud` block cannot be hiding the switch, which parsed."""
     mode = crew_config.resolve_guard(root, "cloudGuard")["effective"]
-    repo_path = os.path.join(root, ".crew", "config.json")
+    repo_path = crew_common.repo_config_file(root, "config.json")
     repo_state = crew_config.layer_state(repo_path)
     global_state = crew_config.layer_state(crew_config.GLOBAL_CONFIG_PATH)
     if "corrupt" in (repo_state, global_state):

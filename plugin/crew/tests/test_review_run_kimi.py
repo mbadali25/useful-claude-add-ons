@@ -1329,11 +1329,15 @@ def test_run_kimi_a_failing_probe_that_wrote_the_tree_exits_probe_changed(repo, 
     assert rl.status(str(repo), "T1")["rounds"] == []
 
 
-def test_every_exit_code_is_distinct():
+def test_the_probe_changed_exit_code_is_no_other_exit_code():
+    """`run` also returns EXIT_UNVERIFIED (5, the gate is not green), and
+    `--probe` returns 5-7; main reuses 5 across those two modes on purpose, so
+    the check is that no other EXIT_* shares EXIT_PROBE_CHANGED's value."""
     codes = {name: value for name, value in vars(review_run).items()
              if name.startswith("EXIT_")}
+    others = {name: value for name, value in codes.items() if name != "EXIT_PROBE_CHANGED"}
 
-    assert len(set(codes.values())) == len(codes) and codes["EXIT_PROBE_CHANGED"] == 5, codes
+    assert (codes["EXIT_PROBE_CHANGED"], codes["EXIT_PROBE_CHANGED"] in others.values()) == (8, False), codes
 
 
 # FIX 8 (review_run.py:225): a special file is recorded, never opened.

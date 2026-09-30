@@ -122,9 +122,25 @@ which family authored the diff.
 
 ### Check
 
+`command -v codex` only says the CLI is installed. Being on `PATH` is not being
+able to review: a logged-out, rate-limited or out-of-credits Codex resolves on
+`PATH` and fails at the first call. `/crew:review` therefore probes with one
+minimal real call, before it reserves a round, with the round's own model and
+effort (so a per-model limit is seen):
+
 ```bash
-command -v codex && codex --version
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket <id> \
+  --scratch <dir> --provider codex --model <qa.codex.model> --effort <effort> --probe
 ```
+
+Four outcomes, each its own exit code: `0` ok, `5` limited, `6` failed, `7`
+unknown (no answer within 120 s). `limited` means the call failed and its error
+or stderr matched one of Codex's own limit messages - usage limit, out of
+credits, spend cap, `rate limit exceeded`, `Quota exceeded`, a plan that does
+not include Codex, or a retry limit on HTTP 429 - which `review_limit.py` cites
+to `openai/codex` `codex-rs/protocol/src/error.rs` line by line. On `limited`
+the round runs on the Claude reviewer, announced as same-family (owner, T-0088).
+"Selected model is at capacity" and "high demand" are not limits.
 
 ### Set up
 
