@@ -376,3 +376,39 @@ def test_git_dir_pointing_elsewhere_blocks(flavour, repo):
         cwd=repo.main)
     assert code == 2, err
     assert "--git-dir" in err, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_env_dash_C_names_the_tree_being_deployed(flavour, repo):
+    """Allow reading of a directory flag the parser recognises."""
+    repo.dirty_main()
+    code, err = run_gate(flavour, repo, f"env -C {repo.wt} deploy-dev",
+                         cwd=repo.main)
+    assert code == 0, err
+    assert repo.in_flight() == f"development {repo.wt_sha}"
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_long_chdir_flag_into_another_repository_blocks(flavour, repo):
+    """Deny reading of the same flag family."""
+    code, err = run_gate(flavour, repo, f"env --chdir={repo.foreign} deploy-dev",
+                         cwd=repo.main)
+    assert code == 2, err
+    assert "different repository" in err, err
+
+
+@pytest.mark.parametrize("command", [
+    "bash -c 'cd {wt} && deploy-qa'",
+    "true\ncd {wt}\ndeploy-qa",
+    "(cd {wt} && deploy-qa)",
+])
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_cd_in_any_other_form_is_could_not_tell(flavour, repo, command):
+    """GEN-05: a directory change the leading chain did not take -- quoted
+    inside `bash -c`, on a second line, in a subshell -- is refused, never
+    judged as if the deploy ran in the payload cwd."""
+    repo.promotions(("development", repo.main_sha))
+    code, err = run_gate(flavour, repo, command.format(wt=repo.wt),
+                         cwd=repo.main)
+    assert code == 2, err
+    assert "changes directory after it starts" in err, err

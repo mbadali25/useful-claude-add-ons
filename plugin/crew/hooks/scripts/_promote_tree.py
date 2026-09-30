@@ -9,15 +9,17 @@ the command, which python on Windows would get wrong.
 
 Kinds:
   cd    one step of the LEADING `cd <dir> &&` / `cd <dir>;` chain, in order
-  C     the directory of a `git -C <dir>` anywhere in the command
+  C     a directory the command reads: `git -C <dir>` (git's global option),
+        `env -C`/`make -C <dir>`, `--chdir`/`--cwd`/`--directory <dir>`
   bare  a git invocation with no `-C`: it resolves in the chain's directory
   hex   a 7-40 character hex token, a candidate literal sha
   bad   a directory token the shell would expand (`$`, a backtick) or `-`
         (the previous directory) - the gate cannot know what it names, so it
         must refuse rather than guess
-  midcd a `cd`/`pushd` AFTER the leading chain (`true && cd x && deploy`, a
-        subshell `(cd x && deploy)`): the deploy may run somewhere the chain
-        does not say, so the gate refuses and asks for the cd to come first
+  midcd a `cd`/`pushd`/`popd`/`chdir` word AFTER the leading chain (`true &&
+        cd x && deploy`, `(cd x && deploy)`, `bash -c 'cd x && deploy'`, a
+        second line): the deploy may run somewhere the chain does not say, so
+        the gate refuses and asks for the cd to come first
   gitdir `--git-dir`/`--work-tree`/`GIT_DIR=`/`GIT_WORK_TREE=`: git pointed at
         a repository by a route the gate does not follow
 
@@ -31,7 +33,16 @@ import sys
 # word. `)` ends it too, so `$(git -C dir rev-parse HEAD)` reads `dir`.
 _TOKEN = r"""(?:"([^"]*)"|'([^']*)'|([^\s;&|()]+))"""
 _CD = re.compile(r"\s*(?:cd|pushd)(?:\s+--)?\s+" + _TOKEN + r"\s*(?:&&|;)")
-_MIDCD = re.compile(r"(?:^|[;&|(`]|\$\()\s*(?:cd|pushd)\b")
+# A directory change anywhere after the chain, as a WORD: after a separator,
+# whitespace, a quote (`bash -c 'cd x && deploy'`) or a brace, and followed by
+# the end, whitespace, a separator or a quote. Deliberately broad (GEN-05): a
+# `cd` the chain did not take is could-not-tell, whatever form it is in.
+_MIDCD = re.compile(r"""(?:^|(?<=[\s;&|(){}'"`]))(?:cd|pushd|popd|chdir)(?=$|[\s;&|)'"`])""")
+# Other tools that take a directory: `env -C`/`make -C` anywhere in the same
+# simple command, and the long flags that mean "run there". `git -C` is only
+# its GLOBAL option (before the subcommand; `git log -C` is copy detection).
+_TOOLDIR = re.compile(r"(?:^|(?<=[\s(;&|/`'\"]))(?:env|make|gmake)\b[^;&|\n]*?\s-C\s*" + _TOKEN)
+_LONGDIR = re.compile(r"(?:^|(?<=\s))--(?:chdir|cwd|directory)(?:=|\s+)" + _TOKEN)
 _GITDIR = re.compile(r"--git-dir\b|--work-tree\b|\bGIT_DIR=|\bGIT_WORK_TREE=")
 _GIT = re.compile(r"(?:^|(?<=[\s(;&|/`]))git\b((?:\s+-c\s+\S+)*)(\s+-C\s*"
                   + _TOKEN + r")?")
@@ -64,6 +75,10 @@ def records(command):
     # that the chain did not take (`cd x | deploy`) is not understood either.
     for m in _MIDCD.finditer(command[pos:]):
         out.append(("midcd", m.group(0).strip()))
+    for rx in (_TOOLDIR, _LONGDIR):
+        for m in rx.finditer(command):
+            text, expands = _value(m, 1)
+            out.append(("bad" if expands else "C", text))
     for m in _GITDIR.finditer(command):
         out.append(("gitdir", m.group(0)))
     for m in _GIT.finditer(command):

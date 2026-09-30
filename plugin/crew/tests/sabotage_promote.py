@@ -14,6 +14,7 @@ CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _SCRIPTS = os.path.join(CREW, "hooks", "scripts")
 SH = os.path.join(_SCRIPTS, "promote-gate.sh")
 PS1 = os.path.join(_SCRIPTS, "promote-gate.ps1")
+TREE = os.path.join(_SCRIPTS, "_promote_tree.py")
 _T = "tests/test_promote_gate_effective_tree.py::"
 
 PROMOTE_TREE_MUTATIONS = (
@@ -53,4 +54,16 @@ PROMOTE_TREE_MUTATIONS = (
      '  if ($resolved -and $resolved -ne $full) {\n',
      '  if ($false) {\n',
      _T + "test_a_literal_sha_that_is_not_the_trees_head_blocks[ps1]"),
+    ("promote-gate.ps1 ignores a cd after the start of the command", PS1,
+     'if ($mid.Success) {\n',
+     'if ($false) {\n',
+     _T + "test_a_cd_after_the_start_of_the_command_blocks[ps1]"),
+    ("_promote_tree.py stops reading env -C / make -C as the deploy's tree", TREE,
+     '    for rx in (_TOOLDIR, _LONGDIR):\n',
+     '    for rx in (_LONGDIR,):\n',
+     _T + "test_env_dash_C_names_the_tree_being_deployed[sh]"),
+    ("_promote_tree.py reads a quoted `bash -c 'cd x'` as no directory change", TREE,
+     """(?:^|(?<=[\\s;&|(){}'"`]))(?:cd|pushd|popd|chdir)""",
+     """(?:^|(?<=[\\s;&|(){}]))(?:cd|pushd|popd|chdir)""",
+     _T + "test_a_cd_in_any_other_form_is_could_not_tell[sh-bash -c 'cd {wt} && deploy-qa']"),
 )

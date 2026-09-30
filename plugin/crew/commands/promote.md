@@ -316,7 +316,7 @@ the deploy runs from**: every `requires` environment has an all-pass row in
 and that tree is clean. These cannot be skipped by deciding to skip them.
 
 The tree is the Bash call's `cwd`, moved by a leading `cd <dir> &&` chain and
-named by any `git -C <dir>`. It must be a worktree of the same repository, every
+named by any `git -C <dir>` (or `env -C`, `make -C`, `--chdir`/`--cwd`/`--directory`). It must be a worktree of the same repository, every
 literal sha in the command must be its HEAD, and a command that changes
 directory after it starts, names two trees, or uses `--git-dir` is refused
 rather than guessed at. `.crew/verify.json`, `.work/PROMOTIONS.md`, the approval

@@ -217,7 +217,10 @@ while ($true) {
 # A directory change AFTER the leading chain, or git pointed at a repository
 # by --git-dir/--work-tree/GIT_DIR: the deploy may read a tree the chain does
 # not name, so refuse rather than judge the wrong one.
-$mid = [regex]::Match($cmd.Substring($pos), '(?:^|[;&|(`]|\$\()\s*(?:cd|chdir|sl|Set-Location|pushd|Push-Location)\b', 'IgnoreCase')
+# As a WORD, after a separator, whitespace, a quote or a brace - deliberately
+# broad, the twin of _promote_tree.py's _MIDCD: a directory change the chain did
+# not take is could-not-tell, whatever form it is in.
+$mid = [regex]::Match($cmd.Substring($pos), '(?:^|(?<=[\s;&|(){}''"`]))(?:cd|chdir|sl|Set-Location|pushd|popd|Push-Location|Pop-Location)(?=$|[\s;&|)''"`])', 'IgnoreCase')
 if ($mid.Success) {
   Stop-Promotion "cannot tell which directory the deploy runs from: the command changes directory after it starts ('$($mid.Value.Trim())'). Put the cd first - 'cd <dir>; <deploy>' - so the gate judges the tree the deploy runs in."
 }
@@ -235,6 +238,22 @@ foreach ($m in $gitRx.Matches($cmd)) {
   $dir = Resolve-Dir $base $val[0]
   if (-not $dir) { Stop-Promotion "cannot tell which directory the deploy runs from: 'git -C $($val[0])' does not resolve from '$base'." }
   $trees.Add($dir)
+}
+# Other tools that take a directory, as in _promote_tree.py: `env -C`/`make -C`
+# in the same simple command, and the long flags that mean "run there" -
+# PowerShell's own -WorkingDirectory among them.
+$dirRxs = @(
+  [regex]('(?:^|(?<=[\s(;&|/`''"]))(?:env|make|gmake)\b[^;&|\n]*?\s-C\s*' + $tokenRx),
+  [regex]('(?:^|(?<=\s))(?:--chdir|--cwd|--directory|-WorkingDirectory)(?:=|:|\s+)' + $tokenRx)
+)
+foreach ($rx in $dirRxs) {
+  foreach ($m in $rx.Matches($cmd)) {
+    $val = Get-TokenValue $m 1
+    if ($val[1]) { Stop-Promotion "cannot tell which directory the deploy runs from: '$($val[0])' is expanded by the shell, and the gate will not guess what it names. Use a literal path." }
+    $dir = Resolve-Dir $base $val[0]
+    if (-not $dir) { Stop-Promotion "cannot tell which directory the deploy runs from: '$($val[0])' does not resolve from '$base'." }
+    $trees.Add($dir)
+  }
 }
 if ($trees.Count -eq 0 -or $bare) { $trees.Add($base) }
 
