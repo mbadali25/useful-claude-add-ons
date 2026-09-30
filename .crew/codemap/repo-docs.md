@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@328fdf4a
+anchor: useful-claude-add-ons@a54ca704
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -1468,3 +1468,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `17d0b1d2` -> `3bb32980` on 2026-09-30 (T-0040-land: T-0040 merged into origin/main `6a8c60b1` at `b6ae7c61`, review round 2's fixes at `3bb32980`).** T-0040's `plugin/crew/README.md` section moved the body citation `plugin/crew/README.md:2259` -> `:2270` (mapped through `git diff -U0 origin/main`, re-read with `sed -n`). No other body citation in this map names a line the landing moved. No suite was executed for this note.
 
 **Merged `3bb32980` (T-0040-land) + `328fdf4a` (main) on T-0040-land, 2026-09-30 (merge of origin/main `844bfc36`, T-0028 landed as crew 1.0.85).** Both sides' provenance kept, main's first; the body citation both sides moved was re-read by content on the merged tree (see the body). No suite was executed for this note.
+
+**Re-anchored `328fdf4a` (main) / `3bb32980` (T-0040-land) -> `a54ca704` on 2026-09-30 (T-0040-land's merge of origin/main `844bfc36`, T-0028 landed as crew 1.0.85).** The merge note above names every citation the merge re-took; nothing else moved. No suite was executed for this note beyond the merge's.
