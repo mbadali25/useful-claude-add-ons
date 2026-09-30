@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@e71ad41f
+anchor: useful-claude-add-ons@f1ccd055
 verified: 2026-09-30
 
 # localgpu
@@ -37,6 +37,10 @@ not by `localgpu`'s own code (see above) and not by this repo's marketplace
 gate either. It is an unenforced convention maintained by whoever edits the
 version, full stop; the gate only catches `plugin.json` drifting from
 `marketplace.json`, a different pair.
+
+## Re-anchor provenance - `e71ad41f` -> `f1ccd055`, 2026-09-30 (T-0505 merges main `42af3fb7`, L-0531, crew 1.0.82)
+
+`git diff --name-only e71ad41f f1ccd055` outside the refresh artifacts returns L-0531's `plugin/crew/tests/sabotage_qa.py` (+5 constants, +18 entries; no line of it is cited here), `.crew/verify.json` (rule 34 edited in place at `:365-373`, line count unchanged), `CHANGELOG.md` (L-0531's entry, below T-0505's; the `CHANGELOG.md` line citations keep main's numbers plus T-0505's 34) and the version files: crew is 1.0.83 on this branch, one past main's 1.0.82. No cited line moved. Nothing was executed for this note.
 
 ## Re-anchor provenance - `17d0b1d2` -> `e71ad41f`, 2026-09-30 (T-0505 merges main `42d5ef58`, T-0094, crew 1.0.81)
 

@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@e71ad41f
+anchor: useful-claude-add-ons@f1ccd055
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -1509,6 +1509,10 @@ two disagree. The other subsystem notes in `.crew/codemap/` cover their own
 areas; `INDEX.md` is the table of contents. The `6c497a14` re-derivation left
 its anchor column to the integrator; T-0015 re-filled that column from
 `grep -m1 '^anchor:'` when it re-anchored every note to `f2bb919b`.
+
+## Re-anchor provenance - `e71ad41f` -> `f1ccd055`, 2026-09-30 (T-0505 merges main `42af3fb7`, L-0531, crew 1.0.82)
+
+`git diff --name-only e71ad41f f1ccd055` outside the refresh artifacts returns L-0531's `plugin/crew/tests/sabotage_qa.py` (+5 constants, +18 entries; no line of it is cited here), `.crew/verify.json` (rule 34 edited in place at `:365-373`, line count unchanged), `CHANGELOG.md` (L-0531's entry, below T-0505's; the `CHANGELOG.md` line citations keep main's numbers plus T-0505's 34) and the version files: crew is 1.0.83 on this branch, one past main's 1.0.82. No cited line moved. Nothing was executed for this note.
 
 ## Re-anchor provenance - `17d0b1d2` -> `e71ad41f`, 2026-09-30 (T-0505 merges main `42d5ef58`, T-0094, crew 1.0.81)
 
