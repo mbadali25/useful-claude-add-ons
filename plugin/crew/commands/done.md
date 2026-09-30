@@ -75,6 +75,22 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_metrics.py record --ticket "$1"
 4. If `notify.provider` is not `none`:
    `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh done "$1 complete"`
 
+## Landing through the merge train
+
+Only when `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_train.py status`
+prints `armed: yes` (L-0520; parallel lanes in one clone). Crew never merges:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_train.py check-land --ticket "$1" --pr <PR>
+```
+
+It refuses unless this ticket holds the train, `git merge-tree` is clean, the
+base has not moved in Touch paths, and HEAD carries checks 1 and 2. On
+`LAND_OK` run the `gh pr merge <PR> --merge --match-head-commit <sha>` it
+printed, then `crew_train.py release --ticket "$1" --merged <merge sha>`. A
+refusal names `crew_train.py catch-up` (a merge, never a rebase): catch up,
+gate the merged head again, rerun this command.
+
 Do not run step 4 before checks 1–4 pass. "Done" that means "I stopped typing"
 is the reason nobody trusts a notification channel — the same line `/crew:work`
 opened with. <!-- deliberate -->

@@ -395,3 +395,26 @@ def test_plan_template_and_skill_carry_a_standards_line():
 
     assert [("Standards:" in template.split("```")[1]),
             ("Standards:" in skill.split("```")[1])] == [True, True]
+
+
+_TRAIN_LANDING = ("## Landing through the merge train", "crew_train.py status",
+                  "armed: yes", 'crew_train.py check-land --ticket "$1"',
+                  "--match-head-commit", 'crew_train.py release --ticket "$1" --merged',
+                  "crew_train.py catch-up", "Crew never merges")
+
+
+def test_done_names_the_merge_train_landing():
+    """L-0520: /crew:done names the land check, the printed merge and the
+    release, and says crew never merges."""
+    text = " ".join(_read(os.path.join(COMMANDS, "done.md")).split())
+
+    missing = [s for s in _TRAIN_LANDING if s not in text]
+
+    assert missing == [], f"done.md lacks {missing}"
+
+
+def test_review_names_the_train_exit():
+    text = " ".join(_read(os.path.join(COMMANDS, "review.md")).split())
+
+    assert ("6 train wait" in text and "Exit 6" in text
+            and "crew_train.py status" in text)
