@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@401f6e0f
+anchor: useful-claude-add-ons@6a44587f
 verified: 2026-09-30
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -641,6 +641,10 @@ on `make up` and unsets it on `make down`.
   was silently dropped from `.crew/verify.json`'s `paths` lists during the
   crew 1.0 restructuring (as opposed to renamed/consolidated) was not traced
   commit by commit — only the current file's shape was read.
+
+## Re-anchor provenance - `401f6e0f` -> `6a44587f`, 2026-09-30 (T-0505)
+
+`git diff --name-only 401f6e0f 6a44587f` outside the refresh artifacts returns only `plugin/crew/tests/sabotage_promote.py`: two sabotage target ids wrapped under the line limit, no behaviour and no line this note cites. No citation moved. Nothing was executed for this note.
 
 ## Re-anchor provenance - `6c497a14` -> `f2bb919b`, 2026-09-25 (T-0015)
 

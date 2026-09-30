@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@401f6e0f
+anchor: useful-claude-add-ons@6a44587f
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -484,6 +484,10 @@ listing the directory.
   makes were not read; both changed substantially in this range and
   `crew.md`/`marketplace-registration.md`/`verification-harness.md` own
   them.
+
+## Re-anchor provenance - `401f6e0f` -> `6a44587f`, 2026-09-30 (T-0505)
+
+`git diff --name-only 401f6e0f 6a44587f` outside the refresh artifacts returns only `plugin/crew/tests/sabotage_promote.py`: two sabotage target ids wrapped under the line limit, no behaviour and no line this note cites. No citation moved. Nothing was executed for this note.
 
 ## Re-anchor provenance - `6c497a14` -> `f2bb919b`, 2026-09-25 (T-0015)
 

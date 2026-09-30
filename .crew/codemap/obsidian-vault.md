@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@401f6e0f
+anchor: useful-claude-add-ons@6a44587f
 verified: 2026-09-30
 
 ## Does
@@ -520,6 +520,10 @@ violation visible at all. (JUDGEMENT.)
   bash's process-group `kill -9`) is, like the WindowsApps stub before it, **MODELLED, not observed
   on a real Windows host** - this note repeats that caveat rather than treating the source reading
   as equivalent to a Windows run.
+
+## Re-anchor provenance - `401f6e0f` -> `6a44587f`, 2026-09-30 (T-0505)
+
+`git diff --name-only 401f6e0f 6a44587f` outside the refresh artifacts returns only `plugin/crew/tests/sabotage_promote.py`: two sabotage target ids wrapped under the line limit, no behaviour and no line this note cites. No citation moved. Nothing was executed for this note.
 
 ## Re-anchor provenance
 The per-path diff `a02331ee..1f97e51c` over the paths this note cites showed **documentation churn

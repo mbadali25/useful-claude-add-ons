@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@401f6e0f
+anchor: useful-claude-add-ons@6a44587f
 verified: 2026-09-30
 
 # localgpu
@@ -37,6 +37,10 @@ not by `localgpu`'s own code (see above) and not by this repo's marketplace
 gate either. It is an unenforced convention maintained by whoever edits the
 version, full stop; the gate only catches `plugin.json` drifting from
 `marketplace.json`, a different pair.
+
+## Re-anchor provenance - `401f6e0f` -> `6a44587f`, 2026-09-30 (T-0505)
+
+`git diff --name-only 401f6e0f 6a44587f` outside the refresh artifacts returns only `plugin/crew/tests/sabotage_promote.py`: two sabotage target ids wrapped under the line limit, no behaviour and no line this note cites. No citation moved. Nothing was executed for this note.
 
 ## Re-anchor provenance - 3167721f -> 1f97e51c, 2026-09-06
 

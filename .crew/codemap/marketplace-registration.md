@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@401f6e0f
+anchor: useful-claude-add-ons@6a44587f
 verified: 2026-09-30
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -311,6 +311,10 @@ against synthetic fixtures and never reads this repo's own docs.
 - **The install scripts' full array contents** (every `SKILL_KEYS` entry, not
   just the crew/plugin rows) were not diffed line by line against `5d1fc5fd`;
   only the catalog *mechanism* and the crew-specific rows were re-measured.
+
+## Re-anchor provenance - `401f6e0f` -> `6a44587f`, 2026-09-30 (T-0505)
+
+`git diff --name-only 401f6e0f 6a44587f` outside the refresh artifacts returns only `plugin/crew/tests/sabotage_promote.py`: two sabotage target ids wrapped under the line limit, no behaviour and no line this note cites. No citation moved. Nothing was executed for this note.
 
 ## Re-anchor provenance - `6c497a14` -> `f2bb919b`, 2026-09-25 (T-0015)
 
