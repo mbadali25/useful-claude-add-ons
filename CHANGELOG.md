@@ -4,6 +4,65 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.64: faster QA harness — parallel pylint and pytest, unsigned fixture commits
+
+- **What changed.** `pylint.yml` and the `**/*.py` rule in `.crew/verify.json`
+  run `pylint -j <os.cpu_count()>`; the `test` job in `pytest-crew.yml` installs
+  `pytest-xdist` and runs `-n auto`; verify.json's whole-suite crew rule uses
+  `-n auto` when `xdist` imports and runs serially when it does not. crew's
+  `conftest.py` pins `commit.gpgsign=false` / `tag.gpgsign=false` for every test
+  through `GIT_CONFIG_COUNT`, appended after the runner's own entries
+  (`crew_fixtures.unsigned_git_env`).
+- **Why (measured 2026-09-29, 4-CPU Linux container).** pylint over every tracked
+  file: 148s serial, 34s at `-j 4`, identical findings. crew's default set:
+  923s serial, 281s at `-n 4` (6393 passed, 453 skipped both ways), 229s at
+  `-n 4` with fixture signing off (6400 passed: the seven new tests). The serial
+  run held one core at ~33%: it is subprocess-bound, which is why workers pay.
+  Fixture commits were running the developer's signing program: 83 ms a commit
+  signed against 7 ms unsigned, and a gpg host with a pinentry can prompt.
+- **Not `-j 0`.** pylint's own CPU detection read that container as 1 CPU and
+  ran serially (151s at `-j 0`), so the count comes from `os.cpu_count()`.
+- **Not Ruff in place of pylint.** Ruff already runs. It has no equivalent for
+  the inference checks this repo's suppressions show firing (`no-member`,
+  `not-callable`, `arguments-differ`, `possibly-used-before-assignment`,
+  `cyclic-import`), and it does not read `# pylint: disable=` pragmas.
+- **Ruff now runs in CI.** No workflow ran it, while verify.json told readers
+  "CI still runs it"; the local gate skips it where ruff is absent. `pylint.yml`
+  gains a `ruff` job (`ruff~=0.16.0`, one Python: ruff does not execute what it
+  checks). `ruff.toml` now names `select = ["E4", "E7", "E9", "F"]` — the
+  default set it was baselined on — because ruff 0.16 widened the default and
+  an unpinned `ruff check .` reported 1493 findings on untouched code. Under
+  that set, 0.15.22 and 0.16.9 both found the same nine that had landed
+  unseen: eight deliberate `E402` in `crew_status.py` (bytecode is disabled
+  before the imports; now `# noqa: E402`, the repo's convention) and one `E713`
+  in `cloud_guard.py` (`not x in y` -> `x not in y`, identical semantics; its
+  suites pass 1761/0, and inverting the line turns four RED).
+- **Wall-clock tests stay serial.** Nine crew tests (12 items) assert elapsed
+  time against a real bound — a hook's timeout, a probe's deadline. Under
+  `-n auto` in the first CI run, `test_near_deadline_candidates_then_a_hang_stay_within_the_hook_timeout`
+  read `ps1=10.25s` against its 10s bound on 2 of 6 jobs. The bound is the
+  hook's real timeout, so it was not loosened. The tests carry a new
+  `wallclock` marker (crew's `conftest.py`), and every parallel caller now runs
+  `-n auto -m "not wallclock"` first and then `-m wallclock` serially.
+- **No background git maintenance in fixtures.** `git commit` runs `git maintenance
+  run --auto`, which the runner's git 2.55 detaches; it was still writing
+  `.git/objects/maintenance.lock` while `test_refresh_check.py::test_check_writes_nothing`
+  snapshotted the fixture repo, which read as the tool under test writing. The
+  conftest pins now include `maintenance.auto=false` and `gc.auto=0`
+  (`crew_fixtures.FIXTURE_GIT_PINS`, helper renamed `fixture_git_env`); a
+  GIT_TRACE test proves a commit launches no maintenance, and goes RED without
+  the pins.
+- **Version.** 1.0.62 was set in the first commit; the Ruff fixes then changed
+  crew files under it, which `check-marketplace.py` rightly refused in CI. It
+  had passed locally only because the check ran before those files were
+  committed. Hence 1.0.63, and 1.0.64 for the maintenance pins.
+- **Unchanged.** Every other check's selection and pass/fail rule; `seconds` in
+  verify.json (those are measurements on the maintainer's machine — re-price
+  with `verify-gate.sh --price`).
+- **Sabotage.** `test_conftest_git_isolation.py` runs commits and tags under a
+  global config whose signer is `/bin/false`; with the conftest loop removed
+  both go RED (`fatal: failed to write commit object`), restored GREEN.
+
 ### Changed — `crew` 1.0.54: review bundles leave generated `graphify-out/` out (T-0092)
 
 - **What changed.** `review_patch.py`'s `EXCLUDED` is now `(".work/",

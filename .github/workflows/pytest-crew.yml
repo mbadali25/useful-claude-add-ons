@@ -46,7 +46,7 @@ jobs:
         # requests.get with in production - the test monkeypatches
         # requests.get itself, not the import). Without it collection dies
         # the same way the yaml one below does, taking the whole job with it.
-        pip install 'pytest~=8.0' pyyaml python-docx numpy pillow requests
+        pip install 'pytest~=8.0' pytest-xdist pyyaml python-docx numpy pillow requests
     - name: Run crew + gizmoduck plugin tests and the collision-free skill suites
       # Scoped to named directories on purpose, and NOT because of
       # skills/cisco-meraki/tests/test_live_smoke.py -- which is what this
@@ -75,7 +75,16 @@ jobs:
       # no test by name and looked like a plain failure. Verified by blocking
       # the yaml import locally, which reproduces the same 12 collection
       # errors the runner logs.
-      run: pytest plugin/crew/tests/ plugin/gizmoduck/scripts/_test/ skills/mermaid-svg-bitbucket/tests/ skills/notify/tests/ skills/doc-builder/scripts/_test/ skills/intune-graph/scripts/_test/ -v
+      #
+      # -n auto (pytest-xdist): the crew suite is subprocess-bound, not CPU-
+      # bound -- serially it held one core at ~33% -- so workers overlap the
+      # waits. EXCEPT the `wallclock` set (crew's conftest): those assert
+      # elapsed time against a real hook timeout, and beside busy workers one
+      # read 10.25s against its 10s bound on 2 of 6 jobs. They run in the
+      # step below, serially, so the bound stays the real one.
+      run: pytest plugin/crew/tests/ plugin/gizmoduck/scripts/_test/ skills/mermaid-svg-bitbucket/tests/ skills/notify/tests/ skills/doc-builder/scripts/_test/ skills/intune-graph/scripts/_test/ -n auto -m "not wallclock" -v
+    - name: Run crew's wall-clock-bounded tests serially
+      run: pytest plugin/crew/tests/ -m wallclock -v
     - name: Run the cisco-meraki skill tests
       # A SEPARATE pytest process, and it has to be. plugin/crew/tests/ and
       # skills/cisco-meraki/tests/ each contain a file named `context.py`
