@@ -187,7 +187,9 @@ any stat-dirty file), because `git diff` rewrites .git/index for a stat-dirty
 file even under `--no-optional-locks`. Standard library only.
 """
 import argparse
+import errno
 import fnmatch
+import io
 import json
 import os
 import re
@@ -528,15 +530,22 @@ def _is_ancestor(root, sha, of="HEAD"):
 def _base_text(root, base, rel):
     """(text, "ok"), (None, "absent") when `rel` is not in `base`'s tree, or
     (None, "error: <why>"). `git_out` returns None on ANY failure, so the
-    tree is asked first: absent and unreadable are different answers."""
+    tree is asked first: absent and unreadable are different answers.
+    Review round 7: `cat-file -e <base>:<rel>` exits 128 for a missing path
+    AND for a base git cannot read, so the base's tree is proven readable
+    first and the path is then looked up in its listing."""
     spec = f"{base}:{rel}"
-    code = _git_rc(root, "cat-file", "-e", spec)
+    code = _git_rc(root, "cat-file", "-e", f"{base}^{{tree}}")
     if code is None:
         return None, "error: git could not run"
-    if code in (1, 128):
-        return None, "absent"
     if code != 0:
-        return None, f"error: git exited {code}"
+        return None, f"error: git cannot read base {base[:12]}'s tree (exit {code})"
+    code, out = _git_out(root, "ls-tree", "-z", base, "--", rel)
+    if code != 0:
+        why = "could not run" if code is None else f"exited {code}"
+        return None, f"error: git ls-tree {why}"
+    if not out.strip(b"\0"):
+        return None, "absent"
     try:
         done = subprocess.run(["git", "-C", root, "--no-optional-locks", "show", spec],
                               capture_output=True, stdin=subprocess.DEVNULL,
@@ -565,6 +574,13 @@ def _sha_moved(root, old, new):
     if code is None:
         return None, f"{COULD_NOT_TELL}: git could not run"
     if code == 128:
+        # Review round 7: 128 is also a short anchor two commits share, as
+        # for the base anchor (`_names_no_commit`).
+        missing = _names_no_commit(root, new)
+        if missing is None:
+            return None, f"{COULD_NOT_TELL}: git could not say whether {new[:12]} names a commit"
+        if not missing:
+            return None, f"{COULD_NOT_TELL}: anchor {new[:12]} is ambiguous"
         return False, f"anchor {new} names no commit"
     if code != 0:
         return None, f"{COULD_NOT_TELL}: git exited {code} reading anchor {new}"
@@ -660,43 +676,109 @@ def _texts(top, base, rel):
         return None, None, (False, "new file, not a re-anchor")
     if state != "ok":
         return None, None, (None, f"{COULD_NOT_TELL}: base copy {state}")
-    early = _on_disk(top, base, rel, "deleted, not a re-anchor")
+    early, data = _on_disk(top, base, rel, "deleted, not a re-anchor")
     if early:
         return None, None, early
-    path = os.path.join(top, *rel.split("/"))
-    after = read_text(path)
-    if after is None:
-        return None, None, (None, f"{COULD_NOT_TELL}: could not read {rel}")
+    # The bytes `_on_disk` read from the file it proved regular (review round
+    # 7), decoded as `read_text` decodes: utf-8-sig, universal newlines.
+    after = io.TextIOWrapper(io.BytesIO(data), encoding="utf-8-sig", errors="replace").read()
     return before, after, None
 
 
 _LINK_MODES = ("120000", "160000")
 
 
+def _read_regular(top, rel):
+    """(bytes, None), or (None, "symlink" | "absent" | "not regular" | a
+    reason). The file is opened WITHOUT following a link at any component:
+    on POSIX each directory is opened relative to its parent with
+    O_NOFOLLOW, so a link swapped in anywhere after the lstat and realpath
+    checks fails the open instead of being read (review round 7). Where
+    `os.open` takes no dir_fd (Windows), the path is opened directly and the
+    descriptor's file must be the one lstat names."""
+    parts = rel.split("/")
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
+    fds = []
+    try:
+        if os.open in os.supports_dir_fd and nofollow:
+            directory = getattr(os, "O_DIRECTORY", 0)
+            fds.append(os.open(os.path.realpath(top), os.O_RDONLY | directory))
+            for part in parts[:-1]:
+                fds.append(os.open(part, os.O_RDONLY | directory | nofollow, dir_fd=fds[-1]))
+            fd = os.open(parts[-1], flags | nofollow, dir_fd=fds[-1])
+        else:
+            path = os.path.join(top, *parts)
+            fd = os.open(path, flags | nofollow)
+            fds.append(fd)
+            named, opened = os.lstat(path), os.fstat(fd)
+            if stat.S_ISLNK(named.st_mode) or (named.st_dev, named.st_ino) != (
+                    opened.st_dev, opened.st_ino):
+                return None, "symlink"
+        fds.append(fd)
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return None, "not regular"
+        chunks = []
+        while True:
+            chunk = os.read(fd, 1 << 16)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        return b"".join(chunks), None
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.ENOTDIR, getattr(errno, "EMLINK", -1)):
+            return None, "symlink"
+        if exc.errno == errno.ENOENT:
+            return None, "absent"
+        reason = exc.strerror or type(exc).__name__
+        return None, reason
+    finally:
+        for handle in dict.fromkeys(fds):
+            try:
+                os.close(handle)
+            except OSError:
+                pass
+
+
+_UNREAD = {"symlink": (False, "a symlink, which no refresh writes"),
+           "not regular": (False, "not a regular file, which no refresh writes")}
+
+
 def _on_disk(top, base, rel, deleted):
-    """None when `rel` is a regular file reached with no symlink along its
-    path and git sees the mode its base copy had; otherwise (verdict,
-    reason). Review round 6: `read_text` followed a symlink, so a map
-    replaced by a link to external re-anchored text was admitted while git
-    stores only the link, and nothing asked whether a rendered diagram or a
-    graph file still existed. A refresh writes regular files in place: a
-    link at the path or along it, a changed mode, or a missing file is not
-    one. `deleted` is the reason for a file lstat proves absent."""
+    """(None, bytes) when `rel` is a regular file reached with no symlink
+    along its path and git sees the mode its base copy had -- the bytes are
+    that file's, read once through a descriptor opened without following a
+    link, before git is asked anything, and they are what the caller judges
+    (review round 7: a check-then-open by path read whatever a swap put
+    there). Otherwise ((verdict, reason), None). Review round 6: `read_text`
+    followed a symlink, so a map replaced by a link to external re-anchored
+    text was admitted while git stores only the link, and nothing asked
+    whether a rendered diagram or a graph file still existed. A refresh
+    writes regular files in place: a link at the path or along it, a changed
+    mode, or a missing file is not one. `deleted` is the reason for a file
+    lstat proves absent."""
     path = os.path.join(top, *rel.split("/"))
     try:
         info = os.lstat(path)
     except (FileNotFoundError, NotADirectoryError):
-        return False, deleted
+        return (False, deleted), None
     except (OSError, ValueError) as exc:
         why = getattr(exc, "strerror", None) or type(exc).__name__
-        return None, f"{COULD_NOT_TELL}: whether {rel} exists: {why}"
+        return (None, f"{COULD_NOT_TELL}: whether {rel} exists: {why}"), None
     if stat.S_ISLNK(info.st_mode):
-        return False, "a symlink, which no refresh writes"
+        return _UNREAD["symlink"], None
     if not stat.S_ISREG(info.st_mode):
-        return False, "not a regular file, which no refresh writes"
+        return _UNREAD["not regular"], None
     named = os.path.normcase(os.path.join(os.path.realpath(top), *rel.split("/")))
     if os.path.normcase(os.path.realpath(path)) != named:
-        return False, "reached through a symlink, which no refresh writes"
+        return (False, "reached through a symlink, which no refresh writes"), None
+    data, why = _read_regular(top, rel)
+    if data is None:
+        if why in _UNREAD:
+            return _UNREAD[why], None
+        if why == "absent":
+            return (False, deleted), None
+        return (None, f"{COULD_NOT_TELL}: could not read {rel}: {why}"), None
     # The mode git sees against the base (the working tree, under
     # core.fileMode), then the mode it stages: a `core.symlinks=false`
     # checkout leaves a link as a regular file that git stores as 120000.
@@ -704,21 +786,21 @@ def _on_disk(top, base, rel, deleted):
                          base, "--", rel)
     if code != 0:
         why = "could not run" if code is None else f"exited {code}"
-        return None, f"{COULD_NOT_TELL}: git diff --raw of {rel} {why}"
+        return (None, f"{COULD_NOT_TELL}: git diff --raw of {rel} {why}"), None
     for record in out.split(b"\0"):
         if record.startswith(b":"):
             old, new = record[1:].decode("ascii", "replace").split(" ")[:2]
             if "000000" not in (old, new) and old != new:
-                return False, f"mode changed from {old} to {new}, which no refresh does"
+                return (False, f"mode changed from {old} to {new}, which no refresh does"), None
     code, out = _git_out(top, "ls-files", "-s", "-z", "--", rel)
     if code != 0:
         why = "could not run" if code is None else f"exited {code}"
-        return None, f"{COULD_NOT_TELL}: git ls-files of {rel} {why}"
+        return (None, f"{COULD_NOT_TELL}: git ls-files of {rel} {why}"), None
     for record in out.split(b"\0"):
         mode = record.decode("ascii", "replace").split(" ", 1)[0]
         if mode in _LINK_MODES:
-            return False, f"stored as {mode}, which no refresh writes"
-    return None
+            return (False, f"stored as {mode}, which no refresh writes"), None
+    return None, data
 
 
 def _map_verdict(top, base, rel, reach):
@@ -808,15 +890,12 @@ def _rule_verdict(top, base, rel, expected):
     if present is None:
         return None, f"{COULD_NOT_TELL}: whether {rel} exists: {why}"
     if present:
-        early = _on_disk(top, base, rel, "deleted, not a regeneration")
+        # Read once, by `_on_disk`, and an unreadable file is could-not-tell
+        # BEFORE any comparison: an unreadable rule no map expects compared
+        # None == None and was admitted as regenerated (review round 2).
+        early, data = _on_disk(top, base, rel, "deleted, not a regeneration")
         if early:
             return early
-        # Read once, and a None is could-not-tell BEFORE any comparison: an
-        # unreadable rule no map expects compared None == None and was
-        # admitted as regenerated (review round 2).
-        data = _read_bytes(path)
-        if data is None:
-            return None, f"{COULD_NOT_TELL}: could not read {rel}"
         want = expected.get(key)
         if want is not None:
             # BYTES, as `crew_instructions._write` writes them: decoded text
@@ -842,14 +921,6 @@ def _rule_verdict(top, base, rel, expected):
     if state in ("ok", "absent"):
         return False, "removed, but it was not generated"
     return None, f"{COULD_NOT_TELL}: base copy {state}"
-
-
-def _read_bytes(path):
-    try:
-        with open(path, "rb") as handle:
-            return handle.read()
-    except (OSError, ValueError):
-        return None
 
 
 def _stored_blob(top, rel, data):
@@ -965,7 +1036,7 @@ def _rendered_verdict(top, base, rel, kinds, out):
     changed and was admitted -- and it is still a regular file on disk
     (review round 6: a `git rm` of it was admitted). A new one, with no base
     copy, may be what the regeneration wrote."""
-    early = _on_disk(top, base, rel, "deleted, not a regeneration")
+    early, _data = _on_disk(top, base, rel, "deleted, not a regeneration")
     if early:
         return early
     stem = os.path.splitext(rel)[0]
@@ -985,7 +1056,7 @@ def _graph_verdict(top, base, rel, graph_code):
     """Anything under `graph.out` is admitted when the ticket changed a code
     path and the file is still a regular file on disk (review round 6, the
     rendered diagram's neighbour: a deleted graph file was admitted)."""
-    early = _on_disk(top, base, rel, "deleted, not a regeneration")
+    early, _data = _on_disk(top, base, rel, "deleted, not a regeneration")
     if early:
         return early
     if graph_code:

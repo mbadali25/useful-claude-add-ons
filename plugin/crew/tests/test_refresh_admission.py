@@ -557,9 +557,9 @@ def test_an_unreadable_rule_is_could_not_tell(anchored, monkeypatch, case):
     # A regular file the hook cannot read. Review round 6 refuses a symlink
     # before it is read, so the dangling link this test used to read "cannot
     # read" is now `test_a_dangling_symlink_rule_is_refused_as_a_symlink`.
-    real = crew_refresh_check._read_bytes  # pylint: disable=protected-access
-    monkeypatch.setattr(crew_refresh_check, "_read_bytes",
-                        lambda path: None if path.endswith(rel.rsplit("/", 1)[1]) else real(path))
+    real = crew_refresh_check._read_regular  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_refresh_check, "_read_regular",
+                        lambda top, r: (None, "EACCES") if r == rel else real(top, r))
 
     verdict, reason = _verdict(root, base, REACH, rel)
 
@@ -649,12 +649,13 @@ def test_a_removed_rule_whose_base_copy_git_cannot_read_is_could_not_tell(tmp_pa
     rel = RULE.format(name="hand")
     root, base = anchored_repo(tmp_path, extra={rel: "# hand\nwritten by a person\n"})
     git(root, "rm", "-q", rel)
-    _failing_git(monkeypatch, "_git_rc", _args_are("cat-file", "-e", f"{base}:{rel}"), 129)
+    # Review round 7 asks for the base's tree before the path (`_base_text`).
+    _failing_git(monkeypatch, "_git_rc", _args_are("cat-file", "-e", f"{base}^{{tree}}"), 129)
 
     verdict, reason = _verdict(root, base, REACH, rel)
 
     assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL),
-            "base copy error: git exited 129" in reason) == (None, True, True), reason
+            "(exit 129)" in reason) == (None, True, True), reason
 
 
 # --- review round 3 -------------------------------------------------------------
@@ -844,9 +845,10 @@ def _typing_fails(real):
     return lambda r, *a: None if a[:2] == ("cat-file", "-t") else real(r, *a)
 
 
-def test_an_ambiguous_new_anchor_is_refused(tmp_path):
-    """The neighbour (a control): the map re-anchored TO a prefix two commits
-    share. `_sha_moved`'s own exit-128 branch must not admit it."""
+def test_an_ambiguous_new_anchor_is_could_not_tell(tmp_path):
+    """The map re-anchored TO a prefix two commits share. Review round 7:
+    `_sha_moved`'s own exit 128 read that as "names no commit", a definite
+    answer git never gave; it is could-not-tell, as the base anchor's is."""
     prefix, bodies = ambiguous_commit_prefix()
     root, base = anchored_repo(tmp_path)
     _ambiguous_objects(root, prefix, bodies)
@@ -854,7 +856,19 @@ def test_an_ambiguous_new_anchor_is_refused(tmp_path):
 
     verdict, reason = _verdict(root, base, REACH, APP)
 
-    assert verdict is not True, reason
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL),
+            "ambiguous" in reason) == (None, True, True), reason
+
+
+def test_a_new_anchor_git_cannot_disambiguate_is_could_not_tell(anchored, monkeypatch):
+    root, base = anchored
+    re_anchor_map(root, "app", "deadbeefdead")
+    _failing_git(monkeypatch, "_git_lines", _args_are("rev-parse", "--disambiguate=deadbeefdead"),
+                 None)
+
+    verdict, reason = _verdict(root, base, REACH, APP)
+
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL)) == (None, True), reason
 
 
 @pytest.mark.parametrize("ext", [".mmd", ".MMD"])
@@ -1214,3 +1228,132 @@ def test_equally_specific_artifact_dirs_are_could_not_tell(anchored):
     verdict, reason = got[FLOW]
     assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL),
             reason.count("docs/diagrams") >= 1, "graph" in reason) == (None, True, True, True), reason
+
+
+# --- review round 7 -------------------------------------------------------------
+# The bytes judged are the bytes of the file the checks proved regular: read
+# once, through a descriptor opened without following a link, before git is
+# asked anything (a swap between check and read admitted external text); an
+# ambiguous NEW anchor is could-not-tell like a base one; and a base whose tree
+# git cannot read is could-not-tell, never "new file".
+
+def _swap_to_symlink(root, rel, data, tmp_path):
+    outside = tmp_path / "outside-race"
+    outside.mkdir(exist_ok=True)
+    target = outside / rel.replace("/", "_")
+    target.write_bytes(data)
+    path = root.joinpath(*rel.split("/"))
+    path.unlink()
+    os.symlink(str(target), str(path))
+
+
+@pytest.mark.parametrize("kind", ["map", "rule"])
+def test_a_symlink_swapped_in_after_the_checks_is_not_what_is_judged(anchored, tmp_path,
+                                                                    monkeypatch, kind):
+    """Round 7 BLOCK: the regular file on disk is NOT admissible; while git is
+    asked for its modes, it is replaced by a link to text that would be. The
+    verdict must be about the regular file the checks proved."""
+    root, base = anchored
+    rel, good, companions = _admitted_shape(root, kind)
+    path = root.joinpath(*rel.split("/"))
+    if kind == "map":
+        # Claims rewritten, anchor NOT moved: refused as a regular file.
+        path.write_bytes(map_text("app", _base_anchor(root, base), ("src/app.py:2",),
+                                  "x is two").encode())
+    else:
+        path.write_bytes(good + b"hand edited\n")
+    real = crew_refresh_check._git_out  # pylint: disable=protected-access
+    swapped = []
+
+    def racing(r, *a, **k):
+        if a and a[0] == "ls-files" and rel in a and not swapped:
+            swapped.append(True)
+            _swap_to_symlink(root, rel, good, tmp_path)
+        return real(r, *a, **k)
+
+    monkeypatch.setattr(crew_refresh_check, "_git_out", racing)
+
+    got = _verdicts(root, base, REACH, companions + [rel])
+
+    assert (swapped, got[rel][0]) == ([True], False), got
+
+
+def _base_anchor(root, base):
+    text = git(root, "show", f"{base}:{APP}")
+    return text.split("anchor: r@")[1].split("\n")[0]
+
+
+def test_a_symlink_swapped_in_just_before_the_open_is_refused(anchored, tmp_path, monkeypatch):
+    """The window the descriptor closes: lstat and realpath saw a regular
+    file, and it became a link to admissible text before the open."""
+    root, base = anchored
+    rel, good, companions = _admitted_shape(root, "map")
+    root.joinpath(*rel.split("/")).write_bytes(good)
+    real = os.path.realpath
+    swapped = []
+    target = os.path.join(str(root), *rel.split("/"))
+
+    def racing(p, *a, **k):
+        out = real(p, *a, **k)
+        if p == target and not swapped:
+            swapped.append(True)
+            _swap_to_symlink(root, rel, good, tmp_path)
+        return out
+
+    monkeypatch.setattr(os.path, "realpath", racing)
+
+    got = _verdicts(root, base, REACH, companions + [rel])
+
+    assert (swapped, got[rel][0], "symlink" in got[rel][1]) == ([True], False, True), got
+
+
+def test_a_dir_swapped_to_a_symlink_just_before_the_open_is_refused(tmp_path, monkeypatch):
+    sub = "docs/diagrams/sub/flow.mmd"
+    old = ("%% Generated from r@deadbeefdead on 2026-09-28.\n%% Anchors: src/app.py\n"
+           "flowchart LR\n  a --> b\n")
+    root, base = anchored_repo(tmp_path / "r", extra={sub: old})
+    good = old.replace("deadbeefdead", head_sha(root, 40))
+    write(root, sub, good)
+    outside = tmp_path / "outside" / "sub"
+    outside.mkdir(parents=True)
+    (outside / "flow.mmd").write_text(good, encoding="utf-8")
+    real = os.path.realpath
+    swapped = []
+    target = os.path.join(str(root), *sub.split("/"))
+
+    def racing(p, *a, **k):
+        out = real(p, *a, **k)
+        if p == target and not swapped:
+            swapped.append(True)
+            subdir = root.joinpath("docs", "diagrams", "sub")
+            (subdir / "flow.mmd").unlink()
+            subdir.rmdir()
+            os.symlink(str(outside), str(subdir))
+        return out
+
+    monkeypatch.setattr(os.path, "realpath", racing)
+
+    got = _verdicts(root, base, REACH, [sub])
+
+    assert (swapped, got[sub][0], "symlink" in got[sub][1]) == ([True], False, True), got
+
+
+def test_a_base_whose_tree_git_cannot_read_is_could_not_tell(anchored):
+    """Round 7 FIX: `cat-file -e <base>:<path>` exits 128 for a missing path
+    AND for a base git cannot read, and both read "absent" -> "new file"."""
+    root, _base = anchored
+    re_anchor_map(root, "app", head_sha(root, 40))
+
+    verdict, reason = _verdict(root, "0123456789abcdef0123456789abcdef01234567", REACH, APP)
+
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL)) == (None, True), reason
+
+
+def test_a_base_listing_git_cannot_give_is_could_not_tell(anchored, monkeypatch):
+    root, base = anchored
+    re_anchor_map(root, "app", head_sha(root, 40))
+    _failing_out(monkeypatch, "ls-tree", (128, b""))
+
+    verdict, reason = _verdict(root, base, REACH, APP)
+
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL)) == (None, True), reason
