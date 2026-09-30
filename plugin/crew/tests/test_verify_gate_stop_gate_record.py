@@ -1954,11 +1954,17 @@ def test_34d_ps1_a_temp_dir_failure_falls_back_to_crew_not_a_pipe(
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
                TMP=str(bogus_temp), TEMP=str(bogus_temp))
 
-    result = crew_fixtures.run_gate(
-        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
-        input="{}", cwd=str(root), env=env,
-        capture_output=True, text=True, check=False,
-        timeout=_GATE_TIMEOUT)
+    # The gate runs its rule under Git's bash, which inherits this env. Were
+    # that the first MSYS process on the host, it would make `/tmp` this
+    # FILE for every bash other xdist workers start meanwhile (T-0110). The
+    # pin keeps that from happening; pwsh's own GetTempFileName() still sees
+    # TMP=a file and still fails, which is what this test is about.
+    with crew_fixtures.msys_tmp_pinned(crew_fixtures.resolve_bash(), env):
+        result = crew_fixtures.run_gate(
+            [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
+            input="{}", cwd=str(root), env=env,
+            capture_output=True, text=True, check=False,
+            timeout=_GATE_TIMEOUT)
     assert result.returncode != 0, (
         "the fixture rule deliberately exits 1; the gate must fail too. "
         + result.stderr

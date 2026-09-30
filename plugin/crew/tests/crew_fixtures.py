@@ -3,6 +3,7 @@
 A fixture is a real git repository with a real commit, because the code under
 test asks git for HEAD and comparing against a mocked sha would test the mock.
 """
+import contextlib
 import ctypes
 import json
 import os
@@ -749,6 +750,73 @@ def resolve_bash():
     )
     _BASH = None
     return _BASH
+
+
+@contextlib.contextmanager
+def msys_tmp_pinned(bash, poisoned_env):
+    """Run a block that starts MSYS processes under `poisoned_env` (TMP/TEMP
+    pointing somewhere that is not a directory) without turning `/tmp` into
+    that path for every other Git-Bash process on the host.
+
+    Git for Windows mounts `/tmp` as `usertemp` (its etc/fstab), resolved
+    from the TMP/TEMP of the process that CREATES the MSYS runtime's
+    per-user, per-installation shared mount table - and every MSYS process
+    started while that region lives shares it. A child handed TMP=<a file>
+    that happens to be the first MSYS process on an idle host therefore
+    breaks every bash any other pytest-xdist worker starts meanwhile:
+    `bash.exe: warning: /tmp must be a valid directory name`, then `VERIFY
+    GATE: cannot create temp file` in an unrelated test (T-0110; CI jobs
+    109709668000 and 109307433677).
+
+    This holds one MSYS process, started with THIS process' environment,
+    open for the whole block, so the region already exists - created sane -
+    when the block's own children start, and they join it instead. The
+    holder waits on its stdin rather than sleeping, so it exits as soon as
+    the block ends or this process dies. Before yielding it proves the pin
+    took: a probe of `bash` under `poisoned_env` must see `/tmp` as a
+    directory, or this raises instead of running a test that would poison
+    the host. The region is per installation, so `bash` must belong to the
+    same MSYS install the block's children use (Git for Windows' own, for
+    every crew gate - verify-gate.ps1 resolves its bash from git.exe).
+
+    `test_msys_tmp_pin.py` checks both halves: the hazard, on a private copy
+    of the runtime, and that every crew test overriding TMP/TEMP runs here.
+    A no-op off Windows and when `bash` is None (such callers skip anyway).
+    """
+    if bash is None or not sys.platform.startswith("win"):
+        yield
+        return
+    holder = subprocess.Popen(
+        [bash, "-c", "echo pinned; read -r _"], env=dict(os.environ),
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL, text=True)
+    try:
+        ready = holder.stdout.readline().strip()
+        if ready != "pinned":
+            raise RuntimeError(
+                f"msys_tmp_pinned: holder {bash!r} did not start "
+                f"(read {ready!r}, exit {holder.poll()})")
+        probe = subprocess.run(
+            [bash, "-c", "if [ -d /tmp ]; then echo tmp-is-dir; fi"],
+            env=poisoned_env, capture_output=True, text=True, check=False,
+            timeout=GATE_SUBPROCESS_TIMEOUT_S)
+        if probe.stdout.strip() != "tmp-is-dir":
+            raise RuntimeError(
+                "msys_tmp_pinned: a process under the poisoned env still "
+                f"does not see /tmp as a directory (stdout={probe.stdout!r} "
+                f"stderr={probe.stderr!r}) - the pin did not take, so the "
+                "block would poison /tmp for the whole host")
+        yield
+    finally:
+        try:
+            holder.stdin.close()
+        except OSError:
+            pass
+        try:
+            holder.wait(timeout=GATE_SUBPROCESS_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            holder.kill()
+            holder.wait()
 
 
 _BASH_NO_PREPEND = "unprobed"
