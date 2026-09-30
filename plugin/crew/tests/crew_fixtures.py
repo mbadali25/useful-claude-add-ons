@@ -47,12 +47,19 @@ _AMBIENT_GATE_TRACKER = None
 _PROC_SUPPORTED = os.path.isdir("/proc")
 
 # The git config every test process pins, whatever the developer's global
-# file says (see conftest's `_no_real_global_config`).
-UNSIGNED_GIT_PINS = (("commit.gpgsign", "false"), ("tag.gpgsign", "false"))
+# file says (see conftest's `_no_real_global_config`):
+#   * no signing -- a fixture commit must not run the developer's signer;
+#   * no background maintenance -- `git commit` launches `git maintenance run
+#     --auto`, which newer git DETACHES, so it can still be writing under
+#     `.git/` (measured: `.git/objects/maintenance.lock`) while a test
+#     snapshots the tree. test_refresh_check.py's "writes nothing" case read
+#     that lock vanishing as the tool under test writing, on crew 1.0.63's CI.
+FIXTURE_GIT_PINS = (("commit.gpgsign", "false"), ("tag.gpgsign", "false"),
+                    ("maintenance.auto", "false"), ("gc.auto", "0"))
 
 
-def unsigned_git_env(environ):
-    """The GIT_CONFIG_COUNT/KEY/VALUE variables that pin UNSIGNED_GIT_PINS on
+def fixture_git_env(environ):
+    """The GIT_CONFIG_COUNT/KEY/VALUE variables that pin FIXTURE_GIT_PINS on
     top of `environ`, APPENDED after any entries it already carries -- never
     written from slot 0. A runner that exports its own entries (a cloud
     container here carries three: URL rewrites and credential.interactive)
@@ -64,10 +71,10 @@ def unsigned_git_env(environ):
     except ValueError:
         base = 0
     env = {}
-    for i, (key, value) in enumerate(UNSIGNED_GIT_PINS, start=base):
+    for i, (key, value) in enumerate(FIXTURE_GIT_PINS, start=base):
         env[f"GIT_CONFIG_KEY_{i}"] = key
         env[f"GIT_CONFIG_VALUE_{i}"] = value
-    env["GIT_CONFIG_COUNT"] = str(base + len(UNSIGNED_GIT_PINS))
+    env["GIT_CONFIG_COUNT"] = str(base + len(FIXTURE_GIT_PINS))
     return env
 
 
