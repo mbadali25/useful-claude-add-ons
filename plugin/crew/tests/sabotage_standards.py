@@ -141,10 +141,10 @@ STANDARDS_MUTATIONS = (
     (
         "an approval receipt that cannot be looked up reads as absent",
         STANDARDS,
-        "        os.lstat(path)\n"
-        "    except FileNotFoundError:\n",
-        "        os.lstat(path)\n"
-        "    except OSError:\n",
+        "    except OSError as exc:\n"
+        "        return True, (f\"could not tell whether {ticket} has an approval receipt \"\n",
+        "    except OSError as exc:\n"
+        "        return False, (f\"could not tell whether {ticket} has an approval receipt \"\n",
         ("tests/test_crew_standards.py::"
          "test_gate_applies_when_the_receipt_cannot_be_looked_up"),
     ),

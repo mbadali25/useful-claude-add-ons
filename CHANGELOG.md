@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.74: build-time development standards and a required pre-review self-check (T-0085)
+### Added — `crew` 1.0.75: build-time development standards and a required pre-review self-check (T-0085)
 
 - **New `crew-standards` skill.** `references/generic.md` ships GEN-01 to GEN-12,
   crew-generic standards mined from 224 BLOCK/FIX findings in crew's own QA reviews;
@@ -50,7 +50,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   each cite a third change set in their Earned by, and a test holds every GEN standard to citing three.
   The stamp's docstring names its remaining write window instead of claiming GEN-03. Rule 31 of
   `.crew/verify.json` also runs on the scripts the stamp, gate, proposals and metric read.
-- Bumped `1.0.69 -> 1.0.74` on the land branch (REPO-03 as amended: no bump on the build branch):
+- Bumped `1.0.69 -> 1.0.75` on the land branch (REPO-03 as amended: no bump on the build branch):
   1.0.70 at the merge of main's 1.0.69, 1.0.71 because a landing-branch commit then re-took one
   `sabotage_standards.py` anchor under `plugin/crew/`, and 1.0.72 for rewrapping `commands/review.md`
   back to its 551-line allowance (`check_instructions.py`), and 1.0.73 at the catch-up merge of main's
@@ -61,7 +61,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   absence only when the nearest existing ancestor is a directory; otherwise the gate says "could not
   tell" and applies. `test_gate_applies_when_a_file_parent_is_reported_as_not_found` simulates the
   Windows errno on every OS (the Windows CI leg is off until win-repo-2's fix), and a
-  `sabotage_standards.py` entry that drops the directory check goes RED. crew 1.0.74.
+  `sabotage_standards.py` entry that drops the directory check goes RED. crew 1.0.74. The fix made the older
+  "receipt that cannot be looked up" entry vacuous (catching `OSError` there is now safe, because the
+  ancestor check still says "could not tell"), so it now flips the `OSError` branch's verdict instead and
+  goes RED again; crew 1.0.75.
 - **Landing changes decided by the owner (2026-09-30).** Merging main's #264 met T-0085's gate in
   `review_run.py`: main's `preflight` runs first (a CLEAN receipt covering the bundle still answers
   CLEAN with no round and no self-check; an unverified or unknown verify gate is refused with exit 5
