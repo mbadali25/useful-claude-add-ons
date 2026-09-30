@@ -563,8 +563,8 @@ STATUS_MUTATIONS = (
      "arguments.\n",
      _S + "test_command_takes_the_ticket_resume_printed"),
     ("the command hands the shell expandable arguments", COMMAND,
-     "If the arguments hold a quote, `$`, a backtick or a backslash, stop without\n",
-     "Consider this without\n",
+     "hold a quote, `$`, a backtick or a backslash, stop without running anything",
+     "hold these, carry on without running anything",
      _S + "test_command_never_hands_the_shell_an_expandable_argument"),
     ("the command double-quotes the arguments", COMMAND,
      "route --root . --args '$ARGUMENTS'\n",
@@ -627,8 +627,8 @@ STATUS_MUTATIONS = (
     # read STILL GREEN on 60f4593e). The in-script guard has its own mutation,
     # "the direct CLI writes bytecode", below.
     ("the command's route invocation writes bytecode", COMMAND,
-     "python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route ",
-     "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route ",
+     "python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route --root . --args",
+     "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route --root . --args",
      _S + "test_every_autopilot_invocation_in_command_skips_bytecode"),
     ("the command's status invocation writes bytecode", COMMAND,
      "python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py status ",
@@ -1028,6 +1028,75 @@ ASSIGN_MUTATIONS = (
       '    try:\n'
       '        policy, risk, warnings = _decision(top, ticket, "approval")\n'),
      _A + "test_origin_line_changes_no_policy[self]"),
+    # Round-1 review's FIX and NIT lines, each red on its named test; the
+    # neighbouring case is the second entry where there is one.
+    ("FIX: mint writes INDEX without its lock", TICKET,
+     ('        with crew_config_files.Lock(os.path.join(top, ".work", "INDEX.md"), '
+      "_MINT_LOCK_WAIT):\n"),
+     "        if True:\n",
+     # The unpaused test_index_rows_intact_after_concurrent_mints loses a row
+     # under this mutation 1 run in 3 (measured); the paused one 6 in 6.
+     _M + "test_index_rows_intact_after_concurrent_slow_mints"),
+    ("FIX: mint's create runs outside the INDEX lock", TICKET,
+     ('        with crew_config_files.Lock(os.path.join(top, ".work", "INDEX.md"), '
+      "_MINT_LOCK_WAIT):\n"),
+     "        if True:\n",
+     _M + "test_mint_create_runs_under_the_index_lock"),
+    ("FIX: mint's move to ready runs after the INDEX lock is released", TICKET,
+     ('            if outcome == "written" and status == "ready":\n'
+      "                state, moved = _mint_ready(top, ticket)\n"
+      "    except crew_config_files.Busy as exc:\n"),
+     ("            pass\n"
+      "    except crew_config_files.Busy as exc:\n"
+      "        raise\n"
+      '    if outcome == "written" and status == "ready":\n'
+      "        state, moved = _mint_ready(top, ticket)\n"
+      "    try:\n        pass\n"
+      "    except crew_config_files.Busy as exc:\n"),
+     _M + "test_mint_ready_move_runs_under_the_index_lock"),
+    ("NIT: a create that raises is not unwound", TICKET,
+     "        except BaseException as exc:\n            indexed = _mint_indexed(top, ticket)\n",
+     "        except ZeroDivisionError as exc:\n            indexed = _mint_indexed(top, ticket)\n",
+     _M + "test_mint_create_that_raises_leaves_no_ticket[RuntimeError]"),
+    ("NIT: a KeyboardInterrupt in create is not unwound", TICKET,
+     "        except BaseException as exc:\n            indexed = _mint_indexed(top, ticket)\n",
+     "        except Exception as exc:\n            indexed = _mint_indexed(top, ticket)\n",
+     _M + "test_mint_create_that_raises_leaves_no_ticket[KeyboardInterrupt]"),
+    ("NIT: a row written before create raised is released anyway", TICKET,
+     "            if indexed is False:\n",
+     "            if indexed is not None:\n",
+     _M + "test_mint_create_that_raises_after_writing_the_row_keeps_the_ticket"),
+    ("NIT: a move to ready that raises escapes mint", TICKET,
+     ("    except Exception as exc:  # pylint: disable=broad-except  # noqa: BLE001\n"
+      '        return "direction", [f"tracker: move to ready raised'),
+     ("    except ZeroDivisionError as exc:  # pylint: disable=broad-except  # noqa: BLE001\n"
+      '        return "direction", [f"tracker: move to ready raised'),
+     _M + "test_mint_ready_move_that_raises_leaves_direction_row_and_warns"),
+    ("NIT: a BOM hides the staging file's title", TICKET,
+     '    text = (text or "").removeprefix("\\ufeff")\n',
+     '    text = text or ""\n',
+     _A + "test_check_direction_takes_a_title_after_a_bom"),
+    ("NIT: mint's --direction-file keeps a BOM", TICKET,
+     'with open(args.direction_file, encoding="utf-8-sig") as handle:',
+     'with open(args.direction_file, encoding="utf-8") as handle:',
+     _M + "test_mint_cli_direction_file_bom_is_not_carried"),
+    ("NIT: argparse refuses a bad --status with exit 2", TICKET,
+     '                        help=f"mint: the new row\'s status, ',
+     '                        choices=MINT_STATUSES, help=f"mint: the new row\'s status, ',
+     _M + "test_mint_cli_bad_status_is_refused_exit_1[spec]"),
+    ("NIT: assign's CLI resolves a relative file against the cwd", TICKET,
+     "            got = assign(root, args.direction_file)\n",
+     "            got = assign(root, os.path.abspath(args.direction_file))\n",
+     _A + "test_assign_cli_relative_direction_file_resolves_under_root"),
+    ("FIX: section 0's quote rule covers assign too", COMMAND,
+     "Otherwise, if the arguments hold a quote, `$`, a",
+     "If the arguments hold a quote, `$`, a",
+     _A + "test_section_0_quote_rule_is_scoped_past_assign"),
+    ("NIT: section 0's assign route is not a runnable path", COMMAND,
+     ("`python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route --root . "
+      "--first assign` in place"),
+     "`crew_autopilot.py route --root . --first assign` in place",
+     _A + "test_assign_section_skips_the_route_shell_line"),
 )
 
 AUTOPILOT_MUTATIONS += ASSIGN_MUTATIONS

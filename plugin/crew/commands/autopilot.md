@@ -13,9 +13,9 @@ on a ticket's first approval, and a distinct successor plan's NEEDS_REPLAN -> IN
 
 ## 0. Route
 
-If the first word is exactly `assign`, run `crew_autopilot.py route --root . --first assign` in place of this shell line
-(the rest is the work: never a shell argument). If the arguments hold a quote, `$`, a backtick or a backslash, stop without
-running anything: no subcommand or ticket id has one. Otherwise:
+If the first word is exactly `assign`, run
+`python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route --root . --first assign` in place of this shell line (the rest is the work: never a shell argument).
+Otherwise, if the arguments hold a quote, `$`, a backtick or a backslash, stop without running anything: no subcommand or ticket id has one. If none does, run:
 
 ```bash
 python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route --root . --args '$ARGUMENTS'

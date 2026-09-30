@@ -76,10 +76,10 @@ _MINT_ONE = ("import sys; sys.path.insert(0, sys.argv[1]); import crew_ticket; "
              "direction='body ' + sys.argv[3])['ticket'])")
 
 
-def _concurrent(root, count=8):
+def _concurrent(root, count=8, program=_MINT_ONE):
     # Started together and waited on below: a `with` per process would run them one at a time.
     procs = [subprocess.Popen(  # pylint: disable=consider-using-with
-        [sys.executable, "-c", _MINT_ONE, SCRIPTS, str(root), str(n)],
+        [sys.executable, "-c", program, SCRIPTS, str(root), str(n)],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, stdin=subprocess.DEVNULL)
         for n in range(count)]
     return [(p.communicate(timeout=120), p.returncode) for p in procs]
@@ -105,6 +105,29 @@ def test_index_rows_intact_after_concurrent_mints(tmp_path):
 
     assert (len(lines), [line for line in lines if not ROW_RE.match(line)],
             len({line.split(" | ")[0] for line in lines})) == (8, [], 8)
+
+
+# The tracker's lost-write window, between its re-read and its replace, held
+# open 50 ms by a `_read_bytes` that pauses after reading, so eight unlocked
+# mints lose rows every run rather than now and then; the INDEX lock is what
+# keeps them. sabotage_autopilot.py removes that lock against this test.
+_MINT_SLOW = ("import sys, time; sys.path.insert(0, sys.argv[1]); import crew_tracker, "
+              "crew_ticket; real = crew_tracker._read_bytes\n"
+              "def slow(*a, **k):\n    got = real(*a, **k); time.sleep(0.05); return got\n"
+              "crew_tracker._read_bytes = slow\n"
+              "print(crew_ticket.mint(sys.argv[2], 'title ' + sys.argv[3], "
+              "direction='body ' + sys.argv[3])['ticket'])")
+
+
+def test_index_rows_intact_after_concurrent_slow_mints(tmp_path):
+    root = _files_repo(tmp_path)
+
+    runs = _concurrent(root, program=_MINT_SLOW)
+    lines = _index(root).decode("utf-8").splitlines()
+
+    assert (len(lines), [line for line in lines if not ROW_RE.match(line)],
+            len({line.split(" | ")[0] for line in lines})) == (8, [], 8), [
+        err for (_o, err), _c in runs]
 
 
 def test_mint_never_takes_an_index_only_id(tmp_path):
@@ -180,6 +203,91 @@ def test_mint_failed_tracker_create_leaves_no_ticket(tmp_path, monkeypatch):
     assert (_tickets(root), _index(root) == before, len(calls),
             "files: could not update: .work/INDEX.md changed during write" in str(err.value)) == (
         [], True, crew_ticket.MINT_ATTEMPTS, True)
+
+
+def _lock_held(root):
+    return (root / ".work" / "INDEX.md.lock").exists()
+
+
+def test_mint_ready_move_runs_under_the_index_lock(tmp_path, monkeypatch):
+    root = _files_repo(tmp_path)
+    real, held = crew_tracker.move, []
+
+    def move(where, ticket, status, reopen=False):
+        held.append(_lock_held(root))
+        return real(where, ticket, status, reopen=reopen)
+
+    monkeypatch.setattr(crew_tracker, "move", move)
+
+    got = crew_ticket.mint(str(root), "new work", direction="go")
+
+    assert (got["status"], held, _lock_held(root)) == ("ready", [True], False)
+
+
+def test_mint_create_runs_under_the_index_lock(tmp_path, monkeypatch):
+    root = _files_repo(tmp_path)
+    real, held = crew_tracker.create, []
+
+    def create(where, ticket, title):
+        held.append(_lock_held(root))
+        return real(where, ticket, title)
+
+    monkeypatch.setattr(crew_tracker, "create", create)
+
+    got = crew_ticket.mint(str(root), "new work", direction="go")
+
+    assert (got["ticket"], held, _lock_held(root)) == ("T-0001", [True], False)
+
+
+@pytest.mark.parametrize("raised,expected", [(RuntimeError, crew_ticket.TicketError),
+                                             (KeyError, crew_ticket.TicketError),
+                                             (KeyboardInterrupt, KeyboardInterrupt)],
+                         ids=["RuntimeError", "KeyError", "KeyboardInterrupt"])
+def test_mint_create_that_raises_leaves_no_ticket(tmp_path, monkeypatch, raised, expected):
+    root = _files_repo(tmp_path, rows="T-0003 | spec | - | r | old\n")
+    before = _index(root)
+
+    def create(where, ticket, title):
+        raise raised("tracker blew up")
+
+    monkeypatch.setattr(crew_tracker, "create", create)
+
+    with pytest.raises(expected):
+        crew_ticket.mint(str(root), "new work", direction="go")
+
+    assert (_tickets(root), _index(root) == before, _lock_held(root)) == ([], True, False)
+
+
+def test_mint_create_that_raises_after_writing_the_row_keeps_the_ticket(tmp_path, monkeypatch):
+    root = _files_repo(tmp_path)
+    real = crew_tracker.create
+
+    def create(where, ticket, title):
+        real(where, ticket, title)
+        raise RuntimeError("the board half blew up")
+
+    monkeypatch.setattr(crew_tracker, "create", create)
+
+    with pytest.raises(crew_ticket.TicketError) as err:
+        crew_ticket.mint(str(root), "new work", direction="go")
+
+    assert (_tickets(root), "T-0001 | direction |" in _index(root).decode("utf-8"),
+            "kept" in str(err.value)) == (["T-0001"], True, True)
+
+
+def test_mint_ready_move_that_raises_leaves_direction_row_and_warns(tmp_path, monkeypatch):
+    root = _files_repo(tmp_path)
+
+    def move(where, ticket, status, reopen=False):
+        raise RuntimeError("board unreadable")
+
+    monkeypatch.setattr(crew_tracker, "move", move)
+
+    got = crew_ticket.mint(str(root), "new work", direction="go")
+
+    assert (got["status"], got["warnings"], _tickets(root), _lock_held(root)) == (
+        "direction", ["tracker: move to ready raised RuntimeError: board unreadable"],
+        ["T-0001"], False)
 
 
 @pytest.mark.parametrize("title", ["a|b", "a\nb", "a\rb", "", " ", "x" * 121],
@@ -360,3 +468,35 @@ def test_mint_cli_refusal_exits_1(tmp_path):
     done = _cli(root, "mint", "--root", ".", "--title", "a|b")
 
     assert (done.returncode, done.stdout.startswith("refused: "), _tickets(root)) == (1, True, [])
+
+
+@pytest.mark.parametrize("status", ["spec", "READY"])
+def test_mint_cli_bad_status_is_refused_exit_1(tmp_path, status):
+    root = _files_repo(tmp_path)
+
+    done = _cli(root, "mint", "--root", ".", "--title", "x", "--status", status)
+
+    assert (done.returncode, done.stdout.startswith("refused: status "), _tickets(root)) == (
+        1, True, [])
+
+
+def test_mint_cli_direction_status_is_accepted(tmp_path):
+    root = _files_repo(tmp_path)
+
+    done = _cli(root, "mint", "--root", ".", "--title", "x", "--status", "direction")
+
+    assert (done.returncode, done.stdout, "T-0001 | direction |" in _index(root).decode(
+        "utf-8")) == (0, "ticket=T-0001\n", True), done.stderr
+
+
+def test_mint_cli_direction_file_bom_is_not_carried(tmp_path):
+    root = _files_repo(tmp_path)
+    body = pathlib.Path(tmp_path / "direction-body.md")
+    body.write_bytes("\ufeff## Ask\nfrom a file\n".encode("utf-8"))
+
+    done = _cli(root, "mint", "--root", ".", "--title", "new work", "--direction-file",
+                str(body))
+
+    assert (done.returncode, (root / ".work" / "tickets" / "T-0001" / "direction.md")
+            .read_text(encoding="utf-8")) == (
+        0, "# T-0001 direction\n## Ask\nfrom a file\n"), done.stderr

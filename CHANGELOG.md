@@ -32,13 +32,24 @@ All notable changes to this repository are documented here. Format follows [Keep
   read-only but for `approve`: `assign` and `mint` are `crew_ticket.py`'s.
 - **Concurrency.** The tracker's replace re-reads before it writes, but a write
   that lands between that re-read and the replace is lost; `mint` therefore
-  serialises its tracker calls on `.work/INDEX.md.lock`, and 8 concurrent
-  mints give 8 distinct ids, folders and rows (measured on Linux).
+  holds `.work/INDEX.md.lock` across both its tracker calls, `create` and the
+  `move` to `ready`, and 8 concurrent mints give 8 distinct ids, folders and
+  rows (measured on Linux). A `create` that raises anything (a `KeyError`, a
+  `KeyboardInterrupt`) releases the claimed folder unless its INDEX row is
+  already written; then the folder is kept and the refusal says so. A `move`
+  that raises leaves the ticket at `direction` with a warning.
+- **Review round 1.** `autopilot.md` section 0 scopes its quote rule past
+  `assign` ("Otherwise, if the arguments hold a quote ...") and names
+  `route --first assign` as a runnable `python3 -B ${CLAUDE_PLUGIN_ROOT}/...`
+  path. A staging file or `mint --direction-file` with a BOM is read as
+  `utf-8-sig`; `mint --status` outside `ready|direction` prints `refused:` and
+  exits 1 instead of an argparse exit 2; `assign --direction-file` resolves a
+  relative path against `--root`, not the current directory.
 - **Unchanged.** `crew_tracker.py`; `/crew:brainstorm`'s and `/crew:fix`'s prose
   id pick (moving them onto `mint` is a follow-up); T-0010's policies. The
   `autopilot.md` budget: T-0019 took 4 lines (114 of 120), leaving T-0012 and
   T-0020 6.
-- **Sabotage.** 17 `ASSIGN_MUTATIONS` in `plugin/crew/tests/sabotage_autopilot.py`,
+- **Sabotage.** 30 `ASSIGN_MUTATIONS` in `plugin/crew/tests/sabotage_autopilot.py`,
   appended to `AUTOPILOT_MUTATIONS`.
 - Bumped `1.0.61 -> 1.0.62`.
 

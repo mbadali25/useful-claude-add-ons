@@ -789,21 +789,26 @@ Tests `plugin/crew/tests/test_crew_autopilot_policy.py` plus new cases in `test_
 registered at `plugin/crew/tests/sabotage.py:77` and `:3055`; `.crew/verify.json` rule 28
 (`:309-315`), which also maps `commands/autopilot.md` since review round 2.
 
-**T-0019 (`/crew:autopilot assign` and `crew_ticket.mint`, DERIVED on T-0019-assign, crew 1.0.62).**
-`mint` (`plugin/crew/hooks/scripts/crew_ticket.py:1201`) refuses a status outside `MINT_STATUSES`,
+**T-0019 (`/crew:autopilot assign` and `crew_ticket.mint`, DERIVED on T-0019-assign, crew 1.0.62, re-read after review round 1).**
+`mint` (`plugin/crew/hooks/scripts/crew_ticket.py:1260`) refuses a status outside `MINT_STATUSES`,
 a bad title (`_mint_title_problem`, `:1091`) and, through `_mint_gate` (`:1078`), any tracker kind
 but `files`/`obsidian` before anything is written; takes one past `_mint_taken` (`:1048`, folders and
 every INDEX line's first `T-<n>`; an INDEX that exists but cannot be read refuses); claims the folder
-with an exclusive `os.mkdir`; and `_mint_claim` (`:1167`) writes direction.md (`_mint_write_direction`,
-`:1102`, temp + fsync + `os.replace`) before `_mint_row` (`:1152`) asks `crew_tracker.create` under
-`crew_config_files.Lock` on `.work/INDEX.md.lock` - `_atomic_update`'s re-read-then-replace loses a
-write that lands between the two (see the tracker section). `assign` (`:1301`) resolves the staging
-file under `.work/autopilot/` (`STAGING`), asks `crew_autopilot.settings` lazily (`_assign_armed`,
-`:1289`), runs `check_direction` (`:1263`) and mints once with `ORIGIN_ASSIGN` (`:1256`), which no
-policy reads (`test_origin_line_changes_no_policy`). `crew_autopilot.py` stays read-only but for
-`approve`: `assign` is not one of its subparsers. `commands/autopilot.md` routes a first word of
-exactly `assign` with `route --first assign` (`:16-18`) and carries the assign lines after section 5
-(`:111-114`). 17 `ASSIGN_MUTATIONS` in `plugin/crew/tests/sabotage_autopilot.py`.
+with an exclusive `os.mkdir`; and `_mint_claim` (`:1227`) writes direction.md (`_mint_write_direction`,
+`:1102`, temp + fsync + `os.replace`), then holds `crew_config_files.Lock` on `.work/INDEX.md.lock`
+(`:1244`) across both tracker calls: `_mint_create` (`:1183`, `_mint_row` `:1152` retried) and, for
+`ready`, `_mint_ready` (`:1213`, the `move`) - `_atomic_update`'s re-read-then-replace loses a write
+that lands between the two (see the tracker section), and both calls rewrite INDEX. A `create` that
+raises anything releases the folder unless `_mint_indexed` (`:1167`) finds the row (or cannot read
+INDEX), then keeps it and says so; a `move` that raises is a warning. `assign` (`:1355`) resolves the
+staging file under `.work/autopilot/` (`STAGING`; a relative path against `root`), asks
+`crew_autopilot.settings` lazily (`_assign_armed`, `:1343`), reads the file as `utf-8-sig`, runs
+`check_direction` (`:1315`, a leading BOM dropped) and mints once with `ORIGIN_ASSIGN` (`:1308`),
+which no policy reads (`test_origin_line_changes_no_policy`). `crew_autopilot.py` stays read-only but
+for `approve`: `assign` is not one of its subparsers. `commands/autopilot.md` routes a first word of
+exactly `assign` with `python3 -B .../crew_autopilot.py route --root . --first assign` (`:16-18`; the
+quote rule is scoped "Otherwise") and carries the assign lines after section 5 (`:112-114`). 30
+`ASSIGN_MUTATIONS` in `plugin/crew/tests/sabotage_autopilot.py`.
 
 ## Plain-text lifecycle routing (T-0023, crew 1.0.43)
 
@@ -1090,8 +1095,8 @@ Obsidian vault). A CLI the commands call, not a hook.
   `:89`, `:91` (all under `plugin/crew/commands/`); brainstorm and fix take
   the next free id on `id taken`, stop on any other failed `create`, and
   create the ticket folder only after a `create` that succeeded;
-  `crew_ticket.mint` (T-0019, `plugin/crew/hooks/scripts/crew_ticket.py:1201`) calls `create`
-  and `move` in process the other way round - folder claimed and direction.md written first, and
+  `crew_ticket.mint` (T-0019, `plugin/crew/hooks/scripts/crew_ticket.py:1260`) calls `create`
+  and `move` in process, both under the INDEX lock, the other way round - folder claimed and direction.md written first, and
   `id taken` releases the folder for the next id;
   `jira-sync.md` and `sdp-sync.md` honour `--to`; `crew_status.py` prints its
   tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:63`).

@@ -29,6 +29,7 @@ _TICKET_SCRIPT = os.path.join(_ROOT, "hooks", "scripts", "crew_ticket.py")
 _COMMAND = os.path.join(_ROOT, "commands", "autopilot.md")
 T = "T-0001"
 POLICIES = ("human", "self", "risk")
+ASSIGN_COUNT = 30
 
 STAGED = """title: add a dry-run flag
 risk: {risk}
@@ -272,6 +273,41 @@ def test_assign_cli_refusal_mints_nothing(tmp_path):
         1, True, [])
 
 
+def test_assign_cli_relative_direction_file_resolves_under_root(tmp_path):
+    root = _repo(tmp_path)
+    _stage(root)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+
+    done = subprocess.run([sys.executable, _TICKET_SCRIPT, "assign", "--root", str(root),
+                           "--direction-file", ".work/autopilot/assign-1.md"],
+                          capture_output=True, text=True, check=False, cwd=str(elsewhere),
+                          stdin=subprocess.DEVNULL)
+
+    assert (done.returncode, done.stdout, _tickets(root)) == (
+        0, f"ticket={T} risk=low\n", [T]), done.stdout + done.stderr
+
+
+def test_assign_reads_a_bom_staging_file(tmp_path):
+    root = _repo(tmp_path)
+    path = _stage(root)
+    path.write_bytes("\ufeff".encode("utf-8") + path.read_bytes())
+
+    got = crew_ticket.assign(str(root), str(path))
+    text = (root / ".work" / "tickets" / T / "direction.md").read_text(encoding="utf-8")
+
+    assert (got["ticket"], "\ufeff" in text, "title: add a dry-run flag\n" in text) == (
+        T, False, True)
+
+
+def test_check_direction_takes_a_title_after_a_bom():
+    fields, problems = crew_ticket.check_direction(
+        "\ufefftitle: x\nrisk: low\n## Ask\nhi\n## Options\no\n## Recommendation\nr\n"
+        "## Open questions\nnone\n")
+
+    assert (fields, problems) == ({"title": "x", "risk": "low"}, [])
+
+
 def test_assign_cli_takes_no_title():
     with pytest.raises(SystemExit):
         crew_ticket.main(["assign", "--root", ".", "--title", "x"])
@@ -487,9 +523,17 @@ def test_assign_section_never_puts_arguments_on_a_shell_line():
 def test_assign_section_skips_the_route_shell_line():
     flat = " ".join(_command().split())
 
-    assert ("If the first word is exactly `assign`, run `crew_autopilot.py route --root . "
-            "--first assign` in place of this shell line" in flat,
-            "`sub=assign`: the assign lines" in flat) == (True, True)
+    assert ("If the first word is exactly `assign`, run `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/"
+            "scripts/crew_autopilot.py route --root . --first assign` in place of this shell "
+            "line" in flat, "`sub=assign`: the assign lines" in flat) == (True, True)
+
+
+def test_section_0_quote_rule_is_scoped_past_assign():
+    flat = " ".join(_command().split())
+    route = flat.index("If the first word is exactly `assign`")
+
+    assert flat.find("Otherwise, if the arguments hold a quote, `$`, a backtick or a backslash, "
+                     "stop without running anything", route) > route
 
 
 def test_assign_section_names_the_stop():
@@ -506,4 +550,4 @@ def test_assign_sabotage_is_registered_with_sabotage_py():
 
     missing = [m[0] for m in ASSIGN_MUTATIONS if m not in sabotage.MUTATIONS]
 
-    assert (len(ASSIGN_MUTATIONS), missing) == (17, [])
+    assert (len(ASSIGN_MUTATIONS), missing) == (ASSIGN_COUNT, [])
