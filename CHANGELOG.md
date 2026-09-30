@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.76: the completion audit admits a refresh artifact only as a re-anchor or regeneration the ticket's change reaches (T-0094)
+### Changed — `crew` 1.0.77: the completion audit admits a refresh artifact only as a re-anchor or regeneration the ticket's change reaches (T-0094)
 
 - **What changed.** `crew_refresh_check.artifact_verdicts` (beside
   `REFRESH_ARTIFACT_PATHS`) judges each changed refresh artifact of an approved
@@ -108,7 +108,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   took 1.0.70 for T-0097 (#268), and review round 3's fixes changed
   `plugin/crew/` after 1.0.70 was set, so it was 1.0.71; main then took
   1.0.72-1.0.75 (T-0085 at 1.0.75), merged in with the round-4 successor, so
-  this is 1.0.76.
+  it was 1.0.76; main then took 1.0.76 for T-0087 (#281), merged in before review
+  round 6, so this is 1.0.77.
 
 ### Added — `crew` 1.0.76: tooling reliability — tool-failure refunds, golden replay, seam contracts, a canary review (T-0087)
 
