@@ -67,12 +67,12 @@ A tooling change: this release carries no feature work.
   covers Codex CLI's `--json` events (`exec_events.rs`), `wsl.exe`'s UTF-16LE
   output and `gh`'s exit codes and review flags, each with its URL, read date
   and probe record. It is held to crew's call sites by `test_external_tool_formats.py`.
-- **Thirty-three sabotage entries** (`tests/sabotage_tooling.py`) cover the
+- **Thirty-five sabotage entries** (`tests/sabotage_tooling.py`) cover the
   refund, the budget, the golden replay and its redaction, the manifest,
   status, autopilot, the gate record, the canary, the tooling-alone checker,
   rule 36's paths, the batch-shim prompt, the WSL probe's no-distribution skip
   and the corpus's `-text` attribute. The six on the checker and `verify.json` are added only where
-  those repo files exist. All thirty-three go RED.
+  those repo files exist. All thirty-five go RED.
 
 ### Fixed — `crew` 1.0.76 (T-0087)
 
@@ -121,6 +121,10 @@ A tooling change: this release carries no feature work.
   `false` or `null`, or whose latest `after_round` is missing, not an integer,
   a boolean or outside its rounds, reads UNKNOWN and refuses a reservation. It
   used to read as a plan with no successor, a normal budget.
+- Review round 6: the committed-corpus test runs the builder's own
+  `golden_build.leak` on every fixture, so a fixture holding this machine's
+  host name fails it; before, the test re-checked the patterns itself and
+  never looked for the host name.
 - Bumped `1.0.75 -> 1.0.76` (1.0.52 on its branch; re-set to 1.0.53 after
   merging main's 1.0.52, T-0076, to 1.0.55 after merging main's 1.0.54,
   T-0092, to 1.0.62 after merging main's 1.0.61, T-0010, to 1.0.70 after

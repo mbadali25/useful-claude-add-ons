@@ -18,6 +18,7 @@ CREW_AUTOPILOT = os.path.join(SCRIPTS, "crew_autopilot.py")
 VERIFY_RECORD = os.path.join(SCRIPTS, "verify_record.py")
 GOLDEN_BUILD = os.path.join(CREW, "tests", "golden_build.py")
 FORMATS_TEST = os.path.join(CREW, "tests", "test_external_tool_formats.py")
+GOLDEN_TEST = os.path.join(CREW, "tests", "test_review_golden.py")
 GOLDEN_ATTRIBUTES = os.path.join(CREW, "tests", "golden", ".gitattributes")
 REPO = os.path.dirname(os.path.dirname(CREW))
 CHECKER = os.path.join(REPO, "scripts", "check-tooling-pr.py")
@@ -257,6 +258,23 @@ TOOLING_MUTATIONS = (
         '    if successors:\n        after = successors[-1].get("after_round")\n',
         '    if False:\n        after = successors[-1].get("after_round")\n',
         "tests/test_review_ledger.py::test_a_wrong_typed_successors_path_reads_unknown",
+    ),
+    (
+        # (ah) Round-6 FIX: the committed-corpus test skips the builder's leak
+        # check again, so the host name is never looked for.
+        "the corpus leak test stops calling golden_build.leak",
+        GOLDEN_TEST,
+        "        found = golden_build.leak(text)\n",
+        "        found = None\n",
+        "tests/test_review_golden.py::test_corpus_leak_check_refuses_a_planted_host_name",
+    ),
+    (
+        # (ai) ... or the builder's leak check forgets the host name.
+        "golden_build.leak no longer looks for the host name",
+        GOLDEN_BUILD,
+        '    if host and host in text:\n        return "host name"\n',
+        '    if False:\n        return "host name"\n',
+        "tests/test_review_golden.py::test_corpus_leak_check_refuses_a_planted_host_name",
     ),
 )
 

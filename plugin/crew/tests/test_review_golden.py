@@ -15,6 +15,7 @@ import glob
 import json
 import os
 import re
+import socket
 import subprocess
 
 import pytest
@@ -119,22 +120,50 @@ def test_golden_corpus_covers_the_shapes_that_broke():
     assert any(e["failure_class"] == "reviewer" for e in expected)
 
 
-def _files():
-    return [p for p in glob.glob(os.path.join(GOLDEN, "**", "*"), recursive=True)
+def _files(root=GOLDEN):
+    return [p for p in glob.glob(os.path.join(root, "**", "*"), recursive=True)
             if os.path.isfile(p)]
+
+
+def _corpus_leaks(root=GOLDEN):
+    """Every leak in the files under `root`: the builder's own `leak` (its
+    patterns, the host name, a person's address) plus the machine-path
+    substrings. Review round 6: this test used to re-check the patterns
+    itself and never looked for the host name."""
+    leaks = []
+    for path in _files(root):
+        with open(path, encoding="utf-8", newline="") as fh:
+            text = fh.read()
+        name = os.path.relpath(path, root)
+        found = golden_build.leak(text)
+        if found:
+            leaks.append((name, found))
+        leaks += [(name, p) for p in MACHINE_PATHS if p in text]
+        leaks += [(name, s.pattern) for s in SECRETS if s.search(text)]
+        leaks += [(name, m) for m in EMAIL.findall(text) if not golden_build.allowed_address(m)]
+    return leaks
 
 
 def test_golden_corpus_holds_no_machine_paths_or_secrets():
     assert _files(), "no golden corpus"
-    leaks = []
-    for path in _files():
-        with open(path, encoding="utf-8", newline="") as fh:
-            text = fh.read()
-        name = os.path.relpath(path, GOLDEN)
-        leaks += [(name, p) for p in MACHINE_PATHS if p in text]
-        leaks += [(name, s.pattern) for s in SECRETS if s.search(text)]
-        leaks += [(name, m) for m in EMAIL.findall(text) if not golden_build.allowed_address(m)]
+
+    leaks = _corpus_leaks()
+
     assert not leaks, leaks
+
+
+def test_corpus_leak_check_refuses_a_planted_host_name(tmp_path):
+    host = socket.gethostname()
+    if not host:
+        pytest.skip("no host name on this machine")
+    (tmp_path / "clean.txt").write_text("READ part 1\nCLEAN\n", encoding="utf-8", newline="\n")
+    assert _corpus_leaks(str(tmp_path)) == []
+    (tmp_path / "out.txt").write_text(f"READ part 1\nran on {host} today\n",
+                                      encoding="utf-8", newline="\n")
+
+    leaks = _corpus_leaks(str(tmp_path))
+
+    assert ("out.txt", "host name") in leaks, leaks
 
 
 def test_golden_corpus_stays_under_its_size_bound():
