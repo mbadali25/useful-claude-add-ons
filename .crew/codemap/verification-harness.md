@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@e2b9371d
+anchor: useful-claude-add-ons@e4421926
 verified: 2026-09-30
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -523,7 +523,7 @@ set on Ubuntu.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
   `plugin/crew/CONFIG.md:2408-2415` — the descoped per-rule process-group kill,
   documented as a standing limitation.
-- `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` —
+- `plugin/crew/hooks/scripts/verify-gate.ps1:825-835`, `:1668-1677` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
 - `scripts/check-marketplace.py:1639` — `main()`, sixteen checks.
 - `scripts/check-marketplace.py:518` — `check_versions`.
@@ -1748,3 +1748,5 @@ import block lost one line; no note cites that file by line. Re-anchor only; not
 **Re-anchored `4aa05915` -> `5053f6b7` on 2026-09-29 (T-0100 pylint fix, crew 1.0.62 re-set).** `5f89c181` rewrites `plugin/crew/hooks/scripts/review_patch.py:284` in place (the `fork_reason` f-string names the merged commit through a `:.12` format spec instead of a `[:12]` slice, so pylint as CI stops reporting E1136 unsubscriptable-object; the text it produces is unchanged), and `ab18d5a9`/`5053f6b7` are the version round trip that re-sets crew 1.0.62 as the last plugin/crew commit (net no change to the version files). `git diff --name-only 4aa05915..5053f6b7` over the paths this map cites, refresh artifacts aside, names only `review_patch.py`; no line was added or removed there, so every `review_patch.py:N` citation maps to itself. No claim moved. Nothing else was executed for this note.
 
 **Re-anchored `5053f6b7` -> `e2b9371d` on 2026-09-30 (T-0100 merges main `a61a6f38`, T-0088 landed as crew 1.0.69; crew 1.0.70 re-set).** `cec11ed5` merges origin/main `a61a6f38` (#263-#267 and T-0088's landing, crew 1.0.62-1.0.69) into `T-0100-build`; `4ba3b166` names 1.0.70 in T-0100's `CHANGELOG.md` entry and re-measures `plugin/crew/BUDGETS.md:11` in place; `e2b9371d` sets crew 1.0.70, the last plugin/crew commit (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`, in place). No conflict in this map. 19 citations moved and were re-pointed; 1 moved history entry was left. Hand edits: the unknown-collapsing lesson is `CLAUDE.md:135` (was `:250`; #266 cut CLAUDE.md to rules and moved the evidence to `docs/claude-md-evidence.md:188`), `plugin/crew/tests/sabotage.py`'s appended line `:3057` in `MUTATIONS +=` `:3054-3059`; `.crew/verify.json:332-339` holds (its `why` line gained a trailing comma in place). Every body citation outside provenance notes (`path:N`, and a bare `:N` taken as the last path named in its paragraph) into a file changed `5053f6b7..e2b9371d` was mapped with a `difflib` line diff (`/root/crew-tmp/t-0100/remap5.py`, machine-local); a citation followed by `at`/`on`/`before`/`until`/`since`/`after` or preceded by `was`/`were` is history and was left as written. A cited line whose text did not change was not re-read. Nothing else was executed for this note.
+
+**Re-anchored `e2b9371d` -> `e4421926` on 2026-09-30 (T-0100 merges main `6813749b`, T-0097 landed as crew 1.0.70; crew 1.0.71 re-set).** `2ea5cfe6` merges origin/main `6813749b` (T-0097 landed as crew 1.0.70: the `.ps1` hook scripts' python probe, `plugin/crew/tests/sabotage_scope.py`, `plugin/crew/tests/test_ps1_python_probe.py`); its two conflicts (`sabotage_scope.py`, `CHANGELOG.md`) kept both sides. `a1000e24` names 1.0.71 in T-0100's `CHANGELOG.md` entry; `e4421926` sets crew 1.0.71 (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`, in place). Body citations into files changed `e2b9371d..e4421926` were mapped the same way as the note above (`/root/crew-tmp/t-0100/remap5.py`), history left as written. Two moved and were re-pointed: `plugin/crew/hooks/scripts/verify-gate.ps1:822-832` -> `:825-835` and `:1665-1674` -> `:1668-1677` (T-0097's probe lines above them); `plugin/crew/tests/sabotage_scope.py` gained T-0097's entry after T-0100's, and no citation into it moved. Nothing else was executed for this note.

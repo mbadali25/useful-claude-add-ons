@@ -4,9 +4,9 @@ paths:
   - "_verify/smoke.sh"
   - "scripts/check-marketplace.py"
 ---
-<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=45f0f72c214ecd73 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=55a3eed59b2a7b86 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # verification-harness
-Code map anchor `e2b9371d`; if it is behind HEAD, re-check with `git diff --name-only e2b9371d..HEAD -- <cited paths>`.
+Code map anchor `e4421926`; if it is behind HEAD, re-check with `git diff --name-only e4421926..HEAD -- <cited paths>`.
 Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and .crew/verify.json — what each actually runs, and where they overlap or don't. .crew/verify.json is tracked; its own anchor field (:3) is stale at 5238be3d, independent of this note's anchor.
 ## Entry points
 - `.crew/verify.json:169-174` (rule 9) — the whole-suite pytest rule and its 377s pricing.
@@ -24,7 +24,7 @@ Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and 
 - `.crew/verify.json:322-330` (rule 30) — the T-0023 plain-text routing suite; `plugin/crew/tests/sabotage.py:79`, `:3056` — `sabotage_route.py`'s registration.
 - `.crew/verify.json:332-339` (rule 31) — the T-0024 group-approval suite; `plugin/crew/tests/sabotage.py:81`, `:3057` — `sabotage_approval.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` / `plugin/crew/CONFIG.md:2408-2415` — the descoped per-rule process-group kill, documented as a standing limitation.
-- `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` — `Resolve-CrewBash` refusal rather than a re-resolving hang.
+- `plugin/crew/hooks/scripts/verify-gate.ps1:825-835`, `:1668-1677` — `Resolve-CrewBash` refusal rather than a re-resolving hang.
 - `scripts/check-marketplace.py:1639` — `main()`, sixteen checks.
 - `scripts/check-marketplace.py:518` — `check_versions`.
 Full note: `.crew/codemap/verification-harness.md`.
