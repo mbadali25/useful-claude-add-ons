@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@17d0b1d2
+anchor: useful-claude-add-ons@c4e2eb98
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -56,7 +56,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 36 commands, 31 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.81 (T-0094's landing re-set, one past origin/main's 1.0.80 after T-0094 merged `d1462bbd`, L-0529's landing (#283); T-0094 was 1.0.78 at `65abeb8d`/`1f21f73b`, one past origin/main's 1.0.77 after T-0094 merged `549cda24`; main's 1.0.77 is T-0086's landing (#282); T-0094 was 1.0.77 at `a0db0703`, one past origin/main's 1.0.76 after T-0094 merged `a7524aac`; main's 1.0.76 is T-0087's landing (#281); T-0094 was 1.0.76 at `1b9e4bfe`, one past origin/main's 1.0.75 after T-0094 merged `9af34e57`; T-0094 was 1.0.71 at `0c19512c`, 1.0.70 at `f5d0f1b1` and 1.0.62 at `fc348c89` on its branch before; main's 1.0.75 is T-0085's landing: 1.0.70 at its merge of main's 1.0.69 at `a61a6f38`, 1.0.71 after one landing-branch sabotage anchor commit, 1.0.72 after rewrapping `commands/review.md` to its line allowance, 1.0.73 at its catch-up merge of main's 1.0.70 at `6813749b` (#268, T-0097), 1.0.74 for the Windows fail-open fix in `gate_applies` at `9b6b0da7`, 1.0.75 for re-targeting the sabotage entry that fix made vacuous; whose 1.0.62-1.0.69 are #263-#267 and T-0088; before that 1.0.61, T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`; T-0085's build branch declares main's version and carries no bump of its own until land, `.crew/standards.md` REPO-03), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.82 (L-0520 PR 1, the merge train CLI, one past main's 1.0.81 after merging T-0094's landing `42d5ef58`; before that 1.0.81, T-0094's landing re-set, one past origin/main's 1.0.80 after T-0094 merged `d1462bbd`, L-0529's landing (#283); T-0094 was 1.0.78 at `65abeb8d`/`1f21f73b`, one past origin/main's 1.0.77 after T-0094 merged `549cda24`; main's 1.0.77 is T-0086's landing (#282); T-0094 was 1.0.77 at `a0db0703`, one past origin/main's 1.0.76 after T-0094 merged `a7524aac`; main's 1.0.76 is T-0087's landing (#281); T-0094 was 1.0.76 at `1b9e4bfe`, one past origin/main's 1.0.75 after T-0094 merged `9af34e57`; T-0094 was 1.0.71 at `0c19512c`, 1.0.70 at `f5d0f1b1` and 1.0.62 at `fc348c89` on its branch before; main's 1.0.75 is T-0085's landing: 1.0.70 at its merge of main's 1.0.69 at `a61a6f38`, 1.0.71 after one landing-branch sabotage anchor commit, 1.0.72 after rewrapping `commands/review.md` to its line allowance, 1.0.73 at its catch-up merge of main's 1.0.70 at `6813749b` (#268, T-0097), 1.0.74 for the Windows fail-open fix in `gate_applies` at `9b6b0da7`, 1.0.75 for re-targeting the sabotage entry that fix made vacuous; whose 1.0.62-1.0.69 are #263-#267 and T-0088; before that 1.0.61, T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes, two past main's 1.0.59; 1.0.60 at `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged `e878cc31`; 1.0.55 on T-0010-solo at `d7c7c75c`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 keeps the refused-snapshot probe's message in a local (ruff F821), 1.0.58 re-anchors two round-5 sabotage entries to the new refusal text, 1.0.56 for the landing branch's pylint disable in `plugin/crew/tests/test_config_menu.py`, 1.0.57 for `crew_config_files.os_error_text`, the Windows path fix in the OS-error refusals; 1.0.55 at `3648f59a` on the build branch, one past main's 1.0.54 from T-0092's `136f4b33`; T-0085's build branch declares main's version and carries no bump of its own until land, `.crew/standards.md` REPO-03), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -512,7 +512,7 @@ they disagree:
   `config.json`".
 - Only `/crew:migrate` (`crew_migrate.py`, `--apply`) ever writes
   `.crew/crew.json`; `/crew:init` still writes only `.crew/config.json`
-  (`TODO.md:3963`, "T2 (lane D, additive) deferred items", filed
+  (`TODO.md:3973`, "T2 (lane D, additive) deferred items", filed
   2026-09-23, still open at this anchor; it was `:3854` at `6c497a14`,
   `:3884` at `f2bb919b` and `:3952` at `1e0706ac`). `crew_migrate.py`'s own module
   docstring (`:1-4`) frames this as "one-time move of a 0.20 crew setup onto
@@ -1282,6 +1282,56 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   the one way a ticket reaches review without the gate; it exists because the pre-existing
   review_run tests run tickets with no receipt, and a ticket without one cannot pass
   `/crew:done`.
+
+## The merge train (L-0520, crew 1.0.82)
+
+DERIVED at this anchor from `plugin/crew/hooks/scripts/crew_train.py` (read in full). This is PR 1
+of the owner's split (2026-09-30): the CLI only. The gate round refusing on it (`review_run.py`
+exit 6) and the reviewer's rerere block are L-0526; until then the train is advisory.
+
+- **What it is.** One locked queue per clone serialising gate+land per overlapping Touch set;
+  lanes still implement in parallel. State under `<git-common-dir>/crew/train/` via `train_dir`
+  (`plugin/crew/hooks/scripts/crew_train.py:254`, on `crew_ticket.state_dir`): `state.json`
+  (`SCHEMA` `:112`), `events.jsonl` (`read_events` `:439`), `merge-log/<id>.jsonl`
+  (`merge_log_path` `:269`, `read_merge_log` `:925`). No config key: `arm`
+  (`:640`) publishes a complete `state.json` with `os.link`, which fails if it exists; `disarm`
+  (`:670`) refuses under the lock while entries exist.
+- **Fail closed.** `load` (`:323`) returns `absent` only when `_absent` (`:278`) proves
+  `state.json` missing (ENOENT under a directory ancestor); unreadable, unparseable, wrong-schema or
+  a malformed entry (`_entry_problem` `:306`) is `could not tell`. `_Lock` (`:366`) is
+  `review_ledger._Lock`'s shape plus an owner token checked before removal, `LOCK_WAIT_SECONDS`
+  (`:113`), never removed for age. `_mutate` (`:407`) refuses absent as `NotArmed` (exit 1)
+  and anything else unreadable as `TrainError` (exit 3), appends events with the next `seq`, then
+  `os.replace`s the state. `touch_of` (`:466`) returns `None` (overlaps everything) for any Touch
+  that is not a readable, problem-free, non-empty list. `_plain` (`:142`) refuses CLI values that
+  carry control characters, and refs that start with `-` or hold whitespace (exit 2).
+- **Overlap and the hold rule.** `_prefix` (`:487`) is the case-folded segments before the
+  first glob segment; `entries_overlap` (`:506`) is a segment-prefix test; `touch_overlap`
+  (`:512`) returns every colliding pair, refresh artifacts dropped by `effective`
+  (`:501`, `REFRESH_PREFIXES` `:116`). `_blockers` (`:573`) is every holder, and every
+  earlier-ordered waiter, on the same base with an overlapping Touch. `acquire` (`:706`) upserts
+  the entry, prints unseen notices (`_notices` `:606`), logs a `wait` event with each blocker's
+  pairs, or refuses `merge <base> first` when `_moved_paths` (`:529`) finds base commits
+  touching Touch, or holds and logs `acquire`. `_stale` (`:546`) is printed evidence only.
+- **Catch-up and land.** `catch_up` (`:861`) refuses an in-progress merge or a dirty tree
+  (`--untracked-files=no`, `.work/` excluded), fetches `<remote>/<branch>` bases (`_fetch`
+  `:841`), runs `ensure_rerere` (`:823`; `--worktree` only when `extensions.worktreeConfig`
+  is already true, else `--local`), `git merge --no-edit <base>`, and parses `Resolved`/`Staged
+  '<path>' using previous resolution.` (git 2.53 prints `Staged` under `rerere.autoupdate`) against
+  the staged set; it never commits a conflicted or rerere-resolved merge, and a merge state it cannot
+  read is `could not tell` (exit 3). `check_land` (`:987`): hold, fetch, `_merge_tree` (`:971`,
+  `--write-tree --name-only`; exit 1 lists conflicts, other codes are could-not-tell),
+  moved-in-Touch, `review_ledger.check_receipt`, `review_gate.gate_state`, then prints `LAND_OK` and
+  the `gh pr merge ... --match-head-commit` line and logs `check-land`. `release` (`:743`) logs
+  `release`, `merged` (paths from `<sha>^1..<sha>`, `null` when unreadable) or `force-release`
+  (needs `--by` and `--reason`).
+- **Callers and tests.** No crew script imports it in this release;
+  `plugin/crew/tests/test_crew_train.py` allows only `review_run.py` and `review_prompt.py` to (the
+  L-0526 callers). `/crew:done` describes the landing sequence (`plugin/crew/commands/done.md`,
+  "Landing through the merge train"; `test_lifecycle_commands.py`). `.crew/verify.json`'s
+  crew_train rule runs `test_crew_train.py`. JUDGEMENT: until L-0526 and the machine-local lane
+  scripts call it, nothing forces a lane through the train; its value is the queue, the land check
+  and the merge log for lanes that use it.
 
 ## Entry points
 
@@ -3143,3 +3193,5 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 **Re-anchored `65abeb8d` -> `1f21f73b` on 2026-09-30 (T-0094 review round 7: `902fb96a`..`91da43bc` code and tests, docs, guide rebuilt, crew 1.0.78 un-set and re-set as `1f21f73b`).** `git diff --name-only 65abeb8d 1f21f73b` returns `CHANGELOG.md`, `docs/guides/crew/crew-1.0-daily-workflow.docx`, `docs/guides/crew/crew-1.0-daily-workflow.html`, `docs/guides/crew/crew-1.0-daily-workflow.pdf`, `docs/guides/crew/src/daily-workflow-scope.md`, `plugin/crew/README.md`, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `plugin/crew/tests/test_refresh_admission.py`. Re-derived here: the refresh-artifact bullet's `crew_refresh_check.py` positions (every function below `_base_text` moved: `_read_regular` is new at `:687`), round 7's sentence, and the entry-point bullet (`ticket_freshness` `:1263`, `main()` `:1363`, `artifact_verdicts` `:970`), each read with `grep -n`. No suite was executed for this note.
 
 **Re-anchored `1f21f73b` (T-0094) / main -> `17d0b1d2` on 2026-09-30 (T-0094 merges origin/main `d1462bbd`, L-0529 landed as crew 1.0.80 (#283), and re-sets crew 1.0.81 in the merge commit).** `git diff --name-only 79ef56c4 17d0b1d2`, refresh artifacts aside, returns `.claude-plugin/marketplace.json`, `CHANGELOG.md`, `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/README.md`, `plugin/crew/tests/crew_fixtures.py`, `plugin/crew/tests/test_context_watch_python_resolver.py`, `plugin/crew/tests/test_event_claim_crash_safety.py`, `plugin/crew/tests/test_path_link_farm.py`, `plugin/crew/tests/test_ps1_python_probe.py`, `plugin/obsidian-vault/.claude-plugin/plugin.json`, `plugin/obsidian-vault/hooks/scripts/_test/test_python_probe_proof.py`: main's L-0529 files plus the version statements. The merge's conflicts were version lines and the generated rules' stamps; main's body lines kept. Re-derived here: the version sentence (1.0.81). No body citation moved (checked with `/root/crew-tmp/t-0094/cite_map_merge.py`, `MAIN_REV=origin/main`, `OURS_REV=79ef56c4`; its only flags are history positions in verification-harness.md's per-commit lists, left as written). No suite was executed for this note.
+
+**Re-anchored `17d0b1d2` -> `c4e2eb98` on 2026-09-30 (L-0520 PR 1, the merge train CLI, after merging main 42d5ef58 (T-0094)).** `git diff --name-only 17d0b1d2 c4e2eb98` adds L-0520's PR 1 outside refresh artifacts: the new `plugin/crew/hooks/scripts/crew_train.py` and its test, `plugin/crew/commands/done.md` (a new section after T-0094's), `plugin/crew/README.md` (a new subsection, and the `<git-common-dir>/crew/` list names the train), two guides and their outputs, `CHANGELOG.md`, `TODO.md`, `plugin/crew/BUDGETS.md:11` (in place), `.crew/verify.json` (one rule) and `test_lifecycle_commands.py`. Path-qualified citations outside dated provenance were moved by a line diff (`/root/crew-tmp/l-0520/tools/l0520_remap.py`, machine-local). The merge train section was regenerated from `crew_train.py` at this anchor, and the version sentence reads 1.0.82. No suite was executed for this note.

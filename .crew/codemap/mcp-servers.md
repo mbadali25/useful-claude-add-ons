@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@17d0b1d2
+anchor: useful-claude-add-ons@c4e2eb98
 verified: 2026-09-30
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -56,7 +56,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
   `this.resolved` and never retries an earlier, higher-priority link. Deliberate - the comment at
   `:44-46` says so - but fixing `MS_ADMIN_CLIENT_SECRET` after `cli` or `device` has won changes
   nothing until restart, and nothing tells you that. Re-verified unchanged 2026-09-06 at
-  `1f97e51c`; still open as `TODO.md:189` (item 2; was `:110` at `f2bb919b`, `:80` at `6c497a14` and `:51` before that, each
+  `1f97e51c`; still open as `TODO.md:199` (item 2; was `:110` at `f2bb919b`, `:80` at `6c497a14` and `:51` before that, each
   move an insertion earlier in the file - re-read at `f2bb919b` on 2026-09-25, same heading and body).
 - **`scopesOverride` silently broadens a narrow scope request.**
   `mcp-servers/packages/core/src/adminAuth.ts:29-36` (the field and its doc comment), `:127`
@@ -64,7 +64,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
   `device` (`mcp-servers/packages/core/src/adminAuth.ts:149-158` - no `scopesOverride` key, and the
   comment at `:155-158` says why) honours caller-supplied delegated scopes. Code that requests a
   narrow scope and receives `.default` did not fail - it was never asked. Re-verified unchanged
-  2026-09-06 at `1f97e51c`; still open as `TODO.md:200` (item 3; was `:121` at `f2bb919b`, `:91`, and `:62` before that - re-read at
+  2026-09-06 at `1f97e51c`; still open as `TODO.md:210` (item 3; was `:121` at `f2bb919b`, `:91`, and `:62` before that - re-read at
   `f2bb919b` on 2026-09-25, same heading and body).
 - **`dist/` is what runs, `src/` is what you edit.** Editing a `.ts` file and then *starting a
   server* leaves the stale compiled JS in place and the change does not take effect. Nothing guards
@@ -78,7 +78,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
     `core/dist` is still stale.
   - **Equal mtimes are stale, not fresh** (`:96-97`, reasoning at `:82-94`). The commit message for
     `4e2bfb78` states the opposite ("Equal timestamps count as fresh"); the shipped code and
-    `TODO.md:281-288` (was `:202-209` at `f2bb919b`, `:172-179`, and `:143-150` before that; re-read at `f2bb919b` on 2026-09-25, same reasoning)
+    `TODO.md:291-298` (was `:202-209` at `f2bb919b`, `:172-179`, and `:143-150` before that; re-read at `f2bb919b` on 2026-09-25, same reasoning)
     are the later, correct account. Trust the code.
   - An unreadable directory throws rather than returning mtime `0` (`:44-51`), because `0` compares
     older than everything and would read as fresh.
@@ -442,3 +442,5 @@ each cited here by name, never by line; nothing under `mcp-servers/` changed. Re
 **Re-anchored `65abeb8d` -> `1f21f73b` on 2026-09-30 (T-0094 review round 7: `902fb96a`..`91da43bc` code and tests, docs, guide rebuilt, crew 1.0.78 un-set and re-set as `1f21f73b`).** `git diff --name-only 65abeb8d 1f21f73b` returns `CHANGELOG.md`, `docs/guides/crew/crew-1.0-daily-workflow.docx`, `docs/guides/crew/crew-1.0-daily-workflow.html`, `docs/guides/crew/crew-1.0-daily-workflow.pdf`, `docs/guides/crew/src/daily-workflow-scope.md`, `plugin/crew/README.md`, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `plugin/crew/tests/test_refresh_admission.py`. No body citation in this map names a line that moved. No suite was executed for this note.
 
 **Re-anchored `1f21f73b` (T-0094) / main -> `17d0b1d2` on 2026-09-30 (T-0094 merges origin/main `d1462bbd`, L-0529 landed as crew 1.0.80 (#283), and re-sets crew 1.0.81 in the merge commit).** `git diff --name-only 79ef56c4 17d0b1d2`, refresh artifacts aside, returns `.claude-plugin/marketplace.json`, `CHANGELOG.md`, `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/README.md`, `plugin/crew/tests/crew_fixtures.py`, `plugin/crew/tests/test_context_watch_python_resolver.py`, `plugin/crew/tests/test_event_claim_crash_safety.py`, `plugin/crew/tests/test_path_link_farm.py`, `plugin/crew/tests/test_ps1_python_probe.py`, `plugin/obsidian-vault/.claude-plugin/plugin.json`, `plugin/obsidian-vault/hooks/scripts/_test/test_python_probe_proof.py`: main's L-0529 files plus the version statements. The merge's conflicts were version lines and the generated rules' stamps; main's body lines kept. No body citation moved (checked with `/root/crew-tmp/t-0094/cite_map_merge.py`, `MAIN_REV=origin/main`, `OURS_REV=79ef56c4`; its only flags are history positions in verification-harness.md's per-commit lists, left as written). No suite was executed for this note.
+
+**Re-anchored `17d0b1d2` -> `c4e2eb98` on 2026-09-30 (L-0520 PR 1, the merge train CLI, after merging main 42d5ef58 (T-0094)).** `git diff --name-only 17d0b1d2 c4e2eb98` adds L-0520's PR 1 outside refresh artifacts (crew_train.py, done.md, README, two guides, CHANGELOG, TODO, BUDGETS.md in place, verify.json, two tests); path-qualified citations outside dated provenance were moved by a line diff (`/root/crew-tmp/l-0520/tools/l0520_remap.py`, machine-local). No suite was executed for this note.

@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@17d0b1d2
+anchor: useful-claude-add-ons@c4e2eb98
 verified: 2026-09-30
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -326,7 +326,7 @@ Notable rules, re-read directly:
   `plugin/crew/tests/sabotage_standards.py` (`STANDARDS_MUTATIONS`, `:61`, 51 entries by `len()`
   on `T-0086-build` after its merge of `a7524aac` - main's 44, then T-0086's seven for the Python set; the `why` states no count), imported by `plugin/crew/tests/sabotage.py:85`
   and appended at `:3062`.
-- **Rule 37**, new in T-0087 (`.crew/verify.json:384-409` since T-0094 merged `a7524aac`, after T-0094's rule 32; rule 36 at `:374-399` on main and on `T-0087-build`'s merge of `9af34e57`, appended after T-0085's rule 35; rule 35 at `:361-386` on its merge of `a61a6f38`, appended after main's rules 32-34; rule 32 on its merge of `8ab733d7`, where T-0010's rule 28 put it last; rule 31 at `:328-353` on `T-0087-build` at `0ef73f74`): `paths` are the `HARNESS` globs
+- **Rule 37**, new in T-0087 (`.crew/verify.json:385-410` since T-0094 merged `a7524aac`, after T-0094's rule 32; rule 36 at `:374-399` on main and on `T-0087-build`'s merge of `9af34e57`, appended after T-0085's rule 35; rule 35 at `:361-386` on its merge of `a61a6f38`, appended after main's rules 32-34; rule 32 on its merge of `8ab733d7`, where T-0010's rule 28 put it last; rule 31 at `:328-353` on `T-0087-build` at `0ef73f74`): `paths` are the `HARNESS` globs
   of `scripts/check-tooling-pr.py` (the review/gate harness: `review_*.py`, both `verify-gate`
   flavours, `verify_record.py`, `verify_fingerprint.py`, `verify_price.py`, `crew_ticket.py`, the
   approval-hook, scope-guard and completion-audit triples, `scope_base.py`, `sabotage*.py`,
@@ -616,7 +616,7 @@ their own, in both the `test` job and the Windows leg of `crew-shell-matrix`. Re
 - `.crew/verify.json:342-349` (rule 32) — T-0094's refresh-admission suite, split out of rule 25.
 - `.crew/verify.json:371-383` (rule 36) — the T-0085 standards suite;
   `plugin/crew/tests/sabotage.py:85`, `:3062` — `sabotage_standards.py`'s registration.
-- `.crew/verify.json:384-409` (rule 37) — the T-0087 harness rule; `scripts/check-tooling-pr.py`
+- `.crew/verify.json:385-410` (rule 37) — the T-0087 harness rule; `scripts/check-tooling-pr.py`
   and its suite `scripts/_test/tooling-pr.py`; `plugin/crew/tests/sabotage.py:82`, `:3061` —
   `sabotage_tooling.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
@@ -1981,3 +1981,5 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 **Re-anchored `65abeb8d` -> `1f21f73b` on 2026-09-30 (T-0094 review round 7: `902fb96a`..`91da43bc` code and tests, docs, guide rebuilt, crew 1.0.78 un-set and re-set as `1f21f73b`).** `git diff --name-only 65abeb8d 1f21f73b` returns `CHANGELOG.md`, `docs/guides/crew/crew-1.0-daily-workflow.docx`, `docs/guides/crew/crew-1.0-daily-workflow.html`, `docs/guides/crew/crew-1.0-daily-workflow.pdf`, `docs/guides/crew/src/daily-workflow-scope.md`, `plugin/crew/README.md`, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `plugin/crew/tests/test_refresh_admission.py`. No body citation in this map names a line that moved. No suite was executed for this note.
 
 **Re-anchored `1f21f73b` (T-0094) / main -> `17d0b1d2` on 2026-09-30 (T-0094 merges origin/main `d1462bbd`, L-0529 landed as crew 1.0.80 (#283), and re-sets crew 1.0.81 in the merge commit).** `git diff --name-only 79ef56c4 17d0b1d2`, refresh artifacts aside, returns `.claude-plugin/marketplace.json`, `CHANGELOG.md`, `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/README.md`, `plugin/crew/tests/crew_fixtures.py`, `plugin/crew/tests/test_context_watch_python_resolver.py`, `plugin/crew/tests/test_event_claim_crash_safety.py`, `plugin/crew/tests/test_path_link_farm.py`, `plugin/crew/tests/test_ps1_python_probe.py`, `plugin/obsidian-vault/.claude-plugin/plugin.json`, `plugin/obsidian-vault/hooks/scripts/_test/test_python_probe_proof.py`: main's L-0529 files plus the version statements. The merge's conflicts were version lines and the generated rules' stamps; main's body lines kept. No body citation moved (checked with `/root/crew-tmp/t-0094/cite_map_merge.py`, `MAIN_REV=origin/main`, `OURS_REV=79ef56c4`; its only flags are history positions in verification-harness.md's per-commit lists, left as written). No suite was executed for this note.
+
+**Re-anchored `17d0b1d2` -> `c4e2eb98` on 2026-09-30 (L-0520 PR 1, the merge train CLI, after merging main 42d5ef58 (T-0094)).** `git diff --name-only 17d0b1d2 c4e2eb98` adds L-0520's PR 1 outside refresh artifacts (crew_train.py, done.md, README, two guides, CHANGELOG, TODO, BUDGETS.md in place, verify.json, two tests); path-qualified citations outside dated provenance were moved by a line diff (`/root/crew-tmp/l-0520/tools/l0520_remap.py`, machine-local). No suite was executed for this note.
