@@ -384,4 +384,10 @@ SCOPE_MUTATIONS = (
      '"  The owner re-points it by typing `/crew:autopilot <id>`; "',
      '"  Fix it with `crew_ticket.py activate --ticket <id>`; "',
      _CA + "test_a_broken_active_ticket_pointer_blocks_the_stop[module]"),
+    # --- T-0097 ------------------------------------------------------------------
+    ("PROBE: a silent candidate's null answer is piped into ConvertFrom-Json", AUDIT_PS1,
+     "          $probe = if ($line) { $line | ConvertFrom-Json } else { $null }\n",
+     "          $probe = $line | ConvertFrom-Json\n",
+     "tests/test_ps1_python_probe.py::"
+     "test_a_silent_candidate_is_rejected_without_writing_to_stderr"),
 )
