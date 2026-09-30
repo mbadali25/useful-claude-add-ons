@@ -2457,12 +2457,26 @@ Every promotion appends a row to `.work/PROMOTIONS.md`, failures included:
 ### What a hook enforces, and what it cannot
 
 `promote-gate.sh` fires on `PreToolUse` and refuses any command matching a
-declared `deploy` entry unless, for the sha at HEAD:
+declared `deploy` entry unless, for the sha at HEAD of **the tree the deploy
+runs from** (the Bash call's `cwd`, moved by a leading `cd <dir> &&` and named
+by any `git -C <dir>`; it must be a worktree of the same repository, and any
+literal sha in the command must be its HEAD):
 
 - every environment in `requires` has an **all-pass** row in `.work/PROMOTIONS.md`
 - `rollback` is set: a runbook that exists and carries `last verified: YYYY-MM-DD` inside 90 days, or the literal `"none"` plus a `rollbackReason` - an absent key blocks the deploy
 - `requireHuman` has an approval marker at `.crew/.approved-<env>-<sha>`
-- the working tree is clean - you cannot deploy a sha plus uncommitted changes
+- that tree is clean - you cannot deploy a sha plus uncommitted changes
+
+So a clean worktree deploys while the main checkout is dirty, and a clean main
+checkout cannot wave a dirty or wrong-sha worktree through. `.crew/verify.json`,
+`.work/PROMOTIONS.md`, the approval markers and `.crew/.deploy-in-flight` are
+read from the session's project directory on purpose - they are gitignored
+per-checkout state that a fresh worktree lacks and a throwaway one could forge -
+so an uncommitted edit to the project's `.crew/verify.json` blocks too. A
+command that changes directory after it starts, names two trees, or uses
+`--git-dir` is refused rather than guessed at (T-0505). When the gate blocks,
+`/crew:promote` fixes the precondition it names; it never hands the owner the
+command to run past the hook.
 
 **Limitation: this enforcement lives in the session, not the repo.** All three
 gates - `guard.sh`, `verify-gate.sh`, `promote-gate.sh` - are hooks that run
@@ -2731,7 +2745,7 @@ with three hooks registered and unlisted.
 
 | Script | Event | Behavior |
 |---|---|---|
-| `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
+| `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree the deploy runs from (payload `cwd`, leading `cd`, `git -C`; same repository) is clean and at that sha. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
 | `cloud-guard.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | **Off by default** (`guards.cloudGuard`). Judges destructive cloud, Terraform and SQL commands and force push against the pinned `cloud.*` identity — see [Cloud guard](#cloud-guard) |
 | `role-write-guard.sh` / `.ps1` | `PreToolUse` on Write / Edit | **Off by default** (`guards.roleWrites`: `block`/`report`/`off`). Keyed on the calling subagent's `agent_type`; enforces a role's write scope mechanically — CONFIG.md §18 |
 | `approval-hook.sh` / `.ps1` | `UserPromptSubmit` | Records a ticket's plan approval only when the prompt *you* typed is `/crew:approve <id>`: validates `spec.md` and `plan.md` and writes the receipt bound to both hashes, or blocks the prompt and says why. Any other prompt: no output, exit 0 |

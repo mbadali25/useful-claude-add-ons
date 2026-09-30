@@ -4,6 +4,32 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.0.76: promote-gate judges the tree the deploy runs from (T-0505)
+
+- **`promote-gate.sh` / `.ps1` read the deployed sha and the clean-tree check
+  from the tree the deploy runs from**, not from `CLAUDE_PROJECT_DIR`: the
+  payload `cwd`, moved by a leading `cd <dir> &&` chain, and named by any
+  `git -C <dir>`. A clean linked worktree now deploys while the main checkout
+  is dirty (TSS's development deploy was blocked with the main checkout's sha
+  named), and a clean main checkout no longer waves a dirty or wrong-sha
+  worktree through.
+- The tree must be a worktree of the **same repository** (shared git common
+  dir), and every literal sha in the command must be its HEAD. A command that
+  changes directory after it starts, names two trees, uses `--git-dir`, or
+  holds a directory the shell would expand is refused rather than guessed at.
+- `.crew/verify.json`, `.work/PROMOTIONS.md`, the `.crew/.approved-*` markers
+  and `.crew/.deploy-in-flight` stay in the project directory on purpose
+  (per-checkout gitignored state a worktree lacks or could forge), so an
+  uncommitted edit to the project's `.crew/verify.json` now blocks.
+  `verify-gate` is unchanged and still matches the in-flight marker.
+- **`/crew:promote`** gains "When the gate blocks": fix the precondition the
+  message names; never hand the owner a deploy so it skips the hook; hand one
+  over only for `requireHuman` or a genuinely interactive step, as a question
+  with a recommendation.
+- New must-block / must-allow suite for both flavours
+  (`test_promote_gate_effective_tree.py`) and nine sabotage entries.
+  After updating, run `claude plugin update crew` and restart the session.
+
 ### Added — `crew` 1.0.75: build-time development standards and a required pre-review self-check (T-0085)
 
 - **New `crew-standards` skill.** `references/generic.md` ships GEN-01 to GEN-12,

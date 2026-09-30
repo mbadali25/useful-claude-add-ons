@@ -415,6 +415,14 @@ of those checks live in this file - they live in the hook that reads it. This
 `.crew/verify.json` is the same, unguarded JSON in every session; only the
 plugin being active turns it into a gate.
 
+**Which tree it judges.** The sha and the clean-tree check come from the tree
+the deploy runs from - the Bash call's `cwd`, moved by a leading `cd <dir> &&`
+and named by any `git -C <dir>` - which must be a worktree of the same
+repository; a literal sha in the command must be that tree's HEAD. This file,
+`.work/PROMOTIONS.md` and the `.crew/.approved-*` markers are read from the
+session's project directory, because they are per-checkout gitignored state.
+To deploy from a clean worktree, run the declared command there.
+
 ### The promotion record
 
 Every promotion appends one line to `.work/PROMOTIONS.md`:
