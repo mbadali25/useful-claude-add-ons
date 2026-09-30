@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.84: the merge train - gate+land serialised per overlapping Touch set (L-0520)
+### Added — `crew` 1.0.86: the merge train - gate+land serialised per overlapping Touch set (L-0520)
 
 - **New `hooks/scripts/crew_train.py`.** One locked queue per clone under
   `<git-common-dir>/crew/train/`, armed per clone with `crew_train.py arm` (no config key; an
