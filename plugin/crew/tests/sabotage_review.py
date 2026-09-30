@@ -64,11 +64,34 @@ REVIEW_FIX_MUTATIONS = (
         # CLEAN on a bundle without knowing anything was left out of it.
         "the review prompt stops naming the excluded paths",
         REVIEW_PROMPT,
-        ('    out.append(f"  excluded (never in the bundle): {\', \'.join(excluded)}" if excluded\n'
-         '               else "  excluded: none recorded")\n'),
+        ('    if isinstance(excluded, list) and all(isinstance(p, str) and p for p in excluded):\n'
+         '        out.append("  excluded (never in the bundle): "\n'
+         '                   + (", ".join(excluded) if excluded else "none"))\n'
+         '    else:\n'
+         '        out.append("  excluded: not recorded by this manifest (unknown)")\n'),
         "    pass\n",
         ("tests/test_review_prompt.py::"
          "test_build_names_the_excluded_paths"),
+    ),
+    (
+        # T-0099: an empty exclusion list collapses into the unknown line, so a
+        # manifest that says "nothing was left out" reads as one that cannot say.
+        "an empty exclusion list prints as unknown",
+        REVIEW_PROMPT,
+        "    if isinstance(excluded, list) and all(isinstance(p, str) and p for p in excluded):\n",
+        "    if excluded and isinstance(excluded, list) and all(isinstance(p, str) and p for p in excluded):\n",
+        ("tests/test_review_prompt.py::"
+         "test_an_empty_exclusion_list_is_not_reported_as_unknown"),
+    ),
+    (
+        # T-0099 round 1: an empty-string entry passes as a path, so `[""]`
+        # prints "none" and reads as a manifest that left nothing out.
+        "an empty-string exclusion entry reads as a known list",
+        REVIEW_PROMPT,
+        "    if isinstance(excluded, list) and all(isinstance(p, str) and p for p in excluded):\n",
+        "    if isinstance(excluded, list) and all(isinstance(p, str) for p in excluded):\n",
+        ("tests/test_review_prompt.py::"
+         "test_a_malformed_exclusion_value_reads_as_unknown"),
     ),
     (
         # An older round's result lands after a later round was reserved.

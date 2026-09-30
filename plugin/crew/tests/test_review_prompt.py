@@ -55,7 +55,34 @@ def test_build_names_the_excluded_paths(repo):
 
     assert "  excluded (never in the bundle): .work/, graphify-out/" in text
     assert text.index("excluded (never in the bundle)") < text.index("Manifest (file categories")
-    assert "  excluded: none recorded" in bare
+    assert "  excluded: not recorded by this manifest (unknown)" in bare
+
+
+UNKNOWN_EXCLUDED = "  excluded: not recorded by this manifest (unknown)"
+
+
+def test_an_empty_exclusion_list_is_not_reported_as_unknown(repo):
+    """T-0099: `excluded: []` is a manifest saying nothing was left out, which
+    is a fact; a missing key is a manifest that cannot say. One line each."""
+    empty = rp.build(str(repo), "T9", dict(MANIFEST, excluded=[]))
+    bare = rp.build(str(repo), "T9", MANIFEST)
+
+    assert "  excluded (never in the bundle): none" in empty
+    assert UNKNOWN_EXCLUDED not in empty
+    assert UNKNOWN_EXCLUDED in bare
+    assert "excluded (never in the bundle)" not in bare
+
+
+@pytest.mark.parametrize("value", [None, ".work/", [".work/", 3], {"a": 1},
+                                   [""], ["", ""], [".work/", ""]])
+def test_a_malformed_exclusion_value_reads_as_unknown(repo, value):
+    """T-0099: a value that is not a list of non-empty strings cannot say what
+    was left out; a string must never be spelled out as a list of its
+    characters, and `[""]` must not read as a known-empty list."""
+    text = rp.build(str(repo), "T9", dict(MANIFEST, excluded=value))
+
+    assert UNKNOWN_EXCLUDED in text
+    assert "excluded (never in the bundle)" not in text
 
 
 def test_build_states_the_read_form_the_parser_accepts(repo):
