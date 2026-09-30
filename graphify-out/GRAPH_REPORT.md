@@ -1,7 +1,7 @@
 # Graph Report - uca-t0019  (2026-09-30)
 
 ## Corpus Check
-- 967 files · ~2,208,365 words
+- 967 files · ~2,208,733 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 59 file(s) not represented in the graph (top: (none) 33, .mmd 8, .csv 4)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `8f0b02d4`
+- Built from commit: `91ad9add`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -2929,7 +2929,7 @@ Nodes (5): expect_nonzero(), green(), nonzero_svg(), red(), render.sh script
 
 ### Community 513 - "`/crew:autopilot` (T-0004, crew 1.0.41)"
 Cohesion: 0.08
-Nodes (58): Added — `crew` 1.0.62: `/crew:autopilot assign` and `crew_ticket.py mint` (T-0019), `/crew:autopilot` (T-0004, crew 1.0.41), Re-anchor provenance - `bbd9a66d` -> `835ce179`, 2026-09-29 (T-0019, crew 1.0.62), Re-anchor provenance - `bbd9a66d` -> `835ce179`, 2026-09-29 (T-0019, crew 1.0.62), Re-anchor provenance - `bbd9a66d` -> `835ce179`, 2026-09-29 (T-0019, crew 1.0.62), Re-anchor provenance - `bbd9a66d` -> `835ce179`, 2026-09-29 (T-0019, crew 1.0.62), Re-anchor provenance - `bbd9a66d` -> `835ce179`, 2026-09-29 (T-0019, crew 1.0.62), Re-anchor provenance - `bbd9a66d` -> `835ce179`, 2026-09-29 (T-0019, crew 1.0.62) (+50 more)
+Nodes (58): Added — `crew` 1.0.63: `/crew:autopilot assign` and `crew_ticket.py mint` (T-0019), `/crew:autopilot` (T-0004, crew 1.0.41), Re-anchor provenance - `bbd9a66d` -> `835ce179`, 2026-09-29 (T-0019, crew 1.0.62), Re-anchor provenance - `bbd9a66d` -> `835ce179`, 2026-09-29 (T-0019, crew 1.0.62), Re-anchor provenance - `bbd9a66d` -> `835ce179`, 2026-09-29 (T-0019, crew 1.0.62), Re-anchor provenance - `bbd9a66d` -> `835ce179`, 2026-09-29 (T-0019, crew 1.0.62), Re-anchor provenance - `bbd9a66d` -> `835ce179`, 2026-09-29 (T-0019, crew 1.0.62), Re-anchor provenance - `bbd9a66d` -> `835ce179`, 2026-09-29 (T-0019, crew 1.0.62) (+50 more)
 
 ### Community 514 - "build.py"
 Cohesion: 0.16
