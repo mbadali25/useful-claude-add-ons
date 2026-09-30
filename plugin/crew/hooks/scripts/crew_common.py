@@ -155,7 +155,7 @@ def shadowed_main_config(root):
     config is in force while the main checkout has one too; else "".
 
     Own wins whole, by design, so this is not an error -- but it is invisible.
-    Every crew <= 1.0.67 SessionStart heal wrote a default `.crew/config.json`
+    Every crew <= 1.0.68 SessionStart heal wrote a default `.crew/config.json`
     into a lane that had none, and that default now shadows the owner's
     settings with nothing saying so (T-0088 review round 1). Status and config
     name it, so the owner can tell a chosen config from a heal-written one.
@@ -197,6 +197,6 @@ def shadow_note(main_crew_dir):
     """The one wording, for status and config, of an own config shadowing the
     main checkout's."""
     return (f"this worktree's own .crew/ is in force; the main checkout's ({main_crew_dir}) "
-            "is not read (own wins whole, never merged). A default written by a crew <= 1.0.67 "
+            "is not read (own wins whole, never merged). A default written by a crew <= 1.0.68 "
             "SessionStart heal shadows it too: delete this worktree's .crew/config.json "
             "(and .crew/crew.json) to inherit")
