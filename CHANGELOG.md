@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` and `obsidian-vault`: the python-free bin fixtures tolerate a name two PATH dirs share (L-0529)
+### Fixed — `crew` 1.0.80 and `obsidian-vault` 0.4.15: the python-free bin fixtures tolerate a name two PATH dirs share (L-0529)
 
 - The first self-hosted CI run (36735895881, Ubuntu 26.04) failed 42 tests
   per `test` leg with `FileExistsError: [Errno 17] File exists:
@@ -26,7 +26,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   another holding a dangling relative link; two distinct dirs holding one
   name, first wins) and `check_tools_tolerates_duplicate_names` in the
   obsidian-vault suite. Test fixtures only; no hook or script changed.
-- Version bumps for both plugins are set on the land branch (REPO-03).
+- Bumped `crew` `1.0.77 -> 1.0.80` (1.0.78 and 1.0.79 are declared by open
+  branches, T-0099 and T-0505) and `obsidian-vault` `0.4.14 -> 0.4.15`.
 
 ### Added — `crew` 1.0.77: the Python development standards set (T-0086, slice 1)
 

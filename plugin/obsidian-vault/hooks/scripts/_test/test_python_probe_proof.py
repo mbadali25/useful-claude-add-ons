@@ -333,6 +333,26 @@ def check_tools_tolerates_duplicate_names():
         out = tools(farm, (str(first), str(second)))
         check("tools(): the first dir holding a name wins", os.readlink(out / "tool"),
               str(first / "tool"))
+        (first / "dangling").symlink_to("not-installed")
+        (second / "dangling").write_text("", encoding="ascii")
+        farm = base / "fourth"
+        farm.mkdir()
+        try:
+            got = os.readlink(tools(farm, (str(first), str(second))) / "dangling")
+        except FileExistsError as exc:
+            got = f"raised {exc}"
+        check("tools(): a dangling entry in the first dir still shadows the name later", got,
+              str(first / "dangling"))
+        listed, real_listdir = [], os.listdir
+        os.listdir = lambda d: listed.append(d) or real_listdir(d)
+        try:
+            farm = base / "third"
+            farm.mkdir()
+            tools(farm, (str(real), str(base / "bin")))
+        finally:
+            os.listdir = real_listdir
+        check("tools(): a dir already linked through an alias is not listed again", listed,
+              [str(real)])
     finally:
         shutil.rmtree(base, ignore_errors=True)
 
