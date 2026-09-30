@@ -155,6 +155,20 @@ those.</p>
 never CLEAN. That is a tool failure, and the round is refunded automatically, up to two per plan
 (for example when Codex answers with its usage-limit <code>error</code> event). What crew relies on from
 Codex's <code>--json</code> stream is in <code>plugin/crew/docs/external-tool-formats.md</code>.</p>
+<p>The review prompt Codex reads ends with a <strong>development standards checklist</strong>: the rules and
+self-check questions of every standard that applies to the change (crew's generic set, any
+matching per-language set, and the repository's <code>.crew/standards.md</code> overlay). The author's own
+self-check answers are withheld from the prompt, so Codex judges each standard's applicability
+itself, and the prompt says the list does not bound the review: a defect outside it is reported
+the same way. Withheld from the prompt is not hidden: the answers stay in
+<code>.work/tickets/&lt;id&gt;/selfcheck.md</code>, which Codex, with read access to the checkout, could open; the
+prompt never names that file. For a ticket with an approval receipt (or one whose receipt cannot
+be proven absent), <code>review_run.py</code> will not launch Codex, or reserve a round, until the author's
+self-check is complete and stamped for the exact bundle Codex is about to read. A ticket with no
+approval receipt is told the gate does not apply, and during a declared incident
+(<code>/crew:emergency</code>) the gate stands down and logs the skip. The self-check is asked for last: a
+CLEAN receipt that already covers the bundle answers CLEAN without it, and a tree the verify gate
+has not passed is refused (exit 5) before it.</p>
 <h2 id="when-codex-hits-a-usage-limit">When Codex Hits a Usage Limit</h2>
 <p>Having <code>codex</code> on <code>PATH</code> does not mean it can review: a logged-out, rate-limited or out-of-credits
 Codex is installed and fails at the first call. So <code>/crew:review</code> makes one minimal real call first,

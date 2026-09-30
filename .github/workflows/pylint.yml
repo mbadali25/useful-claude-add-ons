@@ -1,8 +1,25 @@
 name: Pylint
 
-# push alone tests the branch tip, never the merge result a PR would produce.
-# Matches marketplace.yml and mcp-servers.yml, which already declare both.
-on: [push, pull_request]
+# push runs only on main: a feature branch is tested by its pull_request run
+# (the merge result), not twice. pull_request alone would never test main
+# itself after a merge, so both are declared.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  # Nightly full-matrix run: PRs test Python 3.12 only (see RUN_LEG below),
+  # so 3.11/3.13 are covered here and on every push to main.
+  schedule:
+    - cron: '17 7 * * *'
+
+# One run per PR at a time: a new push to the PR cancels the superseded run.
+# Every non-PR run (push to main, schedule, workflow_dispatch) gets its own
+# group via run_id, so nothing on main is ever cancelled or queued behind
+# another run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -14,19 +31,34 @@ jobs:
       matrix:
         # 3.8 and 3.9 are both past end-of-life, and pylint 4 requires >=3.10.
         python-version: ["3.11", "3.12", "3.13"]
+    env:
+      # PR CI runs Python 3.12 only; push to main, workflow_dispatch and the
+      # nightly schedule run the whole matrix. The 3.11/3.13 legs still EXIST
+      # on a PR, because branch protection requires their check names: a
+      # job-level `if:` cannot read `matrix`, so every step below is gated on
+      # this instead and those legs finish green in seconds having run nothing
+      # but the notice step. Env values are strings, hence == 'true'.
+      RUN_LEG: ${{ github.event_name != 'pull_request' || matrix.python-version == '3.12' }}
     steps:
+    - name: Python ${{ matrix.python-version }} leg SKIPPED on pull_request
+      if: env.RUN_LEG != 'true'
+      run: echo "::notice::PR CI runs Python 3.12 only. This ${{ matrix.python-version }} leg was SKIPPED, not passed; it runs on push to main, workflow_dispatch and the nightly schedule."
     - uses: actions/checkout@v4
+      if: env.RUN_LEG == 'true'
     - name: Set up Python ${{ matrix.python-version }}
+      if: env.RUN_LEG == 'true'
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
+      if: env.RUN_LEG == 'true'
       run: |
         python -m pip install --upgrade pip
         # Pinned so CI and a dev machine agree. A new pylint minor adds checks,
         # which would otherwise fail this job on code nobody touched.
         pip install 'pylint~=4.0'
     - name: Analysing the code with pylint
+      if: env.RUN_LEG == 'true'
       run: |
         pylint --version
         # Config is .pylintrc at the repo root; it documents why each disabled

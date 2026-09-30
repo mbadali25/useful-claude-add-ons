@@ -50,11 +50,11 @@ VERIFY = os.path.join(os.path.dirname(os.path.dirname(CREW)), ".crew", "verify.j
 
 
 def _scope_guard_rule_span():
-    """verify.json from rule 27's scope_guard.py line through rule 35's entry,
+    """verify.json from rule 27's scope_guard.py line through rule 36's entry,
     and the same span with scope_guard.py dropped from both.
 
-    Rule 35 (T-0087; rule 31 before T-0010's rule 28 landed, rule 32 before
-    T-0088's and crew 1.0.65/1.0.67's rules) lists
+    Rule 36 (T-0087; rule 31 before T-0010's rule 28 landed, rule 32 before
+    T-0088's and crew 1.0.65/1.0.67's rules, rule 35 before T-0085's) lists
     scope_guard.py as well, so dropping it from rule 27 alone leaves it
     covered and the mutation stays green. `apply_mutation`
     patches one contiguous, unique span, so the span is read from the file:

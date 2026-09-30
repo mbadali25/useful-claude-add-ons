@@ -13,6 +13,12 @@ script writes the part of it that is about the ticket rather than the diff:
     (`.crew/.verify-verified-at`) against HEAD, and every rule its record
     (`.crew/.verify-gate.record.json`) still lists as NOT VERIFIED.
 
+  - the development standards checklist (T-0085): the effective standards
+    set's ids, rules and self-check questions from `crew_standards.
+    checklist_block`, stating that the author's self-check answers are
+    withheld (`selfcheck.md` is never read here) and that the list does not
+    bound the review; an unreadable overlay is written `UNREADABLE: ...`.
+
 Anything missing is written as `MISSING: ...` naming the path looked at. A
 reviewer handed a prompt with no acceptance section cannot tell "this ticket
 has none" from "nobody passed it"; a line saying which is the difference.
@@ -37,6 +43,7 @@ import re
 import subprocess
 import sys
 
+import crew_standards
 import review_verdict
 import verify_record
 
@@ -251,6 +258,7 @@ def build(root, ticket, manifest, out_dir=None):
     lines = []
     for block in (_bundle_block(manifest), _spec_block(root, ticket),
                   _plan_block(root, ticket), _receipts_block(root, manifest),
+                  crew_standards.checklist_block(root, manifest),
                   _webtest_block(root, ticket, manifest, out_dir)):
         if not block:
             continue

@@ -197,6 +197,11 @@
 %% crew_tracker.py and commands/status.md differ from T-0087's side; the header's crew_context.py:122-124, crew_state.py:646, crew_status.py:225 and
 %% crew_platform.py:230 were re-mapped by script (difflib from cb9b79b1). Bare :N citations inside
 %% nodes name no file and were not re-read here. No node or edge changed.
+
+%% Re-anchored a4eb2f55 -> 2aa49bb8 (T-0085 merged onto main c426c018, T-0076, crew 1.0.53): of the
+%% Anchors paths only crew_context.py changed - T-0076 added four lines inside emit() (:1086-1089,
+%% stdout reconfigured to LF), so the additionalContext write moved :1086 -> :1090; every other
+%% crew_context.py line cited here is above :1084 and unchanged. No other node or edge changed.
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
     start --> reg["hooks.json:3-10<br/>3 SessionStart pairs, sh + ps1, no matcher<br/>each claims per session+source"]
