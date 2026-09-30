@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 
 import pytest
@@ -373,19 +374,20 @@ def test_classify_a_non_string_text_part_is_unknown():
 
 
 def test_probe_an_unreadable_credentials_directory_is_unknown(fake, home, monkeypatch):
-    """Round 5 of T-0028: only a missing credentials directory proves there
-    is no stored OAuth credential; one that cannot be listed is could-not-tell."""
-    real_listdir = os.listdir
+    """Round 5 of T-0028 (retargeted in round 7, when the check became the provider's
+    own credential file): only a missing credential proves there is none; one that
+    cannot be checked is could-not-tell."""
+    real_lstat = os.lstat
 
-    def listdir(path):
-        if os.path.basename(path) == "credentials":
-            raise PermissionError(13, "Permission denied", path)
-        return real_listdir(path)
-    monkeypatch.setattr(kimi_probe.os, "listdir", listdir)
+    def lstat(path, *args, **kwargs):
+        if os.path.basename(os.path.dirname(str(path))) == "credentials":
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_lstat(path, *args, **kwargs)
+    monkeypatch.setattr(kimi_probe.os, "lstat", lstat)
 
     result = _probe(fake, home, monkeypatch)
 
-    assert (result["state"], "credentials directory" in result["reason"]) == ("unknown", True)
+    assert (result["state"], "could not be checked" in result["reason"]) == ("unknown", True)
 
 
 def test_classify_an_answer_that_only_contains_the_marker_is_not_ok():
@@ -414,13 +416,13 @@ def test_probe_a_config_toml_that_is_a_directory_is_unknown(fake, tmp_path, monk
 def test_probe_a_config_toml_lookup_that_fails_is_unknown(fake, home, monkeypatch):
     """Round 5 of T-0028: a stat that fails other than ENOENT (an unreadable
     parent) is not proof that there is no config."""
-    real_stat = os.stat
+    real_open = os.open
 
-    def failing_stat(path, *args, **kwargs):
+    def failing_open(path, *args, **kwargs):
         if os.path.basename(str(path)) == "config.toml":
             raise PermissionError(13, "Permission denied", str(path))
-        return real_stat(path, *args, **kwargs)
-    monkeypatch.setattr(kimi_probe.os, "stat", failing_stat)
+        return real_open(path, *args, **kwargs)
+    monkeypatch.setattr(kimi_probe.os, "open", failing_open)
 
     assert _probe(fake, home, monkeypatch)["state"] == "unknown"
 
@@ -485,3 +487,102 @@ def test_probe_refuses_a_scratch_directory_inside_a_repository(fake, home, monke
     assert (result["state"], calls) == ("unknown", [])
     assert "inside a repository" in result["reason"]
     assert list((repo / "tmp").iterdir()) == []
+
+
+# --- review round 7 (T-0028); their mutations are L-0527's (sabotage*.py is harness) ----
+
+
+@pytest.mark.parametrize("value", ["1", "[\"k3\"]", "{ a = 1 }"],
+                         ids=["int", "array", "table"])
+def test_probe_a_non_string_default_model_is_unknown(fake, tmp_path, monkeypatch, value):
+    """Round 7 FIX 1: a malformed default_model is could-not-tell, not "no default"."""
+    home = kimi_home(tmp_path / "dm", default_model=None)
+    text = (home / "config.toml").read_text(encoding="utf-8")
+    (home / "config.toml").write_text(f"default_model = {value}\n" + text, encoding="utf-8")
+
+    result = _probe(fake, str(home), monkeypatch, model=None)
+
+    assert result["state"] == "unknown", result
+
+
+def test_probe_an_empty_default_model_is_still_not_authenticated(fake, tmp_path, monkeypatch):
+    """must-allow: an empty default_model is a known absence."""
+    home = kimi_home(tmp_path / "dm-empty", default_model="")
+
+    assert _probe(fake, str(home), monkeypatch, model=None)["state"] == "not-authenticated"
+
+
+def test_probe_another_providers_credential_is_not_a_login(fake, tmp_path, monkeypatch):
+    """Round 7 FIX 2: only this provider's own credential file counts. Kimi Code 2.1.1 stores
+    oauth `key = "oauth/<name>"` at `credentials/<name>.json` (measured on the installed CLI)."""
+    home = kimi_home(tmp_path / "other", credential=False)
+    (home / "credentials").mkdir()
+    (home / "credentials" / "unrelated-provider.json").write_text("{}\n", encoding="utf-8")
+
+    assert _probe(fake, str(home), monkeypatch)["state"] == "not-authenticated"
+
+
+def test_probe_the_providers_own_credential_is_a_login(fake, home, monkeypatch):
+    """must-allow: `oauth/kimi-code` with `credentials/kimi-code.json` present."""
+    assert _probe(fake, home, monkeypatch)["state"] == "ok"
+
+
+@pytest.mark.parametrize("oauth_body", ['storage = "keyring"\nkey = "oauth/kimi-code"',
+                                        'storage = "file"', 'storage = "file"\nkey = 7'],
+                         ids=["not-file-storage", "no-key", "key-not-a-string"])
+def test_probe_an_oauth_credential_it_cannot_locate_is_unknown(fake, tmp_path, monkeypatch,
+                                                               oauth_body):
+    home = kimi_home(tmp_path / "loc")
+    text = (home / "config.toml").read_text(encoding="utf-8")
+    text = text.replace('storage = "file"\nkey = "oauth/kimi-code"', oauth_body)
+    (home / "config.toml").write_text(text, encoding="utf-8")
+
+    assert _probe(fake, str(home), monkeypatch)["state"] == "unknown"
+
+
+def test_probe_output_past_the_cap_is_unknown_and_not_kept(fake, home, monkeypatch):
+    """Round 7 FIX 3: the capture is size-capped; a flood is could-not-tell, and nothing
+    past the cap is held in memory."""
+    monkeypatch.setattr(kimi_probe, "OUTPUT_CAP", 4096)
+    seen = []
+    real_classify = kimi_probe.classify
+
+    def spy(stdout, stderr, *rest, **kw):
+        seen.append(len(stdout) + len(stderr))
+        return real_classify(stdout, stderr, *rest, **kw)
+    monkeypatch.setattr(kimi_probe, "classify", spy)
+
+    result = _probe(fake, home, monkeypatch, "flood:200000")
+
+    assert (result["state"], "exceeded" in result["reason"]) == ("unknown", True), result
+    assert all(n <= 2 * 4096 for n in seen)
+
+
+def test_probe_output_under_the_cap_still_classifies(fake, home, monkeypatch):
+    """must-allow: output below the cap reads as before."""
+    monkeypatch.setattr(kimi_probe, "OUTPUT_CAP", 4096)
+
+    assert _probe(fake, home, monkeypatch)["state"] == "ok"
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFOs are POSIX")
+def test_probe_a_fifo_swapped_in_after_the_check_does_not_block(fake, tmp_path, monkeypatch):
+    """Round 7 FIX 4: the config is read from the handle it opened (no reopen by path),
+    and the open cannot block. A stat that still reports a regular file (the race window)
+    must not lead to a blocking open of a FIFO."""
+    home = tmp_path / "fifo-home"
+    home.mkdir()
+    os.mkfifo(home / "config.toml")
+    regular = os.stat(__file__)
+    real_stat = os.stat
+    monkeypatch.setattr(kimi_probe.os, "stat",
+                        lambda p, *a, **k: regular if str(p).endswith("config.toml")
+                        else real_stat(p, *a, **k))
+    out = {}
+    worker = threading.Thread(target=lambda: out.update(_probe(fake, str(home), monkeypatch)),
+                              daemon=True)
+
+    worker.start()
+    worker.join(5)
+
+    assert (worker.is_alive(), out.get("state")) == (False, "unknown")

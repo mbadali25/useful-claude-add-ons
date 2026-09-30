@@ -49,7 +49,13 @@ All notable changes to this repository are documented here. Format follows [Keep
     `rate-limited`. A wrong-shaped `api_key` or `oauth` entry in config.toml is
     `unknown`, not `not-authenticated`; the probe refuses (`unknown`) when the
     temporary directory lies inside a repository, where the CLI could discover
-    that repository's instructions. Every wait is bounded: a timed-out probe's process group is
+    that repository's instructions. Round 7: a non-string `default_model` is
+    `unknown`; only the provider's own stored credential
+    (`credentials/<name>.json` for `key = "oauth/<name>"`, as Kimi Code 2.1.1
+    stores it) counts as a login, and an OAuth entry it cannot locate is
+    `unknown`; each output pipe is capped at 1 MiB (past it is `unknown`,
+    nothing more held in memory); config.toml is opened once, non-blocking,
+    checked and read through that handle (at most 1 MiB). Every wait is bounded: a timed-out probe's process group is
     killed and the follow-up read has its own bound, so a descendant holding a
     pipe cannot hang it. The live stage spends one tiny request, in a throwaway
     directory, with a Read/Grep/Glob-only `--agent-file` and an empty

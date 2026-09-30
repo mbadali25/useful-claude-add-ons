@@ -23,7 +23,8 @@ import textwrap
 # probe, then the review) with one environment:
 #   FAKE_KIMI_PROBE  how the probe call (prompt == "Reply with exactly:
 #                    PROBE_OK") answers: ok | 401 | nomodel | quota:<marker>
-#                    | garbage | nomarker | hang | hang-child:<pidfile> (leaves a
+#                    | garbage | nomarker | flood:<bytes> (that many bytes, then
+#                    PROBE_OK) | hang | hang-child:<pidfile> (leaves a
 #                    descendant holding stdout, its pid written to <pidfile>)
 #   FAKE_KIMI_MODE   how a review call answers: clean | findings | turnfail
 #                    | turnfail-secret (the failure message carries a bearer
@@ -102,6 +103,9 @@ if prompt == "Reply with exactly: PROBE_OK":
         sys.exit(3)
     elif mode == "nomarker":
         say({"role": "assistant", "content": "Sure! Here you go."})
+    elif mode.startswith("flood:"):
+        sys.stdout.write("x" * int(mode.split(":", 1)[1]) + "\n")
+        say(VERSION, {"role": "assistant", "content": "PROBE_OK"}, RESUME)
     elif mode == "hang":
         time.sleep(60)
     elif mode.startswith("hang-child:"):

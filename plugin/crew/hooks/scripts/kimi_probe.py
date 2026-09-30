@@ -19,9 +19,10 @@ THE STATES, each its own value:
   ok                 a real `kimi -p` answered PROBE_OK, exit 0
   not-installed      no `kimi` on PATH
   not-authenticated  no config.toml; the resolved provider has neither an
-                     `api_key` nor an `oauth` block with a file under
-                     `<home>/credentials/`; no model given and no
-                     `default_model`; or the live call answered 401 /
+                     `api_key` nor its own stored OAuth credential
+                     (`key = "oauth/<name>"` -> `<home>/credentials/<name>.json`);
+                     no model given and no `default_model`; or the live call
+                     answered 401 /
                      `invalid_authentication_error` / "No model configured"
   rate-limited       the live call answered with a Moonshot 429 code
                      (`exceeded_current_quota_error`, `rate_limit_reached_error`,
@@ -47,7 +48,7 @@ definition of that agent, for the review launch to reuse.
 
 SECRETS. The static stage reads config.toml for STRUCTURE only: whether a key
 is present, never its value, and nothing under `credentials/` is opened --
-only counted. Anything echoed from the CLI's stderr goes through `redact`
+the provider's own credential file is only checked to exist. Anything echoed from the CLI's stderr goes through `redact`
 first. The child environment drops `KIMI_CODE_INFINITE_RETRY` (a failed request
 would retry forever) and every `KIMI_MODEL_*` override, and sets
 `KIMI_CODE_NO_AUTO_UPDATE=1`.
@@ -62,6 +63,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 
 try:
     import tomllib as _tomllib  # Python 3.11+, stdlib
@@ -71,6 +73,10 @@ except ImportError:  # pragma: no cover - exercised only on 3.8-3.10
 # The bound on reading a killed probe's pipes (PYTHON-07); a descendant that
 # escaped the kill may still hold one open.
 POST_KILL_TIMEOUT = 5
+# Bounds on what the probe holds in memory (round 7 of T-0028): each output pipe,
+# and config.toml. A working probe prints a few hundred bytes.
+OUTPUT_CAP = 1 << 20
+CONFIG_CAP = 1 << 20
 
 STATES = ("ok", "not-installed", "not-authenticated", "rate-limited", "unknown")
 PROBE_PROMPT = "Reply with exactly: PROBE_OK"
@@ -263,7 +269,10 @@ def resolve_alias(config, model_id):
                                      f"`{model_id}`; nothing is guessed")
     else:
         default = config.get("default_model")
-        if not isinstance(default, str) or not default:
+        if default is not None and not isinstance(default, str):
+            # Round 7 of T-0028: a malformed default_model is could-not-tell.
+            return None, ("unknown", "default_model in config.toml is not a string")
+        if not default:
             return None, ("not-authenticated", "no model given and no default_model in "
                                                "config.toml - run `kimi login`")
         if default not in models:
@@ -296,9 +305,9 @@ def _credential_present(config, alias, home):
 
 def _credential_state(config, alias, home):
     """(present, reason): present is True, False, or None for could-not-tell,
-    with the reason naming which. Round 5 of T-0028: an unreadable
-    credentials directory read as "no credential" (not-authenticated); only a
-    directory that does not exist proves absence."""
+    with the reason naming which. Round 5 of T-0028: an unreadable credential
+    read as "no credential"; only one that does not exist proves absence.
+    Round 7: only the provider's own credential file counts, not any file."""
     ref = _table(_table(config.get("models")).get(alias)).get("provider")
     if not isinstance(ref, str):
         return None, PROVIDER_NOT_A_NAME
@@ -314,15 +323,60 @@ def _credential_state(config, alias, home):
         return False, None
     if not isinstance(oauth, dict):
         return None, "the provider's oauth entry is not a table"
-    folder = os.path.join(home, "credentials")
+    # Round 7 of T-0028: only THIS provider's credential counts. Kimi Code 2.1.1
+    # stores `storage = "file"`, `key = "oauth/<name>"` at `credentials/<name>.json`
+    # (measured on the installed CLI's home); anything else is could-not-tell.
+    key_name = oauth.get("key")
+    if oauth.get("storage") != "file" or not isinstance(key_name, str):
+        return None, "the provider's oauth credential location cannot be told"
+    name = key_name.rsplit("/", 1)[-1]
+    if name in ("", ".", "..") or "\\" in name:
+        return None, "the provider's oauth key does not name a credential file"
+    path = os.path.join(home, "credentials", name + ".json")
     try:
-        names = os.listdir(folder)
+        mode = os.lstat(path).st_mode
     except FileNotFoundError:
         return False, None
     except OSError as exc:
-        return None, (f"the Kimi credentials directory could not be read "
+        return None, (f"the provider's credential file could not be checked "
                       f"({type(exc).__name__})")
-    return any(os.path.isfile(os.path.join(folder, n)) for n in names), None
+    if not stat.S_ISREG(mode):
+        return None, "the provider's credential entry is not a regular file"
+    return True, None
+
+
+def _read_config(path):
+    """(bytes, None) for config.toml's contents; (None, None) when it does not exist
+    (ENOENT only); (None, reason) for could-not-tell.
+
+    Round 7 of T-0028: opened ONCE, non-blocking, and checked and read through that
+    handle - a stat then an open by path let a FIFO swapped in between block the
+    open with no deadline. `fstat` on the handle refuses anything but a regular
+    file, and at most CONFIG_CAP bytes are read."""
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+    try:
+        fd = os.open(path, flags)
+    except FileNotFoundError:
+        return None, None
+    except OSError as exc:
+        return None, f"config.toml could not be opened ({type(exc).__name__})"
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return None, "config.toml is not a regular file"
+        chunks, size = [], 0
+        while size <= CONFIG_CAP:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size += len(chunk)
+    except OSError as exc:
+        return None, f"config.toml could not be read ({type(exc).__name__})"
+    finally:
+        os.close(fd)
+    if size > CONFIG_CAP:
+        return None, f"config.toml is larger than {CONFIG_CAP} bytes"
+    return b"".join(chunks), None
 
 
 def _inside_a_repository(path):
@@ -357,22 +411,54 @@ def _run(cmd, env, timeout, cwd=None):
     group = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt"
              else {"start_new_session": True})
     proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,  # pylint: disable=consider-using-with
-                            stderr=subprocess.PIPE, text=True, encoding="utf-8",
-                            errors="replace", env=env, cwd=cwd, **group)
+                            stderr=subprocess.PIPE, env=env, cwd=cwd, **group)
+    # Round 7 of T-0028: each pipe is drained by a thread that keeps at most
+    # OUTPUT_CAP bytes and discards the rest (still draining, so the child never
+    # blocks on a full pipe); communicate() held everything in memory.
+    captured = [_CappedReader(proc.stdout), _CappedReader(proc.stderr)]
+    for reader in captured:
+        reader.start()
     try:
-        stdout, stderr = proc.communicate(timeout=timeout)
+        proc.wait(timeout=timeout)
+        timed_out = False
     except subprocess.TimeoutExpired:
         _kill_group(proc)
-        try:
-            proc.communicate(timeout=POST_KILL_TIMEOUT)
-        except subprocess.TimeoutExpired:
-            pass
-        finally:
-            for pipe in (proc.stdout, proc.stderr):
-                if pipe:
-                    pipe.close()
+        timed_out = True
+    for reader in captured:
+        reader.join(POST_KILL_TIMEOUT)
+    for pipe in (proc.stdout, proc.stderr):
+        if pipe:
+            pipe.close()
+    if timed_out:
         return "", "", None, True
+    if any(reader.overflowed for reader in captured):
+        return "", f"the probe's output exceeded {OUTPUT_CAP} bytes and was not read", None, False
+    stdout, stderr = (r.text() for r in captured)
     return stdout, stderr, proc.returncode, False
+
+
+class _CappedReader(threading.Thread):
+    """Drain one pipe, keeping at most OUTPUT_CAP bytes (PYTHON-07's bound applied
+    to memory). `overflowed` is True once more arrived than was kept."""
+
+    def __init__(self, pipe):
+        super().__init__(daemon=True)
+        self.pipe, self.kept, self.size, self.overflowed = pipe, [], 0, False
+
+    def run(self):
+        try:
+            for chunk in iter(lambda: self.pipe.read1(65536), b""):
+                if self.size + len(chunk) > OUTPUT_CAP:
+                    self.overflowed = True
+                    continue
+                self.kept.append(chunk)
+                self.size += len(chunk)
+        except (OSError, ValueError):
+            self.overflowed = True  # a pipe that failed is not a complete answer
+
+    def text(self):
+        # Only classified: a byte that does not decode leaves the text unrecognised.
+        return b"".join(self.kept).decode("utf-8", errors="replace")
 
 
 def _kill_group(proc):
@@ -432,23 +518,17 @@ def probe(model_id=None, which=shutil.which, home=None, runner=None,
     # Round 5 of T-0028: only ENOENT proves there is no config; a lookup that
     # fails any other way, or a config.toml that is not a regular file, is
     # could-not-tell (os.path.isfile answered False for all three).
-    try:
-        mode = os.stat(path).st_mode
-    except FileNotFoundError:
-        return _result("not-authenticated", "no config.toml in the Kimi Code home - "
-                                            "run `kimi login`", exe=exe)
-    except OSError as exc:
-        return _result("unknown", f"config.toml could not be checked ({type(exc).__name__})",
+    raw, why = _read_config(path)
+    if raw is None:
+        state = "not-authenticated" if why is None else "unknown"
+        return _result(state, why or "no config.toml in the Kimi Code home - run `kimi login`",
                        exe=exe)
-    if not stat.S_ISREG(mode):
-        return _result("unknown", "config.toml is not a regular file", exe=exe)
     if _tomllib is None:
         return _result("unknown", "tomllib is unavailable (Python < 3.11), so "
                                   "config.toml cannot be read", exe=exe)
     try:
-        with open(path, "rb") as fh:
-            config = _tomllib.load(fh)
-    except (OSError, ValueError) as exc:
+        config = _tomllib.loads(raw.decode("utf-8"))
+    except ValueError as exc:  # UnicodeDecodeError and TOMLDecodeError are ValueErrors
         return _result("unknown", f"config.toml could not be parsed ({type(exc).__name__})",
                        exe=exe)
     alias, refusal = resolve_alias(config, model_id)

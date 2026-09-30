@@ -356,8 +356,10 @@ in the alias's `default_effort` in `~/.kimi-code/config.toml`.
 
 **The probe.** `kimi_probe.py` answers `ok`, `not-installed`, `not-authenticated`,
 `rate-limited` or `unknown`; only `ok` is launchable, and could-not-tell (an
-unreadable credentials folder or config, an answer other than exactly `PROBE_OK`)
-is `unknown`, never an answer. The live stage spends one tiny request. Run it with
+unreadable or malformed config, an OAuth credential it cannot locate, output past
+its size cap, an answer other than exactly `PROBE_OK`) is `unknown`, never an
+answer. Only the provider's own credential (`credentials/<name>.json` for
+`key = "oauth/<name>"`) counts as a login. The live stage spends one tiny request. Run it with
 `bash providers.sh --probe-kimi` or `python3 kimi_probe.py --model k3`.
 
 **Read-only is not a flag here.** `kimi -p` forces permission mode `auto`, so the
