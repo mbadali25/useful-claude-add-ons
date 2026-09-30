@@ -4,14 +4,15 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.86: Windows shell routes (T-0040)
+### Added — `crew` 1.0.87: Windows shell routes (T-0040)
 
 - **What it is.** `hooks/scripts/crew_shell.py` picks the shell crew's long-running jobs run in on
   native Windows, and every Windows run of a verify check, a test suite or a graph build goes
   through `crew_shell.py run -- "<command>"`, which prints one `crew-shell:` route line to stderr
   and passes the job's exit code through. `/crew:implement` step 4 and the `crew-execute`,
-  `crew-graph` and `crew-setup` skills say so. Bumped `1.0.85 -> 1.0.86` (T-0040 never set a
-  version on its branch; this is one past main's 1.0.85, T-0028).
+  `crew-graph` and `crew-setup` skills say so. Bumped `1.0.85 -> 1.0.87` (T-0040 never set a
+  version on its branch; it landed at 1.0.86, one past main's 1.0.85, T-0028; this corrects to
+  1.0.87 after the sabotage-entries split below, which changed crew content past that bump).
 - **Four modes, `shellRoute.mode`, in both config layers.** `auto` (the default) routes a job to
   WSL2 when WSL is usable and the repo lives inside WSL, or sits on a Windows drive where a
   measurement found WSL faster; otherwise a plain argv runs directly with no shell and anything
@@ -45,9 +46,13 @@ All notable changes to this repository are documented here. Format follows [Keep
   `mode: auto`, a measurement reused across distros, a distro-less `usable` cache, the module
   preflight missing `-m` after `-X dev` / `-W error`, and the preflight running outside the
   job's `--cd` - owner-accepted and fixed at land.
-- **Tests.** `test_crew_shell.py`, `test_status.py` and `test_crew_config.py`; `sabotage_shell.py`
-  carries 14 mutations. No test calls a real `wsl.exe`, pwsh or Git Bash on a routed path.
-  `.crew/verify.json` rule 39 runs the suites.
+- **Tests.** `test_crew_shell.py`, `test_status.py` and `test_crew_config.py`. The sabotage
+  entries (`sabotage_shell.py`, `SHELL_MUTATIONS`, 14 entries) split out to follow-up ticket
+  W-0115 per rule 36 (`scripts/check-tooling-pr.py`: a HARNESS-path change carries no feature
+  work; owner Matthew Badali, 2026-09-30) - `plugin/crew/tests/sabotage*.py` is a HARNESS glob,
+  so shipping them alongside this feature would have failed that gate. No test calls a real
+  `wsl.exe`, pwsh or Git Bash on a routed path. `.crew/verify.json`'s T-0040 rule runs the two
+  feature suites; W-0115 restores the sabotage rule path and its mutation coverage.
 
 ### Added
 

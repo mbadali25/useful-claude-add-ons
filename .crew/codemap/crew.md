@@ -908,8 +908,10 @@ pwsh Stopwatch) so no launcher start-up is in the number; an unreadable timing i
 never zero. `status_line` (`:923`) reads config and the cache only, and
 `plugin/crew/hooks/scripts/crew_status.py:226` calls it and appends it after the `verify` line. Tests:
 `plugin/crew/tests/test_crew_shell.py`, `plugin/crew/tests/test_status.py`. Mutations:
-`plugin/crew/tests/sabotage_shell.py` (`SHELL_MUTATIONS`, 14 entries, registered at
-`plugin/crew/tests/sabotage.py:86`). The `.crew/verify.json` rule is rule 38 (`:411-417`), the last in the map.
+`plugin/crew/tests/sabotage_shell.py` (`SHELL_MUTATIONS`, 14 entries) shipped with T-0040 up to
+its landing bump, then split out to follow-up ticket W-0115 per rule 36
+(`scripts/check-tooling-pr.py`; owner 2026-09-30) - not registered in `sabotage.py` until W-0115
+restores it. The `.crew/verify.json` rule is rule 38 (`:411-417`), the last in the map.
 
 ## verify-gate's temp-file rule capture
 
