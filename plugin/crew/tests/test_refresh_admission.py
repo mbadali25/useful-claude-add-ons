@@ -1133,12 +1133,17 @@ def test_an_artifact_under_a_symlinked_dir_is_refused_where_open_takes_no_dir_fd
 
 @pytest.mark.parametrize("kind", ["map", "diagram", "rule"])
 def test_an_artifact_whose_git_mode_changed_is_refused(anchored, kind):
+    """Where the filesystem records no executable bit (NTFS: `git init` sets
+    `core.fileMode=false`), git takes the working file's mode from the index,
+    so a mode change reaches git only through the index (W-0116)."""
     root, base = anchored
-    assert git(root, "config", "--bool", "core.fileMode").strip() == "true"
     rel, data, companions = _admitted_shape(root, kind)
     path = root.joinpath(*rel.split("/"))
     path.write_bytes(data)
-    path.chmod(0o755)
+    if git(root, "config", "--bool", "core.fileMode").strip() == "true":
+        path.chmod(0o755)
+    else:
+        git(root, "update-index", "--chmod=+x", "--", rel)
 
     got = _verdicts(root, base, REACH, companions + [rel])
 
@@ -1147,14 +1152,17 @@ def test_an_artifact_whose_git_mode_changed_is_refused(anchored, kind):
 
 def test_an_artifact_staged_as_a_symlink_is_refused(anchored):
     """What a `core.symlinks=false` checkout leaves: a regular file in the
-    working tree that git stores as a link (mode 120000)."""
+    working tree that git stores as a link (mode 120000). Under
+    `core.symlinks=false` git's diff reports the index's 120000 as a mode
+    change; under `true` only `ls-files -s` shows it (W-0116). Both refuse,
+    and both reasons name the mode."""
     root, base = anchored
     rel, data, _companions = _admitted_shape(root, "map")
     root.joinpath(*rel.split("/")).write_bytes(data)
     blob = git(root, "hash-object", "-w", rel).strip()
     git(root, "update-index", "--cacheinfo", f"120000,{blob},{rel}")
 
-    assert _judged(root, base, REACH, rel, "stored as 120000")[:2] == (False, True)
+    assert _judged(root, base, REACH, rel, "120000")[:2] == (False, True)
 
 
 def test_a_git_mode_check_that_cannot_run_is_could_not_tell(anchored, monkeypatch):
