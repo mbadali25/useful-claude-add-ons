@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@35100955
+anchor: useful-claude-add-ons@fb292689
 verified: 2026-09-30
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -280,8 +280,8 @@ Notable rules, re-read directly:
   priced 41s (its `why` records 382 passed, 2 skipped in 41.28s on this host, 2026-09-29, at the
   round-3 fix tree; 327 passed in 40.9s at round 1). Before it `review_run.py` and
   `review_prompt.py` matched only rules 0 and 15. Its mutations live in
-  `plugin/crew/tests/sabotage_standards.py` (`STANDARDS_MUTATIONS`, `:48`, 43 entries by `len()`
-  on the land branch, the 43rd the preflight-order swap; the `why` states no count), imported by `plugin/crew/tests/sabotage.py:84`
+  `plugin/crew/tests/sabotage_standards.py` (`STANDARDS_MUTATIONS`, `:57`, 49 entries by `len()`
+  on `T-0086-build` - main's 44, then T-0086's five for the Python set; the `why` states no count), imported by `plugin/crew/tests/sabotage.py:84`
   and appended at `:3061`.
 
 **Still unresolved at this anchor:** a declared `seconds` figure is only
@@ -1785,3 +1785,5 @@ import block lost one line; no note cites that file by line. Re-anchor only; not
 **Re-anchored `5c9a9db2` -> `37f4e807` on 2026-09-30 (#279: CI triggers, concurrency, PR CI on Python 3.12 only).** `git diff --name-only 5c9a9db2 37f4e807` returns only `.github/workflows/*.yml`, `AGENTS.md` and `.crew/verify.json` outside refresh artifacts. The two CI claims above (instruction-budgets matrix, crew-shell-matrix legs) were rewritten for the new CI: push only on main, pull_request, workflow_dispatch and a 07:17 UTC nightly; on a PR only the 3.12 leg does work and 3.11/3.13 report a skipped pass; superseded PR runs are cancelled, main runs never; the Windows crew-shell-matrix leg is off since #277. Workflow citations were moved by a line diff (1 moved). No suite was executed for this note.
 **Re-anchored `5c9a9db2` -> `06cb9b51` on 2026-09-30 (T-0086 slice 1: the Python standards set, on main `301e478a`).** `git diff --name-only 5c9a9db2 06cb9b51` over this note's paths returns T-0086's files - `plugin/crew/skills/crew-standards/references/python.md` (new, set PYTHON), `plugin/crew/skills/crew-standards/SKILL.md`, `plugin/crew/skills/stack-python/SKILL.md`, `plugin/crew/tests/test_crew_standards.py` (four new tests), `plugin/crew/tests/sabotage_standards.py` (three entries), `plugin/crew/README.md`, `plugin/PLUGINS.md` (rows only), `plugin/crew/BUDGETS.md` (count only) and `CHANGELOG.md` (T-0086's entry on top) - plus main's own commits since `5c9a9db2`. Path-qualified citations into changed files were moved by a line diff (`/root/crew-tmp/t-0086/remap.py`, 9 moved); `plugin/crew/BUDGETS.md:10-11` citations stay on the claim line, whose number changed in place. No suite was executed for this note.
 **Re-anchored `06cb9b51` -> `35100955` on 2026-09-30 (T-0086's merge of main `9af34e57`, #279: CI triggers, concurrency, PR CI on Python 3.12 only).** `git diff --name-only 06cb9b51 35100955` returns, outside refresh artifacts, only `.github/workflows/*.yml`, `AGENTS.md` and `.crew/verify.json` (one line rewritten in place, line count unchanged). No `AGENTS.md:NN` citation exists in any map, and no claim outside verification-harness.md states the CI trigger shape (checked by grep for `push, pull_request`, `six workflows`, `three Python versions`, `windows-latest`), so no citation moved. No suite was executed for this note.
+
+**Re-anchored `35100955` -> `fb292689` on 2026-09-30 (T-0086 review round 1's FIX: PYTHON-07's finding count).** `git diff --name-only 35100955 fb292689` returns only `plugin/crew/skills/crew-standards/references/python.md` (PYTHON-07's Why, `6` -> `7` in place, line count unchanged), `plugin/crew/tests/test_crew_standards.py` (two tests and a pinned table inserted after `:302`) and `plugin/crew/tests/sabotage_standards.py` (four docstring lines after `:43`, two entries at the end; `STANDARDS_MUTATIONS` `:54` -> `:57`, 49 entries by `len()`). Every `path:N` citation into those files sits inside an earlier dated provenance paragraph, left as history; the body's rule-35 paragraph was set to `STANDARDS_MUTATIONS` `:57`, 49 entries. No suite was executed for this note.
