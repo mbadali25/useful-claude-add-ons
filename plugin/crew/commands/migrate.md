@@ -35,6 +35,12 @@ It writes nothing. Each `missing:` or `stale:` line is a `.claude/rules/` file a
 each `orphan:` one it will remove, each `hand-written` line a file it will leave alone. Exit 1 here
 means only that there is something to generate.
 
+Then list the setup phases `/crew:init` will offer to re-verify - this writes nothing either:
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_setup_status.py" --root .
+```
+A 0.20 `.crew/STATUS.md` has no `crew:` line, so every `done` row reads `could not tell when marked` - expected, once, by design. A `note may record a breakage` line names a row whose note says something is broken.
+
 Then ask whether to apply. Do not apply in the same turn as the preview.
 
 ## Step 2 - apply (only after I say yes)
@@ -109,3 +115,4 @@ The originals marked `retireable` still exist. Removing them is a separate,
 explicit decision for the owner - never do it as part of this command.
 
 Run `/crew:status` to confirm the repo now reads as `.crew/crew.json schema 1`.
+Migrate did not add a `crew:` line to `.crew/STATUS.md` - that would claim the rows were checked against 1.0 - so the rows still read could not tell: `/crew:init` next offers each flagged phase for re-verification and writes the stamp when a phase is actually run.

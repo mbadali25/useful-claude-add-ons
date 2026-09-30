@@ -294,7 +294,11 @@ Then run the guided setup:
 
 This walks nine phases, **stopping after each one** so you can check the result
 before the next thing is built on it. It is resumable — `/crew:init --status`
-shows where you are, and it picks up from the first incomplete phase.
+shows where you are, and it picks up from the first incomplete phase, after
+re-offering any `done` phase whose definition changed since it was marked,
+whose status file does not say what it was marked against, or whose note
+records a breakage (`crew_setup_status.py`, run by `/crew:init` and
+`/crew:migrate`).
 
 | # | Phase | Produces |
 |---|---|---|
@@ -317,8 +321,11 @@ than written down. See
 sequence diagram, every gate, and why the order is what it is.
 
 Status is written to `.crew/STATUS.md` with honest states — `partial` and
-`blocked` are used, not rounded up to `done`. A status file that overstates
-progress is how the whole system quietly stops meaning anything.
+`blocked` are used, not rounded up to `done` — and, since 1.0.70, a
+`crew: <version>` line saying which crew the rows were marked against. A `done`
+row is a claim about one version of the phase, and the checker names the rows
+that claim has outlived. A status file that overstates progress is how the
+whole system quietly stops meaning anything.
 
 You do not have to remember the command. Plain language triggers the same
 phased flow — "set up crew in this repo," "set up the team," "run the phased

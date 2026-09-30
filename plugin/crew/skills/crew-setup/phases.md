@@ -7,7 +7,27 @@ Walk this repository through crew setup, one phase at a time.
 ## How this works
 
 Read `.crew/STATUS.md`. If it does not exist, start at Phase 0. If it does,
-resume at the first phase not marked `done`.
+first run the checker and show its lines verbatim - it writes nothing:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_setup_status.py" --root .
+```
+
+Each `phase N ... - re-verify` line is a `done` row not to be trusted: its
+definition changed since it was marked, the file does not say which crew it
+was marked against, or its note may record a breakage. Offer each for
+re-verification, in the order listed, before the first phase not marked `done`;
+then resume there. Exit 3 means it could not tell - quote the line and stop.
+
+**a `done` row whose note records a breakage is not `done`** - re-verify it,
+then mark it `done`, `partial` or `blocked`. The checker's word list is a
+heuristic; this rule is the authority.
+
+Every `## Phase` heading carries `<!-- phase-rev: X.Y.Z -->`, the crew version
+at which that phase's definition last changed materially. Bump it to the
+shipping version when you change what the phase does or when it is done - not
+for wording. The checker cannot tell the two apart; a test only requires that
+each marker parses and is not past the plugin version.
 
 **The run order is 0, 1, 2, 3, 4, 5, 6, 8, 7** — the order the sections appear
 in below. Phase 7 is last: it is the acceptance test of everything set up
@@ -28,6 +48,7 @@ After every phase, rewrite `.crew/STATUS.md`:
 # crew setup status
 repo: <name>
 updated: <date>
+crew: 1.0.70
 
 | # | Phase | State | Notes |
 |---|-------|-------|-------|
@@ -41,6 +62,10 @@ updated: <date>
 | 7 | First ticket      | todo    | |
 | 8 | Promotion gates   | todo    | |
 ```
+
+Copy the `crew:` line from the checker's `current crew:` line on every
+rewrite. It says which crew the rows were marked against; a file without it
+reads could-not-tell on every `done` row.
 
 States: `todo`, `in progress`, `partial`, `blocked`, `done`, `n/a`.
 Be honest with `partial` and `blocked`. A status file that says `done` when a
@@ -62,6 +87,7 @@ enforcement durable across that boundary; only the plugin being active does.
 ---
 
 ## Phase 0 — Platform
+<!-- phase-rev: 1.0.25 -->
 
 Run `platform.sh` (or `platform.ps1` on native Windows). Record the `platform`
 block in `.crew/config.json`. Act on `windows-mount` and `crlfDetected` per
@@ -92,6 +118,7 @@ that runs on this machine, and any CRLF or filesystem issue either fixed or
 explicitly accepted by me.
 
 ## Phase 1 — Config and structure
+<!-- phase-rev: 1.0.43 -->
 
 Run `detect.sh`. If it reports a global `~/.claude/skills/find-skills`, say so:
 its trigger competes with `crew-setup` and `crew-verification` for ordinary
@@ -236,6 +263,7 @@ missing sections and no remaining placeholders,
 and `.gitignore` covers secrets and transcripts.
 
 ## Phase 2 — Providers and notifications
+<!-- phase-rev: 1.0.25 -->
 
 Run `providers.sh`. Then, per the `crew-providers` skill:
 
@@ -290,6 +318,7 @@ is found on PATH or a URL is pasted — those are different things, and the
 difference shows up later as a gate that never fires.
 
 ## Phase 3 — Smoke harness in `_verify/`
+<!-- phase-rev: 1.0.25 -->
 
 Checks live in `_verify/`. Look for it first, along with `qa/`, `spec/` and
 `_test*/`. If the repo already has one of those, adopt it — do not build a
@@ -319,6 +348,7 @@ because it checks nothing is worse than no gate.
 real checks.
 
 ## Phase 4 — Code map
+<!-- phase-rev: 1.0.25 -->
 
 `/crew:onboard`. One `explorer` per subsystem, capped at six per run. Every claim
 anchored to a file path and a sha.
@@ -327,6 +357,7 @@ anchored to a file path and a sha.
 an anchor. Report which areas are still unmapped rather than implying full coverage.
 
 ## Phase 5 — Verification map
+<!-- phase-rev: 1.0.66 -->
 
 `/crew:verify`. Build `.crew/verify.json` from git history, and **verify each
 pairing by breaking the code and confirming the mapped check goes red.**
@@ -375,6 +406,7 @@ someone needed it. Fix them now, or delete the rule and record in
 tree, and every `qa_audit.py` GAP is fixed or recorded in `.crew/STATUS.md`.
 
 ## Phase 6 — Browser tests
+<!-- phase-rev: 1.0.25 -->
 
 Skip with `n/a` if there is no UI. Otherwise **install Playwright first** and
 confirm it runs:
@@ -396,6 +428,7 @@ for the pages that matter. Tag `@visual` and `@flow`, then add the rules to
 **Done when:** `npx playwright test` passes with no agent attached.
 
 ## Phase 8 — Promotion gates
+<!-- phase-rev: 1.0.25 -->
 
 Read `crew-verification` section 4 first. Add the `environments` block to
 `.crew/verify.json` so `development -> qa -> production` is declared rather than
@@ -449,6 +482,7 @@ carries the §3c block (`.crew/*`, the un-ignore list, `.crew/.approved-*` and
 `.work/` below it), and `--dry-run` prints a sequence I recognise.
 
 ## Phase 7 — First real ticket
+<!-- phase-rev: 1.0.25 -->
 
 Run one small, real piece of work end to end: `/crew:brainstorm` → `/crew:spec`
 → `/crew:plan` → `/crew:implement` → `/crew:review` → `/crew:done`.

@@ -267,6 +267,14 @@ Notable rules, re-read directly:
   `len()` at `45345812` — count them there, the `why` states no number), imported by
   `plugin/crew/tests/sabotage.py:81` and appended at `:3055` (`:80` and `:3054` before T-0075's `sabotage_config` import). `crew_ticket.py` is named by
   rules 11 and 31 both (T-0010's owner-only refusal in `crew_ticket.approve` runs under both).
+- **Rule 35**, new on T-0500 (`.crew/verify.json:362-368`; rules 32-34 were added by other tickets
+  and are not described in this note): `paths` `crew_setup_status.py`, `test_setup_status.py`,
+  `sabotage_setup_status.py`, and `crew-setup/phases.md`, `commands/init.md`,
+  `commands/migrate.md` - the suite reads those three documents' text (the `phase-rev` markers,
+  the format block's `crew:` line, the fenced checker calls it runs) → `python3 -m pytest
+  plugin/crew/tests/test_setup_status.py -q`. Its mutations live in
+  `plugin/crew/tests/sabotage_setup_status.py` (`SETUP_STATUS_MUTATIONS`, six entries), imported
+  by `plugin/crew/tests/sabotage.py:84` and appended at `:3062`.
 
 **Still unresolved at this anchor:** a declared `seconds` figure is only
 overwritten by measurement when the rule carries *no* `seconds` at all
@@ -519,6 +527,8 @@ set on Ubuntu.
   `plugin/crew/tests/sabotage.py:79`, `:3054` — `sabotage_route.py`'s registration.
 - `.crew/verify.json:332-339` (rule 31) — the T-0024 group-approval suite;
   `plugin/crew/tests/sabotage.py:81`, `:3055` — `sabotage_approval.py`'s registration.
+- `.crew/verify.json:362-368` (rule 35) — the T-0500 setup-status suite;
+  `plugin/crew/tests/sabotage.py:84`, `:3062` — `sabotage_setup_status.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
   `plugin/crew/CONFIG.md:2373-2380` — the descoped per-rule process-group kill,
   documented as a standing limitation.

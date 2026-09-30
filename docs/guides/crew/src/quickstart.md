@@ -78,7 +78,9 @@ crew registers hooks, so it is off in the install menu by default. Start
 
 Init is phased and resumable: it detects the platform, writes the config, and
 asks before each change. Stop after the config phase if you are short on time;
-`/crew:init` picks up where it left off.
+`/crew:init` picks up where it left off. If a phase you marked `done` has
+changed since, or its note records a breakage, init offers it again first -
+the checker's `phase N ... - re-verify` lines say why.
 
 Check: `/crew:status` now shows a `config` line naming a schema.
 
@@ -99,7 +101,9 @@ It previews first and writes nothing until you agree. The preview lists:
   directory per ticket under `.work/tickets/`);
 - any config key it did not recognise, which is kept under `unmapped`, never
   dropped;
-- the originals it leaves in place and you may retire later.
+- the originals it leaves in place and you may retire later;
+- every `done` setup phase that needs re-verifying (a 0.20 status file reads
+  `could not tell when marked` on all of them, once).
 
 Say yes, and it backs up to `.crew/backups/migrate-<time>/`, then applies. The
 line it ends with is your undo:

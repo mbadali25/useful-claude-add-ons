@@ -17,8 +17,10 @@ that you stop and report after each phase rather than chaining them.
 "set up crew in this repo," the behaviour is identical — there is no second,
 shorter path that skips the gates.
 
-If `.crew/STATUS.md` already exists, say which phase they are on and what is
-outstanding before doing anything else. Resuming beats restarting.
+If `.crew/STATUS.md` already exists, run
+`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_setup_status.py --root .` and say which
+phase they are on, which `done` rows it flags for re-verification and why, and
+what is outstanding before doing anything else. Resuming beats restarting.
 
 Ask before writing anything; this touches version control.
 

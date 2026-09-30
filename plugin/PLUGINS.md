@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.0.69<!-- claim: plugin-version:crew --> |
+| **Version** | 1.0.70<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents, 36 commands, 30 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
@@ -303,6 +303,16 @@ is the point:
 - **Every phase boundary is a gate**, which is the one that does not belong to
   any phase: setup runs one phase, then stops and reports, and does not chain
   into the next without being told to go.
+
+**Re-verified.** A `done` row is a claim about one crew version of its phase.
+Each `## Phase` heading in `phases.md` carries a `<!-- phase-rev: X.Y.Z -->`
+marker, the version its definition last changed at, and `.crew/STATUS.md`
+carries `crew: X.Y.Z`, the version it was written under. `/crew:init` and
+`/crew:migrate` run `crew_setup_status.py`, which flags a `done` row marked
+before its phase's marker, every `done` row of a file with no stamp (could not
+tell - a 0.20 table reads this way once), and one whose note records a
+breakage. It is advisory and never rewrites a row; the operator's re-run of the
+phase sets the state.
 
 Phase 4 is the one phase with no gate. Its done-when is satisfied by producing
 the code map and **reporting** which areas are still unmapped, so it closes
