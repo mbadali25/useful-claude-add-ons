@@ -203,8 +203,11 @@ def _kimi_text(content):
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        texts = [p.get("text") for p in content
-                 if isinstance(p, dict) and p.get("type") == "text"]
+        # Round 5 of T-0028: a member that is not an object is malformed, not
+        # skipped -- CLEAN beside an unparseable part was accepted.
+        if not all(isinstance(p, dict) for p in content):
+            return None
+        texts = [p.get("text") for p in content if p.get("type") == "text"]
         if not all(isinstance(text, str) for text in texts):
             return None
         return "".join(texts)
@@ -213,7 +216,11 @@ def _kimi_text(content):
 
 def _kimi_error(event):
     """The failure an event carries, or None. A `turn.step.retrying` meta
-    event is NOT one: the CLI retries and may still complete the turn."""
+    event is NOT one: the CLI retries and may still complete the turn, and
+    round 5 of T-0028 found one carrying its transient error as an object
+    read as terminal."""
+    if event.get("type") == "turn.step.retrying":
+        return None
     detail = event.get("error")
     if isinstance(detail, dict):
         code, text = detail.get("code"), detail.get("message")

@@ -1429,3 +1429,29 @@ def test_path_digest_of_regular_files_links_and_directories(repo):
 
     assert (digest(str(repo / "d")), digest(str(repo / "nope"))) == ("dir", "missing")
     assert digest(str(repo / "seed.txt")) == digest(str(repo / "seed.txt"))
+
+
+@pytest.mark.parametrize("text", ["{not json\n", "[]\n", '"graphify-out"\n'],
+                         ids=["invalid-json", "array", "string"])
+def test_graph_out_with_a_config_that_does_not_parse_as_an_object_is_none(repo, text):
+    """Round 5 of T-0028: an invalid repository config fell back to the
+    default `graphify-out` exemption, so an uncertain graph.out still hid
+    reviewer writes under it."""
+    _graph_config(repo, "graphify-out")
+    (repo / ".crew" / "config.json").write_text(text, encoding="utf-8")
+
+    assert review_run.graph_out(str(repo)) is None
+
+
+def test_graph_out_with_a_config_that_exists_but_cannot_be_read_is_none(repo, monkeypatch):
+    _graph_config(repo, "graphify-out")
+    real = review_run.crew_common.read_text
+    monkeypatch.setattr(review_run.crew_common, "read_text",
+                        lambda p: None if p.endswith("config.json") else real(p))
+
+    assert review_run.graph_out(str(repo)) is None
+
+
+def test_graph_out_with_no_config_file_is_the_default(repo):
+    """Must-allow: absence is not uncertainty -- no config means the default."""
+    assert review_run.graph_out(str(repo)) == "graphify-out"

@@ -357,3 +357,66 @@ def test_classify_a_non_string_text_part_is_unknown():
     stdout = json.dumps({"role": "assistant", "content": [{"type": "text", "text": 1}]}) + "\n"
 
     assert kimi_probe.classify(stdout, "", 0, False)[0] == "unknown"
+
+
+def test_probe_an_unreadable_credentials_directory_is_unknown(fake, home, monkeypatch):
+    """Round 5 of T-0028: only a missing credentials directory proves there
+    is no stored OAuth credential; one that cannot be listed is could-not-tell."""
+    real_listdir = os.listdir
+
+    def listdir(path):
+        if os.path.basename(path) == "credentials":
+            raise PermissionError(13, "Permission denied", path)
+        return real_listdir(path)
+    monkeypatch.setattr(kimi_probe.os, "listdir", listdir)
+
+    result = _probe(fake, home, monkeypatch)
+
+    assert (result["state"], "credentials directory" in result["reason"]) == ("unknown", True)
+
+
+def test_classify_an_answer_that_only_contains_the_marker_is_not_ok():
+    """Round 5 of T-0028: the probe asks for exactly PROBE_OK; a refusal that
+    merely contains it must not authorise a launch."""
+    stdout = json.dumps({"role": "assistant", "content": "not PROBE_OK"})
+
+    assert kimi_probe.classify(stdout, "", 0, False)[0] == "unknown"
+
+
+def test_classify_the_exact_marker_with_surrounding_whitespace_is_ok():
+    stdout = json.dumps({"role": "assistant", "content": "\nPROBE_OK\n"})
+
+    assert kimi_probe.classify(stdout, "", 0, False)[0] == "ok"
+
+
+def test_probe_a_config_toml_that_is_a_directory_is_unknown(fake, tmp_path, monkeypatch):
+    home = tmp_path / "dir-config"
+    (home / "config.toml").mkdir(parents=True)
+
+    result = _probe(fake, str(home), monkeypatch)
+
+    assert (result["state"], result["reason"]) == ("unknown", "config.toml is not a regular file")
+
+
+def test_probe_a_config_toml_lookup_that_fails_is_unknown(fake, home, monkeypatch):
+    """Round 5 of T-0028: a stat that fails other than ENOENT (an unreadable
+    parent) is not proof that there is no config."""
+    real_stat = os.stat
+
+    def failing_stat(path, *args, **kwargs):
+        if os.path.basename(str(path)) == "config.toml":
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_stat(path, *args, **kwargs)
+    monkeypatch.setattr(kimi_probe.os, "stat", failing_stat)
+
+    assert _probe(fake, home, monkeypatch)["state"] == "unknown"
+
+
+def test_probe_that_cannot_create_its_scratch_directory_is_unknown(fake, home, monkeypatch):
+    def no_scratch(*_args, **_kwargs):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(kimi_probe.tempfile, "mkdtemp", no_scratch)
+
+    result = _probe(fake, home, monkeypatch)
+
+    assert (result["state"], "scratch directory" in result["reason"]) == ("unknown", True)

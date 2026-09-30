@@ -480,8 +480,10 @@ def graph_out(root):
     resolve it: `crew.json`, else `config.json`, in the `.crew/` that
     `crew_common.repo_config_dir` names -- so a linked lane worktree with no
     config of its own reads the main checkout's -- and None when that
-    resolver answers `unknown` (nothing set aside); a missing or
-    wrong-typed value is `graphify-out`; `contained_path` keeps it inside the
+    resolver answers `unknown` (nothing set aside); a config file that
+    exists but cannot be read, is not valid JSON, or is not an object is
+    None too (round 5 of T-0028: it had fallen back to `graphify-out`); a
+    missing or wrong-typed value is `graphify-out`; `contained_path` keeps it inside the
     repository. None when it lands on the root or in `.git`, or a symlink
     moves it -- an exemption for one generated directory must never widen to
     the tree. None too, since round 4 of T-0028, when the directory could
@@ -496,13 +498,18 @@ def graph_out(root):
         return None
     cfg = {}
     for name in crew_common.CONFIG_NAMES:
-        text = crew_common.read_text(os.path.join(crew_dir, name))
+        path = os.path.join(crew_dir, name)
+        text = crew_common.read_text(path)
         if text is None:
+            if os.path.lexists(path):
+                return None  # round 5 of T-0028: unreadable is could-not-tell
             continue
         try:
             cfg = json.loads(text)
         except ValueError:
-            cfg = {}
+            return None  # round 5 of T-0028: invalid JSON sets nothing aside
+        if not isinstance(cfg, dict):
+            return None
         break
     value = crew_common.dict_or_empty(crew_common.dict_or_empty(cfg).get("graph")).get("out")
     if not isinstance(value, str) or not value:

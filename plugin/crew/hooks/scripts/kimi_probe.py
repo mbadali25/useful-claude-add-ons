@@ -55,6 +55,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -196,20 +197,32 @@ def resolve_alias(config, model_id):
 def _credential_present(config, alias, home):
     """True or False; None when the alias's provider reference is not a name,
     which is "could not tell", never "no credential"."""
+    return _credential_state(config, alias, home)[0]
+
+
+def _credential_state(config, alias, home):
+    """(present, reason): present is True, False, or None for could-not-tell,
+    with the reason naming which. Round 5 of T-0028: an unreadable
+    credentials directory read as "no credential" (not-authenticated); only a
+    directory that does not exist proves absence."""
     ref = _table(_table(config.get("models")).get(alias)).get("provider")
     if not isinstance(ref, str):
-        return None
+        return None, PROVIDER_NOT_A_NAME
     provider = _table(_table(config.get("providers")).get(ref))
     key = provider.get("api_key")
     if isinstance(key, str) and key.strip():
-        return True
+        return True, None
     if not isinstance(provider.get("oauth"), dict):
-        return False
+        return False, None
     folder = os.path.join(home, "credentials")
     try:
-        return any(os.path.isfile(os.path.join(folder, n)) for n in os.listdir(folder))
-    except OSError:
-        return False
+        names = os.listdir(folder)
+    except FileNotFoundError:
+        return False, None
+    except OSError as exc:
+        return None, (f"the Kimi credentials directory could not be read "
+                      f"({type(exc).__name__})")
+    return any(os.path.isfile(os.path.join(folder, n)) for n in names), None
 
 
 def _run(cmd, env, timeout, cwd=None):
@@ -240,7 +253,8 @@ def classify(stdout, stderr, code, timed_out, timeout=DEFAULT_TIMEOUT):
     if _AUTH_MARKERS.search(blob) or _AUTH_STATUS.search(stderr or "") \
             or '"status_code":401' in (stdout or "").replace(" ", ""):
         return "not-authenticated", "the Kimi CLI refused the credential - run `kimi login`"
-    if code == 0 and error is None and message is not None and PROBE_MARKER in message:
+    if code == 0 and error is None and message is not None \
+            and message.strip() == PROBE_MARKER:
         return "ok", "answered PROBE_OK"
     if _QUOTA_MARKERS.search(blob) or _QUOTA_STATUS.search(stderr or "") \
             or '"status_code":429' in (stdout or "").replace(" ", ""):
@@ -262,9 +276,19 @@ def probe(model_id=None, which=shutil.which, home=None, runner=None,
     exe = os.path.abspath(exe)
     home = home or kimi_home()
     path = os.path.join(home, "config.toml")
-    if not os.path.isfile(path):
+    # Round 5 of T-0028: only ENOENT proves there is no config; a lookup that
+    # fails any other way, or a config.toml that is not a regular file, is
+    # could-not-tell (os.path.isfile answered False for all three).
+    try:
+        mode = os.stat(path).st_mode
+    except FileNotFoundError:
         return _result("not-authenticated", "no config.toml in the Kimi Code home - "
                                             "run `kimi login`", exe=exe)
+    except OSError as exc:
+        return _result("unknown", f"config.toml could not be checked ({type(exc).__name__})",
+                       exe=exe)
+    if not stat.S_ISREG(mode):
+        return _result("unknown", "config.toml is not a regular file", exe=exe)
     if _tomllib is None:
         return _result("unknown", "tomllib is unavailable (Python < 3.11), so "
                                   "config.toml cannot be read", exe=exe)
@@ -277,14 +301,18 @@ def probe(model_id=None, which=shutil.which, home=None, runner=None,
     alias, refusal = resolve_alias(config, model_id)
     if refusal:
         return _result(refusal[0], refusal[1], exe=exe)
-    present = _credential_present(config, alias, home)
+    present, why = _credential_state(config, alias, home)
     if present is None:
-        return _result("unknown", PROVIDER_NOT_A_NAME, alias=alias, exe=exe)
+        return _result("unknown", why, alias=alias, exe=exe)
     if not present:
         return _result("not-authenticated", "the provider has no api_key and no stored "
                                             "OAuth credential - run `kimi login`",
                        alias=alias, exe=exe)
-    workdir = tempfile.mkdtemp(prefix="crew-kimi-probe-")
+    try:
+        workdir = tempfile.mkdtemp(prefix="crew-kimi-probe-")
+    except OSError as exc:  # round 5 of T-0028: no scratch directory is `unknown`
+        return _result("unknown", f"the probe could not create its scratch directory "
+                                  f"({type(exc).__name__})", alias=alias, exe=exe)
     try:
         cmd = [exe, "-p", PROBE_PROMPT, "-m", alias, "--output-format", "stream-json",
                *read_only_flags(workdir)]

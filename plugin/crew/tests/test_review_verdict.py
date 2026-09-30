@@ -408,3 +408,28 @@ def test_kimi_final_message_string_text_parts_still_join():
                                                      {"type": "text", "text": "EAN"}]})
 
     assert rv.kimi_final_message(stream) == ("CLEAN", None)
+
+
+def test_kimi_final_message_a_non_object_content_member_is_malformed():
+    """Round 5 of T-0028: CLEAN beside an unparseable list member was accepted."""
+    stream = _kimi({"role": "assistant", "content": [{"type": "text", "text": "CLEAN"}, 1]})
+
+    assert rv.kimi_final_message(stream)[1] == "malformed content part"
+
+
+def test_kimi_final_message_a_non_text_part_object_is_still_skipped():
+    stream = _kimi({"role": "assistant",
+                    "content": [{"type": "think", "think": "..."},
+                                {"type": "text", "text": "CLEAN"}]})
+
+    assert rv.kimi_final_message(stream) == ("CLEAN", None)
+
+
+def test_kimi_final_message_a_retry_carrying_an_error_object_is_not_a_failure():
+    """Round 5 of T-0028: a retrying event whose transient failure is an
+    `error` object was read as terminal, so a working Kimi was skipped."""
+    stream = _kimi({"role": "meta", "type": "turn.step.retrying",
+                    "error": {"code": "429", "message": "transient"}},
+                   {"role": "assistant", "content": "PROBE_OK"})
+
+    assert rv.kimi_final_message(stream) == ("PROBE_OK", None)

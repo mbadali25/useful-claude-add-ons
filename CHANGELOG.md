@@ -22,6 +22,18 @@ All notable changes to this repository are documented here. Format follows [Keep
     `graph.json` and `GRAPH_REPORT.md`; a `killpg` PermissionError is
     could-not-tell; a non-string provider reference or text part reads
     `unknown` instead of raising; the probe launches an absolute `kimi`.
+  - **Review round 5's fixes: could-not-tell stays could-not-tell.** The
+    Kimi probe reads `unknown`, not `not-authenticated`, when the credentials
+    directory or `config.toml` cannot be read (only ENOENT proves absence) or
+    `config.toml` is not a regular file, and when it cannot create its
+    scratch directory (it raised); `ok` needs the answer to be exactly
+    `PROBE_OK`, so "not PROBE_OK" no longer authorises a launch. The stream
+    parser treats a non-object content member as malformed, and never reads
+    a `turn.step.retrying` event as a failure, even one carrying an `error`
+    object. `graph.out` sets nothing aside when the repository config exists
+    but cannot be read, is not valid JSON, or is not an object (it had fallen
+    back to `graphify-out`). `/crew:review` hard-fails a pinned `kimi` whose
+    probe fails, as it does a pinned `codex`, instead of walking on.
   - **New exit code: `review_run.py` exits 8 (`EXIT_PROBE_CHANGED`) when the
     Kimi probe changed the working tree, whatever it answered** - no round is
     spent, and `/crew:review` stops and reports the paths instead of walking

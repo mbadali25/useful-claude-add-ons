@@ -293,3 +293,13 @@ def test_crew_providers_names_the_probe_changed_exit_code():
     text = " ".join(_read("skills", "crew-providers", "SKILL.md").split())
 
     assert f"exits {_probe_changed_code()} with no round spent" in text
+
+
+def test_review_md_a_pinned_kimi_hard_fails_on_a_failed_probe():
+    """Round 5 of T-0028: the Kimi row said exit 2 always skips, contradicting
+    the rule that a pinned provider whose probe fails is an error."""
+    body = _read("commands", "review.md")
+    row = next(r for r in _probe_rows(body) if r.startswith("| `kimi`"))
+
+    assert "a pinned `kimi` hard-fails" in row
+    assert "unless `qa.provider` pins `kimi`, which hard-fails instead" in body

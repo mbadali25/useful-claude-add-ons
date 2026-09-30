@@ -32,10 +32,10 @@ _RESOLVED = ("    crew_dir, source, _detail = crew_common.repo_config_dir(top)\n
              "        return None\n"
              "    cfg = {}\n"
              "    for name in crew_common.CONFIG_NAMES:\n"
-             "        text = crew_common.read_text(os.path.join(crew_dir, name))\n")
+             "        path = os.path.join(crew_dir, name)\n")
 _OWN_PATH = ("    cfg = {}\n"
              '    for name in ("crew.json", "config.json"):\n'
-             '        text = crew_common.read_text(os.path.join(top, ".crew", name))\n')
+             '        path = os.path.join(top, ".crew", name)\n')
 _HEAD_CHECK = ('    if not head:\n'
                '        unknown("HEAD could not be read (not a git repository?)")\n'
                '        return None\n')
@@ -57,7 +57,8 @@ _GIT_CALL = (
     "    except (OSError, subprocess.SubprocessError):\n"
     "        return None\n")
 _OK_BRANCH = (
-    "    if code == 0 and error is None and message is not None and PROBE_MARKER in message:\n"
+    "    if code == 0 and error is None and message is not None \\\n"
+    "            and message.strip() == PROBE_MARKER:\n"
     '        return "ok", "answered PROBE_OK"\n')
 _QUOTA_BRANCH = (
     '    if _QUOTA_MARKERS.search(blob) or _QUOTA_STATUS.search(stderr or "") \\\n'
@@ -601,7 +602,7 @@ KIMI_MUTATIONS = (
     ("kimi probe: the credential check takes a non-string provider (round 4 FIX 9)",
      PROBE,
      '    ref = _table(_table(config.get("models")).get(alias)).get("provider")\n'
-     "    if not isinstance(ref, str):\n        return None\n",
+     "    if not isinstance(ref, str):\n        return None, PROVIDER_NOT_A_NAME\n",
      '    ref = _table(_table(config.get("models")).get(alias)).get("provider")\n',
      _P + "test_resolve_alias_and_the_credential_check_refuse_a_non_string_provider"),
     ("kimi probe: a relative exe is kept (round 4 FIX 10)",
@@ -673,4 +674,62 @@ KIMI_MUTATIONS = (
      "answered, exits 8 with no round spent",
      "answered, exits 5 with no round spent",
      _D + "test_crew_providers_names_the_probe_changed_exit_code"),
+    # --- review round 5 (T-0028): one entry per FIX -----------------------------
+    ("review.md: a failed Kimi probe always skips, even when pinned (round 5 FIX 1)",
+     REVIEW_MD,
+     "skip it when `qa.provider` is `auto`; a pinned `kimi` hard-fails, as a pinned `codex` does.",
+     "skip.",
+     _D + "test_review_md_a_pinned_kimi_hard_fails_on_a_failed_probe"),
+    ("kimi probe: an unreadable credentials directory is no credential (round 5 FIX 2)",
+     PROBE,
+     "    except OSError as exc:\n"
+     '        return None, (f"the Kimi credentials directory could not be read "\n',
+     "    except OSError as exc:  # sabotage\n"
+     "        return False, None\n"
+     '        return None, (f"the Kimi credentials directory could not be read "\n',
+     _P + "test_probe_an_unreadable_credentials_directory_is_unknown"),
+    ("kimi probe: any answer containing PROBE_OK is ok (round 5 FIX 3)",
+     PROBE,
+     "            and message.strip() == PROBE_MARKER:\n",
+     "            and PROBE_MARKER in message:\n",
+     _P + "test_classify_an_answer_that_only_contains_the_marker_is_not_ok"),
+    ("kimi probe: a config.toml that is a directory reads as no config (round 5 FIX 4)",
+     PROBE,
+     "    if not stat.S_ISREG(mode):\n",
+     "    if False:  # sabotage\n",
+     _P + "test_probe_a_config_toml_that_is_a_directory_is_unknown"),
+    ("kimi probe: a failed config.toml lookup reads as no config (round 5 FIX 4)",
+     PROBE,
+     "    except FileNotFoundError:\n"
+     '        return _result("not-authenticated", "no config.toml in the Kimi Code home - "\n',
+     "    except OSError:\n"
+     '        return _result("not-authenticated", "no config.toml in the Kimi Code home - "\n',
+     _P + "test_probe_a_config_toml_lookup_that_fails_is_unknown"),
+    ("kimi probe: a failed scratch directory escapes as an exception (round 5 FIX 5)",
+     PROBE,
+     "    except OSError as exc:  # round 5 of T-0028: no scratch directory is `unknown`\n",
+     "    except ArithmeticError as exc:  # sabotage\n",
+     _P + "test_probe_that_cannot_create_its_scratch_directory_is_unknown"),
+    ("review_run: invalid config JSON falls back to the graphify-out exemption (round 5 FIX 6)",
+     RUN,
+     "            return None  # round 5 of T-0028: invalid JSON sets nothing aside\n",
+     "            cfg = {}\n",
+     _R + "test_graph_out_with_a_config_that_does_not_parse_as_an_object_is_none"),
+    ("review_run: an unreadable config falls back to the graphify-out exemption (round 5 FIX 6)",
+     RUN,
+     "                return None  # round 5 of T-0028: unreadable is could-not-tell\n",
+     "                pass\n",
+     _R + "test_graph_out_with_a_config_that_exists_but_cannot_be_read_is_none"),
+    ("kimi_final_message: a non-object content member is skipped (round 5 FIX 7)",
+     VERDICT,
+     "        if not all(isinstance(p, dict) for p in content):\n            return None\n",
+     "        content = [p for p in content if isinstance(p, dict)]\n",
+     "tests/test_review_verdict.py::"
+     "test_kimi_final_message_a_non_object_content_member_is_malformed"),
+    ("kimi_final_message: a retry carrying an error object is terminal (round 5 FIX 8)",
+     VERDICT,
+     '    if event.get("type") == "turn.step.retrying":\n        return None\n',
+     "",
+     "tests/test_review_verdict.py::"
+     "test_kimi_final_message_a_retry_carrying_an_error_object_is_not_a_failure"),
 )
