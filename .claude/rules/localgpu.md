@@ -3,9 +3,9 @@ paths:
   - "plugin/crew/**"
   - "plugin/localgpu/**"
 ---
-<!-- crew:generated source=.crew/codemap/localgpu.md sha256=ab917eccb0fcaf28 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/localgpu.md sha256=92a12a5d6eeb3f7f -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # localgpu
-Code map anchor `45f32c3c`; if it is behind HEAD, re-check with `git diff --name-only 45f32c3c..HEAD -- <cited paths>`.
+Code map anchor `7c88bf3d`; if it is behind HEAD, re-check with `git diff --name-only 7c88bf3d..HEAD -- <cited paths>`.
 Covers: The localgpu plugin: its two independent process trees, the shared-Ollama constraint that drives OLLAMA_MAX_LOADED_MODELS=1, the embed-model mismatch guard, .mcp.json provisioning, and the bootstrap.sh/bootstrap.ps1 parity verdict. Records that plugin/localgpu/commands/crew.md's role table names eleven crew roles that crew 1.0 deleted.
 ## Entry points
 - `plugin/localgpu/mcp/server.py:253` — `main()`, which calls `mcp.run("stdio")` at `:254`.
