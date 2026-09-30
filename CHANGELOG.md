@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.66: `crew-qa-standards` — harness and QA-review standards, and an audit that checks them
+### Added — `crew` 1.0.67: `crew-qa-standards` — harness and QA-review standards, and an audit that checks them
 
 - **What.** A new bundled skill (30 now). `references/harness.md` (H1-H11) and
   `references/review.md` (R1-R12) state each rule once, with the measurement
@@ -35,6 +35,13 @@ All notable changes to this repository are documented here. Format follows [Keep
   re-measured (19,786 lines, 132 files).
 - **Not audited.** H1, H8-H11, R1-R8 and R10 need a reader. Other stacks' tools
   are documented, not detected.
+- **Test race fixed (H4/H11).** `test_auto_cycle.py`'s delay test polled for its
+  shim's log file to exist, but `>>` creates the file before `cut` writes, and
+  under `-n auto` CI read it in that gap (`assert '' == '1'`, `test (3.13)`).
+  It now waits for content. Reproduced first by widening the gap to 0.3s (4 of
+  12 cases red), then 12/12 green with the fix.
+- Bumped `1.0.65 -> 1.0.67` (1.0.66 on its branch; 1.0.67 for the race fix,
+  a second `plugin/crew/` commit after 1.0.66 was set). #262 holds 1.0.68.
 
 ### Changed — `crew` 1.0.65: gate first — no review round on a tree the verify gate has not passed
 
