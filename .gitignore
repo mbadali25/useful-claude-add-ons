@@ -329,6 +329,13 @@ __marimo__/
 # boardDir, pm.authority), and that one stays ignored above.
 !.crew/verify.json
 
+# ...and the development standards overlay (T-0085): this repository's own
+# standards on top of crew's generic set, read by /crew:implement's required
+# self-check and handed to every reviewer. Like the verification map it is a
+# decision about the CODE, so it travels with the repo; ignored, a clone would
+# read "no overlay" and check the change against the generic set alone.
+!.crew/standards.md
+
 # Written by the GitHub Copilot CLI when --model is passed; pins the model for
 # anyone running `copilot` in this repo. crew owns provider model choice
 # (qa.copilot.model / dev.copilot.model), so this file must not shadow it.

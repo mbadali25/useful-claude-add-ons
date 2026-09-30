@@ -377,12 +377,14 @@ the first secret exists is the only time it is free.
 # directory git never entered - every negation below would silently do nothing.
 .crew/*
 
-# The named un-ignore list, and it is a closed list. These three describe the
+# The named un-ignore list, and it is a closed list. These four describe the
 # CODE, are decided once, and are worth the same on every clone: the code map,
-# the endpoint ledger a security scan is owed against, and the verification map.
+# the endpoint ledger a security scan is owed against, the verification map and
+# the development standards overlay (crew-standards; absent is fine).
 !.crew/codemap/
 !.crew/endpoints.json
 !.crew/verify.json
+!.crew/standards.md
 
 # Documentation, not mechanism: `.crew/*` above already ignores every one of
 # these and no negation re-admits them, so deleting these lines changes nothing

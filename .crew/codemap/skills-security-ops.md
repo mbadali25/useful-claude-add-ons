@@ -1,6 +1,6 @@
 # skills-security-ops
-anchor: useful-claude-add-ons@f2bb919b
-verified: 2026-09-25
+anchor: useful-claude-add-ons@22399a9c
+verified: 2026-09-28
 
 ## Does
 Two read-and-remediate skills pointed at live infrastructure: `cisco-meraki` drives the Meraki
@@ -40,7 +40,7 @@ credential-driven, destructive writes reachable) and no code. DERIVED: no module
   (`skills/cisco-meraki/scripts/meraki_config.py:121-126`) - written at `:133-135` by `snapshot()`
   (`:120`). The directory is anchored to the *script*, not the cwd:
   `skills/cisco-meraki/scripts/.meraki-snapshots/` (`skills/cisco-meraki/scripts/meraki_config.py:36-42`),
-  and the comment there says why. Covered by `.gitignore:272` (`.meraki-snapshots/`, no leading
+  and the comment there says why. Covered by `.gitignore:277` (`.meraki-snapshots/`, no leading
   slash, so it matches at any depth). DERIVED. **JUDGEMENT:** the `MERAKI_SNAPSHOT_DIR` env override
   at `:39` can point the unredacted snapshots anywhere, including outside any repo that gitignores
   them; nothing validates the destination.
@@ -257,3 +257,12 @@ anchor lag; no claim was re-read and none of the body above was rewritten.
 **Re-anchored `6c497a14` -> `f2bb919b` on 2026-09-25 (T-0015).** The same path list, run as
 `git diff --name-only 6c497a14 f2bb919b -- <the paths above>`, returns nothing, and nothing under
 `skills/` changed in that range. Current despite the lag; no claim re-read.
+
+**Re-anchor provenance (2026-09-28, anchor f2bb919b -> 22399a9c, T-0085, crew 1.0.52).**
+`git diff --name-only f2bb919b 22399a9c` over the paths this note cites returns only
+`.gitignore`, where T-0085 added the `!.crew/standards.md` un-ignore (7 lines after `:330`).
+Nothing under `skills/cisco-meraki/`, `skills/wazuh-onprem/`, `skills/intune-graph/` or
+`skills/infra-work-ticketing/` changed. Re-reading the one `.gitignore` citation found it
+wrong before this change: `.meraki-snapshots/` is `.gitignore:277` at `f2bb919b`, `9631c707`
+and `22399a9c` alike (`git show <rev>:.gitignore | grep -n`), not `:272`; corrected above. No
+other claim was re-read.
