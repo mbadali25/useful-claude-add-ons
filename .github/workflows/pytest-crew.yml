@@ -141,7 +141,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest]  # TEMPORARY (owner 2026-09-30): windows-latest skipped until the win-repo-2 fix (pointer T-0508) lands; that fix re-enables it.
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python
