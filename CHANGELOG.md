@@ -19,8 +19,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   drafted as standards and moved when their third citation (a TheHomeDepot commit, and
   a commit "found by running the code") proved not to be a review.
 - New tests: the set parses with exactly the admitted ids, every stack standard names
-  and cites three change sets, the set applies to `.py` changes only, and no shipped
-  set cites a machine-local note; three sabotage entries.
+  and cites three change sets and its Why states that count, each PYTHON Why's finding
+  count matches the findings it enumerates, no stack set holds a character
+  `splitlines()` counts as a line and `wc -l` does not, no PYTHON Source quote is cut
+  with `[...]`, the set applies to `.py` changes only, and no shipped set cites a
+  machine-local note; seven sabotage entries.
 - **Behaviour change:** any change touching a `.py` file now answers the nine PYTHON
   rows in its self-check (12 GEN + 9 PYTHON, plus the overlay's). A ticket stamped
   before this lands gets a new standards digest when it merges main: `init` never

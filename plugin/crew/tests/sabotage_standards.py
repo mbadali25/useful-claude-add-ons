@@ -44,6 +44,10 @@ shipped in place of an admitted standard. Its review round 1 FIX added two:
 PYTHON-07's Why claiming six findings where it enumerates seven, and the
 neighbouring half of that claim, a Why naming fewer change sets than its
 Change sets line.
+Its review round 2 FIX added two: a raw U+2028 back in PYTHON-03's
+splitlines table (a line to splitlines() and not to wc -l, so BUDGETS.md's
+total depended on the counter), and PYTHON-01's quote cut with [...] again
+(an elided span is not in the page the quote check reads).
 """
 import os
 
@@ -466,5 +470,21 @@ STANDARDS_MUTATIONS = (
         "**Why.** 5 findings across 3 change sets: a junction-redirected",
         ("tests/test_crew_standards.py::"
          "test_every_stack_standard_why_states_its_change_set_count[python.md]"),
+    ),
+    (
+        "PYTHON-03's splitlines table carries a raw U+2028 again",
+        PYTHON_SET,
+        "`\\x85`, `\\u2028` and",
+        "`\\x85`, `\u2028` and",
+        ("tests/test_crew_standards.py::"
+         "test_every_stack_set_line_count_is_the_same_by_newline_and_splitlines[python.md]"),
+    ),
+    (
+        "PYTHON-01's EncodingWarning quote is cut with [...] again",
+        PYTHON_SET,
+        "command line option or\n  set the PYTHONWARNDEFAULTENCODING environment variable, which",
+        "command line option\n  [...] which",
+        ("tests/test_crew_standards.py::"
+         "test_python_sources_quote_whole_spans_without_elision"),
     ),
 )

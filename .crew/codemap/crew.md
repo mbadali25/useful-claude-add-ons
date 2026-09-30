@@ -1194,9 +1194,9 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   and `std:none` or any other `std:` value is counted on neither side, as are unknown
   rounds; `metric --record` (`:828`) appends a line with no `|`.
 - **Tests.** `plugin/crew/tests/test_crew_standards.py`, `test_review_run_standards.py`,
-  `test_review_prompt.py`, `test_lifecycle_commands.py`; forty-nine mutations in
-  `plugin/crew/tests/sabotage_standards.py` (`STANDARDS_MUTATIONS` `:57`; 44 at origin/main
-  `9af34e57` by `len()`, all T-0085's, then T-0086's five for the Python set), appended in
+  `test_review_prompt.py`, `test_lifecycle_commands.py`; fifty-one mutations in
+  `plugin/crew/tests/sabotage_standards.py` (`STANDARDS_MUTATIONS` `:61`; 44 at origin/main
+  `9af34e57` by `len()`, all T-0085's, then T-0086's seven for the Python set), appended in
   `plugin/crew/tests/sabotage.py` at `:3061`; `.crew/verify.json`'s last rule runs them.
   JUDGEMENT: the approval-receipt condition is
   the one way a ticket reaches review without the gate; it exists because the pre-existing

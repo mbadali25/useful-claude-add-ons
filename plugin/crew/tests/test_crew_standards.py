@@ -345,6 +345,30 @@ def test_python_why_finding_counts_match_their_enumerations():
     assert stated == _PYTHON_FINDINGS
 
 
+@pytest.mark.parametrize("name", _STACK_SETS)
+def test_every_stack_set_line_count_is_the_same_by_newline_and_splitlines(name):
+    """A raw U+2028/U+2029 (or \\v, \\f, \\x1c-\\x1e, \\x85) is a line to
+    splitlines() and not to wc -l, so BUDGETS.md's Markdown total would depend
+    on which counter read it (review round 2, FIX BUDGETS.md:11)."""
+    with open(os.path.join(_REFS, name), encoding="utf-8", newline="") as fh:
+        text = fh.read()
+
+    assert len(text.splitlines()) == text.count("\n")
+
+
+def test_python_sources_quote_whole_spans_without_elision():
+    """Every Source quote is checked verbatim against the raw page, so none may
+    be cut with [...]: an elided span is not in the page (review round 2, FIX
+    python.md:79)."""
+    parsed, problems, _ = cs.parse_set(os.path.join(_REFS, "python.md"))
+    assert parsed is not None, problems
+
+    elided = [std["id"] for std in parsed["standards"]
+              if re.search(r"\[(\.\.\.|…)\]", std["fields"]["Source"])]
+
+    assert elided == []
+
+
 def test_python_set_applies_to_python_files_only():
     def applies(files):
         return "PYTHON" in cs.effective_set(_REPO_ROOT, files)["sets"]

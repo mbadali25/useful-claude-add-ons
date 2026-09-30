@@ -75,8 +75,9 @@ reviewer or a parser.
 - https://docs.python.org/3/library/io.html, "Text Encoding": "The default encoding of TextIOWrapper and
   open() is locale-specific (locale.getencoding())." "This causes bugs because the locale encoding is not
   UTF-8 for most Windows users." "it is highly recommended that you specify the encoding explicitly when
-  opening text files." Same page: "you can enable the -X warn_default_encoding command line option
-  [...] which will emit an EncodingWarning when the default encoding is used."
+  opening text files." Same page: "you can enable the -X warn_default_encoding command line option or
+  set the PYTHONWARNDEFAULTENCODING environment variable, which will emit an EncodingWarning when the
+  default encoding is used."
 - https://docs.python.org/3/library/functions.html#open: "'ignore' ignores errors. Note that ignoring
   encoding errors can lead to data loss." "'surrogateescape' will represent any incorrect bytes as low
   surrogate code units ranging from U+DC80 to U+DCFF." "If newline is '' or '\n', no translation takes
@@ -123,7 +124,7 @@ is printed into line-oriented output, `json.dumps(..., indent=...)` on a path th
 
 **Source.** https://docs.python.org/3/library/stdtypes.html#str.splitlines: "This method splits on the
 following line boundaries. In particular, the boundaries are a superset of universal newlines." Its
-table lists `\n`, `\r`, `\r\n`, `\v`, `\f`, `\x1c`, `\x1d`, `\x1e`, `\x85`, ` ` and ` `.
+table lists `\n`, `\r`, `\r\n`, `\v`, `\f`, `\x1c`, `\x1d`, `\x1e`, `\x85`, `\u2028` and `\u2029`.
 
 ## PYTHON-04 A file someone else reads is replaced, never rewritten in place
 
