@@ -82,8 +82,8 @@ A tooling change: this release carries no feature work.
   `scope_guard.py` from rule 35 as well as rule 27. Rule 35 lists it too, so
   dropping it from rule 27 alone left it covered and the entry stayed green
   (`STILL GREEN -- TEST IS VACUOUS`).
-- `plugin/crew/BUDGETS.md`'s Markdown line count is re-measured: 19,666 lines
-  across 129 files.
+- `plugin/crew/BUDGETS.md`'s Markdown line count is re-measured: 20,087 lines
+  across 133 files.
 - `scripts/check-tooling-pr.py` allows `plugin/crew/BUDGETS.md` alongside a
   harness change: its line count moves with every crew doc edit. It refused this
   branch's own re-measure until then; `scripts/_test/tooling-pr.py` gains the
