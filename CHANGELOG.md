@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.70: the review bundle and the completion audit account for merged main (T-0100)
+### Changed — `crew` 1.0.71: the review bundle and the completion audit account for merged main (T-0100)
 
 - **What changed.** A new `plugin/crew/hooks/scripts/merged_main.py` names the
   latest merged integration commit (`git merge-base HEAD <ref>`, `<ref>` from
@@ -37,11 +37,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   accepted receipt current (the line says how many paths it left out); one
   that changes a reviewed path stales it, conflict or not (that file's diff
   now starts from main's version), and names the merged commit. A
-  receipt recorded before 1.0.70 on a branch that had already merged main
+  receipt recorded before 1.0.71 on a branch that had already merged main
   reads stale once. The same fix landing byte-identical on main and on the
   ticket drops out of both.
 - **Unchanged.** HEAD on the integration branch itself, or no merge of it past
-  the start: byte-identical to 1.0.69. `completion_audit.changed_paths` without
+  the start: byte-identical to 1.0.70. `completion_audit.changed_paths` without
   the new argument (the refresh check's caller), Touch membership, the
   refresh-artifact allowance, `scope_base.py`, and `scope_base.py --changed` /
   `scope_report.py` (filed to `TODO.md`).
@@ -74,9 +74,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   `core.fileMode` ignored, `fork_reason` never written, the stderr count
   printed on a failed lookup, the prompt clause dropped, the receipt note
   dropped; each run by hand, RED on an assertion, restored to its HEAD blob.
-- Bumped `1.0.69 -> 1.0.70` (1.0.55, 1.0.60 and 1.0.62 on its branch, re-set after
-  merging main's 1.0.59, T-0075, 1.0.61, T-0010, and 1.0.69, T-0088; main's
-  1.0.62-1.0.68 are #263-#267's and T-0088's, not this entry's).
+- Bumped `1.0.70 -> 1.0.71` (1.0.55, 1.0.60, 1.0.62 and 1.0.70 on its branch, re-set
+  after merging main's 1.0.59, T-0075, 1.0.61, T-0010, 1.0.69, T-0088, and 1.0.70,
+  T-0097; main's 1.0.62-1.0.70 are #263-#268's and T-0088's, not this entry's).
 
 ### Fixed — `crew` 1.0.70: a silent python candidate no longer writes a red error block on every Windows hook (T-0097)
 
