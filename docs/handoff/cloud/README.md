@@ -28,4 +28,4 @@ Pick them up in the order below: tickets closest to landing first, then the rest
 | 12 | [T-0106](T-0106.md) - crew_autoclear_setup apply-migrate --scan-root finds every repo with autoClear.enabled for | direction | Direction (seed, not approved) | none | none - not started |
 | 13 | [T-0108](T-0108.md) - gizmoduck headless and CI: bootstrap without apt/sudo guidance, tool-home lookup order, sa | direction | Direction (seed, not approved) | none | none - not started |
 
-T-0501 and T-0504 both claim crew 1.0.70 (one past main's 1.0.69 at a61a6f38); whichever lands second must merge main and re-bump.
+Version: bump crew one past whatever version main holds when this ticket lands (main moves; T-0501 #272 and T-0504 #271 both claim 1.0.70, which main now already holds).
