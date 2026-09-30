@@ -747,12 +747,15 @@ def test_a_crlf_checkout_under_autocrlf_is_judged_as_git_stores_it(anchored, rel
     assert (got[APP][0], got[rel][0]) == (True, True), got
 
 
-def _failing_out(monkeypatch, first, result):
+def _failing_out(monkeypatch, first, result, flag=None):
     """Patch `_git_out` to return `result` for the one call whose first arg is
-    `first`, delegating every other call."""
+    `first` (and that carries `flag`, when given), delegating every other
+    call. Review round 6 added `_on_disk`'s `diff --raw`, so INDEX.md's own
+    `diff -U0` is picked out by its flag."""
     real = crew_refresh_check._git_out  # pylint: disable=protected-access
     monkeypatch.setattr(crew_refresh_check, "_git_out",
-                        lambda r, *a, **k: result if a[0] == first else real(r, *a, **k))
+                        lambda r, *a, **k: result if a[0] == first and (flag is None or flag in a)
+                        else real(r, *a, **k))
 
 
 @pytest.mark.parametrize("result", [(None, b""), (129, b"")], ids=["none", "129"])
@@ -761,12 +764,12 @@ def test_an_index_git_cannot_diff_is_could_not_tell(anchored, monkeypatch, resul
     head = head_sha(root, 40)
     re_anchor_map(root, "app", head)
     index_row_append(root, "app", f"re-anchored to `{head[:8]}`")
-    _failing_out(monkeypatch, "diff", result)
+    _failing_out(monkeypatch, "diff", result, flag="-U0")
 
     verdict, reason = _verdicts(root, base, REACH, [APP, INDEX])[INDEX]
 
     assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL),
-            "git diff" in reason) == (None, True, True), reason
+            "git diff of" in reason) == (None, True, True), reason
 
 
 @pytest.mark.parametrize("result", [(None, b""), (129, b"")], ids=["none", "129"])
