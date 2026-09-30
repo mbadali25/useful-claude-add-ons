@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.70: the completion audit admits a refresh artifact only as a re-anchor or regeneration the ticket's change reaches (T-0094)
+### Changed — `crew` 1.0.71: the completion audit admits a refresh artifact only as a re-anchor or regeneration the ticket's change reaches (T-0094)
 
 - **What changed.** `crew_refresh_check.artifact_verdicts` (beside
   `REFRESH_ARTIFACT_PATHS`) judges each changed refresh artifact of an approved
@@ -73,7 +73,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   store (`git hash-object --path --stdin`), so a CRLF or BOM rewrite is refused
   while a CRLF checkout under `core.autocrlf=true` is still the regenerated
   rule; a hash git cannot give is `could not tell`. The code map's counts and
-  version sentence now say 30 skills and 1.0.70.
+  version sentence now say 30 skills and the current version.
 - **Sabotage.** In `plugin/crew/tests/sabotage_refresh.py`, fifteen entries
   after the `# T-0094` marker, sixteen after `# T-0094 review round 1`, nine
   after `# T-0094 review round 2` and twelve after `# T-0094 review round 3`
@@ -84,7 +84,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   fix is a test change those entries cover.
 - **Version.** 1.0.60 on T-0094's branch; T-0010 landed first as 1.0.61 (its own
   branch had used 1.0.60 too), so it was re-set to 1.0.62; main then took
-  1.0.62-1.0.69 (#263-#267 and T-0088), so this lands as 1.0.70.
+  1.0.62-1.0.69 (#263-#267 and T-0088), so it was re-set to 1.0.70; main then
+  took 1.0.70 for T-0097 (#268), and review round 3's fixes changed
+  `plugin/crew/` after 1.0.70 was set, so this is 1.0.71.
 
 ### Changed — `crew` 1.0.69: a Codex limit falls back to Claude; lane worktrees read the main checkout's config (T-0088)
 
