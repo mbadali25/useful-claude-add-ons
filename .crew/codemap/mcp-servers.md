@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@7c88bf3d
+anchor: useful-claude-add-ons@7e23f822
 verified: 2026-09-30
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -56,7 +56,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
   `this.resolved` and never retries an earlier, higher-priority link. Deliberate - the comment at
   `:44-46` says so - but fixing `MS_ADMIN_CLIENT_SECRET` after `cli` or `device` has won changes
   nothing until restart, and nothing tells you that. Re-verified unchanged 2026-09-06 at
-  `1f97e51c`; still open as `TODO.md:189` (item 2; was `:110` at `f2bb919b`, `:80` at `6c497a14` and `:51` before that, each
+  `1f97e51c`; still open as `TODO.md:199` (item 2; was `:110` at `f2bb919b`, `:80` at `6c497a14` and `:51` before that, each
   move an insertion earlier in the file - re-read at `f2bb919b` on 2026-09-25, same heading and body).
 - **`scopesOverride` silently broadens a narrow scope request.**
   `mcp-servers/packages/core/src/adminAuth.ts:29-36` (the field and its doc comment), `:127`
@@ -64,7 +64,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
   `device` (`mcp-servers/packages/core/src/adminAuth.ts:149-158` - no `scopesOverride` key, and the
   comment at `:155-158` says why) honours caller-supplied delegated scopes. Code that requests a
   narrow scope and receives `.default` did not fail - it was never asked. Re-verified unchanged
-  2026-09-06 at `1f97e51c`; still open as `TODO.md:200` (item 3; was `:121` at `f2bb919b`, `:91`, and `:62` before that - re-read at
+  2026-09-06 at `1f97e51c`; still open as `TODO.md:210` (item 3; was `:121` at `f2bb919b`, `:91`, and `:62` before that - re-read at
   `f2bb919b` on 2026-09-25, same heading and body).
 - **`dist/` is what runs, `src/` is what you edit.** Editing a `.ts` file and then *starting a
   server* leaves the stale compiled JS in place and the change does not take effect. Nothing guards
@@ -78,7 +78,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
     `core/dist` is still stale.
   - **Equal mtimes are stale, not fresh** (`:96-97`, reasoning at `:82-94`). The commit message for
     `4e2bfb78` states the opposite ("Equal timestamps count as fresh"); the shipped code and
-    `TODO.md:281-288` (was `:202-209` at `f2bb919b`, `:172-179`, and `:143-150` before that; re-read at `f2bb919b` on 2026-09-25, same reasoning)
+    `TODO.md:291-298` (was `:202-209` at `f2bb919b`, `:172-179`, and `:143-150` before that; re-read at `f2bb919b` on 2026-09-25, same reasoning)
     are the later, correct account. Trust the code.
   - An unreadable directory throws rather than returning mtime `0` (`:44-51`), because `0` compares
     older than everything and would read as fresh.
@@ -415,3 +415,5 @@ each cited here by name, never by line; nothing under `mcp-servers/` changed. Re
 ## Re-anchor provenance - `45f32c3c` -> `7c88bf3d`, 2026-09-30 (T-0087 review round 6 fix)
 
 `cff30f72` makes the committed-corpus test in `plugin/crew/tests/test_review_golden.py` run `golden_build.leak` on every fixture (host name included), adds `test_corpus_leak_check_refuses_a_planted_host_name`, and adds sabotage entries (ah)-(ai) to `plugin/crew/tests/sabotage_tooling.py`; its CHANGELOG bullet moved later CHANGELOG lines by 4, and the CHANGELOG citations above were re-mapped by script (difflib `45f32c3c` -> `7c88bf3d`). `49ed9a29` / `7c88bf3d` step crew back and re-set 1.0.76. No other cited line moved. Re-anchor only: nothing was executed for this note.
+
+**Re-anchored `7c88bf3d` -> `7e23f822` on 2026-09-30 (L-0520 PR 1: the merge train CLI).** `git diff --name-only 7c88bf3d 7e23f822` adds, outside refresh artifacts, L-0520's PR 1 on top of T-0087's landing: the new `plugin/crew/hooks/scripts/crew_train.py` and `plugin/crew/tests/test_crew_train.py`, `plugin/crew/commands/done.md` (a new section), `plugin/crew/README.md` (a new subsection after "You open the pull request", +13 lines below it, and two sentences in place), `docs/guides/crew/src/daily-workflow.md` and `troubleshooting.md` with their rebuilt outputs, `CHANGELOG.md`, `TODO.md` (+10 near the top), `plugin/crew/BUDGETS.md:11` (the count, in place), `.crew/verify.json` (one rule inserted before T-0087's) and `plugin/crew/tests/test_lifecycle_commands.py`. Path-qualified citations outside dated provenance paragraphs were moved by a line diff (difflib equal blocks; `/root/crew-tmp/l-0520/tools/l0520_remap.py`, machine-local): 3 moved. No suite was executed for this note.

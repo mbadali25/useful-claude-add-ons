@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@7c88bf3d
+anchor: useful-claude-add-ons@7e23f822
 verified: 2026-09-30
 
 # localgpu
@@ -1550,3 +1550,5 @@ Nothing under `plugin/localgpu/` changed on either side. Nothing was executed fo
 ## Re-anchor provenance - `45f32c3c` -> `7c88bf3d`, 2026-09-30 (T-0087 review round 6 fix)
 
 `cff30f72` makes the committed-corpus test in `plugin/crew/tests/test_review_golden.py` run `golden_build.leak` on every fixture (host name included), adds `test_corpus_leak_check_refuses_a_planted_host_name`, and adds sabotage entries (ah)-(ai) to `plugin/crew/tests/sabotage_tooling.py`; its CHANGELOG bullet moved later CHANGELOG lines by 4, and the CHANGELOG citations above were re-mapped by script (difflib `45f32c3c` -> `7c88bf3d`). `49ed9a29` / `7c88bf3d` step crew back and re-set 1.0.76. No other cited line moved. Re-anchor only: nothing was executed for this note.
+
+**Re-anchored `7c88bf3d` -> `7e23f822` on 2026-09-30 (L-0520 PR 1: the merge train CLI).** `git diff --name-only 7c88bf3d 7e23f822` adds, outside refresh artifacts, L-0520's PR 1 on top of T-0087's landing: the new `plugin/crew/hooks/scripts/crew_train.py` and `plugin/crew/tests/test_crew_train.py`, `plugin/crew/commands/done.md` (a new section), `plugin/crew/README.md` (a new subsection after "You open the pull request", +13 lines below it, and two sentences in place), `docs/guides/crew/src/daily-workflow.md` and `troubleshooting.md` with their rebuilt outputs, `CHANGELOG.md`, `TODO.md` (+10 near the top), `plugin/crew/BUDGETS.md:11` (the count, in place), `.crew/verify.json` (one rule inserted before T-0087's) and `plugin/crew/tests/test_lifecycle_commands.py`. Path-qualified citations outside dated provenance paragraphs were moved by a line diff (difflib equal blocks; `/root/crew-tmp/l-0520/tools/l0520_remap.py`, machine-local): none moved. No suite was executed for this note.

@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@7c88bf3d
+anchor: useful-claude-add-ons@7e23f822
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -304,7 +304,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:2259` (on T-0085's landing merge of main `a61a6f38`; `:2227` on T-0085's merge of main `8ab733d7`; `:2222` on T-0085's merge of main `2693d0fa`; `:2098` on T-0085's branch at `8abf7ffe`; `:2209` on T-0010-solo's merge of `e878cc31`; `:2085` on T-0010-solo at `d7c7c75c`, `:2077` at `c817782f`, `:2074` at `89c9ee9a`, `:2063` at `50e67586`; `:2204` at `3648f59a`, T-0075's round-5 docs after its merge of `6387ab49`; `:2201` at `938e3b11`, T-0075's round-4 docs after its merge of `f54af3fa`; `:2192` at `3724731b`, T-0075 after its merge of `e6e10432`; `:2174` on T-0075's merge of `d2fbd408`; `:2080` at `d2fbd408`, `:1817` on T-0024's branch at `45345812`, `:2166` on T-0075's branch at `763eaeff`, `:2132` at `764f6018`, `:2072` at `67caa4b8`, `:2107` on T-0075's `f7163410`, `:2057` at `bebbb97f`, `:2084` on T-0075's `e95e5964`, `:2049` on T-0018's first landing merge at `fbc27b49`, `:2034` at `db14619c`, `:1964` on T-0018's branch at `e6b696fb`, `:1990` at T-0023's `a1acd9b7`, `:2052` at T-0021's `74f52fae`, `:2011` at `c2ae46ab`, `:1981` at T-0042's `f0b12ee6`, `:1935` at `2b18f7ab`, `:1831` at T-0021's `bcb77ce2`, `:1809` at `07ca3972`, `:1764` at `a0c0847e`, `:1735` at `8ebbdedc`, `:1794` at T-0006's `2bb92f32`, `:1733` at `c35edda5`; on T-0005's branch `:1859` at `a26ad8c0`, `:1815` at `aa7f9841`, `:1800` at `1e210476`, `:1793` at `3a57b2d2`, `:1772` at `2170d72e`, `:1733` at `8d447a7d`; `:1730` at `f2bb919b`, `:1609` before that,
+  `plugin/crew/README.md:2272` (on T-0085's landing merge of main `a61a6f38`; `:2227` on T-0085's merge of main `8ab733d7`; `:2222` on T-0085's merge of main `2693d0fa`; `:2098` on T-0085's branch at `8abf7ffe`; `:2209` on T-0010-solo's merge of `e878cc31`; `:2085` on T-0010-solo at `d7c7c75c`, `:2077` at `c817782f`, `:2074` at `89c9ee9a`, `:2063` at `50e67586`; `:2204` at `3648f59a`, T-0075's round-5 docs after its merge of `6387ab49`; `:2201` at `938e3b11`, T-0075's round-4 docs after its merge of `f54af3fa`; `:2192` at `3724731b`, T-0075 after its merge of `e6e10432`; `:2174` on T-0075's merge of `d2fbd408`; `:2080` at `d2fbd408`, `:1817` on T-0024's branch at `45345812`, `:2166` on T-0075's branch at `763eaeff`, `:2132` at `764f6018`, `:2072` at `67caa4b8`, `:2107` on T-0075's `f7163410`, `:2057` at `bebbb97f`, `:2084` on T-0075's `e95e5964`, `:2049` on T-0018's first landing merge at `fbc27b49`, `:2034` at `db14619c`, `:1964` on T-0018's branch at `e6b696fb`, `:1990` at T-0023's `a1acd9b7`, `:2052` at T-0021's `74f52fae`, `:2011` at `c2ae46ab`, `:1981` at T-0042's `f0b12ee6`, `:1935` at `2b18f7ab`, `:1831` at T-0021's `bcb77ce2`, `:1809` at `07ca3972`, `:1764` at `a0c0847e`, `:1735` at `8ebbdedc`, `:1794` at T-0006's `2bb92f32`, `:1733` at `c35edda5`; on T-0005's branch `:1859` at `a26ad8c0`, `:1815` at `aa7f9841`, `:1800` at `1e210476`, `:1793` at `3a57b2d2`, `:1772` at `2170d72e`, `:1733` at `8d447a7d`; `:1730` at `f2bb919b`, `:1609` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -356,7 +356,7 @@ listing the directory.
   resolves to stale.
 
 - **`TODO.md`'s `render.sh` entry is still open, still un-CLOSED, re-located
-  rather than assumed at its old line.** Now at `TODO.md:1201` (`:1190` at
+  rather than assumed at its old line.** Now at `TODO.md:1211` (`:1190` at
   `1e0706ac`, `:1122` at
   `f2bb919b`, `:1092` at `6c497a14`, `:1061` before that; the file grew 3645 -> 4714 lines, +1069,
   in the `5d1fc5fd..6c497a14` range, and 30 more lines landed after its
@@ -1383,3 +1383,5 @@ In this note: the runbook-index README citation is `plugin/crew/README.md:2227` 
 ## Re-anchor provenance - `45f32c3c` -> `7c88bf3d`, 2026-09-30 (T-0087 review round 6 fix)
 
 `cff30f72` makes the committed-corpus test in `plugin/crew/tests/test_review_golden.py` run `golden_build.leak` on every fixture (host name included), adds `test_corpus_leak_check_refuses_a_planted_host_name`, and adds sabotage entries (ah)-(ai) to `plugin/crew/tests/sabotage_tooling.py`; its CHANGELOG bullet moved later CHANGELOG lines by 4, and the CHANGELOG citations above were re-mapped by script (difflib `45f32c3c` -> `7c88bf3d`). `49ed9a29` / `7c88bf3d` step crew back and re-set 1.0.76. No other cited line moved. Re-anchor only: nothing was executed for this note.
+
+**Re-anchored `7c88bf3d` -> `7e23f822` on 2026-09-30 (L-0520 PR 1: the merge train CLI).** `git diff --name-only 7c88bf3d 7e23f822` adds, outside refresh artifacts, L-0520's PR 1 on top of T-0087's landing: the new `plugin/crew/hooks/scripts/crew_train.py` and `plugin/crew/tests/test_crew_train.py`, `plugin/crew/commands/done.md` (a new section), `plugin/crew/README.md` (a new subsection after "You open the pull request", +13 lines below it, and two sentences in place), `docs/guides/crew/src/daily-workflow.md` and `troubleshooting.md` with their rebuilt outputs, `CHANGELOG.md`, `TODO.md` (+10 near the top), `plugin/crew/BUDGETS.md:11` (the count, in place), `.crew/verify.json` (one rule inserted before T-0087's) and `plugin/crew/tests/test_lifecycle_commands.py`. Path-qualified citations outside dated provenance paragraphs were moved by a line diff (difflib equal blocks; `/root/crew-tmp/l-0520/tools/l0520_remap.py`, machine-local): 2 moved. No suite was executed for this note.

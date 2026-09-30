@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@7c88bf3d
+anchor: useful-claude-add-ons@7e23f822
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -511,7 +511,7 @@ they disagree:
   `config.json`".
 - Only `/crew:migrate` (`crew_migrate.py`, `--apply`) ever writes
   `.crew/crew.json`; `/crew:init` still writes only `.crew/config.json`
-  (`TODO.md:3963`, "T2 (lane D, additive) deferred items", filed
+  (`TODO.md:3973`, "T2 (lane D, additive) deferred items", filed
   2026-09-23, still open at this anchor; it was `:3854` at `6c497a14`,
   `:3884` at `f2bb919b` and `:3952` at `1e0706ac`). `crew_migrate.py`'s own module
   docstring (`:1-4`) frames this as "one-time move of a 0.20 crew setup onto
@@ -1201,6 +1201,56 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   the one way a ticket reaches review without the gate; it exists because the pre-existing
   review_run tests run tickets with no receipt, and a ticket without one cannot pass
   `/crew:done`.
+
+## The merge train (L-0520, crew 1.0.77)
+
+DERIVED at this anchor from `plugin/crew/hooks/scripts/crew_train.py` (read in full). This is PR 1
+of the owner's split (2026-09-30): the CLI only. The gate round refusing on it (`review_run.py`
+exit 6) and the reviewer's rerere block are L-0526; until then the train is advisory.
+
+- **What it is.** One locked queue per clone serialising gate+land per overlapping Touch set;
+  lanes still implement in parallel. State under `<git-common-dir>/crew/train/` via `train_dir`
+  (`plugin/crew/hooks/scripts/crew_train.py:227`, on `crew_ticket.state_dir`): `state.json`
+  (`SCHEMA` `:110`), `events.jsonl` (`read_events` `:403`), `merge-log/<id>.jsonl`
+  (`merge_log_path` `:242`, `read_merge_log` `:880`). No config key: `arm`
+  (`:597`) publishes a complete `state.json` with `os.link`, which fails if it exists; `disarm`
+  (`:625`) refuses under the lock while entries exist.
+- **Fail closed.** `load` (`:296`) returns `absent` only when `_absent` (`:251`) proves
+  `state.json` missing (ENOENT under a directory ancestor); unreadable, unparseable, wrong-schema or
+  a malformed entry (`_entry_problem` `:279`) is `could not tell`. `_Lock` (`:330`) is
+  `review_ledger._Lock`'s shape plus an owner token checked before removal, `LOCK_WAIT_SECONDS`
+  (`:111`), never removed for age. `_mutate` (`:371`) refuses absent as `NotArmed` (exit 1)
+  and anything else unreadable as `TrainError` (exit 3), appends events with the next `seq`, then
+  `os.replace`s the state. `touch_of` (`:430`) returns `None` (overlaps everything) for any Touch
+  that is not a readable, problem-free, non-empty list. `_plain` (`:140`) refuses CLI values that
+  carry control characters, and refs that start with `-` or hold whitespace (exit 2).
+- **Overlap and the hold rule.** `_prefix` (`:451`) is the case-folded segments before the
+  first glob segment; `entries_overlap` (`:470`) is a segment-prefix test; `touch_overlap`
+  (`:476`) returns every colliding pair, refresh artifacts dropped by `effective`
+  (`:465`, `REFRESH_PREFIXES` `:114`). `_blockers` (`:537`) is every holder, and every
+  earlier-ordered waiter, on the same base with an overlapping Touch. `acquire` (`:661`) upserts
+  the entry, prints unseen notices (`_notices` `:570`), logs a `wait` event with each blocker's
+  pairs, or refuses `merge <base> first` when `_moved_paths` (`:493`) finds base commits
+  touching Touch, or holds and logs `acquire`. `_stale` (`:510`) is printed evidence only.
+- **Catch-up and land.** `catch_up` (`:816`) refuses an in-progress merge or a dirty tree
+  (`--untracked-files=no`, `.work/` excluded), fetches `<remote>/<branch>` bases (`_fetch`
+  `:796`), runs `ensure_rerere` (`:778`; `--worktree` only when `extensions.worktreeConfig`
+  is already true, else `--local`), `git merge --no-edit <base>`, and parses `Resolved`/`Staged
+  '<path>' using previous resolution.` (git 2.53 prints `Staged` under `rerere.autoupdate`) against
+  the staged set; it never commits a conflicted or rerere-resolved merge, and a merge state it cannot
+  read is `could not tell` (exit 3). `check_land` (`:942`): hold, fetch, `_merge_tree` (`:926`,
+  `--write-tree --name-only`; exit 1 lists conflicts, other codes are could-not-tell),
+  moved-in-Touch, `review_ledger.check_receipt`, `review_gate.gate_state`, then prints `LAND_OK` and
+  the `gh pr merge ... --match-head-commit` line and logs `check-land`. `release` (`:698`) logs
+  `release`, `merged` (paths from `<sha>^1..<sha>`, `null` when unreadable) or `force-release`
+  (needs `--by` and `--reason`).
+- **Callers and tests.** No crew script imports it in this release;
+  `plugin/crew/tests/test_crew_train.py` allows only `review_run.py` and `review_prompt.py` to (the
+  L-0526 callers). `/crew:done` describes the landing sequence (`plugin/crew/commands/done.md`,
+  "Landing through the merge train"; `test_lifecycle_commands.py`). `.crew/verify.json`'s
+  crew_train rule runs `test_crew_train.py`. JUDGEMENT: until L-0526 and the machine-local lane
+  scripts call it, nothing forces a lane through the train; its value is the queue, the land check
+  and the merge log for lanes that use it.
 
 ## Entry points
 
@@ -3010,3 +3060,5 @@ citations main's side already carried stale (`questions_check`, `QUESTIONS_SHAPE
 ## Re-anchor provenance - `45f32c3c` -> `7c88bf3d`, 2026-09-30 (T-0087 review round 6 fix)
 
 `cff30f72` makes the committed-corpus test in `plugin/crew/tests/test_review_golden.py` run `golden_build.leak` on every fixture (host name included), adds `test_corpus_leak_check_refuses_a_planted_host_name`, and adds sabotage entries (ah)-(ai) to `plugin/crew/tests/sabotage_tooling.py`; its CHANGELOG bullet moved later CHANGELOG lines by 4, and the CHANGELOG citations above were re-mapped by script (difflib `45f32c3c` -> `7c88bf3d`). `49ed9a29` / `7c88bf3d` step crew back and re-set 1.0.76. No other cited line moved. Re-anchor only: nothing was executed for this note.
+
+**Re-anchored `7c88bf3d` -> `7e23f822` on 2026-09-30 (L-0520 PR 1: the merge train CLI).** `git diff --name-only 7c88bf3d 7e23f822` adds, outside refresh artifacts, L-0520's PR 1 on top of T-0087's landing: the new `plugin/crew/hooks/scripts/crew_train.py` and `plugin/crew/tests/test_crew_train.py`, `plugin/crew/commands/done.md` (a new section), `plugin/crew/README.md` (a new subsection after "You open the pull request", +13 lines below it, and two sentences in place), `docs/guides/crew/src/daily-workflow.md` and `troubleshooting.md` with their rebuilt outputs, `CHANGELOG.md`, `TODO.md` (+10 near the top), `plugin/crew/BUDGETS.md:11` (the count, in place), `.crew/verify.json` (one rule inserted before T-0087's) and `plugin/crew/tests/test_lifecycle_commands.py`. Path-qualified citations outside dated provenance paragraphs were moved by a line diff (difflib equal blocks; `/root/crew-tmp/l-0520/tools/l0520_remap.py`, machine-local): 1 moved. The new section "The merge train (L-0520, crew 1.0.77)" was derived from `plugin/crew/hooks/scripts/crew_train.py` read in full at this anchor, every cited definition set from `grep -n`; it describes PR 1 of the owner's split (the CLI only; the review_run.py exit 6 and the reviewer's rerere block are L-0526). No suite was executed for this note.
