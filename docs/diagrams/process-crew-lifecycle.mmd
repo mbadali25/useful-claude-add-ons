@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@9b6b0da7 on 2026-09-30. Verify before trusting.
+%% Generated from useful-claude-add-ons@2697bf67 on 2026-09-30. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -360,3 +360,10 @@ flowchart TB
 %% differ from T-0087's side; review.md:25-29 and :449, crew_ticket.py:534-575, completion_audit.py:177-215,
 %% approval_hook.py:334, done.md and implement.md lines cited here map to themselves (difflib from
 %% cb9b79b1, checked). No node or edge changed.
+%% Merged 7b62e321 + 9af34e57 -> 2697bf67 (T-0087-build merges T-0085's main 9af34e57; crew 1.0.76): main's
+%% preflight and standards self-check nodes kept, T-0087's two INCOMPLETE edges kept. Of the Anchors
+%% paths review.md and review_run.py differ from main's side: review.md's refund sentence is now
+%% :485-486 (the edge and the :148 comment say so), every other review.md line cited here is main's
+%% and unchanged; review_run.py's preflight moved :454 -> :508, its call :521 -> :575 and the
+%% budget-first block :525-535 -> :579-589 (T-0087's failure-class docstring and refund code above
+%% them), re-read with grep -n. No node or edge changed.

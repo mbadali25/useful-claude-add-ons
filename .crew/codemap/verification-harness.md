@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@37f4e807
+anchor: useful-claude-add-ons@2697bf67
 verified: 2026-09-30
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -1863,3 +1863,7 @@ number) and every `sabotage.py` registration line were re-read on this tree.
 **Re-anchored `9b6b0da7` -> `5c9a9db2` on 2026-09-30 (T-0085 landing: sabotage entry re-targeted, crew 1.0.75).** `git diff --name-only 33da9c91 5c9a9db2` returns the crew version files, `CHANGELOG.md` and `plugin/crew/tests/sabotage_standards.py` (the "receipt that cannot be looked up" entry now flips `gate_applies`' `OSError` verdict). Path-qualified citations into those files were moved by a line diff (`/root/crew-tmp/t-0085/remap_merge.py`, 9 moved, 0 unmapped). No suite was executed for this note.
 
 **Re-anchored `5c9a9db2` -> `37f4e807` on 2026-09-30 (#279: CI triggers, concurrency, PR CI on Python 3.12 only).** `git diff --name-only 5c9a9db2 37f4e807` returns only `.github/workflows/*.yml`, `AGENTS.md` and `.crew/verify.json` outside refresh artifacts. The two CI claims above (instruction-budgets matrix, crew-shell-matrix legs) were rewritten for the new CI: push only on main, pull_request, workflow_dispatch and a 07:17 UTC nightly; on a PR only the 3.12 leg does work and 3.11/3.13 report a skipped pass; superseded PR runs are cancelled, main runs never; the Windows crew-shell-matrix leg is off since #277. Workflow citations were moved by a line diff (1 moved). No suite was executed for this note.
+
+## Re-anchor provenance - `b142d8e3` / main `5c9a9db2`-`37f4e807` -> `2697bf67`, 2026-09-30 (T-0087 review round 5 successor, merge of main `9af34e57`)
+
+`4e97588e` (golden leak check) and `2de03e41` (review ledger successors path) fix review round 5; `7b62e321` adds their sabotage entries. `7ccff1db` merges origin/main `9af34e57` (T-0085 landed as crew 1.0.75, with #268, #276, #277, #279) into `T-0087-build` with a merge commit, and `2697bf67` re-sets crew 1.0.76. The merge's map conflicts were mechanical: a hunk that differed only in numbers or in the anchor took main's side, and a provenance hunk kept both. Every body citation of the form `path:line` was then re-mapped by script (difflib from the parent the line came from - T-0087's `7b62e321` for a line T-0087 carries, main's `9af34e57` otherwise - to this tree; a bare `:N` binds to the last path named on its line). `.crew/verify.json` now holds T-0085's standards rule as rule 35 (`:361-373`) and T-0087's harness rule as rule 36 (`:374-399`); those descriptions were re-read by hand. Citations the script could not attribute predate this change and were left unchanged. Re-anchor only: no other claim moved and nothing was executed for this note.
