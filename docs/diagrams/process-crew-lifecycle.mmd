@@ -1,6 +1,6 @@
-%% Generated from useful-claude-add-ons@bbd9a66d on 2026-09-29. Verify before trusting.
-%% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
-%% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
+%% Generated from useful-claude-add-ons@a7f9c5e4 on 2026-09-29. Verify before trusting.
+%% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py
+%% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
 %% NEW in T-0015. Drawn from the command files themselves, each read in full at
 %% f2bb919b (review.md read at its step headings and verdict/round lines only).
@@ -161,7 +161,7 @@
 %%     :75 one-step plan, still /crew:approve; :94 one review round.
 %% --
 %% Status edits after approval (T-0026): three steps edit spec.md's header status
-%% AFTER approval - plan.md:59 (`planned`), implement.md:108 (`review`) and
+%% AFTER approval - plan.md:60 (`planned`), implement.md:110 (`review`) and
 %% done.md:61 (`status: done`). Until T-0026 the receipt hashed both files whole,
 %% so each left it stale; the done.md case was seen live on 2026-09-25. A
 %% `crew-approval/2` receipt now binds approval_digest
@@ -179,6 +179,42 @@
 %% place) changed, both line-neutral; review.md:25-29, :449 and completion_audit.py:177-187,
 %% :204-215 hold (compared by script). The bundle now also leaves out graphify-out/, which no
 %% node here names. No node or edge changed.
+%% Re-drawn for T-0085 at 22399a9c (crew 1.0.52, from origin/main f54af3fa): the required
+%% standards self-check sits between the refresh and the review. implement.md step 0 and
+%% step 4 were compressed and step 6 gained the self-check (:105-109), so its citations
+%% in the nodes moved: validate :18-24, scope_base :29, in-progress :34 (--reopen :35),
+%% steps :39, changed-file list :57, verify :67, step 6 :86-91, refresh check :93,
+%% status review + --to review :110-113, /crew:review :114. plan.md gained the template's
+%% Standards: line (:36), so its citations from :43 moved +1. review.md: exit codes :441
+%% (2 also = self-check missing or stale, :446-450, nothing reserved), fallback :452,
+%% verdict :484. The gate is review_run.py's standards_gate, called before
+%% review_ledger.reserve (crew_standards.review_gate). The line list under "Every node
+%% cites" below is kept as of a4eb2f55; the nodes carry the current lines.
+%% Re-anchored 22399a9c / c99e31f6 -> 8a084c6c (T-0085 merges main 6387ab49, crew 1.0.55): since the
+%% T-0085 redraw only review.md (:325-335) and completion_audit.py (:71-78) changed among the
+%% Anchors paths, both T-0092's in-place comment reflows (551 and 301 lines before and after); no
+%% node cites either range, so review.md:25-29, :441, :446-450, :452, :484 hold. No node or edge changed.
+%% Re-anchored 8a084c6c -> 07bcaf3b (T-0085 review round 1 fixes): of the Anchors paths
+%% implement.md (two lines reflowed in place, still 120), review.md (step 6's reviewer cell
+%% line becomes three, +2 below :530) and crew_standards.py changed. implement.md:105-109
+%% and review.md:25-29, :441, :446-450, :452, :484 hold (compared by script). The gate now
+%% proves 'no approval receipt' with an lstat and gates on any other lookup error; the
+%% rv0 edge's 'no approval receipt' still reads true. No node or edge changed.
+%% Re-anchored 07bcaf3b -> 001f8a78 (T-0085 successor, review round 2's fixes): of the Anchors
+%% paths only crew_standards.py changed (_scope's merge-base fallback for a kept but unusable
+%% scope record); implement.md and review.md are unchanged, so implement.md:105-109 and
+%% review.md:25-29, :441, :446-450, :452, :484 hold. No node or edge changed.
+%% Re-anchored 001f8a78 / bbd9a66d -> a7f9c5e4, T-0085's merge of main 8ab733d7 (T-0010 landed as crew 1.0.61),
+%% after T-0085 review round 3's fixes (33521aa4): of the Anchors paths review.md gained one line at
+%% :537 (proposals refuses an INCOMPLETE out.txt), below every review.md line cited here, so :25-29, :441,
+%% :446-450, :452, :484, :504, :508 and :511 hold (re-read with sed -n); review_run.run now reads the
+%% ledger first and skips the self-check gate when no round is left or the ledger reads NEEDS_REPLAN,
+%% drawn as the new im5 -> replan edge (review_run.py:418-428); crew_standards.py changed in _scope,
+%% proposals and the metric, which no node names. implement.md:105-109 and :110-113 hold. The
+%% "Status edits after approval" note's plan.md:59 / implement.md:108 were main's lines; on the merged
+%% tree they read plan.md:60 / implement.md:110 (T-0085's plan.md Standards: line and implement.md
+%% self-check moved them), corrected in place. Main's side changed none of the Anchors paths since
+%% bbd9a66d.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
@@ -202,11 +238,11 @@ flowchart TB
     end
 
     subgraph plan["/crew:plan"]
-        sp3 --> pl1["write plan.md: steps with Files / Test / Risk<br/>plan.md:27; optional second opinion :22"]
-        pl1 --> pl2{"every Files: entry<br/>inside Touch?<br/>:43"}
+        sp3 --> pl1["write plan.md: steps with Files / Test / Risk / Standards<br/>plan.md:27, :36; optional second opinion :22"]
+        pl1 --> pl2{"every Files: entry<br/>inside Touch?<br/>:44"}
         pl2 -- no --> amend["amend spec Touch first<br/>spec.md:57"]
         amend --> pl1
-        pl2 -- yes --> pl3["show the plan, STOP<br/>:48"]
+        pl2 -- yes --> pl3["show the plan, STOP<br/>:49"]
     end
 
     subgraph approve["/crew:approve - typed by the user only"]
@@ -218,26 +254,30 @@ flowchart TB
         apg -- "confirmed, every hash unchanged" --> ap2
     end
 
-    ap2 --> planned["spec.md header 'status: planned'<br/>keeps the approval,<br/>crew_tracker.py move --to planned<br/>plan.md:59-62"]
+    ap2 --> planned["spec.md header 'status: planned'<br/>keeps the approval,<br/>crew_tracker.py move --to planned<br/>plan.md:60-63"]
 
     subgraph implement["/crew:implement"]
-        planned --> im0{"crew_ticket.py validate:<br/>plan approved?<br/>implement.md:15-18"}
+        planned --> im0{"crew_ticket.py validate:<br/>plan approved?<br/>implement.md:18-24"}
         im0 -- "no / stale" --> imx([refuse: /crew:plan id --approve])
-        im0 -- yes --> im1["scope_base --record, then<br/>crew_tracker.py move --to in-progress<br/>:31, :36"]
-        im1 --> im2["steps in order, test first<br/>:41; scope-guard on every write<br/>hooks.json:31 (PreToolUse, Touch)"]
-        im2 --> im3a["changed-file list, verify<br/>:59, :69"]
-        im3a --> im3["step 6: tests, then /crew:docs<br/>:89-94"]
-        im3 --> rf1{"crew_refresh_check.py<br/>:96"}
+        im0 -- yes --> im1["scope_base --record, then<br/>crew_tracker.py move --to in-progress<br/>:29, :34"]
+        im1 --> im2["steps in order, test first<br/>:39; scope-guard on every write<br/>hooks.json:31 (PreToolUse, Touch)"]
+        im2 --> im3a["changed-file list, verify<br/>:57, :67"]
+        im3a --> im3["step 6: tests, then /crew:docs<br/>:86-91"]
+        im3 --> rf1{"crew_refresh_check.py<br/>:93"}
         rf1 -- "refresh with ..." --> rf2["run the named refresh,<br/>commit, re-run"]
         rf2 --> rf1
         rf1 -- "stop" --> rfx([report the reason, stop])
-        rf1 -- fresh --> im4["spec.md header 'status: review'<br/>(keeps the approval),<br/>crew_tracker.py move --to review<br/>(Review lane: review outstanding)<br/>:107-111"]
-        im4 --> im5["then /crew:review last<br/>:112"]
+        rf1 -- fresh --> sc1["required standards self-check:<br/>crew_standards.py init, answer every row,<br/>crew_standards.py stamp until exit 0<br/>:105-109"]
+        sc1 --> im4["spec.md header 'status: review'<br/>(keeps the approval),<br/>crew_tracker.py move --to review<br/>(Review lane: review outstanding)<br/>:110-113"]
+        im4 --> im5["then /crew:review last<br/>:114"]
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
-        im5 --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle<br/>review.md:25-29, :449"]
-        rv1 --> rv2{"verdict (the script's)<br/>:440, :481"}
+        im5 --> rv0{"self-check stamped for<br/>this bundle and standards set?<br/>review_run.py standards_gate"}
+        im5 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no self-check asked<br/>review_run.py:418-428" --> replan
+        rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:446-450" --> sc1
+        rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle;<br/>prompt ends with the standards checklist<br/>review.md:25-29, :452"]
+        rv1 --> rv2{"verdict (the script's)<br/>:441, :484"}
         rv2 -- CLEAN --> rcpt["receipt written<br/>:511"]
         rv2 -- FINDINGS --> rv3{"fix, or<br/>user accepts?<br/>:504, :508"}
         rv3 -- accept --> rcpt
