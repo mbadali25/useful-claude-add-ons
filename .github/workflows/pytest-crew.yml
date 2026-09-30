@@ -23,7 +23,11 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Opt-in self-hosted pool. The owner's runner playbook
+    # (mbadali25/github-runner-infra) sets repo variable CREW_RUNNER=self-hosted
+    # on `make up` and unsets it on `make down`, so required checks never wait on
+    # a torn-down runner pool. Unset, this is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CREW_RUNNER == 'self-hosted' && fromJSON('["self-hosted","linux","x64","crew"]') || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -171,7 +175,13 @@ jobs:
     #
     # pytest-xdist is installed HERE only, as a speed-up: the suite does not
     # depend on it and runs the same without `-n`.
-    runs-on: ${{ matrix.os }}
+    #
+    # Opt-in self-hosted pool, ubuntu leg ONLY: a windows-latest leg always
+    # stays on matrix.os. The owner's runner playbook
+    # (mbadali25/github-runner-infra) sets repo variable CREW_RUNNER=self-hosted
+    # on `make up` and unsets it on `make down`, so required checks never wait on
+    # a torn-down runner pool. Unset, every leg runs on matrix.os as before.
+    runs-on: ${{ (matrix.os == 'ubuntu-latest' && vars.CREW_RUNNER == 'self-hosted') && fromJSON('["self-hosted","linux","x64","crew"]') || matrix.os }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
