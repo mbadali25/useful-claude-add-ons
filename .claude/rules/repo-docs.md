@@ -2,7 +2,7 @@
 paths:
   - "plugin/crew/**"
 ---
-<!-- crew:generated source=.crew/codemap/repo-docs.md sha256=a330d197532baad9 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/repo-docs.md sha256=bbded8f60fd37317 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # repo-docs
 Code map anchor `a0c171c7`; if it is behind HEAD, re-check with `git diff --name-only a0c171c7..HEAD -- <cited paths>`.
 Covers: docs/ and CHANGELOG.md. Records that docs/adr/ holds four ADRs while accepted decisions under docs/review/ were never promoted to it, and that TODO.md's render.sh entry is still open though the cygpath -w fix is in source.

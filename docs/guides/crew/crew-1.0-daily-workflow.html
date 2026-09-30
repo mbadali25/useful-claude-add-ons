@@ -354,7 +354,8 @@ are outside it.</p>
 <p>Between steps 1 and 3 the approval is stale. The guard refuses edits outside the ticket directory
 until you approve again.</p>
 <h3 id="after-two-review-rounds-a-successor-plan">After Two Review Rounds: A Successor Plan</h3>
-<p>If a ticket uses both review rounds without an accepted receipt, it moves to <code>NEEDS_REPLAN</code>.
+<p>If a ticket uses both review rounds without an accepted receipt (refunded tool-failure rounds do
+not count), it moves to <code>NEEDS_REPLAN</code>.
 Write a different plan and approve it. <code>approve</code> reports <code>review may continue</code>, and the ledger
 gives the new plan two fresh rounds. Approving the same plan again is refused and exits with
 status 3.</p>
