@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.82: promote-gate judges the tree the deploy runs from (T-0505)
+### Fixed — `crew` 1.0.83: promote-gate judges the tree the deploy runs from (T-0505)
 
 - **`promote-gate.sh` / `.ps1` read the deployed sha and the clean-tree check
   from the tree the deploy runs from**, not from `CLAUDE_PROJECT_DIR`: the
@@ -37,6 +37,20 @@ All notable changes to this repository are documented here. Format follows [Keep
   `promote_tree_mutations.py`, run through sabotage.py's machinery; wiring them
   into `sabotage.py` is a separate tooling PR (`check-tooling-pr.py`).
   After updating, run `claude plugin update crew` and restart the session.
+
+### Added — `crew` 1.0.82: sabotage entries for the python-free bin fixture's dedupe (L-0531)
+
+- Two mutations of `plugin/crew/tests/crew_fixtures.py::link_path_dirs`
+  (L-0529), carried in `sabotage_qa.py`'s tuple because `sabotage.py` is at
+  max-module-lines: the realpath skip removed goes RED on
+  `test_a_dir_already_linked_through_an_alias_is_not_listed_again`, and
+  `lexists` turned back into `exists` goes RED on
+  `test_a_dangling_entry_in_the_first_dir_still_shadows_the_same_name_later`.
+  Split from L-0529 because `sabotage*.py` is review/gate harness and lands
+  in a tooling-only PR (`scripts/check-tooling-pr.py`).
+- Verify rule 34 (`sabotage_qa.py`) now also runs `test_path_link_farm.py` and
+  the shipped-anchor check, so a lost anchor cannot pass the gate.
+- Bumped `crew` `1.0.81 -> 1.0.82` (1.0.81 is T-0094's).
 
 ### Fixed — `crew` 1.0.80 and `obsidian-vault` 0.4.15: the python-free bin fixtures tolerate a name two PATH dirs share (L-0529)
 
