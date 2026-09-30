@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@2eb3599d on 2026-09-29. Verify before trusting.
+%% Generated from useful-claude-add-ons@9c29172b on 2026-09-30. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -285,3 +285,6 @@ flowchart TB
 %% audit's broken-pointer text changed in place (the owner's /crew:autopilot <id>, no CLI). New
 %% edge ap1 -> aprp: the owner's own /crew:autopilot id re-points the worktree; the session's move
 %% off an in-flight ticket is refused by the scope guard. No other node or edge changed.
+%% Re-anchored 2eb3599d -> 9c29172b (T-0504 merges main a61a6f38, crew 1.0.70): of the Anchors paths
+%% review.md (in place, :449 holds), crew_refresh_check.py, crew_ticket.py (after :640, below approve :731) and
+%% crew_tracker.py changed; no line cited here moved. No node or edge changed.

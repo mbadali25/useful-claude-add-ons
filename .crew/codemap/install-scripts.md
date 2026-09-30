@@ -1,6 +1,6 @@
 # install-scripts
-anchor: useful-claude-add-ons@2eb3599d
-verified: 2026-09-29
+anchor: useful-claude-add-ons@9c29172b
+verified: 2026-09-30
 
 ## Re-derive provenance
 
@@ -224,7 +224,7 @@ through their own package managers.
   merely re-synced.** All of the following read **4 agents, 36 commands** (34
   until `ecf69e43` added `/crew:autopilot`, 35 until T-0075 added
   `/crew:config-setup`; re-read at `e95e5964`) (or
-  the plugin-level 29 skills / 34 hook entries across 8 events figures that go
+  the plugin-level 30 skills (29 until main's 1.0.67 added `crew-qa-standards`) / 34 hook entries across 8 events figures that go
   with them), checked directly rather than cross-quoted from one another:
   `.claude-plugin/marketplace.json`'s `crew` description (parsed with
   `json.load`); `plugin/PLUGINS.md:17`; `plugin/README.md:414`'s crew row;
@@ -1210,3 +1210,7 @@ texts; `ce4838ea` sets crew 1.0.62. Every body `path:N` citation was mapped from
 a `difflib` line diff (`/root/crew-tmp/t-0504/citemap2.py`, machine-local); a bare `:N` was rewritten only
 when a backticked identifier beside it was found at that line, and every other moved one was read with `grep
 -n` and set by hand. No citation in this note moved. Re-anchor only; nothing was executed for this note.
+
+## Re-anchor provenance - `2eb3599d` -> `9c29172b`, 2026-09-30 (T-0504 merges main `a61a6f38`, crew 1.0.70)
+
+T-0504 merged origin/main `a61a6f38` (crew 1.0.69: #263-#267 and T-0088) as `b62d2eea` and set crew 1.0.70 in `9c29172b`. The map was re-anchored, not re-derived: every body `path:N` citation into a file changed since `2eb3599d` was mapped through a `difflib` line diff (`citemap3.py`, machine-local in the session scratchpad); a bare `:N` was rewritten only when an identifier or a word from the backticked text beside it is on that line, and every other moved one was read with `grep -n` or `sed -n` and set by hand. No body citation moved (`scripts/` is unchanged since `2eb3599d`); the crew skill figure now reads 30 (main's `crew-qa-standards`). `plugin/PLUGINS.md:17` and `plugin/README.md:414` changed in place only (29 -> 30 skills) and were re-read. Not re-derived here, and so not described by this map: main's own content from that merge - T-0088's linked-worktree config reads through `crew_common.repo_config_file`, `review_limit.py` and the Claude fallback on a Codex limit, the `crew-qa-standards` skill and its `qa_audit.py`, and the CLAUDE.md rewrite that moved its history to `docs/claude-md-evidence.md`. Main's copies of these maps were still anchored at `bbd9a66d` (or older), so this is the first map pass over that merge. Nothing was executed for this note beyond `grep`, `sed`, `find` and the gate named above.

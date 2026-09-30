@@ -1,6 +1,6 @@
 # mcp-servers
-anchor: useful-claude-add-ons@3648f59a
-verified: 2026-09-28
+anchor: useful-claude-add-ons@9c29172b
+verified: 2026-09-30
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
 ## Does
@@ -60,7 +60,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
   move an insertion earlier in the file - re-read at `f2bb919b` on 2026-09-25, same heading and body).
 - **`scopesOverride` silently broadens a narrow scope request.**
   `mcp-servers/packages/core/src/adminAuth.ts:29-36` (the field and its doc comment), `:127`
-  (`secret`) and `:144` (`cli`) force `.default` regardless of what the caller asked for. Only
+  (`secret`) and `:146` (`cli`) force `.default` regardless of what the caller asked for. Only
   `device` (`mcp-servers/packages/core/src/adminAuth.ts:149-158` - no `scopesOverride` key, and the
   comment at `:155-158` says why) honours caller-supplied delegated scopes. Code that requests a
   narrow scope and receives `.default` did not fail - it was never asked. Re-verified unchanged
@@ -366,3 +366,7 @@ returns `.claude-plugin/marketplace.json` (crew's version line only) and `TODO.m
 No citation moved.
 
 **Re-anchored `b2553d26` -> `3648f59a` on 2026-09-28 (T-0075 review round 5, merge of `6387ab49`).** `git diff --name-only b2553d26 3648f59a -- mcp-servers/ README.md TODO.md .claude-plugin/marketplace.json` returns `README.md` (T-0075: crew's slash-command count 35 -> 36 at `:168` and `:874`, in place), `TODO.md` (T-0092's entry at `:5051`, below every citation here) and `.claude-plugin/marketplace.json` (crew's lines only); nothing under `mcp-servers/`. `TODO.md:189`, `:200` and `:281` re-read, unchanged; `grep -c mcp-servers .claude-plugin/marketplace.json` is still **0**. No citation moved.
+
+## Re-anchor provenance - `3648f59a` -> `9c29172b`, 2026-09-30 (T-0504 merges main `a61a6f38`, crew 1.0.70)
+
+T-0504 merged origin/main `a61a6f38` (crew 1.0.69: #263-#267 and T-0088) as `b62d2eea` and set crew 1.0.70 in `9c29172b`. The map was re-anchored, not re-derived: every body `path:N` citation into a file changed since `3648f59a` was mapped through a `difflib` line diff (`citemap3.py`, machine-local in the session scratchpad); a bare `:N` was rewritten only when an identifier or a word from the backticked text beside it is on that line, and every other moved one was read with `grep -n` or `sed -n` and set by hand. One citation moved by the line diff (`plugin/crew/tests/test_scope_guard.py:146`); `README.md` changed only in the crew counts row. Nothing under `mcp-servers/` changed; `grep -c mcp-servers .claude-plugin/marketplace.json` is still 0. Not re-derived here, and so not described by this map: main's own content from that merge - T-0088's linked-worktree config reads through `crew_common.repo_config_file`, `review_limit.py` and the Claude fallback on a Codex limit, the `crew-qa-standards` skill and its `qa_audit.py`, and the CLAUDE.md rewrite that moved its history to `docs/claude-md-evidence.md`. Main's copies of these maps were still anchored at `bbd9a66d` (or older), so this is the first map pass over that merge. Nothing was executed for this note beyond `grep`, `sed`, `find` and the gate named above.
