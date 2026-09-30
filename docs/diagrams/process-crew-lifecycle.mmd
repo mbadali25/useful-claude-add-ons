@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@69c7edbd on 2026-09-30. Verify before trusting.
+%% Generated from useful-claude-add-ons@c04dd2ef on 2026-09-30. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -223,6 +223,9 @@
 %% exit 5 back to the verify gate (review.md:450), and the budget edge to replan now leaves pf0
 %% (owner decision 2026-09-30, "Preflight first"; review_run.py preflight :454 called at :521,
 %% standards_gate :481 at :532). review.md's exit-2 text is :447-450. No other node or edge changed.
+%% Re-anchored 69c7edbd -> c04dd2ef (T-0085 landing, crew 1.0.72): review.md was rewrapped from 557 to 551
+%% lines at and below :511 (:511 gains its continuation line; items 4, 8 and 9 rewrapped). :25-29, :441,
+%% :447-450, :452, :484, :504, :508 and :511 hold. No node or edge changed.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
