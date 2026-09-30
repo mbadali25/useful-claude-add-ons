@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@680e6783
+anchor: useful-claude-add-ons@401f6e0f
 verified: 2026-09-30
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -1198,3 +1198,7 @@ In this note: the version sentence (1.0.62 at `.claude-plugin/marketplace.json:2
 ## Re-anchor provenance - `7c88bf3d` -> `680e6783`, 2026-09-30 (T-0087 merges main `b601d450`, L-0521)
 
 `680e6783` merges origin/main `b601d450` (L-0521: opt-in self-hosted runners for the crew pytest `test` job and the `crew-shell-matrix` ubuntu leg, #280) into `T-0087-build`. Of the paths this note cites, only `AGENTS.md` changed (L-0521's runner paragraph); a difflib re-map of every `path:line` citation from `7c88bf3d` to `680e6783` moved none. The `verification-harness` note's own L-0521 paragraph came from main's side cleanly. Re-anchor only: nothing was executed for this note.
+
+## Re-anchor provenance - `680e6783` -> `401f6e0f`, 2026-09-30 (T-0505 promote-gate effective tree, after merging main `a7524aac`)
+
+This branch carries T-0505 (`0a24dca4`..`2fd449a3`, `d1055b07`, `401f6e0f`) and `b5e5f73a`, its merge of origin/main `a7524aac` (T-0087 landed). T-0505 makes promote-gate (`.sh` and `.ps1`) judge the tree the deploy runs from - the payload `cwd`, a leading `cd` chain, git's global `-C` inside `$(...)`, parsed by a new `_promote_tree.py` - while the deployment map, the promotion log and the approval markers stay in the project dir; it adds two test files and a sabotage module (one import line in `sabotage.py`), rule 4's new path and test in `.crew/verify.json`, and promote docs (CHANGELOG +32 lines at the top, one CONFIG.md sentence +2, crew README, `promote.md`, INSTALLATION, PLUGINS, the troubleshooting guide, BUDGETS' count in place). crew stays 1.0.76 on this branch. A difflib re-map of every explicit `path:line` citation from `680e6783` to `401f6e0f` moved none; BUDGETS' `:11` changed in place. No claim here describes promote-gate's tree resolution. Re-anchor only: nothing was executed for this note.

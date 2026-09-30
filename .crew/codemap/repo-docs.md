@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@7c88bf3d
+anchor: useful-claude-add-ons@401f6e0f
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -764,7 +764,7 @@ c2ae46ab` returns only T-0021's files (its code, commands, tests, fixtures, rele
 was re-mapped from the side of the merge its line came from (`git blame`: main's lines against
 `2b18f7ab`, T-0021's against `bcb77ce2`) with a line diff, and each one whose line moved or changed
 was re-read at `c2ae46ab`. Corrected here: the `docs/runbooks/INDEX.md` sentence in
-`plugin/crew/README.md` is `:2006`; the tracker rule is recorded at `.crew/verify.json:301-308`. No
+`plugin/crew/README.md` is `:2006`; the tracker rule is recorded at `.crew/verify.json:302-309`. No
 command or suite was executed for this note.
 
 ## Re-anchor provenance - `c2ae46ab` -> `d276b268`, 2026-09-27 (T-0021 review round 4)
@@ -1015,7 +1015,7 @@ the version files, `BUDGETS.md`, README, CONFIG.md, the tests and sabotage modul
 `.crew/verify.json` (rule 28 inserted at `:302-308`, so rules 29 and 30 moved down by 7).
 
 The verify rules this note lists were renumbered by hand (T-0010's rule 28 at
-`.crew/verify.json:302-308`, tracker `:309-316`, routing `:317-325`); `plugin/crew/README.md:2090`
+`.crew/verify.json:303-309`, tracker `:309-316`, routing `:317-325`); `plugin/crew/README.md:2090`
 is unmoved. The two rebuilt guides (daily-workflow, troubleshooting) are T-0010's approve-exception
 sentences, rebuilt with `docs/guides/crew/src/build.py`.
 
@@ -1383,3 +1383,7 @@ In this note: the runbook-index README citation is `plugin/crew/README.md:2227` 
 ## Re-anchor provenance - `45f32c3c` -> `7c88bf3d`, 2026-09-30 (T-0087 review round 6 fix)
 
 `cff30f72` makes the committed-corpus test in `plugin/crew/tests/test_review_golden.py` run `golden_build.leak` on every fixture (host name included), adds `test_corpus_leak_check_refuses_a_planted_host_name`, and adds sabotage entries (ah)-(ai) to `plugin/crew/tests/sabotage_tooling.py`; its CHANGELOG bullet moved later CHANGELOG lines by 4, and the CHANGELOG citations above were re-mapped by script (difflib `45f32c3c` -> `7c88bf3d`). `49ed9a29` / `7c88bf3d` step crew back and re-set 1.0.76. No other cited line moved. Re-anchor only: nothing was executed for this note.
+
+## Re-anchor provenance - `7c88bf3d` -> `401f6e0f`, 2026-09-30 (T-0505 promote-gate effective tree, after merging main `a7524aac`)
+
+`680e6783` merged origin/main `b601d450` (L-0521) on T-0087's side; this branch then carries T-0505 (`0a24dca4`..`2fd449a3`, `d1055b07`, `401f6e0f`) and `b5e5f73a`, its merge of origin/main `a7524aac` (T-0087 landed). T-0505 makes promote-gate (`.sh` and `.ps1`) judge the tree the deploy runs from - the payload `cwd`, a leading `cd` chain, git's global `-C` inside `$(...)`, parsed by a new `_promote_tree.py` - while the deployment map, the promotion log and the approval markers stay in the project dir; it adds two test files and a sabotage module (one import line in `sabotage.py`), rule 4's new path and test in `.crew/verify.json`, and promote docs (CHANGELOG +32 lines at the top, one CONFIG.md sentence +2, crew README, `promote.md`, INSTALLATION, PLUGINS, the troubleshooting guide, BUDGETS' count in place). crew stays 1.0.76 on this branch. A difflib re-map of every explicit `path:line` citation from `7c88bf3d` to `401f6e0f` moved only `.crew/verify.json` citations, +1 (rule 4 gained a path line); BUDGETS' `:11` changed in place. No claim here describes promote-gate. Re-anchor only: nothing was executed for this note.
