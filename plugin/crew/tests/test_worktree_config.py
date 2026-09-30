@@ -217,6 +217,10 @@ ALLOWED = {
     # - the scratch repo's config.json written to preview the post-heal rows.
     "crew_config_menu.py": (4, "crew.json label and notice, own backup path, scratch heal"),
     "crew_status.py": (1, "the metrics file `.crew/<metrics name>`, not the config"),
+    # review_gate.py reads the stand-down flag exactly where verify-gate.sh does,
+    # the worktree's own file, until T-0096 routes the shell gate; pinned by
+    # test_review_gate.py's lane test.
+    "review_gate.py": (1, "mirrors verify-gate.sh's own-file stand-down read (T-0096)"),
 }
 
 
