@@ -93,15 +93,15 @@ diagrams and code graph this ticket's changed paths reach:
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_refresh_check.py --root . --ticket $1
 ```
 
-For each `refresh with` line, run the command it names, commit the result and
-re-run until it says `fresh` — an `unknown` whose anchor names no commit (a
-squash-merged branch) included: the refresh re-anchors it. These writes need no
-Touch entry; the scope guard and completion audit allow the refresh-artifact
-paths for an approved ticket. A `stop` anywhere ends the loop, on an artifact
-line (a missing tool, git unable to diff) or on the top line (a scope base that
-hides or may hide the change, an unreadable config): report it with its reason.
-Documents read `not measured` — `/crew:docs`'s judgement, never a pass. Commit
-the refresh before `/crew:review $1` builds its bundle.
+For each `refresh with` line, run the command it names, commit the result and re-run until it says
+`fresh` — an `unknown` whose anchor names no commit (a squash-merged branch) included: the refresh
+re-anchors it. These writes need no Touch entry when they are what a refresh writes: the completion
+audit admits an artifact a path you changed reaches, as a re-anchor (`anchor:` or provenance sha moved
+forward, to HEAD or behind it; INDEX rows of those maps) or a regeneration (`crew_instructions.py
+rules`, the graph after a code change); anything else there needs Touch, and the audit names the reason.
+A `stop` ends the loop, on an artifact line (a missing tool, git unable to diff) or on the top line (a
+base that hides or may hide the change, an unreadable config): report it. Documents read `not measured`,
+never a pass. Commit the refresh before `/crew:review $1` builds its bundle.
 Then the **required self-check** (`crew-standards` skill): run
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py init --root . --ticket $1`, answer
 every row of `.work/tickets/$1/selfcheck.md` (addressed with evidence, or n/a with a reason), then run

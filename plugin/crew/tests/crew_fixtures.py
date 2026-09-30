@@ -1013,6 +1013,34 @@ def _is_git_launcher(bash):
     return parts[-2:] == ["bin", "bash.exe"] and "usr" not in parts
 
 
+def link_path_dirs(dest, sources=("/usr/bin", "/bin"), skip=lambda name: False):
+    """Symlink every entry of each `sources` dir into `dest`, skipping names
+    for which `skip(name)` is true. The first dir holding a name wins, as in
+    PATH lookup (L-0529).
+
+    Two dedupes, both needed. A source dir whose realpath was already linked
+    is skipped: with `/bin -> usr/bin` the second pass is the first again. A
+    name already in `dest` is skipped by `lexists`, not `exists`: `exists`
+    follows the link, so an entry whose own target is missing (Ubuntu
+    26.04's `/usr/bin/grub-ntldr-img -> ../lib/grub/...`, dangling when only
+    `grub-pc` is installed) read as absent and was linked a second time,
+    raising FileExistsError on the self-hosted runners."""
+    seen = set()
+    for source in sources:
+        if not os.path.isdir(source):
+            continue
+        real = os.path.realpath(source)
+        if real in seen:
+            continue
+        seen.add(real)
+        for name in os.listdir(source):
+            target = os.path.join(dest, name)
+            if skip(name) or os.path.lexists(target):
+                continue
+            os.symlink(os.path.join(source, name), target)
+    return dest
+
+
 def shell_path(flavor, dirs, base=None, windows=None, cygpath=None):
     """The PATH value `flavor` ("sh" or "ps1") should be handed, with `dirs`
     first and `base` (default: this process's PATH) behind them.
