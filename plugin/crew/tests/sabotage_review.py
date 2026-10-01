@@ -294,10 +294,10 @@ REVIEW_FIX_MUTATIONS = (
          "test_check_receipt_fails_once_needs_replan_even_on_the_latest_clean_round"),
     ),
     (
-        # The latest round's verdict is not read.
+        # The latest round's verdict is not read (L-0510: through receipt_stands).
         "--check-receipt does not read the latest round's verdict",
         REVIEW_LEDGER,
-        "    if latest.get(\"status\") != \"completed\" or not accepted:\n",
+        "    if not receipt_stands(receipt, latest):\n",
         "    if False:\n",
         ("tests/test_review_receipt.py::"
          "test_check_receipt_fails_when_the_latest_round_is_not_clean_or_accepted"),
