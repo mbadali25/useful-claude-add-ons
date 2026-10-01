@@ -4,6 +4,28 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.0.96: crew-shell-matrix (windows-latest) re-enabled, and the bogus-TMP test no longer poisons `/tmp` for the host (T-0110)
+
+- **`crew-shell-matrix (windows-latest)` runs again** (#277 had disabled it). On a pull request
+  it does work only when the PR changes `plugin/crew/**` or `pytest-crew.yml`; if the diff
+  cannot be taken, the leg runs, with a `::warning::`, rather than reading "nothing changed".
+- **The intermittent Windows failure was a test poisoning its neighbours.** Git for Windows
+  mounts `/tmp` from the TMP/TEMP of whichever process creates the MSYS runtime's shared mount
+  table, so `test_34d_ps1` (TMP pointing at a file), when it was the first MSYS process on an
+  idle runner, broke every bash other xdist workers started meanwhile (`/tmp must be a valid
+  directory name`, then `VERIFY GATE: cannot create temp file`). New test fixture
+  `crew_fixtures.msys_tmp_pinned` holds a sane MSYS process open for the block and proves the
+  pin took before yielding. It pins the bash the gate itself resolves (`gate_bash`, via
+  `verify-gate.ps1 -PrintBash`), and its startup read is bounded: a holder that never
+  announces is killed, and the fixture raises instead of hanging or running unpinned.
+- **`test_msys_tmp_pin.py`** shows the hazard on a private copy of the MSYS runtime (live
+  without the pin, gone with it) and checks the whole crew test tree. A TMP/TEMP override
+  counts as pinned only when its launch runs while the pin is held: in the block, or in a
+  `with` item after the pin. Arguments to the pin and items before it do not count.
+- **Test-only; no hook or product code changed.** Linux and macOS behaviour is unchanged.
+- **Known gap, tracked as W-0119:** `test_kimi_probe.py` is skipped on Windows, because its
+  `fake_kimi_bin` writes an extensionless shebang script Windows cannot exec.
+
 ### Fixed — `crew` 1.0.89: refresh admission refuses a dir swapped to a link on Windows (W-0116)
 
 - **`_read_regular`'s no-dir_fd branch (Windows has no `O_NOFOLLOW` and `os.open` takes no
