@@ -16,8 +16,17 @@ All notable changes to this repository are documented here. Format follows [Keep
   a missing tool is `SKIP` (NOT VERIFIED). Exit 0 only when every non-skipped step passed.
   Works without heavy-run and says so (`heavy_run: absent (uncapped)`).
 - **One status file** (`status.json`: head, heavy-run mode and slot wait, rc/state/seconds/log per
-  step), rewritten atomically after every step. `--check-ci` and `scripts/_test/gate-runner.py`
-  fail when a workflow `run:` command is in neither the table nor its named exclusion list.
+  step), rewritten atomically after every step, heavy steps included as each finishes (not only
+  when the heavy-run call ends). The default output directory is claimed with `mkdir`, so two runs
+  in one second never share it. `--check-ci` and `scripts/_test/gate-runner.py` fail when a
+  workflow `run:` command is in neither the table nor its named exclusion list; each `run:` line is
+  split into simple commands, so a check chained onto an install or inside a one-line `if` still
+  counts, and no job is excluded whole (only a step whose `if:` confines it to Windows).
+- **The table includes `crew-shell-matrix`'s ubuntu leg**: `pytest plugin/crew/tests -m slow -n 4`
+  (the full bash/pwsh hook matrix, heavy group A).
+- **A `--table` step is refused, not crashed**: a name that is not a plain log-file name (path
+  separators, a leading dot, `heavy-run`), an unknown key or a field of the wrong type is exit 2.
+  `--skip` records SKIP before the step's command is built.
 
 ### Added — `crew` 1.0.86: the merge train - gate+land serialised per overlapping Touch set (L-0520)
 

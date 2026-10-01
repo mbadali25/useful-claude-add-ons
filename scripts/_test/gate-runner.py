@@ -694,6 +694,8 @@ def case_heavy_results_reach_status_json(tmp: str) -> None:
     table = write(os.path.join(tmp, "table.json"), json.dumps({"steps": steps}))
     env = {k: v for k, v in os.environ.items() if not k.startswith("HEAVY_RUN")}
     env["HEAVY_RUN"] = "none"
+    # not `with`: the case SIGKILLs it mid-run and reaps it in `finally`
+    # pylint: disable-next=consider-using-with
     proc = subprocess.Popen([sys.executable, TARGET, "--root", root, "--out", out, "--grace", "1",
                              "--table", table], stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, env=env)

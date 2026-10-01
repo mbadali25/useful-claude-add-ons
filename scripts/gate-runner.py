@@ -39,14 +39,25 @@ refusal = exit 2. The last stdout line counts every SKIP and says when the
 table or the step set is not the repo gate (--table, --only).
 
 Status: one JSON file, <out>/status.json, default out
-$TMPDIR/gate-runner/<shortsha>-<utc>/, rewritten (temp file + os.replace)
-after every step; per-step logs under <out>/logs/.
+$TMPDIR/gate-runner/<shortsha>-<utc>/ (claimed with mkdir, so two runs in one
+second get two directories), rewritten (temp file + os.replace) after every
+step -- a heavy step's result is copied in from heavy-part.json as soon as the
+inner runner records it, not when the heavy-run call ends; per-step logs
+under <out>/logs/. --skip records SKIP before anything about the step is built
+or probed.
+
+A --table step is refused (exit 2) unless its name matches _NAME and is not
+reserved (it becomes a log path), its keys are known, and every field has its
+type.
 
 The table is derived from .github/workflows/; `--check-ci` (and
 scripts/_test/gate-runner.py) fails when a workflow `run:` command is in
-neither the table nor EXCLUDED_CI, or a workflow file is unclassified. The
-check is one-way: table steps CI does not run (sabotage.py, ruff-no-new,
-check-tooling-pr) are allowed.
+neither the table nor EXCLUDED_CI, or a workflow file is unclassified. Each
+`run:` line is split into simple commands (on ; && || |, quote-aware), so a
+check chained onto an install or inside a one-line if/while/for still counts.
+No job is excluded whole; a step is excluded only by a WINDOWS_ONLY_IFS
+condition. The check is one-way: table steps CI does not run (sabotage.py,
+ruff-no-new, check-tooling-pr) are allowed.
 
 Windows: the kill path uses CREATE_NEW_PROCESS_GROUP and `taskkill /T`. Not
 verified on a Windows host.
@@ -156,6 +167,13 @@ TABLE = (
          group="A", timeout=1800, pytest=True,
          ci=(("pytest-crew.yml", "pytest " + " ".join(COMBINED_DIRS)
               + ' -n auto -m "not wallclock" -v'),)),
+    # crew-shell-matrix's ubuntu leg: the full bash/pwsh hook matrix, which
+    # plugin/crew/tests/conftest.py deselects from every run not naming `slow`.
+    # 201.8s under heavy-run, 1690 passed / 22 skipped (2026-10-01).
+    Step("pytest-crew-slow", "heavy",
+         (PY, "-m", "pytest", "plugin/crew/tests/", "-m", "slow", "-n", "4", *NO_CACHE),
+         group="A", timeout=900, pytest=True,
+         ci=(("pytest-crew.yml", "python -m pytest plugin/crew/tests -m slow -n auto -v"),)),
 
     _bash_suite("crew-run-tests", "plugin/crew/hooks/scripts/_test/run-tests.sh", "marketplace.yml",
                 phase="heavy", group="B", timeout=900),
@@ -188,8 +206,11 @@ EXCLUDED_WORKFLOWS = (
     ("plugin-evals.yml", "real, billed model calls behind a repository secret"),
     ("publish-mcp-servers.yml", "tag-only npm publish; its npm test is mcp-servers.yml's"),
 )
-EXCLUDED_JOBS = (
-    ("pytest-crew.yml", "crew-shell-matrix", "windows-latest only; this runner has no Windows leg"),
+# A step is excluded by its `if:` only when that condition confines it to a
+# leg this runner does not have. Whole jobs are never excluded: a job's legs
+# change (crew-shell-matrix is ubuntu-only today) and its other steps still run.
+WINDOWS_ONLY_IFS = (
+    ("matrix.os == 'windows-latest'", "runs only on the Windows leg; this runner has none"),
 )
 INSTALL = "an install step, not a check"
 EXCLUDED_CI = (
@@ -379,6 +400,13 @@ def read_json(path: str):
 
 # ---- table ----------------------------------------------------------------
 
+# A step name becomes <out>/logs/<name>.log, so it may not carry a path
+# separator, start with a dot, or be the outer heavy-run call's own log name.
+_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+RESERVED_NAMES = ("heavy-run",)
+TABLE_KEYS = frozenset(("name", "phase", "group", "argv", "cwd", "timeout", "needs", "pytest"))
+
+
 def load_table(path: str | None):
     if path is None:
         return list(TABLE), "builtin"
@@ -397,6 +425,12 @@ def load_table(path: str | None):
         argv = item.get("argv")
         if not isinstance(name, str) or not name or name in seen:
             raise Refusal(f"--table step {i}: missing or duplicate name")
+        if not _NAME.match(name) or name in RESERVED_NAMES:
+            raise Refusal(f"--table step {i}: name {name!r} must match {_NAME.pattern} and not be "
+                          f"one of {RESERVED_NAMES} (it becomes <out>/logs/<name>.log)")
+        unknown = sorted(set(item) - TABLE_KEYS)
+        if unknown:
+            raise Refusal(f"--table step {name}: unknown key(s) {', '.join(unknown)}")
         if phase not in PHASES:
             raise Refusal(f"--table step {name}: phase must be one of {PHASES}")
         if (phase == "heavy") != (group in ("A", "B")):
@@ -404,12 +438,18 @@ def load_table(path: str | None):
         if not isinstance(argv, list) or not argv or not all(isinstance(a, str) for a in argv):
             raise Refusal(f"--table step {name}: argv must be a non-empty list of strings")
         timeout = item.get("timeout", 300)
-        if not isinstance(timeout, (int, float)) or timeout <= 0:
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
             raise Refusal(f"--table step {name}: timeout must be a positive number")
+        cwd, needs, pytest = item.get("cwd", "."), item.get("needs", []), item.get("pytest", False)
+        if not isinstance(cwd, str) or not cwd:
+            raise Refusal(f"--table step {name}: cwd must be a non-empty string")
+        if not isinstance(needs, list) or not all(isinstance(n, str) and n for n in needs):
+            raise Refusal(f"--table step {name}: needs must be a list of non-empty strings")
+        if not isinstance(pytest, bool):
+            raise Refusal(f"--table step {name}: pytest must be true or false")
         seen.add(name)
-        steps.append(Step(name, phase, tuple(argv), group=group, cwd=item.get("cwd", "."),
-                          timeout=timeout, needs=tuple(item.get("needs", ())),
-                          pytest=bool(item.get("pytest", False))))
+        steps.append(Step(name, phase, tuple(argv), group=group, cwd=cwd, timeout=timeout,
+                          needs=tuple(needs), pytest=pytest))
     return steps, src
 
 
@@ -482,8 +522,6 @@ def build_argv(step: Step, ctx: Context) -> list:
 def preflight(step: Step, ctx: Context, argv: list):
     """(state, reason) when the step must not run, else None. Mutates argv[0]
     to the resolved tool path."""
-    if step.name in ctx.skip:
-        return SKIP, "skipped by --skip"
     for need in step.needs:
         if need.startswith("path:"):
             path = ctx.subst(need[len("path:"):])
@@ -512,6 +550,9 @@ def new_result(step: Step, ctx: Context) -> dict:
 
 def run_step(step: Step, ctx: Context) -> dict:
     res = new_result(step, ctx)
+    if step.name in ctx.skip:  # before argv is built: a skipped step probes nothing
+        res["state"], res["reason"] = SKIP, "skipped by --skip"
+        return res
     if STOP.is_set():
         res["state"], res["reason"] = CNT, "runner stopped by a signal before this step started"
         return res
@@ -656,13 +697,27 @@ def run_outer(args, steps: list, source: str, ctx: Context, hr: dict) -> int:
         if hr["mode"] == "present":
             cmd = [hr["path"], *cmd]
         printed: set = set()
+        slot: dict = {}  # step name -> its index in results, once recorded
+
+        def take(name: str, res: dict) -> None:
+            if name in slot:
+                results[slot[name]] = res
+            else:
+                slot[name] = len(results)
+                results.append(res)
 
         def tick() -> None:
+            # Copy each heavy result into status.json as soon as heavy-part.json
+            # has it, so an outer runner killed mid-call loses none of them.
             got = read_json(part)
-            for name, res in ((got or {}).get("steps") or {}).items():
-                if name not in printed:
-                    printed.add(name)
-                    print(summary_line(res), flush=True)
+            fresh = [(n, r) for n, r in ((got or {}).get("steps") or {}).items()
+                     if n not in printed and isinstance(r, dict)]
+            for name, res in fresh:
+                printed.add(name)
+                take(name, res)
+                print(summary_line(res), flush=True)
+            if fresh:
+                save()
 
         budget = args.heavy_timeout or heavy_budget(inner_steps, ctx.grace)
         launched = time.time()
@@ -687,7 +742,7 @@ def run_outer(args, steps: list, source: str, ctx: Context, hr: dict) -> int:
                 res = new_result(step, ctx)
                 res["state"] = CNT
                 res["reason"] = f"{why} before this step recorded a result"
-            results.append(res)
+            take(step.name, res)
             if step.name not in printed:
                 printed.add(step.name)
                 print(summary_line(res), flush=True)
@@ -719,47 +774,112 @@ def default_out(root: str) -> str:
     head = _git(root, "rev-parse", "--short=12", "HEAD")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     base = os.path.join(tempfile.gettempdir(), "gate-runner", f"{(head or 'nogit').strip()}-{stamp}")
+    os.makedirs(os.path.dirname(base), exist_ok=True)
     out, n = base, 1
-    while os.path.exists(out):
-        n += 1
-        out = f"{base}-{n}"
-    return out
+    while True:  # mkdir is the claim: two runs in one second never share a directory
+        try:
+            os.mkdir(out)
+            return out
+        except FileExistsError:
+            n += 1
+            out = f"{base}-{n}"
 
 
 # ---- CI drift ---------------------------------------------------------------
 
 _ASSIGN = re.compile(r"""^[A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'[^']*'|\S*)$""")
-_SHELL_KEYWORD = re.compile(r"^(if|elif|for|while|until)\s")
+_LEAD_KEYWORDS = ("if", "elif", "then", "else", "while", "until", "do", "!")
+_END_KEYWORDS = ("fi", "done")
+_NO_OPS = (":", "true", "false")
 
 
 def normalise(cmd: str) -> str:
     return " ".join(cmd.split())
 
 
+def _split_simple(line: str) -> list:
+    """Split one shell line on `;`, `&&`, `||` and `|` outside quotes and
+    outside `$(...)`, keeping each part's original text."""
+    parts, buf, quote, depth, i = [], [], None, 0, 0
+    while i < len(line):
+        ch, two = line[i], line[i:i + 2]
+        if quote:
+            if ch == "\\" and quote == '"':
+                buf.append(line[i:i + 2])
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif two == "$(":
+            depth += 1
+            buf.append(two)
+            i += 2
+            continue
+        elif ch == ")" and depth:
+            depth -= 1
+        elif depth == 0 and two in ("&&", "||"):
+            parts.append("".join(buf))
+            buf = []
+            i += 2
+            continue
+        elif depth == 0 and ch in (";", "|"):
+            parts.append("".join(buf))
+            buf = []
+            i += 1
+            continue
+        buf.append(ch)
+        i += 1
+    parts.append("".join(buf))
+    return parts
+
+
+def _simple_command(part: str):
+    """The command a split part runs, or None for shell syntax that runs no
+    check: keywords alone, `[ ... ]`/`test` conditions, no-ops, `for` headers,
+    `echo`, bare assignments."""
+    words = part.split()
+    while words and words[0] in _LEAD_KEYWORDS:
+        words = words[1:]
+    if not words or words[0] in _END_KEYWORDS or words[0] in _NO_OPS or words[0] == "for":
+        return None
+    if words[0] in ("[", "[[", "test", "echo", "exit"):
+        return None
+    cmd = " ".join(words)
+    return None if _ASSIGN.match(cmd) else cmd
+
+
 def split_commands(run: str) -> list:
-    """The commands in a `run:` block. Dropped: blank and comment lines, shell
-    control keywords, `echo` lines and bare variable assignments. A check
-    hidden inside an `if` condition would be missed; none is today."""
+    """Every simple command in a `run:` block. A line is split on `;`, `&&`,
+    `||` and `|` (quote- and `$(...)`-aware), so a check chained onto an
+    install, an echo or a condition, or written as a one-line `if`/`while`/
+    `for` body, is still a command. Dropped: blank and comment lines, shell
+    keywords, `[ ]`/`test` conditions, no-ops, `echo`, `exit` and bare
+    variable assignments."""
     out = []
     for raw in run.replace("\\\n", " ").splitlines():
         line = raw.strip()
-        if not line or line.startswith("#") or line.startswith("echo "):
+        if not line or line.startswith("#"):
             continue
-        if line in ("then", "else", "fi", "do", "done") or _SHELL_KEYWORD.match(line):
-            continue
-        if _ASSIGN.match(line):
-            continue
-        out.append(normalise(line))
+        for part in _split_simple(line):
+            cmd = _simple_command(part)
+            if cmd is not None:
+                out.append(normalise(cmd))
     return out
 
 
 def _excluded(workflow: str, cmd: str) -> bool:
+    """A wildcard covers one simple command only: its tail may not run another
+    command through `$(...)` or backticks."""
     for wf, pattern, _reason in EXCLUDED_CI:
         if wf != workflow:
             continue
         pattern = normalise(pattern)
         if pattern.endswith("*") and cmd.startswith(pattern[:-1]):
-            return True
+            tail = cmd[len(pattern) - 1:]
+            if "$(" not in tail and "`" not in tail:
+                return True
         if cmd == pattern:
             return True
     return False
@@ -779,7 +899,7 @@ def ci_drift(root: str, table=TABLE) -> list:
     problems += [f"{f}: in INCLUDED_WORKFLOWS but not in .github/workflows/"
                  for f in INCLUDED_WORKFLOWS if f not in present]
     covered = {(wf, normalise(cmd)) for step in table for wf, cmd in step.ci}
-    skip_jobs = {(wf, job) for wf, job, _ in EXCLUDED_JOBS}
+    windows_only = {cond for cond, _ in WINDOWS_ONLY_IFS}
     for wf in INCLUDED_WORKFLOWS:
         if wf not in present:
             continue
@@ -791,11 +911,11 @@ def ci_drift(root: str, table=TABLE) -> list:
             continue
         jobs = (doc or {}).get("jobs") or {}
         for job_id, job in jobs.items():
-            if (wf, job_id) in skip_jobs or not isinstance(job, dict):
+            if not isinstance(job, dict):
                 continue
             for step in job.get("steps") or []:
                 run = step.get("run") if isinstance(step, dict) else None
-                if not isinstance(run, str):
+                if not isinstance(run, str) or normalise(str(step.get("if", ""))) in windows_only:
                     continue
                 for cmd in split_commands(run):
                     if (wf, cmd) not in covered and not _excluded(wf, cmd):
