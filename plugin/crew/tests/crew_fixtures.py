@@ -805,7 +805,7 @@ def msys_tmp_pinned(bash, poisoned_env):
     holder = subprocess.Popen(
         [bash, "-c", _PIN_HOLDER_SCRIPT], env=dict(os.environ),
         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL, text=True)
+        stderr=subprocess.DEVNULL, text=True, encoding="utf-8")
     try:
         # A reader thread, because select() does not work on Windows pipes;
         # the bound is read at call time so a test can shorten it.
@@ -838,7 +838,8 @@ def msys_tmp_pinned(bash, poisoned_env):
                 f"(read {ready!r}, exit {holder.poll()})")
         probe = subprocess.run(
             [bash, "-c", "if [ -d /tmp ]; then echo tmp-is-dir; fi"],
-            env=poisoned_env, capture_output=True, text=True, check=False,
+            env=poisoned_env, capture_output=True, text=True, encoding="utf-8",
+            check=False,
             timeout=GATE_SUBPROCESS_TIMEOUT_S)
         if probe.stdout.strip() != "tmp-is-dir":
             raise RuntimeError(

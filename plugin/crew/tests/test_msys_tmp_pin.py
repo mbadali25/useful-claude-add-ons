@@ -72,19 +72,25 @@ def _hold(bash, env):
     proc = subprocess.Popen(  # pylint: disable=consider-using-with
         [bash, "-c", "echo up; read -r _"], env=env,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL, text=True)
+        stderr=subprocess.DEVNULL, text=True, encoding="utf-8")
     assert proc.stdout.readline().strip() == "up", f"holder {bash} did not start"
     return proc
 
 
 def _release(proc):
     proc.stdin.close()
-    proc.wait(timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+    try:
+        proc.wait(timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+        raise
 
 
 def _probe(bash, env=None):
     done = subprocess.run([bash, "-c", _PROBE], env=env or dict(os.environ),
-                          capture_output=True, text=True, check=False,
+                          capture_output=True, text=True, encoding="utf-8",
+                          check=False,
                           timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     return done.stdout.strip(), done.stderr.strip()
 
