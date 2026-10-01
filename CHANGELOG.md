@@ -29,8 +29,15 @@ All notable changes to this repository are documented here. Format follows [Keep
 - A `.crew/verify.json` rule covers the new module; `crew-qa-standards` `harness.md` H3 now says
   a fixed sleep before a check is a poll case, not a wallclock case.
 - No change needed: `test_check_writes_nothing` (its maintenance-lock race was fixed by the
-  1.0.64 git pins) and `test_near_deadline_candidates_then_a_hang_stay_within_the_hook_timeout`
-  (already `wallclock` since 1.0.63).
+  1.0.64 git pins).
+- **Not fixed here: `test_near_deadline_candidates_then_a_hang_stay_within_the_hook_timeout`.**
+  It is already `wallclock` (since 1.0.63) and still fails under load: 5 of 20 serial
+  `-m wallclock` runs, with the ps1 probe at 10.00-10.19 s against its 10 s hook bound, and the
+  same 5 of 20 on origin/main. The bound is a real hook timeout, so it is neither loosened nor
+  retried; the overrun is carried by follow-up L-0566 (owner decision 2026-10-01).
+- `poll_until` reads the clock after each sleep and before the next probe, so no probe starts
+  after the deadline and a condition first seen late is not returned as success. The child-process
+  tests kill and reap with `wait(timeout=10)`, not `Popen.__exit__`'s unbounded `wait()`.
 
 ### Fixed — `crew` 1.0.89: refresh admission refuses a dir swapped to a link on Windows (W-0116)
 
