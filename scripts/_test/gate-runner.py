@@ -769,6 +769,295 @@ def case_default_out_is_claimed_atomically(tmp: str) -> None:
     expect(all(os.path.isdir(p) for p in got), "default_out returned a directory it did not create")
 
 
+# ---- review round 2 (L-0513 successor plan) --------------------------------
+
+def run_raw_table(tmp: str, text: str, *args: str, grace: str = "1"):
+    """Run the CLI on a table given as raw JSON text (NaN, Infinity, 1e999)."""
+    root = os.path.join(tmp, "root")
+    os.makedirs(root, exist_ok=True)
+    table = write(os.path.join(tmp, "table.json"), text)
+    argv = [sys.executable, TARGET, "--root", root, "--out", os.path.join(tmp, "out"),
+            "--grace", grace, "--table", table, *args]
+    env = {k: v for k, v in os.environ.items() if not k.startswith("HEAVY_RUN")}
+    env["HEAVY_RUN"] = "none"
+    proc = subprocess.run(argv, capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL,
+                          timeout=CALL_TIMEOUT, check=False)
+    return proc.returncode, proc.stdout + proc.stderr
+
+
+def case_table_rejects_non_finite_timeout(tmp: str) -> None:
+    # BLOCK r2: json.load accepts NaN/Infinity, so `"timeout": NaN` passed the
+    # positive-number check and `now >= deadline` was never true. Neighbours:
+    # --grace and --heavy-timeout (argparse type=float) took nan, inf and 0.
+    for i, raw in enumerate(("NaN", "Infinity", "-Infinity", "1e999")):
+        sub = os.path.join(tmp, f"t{i}")
+        text = ('{"steps": [{"name": "x", "phase": "cheap", "argv": ["true"], "timeout": '
+                + raw + "}]}")
+        rc, out = run_raw_table(sub, text)
+        expect(rc == 2, f"timeout {raw}: rc={rc}, expected a refusal (2)\n{out}")
+        expect("timeout" in out and "Traceback" not in out, f"timeout {raw}: refusal\n{out}")
+    ok = '{"steps": [{"name": "x", "phase": "cheap", "argv": ["true"]}]}'
+    for i, (flag, value) in enumerate((("--grace", "nan"), ("--grace", "inf"),
+                                       ("--heavy-timeout", "nan"), ("--heavy-timeout", "0"),
+                                       ("--heavy-timeout", "inf"))):
+        sub = os.path.join(tmp, f"f{i}")
+        if flag == "--grace":
+            rc, out = run_raw_table(sub, ok, grace=value)
+        else:
+            rc, out = run_raw_table(sub, ok, flag, value)
+        expect(rc == 2, f"{flag} {value}: rc={rc}, expected a refusal (2)\n{out}")
+        expect("Traceback" not in out, f"{flag} {value} crashed\n{out}")
+
+
+def case_ci_drift_substitution_in_dropped_line(tmp: str) -> None:
+    # FIX r2: echo, conditions, exit, assignments and `for` headers were
+    # dropped whole, so a check inside $(...) or backticks there was invisible.
+    runner, root, yaml = _drift_fixture(tmp)
+    hidden = {
+        "new-check1.py": 'echo "$(python3 scripts/new-check1.py)"',
+        "new-check2.py": 'echo "`python3 scripts/new-check2.py`"',
+        "new-check3.py": '[ -n "$(python3 scripts/new-check3.py)" ]',
+        "new-check4.py": 'test -z "$(python3 scripts/new-check4.py)"',
+        "new-check5.py": "X=$(python3 scripts/new-check5.py)",
+        "new-check6.py": "exit $(python3 scripts/new-check6.py)",
+        "new-check7.py": "for f in $(python3 scripts/new-check7.py); do :; done",
+        "new-check8.py": "if [ \"$(python3 scripts/new-check8.py)\" = ok ]; then :; fi",
+        "new-check9.py": "echo $(echo $(python3 scripts/new-check9.py))",
+    }
+
+    def add(doc):
+        job = doc["jobs"][next(iter(doc["jobs"]))]
+        for i, run in enumerate(hidden.values()):
+            job["steps"].append({"name": f"new{i}", "run": run})
+        job["steps"].append({"name": "plain", "run": "echo done\nX=1\ni=$((i+1))\n"})
+
+    _edit_workflow(root, yaml, "shell-suites.yml", add)
+    problems = runner.ci_drift(root)
+    for script, run in hidden.items():
+        expect(any(script in p for p in problems),
+               f"{run!r} hides {script}: problems {problems}")
+    expect(len(problems) == len(hidden),
+           f"plain echo/assignment/arithmetic lines added drift: {problems}")
+
+
+class _StuckProc:
+    """A Popen stand-in that never exits: wait(timeout) sleeps then raises
+    TimeoutExpired, wait() with no timeout blocks for good."""
+
+    def __init__(self, pid: int):
+        self.pid, self.returncode = pid, None
+        self._never = __import__("threading").Event()
+
+    def wait(self, timeout=None):
+        if timeout is None:
+            self._never.wait()
+            return None
+        time.sleep(min(timeout, 0.5))
+        raise subprocess.TimeoutExpired("stuck", timeout)
+
+    def poll(self):
+        return None
+
+    def kill(self):
+        return None
+
+
+class _FakeSubprocess:
+    """The runner's `subprocess` with Popen replaced; everything else real."""
+
+    def __init__(self, proc):
+        self._proc = proc
+
+    def Popen(self, *_a, **_k):  # noqa: N802  pylint: disable=invalid-name
+        return self._proc
+
+    def __getattr__(self, name):
+        return getattr(subprocess, name)
+
+
+def _in_thread(fn, limit: float):
+    """Run fn in a daemon thread; (finished, result-or-exception)."""
+    import threading
+    box = {}
+
+    def target():
+        try:
+            box["value"] = fn()
+        except BaseException as exc:  # pylint: disable=broad-exception-caught
+            box["value"] = exc
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(limit)
+    return not thread.is_alive(), box.get("value")
+
+
+def case_kill_wait_is_bounded(tmp: str) -> None:
+    # FIX r2: after SIGKILL, _kill_group waited with no bound, so a child that
+    # never got reaped (uninterruptible I/O) hung the runner instead of giving
+    # COULD-NOT-TELL. Neighbour: the signal-STOP path's SIGKILL is bounded too.
+    reaped = subprocess.Popen(["sleep", "0"])  # pylint: disable=consider-using-with
+    reaped.wait()
+    runner = load_runner()
+    sent = []
+    runner._signal_group = lambda proc, hard: sent.append(hard)
+    runner.KILL_REAP_SECONDS = 1
+    finished, got = _in_thread(lambda: runner._kill_group(_StuckProc(reaped.pid), 0.2), 10)
+    expect(finished, "_kill_group still waiting 10 s after SIGKILL (unbounded wait)")
+    expect(got is False, f"_kill_group on an unreaped process returned {got!r}, not False")
+    expect(True in sent, f"no SIGKILL sent: {sent}")
+
+    runner.subprocess = _FakeSubprocess(_StuckProc(reaped.pid))
+    log = os.path.join(tmp, "logs", "stuck.log")
+    finished, got = _in_thread(lambda: runner.spawn_and_wait(["stuck"], tmp, log, 0.3, 0.2), 10)
+    expect(finished, "spawn_and_wait hung on a process that never exits after SIGKILL")
+    expect(not isinstance(got, BaseException), f"spawn_and_wait raised {got!r}")
+    rc, timed_out, started, note = got
+    expect(rc is None and timed_out and started, f"returned {got!r}")
+    expect("SIGKILL" in note, f"note does not name SIGKILL: {note!r}")
+    state, _reason = runner.classify(rc, timed_out, started)
+    expect(state == "COULD-NOT-TELL", f"classify gave {state}")
+
+    runner.STOP.set()
+    try:
+        started_at = time.monotonic()
+        finished, got = _in_thread(
+            lambda: runner.spawn_and_wait(["stuck"], tmp, log, 60, 0.2), 10)
+        took = time.monotonic() - started_at
+    finally:
+        runner.STOP.clear()
+    expect(finished, "the STOP path spun past its SIGKILL bound (still running after 10 s)")
+    expect(not isinstance(got, BaseException), f"STOP path raised {got!r}")
+    expect(got[0] is None and runner.classify(*got[:3])[0] == "COULD-NOT-TELL",
+           f"STOP path returned {got!r}")
+    expect(took < 0.2 + 1 + 3, f"STOP path took {took:.1f}s")
+
+
+def case_heavy_part_wrong_shape_is_could_not_tell(tmp: str) -> None:
+    # FIX r2: a valid heavy-part.json of the wrong shape crashed the outer
+    # runner's tick (AttributeError on .get) and orphaned the heavy process.
+    shapes = ["[]", "[1]", '"x"', '{"steps": []}', '{"steps": {"a1": 1}}', '{"steps": null}',
+              '{"steps": "abc"}', '{"steps": {"a1": {}}}', '{"steps": {"a1": {"state": "PASS"}}}']
+    for i, shape in enumerate(shapes):
+        sub = os.path.join(tmp, f"s{i}")
+        os.makedirs(sub)
+        pidf = os.path.join(sub, "hr.pid")
+        payload = write(os.path.join(sub, "payload.json"), shape)
+        body = ('part=""; prev=""\n'
+                'for a in "$@"; do [ "$prev" = "--inner" ] && part="$a"; prev="$a"; done\n'
+                f'cp "{payload}" "$part"\n'
+                f'echo $$ > "{pidf}"\n'
+                'exec sleep 300\n')
+        hr = fake_heavy_run(sub, body)
+        steps = [sh_step("a1", "heavy", "exit 0", "A"), sh_step("s1", "solo", "exit 0")]
+        try:
+            rc, out, status = run_gate(sub, steps, "--heavy-timeout", "3", heavy=hr, grace="0.5")
+            exited = time.monotonic()
+            expect("Traceback" not in out, f"part {shape}: the outer runner crashed\n{out}")
+            expect(rc == 3, f"part {shape}: rc={rc}, expected 3\n{out}")
+            st = by_name(status)
+            for name in ("a1", "s1"):
+                expect(st[name]["state"] == "COULD-NOT-TELL",
+                       f"part {shape}: {name} is {st[name]['state']}\n{out}")
+            with open(pidf, encoding="utf-8") as fh:
+                pid = int(fh.read().strip())
+            alive = True
+            while time.monotonic() < exited + 5:
+                try:
+                    os.kill(pid, 0)
+                except ProcessLookupError:
+                    alive = False
+                    break
+                time.sleep(0.1)
+            expect(not alive, f"part {shape}: heavy-run process {pid} outlived the runner")
+        finally:
+            try:
+                with open(pidf, encoding="utf-8") as fh:
+                    os.kill(int(fh.read().strip()), signal.SIGKILL)
+            except (OSError, ValueError):
+                pass
+    # Neighbour: `started` must be a finite non-bool number, or waited_seconds
+    # stays absent rather than 1-launch or NaN.
+    for i, shape in enumerate(('{"started": true, "steps": {}}', '{"started": NaN, "steps": {}}')):
+        sub = os.path.join(tmp, f"w{i}")
+        os.makedirs(sub)
+        payload = write(os.path.join(sub, "payload.json"), shape)
+        body = ('part=""; prev=""\n'
+                'for a in "$@"; do [ "$prev" = "--inner" ] && part="$a"; prev="$a"; done\n'
+                f'cp "{payload}" "$part"\n'
+                'exit 0\n')
+        hr = fake_heavy_run(sub, body)
+        rc, out, status = run_gate(sub, [sh_step("a1", "heavy", "exit 0", "A")], heavy=hr)
+        expect(rc == 3, f"started {shape}: rc={rc}\n{out}")
+        waited = status["heavy_run"].get("waited_seconds")
+        expect(waited is None, f"started {shape}: waited_seconds={waited!r}, expected absent")
+
+
+def case_table_cwd_stays_in_root(tmp: str) -> None:
+    # FIX r2: a custom step's cwd was only type-checked, so `..` or an absolute
+    # path ran it outside --root.
+    for i, cwd in enumerate(("..", "/", "sub/../../x", tmp)):
+        sub = os.path.join(tmp, f"t{i}")
+        os.makedirs(sub)
+        rc, out, _ = run_gate(sub, [{"name": "x", "phase": "cheap", "argv": ["true"], "cwd": cwd}])
+        expect(rc == 2, f"cwd {cwd!r}: rc={rc}, expected a refusal (2)\n{out}")
+        expect("cwd" in out and "Traceback" not in out, f"cwd {cwd!r}: refusal\n{out}")
+    if os.name != "nt":
+        sub = os.path.join(tmp, "link")
+        os.makedirs(os.path.join(sub, "root"))
+        os.makedirs(os.path.join(sub, "outside"))
+        os.symlink(os.path.join(sub, "outside"), os.path.join(sub, "root", "link"))
+        rc, out, _ = run_gate(sub, [{"name": "x", "phase": "cheap", "argv": ["true"],
+                                     "cwd": "link"}])
+        expect(rc == 2, f"cwd through an escaping symlink: rc={rc}, expected 2\n{out}")
+    else:
+        print("  (symlink neighbour not run on Windows)")
+    for i, cwd in enumerate(("sub/..", "sub", "sub/deeper")):
+        sub = os.path.join(tmp, f"ok{i}")
+        os.makedirs(os.path.join(sub, "root", "sub", "deeper"))
+        rc, out, _ = run_gate(sub, [{"name": "x", "phase": "cheap", "argv": ["true"], "cwd": cwd}])
+        expect(rc == 0, f"in-root cwd {cwd!r}: rc={rc}, expected 0\n{out}")
+    runner = load_runner()
+    for step in runner.TABLE:
+        expect(runner.cwd_in_root(REPO, step.cwd), f"built-in {step.name} cwd {step.cwd!r}")
+
+
+def case_non_utf8_tracked_name_does_not_crash(tmp: str) -> None:
+    # FIX r2: a tracked .py name holding byte 0xff crashed argv construction
+    # (proc.stdout.decode()). Neighbour: a workflow file that is not UTF-8 is a
+    # drift problem naming it, never an exception.
+    if os.name == "nt":
+        raise Skip("bytes file names are POSIX only")
+    root = os.path.join(tmp, "root")
+    os.makedirs(root)
+    name = b"bad\xff.py"
+    with open(os.path.join(os.fsencode(root), name), "wb") as fh:
+        fh.write(b"x = 1\n")
+    git = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+    for cmd in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "fixture"]):
+        subprocess.run(git + cmd, cwd=root, check=True, capture_output=True,
+                       stdin=subprocess.DEVNULL, timeout=60)
+    check = ("import os, sys; a = sys.argv[1:]; "
+             "sys.exit(0 if len(a) == 1 and os.fsencode(a[0]) == b'bad\\xff.py' "
+             "and os.path.exists(os.fsencode(a[0])) else 1)")
+    rc, out, status = run_gate(tmp, [{"name": "gp", "phase": "cheap",
+                                      "argv": [sys.executable, "-c", check, "{git_py_files}"]}])
+    expect("Traceback" not in out, f"a non-UTF-8 tracked name crashed the runner\n{out}")
+    expect(status is not None and by_name(status)["gp"]["state"] == "PASS",
+           f"the child did not get the original bytes name\n{out}")
+    expect(rc == 0, f"rc={rc}\n{out}")
+
+    runner, droot, _yaml = _drift_fixture(os.path.join(tmp, "drift"))
+    with open(os.path.join(droot, ".github", "workflows", "pytest-crew.yml"), "ab") as fh:
+        fh.write(b"# \xff\n")
+    try:
+        problems = runner.ci_drift(droot)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        raise AssertionError(f"ci_drift raised on a non-UTF-8 workflow: {exc!r}") from exc
+    expect(any("pytest-crew.yml" in p for p in problems),
+           f"a non-UTF-8 workflow was not reported: {problems}")
+
+
 CASES = [
     case_list_prints_phases,
     case_one_heavy_run_call_for_both_groups,
@@ -799,6 +1088,12 @@ CASES = [
     case_skip_wins_before_argv_is_built,
     case_heavy_results_reach_status_json,
     case_default_out_is_claimed_atomically,
+    case_table_rejects_non_finite_timeout,
+    case_ci_drift_substitution_in_dropped_line,
+    case_kill_wait_is_bounded,
+    case_heavy_part_wrong_shape_is_could_not_tell,
+    case_table_cwd_stays_in_root,
+    case_non_utf8_tracked_name_does_not_crash,
 ]
 
 
