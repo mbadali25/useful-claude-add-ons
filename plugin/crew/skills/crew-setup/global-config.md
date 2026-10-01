@@ -172,6 +172,13 @@ there everywhere; making them say so once per repository was the friction that
 produced this split. A repo that genuinely wants its memory in `.crew/` still
 overrides `memory.mode` in its own config.
 
+**`shellRoute.mode` and `shellRoute.distro`**, on native Windows only. Which
+shell is fast is a fact about the machine. Run `crew_shell.py probe --write`,
+and `measure --write` when the state is `usable`, then offer `auto` (default),
+`wsl`, `powershell` or `gitbash` with the numbers. On `not-installed`, print the
+`wsl --install -d Ubuntu` recommendation and never run it. See "Choosing the
+shell route on Windows" in `platform.md`.
+
 ## 3. Show the plan, then write
 
 From the menu, Save runs `crew_config_menu.py save --changes '<json>'` (a dry

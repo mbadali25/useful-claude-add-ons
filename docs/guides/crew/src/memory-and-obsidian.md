@@ -304,7 +304,7 @@ The code map also reaches a session with no hook at all, as
   and writes them after `--apply`. Each rule is at most 30 lines: a `paths:`
   list, the note's landmines, and the sha256 of the note it came from. A
   hand-written file already at that path is reported and left alone. Since
-  crew 1.0.70 both commands also print one `anchor behind:` or
+  crew 1.0.106 both commands also print one `anchor behind:` or
   `anchor unresolvable:` line per note they render a rule from whose anchor
   needs re-check - the same classification as session-start's "Anchors to
   re-check" line - or `anchors: could not tell` when there is no git HEAD.

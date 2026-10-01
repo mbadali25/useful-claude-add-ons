@@ -111,6 +111,18 @@ _DIFF_FLAGS = ["--no-color", "--no-ext-diff", "--no-textconv", "-M", "--full-ind
 
 SUBMODULE_MODE = "160000"
 
+# The manifest contract (T-0087). `compute` + `build` write exactly
+# MANIFEST_KEYS (plus `webtest` in a Playwright repository); `manifest_path` is
+# set by review_prompt.main. Its consumers -- review_prompt.py and
+# review_run.py -- read nothing else, which test_review_contracts.py checks by
+# driving both with a manifest this module really wrote.
+MANIFEST_KEYS = ("base", "head", "branch", "dirty", "committed_files", "staged_files",
+                 "unstaged_files", "untracked_files", "entries", "renames", "mode_changes",
+                 "binary_files", "submodules", "excluded", "patch_bytes", "max_part_bytes",
+                 "bundle_sha256", "patch_path", "parts_dir", "parts")
+OPTIONAL_MANIFEST_KEYS = ("webtest", "manifest_path")
+PART_KEYS = ("name", "path", "bytes", "sha256")
+
 
 def _run_raw(root, args, env=None):
     """Run `git -C root <args>` and return stdout as BYTES, raising

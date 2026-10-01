@@ -210,9 +210,17 @@ def test_the_key_names_the_event_and_the_unique_field(tmp_path):
 
 # --- :126 intent, then sent --------------------------------------------------------
 
+@pytest.mark.wallclock
 def test_a_winner_killed_after_exit_0_does_not_cost_the_only_emission(tmp_path):
     """The review's reproduction through the CLI: the winner is 'paused' --
-    it got exit 0 and never reported sent -- and the twin runs."""
+    it got exit 0 and never reported sent -- and the twin runs.
+
+    `wallclock` (T-0110): `3 < waited < 10` is elapsed time, and the grace
+    the twin waits out runs from the WINNER's claim, so a winner slowed down
+    between claiming and exiting shortens the twin's wait. Under -n auto on
+    Windows CI that read `assert (0, 0, False) == (0, 0, True)` (job
+    109855785945); locally, beside a 20-worker run, a 2.70 s winner left the
+    twin 1.82 s. Serially the bound holds."""
     root = _repo(tmp_path)
     cmd = CLAIM + ["notify", ".", "sh"]
     winner = subprocess.run(cmd, input=NOTE, cwd=root, capture_output=True, check=False, timeout=30)
@@ -485,13 +493,7 @@ def _tools(tmp_path):
     """/usr/bin and /bin minus anything named python*/py*."""
     tools = tmp_path / "tools"
     tools.mkdir()
-    for source in ("/usr/bin", "/bin"):
-        if not os.path.isdir(source):
-            continue
-        for name in os.listdir(source):
-            if name.startswith(("python", "py")) or (tools / name).exists():
-                continue
-            os.symlink(os.path.join(source, name), tools / name)
+    crew_fixtures.link_path_dirs(tools, skip=lambda name: name.startswith(("python", "py")))
     return tools
 
 
@@ -627,6 +629,9 @@ def test_ps1_marks_an_unknown_provider_claim_sent_not_orphaned(tmp_path):
         "it 'claimed' forever")
 
 
+# wallclock (T-0110): an elapsed-time bound, so it runs serially, never under -n.
+# Native -n auto (20 workers): took=[3.09, 4.78] and [4.35, 5.85] against the grace; serially it passes.
+@pytest.mark.wallclock
 @needs_bash
 @needs_pwsh
 def test_an_unknown_provider_does_not_orphan_the_twin(tmp_path):

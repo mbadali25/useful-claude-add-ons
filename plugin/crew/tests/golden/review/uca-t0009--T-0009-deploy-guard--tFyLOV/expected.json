@@ -1,0 +1,13 @@
+{
+  "counts": {
+    "BLOCK": 5,
+    "FIX": 1,
+    "NIT": 0
+  },
+  "delivered": true,
+  "failure_class": null,
+  "origin": "uca-t0009/T-0009-deploy-guard--tFyLOV",
+  "parts_missing": [],
+  "read_form": "bare",
+  "verdict": "FINDINGS"
+}

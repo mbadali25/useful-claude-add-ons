@@ -30,7 +30,12 @@ with the error text verbatim.
 **Gate 1 - pre-deploy.**
 - Every environment in `requires` has a `pass` row in `.work/PROMOTIONS.md` for
   the sha you are about to deploy. Not "a pass row" - a pass row *for this sha*.
-- The working tree is clean and the sha is pushed.
+- The tree the deploy runs from is clean, is at the sha you are about to
+  deploy, and that sha is pushed. That is the tree `promote-gate` judges: the
+  Bash call's working directory, moved by a leading `cd <dir> &&` and named by
+  any `git -C <dir>` - not the session's main checkout. To deploy from a clean
+  worktree while the main checkout is dirty, run the declared command there
+  (`cd <worktree> && <deploy>`, or with the session already in the worktree).
 - `rollback` must be set: either a runbook that exists with a `last verified`
   date inside 90 days, or the literal `"none"` plus a `rollbackReason`. An
   absent key is a stop, not a pass - the fix is to add one of the two, in
@@ -89,6 +94,27 @@ green - that is the whole reason it is a separate gate.
 the actual numbers - error count, alarm state, queue depth - not "looks clean".
 A deploy that moved bytes successfully and broke the application looks identical
 to a good one until this gate runs.
+
+## When the gate blocks
+
+`promote-gate` refusing a deploy is gate 1 failing, not an obstacle to route
+around. Quote its `PROMOTION BLOCKED` line verbatim, name the precondition it
+names, and fix that precondition - record the upstream PASS row, commit or
+stash in the tree being deployed, `cd` into the tree that is at the gated sha,
+correct the rollback entry - then run the same command again.
+
+**Never hand the owner a deploy so it skips the hook.** Recommending "run it
+yourself with `!` so it does not go through the hook" turns every check above
+into a suggestion; a TSS session did exactly that when the gate judged the
+wrong tree (T-0505). If the gate is wrong, that is a crew bug to report with
+its message, not a reason to deploy past it.
+
+Hand a deploy to the owner only where one is genuinely needed: the environment
+sets `requireHuman` (show the sha, the diff summary and the last promotion, and
+ask for the yes that lets you write the marker), or the deploy has an
+interactive step a session cannot perform (an MFA prompt, a browser approval).
+Ask it as a question with your recommendation first - never as a list of
+commands to paste.
 
 ## The change request
 
@@ -283,11 +309,30 @@ Be precise about this, because the difference decides how much the sequence abov
 can be trusted.
 
 **Enforced by `promote-gate.sh` (`PreToolUse`).** It fires on any command matching
-a declared `deploy` entry and refuses it unless, for the sha at HEAD: every
-`requires` environment has an all-pass row in `.work/PROMOTIONS.md`; the
-`rollback` runbook exists with `last verified` inside 90 days; `requireHuman` has
-an approval marker at `.crew/.approved-<env>-<sha>`; and the tree is clean. These
-cannot be skipped by deciding to skip them.
+a declared `deploy` entry and refuses it unless, for the sha at HEAD **of the tree
+the deploy runs from**: every `requires` environment has an all-pass row in
+`.work/PROMOTIONS.md`; the `rollback` runbook exists with `last verified` inside
+90 days; `requireHuman` has an approval marker at `.crew/.approved-<env>-<sha>`;
+and that tree is clean. These cannot be skipped by deciding to skip them.
+
+The tree is the Bash call's `cwd`, moved by a leading `cd <dir> &&` chain and
+named by git's global `-C <dir>` inside `$(...)` (a `git -C` whose output feeds
+nothing may only name the tree the deploy runs in). It must be a worktree of the same
+repository and every literal sha in the command must be its HEAD; the directory
+the command itself runs in must be clean too, since that is where the deploy
+process runs. A command that changes directory after it starts (a later `cd`,
+`bash -c 'cd ...'`, `env -C`, `make -C`), names two trees, uses `--git-dir`,
+or puts `git` in a form the gate cannot read with certainty (an unlisted global
+option, quoted text) is refused rather than guessed at. Skip-worktree and
+assume-unchanged entries, and a `git status` that fails, are refused too. `.crew/verify.json`, `.work/PROMOTIONS.md`, the approval
+markers and `.crew/.deploy-in-flight` are read from the session's project
+directory on purpose: they are gitignored per-checkout state, so a fresh
+worktree has none of it and a throwaway one could hold a forged copy. For the
+same reason an uncommitted change to the project's `.crew/verify.json` - an edit,
+a deletion, an untracked map, compared with HEAD's copy rather than with
+`git status` - blocks any command the working or the committed map declares.
+What it cannot see: a deploy script that changes directory itself, and what a
+workflow does with a branch-name ref (`ref=development`).
 
 **Enforced by `verify-gate.sh` (`Stop`).** A deploy that wrote no
 `.work/PROMOTIONS.md` row does not end the turn. A deploy nobody wrote down is a

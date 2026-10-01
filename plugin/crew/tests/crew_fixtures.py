@@ -3,6 +3,7 @@
 A fixture is a real git repository with a real commit, because the code under
 test asks git for HEAD and comparing against a mocked sha would test the mock.
 """
+import contextlib
 import ctypes
 import json
 import os
@@ -13,6 +14,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 
 import pytest
 
@@ -751,6 +753,147 @@ def resolve_bash():
     return _BASH
 
 
+# What the `msys_tmp_pinned` holder runs: announce itself, then wait on stdin
+# so it exits when the block ends. A module constant so a test can swap in a
+# holder that starts but never announces.
+_PIN_HOLDER_SCRIPT = "echo pinned; read -r _"
+
+# How long `msys_tmp_pinned` waits for the holder's "pinned" line. A sane
+# bash prints it in well under a second; a stalled one must not sit in
+# readline() until the CI job's own limit (T-0110 review round 1).
+PIN_STARTUP_TIMEOUT_S = 30
+
+# After killing a holder that never announced, how long to let its stdout
+# reader drain before raising anyway (the reader is a daemon thread).
+PIN_READER_GRACE_S = 5
+
+
+def first_line_within(proc, bound_s, who, consequence=""):
+    """`proc`'s first stdout line, read within `bound_s` seconds, or a
+    RuntimeError naming `who` once `proc` has been stopped.
+
+    A reader thread with a bounded join, because select() does not work on
+    Windows pipes. On timeout it closes `proc`'s stdin, kills it, waits with
+    a bound, and gives the reader `PIN_READER_GRACE_S` to drain. Closing
+    stdin first matters: Git's bin/bash.exe is a shim whose usr/bin/bash.exe
+    child also holds stdout, and killing the shim leaves that child running
+    until its `read` sees EOF. `proc` needs stdin and stdout pipes."""
+    lines = []
+    reader = threading.Thread(
+        target=lambda: lines.append(proc.stdout.readline()), daemon=True)
+    reader.start()
+    reader.join(bound_s)
+    if not reader.is_alive():
+        return lines[0] if lines else ""
+    proc.stdin.close()
+    proc.kill()
+    proc.wait(timeout=GATE_SUBPROCESS_TIMEOUT_S)
+    reader.join(PIN_READER_GRACE_S)
+    raise RuntimeError(
+        f"{who} did not announce itself within {bound_s}s; killed it "
+        f"(exit {proc.poll()})" + (f" {consequence}" if consequence else "")
+        + ("" if not reader.is_alive() else
+           f"; its stdout reader was still blocked {PIN_READER_GRACE_S}s "
+           "later, so a grandchild still holds the pipe"))
+
+
+def gate_bash(pwsh, ps1, env=None):
+    """The bash verify-gate.ps1's own Resolve-CrewBash picks under `env`
+    (default: this process' environment), via its `-PrintBash` probe, or
+    None when it resolves none (the gate then refuses rather than run bash).
+
+    A test that runs the PowerShell gate pins THIS bash, not `resolve_bash`'s:
+    the gate walks up from git.exe, `resolve_bash` starts from PATH order, and
+    with two Git installs they can name different MSYS runtimes - pinning
+    the wrong one leaves the gate children's shared region unpinned (T-0110
+    review round 2). Resolve it under an env WITHOUT the poisoned TMP/TEMP:
+    the probe itself is a launch, and it only reads PATH."""
+    result = run_gate(
+        [pwsh, "-NoProfile", "-NonInteractive", "-File", ps1, "-PrintBash"],
+        env=dict(os.environ) if env is None else env,
+        stdin=subprocess.DEVNULL, capture_output=True, text=True,
+        check=False, timeout=GATE_SUBPROCESS_TIMEOUT_S)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"gate_bash: {ps1} -PrintBash exited {result.returncode}: "
+            f"{result.stderr.strip()}")
+    return result.stdout.strip() or None
+
+
+@contextlib.contextmanager
+def msys_tmp_pinned(bash, poisoned_env):
+    """Run a block that starts MSYS processes under `poisoned_env` (TMP/TEMP
+    pointing somewhere that is not a directory) without turning `/tmp` into
+    that path for every other Git-Bash process on the host.
+
+    Git for Windows mounts `/tmp` as `usertemp` (its etc/fstab), resolved
+    from the TMP/TEMP of the process that CREATES the MSYS runtime's
+    per-user, per-installation shared mount table - and every MSYS process
+    started while that region lives shares it. A child handed TMP=<a file>
+    that happens to be the first MSYS process on an idle host therefore
+    breaks every bash any other pytest-xdist worker starts meanwhile:
+    `bash.exe: warning: /tmp must be a valid directory name`, then `VERIFY
+    GATE: cannot create temp file` in an unrelated test (T-0110; CI jobs
+    109709668000 and 109307433677).
+
+    This holds one MSYS process, started with THIS process' environment,
+    open for the whole block, so the region already exists - created sane -
+    when the block's own children start, and they join it instead. The
+    holder waits on its stdin rather than sleeping, so it exits as soon as
+    the block ends or this process dies. Before yielding it proves the pin
+    took: a probe of `bash` under `poisoned_env` must see `/tmp` as a
+    directory, or this raises instead of running a test that would poison
+    the host. The region is per installation, so `bash` must belong to the
+    same MSYS install the block's children use: for verify-gate.ps1, pass
+    `gate_bash(...)`, which asks the gate's own resolver.
+
+    `test_msys_tmp_pin.py` checks both halves: the hazard, on a private copy
+    of the runtime, and that every crew test overriding TMP/TEMP runs here.
+    A no-op off Windows and when `bash` is None (such callers skip anyway).
+    """
+    if bash is None or not sys.platform.startswith("win"):
+        yield
+        return
+    holder = subprocess.Popen(
+        [bash, "-c", _PIN_HOLDER_SCRIPT], env=dict(os.environ),
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL, text=True, encoding="utf-8")
+    try:
+        # The bound is read at call time so a test can shorten it.
+        ready = first_line_within(
+            holder, PIN_STARTUP_TIMEOUT_S,
+            f"msys_tmp_pinned: holder {bash!r}",
+            "rather than run the block unpinned").strip()
+        if ready != "pinned":
+            raise RuntimeError(
+                f"msys_tmp_pinned: holder {bash!r} did not start "
+                f"(read {ready!r}, exit {holder.poll()})")
+        probe = subprocess.run(
+            [bash, "-c", "if [ -d /tmp ]; then echo tmp-is-dir; fi"],
+            env=poisoned_env, capture_output=True, text=True, encoding="utf-8",
+            check=False,
+            timeout=GATE_SUBPROCESS_TIMEOUT_S)
+        if probe.stdout.strip() != "tmp-is-dir":
+            raise RuntimeError(
+                "msys_tmp_pinned: a process under the poisoned env still "
+                f"does not see /tmp as a directory (stdout={probe.stdout!r} "
+                f"stderr={probe.stderr!r}) - the pin did not take, so the "
+                "block would poison /tmp for the whole host")
+        yield
+    finally:
+        try:
+            holder.stdin.close()
+        except OSError:
+            pass
+        try:
+            holder.wait(timeout=GATE_SUBPROCESS_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            holder.kill()
+            # Bounded too: a TimeoutExpired here names the stuck holder
+            # instead of hanging the run.
+            holder.wait(timeout=GATE_SUBPROCESS_TIMEOUT_S)
+
+
 _BASH_NO_PREPEND = "unprobed"
 
 
@@ -943,6 +1086,34 @@ def _is_git_launcher(bash):
     """True for Git for Windows' `bin\\bash.exe`, never its `usr\\bin` one."""
     parts = [p.lower() for p in pathlib.PureWindowsPath(bash or "").parts]
     return parts[-2:] == ["bin", "bash.exe"] and "usr" not in parts
+
+
+def link_path_dirs(dest, sources=("/usr/bin", "/bin"), skip=lambda name: False):
+    """Symlink every entry of each `sources` dir into `dest`, skipping names
+    for which `skip(name)` is true. The first dir holding a name wins, as in
+    PATH lookup (L-0529).
+
+    Two dedupes, both needed. A source dir whose realpath was already linked
+    is skipped: with `/bin -> usr/bin` the second pass is the first again. A
+    name already in `dest` is skipped by `lexists`, not `exists`: `exists`
+    follows the link, so an entry whose own target is missing (Ubuntu
+    26.04's `/usr/bin/grub-ntldr-img -> ../lib/grub/...`, dangling when only
+    `grub-pc` is installed) read as absent and was linked a second time,
+    raising FileExistsError on the self-hosted runners."""
+    seen = set()
+    for source in sources:
+        if not os.path.isdir(source):
+            continue
+        real = os.path.realpath(source)
+        if real in seen:
+            continue
+        seen.add(real)
+        for name in os.listdir(source):
+            target = os.path.join(dest, name)
+            if skip(name) or os.path.lexists(target):
+                continue
+            os.symlink(os.path.join(source, name), target)
+    return dest
 
 
 def shell_path(flavor, dirs, base=None, windows=None, cygpath=None):
