@@ -39,7 +39,6 @@ KEY = "XDG_CACHE_HOME"
 SPAWN_NAMES = frozenset(
     ("run", "Popen", "check_output", "check_call", "call", "run_gate", "popen_gate"))
 PWSH_RE = re.compile(r"pwsh|powershell", re.IGNORECASE)
-ENVIRON_RE = re.compile(r"\bos\.environ\b|\benviron\b")
 
 
 # --- the static Python rule ----------------------------------------------------
@@ -115,30 +114,48 @@ def _env_value(call):
     return False, None
 
 
-def _judge_env(src, expr, helpers, in_crew, scope_src):
+def _sets_key(node):
+    """True when code under `node` names XDG_CACHE_HOME: a string constant or
+    a keyword argument. Read from the AST, so a comment that mentions the
+    variable is not mistaken for code that sets it."""
+    if node is None:
+        return False
+    return any((isinstance(n, ast.Constant) and n.value == KEY)
+               or (isinstance(n, ast.keyword) and n.arg == KEY)
+               for n in ast.walk(node))
+
+
+def _reads_environ(node):
+    """True when code under `node` reads `os.environ` (or a bare `environ`)."""
+    return any((isinstance(n, ast.Attribute) and n.attr == "environ")
+               or (isinstance(n, ast.Name) and n.id == "environ")
+               for n in ast.walk(node))
+
+
+def _judge_env(src, expr, helpers, in_crew, scope):
     """None when the spawn's environment provably carries the key, else a
     one-line reason. Anything the rule cannot classify is a reason, never a
     pass (outside crew's conftest, where nothing else would set it)."""
     if expr is None or (isinstance(expr, ast.Constant) and expr.value is None):
         return None if in_crew else "inherits the environment, and no conftest sets " + KEY
     text = ast.get_source_segment(src, expr) or ""
-    if KEY in text:
+    if _sets_key(expr):
         return None
     if isinstance(expr, ast.Call) and isinstance(expr.func, ast.Name) and expr.func.id in helpers:
         body = helpers[expr.func.id]
-        if KEY in body:
+        if _sets_key(body):
             return None
-        if ENVIRON_RE.search(body):
+        if _reads_environ(body):
             return None if in_crew else (
                 f"helper {expr.func.id}() copies the environment but sets no {KEY}")
         return f"helper {expr.func.id}() builds the environment from scratch without {KEY}"
-    if ENVIRON_RE.search(text):
+    if _reads_environ(expr):
         return None if in_crew else f"copies the environment but sets no {KEY}"
     if isinstance(expr, ast.Dict) or (
             isinstance(expr, ast.Call) and isinstance(expr.func, ast.Name)
             and expr.func.id == "dict"):
         return f"builds the environment from scratch without {KEY}"
-    if in_crew or KEY in scope_src:
+    if in_crew or _sets_key(scope):
         return None
     return f"env={text} - its enclosing function never sets {KEY}"
 
@@ -165,8 +182,7 @@ def scan_python(rel, src, crew_covered=True):
     only then does an inherited environment under `plugin/crew/tests` pass."""
     tree = ast.parse(src)
     in_crew = crew_covered and rel.startswith(CREW_TESTS)
-    helpers = {n.name: ast.get_source_segment(src, n) or ""
-               for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    helpers = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
     sites = []
     for call, scope in _scopes(tree).items():
         if _func_name(call) not in SPAWN_NAMES:
@@ -175,8 +191,7 @@ def scan_python(rel, src, crew_covered=True):
         if first is None or not any(PWSH_RE.search(t) for t in _argv0_texts(src, first, scope)):
             continue
         _present, env = _env_value(call)
-        scope_src = (ast.get_source_segment(src, scope) or "") if scope is not None else ""
-        reason = _judge_env(src, env, helpers, in_crew, scope_src)
+        reason = _judge_env(src, env, helpers, in_crew, scope)
         sites.append((rel, call.lineno, scope.name if scope is not None else "<module>",
                       reason))
     return sorted(sites, key=lambda s: s[1])
@@ -217,6 +232,21 @@ def test_static_scan_flags_helper_env_without_key(tmp_path):
         "    subprocess.run([PWSH, '-File', 'x.ps1'], env=_env(tmp_path))\n"))
 
     assert len(sites) == 1 and "_env()" in sites[0][3]
+
+
+def test_static_scan_flags_a_key_named_only_in_a_comment(tmp_path):
+    sites = _scan_fixture(tmp_path, "plugin/other/_test/test_c.py", _HEAD + (
+        "def _env():\n"
+        "    # XDG_CACHE_HOME is not set here\n"
+        "    return {'PATH': '/bin'}\n\n"
+        "def pwsh(command, env=None):\n"
+        "    env = dict(os.environ if env is None else env)\n"
+        "    # an ambient XDG_CACHE_HOME would be the shared one\n"
+        "    return subprocess.run([PWSH, '-Command', command], env=env)\n\n"
+        "def other():\n"
+        "    subprocess.run([PWSH, '-c', '1'], env=_env())  # XDG_CACHE_HOME\n"))
+
+    assert [s[3] is not None for s in sites] == [True, True]
 
 
 def test_static_scan_flags_a_bare_name_argv(tmp_path):
