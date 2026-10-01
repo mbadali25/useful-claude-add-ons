@@ -1,5 +1,5 @@
-%% Generated from useful-claude-add-ons@a54ca704 on 2026-09-30. Verify before trusting.
-%% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py
+%% Generated from useful-claude-add-ons@66651b69 on 2026-09-30. Verify before trusting.
+%% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
 %% NEW in T-0015. Drawn from the command files themselves, each read in full at
@@ -247,6 +247,22 @@
 %% Re-anchored c04dd2ef -> 9b6b0da7 (T-0085 landing, crew 1.0.74): of the anchored paths only crew_standards.py
 %% changed (gate_applies proves absence only under a real directory; Windows fail-open fix). The
 %% diagram draws the self-check gate, not that branch. No node or edge changed.
+%% Re-drawn 2697bf67 -> 7e23f822 (L-0520 PR 1, the merge train CLI, crew 1.0.77): of the anchored
+%% paths only done.md changed (a new "Landing through the merge train" section at :78-92; :7-70
+%% hold), and crew_train.py is new. Drawn as ln0-ln2 after dn4: when the train is armed,
+%% crew_train.py check-land, the printed gh pr merge --match-head-commit, then release --merged; a
+%% refusal sends the ticket back to catch up and gate again. The review round taking the train
+%% (review_run.py exit 6) is L-0526 and is not drawn yet.
+%% Re-anchored 7e23f822 -> 53936abb (L-0520 PR 1: T-0086 merged; crew_train.py meets the PYTHON set):
+%% of the anchored paths only crew_train.py changed, which no node cites by line; done.md :78-92 hold.
+%% No node or edge changed.
+%% Re-anchored 1f21f73b -> c4e2eb98 (L-0520 PR 1 merges main 42d5ef58, T-0094 crew 1.0.81): T-0094 added four
+%% lines to done.md above "Landing through the merge train", which is now :82-96, so ln0-ln2's
+%% citations moved +4 (re-read with grep -n). No node or edge changed.
+%% Re-anchored c4e2eb98 -> 0be97503 (L-0520 PR 1 merges main 42af3fb7, L-0531): no anchored path changed.
+%% Re-anchored 0be97503 -> 14bb59ef (L-0520 PR 1 merges main 6a8c60b1, T-0099): no anchored path changed.
+%% Re-anchored 14bb59ef -> 8bf710ed (L-0520 PR 1 review round 1 fixes): done.md's landing section kept its lines (:82-96,
+%% two commands quoted in place); crew_train.py is cited by name only. No node or edge changed.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
@@ -334,6 +350,10 @@ flowchart TB
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
         dn5 -- "stale / unknown" --> dnx
+        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:82-85"}
+        ln0 -- yes --> ln1{"crew_train.py check-land:<br/>holds the train, merge-tree clean,<br/>base unmoved in Touch, receipt + gate<br/>done.md:88-92"}
+        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge<br/>--merge --match-head-commit sha;<br/>then release --merged sha<br/>(crew never merges) :93-94"]
+        ln1 -- "refused: catch-up,<br/>gate the merged head again<br/>:95-96" --> im5
     end
 
     fix -.-> BR
@@ -416,3 +436,7 @@ flowchart TB
 %% or edge changed.
 %% Re-anchored 3bb32980 / 328fdf4a -> a54ca704 (T-0040-land's merge of origin/main 844bfc36); the
 %% merge note above names every line that moved.
+%% Merged a54ca704 (T-0040-land) + 8bf710ed (main) on T-0040-land, 2026-10-01 (merge of origin/main
+%% 66651b69, L-0520 #287): the header takes main's Anchors list (it adds crew_train.py) anchored at the
+%% main tip. T-0040 touches implement.md only (:112 above, re-read with grep -n on the merged tree);
+%% L-0520 touches done.md only (:82-96 for ln0-ln2, re-read the same way). No node or edge changed.
