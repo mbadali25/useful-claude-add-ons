@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@5ffffbe3
+anchor: useful-claude-add-ons@b5f8d333
 verified: 2026-10-01
 
 ## Re-derive provenance
@@ -1548,3 +1548,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `89ebda03` -> `b83598eb` on 2026-10-01 (T-0504 merges main 05a679bf at 3dfaf1e6 with rerere disabled; crew 1.0.107).** The merge took main's side of every refresh artifact; T-0504's own body text was then re-applied (the `/crew:approve` row's re-point sentence, the `activation_policy` / `closed_for_repoint` / `repoint_question` paragraph and the guard's pointer refusal in crew.md). `git diff --name-only 89ebda03 b83598eb`, refresh artifacts aside, is T-0504's files: the hook and CLI scripts, their tests and sabotage files, the commands, README, CONFIG, the guides, CHANGELOG, verify.json and the version files. Every body citation of the form `path:line` into those files was mapped by diff from `89ebda03` to `b83598eb` (42 moved) and every backticked-identifier citation re-checked against the tree at `b83598eb` (37 re-pointed to the definition they name, plus the verify.json rule ranges 25-31); dated provenance notes keep the lines of their own commit. Nothing was executed for this note; the suites run on the same tree are the implement phase's.
 
 **Re-anchored `b83598eb` -> `92c93bf7` on 2026-10-01 (T-0504).** `git diff --name-only b83598eb 92c93bf7` is the code maps, rules and diagrams of the note above and the six rebuilt guide outputs (`docs/guides/crew/crew-1.0-daily-workflow.*`, `crew-1.0-troubleshooting.*`); no body citation points into a changed line. Nothing was executed for this note.
+
+**Re-anchored `5ffffbe3` (main's side) and `92c93bf7` (T-0504's side) -> `b5f8d333` on 2026-10-01 (T-0504 merges main 2906dcbd at 464d9bd0 with rerere disabled; crew 1.0.113).** Both histories are kept above, main's first. Main's side since `05a679bf` touched none of T-0504's code files, so T-0504's citations into them stand as re-read at `92c93bf7`; main's citations into `.crew/verify.json` and `CHANGELOG.md` were mapped by diff from `5ffffbe3` (T-0504's verify.json paths add lines inside rules 25, 27 and 31), and the present-tense ranges of rules 25-31 re-read by content. Nothing was executed for this note.
