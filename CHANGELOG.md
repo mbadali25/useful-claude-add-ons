@@ -4,6 +4,21 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.105: T-0040's shell-route sabotage mutations (W-0115)
+
+T-0040 (crew 1.0.98) shipped `crew_shell.py` without its sabotage entries, which were split out
+because `scripts/check-tooling-pr.py` (rule 36) lets a harness change carry no feature work. This
+tooling-only change restores them.
+
+- `plugin/crew/tests/sabotage_shell.py` (`SHELL_MUTATIONS`, 14 entries) is registered in
+  `sabotage.py` again. Each entry is a way the shell route could fail: wsl mode falling back to
+  Git Bash, a raising probe read as not-installed, a bash string handed to pwsh, a bare `pwsh` or
+  System32 `bash.exe` resolved, the exit code dropped, and so on.
+- Each one, applied alone, turns its named test in `test_crew_shell.py` or `test_status.py` red,
+  and the test is green again on the byte-identical restore (14 of 14, native Windows).
+- `.crew/verify.json`'s T-0040 rule lists `sabotage_shell.py` again, and its `why` says how to
+  re-establish that claim from tracked files.
+
 ### Fixed — `crew` 1.0.102: the merge train's round-2 findings and the rerere rule (L-0558)
 
 L-0520's review round 2 (Codex) left two BLOCKs and three FIXes, owner-accepted so PR 1 could
