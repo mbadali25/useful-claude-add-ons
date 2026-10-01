@@ -29,6 +29,7 @@ import importlib.util
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -358,6 +359,22 @@ def case_heavy_call_killed_marks_unfinished(tmp: str) -> None:
 
 # ---- Acceptance 8 ---------------------------------------------------------
 
+def case_inner_signal_is_not_heavy_rc_zero(tmp: str) -> None:
+    # Measured 2026-09-30 (step 6): the heavy-run scope hit its 6G cap, systemd
+    # stopped the scope with SIGTERM, and status.json still said heavy_run rc=0
+    # because the inner runner returned 0 after its signal handler. The step
+    # states were right; the heavy-run rc must not read as a clean call.
+    steps = [sh_step("a1", "heavy", "kill -TERM $PPID; sleep 5", "A"),
+             sh_step("s1", "solo", "exit 0")]
+    rc, out, status = run_gate(tmp, steps)
+    st = by_name(status)
+    expect(st["a1"]["state"] == "COULD-NOT-TELL", f"a1 is {st['a1']['state']}\n{out}")
+    expect(st["s1"]["state"] == "COULD-NOT-TELL", f"s1 is {st['s1']['state']}\n{out}")
+    expect(status["heavy_run"]["rc"] == 128 + signal.SIGTERM,
+           f"heavy_run {status['heavy_run']} after the inner runner took SIGTERM")
+    expect(rc == 3, f"rc={rc}")
+
+
 def case_table_pins_n4(tmp: str) -> None:
     runner = load_runner()
     pytest_steps = [s for s in runner.TABLE if s.pytest]
@@ -535,6 +552,7 @@ CASES = [
     case_cannot_start_is_could_not_tell,
     case_timeout_kills_grandchildren,
     case_heavy_call_killed_marks_unfinished,
+    case_inner_signal_is_not_heavy_rc_zero,
     case_table_pins_n4,
     case_missing_xdist_is_could_not_tell,
     case_ci_drift_table_covers_workflows,

@@ -218,6 +218,9 @@ class CannotStart(Exception):
 # ---- process handling -----------------------------------------------------
 
 STOP = threading.Event()
+# The first signal that set STOP; the inner runner exits 128+signum with it, so
+# the outer status never records a signal-stopped heavy-run call as rc=0.
+STOP_SIGNAL: list = []
 _LIVE: set = set()
 _LIVE_LOCK = threading.Lock()
 
@@ -299,6 +302,8 @@ def spawn_and_wait(argv: list, cwd: str, log: str, timeout: float, grace: float,
 
 
 def _on_signal(signum, _frame) -> None:
+    if not STOP_SIGNAL:
+        STOP_SIGNAL.append(int(signum))
     STOP.set()
     with _LIVE_LOCK:
         live = list(_LIVE)
@@ -565,6 +570,8 @@ def run_inner(part: str, steps: list, ctx: Context) -> int:
         for thread in threads:
             thread.join(timeout=0.5)
     run_group([s for s in steps if s.phase == "solo"])
+    if STOP.is_set():
+        return 128 + (STOP_SIGNAL[0] if STOP_SIGNAL else int(signal.SIGTERM))
     return 0
 
 
