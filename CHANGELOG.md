@@ -4,19 +4,20 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.108: review closure - a final 0-BLOCK cross-family round auto-accepts (L-0510)
+### Changed — `crew` 1.0.112: review closure - a final 0-BLOCK cross-family round auto-accepts (L-0510)
 
-Bumped `1.0.103 -> 1.0.108` for the family rule (owner decision 2026-10-01 #3); 1.0.104-1.0.107 are
-claimed by open lanes (L-0516, L-0557, W-0115/T-0501, T-0504). Earlier: `1.0.98 -> 1.0.103` after
-merging origin/main `52489039` (T-0040, crew 1.0.98). L-0510's 1.0.90, 1.0.93, 1.0.94 and 1.0.103
-were branch versions and were never published.
+Bumped `1.0.110 -> 1.0.112` after merging origin/main `2906dcbd` (crew 1.0.110); 1.0.111 is claimed
+by L-0557 and W-0117. Before it, `1.0.103 -> 1.0.108` for the family rule (owner decision
+2026-10-01 #3). Earlier: `1.0.98 -> 1.0.103` after
+merging origin/main `52489039` (T-0040, crew 1.0.98). L-0510's 1.0.90, 1.0.93, 1.0.94, 1.0.103 and
+1.0.108 were branch versions and were never published.
 
 - **Behaviour change for every install (owner policy 2026-09-30).** A review round that is the
   last one the budget allows under the current plan, completed as `FINDINGS` with 0 BLOCK, is
   accepted by the new ledger verb `review_ledger.py --ticket <id> --auto-accept --follow-up <id>`.
   It takes no `--by`: the receipt is kind `auto-accepted`, `accepted_by` is fixed to
   `auto: 0 BLOCK, owner policy 2026-09-30`, and it carries the round's FIX/NIT lines verbatim,
-  the follow-up id and the model family. `/crew:review` step 3 then files ONE follow-up ticket
+  the follow-up id, the provider and the model family. `/crew:review` step 3 then files ONE follow-up ticket
   whose `direction.md` quotes every line. No flag or config key turns it off.
 - **The guard is in the ledger, and every unknown is a refusal.** Refused, changing nothing: a
   round not reviewed by another model family than the author's (owner decision 2026-10-01: the
@@ -33,7 +34,7 @@ were branch versions and were never published.
   guarded verb; the owner's `--accept` is otherwise unchanged.
 - **One predicate, `review_ledger.receipt_stands`,** decides whether a FINDINGS receipt stands for
   both `--check-receipt` and `crew_autopilot`; an auto receipt stands only while its round still
-  passes the guard and its lines equal the row's, and a CLEAN round only under a `clean`
+  passes the guard and its lines, provider and family equal the row's, and a CLEAN round only under a `clean`
   receipt. The new `--check-follow-up` matches every line verbatim and as often as the receipt
   carries it; a non-UTF-8 `direction.md` or a receipt of an unknown kind is a named could-not-tell
   refusal. `/crew:done` does not run it yet: L-0568 adds it to check 1.

@@ -148,7 +148,7 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   ```
   A `CLEAN` verdict writes a receipt automatically; a `FINDINGS` verdict only becomes one through
   `--accept`, or `--auto-accept` on a final 0-BLOCK round. An `auto-accepted` receipt stands only
-  while its round still reads 0 BLOCK with the same lines from a Codex or Kimi reviewer. `--check-follow-up` fails until the
+  while its round still reads 0 BLOCK with the same lines from the same Codex or Kimi reviewer the receipt names. `--check-follow-up` fails until the
   follow-up's `direction.md` quotes every line verbatim (a line the receipt carries twice, twice),
   and on a non-UTF-8 file or an unknown receipt kind. `/crew:done` does not run it yet (L-0568 adds
   it to check 1), so run it yourself before closing. `--check-receipt` rebuilds the review bundle from the receipt's recorded base and

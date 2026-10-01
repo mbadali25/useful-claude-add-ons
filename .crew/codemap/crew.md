@@ -703,7 +703,8 @@ allows; review acceptance is FINDINGS with any BLOCK, or a round `review_ledger.
 (`plugin/crew/hooks/scripts/review_ledger.py:590`) whether a FINDINGS receipt stands, the same
 predicate `check_receipt` (`:681`) uses (a CLEAN round stands only under a `clean`
 receipt): `owner-accepted`, or `auto-accepted` with
-`accepted_by == AUTO_BY`, lines equal to the row's and the row passing `_auto_row_problem`
+`accepted_by == AUTO_BY`, lines equal to the row's, provider and model family equal to the row's
+(`_receipt_names_the_reviewer`, review round 3 FIX 2) and the row passing `_auto_row_problem`
 (`:477`), which first asks `_family_problem` (`:454`, owner decision 2026-10-01 #3): the row's
 `provider` is in `AUTO_PROVIDERS` (codex, kimi) and its `model_family` a non-empty string that is
 not `AUTHOR_FAMILY` (claude), every missing or unknown value a refusal. Otherwise it stops at `accept-review`, naming `--auto-accept` when
