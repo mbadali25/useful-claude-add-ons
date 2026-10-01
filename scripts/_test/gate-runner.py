@@ -1058,6 +1058,161 @@ def case_non_utf8_tracked_name_does_not_crash(tmp: str) -> None:
            f"a non-UTF-8 workflow was not reported: {problems}")
 
 
+# ---- review round 3 (L-0513 Fix phase) ------------------------------------
+
+def case_heavy_part_forged_pass_is_could_not_tell(tmp: str) -> None:
+    # BLOCK r3: a heavy-part result with the required keys and state PASS was
+    # taken as PASS though rc was null, so a heavy-run that wrote such a file
+    # and exited 0 gave an overall PASS for a step that never ran. Neighbours:
+    # rc of the wrong type or contradicting the state, a result filed under
+    # another step's name, and a result for a step that is not in the table.
+    def result(**kw):
+        return {"name": "a1", "rc": 0, "state": "PASS", "reason": "", "seconds": 0.0,
+                "log": "/nonexistent.log", **kw}
+
+    forged = {
+        "rc null": {"a1": result(rc=None)},
+        "rc string": {"a1": result(rc="0")},
+        "rc bool": {"a1": result(rc=False)},
+        "rc 1 with PASS": {"a1": result(rc=1)},
+        "rc 0 with FAIL": {"a1": result(state="FAIL")},
+        "name mismatch": {"a1": result(name="b1")},
+        "unknown step": {"zz": result(name="zz")},
+    }
+    cases = list(forged.items()) + [("control", {"a1": result()})]
+    for i, (label, steps_doc) in enumerate(cases):
+        sub = os.path.join(tmp, f"p{i}")
+        os.makedirs(sub)
+        payload = write(os.path.join(sub, "payload.json"),
+                        json.dumps({"started": time.time(), "pid": 1, "steps": steps_doc}))
+        body = ('part=""; prev=""\n'
+                'for a in "$@"; do [ "$prev" = "--inner" ] && part="$a"; prev="$a"; done\n'
+                f'cp "{payload}" "$part"\n'
+                'exit 0\n')
+        hr = fake_heavy_run(sub, body)
+        rc, out, status = run_gate(sub, [sh_step("a1", "heavy", "exit 0", "A")], heavy=hr)
+        st = by_name(status)
+        if label == "control":
+            expect(rc == 0 and st["a1"]["state"] == "PASS",
+                   f"control: a well-formed PASS was not taken: rc={rc} {st['a1']}\n{out}")
+            continue
+        expect(st["a1"]["state"] == "COULD-NOT-TELL",
+               f"{label}: a1 is {st['a1']['state']} from a forged result\n{out}")
+        expect(rc == 3, f"{label}: rc={rc}, expected 3\n{out}")
+        expect("zz" not in st, f"{label}: a step outside the table reached status.json: {st}")
+
+
+def case_ci_drift_process_substitution_in_excluded_install(tmp: str) -> None:
+    # FIX r3: a wildcard EXCLUDED_CI entry refused only `$(` and backticks in
+    # its tail, so `pip install <(python3 x.py)` hid x.py. Neighbour: `>(...)`.
+    runner = load_runner()
+    for run in ("pip install <(python3 scripts/new-check.py)",
+                "pip install >(python3 scripts/new-check.py)",
+                'python -m pip install -r <(python3 scripts/new-check.py)'):
+        cmds = runner.split_commands(run)
+        unknown = [c for c in cmds if not runner._excluded("pytest-crew.yml", c)]
+        expect(any("new-check.py" in c for c in unknown),
+               f"{run!r} hides new-check.py: commands {cmds}, unknown {unknown}")
+    expect(runner._excluded("pytest-crew.yml", "pip install pytest pytest-xdist"),
+           "a plain install is no longer excluded")
+    runner_, root, yaml = _drift_fixture(tmp)
+
+    def add(doc):
+        doc["jobs"]["test"]["steps"].append(
+            {"name": "new", "run": "pip install <(python3 scripts/new-check.py)\n"})
+
+    _edit_workflow(root, yaml, "pytest-crew.yml", add)
+    problems = runner_.ci_drift(root)
+    expect(any("new-check.py" in p for p in problems),
+           f"a process substitution in an install line was not reported: {problems}")
+
+
+def case_table_rejects_group_on_non_heavy_step(tmp: str) -> None:
+    # FIX r3: only heavy steps had their group checked, so a cheap or solo step
+    # took any group value. Neighbour: solo, and a falsy non-null group.
+    bad = []
+    for phase in ("cheap", "solo"):
+        for group in ([], "", 0, False, {}, "A", "C"):
+            bad.append({"name": "x", "phase": phase, "group": group, "argv": ["true"]})
+    for i, step in enumerate(bad):
+        sub = os.path.join(tmp, f"t{i}")
+        os.makedirs(sub)
+        rc, out, _ = run_gate(sub, [step])
+        expect(rc == 2, f"{step['phase']} group {step['group']!r}: rc={rc}, expected 2\n{out}")
+        expect("Traceback" not in out, f"{step} crashed\n{out}")
+    for i, step in enumerate(({"name": "x", "phase": "cheap", "argv": ["true"]},
+                              {"name": "x", "phase": "cheap", "group": None, "argv": ["true"]})):
+        sub = os.path.join(tmp, f"ok{i}")
+        os.makedirs(sub)
+        rc, out, _ = run_gate(sub, [step])
+        expect(rc == 0, f"cheap step with no group: rc={rc}\n{out}")
+
+
+def case_ci_drift_wrong_yaml_shape_is_a_problem(tmp: str) -> None:
+    # FIX r3: valid YAML of the wrong shape (a list at the top, a scalar jobs)
+    # crashed ci_drift. Neighbours: every level below -- a job, its steps, a
+    # step and its run -- and a document with no jobs at all, which read as
+    # "nothing to check".
+    shapes = ["[1]\n", "x\n", "", "on: push\n", "jobs: 5\n", "jobs: [1]\n", "jobs:\n  a: 5\n",
+              "jobs:\n  a:\n    steps: 5\n", "jobs:\n  a:\n    steps: {x: 1}\n",
+              "jobs:\n  a:\n    steps: [5]\n", "jobs:\n  a:\n    steps:\n      - run: 5\n"]
+    for i, text in enumerate(shapes):
+        runner, root, _yaml = _drift_fixture(os.path.join(tmp, f"s{i}"))
+        write(os.path.join(root, ".github", "workflows", "pytest-crew.yml"), text)
+        try:
+            problems = runner.ci_drift(root)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            raise AssertionError(f"ci_drift raised on {text!r}: {exc!r}") from exc
+        expect(any("pytest-crew.yml" in p for p in problems),
+               f"workflow {text!r} was not reported: {problems}")
+
+
+def case_timeout_grace_covers_grandchildren(tmp: str) -> None:
+    # FIX r3: the grace period ended when the group LEADER exited, so a
+    # grandchild still cleaning up after SIGTERM was SIGKILLed at once.
+    # Neighbour: once the whole group is gone the runner does not sit out
+    # the rest of the grace period.
+    cleaned = os.path.join(tmp, "cleaned")
+    pidfile = os.path.join(tmp, "grandchild.pid")
+    inner = f'trap "sleep 1; touch \\"{cleaned}\\"; exit 0" TERM; while :; do sleep 0.1; done'
+    step = sh_step("spawner", "cheap", f"sh -c '{inner}' & echo $! > \"{pidfile}\"; wait",
+                   timeout=1)
+    try:
+        rc, out, status = run_gate(tmp, [step], grace="8")
+    finally:
+        try:
+            with open(pidfile, encoding="utf-8") as fh:
+                os.kill(int(fh.read().strip()), signal.SIGKILL)
+        except (OSError, ValueError):
+            pass
+    res = by_name(status)["spawner"]
+    expect(res["state"] == "COULD-NOT-TELL" and rc == 3, f"rc={rc} {res}\n{out}")
+    expect(os.path.exists(cleaned),
+           f"the grandchild was killed inside its grace period (no cleanup)\n{out}")
+    expect(res["seconds"] < 6, f"the runner sat out the grace after the group was gone: {res}")
+
+
+def case_cwd_rechecked_at_launch(tmp: str) -> None:
+    # FIX r3: cwd containment was checked only when the table loaded, so a step
+    # that swapped an in-root directory for a symlink sent the next step
+    # outside --root. Neighbour: the same inside a heavy group (inner runner).
+    for label, phase, group in (("cheap", "cheap", None), ("heavy", "heavy", "A")):
+        sub = os.path.join(tmp, label)
+        root = os.path.join(sub, "root")
+        outside = os.path.join(sub, "outside")
+        os.makedirs(os.path.join(root, "sub"))
+        os.makedirs(outside)
+        steps = [sh_step("swap", phase, f'rm -rf sub && ln -s "{outside}" sub', group),
+                 sh_step("use", phase, "touch ran-here", group, cwd="sub")]
+        rc, out, status = run_gate(sub, steps)
+        st = by_name(status)
+        expect(st["swap"]["state"] == "PASS", f"{label}: fixture swap failed: {st['swap']}\n{out}")
+        expect(not os.path.exists(os.path.join(outside, "ran-here")),
+               f"{label}: the step ran outside --root through the swapped symlink\n{out}")
+        expect(st["use"]["state"] == "COULD-NOT-TELL", f"{label}: use is {st['use']}\n{out}")
+        expect(rc == 3, f"{label}: rc={rc}\n{out}")
+
+
 CASES = [
     case_list_prints_phases,
     case_one_heavy_run_call_for_both_groups,
@@ -1094,6 +1249,12 @@ CASES = [
     case_heavy_part_wrong_shape_is_could_not_tell,
     case_table_cwd_stays_in_root,
     case_non_utf8_tracked_name_does_not_crash,
+    case_heavy_part_forged_pass_is_could_not_tell,
+    case_ci_drift_process_substitution_in_excluded_install,
+    case_table_rejects_group_on_non_heavy_step,
+    case_ci_drift_wrong_yaml_shape_is_a_problem,
+    case_timeout_grace_covers_grandchildren,
+    case_cwd_rechecked_at_launch,
 ]
 
 
