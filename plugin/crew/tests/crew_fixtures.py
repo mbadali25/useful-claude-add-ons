@@ -768,6 +768,58 @@ PIN_STARTUP_TIMEOUT_S = 30
 PIN_READER_GRACE_S = 5
 
 
+def first_line_within(proc, bound_s, who, consequence=""):
+    """`proc`'s first stdout line, read within `bound_s` seconds, or a
+    RuntimeError naming `who` once `proc` has been stopped.
+
+    A reader thread with a bounded join, because select() does not work on
+    Windows pipes. On timeout it closes `proc`'s stdin, kills it, waits with
+    a bound, and gives the reader `PIN_READER_GRACE_S` to drain. Closing
+    stdin first matters: Git's bin/bash.exe is a shim whose usr/bin/bash.exe
+    child also holds stdout, and killing the shim leaves that child running
+    until its `read` sees EOF. `proc` needs stdin and stdout pipes."""
+    lines = []
+    reader = threading.Thread(
+        target=lambda: lines.append(proc.stdout.readline()), daemon=True)
+    reader.start()
+    reader.join(bound_s)
+    if not reader.is_alive():
+        return lines[0] if lines else ""
+    proc.stdin.close()
+    proc.kill()
+    proc.wait(timeout=GATE_SUBPROCESS_TIMEOUT_S)
+    reader.join(PIN_READER_GRACE_S)
+    raise RuntimeError(
+        f"{who} did not announce itself within {bound_s}s; killed it "
+        f"(exit {proc.poll()})" + (f" {consequence}" if consequence else "")
+        + ("" if not reader.is_alive() else
+           f"; its stdout reader was still blocked {PIN_READER_GRACE_S}s "
+           "later, so a grandchild still holds the pipe"))
+
+
+def gate_bash(pwsh, ps1, env=None):
+    """The bash verify-gate.ps1's own Resolve-CrewBash picks under `env`
+    (default: this process' environment), via its `-PrintBash` probe, or
+    None when it resolves none (the gate then refuses rather than run bash).
+
+    A test that runs the PowerShell gate pins THIS bash, not `resolve_bash`'s:
+    the gate walks up from git.exe, `resolve_bash` starts from PATH order, and
+    with two Git installs they can name different MSYS runtimes - pinning
+    the wrong one leaves the gate children's shared region unpinned (T-0110
+    review round 2). Resolve it under an env WITHOUT the poisoned TMP/TEMP:
+    the probe itself is a launch, and it only reads PATH."""
+    result = run_gate(
+        [pwsh, "-NoProfile", "-NonInteractive", "-File", ps1, "-PrintBash"],
+        env=dict(os.environ) if env is None else env,
+        stdin=subprocess.DEVNULL, capture_output=True, text=True,
+        check=False, timeout=GATE_SUBPROCESS_TIMEOUT_S)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"gate_bash: {ps1} -PrintBash exited {result.returncode}: "
+            f"{result.stderr.strip()}")
+    return result.stdout.strip() or None
+
+
 @contextlib.contextmanager
 def msys_tmp_pinned(bash, poisoned_env):
     """Run a block that starts MSYS processes under `poisoned_env` (TMP/TEMP
@@ -792,8 +844,8 @@ def msys_tmp_pinned(bash, poisoned_env):
     took: a probe of `bash` under `poisoned_env` must see `/tmp` as a
     directory, or this raises instead of running a test that would poison
     the host. The region is per installation, so `bash` must belong to the
-    same MSYS install the block's children use (Git for Windows' own, for
-    every crew gate - verify-gate.ps1 resolves its bash from git.exe).
+    same MSYS install the block's children use: for verify-gate.ps1, pass
+    `gate_bash(...)`, which asks the gate's own resolver.
 
     `test_msys_tmp_pin.py` checks both halves: the hazard, on a private copy
     of the runtime, and that every crew test overriding TMP/TEMP runs here.
@@ -807,31 +859,11 @@ def msys_tmp_pinned(bash, poisoned_env):
         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL, text=True, encoding="utf-8")
     try:
-        # A reader thread, because select() does not work on Windows pipes;
-        # the bound is read at call time so a test can shorten it.
-        bound = PIN_STARTUP_TIMEOUT_S
-        lines = []
-        reader = threading.Thread(
-            target=lambda: lines.append(holder.stdout.readline()), daemon=True)
-        reader.start()
-        reader.join(bound)
-        if reader.is_alive():
-            # Git's bin/bash.exe is a shim whose usr/bin/bash.exe child also
-            # holds stdout, and killing the shim leaves that child running:
-            # close stdin first so the child's `read` hits EOF and it exits,
-            # closing the pipe so the reader sees EOF on its own.
-            holder.stdin.close()
-            holder.kill()
-            holder.wait(timeout=GATE_SUBPROCESS_TIMEOUT_S)
-            reader.join(PIN_READER_GRACE_S)
-            raise RuntimeError(
-                f"msys_tmp_pinned: holder {bash!r} did not announce itself "
-                f"within {bound}s; killed it (exit {holder.poll()}) rather "
-                "than run the block unpinned"
-                + ("" if not reader.is_alive() else
-                   f"; its stdout reader was still blocked {PIN_READER_GRACE_S}s"
-                   " later, so a grandchild still holds the pipe"))
-        ready = lines[0].strip() if lines else ""
+        # The bound is read at call time so a test can shorten it.
+        ready = first_line_within(
+            holder, PIN_STARTUP_TIMEOUT_S,
+            f"msys_tmp_pinned: holder {bash!r}",
+            "rather than run the block unpinned").strip()
         if ready != "pinned":
             raise RuntimeError(
                 f"msys_tmp_pinned: holder {bash!r} did not start "
