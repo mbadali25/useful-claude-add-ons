@@ -45,6 +45,40 @@ All notable changes to this repository are documented here. Format follows [Keep
   `--check-ci` reports workflow YAML of the wrong shape, and a `<(...)`/`>(...)` inside an
   excluded install line, as drift instead of crashing or passing.
 
+### Fixed — `crew` 1.0.102: the merge train's round-2 findings and the rerere rule (L-0558)
+
+L-0520's review round 2 (Codex) left two BLOCKs and three FIXes, owner-accepted so PR 1 could
+land, with the train not to be armed until they were fixed. All five, and the owner's rerere rule:
+
+- **Moved paths judge the full Touch.** `acquire`'s `merge <base> first`, `check-land` and the
+  merged-path notices no longer drop refresh artifacts from Touch; only the queue's overlap
+  decision does. Before, a base that changed `.crew/codemap/crew.md` under a ticket whose Touch
+  named it could still print `LAND_OK`.
+- **The fetch updates the ref it judges.** `catch-up` and `check-land` fetch with
+  `+refs/heads/<branch>:refs/remotes/<remote>/<branch>`; a base that then disagrees with
+  `FETCH_HEAD` is could-not-tell (exit 3), and every later step (the merge, `merge-tree`, the
+  moved-path check) judges that fetched SHA rather than the ref by name, which another worktree's
+  fetch can move. Before, with `remote.origin.fetch` unset, the fetch
+  moved only `FETCH_HEAD` and the checks judged a stale `origin/main`.
+- **No state change commits unlogged.** Events are written before `state.json` and both are rolled
+  back when either write fails (the events file truncated to its old size); the next seq skips
+  past any event a crash left behind.
+- **Malformed state and history are could-not-tell.** Every top-level state field (`schema` the
+  integer 1, never `true` or `1.0`; `seq` and `order` non-negative integers, never booleans; `entries`; `armed_at`, `armed_by`) is checked at
+  load; an `events.jsonl` record that is not an object with a positive `seq`, a known `kind` and a
+  `ticket` is told to every entry as `could not tell whether ... concerns you`, whatever its seq
+  and on every read until repaired, and `arm` refuses
+  on it, instead of a `KeyError` or a silent skip.
+- **rerere, never autoupdate (owner, 2026-09-30).** `catch-up` sets `rerere.enabled` only and
+  merges with `git -c rerere.autoupdate=false`, so a replay is left unstaged for the lane to
+  inspect and `git add`. The version files (`plugin/crew/.claude-plugin/plugin.json`,
+  `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md`, `CHANGELOG.md`) are never replayed: each
+  left conflicted gets `git rerere forget` and its conflict markers back, is named as forgotten in
+  the output, and is listed under `rerere_forgotten` in the merge log; a modify/delete conflict on
+  one, which rerere never resolves, is left as the merge left it.
+- The sabotage rows proving these (S20-S33) belong to L-0526's `sabotage_train.py` (tooling PRs
+  carry no feature work); each was run RED by hand here.
+
 ### Added — `crew` 1.0.98: Windows shell routes (T-0040)
 
 - **What it is.** `hooks/scripts/crew_shell.py` picks the shell crew's long-running jobs run in on

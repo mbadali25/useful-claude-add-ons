@@ -376,13 +376,14 @@ def test_catch_up_replays_rerere_resolution_into_merge_log(repo, capsys):
     assert code == 1 and "rerere" in out, out
     row = _merge_log(repo, "T-1")[-1]
     assert row["outcome"] == "rerere-resolved" and row["rerere_replayed"] == ["f.txt"], row
-    assert "f.txt" in git(lane, "diff", "--name-only", "--cached")
+    assert (lane / "f.txt").read_text(encoding="utf-8") == "one\nRESOLVED\n"
+    assert git(lane, "ls-files", "-u", "--", "f.txt"), "a replay is never staged"
     assert os.path.exists(os.path.join(git(lane, "rev-parse", "--absolute-git-dir"),
                                        "MERGE_HEAD"))
     code, out = _cli(capsys, lane, "merge-log", "--ticket", "T-1")
     assert code == 0 and "rerere_replayed: f.txt" in out, out
     assert git(lane, "config", "--get", "rerere.enabled") == "true"
-    assert git(lane, "config", "--get", "rerere.autoupdate") == "true"
+    assert git(lane, "config", "--get", "rerere.autoupdate", check=False) == ""
 
 
 @pytest.mark.parametrize("worktree_config", [False, True])
@@ -400,10 +401,12 @@ def test_catch_up_never_writes_global_config(repo, capsys, _isolated_git, worktr
     own = os.path.join(git(lane, "rev-parse", "--absolute-git-dir"), "config.worktree")
     if worktree_config:
         with open(own, encoding="utf-8") as fh:
-            assert "rerere" in fh.read()
+            text = fh.read()
+        assert "rerere" in text and "autoupdate" not in text
         assert "rerere" not in shared.read_text(encoding="utf-8")
     else:
-        assert "rerere" in shared.read_text(encoding="utf-8")
+        text = shared.read_text(encoding="utf-8")
+        assert "rerere" in text and "autoupdate" not in text
         assert not os.path.exists(own)
         assert git(lane, "config", "--get", "extensions.worktreeConfig", check=False) == ""
 
@@ -873,3 +876,293 @@ def test_only_the_review_path_imports_the_train():
             if "crew_train" in names:
                 importers.add(name)
     assert importers <= {"review_run.py", "review_prompt.py"}, importers
+
+
+# --- L-0558: review round 2 (codex) and the owner's rerere rule -----------------------------
+
+@pytest.mark.parametrize("verb", ["acquire", "check-land"])
+def test_moved_path_checks_judge_refresh_artifacts_in_touch(repo, capsys, monkeypatch, verb):
+    lane = _holding_lane(repo, capsys, touch=(".crew/codemap/crew.md", "a.txt"))
+    _passing_verdict(monkeypatch)
+    _commit(repo, ".crew/codemap/crew.md", "main moved the map\n")
+
+    if verb == "acquire":
+        code, out = _cli(capsys, lane, "acquire", "--ticket", "T-1")
+    else:
+        code, out = _cli(capsys, lane, "check-land", "--ticket", "T-1", "--no-fetch")
+
+    assert code == 1 and "LAND_OK" not in out and ".crew/codemap/crew.md" in out, out
+
+
+def test_refresh_artifact_only_touch_sets_hold_together(repo, capsys):
+    _spec(repo, "T-1", [".crew/codemap/crew.md"])
+    _spec(repo, "T-2", [".crew/codemap/crew.md"])
+    _arm(capsys, repo)
+    assert _cli(capsys, repo, "acquire", "--ticket", "T-1")[0] == 0
+
+    code, out = _cli(capsys, repo, "acquire", "--ticket", "T-2")
+
+    assert code == 0, out
+
+
+def _remote_lane(repo, capsys, tmp_path):
+    """A lane holding T-1 (Touch a.txt) on origin/main, with
+    remote.origin.fetch unset, then the remote's main moved in a.txt from
+    another clone. Returns (lane, the remote's new main, the lane's old one)."""
+    remote = tmp_path / "remote.git"
+    git(tmp_path, "clone", "-q", "--bare", str(repo), str(remote))
+    git(repo, "remote", "add", "origin", str(remote))
+    git(repo, "fetch", "-q", "origin")
+    git(repo, "config", "--unset-all", "remote.origin.fetch")
+    lane = _worktree(repo, "wt1", "l1")
+    _spec(lane, "T-1", ["a.txt"])
+    _commit(lane, "c.txt", "lane\n")
+    _arm(capsys, repo)
+    code, out = _cli(capsys, lane, "acquire", "--ticket", "T-1", "--base", "origin/main")
+    assert code == 0, out
+    other = tmp_path / "other"
+    git(tmp_path, "clone", "-q", str(remote), str(other))
+    _commit(other, "a.txt", "remote moved a\n")
+    git(other, "push", "-q", "origin", "HEAD:main")
+    return lane, git(other, "rev-parse", "HEAD"), git(lane, "rev-parse", "origin/main")
+
+
+def test_check_land_fetch_updates_the_ref_it_judges(repo, capsys, monkeypatch, tmp_path):
+    lane, moved, _old = _remote_lane(repo, capsys, tmp_path)
+    _passing_verdict(monkeypatch)
+
+    code, out = _cli(capsys, lane, "check-land", "--ticket", "T-1", "--base", "origin/main")
+
+    assert code == 1 and "LAND_OK" not in out and "a.txt" in out, out
+    assert git(lane, "rev-parse", "origin/main") == moved
+
+
+def test_fetched_ref_that_disagrees_with_fetch_head_is_could_not_tell(repo, capsys, monkeypatch,
+                                                                     tmp_path):
+    lane, _moved, old = _remote_lane(repo, capsys, tmp_path)
+    _passing_verdict(monkeypatch)
+    real = crew_train._git  # pylint: disable=protected-access
+
+    def undone(root, *args, **kwargs):
+        result = real(root, *args, **kwargs)
+        if args and args[0] == "fetch":
+            real(root, "update-ref", "refs/remotes/origin/main", old)
+        return result
+    monkeypatch.setattr(crew_train, "_git", undone)
+
+    code, out = _cli(capsys, lane, "check-land", "--ticket", "T-1", "--base", "origin/main")
+
+    assert code == 3 and "could not tell" in out and "FETCH_HEAD" in out, out
+
+
+def test_events_append_failure_commits_no_state(repo, capsys):
+    _spec(repo, "T-1", ["a.txt"])
+    _arm(capsys, repo)
+    folder = crew_train.train_dir(str(repo))
+    state = os.path.join(folder, "state.json")
+    with open(state, "rb") as fh:
+        before = fh.read()
+    os.mkdir(os.path.join(folder, "events.jsonl"))
+
+    code, out = _cli(capsys, repo, "acquire", "--ticket", "T-1")
+
+    assert code == 3 and "could not tell" in out and "Traceback" not in out, out
+    with open(state, "rb") as fh:
+        assert fh.read() == before
+    os.rmdir(os.path.join(folder, "events.jsonl"))
+    assert _cli(capsys, repo, "acquire", "--ticket", "T-1")[0] == 0
+    assert [e["kind"] for e in _events(repo)] == ["acquire"]
+
+
+def test_state_replace_failure_rolls_the_events_back(repo, capsys, monkeypatch):
+    _spec(repo, "T-1", ["a.txt"])
+    _spec(repo, "T-2", ["b.txt"])
+    _arm(capsys, repo)
+    assert _cli(capsys, repo, "acquire", "--ticket", "T-2")[0] == 0
+    events = os.path.join(crew_train.train_dir(str(repo)), "events.jsonl")
+    with open(events, "rb") as fh:
+        before = fh.read()
+
+    def refuse(_src, _dst):
+        raise PermissionError(13, "held open", _dst)
+    monkeypatch.setattr(crew_train.os, "replace", refuse)
+    code, out = _cli(capsys, repo, "acquire", "--ticket", "T-1")
+
+    assert code == 3 and "could not tell" in out, out
+    with open(events, "rb") as fh:
+        assert fh.read() == before
+
+
+@pytest.mark.parametrize("field,value", [("schema", True), ("schema", 1.0), ("order", []),
+                                         ("order", True), ("seq", True),
+                                         ("seq", -1), ("armed_at", None), ("armed_by", 5)])
+def test_malformed_top_level_state_is_could_not_tell(repo, capsys, field, value):
+    _spec(repo, "T-1", ["a.txt"])
+    _arm(capsys, repo)
+    path = os.path.join(crew_train.train_dir(str(repo)), "state.json")
+    with open(path, encoding="utf-8") as fh:
+        state = json.load(fh)
+    if value is None:
+        del state[field]
+    else:
+        state[field] = value
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(state, fh)
+
+    outs = [_cli(capsys, repo, *verb) for verb in (["status"], ["enqueue", "--ticket", "T-1"])]
+
+    for code, out in outs:
+        assert code == 3 and "could not tell" in out and field in out, out
+
+
+_BAD_EVENTS = ['{"seq": 1, "kind": "merged"}',
+               '{"seq": true, "kind": "merged", "ticket": "T-1", "paths": []}',
+               '{"kind": "merged", "ticket": "T-1", "paths": []}',
+               '[1]',
+               '{"seq": 1, "kind": "bogus", "ticket": "T-1"}',
+               '{"seq": 0, "kind": "merged", "ticket": "T-1", "paths": []}']
+
+
+@pytest.mark.parametrize("line", _BAD_EVENTS)
+def test_malformed_event_records_are_could_not_tell(repo, capsys, line):
+    _spec(repo, "T-2", ["zz/only.txt"])
+    _arm(capsys, repo)
+    assert _cli(capsys, repo, "enqueue", "--ticket", "T-2")[0] == 0
+    with open(os.path.join(crew_train.train_dir(str(repo)), "events.jsonl"), "a",
+              encoding="utf-8") as fh:
+        fh.write(line + "\n")
+
+    code, out = _cli(capsys, repo, "status")
+
+    assert code == 0 and "T-2: could not tell whether" in out and "events.jsonl:1" in out, out
+
+
+@pytest.mark.parametrize("line", _BAD_EVENTS)
+def test_arm_refuses_malformed_event_records(repo, capsys, line):
+    folder = crew_train.train_dir(str(repo))
+    os.makedirs(folder)
+    with open(os.path.join(folder, "events.jsonl"), "w", encoding="utf-8") as fh:
+        fh.write(line + "\n")
+
+    code, out = _cli(capsys, repo, "arm")
+
+    assert code == 3 and "could not tell" in out and "events.jsonl:1" in out, out
+
+
+def _commit_many(top, names, text):
+    for name in names:
+        path = top / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    git(top, "add", *names)
+    git(top, "commit", "-qm", "c")
+
+
+def _replayable_conflict(repo, capsys, names):
+    """A lane whose catch-up conflicts on every one of `names`, resolved and
+    committed once (rerere records it) and then reset, so the next catch-up
+    meets the same conflict with a recorded resolution."""
+    _commit_many(repo, names, "one\ntwo\n")
+    lane = _worktree(repo, "wt1", "l1")
+    _commit_many(lane, names, "one\nLANE\n")
+    _commit_many(repo, names, "one\nMAIN\n")
+    assert _cli(capsys, lane, "catch-up", "--ticket", "T-1")[0] == 1
+    _commit_many(lane, names, "one\nRESOLVED\n")
+    git(lane, "reset", "-q", "--hard", "HEAD~1")
+    return lane
+
+
+def test_catch_up_never_stages_a_replay_under_a_user_autoupdate(repo, capsys):
+    git(repo, "config", "rerere.autoupdate", "true")
+    lane = _replayable_conflict(repo, capsys, ["f.txt"])
+
+    code, out = _cli(capsys, lane, "catch-up", "--ticket", "T-1")
+
+    assert code == 1 and _merge_log(repo, "T-1")[-1]["rerere_replayed"] == ["f.txt"], out
+    assert git(lane, "ls-files", "-u", "--", "f.txt"), "a replay is never staged"
+    assert git(lane, "config", "--get", "rerere.autoupdate") == "true"
+
+
+@pytest.mark.parametrize("version", ["plugin/crew/.claude-plugin/plugin.json",
+                                     ".claude-plugin/marketplace.json", "plugin/PLUGINS.md",
+                                     "CHANGELOG.md"])
+def test_catch_up_forgets_rerere_resolutions_of_version_files(repo, capsys, version):
+    lane = _replayable_conflict(repo, capsys, [version, "f.txt"])
+
+    code, out = _cli(capsys, lane, "catch-up", "--ticket", "T-1")
+
+    row = _merge_log(repo, "T-1")[-1]
+    assert code == 1 and "forgotten" in out and version in out, out
+    assert row["rerere_replayed"] == ["f.txt"], row
+    assert version in row["conflicted"] and row["rerere_forgotten"] == [version], row
+    assert "<<<<<<<" in (lane / version).read_text(encoding="utf-8")
+    assert git(lane, "ls-files", "-u", "--", version)
+    git(lane, "merge", "--abort")
+    assert _cli(capsys, lane, "catch-up", "--ticket", "T-1")[0] == 1
+    again = _merge_log(repo, "T-1")[-1]
+    assert again["rerere_replayed"] == ["f.txt"] and version in again["conflicted"], again
+
+
+def test_catch_up_leaves_a_modify_delete_version_file_conflicted(repo, capsys):
+    _commit_many(repo, ["CHANGELOG.md", "f.txt"], "one\ntwo\n")
+    lane = _worktree(repo, "wt1", "l1")
+    _commit_many(lane, ["CHANGELOG.md", "f.txt"], "one\nLANE\n")
+    git(repo, "rm", "-q", "CHANGELOG.md")
+    _commit(repo, "f.txt", "one\nMAIN\n")
+
+    code, out = _cli(capsys, lane, "catch-up", "--ticket", "T-1")
+
+    row = _merge_log(repo, "T-1")[-1]
+    assert code == 1 and row["outcome"] == "conflicted", out
+    assert "CHANGELOG.md" in row["conflicted"] and row["rerere_forgotten"] == [], row
+
+
+# --- L-0558 review round 2 (codex) ------------------------------------------------------------
+
+def _fetch_then_rewind(monkeypatch, top, old):
+    """The reviewer's repro: the fetch succeeds, then another worktree moves
+    the shared remote-tracking ref back before the caller uses it."""
+    real = crew_train._fetch  # pylint: disable=protected-access
+
+    def rewound(*args, **kwargs):
+        result = real(*args, **kwargs)
+        git(top, "update-ref", "refs/remotes/origin/main", old)
+        return result
+    monkeypatch.setattr(crew_train, "_fetch", rewound)
+
+
+def test_check_land_judges_the_fetched_sha(repo, capsys, monkeypatch, tmp_path):
+    lane, _moved, old = _remote_lane(repo, capsys, tmp_path)
+    _passing_verdict(monkeypatch)
+    _fetch_then_rewind(monkeypatch, lane, old)
+
+    code, out = _cli(capsys, lane, "check-land", "--ticket", "T-1", "--base", "origin/main")
+
+    assert code == 1 and "LAND_OK" not in out and "a.txt" in out, out
+
+
+def test_catch_up_merges_the_fetched_sha(repo, capsys, monkeypatch, tmp_path):
+    lane, moved, old = _remote_lane(repo, capsys, tmp_path)
+    _fetch_then_rewind(monkeypatch, lane, old)
+
+    code, out = _cli(capsys, lane, "catch-up", "--ticket", "T-1", "--base", "origin/main")
+
+    assert code == 0, out
+    git(lane, "merge-base", "--is-ancestor", moved, "HEAD")  # raises unless merged
+    assert _merge_log(repo, "T-1")[-1]["base_sha"] == moved
+
+
+def test_malformed_event_at_a_consumed_seq_is_could_not_tell(repo, capsys):
+    _spec(repo, "T-1", ["a.txt"])
+    _spec(repo, "T-2", ["zz/only.txt"])
+    _arm(capsys, repo)
+    assert _cli(capsys, repo, "enqueue", "--ticket", "T-2")[0] == 0
+    assert _cli(capsys, repo, "acquire", "--ticket", "T-1")[0] == 0
+    assert _cli(capsys, repo, "status")[0] == 0
+    path = os.path.join(crew_train.train_dir(str(repo)), "events.jsonl")
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write('{"seq": 1, "kind": "bogus", "ticket": "T-1"}\n')
+
+    code, out = _cli(capsys, repo, "status")
+
+    assert code == 0 and "T-2: could not tell whether" in out and "events.jsonl:1" in out, out
