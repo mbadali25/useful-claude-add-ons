@@ -1600,6 +1600,124 @@ def case_heavy_part_needs_step_metadata(tmp: str) -> None:
            f"control: the full rows were not taken: rc={rc} {st}\n{out}")
 
 
+def _record_killpg(calls: list, procs: list):
+    """Wrap os.killpg so each call records (pgid, sig, whether the step's leader
+    was already reaped at that moment); the real signal is still sent."""
+    real = os.killpg
+
+    def recorder(pgid, sig):
+        reaped = any(p.pid == pgid and p.returncode is not None for p in procs)
+        calls.append((pgid, int(sig), reaped))
+        return real(pgid, sig)
+    return real, recorder
+
+
+def _pid_gone(pid: int, limit: float) -> bool:
+    """True once pid no longer exists or is a zombie (dead, awaiting its reaper)."""
+    deadline = time.monotonic() + limit
+    while time.monotonic() < deadline:
+        try:
+            with open(f"/proc/{pid}/stat", encoding="utf-8") as fh:
+                if fh.read().rsplit(")", 1)[1].split()[0] == "Z":
+                    return True
+        except FileNotFoundError:
+            return True
+        except OSError:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return True
+        time.sleep(0.1)
+    return False
+
+
+def case_no_group_signal_after_leader_reaped(tmp: str) -> None:
+    # BLOCK r6 (owner amendment): after proc.wait() reaped the leader,
+    # _kill_group sent one more SIGKILL to its process group. Once the leader
+    # is reaped and its group is empty the numeric PGID is free for reuse, so
+    # that sweep could SIGKILL an unrelated process group. Neither
+    # _signal_group on a reaped leader nor _kill_group on a timed-out one may
+    # call killpg once the leader has been reaped.
+    runner = load_runner()
+    calls: list = []
+    ready = os.path.join(tmp, "ready")
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with
+        ["sh", "-c", f'trap "" TERM; touch "{ready}"; while :; do sleep 0.1; done'],
+        stdin=subprocess.DEVNULL, **runner._group_kwargs())
+    try:
+        deadline = time.monotonic() + 10
+        while not os.path.exists(ready) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        real, recorder = _record_killpg(calls, [proc])
+        os.killpg = recorder
+        try:
+            got = runner._kill_group(proc, 0.3)
+        finally:
+            os.killpg = real
+    finally:
+        if proc.returncode is None:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except OSError:
+                pass
+            proc.wait()
+    expect(got is True, f"_kill_group returned {got!r} for a leader SIGKILL reaps")
+    expect(proc.returncode is not None, "_kill_group returned without reaping the leader")
+    expect(any(sig == signal.SIGKILL for _pg, sig, _r in calls), f"no SIGKILL sent: {calls}")
+    late = [c for c in calls if c[2]]
+    expect(not late, f"killpg sent after the leader was reaped (PGID may be reused): {late}")
+
+    calls.clear()
+    done = subprocess.Popen(["sleep", "0"],  # pylint: disable=consider-using-with
+                            **runner._group_kwargs())
+    done.wait()
+    real, recorder = _record_killpg(calls, [done])
+    os.killpg = recorder
+    try:
+        runner._signal_group(done, hard=True)
+        runner._signal_group(done, hard=False)
+    finally:
+        os.killpg = real
+    expect(not calls, f"_signal_group signalled a reaped leader's group: {calls}")
+
+
+def case_timeout_kills_group_outliving_leader(tmp: str) -> None:
+    # BLOCK r6 neighbour: the fix must not stop at the leader. A timed-out
+    # group whose leader exits on SIGTERM while a child ignoring SIGTERM lives
+    # on is still SIGKILLed after the grace period.
+    runner = load_runner()
+    pidfile = os.path.join(tmp, "child.pid")
+    script = (f'(trap "" TERM; while :; do sleep 0.1; done) & echo $! > "{pidfile}"; '
+              'trap "exit 0" TERM; while :; do sleep 0.1; done')
+    proc = subprocess.Popen(["sh", "-c", script],  # pylint: disable=consider-using-with
+                            stdin=subprocess.DEVNULL, **runner._group_kwargs())
+    child = None
+    try:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            try:
+                with open(pidfile, encoding="utf-8") as fh:
+                    child = int(fh.read().strip())
+                break
+            except (OSError, ValueError):
+                time.sleep(0.05)
+        expect(child is not None, "the fixture's child never wrote its pid")
+        time.sleep(0.3)
+        got = runner._kill_group(proc, 0.5)
+        gone = _pid_gone(child, 5)
+    finally:
+        for pid in (child, proc.pid):
+            if pid is not None:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except OSError:
+                    pass
+        if proc.returncode is None:
+            proc.wait()
+    expect(got is True, f"_kill_group returned {got!r}")
+    expect(gone, f"child {child} outlived its leader and survived the group SIGKILL")
+
+
 CASES = [
     case_list_prints_phases,
     case_one_heavy_run_call_for_both_groups,
@@ -1649,6 +1767,8 @@ CASES = [
     case_relative_path_tool_is_made_absolute,
     case_heavy_part_fail_needs_a_failing_rc,
     case_heavy_part_needs_step_metadata,
+    case_no_group_signal_after_leader_reaped,
+    case_timeout_kills_group_outliving_leader,
 ]
 
 

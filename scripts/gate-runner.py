@@ -280,6 +280,11 @@ def _group_kwargs() -> dict:
 
 
 def _signal_group(proc: subprocess.Popen, hard: bool) -> None:
+    """Signal the step's process group -- but never once its leader has been
+    reaped: from then on the leader's PID, and with it the group ID, may already
+    belong to an unrelated process group (review r6 BLOCK)."""
+    if proc.returncode is not None:
+        return
     if os.name == "nt":
         cmd = ["taskkill", "/T", "/PID", str(proc.pid)] + (["/F"] if hard else [])
         try:
@@ -300,12 +305,39 @@ def _signal_group(proc: subprocess.Popen, hard: bool) -> None:
                 pass
 
 
+def _group_has_live_member(pgid: int):
+    """Linux: whether any non-zombie process is in group `pgid`, from /proc --
+    the leader is kept unreaped (a zombie) while the group is signalled, and
+    signal 0 counts a zombie as a member. None where /proc cannot say."""
+    try:
+        names = os.listdir("/proc")
+    except OSError:
+        return None
+    for name in names:
+        if not name.isdigit():
+            continue
+        try:
+            with open(f"/proc/{name}/stat", "rb") as fh:
+                fields = fh.read().rsplit(b")", 1)[1].split()
+        except (OSError, IndexError):
+            continue
+        if len(fields) > 2 and fields[2] == str(pgid).encode() and fields[0] not in (b"Z", b"X"):
+            return True
+    return False
+
+
 def _group_alive(proc: subprocess.Popen) -> bool:
     """Whether any process of the step's group is still there. POSIX asks the
     group itself (signal 0), so a grandchild that outlived its leader counts;
-    Windows has no group probe and falls back to the leader."""
+    on Linux, while the leader is unreaped, /proc answers instead so the zombie
+    leader itself does not count. Windows has no group probe and falls back to
+    the leader."""
     if os.name == "nt":
         return proc.poll() is None
+    if proc.returncode is None and os.path.isdir("/proc/self"):
+        live = _group_has_live_member(proc.pid)
+        if live is not None:
+            return live
     try:
         os.killpg(proc.pid, 0)
     except ProcessLookupError:
@@ -315,26 +347,55 @@ def _group_alive(proc: subprocess.Popen) -> bool:
     return True
 
 
+def _leader_exited(proc: subprocess.Popen) -> bool:
+    """Whether the step's leader has exited, WITHOUT reaping it where POSIX
+    allows (waitid WNOWAIT): an unreaped leader keeps its PID, and so the
+    group ID, from being reused, which is what keeps signalling the group safe.
+    Where that cannot be asked (Windows, no os.waitid, not our child) it falls
+    back to poll(), which reaps -- and _signal_group then stands down."""
+    if proc.returncode is not None:
+        return True
+    if os.name == "nt" or not hasattr(os, "waitid"):
+        return proc.poll() is not None
+    try:
+        info = os.waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+    except ChildProcessError:
+        return proc.poll() is not None
+    return info is not None
+
+
+def _reap(proc: subprocess.Popen) -> None:
+    try:
+        proc.wait(timeout=KILL_REAP_SECONDS)
+    except subprocess.TimeoutExpired:
+        pass
+
+
 def _kill_group(proc: subprocess.Popen, grace: float) -> bool:
     """SIGTERM the whole group and give the WHOLE group `grace` to exit -- not
     just the leader, so a grandchild still cleaning up is not SIGKILLed the
     moment its leader is gone; SIGKILL whatever is left, then sweep once more.
-    True when the leader was reaped; False when it was still there
+    The leader is reaped only after the last signal, so every signal reaches
+    this step's group and never a later owner of its PGID (review r6 BLOCK).
+    True when the leader exited and was reaped; False when it was still there
     KILL_REAP_SECONDS after SIGKILL (the caller records COULD-NOT-TELL)."""
     _signal_group(proc, hard=False)
     deadline = time.monotonic() + grace
     while time.monotonic() < deadline:
-        if proc.poll() is not None and not _group_alive(proc):
+        if _leader_exited(proc) and not _group_alive(proc):
+            _reap(proc)
             return True
         time.sleep(0.1)
     _signal_group(proc, hard=True)
-    reaped = True
-    try:
-        proc.wait(timeout=KILL_REAP_SECONDS)
-    except subprocess.TimeoutExpired:
-        reaped = False
+    deadline = time.monotonic() + KILL_REAP_SECONDS
+    exited = _leader_exited(proc)
+    while not exited and time.monotonic() < deadline:
+        time.sleep(0.05)
+        exited = _leader_exited(proc)
     _signal_group(proc, hard=True)
-    return reaped
+    if exited:
+        _reap(proc)
+    return exited
 
 
 def _not_reaped(what: str) -> str:

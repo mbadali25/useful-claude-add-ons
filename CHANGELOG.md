@@ -33,7 +33,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   rc 0, FAIL an ordinary failing rc - never 77, a negative rc or a signal exit - SKIP rc 77 or
   null), so a PASS with no exit status, a SKIP over a failed exit, a FAIL over a skip or a signal
   death, or a row missing the step's metadata is COULD-NOT-TELL. A timeout's grace
-  period lasts until the whole process group is gone, not just its leader. A step's `cwd` is
+  period lasts until the whole process group is gone, not just its leader. The group is signalled
+  only while its leader is unreaped (POSIX `waitid` with `WNOWAIT`; on Linux `/proc` tells the zombie
+  leader from a live member), so a kill never reaches a later owner of a freed process-group ID. A step's `cwd` is
   resolved again at launch, so a symlink swapped in by an earlier step cannot run it outside
   `--root`; on Linux the child starts in the directory that was checked (opened, re-checked, and
   entered through `/proc/self/fd`). The inner runner refuses (exit 2, no step run) a table whose
