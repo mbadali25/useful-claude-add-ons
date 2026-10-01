@@ -1654,7 +1654,9 @@ denied unattended for a prod or unknown target.
 **Not a promotion gate.** `prodUnattended` does not stand down
 `promote-gate.sh`'s `requireHuman` (`promote-gate.sh`, the `requireHuman`
 check), which still applies independently: fully unattended production also
-needs that off. `.crew/verify.json` stays promote-gate's list of environments;
+needs that off. `.crew/verify.json` stays promote-gate's list of environments,
+read from the session's project directory even when the deploy runs from a
+linked worktree (whose HEAD and cleanliness are what the gate then checks);
 `crew_config.py --check` warns when a `nonProd` glob covers one it marks
 `requireHuman: true`.
 

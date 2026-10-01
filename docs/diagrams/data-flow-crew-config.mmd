@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@a54ca704 on 2026-09-30. Verify before trusting.
+%% Generated from useful-claude-add-ons@44d3dbc6 on 2026-10-01. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_config_files.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_shell.py
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
@@ -708,6 +708,15 @@ flowchart TB
 %% provider and the launch gate are not drawn. No node or edge changed.
 %% c43a54c1 -> f4adf923 (T-0028 re-sets crew 1.0.85): release files only; no cited line moved.
 %% f4adf923 -> 328fdf4a (T-0028 round-7 fixes in kimi_probe.py, crew 1.0.85): no cited line moved.
+%% Re-anchored 2697bf67 -> 401f6e0f (T-0505, after merging main a7524aac): of the Anchors paths only
+%% plugin/crew/CONFIG.md changed - one sentence in the environments.* subsection of section 16
+%% (:1644-1646, +2 lines: .crew/verify.json is read from the session's project directory even when
+%% the deploy runs from a linked worktree). No heading added, section numbers hold, and this diagram
+%% cites CONFIG.md by section only and draws no verify.json or promote-gate node. No count, node or edge changed.
+%% Re-anchored 328fdf4a -> 6e581365 (T-0505 merges main 64b04c6b, crew 1.0.91): of the Anchors paths only
+%% plugin/crew/CONFIG.md changed - T-0505's sentence in section 16 (+2 lines; .crew/verify.json is read
+%% from the project directory even when the deploy runs from a linked worktree). This diagram cites
+%% CONFIG.md by section only and draws no promote-gate node. No node or edge changed.
 %% Merged 3bb32980 + 328fdf4a on T-0040-land (merge of origin/main 844bfc36, T-0028 landed as crew
 %% 1.0.85): the merge took T-0040-land's side of every node and kept both provenance blocks. Of the
 %% Anchors paths crew_config.py and crew_state.py differ from T-0040-land's side, by T-0028's Kimi
@@ -719,3 +728,6 @@ flowchart TB
 %% qa.kimi.model and dev.kimi.model sit in both layers. DEF, TMPL, S1 and S3 carry them; no edge changed.
 %% Re-anchored 3bb32980 / 328fdf4a -> a54ca704 (T-0040-land's merge of origin/main 844bfc36); the
 %% merge note above names every line that moved.
+%% Merged 66651b69 (T-0040-land) + 6e581365 (main) on T-0040-land, 2026-10-01 (merge of origin/main
+%% 44d3dbc6, crew 1.0.97, rerere off): both provenance blocks kept, main's first; header at the main tip.
+%% The Anchors list keeps T-0040's crew_shell.py. No node or edge changed by the merge.
