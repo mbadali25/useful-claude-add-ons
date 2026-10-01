@@ -30,8 +30,11 @@ States: PASS (rc 0), FAIL (rc non-zero, the step completed), SKIP (rc 77, or a
 tool the step needs is missing -- NOT VERIFIED), COULD-NOT-TELL (timed out,
 killed by a signal incl. rc 137/143, could not start, or no result recorded).
 A timeout kills the step's whole process group: SIGTERM, a grace period
-(--grace, default 30 s), then SIGKILL. A heavy-run call that dies leaves every
-heavy/solo step it had not recorded COULD-NOT-TELL.
+(--grace, default 30 s) that lasts until the whole GROUP is gone, not just its
+leader, then SIGKILL. A heavy-run call that dies leaves every heavy/solo step
+it had not recorded COULD-NOT-TELL, and a heavy-part.json result is taken only
+for a table step, under its own name, with a state its rc could give (PASS
+needs rc 0) -- anything else is COULD-NOT-TELL.
 
 Overall and exit: any FAIL = FAIL, exit 1; else any COULD-NOT-TELL, or no step
 PASSED at all = COULD-NOT-TELL, exit 3; else PASS, exit 0. Usage error or
@@ -47,8 +50,11 @@ under <out>/logs/. --skip records SKIP before anything about the step is built
 or probed.
 
 A --table step is refused (exit 2) unless its name matches _NAME and is not
-reserved (it becomes a log path), its keys are known, and every field has its
-type.
+reserved (it becomes a log path), its keys are known, every field has its
+type, a heavy step's group is A or B and any other step has none, and its cwd
+resolves inside --root. The cwd is resolved again when the step launches (an
+earlier step may have swapped it for a symlink); outside --root then is
+COULD-NOT-TELL, and the child gets the resolved path.
 
 The table is derived from .github/workflows/; `--check-ci` (and
 scripts/_test/gate-runner.py) fails when a workflow `run:` command is in
@@ -278,21 +284,39 @@ def _signal_group(proc: subprocess.Popen, hard: bool) -> None:
                 pass
 
 
+def _group_alive(proc: subprocess.Popen) -> bool:
+    """Whether any process of the step's group is still there. POSIX asks the
+    group itself (signal 0), so a grandchild that outlived its leader counts;
+    Windows has no group probe and falls back to the leader."""
+    if os.name == "nt":
+        return proc.poll() is None
+    try:
+        os.killpg(proc.pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 def _kill_group(proc: subprocess.Popen, grace: float) -> bool:
-    """SIGTERM the whole group, wait `grace`, SIGKILL; then sweep the group
-    once more so a grandchild that outlived its leader is not left running.
+    """SIGTERM the whole group and give the WHOLE group `grace` to exit -- not
+    just the leader, so a grandchild still cleaning up is not SIGKILLed the
+    moment its leader is gone; SIGKILL whatever is left, then sweep once more.
     True when the leader was reaped; False when it was still there
     KILL_REAP_SECONDS after SIGKILL (the caller records COULD-NOT-TELL)."""
     _signal_group(proc, hard=False)
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline:
+        if proc.poll() is not None and not _group_alive(proc):
+            return True
+        time.sleep(0.1)
+    _signal_group(proc, hard=True)
     reaped = True
     try:
-        proc.wait(timeout=grace)
+        proc.wait(timeout=KILL_REAP_SECONDS)
     except subprocess.TimeoutExpired:
-        _signal_group(proc, hard=True)
-        try:
-            proc.wait(timeout=KILL_REAP_SECONDS)
-        except subprocess.TimeoutExpired:
-            reaped = False
+        reaped = False
     _signal_group(proc, hard=True)
     return reaped
 
@@ -447,17 +471,21 @@ def positive_finite(value) -> bool:
             and math.isfinite(value) and value > 0)
 
 
-def cwd_in_root(root: str, cwd: str) -> bool:
-    """A step cwd is repository-relative: not absolute, and its real path
-    (symlinks resolved) is the root's real path or under it."""
+def contained_cwd(root: str, cwd: str) -> str | None:
+    """The real path (symlinks resolved) of a repository-relative step cwd, or
+    None when cwd is absolute or that real path is outside the root's."""
     if os.path.isabs(cwd) or os.path.splitdrive(cwd)[0]:
-        return False
+        return None
     real_root = os.path.realpath(root)
     real = os.path.realpath(os.path.join(real_root, cwd))
     try:
-        return os.path.commonpath([real_root, real]) == real_root
+        return real if os.path.commonpath([real_root, real]) == real_root else None
     except ValueError:  # different drives on Windows
-        return False
+        return None
+
+
+def cwd_in_root(root: str, cwd: str) -> bool:
+    return contained_cwd(root, cwd) is not None
 
 
 def load_table(path: str | None, root: str = DEFAULT_ROOT):
@@ -486,8 +514,9 @@ def load_table(path: str | None, root: str = DEFAULT_ROOT):
             raise Refusal(f"--table step {name}: unknown key(s) {', '.join(unknown)}")
         if phase not in PHASES:
             raise Refusal(f"--table step {name}: phase must be one of {PHASES}")
-        if (phase == "heavy") != (group in ("A", "B")):
-            raise Refusal(f"--table step {name}: heavy steps need group A or B, others none")
+        if (group not in ("A", "B")) if phase == "heavy" else (group is not None):
+            raise Refusal(f"--table step {name}: heavy steps need group A or B; cheap and solo "
+                          "steps take no group (absent or null)")
         if not isinstance(argv, list) or not argv or not all(isinstance(a, str) for a in argv):
             raise Refusal(f"--table step {name}: argv must be a non-empty list of strings")
         timeout = item.get("timeout", 300)
@@ -624,9 +653,18 @@ def run_step(step: Step, ctx: Context) -> dict:
     if blocked is not None:
         res["state"], res["reason"] = blocked
         return res
+    # Resolved again at launch, not only when the table loaded: an earlier step
+    # may have swapped a directory on this path for a symlink out of the root.
+    # The child gets the resolved path, so the swap cannot land between this
+    # check and a second resolution inside Popen.
+    cwd = contained_cwd(ctx.root, step.cwd)
+    if cwd is None:
+        res["state"] = CNT
+        res["reason"] = (f"could not start: cwd {step.cwd!r} resolves outside --root at launch "
+                         "(symlinks resolved)")
+        return res
     started_at = time.monotonic()
-    rc, timed_out, started, note = spawn_and_wait(
-        argv, os.path.join(ctx.root, step.cwd), res["log"], step.timeout, ctx.grace)
+    rc, timed_out, started, note = spawn_and_wait(argv, cwd, res["log"], step.timeout, ctx.grace)
     res["seconds"] = round(time.monotonic() - started_at, 1)
     res["rc"] = rc
     state, reason = classify(rc, timed_out, started)
@@ -679,9 +717,24 @@ def run_inner(part: str, steps: list, ctx: Context) -> int:
 RESULT_KEYS = ("name", "rc", "state", "reason", "seconds", "log")
 
 
-def _valid_result(res) -> bool:
-    return (isinstance(res, dict) and all(k in res for k in RESULT_KEYS)
-            and res["state"] in (PASS, FAIL, SKIP, CNT))
+def _valid_result(name: str, res) -> bool:
+    """A heavy-part result is taken only when it is filed under its own name,
+    its rc is an int or null (never a bool or a string), and its state is one
+    the inner runner's classify() could give that rc: PASS needs rc 0 and FAIL
+    a non-zero rc -- a PASS without the exit status that proves it is never
+    taken (T-0082). Anything else is dropped, and the step reads COULD-NOT-TELL."""
+    if not isinstance(res, dict) or not all(k in res for k in RESULT_KEYS):
+        return False
+    rc, state = res["rc"], res["state"]
+    if res["name"] != name or state not in (PASS, FAIL, SKIP, CNT):
+        return False
+    if rc is not None and (isinstance(rc, bool) or not isinstance(rc, int)):
+        return False
+    if state == PASS:
+        return rc == 0
+    if state == FAIL:
+        return rc is not None and rc != 0
+    return True
 
 
 def _part(got):
@@ -691,7 +744,7 @@ def _part(got):
     if not isinstance(got, dict):
         return {}, None
     steps = got.get("steps")
-    steps = {n: r for n, r in steps.items() if isinstance(n, str) and _valid_result(r)} \
+    steps = {n: r for n, r in steps.items() if isinstance(n, str) and _valid_result(n, r)} \
         if isinstance(steps, dict) else {}
     started = got.get("started")
     if isinstance(started, bool) or not isinstance(started, (int, float)) \
@@ -779,6 +832,7 @@ def run_outer(args, steps: list, source: str, ctx: Context, hr: dict) -> int:
         if hr["mode"] == "present":
             cmd = [hr["path"], *cmd]
         printed: set = set()
+        wanted = {s.name for s in inner_steps}  # a result for any other name is never taken
         slot: dict = {}  # step name -> its index in results, once recorded
 
         def take(name: str, res: dict) -> None:
@@ -791,7 +845,8 @@ def run_outer(args, steps: list, source: str, ctx: Context, hr: dict) -> int:
         def tick() -> None:
             # Copy each heavy result into status.json as soon as heavy-part.json
             # has it, so an outer runner killed mid-call loses none of them.
-            fresh = [(n, r) for n, r in _part(read_json(part))[0].items() if n not in printed]
+            fresh = [(n, r) for n, r in _part(read_json(part))[0].items()
+                     if n in wanted and n not in printed]
             for name, res in fresh:
                 printed.add(name)
                 take(name, res)
@@ -1027,14 +1082,15 @@ def split_commands(run: str) -> list:
 
 def _excluded(workflow: str, cmd: str) -> bool:
     """A wildcard covers one simple command only: its tail may not run another
-    command through `$(...)` or backticks."""
+    command through any substitution -- `$(...)`, backticks, `<(...)` or
+    `>(...)` (substitutions() is the one definition of what runs)."""
     for wf, pattern, _reason in EXCLUDED_CI:
         if wf != workflow:
             continue
         pattern = normalise(pattern)
         if pattern.endswith("*") and cmd.startswith(pattern[:-1]):
             tail = cmd[len(pattern) - 1:]
-            if "$(" not in tail and "`" not in tail:
+            if not substitutions(tail):
                 return True
         if cmd == pattern:
             return True
@@ -1065,18 +1121,42 @@ def ci_drift(root: str, table=TABLE) -> list:
         except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
             problems.append(f"{wf}: cannot parse: {exc}")
             continue
-        jobs = (doc or {}).get("jobs") or {}
-        for job_id, job in jobs.items():
-            if not isinstance(job, dict):
+        problems += _workflow_commands(wf, doc, covered, windows_only)
+    return problems
+
+
+def _workflow_commands(wf: str, doc, covered: set, windows_only: set) -> list:
+    """Drift problems for one parsed workflow. Valid YAML of the wrong shape at
+    any level (no `jobs` mapping, a job, `steps`, a step or a `run` of the
+    wrong type) is itself a problem naming where: the check never reads a
+    workflow it cannot walk as "nothing to check", and never raises."""
+    if not isinstance(doc, dict) or not isinstance(doc.get("jobs"), dict):
+        return [f"{wf}: cannot check: the document has no `jobs` mapping"]
+    problems = []
+    for job_id, job in doc["jobs"].items():
+        if not isinstance(job, dict):
+            problems.append(f"{wf} jobs.{job_id}: cannot check: the job is not a mapping")
+            continue
+        steps = job.get("steps")
+        if steps is None:  # a reusable-workflow call (`uses:`) has no steps
+            continue
+        if not isinstance(steps, list):
+            problems.append(f"{wf} jobs.{job_id}: cannot check: `steps` is not a list")
+            continue
+        for i, step in enumerate(steps):
+            if not isinstance(step, dict):
+                problems.append(f"{wf} jobs.{job_id}.steps[{i}]: cannot check: not a mapping")
                 continue
-            for step in job.get("steps") or []:
-                run = step.get("run") if isinstance(step, dict) else None
-                if not isinstance(run, str) or normalise(str(step.get("if", ""))) in windows_only:
-                    continue
-                for cmd in split_commands(run):
-                    if (wf, cmd) not in covered and not _excluded(wf, cmd):
-                        problems.append(f"{wf} jobs.{job_id}: `{cmd}` is in neither the step "
-                                        "table nor EXCLUDED_CI")
+            run = step.get("run")
+            if run is None or normalise(str(step.get("if", ""))) in windows_only:
+                continue
+            if not isinstance(run, str):
+                problems.append(f"{wf} jobs.{job_id}.steps[{i}]: cannot check: `run` is not text")
+                continue
+            for cmd in split_commands(run):
+                if (wf, cmd) not in covered and not _excluded(wf, cmd):
+                    problems.append(f"{wf} jobs.{job_id}: `{cmd}` is in neither the step "
+                                    "table nor EXCLUDED_CI")
     return problems
 
 

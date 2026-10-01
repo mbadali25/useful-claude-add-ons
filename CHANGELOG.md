@@ -27,6 +27,13 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **A `--table` step is refused, not crashed**: a name that is not a plain log-file name (path
   separators, a leading dot, `heavy-run`), an unknown key or a field of the wrong type is exit 2.
   `--skip` records SKIP before the step's command is built.
+- **No forged or partial evidence reads as a pass.** A heavy-part result is taken only for a table
+  step, under its own name, with a state its rc could give (PASS needs rc 0), so a PASS with no
+  exit status is COULD-NOT-TELL. A timeout's grace period lasts until the whole process group is
+  gone, not just its leader. A step's `cwd` is resolved again at launch, so a symlink swapped in by
+  an earlier step cannot run it outside `--root`. `--check-ci` reports workflow YAML of the wrong
+  shape, and a `<(...)`/`>(...)` inside an excluded install line, as drift instead of crashing or
+  passing.
 
 ### Fixed — `crew` 1.0.89: refresh admission refuses a dir swapped to a link on Windows (W-0116)
 

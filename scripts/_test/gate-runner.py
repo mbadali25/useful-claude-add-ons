@@ -1080,6 +1080,8 @@ def case_heavy_part_forged_pass_is_could_not_tell(tmp: str) -> None:
         "unknown step": {"zz": result(name="zz")},
     }
     cases = list(forged.items()) + [("control", {"a1": result()})]
+    # The fake holds the call open past the outer runner's 0.5 s tick, so the
+    # live copy into status.json (tick) reads the part as well as the final merge.
     for i, (label, steps_doc) in enumerate(cases):
         sub = os.path.join(tmp, f"p{i}")
         os.makedirs(sub)
@@ -1088,10 +1090,12 @@ def case_heavy_part_forged_pass_is_could_not_tell(tmp: str) -> None:
         body = ('part=""; prev=""\n'
                 'for a in "$@"; do [ "$prev" = "--inner" ] && part="$a"; prev="$a"; done\n'
                 f'cp "{payload}" "$part"\n'
-                'exit 0\n')
+                'sleep 1.2; exit 0\n')
         hr = fake_heavy_run(sub, body)
         rc, out, status = run_gate(sub, [sh_step("a1", "heavy", "exit 0", "A")], heavy=hr)
         st = by_name(status)
+        expect("a1" in st, f"{label}: status.json has no a1 (a result under another name "
+                           f"replaced it): {sorted(st)}\n{out}")
         if label == "control":
             expect(rc == 0 and st["a1"]["state"] == "PASS",
                    f"control: a well-formed PASS was not taken: rc={rc} {st['a1']}\n{out}")
