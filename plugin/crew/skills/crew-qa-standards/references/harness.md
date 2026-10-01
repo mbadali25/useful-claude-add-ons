@@ -46,6 +46,11 @@ limit the test protects.
   `DisableParallelization = true`.
 - **Evidence.** Under `-n auto` in CI, `ps1=10.25s` against a 10s bound on 2 of 6 jobs. Serially,
   all 12 such items passed.
+- **Not a fixed sleep.** A test that sleeps a fixed time and then checks a condition is not a
+  wall-clock test: poll the condition until a deadline well under the thing's natural lifetime,
+  and return the last value so a real survivor still fails. Evidence (L-0516): a 0.5 s sleep
+  before a survivor check failed in CI with one survivor; a pidfile read as soon as it existed
+  saw it empty in 389 of 500 tight reads.
 
 ## H4 — Fixtures never inherit the developer's or runner's global state [audited]
 

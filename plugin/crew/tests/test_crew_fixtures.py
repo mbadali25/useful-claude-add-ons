@@ -18,6 +18,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
+import poll_fixtures
 
 SHA_RE = re.compile(r"^[0-9a-f]{7}$")
 
@@ -311,11 +312,8 @@ def test_kill_process_group_reaches_a_grandchild_after_the_direct_child_has_exit
     assert not _pid_alive(proc.pid), (
         "sanity: the direct child must have already exited")
 
-    deadline = time.time() + 10
-    while not pidfile.exists() and time.time() < deadline:
-        time.sleep(0.1)
-    assert pidfile.exists(), "the grandchild never recorded its own pid"
-    gpid = int(pidfile.read_text(encoding="utf-8").strip())
+    gpid = poll_fixtures.wait_for_pidfile(pidfile, timeout=10)
+    assert gpid is not None, "the grandchild never recorded its own pid"
     assert _pid_alive(gpid), "sanity: the grandchild never started"
 
     crew_fixtures.kill_process_group(proc)
@@ -372,11 +370,8 @@ def test_kill_process_group_uses_the_pgid_recorded_at_spawn_not_a_fresh_lookup(
     )
     assert _pid_alive(proc.pid), "sanity: the direct child never started"
 
-    deadline = time.time() + 10
-    while not pidfile.exists() and time.time() < deadline:
-        time.sleep(0.1)
-    assert pidfile.exists(), "the grandchild never recorded its own pid"
-    grandchild_pid = int(pidfile.read_text(encoding="utf-8").strip())
+    grandchild_pid = poll_fixtures.wait_for_pidfile(pidfile, timeout=10)
+    assert grandchild_pid is not None, "the grandchild never recorded its own pid"
     assert _pid_alive(grandchild_pid), "sanity: the grandchild never started"
 
     crew_fixtures.kill_process_group(proc)
@@ -493,11 +488,8 @@ def test_kill_process_group_refuses_a_reaped_leader_rather_than_guess(
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     assert proc.pgid == proc.pid
 
-    deadline = time.time() + 10
-    while not pidfile.exists() and time.time() < deadline:
-        time.sleep(0.1)
-    assert pidfile.exists(), "the grandchild never recorded its own pid"
-    grandchild_pid = int(pidfile.read_text(encoding="utf-8").strip())
+    grandchild_pid = poll_fixtures.wait_for_pidfile(pidfile, timeout=10)
+    assert grandchild_pid is not None, "the grandchild never recorded its own pid"
     assert _pid_alive(grandchild_pid), "sanity: the grandchild never started"
 
     # Reaps the leader (the shell already exited on its own) before this
