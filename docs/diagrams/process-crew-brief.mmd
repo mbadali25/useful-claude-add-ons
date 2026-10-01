@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@328fdf4a on 2026-09-30. Verify before trusting.
+%% Generated from useful-claude-add-ons@a54ca704 on 2026-09-30. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
@@ -202,6 +202,17 @@
 %% Anchors paths only crew_context.py changed - T-0076 added four lines inside emit() (:1086-1089,
 %% stdout reconfigured to LF), so the additionalContext write moved :1086 -> :1090; every other
 %% crew_context.py line cited here is above :1084 and unchanged. No other node or edge changed.
+%% Re-anchored 3c4f1a68 -> 8f85657a (T-0040, off main 6387ab49): of the Anchors paths only
+%% crew_status.py changed - +1 import line at :34 and +5 lines after the verify line (the
+%% Windows-only shell line) - so collect moves :192-216 -> :193-222, the tracker line's resolve
+%% :63 -> :64 and the HANDOFF check :207 -> :213 (re-read with sed -n). The st2 node names the
+%% new shell line; no node or edge was added.
+%% Merged 78b7080a + 8f85657a on T-0040-land (T-0040's reviewed 913bec89 merged into main 6a8c60b1,
+%% crew 1.0.83): of the Anchors paths only crew_status.py differs from main's side, by T-0040's
+%% crew_shell import (:35) and the Windows-only shell line (:224-228). Re-read with grep -n on
+%% the merged tree: collect :211-240, _tracker_line :67, the HANDOFF check :231; that also
+%% corrects main's st2 citations (:65, :215, :192-216), which predate T-0087's later crew_status.py
+%% edits. The st2 node takes T-0040's shell line; no node or edge was added.
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
     start --> reg["hooks.json:3-10<br/>3 SessionStart pairs, sh + ps1, no matcher<br/>each claims per session+source"]
@@ -254,11 +265,19 @@ flowchart TB
     hr3 -. "? 1.0-only repo (crew.json, no config.json)<br/>with inject:false gets no handoff" .-> hrx
 
     subgraph status["/crew:status (on demand)"]
-        st1["status.md:14<br/>crew_status.py --root ."] --> st2["git header, config file, roster,<br/>tracker (crew_tracker.resolve, :65),<br/>tickets, review ledgers, verify,<br/>codemap freshness, metrics,<br/>handoff, interrupted migrate<br/>:192-216"]
-        st2 -. "? checks fixed .work/HANDOFF.md (:215),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
+        st1["status.md:14<br/>crew_status.py --root ."] --> st2["git header, config file, roster,<br/>tracker (crew_tracker.resolve, :67),<br/>tickets, review ledgers, verify,<br/>shell (Windows only, T-0040),<br/>codemap freshness, metrics,<br/>handoff, interrupted migrate<br/>:211-240"]
+        st2 -. "? checks fixed .work/HANDOFF.md (:231),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
     end
+%% Re-anchored 78b7080a -> 3bb32980 (T-0040-land: merge b6ae7c61, then review round 2's fixes at
+%% 3bb32980); the notes above name every line that moved.
 %% main 6a8c60b1 -> c43a54c1 (T-0028 feature half, crew 1.0.84): citations into crew_state.py and
 %% crew_config.py mapped by difflib (reanchor2.py), each onto the same line text. The Kimi
 %% provider and the launch gate are not drawn. No node or edge changed.
 %% c43a54c1 -> f4adf923 (T-0028 re-sets crew 1.0.85): release files only; no cited line moved.
 %% f4adf923 -> 328fdf4a (T-0028 round-7 fixes in kimi_probe.py, crew 1.0.85): no cited line moved.
+%% Merged 3bb32980 + 328fdf4a on T-0040-land (merge of origin/main 844bfc36, T-0028, crew 1.0.85):
+%% T-0028's crew_state.py remap (the notes just above) and T-0040's crew_status.py lines sit in
+%% different nodes, so each side's lines merged as written; crew_status.py is identical to
+%% T-0040-land's side (git diff --name-only). No node or edge changed.
+%% Re-anchored 3bb32980 / 328fdf4a -> a54ca704 (T-0040-land's merge of origin/main 844bfc36); the
+%% merge note above names every line that moved.

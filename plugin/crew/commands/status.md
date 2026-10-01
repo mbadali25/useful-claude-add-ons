@@ -30,6 +30,7 @@ summary above or below it, and do not pad it with advice.
 | `tickets` / `open` | `.work/tickets/`, `.work/INDEX.md` | - |
 | `review` | review ledgers under the git common dir, newest three: state, rounds used of the budget, and refunded tool-failure rounds (`review_ledger.summary`) | a ledger that will not parse |
 | `verify` | `.crew/.verify-gate.record.json`, counted by status | record unreadable |
+| `shell` | Windows only: `shellRoute` config and the `crew_shell.py probe` cache; runs no `wsl.exe` or `pwsh` | never probed - run /crew:config |
 | `codemap` | anchors checked by path diff, as `crew_freshness.read_knowledge` does | no git |
 | `metrics` | `.crew/metrics.jsonl`, else `.crew/metrics.md` | - |
 | `handoff` | `.work/HANDOFF.md` present | - |
