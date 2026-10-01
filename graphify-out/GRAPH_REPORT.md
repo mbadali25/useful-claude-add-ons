@@ -1,17 +1,17 @@
 # Graph Report - uca-t0505  (2026-10-01)
 
 ## Corpus Check
-- 1117 files · ~2,486,194 words
+- 1117 files · ~2,486,979 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 63 file(s) not represented in the graph (top: (none) 34, .mmd 8, .jsonl 5)
 
 ## Summary
-- 21673 nodes · 45291 edges · 992 communities (805 shown, 187 thin omitted)
-- Extraction: 92% EXTRACTED · 8% INFERRED · 0% AMBIGUOUS · INFERRED: 3647 edges (avg confidence: 0.92)
+- 21673 nodes · 45299 edges · 991 communities (804 shown, 187 thin omitted)
+- Extraction: 92% EXTRACTED · 8% INFERRED · 0% AMBIGUOUS · INFERRED: 3655 edges (avg confidence: 0.92)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `ad2c50eb`
+- Built from commit: `4649f86f`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -63,7 +63,7 @@
 - crew_standards.py
 - test_auto_clear.py
 - parametrize
-- Indexer
+- test_ranking.py
 - review_gate.py
 - TODO
 - Mailgun API — full endpoint index
@@ -440,7 +440,7 @@
 - 2. Credentials and secrets
 - Find Skills
 - _notices
-- Clock
+- test_incremental.py
 - anthropic_proxy.py
 - LabTargetHandler
 - Fixed
@@ -461,7 +461,7 @@
 - test_review_run_launch.py
 - Python development standards (PYTHON)
 - test_verify_gate_rule_out_tail_read.py
-- test_embed_model.py
+- Compliance policies and configuration profiles
 - Configuration reference
 - Profile: memory-vault (notes, frontmatter, wikilinks)
 - record
@@ -740,7 +740,6 @@
 - Vendored driver scripts - provenance
 - exchange-mailbox-restore/scripts/Resolve-OperatorInput.ps1
 - Vendored driver script - provenance (exchange-mailbox-restore copy)
-- `localgpu` — the GPU in this machine, as a sidecar
 - Email backends
 - Skills
 - Solomon logo assets
@@ -966,7 +965,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (992 total, 187 thin omitted)
+## Communities (991 total, 187 thin omitted)
 
 ### Community 0 - "test_role_write_guard.py"
 Cohesion: 0.02
@@ -1057,8 +1056,8 @@ Cohesion: 0.03
 Nodes (141): `subprocess.run`, but a timeout kills the child's whole process GROUP before…, run_gate(), _commit(), _fail_on_gate_timeout(), _git(), _kill_if_still_same_process(), NoReturn, parametrize (+133 more)
 
 ### Community 22 - "search_code"
-Cohesion: 0.03
-Nodes (97): Added, Entry points, localgpu, `check_embed_model` — line numbers, re-checked at this anchor, Entry points, Re-anchor provenance - `3724731b` + `9631c707` -> `938e3b11`, 2026-09-28 (T-0075 review round 4, merge of `f54af3fa`), Six slash commands — new section, added at this pass, Two independent process trees, one shared Ollama (+89 more)
+Cohesion: 0.04
+Nodes (71): Added, Entry points, localgpu, `check_embed_model` — line numbers, re-checked at this anchor, Entry points, Two independent process trees, one shared Ollama, mcp_server_mcpserver, 1. Ollama is installed and serving (+63 more)
 
 ### Community 23 - "test_status.py"
 Cohesion: 0.13
@@ -1156,9 +1155,9 @@ Nodes (65): _crlf_python_env(), by_flavor, skipif, Tests for the EXPERIMENTAL au
 Cohesion: 0.07
 Nodes (50): _both_bytes(), _deny_lock_files(), _global_file(), _machine_and_repo(), _pinned(), parametrize, crew_context.py reads the repo's file and no other layer, so a global value for…, _set_at() (+42 more)
 
-### Community 47 - "Indexer"
-Cohesion: 0.07
-Nodes (42): Embedder, Indexer, Drives one refresh pass over the configured roots., ChunkRecord, One window of one file, before it has a row number., Sabotage log, The primitive the search() fix relies on: `limit` bounds which rows are read…, Reproduces the exact bug: before the fix, search() built `matrix` from an N-row… (+34 more)
+### Community 47 - "test_ranking.py"
+Cohesion: 0.04
+Nodes (60): MonkeyPatch, ndarray, ChunkRecord, Hit, match_glob(), normalise(), One window of one file, before it has a row number., L2-normalise to float32. A zero vector stays zero rather than becoming NaN. (+52 more)
 
 ### Community 48 - "review_gate.py"
 Cohesion: 0.24
@@ -1186,7 +1185,7 @@ Nodes (60): _cli(), _cli_env(), _config(), _folder(), _global(), _index(), param
 
 ### Community 54 - "Verification harness"
 Cohesion: 0.03
-Nodes (70): Calls out to, `.github/workflows/instruction-budgets.yml` — the base-sha fix, `.github/workflows/` — seven other workflows, one of them new, Owns data, Re-anchor provenance - `068db4ff` -> `07eefac5`, 2026-09-26 (T-0042 review round 1), Re-anchor provenance - `12682e41` + `d2444be9` -> `e95e5964`, 2026-09-27 (T-0075 merges main), Re-anchor provenance - `1e210476` -> `aa7f9841`, 2026-09-26 (T-0005 review round 5), Re-anchor provenance - `2170d72e` -> `3a57b2d2`, 2026-09-26 (T-0005 rounds 3-4 and Step 8) (+62 more)
+Nodes (69): Calls out to, `.github/workflows/instruction-budgets.yml` — the base-sha fix, `.github/workflows/` — seven other workflows, one of them new, Owns data, Re-anchor provenance - `068db4ff` -> `07eefac5`, 2026-09-26 (T-0042 review round 1), Re-anchor provenance - `12682e41` + `d2444be9` -> `e95e5964`, 2026-09-27 (T-0075 merges main), Re-anchor provenance - `1e210476` -> `aa7f9841`, 2026-09-26 (T-0005 review round 5), Re-anchor provenance - `2170d72e` -> `3a57b2d2`, 2026-09-26 (T-0005 rounds 3-4 and Step 8) (+61 more)
 
 ### Community 55 - "test_completion_audit.py"
 Cohesion: 0.07
@@ -1229,8 +1228,8 @@ Cohesion: 0.04
 Nodes (39): _events(), The wire format, tested without binding a socket. Every assertion here is about…, web_search has no input_schema and no local equivalent., The VRAM bargain: nothing may linger on an 8GB card by default., The bug this module exists to not reproduce: omit num_ctx and Ollama silently…, Some Ollama builds send arguments as a JSON string., An empty content list is not a valid Anthropic Message., Parse the SSE byte stream back into (event, data) pairs. (+31 more)
 
 ### Community 65 - "VectorStore"
-Cohesion: 0.04
-Nodes (48): Owns data, memmap, ndarray, Hit, match_glob(), normalise(), _prefix_key(), _process_lock() (+40 more)
+Cohesion: 0.05
+Nodes (44): Owns data, Embedder, memmap, 5. The index exists, and how stale it is, EmbedModelMismatch, Indexer, RuntimeError, The index on disk was built with a different embedding model. Vectors from two… (+36 more)
 
 ### Community 66 - "_classify"
 Cohesion: 0.07
@@ -1290,7 +1289,7 @@ Nodes (66): bridge_status, check(), check_in(), check_not_in(), line_for(), make
 
 ### Community 80 - "test_ollama.py"
 Cohesion: 0.07
-Nodes (46): Three one-shot subcommands that are neither half — new at 0.1.18, HTTPError, _describe(), _model_missing(), ModelNotPulled, OllamaClient, OllamaError, OllamaTimeout (+38 more)
+Nodes (47): Three one-shot subcommands that are neither half — new at 0.1.18, HTTPError, 2. Both models are pulled, at the exact tags in config, _describe(), _model_missing(), ModelNotPulled, OllamaClient, OllamaError (+39 more)
 
 ### Community 81 - "test_approval_digest.py"
 Cohesion: 0.10
@@ -2034,7 +2033,7 @@ Nodes (25): html, _appendix(), _authorized_html(), _card(), _cover(), _coverage_
 
 ### Community 267 - "test_chunking.py"
 Cohesion: 0.08
-Nodes (45): `.gitignore` merging, Command file budget, Instruction-surface budgets (crew 1.0, T8), Plugin Markdown total, Chunk, chunk_lines(), document_text(), excerpt() (+37 more)
+Nodes (46): `.gitignore` merging, Re-anchor provenance - `f4adf923` -> `328fdf4a`, 2026-09-30 (T-0028 round-7 fixes, crew 1.0.85 re-set), Command file budget, Instruction-surface budgets (crew 1.0, T8), Plugin Markdown total, Chunk, chunk_lines(), document_text() (+38 more)
 
 ### Community 268 - "build.py"
 Cohesion: 0.16
@@ -2141,16 +2140,16 @@ Cohesion: 0.09
 Nodes (22): Add the marketplace & install skills, Adding a new plugin, Adding a new skill, Content drift, Documentation, Get started, Hooks only run where hooks run, License (+14 more)
 
 ### Community 294 - "test_review_golden.py"
-Cohesion: 0.06
-Nodes (49): Fixed — `crew` 1.0.76 (T-0087), Re-anchor provenance - `45f32c3c` -> `7c88bf3d`, 2026-09-30 (T-0087 review round 6 fix), Re-anchor provenance - `cd106b8b` -> `bbd9a66d`, 2026-09-29 (T-0010 landing branch), Re-anchor provenance - `45f32c3c` -> `7c88bf3d`, 2026-09-30 (T-0087 review round 6 fix), Re-anchor provenance - `cd106b8b` -> `bbd9a66d`, 2026-09-29 (T-0010 landing branch), Re-anchor provenance - `45f32c3c` -> `7c88bf3d`, 2026-09-30 (T-0087 review round 6 fix), Re-anchor provenance - `cd106b8b` -> `bbd9a66d`, 2026-09-29 (T-0010 landing branch), Re-anchor provenance - `45f32c3c` -> `7c88bf3d`, 2026-09-30 (T-0087 review round 6 fix) (+41 more)
+Cohesion: 0.09
+Nodes (37): Re-anchor provenance - `45f32c3c` -> `7c88bf3d`, 2026-09-30 (T-0087 review round 6 fix), Re-anchor provenance - `45f32c3c` -> `7c88bf3d`, 2026-09-30 (T-0087 review round 6 fix), Re-anchor provenance - `45f32c3c` -> `7c88bf3d`, 2026-09-30 (T-0087 review round 6 fix), Re-anchor provenance - `45f32c3c` -> `7c88bf3d`, 2026-09-30 (T-0087 review round 6 fix), Re-anchor provenance - `7c88bf3d` -> `680e6783`, 2026-09-30 (T-0087 merges main `b601d450`, L-0521), Re-anchor provenance - `45f32c3c` -> `7c88bf3d`, 2026-09-30 (T-0087 review round 6 fix), Re-anchor provenance - `45f32c3c` -> `7c88bf3d`, 2026-09-30 (T-0087 review round 6 fix), Re-anchor provenance - `45f32c3c` -> `7c88bf3d`, 2026-09-30 (T-0087 review round 6 fix) (+29 more)
 
 ### Community 295 - "completion_audit.py"
 Cohesion: 0.15
 Nodes (22): Added, Re-anchor provenance - `3648f59a` -> `ea764992`, 2026-09-29 (T-0094), audit(), changed_paths(), _git_fields(), main(), _payload(), physical() (+14 more)
 
 ### Community 296 - "localgpu"
-Cohesion: 0.07
-Nodes (30): Calls out to, localgpu, Re-anchor provenance - 1f97e51c -> 84976536, 2026-09-22, Re-anchor provenance - `23371afb` -> `764f6018`, 2026-09-27 (T-0075 review round 1), Re-anchor provenance - `2697bf67` -> `45f32c3c`, 2026-09-30 (T-0087, after merging main `9af34e57`), Re-anchor provenance - `2b18f7ab` + `488053fc` -> `a1acd9b7`, 2026-09-27 (T-0023 merge of main), Re-anchor provenance - 3167721f -> 1f97e51c, 2026-09-06, Re-anchor provenance - `3648f59a` -> `ea764992`, 2026-09-29 (T-0094) (+22 more)
+Cohesion: 0.04
+Nodes (65): Calls out to, localgpu, Re-anchor provenance - 1f97e51c -> 84976536, 2026-09-22, Re-anchor provenance - `23371afb` -> `764f6018`, 2026-09-27 (T-0075 review round 1), Re-anchor provenance - `2697bf67` -> `45f32c3c`, 2026-09-30 (T-0087, after merging main `9af34e57`), Re-anchor provenance - `2b18f7ab` + `488053fc` -> `a1acd9b7`, 2026-09-27 (T-0023 merge of main), Re-anchor provenance - 3167721f -> 1f97e51c, 2026-09-06, Re-anchor provenance - `3648f59a` -> `ea764992`, 2026-09-29 (T-0094) (+57 more)
 
 ### Community 297 - "Design: crew Project Manager, graph-backed onboarding, and v1 upgrade path"
 Cohesion: 0.09
@@ -2301,8 +2300,8 @@ Cohesion: 0.10
 Nodes (43): _allowance_at(), _body_after_frontmatter(), check_allowance_growth(), check_allowance_no_silent_raise(), check_allowance_paths_exist(), check_broken_references(), _check(), check_command_budget() (+35 more)
 
 ### Community 334 - "golden_build.py"
-Cohesion: 0.13
-Nodes (24): build(), check_local(), expected_for(), fixture(), main(), problems_for(), Build, and machine-locally check, the golden corpus of real reviewer output.…, [(fixture_id, checkout_root, review_dir, skip_reason_or_None)]. (+16 more)
+Cohesion: 0.11
+Nodes (28): Fixed — `crew` 1.0.76 (T-0087), Re-anchor provenance - `cd106b8b` -> `bbd9a66d`, 2026-09-29 (T-0010 landing branch), Re-anchor provenance - `cd106b8b` -> `bbd9a66d`, 2026-09-29 (T-0010 landing branch), Re-anchor provenance - `cd106b8b` -> `bbd9a66d`, 2026-09-29 (T-0010 landing branch), Re-anchor provenance - `cd106b8b` -> `bbd9a66d`, 2026-09-29 (T-0010 landing branch), Re-anchor provenance - `cd106b8b` -> `bbd9a66d`, 2026-09-29 (T-0010 landing branch), Re-anchor provenance - `cd106b8b` -> `bbd9a66d`, 2026-09-29 (T-0010 landing branch), allowed_address() (+20 more)
 
 ### Community 335 - "evaluate"
 Cohesion: 0.11
@@ -2660,13 +2659,13 @@ Nodes (13): Common Skill Categories, Find Skills, How to Help Users Find Skills,
 Cohesion: 0.20
 Nodes (11): _blockers(), effective(), meets_touch(), _notices(), Touch without refresh artifacts; None stays None (everything)., Every colliding (mine, theirs) pair; empty means disjoint. None is an…, A repo-relative file path falls inside Touch (refresh artifacts left out); an…, [(other, pairs)] for every entry that stops `entry` holding. (+3 more)
 
-### Community 424 - "Clock"
-Cohesion: 0.12
-Nodes (15): MonkeyPatch, Clock, embedder(), home(), fixture, Path, Write a file and stamp it with a fresh mtime., A throwaway $LOCALGPU_HOME. Never the real one. (+7 more)
+### Community 424 - "test_incremental.py"
+Cohesion: 0.16
+Nodes (18): Sabotage log, FlakyEmbedder, make_indexer(), Re-indexing must be cheap: unchanged files never reach the embedder., Content A -> changed to B -> embedding B fails *after* A's old chunks were…, Wraps a real embedder but raises once a call budget is exhausted. Stands in for…, A root and one of its own subdirectories, both configured, must not double-…, test_a_file_growing_past_one_window_gains_chunks() (+10 more)
 
 ### Community 425 - "anthropic_proxy.py"
-Cohesion: 0.06
-Nodes (60): Fixed, Second QA round, same day — each finding right about its target, wrong one line over, _blocks_to_text(), check_fits_context(), _could_still_be_a_tool_call(), estimate_prompt_tokens(), _iter_ndjson(), make_server() (+52 more)
+Cohesion: 0.07
+Nodes (55): Fixed, Second QA round, same day — each finding right about its target, wrong one line over, _blocks_to_text(), check_fits_context(), _could_still_be_a_tool_call(), estimate_prompt_tokens(), _iter_ndjson(), _new_message_id() (+47 more)
 
 ### Community 426 - "LabTargetHandler"
 Cohesion: 0.42
@@ -2744,9 +2743,9 @@ Nodes (13): PYTHON-01 Every text open and decode states its encoding, error hand
 Cohesion: 0.18
 Nodes (14): _extract_zero_read_guard(), _git(), parametrize, verify-gate.ps1's rule-output capture reads a bounded TAIL of a rule's captured…, Behavioural: on a static file, proves the new `$size - $readLen` offset…, Structural: the actual revert-catcher (see module docstring for why the…, Structural: the revert-catcher. Sabotage: collapsing back to a bare `if…, A rule that writes exactly `_CONTENT` (no trailing newline) to stdout and then… (+6 more)
 
-### Community 445 - "test_embed_model.py"
-Cohesion: 0.17
-Nodes (13): FlakyEmbedder, make_indexer(), Swapping the embed model for a different one of the same width must not be…, model-a indexes alpha.py, then fails embedding beta.py before the manifest is…, Backward compatibility: a call site that never passes embed_model keeps working…, Wraps a real embedder but raises once a call budget is exhausted. Stands in for…, The whole point of this check: two models of equal width, silently swapped., test_failed_initial_refresh_does_not_let_a_later_model_switch_through() (+5 more)
+### Community 445 - "Compliance policies and configuration profiles"
+Cohesion: 0.22
+Nodes (8): Compliance policies, Compliance policies and configuration profiles, Configuration profiles (legacy), Modifying policies, Scripts and remediations, Settings catalog (beta only), The three generations, Which policy set this setting?
 
 ### Community 446 - "Configuration reference"
 Cohesion: 0.13
@@ -3840,10 +3839,6 @@ Nodes (3): ConvertFrom-InputByte(), Find-AddressColumn(), Read-InputFile()
 Cohesion: 0.40
 Nodes (4): Copied at, Manifest, Upstream may have moved on, Vendored driver script - provenance (exchange-mailbox-restore copy)
 
-### Community 725 - "`localgpu` — the GPU in this machine, as a sidecar"
-Cohesion: 0.22
-Nodes (9): Bundled skills — 1, Commands — 6, Hooks — none, deliberately, `localgpu` — the GPU in this machine, as a sidecar, Testing, The `localgpu` CLI, and the proxy underneath it, The MCP server, Uninstall (+1 more)
-
 ### Community 726 - "Email backends"
 Cohesion: 0.40
 Nodes (4): `connector` — Claude sends it via MCP, Email backends, `smtp` — the script sends it, Which to use
@@ -4189,8 +4184,8 @@ Cohesion: 0.50
 Nodes (3): test_delete_backs_up_by_rename(), test_save_reports_a_partial_os_failure(), _fail()
 
 ## Knowledge Gaps
-- **3113 isolated node(s):** `ci-status.sh script`, `name`, `private`, `description`, `workspaces` (+3108 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 9111 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **3106 isolated node(s):** `ci-status.sh script`, `name`, `private`, `description`, `workspaces` (+3101 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 9104 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **187 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
@@ -4200,10 +4195,10 @@ _Questions this graph is uniquely positioned to answer:_
   _High betweenness centrality (0.025) - this node is a cross-community bridge._
 - **Why does `make_repo()` connect `make_repo` to `test_role_write_guard.py`, `test_verify_absent_and_diagram_kind.py`, `test_endpoints.py`, `test_provider_table.py`, `test_upgrade.py`, `parametrize`, `_fake`, `test_context_watch.py`, `_files_repo`, `_global`, `test_anchor_trigger_fixpoint.py`, `read_text`, `test_status.py`, `_repo`, `test_crew_config.py`, `_repo`, `crew Project Manager, Graph-Backed Onboarding, and v1 Upgrade — Implementation Plan`, `test_diagram_anchors_match_at_any_length`, `test_refresh_admission.py`, `test_codemap_anchors_match_at_any_length`, `test_the_cli_announces_the_new_key_and_does_not_only_write_it_to_a_file`, `by_flavor`, `test_refresh_check.py`, `test_auto_clear_order.py`, `test_auto_clear.py`, `test_platform_sync.py`, `test_auto_cycle.py`, `test_context_watch_python_resolver.py`, `test_context_watch_autoclear_visibility.py`, `test_crew_context_fixes.py`, `_config_json`, `os`, `test_a_config_that_is_not_there_reads_absent_on_every_platform`, `_make_vault`, `_committed_template`, `_sources`, `_Stdin`, `test_auto_clear_review_fixes.py`, `test_handoff_staleness.py`, `_repo`, `_cli`, `test_unmanaged_repo_is_left_untouched.py`, `test_crew_tracker.py`, `test_incident.py`?**
   _High betweenness centrality (0.019) - this node is a cross-community bridge._
-- **Why does `store()` connect `VectorStore` to `Clock`, `Receiving mail with Mailgun`, `pytest`?**
+- **Why does `store()` connect `test_ranking.py` to `VectorStore`, `pytest`, `Receiving mail with Mailgun`?**
   _High betweenness centrality (0.012) - this node is a cross-community bridge._
 - **What connects `ci-status.sh script`, `name`, `private` to the rest of the system?**
-  _3113 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _3106 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `test_role_write_guard.py` be split into smaller, more focused modules?**
   _Cohesion score 0.018218623481781375 - nodes in this community are weakly interconnected._
 - **Should `make_repo` be split into smaller, more focused modules?**
