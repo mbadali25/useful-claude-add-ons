@@ -520,11 +520,25 @@ def _review_phase(top, ticket, evidence, answer):
                       f"({message}): /crew:review would reserve a third round and put "
                       f"{ticket} in NEEDS_REPLAN, which only a new approved plan leaves. A "
                       "human reverts the edit that staled the receipt, or replans")
+    if latest.get("refunded") is True and not ok:
+        # Marked so `next_phase` does not read this rerun as "no progress"
+        # (its docstring says what bounds it). Only the review itself: a
+        # refresh that left its artifact stale is still no progress.
+        found = _toward_review(top, ticket, answer, ok, message,
+                               f"round {latest.get('round')} was a tool failure and "
+                               "was refunded; ")
+        return dict(found, refunded_rerun=found["phase"] == "review")
     if latest.get("verdict") != "CLEAN" and not ok:
         return answer("accept-review", True, f"round {latest.get('round')} is "
                       f"{latest.get('verdict') or 'without a verdict'}: the reviewer did not "
                       "finish reading, and it cannot be accepted - a human reruns "
                       "/crew:review (spending a round) or replans")
+    return _toward_review(top, ticket, answer, ok, message)
+
+
+def _toward_review(top, ticket, answer, ok, message, note=""):
+    """Refresh before the next review round, then review; or done once a
+    receipt stands. `note` prefixes the review reason (a refunded round)."""
     refresh = _refresh_state(top, ticket)
     if refresh["state"] == UNAVAILABLE:
         return answer("refresh", True, refresh["reason"])
@@ -533,7 +547,7 @@ def _review_phase(top, ticket, evidence, answer):
         return answer("refresh", not command,
                       f"before the next review round - {refresh['reason']}", command)
     if not ok:
-        return answer("review", False, f"{message}; artifacts fresh",
+        return answer("review", False, f"{note}{message}; artifacts fresh",
                       f"/crew:review {ticket}")
     if refresh["state"] != FRESH:
         return answer("stale-after-review", True, "an artifact is stale after an "
@@ -547,12 +561,16 @@ def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
     """`{"ticket", "phase", "stop", "reason", "command", "evidence"}`. A
     `stop` phase's `command` is what the HUMAN types, never run by autopilot.
     `max_phases` and `last_command` are the session's count and the command it
-    last ran: reaching the count, or being handed the same command again, stops.
+    last ran: reaching the count, or being handed the same command again, stops
+    -- except `/crew:review` after a refunded tool-failure round: each run that
+    records a round moves the ledger, `review_ledger.REFUND_LIMIT` per plan
+    bounds how many are refunded, and `max_phases` bounds one that records none.
     So does a phase that would run while `crew_ticket.resolve_active` -- what
     the scope guard reads -- names another ticket, none, or a broken pointer.
     `policy=False` is `status`'s: see `_phase`."""
     crew_ticket.check_ticket(ticket)
     result = _phase(root, ticket, policy)
+    rerun = result.pop("refunded_rerun", False)
     if result["stop"]:
         return result
     active, where, broken = crew_ticket.resolve_active(
@@ -567,7 +585,7 @@ def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
         return dict(result, stop=True, reason=(
             f"autopilot.maxPhases ({max_phases}) reached after {phases_run} phases; next "
             f"would be {result['phase']} - run /crew:autopilot {ticket} again"))
-    if last_command and result["command"] == last_command:
+    if last_command and result["command"] == last_command and not rerun:
         return dict(result, stop=True, reason=(
             f"no progress: {last_command} ran and the files on disk still name it "
             f"({result['reason']}) - a human looks at why"))

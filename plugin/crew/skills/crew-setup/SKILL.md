@@ -51,7 +51,9 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/platform.md` whenever the platform
 result is Windows or WSL. Three things there change whether the setup works at
 all: repo location under WSL (an order of magnitude in test runtime), `localhost`
 not reaching the Windows host under WSL2, and CRLF line endings breaking shell
-scripts with a misleading error.
+scripts with a misleading error. On native Windows it also covers choosing the
+shell route (`shellRoute.mode`: `auto`, `wsl`, `powershell`, `gitbash`), which
+`crew_shell.py probe --write` and `measure --write` inform.
 
 Report what it found and what you propose to create. Wait for approval.
 
@@ -128,10 +130,11 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "roles": ["explorer", "reviewer"],
   "qa": {
     "provider": "auto",
-    "order": ["codex", "copilot", "claude"],
+    "order": ["codex", "kimi", "copilot", "claude"],
     "fallback": "claude-sonnet-5",
     "codex": { "model": null, "reasoningEffort": null },
     "copilot": { "model": null },
+    "kimi": { "model": null },
     "roles": {}
   },
   "dev": {
@@ -139,6 +142,7 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
     "fallback": "claude-sonnet-5",
     "codex": { "model": null, "reasoningEffort": null },
     "copilot": { "model": null },
+    "kimi": { "model": null },
     "roles": {}
   },
   "worktree": { "root": null },
@@ -154,6 +158,7 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "emergency": { "standDown": true, "ttlMinutes": 120, "maxTtlMinutes": 480 },
   "notify": { "provider": "none", "urlEnv": null, "tokenEnv": null, "chatId": null, "events": ["phase", "gate", "waiting"] },
   "platform": { "os": null, "wsl": null, "shell": null, "windowsHostIp": null },
+  "shellRoute": { "mode": null, "distro": null },
   "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only", "ticketGranularity": "system", "maxDispatches": 3 },
   "graph": { "enabled": true, "tool": "graphify", "out": "graphify-out", "mode": "code-only", "commitHook": false },
   "docs": { "theme": null, "reportTheme": null },
@@ -377,12 +382,14 @@ the first secret exists is the only time it is free.
 # directory git never entered - every negation below would silently do nothing.
 .crew/*
 
-# The named un-ignore list, and it is a closed list. These three describe the
+# The named un-ignore list, and it is a closed list. These four describe the
 # CODE, are decided once, and are worth the same on every clone: the code map,
-# the endpoint ledger a security scan is owed against, and the verification map.
+# the endpoint ledger a security scan is owed against, the verification map and
+# the development standards overlay (crew-standards; absent is fine).
 !.crew/codemap/
 !.crew/endpoints.json
 !.crew/verify.json
+!.crew/standards.md
 
 # Documentation, not mechanism: `.crew/*` above already ignores every one of
 # these and no negation re-admits them, so deleting these lines changes nothing

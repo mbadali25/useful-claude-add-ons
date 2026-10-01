@@ -175,6 +175,152 @@ even though Docker is plainly running in the Windows tray.
 Containers started from inside WSL are reachable at `localhost` from WSL.
 Containers started from Windows-side Docker Desktop follow the host-IP rule above.
 
+## Choosing the shell route on Windows
+
+On native Windows, crew runs its long-running shell jobs through one wrapper:
+the per-step test runs and verification-map checks in `/crew:implement`, and
+the graphify build.
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_shell.py" run -- "<command>"
+```
+
+On Git Bash without `python3`, use `python` or `py -3` with the same arguments.
+
+It prints one `crew-shell:` line on stderr naming the route and why, then runs
+the job and returns its exit code. The route comes from `shellRoute.mode`,
+settable on both config layers with `shellRoute.distro`. `shellRoute` is not
+`route`: `route` routes plain-text prompts to `/crew:` commands, and
+`shellRoute` picks the shell a job runs in.
+
+| Mode | Plain argv job | Bash-syntax job |
+|---|---|---|
+| `auto` (default) | WSL when chosen (below), else direct exec, no shell | WSL when chosen, else Git Bash |
+| `wsl` | WSL, or refuse with exit 3 | WSL, or refuse with exit 3 |
+| `powershell` | pwsh, or refuse with exit 3 if none resolves | Git Bash, with the line `powershell requested; job is bash syntax -> gitbash` |
+| `gitbash` | Git Bash | Git Bash |
+
+`auto` routes to WSL only when WSL is usable and either the checkout is inside
+WSL's filesystem (opened through `\\wsl$\` or `\\wsl.localhost\`), or the
+checkout is on a Windows drive and `crew_shell.py measure --write` has shown
+WSL faster than Git Bash on both forks and writes for that repo. `auto` never
+picks pwsh. `wsl` never falls back. An unrecognised mode reads as `auto`, and
+both the route line and `/crew:status` name the bad value. Every fallback is
+stated on the route line.
+
+**The probe.** `crew_shell.py probe --write` asks from the Windows side whether
+WSL2 is usable. It checks for `wsl.exe`, reads `wsl.exe --list --verbose`
+(UTF-16LE unless `WSL_UTF8=1`), and takes the default `*` distro unless
+`shellRoute.distro` names one. It never picks a distro by list order. It then
+checks WSL2 and `command -v python3; command -v git` inside that distro, under
+`bash -lc`, the login shell a routed job runs in: a non-login `sh -c` misses
+`$HOME/.local/bin`, where `pip --user` and `pipx` put tools. The
+states are `usable`, `not-installed`, `no-distro`, `wsl1-only`, `no-python3`,
+`no-git`, `broken` (the error quoted verbatim, joined onto one line) and
+`unknown` (the probe itself could not run). `unknown` is never read as `not-installed`. The answer goes to
+`~/.claude/crew/shell-route.json`, a machine-local cache. The probe never
+installs, updates or sets a default version.
+
+**The argv classifier.** A job runs with no shell only when the classifier can
+prove it is plain argv: no shell metacharacter (`| & ; < > ( ) $` backtick
+`* ? [ ] { } ~ ! #`, quotes, backslash, newline), no `sh -c`, `bash x`, `cd`,
+`source` or env assignment, no token that starts with or embeds a POSIX path
+(`/c/x`, `--root=/c/x`, `-I/c/x`, `a:/b`, `x,/y`; such a path is valid only
+once MSYS converts it, so direct exec and Git Bash would pass different
+arguments; a drive letter such as `C:/` and a URL such as `https://` are
+fine), no `*.sh` first word, and an `argv[0]` that resolves. `python3` and `python` as `argv[0]` become the interpreter already
+running `crew_shell.py`, because on native Windows `python3` can be a
+WindowsApps alias that prints a Store prompt and exits 9009. Anything the
+classifier cannot prove goes to bash. `crew_shell.py classify -- "<command>"`
+prints the verdict and the reason. A bash string is never handed to pwsh, and
+crew never translates a bash job into PowerShell. On the `powershell` route
+each argument is single-quoted with `'` and U+2018 to U+201B doubled (pwsh
+reads all five as single quotes), and a program that cannot start exits 1
+with `crew-shell:` and the reason on stderr, never 0.
+
+**The WSL preflight.** Before a job goes to WSL, `run` checks its first word
+with `command -v` under `bash -lc` inside the distro and, for `python3 -m
+<module>`, that the distro's python imports the module. When either is
+missing, `auto` falls to the direct-or-Git-Bash split and says why, and `wsl`
+refuses with exit 3.
+
+**Absolute resolution.** A bare `bash` from a process whose PATH does not start
+with Git's directories reaches `C:\Windows\System32\bash.exe`, which is WSL's
+launcher, not Git Bash. So Git Bash is resolved from `git --exec-path` (three
+levels up, then `bin/bash.exe`), else `C:/Program Files/Git/bin/bash.exe`, and
+never a System32 or WindowsApps path. pwsh is not on Git Bash's PATH, so it is
+resolved as `C:/Program Files/PowerShell/7/pwsh.exe`, else Windows PowerShell
+5.1 under `%SystemRoot%`. Git Bash has no `python3` of its own: commands and
+docs resolve `python3`, then `python`, then `py -3`.
+
+**Measured, per host, never blended.** `dadeush-desktop`, 2026-09-28, the
+owner's session:
+
+| Probe | Git Bash | pwsh | WSL2 ext4 | WSL2 on `/mnt/c` |
+|---|---|---|---|---|
+| 50 forks | 1.70 s | 0.93 s | 0.03 s | - |
+| 200 small writes | 0.13 s | 0.051 s | 0.007 s | 0.70 s |
+
+A real job there, `pytest test_review_prompt.py` over 3 runs: direct exec
+1.72-2.02 s, Git Bash 1.85-2.12 s, pwsh 2.08-2.39 s. The launcher is noise on a
+real job, so `auto` uses direct exec, the cheaper one, and not pwsh.
+
+`dadeush-legion`, 2026-09-22, from two vault sessions (a different procedure):
+50 trivial forks 27.7-35.5 s in Git Bash against 0.19-0.20 s in WSL2; 20
+subshell+pipe round trips 20.4 s against 0.28 s; 200 small writes 4.43 s on
+`/mnt/c` against 0.062 s on WSL's ext4.
+
+`dadeush-desktop` again, 2026-09-28, through `crew_shell.py measure` itself (T-0040's
+native acceptance run; three runs each, range shown; each shell times its own loop):
+
+| Side | 50 forks | 200 small writes |
+|---|---|---|
+| Git Bash, repo on `C:` | 1.61-1.72 s | 0.073-0.082 s |
+| pwsh, repo on `C:` | 0.88-0.91 s | 0.057-0.059 s |
+| WSL2 on `/mnt/c` | 0.027-0.030 s | 0.40-0.43 s |
+| WSL2 ext4 (`mktemp -d`) | 0.028 s | 0.0055-0.0079 s |
+| Git Bash, repo in WSL via `\\wsl.localhost\` | 1.34-1.36 s | 1.45-1.52 s |
+| pwsh, repo in WSL via `\\wsl.localhost\` | 0.90-0.94 s | 0.36-0.38 s |
+| WSL2, repo in WSL (ext4) | 0.027-0.028 s | 0.0049-0.0057 s |
+
+Verdicts: the `C:` checkout is `gitbash-faster` (WSL loses on writes through `/mnt/c`), so
+`auto` does not route it to WSL; the in-WSL clone is `wsl-faster`. `run` was exercised once per
+mode on a `D:` checkout: `auto` ran pytest direct, `gitbash` and `powershell` ran it through
+their shells (242 passed each), `powershell` sent `bash .../render.sh` to Git Bash with the
+line `powershell requested; job is bash syntax -> gitbash`, and `wsl` routed to WSL, where the
+job failed with `No module named pytest`: the preflight then checked only the first word
+(`python3`), so a distro missing the job's module read as a failed check. That refuted the
+spec's claim that a missing tool was resolved by design; the preflight now also checks
+`-m <module>` importability and runs under `bash -lc` (see "The WSL preflight"), so that job
+refuses with exit 3 under `wsl`, naming the module, and runs direct under `auto`. That is
+fixture-tested; the native run was not repeated. `wsl.exe --cd` took `/mnt/d/...` with a space in it and
+`/home/...` for a `\\wsl.localhost\` root. From Git Bash, pass a WSL root as
+`//wsl.localhost/<distro>/...`: a leading `\\` reaches Python as a single `\`. MSYS leaves a
+one-argument command string alone unless the whole string starts with `/`. `dadeush-lenovo`
+and `dadeush-legion` were not measured through `crew_shell.py`.
+
+Legion's Git Bash fork cost is 16-21x desktop's. That spread is why `auto`
+consults a per-machine measurement and not a constant. It is also why a
+Windows-drive repo goes to WSL only when measured: on desktop, WSL on `/mnt/c`
+writes slower than Git Bash (0.70 s against 0.13 s).
+
+**The in-WSL clone.** `measure` also times WSL's own ext4 filesystem when the
+repo is on a Windows drive, and prints the in-WSL clone offer with those
+numbers. crew offers it and never makes it: a move changes paths that other
+tools and sessions use, so the owner decides.
+
+**When WSL is not installed**, crew recommends it with the measured reason and
+the exact command, `wsl --install -d Ubuntu` in an elevated shell, then a
+reboot. `/crew:init`, `/crew:config` and `/crew:status` print that. crew never
+runs it.
+
+**Not routed:** hooks, `verify-gate.sh --all`, anything that writes crew's own
+records (gate records, approval receipts, review ledgers, metrics), git
+operations, and interactive or one-off commands. A WSL git reading a Windows
+checkout sees different stat data and filemode, so a record written that way
+would disagree with the one the native Stop hook writes. Off native Windows
+nothing changes: no probe, no status line, and `run` is exactly `bash -c`.
+
 ## What to tell the user during setup
 
 Report platform, and only mention what is actionable:
@@ -183,6 +329,7 @@ Report platform, and only mention what is actionable:
   speed difference stated plainly.
 - On `crlfDetected`: offer to add `.gitattributes` and renormalize now.
 - On native Windows with WSL available: mention that WSL is the simpler path and
-  ask which they want, rather than deciding for them.
+  ask which they want, rather than deciding for them. The shell route for
+  crew's own jobs is separate: see "Choosing the shell route on Windows".
 - On WSL2 with services on the host: record `windowsHostIp` in `.env.smoke` and
   note that it changes on reboot.

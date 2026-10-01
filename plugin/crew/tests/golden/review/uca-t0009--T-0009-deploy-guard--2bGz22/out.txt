@@ -1,0 +1,34 @@
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-001-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-002-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-003-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-004-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-005-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-006-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-007-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-008-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-009-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-010-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-011-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-012-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-013-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-014-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-015-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-016-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-017-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-018-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-019-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-020-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-021-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-022-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-023-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-024-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-025-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-026-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-027-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-028-of-029.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--2bGz22/diff.txt.parts/part-029-of-029.patch
+BLOCK|plugin/crew/hooks/scripts/crew_guards.py:2142|A runtime command-word hole is gated from raw gh/workflow mentions instead of the symbolic argv shape, so a real dispatch with both words built at runtime is returned unlisted and runs unattended.|With deploy-prod.yml mapped to production and deployWorkflow ask in both layers, run `X=g; X+=h; Y=work; Y+=flow; $X $Y run deploy-prod.yml`; Bash executes `gh workflow run`, but dispatch_trigger returns None and scan emits no finding.
+BLOCK|plugin/crew/hooks/scripts/crew_guards.py:2168|PowerShell launcher and alias targets are recognized only when an argument literally names gh, so a runtime-built Start-Process target can dispatch with no guard finding.|With a listed production workflow, run `$x = 'g'+'h'; Start-Process $x -ArgumentList 'workflow run deploy-prod.yml'`; dispatch_answer returns unlisted and PowerShell scan returns no findings.
+FIX|plugin/crew/hooks/scripts/crew_guards.py:2149|An xargs or parallel placeholder in executable position is not treated as a command-word hole, breaking dispatch_answer’s contract and producing an unconditional cloudGuard denial instead of an attended deployWorkflow ask.|Feed `gh` on stdin to `xargs -I CMD CMD workflow run deploy-prod.yml`; dispatch_answer reports unlisted and scan emits cloudGuard unreadable rather than deployWorkflow line-not-literal.
+BLOCK|plugin/crew/hooks/scripts/cloud_guard.py:2548|Only the repository environments block can populate `problem`; a malformed machine-global environments layer therefore does not default-deny dispatches and a nonProd dispatch still runs unattended.|Set both deployWorkflow policies to ask, put `"environments":{"prodUnattended":"yes"}` in the global config, and configure repo staging plus deploy.yml; unattended `gh workflow run deploy.yml -f environment=staging` is allowed instead of could-not-tell.
+BLOCK|.crew/verify.json:117|The required verification gate has no recorded clean pass, so the claimed 1819-case result and the acceptance suite are not evidenced for this checkout.|Both `.crew/.verify-verified-at` and `.crew/.verify-gate.record.json` are absent, exactly as the supplied test-receipt section reports.
