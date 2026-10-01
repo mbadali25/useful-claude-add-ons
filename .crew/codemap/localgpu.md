@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@89ebda03
-verified: 2026-09-30
+anchor: useful-claude-add-ons@129be47a
+verified: 2026-10-01
 
 # localgpu
 
@@ -1654,3 +1654,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `9580571e` -> `b0ac0e1a` on 2026-09-30 (L-0558 merges main 6fe0e0db (T-0505), crew 1.0.95).** Both histories are kept above: main's T-0505 chain to 9580571e and L-0558's chain to d21fa82d, merged at f7118a04 with rerere disabled. `git diff --name-only 9580571e b0ac0e1a` outside refresh artifacts is L-0558's change (crew_train.py, test_crew_train.py, plugin/crew/README.md, the two guide sources and their outputs, CHANGELOG.md, .crew/verify.json rule 37, the version files) plus main's W-0116 files already in 9580571e's ancestry; the merge-train section's crew_train.py citations were re-mapped at d21fa82d and crew_train.py has not changed since; no other cited line moved. No suite was executed for this note.
 
 **Re-anchored `b0ac0e1a` (main) and `b0ac0e1a` (L-0558) -> `89ebda03` on 2026-10-01 (L-0558 merges main 52489039: T-0110 #297, T-0040 #290; crew 1.0.102).** Both histories are kept above; the merge (c481ada4) ran with rerere disabled. `git diff --name-only b0ac0e1a 89ebda03` outside refresh artifacts is 36 paths: L-0558's change (crew_train.py, test_crew_train.py, plugin/crew/README.md, two guide sources and outputs, CHANGELOG.md, .crew/verify.json rule 37, the version files) plus main's commits since b0ac0e1a; the merge-train section's crew_train.py citations hold (crew_train.py unchanged since 7a71faff); no other line this map cites was re-checked beyond the merge. No suite was executed for this note.
+
+**Re-anchored `89ebda03` -> `129be47a` on 2026-10-01 (T-0501 merges main 05a679bf, crew 1.0.106).** The merge (db147322) ran with rerere disabled. `git diff --name-only 89ebda03 129be47a` outside refresh artifacts is T-0501's change only (crew_instructions.py, check_instructions.py, instruction-budgets.py, sabotage_context.py, test_rules_anchor_advice.py, migrate.md, onboard.md, .crew/verify.json rule 24's why and rules 41-42, CHANGELOG.md, the memory guide source and outputs, docs/handoff/cloud/T-0501.md, the version files): 89ebda03 and 05a679bf differ only in refresh artifacts. Every `path:N` and following bare `:N` cite into those files was compared line-for-line at both commits; the version files moved value, not line. No suite was executed for this note.
