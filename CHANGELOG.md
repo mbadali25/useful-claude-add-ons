@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.93: review closure - a final 0-BLOCK round auto-accepts (L-0510)
+### Changed — `crew` 1.0.94: review closure - a final 0-BLOCK round auto-accepts (L-0510)
 
 - **Behaviour change for every install (owner policy 2026-09-30).** A review round that is the
   last one the budget allows under the current plan, completed as `FINDINGS` with 0 BLOCK, is
