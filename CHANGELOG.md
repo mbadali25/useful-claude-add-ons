@@ -21,9 +21,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   `test_a_winner_killed_after_exit_0_does_not_cost_the_only_emission`,
   `test_the_twin_stands_down_as_soon_as_the_winner_reports_sent` and
   `test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay`.
-- **Four `sabotage_qa.py` entries** prove it: `poll_until` probing once, `poll_until` reporting
-  success at the deadline, `wait_for_pidfile` accepting an empty file, and
-  `completion-audit.ps1`'s tree kill reduced to `Kill($false)` each turn a named test red.
+- **The sabotage entries ride separately** (L-0563, a tooling PR: `sabotage_qa.py` is review/gate
+  harness, which lands alone). Measured here by hand and through a filtered `sabotage.py` run, all
+  four RED: `poll_until` probing once, `poll_until` reporting success at the deadline,
+  `wait_for_pidfile` accepting an empty file, and `completion-audit.ps1`'s tree kill reduced to
+  `Kill($false)`.
 - A `.crew/verify.json` rule covers the new module; `crew-qa-standards` `harness.md` H3 now says
   a fixed sleep before a check is a poll case, not a wallclock case.
 - No change needed: `test_check_writes_nothing` (its maintenance-lock race was fixed by the
