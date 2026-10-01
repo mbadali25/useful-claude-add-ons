@@ -1315,8 +1315,7 @@ def case_cwd_swap_after_check_cannot_escape(tmp: str) -> None:
 
     runner = load_runner()
     sub, root, outside = _cwd_fixture(tmp, "post-open")
-    opener = getattr(runner, "_open_cwd", None)
-    expect(opener is not None, "post-open swap: the runner has no _open_cwd")
+    opener = runner._open_cwd  # pylint: disable=protected-access
 
     def swapping_open(r, c):
         got = opener(r, c)
@@ -1443,8 +1442,7 @@ def case_table_changed_mid_run_is_refused(tmp: str) -> None:
 
     import dataclasses
     runner = load_runner()
-    digest = getattr(runner, "table_digest", None)
-    expect(digest is not None, "the runner has no table_digest")
+    digest = runner.table_digest
     base = digest(list(runner.TABLE))
     target = runner.TABLE[0]
     for field, value in (("argv", target.argv + ("--x",)), ("cwd", "scripts"), ("timeout", 7),
