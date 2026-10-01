@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.103: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516)
+### Fixed — `crew` 1.0.104: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516)
 
 - **New `tests/poll_fixtures.py`.** `poll_until(probe, done, timeout)` probes at least once and
   returns the LAST probed value at the deadline, never a synthesized success, so a real survivor
