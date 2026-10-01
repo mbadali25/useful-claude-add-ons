@@ -3,9 +3,9 @@ paths:
   - "plugin/obsidian-vault/**"
   - "plugin/crew/**"
 ---
-<!-- crew:generated source=.crew/codemap/obsidian-vault.md sha256=45cb30c48fbfa20a -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/obsidian-vault.md sha256=4c860a7e97b4e921 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # obsidian-vault
-Code map anchor `3437cbdd`; if it is behind HEAD, re-check with `git diff --name-only 3437cbdd..HEAD -- <cited paths>`.
+Code map anchor `e41bc6fd`; if it is behind HEAD, re-check with `git diff --name-only e41bc6fd..HEAD -- <cited paths>`.
 Covers: The obsidian-vault plugin: four hook events registered as bash+PowerShell pairs, the three guard checks and their unequal defaults, the two differently-sized exemption sets, and per-vault MCP registration. The guard is PostToolUse, so it reports a bad write rather than blocking it.; re-anchored to c4e2eb98 (L-0520 PR 1, the merge train CLI, after merging main 42d5ef58 (T-0094)); re-anchored to 0be97503 (L-0520 PR 1 merges main 42af3fb7 (L-0531)); re-anchored to 14bb59ef (L-0520 PR 1 merges main 6a8c60b1 (T-0099)); re-anchored to 8bf710ed (L-0520 PR 1 review round 1 fixes); re-anchored to 14b52c91 (L-0520 PR 1 merges main bd4b2f30 (T-0028 #288, crew 1.0.85, and the mailgun skill), crew 1.0.86); re-anchored to 0c3508e9 (L-0520 PR 1 merges main f7caa37d (L-0561 #289: mailgun registered as skills/mailgun 1.0.1, both install scripts, README, INSTALLATION.md), crew stays 1.0.86); re-anchored to fe524012 (L-0513, the shared gate runner: verify.json rule 22 runs its suite and rule 40 is appended, CLAUDE.md +2 lines in Commands; no plugin version, crew stays 1.0.86); re-anchored to 4eacfacf (L-0513 step 6 fix; verify.json why text only)
 ## Landmines
 - The three guard checks do not ship the same way.
