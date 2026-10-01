@@ -157,7 +157,10 @@ def test_a_holder_that_never_announces_fails_fast_instead_of_hanging(
         return proc
 
     monkeypatch.setattr(crew_fixtures.subprocess, "Popen", recording_popen)
-    threads_before = threading.active_count()
+    # The threads alive now, by identity - not a count, which a thread an
+    # EARLIER test left behind can lower by exiting meanwhile (seen when this
+    # ran after test_verify_gate_stop_gate_record.py: `assert 1 == 2`).
+    threads_before = set(threading.enumerate())
     outcome = {}
 
     def enter_the_pin():
@@ -180,11 +183,14 @@ def test_a_holder_that_never_announces_fails_fast_instead_of_hanging(
         assert time.monotonic() - started < 25
         assert len(launched) == 1 and launched[0].poll() is not None, (
             "the stalled holder was left running")
+        def started_here():
+            return [t for t in threading.enumerate()
+                    if t not in threads_before and t is not runner]
+
         deadline = time.monotonic() + 10
-        while (threading.active_count() > threads_before
-               and time.monotonic() < deadline):
+        while started_here() and time.monotonic() < deadline:
             time.sleep(0.05)
-        assert threading.active_count() == threads_before, (
+        assert started_here() == [], (
             "the holder's reader thread outlived the timeout")
     finally:
         for proc in launched:
