@@ -22,7 +22,9 @@ Name the receipt kind it printed. An `auto-accepted` receipt (a final 0-BLOCK
 round, L-0510) also needs its follow-up ticket to quote every finding line:
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py --ticket "$1" --check-follow-up`
 (add `--root <checkout>` if the follow-up was filed in another checkout). A
-missing `direction.md` or a missing line refuses done - name the follow-up id.
+missing or non-UTF-8 `direction.md`, a missing line (matched verbatim, and a line the
+receipt carries twice is owed twice), or a receipt of an unknown kind refuses done - name the
+follow-up id.
 
 ## Check 2 — the verify gate
 

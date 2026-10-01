@@ -67,7 +67,8 @@ verbatim (`findings`), the follow-up ticket id and the model family. It runs
 every check `--accept` runs, then the guard (`auto_accept_refusal`): the
 round's verdict is exactly FINDINGS; its counts are a dict whose BLOCK, FIX
 and NIT are ints (never a bool) and not negative; BLOCK is 0; `findings` is a
-list of strings, none a `BLOCK|` line, as many as FIX + NIT and at least one;
+list of strings, none a `BLOCK|` line, each a `FIX|` or `NIT|` line, as many
+of each as its own count (never only the total) and at least one;
 `webtest_open` is 0 or `WEBTEST_NA`; and the round is final -- `_charged`
 has reached `BUDGET`, so the next reservation would be refused. Every case
 the ledger cannot tell is a refusal, never a 0: an INCOMPLETE or CLEAN
@@ -79,7 +80,11 @@ refusal raises and changes nothing. `--accept` refuses a `--by` beginning
 -- `owner-accepted`, or `auto-accepted` with its row still passing the guard
 and its lines equal to the row's -- and both `check_receipt` and
 `crew_autopilot` call it. `--check-follow-up` confirms the follow-up's
-`.work/tickets/<id>/direction.md` holds every receipt line as a whole line.
+`.work/tickets/<id>/direction.md` holds every receipt line verbatim as a
+whole line, as many times as the receipt carries it; a direction.md that is
+not UTF-8, or a receipt whose kind is none of clean, owner-accepted and
+auto-accepted, is could-not-tell, never "not applicable". A CLEAN round
+stands only under a receipt of kind `clean`.
 The ledger never files the follow-up; `/crew:review` step 3 does.
 
 Either way the receipt carries the bundle sha256 the reviewer read, and
@@ -103,6 +108,7 @@ old receipt is cleared, and nothing else resets the count.
 Exit codes: 0 ok; 1 refused / receipt invalid / error; 2 usage.
 """
 import argparse
+import collections
 import datetime
 import json
 import os
@@ -454,9 +460,17 @@ def _auto_row_problem(row):
                 "or by a caller that did not pass them): could not tell")
     if any(f.strip().startswith("BLOCK|") for f in findings):
         return f"round {row.get('round')} lists a BLOCK line; a BLOCK is never auto-accepted"
-    if not findings or len(findings) != counts["FIX"] + counts["NIT"]:
-        return (f"round {row.get('round')}'s {len(findings)} finding line(s) do not agree with "
-                f"its counts ({counts['FIX']} FIX + {counts['NIT']} NIT): could not tell")
+    other = [f for f in findings if not f.strip().startswith(("FIX|", "NIT|"))]
+    if other:
+        return (f"round {row.get('round')} lists a line that is neither a FIX nor a NIT "
+                f"({other[0]!r}): could not tell")
+    # Per severity, never the total: one NIT line under counts FIX=1, NIT=0
+    # agrees on the sum and disagrees on what was found.
+    fixes = sum(1 for f in findings if f.strip().startswith("FIX|"))
+    if not findings or (fixes, len(findings) - fixes) != (counts["FIX"], counts["NIT"]):
+        return (f"round {row.get('round')}'s finding lines ({fixes} FIX + "
+                f"{len(findings) - fixes} NIT) do not agree with its counts "
+                f"({counts['FIX']} FIX + {counts['NIT']} NIT): could not tell")
     if "webtest_open" not in row:
         return (f"round {row.get('round')} has no webtest state (recorded before L-0510): "
                 "could not tell")
@@ -538,14 +552,15 @@ def auto_accept(root, ticket, follow_up):
 
 def receipt_stands(receipt, latest):
     """Whether `receipt` stands on `latest`, the latest recorded round: a
-    CLEAN round; FINDINGS owner-accepted; or FINDINGS auto-accepted whose row
-    still passes the guard and whose lines are the row's."""
+    CLEAN round under a clean receipt; FINDINGS owner-accepted; or FINDINGS
+    auto-accepted whose row still passes the guard and whose lines are the
+    row's."""
     if not isinstance(receipt, dict) or not isinstance(latest, dict):
         return False
     if latest.get("status") != "completed" or receipt.get("round") != latest.get("round"):
         return False
     if latest.get("verdict") == "CLEAN":
-        return True
+        return receipt.get("kind") == "clean"
     if latest.get("verdict") != "FINDINGS":
         return False
     if receipt.get("kind") == "owner-accepted":
@@ -557,15 +572,20 @@ def receipt_stands(receipt, latest):
 
 def check_follow_up(root, ticket):
     """(ok, message). For an auto-accepted receipt: the follow-up ticket's
-    direction.md under `root` holds every receipt line as a whole line."""
+    direction.md under `root` holds every receipt line verbatim as a whole
+    line, as many times as the receipt carries it. Only a clean or
+    owner-accepted receipt is not applicable; any other kind is could-not-tell."""
     data, state = _load(ledger_path(root, ticket))
     if state != "ok":
         return False, f"ledger is {state}; could not tell whether a follow-up is owed"
     receipt = data.get("receipt")
     if not isinstance(receipt, dict):
         return False, f"no receipt for {ticket}; run --check-receipt first"
-    if receipt.get("kind") != AUTO_KIND:
+    if receipt.get("kind") in ("clean", "owner-accepted"):
         return True, f"not applicable: the receipt is {receipt.get('kind')}, not {AUTO_KIND}"
+    if receipt.get("kind") != AUTO_KIND:
+        return False, (f"the receipt's kind is {receipt.get('kind')!r}, none of clean, "
+                       f"owner-accepted or {AUTO_KIND}: could not tell")
     lines, follow_up = receipt.get("findings"), receipt.get("follow_up")
     if not isinstance(lines, list) or not lines or not all(isinstance(x, str) for x in lines):
         return False, "the auto-accepted receipt carries no finding lines: could not tell"
@@ -576,10 +596,14 @@ def check_follow_up(root, ticket):
     path = os.path.join(root, ".work", "tickets", follow_up, "direction.md")
     try:
         with open(path, encoding="utf-8") as fh:
-            have = {line.strip() for line in fh.read().splitlines()}
+            have = collections.Counter(fh.read().splitlines())
     except OSError as exc:
         return False, f"follow-up {follow_up}: cannot read {path} ({exc.strerror or exc})"
-    missing = [line for line in lines if line.strip() not in have]
+    except UnicodeDecodeError as exc:
+        return False, f"follow-up {follow_up}: {path} is not UTF-8 ({exc.reason}): could not tell"
+    # Verbatim, never stripped, and counted: a line the receipt carries twice
+    # is owed twice.
+    missing = list((collections.Counter(lines) - have).elements())
     if missing:
         return False, (f"follow-up {follow_up}: {path} lacks {len(missing)} of {len(lines)} "
                        f"line(s) as a whole line, first: {missing[0]}")

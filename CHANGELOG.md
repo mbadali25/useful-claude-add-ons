@@ -16,7 +16,8 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **The guard is in the ledger, and every unknown is a refusal.** Refused, changing nothing: any
   BLOCK; any verdict but exactly `FINDINGS` (INCOMPLETE of every class, refunded or not, and
   CLEAN); counts missing, not a dict, or a BLOCK/FIX/NIT that is not a non-negative int (a bool
-  is refused); finding lines missing, holding a `BLOCK|` line, or disagreeing with FIX + NIT;
+  is refused); finding lines missing, holding a `BLOCK|` line or a line of no known severity, or disagreeing
+  with the FIX count or the NIT count (each compared on its own, never only the total);
   `webtest_open` missing, unread or non-zero; a non-final round; a stale tree; `NEEDS_REPLAN`; a
   superseded plan's round; a round recorded before this release. Any BLOCK or refusal still stops
   for the owner, now with 2-4 options, recommended first.
@@ -24,8 +25,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   guarded verb; the owner's `--accept` is otherwise unchanged.
 - **One predicate, `review_ledger.receipt_stands`,** decides whether a FINDINGS receipt stands for
   both `--check-receipt` and `crew_autopilot`; an auto receipt stands only while its round still
-  passes the guard and its lines equal the row's. `/crew:done` check 1 also runs the new
-  `--check-follow-up`.
+  passes the guard and its lines equal the row's, and a CLEAN round only under a `clean`
+  receipt. `/crew:done` check 1 also runs the new `--check-follow-up`, which matches every line
+  verbatim and as often as the receipt carries it; a non-UTF-8 `direction.md` or a receipt of an
+  unknown kind is a named could-not-tell refusal.
 - **`review_run.py`** records `findings` and `webtest_open` on the ledger row and in review.json,
   and prints `review: auto-accept: eligible` or `review: auto-accept: refused - <reason>` after a
   FINDINGS round. Autopilot's review phase runs step 2d and the auto-accept after an eligible

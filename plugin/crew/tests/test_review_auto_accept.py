@@ -209,6 +209,13 @@ REFUSALS = [
      "BLOCK line"),
     ("findings-disagree", _final_with(counts={"BLOCK": 0, "FIX": 2, "NIT": 1}), FOLLOW,
      "do not agree"),
+    ("findings-fix-count-nit-line", _final_with(counts={"BLOCK": 0, "FIX": 1, "NIT": 0},
+                                                findings=[NIT_LINE]), FOLLOW, "do not agree"),
+    ("findings-nit-count-fix-line", _final_with(counts={"BLOCK": 0, "FIX": 0, "NIT": 1},
+                                                findings=[FIX_LINE]), FOLLOW, "do not agree"),
+    ("findings-unknown-severity", _final_with(counts={"BLOCK": 0, "FIX": 1, "NIT": 0},
+                                              findings=["READ|src/a.py"]), FOLLOW,
+     "neither a FIX nor a NIT"),
     ("webtest-open-missing", _final_without("webtest_open"), FOLLOW, "webtest"),
     ("webtest-open-none", _final_with(webtest_open=None), FOLLOW, "webtest"),
     ("webtest-open-false", _final_with(webtest_open=False), FOLLOW, "webtest"),
@@ -419,6 +426,62 @@ def test_check_follow_up_not_applicable(repo, kind):
     result = _cli(repo, "--check-follow-up")
 
     assert (result.returncode, "not applicable" in result.stdout) == (0, True), result.stdout
+
+
+@pytest.mark.parametrize("kind", ["garbage", None])
+def test_check_follow_up_unknown_kind_is_could_not_tell(repo, kind):
+    _clean(repo)
+    _edit(repo, lambda data: data["receipt"].update(kind=kind))
+
+    result = _cli(repo, "--check-follow-up")
+
+    assert (result.returncode, "could not tell" in result.stdout) == (1, True), result.stdout
+
+
+def test_check_receipt_refuses_a_clean_round_with_an_unknown_kind(repo):
+    _clean(repo)
+    _edit(repo, lambda data: data["receipt"].update(kind="garbage"))
+
+    result = _cli(repo, "--check-receipt")
+
+    assert result.returncode == 1, result.stdout
+
+
+def _not_utf8(repo):
+    folder = repo / ".work" / "tickets" / FOLLOW
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "direction.md").write_bytes(b"\xff")
+
+
+def _indented(repo):
+    _direction(repo, f"# {FOLLOW}\n\n```\n  {FIX_LINE}\n{NIT_LINE}\n```\n")
+
+
+@pytest.mark.parametrize("write, named", [
+    (_not_utf8, "UTF-8"),
+    (_indented, FIX_LINE),
+], ids=["not-utf8", "indented-line"])
+def test_check_follow_up_refuses_by_name(repo, write, named):
+    _plain_final(repo)
+    assert _auto(repo).returncode == 0
+    write(repo)
+
+    result = _cli(repo, "--check-follow-up")
+
+    assert (result.returncode, named in result.stdout, "Traceback" in result.stderr) == (
+        1, True, False), result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("copies, code", [(1, 1), (2, 0)], ids=["one-copy", "two-copies"])
+def test_check_follow_up_counts_duplicate_lines(repo, copies, code):
+    _good(repo)
+    _good(repo, counts={"BLOCK": 0, "FIX": 2, "NIT": 0}, findings=[FIX_LINE, FIX_LINE])
+    assert _auto(repo).returncode == 0
+    _direction(repo, f"# {FOLLOW}\n\n```\n" + f"{FIX_LINE}\n" * copies + "```\n")
+
+    result = _cli(repo, "--check-follow-up")
+
+    assert result.returncode == code, result.stdout
 
 
 # --- review_run.finish records the evidence the guard reads -------------------

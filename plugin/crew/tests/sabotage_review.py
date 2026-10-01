@@ -572,9 +572,72 @@ REVIEW_FIX_MUTATIONS = (
         # Finding lines that disagree with the counts are taken as read.
         "auto-accept stops checking lines against counts",
         REVIEW_LEDGER,
-        '    if not findings or len(findings) != counts["FIX"] + counts["NIT"]:\n',
+        ('    if not findings or (fixes, len(findings) - fixes) != (counts["FIX"], '
+         'counts["NIT"]):\n'),
         "    if False:\n",
         "tests/test_review_auto_accept.py::test_auto_accept_refuses[findings-disagree]",
+    ),
+    # L-0510 fix round. Each was run by hand against the tracked file, seen
+    # red, and restored with `git checkout --`.
+    (
+        # Only the total is compared: one NIT line under counts FIX=1, NIT=0
+        # is auto-accepted.
+        "auto-accept compares only the total of FIX and NIT lines",
+        REVIEW_LEDGER,
+        ('    if not findings or (fixes, len(findings) - fixes) != (counts["FIX"], '
+         'counts["NIT"]):\n'),
+        '    if not findings or len(findings) != counts["FIX"] + counts["NIT"]:\n',
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[findings-fix-count-nit-line]",
+    ),
+    (
+        # A line that is neither FIX| nor NIT| is taken as a finding.
+        "auto-accept stops refusing a line of no known severity",
+        REVIEW_LEDGER,
+        "    if other:\n",
+        "    if False:\n",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[findings-unknown-severity]",
+    ),
+    (
+        # A receipt of an unknown kind reads as "not applicable".
+        "--check-follow-up passes a receipt of an unknown kind",
+        REVIEW_LEDGER,
+        '        return False, (f"the receipt\'s kind is',
+        '        return True, (f"the receipt\'s kind is',
+        ("tests/test_review_auto_accept.py::"
+         "test_check_follow_up_unknown_kind_is_could_not_tell[garbage]"),
+    ),
+    (
+        # A CLEAN round stands under a receipt of any kind.
+        "receipt_stands stops reading a CLEAN receipt's kind",
+        REVIEW_LEDGER,
+        '        return receipt.get("kind") == "clean"\n',
+        "        return True\n",
+        ("tests/test_review_auto_accept.py::"
+         "test_check_receipt_refuses_a_clean_round_with_an_unknown_kind"),
+    ),
+    (
+        # A follow-up that is not UTF-8 crashes with a traceback.
+        "--check-follow-up stops catching a decode error",
+        REVIEW_LEDGER,
+        "    except UnicodeDecodeError as exc:\n",
+        "    except KeyError as exc:\n",
+        "tests/test_review_auto_accept.py::test_check_follow_up_refuses_by_name[not-utf8]",
+    ),
+    (
+        # The follow-up's lines are stripped: an indented copy passes.
+        "--check-follow-up strips the follow-up's lines",
+        REVIEW_LEDGER,
+        "            have = collections.Counter(fh.read().splitlines())\n",
+        "            have = collections.Counter(x.strip() for x in fh.read().splitlines())\n",
+        "tests/test_review_auto_accept.py::test_check_follow_up_refuses_by_name[indented-line]",
+    ),
+    (
+        # A line the receipt carries twice is satisfied by one copy.
+        "--check-follow-up stops counting duplicate lines",
+        REVIEW_LEDGER,
+        "    missing = list((collections.Counter(lines) - have).elements())\n",
+        "    missing = [line for line in lines if line not in have]\n",
+        "tests/test_review_auto_accept.py::test_check_follow_up_counts_duplicate_lines[one-copy]",
     ),
     (
         # The owner path forges the auto receipt's string.
