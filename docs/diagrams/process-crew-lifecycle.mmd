@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@8bf710ed on 2026-09-30. Verify before trusting.
+%% Generated from useful-claude-add-ons@963d2905 on 2026-09-30. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -142,11 +142,13 @@
 %%     move --to review (:110-111); then /crew:review last (:112). :114-118
 %%     step 7: done is /crew:done's.
 %%     Scope guard: plugin/crew/hooks/hooks.json:31 (scope-guard.sh, PreToolUse).
-%%   plugin/crew/commands/review.md:25-29 two rounds per ticket, a third is refused
+%%   plugin/crew/commands/review.md:25-28 two rounds per ticket, a third is refused
 %%     -> NEEDS_REPLAN; :440 exit codes 0 CLEAN / 1 FINDINGS / 3 INCOMPLETE /
-%%     4 NEEDS_REPLAN / 2 not run; :449 Claude fallback; :480 the verdict is the
-%%     script's; :485-486 an INCOMPLETE's class and the tool-failure refund;
-%%     :504-505 round 2 is the last (rounds not refunded); :509 --accept --by <who>; :512 a CLEAN
+%%     4 NEEDS_REPLAN / 2 not run; :451 Claude fallback; :482 the verdict is the
+%%     script's; :484-485 an INCOMPLETE's class and the tool-failure refund;
+%%     :502-504 round 2 is the last (rounds not refunded); :505-506 a final 0-BLOCK
+%%     round auto-accepts (--auto-accept --follow-up, L-0510); :507 anything else stops
+%%     for the owner with 2-4 options; :508 --accept --by <who>; :510 a CLEAN
 %%     round writes its receipt itself.
 %%   plugin/crew/commands/done.md:7 all four checks must pass; :10-13 check 1
 %%     review receipt (--check-receipt); :21-27 check 2 verify gate via
@@ -321,20 +323,20 @@ flowchart TB
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
-        im5 --> pf0{"preflight first (#264):<br/>a CLEAN receipt covers this bundle?<br/>verify gate passed this tree?<br/>review_run.py:508, :575"}
+        im5 --> pf0{"preflight first (#264):<br/>a CLEAN receipt covers this bundle?<br/>verify gate passed this tree?<br/>review_run.py:539, :606"}
         pf0 -- "CLEAN receipt: CLEAN,<br/>no round, no self-check" --> rcpt
-        pf0 -- "gate not passed or unknown:<br/>exit 5, no round spent,<br/>self-check not asked<br/>review.md:450" --> vg0["run the verify gate,<br/>then review again"]
+        pf0 -- "gate not passed or unknown:<br/>exit 5, no round spent,<br/>self-check not asked<br/>review.md:449" --> vg0["run the verify gate,<br/>then review again"]
         vg0 --> im5
         pf0 -- "go on" --> rv0{"self-check stamped for<br/>this bundle and standards set?<br/>review_run.py standards_gate"}
-        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no self-check asked<br/>review_run.py:579-589" --> replan
-        rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:447-450" --> sc1
-        rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle;<br/>prompt ends with the standards checklist<br/>review.md:25-29, :452"]
-        rv1 --> rv2{"verdict (the script's)<br/>:441, :484"}
-        rv2 -- CLEAN --> rcpt["receipt written<br/>:511"]
-        rv2 -- FINDINGS --> rv3{"fix, or<br/>user accepts?<br/>:504, :508"}
-        rv3 -- accept --> rcpt
+        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no self-check asked<br/>review_run.py:610-620" --> replan
+        rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:446-449" --> sc1
+        rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle;<br/>prompt ends with the standards checklist<br/>review.md:25-28, :451"]
+        rv1 --> rv2{"verdict (the script's)<br/>:440, :483"}
+        rv2 -- CLEAN --> rcpt["receipt written<br/>:510"]
+        rv2 -- FINDINGS --> rv3{"final round, 0 BLOCK?<br/>else fix, or the<br/>owner accepts<br/>:503, :505-508"}
+        rv3 -- "auto-accept (L-0510): eligible,<br/>no specialist/control BLOCK;<br/>one follow-up ticket :505-506<br/>- or the owner accepts :508" --> rcpt
         rv3 -- "fix, round 2" --> rv1
-        rv2 -- "INCOMPLETE (tool failure: refunded, :485-486)" --> rv1
+        rv2 -- "INCOMPLETE (tool failure: refunded, :484-485)" --> rv1
         rv2 -- "INCOMPLETE (reviewer / tree): counts" --> rv1
         rv2 -- "third round refused" --> replan([NEEDS_REPLAN:<br/>back to /crew:plan])
     end
@@ -423,3 +425,9 @@ flowchart TB
 %% provider and the launch gate are not drawn. No node or edge changed.
 %% c43a54c1 -> f4adf923 (T-0028 re-sets crew 1.0.85): release files only; no cited line moved.
 %% f4adf923 -> 328fdf4a (T-0028 round-7 fixes in kimi_probe.py, crew 1.0.85): no cited line moved.
+%% Re-drawn 8bf710ed -> 963d2905 (L-0510, review closure, crew 1.0.90): of the anchored paths
+%% review.md (step 3.3 rewritten, :25-28 compacted), done.md (check 1 gained six lines, so every
+%% done.md citation from check 2 down moved +6) and review_run.py (findings / webtest_open recorded,
+%% +31 above preflight) changed. rv3 now asks whether the final round has 0 BLOCK, and its edge to
+%% rcpt is the --auto-accept path or the owner's --accept. Citations mapped by difflib from
+%% 66651b69 to 963d2905 (/root/crew-tmp/l-0510/tools/remap.py, machine-local) and each re-read.
