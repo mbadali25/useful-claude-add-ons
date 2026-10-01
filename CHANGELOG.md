@@ -17,8 +17,11 @@ versions and were never published.
   `auto: 0 BLOCK, owner policy 2026-09-30`, and it carries the round's FIX/NIT lines verbatim,
   the follow-up id and the model family. `/crew:review` step 3 then files ONE follow-up ticket
   whose `direction.md` quotes every line. No flag or config key turns it off.
-- **The guard is in the ledger, and every unknown is a refusal.** Refused, changing nothing: any
-  BLOCK; any verdict but exactly `FINDINGS` (INCOMPLETE of every class, refunded or not, and
+- **The guard is in the ledger, and every unknown is a refusal.** Refused, changing nothing: a
+  round not reviewed by another model family than the author's (owner decision 2026-10-01: the
+  row's provider must be `codex` or `kimi` and its family recorded and not `claude`, so a
+  Claude-fallback round, a missing provider or family, and Copilot or any other provider are
+  refused); any BLOCK; any verdict but exactly `FINDINGS` (INCOMPLETE of every class, refunded or not, and
   CLEAN); counts missing, not a dict, or a BLOCK/FIX/NIT that is not a non-negative int (a bool
   is refused); finding lines missing, holding a `BLOCK|` line or a line of no known severity, or disagreeing
   with the FIX count or the NIT count (each compared on its own, never only the total);
