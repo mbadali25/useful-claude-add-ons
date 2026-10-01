@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.107: crew runs its own bookkeeping; a move off an in-flight ticket is the owner's prompt (T-0504)
+### Changed — `crew` 1.0.113: crew runs its own bookkeeping; a move off an in-flight ticket is the owner's prompt (T-0504)
 
 - **Why.** The owner, 2026-09-29: "The crew plugin and other repos keep asking
   me to run a Python script or a command. I thought it was going to
@@ -50,9 +50,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   `claude plugin update crew` to 1.0.61 or later.
 - **Sabotage.** New rows in `sabotage_scope.py`, `sabotage_autopilot.py`
   (`REPOINT_MUTATIONS`) and `sabotage_approval.py`, each naming one test.
-- Bumped `1.0.102 -> 1.0.107` (1.0.62 on its branch, one past main's 1.0.61; re-set
-  after each origin/main merge, last 05a679bf at 1.0.102; 1.0.103-1.0.106 are claimed by
-  L-0510, L-0516, W-0115/L-0557 and T-0501, so this takes the next free one).
+- Bumped `1.0.110 -> 1.0.113` (1.0.62 on its branch, one past main's 1.0.61; re-set
+  after each origin/main merge, last 2906dcbd at 1.0.110; 1.0.111 is claimed by W-0117 #302
+  and L-0557, 1.0.112 by L-0510, so this takes the next free one).
 
 ### Fixed — `crew` 1.0.110: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516)
 
