@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@0c3508e9
+anchor: useful-claude-add-ons@b1d8a4e8
 verified: 2026-09-30
 
 ## Does
@@ -132,7 +132,7 @@ violation visible at all. (JUDGEMENT.)
   default OFF (`is True` tests at `plugin/obsidian-vault/hooks/scripts/vault_guard.py:301-302`);
   `checkCanvas` defaults ON, via an `is not False` test at `:303`. Assuming all three share a
   default is the easy mistake, and it inverts which rules a fresh install enforces. All three
-  defaults are pinned by cases in the suite (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:405,413,434`).
+  defaults are pinned by cases in the suite (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:408,413,434`).
   (DERIVED.)
 - **The guard only ever sees the DEFAULT vault.** `main()` calls
   `obsidian_common.resolve_vault_path()` with no name
@@ -153,7 +153,7 @@ violation visible at all. (JUDGEMENT.)
   (`:39`). Widening one while reading the other is how an exemption silently grows. Each of the
   three ASCII-checked names is pinned individually, after a Codex round found that testing
   `README.md` alone let a narrowing of `ASCII_EXEMPT_NAMES` pass the whole suite
-  (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:294-305`). (DERIVED.)
+  (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:297-308`). (DERIVED.)
 - **The frontmatter exemption is one check wide, not the whole function.** `fm_optional` excuses an
   exempt basename from *having* frontmatter and nothing else: a `README.md` that does carry
   frontmatter is still held to required keys, title-matches-filename and the updated date
@@ -163,7 +163,7 @@ violation visible at all. (JUDGEMENT.)
   `notes_glob` is passed to `check_note` alone
   (`plugin/obsidian-vault/hooks/scripts/vault_guard.py:329-333`); `check_ascii` (`:328`) and
   `check_canvas` (`:334-335`) never receive it. The note half of that is pinned
-  (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:451`) and the ASCII half is pinned by
+  (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:454`) and the ASCII half is pinned by
   the `wiki/ascii/CLAUDE.md` case (`:315`). **The canvas half is not pinned:** all four canvas
   cases live under `wiki/canvases/`, which is inside the `wiki/` prefix the ON config sets, so
   adding prefix-gating to `check_canvas` would pass the suite unnoticed. (DERIVED for the code;
@@ -188,7 +188,7 @@ violation visible at all. (JUDGEMENT.)
   that this only matters when nothing more specific (`PYTHONIOENCODING`, or the wrapper's own
   `PYTHONUTF8=1` backstop, below) already forced UTF-8. The MEASUREMENT is recorded elsewhere -
   `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:140-150` and
-  `plugin/obsidian-vault/hooks/scripts/_test/test_vault_guard_sh.sh:358-363` - where the guard's own
+  `plugin/obsidian-vault/hooks/scripts/_test/test_vault_guard_sh.sh:361-366` - where the guard's own
   regression suite measured `PYTHONIOENCODING` as taking precedence OVER `PYTHONUTF8` when both are set - so the
   wrapper backstop cannot rescue a decode an explicit `PYTHONIOENCODING` in the calling environment
   has already corrupted. (DERIVED, and sabotage-tested: `_test/test_vault_guard_sh.sh`'s
@@ -272,7 +272,7 @@ violation visible at all. (JUDGEMENT.)
     at exit 0.
   Pinned by `plugin/obsidian-vault/hooks/scripts/_test/test_vault_guard_sh.sh` (grown from 372 to
   652 lines this pass - see "Measured this pass"), run from the main suite as one folded case at
-  `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:513`.
+  `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:516`.
   **The stub is MODELLED, not observed** - built on Linux from the alias's documented behaviour
   (`plugin/obsidian-vault/hooks/scripts/vault-guard.sh:35-37` says so). The *shape* of the failure
   is verified; the Windows fixture behind it is not, and nobody has reproduced this on a real
@@ -321,7 +321,7 @@ violation visible at all. (JUDGEMENT.)
   `plugin/obsidian-vault/hooks/scripts/vault-capture.ps1:65`), which has nothing left for legacy reconstruction to strip. Reproduced without a Windows
   machine by explicitly setting `$PSNativeCommandArgumentPassing = 'Legacy'` under `pwsh` on Linux,
   and pinned in the new `plugin/obsidian-vault/hooks/scripts/_test/test_ps1_legacy_args.sh`
-  (188 lines), run from the main suite at `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:516-517`. **Like the WindowsApps stub, this
+  (188 lines), run from the main suite at `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:519-520`. **Like the WindowsApps stub, this
   reproduction is MODELLED under a forced setting, not observed on a real legacy-mode Windows
   PowerShell 5.1 host** - the script's own header says so. (DERIVED.)
 - **Crew 1.0 retired two adjacent memory systems this note used to reference by name; both are
@@ -430,7 +430,7 @@ violation visible at all. (JUDGEMENT.)
   Pinned by the new `plugin/obsidian-vault/hooks/scripts/_test/test_bridge_capture_sh.sh`
   (350 lines), whose own header states it is closing exactly the gap this note used to name: "the
   two remaining naive wrappers ... still carry the naive one-liner". Run from the main suite at
-  `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:514-515`. (DERIVED.)
+  `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:517-518`. (DERIVED.)
 
 - **The two retired `claude-memories-*` skills' conventions did not disappear - they moved into
   this plugin as portable "profiles".** New this pass:
@@ -451,7 +451,7 @@ violation visible at all. (JUDGEMENT.)
   **RESULT: 71 passed, 0 failed, 0 skipped.** `pwsh` present at `/snap/bin/pwsh`. Grew from 69 (at
   `60c79407`) to 71 exactly because `run-tests.sh` gained two new folded cases, each counting as one
   pass/fail regardless of how many assertions it makes internally: `py_suite ... test_memory_ops.py`
-  (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:480-481`) and `py_suite ... test_python_probe_proof.py`
+  (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:483-484`) and `py_suite ... test_python_probe_proof.py`
   (`:520-521`) - confirmed by reading `run-tests.sh` itself, not inferred from the count alone.
 - Previous run, kept for its own record: at `60c79407`, on **Linux**, checkout
   `/repos/personal/useful-claude-add-ons/.claude/worktrees/agent-a13e59fa14639e19c`, branch
@@ -460,7 +460,7 @@ violation visible at all. (JUDGEMENT.)
   the previous `67 passed, 0 failed` recorded here was taken on Linux at `84976536`, before PR #210
   added the `SKIP` counter, two new sub-suites, and the `PYTHONUTF8=1` decode backstop.)
   `RESULT` itself changed shape this pass - `"$PASS passed, $FAIL failed"` became
-  `"$PASS passed, $FAIL failed, $SKIP skipped"` (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:535`), and `sh_suite` (`:488-511`)
+  `"$PASS passed, $FAIL failed, $SKIP skipped"` (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:538`), and `sh_suite` (`:488-511`)
   now also greps each sub-suite's own output for `SKIP:` lines and folds their count in
   (`:498-502`) rather than discarding that output silently on a clean exit, which is what the
   previous version of this note's "67 is not the number every machine sees" paragraph was working
@@ -534,7 +534,7 @@ Re-read in full this pass: `plugin/obsidian-vault/hooks/hooks.json` (all 22 line
 `plugin/obsidian-vault/hooks/scripts/obsidian_common.py:60-100` and `:256-300`,
 `plugin/obsidian-vault/hooks/scripts/vault_ops.py:1036-1100`,
 `plugin/obsidian-vault/hooks/scripts/bridge_status.py:2-30`,
-`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:1-40,285-330,436-482`,
+`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:1-43,285-330,436-482`,
 `plugin/obsidian-vault/README.md:25-60`, `plugin/crew/hooks/hooks.json` (events and PreToolUse
 matchers), and the marketplace entry. Every function range quoted above came from `ast.parse`
 printing `lineno`-`end_lineno`, not from counting `sed` output. The suite was executed rather than
@@ -755,7 +755,7 @@ left un-checked.** The shifts fall into two causes, both mechanical rather than 
   `written_text`, the exemption-name lists, and the module docstring is unaffected.
 - `run-tests.sh` gained one line (`SKIP=0`) near its top (line 29), shifting every citation below
   it by exactly one, and gained two new `sh_suite` calls plus a widened flavour-guard block near
-  its tail, shifting everything from `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:513` on by more. Both effects were checked by
+  its tail, shifting everything from `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:516` on by more. Both effects were checked by
   grepping for the cited text itself and reading off its new line number, not by assuming a
   constant offset - the `+1` shift and the tail rewrite do not compose predictably from one number.
 
@@ -787,7 +787,7 @@ one found is reported here for scribe:
   checkCanvas default; that line is now inside a comment and the check is at
   `plugin/obsidian-vault/hooks/scripts/vault_guard.py:303`. Missed by this pass's first sweep and
   caught on review. A third copy of the same stale citation is at
-  `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:49` (caught on the second review).
+  `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:52` (caught on the second review).
 - `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:42` and
   `plugin/obsidian-vault/hooks/scripts/vault-guard.ps1:53` cite crew's resolver as
   `plugin/crew/hooks/scripts/role-write-guard.sh:32-57`; it now spans `:32-113`.
@@ -885,8 +885,8 @@ stdin decode-then-parse split) therefore still holds unchanged and was not re-re
   usable interpreter" was leaking a real, working `python3` into every such case - every must-refuse
   case became a false PASS-through instead of the expected stand-down. Fixed by creating
   `$work/pwsh-only` holding nothing but a symlink to the real `pwsh`
-  (`plugin/obsidian-vault/hooks/scripts/_test/test_vault_guard_sh.sh:692-704`, and the identical
-  pattern in `plugin/obsidian-vault/hooks/scripts/_test/test_bridge_capture_sh.sh:351-355`).
+  (`plugin/obsidian-vault/hooks/scripts/_test/test_vault_guard_sh.sh:695-707`, and the identical
+  pattern in `plugin/obsidian-vault/hooks/scripts/_test/test_bridge_capture_sh.sh:354-358`).
   (DERIVED, read in full - not merely inferred from the task's own summary of it.)
 - **Roles and profiles.** `writer_vault()`, `ROLES`, `host_id()` in `obsidian_common.py` (+102/-);
   `vault_setup.py`, `vault_import.py`, `vault_recall.py`, `vault_garden.py` (all new); `select()`'s
@@ -1090,3 +1090,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `8bf710ed` -> `14b52c91` on 2026-09-30 (L-0520 PR 1 merges main bd4b2f30 (T-0028 #288, crew 1.0.85, and the mailgun skill), crew 1.0.86).**  No suite was executed for this note.
 
 **Re-anchored `14b52c91` -> `0c3508e9` on 2026-09-30 (L-0520 PR 1 merges main f7caa37d (L-0561 #289: mailgun registered as skills/mailgun 1.0.1, both install scripts, README, INSTALLATION.md), crew stays 1.0.86).**  No suite was executed for this note.
+
+**Re-anchored `0c3508e9` -> `b1d8a4e8` on 2026-09-30 (L-0557: per-test XDG_CACHE_HOME for every pwsh the suites spawn, crew 1.0.89, obsidian-vault 0.4.16).** `git diff --name-only 0c3508e9 b1d8a4e8` returns, outside refresh artifacts, L-0557's test-only files (`plugin/crew/tests/conftest.py`, `plugin/crew/tests/crew_fixtures.py`, new `plugin/crew/tests/test_pwsh_cache_isolation.py`, both `test_flavour_guard.py` copies, the obsidian-vault `_test` suites, six `scripts/_test/*.sh`), `.crew/verify.json` (one new rule, appended after the Kimi rule), `plugin/crew/README.md` (one paragraph after the test-layer table), the harness reference's H4 table (one row), `CHANGELOG.md`, `plugin/crew/BUDGETS.md` and the version files. Body `path:line` citations into those files were moved by difflib from `0c3508e9` (`/root/crew-tmp/l-0557/tools/remap.py`, machine-local): 25 moved, in crew.md (CHANGELOG), obsidian-vault.md (its `_test` suites) and verification-harness.md (verify.json range unchanged). No hook or production script changed. No suite was executed for this note. The obsidian-vault `_test` suites that run pwsh (`test_vault_guard_sh.sh`, `test_bridge_capture_sh.sh`, `test_ps1_legacy_args.sh`, `run-tests.sh`, and the Python `test_flavour_guard.py`, `test_memory_ops.py`, `test_python_probe_proof.py`) now give it a throwaway `XDG_CACHE_HOME`.
