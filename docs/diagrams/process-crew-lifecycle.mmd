@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@8bf710ed on 2026-09-30. Verify before trusting.
+%% Generated from useful-claude-add-ons@bf7ce780 on 2026-09-30. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -263,6 +263,8 @@
 %% Re-anchored 0be97503 -> 14bb59ef (L-0520 PR 1 merges main 6a8c60b1, T-0099): no anchored path changed.
 %% Re-anchored 14bb59ef -> 8bf710ed (L-0520 PR 1 review round 1 fixes): done.md's landing section kept its lines (:82-96,
 %% two commands quoted in place); crew_train.py is cited by name only. No node or edge changed.
+%% Re-anchored 8bf710ed -> bf7ce780 (L-0558, crew 1.0.87): of the anchored paths only crew_train.py changed
+%% (round-2 fixes, rerere rule); no node cites it by line, done.md is unchanged. No node or edge changed.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
