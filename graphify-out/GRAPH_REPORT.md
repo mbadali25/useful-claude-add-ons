@@ -1,7 +1,7 @@
 # Graph Report - uca-l0516  (2026-09-30)
 
 ## Corpus Check
-- 1116 files · ~2,475,010 words
+- 1116 files · ~2,477,143 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 63 file(s) not represented in the graph (top: (none) 34, .mmd 8, .jsonl 5)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `57d9ef23`
+- Built from commit: `74da46e9`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -249,7 +249,7 @@
 - crew_incident.py
 - test_handoff_staleness.py
 - _repo
-- Fixed — `crew` 1.0.89: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516)
+- Fixed — `crew` 1.0.92: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516)
 - _global_file
 - kb4.py
 - notifyd.py
@@ -1915,9 +1915,9 @@ Nodes (24): commit_with_date(), Commit one file with both dates forced, simulati
 Cohesion: 0.09
 Nodes (30): A repo whose `.crew/config.json` holds `config` (defaults when None)., A machine path whose directory cannot be made: `os.makedirs` denied (patched…, _repo(), _repo_bytes(), _rewrite_with(), _stray_locks(), test_a_block_set_to_nothing_is_refused_off_an_open_table(), test_crew_json_presence_is_named() (+22 more)
 
-### Community 233 - "Fixed — `crew` 1.0.89: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516)"
+### Community 233 - "Fixed — `crew` 1.0.92: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516)"
 Cohesion: 0.22
-Nodes (8): Fixed — `crew` 1.0.89: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516), wallclock, Codex r1 finding 1 (event_claim.py:230): a claimant that loses the O_EXCL race…, The review's reproduction through the CLI: the winner is 'paused' -- it got…, test_a_loser_of_the_takeover_race_waits_instead_of_returning_false(), test_a_winner_killed_after_exit_0_does_not_cost_the_only_emission(), contender(), test_the_twin_stands_down_as_soon_as_the_winner_reports_sent()
+Nodes (8): Fixed — `crew` 1.0.92: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516), wallclock, Codex r1 finding 1 (event_claim.py:230): a claimant that loses the O_EXCL race…, The review's reproduction through the CLI: the winner is 'paused' -- it got…, test_a_loser_of_the_takeover_race_waits_instead_of_returning_false(), test_a_winner_killed_after_exit_0_does_not_cost_the_only_emission(), contender(), test_the_twin_stands_down_as_soon_as_the_winner_reports_sent()
 
 ### Community 234 - "_global_file"
 Cohesion: 0.09
@@ -4259,7 +4259,7 @@ Nodes (3): Aliases match as loose prefixes again, as they did in the first draft
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `[Unreleased]` connect `[Unreleased]` to `test_role_ladder.py`, `role_write_guard.py`, `default_config`, `test_upgrade.py`, `The writers and the `/crew:config` menu (T-0075, crew 1.0.55)`, `ConfigTool`, `pytest`, `test_check_reads_the_svg.py`, `crew_state.py`, `tg.py`, `search_code`, `crew_autopilot.py`, `resolve_ratcheted`, `test_review_patch.py`, `crew_endpoints.py`, `test_ps1_python_probe.py`, `completion_audit.py`, `anthropic_proxy.py`, `crew_resume.py`, `graphClient.ts`, `verify_fingerprint.py`, `reconcile`, `label`, `[2026-07-28]`, `test_completion_audit.py`, `Crew redesign — Claude Fable 5.1 design`, `crew_freshness.py`, `check-marketplace.py`, `_config_json`, `test_python_probe_proof.py`, `review_prompt.py`, `crew_refresh_check.py`, `rule_of_two.py`, `golden_build.py`, `Brand`, `test_sabotage_harness.py`, `mg.py`, `crew_instructions.py`, `check_self_claims`, `review_run.py`, `crew_status.py`, `crew_incident.py`, `Changed`, `codex`, `Fixed — `crew` 1.0.89: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516)`, `notifyd.py`, `stamp`, `link_path_dirs`?**
+- **Why does `[Unreleased]` connect `[Unreleased]` to `test_role_ladder.py`, `role_write_guard.py`, `default_config`, `test_upgrade.py`, `The writers and the `/crew:config` menu (T-0075, crew 1.0.55)`, `ConfigTool`, `pytest`, `test_check_reads_the_svg.py`, `crew_state.py`, `tg.py`, `search_code`, `crew_autopilot.py`, `resolve_ratcheted`, `test_review_patch.py`, `crew_endpoints.py`, `test_ps1_python_probe.py`, `completion_audit.py`, `anthropic_proxy.py`, `crew_resume.py`, `graphClient.ts`, `verify_fingerprint.py`, `reconcile`, `label`, `[2026-07-28]`, `test_completion_audit.py`, `Crew redesign — Claude Fable 5.1 design`, `crew_freshness.py`, `check-marketplace.py`, `_config_json`, `test_python_probe_proof.py`, `review_prompt.py`, `crew_refresh_check.py`, `rule_of_two.py`, `golden_build.py`, `Brand`, `test_sabotage_harness.py`, `mg.py`, `crew_instructions.py`, `check_self_claims`, `review_run.py`, `crew_status.py`, `crew_incident.py`, `Changed`, `codex`, `Fixed — `crew` 1.0.92: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516)`, `notifyd.py`, `stamp`, `link_path_dirs`?**
   _High betweenness centrality (0.021) - this node is a cross-community bridge._
 - **Why does `TODO` connect `TODO` to `.device`, `test_provider_table.py`, `default_config`, `family`, `version-drift.py`, `crew_ticket.py`, `crew_state.py`, `test_verify_gate_stop_gate_record.py`, `PM assign wave 2, 2026-09-24 - status corrections and new deferrals`, `_write_marker`, `crew_context.py`, `crew_endpoints.py`, `count_crew_markdown_lines`, `manager_config.py`, `anthropic_proxy.py`, `crew_resume.py`, `test_the_cli_announces_the_new_key_and_does_not_only_write_it_to_a_file`, `test_16_a_skip_after_a_pass_deletes_the_stale_fingerprint`, `sync-updates.py`, `test_completion_audit.py`, `Crew redesign — Claude Fable 5.1 design`, `crew_freshness.py`, `check-marketplace.py`, `test_verify_gate_python3_shim.py`, `VectorStore`, `crew_autocycle.py`, `shell_path`, `crew_route.py`, `Troubleshooting`, `render_mermaid.py`, `test_sabotage_harness.py`, `crew_instructions.py`, `check_land`, `in_scope`, `crew_fixtures.py`, `Document builder`, `review_run.py`, `test_auto_clear_review_fixes.py`, `Found while fixing the 0.19.92 fingerprint/budget review items, NOT fixed`, `test_stack_skills.py`, `kimi_probe.py`, `Filed 2026-09-23 by the crew PM, during the unnamed-PM fix, not fixed there`?**
   _High betweenness centrality (0.017) - this node is a cross-community bridge._
