@@ -663,4 +663,15 @@ REVIEW_FIX_MUTATIONS = (
         '        "webtest_open"',
         "tests/test_review_auto_accept.py::test_finish_records_findings_and_webtest_state",
     ),
+    # L-0510, owner decision 2026-10-01 #3: the family rule. Run by hand
+    # against the tracked file, seen red, restored with `git checkout --`.
+    (
+        # The family check is removed: a Claude-fallback (same-family) round
+        # auto-accepts.
+        "auto-accept stops checking the reviewer's family",
+        REVIEW_LEDGER,
+        "    problem = _family_problem(row)\n    if problem:\n        return problem\n",
+        "",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[same-family-claude]",
+    ),
 )

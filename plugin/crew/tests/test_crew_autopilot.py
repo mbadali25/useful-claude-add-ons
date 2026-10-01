@@ -303,10 +303,11 @@ def test_next_owner_accepted_findings_move_on(tmp_path, monkeypatch):
 LINE = "FIX|src/app.py:1|the loop never stops|run it offline"
 
 
-def _auto_row(number=2, block=0):
+def _auto_row(number=2, block=0, provider="codex", family="gpt"):
     row = _round(number, "FINDINGS")
     row.update({"counts": {"BLOCK": block, "FIX": 1, "NIT": 0}, "findings": [LINE],
-                "webtest_open": review_ledger.WEBTEST_NA, "refunded": False})
+                "webtest_open": review_ledger.WEBTEST_NA, "refunded": False,
+                "provider": provider, "model_family": family})
     return row
 
 
@@ -355,6 +356,18 @@ def test_next_ineligible_findings_quote_the_refusal(tmp_path):
     assert (got["phase"], got["stop"], "a BLOCK is never auto-accepted" in got["reason"],
             "--accept --by <owner>" in got["reason"]) == ("accept-review", True, True, True), \
         got["reason"]
+
+
+def test_next_same_family_round_quotes_the_family_refusal(tmp_path):
+    root = _approved(tmp_path)
+    _ledger(root, [_auto_row(1), _auto_row(2, provider="claude", family="claude")],
+            state="REVIEWED")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "same family" in got["reason"],
+            "--auto-accept refuses it" in got["reason"]) == (
+        "accept-review", True, True, True), got["reason"]
 
 
 def test_next_refresh_before_rereview(tmp_path, monkeypatch):

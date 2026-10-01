@@ -65,7 +65,11 @@ takes no `--by`: it writes a receipt of kind `auto-accepted` whose
 `accepted_by` is fixed to `AUTO_BY`, carrying the round's finding lines
 verbatim (`findings`), the follow-up ticket id and the model family. It runs
 every check `--accept` runs, then the guard (`auto_accept_refusal`): the
-round's verdict is exactly FINDINGS; its counts are a dict whose BLOCK, FIX
+round was reviewed by another model family than the author's -- its
+`provider` is codex or kimi (`AUTO_PROVIDERS`) and its `model_family` a
+non-empty string that is not `claude` (owner decision 2026-10-01 #3; a
+Claude-fallback round, a missing provider or family, and any other provider
+are refused); the round's verdict is exactly FINDINGS; its counts are a dict whose BLOCK, FIX
 and NIT are ints (never a bool) and not negative; BLOCK is 0; `findings` is a
 list of strings, none a `BLOCK|` line, each a `FIX|` or `NIT|` line, as many
 of each as its own count (never only the total) and at least one;
@@ -132,6 +136,13 @@ AUTO_PREFIX = "auto:"
 # `webtest_open` when the healer-skip check did not apply to the round. None
 # means it applied and could not be read: could not tell, never 0.
 WEBTEST_NA = "not-applicable"
+# Owner decision 2026-10-01 #3: only a reviewer from another model family than
+# the author's auto-accepts. The author is `claude` (crew's developer runs
+# in-session); the providers whose family is not claude's by construction are
+# codex and kimi. Copilot hosts several families, so it is an unknown provider
+# here, never guessed. Constants: no config is read for either.
+AUTHOR_FAMILY = "claude"
+AUTO_PROVIDERS = ("codex", "kimi")
 
 NEEDS_REPLAN = "NEEDS_REPLAN"
 IN_REVIEW = "IN_REVIEW"
@@ -440,10 +451,36 @@ def _is_count(value):
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
+def _family_problem(row):
+    """None when the row's reviewer is from another model family than the
+    author's, read from the provider and family recorded on the row; else why
+    not. A missing or unknown value is could-not-tell, never a pass."""
+    provider, family = row.get("provider"), row.get("model_family")
+    if not isinstance(provider, str) or not provider:
+        return (f"round {row.get('round')} records no provider ({provider!r}): could not "
+                "tell the reviewer's family")
+    if provider == AUTHOR_FAMILY:
+        return (f"round {row.get('round')} was reviewed by {provider}, the same family as "
+                "the author; a same-family round needs the owner's --accept")
+    if provider not in AUTO_PROVIDERS:
+        return (f"round {row.get('round')} was reviewed by {provider!r}, an unknown provider "
+                f"for auto-accept (only {', '.join(AUTO_PROVIDERS)}): could not tell")
+    if not isinstance(family, str) or not family.strip():
+        return (f"round {row.get('round')} records no model family ({family!r}): could not "
+                "tell the reviewer's family")
+    if family.strip().lower() == AUTHOR_FAMILY:
+        return (f"round {row.get('round')}'s reviewer family is {family}, the same family as "
+                "the author; a same-family round needs the owner's --accept")
+    return None
+
+
 def _auto_row_problem(row):
     """None when a completed FINDINGS row's own evidence allows an auto
     receipt, else why not. Shared by `auto_accept_refusal` and
     `receipt_stands`, so the two cannot drift. Every unknown is a reason."""
+    problem = _family_problem(row)
+    if problem:
+        return problem
     counts = row.get("counts")
     if not isinstance(counts, dict):
         return f"round {row.get('round')} has no readable counts ({counts!r}): could not tell"

@@ -6,7 +6,9 @@
 only the latest completed round under the current plan when that round is the
 last one the budget allows, its verdict is exactly FINDINGS, its counts read
 BLOCK 0 (an int, never a bool), its finding lines agree with FIX + NIT, and
-its webtest state is known and clean. Every other case -- including every
+its webtest state is known and clean, and its reviewer is from another model
+family than the author's: provider codex or kimi, with a recorded family
+other than claude (owner decision 2026-10-01 #3). Every other case -- including every
 case where the ledger cannot tell -- is a named refusal that leaves the ledger
 byte-identical. The owner's `--accept` refuses a `--by` starting `auto:`, so
 the auto string can come only from the guarded verb. Must-block and
@@ -183,6 +185,21 @@ def _plain_final(repo):
     _good(repo)
 
 
+def _final_by(provider, family):
+    def build(repo):
+        _good(repo)
+        _good(repo, provider=provider, family=family)
+    return build
+
+
+def _final_row_edit(change):
+    def build(repo):
+        _good(repo)
+        _good(repo)
+        _edit(repo, lambda data: change(data["rounds"][-1]))
+    return build
+
+
 REFUSALS = [
     ("block-1", _final_with(counts={"BLOCK": 1, "FIX": 1, "NIT": 1},
                             findings=[BLOCK_LINE, FIX_LINE, NIT_LINE]), FOLLOW, "1 BLOCK"),
@@ -226,6 +243,18 @@ REFUSALS = [
     ("already-accepted", _already, FOLLOW, "already accepted"),
     ("pre-change-row", _pre_change, FOLLOW, "finding lines"),
     ("superseded-plan", _superseded, FOLLOW, "successor replaced"),
+    ("same-family-claude", _final_by("claude", "claude"), FOLLOW, "same family"),
+    ("provider-unknown-copilot", _final_by("copilot", "gpt"), FOLLOW, "unknown provider"),
+    ("provider-unknown-name", _final_by("acme", "acme"), FOLLOW, "unknown provider"),
+    ("provider-missing", _final_row_edit(lambda row: row.pop("provider")), FOLLOW,
+     "no provider"),
+    ("provider-none", _final_row_edit(lambda row: row.update(provider=None)), FOLLOW,
+     "no provider"),
+    ("family-missing", _final_row_edit(lambda row: row.pop("model_family")), FOLLOW,
+     "no model family"),
+    ("family-none", _final_by("codex", None), FOLLOW, "no model family"),
+    ("family-empty", _final_by("codex", ""), FOLLOW, "no model family"),
+    ("family-claude-on-codex", _final_by("codex", "claude"), FOLLOW, "same family"),
     ("follow-up-missing", _plain_final, None, "--follow-up"),
     ("follow-up-path", _plain_final, "../x", "not a plain id"),
     ("follow-up-is-the-ticket", _plain_final, T, "the ticket itself"),
@@ -296,13 +325,15 @@ def test_auto_accept_on_the_successor_plans_final_round(repo, monkeypatch):
     assert (receipt["kind"], receipt["round"]) == ("auto-accepted", 4)
 
 
-def test_auto_accept_same_family_round(repo):
-    _good(repo, provider="claude", family="claude")
-    _good(repo, provider="claude", family="claude")
+@pytest.mark.parametrize("provider, family", [("codex", "gpt"), ("kimi", "kimi")],
+                         ids=["codex", "kimi"])
+def test_auto_accept_cross_family_round(repo, provider, family):
+    _good(repo)
+    _good(repo, provider=provider, family=family)
 
     result = _auto(repo)
 
-    assert (result.returncode, _receipt(repo)["model_family"]) == (0, "claude"), result.stderr
+    assert (result.returncode, _receipt(repo)["model_family"]) == (0, family), result.stderr
 
 
 def test_auto_accept_takes_no_by(repo):
@@ -349,9 +380,14 @@ def _tamper_by(data):
     data["receipt"]["accepted_by"] = "someone"
 
 
-@pytest.mark.parametrize("tamper", [None, _tamper_block, _tamper_lines, _tamper_by],
+def _tamper_provider(data):
+    data["rounds"][-1]["provider"] = "claude"
+
+
+@pytest.mark.parametrize("tamper", [None, _tamper_block, _tamper_lines, _tamper_by,
+                                    _tamper_provider],
                          ids=["untouched", "row-block-1", "receipt-lines-differ",
-                              "receipt-by-differs"])
+                              "receipt-by-differs", "row-provider-claude"])
 def test_check_receipt_requires_the_auto_rows_guard(repo, tamper):
     _plain_final(repo)
     assert _auto(repo).returncode == 0
