@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@328fdf4a
+anchor: useful-claude-add-ons@0c3508e9
 verified: 2026-09-30
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -37,7 +37,14 @@ including the slow version-drift walk `_verify/smoke.sh` skips), and
 them and is wired into CI but not into the local Stop gate: see
 "`scripts/check_instructions.py`" below.
 
-## `.crew/verify.json` — 39 rules, up from 38
+## `.crew/verify.json` — 40 rules, up from 39
+
+**DERIVED, read in full via `json.load` on L-0520 PR 1's merge of main `844bfc36` (T-0028 landed as
+crew 1.0.85): 430 lines, 40 rules.** Main's 39 rules plus L-0520's merge train rule, which sits as
+rule 37 (`.crew/verify.json:385`, one line) between T-0085's standards rule 36 and T-0087's
+harness rule, now rule 38 (`:386-411`); T-0028's Kimi rule is rule 39 (`:412-425`), the last;
+`default` is `:428` and `unmapped` `:429`. The paragraph below is main's reading, whose rule
+numbers from 37 on are one lower than on this tree.
 
 **DERIVED, read in full via `json.load` on T-0028 at `c43a54c1`: 429 lines, 39 rules.** Main's
 38 rules plus T-0028's one added path in rule 7 (`:129-145`) and its Kimi rule appended last as
@@ -236,8 +243,8 @@ Notable rules, re-read directly:
   every `STATUS_MUTATIONS` entry reaches `sabotage.MUTATIONS`. The rule's `why` states no
   mutation count (it said "six" until the refresh commit after `07ca3972`, while the tuple
   held more); count them in the tuple. One of them targets `crew_ticket.py`'s `parse_risk`, a path rule 27
-  does not name (see rules 11 and 31). `crew_autopilot.py` also matches rules 0, 15, 28 and 37 (T-0087's harness rule, as a seam
-  consumer; rule 36 on main), `autopilot.md` rules 0, 12, 28 and 37.
+  does not name (see rules 11 and 31). `crew_autopilot.py` also matches rules 0, 15, 28 and 38 (T-0087's harness rule, as a seam
+  consumer; rule 37 on main, rule 36 before T-0094's rule 32), `autopilot.md` rules 0, 12, 28 and 38.
 - **Rule 28**, new on T-0010-solo (`.crew/verify.json:309-315` on T-0094's merge of `8ab733d7`, `:308-314` since T-0010-solo merged `e878cc31`, `:303-309` since it merged
   `67caa4b8`, `:301-306` on its branch before, T-0010): `paths` `crew_autopilot.py`, `commands/autopilot.md`
   (since review round 2's FIX) and `test_crew_autopilot_policy.py` → `python3 -m pytest
@@ -290,8 +297,8 @@ Notable rules, re-read directly:
   `plugin/crew/tests/sabotage_approval.py` (`APPROVAL_MUTATIONS`, `:32`; 65 entries by
   `len()` at `45345812` — count them there, the `why` states no number), imported by
   `plugin/crew/tests/sabotage.py:81` and appended at `:3059` (`:3058` before T-0094 merged `a7524aac`, which brought T-0087's `sabotage_tooling` import; `:3056` before T-0085's landing merge of main `a61a6f38`; `:3055` before T-0085's merge of `8ab733d7`; `:80` and `:3054` before T-0075's `sabotage_config` import). `crew_ticket.py` is named by
-  rules 11, 31, 36 and 37 (T-0010's owner-only refusal in `crew_ticket.approve` runs under 11 and 31;
-  T-0085's rule 36 names it since review round 3, for `gate_applies`' approval-receipt read; 37 is T-0087's harness rule).
+  rules 11, 31, 36 and 38 (T-0010's owner-only refusal in `crew_ticket.approve` runs under 11 and 31;
+  T-0085's rule 36 names it since review round 3, for `gate_applies`' approval-receipt read; 38 is T-0087's harness rule, 37 on main).
 - **Rule 32**, new in T-0094 review round 2 (`.crew/verify.json:343-350`; the last rule until T-0094 merged `a61a6f38`, which brought main's rules 33-35 in after it):
   `paths` `crew_refresh_check.py`, `crew_instructions.py`,
   `plugin/crew/tests/test_refresh_admission.py` and `plugin/crew/tests/refresh_fixtures.py`
@@ -330,7 +337,7 @@ Notable rules, re-read directly:
   `plugin/crew/tests/sabotage_standards.py` (`STANDARDS_MUTATIONS`, `:61`, 51 entries by `len()`
   on `T-0086-build` after its merge of `a7524aac` - main's 44, then T-0086's seven for the Python set; the `why` states no count), imported by `plugin/crew/tests/sabotage.py:85`
   and appended at `:3062`.
-- **Rule 37**, new in T-0087 (`.crew/verify.json:385-410` on T-0028, one below main's `:384-409` since T-0094 merged `a7524aac`, after T-0094's rule 32; rule 36 at `:374-399` on main and on `T-0087-build`'s merge of `9af34e57`, appended after T-0085's rule 35; rule 35 at `:361-386` on its merge of `a61a6f38`, appended after main's rules 32-34; rule 32 on its merge of `8ab733d7`, where T-0010's rule 28 put it last; rule 31 at `:328-353` on `T-0087-build` at `0ef73f74`): `paths` are the `HARNESS` globs
+- **Rule 38**, new in T-0087 (`.crew/verify.json:386-411` on L-0520 PR 1's merge of main `844bfc36`, below L-0520's rule 37 at `:385`; rule 37 at `:385-410` on T-0028, one below main's `:384-409` since T-0094 merged `a7524aac`, after T-0094's rule 32; rule 36 at `:374-399` on main and on `T-0087-build`'s merge of `9af34e57`, appended after T-0085's rule 35; rule 35 at `:361-386` on its merge of `a61a6f38`, appended after main's rules 32-34; rule 32 on its merge of `8ab733d7`, where T-0010's rule 28 put it last; rule 31 at `:328-353` on `T-0087-build` at `0ef73f74`): `paths` are the `HARNESS` globs
   of `scripts/check-tooling-pr.py` (the review/gate harness: `review_*.py`, both `verify-gate`
   flavours, `verify_record.py`, `verify_fingerprint.py`, `verify_price.py`, `crew_ticket.py`, the
   approval-hook, scope-guard and completion-audit triples, `scope_base.py`, `sabotage*.py`,
@@ -620,10 +627,12 @@ their own, in both the `test` job and the Windows leg of `crew-shell-matrix`. Re
 - `.crew/verify.json:343-350` (rule 32) — T-0094's refresh-admission suite, split out of rule 25.
 - `.crew/verify.json:372-384` (rule 36) — the T-0085 standards suite;
   `plugin/crew/tests/sabotage.py:85`, `:3062` — `sabotage_standards.py`'s registration.
-- `.crew/verify.json:385-410` (rule 37) — the T-0087 harness rule; `scripts/check-tooling-pr.py`
+- `.crew/verify.json:385` (rule 37) — L-0520's merge train suite (`crew_train.py`,
+  `test_crew_train.py`); its sabotage entries are L-0526.
+- `.crew/verify.json:386-411` (rule 38) — the T-0087 harness rule; `scripts/check-tooling-pr.py`
   and its suite `scripts/_test/tooling-pr.py`; `plugin/crew/tests/sabotage.py:82`, `:3061` —
   `sabotage_tooling.py`'s registration.
-- `.crew/verify.json:411-424` (rule 38) — T-0028's Kimi Code provider suite (`kimi_probe.py`,
+- `.crew/verify.json:412-425` (rule 39) — T-0028's Kimi Code provider suite (`kimi_probe.py`,
   its tests, `kimi_fixtures.py`, the fixture run and the provider docs); no sabotage entries,
   since `sabotage*.py` is review harness and the probe's mutations land with L-0527.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
@@ -2016,3 +2025,15 @@ ordered the fixes); `328fdf4a` re-sets crew 1.0.85. Body citations were mapped b
 `ea90a4e4` to `328fdf4a` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local), each moved
 citation landing on the same line text. Re-anchor only (owner refresh-artifact
 standing rule, 2026-09-28); no test suite was executed for this note.
+
+**Re-anchored `17d0b1d2` -> `c4e2eb98` on 2026-09-30 (L-0520 PR 1, the merge train CLI, after merging main 42d5ef58 (T-0094)).** `git diff --name-only 17d0b1d2 c4e2eb98` adds L-0520's PR 1 outside refresh artifacts (crew_train.py, done.md, README, two guides, CHANGELOG, TODO, BUDGETS.md in place, verify.json, two tests); path-qualified citations outside dated provenance were moved by a line diff (`/root/crew-tmp/l-0520/tools/l0520_remap.py`, machine-local). No suite was executed for this note.
+
+**Re-anchored `c4e2eb98` -> `0be97503` on 2026-09-30 (L-0520 PR 1 merges main 42af3fb7 (L-0531)).** `git diff --name-only c4e2eb98 0be97503` returns, outside refresh artifacts, only L-0531's `plugin/crew/tests/sabotage_qa.py`, `.crew/verify.json` and release bookkeeping; path-qualified citations were moved by a line diff (`/root/crew-tmp/l-0520/tools/l0520_remap.py`). No suite was executed for this note.
+
+**Re-anchored `0be97503` -> `14bb59ef` on 2026-09-30 (L-0520 PR 1 merges main 6a8c60b1 (T-0099)).** `git diff --name-only 0be97503 14bb59ef` returns, outside refresh artifacts, T-0099's `review_prompt.py`, `sabotage_review.py`, `test_review_prompt.py` and release bookkeeping; path-qualified citations were moved by a line diff (`/root/crew-tmp/l-0520/tools/l0520_remap.py`). No suite was executed for this note.
+
+**Re-anchored `14bb59ef` -> `8bf710ed` on 2026-09-30 (L-0520 PR 1 review round 1 fixes).** `git diff --name-only 14bb59ef 8bf710ed` returns crew_train.py, done.md and README.md (edits in place), BUDGETS.md, two tests and the version files; path-qualified citations outside dated provenance were moved by a line diff (`/root/crew-tmp/l-0520/tools/l0520_remap.py`). No suite was executed for this note.
+
+**Re-anchored `8bf710ed` -> `14b52c91` on 2026-09-30 (L-0520 PR 1 merges main bd4b2f30 (T-0028 #288, crew 1.0.85, and the mailgun skill), crew 1.0.86).**  No suite was executed for this note.
+
+**Re-anchored `14b52c91` -> `0c3508e9` on 2026-09-30 (L-0520 PR 1 merges main f7caa37d (L-0561 #289: mailgun registered as skills/mailgun 1.0.1, both install scripts, README, INSTALLATION.md), crew stays 1.0.86).**  No suite was executed for this note.

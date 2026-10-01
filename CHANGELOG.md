@@ -4,6 +4,33 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.86: the merge train - gate+land serialised per overlapping Touch set (L-0520)
+
+- **New `hooks/scripts/crew_train.py`.** One locked queue per clone under
+  `<git-common-dir>/crew/train/`, armed per clone with `crew_train.py arm` (no config key; an
+  unarmed clone behaves exactly as before). A ticket holds the train only when no holder and no
+  earlier waiter on the same base has an overlapping Touch set, so overlapping tickets gate and
+  land one at a time while disjoint ones run at once, and lanes still implement in parallel.
+  Overlap is conservative (literal-prefix match; refresh artifacts not counted); an undeclared
+  Touch overlaps everything; an unreadable state, a failed git call or a lock held past its wait
+  is could-not-tell (exit 3). Every wait is logged with its colliding paths; stale holds are
+  reported (`stale?:`) and released only by `release --force --by <who> --reason <text>`.
+- **Advisory in this release.** Lanes (or you) call `crew_train.py acquire` before the gate
+  round; `review_run.py` refusing the round itself (exit 6) and the review prompt's rerere block
+  are L-0526, a separate tooling PR (owner 2026-09-30: tooling PRs carry no feature work). No hook
+  is added.
+- **`crew_train.py catch-up`** merges the base (never a rebase) after making `rerere.enabled`
+  and `rerere.autoupdate` true in the worktree (`--worktree` or `--local`, never `--global`),
+  never commits a conflicted or rerere-resolved merge, and records each catch-up (with the files
+  rerere replayed) in a merge log that `crew_train.py merge-log` prints.
+- **`crew_train.py check-land`** refuses unless the ticket holds the train, `git merge-tree` is
+  clean, the base has not moved in Touch paths, and HEAD carries a current review receipt and a
+  green verify gate; then it prints `gh pr merge <n> --merge --match-head-commit <sha>` (crew
+  never merges). `release --merged <sha>` tells every overlapping lane to merge the base.
+  `/crew:done` gains "Landing through the merge train".
+- The delta gate, scheduling and the spec's accepted-limits section are proposed follow-ups
+  (TODO.md), not in this release.
+
 ### Added
 
 - **`mailgun` 1.0.0: registered as `skills/mailgun` (L-0561).** bd4b2f30 added
