@@ -13,6 +13,12 @@ _T = "tests/test_qa_audit.py::"
 # the smallest sibling it already sums.
 FIXTURES = os.path.join(CREW, "tests", "crew_fixtures.py")
 _F = "tests/test_path_link_farm.py::"
+# L-0516: the deadline polls that replaced fixed sleeps, and the ps1 tree kill
+# the survivor poll proves. Here for the same max-module-lines reason.
+POLL = os.path.join(CREW, "tests", "poll_fixtures.py")
+_P = "tests/test_poll_fixtures.py::"
+PS1_AUDIT = os.path.join(CREW, "hooks", "scripts", "completion-audit.ps1")
+_E = "tests/test_event_claim_crash_safety.py::"
 
 QA_AUDIT_MUTATIONS = (
     (
@@ -74,5 +80,38 @@ QA_AUDIT_MUTATIONS = (
         "            if skip(name) or os.path.lexists(target):\n",
         "            if skip(name) or os.path.exists(target):\n",
         _F + "test_a_dangling_entry_in_the_first_dir_still_shadows_the_same_name_later",
+    ),
+    (
+        # One probe and out: the fixed-sleep shape again, minus the sleep.
+        "poll_until probes once and never waits",
+        POLL,
+        "        if done(value) or time.monotonic() >= deadline:\n",
+        "        if True:\n",
+        _P + "test_poll_until_returns_once_a_late_child_has_died",
+    ),
+    (
+        # At the deadline a falsy value of the probe's own type reads as
+        # "nothing left": a real survivor passes as a success.
+        "poll_until reports success at the deadline",
+        POLL,
+        "            return value\n",
+        "            return value if done(value) else type(value)()\n",
+        _P + "test_poll_until_reports_a_child_that_never_dies_at_the_deadline",
+    ),
+    (
+        # An existing empty pidfile reads as pid 0: the exists()-only wait.
+        "wait_for_pidfile accepts an existing empty file",
+        POLL,
+        "        return int(text) if text.isdigit() else None\n",
+        "        return int(text) if text.isdigit() else 0\n",
+        _P + "test_wait_for_pidfile_waits_past_an_empty_file_for_the_pid",
+    ),
+    (
+        # Only the launcher dies; its python child outlives the probe.
+        "the ps1 probe kills only the launcher",
+        PS1_AUDIT,
+        "            $proc.Kill($true)\n",
+        "            $proc.Kill($false)\n",
+        _E + "test_the_ps1_probe_timeout_kills_the_launchers_child_too",
     ),
 )
