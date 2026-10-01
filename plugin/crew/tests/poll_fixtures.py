@@ -22,15 +22,20 @@ def poll_until(probe, done, timeout, interval=0.05):
     Always probes at least once, even with a zero timeout. Returns the LAST
     probed value, never a synthesized success: at the deadline the caller gets
     what the probe actually saw and makes its own assertion on it, so a real
-    survivor still fails the test. The deadline uses `time.monotonic()`, which
-    a wall-clock step cannot stretch or cut (PEP 418).
+    survivor still fails the test. No probe starts after the deadline: the
+    clock is read after each sleep and before the next probe, so a condition
+    that first holds late (a slow interval, a stalled scheduler) is not
+    returned as success. The deadline uses `time.monotonic()`, which a
+    wall-clock step cannot stretch or cut (PEP 418).
     """
     deadline = time.monotonic() + timeout
-    while True:
-        value = probe()
-        if done(value) or time.monotonic() >= deadline:
-            return value
+    value = probe()
+    while not done(value):
         time.sleep(interval)
+        if time.monotonic() >= deadline:
+            return value
+        value = probe()
+    return value
 
 
 def wait_for_pidfile(path, timeout=10):
