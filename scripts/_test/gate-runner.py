@@ -48,6 +48,7 @@ class Skip(Exception):
 def load_runner():
     spec = importlib.util.spec_from_file_location("gate_runner", TARGET)
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # dataclasses resolves annotations through sys.modules
     spec.loader.exec_module(module)
     return module
 
