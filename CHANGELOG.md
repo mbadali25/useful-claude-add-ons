@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed - `crew` 1.0.89, `obsidian-vault` 0.4.16: every pwsh the test suites spawn gets its own XDG_CACHE_HOME (L-0557)
+### Fixed - `crew` 1.0.95, `obsidian-vault` 0.4.16: every pwsh the test suites spawn gets its own XDG_CACHE_HOME (L-0557)
 
 - **Cause.** pwsh reads its multicore-JIT startup profile,
   `$XDG_CACHE_HOME/powershell/StartupProfileData-NonInteractive`, at start-up and rewrites it at
@@ -20,6 +20,28 @@ All notable changes to this repository are documented here. Format follows [Keep
   Python by AST and shell by line, for a pwsh spawn that would skip it, and needs no pwsh. No
   retry and no crash-signature matching. Hooks and production scripts are unchanged (L-0559);
   Windows pwsh keeps its profile under `LOCALAPPDATA`, so the variable changes nothing there.
+
+### Fixed — `crew` 1.0.89: refresh admission refuses a dir swapped to a link on Windows (W-0116)
+
+- **`_read_regular`'s no-dir_fd branch (Windows has no `O_NOFOLLOW` and `os.open` takes no
+  `dir_fd`) now also calls `GetFinalPathNameByHandleW` on the open descriptor and refuses the
+  read unless that real path is `realpath(top)/rel`.** Without it, a directory swapped to a link
+  after `_on_disk`'s realpath check passed admission: `lstat` follows the same link to the same
+  outside file, so the lstat/fstat identity check it already did matched, and outside text was
+  admitted ("re-anchored"). A final path Windows will not give back is a reason, not a pass —
+  the check fails closed (could-not-tell), same posture as the existing `O_NOFOLLOW` path on
+  POSIX. `_FINAL_PATH` is `None` off Windows, so POSIX runs exactly the code it ran before;
+  **Linux and macOS behavior is unchanged.**
+- **Two tests fixed to build a real premise on Windows, not just pass there.** NTFS clones get
+  `core.fileMode=false`, so a working-file `chmod` never reaches git; the mode-change test now
+  stages the bit with `git update-index --chmod=+x` when `core.fileMode` is false, and still
+  chmods on disk when it's true. The staged-symlink test now asserts the refusal reason names
+  `120000` rather than the exact string `"stored as 120000"`, since a `core.symlinks=false`
+  checkout reports the staged link as a mode change while `true` reports it as "stored as
+  120000" — both refuse, only the wording differs.
+- **Known gap, tracked as W-0117:** the `GetFinalPathNameByHandleW` check closes the no-dir_fd
+  race on a *directory* swapped to a link; a narrower window on the *file* itself is not yet
+  covered and is left for that ticket.
 
 ### Added — `crew` 1.0.86: the merge train - gate+land serialised per overlapping Touch set (L-0520)
 

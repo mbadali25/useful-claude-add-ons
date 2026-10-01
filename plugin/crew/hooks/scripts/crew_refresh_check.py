@@ -684,6 +684,38 @@ def _texts(top, base, rel):
 _LINK_MODES = ("120000", "160000")
 
 
+def _win_final_path(fd):
+    """The drive or UNC path of the file open on `fd`, every link and
+    junction along it resolved (GetFinalPathNameByHandleW), or None when
+    Windows will not say or says it in another form (a volume GUID path)."""
+    try:
+        import ctypes  # pylint: disable=import-outside-toplevel
+        import msvcrt  # pylint: disable=import-outside-toplevel
+        from ctypes import wintypes  # pylint: disable=import-outside-toplevel
+        final = ctypes.WinDLL("kernel32", use_last_error=True).GetFinalPathNameByHandleW
+        final.restype = wintypes.DWORD
+        final.argtypes = [wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD]
+        handle = msvcrt.get_osfhandle(fd)
+        size = final(handle, None, 0, 0)
+        buf = ctypes.create_unicode_buffer(size + 1)
+        got = final(handle, buf, size + 1, 0)
+    except (ImportError, AttributeError, OSError):
+        return None
+    if not size or not got or got > size:
+        return None
+    path = buf.value
+    if path.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + path[8:]
+    if path.startswith("\\\\?\\") and path[5:6] == ":":
+        return path[4:]
+    return None
+
+
+# Where the file open on a descriptor really is. Only the no-dir_fd branch of
+# `_read_regular` asks, and only Windows answers; tests stub it (W-0116).
+_FINAL_PATH = _win_final_path if os.name == "nt" else None
+
+
 def _read_regular(top, rel):
     """(bytes, None), or (None, "symlink" | "absent" | "not regular" | a
     reason). The file is opened WITHOUT following a link at any component:
@@ -691,7 +723,11 @@ def _read_regular(top, rel):
     O_NOFOLLOW, so a link swapped in anywhere after the lstat and realpath
     checks fails the open instead of being read (review round 7). Where
     `os.open` takes no dir_fd (Windows), the path is opened directly and the
-    descriptor's file must be the one lstat names."""
+    descriptor's file must be the one lstat names, AND the descriptor's own
+    final path must be the path the checks proved: lstat follows a directory
+    swapped to a link along the path, so it names the same outside file the
+    descriptor holds (W-0116). A final path Windows will not give is a
+    reason, never a pass."""
     parts = rel.split("/")
     nofollow = getattr(os, "O_NOFOLLOW", 0)
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
@@ -711,6 +747,13 @@ def _read_regular(top, rel):
             if stat.S_ISLNK(named.st_mode) or (named.st_dev, named.st_ino) != (
                     opened.st_dev, opened.st_ino):
                 return None, "symlink"
+            if _FINAL_PATH is not None:
+                where = _FINAL_PATH(fd)
+                if where is None:
+                    return None, "Windows did not say where the opened file is"
+                expected = os.path.join(os.path.realpath(top), *parts)
+                if os.path.normcase(where) != os.path.normcase(expected):
+                    return None, "symlink"
         fds.append(fd)
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             return None, "not regular"
