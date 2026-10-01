@@ -4,6 +4,27 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — CI: crew's Windows suite runs as parallel jobs behind one required fan-in, repository tooling, no plugin version (L-0577)
+
+- **The Windows leg of `crew-shell-matrix` is now five jobs.** It was one serial job with a p50 of
+  37.1 min (default set 27.4, slow 8.8, wallclock 2.2), rerun on every open PR after each merge
+  because branch protection is strict. `.github/workflows/pytest-crew.yml` now runs
+  `crew-windows-default` (the default set, PowerShell parity sample included, split in 3 by
+  pytest-split 0.11.0), `crew-windows-slow` and `crew-windows-wallclock` (still serial) in
+  parallel, behind `crew-windows-decide` (T-0110's PR path rule, unchanged). The saving is not
+  measured yet; the first PR run is what measures it.
+- **The required check name did not change.** The fan-in `crew-windows-gate` is named
+  `crew-shell-matrix (windows-latest)`, runs `if: always()`, and passes only through
+  `scripts/check-windows-shards.py`: every Windows job succeeded, each shard collected the
+  identical default set, the shards' JUnit name every collected test exactly once, and slow and
+  wallclock ran exactly what they collected. Anything missing or unreadable fails it.
+  `crew-shell-matrix (ubuntu-latest)` keeps its name and commands.
+- **Every Windows set reports `--durations=50` and uploads its collection and JUnit** (14-day
+  artifacts); the default shards also upload pytest-split durations, so a later change can commit
+  a durations file and split by time rather than by count.
+- `scripts/_test/windows-shards.py` (30 cases) tests the fan-in and runs in `marketplace.yml`;
+  `scripts/gate-runner.py` learns the `runner.os == 'Windows'` step condition and the fan-in call.
+
 ### Added — `crew` 1.0.106: T-0040's shell-route sabotage mutations (W-0115)
 
 T-0040 (crew 1.0.98) shipped `crew_shell.py` without its sabotage entries, which were split out
