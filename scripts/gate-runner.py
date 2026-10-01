@@ -67,6 +67,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import shutil
@@ -92,6 +93,9 @@ SIGNAL_RCS = {129: "SIGHUP", 130: "SIGINT", 131: "SIGQUIT", 134: "SIGABRT",
               143: "SIGTERM"}
 PHASES = ("cheap", "heavy", "solo")
 SLOT_WAIT_ALLOWANCE = 3600
+# The wait after the final SIGKILL is a wait too: a child stuck in uninterruptible
+# I/O may never be reaped, and the step is then COULD-NOT-TELL, not a hang.
+KILL_REAP_SECONDS = 10
 
 
 @dataclass(frozen=True)
@@ -256,7 +260,11 @@ def _group_kwargs() -> dict:
 def _signal_group(proc: subprocess.Popen, hard: bool) -> None:
     if os.name == "nt":
         cmd = ["taskkill", "/T", "/PID", str(proc.pid)] + (["/F"] if hard else [])
-        subprocess.run(cmd, capture_output=True, check=False, stdin=subprocess.DEVNULL)
+        try:
+            subprocess.run(cmd, capture_output=True, check=False, stdin=subprocess.DEVNULL,
+                           timeout=60)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
         return
     try:
         os.killpg(proc.pid, signal.SIGKILL if hard else signal.SIGTERM)
@@ -270,16 +278,28 @@ def _signal_group(proc: subprocess.Popen, hard: bool) -> None:
                 pass
 
 
-def _kill_group(proc: subprocess.Popen, grace: float) -> None:
+def _kill_group(proc: subprocess.Popen, grace: float) -> bool:
     """SIGTERM the whole group, wait `grace`, SIGKILL; then sweep the group
-    once more so a grandchild that outlived its leader is not left running."""
+    once more so a grandchild that outlived its leader is not left running.
+    True when the leader was reaped; False when it was still there
+    KILL_REAP_SECONDS after SIGKILL (the caller records COULD-NOT-TELL)."""
     _signal_group(proc, hard=False)
+    reaped = True
     try:
         proc.wait(timeout=grace)
     except subprocess.TimeoutExpired:
         _signal_group(proc, hard=True)
-        proc.wait()
+        try:
+            proc.wait(timeout=KILL_REAP_SECONDS)
+        except subprocess.TimeoutExpired:
+            reaped = False
     _signal_group(proc, hard=True)
+    return reaped
+
+
+def _not_reaped(what: str) -> str:
+    return (f"{what}; process group sent SIGKILL and did not exit within "
+            f"{KILL_REAP_SECONDS:g}s")
 
 
 def spawn_and_wait(argv: list, cwd: str, log: str, timeout: float, grace: float,
@@ -298,26 +318,38 @@ def spawn_and_wait(argv: list, cwd: str, log: str, timeout: float, grace: float,
             _LIVE.add(proc)
         try:
             deadline = time.monotonic() + timeout
-            stopped_at = None
+            stopped_at = killed_at = None
             while True:
                 try:
                     return proc.wait(timeout=0.5), False, True, ""
                 except subprocess.TimeoutExpired:
                     pass
                 if on_tick is not None:
-                    on_tick()
+                    try:
+                        on_tick()
+                    # Any fault in the caller's merge must not orphan the group: the
+                    # recovery is to kill it and say so (the caller marks COULD-NOT-TELL).
+                    except Exception as exc:  # pylint: disable=broad-exception-caught
+                        what = f"status merge failed ({exc!r})"
+                        if not _kill_group(proc, grace):
+                            return None, False, True, _not_reaped(what)
+                        return None, False, True, f"{what}; process group killed"
                 now = time.monotonic()
                 if STOP.is_set():
                     if stopped_at is None:
                         stopped_at = now
                         _signal_group(proc, hard=False)
-                    elif now - stopped_at > grace:
+                    elif killed_at is None and now - stopped_at > grace:
+                        killed_at = now
                         _signal_group(proc, hard=True)
+                    elif killed_at is not None and now - killed_at > KILL_REAP_SECONDS:
+                        return None, False, True, _not_reaped("runner stopped by a signal")
                 if now >= deadline:
-                    _kill_group(proc, grace)
+                    what = f"timed out after {timeout:g}s"
+                    if not _kill_group(proc, grace):
+                        return None, True, True, _not_reaped(what)
                     return (proc.returncode, True, True,
-                            f"timed out after {timeout:g}s; process group killed "
-                            f"(SIGTERM, {grace:g}s grace, SIGKILL)")
+                            f"{what}; process group killed (SIGTERM, {grace:g}s grace, SIGKILL)")
         finally:
             with _LIVE_LOCK:
                 _LIVE.discard(proc)
@@ -408,7 +440,27 @@ RESERVED_NAMES = ("heavy-run",)
 TABLE_KEYS = frozenset(("name", "phase", "group", "argv", "cwd", "timeout", "needs", "pytest"))
 
 
-def load_table(path: str | None):
+def positive_finite(value) -> bool:
+    """A JSON or CLI number usable as a duration: not bool, finite, > 0
+    (json.load accepts NaN and Infinity, and 1e999 parses as inf)."""
+    return (not isinstance(value, bool) and isinstance(value, (int, float))
+            and math.isfinite(value) and value > 0)
+
+
+def cwd_in_root(root: str, cwd: str) -> bool:
+    """A step cwd is repository-relative: not absolute, and its real path
+    (symlinks resolved) is the root's real path or under it."""
+    if os.path.isabs(cwd) or os.path.splitdrive(cwd)[0]:
+        return False
+    real_root = os.path.realpath(root)
+    real = os.path.realpath(os.path.join(real_root, cwd))
+    try:
+        return os.path.commonpath([real_root, real]) == real_root
+    except ValueError:  # different drives on Windows
+        return False
+
+
+def load_table(path: str | None, root: str = DEFAULT_ROOT):
     if path is None:
         return list(TABLE), "builtin"
     src = os.path.abspath(path)
@@ -439,11 +491,14 @@ def load_table(path: str | None):
         if not isinstance(argv, list) or not argv or not all(isinstance(a, str) for a in argv):
             raise Refusal(f"--table step {name}: argv must be a non-empty list of strings")
         timeout = item.get("timeout", 300)
-        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
-            raise Refusal(f"--table step {name}: timeout must be a positive number")
+        if not positive_finite(timeout):
+            raise Refusal(f"--table step {name}: timeout must be a finite positive number")
         cwd, needs, pytest = item.get("cwd", "."), item.get("needs", []), item.get("pytest", False)
         if not isinstance(cwd, str) or not cwd:
             raise Refusal(f"--table step {name}: cwd must be a non-empty string")
+        if not cwd_in_root(root, cwd):
+            raise Refusal(f"--table step {name}: cwd {cwd!r} must be a directory inside --root "
+                          "(relative, symlinks resolved)")
         if not isinstance(needs, list) or not all(isinstance(n, str) and n for n in needs):
             raise Refusal(f"--table step {name}: needs must be a list of non-empty strings")
         if not isinstance(pytest, bool):
@@ -507,7 +562,9 @@ def _git_py_files(root: str) -> list:
     if proc.returncode != 0:
         raise CannotStart(f"git ls-files exit {proc.returncode}: "
                           f"{proc.stderr.decode(errors='replace').strip()}")
-    return [p for p in proc.stdout.decode().split("\0") if p]
+    # fsdecode: surrogateescape on POSIX, so a name that is not UTF-8 reaches the
+    # child as its original bytes instead of raising here.
+    return [os.fsdecode(p) for p in proc.stdout.split(b"\0") if p]
 
 
 def build_argv(step: Step, ctx: Context) -> list:
@@ -619,6 +676,30 @@ def run_inner(part: str, steps: list, ctx: Context) -> int:
 
 # ---- outer ----------------------------------------------------------------
 
+RESULT_KEYS = ("name", "rc", "state", "reason", "seconds", "log")
+
+
+def _valid_result(res) -> bool:
+    return (isinstance(res, dict) and all(k in res for k in RESULT_KEYS)
+            and res["state"] in (PASS, FAIL, SKIP, CNT))
+
+
+def _part(got):
+    """(steps, started) from heavy-part.json as read: only well-formed step
+    results, and `started` only when a finite non-bool number. A document of
+    any other shape gives ({}, None), never an exception."""
+    if not isinstance(got, dict):
+        return {}, None
+    steps = got.get("steps")
+    steps = {n: r for n, r in steps.items() if isinstance(n, str) and _valid_result(r)} \
+        if isinstance(steps, dict) else {}
+    started = got.get("started")
+    if isinstance(started, bool) or not isinstance(started, (int, float)) \
+            or not math.isfinite(started):
+        started = None
+    return steps, started
+
+
 def resolve_heavy_run(env) -> tuple:
     value = env.get("HEAVY_RUN")
     if value in (None, ""):
@@ -710,9 +791,7 @@ def run_outer(args, steps: list, source: str, ctx: Context, hr: dict) -> int:
         def tick() -> None:
             # Copy each heavy result into status.json as soon as heavy-part.json
             # has it, so an outer runner killed mid-call loses none of them.
-            got = read_json(part)
-            fresh = [(n, r) for n, r in ((got or {}).get("steps") or {}).items()
-                     if n not in printed and isinstance(r, dict)]
+            fresh = [(n, r) for n, r in _part(read_json(part))[0].items() if n not in printed]
             for name, res in fresh:
                 printed.add(name)
                 take(name, res)
@@ -731,15 +810,14 @@ def run_outer(args, steps: list, source: str, ctx: Context, hr: dict) -> int:
                 cmd, ctx.root, os.path.join(ctx.out, "logs", "heavy-run.log"), budget,
                 ctx.grace * 2 + 5, on_tick=tick)
         hr["rc"] = rc
-        got = read_json(part)
-        recorded = (got or {}).get("steps") or {}
-        if got and isinstance(got.get("started"), (int, float)):
-            hr["waited_seconds"] = round(got["started"] - launched, 1)
+        recorded, inner_started = _part(read_json(part))
+        if inner_started is not None:
+            hr["waited_seconds"] = round(inner_started - launched, 1)
         why = (f"heavy-run call timed out after {budget:g}s (slot wait included)" if timed_out
                else note or f"heavy-run call ended rc={rc}")
         for step in inner_steps:
             res = recorded.get(step.name)
-            if not isinstance(res, dict) or res.get("state") not in (PASS, FAIL, SKIP, CNT):
+            if res is None:
                 res = new_result(step, ctx)
                 res["state"] = CNT
                 res["reason"] = f"{why} before this step recorded a result"
@@ -851,13 +929,87 @@ def _simple_command(part: str):
     return None if _ASSIGN.match(cmd) else cmd
 
 
+def _close(text: str, i: int) -> int:
+    """Index just past the `)` that closes the `(` before i: quote-aware and
+    nesting-aware; len(text) when unclosed."""
+    depth, quote = 1, None
+    while i < len(text):
+        ch = text[i]
+        if quote:
+            if ch == "\\" and quote == '"':
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch == "\\":
+            i += 2
+            continue
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    return len(text)
+
+
+def substitutions(text: str) -> list:
+    """The bodies of every command substitution in `text` that the shell would
+    run: `$(...)`, backticks, `<(...)` and `>(...)`, outside single quotes
+    (inside double quotes they still run). `$((...))` is arithmetic, not a
+    command; substitutions inside it are still returned. Nested bodies are
+    returned whole; split_commands recurses into them."""
+    out, quote, i = [], None, 0
+    while i < len(text):
+        ch, two = text[i], text[i:i + 2]
+        if quote == "'":
+            if ch == "'":
+                quote = None
+            i += 1
+            continue
+        if ch == "\\":
+            i += 2
+            continue
+        if ch == '"':
+            quote = None if quote == '"' else '"'
+            i += 1
+            continue
+        if quote is None and ch == "'":
+            quote = "'"
+            i += 1
+            continue
+        if text[i:i + 3] == "$((":
+            end = _close(text, i + 2)
+            out += substitutions(text[i + 3:end - 1])
+            i = end
+            continue
+        if two in ("$(", "<(", ">("):
+            end = _close(text, i + 2)
+            out.append(text[i + 2:end - 1])
+            i = end
+            continue
+        if ch == "`":
+            end = text.find("`", i + 1)
+            end = len(text) if end < 0 else end
+            out.append(text[i + 1:end])
+            i = end + 1
+            continue
+        i += 1
+    return out
+
+
 def split_commands(run: str) -> list:
     """Every simple command in a `run:` block. A line is split on `;`, `&&`,
     `||` and `|` (quote- and `$(...)`-aware), so a check chained onto an
     install, an echo or a condition, or written as a one-line `if`/`while`/
     `for` body, is still a command. Dropped: blank and comment lines, shell
     keywords, `[ ]`/`test` conditions, no-ops, `echo`, `exit` and bare
-    variable assignments."""
+    variable assignments -- but a dropped part is first searched for command
+    substitutions (`$(...)`, backticks, `<(...)`), and each body is split the
+    same way, so `echo "$(python3 x.py)"` still counts `python3 x.py`."""
     out = []
     for raw in run.replace("\\\n", " ").splitlines():
         line = raw.strip()
@@ -867,6 +1019,9 @@ def split_commands(run: str) -> list:
             cmd = _simple_command(part)
             if cmd is not None:
                 out.append(normalise(cmd))
+                continue
+            for body in substitutions(part):
+                out += split_commands(body)
     return out
 
 
@@ -907,7 +1062,7 @@ def ci_drift(root: str, table=TABLE) -> list:
         try:
             with open(os.path.join(wfdir, wf), encoding="utf-8") as fh:
                 doc = yaml.safe_load(fh)
-        except (OSError, yaml.YAMLError) as exc:
+        except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
             problems.append(f"{wf}: cannot parse: {exc}")
             continue
         jobs = (doc or {}).get("jobs") or {}
@@ -927,6 +1082,16 @@ def ci_drift(root: str, table=TABLE) -> list:
 
 # ---- main -----------------------------------------------------------------
 
+def _duration(text: str) -> float:
+    try:
+        value = float(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a number") from exc
+    if not positive_finite(value):
+        raise argparse.ArgumentTypeError(f"{text!r} must be a finite number > 0")
+    return value
+
+
 def parse_args(argv):
     ap = argparse.ArgumentParser(description="Run this repository's whole local gate.")
     ap.add_argument("--root", default=DEFAULT_ROOT, help="repository root (default: this repo)")
@@ -936,8 +1101,8 @@ def parse_args(argv):
     ap.add_argument("--skip", action="append", metavar="NAME", help="record NAME as SKIP, do not run it")
     ap.add_argument("--only", action="append", metavar="NAME", help="run only NAME (repeatable)")
     ap.add_argument("--table", help="a JSON step table instead of the built-in one (tests, ad-hoc)")
-    ap.add_argument("--grace", type=float, default=30.0, help="seconds between SIGTERM and SIGKILL")
-    ap.add_argument("--heavy-timeout", type=float, default=None,
+    ap.add_argument("--grace", type=_duration, default=30.0, help="seconds between SIGTERM and SIGKILL")
+    ap.add_argument("--heavy-timeout", type=_duration, default=None,
                     help="seconds for the whole heavy-run call (default: from the step timeouts)")
     ap.add_argument("--inner", metavar="PART_JSON", help=argparse.SUPPRESS)
     return ap.parse_args(argv)
@@ -946,7 +1111,7 @@ def parse_args(argv):
 def main(argv=None) -> int:
     args = parse_args(argv)
     try:
-        steps, source = load_table(args.table)
+        steps, source = load_table(args.table, os.path.abspath(args.root))
         names = {s.name for s in steps}
         unknown = sorted(set(args.skip or ()) - names) + sorted(set(args.only or ()) - names)
         if unknown:
