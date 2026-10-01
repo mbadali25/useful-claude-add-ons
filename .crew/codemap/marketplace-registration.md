@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@0c3508e9
+anchor: useful-claude-add-ons@fe524012
 verified: 2026-09-30
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -24,7 +24,7 @@ claims to state, everywhere this pass checked.
 # Marketplace and registration
 
 **DERIVED.** The root `.claude-plugin/marketplace.json` is the only
-marketplace file in this repo — stated as policy at `CLAUDE.md:5` and `:57`,
+marketplace file in this repo — stated as policy at `CLAUDE.md:5` and `:59`,
 enforced at `scripts/check-marketplace.py:104-131` (`check_registration`,
 unmoved from the previous anchor), which walks every on-disk entry directory
 and fails if `<dir>/.claude-plugin/marketplace.json` exists.
@@ -1292,3 +1292,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `8bf710ed` -> `14b52c91` on 2026-09-30 (L-0520 PR 1 merges main bd4b2f30 (T-0028 #288, crew 1.0.85, and the mailgun skill), crew 1.0.86).**  No suite was executed for this note.
 
 **Re-anchored `14b52c91` -> `0c3508e9` on 2026-09-30 (L-0520 PR 1 merges main f7caa37d (L-0561 #289: mailgun registered as skills/mailgun 1.0.1, both install scripts, README, INSTALLATION.md), crew stays 1.0.86).**  No suite was executed for this note.
+
+**Re-anchored `0c3508e9` -> `fe524012` on 2026-09-30 (L-0513, the shared gate runner `scripts/gate-runner.py`; repository tooling, no plugin version, crew stays 1.0.86).** `git diff --name-only 0c3508e9 fe524012` returns, outside refresh artifacts, `.crew/verify.json` (rule 22's `run`, `seconds` and `why` in place, and rule 40 appended after T-0028's Kimi rule 39 at `:426-430`), `CLAUDE.md` (a two-line gate-runner pointer in Commands, so every line from the old `:14` moved down 2), `CHANGELOG.md`, `README.md` (main's re-pin `767fa3ef`, in place), `scripts/gate-runner.py` and `scripts/_test/gate-runner.py`; no `plugin/crew` path. Every `CLAUDE.md:N` and `.crew/verify.json:N` body citation in this note was re-read with `grep -n`/`sed -n`. `CLAUDE.md:57` -> `:59` (the marketplace.json-inside-a-plugin rule). No suite was executed for this note.

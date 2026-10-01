@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@0c3508e9
+anchor: useful-claude-add-ons@fe524012
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -196,10 +196,11 @@ through their own package managers.
 ## Landmines
 
 - **`README.md`'s install-URL pin is current at this anchor.** `README.md:12`
-  and `:18` read `e878cc31e00a7acb480fc17dd8afdcaf40c91f2d` (re-pinned by
-  `17d057db` after T-0075 merged as `e878cc31`; re-read at `ea764992`), and
-  `git log --oneline e878cc31..ea764992 -- scripts/install-prerequisites.sh
-  scripts/install-prerequisites.ps1` is empty. DERIVED. The history below is
+  and `:18` read `f7caa37d2cfc694330c3cf2b305592ff473e3194` (re-pinned by
+  `767fa3ef` after L-0561 merged as `f7caa37d`; re-read at `fe524012`), and
+  `git log --oneline f7caa37d..fe524012 -- scripts/install-prerequisites.sh
+  scripts/install-prerequisites.ps1` is empty. DERIVED. (At `ea764992` the pin
+  read `e878cc31e00a7acb480fc17dd8afdcaf40c91f2d`, re-pinned by `17d057db`.) The history below is
   what the bullet said at earlier anchors: the pin was STALE there, by one
   line per script. `README.md:12` and `:18` still read
   `6c497a14fc06612732241d2b13eee4fea41996f5` (re-read at `07ca3972`), but
@@ -1381,3 +1382,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `8bf710ed` -> `14b52c91` on 2026-09-30 (L-0520 PR 1 merges main bd4b2f30 (T-0028 #288, crew 1.0.85, and the mailgun skill), crew 1.0.86).**  No suite was executed for this note.
 
 **Re-anchored `14b52c91` -> `0c3508e9` on 2026-09-30 (L-0520 PR 1 merges main f7caa37d (L-0561 #289: mailgun registered as skills/mailgun 1.0.1, both install scripts, README, INSTALLATION.md), crew stays 1.0.86).**  No suite was executed for this note.
+
+**Re-anchored `0c3508e9` -> `fe524012` on 2026-09-30 (L-0513, the shared gate runner `scripts/gate-runner.py`; repository tooling, no plugin version, crew stays 1.0.86).** `git diff --name-only 0c3508e9 fe524012` returns, outside refresh artifacts, `.crew/verify.json` (rule 22's `run`, `seconds` and `why` in place, and rule 40 appended after T-0028's Kimi rule 39 at `:426-430`), `CLAUDE.md` (a two-line gate-runner pointer in Commands, so every line from the old `:14` moved down 2), `CHANGELOG.md`, `README.md` (main's re-pin `767fa3ef`, in place), `scripts/gate-runner.py` and `scripts/_test/gate-runner.py`; no `plugin/crew` path. Every `CLAUDE.md:N` and `.crew/verify.json:N` body citation in this note was re-read with `grep -n`/`sed -n`. `767fa3ef` (on main) re-pinned `README.md:12`/`:18` to `f7caa37d`; the install-URL pin landmine was re-read and now names that pin. No suite was executed for this note.

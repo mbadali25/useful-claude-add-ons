@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@0c3508e9
+anchor: useful-claude-add-ons@fe524012
 verified: 2026-09-30
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -167,11 +167,16 @@ Notable rules, re-read directly:
   `sh -c` tool-presence probe exiting 77 rather than 1 when the interpreter or
   module is absent, and rule 14 is the one rule carrying an `"agents"` key
   (`["powershell-security-hardening"]`).
-- **Rules 22-23**, the two `run: []` catch-alls (`.github/workflows/**`
-  deliberately unchecked; `graphify-out/**`, `.crew/codemap/**`, `.crew/**`,
-  `.serena/**` and others deliberately unchecked) are unchanged. Both declare
-  `"reach": "local"` on the reading that an empty `run` cannot reach off this
-  machine — `verify_record.scan_reach([])` already returns that.
+- **Rule 22** (`.crew/verify.json:256-260`, `.github/workflows/**`) is no longer a
+  `run: []` catch-all since L-0513: it runs `python3 scripts/_test/gate-runner.py`,
+  priced 12s, whose drift cases read every `jobs.*.steps[*].run` command of the PR-path
+  workflows against `scripts/gate-runner.py`'s step table and named exclusions. Its `why`
+  says it still does not validate workflow YAML (GitHub alone does); `reach: local` was
+  re-derived from that command. **Rule 23**, the remaining `run: []` catch-all
+  (`graphify-out/**`, `.crew/codemap/**`, `.crew/**`, `.serena/**` and others
+  deliberately unchecked), is unchanged and declares `"reach": "local"` on the reading
+  that an empty `run` cannot reach off this machine — `verify_record.scan_reach([])`
+  already returns that.
 - **Rule 24**, new at `f2bb919b` (`.crew/verify.json:269`, #228; rule 23 until T-0005's rule 6 merged in): `paths`
   `.claude/rules/**` and `.crew/codemap/**` → `python3
   plugin/crew/hooks/scripts/crew_instructions.py rules --root . --check`, priced
@@ -485,7 +490,7 @@ The one change in this range is internal to `check_self_claims`
 explicit UNVERIFIED finding rather than comparing `None` against a real count
 — named in its own docstring as the same "unknown collapsing into the
 safe-looking value" bug CLAUDE.md's Lessons section calls out
-(`CLAUDE.md:144`). See
+(`CLAUDE.md:146`). See
 `marketplace-registration.md` for what this marker checks and where it is
 used; this note owns the mechanism, not the claim.
 
@@ -635,6 +640,10 @@ their own, in both the `test` job and the Windows leg of `crew-shell-matrix`. Re
 - `.crew/verify.json:412-425` (rule 39) — T-0028's Kimi Code provider suite (`kimi_probe.py`,
   its tests, `kimi_fixtures.py`, the fixture run and the provider docs); no sabotage entries,
   since `sabotage*.py` is review harness and the probe's mutations land with L-0527.
+- `.crew/verify.json:426-430` (rule 40, the last rule) — L-0513's gate runner
+  (`scripts/gate-runner.py`) and its suite `scripts/_test/gate-runner.py`, priced 12s; the
+  same suite is rule 22's command. Not review harness: `scripts/check-tooling-pr.py` reports
+  no harness path for it.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
   `plugin/crew/CONFIG.md:2410-2417` — the descoped per-rule process-group kill,
   documented as a standing limitation.
@@ -2037,3 +2046,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `8bf710ed` -> `14b52c91` on 2026-09-30 (L-0520 PR 1 merges main bd4b2f30 (T-0028 #288, crew 1.0.85, and the mailgun skill), crew 1.0.86).**  No suite was executed for this note.
 
 **Re-anchored `14b52c91` -> `0c3508e9` on 2026-09-30 (L-0520 PR 1 merges main f7caa37d (L-0561 #289: mailgun registered as skills/mailgun 1.0.1, both install scripts, README, INSTALLATION.md), crew stays 1.0.86).**  No suite was executed for this note.
+
+**Re-anchored `0c3508e9` -> `fe524012` on 2026-09-30 (L-0513, the shared gate runner `scripts/gate-runner.py`; repository tooling, no plugin version, crew stays 1.0.86).** `git diff --name-only 0c3508e9 fe524012` returns, outside refresh artifacts, `.crew/verify.json` (rule 22's `run`, `seconds` and `why` in place, and rule 40 appended after T-0028's Kimi rule 39 at `:426-430`), `CLAUDE.md` (a two-line gate-runner pointer in Commands, so every line from the old `:14` moved down 2), `CHANGELOG.md`, `README.md` (main's re-pin `767fa3ef`, in place), `scripts/gate-runner.py` and `scripts/_test/gate-runner.py`; no `plugin/crew` path. Every `CLAUDE.md:N` and `.crew/verify.json:N` body citation in this note was re-read with `grep -n`/`sed -n`. Rule 22 (`.github/workflows/**`) now runs `python3 scripts/_test/gate-runner.py` and is no longer a `run: []` catch-all, so the Rules 22-23 bullet was rewritten (rule 23 is the one remaining catch-all); rule 40 (`:426-430`, the gate runner and its suite) was added to the citation list; `CLAUDE.md:144` -> `:146`. No suite was executed for this note.

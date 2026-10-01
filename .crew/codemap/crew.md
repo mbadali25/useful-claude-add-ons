@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@0c3508e9
+anchor: useful-claude-add-ons@fe524012
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -1279,7 +1279,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `test_review_prompt.py`, `test_lifecycle_commands.py`; fifty-one mutations in
   `plugin/crew/tests/sabotage_standards.py` (`STANDARDS_MUTATIONS` `:61`; 44 at origin/main
   `a7524aac` by `len()`, all T-0085's, then T-0086's seven for the Python set), appended in
-  `plugin/crew/tests/sabotage.py` at `:3062`; `.crew/verify.json`'s last rule runs them.
+  `plugin/crew/tests/sabotage.py` at `:3062`; `.crew/verify.json`'s rule 36 (`:372-384`) runs them.
   JUDGEMENT: the approval-receipt condition is
   the one way a ticket reaches review without the gate; it exists because the pre-existing
   review_run tests run tickets with no receipt, and a ticket without one cannot pass
@@ -3273,3 +3273,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `8bf710ed` -> `14b52c91` on 2026-09-30 (L-0520 PR 1 merges main bd4b2f30 (T-0028 #288, crew 1.0.85, and the mailgun skill), crew 1.0.86).** `96bfd946` merges origin/main `bd4b2f30` with rerere disabled; `git diff --name-only 8bf710ed 14b52c91` returns, outside refresh artifacts, T-0028's Kimi Code provider files (`crew_state.py`, `crew_config.py`, `kimi_probe.py`, templates, provider docs and tests, `plugin/crew/README.md`, `plugin/crew/CONFIG.md`), main's unregistered `plugin/mailgun/` (which `scripts/check-marketplace.py` reports as not registered, on main as here), `.crew/verify.json` (both sides' rules: the merge train rule is 37, T-0087's harness rule 38, T-0028's Kimi rule 39), `CHANGELOG.md`, `TODO.md`, `plugin/crew/BUDGETS.md` and the version files (1.0.86). Conflicted map hunks were resolved by hand (anchor lines this branch's, provenance and INDEX history both sides', both new crew.md sections kept); body path:line citations were mapped from the side each line came from to the merged tree by difflib (`/root/crew-tmp/l-0520/tools/merge_remap.py`, machine-local), the README runbooks-index citation and the verify.json rule numbers re-read with `grep -n`, and the version sentence reads 1.0.86. No suite was executed for this note.
 
 **Re-anchored `14b52c91` -> `0c3508e9` on 2026-09-30 (L-0520 PR 1 merges main f7caa37d (L-0561 #289: mailgun registered as skills/mailgun 1.0.1, both install scripts, README, INSTALLATION.md), crew stays 1.0.86).** `git diff --name-only 14b52c91 0c3508e9` returns, outside refresh artifacts, L-0561's registration of `skills/mailgun` (moved from `plugin/mailgun/`), `.claude-plugin/marketplace.json`, both install scripts, `README.md`, `INSTALLATION.md`, `skills/README.md` and `CHANGELOG.md`; no `plugin/crew` path. Install-script citations in install-scripts.md and marketplace-registration.md were moved by difflib from `3f75648a` (`/root/crew-tmp/l-0520/tools/merge_remap.py`), and repo-docs.md's skills count reads 35. No suite was executed for this note.
+
+**Re-anchored `0c3508e9` -> `fe524012` on 2026-09-30 (L-0513, the shared gate runner `scripts/gate-runner.py`; repository tooling, no plugin version, crew stays 1.0.86).** `git diff --name-only 0c3508e9 fe524012` returns, outside refresh artifacts, `.crew/verify.json` (rule 22's `run`, `seconds` and `why` in place, and rule 40 appended after T-0028's Kimi rule 39 at `:426-430`), `CLAUDE.md` (a two-line gate-runner pointer in Commands, so every line from the old `:14` moved down 2), `CHANGELOG.md`, `README.md` (main's re-pin `767fa3ef`, in place), `scripts/gate-runner.py` and `scripts/_test/gate-runner.py`; no `plugin/crew` path. Every `CLAUDE.md:N` and `.crew/verify.json:N` body citation in this note was re-read with `grep -n`/`sed -n`. `.crew/verify.json`'s last rule is now rule 40 (the gate runner), so the standards bullet names rule 36 (`:372-384`), which runs the standards tests, instead of "the last rule" (already stale at `0c3508e9`, where the last rule was T-0028's Kimi rule 39). No suite was executed for this note.
