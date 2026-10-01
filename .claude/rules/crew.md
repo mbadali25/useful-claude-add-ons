@@ -2,9 +2,9 @@
 paths:
   - "plugin/crew/**"
 ---
-<!-- crew:generated source=.crew/codemap/crew.md sha256=50e7d80ecbcfe634 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/crew.md sha256=5b6455fbf44c96cd -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # crew
-Code map anchor `de32cb87`; if it is behind HEAD, re-check with `git diff --name-only de32cb87..HEAD -- <cited paths>`.
+Code map anchor `f23b01b4`; if it is behind HEAD, re-check with `git diff --name-only f23b01b4..HEAD -- <cited paths>`.
 Covers: ; re-anchored to 6e581365 (T-0505 merges main 64b04c6b: W-0116 crew 1.0.89, runner auto-start #294; crew 1.0.91); re-anchored to 9580571e (T-0505 raises promote.md's line ceiling in .budget-allowance.json, crew 1.0.91)
 ## Entry points
 - `plugin/crew/hooks/scripts/crew_state.py:999` — `TRIGGERS`, a 15-entry tuple, unchanged in membership and order from the previous anchor.

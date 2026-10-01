@@ -3,9 +3,9 @@ paths:
   - "scripts/**"
   - "plugin/PLUGINS.md"
 ---
-<!-- crew:generated source=.crew/codemap/marketplace-registration.md sha256=3dca939954287ea9 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/marketplace-registration.md sha256=1c24e9ec31f79e18 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # marketplace-registration
-Code map anchor `de32cb87`; if it is behind HEAD, re-check with `git diff --name-only de32cb87..HEAD -- <cited paths>`.
+Code map anchor `f23b01b4`; if it is behind HEAD, re-check with `git diff --name-only f23b01b4..HEAD -- <cited paths>`.
 Covers: ; re-anchored to 6e581365 (T-0505 merges main 64b04c6b: W-0116 crew 1.0.89, runner auto-start #294; crew 1.0.91); re-anchored to 9580571e (T-0505 raises promote.md's line ceiling in .budget-allowance.json, crew 1.0.91)
 ## Entry points
 - `.claude-plugin/marketplace.json:217` — crew's `description`, now correct against disk on every measured count.

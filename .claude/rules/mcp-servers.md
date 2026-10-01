@@ -3,9 +3,9 @@ paths:
   - "mcp-servers/packages/**"
   - "mcp-servers/scripts/**"
 ---
-<!-- crew:generated source=.crew/codemap/mcp-servers.md sha256=8cd0c65aa5ea8cdd -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/mcp-servers.md sha256=01d268eb4c7f55ec -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # mcp-servers
-Code map anchor `de32cb87`; if it is behind HEAD, re-check with `git diff --name-only de32cb87..HEAD -- <cited paths>`.
+Code map anchor `f23b01b4`; if it is behind HEAD, re-check with `git diff --name-only f23b01b4..HEAD -- <cited paths>`.
 Covers: ; re-anchored to 6e581365 (T-0505 merges main 64b04c6b: W-0116 crew 1.0.89, runner auto-start #294; crew 1.0.91); re-anchored to 9580571e (T-0505 raises promote.md's line ceiling in .budget-allowance.json, crew 1.0.91)
 ## Landmines
 - The credential chain caches its winner for the process lifetime.
