@@ -603,7 +603,8 @@ def test_workflow_holds_a_read_only_token_and_no_secrets(workflow):
     text, data = workflow
 
     assert data["permissions"] == {"contents": "read"}
-    assert "secrets." not in text
+    code = [line for line in text.splitlines() if not line.lstrip().startswith("#")]
+    assert not [line for line in code if "secrets" in line]
 
 
 def test_workflow_job_runs_only_on_the_self_hosted_pool_when_opted_in(workflow):

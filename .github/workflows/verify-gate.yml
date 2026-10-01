@@ -10,8 +10,8 @@ name: Verify gate receipt (self-hosted)
 # Security. `push` only, never pull_request / pull_request_target: a push
 # event is same-repository by construction, so fork code can never reach the
 # pool (owner 2026-09-30, "No fork PRs", the L-0521 clause). The token is
-# contents:read and is not persisted into the checkout; the job references no
-# secrets. Uploading an artifact needs no token scope.
+# contents:read and is not persisted into the checkout; the job reads no
+# repository secret. Uploading an artifact needs no token scope.
 #
 # Opt-in. The job runs only while the runner playbook
 # (mbadali25/github-runner-infra) has CREW_RUNNER=self-hosted set. Unset, the
