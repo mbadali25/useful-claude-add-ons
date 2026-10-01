@@ -1018,7 +1018,8 @@ _BAD_EVENTS = ['{"seq": 1, "kind": "merged"}',
                '{"seq": true, "kind": "merged", "ticket": "T-1", "paths": []}',
                '{"kind": "merged", "ticket": "T-1", "paths": []}',
                '[1]',
-               '{"seq": 1, "kind": "bogus", "ticket": "T-1"}']
+               '{"seq": 1, "kind": "bogus", "ticket": "T-1"}',
+               '{"seq": 0, "kind": "merged", "ticket": "T-1", "paths": []}']
 
 
 @pytest.mark.parametrize("line", _BAD_EVENTS)
@@ -1099,3 +1100,18 @@ def test_catch_up_forgets_rerere_resolutions_of_version_files(repo, capsys, vers
     assert _cli(capsys, lane, "catch-up", "--ticket", "T-1")[0] == 1
     again = _merge_log(repo, "T-1")[-1]
     assert again["rerere_replayed"] == ["f.txt"] and version in again["conflicted"], again
+
+
+def test_catch_up_leaves_a_modify_delete_version_file_conflicted(repo, capsys):
+    _commit_many(repo, ["CHANGELOG.md", "f.txt"], "one\ntwo\n")
+    lane = _worktree(repo, "wt1", "l1")
+    _commit_many(lane, ["CHANGELOG.md", "f.txt"], "one\nLANE\n")
+    git(repo, "rm", "-q", "CHANGELOG.md")
+    _commit(repo, "f.txt", "one\nMAIN\n")
+
+    code, out = _cli(capsys, lane, "catch-up", "--ticket", "T-1")
+
+    row = _merge_log(repo, "T-1")[-1]
+    assert code == 1 and row["outcome"] == "conflicted", out
+    assert "CHANGELOG.md" in row["conflicted"] and row["rerere_forgotten"] == [], row
+

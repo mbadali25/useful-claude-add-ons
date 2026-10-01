@@ -601,7 +601,7 @@ def read_events(root, after=0):
         problem = _event_problem(event)
         seq = event.get("seq") if isinstance(event, dict) else None
         if problem:
-            if not _count(seq) or seq > after:
+            if not _count(seq) or seq < 1 or seq > after:
                 problems.append(f"{path}:{number} is not a train event ({problem})")
             continue
         if seq > after:
@@ -988,6 +988,16 @@ def ensure_rerere(top):
     return scope
 
 
+def _both_sides(top, path):
+    """Whether the index holds stage 2 and stage 3 for `path`."""
+    stages = set()
+    for line in _lines(_git_ok(top, "ls-files", "-u", "--", path)):
+        meta = line.split("\t", 1)[0].split()
+        if len(meta) == 3:
+            stages.add(meta[2])
+    return {"2", "3"} <= stages
+
+
 def _forget_version_files(top, unmerged):
     """For each VERSION_FILES path the merge left unmerged: `git rerere
     forget` (which leaves the replayed bytes in the working tree) and then
@@ -995,10 +1005,14 @@ def _forget_version_files(top, unmerged):
     paths whose recorded resolution was forgotten; git prints `Forgot
     resolution for '<path>'` only when there was one (git 2.53.0). A path
     is restored whether or not that line was seen, so a git that words it
-    differently still leaves the file conflicted."""
+    differently still leaves the file conflicted. Only a path holding both
+    sides in the index (stages 2 and 3) is touched: a modify/delete conflict
+    is never rerere'd, and `checkout -m` cannot rebuild it ("does not have
+    all necessary versions"), so it stays as the merge left it. (`git rerere
+    status` cannot filter: it omits a path rerere just resolved.)"""
     forgotten = []
     for path in VERSION_FILES:
-        if path not in unmerged:
+        if path not in unmerged or not _both_sides(top, path):
             continue
         code, out, err = _git(top, "rerere", "forget", "--", path)
         if code != 0:
