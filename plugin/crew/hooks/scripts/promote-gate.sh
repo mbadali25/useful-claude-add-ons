@@ -16,6 +16,24 @@
 #      was written this session.
 #   4. A clean tree - you cannot deploy a sha that is not what is committed.
 #
+# WHICH tree (T-0505). The sha and the clean-tree check are read from the tree
+# the deploy RUNS FROM, not from CLAUDE_PROJECT_DIR: the payload `cwd` (else
+# the project dir), moved by a leading `cd <dir> &&` chain, and named by any
+# `git -C <dir>` in the command. It must be a worktree of the SAME repository
+# as the project dir, and every literal sha in the command must be its HEAD.
+# Judging the project dir blocked a clean worktree for the main checkout's
+# dirt, named a sha that was not being deployed, and let a clean main checkout
+# wave a dirty or wrong-sha worktree through.
+#
+# Policy and state stay in the project dir, deliberately: .crew/verify.json,
+# .work/PROMOTIONS.md, .crew/.approved-<env>-<sha>, the rollback runbook, the
+# incident files and .crew/.deploy-in-flight. `.work/` and `.crew/*` are
+# per-checkout, gitignored state: a fresh worktree has none of it (reading it
+# there would refuse every worktree deploy for a missing PASS row) and a
+# throwaway worktree can hold a forged copy (reading it there would launder a
+# sha). verify-gate.sh reads the in-flight marker and PROMOTIONS.md from the
+# project dir too, so the Stop-time check keeps matching.
+#
 # What it cannot enforce, and does not pretend to: that smoke, regression and
 # verify actually ran AFTER the deploy. verify-gate.sh picks that up at Stop by
 # refusing to end a turn that deployed and recorded nothing.
@@ -32,16 +50,43 @@ cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null || exit 0
 # DIRECTORY named .crew/verify.json is not an opt-out, it is a map that cannot
 # be read, and `-f` answered false for it and exited 0 here. Everything that
 # exists goes on to the read below, which decides readable from unreadable.
-[ -e .crew/verify.json ] || exit 0
+#
+# T-0505: "no map at all" means none in the working copy AND none committed.
+# The map is read from this checkout while its dirt no longer blocks a deploy
+# from a linked worktree, so an uncommitted change to it - an edit, a deletion,
+# an untracked file - must not become policy. The working bytes are compared
+# with HEAD's blob by `git hash-object` rather than trusted to `git status`,
+# which skip-worktree and assume-unchanged silence (Codex r1). MAP_DIRTY is
+# acted on once the command is known to be a deploy, matched against the
+# working map AND the committed one, so an edit that renames the deploy
+# command cannot make it match nothing.
+HEAD_MAP=$(git rev-parse -q --verify "HEAD:./.crew/verify.json" 2>/dev/null)
+MAP_DIRTY=""
+if [ ! -e .crew/verify.json ]; then
+  [ -z "$HEAD_MAP" ] && exit 0
+  MAP_DIRTY="deleted, and committed at HEAD"
+elif [ -n "$HEAD_MAP" ]; then
+  WORK_MAP=$(git hash-object -- .crew/verify.json 2>/dev/null)
+  if [ -z "$WORK_MAP" ]; then
+    MAP_DIRTY="could not be hashed to compare with HEAD"
+  elif [ "$WORK_MAP" != "$HEAD_MAP" ]; then
+    MAP_DIRTY="differs from HEAD"
+  fi
+elif [ -n "$(git ls-files --others --exclude-standard -- .crew/verify.json 2>/dev/null)" ]; then
+  MAP_DIRTY="untracked - in no commit"
+fi
 
 PY=$(crew_py) || exit 0   # no python: cannot read the map, so do not pretend to gate
 
 if command -v jq >/dev/null 2>&1; then
   CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
+  RUN_CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
 else
   CMD=$(printf '%s' "$INPUT" | "$PY" -c 'import sys,json;print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' 2>/dev/null)
+  RUN_CWD=$(printf '%s' "$INPUT" | "$PY" -c 'import sys,json;print(json.load(sys.stdin).get("cwd") or "")' 2>/dev/null)
 fi
 CMD=$(crew_strip_cr "$CMD")
+RUN_CWD=$(crew_strip_cr "$RUN_CWD")
 [ -z "$CMD" ] && exit 0
 
 # Which environment, if any, does this command deploy to? And - separately -
@@ -72,14 +117,60 @@ CMD=$(crew_strip_cr "$CMD")
 # unmet precondition into a recorded skip, and every skip row names the
 # environment - which is precisely what could not be determined here. There is
 # nothing to record and nothing to stand down.
-ENVNAME=$("$PY" - "$CMD" <<'PY'
-import json, sys
+ENVNAME=$(CREW_HEAD_MAP="$HEAD_MAP" CREW_MAP_DIRTY="$MAP_DIRTY" "$PY" - "$CMD" <<'PY'
+import json, os, shutil, subprocess, sys
 cmd = sys.argv[1]
 
 
 def unreadable(why, status):
     print(why, file=sys.stderr)
     sys.exit(status)
+
+
+def matches(envs):
+    """The first environment whose declared deploy matches `cmd`, or None.
+    Only for the COMMITTED map below; the working map keeps its own strict
+    reading."""
+    for name, cfg in envs.items():
+        declared = cfg.get("deploy", []) if isinstance(cfg, dict) else []
+        declared = [declared] if isinstance(declared, str) else declared
+        if not isinstance(declared, list):
+            continue
+        for d in declared:
+            if isinstance(d, str) and d and (d in cmd or cmd in d):
+                return name
+    return None
+
+
+# A dirty map is matched against the committed one too (T-0505). A committed
+# map that cannot be read or has no readable environments is could-not-tell,
+# status 3: with the working map dirty, "matched nothing" would be a guess.
+if os.environ.get("CREW_MAP_DIRTY") and os.environ.get("CREW_HEAD_MAP"):
+    git = shutil.which("git")
+    if git is None:
+        unreadable("the deploy map is uncommitted and git is not on PATH, so the "
+                   "committed map cannot be read to compare with", 3)
+    try:
+        proc = subprocess.run([git, "cat-file", "blob", os.environ["CREW_HEAD_MAP"]],
+                              capture_output=True, check=False, timeout=10,
+                              stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        unreadable(f"the committed .crew/verify.json could not be read: {exc}", 3)
+    if proc.returncode != 0:
+        unreadable("the committed .crew/verify.json could not be read "
+                   f"(git cat-file exited {proc.returncode})", 3)
+    try:
+        committed = json.loads(proc.stdout.decode("utf-8-sig", errors="replace"))
+    except ValueError as exc:
+        unreadable(f"the committed .crew/verify.json does not parse as JSON: {exc}", 3)
+    committed_envs = committed.get("environments", {}) if isinstance(committed, dict) else None
+    if not isinstance(committed_envs, dict):
+        unreadable("the committed .crew/verify.json holds no object of environments", 3)
+    hit = matches(committed_envs)
+    if hit:
+        print(hit); sys.exit(0)
+    if not os.path.exists(".crew/verify.json"):
+        sys.exit(0)
 
 
 try:
@@ -152,13 +243,145 @@ block() {
   exit 2
 }
 
-SHA=$(git rev-parse --short HEAD 2>/dev/null)
-[ -z "$SHA" ] && block "not a git repository - cannot establish what is being deployed."
-
-# 4. clean tree
-if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
-  block "the working tree is dirty. You would be deploying \"$SHA\" plus changes that are in no commit and no review. Commit or stash first."
+if [ -n "$MAP_DIRTY" ]; then
+  block ".crew/verify.json in the project dir ($(pwd -P)) has uncommitted changes: it $MAP_DIRTY. The deploy map is policy; commit the change (it is then reviewed like any other) or revert it."
 fi
+
+PROJECT_TOP=$(git rev-parse --show-toplevel 2>/dev/null)
+[ -z "$PROJECT_TOP" ] && block "not a git repository - cannot establish what is being deployed."
+
+# The tree this deploy runs from (T-0505; the header says why). `cd` in a
+# subshell resolves each step the way the shell running the command will,
+# MSYS and Windows paths included; `pwd -P` makes two spellings of one
+# directory compare equal.
+resolve_dir() {
+  local t=$2
+  case "$t" in
+    "~") t=$HOME ;;
+    "~/"*) t="$HOME/${t#\~/}" ;;
+  esac
+  ( cd "$1" 2>/dev/null && cd "$t" 2>/dev/null && pwd -P )
+}
+# The common dir identifies the repository: every linked worktree shares it.
+common_dir() {
+  ( cd "$1" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P )
+}
+
+BASE=$(pwd -P)
+if [ -n "$RUN_CWD" ]; then
+  BASE=$(resolve_dir "$BASE" "$RUN_CWD")
+  [ -z "$BASE" ] && block "the command runs from '$RUN_CWD', which does not exist, so it is not inside a git worktree - cannot establish what is being deployed."
+fi
+RECORDS=$(PYTHONIOENCODING=utf-8 "$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_tree.py" "$CMD") \
+  || block "the deploy command could not be parsed for the directory it runs from (_promote_tree.py failed). This is not a pass."
+TREES=()
+RUNDIRS=()
+BARE=0
+HEXES=()
+while IFS=$'\t' read -r kind tok; do
+  case "$kind" in
+    cd)
+      NEXT=$(resolve_dir "$BASE" "$tok")
+      [ -z "$NEXT" ] && block "cannot tell which directory the deploy runs from: 'cd $tok' does not resolve from '$BASE'."
+      BASE=$NEXT ;;
+    bad)
+      block "cannot tell which directory the deploy runs from: '$tok' is not a form the gate reads with certainty (a shell-expanded path, an unlisted git option, git inside quoted text), and it will not guess. Use a literal 'cd <dir> &&' or 'git -C <dir>'." ;;
+    C)
+      D=$(resolve_dir "$BASE" "$tok")
+      [ -z "$D" ] && block "cannot tell which directory the deploy runs from: 'git -C $tok' does not resolve from '$BASE'."
+      TREES+=("$D") ;;
+    Crun)
+      D=$(resolve_dir "$BASE" "$tok")
+      [ -z "$D" ] && block "cannot tell which directory the deploy runs from: 'git -C $tok' does not resolve from '$BASE'."
+      RUNDIRS+=("$D") ;;
+    midcd)
+      block "cannot tell which directory the deploy runs from: the command changes directory after it starts ('$tok'). Put the cd first - 'cd <dir> && <deploy>' - so the gate judges the tree the deploy runs in." ;;
+    gitdir)
+      block "cannot tell which tree the deploy reads: '$tok' points git at a repository by a route the gate does not follow. Use 'cd <dir> &&' or 'git -C <dir>'." ;;
+    bare) BARE=1 ;;
+    hex) HEXES+=("$tok") ;;
+  esac
+done <<EOF
+$RECORDS
+EOF
+# The sha comes from `git -C`'s tree when there is one; from the chain's
+# directory when there is none, or when a bare `git` also reads it. The chain's
+# directory is ALSO where the deploy process runs, so it is checked for dirt
+# and repository below whatever `-C` says (Codex r1: a clean `-C` tree must not
+# launder a dirty tree the deploy executes in).
+if [ "${#TREES[@]}" -eq 0 ] || [ "$BARE" -eq 1 ]; then
+  TREES+=("$BASE")
+fi
+RUN_TOP=$(git -C "$BASE" rev-parse --show-toplevel 2>/dev/null)
+[ -z "$RUN_TOP" ] && block "the deploy runs from '$BASE', which is not inside a git worktree - cannot establish what is being deployed."
+# A `git -C` outside a command substitution feeds the deploy nothing, so it
+# may only name the tree the deploy runs in (`deploy; echo git -C <wt>` must
+# not make the gate judge <wt> while the deploy ships the payload cwd's sha).
+for D in ${RUNDIRS[@]+"${RUNDIRS[@]}"}; do
+  if [ "$(git -C "$D" rev-parse --show-toplevel 2>/dev/null)" != "$RUN_TOP" ]; then
+    block "the command names 'git -C $D' outside a command substitution, which is not the tree the deploy runs in ('$RUN_TOP'). Use 'cd <dir> &&' so the deploy runs there, or '\$(git -C <dir> ...)' to feed it a sha."
+  fi
+done
+
+TREE=""
+for D in "${TREES[@]}"; do
+  TOP=$(git -C "$D" rev-parse --show-toplevel 2>/dev/null)
+  [ -z "$TOP" ] && block "the deploy runs from '$D', which is not inside a git worktree - cannot establish what is being deployed."
+  if [ -z "$TREE" ]; then
+    TREE=$TOP
+  elif [ "$TOP" != "$TREE" ]; then
+    block "the deploy command names more than one tree ('$TREE' and '$TOP'), so which sha is being deployed is ambiguous. Run it from one tree."
+  fi
+done
+
+TREE_COMMON=$(common_dir "$TREE")
+PROJECT_COMMON=$(common_dir "$PROJECT_TOP")
+# Two failed lookups compare equal as two empty strings; that is not "same
+# repository", it is "could not tell".
+if [ -z "$TREE_COMMON" ] || [ -z "$PROJECT_COMMON" ]; then
+  block "could not read the git common dir of '$TREE' or of '$PROJECT_TOP', so the gate cannot tell whether the deploy runs from this repository."
+fi
+if [ "$TREE_COMMON" != "$PROJECT_COMMON" ]; then
+  block "the deploy runs from '$TREE', which is a worktree of a different repository than this project ('$PROJECT_TOP'). Its sha has no PASS row, marker or map here."
+fi
+if [ "$RUN_TOP" != "$TREE" ] && [ "$(common_dir "$RUN_TOP")" != "$PROJECT_COMMON" ]; then
+  block "the deploy process runs in '$RUN_TOP', which is not a worktree of this project ('$PROJECT_TOP')."
+fi
+
+SHA=$(git -C "$TREE" rev-parse --short HEAD 2>/dev/null)
+FULL=$(git -C "$TREE" rev-parse HEAD 2>/dev/null)
+[ -z "$SHA" ] && block "'$TREE' has no commit at HEAD - cannot establish what is being deployed."
+
+# 4. clean tree - the tree being deployed and the tree the deploy runs in,
+# not the session's checkout. A status that FAILS is could-not-tell, never
+# clean; untracked files are listed whatever status.showUntrackedFiles says;
+# an index entry flagged skip-worktree or assume-unchanged hides edits from
+# status, so it is refused too (Codex r1).
+clean_or_block() {
+  local st flags
+  st=$(git -C "$1" status --porcelain --untracked-files=all --ignore-submodules=none 2>/dev/null) \
+    || block "could not read git status in '$1', so the gate cannot tell whether it is clean. This is not a pass."
+  if [ -n "$st" ]; then
+    block "the tree this deploy runs from ('$1') is dirty. You would be deploying \"$SHA\" plus changes that are in no commit and no review. Commit or stash there first."
+  fi
+  flags=$(git -C "$1" ls-files -v 2>/dev/null) \
+    || block "could not read the index of '$1', so the gate cannot tell whether it is clean. This is not a pass."
+  if printf '%s\n' "$flags" | grep -q '^[a-zS]'; then
+    block "'$1' has index entries flagged skip-worktree or assume-unchanged, which hide changes from git status. Clear them (git update-index --no-skip-worktree / --no-assume-unchanged) before deploying."
+  fi
+}
+clean_or_block "$TREE"
+[ "$RUN_TOP" != "$TREE" ] && clean_or_block "$RUN_TOP"
+
+# A literal sha in the command must be the tree's HEAD, or the PASS rows below
+# are checked for one sha while another ships. A hex token that names no
+# commit here (a build id, a digest) is not a sha and is left alone.
+for H in ${HEXES[@]+"${HEXES[@]}"}; do
+  RESOLVED=$(git -C "$TREE" rev-parse -q --verify "$H^{commit}" 2>/dev/null) || continue
+  if [ -n "$RESOLVED" ] && [ "$RESOLVED" != "$FULL" ]; then
+    block "the command names commit '$H', but the tree it runs from ('$TREE') is at \"$SHA\". The gate checks the sha being deployed; run it from a tree at '$H', or drop the literal."
+  fi
+done
 
 # 1-3, read from the map
 VERDICT=$("$PY" - "$ENVNAME" "$SHA" <<'PY' 2>/dev/null
@@ -252,7 +475,7 @@ VERDICT_STATUS=$?
 # bug class - an unknown collapsing into the safe-looking value - sitting in the
 # gate whose entire job is to refuse.
 if [ "$VERDICT_STATUS" -ne 0 ]; then
-  echo "PROMOTION BLOCKED ($ENVNAME, sha $SHA):" >&2
+  echo "PROMOTION BLOCKED ($ENVNAME, sha $SHA, tree $TREE):" >&2
   echo "  - the pre-deploy check could not be evaluated (exit $VERDICT_STATUS)." >&2
   echo "    This is not a pass. Something in .crew/verify.json or a rollback" >&2
   echo "    runbook could not be read - a malformed 'last verified' date does" >&2
@@ -274,7 +497,7 @@ if [ -n "$VERDICT" ] && crew_incident_active; then
 fi
 
 if [ -n "$VERDICT" ]; then
-  echo "PROMOTION BLOCKED ($ENVNAME, sha $SHA):" >&2
+  echo "PROMOTION BLOCKED ($ENVNAME, sha $SHA, tree $TREE):" >&2
   printf '%s' "$VERDICT" | tr '\036' '\n' | sed 's/^/  - /' >&2
   echo "" >&2
   echo "These are the pre-deploy gates from .crew/verify.json. Fix them, or set" >&2
