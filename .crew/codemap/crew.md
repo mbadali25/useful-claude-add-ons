@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@805b0a25
+anchor: useful-claude-add-ons@7ecbdc7f
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -3277,3 +3277,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `0c3508e9` -> `5ab63076` on 2026-09-30 (L-0516: deadline polls replace fixed sleeps in the flaky crew tests, crew 1.0.89; verify.json gains rule 10 so later rules shift by one and six lines).**  No suite was executed for this note.
 
 **Re-anchored `5ab63076` -> `805b0a25` on 2026-09-30 (L-0516 split per the tooling-PR rule: sabotage_qa.py back to main's copy, its four entries move to L-0563; verify.json rule 10's why and CHANGELOG reworded in place).**  No suite was executed for this note.
+
+**Re-anchored `805b0a25` -> `7ecbdc7f` on 2026-09-30 (L-0516 re-bumps crew to 1.0.91 after the split; version files, CHANGELOG heading and the two version sentences only).**  No suite was executed for this note.
