@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@44d3dbc6 on 2026-10-01. Verify before trusting.
+%% Generated from useful-claude-add-ons@89ebda03 on 2026-10-01. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -263,6 +263,9 @@
 %% Re-anchored 0be97503 -> 14bb59ef (L-0520 PR 1 merges main 6a8c60b1, T-0099): no anchored path changed.
 %% Re-anchored 14bb59ef -> 8bf710ed (L-0520 PR 1 review round 1 fixes): done.md's landing section kept its lines (:82-96,
 %% two commands quoted in place); crew_train.py is cited by name only. No node or edge changed.
+%% Re-anchored 8bf710ed -> bf7ce780 (L-0558, crew 1.0.87): of the anchored paths only crew_train.py changed
+%% (round-2 fixes, rerere rule); no node cites it by line, done.md is unchanged. No node or edge changed.
+%% Re-anchored bf7ce780 -> dbad6519 (L-0558 self-review fixes): only crew_train.py changed among the anchors. No node or edge changed.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
@@ -416,6 +419,8 @@ flowchart TB
 %% tooling-PR rule's ALONGSIDE, so L-0540 cannot carry it); the audit applies it once L-0540 lands.
 %% No node or edge changed.
 %% Re-anchored 65abeb8d -> 1f21f73b (T-0094 review round 7): of the Anchors paths only crew_refresh_check.py
+%% Re-anchored dbad6519 -> afd976ee (L-0558 review round 1 fix): only crew_train.py changed among the anchors. No node or edge changed.
+%% Re-anchored afd976ee -> d21fa82d (L-0558 round-2 fixes, main merge): crew_train.py and main's crew_refresh_check.py (W-0116) changed among the anchors; no node cites either by line. No node or edge changed.
 %% changed (_read_regular new, the functions below it moved); this diagram cites no line of it.
 %% No node or edge changed.
 %% Merged 1f21f73b's lines on T-0040-land (T-0040's reviewed 913bec89 merged into main 6a8c60b1,
@@ -431,6 +436,7 @@ flowchart TB
 %% c43a54c1 -> f4adf923 (T-0028 re-sets crew 1.0.85): release files only; no cited line moved.
 %% f4adf923 -> 328fdf4a (T-0028 round-7 fixes in kimi_probe.py, crew 1.0.85): no cited line moved.
 %% Re-anchored 8bf710ed -> 6e581365 (T-0505 merges main 64b04c6b, crew 1.0.91): of the Anchors paths only
+%% Re-anchored 6e581365 (main, T-0505) and d21fa82d (L-0558) -> b0ac0e1a (L-0558 merges main 6fe0e0db): crew_train.py changed among the anchors; no node cites it by line. No node or edge changed.
 %% crew_refresh_check.py changed (W-0116's refresh admission on Windows). A difflib map of its cited
 %% lines :50-61, :53, :93 and :96 maps each onto itself with the same text. No node or edge changed.
 %% Merged 3bb32980 + 328fdf4a on T-0040-land (merge of origin/main 844bfc36, T-0028, crew 1.0.85):
@@ -438,6 +444,7 @@ flowchart TB
 %% :112 touch different lines; commands/implement.md is identical to T-0040-land's side. No node
 %% or edge changed.
 %% Re-anchored 3bb32980 / 328fdf4a -> a54ca704 (T-0040-land's merge of origin/main 844bfc36); the
+%% Re-anchored 44d3dbc6 -> 89ebda03 (L-0558 merges main 52489039): crew_train.py is cited by name only. No node or edge changed.
 %% merge note above names every line that moved.
 %% Merged a54ca704 (T-0040-land) + 8bf710ed (main) on T-0040-land, 2026-10-01 (merge of origin/main
 %% 66651b69, L-0520 #287): the header takes main's Anchors list (it adds crew_train.py) anchored at the
