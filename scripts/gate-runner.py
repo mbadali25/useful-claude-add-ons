@@ -34,7 +34,10 @@ A timeout kills the step's whole process group: SIGTERM, a grace period
 leader, then SIGKILL. A heavy-run call that dies leaves every heavy/solo step
 it had not recorded COULD-NOT-TELL, and a heavy-part.json result is taken only
 for a table step, under its own name, with a state its rc could give (PASS
-needs rc 0) -- anything else is COULD-NOT-TELL.
+needs rc 0, SKIP rc 77 or null) -- anything else is COULD-NOT-TELL. The inner
+runner refuses (exit 2, no step run) unless the table it loads has the digest
+the outer runner validated (--table-digest), so a table or runner file edited
+by a cheap step never runs.
 
 Overall and exit: any FAIL = FAIL, exit 1; else any COULD-NOT-TELL, or no step
 PASSED at all = COULD-NOT-TELL, exit 3; else PASS, exit 0. Usage error or
@@ -54,7 +57,11 @@ reserved (it becomes a log path), its keys are known, every field has its
 type, a heavy step's group is A or B and any other step has none, and its cwd
 resolves inside --root. The cwd is resolved again when the step launches (an
 earlier step may have swapped it for a symlink); outside --root then is
-COULD-NOT-TELL, and the child gets the resolved path.
+COULD-NOT-TELL. On Linux the checked directory is opened, the opened directory
+is checked again, and the child starts in it through /proc/self/fd, so a later
+swap of the pathname cannot redirect it; elsewhere (no /proc/self/fd) the
+child gets the resolved path and a swap in between is not prevented. A tool
+named in `needs` is run by its absolute path.
 
 The table is derived from .github/workflows/; `--check-ci` (and
 scripts/_test/gate-runner.py) fails when a workflow `run:` command is in
@@ -72,6 +79,8 @@ verified on a Windows host.
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import hashlib
 import json
 import math
 import os
@@ -483,10 +492,14 @@ def contained_cwd(root: str, cwd: str) -> str | None:
         return None
     real_root = os.path.realpath(root)
     real = os.path.realpath(os.path.join(real_root, cwd))
+    return real if _inside(real_root, real) else None
+
+
+def _inside(real_root: str, real: str) -> bool:
     try:
-        return real if os.path.commonpath([real_root, real]) == real_root else None
+        return os.path.commonpath([real_root, real]) == real_root
     except ValueError:  # different drives on Windows
-        return None
+        return False
 
 
 def cwd_in_root(root: str, cwd: str) -> bool:
@@ -543,6 +556,14 @@ def load_table(path: str | None, root: str = DEFAULT_ROOT):
     return steps, src
 
 
+def table_digest(steps: list) -> str:
+    """sha256 over every field of every step of a loaded table (built-in or
+    --table alike), so the inner runner can prove it loaded the table the
+    outer runner validated."""
+    text = json.dumps([dataclasses.asdict(s) for s in steps], sort_keys=True)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def phase_label(step: Step) -> str:
     return f"heavy {step.group}" if step.phase == "heavy" else step.phase
 
@@ -581,10 +602,12 @@ class Context:
 
 
 def _which(tool: str) -> str | None:
+    """The tool's absolute path: shutil.which resolves a relative PATH entry
+    against this process's cwd, and the step runs in another one."""
     found = shutil.which(tool)
     if found is None and tool == "pwsh" and os.path.exists(WINDOWS_PWSH):
         found = WINDOWS_PWSH
-    return found
+    return os.path.abspath(found) if found else None
 
 
 def _git_py_files(root: str) -> list:
@@ -634,6 +657,29 @@ def preflight(step: Step, ctx: Context, argv: list):
     return None
 
 
+def _open_cwd(root: str, cwd: str):
+    """(fd, path to start the child in) for a step cwd inside the root, or None.
+    With /proc/self/fd (Linux) the checked directory is opened and the OPENED
+    directory is checked again; the child starts in /proc/self/fd/<fd>, which it
+    resolves through its own inherited copy of fd before exec (fd stays
+    close-on-exec, so the step never holds it), so a swap of the pathname after
+    this check cannot redirect it. Elsewhere fd is None and the path is the
+    resolved one (a swap in between is not prevented there)."""
+    real = contained_cwd(root, cwd)
+    if real is None:
+        return None
+    if os.name == "nt" or not os.path.isdir("/proc/self/fd"):
+        return None, real
+    try:
+        fd = os.open(real, os.O_RDONLY | os.O_DIRECTORY)
+    except OSError:
+        return None
+    if not _inside(os.path.realpath(root), os.path.realpath(f"/proc/self/fd/{fd}")):
+        os.close(fd)
+        return None
+    return fd, f"/proc/self/fd/{fd}"
+
+
 def new_result(step: Step, ctx: Context) -> dict:
     return {"name": step.name, "phase": step.phase, "group": step.group, "argv": list(step.argv),
             "cwd": step.cwd, "timeout": step.timeout, "rc": None, "state": None, "reason": "",
@@ -660,16 +706,21 @@ def run_step(step: Step, ctx: Context) -> dict:
         return res
     # Resolved again at launch, not only when the table loaded: an earlier step
     # may have swapped a directory on this path for a symlink out of the root.
-    # The child gets the resolved path, so the swap cannot land between this
-    # check and a second resolution inside Popen.
-    cwd = contained_cwd(ctx.root, step.cwd)
-    if cwd is None:
+    # On Linux the child starts in the directory that was checked (_open_cwd).
+    opened = _open_cwd(ctx.root, step.cwd)
+    if opened is None:
         res["state"] = CNT
         res["reason"] = (f"could not start: cwd {step.cwd!r} resolves outside --root at launch "
-                         "(symlinks resolved)")
+                         "(symlinks resolved) or could not be opened")
         return res
+    fd, cwd = opened
     started_at = time.monotonic()
-    rc, timed_out, started, note = spawn_and_wait(argv, cwd, res["log"], step.timeout, ctx.grace)
+    try:
+        rc, timed_out, started, note = spawn_and_wait(argv, cwd, res["log"], step.timeout,
+                                                      ctx.grace)
+    finally:
+        if fd is not None:
+            os.close(fd)
     res["seconds"] = round(time.monotonic() - started_at, 1)
     res["rc"] = rc
     state, reason = classify(rc, timed_out, started)
@@ -725,9 +776,11 @@ RESULT_KEYS = ("name", "rc", "state", "reason", "seconds", "log")
 def _valid_result(name: str, res) -> bool:
     """A heavy-part result is taken only when it is filed under its own name,
     its rc is an int or null (never a bool or a string), and its state is one
-    the inner runner's classify() could give that rc: PASS needs rc 0 and FAIL
-    a non-zero rc -- a PASS without the exit status that proves it is never
-    taken (T-0082). Anything else is dropped, and the step reads COULD-NOT-TELL."""
+    the inner runner's classify() could give that rc: PASS needs rc 0, FAIL a
+    non-zero rc, SKIP rc 77 or null (--skip, a missing tool) -- a PASS without
+    the exit status that proves it, or a SKIP over a failed exit, is never
+    taken (T-0082). COULD-NOT-TELL takes any rc: it never passes. Anything
+    else is dropped, and the step reads COULD-NOT-TELL."""
     if not isinstance(res, dict) or not all(k in res for k in RESULT_KEYS):
         return False
     rc, state = res["rc"], res["state"]
@@ -739,6 +792,8 @@ def _valid_result(name: str, res) -> bool:
         return rc == 0
     if state == FAIL:
         return rc is not None and rc != 0
+    if state == SKIP:
+        return rc is None or rc == EXIT_SKIP
     return True
 
 
@@ -774,11 +829,13 @@ def resolve_heavy_run(env) -> tuple:
 
 def _git(root: str, *args: str):
     try:
-        proc = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, timeout=60,
+        proc = subprocess.run(["git", *args], cwd=root, capture_output=True, timeout=60,
                               check=False, stdin=subprocess.DEVNULL)
     except (OSError, subprocess.TimeoutExpired):
         return None
-    return proc.stdout if proc.returncode == 0 else None
+    # surrogateescape cannot raise: a file name that is not UTF-8 in
+    # `status --porcelain` must not crash the runner before status.json exists.
+    return proc.stdout.decode("utf-8", "surrogateescape") if proc.returncode == 0 else None
 
 
 def heavy_run_label(hr: dict) -> str:
@@ -792,7 +849,20 @@ def heavy_budget(steps: list, grace: float) -> float:
     return max(a, b) + solo + grace * (len(steps) + 2) + SLOT_WAIT_ALLOWANCE
 
 
-def run_outer(args, steps: list, source: str, ctx: Context, hr: dict) -> int:
+def _log_tail(path: str) -> str:
+    """The last non-empty line of a log, for a reason string ('' if none)."""
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            fh.seek(max(0, fh.tell() - 4096))
+            lines = fh.read().decode("utf-8", "replace").splitlines()
+    except OSError:
+        return ""
+    lines = [ln.strip() for ln in lines if ln.strip()]
+    return lines[-1][:300] if lines else ""
+
+
+def run_outer(args, steps: list, source: str, ctx: Context, hr: dict, digest: str) -> int:
     status_path = os.path.join(ctx.out, "status.json")
     head = _git(ctx.root, "rev-parse", "HEAD")
     porcelain = _git(ctx.root, "status", "--porcelain")
@@ -827,7 +897,7 @@ def run_outer(args, steps: list, source: str, ctx: Context, hr: dict) -> int:
     if inner_steps:
         part = os.path.join(ctx.out, "heavy-part.json")
         cmd = [sys.executable, os.path.abspath(__file__), "--inner", part, "--root", ctx.root,
-               "--out", ctx.out, "--grace", f"{ctx.grace:g}"]
+               "--out", ctx.out, "--grace", f"{ctx.grace:g}", "--table-digest", digest]
         if source != "builtin":
             cmd += ["--table", source]
         for name in args.skip or ():
@@ -875,6 +945,11 @@ def run_outer(args, steps: list, source: str, ctx: Context, hr: dict) -> int:
             hr["waited_seconds"] = round(inner_started - launched, 1)
         why = (f"heavy-run call timed out after {budget:g}s (slot wait included)" if timed_out
                else note or f"heavy-run call ended rc={rc}")
+        if rc == EXIT_USAGE and not timed_out and not note:
+            # The inner runner refused (e.g. the table changed): say why.
+            tail = _log_tail(os.path.join(ctx.out, "logs", "heavy-run.log"))
+            if tail:
+                why = f"{why} ({tail})"
         for step in inner_steps:
             res = recorded.get(step.name)
             if res is None:
@@ -1190,6 +1265,7 @@ def parse_args(argv):
     ap.add_argument("--heavy-timeout", type=_duration, default=None,
                     help="seconds for the whole heavy-run call (default: from the step timeouts)")
     ap.add_argument("--inner", metavar="PART_JSON", help=argparse.SUPPRESS)
+    ap.add_argument("--table-digest", help=argparse.SUPPRESS)
     return ap.parse_args(argv)
 
 
@@ -1197,6 +1273,12 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     try:
         steps, source = load_table(args.table, os.path.abspath(args.root))
+        digest = table_digest(steps)  # the full table, before --only
+        if args.inner and args.table_digest != digest:
+            raise Refusal("--inner: table changed since the outer runner validated it "
+                          f"(outer {args.table_digest or 'none given'}, inner {digest})"
+                          if args.table_digest else
+                          "--inner needs --table-digest (no unchecked table is run)")
         names = {s.name for s in steps}
         unknown = sorted(set(args.skip or ()) - names) + sorted(set(args.only or ()) - names)
         if unknown:
@@ -1230,7 +1312,7 @@ def main(argv=None) -> int:
     ctx = Context(root, out, args.grace, set(args.skip or ()))
     hr = {"mode": mode, "path": path, "launched": False, "rc": None, "waited_seconds": None,
           "note": "uncapped" if mode == "absent" else None}
-    return run_outer(args, steps, source, ctx, hr)
+    return run_outer(args, steps, source, ctx, hr, digest)
 
 
 if __name__ == "__main__":
