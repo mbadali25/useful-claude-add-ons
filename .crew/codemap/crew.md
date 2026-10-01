@@ -1170,17 +1170,17 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   `_outside_refresh_artifacts` (`plugin/crew/hooks/scripts/completion_audit.py:177-187`)
   drops every refresh-artifact path when the approval is current and none
   otherwise. JUDGEMENT: T-0094 (crew 1.0.78) ships the narrower judgement,
-  `artifact_verdicts` (`plugin/crew/hooks/scripts/crew_refresh_check.py:970`), and
+  `artifact_verdicts` (`plugin/crew/hooks/scripts/crew_refresh_check.py:1013`), and
   the owner split its wiring into the audit off to L-0540 on 2026-09-30 (a
   harness change lands alone, `scripts/check-tooling-pr.py`), so until L-0540
   lands nothing in the hooks calls it. It answers True / False / None per
   changed artifact. A `True` needs a changed path to reach the artifact
   through its BASE copy's citations (reach = every path changed since the base,
   release bookkeeping dropped except `ADMISSION_BOOKKEEPING`, a plugin
-  manifest, `:264` and `:988-997` in `crew_refresh_check.py`; the graph's code
+  manifest, `:264` and `:1031-1040` in `crew_refresh_check.py`; the graph's code
   test reads the whole reach) and a re-anchor or regeneration shape: a map's
   `anchor:` moved forward from the base copy's anchor to a commit behind HEAD
-  (`_map_verdict` `:802`, `_sha_moved` `:557`, `_moved_from` `:615`: an
+  (`_map_verdict` `:845`, `_sha_moved` `:557`, `_moved_from` `:615`: an
   unchanged anchor text never moved, an anchor added to a base copy with none
   did not move either (review round 3), a base anchor git cannot resolve is
   could-not-tell, a base anchor `cat-file` cannot find counts as moved only
@@ -1188,27 +1188,27 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   carries that prefix - an ambiguous short anchor is could-not-tell -, one on HEAD's history must be behind the new one), INDEX rows
   of admitted maps only, deleted lines included, read from `git diff -U0
   <base> -- INDEX.md` so a changed terminator or a BOM counts
-  (`_index_verdict` `:839`, `_diff_lines` `:816`, since review round 3), a
-  diagram's provenance sha moved the same way (`_diagram_verdict` `:863`), a
+  (`_index_verdict` `:882`, `_diff_lines` `:859`, since review round 3), a
+  diagram's provenance sha moved the same way (`_diagram_verdict` `:906`), a
   rendered file beside an admitted same-stem source, its extension compared
-  case-folded (`_rendered_verdict` `:1029`, review round 4), a rule
+  case-folded (`_rendered_verdict` `:1072`, review round 4), a rule
   whose bytes equal `crew_instructions.expected_rules`, or whose blob git would
-  store does (`_rule_verdict` `:882`, `_stored_blob` `:922`: a CRLF checkout
+  store does (`_rule_verdict` `:925`, `_stored_blob` `:965`: a CRLF checkout
   under `core.autocrlf` passes, a CRLF or BOM rewrite does not, since review
   round 3; a rule file that exists but cannot be read is could-not-tell before
   any comparison, in `_on_disk`, since review round 2), the graph after a code
-  change (`_graph_verdict` `:1051`). `None` (`COULD_NOT_TELL`, `:491`) never
+  change (`_graph_verdict` `:1094`). `None` (`COULD_NOT_TELL`, `:491`) never
   admits. Since review round 5 whether the config, a rule or a map exists is
   `_present` (`:340`), lstat's errno rather than `os.path.lexists`: only
   ENOENT or ENOTDIR is absent, and a directory the hook user cannot search is
   could-not-tell (`_read_config` `:313`, `_texts` `:667`). Since review round 6
   every kind that reads or admits a working-tree file first asks `_on_disk`
-  (`:743`): a deleted file, a symlink at the path or along its dirs, a git mode
+  (`:786`): a deleted file, a symlink at the path or along its dirs, a git mode
   different from the base copy's (`git diff --raw`, which is why INDEX.md's
   own mode branch is gone) or a 120000/160000 stage entry is refused; and the
   kind comes from the most specific artifact dir holding the path (`_claims`
-  `:934`, `_kind` `:943`), two equally specific ones being could-not-tell. Since review round 7 `_on_disk`
-  judges the bytes `_read_regular` (`:687`) read once through a descriptor opened with
+  `:977`, `_kind` `:986`), two equally specific ones being could-not-tell. Since review round 7 `_on_disk`
+  judges the bytes `_read_regular` (`:719`) read once through a descriptor opened with
   `O_NOFOLLOW` at every component, before any git call; an ambiguous new anchor is
   could-not-tell, and `_base_text` (`:530`) looks the base copy up with `git ls-tree`.
   With no current approval nothing is exempt.
@@ -1456,8 +1456,8 @@ exit 6) and the reviewer's rerere block are L-0526; until then the train is advi
   above.
 - `plugin/crew/hooks/scripts/crew_resume.py:668` — `decide`, read-only;
   `main()` is the `decide` / `record` / `precompact` CLI.
-- `plugin/crew/hooks/scripts/crew_refresh_check.py:1263` — `ticket_freshness`,
-  the library entry point; `main()` at `:1363`; `artifact_verdicts` at `:970`,
+- `plugin/crew/hooks/scripts/crew_refresh_check.py:1306` — `ticket_freshness`,
+  the library entry point; `main()` at `:1406`; `artifact_verdicts` at `:1013`,
   the admission judgement (T-0094) that L-0540 wires into the audit.
 - `plugin/crew/hooks/scripts/crew_autopilot.py:559` — `next_phase`, read-only;
   `main()` at `:1635` is the `next` / `resume` / `settings` / `stops` /
@@ -3343,3 +3343,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `328fdf4a` (main) / `3bb32980` (T-0040-land) -> `a54ca704` on 2026-09-30 (T-0040-land's merge of origin/main `844bfc36`, T-0028 landed as crew 1.0.85).** The merge note above names every citation the merge re-took; nothing else moved. No suite was executed for this note beyond the merge's.
 
 **Merged `0c3508e9` (main) + `a54ca704` (T-0040-land) on T-0040-land, 2026-10-01 (merge of origin/main `66651b69`: L-0520 PR 1 #287, the merge train, landed as crew 1.0.86; anchored at that main tip).** Four hunks of this file conflicted: the anchor, the verify-rule list, the gate-record reader citations and the provenance tail. Both sides' provenance is kept, main's first. Re-taken on the merged tree: `.crew/verify.json` by `json.load` index and by line - L-0520's merge train rule 37 `:385`, T-0087's harness rule 38 `:386-411`, T-0028's Kimi rule 39 `:412-425` and T-0040's shell-route rule 40 `:427-432`, the last; `plugin/crew/hooks/scripts/review_prompt.py:173` (main's position; T-0040 does not touch the file) and `plugin/crew/hooks/scripts/crew_status.py:155` (T-0040's +1 import; main does not touch the file), both the `verify_record.read_record` call, with `grep -n`. Every `path:line` either side added into a file only the other side changed was mapped through a line diff onto the merged tree; outside dated provenance none moved. No suite was executed for this note beyond the merge's.
+
+**Merged `66651b69` -> `0c0275e8` on T-0040-land, 2026-10-01 (origin/main after W-0116 #292, crew 1.0.89; a clean merge with rerere off).** `git diff --name-only 66651b69 0c0275e8` returns, outside release bookkeeping, `plugin/crew/hooks/scripts/crew_refresh_check.py` (W-0116: `_win_final_path` and `_FINAL_PATH` new after `:686`, `_read_regular`'s docstring and its Windows final-path check; +43 lines below `:713`) and `plugin/crew/tests/test_refresh_admission.py`. This map's citations into `crew_refresh_check.py` that held at `66651b69` and sat below the insertion were moved and each re-read against the symbol it names: `artifact_verdicts` `:1013`, the reach lines `:1031-1040`, `_map_verdict` `:845`, `_diff_lines` `:859`, `_index_verdict` `:882`, `_diagram_verdict` `:906`, `_rule_verdict` `:925`, `_stored_blob` `:965`, `_claims` `:977`, `_kind` `:986`, `_rendered_verdict` `:1072`, `_graph_verdict` `:1094`, `_on_disk` `:786`, `_read_regular` `:719`, `ticket_freshness` `:1306`, `main` `:1406`. W-0116's Windows final-path check is not described here. Five positions in the CLI paragraph above (`RELEASE_BOOKKEEPING` `:238`, `:207-209`, `_named_behind` `:1053`, `_unconfirmed` `:1070`, `ticket_freshness` `:1092`) were already behind at `66651b69` and are left as found. Anchor kept at `66651b69`. No suite was executed for this note.
