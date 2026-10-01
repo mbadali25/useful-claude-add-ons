@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.105: T-0040's shell-route sabotage mutations (W-0115)
+### Added — `crew` 1.0.106: T-0040's shell-route sabotage mutations (W-0115)
 
 T-0040 (crew 1.0.98) shipped `crew_shell.py` without its sabotage entries, which were split out
 because `scripts/check-tooling-pr.py` (rule 36) lets a harness change carry no feature work. This
