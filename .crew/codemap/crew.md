@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@083cda66
+anchor: useful-claude-add-ons@908c03af
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -3286,3 +3286,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `7ecbdc7f` -> `a9c0d9ab` on 2026-09-30 (L-0516: pylint R1732 fix in test_poll_fixtures.py (with-blocks, no line this map cites moves) and crew re-bumped to 1.0.92; version files, CHANGELOG heading and the two version sentences in place).**  No suite was executed for this note.
 
 **Re-anchored `a9c0d9ab` -> `083cda66` on 2026-10-01 (L-0516 merges main `64b04c6b` (W-0116 #292: `crew_refresh_check.py` gains the Windows `_FINAL_PATH` check, `test_refresh_admission.py` two Windows premises; runner-autostart.yml) and crew re-bumped to 1.0.93; version files, CHANGELOG heading and the two version sentences in place).** `git diff --name-only a9c0d9ab 083cda66` over this map's cited paths names `plugin/crew/hooks/scripts/crew_refresh_check.py` (three hunks at old `:684-717`, everything from old `:687` down moved +32, from old `:743` down +43): each citation in the refresh-check section and the entry-point list re-read with `grep -n` and moved onto the same line text; `_named_behind`, `_unconfirmed` and `ticket_freshness` in that section were already stale at a9c0d9ab and now read `:1267`, `:1284`, `:1306`; the W-0116 `_FINAL_PATH` clause added. The history sections keep their own anchors' numbers.  No suite was executed for this note.
+
+**Re-anchored `083cda66` -> `908c03af` on 2026-10-01 (L-0516 review round 1 fixes: `poll_until` reads the clock before each probe after the first, `test_poll_fixtures.py` reaps its children with `wait(timeout=10)`, CHANGELOG corrected; crew re-bumped to 1.0.97; version files, CHANGELOG heading and the two version sentences in place).** `git diff --name-only 083cda66 908c03af` over this map's cited paths: no cited line moved.  No suite was executed for this note.
