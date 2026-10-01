@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.109: `rules` says when it generates from a code map whose anchor needs re-check (T-0501)
+### Changed — `crew` 1.0.114: `rules` says when it generates from a code map whose anchor needs re-check (T-0501)
 
 - **What changed.** `crew_instructions.py rules` and `rules --check` print, after
   the `wrote`/`stale:`/`missing:`/`orphan:`/`hand-written` lines, one advisory line
@@ -19,8 +19,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   above)` or ` - rules match the code map; anchors not checked (no git HEAD)`.
   `scripts/check_instructions.py`'s drift parser drops the three
   `ANCHOR_ADVISORY_PREFIXES` so an anchor line is never quoted as drift.
-  `.crew/verify.json` gains rules 42 (the generator's pytest suites, which no
-  rule reached before) and 43 (`scripts/_test/instruction-budgets.py`).
+  `.crew/verify.json` gains rules 43 (the generator's pytest suites, which no
+  rule reached before) and 44 (`scripts/_test/instruction-budgets.py`).
 - **Why.** aws-ops follow-up report item 14: `rules` wrote 8 `.claude/rules/*.md`
   while the session-start hook reported 4 of those subsystems' anchors as needing
   re-check, and neither `rules` nor `rules --check` said so; `/crew:migrate`'s
@@ -28,14 +28,14 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Unchanged.** The classifier is SessionStart's own (`anchor_state` with
   `rev-parse --short=8 HEAD`), so the two surfaces name the same notes. The
   generated rule bytes, `render_rule` and `rule_digest` (the state is printed,
-  never rendered in, so rule 24's sync check keeps its fixpoint); exit codes (1 =
+  never rendered in, so rule 25's sync check keeps its fixpoint); exit codes (1 =
   drift only); `rules()`'s return contract; `agents` and `codex` output. No flag,
   no strict mode. A note that yields no rule file is not reported by `rules`.
 - **Docs.** `/crew:migrate` preview and apply and `/crew:onboard` step 6 say what
   the lines mean and what to do (`/crew:onboard --refresh <subsystem>` and re-run,
   or record it); the memory-and-obsidian guide's path-scoped-rules bullet, rebuilt
   to HTML, DOCX and PDF with LibreOffice; `.crew/codemap/crew.md` and
-  `verification-harness.md`; rule 24's `why`.
+  `verification-harness.md`; rule 25's `why` (the `.claude/rules/` sync rule).
 - **Sabotage.** Two entries in `plugin/crew/tests/sabotage_context.py`, each run by
   hand through `sabotage.py`'s `apply_mutation`/`run_test`/`restore` against the
   tracked file and confirmed RED, the file restored to its HEAD blob after each:
@@ -46,7 +46,42 @@ All notable changes to this repository are documented here. Format follows [Keep
   A third, by hand: dropping `check_instructions.py`'s prefix filter reds three
   `instruction-budgets.py` cases, `edited-behind`'s "exactly one problem and no
   'anchor' line" among them.
-- Bumped `1.0.106 -> 1.0.109` (1.0.62, then 1.0.70, then 1.0.106 on its branch; re-set after merging main's 1.0.106, W-0115; 1.0.107 and 1.0.108 are claimed by the T-0504 and L-0510 lanes).
+- Bumped `1.0.110 -> 1.0.114` (1.0.62, 1.0.70, 1.0.106 and 1.0.109 on its branch; re-set after merging main's 1.0.110, L-0516; 1.0.111-1.0.113 are claimed by the L-0557/W-0117, L-0510 and T-0504 lanes).
+
+### Fixed — `crew` 1.0.110: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516)
+
+- **New `tests/poll_fixtures.py`.** `poll_until(probe, done, timeout)` probes at least once and
+  returns the LAST probed value at the deadline, never a synthesized success, so a real survivor
+  still fails the caller's assertion. `wait_for_pidfile(path)` waits for a decimal pid, not just
+  for the file: a shell redirect creates or truncates the file before it writes (POSIX XCU
+  2.7.2), and a tight reader saw it existing but empty in 389 of 500 reads.
+- **The ps1 survivor test** (`test_the_ps1_probe_timeout_kills_the_launchers_child_too`) polls
+  for survivors up to 10 s instead of sleeping 0.5 s once, which failed in CI on 2026-09-30 with
+  one survivor. Both survivor tests now use a per-call `uuid4` token, because `tmp_path.name` is
+  identical in every pytest process and two CI legs on one host could read or reap each other's
+  child through `/proc`.
+- **The three `test_kill_process_group_*` pidfile reads** go through `wait_for_pidfile`.
+- **Three tests that time themselves are now `wallclock`** (serial), with their bounds unchanged:
+  `test_a_winner_killed_after_exit_0_does_not_cost_the_only_emission`,
+  `test_the_twin_stands_down_as_soon_as_the_winner_reports_sent` and
+  `test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay`.
+- **The sabotage entries ride separately** (L-0563, a tooling PR: `sabotage_qa.py` is review/gate
+  harness, which lands alone). Measured here by hand and through a filtered `sabotage.py` run, all
+  four RED: `poll_until` probing once, `poll_until` reporting success at the deadline,
+  `wait_for_pidfile` accepting an empty file, and `completion-audit.ps1`'s tree kill reduced to
+  `Kill($false)`.
+- A `.crew/verify.json` rule covers the new module; `crew-qa-standards` `harness.md` H3 now says
+  a fixed sleep before a check is a poll case, not a wallclock case.
+- No change needed: `test_check_writes_nothing` (its maintenance-lock race was fixed by the
+  1.0.64 git pins).
+- **Not fixed here: `test_near_deadline_candidates_then_a_hang_stay_within_the_hook_timeout`.**
+  It is already `wallclock` (since 1.0.63) and still fails under load: 5 of 20 serial
+  `-m wallclock` runs, with the ps1 probe at 10.00-10.19 s against its 10 s hook bound, and the
+  same 5 of 20 on origin/main. The bound is a real hook timeout, so it is neither loosened nor
+  retried; the overrun is carried by follow-up L-0566 (owner decision 2026-10-01).
+- `poll_until` reads the clock after each sleep and before the next probe, so no probe starts
+  after the deadline and a condition first seen late is not returned as success. The child-process
+  tests kill and reap with `wait(timeout=10)`, not `Popen.__exit__`'s unbounded `wait()`.
 
 ### Added — `crew` 1.0.106: T-0040's shell-route sabotage mutations (W-0115)
 
