@@ -69,8 +69,8 @@ is reported as `stale?: <evidence>` and never released automatically:
 MERGE BASE, THEN GATE. `acquire` refuses (`merge <base> first`) while the base
 holds commits not in HEAD that touch this ticket's Touch, so the gate verdict
 covers the tree that lands. `catch-up` is the one catch-up: `git -c
-rerere.autoupdate=false merge --no-edit <base>`, never a rebase or
-cherry-pick, after making `rerere.enabled` true in this worktree (`git config
+rerere.autoupdate=false merge --no-edit <sha>` (the SHA the fetch returned,
+not `<base>` by name), never a rebase or cherry-pick, after making `rerere.enabled` true in this worktree (`git config
 --worktree` when `extensions.worktreeConfig` is already on, else `--local`;
 never `--global`, never switching the extension on). It never writes
 `rerere.autoupdate` (owner, 2026-09-30) and never commits a conflicted or
@@ -84,7 +84,8 @@ gate.
 LAND. `check-land` requires, in order: the train readable; this worktree's
 entry holding; the base fetched (`+refs/heads/<branch>:refs/remotes/<remote>/
 <branch>`, and the base must then name FETCH_HEAD's commit, else could not
-tell); `git merge-tree --write-tree <base> HEAD`
+tell; every later step judges that SHA, never `<base>` by name, since another
+worktree's fetch can move the shared ref); `git merge-tree --write-tree <sha> HEAD`
 clean (exit 1 lists the conflicted paths; anything else, e.g. a git older than
 2.38, is could not tell); the base not moved in Touch paths since HEAD's
 merge-base with it (moved only outside Touch is allowed and said); a current
@@ -583,8 +584,8 @@ def _event_problem(event):
 def read_events(root, after=0):
     """(events with seq > after, problems). An unparseable line, or a valid
     JSON line without an event's shape (L-0558), is named, never silently
-    dropped and never handed to a reader that would index a missing field;
-    a malformed record with a readable seq <= after was already reported."""
+    dropped and never handed to a reader that would index a missing field,
+    whatever its seq."""
     path = _events_path(root)
     try:
         text = _read_file(path)
@@ -602,12 +603,13 @@ def read_events(root, after=0):
             problems.append(f"{path}:{number} does not parse")
             continue
         problem = _event_problem(event)
-        seq = event.get("seq") if isinstance(event, dict) else None
         if problem:
-            if not _count(seq) or seq < 1 or seq > after:
-                problems.append(f"{path}:{number} is not a train event ({problem})")
+            # Whatever its seq (L-0558 review round 2): a malformed record at
+            # or below `after` is still malformed shared history, reported on
+            # every read until someone repairs the file.
+            problems.append(f"{path}:{number} is not a train event ({problem})")
             continue
-        if seq > after:
+        if event["seq"] > after:
             found.append(event)
     return found, problems
 
@@ -1033,14 +1035,25 @@ def _remote_of(top, base):
     return (head, branch) if branch and head in remotes else (None, None)
 
 
-def _fetch(top, base):
-    """Fetch `<remote>/<branch>` INTO the ref judged. A bare `git fetch
-    <remote> <branch>` updates only FETCH_HEAD when `remote.<remote>.fetch`
-    is unset, leaving `<base>` stale (L-0558), so the refspec is explicit;
-    then `<base>` must name the commit FETCH_HEAD does, or could not tell."""
+def _base_sha(top, base):
+    return _git_ok(top, "rev-parse", "--verify", "--end-of-options", f"{base}^{{commit}}").strip()
+
+
+def _fetch(top, base, fetch=True):
+    """(line, sha): the commit every later step judges. Fetches
+    `<remote>/<branch>` INTO the ref judged: a bare `git fetch <remote>
+    <branch>` updates only FETCH_HEAD when `remote.<remote>.fetch` is unset,
+    leaving `<base>` stale (L-0558), so the refspec is explicit; then `<base>`
+    must name the commit FETCH_HEAD does, or could not tell. The SHA is
+    returned and used from then on, never `<base>` by name again: another
+    worktree's fetch can move the shared remote-tracking ref at any moment
+    (L-0558 review round 2). A local base, or `fetch=False`, is resolved
+    once, here."""
+    if not fetch:
+        return f"{base}: not fetched (--no-fetch)", _base_sha(top, base)
     remote, branch = _remote_of(top, base)
     if not remote:
-        return f"{base} is local; not fetched"
+        return f"{base} is local; not fetched", _base_sha(top, base)
     refspec = f"+refs/heads/{branch}:refs/remotes/{remote}/{branch}"
     code, out, err = _git(top, "fetch", "--quiet", remote, refspec)
     if code != 0:
@@ -1058,7 +1071,7 @@ def _fetch(top, base):
         raise TrainError(f"could not tell: {base} is {shas[1][:12]} after git fetch {remote} "
                          f"{refspec}, but FETCH_HEAD is {shas[0][:12]}; the ref judged is not the "
                          "one fetched")
-    return f"fetched {remote} {branch} into {base} ({shas[0][:12]})"
+    return f"fetched {remote} {branch} into {base} ({shas[0][:12]})", shas[0]
 
 
 def _append_merge_log(root, ticket, row):
@@ -1083,13 +1096,13 @@ def catch_up(root, ticket, base=None, fetch=True, lane=None):
     if dirty:
         return EXIT_REFUSED, ["working tree is dirty; commit or stash first:"] + \
             ["  " + d for d in dirty[:20]]
-    lines = [_fetch(top, base) if fetch else f"{base}: not fetched (--no-fetch)"]
+    line, base_sha = _fetch(top, base, fetch)
+    lines = [line]
     scope = ensure_rerere(top)
     lines.append(f"rerere.enabled is true ({scope}); crew never sets rerere.autoupdate, and "
                  "this merge runs with it off")
     head_before = _head(top)
-    base_sha = _git_ok(top, "rev-parse", f"{base}^{{commit}}").strip()
-    code, out, err = _git(top, "-c", "rerere.autoupdate=false", "merge", "--no-edit", base)
+    code, out, err = _git(top, "-c", "rerere.autoupdate=false", "merge", "--no-edit", base_sha)
     unknown = None
     conflicted = replayed = forgotten = None
     try:
@@ -1122,7 +1135,7 @@ def catch_up(root, ticket, base=None, fetch=True, lane=None):
         "head_before": head_before, "base": base, "base_sha": base_sha, "outcome": outcome,
         "conflicted": conflicted, "rerere_replayed": replayed, "rerere_forgotten": forgotten,
         "rerere_config": scope})
-    lines.append(f"catch-up {outcome}: git merge --no-edit {base} ({base_sha[:12]})")
+    lines.append(f"catch-up {outcome}: git merge --no-edit {base_sha[:12]} (the {base} fetched)")
     if unknown:
         lines.append(f"  could not tell what the merge left: {unknown}; inspect the worktree "
                      "(git status) before anything else")
@@ -1233,14 +1246,15 @@ def check_land(root, ticket, base=None, pr=None, fetch=True):
     # HEAD is read ONCE, before any check, and every check below judges it;
     # the final step refuses if HEAD moved meanwhile (GEN-03).
     head = _head(top)
-    lines = [_fetch(top, base) if fetch else f"{base}: not fetched (--no-fetch)"]
-    conflicts = _merge_tree(top, base)
+    line, base_sha = _fetch(top, base, fetch)
+    lines = [line]
+    conflicts = _merge_tree(top, base_sha)
     if conflicts:
         return EXIT_REFUSED, lines + [f"merge-tree: HEAD conflicts with {base} in: "
                                       f"{', '.join(conflicts)}",
                                       f"  run crew_train.py catch-up --ticket {ticket}, "
                                       "resolve, gate the merged head, then check-land again"]
-    behind, moved = _moved_paths(top, base)
+    behind, moved = _moved_paths(top, base_sha)
     in_touch = [p for p in moved if meets_touch(p, entry.get("touch"))]
     if in_touch:
         return EXIT_REFUSED, lines + [f"{base} moved in Touch paths since HEAD's merge-base: "

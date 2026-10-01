@@ -1115,3 +1115,54 @@ def test_catch_up_leaves_a_modify_delete_version_file_conflicted(repo, capsys):
     row = _merge_log(repo, "T-1")[-1]
     assert code == 1 and row["outcome"] == "conflicted", out
     assert "CHANGELOG.md" in row["conflicted"] and row["rerere_forgotten"] == [], row
+
+
+# --- L-0558 review round 2 (codex) ------------------------------------------------------------
+
+def _fetch_then_rewind(monkeypatch, top, old):
+    """The reviewer's repro: the fetch succeeds, then another worktree moves
+    the shared remote-tracking ref back before the caller uses it."""
+    real = crew_train._fetch  # pylint: disable=protected-access
+
+    def rewound(*args, **kwargs):
+        result = real(*args, **kwargs)
+        git(top, "update-ref", "refs/remotes/origin/main", old)
+        return result
+    monkeypatch.setattr(crew_train, "_fetch", rewound)
+
+
+def test_check_land_judges_the_fetched_sha(repo, capsys, monkeypatch, tmp_path):
+    lane, _moved, old = _remote_lane(repo, capsys, tmp_path)
+    _passing_verdict(monkeypatch)
+    _fetch_then_rewind(monkeypatch, lane, old)
+
+    code, out = _cli(capsys, lane, "check-land", "--ticket", "T-1", "--base", "origin/main")
+
+    assert code == 1 and "LAND_OK" not in out and "a.txt" in out, out
+
+
+def test_catch_up_merges_the_fetched_sha(repo, capsys, monkeypatch, tmp_path):
+    lane, moved, old = _remote_lane(repo, capsys, tmp_path)
+    _fetch_then_rewind(monkeypatch, lane, old)
+
+    code, out = _cli(capsys, lane, "catch-up", "--ticket", "T-1", "--base", "origin/main")
+
+    assert code == 0, out
+    git(lane, "merge-base", "--is-ancestor", moved, "HEAD")  # raises unless merged
+    assert _merge_log(repo, "T-1")[-1]["base_sha"] == moved
+
+
+def test_malformed_event_at_a_consumed_seq_is_could_not_tell(repo, capsys):
+    _spec(repo, "T-1", ["a.txt"])
+    _spec(repo, "T-2", ["zz/only.txt"])
+    _arm(capsys, repo)
+    assert _cli(capsys, repo, "enqueue", "--ticket", "T-2")[0] == 0
+    assert _cli(capsys, repo, "acquire", "--ticket", "T-1")[0] == 0
+    assert _cli(capsys, repo, "status")[0] == 0
+    path = os.path.join(crew_train.train_dir(str(repo)), "events.jsonl")
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write('{"seq": 1, "kind": "bogus", "ticket": "T-1"}\n')
+
+    code, out = _cli(capsys, repo, "status")
+
+    assert code == 0 and "T-2: could not tell whether" in out and "events.jsonl:1" in out, out
