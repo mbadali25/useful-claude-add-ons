@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@44d3dbc6 on 2026-10-01. Verify before trusting.
+%% Generated from useful-claude-add-ons@5254bbfe on 2026-10-01. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -455,3 +455,7 @@ flowchart TB
 %% +31 above preflight) changed. rv3 now asks whether the final round has 0 BLOCK, and its edge to
 %% rcpt is the --auto-accept path or the owner's --accept. Citations mapped by difflib from
 %% 66651b69 to 963d2905 (/root/crew-tmp/l-0510/tools/remap.py, machine-local) and each re-read.
+%% Merged 490f4ec1 (L-0510) + 52489039 (main, T-0040 #290, crew 1.0.98) on L-0510-build, 2026-10-01
+%% (merge 58fc8da8, rerere off), re-anchored to 5254bbfe (crew 1.0.103): header and provenance conflicted,
+%% both provenance blocks kept, main's first; review.md / review_run.py citations (L-0510's) and implement.md / done.md / crew_refresh_check.py
+%% citations (main's) re-read on the merged tree with sed -n; each on the same text. No node or edge changed.
