@@ -107,7 +107,7 @@ def read_trace(tmp: str) -> dict:
 
 
 def run_gate(tmp: str, steps: list[dict] | None, *args: str, heavy: str = "none",
-             env_extra: dict | None = None, grace: str = "1"):
+             env_extra: dict | None = None, grace: str = "1", cwd: str | None = None):
     """Run the CLI on a fixture table. Returns (rc, stdout, status-or-None)."""
     root = os.path.join(tmp, "root")
     os.makedirs(root, exist_ok=True)
@@ -121,7 +121,7 @@ def run_gate(tmp: str, steps: list[dict] | None, *args: str, heavy: str = "none"
            if k not in ("HEAVY_RUN_NOCAP", "HEAVY_RUN_MEM", "HEAVY_RUN")}
     env["HEAVY_RUN"] = heavy
     env.update(env_extra or {})
-    proc = subprocess.run(argv, capture_output=True, text=True, env=env,
+    proc = subprocess.run(argv, capture_output=True, text=True, env=env, cwd=cwd,
                           stdin=subprocess.DEVNULL, timeout=CALL_TIMEOUT, check=False)
     status = None
     path = os.path.join(out, "status.json")
@@ -1218,6 +1218,286 @@ def case_cwd_rechecked_at_launch(tmp: str) -> None:
         expect(rc == 3, f"{label}: rc={rc}\n{out}")
 
 
+# ---- review round 4 (L-0513 successor plan) --------------------------------
+
+def _inner_part_heavy_run(sub: str, steps_doc: dict) -> str:
+    """A fake heavy-run that writes `steps_doc` as the inner part and exits 0."""
+    payload = write(os.path.join(sub, "payload.json"),
+                    json.dumps({"started": time.time(), "pid": 1, "steps": steps_doc}))
+    body = ('part=""; prev=""\n'
+            'for a in "$@"; do [ "$prev" = "--inner" ] && part="$a"; prev="$a"; done\n'
+            f'cp "{payload}" "$part"\n'
+            'exit 0\n')
+    return fake_heavy_run(sub, body)
+
+
+def case_heavy_part_state_contradicts_rc(tmp: str) -> None:
+    # BLOCK r4: a heavy-part SKIP was taken with any rc, so a step that exited 1
+    # and was filed as SKIP read SKIP and the run could exit 0. Neighbours: the
+    # SKIP and COULD-NOT-TELL results classify() and run_step() really give are
+    # still taken as they are (their payload reason survives).
+    def result(name, state, rc, reason):
+        return {"name": name, "rc": rc, "state": state, "reason": reason, "seconds": 0.0,
+                "log": "/nonexistent.log"}
+
+    refuse = [("SKIP", 1), ("SKIP", 0), ("SKIP", 137), ("SKIP", -9), ("SKIP", 2)]
+    allow = [("SKIP", 77), ("SKIP", None), ("COULD-NOT-TELL", None), ("COULD-NOT-TELL", 1),
+             ("COULD-NOT-TELL", 143), ("COULD-NOT-TELL", -9)]
+    rows = [(st, rc, False) for st, rc in refuse] + [(st, rc, True) for st, rc in allow]
+    for i, (state, rcv, taken) in enumerate(rows):
+        label = f"b1 {state} rc {rcv}"
+        sub = os.path.join(tmp, f"r{i}")
+        os.makedirs(sub)
+        doc = {"a1": result("a1", "PASS", 0, ""), "b1": result("b1", state, rcv, f"payload-{i}")}
+        hr = _inner_part_heavy_run(sub, doc)
+        rc, out, status = run_gate(sub, [sh_step("a1", "heavy", "exit 0", "A"),
+                                         sh_step("b1", "heavy", "exit 0", "B")], heavy=hr)
+        st = by_name(status)
+        expect(st["a1"]["state"] == "PASS", f"{label}: control a1 is {st['a1']}\n{out}")
+        if not taken:
+            expect(st["b1"]["state"] == "COULD-NOT-TELL",
+                   f"{label}: a contradicting result was taken as {st['b1']['state']}\n{out}")
+            expect(rc == 3, f"{label}: rc={rc}, expected 3\n{out}")
+            continue
+        expect(st["b1"]["state"] == state and st["b1"]["reason"] == f"payload-{i}",
+               f"{label}: a result run_step can give was not taken: {st['b1']}\n{out}")
+        expect(rc == (0 if state == "SKIP" else 3), f"{label}: rc={rc}\n{out}")
+
+
+def _cwd_fixture(tmp: str, label: str):
+    sub = os.path.join(tmp, label)
+    root, outside = os.path.join(sub, "r"), os.path.join(sub, "o")
+    os.makedirs(os.path.join(root, "sub"))
+    os.makedirs(outside)
+    return sub, root, outside
+
+
+def _swap_to(root: str, outside: str) -> None:
+    os.rename(os.path.join(root, "sub"), os.path.join(root, "sub.real"))
+    os.symlink(outside, os.path.join(root, "sub"))
+
+
+def _run_where(runner, sub: str, root: str, cwd: str) -> tuple:
+    where = os.path.join(sub, "where.txt")
+    step = runner.Step("w", "cheap", ("sh", "-c", f'pwd -P > "{where}"'), cwd=cwd)
+    ctx = runner.Context(root, os.path.join(sub, "out"), 1.0, set())
+    res = runner.run_step(step, ctx)
+    landed = None
+    if os.path.exists(where):
+        with open(where, encoding="utf-8") as fh:
+            landed = fh.read().strip()
+    return res, landed
+
+
+def case_cwd_swap_after_check_cannot_escape(tmp: str) -> None:
+    # FIX r4: containment was checked on a pathname that Popen then resolved
+    # again, so a symlink swapped in between sent the child outside --root.
+    # Neighbours: a swap after the directory is opened cannot redirect the
+    # child; no swap and an in-root symlink cwd still run.
+    if os.name == "nt" or not os.path.isdir("/proc/self/fd"):
+        raise Skip("the cwd binding needs /proc/self/fd (Linux)")
+
+    runner = load_runner()
+    sub, root, outside = _cwd_fixture(tmp, "pre-open")
+    checked = runner.contained_cwd
+
+    def swapping_check(r, c):
+        got = checked(r, c)
+        _swap_to(root, outside)
+        return got
+
+    runner.contained_cwd = swapping_check
+    res, landed = _run_where(runner, sub, root, "sub")
+    expect(landed is None or not landed.startswith(os.path.realpath(outside)),
+           f"pre-open swap: the child ran outside --root, in {landed}: {res}")
+    expect(res["state"] == "COULD-NOT-TELL" and "cwd" in res["reason"],
+           f"pre-open swap: {res}")
+
+    runner = load_runner()
+    sub, root, outside = _cwd_fixture(tmp, "post-open")
+    opener = getattr(runner, "_open_cwd", None)
+    expect(opener is not None, "post-open swap: the runner has no _open_cwd")
+
+    def swapping_open(r, c):
+        got = opener(r, c)
+        _swap_to(root, outside)
+        return got
+
+    runner._open_cwd = swapping_open  # pylint: disable=protected-access
+    res, landed = _run_where(runner, sub, root, "sub")
+    expect(res["state"] == "PASS" and landed == os.path.realpath(os.path.join(root, "sub.real")),
+           f"post-open swap: the child did not run in the checked directory: {landed} {res}")
+
+    runner = load_runner()
+    sub, root, _outside = _cwd_fixture(tmp, "no-swap")
+    res, landed = _run_where(runner, sub, root, "sub")
+    expect(res["state"] == "PASS" and landed == os.path.realpath(os.path.join(root, "sub")),
+           f"no swap: {landed} {res}")
+    os.symlink(os.path.join(root, "sub"), os.path.join(root, "lnk"))
+    res, landed = _run_where(runner, sub, root, "lnk")
+    expect(res["state"] == "PASS" and landed == os.path.realpath(os.path.join(root, "sub")),
+           f"in-root symlink cwd: {landed} {res}")
+
+
+def _git_repo(root: str) -> list:
+    git = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+    os.makedirs(root, exist_ok=True)
+    write(os.path.join(root, "a.txt"), "a\n")
+    for cmd in (["init", "-q"], ["config", "core.quotePath", "false"], ["add", "-A"],
+                ["commit", "-q", "-m", "fixture"]):
+        subprocess.run(git + cmd, cwd=root, check=True, capture_output=True,
+                       stdin=subprocess.DEVNULL, timeout=60)
+    return git
+
+
+def _dirty_runs(sub: str) -> list:
+    """(label, rc, out, status) with --out and with the default --out."""
+    step = [{"name": "c", "phase": "cheap", "argv": ["sh", "-c", "exit 0"]}]
+    runs = []
+    rc, out, status = run_gate(sub, step)
+    runs.append(("--out", rc, out, status))
+    tmpd = os.path.join(sub, "tmpd")
+    os.makedirs(tmpd)
+    table = write(os.path.join(sub, "table2.json"), json.dumps({"steps": step}))
+    env = {k: v for k, v in os.environ.items() if k != "HEAVY_RUN"}
+    env.update({"HEAVY_RUN": "none", "TMPDIR": tmpd})
+    proc = subprocess.run([sys.executable, TARGET, "--root", os.path.join(sub, "root"),
+                           "--table", table, "--grace", "1"], capture_output=True, text=True,
+                          env=env, stdin=subprocess.DEVNULL, timeout=CALL_TIMEOUT, check=False)
+    found = None
+    base = os.path.join(tmpd, "gate-runner")
+    for name in (os.listdir(base) if os.path.isdir(base) else []):
+        path = os.path.join(base, name, "status.json")
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as fh:
+                found = json.load(fh)
+    runs.append(("default --out", proc.returncode, proc.stdout + proc.stderr, found))
+    return runs
+
+
+def case_non_utf8_dirty_name_does_not_crash(tmp: str) -> None:
+    # FIX r4: `git status --porcelain` was decoded as UTF-8 text, so an untracked
+    # name holding byte 0xff raised before status.json existed. Neighbours: a
+    # tracked file modified is dirty too, and a clean repository is not.
+    if os.name == "nt":
+        raise Skip("bytes file names are POSIX only")
+    rows = []
+    sub = os.path.join(tmp, "untracked")
+    _git_repo(os.path.join(sub, "root"))
+    with open(os.path.join(os.fsencode(sub), b"root", b"bad\xff.py"), "wb") as fh:
+        fh.write(b"x = 1\n")
+    rows.append(("untracked bad name", sub, True))
+
+    sub = os.path.join(tmp, "tracked")
+    git = _git_repo(os.path.join(sub, "root"))
+    bad = os.path.join(os.fsencode(sub), b"root", b"bad\xff.py")
+    with open(bad, "wb") as fh:
+        fh.write(b"x = 1\n")
+    for cmd in (["add", "-A"], ["commit", "-q", "-m", "bad"]):
+        subprocess.run(git + cmd, cwd=os.path.join(sub, "root"), check=True,
+                       capture_output=True, stdin=subprocess.DEVNULL, timeout=60)
+    with open(bad, "ab") as fh:
+        fh.write(b"y = 2\n")
+    rows.append(("tracked bad name modified", sub, True))
+
+    sub = os.path.join(tmp, "clean")
+    _git_repo(os.path.join(sub, "root"))
+    rows.append(("clean", sub, False))
+
+    for label, sub, dirty in rows:
+        for how, rc, out, status in _dirty_runs(sub):
+            expect("Traceback" not in out, f"{label} ({how}): the runner crashed\n{out}")
+            expect(status is not None, f"{label} ({how}): no status.json\n{out}")
+            expect(status["dirty"] is dirty,
+                   f"{label} ({how}): dirty is {status['dirty']!r}, expected {dirty}\n{out}")
+            expect(rc == 0, f"{label} ({how}): rc={rc}\n{out}")
+
+
+def case_table_changed_mid_run_is_refused(tmp: str) -> None:
+    # FIX r4: the inner runner re-read --table after the cheap steps ran, so a
+    # cheap step that rewrote the file ran a different heavy command than the
+    # one the outer runner validated. Neighbours: a byte-identical rewrite still
+    # runs; a changed built-in step changes the digest; --inner refuses a
+    # digest that does not match, and refuses to run without one.
+    for label, changed in (("changed", True), ("identical", False)):
+        sub = os.path.join(tmp, label)
+        os.makedirs(sub)
+        flag = os.path.join(sub, "replaced.flag")
+        table = os.path.join(sub, "table.json")
+        h1 = sh_step("h1", "heavy", "exit 0", "A")
+        replacement = dict(h1, argv=["touch", flag]) if changed else h1
+        rewrite = {"name": "rw", "phase": "cheap", "argv": ["cp", os.path.join(sub, "next.json"),
+                                                            table]}
+        write(os.path.join(sub, "next.json"), json.dumps({"steps": [rewrite, replacement]}))
+        rc, out, status = run_gate(sub, [rewrite, h1])
+        st = by_name(status)
+        expect(st["rw"]["state"] == "PASS", f"{label}: fixture rewrite failed {st['rw']}\n{out}")
+        if changed:
+            expect(not os.path.exists(flag), f"changed: the replaced heavy command ran\n{out}")
+            expect(st["h1"]["state"] == "COULD-NOT-TELL" and "table changed" in st["h1"]["reason"],
+                   f"changed: h1 is {st['h1']}\n{out}")
+            expect(rc == 3, f"changed: rc={rc}\n{out}")
+        else:
+            expect(st["h1"]["state"] == "PASS" and rc == 0,
+                   f"identical: a byte-identical rewrite was refused: rc={rc} {st['h1']}\n{out}")
+
+    import dataclasses
+    runner = load_runner()
+    digest = getattr(runner, "table_digest", None)
+    expect(digest is not None, "the runner has no table_digest")
+    base = digest(list(runner.TABLE))
+    target = runner.TABLE[0]
+    for field, value in (("argv", target.argv + ("--x",)), ("cwd", "scripts"), ("timeout", 7),
+                         ("phase", "solo"), ("group", "A")):
+        edited = [dataclasses.replace(target, **{field: value})] + list(runner.TABLE[1:])
+        expect(digest(edited) != base, f"table_digest does not change with {field}")
+
+    sub = os.path.join(tmp, "by-hand")
+    os.makedirs(os.path.join(sub, "root"))
+    table = write(os.path.join(sub, "t.json"), json.dumps({"steps": [h1]}))
+    part = os.path.join(sub, "part.json")
+    for extra in (["--table-digest", "0" * 64], []):
+        if os.path.exists(part):
+            os.remove(part)
+        proc = subprocess.run([sys.executable, TARGET, "--inner", part, "--root",
+                               os.path.join(sub, "root"), "--out", os.path.join(sub, "out"),
+                               "--table", table, *extra], capture_output=True, text=True,
+                              stdin=subprocess.DEVNULL, timeout=CALL_TIMEOUT, check=False)
+        what = "a wrong digest" if extra else "no digest"
+        expect(proc.returncode == 2, f"--inner with {what}: rc={proc.returncode}\n"
+                                     f"{proc.stdout}{proc.stderr}")
+        recorded = {}
+        if os.path.exists(part):
+            with open(part, encoding="utf-8") as fh:
+                recorded = json.load(fh).get("steps", {})
+        expect(not recorded, f"--inner with {what} recorded steps: {recorded}")
+
+
+def case_relative_path_tool_is_made_absolute(tmp: str) -> None:
+    # FIX r4: _which returned a relative path for a relative PATH entry, and the
+    # child resolved it again against the step's cwd. Neighbours: `bin` without
+    # `./`, an empty PATH entry, and an absolute entry.
+    if os.name == "nt":
+        raise Skip("POSIX shebang fixture")
+    sh_dir = os.path.dirname(shutil.which("sh") or "/bin/sh")
+    for i, (label, entry, at) in enumerate((("./bin", "./bin", "bin"), ("bin", "bin", "bin"),
+                                            ("empty entry", "", "."),
+                                            ("absolute", None, "bin"))):
+        sub = os.path.join(tmp, f"p{i}")
+        root = os.path.join(sub, "root")
+        os.makedirs(os.path.join(root, "sub"))
+        tool = write(os.path.join(root, at, "tool"), "#!/bin/sh\nexit 0\n", 0o755)
+        path = (os.path.join(root, "bin") if entry is None else entry) + os.pathsep + sh_dir
+        step = {"name": "t", "phase": "cheap", "argv": ["tool"], "needs": ["tool"], "cwd": "sub"}
+        rc, out, status = run_gate(sub, [step], env_extra={"PATH": path}, cwd=root)
+        st = by_name(status)["t"]
+        got = st["argv"][0]
+        expect(st["state"] == "PASS", f"{label}: {st}\n{out}")
+        expect(os.path.isabs(got) and os.path.realpath(got) == os.path.realpath(tool),
+               f"{label}: recorded argv[0] {got!r}, expected {tool}\n{out}")
+        expect(rc == 0, f"{label}: rc={rc}\n{out}")
+
+
 CASES = [
     case_list_prints_phases,
     case_one_heavy_run_call_for_both_groups,
@@ -1260,6 +1540,11 @@ CASES = [
     case_ci_drift_wrong_yaml_shape_is_a_problem,
     case_timeout_grace_covers_grandchildren,
     case_cwd_rechecked_at_launch,
+    case_heavy_part_state_contradicts_rc,
+    case_cwd_swap_after_check_cannot_escape,
+    case_non_utf8_dirty_name_does_not_crash,
+    case_table_changed_mid_run_is_refused,
+    case_relative_path_tool_is_made_absolute,
 ]
 
 
