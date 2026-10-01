@@ -20,8 +20,8 @@ land, with the train not to be armed until they were fixed. All five, and the ow
 - **No state change commits unlogged.** Events are written before `state.json` and both are rolled
   back when either write fails (the events file truncated to its old size); the next seq skips
   past any event a crash left behind.
-- **Malformed state and history are could-not-tell.** Every top-level state field (`seq` and
-  `order` non-negative integers, never booleans; `entries`; `armed_at`, `armed_by`) is checked at
+- **Malformed state and history are could-not-tell.** Every top-level state field (`schema` the
+  integer 1, never `true` or `1.0`; `seq` and `order` non-negative integers, never booleans; `entries`; `armed_at`, `armed_by`) is checked at
   load; an `events.jsonl` record that is not an object with a positive `seq`, a known `kind` and a
   `ticket` is told to every entry as `could not tell whether ... concerns you`, and `arm` refuses
   on it, instead of a `KeyError` or a silent skip.
@@ -32,7 +32,7 @@ land, with the train not to be armed until they were fixed. All five, and the ow
   left conflicted gets `git rerere forget` and its conflict markers back, is named as forgotten in
   the output, and is listed under `rerere_forgotten` in the merge log; a modify/delete conflict on
   one, which rerere never resolves, is left as the merge left it.
-- The sabotage rows proving these (S20-S29) belong to L-0526's `sabotage_train.py` (tooling PRs
+- The sabotage rows proving these (S20-S30) belong to L-0526's `sabotage_train.py` (tooling PRs
   carry no feature work); each was run RED by hand here.
 
 ### Added — `crew` 1.0.86: the merge train - gate+land serialised per overlapping Touch set (L-0520)

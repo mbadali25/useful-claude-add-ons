@@ -56,8 +56,8 @@ or "no holder". The lock is removed only while it still holds its owner's
 token; `arm` publishes a complete state.json with `os.link`. CLI values are
 checked before use: a ref (`--base`, `--merged`) may not start with `-`,
 `--pr` is digits, and no value carries a control character (exit 2). Every
-top-level state field a verb reads (`seq`, `order`, `entries`, `armed_at`,
-`armed_by`) is shape-checked at load, and every events.jsonl record (an object
+top-level state field a verb reads (`schema`, `seq`, `order`, `entries`,
+`armed_at`, `armed_by`) is shape-checked at load, and every events.jsonl record (an object
 with a positive integer `seq`, a known `kind`, a `ticket`); a malformed record
 is a `could not tell whether ... concerns you` notice to every entry, and
 `arm` refuses on it. Events are written BEFORE state.json, and both are rolled
