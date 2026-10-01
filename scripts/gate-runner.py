@@ -227,6 +227,8 @@ EXCLUDED_WORKFLOWS = (
     ("plugin-evals.yml", "real, billed model calls behind a repository secret"),
     ("publish-mcp-servers.yml", "tag-only npm publish; its npm test is mcp-servers.yml's"),
     ("runner-autostart.yml", "dispatches a start of the self-hosted runner host; checks nothing"),
+    ("verify-gate.yml", "runs verify-gate.sh --all on the self-hosted pool and uploads its receipt "
+                        "(L-0555); the lane's own gate is that same command, not a CI suite"),
 )
 # A step is excluded by its `if:` only when that condition confines it to a
 # leg this runner does not have. Whole jobs are never excluded: a job's legs
