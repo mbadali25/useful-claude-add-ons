@@ -110,6 +110,12 @@
       "version": "1.0.1"
     },
     {
+      "name": "mailgun",
+      "source": "./skills/mailgun",
+      "description": "Operate a Mailgun account through its API - send and receive email, read events, delivery reports and stats, and configure domains, routes, webhooks, templates, suppressions and lists.",
+      "version": "1.0.1"
+    },
+    {
       "name": "mermaid-svg-bitbucket",
       "source": "./skills/mermaid-svg-bitbucket",
       "description": "Pre-render Mermaid diagrams to committed SVG so they display correctly in Bitbucket Cloud.",
@@ -215,7 +221,7 @@
       "name": "crew",
       "source": "./plugin/crew",
       "description": "Virtual dev team for multi-repo legacy work - one interactive session owns a ticket from brainstorm through spec, plan, implement, tests, docs and review to done; 4 context-isolated agents (explorer, reviewer, security, researcher) plus on-demand stack skills, 36 slash commands, 31 bundled skills, and deterministic hooks: a budgeted context hook (on by default) that carries the handoff across a clear or compaction, plan-approval and scope guards with a completion audit, an opt-in cloud/destructive guard, and a verify gate that fails unverified turns. /crew:migrate carries a 0.20 setup forward.",
-      "version": "1.0.84"
+      "version": "1.0.91"
     },
     {
       "name": "gizmoduck",

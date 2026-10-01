@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@43d0efc8
+anchor: useful-claude-add-ons@0c3508e9
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -88,7 +88,7 @@ through their own package managers.
 - `scripts/install-prerequisites.ps1:1067-1094` — `$script:Catalog`, the
   Windows equivalent: same 26 keys in the same order (`Key`/`Default`/`Name`
   one per row), same defaults. DERIVED.
-- `scripts/install-prerequisites.sh:2743` — `install_web_testing`, the new
+- `scripts/install-prerequisites.sh:2745` — `install_web_testing`, the new
   merged row (see Landmines). PowerShell equivalent is inline under
   `Test-Selected 'web-testing'` (not a named function on that side — verified
   by `grep -n "'web-testing'" scripts/install-prerequisites.ps1`, one hit,
@@ -101,10 +101,10 @@ through their own package managers.
   at this anchor (see Landmines) — a stricter registration path used by the
   web-testing row that compares an existing registration's actual
   command/args against the required form, not just whether a name is taken.
-- `scripts/install-prerequisites.sh:2467` — `run_skill_preflights`, unchanged
+- `scripts/install-prerequisites.sh:2469` — `run_skill_preflights`, unchanged
   in behaviour (report-only, `</dev/null` stdin, UNCHECKED-not-absent
   wording all re-read and confirmed byte-identical in substance).  PowerShell
-  twin `Invoke-SkillPreflights` at `scripts/install-prerequisites.ps1:2103`.
+  twin `Invoke-SkillPreflights` at `scripts/install-prerequisites.ps1:2104`.
 - `scripts/_test/drift-detection.sh:21` / `:82` — unchanged (byte-identical
   since `5d1fc5fd`, closed by the per-path check, not re-read).
 - `scripts/_test/self-claims.py:1227` — `main()` (was `:1166`; file grew
@@ -114,11 +114,11 @@ through their own package managers.
   `count_crew_markdown_lines` counter live in `scripts/check-marketplace.py`
   and are consumed by `plugin/crew/BUDGETS.md:10`, outside this note's scope;
   `marketplace-registration.md` owns `check-marketplace.py`'s function map).
-- `scripts/install-prerequisites.sh:3355` / `:3506` — the `lsp-plugins` and
+- `scripts/install-prerequisites.sh:3357` / `:3506` — the `lsp-plugins` and
   `stack-tools` rows are dispatched as top-level `if is_selected "..."` blocks
   near the end of the script's execution flow, not named functions the way
   every other row is. PowerShell equivalents at
-  `scripts/install-prerequisites.ps1:2978` / `:3166`, same shape
+  `scripts/install-prerequisites.ps1:2979` / `:3166`, same shape
   (`if (Test-Selected '...')`). DERIVED; not read for internal behaviour
   beyond confirming both platforms dispatch on the same two keys.
 
@@ -160,7 +160,7 @@ through their own package managers.
   mcp add` (`:966`/`:968` inside `add_mcp_server`), `claude mcp get`
   (`:1015`, new), `claude mcp list` (`:905`). DERIVED.
 - Playwright, for the merged `web-testing` row
-  (`scripts/install-prerequisites.sh:2743-2839`,
+  (`scripts/install-prerequisites.sh:2745-2841`,
   `install_web_testing`): refuses if `node` is absent or older than
   20.19/22.12 (`:2744-2755`, an exact SemVer-ish parse of `node -v`, no
   install-or-upgrade attempt — told, not fixed); requires a `package.json` in
@@ -237,8 +237,8 @@ through their own package managers.
   `.claude-plugin/marketplace.json`'s `crew` description (parsed with
   `json.load`); `plugin/PLUGINS.md:17`; `plugin/README.md:414`'s crew row;
   `plugin/crew/README.md`; `PLUGIN_NAME`'s crew row in both install scripts
-  (`scripts/install-prerequisites.sh:1391`,
-  `scripts/install-prerequisites.ps1:1174`). Independently re-derived from the
+  (`scripts/install-prerequisites.sh:1393`,
+  `scripts/install-prerequisites.ps1:1175`). Independently re-derived from the
   filesystem rather than trusted: `ls plugin/crew/agents/*.md` = 4 (explorer,
   researcher, reviewer, security — no PM, no scribe: the roster cut this
   repo's own memory already names), `ls plugin/crew/commands/*.md` = 36,
@@ -269,25 +269,25 @@ through their own package managers.
   was made narrowly, for the one row that needed it, not generally.
 
 - **Nothing may bypass `pick_fit` / `Format-PickerLine`.**
-  `scripts/install-prerequisites.sh:1784-1793` and
-  `scripts/install-prerequisites.ps1:1410-1417`, re-read line by line, same
+  `scripts/install-prerequisites.sh:1786-1795` and
+  `scripts/install-prerequisites.ps1:1411-1418`, re-read line by line, same
   shape as the previous anchor: bash appends a one-character ellipsis and
   reserves 1; PowerShell appends `...` (three characters) and reserves 3,
   padding the result to `Width` — the comment at `:1412-1413` still records
   that reserving 1 there used to return `Width + 2`. The scroll indicator
   (`showing N-M of T`) still does not route through either clipper
-  (`scripts/install-prerequisites.sh:1832`,
-  `scripts/install-prerequisites.ps1:1488`) and is still bounded to a string
+  (`scripts/install-prerequisites.sh:1834`,
+  `scripts/install-prerequisites.ps1:1489`) and is still bounded to a string
   short enough not to wrap at the still-40-column floor
-  (`term_cols`, `scripts/install-prerequisites.sh:1706-1713`, the floor at
+  (`term_cols`, `scripts/install-prerequisites.sh:1708-1715`, the floor at
   `:1711`; `[Console]::WindowWidth -lt 40` inside `Test-PickerSupported` at
-  `scripts/install-prerequisites.ps1:1377`). JUDGEMENT, unchanged: route it
+  `scripts/install-prerequisites.ps1:1378`). JUDGEMENT, unchanged: route it
   through the clipper anyway if that string ever grows.
 
 - **`Test-PickerSupported` still refuses strictly more cases than bash's
   `picker_supported`,** re-read at this anchor
-  (`scripts/install-prerequisites.ps1:1371-1384` vs
-  `scripts/install-prerequisites.sh:1715-1724`): redirected input/output, no
+  (`scripts/install-prerequisites.ps1:1372-1385` vs
+  `scripts/install-prerequisites.sh:1717-1726`): redirected input/output, no
   `RawUI`, the PowerShell ISE (`ReadKey` throws there), and
   `WindowHeight < 10 || WindowWidth < 40` all refuse on the PowerShell side;
   bash refuses no-tty, no `stty`, `TERM=dumb`, and fewer than 10 lines, but
@@ -297,13 +297,13 @@ through their own package managers.
 
 - **The skill preflights are still REPORT-ONLY, unchanged in every particular
   this note checks.** `run_skill_preflights`
-  (`scripts/install-prerequisites.sh:2467`; PowerShell
-  `Invoke-SkillPreflights` at `scripts/install-prerequisites.ps1:2103`) still
+  (`scripts/install-prerequisites.sh:2469`; PowerShell
+  `Invoke-SkillPreflights` at `scripts/install-prerequisites.ps1:2104`) still
   runs each selected skill's own `preflight.py` with no `--install`, `</dev/null`
   on the bash side (load-bearing — an inherited console would turn a report
   into a prompt), and a missing interpreter is still reported as UNCHECKED,
-  not absent, verbatim (`scripts/install-prerequisites.sh:2481`,
-  `scripts/install-prerequisites.ps1:2114`).
+  not absent, verbatim (`scripts/install-prerequisites.sh:2483`,
+  `scripts/install-prerequisites.ps1:2115`).
 
 - **`ensure_uv`'s chain and memoisation are unchanged.** `UV_ENSURED`
   memoises across the three callers that need `uv`/`uvx`
@@ -333,9 +333,9 @@ through their own package managers.
   matching PowerShell row (`scripts/install-prerequisites.ps1:1092` area —
   confirmed by reading the `$script:Catalog` block, `:1067-1094`). Every
   `PLUGIN_STATE` entry is still filled to `1` by a loop
-  (`scripts/install-prerequisites.sh:1404-1406`); every PowerShell
+  (`scripts/install-prerequisites.sh:1406-1408`); every PowerShell
   `PluginCatalog` row's `Selected` is still `$true`
-  (`scripts/install-prerequisites.ps1:1174-1178`).
+  (`scripts/install-prerequisites.ps1:1175-1179`).
 
 - **`claude-memories-vault` / `claude-memories-canvas` are gone from both
   catalogs, replacing a landmine this note no longer needs to track.** Their
@@ -394,38 +394,6 @@ through their own package managers.
 - `skill_preflight_path` / `Get-SkillPreflightPath`'s recursive search for an
   installed skill's `preflight.py` was not re-read at this pass; no installed
   skill directory was inspected.
-
-## Re-anchor provenance - `f1ccd055` -> `43d0efc8`, 2026-09-30 (T-0505 merges main `6a8c60b1`, T-0099, crew 1.0.83)
-
-`git diff --name-only f1ccd055 43d0efc8` outside the refresh artifacts returns T-0099's `review_prompt.py` (+6 in `_bundle_block` from `:94`), its tests and sabotage entries, `CHANGELOG.md` (T-0099's entry, below T-0505's) and the version files (crew 1.0.84 on this branch, one past main's 1.0.83). The five `review_prompt.py` citations are exactly main's as T-0099 landed them; this merge did not re-derive them. No citation T-0505 owns moved. Nothing was executed for this note.
-
-## Re-anchor provenance - `e71ad41f` -> `f1ccd055`, 2026-09-30 (T-0505 merges main `42af3fb7`, L-0531, crew 1.0.82)
-
-`git diff --name-only e71ad41f f1ccd055` outside the refresh artifacts returns L-0531's `plugin/crew/tests/sabotage_qa.py` (+5 constants, +18 entries; no line of it is cited here), `.crew/verify.json` (rule 34 edited in place at `:365-373`, line count unchanged), `CHANGELOG.md` (L-0531's entry, below T-0505's; the `CHANGELOG.md` line citations keep main's numbers plus T-0505's 34) and the version files: crew is 1.0.83 on this branch, one past main's 1.0.82. No cited line moved. Nothing was executed for this note.
-
-## Re-anchor provenance - `17d0b1d2` -> `e71ad41f`, 2026-09-30 (T-0505 merges main `42d5ef58`, T-0094, crew 1.0.81)
-
-The merge took main's side of every code map, INDEX row and generated rule, then re-applied T-0505's own changes: its earlier provenance sections (kept verbatim below, describing their own anchors); rule 4 runs ten pytest files and names `_promote_tree.py`, now on the `promote-gate.ps1` line (`.crew/verify.json:97`) so no later rule moves and main's verify.json citations stand; `promote-gate.sh:79` is the plain `crew_py` call; promote-gate is not a `crew_config.py` user; crew is 1.0.82 on this branch (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`). T-0505's CHANGELOG entry (34 lines) sits above main's, so main's `CHANGELOG.md` line citations moved +34 (ten). Nothing was executed for this note.
-
-## Re-anchor provenance - `68659749` -> `7867e893`, 2026-09-30 (T-0505 pre-review hardening)
-
-`git diff --name-only 68659749 7867e893` returns `CHANGELOG.md` (one word, in place), both promote-gate flavours (the committed-map read is could-not-tell on any failure; the parser's output is UTF-8) and two test files. `promote-gate.sh:79` (the `crew_py` call) was re-read and has not moved; no other cited line moved. Nothing was executed for this note.
-
-## Re-anchor provenance - `da6c62c1` -> `68659749`, 2026-09-30 (T-0505 merges main `d1462bbd`, L-0529)
-
-`git diff --name-only da6c62c1 68659749` outside the refresh artifacts returns L-0529's files (four crew tests, `crew_fixtures.py`, obsidian-vault's probe test and plugin.json, now 0.4.15) and the version files, edited in place: crew is 1.0.82 on this branch past main's 1.0.80 (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`). L-0529's CHANGELOG entry adds 25 lines below T-0505's, so every `CHANGELOG.md` line citation here moved +25 (nine, all in history sections). No other cited line moved. Nothing was executed for this note.
-
-## Re-anchor provenance - `7c88bf3d` -> `401f6e0f`, 2026-09-30 (T-0505 promote-gate effective tree, after merging main `a7524aac`)
-
-`680e6783` merged origin/main `b601d450` (L-0521) on T-0087's side; this branch then carries T-0505 (`0a24dca4`..`2fd449a3`, `d1055b07`, `401f6e0f`) and `b5e5f73a`, its merge of origin/main `a7524aac` (T-0087 landed). T-0505 makes promote-gate (`.sh` and `.ps1`) judge the tree the deploy runs from - the payload `cwd`, a leading `cd` chain, git's global `-C` inside `$(...)`, parsed by a new `_promote_tree.py` - while the deployment map, the promotion log and the approval markers stay in the project dir; it adds two test files and a sabotage module (one import line in `sabotage.py`), rule 4's new path and test in `.crew/verify.json`, and promote docs (CHANGELOG +32 lines at the top, one CONFIG.md sentence +2, crew README, `promote.md`, INSTALLATION, PLUGINS, the troubleshooting guide, BUDGETS' count in place). crew stays 1.0.76 on this branch. A difflib re-map of every explicit `path:line` citation from `7c88bf3d` to `401f6e0f` moved none; BUDGETS' `:11` changed in place. No claim here describes promote-gate's tree resolution. Re-anchor only: nothing was executed for this note.
-
-## Re-anchor provenance - `401f6e0f` -> `6a44587f`, 2026-09-30 (T-0505)
-
-`git diff --name-only 401f6e0f 6a44587f` outside the refresh artifacts returns only `plugin/crew/tests/sabotage_promote.py`: two sabotage target ids wrapped under the line limit, no behaviour and no line this note cites. No citation moved. Nothing was executed for this note.
-
-## Re-anchor provenance - `38b220cf` -> `da6c62c1`, 2026-09-30 (T-0505 replayed onto main's maps after merging `549cda24`)
-
-`a8b00168` merged origin/main `549cda24` (T-0086, crew 1.0.77) and took main's side of every code map, INDEX, the generated rules and the graph, discarding this branch's `401f6e0f` / `6a44587f` refresh; `da6c62c1` then set crew 1.0.79, re-measured BUDGETS.md in place, renamed the T-0505 mutation module to `promote_tree_mutations.py` (not wired into `sabotage.py`) and reverted `sabotage.py` to main's. Main's note is the base here; T-0505's two earlier sections follow main's, kept as history, except that their `sabotage.py` claims (one new import line, citations +1) no longer hold: `sabotage.py` is identical to main's, so main's `sabotage.py` citations stand unchanged. A difflib re-map of every path-qualified `path:line` citation from `38b220cf` to `da6c62c1` moved `.crew/verify.json` citations +1 past rule 4's new path line, CONFIG.md +2 past T-0505's sentence (`:1644-1646`) and CHANGELOG.md +34 (T-0505's entry on top); version lines and in-place edits (marketplace.json, plugin.json, PLUGINS.md, BUDGETS.md, INSTALLATION.md) keep their numbers. No citation in this note moved. Nothing was executed for this note.
 
 ## Re-anchor provenance - `6c497a14` -> `f2bb919b`, 2026-09-25 (T-0015)
 
@@ -1374,3 +1342,42 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 **Re-anchored `65abeb8d` -> `1f21f73b` on 2026-09-30 (T-0094 review round 7: `902fb96a`..`91da43bc` code and tests, docs, guide rebuilt, crew 1.0.78 un-set and re-set as `1f21f73b`).** `git diff --name-only 65abeb8d 1f21f73b` returns `CHANGELOG.md`, `docs/guides/crew/crew-1.0-daily-workflow.docx`, `docs/guides/crew/crew-1.0-daily-workflow.html`, `docs/guides/crew/crew-1.0-daily-workflow.pdf`, `docs/guides/crew/src/daily-workflow-scope.md`, `plugin/crew/README.md`, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `plugin/crew/tests/test_refresh_admission.py`. No body citation in this map names a line that moved. No suite was executed for this note.
 
 **Re-anchored `1f21f73b` (T-0094) / main -> `17d0b1d2` on 2026-09-30 (T-0094 merges origin/main `d1462bbd`, L-0529 landed as crew 1.0.80 (#283), and re-sets crew 1.0.81 in the merge commit).** `git diff --name-only 79ef56c4 17d0b1d2`, refresh artifacts aside, returns `.claude-plugin/marketplace.json`, `CHANGELOG.md`, `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/README.md`, `plugin/crew/tests/crew_fixtures.py`, `plugin/crew/tests/test_context_watch_python_resolver.py`, `plugin/crew/tests/test_event_claim_crash_safety.py`, `plugin/crew/tests/test_path_link_farm.py`, `plugin/crew/tests/test_ps1_python_probe.py`, `plugin/obsidian-vault/.claude-plugin/plugin.json`, `plugin/obsidian-vault/hooks/scripts/_test/test_python_probe_proof.py`: main's L-0529 files plus the version statements. The merge's conflicts were version lines and the generated rules' stamps; main's body lines kept. No body citation moved (checked with `/root/crew-tmp/t-0094/cite_map_merge.py`, `MAIN_REV=origin/main`, `OURS_REV=79ef56c4`; its only flags are history positions in verification-harness.md's per-commit lists, left as written). No suite was executed for this note.
+
+## Re-anchor provenance - main `6a8c60b1` -> `c43a54c1`, 2026-09-30 (T-0028, feature half, crew 1.0.84)
+
+T-0028 (the Kimi Code provider, feature half after the owner's split; the review launch is L-0527)
+merged origin/main `6a8c60b1` (L-0531 #284 and T-0099 #278, crew 1.0.83) with rerere disabled, taking main's code
+maps. The branch differs from main only in the Kimi provider's feature files (`crew_state.py`,
+`crew_config.py` with the launch gate, `kimi_probe.py`, the templates, provider docs and tests,
+`.crew/verify.json`, the release files). This note is main's copy; every body citation into a
+changed file was mapped by a `difflib` line diff from `6a8c60b1` to `c43a54c1` with
+`/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local), each moved citation landing on the
+same line text. T-0028's earlier branch provenance is in git history. Re-anchor
+only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
+
+## Re-anchor provenance - `c43a54c1` -> `f4adf923`, 2026-09-30 (T-0028 re-sets crew 1.0.85)
+
+`f4adf923` changes only the release files (crew 1.0.84 -> 1.0.85: `plugin.json`, `marketplace.json`,
+`PLUGINS.md`, the README's version mention and the CHANGELOG heading), because T-0505 targets
+1.0.84. No cited line moved; the version sentences were re-read. Re-anchor only (owner
+refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
+
+## Re-anchor provenance - `f4adf923` -> `328fdf4a`, 2026-09-30 (T-0028 round-7 fixes, crew 1.0.85 re-set)
+
+`233701d5` fixes review round 7's four FIXes in `kimi_probe.py` (the owner accepted round 7 and
+ordered the fixes); `328fdf4a` re-sets crew 1.0.85. Body citations were mapped by `difflib` from
+`ea90a4e4` to `328fdf4a` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local), each moved
+citation landing on the same line text. Re-anchor only (owner refresh-artifact
+standing rule, 2026-09-28); no test suite was executed for this note.
+
+**Re-anchored `17d0b1d2` -> `c4e2eb98` on 2026-09-30 (L-0520 PR 1, the merge train CLI, after merging main 42d5ef58 (T-0094)).** `git diff --name-only 17d0b1d2 c4e2eb98` adds L-0520's PR 1 outside refresh artifacts (crew_train.py, done.md, README, two guides, CHANGELOG, TODO, BUDGETS.md in place, verify.json, two tests); path-qualified citations outside dated provenance were moved by a line diff (`/root/crew-tmp/l-0520/tools/l0520_remap.py`, machine-local). No suite was executed for this note.
+
+**Re-anchored `c4e2eb98` -> `0be97503` on 2026-09-30 (L-0520 PR 1 merges main 42af3fb7 (L-0531)).** `git diff --name-only c4e2eb98 0be97503` returns, outside refresh artifacts, only L-0531's `plugin/crew/tests/sabotage_qa.py`, `.crew/verify.json` and release bookkeeping; path-qualified citations were moved by a line diff (`/root/crew-tmp/l-0520/tools/l0520_remap.py`). No suite was executed for this note.
+
+**Re-anchored `0be97503` -> `14bb59ef` on 2026-09-30 (L-0520 PR 1 merges main 6a8c60b1 (T-0099)).** `git diff --name-only 0be97503 14bb59ef` returns, outside refresh artifacts, T-0099's `review_prompt.py`, `sabotage_review.py`, `test_review_prompt.py` and release bookkeeping; path-qualified citations were moved by a line diff (`/root/crew-tmp/l-0520/tools/l0520_remap.py`). No suite was executed for this note.
+
+**Re-anchored `14bb59ef` -> `8bf710ed` on 2026-09-30 (L-0520 PR 1 review round 1 fixes).** `git diff --name-only 14bb59ef 8bf710ed` returns crew_train.py, done.md and README.md (edits in place), BUDGETS.md, two tests and the version files; path-qualified citations outside dated provenance were moved by a line diff (`/root/crew-tmp/l-0520/tools/l0520_remap.py`). No suite was executed for this note.
+
+**Re-anchored `8bf710ed` -> `14b52c91` on 2026-09-30 (L-0520 PR 1 merges main bd4b2f30 (T-0028 #288, crew 1.0.85, and the mailgun skill), crew 1.0.86).**  No suite was executed for this note.
+
+**Re-anchored `14b52c91` -> `0c3508e9` on 2026-09-30 (L-0520 PR 1 merges main f7caa37d (L-0561 #289: mailgun registered as skills/mailgun 1.0.1, both install scripts, README, INSTALLATION.md), crew stays 1.0.86).**  No suite was executed for this note.

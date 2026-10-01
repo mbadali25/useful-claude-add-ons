@@ -1133,12 +1133,17 @@ def test_an_artifact_under_a_symlinked_dir_is_refused_where_open_takes_no_dir_fd
 
 @pytest.mark.parametrize("kind", ["map", "diagram", "rule"])
 def test_an_artifact_whose_git_mode_changed_is_refused(anchored, kind):
+    """Where the filesystem records no executable bit (NTFS: `git init` sets
+    `core.fileMode=false`), git takes the working file's mode from the index,
+    so a mode change reaches git only through the index (W-0116)."""
     root, base = anchored
-    assert git(root, "config", "--bool", "core.fileMode").strip() == "true"
     rel, data, companions = _admitted_shape(root, kind)
     path = root.joinpath(*rel.split("/"))
     path.write_bytes(data)
-    path.chmod(0o755)
+    if git(root, "config", "--bool", "core.fileMode").strip() == "true":
+        path.chmod(0o755)
+    else:
+        git(root, "update-index", "--chmod=+x", "--", rel)
 
     got = _verdicts(root, base, REACH, companions + [rel])
 
@@ -1147,14 +1152,17 @@ def test_an_artifact_whose_git_mode_changed_is_refused(anchored, kind):
 
 def test_an_artifact_staged_as_a_symlink_is_refused(anchored):
     """What a `core.symlinks=false` checkout leaves: a regular file in the
-    working tree that git stores as a link (mode 120000)."""
+    working tree that git stores as a link (mode 120000). Under
+    `core.symlinks=false` git's diff reports the index's 120000 as a mode
+    change; under `true` only `ls-files -s` shows it (W-0116). Both refuse,
+    and both reasons name the mode."""
     root, base = anchored
     rel, data, _companions = _admitted_shape(root, "map")
     root.joinpath(*rel.split("/")).write_bytes(data)
     blob = git(root, "hash-object", "-w", rel).strip()
     git(root, "update-index", "--cacheinfo", f"120000,{blob},{rel}")
 
-    assert _judged(root, base, REACH, rel, "stored as 120000")[:2] == (False, True)
+    assert _judged(root, base, REACH, rel, "120000")[:2] == (False, True)
 
 
 def test_a_git_mode_check_that_cannot_run_is_could_not_tell(anchored, monkeypatch):
@@ -1348,6 +1356,53 @@ def test_a_dir_swapped_to_a_symlink_just_before_the_open_is_refused(tmp_path, mo
     got = _verdicts(root, base, REACH, [sub])
 
     assert (swapped, got[sub][0], "symlink" in got[sub][1]) == ([True], False, True), got
+
+
+# --- W-0116 -----------------------------------------------------------------------
+# Where `os.open` takes no dir_fd (Windows), a directory swapped to a link
+# after the realpath check is opened through; lstat of the final component
+# follows the same link, so only the descriptor's own final path tells.
+
+def _no_dir_fd_with_final_path(monkeypatch, final):
+    monkeypatch.setattr(os, "supports_dir_fd", set())
+    monkeypatch.setattr(crew_refresh_check, "_FINAL_PATH", final)
+
+
+def test_a_descriptor_whose_final_path_is_elsewhere_is_refused(anchored, tmp_path, monkeypatch):
+    root, base = anchored
+    rel, good, companions = _admitted_shape(root, "map")
+    root.joinpath(*rel.split("/")).write_bytes(good)
+    _no_dir_fd_with_final_path(monkeypatch, lambda fd: str(tmp_path / "outside" / "app.md"))
+
+    got = _verdicts(root, base, REACH, companions + [rel])
+
+    assert (got[rel][0], "symlink" in got[rel][1]) == (False, True), got
+
+
+def test_a_descriptor_whose_final_path_cannot_be_read_is_could_not_tell(anchored, monkeypatch):
+    root, base = anchored
+    rel, good, companions = _admitted_shape(root, "map")
+    root.joinpath(*rel.split("/")).write_bytes(good)
+    _no_dir_fd_with_final_path(monkeypatch, lambda fd: None)
+
+    verdict, reason = _verdicts(root, base, REACH, companions + [rel])[rel]
+
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL)) == (None, True), reason
+
+
+def test_a_descriptor_whose_final_path_is_the_checked_path_is_admitted(anchored, monkeypatch):
+    """The control: the lookup answering with the path the checks proved,
+    spelled in another case, admits."""
+    root, base = anchored
+    rel, good, companions = _admitted_shape(root, "map")
+    root.joinpath(*rel.split("/")).write_bytes(good)
+    named = os.path.join(os.path.realpath(str(root)), *rel.split("/"))
+    _no_dir_fd_with_final_path(monkeypatch, lambda fd: named.swapcase() if os.name == "nt"
+                               else named)
+
+    got = _verdicts(root, base, REACH, companions + [rel])
+
+    assert got[rel][0] is True, got
 
 
 def test_a_base_whose_tree_git_cannot_read_is_could_not_tell(anchored):

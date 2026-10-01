@@ -167,6 +167,37 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   ```
   Refuses on a ticket already `ACCEPTED` or already `NEEDS_REPLAN`.
 
+- **Symptom: `crew_train.py acquire` exits 1, `waiting behind <ticket>`.** The clone's merge train
+  is armed (L-0520) and an overlapping ticket holds it, or queued first on the same base.
+  **Check:**
+  ```bash
+  python3 "<crew>/hooks/scripts/crew_train.py" --root . status
+  ```
+  Each waiting entry lists the ticket it is behind and every colliding pair (`<mine> x <theirs>`);
+  `touch: undeclared: <why>` means that ticket's spec has no usable `## Touch`, which overlaps
+  everything.
+  **Fix:** wait for the holder to land and release, then acquire again before reviewing; fix an
+  undeclared Touch in the spec. `merge <base> first` means the base moved in this ticket's Touch:
+  run `crew_train.py catch-up --ticket <id>` and review the merged head. `could not tell` (exit 3)
+  means the train state could not be read — the message names the file; nothing is guessed.
+
+- **Symptom: a lane holds the train and its session died.** `status` prints `stale?:` beside it
+  (worktree missing, head already in the base, held for hours). Nothing releases it
+  automatically, by design.
+  **Fix:** once you are sure it is dead:
+  ```bash
+  python3 "<crew>/hooks/scripts/crew_train.py" --root . release --ticket <id> --force \
+    --by <who> --reason "<why>"
+  ```
+  The release is logged as a `force-release` event that the other lanes see.
+
+- **Symptom: `check-land` says the base moved in Touch paths.** Another ticket landed changes to
+  paths this ticket touches after it was gated, so the verdict covers a different tree.
+  **Fix:** `crew_train.py catch-up --ticket <id>` (a merge; conflicts and rerere-replayed files
+  are listed and left staged for you to commit), gate the merged head again (`/crew:review`),
+  then `check-land` again. `merge-tree: HEAD conflicts with <base>` is the same fix with a
+  conflict to resolve first.
+
 ## Scope: approval and the completion audit
 
 A ticket's contract lives in `.work/tickets/<id>/`: `spec.md`'s `## Touch` section names every path

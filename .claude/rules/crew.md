@@ -2,16 +2,16 @@
 paths:
   - "plugin/crew/**"
 ---
-<!-- crew:generated source=.crew/codemap/crew.md sha256=6db112ca311f8b58 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/crew.md sha256=1452d5264fa6a2f0 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # crew
-Code map anchor `43d0efc8`; if it is behind HEAD, re-check with `git diff --name-only 43d0efc8..HEAD -- <cited paths>`.
-Covers: The crew plugin after 1.0: hooks, the four agents, commands, skills inventory, config layering and leaf counts, and how crew_freshness.py reads this very directory.; then to e71ad41f (T-0505, after merging T-0094's main); then to f1ccd055 (T-0505 merges L-0531's main); then to 43d0efc8 (T-0505 merges T-0099's main)
+Code map anchor `0c3508e9`; if it is behind HEAD, re-check with `git diff --name-only 0c3508e9..HEAD -- <cited paths>`.
+Covers: The crew plugin after 1.0: hooks, the four agents, commands, skills inventory, config layering and leaf counts, and how crew_freshness.py reads this very directory.; re-anchored to c4e2eb98 (L-0520 PR 1, the merge train CLI, after merging main 42d5ef58 (T-0094)); re-anchored to 0be97503 (L-0520 PR 1 merges main 42af3fb7 (L-0531)); re-anchored to 14bb59ef (L-0520 PR 1 merges main 6a8c60b1 (T-0099)); re-anchored to 8bf710ed (L-0520 PR 1 review round 1 fixes); re-anchored to 14b52c91 (L-0520 PR 1 merges main bd4b2f30 (T-0028 #288, crew 1.0.85, and the mailgun skill), crew 1.0.86); re-anchored to 0c3508e9 (L-0520 PR 1 merges main f7caa37d (L-0561 #289: mailgun registered as skills/mailgun 1.0.1, both install scripts, README, INSTALLATION.md), crew stays 1.0.86)
 ## Entry points
 - `plugin/crew/hooks/scripts/crew_state.py:999` — `TRIGGERS`, a 15-entry tuple, unchanged in membership and order from the previous anchor.
-- `plugin/crew/hooks/scripts/crew_state.py:2909` — `evaluate_triggers`.
+- `plugin/crew/hooks/scripts/crew_state.py:2942` — `evaluate_triggers`.
 - `plugin/crew/hooks/scripts/crew_config.py:244` / `:397` — `default_config()` / `default_global_config()`.
-- `plugin/crew/hooks/scripts/crew_config.py:2467` — `_RATCHETED`, the 14-key ratchet table (seven construction steps).
-- `plugin/crew/hooks/scripts/crew_config.py:3062` / `:3088` — `plan_repo_write` / `write_repo_config`, the one repo-layer writer (T-0075); `:2862` / `:2881` — the machine pair.
+- `plugin/crew/hooks/scripts/crew_config.py:2498` — `_RATCHETED`, the 14-key ratchet table (seven construction steps).
+- `plugin/crew/hooks/scripts/crew_config.py:3093` / `:3119` — `plan_repo_write` / `write_repo_config`, the one repo-layer writer (T-0075); `:2893` / `:2912` — the machine pair.
 - `plugin/crew/hooks/scripts/crew_config_files.py:364` — `update_json`, the lock and compare-and-swap both writers stand on (T-0075).
 - `plugin/crew/hooks/scripts/crew_config_menu.py:1051` — `main()`, the `spec` / `save` / `delete-repo` / `restore-repo` CLI the `/crew:config` menu calls.
 - `plugin/crew/hooks/scripts/role_write_guard.py:540` — `classify`, the decision function; `:685` — `main()`.

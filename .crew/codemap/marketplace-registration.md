@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@43d0efc8
+anchor: useful-claude-add-ons@0c3508e9
 verified: 2026-09-30
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -47,7 +47,7 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.84** (T-0505 on its branch, one past main's 1.0.83, T-0099's landing bump; main's 1.0.82 is L-0531's sabotage entries for L-0529's fixture, one past main's 1.0.81 after merging `42d5ef58`; main's 1.0.81 is T-0094's landing re-set, one past origin/main's 1.0.80 after T-0094 merged `d1462bbd`; main's 1.0.80 is L-0529's test-fixture fix, past main's 1.0.77 (T-0086) with 1.0.78 and 1.0.79 declared by open branches; before that 1.0.76, T-0087's re-set on `T-0087-build`, one past main's 1.0.75 after merging `9af34e57`, T-0085's landing; 1.0.70 at T-0087's re-set `90b71bbf`, one past main's 1.0.69 after merging `a61a6f38`; main's 1.0.75 is T-0085's landing: 1.0.70 at its merge of main's 1.0.69 at `a61a6f38`, 1.0.71 after one landing-branch sabotage anchor commit, 1.0.72 after rewrapping `commands/review.md` to its line allowance, 1.0.73 at its catch-up merge of main's 1.0.70 at `6813749b` (#268, T-0097), 1.0.74 for the Windows fail-open fix in `gate_applies` at `9b6b0da7`, 1.0.75 for re-targeting the sabotage entry that fix made vacuous; before that **1.0.61**, T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes; 1.0.60 at T-0010's re-set `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged main `e878cc31`; on T-0010-solo it was 1.0.55 at `d7c7c75c`, 1.0.51 at `360c4029` and 1.0.50 at `50a275ea`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 for the refused-probe F821 fix, 1.0.58 for re-anchored sabotage entries, 1.0.56 for the landing branch's pylint disable, 1.0.57 for the Windows path fix in the OS-error refusals; `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+`rule-of-two`. `crew` is now **1.0.86** (L-0520 PR 1's re-set at `14b52c91` after merging main `bd4b2f30`, past main's 1.0.85 and skipping 1.0.84, which T-0505 targets; 1.0.84 on L-0520's branch at `e60d88f2`; main's 1.0.85 is T-0028's re-set at `328fdf4a` after the round-7 fixes, first set at `f4adf923`, past main's 1.0.83 and skipping 1.0.84, which T-0505 targets; 1.0.84 at `c43a54c1`, one past main's 1.0.83, T-0099's landing #278, which this note on main still read as 1.0.82; 1.0.82 is L-0531's sabotage entries for L-0529's fixture, one past main's 1.0.81 after merging `42d5ef58`; main's 1.0.81 is T-0094's landing re-set, one past origin/main's 1.0.80 after T-0094 merged `d1462bbd`; main's 1.0.80 is L-0529's test-fixture fix, past main's 1.0.77 (T-0086) with 1.0.78 and 1.0.79 declared by open branches; before that 1.0.76, T-0087's re-set on `T-0087-build`, one past main's 1.0.75 after merging `9af34e57`, T-0085's landing; 1.0.70 at T-0087's re-set `90b71bbf`, one past main's 1.0.69 after merging `a61a6f38`; main's 1.0.75 is T-0085's landing: 1.0.70 at its merge of main's 1.0.69 at `a61a6f38`, 1.0.71 after one landing-branch sabotage anchor commit, 1.0.72 after rewrapping `commands/review.md` to its line allowance, 1.0.73 at its catch-up merge of main's 1.0.70 at `6813749b` (#268, T-0097), 1.0.74 for the Windows fail-open fix in `gate_applies` at `9b6b0da7`, 1.0.75 for re-targeting the sabotage entry that fix made vacuous; before that **1.0.61**, T-0010's landing re-set `bbd9a66d` after its landing-branch lint fixes; 1.0.60 at T-0010's re-set `cd106b8b`, one past main's 1.0.59 after T-0010-solo merged main `e878cc31`; on T-0010-solo it was 1.0.55 at `d7c7c75c`, 1.0.51 at `360c4029` and 1.0.50 at `50a275ea`; main's 1.0.59 is T-0075's landing bumps: 1.0.59 for the refused-probe F821 fix, 1.0.58 for re-anchored sabotage entries, 1.0.56 for the landing branch's pylint disable, 1.0.57 for the Windows path fix in the OS-error refusals; `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
 and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `cd106b8b` and again on T-0085's merge of main `8ab733d7`: T-0085's build branch declares main's version and carries no bump of its own until land, `.crew/standards.md` REPO-03; on T-0085's branch it was 1.0.59 from its merge of `2693d0fa` to `33521aa4`, 1.0.56 at `8abf7ffe`, reverted by `0fd1bdf8`, 1.0.55 at `8a084c6c`, 1.0.53 at `2aa49bb8` and `b82035e6`, and 1.0.52 at `22399a9c`); it was 1.0.55 at `3648f59a`, T-0075's re-bump one past main after its merge of `6387ab49`; on T-0075's branch it was 1.0.52 at `938e3b11` (its re-bump after its merge of `f54af3fa`), 1.0.51 at `3724731b`, 1.0.50 at `8cabe586`, 1.0.49 at `7d217751`, `81ed193c` and `ca667718`, 1.0.48 at `23371afb`, 1.0.47 at `f7163410`, 1.0.46 at `e95e5964` and 1.0.44 at `d2444be9`; on main it was 1.0.54 at `6387ab49` and `2442d367` (T-0092's landing merge onto main `311dab8c`, whose 1.0.54 is T-0092's re-bump `136f4b33` after merging main `ff59160f`); it was 1.0.53 at main `311dab8c` and `ff59160f` (T-0089's landing bump `0f526a8c`) and at `3c4f1a68`, T-0092's re-bump after merging main `c426c018`; it was 1.0.52 at `c426c018` (T-0076's landing, `e329eb8f`) and at `c99e31f6`, T-0092's first bump; it was 1.0.51 at `9631c707`, T-0072's landing bump after its merge of `e6e10432`; it was 1.0.50 at `a4eb2f55`, T-0072's bump after its merge of `5050ea3b`, and at main `e6e10432`, T-0079's landing, bumped on T-0079's branch at `81685adf`, where it was 1.0.49 at `78215930`; it was 1.0.49 at `fc289446` (T-0077's landing bump) and on T-0072's branch at `80326b1d`, 1.0.48 at `8de3c669` (T-0024's landing bump) and on T-0072's branch at `21429244` and `996a0a9e`, 1.0.47 at `67caa4b8` after T-0018's re-bump `65bb3330` on its merge of
 main `bebbb97f` (`f458e752`), 1.0.47 on T-0072's branch at `715a8c2f`, 1.0.46 at `bebbb97f` and at that merge (T-0023's bump `e463ca53`) and at T-0018's first landing bump `fbc27b49`, 1.0.45 at `db14619c` (T-0021, bumped again for a CI fix), 1.0.44 on T-0018's branch at `0c7f6b84`, 1.0.43 on T-0023's branch at `a1acd9b7` and on T-0018's at `39f8f59f`, 1.0.44 at `12682e41`, 1.0.43 at `f0b12ee6` (T-0042) and on T-0021's branch at `c2ae46ab`, 1.0.42 at `2b18f7ab` (1.0.46 on T-0021's branch until its merge of main), 1.0.41 at `07ca3972` and on T-0005's branch, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.15** (L-0529's test-fixture fix; 0.4.14 before, was 0.3.14); `gizmoduck` (0.5.3) and
@@ -68,8 +68,8 @@ against disk:
 | skills | 31 | `find plugin/crew/skills -maxdepth 1 -mindepth 1 -type d` → 31 (T-0085 added `crew-standards`, #267 `crew-qa-standards`; both read 30 on their own branches, 31 from T-0085's landing merge) | same sites, each `<!-- claim: plugin-skills:crew -->`-marked; **at `22399a9c` `INSTALLATION.md:252` and `plugin/README.md:414` still read 29** (outside T-0085's Touch), so `check_self_claims` fails on both; both read 30 from `b82035e6` (the Touch amendment) and the check passes |
 | hook entries | 34 | walking `plugin/crew/hooks/hooks.json`'s 8 events → 34 command entries | same sites |
 
-Both install scripts' own crew catalog row (`scripts/install-prerequisites.sh:1391`,
-`scripts/install-prerequisites.ps1:1174`) states "4 agents, 36 commands" and
+Both install scripts' own crew catalog row (`scripts/install-prerequisites.sh:1393`,
+`scripts/install-prerequisites.ps1:1175`) states "4 agents, 36 commands" and
 matches too — `CATALOG_CLAIMS` (below) checks exactly this pair for exactly
 this reason. Every number in the table above was re-derived from the
 filesystem this pass, not read off a previous version of this note or off the
@@ -119,12 +119,12 @@ two tables is, like an unmarked number anywhere else, not checked.
 | Marketplace entry | `.claude-plugin/marketplace.json` (one flat array, split by `source` prefix only) | same file |
 | Catalog doc | `skills/README.md` — header `:73`, first row `:75` (both moved from `:87`/`:89`) | `plugin/PLUGINS.md` (a `## \`name\`` section) **and** `plugin/README.md` (a table row) |
 | Root README | linked under `skills/{name}` | linked under `plugin/{name}` |
-| `.sh` install script | `SKILL_KEYS`/`SKILL_NAME`/`SKILL_SPEC`, `scripts/install-prerequisites.sh:1298-...` | `PLUGIN_KEYS`/`PLUGIN_NAME`/`PLUGIN_SPEC`, `scripts/install-prerequisites.sh:1383-1393` |
-| `.ps1` install script | `$script:SkillCatalog`, `scripts/install-prerequisites.ps1:1127` | `$script:PluginCatalog`, `scripts/install-prerequisites.ps1:1173` |
+| `.sh` install script | `SKILL_KEYS`/`SKILL_NAME`/`SKILL_SPEC`, `scripts/install-prerequisites.sh:1298-...` | `PLUGIN_KEYS`/`PLUGIN_NAME`/`PLUGIN_SPEC`, `scripts/install-prerequisites.sh:1385-1395` |
+| `.ps1` install script | `$script:SkillCatalog`, `scripts/install-prerequisites.ps1:1127` | `$script:PluginCatalog`, `scripts/install-prerequisites.ps1:1174` |
 | Own manifest version | none | `plugin/<name>/.claude-plugin/plugin.json`, bumped in lockstep with the marketplace entry |
 
-Both install-script catalog rows for `crew` (`scripts/install-prerequisites.sh:1391`,
-`scripts/install-prerequisites.ps1:1174`) both read "4 agents, 36 commands,
+Both install-script catalog rows for `crew` (`scripts/install-prerequisites.sh:1393`,
+`scripts/install-prerequisites.ps1:1175`) both read "4 agents, 36 commands,
 safety hooks", matching `PLUGIN_KEYS` order
 (`crew`, `gizmoduck`, `localgpu`, `obsidian-vault`, `rule-of-two`) against
 `marketplace.json`'s own plugin ordering — `check_catalogs`
@@ -151,20 +151,20 @@ sub-picker groups: `own-skills`, `repo-plugins`, and two the marketplace
 never touches — `team` (`TEAM_KEYS`/`$script:TeamCatalog`) and `community`
 (`COMMUNITY_KEYS`/`$script:CommunityCatalog`).
 
-- **`TEAM_KEYS`** (`scripts/install-prerequisites.sh:1422`) is unchanged at
+- **`TEAM_KEYS`** (`scripts/install-prerequisites.sh:1424`) is unchanged at
   **four**: `superpowers`, `frontend-design`, `excalidraw-generator`,
   `github` — all four resolving through `claude-plugins-official`.
-- **`COMMUNITY_KEYS`** (`scripts/install-prerequisites.sh:1448-1450`) is
+- **`COMMUNITY_KEYS`** (`scripts/install-prerequisites.sh:1450-1452`) is
   **eight**: `adhd-output-style`, `azure-tools`, `anthropic-office-skills`,
   `agent-browser`, `ppt-master`, `voltagent-infra`, `voltagent-qa-sec`,
   `eli5` — resolving through **five** distinct marketplace names
   (`claude-settings`, `agent-browser`, `ppt-master`, `voltagent-subagents`,
   `claude-community`), confirmed by reading `COMMUNITY_SPEC`
-  (`:1461-1470`). The comment at `scripts/install-prerequisites.sh:1440-1441`
+  (`:1461-1470`). The comment at `scripts/install-prerequisites.sh:1442-1443`
   still states explicitly that the local name is `claude-community`, not
   `claude-plugins-community`.
 
-`$script:CommunityCatalog` (`scripts/install-prerequisites.ps1:1205`) and
+`$script:CommunityCatalog` (`scripts/install-prerequisites.ps1:1206`) and
 `$script:TeamCatalog` (`:1188`) agree with the `.sh` arrays — the matched-pair
 check (`check_group_parity`) still passes, and still says nothing about
 whether either array's *content* is accurate, since nothing in
@@ -304,6 +304,8 @@ against synthetic fixtures and never reads this repo's own docs.
   Re-measured at `ef5b4c89` (T-0094 after merging `8ab733d7`, main's 19,494, and its round-2
   README edits): 19,500 across 128 files on `:11`, recomputed with `git ls-files 'plugin/crew/*.md'`
   rather than taken from either side; `check-marketplace.py` passes it at `fc348c89` ("all checks passed").
+  Re-measured on T-0028 at `328fdf4a`: 21,515 lines across 137 files on `:11` (21,513 at `c43a54c1`) (T-0028's Kimi docs
+  and the fixture README over main's `6a8c60b1`), matching; `check-marketplace.py` passes it.
   Re-measured on T-0094's merge of `a61a6f38` (main's 19,915 across 132): 19,921 across 132 files on
   `:11`, recomputed from the merged tree the same way; `check-marketplace.py` passes it at `f5d0f1b1`
   ("all checks passed").
@@ -319,38 +321,6 @@ against synthetic fixtures and never reads this repo's own docs.
 - **The install scripts' full array contents** (every `SKILL_KEYS` entry, not
   just the crew/plugin rows) were not diffed line by line against `5d1fc5fd`;
   only the catalog *mechanism* and the crew-specific rows were re-measured.
-
-## Re-anchor provenance - `f1ccd055` -> `43d0efc8`, 2026-09-30 (T-0505 merges main `6a8c60b1`, T-0099, crew 1.0.83)
-
-`git diff --name-only f1ccd055 43d0efc8` outside the refresh artifacts returns T-0099's `review_prompt.py` (+6 in `_bundle_block` from `:94`), its tests and sabotage entries, `CHANGELOG.md` (T-0099's entry, below T-0505's) and the version files (crew 1.0.84 on this branch, one past main's 1.0.83). The five `review_prompt.py` citations are exactly main's as T-0099 landed them; this merge did not re-derive them. No citation T-0505 owns moved. Nothing was executed for this note.
-
-## Re-anchor provenance - `e71ad41f` -> `f1ccd055`, 2026-09-30 (T-0505 merges main `42af3fb7`, L-0531, crew 1.0.82)
-
-`git diff --name-only e71ad41f f1ccd055` outside the refresh artifacts returns L-0531's `plugin/crew/tests/sabotage_qa.py` (+5 constants, +18 entries; no line of it is cited here), `.crew/verify.json` (rule 34 edited in place at `:365-373`, line count unchanged), `CHANGELOG.md` (L-0531's entry, below T-0505's; the `CHANGELOG.md` line citations keep main's numbers plus T-0505's 34) and the version files: crew is 1.0.83 on this branch, one past main's 1.0.82. No cited line moved. Nothing was executed for this note.
-
-## Re-anchor provenance - `17d0b1d2` -> `e71ad41f`, 2026-09-30 (T-0505 merges main `42d5ef58`, T-0094, crew 1.0.81)
-
-The merge took main's side of every code map, INDEX row and generated rule, then re-applied T-0505's own changes: its earlier provenance sections (kept verbatim below, describing their own anchors); rule 4 runs ten pytest files and names `_promote_tree.py`, now on the `promote-gate.ps1` line (`.crew/verify.json:97`) so no later rule moves and main's verify.json citations stand; `promote-gate.sh:79` is the plain `crew_py` call; promote-gate is not a `crew_config.py` user; crew is 1.0.82 on this branch (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`). T-0505's CHANGELOG entry (34 lines) sits above main's, so main's `CHANGELOG.md` line citations moved +34 (ten). Nothing was executed for this note.
-
-## Re-anchor provenance - `68659749` -> `7867e893`, 2026-09-30 (T-0505 pre-review hardening)
-
-`git diff --name-only 68659749 7867e893` returns `CHANGELOG.md` (one word, in place), both promote-gate flavours (the committed-map read is could-not-tell on any failure; the parser's output is UTF-8) and two test files. `promote-gate.sh:79` (the `crew_py` call) was re-read and has not moved; no other cited line moved. Nothing was executed for this note.
-
-## Re-anchor provenance - `da6c62c1` -> `68659749`, 2026-09-30 (T-0505 merges main `d1462bbd`, L-0529)
-
-`git diff --name-only da6c62c1 68659749` outside the refresh artifacts returns L-0529's files (four crew tests, `crew_fixtures.py`, obsidian-vault's probe test and plugin.json, now 0.4.15) and the version files, edited in place: crew is 1.0.82 on this branch past main's 1.0.80 (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`). L-0529's CHANGELOG entry adds 25 lines below T-0505's, so every `CHANGELOG.md` line citation here moved +25 (nine, all in history sections). No other cited line moved. Nothing was executed for this note.
-
-## Re-anchor provenance - `680e6783` -> `401f6e0f`, 2026-09-30 (T-0505 promote-gate effective tree, after merging main `a7524aac`)
-
-This branch carries T-0505 (`0a24dca4`..`2fd449a3`, `d1055b07`, `401f6e0f`) and `b5e5f73a`, its merge of origin/main `a7524aac` (T-0087 landed). T-0505 makes promote-gate (`.sh` and `.ps1`) judge the tree the deploy runs from - the payload `cwd`, a leading `cd` chain, git's global `-C` inside `$(...)`, parsed by a new `_promote_tree.py` - while the deployment map, the promotion log and the approval markers stay in the project dir; it adds two test files and a sabotage module (one import line in `sabotage.py`), rule 4's new path and test in `.crew/verify.json`, and promote docs (CHANGELOG +32 lines at the top, one CONFIG.md sentence +2, crew README, `promote.md`, INSTALLATION, PLUGINS, the troubleshooting guide, BUDGETS' count in place). crew stays 1.0.76 on this branch. A difflib re-map of every explicit `path:line` citation from `680e6783` to `401f6e0f` moved none; BUDGETS' `:11` changed in place. No claim here describes promote-gate's tree resolution. Re-anchor only: nothing was executed for this note.
-
-## Re-anchor provenance - `401f6e0f` -> `6a44587f`, 2026-09-30 (T-0505)
-
-`git diff --name-only 401f6e0f 6a44587f` outside the refresh artifacts returns only `plugin/crew/tests/sabotage_promote.py`: two sabotage target ids wrapped under the line limit, no behaviour and no line this note cites. No citation moved. Nothing was executed for this note.
-
-## Re-anchor provenance - `38b220cf` -> `da6c62c1`, 2026-09-30 (T-0505 replayed onto main's maps after merging `549cda24`)
-
-`a8b00168` merged origin/main `549cda24` (T-0086, crew 1.0.77) and took main's side of every code map, INDEX, the generated rules and the graph, discarding this branch's `401f6e0f` / `6a44587f` refresh; `da6c62c1` then set crew 1.0.79, re-measured BUDGETS.md in place, renamed the T-0505 mutation module to `promote_tree_mutations.py` (not wired into `sabotage.py`) and reverted `sabotage.py` to main's. Main's note is the base here; T-0505's two earlier sections follow main's, kept as history, except that their `sabotage.py` claims (one new import line, citations +1) no longer hold: `sabotage.py` is identical to main's, so main's `sabotage.py` citations stand unchanged. A difflib re-map of every path-qualified `path:line` citation from `38b220cf` to `da6c62c1` moved `.crew/verify.json` citations +1 past rule 4's new path line, CONFIG.md +2 past T-0505's sentence (`:1644-1646`) and CHANGELOG.md +34 (T-0505's entry on top); version lines and in-place edits (marketplace.json, plugin.json, PLUGINS.md, BUDGETS.md, INSTALLATION.md) keep their numbers. Corrected: the version sentence said crew is 1.0.76; it is 1.0.79 on this branch (main 1.0.77), matching `:218`, `plugin.json:3` and `PLUGINS.md:14`. Nothing was executed for this note.
 
 ## Re-anchor provenance - `6c497a14` -> `f2bb919b`, 2026-09-25 (T-0015)
 
@@ -1283,3 +1253,42 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 **Re-anchored `65abeb8d` -> `1f21f73b` on 2026-09-30 (T-0094 review round 7: `902fb96a`..`91da43bc` code and tests, docs, guide rebuilt, crew 1.0.78 un-set and re-set as `1f21f73b`).** `git diff --name-only 65abeb8d 1f21f73b` returns `CHANGELOG.md`, `docs/guides/crew/crew-1.0-daily-workflow.docx`, `docs/guides/crew/crew-1.0-daily-workflow.html`, `docs/guides/crew/crew-1.0-daily-workflow.pdf`, `docs/guides/crew/src/daily-workflow-scope.md`, `plugin/crew/README.md`, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `plugin/crew/tests/test_refresh_admission.py`. No body citation in this map names a line that moved. No suite was executed for this note.
 
 **Re-anchored `1f21f73b` (T-0094) / main -> `17d0b1d2` on 2026-09-30 (T-0094 merges origin/main `d1462bbd`, L-0529 landed as crew 1.0.80 (#283), and re-sets crew 1.0.81 in the merge commit).** `git diff --name-only 79ef56c4 17d0b1d2`, refresh artifacts aside, returns `.claude-plugin/marketplace.json`, `CHANGELOG.md`, `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/README.md`, `plugin/crew/tests/crew_fixtures.py`, `plugin/crew/tests/test_context_watch_python_resolver.py`, `plugin/crew/tests/test_event_claim_crash_safety.py`, `plugin/crew/tests/test_path_link_farm.py`, `plugin/crew/tests/test_ps1_python_probe.py`, `plugin/obsidian-vault/.claude-plugin/plugin.json`, `plugin/obsidian-vault/hooks/scripts/_test/test_python_probe_proof.py`: main's L-0529 files plus the version statements. The merge's conflicts were version lines and the generated rules' stamps; main's body lines kept. Re-derived here: the version sentence (1.0.81). No body citation moved (checked with `/root/crew-tmp/t-0094/cite_map_merge.py`, `MAIN_REV=origin/main`, `OURS_REV=79ef56c4`; its only flags are history positions in verification-harness.md's per-commit lists, left as written). No suite was executed for this note.
+
+## Re-anchor provenance - main `6a8c60b1` -> `c43a54c1`, 2026-09-30 (T-0028, feature half, crew 1.0.84)
+
+T-0028 (the Kimi Code provider, feature half after the owner's split; the review launch is L-0527)
+merged origin/main `6a8c60b1` (L-0531 #284 and T-0099 #278, crew 1.0.83) with rerere disabled, taking main's code
+maps. The branch differs from main only in the Kimi provider's feature files (`crew_state.py`,
+`crew_config.py` with the launch gate, `kimi_probe.py`, the templates, provider docs and tests,
+`.crew/verify.json`, the release files). This note is main's copy; every body citation into a
+changed file was mapped by a `difflib` line diff from `6a8c60b1` to `c43a54c1` with
+`/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local), each moved citation landing on the
+same line text. crew is 1.0.84 and BUDGETS.md reads 21,513 across 137, both re-read. T-0028's earlier branch provenance is in git history. Re-anchor
+only (owner refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
+
+## Re-anchor provenance - `c43a54c1` -> `f4adf923`, 2026-09-30 (T-0028 re-sets crew 1.0.85)
+
+`f4adf923` changes only the release files (crew 1.0.84 -> 1.0.85: `plugin.json`, `marketplace.json`,
+`PLUGINS.md`, the README's version mention and the CHANGELOG heading), because T-0505 targets
+1.0.84. No cited line moved; the version sentences were re-read. Re-anchor only (owner
+refresh-artifact standing rule, 2026-09-28); no test suite was executed for this note.
+
+## Re-anchor provenance - `f4adf923` -> `328fdf4a`, 2026-09-30 (T-0028 round-7 fixes, crew 1.0.85 re-set)
+
+`233701d5` fixes review round 7's four FIXes in `kimi_probe.py` (the owner accepted round 7 and
+ordered the fixes); `328fdf4a` re-sets crew 1.0.85. Body citations were mapped by `difflib` from
+`ea90a4e4` to `328fdf4a` with `/root/crew-tmp/t-0028/refresh/reanchor2.py` (machine-local), each moved
+citation landing on the same line text. BUDGETS.md reads 21,515 across 137, re-read. Re-anchor only (owner refresh-artifact
+standing rule, 2026-09-28); no test suite was executed for this note.
+
+**Re-anchored `17d0b1d2` -> `c4e2eb98` on 2026-09-30 (L-0520 PR 1, the merge train CLI, after merging main 42d5ef58 (T-0094)).** `git diff --name-only 17d0b1d2 c4e2eb98` adds L-0520's PR 1 outside refresh artifacts (crew_train.py, done.md, README, two guides, CHANGELOG, TODO, BUDGETS.md in place, verify.json, two tests); path-qualified citations outside dated provenance were moved by a line diff (`/root/crew-tmp/l-0520/tools/l0520_remap.py`, machine-local). No suite was executed for this note.
+
+**Re-anchored `c4e2eb98` -> `0be97503` on 2026-09-30 (L-0520 PR 1 merges main 42af3fb7 (L-0531)).** `git diff --name-only c4e2eb98 0be97503` returns, outside refresh artifacts, only L-0531's `plugin/crew/tests/sabotage_qa.py`, `.crew/verify.json` and release bookkeeping; path-qualified citations were moved by a line diff (`/root/crew-tmp/l-0520/tools/l0520_remap.py`). No suite was executed for this note.
+
+**Re-anchored `0be97503` -> `14bb59ef` on 2026-09-30 (L-0520 PR 1 merges main 6a8c60b1 (T-0099)).** `git diff --name-only 0be97503 14bb59ef` returns, outside refresh artifacts, T-0099's `review_prompt.py`, `sabotage_review.py`, `test_review_prompt.py` and release bookkeeping; path-qualified citations were moved by a line diff (`/root/crew-tmp/l-0520/tools/l0520_remap.py`). No suite was executed for this note.
+
+**Re-anchored `14bb59ef` -> `8bf710ed` on 2026-09-30 (L-0520 PR 1 review round 1 fixes).** `git diff --name-only 14bb59ef 8bf710ed` returns crew_train.py, done.md and README.md (edits in place), BUDGETS.md, two tests and the version files; path-qualified citations outside dated provenance were moved by a line diff (`/root/crew-tmp/l-0520/tools/l0520_remap.py`). No suite was executed for this note.
+
+**Re-anchored `8bf710ed` -> `14b52c91` on 2026-09-30 (L-0520 PR 1 merges main bd4b2f30 (T-0028 #288, crew 1.0.85, and the mailgun skill), crew 1.0.86).**  No suite was executed for this note.
+
+**Re-anchored `14b52c91` -> `0c3508e9` on 2026-09-30 (L-0520 PR 1 merges main f7caa37d (L-0561 #289: mailgun registered as skills/mailgun 1.0.1, both install scripts, README, INSTALLATION.md), crew stays 1.0.86).**  No suite was executed for this note.
