@@ -178,6 +178,17 @@ jobs:
     # pytest-xdist is installed HERE only, as a speed-up: the suite does not
     # depend on it and runs the same without `-n`.
     #
+    # windows-latest is scoped by PATH, ubuntu-latest is not. Windows runs on
+    # every non-PR event (push to main, the nightly schedule,
+    # workflow_dispatch) and on a pull_request only when it changes
+    # plugin/crew/** or this workflow file (a PR editing this leg must run
+    # it). Not an `on: pull_request: paths:` filter: that would drop the whole
+    # workflow, `test` job included, for a PR outside those paths and leave its
+    # required checks pending. Not a job-level `if:` either, which cannot read
+    # `matrix`. So the leg always exists and every step after the decision is
+    # gated on RUN_LEG -- the `test` job's pattern -- and a PR that touches no
+    # crew path reports a skipped pass, with a notice saying so.
+    #
     # Opt-in self-hosted pool, ubuntu leg ONLY: a windows-latest leg always
     # stays on matrix.os. The owner's runner playbook
     # (mbadali25/github-runner-infra) sets repo variable CREW_RUNNER=self-hosted
@@ -190,14 +201,37 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]  # TEMPORARY (owner 2026-09-30): windows-latest skipped until the win-repo-2 fix (pointer T-0508) lands; that fix re-enables it.
+        os: [ubuntu-latest, windows-latest]
     steps:
     - uses: actions/checkout@v4
+      with:
+        # The PR merge commit plus its first parent (the base tip): all the
+        # decision below diffs.
+        fetch-depth: 2
+    - name: Decide whether this leg runs
+      shell: bash
+      # A diff that cannot be computed RUNS the leg: an unknown answer must
+      # not read as "nothing under plugin/crew changed".
+      run: |
+        run=true
+        if [ "${{ matrix.os }}" = windows-latest ] && [ "${{ github.event_name }}" = pull_request ]; then
+          if changed=$(git diff --name-only HEAD^1 HEAD -- plugin/crew .github/workflows/pytest-crew.yml); then
+            if [ -z "$changed" ]; then
+              run=false
+              echo "::notice::crew-shell-matrix (windows-latest) SKIPPED, not passed: this PR changes nothing under plugin/crew/ or .github/workflows/pytest-crew.yml. It runs on push to main, the nightly schedule and workflow_dispatch."
+            fi
+          else
+            echo "::warning::crew-shell-matrix (windows-latest): could not diff the PR against its base (git diff HEAD^1 HEAD failed), so the leg runs."
+          fi
+        fi
+        echo "RUN_LEG=$run" >> "$GITHUB_ENV"
     - name: Set up Python
+      if: env.RUN_LEG == 'true'
       uses: actions/setup-python@v5
       with:
         python-version: "3.13"
     - name: Install pytest
+      if: env.RUN_LEG == 'true'
       # pyyaml: three crew test modules import it at module top, so without
       # it collection fails and takes the whole run down with it.
       run: |
@@ -218,10 +252,11 @@ jobs:
       # step: those tests assert elapsed time against a real bound and run in
       # the step below, serially. Found by crew-qa-standards' own audit (H3),
       # which this step failed until this line.
-      if: matrix.os == 'windows-latest'
+      if: env.RUN_LEG == 'true' && matrix.os == 'windows-latest'
       run: python -m pytest plugin/crew/tests -n auto -m "not wallclock" -v
     - name: Run crew's wall-clock-bounded tests serially (Windows)
-      if: matrix.os == 'windows-latest'
+      if: env.RUN_LEG == 'true' && matrix.os == 'windows-latest'
       run: python -m pytest plugin/crew/tests -m wallclock -v
     - name: Run crew's slow set (the full per-shell hook matrix)
+      if: env.RUN_LEG == 'true'
       run: python -m pytest plugin/crew/tests -m slow -n auto -v

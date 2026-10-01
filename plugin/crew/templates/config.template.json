@@ -133,6 +133,10 @@
     "shell": null,
     "windowsHostIp": null
   },
+  "shellRoute": {
+    "mode": null,
+    "distro": null
+  },
   "pm": {
     "enabled": true,
     "mode": "adaptive",

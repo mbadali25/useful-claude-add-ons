@@ -277,6 +277,36 @@ contract itself. This section is what goes wrong with the approval and the audit
   with exit 2: "no usable python ... failing closed". Fix by installing a real Python 3, not by
   reading the closed refusal as a false positive.
 
+## Promote gate blocks a worktree deploy
+
+`promote-gate.sh` / `.ps1`, the `PreToolUse` hook on declared `deploy` commands. Since T-0505 it
+judges **the tree the deploy runs from**: the Bash call's `cwd`, moved by a leading `cd <dir> &&`
+and named by any `git -C <dir>`. That tree must be a worktree of the same repository, clean, and at
+every literal sha the command names. `.crew/verify.json`, `.work/PROMOTIONS.md` and the
+`.crew/.approved-<env>-<sha>` markers are still read from the session's project directory.
+
+- **"the tree this deploy runs from ('...') is dirty"** names the tree it judged. If that is the
+  main checkout while you meant a worktree, run the command there: `cd <worktree> && <deploy>`, or
+  enter the worktree first. A dirty main checkout no longer blocks a clean worktree.
+- **"no all-pass row for sha X"** where X is the worktree's sha: the upstream environment passed a
+  different sha. Promote the worktree's sha upstream first; a row for the main checkout's sha does
+  not carry over.
+- **"the command names commit '...', but the tree it runs from ... is at ..."**: a literal
+  `ref=<sha>` that is not the tree's HEAD. Deploy from a tree at that sha, or drop the literal.
+- **"changes directory after it starts"** (a later `cd`, `bash -c 'cd ...'`, `env -C`, `make -C`),
+  **"names more than one tree"**, **"not a form the gate reads with certainty"** or **`--git-dir`**:
+  the gate will not guess. Put a single literal `cd <dir> &&` first, or use `git -C <dir>` - and
+  note the directory the command itself runs in must be clean too.
+- **"index entries flagged skip-worktree or assume-unchanged"**: those flags hide edits from
+  `git status`; clear them in the tree being deployed.
+- **"has uncommitted changes: it ..."** also fires when the map is deleted or untracked, or edited
+  under skip-worktree: the gate compares the file with HEAD's copy, not with `git status`.
+- **".crew/verify.json in the project dir ... has uncommitted changes"**: commit or revert the map;
+  an uncommitted map is not policy.
+- Never route around a block by running the deploy yourself with `!`. `/crew:promote` fixes the
+  precondition the message names and asks you only for a `requireHuman` yes or a genuinely
+  interactive step.
+
 ## Cloud guard false positives
 
 `cloud-guard.sh` / `cloud_guard.py`, a `PreToolUse` hook on `Bash` and `PowerShell`. **Ships off**
@@ -495,3 +525,9 @@ runs but the visual rule never passes.
   both. This is not double-firing to fix — it is how the same hook reaches both shells; each
   PowerShell twin stands itself down on the wrong platform (`$env:OS -ne 'Windows_NT'`) rather than
   the bash twin doing that job.
+- **Tests and checks are slow on Windows.** Read `/crew:status`'s `shell` line first. It names the
+  shell route crew's jobs take (`shellRoute.mode`: `auto`, `wsl`, `powershell`, `gitbash`) and why.
+  `WSL never probed` means nobody ran `crew_shell.py probe --write`; `not-installed` comes with the
+  `wsl --install -d Ubuntu` recommendation, which crew prints and never runs. A repo on a Windows
+  drive goes to WSL under `auto` only after `crew_shell.py measure --write` has shown WSL faster
+  there. See "Choosing the shell route on Windows" in `plugin/crew/skills/crew-setup/platform.md`.

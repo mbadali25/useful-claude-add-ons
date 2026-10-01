@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@52e309cf
+anchor: useful-claude-add-ons@44d3dbc6
 verified: 2026-09-30
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -420,7 +420,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2410-2417` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2423-2430` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -576,8 +576,9 @@ suite at all — `pytest-crew.yml` runs pytest and cannot collect a `.sh` file
 executed by CI despite being committed and green. Each is its own step
 deliberately, so a failure names which suite went red rather than collapsing
 into one line. `pytest-crew.yml` gained a `crew-shell-matrix` job
-(`:162-227`) that runs on `ubuntu-latest` (its `windows-latest` leg is disabled by #277
-until win-repo-2's fix re-enables it) — the
+(`:162-262`) that runs on `ubuntu-latest` and `windows-latest` (#277 disabled the
+Windows leg; T-0110 re-enabled it, doing work on a pull request only when the PR
+changes `plugin/crew/**` or `pytest-crew.yml`) — the
 `-m slow` full per-shell hook matrix on both, plus a Windows-only run of
 crew's default (parity-sample) set, since the `test` job above only runs that
 set on Ubuntu. Both that ubuntu leg and the `test` job carry an opt-in
@@ -636,7 +637,7 @@ their own, in both the `test` job and the Windows leg of `crew-shell-matrix`. Re
   its tests, `kimi_fixtures.py`, the fixture run and the provider docs); no sabotage entries,
   since `sabotage*.py` is review harness and the probe's mutations land with L-0527.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
-  `plugin/crew/CONFIG.md:2410-2417` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2423-2430` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:825-835`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -2037,6 +2038,20 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `8bf710ed` -> `14b52c91` on 2026-09-30 (L-0520 PR 1 merges main bd4b2f30 (T-0028 #288, crew 1.0.85, and the mailgun skill), crew 1.0.86).**  No suite was executed for this note.
 
 **Re-anchored `14b52c91` -> `0c3508e9` on 2026-09-30 (L-0520 PR 1 merges main f7caa37d (L-0561 #289: mailgun registered as skills/mailgun 1.0.1, both install scripts, README, INSTALLATION.md), crew stays 1.0.86).**  No suite was executed for this note.
+
+**Re-anchored `0c3508e9` -> `6e581365` on 2026-09-30 (T-0505 merges main 64b04c6b: W-0116 crew 1.0.89, runner auto-start #294; crew 1.0.91).** `git diff --name-only 0c3508e9 6e581365` outside the refresh artifacts returns W-0116's `plugin/crew/hooks/scripts/crew_refresh_check.py` and `plugin/crew/tests/test_refresh_admission.py`, `.github/workflows/runner-autostart.yml` (#294), the repo README, and T-0505's files: `promote-gate.sh`/`.ps1`, the new `_promote_tree.py`, `test_promote_gate_effective_tree.py`, `promote_tree_mutations.py`, `promote.md`, crew README, CONFIG.md (+2 lines in section 16), the crew-verification SKILL, INSTALLATION.md, `.crew/verify.json` (rule 4 path), the troubleshooting guide and its builds, the cloud handoff note and README, CHANGELOG.md and the version files (crew 1.0.91, past main's 1.0.89). A difflib re-map of every path-qualified `path:line` citation in the eight maps (history sections skipped) moved four: `crew_refresh_check.py:970` -> `:1013` (W-0116) and three `plugin/crew/CONFIG.md:2410-2417` -> `:2412-2419` (T-0505's sentence); none was unmapped. Re-applied by hand in `crew.md`: `promote-gate.sh:79` is the plain `crew_py()` call (re-read with `grep -n`), and `promote-gate.sh` is not a `crew_config.py` user (no `crew_config` import or `.crew/config.json` read in either flavour). Bare `:N` continuations and `CHANGELOG.md` citations in history sections were left as written. No suite was executed for this note.
+
+**Re-anchored `6e581365` -> `9580571e` on 2026-10-01 (T-0505 raises promote.md's line ceiling in .budget-allowance.json, crew 1.0.91).** `git diff --name-only 6e581365 9580571e` outside the refresh artifacts returns only `plugin/crew/.budget-allowance.json`: promote.md's entry edited in place (`lines` 335 -> 380, reason `T8: to trim` -> a `raised:` reason), line count unchanged. No note cites a line of that file; a difflib re-map of every path-qualified citation moved none. No suite was executed for this note.
+
+**Re-anchored `17d0b1d2` -> `3bb32980` on 2026-09-30 (T-0040-land: T-0040 merged into origin/main `6a8c60b1` at `b6ae7c61`, review round 2's fixes at `3bb32980`).** T-0040's `plugin/crew/CONFIG.md` rows moved the body citation `plugin/crew/CONFIG.md:2408-2415` -> `:2419-2426`, twice (mapped through `git diff -U0 origin/main`, re-read with `sed -n`). `.crew/verify.json:384-409` holds: T-0040's rule is appended after it as rule 38 (`:411-417`). No suite was executed for this note.
+
+**Merged `3bb32980` (T-0040-land) + `328fdf4a` (main) on T-0040-land, 2026-09-30 (merge of origin/main `844bfc36`, T-0028 landed as crew 1.0.85).** Both sides' provenance kept, main's first; the body citation both sides moved was re-read by content on the merged tree (see the body). No suite was executed for this note.
+
+**Re-anchored `328fdf4a` (main) / `3bb32980` (T-0040-land) -> `a54ca704` on 2026-09-30 (T-0040-land's merge of origin/main `844bfc36`, T-0028 landed as crew 1.0.85).** The merge note above names every citation the merge re-took; nothing else moved. No suite was executed for this note beyond the merge's.
+
+**Merged `0c3508e9` (main) + `a54ca704` (T-0040-land) on T-0040-land, 2026-10-01 (merge of origin/main `66651b69`: L-0520 PR 1 #287, the merge train, landed as crew 1.0.86; anchored at that main tip).** Two hunks of this file conflicted: the anchor and the provenance tail. Both sides' provenance is kept, main's first. Re-taken on the merged tree: `.crew/verify.json:386-411` is T-0087's harness rule (38, after L-0520's merge train rule 37 at `:385`), and T-0040's shell-route rule is 40 at `:427-432`, the last. Every `path:line` either side added into a file only the other side changed was mapped through a line diff onto the merged tree; outside dated provenance none moved. No suite was executed for this note.
+
+**Merged `9580571e` (main) + `66651b69` (T-0040-land) on T-0040-land, 2026-10-01 (merge of origin/main `44d3dbc6`: runner auto-start #294, T-0505 #296 and T-0110 #297, crew 1.0.97, with rerere off; anchored at that main tip).** Four hunks of this file conflicted: the anchor, two `plugin/crew/CONFIG.md` citations and the provenance tail. The descoped process-group paragraph is `plugin/crew/CONFIG.md:2423-2430` on the merged tree (T-0040's rows +11 and T-0505's section-16 sentence +2 both sit above it), re-found by its first and last lines. Both sides' provenance is kept, main's first. Every `path:line` either side added into a file the other side changed was mapped through a line diff onto the merged tree, and every citation into a file both sides changed was compared by text. No suite was executed for this note.
 
 **Re-anchored `0c3508e9` -> `963d2905` on 2026-09-30 (L-0510: review closure, a final 0-BLOCK round auto-accepts, crew 1.0.90).** `git diff --name-only 0c3508e9 963d2905` returns, outside refresh artifacts, main's L-0561 README repin and L-0510's files (review_ledger.py, review_run.py, crew_autopilot.py, review.md, done.md, autopilot.md, README.md, CONFIG.md, BUDGETS.md, PLUGINS.md, the troubleshooting guide, CHANGELOG.md, two tests, sabotage_review.py and the version files); path-qualified citations outside dated provenance checked by a line diff: no body citation moved: provenance paragraphs keep their dated numbers, and the only cited lines that changed are version lines (plugin.json, PLUGINS.md, BUDGETS.md), unchanged in place. No suite was executed for this note.
 
