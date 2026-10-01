@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@773ce841 on 2026-10-01. Verify before trusting.
+%% Generated from useful-claude-add-ons@0d159692 on 2026-10-01. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -435,6 +435,9 @@ flowchart TB
 %% provider and the launch gate are not drawn. No node or edge changed.
 %% c43a54c1 -> f4adf923 (T-0028 re-sets crew 1.0.85): release files only; no cited line moved.
 %% f4adf923 -> 328fdf4a (T-0028 round-7 fixes in kimi_probe.py, crew 1.0.85): no cited line moved.
+%% 8bf710ed -> e41bc6fd (L-0513 merges main 64b04c6b, W-0116 crew 1.0.89): of the Anchors paths only
+%% crew_refresh_check.py changed (+43 lines after :686); the nodes cite :50-61, :53, :93 and :96,
+%% all above it and re-read. No node or edge changed.
 %% Re-anchored 8bf710ed -> 6e581365 (T-0505 merges main 64b04c6b, crew 1.0.91): of the Anchors paths only
 %% Re-anchored 6e581365 (main, T-0505) and d21fa82d (L-0558) -> b0ac0e1a (L-0558 merges main 6fe0e0db): crew_train.py changed among the anchors; no node cites it by line. No node or edge changed.
 %% crew_refresh_check.py changed (W-0116's refresh admission on Windows). A difflib map of its cited
@@ -454,6 +457,13 @@ flowchart TB
 %% 44d3dbc6, crew 1.0.97, rerere off): both provenance blocks kept, main's first; header at the main tip.
 %% done.md / implement.md / crew_refresh_check.py lines cited here re-read on the merged tree.
 %% No node or edge changed.
+%% Re-anchored 44d3dbc6 / f23b01b4 -> 71038cb9 (L-0513: round 6 BLOCK amendment, merge of origin/main 52489039
+%% (T-0040, crew 1.0.98, rerere off) at 74130bbd, rules 22/40 repriced): of the Anchors paths only implement.md changed (T-0040's step 4 Windows sentence,
+%% a reflow at :66-77, 5 lines in and 5 out, so no later line moved); no line cited here is inside that
+%% range. No node or edge changed.
+%% Re-anchored 71038cb9 / 89ebda03 -> 0d159692 (L-0513 merges origin/main 05a679bf: L-0558, crew 1.0.102,
+%% rerere off): of the Anchors paths only crew_train.py differs from L-0513's side, by L-0558, which main's
+%% side of this diagram already drew; no node or edge changed.
 %% 8bf710ed -> d9ccfd5a (L-0557 merges main 0c0275e8, W-0116 #292; crew 1.0.95): of the Anchors paths only
 %% crew_refresh_check.py changed (W-0116: a GetFinalPathNameByHandleW check inside _read_regular, hunks at :684 and
 %% below); this diagram cites no line of it at or after :684. No node or edge changed.
