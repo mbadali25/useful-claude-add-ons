@@ -57,6 +57,7 @@ A fixture repository or process must not read the real global config. Pin, per t
 | Background git maintenance | `maintenance.auto=false`, `gc.auto=0` | git 2.55 detaches `maintenance run --auto`; a "writes nothing" test saw `.git/objects/maintenance.lock` vanish mid-snapshot |
 | Machine-global tool config | point the path at a file that does not exist | crew's `~/.claude/crew/config.json` |
 | Ambient env (`CLAUDE_PROJECT_DIR`, `HOME`) | `monkeypatch.delenv` / explicit `env=` | green in CI, red on the maintainer's machine |
+| Shared tool cache raced by concurrent children (pwsh's startup profile) | a per-test `XDG_CACHE_HOME` | concurrent pwsh crashed at start-up (-6 "Stack overflow.", -11 SIGSEGV), about 1 `-m slow -n 12` run in 20-50; with the profile unwritable, 150/150 clean |
 
 - **Apply.** Pin through `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_n` / `GIT_CONFIG_VALUE_n`,
   **appended after** whatever count the runner already carries. Cloud containers export their

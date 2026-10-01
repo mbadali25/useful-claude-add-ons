@@ -422,7 +422,15 @@
       "seconds": 9,
       "run": ["python3 -m pytest plugin/crew/tests/test_kimi_probe.py plugin/crew/tests/test_kimi_stream.py plugin/crew/tests/test_kimi_docs.py -q -p no:cacheprovider"],
       "reach": "local",
-      "why": "T-0028 (feature half): the Kimi Code probe's five states, only ok launchable, could-not-tell never ok (an unreadable credentials folder or config.toml, a config.toml that is not a regular file, a scratch directory that cannot be made, an answer other than exactly PROBE_OK are unknown), the read-only agent file and throwaway directory, the scrubbed env and redaction; the stream-json parser (kimi_probe.final_message), checked against fixtures/kimi-stream-2.1.1/ok.jsonl, the owner's one captured run (2026-09-25, session id redacted); and the provider docs. Timed 2026-09-30 on the Linux host under heavy-run: 5.8s wall (97 passed) at e8f41b09, 5.5s pytest; 9 allows for load. The review launch and its tests land with L-0527 (tooling only). reach: local - a fake `kimi` on PATH and a fixture KIMI_CODE_HOME under tmp_path, no network and no real Kimi call." }
+      "why": "T-0028 (feature half): the Kimi Code probe's five states, only ok launchable, could-not-tell never ok (an unreadable credentials folder or config.toml, a config.toml that is not a regular file, a scratch directory that cannot be made, an answer other than exactly PROBE_OK are unknown), the read-only agent file and throwaway directory, the scrubbed env and redaction; the stream-json parser (kimi_probe.final_message), checked against fixtures/kimi-stream-2.1.1/ok.jsonl, the owner's one captured run (2026-09-25, session id redacted); and the provider docs. Timed 2026-09-30 on the Linux host under heavy-run: 5.8s wall (97 passed) at e8f41b09, 5.5s pytest; 9 allows for load. The review launch and its tests land with L-0527 (tooling only). reach: local - a fake `kimi` on PATH and a fixture KIMI_CODE_HOME under tmp_path, no network and no real Kimi call." },
+    {"paths": ["plugin/crew/tests/test_pwsh_cache_isolation.py",
+                "plugin/crew/hooks/scripts/_test/test_flavour_guard.py",
+                "plugin/obsidian-vault/hooks/scripts/_test/**",
+                "scripts/_test/*.sh"],
+      "seconds": 3,
+      "run": ["python3 -m pytest plugin/crew/tests/test_pwsh_cache_isolation.py -q -p no:cacheprovider"],
+      "reach": "local",
+      "why": "L-0557. Every pwsh the suites spawn runs with its own XDG_CACHE_HOME, so concurrent pwsh never share the startup profile they race on (-6 'Stack overflow.' / -11 SIGSEGV at start-up). The guard scans every tracked tests/_test *.py and *.sh statically, so a suite outside plugin/crew/tests that gains a pwsh spawn without the variable turns this red, and it needs no pwsh. reach: local - it reads this checkout's files and spawns only git ls-files." }
   ],
 
   "default": ["bash _verify/smoke.sh"],

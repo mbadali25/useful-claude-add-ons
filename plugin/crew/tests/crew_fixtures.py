@@ -859,6 +859,115 @@ def resolve_pwsh():
     return _PWSH
 
 
+# --- per-test pwsh startup-profile isolation (L-0557) -------------------------
+#
+# pwsh reads `$XDG_CACHE_HOME/powershell/StartupProfileData-NonInteractive` at
+# start-up and rewrites it at exit. Concurrent pwsh sharing one file race on
+# it, and a reader that catches it half-written dies before running anything:
+# "Stack overflow." (-6) or SIGSEGV (-11). conftest gives every test its own
+# XDG_CACHE_HOME and installs `pwsh_cache_audit` so a pwsh spawned without one
+# is refused. No retry and no crash-signature matching, by owner decision.
+# On Windows pwsh keeps the profile under LOCALAPPDATA, so the variable is a
+# no-op there and the check still passes.
+
+# The directory a pwsh spawn's XDG_CACHE_HOME must sit under right now: the
+# current test's tmp_path during a test, the session dir outside one, None
+# before conftest's configure and after its unconfigure (the check is off).
+_PWSH_CACHE_ROOT = None
+_PWSH_CACHE_SESSION = None
+_PWSH_AUDIT_INSTALLED = False
+_PWSH_NAMES = ("pwsh", "powershell")
+
+
+def pwsh_cache_session_dir():
+    """The session-wide XDG_CACHE_HOME conftest set at configure, or None."""
+    return _PWSH_CACHE_SESSION
+
+
+def _argv0(executable, args):
+    """argv[0] as text: `executable` when given, else the first element of a
+    list, else the first token of a command-line string (quoted or not)."""
+    if executable is not None:
+        return os.fsdecode(executable)
+    if isinstance(args, (str, bytes, os.PathLike)):
+        line = os.fsdecode(args).lstrip()
+        if line.startswith('"'):
+            return line[1:].split('"', 1)[0]
+        return line.split(None, 1)[0] if line else ""
+    try:
+        first = list(args)[0]
+    except (TypeError, IndexError):
+        return ""
+    return os.fsdecode(first)
+
+
+def _is_pwsh(argv0):
+    base = re.split(r"[\\/]", argv0)[-1].lower()
+    if base.endswith(".exe"):
+        base = base[:-4]
+    return base in _PWSH_NAMES
+
+
+def _env_get(env, key):
+    if env is None:
+        env = os.environ
+    for name, value in env.items():
+        name = os.fsdecode(name)
+        if name == key or (os.name == "nt" and name.upper() == key):
+            return os.fsdecode(value)
+    return None
+
+
+def _norm(path):
+    return os.path.normcase(os.path.realpath(path))
+
+
+def pwsh_cache_violation(executable, args, env, allowed_root):
+    """None when the spawn is not pwsh, or its XDG_CACHE_HOME sits under
+    `allowed_root`; else a one-line reason. `env is None` means os.environ,
+    as for subprocess. Pure: the audit hook supplies the arguments."""
+    if not _is_pwsh(_argv0(executable, args)):
+        return None
+    value = _env_get(env, "XDG_CACHE_HOME")
+    if value is None:
+        return "XDG_CACHE_HOME is unset, so pwsh would use the user default ~/.cache"
+    if not value:
+        return "XDG_CACHE_HOME is empty, so pwsh would use the user default ~/.cache"
+    if _norm(value) == _norm(os.path.join(os.path.expanduser("~"), ".cache")):
+        return f"XDG_CACHE_HOME={value} is the user default, shared by every pwsh"
+    root = _norm(allowed_root)
+    here = _norm(value)
+    if here != root and not here.startswith(root.rstrip(os.sep) + os.sep):
+        return f"XDG_CACHE_HOME={value} is outside this test's directory {allowed_root}"
+    return None
+
+
+def pwsh_cache_audit(event, payload):
+    """`sys.addaudithook` callback: refuse a pwsh spawn whose cache is not
+    this test's own. Raising aborts the spawn before the process exists."""
+    if event != "subprocess.Popen" or _PWSH_CACHE_ROOT is None:
+        return
+    executable, args, _cwd, env = payload
+    reason = pwsh_cache_violation(executable, args, env, _PWSH_CACHE_ROOT)
+    if reason:
+        raise RuntimeError("pwsh spawned without its own XDG_CACHE_HOME (L-0557): " + reason)
+
+
+def install_pwsh_cache_audit():
+    """Install the audit hook once per process; hooks cannot be removed."""
+    global _PWSH_AUDIT_INSTALLED  # pylint: disable=global-statement
+    if not _PWSH_AUDIT_INSTALLED:
+        sys.addaudithook(pwsh_cache_audit)
+        _PWSH_AUDIT_INSTALLED = True
+
+
+def set_pwsh_cache_session(path):
+    """Record the session dir (or None) and make it the current root."""
+    global _PWSH_CACHE_SESSION, _PWSH_CACHE_ROOT  # pylint: disable=global-statement
+    _PWSH_CACHE_SESSION = path
+    _PWSH_CACHE_ROOT = path
+
+
 # The full per-shell matrix. `conftest.py` registers the marker and deselects
 # it from a default run; `pytest -m slow` or `--run-slow` runs it. Only the
 # bash and pwsh drivers of a decision case carry it: the python driver runs
@@ -1024,6 +1133,9 @@ def write_shim(directory, name, sh_body="#!/bin/sh\nexit 0\n",
 def shim_env(flavor, bindir, **extra):
     """`{"PATH": ...}` with `bindir` first, built for `flavor`, plus `extra`."""
     env = {"PATH": shell_path(flavor, [bindir])}
+    # Built from scratch, so the per-test pwsh cache (L-0557) is copied in.
+    if "XDG_CACHE_HOME" in os.environ:
+        env["XDG_CACHE_HOME"] = os.environ["XDG_CACHE_HOME"]
     env.update(extra)
     return env
 

@@ -11,11 +11,14 @@ test and undoes everything at teardown regardless of ordering.
 """
 import os
 import re
+import shutil
+import tempfile
 
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_config
+import crew_fixtures
 import crew_state
 # Re-exported so pytest discovers it as a fixture package-wide (fixture
 # discovery is by name in a conftest module's namespace, not by definition
@@ -81,6 +84,19 @@ def _no_real_global_config(tmp_path, monkeypatch):
     for name, value in fixture_git_env(os.environ).items():
         monkeypatch.setenv(name, value)
 
+    # Fourth channel (L-0557): pwsh's multicore-JIT startup profile,
+    # `$XDG_CACHE_HOME/powershell/StartupProfileData-NonInteractive`. Every
+    # pwsh reads it at start-up and rewrites it at exit, so concurrent pwsh
+    # sharing the user's ~/.cache race on one file, and a reader that catches
+    # it half-written dies before running a statement ("Stack overflow." -6,
+    # or SIGSEGV -11) - about one `-m slow -n 12` run in 20-50. Each test gets
+    # its own dir; the root moves with it, so the audit hook conftest installs
+    # refuses a pwsh whose cache is anywhere else. Not created here: pwsh
+    # creates it on first use, and tests that list tmp_path see nothing new
+    # unless they ran pwsh. A no-op for Windows pwsh (LOCALAPPDATA).
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
+    monkeypatch.setattr(crew_fixtures, "_PWSH_CACHE_ROOT", str(tmp_path))
+
 
 # --- the `slow` marker: the full per-shell hook matrix ------------------------
 #
@@ -104,7 +120,34 @@ def pytest_addoption(parser):
              "matrix). `-m slow` runs only those.")
 
 
+_XDG_PREVIOUS = "unset"
+
+
+def _isolate_pwsh_cache():
+    """Session half of the pwsh cache isolation (L-0557): a session-wide
+    XDG_CACHE_HOME for spawns outside any test (collection, module fixtures),
+    then the audit hook. The autouse fixture narrows it to each test."""
+    global _XDG_PREVIOUS  # pylint: disable=global-statement
+    _XDG_PREVIOUS = os.environ.get("XDG_CACHE_HOME")
+    session = tempfile.mkdtemp(prefix="crew-xdg-")
+    os.environ["XDG_CACHE_HOME"] = session
+    crew_fixtures.set_pwsh_cache_session(session)
+    crew_fixtures.install_pwsh_cache_audit()
+
+
+def pytest_unconfigure(config):  # pylint: disable=unused-argument
+    session = crew_fixtures.pwsh_cache_session_dir()
+    crew_fixtures.set_pwsh_cache_session(None)
+    if _XDG_PREVIOUS is None:
+        os.environ.pop("XDG_CACHE_HOME", None)
+    elif _XDG_PREVIOUS != "unset":
+        os.environ["XDG_CACHE_HOME"] = _XDG_PREVIOUS
+    if session:
+        shutil.rmtree(session, ignore_errors=True)
+
+
 def pytest_configure(config):
+    _isolate_pwsh_cache()
     config.addinivalue_line(
         "markers",
         "slow: the full bash/pwsh driver matrix for a hook; deselected by "
