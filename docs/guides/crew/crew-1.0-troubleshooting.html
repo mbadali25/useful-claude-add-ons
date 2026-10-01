@@ -348,7 +348,8 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
 <li><strong>Symptom: <code>check-land</code> says the base moved in Touch paths.</strong> Another ticket landed changes to
   paths this ticket touches after it was gated, so the verdict covers a different tree.
   <strong>Fix:</strong> <code>crew_train.py catch-up --ticket &lt;id&gt;</code> (a merge; conflicts and rerere-replayed files
-  are listed and left staged for you to commit), gate the merged head again (<code>/crew:review</code>),
+  are listed and left unstaged for you to inspect, <code>git add</code> and commit; a version file is never
+  replayed and comes back conflicted), gate the merged head again (<code>/crew:review</code>),
   then <code>check-land</code> again. <code>merge-tree: HEAD conflicts with &lt;base&gt;</code> is the same fix with a
   conflict to resolve first.</li>
 </ul>

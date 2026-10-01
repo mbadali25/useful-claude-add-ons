@@ -83,7 +83,10 @@ Before the review round, `crew_train.py acquire --ticket T-0091` takes the train
 Touch overlaps one already holding it waits (exit 1, colliding paths named) and gates next, in the
 order the lanes reached their gate, while a ticket with a disjoint Touch gates at once. Catch up with `crew_train.py catch-up --ticket
 T-0091` - a `git merge` of the base, never a rebase, with git rerere on so a conflict resolved
-once replays next time (the replayed files are staged and listed; show them to the reviewer).
+once replays next time. A replay is left unstaged and listed: inspect it, `git add` it, and show
+it to the reviewer. crew never turns on `rerere.autoupdate`, and the version files
+(`plugin.json`, `marketplace.json`, `PLUGINS.md`, `CHANGELOG.md`) are never replayed - they come
+back conflicted, named as forgotten, for you to resolve by hand.
 
 **8. Done.** You type `/crew:done T-0091`. Three checks, all required: the
 review receipt rebuilds clean, the verify gate is clean, and the completion

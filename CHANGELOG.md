@@ -4,6 +4,36 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.0.87: the merge train's round-2 findings and the rerere rule (L-0558)
+
+L-0520's review round 2 (Codex) left two BLOCKs and three FIXes, owner-accepted so PR 1 could
+land, with the train not to be armed until they were fixed. All five, and the owner's rerere rule:
+
+- **Moved paths judge the full Touch.** `acquire`'s `merge <base> first`, `check-land` and the
+  merged-path notices no longer drop refresh artifacts from Touch; only the queue's overlap
+  decision does. Before, a base that changed `.crew/codemap/crew.md` under a ticket whose Touch
+  named it could still print `LAND_OK`.
+- **The fetch updates the ref it judges.** `catch-up` and `check-land` fetch with
+  `+refs/heads/<branch>:refs/remotes/<remote>/<branch>`; a base that then disagrees with
+  `FETCH_HEAD` is could-not-tell (exit 3). Before, with `remote.origin.fetch` unset, the fetch
+  moved only `FETCH_HEAD` and the checks judged a stale `origin/main`.
+- **No state change commits unlogged.** Events are written before `state.json` and both are rolled
+  back when either write fails (the events file truncated to its old size); the next seq skips
+  past any event a crash left behind.
+- **Malformed state and history are could-not-tell.** Every top-level state field (`seq` and
+  `order` non-negative integers, never booleans; `entries`; `armed_at`, `armed_by`) is checked at
+  load; an `events.jsonl` record that is not an object with a positive `seq`, a known `kind` and a
+  `ticket` is told to every entry as `could not tell whether ... concerns you`, and `arm` refuses
+  on it, instead of a `KeyError` or a silent skip.
+- **rerere, never autoupdate (owner, 2026-09-30).** `catch-up` sets `rerere.enabled` only and
+  merges with `git -c rerere.autoupdate=false`, so a replay is left unstaged for the lane to
+  inspect and `git add`. The version files (`plugin/crew/.claude-plugin/plugin.json`,
+  `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md`, `CHANGELOG.md`) are never replayed: each
+  left conflicted gets `git rerere forget` and its conflict markers back, is named as forgotten in
+  the output, and is listed under `rerere_forgotten` in the merge log.
+- The sabotage rows proving these (S20-S28) belong to L-0526's `sabotage_train.py` (tooling PRs
+  carry no feature work); each was run RED by hand here.
+
 ### Added — `crew` 1.0.86: the merge train - gate+land serialised per overlapping Touch set (L-0520)
 
 - **New `hooks/scripts/crew_train.py`.** One locked queue per clone under
