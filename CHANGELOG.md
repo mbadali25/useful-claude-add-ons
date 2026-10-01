@@ -4,6 +4,32 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.0.89: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516)
+
+- **New `tests/poll_fixtures.py`.** `poll_until(probe, done, timeout)` probes at least once and
+  returns the LAST probed value at the deadline, never a synthesized success, so a real survivor
+  still fails the caller's assertion. `wait_for_pidfile(path)` waits for a decimal pid, not just
+  for the file: a shell redirect creates or truncates the file before it writes (POSIX XCU
+  2.7.2), and a tight reader saw it existing but empty in 389 of 500 reads.
+- **The ps1 survivor test** (`test_the_ps1_probe_timeout_kills_the_launchers_child_too`) polls
+  for survivors up to 10 s instead of sleeping 0.5 s once, which failed in CI on 2026-09-30 with
+  one survivor. Both survivor tests now use a per-call `uuid4` token, because `tmp_path.name` is
+  identical in every pytest process and two CI legs on one host could read or reap each other's
+  child through `/proc`.
+- **The three `test_kill_process_group_*` pidfile reads** go through `wait_for_pidfile`.
+- **Three tests that time themselves are now `wallclock`** (serial), with their bounds unchanged:
+  `test_a_winner_killed_after_exit_0_does_not_cost_the_only_emission`,
+  `test_the_twin_stands_down_as_soon_as_the_winner_reports_sent` and
+  `test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay`.
+- **Four `sabotage_qa.py` entries** prove it: `poll_until` probing once, `poll_until` reporting
+  success at the deadline, `wait_for_pidfile` accepting an empty file, and
+  `completion-audit.ps1`'s tree kill reduced to `Kill($false)` each turn a named test red.
+- A `.crew/verify.json` rule covers the new module; `crew-qa-standards` `harness.md` H3 now says
+  a fixed sleep before a check is a poll case, not a wallclock case.
+- No change needed: `test_check_writes_nothing` (its maintenance-lock race was fixed by the
+  1.0.64 git pins) and `test_near_deadline_candidates_then_a_hang_stay_within_the_hook_timeout`
+  (already `wallclock` since 1.0.63).
+
 ### Added — `crew` 1.0.86: the merge train - gate+land serialised per overlapping Touch set (L-0520)
 
 - **New `hooks/scripts/crew_train.py`.** One locked queue per clone under
