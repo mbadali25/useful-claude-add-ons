@@ -44,27 +44,23 @@ def test_poll_until_probes_at_least_once_with_a_zero_timeout():
 
 def test_poll_until_returns_once_a_late_child_has_died():
     began = time.monotonic()
-    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(1.0)"])
-    try:
+    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(1.0)"]) as proc:
         alive = poll_fixtures.poll_until(lambda: proc.poll() is None,
                                          done=lambda v: not v, timeout=10)
         waited = time.monotonic() - began
-    finally:
-        proc.wait(timeout=10)
 
     assert (alive, waited >= 0.9) == (False, True)
 
 
 def test_poll_until_reports_a_child_that_never_dies_at_the_deadline():
     began = time.monotonic()
-    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
-    try:
-        alive = poll_fixtures.poll_until(lambda: proc.poll() is None,
-                                         done=lambda v: not v, timeout=1.0)
-        waited = time.monotonic() - began
-    finally:
-        proc.kill()
-        proc.wait(timeout=10)
+    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"]) as proc:
+        try:
+            alive = poll_fixtures.poll_until(lambda: proc.poll() is None,
+                                             done=lambda v: not v, timeout=1.0)
+            waited = time.monotonic() - began
+        finally:
+            proc.kill()
 
     assert (alive, waited >= 1.0) == (True, True)
 
