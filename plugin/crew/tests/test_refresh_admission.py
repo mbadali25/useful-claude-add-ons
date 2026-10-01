@@ -1181,15 +1181,17 @@ def _change_mode(root, rel, data, file_mode, change):
     """Write `rel`'s admitted bytes, set `core.fileMode`, then make `change`:
     `index` stages +x and leaves the disk alone, `disk` chmods the file only,
     `both` does the two, `link` stages the file as a link (120000), and
-    `staged-edit` stages the bytes with the mode unchanged. Skips `disk` and
-    `both` under `core.fileMode=true` where the filesystem keeps no
-    executable bit (NTFS), since git cannot see the disk half there."""
+    `staged-edit` stages the bytes with the mode unchanged. Skips only
+    `disk` under `core.fileMode=true` where the filesystem keeps no
+    executable bit (NTFS), since that case is nothing but the disk half;
+    `both` still stages +x there and must be refused (W-0117 review round 1
+    FIX)."""
     path = root.joinpath(*rel.split("/"))
     path.write_bytes(data)
     git(root, "config", "core.fileMode", file_mode)
     if change in ("disk", "both"):
         path.chmod(0o755)
-        if file_mode == "true" and not path.stat().st_mode & 0o111:
+        if change == "disk" and file_mode == "true" and not path.stat().st_mode & 0o111:
             pytest.skip("this filesystem records no executable bit")
     if change in ("index", "both"):
         git(root, "update-index", "--chmod=+x", "--", rel)
