@@ -1507,12 +1507,19 @@ def case_relative_path_tool_is_made_absolute(tmp: str) -> None:
 
 # ---- review round 5 (L-0513 Fix phase) ------------------------------------
 
-def _two_heavy(sub: str, b1: dict):
-    """Run a1 (A) and b1 (B) with a fake heavy-run that files a well-formed
-    PASS for a1 and `b1` as given for b1."""
-    hr = _inner_part_heavy_run(sub, {"a1": part_row("a1", "PASS", 0), "b1": b1})
-    return run_gate(sub, [sh_step("a1", "heavy", "exit 0", "A"),
-                          sh_step("b1", "heavy", "exit 0", "B")], heavy=hr)
+def _many_heavy(sub: str, rows: dict):
+    """One gate run: heavy step `name` per row (groups alternating A, B, each
+    `exit 0`), under a fake heavy-run that files each row as that step's
+    result. One run per batch keeps the case inside the suite's budget."""
+    names = sorted(rows)
+    hr = _inner_part_heavy_run(sub, rows)
+    return run_gate(sub, [sh_step(n, "heavy", "exit 0", _row_group(i))
+                          for i, n in enumerate(names)], heavy=hr)
+
+
+def _row_group(i: int) -> str:
+    """The group of the i-th step in sorted name order: A, B, A, ..."""
+    return "AB"[i % 2]
 
 
 def case_heavy_part_fail_needs_a_failing_rc(tmp: str) -> None:
@@ -1522,23 +1529,23 @@ def case_heavy_part_fail_needs_a_failing_rc(tmp: str) -> None:
     # FAIL with an ordinary failing rc (1, 2, 128, 255) is still taken.
     refuse = [77, -9, -15, 129, 130, 131, 134, 137, 139, 143]
     allow = [1, 2, 128, 255]
-    rows = [(rc, False) for rc in refuse] + [(rc, True) for rc in allow]
-    for i, (rcv, taken) in enumerate(rows):
-        label = f"b1 FAIL rc {rcv}"
-        sub = os.path.join(tmp, f"f{i}")
+    for label, rcs, want_state, want_rc in (("refused", refuse, "COULD-NOT-TELL", 3),
+                                            ("allowed", allow, "FAIL", 1)):
+        rows = {f"s{i:02d}": part_row(f"s{i:02d}", "FAIL", rcv, f"payload-{rcv}",
+                                      group=_row_group(i))
+                for i, rcv in enumerate(rcs)}
+        sub = os.path.join(tmp, label)
         os.makedirs(sub)
-        rc, out, status = _two_heavy(sub, part_row("b1", "FAIL", rcv, f"payload-{i}", group="B"))
+        rc, out, status = _many_heavy(sub, rows)
         st = by_name(status)
-        expect(st["a1"]["state"] == "PASS", f"{label}: control a1 is {st['a1']}\n{out}")
-        if not taken:
-            expect(st["b1"]["state"] == "COULD-NOT-TELL",
-                   f"{label}: a FAIL classify() cannot give was taken as {st['b1']['state']}"
-                   f"\n{out}")
-            expect(rc == 3, f"{label}: rc={rc}, expected 3\n{out}")
-            continue
-        expect(st["b1"]["state"] == "FAIL" and st["b1"]["reason"] == f"payload-{i}",
-               f"{label}: a FAIL run_step can give was not taken: {st['b1']}\n{out}")
-        expect(rc == 1, f"{label}: rc={rc}, expected 1\n{out}")
+        for name, row in rows.items():
+            got = st[name]
+            expect(got["state"] == want_state,
+                   f"FAIL rc {row['rc']}: read {got['state']}, expected {want_state}\n{out}")
+            if want_state == "FAIL":
+                expect(got["reason"] == row["reason"],
+                       f"FAIL rc {row['rc']}: the payload's reason was not kept: {got}")
+        expect(rc == want_rc, f"{label}: rc={rc}, expected {want_rc}\n{out}")
 
 
 def case_heavy_part_needs_step_metadata(tmp: str) -> None:
@@ -1547,35 +1554,50 @@ def case_heavy_part_needs_step_metadata(tmp: str) -> None:
     # group, argv, cwd and timeout (acceptance check 11). Neighbours: each
     # field present but contradicting the table, or of the wrong type, is not
     # taken either; the full row run_step writes still is.
-    full = part_row("b1", "PASS", 0, group="B")
-    bad = {f"missing {k}": {x: v for x, v in full.items() if x != k}
-           for k in ("phase", "group", "argv", "cwd", "timeout")}
-    bad.update({
-        "phase solo": {**full, "phase": "solo"},
-        "group A": {**full, "group": "A"},
-        "group null": {**full, "group": None},
-        "cwd sub": {**full, "cwd": "sub"},
-        "timeout 61": {**full, "timeout": 61},
-        "timeout string": {**full, "timeout": "60"},
-        "argv string": {**full, "argv": "sh -c exit 0"},
-        "argv non-str item": {**full, "argv": ["sh", 1]},
-    })
-    cases = list(bad.items()) + [("control", full)]
-    for i, (label, row) in enumerate(cases):
-        sub = os.path.join(tmp, f"m{i}")
-        os.makedirs(sub)
-        rc, out, status = _two_heavy(sub, row)
-        st = by_name(status)
-        if label == "control":
-            expect(rc == 0 and st["b1"]["state"] == "PASS",
-                   f"control: the full row was not taken: rc={rc} {st['b1']}\n{out}")
-            continue
-        expect(st["b1"]["state"] == "COULD-NOT-TELL",
-               f"{label}: b1 is {st['b1']['state']} from a row without the step's metadata"
+    def full(name, i):
+        return part_row(name, "PASS", 0, group=_row_group(i))
+
+    def other_group(i):
+        return _row_group(i + 1)
+
+    edits = [("missing phase", lambda r, i: r.pop("phase")),
+             ("missing group", lambda r, i: r.pop("group")),
+             ("missing argv", lambda r, i: r.pop("argv")),
+             ("missing cwd", lambda r, i: r.pop("cwd")),
+             ("missing timeout", lambda r, i: r.pop("timeout")),
+             ("phase solo", lambda r, i: r.update(phase="solo")),
+             ("other group", lambda r, i: r.update(group=other_group(i))),
+             ("group null", lambda r, i: r.update(group=None)),
+             ("cwd sub", lambda r, i: r.update(cwd="sub")),
+             ("timeout 61", lambda r, i: r.update(timeout=61)),
+             ("timeout string", lambda r, i: r.update(timeout="60")),
+             ("timeout float", lambda r, i: r.update(timeout=60.0)),
+             ("argv string", lambda r, i: r.update(argv="sh -c exit 0")),
+             ("argv non-str item", lambda r, i: r.update(argv=["sh", 1]))]
+    rows, labels = {}, {}
+    for i, (label, edit) in enumerate(edits):
+        name = f"m{i:02d}"
+        row = full(name, i)
+        edit(row, i)
+        rows[name], labels[name] = row, label
+    sub = os.path.join(tmp, "bad")
+    os.makedirs(sub)
+    rc, out, status = _many_heavy(sub, rows)
+    st = by_name(status)
+    for name, label in labels.items():
+        got = st[name]
+        expect(got["state"] == "COULD-NOT-TELL",
+               f"{label}: {name} is {got['state']} from a row without the step's metadata"
                f"\n{out}")
-        expect(rc == 3, f"{label}: rc={rc}, expected 3\n{out}")
         for key in ("phase", "group", "argv", "cwd", "timeout"):
-            expect(key in st["b1"], f"{label}: status.json's b1 lacks {key}: {st['b1']}")
+            expect(key in got, f"{label}: status.json's {name} lacks {key}: {got}")
+    expect(rc == 3, f"bad rows: rc={rc}, expected 3\n{out}")
+    sub = os.path.join(tmp, "control")
+    os.makedirs(sub)
+    rc, out, status = _many_heavy(sub, {"c0": full("c0", 0), "c1": full("c1", 1)})
+    st = by_name(status)
+    expect(rc == 0 and all(st[n]["state"] == "PASS" for n in ("c0", "c1")),
+           f"control: the full rows were not taken: rc={rc} {st}\n{out}")
 
 
 CASES = [

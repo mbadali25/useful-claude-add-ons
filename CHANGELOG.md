@@ -28,8 +28,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   separators, a leading dot, `heavy-run`), an unknown key or a field of the wrong type is exit 2.
   `--skip` records SKIP before the step's command is built.
 - **No forged or partial evidence reads as a pass.** A heavy-part result is taken only for a table
-  step, under its own name, with a state its rc could give (PASS needs rc 0, SKIP rc 77 or null),
-  so a PASS with no exit status, or a SKIP over a failed exit, is COULD-NOT-TELL. A timeout's grace
+  step, under its own name, carrying that step's phase, group, cwd and timeout and an argv list
+  (every per-step field `status.json` states), with the state `classify()` gives its rc (PASS needs
+  rc 0, FAIL an ordinary failing rc - never 77, a negative rc or a signal exit - SKIP rc 77 or
+  null), so a PASS with no exit status, a SKIP over a failed exit, a FAIL over a skip or a signal
+  death, or a row missing the step's metadata is COULD-NOT-TELL. A timeout's grace
   period lasts until the whole process group is gone, not just its leader. A step's `cwd` is
   resolved again at launch, so a symlink swapped in by an earlier step cannot run it outside
   `--root`; on Linux the child starts in the directory that was checked (opened, re-checked, and

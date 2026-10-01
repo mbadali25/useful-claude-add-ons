@@ -33,8 +33,10 @@ A timeout kills the step's whole process group: SIGTERM, a grace period
 (--grace, default 30 s) that lasts until the whole GROUP is gone, not just its
 leader, then SIGKILL. A heavy-run call that dies leaves every heavy/solo step
 it had not recorded COULD-NOT-TELL, and a heavy-part.json result is taken only
-for a table step, under its own name, with a state its rc could give (PASS
-needs rc 0, SKIP rc 77 or null) -- anything else is COULD-NOT-TELL. The inner
+for a table step, under its own name, carrying that step's phase, group, cwd
+and timeout and an argv list, with a state its rc could give (PASS needs rc 0,
+FAIL an rc classify() calls FAIL, SKIP rc 77 or null) -- anything else is
+COULD-NOT-TELL. The inner
 runner refuses (exit 2, no step run) unless the table it loads has the digest
 the outer runner validated (--table-digest), so a table or runner file edited
 by a cheap step never runs.
@@ -770,41 +772,61 @@ def run_inner(part: str, steps: list, ctx: Context) -> int:
 
 # ---- outer ----------------------------------------------------------------
 
-RESULT_KEYS = ("name", "rc", "state", "reason", "seconds", "log")
+RESULT_KEYS = ("name", "phase", "group", "argv", "cwd", "timeout", "rc", "state", "reason",
+               "seconds", "log")
 
 
-def _valid_result(name: str, res) -> bool:
+def _same_metadata(step: Step, res: dict) -> bool:
+    """The row carries the table step's phase, group, cwd and timeout (a bool
+    is never a timeout) and an argv list of strings -- every per-step field
+    status.json must state (acceptance check 11). argv is only typed, not
+    compared: build_argv adds the pinned pytest flags at launch."""
+    argv, timeout = res["argv"], res["timeout"]
+    return (res["phase"] == step.phase and res["group"] == step.group
+            and res["cwd"] == step.cwd and not isinstance(timeout, bool)
+            and type(timeout) is type(step.timeout) and timeout == step.timeout
+            and isinstance(argv, list) and all(isinstance(a, str) for a in argv))
+
+
+def _valid_result(step: Step, res) -> bool:
     """A heavy-part result is taken only when it is filed under its own name,
-    its rc is an int or null (never a bool or a string), and its state is one
-    the inner runner's classify() could give that rc: PASS needs rc 0, FAIL a
-    non-zero rc, SKIP rc 77 or null (--skip, a missing tool) -- a PASS without
-    the exit status that proves it, or a SKIP over a failed exit, is never
-    taken (T-0082). COULD-NOT-TELL takes any rc: it never passes. Anything
-    else is dropped, and the step reads COULD-NOT-TELL."""
+    carries its table step's metadata (_same_metadata), its rc is an int or
+    null (never a bool or a string), and its state is the one the inner
+    runner's classify() gives that rc: PASS needs rc 0, FAIL an rc classify()
+    calls FAIL (never 77, a negative rc or a signal exit -- those are SKIP or
+    COULD-NOT-TELL), SKIP rc 77 or null (--skip, a missing tool) -- a PASS
+    without the exit status that proves it, or a SKIP or FAIL over an exit
+    that says otherwise, is never taken (T-0082). COULD-NOT-TELL takes any rc:
+    it never passes. Anything else is dropped, and the step reads
+    COULD-NOT-TELL."""
     if not isinstance(res, dict) or not all(k in res for k in RESULT_KEYS):
         return False
     rc, state = res["rc"], res["state"]
-    if res["name"] != name or state not in (PASS, FAIL, SKIP, CNT):
+    if res["name"] != step.name or state not in (PASS, FAIL, SKIP, CNT):
+        return False
+    if not _same_metadata(step, res):
         return False
     if rc is not None and (isinstance(rc, bool) or not isinstance(rc, int)):
         return False
     if state == PASS:
         return rc == 0
     if state == FAIL:
-        return rc is not None and rc != 0
+        return rc is not None and classify(rc, False, True)[0] == FAIL
     if state == SKIP:
         return rc is None or rc == EXIT_SKIP
     return True
 
 
-def _part(got):
-    """(steps, started) from heavy-part.json as read: only well-formed step
-    results, and `started` only when a finite non-bool number. A document of
-    any other shape gives ({}, None), never an exception."""
+def _part(got, table: dict):
+    """(steps, started) from heavy-part.json as read: only well-formed results
+    for a step of `table` (name -> Step), and `started` only when a finite
+    non-bool number. A document of any other shape gives ({}, None), never an
+    exception."""
     if not isinstance(got, dict):
         return {}, None
     steps = got.get("steps")
-    steps = {n: r for n, r in steps.items() if isinstance(n, str) and _valid_result(n, r)} \
+    steps = {n: r for n, r in steps.items()
+             if isinstance(n, str) and n in table and _valid_result(table[n], r)} \
         if isinstance(steps, dict) else {}
     started = got.get("started")
     if isinstance(started, bool) or not isinstance(started, (int, float)) \
@@ -907,7 +929,7 @@ def run_outer(args, steps: list, source: str, ctx: Context, hr: dict, digest: st
         if hr["mode"] == "present":
             cmd = [hr["path"], *cmd]
         printed: set = set()
-        wanted = {s.name for s in inner_steps}  # a result for any other name is never taken
+        wanted = {s.name: s for s in inner_steps}  # a result for any other name is never taken
         slot: dict = {}  # step name -> its index in results, once recorded
 
         def take(name: str, res: dict) -> None:
@@ -920,8 +942,8 @@ def run_outer(args, steps: list, source: str, ctx: Context, hr: dict, digest: st
         def tick() -> None:
             # Copy each heavy result into status.json as soon as heavy-part.json
             # has it, so an outer runner killed mid-call loses none of them.
-            fresh = [(n, r) for n, r in _part(read_json(part))[0].items()
-                     if n in wanted and n not in printed]
+            fresh = [(n, r) for n, r in _part(read_json(part), wanted)[0].items()
+                     if n not in printed]
             for name, res in fresh:
                 printed.add(name)
                 take(name, res)
@@ -940,7 +962,7 @@ def run_outer(args, steps: list, source: str, ctx: Context, hr: dict, digest: st
                 cmd, ctx.root, os.path.join(ctx.out, "logs", "heavy-run.log"), budget,
                 ctx.grace * 2 + 5, on_tick=tick)
         hr["rc"] = rc
-        recorded, inner_started = _part(read_json(part))
+        recorded, inner_started = _part(read_json(part), wanted)
         if inner_started is not None:
             hr["waited_seconds"] = round(inner_started - launched, 1)
         why = (f"heavy-run call timed out after {budget:g}s (slot wait included)" if timed_out
