@@ -540,6 +540,233 @@ def case_skip_and_table_are_recorded(tmp: str) -> None:
     expect(rc == 0, f"rc={rc}")
 
 
+# ---- review round 1 (L-0513 Fix phase) -------------------------------------
+
+def _drift_fixture(tmp: str):
+    """A copy of this repo's workflows; returns (runner, root, yaml)."""
+    _need_yaml()
+    import yaml
+    runner = load_runner()
+    root = os.path.join(tmp, "repo")
+    shutil.copytree(os.path.join(REPO, ".github", "workflows"),
+                    os.path.join(root, ".github", "workflows"))
+    expect(runner.ci_drift(root) == [], "the copied workflows already drift")
+    return runner, root, yaml
+
+
+def _edit_workflow(root: str, yaml, name: str, edit) -> None:
+    path = os.path.join(root, ".github", "workflows", name)
+    with open(path, encoding="utf-8") as fh:
+        doc = yaml.safe_load(fh)
+    edit(doc)
+    write(path, yaml.safe_dump(doc))
+
+
+def case_ci_drift_scans_crew_shell_matrix(tmp: str) -> None:
+    # BLOCK r1: the whole crew-shell-matrix job was excluded as Windows-only,
+    # but its ubuntu leg runs the slow hook matrix on every PR.
+    runner, root, yaml = _drift_fixture(tmp)
+    slow = [s for s in runner.TABLE if any(wf == "pytest-crew.yml" and " -m slow" in cmd
+                                           for wf, cmd in s.ci)]
+    expect(len(slow) == 1, f"no table step covers the slow hook matrix: {[s.name for s in slow]}")
+    expect(slow[0].phase == "heavy" and ("-n", "4") in list(zip(slow[0].argv, slow[0].argv[1:])),
+           f"slow step is not a heavy -n 4 pytest step: {slow[0]}")
+    _edit_workflow(root, yaml, "pytest-crew.yml", lambda d: d["jobs"]["crew-shell-matrix"]["steps"]
+                   .append({"name": "new", "run": "python3 scripts/new-check.py"}))
+    problems = runner.ci_drift(root)
+    expect(any("crew-shell-matrix" in p and "new-check.py" in p for p in problems),
+           f"a command added to crew-shell-matrix was not reported: {problems}")
+
+
+def case_ci_drift_windows_only_step_needs_its_if(tmp: str) -> None:
+    # Neighbour of the crew-shell-matrix BLOCK: a Windows-only step is excluded
+    # by its `if:`, so dropping the `if:` makes its command count again.
+    runner, root, yaml = _drift_fixture(tmp)
+
+    def drop_if(doc):
+        for step in doc["jobs"]["crew-shell-matrix"]["steps"]:
+            if step.get("if") == "matrix.os == 'windows-latest'" and "not wallclock" in step["run"]:
+                del step["if"]
+                return
+        raise AssertionError("fixture: no Windows-only step to edit")
+
+    _edit_workflow(root, yaml, "pytest-crew.yml", drop_if)
+    problems = runner.ci_drift(root)
+    expect(any("crew-shell-matrix" in p and "not wallclock" in p for p in problems),
+           f"a Windows-only command that lost its if: was not reported: {problems}")
+
+
+def case_ci_drift_compound_commands(tmp: str) -> None:
+    # FIX r1 (wildcard prefix) and FIX r1 (dropped `if` lines), plus their
+    # neighbours: a check chained onto an excluded install, an echo, or hidden
+    # in a one-line conditional or loop is still a command CI runs.
+    runner = load_runner()
+    hidden = [
+        "pip install pytest && python3 scripts/new-check.py",
+        "pip install pytest; python3 scripts/new-check.py",
+        "pip install pytest || python3 scripts/new-check.py",
+        "pip install $(python3 scripts/new-check.py)",
+        "if true; then python3 scripts/new-check.py; fi",
+        "if python3 scripts/new-check.py; then :; fi",
+        "if ! python3 scripts/new-check.py; then exit 1; fi",
+        "while python3 scripts/new-check.py; do :; done",
+        "for f in a b; do python3 scripts/new-check.py; done",
+        "echo hi && python3 scripts/new-check.py",
+        "if [ -n \"$X\" ]; then\n  python3 scripts/new-check.py\nfi",
+    ]
+    for run in hidden:
+        cmds = runner.split_commands(run)
+        unknown = [c for c in cmds if not runner._excluded("pytest-crew.yml", c)]
+        expect(any("new-check.py" in c for c in unknown),
+               f"{run!r} hides new-check.py: commands {cmds}, unknown {unknown}")
+    runner_, root, yaml = _drift_fixture(tmp)
+
+    def chain(doc):
+        for step in doc["jobs"]["test"]["steps"]:
+            if isinstance(step.get("run"), str) and "pip install" in step["run"]:
+                step["run"] = "pip install pytest && python3 scripts/new-check.py\n"
+                return
+        raise AssertionError("fixture: no install step to edit")
+
+    _edit_workflow(root, yaml, "pytest-crew.yml", chain)
+    problems = runner_.ci_drift(root)
+    expect(any("new-check.py" in p for p in problems),
+           f"a check chained onto an install was not reported: {problems}")
+
+
+def case_table_rejects_unsafe_step_names(tmp: str) -> None:
+    # BLOCK r1: a custom-table name became a log path, so `/abs` or `../x`
+    # escaped --out and truncated a file outside it. Neighbour: a step named
+    # heavy-run would share the outer heavy-run call's log.
+    victim = os.path.join(tmp, "victim")
+    write(victim + ".log", "keep me\n")
+    for bad in (victim, "../escape", "a/b", "..", ".hidden", "heavy-run", "a\\b", ""):
+        sub = os.path.join(tmp, f"t{abs(hash(bad))}")
+        os.makedirs(sub)
+        rc, out, _ = run_gate(sub, [{"name": bad, "phase": "cheap", "argv": ["true"]}])
+        expect(rc == 2, f"name {bad!r}: rc={rc}, expected a refusal (2)\n{out}")
+        expect("Traceback" not in out, f"name {bad!r} crashed\n{out}")
+    with open(victim + ".log", encoding="utf-8") as fh:
+        expect(fh.read() == "keep me\n", "a file outside --out was truncated")
+
+
+def case_table_rejects_wrong_field_types(tmp: str) -> None:
+    # FIX r1: valid JSON of the wrong shape crashed with a traceback. Neighbours:
+    # needs as a bare string (tuple("bash") is its characters), a bool timeout
+    # (bool is an int), and an unknown key (a typo silently defaulted).
+    base = {"name": "x", "phase": "cheap", "argv": ["true"]}
+    bad = [{"cwd": []}, {"cwd": 5}, {"cwd": ""}, {"needs": "bash"}, {"needs": [1]},
+           {"pytest": "yes"}, {"timeout": True}, {"timeot": 5}]
+    for i, extra in enumerate(bad):
+        sub = os.path.join(tmp, f"t{i}")
+        os.makedirs(sub)
+        rc, out, _ = run_gate(sub, [{**base, **extra}])
+        expect(rc == 2, f"{extra}: rc={rc}, expected a refusal (2)\n{out}")
+        expect("Traceback" not in out, f"{extra} crashed\n{out}")
+
+
+def case_skip_wins_before_argv_is_built(tmp: str) -> None:
+    # FIX r1: --skip was applied after argv construction, so a skipped step
+    # whose {git_py_files} expansion fails (non-git root) read COULD-NOT-TELL.
+    # Neighbour: the same for a heavy step, which runs in the inner runner.
+    steps = [{"name": "gp", "phase": "cheap", "argv": ["echo", "{git_py_files}"]},
+             {"name": "hp", "phase": "heavy", "group": "A", "argv": ["echo", "{git_py_files}"]},
+             sh_step("ok", "cheap", "exit 0")]
+    rc, out, status = run_gate(tmp, steps, "--skip", "gp", "--skip", "hp")
+    st = by_name(status)
+    for name in ("gp", "hp"):
+        expect(st[name]["state"] == "SKIP" and st[name]["reason"] == "skipped by --skip",
+               f"{name} = {st[name]['state']} {st[name]['reason']!r}\n{out}")
+    expect(rc == 0, f"rc={rc}\n{out}")
+
+
+def case_heavy_results_reach_status_json(tmp: str) -> None:
+    # FIX r1: heavy results lived only in heavy-part.json until the whole
+    # heavy call ended; an outer runner killed then left status.json with
+    # none of them. A finished heavy step must reach status.json while the
+    # call is still running.
+    root = os.path.join(tmp, "root")
+    os.makedirs(root)
+    out = os.path.join(tmp, "out")
+    pidf = os.path.join(tmp, "b1.pid")
+    steps = [sh_step("a1", "heavy", "exit 0", "A"),
+             sh_step("b1", "heavy", f'echo $$ > "{pidf}"; exec sleep 30', "B")]
+    table = write(os.path.join(tmp, "table.json"), json.dumps({"steps": steps}))
+    env = {k: v for k, v in os.environ.items() if not k.startswith("HEAVY_RUN")}
+    env["HEAVY_RUN"] = "none"
+    proc = subprocess.Popen([sys.executable, TARGET, "--root", root, "--out", out, "--grace", "1",
+                             "--table", table], stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, env=env)
+    status_path = os.path.join(out, "status.json")
+    seen = None
+    try:
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline and seen is None:
+            try:
+                with open(status_path, encoding="utf-8") as fh:
+                    got = json.load(fh)
+                seen = next((s for s in got["steps"] if s["name"] == "a1"), None)
+            except (OSError, ValueError):
+                pass
+            time.sleep(0.2)
+        expect(proc.poll() is None, "fixture: the runner ended before the check")
+        proc.send_signal(signal.SIGKILL)
+        proc.wait(timeout=10)
+        with open(status_path, encoding="utf-8") as fh:
+            final = json.load(fh)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        part = os.path.join(out, "heavy-part.json")
+        for pid_src in (pidf, part):
+            try:
+                with open(pid_src, encoding="utf-8") as fh:
+                    text = fh.read()
+                pid = json.loads(text)["pid"] if pid_src == part else int(text.strip())
+                os.kill(pid, signal.SIGKILL)
+            except (OSError, ValueError, KeyError):
+                pass
+    expect(seen is not None and seen["state"] == "PASS",
+           f"a1 never reached status.json while the heavy call ran: {seen}")
+    a1 = next((s for s in final["steps"] if s["name"] == "a1"), None)
+    expect(a1 is not None and a1["state"] == "PASS",
+           f"after SIGKILL of the outer runner status.json has a1 = {a1}")
+    expect(final["overall"] == "RUNNING", f"overall {final['overall']} for an unfinished run")
+
+
+def case_default_out_is_claimed_atomically(tmp: str) -> None:
+    # FIX r1: default_out checked for a free name without creating it, so two
+    # runs at one commit in one UTC second could share a directory.
+    import threading
+    from datetime import datetime, timezone
+    runner = load_runner()
+
+    class FixedClock:
+        @staticmethod
+        def now(tz=None):
+            return datetime(2026, 9, 30, 12, 0, 0, tzinfo=tz or timezone.utc)
+
+    saved_dt, saved_tmp = runner.datetime, tempfile.tempdir
+    runner.datetime, tempfile.tempdir = FixedClock, tmp
+    got, lock = [], threading.Lock()
+
+    def claim():
+        path = runner.default_out(REPO)
+        with lock:
+            got.append(path)
+
+    try:
+        threads = [threading.Thread(target=claim) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+    finally:
+        runner.datetime, tempfile.tempdir = saved_dt, saved_tmp
+    expect(len(set(got)) == 8, f"concurrent runs shared an output directory: {sorted(got)}")
+    expect(all(os.path.isdir(p) for p in got), "default_out returned a directory it did not create")
+
+
 CASES = [
     case_list_prints_phases,
     case_one_heavy_run_call_for_both_groups,
@@ -562,6 +789,14 @@ CASES = [
     case_status_file_shape_and_atomic_write,
     case_never_sets_heavy_run_caps,
     case_skip_and_table_are_recorded,
+    case_ci_drift_scans_crew_shell_matrix,
+    case_ci_drift_windows_only_step_needs_its_if,
+    case_ci_drift_compound_commands,
+    case_table_rejects_unsafe_step_names,
+    case_table_rejects_wrong_field_types,
+    case_skip_wins_before_argv_is_built,
+    case_heavy_results_reach_status_json,
+    case_default_out_is_claimed_atomically,
 ]
 
 
