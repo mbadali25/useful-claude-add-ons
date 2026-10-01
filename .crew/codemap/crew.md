@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@dbad6519
+anchor: useful-claude-add-ons@c8118baf
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -3290,3 +3290,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `0c3508e9` -> `bf7ce780` on 2026-09-30 (L-0558: L-0520 round-2 fixes and the rerere rule, crew 1.0.87).** `git diff --name-only 0c3508e9 bf7ce780` returns, outside refresh artifacts, L-0520's own graph rebuild and main's README re-pin (c260cdfb, via the #287 merge 66651b69), then L-0558's `plugin/crew/hooks/scripts/crew_train.py`, `plugin/crew/tests/test_crew_train.py`, `plugin/crew/README.md` (merge-train section, in-place line edits), the daily-workflow and troubleshooting guide sources and their six rebuilt outputs, `CHANGELOG.md`, `.crew/verify.json` (rule 37's why and seconds, still :385) and the three version files (1.0.87, same lines). The merge-train section above was re-derived from crew_train.py read in full at bf7ce780; citations elsewhere were checked with l0520_remap.py (0 moved outside that section; verify.json:385 kept, its content changed in place). No suite was executed for this note.
 
 **Re-anchored `bf7ce780` -> `dbad6519` on 2026-09-30 (L-0558 self-review fixes, crew 1.0.87).** `git diff --name-only bf7ce780 dbad6519` returns, outside refresh artifacts, `plugin/crew/hooks/scripts/crew_train.py`, `plugin/crew/tests/test_crew_train.py` and `CHANGELOG.md` (L-0558's self-review fixes); the merge-train section's crew_train.py citations were re-mapped by definition name and the `_both_sides` stage filter added. No suite was executed for this note.
+
+**Re-anchored `dbad6519` -> `c8118baf` on 2026-09-30 (L-0558 lint fix and version re-set).** `git diff --name-only dbad6519 c8118baf` returns, outside refresh artifacts, `plugin/crew/tests/test_crew_train.py` (one trailing blank line dropped) and the three version files (stepped back and re-set to 1.0.87 on the same lines); nothing any map cites by line moved. No suite was executed for this note.
