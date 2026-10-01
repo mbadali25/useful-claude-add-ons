@@ -222,6 +222,8 @@ EXCLUDED_WORKFLOWS = (
 # change (crew-shell-matrix is ubuntu-only today) and its other steps still run.
 WINDOWS_ONLY_IFS = (
     ("matrix.os == 'windows-latest'", "runs only on the Windows leg; this runner has none"),
+    ("env.RUN_LEG == 'true' && matrix.os == 'windows-latest'",
+     "runs only on the Windows leg (behind T-0110's RUN_LEG decision); this runner has none"),
 )
 INSTALL = "an install step, not a check"
 EXCLUDED_CI = (
@@ -235,6 +237,9 @@ EXCLUDED_CI = (
     ("pylint.yml", "ruff --version", "prints a version"),
     ("pytest-crew.yml", "python -m pip install *", INSTALL),
     ("pytest-crew.yml", "pip install *", INSTALL),
+    ("pytest-crew.yml",
+     "changed=$(git diff --name-only HEAD^1 HEAD -- plugin/crew .github/workflows/pytest-crew.yml)",
+     "decides whether crew-shell-matrix's Windows leg runs on a PR (T-0110); checks nothing"),
     ("mcp-servers.yml", "npm ci", INSTALL + "; the npm test step SKIPs without node_modules"),
 )
 

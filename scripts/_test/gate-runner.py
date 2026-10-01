@@ -582,10 +582,11 @@ def case_ci_drift_windows_only_step_needs_its_if(tmp: str) -> None:
     # Neighbour of the crew-shell-matrix BLOCK: a Windows-only step is excluded
     # by its `if:`, so dropping the `if:` makes its command count again.
     runner, root, yaml = _drift_fixture(tmp)
+    windows_ifs = {cond for cond, _ in runner.WINDOWS_ONLY_IFS}
 
     def drop_if(doc):
         for step in doc["jobs"]["crew-shell-matrix"]["steps"]:
-            if step.get("if") == "matrix.os == 'windows-latest'" and "not wallclock" in step["run"]:
+            if step.get("if") in windows_ifs and "not wallclock" in step["run"]:
                 del step["if"]
                 return
         raise AssertionError("fixture: no Windows-only step to edit")
