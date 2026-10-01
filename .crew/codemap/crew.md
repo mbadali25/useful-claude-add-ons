@@ -1376,7 +1376,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `commands/review.md` has no Kimi row; L-0527 (tooling only) adds the launch, and adding `kimi`
   to `review_run.LAUNCHED` makes Kimi eligible with no crew_config change.
 
-## The merge train (L-0520, crew 1.0.86; L-0558 fixes, crew 1.0.95)
+## The merge train (L-0520, crew 1.0.86; L-0558 fixes, crew 1.0.102)
 
 DERIVED at this anchor from `plugin/crew/hooks/scripts/crew_train.py` (read in full). This is PR 1
 of the owner's split (2026-09-30): the CLI only, plus L-0558's fixes for L-0520's review round 2
