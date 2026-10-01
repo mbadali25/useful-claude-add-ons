@@ -28,12 +28,17 @@ All notable changes to this repository are documented here. Format follows [Keep
   separators, a leading dot, `heavy-run`), an unknown key or a field of the wrong type is exit 2.
   `--skip` records SKIP before the step's command is built.
 - **No forged or partial evidence reads as a pass.** A heavy-part result is taken only for a table
-  step, under its own name, with a state its rc could give (PASS needs rc 0), so a PASS with no
-  exit status is COULD-NOT-TELL. A timeout's grace period lasts until the whole process group is
-  gone, not just its leader. A step's `cwd` is resolved again at launch, so a symlink swapped in by
-  an earlier step cannot run it outside `--root`. `--check-ci` reports workflow YAML of the wrong
-  shape, and a `<(...)`/`>(...)` inside an excluded install line, as drift instead of crashing or
-  passing.
+  step, under its own name, with a state its rc could give (PASS needs rc 0, SKIP rc 77 or null),
+  so a PASS with no exit status, or a SKIP over a failed exit, is COULD-NOT-TELL. A timeout's grace
+  period lasts until the whole process group is gone, not just its leader. A step's `cwd` is
+  resolved again at launch, so a symlink swapped in by an earlier step cannot run it outside
+  `--root`; on Linux the child starts in the directory that was checked (opened, re-checked, and
+  entered through `/proc/self/fd`). The inner runner refuses (exit 2, no step run) a table whose
+  digest differs from the one the outer runner validated, so a step that edits `--table` or the
+  runner cannot change what runs next. A `needs` tool runs by its absolute path, and a file name
+  that is not UTF-8 in `git status` no longer crashes the runner before `status.json` exists.
+  `--check-ci` reports workflow YAML of the wrong shape, and a `<(...)`/`>(...)` inside an
+  excluded install line, as drift instead of crashing or passing.
 
 ### Fixed — `crew` 1.0.97: crew-shell-matrix (windows-latest) re-enabled, and the bogus-TMP test no longer poisons `/tmp` for the host (T-0110)
 
