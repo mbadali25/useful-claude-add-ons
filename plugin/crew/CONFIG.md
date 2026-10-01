@@ -2491,8 +2491,10 @@ effect `status` shows is `crew_ticket.accepted`'s: an `autopilot` receipt
 stands only while the policy still allows it.
 
 **What arming it does not change.** Review acceptance and brainstorm always
-stop for a person, at every setting — accepting review FINDINGS
-(`review_ledger.py --accept`) is never automatic; every
+stop for a person, at every setting — accepting review FINDINGS with any
+BLOCK (`review_ledger.py --accept`) is never automatic; the one exception is
+not a setting either: a final 0-BLOCK round is accepted by the ledger-guarded
+`review_ledger.py --auto-accept` (L-0510), and no config key changes that; every
 `AUTONOMOUS_STOPS` id (§5) binds it; no hook, review budget or completion
 audit is relaxed. `pm.authority: autonomous` from 0.20 arms nothing —
 `/crew:migrate` keeps it under `retired.pm` and its note points here.

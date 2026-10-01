@@ -267,8 +267,12 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   or <code>INCOMPLETE</code> — leaves the ticket state <code>REVIEWED</code>, so its <code>FINDINGS</code> can still be accepted. A
   <strong>third</strong> reservation attempt is refused outright and the state becomes <code>NEEDS_REPLAN</code>; that
   refusal, and an explicit <code>--reject</code>, are the only two ways into <code>NEEDS_REPLAN</code>.
-  <strong>Fix:</strong> own the FINDINGS with <code>--accept --by &lt;who&gt;</code> (only the most recent completed round, only
-  once, never once <code>NEEDS_REPLAN</code>), or write a new plan and get it approved — <code>crew_ticket.py
+  <strong>Fix:</strong> a final round with 0 BLOCK closes itself: <code>review: auto-accept: eligible</code>, then
+  <code>--auto-accept --follow-up &lt;id&gt;</code> writes an <code>auto-accepted</code> receipt and its FIX/NIT lines go
+  verbatim into one follow-up ticket. A <code>review: auto-accept: refused - &lt;reason&gt;</code> line names what
+  stopped it (any BLOCK, INCOMPLETE, not the final round, an open healer skip, a count it could not
+  read). Otherwise own the FINDINGS with <code>--accept --by &lt;who&gt;</code> (only the most recent completed round,
+  only once, never once <code>NEEDS_REPLAN</code>; a name starting <code>auto:</code> is refused), or write a new plan and get it approved — <code>crew_ticket.py
   approve</code> on a <code>NEEDS_REPLAN</code> ticket opens a fresh budget of two rounds counted from the successor
   plan; the rounds already spent stay in the ledger and are not erased.</p>
 <ul>
@@ -296,7 +300,9 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
 <pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --check-receipt
 </code></pre>
 <p>A <code>CLEAN</code> verdict writes a receipt automatically; a <code>FINDINGS</code> verdict only becomes one through
-  <code>--accept</code>. <code>--check-receipt</code> rebuilds the review bundle from the receipt's recorded base and
+  <code>--accept</code>, or <code>--auto-accept</code> on a final 0-BLOCK round. An <code>auto-accepted</code> receipt stands only
+  while its round still reads 0 BLOCK with the same lines, and <code>/crew:done</code> also runs
+  <code>--check-follow-up</code>, which fails until the follow-up's <code>direction.md</code> quotes every line. <code>--check-receipt</code> rebuilds the review bundle from the receipt's recorded base and
   fails unless the hash still matches, the receipt is for the <strong>latest</strong> recorded round, and the
   state is not <code>NEEDS_REPLAN</code> — so editing a file after the reviewer read it, or after the receipt
   was written, invalidates the receipt even though nothing about the ledger itself looks wrong.
