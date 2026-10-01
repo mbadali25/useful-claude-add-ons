@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@7ecbdc7f
+anchor: useful-claude-add-ons@a9c0d9ab
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -1482,3 +1482,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `5ab63076` -> `805b0a25` on 2026-09-30 (L-0516 split per the tooling-PR rule: sabotage_qa.py back to main's copy, its four entries move to L-0563; verify.json rule 10's why and CHANGELOG reworded in place).**  No suite was executed for this note.
 
 **Re-anchored `805b0a25` -> `7ecbdc7f` on 2026-09-30 (L-0516 re-bumps crew to 1.0.91 after the split; version files, CHANGELOG heading and the two version sentences only).**  No suite was executed for this note.
+
+**Re-anchored `7ecbdc7f` -> `a9c0d9ab` on 2026-09-30 (L-0516: pylint R1732 fix in test_poll_fixtures.py (with-blocks, no line this map cites moves) and crew re-bumped to 1.0.92; version files, CHANGELOG heading and the two version sentences in place).**  No suite was executed for this note.
