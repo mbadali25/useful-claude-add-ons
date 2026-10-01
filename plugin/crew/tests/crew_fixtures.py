@@ -14,6 +14,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 
 import pytest
 
@@ -752,6 +753,21 @@ def resolve_bash():
     return _BASH
 
 
+# What the `msys_tmp_pinned` holder runs: announce itself, then wait on stdin
+# so it exits when the block ends. A module constant so a test can swap in a
+# holder that starts but never announces.
+_PIN_HOLDER_SCRIPT = "echo pinned; read -r _"
+
+# How long `msys_tmp_pinned` waits for the holder's "pinned" line. A sane
+# bash prints it in well under a second; a stalled one must not sit in
+# readline() until the CI job's own limit (T-0110 review round 1).
+PIN_STARTUP_TIMEOUT_S = 30
+
+# After killing a holder that never announced, how long to let its stdout
+# reader drain before raising anyway (the reader is a daemon thread).
+PIN_READER_GRACE_S = 5
+
+
 @contextlib.contextmanager
 def msys_tmp_pinned(bash, poisoned_env):
     """Run a block that starts MSYS processes under `poisoned_env` (TMP/TEMP
@@ -787,11 +803,35 @@ def msys_tmp_pinned(bash, poisoned_env):
         yield
         return
     holder = subprocess.Popen(
-        [bash, "-c", "echo pinned; read -r _"], env=dict(os.environ),
+        [bash, "-c", _PIN_HOLDER_SCRIPT], env=dict(os.environ),
         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL, text=True)
     try:
-        ready = holder.stdout.readline().strip()
+        # A reader thread, because select() does not work on Windows pipes;
+        # the bound is read at call time so a test can shorten it.
+        bound = PIN_STARTUP_TIMEOUT_S
+        lines = []
+        reader = threading.Thread(
+            target=lambda: lines.append(holder.stdout.readline()), daemon=True)
+        reader.start()
+        reader.join(bound)
+        if reader.is_alive():
+            # Git's bin/bash.exe is a shim whose usr/bin/bash.exe child also
+            # holds stdout, and killing the shim leaves that child running:
+            # close stdin first so the child's `read` hits EOF and it exits,
+            # closing the pipe so the reader sees EOF on its own.
+            holder.stdin.close()
+            holder.kill()
+            holder.wait(timeout=GATE_SUBPROCESS_TIMEOUT_S)
+            reader.join(PIN_READER_GRACE_S)
+            raise RuntimeError(
+                f"msys_tmp_pinned: holder {bash!r} did not announce itself "
+                f"within {bound}s; killed it (exit {holder.poll()}) rather "
+                "than run the block unpinned"
+                + ("" if not reader.is_alive() else
+                   f"; its stdout reader was still blocked {PIN_READER_GRACE_S}s"
+                   " later, so a grandchild still holds the pipe"))
+        ready = lines[0].strip() if lines else ""
         if ready != "pinned":
             raise RuntimeError(
                 f"msys_tmp_pinned: holder {bash!r} did not start "
@@ -816,7 +856,9 @@ def msys_tmp_pinned(bash, poisoned_env):
             holder.wait(timeout=GATE_SUBPROCESS_TIMEOUT_S)
         except subprocess.TimeoutExpired:
             holder.kill()
-            holder.wait()
+            # Bounded too: a TimeoutExpired here names the stuck holder
+            # instead of hanging the run.
+            holder.wait(timeout=GATE_SUBPROCESS_TIMEOUT_S)
 
 
 _BASH_NO_PREPEND = "unprobed"

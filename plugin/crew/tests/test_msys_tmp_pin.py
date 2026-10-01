@@ -28,6 +28,8 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import threading
+import time
 
 import pytest
 
@@ -131,37 +133,245 @@ def test_pinned_a_bogus_tmp_child_leaves_tmp_alone(tmp_path):
     assert itself == ("tmp-is-dir", ""), itself
 
 
+@_WINDOWS_ONLY
+def test_a_holder_that_never_announces_fails_fast_instead_of_hanging(
+        tmp_path, monkeypatch):
+    """A bash that starts but never writes its "pinned" line must turn into
+    a named error within the startup bound - not a readline() that blocks
+    until the CI job's 60-minute limit - with the holder killed, its reader
+    thread gone, and the block never entered (so nothing runs unpinned)."""
+    monkeypatch.setattr(crew_fixtures, "_PIN_HOLDER_SCRIPT", "read -r _")
+    monkeypatch.setattr(crew_fixtures, "PIN_STARTUP_TIMEOUT_S", 1)
+    launched = []
+    real_popen = subprocess.Popen
+
+    def recording_popen(*args, **kwargs):
+        proc = real_popen(*args, **kwargs)  # pylint: disable=consider-using-with
+        launched.append(proc)
+        return proc
+
+    monkeypatch.setattr(crew_fixtures.subprocess, "Popen", recording_popen)
+    threads_before = threading.active_count()
+    outcome = {}
+
+    def enter_the_pin():
+        try:
+            with crew_fixtures.msys_tmp_pinned(_BASH, _poisoned_env(tmp_path)):
+                outcome["entered"] = True
+        except RuntimeError as exc:
+            outcome["error"] = str(exc)
+
+    runner = threading.Thread(target=enter_the_pin, daemon=True)
+    started = time.monotonic()
+    runner.start()
+    runner.join(timeout=30)
+    try:
+        assert not runner.is_alive(), (
+            "msys_tmp_pinned is still blocked reading the holder's startup "
+            "line 30 s after a 1 s bound")
+        assert "entered" not in outcome, "the block ran without a pin"
+        assert "did not announce" in outcome.get("error", ""), outcome
+        assert time.monotonic() - started < 25
+        assert len(launched) == 1 and launched[0].poll() is not None, (
+            "the stalled holder was left running")
+        deadline = time.monotonic() + 10
+        while (threading.active_count() > threads_before
+               and time.monotonic() < deadline):
+            time.sleep(0.05)
+        assert threading.active_count() == threads_before, (
+            "the holder's reader thread outlived the timeout")
+    finally:
+        for proc in launched:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+
+
 # --- structural: every TMP/TEMP override runs inside the pin -----------------
 
 _OVERRIDDEN = {"TMP", "TEMP"}
 
 
-def _unpinned_overrides(source):
-    """Names of functions in `source` that put TMP or TEMP into an
-    environment - `dict(..., TMP=...)` or a `{"TMP": ...}` literal - without
-    a `with ...msys_tmp_pinned(...)` block in the same function."""
-    offenders = []
+# Calls that only BUILD or copy an environment; anything else handed a
+# poisoned env is treated as a launch.
+_ENV_BUILDERS = {"dict", "copy", "deepcopy"}
+_ENV_MUTATORS = {"update", "setdefault"}
+# These put TMP/TEMP into THIS process' environment, which every later child
+# inherits - including ones started after the pin's block has ended.
+_PROCESS_ENV_SETTERS = {"setenv", "putenv"}
+
+
+def _callee(call):
+    func = call.func
+    return getattr(func, "attr", None) or getattr(func, "id", None)
+
+
+def _is_os_environ(node):
+    return isinstance(node, ast.Attribute) and node.attr == "environ"
+
+
+def _names_a_tmp_key(node):
+    return isinstance(node, ast.Constant) and node.value in _OVERRIDDEN
+
+
+def _is_override(node):
+    """`f(..., TMP=...)` or a `{"TMP": ...}` literal."""
+    if isinstance(node, ast.Call):
+        return any(kw.arg in _OVERRIDDEN for kw in node.keywords)
+    return isinstance(node, ast.Dict) and any(
+        _names_a_tmp_key(key) for key in node.keys)
+
+
+def _pinned_nodes(func):
+    """ids of every node lexically inside a `with ...msys_tmp_pinned(...)`
+    - its body, and its own items (`with pin(B, env)` reads env there)."""
+    inside = set()
+    for node in ast.walk(func):
+        if isinstance(node, (ast.With, ast.AsyncWith)) and any(
+                isinstance(item.context_expr, ast.Call)
+                and _callee(item.context_expr) == "msys_tmp_pinned"
+                for item in node.items):
+            for part in [*node.items, *node.body]:
+                inside.update(id(sub) for sub in ast.walk(part))
+    return inside
+
+
+def _mutation_receiver(node):
+    """The object a node writes TMP/TEMP INTO, if any: `X["TMP"] = v`,
+    `X.update(TMP=v)` / `X.update({"TMP": v})`, `X.setdefault("TMP", v)`."""
+    if isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Store):
+        return node.value if _names_a_tmp_key(node.slice) else None
+    if not (isinstance(node, ast.Call) and _callee(node) in _ENV_MUTATORS
+            and isinstance(node.func, ast.Attribute)):
+        return None
+    writes = _is_override(node) or any(
+        _is_override(arg) or _names_a_tmp_key(arg) for arg in node.args[:1])
+    return node.func.value if writes else None
+
+
+def _mutated_name(node):
+    """The LOCAL name a node writes TMP/TEMP into, if any."""
+    receiver = _mutation_receiver(node)
+    return receiver.id if isinstance(receiver, ast.Name) else None
+
+
+def _sets_process_env(node):
+    """`os.environ["TMP"] = x`, `os.environ.update(TMP=x)`,
+    `monkeypatch.setenv("TMP", x)`, `os.putenv("TEMP", x)`."""
+    if (isinstance(node, ast.Call) and _callee(node) in _PROCESS_ENV_SETTERS
+            and node.args and _names_a_tmp_key(node.args[0])):
+        return True
+    return _is_os_environ(_mutation_receiver(node))
+
+
+def _poisoned(expr, tainted):
+    """Does `expr` evaluate to an env carrying a TMP/TEMP override: the
+    override itself, a tainted name, or a copy of either."""
+    if _is_override(expr):
+        return True
+    if isinstance(expr, ast.Name):
+        return expr.id in tainted
+    if isinstance(expr, ast.Dict):
+        return any(key is None and _poisoned(value, tainted)
+                   for key, value in zip(expr.keys, expr.values))
+    if isinstance(expr, ast.Call) and _callee(expr) in _ENV_BUILDERS:
+        receiver = ([expr.func.value]
+                    if isinstance(expr.func, ast.Attribute) else [])
+        return any(_poisoned(arg, tainted) for arg in
+                   [*receiver, *expr.args, *(kw.value for kw in expr.keywords)])
+    return False
+
+
+def _assigned_names(stmt):
+    targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
+    return [node.id for target in targets for node in ast.walk(target)
+            if isinstance(node, ast.Name)]
+
+
+def _taint(func):
+    """Local names that hold a poisoned env anywhere in `func` (flow-
+    insensitive on purpose: a later override taints an earlier read too,
+    which can only over-report), and the ids of nodes that merely build or
+    copy one - so `env2 = dict(env)` is not itself a launch."""
+    tainted, building = set(), set()
+    nodes = list(ast.walk(func))
+    changed = True
+    while changed:
+        changed = False
+        for node in nodes:
+            fresh = []
+            mutated = _mutated_name(node)
+            if mutated:
+                fresh.append(mutated)
+                if isinstance(node, ast.Subscript):
+                    building.add(id(node.value))
+                else:
+                    building.update(id(sub) for sub in ast.walk(node))
+            if (isinstance(node, (ast.Assign, ast.AnnAssign))
+                    and node.value is not None
+                    and _poisoned(node.value, tainted)):
+                fresh.extend(_assigned_names(node))
+                if not (isinstance(node.value, ast.Call)
+                        and _callee(node.value) not in _ENV_BUILDERS):
+                    building.update(id(sub) for sub in ast.walk(node.value))
+            for name in fresh:
+                if name not in tainted:
+                    tainted.add(name)
+                    changed = True
+    return tainted, building
+
+
+def _tmp_sites(source):
+    """{function name: [line of each unpinned use]} for every function in
+    `source` that puts TMP or TEMP into an environment.
+
+    A use is pinned only if it sits lexically inside a `with
+    ...msys_tmp_pinned(...)` (body or items) - NOT merely somewhere in a
+    function that also contains one. A use is: any read of a local name
+    holding a poisoned env, other than building or copying one; an inline
+    override (`run({"TMP": p})`, `run(env=dict(os.environ, TMP=p))`,
+    `return dict(..., TMP=p)`) that is not simply assigned to a name; or
+    any write of TMP/TEMP into this process' own environment, which is
+    flagged even inside the pin because it outlives the block."""
+    sites = {}
     for func in ast.walk(ast.parse(source)):
         if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
-        overrides = pinned = False
+        tainted, building = _taint(func)
+        inside = _pinned_nodes(func)
+        assigned = {id(node.value) for node in ast.walk(func)
+                    if isinstance(node, (ast.Assign, ast.AnnAssign))}
+        overrides, unpinned = False, []
         for node in ast.walk(func):
-            if isinstance(node, ast.Call) and any(
-                    kw.arg in _OVERRIDDEN for kw in node.keywords):
+            if _sets_process_env(node):
                 overrides = True
-            elif isinstance(node, ast.Dict) and any(
-                    isinstance(key, ast.Constant) and key.value in _OVERRIDDEN
-                    for key in node.keys):
+                unpinned.append(node.lineno)
+                continue
+            if _is_override(node) or _mutated_name(node):
                 overrides = True
-            elif isinstance(node, ast.With):
-                for item in node.items:
-                    call = item.context_expr
-                    target = getattr(call, "func", None)
-                    name = getattr(target, "attr", None) or getattr(target, "id", None)
-                    pinned = pinned or name == "msys_tmp_pinned"
-        if overrides and not pinned:
-            offenders.append(func.name)
-    return offenders
+            if id(node) in building:
+                continue
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                use = node.id in tainted
+            elif _is_override(node) and _mutated_name(node) is None:
+                use = (id(node) not in assigned
+                       or _callee(node) not in _ENV_BUILDERS | {None})
+            else:
+                use = False
+            if use and id(node) not in inside:
+                unpinned.append(node.lineno)
+        if overrides:
+            # Merged, not assigned: two functions may share a name (methods,
+            # nested helpers), and the clean one must not hide the other.
+            sites[func.name] = sorted(set(sites.get(func.name, [])) | set(unpinned))
+    return sites
+
+
+def _unpinned_overrides(source):
+    """Names of functions in `source` that put TMP or TEMP into an
+    environment and use it anywhere outside a `with msys_tmp_pinned(...)`
+    block (see `_tmp_sites`)."""
+    return [name for name, lines in _tmp_sites(source).items() if lines]
 
 
 def test_the_override_detector_sees_both_spellings_and_the_pin():
@@ -176,6 +386,127 @@ def test_the_override_detector_sees_both_spellings_and_the_pin():
     )
     assert _unpinned_overrides(unpinned) == ["a", "b"]
     assert _unpinned_overrides(pinned) == []
+
+
+# T-0110 review round 1: a function used to count as pinned if it merely
+# CONTAINED a `with msys_tmp_pinned(...)`, wherever the launch was. Each of
+# these launches (or leaks) a poisoned env outside the block.
+_MUST_FLAG = {
+    "set_by_subscript_after_the_pin_ended": (
+        "def f(p):\n"
+        "    env = dict(os.environ)\n"
+        "    with crew_fixtures.msys_tmp_pinned(B, env):\n"
+        "        pass\n"
+        "    env['TMP'] = p\n"
+        "    run(env)\n"),
+    "launched_before_a_later_pin": (
+        "def f(p):\n"
+        "    env = dict(os.environ, TMP=p)\n"
+        "    run(env)\n"
+        "    with crew_fixtures.msys_tmp_pinned(B, env):\n"
+        "        run(env)\n"),
+    "launched_again_after_the_pin": (
+        "def f(p):\n"
+        "    env = dict(os.environ, TEMP=p)\n"
+        "    with msys_tmp_pinned(B, env):\n"
+        "        run(env)\n"
+        "    run(env)\n"),
+    "set_by_subscript_with_no_pin": (
+        "def f(p):\n"
+        "    env = {}\n"
+        "    env['TEMP'] = p\n"
+        "    run(env)\n"),
+    "set_by_update": (
+        "def f(p):\n"
+        "    env = dict(os.environ)\n"
+        "    env.update(TMP=p)\n"
+        "    run(env)\n"),
+    "copied_then_launched_outside": (
+        "def f(p):\n"
+        "    base = dict(os.environ, TMP=p)\n"
+        "    env = dict(base, X='1')\n"
+        "    with crew_fixtures.msys_tmp_pinned(B, base):\n"
+        "        pass\n"
+        "    run(env)\n"),
+    "inline_launch_beside_a_pin": (
+        "def f(p):\n"
+        "    with crew_fixtures.msys_tmp_pinned(B, {}):\n"
+        "        pass\n"
+        "    run(env=dict(os.environ, TMP=p))\n"),
+    "returned_to_an_unknown_caller": (
+        "def f(p):\n"
+        "    return dict(os.environ, TMP=p)\n"),
+    "this_process_env_via_setenv": (
+        "def f(p, monkeypatch):\n"
+        "    with crew_fixtures.msys_tmp_pinned(B, {}):\n"
+        "        monkeypatch.setenv('TMP', p)\n"
+        "        run()\n"),
+    "hidden_by_a_clean_namesake_after_it": (
+        "def f(p):\n"
+        "    run({'TMP': p})\n"
+        "class C:\n"
+        "    def f(self, p):\n"
+        "        env = dict(os.environ, TMP=p)\n"
+        "        with crew_fixtures.msys_tmp_pinned(B, env):\n"
+        "            run(env)\n"),
+    "this_process_env_via_os_environ": (
+        "def f(p):\n"
+        "    with crew_fixtures.msys_tmp_pinned(B, {}):\n"
+        "        os.environ['TEMP'] = p\n"
+        "        run()\n"),
+}
+
+_MUST_PASS = {
+    # The real test_34d_ps1 shape: env built BEFORE the pin, used only in
+    # the pin's own items and inside its body; the result read afterwards.
+    "built_before_launched_inside": (
+        "def f(tmp_path):\n"
+        "    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),\n"
+        "               TMP=str(bogus), TEMP=str(bogus))\n"
+        "    with crew_fixtures.msys_tmp_pinned(\n"
+        "            crew_fixtures.resolve_bash(), env):\n"
+        "        result = crew_fixtures.run_gate(\n"
+        "            [PWSH, '-File', PS1], input='{}', env=env, check=False)\n"
+        "    assert result.returncode != 0, result.stderr\n"
+        "    assert 'x' in result.stderr, f'stderr: {result.stderr}'\n"),
+    "set_by_subscript_inside_the_pin": (
+        "def f(p):\n"
+        "    env = dict(os.environ)\n"
+        "    with crew_fixtures.msys_tmp_pinned(B, env):\n"
+        "        env['TMP'] = p\n"
+        "        run(env)\n"),
+    "launched_unpoisoned_before_the_override": (
+        "def f(p):\n"
+        "    other = dict(os.environ)\n"
+        "    run(other)\n"
+        "    env = dict(os.environ, TMP=p)\n"
+        "    with crew_fixtures.msys_tmp_pinned(B, env), open(p) as fh:\n"
+        "        run(env, fh)\n"),
+    "reads_tmp_without_setting_it": (
+        "def f():\n"
+        "    run(os.environ.get('TMP'), os.environ['TEMP'])\n"),
+}
+
+
+@pytest.mark.parametrize("case", sorted(_MUST_FLAG))
+def test_the_override_detector_flags_a_launch_outside_the_pin(case):
+    assert _unpinned_overrides(_MUST_FLAG[case]) == ["f"], case
+
+
+@pytest.mark.parametrize("case", sorted(_MUST_PASS))
+def test_the_override_detector_passes_a_launch_inside_the_pin(case):
+    assert _unpinned_overrides(_MUST_PASS[case]) == [], case
+
+
+def test_the_real_test_34d_ps1_overrides_tmp_and_launches_inside_the_pin():
+    """Not vacuous: the detector must SEE test_34d_ps1's override (else its
+    clean result in the whole-tree check below proves nothing)."""
+    source = (_TESTS / "test_verify_gate_stop_gate_record.py").read_text(
+        encoding="utf-8")
+    sites = _tmp_sites(source)
+    name = "test_34d_ps1_a_temp_dir_failure_falls_back_to_crew_not_a_pipe"
+    assert name in sites, "the detector no longer sees test_34d_ps1's override"
+    assert sites[name] == [], sites[name]
 
 
 # Exempt by exact name, with the reason: this module's own helper poisons
