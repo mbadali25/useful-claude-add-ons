@@ -26,9 +26,9 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **One predicate, `review_ledger.receipt_stands`,** decides whether a FINDINGS receipt stands for
   both `--check-receipt` and `crew_autopilot`; an auto receipt stands only while its round still
   passes the guard and its lines equal the row's, and a CLEAN round only under a `clean`
-  receipt. `/crew:done` check 1 also runs the new `--check-follow-up`, which matches every line
-  verbatim and as often as the receipt carries it; a non-UTF-8 `direction.md` or a receipt of an
-  unknown kind is a named could-not-tell refusal.
+  receipt. The new `--check-follow-up` matches every line verbatim and as often as the receipt
+  carries it; a non-UTF-8 `direction.md` or a receipt of an unknown kind is a named could-not-tell
+  refusal. `/crew:done` does not run it yet: L-0568 adds it to check 1.
 - **`review_run.py`** records `findings` and `webtest_open` on the ledger row and in review.json,
   and prints `review: auto-accept: eligible` or `review: auto-accept: refused - <reason>` after a
   FINDINGS round. Autopilot's review phase runs step 2d and the auto-accept after an eligible

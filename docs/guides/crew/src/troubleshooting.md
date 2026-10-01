@@ -148,9 +148,10 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   ```
   A `CLEAN` verdict writes a receipt automatically; a `FINDINGS` verdict only becomes one through
   `--accept`, or `--auto-accept` on a final 0-BLOCK round. An `auto-accepted` receipt stands only
-  while its round still reads 0 BLOCK with the same lines, and `/crew:done` also runs
-  `--check-follow-up`, which fails until the follow-up's `direction.md` quotes every line verbatim (a line the
-  receipt carries twice, twice), and on a non-UTF-8 file or an unknown receipt kind. `--check-receipt` rebuilds the review bundle from the receipt's recorded base and
+  while its round still reads 0 BLOCK with the same lines. `--check-follow-up` fails until the
+  follow-up's `direction.md` quotes every line verbatim (a line the receipt carries twice, twice),
+  and on a non-UTF-8 file or an unknown receipt kind. `/crew:done` does not run it yet (L-0568 adds
+  it to check 1), so run it yourself before closing. `--check-receipt` rebuilds the review bundle from the receipt's recorded base and
   fails unless the hash still matches, the receipt is for the **latest** recorded round, and the
   state is not `NEEDS_REPLAN` — so editing a file after the reviewer read it, or after the receipt
   was written, invalidates the receipt even though nothing about the ledger itself looks wrong.
