@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.114: `rules` says when it generates from a code map whose anchor needs re-check (T-0501)
+### Changed — `crew` 1.0.115: `rules` says when it generates from a code map whose anchor needs re-check (T-0501)
 
 - **What changed.** `crew_instructions.py rules` and `rules --check` print, after
   the `wrote`/`stale:`/`missing:`/`orphan:`/`hand-written` lines, one advisory line
@@ -46,7 +46,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   A third, by hand: dropping `check_instructions.py`'s prefix filter reds three
   `instruction-budgets.py` cases, `edited-behind`'s "exactly one problem and no
   'anchor' line" among them.
-- Bumped `1.0.110 -> 1.0.114` (1.0.62, 1.0.70, 1.0.106 and 1.0.109 on its branch; re-set after merging main's 1.0.110, L-0516; 1.0.111-1.0.113 are claimed by the L-0557/W-0117, L-0510 and T-0504 lanes).
+- Bumped `1.0.110 -> 1.0.115` (1.0.62, 1.0.70, 1.0.106 and 1.0.109 on its branch; re-set after merging main's 1.0.110, L-0516; 1.0.111-1.0.114 are claimed by the W-0117, L-0510, T-0504 and L-0557 lanes).
 
 ### Fixed — `crew` 1.0.110: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516)
 
