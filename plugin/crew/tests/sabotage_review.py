@@ -524,4 +524,80 @@ REVIEW_FIX_MUTATIONS = (
         "    if ok:\n",
         "tests/test_review_gate.py::test_owner_accepted_findings_do_not_short_circuit",
     ),
+    # L-0510: the auto-accept guard. Each was run by hand against the tracked
+    # file, seen red, and restored with `git checkout --`.
+    (
+        # A final round with a BLOCK is auto-accepted.
+        "auto-accept stops refusing a BLOCK count",
+        REVIEW_LEDGER,
+        '    if counts["BLOCK"] != 0:\n',
+        "    if False:\n",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[block-1-count-only]",
+    ),
+    (
+        # An INCOMPLETE round -- the reviewer never finished reading -- is
+        # auto-accepted.
+        "auto-accept stops refusing a non-FINDINGS verdict",
+        REVIEW_LEDGER,
+        '    if row.get("verdict") != "FINDINGS":\n        failure = ',
+        "    if False:\n        failure = ",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[incomplete-reviewer]",
+    ),
+    (
+        # Round 1 of 2 is auto-accepted: the lane never fixes and reruns.
+        "auto-accept stops requiring the final round",
+        REVIEW_LEDGER,
+        "    if _charged(data) < BUDGET:\n",
+        "    if False:\n",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[round-1-of-2]",
+    ),
+    (
+        # An open healer skip is auto-accepted.
+        "auto-accept stops reading the webtest state",
+        REVIEW_LEDGER,
+        "    if not ((type(webtest) is int and webtest == 0) or webtest == WEBTEST_NA):",
+        "    if False:",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[webtest-open-1]",
+    ),
+    (
+        # A membership test: `False in (0, WEBTEST_NA)` is true, so a webtest
+        # state of `false` passes as 0.
+        "auto-accept's webtest check lets a bool through",
+        REVIEW_LEDGER,
+        "    if not ((type(webtest) is int and webtest == 0) or webtest == WEBTEST_NA):",
+        "    if webtest not in (0, WEBTEST_NA):",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[webtest-open-false]",
+    ),
+    (
+        # Finding lines that disagree with the counts are taken as read.
+        "auto-accept stops checking lines against counts",
+        REVIEW_LEDGER,
+        '    if not findings or len(findings) != counts["FIX"] + counts["NIT"]:\n',
+        "    if False:\n",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[findings-disagree]",
+    ),
+    (
+        # The owner path forges the auto receipt's string.
+        "--accept stops reserving the auto: prefix",
+        REVIEW_LEDGER,
+        "    if by.strip().lower().startswith(AUTO_PREFIX):\n",
+        "    if False:\n",
+        "tests/test_review_auto_accept.py::test_owner_accept_refuses_the_auto_prefix",
+    ),
+    (
+        # An auto receipt keeps standing after its row is edited to a BLOCK.
+        "receipt_stands stops re-checking the auto row",
+        REVIEW_LEDGER,
+        "            and _auto_row_problem(latest) is None)\n",
+        "            and True)\n",
+        "tests/test_review_auto_accept.py::test_check_receipt_requires_the_auto_rows_guard[row-block-1]",
+    ),
+    (
+        # The lines the follow-up must quote are never recorded.
+        "finish stops recording the finding lines",
+        REVIEW_RUN,
+        '        "findings": result["findings"], "webtest_open"',
+        '        "webtest_open"',
+        "tests/test_review_auto_accept.py::test_finish_records_findings_and_webtest_state",
+    ),
 )

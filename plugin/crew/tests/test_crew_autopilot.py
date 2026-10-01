@@ -300,6 +300,63 @@ def test_next_owner_accepted_findings_move_on(tmp_path, monkeypatch):
     assert _next(root)["phase"] == "done"
 
 
+LINE = "FIX|src/app.py:1|the loop never stops|run it offline"
+
+
+def _auto_row(number=2, block=0):
+    row = _round(number, "FINDINGS")
+    row.update({"counts": {"BLOCK": block, "FIX": 1, "NIT": 0}, "findings": [LINE],
+                "webtest_open": review_ledger.WEBTEST_NA, "refunded": False})
+    return row
+
+
+def _auto_receipt(number=2):
+    return dict(_receipt(number, review_ledger.AUTO_KIND), accepted_by=review_ledger.AUTO_BY,
+                findings=[LINE], follow_up="L-9999")
+
+
+def test_next_auto_accepted_findings_move_on(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_auto_row(1), _auto_row(2)], state="ACCEPTED", receipt=_auto_receipt())
+    _receipt_ok(monkeypatch, True)
+    _refresh(monkeypatch, "fresh")
+
+    assert _next(root)["phase"] == "done"
+
+
+def test_next_auto_receipt_on_a_block_row_stops(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_auto_row(1), _auto_row(2, block=1)], state="ACCEPTED",
+            receipt=_auto_receipt())
+    _receipt_ok(monkeypatch, True)
+    _refresh(monkeypatch, "fresh")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"]) == ("accept-review", True)
+
+
+def test_next_eligible_round_without_receipt_names_auto_accept(tmp_path):
+    root = _approved(tmp_path)
+    _ledger(root, [_auto_row(1), _auto_row(2)], state="REVIEWED")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "review_ledger.py --auto-accept" in got["reason"]) == (
+        "accept-review", True, True), got["reason"]
+
+
+def test_next_ineligible_findings_quote_the_refusal(tmp_path):
+    root = _approved(tmp_path)
+    _ledger(root, [_auto_row(1), _auto_row(2, block=1)], state="REVIEWED")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "a BLOCK is never auto-accepted" in got["reason"],
+            "--accept --by <owner>" in got["reason"]) == ("accept-review", True, True, True), \
+        got["reason"]
+
+
 def test_next_refresh_before_rereview(tmp_path, monkeypatch):
     root = _approved(tmp_path)
     _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED", receipt=_receipt(1))
@@ -1167,6 +1224,13 @@ def test_command_ends_the_review_phase_at_the_verdict():
     text = " ".join(_command_text().split())
     assert (REVIEW_VERDICT_RULE in text, "never fix and rerun" in text,
             "back through `next`" in text) == (True, True, True)
+
+
+def test_command_runs_auto_accept_only_when_eligible():
+    text = " ".join(_command_text().split())
+    assert ("`review: auto-accept: eligible`" in text, "--auto-accept" in text,
+            REVIEW_VERDICT_RULE in text, "never fix and rerun" in text,
+            "back through `next`" in text) == (True, True, True, True, True)
 
 
 def test_command_activates_the_ticket_only_without_a_pointer():

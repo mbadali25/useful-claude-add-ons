@@ -60,10 +60,33 @@ accepting an older completed round used to move NEEDS_REPLAN back to
 ACCEPTED. Round 2's FINDINGS are acceptable -- the budget is exhausted only
 when it is spent with nothing accepted, which is the refused third
 reservation.
+AUTO-ACCEPT (L-0510, owner policy 2026-09-30). `--auto-accept --follow-up <id>`
+takes no `--by`: it writes a receipt of kind `auto-accepted` whose
+`accepted_by` is fixed to `AUTO_BY`, carrying the round's finding lines
+verbatim (`findings`), the follow-up ticket id and the model family. It runs
+every check `--accept` runs, then the guard (`auto_accept_refusal`): the
+round's verdict is exactly FINDINGS; its counts are a dict whose BLOCK, FIX
+and NIT are ints (never a bool) and not negative; BLOCK is 0; `findings` is a
+list of strings, none a `BLOCK|` line, as many as FIX + NIT and at least one;
+`webtest_open` is 0 or `WEBTEST_NA`; and the round is final -- `_charged`
+has reached `BUDGET`, so the next reservation would be refused. Every case
+the ledger cannot tell is a refusal, never a 0: an INCOMPLETE or CLEAN
+verdict, a missing or mistyped count, a missing `findings` or `webtest_open`
+(which is every row recorded before this rule), an unreadable ledger. A
+refusal raises and changes nothing. `--accept` refuses a `--by` beginning
+`auto:` (any case), so that string can come only from the guarded verb.
+`receipt_stands` is the one predicate for whether a FINDINGS receipt stands
+-- `owner-accepted`, or `auto-accepted` with its row still passing the guard
+and its lines equal to the row's -- and both `check_receipt` and
+`crew_autopilot` call it. `--check-follow-up` confirms the follow-up's
+`.work/tickets/<id>/direction.md` holds every receipt line as a whole line.
+The ledger never files the follow-up; `/crew:review` step 3 does.
+
 Either way the receipt carries the bundle sha256 the reviewer read, and
 `--check-receipt` rebuilds the bundle from the receipt's base and exits
 non-zero unless the hash still matches -- and unless the receipt is for the
-latest recorded round, that round is CLEAN or owner-accepted, and the state
+latest recorded round, that round is CLEAN or its receipt stands
+(`receipt_stands`), and the state
 is not NEEDS_REPLAN, so an older round's receipt never outlives a later
 verdict. `/crew:done` (T4) gates on it.
 
@@ -94,6 +117,15 @@ BUDGET = 2
 # A constant like BUDGET: bounds a refund loop at four launched rounds per
 # two-round budget. No flag, env var or config key reads into it.
 REFUND_LIMIT = 2
+
+# L-0510: the auto-accept receipt. Constants, like BUDGET: no flag, env var or
+# config key turns the policy on or off or changes the string.
+AUTO_KIND = "auto-accepted"
+AUTO_BY = "auto: 0 BLOCK, owner policy 2026-09-30"
+AUTO_PREFIX = "auto:"
+# `webtest_open` when the healer-skip check did not apply to the round. None
+# means it applied and could not be read: could not tell, never 0.
+WEBTEST_NA = "not-applicable"
 
 NEEDS_REPLAN = "NEEDS_REPLAN"
 IN_REVIEW = "IN_REVIEW"
@@ -324,6 +356,11 @@ def record(root, ticket, number, review):
             "head": review.get("head"), "model_family": review.get("model_family"),
             "failure_class": review.get("failure_class"),
         })
+        # L-0510: stored only when the caller passed them, so a row from a
+        # caller that never did reads as "could not tell" to the guard.
+        for key in ("findings", "webtest_open"):
+            if key in review:
+                row[key] = review[key]
         if review["verdict"] == "INCOMPLETE" and review.get("failure_class") == "tool":
             row["refunded"] = _refunded(data) < REFUND_LIMIT
             if not row["refunded"]:
@@ -349,6 +386,9 @@ def accept(root, ticket, by):
     and refuses when the tree no longer matches the bundle that round read."""
     if not isinstance(by, str) or not by.strip():
         raise LedgerError("--accept needs --by <who is accepting>")
+    if by.strip().lower().startswith(AUTO_PREFIX):
+        raise LedgerError(f"--by {by.strip()!r}: the {AUTO_PREFIX!r} prefix is reserved for "
+                          "--auto-accept, which checks the round itself")
 
     def change(data, state):
         if state != "ok":
@@ -388,6 +428,162 @@ def accept(root, ticket, by):
         return data, data["receipt"]
 
     return _mutate(root, ticket, change)
+
+
+def _is_count(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _auto_row_problem(row):
+    """None when a completed FINDINGS row's own evidence allows an auto
+    receipt, else why not. Shared by `auto_accept_refusal` and
+    `receipt_stands`, so the two cannot drift. Every unknown is a reason."""
+    counts = row.get("counts")
+    if not isinstance(counts, dict):
+        return f"round {row.get('round')} has no readable counts ({counts!r}): could not tell"
+    for sev in ("BLOCK", "FIX", "NIT"):
+        if not _is_count(counts.get(sev)):
+            return (f"round {row.get('round')}'s {sev} count is {counts.get(sev)!r}, not a "
+                    "non-negative integer: could not tell")
+    if counts["BLOCK"] != 0:
+        return (f"round {row.get('round')} has {counts['BLOCK']} BLOCK finding(s); a BLOCK "
+                "is never auto-accepted")
+    findings = row.get("findings")
+    if not isinstance(findings, list) or not all(isinstance(f, str) for f in findings):
+        return (f"round {row.get('round')} carries no finding lines (recorded before L-0510, "
+                "or by a caller that did not pass them): could not tell")
+    if any(f.strip().startswith("BLOCK|") for f in findings):
+        return f"round {row.get('round')} lists a BLOCK line; a BLOCK is never auto-accepted"
+    if not findings or len(findings) != counts["FIX"] + counts["NIT"]:
+        return (f"round {row.get('round')}'s {len(findings)} finding line(s) do not agree with "
+                f"its counts ({counts['FIX']} FIX + {counts['NIT']} NIT): could not tell")
+    if "webtest_open" not in row:
+        return (f"round {row.get('round')} has no webtest state (recorded before L-0510): "
+                "could not tell")
+    webtest = row["webtest_open"]
+    # Never a membership test: `False in (0, WEBTEST_NA)` is true.
+    if not ((type(webtest) is int and webtest == 0) or webtest == WEBTEST_NA):  # pylint: disable=unidiomatic-typecheck
+        return (f"round {row.get('round')}'s webtest state is {webtest!r}: open healer "
+                "skips are never accepted, and an unread check is could-not-tell")
+    return None
+
+
+def auto_accept_refusal(data, ticket):
+    """None when the latest round may be auto-accepted, else the reason. Pure:
+    reads only `data` (a loaded ledger). The tree-hash check needs the
+    repository and is `auto_accept`'s."""
+    if not isinstance(data, dict):
+        return "the ledger is unreadable: could not tell"
+    if data.get("state") == NEEDS_REPLAN:
+        return f"{ticket} is {NEEDS_REPLAN}; only an approved successor plan continues"
+    rounds = data.get("rounds") or []
+    if not rounds or not isinstance(rounds[-1], dict):
+        return "no review round to accept"
+    row = rounds[-1]
+    if row.get("status") != "completed":
+        return f"round {row.get('round')}, the most recent, has no result yet"
+    if len(rounds) - _spent(data) >= row.get("round", 0):
+        return (f"round {row.get('round')} reviewed the plan a successor replaced; only a "
+                "round under the current plan can be accepted")
+    if row.get("verdict") != "FINDINGS":
+        failure = f" ({row.get('failure_class')})" if row.get("failure_class") else ""
+        return (f"round {row.get('round')} is {row.get('verdict')}{failure}; only a FINDINGS "
+                "round is auto-accepted")
+    problem = _auto_row_problem(row)
+    if problem:
+        return problem
+    if _charged(data) < BUDGET:
+        return (f"not the final round: {_charged(data)} of {BUDGET} budget rounds used; fix "
+                "and run the next round")
+    receipt = data.get("receipt") or {}
+    if receipt.get("round") == row.get("round"):
+        return (f"round {row.get('round')} was already accepted by "
+                f"{receipt.get('accepted_by')} at {receipt.get('accepted_at')}")
+    return None
+
+
+def auto_accept(root, ticket, follow_up):
+    """Accept the latest round under the owner policy of 2026-09-30, or raise
+    LedgerError naming the condition that failed (and change nothing)."""
+    if not follow_up:
+        raise LedgerError("--auto-accept needs --follow-up <id>: the ticket its FIX/NIT "
+                          "lines go to")
+    check_ticket(follow_up)
+    if follow_up == ticket:
+        raise LedgerError(f"--follow-up {follow_up} is the ticket itself; the follow-up is "
+                          "a new ticket")
+
+    def change(data, state):
+        if state != "ok":
+            raise LedgerError(f"--auto-accept refused: ledger is {state}; could not tell")
+        refusal = auto_accept_refusal(data, ticket)
+        if refusal:
+            raise LedgerError(f"--auto-accept refused: {refusal}")
+        row = data["rounds"][-1]
+        if _current_hash(root, row.get("base")) != row.get("bundle_sha256"):
+            raise LedgerError("--auto-accept refused: the tree has changed since that review, "
+                              "so accepting it would accept code nobody reviewed")
+        data["receipt"] = {
+            "kind": AUTO_KIND, "round": row["round"],
+            "bundle_sha256": row["bundle_sha256"], "base": row["base"],
+            "verdict": "FINDINGS", "accepted_by": AUTO_BY, "accepted_at": _now(),
+            "findings": list(row["findings"]), "follow_up": follow_up,
+            "model_family": row.get("model_family"),
+        }
+        data["state"] = ACCEPTED
+        return data, data["receipt"]
+
+    return _mutate(root, ticket, change)
+
+
+def receipt_stands(receipt, latest):
+    """Whether `receipt` stands on `latest`, the latest recorded round: a
+    CLEAN round; FINDINGS owner-accepted; or FINDINGS auto-accepted whose row
+    still passes the guard and whose lines are the row's."""
+    if not isinstance(receipt, dict) or not isinstance(latest, dict):
+        return False
+    if latest.get("status") != "completed" or receipt.get("round") != latest.get("round"):
+        return False
+    if latest.get("verdict") == "CLEAN":
+        return True
+    if latest.get("verdict") != "FINDINGS":
+        return False
+    if receipt.get("kind") == "owner-accepted":
+        return True
+    return (receipt.get("kind") == AUTO_KIND and receipt.get("accepted_by") == AUTO_BY
+            and receipt.get("findings") == latest.get("findings")
+            and _auto_row_problem(latest) is None)
+
+
+def check_follow_up(root, ticket):
+    """(ok, message). For an auto-accepted receipt: the follow-up ticket's
+    direction.md under `root` holds every receipt line as a whole line."""
+    data, state = _load(ledger_path(root, ticket))
+    if state != "ok":
+        return False, f"ledger is {state}; could not tell whether a follow-up is owed"
+    receipt = data.get("receipt")
+    if not isinstance(receipt, dict):
+        return False, f"no receipt for {ticket}; run --check-receipt first"
+    if receipt.get("kind") != AUTO_KIND:
+        return True, f"not applicable: the receipt is {receipt.get('kind')}, not {AUTO_KIND}"
+    lines, follow_up = receipt.get("findings"), receipt.get("follow_up")
+    if not isinstance(lines, list) or not lines or not all(isinstance(x, str) for x in lines):
+        return False, "the auto-accepted receipt carries no finding lines: could not tell"
+    try:
+        check_ticket(follow_up)
+    except LedgerError as exc:
+        return False, f"the receipt's follow-up id is unusable: {exc}"
+    path = os.path.join(root, ".work", "tickets", follow_up, "direction.md")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            have = {line.strip() for line in fh.read().splitlines()}
+    except OSError as exc:
+        return False, f"follow-up {follow_up}: cannot read {path} ({exc.strerror or exc})"
+    missing = [line for line in lines if line.strip() not in have]
+    if missing:
+        return False, (f"follow-up {follow_up}: {path} lacks {len(missing)} of {len(lines)} "
+                       f"line(s) as a whole line, first: {missing[0]}")
+    return True, f"follow-up {follow_up} quotes all {len(lines)} line(s) ({path})"
 
 
 def reject(root, ticket, by):
@@ -436,12 +632,10 @@ def check_receipt(root, ticket):
     if not isinstance(latest, dict) or latest.get("round") != receipt.get("round"):
         return False, (f"receipt is for round {receipt.get('round')}, not the latest recorded "
                        "round; only the latest round's verdict counts")
-    accepted = (latest.get("verdict") == "CLEAN"
-                or (latest.get("verdict") == "FINDINGS"
-                    and receipt.get("kind") == "owner-accepted"))
-    if latest.get("status") != "completed" or not accepted:
+    if not receipt_stands(receipt, latest):
         return False, (f"round {latest.get('round')} is {latest.get('verdict') or 'not completed'}"
-                       "; a receipt stands only on a CLEAN or owner-accepted round")
+                       "; a receipt stands only on a CLEAN or owner-accepted round, or an "
+                       "auto-accepted 0-BLOCK one")
     try:
         current = _current_hash(root, receipt.get("base"))
     except LedgerError as exc:
@@ -546,11 +740,19 @@ def main(argv):
     action.add_argument("--reject", action="store_true",
                         help="send the ticket to NEEDS_REPLAN now (needs --by)")
     action.add_argument("--check-receipt", action="store_true")
+    action.add_argument("--auto-accept", action="store_true",
+                        help="accept a final 0-BLOCK FINDINGS round (needs --follow-up; "
+                             "takes no --by)")
+    action.add_argument("--check-follow-up", action="store_true",
+                        help="an auto-accepted receipt's follow-up quotes every line")
     action.add_argument("--successor-plan", metavar="PLAN_SHA256")
     parser.add_argument("--provider", default="claude")
     parser.add_argument("--model")
     parser.add_argument("--by", help="who accepts or rejects, with --accept / --reject")
+    parser.add_argument("--follow-up", help="with --auto-accept: the follow-up ticket id")
     args = parser.parse_args(argv)
+    if args.auto_accept and args.by is not None:
+        parser.error("--auto-accept takes no --by: its accepted_by is fixed")
     root = os.path.abspath(args.root)
 
     try:
@@ -575,6 +777,18 @@ def main(argv):
             return 0
         if args.check_receipt:
             ok, message = check_receipt(root, args.ticket)
+            print(f"review-ledger: {message}")
+            return 0 if ok else 1
+        if args.auto_accept:
+            receipt = auto_accept(root, args.ticket, args.follow_up)
+            print(f"review-ledger: round {receipt['round']} FINDINGS auto-accepted "
+                  f"({AUTO_BY}), follow-up {receipt['follow_up']}, "
+                  f"{len(receipt['findings'])} line(s)")
+            for line in receipt["findings"]:
+                print(line)
+            return 0
+        if args.check_follow_up:
+            ok, message = check_follow_up(root, args.ticket)
             print(f"review-ledger: {message}")
             return 0 if ok else 1
         ok, message = continue_with_successor_plan(root, args.ticket, args.successor_plan)
