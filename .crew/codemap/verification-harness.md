@@ -526,30 +526,30 @@ skills, 5 plugins`, `all checks passed`, rc 0.
 
 **DERIVED, read in full at this anchor.** 721 lines, absent at `5d1fc5fd`.
 Gates crew 1.0's instruction-surface budgets file by file, per its own module
-docstring (`:1-59`): a 120-line command-file budget
-(`COMMAND_MAX_LINES`, `:76`) with `plugin/crew/.budget-allowance.json` as the
+docstring (`:1-61`): a 120-line command-file budget
+(`COMMAND_MAX_LINES`, `:78`) with `plugin/crew/.budget-allowance.json` as the
 only sanctioned exception; no file outside that allowance may grow past its
 recorded line count, and no listed ceiling may be *raised* in the same change
 that grows the file unless its `reason` is rewritten to an explicit
-`"raised: <why>"` string (`RAISED_REASON_RE`, `:97`) — checked against the
+`"raised: <why>"` string (`RAISED_REASON_RE`, `:99`) — checked against the
 allowance file as committed at the merge-base with the default branch, or
-`--base <ref>` (`check_allowance_no_silent_raise`, `:334`); frontmatter
+`--base <ref>` (`check_allowance_no_silent_raise`, `:336`); frontmatter
 presence; generated-file drift (a no-op today — none is committed in this
 repo, per its own docstring, but tested against fixtures); a maintained
 **stale-name scan**, inverted from the pattern the marketplace checker uses —
-`STALE_NAMES` (`:98-106`, eight pre-1.0 names: `qa-reviewer`, `/crew:work`,
+`STALE_NAMES` (`:100-108`, eight pre-1.0 names: `qa-reviewer`, `/crew:work`,
 `/crew:ticket`, `/crew:pm`, `/crew:roster`, `/crew:scale`, `pm-journal`,
 `pm-pulse`) is scanned across **every** `plugin/crew/*.md` file (and
-`AGENTS.md`) by default, and `LEGACY_STALE_NAME_FILES` (`:118-...`, a
+`AGENTS.md`) by default, and `LEGACY_STALE_NAME_FILES` (`:120-...`, a
 maintained allowlist of pre-1.0 or held files permitted to mention one) is
 what is *exempt* — a new 1.0 file nobody remembers to list is checked, not
-silently skipped, which the comment at `:109-117` states was the opposite of
+silently skipped, which the comment at `:111-119` states was the opposite of
 the previous convention's failure mode; broken `${CLAUDE_PLUGIN_ROOT}` /
 Markdown-link references; and typed policy IDs — every `guards.<name>`
-reference is checked against `crew_guards.ALL_GUARD_NAMES` (`:653`, the one
+reference is checked against `crew_guards.ALL_GUARD_NAMES` (`:662`, the one
 place those names are declared).
 
-`rel()` (`:195-202`) is POSIX-relative by construction: `os.path.relpath`
+`rel()` (`:197-204`) is POSIX-relative by construction: `os.path.relpath`
 joined with the OS separator and then `.replace(os.sep, "/")`, because every
 path-keyed lookup this script does (`.budget-allowance.json`'s keys,
 `LEGACY_STALE_NAME_FILES`) is committed with `/` — a bare `os.path.relpath` on
@@ -670,7 +670,7 @@ their own, in both the `test` job and the Windows leg of `crew-shell-matrix`. Re
 - `scripts/check-marketplace.py:518` — `check_versions`.
 - `scripts/check-marketplace.py:564`, `:673` — `count_crew_markdown_lines`,
   `check_self_claims`.
-- `scripts/check_instructions.py:685` — `main()`, nine checks.
+- `scripts/check_instructions.py:694` — `main()`, nine checks.
 - `.github/workflows/instruction-budgets.yml:71-93` — the `github.event.before`
   base-sha fix for a `push` to `main`.
 
