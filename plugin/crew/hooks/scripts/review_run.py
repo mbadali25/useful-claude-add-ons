@@ -56,6 +56,13 @@ the untouched tree.
 Writes `<work-dir>/review.json` (default `.work/tickets/<id>/review.json`)
 and records the round in the ledger; a CLEAN round writes the receipt.
 
+METRICS ROW (L-0578). Once the ledger has accepted the round, and before
+review.json, `review_metrics.record` appends the round's row to the main
+checkout's `.crew/metrics.md` and a `review:` line says where, or why not and
+the row to append by hand. It never changes the verdict or the exit code.
+`--note codex-probe=<exit>` (claude) carries the probe's answer, so a Codex
+limit the probe found live is labelled though it records no marker.
+
 WEB TESTS. In a Playwright repository (the manifest carries a `webtest`
 listing) or wherever `.work/tickets/<id>/webtest/findings.json` exists, the
 healer-skip check is RE-RUN here, before the verdict, stamped with the
@@ -126,6 +133,7 @@ import crew_state
 import review_gate
 import review_ledger
 import review_limit
+import review_metrics
 import review_patch
 import review_prompt
 import review_verdict
@@ -444,6 +452,9 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     review["refunded"] = row.get("refunded") is True
     review["refund_refused"] = row.get("refund_refused")
     review["elapsed_s"] = round_elapsed(args.root, args.ticket, number)
+    # Before review.json: the row is owed once the ledger holds the round.
+    metrics_line = review_metrics.record(args.root, args.ticket, number, review, args.manifest,
+                                         getattr(args, "note", "") or "")
     work_dir = args.work_dir or os.path.join(args.root, ".work", "tickets", args.ticket)
     _write_atomic(os.path.join(work_dir, "review.json"),
                   json.dumps(review, indent=2, sort_keys=True) + "\n")
@@ -458,6 +469,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
           f"{args.provider}/{args.model or 'default'} family={review['model_family']} "
           f"ledger={state} gate={review['gate']['state']} "
           f"elapsed={_fmt_elapsed(review['elapsed_s'])}")
+    print(metrics_line)
     for reason in result["reasons"]:
         print(f"review: INCOMPLETE because {reason}")
     if failure == review_verdict.TOOL and review["refunded"]:
@@ -677,6 +689,9 @@ def main(argv):
     parser.add_argument("--exit-code", type=int)
     parser.add_argument("--probe", action="store_true")
     parser.add_argument("--probe-timeout", type=int, default=PROBE_TIMEOUT)
+    parser.add_argument("--note", default="",
+                        help="claude only: why this provider ran, for the metrics row "
+                             "('codex-probe=<probe exit>'; 5 means a Codex limit)")
     parser.add_argument("--allow-unverified", action="store_true",
                         help="review a tree the verify gate has not passed; recorded in "
                              "review.json as gate.overridden")

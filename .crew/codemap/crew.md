@@ -1513,6 +1513,12 @@ then the train is advisory.
   list at this anchor is exactly four paths — `!.crew/codemap/`,
   `!.crew/endpoints.json`, `!.crew/verify.json` and, since T-0085, `!.crew/standards.md`
   — confirmed by reading `.gitignore:279-337` directly; `metrics.jsonl` is not among them.
+- `.crew/metrics.md` — still written, now by code: DERIVED (L-0578) `review_run.finish`
+  calls `review_metrics.record` right after `review_ledger.record` accepts the round and before
+  review.json (`plugin/crew/hooks/scripts/review_run.py`, grep `review_metrics.record`), one row
+  per round into the MAIN checkout's file (`crew_common._main_checkout`), nothing when git cannot
+  name it. Readers (`crew_state.read_metrics`, `crew_standards.metric`) still read `<root>/.crew/`,
+  so from a linked worktree they do not see it yet - JUDGEMENT: a follow-up reader change.
 - `.crew/endpoints.json` and its lock file `.crew/endpoints.json.oslock`
   (created on first use, never deleted); see above.
 
