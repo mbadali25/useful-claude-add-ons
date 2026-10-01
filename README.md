@@ -9,13 +9,13 @@ One-line bootstrap — no `git clone` needed. Pulls the prerequisite installer s
 **Windows** (elevated PowerShell):
 
 ```powershell
-irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/e878cc31e00a7acb480fc17dd8afdcaf40c91f2d/scripts/install-prerequisites.ps1' | iex
+irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/f7caa37d2cfc694330c3cf2b305592ff473e3194/scripts/install-prerequisites.ps1' | iex
 ```
 
 **Linux**:
 
 ```bash
-curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/e878cc31e00a7acb480fc17dd8afdcaf40c91f2d/scripts/install-prerequisites.sh' | bash
+curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/f7caa37d2cfc694330c3cf2b305592ff473e3194/scripts/install-prerequisites.sh' | bash
 ```
 
 Both links are pinned to a specific commit SHA rather than `main`, so the exact script you're running is fixed and auditable — it can't silently change between when you review it and when you run it. **Update the SHA above whenever `scripts/install-prerequisites.*` changes**: after merging to `main`, run `git rev-parse HEAD` and swap it into both URLs.
@@ -49,7 +49,7 @@ The menu is a cursor picker — **↑/↓ to move, Space to tick, Enter to start
   ----------------------
     [x] Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)
     [x] Claude Code CLI (@anthropic-ai/claude-code) + PATH export
-  > [x] This repo's marketplace + 34 of 34 skills  >
+  > [x] This repo's marketplace + 35 of 35 skills  >
     [x] Team plugins: superpowers, frontend-design, excalidraw-generator
     ...
   ↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel
@@ -151,7 +151,7 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 |---|---|---|
 | 1 Prerequisites | Chocolatey + git, awscli, nodejs, python (Windows) / git, nodejs, npm, python3, pip3 via apt/dnf/yum/pacman/zypper/apk (Linux) | package manager |
 | 2 Claude Code CLI | `@anthropic-ai/claude-code`, a persistent `PATH` entry for the npm global bin, and an update to the latest published version if one already exists | npm |
-| 3 This repo | The `useful-claude-add-ons` marketplace and, by default, all 34 skills<!-- claim: skills-count --> in [`skills/`](skills/) — narrow it with → in the menu or `--skills` | this repo |
+| 3 This repo | The `useful-claude-add-ons` marketplace and, by default, all 35 skills<!-- claim: skills-count --> in [`skills/`](skills/) — narrow it with → in the menu or `--skills` | this repo |
 | 4 Team plugins | `superpowers`, `frontend-design`, `excalidraw-generator` | 3 marketplaces (only the ones behind a ticked plugin) |
 | 5 find-skills | The `find-skills` skill, into the user skills dir | `vercel-labs/skills` |
 | 6 Community | `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master`, `voltagent-infra`, `voltagent-qa-sec` | 4 marketplaces (only the ones behind a ticked plugin) |
@@ -828,6 +828,7 @@ See [`Skill-Authoring-Standard.md`](Skill-Authoring-Standard.md) for how a skill
 | [`intune-graph`](skills/intune-graph) | Endpoint Mgmt | Microsoft Intune via Microsoft Graph — device lookup/troubleshooting, compliance and configuration profiles, Win32/LOB app deployment, bulk report exports. | "Why is this laptop non-compliant?"; pushing a sync to a set of machines; packaging and deploying a Win32 app; exporting device inventory; a 403/429 from `graph.microsoft.com`. | Automatic |
 | [`jira-manager`](skills/jira-manager) | ITSM | Jira Cloud through the REST API v3 with an email + API token — JQL search, create, update fields, assign, transition, comment, log work. No MCP connector, no OAuth flow. | "What am I assigned this sprint?"; opening a ticket from the terminal; bulk-retitling or reprioritising a backlog; closing an issue and logging the time against it. | Automatic |
 | [`knowbe4-admin`](skills/knowbe4-admin) | Security Awareness | KnowBe4 KSAT administration — diagnose SCIM user-sync against Microsoft Entra ID or Okta, pull Reporting API data, and route each change to the surface that actually owns it. | Users not provisioning or mass-archiving after a SCIM change; duplicate or quarantined accounts; attribute drift between the IdP and KSAT; exporting phishing or training results. | Automatic |
+| [`mailgun`](skills/mailgun) | Email / Messaging | Operates a Mailgun account end to end through its API with one stdlib-only script — send (plain, HTML, templates, attachments, scheduled, test mode), receive and read inbound mail, pull events, delivery reports and stats, and configure domains, DNS verification, routes, webhooks, templates, suppressions, mailing lists, tracking, IPs, API keys and subaccounts. | Sending an email from a Mailgun domain; "was this email delivered, bounced or opened?"; checking an inbound route or inbox; pulling email stats; a 401 from the wrong region; changing domain, tracking or suppression settings. | Automatic |
 | [`mermaid-svg-bitbucket`](skills/mermaid-svg-bitbucket) | Docs / DevOps | Pre-renders Mermaid diagrams to committed SVG so they display in Bitbucket Cloud, which never adopted native ```mermaid``` fences. | A README diagram that renders on GitHub but shows raw code in Bitbucket; diagram labels coming out blank; migrating docs from GitHub/GitLab to Bitbucket. | Automatic |
 | [`notify`](skills/notify) | Productivity | Pings you out of band about a session or job — a two-way Telegram bot (a `question` blocks until you answer from your phone, with a topic-per-job dispatcher for concurrent jobs) or email over SMTP or an M365/Gmail MCP connector. Config-driven, global or per project. | "Tell me when this finishes"; "message me if it errors"; a long migration that needs a yes/no before it proceeds; overnight jobs you don't want to babysit. | Automatic |
 | [`obsidian-canvas`](skills/obsidian-canvas) | Docs / Obsidian | Creates and edits Obsidian Canvas `.canvas` files directly as JSON (JSON Canvas spec) — architecture maps, decision trees, and boards with embedded live notes, text cards, groups, and labeled arrows; no plugin or REST bridge required. | "Map this out visually in Obsidian"; an infrastructure diagram the user can rearrange in their vault; a whiteboard view over existing notes; tweaking an existing `.canvas` without regenerating it. | Automatic |

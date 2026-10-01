@@ -4,6 +4,136 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.0.89: refresh admission refuses a dir swapped to a link on Windows (W-0116)
+
+- **`_read_regular`'s no-dir_fd branch (Windows has no `O_NOFOLLOW` and `os.open` takes no
+  `dir_fd`) now also calls `GetFinalPathNameByHandleW` on the open descriptor and refuses the
+  read unless that real path is `realpath(top)/rel`.** Without it, a directory swapped to a link
+  after `_on_disk`'s realpath check passed admission: `lstat` follows the same link to the same
+  outside file, so the lstat/fstat identity check it already did matched, and outside text was
+  admitted ("re-anchored"). A final path Windows will not give back is a reason, not a pass —
+  the check fails closed (could-not-tell), same posture as the existing `O_NOFOLLOW` path on
+  POSIX. `_FINAL_PATH` is `None` off Windows, so POSIX runs exactly the code it ran before;
+  **Linux and macOS behavior is unchanged.**
+- **Two tests fixed to build a real premise on Windows, not just pass there.** NTFS clones get
+  `core.fileMode=false`, so a working-file `chmod` never reaches git; the mode-change test now
+  stages the bit with `git update-index --chmod=+x` when `core.fileMode` is false, and still
+  chmods on disk when it's true. The staged-symlink test now asserts the refusal reason names
+  `120000` rather than the exact string `"stored as 120000"`, since a `core.symlinks=false`
+  checkout reports the staged link as a mode change while `true` reports it as "stored as
+  120000" — both refuse, only the wording differs.
+- **Known gap, tracked as W-0117:** the `GetFinalPathNameByHandleW` check closes the no-dir_fd
+  race on a *directory* swapped to a link; a narrower window on the *file* itself is not yet
+  covered and is left for that ticket.
+
+### Added — `crew` 1.0.86: the merge train - gate+land serialised per overlapping Touch set (L-0520)
+
+- **New `hooks/scripts/crew_train.py`.** One locked queue per clone under
+  `<git-common-dir>/crew/train/`, armed per clone with `crew_train.py arm` (no config key; an
+  unarmed clone behaves exactly as before). A ticket holds the train only when no holder and no
+  earlier waiter on the same base has an overlapping Touch set, so overlapping tickets gate and
+  land one at a time while disjoint ones run at once, and lanes still implement in parallel.
+  Overlap is conservative (literal-prefix match; refresh artifacts not counted); an undeclared
+  Touch overlaps everything; an unreadable state, a failed git call or a lock held past its wait
+  is could-not-tell (exit 3). Every wait is logged with its colliding paths; stale holds are
+  reported (`stale?:`) and released only by `release --force --by <who> --reason <text>`.
+- **Advisory in this release.** Lanes (or you) call `crew_train.py acquire` before the gate
+  round; `review_run.py` refusing the round itself (exit 6) and the review prompt's rerere block
+  are L-0526, a separate tooling PR (owner 2026-09-30: tooling PRs carry no feature work). No hook
+  is added.
+- **`crew_train.py catch-up`** merges the base (never a rebase) after making `rerere.enabled`
+  and `rerere.autoupdate` true in the worktree (`--worktree` or `--local`, never `--global`),
+  never commits a conflicted or rerere-resolved merge, and records each catch-up (with the files
+  rerere replayed) in a merge log that `crew_train.py merge-log` prints.
+- **`crew_train.py check-land`** refuses unless the ticket holds the train, `git merge-tree` is
+  clean, the base has not moved in Touch paths, and HEAD carries a current review receipt and a
+  green verify gate; then it prints `gh pr merge <n> --merge --match-head-commit <sha>` (crew
+  never merges). `release --merged <sha>` tells every overlapping lane to merge the base.
+  `/crew:done` gains "Landing through the merge train".
+- The delta gate, scheduling and the spec's accepted-limits section are proposed follow-ups
+  (TODO.md), not in this release.
+
+### Added
+
+- **`mailgun` 1.0.0: registered as `skills/mailgun` (L-0561).** bd4b2f30 added
+  it as `plugin/mailgun/` with no registration, which failed
+  `scripts/check-marketplace.py` and every PR's `check` job. It is one
+  `SKILL.md` plus `references/` and `scripts/mg.py`, so it moves to `skills/`
+  and is registered in `marketplace.json`, both catalog tables,
+  `INSTALLATION.md` and both install scripts. Skill content unchanged; the
+  marketplace goes from 34 to 35 skills.
+  Then `1.0.0 -> 1.0.1`: a lint-only pass on `scripts/mg.py` (split imports,
+  `encoding="utf-8"`, `with` blocks, `rsplit(maxsplit=1)`, one wrapped line)
+  so the required pylint and ruff jobs pass; no behaviour change intended.
+
+- **`crew` 1.0.85: the Kimi Code CLI is a crew provider (T-0028, the feature
+  half). BEHAVIOUR CHANGE: the default `qa.order` now lists Kimi second -
+  `["codex", "kimi", "copilot", "claude"]`.** `/crew:review` does not launch
+  Kimi yet: that wiring is crew's review harness, and lands on its own as
+  L-0527 (tooling-only PRs carry no feature work, T-0087's rule). **The launch
+  gate** keeps the new rung from changing what a review does today:
+  `crew_config.order_candidates` offers a `qa.order` provider only when
+  `/crew:review` can launch it - `crew_config.review_launchable()`, which is
+  `review_run.LAUNCHED` plus the in-session `claude` - so `/crew:model` and the
+  `/crew:review` walk report Kimi as `no - /crew:review cannot launch kimi yet`
+  and go on to the next rung. The gate names no provider: L-0527 adding `kimi`
+  to `review_run.LAUNCHED` is what makes it eligible; an unreadable list is
+  could-not-tell and admits nothing. (`review_run.py --provider kimi` itself
+  still exits 2 until then, nothing launched.) Bumped `1.0.83 -> 1.0.85` (1.0.44 on its
+  branch; 1.0.60 after merging main's 1.0.59; 1.0.62 after main's 1.0.61;
+  1.0.70 after main's 1.0.69; 1.0.76 after main's 1.0.75; 1.0.77 after
+  main's 1.0.76, T-0087; 1.0.78 after main's 1.0.77, T-0086; 1.0.79 after
+  the round-6 fixes; 1.0.83 after merging main's 1.0.80, L-0529, 1.0.83 again after
+  merging main's 1.0.81, T-0094; 1.0.85 after merging main's 1.0.83, L-0531
+  and T-0099, since T-0505 targets 1.0.84).
+  - **`kimi` is in `QA_PROVIDERS` and `DEV_PROVIDERS`**, so every
+    `qa.roles.<r>` and `dev.roles.<r>` slot accepts a
+    `{"provider": "kimi", "model": ...}` pin that validates, reports in
+    `/crew:model` and is family-guarded. The owner's ids are `k3`,
+    `kimi-for-coding` and `kimi-for-coding-highspeed`; they are displayed,
+    never an allowlist. No role pin ships; `/crew:model` offers the table.
+  - **Family token `kimi`, fixed by provider.** `family("kimi", <any model>)`
+    is `kimi` before the model is read - `k3` would otherwise parse as `k` and
+    clear Kimi to review Kimi - and it equals a Copilot `kimi-*` pin's family,
+    so each bars the other. A bare Kimi Code id served by another provider
+    (`k3` through Codex or Copilot) is `kimi` too: a model whose leading
+    letters are exactly `k` followed by a digit.
+  - **New probe, `hooks/scripts/kimi_probe.py`**: `ok`, `not-installed`,
+    `not-authenticated`, `rate-limited` or `unknown`, each its own value; only
+    `ok` is launchable. Could-not-tell never becomes an answer: an unreadable
+    credentials directory or `config.toml` (only ENOENT proves absence), a
+    `config.toml` that is not a regular file, a scratch directory that cannot
+    be made, unrecognised output, a timeout, an id no `type = "kimi"` alias
+    serves, and any answer other than exactly `PROBE_OK` are `unknown`. A 429
+    the CLI retried and then completed reads `ok`; a 429 that ended the call is
+    `rate-limited`. A wrong-shaped `api_key` or `oauth` entry in config.toml is
+    `unknown`, not `not-authenticated`; the probe refuses (`unknown`) when the
+    temporary directory lies inside a repository, where the CLI could discover
+    that repository's instructions. Round 7: a non-string `default_model` is
+    `unknown`; only the provider's own stored credential
+    (`credentials/<name>.json` for `key = "oauth/<name>"`, as Kimi Code 2.1.1
+    stores it) counts as a login, and an OAuth entry it cannot locate is
+    `unknown`; each output pipe is capped at 1 MiB (past it is `unknown`,
+    nothing more held in memory); config.toml is opened once, non-blocking,
+    checked and read through that handle (at most 1 MiB). Every wait is bounded: a timed-out probe's process group is
+    killed and the follow-up read has its own bound, so a descendant holding a
+    pipe cannot hang it. The live stage spends one tiny request, in a throwaway
+    directory, with a Read/Grep/Glob-only `--agent-file` and an empty
+    `--skills-dir` (`kimi -p` forces permission mode `auto`), a scrubbed env,
+    and stderr redacted. `providers.sh --probe-kimi` runs it; without the flag
+    it only reports the CLI.
+  - **The stream-json parser, `kimi_probe.final_message`, is tested against a
+    real run.** `tests/fixtures/kimi-stream-2.1.1/ok.jsonl` is the owner's one
+    captured `kimi -p` call (2026-09-25, session id redacted). Only a
+    `role: assistant` line is read; a non-object content member is malformed;
+    a `turn.step.retrying` event is never a failure. Tool-call, retry, 401,
+    quota and failed-turn records remain uncaptured.
+  - `qa.kimi.model` / `dev.kimi.model` (default `null`); no
+    `reasoningEffort` key. `model.md`, `crew-providers` and `providers.sh`
+    document it. `templates/config.template.json` and `global.template.json`
+    are regenerated from `default_config()` / `default_global_config()`, so
+    `/crew:init` writes the `kimi` blocks and the new order.
+
 ### Fixed — `crew` 1.0.83: the review prompt tells a known-empty exclusion list from an unrecorded one (T-0099)
 
 - **What changed.** `_bundle_block` in `review_prompt.py` now checks the shape of `manifest["excluded"]`
