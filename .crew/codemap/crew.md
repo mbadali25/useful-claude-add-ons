@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@c8118baf
+anchor: useful-claude-add-ons@afd976ee
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -3292,3 +3292,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `bf7ce780` -> `dbad6519` on 2026-09-30 (L-0558 self-review fixes, crew 1.0.87).** `git diff --name-only bf7ce780 dbad6519` returns, outside refresh artifacts, `plugin/crew/hooks/scripts/crew_train.py`, `plugin/crew/tests/test_crew_train.py` and `CHANGELOG.md` (L-0558's self-review fixes); the merge-train section's crew_train.py citations were re-mapped by definition name and the `_both_sides` stage filter added. No suite was executed for this note.
 
 **Re-anchored `dbad6519` -> `c8118baf` on 2026-09-30 (L-0558 lint fix and version re-set).** `git diff --name-only dbad6519 c8118baf` returns, outside refresh artifacts, `plugin/crew/tests/test_crew_train.py` (one trailing blank line dropped) and the three version files (stepped back and re-set to 1.0.87 on the same lines); nothing any map cites by line moved. No suite was executed for this note.
+
+**Re-anchored `c8118baf` -> `afd976ee` on 2026-09-30 (L-0558 review round 1 fix).** `git diff --name-only c8118baf afd976ee` returns, outside refresh artifacts: CHANGELOG.md plugin/crew/README.md plugin/crew/hooks/scripts/crew_train.py plugin/crew/tests/test_crew_train.py - see the merge-train section for crew_train.py citations, re-mapped by definition name; no other cited line moved. No suite was executed for this note.
