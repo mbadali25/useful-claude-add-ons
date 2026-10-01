@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@89ebda03
+anchor: useful-claude-add-ons@70993489
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -1504,3 +1504,7 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `9580571e` -> `b0ac0e1a` on 2026-09-30 (L-0558 merges main 6fe0e0db (T-0505), crew 1.0.95).** Both histories are kept above: main's T-0505 chain to 9580571e and L-0558's chain to d21fa82d, merged at f7118a04 with rerere disabled. `git diff --name-only 9580571e b0ac0e1a` outside refresh artifacts is L-0558's change (crew_train.py, test_crew_train.py, plugin/crew/README.md, the two guide sources and their outputs, CHANGELOG.md, .crew/verify.json rule 37, the version files) plus main's W-0116 files already in 9580571e's ancestry; the merge-train section's crew_train.py citations were re-mapped at d21fa82d and crew_train.py has not changed since; no other cited line moved. No suite was executed for this note.
 
 **Re-anchored `44d3dbc6` (main) and `b0ac0e1a` (L-0558) -> `89ebda03` on 2026-10-01 (L-0558 merges main 52489039: T-0110 #297, T-0040 #290; crew 1.0.102).** Both histories are kept above; the merge (c481ada4) ran with rerere disabled. `git diff --name-only 44d3dbc6 89ebda03` outside refresh artifacts is 35 paths: L-0558's change (crew_train.py, test_crew_train.py, plugin/crew/README.md, two guide sources and outputs, CHANGELOG.md, .crew/verify.json rule 37, the version files) plus main's commits since 44d3dbc6; the merge-train section's crew_train.py citations hold (crew_train.py unchanged since 7a71faff); no other line this map cites was re-checked beyond the merge. No suite was executed for this note.
+
+## Re-anchor provenance - `89ebda03` -> `70993489`, 2026-10-01 (T-0503 merges origin/main `05a679bf`, bitbucket 1.2.3)
+
+`git diff --name-only 89ebda03 70993489` over the paths the refresh check named returns only T-0503's own change: the `bitbucket` catalog row's Use cases cell edited in place in `README.md` and `skills/README.md` (one line each, no line count changed) and the documentation-invariants section added to `skills/bitbucket/scripts/_test/merge_gate.sh`. Every line this note cites in those three files reads the same at `89ebda03` and `70993489` (compared by script, 9 checked, 0 differ). Re-anchor only, under the refresh-artifact standing rule (owner 2026-09-28); nothing was executed for this note.
