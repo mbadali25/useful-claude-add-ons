@@ -3,6 +3,7 @@
 A fixture is a real git repository with a real commit, because the code under
 test asks git for HEAD and comparing against a mocked sha would test the mock.
 """
+import contextlib
 import ctypes
 import json
 import os
@@ -13,6 +14,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 
 import pytest
 
@@ -749,6 +751,115 @@ def resolve_bash():
     )
     _BASH = None
     return _BASH
+
+
+# What the `msys_tmp_pinned` holder runs: announce itself, then wait on stdin
+# so it exits when the block ends. A module constant so a test can swap in a
+# holder that starts but never announces.
+_PIN_HOLDER_SCRIPT = "echo pinned; read -r _"
+
+# How long `msys_tmp_pinned` waits for the holder's "pinned" line. A sane
+# bash prints it in well under a second; a stalled one must not sit in
+# readline() until the CI job's own limit (T-0110 review round 1).
+PIN_STARTUP_TIMEOUT_S = 30
+
+# After killing a holder that never announced, how long to let its stdout
+# reader drain before raising anyway (the reader is a daemon thread).
+PIN_READER_GRACE_S = 5
+
+
+@contextlib.contextmanager
+def msys_tmp_pinned(bash, poisoned_env):
+    """Run a block that starts MSYS processes under `poisoned_env` (TMP/TEMP
+    pointing somewhere that is not a directory) without turning `/tmp` into
+    that path for every other Git-Bash process on the host.
+
+    Git for Windows mounts `/tmp` as `usertemp` (its etc/fstab), resolved
+    from the TMP/TEMP of the process that CREATES the MSYS runtime's
+    per-user, per-installation shared mount table - and every MSYS process
+    started while that region lives shares it. A child handed TMP=<a file>
+    that happens to be the first MSYS process on an idle host therefore
+    breaks every bash any other pytest-xdist worker starts meanwhile:
+    `bash.exe: warning: /tmp must be a valid directory name`, then `VERIFY
+    GATE: cannot create temp file` in an unrelated test (T-0110; CI jobs
+    109709668000 and 109307433677).
+
+    This holds one MSYS process, started with THIS process' environment,
+    open for the whole block, so the region already exists - created sane -
+    when the block's own children start, and they join it instead. The
+    holder waits on its stdin rather than sleeping, so it exits as soon as
+    the block ends or this process dies. Before yielding it proves the pin
+    took: a probe of `bash` under `poisoned_env` must see `/tmp` as a
+    directory, or this raises instead of running a test that would poison
+    the host. The region is per installation, so `bash` must belong to the
+    same MSYS install the block's children use (Git for Windows' own, for
+    every crew gate - verify-gate.ps1 resolves its bash from git.exe).
+
+    `test_msys_tmp_pin.py` checks both halves: the hazard, on a private copy
+    of the runtime, and that every crew test overriding TMP/TEMP runs here.
+    A no-op off Windows and when `bash` is None (such callers skip anyway).
+    """
+    if bash is None or not sys.platform.startswith("win"):
+        yield
+        return
+    holder = subprocess.Popen(
+        [bash, "-c", _PIN_HOLDER_SCRIPT], env=dict(os.environ),
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL, text=True, encoding="utf-8")
+    try:
+        # A reader thread, because select() does not work on Windows pipes;
+        # the bound is read at call time so a test can shorten it.
+        bound = PIN_STARTUP_TIMEOUT_S
+        lines = []
+        reader = threading.Thread(
+            target=lambda: lines.append(holder.stdout.readline()), daemon=True)
+        reader.start()
+        reader.join(bound)
+        if reader.is_alive():
+            # Git's bin/bash.exe is a shim whose usr/bin/bash.exe child also
+            # holds stdout, and killing the shim leaves that child running:
+            # close stdin first so the child's `read` hits EOF and it exits,
+            # closing the pipe so the reader sees EOF on its own.
+            holder.stdin.close()
+            holder.kill()
+            holder.wait(timeout=GATE_SUBPROCESS_TIMEOUT_S)
+            reader.join(PIN_READER_GRACE_S)
+            raise RuntimeError(
+                f"msys_tmp_pinned: holder {bash!r} did not announce itself "
+                f"within {bound}s; killed it (exit {holder.poll()}) rather "
+                "than run the block unpinned"
+                + ("" if not reader.is_alive() else
+                   f"; its stdout reader was still blocked {PIN_READER_GRACE_S}s"
+                   " later, so a grandchild still holds the pipe"))
+        ready = lines[0].strip() if lines else ""
+        if ready != "pinned":
+            raise RuntimeError(
+                f"msys_tmp_pinned: holder {bash!r} did not start "
+                f"(read {ready!r}, exit {holder.poll()})")
+        probe = subprocess.run(
+            [bash, "-c", "if [ -d /tmp ]; then echo tmp-is-dir; fi"],
+            env=poisoned_env, capture_output=True, text=True, encoding="utf-8",
+            check=False,
+            timeout=GATE_SUBPROCESS_TIMEOUT_S)
+        if probe.stdout.strip() != "tmp-is-dir":
+            raise RuntimeError(
+                "msys_tmp_pinned: a process under the poisoned env still "
+                f"does not see /tmp as a directory (stdout={probe.stdout!r} "
+                f"stderr={probe.stderr!r}) - the pin did not take, so the "
+                "block would poison /tmp for the whole host")
+        yield
+    finally:
+        try:
+            holder.stdin.close()
+        except OSError:
+            pass
+        try:
+            holder.wait(timeout=GATE_SUBPROCESS_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            holder.kill()
+            # Bounded too: a TimeoutExpired here names the stuck holder
+            # instead of hanging the run.
+            holder.wait(timeout=GATE_SUBPROCESS_TIMEOUT_S)
 
 
 _BASH_NO_PREPEND = "unprobed"
