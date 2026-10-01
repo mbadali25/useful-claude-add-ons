@@ -134,6 +134,10 @@ def test_status_shell_line_on_windows(tmp_path, monkeypatch, mode, cache, locati
     root = make_repo(tmp_path, config={"schema": 7, "shellRoute": {"mode": mode, "distro": None}})
     monkeypatch.setattr(crew_shell, "host_os", lambda *a, **k: "windows-bash")
     monkeypatch.setattr(crew_shell, "repo_location", lambda _root: location)
+    # Faked with repo_location, as test_crew_shell.py does: a WSL route also
+    # translates the real tmp_path, which is a drive path on Windows but a POSIX
+    # path on Linux CI, and to_wsl_path rightly refuses the latter.
+    monkeypatch.setattr(crew_shell, "to_wsl_path", lambda p, distro=None: ("/home/u/repo", ""))
     monkeypatch.setattr(crew_shell, "resolve_pwsh", lambda *a, **k: (PWSH7, "pwsh reason"))
     if cache is not None:
         crew_shell.write_cache(cache)
