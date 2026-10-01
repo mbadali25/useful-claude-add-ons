@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.104: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516)
+### Fixed — `crew` 1.0.110: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516)
 
 - **New `tests/poll_fixtures.py`.** `poll_until(probe, done, timeout)` probes at least once and
   returns the LAST probed value at the deadline, never a synthesized success, so a real survivor
@@ -38,6 +38,21 @@ All notable changes to this repository are documented here. Format follows [Keep
 - `poll_until` reads the clock after each sleep and before the next probe, so no probe starts
   after the deadline and a condition first seen late is not returned as success. The child-process
   tests kill and reap with `wait(timeout=10)`, not `Popen.__exit__`'s unbounded `wait()`.
+
+### Added — `crew` 1.0.106: T-0040's shell-route sabotage mutations (W-0115)
+
+T-0040 (crew 1.0.98) shipped `crew_shell.py` without its sabotage entries, which were split out
+because `scripts/check-tooling-pr.py` (rule 36) lets a harness change carry no feature work. This
+tooling-only change restores them.
+
+- `plugin/crew/tests/sabotage_shell.py` (`SHELL_MUTATIONS`, 14 entries) is registered in
+  `sabotage.py` again. Each entry is a way the shell route could fail: wsl mode falling back to
+  Git Bash, a raising probe read as not-installed, a bash string handed to pwsh, a bare `pwsh` or
+  System32 `bash.exe` resolved, the exit code dropped, and so on.
+- Each one, applied alone, turns its named test in `test_crew_shell.py` or `test_status.py` red,
+  and the test is green again on the byte-identical restore (14 of 14, native Windows).
+- `.crew/verify.json`'s T-0040 rule lists `sabotage_shell.py` again, and its `why` says how to
+  re-establish that claim from tracked files.
 
 ### Added — `scripts/gate-runner.py`: one local gate runner, repository tooling, no plugin version (L-0513)
 

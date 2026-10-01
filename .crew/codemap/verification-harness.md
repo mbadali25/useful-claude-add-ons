@@ -39,16 +39,16 @@ them and is wired into CI but not into the local Stop gate: see
 
 ## `.crew/verify.json` — 43 rules, up from 42
 
-**DERIVED, read in full via `json.load` on L-0516 at its merge of main `cacf7ff0` (L-0513 #301):
-448 lines, 43 rules.** Main's 42 rules (L-0513 #301's gate-runner rule at
-`.crew/verify.json:432-436`, then T-0040 #290's shell-route rule, the last, at `:438-443`) plus
+**DERIVED, read in full via `json.load` on L-0516 at its merge of main `ddcbf90d` (W-0115 #299, after L-0513 #301):
+449 lines, 43 rules.** Main's 42 rules (L-0513 #301's gate-runner rule at
+`.crew/verify.json:432-436`, then T-0040 #290's shell-route rule, the last, at `:438-444` since W-0115 added `sabotage_shell.py` to its paths) plus
 L-0516's poll-fixture rule, inserted right after the whole-suite rule as rule 10
 (`.crew/verify.json:177-181`; paths `plugin/crew/tests/poll_fixtures.py` and
 `test_poll_fixtures.py`, run with its two consumers `test_event_claim_crash_safety.py` and
 `test_crew_fixtures.py`). Every rule from the old rule 10 (`crew_upgrade.py`) on is therefore one
 higher, and every line from `:177` on six lines further down, than the paragraphs below state
 where they read main's tree (L-0513's rule 22 text at `:256-260` is `:262-266` here, its rule 40
-at `:426-430` is rule 41 at `:432-436`); `default` is `:446` and `unmapped` `:447`.
+at `:426-430` is rule 41 at `:432-436`); `default` is `:447` and `unmapped` `:448`.
 
 **DERIVED, read in full via `json.load` on L-0520 PR 1's merge of main `844bfc36` (T-0028 landed as
 crew 1.0.85): 430 lines, 40 rules.** Main's 39 rules plus L-0520's merge train rule, which sits as
