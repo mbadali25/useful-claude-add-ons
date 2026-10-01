@@ -26,24 +26,28 @@ All notable changes to this repository are documented here. Format follows [Keep
   cell did not run (the last stdout line starts `GIZMODUCK_ROUTINE_INCOMPLETE:`;
   a run with no cells is not complete); 2 for a usage or manifest error (a
   wrong-typed manifest value, a target `name` that is not a plain directory
-  name, or PyYAML missing included), with nothing written. Findings never
+  name or names a file routine writes, or PyYAML missing included), with
+  nothing written. Findings never
   change the status.
 - **Gates.** sqlmap's two gates are routine.py's and unchanged: `options.sqlmap`
   makes a target a candidate, and `--confirm-active`, asked for by name, lets it
   fire. A directory already holding a `scan-meta.json` is refused without
   `--replace`, which removes that `scan-meta.json` first, then the earlier run's
   files and only the target directories it names, and exits 2 removing nothing
-  when it cannot tell which those are (or one is a symlink).
+  when it cannot tell which those are (or one is a symlink). A target
+  directory that already exists and that no earlier run there owns is refused
+  with exit 2 on any run, so routine never adopts, and later removes, a
+  directory it did not create.
   `scan-meta.json` and `report.*` are written complete-then-renamed.
   Every routine-only flag, and `--run-manifest`, is refused on any other command.
 - **Unchanged.** The flat Nuclei report, byte for byte; every other subcommand
   stays stdlib-only (`routine` imports routine.py, and so PyYAML, lazily); no
   slash command; no hook; crew's endpoint-ledger path `docs/security-scans/<ep-id>.md`
   is untouched, and the dated layout does not satisfy it (follow-up in `TODO.md`).
-- **Sabotage.** Fifteen entries, (a) to (o), listed in
-  `plugin/gizmoduck/scripts/_test/test_routine_cli.py`'s docstring. (h) to (o) and
+- **Sabotage.** Seventeen entries, (a) to (q), listed in
+  `plugin/gizmoduck/scripts/_test/test_routine_cli.py`'s docstring. (h) to (q) and
   the rewritten (d) came with the review round-1 fixes and were each run against
-  the tracked `gizmoduck.py` and confirmed RED; (d) now fails the write itself
+  the committed `gizmoduck.py` and confirmed RED; (d) now fails the write itself
   half-way, because failing before the write could not tell an atomic helper
   from a plain `open(path, "w")`.
 - gizmoduck 0.5.3 -> 0.5.4 (`plugin.json`, `marketplace.json`, `plugin/PLUGINS.md`).

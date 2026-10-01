@@ -114,7 +114,9 @@ testssl; `iac` checkov, trivy; `deps` trivy, dependency-check; `code` semgrep. A
 with no `authorized_by`, a duplicate `name`, an unknown `kind`, a target missing its
 location, or a value of the wrong type is refused before anything runs, with exit 2. A `name`
 becomes the directory `<out>/<name>/`, so it must be a plain directory name: no `/`, `\`
-or `:`, no leading or trailing space, and not `.` or `..`. `routine` needs PyYAML; without
+or `:`, no leading or trailing space, not `.` or `..`, and not the name of a file routine
+writes there (`report.md`, `scan-meta.json` and the rest, in any case). `routine` needs
+PyYAML; without
 it the command exits 2 and names it.
 
 Two output layouts, one of them per run:
@@ -161,7 +163,12 @@ alone. It removes that `scan-meta.json` first, so a replace interrupted part-way
 `scan-meta.json` at all, exactly like an interrupted first run, never the old one describing
 files that are gone. When it cannot tell which directories the earlier run owns (an
 unreadable or older `scan-meta.json`, a target name that is not a plain directory name, or a
-named directory that is a symlink) it exits 2 and removes nothing. `scan-meta.json` and
+named directory that is a symlink) it exits 2 and removes nothing. A target directory
+that already exists (or is a symlink) and that no earlier run in the directory owns is
+refused the same way, on a first run as on `--replace`: writing into it would make it the
+run's own, and the next `--replace` would remove a directory routine never created. After
+an interrupted run, move its partial target directories aside before rerunning.
+`scan-meta.json` and
 `report.*` are written complete-then-renamed, never truncated in place.
 
 **sqlmap has two gates, and both stay.** `options.sqlmap: true` makes a target a candidate;

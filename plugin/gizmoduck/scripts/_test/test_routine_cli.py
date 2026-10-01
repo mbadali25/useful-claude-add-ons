@@ -60,6 +60,14 @@ must go red):
       -> test_replace_refuses_a_target_directory_that_is_a_symlink
   (o) _sanitised_env without PYTHONUSERBASE
       -> test_sanitised_env_keeps_the_user_site
+  (p) a target directory that already exists, and that no earlier run in
+      the directory owns, written into anyway (the neighbour of (h): such a
+      directory becomes "the earlier run's" and the next --replace removes it)
+      -> test_a_target_directory_no_earlier_run_owns_is_refused [plain] /
+         [symlink] and
+         test_replace_refuses_a_new_target_directory_the_earlier_run_did_not_own
+  (q) a target named after a file routine writes in the output directory
+      -> test_manifest_errors_write_nothing[reserved-name] / [reserved-name-case]
 """
 import datetime
 import importlib.util
@@ -355,6 +363,51 @@ def test_replace_leaves_a_symlink_the_earlier_run_did_not_name(gz, fixture, tmp_
     assert (out / "link" / "precious.txt").read_text(encoding="utf-8") == "precious"
 
 
+@pytest.mark.parametrize("shape", ["plain", "symlink"])
+def test_a_target_directory_no_earlier_run_owns_is_refused(gz, fixture, tmp_path, capsys, shape):
+    """A directory routine did not create is never adopted as a target
+    directory: an earlier run would then "own" it, and --replace removes it."""
+    out = tmp_path / "out"
+    out.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "keep.txt").write_text("keep", encoding="utf-8")
+    if shape == "plain":
+        (out / "site-a").mkdir()
+        (out / "site-a" / "keep.txt").write_text("keep", encoding="utf-8")
+        kept = out / "site-a" / "keep.txt"
+    else:
+        _symlink_or_skip(out / "site-a", elsewhere)
+        kept = elsewhere / "keep.txt"
+    reg = _registry()
+
+    rc = _run(gz, fixture, tmp_path, reg, confirm=True)
+
+    assert rc == 2
+    assert "no earlier run in this directory owns it" in capsys.readouterr().err
+    assert kept.read_text(encoding="utf-8") == "keep"
+    assert sorted(p.name for p in out.iterdir()) == ["site-a"]
+    assert all(a.run_calls == [] for a in reg.ADAPTERS.values())
+
+
+def test_replace_refuses_a_new_target_directory_the_earlier_run_did_not_own(gz, fixture,
+                                                                           tmp_path, capsys):
+    out = _earlier_run(gz, tmp_path, names=("site-a",))
+    earlier_meta = (out / "scan-meta.json").read_bytes()
+    (out / "site-b").mkdir()
+    (out / "site-b" / "keep.txt").write_text("keep", encoding="utf-8")
+    reg = _registry()
+
+    rc = _run(gz, fixture, tmp_path, reg, confirm=True, replace=True)
+
+    assert rc == 2
+    assert "no earlier run in this directory owns it" in capsys.readouterr().err
+    assert (out / "scan-meta.json").read_bytes() == earlier_meta
+    assert (out / "site-a" / "raw.txt").is_file()
+    assert (out / "site-b" / "keep.txt").read_text(encoding="utf-8") == "keep"
+    assert all(a.run_calls == [] for a in reg.ADAPTERS.values())
+
+
 def test_an_interrupted_replace_leaves_no_scan_meta_from_the_earlier_run(gz, fixture, tmp_path):
     out = _earlier_run(gz, tmp_path)
     assert _meta(out)["coverage"]["complete"] is True
@@ -505,6 +558,12 @@ _BAD_MANIFESTS = {
     "options-not-a-mapping": (("authorized_by: t\ntargets:\n"
                                "  - {name: a, kind: web, url: 'https://a.invalid/', options: 5}\n"),
                               "targets[0] 'options' must be a mapping"),
+    "reserved-name": (("authorized_by: t\ntargets:\n"
+                       "  - {name: report.md, kind: web, url: 'https://a.invalid/'}\n"),
+                      "is a file routine writes in the output directory"),
+    "reserved-name-case": (("authorized_by: t\ntargets:\n"
+                            "  - {name: Scan-Meta.JSON, kind: web, url: 'https://a.invalid/'}\n"),
+                           "is a file routine writes in the output directory"),
     "missing-file": (None, "No such file or directory"),
 }
 

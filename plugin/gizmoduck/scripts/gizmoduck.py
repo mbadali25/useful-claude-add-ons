@@ -883,6 +883,9 @@ def _check_manifest_shape(path, yaml):
                              f"(it becomes <out>/<name>/; no '/', '\\' or ':', no "
                              f"leading or trailing space, not '.' or '..'), "
                              f"not {name!r}")
+        if name.casefold() in {f.casefold() for f in ROUTINE_FILES}:
+            raise ValueError(f"targets[{i}] name {name!r} is a file routine writes in the "
+                             f"output directory; <out>/{name}/ would collide with it")
         if not isinstance(raw.get("kind"), str):
             raise ValueError(f"targets[{i}] 'kind' must be a string, "  # noqa: TRY004
                              f"not {raw.get('kind')!r}")
@@ -932,6 +935,18 @@ def _earlier_run_dirs(outdir, meta_path):
     return dirs
 
 
+def _unowned_target_dirs(outdir, manifest, owned):
+    """The new run's target directories that already exist (or are a symlink)
+    in `outdir` and that no earlier run there owns. Writing into one would
+    adopt it: the next scan-meta.json would name it, and a later `--replace`
+    would remove a directory routine never created (`--out .` in a checkout
+    with a target named `docs`). So the run is refused instead."""
+    owned = {Path(d) for d in owned}
+    return [outdir / t.name for t in manifest.targets
+            if ((outdir / t.name).is_symlink() or (outdir / t.name).exists())
+            and (outdir / t.name) not in owned]
+
+
 def _clear_earlier_run(outdir, meta_path, dirs):
     """`--replace`: remove an earlier run's files and the per-target
     directories `_earlier_run_dirs` resolved, and nothing else.
@@ -959,8 +974,9 @@ def cmd_routine(manifest_path, out, *, scan_root=None, date=None, replace=False,
     when every output was written but some cell did not run, and 2 when
     nothing was written: PyYAML missing, a refused manifest, an output
     directory that already holds an earlier run's scan-meta.json without
-    `replace`, or a `replace` that cannot tell which directories the earlier
-    run owns.
+    `replace`, a `replace` that cannot tell which directories the earlier
+    run owns, or a target directory that already exists and that no earlier
+    run in the directory owns.
 
     `routine` needs PyYAML, so it is imported here rather than at module top:
     every other command stays stdlib-only, and a missing PyYAML is a usage
@@ -991,6 +1007,7 @@ def cmd_routine(manifest_path, out, *, scan_root=None, date=None, replace=False,
         outdir = Path(out)
 
     meta_path = outdir / "scan-meta.json"
+    dirs = []
     if meta_path.exists():
         if not replace:
             print(f"routine: {meta_path} already exists - this directory holds an earlier "
@@ -1004,6 +1021,15 @@ def cmd_routine(manifest_path, out, *, scan_root=None, date=None, replace=False,
                   f"owns - {exc}. Nothing was removed; move {outdir} aside or choose another "
                   f"--out/--date", file=sys.stderr)
             return 2
+    unowned = _unowned_target_dirs(outdir, manifest, dirs)
+    if unowned:
+        names = ", ".join(str(d) for d in unowned)
+        print(f"routine: {names} already exists and no earlier run in this directory owns it; "
+              f"routine writes each target into <out>/<name>/ and only removes what it wrote. "
+              f"Nothing was written or removed; move it aside, rename the target, or choose "
+              f"another --out/--date", file=sys.stderr)
+        return 2
+    if meta_path.exists():
         _clear_earlier_run(outdir, meta_path, dirs)
 
     started_at = _utc_now().isoformat()
