@@ -708,6 +708,9 @@ flowchart TB
 %% provider and the launch gate are not drawn. No node or edge changed.
 %% c43a54c1 -> f4adf923 (T-0028 re-sets crew 1.0.85): release files only; no cited line moved.
 %% f4adf923 -> 328fdf4a (T-0028 round-7 fixes in kimi_probe.py, crew 1.0.85): no cited line moved.
+%% 328fdf4a -> fe524012 (L-0513, the gate runner; no plugin version): of the Anchors paths only CLAUDE.md
+%% changed - a two-line gate-runner pointer in Commands (+2 from :14). No comment here cites a current
+%% CLAUDE.md line, and no count, node or edge changed.
 %% Re-anchored 2697bf67 -> 401f6e0f (T-0505, after merging main a7524aac): of the Anchors paths only
 %% plugin/crew/CONFIG.md changed - one sentence in the environments.* subsection of section 16
 %% (:1644-1646, +2 lines: .crew/verify.json is read from the session's project directory even when
@@ -737,3 +740,15 @@ flowchart TB
 %% line cited here reads as T-0040-land drew it. No node or edge changed.
 %% Re-anchored 1390bb23 -> 0027f794 (L-0516 merges main 05a679bf, L-0558 #293, crew 1.0.103): git diff --name-only
 %% 1390bb23 0027f794 over the Anchors paths is empty, so every line cited here reads as before. No node or edge changed.
+%% Re-anchored 6e581365 -> de32cb87 (L-0513 merges origin/main 44d3dbc6, T-0110 crew 1.0.97): of the Anchors
+%% paths only CLAUDE.md changed - L-0513's two-line gate-runner pointer in Commands (+2 from :14). No
+%% comment here cites a CLAUDE.md line, and no node or edge changed.
+%% Re-anchored de32cb87 -> f23b01b4 (L-0513 review round 5 fixes): `git diff --name-only de32cb87 f23b01b4`
+%% over the Anchors paths returns nothing. No node or edge changed.
+%% Re-anchored 44d3dbc6 / f23b01b4 -> 71038cb9 (L-0513: round 6 BLOCK amendment, merge of origin/main 52489039
+%% (T-0040, crew 1.0.98, rerere off) at 74130bbd, rules 22/40 repriced): of the Anchors paths CLAUDE.md, CONFIG.md, crew_config.py and crew_shell.py differ from L-0513's side,
+%% all by T-0040, which main's side of this diagram (header and provenance above) already drew; CLAUDE.md
+%% also carries L-0513's two-line gate-runner pointer. No comment here cites a line those changes moved,
+%% and no node or edge changed.
+%% Re-anchored 71038cb9 / 89ebda03 -> 0d159692 (L-0513 merges origin/main 05a679bf: L-0558, crew 1.0.102,
+%% rerere off): `git diff --name-only 71038cb9 0d159692` over the Anchors paths returns nothing. No node or edge changed.
