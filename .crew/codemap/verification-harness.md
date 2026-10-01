@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@e41bc6fd
+anchor: useful-claude-add-ons@4a48f594
 verified: 2026-10-01
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -169,7 +169,7 @@ Notable rules, re-read directly:
   (`["powershell-security-hardening"]`).
 - **Rule 22** (`.crew/verify.json:256-260`, `.github/workflows/**`) is no longer a
   `run: []` catch-all since L-0513: it runs `python3 scripts/_test/gate-runner.py`,
-  priced 20s, whose drift cases read every `jobs.*.steps[*].run` command of the PR-path
+  priced 55s, whose drift cases read every `jobs.*.steps[*].run` command of the PR-path
   workflows against `scripts/gate-runner.py`'s step table and named exclusions. Its `why`
   says it still does not validate workflow YAML (GitHub alone does); `reach: local` was
   re-derived from that command. **Rule 23**, the remaining `run: []` catch-all
@@ -641,7 +641,7 @@ their own, in both the `test` job and the Windows leg of `crew-shell-matrix`. Re
   its tests, `kimi_fixtures.py`, the fixture run and the provider docs); no sabotage entries,
   since `sabotage*.py` is review harness and the probe's mutations land with L-0527.
 - `.crew/verify.json:426-430` (rule 40, the last rule) — L-0513's gate runner
-  (`scripts/gate-runner.py`) and its suite `scripts/_test/gate-runner.py`, priced 20s; the
+  (`scripts/gate-runner.py`) and its suite `scripts/_test/gate-runner.py`, priced 55s; the
   same suite is rule 22's command. Not review harness: `scripts/check-tooling-pr.py` reports
   no harness path for it.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
@@ -2054,3 +2054,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `4eacfacf` -> `3437cbdd` on 2026-10-01 (L-0513 Fix phase: review round 1's 2 BLOCK and 6 FIX; repository tooling, no plugin version, crew stays 1.0.86).** `git diff --name-only 4eacfacf 3437cbdd` returns, outside refresh artifacts, `scripts/gate-runner.py`, `scripts/_test/gate-runner.py`, `CHANGELOG.md` (the L-0513 Unreleased entry, +9 lines) and `.crew/verify.json` (rules 22 and 40: `seconds` 12 -> 20 and `why` text, in place; line count unchanged, rule 40 still `:426-430`). Rules 22 and 40's "priced 12s" in this map's body updated to 20s in place. No suite was executed for this note.
 
 **Re-anchored `3437cbdd` -> `e41bc6fd` on 2026-10-01 (L-0513 successor plan: review round 2's six fixes, after `git -c rerere.enabled=false merge origin/main` at `1899c370`; repository tooling, no plugin version of its own, crew is main's 1.0.89).** `git diff --name-only 3437cbdd e41bc6fd` returns, outside refresh artifacts, `scripts/gate-runner.py`, `scripts/_test/gate-runner.py`, `.crew/verify.json` (rules 22 and 40: `seconds` 20 -> 41, in place, line count unchanged), and from main's merge `.github/workflows/runner-autostart.yml`, `CHANGELOG.md` (+22 lines at `:31`, W-0116's entry), `plugin/PLUGINS.md:14`, `.claude-plugin/marketplace.json:224` and `plugin/crew/.claude-plugin/plugin.json:3` (crew 1.0.86 -> 1.0.89, in place), `plugin/crew/hooks/scripts/crew_refresh_check.py` (+43 lines, inserted after `:686`, `:694` and `:713`) and `plugin/crew/tests/test_refresh_admission.py`. No body citation of this map points into a moved line of those files. No suite was executed for this note.
+
+**Re-anchored `e41bc6fd` -> `4a48f594` on 2026-10-01 (L-0513 Fix phase: review round 3's BLOCK, five FIX and the NIT; repository tooling, no plugin version of its own, crew is main's 1.0.89).** `git diff --name-only e41bc6fd 4a48f594` returns, outside refresh artifacts, `scripts/gate-runner.py`, `scripts/_test/gate-runner.py`, `.crew/verify.json` (rules 22 and 40: `seconds` 41 -> 55 and their `why` text, in place, line count unchanged) and `CHANGELOG.md` (+7 lines inserted after `:29`, inside L-0513's own entry). No map cites a `scripts/gate-runner.py` line. The `CHANGELOG.md:N` figures inside earlier re-anchor notes describe the file at those notes' own anchors and are left as written; none is a body citation of current content. Rule 22's and rule 40's price, cited above as 20s, is corrected to 55s (`.crew/verify.json:257` and `:427`). No suite was executed for this note.
