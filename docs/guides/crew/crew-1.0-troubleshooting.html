@@ -757,6 +757,12 @@ runs but the visual rule never passes.</p>
   both. This is not double-firing to fix — it is how the same hook reaches both shells; each
   PowerShell twin stands itself down on the wrong platform (<code>$env:OS -ne 'Windows_NT'</code>) rather than
   the bash twin doing that job.</li>
+<li><strong>Tests and checks are slow on Windows.</strong> Read <code>/crew:status</code>'s <code>shell</code> line first. It names the
+  shell route crew's jobs take (<code>shellRoute.mode</code>: <code>auto</code>, <code>wsl</code>, <code>powershell</code>, <code>gitbash</code>) and why.
+  <code>WSL never probed</code> means nobody ran <code>crew_shell.py probe --write</code>; <code>not-installed</code> comes with the
+  <code>wsl --install -d Ubuntu</code> recommendation, which crew prints and never runs. A repo on a Windows
+  drive goes to WSL under <code>auto</code> only after <code>crew_shell.py measure --write</code> has shown WSL faster
+  there. See "Choosing the shell route on Windows" in <code>plugin/crew/skills/crew-setup/platform.md</code>.</li>
 </ul>
 <h2 id="auto-wrap-up-auto-clear-and-auto-resume">Auto Wrap-Up, Auto-Clear and Auto-Resume</h2>
 <p>This section is folded into the troubleshooting guide (<code>troubleshooting.md</code>), linked from it as
