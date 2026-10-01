@@ -576,8 +576,9 @@ suite at all — `pytest-crew.yml` runs pytest and cannot collect a `.sh` file
 executed by CI despite being committed and green. Each is its own step
 deliberately, so a failure names which suite went red rather than collapsing
 into one line. `pytest-crew.yml` gained a `crew-shell-matrix` job
-(`:162-227`) that runs on `ubuntu-latest` (its `windows-latest` leg is disabled by #277
-until win-repo-2's fix re-enables it) — the
+(`:162-262`) that runs on `ubuntu-latest` and `windows-latest` (#277 disabled the
+Windows leg; T-0110 re-enabled it, doing work on a pull request only when the PR
+changes `plugin/crew/**` or `pytest-crew.yml`) — the
 `-m slow` full per-shell hook matrix on both, plus a Windows-only run of
 crew's default (parity-sample) set, since the `test` job above only runs that
 set on Ubuntu. Both that ubuntu leg and the `test` job carry an opt-in

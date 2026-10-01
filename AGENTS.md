@@ -41,9 +41,10 @@ report a skipped pass so the required check names stay satisfied; the nightly ru
 at 07:17 UTC; a newer push to a pull request cancels its older run, and a main run
 is never cancelled), alongside
 gizmoduck's and several skills' suites. The `crew-shell-matrix` job runs `-m slow`
-on `ubuntu-latest` — the full hook matrix the `test` job deselects; its
-`windows-latest` leg is disabled by #277 until win-repo-2's fix re-enables it, and
-when enabled it also re-runs the plain default command
+on `ubuntu-latest` and `windows-latest` — the full hook matrix the `test` job deselects
+(#277 disabled the Windows leg; T-0110 re-enabled it, scoped: on a pull request it does
+work only when the PR changes `plugin/crew/**` or `pytest-crew.yml`, and otherwise
+reports a skipped pass). The Windows leg also re-runs the plain default command
 (`test` already covers that set, but only on ubuntu, so the PowerShell
 parity-sample cases never run natively anywhere else). Neither job
 substitutes for the other: a change to `conftest.py`'s slow-marker logic,
