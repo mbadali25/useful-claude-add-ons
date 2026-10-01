@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@a9c0d9ab
+anchor: useful-claude-add-ons@083cda66
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -1093,9 +1093,9 @@ changed paths reach still current (module docstring, `:1-8`)? It narrows
 artifact reads `fresh`/`stale`/`unknown` (`:207-209`) with the refresh command
 to run, documents read `not measured`, and a scope base that hides or may
 hide the change - a fallback, or (since review round 3) a recorded base with
-a commit behind it naming the ticket (`_named_behind`, `:1053`) - makes the
+a commit behind it naming the ticket (`_named_behind`, `:1267`) - makes the
 whole answer `unknown`, and every artifact measured against that base with it
-(`_unconfirmed`, `:1070`; `ticket_freshness`, `:1092`). It is a CLI the
+(`_unconfirmed`, `:1284`; `ticket_freshness`, `:1306`). It is a CLI the
 commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 `f2bb919b`.
 
@@ -1114,17 +1114,17 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   `_outside_refresh_artifacts` (`plugin/crew/hooks/scripts/completion_audit.py:177-187`)
   drops every refresh-artifact path when the approval is current and none
   otherwise. JUDGEMENT: T-0094 (crew 1.0.78) ships the narrower judgement,
-  `artifact_verdicts` (`plugin/crew/hooks/scripts/crew_refresh_check.py:970`), and
+  `artifact_verdicts` (`plugin/crew/hooks/scripts/crew_refresh_check.py:1013`), and
   the owner split its wiring into the audit off to L-0540 on 2026-09-30 (a
   harness change lands alone, `scripts/check-tooling-pr.py`), so until L-0540
   lands nothing in the hooks calls it. It answers True / False / None per
   changed artifact. A `True` needs a changed path to reach the artifact
   through its BASE copy's citations (reach = every path changed since the base,
   release bookkeeping dropped except `ADMISSION_BOOKKEEPING`, a plugin
-  manifest, `:264` and `:988-997` in `crew_refresh_check.py`; the graph's code
+  manifest, `:264` and `:1031-1040` in `crew_refresh_check.py`; the graph's code
   test reads the whole reach) and a re-anchor or regeneration shape: a map's
   `anchor:` moved forward from the base copy's anchor to a commit behind HEAD
-  (`_map_verdict` `:802`, `_sha_moved` `:557`, `_moved_from` `:615`: an
+  (`_map_verdict` `:845`, `_sha_moved` `:557`, `_moved_from` `:615`: an
   unchanged anchor text never moved, an anchor added to a base copy with none
   did not move either (review round 3), a base anchor git cannot resolve is
   could-not-tell, a base anchor `cat-file` cannot find counts as moved only
@@ -1132,28 +1132,31 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   carries that prefix - an ambiguous short anchor is could-not-tell -, one on HEAD's history must be behind the new one), INDEX rows
   of admitted maps only, deleted lines included, read from `git diff -U0
   <base> -- INDEX.md` so a changed terminator or a BOM counts
-  (`_index_verdict` `:839`, `_diff_lines` `:816`, since review round 3), a
-  diagram's provenance sha moved the same way (`_diagram_verdict` `:863`), a
+  (`_index_verdict` `:882`, `_diff_lines` `:859`, since review round 3), a
+  diagram's provenance sha moved the same way (`_diagram_verdict` `:906`), a
   rendered file beside an admitted same-stem source, its extension compared
-  case-folded (`_rendered_verdict` `:1029`, review round 4), a rule
+  case-folded (`_rendered_verdict` `:1072`, review round 4), a rule
   whose bytes equal `crew_instructions.expected_rules`, or whose blob git would
-  store does (`_rule_verdict` `:882`, `_stored_blob` `:922`: a CRLF checkout
+  store does (`_rule_verdict` `:925`, `_stored_blob` `:965`: a CRLF checkout
   under `core.autocrlf` passes, a CRLF or BOM rewrite does not, since review
   round 3; a rule file that exists but cannot be read is could-not-tell before
   any comparison, in `_on_disk`, since review round 2), the graph after a code
-  change (`_graph_verdict` `:1051`). `None` (`COULD_NOT_TELL`, `:491`) never
+  change (`_graph_verdict` `:1094`). `None` (`COULD_NOT_TELL`, `:491`) never
   admits. Since review round 5 whether the config, a rule or a map exists is
   `_present` (`:340`), lstat's errno rather than `os.path.lexists`: only
   ENOENT or ENOTDIR is absent, and a directory the hook user cannot search is
   could-not-tell (`_read_config` `:313`, `_texts` `:667`). Since review round 6
   every kind that reads or admits a working-tree file first asks `_on_disk`
-  (`:743`): a deleted file, a symlink at the path or along its dirs, a git mode
+  (`:786`): a deleted file, a symlink at the path or along its dirs, a git mode
   different from the base copy's (`git diff --raw`, which is why INDEX.md's
   own mode branch is gone) or a 120000/160000 stage entry is refused; and the
   kind comes from the most specific artifact dir holding the path (`_claims`
-  `:934`, `_kind` `:943`), two equally specific ones being could-not-tell. Since review round 7 `_on_disk`
-  judges the bytes `_read_regular` (`:687`) read once through a descriptor opened with
-  `O_NOFOLLOW` at every component, before any git call; an ambiguous new anchor is
+  `:977`, `_kind` `:986`), two equally specific ones being could-not-tell. Since review round 7 `_on_disk`
+  judges the bytes `_read_regular` (`:719`) read once through a descriptor opened with
+  `O_NOFOLLOW` at every component, before any git call (on Windows, which has no `O_NOFOLLOW`,
+  W-0116 adds `_FINAL_PATH` (`:716`): the read is refused unless `GetFinalPathNameByHandleW` on
+  the open descriptor (`:750-751`) names `realpath(top)/rel`, and an unanswerable final path is
+  could-not-tell; `_FINAL_PATH` is None off Windows); an ambiguous new anchor is
   could-not-tell, and `_base_text` (`:530`) looks the base copy up with `git ls-tree`.
   With no current approval nothing is exempt.
 - Tests: `plugin/crew/tests/test_refresh_check.py`,
@@ -1400,8 +1403,8 @@ exit 6) and the reviewer's rerere block are L-0526; until then the train is advi
   above.
 - `plugin/crew/hooks/scripts/crew_resume.py:668` — `decide`, read-only;
   `main()` is the `decide` / `record` / `precompact` CLI.
-- `plugin/crew/hooks/scripts/crew_refresh_check.py:1263` — `ticket_freshness`,
-  the library entry point; `main()` at `:1363`; `artifact_verdicts` at `:970`,
+- `plugin/crew/hooks/scripts/crew_refresh_check.py:1306` — `ticket_freshness`,
+  the library entry point; `main()` at `:1406`; `artifact_verdicts` at `:1013`,
   the admission judgement (T-0094) that L-0540 wires into the audit.
 - `plugin/crew/hooks/scripts/crew_autopilot.py:559` — `next_phase`, read-only;
   `main()` at `:1635` is the `next` / `resume` / `settings` / `stops` /
@@ -3281,3 +3284,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `805b0a25` -> `7ecbdc7f` on 2026-09-30 (L-0516 re-bumps crew to 1.0.91 after the split; version files, CHANGELOG heading and the two version sentences only).**  No suite was executed for this note.
 
 **Re-anchored `7ecbdc7f` -> `a9c0d9ab` on 2026-09-30 (L-0516: pylint R1732 fix in test_poll_fixtures.py (with-blocks, no line this map cites moves) and crew re-bumped to 1.0.92; version files, CHANGELOG heading and the two version sentences in place).**  No suite was executed for this note.
+
+**Re-anchored `a9c0d9ab` -> `083cda66` on 2026-10-01 (L-0516 merges main `64b04c6b` (W-0116 #292: `crew_refresh_check.py` gains the Windows `_FINAL_PATH` check, `test_refresh_admission.py` two Windows premises; runner-autostart.yml) and crew re-bumped to 1.0.93; version files, CHANGELOG heading and the two version sentences in place).** `git diff --name-only a9c0d9ab 083cda66` over this map's cited paths names `plugin/crew/hooks/scripts/crew_refresh_check.py` (three hunks at old `:684-717`, everything from old `:687` down moved +32, from old `:743` down +43): each citation in the refresh-check section and the entry-point list re-read with `grep -n` and moved onto the same line text; `_named_behind`, `_unconfirmed` and `ticket_freshness` in that section were already stale at a9c0d9ab and now read `:1267`, `:1284`, `:1306`; the W-0116 `_FINAL_PATH` clause added. The history sections keep their own anchors' numbers.  No suite was executed for this note.
