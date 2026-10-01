@@ -1325,14 +1325,14 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
 DERIVED at this anchor from `plugin/crew/hooks/scripts/crew_train.py` (read in full). This is PR 1
 of the owner's split (2026-09-30): the CLI only, plus L-0558's fixes for L-0520's review round 2
 and the owner's rerere rule. The gate round refusing on it (`review_run.py` exit 6), the
-reviewer's rerere block and the sabotage rows (S1-S19, and L-0558's S20-S28) are L-0526; until
+reviewer's rerere block and the sabotage rows (S1-S19, and L-0558's S20-S29) are L-0526; until
 then the train is advisory.
 
 - **What it is.** One locked queue per clone serialising gate+land per overlapping Touch set;
   lanes still implement in parallel. State under `<git-common-dir>/crew/train/` via `train_dir`
   (`plugin/crew/hooks/scripts/crew_train.py:275`, on `crew_ticket.state_dir`): `state.json`
   (`SCHEMA` `:125`), `events.jsonl` (`read_events` `:580`), `merge-log/<id>.jsonl`
-  (`merge_log_path` `:290`, `read_merge_log` `:1134`). No config key: `arm`
+  (`merge_log_path` `:290`, `read_merge_log` `:1148`). No config key: `arm`
   (`:791`) publishes a complete `state.json` with `os.link`, which fails if it exists; `disarm`
   (`:821`) refuses under the lock while entries exist.
 - **Fail closed.** `load` (`:376`) returns `absent` only when `_absent` (`:299`) proves
@@ -1359,17 +1359,17 @@ then the train is advisory.
   upserts the entry, prints unseen notices, logs a `wait` event with each blocker's pairs, or
   refuses `merge <base> first` when `_moved_paths` (`:679`) finds base commits touching Touch, or
   holds and logs `acquire`. `_stale` (`:696`) is printed evidence only.
-- **Catch-up and land.** `catch_up` (`:1056`) refuses an in-progress merge or a dirty tree
+- **Catch-up and land.** `catch_up` (`:1070`) refuses an in-progress merge or a dirty tree
   (untracked files count, `.work/` excluded), fetches `<remote>/<branch>` bases (`_fetch`
-  `:1019`: explicit `+refs/heads/<branch>:refs/remotes/<remote>/<branch>` refspec, then the base
+  `:1033`: explicit `+refs/heads/<branch>:refs/remotes/<remote>/<branch>` refspec, then the base
   must equal `FETCH_HEAD` or could-not-tell), runs `ensure_rerere` (`:977`; `rerere.enabled` only,
   `--worktree` only when `extensions.worktreeConfig` is already true, else `--local`), then
   `git -c rerere.autoupdate=false merge --no-edit <base>`, so a replay stays unmerged and unstaged.
   It parses `Resolved`/`Staged '<path>' using previous resolution.`, runs `_forget_version_files`
-  (`:991`; `VERSION_FILES` `:143`: `git rerere forget` then `git checkout -m` on each still
-  unmerged) and logs `conflicted`, `rerere_replayed` and `rerere_forgotten`; it never commits a
+  (`:1001`; `VERSION_FILES` `:143`: `git rerere forget` then `git checkout -m` on each still
+  unmerged with index stages 2 and 3 (`_both_sides` `:991`), so a modify/delete conflict stays as the merge left it) and logs `conflicted`, `rerere_replayed` and `rerere_forgotten`; it never commits a
   conflicted or rerere-resolved merge, and a merge state it cannot read is `could not tell`
-  (exit 3). `check_land` (`:1198`): hold, fetch, `_merge_tree` (`:1182`,
+  (exit 3). `check_land` (`:1212`): hold, fetch, `_merge_tree` (`:1196`,
   `--write-tree --name-only`; exit 1 lists conflicts, other codes are could-not-tell),
   moved-in-Touch, `review_ledger.check_receipt`, `review_gate.gate_state`, then re-checks the hold
   and HEAD under the lock and prints `LAND_OK` and the `gh pr merge ... --match-head-commit` line

@@ -30,8 +30,9 @@ land, with the train not to be armed until they were fixed. All five, and the ow
   inspect and `git add`. The version files (`plugin/crew/.claude-plugin/plugin.json`,
   `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md`, `CHANGELOG.md`) are never replayed: each
   left conflicted gets `git rerere forget` and its conflict markers back, is named as forgotten in
-  the output, and is listed under `rerere_forgotten` in the merge log.
-- The sabotage rows proving these (S20-S28) belong to L-0526's `sabotage_train.py` (tooling PRs
+  the output, and is listed under `rerere_forgotten` in the merge log; a modify/delete conflict on
+  one, which rerere never resolves, is left as the merge left it.
+- The sabotage rows proving these (S20-S29) belong to L-0526's `sabotage_train.py` (tooling PRs
   carry no feature work); each was run RED by hand here.
 
 ### Added — `crew` 1.0.86: the merge train - gate+land serialised per overlapping Touch set (L-0520)
