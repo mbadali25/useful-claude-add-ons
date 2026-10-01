@@ -28,7 +28,7 @@ from crew_fixtures import fixture_git_env
 
 
 @pytest.fixture(autouse=True)
-def _no_real_global_config(tmp_path, monkeypatch):
+def _no_real_global_config(tmp_path, tmp_path_factory, monkeypatch):
     """Point every reader of the machine-global config at a path that does not
     exist, so no test can read or write the developer's real
     `~/.claude/crew/config.json`.
@@ -91,11 +91,20 @@ def _no_real_global_config(tmp_path, monkeypatch):
     # it half-written dies before running a statement ("Stack overflow." -6,
     # or SIGSEGV -11) - about one `-m slow -n 12` run in 20-50. Each test gets
     # its own dir; the root moves with it, so the audit hook conftest installs
-    # refuses a pwsh whose cache is anywhere else. Not created here: pwsh
-    # creates it on first use, and tests that list tmp_path see nothing new
-    # unless they ran pwsh. A no-op for Windows pwsh (LOCALAPPDATA).
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
-    monkeypatch.setattr(crew_fixtures, "_PWSH_CACHE_ROOT", str(tmp_path))
+    # refuses a pwsh whose cache is anywhere else. A no-op for Windows pwsh
+    # (LOCALAPPDATA).
+    #
+    # Created here, so the value names a directory that exists rather than one
+    # that appears only if some pwsh runs first -- and created by
+    # `tmp_path_factory.mktemp`, BESIDE tmp_path under the same basetemp, not
+    # inside it: a `tmp_path / "xdg-cache"` made for every test showed up in
+    # nine tests that assert exactly what their tmp_path holds
+    # (test_config_files, test_crew_fixtures, test_webtest_scaffold). mktemp
+    # numbers each one, so no two tests share it, and pytest removes it with
+    # the basetemp.
+    xdg_cache = tmp_path_factory.mktemp("xdg-cache")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(xdg_cache))
+    monkeypatch.setattr(crew_fixtures, "_PWSH_CACHE_ROOT", str(xdg_cache))
 
 
 # --- the `slow` marker: the full per-shell hook matrix ------------------------

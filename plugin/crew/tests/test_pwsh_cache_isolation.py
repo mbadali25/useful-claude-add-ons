@@ -114,17 +114,6 @@ def _env_value(call):
     return False, None
 
 
-def _sets_key(node):
-    """True when code under `node` names XDG_CACHE_HOME: a string constant or
-    a keyword argument. Read from the AST, so a comment that mentions the
-    variable is not mistaken for code that sets it."""
-    if node is None:
-        return False
-    return any((isinstance(n, ast.Constant) and n.value == KEY)
-               or (isinstance(n, ast.keyword) and n.arg == KEY)
-               for n in ast.walk(node))
-
-
 def _reads_environ(node):
     """True when code under `node` reads `os.environ` (or a bare `environ`)."""
     return any((isinstance(n, ast.Attribute) and n.attr == "environ")
@@ -132,32 +121,168 @@ def _reads_environ(node):
                for n in ast.walk(node))
 
 
-def _judge_env(src, expr, helpers, in_crew, scope):
-    """None when the spawn's environment provably carries the key, else a
-    one-line reason. Anything the rule cannot classify is a reason, never a
-    pass (outside crew's conftest, where nothing else would set it)."""
+def _own_nodes(func):
+    """Nodes under `func`, not descending into nested functions or classes."""
+    stack = list(ast.iter_child_nodes(func))
+    while stack:
+        node = stack.pop()
+        yield node
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda,
+                                 ast.ClassDef)):
+            stack.extend(ast.iter_child_nodes(node))
+
+
+def _is_key(node):
+    return isinstance(node, ast.Constant) and node.value == KEY
+
+
+def _top_level_value(expr):
+    """The value an environment EXPRESSION gives XDG_CACHE_HOME at its own top
+    level -- a dict display's key or a `dict(...)` keyword -- else None. A key
+    nested in some other dict inside it is not the environment's."""
+    if isinstance(expr, ast.Dict):
+        for key, value in zip(expr.keys, expr.values):
+            if _is_key(key):
+                return value
+    if isinstance(expr, ast.Call) and isinstance(expr.func, ast.Name) and expr.func.id == "dict":
+        for kw in expr.keywords:
+            if kw.arg == KEY:
+                return kw.value
+    return None
+
+
+_SETDEFAULT = object()
+
+
+def _name_state(name, scope):
+    """What straight-line code in `scope`'s own body last did to `name`'s key:
+    (value node | _SETDEFAULT | None, the last value assigned to `name`).
+
+    Only statements DIRECTLY in the body count. A set inside an `if`, a loop or
+    a `try` may not run, so it is not proof; a later rebinding of `name`
+    discards an earlier set."""
+    state, assigned = None, None
+    for stmt in scope.body:
+        if isinstance(stmt, ast.Assign):
+            for target in stmt.targets:
+                if isinstance(target, ast.Name) and target.id == name:
+                    state, assigned = _top_level_value(stmt.value), stmt.value
+                elif (isinstance(target, ast.Subscript) and isinstance(target.value, ast.Name)
+                      and target.value.id == name and _is_key(target.slice)):
+                    state = stmt.value
+        elif isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+            call = stmt.value
+            func = call.func
+            if not (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
+                    and func.value.id == name):
+                continue
+            if func.attr == "update":
+                found = [kw.value for kw in call.keywords if kw.arg == KEY]
+                found += [v for v in (_top_level_value(a) for a in call.args) if v is not None]
+                if found:
+                    state = found[-1]
+            elif func.attr == "setdefault" and call.args and _is_key(call.args[0]):
+                state = state if state is not None else _SETDEFAULT
+    return state, assigned
+
+
+def _assigned_values(name, scope, module):
+    """Every value bound to `name` in `scope` (any branch), else at module top."""
+    found = []
+    if scope is not None:
+        for node in _own_nodes(scope):
+            if isinstance(node, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id == name for t in node.targets):
+                found.append(node.value)
+    if not found:
+        for stmt in module.body:
+            if isinstance(stmt, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id == name for t in stmt.targets):
+                found.append(stmt.value)
+    return found
+
+
+_HOME_ATTRS = frozenset(("expanduser", "home"))
+
+
+def _value_problem(value, scope, ctx, depth=0):
+    """None when `value`, given to XDG_CACHE_HOME, names a directory of the
+    spawn's own; else a reason. Empty, None and anything derived from the home
+    directory or `~` are the user default under another name, and so is an
+    ambient XDG_CACHE_HOME copied back outside crew's conftest. A bare name is
+    followed to every value bound to it; one it cannot resolve is a reason."""
+    if isinstance(value, ast.Constant) and value.value in (None, ""):
+        return f"sets {KEY} empty, so pwsh falls back to the user default ~/.cache"
+    if isinstance(value, ast.Name):
+        bound = _assigned_values(value.id, scope, ctx["module"]) if depth < 3 else []
+        if not bound:
+            return f"sets {KEY} from {value.id}, which the scan cannot resolve"
+        for item in bound:
+            reason = _value_problem(item, scope, ctx, depth + 1)
+            if reason:
+                return reason
+        return None
+    for node in ast.walk(value):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            text = node.value.rstrip("/\\")
+            if text.startswith("~") or text.endswith(".cache") or node.value == "HOME":
+                return f"sets {KEY} to the user default ~/.cache (or from HOME)"
+            if node.value == KEY and not ctx["in_crew"]:
+                return (f"copies the ambient {KEY} back, which outside crew's conftest "
+                        "is the user's own")
+        if isinstance(node, ast.Attribute) and node.attr in _HOME_ATTRS:
+            return f"sets {KEY} from the home directory - the user default"
+    return None
+
+
+def _judge_helper(name, ctx, depth):
+    helper = ctx["helpers"][name]
+    returns = [n for n in _own_nodes(helper) if isinstance(n, ast.Return)]
+    if not returns:
+        return f"helper {name}() returns no environment"
+    for ret in returns:
+        reason = _judge_env(ret.value, ctx, helper, depth + 1)
+        if reason:
+            return f"helper {name}(): {reason}"
+    return None
+
+
+def _judge_env(expr, ctx, scope, depth=0):
+    """None when the spawn's environment provably carries a key of its own,
+    else a one-line reason. Anything the rule cannot classify is a reason,
+    never a pass (outside crew's conftest, where nothing else would set it).
+    Only the expression itself, the statements that build the name it is, and
+    a same-module helper's RETURNED values count: a mention of the key in a
+    branch, an unused dict or a comment proves nothing."""
+    in_crew = ctx["in_crew"]
     if expr is None or (isinstance(expr, ast.Constant) and expr.value is None):
         return None if in_crew else "inherits the environment, and no conftest sets " + KEY
-    text = ast.get_source_segment(src, expr) or ""
-    if _sets_key(expr):
-        return None
-    if isinstance(expr, ast.Call) and isinstance(expr.func, ast.Name) and expr.func.id in helpers:
-        body = helpers[expr.func.id]
-        if _sets_key(body):
-            return None
-        if _reads_environ(body):
+    text = ast.get_source_segment(ctx["src"], expr) or ""
+    value = _top_level_value(expr)
+    if value is not None:
+        return _value_problem(value, scope, ctx)
+    if isinstance(expr, ast.Name) and scope is not None and depth < 4:
+        state, assigned = _name_state(expr.id, scope)
+        if state is _SETDEFAULT:
             return None if in_crew else (
-                f"helper {expr.func.id}() copies the environment but sets no {KEY}")
-        return f"helper {expr.func.id}() builds the environment from scratch without {KEY}"
+                f"setdefault keeps an ambient {KEY}, which outside crew's conftest is the "
+                "user's own")
+        if state is not None:
+            return _value_problem(state, scope, ctx)
+        if assigned is not None:
+            return _judge_env(assigned, ctx, scope, depth + 1)
+        return None if in_crew else (
+            f"env={text} - its enclosing function never sets {KEY} on it unconditionally")
+    if (isinstance(expr, ast.Call) and isinstance(expr.func, ast.Name)
+            and expr.func.id in ctx["helpers"] and depth < 4):
+        return _judge_helper(expr.func.id, ctx, depth)
     if _reads_environ(expr):
         return None if in_crew else f"copies the environment but sets no {KEY}"
     if isinstance(expr, ast.Dict) or (
             isinstance(expr, ast.Call) and isinstance(expr.func, ast.Name)
             and expr.func.id == "dict"):
         return f"builds the environment from scratch without {KEY}"
-    if in_crew or _sets_key(scope):
-        return None
-    return f"env={text} - its enclosing function never sets {KEY}"
+    return None if in_crew else f"env={text} - the scan cannot tell that it sets {KEY}"
 
 
 def _scopes(tree):
@@ -181,8 +306,9 @@ def scan_python(rel, src, crew_covered=True):
     `crew_covered` says whether crew's conftest really sets the key per test;
     only then does an inherited environment under `plugin/crew/tests` pass."""
     tree = ast.parse(src)
-    in_crew = crew_covered and rel.startswith(CREW_TESTS)
-    helpers = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    ctx = {"src": src, "module": tree,
+           "in_crew": crew_covered and rel.startswith(CREW_TESTS),
+           "helpers": {n.name: n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}}
     sites = []
     for call, scope in _scopes(tree).items():
         if _func_name(call) not in SPAWN_NAMES:
@@ -191,7 +317,7 @@ def scan_python(rel, src, crew_covered=True):
         if first is None or not any(PWSH_RE.search(t) for t in _argv0_texts(src, first, scope)):
             continue
         _present, env = _env_value(call)
-        reason = _judge_env(src, env, helpers, in_crew, scope)
+        reason = _judge_env(env, ctx, scope)
         sites.append((rel, call.lineno, scope.name if scope is not None else "<module>",
                       reason))
     return sorted(sites, key=lambda s: s[1])
@@ -288,7 +414,7 @@ def test_static_scan_accepts_explicit_key(tmp_path):
         "    return {'PATH': '/bin', 'XDG_CACHE_HOME': XDG}\n\n"
         "def pwsh(command, env=None):\n"
         "    env = dict(os.environ if env is None else env)\n"
-        "    env.setdefault('XDG_CACHE_HOME', XDG)\n"
+        "    env['XDG_CACHE_HOME'] = XDG\n"
         "    return subprocess.run([PWSH, '-Command', command], env=env)\n\n"
         "def other():\n"
         "    subprocess.run([PWSH, '-c', '1'], env=dict(os.environ, XDG_CACHE_HOME=XDG))\n"
@@ -318,6 +444,121 @@ def test_static_scan_ignores_non_pwsh_spawns(tmp_path):
     assert sites == []
 
 
+# An XDG_CACHE_HOME that is empty, or that is the user's own ~/.cache, is the
+# shared startup profile under another name: naming the key is not enough.
+_BAD_VALUES = (
+    "''",
+    "None",
+    "'~/.cache'",
+    "os.path.expanduser('~/.cache')",
+    "str(pathlib.Path.home() / '.cache')",
+    "str(pathlib.Path.home() / 'shared')",
+    "os.path.join(os.environ['HOME'], '.cache')",
+    "os.environ.get('XDG_CACHE_HOME', '')",
+)
+_SET_FORMS = (
+    "    subprocess.run([PWSH, '-c', '1'], env={{'PATH': '/bin', 'XDG_CACHE_HOME': {v}}})\n",
+    "    subprocess.run([PWSH, '-c', '1'], env=dict(os.environ, XDG_CACHE_HOME={v}))\n",
+    "    env = dict(os.environ)\n    env['XDG_CACHE_HOME'] = {v}\n"
+    "    subprocess.run([PWSH, '-c', '1'], env=env)\n",
+)
+
+
+@pytest.mark.parametrize("form", range(len(_SET_FORMS)))
+@pytest.mark.parametrize("value", _BAD_VALUES)
+def test_static_scan_flags_empty_or_user_default_value(tmp_path, value, form):
+    sites = _scan_fixture(tmp_path, "plugin/other/_test/test_bad.py", _HEAD + (
+        "import pathlib\n\ndef go():\n" + _SET_FORMS[form].format(v=value)))
+
+    assert [s[3] is not None for s in sites] == [True]
+
+
+def test_static_scan_flags_setdefault_outside_crew_conftest(tmp_path):
+    sites = _scan_fixture(tmp_path, "plugin/other/_test/test_sd.py", _HEAD + (
+        "def go():\n"
+        "    env = dict(os.environ)\n"
+        "    env.setdefault('XDG_CACHE_HOME', '/tmp/x')\n"
+        "    subprocess.run([PWSH, '-c', '1'], env=env)\n"))
+
+    assert [s[3] is not None for s in sites] == [True]
+
+
+def test_static_scan_flags_helper_whose_return_lacks_key(tmp_path):
+    sites = _scan_fixture(tmp_path, "plugin/other/_test/test_dead.py", _HEAD + (
+        "def _env(flag=False):\n"
+        "    if flag:\n"
+        "        unused = {'XDG_CACHE_HOME': '/tmp/x'}\n"
+        "        del unused\n"
+        "    return {'PATH': '/bin'}\n\n"
+        "def go():\n"
+        "    subprocess.run([PWSH, '-c', '1'], env=_env())\n"))
+
+    assert [s[3] is not None for s in sites] == [True]
+
+
+def test_static_scan_flags_key_set_only_in_a_branch_or_another_dict(tmp_path):
+    sites = _scan_fixture(tmp_path, "plugin/other/_test/test_branch.py", _HEAD + (
+        "def go(flag):\n"
+        "    env = dict(os.environ)\n"
+        "    if flag:\n"
+        "        env['XDG_CACHE_HOME'] = '/tmp/x'\n"
+        "    subprocess.run([PWSH, '-c', '1'], env=env)\n"
+        "    subprocess.run([PWSH, '-c', '1'],\n"
+        "                   env={'PATH': '/bin', 'X': {'XDG_CACHE_HOME': '/tmp/x'}})\n"))
+
+    assert [s[3] is not None for s in sites] == [True, True]
+
+
+def test_static_scan_flags_name_rebuilt_after_the_key_was_set(tmp_path):
+    sites = _scan_fixture(tmp_path, "plugin/other/_test/test_reset.py", _HEAD + (
+        "def go():\n"
+        "    env = dict(os.environ, XDG_CACHE_HOME='/tmp/x')\n"
+        "    env = {'PATH': '/bin'}\n"
+        "    subprocess.run([PWSH, '-c', '1'], env=env)\n"))
+
+    assert [s[3] is not None for s in sites] == [True]
+
+
+def test_static_scan_flags_crew_helper_returning_a_from_scratch_name(tmp_path):
+    sites = _scan_fixture(tmp_path, CREW_TESTS + "test_scratch.py", _HEAD + (
+        "def _env():\n"
+        "    env = {'PATH': '/bin'}\n"
+        "    return env\n\n"
+        "def test_f():\n"
+        "    subprocess.run([PWSH, '-c', '1'], env=_env())\n"))
+
+    assert [s[3] is not None for s in sites] == [True]
+
+
+@pytest.mark.parametrize("suffix", (".py", ".sh"))
+def test_tree_scans_report_an_unreadable_suite_instead_of_skipping_it(tmp_path, suffix):
+    rel = "plugin/other/_test/test_bin" + suffix
+    path = tmp_path / rel
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"subprocess.run(['pwsh', '-NoProfile'])\n\xff\xfe not utf-8\n")
+    scan = _tree_python_problems if suffix == ".py" else _tree_shell_problems
+
+    problems = scan(tmp_path, [rel])
+
+    assert [p.split(" ", 1)[0] for p in problems] == [rel + ":0:"]
+
+
+@pytest.mark.parametrize("line, covers", (
+    ('    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))\n', True),
+    ('    xdg = tmp_path_factory.mktemp("xdg-cache")\n'
+     '    monkeypatch.setenv("XDG_CACHE_HOME", str(xdg))\n', True),
+    ('    monkeypatch.setenv("XDG_CACHE_HOME", "/tmp/shared")\n', False),
+    ('    monkeypatch.setenv("XDG_CACHE_HOME", "")\n', False),
+    ('    monkeypatch.setenv("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))\n', False),
+    ('    if False:\n        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))\n', False),
+))
+def test_conftest_premise_needs_a_per_test_value(line, covers):
+    text = ("import os\nimport pytest\n\n@pytest.fixture(autouse=True)\n"
+            "def _iso(tmp_path, monkeypatch):\n" + line)
+
+    assert conftest_sets_per_test_cache(text) is covers
+
+
 # Named spawn sites the tree scan must find, matched by file and enclosing
 # function (never by line or count: the count depends on the scanner, and
 # other lanes edit files that hold pwsh spawns). A refactor that hides one
@@ -333,32 +574,93 @@ SENTINELS = (
 )
 
 
-CONFTEST_SETS_RE = re.compile(r'monkeypatch\.setenv\(\s*"XDG_CACHE_HOME"')
+def _is_autouse(func):
+    for deco in func.decorator_list:
+        if isinstance(deco, ast.Call) and any(
+                kw.arg == "autouse" and isinstance(kw.value, ast.Constant) and kw.value.value is True
+                for kw in deco.keywords):
+            return True
+    return False
+
+
+_PYTEST_TMP = frozenset(("tmp_path", "tmp_path_factory"))
+
+
+def _derives_from_pytest_tmp(value, func, module, depth=0):
+    """True when `value` is built from `tmp_path` or `tmp_path_factory`,
+    following each name in it to the values bound to it (every binding must
+    derive from one)."""
+    for node in ast.walk(value):
+        if not isinstance(node, ast.Name):
+            continue
+        if node.id in _PYTEST_TMP:
+            return True
+        bound = _assigned_values(node.id, func, module) if depth < 3 else []
+        if bound and all(_derives_from_pytest_tmp(v, func, module, depth + 1) for v in bound):
+            return True
+    return False
+
+
+def conftest_sets_per_test_cache(text):
+    """True when an autouse fixture in `text` unconditionally runs
+    `monkeypatch.setenv("XDG_CACHE_HOME", <a per-test pytest temp dir>)` -- the
+    premise every inherited-environment pass under plugin/crew/tests rests on.
+    An empty value, the user default, or a set inside a branch is not it."""
+    tree = ast.parse(text)
+    for func in ast.walk(tree):
+        if not isinstance(func, ast.FunctionDef) or not _is_autouse(func):
+            continue
+        for stmt in func.body:
+            call = stmt.value if isinstance(stmt, ast.Expr) else None
+            if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+                    and call.func.attr == "setenv" and len(call.args) == 2
+                    and _is_key(call.args[0])):
+                continue
+            value = call.args[1]
+            ctx = {"src": text, "module": tree, "in_crew": True}
+            if (_derives_from_pytest_tmp(value, func, tree)
+                    and _value_problem(value, func, ctx) is None):
+                return True
+    return False
 
 
 def crew_conftest_covers():
-    """True when crew's conftest sets XDG_CACHE_HOME per test - the premise
-    every inherited-environment pass under plugin/crew/tests rests on."""
     path = REPO / CREW_TESTS / "conftest.py"
-    return bool(CONFTEST_SETS_RE.search(path.read_text(encoding="utf-8")))
+    return conftest_sets_per_test_cache(path.read_text(encoding="utf-8"))
 
 
-def _tree_python_sites():
-    sites, sources = [], {}
-    covered = crew_conftest_covers()
-    for rel in _suite_files(".py"):
-        try:
-            src = (REPO / rel).read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+def _read_suite(root, rel):
+    """(text, None), or (None, a `file:0:` problem). A suite the scan cannot
+    read is reported, never skipped: "could not inspect" is not "clean"."""
+    try:
+        return (root / rel).read_text(encoding="utf-8"), None
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, f"{rel}:0: could not be read, so it was not checked: {exc}"
+
+
+def _tree_python_sites(root=REPO, files=None, covered=None):
+    """(sites, sources, problems) over the tracked Python suites."""
+    sites, sources, problems = [], {}, []
+    covered = crew_conftest_covers() if covered is None else covered
+    for rel in _suite_files(".py") if files is None else files:
+        src, problem = _read_suite(root, rel)
+        if problem:
+            problems.append(problem)
             continue
         try:
             found = scan_python(rel, src, covered)
         except SyntaxError as exc:
-            sites.append((rel, exc.lineno or 0, "<module>", f"unparseable: {exc.msg}"))
+            problems.append(f"{rel}:{exc.lineno or 0}: unparseable: {exc.msg}")
             continue
         sources[rel] = src
         sites.extend(found)
-    return sites, sources
+    return sites, sources, problems
+
+
+def _tree_python_problems(root, files):
+    sites, _sources, problems = _tree_python_sites(root, files, covered=True)
+    return problems + [f"{rel}:{line}: ({func}) {reason}"
+                       for rel, line, func, reason in sites if reason]
 
 
 def _sentinel_missing(sites, sources):
@@ -375,9 +677,10 @@ def _sentinel_missing(sites, sources):
 
 
 def test_every_python_pwsh_spawn_carries_xdg_cache_home():
-    sites, sources = _tree_python_sites()
+    sites, sources, problems = _tree_python_sites()
 
-    bad = [f"{rel}:{line} ({func}): {reason}" for rel, line, func, reason in sites if reason]
+    bad = problems + [f"{rel}:{line} ({func}): {reason}"
+                      for rel, line, func, reason in sites if reason]
     missing = _sentinel_missing(sites, sources)
 
     assert (bad, missing) == ([], []), (
@@ -485,18 +788,28 @@ SHELL_SENTINELS = (
 )
 
 
-def test_every_shell_suite_exports_xdg_cache_home_before_its_first_pwsh():
+def _tree_shell(root=REPO, files=None):
+    """(problems, the suites that invoke a real pwsh)."""
     bad, invoking = [], set()
-    for rel in _suite_files(".sh"):
-        try:
-            text = (REPO / rel).read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+    for rel in _suite_files(".sh") if files is None else files:
+        text, problem = _read_suite(root, rel)
+        if problem:
+            bad.append(problem)
             continue
         if _invocations(text):
             invoking.add(rel)
         reason = scan_shell(rel, text)
         if reason:
             bad.append(reason)
+    return bad, invoking
+
+
+def _tree_shell_problems(root, files):
+    return _tree_shell(root, files)[0]
+
+
+def test_every_shell_suite_exports_xdg_cache_home_before_its_first_pwsh():
+    bad, invoking = _tree_shell()
 
     missing = [rel for rel in SHELL_SENTINELS if rel not in invoking]
 
@@ -570,8 +883,23 @@ def test_runtime_check_ignores_non_pwsh(argv0, tmp_path):
     assert reason is None
 
 
-def test_autouse_fixture_gives_each_test_its_own_cache_dir(tmp_path):
-    value = os.environ.get(KEY)
+_SEEN_CACHE_DIRS = set()
 
-    assert (value, value != crew_fixtures.pwsh_cache_session_dir()) == (
-        str(tmp_path / "xdg-cache"), True)
+
+@pytest.mark.parametrize("_run", (1, 2))
+def test_autouse_fixture_never_hands_two_tests_the_same_cache_dir(_run):
+    value = os.environ[KEY]
+    seen_before = value in _SEEN_CACHE_DIRS
+    _SEEN_CACHE_DIRS.add(value)
+
+    assert not seen_before, f"{value} was already another test's cache dir"
+
+
+def test_autouse_fixture_gives_each_test_its_own_cache_dir(tmp_path_factory):
+    value = pathlib.Path(os.environ[KEY])
+
+    assert (value.parent == tmp_path_factory.getbasetemp(),
+            value.name.startswith("xdg-cache"), value.is_dir(),
+            str(value) != crew_fixtures.pwsh_cache_session_dir(),
+            str(value) == crew_fixtures._PWSH_CACHE_ROOT) == (  # pylint: disable=protected-access
+                True, True, True, True, True)

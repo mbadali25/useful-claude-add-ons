@@ -871,7 +871,7 @@ def resolve_pwsh():
 # no-op there and the check still passes.
 
 # The directory a pwsh spawn's XDG_CACHE_HOME must sit under right now: the
-# current test's tmp_path during a test, the session dir outside one, None
+# current test's own cache dir during a test, the session dir outside one, None
 # before conftest's configure and after its unconfigure (the check is off).
 _PWSH_CACHE_ROOT = None
 _PWSH_CACHE_SESSION = None
