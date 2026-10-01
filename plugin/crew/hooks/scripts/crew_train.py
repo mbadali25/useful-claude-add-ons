@@ -18,7 +18,7 @@ STATE. `<git-common-dir>/crew/train/`, shared by every worktree of one clone:
   events.jsonl          append-only: acquire, wait, release, merged,
                         force-release, check-land (each with a `seq`)
   merge-log/<id>.jsonl  one line per catch-up: head before, base sha, outcome,
-                        conflicted files, rerere-replayed files
+                        conflicted, rerere-replayed and rerere-forgotten files
 `scope_guard.py` already refuses Write/Edit, and obvious shell writes, under
 `<git-common-dir>/crew/`. Lanes in separate CLONES do not share a train.
 
@@ -40,8 +40,10 @@ one (its case-folded segments before the first segment holding `*`, `?` or
 can share a path; it may say overlap for sets that cannot (`a/*.py` and
 `a/b/c.py`), which only serialises more. Refresh artifacts -- `.crew/codemap/`,
 `.claude/rules/`, `docs/diagrams/`, `graphify-out/` -- are regenerated, never
-hand-merged, so they are left out of every overlap and moved-path decision; a
-conflict in one still fails `merge-tree` at land.
+hand-merged, so they are left out of the OVERLAP decision only. The moved-path
+checks (`acquire`'s `merge <base> first`, `check-land`) and the merged-path
+notices judge the full Touch (L-0558): a base that moved a path this ticket
+names is a tree its verdict did not cover.
 
 FAIL CLOSED. An undeclared Touch -- no spec.md, no `## Touch`, no bullet, a
 parse problem, unreadable bytes -- overlaps everything and is named
@@ -53,25 +55,36 @@ TELL: the verb exits 3 naming the path, and nothing reads it as "not armed"
 or "no holder". The lock is removed only while it still holds its owner's
 token; `arm` publishes a complete state.json with `os.link`. CLI values are
 checked before use: a ref (`--base`, `--merged`) may not start with `-`,
-`--pr` is digits, and no value carries a control character (exit 2). A lock is never broken by age
+`--pr` is digits, and no value carries a control character (exit 2). Every
+top-level state field a verb reads (`seq`, `order`, `entries`, `armed_at`,
+`armed_by`) is shape-checked at load, and every events.jsonl record (an object
+with a positive integer `seq`, a known `kind`, a `ticket`); a malformed record
+is a `could not tell whether ... concerns you` notice to every entry, and
+`arm` refuses on it. Events are written BEFORE state.json, and both are rolled
+back if either fails, so no state change commits unlogged. A lock is never broken by age
 (breaking locks by age is how two writers both win), and a stale-looking hold
 is reported as `stale?: <evidence>` and never released automatically:
 `release --force --by <who> --reason <text>` releases it and logs an event.
 
 MERGE BASE, THEN GATE. `acquire` refuses (`merge <base> first`) while the base
 holds commits not in HEAD that touch this ticket's Touch, so the gate verdict
-covers the tree that lands. `catch-up` is the one catch-up: `git merge
---no-edit <base>`, never a rebase or cherry-pick, after making
-`rerere.enabled`/`rerere.autoupdate` true in this worktree (`git config
+covers the tree that lands. `catch-up` is the one catch-up: `git -c
+rerere.autoupdate=false merge --no-edit <base>`, never a rebase or
+cherry-pick, after making `rerere.enabled` true in this worktree (`git config
 --worktree` when `extensions.worktreeConfig` is already on, else `--local`;
-never `--global`, never switching the extension on). It never commits a
-conflicted or rerere-resolved merge: replayed files are staged and listed, the
-merge is left for the lane to inspect and commit, and the merge log names
-them (`merge-log`), for the reviewer. A replayed resolution is still a change
-to gate.
+never `--global`, never switching the extension on). It never writes
+`rerere.autoupdate` (owner, 2026-09-30) and never commits a conflicted or
+rerere-resolved merge: replayed files are left in the working tree UNSTAGED
+and listed, for the lane to inspect and `git add`; each VERSION_FILES path
+still unmerged has its rerere resolution forgotten and its conflict markers
+restored, for the lane to resolve by hand; the merge log names both
+(`merge-log`), for the reviewer. A replayed resolution is still a change to
+gate.
 
 LAND. `check-land` requires, in order: the train readable; this worktree's
-entry holding; the base fetched; `git merge-tree --write-tree <base> HEAD`
+entry holding; the base fetched (`+refs/heads/<branch>:refs/remotes/<remote>/
+<branch>`, and the base must then name FETCH_HEAD's commit, else could not
+tell); `git merge-tree --write-tree <base> HEAD`
 clean (exit 1 lists the conflicted paths; anything else, e.g. a git older than
 2.38, is could not tell); the base not moved in Touch paths since HEAD's
 merge-base with it (moved only outside Touch is allowed and said); a current
@@ -117,10 +130,18 @@ REFRESH_PREFIXES = ((".crew", "codemap"), (".claude", "rules"), ("docs", "diagra
                     ("graphify-out",))
 UNDECLARED = "<undeclared>"
 NOTICE_KINDS = ("merged", "force-release")
+EVENT_KINDS = ("acquire", "wait", "release", "merged", "force-release", "check-land")
 _REPLAYED_RE = re.compile(r"^(?:Resolved|Staged) '(.+)' using previous resolution\.$")
 _PR_RE = re.compile(r"^[0-9]{1,10}$")
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 STATES = ("waiting", "holding")
+# Never rerere (owner, 2026-09-30, "Keep rerere, no autoupdate"): the shared
+# rr-cache replayed another lane's crew-version resolution into T-0028 and
+# set a wrong version without a word. After a catch-up merge, each of these
+# still unmerged has its recorded resolution forgotten and its conflict
+# markers restored, for the lane to resolve by hand.
+VERSION_FILES = ("plugin/crew/.claude-plugin/plugin.json", ".claude-plugin/marketplace.json",
+                 "plugin/PLUGINS.md", "CHANGELOG.md")
 
 
 class TrainError(RuntimeError):
@@ -329,6 +350,29 @@ def _entry_problem(entry):
     return None
 
 
+def _count(value):
+    """A non-negative int that is not a bool."""
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _state_problem(data):
+    """Why a parsed state.json is not a schema-1 train state, or None. Every
+    top-level field a verb reads is checked here, so a malformed one is could
+    not tell at load, never a TypeError inside a verb (L-0558)."""
+    if not isinstance(data, dict) or data.get("schema") != SCHEMA:
+        return (f"it is not a schema-{SCHEMA} train state (schema "
+                f"{data.get('schema') if isinstance(data, dict) else None!r})")
+    for key in ("seq", "order"):
+        if not _count(data.get(key)):
+            return f"its {key!r} is {data.get(key)!r}, not a non-negative integer"
+    if not isinstance(data.get("entries"), list):
+        return "its 'entries' is not a list"
+    for key in ("armed_at", "armed_by"):
+        if not isinstance(data.get(key), str):
+            return f"its {key!r} is {data.get(key)!r}, not a string"
+    return None
+
+
 def load(root):
     """(state, where, why): `where` is `absent`, `ok` or `could not tell`.
     Only a state.json proven missing (`_absent`) is `absent`; every entry is
@@ -343,11 +387,9 @@ def load(root):
         data = json.loads(_read_file(path))
     except (OSError, ValueError) as exc:
         return None, "could not tell", f"{path} cannot be read: {exc}"
-    if not isinstance(data, dict) or data.get("schema") != SCHEMA \
-            or not isinstance(data.get("entries"), list) \
-            or not isinstance(data.get("seq"), int):
-        return None, "could not tell", (f"{path} is not a schema-{SCHEMA} train state "
-                                        f"(schema {data.get('schema') if isinstance(data, dict) else None!r})")
+    problem = _state_problem(data)
+    if problem:
+        return None, "could not tell", f"{path}: {problem}"
     for entry in data["entries"]:
         problem = _entry_problem(entry)
         if problem:
@@ -413,10 +455,88 @@ class _Lock:
             pass
 
 
+def _write_all(fd, data):
+    view = memoryview(data)
+    while view:
+        view = view[os.write(fd, view):]
+
+
+def _commit(root, path, state, lines):
+    """Write `lines` to the events file, then replace state.json; nothing is
+    committed unless both land. Events FIRST (L-0558, review round 2 of
+    L-0520): the reverse order let an append that failed after a good save
+    leave a hold nobody logged, or a release nobody was told of. If the
+    append or the save fails, the events file is truncated back to its size
+    before this call (removed when this call created it) and the verb is
+    could not tell. A process killed between the two leaves an event whose
+    state change did not happen; `_mutate` numbers past it, so no seq is
+    reused, and every event is advice beside `acquire`'s refusal."""
+    if not lines:
+        try:
+            _save(path, state)
+        except OSError as exc:
+            raise TrainError(f"could not tell: writing {path} failed: {exc}") from exc
+        return
+    events = _events_path(root)
+    data = ("\n".join(lines) + "\n").encode("utf-8")
+    created = not os.path.lexists(events)
+    try:
+        fd = os.open(events, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0),
+                     0o644)
+    except OSError as exc:
+        raise TrainError(f"could not tell: {events} cannot be opened for append: {exc}; "
+                         f"nothing was written and {path} is unchanged") from exc
+    size, failure, undo = None, None, "nothing was written"
+    try:
+        size = os.fstat(fd).st_size
+        _write_all(fd, data)
+        os.fsync(fd)
+        _save(path, state)
+    except OSError as exc:
+        failure = exc
+        if size is not None:
+            try:
+                os.ftruncate(fd, size)
+                undo = f"{events} truncated back to {size} bytes"
+            except OSError as again:
+                undo = f"{events} could NOT be truncated back to {size} bytes ({again}); inspect it"
+    finally:
+        os.close(fd)
+    if failure is None:
+        return
+    if created and size == 0 and "NOT" not in undo:
+        try:
+            os.remove(events)
+            undo = f"{events} removed (this call created it)"
+        except OSError as again:
+            undo += f"; it could not be removed ({again})"
+    raise TrainError(f"could not tell: writing {path} or its events failed: {failure}; {undo}; "
+                     f"{path} is unchanged") from failure
+
+
+def _last_seq(root):
+    """The highest integer seq any line of the events file carries, or 0.
+    Unreadable lines are `read_events`' business; this only keeps a seq
+    from being reused after an event outlived its state change."""
+    try:
+        text = _read_file(_events_path(root))
+    except OSError:
+        return 0
+    best = 0
+    for line in _records(text):
+        try:
+            seq = json.loads(line).get("seq") if line.strip() else None
+        except (ValueError, AttributeError):
+            continue
+        if isinstance(seq, int) and not isinstance(seq, bool):
+            best = max(best, seq)
+    return best
+
+
 def _mutate(root, change):
     """Run `change(state, events)` under the lock on an armed, readable state.
-    `events` is a list the change appends to; they are written with the next
-    seq numbers, then state.json is replaced atomically."""
+    `events` is a list the change appends to; they are numbered with the next
+    seqs and written by `_commit`, which replaces state.json only after them."""
     path = _state_path(root)
     missing, why = _absent(path)
     if missing is None:
@@ -432,28 +552,36 @@ def _mutate(root, change):
         events = []
         result = change(state, events)
         lines = []
+        if events:
+            state["seq"] = max(state["seq"], _last_seq(root))
         for event in events:
             state["seq"] += 1
             event.setdefault("time", _now())
             event["seq"] = state["seq"]
             lines.append(json.dumps(event, sort_keys=True))
-        # State first, then its events: a save that fails leaves no event
-        # behind and the next mutation reuses nothing; an append that fails
-        # after a good save leaves a gap in seq, never a duplicate.
-        try:
-            _save(path, state)
-            if lines:
-                text = "\n".join(lines) + "\n"
-                with open(_events_path(root), "a", encoding="utf-8", newline="\n") as fh:
-                    fh.write(text)
-        except OSError as exc:
-            raise TrainError(f"could not tell: writing {path} or its events failed: {exc}") from exc
+        _commit(root, path, state, lines)
     return result
 
 
+def _event_problem(event):
+    """Why a parsed events.jsonl record is not a train event, or None."""
+    if not isinstance(event, dict):
+        return "not an object"
+    seq = event.get("seq")
+    if not _count(seq) or seq < 1:
+        return f"seq {seq!r} is not a positive integer"
+    if event.get("kind") not in EVENT_KINDS:
+        return f"kind {event.get('kind')!r} is not one of {', '.join(EVENT_KINDS)}"
+    if not isinstance(event.get("ticket"), str) or not event.get("ticket"):
+        return f"ticket {event.get('ticket')!r} is not a non-empty string"
+    return None
+
+
 def read_events(root, after=0):
-    """(events with seq > after, problems). An unparseable line is named,
-    never silently dropped."""
+    """(events with seq > after, problems). An unparseable line, or a valid
+    JSON line without an event's shape (L-0558), is named, never silently
+    dropped and never handed to a reader that would index a missing field;
+    a malformed record with a readable seq <= after was already reported."""
     path = _events_path(root)
     try:
         text = _read_file(path)
@@ -470,8 +598,13 @@ def read_events(root, after=0):
         except ValueError:
             problems.append(f"{path}:{number} does not parse")
             continue
-        if isinstance(event, dict) and isinstance(event.get("seq"), int) \
-                and event["seq"] > after:
+        problem = _event_problem(event)
+        seq = event.get("seq") if isinstance(event, dict) else None
+        if problem:
+            if not _count(seq) or seq > after:
+                problems.append(f"{path}:{number} is not a train event ({problem})")
+            continue
+        if seq > after:
             found.append(event)
     return found, problems
 
@@ -535,9 +668,11 @@ def touch_overlap(mine, theirs):
 
 
 def meets_touch(path, touch):
-    """A repo-relative file path falls inside Touch (refresh artifacts left
-    out); an undeclared Touch meets every path."""
-    touch = effective(touch)
+    """A repo-relative file path falls inside the FULL Touch; an undeclared
+    Touch meets every path. Refresh artifacts are dropped from the overlap
+    decision only (`touch_overlap`), never from this one: a base that moved a
+    path this ticket's Touch names is a tree its verdict did not cover
+    (L-0558, review round 2 of L-0520)."""
     return True if touch is None else crew_ticket.in_touch(path, touch)
 
 
@@ -622,7 +757,8 @@ def _notices(root, state, entry):
     """Unseen merged/force-release events meeting `entry`'s Touch, as lines;
     advances the entry's last_seen."""
     events, problems = read_events(root, entry.get("last_seen", 0))
-    out = [f"{entry['ticket']}: events: {p}" for p in problems]
+    out = [f"{entry['ticket']}: could not tell whether {p} concerns you - check the base "
+           "before you gate" for p in problems]
     for event in events:
         if event.get("kind") not in NOTICE_KINDS or event.get("ticket") == entry["ticket"]:
             continue
@@ -826,7 +962,7 @@ def status(root, as_json=False):
                          f"{str(entry.get('head'))[:12]} touch: {entry.get('touch_source')}")
             skipped = [t for t in entry.get("touch") or [] if _is_refresh(t)]
             if skipped:
-                lines.append(f"    refresh artifacts not counted: {', '.join(skipped)}")
+                lines.append(f"    refresh artifacts not counted for overlap: {', '.join(skipped)}")
             if entry.get("state") == "waiting":
                 for other, pairs in _blockers(state, entry):
                     lines.append(f"    behind {other['ticket']}: " + "; ".join(
@@ -839,15 +975,39 @@ def status(root, as_json=False):
 # --- catch-up and the merge log ---------------------------------------------------------------
 
 def ensure_rerere(top):
-    """Make rerere.enabled/autoupdate true for this worktree; the scope used."""
+    """Make rerere.enabled true for this worktree; the scope used. Never
+    rerere.autoupdate (owner, 2026-09-30): a replay is left unstaged for the
+    lane to inspect, and the catch-up merge passes `-c rerere.autoupdate=false`
+    for that one invocation, so a user's own setting cannot stage one."""
     code, out, err = _git(top, "config", "--get", "--bool", "extensions.worktreeConfig")
     if code not in (0, 1):
         raise TrainError(f"could not tell whether extensions.worktreeConfig is on (git config "
                          f"exit {code}: {err.strip()[:200]}); rerere was not configured")
     scope = "--worktree" if code == 0 and out.strip() == "true" else "--local"
-    for key in ("rerere.enabled", "rerere.autoupdate"):
-        _git_ok(top, "config", scope, key, "true")
+    _git_ok(top, "config", scope, "rerere.enabled", "true")
     return scope
+
+
+def _forget_version_files(top, unmerged):
+    """For each VERSION_FILES path the merge left unmerged: `git rerere
+    forget` (which leaves the replayed bytes in the working tree) and then
+    `git checkout -m` (which puts the conflict markers back). Returns the
+    paths whose recorded resolution was forgotten; git prints `Forgot
+    resolution for '<path>'` only when there was one (git 2.53.0). A path
+    is restored whether or not that line was seen, so a git that words it
+    differently still leaves the file conflicted."""
+    forgotten = []
+    for path in VERSION_FILES:
+        if path not in unmerged:
+            continue
+        code, out, err = _git(top, "rerere", "forget", "--", path)
+        if code != 0:
+            raise TrainError(f"git rerere forget -- {path} failed (exit {code}): "
+                             f"{(err or out).strip()[:200]}")
+        if f"Forgot resolution for '{path}'" in out + err:
+            forgotten.append(path)
+        _git_ok(top, "checkout", "-m", "--", path)
+    return forgotten
 
 
 def _remote_of(top, base):
@@ -857,14 +1017,31 @@ def _remote_of(top, base):
 
 
 def _fetch(top, base):
+    """Fetch `<remote>/<branch>` INTO the ref judged. A bare `git fetch
+    <remote> <branch>` updates only FETCH_HEAD when `remote.<remote>.fetch`
+    is unset, leaving `<base>` stale (L-0558), so the refspec is explicit;
+    then `<base>` must name the commit FETCH_HEAD does, or could not tell."""
     remote, branch = _remote_of(top, base)
     if not remote:
         return f"{base} is local; not fetched"
-    code, out, err = _git(top, "fetch", "--quiet", remote, branch)
+    refspec = f"+refs/heads/{branch}:refs/remotes/{remote}/{branch}"
+    code, out, err = _git(top, "fetch", "--quiet", remote, refspec)
     if code != 0:
-        raise TrainError(f"could not tell: git fetch {remote} {branch} failed (exit {code}): "
+        raise TrainError(f"could not tell: git fetch {remote} {refspec} failed (exit {code}): "
                          f"{(err or out).strip()[:300]}")
-    return f"fetched {remote} {branch}"
+    shas = []
+    for ref in ("FETCH_HEAD", base):
+        code, out, err = _git(top, "rev-parse", "--verify", "--quiet", "--end-of-options",
+                              f"{ref}^{{commit}}")
+        if code != 0:
+            raise TrainError(f"could not tell: {ref} names no commit after git fetch {remote} "
+                             f"{refspec} (exit {code}): {err.strip()[:200]}")
+        shas.append(out.strip())
+    if shas[0] != shas[1]:
+        raise TrainError(f"could not tell: {base} is {shas[1][:12]} after git fetch {remote} "
+                         f"{refspec}, but FETCH_HEAD is {shas[0][:12]}; the ref judged is not the "
+                         "one fetched")
+    return f"fetched {remote} {branch} into {base} ({shas[0][:12]})"
 
 
 def _append_merge_log(root, ticket, row):
@@ -891,22 +1068,30 @@ def catch_up(root, ticket, base=None, fetch=True, lane=None):
             ["  " + d for d in dirty[:20]]
     lines = [_fetch(top, base) if fetch else f"{base}: not fetched (--no-fetch)"]
     scope = ensure_rerere(top)
-    lines.append(f"rerere.enabled and rerere.autoupdate are true ({scope})")
+    lines.append(f"rerere.enabled is true ({scope}); crew never sets rerere.autoupdate, and "
+                 "this merge runs with it off")
     head_before = _head(top)
     base_sha = _git_ok(top, "rev-parse", f"{base}^{{commit}}").strip()
-    code, out, err = _git(top, "merge", "--no-edit", base)
+    code, out, err = _git(top, "-c", "rerere.autoupdate=false", "merge", "--no-edit", base)
     unknown = None
-    conflicted = replayed = None
+    conflicted = replayed = forgotten = None
     try:
         probe = _git(top, "rev-parse", "-q", "--verify", "MERGE_HEAD")[0]
         if code is None or probe not in (0, 1):
             raise TrainError(f"git merge exit {code}, MERGE_HEAD probe exit {probe}")
         in_merge = probe == 0
-        conflicted = _lines(_git_ok(top, "diff", "--name-only", "--diff-filter=U"))
+        unmerged = _lines(_git_ok(top, "diff", "--name-only", "--diff-filter=U"))
         staged = set(_lines(_git_ok(top, "diff", "--name-only", "--cached")))
-        said = [m.group(1) for m in (_REPLAYED_RE.match(x.strip())
-                                     for x in _records(out + "\n" + err)) if m]
-        replayed = sorted({p for p in said if p in staged and p not in conflicted})
+        said = {m.group(1) for m in (_REPLAYED_RE.match(x.strip())
+                                     for x in _records(out + "\n" + err)) if m}
+        slipped = sorted(p for p in said & set(VERSION_FILES) if p not in unmerged)
+        if slipped:
+            raise TrainError(f"rerere resolved version files the merge left staged: "
+                             f"{', '.join(slipped)}")
+        forgotten = _forget_version_files(top, unmerged) if in_merge else []
+        replayed = sorted(p for p in said if (p in unmerged or p in staged)
+                          and p not in VERSION_FILES)
+        conflicted = [p for p in unmerged if p not in replayed]
         if code == 0:
             outcome = "up-to-date" if _head(top) == head_before else "merged"
         elif in_merge:
@@ -918,20 +1103,26 @@ def catch_up(root, ticket, base=None, fetch=True, lane=None):
     _append_merge_log(root, ticket, {
         "time": _now(), "ticket": ticket, "lane": _lane(top, lane), "worktree": top,
         "head_before": head_before, "base": base, "base_sha": base_sha, "outcome": outcome,
-        "conflicted": conflicted, "rerere_replayed": replayed, "rerere_config": scope})
+        "conflicted": conflicted, "rerere_replayed": replayed, "rerere_forgotten": forgotten,
+        "rerere_config": scope})
     lines.append(f"catch-up {outcome}: git merge --no-edit {base} ({base_sha[:12]})")
     if unknown:
         lines.append(f"  could not tell what the merge left: {unknown}; inspect the worktree "
                      "(git status) before anything else")
         return EXIT_UNKNOWN, lines
     if replayed:
-        lines.append(f"  rerere replayed (staged, review it as a change): {', '.join(replayed)}")
+        lines.append("  rerere replayed into the working tree, NOT staged (inspect each as a "
+                     f"change, then git add it): {', '.join(replayed)}")
+    if forgotten:
+        lines.append("  rerere resolution forgotten (version file, never replayed - resolve it "
+                     f"by hand): {', '.join(forgotten)}")
     if conflicted:
         lines.append(f"  conflicted: {', '.join(conflicted)}")
     if outcome == "refused":
         lines.append("  git: " + (err or out).strip()[:300])
     if outcome in ("conflicted", "rerere-resolved"):
-        lines.append("  inspect, then git commit --no-edit; the head must be gated again")
+        lines.append("  resolve or inspect each file, git add it, then git commit --no-edit; the "
+                     "head must be gated again")
         return EXIT_REFUSED, lines
     if outcome == "refused":
         return EXIT_REFUSED, lines
@@ -981,6 +1172,8 @@ def merge_log(root, ticket):
             lines.append(f"  conflicted: {', '.join(row['conflicted'])}")
         if row.get("rerere_replayed"):
             lines.append(f"  rerere_replayed: {', '.join(row['rerere_replayed'])}")
+        if row.get("rerere_forgotten"):
+            lines.append(f"  rerere_forgotten: {', '.join(row['rerere_forgotten'])}")
     return EXIT_OK, lines
 
 
