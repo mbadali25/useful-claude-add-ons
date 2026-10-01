@@ -76,7 +76,10 @@ def read_collected(path: str) -> tuple:
     The ids are the leading lines up to the first blank one; every one must be
     a node id. The summary line further down must state the same count."""
     try:
-        with open(path, encoding="utf-8") as fh:
+        # Written on Windows by a redirected python: CRLF line ends, which
+        # newline=None (universal newlines) reads as "\n". Strict decoding: a
+        # transcript that is not UTF-8 is a failure, not a guess.
+        with open(path, encoding="utf-8", errors="strict", newline=None) as fh:
             lines = fh.read().splitlines()
     except (OSError, UnicodeDecodeError) as exc:
         return [], [f"{path}: cannot read: {exc}"]

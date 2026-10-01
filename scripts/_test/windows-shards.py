@@ -59,7 +59,7 @@ def junit_text(ids):
 
 def write(path, text):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as fh:
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
 
 
@@ -149,6 +149,12 @@ def case_decide_job_failed_fails(root):
 def case_decide_output_empty_fails(root):
     build(root, good_groups())
     return run(root, run_flag=""), (1, "not true or false")
+
+
+def case_crlf_collection_from_windows_passes(root):
+    crlf = collected_text(IDS, deselected=3).replace("\n", "\r\n")
+    build(root, good_groups(), collected=[crlf, crlf, crlf])
+    return run(root), (0, "each ran exactly once")
 
 
 def case_shard_job_failed_fails(root):
