@@ -41,7 +41,7 @@ them and is wired into CI but not into the local Stop gate: see
 
 **DERIVED, read in full via `json.load` on L-0516 at its merge of main `ddcbf90d` (W-0115 #299, after L-0513 #301):
 449 lines, 43 rules.** Main's 42 rules (L-0513 #301's gate-runner rule at
-`.crew/verify.json:432-436`, then T-0040 #290's shell-route rule, the last, at `:438-444` since W-0115 added `sabotage_shell.py` to its paths) plus
+`.crew/verify.json:432-436`, then T-0040 #290's shell-route rule, the last on main (T-0501's rules 43-44 follow it on its branch), at `:438-444` since W-0115 added `sabotage_shell.py` to its paths) plus
 L-0516's poll-fixture rule, inserted right after the whole-suite rule as rule 10
 (`.crew/verify.json:177-181`; paths `plugin/crew/tests/poll_fixtures.py` and
 `test_poll_fixtures.py`, run with its two consumers `test_event_claim_crash_safety.py` and
@@ -650,7 +650,7 @@ their own, in both the `test` job and the Windows leg of `crew-shell-matrix`. Re
 - `plugin/crew/hooks/scripts/verify-gate.sh:1600-1705` /
   `verify-gate.ps1:1655-1789` — temp-file rule-output capture, 1 MiB tail cap,
   no-pipe fallback refusal.
-- `.crew/verify.json:275` (rule 24) — the `.claude/rules/` sync check.
+- `.crew/verify.json:275` (rule 25; rule 24 before L-0516's rule 10) — the `.claude/rules/` sync check.
 - `.crew/verify.json:276-294` (rule 25) — the T-0008 refresh-check suite;
   `plugin/crew/tests/sabotage.py:75`, `:3059` — `sabotage_refresh.py`'s
   registration.
