@@ -674,4 +674,14 @@ REVIEW_FIX_MUTATIONS = (
         "",
         "tests/test_review_auto_accept.py::test_auto_accept_refuses[same-family-claude]",
     ),
+    (
+        # Review round 3 FIX 2: the receipt's provider and family are never
+        # compared with the row's, so a receipt naming claude still stands.
+        "auto receipt stops naming the row's reviewer",
+        REVIEW_LEDGER,
+        "            and _receipt_names_the_reviewer(receipt, latest)\n",
+        "",
+        "tests/test_review_auto_accept.py::test_check_receipt_requires_the_auto_rows_guard"
+        "[receipt-family-claude]",
+    ),
 )

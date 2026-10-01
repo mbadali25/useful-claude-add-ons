@@ -82,7 +82,7 @@ refusal raises and changes nothing. `--accept` refuses a `--by` beginning
 `auto:` (any case), so that string can come only from the guarded verb.
 `receipt_stands` is the one predicate for whether a FINDINGS receipt stands
 -- `owner-accepted`, or `auto-accepted` with its row still passing the guard
-and its lines equal to the row's -- and both `check_receipt` and
+and its lines, provider and model family equal to the row's -- and both `check_receipt` and
 `crew_autopilot` call it. `--check-follow-up` confirms the follow-up's
 `.work/tickets/<id>/direction.md` holds every receipt line verbatim as a
 whole line, as many times as the receipt carries it; a direction.md that is
@@ -579,7 +579,7 @@ def auto_accept(root, ticket, follow_up):
             "bundle_sha256": row["bundle_sha256"], "base": row["base"],
             "verdict": "FINDINGS", "accepted_by": AUTO_BY, "accepted_at": _now(),
             "findings": list(row["findings"]), "follow_up": follow_up,
-            "model_family": row.get("model_family"),
+            "provider": row.get("provider"), "model_family": row.get("model_family"),
         }
         data["state"] = ACCEPTED
         return data, data["receipt"]
@@ -590,8 +590,9 @@ def auto_accept(root, ticket, follow_up):
 def receipt_stands(receipt, latest):
     """Whether `receipt` stands on `latest`, the latest recorded round: a
     CLEAN round under a clean receipt; FINDINGS owner-accepted; or FINDINGS
-    auto-accepted whose row still passes the guard and whose lines are the
-    row's."""
+    auto-accepted whose row still passes the guard and whose lines, provider
+    and model family are the row's (review r3: a receipt that misstates the
+    family the guard checked does not stand)."""
     if not isinstance(receipt, dict) or not isinstance(latest, dict):
         return False
     if latest.get("status") != "completed" or receipt.get("round") != latest.get("round"):
@@ -604,7 +605,16 @@ def receipt_stands(receipt, latest):
         return True
     return (receipt.get("kind") == AUTO_KIND and receipt.get("accepted_by") == AUTO_BY
             and receipt.get("findings") == latest.get("findings")
+            and _receipt_names_the_reviewer(receipt, latest)
             and _auto_row_problem(latest) is None)
+
+
+def _receipt_names_the_reviewer(receipt, latest):
+    """The auto receipt's provider and model family are the row's, both
+    present: the receipt carries the family the guard checked, never another."""
+    pairs = ((receipt.get("provider"), latest.get("provider")),
+             (receipt.get("model_family"), latest.get("model_family")))
+    return all(isinstance(mine, str) and mine and mine == row for mine, row in pairs)
 
 
 def check_follow_up(root, ticket):

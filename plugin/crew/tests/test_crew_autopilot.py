@@ -313,7 +313,7 @@ def _auto_row(number=2, block=0, provider="codex", family="gpt"):
 
 def _auto_receipt(number=2):
     return dict(_receipt(number, review_ledger.AUTO_KIND), accepted_by=review_ledger.AUTO_BY,
-                findings=[LINE], follow_up="L-9999")
+                findings=[LINE], follow_up="L-9999", provider="codex", model_family="gpt")
 
 
 def test_next_auto_accepted_findings_move_on(tmp_path, monkeypatch):

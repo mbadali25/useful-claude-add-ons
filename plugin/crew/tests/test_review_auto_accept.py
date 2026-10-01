@@ -336,6 +336,20 @@ def test_auto_accept_cross_family_round(repo, provider, family):
     assert (result.returncode, _receipt(repo)["model_family"]) == (0, family), result.stderr
 
 
+@pytest.mark.parametrize("provider, family", [("codex", "gpt"), ("kimi", "kimi")],
+                         ids=["codex", "kimi"])
+def test_auto_receipt_names_the_rows_provider_and_family_and_stands(repo, provider, family):
+    _good(repo)
+    _good(repo, provider=provider, family=family)
+    assert _auto(repo).returncode == 0
+
+    result = _cli(repo, "--check-receipt")
+
+    receipt = _receipt(repo)
+    assert (result.returncode, receipt["provider"], receipt["model_family"]) == (
+        0, provider, family), result.stderr
+
+
 def test_auto_accept_takes_no_by(repo):
     _plain_final(repo)
 
@@ -384,10 +398,30 @@ def _tamper_provider(data):
     data["rounds"][-1]["provider"] = "claude"
 
 
+def _tamper_receipt_family(data):
+    data["receipt"]["model_family"] = "claude"
+
+
+def _tamper_receipt_family_missing(data):
+    del data["receipt"]["model_family"]
+
+
+def _tamper_receipt_provider(data):
+    data["receipt"]["provider"] = "kimi"
+
+
+def _tamper_receipt_provider_missing(data):
+    del data["receipt"]["provider"]
+
+
 @pytest.mark.parametrize("tamper", [None, _tamper_block, _tamper_lines, _tamper_by,
-                                    _tamper_provider],
+                                    _tamper_provider, _tamper_receipt_family,
+                                    _tamper_receipt_family_missing, _tamper_receipt_provider,
+                                    _tamper_receipt_provider_missing],
                          ids=["untouched", "row-block-1", "receipt-lines-differ",
-                              "receipt-by-differs", "row-provider-claude"])
+                              "receipt-by-differs", "row-provider-claude",
+                              "receipt-family-claude", "receipt-family-missing",
+                              "receipt-provider-differs", "receipt-provider-missing"])
 def test_check_receipt_requires_the_auto_rows_guard(repo, tamper):
     _plain_final(repo)
     assert _auto(repo).returncode == 0
