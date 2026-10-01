@@ -66,14 +66,14 @@ ticket's spec.Touch. File it to `TODO.md`, not to the diff.
 
 ## 4. Verify
 
-Run the checks your changed paths map to in `.crew/verify.json` (no map: `./_verify/smoke.sh`).
-Fix and rerun on red. A changed path mapping to no rule gets one before you finish (step 6).
+Run the checks your changed paths map to in `.crew/verify.json` (no map: `./_verify/smoke.sh`). Fix and
+rerun on red. A changed path mapping to no rule gets one before you finish (step 6). On native Windows,
+run each check through `crew_shell.py run -- "<command>"` and quote its `crew-shell:` route line (crew-setup/platform.md).
 
 ## 5. Specialists, endpoints, coverage
 
-Auth/input/SQL/secrets/IaC → `crew:security`. Migration/schema/big-table query
-→ load the `stack-sql` skill. A new externally reachable route declared
-now, never later:
+Auth/input/SQL/secrets/IaC → `crew:security`. Migration/schema/big-table query → load the `stack-sql`
+skill. A new externally reachable route declared now, never later:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_state.py --root . \

@@ -37,6 +37,93 @@ land, with the train not to be armed until they were fixed. All five, and the ow
   one, which rerere never resolves, is left as the merge left it.
 - The sabotage rows proving these (S20-S33) belong to L-0526's `sabotage_train.py` (tooling PRs
   carry no feature work); each was run RED by hand here.
+### Added — `crew` 1.0.98: Windows shell routes (T-0040)
+
+- **What it is.** `hooks/scripts/crew_shell.py` picks the shell crew's long-running jobs run in on
+  native Windows, and every Windows run of a verify check, a test suite or a graph build goes
+  through `crew_shell.py run -- "<command>"`, which prints one `crew-shell:` route line to stderr
+  and passes the job's exit code through. `/crew:implement` step 4 and the `crew-execute`,
+  `crew-graph` and `crew-setup` skills say so. Bumped `1.0.97 -> 1.0.98` (T-0040 never set a
+  version on its branch; it landed at 1.0.86, one past main's 1.0.85, T-0028; 1.0.87 after the
+  sabotage-entries split below; 1.0.88 after PR CI's real leg - `check (3.12)`/`test (3.12)`,
+  which a PR only runs at 3.12 - caught a stale generated-rules hash and an over-budget
+  `implement.md` neither local run had exercised the same way; 1.0.89 after `test (3.12)` on
+  Linux failed `test_status.py`'s `wsl-fs` case, below; 1.0.90, one past main's 1.0.89, after
+  merging L-0520 (#287, 1.0.86) and W-0116 (#292, 1.0.89); 1.0.98, one past main's 1.0.97, after
+  merging #294, T-0505 (#296, 1.0.92) and T-0110 (#297, 1.0.97). T-0040's 1.0.86-1.0.90 were
+  branch versions and were never published).
+- **Four modes, `shellRoute.mode`, in both config layers.** `auto` (the default) routes a job to
+  WSL2 when WSL is usable and the repo lives inside WSL, or sits on a Windows drive where a
+  measurement found WSL faster; otherwise a plain argv runs directly with no shell and anything
+  else runs in Git Bash. `wsl` routes to WSL or refuses (exit 3) - it never falls back.
+  `powershell` hands pwsh only a plain argv, each element quoted, and sends bash syntax to Git
+  Bash. `gitbash` always uses Git Bash. `shellRoute.distro` names the WSL distro; `null` takes
+  the default (`*`) distro, never one picked by list order. The repo template leaves `mode`
+  `null`, so a repo that chose nothing inherits the machine's value (review round 2).
+- **The argv classifier.** `classify` proves a command is a plain argv or calls it bash:
+  metacharacters, shell words, an assignment prefix, a path-looking argv0 and an embedded POSIX
+  path (`--root=/c/...`, which MSYS converts on the Git Bash route and direct exec does not) are
+  all bash. A leading `python3` becomes the running interpreter on the direct and pwsh routes.
+- **The WSL probe, cache and measurement.** `probe` runs only `wsl.exe --list --verbose` and one
+  `command -v python3; command -v git` in the job's own `bash -lc`, and answers `usable`,
+  `not-installed`, `no-distro`, `wsl1-only`, `no-python3`, `no-git`, `broken` or `unknown`; a
+  runner that raises is `unknown`, never `not-installed`, and nothing is ever installed. The
+  answer is cached machine-locally in `~/.claude/crew/shell-route.json` (`probe --write`), never
+  under a repo; a `usable` cache that names no distro reads as `unknown`. `measure` times 50
+  forks and 200 small writes per shell with each shell's own clock, and a verdict is used only
+  for the distro it measured. Before a WSL job, a preflight checks the first word - and, for
+  `python3 -m <mod>`, that the module imports - inside the distro, in the job's `--cd`.
+- **`/crew:status` shell line.** On native Windows `/crew:status` prints
+  `shell <mode> -> <route> - <why>`, taken from the same decision `run` makes; it runs no
+  `wsl.exe`, no pwsh and no git.
+- **Unchanged.** No hook calls `crew_shell.py`: `hooks.json`, every `hooks/scripts/*.sh` and
+  `*.ps1`, `crew_platform.py` and `verify-gate.sh` are byte-identical to main. Off native
+  Windows `run` is exactly `bash -c <cmd>` - no probe, no config read, no message - and the
+  status line is absent.
+- **Review.** Round 1 (Claude, same family): 1 BLOCK, 10 FIX, 2 NIT, owner-accepted and fixed.
+  Round 2 (Codex, independent): 1 BLOCK (this version bump), 5 FIX - the template pinning
+  `mode: auto`, a measurement reused across distros, a distro-less `usable` cache, the module
+  preflight missing `-m` after `-X dev` / `-W error`, and the preflight running outside the
+  job's `--cd` - owner-accepted and fixed at land.
+- **Tests.** `test_crew_shell.py`, `test_status.py` and `test_crew_config.py`. The sabotage
+  entries (`sabotage_shell.py`, `SHELL_MUTATIONS`, 14 entries) split out to follow-up ticket
+  W-0115 per rule 36 (`scripts/check-tooling-pr.py`: a HARNESS-path change carries no feature
+  work; owner Matthew Badali, 2026-09-30) - `plugin/crew/tests/sabotage*.py` is a HARNESS glob,
+  so shipping them alongside this feature would have failed that gate. No test calls a real
+  `wsl.exe`, pwsh or Git Bash on a routed path. `.crew/verify.json`'s T-0040 rule runs the two
+  feature suites; W-0115 restores the sabotage rule path and its mutation coverage.
+- **Landing-branch CI fixes.** `.claude/rules/crew.md` regenerated after a codemap correction
+  changed its source hash; `implement.md`'s step-4 native-Windows note reflowed (two paragraphs
+  re-wrapped, no wording lost) to stay at the 120-line command budget rather than growing an
+  allowance exception; `BUDGETS.md`'s `plugin/crew/*.md` line count corrected to 21,719 (moved
+  by the reflow, per this file's own "re-measure rather than trusting it" note), then 21,748
+  after merging main's L-0520 and 21,820 after merging main `44d3dbc6`. `test_status_shell_line_on_windows`'s `wsl-fs` case faked `repo_location` but not
+  `to_wsl_path`, which `route_for` also runs on the real `tmp_path`: a drive path on Windows
+  (translated, so it passed there) and a POSIX path on Linux CI (refused as "not a Windows
+  path", so the line fell back to direct/gitbash). The test now fakes both, as
+  `test_crew_shell.py` already did; the product is unchanged.
+
+### Fixed — `crew` 1.0.97: crew-shell-matrix (windows-latest) re-enabled, and the bogus-TMP test no longer poisons `/tmp` for the host (T-0110)
+
+- **`crew-shell-matrix (windows-latest)` runs again** (#277 had disabled it). On a pull request
+  it does work only when the PR changes `plugin/crew/**` or `pytest-crew.yml`; if the diff
+  cannot be taken, the leg runs, with a `::warning::`, rather than reading "nothing changed".
+- **The intermittent Windows failure was a test poisoning its neighbours.** Git for Windows
+  mounts `/tmp` from the TMP/TEMP of whichever process creates the MSYS runtime's shared mount
+  table, so `test_34d_ps1` (TMP pointing at a file), when it was the first MSYS process on an
+  idle runner, broke every bash other xdist workers started meanwhile (`/tmp must be a valid
+  directory name`, then `VERIFY GATE: cannot create temp file`). New test fixture
+  `crew_fixtures.msys_tmp_pinned` holds a sane MSYS process open for the block and proves the
+  pin took before yielding. It pins the bash the gate itself resolves (`gate_bash`, via
+  `verify-gate.ps1 -PrintBash`), and its startup read is bounded: a holder that never
+  announces is killed, and the fixture raises instead of hanging or running unpinned.
+- **`test_msys_tmp_pin.py`** shows the hazard on a private copy of the MSYS runtime (live
+  without the pin, gone with it) and checks the whole crew test tree. A TMP/TEMP override
+  counts as pinned only when its launch runs while the pin is held: in the block, or in a
+  `with` item after the pin. Arguments to the pin and items before it do not count.
+- **Test-only; no hook or product code changed.** Linux and macOS behaviour is unchanged.
+- **Known gap, tracked as W-0119:** `test_kimi_probe.py` is skipped on Windows, because its
+  `fake_kimi_bin` writes an extensionless shebang script Windows cannot exec.
 ### Fixed — `crew` 1.0.92: promote-gate judges the tree the deploy runs from (T-0505)
 
 - **`promote-gate.sh` / `.ps1` read the deployed sha and the clean-tree check
