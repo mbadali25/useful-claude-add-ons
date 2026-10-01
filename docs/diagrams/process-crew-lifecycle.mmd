@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@89ebda03 on 2026-10-01. Verify before trusting.
+%% Generated from useful-claude-add-ons@b83598eb on 2026-10-01. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -301,8 +301,9 @@ flowchart TB
         ap0 --> ap1{"approval-hook (UserPromptSubmit)<br/>hooks.json:14; approve.md:9"}
         ap1 -- refused --> apx([prompt blocked, reason shown<br/>:15])
         ap1 -- recorded --> ap2["approval.json = digest(spec.md, plan.md),<br/>header status value normalised<br/>approved_via user-prompt<br/>:12-13"]
-        ap1 -- "several ids, a range,<br/>or plain text" --> apg["PENDING list, nothing recorded;<br/>user's own /crew:approve --confirm<br/>records one receipt per ticket, or none<br/>approve.md:27-32"]
+        ap1 -- "several ids, a range,<br/>or plain text" --> apg["PENDING list, nothing recorded;<br/>user's own /crew:approve --confirm<br/>records one receipt per ticket, or none<br/>approve.md:30-35"]
         apg -- "confirmed, every hash unchanged" --> ap2
+        ap1 -- "the owner's own<br/>/crew:autopilot id (T-0504)" --> aprp["re-points this worktree's active ticket,<br/>names the one it left; the session's own<br/>move off an in-flight ticket is refused<br/>approve.md:18-19"]
     end
 
     ap2 --> planned["spec.md header 'status: planned'<br/>keeps the approval,<br/>crew_tracker.py move --to planned<br/>plan.md:60-63"]
@@ -454,3 +455,7 @@ flowchart TB
 %% 44d3dbc6, crew 1.0.97, rerere off): both provenance blocks kept, main's first; header at the main tip.
 %% done.md / implement.md / crew_refresh_check.py lines cited here re-read on the merged tree.
 %% No node or edge changed.
+%% Re-anchored 89ebda03 -> b83598eb (T-0504 merges main 05a679bf with rerere off, crew 1.0.107): the merge
+%% took main's side; of the Anchors paths only T-0504's files changed (approve.md +3 at :18-20,
+%% crew_ticket.py, completion_audit.py, CONFIG.md §20 +11 after the cited lines). Cited lines re-mapped by
+%% diff; edge ap1 -> aprp re-added (the owner's /crew:autopilot id re-point).
