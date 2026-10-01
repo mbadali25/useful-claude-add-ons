@@ -323,6 +323,9 @@ def record(root, ticket, number, review):
             "bundle_sha256": review.get("bundle_sha256"), "base": review.get("base"),
             "head": review.get("head"), "model_family": review.get("model_family"),
             "failure_class": review.get("failure_class"),
+            # How many stray lines a FINDINGS round was recovered despite
+            # (L-0576): an acceptance can see the round was not strictly read.
+            "ignored_lines": len(review.get("ignored_lines") or []),
         })
         if review["verdict"] == "INCOMPLETE" and review.get("failure_class") == "tool":
             row["refunded"] = _refunded(data) < REFUND_LIMIT

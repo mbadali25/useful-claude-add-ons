@@ -4,6 +4,32 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` (version pending): harmless stray lines beside findings no longer burn a review round (L-0576)
+
+A tooling-only change to the review verdict parser. Paired with L-0514 (bounded retry), which it
+does not implement.
+
+- **Recovered, never beside CLEAN.** `review_verdict.parse` scores a round FINDINGS when its
+  findings parse, every bundle part has a READ line, the reviewer exited 0, no other reason applies,
+  and its only contract break is stray prose, a heading or a code fence. T-0100 round 2 was
+  INCOMPLETE for one trailing paragraph beside four well-formed findings; it now replays FINDINGS
+  (new golden fixture). CLEAN is unchanged: any stray line beside it is still INCOMPLETE.
+- **Could-not-tell stays INCOMPLETE.** A stray line that might be a misformatted contract line (a
+  keyword in any case after markdown decoration, a finding with an empty field, a `|` table row)
+  or that admits the review fell short ("incomplete", "skipped", "truncated", "could not review",
+  "ran out", ...) keeps the round INCOMPLETE, as do a missing READ, a bad exit, a timeout and a
+  bundle/stream reason (`parse` now takes these as `prior_reasons`, so `review_run.finish` can no
+  longer recover a round its own checks fail).
+- **Shown, not dropped.** `review.json` carries `ignored_lines`, the ledger row their count, and
+  `review_run` prints `review: FINDINGS kept; N line(s) outside the contract were ignored, first:
+  ...`; `/crew:review` step 3.1 reports them verbatim.
+- **Measured.** Over every preserved review on the Linux host (56 with an out.txt and manifest),
+  the parser before this change gave 53 FINDINGS, 1 CLEAN, 2 INCOMPLETE; after it, T-0100 r2 is
+  FINDINGS and the reviewer-declared T-0028 round stays INCOMPLETE. Most of the ledgers' 17
+  historic INCOMPLETEs were already recovered by T-0079 and T-0072's fixes.
+- Eleven new `sabotage_review.py` entries; the `crew_standards.py` proposals docstring and the
+  crew-qa-standards R5 wording are a follow-up feature PR (tooling-PR rule).
+
 ### Added — `crew` 1.0.106: T-0040's shell-route sabotage mutations (W-0115)
 
 T-0040 (crew 1.0.98) shipped `crew_shell.py` without its sabotage entries, which were split out

@@ -9,6 +9,8 @@ Only `tool` is refunded, at most `review_ledger.REFUND_LIMIT` times per plan
 """
 import json
 import os
+import subprocess
+import sys
 
 import pytest
 
@@ -260,6 +262,71 @@ def test_clean_and_findings_rounds_carry_no_failure_class(repo, tmp_path, mode):
     _, review = _run(repo, tmp_path, mode)
 
     assert (review["failure_class"], review["refunded"]) == (None, False)
+
+
+def _finish_claude(repo, tmp_path, body, before=None):
+    """Reserve a claude round and record `body` (after a READ line per part)
+    through the subagent path, as /crew:review step 2c does."""
+    (repo / "change.txt").write_text("change\n", encoding="utf-8")
+    scratch, work = tmp_path / "scratch", tmp_path / "work"
+    review_fixtures.bundle(repo, scratch)
+    parts = json.loads((scratch / "manifest.json").read_text(encoding="utf-8"))["parts"]
+    (scratch / "out.txt").write_text(
+        "".join(f"READ|{p['path']}\n" for p in parts) + body, encoding="utf-8")
+    if before:
+        before(parts)
+    common = [sys.executable, os.path.join(os.path.dirname(rv.__file__), "review_run.py"),
+              "--root", str(repo), "--ticket", "T1", "--scratch", str(scratch),
+              "--provider", "claude"]
+    subprocess.run(common + ["--reserve-only"], capture_output=True,
+                   stdin=subprocess.DEVNULL, check=True)
+    result = subprocess.run(common + ["--round", "1", "--output", str(scratch / "out.txt"),
+                                      "--exit-code", "0", "--work-dir", str(work)],
+                            capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                            check=False)
+    return result, json.loads((work / "review.json").read_text(encoding="utf-8"))
+
+
+def test_finish_reports_ignored_lines(repo, tmp_path):
+    """L-0576: a FINDINGS round recovered despite a stray prose line keeps
+    that line in review.json and names it on a `review:` line."""
+    prose = "The sabotage entries need --run-slow; sabotage.py passes it."
+
+    result, review = _finish_claude(repo, tmp_path, f"FIX|a.py:1|breaks|run it\n{prose}\n")
+
+    kept = [ln for ln in result.stdout.splitlines() if ln.startswith("review: FINDINGS kept; 1 ")]
+    assert (result.returncode, review["verdict"], review["ignored_lines"],
+            review["failure_class"], len(kept)) == (1, "FINDINGS", [prose], None, 1), (
+        result.stdout + result.stderr)
+
+
+def test_ledger_row_counts_the_ignored_lines(repo, tmp_path):
+    _finish_claude(repo, tmp_path, "FIX|a.py:1|breaks|run it\nA closing remark.\n")
+
+    assert rl.status(str(repo), "T1")["rounds"][-1]["ignored_lines"] == 1
+
+
+def test_finish_recovers_nothing_when_the_bundle_changed(repo, tmp_path):
+    """A tree reason found by `finish` itself rules recovery out: the round is
+    INCOMPLETE, the stray line is a reason, and nothing says FINDINGS kept."""
+    def damage(parts):
+        with open(parts[0]["path"], "ab") as fh:
+            fh.write(b"x")
+
+    result, review = _finish_claude(repo, tmp_path, "FIX|a.py:1|breaks|run it\nA remark.\n",
+                                    before=damage)
+
+    assert (result.returncode, review["verdict"], review["failure_class"],
+            review["ignored_lines"], " kept; " in result.stdout,
+            any("match no part of the contract" in r for r in review["reasons"])) == (
+        3, "INCOMPLETE", "tree", [], False, True), result.stdout + result.stderr
+
+
+def test_finish_records_no_ignored_lines_on_a_strict_round(repo, tmp_path):
+    result, review = _finish_claude(repo, tmp_path, "FIX|a.py:1|breaks|run it\n")
+
+    assert (result.returncode, review["ignored_lines"], " kept; " in result.stdout) == (
+        1, [], False), result.stdout + result.stderr
 
 
 def test_refund_limit_holds_through_review_run(repo, tmp_path):

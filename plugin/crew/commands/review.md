@@ -481,7 +481,9 @@ rather than about the prompt.
 
 Read ONLY `$SCRATCH/out.txt` and the `review:` lines. Never load the diff back into your context.
 **The verdict is the script's, not yours**: CLEAN only for exactly `CLEAN` at exit 0 with every
-part acknowledged; any BLOCK/FIX/NIT is FINDINGS; a non-zero exit, empty or unparseable output, a
+part acknowledged and no other line; any BLOCK/FIX/NIT is FINDINGS, even beside harmless stray
+prose, which the script ignores and names on a `review: FINDINGS kept; ...` line; a non-zero exit,
+empty output, a line that might be a misformatted contract line or admits the review fell short, a
 skipped part or a timeout is INCOMPLETE — never report INCOMPLETE as clean. Only a `tool` INCOMPLETE
 (no intact answer) is refunded, up to two per plan, as its `review:` line says; its rerun is a new round.
 
@@ -496,7 +498,9 @@ loses the most time to.
 
 **Step 3 — act.**
 1. Report every BLOCK and FIX line verbatim. Do not soften or argue before
-   showing me. State the review range and file list **from `$MANIFEST`**, not
+   showing me. If a `review: FINDINGS kept; ...` line printed, also show me
+   every ignored line verbatim (`review.json`'s `ignored_lines`): the script
+   ignored them, it did not read them for defects. State the review range and file list **from `$MANIFEST`**, not
    by re-deriving it: base, head, branch, whether the tree was dirty, and
    which category (committed / staged / unstaged / untracked) each changed
    file fell into is the one record of what was actually reviewed.

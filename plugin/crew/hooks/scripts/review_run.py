@@ -403,10 +403,10 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     stream_reasons = list(extra_reasons)
     extra_reasons = list(extra_reasons) + bundle_problems(manifest)
     extra_reasons += webtest_reasons
-    result = review_verdict.parse(output, exit_code, timed_out, parts)
-    if extra_reasons:
-        result["reasons"] = list(extra_reasons) + result["reasons"]
-        result["verdict"] = review_verdict.INCOMPLETE
+    # The outside reasons go INTO the parse, so a stray line is never
+    # recovered on a round they make INCOMPLETE (L-0576).
+    result = review_verdict.parse(output, exit_code, timed_out, parts,
+                                  prior_reasons=extra_reasons)
     webtest_verdict = None
     if rows:
         webtest_verdict = (f"{len(rows)} open healer skip(s) in webtest_findings; a healer skip "
@@ -422,7 +422,8 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     review = {
         "ticket": args.ticket, "round": number, "budget": review_ledger.BUDGET,
         "verdict": result["verdict"], "counts": result["counts"],
-        "reasons": result["reasons"], "parts_expected": parts,
+        "reasons": result["reasons"], "ignored_lines": result["ignored"],
+        "parts_expected": parts,
         "parts_missing": result["parts_missing"],
         "provider": args.provider, "model": args.model or None,
         "model_family": crew_state.family(args.provider, args.model),
@@ -460,6 +461,10 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
           f"elapsed={_fmt_elapsed(review['elapsed_s'])}")
     for reason in result["reasons"]:
         print(f"review: INCOMPLETE because {reason}")
+    if result["ignored"]:
+        print(f"review: {result['verdict']} kept; {len(result['ignored'])} line(s) outside the "
+              f"contract were ignored, first: {result['ignored'][0][:120]!r} - read them in "
+              "out.txt and report them with the findings")
     if failure == review_verdict.TOOL and review["refunded"]:
         print(f"review: round {number} was a tool failure ({result['reasons'][0]}); refunded - "
               f"{ledger.get('rounds_spent')} of {review_ledger.BUDGET} budget rounds used")
