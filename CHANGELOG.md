@@ -4,7 +4,11 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.94: review closure - a final 0-BLOCK round auto-accepts (L-0510)
+### Changed — `crew` 1.0.103: review closure - a final 0-BLOCK round auto-accepts (L-0510)
+
+Bumped `1.0.98 -> 1.0.103` after merging origin/main `52489039` (T-0040, crew 1.0.98); 1.0.99-1.0.102
+are claimed by open lanes (L-0557, L-0516, L-0558). L-0510's 1.0.90, 1.0.93 and 1.0.94 were branch
+versions and were never published.
 
 - **Behaviour change for every install (owner policy 2026-09-30).** A review round that is the
   last one the budget allows under the current plan, completed as `FINDINGS` with 0 BLOCK, is
