@@ -1114,4 +1114,3 @@ def test_catch_up_leaves_a_modify_delete_version_file_conflicted(repo, capsys):
     row = _merge_log(repo, "T-1")[-1]
     assert code == 1 and row["outcome"] == "conflicted", out
     assert "CHANGELOG.md" in row["conflicted"] and row["rerere_forgotten"] == [], row
-
