@@ -95,6 +95,17 @@ def sh_step(name: str, phase: str, cmd: str, group: str | None = None, timeout: 
     return step
 
 
+def part_row(name: str, state: str, rc, reason: str = "", phase: str = "heavy",
+             group: str | None = "A", cwd: str = ".", timeout: int = 60,
+             argv: list | None = None) -> dict:
+    """A heavy-part.json result as run_step writes it: every field status.json
+    must carry for a step, matching sh_step's table defaults."""
+    return {"name": name, "phase": phase, "group": group,
+            "argv": ["sh", "-c", "exit 0"] if argv is None else argv, "cwd": cwd,
+            "timeout": timeout, "rc": rc, "state": state, "reason": reason, "seconds": 0.0,
+            "log": "/nonexistent.log"}
+
+
 def read_trace(tmp: str) -> dict:
     path = os.path.join(tmp, "trace.txt")
     out = {}
@@ -1068,8 +1079,7 @@ def case_heavy_part_forged_pass_is_could_not_tell(tmp: str) -> None:
     # rc of the wrong type or contradicting the state, a result filed under
     # another step's name, and a result for a step that is not in the table.
     def result(**kw):
-        return {"name": "a1", "rc": 0, "state": "PASS", "reason": "", "seconds": 0.0,
-                "log": "/nonexistent.log", **kw}
+        return {**part_row("a1", "PASS", 0), **kw}
 
     forged = {
         "rc null": {"a1": result(rc=None)},
@@ -1237,8 +1247,7 @@ def case_heavy_part_state_contradicts_rc(tmp: str) -> None:
     # SKIP and COULD-NOT-TELL results classify() and run_step() really give are
     # still taken as they are (their payload reason survives).
     def result(name, state, rc, reason):
-        return {"name": name, "rc": rc, "state": state, "reason": reason, "seconds": 0.0,
-                "log": "/nonexistent.log"}
+        return part_row(name, state, rc, reason, group="A" if name == "a1" else "B")
 
     refuse = [("SKIP", 1), ("SKIP", 0), ("SKIP", 137), ("SKIP", -9), ("SKIP", 2)]
     allow = [("SKIP", 77), ("SKIP", None), ("COULD-NOT-TELL", None), ("COULD-NOT-TELL", 1),
@@ -1496,6 +1505,79 @@ def case_relative_path_tool_is_made_absolute(tmp: str) -> None:
         expect(rc == 0, f"{label}: rc={rc}\n{out}")
 
 
+# ---- review round 5 (L-0513 Fix phase) ------------------------------------
+
+def _two_heavy(sub: str, b1: dict):
+    """Run a1 (A) and b1 (B) with a fake heavy-run that files a well-formed
+    PASS for a1 and `b1` as given for b1."""
+    hr = _inner_part_heavy_run(sub, {"a1": part_row("a1", "PASS", 0), "b1": b1})
+    return run_gate(sub, [sh_step("a1", "heavy", "exit 0", "A"),
+                          sh_step("b1", "heavy", "exit 0", "B")], heavy=hr)
+
+
+def case_heavy_part_fail_needs_a_failing_rc(tmp: str) -> None:
+    # FIX r5: a heavy-part FAIL was taken with any non-zero rc, so rc 77 (a
+    # skip), a negative rc and 129-143 (signal deaths) read FAIL and exit 1
+    # where run_step's classify() gives SKIP or COULD-NOT-TELL. Neighbours: a
+    # FAIL with an ordinary failing rc (1, 2, 128, 255) is still taken.
+    refuse = [77, -9, -15, 129, 130, 131, 134, 137, 139, 143]
+    allow = [1, 2, 128, 255]
+    rows = [(rc, False) for rc in refuse] + [(rc, True) for rc in allow]
+    for i, (rcv, taken) in enumerate(rows):
+        label = f"b1 FAIL rc {rcv}"
+        sub = os.path.join(tmp, f"f{i}")
+        os.makedirs(sub)
+        rc, out, status = _two_heavy(sub, part_row("b1", "FAIL", rcv, f"payload-{i}", group="B"))
+        st = by_name(status)
+        expect(st["a1"]["state"] == "PASS", f"{label}: control a1 is {st['a1']}\n{out}")
+        if not taken:
+            expect(st["b1"]["state"] == "COULD-NOT-TELL",
+                   f"{label}: a FAIL classify() cannot give was taken as {st['b1']['state']}"
+                   f"\n{out}")
+            expect(rc == 3, f"{label}: rc={rc}, expected 3\n{out}")
+            continue
+        expect(st["b1"]["state"] == "FAIL" and st["b1"]["reason"] == f"payload-{i}",
+               f"{label}: a FAIL run_step can give was not taken: {st['b1']}\n{out}")
+        expect(rc == 1, f"{label}: rc={rc}, expected 1\n{out}")
+
+
+def case_heavy_part_needs_step_metadata(tmp: str) -> None:
+    # FIX r5: a heavy-part row with only name/rc/state/reason/seconds/log was
+    # taken, so overall PASS came with a status.json step lacking phase,
+    # group, argv, cwd and timeout (acceptance check 11). Neighbours: each
+    # field present but contradicting the table, or of the wrong type, is not
+    # taken either; the full row run_step writes still is.
+    full = part_row("b1", "PASS", 0, group="B")
+    bad = {f"missing {k}": {x: v for x, v in full.items() if x != k}
+           for k in ("phase", "group", "argv", "cwd", "timeout")}
+    bad.update({
+        "phase solo": {**full, "phase": "solo"},
+        "group A": {**full, "group": "A"},
+        "group null": {**full, "group": None},
+        "cwd sub": {**full, "cwd": "sub"},
+        "timeout 61": {**full, "timeout": 61},
+        "timeout string": {**full, "timeout": "60"},
+        "argv string": {**full, "argv": "sh -c exit 0"},
+        "argv non-str item": {**full, "argv": ["sh", 1]},
+    })
+    cases = list(bad.items()) + [("control", full)]
+    for i, (label, row) in enumerate(cases):
+        sub = os.path.join(tmp, f"m{i}")
+        os.makedirs(sub)
+        rc, out, status = _two_heavy(sub, row)
+        st = by_name(status)
+        if label == "control":
+            expect(rc == 0 and st["b1"]["state"] == "PASS",
+                   f"control: the full row was not taken: rc={rc} {st['b1']}\n{out}")
+            continue
+        expect(st["b1"]["state"] == "COULD-NOT-TELL",
+               f"{label}: b1 is {st['b1']['state']} from a row without the step's metadata"
+               f"\n{out}")
+        expect(rc == 3, f"{label}: rc={rc}, expected 3\n{out}")
+        for key in ("phase", "group", "argv", "cwd", "timeout"):
+            expect(key in st["b1"], f"{label}: status.json's b1 lacks {key}: {st['b1']}")
+
+
 CASES = [
     case_list_prints_phases,
     case_one_heavy_run_call_for_both_groups,
@@ -1543,6 +1625,8 @@ CASES = [
     case_non_utf8_dirty_name_does_not_crash,
     case_table_changed_mid_run_is_refused,
     case_relative_path_tool_is_made_absolute,
+    case_heavy_part_fail_needs_a_failing_rc,
+    case_heavy_part_needs_step_metadata,
 ]
 
 
