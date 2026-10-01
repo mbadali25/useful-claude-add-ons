@@ -4,17 +4,19 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.88: Windows shell routes (T-0040)
+### Added — `crew` 1.0.89: Windows shell routes (T-0040)
 
 - **What it is.** `hooks/scripts/crew_shell.py` picks the shell crew's long-running jobs run in on
   native Windows, and every Windows run of a verify check, a test suite or a graph build goes
   through `crew_shell.py run -- "<command>"`, which prints one `crew-shell:` route line to stderr
   and passes the job's exit code through. `/crew:implement` step 4 and the `crew-execute`,
-  `crew-graph` and `crew-setup` skills say so. Bumped `1.0.85 -> 1.0.88` (T-0040 never set a
+  `crew-graph` and `crew-setup` skills say so. Bumped `1.0.85 -> 1.0.89` (T-0040 never set a
   version on its branch; it landed at 1.0.86, one past main's 1.0.85, T-0028; 1.0.87 after the
   sabotage-entries split below; 1.0.88 after PR CI's real leg - `check (3.12)`/`test (3.12)`,
   which a PR only runs at 3.12 - caught a stale generated-rules hash and an over-budget
-  `implement.md` neither local run had exercised the same way).
+  `implement.md` neither local run had exercised the same way; 1.0.89 after `test (3.12)` on
+  Linux failed `test_status.py`'s `wsl-fs` case, below. 1.0.86-1.0.88 were branch versions and
+  were never published; main's 1.0.86 is L-0520's).
 - **Four modes, `shellRoute.mode`, in both config layers.** `auto` (the default) routes a job to
   WSL2 when WSL is usable and the repo lives inside WSL, or sits on a Windows drive where a
   measurement found WSL faster; otherwise a plain argv runs directly with no shell and anything
@@ -60,6 +62,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   re-wrapped, no wording lost) to stay at the 120-line command budget rather than growing an
   allowance exception; `BUDGETS.md`'s `plugin/crew/*.md` line count corrected to 21,719 (moved
   by the reflow, per this file's own "re-measure rather than trusting it" note).
+  `test_status_shell_line_on_windows`'s `wsl-fs` case faked `repo_location` but not
+  `to_wsl_path`, which `route_for` also runs on the real `tmp_path`: a drive path on Windows
+  (translated, so it passed there) and a POSIX path on Linux CI (refused as "not a Windows
+  path", so the line fell back to direct/gitbash). The test now fakes both, as
+  `test_crew_shell.py` already did; the product is unchanged.
 
 ### Added
 
