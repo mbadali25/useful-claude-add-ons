@@ -21,6 +21,11 @@ from kimi_fixtures import fake_kimi_bin, kimi_home
 _PROBE = os.path.join(context._ROOT, "hooks", "scripts",  # pylint: disable=protected-access
                       "kimi_probe.py")
 
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="W-0119: fake_kimi_bin writes an extensionless shebang script "
+           "Windows cannot exec")
+
 
 @pytest.fixture(name="fake")
 def _fake(tmp_path):
