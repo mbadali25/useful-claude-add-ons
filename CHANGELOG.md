@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.91: promote-gate judges the tree the deploy runs from (T-0505)
+### Fixed — `crew` 1.0.92: promote-gate judges the tree the deploy runs from (T-0505)
 
 - **`promote-gate.sh` / `.ps1` read the deployed sha and the clean-tree check
   from the tree the deploy runs from**, not from `CLAUDE_PROJECT_DIR`: the
