@@ -1025,7 +1025,7 @@ fails `--check`. `.crew/verify.json` rule 24 (`.crew/verify.json:269`) runs `--c
 gate** - see `verification-harness.md`. DERIVED from the source above; the command was run by
 T-0015 against this refresh.
 
-Since T-0501 (crew 1.0.106) both modes also print advisory lines about the notes a rule is rendered
+Since T-0501 (crew 1.0.109) both modes also print advisory lines about the notes a rule is rendered
 from (`_rule_subsystems`, `:178`): `anchor_lines` (`:243`) runs `crew_context.anchor_state` - the
 classifier and `rev-parse --short=8 HEAD` behind SessionStart's "Anchors to re-check" - and prints
 one `anchor behind:` / `anchor unresolvable:` line per note in `WARN_STATES`, or one

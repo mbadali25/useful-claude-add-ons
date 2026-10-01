@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.106: `rules` says when it generates from a code map whose anchor needs re-check (T-0501)
+### Changed — `crew` 1.0.109: `rules` says when it generates from a code map whose anchor needs re-check (T-0501)
 
 - **What changed.** `crew_instructions.py rules` and `rules --check` print, after
   the `wrote`/`stale:`/`missing:`/`orphan:`/`hand-written` lines, one advisory line
@@ -46,7 +46,22 @@ All notable changes to this repository are documented here. Format follows [Keep
   A third, by hand: dropping `check_instructions.py`'s prefix filter reds three
   `instruction-budgets.py` cases, `edited-behind`'s "exactly one problem and no
   'anchor' line" among them.
-- Bumped `1.0.102 -> 1.0.106` (1.0.62, then 1.0.70 on its branch; re-set after merging main's 1.0.102, L-0558 and L-0513; 1.0.103-1.0.105 are claimed by the L-0510, L-0516, L-0557 and W-0115 lanes).
+- Bumped `1.0.106 -> 1.0.109` (1.0.62, then 1.0.70, then 1.0.106 on its branch; re-set after merging main's 1.0.106, W-0115; 1.0.107 and 1.0.108 are claimed by the T-0504 and L-0510 lanes).
+
+### Added — `crew` 1.0.106: T-0040's shell-route sabotage mutations (W-0115)
+
+T-0040 (crew 1.0.98) shipped `crew_shell.py` without its sabotage entries, which were split out
+because `scripts/check-tooling-pr.py` (rule 36) lets a harness change carry no feature work. This
+tooling-only change restores them.
+
+- `plugin/crew/tests/sabotage_shell.py` (`SHELL_MUTATIONS`, 14 entries) is registered in
+  `sabotage.py` again. Each entry is a way the shell route could fail: wsl mode falling back to
+  Git Bash, a raising probe read as not-installed, a bash string handed to pwsh, a bare `pwsh` or
+  System32 `bash.exe` resolved, the exit code dropped, and so on.
+- Each one, applied alone, turns its named test in `test_crew_shell.py` or `test_status.py` red,
+  and the test is green again on the byte-identical restore (14 of 14, native Windows).
+- `.crew/verify.json`'s T-0040 rule lists `sabotage_shell.py` again, and its `why` says how to
+  re-establish that claim from tracked files.
 
 ### Added — `scripts/gate-runner.py`: one local gate runner, repository tooling, no plugin version (L-0513)
 

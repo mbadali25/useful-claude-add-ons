@@ -188,7 +188,7 @@ Notable rules, re-read directly:
   indices"), so rule 23's "DELIBERATELY UNCHECKED" `why` no longer describes
   what happens to a codemap edit: any `.crew/codemap/` change without a
   regenerated `.claude/rules/` now fails the Stop gate. Since T-0501 (crew
-  1.0.106) the command also prints advisory `anchor behind:` /
+  1.0.109) the command also prints advisory `anchor behind:` /
   `anchor unresolvable:` / `anchors: could not tell` lines, and its `why`
   says so: they never change its exit code, so this rule still passes on a
   stale-but-synced codemap by design.
@@ -366,10 +366,10 @@ Notable rules, re-read directly:
   entries are appended only where those repo files exist, and run the suite through
   `test_tooling_alone_checker_passes_its_must_block_must_allow_suite`. JUDGEMENT: it overlaps rules 0, 9, 11, 15, 31 and 35 by
   path; that overlap is the point, since it adds the tooling-alone check those rules lack.
-- **Rule 42**, new on T-0501's branch (`.crew/verify.json:438-444`, T-0501; rules 32-33 on its
+- **Rule 42**, new on T-0501's branch (`.crew/verify.json:439-445`, T-0501; rules 32-33 on its
   branch off `8ab733d7`, 35-36 after its merge of `a61a6f38`, 41-42 after its merge of `05a679bf`,
-  42-43 after its merge of `cacf7ff0`, where L-0513's gate-runner rule 40 sits above them and they
-  make the file 454 lines and 44 rules): `paths` `crew_instructions.py`,
+  42-43 after its merge of `cacf7ff0`, where L-0513's gate-runner rule 40 sits above them; on its
+  merge of `ddcbf90d` they make the file 455 lines and 44 rules): `paths` `crew_instructions.py`,
   `test_crew_instructions.py`, `test_rules_generation_path.py`, `test_rules_anchor_advice.py` and
   `sabotage_context.py` → `python3 -m pytest plugin/crew/tests/test_crew_instructions.py
   plugin/crew/tests/test_rules_generation_path.py plugin/crew/tests/test_rules_anchor_advice.py -q`,
@@ -378,7 +378,7 @@ Notable rules, re-read directly:
   `test_rules_anchor_advice.py` holds the must-print (behind, unresolvable, no HEAD) and must-not
   (current, `agents`/`codex`, a note with no rule) cases and the parity with SessionStart's
   classifier; `sabotage_context.py`'s two T-0501 entries red on it.
-- **Rule 43**, new on T-0501's branch (`.crew/verify.json:445-449`, T-0501): `paths`
+- **Rule 43**, new on T-0501's branch (`.crew/verify.json:446-450`, T-0501): `paths`
   `scripts/check_instructions.py` and `scripts/_test/instruction-budgets.py` → `python3
   scripts/_test/instruction-budgets.py`, priced 2s. `check_instructions.py` parses
   `rules --check`'s stdout and drops the advisory anchor prefixes; the suite's `behind` and
@@ -665,7 +665,7 @@ their own, in both the `test` job and the Windows leg of `crew-shell-matrix`. Re
 - `.crew/verify.json:412-425` (rule 39) — T-0028's Kimi Code provider suite (`kimi_probe.py`,
   its tests, `kimi_fixtures.py`, the fixture run and the provider docs); no sabotage entries,
   since `sabotage*.py` is review harness and the probe's mutations land with L-0527.
-- `.crew/verify.json:438-444` (rule 42) and `:445-449` (rule 43) — T-0501's generator and
+- `.crew/verify.json:439-445` (rule 42) and `:446-450` (rule 43) — T-0501's generator and
   budget-checker suites; `sabotage_context.py`'s `CONTEXT_MUTATIONS` carries rule 42's entries.
 - `.crew/verify.json:426-430` (rule 40) — L-0513's gate runner
   (`scripts/gate-runner.py`) and its suite `scripts/_test/gate-runner.py`, priced 60s; the
