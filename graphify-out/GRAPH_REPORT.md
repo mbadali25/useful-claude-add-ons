@@ -1,7 +1,7 @@
 # Graph Report - uca-l0510  (2026-09-30)
 
 ## Corpus Check
-- 1115 files · ~2,478,603 words
+- 1115 files · ~2,479,210 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 63 file(s) not represented in the graph (top: (none) 34, .mmd 8, .jsonl 5)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `9edc48a8`
+- Built from commit: `b75a1b64`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -1399,7 +1399,7 @@ Nodes (54): Changed, Calls out to, Confirming recall reaches your sessions, Meas
 
 ### Community 106 - "review_ledger.py"
 Cohesion: 0.06
-Nodes (71): Changed — `crew` 1.0.65: gate first — no review round on a tree the verify gate has not passed, Changed — `crew` 1.0.90: review closure - a final 0-BLOCK round auto-accepts (L-0510), (rounds_list_or_UNKNOWN, source_note)., _review_rounds(), accept(), change(), auto_accept(), change() (+63 more)
+Nodes (71): Changed — `crew` 1.0.65: gate first — no review round on a tree the verify gate has not passed, Changed — `crew` 1.0.93: review closure - a final 0-BLOCK round auto-accepts (L-0510), (rounds_list_or_UNKNOWN, source_note)., _review_rounds(), accept(), change(), auto_accept(), change() (+63 more)
 
 ### Community 107 - "repo-docs"
 Cohesion: 0.04
