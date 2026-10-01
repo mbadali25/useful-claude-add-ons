@@ -359,7 +359,10 @@ def _state_problem(data):
     """Why a parsed state.json is not a schema-1 train state, or None. Every
     top-level field a verb reads is checked here, so a malformed one is could
     not tell at load, never a TypeError inside a verb (L-0558)."""
-    if not isinstance(data, dict) or data.get("schema") != SCHEMA:
+    # `_count` first: `True == 1` and `1.0 == 1`, so `!= SCHEMA` alone accepts
+    # a boolean or float schema (L-0558 review round 1).
+    if not isinstance(data, dict) or not _count(data.get("schema")) \
+            or data.get("schema") != SCHEMA:
         return (f"it is not a schema-{SCHEMA} train state (schema "
                 f"{data.get('schema') if isinstance(data, dict) else None!r})")
     for key in ("seq", "order"):

@@ -993,7 +993,8 @@ def test_state_replace_failure_rolls_the_events_back(repo, capsys, monkeypatch):
         assert fh.read() == before
 
 
-@pytest.mark.parametrize("field,value", [("order", []), ("order", True), ("seq", True),
+@pytest.mark.parametrize("field,value", [("schema", True), ("schema", 1.0), ("order", []),
+                                         ("order", True), ("seq", True),
                                          ("seq", -1), ("armed_at", None), ("armed_by", 5)])
 def test_malformed_top_level_state_is_could_not_tell(repo, capsys, field, value):
     _spec(repo, "T-1", ["a.txt"])
