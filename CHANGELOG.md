@@ -44,6 +44,131 @@ were branch versions and were never published.
 - **Boundary with L-0514 (INCOMPLETE retry):** disjoint. No INCOMPLETE is ever auto-accepted, and
   a refunded round never counts toward "final"; L-0514 is not implemented here.
 
+### Fixed — `crew` 1.0.110: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516)
+
+- **New `tests/poll_fixtures.py`.** `poll_until(probe, done, timeout)` probes at least once and
+  returns the LAST probed value at the deadline, never a synthesized success, so a real survivor
+  still fails the caller's assertion. `wait_for_pidfile(path)` waits for a decimal pid, not just
+  for the file: a shell redirect creates or truncates the file before it writes (POSIX XCU
+  2.7.2), and a tight reader saw it existing but empty in 389 of 500 reads.
+- **The ps1 survivor test** (`test_the_ps1_probe_timeout_kills_the_launchers_child_too`) polls
+  for survivors up to 10 s instead of sleeping 0.5 s once, which failed in CI on 2026-09-30 with
+  one survivor. Both survivor tests now use a per-call `uuid4` token, because `tmp_path.name` is
+  identical in every pytest process and two CI legs on one host could read or reap each other's
+  child through `/proc`.
+- **The three `test_kill_process_group_*` pidfile reads** go through `wait_for_pidfile`.
+- **Three tests that time themselves are now `wallclock`** (serial), with their bounds unchanged:
+  `test_a_winner_killed_after_exit_0_does_not_cost_the_only_emission`,
+  `test_the_twin_stands_down_as_soon_as_the_winner_reports_sent` and
+  `test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay`.
+- **The sabotage entries ride separately** (L-0563, a tooling PR: `sabotage_qa.py` is review/gate
+  harness, which lands alone). Measured here by hand and through a filtered `sabotage.py` run, all
+  four RED: `poll_until` probing once, `poll_until` reporting success at the deadline,
+  `wait_for_pidfile` accepting an empty file, and `completion-audit.ps1`'s tree kill reduced to
+  `Kill($false)`.
+- A `.crew/verify.json` rule covers the new module; `crew-qa-standards` `harness.md` H3 now says
+  a fixed sleep before a check is a poll case, not a wallclock case.
+- No change needed: `test_check_writes_nothing` (its maintenance-lock race was fixed by the
+  1.0.64 git pins).
+- **Not fixed here: `test_near_deadline_candidates_then_a_hang_stay_within_the_hook_timeout`.**
+  It is already `wallclock` (since 1.0.63) and still fails under load: 5 of 20 serial
+  `-m wallclock` runs, with the ps1 probe at 10.00-10.19 s against its 10 s hook bound, and the
+  same 5 of 20 on origin/main. The bound is a real hook timeout, so it is neither loosened nor
+  retried; the overrun is carried by follow-up L-0566 (owner decision 2026-10-01).
+- `poll_until` reads the clock after each sleep and before the next probe, so no probe starts
+  after the deadline and a condition first seen late is not returned as success. The child-process
+  tests kill and reap with `wait(timeout=10)`, not `Popen.__exit__`'s unbounded `wait()`.
+
+### Added — `crew` 1.0.106: T-0040's shell-route sabotage mutations (W-0115)
+
+T-0040 (crew 1.0.98) shipped `crew_shell.py` without its sabotage entries, which were split out
+because `scripts/check-tooling-pr.py` (rule 36) lets a harness change carry no feature work. This
+tooling-only change restores them.
+
+- `plugin/crew/tests/sabotage_shell.py` (`SHELL_MUTATIONS`, 14 entries) is registered in
+  `sabotage.py` again. Each entry is a way the shell route could fail: wsl mode falling back to
+  Git Bash, a raising probe read as not-installed, a bash string handed to pwsh, a bare `pwsh` or
+  System32 `bash.exe` resolved, the exit code dropped, and so on.
+- Each one, applied alone, turns its named test in `test_crew_shell.py` or `test_status.py` red,
+  and the test is green again on the byte-identical restore (14 of 14, native Windows).
+- `.crew/verify.json`'s T-0040 rule lists `sabotage_shell.py` again, and its `why` says how to
+  re-establish that claim from tracked files.
+
+### Added — `scripts/gate-runner.py`: one local gate runner, repository tooling, no plugin version (L-0513)
+
+- **One runner in place of the per-lane `suites*.sh`.** `python3 scripts/gate-runner.py` runs a
+  declared step table taken from the PR-path CI: cheap checks serially and never under heavy-run;
+  the heavy steps as two groups run at the same time inside ONE heavy-run call; then a solo tail
+  (the `wallclock` pytest set and `sabotage.py`) in that same call. Every pytest step but
+  `wallclock` runs with a literal `-n 4`; no pytest-xdist means COULD-NOT-TELL, never a serial run.
+- **Could-not-tell is never a pass.** A step that times out (its whole process group is killed),
+  dies by a signal (incl. 137/143), cannot start, or leaves no result is `COULD-NOT-TELL`; rc 77 or
+  a missing tool is `SKIP` (NOT VERIFIED). Exit 0 only when every non-skipped step passed.
+  Works without heavy-run and says so (`heavy_run: absent (uncapped)`).
+- **One status file** (`status.json`: head, heavy-run mode and slot wait, rc/state/seconds/log per
+  step), rewritten atomically after every step, heavy steps included as each finishes (not only
+  when the heavy-run call ends). The default output directory is claimed with `mkdir`, so two runs
+  in one second never share it. `--check-ci` and `scripts/_test/gate-runner.py` fail when a
+  workflow `run:` command is in neither the table nor its named exclusion list; each `run:` line is
+  split into simple commands, so a check chained onto an install or inside a one-line `if` still
+  counts, and no job is excluded whole (only a step whose `if:` confines it to Windows).
+- **The table includes `crew-shell-matrix`'s ubuntu leg**: `pytest plugin/crew/tests -m slow -n 4`
+  (the full bash/pwsh hook matrix, heavy group A).
+- **A `--table` step is refused, not crashed**: a name that is not a plain log-file name (path
+  separators, a leading dot, `heavy-run`), an unknown key or a field of the wrong type is exit 2.
+  `--skip` records SKIP before the step's command is built.
+- **No forged or partial evidence reads as a pass.** A heavy-part result is taken only for a table
+  step, under its own name, carrying that step's phase, group, cwd and timeout and an argv list
+  (every per-step field `status.json` states), with the state `classify()` gives its rc (PASS needs
+  rc 0, FAIL an ordinary failing rc - never 77, a negative rc or a signal exit - SKIP rc 77 or
+  null), so a PASS with no exit status, a SKIP over a failed exit, a FAIL over a skip or a signal
+  death, or a row missing the step's metadata is COULD-NOT-TELL. A timeout's grace
+  period lasts until the whole process group is gone, not just its leader. The group is signalled
+  only while its leader is unreaped (POSIX `waitid` with `WNOWAIT`; on Linux `/proc` tells the zombie
+  leader from a live member), so a kill never reaches a later owner of a freed process-group ID. A step's `cwd` is
+  resolved again at launch, so a symlink swapped in by an earlier step cannot run it outside
+  `--root`; on Linux the child starts in the directory that was checked (opened, re-checked, and
+  entered through `/proc/self/fd`). The inner runner refuses (exit 2, no step run) a table whose
+  digest differs from the one the outer runner validated, so a step that edits `--table` or the
+  runner cannot change what runs next. A `needs` tool runs by its absolute path, and a file name
+  that is not UTF-8 in `git status` no longer crashes the runner before `status.json` exists.
+  `--check-ci` reports workflow YAML of the wrong shape, and a `<(...)`/`>(...)` inside an
+  excluded install line, as drift instead of crashing or passing.
+
+### Fixed — `crew` 1.0.102: the merge train's round-2 findings and the rerere rule (L-0558)
+
+L-0520's review round 2 (Codex) left two BLOCKs and three FIXes, owner-accepted so PR 1 could
+land, with the train not to be armed until they were fixed. All five, and the owner's rerere rule:
+
+- **Moved paths judge the full Touch.** `acquire`'s `merge <base> first`, `check-land` and the
+  merged-path notices no longer drop refresh artifacts from Touch; only the queue's overlap
+  decision does. Before, a base that changed `.crew/codemap/crew.md` under a ticket whose Touch
+  named it could still print `LAND_OK`.
+- **The fetch updates the ref it judges.** `catch-up` and `check-land` fetch with
+  `+refs/heads/<branch>:refs/remotes/<remote>/<branch>`; a base that then disagrees with
+  `FETCH_HEAD` is could-not-tell (exit 3), and every later step (the merge, `merge-tree`, the
+  moved-path check) judges that fetched SHA rather than the ref by name, which another worktree's
+  fetch can move. Before, with `remote.origin.fetch` unset, the fetch
+  moved only `FETCH_HEAD` and the checks judged a stale `origin/main`.
+- **No state change commits unlogged.** Events are written before `state.json` and both are rolled
+  back when either write fails (the events file truncated to its old size); the next seq skips
+  past any event a crash left behind.
+- **Malformed state and history are could-not-tell.** Every top-level state field (`schema` the
+  integer 1, never `true` or `1.0`; `seq` and `order` non-negative integers, never booleans; `entries`; `armed_at`, `armed_by`) is checked at
+  load; an `events.jsonl` record that is not an object with a positive `seq`, a known `kind` and a
+  `ticket` is told to every entry as `could not tell whether ... concerns you`, whatever its seq
+  and on every read until repaired, and `arm` refuses
+  on it, instead of a `KeyError` or a silent skip.
+- **rerere, never autoupdate (owner, 2026-09-30).** `catch-up` sets `rerere.enabled` only and
+  merges with `git -c rerere.autoupdate=false`, so a replay is left unstaged for the lane to
+  inspect and `git add`. The version files (`plugin/crew/.claude-plugin/plugin.json`,
+  `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md`, `CHANGELOG.md`) are never replayed: each
+  left conflicted gets `git rerere forget` and its conflict markers back, is named as forgotten in
+  the output, and is listed under `rerere_forgotten` in the merge log; a modify/delete conflict on
+  one, which rerere never resolves, is left as the merge left it.
+- The sabotage rows proving these (S20-S33) belong to L-0526's `sabotage_train.py` (tooling PRs
+  carry no feature work); each was run RED by hand here.
+
 ### Added — `crew` 1.0.98: Windows shell routes (T-0040)
 
 - **What it is.** `hooks/scripts/crew_shell.py` picks the shell crew's long-running jobs run in on
