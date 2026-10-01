@@ -35,14 +35,31 @@ what most local runs and most changes need. To run the full matrix too, use
 
 The two CI jobs in `.github/workflows/pytest-crew.yml` split the same way:
 the `test` job runs the DEFAULT command above (no `-m`, no `--run-slow`),
-on `ubuntu-latest` across three Python versions, alongside gizmoduck's and
-several skills' suites. The `crew-shell-matrix` job runs `-m slow` on both
-`ubuntu-latest` and `windows-latest` — the full hook matrix the `test` job
-deselects — and, Windows only, also re-runs the plain default command
+on `ubuntu-latest` across three Python versions on main pushes, manual dispatch and
+the nightly schedule (on a pull request only the 3.12 leg does work; 3.11 and 3.13
+report a skipped pass so the required check names stay satisfied; the nightly runs
+at 07:17 UTC; a newer push to a pull request cancels its older run, and a main run
+is never cancelled), alongside
+gizmoduck's and several skills' suites. The `crew-shell-matrix` job runs `-m slow`
+on `ubuntu-latest` and `windows-latest` — the full hook matrix the `test` job deselects
+(#277 disabled the Windows leg; T-0110 re-enabled it, scoped: on a pull request it does
+work only when the PR changes `plugin/crew/**` or `pytest-crew.yml`, and otherwise
+reports a skipped pass). The Windows leg also re-runs the plain default command
 (`test` already covers that set, but only on ubuntu, so the PowerShell
 parity-sample cases never run natively anywhere else). Neither job
 substitutes for the other: a change to `conftest.py`'s slow-marker logic,
 or to a hook only the matrix exercises, can pass one and still be wrong.
+
+Both jobs' `ubuntu-latest` placement is the default, not a fixed fact: when the
+repo variable `CREW_RUNNER` is `self-hosted`, the `test` job and the
+`crew-shell-matrix` ubuntu leg run on the owner's self-hosted pool
+(`[self-hosted, linux, x64, crew]`) instead; a `windows-latest` leg and every
+other job and workflow stay GitHub-hosted. Fork pull requests never reach the
+pool: this repo is public, so only non-PR events (push, schedule, manual
+dispatch) and pull requests from branches of this repo use it. The owner's runner playbook
+(mbadali25/github-runner-infra) sets the variable on `make up` and unsets it on
+`make down`, so required checks never wait on a torn-down pool. Unset, nothing
+changes.
 
 ## The rule that bites every change
 

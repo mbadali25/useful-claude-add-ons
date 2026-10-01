@@ -1,0 +1,38 @@
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-001-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-002-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-003-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-004-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-005-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-006-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-007-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-008-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-009-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-010-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-011-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-012-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-013-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-014-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-015-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-016-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-017-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-018-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-019-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-020-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-021-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-022-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-023-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-024-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-025-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-026-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-027-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-028-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-029-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-030-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-031-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-032-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-033-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-034-of-035.patch
+READ|<ROOT>/.work/review/T-0010-solo--oR52Cv/diff.txt.parts/part-035-of-035.patch
+FIX|plugin/crew/hooks/scripts/crew_autopilot.py:1318|status exposes approval/questions policy warnings, contradicting the requirement and its own docstring that status read no policy and remain identical under every policy setting|Set autopilot.mode=plan and autopilot.approval=bogus, run crew_autopilot.py status, then remove only approval and rerun; the first output gains an autopilot.approval warning.
+FIX|plugin/PLUGINS.md:128|The catalog still describes the approval receipt as approve's “one write,” understating the documented three-write carve-out and reviving round 4's rejected sole-receipt claim|Run an allowed first autopilot approval and observe both approval.json and scope-tickets.json change; approve a distinct successor under NEEDS_REPLAN and observe the ledger change too.
+FIX|docs/guides/crew/src/daily-workflow-scope.md:53|The opt-in recipe omits required autopilot.mode=plan and says both shown settings default off even though autopilot.approval defaults to risk, so following the guide does not enable self-approval and misstates the safety default|Configure only scope.allowCliApproval=true and autopilot.approval=self as instructed, then run crew_autopilot.py settings; it reports mode=off and /crew:autopilot stops before approve. With no approval key it reports approval=risk, not off.

@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Reports provider availability AND whether they actually work. Read-only.
+#   --probe-kimi   also run kimi_probe.py, which SPENDS ONE Kimi request
 say() { printf '%-14s %s\n' "$1" "$2"; }
+PROBE_KIMI=0
+for arg in "$@"; do
+  [ "$arg" = "--probe-kimi" ] && PROBE_KIMI=1
+done
 
 echo "== QA reviewer =="
 if command -v codex >/dev/null 2>&1; then
@@ -8,6 +13,31 @@ if command -v codex >/dev/null 2>&1; then
   say "auth:" "run: codex exec --skip-git-repo-check 'reply OK'  -  must return without prompting"
 else
   say "codex:" "NOT FOUND -> /crew:review moves to the next provider in qa.order"
+fi
+
+if command -v kimi >/dev/null 2>&1; then
+  say "kimi:" "found ($(kimi --version 2>/dev/null | head -1))"
+  probe="$(dirname "$0")/../../../hooks/scripts/kimi_probe.py"
+  if [ "$PROBE_KIMI" = 1 ]; then
+    py=""
+    for c in python3 python py; do
+      if command -v "$c" >/dev/null 2>&1; then py="$c"; break; fi
+    done
+    if [ -z "$py" ]; then
+      echo "providers.sh: no python3/python/py on PATH; cannot run kimi_probe.py" >&2
+      say "probe:" "NOT RUN - no python found"
+    else
+      say "probe:" "$("$py" "$probe" 2>&1 | head -1)"
+    fi
+  else
+    say "probe:" "not run - it spends one request. To run it:"
+    say "" "bash providers.sh --probe-kimi   (or: python3 kimi_probe.py --model k3)"
+  fi
+  say "states:" "only ok launches; not-installed / not-authenticated /"
+  say "" "rate-limited / unknown each skip to the next provider, named"
+else
+  say "kimi:" "not found -> curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash"
+  say "" "then: kimi login   (~/.kimi-code/bin must be on PATH)"
 fi
 
 if command -v copilot >/dev/null 2>&1; then
