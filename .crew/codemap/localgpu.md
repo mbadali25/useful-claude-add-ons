@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@bee8b203
+anchor: useful-claude-add-ons@52e309cf
 verified: 2026-09-30
 
 # localgpu
@@ -1640,3 +1640,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `0c3508e9` -> `963d2905` on 2026-09-30 (L-0510: review closure, a final 0-BLOCK round auto-accepts, crew 1.0.90).** `git diff --name-only 0c3508e9 963d2905` returns, outside refresh artifacts, main's L-0561 README repin and L-0510's files (review_ledger.py, review_run.py, crew_autopilot.py, review.md, done.md, autopilot.md, README.md, CONFIG.md, BUDGETS.md, PLUGINS.md, the troubleshooting guide, CHANGELOG.md, two tests, sabotage_review.py and the version files); path-qualified citations outside dated provenance checked by a line diff: no body citation moved: provenance paragraphs keep their dated numbers, and the only cited lines that changed are version lines (plugin.json, PLUGINS.md, BUDGETS.md), unchanged in place. No suite was executed for this note.
 
 **Re-anchored `963d2905` -> `bee8b203` on 2026-09-30 (L-0510 suite fixes, crew re-bumped to 1.0.93).** `git diff --name-only 963d2905 bee8b203` returns, outside refresh artifacts, `sabotage_review.py` (one row's find string), `plugin/crew/docs/external-tool-formats.md` (four `review_run.py` citations), CHANGELOG.md and the version files; a body-only line diff moved no citation here (`docs/diagrams/data-flow-crew-config.mmd:1-2` is its re-written header, still lines 1-2). No suite was executed for this note.
+
+**Re-anchored `bee8b203` -> `52e309cf` on 2026-10-01 (L-0510 review fix round, crew re-bumped to 1.0.94).** `git diff --name-only bee8b203 52e309cf` returns, outside refresh artifacts, `review_ledger.py` (the per-severity count check, the CLEAN receipt-kind check and `check_follow_up`'s kind allowlist, UTF-8 refusal and verbatim counted match), its tests and sabotage rows, `plugin/crew/README.md`, `plugin/crew/commands/done.md`, `plugin/crew/commands/review.md`, `plugin/crew/BUDGETS.md`, the troubleshooting guide and its rendered outputs, CHANGELOG.md and the version files. A body-only line diff moved no citation here. No suite was executed for this note.

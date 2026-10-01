@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@963d2905 on 2026-09-30. Verify before trusting.
+%% Generated from useful-claude-add-ons@52e309cf on 2026-10-01. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -151,12 +151,12 @@
 %%     for the owner with 2-4 options; :508 --accept --by <who>; :510 a CLEAN
 %%     round writes its receipt itself.
 %%   plugin/crew/commands/done.md:7 all four checks must pass; :10-13 check 1
-%%     review receipt (--check-receipt); :21-27 check 2 verify gate via
-%%     crew_status.py; :35-38 check 3 completion audit (:43-48: a refresh artifact
-%%     not admitted is listed with its reason); :50-61 check 4
-%%     crew_refresh_check.py (:53), read-only, refuses on stale/unknown and never
-%%     refreshes; :63-69 all pass -> spec.md `status: done`, keeping the approval
-%%     (:65-66), then crew_tracker.py move --to done (:67); :74 crew_metrics record.
+%%     review receipt (--check-receipt); :21-29 check 2 verify gate via
+%%     crew_status.py; :37-40 check 3 completion audit (:45-50: a refresh artifact
+%%     not admitted is listed with its reason); :52-63 check 4
+%%     crew_refresh_check.py (:55), read-only, refuses on stale/unknown and never
+%%     refreshes; :65-71 all pass -> spec.md `status: done`, keeping the approval
+%%     (:67-68), then crew_tracker.py move --to done (:69); :76 crew_metrics record.
 %%     Stop hooks: plugin/crew/hooks/hooks.json:58 (verify-gate.sh), :62 (completion-audit.sh).
 %%   plugin/crew/commands/fix.md:2 the light path - every phase, each compressed
 %%     to one step; :27 crew_tracker.py create (`id taken` -> next free id, :28-29;

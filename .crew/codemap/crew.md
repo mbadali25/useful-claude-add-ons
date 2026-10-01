@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@bee8b203
+anchor: useful-claude-add-ons@52e309cf
 verified: 2026-09-30
 
 ## Re-derive provenance
@@ -145,7 +145,7 @@ draws it:
 | `/crew:approve` (`plugin/crew/commands/approve.md:5`, `disable-model-invocation: true`) | Typed by the user only: the UserPromptSubmit `approval-hook` records `<git-common-dir>/crew/tickets/<id>/approval.json`, bound to the digest of `spec.md` and `plan.md` (`:7-16`; since T-0026 a `crew-approval/2` digest that normalises only the header's status value, so the lifecycle's status edits keep the approval); the command body only relays the result. Since T-0024 (crew 1.0.42) several ids, a range `T-0010..T-0012` or the one plain-text form `approve T-1 through T-3` record nothing on that prompt: the hook blocks it with a PENDING list bound to each ticket's hashes, and only the user's own one-line `/crew:approve --confirm` (same session, within `PENDING_TTL`) records one receipt per ticket, or none (`plugin/crew/hooks/scripts/approval_hook.py:361`, `:433`; relay at `approve.md:27-43`). Since 1.0.44 only the prompt's own top-level command counts (a command tag nested in another is refused, and the expanded form carries nothing outside its tags, for a single id too since 1.0.45), commas go only between ids, and the closed-row check matches the id whole and in any case (`crew_ticket.py` `precheck` `:811`; the row's id cell is its first id-shaped cell) | new in 1.0 |
 | `/crew:implement` (`plugin/crew/commands/implement.md:8-9`) | Implements an approved plan, then tests/docs/review; loads `crew-execute` (adapted from `superpowers:executing-plans`) | `/crew:work` |
 | `/crew:review` (`plugin/crew/commands/review.md`) | Independent QA review of the working diff (Codex, Copilot, or the `crew:reviewer` Claude fallback) | (unchanged name; internals rewritten) |
-| `/crew:done` (`plugin/crew/commands/done.md:7-8`) | Closes a ticket; four checks (review receipt, clean verify gate, passing completion audit, current artifacts), any one failing refuses the close, no partial close. Check 4 (`:56-67`, since crew 1.0.36) runs `crew_refresh_check.py` and refuses on any `stale` or `unknown` line **without refreshing** - a write there would stale check 1's receipt (`:62-65`) | new in 1.0 |
+| `/crew:done` (`plugin/crew/commands/done.md:7-8`) | Closes a ticket; four checks (review receipt, clean verify gate, passing completion audit, current artifacts), any one failing refuses the close, no partial close. Check 4 (`:58-69`, since crew 1.0.36) runs `crew_refresh_check.py` and refuses on any `stale` or `unknown` line **without refreshing** - a write there would stale check 1's receipt (`:64-67`) | new in 1.0 |
 
 `/crew:ticket` and `/crew:work` are now **removal stubs with no behaviour**
 (`plugin/crew/commands/ticket.md`, `plugin/crew/commands/work.md`, each a
@@ -691,15 +691,16 @@ open questions; plan approval and open questions wait for a person unless T-0010
 allows; review acceptance is FINDINGS with any BLOCK, or a round `review_ledger.py
 --auto-accept` refuses, since L-0510).
 
-**Review closure (L-0510, crew 1.0.93).** DERIVED at the anchor below. `_review_phase`
+**Review closure (L-0510, crew 1.0.94).** DERIVED at the anchor below. `_review_phase`
 (`plugin/crew/hooks/scripts/crew_autopilot.py:491`) asks `review_ledger.receipt_stands`
-(`plugin/crew/hooks/scripts/review_ledger.py:539`) whether a FINDINGS receipt stands, the same
-predicate `check_receipt` (`:620`) uses: `owner-accepted`, or `auto-accepted` with
+(`plugin/crew/hooks/scripts/review_ledger.py:553`) whether a FINDINGS receipt stands, the same
+predicate `check_receipt` (`:644`) uses (a CLEAN round stands only under a `clean`
+receipt): `owner-accepted`, or `auto-accepted` with
 `accepted_by == AUTO_BY`, lines equal to the row's and the row passing `_auto_row_problem`
-(`:437`). Otherwise it stops at `accept-review`, naming `--auto-accept` when
-`auto_accept_refusal` (`:471`) returns None and quoting the refusal when not. `auto_accept`
-(`:505`) is the guarded verb; `accept` (`:384`) refuses a `--by` starting `auto:`;
-`check_follow_up` (`:558`) reads the follow-up's `direction.md`. `review_run.finish` records
+(`:443`). Otherwise it stops at `accept-review`, naming `--auto-accept` when
+`auto_accept_refusal` (`:485`) returns None and quoting the refusal when not. `auto_accept`
+(`:519`) is the guarded verb; `accept` (`:390`) refuses a `--by` starting `auto:`;
+`check_follow_up` (`:573`) reads the follow-up's `direction.md`. `review_run.finish` records
 `findings` and `webtest_open` (`_webtest_open`, `plugin/crew/hooks/scripts/review_run.py:401`)
 and prints `auto_accept_line` (`:410`). JUDGEMENT: autopilot never calls `auto_accept`; the
 command prose (`plugin/crew/commands/autopilot.md:86`) runs it inside the review phase.
@@ -779,7 +780,7 @@ refused. `question_policy` (`:1075`) is `take|stop` by the same rule without the
 `approval.json`; on a ticket's first approval, the scope ramp's `scope-tickets.json`
 (`crew_ticket._register_ramp`, `plugin/crew/hooks/scripts/crew_ticket.py:705`, as for every
 route); and, for a distinct successor plan under a NEEDS_REPLAN ledger, the ledger moved
-NEEDS_REPLAN -> IN_REVIEW (`review_ledger.continue_with_successor_plan`, `plugin/crew/hooks/scripts/review_ledger.py:671`). `questions_check` (`:1246`) validates
+NEEDS_REPLAN -> IN_REVIEW (`review_ledger.continue_with_successor_plan`, `plugin/crew/hooks/scripts/review_ledger.py:695`). `questions_check` (`:1246`) validates
 `.work/tickets/<id>/questions.md` against `QUESTIONS_SHAPE` (`:1154`) and refuses a `taken:` line
 naming a policy that never takes (only `self`/`risk` do; the name is history, not compared with
 today's) or any `taken:` while the policy in force says `stop`. `next` appends
@@ -1116,8 +1117,8 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 - `/crew:implement` step 6 (`plugin/crew/commands/implement.md:86-115`) runs
   it after `/crew:docs` and before `/crew:review` (`:93`), runs each named
   refresh, commits, and re-runs until `fresh`; a `stop` ends the loop.
-- `/crew:done` Check 4 (`plugin/crew/commands/done.md:56-67`) runs it again
-  and refuses on `stale` or `unknown` without refreshing (`:62-65`).
+- `/crew:done` Check 4 (`plugin/crew/commands/done.md:58-69`) runs it again
+  and refuses on `stale` or `unknown` without refreshing (`:64-67`).
 - `REFRESH_ARTIFACT_PATHS` (`plugin/crew/hooks/scripts/crew_refresh_check.py:236-241`: the code map,
   `docs.diagramsDir`, `graph.out`, `.claude/rules`) is the one definition.
   The scope guard (`_refresh_artifact`,
@@ -1529,11 +1530,11 @@ exit 6) and the reviewer's rerere block are L-0526; until then the train is advi
   event and item vocabularies start at `:80`. `review_run.finish` computes the class at
   `plugin/crew/hooks/scripts/review_run.py:447` and prints the refund line at `:492`
   and `:495`. The ledger refunds a `tool` round up to `REFUND_LIMIT`
-  (`plugin/crew/hooks/scripts/review_ledger.py:119`; `BUDGET` `:116` unchanged).
-  `_refunded` (`:273`) counts refunded rows after the successor boundary
-  (`_boundary`, `:265`), `_charged` (`:279`) is spent minus refunded, and
-  `reserve` tests `_charged` against `BUDGET`. `summary` (`:710`, `load = _load` at
-  `:707`) is the dict `status` returns and the one `crew_status._review_lines`
+  (`plugin/crew/hooks/scripts/review_ledger.py:125`; `BUDGET` `:122` unchanged).
+  `_refunded` (`:279`) counts refunded rows after the successor boundary
+  (`_boundary`, `:271`), `_charged` (`:285`) is spent minus refunded, and
+  `reserve` tests `_charged` against `BUDGET`. `summary` (`:734`, `load = _load` at
+  `:731`) is the dict `status` returns and the one `crew_status._review_lines`
   renders (`plugin/crew/hooks/scripts/crew_status.py:139`). Autopilot sends a
   refunded round back to review (`plugin/crew/hooks/scripts/crew_autopilot.py:532`,
   `_toward_review` `:548`), and `next_phase`'s no-progress stop (`:597`) lets that
@@ -3291,3 +3292,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `0c3508e9` -> `963d2905` on 2026-09-30 (L-0510: review closure, a final 0-BLOCK round auto-accepts, crew 1.0.90).** `git diff --name-only 0c3508e9 963d2905` returns, outside refresh artifacts, main's L-0561 README repin and L-0510's files (review_ledger.py, review_run.py, crew_autopilot.py, review.md, done.md, autopilot.md, README.md, CONFIG.md, BUDGETS.md, PLUGINS.md, the troubleshooting guide, CHANGELOG.md, two tests, sabotage_review.py and the version files); path-qualified citations outside dated provenance checked by a line diff: citations into crew_autopilot.py, review_ledger.py, review_run.py, done.md and autopilot.md re-derived by symbol (several were already stale at `0c3508e9` and are corrected to the definition they name), and a DERIVED review-closure paragraph added. No suite was executed for this note.
 
 **Re-anchored `963d2905` -> `bee8b203` on 2026-09-30 (L-0510 suite fixes, crew re-bumped to 1.0.93).** `git diff --name-only 963d2905 bee8b203` returns, outside refresh artifacts, `sabotage_review.py` (one row's find string), `plugin/crew/docs/external-tool-formats.md` (four `review_run.py` citations), CHANGELOG.md and the version files; a body-only line diff moved no citation here (`docs/diagrams/data-flow-crew-config.mmd:1-2` is its re-written header, still lines 1-2). The review-closure paragraph's version now reads 1.0.93. No suite was executed for this note.
+
+**Re-anchored `bee8b203` -> `52e309cf` on 2026-10-01 (L-0510 review fix round, crew re-bumped to 1.0.94).** `git diff --name-only bee8b203 52e309cf` returns, outside refresh artifacts, `review_ledger.py` (the per-severity count check, the CLEAN receipt-kind check and `check_follow_up`'s kind allowlist, UTF-8 refusal and verbatim counted match), its tests and sabotage rows, `plugin/crew/README.md`, `plugin/crew/commands/done.md`, `plugin/crew/commands/review.md`, `plugin/crew/BUDGETS.md`, the troubleshooting guide and its rendered outputs, CHANGELOG.md and the version files. The body's `review_ledger.py` citations and the `done.md` ranges were moved by a line diff (the bare `:478` beside `crew_ticket` was left alone, it is not a `review_ledger.py` line), and the review-closure paragraph's version now reads 1.0.94. No suite was executed for this note.
