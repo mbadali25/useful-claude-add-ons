@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.95: the merge train's round-2 findings and the rerere rule (L-0558)
+### Fixed — `crew` 1.0.102: the merge train's round-2 findings and the rerere rule (L-0558)
 
 L-0520's review round 2 (Codex) left two BLOCKs and three FIXes, owner-accepted so PR 1 could
 land, with the train not to be armed until they were fixed. All five, and the owner's rerere rule:
