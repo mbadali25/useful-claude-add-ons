@@ -236,7 +236,13 @@ def _signal_group(proc: subprocess.Popen, hard: bool) -> None:
     try:
         os.killpg(proc.pid, signal.SIGKILL if hard else signal.SIGTERM)
     except (ProcessLookupError, PermissionError):
-        pass
+        if hard and proc.poll() is None:
+            # No group to signal (it was never made, or is gone): kill the
+            # child itself, so the caller's wait() cannot block forever.
+            try:
+                proc.kill()
+            except OSError:
+                pass
 
 
 def _kill_group(proc: subprocess.Popen, grace: float) -> None:

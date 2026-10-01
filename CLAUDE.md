@@ -10,7 +10,9 @@ No build. `python3 scripts/check-marketplace.py` is the gate: every registration
 scripts being a matched pair, hook quoting and exit codes, and version drift. Commit, then run it,
 then push: its version-drift check compares commits, so uncommitted plugin edits pass it locally.
 Per-path commands and promotion steps live in `.crew/verify.json` — that file is the mechanism, this
-one is the judgment. Do not restate its commands here.
+one is the judgment. Do not restate its commands here. A lane runs the whole local suite with
+`python3 scripts/gate-runner.py` (one status file, heavy-run aware) instead of its own `suites*.sh`;
+its step table is checked against `.github/workflows/` by its own suite.
 
 ## Where things are - entrypoints, logic, DO NOT TOUCH
 

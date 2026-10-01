@@ -4,6 +4,21 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `scripts/gate-runner.py`: one local gate runner, repository tooling, no plugin version (L-0513)
+
+- **One runner in place of the per-lane `suites*.sh`.** `python3 scripts/gate-runner.py` runs a
+  declared step table taken from the PR-path CI: cheap checks serially and never under heavy-run;
+  the heavy steps as two groups run at the same time inside ONE heavy-run call; then a solo tail
+  (the `wallclock` pytest set and `sabotage.py`) in that same call. Every pytest step but
+  `wallclock` runs with a literal `-n 4`; no pytest-xdist means COULD-NOT-TELL, never a serial run.
+- **Could-not-tell is never a pass.** A step that times out (its whole process group is killed),
+  dies by a signal (incl. 137/143), cannot start, or leaves no result is `COULD-NOT-TELL`; rc 77 or
+  a missing tool is `SKIP` (NOT VERIFIED). Exit 0 only when every non-skipped step passed.
+  Works without heavy-run and says so (`heavy_run: absent (uncapped)`).
+- **One status file** (`status.json`: head, heavy-run mode and slot wait, rc/state/seconds/log per
+  step), rewritten atomically after every step. `--check-ci` and `scripts/_test/gate-runner.py`
+  fail when a workflow `run:` command is in neither the table nor its named exclusion list.
+
 ### Added — `crew` 1.0.86: the merge train - gate+land serialised per overlapping Touch set (L-0520)
 
 - **New `hooks/scripts/crew_train.py`.** One locked queue per clone under
