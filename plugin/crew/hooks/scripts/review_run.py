@@ -56,6 +56,16 @@ the untouched tree.
 Writes `<work-dir>/review.json` (default `.work/tickets/<id>/review.json`)
 and records the round in the ledger; a CLEAN round writes the receipt.
 
+METRICS ROW (L-0578). Once the ledger has accepted the round, and before
+review.json, `review_metrics.record` appends the round's row to the main
+checkout's `.crew/metrics.md` and a `review:` line says where, or why not and
+the row to append by hand. It never changes the verdict or the exit code.
+The row's std: token is the one `standards_gate` checked before the
+reservation, kept in memory and in `<scratch>/reserved-std.json` for the
+claude provider's second call - never recomputed after the review.
+`--note codex-probe=<exit>` (claude) carries the probe's answer, so a Codex
+limit the probe found live is labelled though it records no marker.
+
 WEB TESTS. In a Playwright repository (the manifest carries a `webtest`
 listing) or wherever `.work/tickets/<id>/webtest/findings.json` exists, the
 healer-skip check is RE-RUN here, before the verdict, stamped with the
@@ -134,6 +144,7 @@ import crew_state
 import review_gate
 import review_ledger
 import review_limit
+import review_metrics
 import review_patch
 import review_prompt
 import review_verdict
@@ -473,6 +484,10 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     review["refunded"] = row.get("refunded") is True
     review["refund_refused"] = row.get("refund_refused")
     review["elapsed_s"] = round_elapsed(args.root, args.ticket, number)
+    # Before review.json: the row is owed once the ledger holds the round.
+    metrics_line = review_metrics.record(args.root, args.ticket, number, review,
+                                         review_metrics.reserved_std(args, number),
+                                         getattr(args, "note", "") or "")
     work_dir = args.work_dir or os.path.join(args.root, ".work", "tickets", args.ticket)
     _write_atomic(os.path.join(work_dir, "review.json"),
                   json.dumps(review, indent=2, sort_keys=True) + "\n")
@@ -487,6 +502,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
           f"{args.provider}/{args.model or 'default'} family={review['model_family']} "
           f"ledger={state} gate={review['gate']['state']} "
           f"elapsed={_fmt_elapsed(review['elapsed_s'])}")
+    print(metrics_line)
     for reason in result["reasons"]:
         print(f"review: INCOMPLETE because {reason}")
     if failure == review_verdict.TOOL and review["refunded"]:
@@ -579,6 +595,7 @@ def standards_gate(args):
             crew_incident.log_skip(args.root, "standards-selfcheck", "; ".join(problems))
             sys.stderr.write(f"review-run: incident {incident['id']} is active; the standards "
                              "self-check stands down and the skip is logged\n")
+            args.reserved_std = "std:none"
             return None
         for problem in problems:
             sys.stderr.write(f"review-run: self-check: {problem}\n")
@@ -586,7 +603,26 @@ def standards_gate(args):
                          f"crew_standards.py stamp --root . --ticket {args.ticket}; nothing "
                          "launched, no round spent\n")
         return EXIT_USAGE
+    # The token this round is reserved under: the row carries it, not a
+    # recomputation after the review (L-0578 review round 2).
+    args.reserved_std = review_metrics.std_from_note(note)
     return None
+
+
+def _keep_reserved_std(args, number):
+    """Hand the reservation's std: token to the call that finishes the round:
+    in memory for a launched provider, `<scratch>/reserved-std.json` for the
+    claude provider's second call. A record that cannot be written leaves
+    the row's token `std:unknown`, said here."""
+    token = getattr(args, "reserved_std", None)
+    if not token:
+        return
+    try:
+        _write_atomic(os.path.join(args.scratch, review_metrics.RESERVED_STD_FILE),
+                      json.dumps({"ticket": args.ticket, "round": number, "std": token}) + "\n")
+    except OSError as exc:
+        sys.stderr.write(f"review-run: could not record this round's std: token ({exc}); its "
+                         "metrics row will say std:unknown\n")
 
 
 def run(args):
@@ -623,6 +659,7 @@ def run(args):
     sys.stderr.write(f"review-run: {message}\n")
     if not ok:
         return EXIT_REFUSED
+    _keep_reserved_std(args, number)
     if args.provider not in LAUNCHED:
         print(f"ROUND={number}")
         return EXIT_CLEAN
@@ -710,6 +747,9 @@ def main(argv):
     parser.add_argument("--exit-code", type=int)
     parser.add_argument("--probe", action="store_true")
     parser.add_argument("--probe-timeout", type=int, default=PROBE_TIMEOUT)
+    parser.add_argument("--note", default="",
+                        help="claude only: why this provider ran, for the metrics row "
+                             "('codex-probe=<probe exit>'; 5 means a Codex limit)")
     parser.add_argument("--allow-unverified", action="store_true",
                         help="review a tree the verify gate has not passed; recorded in "
                              "review.json as gate.overridden")

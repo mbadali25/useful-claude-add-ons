@@ -13,6 +13,7 @@ REVIEW_RUN = os.path.join(CREW, "hooks", "scripts", "review_run.py")
 REVIEW_PATCH = os.path.join(CREW, "hooks", "scripts", "review_patch.py")
 REVIEW_PROMPT = os.path.join(CREW, "hooks", "scripts", "review_prompt.py")
 REVIEW_GATE = os.path.join(CREW, "hooks", "scripts", "review_gate.py")
+REVIEW_METRICS = os.path.join(CREW, "hooks", "scripts", "review_metrics.py")
 
 REVIEW_FIX_MUTATIONS = (
     # The T1 review-fix round. Each was also run by hand against the tracked
@@ -44,8 +45,9 @@ REVIEW_FIX_MUTATIONS = (
         # of generated JSON and the Claude fallback comes back INCOMPLETE.
         "the bundle diff no longer excludes graphify-out",
         REVIEW_PATCH,
-        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"]\n',
-        '_EXCLUDE_SPEC = [":(exclude).work"]\n',
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out", '
+        '":(exclude).crew/metrics.md"]\n',
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude).crew/metrics.md"]\n',
         ("tests/test_review_patch.py::"
          "test_generated_graph_dir_is_excluded_and_says_so"),
     ),
@@ -54,8 +56,8 @@ REVIEW_FIX_MUTATIONS = (
         # with the graph left out and nothing records that it was.
         "the manifest stops saying graphify-out is excluded",
         REVIEW_PATCH,
-        'EXCLUDED = (".work/", "graphify-out/")\n',
-        'EXCLUDED = (".work/",)\n',
+        'EXCLUDED = (".work/", "graphify-out/", ".crew/metrics.md")\n',
+        'EXCLUDED = (".work/", ".crew/metrics.md")\n',
         ("tests/test_review_patch.py::"
          "test_generated_graph_dir_is_excluded_and_says_so"),
     ),
@@ -745,5 +747,74 @@ REVIEW_FIX_MUTATIONS = (
         "    review_ledger.utf8_stdio()\n",
         "",
         "tests/test_review_auto_accept.py::test_autopilot_main_switches_its_streams_to_utf8_first",
+    ),
+    (
+        # L-0578: the metrics row goes back to depending on prose step 6,
+        # which lanes skipped for 118 of 162 rounds.
+        "a recorded round writes no metrics row",
+        REVIEW_RUN,
+        "    metrics_line = review_metrics.record(args.root, args.ticket, number, review,\n",
+        '    metrics_line = "review: no row"; _unused = (\n',
+        "tests/test_review_metrics.py::test_codex_findings_round_appends_one_scored_row",
+    ),
+    (
+        # L-0578: the row the round writes changes the bundle, so a CLEAN
+        # receipt in a repo that does not gitignore .crew/ stops checking.
+        "the metrics row is reviewed as part of the bundle",
+        REVIEW_PATCH,
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out", '
+        '":(exclude).crew/metrics.md"]\n',
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"]\n',
+        "tests/test_review_patch.py::"
+        "test_metrics_row_stays_out_of_the_bundle_and_the_rest_of_crew_stays_in",
+    ),
+    (
+        # L-0578 review r1 BLOCK: a symlinked .crew directory is followed and
+        # the row lands in a file outside the checkout.
+        "the metrics writer follows a symlinked .crew directory",
+        REVIEW_METRICS,
+        "    if is_link_or_junction(parent):\n"
+        "        raise NotARegularFile(f\"{parent} is a link or junction; not following it\")\n"
+        "    try:\n",
+        "    if False:\n"
+        "        raise NotARegularFile(f\"{parent} is a link or junction; not following it\")\n"
+        "    try:\n",
+        "tests/test_review_metrics.py::test_a_junction_parent_is_refused",
+    ),
+    (
+        # L-0578 review r2 BLOCK: the open follows a .crew symlink swapped in
+        # after the pre-check (check-then-open race).
+        "the metrics open follows the .crew directory",
+        REVIEW_METRICS,
+        "    if nofollow and directory and os.open in os.supports_dir_fd:\n",
+        "    if False:\n",
+        "tests/test_review_metrics.py::"
+        "test_the_open_itself_refuses_a_crew_symlink_swapped_in_after_the_check",
+    ),
+    (
+        # L-0578 review r2 FIX: a marker naming another provider passes for a
+        # Codex limit.
+        "a limit marker of any provider claims a codex limit",
+        REVIEW_METRICS,
+        '    if not isinstance(previous, int) or isinstance(previous, bool) or provider != "codex" \\\n',
+        "    if not isinstance(previous, int) or isinstance(previous, bool) \\\n",
+        "tests/test_review_metrics.py::test_a_malformed_limit_marker_is_unreadable_not_a_limit",
+    ),
+    (
+        # L-0578 review r2 FIX: a malformed config reads as config provenance.
+        "an unreadable config is reported as config provenance",
+        REVIEW_METRICS,
+        '    if source == "config" and config_unreadable(root):\n',
+        "    if False:\n",
+        "tests/test_review_metrics.py::test_a_malformed_config_is_not_reported_as_config_provenance",
+    ),
+    (
+        # L-0578 review r2 FIX: the row takes a reservation record for
+        # another round.
+        "a reservation token for another round is used",
+        REVIEW_METRICS,
+        "                or kept.get(\"round\") != number or isinstance(kept.get(\"round\"), bool):\n",
+        "                or isinstance(kept.get(\"round\"), bool):\n",
+        "tests/test_review_metrics.py::test_a_reservation_record_for_another_round_is_not_used",
     ),
 )

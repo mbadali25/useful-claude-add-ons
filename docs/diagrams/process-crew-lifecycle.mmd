@@ -330,12 +330,12 @@ flowchart TB
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
-        im5 --> pf0{"preflight first (#264):<br/>a CLEAN receipt covers this bundle?<br/>verify gate passed this tree?<br/>review_run.py:539, :606"}
+        im5 --> pf0{"preflight first (#264):<br/>a CLEAN receipt covers this bundle?<br/>verify gate passed this tree?<br/>review_run.py:555, :642"}
         pf0 -- "CLEAN receipt: CLEAN,<br/>no round, no self-check" --> rcpt
         pf0 -- "gate not passed or unknown:<br/>exit 5, no round spent,<br/>self-check not asked<br/>review.md:449" --> vg0["run the verify gate,<br/>then review again"]
         vg0 --> im5
         pf0 -- "go on" --> rv0{"self-check stamped for<br/>this bundle and standards set?<br/>review_run.py standards_gate"}
-        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no self-check asked<br/>review_run.py:610-620" --> replan
+        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no self-check asked<br/>review_run.py:646-656" --> replan
         rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:446-449" --> sc1
         rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle;<br/>prompt ends with the standards checklist<br/>review.md:25-28, :451"]
         rv1 --> rv2{"verdict (the script's)<br/>:440, :483"}
@@ -497,6 +497,12 @@ flowchart TB
 %% touches no Anchors path. No node or edge changed.
 %% Re-anchored 5ffffbe3 (main) and c43a9ce3 (L-0557) -> 6053b65d (L-0557 merges main 2906dcbd, L-0516 #298, rerere off;
 %% crew 1.0.114): both provenance blocks kept, main's first; L-0516 and L-0557 touch no Anchors path. No node or edge changed.
+%% Re-anchored for L-0578 at b4f04e23 (merge of main 8d84786d, W-0117 #302; crew 1.0.119):
+%% of the anchored paths review_run.py, review.md and crew_refresh_check.py changed since
+%% 6053b65d. review_run.py's preflight citation :508, :575 -> :524, :611 and the budget
+%% block :579-589 -> :615-625 (difflib); review.md :447-450, crew_refresh_check.py :93 and
+%% done.md :50-61 did not move. No node's meaning changed: the metrics row L-0578 adds is
+%% written inside the round, which this diagram draws as one node.
 %% Re-drawn 8bf710ed -> 963d2905 (L-0510, review closure, crew 1.0.90): of the anchored paths
 %% review.md (step 3.3 rewritten, :25-28 compacted), done.md (check 1 gained six lines, so every
 %% done.md citation from check 2 down moved +6) and review_run.py (findings / webtest_open recorded,
