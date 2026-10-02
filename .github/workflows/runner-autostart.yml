@@ -44,11 +44,16 @@ jobs:
             echo "::notice::RUNNER_START_TOKEN is not set, so the self-hosted runners were NOT started. CI runs on GitHub-hosted runners."
             exit 0
           fi
-          pending=$(gh run list --repo "$INFRA_REPO" --workflow runners.yml \
-                      --json status --jq '[.[] | select(.status != "completed")] | length')
+          # REST endpoints throughout, never `gh run list --workflow` or
+          # `gh workflow run`: both first read the workflow file through the
+          # contents API, which a token holding only Actions permission gets a
+          # 404 from ("workflow runners.yml not found on the default branch").
+          pending=$(gh api "repos/$INFRA_REPO/actions/workflows/runners.yml/runs?per_page=20" \
+                      --jq '[.workflow_runs[] | select(.status != "completed")] | length')
           if [ "$pending" -gt 0 ]; then
             echo "::notice::A Runners run is already queued or in progress in $INFRA_REPO; not starting another."
             exit 0
           fi
-          gh workflow run runners.yml --repo "$INFRA_REPO" --ref main -f action=start
+          gh api -X POST "repos/$INFRA_REPO/actions/workflows/runners.yml/dispatches" \
+            -f ref=main -f 'inputs[action]=start'
           echo "::notice::Self-hosted runners were stopped; dispatched Runners > start in $INFRA_REPO."
