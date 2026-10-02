@@ -855,7 +855,20 @@ def status(root, ticket):
     return summary(*_load(path), ticket, path)
 
 
+def utf8_stdio():
+    """Write stdout and stderr as UTF-8 whatever the console code page: a
+    finding line is reviewer text, and on a Windows cp1252 console printing
+    one carrying U+2028 (or any character cp1252 lacks) raised
+    UnicodeEncodeError after the receipt was written (win-repo-2, 75bd0aea).
+    A stream that cannot be reconfigured is left as it is."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8")
+
+
 def main(argv):
+    utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", default=".")
     parser.add_argument("--ticket", required=True)

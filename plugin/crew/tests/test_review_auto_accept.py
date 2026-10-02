@@ -636,6 +636,73 @@ def test_check_follow_up_keeps_a_u2028_finding_on_one_line(repo):
     assert result.returncode == 0, result.stdout
 
 
+# --- output on a non-UTF-8 console (Windows cp1252, win-repo-2 at 75bd0aea) ---
+
+_NOT_CP1252 = "FIX|src/a.py:12|left\u2028right \u2192 \u4e2d|run it"
+
+
+def _cp1252_cli(repo, *args):
+    """The ledger CLI with stdout and stderr encoded cp1252, as a Windows
+    console gives them; the bytes are decoded here as UTF-8."""
+    env = dict(os.environ, PYTHONIOENCODING="cp1252", PYTHONUTF8="0")
+    result = subprocess.run([sys.executable, _LEDGER, "--root", str(repo), "--ticket", T]
+                            + list(args), capture_output=True, stdin=subprocess.DEVNULL,
+                            check=False, env=env)
+    return (result.returncode, result.stdout.decode("utf-8"),
+            result.stderr.decode("utf-8"))
+
+
+def test_auto_accept_prints_a_non_cp1252_finding_on_a_cp1252_console(repo):
+    _good(repo)
+    _good(repo, counts={"BLOCK": 0, "FIX": 1, "NIT": 0}, findings=[_NOT_CP1252])
+
+    code, out, err = _cp1252_cli(repo, "--auto-accept", "--follow-up", FOLLOW)
+
+    assert (code, _NOT_CP1252 in out.split("\n"), "Traceback" in err) == (
+        0, True, False), out + err
+
+
+def test_check_follow_up_names_a_non_cp1252_line_on_a_cp1252_console(repo):
+    _good(repo)
+    _good(repo, counts={"BLOCK": 0, "FIX": 1, "NIT": 0}, findings=[_NOT_CP1252])
+    assert _auto(repo).returncode == 0
+    _direction(repo, f"# {FOLLOW}\n")
+
+    code, out, err = _cp1252_cli(repo, "--check-follow-up")
+
+    assert (code, _NOT_CP1252 in out, "Traceback" in err) == (1, True, False), out + err
+
+
+def test_a_refusal_quoting_a_non_cp1252_finding_reaches_a_cp1252_stderr(repo):
+    _good(repo)
+    _good(repo, counts={"BLOCK": 0, "FIX": 1, "NIT": 0}, findings=["READ|\u4e2d.py"])
+
+    code, _, err = _cp1252_cli(repo, "--auto-accept", "--follow-up", FOLLOW)
+
+    assert (code, "\u4e2d" in err, "Traceback" in err) == (1, True, False), err
+
+
+def test_autopilot_main_switches_its_streams_to_utf8_first(monkeypatch, tmp_path):
+    import crew_autopilot  # pylint: disable=import-outside-toplevel
+    calls = []
+    monkeypatch.setattr(rl, "utf8_stdio", lambda: calls.append("utf8"))
+
+    crew_autopilot.main(["stops", "--root", str(tmp_path)])
+
+    assert calls == ["utf8"]
+
+
+def test_review_run_main_switches_its_streams_to_utf8_first(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(rl, "utf8_stdio", lambda: calls.append("utf8"))
+
+    with pytest.raises(SystemExit):
+        review_run.main(["--root", str(tmp_path), "--ticket", T, "--scratch", str(tmp_path),
+                         "--provider", "codex", "--reserve-only"])
+
+    assert calls == ["utf8"]
+
+
 # --- review_run.finish records the evidence the guard reads -------------------
 
 def _finish(repo, tmp_path, monkeypatch, webtest, name="s"):

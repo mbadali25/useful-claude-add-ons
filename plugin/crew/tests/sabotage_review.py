@@ -722,4 +722,28 @@ REVIEW_FIX_MUTATIONS = (
         "    if count and not _is_count(count):\n",
         "tests/test_review_auto_accept.py::test_auto_accept_refuses[review-json-ignored-list]",
     ),
+    # win-repo-2 at 75bd0aea: a cp1252 console. Each run by hand, seen red.
+    (
+        # The ledger CLI prints finding lines in the console's code page again.
+        "the ledger CLI stops writing UTF-8",
+        REVIEW_LEDGER,
+        "def main(argv):\n    utf8_stdio()\n",
+        "def main(argv):\n",
+        "tests/test_review_auto_accept.py::"
+        "test_auto_accept_prints_a_non_cp1252_finding_on_a_cp1252_console",
+    ),
+    (
+        "review_run stops switching its streams to UTF-8",
+        REVIEW_RUN,
+        "    review_ledger.utf8_stdio()\n",
+        "",
+        "tests/test_review_auto_accept.py::test_review_run_main_switches_its_streams_to_utf8_first",
+    ),
+    (
+        "crew_autopilot stops switching its streams to UTF-8",
+        os.path.join(CREW, "hooks", "scripts", "crew_autopilot.py"),
+        "    review_ledger.utf8_stdio()\n",
+        "",
+        "tests/test_review_auto_accept.py::test_autopilot_main_switches_its_streams_to_utf8_first",
+    ),
 )

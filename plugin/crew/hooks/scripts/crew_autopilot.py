@@ -1660,6 +1660,9 @@ def _cli_deploy(args):
 
 
 def main(argv):
+    # `next` quotes the ledger's auto-accept refusal, which can quote reviewer
+    # text: write UTF-8 whatever the console code page (review_ledger.utf8_stdio).
+    review_ledger.utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="action", required=True)
     for name in ("next", "resume", "settings", "stops", "route", "status", "approve",

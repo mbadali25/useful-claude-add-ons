@@ -692,6 +692,8 @@ def probe(args):
 
 
 def main(argv):
+    # Finding text and refusals quoting it reach stdout; see utf8_stdio.
+    review_ledger.utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", default=".")
     parser.add_argument("--ticket", required=True)
