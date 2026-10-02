@@ -45,6 +45,107 @@ All notable changes to this repository are documented here. Format follows [Keep
   `scripts/_test/lsp-stack-tools.sh` (a prose `# shellcheck/...` comment, `:7`), so a bundle that
   changes either file reads COULD NOT CHECK for ShellCheck until those lines are fixed.
 
+### Changed — `session-defaults` 1.1.0 and `config-tuneup` 1.1.0: two skills renamed off the reserved `claude-` prefix (W-0120)
+
+- **`claude-code-defaults` is now `session-defaults`, and `claude-code-tuneup` is now
+  `config-tuneup`.** `claude plugin validate --strict` (claude CLI 2.1.287) refuses both old
+  names as reserved: a third party's plugin name cannot start with `claude-`. `_verify/smoke.sh`
+  runs that check wherever the CLI is installed, so it failed on every such machine and every
+  crew Stop gate failed with it. CI runs the same check but installs a pinned CLI, 2.1.278
+  (`.github/workflows/marketplace.yml`), and has stayed green with both names; 2.1.278 itself
+  was not run locally.
+- **What moved.** The directories (`git mv`), the marketplace entries, both install scripts'
+  skill catalogs, the three catalog lists (`README.md`, `skills/README.md`, `INSTALLATION.md`),
+  each `SKILL.md` frontmatter `name`, and the in-skill references. Every list stays
+  alphabetical, so both rows change position. The skills' content is otherwise unchanged.
+- **Migrating.** A copy installed under an old name no longer receives updates, because the
+  marketplace no longer lists it. Uninstall the old name, then install the new one:
+
+  ```
+  claude plugin uninstall claude-code-defaults@useful-claude-add-ons
+  claude plugin install session-defaults@useful-claude-add-ons
+  claude plugin uninstall claude-code-tuneup@useful-claude-add-ons
+  claude plugin install config-tuneup@useful-claude-add-ons
+  ```
+
+  Re-running either install script installs the new names, and it leaves the old ones
+  installed. Entries below this one keep the old names, because that is what they shipped as.
+
+### Fixed - `crew` 1.0.119: `review_run.py` writes the `.crew/metrics.md` row for every review round (L-0578)
+
+- **Cause.** The row was prose step 6 of `/crew:review`, after the verdict, notify and PR
+  review, and lanes and headless reviewers skipped it: on 2026-10-01 the review ledgers held 162
+  rounds and the main checkout's `.crew/metrics.md` 59 scored rows, with 27 of 49 tickets having
+  none anywhere. Rows written from a lane landed in the lane worktree's own gitignored `.crew/`,
+  which the main checkout never reads (25 of them).
+- **Fix.** New `review_metrics.py`, called by `review_run.finish` right after the ledger accepts
+  the round: one row per round into the MAIN checkout's `.crew/metrics.md`, also from a linked
+  worktree; `INCOMPLETE` count cells for a round with no verdict; the `std:` token the round was
+  reserved under (`<scratch>/reserved-std.json` for the claude provider's two calls), never one
+  recomputed; the reviewer's family against the author's, with where that came from
+  (`different family` only on a dispatch record, `family unknown` for an unreadable config or
+  marker, `same-family: codex limit` from a well-formed limit marker or `--note codex-probe=5`).
+  A link or junction at `.crew`, a linked metrics file or a FIFO is refused, not followed. A write
+  that fails never changes the verdict or exit code and prints the row to append by hand.
+  `review_patch.py` leaves `.crew/metrics.md` out of the bundle, so the row never stales a CLEAN
+  receipt. `commands/review.md` step 6 now forbids a hand-written scored row.
+- **Not here.** The readers (`crew_state.read_metrics`, `crew_standards.metric`, `/crew:status`)
+  still read `<root>/.crew/`, so from a linked worktree they do not see these rows yet (L-0582),
+  and the 118 historical rounds with no row are not backfilled (L-0583).
+### Fixed — `crew` 1.0.115: refresh admission refuses a mode change that exists only in the index (W-0117)
+
+- **`crew_refresh_check._on_disk` now asks git for the index's mode too.** Under
+  `core.fileMode=true` git's worktree diff reads the mode from the disk, so a mode staged with
+  `git update-index --chmod=+x` while the file stayed 644 never reached the check and the artifact
+  was admitted, though `git commit` records the index's 100755. The existing
+  `git diff --raw <base>` mode check now runs a second time with `--cached`, with the same
+  refusal text; a `--cached` diff that cannot run is could-not-tell. Found in W-0116.
+- **A case matrix pins it**, over `core.fileMode` true and false, set explicitly so the `true`
+  rows run on Windows too: index-only, both and a staged 120000 are refused; a staged content
+  edit, and a disk chmod git ignores under `false`, are admitted. Disk-only under `true` is
+  skipped where the filesystem keeps no executable bit (NTFS). With `--cached` removed the
+  index-only, both and could-not-tell cases go red.
+- **The sabotage entry rides separately** (rule 36: `sabotage_refresh.py` is harness and lands
+  alone).
+
+### Changed — `bitbucket` 1.2.3: variables read back with the trailing slash, repository access tokens are UI-only, reviewers on Bitbucket (T-0503)
+
+- **What changed.** `skills/bitbucket/SKILL.md` gains a fourth common task,
+  "Add reviewers to PR #12" (`effective-default-reviewers`, then a
+  read-modify-write `PUT pullrequests/{id}` carrying the existing title and the
+  full `reviewers` list), a "Pipeline and deployment variables: read back with
+  the trailing slash" section (an empty `values` from the slash-less path is
+  "could not tell", not "absent"), a "Repository access tokens are UI-only on
+  Cloud" section, two Safety rails bullets (never ask for a token creation or
+  rotation page to be pasted; a token seen in chat is leaked - revoke and
+  recreate), and a trigger clause in the frontmatter `description`.
+  `references/api.md` gains the PUT reviewer body, a "Default reviewers"
+  sub-list, a "Pipeline and deployment variables" section and two Gotchas.
+  Every API sentence cites its Atlassian page. Both catalog rows' "Use cases"
+  column names the two new symptoms. Reviewer uuids are read from
+  `values[].user.uuid` on `effective-default-reviewers`, the project-level list
+  and workspace members; only the repo-level `default-reviewers` list answers
+  with `values[].uuid`. `scripts/_test/merge_gate.sh` gains a
+  "documentation invariants" section that keeps the entries, the trailing
+  slash, the uuid path, the scopes, a citation on every new `api.md` bullet and
+  the two catalog rows from drifting; each check reads only the section it
+  guards, and the token scan reports a read error as "could not tell".
+- **Why.** The aws-managed-services session's report of 2026-09-28, items 18
+  (variables GETs without the trailing slash read as empty - a false "variable
+  not present"), 19 (repository access tokens cannot be created over the Cloud
+  REST API, and a live token was pasted into chat from the rotate dialog) and
+  20 (the GitHub-only CODEOWNERS / `gh pr create --reviewer` habit has no
+  Bitbucket twin).
+- **Not reproduced.** The slash-less GET's HTTP 200 with `"values": []`; the
+  access-token endpoints' 404s and the "Access token rotated" dialog carrying
+  the value three times in its page HTML; the reviewer PUT's HTTP 200 with the
+  description preserved. All are the reporter's observations and the skill
+  text says so ("reported 2026-09-28, not reproduced here"). No call was made
+  against a Bitbucket workspace.
+- **Unchanged.** `scripts/bb.sh` and `scripts/merge_gate.sh` behaviour, the
+  marketplace `description`, the install scripts' menu text, `skills/UPDATE.md`.
+- Bumped `bitbucket` 1.2.2 -> 1.2.3.
+
 ### Fixed - `crew` 1.0.114, `obsidian-vault` 0.4.16: every pwsh the test suites spawn gets its own XDG_CACHE_HOME (L-0557)
 
 - **Cause.** pwsh reads its multicore-JIT startup profile,
@@ -11498,7 +11599,7 @@ A tooling change: this release carries no feature work.
   that already had `superpowers@claude-plugins-official` — which items 6 and 7 register —
   the install was skipped, leaving an orphaned `superpowers-marketplace` registration and
   a second, disabled `superpowers@superpowers-marketplace` entry: exactly the duplicate
-  [`skills/claude-code-tuneup`](skills/claude-code-tuneup/references/symptoms.md) tells you
+  [`skills/claude-code-tuneup`](skills/config-tuneup/references/symptoms.md) tells you
   to clean up. Item 4 now takes Superpowers from `anthropics/claude-plugins-official`, the
   marketplace the scripts already register elsewhere, so there is one source for it.
 

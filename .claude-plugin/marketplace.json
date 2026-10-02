@@ -17,7 +17,7 @@
       "name": "bitbucket",
       "source": "./skills/bitbucket",
       "description": "Git over HTTPS with Atlassian API tokens plus the Bitbucket Cloud REST API - PRs, pipelines, comments, branches.",
-      "version": "1.2.2"
+      "version": "1.2.3"
     },
     {
       "name": "checkpoint-email",
@@ -32,21 +32,15 @@
       "version": "1.1.0"
     },
     {
-      "name": "claude-code-defaults",
-      "source": "./skills/claude-code-defaults",
-      "description": "Configure how Claude Code behaves by default - CLAUDE.md instructions, settings.json, permission allow/deny/ask rules and modes, hooks, default model, and which scope (user/project/local/managed) each belongs in.",
-      "version": "1.0.1"
-    },
-    {
-      "name": "claude-code-tuneup",
-      "source": "./skills/claude-code-tuneup",
-      "description": "Audit a Claude Code install for what makes it slow or bloated - duplicate skills, per-tool-call hooks, SessionStart injections, disabled-but-installed plugins, overlapping MCP servers, oversized CLAUDE.md - and return a ranked cleanup plan.",
-      "version": "1.0.0"
-    },
-    {
       "name": "cloudflare",
       "source": "./skills/cloudflare",
       "description": "Cloudflare v4 API - DNS, zones, cache, WAF, page rules, SSL/TLS, Workers/KV/R2, Zero Trust, analytics.",
+      "version": "1.1.0"
+    },
+    {
+      "name": "config-tuneup",
+      "source": "./skills/config-tuneup",
+      "description": "Audit a Claude Code install for what makes it slow or bloated - duplicate skills, per-tool-call hooks, SessionStart injections, disabled-but-installed plugins, overlapping MCP servers, oversized CLAUDE.md - and return a ranked cleanup plan.",
       "version": "1.1.0"
     },
     {
@@ -156,6 +150,12 @@
       "source": "./skills/report-builder",
       "description": "Deprecated 2026-09-10, superseded by doc-builder. Redirect stub only.",
       "version": "2.0.0"
+    },
+    {
+      "name": "session-defaults",
+      "source": "./skills/session-defaults",
+      "description": "Configure how Claude Code behaves by default - CLAUDE.md instructions, settings.json, permission allow/deny/ask rules and modes, hooks, default model, and which scope (user/project/local/managed) each belongs in.",
+      "version": "1.1.0"
     },
     {
       "name": "shipstation",

@@ -325,6 +325,7 @@ HARNESS_SUITES = (
     "plugin/crew/tests/test_review_refund.py",
     "plugin/crew/tests/test_external_tool_formats.py",
     "plugin/crew/tests/test_status.py",
+    "plugin/crew/tests/test_review_metrics.py",
 )
 
 
