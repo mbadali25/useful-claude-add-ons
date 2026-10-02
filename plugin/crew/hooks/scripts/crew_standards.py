@@ -726,11 +726,13 @@ def proposals(root, ticket, scratch, round_no):
     out.txt, verbatim, for the owner to rule on. Writes only the proposals
     file, with an exclusive create; never a set file.
 
-    An out.txt the verdict parser calls INCOMPLETE -- empty, a line it cannot
-    read (a finding inside a code fence or behind a bullet), neither CLEAN nor
-    a finding -- is refused and nothing is written: "could not tell" never
+    An out.txt the verdict parser calls INCOMPLETE -- empty, a line that might
+    be a contract line it cannot read (a finding behind a bullet), neither
+    CLEAN nor a finding -- is refused and nothing is written: "could not tell" never
     becomes "no findings", and the exclusive create is left free for the
-    corrected run (GEN-01)."""
+    corrected run (GEN-01). A round the parser recovered despite harmless
+    stray lines (prose or a code fence beside well-formed findings, L-0576)
+    is FINDINGS, and its findings are proposed like any other."""
     import review_verdict  # pylint: disable=import-outside-toplevel
     source = os.path.join(scratch, "out.txt")
     raw, why = _read_bytes(source)
