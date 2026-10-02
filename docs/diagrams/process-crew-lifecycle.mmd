@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@6053b65d on 2026-10-01. Verify before trusting.
+%% Generated from useful-claude-add-ons@3d96623a on 2026-10-02. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -502,3 +502,9 @@ flowchart TB
 %% Re-anchored 835ce179 -> 9c84df76 (T-0019 review round 1): of the Anchors paths only crew_ticket.py
 %% changed, from :1167 down (mint's INDEX lock now spans create and move; +54 lines), below every
 %% line this diagram cites (approval_digest :577, status() :604, approve :738 hold). No node or edge changed.
+%% Re-anchored 6053b65d (main) and 9c84df76 (T-0019) -> 3d96623a (T-0019 merges origin/main 8d84786d, W-0117 #302,
+%% rerere off, at 3d5f4858; crew 1.0.123): both provenance blocks kept, main's first. Of the Anchors paths
+%% crew_ticket.py differs from main by T-0019's mint/assign (+15 docstring and import lines, so approval_digest
+%% :577, status() :604, approve :739, the group-confirm refusal :758-760 and the digest block :549-590 above),
+%% and crew_refresh_check.py differs from 6053b65d by W-0117's --cached mode check (main's change). No node
+%% cites a line in either file; no node or edge changed.

@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@f5cab1f9
-verified: 2026-10-01
+anchor: useful-claude-add-ons@3d96623a
+verified: 2026-10-02
 
 ## Re-derive provenance
 
@@ -429,23 +429,23 @@ listing the directory.
   `plugin/crew/tests/test_approval_digest.py` run that test file and
   `test_crew_ticket.py`. T-0005 inserted another mid-list (`:117-127`, the cloud-guard suites).
   Since `a0c0847e` T-0006's rule sits at `:282-292` (`:270-280` before T-0005 merged)
-  and T-0004 appended a last one (`:298-308` since T-0019 added `crew_ticket.py` and its two suites,
+  and T-0004 appended a last one (`:307-317` on T-0019's merge of `8d84786d`; `:298-308` since T-0019 added `crew_ticket.py` and its two suites,
   re-read at T-0019's version commit; `:293-301` since T-0018 widened it; `:293-300` on main before that,
   `:281-288` before T-0005 merged): `crew_autopilot.py`, `crew_ticket.py` (T-0019), `commands/autopilot.md`,
   `test_crew_autopilot.py`, `test_crew_autopilot_status.py` (T-0018), `test_crew_autopilot_deploy.py`
   (T-0072), `test_crew_ticket_mint.py` and `test_crew_autopilot_assign.py` (T-0019) and
   `sabotage_autopilot.py` run those test files (bar the sabotage module) plus
-  `test_lifecycle_commands.py`. T-0010's rule 28 follows it (`:309-315` since T-0019; `:302-308` since T-0010-solo merged
+  `test_lifecycle_commands.py`. T-0010's rule 28 follows it (`:318-324` on T-0019's merge of `8d84786d`; `:309-315` since T-0019; `:302-308` since T-0010-solo merged
   `67caa4b8`; `:301-306` on its branch): `crew_autopilot.py`, `commands/autopilot.md` (since review
   round 2) and `test_crew_autopilot_policy.py` run that file plus `test_scope_guard.py`. T-0021's
-  merge of main put its rule after those (`:316-323` since T-0019; `:309-316` since T-0010's merge; `:302-309` after T-0018
+  merge of main put its rule after those (`:325-332` on T-0019's merge of `8d84786d`; `:316-323` since T-0019; `:309-316` since T-0010's merge; `:302-309` after T-0018
   landed, `:301-308` before that, `:262-269` on its branch before the merge): `crew_tracker.py`,
   `test_crew_tracker.py`, `sabotage_tracker.py` and the board fixtures run
-  `test_crew_tracker.py`. T-0023 appended rule 30 last (`:324-332` since T-0019; `:317-325` since T-0010's rule 28 went in
+  `test_crew_tracker.py`. T-0023 appended rule 30 last (`:333-341` on T-0019's merge of `8d84786d`; `:324-332` since T-0019; `:317-325` since T-0010's rule 28 went in
   above it; `:310-318` on main since T-0018 landed, `:309-317` before): `crew_route.py`,
   `crew_context.py`, their two test files and `sabotage_route.py` run `test_crew_route.py`,
   `test_crew_route_hook.py` and `test_crew_context.py`.
-  T-0024 appended rule 31 last (`:334-341` since T-0019; `:327-334` since T-0010's merge of `6387ab49`, `:342-349` after its
+  T-0024 appended rule 31 last (`:343-350` on T-0019's merge of `8d84786d`; `:334-341` since T-0019; `:327-334` since T-0010's merge of `6387ab49`, `:342-349` after its
   merge of `f96e9ec9`; `:320-327` on main; rule 27 at `:290-297` on its branch): `approval_hook.py`, both approval-hook
   wrappers, `crew_ticket.py`, `test_approval_hook.py`, `test_approval_group.py` and
   `sabotage_approval.py` run `test_approval_hook.py`, `test_approval_group.py` and
@@ -1591,3 +1591,5 @@ dated provenance notes are left as history at their own commit. Moved in the bod
 **Re-anchored `59bc44e5` -> `9c84df76` on 2026-09-30 (T-0019 review round 1).** `2692e166` fixes round 1's three FIX and five NIT lines: `plugin/crew/hooks/scripts/crew_ticket.py` gains `_mint_indexed`, `_mint_create` and `_mint_ready` above `_mint_claim` (+54 from `:1167` down, so `mint` `:1201` -> `:1260`, `check_direction` `:1263` -> `:1315`, `assign` `:1301` -> `:1355`), `plugin/crew/commands/autopilot.md` rewrites section 0's three lines in place (`:16-18`, still 114 lines), `plugin/crew/README.md` changes `:802`, `:815` and `:819` in place, `CHANGELOG.md` gains eleven lines at `:37`, `plugin/crew/tests/sabotage_autopilot.py` re-points two STATUS_MUTATIONS anchors in place (`:566`, `:630`) and appends 13 ASSIGN_MUTATIONS after `:1030`, and the two T-0019 suites grow. `9c84df76` re-measures `.crew/verify.json` rule 27 in place (`seconds` 19 -> 26 and its `why`; same line count, so every rule range holds). Every `path:line` citation into those files was listed by grep; the only ones past a changed line are crew.md's T-0019 paragraph and tracker-callers line (re-read and corrected in `2692e166`) and `CHANGELOG.md` lines inside dated notes, left as history at their own commit. Nothing was executed for this note.
 
 **Re-anchored `9c84df76` -> `21c31318` on 2026-09-30 (T-0019 review round 1, crew 1.0.63).** `21c31318` bumps crew 1.0.62 -> 1.0.63 in place: `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14` (the `plugin-version:crew` claim), `plugin/crew/README.md:809` ("since 1.0.63") and the CHANGELOG entry's heading and bump line (`CHANGELOG.md:7`, `:54`); no line moved. crew.md's and marketplace-registration.md's version sentences now read 1.0.63. Nothing was executed for this note.
+
+**Re-anchored `f5cab1f9` (main) and `21c31318` (T-0019) -> `3d96623a` on 2026-10-02 (T-0019 merges origin/main `8d84786d`, W-0117 #302, crew 1.0.115, at `3d5f4858` with rerere disabled, and re-bumps crew to 1.0.123 at `3d96623a`).** The merge took main's side of every code-map, INDEX, diagram, rules and graph conflict, kept both sides' provenance, and kept T-0019's router, tests, `mint` and tracker sentences with their line numbers re-read in the merged tree (`grep -n` for the `crew_autopilot.py` and `crew_ticket.py` symbols, `json` for the `.crew/verify.json` rule ranges). `git diff --name-only origin/main 3d96623a`, refresh artifacts aside, is T-0019's own change: `.claude-plugin/marketplace.json`, `.crew/verify.json` (the autopilot rule's two path lines), `CHANGELOG.md` (T-0019's entry, 51 lines, above main's), `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/BUDGETS.md`, `plugin/crew/CONFIG.md`, `plugin/crew/README.md`, `plugin/crew/commands/autopilot.md`, `plugin/crew/hooks/scripts/crew_autopilot.py`, `plugin/crew/hooks/scripts/crew_ticket.py`, `plugin/crew/tests/sabotage_autopilot.py` and five test files (`test_crew_autopilot.py`, `test_crew_autopilot_assign.py`, `test_crew_autopilot_status.py`, `test_crew_ticket_mint.py`, `test_lifecycle_commands.py`). Citations from main's side into those files were listed by script (difflib, `origin/main` -> `3d96623a`); moved: the runbooks-index sentence's `plugin/crew/README.md:2291` (main's `:2285` plus T-0019's six Autopilot lines) and the five `.crew/verify.json` ranges T-0019 had added (`:307-317`, `:318-324`, `:325-332`, `:333-341`, `:343-350`). The root `README.md` citations are not T-0019's file and did not move. Dated history inside parentheticals and provenance notes is left at its own commit. Nothing was executed for this note beyond `grep -n`, `json.load` and that script.
