@@ -4,6 +4,22 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.0.115: refresh admission refuses a mode change that exists only in the index (W-0117)
+
+- **`crew_refresh_check._on_disk` now asks git for the index's mode too.** Under
+  `core.fileMode=true` git's worktree diff reads the mode from the disk, so a mode staged with
+  `git update-index --chmod=+x` while the file stayed 644 never reached the check and the artifact
+  was admitted, though `git commit` records the index's 100755. The existing
+  `git diff --raw <base>` mode check now runs a second time with `--cached`, with the same
+  refusal text; a `--cached` diff that cannot run is could-not-tell. Found in W-0116.
+- **A case matrix pins it**, over `core.fileMode` true and false, set explicitly so the `true`
+  rows run on Windows too: index-only, both and a staged 120000 are refused; a staged content
+  edit, and a disk chmod git ignores under `false`, are admitted. Disk-only under `true` is
+  skipped where the filesystem keeps no executable bit (NTFS). With `--cached` removed the
+  index-only, both and could-not-tell cases go red.
+- **The sabotage entry rides separately** (rule 36: `sabotage_refresh.py` is harness and lands
+  alone).
+
 ### Changed — `bitbucket` 1.2.3: variables read back with the trailing slash, repository access tokens are UI-only, reviewers on Bitbucket (T-0503)
 
 - **What changed.** `skills/bitbucket/SKILL.md` gains a fourth common task,
