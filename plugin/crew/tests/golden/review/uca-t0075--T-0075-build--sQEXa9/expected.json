@@ -1,0 +1,13 @@
+{
+  "counts": {
+    "BLOCK": 3,
+    "FIX": 2,
+    "NIT": 0
+  },
+  "delivered": true,
+  "failure_class": null,
+  "origin": "uca-t0075/T-0075-build--sQEXa9",
+  "parts_missing": [],
+  "read_form": "full",
+  "verdict": "FINDINGS"
+}

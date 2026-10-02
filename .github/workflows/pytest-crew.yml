@@ -1,25 +1,62 @@
 name: Pytest (crew + gizmoduck plugins, skill suites)
 
-# push alone tests the branch tip, never the merge result a PR would produce.
-# Matches marketplace.yml and mcp-servers.yml, which already declare both.
-on: [push, pull_request]
+# push runs only on main: a feature branch is tested by its pull_request run
+# (the merge result), not twice. pull_request alone would never test main
+# itself after a merge, so both are declared.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  # Nightly full-matrix run: PRs test Python 3.12 only (see RUN_LEG below),
+  # so 3.11/3.13 are covered here and on every push to main.
+  schedule:
+    - cron: '17 7 * * *'
+
+# One run per PR at a time: a new push to the PR cancels the superseded run.
+# Every non-PR run (push to main, schedule, workflow_dispatch) gets its own
+# group via run_id, so nothing on main is ever cancelled or queued behind
+# another run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Opt-in self-hosted pool. The owner's runner playbook
+    # (mbadali25/github-runner-infra) sets repo variable CREW_RUNNER=self-hosted
+    # on `make up` and unsets it on `make down`, so required checks never wait on
+    # a torn-down runner pool. Unset, this is ubuntu-latest exactly as before.
+    # Fork PRs never reach the pool (owner 2026-09-30, "No fork PRs"): this repo
+    # is public, so only non-PR events and same-repo PRs may use it.
+    runs-on: ${{ (vars.CREW_RUNNER == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","linux","x64","crew"]') || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
         # Matches the pylint job's floor: pylint 4 needs >=3.10, and these
         # scripts are stdlib-only so there is nothing else to pin against.
         python-version: ["3.11", "3.12", "3.13"]
+    env:
+      # PR CI runs Python 3.12 only; push to main, workflow_dispatch and the
+      # nightly schedule run the whole matrix. The 3.11/3.13 legs still EXIST
+      # on a PR, because branch protection requires their check names: a
+      # job-level `if:` cannot read `matrix`, so every step below is gated on
+      # this instead and those legs finish green in seconds having run nothing
+      # but the notice step. Env values are strings, hence == 'true'.
+      RUN_LEG: ${{ github.event_name != 'pull_request' || matrix.python-version == '3.12' }}
     steps:
+    - name: Python ${{ matrix.python-version }} leg SKIPPED on pull_request
+      if: env.RUN_LEG != 'true'
+      run: echo "::notice::PR CI runs Python 3.12 only. This ${{ matrix.python-version }} leg was SKIPPED, not passed; it runs on push to main, workflow_dispatch and the nightly schedule."
     - uses: actions/checkout@v4
+      if: env.RUN_LEG == 'true'
     - name: Set up Python ${{ matrix.python-version }}
+      if: env.RUN_LEG == 'true'
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install pytest
+      if: env.RUN_LEG == 'true'
       run: |
         python -m pip install --upgrade pip
         # python-docx is NOT optional either, for the same reason pyyaml is
@@ -46,8 +83,9 @@ jobs:
         # requests.get with in production - the test monkeypatches
         # requests.get itself, not the import). Without it collection dies
         # the same way the yaml one below does, taking the whole job with it.
-        pip install 'pytest~=8.0' pyyaml python-docx numpy pillow requests
+        pip install 'pytest~=8.0' pytest-xdist pyyaml python-docx numpy pillow requests
     - name: Run crew + gizmoduck plugin tests and the collision-free skill suites
+      if: env.RUN_LEG == 'true'
       # Scoped to named directories on purpose, and NOT because of
       # skills/cisco-meraki/tests/test_live_smoke.py -- which is what this
       # comment used to claim. That file is decorated
@@ -75,8 +113,19 @@ jobs:
       # no test by name and looked like a plain failure. Verified by blocking
       # the yaml import locally, which reproduces the same 12 collection
       # errors the runner logs.
-      run: pytest plugin/crew/tests/ plugin/gizmoduck/scripts/_test/ skills/mermaid-svg-bitbucket/tests/ skills/notify/tests/ skills/doc-builder/scripts/_test/ skills/intune-graph/scripts/_test/ -v
+      #
+      # -n auto (pytest-xdist): the crew suite is subprocess-bound, not CPU-
+      # bound -- serially it held one core at ~33% -- so workers overlap the
+      # waits. EXCEPT the `wallclock` set (crew's conftest): those assert
+      # elapsed time against a real hook timeout, and beside busy workers one
+      # read 10.25s against its 10s bound on 2 of 6 jobs. They run in the
+      # step below, serially, so the bound stays the real one.
+      run: pytest plugin/crew/tests/ plugin/gizmoduck/scripts/_test/ skills/mermaid-svg-bitbucket/tests/ skills/notify/tests/ skills/doc-builder/scripts/_test/ skills/intune-graph/scripts/_test/ -n auto -m "not wallclock" -v
+    - name: Run crew's wall-clock-bounded tests serially
+      if: env.RUN_LEG == 'true'
+      run: pytest plugin/crew/tests/ -m wallclock -v
     - name: Run the cisco-meraki skill tests
+      if: env.RUN_LEG == 'true'
       # A SEPARATE pytest process, and it has to be. plugin/crew/tests/ and
       # skills/cisco-meraki/tests/ each contain a file named `context.py`
       # whose import side effect is what puts that skill's scripts/ on
@@ -96,6 +145,7 @@ jobs:
       # work around a runner detail.
       run: pytest skills/cisco-meraki/tests/ -v
     - name: Run the wazuh-onprem skill tests
+      if: env.RUN_LEG == 'true'
       # skills/wazuh-onprem/scripts/_test/test_manager_config_remote_paths.py
       # puts scripts/ on sys.path itself (no separate context.py file, so it
       # does not hit the context.py collision the step above works around)
@@ -127,7 +177,26 @@ jobs:
     #
     # pytest-xdist is installed HERE only, as a speed-up: the suite does not
     # depend on it and runs the same without `-n`.
-    runs-on: ${{ matrix.os }}
+    #
+    # windows-latest is scoped by PATH, ubuntu-latest is not. Windows runs on
+    # every non-PR event (push to main, the nightly schedule,
+    # workflow_dispatch) and on a pull_request only when it changes
+    # plugin/crew/** or this workflow file (a PR editing this leg must run
+    # it). Not an `on: pull_request: paths:` filter: that would drop the whole
+    # workflow, `test` job included, for a PR outside those paths and leave its
+    # required checks pending. Not a job-level `if:` either, which cannot read
+    # `matrix`. So the leg always exists and every step after the decision is
+    # gated on RUN_LEG -- the `test` job's pattern -- and a PR that touches no
+    # crew path reports a skipped pass, with a notice saying so.
+    #
+    # Opt-in self-hosted pool, ubuntu leg ONLY: a windows-latest leg always
+    # stays on matrix.os. The owner's runner playbook
+    # (mbadali25/github-runner-infra) sets repo variable CREW_RUNNER=self-hosted
+    # on `make up` and unsets it on `make down`, so required checks never wait on
+    # a torn-down runner pool. Unset, every leg runs on matrix.os as before.
+    # Fork PRs never reach the pool (owner 2026-09-30, "No fork PRs"): this repo
+    # is public, so only non-PR events and same-repo PRs may use it.
+    runs-on: ${{ (matrix.os == 'ubuntu-latest' && vars.CREW_RUNNER == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","linux","x64","crew"]') || matrix.os }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -135,11 +204,34 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     steps:
     - uses: actions/checkout@v4
+      with:
+        # The PR merge commit plus its first parent (the base tip): all the
+        # decision below diffs.
+        fetch-depth: 2
+    - name: Decide whether this leg runs
+      shell: bash
+      # A diff that cannot be computed RUNS the leg: an unknown answer must
+      # not read as "nothing under plugin/crew changed".
+      run: |
+        run=true
+        if [ "${{ matrix.os }}" = windows-latest ] && [ "${{ github.event_name }}" = pull_request ]; then
+          if changed=$(git diff --name-only HEAD^1 HEAD -- plugin/crew .github/workflows/pytest-crew.yml); then
+            if [ -z "$changed" ]; then
+              run=false
+              echo "::notice::crew-shell-matrix (windows-latest) SKIPPED, not passed: this PR changes nothing under plugin/crew/ or .github/workflows/pytest-crew.yml. It runs on push to main, the nightly schedule and workflow_dispatch."
+            fi
+          else
+            echo "::warning::crew-shell-matrix (windows-latest): could not diff the PR against its base (git diff HEAD^1 HEAD failed), so the leg runs."
+          fi
+        fi
+        echo "RUN_LEG=$run" >> "$GITHUB_ENV"
     - name: Set up Python
+      if: env.RUN_LEG == 'true'
       uses: actions/setup-python@v5
       with:
         python-version: "3.13"
     - name: Install pytest
+      if: env.RUN_LEG == 'true'
       # pyyaml: three crew test modules import it at module top, so without
       # it collection fails and takes the whole run down with it.
       run: |
@@ -155,7 +247,16 @@ jobs:
       # -- so without this step those PowerShell parity cases never execute
       # on this runner. Windows-only: ubuntu already gets this set from the
       # `test` job, so running it again here would be pure duplication.
-      if: matrix.os == 'windows-latest'
-      run: python -m pytest plugin/crew/tests -n auto -v
+      #
+      # `-m "not wallclock"` for the same reason as the `test` job's crew
+      # step: those tests assert elapsed time against a real bound and run in
+      # the step below, serially. Found by crew-qa-standards' own audit (H3),
+      # which this step failed until this line.
+      if: env.RUN_LEG == 'true' && matrix.os == 'windows-latest'
+      run: python -m pytest plugin/crew/tests -n auto -m "not wallclock" -v
+    - name: Run crew's wall-clock-bounded tests serially (Windows)
+      if: env.RUN_LEG == 'true' && matrix.os == 'windows-latest'
+      run: python -m pytest plugin/crew/tests -m wallclock -v
     - name: Run crew's slow set (the full per-shell hook matrix)
+      if: env.RUN_LEG == 'true'
       run: python -m pytest plugin/crew/tests -m slow -n auto -v

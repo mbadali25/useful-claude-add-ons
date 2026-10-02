@@ -58,7 +58,12 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root <repo> --expla
 ```
 
 Every globally-settable key with its effective value and the layer that decided
-it: `repo`, `global`, or `default`. Show this table before asking anything.
+it: `repo`, `global`, or `default`. Show this table before asking anything. Its
+first line names the repo layer's file and where it came from:
+`repo layer: <path> (own)`, or `(main checkout)` in a linked worktree that
+inherits the main checkout's config, or `(unknown)` when git could not tell. An
+`(own)` line in a lane whose main checkout has a config too adds that the main
+checkout's is not read - often a default an older crew heal wrote there.
 `--root` is optional outside a repo — with no `.crew/config.json` the `repo`
 layer is simply empty, which is the right answer for a user who has no repo in
 mind yet.
@@ -166,6 +171,13 @@ One vault per person, and a person who keeps their memory in a vault keeps it
 there everywhere; making them say so once per repository was the friction that
 produced this split. A repo that genuinely wants its memory in `.crew/` still
 overrides `memory.mode` in its own config.
+
+**`shellRoute.mode` and `shellRoute.distro`**, on native Windows only. Which
+shell is fast is a fact about the machine. Run `crew_shell.py probe --write`,
+and `measure --write` when the state is `usable`, then offer `auto` (default),
+`wsl`, `powershell` or `gitbash` with the numbers. On `not-installed`, print the
+`wsl --install -d Ubuntu` recommendation and never run it. See "Choosing the
+shell route on Windows" in `platform.md`.
 
 ## 3. Show the plan, then write
 

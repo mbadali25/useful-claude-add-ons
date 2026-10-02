@@ -2,26 +2,26 @@
 paths:
   - "plugin/crew/**"
 ---
-<!-- crew:generated source=.crew/codemap/crew.md sha256=96abfffb84d57d72 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/crew.md sha256=aea18a616bde620f -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # crew
-Code map anchor `8730119f`; if it is behind HEAD, re-check with `git diff --name-only 8730119f..HEAD -- <cited paths>`.
-Covers: The crew plugin after 1.0: hooks, the four agents, commands, skills inventory, config layering and leaf counts, and how crew_freshness.py reads this very directory.
+Code map anchor `6053b65d`; if it is behind HEAD, re-check with `git diff --name-only 6053b65d..HEAD -- <cited paths>`.
+Covers: The crew plugin after 1.0: hooks, the four agents, commands, skills inventory, config layering and leaf counts, and how crew_freshness.py reads this very directory.; re-anchored to c4e2eb98 (L-0520 PR 1, the merge train CLI, after merging main 42d5ef58 (T-0094)); re-anchored to 0be97503 (L-0520 PR 1 merges main 42af3fb7 (L-0531)); re-anchored to 14bb59ef (L-0520 PR 1 merges main 6a8c60b1 (T-0099)); re-anchored to 8bf710ed (L-0520 PR 1 review round 1 fixes); re-anchored to 14b52c91 (L-0520 PR 1 merges main bd4b2f30 (T-0028 #288, crew 1.0.85, and the mailgun skill), crew 1.0.86); re-anchored to 0c3508e9 (L-0520 PR 1 merges main f7caa37d (L-0561 #289: mailgun registered as skills/mailgun 1.0.1, both install scripts, README, INSTALLATION.md), crew stays 1.0.86); re-anchored to 6e581365 (T-0505 merges main 64b04c6b: W-0116 crew 1.0.89, runner auto-start #294; crew 1.0.91); re-anchored to 9580571e (T-0505 raises promote.md's line ceiling in .budget-allowance.json, crew 1.0.91); re-anchored to 89ebda03 (L-0558 merges main 52489039); re-anchored to 5ab63076 (L-0516: deadline polls replace fixed sleeps in the flaky crew tests, crew 1.0.89; verify.json gains rule 10 so later rules shift by one and six lines); re-anchored to 805b0a25 (L-0516 split per the tooling-PR rule: sabotage_qa.py back to main's copy, its four entries move to L-0563; verify.json rule 10's why and CHANGELOG reworded in place); re-anchored to 7ecbdc7f (L-0516 re-bumps crew to 1.0.91 after the split; version files, CHANGELOG heading and the two version sentences only); re-anchored to a9c0d9ab (L-0516: pylint R1732 fix in test_poll_fixtures.py (with-blocks, no line this map cites moves) and crew re-bumped to 1.0.92; version files, CHANGELOG heading and the two version sentences in place); re-anchored to 083cda66 (L-0516 merges main 64b04c6b (W-0116 #292: crew_refresh_check.py gains the Windows _FINAL_PATH check, test_refresh_admission.py two Windows premises; runner-autostart.yml) and crew re-bumped to 1.0.93; version files, CHANGELOG heading and the two version sentences in place); re-anchored to 908c03af (L-0516 review round 1 fixes: poll_until reads the clock before each probe after the first, test_poll_fixtures.py reaps its children with wait(timeout=10), CHANGELOG corrected; crew re-bumped to 1.0.97; version files, CHANGELOG heading and the two version sentences in place); re-anchored to 11f476a2 (L-0516 merges main 6fe0e0db, T-0505 #296, without rerere; crew 1.0.98; no body citation moved); re-anchored to 1390bb23 (L-0516 merges main 52489039, T-0110 #297 and T-0040 #290, without rerere; crew 1.0.100); re-anchored to 0027f794 (L-0516 merges main 05a679bf, L-0558 #293, without rerere; crew 1.0.103); L-0513 re-anchored fe524012 -> 4eacfacf -> 3437cbdd -> e41bc6fd -> 4a48f594 -> de32cb87 -> f23b01b4 (the gate runner scripts/gate-runner.py and its review fixes; repository tooling, no plugin version; per-step notes in this map's provenance), then merged with main 52489039 (T-0040, crew 1.0.98) and re-anchored to 71038cb9, then merged with main 05a679bf (L-0558, crew 1.0.102) and re-anchored to 0d159692; re-anchored to ec95c8aa (L-0516 merges main cacf7ff0, L-0513 #301, without rerere; crew 1.0.104); re-anchored to 5ffffbe3 (L-0516 merges main ddcbf90d, W-0115 #299, without rerere; crew 1.0.110)
 ## Entry points
-- `plugin/crew/hooks/scripts/crew_state.py:996` — `TRIGGERS`, a 15-entry tuple, unchanged in membership and order from the previous anchor.
-- `plugin/crew/hooks/scripts/crew_state.py:2906` — `evaluate_triggers`.
-- `plugin/crew/hooks/scripts/crew_config.py:243` / `:396` — `default_config()` / `default_global_config()`.
-- `plugin/crew/hooks/scripts/crew_config.py:2451` — `_RATCHETED`, the 14-key ratchet table (seven construction steps).
-- `plugin/crew/hooks/scripts/crew_config.py:3045` / `:3071` — `plan_repo_write` / `write_repo_config`, the one repo-layer writer (T-0075); `:2846` / `:2865` — the machine pair.
-- `plugin/crew/hooks/scripts/crew_config_files.py:350` — `update_json`, the lock and compare-and-swap both writers stand on (T-0075).
-- `plugin/crew/hooks/scripts/crew_config_menu.py:1048` — `main()`, the `spec` / `save` / `delete-repo` / `restore-repo` CLI the `/crew:config` menu calls.
-- `plugin/crew/hooks/scripts/role_write_guard.py:539` — `classify`, the decision function; `:684` — `main()`.
+- `plugin/crew/hooks/scripts/crew_state.py:999` — `TRIGGERS`, a 15-entry tuple, unchanged in membership and order from the previous anchor.
+- `plugin/crew/hooks/scripts/crew_state.py:2942` — `evaluate_triggers`.
+- `plugin/crew/hooks/scripts/crew_config.py:244` / `:405` — `default_config()` / `default_global_config()`.
+- `plugin/crew/hooks/scripts/crew_config.py:2510` — `_RATCHETED`, the 14-key ratchet table (seven construction steps).
+- `plugin/crew/hooks/scripts/crew_config.py:3105` / `:3131` — `plan_repo_write` / `write_repo_config`, the one repo-layer writer (T-0075); `:2905` / `:2924` — the machine pair.
+- `plugin/crew/hooks/scripts/crew_config_files.py:364` — `update_json`, the lock and compare-and-swap both writers stand on (T-0075).
+- `plugin/crew/hooks/scripts/crew_config_menu.py:1051` — `main()`, the `spec` / `save` / `delete-repo` / `restore-repo` CLI the `/crew:config` menu calls.
+- `plugin/crew/hooks/scripts/role_write_guard.py:540` — `classify`, the decision function; `:685` — `main()`.
 - `plugin/crew/hooks/scripts/role-write-guard.sh:348` — where the strict private-resolver result feeds the guard's fail-closed fallback.
 - `plugin/crew/hooks/scripts/event_claim.py` — no single entry point read this pass beyond the module docstring; called from `notify.sh` and `handoff-write.sh` only.
-- `plugin/crew/hooks/scripts/crew_context.py:121` — `load_crew_config`, the one function that reads `crew.json` before `config.json`.
+- `plugin/crew/hooks/scripts/crew_context.py:122` — `load_crew_config`, the one function that reads `crew.json` before `config.json`.
 - `plugin/crew/hooks/scripts/crew_autoclear_setup.py` — no single `main()` confirmed at a specific line this pass; called with subcommands (`plan-windows-default`, `apply-migrate`) from the three sites named above.
-- `plugin/crew/hooks/scripts/crew_resume.py:667` — `decide`, read-only; `main()` is the `decide` / `record` / `precompact` CLI.
-- `plugin/crew/hooks/scripts/crew_refresh_check.py:576` — `ticket_freshness`, the library entry point; `main()` at `:676`.
-- `plugin/crew/hooks/scripts/crew_autopilot.py:544` — `next_phase`, read-only; `main()` at `:1632` is the `next` / `resume` / `settings` / `stops` / `route` / `status` / `deploy-allowed` / `approve` / `questions-check`...
-- `plugin/crew/hooks/scripts/crew_route.py:210` — `decide`, read-only route / ask / none for a prompt; `main()` at `:332` is the `settings` / `decide` CLI.
+- `plugin/crew/hooks/scripts/crew_resume.py:668` — `decide`, read-only; `main()` is the `decide` / `record` / `precompact` CLI.
+- `plugin/crew/hooks/scripts/crew_refresh_check.py:1306` — `ticket_freshness`, the library entry point; `main()` at `:1406`; `artifact_verdicts` at `:1013`, the admission judgement (T-0094) that L-0540 wires into the au...
+- `plugin/crew/hooks/scripts/crew_autopilot.py:559` — `next_phase`, read-only; `main()` at `:1635` is the `next` / `resume` / `settings` / `stops` / `route` / `status` / `deploy-allowed` / `approve` / `questions-check`...
+- `plugin/crew/hooks/scripts/crew_route.py:211` — `decide`, read-only route / ask / none for a prompt; `main()` at `:333` is the `settings` / `decide` CLI.
 - `plugin/crew/hooks/scripts/crew_endpoints.py:566` — `declare_endpoint`, the only writer of *declared* records.
 Full note: `.crew/codemap/crew.md`.

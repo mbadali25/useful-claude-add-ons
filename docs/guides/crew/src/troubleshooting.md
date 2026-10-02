@@ -122,6 +122,21 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   approve` on a `NEEDS_REPLAN` ticket opens a fresh budget of two rounds counted from the successor
   plan; the rounds already spent stay in the ledger and are not erased.
 
+- **Symptom: a round came back `INCOMPLETE`.**
+  **Check:** the `review:` lines, or `failure_class` in `.work/tickets/<id>/review.json`. An
+  INCOMPLETE round has one of three classes. `tool` means the answer never arrived intact: a
+  timeout, a bad or unknown exit, empty output, or a failed Codex stream. `tree` means a bundle part
+  or web-test report changed under the reviewer. `reviewer` means the output arrived and broke the
+  contract.
+  **Fix:** a `tool` round is refunded automatically, up to two per plan. The line reads
+  `review: round N was a tool failure (...); refunded`. Only the failed round is given back: the
+  rerun `/crew:review` reserves a new round, charged like any other unless it is a tool failure
+  too, so a ticket with one charged round that reruns and gets FINDINGS has spent the budget. If
+  Codex is out of quota, use the next eligible provider. A third tool failure under
+  one plan reads `NOT refunded - refund limit 2 per plan reached` and counts. A `reviewer` or `tree`
+  round always counts. Rebuild the bundle (tree), or rerun and read what the reviewer wrote
+  (reviewer).
+
 - **Symptom: `/crew:done` refuses with a receipt error.**
   **Check:**
   ```bash
@@ -135,11 +150,54 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   **Fix:** if the edit was deliberate, get the ticket reviewed again (spends the next round); if it
   was accidental, revert the edit and re-check.
 
+- **Symptom: Codex hit a usage limit.** The probe printed `PROBE=limited` (exit 5) with the
+  error on `PROBE_DETAIL=...`, or a round printed `review: codex usage limit in round N: ...`.
+  **Cause:** Codex's usage limit, rate limit, quota or spend cap - its own message is quoted.
+  **What happens:** that round runs on the Claude reviewer, announced as
+  `same-family (codex limit)` and not independent; the limit is recorded in
+  `<git-common-dir>/crew/review-limit/<ticket>.json` and applies to the next round only. The
+  round is spent like any other. To check Codex yourself without spending one:
+  ```bash
+  python3 "<crew>/hooks/scripts/review_run.py" --root . --ticket <id> --scratch <dir> \
+    --provider codex --probe
+  ```
 - **Symptom: you want to send a ticket back without spending the third round.**
   ```bash
   python3 "<crew>/hooks/scripts/review_ledger.py" --root . --ticket <id> --reject --by <who>
   ```
   Refuses on a ticket already `ACCEPTED` or already `NEEDS_REPLAN`.
+
+- **Symptom: `crew_train.py acquire` exits 1, `waiting behind <ticket>`.** The clone's merge train
+  is armed (L-0520) and an overlapping ticket holds it, or queued first on the same base.
+  **Check:**
+  ```bash
+  python3 "<crew>/hooks/scripts/crew_train.py" --root . status
+  ```
+  Each waiting entry lists the ticket it is behind and every colliding pair (`<mine> x <theirs>`);
+  `touch: undeclared: <why>` means that ticket's spec has no usable `## Touch`, which overlaps
+  everything.
+  **Fix:** wait for the holder to land and release, then acquire again before reviewing; fix an
+  undeclared Touch in the spec. `merge <base> first` means the base moved in this ticket's Touch:
+  run `crew_train.py catch-up --ticket <id>` and review the merged head. `could not tell` (exit 3)
+  means the train state could not be read — the message names the file; nothing is guessed.
+
+- **Symptom: a lane holds the train and its session died.** `status` prints `stale?:` beside it
+  (worktree missing, head already in the base, held for hours). Nothing releases it
+  automatically, by design.
+  **Fix:** once you are sure it is dead:
+  ```bash
+  python3 "<crew>/hooks/scripts/crew_train.py" --root . release --ticket <id> --force \
+    --by <who> --reason "<why>"
+  ```
+  The release is logged as a `force-release` event that the other lanes see.
+
+- **Symptom: `check-land` says the base moved in Touch paths.** Another ticket landed changes to
+  paths this ticket touches after it was gated, so the verdict covers a different tree.
+  **Fix:** `crew_train.py catch-up --ticket <id>` (a merge; conflicts and rerere-replayed files
+  are listed and left unstaged for you to inspect, `git add` and commit; a version file is never
+  replayed and comes back conflicted), gate the merged head again (`/crew:review`),
+  then `check-land` again. `merge-tree: HEAD conflicts with <base>` is the same fix with a
+  conflict to resolve first.
 
 ## Scope: approval and the completion audit
 
@@ -148,6 +206,19 @@ the ticket may change; `plan.md`'s `Files:` lines must each fall inside Touch. T
 session to that contract — see [Daily workflow: scope and approval](daily-workflow-scope.md) for the
 contract itself. This section is what goes wrong with the approval and the audit.
 
+- **Symptom: a lane worktree does not see my settings** (a CLI approval refused, `scope.mode`
+  read as `off`, guards at their defaults). `.crew/*` is gitignored, so `git worktree add` makes a
+  checkout with no crew config.
+  **Check:** `/crew:status` prints `config   inherited from the main checkout (<path>) ...` when
+  the worktree reads the main checkout's `.crew/config.json` (crew 1.0.69+, T-0088), and
+  `crew_config.py --root . --explain` starts with `repo layer: <path> (<source>)`.
+  **Cause and fix:** a worktree with its own `.crew/config.json` or `.crew/crew.json` reads only
+  those, never merged with the main checkout's - delete them to inherit. `/crew:status` names
+  that case: `... the main checkout's (<path>) is not read ...`. A lane made before 1.0.69 almost
+  always has one, a default that crew's SessionStart heal wrote there. `(unknown)` means git
+  could not name the main checkout; then no default is written either. The shell and PowerShell readers (`verify-gate.sh`,
+  `_common.sh`, `notify.sh`, the handoff scripts, `promote-gate.ps1`, `scope-guard.ps1`,
+  `cloud-guard.ps1`, `auto-clear.ps1`) do not inherit yet.
 - **Symptom: an edit inside Touch is still refused.**
   **Check:** approval status.
   ```bash
@@ -198,6 +269,36 @@ contract itself. This section is what goes wrong with the approval and the audit
   prove `off` (a corrupt file, `report`, `auto`, `block`, or no `scope` key at all) fails **closed**
   with exit 2: "no usable python ... failing closed". Fix by installing a real Python 3, not by
   reading the closed refusal as a false positive.
+
+## Promote gate blocks a worktree deploy
+
+`promote-gate.sh` / `.ps1`, the `PreToolUse` hook on declared `deploy` commands. Since T-0505 it
+judges **the tree the deploy runs from**: the Bash call's `cwd`, moved by a leading `cd <dir> &&`
+and named by any `git -C <dir>`. That tree must be a worktree of the same repository, clean, and at
+every literal sha the command names. `.crew/verify.json`, `.work/PROMOTIONS.md` and the
+`.crew/.approved-<env>-<sha>` markers are still read from the session's project directory.
+
+- **"the tree this deploy runs from ('...') is dirty"** names the tree it judged. If that is the
+  main checkout while you meant a worktree, run the command there: `cd <worktree> && <deploy>`, or
+  enter the worktree first. A dirty main checkout no longer blocks a clean worktree.
+- **"no all-pass row for sha X"** where X is the worktree's sha: the upstream environment passed a
+  different sha. Promote the worktree's sha upstream first; a row for the main checkout's sha does
+  not carry over.
+- **"the command names commit '...', but the tree it runs from ... is at ..."**: a literal
+  `ref=<sha>` that is not the tree's HEAD. Deploy from a tree at that sha, or drop the literal.
+- **"changes directory after it starts"** (a later `cd`, `bash -c 'cd ...'`, `env -C`, `make -C`),
+  **"names more than one tree"**, **"not a form the gate reads with certainty"** or **`--git-dir`**:
+  the gate will not guess. Put a single literal `cd <dir> &&` first, or use `git -C <dir>` - and
+  note the directory the command itself runs in must be clean too.
+- **"index entries flagged skip-worktree or assume-unchanged"**: those flags hide edits from
+  `git status`; clear them in the tree being deployed.
+- **"has uncommitted changes: it ..."** also fires when the map is deleted or untracked, or edited
+  under skip-worktree: the gate compares the file with HEAD's copy, not with `git status`.
+- **".crew/verify.json in the project dir ... has uncommitted changes"**: commit or revert the map;
+  an uncommitted map is not policy.
+- Never route around a block by running the deploy yourself with `!`. `/crew:promote` fixes the
+  precondition the message names and asks you only for a `requireHuman` yes or a genuinely
+  interactive step.
 
 ## Cloud guard false positives
 
@@ -417,3 +518,9 @@ runs but the visual rule never passes.
   both. This is not double-firing to fix — it is how the same hook reaches both shells; each
   PowerShell twin stands itself down on the wrong platform (`$env:OS -ne 'Windows_NT'`) rather than
   the bash twin doing that job.
+- **Tests and checks are slow on Windows.** Read `/crew:status`'s `shell` line first. It names the
+  shell route crew's jobs take (`shellRoute.mode`: `auto`, `wsl`, `powershell`, `gitbash`) and why.
+  `WSL never probed` means nobody ran `crew_shell.py probe --write`; `not-installed` comes with the
+  `wsl --install -d Ubuntu` recommendation, which crew prints and never runs. A repo on a Windows
+  drive goes to WSL under `auto` only after `crew_shell.py measure --write` has shown WSL faster
+  there. See "Choosing the shell route on Windows" in `plugin/crew/skills/crew-setup/platform.md`.

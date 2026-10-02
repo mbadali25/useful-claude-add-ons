@@ -1,0 +1,13 @@
+{
+  "counts": {
+    "BLOCK": 1,
+    "FIX": 2,
+    "NIT": 0
+  },
+  "delivered": true,
+  "failure_class": null,
+  "origin": "uca-t0010-solo/T-0010-solo--V7Q7fm",
+  "parts_missing": [],
+  "read_form": "full",
+  "verdict": "FINDINGS"
+}

@@ -29,7 +29,7 @@ MAX_LINES = 120
 
 NEW_COMMANDS = ("brainstorm.md", "spec.md", "plan.md", "implement.md",
                 "done.md", "fix.md", "approve.md", "autopilot.md")
-NEW_SKILLS = ("crew-brainstorm", "crew-plan", "crew-execute")
+NEW_SKILLS = ("crew-brainstorm", "crew-plan", "crew-execute", "crew-standards")
 
 
 def _read(path):
@@ -353,3 +353,61 @@ def test_a_failed_create_stops_before_the_folder(name):
     folder = text.find("create `.work/tickets/")
 
     assert (create != -1, stop != -1, folder != -1, create < stop < folder) == (True, True, True, True)
+
+
+# T-0085: the build-time standards reach the commands that apply them. Exact
+# strings, matched on whitespace-normalised text, and one ordering control: the
+# stamp sits before the review, so a self-check moved after `/crew:review $1`
+# (a text mutation that keeps the words) still goes red. review.md's two
+# refusal strings are in the exit-2 paragraph only T-0085 wrote; main's
+# pre-T-0085 paragraph carries neither (review round 2 FIX 4).
+_STANDARDS_STEPS = {
+    "implement.md": ("crew_standards.py stamp --root . --ticket $1", "crew-standards"),
+    "plan.md": ("Standards:",),
+    "review.md": ('crew_standards.py proposals --root . --ticket "$TICKET"', "std:",
+                  "`review-run: self-check: ...`",
+                  "run the `crew_standards.py stamp` it names"),
+    "fix.md": ("self-check",),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_STANDARDS_STEPS))
+def test_commands_name_the_standards_steps(name):
+    text = " ".join(_read(os.path.join(COMMANDS, name)).split())
+
+    missing = [s for s in _STANDARDS_STEPS[name] if s not in text]
+
+    assert missing == [], f"{name} lacks {missing}"
+
+
+def test_implement_stamps_the_self_check_before_the_review():
+    lines = _read(os.path.join(COMMANDS, "implement.md")).splitlines()
+
+    stamp = [i for i, line in enumerate(lines) if "crew_standards.py stamp" in line]
+    review = [i for i, line in enumerate(lines) if "**Then, last, `/crew:review $1`**" in line]
+
+    assert stamp and review and stamp[-1] < review[0], (stamp, review)
+
+
+def test_plan_template_and_skill_carry_a_standards_line():
+    template = _read(os.path.join(COMMANDS, "plan.md"))
+    skill = _read(os.path.join(SKILLS, "crew-plan", "SKILL.md"))
+
+    assert [("Standards:" in template.split("```")[1]),
+            ("Standards:" in skill.split("```")[1])] == [True, True]
+
+
+_TRAIN_LANDING = ("## Landing through the merge train", "crew_train.py\" status",
+                  "armed: yes", 'crew_train.py" check-land --ticket "$1"',
+                  "--match-head-commit", 'crew_train.py release --ticket "$1" --merged',
+                  "crew_train.py catch-up", "Crew never merges")
+
+
+def test_done_names_the_merge_train_landing():
+    """L-0520: /crew:done names the land check, the printed merge and the
+    release, and says crew never merges."""
+    text = " ".join(_read(os.path.join(COMMANDS, "done.md")).split())
+
+    missing = [s for s in _TRAIN_LANDING if s not in text]
+
+    assert missing == [], f"done.md lacks {missing}"

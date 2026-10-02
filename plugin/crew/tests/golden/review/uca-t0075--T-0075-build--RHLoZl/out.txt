@@ -1,0 +1,34 @@
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-001-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-002-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-003-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-004-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-005-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-006-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-007-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-008-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-009-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-010-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-011-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-012-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-013-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-014-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-015-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-016-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-017-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-018-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-019-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-020-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-021-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-022-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-023-of-024.patch
+READ|<ROOT>/.work/review/T-0075-build--RHLoZl/diff.txt.parts/part-024-of-024.patch
+BLOCK|plugin/crew/hooks/scripts/crew_config_menu.py:528|The printed restore command uses POSIX shlex quoting and cannot execute under Windows cmd.exe, so test_delete_prints_restore_command_that_works fails in the required Windows default suite|On Windows, delete a repo config and execute the printed command with subprocess.run(shell=True); shlex.quote wraps backslash paths in single quotes, which cmd.exe treats literally
+BLOCK|.crew/verify.json:129|The changed config rule has no verify-gate receipt, so the required clean pass and full-suite acceptance are unproven|Check for .crew/.verify-verified-at and .crew/.verify-gate.record.json; both are absent according to the bundle receipts
+FIX|plugin/crew/hooks/scripts/crew_config.py:2918|Integer 0 passes the false-or-null veto check because 0 equals False in Python, but the auto-clear and resume readers use identity checks, so the written value does not veto an armed machine setting|Apply --set context.autoClear.enabled=0 --repo with machine enabled true; the write succeeds and auto-clear remains enabled
+FIX|plugin/crew/hooks/scripts/crew_config_menu.py:229|A missing or malformed repo config collapses to an empty dict, yet every normal repo row remains writable with choices, violating the selection guarantee and failing only at Save|Remove .crew/config.json or replace it with invalid JSON, run spec --layer repo --json, select tracker=jira, then Save; the menu offers it but plan_repo_write refuses
+FIX|plugin/crew/hooks/scripts/crew_config_menu.py:301|Expanded role rows reimplement source attribution and hide a global contribution behind source=repo instead of preserving explain_config's repo+global rule|Put qa.roles.review.provider in the global file and only qa.roles.review.model in the repo file; the row value combines both but reports only repo
+FIX|plugin/crew/hooks/scripts/crew_config_menu.py:401|Save catches only OSError after prevalidation, so a concurrent repo deletion or corruption raises RepoWriteRefused after the machine layer was written and escapes without the required partial-write report|Let both plans succeed, remove or corrupt .crew/config.json before write_repo_config runs, and apply; the machine write completes followed by an uncaught exception
+FIX|plugin/crew/hooks/scripts/crew_config_menu.py:266|The machine spec omits platform.* and schema entirely instead of showing them read-only with their refusal reasons as required|Run spec --layer machine --json and search the rows for platform.os and schema; neither exists
+FIX|plugin/crew/hooks/scripts/crew_config_menu.py:475|The delete preview deliberately omits the required guards.forcePush block-to-allow widening under a global allow value|Set repo guards.forcePush=block and global guards.forcePush=allow, then run delete-repo; no forcePush row or widening marker is printed
+FIX|plugin/crew/hooks/scripts/crew_config_menu.py:493|Delete preview resets platform-owned leaves to null even though the same SessionStart continues into platform detection and restores the detected values, so its claimed post-heal diff contains false changes|With platform.os=linux in the repo config, run delete-repo; the preview says linux becomes null, but the next platform-sync SessionStart writes linux again
+FIX|plugin/crew/hooks/scripts/crew_config_menu.py:416|The typed delete token is always root's basename instead of git rev-parse --show-toplevel's basename with fallback, weakening the specified checkout-name confirmation|Point --root at a nested directory containing .crew inside a repository; the command asks for the nested directory name rather than the repository name

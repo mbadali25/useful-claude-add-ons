@@ -1,0 +1,13 @@
+{
+  "counts": {
+    "BLOCK": 0,
+    "FIX": 2,
+    "NIT": 6
+  },
+  "delivered": true,
+  "failure_class": null,
+  "origin": "uca-t0015r/T-0015-a9vs6U",
+  "parts_missing": [],
+  "read_form": "bare",
+  "verdict": "FINDINGS"
+}

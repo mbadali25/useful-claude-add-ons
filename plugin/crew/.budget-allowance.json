@@ -16,8 +16,8 @@
     "reason": "raised: item 5 under 'Then make the knowledge executable' runs crew_autoclear_setup.py so a standalone /crew:onboard configures context.autoClear the same way /crew:init does"
   },
   "plugin/crew/commands/promote.md": {
-    "lines": 335,
-    "reason": "T8: to trim"
+    "lines": 380,
+    "reason": "raised: T-0505 adds 'When the gate blocks' (fix the precondition, never hand the owner a deploy so it skips the hook) and names which tree gate 1 judges"
   },
   "plugin/crew/commands/review.md": {
     "lines": 551,

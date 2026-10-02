@@ -213,6 +213,7 @@ import re
 import sys
 import time
 
+import crew_common
 import crew_config
 import crew_state
 
@@ -756,7 +757,7 @@ def main(argv=None):  # pylint: disable=unused-argument
         # ratchet without ever reaching the corruption check at all, so a
         # repo that used to say `block` and got corrupted read as `report`
         # -- which never blocks anything -- instead of the floor.
-        repo_config_path = os.path.join(root, ".crew", "config.json")
+        repo_config_path = crew_common.repo_config_file(root, "config.json")
         repo_state = crew_config.layer_state(repo_config_path)
         global_state = crew_config.layer_state(crew_config.GLOBAL_CONFIG_PATH)
         forced_by_corruption = repo_state == "corrupt" or global_state == "corrupt"

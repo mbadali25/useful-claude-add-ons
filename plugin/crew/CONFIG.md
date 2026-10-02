@@ -36,7 +36,7 @@ print(json.dumps(c.leaf_paths(c.default_global_config()), indent=1))"
 
 | Layer | File | Read by |
 |---|---|---|
-| repo | `.crew/config.json` in the repository root | `crew_state.load_config` |
+| repo | `.crew/config.json` in the repository root - or, in a linked worktree with neither `.crew/config.json` nor `.crew/crew.json`, the main checkout's (`crew_common.repo_config_dir`) | `crew_state.load_config` |
 | machine-global | `~/.claude/crew/config.json` | `crew_config.py::read_global_config` |
 
 Both are optional. `read_global_config` **never raises**: an absent, malformed,
@@ -111,6 +111,41 @@ files on migration rather than only resolving them for a read
 (`crew_config.py`, a comment).
 
 ---
+
+### In a linked worktree
+
+Since crew 1.0.69 (T-0088) every Python reader of the repo config opens
+`crew_common.repo_config_file(root, name)`, which resolves the `.crew/`
+directory in this order:
+
+1. The worktree's own `.crew/` when it holds `config.json` **or** `crew.json`.
+   Both files are then read from there and nothing is inherited, even when
+   they are partial: the two checkouts' files are never merged.
+2. `.git` a directory, or missing: the repository's own `.crew/`, with no git call.
+3. `.git` a file (a linked worktree or a submodule): `git rev-parse
+   --git-dir --git-common-dir`, each path joined to the worktree's top (no
+   `--path-format`, which git before 2.31 does not know). A submodule (git-dir equals
+   common-dir) or a bare common directory (not named `.git`) has no main
+   checkout and reads its own `.crew/`. Otherwise the main checkout's `.crew/`,
+   when it holds either file.
+4. When git cannot answer, the source is `unknown`: the worktree's own `.crew/`
+   is read (nothing inherited), and `/crew:status` and `/crew:config --explain`
+   print that git could not tell.
+
+**A lane made before crew 1.0.69 has a config of its own already.** Every
+SessionStart heal on crew 1.0.68 or earlier wrote a default `.crew/config.json`
+into a lane worktree that had none, so rule 1 applies and nothing is inherited.
+`/crew:status` and `/crew:config --explain` name that case: a linked worktree
+whose own file is in force while the main checkout also has one prints `the
+main checkout's (<path>) is not read`. If the lane's file is a default nobody
+edited, delete it (and `.crew/crew.json`, if present) to inherit; from 1.0.69
+the heal path creates nothing there again.
+
+The writers never follow it: `crew_platform` (heal and `platform-sync`),
+`crew_autoclear_setup`, `crew_migrate`, `/crew:init` and the machine-global writer
+keep their own-path behaviour, and the heal path creates nothing in a worktree
+that inherits a config, or in one where git could not tell. The shell and PowerShell readers (`verify-gate.sh`, `_common.sh`, `notify.sh`, `handoff-read.sh`, `handoff-write.sh`, `promote-gate.ps1`, `scope-guard.ps1`, `cloud-guard.ps1` and `auto-clear.ps1`) are not
+routed yet and read only the worktree's own file.
 
 ## 2. The invariant
 
@@ -659,18 +694,20 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 
 | Key | Type | Default |
 |---|---|---|
-| `qa.provider` | `auto` \| `claude` \| `codex` \| `copilot` | `"auto"` |
-| `qa.order` | list (a leaf; replaced wholesale) | `["codex", "copilot", "claude"]` |
+| `qa.provider` | `auto` \| `claude` \| `codex` \| `copilot` \| `kimi` | `"auto"` |
+| `qa.order` | list (a leaf; replaced wholesale) | `["codex", "kimi", "copilot", "claude"]` |
 | `qa.fallback` | string | `"claude-sonnet-5"` |
 | `qa.codex.model` | string or `null` | `null` |
 | `qa.codex.reasoningEffort` | string or `null` | `null` |
 | `qa.copilot.model` | string or `null` | `null` |
+| `qa.kimi.model` | a Kimi Code model id (`k3`, `kimi-for-coding`, `kimi-for-coding-highspeed`) or `null` for the CLI's own `default_model`; no `reasoningEffort` key | `null` |
 | `qa.roles` | open table (empty dict = leaf) | `{}` |
-| `dev.provider` | `claude` \| `codex` \| `copilot` | `"claude"` |
+| `dev.provider` | `claude` \| `codex` \| `copilot` \| `kimi` | `"claude"` |
 | `dev.fallback` | string | `"claude-sonnet-5"` |
 | `dev.codex.model` | string or `null` | `null` |
 | `dev.codex.reasoningEffort` | string or `null` | `null` |
 | `dev.copilot.model` | string or `null` | `null` |
+| `dev.kimi.model` | a Kimi Code model id or `null`, as `qa.kimi.model` | `null` |
 | `dev.roles` | open table | `{}` |
 | `worktree.root` | path or `null` | `null` |
 | `secondOpinion.provider` | string | `"none"` |
@@ -725,7 +762,7 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 | `route.enabled` | boolean; only the JSON value `true` arms it, and a repo value wins over the machine one (§21) | `false` |
 
 `crew_state.QA_PROVIDERS` and `DEV_PROVIDERS` are both
-`["claude", "codex", "copilot"]` (dumped by execution). `qa.provider`
+`["claude", "codex", "copilot", "kimi"]` (dumped by execution). `qa.provider`
 additionally accepts `"auto"`; a `dev.provider` of `"auto"` is **not** valid —
 `crew_config.py::validate_providers` checks `qa.provider` against
 `QA_PROVIDERS + ["auto"]` and `dev.provider` against `DEV_PROVIDERS` alone.
@@ -793,6 +830,8 @@ repository or one checkout.
 | `platform.wsl` | boolean or `null` | `null` | `crew_platform.py` |
 | `platform.shell` | string or `null` | `null` | `crew_platform.py` |
 | `platform.windowsHostIp` | string or `null` | `null` | `crew_platform.py` |
+| `shellRoute.mode` | `"auto"`, `"wsl"`, `"powershell"`, `"gitbash"` or `null` | `null` (repo), `"auto"` (machine) | `crew_shell.mode` — the shell crew's long-running jobs run in on native Windows; both layers; a repo `null` inherits the machine value and unset everywhere reads as `auto`; an unrecognised value reads as `auto` and is named on the route line and the `/crew:status` `shell` line |
+| `shellRoute.distro` | string or `null` | `null` | `crew_shell.configured_distro` — the WSL distro to probe and route to; `null` takes the default (`*`) distro, never one picked by list order |
 | `graph.enabled` | boolean | `true` | **no consumer found**, §9 |
 | `graph.tool` | string | `"graphify"` | **no consumer found**, §9 |
 | `graph.out` | path | `"graphify-out"` | `crew_state.py` |
@@ -811,6 +850,15 @@ case `null_shadows` is deliberately narrow to protect (§1).
 machine facts into the repo config. That is why it is repo-only despite
 describing a machine: the value records what *this checkout* resolved, and a
 global override would make every repo on the box report the first one's answer.
+
+`shellRoute.*` (T-0040) is a preference, not a detected fact, so it is not in
+`platform.*`: platform-sync rewrites `platform.shell` every SessionStart. It is
+settable on both layers, because which shell is fast is a fact about the
+machine and a repo may still override it. The probe's answer is not config: it
+lives in the machine-local cache `~/.claude/crew/shell-route.json`, written only
+by `crew_shell.py probe --write` and `measure --write`. `shellRoute` is not
+`route`: `route` routes plain-text prompts to `/crew:` commands, and
+`shellRoute` picks the shell a job runs in.
 
 ---
 
@@ -1606,7 +1654,9 @@ denied unattended for a prod or unknown target.
 **Not a promotion gate.** `prodUnattended` does not stand down
 `promote-gate.sh`'s `requireHuman` (`promote-gate.sh`, the `requireHuman`
 check), which still applies independently: fully unattended production also
-needs that off. `.crew/verify.json` stays promote-gate's list of environments;
+needs that off. `.crew/verify.json` stays promote-gate's list of environments,
+read from the session's project directory even when the deploy runs from a
+linked worktree (whose HEAD and cleanliness are what the gate then checks);
 `crew_config.py --check` warns when a `nonProd` glob covers one it marks
 `requireHuman: true`.
 

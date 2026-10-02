@@ -1,0 +1,24 @@
+READ|part-001-of-022.patch
+READ|part-002-of-022.patch
+READ|part-003-of-022.patch
+READ|part-004-of-022.patch
+READ|part-005-of-022.patch
+READ|part-006-of-022.patch
+READ|part-007-of-022.patch
+READ|part-008-of-022.patch
+READ|part-009-of-022.patch
+READ|part-010-of-022.patch
+READ|part-011-of-022.patch
+READ|part-012-of-022.patch
+READ|part-013-of-022.patch
+READ|part-014-of-022.patch
+READ|part-015-of-022.patch
+READ|part-016-of-022.patch
+READ|part-017-of-022.patch
+READ|part-018-of-022.patch
+READ|part-019-of-022.patch
+READ|part-020-of-022.patch
+READ|part-021-of-022.patch
+READ|part-022-of-022.patch
+FIX|plugin/crew/hooks/scripts/crew_autopilot.py:285|Stripping indentation accepts four-space-indented code as a closing fence; the actual closer then opens a fence that hides real questions, bypassing the HUMAN_STOP.|Set an approved ticket's direction.md to 'go\n```text\n    ```\n```\n\n## Open questions\n- which DB?\n```sql\nselect 1;\n```\n'. _open_items returns []; next returns implement, stop=False. The base version stops at open-questions.
+FIX|plugin/crew/hooks/scripts/crew_autopilot.py:256|A fence inside a list at two-space indentation survives leaving the list, swallowing the following Open questions section and bypassing the HUMAN_STOP.|Set an approved ticket's direction.md to 'go\n- example\n  ```text\n  foo\n\n## Open questions\n- which DB?\n```sql\nselect 1;\n```\n'. The heading renders outside the list, but _open_items returns [] and next returns implement, stop=False; the base version stops at open-questions.
