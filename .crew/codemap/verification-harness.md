@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@45bed356
-verified: 2026-10-01
+anchor: useful-claude-add-ons@d73f1309
+verified: 2026-10-02
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -436,7 +436,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2423-2430` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2577-2584` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -660,7 +660,7 @@ their own, in both the `test` job and the Windows leg of `crew-shell-matrix`. Re
   (`test_crew_shell.py`, `test_status.py`) for `crew_shell.py` and `crew_status.py`, priced 17s;
   its sabotage entries split out to W-0115.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
-  `plugin/crew/CONFIG.md:2423-2430` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2577-2584` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:825-835`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -2084,7 +2084,7 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 
 **Merged `0c3508e9` (main) + `a54ca704` (T-0040-land) on T-0040-land, 2026-10-01 (merge of origin/main `66651b69`: L-0520 PR 1 #287, the merge train, landed as crew 1.0.86; anchored at that main tip).** Two hunks of this file conflicted: the anchor and the provenance tail. Both sides' provenance is kept, main's first. Re-taken on the merged tree: `.crew/verify.json:386-411` is T-0087's harness rule (38, after L-0520's merge train rule 37 at `:385`), and T-0040's shell-route rule is 40 at `:427-432`, the last. Every `path:line` either side added into a file only the other side changed was mapped through a line diff onto the merged tree; outside dated provenance none moved. No suite was executed for this note.
 
-**Merged `9580571e` (main) + `66651b69` (T-0040-land) on T-0040-land, 2026-10-01 (merge of origin/main `44d3dbc6`: runner auto-start #294, T-0505 #296 and T-0110 #297, crew 1.0.97, with rerere off; anchored at that main tip).** Four hunks of this file conflicted: the anchor, two `plugin/crew/CONFIG.md` citations and the provenance tail. The descoped process-group paragraph is `plugin/crew/CONFIG.md:2423-2430` on the merged tree (T-0040's rows +11 and T-0505's section-16 sentence +2 both sit above it), re-found by its first and last lines. Both sides' provenance is kept, main's first. Every `path:line` either side added into a file the other side changed was mapped through a line diff onto the merged tree, and every citation into a file both sides changed was compared by text. No suite was executed for this note.
+**Merged `9580571e` (main) + `66651b69` (T-0040-land) on T-0040-land, 2026-10-01 (merge of origin/main `44d3dbc6`: runner auto-start #294, T-0505 #296 and T-0110 #297, crew 1.0.97, with rerere off; anchored at that main tip).** Four hunks of this file conflicted: the anchor, two `plugin/crew/CONFIG.md` citations and the provenance tail. The descoped process-group paragraph is `plugin/crew/CONFIG.md:2577-2584` on the merged tree (T-0040's rows +11 and T-0505's section-16 sentence +2 both sit above it), re-found by its first and last lines. Both sides' provenance is kept, main's first. Every `path:line` either side added into a file the other side changed was mapped through a line diff onto the merged tree, and every citation into a file both sides changed was compared by text. No suite was executed for this note.
 
 **Re-anchored `0c3508e9` -> `bf7ce780` on 2026-09-30 (L-0558: L-0520 round-2 fixes and the rerere rule, crew 1.0.87).**  No suite was executed for this note.
 
@@ -2153,3 +2153,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `6053b65d` -> `f5cab1f9` on 2026-10-01 (T-0503 merges origin/main `ffd11270`, L-0557 #300, crew 1.0.114, at `f5cab1f9` with rerere disabled; bitbucket 1.2.3).** The merge took main's side of every code map. `git diff --name-only ffd11270 f5cab1f9` is T-0503's own change only: `.claude-plugin/marketplace.json` (bitbucket version), `CHANGELOG.md` (its entry, 33 lines at the top), the `bitbucket` catalog row in `README.md` and `skills/README.md` (edited in place, no line count changed), `docs/handoff/cloud/T-0503.md`, and `skills/bitbucket/` (`SKILL.md`, `references/api.md`, `scripts/_test/merge_gate.sh`). Every citation into those files was compared by script against `ffd11270` (158 checked across the eight maps); no other cited line moved. Re-anchor only, under the refresh-artifact standing rule (owner 2026-09-28); no suite was executed for this note.
 
 **Re-anchored `f5cab1f9` -> `45bed356` on 2026-10-01 (T-0503 review round 1 fixes, bitbucket 1.2.3).** `git diff --name-only f5cab1f9 45bed356` is `CHANGELOG.md` and `skills/bitbucket/` (`SKILL.md`, `references/api.md`, `scripts/_test/merge_gate.sh`) only; every citation into them was compared by script. This map names `skills/bitbucket/scripts/_test/merge_gate.sh` by path only and cites none of its lines, so nothing it states moved. Re-anchor only, under the refresh-artifact standing rule (owner 2026-09-28); no suite was executed for this note.
+
+**Re-anchored `45bed356` -> `d73f1309` on 2026-10-02 (T-0009 merges origin/main `8d84786d`, W-0117 #302, crew 1.0.115, with rerere off, and sets crew 1.0.124).** `git diff --name-only 45bed356 d73f1309` over this note's cited paths returns T-0009's files (the cloud guard's workflow-dispatch gate: `cloud_guard.py`, `crew_guards.py`, `crew_config.py`, their tests and sabotage entries, `CONFIG.md`, `README.md`, the two crew skills, the templates, `.crew/verify.json` rule 6's `why`, the troubleshooting guide), the version files and the refreshed crew map and diagram. Every body citation of the form `path:line` into a file T-0009 changed was re-mapped from `45bed356` by a line-level `difflib` match and the moved ones re-read; citations inside provenance entries describe their own commits and were left as written. T-0009 adds 154 lines to `plugin/crew/CONFIG.md` above the descoped per-rule process-group kill, so the body citation `plugin/crew/CONFIG.md:2423-2430` (cited 3 times) moves to `:2577-2584`, re-read with `sed -n`. `.crew/verify.json` rule 6 (`:117-127`) keeps its lines; only its `why` text (T-0009's timing note) differs. Re-anchor only, under the refresh-artifact standing rule (owner 2026-09-28); nothing was executed for this note beyond `git diff`, `sed -n` and that match.
