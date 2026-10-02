@@ -612,15 +612,26 @@ suite at all — `pytest-crew.yml` runs pytest and cannot collect a `.sh` file
 executed by CI despite being committed and green. Each is its own step
 deliberately, so a failure names which suite went red rather than collapsing
 into one line. `pytest-crew.yml` gained a `crew-shell-matrix` job
-(`:162-262`) that runs on `ubuntu-latest` and `windows-latest` (#277 disabled the
-Windows leg; T-0110 re-enabled it, doing work on a pull request only when the PR
-changes `plugin/crew/**` or `pytest-crew.yml`) — the
-`-m slow` full per-shell hook matrix on both, plus a Windows-only run of
-crew's default (parity-sample) set, since the `test` job above only runs that
-set on Ubuntu. Both that ubuntu leg and the `test` job carry an opt-in
+(`:162-209`, ubuntu leg only since L-0577) that runs the `-m slow` full per-shell
+hook matrix. On Windows, L-0577 replaced the one serial leg (p50 37.1 min) with
+parallel jobs (`:211-453`): `crew-windows-decide` (`:263`, T-0110's rule: on a
+pull request the Windows jobs run only when the PR changes `plugin/crew/**` or
+`pytest-crew.yml`), `crew-windows-default` (`:297`, crew's default
+parity-sample set split in 3 by pytest-split, since the `test` job above only runs
+that set on Ubuntu), `crew-windows-slow` (`:345`), `crew-windows-wallclock`
+(`:384`, serial), and the fan-in `crew-windows-gate` (`:423`), named
+`crew-shell-matrix (windows-latest)` so the required check name is unchanged.
+The gate runs `if: always()` and passes only through
+`scripts/check-windows-shards.py`: every Windows job succeeded, every shard
+collected the identical default set, the shards' JUnit name each collected test
+exactly once, and slow and wallclock ran what they collected (suite
+`scripts/_test/windows-shards.py`). Each Windows `run:` step carries
+`if: runner.os == 'Windows'`, the `WINDOWS_ONLY_IFS` condition
+`scripts/gate-runner.py`'s drift check excludes. The Windows jobs take `runs-on` from one
+`crew-windows-decide` output and run `shell: pwsh` steps, so retargeting them is a one-line change. Both the ubuntu leg and the `test` job carry an opt-in
 `runs-on` expression (L-0521): with repo variable `CREW_RUNNER` set to
 `self-hosted` they run on `[self-hosted, linux, x64, crew]`, otherwise on
-`ubuntu-latest` / `matrix.os` as before; a `windows-latest` leg never moves,
+`ubuntu-latest` / `matrix.os` as before; a `windows-latest` job never moves,
 and neither does a fork pull request (the repo is public, so the expression
 also requires a non-PR event or `head.repo.full_name == github.repository`).
 The owner's runner playbook (mbadali25/github-runner-infra) sets the variable
@@ -630,7 +641,7 @@ Since T-0094 merged `a61a6f38` (read at `f5d0f1b1`): `pylint.yml` runs pylint wi
 CPU (`:40`) and gained a `ruff` job (`:42-65`) that runs `ruff check .` pinned to `ruff~=0.16.0`
 against `ruff.toml`'s explicit `select`; `pytest-crew.yml` installs `pytest-xdist`, runs the
 suites with `-n auto -m "not wallclock"` and the `wallclock`-marked tests in a serial step of
-their own, in both the `test` job and the Windows leg of `crew-shell-matrix`. Read, not run.
+their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. Read, not run.
 
 ## Entry points
 
@@ -676,7 +687,7 @@ their own, in both the `test` job and the Windows leg of `crew-shell-matrix`. Re
   (`scripts/gate-runner.py`) and its suite `scripts/_test/gate-runner.py`, priced 60s; the
   same suite is rule 22's command. Not review harness: `scripts/check-tooling-pr.py` reports
   no harness path for it.
-- `.crew/verify.json:496-502` (rule 41, the last rule) — T-0040's shell-route suites
+- `.crew/verify.json:501-507` (rule 41, the last rule) — T-0040's shell-route suites
   (`test_crew_shell.py`, `test_status.py`) for `crew_shell.py` and `crew_status.py`, priced 17s;
   its sabotage entries split out to W-0115.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1526-1535` /
@@ -2134,7 +2145,7 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 
 **Re-anchored `908c03af` -> `11f476a2` on 2026-10-01 (L-0516 merges main `6fe0e0db` (T-0505 #296: promote-gate judges the deploy's tree, crew 1.0.92) without rerere and re-bumps crew to 1.0.98).** Conflicts were refresh artifacts, CHANGELOG, BUDGETS.md and the version files only; each map keeps both branches' history notes (main's first). `git diff --name-only 908c03af 11f476a2` outside the refresh artifacts returns T-0505's files (`promote-gate.sh`/`.ps1`, `_promote_tree.py`, `test_promote_gate_effective_tree.py`, `promote_tree_mutations.py`, `promote.md`, crew README, CONFIG.md, `.budget-allowance.json`, the crew-verification SKILL, INSTALLATION.md, `.crew/verify.json` rule 4's path, the troubleshooting guide and its builds, the cloud handoff note and README), CHANGELOG.md, BUDGETS.md (21,621 lines, still `:11`) and the version files. Main's own re-maps of those files (`CONFIG.md:2412-2419`, `promote-gate.sh:79`) arrived with the merge; a difflib re-map of every path-qualified citation from `908c03af` to `11f476a2` moved none outside history sections, where `CHANGELOG.md` and `CONFIG.md` citations are left as written. `crew_refresh_check.py`'s `main()` `:1406` and `artifact_verdicts` `:1013` keep this branch's values (re-read with `grep -n`; main's map still read `:1363`/`:970`). No suite was executed for this note.
 
-**Re-anchored `11f476a2` -> `1390bb23` on 2026-10-01 (L-0516 merges main `52489039` (T-0110 #297 at crew 1.0.97, T-0040 #290 at 1.0.98) without rerere and re-bumps crew to 1.0.100).** Main moved while this lane's suites ran. Conflicts were refresh artifacts, CHANGELOG and BUDGETS.md only; maps, diagram notes and INDEX keep both histories (main's first). A citation re-map that follows each line's origin (this branch's lines from `e9375690`, main's from `52489039`, each to `1390bb23`; history skipped) moved nothing: main's own lines already carry T-0040's moves (`CONFIG.md`, `crew_config.py`, crew README). Re-read by hand: `crew.md`'s W-0116 `_FINAL_PATH` sentence keeps this branch's text (`crew_refresh_check.py:716`); `verification-harness.md`'s verify.json paragraph now reads 42 rules / 443 lines (T-0040's rule 42 at `.crew/verify.json:482-488`, `default` `:441`, `unmapped` `:442`), and rule 39 `:418-431` is unchanged. No suite was executed for this note.
+**Re-anchored `11f476a2` -> `1390bb23` on 2026-10-01 (L-0516 merges main `52489039` (T-0110 #297 at crew 1.0.97, T-0040 #290 at 1.0.98) without rerere and re-bumps crew to 1.0.100).** Main moved while this lane's suites ran. Conflicts were refresh artifacts, CHANGELOG and BUDGETS.md only; maps, diagram notes and INDEX keep both histories (main's first). A citation re-map that follows each line's origin (this branch's lines from `e9375690`, main's from `52489039`, each to `1390bb23`; history skipped) moved nothing: main's own lines already carry T-0040's moves (`CONFIG.md`, `crew_config.py`, crew README). Re-read by hand: `crew.md`'s W-0116 `_FINAL_PATH` sentence keeps this branch's text (`crew_refresh_check.py:716`); `verification-harness.md`'s verify.json paragraph now reads 42 rules / 443 lines (T-0040's rule 42 at `.crew/verify.json:482-493`, `default` `:441`, `unmapped` `:442`), and rule 39 `:418-431` is unchanged. No suite was executed for this note.
 
 **Re-anchored `1390bb23` -> `0027f794` on 2026-10-01 (L-0516 merges main `05a679bf` (L-0558 #293 at crew 1.0.102) without rerere and re-bumps crew to 1.0.103).** Main moved while this lane's required checks ran. Conflicts were refresh artifacts, CHANGELOG and the version files only; maps, diagram notes and INDEX keep both histories (main's first). Main's change outside refresh artifacts is `crew_train.py`, `test_crew_train.py`, crew README, the daily-workflow and troubleshooting guides, CHANGELOG, the version files and `.crew/verify.json` rule 37's line rewritten in place (443 lines at both `1390bb23` and `0027f794`, so no `.crew/verify.json:N` citation moves). Main's own lines already carry L-0558's `crew_train.py` moves; no line this branch added cites `crew_train.py`, `test_crew_train.py`, the crew README or either guide by line. `crew.md`'s version sentence names 1.0.103 in place. No suite was executed for this note.
 
@@ -2164,11 +2175,11 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 
 **Re-anchored `89ebda03` (main) and `90186613` (L-0557) -> `773ce841` on 2026-10-01 (L-0557 merges main `05a679bf`, L-0558 #293, crew 1.0.102, at `2169bd11` with rerere disabled; L-0557 re-sets crew 1.0.105 at `773ce841`).** Both provenance histories are kept above, main's first. Body citations were re-checked by mapping each one from the tree its line came from (`89ebda03` for main's lines, `74dd1aa5` for L-0557's) to this tree with difflib: no citation moved. Citations into the version lines of `plugin/crew/.claude-plugin/plugin.json`, `plugin/PLUGINS.md` and `.claude-plugin/marketplace.json` keep their line numbers (the value changed in place). No suite was executed for this note.
 
-**Re-anchored `0d159692` (main, L-0513 #301) and `773ce841` (L-0557) -> `a9608aa5` on 2026-10-01 (L-0557 merges main `cacf7ff0`, L-0513 #301: `scripts/gate-runner.py`, no plugin version; rerere disabled; crew stays 1.0.105).** Both provenance histories are kept, main's first. Where both sides had re-mapped the same citation, main's line was taken, and each citation was then mapped with difflib from the tree its line came from (`cacf7ff0` for main's lines, `95036b4c` for L-0557's) to this tree: `.crew/verify.json:487-492` (main's side) moved to `:441-446` (L-0557's rule now sits above it). No suite was executed for this note.
+**Re-anchored `0d159692` (main, L-0513 #301) and `773ce841` (L-0557) -> `a9608aa5` on 2026-10-01 (L-0557 merges main `cacf7ff0`, L-0513 #301: `scripts/gate-runner.py`, no plugin version; rerere disabled; crew stays 1.0.105).** Both provenance histories are kept, main's first. Where both sides had re-mapped the same citation, main's line was taken, and each citation was then mapped with difflib from the tree its line came from (`cacf7ff0` for main's lines, `95036b4c` for L-0557's) to this tree: `.crew/verify.json:492-497` (main's side) moved to `:441-446` (L-0557's rule now sits above it). No suite was executed for this note.
 
 **Re-anchored `a9608aa5` -> `c43a9ce3` on 2026-10-01 (L-0557 merges main `ddcbf90d`, W-0115 #299, crew 1.0.106, at `0597e5c6` with rerere disabled, and re-sets crew 1.0.111 at `c43a9ce3`).** The merge touched no code map. `git diff --name-only a9608aa5 c43a9ce3` outside refresh artifacts is W-0115's `plugin/crew/tests/sabotage.py`, `sabotage_shell.py` and `.crew/verify.json` plus the version files and CHANGELOG; each citation into a changed file was mapped with difflib from `92448f1a` to this tree: `plugin/crew/tests/sabotage.py:3061-3062` moved to `:3061-3062` (W-0115's mutations above it). No suite was executed for this note.
 
-**Re-anchored `5ffffbe3` (main, L-0516 #298) and `c43a9ce3` (L-0557) -> `6053b65d` on 2026-10-01 (L-0557 merges main `2906dcbd`, L-0516 #298, crew 1.0.110, at `2f3fb34c` with rerere disabled, and re-sets crew 1.0.114 at `6053b65d`).** Both provenance histories are kept, main's first, and main's body citations were taken where both sides had re-mapped the same one. Each citation into a changed file was then mapped with difflib from the tree its line came from (`2906dcbd` for main's lines, `a54ff87b` for L-0557's) to this tree: `.crew/verify.json:481-486` -> `:438-443` and `:441-446` -> `:447-452` (L-0557's side, L-0516's rule above them); the `:433-439` range in L-0516's provenance note was kept. On this tree `.crew/verify.json` is 458 lines and 44 rules: the 43 the section above reads plus L-0557's pwsh cache-isolation rule at `:438-445`, right after L-0513's gate-runner rule (`:432-436`), so T-0040's shell-route rule is the last; `default` is `:456` and `unmapped` `:457`. No suite was executed for this note.
+**Re-anchored `5ffffbe3` (main, L-0516 #298) and `c43a9ce3` (L-0557) -> `6053b65d` on 2026-10-01 (L-0557 merges main `2906dcbd`, L-0516 #298, crew 1.0.110, at `2f3fb34c` with rerere disabled, and re-sets crew 1.0.114 at `6053b65d`).** Both provenance histories are kept, main's first, and main's body citations were taken where both sides had re-mapped the same one. Each citation into a changed file was then mapped with difflib from the tree its line came from (`2906dcbd` for main's lines, `a54ff87b` for L-0557's) to this tree: `.crew/verify.json:481-491` -> `:438-443` and `:441-446` -> `:447-452` (L-0557's side, L-0516's rule above them); the `:433-439` range in L-0516's provenance note was kept. On this tree `.crew/verify.json` is 458 lines and 44 rules: the 43 the section above reads plus L-0557's pwsh cache-isolation rule at `:438-445`, right after L-0513's gate-runner rule (`:432-436`), so T-0040's shell-route rule is the last; `default` is `:456` and `unmapped` `:457`. No suite was executed for this note.
 
 **Re-anchored `6053b65d` -> `f5cab1f9` on 2026-10-01 (T-0503 merges origin/main `ffd11270`, L-0557 #300, crew 1.0.114, at `f5cab1f9` with rerere disabled; bitbucket 1.2.3).** The merge took main's side of every code map. `git diff --name-only ffd11270 f5cab1f9` is T-0503's own change only: `.claude-plugin/marketplace.json` (bitbucket version), `CHANGELOG.md` (its entry, 33 lines at the top), the `bitbucket` catalog row in `README.md` and `skills/README.md` (edited in place, no line count changed), `docs/handoff/cloud/T-0503.md`, and `skills/bitbucket/` (`SKILL.md`, `references/api.md`, `scripts/_test/merge_gate.sh`). Every citation into those files was compared by script against `ffd11270` (158 checked across the eight maps); no other cited line moved. Re-anchor only, under the refresh-artifact standing rule (owner 2026-09-28); no suite was executed for this note.
 
