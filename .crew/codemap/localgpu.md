@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@252dd5d4
+anchor: useful-claude-add-ons@97b65952
 verified: 2026-10-01
 
 # localgpu
@@ -1740,3 +1740,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Merged L-0510 (`553f4aa0`, the UTF-8 console fix) + `04dde5a2` (main: L-0578 #304 crew 1.0.119, W-0120 #307) on L-0510-build, 2026-10-02 (merge `41aa4e2a`, rerere off, standing go #9), anchored at `2b372b84`.** Both provenance blocks are kept above, main's first. L-0578 changed `review_run.py` (the metrics row) and `commands/review.md` step 6; every `review_run.py` citation in this note was re-derived on the merged file by difflib from each parent and read with `sed -n` (preflight `:555`, called at `:642`; `--provider` `:739`; `finish`'s parts `:438`/`:440`; `failure_class` `:458`; refund lines `:508`/`:511`; `_webtest_open` `:412`; `auto_accept_line` `:421`). `review_ledger.py` gained `utf8_stdio` after `summary` (`:838`), so no earlier citation moved.
 
 **Re-anchored `2b372b84` -> `252dd5d4` on 2026-10-02 (L-0510 review round 6 fixes, owner decision #10; merge `24f3ec25` of origin/main `d2ec37d3`, README only).** `d551680c` changed `review_ledger.py` (`read_review_json` `:599` and `_receipt_binds_review_json` `:721` new, `receipt_stands` gained `root, ticket`, `hashlib` imported, docstring +5), `crew_autopilot.py` (one line edited in place), `commands/review.md` (step 3 quoted in place), the L-0510 tests, CHANGELOG and README. `crew.md`'s `review_ledger.py` citations were re-read with `grep -n` by name (`receipt_stands` `:695`, `check_receipt` `:819`, `auto_accept` `:655`, `check_follow_up` `:742`, `summary` `:909`, `BUDGET` `:132`, `REFUND_LIMIT` `:135`). No other note cites a moved line.
+
+**Re-anchored `252dd5d4` -> `97b65952` on 2026-10-02 (L-0510, merge `48cf52dd` of origin/main `7ba4f9ea`, crew 1.0.126 -> 1.0.130).** Main brought L-0572's `verify-gate.sh`/`.ps1`, `verify_record.py`, CONFIG.md and its own codemap edits; it touched none of the files L-0510's citations name (`review_ledger.py`, `crew_autopilot.py`, `review_run.py`, `commands/review.md`, `commands/autopilot.md`), so no L-0510 citation moved; L-0572's citations were written against main and carried by the merge unchanged.
