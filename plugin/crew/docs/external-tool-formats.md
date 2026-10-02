@@ -16,7 +16,7 @@ It is never a pass.
 
 ## Codex CLI
 
-**What crew calls.** `review_run.command_for` (`plugin/crew/hooks/scripts/review_run.py:219-229`)
+**What crew calls.** `review_run.command_for` (`plugin/crew/hooks/scripts/review_run.py:222-232`)
 runs `codex exec` with these flags and nothing else:
 
 | Flag | Meaning |
@@ -61,7 +61,7 @@ raw U+2028 (`plugin/crew/tests/golden/review/uca-t0072--T-0072-build--2BJpY8/eve
 `agent_message` item's text. It counts a turn as complete only on
 `turn.completed`. A `turn.failed`, an `error` event or an unparseable line is
 an error, and a stream with no completed turn is also an error. The verdict
-parser (`review_run.py:414`) turns any of those into INCOMPLETE of class
+parser (`review_run.py:417`) turns any of those into INCOMPLETE of class
 `tool`, which is refunded. Every event and item type in the committed corpus is
 one of the documented types (`test_golden_codex_events_use_documented_types`).
 On 2026-09-28, the 26 local streams used only `thread.started`, `turn.started`,
@@ -107,9 +107,9 @@ Probed: not probed. The T-0087 host is Linux (Ubuntu) with no `wsl.exe`, so `tes
 
 **What crew calls.** On Windows, `shutil.which("codex")` or `shutil.which("copilot")`
 resolves an npm-installed CLI to its `.cmd` shim. `review_run.through_batch_shim`
-(`plugin/crew/hooks/scripts/review_run.py:194`) names a provider whose resolved
-path ends `.cmd` or `.bat` (`BATCH_SHIM_SUFFIXES`, `:155`), and
-`review_run.prompt_argument` (`:201`) never hands such a provider the prompt
+(`plugin/crew/hooks/scripts/review_run.py:197`) names a provider whose resolved
+path ends `.cmd` or `.bat` (`BATCH_SHIM_SUFFIXES`, `:158`), and
+`review_run.prompt_argument` (`:204`) never hands such a provider the prompt
 inline: it passes the one-line pointer to `prompt.txt` that an over-limit prompt
 already gets, and says why on stderr.
 

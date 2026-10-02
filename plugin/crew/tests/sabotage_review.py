@@ -531,8 +531,7 @@ REVIEW_FIX_MUTATIONS = (
         # which lanes skipped for 118 of 162 rounds.
         "a recorded round writes no metrics row",
         REVIEW_RUN,
-        "    metrics_line = review_metrics.record(args.root, args.ticket, number, review, "
-        "args.manifest,\n",
+        "    metrics_line = review_metrics.record(args.root, args.ticket, number, review,\n",
         '    metrics_line = "review: no row"; _unused = (\n',
         "tests/test_review_metrics.py::test_codex_findings_round_appends_one_scored_row",
     ),
@@ -552,8 +551,48 @@ REVIEW_FIX_MUTATIONS = (
         # the row lands in a file outside the checkout.
         "the metrics writer follows a symlinked .crew directory",
         REVIEW_METRICS,
-        "    if os.path.islink(parent):\n",
+        "    if is_link_or_junction(parent):\n"
+        "        raise NotARegularFile(f\"{parent} is a link or junction; not following it\")\n"
+        "    try:\n",
+        "    if False:\n"
+        "        raise NotARegularFile(f\"{parent} is a link or junction; not following it\")\n"
+        "    try:\n",
+        "tests/test_review_metrics.py::test_a_junction_parent_is_refused",
+    ),
+    (
+        # L-0578 review r2 BLOCK: the open follows a .crew symlink swapped in
+        # after the pre-check (check-then-open race).
+        "the metrics open follows the .crew directory",
+        REVIEW_METRICS,
+        "    if nofollow and directory and os.open in os.supports_dir_fd:\n",
         "    if False:\n",
-        "tests/test_review_metrics.py::test_a_symlinked_crew_dir_is_not_followed",
+        "tests/test_review_metrics.py::"
+        "test_the_open_itself_refuses_a_crew_symlink_swapped_in_after_the_check",
+    ),
+    (
+        # L-0578 review r2 FIX: a marker naming another provider passes for a
+        # Codex limit.
+        "a limit marker of any provider claims a codex limit",
+        REVIEW_METRICS,
+        '    if not isinstance(previous, int) or isinstance(previous, bool) or provider != "codex" \\\n',
+        "    if not isinstance(previous, int) or isinstance(previous, bool) \\\n",
+        "tests/test_review_metrics.py::test_a_malformed_limit_marker_is_unreadable_not_a_limit",
+    ),
+    (
+        # L-0578 review r2 FIX: a malformed config reads as config provenance.
+        "an unreadable config is reported as config provenance",
+        REVIEW_METRICS,
+        '    if source == "config" and config_unreadable(root):\n',
+        "    if False:\n",
+        "tests/test_review_metrics.py::test_a_malformed_config_is_not_reported_as_config_provenance",
+    ),
+    (
+        # L-0578 review r2 FIX: the row takes a reservation record for
+        # another round.
+        "a reservation token for another round is used",
+        REVIEW_METRICS,
+        "                or kept.get(\"round\") != number or isinstance(kept.get(\"round\"), bool):\n",
+        "                or isinstance(kept.get(\"round\"), bool):\n",
+        "tests/test_review_metrics.py::test_a_reservation_record_for_another_round_is_not_used",
     ),
 )
