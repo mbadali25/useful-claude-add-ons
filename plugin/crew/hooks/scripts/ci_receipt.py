@@ -7,8 +7,10 @@ WHY. A local `verify-gate.sh --all` costs 17-20 minutes and holds a heavy
 slot on a shared box that OOM-kills it at the 6G cap. The self-hosted runner
 pool sits idle most of the day. `.github/workflows/verify-gate.yml` runs the
 same gate there on a pushed lane branch and uploads what this module's
-`build` writes; `check` lets `/crew:done` take that result instead of a local
-run -- but ONLY when it provably describes the commit checked out here.
+`build` writes; `check` reports whether that result provably describes the
+commit checked out here. Diagnostic in this release: no gate consumer
+(`/crew:done`, `review_run.py`, `crew_train.py check-land`, the Stop hook)
+accepts it yet; that wiring is a separate tooling change.
 
 WHAT `build` RECORDS (runner side, after the gate). The verdict is not the
 gate's exit status. It is `review_gate.gate_state` asked on the runner, the
@@ -32,8 +34,8 @@ WHAT `check` ACCEPTS (local side). VERIFIED needs ALL of:
     from a push or workflow_dispatch, completed with conclusion success;
   * its `crew-verify-receipt-<attempt>` artifact (exactly one, unexpired, naming
     that run and HEAD), holding a receipt of this
-    schema whose head, tree, verify.json blob, run id, attempt and
-    repository all equal what git and the API say, with `pass` true, gate
+    schema whose head, tree, verify.json blob, gate_impl digest, run id,
+    attempt and repository all equal what git and the API say, with `pass` true, gate
     state VERIFIED, gate rc 0, nothing outstanding and a clean tree;
   * the newest run, and the local HEAD, tree, map and working tree, all
     unchanged from the start of the check to its end.
@@ -436,6 +438,10 @@ def check(root, fetch=None):
         if worktree != blob:
             return UNVERIFIED, ("the working .crew/verify.json differs from HEAD's; the CI "
                                 "receipt covers HEAD's map only"), head
+        impl = gate_impl(root)
+        if impl is None:
+            return UNVERIFIED, ("HEAD lacks a gate implementation file (GATE_IMPL), so the "
+                                "receipt's gate_impl cannot be matched"), head
         if material:
             return UNVERIFIED, (f"{len(material)} path(s) differ from HEAD locally "
                                 f"({', '.join(material[:3])}); a CI receipt covers only the "
@@ -467,7 +473,7 @@ def check(root, fetch=None):
         if not isinstance(receipt, dict) or receipt.get("schema") != SCHEMA:
             raise Unreadable(f"run {run_id}'s {RECEIPT_NAME} is not a {SCHEMA} receipt")
         wrong = _mismatch(receipt, (
-            ("head", head), ("tree", tree), ("verify_json", blob),
+            ("head", head), ("tree", tree), ("verify_json", blob), ("gate_impl", impl),
             ("run.id", run_id), ("run.attempt", str(run.get("run_attempt"))),
             ("run.repository", slug), ("pass", True), ("gate.state", VERIFIED),
             ("gate.rc", 0), ("outstanding", []), ("clean", True)))

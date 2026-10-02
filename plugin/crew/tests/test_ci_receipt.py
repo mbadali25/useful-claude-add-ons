@@ -46,6 +46,9 @@ def _repo(tmp_path, run="echo RAN-ok", config=None):
     (root / ".gitignore").write_text(".crew/.verify*\n.crew/config.json\n", encoding="utf-8")
     if config is not None:
         (root / ".crew" / "config.json").write_text(config, encoding="utf-8")
+    for path in cr.GATE_IMPL:
+        (root / path).parent.mkdir(parents=True, exist_ok=True)
+        (root / path).write_text(f"fixture copy of {path}\n", encoding="utf-8")
     git(root, "add", "-A")
     git(root, "commit", "-qm", "map")
     git(root, "remote", "add", "origin", f"https://github.com/{SLUG}.git")
@@ -177,6 +180,7 @@ def _receipt(root, **over):
         "schema": cr.SCHEMA, "pass": True, "reasons": [], "head": head,
         "tree": git(root, "rev-parse", "HEAD^{tree}"),
         "verify_json": git(root, "rev-parse", "HEAD:.crew/verify.json"),
+        "gate_impl": cr.gate_impl(str(root)),
         "gate": {"rc": 0, "state": cr.VERIFIED, "reason": "clean"},
         "outstanding": [], "clean": True, "commands": [],
         "run": {"id": str(RUN_ID), "attempt": "1", "repository": SLUG},
@@ -292,6 +296,9 @@ BLOCKED = {
     "head-mismatch": lambda root: _api(root, receipt=_receipt(root, head="1" * 40)),
     "tree-mismatch": lambda root: _api(root, receipt=_receipt(root, tree="2" * 40)),
     "verify-json-mismatch": lambda root: _api(root, receipt=_receipt(root, verify_json="3" * 40)),
+    "gate-impl-forged": lambda root: _api(root, receipt=_receipt(root, gate_impl="5" * 64)),
+    "gate-impl-missing": lambda root: _api(root, receipt={
+        k: v for k, v in _receipt(root).items() if k != "gate_impl"}),
     "run-id-mismatch": lambda root: _api(root, receipt=_receipt(root, run__id="999")),
     "attempt-mismatch": lambda root: _api(root, receipt=_receipt(root, run__attempt="2")),
     "repository-mismatch": lambda root: _api(root, receipt=_receipt(root, run__repository="x/y")),
@@ -403,6 +410,18 @@ def test_check_allows_a_producer_change_that_came_from_main(tmp_path):
     state, reason, _ = _check(root)
 
     assert state == cr.VERIFIED, reason
+
+
+def test_check_refuses_a_head_without_the_gate_implementation(tmp_path):
+    root = _repo(tmp_path)
+    git(root, "rm", "-q", cr.GATE_IMPL[-1])
+    git(root, "commit", "-qm", "drop one gate file")
+    git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+    state, reason, _ = _check(root)
+
+    assert state == cr.UNVERIFIED
+    assert "gate implementation" in reason
 
 
 def test_check_without_origin_main_could_not_tell(tmp_path):
