@@ -713,4 +713,13 @@ REVIEW_FIX_MUTATIONS = (
         '    ignored = row.get("ignored_lines", 0)\n',
         "tests/test_review_auto_accept.py::test_auto_accept_refuses[ignored-lines-missing]",
     ),
+    (
+        # Review round 5 BLOCK: review.json's count is not checked for shape,
+        # so an empty list (or any falsy value) reads as 0 stray lines.
+        "auto-accept reads any falsy review.json ignored_lines as 0",
+        REVIEW_LEDGER,
+        "    if not _is_count(count):\n",
+        "    if count and not _is_count(count):\n",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[review-json-ignored-list]",
+    ),
 )

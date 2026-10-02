@@ -53,8 +53,9 @@ def _round(repo, verdict="FINDINGS", counts=_ABSENT, findings=_ABSENT, webtest_o
     """Reserve and record one round through the real ledger, with a real
     bundle of the current tree. `_ABSENT` leaves a key out of the review dict.
     `ignored` is the row's `ignored_lines` as L-0576's `record` writes it (a
-    count), mirrored as a list in this round's review.json; `_ABSENT` leaves
-    both out, the shape of a round recorded before L-0576."""
+    count), mirrored in this round's review.json as L-0576's `review_run`
+    writes it (`ignored_lines` the same int, `ignored_text` the lines);
+    `_ABSENT` leaves both out, the shape of a round recorded before L-0576."""
     base = git(repo, "rev-parse", "HEAD")
     manifest, _, _ = review_patch.compute(str(repo), base)
     ok, number, message = rl.reserve(str(repo), T, provider)
@@ -72,8 +73,9 @@ def _round(repo, verdict="FINDINGS", counts=_ABSENT, findings=_ABSENT, webtest_o
         _edit(repo, lambda data: data["rounds"][-1].update(ignored_lines=ignored))
     on_disk = dict(review, round=number)
     if ignored is not _ABSENT:
-        on_disk["ignored_lines"] = (["stray"] * ignored if type(ignored) is int  # pylint: disable=unidiomatic-typecheck
-                                    else ignored)
+        on_disk["ignored_lines"] = ignored
+        if type(ignored) is int:  # pylint: disable=unidiomatic-typecheck
+            on_disk["ignored_text"] = ["stray"] * max(ignored, 0)
     _review_json(repo, json.dumps(on_disk))
     return number
 
@@ -280,10 +282,24 @@ REFUSALS = [
     ("review-json-no-ignored-lines", _final_then(
         lambda repo: _review_json(repo, json.dumps({"round": 2}))), FOLLOW, "review.json"),
     ("review-json-recovered", _final_then(
-        lambda repo: _review_json(repo, json.dumps({"round": 2, "ignored_lines": ["x"]}))),
+        lambda repo: _review_json(repo, json.dumps({"round": 2, "ignored_lines": 1}))),
      FOLLOW, "recovered"),
+    # Review round 5 BLOCK: L-0576 writes an int count; any other shape --
+    # a list, a string, a bool, a negative -- is could-not-tell, never 0.
+    ("review-json-ignored-list", _final_then(
+        lambda repo: _review_json(repo, json.dumps({"round": 2, "ignored_lines": []}))),
+     FOLLOW, "no readable ignored_lines count"),
+    ("review-json-ignored-string", _final_then(
+        lambda repo: _review_json(repo, json.dumps({"round": 2, "ignored_lines": "0"}))),
+     FOLLOW, "no readable ignored_lines count"),
+    ("review-json-ignored-bool", _final_then(
+        lambda repo: _review_json(repo, json.dumps({"round": 2, "ignored_lines": False}))),
+     FOLLOW, "no readable ignored_lines count"),
+    ("review-json-ignored-negative", _final_then(
+        lambda repo: _review_json(repo, json.dumps({"round": 2, "ignored_lines": -1}))),
+     FOLLOW, "no readable ignored_lines count"),
     ("review-json-other-round", _final_then(
-        lambda repo: _review_json(repo, json.dumps({"round": 1, "ignored_lines": []}))),
+        lambda repo: _review_json(repo, json.dumps({"round": 1, "ignored_lines": 0}))),
      FOLLOW, "review.json"),
     ("webtest-open-missing", _final_without("webtest_open"), FOLLOW, "webtest"),
     ("webtest-open-none", _final_with(webtest_open=None), FOLLOW, "webtest"),

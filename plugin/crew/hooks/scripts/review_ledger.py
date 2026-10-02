@@ -75,7 +75,7 @@ list of strings, none a `BLOCK|` line, each a `FIX|` or `NIT|` line, as many
 of each as its own count (never only the total) and at least one;
 none carrying an embedded line break; `ignored_lines` (L-0576's count of the
 stray lines a verdict was recovered despite) is 0 on the row, and this
-round's `.work/tickets/<id>/review.json` lists none (owner decision
+round's `.work/tickets/<id>/review.json` counts 0 (owner decision
 2026-10-01 #6: a recovered round is the owner's; a missing, mistyped or
 unreadable count is could-not-tell, never 0, and this branch does not
 write the field); `webtest_open` is 0 or `WEBTEST_NA`; and the round is final -- `_charged`
@@ -577,7 +577,7 @@ def auto_accept_refusal(data, ticket):
 
 def _review_json_problem(root, ticket, row):
     """None when this round's review.json is readable, is for `row`'s round
-    and lists no ignored line; else why not (owner decision 2026-10-01 #6).
+    and its `ignored_lines` count is 0; else why not (owner decision 2026-10-01 #6).
     The row already carries the count; this is the second witness the owner
     asked for, so an unreadable file is could-not-tell, never a pass."""
     path = os.path.join(root, ".work", "tickets", ticket, "review.json")
@@ -591,13 +591,16 @@ def _review_json_problem(root, ticket, row):
         got = review.get("round") if isinstance(review, dict) else review
         return (f"{path} is not round {row.get('round')}'s (it reads {got!r}): could not "
                 "tell whether the verdict was recovered from stray lines")
-    lines = review.get("ignored_lines")
-    if not isinstance(lines, list):
-        return (f"{path} carries no ignored_lines list ({lines!r}): could not tell whether "
-                f"round {row.get('round')}'s verdict was recovered from stray lines")
-    if lines:
+    # L-0576 writes the count here as an int (the lines go to `ignored_text`).
+    # Any other shape is could-not-tell, never 0 (review round 5 BLOCK).
+    count = review.get("ignored_lines")
+    if not _is_count(count):
+        return (f"{path} carries no readable ignored_lines count ({count!r}): could not "
+                f"tell whether round {row.get('round')}'s verdict was recovered from stray "
+                "lines")
+    if count:
         return (f"{path}: round {row.get('round')}'s verdict was recovered from "
-                f"{len(lines)} stray line(s); a recovered round is the owner's to accept")
+                f"{count} stray line(s); a recovered round is the owner's to accept")
     return None
 
 

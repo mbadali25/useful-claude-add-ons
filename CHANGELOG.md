@@ -33,7 +33,7 @@ merging origin/main `52489039` (T-0040, crew 1.0.98). L-0510's 1.0.90, 1.0.93, 1
   superseded plan's round; a round recorded before this release. Any BLOCK or refusal still stops
   for the owner, now with 2-4 options, recommended first.
 - **A verdict recovered from stray lines never auto-accepts** (owner decision 2026-10-01): the
-  row's `ignored_lines` (L-0576's count) above 0, or this round's `review.json` listing any, is
+  row's `ignored_lines` (L-0576's count) above 0, or this round's `review.json` count (an int) above 0, is
   refused as recovered; a missing, mistyped or unreadable count or `review.json` is refused as
   could-not-tell, never read as 0. This release does not write the field, so until L-0576 lands
   every round stops for the owner.
