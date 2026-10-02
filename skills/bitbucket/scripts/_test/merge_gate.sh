@@ -420,45 +420,121 @@ API_MD="$SKILL_DIR/references/api.md"
 ROOT_README="$HERE/../../../../README.md"
 SKILLS_README="$HERE/../../../README.md"
 
-if grep -qF 'pipelines_config/variables/' "$SKILL_MD"; then
-  pass "SKILL.md: variables GET is written with the trailing slash"
+# section FILE HEADING-PREFIX: the lines from the heading that starts with
+# HEADING-PREFIX up to the next heading of the same or a higher level. A pattern checked against the
+# whole file passes when the phrase moves to an unrelated section (review round
+# 1, FIX), so each invariant reads only the section it belongs to. A missing
+# section prints nothing, and every check below fails on an empty section.
+section() {
+  awk -v h="$2" '
+    BEGIN { lvl = match(h, /^#+/) ? RLENGTH : 0 }
+    /^#+ / {
+      match($0, /^#+/)
+      if (on && RLENGTH <= lvl) on = 0
+      if (index($0, h) == 1) on = 1
+    }
+    on { print }
+  ' "$1"
+}
+# in_section NAME FILE HEADING FIXED-STRING: PASS only when the section exists
+# and carries the string.
+in_section() {
+  _sec="$(section "$2" "$3")"
+  if [ -n "$_sec" ] && printf '%s\n' "$_sec" | grep -qF -- "$4"; then
+    pass "$1"
+  else
+    fail "$1"
+  fi
+}
+VARS_H='## Pipeline and deployment variables'
+TOKENS_H='## Repository access tokens'
+TASKS_H='## Common tasks'
+API_REV_H='### Default reviewers'
+API_VARS_H='## Pipeline and deployment variables'
+
+in_section "SKILL.md: variables GET is written with the trailing slash" \
+  "$SKILL_MD" "$VARS_H" 'pipelines_config/variables/'
+in_section "SKILL.md: an empty values list from the slash-less path is could-not-tell" \
+  "$SKILL_MD" "$VARS_H" 'could not tell'
+in_section "SKILL.md: default reviewers are named" \
+  "$SKILL_MD" "$TASKS_H" 'effective-default-reviewers'
+in_section "SKILL.md: the access-token create endpoint is placed on Data Center" \
+  "$SKILL_MD" "$TOKENS_H" 'Data Center'
+# effective-default-reviewers and workspace members answer with
+# `values[].user.uuid` (swagger.v3.json: paginated_default_reviewer_and_type,
+# paginated_workspace_memberships); only the repo-level list is `values[].uuid`
+# (paginated_accounts). Review round 1, FIX: the docs sent readers to
+# `values[].uuid` on effective-default-reviewers, which holds no uuid.
+in_section "SKILL.md: reviewer uuids are read from values[].user.uuid" \
+  "$SKILL_MD" "$TASKS_H" 'values[].user.uuid'
+in_section "api.md: reviewer uuids are read from values[].user.uuid" \
+  "$API_MD" "$API_REV_H" 'values[].user.uuid'
+if grep -qF -- '`values[].uuid` from `effective-default-reviewers`' "$SKILL_MD" "$API_MD"; then
+  fail "no doc reads a uuid from values[].uuid on effective-default-reviewers"
 else
-  fail "SKILL.md: variables GET is written with the trailing slash"
+  pass "no doc reads a uuid from values[].uuid on effective-default-reviewers"
 fi
-if grep -qi 'could not tell' "$SKILL_MD"; then
-  pass "SKILL.md: an empty values list from the slash-less path is could-not-tell"
-else
-  fail "SKILL.md: an empty values list from the slash-less path is could-not-tell"
-fi
-if grep -qF 'effective-default-reviewers' "$SKILL_MD"; then
-  pass "SKILL.md: default reviewers are named"
-else
-  fail "SKILL.md: default reviewers are named"
-fi
-if grep -qF 'Data Center' "$SKILL_MD"; then
-  pass "SKILL.md: the access-token create endpoint is placed on Data Center"
-else
-  fail "SKILL.md: the access-token create endpoint is placed on Data Center"
-fi
-if grep -qF 'pipelines_config/variables/' "$API_MD" \
-  && grep -qF 'deployments_config/environments/{environment_uuid}/variables/' "$API_MD"; then
-  pass "api.md: both variables paths carry the trailing slash"
-else
-  fail "api.md: both variables paths carry the trailing slash"
-fi
-if grep -qF 'default-reviewers/{target_username}' "$API_MD" \
-  && grep -qF 'effective-default-reviewers' "$API_MD"; then
-  pass "api.md: default-reviewer endpoints are listed"
-else
-  fail "api.md: default-reviewer endpoints are listed"
-fi
+# swagger.v3.json: the project-level PUT and DELETE both need
+# admin:project:bitbucket / project:admin (review round 1, FIX).
+in_section "api.md: project-level PUT and DELETE both carry their scope" \
+  "$API_MD" "$API_REV_H" 'project-level PUT and DELETE `admin:project:bitbucket`'
+in_section "api.md: both variables paths carry the trailing slash" \
+  "$API_MD" "$API_VARS_H" 'pipelines_config/variables/'
+in_section "api.md: the deployment variables path carries the trailing slash" \
+  "$API_MD" "$API_VARS_H" 'deployments_config/environments/{environment_uuid}/variables/'
+in_section "api.md: default-reviewer endpoints are listed" \
+  "$API_MD" "$API_REV_H" 'default-reviewers/{target_username}'
+in_section "api.md: effective default reviewers are listed" \
+  "$API_MD" "$API_REV_H" 'effective-default-reviewers'
+# uncited_bullets FILE HEADING: the first line of every `- ` bullet in that
+# section that carries no developer.atlassian.com link anywhere in the bullet.
+# Every API statement cites its Atlassian page (spec acceptance; review round
+# 1, FIX). Prints "NO SECTION" when the heading is absent, so a renamed
+# heading fails instead of reading as "no uncited bullet".
+uncited_bullets() {
+  section "$1" "$2" | awk '
+    function flush() { if (inb && b !~ /developer\.atlassian\.com/) print first; inb = 0; b = "" }
+    NR == 1 { seen = 1 }
+    /^#+ / { flush(); next }
+    /^- / { flush(); inb = 1; first = $0; b = $0; next }
+    /^[^ ]/ { flush(); next }
+    inb { b = b " " $0 }
+    END { flush(); if (!seen) print "NO SECTION" }
+  '
+}
+for H in "$API_REV_H" "$API_VARS_H"; do
+  UNCITED="$(uncited_bullets "$API_MD" "$H")"
+  if [ -z "$UNCITED" ]; then
+    pass "api.md: every bullet under '$H' cites its Atlassian page"
+  else
+    fail "api.md: every bullet under '$H' cites its Atlassian page: $UNCITED"
+  fi
+done
+# token_scan DIR: "found", "absent" or "could not tell". grep -r exits 2 on a
+# read error, and that is not proof of absence (review round 1, FIX: the old
+# `if grep ...; else pass` read exit 2 as "no token").
 # A token-shaped literal: Atlassian API tokens start ATATT, and the placeholder
 # SKILL.md uses (ATATT...) is far shorter than 20 characters after the prefix.
-if grep -rEq 'ATATT[A-Za-z0-9_-]{20,}|ATCTT[A-Za-z0-9_-]{20,}' "$SKILL_DIR"; then
-  fail "no token-shaped value anywhere under skills/bitbucket/"
-else
+token_scan() {
+  _rc=0
+  grep -rEq 'ATATT[A-Za-z0-9_-]{20,}|ATCTT[A-Za-z0-9_-]{20,}' "$1" 2>/dev/null || _rc=$?
+  case "$_rc" in
+    0) echo found ;;
+    1) echo absent ;;
+    *) echo "could not tell (grep exit $_rc)" ;;
+  esac
+}
+SCAN="$(token_scan "$SKILL_DIR")"
+if [ "$SCAN" = absent ]; then
   pass "no token-shaped value anywhere under skills/bitbucket/"
+else
+  fail "no token-shaped value anywhere under skills/bitbucket/: $SCAN"
 fi
+SCAN="$(token_scan "$TMP/no-such-dir")"
+case "$SCAN" in
+  "could not tell"*) pass "an unreadable tree is could-not-tell, never absent" ;;
+  *) fail "an unreadable tree is could-not-tell, never absent: got '$SCAN'" ;;
+esac
 # The two catalogs differ only in the link target; an empty row on either side
 # is a failure, not a match.
 ROW_ROOT="$(grep -F '[`bitbucket`](skills/bitbucket)' "$ROOT_README" | sed 's#](skills/bitbucket)#](bitbucket)#')"

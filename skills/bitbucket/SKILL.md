@@ -194,8 +194,10 @@ Offline checks for the script: `scripts/_test/merge_gate.sh`.
    full list.
 3. Reported 2026-09-28, not reproduced here: that PUT returned HTTP 200 with the
    description preserved.
-4. Reviewer uuids: `values[].uuid` from `effective-default-reviewers`, or
-   `GET workspaces/{ws}/members`. Payload shapes: `references/api.md`.
+4. Reviewer uuids: `values[].user.uuid` from `effective-default-reviewers` or
+   from `GET workspaces/{ws}/members` (each entry wraps the account in `user`);
+   the repo-level `default-reviewers` list alone answers with `values[].uuid`.
+   Payload shapes: `references/api.md`.
 
 ## Pipeline and deployment variables: read back with the trailing slash
 

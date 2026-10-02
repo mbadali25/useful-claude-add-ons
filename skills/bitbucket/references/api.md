@@ -76,12 +76,21 @@ Bitbucket adds a repo's default reviewers to every new PR.
   reviewer." PUT: "This method is idempotent."
   ([Atlassian](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/#api-repositories-workspace-repo-slug-default-reviewers-target-username-put)).
 - Project level: `GET workspaces/{ws}/projects/{project_key}/default-reviewers`
-  and `GET|PUT|DELETE workspaces/{ws}/projects/{project_key}/default-reviewers/{selected_user}`.
-- Scopes (API token / OAuth): reads `read:pullrequest:bitbucket` (OAuth
-  `pullrequest`; `project:admin` for the project-level list);
-  repo-level PUT and DELETE `admin:repository:bitbucket` (`repository:admin`);
-  project-level PUT `admin:project:bitbucket` (`project:admin`).
-- Reviewer uuids: `values[].uuid` from the lists above, or `GET workspaces/{ws}/members`.
+  ([Atlassian](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-projects/#api-workspaces-workspace-projects-project-key-default-reviewers-get))
+  and `GET|PUT|DELETE workspaces/{ws}/projects/{project_key}/default-reviewers/{selected_user}`
+  ([Atlassian](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-projects/#api-workspaces-workspace-projects-project-key-default-reviewers-selected-user-put)).
+- Scopes (API token / OAuth), as each endpoint's page lists them: reads
+  `read:pullrequest:bitbucket` (OAuth `pullrequest`; `project:admin` for the
+  project-level reads); repo-level PUT and DELETE `admin:repository:bitbucket`
+  (`repository:admin`)
+  ([Atlassian](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/#api-repositories-workspace-repo-slug-default-reviewers-target-username-delete));
+  project-level PUT and DELETE `admin:project:bitbucket` (`project:admin`)
+  ([Atlassian](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-projects/#api-workspaces-workspace-projects-project-key-default-reviewers-selected-user-delete)).
+- Reviewer uuids: `values[].user.uuid` from `effective-default-reviewers`, the
+  project-level list and `GET workspaces/{ws}/members`
+  ([Atlassian](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-workspaces/#api-workspaces-workspace-members-get)),
+  each of which wraps the account in `user`; the repo-level `default-reviewers`
+  list alone answers with the accounts themselves, `values[].uuid`.
 
 ## PR comments
 - `GET  repositories/{ws}/{repo}/pullrequests/{id}/comments`
@@ -116,11 +125,15 @@ Bitbucket adds a repo's default reviewers to every new PR.
 - **Write the trailing slash on both GETs.** Reported 2026-09-28, not
   reproduced here: without it the API answered HTTP 200 with `"values": []`
   while variables existed, and with it they listed. Atlassian documents both
-  paths without the slash, so an empty list from the slash-less path is
-  "could not tell"; the trailing-slash call or the Pipelines settings page
-  confirms.
-- `GET repositories/{ws}/{repo}/environments` — environment uuids.
-- `POST` on either variables path — create:
+  paths without the slash
+  ([Atlassian](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pipelines/#api-repositories-workspace-repo-slug-pipelines-config-variables-get)),
+  so an empty list from the slash-less path is "could not tell"; the
+  trailing-slash call or the Pipelines settings page confirms.
+- `GET repositories/{ws}/{repo}/environments` — environment uuids
+  ([Atlassian](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-deployments/#api-repositories-workspace-repo-slug-environments-get)).
+- `POST` on either variables path — create
+  ([repository](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pipelines/#api-repositories-workspace-repo-slug-pipelines-config-variables-post),
+  [deployment](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pipelines/#api-repositories-workspace-repo-slug-deployments-config-environments-environment-uuid-variables-post)):
   ```json
   {"key": "NAME", "value": "text", "secured": true}
   ```
@@ -129,9 +142,14 @@ Bitbucket adds a repo's default reviewers to every new PR.
   exposed in the logs or the REST API." A secured variable is listed with an
   empty `value` — that is not the slash symptom above.
 - `PUT|DELETE repositories/{ws}/{repo}/pipelines_config/variables/{variable_uuid}`
-  (GET too) and `PUT|DELETE .../deployments_config/environments/{environment_uuid}/variables/{variable_uuid}`.
-- Scopes (API token / OAuth): reads `read:pipeline:bitbucket` (`pipeline`);
-  writes `admin:pipeline:bitbucket` (`pipeline:variable`).
+  (GET too)
+  ([Atlassian](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pipelines/#api-repositories-workspace-repo-slug-pipelines-config-variables-variable-uuid-put))
+  and `PUT|DELETE .../deployments_config/environments/{environment_uuid}/variables/{variable_uuid}`
+  ([Atlassian](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pipelines/#api-repositories-workspace-repo-slug-deployments-config-environments-environment-uuid-variables-variable-uuid-put)).
+- Scopes (API token / OAuth), as each endpoint's page lists them: reads
+  `read:pipeline:bitbucket` (`pipeline`); variable writes
+  `admin:pipeline:bitbucket` (`pipeline:variable`)
+  ([Atlassian](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pipelines/#api-repositories-workspace-repo-slug-pipelines-config-variables-post)).
 
 ## Commit statuses (build badges on commits)
 - `GET  repositories/{ws}/{repo}/commit/{hash}/statuses`
