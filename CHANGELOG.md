@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.50: environment-scoped workflow deploys in the cloud guard (T-0009)
+### Added — `crew` 1.0.124: environment-scoped workflow deploys in the cloud guard (T-0009)
 
 - **`guards.deployWorkflow` and `environments.workflows`.** While
   `guards.cloudGuard` is armed, `gh workflow run <wf>` and its REST twin,
@@ -104,7 +104,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   `environments.nonProd`, `environments.prodUnattended` (both layers) and the
   destroy rule, beside the dispatch grammar; its HTML, DOCX and PDF are
   rebuilt.
-- Bumped `1.0.49 -> 1.0.50` (1.0.43 on its branch; main gave 1.0.43-1.0.49 to T-0042, T-0021, T-0023, T-0018, T-0024, T-0077).
+- Bumped `1.0.115 -> 1.0.124` (1.0.43 then 1.0.50 on its branch; main gave 1.0.43-1.0.115 to other tickets meanwhile, and 1.0.116-1.0.123 are claimed or burned by other lanes: 1.0.116 L-0555, 1.0.119 L-0578, 1.0.120 L-0576, 1.0.121 L-0510, 1.0.122 L-0574, 1.0.123 T-0019; 1.0.112, 1.0.113, 1.0.117 and 1.0.118 burned).
 
 ### Fixed — `crew` 1.0.115: refresh admission refuses a mode change that exists only in the index (W-0117)
 
