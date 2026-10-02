@@ -74,6 +74,12 @@ jobs:
       # different half of the fix.
       - name: Version-drift commit-shape suite
         run: python3 scripts/_test/version-drift.py
+      # The fan-in behind the required `crew-shell-matrix (windows-latest)`
+      # check (pytest-crew.yml's crew-windows-gate). Each case is one way a
+      # test could be lost, or a Windows job not run, while that check went
+      # green (L-0577).
+      - name: Windows shard fan-in suite
+        run: python3 scripts/_test/windows-shards.py
       # The UPDATE.md mirrors are generated, so the only thing keeping them
       # honest is a gate that fails. Without this step the generator's --check
       # mode is a check nobody runs, which is worse than no check: the blocks
