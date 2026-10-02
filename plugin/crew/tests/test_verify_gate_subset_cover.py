@@ -503,13 +503,15 @@ def _pytest_targets_are_inside_the_suite(cmd):
     targets = parts[3:-1]
     if not targets or any(t.startswith("-") for t in targets):
         return False
-    suite = os.path.join(_REPO, "plugin", "crew", "tests")
+    suite = os.path.normcase(os.path.normpath(os.path.join(_REPO, "plugin", "crew", "tests")))
     for target in targets:
         path = target.split("::", 1)[0]
         if not path.startswith("plugin/crew/tests/") or "/" in path[len("plugin/crew/tests/"):]:
             return False
-        hits = [h for h in glob.glob(os.path.join(_REPO, path))
-                if os.path.dirname(h) == suite]
+        # normpath: on Windows the map's forward slashes survive os.path.join,
+        # so a raw dirname never equals the backslashed suite path (CI, #309).
+        hits = [h for h in glob.glob(os.path.join(_REPO, *path.split("/")))
+                if os.path.normcase(os.path.normpath(os.path.dirname(h))) == suite]
         if not hits or not all(os.path.basename(h).startswith("test_") and h.endswith(".py")
                                 for h in hits):
             return False
