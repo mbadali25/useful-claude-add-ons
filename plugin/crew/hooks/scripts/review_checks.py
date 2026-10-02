@@ -355,9 +355,11 @@ def _spawn(argv, cwd, timeout):
              else {"start_new_session": True})
     try:
         # surrogateescape: tool output carries paths, which must round-trip.
-        proc = subprocess.Popen(argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                text=True, encoding="utf-8", errors="surrogateescape",
-                                stdin=subprocess.DEVNULL, env=env, **group)
+        # Not a `with` block: on a timeout the group is killed before any wait.
+        proc = subprocess.Popen(  # pylint: disable=consider-using-with
+            argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="surrogateescape",
+            stdin=subprocess.DEVNULL, env=env, **group)
     except OSError as exc:
         raise CouldNotCheck(f"could not start {argv[0]}: {exc}") from exc
     try:

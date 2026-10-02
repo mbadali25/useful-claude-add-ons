@@ -617,7 +617,7 @@ def test_a_record_that_contradicts_itself_is_not_recorded(tmp_path, payload):
     """Review round 3: a same-bundle record is accepted only in the shape
     record() writes, and only when its result is what its checks add up to."""
     (tmp_path / rc.RESULT_FILE).write_text(json.dumps(dict(
-        dict(overridden=False, stood_down=False), bundle_sha256="sha-a", **payload)),
+        {"overridden": False, "stood_down": False}, bundle_sha256="sha-a", **payload)),
         encoding="utf-8")
 
     assert rc.recorded(str(tmp_path), "sha-a")["result"] == rc.NOT_RECORDED

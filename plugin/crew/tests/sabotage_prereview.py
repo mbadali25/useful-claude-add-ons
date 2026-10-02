@@ -130,7 +130,8 @@ PREREVIEW_MUTATIONS = (
      "            bundle = json.load(fh).get(\"bundle_sha256\")\n",
      _R + "test_the_record_is_bound_to_the_manifest_the_checks_read"),
     ("a timeout kills only the direct child", CHECKS,
-     "        else:\n            os.killpg(proc.pid, signal.SIGKILL)\n    except (OSError, subprocess.SubprocessError):\n",
+     "        else:\n            os.killpg(proc.pid, signal.SIGKILL)\n"
+     "    except (OSError, subprocess.SubprocessError):\n",
      "        else:\n            pass\n    except (OSError, subprocess.SubprocessError):\n",
      _C + "test_the_timeout_holds_when_a_child_keeps_the_output_open"),
     ("a record with a flag its result cannot carry is accepted", CHECKS,
