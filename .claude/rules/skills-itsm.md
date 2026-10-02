@@ -4,10 +4,10 @@ paths:
   - "skills/infra-work-ticketing/**"
   - "plugin/gizmoduck/**"
 ---
-<!-- crew:generated source=.crew/codemap/skills-itsm.md sha256=949f9fa5d7c4d6e2 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/skills-itsm.md sha256=8a2732a6670119ec -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # skills-itsm
-Code map anchor `91b793fa`; if it is behind HEAD, re-check with `git diff --name-only 91b793fa..HEAD -- <cited paths>`.
-Covers: infra-work-ticketing + notify. Records that SKILL.md:209-211 still instructs an unconfirmed ticket creation by default against a live service desk; a scanner-batch carve-out at :213-231 narrows that, and the missing-fact list moved to :233.; re-anchored to 40292eca (T-0107 round-1 fixes and its merge of main ffd11270); re-anchored to 91b793fa (T-0107 round-1 fixes' neighbours)
+Code map anchor `7773abb2`; if it is behind HEAD, re-check with `git diff --name-only 7773abb2..HEAD -- <cited paths>`.
+Covers: infra-work-ticketing + notify. Records that SKILL.md:209-211 still instructs an unconfirmed ticket creation by default against a live service desk; a scanner-batch carve-out at :213-231 narrows that, and the missing-fact list moved to :233.; re-anchored to 40292eca (T-0107 round-1 fixes and its merge of main ffd11270); re-anchored to 91b793fa (T-0107 round-1 fixes' neighbours); re-anchored to 7773abb2 (T-0107 review round-2 fixes)
 ## Landmines
 - Ticket creation is ungated by default, and gated for exactly one class of caller.
 - MCP writes bypass the secret scrubber.
