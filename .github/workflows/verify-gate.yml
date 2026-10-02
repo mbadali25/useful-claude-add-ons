@@ -57,15 +57,18 @@ jobs:
     # Every tool a rule needs is installed here, because a missing one makes
     # that rule exit 77 (SKIP), a SKIP never advances the verified marker, and
     # then no receipt can pass. pwsh comes from the host (infra role
-    # host_base/pwsh). mmdc needs Chromium's shared libraries on the host.
+    # host_base/pwsh); Chromium's shared libraries for mmdc too (infra #12).
     - name: Install the gate's Python tools
       run: |
         python -m pip install --upgrade pip
         pip install 'pytest~=8.0' pytest-xdist pyyaml python-docx numpy pillow requests 'pylint~=4.0' ruff
     - name: Install mcp-servers dependencies
       run: npm --prefix mcp-servers ci
+    # Pinned: the version proven on the pool host (github-runner-infra #12,
+    # bc1c04b, which installed headless Chrome's libraries). mmdc is not on the
+    # host's PATH; this puts it on setup-node's, so render.sh does not SKIP.
     - name: Install mmdc
-      run: npm install -g @mermaid-js/mermaid-cli
+      run: npm install -g @mermaid-js/mermaid-cli@12.0.0
     # A self-hosted workspace outlives the job. The receipt must rest on
     # evidence THIS run wrote, so any earlier marker, record or fingerprint is
     # removed first, and the build step requires a marker newer than the

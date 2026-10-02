@@ -637,3 +637,10 @@ def test_workflow_runs_the_gate_with_all_then_always_builds_and_uploads(workflow
                for s in steps[:steps.index(gate)])
     assert (build["if"], upload["if"]) == ("always()", "always()")
     assert upload["with"]["name"] == cr.ARTIFACT + "-${{ github.run_attempt }}"
+
+
+def test_workflow_installs_a_pinned_mmdc_so_the_diagram_rule_does_not_skip(workflow):
+    _, data = workflow
+    runs = [str(s.get("run", "")) for s in data["jobs"]["verify-gate"]["steps"]]
+
+    assert any("@mermaid-js/mermaid-cli@12.0.0" in r for r in runs)
