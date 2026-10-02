@@ -13,6 +13,12 @@ script writes the part of it that is about the ticket rather than the diff:
     (`.crew/.verify-verified-at`) against HEAD, and every rule its record
     (`.crew/.verify-gate.record.json`) still lists as NOT VERIFIED.
 
+  - the development standards checklist (T-0085): the effective standards
+    set's ids, rules and self-check questions from `crew_standards.
+    checklist_block`, stating that the author's self-check answers are
+    withheld (`selfcheck.md` is never read here) and that the list does not
+    bound the review; an unreadable overlay is written `UNREADABLE: ...`.
+
 Anything missing is written as `MISSING: ...` naming the path looked at. A
 reviewer handed a prompt with no acceptance section cannot tell "this ticket
 has none" from "nobody passed it"; a line saying which is the difference.
@@ -37,7 +43,9 @@ import re
 import subprocess
 import sys
 
+import crew_standards
 import review_verdict
+import verify_record
 
 SPEC_SECTIONS = ("Intent", "Exclusions", "Evidence", "Unknowns", "Acceptance checks")
 WEBTEST_FINDINGS_MAX = 50
@@ -86,9 +94,15 @@ def _bundle_block(manifest):
            "other directory counts for nothing; a part with no READ line makes the review "
            "INCOMPLETE."]
     out += [f"  {p['path']}" for p in parts]
+    # Three states, one line each (T-0099): an empty list is a manifest saying
+    # nothing was left out; no key, or anything but a list of non-blank strings,
+    # is one that cannot say, and must not read as either of the known answers.
     excluded = manifest.get("excluded")
-    out.append(f"  excluded (never in the bundle): {', '.join(excluded)}" if excluded
-               else "  excluded: none recorded")
+    if isinstance(excluded, list) and all(isinstance(p, str) and p.strip() for p in excluded):
+        out.append("  excluded (never in the bundle): "
+                   + (", ".join(excluded) if excluded else "none"))
+    else:
+        out.append("  excluded: not recorded by this manifest (unknown)")
     out.append(f"Manifest (file categories, renames, modes, binaries, submodules): "
                f"{manifest.get('manifest_path', 'manifest.json')}")
     for key, label in (("renames", "renamed"), ("mode_changes", "mode changed"),
@@ -156,17 +170,13 @@ def _receipts_block(root, manifest):
         out.append(f"Last clean verify pass: {verified[:12]}; HEAD is {head[:12]}"
                    f"{', tree dirty' if manifest.get('dirty') else ''}. Changes after that "
                    "pass have NOT been through the gate.")
-    record_path = os.path.join(root, ".crew", ".verify-gate.record.json")
-    raw = _read(record_path)
-    if raw is None:
-        out.append("MISSING: no .crew/.verify-gate.record.json (no per-rule record).")
+    state, rules = verify_record.read_record(root)
+    shown = verify_record.RECORD_PATH.replace("\\", "/")
+    if state == "absent":
+        out.append(f"MISSING: no {shown} (no per-rule record).")
         return out
-    try:
-        rules = json.loads(raw).get("rules")
-    except (ValueError, AttributeError):
-        rules = None
-    if not isinstance(rules, dict):
-        out.append("UNREADABLE: .crew/.verify-gate.record.json does not parse; which rules "
+    if state != "ok":
+        out.append(f"UNREADABLE: {shown} does not parse; which rules "
                    "are unverified is UNKNOWN.")
     elif not rules:
         out.append("Per-rule record: no rule is outstanding.")
@@ -254,6 +264,7 @@ def build(root, ticket, manifest, out_dir=None):
     lines = []
     for block in (_bundle_block(manifest), _spec_block(root, ticket),
                   _plan_block(root, ticket), _receipts_block(root, manifest),
+                  crew_standards.checklist_block(root, manifest),
                   _webtest_block(root, ticket, manifest, out_dir)):
         if not block:
             continue

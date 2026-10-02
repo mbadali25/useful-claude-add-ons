@@ -1,0 +1,33 @@
+READ|part-001-of-024.patch
+READ|part-002-of-024.patch
+READ|part-003-of-024.patch
+READ|part-004-of-024.patch
+READ|part-005-of-024.patch
+READ|part-006-of-024.patch
+READ|part-007-of-024.patch
+READ|part-008-of-024.patch
+READ|part-009-of-024.patch
+READ|part-010-of-024.patch
+READ|part-011-of-024.patch
+READ|part-012-of-024.patch
+READ|part-013-of-024.patch
+READ|part-014-of-024.patch
+READ|part-015-of-024.patch
+READ|part-016-of-024.patch
+READ|part-017-of-024.patch
+READ|part-018-of-024.patch
+READ|part-019-of-024.patch
+READ|part-020-of-024.patch
+READ|part-021-of-024.patch
+READ|part-022-of-024.patch
+READ|part-023-of-024.patch
+READ|part-024-of-024.patch
+BLOCK|.crew/verify.json:129|The current checkout has no clean verify marker and its gate record leaves the npm and ruff rules skipped, so the required clean verification pass remains unproven|Check .crew/.verify-verified-at and .crew/.verify-gate.record.json; the marker is absent and both recorded rules have status skipped
+BLOCK|plugin/crew/hooks/scripts/crew_config_menu.py:659|Delete accepts malformed, empty, or non-object configs, then prints a restore command that restore-repo refuses, breaking the promised byte-identical recovery path after the hard delete|Write `{not json` to .crew/config.json, run delete-repo with the correct confirmation and --apply, then execute the printed restore command; _valid_backup rejects the verified backup as unparsable
+BLOCK|plugin/crew/hooks/scripts/crew_config_menu.py:664|A concurrent config replacement after backup verification is deleted without being backed up, so the hard-delete safety guarantee has a data-loss race|Pause after _backup returns, replace .crew/config.json with different bytes from another process, then resume; os.remove deletes the new bytes while the backup contains only the old file
+FIX|plugin/crew/hooks/scripts/crew_config.py:2643|Machine whole-block updates are validated only by their parent path, allowing the explicitly refused consent key to bypass the global writer|Run crew_config.py --set 'context={"autoClear":{"unsafeFocus":true}}' --apply; the write succeeds although context.autoClear.unsafeFocus must be refused at the machine layer
+FIX|plugin/crew/hooks/scripts/crew_config.py:2606|Null bypasses enum validation even though it is outside every tuple returned by enum_values, contradicting the ticket’s “outside its values is refused” rule|Call plan_global_write({"pm.authority": None}); it succeeds although None is not in crew_state.AUTHORITIES
+FIX|plugin/crew/hooks/scripts/crew_config.py:2974|Concurrent repo writes merge against stale snapshots, so the later atomic replace silently discards the earlier session’s unrelated update|Synchronize two processes after plan_repo_write on the same original file, update different keys, then let both replace; the last writer’s file lacks the first writer’s key
+FIX|plugin/crew/hooks/scripts/crew_config_menu.py:178|Choice filtering checks only the proposed value, not the merged file the writer validates, so a readable config with an invalid existing provider offers choices that Save refuses|Put qa.provider="gpt" in an otherwise valid repo config, request spec --layer repo, select the offered tracker="jira" choice, then Save; plan_repo_write rejects it because the merged provider remains invalid
+FIX|plugin/crew/hooks/scripts/crew_config_menu.py:541|Delete preview walks only current default leaves and omits unknown preserved keys that the delete will remove, so it is not the promised full preview|Add top-level "x-local":1 to a valid repo config and run delete-repo without confirmation; no x-local row appears even though applying the delete removes it
+FIX|plugin/crew/hooks/scripts/crew_config_menu.py:777|The save CLI validates only the outer change-set object and crashes on non-object layer values instead of refusing them with exit 2|Run save --changes '{"machine":1}'; save executes dict(1) and raises TypeError with a traceback

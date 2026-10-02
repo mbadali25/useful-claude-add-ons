@@ -10,7 +10,9 @@ No build. `python3 scripts/check-marketplace.py` is the gate: every registration
 scripts being a matched pair, hook quoting and exit codes, and version drift. Commit, then run it,
 then push: its version-drift check compares commits, so uncommitted plugin edits pass it locally.
 Per-path commands and promotion steps live in `.crew/verify.json` — that file is the mechanism, this
-one is the judgment. Do not restate its commands here.
+one is the judgment. Do not restate its commands here. A lane runs the whole local suite with
+`python3 scripts/gate-runner.py` (one status file, heavy-run aware) instead of its own `suites*.sh`;
+its step table is checked against `.github/workflows/` by its own suite.
 
 ## Where things are - entrypoints, logic, DO NOT TOUCH
 
@@ -34,6 +36,15 @@ fenced code block is marked from the line above the fence. Unmarked numbers are 
 checked: `17 skills` is true of crew's bundle and false of the marketplace, and a checker that
 guesses which is which fails correct lines. That silence is asserted by
 `scripts/_test/self-claims.py`, so do not "improve" the check into inferring claims.
+
+**A change to the review/gate harness lands alone, with no feature work in the same PR.** Owner rule,
+2026-09-28 (T-0087). The harness is the set of paths in `HARNESS` in `scripts/check-tooling-pr.py`.
+Whenever one of them changes, `.crew/verify.json`'s harness rule runs that checker, its suite
+`scripts/_test/tooling-pr.py`, the golden replay of real reviewer output, the seam contracts and
+the canary review. Tests, docs, version files, the code map and the graph may ride along. A feature
+may not, and neither may production code or a prompt outside the harness. The few files that read a
+harness format (`SEAM` in the same script) ride along only when a lane commit declares each with a
+`Tooling-seam: <path>` trailer, a claim the reviewer holds the diff to.
 
 ## Stop and ask - the conditions that should halt work
 
@@ -91,10 +102,10 @@ are tracked, so committing one advances HEAD past the sha it records.
 <!-- crew-ignore-policy:list -->
 Decisions in `docs/adr/`. The gitignore policy for the rest, stated once: `.crew/*` is ignored
 and a **named** list is un-ignored — `!.crew/codemap/`, `!.crew/endpoints.json`,
-`!.crew/verify.json`. Nothing else under `.crew/` is tracked, `.work/` is ignored entirely, and
-`.crew/.approved-*` is listed too, as documentation of the promotion approval marker **the operator
-creates** — `.crew/*` already ignores it and no negation re-admits it, so that line and its position
-are not what keeps it untracked.
+`!.crew/verify.json`, `!.crew/standards.md`. Nothing else under `.crew/` is tracked, `.work/` is
+ignored entirely, and `.crew/.approved-*` is listed too, as documentation of the promotion approval
+marker **the operator creates** — `.crew/*` already ignores it and no negation re-admits it, so that
+line and its position are not what keeps it untracked.
 `scripts/check-marketplace.py::check_crew_ignore_policy` asserts that list is the same set here, in
 crew-setup's shipped template, and in every doc that states it — so change the list in one place and
 the gate tells you the other places exist.
