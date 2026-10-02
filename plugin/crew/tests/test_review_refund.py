@@ -295,8 +295,8 @@ def test_finish_reports_ignored_lines(repo, tmp_path):
     result, review = _finish_claude(repo, tmp_path, f"FIX|a.py:1|breaks|run it\n{prose}\n")
 
     kept = [ln for ln in result.stdout.splitlines() if ln.startswith("review: FINDINGS kept; 1 ")]
-    assert (result.returncode, review["verdict"], review["ignored_lines"],
-            review["failure_class"], len(kept)) == (1, "FINDINGS", [prose], None, 1), (
+    assert (result.returncode, review["verdict"], review["ignored_lines"], review["ignored_text"],
+            review["failure_class"], len(kept)) == (1, "FINDINGS", 1, [prose], None, 1), (
         result.stdout + result.stderr)
 
 
@@ -317,16 +317,17 @@ def test_finish_recovers_nothing_when_the_bundle_changed(repo, tmp_path):
                                     before=damage)
 
     assert (result.returncode, review["verdict"], review["failure_class"],
-            review["ignored_lines"], " kept; " in result.stdout,
+            review["ignored_lines"], review["ignored_text"], " kept; " in result.stdout,
             any("match no part of the contract" in r for r in review["reasons"])) == (
-        3, "INCOMPLETE", "tree", [], False, True), result.stdout + result.stderr
+        3, "INCOMPLETE", "tree", 0, [], False, True), result.stdout + result.stderr
 
 
 def test_finish_records_no_ignored_lines_on_a_strict_round(repo, tmp_path):
     result, review = _finish_claude(repo, tmp_path, "FIX|a.py:1|breaks|run it\n")
 
-    assert (result.returncode, review["ignored_lines"], " kept; " in result.stdout) == (
-        1, [], False), result.stdout + result.stderr
+    assert (result.returncode, review["ignored_lines"], review["ignored_text"],
+            " kept; " in result.stdout) == (1, 0, [], False), result.stdout + result.stderr
+    assert type(review["ignored_lines"]) is int  # L-0510 reads it as an int
 
 
 def test_refund_limit_holds_through_review_run(repo, tmp_path):

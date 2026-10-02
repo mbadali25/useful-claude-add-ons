@@ -115,7 +115,9 @@ _READ = re.compile(r"^READ\|(.*\S.*)$")
 # line is "could not tell" and keeps the round INCOMPLETE; only a stray line
 # that is none of these is harmless enough to ignore beside findings.
 _DECORATION = re.compile(r"^(?:[\s`*_>#+-]|\d+[.)])+")
-_FENCE = re.compile(r"^(?:`{3,}|~{3,})[\w.+#-]*$")
+# A fence line: the fence, optional spaces, and at most one info word
+# (CommonMark allows spaces before it - review round 2 FIX, "``` FIX").
+_FENCE = re.compile(r"^(?:`{3,}|~{3,})[ \t]*[\w.+#-]*$")
 _KEYWORD = r"BLOCK|FIX|NIT|READ|CLEAN"
 _ON_BARE = (re.compile(rf"^(?:{_KEYWORD})\b", re.IGNORECASE),)
 # An admission that the review itself fell short reads as could-not-tell too,

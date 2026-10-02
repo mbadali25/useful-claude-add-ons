@@ -20,7 +20,8 @@ does not implement.
   "ran out", ...) keeps the round INCOMPLETE, as do a missing READ, a bad exit, a timeout and a
   bundle/stream reason (`parse` now takes these as `prior_reasons`, so `review_run.finish` can no
   longer recover a round its own checks fail).
-- **Shown, not dropped.** `review.json` carries `ignored_lines`, the ledger row their count, and
+- **Shown, not dropped.** `review.json` carries `ignored_lines` (an int on every round, 0 when none; the
+  contract L-0510 reads) and the lines verbatim in `ignored_text`, the ledger row the count, and
   `review_run` prints `review: FINDINGS kept; N line(s) outside the contract were ignored, first:
   ...`; `/crew:review` step 3.1 reports them verbatim.
 - **Measured.** Over every preserved review on the Linux host (56 with an out.txt and manifest),

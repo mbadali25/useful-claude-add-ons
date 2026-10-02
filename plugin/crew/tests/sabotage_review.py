@@ -595,7 +595,7 @@ REVIEW_FIX_MUTATIONS = (
         # The ledger forgets that a round was recovered.
         "the ledger row drops the ignored-line count",
         REVIEW_LEDGER,
-        '            "ignored_lines": len(review.get("ignored_lines") or []),\n',
+        '            "ignored_lines": _ignored_count(review.get("ignored_lines")),\n',
         '            "ignored_lines": 0,\n',
         "tests/test_review_refund.py::test_ledger_row_counts_the_ignored_lines",
     ),
@@ -613,8 +613,8 @@ REVIEW_FIX_MUTATIONS = (
         # The ignored lines vanish from review.json.
         "review.json drops the ignored lines",
         REVIEW_RUN,
-        '        "reasons": result["reasons"], "ignored_lines": result["ignored"],\n',
-        '        "reasons": result["reasons"], "ignored_lines": [],\n',
+        '        "ignored_lines": len(result["ignored"]), "ignored_text": result["ignored"],\n',
+        '        "ignored_lines": 0, "ignored_text": [],\n',
         "tests/test_review_refund.py::test_finish_reports_ignored_lines",
     ),
     (
@@ -642,5 +642,15 @@ REVIEW_FIX_MUTATIONS = (
         '        unparseable.append(raw[:-1] if raw.endswith("\\r") else raw)\n',
         "        unparseable.append(line)\n",
         "tests/test_review_verdict.py::test_parse_ignored_lines_are_kept_verbatim",
+    ),
+    (
+        # Review round 2 FIX: a fence with a space before its info string
+        # ("``` FIX") was not a fence, so its info word read as a keyword.
+        "a fence with a space before its info string is not a fence",
+        REVIEW_VERDICT,
+        '_FENCE = re.compile(r"^(?:`{3,}|~{3,})[ \\t]*[\\w.+#-]*$")\n',
+        '_FENCE = re.compile(r"^(?:`{3,}|~{3,})[\\w.+#-]*$")\n',
+        ("tests/test_review_verdict.py::"
+         "test_parse_harmless_stray_lines_beside_findings_are_recovered"),
     ),
 )

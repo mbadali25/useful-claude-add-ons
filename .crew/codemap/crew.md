@@ -1581,7 +1581,7 @@ then the train is advisory.
   bundle/webtest/stream reasons in, `plugin/crew/hooks/scripts/review_run.py:409`), and
   only when no stray line is `contract_like` (`plugin/crew/hooks/scripts/review_verdict.py:133`;
   the shortfall wording net `_SHORTFALL` is `:123`). The ignored lines go to
-  review.json's `ignored_lines` (`plugin/crew/hooks/scripts/review_run.py:425`), a
+  review.json's `ignored_text`, with the count as `ignored_lines` (`plugin/crew/hooks/scripts/review_run.py:427`), a
   `review: FINDINGS kept; ...` line (`:464`) and, as a count, the ledger row
   (`plugin/crew/hooks/scripts/review_ledger.py:328`).
 - DERIVED (T-0087, crew 1.0.53): an INCOMPLETE round is classed by

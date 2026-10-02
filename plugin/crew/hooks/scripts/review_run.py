@@ -422,7 +422,10 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     review = {
         "ticket": args.ticket, "round": number, "budget": review_ledger.BUDGET,
         "verdict": result["verdict"], "counts": result["counts"],
-        "reasons": result["reasons"], "ignored_lines": result["ignored"],
+        "reasons": result["reasons"],
+        # L-0510's contract: an int on every round, 0 when none were ignored;
+        # the lines themselves, verbatim, are `ignored_text` (L-0576).
+        "ignored_lines": len(result["ignored"]), "ignored_text": result["ignored"],
         "parts_expected": parts,
         "parts_missing": result["parts_missing"],
         "provider": args.provider, "model": args.model or None,

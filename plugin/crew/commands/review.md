@@ -499,7 +499,7 @@ loses the most time to.
 **Step 3 — act.**
 1. Report every BLOCK and FIX line verbatim. Do not soften or argue before
    showing me. If a `review: FINDINGS kept; ...` line printed, also show me
-   every ignored line verbatim (`review.json`'s `ignored_lines`): the script
+   every ignored line verbatim (`review.json`'s `ignored_text`; `ignored_lines` is their count): the script
    ignored them, it did not read them for defects. State the review range and file list **from `$MANIFEST`**, not
    by re-deriving it: base, head, branch, whether the tree was dirty, and
    which category (committed / staged / unstaged / untracked) each changed

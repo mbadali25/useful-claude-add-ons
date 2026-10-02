@@ -181,6 +181,8 @@ BLOCK_LINE = "BLOCK|b.py:2|breaks badly|call it"
     (["```"], ["```"]),
     (["```text"], ["```"]),
     (["```FIX"], ["```"]),
+    (["``` FIX"], ["```"]),
+    (["~~~  text"], ["~~~"]),
     (["~~~"], ["~~~"]),
     (["Two defects below."], ["", "Everything else reads correctly."]),
 ])
@@ -231,6 +233,8 @@ def test_parse_clean_with_any_stray_line_is_incomplete(stray):
     "| a.py:1 | breaks | repro |",
     "a.py:1 | breaks | repro | more",
     "INCOMPLETE: I did not read all 30 patch parts in full.",
+    "``` FIX a.py:1 breaks on empty input",
+    "``` FIX|a.py:1|breaks|repro",
     "Note: this review is incomplete; part 2 was skimmed.",
     "block a.py:1 deletes user data",
     "Fix the retry loop in a.py:1 before landing.",
