@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added - `crew` 1.0.123: a recurring-findings checklist, scoped to a ticket's paths, for the implementer (L-0575)
+### Added - `crew` 1.0.129: a recurring-findings checklist, scoped to a ticket's paths, for the implementer (L-0575)
 
 - **What.** `plugin/crew/skills/crew-qa-standards/references/recurring-findings.md` lists seven
   defect classes earlier reviews kept finding (fail-open handling, tests that cannot fail, claims not
