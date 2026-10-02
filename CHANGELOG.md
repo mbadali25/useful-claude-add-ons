@@ -6,7 +6,8 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed — `crew` 1.0.130: review closure - a final 0-BLOCK cross-family round auto-accepts (L-0510)
 
-Bumped `1.0.121 -> 1.0.130` after merging origin/main `7ba4f9ea` (crew 1.0.126, L-0572);
+Bumped `1.0.129 -> 1.0.130` (main's 1.0.129 taken in the merge) after merging origin/main `0487fc39`
+(L-0599 #315, crew 1.0.129); before it `1.0.121 -> 1.0.130` after merging origin/main `7ba4f9ea` (crew 1.0.126, L-0572);
 1.0.130 allocated by the coordinator. Before it, `1.0.114 -> 1.0.121` after merging origin/main `ffd11270` (L-0557, crew 1.0.114);
 1.0.113-1.0.120 are claimed by other lanes and 1.0.112 is released (burned). Before that,
 `1.0.110 -> 1.0.112` after merging origin/main `2906dcbd` (crew 1.0.110). Before that, `1.0.103 -> 1.0.108` for the family rule (owner decision
