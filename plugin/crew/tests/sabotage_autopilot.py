@@ -970,4 +970,30 @@ POLICY_MUTATIONS += (
      ("    kind = (receipt.get(\"kind\") if isinstance(receipt, dict)\n"
       "            and review_ledger.check_receipt(top, ticket)[0] else None)\n"),
      _P + "test_closed_for_repoint_ignores_a_stale_bundle_hash"),
+    # T-0504 review round 1: an ACCEPTED ledger's receipt must stand on its latest
+    # completed round, as review_ledger writes one, or it is could-not-tell.
+    ("a receipt for an earlier round closes a ticket for a re-point", AUTOPILOT,
+     '    if latest.get("round") != receipt.get("round"):\n', "    if False:\n",
+     _P + "test_activation_malformed_accepted_ledger_refuses_as_could_not_tell"
+     "[receipt-not-the-latest-round]"),
+    ("a clean receipt on a FINDINGS round closes a ticket for a re-point", AUTOPILOT,
+     '    if latest.get("status") != "completed" or latest.get("verdict") != verdict:\n',
+     '    if latest.get("status") != "completed":\n',
+     _P + "test_activation_malformed_accepted_ledger_refuses_as_could_not_tell"
+     "[clean-receipt-on-a-findings-round]"),
+    ("a receipt on an unfinished round closes a ticket for a re-point", AUTOPILOT,
+     '    if latest.get("status") != "completed" or latest.get("verdict") != verdict:\n',
+     '    if latest.get("verdict") != verdict:\n',
+     _P + "test_activation_malformed_accepted_ledger_refuses_as_could_not_tell"
+     "[latest-round-not-completed]"),
+    ("a receipt naming no bundle closes a ticket for a re-point", AUTOPILOT,
+     '    if not isinstance(receipt.get("bundle_sha256"), str) or not receipt["bundle_sha256"]:\n',
+     "    if False:\n",
+     _P + "test_activation_malformed_accepted_ledger_refuses_as_could_not_tell"
+     "[no-bundle-hash]"),
+    ("an owner-accepted receipt naming nobody closes a ticket for a re-point", AUTOPILOT,
+     '    if kind == "owner-accepted" and (not isinstance(who, str) or not who.strip()):\n',
+     "    if False:\n",
+     _P + "test_activation_malformed_accepted_ledger_refuses_as_could_not_tell"
+     "[owner-accepted-by-nobody]"),
 )

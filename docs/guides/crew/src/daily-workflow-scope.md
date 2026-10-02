@@ -161,4 +161,8 @@ closed by an accepted review (a `clean` or `owner-accepted` receipt in the revie
 yours: type `/crew:autopilot <id>`, and crew's prompt hook re-points this worktree and says which
 ticket it left. The edit guard refuses the session's own `activate` or `deactivate` for that move
 under every mode but `off`, and autopilot's stops recommend finishing the in-flight ticket rather
-than telling you to run a script.
+than telling you to run a script. A review ledger that says accepted but whose receipt does not
+stand on its latest completed round, and a `--root` the guard cannot judge where the shell will
+(`~`, a variable, a backslash path, a directory change, or no repository where it looked), both
+count as could not tell, so the move stays yours. If the pointer moves between the prompt hook
+reading it and writing it, the hook writes nothing and says so.

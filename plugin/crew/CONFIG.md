@@ -2508,7 +2508,8 @@ decides whether the session may run `crew_ticket.py activate` or `deactivate`, a
 nothing in this file gates it: not `autopilot.approval`, not `autopilot.mode`,
 not `scope.allowCliApproval`. It allows only moves that cannot widen scope — no
 pointer yet, the pointer already on the ticket, or a pointer on a ticket with an
-accepted review receipt and a done INDEX row or spec header — and the scope guard
+accepted review receipt (standing on its latest completed round, as the review
+ledger writes one) and a done INDEX row or spec header — and the scope guard
 refuses the session's move off an in-flight ticket, which you make by typing
 `/crew:autopilot <id>`. `scope.mode: off` lifts that refusal, like every other
 shell refusal of the guard. `resume` then tells the command to activate

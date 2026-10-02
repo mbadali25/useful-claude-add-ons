@@ -1124,13 +1124,41 @@ REPOINT_RECEIPTS = ("clean", "owner-accepted")
 ACTIVATION_VERBS = ("activate", "deactivate")
 
 
+def _hollow_receipt(rounds, receipt, kind):
+    """Why an ACCEPTED ledger's `kind` receipt does not stand as
+    `review_ledger.record`/`accept` write one, or None when it does: on the
+    latest round, completed, with that round's verdict (CLEAN for `clean`,
+    FINDINGS for `owner-accepted`, which also names who accepted), and a
+    bundle hash. Bytes the ledger's own writers never produce are could not
+    tell, never an accepted receipt (review round 1: a ledger holding only a
+    state and a kind read as closed). The hash is not rebuilt; a merged
+    ticket's never matches (`closed_for_repoint`)."""
+    latest = rounds[-1] if isinstance(rounds, list) and rounds else None
+    if not isinstance(latest, dict):
+        return "it records no review round"
+    if latest.get("round") != receipt.get("round"):
+        return (f"its receipt is for round {receipt.get('round')!r}, not the latest round "
+                f"{latest.get('round')!r}")
+    verdict = "CLEAN" if kind == "clean" else "FINDINGS"
+    if latest.get("status") != "completed" or latest.get("verdict") != verdict:
+        return (f"its latest round is {latest.get('status')!r}/{latest.get('verdict')!r}, "
+                f"not a completed {verdict} round a {kind} receipt stands on")
+    if not isinstance(receipt.get("bundle_sha256"), str) or not receipt["bundle_sha256"]:
+        return "its receipt names no reviewed bundle"
+    who = receipt.get("accepted_by")
+    if kind == "owner-accepted" and (not isinstance(who, str) or not who.strip()):
+        return "its owner-accepted receipt names nobody who accepted"
+    return None
+
+
 def closed_for_repoint(root, ticket, notes=None):
     """Whether `ticket` is closed by a fact the session cannot write: True
     only when its review ledger (under `<git-common-dir>/crew/`, which the
     scope guard refuses to the session) is ACCEPTED with a `clean` or
     `owner-accepted` receipt AND `_closed` says INDEX.md or its spec header
-    says done. None is could not tell -- an unreadable ledger or spec, or a
-    probe that raised -- and never reads as closed. False otherwise, INDEX or
+    says done. None is could not tell -- an unreadable ledger or spec, a
+    probe that raised, or an ACCEPTED ledger whose receipt does not stand on
+    its latest round (`_hollow_receipt`) -- and never reads as closed. False otherwise, INDEX or
     spec alone included: both are the session's to edit. Never reads
     `review_ledger.check_receipt`, which fails for every merged ticket once
     the tree moves on. `notes`, when a list, gets one line saying why."""
@@ -1148,9 +1176,15 @@ def closed_for_repoint(root, ticket, notes=None):
         return None
     receipt = ledger.get("receipt")
     kind = receipt.get("kind") if isinstance(receipt, dict) else None
-    if state != review_ledger.ACCEPTED or kind not in REPOINT_RECEIPTS:
+    if state != review_ledger.ACCEPTED:
         notes.append(f"no accepted review receipt: its ledger is {state}")
         return False
+    hollow = (f"its receipt is {kind!r}, not one of {'/'.join(REPOINT_RECEIPTS)}"
+              if kind not in REPOINT_RECEIPTS
+              else _hollow_receipt(ledger.get("rounds"), receipt, kind))
+    if hollow:
+        notes.append(f"its ledger says ACCEPTED, but {hollow}")
+        return None
     try:
         closed = _closed(top, ticket)
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except

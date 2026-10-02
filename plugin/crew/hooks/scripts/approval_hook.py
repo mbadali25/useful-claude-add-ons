@@ -97,6 +97,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import sys
 import time
 import uuid
@@ -606,29 +607,55 @@ def _partly(root, items, index, recorded, attempt, exc):
     return 2
 
 
+def _folder(top, ticket):
+    """Whether `ticket`'s folder exists: True, False (proven missing), or
+    None when the probe could not tell (review round 1: `os.path.isdir`
+    collapsed an unreadable `.work/tickets/` into "missing")."""
+    try:
+        return stat.S_ISDIR(os.stat(crew_ticket.ticket_dir(top, ticket)).st_mode)
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    except OSError:
+        return None
+
+
 def _repoint(root, ticket):
     """Carry out the owner's `/crew:autopilot <ticket>`: move this worktree's
     active-ticket pointer to `ticket` and say what it left. Silent when there
-    is no ticket folder or the pointer already names it."""
+    is no ticket folder or the pointer already names it. The write is a
+    compare-and-swap on the entry read here (`crew_ticket.activate(expect=)`),
+    so a re-point made meanwhile is never overwritten or misreported."""
     try:
         top = crew_ticket.toplevel(root)
-        if not top or not os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
+        if not top:
             return 0
-        active, where, broken = crew_ticket.resolve_active(top)
-        if where == "active-ticket" and active == ticket:
+        folder = _folder(top, ticket)
+        if folder is None:
+            raise crew_ticket.TicketError(f"could not tell whether .work/tickets/{ticket}/ "
+                                          "exists (it could not be read)")
+        if not folder:
+            return 0
+        before = crew_ticket.pointer_entry(top)
+        if before == ticket:
             return 0
         try:
             import crew_autopilot  # pylint: disable=import-outside-toplevel
             state = crew_autopilot.activation_policy(top, ticket).get("reason")
         except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
             state = f"its state could not be told ({type(exc).__name__})"
-        crew_ticket.activate(top, ticket)
+        try:
+            crew_ticket.activate(top, ticket, expect=before)
+        except crew_ticket.PointerMoved as moved:
+            if moved.current == ticket:
+                return 0
+            raise
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         sys.stderr.write(f"crew: /crew:autopilot {ticket} could not re-point this worktree "
                          f"-- {type(exc).__name__}: {_one_line(exc)}; nothing changed\n")
         return 2
-    left = ("a broken pointer" if broken else
-            active if where == "active-ticket" else "no ticket")
+    left = ("no ticket" if before is None else
+            before if isinstance(before, str) and crew_ticket._TICKET_RE.match(before)  # pylint: disable=protected-access
+            and _folder(top, before) else "a broken pointer")
     return _emit(f"crew: the owner re-pointed this worktree to {ticket} from their own "
                  f"/crew:autopilot prompt; {left} was active ({_one_line(state)}).")
 

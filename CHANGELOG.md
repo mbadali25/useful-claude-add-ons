@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.118: crew runs its own bookkeeping; a move off an in-flight ticket is the owner's prompt (T-0504)
+### Changed — `crew` (version set at land, REPO-03): crew runs its own bookkeeping; a move off an in-flight ticket is the owner's prompt (T-0504)
 
 - **Why.** The owner, 2026-09-29: "The crew plugin and other repos keep asking
   me to run a Python script or a command. I thought it was going to
@@ -32,12 +32,21 @@ All notable changes to this repository are documented here. Format follows [Keep
   (bash and PowerShell continuations). The refusal names `/crew:autopilot <id>`
   and recommends finishing the in-flight ticket. The broken-pointer messages
   of the guard and the Stop audit name the same prompt instead of the CLI.
+  Review round 1: a `--root` starting with `~`, carrying a backslash, or
+  naming no repository where the guard looked is could-not-tell (it was
+  allowed, so the shell could reach a repository the guard never judged); an
+  ACCEPTED ledger whose receipt does not stand on its latest completed round
+  (`_hollow_receipt`) is could-not-tell, never closed.
 - **Hook extension, no new hook.** `approval_hook.py` (the existing
   UserPromptSubmit hook) also re-points this worktree when the owner's prompt is
   exactly `/crew:autopilot <id>` or `run <id>`, RAW or EXPANDED, one line, and
   the ticket has a folder; it adds context naming the ticket it left. `status`,
   `assign`, `goal`, `focus`, `--goal`, bare, mid-sentence, nested-tag and
-  multi-line prompts never re-point. Both wrappers' pre-filters pass
+  multi-line prompts never re-point. Review round 1: the write is a
+  compare-and-swap (`crew_ticket.activate(expect=)`) under
+  `active-ticket.lock`, which `activate`/`deactivate` also take, so a re-point
+  made meanwhile is neither overwritten nor misreported; an unreadable ticket
+  folder blocks the prompt as could-not-tell. Both wrappers' pre-filters pass
   `crew:autopilot`; with no python it passes unblocked. `hooks.json` unchanged.
 - **Docs.** README (scripts and hooks rows, "Who moves the active ticket",
   "Letting crew run its own scripts without a prompt" with `permissions.allow`
@@ -50,9 +59,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   `claude plugin update crew` to 1.0.61 or later.
 - **Sabotage.** New rows in `sabotage_scope.py`, `sabotage_autopilot.py`
   (`REPOINT_MUTATIONS`) and `sabotage_approval.py`, each naming one test.
-- Bumped `1.0.114 -> 1.0.118` (1.0.62 on its branch, one past main's 1.0.61; re-set
-  after each origin/main merge, last ffd11270 at 1.0.114; 1.0.115 and 1.0.117 are claimed by
-  T-0501's worktree and 1.0.116 by L-0555's, so this takes the next free one).
+- Version: none on the build branch. Per `.crew/standards.md` REPO-03 it declares the
+  version of the origin/main it last merged (ffd11270, crew 1.0.114); the bump lands on
+  the land branch at push, after the review receipt, at the next version above origin/main
+  that no open PR branch or other worktree declares (review round 1 withdrew the
+  build-branch 1.0.118).
 
 ### Fixed - `crew` 1.0.114, `obsidian-vault` 0.4.16: every pwsh the test suites spawn gets its own XDG_CACHE_HOME (L-0557)
 

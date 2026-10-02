@@ -398,6 +398,76 @@ def test_autopilot_pointer_write_failure_blocks_the_prompt(repo, monkeypatch, ca
         2, "T-1", True)
 
 
+def _entry(repo):
+    """This worktree's raw pointer entry (None when it has none)."""
+    pointer = pathlib.Path(common_dir(repo), "crew", "active-ticket")
+    mapping = json.loads(pointer.read_text(encoding="utf-8")) if pointer.exists() else {}
+    return mapping.get(crew_ticket.toplevel(str(repo)))
+
+
+def _racing_policy(monkeypatch, repo, ticket):
+    """Another process re-points this worktree to `ticket` between the hook
+    reading the pointer and writing it (activation_policy runs in that gap)."""
+    import crew_autopilot  # pylint: disable=import-outside-toplevel
+    real = crew_autopilot.activation_policy
+
+    def racing(*args, **kwargs):
+        if ticket is None:
+            crew_ticket.deactivate(str(repo))
+        else:
+            crew_ticket.activate(str(repo), ticket)
+        return real(*args, **kwargs)
+    monkeypatch.setattr(crew_autopilot, "activation_policy", racing)
+
+
+# Review round 1, FIX approval_hook.py:617: the hook read the pointer, then
+# overwrote it, so a re-point made in between was lost and the hook named the
+# ticket it never left. The write is a compare-and-swap under the pointer lock.
+@pytest.mark.parametrize("racer", ["T-3", None])
+def test_autopilot_prompt_never_overwrites_a_concurrent_repoint(repo, monkeypatch, capsys,
+                                                                racer):
+    _pointed(repo)
+    make_ticket(repo, "T-3", activate=False)
+    _racing_policy(monkeypatch, repo, racer)
+
+    code = approval_hook.handle(prompt(repo, "/crew:autopilot T-2"))
+
+    captured = capsys.readouterr()
+    assert (code, _entry(repo), captured.out, "changed since" in captured.err) == (
+        2, racer, "", True)
+
+
+def test_autopilot_prompt_racing_to_the_same_ticket_is_silent(repo, monkeypatch, capsys):
+    _pointed(repo)
+    _racing_policy(monkeypatch, repo, "T-2")
+
+    code = approval_hook.handle(prompt(repo, "/crew:autopilot T-2"))
+
+    assert (code, _pointer(repo), capsys.readouterr().out) == (0, "T-2", "")
+
+
+# Review round 1, FIX approval_hook.py:615: an unreadable ticket folder read as
+# "no folder" and the prompt passed silently with the re-point undone.
+@pytest.mark.parametrize("error", [PermissionError, OSError])
+def test_autopilot_unreadable_ticket_folder_is_could_not_tell(repo, monkeypatch, capsys,
+                                                              error):
+    _pointed(repo)
+    real = os.stat
+    target = os.path.join(".work", "tickets", "T-2")
+
+    def deny(path, *args, **kwargs):
+        if os.path.normpath(os.fspath(path)).endswith(target):
+            raise error(13, "Permission denied", os.fspath(path))
+        return real(path, *args, **kwargs)
+    monkeypatch.setattr(os, "stat", deny)
+
+    code = approval_hook.handle(prompt(repo, "/crew:autopilot T-2"))
+
+    monkeypatch.undo()
+    assert (code, _pointer(repo), "could not tell" in capsys.readouterr().err) == (
+        2, "T-1", True)
+
+
 def test_an_approve_prompt_is_not_a_repoint(repo):
     _pointed(repo)
 

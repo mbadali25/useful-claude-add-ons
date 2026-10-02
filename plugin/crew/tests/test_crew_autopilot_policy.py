@@ -1104,6 +1104,61 @@ def test_deactivate_uses_the_same_table(tmp_path, setup, allow, case):
     assert (got["allow"], got["case"]) == (allow, case)
 
 
+def _hollow(data):
+    data.clear()
+    data.update({"state": "ACCEPTED", "rounds": [], "receipt": {"kind": "clean"}})
+
+
+_DELETE = object()
+
+
+def _set(path, value):
+    def change(data):
+        *parents, last = path
+        node = data
+        for key in parents:
+            node = node[key]
+        if value is _DELETE:
+            del node[last]
+        else:
+            node[last] = value
+    return change
+
+
+
+# Review round 1, BLOCK crew_autopilot.py:1149: state ACCEPTED plus a receipt `kind`
+# was trusted alone. An ACCEPTED ledger whose receipt does not stand on its latest
+# completed round, as review_ledger writes one, is could-not-tell, never closed.
+@pytest.mark.parametrize("kind,change", [
+    pytest.param("clean", _hollow, id="state-and-kind-only"),
+    pytest.param("clean", _set(("receipt", "round"), 2), id="receipt-not-the-latest-round"),
+    pytest.param("clean", _set(("rounds", -1, "verdict"), "FINDINGS"),
+                 id="clean-receipt-on-a-findings-round"),
+    pytest.param("owner-accepted", _set(("rounds", -1, "verdict"), "CLEAN"),
+                 id="owner-accepted-on-a-clean-round"),
+    pytest.param("owner-accepted", _set(("receipt", "accepted_by"), None),
+                 id="owner-accepted-by-nobody"),
+    pytest.param("clean", _set(("rounds", -1, "status"), "reserved"),
+                 id="latest-round-not-completed"),
+    pytest.param("clean", _set(("receipt", "bundle_sha256"), _DELETE), id="no-bundle-hash"),
+    pytest.param("clean", _set(("receipt",), "clean"), id="receipt-not-an-object"),
+])
+def test_activation_malformed_accepted_ledger_refuses_as_could_not_tell(tmp_path, kind,
+                                                                      change):
+    root = _pointed(tmp_path, status="done")
+    accepted_ledger(root, "T-1", kind)
+    path = review_ledger.ledger_path(str(root), "T-1")
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+    change(data)
+    _write(path, json.dumps(data))
+
+    got = _activation(root)
+
+    assert (got["allow"], got["case"], "could not tell" in got["reason"]) == (
+        False, "unknown", True)
+
+
 def test_closed_for_repoint_ignores_a_stale_bundle_hash(tmp_path):
     root = _pointed(tmp_path, status="done")
     accepted_ledger(root, "T-1")

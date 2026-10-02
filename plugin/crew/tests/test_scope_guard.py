@@ -802,6 +802,70 @@ def test_activate_after_a_directory_change_is_refused_as_could_not_tell(flavour,
     assert (code, "could not tell which worktree" in err) == (2, True)
 
 
+# Review round 1, BLOCK crew_ticket.py:1079: a --root the guard cannot model as the
+# shell will (a `~` the shell expands, a backslash path, a path that is no repository
+# where the guard looked) was allowed, so the CLI could move a pointer the guard never
+# judged. Each is could-not-tell now; `--root .` and an absolute worktree still judge.
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+@pytest.mark.parametrize("tool,command,decoy", [
+    pytest.param("Bash", "python3 hooks/scripts/crew_ticket.py activate --root ~/other "
+                         "--ticket T-2", "~/other", id="tilde"),
+    pytest.param("Bash", "python3 hooks/scripts/crew_ticket.py activate --root=~ --ticket T-2",
+                 "~", id="tilde-equals"),
+    pytest.param("Bash", "python3 hooks/scripts/crew_ticket.py deactivate --root ~/other",
+                 "~/other", id="tilde-deactivate"),
+    pytest.param("Bash", "python3 hooks/scripts/crew_ticket.py activate --root no-such-dir "
+                         "--ticket T-2", None, id="not-a-repository"),
+    pytest.param("PowerShell", "& python crew_ticket.py activate --root C:\\repos\\other "
+                               "--ticket T-2", "C:reposother", id="ps-backslash"),
+    pytest.param("Bash", "python3 hooks/scripts/crew_ticket.py activate --ro 'C:\\r\\o' "
+                         "--ticket T-2", "C:\\r\\o", id="abbreviated-backslash"),
+])
+def test_activate_with_a_root_the_guard_cannot_model_is_refused(flavour, tmp_path, tool,
+                                                                command, decoy):
+    root = make_repo(tmp_path, mode="block")
+    make_ticket(root, "T-2", activate=False)
+    try:  # the literal path the guard would model, made a directory inside this repo
+        if decoy:
+            (root / decoy).mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+
+    code, _, err = _shell(flavour, root, command, tool)
+
+    assert (code, "could not tell which worktree" in err) == (2, True)
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+@pytest.mark.parametrize("command", [
+    "python3 hooks/scripts/crew_ticket.py activate --root . --ticket T-2",
+    "python3 hooks/scripts/crew_ticket.py activate --root src --ticket T-2",
+    "python3 hooks/scripts/crew_ticket.py activate --root ./ --ticket T-2",
+])
+def test_activate_with_a_modelled_root_and_no_pointer_is_allowed(flavour, tmp_path, command):
+    root = make_repo(tmp_path, mode="block")
+    (root / "src").mkdir(exist_ok=True)
+    make_ticket(root, "T-2", activate=False)
+
+    code, out, err = _shell(flavour, root, command)
+
+    assert (code, out, err) == (0, "", "")
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+def test_activate_off_a_ticket_with_a_hollow_accepted_ledger_is_refused(flavour, tmp_path):
+    root = _in_flight(tmp_path, status="done")
+    path = pathlib.Path(common_dir(root), "crew", "review", "T-1.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"state": "ACCEPTED", "rounds": [],
+                                "receipt": {"kind": "clean"}}), encoding="utf-8")
+
+    code, _, err = _shell(flavour, root, _ACTIVATE_T2)
+
+    assert (_refused_for_the_owner(code, err, "T-1", "T-2"), "could not tell" in err) == (
+        (2, True, True, False, False), True)
+
+
 def test_broken_pointer_message_names_the_owner_prompt_not_the_cli(tmp_path):
     root = make_repo(tmp_path, mode="block")
     make_ticket(root, "T-1", activate=False)

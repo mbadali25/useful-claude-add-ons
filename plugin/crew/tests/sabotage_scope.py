@@ -364,8 +364,10 @@ SCOPE_MUTATIONS = (
      '        notes.append("its review ledger is unreadable")\n        return True\n',
      _SG + "test_activate_off_a_ticket_with_a_corrupt_ledger_is_refused[block-module]"),
     ("POINTER: INDEX done alone closes a ticket for a re-point", AUTOPILOT,
-     "    if state != review_ledger.ACCEPTED or kind not in REPOINT_RECEIPTS:\n",
-     "    if False:\n",
+     ('    if state != review_ledger.ACCEPTED:\n'
+      '        notes.append(f"no accepted review receipt: its ledger is {state}")\n'
+      '        return False\n    hollow = ('),
+     "    if False:\n        return False\n    hollow = None and (",
      _SG + "test_activate_off_a_ticket_closed_in_index_only_is_refused[block-module]"),
     ("POINTER: a directory change before the call is not judged", TICKET,
      "(not os.path.isabs(root) and _CD_RE.search(before))",
@@ -384,6 +386,24 @@ SCOPE_MUTATIONS = (
      '"  The owner re-points it by typing `/crew:autopilot <id>`; "',
      '"  Fix it with `crew_ticket.py activate --ticket <id>`; "',
      _CA + "test_a_broken_active_ticket_pointer_blocks_the_stop[module]"),
+    # --- T-0504 review round 1: roots the guard cannot model, hollow receipts -----
+    ("POINTER r1: a --root that is no repository where the guard looked is allowed",
+     TICKET,
+     "    if not top:\n        # Not a repository where the guard looked",
+     "    if not top:\n        return None\n        # Not a repository where the guard looked",
+     _SG + "test_activate_with_a_root_the_guard_cannot_model_is_refused"
+     "[not-a-repository-module]"),
+    ("POINTER r1: a --root starting with ~ is modelled as a literal path", TICKET,
+     'root.startswith("~")', "False",
+     _SG + "test_activate_with_a_root_the_guard_cannot_model_is_refused[tilde-module]"),
+    ("POINTER r1: a backslash --root is modelled by POSIX shlex", TICKET,
+     "_ROOT_BACKSLASH_RE.search(text)", "False",
+     _SG + "test_activate_with_a_root_the_guard_cannot_model_is_refused"
+     "[abbreviated-backslash-module]"),
+    ("POINTER r1: a hollow ACCEPTED ledger closes a ticket for a re-point", AUTOPILOT,
+     '        notes.append(f"its ledger says ACCEPTED, but {hollow}")\n        return None\n',
+     '        notes.append(f"its ledger says ACCEPTED, but {hollow}")\n        return True\n',
+     _SG + "test_activate_off_a_ticket_with_a_hollow_accepted_ledger_is_refused[module]"),
     # --- T-0097 ------------------------------------------------------------------
     ("PROBE: a silent candidate's null answer is piped into ConvertFrom-Json", AUDIT_PS1,
      "          $probe = if ($line) { $line | ConvertFrom-Json } else { $null }\n",

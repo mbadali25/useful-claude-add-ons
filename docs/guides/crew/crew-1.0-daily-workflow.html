@@ -421,6 +421,10 @@ closed by an accepted review (a <code>clean</code> or <code>owner-accepted</code
 yours: type <code>/crew:autopilot &lt;id&gt;</code>, and crew's prompt hook re-points this worktree and says which
 ticket it left. The edit guard refuses the session's own <code>activate</code> or <code>deactivate</code> for that move
 under every mode but <code>off</code>, and autopilot's stops recommend finishing the in-flight ticket rather
-than telling you to run a script.</p>
+than telling you to run a script. A review ledger that says accepted but whose receipt does not
+stand on its latest completed round, and a <code>--root</code> the guard cannot judge where the shell will
+(<code>~</code>, a variable, a backslash path, a directory change, or no repository where it looked), both
+count as could not tell, so the move stays yours. If the pointer moves between the prompt hook
+reading it and writing it, the hook writes nothing and says so.</p>
 </body>
 </html>

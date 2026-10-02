@@ -126,6 +126,7 @@ Exit codes: 0 ok / approved; 1 refused, invalid, stale or none; 2 usage;
 3 approved, but the review ledger refused the successor plan.
 """
 import argparse
+import contextlib
 import datetime
 import fnmatch
 import functools
@@ -137,6 +138,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 
 import crew_common
 
@@ -915,25 +917,97 @@ def _active_path(root):
     return os.path.join(state, "active-ticket") if state else None
 
 
-def activate(root, ticket):
+POINTER_LOCK_SECONDS = 5.0
+UNREADABLE_POINTER = "<unreadable>"
+_ANY = object()
+
+
+class PointerMoved(TicketError):
+    """`activate(expect=...)` found the pointer no longer as the caller read
+    it; nothing was written. `current` is what it names now."""
+
+    def __init__(self, current):
+        super().__init__(f"the active-ticket pointer changed since it was read: it now "
+                         f"names {current or 'no ticket'}")
+        self.current = current
+
+
+@contextlib.contextmanager
+def _pointer_lock(path):
+    """O_CREAT|O_EXCL lock beside the pointer file, held for one
+    read-modify-write, so a compare-and-swap (`activate(expect=...)`) is not
+    raced by another crew writer (review round 1)."""
+    lock = path + ".lock"
+    os.makedirs(os.path.dirname(lock), exist_ok=True)
+    deadline = time.monotonic() + POINTER_LOCK_SECONDS
+    while True:
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
+        except FileExistsError as exc:
+            if time.monotonic() > deadline:
+                raise TicketError(f"the pointer lock {lock} has been held for over "
+                                  f"{POINTER_LOCK_SECONDS:.0f}s; if nothing is moving the "
+                                  "pointer, a process died holding it -- remove that file "
+                                  "by hand") from exc
+            time.sleep(0.02)
+    try:
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+        yield
+    finally:
+        try:
+            os.remove(lock)
+        except OSError:
+            pass
+
+
+def _entry_of(data, state, top):
+    """This worktree's raw pointer entry from a read: None when it has none,
+    UNREADABLE_POINTER when the file does not parse as a mapping."""
+    if state == "absent":
+        return None
+    if state != "ok" or not isinstance(data, dict):
+        return UNREADABLE_POINTER
+    return data.get(top)
+
+
+def pointer_entry(root):
+    """This worktree's raw active-ticket entry, as `activate(expect=...)`
+    compares it: None (no entry), UNREADABLE_POINTER, or what the file holds."""
+    top, path = toplevel(root), _active_path(root)
+    if not top or not path:
+        return None
+    return _entry_of(*_read_json(path), top)
+
+
+def activate(root, ticket, expect=_ANY):
+    """Point this worktree at `ticket`. With `expect`, a compare-and-swap:
+    under the pointer lock, write only if the entry still equals `expect`
+    (`pointer_entry`'s value), else raise PointerMoved and write nothing."""
     check_ticket(ticket)
     top, path = toplevel(root), _active_path(root)
     if not top or not path:
         raise TicketError(f"{root} is not a git repository")
-    data, state = _read_json(path)
-    mapping = data if state == "ok" and isinstance(data, dict) else {}
-    mapping[top] = ticket
-    _write_json(path, mapping)
+    with _pointer_lock(path):
+        data, state = _read_json(path)
+        current = _entry_of(data, state, top)
+        if expect is not _ANY and current != expect:
+            raise PointerMoved(current)
+        mapping = data if state == "ok" and isinstance(data, dict) else {}
+        mapping[top] = ticket
+        _write_json(path, mapping)
 
 
 def deactivate(root):
     top, path = toplevel(root), _active_path(root)
     if not top or not path:
         return
-    data, state = _read_json(path)
-    if state == "ok" and isinstance(data, dict) and top in data:
-        del data[top]
-        _write_json(path, data)
+    with _pointer_lock(path):
+        data, state = _read_json(path)
+        if state == "ok" and isinstance(data, dict) and top in data:
+            del data[top]
+            _write_json(path, data)
 
 
 def resolve_active(root):
@@ -1049,6 +1123,11 @@ def _parser(cls=argparse.ArgumentParser):
 _CD_RE = re.compile(r"(?:^|[\s;&|(`{])(?:cd|pushd|popd|chdir|set-location|push-location|sl)"
                     r"(?=[\s;&|)]|$)", re.IGNORECASE)
 _UNRESOLVED_RE = re.compile(r"[$`%]")
+# A --root (or an abbreviation argparse accepts) carrying a backslash: POSIX
+# shlex, which models the arguments, drops it where PowerShell keeps it and
+# where a Windows path means a separator, so the modelled root is not the one
+# the CLI would use (review round 1).
+_ROOT_BACKSLASH_RE = re.compile(r"--r(?:o(?:o(?:t)?)?)?(?:=|\s+)['\"]?[^\s;&|'\"]*\\")
 
 
 def _activation_policy(top, ticket, verb):
@@ -1083,14 +1162,18 @@ def _activation_refusal(args_text, before, cwd):
         return None
     target = args.ticket if args.action == "activate" else None
     root = args.root
-    if _UNRESOLVED_RE.search(root) or (not os.path.isabs(root) and _CD_RE.search(before)):
+    if (_UNRESOLVED_RE.search(root) or root.startswith("~") or _ROOT_BACKSLASH_RE.search(text)
+            or (not os.path.isabs(root) and _CD_RE.search(before))):
         return refuse(f"could not tell which worktree's pointer --root {root!r} names "
-                      "(a variable or a directory change); could not tell which worktree",
-                      target=target)
+                      "(a variable, a home directory, a backslash path or a directory "
+                      "change); could not tell which worktree", target=target)
     root = root if os.path.isabs(root) else os.path.join(cwd or ".", root)
     top = toplevel(root)
     if not top:
-        return None
+        # Not a repository where the guard looked: the shell may still reach
+        # one there (review round 1), so this is could-not-tell, never a yes.
+        return refuse(f"--root {args.root!r} is not a git repository where the guard looked; "
+                      "could not tell which worktree", target=target)
     try:
         decision = _activation_policy(top, args.ticket, args.action)
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
