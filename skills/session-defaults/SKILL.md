@@ -1,5 +1,5 @@
 ---
-name: claude-code-defaults
+name: session-defaults
 description: Walk someone through configuring how Claude Code behaves by default in the terminal — CLAUDE.md instructions, settings.json, permission allow/deny/ask rules, permission modes, default model and effort, hooks, and which scope (user, project, local, managed) each thing belongs in. Use this skill whenever someone wants to set up, change, review, tidy, or troubleshoot Claude Code's default behavior, including phrasings like "configure Claude Code", "set up my CLAUDE.md", "stop asking me for permission every time", "make Claude always run the tests", "why is Claude ignoring my instructions", "Claude keeps doing X and I want it to stop", "settings.json for Claude Code", "set my default model", "standardize Claude Code for my team", or rolling config out to a fleet with MDM. Use it even when no specific file is named — "I want Claude Code to act differently" is enough to trigger it. Do not use it for one-off in-session requests that don't need to persist.
 ---
 
