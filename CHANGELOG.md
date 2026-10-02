@@ -4,6 +4,63 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed - `crew` 1.0.114, `obsidian-vault` 0.4.16: every pwsh the test suites spawn gets its own XDG_CACHE_HOME (L-0557)
+
+- **Cause.** pwsh reads its multicore-JIT startup profile,
+  `$XDG_CACHE_HOME/powershell/StartupProfileData-NonInteractive`, at start-up and rewrites it at
+  exit. Concurrent pwsh sharing `~/.cache/powershell` race on that one file, and a reader that
+  catches it half-written dies before running a statement ("Stack overflow.", exit -6, or
+  SIGSEGV, -11) - about one `-m slow -n 12` run in 20-50 on the self-hosted runners.
+- **Test code only.** `plugin/crew/tests/conftest.py` gives each test its own
+  `XDG_CACHE_HOME`, a directory `tmp_path_factory.mktemp` creates beside `tmp_path` (inside it,
+  it showed up in nine tests that assert what their `tmp_path` holds), and installs an audit hook
+  that refuses a pwsh spawned with any other cache dir. The `pwsh()` helpers in both `test_flavour_guard.py` copies, the
+  obsidian-vault Python suites, and the ten shell suites under `scripts/_test/` and
+  `plugin/obsidian-vault/hooks/scripts/_test/` set it too. New
+  `plugin/crew/tests/test_pwsh_cache_isolation.py` scans every tracked `tests`/`_test` suite,
+  Python by AST and shell by line, for a pwsh spawn that would skip it, and needs no pwsh. It
+  judges the value as well as the name (empty, `None`, `~`, `.cache` or the home directory fail),
+  counts only a set that always runs (not one inside a branch, an unused dict or a helper's dead
+  code, only what a helper returns), and reports a suite it cannot read as `file:0` rather than
+  skipping it. No
+  retry and no crash-signature matching. Hooks and production scripts are unchanged (L-0559);
+  Windows pwsh keeps its profile under `LOCALAPPDATA`, so the variable changes nothing there.
+
+### Fixed — `crew` 1.0.110: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516)
+
+- **New `tests/poll_fixtures.py`.** `poll_until(probe, done, timeout)` probes at least once and
+  returns the LAST probed value at the deadline, never a synthesized success, so a real survivor
+  still fails the caller's assertion. `wait_for_pidfile(path)` waits for a decimal pid, not just
+  for the file: a shell redirect creates or truncates the file before it writes (POSIX XCU
+  2.7.2), and a tight reader saw it existing but empty in 389 of 500 reads.
+- **The ps1 survivor test** (`test_the_ps1_probe_timeout_kills_the_launchers_child_too`) polls
+  for survivors up to 10 s instead of sleeping 0.5 s once, which failed in CI on 2026-09-30 with
+  one survivor. Both survivor tests now use a per-call `uuid4` token, because `tmp_path.name` is
+  identical in every pytest process and two CI legs on one host could read or reap each other's
+  child through `/proc`.
+- **The three `test_kill_process_group_*` pidfile reads** go through `wait_for_pidfile`.
+- **Three tests that time themselves are now `wallclock`** (serial), with their bounds unchanged:
+  `test_a_winner_killed_after_exit_0_does_not_cost_the_only_emission`,
+  `test_the_twin_stands_down_as_soon_as_the_winner_reports_sent` and
+  `test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay`.
+- **The sabotage entries ride separately** (L-0563, a tooling PR: `sabotage_qa.py` is review/gate
+  harness, which lands alone). Measured here by hand and through a filtered `sabotage.py` run, all
+  four RED: `poll_until` probing once, `poll_until` reporting success at the deadline,
+  `wait_for_pidfile` accepting an empty file, and `completion-audit.ps1`'s tree kill reduced to
+  `Kill($false)`.
+- A `.crew/verify.json` rule covers the new module; `crew-qa-standards` `harness.md` H3 now says
+  a fixed sleep before a check is a poll case, not a wallclock case.
+- No change needed: `test_check_writes_nothing` (its maintenance-lock race was fixed by the
+  1.0.64 git pins).
+- **Not fixed here: `test_near_deadline_candidates_then_a_hang_stay_within_the_hook_timeout`.**
+  It is already `wallclock` (since 1.0.63) and still fails under load: 5 of 20 serial
+  `-m wallclock` runs, with the ps1 probe at 10.00-10.19 s against its 10 s hook bound, and the
+  same 5 of 20 on origin/main. The bound is a real hook timeout, so it is neither loosened nor
+  retried; the overrun is carried by follow-up L-0566 (owner decision 2026-10-01).
+- `poll_until` reads the clock after each sleep and before the next probe, so no probe starts
+  after the deadline and a condition first seen late is not returned as success. The child-process
+  tests kill and reap with `wait(timeout=10)`, not `Popen.__exit__`'s unbounded `wait()`.
+
 ### Added — `crew` 1.0.106: T-0040's shell-route sabotage mutations (W-0115)
 
 T-0040 (crew 1.0.98) shipped `crew_shell.py` without its sabotage entries, which were split out

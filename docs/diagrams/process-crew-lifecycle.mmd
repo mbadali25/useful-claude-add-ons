@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@0d159692 on 2026-10-01. Verify before trusting.
+%% Generated from useful-claude-add-ons@6053b65d on 2026-10-01. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -456,7 +456,15 @@ flowchart TB
 %% Merged 66651b69 (T-0040-land) + 6e581365 (main) on T-0040-land, 2026-10-01 (merge of origin/main
 %% 44d3dbc6, crew 1.0.97, rerere off): both provenance blocks kept, main's first; header at the main tip.
 %% done.md / implement.md / crew_refresh_check.py lines cited here re-read on the merged tree.
+
+%% 8bf710ed -> 083cda66 (L-0516 merges main 64b04c6b, W-0116 #292, crew 1.0.93): of the Anchors paths only
+%% crew_refresh_check.py changed (the Windows _FINAL_PATH check in _read_regular); this diagram cites no line of it.
 %% No node or edge changed.
+%% Re-anchored 083cda66 -> 1390bb23 (L-0516 merges main 52489039, T-0110 #297 and T-0040 #290, crew 1.0.100):
+%% of the Anchors paths only implement.md changed (T-0040's step 4/5 rewrap at :69-76, five lines in, five out,
+%% 120 lines either side); :15-24 and :105-112 re-read with sed -n on the merged tree. No node or edge changed.
+%% Re-anchored 1390bb23 -> 0027f794 (L-0516 merges main 05a679bf, L-0558 #293, crew 1.0.103): of the Anchors
+%% paths only crew_train.py changed, which no node cites by line (git diff --name-only 1390bb23 0027f794). No node or edge changed.
 %% Re-anchored 44d3dbc6 / f23b01b4 -> 71038cb9 (L-0513: round 6 BLOCK amendment, merge of origin/main 52489039
 %% (T-0040, crew 1.0.98, rerere off) at 74130bbd, rules 22/40 repriced): of the Anchors paths only implement.md changed (T-0040's step 4 Windows sentence,
 %% a reflow at :66-77, 5 lines in and 5 out, so no later line moved); no line cited here is inside that
@@ -464,3 +472,22 @@ flowchart TB
 %% Re-anchored 71038cb9 / 89ebda03 -> 0d159692 (L-0513 merges origin/main 05a679bf: L-0558, crew 1.0.102,
 %% rerere off): of the Anchors paths only crew_train.py differs from L-0513's side, by L-0558, which main's
 %% side of this diagram already drew; no node or edge changed.
+%% Re-anchored 0027f794 / 0d159692 -> ec95c8aa (L-0516 merges origin/main cacf7ff0, L-0513 #301,
+%% rerere off; crew 1.0.104): `git diff --name-only 0027f794 ec95c8aa` over the Anchors paths returns nothing. No node or edge changed.
+%% 8bf710ed -> d9ccfd5a (L-0557 merges main 0c0275e8, W-0116 #292; crew 1.0.95): of the Anchors paths only
+%% crew_refresh_check.py changed (W-0116: a GetFinalPathNameByHandleW check inside _read_regular, hunks at :684 and
+%% below); this diagram cites no line of it at or after :684. No node or edge changed.
+%% Re-anchored 44d3dbc6 -> 90186613 (L-0557 merges main 52489039, T-0040 #290, at 327e6ec1; crew 1.0.101):
+%% of the Anchors paths only commands/implement.md changed since 44d3dbc6, by T-0040, whose :112 citation above was
+%% re-read on its merged tree 52489039; implement.md is byte-identical to 52489039 at 90186613 (git diff --quiet).
+%% L-0557 touches no Anchors path. No node or edge changed.
+%% Re-anchored 89ebda03 (main) and 90186613 (L-0557) -> 773ce841 (L-0557 merges main 05a679bf, L-0558 #293, at 2169bd11,
+%% rerere off; crew 1.0.105): both provenance blocks kept, main's first; header at the new anchor. L-0557 touches no
+%% Anchors path, and no line this diagram cites moved. No node or edge changed.
+%% Re-anchored 0d159692 (main) and 773ce841 (L-0557) -> a9608aa5 (L-0557 merges main cacf7ff0, L-0513 #301, rerere off;
+%% crew 1.0.105): both provenance blocks kept, main's first; header at the new anchor. Neither L-0513 nor L-0557 touches an
+%% Anchors path. No node or edge changed.
+%% Re-anchored a9608aa5 -> c43a9ce3 (L-0557 merges main ddcbf90d, W-0115 #299, rerere off; crew 1.0.111): W-0115
+%% touches no Anchors path. No node or edge changed.
+%% Re-anchored 5ffffbe3 (main) and c43a9ce3 (L-0557) -> 6053b65d (L-0557 merges main 2906dcbd, L-0516 #298, rerere off;
+%% crew 1.0.114): both provenance blocks kept, main's first; L-0516 and L-0557 touch no Anchors path. No node or edge changed.
