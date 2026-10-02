@@ -1322,9 +1322,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   (`_write_replacing` `:329`); `stamp`'s docstring names the remaining window between that
   re-read and the replace as an accepted risk, not a GEN-03 binding.
 - **Gate.** `review_run.run` first calls main's `preflight`
-  (`plugin/crew/hooks/scripts/review_run.py:524`, at `:611`; #264): a CLEAN receipt covering the
-
-  (`plugin/crew/hooks/scripts/review_run.py:539`, at `:575`; #264): a CLEAN receipt covering the
+  (`plugin/crew/hooks/scripts/review_run.py:555`, at `:642`; #264): a CLEAN receipt covering the
   bundle answers CLEAN with no round and no self-check, and a verify gate that has not passed
   the tree is refused with exit 5 before the self-check is asked for (owner decision
   2026-09-30, "Preflight first"; `test_preflight_answers_before_the_selfcheck_is_asked_for`).
@@ -1395,9 +1393,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   one coupling between the provider table and the review harness, pinned by
   `test_launch_gate_agrees_with_review_run` in `plugin/crew/tests/test_provider_table.py`.
 - **DERIVED**: nothing launches Kimi for a review yet. `review_run.py`'s `--provider` choices are
-  `codex`, `copilot` and `claude` (`plugin/crew/hooks/scripts/review_run.py:706`), and
-
-  `codex`, `copilot` and `claude` (`plugin/crew/hooks/scripts/review_run.py:700`), and
+  `codex`, `copilot` and `claude` (`plugin/crew/hooks/scripts/review_run.py:739`), and
   `commands/review.md` has no Kimi row; L-0527 (tooling only) adds the launch, and adding `kimi`
   to `review_run.LAUNCHED` makes Kimi eligible with no crew_config change.
 
@@ -1599,11 +1595,8 @@ then the train is advisory.
   (`plugin/crew/hooks/scripts/review_prompt.py:93`) and on the webtest
   overflow line (`plugin/crew/hooks/scripts/review_prompt.py:253`), and
   `review_run.finish` hands `parse` the manifest `path`s
-  (`plugin/crew/hooks/scripts/review_run.py:410`) and the overflow file's
-  scratch path (`plugin/crew/hooks/scripts/review_run.py:412`). `parse` and
-
-  (`plugin/crew/hooks/scripts/review_run.py:427`) and the overflow file's
-  scratch path (`plugin/crew/hooks/scripts/review_run.py:429`). `parse` and
+  (`plugin/crew/hooks/scripts/review_run.py:438`) and the overflow file's
+  scratch path (`plugin/crew/hooks/scripts/review_run.py:440`). `parse` and
   `codex_final_message` split reviewer output on `\n` only, never
   `str.splitlines()`, whose U+2028 break cut a Codex event mid-JSON
   (`plugin/crew/hooks/scripts/review_verdict.py:116`,
@@ -1616,16 +1609,8 @@ then the train is advisory.
   else `reviewer`. `VERDICTS`, `FINDING_FORM` and the class names are at
   `plugin/crew/hooks/scripts/review_verdict.py:72`, `:75` and `:77`, and the Codex
   event and item vocabularies start at `:80`. `review_run.finish` computes the class at
-  `plugin/crew/hooks/scripts/review_run.py:409` and prints the refund line at `:480`
-  and `:424`. The ledger refunds a `tool` round up to `REFUND_LIMIT`
-  (`plugin/crew/hooks/scripts/review_ledger.py:96`; `BUDGET` `:93` unchanged).
-  `_refunded` (`:232`) counts refunded rows after the successor boundary
-  (`_boundary`, `:224`), `_charged` (`:238`) is spent minus refunded, and
-  `reserve` tests `_charged` against `BUDGET`. `summary` (`:507`, `load = _load` at
-  `:504`) is the dict `status` returns and the one `crew_status._review_lines`
-
-  `plugin/crew/hooks/scripts/review_run.py:447` and prints the refund line at `:492`
-  and `:495`. The ledger refunds a `tool` round up to `REFUND_LIMIT`
+  `plugin/crew/hooks/scripts/review_run.py:458` and prints the refund line at `:508`
+  and `:511`. The ledger refunds a `tool` round up to `REFUND_LIMIT`
   (`plugin/crew/hooks/scripts/review_ledger.py:129`; `BUDGET` `:126` unchanged).
   `_refunded` (`:290`) counts refunded rows after the successor boundary
   (`_boundary`, `:282`), `_charged` (`:296`) is spent minus refunded, and
