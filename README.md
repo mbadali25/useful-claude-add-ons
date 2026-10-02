@@ -9,13 +9,13 @@ One-line bootstrap — no `git clone` needed. Pulls the prerequisite installer s
 **Windows** (elevated PowerShell):
 
 ```powershell
-irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/f7caa37d2cfc694330c3cf2b305592ff473e3194/scripts/install-prerequisites.ps1' | iex
+irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/04dde5a228f0c29e5009691a655bcc38b3d9d48d/scripts/install-prerequisites.ps1' | iex
 ```
 
 **Linux**:
 
 ```bash
-curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/f7caa37d2cfc694330c3cf2b305592ff473e3194/scripts/install-prerequisites.sh' | bash
+curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/04dde5a228f0c29e5009691a655bcc38b3d9d48d/scripts/install-prerequisites.sh' | bash
 ```
 
 Both links are pinned to a specific commit SHA rather than `main`, so the exact script you're running is fixed and auditable — it can't silently change between when you review it and when you run it. **Update the SHA above whenever `scripts/install-prerequisites.*` changes**: after merging to `main`, run `git rev-parse HEAD` and swap it into both URLs.
