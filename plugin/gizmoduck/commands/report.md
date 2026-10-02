@@ -18,6 +18,11 @@ does not contain it). Do not change this line's wording without updating
 `_SCAN_MARKER_RE` in `crew_state.py` in the same change — the two are one contract, not two
 independent formats that happen to agree.
 
+When the findings file came from `gizmoduck.py routine`, pass `--run-manifest <same
+dir>/run-manifest.json` to the report generation so the coverage table is rendered. A
+routine report without it hides which tools did not run, which is how a partial scan reads
+as a clean one.
+
 If this repo has crew installed and `.crew/endpoints.json` exists: check whether any
 DECLARED record's `endpoint` (a host or URL — not a free-text description; the endpoint
 must be something this report's own text can literally contain) matches a target this
