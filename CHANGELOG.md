@@ -33,6 +33,15 @@ All notable changes to this repository are documented here. Format follows [Keep
   new finding among them still refuses. A bad base-side row leaves only that file unchecked. The
   timeout kills the linter's whole process group and covers a child left holding its output open.
   The bundle hash recorded comes from the same read of the manifest as the files linted.
+- **The config is the bundle's.** `preReview` is read from `.crew/verify.json` as the bundle has it
+  (its blob when the bundle changes, deletes or renames the map, else the base commit's), so a
+  working-tree edit made after the bundle was built cannot disable or narrow the checks. Only a map
+  git does not track (an ignored `.crew/`) is read from the working tree. A manifest that cannot be
+  read, or has no `bundle_sha256`, is could-not-check, even where nothing is configured. A file the
+  bundle turns from a symlink or submodule into a regular file has no base side and is linted; a
+  linter config or verify map that is a symlink is could-not-check. On Windows `taskkill` runs from
+  `%SystemRoot%\System32`, and a linter named without a path is found on absolute `PATH` entries
+  only, never in the current directory.
 - **This repo's config.** ruff adds the fail-open rules S110/S112/BLE001, which `ruff.toml` does not
   select. ShellCheck (`-S warning`) and actionlint run through pinned `uvx` packages. PSScriptAnalyzer
   runs a 13-rule correctness and fail-open allowlist (no WriteHost or naming rules).

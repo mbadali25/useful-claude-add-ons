@@ -215,8 +215,11 @@ no findings, or exit 0 with some). A bad row, or a contradicting status, does
 not throw away the rows that could be read: a new finding among them still
 refuses. A bad row naming a base-side file leaves only that file unchecked,
 because its base count is short. A timeout kills the linter's whole process
-group (`taskkill /T` on Windows), and covers a child left holding the output
-open after the linter exits. A parse-abort marker on either side
+group (`%SystemRoot%\System32\taskkill.exe /T` on Windows, never a bare
+`taskkill`), and covers a child left holding the output open after the linter
+exits. A linter named without a path is looked up on the absolute `PATH`
+entries only: on Windows `shutil.which` searches the current directory first,
+so it is not used there. A parse-abort marker on either side
 makes that file "could not check" too, because the tool did not analyse it.
 That covers only that file: a new finding in any other file still refuses
 the round, and `--allow-unverified` does not override it.

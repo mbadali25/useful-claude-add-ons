@@ -136,16 +136,67 @@ class CouldNotCheck(Exception):
     """The check did not run to a result. Never read as a pass."""
 
 
-def load_config(root):
-    """(linters, None), (None, None) when nothing is configured, or
-    (None, problem) when the map or its `preReview` key cannot be read."""
+def _base_modes(root, base, rels):
+    """{relative path: git mode} for those of `rels` the base commit has."""
+    if _git(root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode != 0:
+        raise CouldNotCheck(f"the manifest's base {base[:12]} is not a commit git can read")
+    listing = _git(root, "ls-tree", "-z", base, "--", *rels)
+    if listing.returncode != 0:
+        raise CouldNotCheck(f"git cannot list the base tree: "
+                            f"{listing.stderr.decode('utf-8', 'replace').strip()}")
+    modes = {}
+    for record in listing.stdout.decode("utf-8", "surrogateescape").split("\0"):
+        if record:
+            meta, _, name = record.partition("\t")
+            modes[name] = meta.split(" ", 1)[0]
+    return modes
+
+
+def _map_bytes(root, manifest):
+    """The verify map AS THE BUNDLE HAS IT (review round 5): the bundle's
+    blob when the bundle adds, changes, deletes or renames it away, else the
+    base commit's. Only a map git does not track at all (an ignored
+    `.crew/`) is read from the working tree, because no bundle can carry it.
+    None when the bundle has no map."""
+    rel = VERIFY_MAP.replace(os.sep, "/")
+    entries = manifest.get("entries") or []
+    for entry in entries:
+        if entry.get("path") == rel:
+            if entry.get("status") == "D":
+                return None
+            if entry.get("new_mode") in SKIPPED_MODES:
+                raise CouldNotCheck(f"{rel} is a symlink or submodule in the bundle")
+            return _git_blob(root, entry["new_id"])
+    if any(e.get("status") == "R" and e.get("old_path") == rel for e in entries):
+        return None
+    mode = _base_modes(root, manifest["base"], [rel]).get(rel)
+    if mode in SKIPPED_MODES:
+        raise CouldNotCheck(f"{rel} is a symlink or submodule in the base commit")
+    if mode is not None:
+        return _git_blob(root, f"{manifest['base']}:{rel}")
     path = os.path.join(root, VERIFY_MAP)
-    if not os.path.exists(path):
+    if not os.path.lexists(path):
+        return None
+    try:
+        with open(path, "rb") as fh:
+            return fh.read()
+    except OSError as exc:
+        raise CouldNotCheck(f"cannot read the untracked map: {exc}") from exc
+
+
+def load_config(root, manifest):
+    """(linters, None), (None, None) when nothing is configured, or
+    (None, problem) when the map or its `preReview` key cannot be read.
+    The map is the bundle's (`_map_bytes`), never a later working tree."""
+    try:
+        raw = _map_bytes(root, manifest)
+    except CouldNotCheck as exc:
+        return None, f"{VERIFY_MAP} could not be read: {exc}"
+    if raw is None:
         return None, None
     try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
-    except (OSError, ValueError) as exc:
+        data = json.loads(raw.decode("utf-8"))
+    except ValueError as exc:  # UnicodeDecodeError is a ValueError
         return None, f"{VERIFY_MAP} could not be read: {exc}"
     if not isinstance(data, dict):
         # Valid JSON that is not an object is a broken map, not an absent key.
@@ -221,7 +272,9 @@ def changed_files(manifest):
             raise ValueError(f"an entry is not the shape review_patch writes: {entry!r:.200}")
         # A file git calls binary is still linted (a UTF-16 .ps1 is one): the
         # tool, not git's heuristic, decides whether it can read it.
-        if entry.get("status") == "D" or entry.get("submodule"):
+        # Judged by the NEW mode only: a submodule or symlink the bundle turns
+        # into a regular file is a file to lint (review round 5).
+        if entry.get("status") == "D":
             continue
         if entry.get("new_mode") in SKIPPED_MODES:
             continue
@@ -261,23 +314,23 @@ def _config_blobs(root, manifest):
     # gone, and its base blob must not come back to suppress a new finding.
     renamed_away = {e.get("old_path") for e in entries if e.get("status") == "R"}
     base = manifest["base"]
-    if _git(root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode != 0:
-        raise CouldNotCheck(f"the manifest's base {base[:12]} is not a commit git can read")
-    names = [name.replace(os.sep, "/") for name in CONFIG_FILES]
-    listing = _git(root, "ls-tree", "-z", "--name-only", base, "--", *names)
-    if listing.returncode != 0:
-        raise CouldNotCheck(f"git cannot list the base tree's linter config: "
-                            f"{listing.stderr.decode('utf-8', 'replace').strip()}")
-    at_base = {n for n in listing.stdout.decode("utf-8", "surrogateescape").split("\0") if n}
+    at_base = _base_modes(root, base, [name.replace(os.sep, "/") for name in CONFIG_FILES])
     found = {}
     for name in CONFIG_FILES:
         rel = name.replace(os.sep, "/")
         entry = changed.get(rel)
         if entry is not None:
             if entry.get("status") != "D":
+                # A symlink's blob is its target text, never a config (round 5).
+                if entry.get("new_mode") in SKIPPED_MODES:
+                    raise CouldNotCheck(f"the linter config {rel} is a symlink or submodule "
+                                        "in the bundle")
                 found[rel] = _git_blob(root, entry["new_id"])
             continue
         if rel in at_base and rel not in renamed_away:
+            if at_base[rel] in SKIPPED_MODES:
+                raise CouldNotCheck(f"the linter config {rel} is a symlink or submodule "
+                                    "in the base commit")
             found[rel] = _git_blob(root, f"{base}:{rel}")
     return found
 
@@ -294,10 +347,31 @@ def _materialise(root, entries, configs, tmp):
         rel = entry["path"]
         _write(_inside(tmp, "head", rel), _git_blob(root, entry["new_id"]))
         old = entry.get("old_id") or _ZERO
-        if entry.get("status") != "A" and old != _ZERO:
+        # A symlink's or gitlink's old blob is not this file's base text:
+        # the file then has no base, as if added (review round 5).
+        if entry.get("status") != "A" and old != _ZERO \
+                and entry.get("old_mode") not in SKIPPED_MODES:
             _write(_inside(tmp, "base", rel), _git_blob(root, old))
             with_base.add(rel)
     return with_base
+
+
+def _which(name):
+    """`name` from the ABSOLUTE PATH entries only. shutil.which on Windows
+    searches the current directory first, so a repository could plant the
+    linter it is judged by (review round 5); it is not used there."""
+    dirs = [d for d in os.environ.get("PATH", "").split(os.pathsep) if d and os.path.isabs(d)]
+    if os.name != "nt":
+        return shutil.which(name, path=os.pathsep.join(dirs)) if dirs else None
+    exts = [e for e in (os.environ.get("PATHEXT") or ".COM;.EXE").split(";") if e]
+    has_ext = os.path.splitext(name)[1].upper() in (e.upper() for e in exts)
+    candidates = [name] if has_ext else [name + ext for ext in exts]
+    for folder in dirs:
+        for candidate in candidates:
+            path = os.path.join(folder, candidate)
+            if os.path.isfile(path):
+                return path
+    return None
 
 
 def _command(spec):
@@ -305,7 +379,7 @@ def _command(spec):
     if not argv:
         argv = {"ruff": [sys.executable, "-m", "ruff"],
                 "psscriptanalyzer": ["pwsh"]}.get(spec["tool"], [spec["tool"]])
-    exe = argv[0] if os.path.isabs(argv[0]) else shutil.which(argv[0])
+    exe = argv[0] if os.path.isabs(argv[0]) else _which(argv[0])
     if not exe:
         raise CouldNotCheck(f"{argv[0]} is not on PATH (command: {' '.join(argv)})")
     if os.path.splitext(exe)[1].lower() in (".cmd", ".bat"):
@@ -336,9 +410,14 @@ def _kill_tree(proc):
     grandchild may hold open forever (review round 4)."""
     try:
         if os.name == "nt":
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                           capture_output=True, stdin=subprocess.DEVNULL, check=False,
-                           timeout=_REAP_SECONDS)
+            # By absolute path: a bare name would let a taskkill.exe in the
+            # current directory run (review round 5). No SystemRoot, no taskkill.
+            system_root = os.environ.get("SystemRoot") or os.environ.get("SYSTEMROOT")
+            if system_root and os.path.isabs(system_root):
+                subprocess.run([os.path.join(system_root, "System32", "taskkill.exe"),
+                                "/F", "/T", "/PID", str(proc.pid)],
+                               capture_output=True, stdin=subprocess.DEVNULL, check=False,
+                               timeout=_REAP_SECONDS)
         else:
             os.killpg(proc.pid, signal.SIGKILL)
     except (OSError, subprocess.SubprocessError):
@@ -645,29 +724,37 @@ def run_checks_bound(root, manifest_path):
             manifest = json.load(fh)
     except (OSError, ValueError) as exc:
         manifest_problem = exc
-    bundle = manifest.get("bundle_sha256") if isinstance(manifest, dict) else None
-    bundle = bundle if isinstance(bundle, str) else None
+    bundle = _bundle_hash(manifest)
     results, configured = _run_checks(root, manifest, manifest_problem)
     return results, configured, bundle
 
 
 def _run_checks(root, manifest, manifest_problem):
-    linters, problem = load_config(root)
-    if problem:
-        return [{"name": "config", "status": COULD_NOT, "files": 0, "new": [],
-                 "detail": problem}], True
-    if linters is None:
-        return [], False
+    # The manifest first: the config is read from the bundle it describes,
+    # so without it not even "nothing configured" can be said (round 5).
     try:
         if manifest_problem is not None:
             raise manifest_problem
         entries = changed_files(manifest)
         if not isinstance(manifest.get("base"), str) or not manifest["base"]:
             raise ValueError("it names no base commit")
+        if not _bundle_hash(manifest):
+            raise ValueError("it has no bundle_sha256 to bind a record to")
     except (OSError, ValueError, AttributeError, TypeError) as exc:
         return [{"name": "manifest", "status": COULD_NOT, "files": 0, "new": [],
                  "detail": f"the bundle manifest could not be read: {exc}"}], True
+    linters, problem = load_config(root, manifest)
+    if problem:
+        return [{"name": "config", "status": COULD_NOT, "files": 0, "new": [],
+                 "detail": problem}], True
+    if linters is None:
+        return [], False
     return [check_one(root, spec, entries, manifest) for spec in linters], True
+
+
+def _bundle_hash(manifest):
+    value = manifest.get("bundle_sha256") if isinstance(manifest, dict) else None
+    return value if isinstance(value, str) and value else None
 
 
 def overall(results, configured=True):
@@ -716,6 +803,8 @@ def record(scratch, bundle_sha256, results, overridden, stood_down, configured=T
 def recorded(scratch, bundle_sha256):
     """The record for exactly this bundle. Otherwise a `not-recorded` dict
     saying why, never None: an absent record must not read as a clean one."""
+    if not isinstance(bundle_sha256, str) or not bundle_sha256:
+        return {"result": NOT_RECORDED, "reason": "the bundle has no bundle_sha256 to match"}
     path = os.path.join(scratch, RESULT_FILE)
     try:
         with open(path, encoding="utf-8") as fh:

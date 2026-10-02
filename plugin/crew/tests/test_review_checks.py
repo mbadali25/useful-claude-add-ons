@@ -298,10 +298,18 @@ def test_an_unreadable_manifest_is_could_not_check(tmp_path, fake):
     assert (results[0]["name"], results[0]["status"]) == ("manifest", rc.COULD_NOT)
 
 
-def test_unconfigured_is_reported_as_not_configured(tmp_path):
-    repo = init_repo(tmp_path / "r")
+def _plain(tmp_path):
+    """A repo with a .py change and no verify map, its .crew/ ignored."""
+    repo = _repo(tmp_path, {"a.py": "x\n", ".gitignore": ".base\n.crew/\n"})
+    (repo / ".base").write_text(git(repo, "rev-parse", "HEAD").strip(), encoding="utf-8")
+    _edit(repo, "a.py", "y\n")
+    return repo
 
-    assert rc.run_checks(str(repo), str(tmp_path / "unused.json")) == ([], False)
+
+def test_unconfigured_is_reported_as_not_configured(tmp_path):
+    repo = _plain(tmp_path)
+
+    assert rc.run_checks(str(repo), _bundle(repo, tmp_path)) == ([], False)
 
 
 def test_rename_added_deleted(tmp_path, fake):
@@ -648,22 +656,22 @@ def test_an_override_or_stand_down_record_reads_back(tmp_path, checks, overridde
 def test_a_verify_map_that_is_not_an_object_is_could_not_check(tmp_path, content):
     """Review round 4: valid JSON that is not an object is a broken map, not
     an absent `preReview` key."""
-    repo = init_repo(tmp_path / "r")
+    repo = _plain(tmp_path)
     (repo / ".crew").mkdir()
     (repo / ".crew" / "verify.json").write_text(content, encoding="utf-8")
 
-    results, configured = rc.run_checks(str(repo), str(tmp_path / "unused.json"))
+    results, configured = rc.run_checks(str(repo), _bundle(repo, tmp_path))
 
     assert (configured, [(r["name"], r["status"]) for r in results]) == (
         True, [("config", rc.COULD_NOT)]), results
 
 
 def test_a_verify_map_without_the_key_is_still_not_configured(tmp_path):
-    repo = init_repo(tmp_path / "r")
+    repo = _plain(tmp_path)
     (repo / ".crew").mkdir()
     (repo / ".crew" / "verify.json").write_text('{"version": 1}', encoding="utf-8")
 
-    assert rc.run_checks(str(repo), str(tmp_path / "unused.json")) == ([], False)
+    assert rc.run_checks(str(repo), _bundle(repo, tmp_path)) == ([], False)
 
 
 @pytest.mark.parametrize("tool", sorted(_TOOLS))
@@ -928,3 +936,249 @@ def test_a_status_that_disagrees_with_its_rows_keeps_the_rows(tmp_path, fake, mo
     result = _one(repo, tmp_path)
 
     assert (result["status"], "disagree" in result["detail"]) == (expected, True), result
+
+
+# --- review round 5 (owner grant 2026-10-02) ---------------------------------
+
+def _tracked(tmp_path, fake, files, linters=None):
+    """A repo whose verify map is TRACKED (committed in the base), as this
+    repository's is, so the bundle carries it."""
+    verify = {"version": 1, "rules": [],
+              rc.CONFIG_KEY: {"linters": linters or [_linter(fake, "ruff")]}}
+    repo = _repo(tmp_path, dict(files, **{".gitignore": ".base\n",
+                                          ".crew/verify.json": json.dumps(verify)}))
+    (repo / ".base").write_text(git(repo, "rev-parse", "HEAD").strip(), encoding="utf-8")
+    return repo
+
+
+@pytest.mark.parametrize("live", [
+    '{"version": 1, "rules": []}',
+    "not json",
+    None])
+def test_the_config_is_the_bundles_not_the_live_trees(tmp_path, fake, live):
+    """Review round 5 BLOCK: a verify map edited (or removed) in the working
+    tree after the bundle was built does not decide the bundle's checks."""
+    repo = _tracked(tmp_path, fake, {"a.py": "x\n"})
+    _edit(repo, "a.py", "x\n# LINT BLE001 a new problem\n")
+    manifest = _bundle(repo, tmp_path)
+    if live is None:
+        os.remove(repo / ".crew" / "verify.json")
+    else:
+        (repo / ".crew" / "verify.json").write_text(live, encoding="utf-8")
+
+    results, configured = rc.run_checks(str(repo), manifest)
+
+    assert (configured, [r["status"] for r in results]) == (True, [rc.FAIL]), results
+
+
+def test_a_narrowed_live_config_does_not_narrow_the_bundles(tmp_path, fake):
+    repo = _tracked(tmp_path, fake, {"a.py": "x\n"})
+    _edit(repo, "a.py", "x\n# LINT BLE001 a new problem\n")
+    manifest = _bundle(repo, tmp_path)
+    (repo / ".crew" / "verify.json").write_text(json.dumps({rc.CONFIG_KEY: {"linters": [
+        _linter(fake, "ruff", paths=["nothing/**"])]}}), encoding="utf-8")
+
+    results, _ = rc.run_checks(str(repo), manifest)
+
+    assert [r["status"] for r in results] == [rc.FAIL], results
+
+
+def test_a_config_change_the_bundle_carries_is_the_one_used(tmp_path, fake):
+    """The neighbour: an edit INSIDE the bundle is the bundle's config (the
+    reviewer sees it in the diff), whether it widens or removes the checks."""
+    repo = _tracked(tmp_path, fake, {"a.py": "x\n"})
+    _edit(repo, "a.py", "x\n# LINT BLE001 a new problem\n")
+    (repo / ".crew" / "verify.json").write_text('{"version": 1, "rules": []}', encoding="utf-8")
+    manifest = _bundle(repo, tmp_path)
+    (repo / ".crew" / "verify.json").write_text(json.dumps({rc.CONFIG_KEY: {"linters": [
+        _linter(fake, "ruff")]}}), encoding="utf-8")
+
+    assert rc.run_checks(str(repo), manifest) == ([], False)
+
+
+def test_a_verify_map_the_bundle_deletes_is_not_configured(tmp_path, fake):
+    repo = _tracked(tmp_path, fake, {"a.py": "x\n"})
+    _edit(repo, "a.py", "x\n# LINT BLE001 a new problem\n")
+    git(repo, "rm", "-q", ".crew/verify.json")
+    manifest = _bundle(repo, tmp_path)
+    (repo / ".crew").mkdir(exist_ok=True)
+    (repo / ".crew" / "verify.json").write_text(json.dumps({rc.CONFIG_KEY: {"linters": [
+        _linter(fake, "ruff")]}}), encoding="utf-8")
+
+    assert rc.run_checks(str(repo), manifest) == ([], False)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_a_verify_map_that_is_a_symlink_in_the_bundle_is_could_not_check(tmp_path, fake):
+    repo = _tracked(tmp_path, fake, {"a.py": "x\n", "real.json": "{}"})
+    _edit(repo, "a.py", "y\n")
+    os.remove(repo / ".crew" / "verify.json")
+    os.symlink("../real.json", repo / ".crew" / "verify.json")
+
+    results, _ = rc.run_checks(str(repo), _bundle(repo, tmp_path))
+
+    assert [(r["name"], r["status"]) for r in results] == [("config", rc.COULD_NOT)], results
+
+
+def test_an_unreadable_manifest_is_could_not_check_even_unconfigured(tmp_path):
+    """The config now comes from the bundle, so a manifest that cannot be
+    read cannot be judged unconfigured either."""
+    repo = _plain(tmp_path)
+
+    results, configured, bundle = rc.run_checks_bound(str(repo), str(tmp_path / "absent.json"))
+
+    assert (configured, [(r["name"], r["status"]) for r in results], bundle) == (
+        True, [("manifest", rc.COULD_NOT)], None), results
+
+
+@pytest.mark.parametrize("value", ["DROP", None, 7, ""])
+def test_a_manifest_without_a_bundle_hash_is_could_not_check(tmp_path, fake, value):
+    """Review round 5 FIX :648: no usable bundle_sha256 is a broken manifest,
+    not a record bound to None."""
+    repo = _start(tmp_path, {"a.py": "x\n"}, [_linter(fake, "ruff")])
+    _edit(repo, "a.py", "y\n")
+    path = _bundle(repo, tmp_path)
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    if value == "DROP":
+        del data["bundle_sha256"]
+    else:
+        data["bundle_sha256"] = value
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(data, fh)
+
+    results, _, bundle = rc.run_checks_bound(str(repo), path)
+
+    assert ([(r["name"], r["status"]) for r in results], bundle) == (
+        [("manifest", rc.COULD_NOT)], None), results
+
+
+@pytest.mark.parametrize("wanted", [None, ""])
+def test_recorded_never_matches_a_missing_bundle_hash(tmp_path, wanted):
+    rc.record(str(tmp_path), wanted, [], False, False, configured=False)
+
+    assert rc.recorded(str(tmp_path), wanted)["result"] == rc.NOT_RECORDED
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_a_symlink_turned_regular_file_has_no_base(tmp_path, fake):
+    """Review round 5 FIX :226: the symlink's target text is not the base
+    side of the file that replaces it, so it cannot baseline a finding."""
+    repo = _repo(tmp_path, {".gitignore": ".base\n.crew/\n"})
+    os.symlink("# LINT BLE001 same", repo / "a.py")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "link")
+    (repo / ".base").write_text(git(repo, "rev-parse", "HEAD").strip(), encoding="utf-8")
+    _config(repo, [_linter(fake, "ruff")])
+    os.remove(repo / "a.py")
+    _edit(repo, "a.py", "# LINT BLE001 same\n")
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], [r["path"] for r in result["new"]]) == (rc.FAIL, ["a.py"]), result
+
+
+def test_a_submodule_turned_regular_file_is_linted(tmp_path, fake):
+    """The neighbour: a gitlink replaced by a real file was skipped as a
+    submodule, so a finding in it was never looked at."""
+    repo = _repo(tmp_path, {".gitignore": ".base\n.crew/\n"})
+    head = git(repo, "rev-parse", "HEAD").strip()
+    git(repo, "update-index", "--add", "--cacheinfo", f"160000,{head},sub.py")
+    git(repo, "commit", "-qm", "gitlink")
+    (repo / ".base").write_text(git(repo, "rev-parse", "HEAD").strip(), encoding="utf-8")
+    _config(repo, [_linter(fake, "ruff")])
+    git(repo, "rm", "-q", "--cached", "sub.py")
+    _edit(repo, "sub.py", "# LINT BLE001 inside\n")
+    git(repo, "add", "sub.py")
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], [r["path"] for r in result["new"]]) == (rc.FAIL, ["sub.py"]), result
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_a_linter_config_that_is_a_symlink_is_could_not_check(tmp_path, fake):
+    """The neighbour on the config side: a symlink's blob is its target
+    text, which must not be handed to the linter as its config."""
+    repo = _start(tmp_path, {"a.py": "x\n", "real.toml": "line-length = 80\n"},
+                  [_linter(fake, "ruff")])
+    os.symlink("real.toml", repo / "ruff.toml")
+    _edit(repo, "a.py", "y\n")
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], "symlink" in result["detail"]) == (rc.COULD_NOT, True), result
+
+
+def test_taskkill_is_run_by_absolute_path(monkeypatch, tmp_path):
+    """Review round 5 FIX :339: never a bare `taskkill` a repository could
+    shadow from the current directory."""
+    seen = []
+    monkeypatch.setattr(rc.os, "name", "nt")
+    monkeypatch.setenv("SystemRoot", str(tmp_path / "Windows"))
+    monkeypatch.setattr(rc.subprocess, "run", lambda argv, **_: seen.append(argv))
+
+    class _Proc:
+        pid = 4242
+
+        def kill(self):
+            seen.append("kill")
+
+    rc._kill_tree(_Proc())  # pylint: disable=protected-access
+
+    assert seen == [[os.path.join(str(tmp_path / "Windows"), "System32", "taskkill.exe"),
+                     "/F", "/T", "/PID", "4242"], "kill"], seen
+
+
+def test_no_taskkill_without_a_system_root(monkeypatch):
+    seen = []
+    monkeypatch.setattr(rc.os, "name", "nt")
+    monkeypatch.delenv("SystemRoot", raising=False)
+    monkeypatch.delenv("SYSTEMROOT", raising=False)
+    monkeypatch.setattr(rc.subprocess, "run", lambda argv, **_: seen.append(argv))
+
+    class _Proc:
+        pid = 4242
+
+        def kill(self):
+            seen.append("kill")
+
+    rc._kill_tree(_Proc())  # pylint: disable=protected-access
+
+    assert seen == ["kill"], seen
+
+
+def test_a_linter_is_never_found_in_the_current_directory(tmp_path, monkeypatch):
+    """The neighbour of :339: `_command` resolves a bare name from absolute
+    PATH entries only. On Windows shutil.which searches the current
+    directory first, so it is not used there."""
+    here = tmp_path / "repo"
+    here.mkdir()
+    for name in ("lintme", "lintme.EXE"):
+        (here / name).write_text("", encoding="utf-8")
+        os.chmod(here / name, 0o755)
+    monkeypatch.chdir(here)
+    monkeypatch.setenv("PATH", os.pathsep.join([".", "", str(tmp_path / "empty")]))
+    monkeypatch.setenv("PATHEXT", ".EXE")
+
+    for system in ("posix", "nt"):
+        monkeypatch.setattr(rc.os, "name", system)
+        with pytest.raises(rc.CouldNotCheck):
+            rc._command({"tool": "ruff", "command": ["lintme"]})  # pylint: disable=protected-access
+
+
+def test_a_linter_on_an_absolute_path_entry_is_found(tmp_path, monkeypatch):
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    for name in ("lintme", "lintme.EXE"):
+        (bindir / name).write_text("", encoding="utf-8")
+        os.chmod(bindir / name, 0o755)
+    monkeypatch.setenv("PATH", str(bindir))
+    monkeypatch.setenv("PATHEXT", ".EXE")
+    found = {}
+    for system in ("posix", "nt"):
+        monkeypatch.setattr(rc.os, "name", system)
+        found[system] = os.path.basename(
+            rc._command({"tool": "ruff", "command": ["lintme"]})[0])  # pylint: disable=protected-access
+
+    assert found == {"posix": "lintme", "nt": "lintme.EXE"}, found
