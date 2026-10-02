@@ -19,8 +19,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   above)` or ` - rules match the code map; anchors not checked (no git HEAD)`.
   `scripts/check_instructions.py`'s drift parser drops the three
   `ANCHOR_ADVISORY_PREFIXES` so an anchor line is never quoted as drift.
-  `.crew/verify.json` gains rules 43 (the generator's pytest suites, which no
-  rule reached before) and 44 (`scripts/_test/instruction-budgets.py`).
+  `.crew/verify.json` gains rules 44 (the generator's pytest suites, which no
+  rule reached before) and 45 (`scripts/_test/instruction-budgets.py`).
 - **Why.** aws-ops follow-up report item 14: `rules` wrote 8 `.claude/rules/*.md`
   while the session-start hook reported 4 of those subsystems' anchors as needing
   re-check, and neither `rules` nor `rules --check` said so; `/crew:migrate`'s
@@ -46,7 +46,29 @@ All notable changes to this repository are documented here. Format follows [Keep
   A third, by hand: dropping `check_instructions.py`'s prefix filter reds three
   `instruction-budgets.py` cases, `edited-behind`'s "exactly one problem and no
   'anchor' line" among them.
-- Bumped `1.0.110 -> 1.0.115` (1.0.62, 1.0.70, 1.0.106 and 1.0.109 on its branch; re-set after merging main's 1.0.110, L-0516; 1.0.111-1.0.114 are claimed by the W-0117, L-0510, T-0504 and L-0557 lanes).
+- Bumped `1.0.114 -> 1.0.115` (1.0.62, 1.0.70, 1.0.106 and 1.0.109 on its branch; 1.0.115 since merging main's 1.0.110, L-0516, and kept after merging main's 1.0.114, L-0557 #300, as still the next free version past main; 1.0.116 is claimed by the L-0555 lane).
+
+### Fixed - `crew` 1.0.114, `obsidian-vault` 0.4.16: every pwsh the test suites spawn gets its own XDG_CACHE_HOME (L-0557)
+
+- **Cause.** pwsh reads its multicore-JIT startup profile,
+  `$XDG_CACHE_HOME/powershell/StartupProfileData-NonInteractive`, at start-up and rewrites it at
+  exit. Concurrent pwsh sharing `~/.cache/powershell` race on that one file, and a reader that
+  catches it half-written dies before running a statement ("Stack overflow.", exit -6, or
+  SIGSEGV, -11) - about one `-m slow -n 12` run in 20-50 on the self-hosted runners.
+- **Test code only.** `plugin/crew/tests/conftest.py` gives each test its own
+  `XDG_CACHE_HOME`, a directory `tmp_path_factory.mktemp` creates beside `tmp_path` (inside it,
+  it showed up in nine tests that assert what their `tmp_path` holds), and installs an audit hook
+  that refuses a pwsh spawned with any other cache dir. The `pwsh()` helpers in both `test_flavour_guard.py` copies, the
+  obsidian-vault Python suites, and the ten shell suites under `scripts/_test/` and
+  `plugin/obsidian-vault/hooks/scripts/_test/` set it too. New
+  `plugin/crew/tests/test_pwsh_cache_isolation.py` scans every tracked `tests`/`_test` suite,
+  Python by AST and shell by line, for a pwsh spawn that would skip it, and needs no pwsh. It
+  judges the value as well as the name (empty, `None`, `~`, `.cache` or the home directory fail),
+  counts only a set that always runs (not one inside a branch, an unused dict or a helper's dead
+  code, only what a helper returns), and reports a suite it cannot read as `file:0` rather than
+  skipping it. No
+  retry and no crash-signature matching. Hooks and production scripts are unchanged (L-0559);
+  Windows pwsh keeps its profile under `LOCALAPPDATA`, so the variable changes nothing there.
 
 ### Fixed — `crew` 1.0.110: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516)
 
