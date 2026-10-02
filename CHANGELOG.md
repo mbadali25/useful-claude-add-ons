@@ -37,6 +37,10 @@ merging origin/main `52489039` (T-0040, crew 1.0.98). L-0510's 1.0.90, 1.0.93, 1
   refused as recovered; a missing, mistyped or unreadable count or `review.json` is refused as
   could-not-tell, never read as 0. This release does not write the field, so until L-0576 lands
   every round stops for the owner.
+- **The ledger, `review_run.py` and `crew_autopilot.py` write UTF-8 whatever the console code
+  page**, so a finding carrying U+2028 or any character cp1252 lacks no longer raises
+  `UnicodeEncodeError` on a Windows console after the receipt is written (found by the native
+  Windows run at `75bd0aea`).
 - **`--check-follow-up` splits `direction.md` on `\n` only**, never `splitlines()`, so a U+2028
   inside a quoted finding stays on its line. `/crew:autopilot` section 4's no-new-ticket stop
   (T-0012) names the step 3.3 follow-up as its one exception (review round 4).
