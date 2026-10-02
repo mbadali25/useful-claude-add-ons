@@ -95,7 +95,7 @@ TOOLS = {
     "actionlint": {"globs": (".github/workflows/*.yml", ".github/workflows/*.yaml")},
 }
 LINTER_KEYS = {"tool", "command", "args", "paths", "timeout", "rules"}
-BLOCK_KEYS = {"linters", "_note"}  # `_note` is prose for the next human, read by nothing
+BLOCK_KEYS = {"linters"}  # nothing else, not even a `_note`: an unknown key fails closed
 
 # Read by pwsh with -File: the list of files and the rule allowlist arrive as
 # files, so no path or rule name is ever quoted into a command line.
@@ -251,7 +251,11 @@ def _config_blobs(root, manifest):
     bundle blob when the bundle changes the file, else the base blob (then
     identical to the bundle's). Never the live working tree, which may have
     moved on since the bundle was built."""
-    changed = {e.get("path"): e for e in manifest.get("entries") or []}
+    entries = manifest.get("entries") or []
+    changed = {e.get("path"): e for e in entries}
+    # A rename removes its old path from the bundle: a config renamed away is
+    # gone, and its base blob must not come back to suppress a new finding.
+    renamed_away = {e.get("old_path") for e in entries if e.get("status") == "R"}
     base = manifest["base"]
     if _git(root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode != 0:
         raise CouldNotCheck(f"the manifest's base {base[:12]} is not a commit git can read")
@@ -269,7 +273,7 @@ def _config_blobs(root, manifest):
             if entry.get("status") != "D":
                 found[rel] = _git_blob(root, entry["new_id"])
             continue
-        if rel in at_base:
+        if rel in at_base and rel not in renamed_away:
             found[rel] = _git_blob(root, f"{base}:{rel}")
     return found
 
@@ -606,13 +610,34 @@ def recorded(scratch, bundle_sha256):
                 "reason": f"{RESULT_FILE} was written for another bundle"}
     if not (payload.get("result") in (PASS, FAIL, COULD_NOT, NOT_CONFIGURED)
             and isinstance(payload.get("checks"), list)
-            and all(isinstance(c, dict) and isinstance(c.get("status"), str)
-                    for c in payload["checks"])
+            and all(_is_check_row(c) for c in payload["checks"])
             and isinstance(payload.get("overridden"), bool)
             and isinstance(payload.get("stood_down"), bool)):
         return {"result": NOT_RECORDED,
                 "reason": f"{RESULT_FILE} is not the shape record() writes"}
+    configured = payload["result"] != NOT_CONFIGURED
+    if (not configured and payload["checks"]) or \
+            payload["result"] != overall(payload["checks"], configured):
+        return {"result": NOT_RECORDED,
+                "reason": f"{RESULT_FILE} states a result its checks do not add up to"}
     return payload
+
+
+def _is_int(value):
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_check_row(row):
+    """A check row exactly as check_one / run_checks build it."""
+    return (isinstance(row, dict)
+            and isinstance(row.get("name"), str)
+            and row.get("status") in (PASS, FAIL, COULD_NOT, NA)
+            and _is_int(row.get("files"))
+            and isinstance(row.get("detail"), str)
+            and isinstance(row.get("new"), list)
+            and all(isinstance(n, dict) and _is_int(n.get("count"))
+                    and all(isinstance(n.get(k), str) for k in ("path", "rule", "message"))
+                    for n in row["new"]))
 
 
 def main(argv):

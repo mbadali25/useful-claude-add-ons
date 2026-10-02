@@ -20,6 +20,12 @@ All notable changes to this repository are documented here. Format follows [Keep
   `prereview-checks` skip. A file the tool could not parse is unchecked on its own: a new finding in
   any other file still refuses, override or not. Only line and column positions in a message are
   ignored when matching findings; any other changed number is a new finding.
+- **Strict inputs.** `preReview` accepts only `linters`; any other key, `_note` included, is a
+  `config` COULD NOT CHECK row, so this repo's comment on the block now lives in a top-level
+  `_note_preReview`. A root linter config the bundle renames away is gone from the bundle, never
+  reloaded from the base. A `prereview.json` for the right bundle is used only in the exact shape
+  `record()` writes and when its result is what its checks add up to; otherwise `review.json`
+  carries `not-recorded`.
 - **This repo's config.** ruff adds the fail-open rules S110/S112/BLE001, which `ruff.toml` does not
   select. ShellCheck (`-S warning`) and actionlint run through pinned `uvx` packages. PSScriptAnalyzer
   runs a 13-rule correctness and fail-open allowlist (no WriteHost or naming rules).

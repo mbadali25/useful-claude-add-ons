@@ -326,7 +326,7 @@ def test_cli_exit_codes(tmp_path, fake, monkeypatch, capsys, mode, text, code):
 
 
 def test_recorded_is_bound_to_the_bundle(tmp_path):
-    rc.record(str(tmp_path), "sha-a", [{"status": rc.PASS}], False, False)
+    rc.record(str(tmp_path), "sha-a", [_ROW], False, False)
 
     assert (rc.recorded(str(tmp_path), "sha-a")["result"],
             rc.recorded(str(tmp_path), "sha-b")["result"]) == (rc.PASS, rc.NOT_RECORDED)
@@ -526,13 +526,18 @@ def test_actionlint_output_that_contradicts_its_status_is_could_not_check(
     assert _one(repo, tmp_path)["status"] == rc.COULD_NOT
 
 
-def test_a_note_in_the_block_is_allowed(tmp_path, fake):
+def test_a_note_in_the_block_is_an_unknown_key(tmp_path, fake):
+    """Review round 3: only `linters` is allowed under preReview, so a `_note`
+    fails closed like any other unknown key (owner 2026-10-02)."""
     repo = _start(tmp_path, {"a.py": "x\n"}, [])
     (repo / ".crew" / "verify.json").write_text(json.dumps({rc.CONFIG_KEY: {
         "_note": ["prose"], "linters": [_linter(fake, "ruff")]}}), encoding="utf-8")
     _edit(repo, "a.py", "y\n")
 
-    assert _one(repo, tmp_path)["status"] == rc.PASS
+    result = _one(repo, tmp_path)
+
+    assert (result["name"], result["status"], "_note" in result["detail"]) == (
+        "config", rc.COULD_NOT, True), result
 
 
 @pytest.mark.parametrize("name", ["actionlint.yaml", "actionlint.yml"])
@@ -555,6 +560,72 @@ def test_a_record_of_the_wrong_shape_is_not_recorded(tmp_path):
                                            encoding="utf-8")
 
     assert rc.recorded(str(tmp_path), "sha-a")["result"] == rc.NOT_RECORDED
+
+
+_ROW = {"name": "ruff", "status": rc.PASS, "files": 1, "new": [], "detail": ""}
+
+
+@pytest.mark.parametrize("payload", [
+    {"result": rc.PASS, "checks": [{"status": rc.FAIL}]},
+    {"result": rc.PASS, "checks": [dict(_ROW, status=rc.FAIL)]},
+    {"result": rc.PASS, "checks": [dict(_ROW, status=rc.COULD_NOT)]},
+    {"result": rc.FAIL, "checks": [_ROW]},
+    {"result": rc.NOT_CONFIGURED, "checks": [_ROW]},
+    {"result": rc.PASS, "checks": [dict(_ROW, status="green")]},
+    {"result": rc.PASS, "checks": [{k: v for k, v in _ROW.items() if k != "files"}]},
+    {"result": rc.PASS, "checks": [dict(_ROW, files=True)]},
+    {"result": rc.PASS, "checks": [dict(_ROW, new="none")]},
+    {"result": rc.PASS, "checks": [dict(_ROW, detail=None)]},
+    {"result": rc.FAIL, "checks": [dict(_ROW, status=rc.FAIL, new=[{"path": "a.py"}])]}])
+def test_a_record_that_contradicts_itself_is_not_recorded(tmp_path, payload):
+    """Review round 3: a same-bundle record is accepted only in the shape
+    record() writes, and only when its result is what its checks add up to."""
+    (tmp_path / rc.RESULT_FILE).write_text(json.dumps(dict(
+        payload, bundle_sha256="sha-a", overridden=False, stood_down=False)), encoding="utf-8")
+
+    assert rc.recorded(str(tmp_path), "sha-a")["result"] == rc.NOT_RECORDED
+
+
+@pytest.mark.parametrize("checks, configured", [
+    ([_ROW], True), ([dict(_ROW, status=rc.NA)], True), ([], False),
+    ([dict(_ROW, status=rc.FAIL, new=[{"path": "a.py", "rule": "X", "message": "m",
+                                       "count": 1}])], True),
+    ([dict(_ROW, status=rc.COULD_NOT, detail="tool missing")], True)])
+def test_every_record_record_writes_reads_back(tmp_path, checks, configured):
+    rc.record(str(tmp_path), "sha-a", checks, False, False, configured)
+
+    assert rc.recorded(str(tmp_path), "sha-a")["result"] == rc.overall(checks, configured)
+
+
+def test_a_config_renamed_away_is_gone_from_the_bundle(tmp_path, fake, monkeypatch):
+    """Review round 3 BLOCK: a root config the bundle renames away must not
+    be reloaded from the base, where it could disable a new finding."""
+    out = tmp_path / "seen.json"
+    repo = _start(tmp_path, {".shellcheckrc": "disable=SC2086\n", "run.sh": "x\n"},
+                  [_linter(fake, "shellcheck")])
+    (repo / "docs").mkdir()
+    git(repo, "mv", ".shellcheckrc", "docs/old.shellcheckrc")
+    _edit(repo, "run.sh", "y\n")
+    monkeypatch.setenv("FAKE_LINT_ARGV_OUT", str(out))
+
+    _one(repo, tmp_path)
+    argv = json.loads(out.read_text(encoding="utf-8"))["argv"]
+
+    assert ("--rcfile" in argv, "--norc" in argv) == (False, True), argv
+
+
+def test_a_config_renamed_into_place_is_the_bundles(tmp_path, fake, monkeypatch):
+    out = tmp_path / "seen.json"
+    repo = _start(tmp_path, {"docs/new.shellcheckrc": "disable=SC2086\n", "run.sh": "x\n"},
+                  [_linter(fake, "shellcheck")])
+    git(repo, "mv", "docs/new.shellcheckrc", ".shellcheckrc")
+    _edit(repo, "run.sh", "y\n")
+    monkeypatch.setenv("FAKE_LINT_ARGV_OUT", str(out))
+
+    _one(repo, tmp_path)
+    argv = json.loads(out.read_text(encoding="utf-8"))["argv"]
+
+    assert argv[argv.index("--rcfile") + 1].endswith(os.path.join("head", ".shellcheckrc")), argv
 
 
 def test_record_leaves_no_staging_file(tmp_path):
