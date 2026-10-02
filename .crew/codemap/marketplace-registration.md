@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@9581933e
+anchor: useful-claude-add-ons@34c9a8bc
 verified: 2026-10-01
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -1420,3 +1420,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `18b764dc` -> `22aeb5a8` on 2026-10-02 (L-0574 round-7 class sweep: fifteen citations moved by difflib (review_run.py, CHANGELOG.md), two bare review_run.py citations re-read by hand).**
 
 **Re-anchored `22aeb5a8` -> `9581933e` on 2026-10-02 (L-0574: external-tool-formats.md citation fix and the crew 1.0.131 re-set; no cited line moved).**
+
+**Re-anchored `9581933e` -> `34c9a8bc` on 2026-10-02 (L-0574 merges origin/main 0487fc39 at bd459af7 (rerere disabled; both provenance histories kept, main's first) and fixes review round 7 at 4a35e5d2; citations re-mapped by difflib, bare review_run.py citations re-read by hand).**
