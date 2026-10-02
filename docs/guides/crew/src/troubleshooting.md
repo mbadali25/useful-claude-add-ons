@@ -121,7 +121,9 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   `--auto-accept --follow-up <id>` writes an `auto-accepted` receipt and its FIX/NIT lines go
   verbatim into one follow-up ticket. A `review: auto-accept: refused - <reason>` line names what
   stopped it (any BLOCK, INCOMPLETE, not the final round, an open healer skip, a count it could not
-  read, a same-family Claude-fallback round, or a provider or family it could not tell). Otherwise own the FINDINGS with `--accept --by <who>` (only the most recent completed round,
+  read, a same-family Claude-fallback round, a provider or family it could not tell, or a verdict
+  recovered from stray lines - `ignored_lines` above 0, or missing or unreadable, which is
+  could-not-tell until L-0576 records it). Otherwise own the FINDINGS with `--accept --by <who>` (only the most recent completed round,
   only once, never once `NEEDS_REPLAN`; a name starting `auto:` is refused), or write a new plan and get it approved — `crew_ticket.py
   approve` on a `NEEDS_REPLAN` ticket opens a fresh budget of two rounds counted from the successor
   plan; the rounds already spent stay in the ledger and are not erased.

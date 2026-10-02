@@ -90,7 +90,7 @@ later round, never after an accepted review (that stales the receipt): `next` en
 
 ## 4. Stops
 
-A person: `brainstorm` (no approved direction) and `review-acceptance` (FINDINGS with any BLOCK, or a round `--auto-accept` refuses, are the owner's, at every setting); `plan-approval` and `open-questions` are a person unless section 3's
+A person: `brainstorm` (no approved direction) and `review-acceptance` (FINDINGS with any BLOCK, or a round `--auto-accept` refuses - a verdict recovered from stray lines, or `ignored_lines` it could not tell, among them - are the owner's, at every setting); `plan-approval` and `open-questions` are a person unless section 3's
 policy allows. `next` enforces from disk, every turn: `needs-replan`, `needs-replan-or-revert`,
 `unknown-ledger`, `failed-validate`, `direction-unknown`, `unsettled-artifact`, `ticket-mismatch`,
 `max-phases`, `no-progress`. This procedure: `review-verdict`, `failed-done-check`,
