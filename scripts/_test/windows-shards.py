@@ -32,6 +32,8 @@ IDS = [
 SLOW_IDS = ["plugin/crew/tests/test_a.py::test_matrix[sh-case1]",
             "plugin/crew/tests/test_a.py::test_matrix[ps1-case1]"]
 WALL_IDS = ["plugin/crew/tests/test_w.py::test_bound"]
+# A checker that hangs is a failed case, not a hung CI job.
+CHECKER_TIMEOUT = 60
 JOBS_OK = ["--job", "default=success", "--job", "slow=success", "--job", "wallclock=success"]
 
 
@@ -89,8 +91,11 @@ def run(root, extra=None, run_flag="true", decide="success", jobs=None, shards=3
         event="pull_request"):
     argv = [sys.executable, CHECKER, "--shards", str(shards), "--artifacts", root,
             "--decide-result", decide, "--run", run_flag, "--event", event] + (JOBS_OK if jobs is None else jobs)
-    proc = subprocess.run(argv + (extra or []), capture_output=True, text=True, check=False,
-                          stdin=subprocess.DEVNULL)
+    try:
+        proc = subprocess.run(argv + (extra or []), capture_output=True, text=True, check=False,
+                              stdin=subprocess.DEVNULL, timeout=CHECKER_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return None, f"checker did not finish within {CHECKER_TIMEOUT}s"
     return proc.returncode, proc.stdout + proc.stderr
 
 
@@ -204,6 +209,20 @@ def case_test_in_no_shard_fails(root):
     lost = groups[1].pop()
     build(root, groups)
     return run(root), (1, f"{lost} was collected but ran in no shard")
+
+
+def case_test_twice_in_one_shard_fails(root):
+    groups = good_groups()
+    groups[0].append(groups[0][0])
+    build(root, groups)
+    return run(root), (1, "shard 1: plugin.crew.tests.test_a::test_one ran 2 times")
+
+
+def case_slow_test_ran_twice_fails(root):
+    build(root, good_groups())
+    write(os.path.join(root, "crew-windows-slow", "junit.xml"),
+          junit_text(SLOW_IDS + SLOW_IDS[:1]))
+    return run(root), (1, "slow: plugin.crew.tests.test_a::test_matrix[sh-case1] ran 2 times")
 
 
 def case_test_in_two_shards_fails(root):

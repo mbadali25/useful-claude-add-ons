@@ -28,7 +28,8 @@ It passes when either
     default set, before splitting) and `junit.xml` (what the shard ran);
   * every shard collected the same node ids, in the same order (pytest-split
     assumes it), and the count matches pytest's own "N tests collected" line;
-  * every collected test appears in exactly one shard's JUnit, and no shard's
+  * every collected test appears in exactly one shard's JUnit, exactly once
+    (a testcase recorded twice is a failure), and no shard's
     JUnit names a test the collection does not have.
 
 JUnit records (classname, name), not node ids. A node id is mapped the way
@@ -43,6 +44,7 @@ Exit 0: pass. Exit 1: a failure, one `::error::` line per problem. Exit 2: usage
 from __future__ import annotations
 
 import argparse
+import collections
 import os
 import re
 import sys
@@ -112,15 +114,18 @@ def read_collected(path: str) -> tuple:
 
 
 def read_junit(path: str) -> tuple:
-    """(set of (classname, name), problems) for every testcase in a JUnit file."""
+    """(set of (classname, name), problems) for every testcase in a JUnit file.
+
+    pytest writes one testcase per test, so a name recorded twice means the
+    test ran twice: that is reported, not folded into the set."""
     try:
         root = ET.parse(path).getroot()
     except (OSError, ET.ParseError) as exc:
         return set(), [f"{path}: cannot read: {exc}"]
-    keys = set()
-    for case in root.iter("testcase"):
-        keys.add((case.get("classname", ""), case.get("name", "")))
-    return keys, []
+    counts = collections.Counter(
+        (case.get("classname", ""), case.get("name", "")) for case in root.iter("testcase"))
+    problems = [f"{c}::{n} ran {k} times" for (c, n), k in sorted(counts.items()) if k > 1]
+    return set(counts), problems[:20]
 
 
 def check_partition(artifacts: str, shards: int) -> list:
@@ -138,7 +143,7 @@ def check_partition(artifacts: str, shards: int) -> list:
             collections[k] = ids
         keys, found = read_junit(os.path.join(shard_dir, JUNIT))
         problems += [f"shard {k}: {p}" for p in found]
-        if not found:
+        if keys or not found:
             ran[k] = keys
     extra_dirs = sorted(
         name for name in (os.listdir(artifacts) if os.path.isdir(artifacts) else [])

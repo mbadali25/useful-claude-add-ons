@@ -22,7 +22,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Every Windows set reports `--durations=50` and uploads its collection and JUnit** (14-day
   artifacts); the default shards also upload pytest-split durations, so a later change can commit
   a durations file and split by time rather than by count.
-- `scripts/_test/windows-shards.py` (31 cases) tests the fan-in and runs in `marketplace.yml`;
+- `scripts/_test/windows-shards.py` (33 cases) tests the fan-in and runs in `marketplace.yml`;
   `scripts/gate-runner.py` learns the `runner.os == 'Windows'` step condition and the fan-in call.
 
 ### Added — `crew` 1.0.106: T-0040's shell-route sabotage mutations (W-0115)
