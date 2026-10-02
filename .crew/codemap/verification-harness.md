@@ -478,6 +478,26 @@ that changed shape or are newly documented here:
   read (`verify-gate.sh:5-30`) so a terminal invocation of the flag is never
   blocked on it, and never reachable from the Stop hook itself (`hooks.json`
   invokes this script with no argument or `--all`, never `--price`).
+- **Declared subset coverage, `--all` only (L-0572).** DERIVED at the L-0572
+  branch. `plugin/crew/hooks/scripts/verify_record.py:457` `cover_declarations`
+  validates `"coveredBy": "<id>"` against the rule carrying that `"id"`
+  (unknown/duplicate id, self, chain, no runnable superset command, env
+  mismatch -> ignored with a notice, the subset runs);
+  `plugin/crew/hooks/scripts/verify_record.py:508` `cover_plan` moves the
+  creditable commands to the end and returns per-position guards (the
+  superset's command positions); `plugin/crew/hooks/scripts/verify_record.py:571`
+  `tree_snapshot` hashes HEAD, the index, every tracked/untracked path and its mode or symlink target, and refuses FIFOs and skip-worktree/assume-unchanged entries.
+  The `.sh` calls the planner only when `budget is None`
+  (`plugin/crew/hooks/scripts/verify-gate.sh:1241`) and credits a position in
+  `cover_credit` (`plugin/crew/hooks/scripts/verify-gate.sh:1557`) only when
+  every guard position is `pass` and the snapshot taken before the first
+  command equals the one at the first credit; the `.ps1` reaches the same
+  planner through `verify_record.py cover-plan`
+  (`plugin/crew/hooks/scripts/verify-gate.ps1:1349`). A credited command is
+  logged `COVERED by rules[N]` and synced as status `covered`, which `_sync`
+  treats as clean but never caches as a timing. JUDGEMENT: this repo declares
+  `rules[9]` as `crew-suite`; with xdist installed its non-wallclock tests run
+  in parallel, so a covered subset loses its local serial run.
 
 ## `scripts/check-marketplace.py` — the direct gate
 
