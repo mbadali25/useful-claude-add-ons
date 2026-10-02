@@ -105,6 +105,7 @@ without ever running.
 | `agents` | `/crew:review` - the hook cannot spawn a subagent, so specialist review is a review-time concern |
 | `agents`, continued | any installed subagent, not only crew's own. See below. |
 | `environments` and everything under it | `/crew:promote` |
+| `preReview` and everything under it | `review_run.py`, before a review round is reserved (`hooks/scripts/review_checks.py`, L-0574): linters run over the bundle's changed files, no new findings against the bundle's base; a tool that could not check refuses the round unless `--allow-unverified`. Not the `Stop` hook. |
 | `why`, `anchor`, `version` | **nothing.** They are notes for the next human. |
 
 `why` is worth writing anyway: a rule whose reason nobody remembers gets deleted

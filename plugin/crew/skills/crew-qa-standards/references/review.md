@@ -13,6 +13,12 @@ matching the tree now), never by the gate's exit status. That status is also 0 w
 is stood down, backs off a lock, or has nothing to check. An override is explicit and recorded
 (`--allow-unverified` → `gate.overridden` in `review.json`).
 
+Deterministic linters go before a round too, and only on what the change adds: lint each changed
+file at its base and in the bundle, and refuse the round on a finding the bundle adds (crew:
+`preReview` in `.crew/verify.json`, run by `review_checks.py`). A linter that could not run, or
+could not parse a file, is "could not check", never a pass, and a known new finding is never
+overridable.
+
 - **Why.** A reviewer's opinion on code the gate would refuse for free is the costliest way to
   learn it is red. With only a small number of rounds, it also spends one the ticket needs.
 
