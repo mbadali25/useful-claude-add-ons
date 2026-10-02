@@ -25,11 +25,15 @@ merging origin/main `52489039` (T-0040, crew 1.0.98). L-0510's 1.0.90, 1.0.93, 1
   Claude-fallback round, a missing provider or family, and Copilot or any other provider are
   refused); any BLOCK; any verdict but exactly `FINDINGS` (INCOMPLETE of every class, refunded or not, and
   CLEAN); counts missing, not a dict, or a BLOCK/FIX/NIT that is not a non-negative int (a bool
-  is refused); finding lines missing, holding a `BLOCK|` line or a line of no known severity, or disagreeing
+  is refused); finding lines missing, holding a `BLOCK|` line, a line of no known severity or a line
+  carrying an embedded `\n`/`\r` (it could hide a BLOCK behind a FIX prefix), or disagreeing
   with the FIX count or the NIT count (each compared on its own, never only the total);
   `webtest_open` missing, unread or non-zero; a non-final round; a stale tree; `NEEDS_REPLAN`; a
   superseded plan's round; a round recorded before this release. Any BLOCK or refusal still stops
   for the owner, now with 2-4 options, recommended first.
+- **`--check-follow-up` splits `direction.md` on `\n` only**, never `splitlines()`, so a U+2028
+  inside a quoted finding stays on its line. `/crew:autopilot` section 4's no-new-ticket stop
+  (T-0012) names the step 3.3 follow-up as its one exception (review round 4).
 - **`--accept --by` refuses a name starting `auto:`**, so the auto string comes only from the
   guarded verb; the owner's `--accept` is otherwise unchanged.
 - **One predicate, `review_ledger.receipt_stands`,** decides whether a FINDINGS receipt stands for

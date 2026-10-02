@@ -700,17 +700,17 @@ allows; review acceptance is FINDINGS with any BLOCK, or a round `review_ledger.
 
 **Review closure (L-0510, crew 1.0.94).** DERIVED at the anchor below. `_review_phase`
 (`plugin/crew/hooks/scripts/crew_autopilot.py:491`) asks `review_ledger.receipt_stands`
-(`plugin/crew/hooks/scripts/review_ledger.py:590`) whether a FINDINGS receipt stands, the same
-predicate `check_receipt` (`:691`) uses (a CLEAN round stands only under a `clean`
+(`plugin/crew/hooks/scripts/review_ledger.py:596`) whether a FINDINGS receipt stands, the same
+predicate `check_receipt` (`:700`) uses (a CLEAN round stands only under a `clean`
 receipt): `owner-accepted`, or `auto-accepted` with
 `accepted_by == AUTO_BY`, lines equal to the row's, provider and model family equal to the row's
-(`_receipt_names_the_reviewer` `:612`, review round 3 FIX 2) and the row passing `_auto_row_problem`
+(`_receipt_names_the_reviewer` `:618`, review round 3 FIX 2) and the row passing `_auto_row_problem`
 (`:477`), which first asks `_family_problem` (`:454`, owner decision 2026-10-01 #3): the row's
 `provider` is in `AUTO_PROVIDERS` (codex, kimi) and its `model_family` a non-empty string that is
-not `AUTHOR_FAMILY` (claude), every missing or unknown value a refusal. Otherwise it stops at `accept-review`, naming `--auto-accept` when
-`auto_accept_refusal` (`:522`) returns None and quoting the refusal when not. `auto_accept`
-(`:556`) is the guarded verb; `accept` (`:401`) refuses a `--by` starting `auto:`;
-`check_follow_up` (`:620`) reads the follow-up's `direction.md`. `review_run.finish` records
+not `AUTHOR_FAMILY` (claude), every missing or unknown value a refusal; a finding carrying `\n` or `\r` is could-not-tell before it is classified (review round 4 FIX 1). Otherwise it stops at `accept-review`, naming `--auto-accept` when
+`auto_accept_refusal` (`:528`) returns None and quoting the refusal when not. `auto_accept`
+(`:562`) is the guarded verb; `accept` (`:401`) refuses a `--by` starting `auto:`;
+`check_follow_up` (`:626`) reads the follow-up's `direction.md`, split on `\n` only, never `splitlines()` (review round 4 FIX 2). `review_run.finish` records
 `findings` and `webtest_open` (`_webtest_open`, `plugin/crew/hooks/scripts/review_run.py:401`)
 and prints `auto_accept_line` (`:410`). JUDGEMENT: autopilot never calls `auto_accept`; the
 command prose (`plugin/crew/commands/autopilot.md:86`) runs it inside the review phase.
@@ -790,7 +790,7 @@ refused. `question_policy` (`:1075`) is `take|stop` by the same rule without the
 `approval.json`; on a ticket's first approval, the scope ramp's `scope-tickets.json`
 (`crew_ticket._register_ramp`, `plugin/crew/hooks/scripts/crew_ticket.py:705`, as for every
 route); and, for a distinct successor plan under a NEEDS_REPLAN ledger, the ledger moved
-NEEDS_REPLAN -> IN_REVIEW (`review_ledger.continue_with_successor_plan`, `plugin/crew/hooks/scripts/review_ledger.py:742`). `questions_check` (`:1246`) validates
+NEEDS_REPLAN -> IN_REVIEW (`review_ledger.continue_with_successor_plan`, `plugin/crew/hooks/scripts/review_ledger.py:751`). `questions_check` (`:1246`) validates
 `.work/tickets/<id>/questions.md` against `QUESTIONS_SHAPE` (`:1154`) and refuses a `taken:` line
 naming a policy that never takes (only `self`/`risk` do; the name is history, not compared with
 today's) or any `taken:` while the policy in force says `stop`. `next` appends
@@ -1608,8 +1608,8 @@ then the train is advisory.
   (`plugin/crew/hooks/scripts/review_ledger.py:129`; `BUDGET` `:126` unchanged).
   `_refunded` (`:290`) counts refunded rows after the successor boundary
   (`_boundary`, `:282`), `_charged` (`:296`) is spent minus refunded, and
-  `reserve` tests `_charged` against `BUDGET`. `summary` (`:781`, `load = _load` at
-  `:778`) is the dict `status` returns and the one `crew_status._review_lines`
+  `reserve` tests `_charged` against `BUDGET`. `summary` (`:790`, `load = _load` at
+  `:787`) is the dict `status` returns and the one `crew_status._review_lines`
   renders (`plugin/crew/hooks/scripts/crew_status.py:140`). Autopilot sends a
   refunded round back to review (`plugin/crew/hooks/scripts/crew_autopilot.py:532`,
   `_toward_review` `:548`), and `next_phase`'s no-progress stop (`:597`) lets that
