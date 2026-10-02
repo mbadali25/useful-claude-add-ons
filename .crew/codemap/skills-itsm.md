@@ -1,6 +1,6 @@
 # skills-itsm
-anchor: useful-claude-add-ons@53ba2fd7
-verified: 2026-09-29
+anchor: useful-claude-add-ons@40292eca
+verified: 2026-10-02
 
 ## Does
 `infra-work-ticketing` gets infrastructure work logged to ServiceDesk Plus or Jira through an MCP
@@ -20,7 +20,7 @@ the paper trail, the other pages the person.
   (`skills/notify/SKILL.md:161`); it owns the single Telegram poller so concurrent jobs do not
   fight over replies.
 - `plugin/gizmoduck/scripts/_test/labtarget/labtarget_server.py:264` — module entry point (`main()`), from the graph
-- `plugin/gizmoduck/scripts/gizmoduck.py:1097` — module entry point (`main()`), from the graph
+- `plugin/gizmoduck/scripts/gizmoduck.py:1235` — module entry point (`main()`), from the graph
 - `skills/notify/scripts/telegram_get_chat_id.py:19` — module entry point (`main()`), from the graph
 
 ## Owns data
@@ -140,7 +140,7 @@ the text the note claims.
 **Also checked, outside this note's subsystem.** That the gizmoduck gate the carve-out names is real
 rather than aspirational: `plugin/gizmoduck/scripts/gizmoduck.py` implements `--yes DIGEST` with
 `_records_digest` at `:206-225`, binding the approval to the exact previewed batch, and refuses a
-stale or mismatched digest rather than treating it as a bare yes (`:1268-1274`). Recorded here only
+stale or mismatched digest rather than treating it as a bare yes (`:1406-1412`). Recorded here only
 because the carve-out's meaning depends on it; the gizmoduck subsystem is documented elsewhere.
 
 **Re-anchored `1f97e51c` -> `34a333f0` on 2026-09-14.** One cited path moved:
@@ -216,3 +216,5 @@ and `git diff --name-only 6c497a14 f2bb919b -- skills/ plugin/gizmoduck` is empt
 **Re-anchored `f2bb919b` -> `0da787d3` on 2026-09-29 (T-0107, gizmoduck 0.5.4). One cited path moved.** `crew_refresh_check.py` named `plugin/gizmoduck/scripts/gizmoduck.py`, which T-0107 grows by the `routine` subcommand: 22 lines ahead of `_records_digest` (the module docstring's `routine` and `--run-manifest` usage, two imports) and the `cmd_routine` block plus `main()`'s new flags ahead of the rest. Three citations moved and were re-read at their new lines by `grep -n` / `sed -n`: `main()` `:852` -> `:1097`, `_records_digest` `:184-203` -> `:206-225`, and the stale/mismatched-digest refusal (`GIZMODUCK_APPROVAL_MISMATCH`) `:974-980` -> `:1268-1274`. Each still says what this note claims. The line numbers in the dated notes above keep their own commit's value. `git diff --name-only f2bb919b 0da787d3 -- skills/infra-work-ticketing/ skills/notify/` is empty. Nothing was executed for this note.
 
 **Re-anchored `0da787d3` -> `53ba2fd7` on 2026-09-29 (T-0107 lint commit `98b613a5`). Current despite the lag.** `git diff -U0 0da787d3 53ba2fd7 -- plugin/gizmoduck/scripts/gizmoduck.py` is two lines changed in place, `:831` and `:835` (`_load_run_manifest`'s docstring and a `# noqa: TRY004`), no line added or removed; `main()` is still `:1097`, `_records_digest` `:206-225`, and the digest refusal `:1268-1274`, re-read by `grep -n`. Nothing was executed for this note.
+
+**Re-anchored `53ba2fd7` -> `40292eca` on 2026-10-02 (T-0107 review round-1 fixes `b70a4a9d`/`6c34e312`, then its merge of origin/main `ffd11270`). One cited path moved.** `git diff -U0 53ba2fd7 40292eca -- plugin/gizmoduck/scripts/gizmoduck.py` starts at `:731`, so `_records_digest` holds at `:206-225`; everything after the `--replace` ownership and target-directory checks moves +138. Re-read by `grep -n` / `sed -n`: `main()` `:1097` -> `:1235`, and the stale/mismatched-digest refusal (`GIZMODUCK_APPROVAL_MISMATCH`) `:1268-1274` -> `:1406-1412`. Each still says what this map claims. `git diff --name-only 53ba2fd7 40292eca -- skills/infra-work-ticketing/ skills/notify/` is empty. Nothing was executed for this note.

@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `gizmoduck` 0.5.4: `routine` subcommand and the dated docs/security-scans layout (T-0107)
+### Added — `gizmoduck` 0.5.5: `routine` subcommand and the dated docs/security-scans layout (T-0107)
 
 - **What changed.** `gizmoduck.py routine <manifest.yaml>` calls routine.py's
   existing `load_manifest` and `run_routine`, then renders the combined report
@@ -50,7 +50,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   the committed `gizmoduck.py` and confirmed RED; (d) now fails the write itself
   half-way, because failing before the write could not tell an atomic helper
   from a plain `open(path, "w")`.
-- gizmoduck 0.5.3 -> 0.5.4 (`plugin.json`, `marketplace.json`, `plugin/PLUGINS.md`).
+- gizmoduck 0.5.3 -> 0.5.5 (0.5.4 was set before the review round-1 fixes and never released; `plugin.json`, `marketplace.json`, `plugin/PLUGINS.md`).
 
 ### Fixed - `crew` 1.0.114, `obsidian-vault` 0.4.16: every pwsh the test suites spawn gets its own XDG_CACHE_HOME (L-0557)
 
