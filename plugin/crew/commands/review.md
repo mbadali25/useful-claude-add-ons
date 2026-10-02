@@ -480,10 +480,11 @@ provider: identical instructions are what make a differing defect count a fact a
 rather than about the prompt.
 
 Read ONLY `$SCRATCH/out.txt` and the `review:` lines. Never load the diff back into your context.
-**The verdict is the script's, not yours**: CLEAN only for exactly `CLEAN` at exit 0 with every
-part acknowledged; any BLOCK/FIX/NIT is FINDINGS; a non-zero exit, empty or unparseable output, a
-skipped part or a timeout is INCOMPLETE — never report INCOMPLETE as clean. Only a `tool` INCOMPLETE
-(no intact answer) is refunded, up to two per plan, as its `review:` line says; its rerun is a new round.
+**The verdict is the script's, not yours**: CLEAN only for exactly `CLEAN` at exit 0, every part acknowledged,
+no other line; any BLOCK/FIX/NIT is FINDINGS, even beside harmless stray prose (the script ignores it and names
+it on a `review: FINDINGS kept; ...` line); a non-zero exit, empty output, a possibly misformatted contract line,
+a line admitting the review fell short, a skipped part or a timeout is INCOMPLETE — never report INCOMPLETE as
+clean. Only a `tool` INCOMPLETE (no intact answer) is refunded, up to two per plan, as its `review:` line says; its rerun is a new round.
 
 **Step 2d — re-run the failing control, do not read about it.** If the diff adds or edits a test,
 guard, assertion or smoke step, the author is expected to have broken it on purpose and shown it go
@@ -495,11 +496,10 @@ is a BLOCK, not a NIT — a check that has never been shown to fail is the defec
 loses the most time to.
 
 **Step 3 — act.**
-1. Report every BLOCK and FIX line verbatim. Do not soften or argue before
-   showing me. State the review range and file list **from `$MANIFEST`**, not
-   by re-deriving it: base, head, branch, whether the tree was dirty, and
-   which category (committed / staged / unstaged / untracked) each changed
-   file fell into is the one record of what was actually reviewed.
+1. Report every BLOCK and FIX line verbatim; do not soften or argue first. If a `review: FINDINGS kept; ...` line
+   printed, also show every ignored line verbatim (`review.json` `ignored_text`, counted by `ignored_lines`): the script
+   ignored them, it did not read them for defects. State the review range and file list **from `$MANIFEST`**, not re-derived:
+   base, head, branch, dirty or not, and each changed file's category (committed / staged / unstaged / untracked).
 2. Fix all BLOCK items. Rerun `./_verify/smoke.sh`. Rerun this review once — round 2 is the last,
    counting only rounds not refunded. A refusal (exit 4, `NEEDS_REPLAN`) is terminal in this
    release: stop, say so, and replan the ticket; there is no third round.
