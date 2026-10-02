@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.111: refresh admission refuses a mode change that exists only in the index (W-0117)
+### Fixed — `crew` 1.0.115: refresh admission refuses a mode change that exists only in the index (W-0117)
 
 - **`crew_refresh_check._on_disk` now asks git for the index's mode too.** Under
   `core.fileMode=true` git's worktree diff reads the mode from the disk, so a mode staged with
