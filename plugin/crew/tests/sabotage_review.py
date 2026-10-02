@@ -44,8 +44,9 @@ REVIEW_FIX_MUTATIONS = (
         # of generated JSON and the Claude fallback comes back INCOMPLETE.
         "the bundle diff no longer excludes graphify-out",
         REVIEW_PATCH,
-        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"]\n',
-        '_EXCLUDE_SPEC = [":(exclude).work"]\n',
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out", '
+        '":(exclude).crew/metrics.md"]\n',
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude).crew/metrics.md"]\n',
         ("tests/test_review_patch.py::"
          "test_generated_graph_dir_is_excluded_and_says_so"),
     ),
@@ -54,8 +55,8 @@ REVIEW_FIX_MUTATIONS = (
         # with the graph left out and nothing records that it was.
         "the manifest stops saying graphify-out is excluded",
         REVIEW_PATCH,
-        'EXCLUDED = (".work/", "graphify-out/")\n',
-        'EXCLUDED = (".work/",)\n',
+        'EXCLUDED = (".work/", "graphify-out/", ".crew/metrics.md")\n',
+        'EXCLUDED = (".work/", ".crew/metrics.md")\n',
         ("tests/test_review_patch.py::"
          "test_generated_graph_dir_is_excluded_and_says_so"),
     ),
@@ -523,5 +524,26 @@ REVIEW_FIX_MUTATIONS = (
         '    if ok and (data.get("receipt") or {}).get("kind") == "clean":\n',
         "    if ok:\n",
         "tests/test_review_gate.py::test_owner_accepted_findings_do_not_short_circuit",
+    ),
+    (
+        # L-0578: the metrics row goes back to depending on prose step 6,
+        # which lanes skipped for 118 of 162 rounds.
+        "a recorded round writes no metrics row",
+        REVIEW_RUN,
+        "    metrics_line = review_metrics.record(args.root, args.ticket, number, review, "
+        "args.manifest,\n",
+        '    metrics_line = "review: no row"; _unused = (\n',
+        "tests/test_review_metrics.py::test_codex_findings_round_appends_one_scored_row",
+    ),
+    (
+        # L-0578: the row the round writes changes the bundle, so a CLEAN
+        # receipt in a repo that does not gitignore .crew/ stops checking.
+        "the metrics row is reviewed as part of the bundle",
+        REVIEW_PATCH,
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out", '
+        '":(exclude).crew/metrics.md"]\n',
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"]\n',
+        "tests/test_review_patch.py::"
+        "test_metrics_row_stays_out_of_the_bundle_and_the_rest_of_crew_stays_in",
     ),
 )
