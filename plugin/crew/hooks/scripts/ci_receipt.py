@@ -47,8 +47,9 @@ FOUR ANSWERS, "could not tell" its own one (`review_gate`'s names):
   UNKNOWN     exit 3 -- gh, git, the network or the artifact could not be
               read; never read as VERIFIED, refused like UNVERIFIED
   NO_GATE     exit 4 -- no verify map, or the gate is stood down
-Usage errors exit 2. The last stdout line is always
-`CI_RECEIPT <STATE> head=<sha or -> <reason>`.
+Usage errors exit 2. The last stdout line of `check` is always the one line
+`CI_RECEIPT <STATE> head=<sha or -> <reason>`, its reason folded onto one line
+(gh's stderr is multi-line).
 
 The network is reached only through `fetch` (default: `gh api`), so tests
 inject a fake and never touch it.
@@ -59,6 +60,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import zipfile
@@ -314,8 +316,11 @@ def _summary(receipt):
 
 def gh_fetch(path):
     """`gh api <path>`'s body as bytes. Any failure is Unreadable."""
+    gh = shutil.which("gh")
+    if gh is None:
+        raise Unreadable("gh is not on PATH, so the run and its receipt cannot be read")
     try:
-        out = subprocess.run(["gh", "api", path], capture_output=True, check=False,
+        out = subprocess.run([gh, "api", path], capture_output=True, check=False,
                              timeout=_GH_TIMEOUT_S, stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError) as exc:
         raise Unreadable(f"gh could not run: {exc}") from exc
@@ -539,7 +544,7 @@ def main(argv):
               f"sha256={hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]}")
         return 0 if receipt["pass"] else 1
     state, reason, head = check(args.root)
-    print(f"CI_RECEIPT {state} head={head or '-'} {reason}")
+    print(f"CI_RECEIPT {state} head={head or '-'} {' '.join(str(reason).split())}")
     return EXIT[state]
 
 

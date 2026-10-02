@@ -501,10 +501,18 @@ def test_check_with_a_fake_fetcher_never_runs_gh(tmp_path, monkeypatch):
     assert _check(root, api)[0] == cr.VERIFIED
 
 
+def test_gh_fetch_without_gh_on_path_is_unreadable(monkeypatch):
+    monkeypatch.setattr(cr.shutil, "which", lambda _name: None)
+
+    with pytest.raises(cr.Unreadable):
+        cr.gh_fetch("repos/x/y")
+
+
 def test_gh_fetch_that_cannot_start_is_unreadable(monkeypatch):
     def boom(*_a, **_kw):
         raise FileNotFoundError("gh")
 
+    monkeypatch.setattr(cr.shutil, "which", lambda _name: "/usr/bin/gh")
     monkeypatch.setattr(cr.subprocess, "run", boom)
 
     with pytest.raises(cr.Unreadable):
@@ -518,7 +526,7 @@ import base64, json, os, sys
 api = json.load(open(os.environ["FAKE_GH_MAP"]))
 path = sys.argv[2] if len(sys.argv) > 2 and sys.argv[1] == "api" else None
 if path not in api:
-    sys.stderr.write("fake gh: HTTP 404 for %r\\n" % path)
+    sys.stderr.write("fake gh: HTTP 404 for %r\\n(second line of gh's stderr)\\n" % path)
     sys.exit(1)
 sys.stdout.buffer.write(base64.b64decode(api[path]))
 """
@@ -558,6 +566,7 @@ def test_cli_exit_codes_and_last_line(tmp_path, case, code, state):
 
     assert result.returncode == code, result.stdout + result.stderr
     assert result.stdout.strip().splitlines()[-1].startswith(f"CI_RECEIPT {state} head={head} ")
+    assert not [line for line in result.stdout.splitlines() if line.startswith("(second line")]
 
 
 def test_cli_usage_error_exits_2():
