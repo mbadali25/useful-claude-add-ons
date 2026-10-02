@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@18b764dc on 2026-10-02. Verify before trusting.
+%% Generated from useful-claude-add-ons@22aeb5a8 on 2026-10-02. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -324,15 +324,15 @@ flowchart TB
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
-        im5 --> pf0{"preflight first (#264):<br/>a CLEAN receipt covers this bundle?<br/>verify gate passed this tree?<br/>review_run.py:540, :694"}
+        im5 --> pf0{"preflight first (#264):<br/>a CLEAN receipt covers this bundle?<br/>verify gate passed this tree?<br/>review_run.py:544, :715"}
         pf0 -- "CLEAN receipt: CLEAN,<br/>no round, no self-check" --> rcpt
         pf0 -- "gate not passed or unknown:<br/>exit 5, no round spent,<br/>self-check not asked<br/>review.md:450" --> vg0["run the verify gate,<br/>then review again"]
         vg0 --> im5
-        pf0 -- "go on" --> pr0{"pre-review checks (L-0574):<br/>no linter finding the bundle adds<br/>against its base? could every<br/>configured linter check?<br/>review_run.py prereview_gate :597"}
+        pf0 -- "go on" --> pr0{"pre-review checks (L-0574):<br/>no linter finding the bundle adds<br/>against its base? could every<br/>configured linter check?<br/>review_run.py prereview_gate :601"}
         pr0 -- "NEW finding: exit 5, no round spent,<br/>not overridable; or COULD NOT CHECK:<br/>exit 5 unless --allow-unverified<br/>review.md:450" --> fx0["fix the finding or the tool,<br/>then review again"]
         fx0 --> im5
         pr0 -- "pass / n/a / none configured,<br/>override recorded, or an active<br/>incident (skip logged)" --> rv0{"self-check stamped for<br/>this bundle and standards set?<br/>review_run.py standards_gate"}
-        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no pre-review checks, no self-check<br/>review_run.py:698-709" --> replan
+        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no pre-review checks, no self-check<br/>review_run.py:719-730" --> replan
         rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:447-450" --> sc1
         rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle;<br/>prompt ends with the standards checklist<br/>review.md:25-29, :452"]
         rv1 --> rv2{"verdict (the script's)<br/>:441, :484"}
@@ -515,3 +515,4 @@ flowchart TB
 %% Re-anchored d640eba3 -> 5143dbcd (L-0574 round-4 fixes and the merge of origin/main d2ec37d3; see the merge note above pr0).
 %% Re-anchored 5143dbcd -> a4ffe1de (L-0574: pylint fixes, then merge of origin/main 7ba4f9ea; main changed none of the anchored paths).
 %% Re-anchored a4ffe1de -> 18b764dc (L-0574: merge of main 22292d63, then the round-5 fixes in review_checks.py; review_run.py and the commands this diagram anchors did not change).
+%% Re-anchored 18b764dc -> 22aeb5a8 (L-0574 round-7 class sweep): review_run.py moved - pf0 :540, :694 -> :544, :715, pr0 prereview_gate :597 -> :601, the budget block :698-709 -> :719-730 (difflib); no node or edge changed.
