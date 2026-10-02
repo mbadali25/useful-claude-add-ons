@@ -15,17 +15,35 @@ THE CONTRACT the shared prompt asks every reviewer for:
 
 THE RULE, in precedence order:
 
-  INCOMPLETE  timed out; no exit status; non-zero exit; empty output; any line
-              that is none of the above -- a code fence included, and a
-              finding with any of its four fields empty; a bundle part with
-              no READ line; CLEAN beside findings; CLEAN more than once;
+  INCOMPLETE  timed out; no exit status; non-zero exit; empty output; a reason
+              found outside the text (`prior_reasons`: a Codex stream error, a
+              bundle or webtest check); a bundle part with no READ line; CLEAN
+              beside findings; CLEAN more than once; any line that is none of
+              the above (a "stray" line) unless it is recovered, below;
               neither CLEAN nor a finding.
   FINDINGS    at least one BLOCK/FIX/NIT line and nothing above applies.
-  CLEAN       exactly one CLEAN line (plus the READ lines), exit 0.
+  CLEAN       exactly one CLEAN line (plus the READ lines), exit 0, and no
+              other line at all.
+
+RECOVERY (L-0576). Stray lines are ignored -- listed in `ignored`, not made a
+reason -- only when every one of these holds: at least one finding parsed;
+no other reason applies (so no CLEAN line, every part READ, exit 0, no
+timeout, no prior reason); and no stray line is `contract_like`. A
+contract-like line is one that might be a contract line the parser failed to
+read -- after markdown decoration is stripped it starts with BLOCK, FIX, NIT,
+READ or CLEAN in any case (`- FIX|...`, `fix|...`, `Clean.`, a finding with an
+empty field), or it holds three or more `|` -- or one that admits the review
+fell short (`_SHORTFALL`: "incomplete", "skipped", "truncated", "could not
+review", "ran out", ...). Those are "could not tell", and the round stays
+INCOMPLETE. What is left is prose, a heading or a code fence beside findings
+that parsed: the findings count, and the ignored lines are kept for a person
+to read. The `_SHORTFALL` net is wording, so it cannot be complete; that is
+why recovery never reaches CLEAN and the ignored lines are always reported.
 
 INCOMPLETE is never CLEAN, and nothing that went wrong can become CLEAN: every
 failure path is an explicit reason, and CLEAN is only reachable when the
-reason list is empty.
+reason list is empty and there was a CLEAN line and no finding -- a recovered
+round always has a finding, so it is never CLEAN.
 
 An INCOMPLETE is classed by `failure_class`, in precedence order: `tree` when
 the bundle or webtest check found the tree moved; `tool` when the answer never
@@ -90,6 +108,38 @@ _FINDING = re.compile(rf"^(BLOCK|FIX|NIT)\|{_FIELD}\|{_FIELD}\|.*\S.*$")
 READ_FORM = "READ|<the path exactly as listed, or its bare file name>"
 # The token is the rest of the line: a listed path may contain a space.
 _READ = re.compile(r"^READ\|(.*\S.*)$")
+# A stray line that may be a contract line the parser failed to read, or an
+# admission that the review fell short (L-0576): one that starts with a
+# contract keyword in any case once markdown decoration is stripped; a row of
+# three or more `|`; or one matching a `_SHORTFALL` pattern anywhere. Such a
+# line is "could not tell" and keeps the round INCOMPLETE; only a stray line
+# that is none of these is harmless enough to ignore beside findings.
+_DECORATION = re.compile(r"^(?:[\s`*_>#+-]|\d+[.)])+")
+# A fence line: the fence, optional spaces, and at most one info word
+# (CommonMark allows spaces before it - review round 2 FIX, "``` FIX").
+_FENCE = re.compile(r"^(?:`{3,}|~{3,})[ \t]*[\w.+#-]*$")
+_KEYWORD = r"BLOCK|FIX|NIT|READ|CLEAN"
+_ON_BARE = (re.compile(rf"^(?:{_KEYWORD})\b", re.IGNORECASE),)
+# An admission that the review itself fell short reads as could-not-tell too,
+# not as prose to ignore -- the wording here is a net, so it errs wide.
+_SHORTFALL = (r"\bincomplete\b",
+              r"\b(?:skip|skipped|skipping|skimm?ed|truncated|partial|partially|unread)\b",
+              r"\b(?:ran|run|running) out\b|\btimed? ?out\b",
+              r"\b(?:did not|didn't|could not|couldn't|cannot|can't|unable to|was not able to"
+              r"|not able to|not fully|never)\b.{0,40}\b(?:read|review|reviewed|open|opened"
+              r"|load|loaded|see|saw|access|finish|finished|check|checked|cover|covered)\b")
+_ON_LINE = (re.compile(r"\|.*\|.*\|"),) + tuple(
+    re.compile(p, re.IGNORECASE) for p in _SHORTFALL)
+
+
+def contract_like(line):
+    """True when `line` might be a contract line the parser could not read.
+    A code fence is markup, so its info string (```FIX) is never read as a
+    keyword; the whole-line checks still apply to it."""
+    line = line.strip()
+    bare = "" if _FENCE.match(line) else _DECORATION.sub("", line)
+    return (any(p.search(bare) for p in _ON_BARE)
+            or any(p.search(line) for p in _ON_LINE))
 
 
 def _norm(path):
@@ -105,9 +155,13 @@ def _covers(token, listed):
     return "/" not in token and token == posixpath.basename(listed)
 
 
-def parse(text, exit_code, timed_out=False, expected_parts=()):
-    """Return a dict: verdict, counts, findings, reasons, parts_read,
-    parts_missing, delivered. `exit_code` None means the status is unknown;
+def parse(text, exit_code, timed_out=False, expected_parts=(), prior_reasons=()):
+    """Return a dict: verdict, counts, findings, reasons, ignored, parts_read,
+    parts_missing, delivered. `ignored` lists the harmless stray lines a
+    FINDINGS round was recovered despite; it is empty otherwise.
+    `prior_reasons` are INCOMPLETE reasons found outside the text (a Codex
+    stream error, a bundle or webtest check); they lead `reasons` and, like
+    every other reason, rule recovery out. `exit_code` None means the status is unknown;
     `delivered` is whether an answer arrived intact at all (see
     `failure_class`)."""
     counts = {sev: 0 for sev in SEVERITIES}
@@ -129,9 +183,11 @@ def parse(text, exit_code, timed_out=False, expected_parts=()):
             counts[match.group(1)] += 1
             findings.append(line)
             continue
-        unparseable.append(line)
+        # Kept as written (only a "\r" line end dropped): an ignored line
+        # is reported verbatim, so a person reads what the reviewer wrote.
+        unparseable.append(raw[:-1] if raw.endswith("\r") else raw)
 
-    reasons = []
+    reasons = list(prior_reasons)
     if timed_out:
         reasons.append("the reviewer timed out")
     if exit_code is None:
@@ -140,9 +196,6 @@ def parse(text, exit_code, timed_out=False, expected_parts=()):
         reasons.append(f"the reviewer exited {exit_code}")
     if not (text or "").strip():
         reasons.append("the reviewer's output is empty")
-    if unparseable:
-        reasons.append(f"{len(unparseable)} output line(s) match no part of the contract, "
-                       f"first: {unparseable[0][:120]!r}")
     missing = [part for part in expected_parts if not any(_covers(t, part) for t in read)]
     if missing:
         reasons.append(f"no READ line for {len(missing)} of {len(expected_parts)} bundle "
@@ -151,6 +204,17 @@ def parse(text, exit_code, timed_out=False, expected_parts=()):
         reasons.append("the output says CLEAN and also lists findings")
     if clean_lines > 1:
         reasons.append("the output says CLEAN more than once")
+    # Recovery (L-0576): stray lines are ignored only beside findings, with no
+    # other reason (CLEAN beside findings is one), and none contract-like.
+    # CLEAN is exact: with no finding there is nothing to recover.
+    ignored = []
+    if unparseable:
+        if (findings and not reasons
+                and not any(contract_like(line) for line in unparseable)):
+            ignored = unparseable
+        else:
+            reasons.append(f"{len(unparseable)} output line(s) match no part of the contract, "
+                           f"first: {unparseable[0].strip()[:120]!r}")
     if not clean_lines and not findings and not reasons:
         reasons.append("the output has neither CLEAN nor a finding")
 
@@ -166,6 +230,7 @@ def parse(text, exit_code, timed_out=False, expected_parts=()):
         "counts": counts,
         "findings": findings,
         "reasons": reasons,
+        "ignored": ignored,
         "parts_read": read,
         "parts_missing": missing,
         "delivered": delivered,

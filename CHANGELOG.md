@@ -63,6 +63,125 @@ All notable changes to this repository are documented here. Format follows [Keep
   `scripts/_test/lsp-stack-tools.sh` (a prose `# shellcheck/...` comment, `:7`), so a bundle that
   changes either file reads COULD NOT CHECK for ShellCheck until those lines are fixed.
 
+### Fixed - `gizmoduck` 0.5.6: main's Pylint `build (3.11)` leg red on a guarded `os.path.isjunction` call (L-0599)
+
+- **What.** Since T-0107 (75681fba) pylint 4 on Python 3.11 reported
+  `plugin/gizmoduck/scripts/gizmoduck.py:925:58: E1102: isjunction is not callable (not-callable)`
+  and exited 2, while its summary line still read 10.00/10. `os.path.isjunction` exists only on
+  3.12+, so on 3.11 pylint infers the `getattr(os.path, "isjunction", None)` result as `None` and
+  cannot see the `isjunction and` guard before the call. A false positive: `_is_link` is unchanged.
+- **Fix.** A line-scoped `# pylint: disable=not-callable` on the call, and the guard's comment says
+  why, the same treatment `plugin/crew/hooks/scripts/crew_migrate.py`'s `_is_link` already has. No
+  line was added, so no line citation moves. Pylint on the file under 3.11 now exits 0 (was 2);
+  3.12 and 3.13 exit 0 as before.
+
+### Added - `crew` 1.0.129: a recurring-findings checklist, scoped to a ticket's paths, for the implementer (L-0575)
+
+- **What.** `plugin/crew/skills/crew-qa-standards/references/recurring-findings.md` lists seven
+  defect classes earlier reviews kept finding (fail-open handling, tests that cannot fail, claims not
+  true at HEAD, processes and races, PowerShell/Bash drift, version and registration, guard bypass),
+  each with path globs, its measured count and at most four probes. New
+  `plugin/crew/hooks/scripts/recurring_findings.py --root . --ticket <id>` prints the classes whose
+  globs meet the spec's Touch list, capped at 60 lines with any cut named by id. `/crew:implement`
+  step 2 runs it before the first plan step, pastes it into every developer dispatch and re-runs it
+  before the self-check; `/crew:fix` step 4 does the same.
+- **Unknown stays unknown.** An unreadable or malformed data file prints `UNREADABLE:`/`PROBLEM:`
+  and never "no class applies"; an unreadable spec, any Touch problem or an unusable manifest
+  prints `UNKNOWN:` and lists every class; the CLI exits 1 whenever it prints one of these.
+- **Evidence.** Counted 2026-10-01 over 625 unique finding lines (539 BLOCK/FIX) from 54 review
+  ledgers and 177 reviewer `out.txt` files on the Linux host; keyword classes, overlapping. The
+  review prompt gains the same block in a follow-up tooling PR (`review_prompt.py` is review harness,
+  `scripts/check-tooling-pr.py`).
+
+
+### Changed — `crew` 1.0.128: harmless stray lines beside findings no longer burn a review round (L-0576)
+
+A tooling-only change to the review verdict parser. Paired with L-0514 (bounded retry), which it
+does not implement.
+
+- **Recovered, never beside CLEAN.** `review_verdict.parse` scores a round FINDINGS when its
+  findings parse, every bundle part has a READ line, the reviewer exited 0, no other reason applies,
+  and its only contract break is stray prose, a heading or a code fence. T-0100 round 2 was
+  INCOMPLETE for one trailing paragraph beside four well-formed findings; it now replays FINDINGS
+  (new golden fixture). CLEAN is unchanged: any stray line beside it is still INCOMPLETE.
+- **Could-not-tell stays INCOMPLETE.** A stray line that might be a misformatted contract line (a
+  keyword in any case after markdown decoration, a finding with an empty field, a `|` table row)
+  or that admits the review fell short ("incomplete", "skipped", "truncated", "could not review",
+  "ran out", ...) keeps the round INCOMPLETE, as do a missing READ, a bad exit, a timeout and a
+  bundle/stream reason (`parse` now takes these as `prior_reasons`, so `review_run.finish` can no
+  longer recover a round its own checks fail).
+- **Shown, not dropped.** `review.json` carries `ignored_lines` (an int on every round, 0 when none; the
+  contract L-0510 reads) and the lines verbatim in `ignored_text`, the ledger row the count (null,
+  never 0, when review.json's value is missing or malformed), and
+  `review_run` prints `review: FINDINGS kept; N line(s) outside the contract were ignored, first:
+  ...`; `/crew:review` step 3.1 reports them verbatim.
+- **Measured.** Over every preserved review on the Linux host (56 with an out.txt and manifest),
+  the parser before this change gave 53 FINDINGS, 1 CLEAN, 2 INCOMPLETE; after it, T-0100 r2 is
+  FINDINGS and the reviewer-declared T-0028 round stays INCOMPLETE. Most of the ledgers' 17
+  historic INCOMPLETEs were already recovered by T-0079 and T-0072's fixes.
+- Fifteen new `sabotage_review.py` entries; the `crew_standards.py` proposals docstring and the
+  crew-qa-standards R5 wording are a follow-up feature PR (tooling-PR rule).
+### Added — `gizmoduck` 0.5.5: `routine` subcommand and the dated docs/security-scans layout (T-0107)
+
+- **What changed.** `gizmoduck.py routine <manifest.yaml>` calls routine.py's
+  existing `load_manifest` and `run_routine`, then renders the combined report
+  with its coverage table from the run's own `findings.jsonl` and
+  `run-manifest.json`. Output goes to `--out DIR` (default `routine-out/`) or,
+  with `--scan-root MODULE_DIR [--date YYYY-MM-DD]`, to
+  `MODULE_DIR/docs/security-scans/YYYY-MM-DD/`, holding `findings.jsonl`,
+  `run-manifest.json`, `report.md`, `report.html`, `report.pdf` when a renderer
+  is present, and `scan-meta.json` (gizmoduck's own schema 1: version,
+  timestamps, `authorized_by`, targets, coverage counts and `complete`, finding
+  counts, the file names). `report` gains `--run-manifest run-manifest.json`, so
+  a routine run re-renders with its coverage table.
+- **Why.** aws-ops report items 8 and 12: `run_routine` was the only path to
+  checkov, trivy, dependency-check, semgrep, ZAP, testssl, nmap, nikto and sqlmap
+  and nothing shipped called it, so only nuclei was runnable headless; and
+  nothing wrote the dated layout. The reporter vendored a pinned copy of the
+  scripts to work around both.
+- **Exit codes.** 0 when every cell ran; 4 when every output was written but some
+  cell did not run (the last stdout line starts `GIZMODUCK_ROUTINE_INCOMPLETE:`;
+  a run with no cells is not complete); 2 for a usage or manifest error (a
+  wrong-typed manifest value, a target `name` that is not a plain directory
+  name or names a file routine writes, or PyYAML missing included), with
+  nothing written. Findings never
+  change the status.
+- **Gates.** sqlmap's two gates are routine.py's and unchanged: `options.sqlmap`
+  makes a target a candidate, and `--confirm-active`, asked for by name, lets it
+  fire. A directory already holding a `scan-meta.json` is refused without
+  `--replace`, which removes that `scan-meta.json` first, then the earlier run's
+  files and only the target directories it names, and exits 2 removing nothing
+  when it cannot tell which those are (or one is a symlink or a junction). A target
+  directory that already exists and that no earlier run there owns is refused
+  with exit 2 on any run, so routine never adopts, and later removes, a
+  directory it did not create; likewise a file routine writes (`report.md`,
+  `findings.jsonl`, ...) found in a directory with no `scan-meta.json` is
+  refused rather than overwritten. A run holds `.gizmoduck-routine.lock` in
+  its output directory, so a second run there exits 2. The manifest is read
+  once and the checked bytes are the ones loaded. An active-scan gate option
+  (`zap_active`, `nmap_vuln`, `sqlmap`) must be a YAML boolean; a quoted
+  `"false"` is refused. A target name is letters, digits, `.`, `_`, `-`,
+  not a Windows device name and not a case-variant of another target's.
+  `scan-meta.json` and `report.*` are written complete-then-renamed (a
+  same-directory temp, `newline="\n"`, fsynced before the swap, keeping
+  the file's mode or the umask's, the swap retried on a transient Windows
+  `PermissionError`); `report.pdf` too, with wkhtmltopdf bounded at 300 s.
+  `report --run-manifest` refuses a cell that is not a mapping of string
+  `target`, `tool` and `status`. The PyYAML install hint quotes the
+  interpreter path for the shell it will be pasted into.
+  Every routine-only flag, and `--run-manifest`, is refused on any other command.
+- **Unchanged.** The flat Nuclei report, byte for byte; every other subcommand
+  stays stdlib-only (`routine` imports routine.py, and so PyYAML, lazily); no
+  slash command; no hook; crew's endpoint-ledger path `docs/security-scans/<ep-id>.md`
+  is untouched, and the dated layout does not satisfy it (follow-up in `TODO.md`).
+- **Sabotage.** Twenty-nine entries, (a) to (ac), listed in
+  `plugin/gizmoduck/scripts/_test/test_routine_cli.py`'s docstring. (h) to (ac) and
+  the rewritten (d) came with the review round-1 fixes and were each run against
+  the committed `gizmoduck.py` and confirmed RED; (d) now fails the write itself
+  half-way, because failing before the write could not tell an atomic helper
+  from a plain `open(path, "w")`.
+- gizmoduck 0.5.3 -> 0.5.5: 0.5.4 was declared on this branch before the review round-2 fixes and never released, so the version is set again after the last content change and the drift check measures from there (`plugin.json`, `marketplace.json`, `plugin/PLUGINS.md`).
+
 ### Changed — CI: crew's Windows suite runs as parallel jobs behind one required fan-in, repository tooling, no plugin version (L-0577)
 
 - **The Windows leg of `crew-shell-matrix` is now five jobs.** It was one serial job with a p50 of
