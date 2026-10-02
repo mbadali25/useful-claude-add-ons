@@ -87,6 +87,7 @@ TOOLS = {
     "actionlint": {"globs": (".github/workflows/*.yml", ".github/workflows/*.yaml")},
 }
 LINTER_KEYS = {"tool", "command", "args", "paths", "timeout", "rules"}
+BLOCK_KEYS = {"linters", "_note"}  # `_note` is prose for the next human, read by nothing
 
 # Read by pwsh with -File: the list of files and the rule allowlist arrive as
 # files, so no path or rule name is ever quoted into a command line.
@@ -142,6 +143,9 @@ def load_config(root):
     if not isinstance(linters, list) or not linters:
         return None, f'{VERIFY_MAP} "{CONFIG_KEY}" needs a non-empty "linters" list'
     problems = []
+    unknown_block = sorted(set(block) - BLOCK_KEYS)
+    if unknown_block:
+        problems.append(f"{CONFIG_KEY}: unknown key(s) {', '.join(unknown_block)}")
     for index, spec in enumerate(linters):
         where = f'{CONFIG_KEY}.linters[{index}]'
         if not isinstance(spec, dict) or spec.get("tool") not in TOOLS:
@@ -235,6 +239,15 @@ def _config_blobs(root, manifest):
     identical to the bundle's). Never the live working tree, which may have
     moved on since the bundle was built."""
     changed = {e.get("path"): e for e in manifest.get("entries") or []}
+    base = manifest["base"]
+    if _git(root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode != 0:
+        raise CouldNotCheck(f"the manifest's base {base[:12]} is not a commit git can read")
+    names = [name.replace(os.sep, "/") for name in CONFIG_FILES]
+    listing = _git(root, "ls-tree", "-z", "--name-only", base, "--", *names)
+    if listing.returncode != 0:
+        raise CouldNotCheck(f"git cannot list the base tree's linter config: "
+                            f"{listing.stderr.decode('utf-8', 'replace').strip()}")
+    at_base = {n for n in listing.stdout.decode("utf-8", "surrogateescape").split("\0") if n}
     found = {}
     for name in CONFIG_FILES:
         rel = name.replace(os.sep, "/")
@@ -243,8 +256,8 @@ def _config_blobs(root, manifest):
             if entry.get("status") != "D":
                 found[rel] = _git_blob(root, entry["new_id"])
             continue
-        if _git(root, "cat-file", "-e", f"{manifest['base']}:{rel}").returncode == 0:
-            found[rel] = _git_blob(root, f"{manifest['base']}:{rel}")
+        if rel in at_base:
+            found[rel] = _git_blob(root, f"{base}:{rel}")
     return found
 
 
@@ -313,6 +326,14 @@ def _expect(proc, ok_codes, tool):
         raise CouldNotCheck(f"{tool} exited {proc.returncode}: {tail[:400] or 'no output'}")
 
 
+def _consistent(proc, rows, tool):
+    """Exit 1 is the tool's own "findings" status and 0 its "none": output
+    that contradicts the status is a partial answer, not a clean one."""
+    if (proc.returncode == 1) != bool(rows):
+        raise CouldNotCheck(f"{tool} exited {proc.returncode} but reported {len(rows)} "
+                            "finding(s); the status and the output disagree")
+
+
 def _loads(text, tool):
     try:
         return json.loads(text)
@@ -355,6 +376,7 @@ def _run_shellcheck(argv, spec, tmp, files, timeout):
     rows = data.get("comments") if isinstance(data, dict) else None
     if not isinstance(rows, list):
         raise CouldNotCheck("shellcheck json1 output has no comments list")
+    _consistent(proc, rows, "shellcheck")
     for row in rows:
         code = f"SC{row['code']}"
         yield _split(tmp, os.path.join(tmp, row["file"])) + (code, row.get("message", ""),
@@ -362,12 +384,19 @@ def _run_shellcheck(argv, spec, tmp, files, timeout):
 
 
 def _run_actionlint(argv, spec, tmp, files, timeout):
-    proc = _spawn(argv + ["-format", "{{json .}}", "-no-color"] + list(spec.get("args") or [])
-                  + files, tmp, timeout)
+    # actionlint 1.7.12 discovers only `.github/actionlint.yaml` by itself,
+    # so the bundle's config is named explicitly, whichever spelling it uses.
+    config = [os.path.join(tmp, "head", ".github", name)
+              for name in ("actionlint.yaml", "actionlint.yml")]
+    config = [c for c in config if os.path.isfile(c)][:1]
+    proc = _spawn(argv + ["-format", "{{json .}}", "-no-color"]
+                  + (["-config-file", config[0]] if config else [])
+                  + list(spec.get("args") or []) + files, tmp, timeout)
     _expect(proc, (0, 1), "actionlint")
-    rows = _loads(proc.stdout or "[]", "actionlint")
+    rows = _loads(proc.stdout, "actionlint")
     if not isinstance(rows, list):
         raise CouldNotCheck("actionlint output is not a list")
+    _consistent(proc, rows, "actionlint")
     for row in rows:
         kind = row.get("kind") or "?"
         yield _split(tmp, os.path.join(tmp, row["filepath"])) + (
@@ -500,10 +529,17 @@ def record(scratch, bundle_sha256, results, overridden, stood_down, configured=T
                "overridden": overridden, "stood_down": stood_down, "checks": results}
     path = os.path.join(scratch, RESULT_FILE)
     text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write(text)
-    os.replace(tmp, path)
+    # A temp name of its own per writer, so two runs sharing a scratch
+    # directory never write or replace each other's staging file.
+    handle, tmp = tempfile.mkstemp(prefix=RESULT_FILE + ".", suffix=".tmp", dir=scratch)
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
 
 
 def recorded(scratch, bundle_sha256):
@@ -520,6 +556,14 @@ def recorded(scratch, bundle_sha256):
     if not isinstance(payload, dict) or payload.get("bundle_sha256") != bundle_sha256:
         return {"result": NOT_RECORDED,
                 "reason": f"{RESULT_FILE} was written for another bundle"}
+    if not (payload.get("result") in (PASS, FAIL, COULD_NOT, NOT_CONFIGURED)
+            and isinstance(payload.get("checks"), list)
+            and all(isinstance(c, dict) and isinstance(c.get("status"), str)
+                    for c in payload["checks"])
+            and isinstance(payload.get("overridden"), bool)
+            and isinstance(payload.get("stood_down"), bool)):
+        return {"result": NOT_RECORDED,
+                "reason": f"{RESULT_FILE} is not the shape record() writes"}
     return payload
 
 

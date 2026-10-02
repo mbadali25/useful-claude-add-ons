@@ -37,6 +37,10 @@ _FAKE = textwrap.dedent(r'''
         time.sleep(30)
     if mode == "badjson":
         print("this is not json"); sys.exit(0)
+    if mode == "empty":
+        sys.exit(0)
+    if mode == "rc1-none":
+        print(json.dumps({"comments": []}) if tool == "shellcheck" else "[]"); sys.exit(1)
     if tool == "pwsh":
         files = [l for l in open(args[-2], encoding="utf-8").read().splitlines() if l]
     else:
@@ -206,6 +210,8 @@ _COULD_NOT = {
     "abort-in-bundle": ({}, "", "# ABORT\n", "x0\n", "bundle: SC1072"),
     "abort-in-base": ({}, "", "x\n", "# ABORT\n", "base: SC1072"),
     "unreadable-blob": ({}, "", "x\n", "x0\n", "cannot read blob"),
+    "exit-1-but-no-findings": ({}, "rc1-none", "x\n", "x0\n", "disagree"),
+    "bad-base": ({}, "", "x\n", "x0\n", "not a commit"),
 }
 
 
@@ -218,6 +224,8 @@ def test_could_not_check_cases(tmp_path, fake, monkeypatch, case):
     manifest = _bundle(repo, tmp_path)
     if case == "unreadable-blob":
         _bogus_blob(manifest)
+    if case == "bad-base":
+        _tamper(manifest, lambda m: m.update(base="2" * 40))
 
     results, _ = rc.run_checks(str(repo), manifest)
 
@@ -236,6 +244,8 @@ def test_could_not_check_cases(tmp_path, fake, monkeypatch, case):
      "positive integer"),
     (json.dumps({rc.CONFIG_KEY: {"linters": [{"tool": "ruff", "args": "S110"}]}}),
      "list of strings"),
+    (json.dumps({rc.CONFIG_KEY: {"linters": [{"tool": "ruff"}], "linter": []}}),
+     "unknown key(s) linter"),
 ])
 def test_a_config_it_cannot_read_is_could_not_check(tmp_path, verify_json, fragment):
     repo = _start(tmp_path, {"a.py": "x\n"}, [])
@@ -492,3 +502,52 @@ def test_shellcheck_reads_the_bundles_rc_file(tmp_path, fake, monkeypatch):
     argv = json.loads(out.read_text(encoding="utf-8"))["argv"]
 
     assert argv[argv.index("--rcfile") + 1].endswith(os.path.join("head", ".shellcheckrc")), argv
+
+
+@pytest.mark.parametrize("mode", ["rc1-none", "empty"])
+def test_actionlint_output_that_contradicts_its_status_is_could_not_check(
+        tmp_path, fake, monkeypatch, mode):
+    rel = ".github/workflows/ci.yml"
+    repo = _start(tmp_path, {rel: "x\n"}, [_linter(fake, "actionlint")])
+    _edit(repo, rel, "y\n")
+    monkeypatch.setenv("FAKE_LINT_MODE", mode)
+
+    assert _one(repo, tmp_path)["status"] == rc.COULD_NOT
+
+
+def test_a_note_in_the_block_is_allowed(tmp_path, fake):
+    repo = _start(tmp_path, {"a.py": "x\n"}, [])
+    (repo / ".crew" / "verify.json").write_text(json.dumps({rc.CONFIG_KEY: {
+        "_note": ["prose"], "linters": [_linter(fake, "ruff")]}}), encoding="utf-8")
+    _edit(repo, "a.py", "y\n")
+
+    assert _one(repo, tmp_path)["status"] == rc.PASS
+
+
+@pytest.mark.parametrize("name", ["actionlint.yaml", "actionlint.yml"])
+def test_actionlint_is_handed_the_bundles_config_by_name(tmp_path, fake, monkeypatch, name):
+    out = tmp_path / "seen.json"
+    rel = ".github/workflows/ci.yml"
+    repo = _start(tmp_path, {f".github/{name}": "self-hosted-runner:\n  labels: []\n", rel: "x\n"},
+                  [_linter(fake, "actionlint")])
+    _edit(repo, rel, "y\n")
+    monkeypatch.setenv("FAKE_LINT_ARGV_OUT", str(out))
+
+    _one(repo, tmp_path)
+    argv = json.loads(out.read_text(encoding="utf-8"))["argv"]
+
+    assert argv[argv.index("-config-file") + 1].endswith(name), argv
+
+
+def test_a_record_of_the_wrong_shape_is_not_recorded(tmp_path):
+    (tmp_path / rc.RESULT_FILE).write_text(json.dumps({"bundle_sha256": "sha-a"}),
+                                           encoding="utf-8")
+
+    assert rc.recorded(str(tmp_path), "sha-a")["result"] == rc.NOT_RECORDED
+
+
+def test_record_leaves_no_staging_file(tmp_path):
+    rc.record(str(tmp_path), "sha-a", [], False, False)
+    rc.record(str(tmp_path), "sha-a", [], False, False)
+
+    assert sorted(os.listdir(tmp_path)) == [rc.RESULT_FILE]
