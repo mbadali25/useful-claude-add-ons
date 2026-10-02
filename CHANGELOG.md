@@ -32,6 +32,60 @@ does not implement.
 - Fifteen new `sabotage_review.py` entries; the `crew_standards.py` proposals docstring and the
   crew-qa-standards R5 wording are a follow-up feature PR (tooling-PR rule).
 
+### Fixed — `crew` 1.0.115: refresh admission refuses a mode change that exists only in the index (W-0117)
+
+- **`crew_refresh_check._on_disk` now asks git for the index's mode too.** Under
+  `core.fileMode=true` git's worktree diff reads the mode from the disk, so a mode staged with
+  `git update-index --chmod=+x` while the file stayed 644 never reached the check and the artifact
+  was admitted, though `git commit` records the index's 100755. The existing
+  `git diff --raw <base>` mode check now runs a second time with `--cached`, with the same
+  refusal text; a `--cached` diff that cannot run is could-not-tell. Found in W-0116.
+- **A case matrix pins it**, over `core.fileMode` true and false, set explicitly so the `true`
+  rows run on Windows too: index-only, both and a staged 120000 are refused; a staged content
+  edit, and a disk chmod git ignores under `false`, are admitted. Disk-only under `true` is
+  skipped where the filesystem keeps no executable bit (NTFS). With `--cached` removed the
+  index-only, both and could-not-tell cases go red.
+- **The sabotage entry rides separately** (rule 36: `sabotage_refresh.py` is harness and lands
+  alone).
+
+### Changed — `bitbucket` 1.2.3: variables read back with the trailing slash, repository access tokens are UI-only, reviewers on Bitbucket (T-0503)
+
+- **What changed.** `skills/bitbucket/SKILL.md` gains a fourth common task,
+  "Add reviewers to PR #12" (`effective-default-reviewers`, then a
+  read-modify-write `PUT pullrequests/{id}` carrying the existing title and the
+  full `reviewers` list), a "Pipeline and deployment variables: read back with
+  the trailing slash" section (an empty `values` from the slash-less path is
+  "could not tell", not "absent"), a "Repository access tokens are UI-only on
+  Cloud" section, two Safety rails bullets (never ask for a token creation or
+  rotation page to be pasted; a token seen in chat is leaked - revoke and
+  recreate), and a trigger clause in the frontmatter `description`.
+  `references/api.md` gains the PUT reviewer body, a "Default reviewers"
+  sub-list, a "Pipeline and deployment variables" section and two Gotchas.
+  Every API sentence cites its Atlassian page. Both catalog rows' "Use cases"
+  column names the two new symptoms. Reviewer uuids are read from
+  `values[].user.uuid` on `effective-default-reviewers`, the project-level list
+  and workspace members; only the repo-level `default-reviewers` list answers
+  with `values[].uuid`. `scripts/_test/merge_gate.sh` gains a
+  "documentation invariants" section that keeps the entries, the trailing
+  slash, the uuid path, the scopes, a citation on every new `api.md` bullet and
+  the two catalog rows from drifting; each check reads only the section it
+  guards, and the token scan reports a read error as "could not tell".
+- **Why.** The aws-managed-services session's report of 2026-09-28, items 18
+  (variables GETs without the trailing slash read as empty - a false "variable
+  not present"), 19 (repository access tokens cannot be created over the Cloud
+  REST API, and a live token was pasted into chat from the rotate dialog) and
+  20 (the GitHub-only CODEOWNERS / `gh pr create --reviewer` habit has no
+  Bitbucket twin).
+- **Not reproduced.** The slash-less GET's HTTP 200 with `"values": []`; the
+  access-token endpoints' 404s and the "Access token rotated" dialog carrying
+  the value three times in its page HTML; the reviewer PUT's HTTP 200 with the
+  description preserved. All are the reporter's observations and the skill
+  text says so ("reported 2026-09-28, not reproduced here"). No call was made
+  against a Bitbucket workspace.
+- **Unchanged.** `scripts/bb.sh` and `scripts/merge_gate.sh` behaviour, the
+  marketplace `description`, the install scripts' menu text, `skills/UPDATE.md`.
+- Bumped `bitbucket` 1.2.2 -> 1.2.3.
+
 ### Fixed - `crew` 1.0.114, `obsidian-vault` 0.4.16: every pwsh the test suites spawn gets its own XDG_CACHE_HOME (L-0557)
 
 - **Cause.** pwsh reads its multicore-JIT startup profile,

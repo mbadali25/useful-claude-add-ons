@@ -1177,6 +1177,97 @@ def test_a_git_mode_check_that_cannot_run_is_could_not_tell(anchored, monkeypatc
     assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL)) == (None, True), reason
 
 
+def _change_mode(root, rel, data, file_mode, change):
+    """Write `rel`'s admitted bytes, set `core.fileMode`, then make `change`:
+    `index` stages +x and leaves the disk alone, `disk` chmods the file only,
+    `both` does the two, `link` stages the file as a link (120000), and
+    `staged-edit` stages the bytes with the mode unchanged. Skips only
+    `disk` under `core.fileMode=true` where the filesystem keeps no
+    executable bit (NTFS), since that case is nothing but the disk half;
+    `both` still stages +x there and must be refused (W-0117 review round 1
+    FIX)."""
+    path = root.joinpath(*rel.split("/"))
+    path.write_bytes(data)
+    git(root, "config", "core.fileMode", file_mode)
+    if change in ("disk", "both"):
+        path.chmod(0o755)
+        if change == "disk" and file_mode == "true" and not path.stat().st_mode & 0o111:
+            pytest.skip("this filesystem records no executable bit")
+    if change in ("index", "both"):
+        git(root, "update-index", "--chmod=+x", "--", rel)
+    if change == "link":
+        blob = git(root, "hash-object", "-w", rel).strip()
+        git(root, "update-index", "--cacheinfo", f"120000,{blob},{rel}")
+    if change == "staged-edit":
+        git(root, "add", "--", rel)
+
+
+MODE_CASES = [
+    # (core.fileMode, change, admitted, what a refusal's reason names)
+    ("true", "index", False, "mode changed"),
+    ("true", "disk", False, "mode changed"),
+    ("true", "both", False, "mode changed"),
+    ("true", "link", False, "120000"),
+    ("true", "staged-edit", True, None),
+    ("false", "index", False, "mode changed"),
+    ("false", "disk", True, None),
+    ("false", "both", False, "mode changed"),
+    ("false", "link", False, "120000"),
+    ("false", "staged-edit", True, None),
+]
+
+
+@pytest.mark.parametrize("file_mode,change,admitted,names", MODE_CASES,
+                         ids=[f"file_mode-{c[0]}-{c[1]}" for c in MODE_CASES])
+def test_the_mode_git_would_commit_decides_whatever_file_mode_says(anchored, file_mode, change,
+                                                                   admitted, names):
+    """W-0117: under `core.fileMode=true` git's worktree diff reads the mode
+    from the disk, so a mode staged with `update-index --chmod=+x` while the
+    file stayed 644 was invisible to it and admitted, though `git commit`
+    records the index's 100755. Every mode git would commit differently from
+    the base is refused, under either setting; a staged content edit, and a
+    disk chmod git ignores (`core.fileMode=false`), are not mode changes."""
+    root, base = anchored
+    rel, data, _companions = _admitted_shape(root, "map")
+    _change_mode(root, rel, data, file_mode, change)
+
+    verdict, reason = _verdict(root, base, REACH, rel)
+
+    if admitted:
+        assert verdict is True, reason
+    else:
+        assert (verdict, names in reason) == (False, True), reason
+
+
+@pytest.mark.parametrize("kind", ["map", "diagram", "rule"])
+def test_an_index_only_mode_change_under_file_mode_true_is_refused(anchored, kind):
+    """The W-0117 gap for every kind `_on_disk` guards, not just a map."""
+    root, base = anchored
+    rel, data, companions = _admitted_shape(root, kind)
+    _change_mode(root, rel, data, "true", "index")
+
+    got = _verdicts(root, base, REACH, companions + [rel])
+
+    assert (got[rel][0], "mode changed from 100644 to 100755" in got[rel][1]) == (False, True), got
+
+
+@pytest.mark.parametrize("result", [(None, b""), (129, b"")], ids=["none", "129"])
+def test_an_index_mode_check_that_cannot_run_is_could_not_tell(anchored, monkeypatch, result):
+    """Only the `--cached` diff fails: the worktree diff has already passed,
+    so admitting here would be admitting a mode nobody read."""
+    root, base = anchored
+    re_anchor_map(root, "app", head_sha(root, 40))
+    real = crew_refresh_check._git_out  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_refresh_check, "_git_out",
+                        lambda r, *a, **k: result if "--raw" in a and "--cached" in a
+                        else real(r, *a, **k))
+
+    verdict, reason = _verdict(root, base, REACH, APP)
+
+    assert (verdict, reason.startswith(crew_refresh_check.COULD_NOT_TELL),
+            "--cached" in reason) == (None, True, True), reason
+
+
 def _cfg(**dirs):
     cfg = {}
     if "diagrams" in dirs:

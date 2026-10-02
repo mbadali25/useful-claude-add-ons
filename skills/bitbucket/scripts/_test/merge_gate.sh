@@ -2,10 +2,10 @@
 # Dry-run checks for scripts/merge_gate.sh.
 #
 # No network, no credentials, no real config: merge_gate.sh resolves its
-# transport through BB_CMD, so every test up to the last section points that at
+# transport through BB_CMD, so every test before the transport section points that at
 # _test/stub_bb.sh and feeds it canned responses.
 #
-# The final section is the exception and is deliberate: it runs the real bb.sh,
+# The transport section is the exception and is deliberate: it runs the real bb.sh,
 # because a fixture stub can never show whether the shipped file is invocable at
 # all. It strips BITBUCKET_EMAIL and BITBUCKET_API_TOKEN from bb.sh's
 # environment, so bb.sh stops at its own auth guard before curl. Still no
@@ -16,6 +16,9 @@
 # branch_match_kind schemes, that a failed export validation deletes nothing,
 # that a restore never reuses a recorded id, and that a plan-limited write is
 # reported as its own state instead of collapsing into "applied" or "failed".
+#
+# The last section, after the transport one, runs no script at all: it greps
+# the skill's docs and the two catalog rows (T-0503's documentation invariants).
 #
 # Creates nothing outside its own mktemp -d.
 set -uo pipefail
@@ -402,6 +405,145 @@ OUT="$(cat "$CASE_DIR/out")"; ERR="$(cat "$CASE_DIR/err")"
 want_nonzero_rc "the default transport still fails without credentials"
 want_missing "the default transport is not blocked by the executable bit" "$ERR" "Permission denied"
 want_contains "it failed on bb.sh's auth guard instead" "$ERR" "$GUARD_TEXT"
+
+echo "== documentation invariants (T-0503) =="
+# The aws-ops report of 2026-09-28 (items 18-20) named three API behaviours the
+# skill's docs were silent on: variables GETs read back without the trailing
+# slash, repository access tokens being UI-only on Cloud, and reviewers on a
+# Bitbucket PR. These cases keep those entries, the trailing slash itself, and
+# the two catalog rows from drifting apart. No network: they read only files in
+# this repo. Each pattern was checked RED on the docs before the entries existed,
+# so none of them passes on the docs' silence.
+SKILL_DIR="$HERE/../.."
+SKILL_MD="$SKILL_DIR/SKILL.md"
+API_MD="$SKILL_DIR/references/api.md"
+ROOT_README="$HERE/../../../../README.md"
+SKILLS_README="$HERE/../../../README.md"
+
+# section FILE HEADING-PREFIX: the lines from the heading that starts with
+# HEADING-PREFIX up to the next heading of the same or a higher level. A pattern checked against the
+# whole file passes when the phrase moves to an unrelated section (review round
+# 1, FIX), so each invariant reads only the section it belongs to. A missing
+# section prints nothing, and every check below fails on an empty section.
+section() {
+  awk -v h="$2" '
+    BEGIN { lvl = match(h, /^#+/) ? RLENGTH : 0 }
+    /^#+ / {
+      match($0, /^#+/)
+      if (on && RLENGTH <= lvl) on = 0
+      if (index($0, h) == 1) on = 1
+    }
+    on { print }
+  ' "$1"
+}
+# in_section NAME FILE HEADING FIXED-STRING: PASS only when the section exists
+# and carries the string.
+in_section() {
+  _sec="$(section "$2" "$3")"
+  if [ -n "$_sec" ] && printf '%s\n' "$_sec" | grep -qF -- "$4"; then
+    pass "$1"
+  else
+    fail "$1"
+  fi
+}
+VARS_H='## Pipeline and deployment variables'
+TOKENS_H='## Repository access tokens'
+TASKS_H='## Common tasks'
+API_REV_H='### Default reviewers'
+API_VARS_H='## Pipeline and deployment variables'
+
+in_section "SKILL.md: variables GET is written with the trailing slash" \
+  "$SKILL_MD" "$VARS_H" 'pipelines_config/variables/'
+in_section "SKILL.md: an empty values list from the slash-less path is could-not-tell" \
+  "$SKILL_MD" "$VARS_H" 'could not tell'
+in_section "SKILL.md: default reviewers are named" \
+  "$SKILL_MD" "$TASKS_H" 'effective-default-reviewers'
+in_section "SKILL.md: the access-token create endpoint is placed on Data Center" \
+  "$SKILL_MD" "$TOKENS_H" 'Data Center'
+# effective-default-reviewers and workspace members answer with
+# `values[].user.uuid` (swagger.v3.json: paginated_default_reviewer_and_type,
+# paginated_workspace_memberships); only the repo-level list is `values[].uuid`
+# (paginated_accounts). Review round 1, FIX: the docs sent readers to
+# `values[].uuid` on effective-default-reviewers, which holds no uuid.
+in_section "SKILL.md: reviewer uuids are read from values[].user.uuid" \
+  "$SKILL_MD" "$TASKS_H" 'values[].user.uuid'
+in_section "api.md: reviewer uuids are read from values[].user.uuid" \
+  "$API_MD" "$API_REV_H" 'values[].user.uuid'
+if grep -qF -- '`values[].uuid` from `effective-default-reviewers`' "$SKILL_MD" "$API_MD"; then
+  fail "no doc reads a uuid from values[].uuid on effective-default-reviewers"
+else
+  pass "no doc reads a uuid from values[].uuid on effective-default-reviewers"
+fi
+# swagger.v3.json: the project-level PUT and DELETE both need
+# admin:project:bitbucket / project:admin (review round 1, FIX).
+in_section "api.md: project-level PUT and DELETE both carry their scope" \
+  "$API_MD" "$API_REV_H" 'project-level PUT and DELETE `admin:project:bitbucket`'
+in_section "api.md: both variables paths carry the trailing slash" \
+  "$API_MD" "$API_VARS_H" 'pipelines_config/variables/'
+in_section "api.md: the deployment variables path carries the trailing slash" \
+  "$API_MD" "$API_VARS_H" 'deployments_config/environments/{environment_uuid}/variables/'
+in_section "api.md: default-reviewer endpoints are listed" \
+  "$API_MD" "$API_REV_H" 'default-reviewers/{target_username}'
+in_section "api.md: effective default reviewers are listed" \
+  "$API_MD" "$API_REV_H" 'effective-default-reviewers'
+# uncited_bullets FILE HEADING: the first line of every `- ` bullet in that
+# section that carries no developer.atlassian.com link anywhere in the bullet.
+# Every API statement cites its Atlassian page (spec acceptance; review round
+# 1, FIX). Prints "NO SECTION" when the heading is absent, so a renamed
+# heading fails instead of reading as "no uncited bullet".
+uncited_bullets() {
+  section "$1" "$2" | awk '
+    function flush() { if (inb && b !~ /developer\.atlassian\.com/) print first; inb = 0; b = "" }
+    NR == 1 { seen = 1 }
+    /^#+ / { flush(); next }
+    /^- / { flush(); inb = 1; first = $0; b = $0; next }
+    /^[^ ]/ { flush(); next }
+    inb { b = b " " $0 }
+    END { flush(); if (!seen) print "NO SECTION" }
+  '
+}
+for H in "$API_REV_H" "$API_VARS_H"; do
+  UNCITED="$(uncited_bullets "$API_MD" "$H")"
+  if [ -z "$UNCITED" ]; then
+    pass "api.md: every bullet under '$H' cites its Atlassian page"
+  else
+    fail "api.md: every bullet under '$H' cites its Atlassian page: $UNCITED"
+  fi
+done
+# token_scan DIR: "found", "absent" or "could not tell". grep -r exits 2 on a
+# read error, and that is not proof of absence (review round 1, FIX: the old
+# `if grep ...; else pass` read exit 2 as "no token").
+# A token-shaped literal: Atlassian API tokens start ATATT, and the placeholder
+# SKILL.md uses (ATATT...) is far shorter than 20 characters after the prefix.
+token_scan() {
+  _rc=0
+  grep -rEq 'ATATT[A-Za-z0-9_-]{20,}|ATCTT[A-Za-z0-9_-]{20,}' "$1" 2>/dev/null || _rc=$?
+  case "$_rc" in
+    0) echo found ;;
+    1) echo absent ;;
+    *) echo "could not tell (grep exit $_rc)" ;;
+  esac
+}
+SCAN="$(token_scan "$SKILL_DIR")"
+if [ "$SCAN" = absent ]; then
+  pass "no token-shaped value anywhere under skills/bitbucket/"
+else
+  fail "no token-shaped value anywhere under skills/bitbucket/: $SCAN"
+fi
+SCAN="$(token_scan "$TMP/no-such-dir")"
+case "$SCAN" in
+  "could not tell"*) pass "an unreadable tree is could-not-tell, never absent" ;;
+  *) fail "an unreadable tree is could-not-tell, never absent: got '$SCAN'" ;;
+esac
+# The two catalogs differ only in the link target; an empty row on either side
+# is a failure, not a match.
+ROW_ROOT="$(grep -F '[`bitbucket`](skills/bitbucket)' "$ROOT_README" | sed 's#](skills/bitbucket)#](bitbucket)#')"
+ROW_SKILLS="$(grep -F '[`bitbucket`](bitbucket)' "$SKILLS_README")"
+if [ -n "$ROW_ROOT" ] && [ "$ROW_ROOT" = "$ROW_SKILLS" ]; then
+  pass "README.md and skills/README.md carry the same bitbucket row"
+else
+  fail "README.md and skills/README.md carry the same bitbucket row"
+fi
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
