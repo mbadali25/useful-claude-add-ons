@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@7e18daf8
-verified: 2026-10-01
+anchor: useful-claude-add-ons@d6e51bb8
+verified: 2026-10-02
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -614,15 +614,26 @@ suite at all — `pytest-crew.yml` runs pytest and cannot collect a `.sh` file
 executed by CI despite being committed and green. Each is its own step
 deliberately, so a failure names which suite went red rather than collapsing
 into one line. `pytest-crew.yml` gained a `crew-shell-matrix` job
-(`:162-262`) that runs on `ubuntu-latest` and `windows-latest` (#277 disabled the
-Windows leg; T-0110 re-enabled it, doing work on a pull request only when the PR
-changes `plugin/crew/**` or `pytest-crew.yml`) — the
-`-m slow` full per-shell hook matrix on both, plus a Windows-only run of
-crew's default (parity-sample) set, since the `test` job above only runs that
-set on Ubuntu. Both that ubuntu leg and the `test` job carry an opt-in
+(`:162-209`, ubuntu leg only since L-0577) that runs the `-m slow` full per-shell
+hook matrix. On Windows, L-0577 replaced the one serial leg (p50 37.1 min) with
+parallel jobs (`:211-453`): `crew-windows-decide` (`:263`, T-0110's rule: on a
+pull request the Windows jobs run only when the PR changes `plugin/crew/**` or
+`pytest-crew.yml`), `crew-windows-default` (`:297`, crew's default
+parity-sample set split in 3 by pytest-split, since the `test` job above only runs
+that set on Ubuntu), `crew-windows-slow` (`:345`), `crew-windows-wallclock`
+(`:384`, serial), and the fan-in `crew-windows-gate` (`:423`), named
+`crew-shell-matrix (windows-latest)` so the required check name is unchanged.
+The gate runs `if: always()` and passes only through
+`scripts/check-windows-shards.py`: every Windows job succeeded, every shard
+collected the identical default set, the shards' JUnit name each collected test
+exactly once, and slow and wallclock ran what they collected (suite
+`scripts/_test/windows-shards.py`). Each Windows `run:` step carries
+`if: runner.os == 'Windows'`, the `WINDOWS_ONLY_IFS` condition
+`scripts/gate-runner.py`'s drift check excludes. The Windows jobs take `runs-on` from one
+`crew-windows-decide` output and run `shell: pwsh` steps, so retargeting them is a one-line change. Both the ubuntu leg and the `test` job carry an opt-in
 `runs-on` expression (L-0521): with repo variable `CREW_RUNNER` set to
 `self-hosted` they run on `[self-hosted, linux, x64, crew]`, otherwise on
-`ubuntu-latest` / `matrix.os` as before; a `windows-latest` leg never moves,
+`ubuntu-latest` / `matrix.os` as before; a `windows-latest` job never moves,
 and neither does a fork pull request (the repo is public, so the expression
 also requires a non-PR event or `head.repo.full_name == github.repository`).
 The owner's runner playbook (mbadali25/github-runner-infra) sets the variable
@@ -632,7 +643,7 @@ Since T-0094 merged `a61a6f38` (read at `f5d0f1b1`): `pylint.yml` runs pylint wi
 CPU (`:40`) and gained a `ruff` job (`:42-65`) that runs `ruff check .` pinned to `ruff~=0.16.0`
 against `ruff.toml`'s explicit `select`; `pytest-crew.yml` installs `pytest-xdist`, runs the
 suites with `-n auto -m "not wallclock"` and the `wallclock`-marked tests in a serial step of
-their own, in both the `test` job and the Windows leg of `crew-shell-matrix`. Read, not run.
+their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. Read, not run.
 
 ## Entry points
 
@@ -2177,6 +2188,18 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `f5cab1f9` -> `45bed356` on 2026-10-01 (T-0503 review round 1 fixes, bitbucket 1.2.3).** `git diff --name-only f5cab1f9 45bed356` is `CHANGELOG.md` and `skills/bitbucket/` (`SKILL.md`, `references/api.md`, `scripts/_test/merge_gate.sh`) only; every citation into them was compared by script. This map names `skills/bitbucket/scripts/_test/merge_gate.sh` by path only and cites none of its lines, so nothing it states moved. Re-anchor only, under the refresh-artifact standing rule (owner 2026-09-28); no suite was executed for this note.
 
 **Re-anchored `45bed356` -> `b4f04e23` on 2026-10-02 (L-0578 merges origin/main `8d84786d`, W-0117 #302, crew 1.0.115, at `b4f04e23` with rerere disabled; crew 1.0.119).** L-0578's own change is `review_metrics.py` (new), `review_run.py`, `review_patch.py`, `commands/review.md`, the README, BUDGETS.md, external-tool-formats.md, `.crew/verify.json` rule 38, its tests and sabotage entries, and the version files and CHANGELOG. five `.crew/verify.json` ranges re-mapped by difflib from `45bed356` (+1 below W-0117's change, rule 38 `:386-411`->`:386-412`), and rule 38's body citation `:392-417` -> `:392-418` by hand (L-0578 lists test_review_metrics.py in it); historical ranges in earlier provenance notes were kept. No suite was executed for this note.
+
+**Re-anchored `3648f59a` -> `0da787d3` on 2026-09-29 (T-0107, gizmoduck 0.5.4). Current despite the lag.** `crew_refresh_check.py` named README.md as changed since the anchor. T-0107 edits exactly one line of each, in place (`git diff --numstat 2693d0fa 0da787d3 -- README.md plugin/README.md` is `1 1` for both): the gizmoduck catalog row, `README.md:875` and `plugin/README.md:415`, gains one clause naming the routine. No line shifted, and a script over every `README.md:N[-M]` citation in `.crew/codemap/` found none covering either line. `plugin/PLUGINS.md` changes only at `:441`, `:446`, `:451` and `:470` (+2 lines after it), and no note cites a `PLUGINS.md` line at or after `:441`. No claim re-read; nothing was executed for this note.
+
+**Re-anchored `bbd9a66d` -> `8730119f` on 2026-09-29 (T-0107 merges origin/main `8ab733d7`). Current despite the lag.** `8730119f` merges origin/main (T-0010 landed, crew 1.0.61, main's anchor `bbd9a66d`) into `T-0107-build`; the conflicts were this header and the provenance tail, resolved mechanically - main's anchor taken, both sides' provenance kept, main's first. `git diff --numstat bbd9a66d 8730119f -- README.md plugin/README.md` is `1 1` for each: T-0107's gizmoduck catalog row, still `README.md:875` and `plugin/README.md:415`, edited in place. No citation outside provenance covers either line, and `plugin/PLUGINS.md` changes only at `:441`, `:446`, `:451` and `:470` (+2 after it), where no note cites a line. Nothing was executed for this note.
+
+**Re-anchored `6053b65d` -> `40292eca` on 2026-10-02 (T-0107 merges origin/main `ffd11270`, without rerere). Current despite the lag.** `40292eca` merges origin/main into `T-0107-build`; the header conflict took main's anchor and both sides' provenance notes were kept, main's first. `crew_refresh_check.py` named README.md and plugin/README.md: `git diff --numstat 6053b65d 40292eca -- README.md plugin/README.md` is `1 1` for each, T-0107's gizmoduck catalog row edited in place, now `README.md:876` (main's side added a line above it) and `plugin/README.md:415`. The only citations covering those lines sit in dated notes that state their own commit's coordinates. gizmoduck is re-set to 0.5.4, one patch above main's 0.5.3, after the last content change. Nothing was executed for this note.
+
+**Re-anchored `45bed356` -> `e60394fd` on 2026-10-02 (T-0107 merges origin/main `8d84786d`, without rerere). Current despite the lag.** `e60394fd` merges origin/main (W-0117, crew 1.0.115) into `T-0107-build`; the header conflict took main's anchor and both sides' provenance notes were kept, main's first. Against the scope base `8d84786d`, `crew_refresh_check.py` named README.md and plugin/README.md: `git diff --numstat 8d84786d e60394fd -- README.md plugin/README.md` is `1 1` for each, T-0107's gizmoduck catalog row edited in place, still `README.md:876` and `plugin/README.md:415`. The only citations covering those lines sit in dated notes that state their own commit's coordinates. gizmoduck stays 0.5.5 (main is 0.5.3). Nothing was executed for this note.
+
+**Re-anchored `b4f04e23` -> `56f28a16` on 2026-10-02 (T-0107 merges origin/main `04dde5a2`, without rerere). Current despite the lag.** The header conflict took main's anchor and both sides' provenance notes were kept, main's first. Against the scope base `04dde5a2`, `git diff --numstat 04dde5a2 56f28a16 -- README.md plugin/README.md` is `1 1` for each: T-0107's gizmoduck catalog row, edited in place (`README.md:889`, `plugin/README.md:415`). The only citations covering those lines sit in dated notes that state their own commit's coordinates. gizmoduck stays 0.5.5 (main is 0.5.3). Nothing was executed for this note.
+
+**Re-anchored `56f28a16` -> `d6e51bb8` on 2026-10-02 (T-0107 merges origin/main `d2ec37d3`, W-0120's re-pin, without rerere; no conflict).** `git diff -U0 56f28a16 d6e51bb8 -- README.md` is main's two install-URL lines, `:12` and `:18`, re-pinned in place to `04dde5a2` (no line shifts); T-0107's gizmoduck catalog row is still `README.md:889` and `plugin/README.md:415`, unchanged. No body citation covers `:12` or `:18` here. gizmoduck stays 0.5.5 (main is 0.5.3). Nothing was executed for this note.
 
 **Re-anchored `6053b65d` -> `3a33161c` on 2026-10-01 (L-0555 PR 1: the diagnostic CI verify-gate receipt - `plugin/crew/hooks/scripts/ci_receipt.py`, `.github/workflows/verify-gate.yml` (mmdc pinned at 12.0.0), `plugin/crew/tests/test_ci_receipt.py` - merging origin/main `ffd11270` (L-0557 #300, crew 1.0.114) at `751d6d2a` with rerere disabled, crew 1.0.116, skipping 1.0.115 claimed by another lane).** Refresh-artifact conflicts were resolved by taking main's side and redoing this pass. `git diff --name-only 6053b65d 3a33161c` outside refresh artifacts returns L-0555's paths only: the three new files, `.crew/verify.json` (one rule appended last, at `.crew/verify.json:454`), `CHANGELOG.md` (+16 lines at the top), `plugin/crew/README.md` (+23 lines in section 17), `scripts/gate-runner.py` (+2 lines in EXCLUDED_WORKFLOWS), `plugin/crew/BUDGETS.md` (count only) and the version files. A difflib re-map of every path-qualified citation into those files (history notes skipped) moved nine `CHANGELOG.md` citations in `crew.md` by +16 and six `plugin/crew/README.md` citations in `repo-docs.md` by +23; every other citation maps onto itself. No suite was executed for this note.
 

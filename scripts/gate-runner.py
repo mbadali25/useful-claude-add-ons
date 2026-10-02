@@ -152,6 +152,7 @@ TABLE = (
     _py_suite("self-claims", "scripts/_test/self-claims.py"),
     _py_suite("crew-ignore-policy", "scripts/_test/crew-ignore-policy.py"),
     _py_suite("version-drift", "scripts/_test/version-drift.py"),
+    _py_suite("windows-shards", "scripts/_test/windows-shards.py"),
     _py_suite("instruction-budgets-suite", "scripts/_test/instruction-budgets.py",
               "instruction-budgets.yml"),
     Step("sync-updates", "cheap", (PY, "scripts/sync-updates.py", "--check"),
@@ -233,10 +234,11 @@ EXCLUDED_WORKFLOWS = (
 # A step is excluded by its `if:` only when that condition confines it to a
 # leg this runner does not have. Whole jobs are never excluded: a job's legs
 # change (crew-shell-matrix is ubuntu-only today) and its other steps still run.
+# The crew-windows-* jobs (L-0577) run only on windows-latest, and each of
+# their `run:` steps carries this condition so the job's own steps say so.
 WINDOWS_ONLY_IFS = (
-    ("matrix.os == 'windows-latest'", "runs only on the Windows leg; this runner has none"),
-    ("env.RUN_LEG == 'true' && matrix.os == 'windows-latest'",
-     "runs only on the Windows leg (behind T-0110's RUN_LEG decision); this runner has none"),
+    ("runner.os == 'Windows'",
+     "runs only in a crew-windows-* job (L-0577); this runner is not Windows"),
 )
 INSTALL = "an install step, not a check"
 EXCLUDED_CI = (
@@ -252,7 +254,10 @@ EXCLUDED_CI = (
     ("pytest-crew.yml", "pip install *", INSTALL),
     ("pytest-crew.yml",
      "changed=$(git diff --name-only HEAD^1 HEAD -- plugin/crew .github/workflows/pytest-crew.yml)",
-     "decides whether crew-shell-matrix's Windows leg runs on a PR (T-0110); checks nothing"),
+     "crew-windows-decide: whether the Windows jobs run on a PR (T-0110, L-0577); checks nothing"),
+    ("pytest-crew.yml", "python3 scripts/check-windows-shards.py *",
+     "the Windows fan-in (L-0577): reads CI job results and artifacts, which a lane does not "
+     "have; its suite scripts/_test/windows-shards.py is the windows-shards step"),
     ("mcp-servers.yml", "npm ci", INSTALL + "; the npm test step SKIPs without node_modules"),
 )
 
