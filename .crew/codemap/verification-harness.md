@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@d640eba3
+anchor: useful-claude-add-ons@d41c2c94
 verified: 2026-10-01
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -2157,3 +2157,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `8177fdff` -> `3afec6e6` on 2026-10-01 (L-0574: noqa BLE001 on two boundary catches, same lines; difflib moved no citation).**
 
 **Re-anchored `3afec6e6` -> `d640eba3` on 2026-10-01 (L-0574 round-2 fixes and the crew 1.0.122 bump; ten CHANGELOG citations moved +2 by difflib, the crew map's version sentence now reads 1.0.122).**
+
+**Re-anchored `d640eba3` -> `d41c2c94` on 2026-10-01 (L-0574: a sabotage anchor re-targeted and the graph rebuilt; no cited line moved).**
