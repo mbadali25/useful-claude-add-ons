@@ -14,6 +14,19 @@ shipped in crew 0.15.1 and is recorded there.
 
 ## Unreleased
 
+Two skills renamed, same content. `claude plugin validate --strict` reserves
+the `claude-` prefix for Anthropic's own plugins, so `claude-code-defaults` is
+now **`session-defaults`** (1.1.0) and `claude-code-tuneup` is now
+**`config-tuneup`** (1.1.0). A copy installed under an old name no longer
+receives updates. Uninstall the old name, then install the new one:
+
+```
+claude plugin uninstall claude-code-defaults@useful-claude-add-ons
+claude plugin install session-defaults@useful-claude-add-ons
+claude plugin uninstall claude-code-tuneup@useful-claude-add-ons
+claude plugin install config-tuneup@useful-claude-add-ons
+```
+
 Nine new skills, taking the marketplace from 25 to 34.
 
 - **`jira-manager`** — Jira Cloud over the REST API v3 with an email + API

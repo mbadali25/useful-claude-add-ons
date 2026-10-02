@@ -313,7 +313,7 @@ Ten subsystems. At `a02331ee` they covered 76% of graph nodes (5056 of 6614 with
 `source_file`); that figure was **not** re-measured at the 2026-09-25 pass.
 What remains unmapped is almost entirely the single-skill directories under `skills/` — the largest
 are `work-log-reporter`, `web-testing-playwright`, `visio-diagrams`, `intune-graph`,
-`aws-opensearch`, `claude-code-tuneup`, `sophos-central` and `repo-docs`, none individually large.
+`aws-opensearch`, `config-tuneup`, `sophos-central` and `repo-docs`, none individually large.
 
 That percentage is a measurement, not a target, and it moves whenever the graph is rebuilt.
 Re-measure instead of trusting it: group node `source_file` values by top-level directory and
