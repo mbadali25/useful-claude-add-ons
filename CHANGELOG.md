@@ -4,6 +4,23 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.132: the verify gate runs on the self-hosted pool and leaves a receipt; `ci_receipt.py check` reports whether it matches HEAD (L-0555, diagnostic)
+
+- **`.github/workflows/verify-gate.yml`** runs `verify-gate.sh --all` on pushes to `L-*`, `T-*` and
+  `W-*` branches, on the self-hosted pool only while `CREW_RUNNER=self-hosted`, never on a pull
+  request event (fork code cannot reach the pool). `contents: read`, no repository secret,
+  credentials not persisted. Earlier gate evidence in the reused workspace is removed first.
+- **`hooks/scripts/ci_receipt.py build`** writes the receipt from `review_gate.gate_state` on the
+  runner, bound to head, tree, the `.crew/verify.json` blob and `gate_impl` (a digest of the gate
+  implementation), refusing a marker older than the gate's start. Uploaded as
+  `crew-verify-receipt-<attempt>`.
+- **`ci_receipt.py check`** answers VERIFIED / UNVERIFIED / UNKNOWN / NO_GATE. It takes the newest
+  run for HEAD before reading its status, binds the artifact to that run and sha, requires a clean
+  local tree and no branch change to the gate implementation, and re-reads everything, the
+  stand-down included, at the end. An unreadable stand-down is UNKNOWN; origin's host must be github.com.
+- Diagnostic only: no consumer accepts the receipt yet. `scripts/gate-runner.py` classifies the
+  workflow as excluded; a `.crew/verify.json` rule runs `test_ci_receipt.py`.
+
 ### Fixed - `gizmoduck` 0.5.6: main's Pylint `build (3.11)` leg red on a guarded `os.path.isjunction` call (L-0599)
 
 - **What.** Since T-0107 (75681fba) pylint 4 on Python 3.11 reported

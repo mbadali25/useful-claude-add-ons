@@ -1,0 +1,113 @@
+name: Verify gate receipt (self-hosted)
+
+# L-0555. Runs crew's verify gate (`verify-gate.sh --all`, the whole
+# .crew/verify.json map) on a pushed lane branch, on the self-hosted pool, and
+# uploads a receipt that `plugin/crew/hooks/scripts/ci_receipt.py check`
+# accepts locally ONLY when it matches HEAD's sha, tree and verify.json blob
+# exactly. A local `--all` costs 17-20 minutes and is OOM-killed at the shared
+# box's 6G cap; the pool is idle most of the day.
+#
+# Security. `push` only, never pull_request / pull_request_target: a push
+# event is same-repository by construction, so fork code can never reach the
+# pool (owner 2026-09-30, "No fork PRs", the L-0521 clause). The token is
+# contents:read and is not persisted into the checkout; the job reads no
+# repository secret. Uploading an artifact needs no token scope.
+#
+# Opt-in. The job runs only while the runner playbook
+# (mbadali25/github-runner-infra) has CREW_RUNNER=self-hosted set. Unset, the
+# job is skipped, no receipt exists, and every consumer behaves as before
+# (run the gate locally, or refuse). It is not a required check.
+on:
+  push:
+    branches: ['L-*', 'T-*', 'W-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch supersedes the running gate: its receipt
+# would describe a sha nobody will check.
+concurrency:
+  group: verify-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-gate:
+    if: vars.CREW_RUNNER == 'self-hosted' && github.repository == 'mbadali25/useful-claude-add-ons'
+    runs-on: [self-hosted, linux, x64, crew]
+    timeout-minutes: 60
+    env:
+      # rules[9]'s `-n auto` would start one xdist worker per vCPU (16) in
+      # each of up to six concurrent jobs on one host. pytest-xdist honours
+      # this for `-n auto` without a change to verify.json.
+      PYTEST_XDIST_AUTO_NUM_WORKERS: "4"
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        # origin/main must exist: check-tooling-pr.py (a verify rule) diffs
+        # against it, and exits 77 (SKIP, never verified) without it.
+        fetch-depth: 0
+        persist-credentials: false
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - uses: actions/setup-node@v4
+      with:
+        node-version: "22"
+    # Every tool a rule needs is installed here, because a missing one makes
+    # that rule exit 77 (SKIP), a SKIP never advances the verified marker, and
+    # then no receipt can pass. pwsh comes from the host (infra role
+    # host_base/pwsh); Chromium's shared libraries for mmdc too (infra #12).
+    - name: Install the gate's Python tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install 'pytest~=8.0' pytest-xdist pyyaml python-docx numpy pillow requests 'pylint~=4.0' ruff
+    - name: Install mcp-servers dependencies
+      run: npm --prefix mcp-servers ci
+    # Pinned: the version proven on the pool host (github-runner-infra #12,
+    # bc1c04b, which installed headless Chrome's libraries). mmdc is not on the
+    # host's PATH; this puts it on setup-node's, so render.sh does not SKIP.
+    - name: Install mmdc
+      run: npm install -g @mermaid-js/mermaid-cli@12.0.0
+    # A self-hosted workspace outlives the job. The receipt must rest on
+    # evidence THIS run wrote, so any earlier marker, record or fingerprint is
+    # removed first, and the build step requires a marker newer than the
+    # gate's start.
+    - name: Clear earlier gate evidence
+      run: rm -rf .crew/.verify-verified-at .crew/.verify-gate.fingerprint .crew/.verify-gate.record.json .crew/.verify-gate.timings.json .crew/.verify-gate.lock
+    - name: verify-gate --all
+      id: gate
+      run: |
+        set +e
+        echo "since=$(date +%s)" >> "$GITHUB_OUTPUT"
+        bash plugin/crew/hooks/scripts/verify-gate.sh --all < /dev/null > "$RUNNER_TEMP/gate.log" 2>&1
+        rc=$?
+        echo "rc=$rc" >> "$GITHUB_OUTPUT"
+        tail -n 200 "$RUNNER_TEMP/gate.log"
+        echo "verify-gate.sh --all exited $rc"
+        exit 0
+    # The receipt, not this job's exit status, is the evidence: it is built
+    # from review_gate.gate_state on this checkout and binds the verdict to
+    # HEAD, its tree and the verify.json blob. Exits 1 when it did not pass,
+    # which fails the job; ci_receipt.py check refuses any run that did not
+    # conclude success.
+    - name: Build the receipt
+      if: always()
+      run: >-
+        python plugin/crew/hooks/scripts/ci_receipt.py build --root .
+        --gate-rc "${{ steps.gate.outputs.rc || 'none' }}"
+        --gate-log "$RUNNER_TEMP/gate.log"
+        --out "$RUNNER_TEMP/crew-verify-receipt/receipt.json"
+        --since "${{ steps.gate.outputs.since || '0' }}"
+        --summary "$GITHUB_STEP_SUMMARY"
+    - name: Keep the gate log with the receipt
+      if: always()
+      run: cp "$RUNNER_TEMP/gate.log" "$RUNNER_TEMP/crew-verify-receipt/gate.log" || true
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        # One artifact per attempt: a re-run never shadows an earlier receipt.
+        name: crew-verify-receipt-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/crew-verify-receipt/
+        retention-days: 14
+        if-no-files-found: error
