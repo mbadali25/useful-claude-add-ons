@@ -54,6 +54,7 @@ DATA_REL = "skills/crew-qa-standards/references/recurring-findings.md"
 
 _SECTION_RE = re.compile(r"^## (RF-\d{2}) (\S.*?)\s*$")
 _WILD = re.compile(r"[*?\[]")
+_WILD_TOKEN = re.compile(r"\[[^\]]*\]|[*?]")
 
 
 def data_path():
@@ -123,6 +124,8 @@ def _entry(section):
     fields, probes = {}, []
     for offset, line in enumerate(section["body"], 1):
         label = line.partition(":")[0]
+        if line.startswith("-") and not line[1:].strip():
+            return None, f"line {section['line'] + offset} is an empty probe"
         if line.startswith("- "):
             probes.append(line[2:].strip())
         elif label in ("applies-to", "seen") and ":" in line:
@@ -179,24 +182,26 @@ def _segment_overlap(x, y):
     taken to overlap, the conservative answer."""
     if not _WILD.search(x) or not _WILD.search(y):
         return fnmatch.fnmatch(x, y) or fnmatch.fnmatch(y, x)
-    heads = [_WILD.split(s, 1)[0] for s in (x, y)]
-    tails = [_WILD.split(s)[-1] for s in (x, y)]
+    heads = [_WILD_TOKEN.split(s, 1)[0] for s in (x, y)]
+    tails = [_WILD_TOKEN.split(s)[-1] for s in (x, y)]
     head_ok = heads[0].startswith(heads[1]) or heads[1].startswith(heads[0])
     tail_ok = tails[0].endswith(tails[1]) or tails[1].endswith(tails[0])
     return head_ok and tail_ok
 
 
 def _names_a_directory(entry, root):
-    """A wildcard-free Touch entry covers what is under it when it is a
-    directory: on disk when it exists, else when its last segment has no
-    extension (`plugin/crew/docs`), the way a new directory is usually named."""
+    """A wildcard-free Touch entry covers what is under it, as
+    `crew_ticket.path_matches` reads it, unless it exists in `root` as a
+    regular file: only a file proven on disk is kept narrow, so a new
+    directory (`docs/v1.0`) and anything that cannot be checked are covered."""
     if _WILD.search(entry):
         return False
     if root:
-        found = os.path.join(root, *_segments(entry))
-        if os.path.lexists(found):
-            return os.path.isdir(found)
-    return "." not in (_segments(entry) or ("",))[-1]
+        try:
+            return not os.path.isfile(os.path.join(root, *_segments(entry)))
+        except (OSError, ValueError):
+            return True
+    return True
 
 
 def matches(path, glob, touch=False, root=None):
@@ -224,10 +229,16 @@ def _entry_lines(entry):
 
 def render(header, entries, notes=()):
     """`header` lines, then `notes` (UNKNOWN/UNREADABLE/PROBLEM), then whole
-    entries while they fit in MAX_LINES; a cut names what it dropped. With a
-    data note present, an empty selection is never reported as "none applies":
-    the section that could not be read may have been the one that did."""
-    out = list(header) + list(notes)
+    entries while they fit; never more than MAX_LINES lines in all. Notes past
+    their share are counted, not dropped silently; entries past the cap are
+    named by id. With a data note present, an empty selection is never
+    reported as "none applies": the section that could not be read may have
+    been the one that did."""
+    out = list(header)
+    room = MAX_LINES - len(out) - 2
+    out += list(notes[:room])
+    if len(notes) > room:
+        out[-1] = f"[... {len(notes) - room + 1} more notes not shown]"
     if not entries:
         if any(n.startswith(("UNREADABLE:", "PROBLEM:")) for n in notes):
             out.append("No class could be read that is keyed to these paths, and the checklist "
@@ -238,7 +249,7 @@ def render(header, entries, notes=()):
     for index, entry in enumerate(entries):
         lines = _entry_lines(entry)
         reserve = 1 if index + 1 < len(entries) else 0
-        if index and len(out) + len(lines) + reserve > MAX_LINES:
+        if len(out) + len(lines) + reserve > MAX_LINES:
             dropped = [e["id"] for e in entries[index:]]
             out.append(f"[TRUNCATED at {MAX_LINES} lines: {', '.join(dropped)} not shown; "
                        f"read them in plugin/crew/{DATA_REL}.]")

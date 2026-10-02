@@ -37,8 +37,8 @@ me `tracker not updated: <reason>` and keep going — a tracker never blocks wor
 
 ## 2. Work the plan's steps in order
 
-First print what earlier reviews kept finding on this ticket's paths, and keep each item open while you work:
-`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/recurring_findings.py --root . --ticket $1` (exit 1: read its UNKNOWN
+Print what earlier reviews kept finding on this ticket's paths and keep each item open while you work:
+`python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/recurring_findings.py" --root . --ticket $1` (exit 1: read its UNKNOWN
 line; re-run it before the self-check). Then read `.work/tickets/$1/plan.md`. Per step: write the test it names, watch
 it fail, implement the minimal change, watch it pass, then the next step. A step whose Expected does not match reality
 is a plan defect — rule on it, note the ruling and why in your report, and keep going; do not silently deviate.

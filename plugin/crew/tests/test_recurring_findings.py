@@ -15,6 +15,7 @@ import recurring_findings as rf
 SCRIPT = os.path.join(os.path.dirname(os.path.abspath(rf.__file__)), "recurring_findings.py")
 EMPTY = {"committed_files": [], "staged_files": [], "unstaged_files": [], "untracked_files": []}
 NONE_KEYED = "No recurring-finding class is keyed to these paths."
+REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir))
 
 
 def _manifest(*files):
@@ -100,12 +101,15 @@ def test_select_parity_entry_by_changed_path(path, expected):
     ("docs/guides/crew/**", "**/*.md", True),
     ("plugin/crew/docs", "**/*.md", True),
     ("plugin/crew/README.md", "**/*.py", False),
+    ("docs/v1.0", "docs/v1.0/**/*.md", True),
+    ("src/[ab].py", "src/[bc].py", True),
+    ("src/[ab].py", "src/*.ps1", False),
     ("plugin/crew/hooks/scripts/role-write-guard.ps1", "**/*guard*", True),
     ("plugin/crew/hooks/scripts/crew_state.py", "**/*guard*", False),
     ("CHANGELOG.md", "plugin/**", False),
 ])
 def test_select_by_touch_entry(touch, glob, expected):
-    assert rf.matches(touch, glob, touch=True) is expected
+    assert rf.matches(touch, glob, touch=True, root=REPO) is expected
 
 
 def test_select_keeps_file_order_and_drops_unkeyed(tmp_path):
@@ -129,6 +133,7 @@ def test_select_keeps_file_order_and_drops_unkeyed(tmp_path):
     (_section("RF-01").replace("applies-to", "Applies-to"), "is not applies-to, seen or a"),
     (_section("RF-01").replace("- probe", "* probe"), "is not applies-to, seen or a"),
     (_section("RF-01") .replace("seen: 3 of 9", "seen: 3\nseen: 4"), "repeats seen"),
+    (_section("RF-01").replace("- probe RF-01 0", "- "), "an empty probe"),
 ])
 def test_data_problem_is_named_and_never_reads_as_no_match(tmp_path, text, expect):
     data = _data(tmp_path, text + _section("RF-09", '["**/*.md"]'))
@@ -226,6 +231,25 @@ def test_cap_drops_whole_entries_and_says_which(tmp_path):
     assert cut.startswith(f"[TRUNCATED at {rf.MAX_LINES} lines: ")
     assert all(f"RF-{n:02d}" in cut for n in range(len(shown) + 1, 21))
     assert lines[-2].startswith("  - ")
+
+
+def test_cap_holds_when_notes_alone_would_overflow(tmp_path):
+    data = _data(tmp_path, _section("RF-01", probes=4))
+    entries, _ = rf.parse(data)
+    notes = [f"PROBLEM: x{n}" for n in range(70)]
+    empty = rf.render(["header"], [], notes)
+    full = rf.render(["header"], entries, notes)
+
+    assert len(empty) <= rf.MAX_LINES and len(full) <= rf.MAX_LINES
+    assert any("more notes not shown" in line for line in empty)
+    assert full[-1].startswith("[TRUNCATED") and "RF-01" in full[-1]
+
+
+def test_shipped_sections_are_ranked_by_their_count():
+    counts = [int(re.search(r"about (\d+) of", e["seen"]).group(1))
+              for e in rf.parse(rf.data_path())[0]]
+
+    assert counts == sorted(counts, reverse=True)
 
 
 # ---- the two readers ---------------------------------------------------------------
