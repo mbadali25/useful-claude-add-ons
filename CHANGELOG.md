@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.120: harmless stray lines beside findings no longer burn a review round (L-0576)
+### Changed — `crew` 1.0.128: harmless stray lines beside findings no longer burn a review round (L-0576)
 
 A tooling-only change to the review verdict parser. Paired with L-0514 (bounded retry), which it
 does not implement.
