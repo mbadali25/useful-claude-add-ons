@@ -173,7 +173,7 @@ def check_partition(artifacts: str, shards: int) -> list:
             else:
                 seen[key] = k
     if len(ran) == shards:
-        missing = [expected[key] for key in expected if key not in seen]
+        missing = [nodeid for key, nodeid in expected.items() if key not in seen]
         for nodeid in missing[:20]:
             problems.append(f"{nodeid} was collected but ran in no shard")
         if len(missing) > 20:
@@ -201,7 +201,7 @@ def check_whole_set(artifacts: str, name: str) -> list:
         if key in expected:
             problems.append(f"{name}: ambiguous JUnit name {key}: {expected[key]} and {nodeid}")
         expected[key] = nodeid
-    missing = [expected[key] for key in expected if key not in keys]
+    missing = [nodeid for key, nodeid in expected.items() if key not in keys]
     extra = sorted(keys - expected.keys())
     problems += [f"{name}: {nodeid} was collected but did not run" for nodeid in missing[:20]]
     problems += [f"{name}: ran {c}::{n}, which it did not collect" for c, n in extra[:20]]
