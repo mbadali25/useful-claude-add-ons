@@ -1238,6 +1238,30 @@ if budget is not None:
             + (" plus " + str(len(unknown)) + " of unstated cost" if unknown else "")
             + ", deferred " + str(len(deferred))
             + ". The deferred ones were NOT checked - run /crew:verify.")
+# --- declared coverage (L-0572), --all only --------------------------------
+# A rule declaring `"coveredBy": "<id>"` may be credited instead of re-run
+# when the rule carrying that `id` ran and passed earlier in this same run.
+# verify_record.cover_plan decides only WHICH commands may be credited and
+# moves them to the end; the run loop below decides whether each IS, from
+# the superset's exit codes. Stop mode never reaches this: its budget order
+# is its own contract, and the full-suite superset is chronic there anyway.
+# No verify_record, or any failure here, means no plan and every rule runs.
+cover_guards = [None] * len(cmds)
+if budget is None and _vr is not None and hasattr(_vr, "cover_plan"):
+    try:
+        _ccmds, _cguards, _cnotes = _vr.cover_plan(
+            cfg.get("rules", []) or [], rule_order, rule_cmds, cmds,
+            [c for c in (cfg.get("always", []) or []) if isinstance(c, str)])
+        cmds, cover_guards = _ccmds, _cguards
+        notices.extend(_cnotes)
+    except Exception as _cexc:  # pylint: disable=broad-except
+        notices.append("verify-gate: declared coverage NOT applied (%s: %s) - every rule runs"
+                       % (type(_cexc).__name__, _cexc))
+# Record 7, aligned one-to-one with record 1: `<superset rule indices>;<positions>`
+# for a command that may be credited, empty for every other.
+cover_record = "\x1e".join(
+    "" if not g else ",".join(str(r) for r in g["rules"]) + ";" + ",".join(str(p) for p in g["pos"])
+    for g in cover_guards)
 # Two records down one channel. The RECORD separator is \x1d (ASCII group
 # separator) and the FIELD separator inside each record is \x1e; neither can
 # appear in a command, because reject_unrepresentable above refused the map
@@ -1290,7 +1314,8 @@ extras = json.dumps({"matched_rules": matched_rules})
 sys.stdout.write("\x1e".join(cmds) + "\x1d" + "\x1e".join(unmatched) + "\x1d" + "\x1e".join(notices)
                  + "\x1d" + str(acute_count)
                  + "\x1d" + str(int(max_cost))
-                 + "\x1d" + extras + "\n")
+                 + "\x1d" + extras
+                 + "\x1d" + cover_record + "\n")
 PY
 )
 # CAPTURE FIRST, STRIP SECOND - not piped directly through `tr -d '\r'` on
@@ -1379,6 +1404,14 @@ esac
 # persist per-rule status and update the measured-timings cache. A single
 # line (json.dumps with no indent), so sed -n 6p on the \x1d split is safe.
 EXTRAS=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 6p)
+# Record 7 (L-0572): one guard per line, aligned with $CMDS, empty for a
+# command that is never credited. Missing or short means "no guard", which
+# runs the command - the safe direction. Read into an indexed array (bash
+# 3.2 has no mapfile) so the run loop can look a guard up by position.
+COVER_AT=()
+while IFS= read -r COVER_LINE; do
+  COVER_AT+=("$COVER_LINE")
+done <<< "$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 7p | tr '\036' '\n')"
 if [ -n "$NOTICES" ]; then
   printf '%s\n' "$NOTICES" >&2
 fi
@@ -1500,7 +1533,53 @@ lock_extend
 # leader-exited group). CONFIG.md states the resulting limitation: this gate
 # does not reap what a rule leaves running in the background: a rule must
 # not background work.
+# --- declared coverage, the run-time half (L-0572) -------------------------
+# COVER_AT (record 7) names, per position, the commands of a declared
+# superset that must ALL have exited 0 earlier in THIS run for the command
+# at that position to be credited instead of run. Only "pass" satisfies a
+# guard: fail, skip77 (77), a killed run (137/143 are just non-zero here),
+# a covered or an absent status all mean the subset runs.
+#
+# The same run is not proof of the same TREE: a rule, an editor or another
+# session can change files between the superset finishing and the credit.
+# So a whole-tree snapshot (verify_record.tree_snapshot: HEAD, index and the
+# bytes of every tracked and untracked path) is taken before the first
+# command and again at the first credit; unequal, or unreadable either time,
+# turns credit off for the rest of the run and every subset runs.
+POS=-1
+STATUS_AT=()
+COVERED_N=0
+COVER_STATE=""
+COVER_SNAP0=""
+if [ -n "$PY" ] && printf '%s\n' "${COVER_AT[@]}" | grep -q .; then
+  COVER_SNAP0=$("$PY" "$FP_DIR/verify_record.py" tree-snapshot 2>/dev/null | tr -d '\r')
+fi
+cover_credit() {
+  local positions p
+  positions="${1#*;}"
+  if [ -z "$positions" ] || [ "$positions" = "$1" ]; then return 1; fi
+  IFS=, read -r -a GPOS <<< "$positions"
+  [ "${#GPOS[@]}" -gt 0 ] || return 1
+  for p in "${GPOS[@]}"; do
+    case "$p" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$((10#$p))" -lt "$POS" ] || return 1
+    [ "${STATUS_AT[$((10#$p))]:-}" = "pass" ] || return 1
+  done
+  if [ -z "$COVER_STATE" ]; then
+    COVER_SNAP1=$("$PY" "$FP_DIR/verify_record.py" tree-snapshot 2>/dev/null | tr -d '\r')
+    if [ -n "$COVER_SNAP0" ] && [ "$COVER_SNAP0" = "$COVER_SNAP1" ]; then
+      COVER_STATE=ok
+    else
+      COVER_STATE=off
+      echo "verify-gate: the working tree changed during this run, or its snapshot could not be read - declared coverage NOT applied, every remaining subset rule runs" >&2
+    fi
+  fi
+  [ "$COVER_STATE" = ok ]
+}
 while IFS= read -r IDENT; do
+  # Incremented BEFORE any `continue`, so positions stay aligned with
+  # record 7 even across a blank line.
+  POS=$((POS + 1))
   [ -z "$IDENT" ] && continue
   # IDENT is a matcher IDENTITY: the literal command text, and - only when
   # its rule declared "env" - a \x1c-joined canonical env JSON. Split it via
@@ -1524,6 +1603,16 @@ print(text + "\x1e" + (envjson if sep else ""), end="")
   fi
   c="${SPLIT%%$'\x1e'*}"
   ENV_JSON="${SPLIT#*$'\x1e'}"
+  GUARD="${COVER_AT[$POS]:-}"
+  if [ -n "$GUARD" ] && cover_credit "$GUARD"; then
+    echo "verify-gate: COVERED by rules[${GUARD%%;*}] (passed this run): $c" >&2
+    STATUS_AT[$POS]="covered"
+    COVERED_N=$((COVERED_N + 1))
+    LOG_LINE=$("$PY" -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": "covered", "elapsed": 0}))' "$IDENT" 2>/dev/null | tr -d '\r')
+    [ -n "$LOG_LINE" ] && CMD_LOG="$CMD_LOG
+$LOG_LINE"
+    continue
+  fi
   # --- env pinning ---------------------------------------------------
   # Every PINNED_VARS name (verify_record.py: ENV, AWS_PROFILE, ... TF_VAR_environment) is
   # unset for every rule command UNLESS the owning rule declares "env" for
@@ -1719,6 +1808,7 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
   else
     CMD_STATUS="pass"
   fi
+  STATUS_AT[$POS]="$CMD_STATUS"
   RULE_ELAPSED=$(( $(date +%s) - RULE_START ))
   TOTAL_ELAPSED=$(( TOTAL_ELAPSED + RULE_ELAPSED ))
   echo "verify-gate: ${RULE_ELAPSED}s  $c" >&2
@@ -1744,6 +1834,9 @@ done <<< "$CMDS"
 
 echo "verify-gate: ${TOTAL_ELAPSED}s total across $(printf '%s
 ' "$CMDS" | grep -c .) rule command(s)" >&2
+if [ "$COVERED_N" -gt 0 ]; then
+  echo "verify-gate: $COVERED_N of them COVERED by a declared superset rule that passed this run - not re-run" >&2
+fi
 
 if [ -n "$UNMAPPED" ] && grep -q '"unmapped"[[:space:]]*:[[:space:]]*"fail"' .crew/verify.json; then
   echo "UNMAPPED CHANGES - .crew/verify.json has no rule for:" >&2

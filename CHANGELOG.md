@@ -21,6 +21,27 @@ All notable changes to this repository are documented here. Format follows [Keep
 - Diagnostic only: no consumer accepts the receipt yet. `scripts/gate-runner.py` classifies the
   workflow as excluded; a `.crew/verify.json` rule runs `test_ci_receipt.py`.
 
+### Changed — `crew` 1.0.126: `verify-gate --all` credits declared subset rules instead of re-running them (L-0572)
+
+- **A rule may carry `"id"`, and a rule may declare `"coveredBy": "<id>"`.** Under `--all` only, the
+  declared subset's commands move to the end of the run and are logged
+  `verify-gate: COVERED by rules[N] (passed this run)` instead of re-run, but only when every command
+  of the named rule exited 0 earlier in the same run and a snapshot of the working tree (HEAD, index,
+  every tracked and untracked path's bytes, mode and symlink target) is unchanged since before the
+  first command. Anything else runs the subset: the superset failed, skipped (77), was killed or did
+  not match; Stop mode; any `PYTEST_ADDOPTS`; a command also in `always` or in another rule; an
+  unknown, duplicate, self, chained or env-mismatched declaration (named in a notice); a snapshot that
+  cannot be taken (FIFOs, skip-worktree or assume-unchanged entries). One planner,
+  `verify_record.cover_plan`, serves both `verify-gate.sh` and `verify-gate.ps1`.
+- **A credited command is recorded as status `covered`**: clean for the obligation record, never
+  cached as a timing. CONFIG.md §19 documents the keys.
+- **This repo declares `rules[9]` as `crew-suite`**, and 23 pytest-only subset rules are covered by
+  it. Measured back to back on one host: `--all` 1164s on origin/main, 520s on the branch (23
+  credited). Owner-accepted risks: ignored files are outside the snapshot, and a credited subset
+  loses its local serial run when xdist is installed.
+- **Tests:** `plugin/crew/tests/test_verify_gate_subset_cover.py` (both flavours) and eleven
+  sabotage entries in `plugin/crew/tests/sabotage_tooling.py`, each red.
+
 ### Changed — `session-defaults` 1.1.0 and `config-tuneup` 1.1.0: two skills renamed off the reserved `claude-` prefix (W-0120)
 
 - **`claude-code-defaults` is now `session-defaults`, and `claude-code-tuneup` is now
