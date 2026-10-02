@@ -477,11 +477,11 @@
     { "paths": ["plugin/crew/hooks/scripts/verify-gate.sh", "plugin/crew/hooks/scripts/verify-gate.ps1",
                 "plugin/crew/hooks/scripts/verify_record.py",
                 "plugin/crew/tests/test_verify_gate_subset_cover.py"],
-      "seconds": 60,
+      "seconds": 45,
       "coveredBy": "crew-suite",
       "run": ["python3 -m pytest plugin/crew/tests/test_verify_gate_subset_cover.py -q"],
       "reach": "local",
-      "why": "L-0572: declared subset coverage under --all. A rule carrying `coveredBy` is credited, not re-run, only when the rule whose `id` it names ran and passed earlier in the same --all run on an unchanged tree (whole-tree snapshot before the first command and at the first credit) with PYTEST_ADDOPTS empty; a failed, skipped (77), killed (137/143), unmatched or tree-moving superset, Stop mode, a command also named by `always` or an undeclared rule, or an invalid declaration all run the subset. Both flavours, the .ps1 under pwsh with OS=Windows_NT off Windows. test_repo_map_declarations_are_valid_and_plausible holds this map's own declarations to zero invalid ones and every covered command to `python3 -m pytest <plugin/crew/tests/test_*.py targets> -q`. Its mutations are in sabotage_tooling.py. MEASURE. reach: local - throwaway git repos under tmp_path; no network call." }
+      "why": "L-0572: declared subset coverage under --all. A rule carrying `coveredBy` is credited, not re-run, only when the rule whose `id` it names ran and passed earlier in the same --all run on an unchanged tree (whole-tree snapshot before the first command and at the first credit) with PYTEST_ADDOPTS empty; a failed, skipped (77), killed (137/143), unmatched or tree-moving superset, Stop mode, a command also named by `always` or an undeclared rule, or an invalid declaration all run the subset. Both flavours, the .ps1 under pwsh with OS=Windows_NT off Windows. test_repo_map_declarations_are_valid_and_plausible holds this map's own declarations to zero invalid ones and every covered command to `python3 -m pytest <plugin/crew/tests/test_*.py targets> -q`. Its mutations are in sabotage_tooling.py (eleven, each red, .work/tickets/L-0572/sabotage.md). 45s (62 passed) measured 2026-10-02 inside a full verify-gate --all on the Linux host (20 CPUs, load average 3.1-3.9, under heavy-run); re-time rather than trusting it. reach: local - throwaway git repos under tmp_path; no network call." }
   ],
 
   "default": ["bash _verify/smoke.sh"],
