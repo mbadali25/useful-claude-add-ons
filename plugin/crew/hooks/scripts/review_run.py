@@ -179,12 +179,33 @@ PROBE_OK, PROBE_LIMITED, PROBE_FAILED, PROBE_UNKNOWN = "ok", "limited", "failed"
 VERIFY_GATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "verify-gate.sh")
 
 
-def _read(path):
-    """Text of a regular file, through review_checks.read_regular (class b,
-    L-0574 round-7 sweep): a symlink, FIFO or device raises NotRegularFile,
-    an OSError, instead of being followed or blocking."""
-    return review_checks.read_regular(path).decode("utf-8", errors="replace").replace(
+def _read(path, base):
+    """Text of a regular file inside `base`, through review_checks.read_regular
+    (class b): a symlink at the file or at any directory between `base` and it,
+    a FIFO or a device raises NotRegularFile, an OSError, instead of being
+    followed or blocking (L-0574 review round 7)."""
+    return review_checks.read_regular(path, base).decode("utf-8", errors="replace").replace(
         "\r\n", "\n").replace("\r", "\n")
+
+
+def _trusted(path, scratch):
+    """The directory a read of `path` is checked from: the scratch directory
+    when `path` is inside it (where /crew:review puts the manifest, the
+    output and the prompt), else the path's own directory, which is where the
+    operator pointed it."""
+    path, scratch = os.path.abspath(path), os.path.abspath(scratch)
+    try:
+        inside = os.path.commonpath([path, scratch]) == scratch
+    except ValueError:  # another drive on Windows
+        inside = False
+    return scratch if inside else os.path.dirname(path)
+
+
+def _part_base(path):
+    """review_patch writes parts into `<out>.parts/`; the directory holding
+    that directory is the one trusted, so `<out>.parts` itself is checked."""
+    folder = os.path.dirname(os.path.abspath(path))
+    return os.path.dirname(folder) if folder.endswith(".parts") else folder
 
 
 def _decode_partial(value):
@@ -222,7 +243,7 @@ def prompt_argument(prompt_path, exe=None):
     """`exe` is the resolved provider binary. The prompt goes inline only when
     it fits INLINE_PROMPT_LIMIT and `exe` is not a batch shim; otherwise the
     argument is a one-line pointer to `prompt_path`, said on stderr."""
-    text = _read(prompt_path)
+    text = _read(prompt_path, os.path.dirname(os.path.abspath(prompt_path)))
     if len(text) <= INLINE_PROMPT_LIMIT and not through_batch_shim(exe):
         return text
     if len(text) > INLINE_PROMPT_LIMIT:
@@ -352,7 +373,7 @@ def bundle_problems(manifest):
     total = 0
     for row in rows:
         try:
-            data = review_checks.read_regular(row["path"])
+            data = review_checks.read_regular(row["path"], _part_base(row["path"]))
         except (OSError, KeyError, TypeError) as exc:
             problems.append(f"bundle part {row.get('name')} could not be read: {exc}")
             continue
@@ -372,7 +393,7 @@ def bundle_problems(manifest):
 
 def _findings_doc(root, ticket):
     try:
-        doc = json.loads(_read(webtest_guard.findings_path(root, ticket)))
+        doc = json.loads(_read(webtest_guard.findings_path(root, ticket), root))
     except (OSError, ValueError):
         return None
     return doc if isinstance(doc, dict) else None
@@ -421,7 +442,7 @@ def webtest_check(root, ticket, manifest):
 
 def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     """Verdict -> ledger -> review.json. Returns the process exit code."""
-    manifest = json.loads(_read(args.manifest))
+    manifest = json.loads(_read(args.manifest, _trusted(args.manifest, args.scratch)))
     # The parts as the prompt lists them -- full paths -- so a READ line that
     # echoes the listed path counts (T-0079). A part with no path falls back to
     # its name, which review_verdict still matches exactly.
@@ -617,7 +638,8 @@ def prereview_gate(args):
     try:
         # One read of the manifest gives both the entries linted and the hash
         # recorded, so a replaced manifest cannot borrow these results.
-        results, configured, bundle = review_checks.run_checks_bound(args.root, args.manifest)
+        results, configured, bundle = review_checks.run_checks_bound(
+            args.root, args.manifest, _trusted(args.manifest, args.scratch))
     except Exception as exc:  # noqa: BLE001 - boundary, see below  pylint: disable=broad-exception-caught
         # Boundary: an escaped exception would exit 1, which reads as FINDINGS.
         # No hash is trusted here: the record is written for no bundle at all.
@@ -860,7 +882,8 @@ def main(argv):
             if args.round is None or args.output is None or args.exit_code is None:
                 parser.error("the claude provider takes --reserve-only, or --round N "
                              "--output FILE --exit-code N after the subagent ran")
-            output = _read(args.output) if os.path.exists(args.output) else ""
+            output = (_read(args.output, _trusted(args.output, args.scratch))
+                      if os.path.exists(args.output) else "")
             return finish(args, args.round, output, args.exit_code, False)
         if args.reserve_only or args.round is not None:
             parser.error("--reserve-only and --round are for the claude provider only")

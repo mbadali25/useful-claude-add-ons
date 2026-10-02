@@ -17,7 +17,7 @@ It is never a pass.
 
 ## Codex CLI
 
-**What crew calls.** `review_run.command_for` (`plugin/crew/hooks/scripts/review_run.py:239-249`)
+**What crew calls.** `review_run.command_for` (`plugin/crew/hooks/scripts/review_run.py:260-270`)
 runs `codex exec` with these flags and nothing else:
 
 | Flag | Meaning |
@@ -62,7 +62,7 @@ raw U+2028 (`plugin/crew/tests/golden/review/uca-t0072--T-0072-build--2BJpY8/eve
 `agent_message` item's text. It counts a turn as complete only on
 `turn.completed`. A `turn.failed`, an `error` event or an unparseable line is
 an error, and a stream with no completed turn is also an error. The verdict
-parser (`review_run.py:437`) turns any of those into INCOMPLETE of class
+parser (`review_run.py:458`) turns any of those into INCOMPLETE of class
 `tool`, which is refunded. Every event and item type in the committed corpus is
 one of the documented types (`test_golden_codex_events_use_documented_types`).
 On 2026-09-28, the 26 local streams used only `thread.started`, `turn.started`,
@@ -106,11 +106,12 @@ Probed: not probed. The T-0087 host is Linux (Ubuntu) with no `wsl.exe`, so `tes
 
 ## Windows batch shims
 
-**What crew calls.** On Windows, `shutil.which("codex")` or `shutil.which("copilot")`
-resolves an npm-installed CLI to its `.cmd` shim. `review_run.through_batch_shim`
-(`plugin/crew/hooks/scripts/review_run.py:214`) names a provider whose resolved
+**What crew calls.** On Windows, `review_checks.resolve_executable("codex")` or
+`resolve_executable("copilot")` (the absolute `PATH` entries only, never the current
+directory) resolves an npm-installed CLI to its `.cmd` shim. `review_run.through_batch_shim`
+(`plugin/crew/hooks/scripts/review_run.py:235`) names a provider whose resolved
 path ends `.cmd` or `.bat` (`BATCH_SHIM_SUFFIXES`, `:172`), and
-`review_run.prompt_argument` (`:221`) never hands such a provider the prompt
+`review_run.prompt_argument` (`:242`) never hands such a provider the prompt
 inline: it passes the one-line pointer to `prompt.txt` that an over-limit prompt
 already gets, and says why on stderr.
 
@@ -180,10 +181,10 @@ ruff 0.16.9, ShellCheck 0.11.0 (`shellcheck-py==0.11.0.1`), actionlint
 
 | Tool | Invocation | Exit statuses read as "ran" | Output crew reads | Parse-abort marker |
 |------|------------|-----------------------------|-------------------|--------------------|
-| ruff | `check --output-format json --exit-zero --no-cache --extend-select E902 <args> <files>` | 0 | a JSON list; `filename` (absolute), `code`, `message` | `code` `invalid-syntax` (null codes are read as it), or `E902` (the file could not be read, e.g. not UTF-8; selected always, because an unselected E902 reports nothing): ruff then reports nothing else for that file |
+| ruff | `check --output-format json --exit-zero --no-cache --extend-select E902 <args> <files>` | 0 | a JSON list; `filename` (absolute), `code`, `message` | `code` `invalid-syntax` (a null `code` is read as it; a row with no `code` key is unreadable), or `E902` (the file could not be read, e.g. not UTF-8; selected always, because an unselected E902 reports nothing): ruff then reports nothing else for that file |
 | ShellCheck | `-f json1 --rcfile <bundle .shellcheckrc>` (or `--norc` when the bundle has none) `<args> <files>` | 0 none, 1 findings (2 unreadable file, 3 bad syntax, 4 bad options are errors) | `{"comments": [...]}`; `file` (as passed), `code` (int, read as `SC<code>`), `message` | `SC1072` ("Fix any mentioned problems and try again"): parsing of that file stopped; `SC1071`: a shell ShellCheck does not check (zsh, fish) |
 | actionlint | `-format '{{json .}}' -no-color -shellcheck= -pyflakes= [-config-file <bundle .github/actionlint.y(a)ml>] <args> <files>` (1.7.12 discovers only `actionlint.yaml` by itself) | 0 none, 1 findings (2 bad flag, 3 fatal are errors) | a JSON list; `filepath` (as passed), `kind`, `message` | `kind` `syntax-check` |
-| PSScriptAnalyzer | `pwsh -NoProfile -NonInteractive -File <script> <file-list> <rule-list>` | 0 (the script exits 3 on any error, an unknown `-IncludeRule` name included) | one JSON line from `ConvertTo-Json`; `file`, `rule`, `severity`, `message` | `severity` `ParseError` |
+| PSScriptAnalyzer | `pwsh -NoProfile -NonInteractive -File <script> <file-list> <rule-list>`, both lists JSON arrays (a newline in a file name cannot split one) | 0 (the script exits 3 on any error, an unknown `-IncludeRule` name included) | one JSON line from `ConvertTo-Json`; `file`, `rule`, `severity` (one of `Information`, `Warning`, `Error`, `ParseError`), `message` | `severity` `ParseError` |
 
 Each linter runs with stdin closed, a copy of the environment with every
 variable whose name carries TOKEN, SECRET, PASSWORD, API_KEY or CREDENTIAL
@@ -209,11 +210,13 @@ value (`requires 2` to `requires 3`) is a new finding. A row with no
 
 **How crew reads it.** Anything outside the table is "could not check",
 never a pass: another exit status, a timeout, output that is not the JSON
-shown (empty output included), a field missing from a row, or, for
-ShellCheck and actionlint, a status that contradicts the output (exit 1 with
-no findings, or exit 0 with some). A bad row, or a contradicting status, does
-not throw away the rows that could be read: a new finding among them still
-refuses. A bad row naming a base-side file leaves only that file unchecked,
+shown (empty output included), a field missing from a row or of the wrong
+type (no `kind`, `rule`, `severity` or `code` is ever filled with a default),
+or, for ShellCheck and actionlint, a status that contradicts the output (exit
+1 with no findings, or exit 0 with some). A bad row, an unexpected exit
+status, or a contradicting status, does not throw away the rows that could be
+read: a new finding among them still refuses, and `--allow-unverified` does
+not override it. A bad row naming a base-side file leaves only that file unchecked,
 because its base count is short. A timeout kills the linter's whole process
 group (`%SystemRoot%\System32\taskkill.exe /T` on Windows, never a bare
 `taskkill`), and covers a child left holding the output open after the linter

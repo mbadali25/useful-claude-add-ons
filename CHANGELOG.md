@@ -51,6 +51,16 @@ All notable changes to this repository are documented here. Format follows [Keep
   PSScriptAnalyzer) is rejected. Each run stages its own pre-review record, bound to the round it
   reserves (`prereview-r<N>.json`), so two runs sharing a scratch directory never swap records.
   Files git flags as binary are still linted when their extension is configured (a UTF-16 `.ps1`).
+- **Review round 7.** A file is read only through no symlink at any directory between the repo root
+  (or scratch directory) and it, each directory opened `O_NOFOLLOW` from the one before, so an
+  untracked `.crew/` that is a link to another directory's map is could-not-check. PSScriptAnalyzer
+  gets its file and rule lists as JSON arrays, so a newline in a file name can no longer split it
+  into the names of clean files. A linter's valid rows are kept beside an unexpected exit status, so
+  a new finding among them still refuses and `--allow-unverified` does not override it. A row with no
+  actionlint `kind`, PSScriptAnalyzer `rule` or `severity`, or ruff/ShellCheck `code`, is unreadable
+  instead of a finding with a default. Records are `prereview-<ticket>-r<N>.json`, so two tickets
+  sharing a scratch directory each keep round 1. Every printed path, rule, message and error is one
+  line, its control characters escaped, so a file name cannot forge a status line.
 - **This repo's config.** ruff adds the fail-open rules S110/S112/BLE001, which `ruff.toml` does not
   select. ShellCheck (`-S warning`) and actionlint run through pinned `uvx` packages. PSScriptAnalyzer
   runs a 13-rule correctness and fail-open allowlist (no WriteHost or naming rules).

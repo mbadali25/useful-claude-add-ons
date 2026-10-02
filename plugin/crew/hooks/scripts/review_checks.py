@@ -70,10 +70,10 @@ CONFIG_KEY = "preReview"
 VERIFY_MAP = os.path.join(".crew", "verify.json")
 # Class d (round-7 sweep): a record is per run, then per round. record()
 # stages `prereview.run-<random>.json`; once `reserve` hands the run its round,
-# bind_record() moves it to `prereview-r<N>.json` with the ticket and round
+# bind_record() moves it to `prereview-<ticket>-r<N>.json` with the ticket and round
 # inside, and finish reads the record of ITS round. Two runs sharing a scratch
 # directory never overwrite each other (review round 6 FIX :788).
-RESULT_FILE = "prereview-r<N>.json"
+RESULT_FILE = "prereview-<ticket>-r<N>.json"
 DEFAULT_TIMEOUT = 300
 GIT_TIMEOUT = 60
 # Never handed to a linter: it needs none of them (PYTHON-08).
@@ -121,7 +121,9 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 try {
     Import-Module PSScriptAnalyzer -ErrorAction Stop
-    $rules = @(Get-Content -LiteralPath $RulesFile | Where-Object { $_ })
+    # Both lists are JSON (review round 7 BLOCK :679): a newline in a file
+    # name split the old one-name-per-line list into names of clean files.
+    $rules = @(Get-Content -Raw -Encoding utf8 -LiteralPath $RulesFile | ConvertFrom-Json)
     $known = @(Get-ScriptAnalyzerRule | ForEach-Object { $_.RuleName })
     $unknown = @($rules | Where-Object { $known -notcontains $_ })
     if ($unknown.Count -gt 0) {
@@ -129,7 +131,7 @@ try {
         [Console]::Error.WriteLine("psscriptanalyzer: unknown rule(s): " + ($unknown -join ', '))
         exit 3
     }
-    $rows = foreach ($path in @(Get-Content -LiteralPath $ListFile | Where-Object { $_ })) {
+    $rows = foreach ($path in @(Get-Content -Raw -Encoding utf8 -LiteralPath $ListFile | ConvertFrom-Json)) {
         # -Path takes wildcards: a name with [ ] would match nothing and
         # read as clean, so the name is escaped to match only itself.
         $params = @{ Path = [System.Management.Automation.WildcardPattern]::Escape($path) }
@@ -148,6 +150,18 @@ try {
 """
 
 
+# C0, DEL, C1 and the Unicode line/paragraph separators: anything that can
+# start a new line on a terminal or in a log (review round 7 FIX :847).
+_CONTROL = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029]")
+
+
+def one_line(text):
+    """`text` with every control character escaped, so a path, rule, message
+    or error the tool or the repo chose can never print a line of its own."""
+    return _CONTROL.sub(lambda m: f"\\x{ord(m.group()):02x}" if ord(m.group()) < 0x100
+                        else f"\\u{ord(m.group()):04x}", str(text))
+
+
 class CouldNotCheck(Exception):
     """The check did not run to a result. Never read as a pass."""
 
@@ -162,18 +176,85 @@ _READ_FLAGS = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBL
 _REPARSE_POINT = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
 
 
-def read_regular(path):
-    """The bytes of `path`, which must be a regular file (class b, round-7
-    sweep): the ONLY file read in this module and in review_run.py.
-    FileNotFoundError when absent; NotRegularFile for a symlink, FIFO,
-    device, directory or Windows reparse point. lstat first, then an
-    O_NOFOLLOW|O_NONBLOCK open re-checked by fstat against the same inode,
-    so it never follows a link swapped in and never blocks on a FIFO."""
-    before = os.lstat(path)
-    if not stat.S_ISREG(before.st_mode) or (
-            getattr(before, "st_file_attributes", 0) & _REPARSE_POINT):
+_DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+_WALK_BY_FD = (os.open in os.supports_dir_fd and os.stat in os.supports_dir_fd
+               and hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW"))
+
+
+def _not_plain(info):
+    return stat.S_ISLNK(info.st_mode) or bool(
+        getattr(info, "st_file_attributes", 0) & _REPARSE_POINT)
+
+
+def read_regular(path, base):
+    """The bytes of `path`, which must be a regular file inside `base`, the
+    directory the caller trusts (the repo root, or the scratch directory):
+    the ONLY file read in this module and in review_run.py (class b).
+
+    FileNotFoundError when it, or a directory on the way, is absent.
+    NotRegularFile when it lies outside `base`, when ANY component between
+    `base` and it is a symlink or reparse point (review round 7 BLOCK :172:
+    a symlinked `.crew` led to another directory's map), or when it is a
+    symlink, FIFO, device or directory itself. Where the OS has dir_fd, each
+    directory is opened O_NOFOLLOW from the one before, so no component can
+    be swapped for a link between the check and the open; elsewhere
+    (Windows) each component is lstat-ed. The file itself is lstat-ed, opened
+    O_NOFOLLOW|O_NONBLOCK and re-checked by fstat against the same inode, so
+    it is never followed and a FIFO never blocks. `base` itself is taken as
+    given: it is where the operator chose to work."""
+    base = os.path.abspath(base)
+    rel = os.path.relpath(os.path.abspath(path), base)
+    parts = rel.split(os.sep)
+    if rel in (os.curdir, os.pardir) or os.path.isabs(rel) or parts[0] == os.pardir:
+        raise NotRegularFile(errno.EINVAL, f"not inside {base}", path)
+    if _WALK_BY_FD:
+        fd = _walk_to_parent(base, parts[:-1], path)
+        try:
+            before = os.stat(parts[-1], dir_fd=fd, follow_symlinks=False)
+            _regular_or_raise(before, path)
+            leaf = os.open(parts[-1], _READ_FLAGS, dir_fd=fd)
+        finally:
+            os.close(fd)
+    else:
+        current = base
+        for part in parts[:-1]:
+            current = os.path.join(current, part)
+            info = os.lstat(current)
+            if _not_plain(info) or not stat.S_ISDIR(info.st_mode):
+                raise NotRegularFile(errno.EINVAL, f"{current} is a link or not a directory",
+                                     path)
+        before = os.lstat(path)
+        _regular_or_raise(before, path)
+        leaf = os.open(path, _READ_FLAGS)
+    return _read_fd(leaf, before, path)
+
+
+def _walk_to_parent(base, dirs, path):
+    """An fd for the directory holding `path`, every step opened O_NOFOLLOW."""
+    fd = os.open(base, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in dirs:
+            try:
+                step = os.open(part, _DIR_FLAGS, dir_fd=fd)
+            except OSError as exc:
+                if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+                    raise NotRegularFile(errno.EINVAL, f"{part} is a symlink or not a "
+                                                       "directory", path) from exc
+                raise
+            os.close(fd)
+            fd = step
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _regular_or_raise(info, path):
+    if not stat.S_ISREG(info.st_mode) or _not_plain(info):
         raise NotRegularFile(errno.EINVAL, "not a regular file", path)
-    fd = os.open(path, _READ_FLAGS)
+
+
+def _read_fd(fd, before, path):
     try:
         after = os.fstat(fd)
         if not stat.S_ISREG(after.st_mode) or (after.st_dev, after.st_ino) != (
@@ -262,7 +343,7 @@ def _map_bytes(root, manifest):
     if mode is not None:
         return _git_blob(root, f"{manifest['base']}:{rel}")
     try:
-        return read_regular(os.path.join(root, VERIFY_MAP))
+        return read_regular(os.path.join(root, VERIFY_MAP), root)
     except FileNotFoundError:
         return None
     except OSError as exc:  # NotRegularFile included: never "none configured"
@@ -314,6 +395,9 @@ def load_config(root, manifest):
             if key in spec and not (isinstance(spec[key], list) and spec[key]
                                     and all(isinstance(v, str) and v for v in spec[key])):
                 problems.append(f"{where}: {key} must be a non-empty list of strings")
+            elif key == "rules" and key in spec and any(_CONTROL.search(v) for v in spec[key]):
+                # Neighbour of review round 7 BLOCK :679: a rule name is one name.
+                problems.append(f"{where}: rules must not hold a control character")
         if "timeout" in spec and not (isinstance(spec["timeout"], int)
                                       and not isinstance(spec["timeout"], bool)
                                       and spec["timeout"] > 0):
@@ -534,10 +618,34 @@ def _spawn(argv, cwd, timeout):
     return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
 
 
-def _expect(proc, ok_codes, tool):
+def _rows(proc, ok_codes, tool, extract):
+    """(rows, bad): the rows `extract` reads from the tool's output and, when
+    the exit status is not one the tool promises, a bad row naming it.
+
+    Rows printed beside an unexpected exit are KEPT (review round 7 BLOCK
+    :630), so a NEW finding among them still FAILs, which --allow-unverified
+    never overrides; with nothing new the exit makes it could-not-check.
+    Output that does not parse is CouldNotCheck, naming the exit too."""
+    odd = None
     if proc.returncode not in ok_codes:
         tail = " ".join((proc.stderr or proc.stdout or "").strip().splitlines()[-3:])
-        raise CouldNotCheck(f"{tool} exited {proc.returncode}: {tail[:400] or 'no output'}")
+        odd = f"{tool} exited {proc.returncode}: {tail[:400] or 'no output'}"
+    try:
+        rows = extract(proc.stdout or "")
+    except CouldNotCheck as exc:
+        if odd:
+            raise CouldNotCheck(f"{odd}; {exc}") from exc
+        raise
+    return rows, ([_BadRow(None, odd, "exit")] if odd else [])
+
+
+def _text(row, key, tool):
+    """A non-empty string field of a row (review round 7 BLOCK :664): a
+    missing kind, rule or code is never filled with a default."""
+    value = row.get(key) if isinstance(row, dict) else None
+    if not isinstance(value, str) or not value:
+        raise CouldNotCheck(f"{tool} reported a row with no {key}")
+    return value
 
 
 def _message(row, tool):
@@ -553,10 +661,10 @@ class _BadRow:
     """A row the checks could not read. Yielded in place of raising, so the
     rows already read are kept (review round 4). `where` is (side, rel) when
     the row names a file inside the trees, else None."""
-    __slots__ = ("where", "reason")
+    __slots__ = ("where", "reason", "kind")
 
-    def __init__(self, where, reason):
-        self.where, self.reason = where, reason
+    def __init__(self, where, reason, kind="row"):
+        self.where, self.reason, self.kind = where, reason, kind
 
 
 _ROW_ERRORS = (CouldNotCheck, KeyError, TypeError, AttributeError, ValueError)
@@ -608,12 +716,20 @@ def _run_ruff(argv, spec, tmp, files, timeout):
     proc = _spawn(argv + ["check", "--output-format", "json", "--exit-zero", "--no-cache",
                           "--extend-select", "E902"]
                   + list(spec.get("args") or []) + files, tmp, timeout)
-    _expect(proc, (0,), "ruff")
-    rows = _loads(proc.stdout, "ruff")
-    if not isinstance(rows, list):
-        raise CouldNotCheck("ruff output is not a list")
+    def extract(text):
+        rows = _loads(text, "ruff")
+        if not isinstance(rows, list):
+            raise CouldNotCheck("ruff output is not a list")
+        return rows
+    rows, odd = _rows(proc, (0,), "ruff", extract)
+    yield from odd
     def parse(row):
-        code = row.get("code") or "invalid-syntax"
+        # A null code is ruff's own spelling of a syntax error; a MISSING code
+        # is a row it did not finish (review round 7 BLOCK :664).
+        if row["code"] is None:
+            code = "invalid-syntax"
+        else:
+            code = _text(row, "code", "ruff")
         # invalid-syntax: parsing stopped; E902: the file could not be read.
         return _split(tmp, row["filename"]) + (code, _message(row, "ruff"),
                                                 code in ("invalid-syntax", "E902"))
@@ -627,13 +743,17 @@ def _run_shellcheck(argv, spec, tmp, files, timeout):
     rc_args = ["--rcfile", rcfile] if os.path.isfile(rcfile) else ["--norc"]
     proc = _spawn(argv + ["-f", "json1"] + rc_args + list(spec.get("args") or []) + files, tmp,
                   timeout)
-    _expect(proc, (0, 1), "shellcheck")
-    data = _loads(proc.stdout, "shellcheck")
-    rows = data.get("comments") if isinstance(data, dict) else None
-    if not isinstance(rows, list):
-        raise CouldNotCheck("shellcheck json1 output has no comments list")
-    yield from _consistent(proc, rows, "shellcheck")
+    def extract(text):
+        data = _loads(text, "shellcheck")
+        rows = data.get("comments") if isinstance(data, dict) else None
+        if not isinstance(rows, list):
+            raise CouldNotCheck("shellcheck json1 output has no comments list")
+        return rows
+    rows, odd = _rows(proc, (0, 1), "shellcheck", extract)
+    yield from odd or _consistent(proc, rows, "shellcheck")
     def parse(row):
+        if not isinstance(row["code"], int) or isinstance(row["code"], bool):
+            raise CouldNotCheck(f"shellcheck reported a code that is not a number: {row['code']!r}")
         code = f"SC{row['code']}"
         # SC1072: parsing stopped; SC1071: a shell ShellCheck does not check.
         return _split(tmp, os.path.join(tmp, row["file"])) + (
@@ -655,13 +775,15 @@ def _run_actionlint(argv, spec, tmp, files, timeout):
     proc = _spawn(argv + ["-format", "{{json .}}", "-no-color", "-shellcheck=", "-pyflakes="]
                   + (["-config-file", config[0]] if config else [])
                   + list(spec.get("args") or []) + files, tmp, timeout)
-    _expect(proc, (0, 1), "actionlint")
-    rows = _loads(proc.stdout, "actionlint")
-    if not isinstance(rows, list):
-        raise CouldNotCheck("actionlint output is not a list")
-    yield from _consistent(proc, rows, "actionlint")
+    def extract(text):
+        rows = _loads(text, "actionlint")
+        if not isinstance(rows, list):
+            raise CouldNotCheck("actionlint output is not a list")
+        return rows
+    rows, odd = _rows(proc, (0, 1), "actionlint", extract)
+    yield from odd or _consistent(proc, rows, "actionlint")
     def parse(row):
-        kind = row.get("kind") or "?"
+        kind = _text(row, "kind", "actionlint")
         return _split(tmp, os.path.join(tmp, row["filepath"])) + (
             kind, _message(row, "actionlint"), kind == "syntax-check")
     yield from _each(rows, "actionlint", tmp, lambda row: os.path.join(tmp, row["filepath"]),
@@ -672,25 +794,37 @@ def _run_pssa(argv, spec, tmp, files, timeout):
     script = os.path.join(tmp, "pssa.ps1")
     listing = os.path.join(tmp, "pssa-files.txt")
     rules = os.path.join(tmp, "pssa-rules.txt")
-    for path, lines in ((script, [_PSSA_SCRIPT]),
-                        (listing, [os.path.join(tmp, f) for f in files]),
-                        (rules, list(spec.get("rules") or []))):
+    for path, text in ((script, _PSSA_SCRIPT),
+                       (listing, json.dumps([os.path.join(tmp, f) for f in files])),
+                       (rules, json.dumps(list(spec.get("rules") or [])))):
         with open(path, "w", encoding="utf-8", newline="\n") as fh:
-            fh.write("\n".join(lines) + "\n")
+            fh.write(text + "\n")
     proc = _spawn(argv + ["-NoProfile", "-NonInteractive", "-File", script, listing, rules],
                   tmp, timeout)
-    _expect(proc, (0,), "psscriptanalyzer")
-    rows = _loads((proc.stdout or "").strip(), "psscriptanalyzer")
-    if isinstance(rows, dict):
-        rows = [rows]
-    if not isinstance(rows, list):
-        raise CouldNotCheck("psscriptanalyzer output is not a list")
+    def extract(text):
+        rows = _loads(text.strip(), "psscriptanalyzer")
+        if isinstance(rows, dict):
+            rows = [rows]
+        if not isinstance(rows, list):
+            raise CouldNotCheck("psscriptanalyzer output is not a list")
+        return rows
+    rows, odd = _rows(proc, (0,), "psscriptanalyzer", extract)
+    yield from odd
     def parse(row):
-        return _split(tmp, row["file"]) + (row.get("rule") or "?",
-                                           _message(row, "psscriptanalyzer"),
-                                           row.get("severity") == "ParseError")
+        severity = row.get("severity") if isinstance(row, dict) else None
+        if severity not in PSSA_SEVERITIES:
+            raise CouldNotCheck(f"psscriptanalyzer reported a severity it does not have: "
+                                f"{severity!r}")
+        # A parse error may carry no rule name; any other row must.
+        rule = (row.get("rule") or "ParseError") if severity == "ParseError" and isinstance(
+            row.get("rule"), str) else _text(row, "rule", "psscriptanalyzer")
+        return _split(tmp, row["file"]) + (rule, _message(row, "psscriptanalyzer"),
+                                           severity == "ParseError")
     yield from _each(rows, "psscriptanalyzer", tmp, lambda row: row["file"], parse)
 
+
+# DiagnosticSeverity, the values `[string]$r.Severity` can take.
+PSSA_SEVERITIES = ("Information", "Warning", "Error", "ParseError")
 
 RUNNERS = {"ruff": _run_ruff, "shellcheck": _run_shellcheck,
            "psscriptanalyzer": _run_pssa, "actionlint": _run_actionlint}
@@ -711,10 +845,13 @@ def check_one(root, spec, entries, manifest):
             files = [f"head/{e['path']}" for e in selected]
             files += [f"base/{rel}" for rel in sorted(with_base)]
             counts = {"base": collections.Counter(), "head": collections.Counter()}
-            aborted, aborted_files, unparsed, bad = [], set(), set(), []
+            aborted, aborted_files, unparsed, bad, exits = [], set(), set(), [], []
             rows = RUNNERS[spec["tool"]](argv, spec, tmp, files,
                                          spec.get("timeout") or DEFAULT_TIMEOUT)
             for row in rows:
+                if isinstance(row, _BadRow) and row.kind == "exit":
+                    exits.append(row.reason)
+                    continue
                 if isinstance(row, _BadRow):
                     # A bad BASE row leaves that file's base count short, so
                     # its head findings may not be new: unchecked, like a base
@@ -742,7 +879,7 @@ def check_one(root, spec, entries, manifest):
         added = n - counts["base"][key]
         if added > 0 and key[0] not in unparsed:
             new.append({"path": key[0], "rule": key[1], "message": key[2], "count": added})
-    parts = []
+    parts = list(exits)
     if aborted:
         parts.append(f"{name} could not parse {len(aborted_files)} "
                      "file(s), so they were not checked: " + "; ".join(sorted(set(aborted))))
@@ -785,14 +922,17 @@ def run_checks(root, manifest_path):
     return results, configured
 
 
-def run_checks_bound(root, manifest_path):
+def run_checks_bound(root, manifest_path, scratch=None):
     """(results, configured, bundle_sha256): the hash comes from the same read
     of the manifest as the entries the linters checked, so a manifest replaced
     mid-run cannot have these results recorded against it (review round 4).
-    bundle_sha256 is None when the manifest could not be read."""
+    bundle_sha256 is None when the manifest could not be read. The manifest
+    is read inside `scratch` (review_run passes its scratch directory); with
+    none, inside the manifest's own directory."""
     manifest, manifest_problem = None, None
+    base = scratch or os.path.dirname(os.path.abspath(manifest_path))
     try:
-        manifest = json.loads(read_regular(manifest_path).decode("utf-8"))
+        manifest = json.loads(read_regular(manifest_path, base).decode("utf-8"))
     except (OSError, ValueError) as exc:
         manifest_problem = exc
     bundle = _bundle_hash(manifest)
@@ -844,9 +984,10 @@ def lines(results):
     out = []
     for r in results:
         label = {PASS: "pass", FAIL: "FAIL", COULD_NOT: "COULD NOT CHECK", NA: "n/a"}[r["status"]]
-        out.append(f"pre-review checks: {r['name']} {label} - {r['detail']}")
+        out.append(f"pre-review checks: {one_line(r['name'])} {label} - {one_line(r['detail'])}")
         for row in r["new"][:SHOWN]:
-            out.append(f"  NEW x{row['count']} {row['path']}: {row['rule']} {row['message']}")
+            out.append(f"  NEW x{row['count']} {one_line(row['path'])}: {one_line(row['rule'])} "
+                       f"{one_line(row['message'])}")
         if len(r["new"]) > SHOWN:
             out.append(f"  ... and {len(r['new']) - SHOWN} more")
     return out
@@ -866,8 +1007,18 @@ def _write_json(scratch, path, payload):
         raise
 
 
-def round_record_path(scratch, number):
-    return os.path.join(scratch, f"prereview-r{number}.json")
+_TICKET_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
+
+
+def round_record_path(scratch, ticket, number):
+    """`prereview-<ticket>-r<N>.json` (review round 7 FIX :870: two tickets
+    sharing a scratch directory each keep round 1). ValueError for a ticket
+    that is not a plain file-name part, so it can never name another path."""
+    if not isinstance(ticket, str) or not _TICKET_NAME.match(ticket):
+        raise ValueError(f"ticket {ticket!r} is not a plain name")
+    if not isinstance(number, int) or isinstance(number, bool) or number < 1:
+        raise ValueError(f"round {number!r} is not a positive integer")
+    return os.path.join(scratch, f"prereview-{ticket}-r{number}.json")
 
 
 def record(scratch, bundle_sha256, results, overridden, stood_down, configured=True):
@@ -883,9 +1034,10 @@ def record(scratch, bundle_sha256, results, overridden, stood_down, configured=T
 def bind_record(staged, scratch, ticket, number):
     """The staged record becomes round `number`'s, ticket and round written
     inside so a file moved or copied between rounds does not match."""
-    payload = json.loads(read_regular(staged).decode("utf-8"))
+    target = round_record_path(scratch, ticket, number)
+    payload = json.loads(read_regular(staged, scratch).decode("utf-8"))
     payload.update(ticket=ticket, round=number)
-    _write_json(scratch, round_record_path(scratch, number), payload)
+    _write_json(scratch, target, payload)
     os.remove(staged)
 
 
@@ -895,10 +1047,13 @@ def recorded(scratch, bundle_sha256, ticket, number):
     as a clean one."""
     if not isinstance(bundle_sha256, str) or not bundle_sha256:
         return {"result": NOT_RECORDED, "reason": "the bundle has no bundle_sha256 to match"}
-    path = round_record_path(scratch, number)
+    try:
+        path = round_record_path(scratch, ticket, number)
+    except ValueError as exc:
+        return {"result": NOT_RECORDED, "reason": str(exc)}
     name = os.path.basename(path)
     try:
-        payload = json.loads(read_regular(path).decode("utf-8"))
+        payload = json.loads(read_regular(path, scratch).decode("utf-8"))
     except FileNotFoundError:
         return {"result": NOT_RECORDED, "reason": f"no {name} in the scratch directory"}
     except (OSError, ValueError) as exc:
@@ -969,7 +1124,7 @@ def main(argv):
     except Exception as exc:  # noqa: BLE001 - boundary, see below  pylint: disable=broad-exception-caught
         # The CLI's boundary: exit 1 means "new findings", so a crash must not
         # leave through the default traceback status.
-        print(f"pre-review checks: COULD NOT CHECK - {type(exc).__name__}: {exc}")
+        print(f"pre-review checks: COULD NOT CHECK - {type(exc).__name__}: {one_line(exc)}")
         return EXIT_COULD_NOT
     if not configured:
         print(f"pre-review checks: none configured ({VERIFY_MAP} has no {CONFIG_KEY})")

@@ -47,8 +47,9 @@ _FAKE = textwrap.dedent(r'''
                                            for f in args if os.path.isfile(f)]}))
             sys.exit(1)
         print(json.dumps([{"filename": os.path.abspath(f), "filepath": f, "file": f,
-                           "code": "BLE001", "kind": "expression", "rule": "R"}
-                          for f in (open(args[-2]).read().split() if tool == "pwsh"
+                           "code": "BLE001", "kind": "expression", "rule": "R",
+                           "severity": "Warning"}
+                          for f in (json.load(open(args[-2], encoding="utf-8")) if tool == "pwsh"
                                     else [a for a in args if os.path.isfile(a)])]))
         sys.exit(1 if tool == "actionlint" else 0)
     if mode in ("orphan", "orphan-exit"):
@@ -62,7 +63,7 @@ _FAKE = textwrap.dedent(r'''
     if mode == "rc1-none":
         print(json.dumps({"comments": []}) if tool == "shellcheck" else "[]"); sys.exit(1)
     if tool == "pwsh":
-        files = [l for l in open(args[-2], encoding="utf-8").read().splitlines() if l]
+        files = json.load(open(args[-2], encoding="utf-8"))
     else:
         files = [a for a in args if not a.startswith("-") and os.path.isfile(a)]
     rows = []
@@ -84,23 +85,27 @@ _FAKE = textwrap.dedent(r'''
         if bad_file:
             row[key] = where(bad_file)
         return [row]
+    drop = os.environ.get("FAKE_LINT_DROP", "")
+    def emit(out, code):
+        for row in (out["comments"] if isinstance(out, dict) else out):
+            row.pop(drop, None)
+        print(json.dumps(out))
+        sys.exit(int(os.environ.get("FAKE_LINT_EXIT") or code))
     if tool == "ruff":
-        print(json.dumps([{"filename": os.path.abspath(n), "message": m,
-                           "code": None if a else r} for n, r, m, a in rows]
-                         + extra("filename", os.path.abspath))); sys.exit(0)
+        emit([{"filename": os.path.abspath(n), "message": m, "code": None if a else r}
+              for n, r, m, a in rows] + extra("filename", os.path.abspath), 0)
     if tool == "shellcheck":
-        print(json.dumps({"comments": [{"file": n, "code": 1072 if a else int(r),
-                                        "level": "error", "message": m} for n, r, m, a in rows]
-                          + extra("file", str)}))
-        sys.exit(0 if mode == "rc0-rows" else 1 if rows or bad else 0)
+        emit({"comments": [{"file": n, "code": 1072 if a else int(r), "level": "error",
+                            "message": m} for n, r, m, a in rows] + extra("file", str)},
+             0 if mode == "rc0-rows" else 1 if rows or bad else 0)
     if tool == "actionlint":
-        print(json.dumps([{"filepath": n, "kind": "syntax-check" if a else r, "message": m}
-                          for n, r, m, a in rows] + extra("filepath", str)))
-        sys.exit(0 if mode == "rc0-rows" else 1 if rows or bad else 0)
+        emit([{"filepath": n, "kind": "syntax-check" if a else r, "message": m}
+              for n, r, m, a in rows] + extra("filepath", str),
+             0 if mode == "rc0-rows" else 1 if rows or bad else 0)
     if tool == "pwsh":
-        print(json.dumps([{"file": n, "rule": r or "", "message": m,
-                           "severity": "ParseError" if a else "Warning"}
-                          for n, r, m, a in rows] + extra("file", str))); sys.exit(0)
+        emit([{"file": n, "rule": r or "", "message": m,
+               "severity": "ParseError" if a else "Warning"}
+              for n, r, m, a in rows] + extra("file", str), 0)
 ''')
 
 _TOOLS = {  # tool -> (fake argv[1], a file it lints, a rule name it would report)
@@ -190,7 +195,7 @@ def _got(scratch, bundle, ticket=_TICKET, number=_ROUND):
 
 def _write_bound(scratch, payload):
     """A hand-written record where the round's record lives."""
-    with open(rc.round_record_path(str(scratch), _ROUND), "w", encoding="utf-8") as fh:
+    with open(rc.round_record_path(str(scratch), _TICKET, _ROUND), "w", encoding="utf-8") as fh:
         json.dump(payload, fh)
 
 
@@ -385,7 +390,7 @@ def test_recorded_is_bound_to_the_bundle(tmp_path):
 @pytest.mark.parametrize("content", [None, "{torn"])
 def test_a_missing_or_torn_record_is_not_recorded_never_none(tmp_path, content):
     if content is not None:
-        with open(rc.round_record_path(str(tmp_path), _ROUND), "w", encoding="utf-8") as fh:
+        with open(rc.round_record_path(str(tmp_path), _TICKET, _ROUND), "w", encoding="utf-8") as fh:
             fh.write(content)
 
     found = _got(tmp_path, "sha-a")
@@ -1349,7 +1354,7 @@ def test_class_b_every_file_read_goes_through_read_regular():
                 reading = mode is None or not any(c in str(mode) for c in "wax")
             else:
                 reading = name in ("os.open",) or name.endswith((".read_text", ".read_bytes"))
-            if reading and fn != "read_regular":
+            if reading and fn not in ("read_regular", "_walk_to_parent"):
                 bad.append(f"{os.path.basename(path)}:{node.lineno} {name} in {fn}")
     assert not bad, bad
 
@@ -1357,7 +1362,7 @@ def test_class_b_every_file_read_goes_through_read_regular():
 def test_read_regular_reads_a_regular_file(tmp_path):
     (tmp_path / "f").write_bytes(b"abc")
 
-    assert rc.read_regular(str(tmp_path / "f")) == b"abc"
+    assert rc.read_regular(str(tmp_path / "f"), str(tmp_path)) == b"abc"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="FIFOs and symlinks are POSIX here")
@@ -1375,12 +1380,12 @@ def test_read_regular_refuses_what_is_not_a_regular_file(tmp_path, kind):
         path = "/dev/null"
 
     with pytest.raises(rc.NotRegularFile):
-        rc.read_regular(str(path))
+        rc.read_regular(str(path), os.path.dirname(str(path)))
 
 
 def test_read_regular_says_absent(tmp_path):
     with pytest.raises(FileNotFoundError):
-        rc.read_regular(str(tmp_path / "absent"))
+        rc.read_regular(str(tmp_path / "absent"), str(tmp_path))
 
 
 @pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
@@ -1431,7 +1436,7 @@ def test_a_fifo_is_could_not_check_and_never_blocks(tmp_path, where):
 @pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
 def test_a_symlinked_record_is_not_recorded(tmp_path):
     _bound(tmp_path, "sha-a", [_ROW])
-    real = rc.round_record_path(str(tmp_path), _ROUND)
+    real = rc.round_record_path(str(tmp_path), _TICKET, _ROUND)
     os.rename(real, tmp_path / "moved.json")
     os.symlink(tmp_path / "moved.json", real)
 
@@ -1527,7 +1532,249 @@ def test_two_runs_sharing_a_scratch_keep_their_own_records(tmp_path):
 @pytest.mark.parametrize("ticket, number", [("T-2", _ROUND), (_TICKET, 2)])
 def test_a_record_for_another_ticket_or_round_is_not_recorded(tmp_path, ticket, number):
     _bound(tmp_path, "sha-a", [_ROW])
-    os.replace(rc.round_record_path(str(tmp_path), _ROUND),
-               rc.round_record_path(str(tmp_path), number))
+    os.replace(rc.round_record_path(str(tmp_path), _TICKET, _ROUND),
+               rc.round_record_path(str(tmp_path), ticket, number))
 
     assert _got(tmp_path, "sha-a", ticket=ticket, number=number)["result"] == rc.NOT_RECORDED
+
+
+# ---- review round 7 (owner granted round 8, 2026-10-02) ----
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_an_untracked_map_behind_a_symlinked_crew_directory_is_could_not_check(tmp_path, fake):
+    """Round 7 BLOCK :172: `.crew` itself a symlink to a directory holding a
+    map with no preReview. The leaf is a regular file; the parent is not."""
+    repo = _plain(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "verify.json").write_text('{"version": 1}', encoding="utf-8")
+    os.symlink(elsewhere, repo / ".crew")
+
+    results, configured = rc.run_checks(str(repo), _bundle(repo, tmp_path))
+
+    assert (configured, [(r["name"], r["status"]) for r in results]) == (
+        True, [("config", rc.COULD_NOT)]), results
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+@pytest.mark.parametrize("depth", [1, 2])
+def test_read_regular_refuses_a_symlink_at_any_component_below_its_base(tmp_path, depth):
+    real = tmp_path / "real" / "a" / "b"
+    real.mkdir(parents=True)
+    (real / "f").write_bytes(b"x")
+    base = tmp_path / "base"
+    base.mkdir()
+    if depth == 1:
+        os.symlink(tmp_path / "real" / "a", base / "a")
+    else:
+        (base / "a").mkdir()
+        os.symlink(real, base / "a" / "b")
+
+    with pytest.raises(rc.NotRegularFile):
+        rc.read_regular(str(base / "a" / "b" / "f"), str(base))
+
+
+def test_read_regular_reads_a_nested_regular_file_and_says_a_missing_parent(tmp_path):
+    (tmp_path / "a" / "b").mkdir(parents=True)
+    (tmp_path / "a" / "b" / "f").write_bytes(b"x")
+
+    assert rc.read_regular(str(tmp_path / "a" / "b" / "f"), str(tmp_path)) == b"x"
+    with pytest.raises(FileNotFoundError):
+        rc.read_regular(str(tmp_path / "gone" / "f"), str(tmp_path))
+
+
+@pytest.mark.parametrize("rel", ["../outside", "."])
+def test_read_regular_refuses_a_path_outside_its_base(tmp_path, rel):
+    (tmp_path / "outside").write_bytes(b"x")
+    base = tmp_path / "base"
+    base.mkdir()
+
+    with pytest.raises(rc.NotRegularFile):
+        rc.read_regular(os.path.join(str(base), rel), str(base))
+
+
+def test_class_b_every_read_names_the_directory_it_trusts():
+    """Round 7: a reader with no base checks the leaf only. Every call of
+    read_regular in the swept files passes a base."""
+    bad = []
+    for path in _SWEPT:
+        for node, fn in _calls(path):
+            name = _dotted(node.func)
+            if name.endswith("read_regular") and len(node.args) + len(node.keywords) < 2:
+                bad.append(f"{os.path.basename(path)}:{node.lineno} in {fn}")
+    assert not bad, bad
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a newline in a file name is POSIX here")
+def test_a_newline_in_a_powershell_name_never_splits_the_file_list(tmp_path, fake):
+    """Round 7 BLOCK :679: the finding-bearing file is linted as itself, never
+    as the two clean files its name splits into."""
+    repo = _start(tmp_path, {"first.ps1": "clean\n", "second.ps1": "clean\n"},
+                  [_linter(fake, "psscriptanalyzer")])
+    _edit(repo, "first.ps1\nhead/second.ps1", "# LINT PSAvoidUsingEmptyCatchBlock bad\n")
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], [r["path"] for r in result["new"]]) == (
+        rc.FAIL, ["first.ps1\nhead/second.ps1"]), result
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a newline in a file name is POSIX here")
+def test_real_pssa_lints_a_name_with_a_newline(tmp_path):
+    if not _pssa_present():
+        pytest.skip("pwsh with PSScriptAnalyzer is not installed, so this real-tool case did not run")
+    repo = _start(tmp_path, {"first.ps1": "Write-Output 'a'\n", "second.ps1": "Write-Output 'b'\n"},
+                  [{"tool": "psscriptanalyzer", "rules": ["PSAvoidUsingEmptyCatchBlock"]}])
+    _edit(repo, "first.ps1\nhead/second.ps1", "try { Write-Output 'a' } catch { }\n")
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], [(r["path"], r["rule"]) for r in result["new"]]) == (
+        rc.FAIL, [("first.ps1\nhead/second.ps1", "PSAvoidUsingEmptyCatchBlock")]), result
+
+
+def test_a_rule_name_with_a_newline_is_rejected(tmp_path, fake):
+    """Neighbour: a newline in a rule would have split one allowlist entry into two."""
+    repo = _start(tmp_path, {"a.ps1": "x\n"},
+                  [_linter(fake, "psscriptanalyzer", rules=["PSAvoidUsingEmptyCatchBlock\nX"])])
+    _edit(repo, "a.ps1", "y\n")
+
+    results, _ = rc.run_checks(str(repo), _bundle(repo, tmp_path))
+
+    assert [(r["name"], r["status"]) for r in results] == [("config", rc.COULD_NOT)], results
+
+
+@pytest.mark.parametrize("tool", sorted(_TOOLS))
+@pytest.mark.parametrize("in_base, expected", [(False, rc.FAIL), (True, rc.COULD_NOT)])
+def test_an_unexpected_exit_keeps_the_rows_it_printed(tmp_path, fake, monkeypatch, tool,
+                                                     in_base, expected):
+    """Round 7 BLOCK :630: valid rows and exit 4. A NEW finding among them
+    still FAILs, which --allow-unverified never overrides; with nothing new
+    the exit makes it COULD NOT CHECK."""
+    _, rel, rule = _TOOLS[tool]
+    finding = f"# LINT {rule} a problem\n"
+    repo = _start(tmp_path, {rel: finding if in_base else "line one\n"}, [_linter(fake, tool)])
+    _edit(repo, rel, finding + "more\n")
+    monkeypatch.setenv("FAKE_LINT_EXIT", "4")
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], "exited 4" in result["detail"]) == (expected, True), result
+
+
+@pytest.mark.parametrize("tool, field", [("actionlint", "kind"), ("psscriptanalyzer", "rule"),
+                                         ("psscriptanalyzer", "severity"),
+                                         ("shellcheck", "code"), ("ruff", "code")])
+@pytest.mark.parametrize("side", ["head", "both"])
+def test_a_row_missing_a_field_is_could_not_check_never_a_default(tmp_path, fake, monkeypatch,
+                                                                  tool, field, side):
+    """Round 7 BLOCK :664: a missing kind, rule, severity or code is never
+    filled with "?" (or read as a parse abort): the row is unreadable."""
+    _, rel, rule = _TOOLS[tool]
+    finding = f"# LINT {rule} a problem\n"
+    repo = _start(tmp_path, {rel: finding if side == "both" else "line one\n"},
+                  [_linter(fake, tool)])
+    _edit(repo, rel, finding + "more\n")
+    monkeypatch.setenv("FAKE_LINT_DROP", field)
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], result["new"], "could not read" in result["detail"]) == (
+        rc.COULD_NOT, [], True), result
+
+
+@pytest.mark.parametrize("tool, value", [("shellcheck", "2086"), ("shellcheck", True),
+                                         ("psscriptanalyzer", "Severe")])
+def test_a_field_of_the_wrong_type_or_value_is_could_not_check(tmp_path, fake, monkeypatch,
+                                                               tool, value):
+    """Neighbour: a shellcheck code that is not an int, a PSScriptAnalyzer
+    severity it does not have."""
+    _, rel, rule = _TOOLS[tool]
+    repo = _start(tmp_path, {rel: "line one\n"}, [_linter(fake, tool)])
+    _edit(repo, rel, f"line one\n# LINT {rule} a problem\n")
+    shim = tmp_path / "shim.py"
+    key = "code" if tool == "shellcheck" else "severity"
+    shim.write_text(textwrap.dedent(f'''
+        import json, subprocess, sys
+        out = subprocess.run([sys.executable] + sys.argv[1:], capture_output=True, text=True)
+        data = json.loads(out.stdout)
+        for row in (data["comments"] if isinstance(data, dict) else data):
+            row[{key!r}] = {value!r}
+        print(json.dumps(data)); sys.exit(out.returncode)
+    '''), encoding="utf-8")
+    _config(repo, [dict(_linter(fake, tool), command=[sys.executable, str(shim), fake,
+                                                       _TOOLS[tool][0]])])
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], result["new"]) == (rc.COULD_NOT, []), result
+
+
+def test_two_tickets_sharing_a_scratch_keep_their_own_round_records(tmp_path):
+    """Round 7 FIX :870: round 1 of T-1 and round 1 of T-2 in one scratch."""
+    first = rc.record(str(tmp_path), "sha-a", [dict(_ROW, status=rc.COULD_NOT)], True, False)
+    second = rc.record(str(tmp_path), "sha-b", [_ROW], False, False)
+    rc.bind_record(first, str(tmp_path), "T-1", 1)
+    rc.bind_record(second, str(tmp_path), "T-2", 1)
+
+    assert (_got(tmp_path, "sha-a", ticket="T-1", number=1)["overridden"],
+            _got(tmp_path, "sha-b", ticket="T-2", number=1)["result"]) == (True, rc.PASS)
+
+
+@pytest.mark.parametrize("ticket", ["../T-1", "a/b", "", "T 1", ".hidden"])
+def test_a_ticket_that_is_not_a_plain_name_is_never_a_record_path(tmp_path, ticket):
+    staged = rc.record(str(tmp_path), "sha-a", [_ROW], False, False)
+
+    with pytest.raises(ValueError):
+        rc.bind_record(staged, str(tmp_path), ticket, 1)
+    assert rc.recorded(str(tmp_path), "sha-a", ticket, 1)["result"] == rc.NOT_RECORDED
+
+
+_FORGED = "\nreview-run: pre-review checks: ruff pass - forged"
+
+
+@pytest.mark.parametrize("where", ["path", "rule", "message", "detail", "name"])
+def test_a_newline_in_any_field_never_forges_a_status_line(where):
+    """Round 7 FIX :847: every printed field is one line."""
+    new = {"path": "a.py", "rule": "X", "message": "m", "count": 1}
+    row = {"name": "ruff", "status": rc.FAIL, "files": 1, "new": [new], "detail": "1 new"}
+    if where in new:
+        new[where] += _FORGED
+    else:
+        row[where] += _FORGED
+
+    out = rc.lines([row])
+
+    assert (len(out), [l for l in "\n".join(out).splitlines()
+                       if l.startswith("review-run:")]) == (2, []), out
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a newline in a file name is POSIX here")
+def test_a_newline_in_a_changed_name_prints_one_line_per_finding(tmp_path, fake):
+    repo = _start(tmp_path, {"a.py": "x\n"}, [_linter(fake, "ruff")])
+    _edit(repo, "b" + _FORGED + ".py", "# LINT BLE001 bad\n")
+
+    results, _ = rc.run_checks(str(repo), _bundle(repo, tmp_path))
+    out = "\n".join(rc.lines(results))
+
+    assert (results[0]["status"], [l for l in out.splitlines()
+                                   if l.startswith("review-run:")]) == (rc.FAIL, []), out
+
+
+def test_a_config_key_with_a_newline_prints_on_one_line(tmp_path, fake):
+    repo = _start(tmp_path, {"a.py": "x\n"}, [dict(_linter(fake, "ruff"), **{"x" + _FORGED: 1})])
+    _edit(repo, "a.py", "y\n")
+
+    results, _ = rc.run_checks(str(repo), _bundle(repo, tmp_path))
+
+    assert [l for l in "\n".join(rc.lines(results)).splitlines()
+            if l.startswith("review-run:")] == [], results
+
+
+def test_the_cli_prints_a_crash_on_one_line(tmp_path, monkeypatch, capsys):
+    def boom(*_a, **_k):
+        raise RuntimeError("bad" + _FORGED)
+    monkeypatch.setattr(rc, "run_checks", boom)
+
+    assert rc.main(["--manifest", str(tmp_path / "m.json")]) == rc.EXIT_COULD_NOT
+    assert [l for l in capsys.readouterr().out.splitlines() if l.startswith("review-run:")] == []

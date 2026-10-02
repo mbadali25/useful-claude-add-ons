@@ -127,7 +127,7 @@ def _run(repo, scratch, tmp_path, provider, *extra):
 def _record(scratch):
     """The round's record when a round was reserved, else the one record a
     refusing run staged."""
-    bound = sorted(scratch.glob("prereview-r*.json"))
+    bound = sorted(scratch.glob(f"prereview-{TICKET}-r*.json"))
     found = bound or sorted(scratch.glob("prereview.run-*.json"))
     assert len(found) == 1, found
     return json.loads(found[-1].read_text(encoding="utf-8"))
@@ -250,7 +250,7 @@ def test_claude_completion_carries_prereview(tmp_path, fake, record):
     reserved = _run(repo, scratch, tmp_path, "claude")
     assert "ROUND=1" in reserved.stdout, reserved.stderr
     if record == "removed":
-        os.remove(rc.round_record_path(str(scratch), 1))
+        os.remove(rc.round_record_path(str(scratch), TICKET, 1))
     manifest = json.loads((scratch / "manifest.json").read_text(encoding="utf-8"))
     out = tmp_path / "out.txt"
     out.write_text("\n".join("READ|" + p["path"] for p in manifest["parts"]) + "\nCLEAN\n",
@@ -344,3 +344,47 @@ def test_two_runs_sharing_a_scratch_do_not_swap_records(tmp_path):
     assert ("ROUND=1" in allowed.stdout, refused.returncode, done.returncode,
             review["prereview"]["overridden"], review["prereview"]["round"]) == (
         True, 5, 0, True, 1), allowed.stderr + refused.stderr + done.stderr
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_a_symlinked_parts_directory_is_never_read_as_the_bundle(tmp_path, fake):
+    """Neighbour of review round 7 BLOCK :172 in review_run: the parts live in
+    `<out>.parts/`, and that directory swapped for a link to an identical copy
+    is a bundle problem, not a bundle."""
+    import review_run  # pylint: disable=import-outside-toplevel
+    _, scratch = _setup(tmp_path, [_ruff(fake)])
+    manifest = json.loads((scratch / "manifest.json").read_text(encoding="utf-8"))
+    parts = os.path.dirname(manifest["parts"][0]["path"])
+    copy = tmp_path / "copy.parts"
+    os.rename(parts, copy)
+    os.symlink(copy, parts)
+
+    problems = review_run.bundle_problems(manifest)
+
+    assert problems and all("could not be read" in p for p in problems), problems
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_a_manifest_behind_a_symlinked_scratch_subdirectory_is_could_not_check(tmp_path, fake):
+    repo, scratch = _setup(tmp_path, [_ruff(fake)])
+    real = tmp_path / "real-sub"
+    real.mkdir()
+    (real / "manifest.json").write_bytes((scratch / "manifest.json").read_bytes())
+    os.symlink(real, scratch / "sub")
+
+    results, _, bundle = rc.run_checks_bound(str(repo), str(scratch / "sub" / "manifest.json"),
+                                             str(scratch))
+
+    assert ([(r["name"], r["status"]) for r in results], bundle) == (
+        [("manifest", rc.COULD_NOT)], None), results
+
+
+def test_a_path_inside_scratch_is_checked_from_scratch(tmp_path):
+    """So a symlinked directory between scratch and the manifest or output is
+    seen; a path the operator put elsewhere is checked from its own folder."""
+    import review_run  # pylint: disable=import-outside-toplevel
+    scratch = tmp_path / "s"
+
+    assert (review_run._trusted(str(scratch / "sub" / "m.json"), str(scratch)),  # pylint: disable=protected-access
+            review_run._trusted(str(tmp_path / "o" / "out.txt"), str(scratch))) == (  # pylint: disable=protected-access
+        str(scratch), str(tmp_path / "o"))
