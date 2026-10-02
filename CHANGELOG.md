@@ -4,6 +4,44 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `bitbucket` 1.2.3: variables read back with the trailing slash, repository access tokens are UI-only, reviewers on Bitbucket (T-0503)
+
+- **What changed.** `skills/bitbucket/SKILL.md` gains a fourth common task,
+  "Add reviewers to PR #12" (`effective-default-reviewers`, then a
+  read-modify-write `PUT pullrequests/{id}` carrying the existing title and the
+  full `reviewers` list), a "Pipeline and deployment variables: read back with
+  the trailing slash" section (an empty `values` from the slash-less path is
+  "could not tell", not "absent"), a "Repository access tokens are UI-only on
+  Cloud" section, two Safety rails bullets (never ask for a token creation or
+  rotation page to be pasted; a token seen in chat is leaked - revoke and
+  recreate), and a trigger clause in the frontmatter `description`.
+  `references/api.md` gains the PUT reviewer body, a "Default reviewers"
+  sub-list, a "Pipeline and deployment variables" section and two Gotchas.
+  Every API sentence cites its Atlassian page. Both catalog rows' "Use cases"
+  column names the two new symptoms. Reviewer uuids are read from
+  `values[].user.uuid` on `effective-default-reviewers`, the project-level list
+  and workspace members; only the repo-level `default-reviewers` list answers
+  with `values[].uuid`. `scripts/_test/merge_gate.sh` gains a
+  "documentation invariants" section that keeps the entries, the trailing
+  slash, the uuid path, the scopes, a citation on every new `api.md` bullet and
+  the two catalog rows from drifting; each check reads only the section it
+  guards, and the token scan reports a read error as "could not tell".
+- **Why.** The aws-managed-services session's report of 2026-09-28, items 18
+  (variables GETs without the trailing slash read as empty - a false "variable
+  not present"), 19 (repository access tokens cannot be created over the Cloud
+  REST API, and a live token was pasted into chat from the rotate dialog) and
+  20 (the GitHub-only CODEOWNERS / `gh pr create --reviewer` habit has no
+  Bitbucket twin).
+- **Not reproduced.** The slash-less GET's HTTP 200 with `"values": []`; the
+  access-token endpoints' 404s and the "Access token rotated" dialog carrying
+  the value three times in its page HTML; the reviewer PUT's HTTP 200 with the
+  description preserved. All are the reporter's observations and the skill
+  text says so ("reported 2026-09-28, not reproduced here"). No call was made
+  against a Bitbucket workspace.
+- **Unchanged.** `scripts/bb.sh` and `scripts/merge_gate.sh` behaviour, the
+  marketplace `description`, the install scripts' menu text, `skills/UPDATE.md`.
+- Bumped `bitbucket` 1.2.2 -> 1.2.3.
+
 ### Fixed - `crew` 1.0.114, `obsidian-vault` 0.4.16: every pwsh the test suites spawn gets its own XDG_CACHE_HOME (L-0557)
 
 - **Cause.** pwsh reads its multicore-JIT startup profile,
