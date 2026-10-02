@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@fa63852d
+anchor: useful-claude-add-ons@f937576e
 verified: 2026-10-01
 
 ## Re-derive provenance
@@ -204,11 +204,11 @@ listing the directory.
 - `SKILL_KEYS` dropped **36 -> 34**: `claude-memories-canvas` and
   `claude-memories-vault` removed from both install scripts' catalogs and
   from `skills/`. `skills/README.md` lost the two corresponding table rows in
-  this range (confirmed by diff — pure deletions, not moves). `README.md:736`
+  this range (confirmed by diff — pure deletions, not moves). `README.md:749`
   (outside this note's tracked pathspec, read directly) explains the
   replacement: `obsidian-vault`'s portable `obsidian-memory-contract`
   profiles.
-- `skills/README.md:15` — `<!-- BEGIN skills/UPDATE.md -->` block, generated
+- `skills/README.md:28` — `<!-- BEGIN skills/UPDATE.md -->` block, generated
   from `skills/UPDATE.md` by `scripts/sync-updates.py`, still reads "Nine new
   skills, taking the marketplace from 25 to 34" under an `### Unreleased`
   heading. This line was **not** touched by the diff in this range (the
@@ -1580,3 +1580,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `1e2762a0` -> `b10e3895` on 2026-10-02 (L-0555 review round 2 fixes: `ci_receipt.py` treats an unreadable stand-down as UNKNOWN, re-reads the stand-down at the last look, and anchors the origin host to github.com; crew 1.0.116 re-set).** `git diff --name-only 1e2762a0 b10e3895` outside refresh artifacts returns `plugin/crew/hooks/scripts/ci_receipt.py` and `plugin/crew/tests/test_ci_receipt.py`; the version files net to no change. No code map cites a line of either file, so every citation maps onto itself. No suite was executed for this note.
 
 **Re-anchored `b4f04e23` -> `fa63852d` on 2026-10-02 (L-0555 merges origin/main `dd95135a`, L-0578 #304, crew 1.0.119, at `fa63852d` with rerere disabled; crew 1.0.120).** The merge took main's anchor and INDEX rows and kept both lanes' re-anchor notes. L-0555's own change against main is `ci_receipt.py`, `test_ci_receipt.py`, `.github/workflows/verify-gate.yml`, `scripts/gate-runner.py`, one `.crew/verify.json` rule (line 454 edited in place, 455 appended), `plugin/crew/README.md` (+23 lines after `:2167`), `CHANGELOG.md` (+17 lines at the top) and the version and count lines. Citations moved by difflib: `CHANGELOG.md` +17 in `crew.md`'s current-citation lines, `plugin/crew/README.md` +23 past `:2167` in `repo-docs.md` (nine). No suite was executed for this note.
+
+**Re-anchored `fa63852d` -> `f937576e` on 2026-10-02 (L-0555 merges origin/main `04dde5a2`, W-0120 #307, the claude- prefix renames, at `f937576e` with rerere disabled; crew stays 1.0.120).** Only `CHANGELOG.md` conflicted. Citations moved by difflib: this lane's `CHANGELOG.md` lines in `crew.md` +26 (W-0120's entry), `README.md:736` -> `:749` (three, in `repo-docs.md` and `install-scripts.md`) and `skills/README.md:15` -> `:28`. No suite was executed for this note.
