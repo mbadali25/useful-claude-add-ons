@@ -22,9 +22,13 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Every Windows set reports `--durations=50` and uploads its collection and JUnit** (14-day
   artifacts); the default shards also upload pytest-split durations, so a later change can commit
   a durations file and split by time rather than by count.
-- **One place to retarget.** Every `crew-windows-*` job takes `runs-on` from one
-  `crew-windows-decide` output (`windows-latest` today), and the Windows steps run under
-  `shell: pwsh` with `python`, so moving them to a self-hosted Windows pool changes one line.
+- **The Windows jobs run on the self-hosted `crew-win` pool.** Every `crew-windows-*` job takes
+  `runs-on` from one `crew-windows-decide` output. That output is `["self-hosted","Windows","crew-win"]`
+  (winrepo2-1..4, anew-inf01-1..2) for every non-PR event and every pull request from a branch of
+  this repo. It is `"windows-latest"` for a fork pull request, because the repo is public
+  (owner 2026-09-30, "No fork PRs"). Owner 2026-10-02. Unlike the Linux pool, this does not read
+  `CREW_RUNNER`, so the required Windows check waits until a `crew-win` runner is online. The
+  Windows steps run under `shell: pwsh` with `python`.
 - `scripts/_test/windows-shards.py` (35 cases) tests the fan-in and runs in `marketplace.yml`;
   `scripts/gate-runner.py` learns the `runner.os == 'Windows'` step condition and the fan-in call.
 

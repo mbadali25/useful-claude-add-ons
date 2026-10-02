@@ -592,14 +592,14 @@ suite at all — `pytest-crew.yml` runs pytest and cannot collect a `.sh` file
 executed by CI despite being committed and green. Each is its own step
 deliberately, so a failure names which suite went red rather than collapsing
 into one line. `pytest-crew.yml` gained a `crew-shell-matrix` job
-(`:162-209`, ubuntu leg only since L-0577) that runs the `-m slow` full per-shell
+(`:162-212`, ubuntu leg only since L-0577) that runs the `-m slow` full per-shell
 hook matrix. On Windows, L-0577 replaced the one serial leg (p50 37.1 min) with
-parallel jobs (`:211-453`): `crew-windows-decide` (`:263`, T-0110's rule: on a
+parallel jobs (`:214-478`): `crew-windows-decide` (`:266`, T-0110's rule: on a
 pull request the Windows jobs run only when the PR changes `plugin/crew/**` or
-`pytest-crew.yml`), `crew-windows-default` (`:297`, crew's default
+`pytest-crew.yml`), `crew-windows-default` (`:310`, crew's default
 parity-sample set split in 3 by pytest-split, since the `test` job above only runs
-that set on Ubuntu), `crew-windows-slow` (`:345`), `crew-windows-wallclock`
-(`:384`, serial), and the fan-in `crew-windows-gate` (`:423`), named
+that set on Ubuntu), `crew-windows-slow` (`:362`), `crew-windows-wallclock`
+(`:405`, serial), and the fan-in `crew-windows-gate` (`:448`), named
 `crew-shell-matrix (windows-latest)` so the required check name is unchanged.
 The gate runs `if: always()` and passes only through
 `scripts/check-windows-shards.py`: every Windows job succeeded, every shard
@@ -611,8 +611,10 @@ exactly once, and slow and wallclock ran what they collected (suite
 `crew-windows-decide` output and run `shell: pwsh` steps, so retargeting them is a one-line change. Both the ubuntu leg and the `test` job carry an opt-in
 `runs-on` expression (L-0521): with repo variable `CREW_RUNNER` set to
 `self-hosted` they run on `[self-hosted, linux, x64, crew]`, otherwise on
-`ubuntu-latest` / `matrix.os` as before; a `windows-latest` job never moves,
-and neither does a fork pull request (the repo is public, so the expression
+`ubuntu-latest` / `matrix.os` as before. The `crew-windows-*` jobs do not read
+`CREW_RUNNER`: `crew-windows-decide` emits `["self-hosted","Windows","crew-win"]` for every
+non-PR event and same-repo pull request and `"windows-latest"` for a fork pull request
+(JUDGEMENT: owner 2026-10-02, L-0577). No fork pull request reaches either pool (the repo is public, so the expression
 also requires a non-PR event or `head.repo.full_name == github.repository`).
 The owner's runner playbook (mbadali25/github-runner-infra) sets the variable
 on `make up` and unsets it on `make down`.
