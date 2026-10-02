@@ -109,16 +109,19 @@ def scan_repo(files: list[str]) -> tuple[int, list[str]]:
     return directives, hits
 
 
-def _shellcheck(sc: str, args: list[str], cwd: str) -> str:
+def _shellcheck(sc: str, args: list[str], cwd: str) -> tuple[int, str]:
+    """(exit status, output). ShellCheck exits 0 clean and 1 with findings; 2 and
+    above mean it could not check at all, which the callers report as a failure."""
     out = subprocess.run([sc, "-f", "gcc", *args], capture_output=True, text=True,
                          encoding="utf-8", errors="replace", cwd=cwd, timeout=300,
                          env=os.environ.copy(), check=False)
-    return out.stdout + out.stderr
+    return out.returncode, out.stdout + out.stderr
 
 
 def cross_check(sc: str, files: list[str]) -> list[str]:
     failures = []
-    version = subprocess.run([sc, "--version"], capture_output=True, text=True, timeout=60,
+    version = subprocess.run([sc, "--version"], capture_output=True, text=True,
+                             encoding="utf-8", errors="replace", timeout=60,
                              env=os.environ.copy(), check=False).stdout
     print("shellcheck cross-check: "
           + next((v for v in version.splitlines() if v.startswith("version")), "version unknown"))
@@ -129,10 +132,13 @@ def cross_check(sc: str, files: list[str]) -> list[str]:
             fixture = Path(tmp, f"case{i}.sh")
             fixture.write_text(f"#!/usr/bin/env bash\n{line}\ntrue\n", encoding="utf-8",
                                newline="\n")
-            report = _shellcheck(sc, [fixture.name], tmp)
-            if code is not None and f"[{code}]" not in report:
+            status, report = _shellcheck(sc, [fixture.name], tmp)
+            if status not in (0, 1):
+                failures.append(f"real shellcheck could not check fixture {line!r} "
+                                f"(exit {status}): {report.strip()}")
+            elif code is not None and f"[{code}]" not in report:
                 failures.append(f"real shellcheck did not report {code} for must-block {line!r}")
-            if code is None and any(c in report for c in PARSE_CODES):
+            elif code is None and any(c in report for c in PARSE_CODES):
                 failures.append(f"real shellcheck rejected must-allow {line!r}: {report.strip()}")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -140,7 +146,10 @@ def cross_check(sc: str, files: list[str]) -> list[str]:
     # one process over every tracked *.sh took 16s and this took 4s for the whole suite.
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         reports = pool.map(lambda rel: _shellcheck(sc, ["-S", "error", rel], str(ROOT)), files)
-        for report in reports:
+        for rel, (status, report) in zip(files, reports):
+            if status not in (0, 1):
+                failures.append(f"real shellcheck could not check {rel} (exit {status}): "
+                                f"{report.strip()}")
             failures.extend(f"real shellcheck: {line}" for line in report.splitlines()
                             if "[SC1073]" in line)
     return failures
