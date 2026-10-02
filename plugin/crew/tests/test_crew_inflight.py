@@ -219,13 +219,19 @@ def test_begin_refuses_same_session_other_runner(capsys, monkeypatch, repo, cloc
 
 
 def test_begin_without_session_is_unknown(capsys, monkeypatch, repo, clock, live_pid):  # pylint: disable=unused-argument
+    """begin refuses before it asks `holds`: `holds` has its own `me is None`
+    guard with the same words, so asserting the text alone would pass with
+    begin's refusal removed (an equivalent mutant). `holds` is never reached."""
     _session(monkeypatch, "sess-a", live_pid)
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID")
+    asked = []
+    monkeypatch.setattr(crew_inflight, "holds", lambda *a, **k: asked.append(a) or {})
 
     code, out = _begin(capsys, repo["main"], "workflow:lane-1")
 
     _assert_refused(code, out, repo, None, 3, "unknown")
     assert "cannot tell who is asking" in out
+    assert not asked
 
 
 # --- begin: must allow -----------------------------------------------------------

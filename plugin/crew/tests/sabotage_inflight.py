@@ -46,6 +46,13 @@ INFLIGHT_MUTATIONS = (
      '    if me is None and answer["state"] in GO:\n',
      "    if False:\n",
      _A + "test_next_without_session_stops"),
+    ("begin writes without a session id", INFLIGHT,
+     "    if me is None or runner is None:\n"
+     '        _result(UNKNOWN, "cannot tell who is asking: CLAUDE_CODE_SESSION_ID is absent; nothing written")\n'
+     "        return EXIT_UNKNOWN\n"
+     "    worktree = os.path.realpath(args.worktree or top)\n",
+     "    worktree = os.path.realpath(args.worktree or top)\n",
+     _I + "test_begin_without_session_is_unknown"),
     ("the reserved-round signal is skipped", INFLIGHT,
      "            ledger = _ledger_signal(top, ticket, record)\n",
      '            ledger = _answer(FREE, ticket, "skipped")\n',

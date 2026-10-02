@@ -250,12 +250,14 @@ def test_status_waiting_on_owner_at_approve(tmp_path):
 
 
 def test_status_reserved_round_waits_on_reviewer(tmp_path):
+    """T-0049: a reserved round with no result is in flight, so `next` stops
+    `in-flight` rather than `review`; `status` still names the reviewer."""
     root = _approved(tmp_path)
     _ledger(root, [_round(1, status="reserved")])
 
     got = crew_autopilot.status(str(root), T)
 
-    assert (got["phase"], got["waiting"].split(" - ", maxsplit=1)[0]) == ("review", "reviewer")
+    assert (got["phase"], got["waiting"].split(" - ", maxsplit=1)[0]) == ("in-flight", "reviewer")
 
 
 def test_status_unknown_ledger_is_unknown(tmp_path):
