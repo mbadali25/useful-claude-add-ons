@@ -341,6 +341,17 @@ def reserve(root, ticket, provider, model=None):
     return _mutate(root, ticket, change)
 
 
+def _ignored_count(value):
+    """review.json's `ignored_lines`: a non-negative int count (L-0576), kept
+    as is. Anything else -- missing, null, a bool, a string, a negative -- is
+    unknown and recorded as None, never 0: 0 means "none were ignored", and
+    a reader (L-0510's auto-accept) must be able to tell that from "could not
+    tell"."""
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
+
+
 def record(root, ticket, number, review):
     """Record a reserved round's result. `review` is the review.json dict.
     A CLEAN verdict writes the receipt."""
@@ -378,6 +389,9 @@ def record(root, ticket, number, review):
             "bundle_sha256": review.get("bundle_sha256"), "base": review.get("base"),
             "head": review.get("head"), "model_family": review.get("model_family"),
             "failure_class": review.get("failure_class"),
+            # How many stray lines a FINDINGS round was recovered despite
+            # (L-0576): an acceptance can see the round was not strictly read.
+            "ignored_lines": _ignored_count(review.get("ignored_lines")),
         })
         # L-0510: stored only when the caller passed them, so a row from a
         # caller that never did reads as "could not tell" to the guard.

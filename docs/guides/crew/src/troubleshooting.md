@@ -123,7 +123,7 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   stopped it (any BLOCK, INCOMPLETE, not the final round, an open healer skip, a count it could not
   read, a same-family Claude-fallback round, a provider or family it could not tell, or a verdict
   recovered from stray lines - `ignored_lines` above 0, or missing or unreadable, which is
-  could-not-tell until L-0576 records it). Otherwise own the FINDINGS with `--accept --by <who>` (only the most recent completed round,
+  could-not-tell, as on a round recorded before L-0576 wrote the count). Otherwise own the FINDINGS with `--accept --by <who>` (only the most recent completed round,
   only once, never once `NEEDS_REPLAN`; a name starting `auto:` is refused), or write a new plan and get it approved — `crew_ticket.py
   approve` on a `NEEDS_REPLAN` ticket opens a fresh budget of two rounds counted from the successor
   plan; the rounds already spent stay in the ledger and are not erased.
@@ -133,7 +133,12 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   INCOMPLETE round has one of three classes. `tool` means the answer never arrived intact: a
   timeout, a bad or unknown exit, empty output, or a failed Codex stream. `tree` means a bundle part
   or web-test report changed under the reviewer. `reviewer` means the output arrived and broke the
-  contract.
+  contract. Harmless prose, a heading or a code fence beside well-formed findings, with every part
+  acknowledged and exit 0, no longer does that: the round is FINDINGS, and the ignored lines are
+  printed on a `review: FINDINGS kept; ...` line and kept in `review.json`'s `ignored_text` (`ignored_lines` is their count). A
+  stray line beside `CLEAN`, a misformatted contract line (`- FIX|...`, `fix|...`, a `|` table row)
+  or a line admitting the review fell short ("skipped", "truncated", "could not review") is still
+  INCOMPLETE `reviewer`.
   **Fix:** a `tool` round is refunded automatically, up to two per plan. The line reads
   `review: round N was a tool failure (...); refunded`. Only the failed round is given back: the
   rerun `/crew:review` reserves a new round, charged like any other unless it is a tool failure

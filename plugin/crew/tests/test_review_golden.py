@@ -120,6 +120,18 @@ def test_golden_corpus_covers_the_shapes_that_broke():
     assert any(e["failure_class"] == "reviewer" for e in expected)
 
 
+def test_golden_corpus_holds_a_round_recovered_despite_stray_prose():
+    """T-0100 round 2 scored INCOMPLETE for one trailing paragraph beside four
+    well-formed findings and full READ coverage; L-0576 recovers it."""
+    recovered = []
+    for folder in FIXTURES:
+        result = rv.parse(_text(folder, "out.txt"), 0, False, _json(folder, "parts.json"))
+        if result["ignored"]:
+            recovered.append((os.path.basename(os.path.dirname(folder)), result["verdict"]))
+
+    assert ("uca-t0100--T-0100-build--nqUaqO", rv.FINDINGS) in recovered, recovered
+
+
 def _files(root=GOLDEN):
     return [p for p in glob.glob(os.path.join(root, "**", "*"), recursive=True)
             if os.path.isfile(p)]
