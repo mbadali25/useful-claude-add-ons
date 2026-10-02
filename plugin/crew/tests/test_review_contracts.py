@@ -384,15 +384,19 @@ def test_prereview_reads_only_manifest_keys(tmp_path, monkeypatch):
     produced_entry_keys = set().union(*(set(e) for e in manifest["entries"]))
     seen = []
 
-    def load(fh, **kw):
-        if os.path.abspath(fh.name) != str(scratch / "manifest.json"):
-            return json.load(fh, **kw)
-        rec = json.load(fh, object_hook=Recording, **kw)
+    # The manifest is read through read_regular and parsed with json.loads
+    # (L-0574 round-7 sweep): the parse of exactly its text is the one recorded.
+    manifest_text = (scratch / "manifest.json").read_text(encoding="utf-8")
+
+    def loads(text, **kw):
+        if text != manifest_text or seen:
+            return json.loads(text, **kw)
+        rec = json.loads(text, object_hook=Recording, **kw)
         seen.append(rec)
         return rec
 
     monkeypatch.setattr(review_checks, "json", types.SimpleNamespace(
-        load=load, loads=json.loads, dumps=json.dumps))
+        load=json.load, loads=loads, dumps=json.dumps))
     Recording.log = []
     results, configured = review_checks.run_checks(str(repo), str(scratch / "manifest.json"))
     top = _keys(Recording.log, seen[0])

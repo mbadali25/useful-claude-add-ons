@@ -217,9 +217,11 @@ refuses. A bad row naming a base-side file leaves only that file unchecked,
 because its base count is short. A timeout kills the linter's whole process
 group (`%SystemRoot%\System32\taskkill.exe /T` on Windows, never a bare
 `taskkill`), and covers a child left holding the output open after the linter
-exits. A linter named without a path is looked up on the absolute `PATH`
-entries only: on Windows `shutil.which` searches the current directory first,
-so it is not used there. A parse-abort marker on either side
+exits. Every program (git, each linter, pwsh, taskkill, the reviewer CLIs) is
+found by `review_checks.resolve_executable`: an absolute path, or the absolute
+`PATH` entries only. On Windows `shutil.which` searches the current directory
+first, so it is not used there. PSScriptAnalyzer takes no `args`: the key is
+rejected for it, since the script it runs reads only the file and rule lists. A parse-abort marker on either side
 makes that file "could not check" too, because the tool did not analyse it.
 That covers only that file: a new finding in any other file still refuses
 the round, and `--allow-unverified` does not override it.

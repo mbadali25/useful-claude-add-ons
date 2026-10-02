@@ -138,7 +138,6 @@ import datetime
 import hashlib
 import json
 import os
-import shutil
 import signal
 import subprocess
 import sys
@@ -181,8 +180,11 @@ VERIFY_GATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "verify-g
 
 
 def _read(path):
-    with open(path, encoding="utf-8", errors="replace") as fh:
-        return fh.read()
+    """Text of a regular file, through review_checks.read_regular (class b,
+    L-0574 round-7 sweep): a symlink, FIFO or device raises NotRegularFile,
+    an OSError, instead of being followed or blocking."""
+    return review_checks.read_regular(path).decode("utf-8", errors="replace").replace(
+        "\r\n", "\n").replace("\r", "\n")
 
 
 def _decode_partial(value):
@@ -307,8 +309,10 @@ def launch(cmd, root, timeout):
     except subprocess.TimeoutExpired:
         escaped = False
         if proc.poll() is None:
-            if os.name == "nt":
-                subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+            killer = review_checks.taskkill() if os.name == "nt" else None
+            if os.name == "nt" and killer:
+                # Absolute, never a bare `taskkill` (L-0574 round-7 sweep).
+                subprocess.run([killer, "/T", "/F", "/PID", str(proc.pid)],
                                capture_output=True, timeout=30, check=False)
             else:
                 try:
@@ -348,8 +352,7 @@ def bundle_problems(manifest):
     total = 0
     for row in rows:
         try:
-            with open(row["path"], "rb") as fh:
-                data = fh.read()
+            data = review_checks.read_regular(row["path"])
         except (OSError, KeyError, TypeError) as exc:
             problems.append(f"bundle part {row.get('name')} could not be read: {exc}")
             continue
@@ -470,7 +473,8 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     review["refunded"] = row.get("refunded") is True
     review["refund_refused"] = row.get("refund_refused")
     review["elapsed_s"] = round_elapsed(args.root, args.ticket, number)
-    review["prereview"] = review_checks.recorded(args.scratch, manifest.get("bundle_sha256"))
+    review["prereview"] = review_checks.recorded(args.scratch, manifest.get("bundle_sha256"),
+                                                 args.ticket, number)
     # Before review.json: the row is owed once the ledger holds the round.
     metrics_line = review_metrics.record(args.root, args.ticket, number, review,
                                          review_metrics.reserved_std(args, number),
@@ -615,13 +619,14 @@ def prereview_gate(args):
     if not configured:
         sys.stderr.write(f"review-run: pre-review checks: none configured "
                          f"({review_checks.VERIFY_MAP} has no {review_checks.CONFIG_KEY})\n")
-        _record(args.scratch, bundle, [], False, False, configured=False)
+        args.prereview_staged = _record(args.scratch, bundle, [], False, False,
+                                        configured=False)
         return None
     for line in review_checks.lines(results):
         sys.stderr.write(f"review-run: {line}\n")
     verdict = review_checks.overall(results)
     if verdict == review_checks.PASS:
-        _record(args.scratch, bundle, results, False, False)
+        args.prereview_staged = _record(args.scratch, bundle, results, False, False)
         return None
     incident = crew_incident.read_state(args.root, crew_state.load_config(args.root))
     if incident["active"]:
@@ -630,14 +635,14 @@ def prereview_gate(args):
                 review_checks.FAIL, review_checks.COULD_NOT)))
         sys.stderr.write(f"review-run: incident {incident['id']} is active; the pre-review "
                          "checks stand down and the skip is logged\n")
-        _record(args.scratch, bundle, results, False, True)
+        args.prereview_staged = _record(args.scratch, bundle, results, False, True)
         return None
     if verdict == review_checks.COULD_NOT and args.allow_unverified:
         sys.stderr.write("review-run: pre-review checks could not check everything; reviewing "
                          "anyway (--allow-unverified); review.json records the override\n")
-        _record(args.scratch, bundle, results, True, False)
+        args.prereview_staged = _record(args.scratch, bundle, results, True, False)
         return None
-    _record(args.scratch, bundle, results, False, False)
+    args.prereview_staged = _record(args.scratch, bundle, results, False, False)
     if verdict == review_checks.FAIL:
         sys.stderr.write("review-run: the bundle adds linter findings its base did not have. No "
                          "round reserved. Fix them (or suppress one with the tool's own inline "
@@ -652,12 +657,28 @@ def prereview_gate(args):
 
 
 def _record(scratch, bundle, results, overridden, stood_down, configured=True):
-    """Write prereview.json; a write that fails is said, never fatal: the
-    decision is already made, and `finish` then reads `not-recorded`."""
+    """Stage this run's record; a write that fails is said, never fatal: the
+    decision is already made, and `finish` then reads `not-recorded`. Returns
+    the staged path for _bind_record, or None."""
     try:
-        review_checks.record(scratch, bundle, results, overridden, stood_down, configured)
+        return review_checks.record(scratch, bundle, results, overridden, stood_down,
+                                    configured)
     except OSError as exc:
         sys.stderr.write(f"review-run: could not record the pre-review checks in {scratch} "
+                         f"({exc}); review.json will say not-recorded\n")
+        return None
+
+
+def _bind_record(args, number):
+    """Bind this run's staged record to the round `reserve` just gave it, so
+    `finish` for that round reads it and no other run's (class d)."""
+    staged = getattr(args, "prereview_staged", None)
+    if not staged:
+        return
+    try:
+        review_checks.bind_record(staged, args.scratch, args.ticket, number)
+    except (OSError, ValueError) as exc:
+        sys.stderr.write(f"review-run: could not bind the pre-review record to round {number} "
                          f"({exc}); review.json will say not-recorded\n")
 
 
@@ -684,7 +705,7 @@ def run(args):
             sys.stderr.write("review-run: copilot needs --model (qa.copilot.model); an "
                              "unpinned Copilot is the author's family\n")
             return EXIT_USAGE
-        exe = shutil.which(args.provider)
+        exe = review_checks.resolve_executable(args.provider)
         if not exe:
             sys.stderr.write(f"review-run: {args.provider} is not on PATH; nothing launched, "
                              "no round spent\n")
@@ -713,6 +734,7 @@ def run(args):
     sys.stderr.write(f"review-run: {message}\n")
     if not ok:
         return EXIT_REFUSED
+    _bind_record(args, number)
     _keep_reserved_std(args, number)
     if args.provider not in LAUNCHED:
         print(f"ROUND={number}")
@@ -762,7 +784,7 @@ def probe(args):
     mark = review_limit.recorded(args.root, args.ticket)
     if mark:
         return PROBE_LIMITED, f"recorded in round {mark['round']}: {mark['error']}"
-    exe = shutil.which("codex")
+    exe = review_checks.resolve_executable("codex")
     if not exe:
         return PROBE_FAILED, "codex is not on PATH"
     timeout = args.probe_timeout

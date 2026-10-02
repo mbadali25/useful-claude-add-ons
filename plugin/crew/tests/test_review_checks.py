@@ -30,7 +30,9 @@ _FAKE = textwrap.dedent(r'''
     mode = os.environ.get("FAKE_LINT_MODE", "")
     if os.environ.get("FAKE_LINT_ARGV_OUT"):
         with open(os.environ["FAKE_LINT_ARGV_OUT"], "w", encoding="utf-8") as fh:
-            json.dump({"argv": sys.argv[1:], "env": dict(os.environ)}, fh)
+            json.dump({"argv": sys.argv[1:], "env": dict(os.environ),
+                       "texts": {a: open(a, encoding="utf-8").read() for a in sys.argv[2:]
+                                 if a.endswith(".txt") and os.path.isfile(a)}}, fh)
     if mode == "rc":
         sys.stderr.write("fake: broken\n"); sys.exit(4)
     if mode == "sleep":
@@ -173,6 +175,25 @@ def _one(repo, tmp_path):
     return results[0]
 
 
+_TICKET, _ROUND = "T-1", 1
+
+
+def _bound(scratch, bundle, checks, overridden=False, stood_down=False, configured=True):
+    """record() stages this run's record; bind_record() keys it to the round."""
+    staged = rc.record(str(scratch), bundle, checks, overridden, stood_down, configured)
+    rc.bind_record(staged, str(scratch), _TICKET, _ROUND)
+
+
+def _got(scratch, bundle, ticket=_TICKET, number=_ROUND):
+    return rc.recorded(str(scratch), bundle, ticket, number)
+
+
+def _write_bound(scratch, payload):
+    """A hand-written record where the round's record lives."""
+    with open(rc.round_record_path(str(scratch), _ROUND), "w", encoding="utf-8") as fh:
+        json.dump(payload, fh)
+
+
 @pytest.mark.parametrize("tool", sorted(_TOOLS))
 def test_new_finding_fails(tmp_path, fake, tool):
     _, rel, rule = _TOOLS[tool]
@@ -270,7 +291,7 @@ def test_could_not_check_cases(tmp_path, fake, monkeypatch, case):
     (json.dumps({rc.CONFIG_KEY: {"linters": [{"tool": "eslint"}]}}), "tool must be one of"),
     (json.dumps({rc.CONFIG_KEY: {"linters": [{"tool": "ruff", "colour": 1}]}}), "unknown key"),
     (json.dumps({rc.CONFIG_KEY: {"linters": [{"tool": "ruff", "rules": ["X"]}]}}),
-     "psscriptanalyzer only"),
+     "ruff does not use rules"),
     (json.dumps({rc.CONFIG_KEY: {"linters": [{"tool": "ruff", "timeout": 0}]}}),
      "positive integer"),
     (json.dumps({rc.CONFIG_KEY: {"linters": [{"tool": "ruff", "args": "S110"}]}}),
@@ -355,18 +376,19 @@ def test_cli_exit_codes(tmp_path, fake, monkeypatch, capsys, mode, text, code):
 
 
 def test_recorded_is_bound_to_the_bundle(tmp_path):
-    rc.record(str(tmp_path), "sha-a", [_ROW], False, False)
+    _bound(tmp_path, "sha-a", [_ROW])
 
-    assert (rc.recorded(str(tmp_path), "sha-a")["result"],
-            rc.recorded(str(tmp_path), "sha-b")["result"]) == (rc.PASS, rc.NOT_RECORDED)
+    assert (_got(tmp_path, "sha-a")["result"],
+            _got(tmp_path, "sha-b")["result"]) == (rc.PASS, rc.NOT_RECORDED)
 
 
 @pytest.mark.parametrize("content", [None, "{torn"])
 def test_a_missing_or_torn_record_is_not_recorded_never_none(tmp_path, content):
     if content is not None:
-        (tmp_path / rc.RESULT_FILE).write_text(content, encoding="utf-8")
+        with open(rc.round_record_path(str(tmp_path), _ROUND), "w", encoding="utf-8") as fh:
+            fh.write(content)
 
-    found = rc.recorded(str(tmp_path), "sha-a")
+    found = _got(tmp_path, "sha-a")
 
     assert (found["result"], bool(found["reason"])) == (rc.NOT_RECORDED, True)
 
@@ -585,10 +607,9 @@ def test_actionlint_is_handed_the_bundles_config_by_name(tmp_path, fake, monkeyp
 
 
 def test_a_record_of_the_wrong_shape_is_not_recorded(tmp_path):
-    (tmp_path / rc.RESULT_FILE).write_text(json.dumps({"bundle_sha256": "sha-a"}),
-                                           encoding="utf-8")
+    _write_bound(tmp_path, {"bundle_sha256": "sha-a", "ticket": _TICKET, "round": _ROUND})
 
-    assert rc.recorded(str(tmp_path), "sha-a")["result"] == rc.NOT_RECORDED
+    assert _got(tmp_path, "sha-a")["result"] == rc.NOT_RECORDED
 
 
 _ROW = {"name": "ruff", "status": rc.PASS, "files": 1, "new": [], "detail": ""}
@@ -624,11 +645,10 @@ _NEW = {"path": "a.py", "rule": "X", "message": "m", "count": 1}
 def test_a_record_that_contradicts_itself_is_not_recorded(tmp_path, payload):
     """Review round 3: a same-bundle record is accepted only in the shape
     record() writes, and only when its result is what its checks add up to."""
-    (tmp_path / rc.RESULT_FILE).write_text(json.dumps(dict(
-        {"overridden": False, "stood_down": False}, bundle_sha256="sha-a", **payload)),
-        encoding="utf-8")
+    _write_bound(tmp_path, dict({"overridden": False, "stood_down": False}, bundle_sha256="sha-a",
+                                ticket=_TICKET, round=_ROUND, **payload))
 
-    assert rc.recorded(str(tmp_path), "sha-a")["result"] == rc.NOT_RECORDED
+    assert _got(tmp_path, "sha-a")["result"] == rc.NOT_RECORDED
 
 
 @pytest.mark.parametrize("checks, configured", [
@@ -637,9 +657,9 @@ def test_a_record_that_contradicts_itself_is_not_recorded(tmp_path, payload):
                                        "count": 1}])], True),
     ([dict(_ROW, status=rc.COULD_NOT, detail="tool missing")], True)])
 def test_every_record_record_writes_reads_back(tmp_path, checks, configured):
-    rc.record(str(tmp_path), "sha-a", checks, False, False, configured)
+    _bound(tmp_path, "sha-a", checks, False, False, configured)
 
-    assert rc.recorded(str(tmp_path), "sha-a")["result"] == rc.overall(checks, configured)
+    assert _got(tmp_path, "sha-a")["result"] == rc.overall(checks, configured)
 
 
 @pytest.mark.parametrize("checks, overridden, stood_down", [
@@ -647,9 +667,9 @@ def test_every_record_record_writes_reads_back(tmp_path, checks, configured):
     ([dict(_ROW, status=rc.COULD_NOT)], False, True),
     ([dict(_ROW, status=rc.FAIL, new=[_NEW])], False, True)])
 def test_an_override_or_stand_down_record_reads_back(tmp_path, checks, overridden, stood_down):
-    rc.record(str(tmp_path), "sha-a", checks, overridden, stood_down)
+    _bound(tmp_path, "sha-a", checks, overridden, stood_down)
 
-    assert rc.recorded(str(tmp_path), "sha-a")["result"] == rc.overall(checks)
+    assert _got(tmp_path, "sha-a")["result"] == rc.overall(checks)
 
 
 @pytest.mark.parametrize("content", ["[]", "null", '"text"', "3"])
@@ -788,10 +808,11 @@ def test_a_config_renamed_into_place_is_the_bundles(tmp_path, fake, monkeypatch)
 
 
 def test_record_leaves_no_staging_file(tmp_path):
-    rc.record(str(tmp_path), "sha-a", [], False, False)
-    rc.record(str(tmp_path), "sha-a", [], False, False)
+    first = rc.record(str(tmp_path), "sha-a", [], False, False)
+    second = rc.record(str(tmp_path), "sha-a", [], False, False)
 
-    assert sorted(os.listdir(tmp_path)) == [rc.RESULT_FILE]
+    assert (first != second, sorted(os.listdir(tmp_path)) == sorted(
+        [os.path.basename(first), os.path.basename(second)])) == (True, True)
 
 
 def test_a_shell_shellcheck_does_not_support_is_could_not_check(tmp_path, fake):
@@ -1055,9 +1076,9 @@ def test_a_manifest_without_a_bundle_hash_is_could_not_check(tmp_path, fake, val
 
 @pytest.mark.parametrize("wanted", [None, ""])
 def test_recorded_never_matches_a_missing_bundle_hash(tmp_path, wanted):
-    rc.record(str(tmp_path), wanted, [], False, False, configured=False)
+    _bound(tmp_path, wanted, [], configured=False)
 
-    assert rc.recorded(str(tmp_path), wanted)["result"] == rc.NOT_RECORDED
+    assert _got(tmp_path, wanted)["result"] == rc.NOT_RECORDED
 
 
 @pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
@@ -1114,6 +1135,7 @@ def test_taskkill_is_run_by_absolute_path(monkeypatch, tmp_path):
     """Review round 5 FIX :339: never a bare `taskkill` a repository could
     shadow from the current directory."""
     seen = []
+    _exe(tmp_path / "Windows" / "System32", "taskkill.exe")
     monkeypatch.setattr(rc.os, "name", "nt")
     monkeypatch.setenv("SystemRoot", str(tmp_path / "Windows"))
     monkeypatch.setattr(rc.subprocess, "run", lambda argv, **_: seen.append(argv))
@@ -1182,3 +1204,330 @@ def test_a_linter_on_an_absolute_path_entry_is_found(tmp_path, monkeypatch):
             rc._command({"tool": "ruff", "command": ["lintme"]})[0])  # pylint: disable=protected-access
 
     assert found == {"posix": "lintme", "nt": "lintme.EXE"}, found
+
+
+# --- round-7 class sweep (owner decision 2026-10-02) --------------------------
+import ast  # noqa: E402  pylint: disable=wrong-import-position,wrong-import-order
+import review_run  # noqa: E402  pylint: disable=wrong-import-position,wrong-import-order
+
+_SWEPT = [os.path.join(_SCRIPTS, "review_checks.py"), os.path.join(_SCRIPTS, "review_run.py")]
+
+
+def _calls(path):
+    tree = ast.parse(open(path, encoding="utf-8").read())  # pylint: disable=consider-using-with
+    owner = {}
+    for fn in ast.walk(tree):
+        if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for node in ast.walk(fn):
+                owner.setdefault(id(node), fn.name)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            yield node, owner.get(id(node), "<module>")
+
+
+def _dotted(func):
+    parts = []
+    while isinstance(func, ast.Attribute):
+        parts.append(func.attr)
+        func = func.value
+    if isinstance(func, ast.Name):
+        parts.append(func.id)
+    return ".".join(reversed(parts))
+
+
+# class a - executables ---------------------------------------------------------
+
+def test_class_a_every_executable_comes_from_the_resolver():
+    """No shutil.which outside resolve_executable, and no subprocess argv that
+    starts with a literal program name, in either swept file."""
+    bad = []
+    for path in _SWEPT:
+        for node, fn in _calls(path):
+            name = _dotted(node.func)
+            if name == "shutil.which" and fn != "resolve_executable":
+                bad.append(f"{os.path.basename(path)}:{node.lineno} shutil.which in {fn}")
+            if name.startswith("subprocess.") and name.rsplit(".", maxsplit=1)[-1] in (
+                    "run", "Popen", "call", "check_call", "check_output") and node.args:
+                first = node.args[0]
+                if isinstance(first, (ast.List, ast.Tuple)) and first.elts and isinstance(
+                        first.elts[0], ast.Constant) and isinstance(first.elts[0].value, str):
+                    bad.append(f"{os.path.basename(path)}:{node.lineno} bare "
+                               f"{first.elts[0].value!r} in {fn}")
+    assert not bad, bad
+
+
+def _exe(folder, name, body="#!/bin/sh\nexit 0\n"):
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / name).write_text(body, encoding="utf-8")
+    os.chmod(folder / name, 0o755)
+    return folder / name
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a POSIX shell script stands in for git")
+def test_git_is_never_taken_from_the_current_directory(tmp_path, fake, monkeypatch):
+    """Review round 6 BLOCK :245: a `git` in the repository root, with `.` on
+    PATH, must not answer for the real one."""
+    repo = _start(tmp_path, {"a.py": "x\n"}, [_linter(fake, "ruff")])
+    _edit(repo, "a.py", "x\n# LINT BLE001 a new problem\n")
+    manifest = _bundle(repo, tmp_path)
+    marker = tmp_path / "spoofed"
+    _exe(repo, "git", f"#!/bin/sh\ntouch {marker}\nexit 0\n")
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("PATH", os.pathsep.join([".", os.path.dirname(shutil.which("git"))]))
+
+    results, _ = rc.run_checks(str(repo), manifest)
+
+    assert ([r["status"] for r in results], marker.exists()) == ([rc.FAIL], False), results
+
+
+def test_git_missing_is_could_not_check(tmp_path, fake, monkeypatch):
+    repo = _start(tmp_path, {"a.py": "x\n"}, [_linter(fake, "ruff")])
+    _edit(repo, "a.py", "y\n")
+    manifest = _bundle(repo, tmp_path)
+    monkeypatch.setenv("PATH", str(tmp_path / "nothing-here"))
+
+    results, configured = rc.run_checks(str(repo), manifest)
+
+    assert (configured, [r["status"] for r in results]) == (True, [rc.COULD_NOT]), results
+
+
+def test_the_resolver_refuses_relative_names_and_entries(tmp_path, monkeypatch):
+    here = tmp_path / "repo"
+    _exe(here, "tool")
+    _exe(here / "sub", "tool")
+    monkeypatch.chdir(here)
+    monkeypatch.setenv("PATH", os.pathsep.join([".", "", "sub"]))
+
+    assert [rc.resolve_executable(n) for n in ("tool", "./tool", "sub/tool")] == [None] * 3
+
+
+def test_the_resolver_accepts_an_absolute_regular_file_only(tmp_path):
+    tool = _exe(tmp_path / "bin", "tool")
+    (tmp_path / "dir").mkdir()
+
+    assert [rc.resolve_executable(str(p)) for p in (tool, tmp_path / "dir",
+                                                    tmp_path / "absent")] == [str(tool), None, None]
+
+
+def test_review_run_finds_providers_through_the_resolver(monkeypatch):
+    seen = []
+    monkeypatch.setattr(review_run.review_checks, "resolve_executable",
+                        seen.append)
+    args = type("A", (), {"provider": "codex", "model": "m", "root": ".", "ticket": "T-1",
+                          "scratch": ".", "effort": "high", "probe_timeout": 1})()
+    monkeypatch.setattr(review_run.review_limit, "recorded", lambda *a: None)
+
+    review_run.probe(args)
+
+    assert seen == ["codex"], seen
+
+
+def test_review_run_taskkill_is_absolute(monkeypatch, tmp_path):
+    monkeypatch.setattr(review_run.os, "name", "nt")
+    monkeypatch.setenv("SystemRoot", str(tmp_path / "Windows"))
+    _exe(tmp_path / "Windows" / "System32", "taskkill.exe")
+
+    assert rc.taskkill() == str(tmp_path / "Windows" / "System32" / "taskkill.exe")
+
+
+# class b - file reads ----------------------------------------------------------
+
+def test_class_b_every_file_read_goes_through_read_regular():
+    """open() for reading, os.open, os.fdopen for reading, read_text and
+    read_bytes appear only inside read_regular, in either swept file."""
+    bad = []
+    for path in _SWEPT:
+        for node, fn in _calls(path):
+            name = _dotted(node.func)
+            mode = None
+            if name in ("open", "io.open", "os.fdopen"):
+                if len(node.args) > 1 and isinstance(node.args[1], ast.Constant):
+                    mode = node.args[1].value
+                for kw in node.keywords:
+                    if kw.arg == "mode" and isinstance(kw.value, ast.Constant):
+                        mode = kw.value.value
+                reading = mode is None or not any(c in str(mode) for c in "wax")
+            else:
+                reading = name in ("os.open",) or name.endswith((".read_text", ".read_bytes"))
+            if reading and fn != "read_regular":
+                bad.append(f"{os.path.basename(path)}:{node.lineno} {name} in {fn}")
+    assert not bad, bad
+
+
+def test_read_regular_reads_a_regular_file(tmp_path):
+    (tmp_path / "f").write_bytes(b"abc")
+
+    assert rc.read_regular(str(tmp_path / "f")) == b"abc"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="FIFOs and symlinks are POSIX here")
+@pytest.mark.parametrize("kind", ["symlink", "fifo", "dir", "device"])
+def test_read_regular_refuses_what_is_not_a_regular_file(tmp_path, kind):
+    path = tmp_path / "f"
+    (tmp_path / "real").write_text("{}", encoding="utf-8")
+    if kind == "symlink":
+        os.symlink(tmp_path / "real", path)
+    elif kind == "fifo":
+        os.mkfifo(path)
+    elif kind == "dir":
+        path.mkdir()
+    else:
+        path = "/dev/null"
+
+    with pytest.raises(rc.NotRegularFile):
+        rc.read_regular(str(path))
+
+
+def test_read_regular_says_absent(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        rc.read_regular(str(tmp_path / "absent"))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_an_untracked_symlinked_verify_map_is_could_not_check(tmp_path, fake):
+    """Review round 6 BLOCK :177: never followed to a file without preReview."""
+    repo = _plain(tmp_path)
+    (repo / ".crew").mkdir()
+    (tmp_path / "elsewhere.json").write_text('{"version": 1}', encoding="utf-8")
+    os.symlink(tmp_path / "elsewhere.json", repo / ".crew" / "verify.json")
+
+    results, configured = rc.run_checks(str(repo), _bundle(repo, tmp_path))
+
+    assert (configured, [(r["name"], r["status"]) for r in results]) == (
+        True, [("config", rc.COULD_NOT)]), results
+
+
+_NO_HANG = textwrap.dedent('''
+    import sys
+    sys.path.insert(0, sys.argv[1])
+    import review_checks as rc
+    results, configured, _ = rc.run_checks_bound(sys.argv[2], sys.argv[3])
+    print(configured, [(r["name"], r["status"]) for r in results])
+''')
+
+
+@pytest.mark.skipif(os.name == "nt", reason="FIFOs are POSIX")
+@pytest.mark.parametrize("where", ["map", "manifest"])
+def test_a_fifo_is_could_not_check_and_never_blocks(tmp_path, where):
+    """Review round 6 FIX :181: a FIFO with no writer, as the untracked map
+    or as the manifest, is could-not-check at once."""
+    repo = _plain(tmp_path)
+    manifest = _bundle(repo, tmp_path)
+    if where == "map":
+        (repo / ".crew").mkdir()
+        os.mkfifo(repo / ".crew" / "verify.json")
+    else:
+        os.remove(manifest)
+        os.mkfifo(manifest)
+
+    proc = subprocess.run([sys.executable, "-c", _NO_HANG, _SCRIPTS, str(repo), manifest],
+                          capture_output=True, text=True, timeout=60, check=False,
+                          stdin=subprocess.DEVNULL)
+
+    name = "config" if where == "map" else "manifest"
+    assert proc.stdout.strip() == f"True [('{name}', '{rc.COULD_NOT}')]", proc.stderr
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_a_symlinked_record_is_not_recorded(tmp_path):
+    _bound(tmp_path, "sha-a", [_ROW])
+    real = rc.round_record_path(str(tmp_path), _ROUND)
+    os.rename(real, tmp_path / "moved.json")
+    os.symlink(tmp_path / "moved.json", real)
+
+    assert _got(tmp_path, "sha-a")["result"] == rc.NOT_RECORDED
+
+
+# class c - config values -------------------------------------------------------
+
+@pytest.mark.parametrize("key", ["command", "args", "paths", "timeout", "rules"])
+def test_an_explicit_null_is_could_not_check(tmp_path, fake, key):
+    """Review round 6 FIX :225: `null` is not "use the default"."""
+    tool = "psscriptanalyzer" if key == "rules" else "ruff"
+    repo = _start(tmp_path, {"a.py": "x\n"}, [dict(_linter(fake, tool), **{key: None})])
+    _edit(repo, "a.py", "y\n")
+
+    results, _ = rc.run_checks(str(repo), _bundle(repo, tmp_path))
+
+    assert ([(r["name"], r["status"]) for r in results], key in results[0]["detail"]) == (
+        [("config", rc.COULD_NOT)], True), results
+
+
+@pytest.mark.parametrize("block", [{"linters": None}, None, {"linters": [None]}])
+def test_a_null_block_or_linter_is_could_not_check(tmp_path, fake, block):
+    repo = _start(tmp_path, {"a.py": "x\n"}, [])
+    (repo / ".crew" / "verify.json").write_text(json.dumps({rc.CONFIG_KEY: block}),
+                                                encoding="utf-8")
+    _edit(repo, "a.py", "y\n")
+
+    results, _ = rc.run_checks(str(repo), _bundle(repo, tmp_path))
+
+    assert [(r["name"], r["status"]) for r in results] == [("config", rc.COULD_NOT)], results
+
+
+def test_psscriptanalyzer_args_are_rejected(tmp_path, fake):
+    """Review round 6 FIX :608: accepted but never passed is rejected."""
+    repo = _start(tmp_path, {"ps/tool.ps1": "x\n"},
+                  [_linter(fake, "psscriptanalyzer", args=["-Severity", "Error"])])
+    _edit(repo, "ps/tool.ps1", "y\n")
+
+    results, _ = rc.run_checks(str(repo), _bundle(repo, tmp_path))
+
+    assert ([(r["name"], r["status"]) for r in results], "args" in results[0]["detail"]) == (
+        [("config", rc.COULD_NOT)], True), results
+
+
+def test_class_c_every_accepted_key_is_honoured(tmp_path, fake, monkeypatch):
+    """Every (tool, key) TOOL_KEYS accepts reaches the run: args into argv,
+    rules into the rules file, paths into the selection, timeout into the
+    timer. A key accepted for a tool and not listed here fails this test."""
+    honoured = set()
+    out = tmp_path / "seen.json"
+    monkeypatch.setenv("FAKE_LINT_ARGV_OUT", str(out))
+    for tool, (_, rel, _) in sorted(_TOOLS.items()):
+        for key in sorted(rc.TOOL_KEYS[tool] - {"tool", "command"}):
+            case = tmp_path / f"{tool}-{key}"
+            value = {"args": ["--sentinel-arg"], "rules": ["SentinelRule"],
+                     "paths": ["nothing/**"], "timeout": 1}[key]
+            repo = _start(case, {rel: "x\n"}, [dict(_linter(fake, tool), **{key: value})])
+            _edit(repo, rel, "y\n")
+            if key == "timeout":
+                monkeypatch.setenv("FAKE_LINT_MODE", "sleep")
+            result = _one(repo, case)
+            monkeypatch.delenv("FAKE_LINT_MODE", raising=False)
+            seen = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {}
+            if out.exists():
+                out.unlink()
+            if key == "args" and "--sentinel-arg" in seen.get("argv", []):
+                honoured.add((tool, key))
+            if key == "rules" and any("SentinelRule" in t for t in seen.get("texts", {}).values()):
+                honoured.add((tool, key))
+            if key == "paths" and result["status"] == rc.NA:
+                honoured.add((tool, key))
+            if key == "timeout" and "timed out after 1s" in result["detail"]:
+                honoured.add((tool, key))
+    expected = {(t, k) for t in _TOOLS for k in rc.TOOL_KEYS[t] - {"tool", "command"}}
+    assert honoured == expected, sorted(expected - honoured)
+
+
+# class d - records -------------------------------------------------------------
+
+def test_two_runs_sharing_a_scratch_keep_their_own_records(tmp_path):
+    """Review round 6 FIX :788: records are bound to the reserved round, so a
+    second run for the same bundle cannot overwrite the first one's."""
+    first = rc.record(str(tmp_path), "sha-a", [dict(_ROW, status=rc.COULD_NOT)], True, False)
+    second = rc.record(str(tmp_path), "sha-a", [dict(_ROW, status=rc.COULD_NOT)], False, False)
+    rc.bind_record(first, str(tmp_path), _TICKET, 6)
+    rc.bind_record(second, str(tmp_path), _TICKET, 7)
+
+    assert (_got(tmp_path, "sha-a", number=6)["overridden"],
+            _got(tmp_path, "sha-a", number=7)["overridden"]) == (True, False)
+
+
+@pytest.mark.parametrize("ticket, number", [("T-2", _ROUND), (_TICKET, 2)])
+def test_a_record_for_another_ticket_or_round_is_not_recorded(tmp_path, ticket, number):
+    _bound(tmp_path, "sha-a", [_ROW])
+    os.replace(rc.round_record_path(str(tmp_path), _ROUND),
+               rc.round_record_path(str(tmp_path), number))
+
+    assert _got(tmp_path, "sha-a", ticket=ticket, number=number)["result"] == rc.NOT_RECORDED

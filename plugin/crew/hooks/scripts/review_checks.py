@@ -50,11 +50,14 @@ findings, 3 could not check, 2 usage.
 """
 import argparse
 import collections
+import errno
 import json
 import os
 import re
 import shutil
+import secrets
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -65,7 +68,12 @@ PASS, FAIL, COULD_NOT, NA = "pass", "fail", "could-not-check", "n/a"
 NOT_CONFIGURED, NOT_RECORDED = "not-configured", "not-recorded"
 CONFIG_KEY = "preReview"
 VERIFY_MAP = os.path.join(".crew", "verify.json")
-RESULT_FILE = "prereview.json"
+# Class d (round-7 sweep): a record is per run, then per round. record()
+# stages `prereview.run-<random>.json`; once `reserve` hands the run its round,
+# bind_record() moves it to `prereview-r<N>.json` with the ticket and round
+# inside, and finish reads the record of ITS round. Two runs sharing a scratch
+# directory never overwrite each other (review round 6 FIX :788).
+RESULT_FILE = "prereview-r<N>.json"
 DEFAULT_TIMEOUT = 300
 GIT_TIMEOUT = 60
 # Never handed to a linter: it needs none of them (PYTHON-08).
@@ -95,7 +103,15 @@ TOOLS = {
     "psscriptanalyzer": {"globs": ("**/*.ps1", "**/*.psm1", "**/*.psd1")},
     "actionlint": {"globs": (".github/workflows/*.yml", ".github/workflows/*.yaml")},
 }
-LINTER_KEYS = {"tool", "command", "args", "paths", "timeout", "rules"}
+# Class c (round-7 sweep): the keys each tool's runner actually reads. A key
+# a runner would ignore (psscriptanalyzer has no `args`) is rejected, never
+# accepted and dropped; `test_class_c_every_accepted_key_is_honoured` proves
+# every key listed here reaches the run.
+_COMMON_KEYS = {"tool", "command", "paths", "timeout"}
+TOOL_KEYS = {"ruff": _COMMON_KEYS | {"args"}, "shellcheck": _COMMON_KEYS | {"args"},
+             "actionlint": _COMMON_KEYS | {"args"},
+             "psscriptanalyzer": _COMMON_KEYS | {"rules"}}
+LINTER_KEYS = set().union(*TOOL_KEYS.values())
 BLOCK_KEYS = {"linters"}  # nothing else, not even a `_note`: an unknown key fails closed
 
 # Read by pwsh with -File: the list of files and the rule allowlist arrive as
@@ -136,6 +152,77 @@ class CouldNotCheck(Exception):
     """The check did not run to a result. Never read as a pass."""
 
 
+class NotRegularFile(OSError):
+    """A path that exists but is not a regular file: a symlink, FIFO, device
+    or directory. Every caller reads it as could-not-check."""
+
+
+_READ_FLAGS = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+               | getattr(os, "O_BINARY", 0))
+_REPARSE_POINT = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+
+
+def read_regular(path):
+    """The bytes of `path`, which must be a regular file (class b, round-7
+    sweep): the ONLY file read in this module and in review_run.py.
+    FileNotFoundError when absent; NotRegularFile for a symlink, FIFO,
+    device, directory or Windows reparse point. lstat first, then an
+    O_NOFOLLOW|O_NONBLOCK open re-checked by fstat against the same inode,
+    so it never follows a link swapped in and never blocks on a FIFO."""
+    before = os.lstat(path)
+    if not stat.S_ISREG(before.st_mode) or (
+            getattr(before, "st_file_attributes", 0) & _REPARSE_POINT):
+        raise NotRegularFile(errno.EINVAL, "not a regular file", path)
+    fd = os.open(path, _READ_FLAGS)
+    try:
+        after = os.fstat(fd)
+        if not stat.S_ISREG(after.st_mode) or (after.st_dev, after.st_ino) != (
+                before.st_dev, before.st_ino):
+            raise NotRegularFile(errno.EINVAL, "changed while being opened", path)
+        chunks = []
+        while True:
+            chunk = os.read(fd, 1 << 20)
+            if not chunk:
+                return b"".join(chunks)
+            chunks.append(chunk)
+    finally:
+        os.close(fd)
+
+
+def resolve_executable(name):
+    """The absolute path of an executable (class a, round-7 sweep): the ONLY
+    way this module and review_run.py find a program. An absolute `name` must
+    be a regular file; a bare name is looked up on the ABSOLUTE PATH entries
+    only. Never the current directory: shutil.which searches it first on
+    Windows, and a relative PATH entry (`.`) does the same anywhere. A relative
+    path such as `./tool` is refused. None when not found."""
+    if os.path.isabs(name):
+        return name if os.path.isfile(name) else None
+    if os.sep in name or (os.altsep and os.altsep in name):
+        return None
+    dirs = [d for d in os.environ.get("PATH", "").split(os.pathsep) if d and os.path.isabs(d)]
+    if os.name != "nt":
+        return shutil.which(name, path=os.pathsep.join(dirs)) if dirs else None
+    exts = [e for e in (os.environ.get("PATHEXT") or ".COM;.EXE").split(";") if e]
+    has_ext = os.path.splitext(name)[1].upper() in (e.upper() for e in exts)
+    candidates = [name] if has_ext else [name + ext for ext in exts]
+    for folder in dirs:
+        for candidate in candidates:
+            path = os.path.join(folder, candidate)
+            if os.path.isfile(path):
+                return path
+    return None
+
+
+def taskkill():
+    """%SystemRoot%\\System32\\taskkill.exe through the resolver, or None: no
+    absolute SystemRoot, no taskkill (never a bare name)."""
+    root = os.environ.get("SystemRoot") or os.environ.get("SYSTEMROOT")
+    if not root or not os.path.isabs(root):
+        return None
+    return resolve_executable(os.path.join(root, "System32", "taskkill.exe"))
+
+
 def _base_modes(root, base, rels):
     """{relative path: git mode} for those of `rels` the base commit has."""
     if _git(root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode != 0:
@@ -174,13 +261,11 @@ def _map_bytes(root, manifest):
         raise CouldNotCheck(f"{rel} is a symlink or submodule in the base commit")
     if mode is not None:
         return _git_blob(root, f"{manifest['base']}:{rel}")
-    path = os.path.join(root, VERIFY_MAP)
-    if not os.path.lexists(path):
-        return None
     try:
-        with open(path, "rb") as fh:
-            return fh.read()
-    except OSError as exc:
+        return read_regular(os.path.join(root, VERIFY_MAP))
+    except FileNotFoundError:
+        return None
+    except OSError as exc:  # NotRegularFile included: never "none configured"
         raise CouldNotCheck(f"cannot read the untracked map: {exc}") from exc
 
 
@@ -220,16 +305,18 @@ def load_config(root, manifest):
         unknown = sorted(set(spec) - LINTER_KEYS)
         if unknown:
             problems.append(f"{where}: unknown key(s) {', '.join(unknown)}")
+        unused = sorted((set(spec) & LINTER_KEYS) - TOOL_KEYS[spec["tool"]])
+        if unused:
+            problems.append(f"{where}: {spec['tool']} does not use {', '.join(unused)}")
+        # A key that is PRESENT is checked, so an explicit null is a problem,
+        # never "use the default" (review round 6 FIX :225).
         for key in ("command", "args", "paths", "rules"):
-            value = spec.get(key)
-            if value is not None and not (isinstance(value, list) and value
-                                          and all(isinstance(v, str) and v for v in value)):
+            if key in spec and not (isinstance(spec[key], list) and spec[key]
+                                    and all(isinstance(v, str) and v for v in spec[key])):
                 problems.append(f"{where}: {key} must be a non-empty list of strings")
-        if spec.get("rules") is not None and spec["tool"] != "psscriptanalyzer":
-            problems.append(f"{where}: rules is for psscriptanalyzer only")
-        timeout = spec.get("timeout")
-        if timeout is not None and (not isinstance(timeout, int) or isinstance(timeout, bool)
-                                    or timeout <= 0):
+        if "timeout" in spec and not (isinstance(spec["timeout"], int)
+                                      and not isinstance(spec["timeout"], bool)
+                                      and spec["timeout"] > 0):
             problems.append(f"{where}: timeout must be a positive integer")
     if problems:
         return None, "; ".join(problems)
@@ -241,8 +328,11 @@ def _name(spec):
 
 
 def _git(root, *args):
+    git = resolve_executable("git")
+    if not git:
+        raise CouldNotCheck("git is not on an absolute PATH entry")
     try:
-        return subprocess.run(["git", *args], cwd=root, capture_output=True,
+        return subprocess.run([git, *args], cwd=root, capture_output=True,
                               stdin=subprocess.DEVNULL, timeout=GIT_TIMEOUT, check=False)
     except subprocess.TimeoutExpired as exc:
         raise CouldNotCheck(f"git {args[0]} timed out after {GIT_TIMEOUT}s") from exc
@@ -356,32 +446,15 @@ def _materialise(root, entries, configs, tmp):
     return with_base
 
 
-def _which(name):
-    """`name` from the ABSOLUTE PATH entries only. shutil.which on Windows
-    searches the current directory first, so a repository could plant the
-    linter it is judged by (review round 5); it is not used there."""
-    dirs = [d for d in os.environ.get("PATH", "").split(os.pathsep) if d and os.path.isabs(d)]
-    if os.name != "nt":
-        return shutil.which(name, path=os.pathsep.join(dirs)) if dirs else None
-    exts = [e for e in (os.environ.get("PATHEXT") or ".COM;.EXE").split(";") if e]
-    has_ext = os.path.splitext(name)[1].upper() in (e.upper() for e in exts)
-    candidates = [name] if has_ext else [name + ext for ext in exts]
-    for folder in dirs:
-        for candidate in candidates:
-            path = os.path.join(folder, candidate)
-            if os.path.isfile(path):
-                return path
-    return None
-
-
 def _command(spec):
     argv = list(spec.get("command") or [])
     if not argv:
         argv = {"ruff": [sys.executable, "-m", "ruff"],
                 "psscriptanalyzer": ["pwsh"]}.get(spec["tool"], [spec["tool"]])
-    exe = argv[0] if os.path.isabs(argv[0]) else _which(argv[0])
+    exe = resolve_executable(argv[0])
     if not exe:
-        raise CouldNotCheck(f"{argv[0]} is not on PATH (command: {' '.join(argv)})")
+        raise CouldNotCheck(f"{argv[0]} is not on PATH (absolute entries only, never the "
+                            f"current directory; command: {' '.join(argv)})")
     if os.path.splitext(exe)[1].lower() in (".cmd", ".bat"):
         # cmd.exe would re-parse every file name argument (PYTHON-06).
         raise CouldNotCheck(f"{exe} is a batch-file shim; name the real executable in `command`")
@@ -412,10 +485,9 @@ def _kill_tree(proc):
         if os.name == "nt":
             # By absolute path: a bare name would let a taskkill.exe in the
             # current directory run (review round 5). No SystemRoot, no taskkill.
-            system_root = os.environ.get("SystemRoot") or os.environ.get("SYSTEMROOT")
-            if system_root and os.path.isabs(system_root):
-                subprocess.run([os.path.join(system_root, "System32", "taskkill.exe"),
-                                "/F", "/T", "/PID", str(proc.pid)],
+            killer = taskkill()
+            if killer:
+                subprocess.run([killer, "/F", "/T", "/PID", str(proc.pid)],
                                capture_output=True, stdin=subprocess.DEVNULL, check=False,
                                timeout=_REAP_SECONDS)
         else:
@@ -720,8 +792,7 @@ def run_checks_bound(root, manifest_path):
     bundle_sha256 is None when the manifest could not be read."""
     manifest, manifest_problem = None, None
     try:
-        with open(manifest_path, encoding="utf-8") as fh:
-            manifest = json.load(fh)
+        manifest = json.loads(read_regular(manifest_path).decode("utf-8"))
     except (OSError, ValueError) as exc:
         manifest_problem = exc
     bundle = _bundle_hash(manifest)
@@ -781,15 +852,10 @@ def lines(results):
     return out
 
 
-def record(scratch, bundle_sha256, results, overridden, stood_down, configured=True):
-    """Write <scratch>/prereview.json, bound to the bundle it judged."""
-    payload = {"bundle_sha256": bundle_sha256, "result": overall(results, configured),
-               "overridden": overridden, "stood_down": stood_down, "checks": results}
-    path = os.path.join(scratch, RESULT_FILE)
+def _write_json(scratch, path, payload):
+    """Atomically, through a temp name of this writer's own in `scratch`."""
     text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
-    # A temp name of its own per writer, so two runs sharing a scratch
-    # directory never write or replace each other's staging file.
-    handle, tmp = tempfile.mkstemp(prefix=RESULT_FILE + ".", suffix=".tmp", dir=scratch)
+    handle, tmp = tempfile.mkstemp(prefix=".prereview.", suffix=".tmp", dir=scratch)
     try:
         with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
@@ -800,35 +866,63 @@ def record(scratch, bundle_sha256, results, overridden, stood_down, configured=T
         raise
 
 
-def recorded(scratch, bundle_sha256):
-    """The record for exactly this bundle. Otherwise a `not-recorded` dict
-    saying why, never None: an absent record must not read as a clean one."""
+def round_record_path(scratch, number):
+    return os.path.join(scratch, f"prereview-r{number}.json")
+
+
+def record(scratch, bundle_sha256, results, overridden, stood_down, configured=True):
+    """Stage this run's record, bound to the bundle it judged, under a name no
+    other run uses. Returns its path, for bind_record once a round is held."""
+    payload = {"bundle_sha256": bundle_sha256, "result": overall(results, configured),
+               "overridden": overridden, "stood_down": stood_down, "checks": results}
+    path = os.path.join(scratch, f"prereview.run-{secrets.token_hex(8)}.json")
+    _write_json(scratch, path, payload)
+    return path
+
+
+def bind_record(staged, scratch, ticket, number):
+    """The staged record becomes round `number`'s, ticket and round written
+    inside so a file moved or copied between rounds does not match."""
+    payload = json.loads(read_regular(staged).decode("utf-8"))
+    payload.update(ticket=ticket, round=number)
+    _write_json(scratch, round_record_path(scratch, number), payload)
+    os.remove(staged)
+
+
+def recorded(scratch, bundle_sha256, ticket, number):
+    """Round `number`'s record for exactly this bundle and ticket. Otherwise a
+    `not-recorded` dict saying why, never None: an absent record must not read
+    as a clean one."""
     if not isinstance(bundle_sha256, str) or not bundle_sha256:
         return {"result": NOT_RECORDED, "reason": "the bundle has no bundle_sha256 to match"}
-    path = os.path.join(scratch, RESULT_FILE)
+    path = round_record_path(scratch, number)
+    name = os.path.basename(path)
     try:
-        with open(path, encoding="utf-8") as fh:
-            payload = json.load(fh)
+        payload = json.loads(read_regular(path).decode("utf-8"))
     except FileNotFoundError:
-        return {"result": NOT_RECORDED, "reason": f"no {RESULT_FILE} in the scratch directory"}
+        return {"result": NOT_RECORDED, "reason": f"no {name} in the scratch directory"}
     except (OSError, ValueError) as exc:
-        return {"result": NOT_RECORDED, "reason": f"{RESULT_FILE} could not be read: {exc}"}
+        return {"result": NOT_RECORDED, "reason": f"{name} could not be read: {exc}"}
     if not isinstance(payload, dict) or payload.get("bundle_sha256") != bundle_sha256:
         return {"result": NOT_RECORDED,
-                "reason": f"{RESULT_FILE} was written for another bundle"}
+                "reason": f"{name} was written for another bundle"}
+    if payload.get("ticket") != ticket or payload.get("round") != number \
+            or isinstance(payload.get("round"), bool):
+        return {"result": NOT_RECORDED,
+                "reason": f"{name} was bound to another ticket or round"}
     if not (payload.get("result") in (PASS, FAIL, COULD_NOT, NOT_CONFIGURED)
             and isinstance(payload.get("checks"), list)
             and all(_is_check_row(c) for c in payload["checks"])
             and isinstance(payload.get("overridden"), bool)
             and isinstance(payload.get("stood_down"), bool)):
         return {"result": NOT_RECORDED,
-                "reason": f"{RESULT_FILE} is not the shape record() writes"}
+                "reason": f"{name} is not the shape record() writes"}
     configured = payload["result"] != NOT_CONFIGURED
     if (not configured and payload["checks"]) or \
             payload["result"] != overall(payload["checks"], configured) or \
             not _flags_fit(payload):
         return {"result": NOT_RECORDED,
-                "reason": f"{RESULT_FILE} states a result its checks do not add up to"}
+                "reason": f"{name} states a result its checks do not add up to"}
     return payload
 
 

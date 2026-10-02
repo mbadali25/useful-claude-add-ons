@@ -42,6 +42,15 @@ All notable changes to this repository are documented here. Format follows [Keep
   linter config or verify map that is a symlink is could-not-check. On Windows `taskkill` runs from
   `%SystemRoot%\System32`, and a linter named without a path is found on absolute `PATH` entries
   only, never in the current directory.
+- **One path per class, in `review_checks.py` and `review_run.py`.** Every program (git, each linter,
+  pwsh, taskkill, the reviewer CLIs) is found by one resolver: an absolute path, or an absolute `PATH`
+  entry, never the current directory. Every file read (the untracked verify map, the manifest, the
+  records, `prompt.txt`, the diff parts, `--output`) goes through one regular-file-only reader that
+  refuses a symlink, FIFO or device as could-not-check and never blocks. Every config value is
+  typed strictly: an explicit `null` is could-not-check, and a key a tool does not use (`args` for
+  PSScriptAnalyzer) is rejected. Each run stages its own pre-review record, bound to the round it
+  reserves (`prereview-r<N>.json`), so two runs sharing a scratch directory never swap records.
+  Files git flags as binary are still linted when their extension is configured (a UTF-16 `.ps1`).
 - **This repo's config.** ruff adds the fail-open rules S110/S112/BLE001, which `ruff.toml` does not
   select. ShellCheck (`-S warning`) and actionlint run through pinned `uvx` packages. PSScriptAnalyzer
   runs a 13-rule correctness and fail-open allowlist (no WriteHost or naming rules).

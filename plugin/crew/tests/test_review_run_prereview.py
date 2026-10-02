@@ -125,7 +125,12 @@ def _run(repo, scratch, tmp_path, provider, *extra):
 
 
 def _record(scratch):
-    return json.loads((scratch / rc.RESULT_FILE).read_text(encoding="utf-8"))
+    """The round's record when a round was reserved, else the one record a
+    refusing run staged."""
+    bound = sorted(scratch.glob("prereview-r*.json"))
+    found = bound or sorted(scratch.glob("prereview.run-*.json"))
+    assert len(found) == 1, found
+    return json.loads(found[-1].read_text(encoding="utf-8"))
 
 
 @pytest.mark.parametrize("provider", sorted(_PROVIDERS))
@@ -245,7 +250,7 @@ def test_claude_completion_carries_prereview(tmp_path, fake, record):
     reserved = _run(repo, scratch, tmp_path, "claude")
     assert "ROUND=1" in reserved.stdout, reserved.stderr
     if record == "removed":
-        os.remove(scratch / rc.RESULT_FILE)
+        os.remove(rc.round_record_path(str(scratch), 1))
     manifest = json.loads((scratch / "manifest.json").read_text(encoding="utf-8"))
     out = tmp_path / "out.txt"
     out.write_text("\n".join("READ|" + p["path"] for p in manifest["parts"]) + "\nCLEAN\n",
@@ -313,3 +318,29 @@ def test_the_record_is_bound_to_the_manifest_the_checks_read(tmp_path, fake, mon
 
     assert (review_run.prereview_gate(args), _record(scratch)["bundle_sha256"]) == (
         None, checked)
+
+
+def test_two_runs_sharing_a_scratch_do_not_swap_records(tmp_path):
+    """L-0574 review round 6 FIX :788: an --allow-unverified run reserves
+    round 1; a second, refusing run for the same bundle in the same scratch
+    then writes its own record. Round 1's review.json still carries round
+    1's override."""
+    repo, scratch = _setup(tmp_path, [_missing()])
+    allowed = _run(repo, scratch, tmp_path, "claude", "--allow-unverified")
+    refused = _run(repo, scratch, tmp_path, "claude")
+    manifest = json.loads((scratch / "manifest.json").read_text(encoding="utf-8"))
+    out = tmp_path / "out.txt"
+    out.write_text("\n".join("READ|" + p["path"] for p in manifest["parts"]) + "\nCLEAN\n",
+                   encoding="utf-8")
+
+    done = subprocess.run([sys.executable, _RUN, "--root", str(repo), "--ticket", TICKET,
+                           "--scratch", str(scratch), "--provider", "claude", "--round", "1",
+                           "--output", str(out), "--exit-code", "0",
+                           "--work-dir", str(tmp_path / "work")],
+                          capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False,
+                          timeout=120)
+    review = json.loads((tmp_path / "work" / "review.json").read_text(encoding="utf-8"))
+
+    assert ("ROUND=1" in allowed.stdout, refused.returncode, done.returncode,
+            review["prereview"]["overridden"], review["prereview"]["round"]) == (
+        True, 5, 0, True, 1), allowed.stderr + refused.stderr + done.stderr
