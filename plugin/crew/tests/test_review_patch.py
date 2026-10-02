@@ -330,7 +330,7 @@ def test_work_dir_is_excluded_and_says_so(repo, tmp_path):
     assert result.returncode == 0, result.stderr
     manifest = _manifest(tmp_path)
     assert manifest["untracked_files"] == ["real.txt"]
-    assert manifest["excluded"] == [".work/", "graphify-out/"]
+    assert manifest["excluded"] == [".work/", "graphify-out/", ".crew/metrics.md"]
     assert b"scratch" not in (tmp_path / "diff.txt").read_bytes()
 
 
@@ -402,7 +402,7 @@ def test_generated_graph_dir_is_excluded_and_says_so(repo, tmp_path):
     assert b"graphify-out/" not in patch
     assert b'"nodes": 2' not in patch
     m = _manifest(tmp_path)
-    assert m["excluded"] == [".work/", "graphify-out/"]
+    assert m["excluded"] == [".work/", "graphify-out/", ".crew/metrics.md"]
     listed = (m["committed_files"] + m["unstaged_files"] + m["untracked_files"]
               + [e["path"] for e in m["entries"]])
     assert not [p for p in listed if p.startswith("graphify-out/")]
@@ -452,3 +452,22 @@ def test_look_alike_paths_are_still_bundled(repo, tmp_path):
     patch = (tmp_path / "diff.txt").read_bytes()
     assert b"notes" in patch and b"nested" in patch
     assert b"graphify-out/graph.json" not in patch
+
+
+# ---- L-0578: review_run.py appends .crew/metrics.md between bundle and receipt ----
+
+def test_metrics_row_stays_out_of_the_bundle_and_the_rest_of_crew_stays_in(repo, tmp_path):
+    """review_run.py writes the round's row after the bundle is built; in a repo
+    that does not gitignore .crew/ that row must not change what the receipt
+    rebuilds, while every other .crew/ file is still reviewed."""
+    base = _git(repo, "rev-parse", "HEAD")
+    (repo / ".crew").mkdir()
+    (repo / ".crew" / "metrics.md").write_text("2026-10-01 | T1 | x (r1) | 0 | 0\n",
+                                               encoding="utf-8")
+    (repo / ".crew" / "verify.json").write_text("{}\n", encoding="utf-8")
+
+    result = _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+
+    assert result.returncode == 0, result.stderr
+    assert (_manifest(tmp_path)["untracked_files"],
+            b"(r1)" in (tmp_path / "diff.txt").read_bytes()) == ([".crew/verify.json"], False)
