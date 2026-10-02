@@ -612,15 +612,26 @@ suite at all — `pytest-crew.yml` runs pytest and cannot collect a `.sh` file
 executed by CI despite being committed and green. Each is its own step
 deliberately, so a failure names which suite went red rather than collapsing
 into one line. `pytest-crew.yml` gained a `crew-shell-matrix` job
-(`:162-262`) that runs on `ubuntu-latest` and `windows-latest` (#277 disabled the
-Windows leg; T-0110 re-enabled it, doing work on a pull request only when the PR
-changes `plugin/crew/**` or `pytest-crew.yml`) — the
-`-m slow` full per-shell hook matrix on both, plus a Windows-only run of
-crew's default (parity-sample) set, since the `test` job above only runs that
-set on Ubuntu. Both that ubuntu leg and the `test` job carry an opt-in
+(`:162-209`, ubuntu leg only since L-0577) that runs the `-m slow` full per-shell
+hook matrix. On Windows, L-0577 replaced the one serial leg (p50 37.1 min) with
+parallel jobs (`:211-453`): `crew-windows-decide` (`:263`, T-0110's rule: on a
+pull request the Windows jobs run only when the PR changes `plugin/crew/**` or
+`pytest-crew.yml`), `crew-windows-default` (`:297`, crew's default
+parity-sample set split in 3 by pytest-split, since the `test` job above only runs
+that set on Ubuntu), `crew-windows-slow` (`:345`), `crew-windows-wallclock`
+(`:384`, serial), and the fan-in `crew-windows-gate` (`:423`), named
+`crew-shell-matrix (windows-latest)` so the required check name is unchanged.
+The gate runs `if: always()` and passes only through
+`scripts/check-windows-shards.py`: every Windows job succeeded, every shard
+collected the identical default set, the shards' JUnit name each collected test
+exactly once, and slow and wallclock ran what they collected (suite
+`scripts/_test/windows-shards.py`). Each Windows `run:` step carries
+`if: runner.os == 'Windows'`, the `WINDOWS_ONLY_IFS` condition
+`scripts/gate-runner.py`'s drift check excludes. The Windows jobs take `runs-on` from one
+`crew-windows-decide` output and run `shell: pwsh` steps, so retargeting them is a one-line change. Both the ubuntu leg and the `test` job carry an opt-in
 `runs-on` expression (L-0521): with repo variable `CREW_RUNNER` set to
 `self-hosted` they run on `[self-hosted, linux, x64, crew]`, otherwise on
-`ubuntu-latest` / `matrix.os` as before; a `windows-latest` leg never moves,
+`ubuntu-latest` / `matrix.os` as before; a `windows-latest` job never moves,
 and neither does a fork pull request (the repo is public, so the expression
 also requires a non-PR event or `head.repo.full_name == github.repository`).
 The owner's runner playbook (mbadali25/github-runner-infra) sets the variable
@@ -630,7 +641,7 @@ Since T-0094 merged `a61a6f38` (read at `f5d0f1b1`): `pylint.yml` runs pylint wi
 CPU (`:40`) and gained a `ruff` job (`:42-65`) that runs `ruff check .` pinned to `ruff~=0.16.0`
 against `ruff.toml`'s explicit `select`; `pytest-crew.yml` installs `pytest-xdist`, runs the
 suites with `-n auto -m "not wallclock"` and the `wallclock`-marked tests in a serial step of
-their own, in both the `test` job and the Windows leg of `crew-shell-matrix`. Read, not run.
+their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. Read, not run.
 
 ## Entry points
 

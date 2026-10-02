@@ -591,20 +591,21 @@ def case_ci_drift_scans_crew_shell_matrix(tmp: str) -> None:
 
 def case_ci_drift_windows_only_step_needs_its_if(tmp: str) -> None:
     # Neighbour of the crew-shell-matrix BLOCK: a Windows-only step is excluded
-    # by its `if:`, so dropping the `if:` makes its command count again.
+    # by its `if:`, so dropping the `if:` makes its command count again. The
+    # Windows default set lives in crew-windows-default since L-0577.
     runner, root, yaml = _drift_fixture(tmp)
     windows_ifs = {cond for cond, _ in runner.WINDOWS_ONLY_IFS}
 
     def drop_if(doc):
-        for step in doc["jobs"]["crew-shell-matrix"]["steps"]:
-            if step.get("if") in windows_ifs and "not wallclock" in step["run"]:
+        for step in doc["jobs"]["crew-windows-default"]["steps"]:
+            if step.get("if") in windows_ifs and "not wallclock" in step.get("run", ""):
                 del step["if"]
                 return
         raise AssertionError("fixture: no Windows-only step to edit")
 
     _edit_workflow(root, yaml, "pytest-crew.yml", drop_if)
     problems = runner.ci_drift(root)
-    expect(any("crew-shell-matrix" in p and "not wallclock" in p for p in problems),
+    expect(any("crew-windows-default" in p and "not wallclock" in p for p in problems),
            f"a Windows-only command that lost its if: was not reported: {problems}")
 
 
