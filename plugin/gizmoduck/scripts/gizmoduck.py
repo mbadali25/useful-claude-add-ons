@@ -921,8 +921,8 @@ def _is_link(path):
     """True for a symlink, and on Windows for a junction too: a junction is
     not a symlink to `Path.is_symlink`, yet removing or writing through one
     reaches outside the output directory just the same."""
-    isjunction = getattr(os.path, "isjunction", None)  # Python 3.12+
-    return Path(path).is_symlink() or bool(isjunction and isjunction(path))
+    isjunction = getattr(os.path, "isjunction", None)  # 3.12+; pylint on 3.11 cannot see this guard
+    return Path(path).is_symlink() or bool(isjunction and isjunction(path))  # pylint: disable=not-callable
 
 
 def _is_plain_dir_name(name):

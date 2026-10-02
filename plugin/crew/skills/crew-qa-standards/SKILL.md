@@ -12,6 +12,9 @@ it:
   script that installs its tools (H8).
 - [`references/review.md`](references/review.md): R1-R12, how an LLM review is run and how a PR reports.
 - [`references/steward-template.md`](references/steward-template.md): the repo's PR-loop skill.
+- [`references/recurring-findings.md`](references/recurring-findings.md): the defect classes earlier
+  reviews kept finding, keyed by path globs. Not read whole: `hooks/scripts/recurring_findings.py`
+  prints the classes a change's paths meet, to the implementer (`/crew:implement` step 2). Edit it in place; its suite holds each class to four probes and the block to its cap.
 
 Read only the rule you are applying. Both files are long, and loading them whole to fix one
 gap costs the tokens the standards exist to save.
