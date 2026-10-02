@@ -479,14 +479,14 @@ that changed shape or are newly documented here:
   blocked on it, and never reachable from the Stop hook itself (`hooks.json`
   invokes this script with no argument or `--all`, never `--price`).
 - **Declared subset coverage, `--all` only (L-0572).** DERIVED at the L-0572
-  branch. `plugin/crew/hooks/scripts/verify_record.py:456` `cover_declarations`
+  branch. `plugin/crew/hooks/scripts/verify_record.py:457` `cover_declarations`
   validates `"coveredBy": "<id>"` against the rule carrying that `"id"`
   (unknown/duplicate id, self, chain, no runnable superset command, env
   mismatch -> ignored with a notice, the subset runs);
-  `plugin/crew/hooks/scripts/verify_record.py:507` `cover_plan` moves the
+  `plugin/crew/hooks/scripts/verify_record.py:508` `cover_plan` moves the
   creditable commands to the end and returns per-position guards (the
-  superset's command positions); `plugin/crew/hooks/scripts/verify_record.py:569`
-  `tree_snapshot` hashes HEAD, the index and every tracked/untracked path.
+  superset's command positions); `plugin/crew/hooks/scripts/verify_record.py:571`
+  `tree_snapshot` hashes HEAD, the index, every tracked/untracked path and its mode or symlink target, and refuses FIFOs and skip-worktree/assume-unchanged entries.
   The `.sh` calls the planner only when `budget is None`
   (`plugin/crew/hooks/scripts/verify-gate.sh:1241`) and credits a position in
   `cover_credit` (`plugin/crew/hooks/scripts/verify-gate.sh:1557`) only when
