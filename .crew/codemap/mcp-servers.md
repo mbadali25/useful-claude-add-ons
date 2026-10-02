@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@b4f04e23
+anchor: useful-claude-add-ons@fa63852d
 verified: 2026-10-01
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -573,3 +573,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `8b21ecc3` -> `1e2762a0` on 2026-10-02 (L-0555 review round 1 fixes: `ci_receipt.py` requires the receipt's gate_impl to match HEAD's and its docstring says diagnostic; the verify.json rule is priced 10s from measured runs; crew 1.0.116 re-set).** `git diff --name-only 8b21ecc3 1e2762a0` outside refresh artifacts returns `plugin/crew/hooks/scripts/ci_receipt.py`, `plugin/crew/tests/test_ci_receipt.py` and `.crew/verify.json` (the last rule's line edited in place, no line moved); the version files net to no change. Every citation maps onto itself. No suite was executed for this note.
 
 **Re-anchored `1e2762a0` -> `b10e3895` on 2026-10-02 (L-0555 review round 2 fixes: `ci_receipt.py` treats an unreadable stand-down as UNKNOWN, re-reads the stand-down at the last look, and anchors the origin host to github.com; crew 1.0.116 re-set).** `git diff --name-only 1e2762a0 b10e3895` outside refresh artifacts returns `plugin/crew/hooks/scripts/ci_receipt.py` and `plugin/crew/tests/test_ci_receipt.py`; the version files net to no change. No code map cites a line of either file, so every citation maps onto itself. No suite was executed for this note.
+
+**Re-anchored `b4f04e23` -> `fa63852d` on 2026-10-02 (L-0555 merges origin/main `dd95135a`, L-0578 #304, crew 1.0.119, at `fa63852d` with rerere disabled; crew 1.0.120).** The merge took main's anchor and INDEX rows and kept both lanes' re-anchor notes. L-0555's own change against main is `ci_receipt.py`, `test_ci_receipt.py`, `.github/workflows/verify-gate.yml`, `scripts/gate-runner.py`, one `.crew/verify.json` rule (line 454 edited in place, 455 appended), `plugin/crew/README.md` (+23 lines after `:2167`), `CHANGELOG.md` (+17 lines at the top) and the version and count lines. Citations moved by difflib: `CHANGELOG.md` +17 in `crew.md`'s current-citation lines, `plugin/crew/README.md` +23 past `:2167` in `repo-docs.md` (nine). No suite was executed for this note.
