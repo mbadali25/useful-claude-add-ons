@@ -4,13 +4,14 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.112: review closure - a final 0-BLOCK cross-family round auto-accepts (L-0510)
+### Changed — `crew` 1.0.121: review closure - a final 0-BLOCK cross-family round auto-accepts (L-0510)
 
-Bumped `1.0.110 -> 1.0.112` after merging origin/main `2906dcbd` (crew 1.0.110); 1.0.111 is claimed
-by L-0557 and W-0117. Before it, `1.0.103 -> 1.0.108` for the family rule (owner decision
+Bumped `1.0.114 -> 1.0.121` after merging origin/main `ffd11270` (L-0557, crew 1.0.114);
+1.0.113-1.0.120 are claimed by other lanes and 1.0.112 is released (burned). Before it,
+`1.0.110 -> 1.0.112` after merging origin/main `2906dcbd` (crew 1.0.110). Before that, `1.0.103 -> 1.0.108` for the family rule (owner decision
 2026-10-01 #3). Earlier: `1.0.98 -> 1.0.103` after
-merging origin/main `52489039` (T-0040, crew 1.0.98). L-0510's 1.0.90, 1.0.93, 1.0.94, 1.0.103 and
-1.0.108 were branch versions and were never published.
+merging origin/main `52489039` (T-0040, crew 1.0.98). L-0510's 1.0.90, 1.0.93, 1.0.94, 1.0.103,
+1.0.108 and 1.0.112 were branch versions and were never published.
 
 - **Behaviour change for every install (owner policy 2026-09-30).** A review round that is the
   last one the budget allows under the current plan, completed as `FINDINGS` with 0 BLOCK, is
@@ -53,6 +54,28 @@ merging origin/main `52489039` (T-0040, crew 1.0.98). L-0510's 1.0.90, 1.0.93, 1
   round, never a fix or a rerun.
 - **Boundary with L-0514 (INCOMPLETE retry):** disjoint. No INCOMPLETE is ever auto-accepted, and
   a refunded round never counts toward "final"; L-0514 is not implemented here.
+
+### Fixed - `crew` 1.0.114, `obsidian-vault` 0.4.16: every pwsh the test suites spawn gets its own XDG_CACHE_HOME (L-0557)
+
+- **Cause.** pwsh reads its multicore-JIT startup profile,
+  `$XDG_CACHE_HOME/powershell/StartupProfileData-NonInteractive`, at start-up and rewrites it at
+  exit. Concurrent pwsh sharing `~/.cache/powershell` race on that one file, and a reader that
+  catches it half-written dies before running a statement ("Stack overflow.", exit -6, or
+  SIGSEGV, -11) - about one `-m slow -n 12` run in 20-50 on the self-hosted runners.
+- **Test code only.** `plugin/crew/tests/conftest.py` gives each test its own
+  `XDG_CACHE_HOME`, a directory `tmp_path_factory.mktemp` creates beside `tmp_path` (inside it,
+  it showed up in nine tests that assert what their `tmp_path` holds), and installs an audit hook
+  that refuses a pwsh spawned with any other cache dir. The `pwsh()` helpers in both `test_flavour_guard.py` copies, the
+  obsidian-vault Python suites, and the ten shell suites under `scripts/_test/` and
+  `plugin/obsidian-vault/hooks/scripts/_test/` set it too. New
+  `plugin/crew/tests/test_pwsh_cache_isolation.py` scans every tracked `tests`/`_test` suite,
+  Python by AST and shell by line, for a pwsh spawn that would skip it, and needs no pwsh. It
+  judges the value as well as the name (empty, `None`, `~`, `.cache` or the home directory fail),
+  counts only a set that always runs (not one inside a branch, an unused dict or a helper's dead
+  code, only what a helper returns), and reports a suite it cannot read as `file:0` rather than
+  skipping it. No
+  retry and no crash-signature matching. Hooks and production scripts are unchanged (L-0559);
+  Windows pwsh keeps its profile under `LOCALAPPDATA`, so the variable changes nothing there.
 
 ### Fixed — `crew` 1.0.110: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516)
 

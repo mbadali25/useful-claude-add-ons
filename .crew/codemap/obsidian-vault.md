@@ -132,7 +132,7 @@ violation visible at all. (JUDGEMENT.)
   default OFF (`is True` tests at `plugin/obsidian-vault/hooks/scripts/vault_guard.py:301-302`);
   `checkCanvas` defaults ON, via an `is not False` test at `:303`. Assuming all three share a
   default is the easy mistake, and it inverts which rules a fresh install enforces. All three
-  defaults are pinned by cases in the suite (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:405,413,434`).
+  defaults are pinned by cases in the suite (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:408,413,434`).
   (DERIVED.)
 - **The guard only ever sees the DEFAULT vault.** `main()` calls
   `obsidian_common.resolve_vault_path()` with no name
@@ -153,7 +153,7 @@ violation visible at all. (JUDGEMENT.)
   (`:39`). Widening one while reading the other is how an exemption silently grows. Each of the
   three ASCII-checked names is pinned individually, after a Codex round found that testing
   `README.md` alone let a narrowing of `ASCII_EXEMPT_NAMES` pass the whole suite
-  (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:294-305`). (DERIVED.)
+  (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:297-308`). (DERIVED.)
 - **The frontmatter exemption is one check wide, not the whole function.** `fm_optional` excuses an
   exempt basename from *having* frontmatter and nothing else: a `README.md` that does carry
   frontmatter is still held to required keys, title-matches-filename and the updated date
@@ -163,7 +163,7 @@ violation visible at all. (JUDGEMENT.)
   `notes_glob` is passed to `check_note` alone
   (`plugin/obsidian-vault/hooks/scripts/vault_guard.py:329-333`); `check_ascii` (`:328`) and
   `check_canvas` (`:334-335`) never receive it. The note half of that is pinned
-  (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:451`) and the ASCII half is pinned by
+  (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:454`) and the ASCII half is pinned by
   the `wiki/ascii/CLAUDE.md` case (`:315`). **The canvas half is not pinned:** all four canvas
   cases live under `wiki/canvases/`, which is inside the `wiki/` prefix the ON config sets, so
   adding prefix-gating to `check_canvas` would pass the suite unnoticed. (DERIVED for the code;
@@ -188,7 +188,7 @@ violation visible at all. (JUDGEMENT.)
   that this only matters when nothing more specific (`PYTHONIOENCODING`, or the wrapper's own
   `PYTHONUTF8=1` backstop, below) already forced UTF-8. The MEASUREMENT is recorded elsewhere -
   `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:140-150` and
-  `plugin/obsidian-vault/hooks/scripts/_test/test_vault_guard_sh.sh:358-363` - where the guard's own
+  `plugin/obsidian-vault/hooks/scripts/_test/test_vault_guard_sh.sh:361-366` - where the guard's own
   regression suite measured `PYTHONIOENCODING` as taking precedence OVER `PYTHONUTF8` when both are set - so the
   wrapper backstop cannot rescue a decode an explicit `PYTHONIOENCODING` in the calling environment
   has already corrupted. (DERIVED, and sabotage-tested: `_test/test_vault_guard_sh.sh`'s
@@ -272,7 +272,7 @@ violation visible at all. (JUDGEMENT.)
     at exit 0.
   Pinned by `plugin/obsidian-vault/hooks/scripts/_test/test_vault_guard_sh.sh` (grown from 372 to
   652 lines this pass - see "Measured this pass"), run from the main suite as one folded case at
-  `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:513`.
+  `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:516`.
   **The stub is MODELLED, not observed** - built on Linux from the alias's documented behaviour
   (`plugin/obsidian-vault/hooks/scripts/vault-guard.sh:35-37` says so). The *shape* of the failure
   is verified; the Windows fixture behind it is not, and nobody has reproduced this on a real
@@ -321,7 +321,7 @@ violation visible at all. (JUDGEMENT.)
   `plugin/obsidian-vault/hooks/scripts/vault-capture.ps1:65`), which has nothing left for legacy reconstruction to strip. Reproduced without a Windows
   machine by explicitly setting `$PSNativeCommandArgumentPassing = 'Legacy'` under `pwsh` on Linux,
   and pinned in the new `plugin/obsidian-vault/hooks/scripts/_test/test_ps1_legacy_args.sh`
-  (188 lines), run from the main suite at `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:516-517`. **Like the WindowsApps stub, this
+  (188 lines), run from the main suite at `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:519-520`. **Like the WindowsApps stub, this
   reproduction is MODELLED under a forced setting, not observed on a real legacy-mode Windows
   PowerShell 5.1 host** - the script's own header says so. (DERIVED.)
 - **Crew 1.0 retired two adjacent memory systems this note used to reference by name; both are
@@ -430,7 +430,7 @@ violation visible at all. (JUDGEMENT.)
   Pinned by the new `plugin/obsidian-vault/hooks/scripts/_test/test_bridge_capture_sh.sh`
   (350 lines), whose own header states it is closing exactly the gap this note used to name: "the
   two remaining naive wrappers ... still carry the naive one-liner". Run from the main suite at
-  `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:514-515`. (DERIVED.)
+  `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:517-518`. (DERIVED.)
 
 - **The two retired `claude-memories-*` skills' conventions did not disappear - they moved into
   this plugin as portable "profiles".** New this pass:
@@ -451,7 +451,7 @@ violation visible at all. (JUDGEMENT.)
   **RESULT: 71 passed, 0 failed, 0 skipped.** `pwsh` present at `/snap/bin/pwsh`. Grew from 69 (at
   `60c79407`) to 71 exactly because `run-tests.sh` gained two new folded cases, each counting as one
   pass/fail regardless of how many assertions it makes internally: `py_suite ... test_memory_ops.py`
-  (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:480-481`) and `py_suite ... test_python_probe_proof.py`
+  (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:483-484`) and `py_suite ... test_python_probe_proof.py`
   (`:520-521`) - confirmed by reading `run-tests.sh` itself, not inferred from the count alone.
 - Previous run, kept for its own record: at `60c79407`, on **Linux**, checkout
   `/repos/personal/useful-claude-add-ons/.claude/worktrees/agent-a13e59fa14639e19c`, branch
@@ -460,7 +460,7 @@ violation visible at all. (JUDGEMENT.)
   the previous `67 passed, 0 failed` recorded here was taken on Linux at `84976536`, before PR #210
   added the `SKIP` counter, two new sub-suites, and the `PYTHONUTF8=1` decode backstop.)
   `RESULT` itself changed shape this pass - `"$PASS passed, $FAIL failed"` became
-  `"$PASS passed, $FAIL failed, $SKIP skipped"` (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:535`), and `sh_suite` (`:488-511`)
+  `"$PASS passed, $FAIL failed, $SKIP skipped"` (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:538`), and `sh_suite` (`:488-511`)
   now also greps each sub-suite's own output for `SKIP:` lines and folds their count in
   (`:498-502`) rather than discarding that output silently on a clean exit, which is what the
   previous version of this note's "67 is not the number every machine sees" paragraph was working
@@ -534,7 +534,7 @@ Re-read in full this pass: `plugin/obsidian-vault/hooks/hooks.json` (all 22 line
 `plugin/obsidian-vault/hooks/scripts/obsidian_common.py:60-100` and `:256-300`,
 `plugin/obsidian-vault/hooks/scripts/vault_ops.py:1036-1100`,
 `plugin/obsidian-vault/hooks/scripts/bridge_status.py:2-30`,
-`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:1-40,285-330,436-482`,
+`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:1-43,285-330,436-482`,
 `plugin/obsidian-vault/README.md:25-60`, `plugin/crew/hooks/hooks.json` (events and PreToolUse
 matchers), and the marketplace entry. Every function range quoted above came from `ast.parse`
 printing `lineno`-`end_lineno`, not from counting `sed` output. The suite was executed rather than
@@ -755,7 +755,7 @@ left un-checked.** The shifts fall into two causes, both mechanical rather than 
   `written_text`, the exemption-name lists, and the module docstring is unaffected.
 - `run-tests.sh` gained one line (`SKIP=0`) near its top (line 29), shifting every citation below
   it by exactly one, and gained two new `sh_suite` calls plus a widened flavour-guard block near
-  its tail, shifting everything from `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:513` on by more. Both effects were checked by
+  its tail, shifting everything from `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:516` on by more. Both effects were checked by
   grepping for the cited text itself and reading off its new line number, not by assuming a
   constant offset - the `+1` shift and the tail rewrite do not compose predictably from one number.
 
@@ -787,7 +787,7 @@ one found is reported here for scribe:
   checkCanvas default; that line is now inside a comment and the check is at
   `plugin/obsidian-vault/hooks/scripts/vault_guard.py:303`. Missed by this pass's first sweep and
   caught on review. A third copy of the same stale citation is at
-  `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:49` (caught on the second review).
+  `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:52` (caught on the second review).
 - `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:42` and
   `plugin/obsidian-vault/hooks/scripts/vault-guard.ps1:53` cite crew's resolver as
   `plugin/crew/hooks/scripts/role-write-guard.sh:32-57`; it now spans `:32-113`.
@@ -885,8 +885,8 @@ stdin decode-then-parse split) therefore still holds unchanged and was not re-re
   usable interpreter" was leaking a real, working `python3` into every such case - every must-refuse
   case became a false PASS-through instead of the expected stand-down. Fixed by creating
   `$work/pwsh-only` holding nothing but a symlink to the real `pwsh`
-  (`plugin/obsidian-vault/hooks/scripts/_test/test_vault_guard_sh.sh:692-704`, and the identical
-  pattern in `plugin/obsidian-vault/hooks/scripts/_test/test_bridge_capture_sh.sh:351-355`).
+  (`plugin/obsidian-vault/hooks/scripts/_test/test_vault_guard_sh.sh:695-707`, and the identical
+  pattern in `plugin/obsidian-vault/hooks/scripts/_test/test_bridge_capture_sh.sh:354-358`).
   (DERIVED, read in full - not merely inferred from the task's own summary of it.)
 - **Roles and profiles.** `writer_vault()`, `ROLES`, `host_id()` in `obsidian_common.py` (+102/-);
   `vault_setup.py`, `vault_import.py`, `vault_recall.py`, `vault_garden.py` (all new); `select()`'s
@@ -972,10 +972,11 @@ not re-run this pass.
 
 **Re-anchored `6caa1872` -> `fe80f69d` on 2026-09-28 (T-0088 review round 1 fixes, crew 1.0.55 unchanged).** `c3624af6` fixes the round's four FIX and three NIT findings (`crew_common.py`, `crew_platform.py`, `crew_config.py`, `review_run.py`, `review_limit.py`, their tests and sabotage entries, and the docs that describe them: `plugin/crew/CONFIG.md` +10 below `:126`, `plugin/crew/README.md` +7 below `:942`, `commands/review.md` in place, `CHANGELOG.md`, the troubleshooting and working-with-codex guides, `BUDGETS.md:11` in place); `fe80f69d` rebuilds the two guides. Every body citation of the form `path:line` into those files was compared by script (`/root/crew-tmp/t-0088/cites.py`, local), including the seven into `crew_platform.py`, all above its +7 at `:239`: each holds; `BUDGETS.md:11` (the count, in place) and `CHANGELOG.md` lines inside dated provenance notes are left as history. Nothing was executed for this note.
 
-**Re-anchored `fe80f69d` -> `68e106f5` on 2026-09-28 (T-0088 re-bumps crew to 1.0.56 for its review round 1 fixes).** `68e106f5` sets the version files (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`) to 1.0.56 and moves T-0088's own current-version mentions (`plugin/crew/CONFIG.md:117`, `:135`, `:141`, `plugin/crew/README.md:950`, `:963`, `docs/guides/crew/src/troubleshooting.md:166`, `:170` and the rebuilt troubleshooting HTML/DOCX/PDF) and its `CHANGELOG.md` heading and bump line to 1.0.56, all in place: `git diff --numstat fe80f69d 68e106f5` shows equal added and removed counts for every text file. No cited line moved. Nothing was executed for this note.
+**Re-anchored `fe80f69d` -> `68e106f5` on 2026-09-28 (T-0088 re-bumps crew to 1.0.56 for its review round 1 fixes).** `68e106f5` sets the version files (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`) to 1.0.56 and moves T-0088's own current-version mentions (`plugin/crew/CONFIG.md:117`, `:135`, `:141`, `plugin/crew/README.md:961`, `:963`, `docs/guides/crew/src/troubleshooting.md:166`, `:170` and the rebuilt troubleshooting HTML/DOCX/PDF) and its `CHANGELOG.md` heading and bump line to 1.0.56, all in place: `git diff --numstat fe80f69d 68e106f5` shows equal added and removed counts for every text file. No cited line moved. Nothing was executed for this note.
+
 **Re-anchored `b5c37635` -> `c0768d0e` on 2026-09-28 (T-0087, crew 1.0.53).** `c0768d0e` is T-0087's merge of main `f8b6c8d7` (T-0091, no plugin version change) into `T-0087-build`; crew stays 1.0.53, one past main's 1.0.52, and `c8cc69ec` is still the last `plugin/crew` commit. `git diff --name-only b5c37635 c0768d0e`, refresh artifacts aside, returns `CLAUDE.md` (T-0091's Landmines truncating-`open` measurement paragraph, +35/-18 at `:189`, so every later line moves +17) and `TODO.md`. `b5c37635..c8cc69ec` changed, of this note's cited paths, only `CHANGELOG.md`, `.claude-plugin/marketplace.json` and `CLAUDE.md` above `:189` (T-0087's own crew version re-sets and the tooling-alone bullet, cited by name here, no line). Every other body `CLAUDE.md:N` citation here is at or above `:189`, or sits inside a dated re-anchor note that states the coordinates of its own commit, so none moved. Nothing was executed for this note.
 
-**Re-anchored `c0768d0e` / `c192b83d` -> `379ab5e6` on 2026-09-28 (T-0087 merged onto `6387ab49`, crew 1.0.55).** `01dd3854` merges origin/main `6387ab49` into `T-0087-build`: T-0089 (crew 1.0.53, `plugin/crew/tests/test_role_write_guard.py`), T-0090 (mcp-servers 0.2.1: `SECURITY.md`, ten files under `mcp-servers/`) and T-0092 (crew 1.0.54: `graphify-out/` left out of review bundles - `review_patch.py`, `review_prompt.py`, `completion_audit.py`'s comment, `crew_autopilot.py`'s docstring, `commands/review.md`, `plugin/crew/README.md`, `TODO.md`, three test files). `379ab5e6` re-bumps crew to 1.0.55, one past main's 1.0.54, and moves T-0087's `1.0.53` mentions (`plugin/crew/README.md:743`, its `CHANGELOG.md` entry) to 1.0.55 in place. The code-map, INDEX, diagram, rules and graph conflicts were resolved mechanically - both sides' provenance notes kept, main's first; the version sentence, `.claude/rules/` and `graphify-out/` taken from main and then refreshed. Every body citation of the form `path:line` was re-mapped by script (difflib over each cited file, from the anchor of the side `git blame` puts the note line on, both anchors for a line common to both, never guessed): none moved in this map. Citations the script could not map, or where the two sides' anchors disagree on a line common to both, were not re-read here and are unchanged; they predate this merge (for example `CHANGELOG.md`'s "117 -> 119" is cited at `:654-655` on both sides and sits at `:909-910`), and this pass only re-anchors.
+**Re-anchored `c0768d0e` / `c192b83d` -> `379ab5e6` on 2026-09-28 (T-0087 merged onto `6387ab49`, crew 1.0.55).** `01dd3854` merges origin/main `6387ab49` into `T-0087-build`: T-0089 (crew 1.0.53, `plugin/crew/tests/test_role_write_guard.py`), T-0090 (mcp-servers 0.2.1: `SECURITY.md`, ten files under `mcp-servers/`) and T-0092 (crew 1.0.54: `graphify-out/` left out of review bundles - `review_patch.py`, `review_prompt.py`, `completion_audit.py`'s comment, `crew_autopilot.py`'s docstring, `commands/review.md`, `plugin/crew/README.md`, `TODO.md`, three test files). `379ab5e6` re-bumps crew to 1.0.55, one past main's 1.0.54, and moves T-0087's `1.0.53` mentions (`plugin/crew/README.md:754`, its `CHANGELOG.md` entry) to 1.0.55 in place. The code-map, INDEX, diagram, rules and graph conflicts were resolved mechanically - both sides' provenance notes kept, main's first; the version sentence, `.claude/rules/` and `graphify-out/` taken from main and then refreshed. Every body citation of the form `path:line` was re-mapped by script (difflib over each cited file, from the anchor of the side `git blame` puts the note line on, both anchors for a line common to both, never guessed): none moved in this map. Citations the script could not map, or where the two sides' anchors disagree on a line common to both, were not re-read here and are unchanged; they predate this merge (for example `CHANGELOG.md`'s "117 -> 119" is cited at `:654-655` on both sides and sits at `:909-910`), and this pass only re-anchors.
 
 **Re-anchored `379ab5e6` -> `17fa035e` on 2026-09-28 (T-0087 review round 1, crew 1.0.55 unchanged - not yet released).** `bbe68e85` fixes review round 1: autopilot lets a refunded round's `/crew:review` rerun past its no-progress stop, rule 31 triggers on its suites and seam consumers, `scripts/check-tooling-pr.py` admits no production code or prompt alongside the harness (a `SEAM` consumer only with a `Tooling-seam:` trailer), `golden_build.redact` bounds both sides of a match, a malformed `successors` loads as corrupt, `review_run.py`'s summary line counts charged rounds, a worktree rename is parsed, and the guides stop calling a post-refund rerun free; `17fa035e` re-prices rule 31. `git diff --name-only 379ab5e6 17fa035e`, refresh artifacts aside, returns those scripts, their tests, one golden fixture, `.crew/verify.json`, `CLAUDE.md`, `CHANGELOG.md`, `plugin/crew/README.md`, `plugin/crew/BUDGETS.md`, `commands/autopilot.md`, `commands/review.md` and the troubleshooting guide. Body citations of the form `path:line` into those files were re-mapped by script (difflib over each cited file from `379ab5e6` to `bbe68e85`, only for note lines committed before this pass, never guessed): none moved in this map.
 
@@ -1148,6 +1149,26 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `0027f794` (L-0516's side) and `0d159692` (main's side) -> `ec95c8aa` on 2026-10-01 (L-0516 merges origin/main `cacf7ff0` - L-0513 #301, the gate runner; crew stays 1.0.102 on main - with `git -c rerere.enabled=false`; crew 1.0.104, re-bumped at `1f2114bc` past 1.0.103, which L-0510's worktree claimed first).** Conflicts were refresh artifacts and CHANGELOG only; each map keeps both re-anchor histories. `git diff --name-only 0027f794 ec95c8aa` outside refresh artifacts returns main's L-0513 paths (`.crew/verify.json` rule 22 rewritten in place at `:262-266` and its gate-runner rule appended at `:432-436`, `CLAUDE.md`, `scripts/gate-runner.py`, `scripts/_test/gate-runner.py`) and the three version files plus CHANGELOG; `git diff --name-only 0d159692 ec95c8aa` returns L-0516's own paths. A difflib re-map of every path-qualified `path:line` citation in the eight maps and two diagrams (history notes skipped), from each merge parent's anchor, found every one mapping onto itself from at least one parent except the version lines (changed in place) and nine `CHANGELOG.md:N` citations in `crew.md` from main's side, which L-0516's CHANGELOG entry above them moved by 35 (`:519-520` -> `:554-555`, `:679-680` -> `:714-715`, `:308` -> `:343`, `:676-677` -> `:711-712`, `:887-888` -> `:922-923`, `:898-899` -> `:933-934`, `:1114-1115` -> `:1149-1150`, `:1238` -> `:1273`, `:1134` -> `:1169`). `verification-harness.md`'s verify.json section now reads the merged tree (448 lines, 43 rules). No suite was executed for this note.
 
 **Re-anchored `ec95c8aa` -> `5ffffbe3` on 2026-10-01 (L-0516 merges origin/main `ddcbf90d` - W-0115 #299, T-0040's shell-route sabotage mutations, crew 1.0.106 - with `git -c rerere.enabled=false` and re-bumps crew to 1.0.110, skipping 1.0.105 (L-0557), 1.0.107 (T-0504), 1.0.108 (L-0510) and 1.0.109 (T-0501)).** Conflicts were the three version files and CHANGELOG only. `git diff --name-only ec95c8aa 5ffffbe3` outside refresh artifacts returns W-0115's paths (`plugin/crew/tests/sabotage.py`, `plugin/crew/tests/sabotage_shell.py`, `.crew/verify.json`'s last rule gaining one path line) plus the version files and CHANGELOG. A difflib re-map of every path-qualified citation (history notes skipped) moved two `plugin/crew/tests/sabotage.py` citations in `crew.md` by +2 (`:3055` -> `:3057`, `:3056` -> `:3058`; W-0115 adds an import at `:86` and a comment line at `:3055`), the nine main-side `CHANGELOG.md` citations in `crew.md` by +15 for W-0115's entry, and `verification-harness.md`'s verify.json header to 449 lines; every other citation maps onto itself. No suite was executed for this note.
+
+**Re-anchored `0c3508e9` -> `b1d8a4e8` on 2026-09-30 (L-0557: per-test XDG_CACHE_HOME for every pwsh the suites spawn, crew 1.0.89, obsidian-vault 0.4.16).** `git diff --name-only 0c3508e9 b1d8a4e8` returns, outside refresh artifacts, L-0557's test-only files (`plugin/crew/tests/conftest.py`, `plugin/crew/tests/crew_fixtures.py`, new `plugin/crew/tests/test_pwsh_cache_isolation.py`, both `test_flavour_guard.py` copies, the obsidian-vault `_test` suites, six `scripts/_test/*.sh`), `.crew/verify.json` (one new rule, appended after the Kimi rule), `plugin/crew/README.md` (one paragraph after the test-layer table), the harness reference's H4 table (one row), `CHANGELOG.md`, `plugin/crew/BUDGETS.md` and the version files. Body `path:line` citations into those files were moved by difflib from `0c3508e9` (`/root/crew-tmp/l-0557/tools/remap.py`, machine-local): 25 moved, in crew.md (CHANGELOG), obsidian-vault.md (its `_test` suites) and verification-harness.md (verify.json range unchanged). No hook or production script changed. No suite was executed for this note. The obsidian-vault `_test` suites that run pwsh (`test_vault_guard_sh.sh`, `test_bridge_capture_sh.sh`, `test_ps1_legacy_args.sh`, `run-tests.sh`, and the Python `test_flavour_guard.py`, `test_memory_ops.py`, `test_python_probe_proof.py`) now give it a throwaway `XDG_CACHE_HOME`.
+
+**Re-anchored `b1d8a4e8` -> `d9ccfd5a` on 2026-10-01 (L-0557 merges main 0c0275e8 (W-0116 #292, crew 1.0.89) and re-sets crew 1.0.95).** `git diff --name-only b1d8a4e8 d9ccfd5a` returns, outside refresh artifacts, W-0116's `plugin/crew/hooks/scripts/crew_refresh_check.py` (a final-path check in `_read_regular`'s no-dir_fd branch, hunks from :684) and `plugin/crew/tests/test_refresh_admission.py`, `CHANGELOG.md` (both sides' Unreleased entries kept) and the version files (crew 1.0.95). Body `path:line` citations into those files were moved by difflib from `b1d8a4e8` (`/root/crew-tmp/l-0557/tools/remap.py`, machine-local), each onto the same line text. No suite was executed for this note.
+
+**Re-anchored `d9ccfd5a` -> `97ace923` on 2026-10-01 (L-0557 review round 1 fixes, crew 1.0.96).** `git diff --name-only d9ccfd5a 97ace923` returns, outside refresh artifacts, L-0557's test-only `plugin/crew/tests/conftest.py` (the per-test cache dir is now `tmp_path_factory.mktemp("xdg-cache")`), `plugin/crew/tests/crew_fixtures.py` (one comment), `plugin/crew/tests/test_pwsh_cache_isolation.py` (the static guard judges values and returned environments, reports unreadable suites), `CHANGELOG.md` (L-0557's entry, five lines longer) and the version files (crew 1.0.96: 1.0.95 is also claimed by L-0558, #293). Body `path:line` citations into those files were moved by difflib from `d9ccfd5a` (`/root/crew-tmp/l-0557/tools/remap.py`, machine-local): none in this map (all 10 are `CHANGELOG.md` in crew.md). No hook or production script changed. No suite was executed for this note.
+
+**Re-anchored `97ace923` / `9580571e` -> `550c39cd` on 2026-10-01 (L-0557 merges main 6fe0e0db: T-0505 #296 crew 1.0.92, runner auto-start #294; crew stays 1.0.96).** `550c39cd` is a two-parent merge made with `git -c rerere.enabled=false merge origin/main`; its conflicts were refresh artifacts, version files and CHANGELOG only. This side's notes were anchored `97ace923` and main's `9580571e`; `git diff --name-only 9580571e 6fe0e0db` outside the refresh artifacts returns only the 1.0.92 version files and CHANGELOG, so main's notes already describe every non-artifact change it brings, and this side's notes describe L-0557's. Body `path:line` citations were moved by difflib, each from the anchor of the side whose copy of this map carries the line (`/root/crew-tmp/l-0557/tools/remap2.py`, machine-local): 17 moved - 10 `CHANGELOG.md` in crew.md (T-0505's 1.0.92 entry now sits below L-0557's) and 7 `plugin/crew/CONFIG.md` in verification-harness.md (T-0505's CONFIG.md edit), every one an exact-text match. No suite was executed for this note.
+
+**Re-anchored `550c39cd` -> `038d5d10` on 2026-10-01 (L-0557 merges main 44d3dbc6: T-0110 #297, crew 1.0.97; L-0557 re-sets crew 1.0.99 at `4fc11923`).** `038d5d10` is a two-parent merge made with `git -c rerere.enabled=false merge origin/main`; its conflicts were version files, CHANGELOG and one generated rules file. `git diff --name-only 6fe0e0db 44d3dbc6` outside the refresh artifacts returns T-0110's `.github/workflows/pytest-crew.yml`, `AGENTS.md`, `plugin/crew/tests/crew_fixtures.py` (new helpers below L-0557's, auto-merged), seven crew test files, CHANGELOG and the 1.0.97 version files. T-0110 updated verification-harness.md's `pytest-crew.yml` sentence itself; the other files are cited by name only. Body `path:line` citations were moved by difflib (`/root/crew-tmp/l-0557/tools/remap2.py`, machine-local): 10 moved, all `CHANGELOG.md` in crew.md (T-0110's 1.0.97 entry now sits below L-0557's), every one an exact-text match. No suite was executed for this note.
+
+**Re-anchored `038d5d10` / `44d3dbc6` -> `90186613` on 2026-10-01 (L-0557 merges main 52489039 at `327e6ec1`: T-0040 #290, crew 1.0.98; L-0557 re-sets crew 1.0.101 at `90186613`).** `327e6ec1` is a two-parent merge made with `git -c rerere.enabled=false merge origin/main`; its conflicts were refresh artifacts, version files, CHANGELOG, BUDGETS.md's count and `.crew/verify.json` (both sides appended one rule; both kept). Main's notes (anchor line `44d3dbc6`) were re-taken by T-0040 on its own merged tree `52489039`, so a line only in main's copy of a map is measured from `52489039`; a line in this side's copy is measured from `038d5d10`. Body `path:line` citations were moved by difflib (`/root/crew-tmp/l-0557/tools/remap2.py`, machine-local): 73 moved, all from this side's lines - `plugin/crew/README.md` (+11 lines from T-0040 above :743), `plugin/crew/CONFIG.md` (+11 from T-0040), `CHANGELOG.md` (T-0040's 1.0.98 entry, then this side's below it), `plugin/crew/tests/test_crew_config.py` and `plugin/crew/hooks/scripts/crew_config.py` (T-0040); every one an exact-text match, none on a changed line. T-0040's own claims about crew_shell.py, crew_status.py and the shell-route config are main's notes above and were not re-derived here. No suite was executed for this note.
+
+**Re-anchored `89ebda03` (main) and `90186613` (L-0557) -> `773ce841` on 2026-10-01 (L-0557 merges main `05a679bf`, L-0558 #293, crew 1.0.102, at `2169bd11` with rerere disabled; L-0557 re-sets crew 1.0.105 at `773ce841`).** Both provenance histories are kept above, main's first. Body citations were re-checked by mapping each one from the tree its line came from (`89ebda03` for main's lines, `74dd1aa5` for L-0557's) to this tree with difflib: no citation moved. Citations into the version lines of `plugin/crew/.claude-plugin/plugin.json`, `plugin/PLUGINS.md` and `.claude-plugin/marketplace.json` keep their line numbers (the value changed in place). No suite was executed for this note.
+
+**Re-anchored `0d159692` (main, L-0513 #301) and `773ce841` (L-0557) -> `a9608aa5` on 2026-10-01 (L-0557 merges main `cacf7ff0`, L-0513 #301: `scripts/gate-runner.py`, no plugin version; rerere disabled; crew stays 1.0.105).** Both provenance histories are kept, main's first. Where both sides had re-mapped the same citation, main's line was taken, and each citation was then mapped with difflib from the tree its line came from (`cacf7ff0` for main's lines, `95036b4c` for L-0557's) to this tree: no citation moved. No suite was executed for this note.
+
+**Re-anchored `a9608aa5` -> `c43a9ce3` on 2026-10-01 (L-0557 merges main `ddcbf90d`, W-0115 #299, crew 1.0.106, at `0597e5c6` with rerere disabled, and re-sets crew 1.0.111 at `c43a9ce3`).** The merge touched no code map. `git diff --name-only a9608aa5 c43a9ce3` outside refresh artifacts is W-0115's `plugin/crew/tests/sabotage.py`, `sabotage_shell.py` and `.crew/verify.json` plus the version files and CHANGELOG; each citation into a changed file was mapped with difflib from `92448f1a` to this tree: no citation moved. No suite was executed for this note.
+
+**Re-anchored `5ffffbe3` (main, L-0516 #298) and `c43a9ce3` (L-0557) -> `6053b65d` on 2026-10-01 (L-0557 merges main `2906dcbd`, L-0516 #298, crew 1.0.110, at `2f3fb34c` with rerere disabled, and re-sets crew 1.0.114 at `6053b65d`).** Both provenance histories are kept, main's first, and main's body citations were taken where both sides had re-mapped the same one. Each citation into a changed file was then mapped with difflib from the tree its line came from (`2906dcbd` for main's lines, `a54ff87b` for L-0557's) to this tree: no body citation moved; the `.crew/verify.json:433-439` range in L-0516's provenance note was kept, because it describes that tree. No suite was executed for this note.
 
 **Re-anchored `0c3508e9` -> `963d2905` on 2026-09-30 (L-0510: review closure, a final 0-BLOCK round auto-accepts, crew 1.0.90).** `git diff --name-only 0c3508e9 963d2905` returns, outside refresh artifacts, main's L-0561 README repin and L-0510's files (review_ledger.py, review_run.py, crew_autopilot.py, review.md, done.md, autopilot.md, README.md, CONFIG.md, BUDGETS.md, PLUGINS.md, the troubleshooting guide, CHANGELOG.md, two tests, sabotage_review.py and the version files); path-qualified citations outside dated provenance checked by a line diff: no body citation moved: provenance paragraphs keep their dated numbers, and the only cited lines that changed are version lines (plugin.json, PLUGINS.md, BUDGETS.md), unchanged in place. No suite was executed for this note.
 
