@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@5143dbcd
+anchor: useful-claude-add-ons@ded603a7
 verified: 2026-10-01
 
 ## Re-derive provenance
@@ -1582,3 +1582,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `d41c2c94` -> `1f5400df` on 2026-10-01 (L-0574 round-3 fixes; ten CHANGELOG citations moved +6 by difflib).**
 
 **Re-anchored `1f5400df` -> `5143dbcd` on 2026-10-02 (L-0574 round-4 fixes and the merge of origin/main d2ec37d3: this branch's map text kept, main's re-anchor notes restored, citations into the eight files round 4 changed re-mapped by difflib from 1f5400df and the rest from 846cc465 onto the merge).**
+
+**Re-anchored `5143dbcd` -> `ded603a7` on 2026-10-02 (L-0574: the gate's pylint findings fixed; no cited line moved).**
