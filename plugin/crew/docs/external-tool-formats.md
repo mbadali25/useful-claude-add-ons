@@ -53,7 +53,7 @@ follows the source. `CODEX_EVENT_TYPES` (`:98`) is the eight event names.
 and `\` (its `ESCAPE` table, https://github.com/serde-rs/json/blob/master/src/ser.rs,
 read 2026-09-28). So U+2028 and U+2029 inside a message reach the stream
 unescaped. Python's `str.splitlines()` splits on them and cuts one event in
-two. `review_verdict.codex_final_message` (`:255`) splits on `"\n"` only. That
+two. `review_verdict.codex_final_message` (`:257`) splits on `"\n"` only. That
 bug cost T-0072 its round 4. The golden corpus commits one stream that carries
 raw U+2028 (`plugin/crew/tests/golden/review/uca-t0072--T-0072-build--2BJpY8/events.jsonl`).
 
