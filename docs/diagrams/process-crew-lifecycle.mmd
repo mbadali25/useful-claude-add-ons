@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@d640eba3 on 2026-10-01. Verify before trusting.
+%% Generated from useful-claude-add-ons@5143dbcd on 2026-10-02. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -324,7 +324,7 @@ flowchart TB
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
-        im5 --> pf0{"preflight first (#264):<br/>a CLEAN receipt covers this bundle?<br/>verify gate passed this tree?<br/>review_run.py:540, :703"}
+        im5 --> pf0{"preflight first (#264):<br/>a CLEAN receipt covers this bundle?<br/>verify gate passed this tree?<br/>review_run.py:540, :694"}
         pf0 -- "CLEAN receipt: CLEAN,<br/>no round, no self-check" --> rcpt
         pf0 -- "gate not passed or unknown:<br/>exit 5, no round spent,<br/>self-check not asked<br/>review.md:450" --> vg0["run the verify gate,<br/>then review again"]
         vg0 --> im5
@@ -332,7 +332,7 @@ flowchart TB
         pr0 -- "NEW finding: exit 5, no round spent,<br/>not overridable; or COULD NOT CHECK:<br/>exit 5 unless --allow-unverified<br/>review.md:450" --> fx0["fix the finding or the tool,<br/>then review again"]
         fx0 --> im5
         pr0 -- "pass / n/a / none configured,<br/>override recorded, or an active<br/>incident (skip logged)" --> rv0{"self-check stamped for<br/>this bundle and standards set?<br/>review_run.py standards_gate"}
-        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no pre-review checks, no self-check<br/>review_run.py:707-719" --> replan
+        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no pre-review checks, no self-check<br/>review_run.py:698-709" --> replan
         rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:447-450" --> sc1
         rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle;<br/>prompt ends with the standards checklist<br/>review.md:25-29, :452"]
         rv1 --> rv2{"verdict (the script's)<br/>:441, :484"}
@@ -501,8 +501,8 @@ flowchart TB
 %% done.md :50-61 did not move. No node's meaning changed: the metrics row L-0578 adds is
 %% written inside the round, which this diagram draws as one node.
 %% L-0574 merges main d2ec37d3 (W-0120 #307/#308, which carries L-0578 #304 above): pf0
-%% :524, :667 -> :540, :703, pr0 prereview_gate :577 -> :597, the budget block :671-682 ->
-%% :707-719 (difflib from 846cc465 to the merge).
+%% :524, :667 -> :540, :694, pr0 prereview_gate :577 -> :597, the budget block :671-682 ->
+%% :698-709 (difflib from the diagram's anchor d640eba3 to the merge).
 %% L-0574 (on ffd11270): review_run.py gained prereview_gate (:577), question 3 of "BEFORE ANY ROUND
 %% IS RESERVED", asked after preflight (:524, called :651) and before standards_gate, inside the
 %% not-spent branch (:655-666). New node pr0 and its refusal loop fx0 sit between pf0 and rv0; the
@@ -512,3 +512,4 @@ flowchart TB
 %% Re-anchored 17dc6d23 -> 8177fdff (L-0574 round 1 fixes): review_run.py moved; its cited lines re-read below.
 %% Re-anchored 8177fdff -> 3afec6e6 (L-0574: noqa BLE001 on two boundary catches, same lines; difflib moved no citation).
 %% Re-anchored 3afec6e6 -> d640eba3 (L-0574 round-2 fixes and the crew 1.0.122 bump; ten CHANGELOG citations moved +2 by difflib, the crew map's version sentence now reads 1.0.122).
+%% Re-anchored d640eba3 -> 5143dbcd (L-0574 round-4 fixes and the merge of origin/main d2ec37d3; see the merge note above pr0).
