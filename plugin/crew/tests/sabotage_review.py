@@ -702,4 +702,15 @@ REVIEW_FIX_MUTATIONS = (
         "            have = collections.Counter(fh.read().splitlines())\n",
         "tests/test_review_auto_accept.py::test_check_follow_up_keeps_a_u2028_finding_on_one_line",
     ),
+    # Owner decision 2026-10-01 #6: recovered verdicts never auto-accept. Run
+    # by hand against the tracked file, seen red, restored.
+    (
+        # A row recorded before L-0576 reads as 0 stray lines, so an unread
+        # count passes as "not recovered".
+        "auto-accept defaults a missing ignored_lines to 0",
+        REVIEW_LEDGER,
+        '    ignored = row.get("ignored_lines")\n',
+        '    ignored = row.get("ignored_lines", 0)\n',
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[ignored-lines-missing]",
+    ),
 )

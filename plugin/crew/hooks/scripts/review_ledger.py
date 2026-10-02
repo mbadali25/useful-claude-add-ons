@@ -73,7 +73,12 @@ are refused); the round's verdict is exactly FINDINGS; its counts are a dict who
 and NIT are ints (never a bool) and not negative; BLOCK is 0; `findings` is a
 list of strings, none a `BLOCK|` line, each a `FIX|` or `NIT|` line, as many
 of each as its own count (never only the total) and at least one;
-`webtest_open` is 0 or `WEBTEST_NA`; and the round is final -- `_charged`
+none carrying an embedded line break; `ignored_lines` (L-0576's count of the
+stray lines a verdict was recovered despite) is 0 on the row, and this
+round's `.work/tickets/<id>/review.json` lists none (owner decision
+2026-10-01 #6: a recovered round is the owner's; a missing, mistyped or
+unreadable count is could-not-tell, never 0, and this branch does not
+write the field); `webtest_open` is 0 or `WEBTEST_NA`; and the round is final -- `_charged`
 has reached `BUDGET`, so the next reservation would be refused. Every case
 the ledger cannot tell is a refusal, never a 0: an INCOMPLETE or CLEAN
 verdict, a missing or mistyped count, a missing `findings` or `webtest_open`
@@ -514,6 +519,17 @@ def _auto_row_problem(row):
         return (f"round {row.get('round')}'s finding lines ({fixes} FIX + "
                 f"{len(findings) - fixes} NIT) do not agree with its counts "
                 f"({counts['FIX']} FIX + {counts['NIT']} NIT): could not tell")
+    # Owner decision 2026-10-01 #6: L-0576's `ignored_lines` counts the stray
+    # lines a FINDINGS verdict was recovered despite. Recovered is the owner's;
+    # an absent or unread count is could-not-tell, never 0.
+    ignored = row.get("ignored_lines")
+    if not _is_count(ignored):
+        return (f"round {row.get('round')} has no readable ignored_lines ({ignored!r}; "
+                "recorded before L-0576, or unreadable): could not tell whether its "
+                "verdict was recovered from stray lines")
+    if ignored:
+        return (f"round {row.get('round')}'s verdict was recovered from {ignored} stray "
+                "line(s) (ignored_lines); a recovered round is the owner's to accept")
     if "webtest_open" not in row:
         return (f"round {row.get('round')} has no webtest state (recorded before L-0510): "
                 "could not tell")
@@ -559,6 +575,32 @@ def auto_accept_refusal(data, ticket):
     return None
 
 
+def _review_json_problem(root, ticket, row):
+    """None when this round's review.json is readable, is for `row`'s round
+    and lists no ignored line; else why not (owner decision 2026-10-01 #6).
+    The row already carries the count; this is the second witness the owner
+    asked for, so an unreadable file is could-not-tell, never a pass."""
+    path = os.path.join(root, ".work", "tickets", ticket, "review.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            review = json.load(fh)
+    except (OSError, ValueError) as exc:
+        return (f"{path} is unreadable ({exc}): could not tell whether round "
+                f"{row.get('round')}'s verdict was recovered from stray lines")
+    if not isinstance(review, dict) or review.get("round") != row.get("round"):
+        got = review.get("round") if isinstance(review, dict) else review
+        return (f"{path} is not round {row.get('round')}'s (it reads {got!r}): could not "
+                "tell whether the verdict was recovered from stray lines")
+    lines = review.get("ignored_lines")
+    if not isinstance(lines, list):
+        return (f"{path} carries no ignored_lines list ({lines!r}): could not tell whether "
+                f"round {row.get('round')}'s verdict was recovered from stray lines")
+    if lines:
+        return (f"{path}: round {row.get('round')}'s verdict was recovered from "
+                f"{len(lines)} stray line(s); a recovered round is the owner's to accept")
+    return None
+
+
 def auto_accept(root, ticket, follow_up):
     """Accept the latest round under the owner policy of 2026-09-30, or raise
     LedgerError naming the condition that failed (and change nothing)."""
@@ -577,6 +619,9 @@ def auto_accept(root, ticket, follow_up):
         if refusal:
             raise LedgerError(f"--auto-accept refused: {refusal}")
         row = data["rounds"][-1]
+        problem = _review_json_problem(root, ticket, row)
+        if problem:
+            raise LedgerError(f"--auto-accept refused: {problem}")
         if _current_hash(root, row.get("base")) != row.get("bundle_sha256"):
             raise LedgerError("--auto-accept refused: the tree has changed since that review, "
                               "so accepting it would accept code nobody reviewed")

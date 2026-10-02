@@ -49,9 +49,12 @@ def _repo(tmp_path):
 
 
 def _round(repo, verdict="FINDINGS", counts=_ABSENT, findings=_ABSENT, webtest_open=_ABSENT,
-           provider="codex", failure_class=None, family="gpt"):
+           provider="codex", failure_class=None, family="gpt", ignored=0):
     """Reserve and record one round through the real ledger, with a real
-    bundle of the current tree. `_ABSENT` leaves a key out of the review dict."""
+    bundle of the current tree. `_ABSENT` leaves a key out of the review dict.
+    `ignored` is the row's `ignored_lines` as L-0576's `record` writes it (a
+    count), mirrored as a list in this round's review.json; `_ABSENT` leaves
+    both out, the shape of a round recorded before L-0576."""
     base = git(repo, "rev-parse", "HEAD")
     manifest, _, _ = review_patch.compute(str(repo), base)
     ok, number, message = rl.reserve(str(repo), T, provider)
@@ -65,7 +68,20 @@ def _round(repo, verdict="FINDINGS", counts=_ABSENT, findings=_ABSENT, webtest_o
     if webtest_open is not _ABSENT:
         review["webtest_open"] = webtest_open
     rl.record(str(repo), T, number, review)
+    if ignored is not _ABSENT:
+        _edit(repo, lambda data: data["rounds"][-1].update(ignored_lines=ignored))
+    on_disk = dict(review, round=number)
+    if ignored is not _ABSENT:
+        on_disk["ignored_lines"] = (["stray"] * ignored if type(ignored) is int  # pylint: disable=unidiomatic-typecheck
+                                    else ignored)
+    _review_json(repo, json.dumps(on_disk))
     return number
+
+
+def _review_json(repo, text):
+    folder = repo / ".work" / "tickets" / T
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "review.json").write_text(text, encoding="utf-8")
 
 
 def _good(repo, **kw):
@@ -192,6 +208,14 @@ def _final_by(provider, family):
     return build
 
 
+def _final_then(change):
+    def build(repo):
+        _good(repo)
+        _good(repo)
+        change(repo)
+    return build
+
+
 def _final_row_edit(change):
     def build(repo):
         _good(repo)
@@ -240,6 +264,27 @@ REFUSALS = [
     ("finding-embedded-cr", _final_with(counts={"BLOCK": 0, "FIX": 1, "NIT": 0},
                                         findings=[FIX_LINE + "\r" + BLOCK_LINE]), FOLLOW,
      "line break"),
+    # Owner decision 2026-10-01 #6: a verdict recovered from stray lines
+    # (L-0576's ignored_lines) is the owner's; an unread count is could-not-tell.
+    ("ignored-lines-3", _final_with(ignored=3), FOLLOW, "recovered from 3 stray line(s)"),
+    ("ignored-lines-missing", _final_with(ignored=_ABSENT), FOLLOW,
+     "no readable ignored_lines"),
+    ("ignored-lines-string", _final_with(ignored="x"), FOLLOW, "no readable ignored_lines"),
+    ("ignored-lines-bool", _final_with(ignored=True), FOLLOW, "no readable ignored_lines"),
+    ("ignored-lines-negative", _final_with(ignored=-1), FOLLOW, "no readable ignored_lines"),
+    ("review-json-unreadable", _final_then(lambda repo: _review_json(repo, "{not json")),
+     FOLLOW, "review.json"),
+    ("review-json-missing", _final_then(
+        lambda repo: os.remove(repo / ".work" / "tickets" / T / "review.json")),
+     FOLLOW, "review.json"),
+    ("review-json-no-ignored-lines", _final_then(
+        lambda repo: _review_json(repo, json.dumps({"round": 2}))), FOLLOW, "review.json"),
+    ("review-json-recovered", _final_then(
+        lambda repo: _review_json(repo, json.dumps({"round": 2, "ignored_lines": ["x"]}))),
+     FOLLOW, "recovered"),
+    ("review-json-other-round", _final_then(
+        lambda repo: _review_json(repo, json.dumps({"round": 1, "ignored_lines": []}))),
+     FOLLOW, "review.json"),
     ("webtest-open-missing", _final_without("webtest_open"), FOLLOW, "webtest"),
     ("webtest-open-none", _final_with(webtest_open=None), FOLLOW, "webtest"),
     ("webtest-open-false", _final_with(webtest_open=False), FOLLOW, "webtest"),
@@ -612,7 +657,31 @@ def test_finish_records_findings_and_webtest_state(repo, tmp_path, monkeypatch, 
             row["webtest_open"]) == ([FIX_LINE], [FIX_LINE], expected, expected)
 
 
+def _record_with_ignored_lines(monkeypatch, repo):
+    """Stand in for L-0576's `record`, which writes the row's `ignored_lines`
+    count; this branch's `record` does not, by design (owner decision #6)."""
+    real = rl.record
+
+    def record(root, ticket, number, review):
+        state = real(root, ticket, number, review)
+        _edit(repo, lambda data: data["rounds"][-1].update(ignored_lines=0))
+        return state
+    monkeypatch.setattr(rl, "record", record)
+
+
+def test_finish_without_ignored_lines_cannot_tell(repo, tmp_path, monkeypatch, capsys):
+    """Until L-0576 records the count, no round reads as eligible: the
+    eligibility line names the missing field as could-not-tell."""
+    _finish(repo, tmp_path, monkeypatch, (None, None, []), "one")
+    _finish(repo, tmp_path, monkeypatch, (None, None, []), "two")
+    out = capsys.readouterr().out
+
+    assert ("no readable ignored_lines" in out, "auto-accept: eligible" in out) == (
+        True, False), out
+
+
 def test_finish_prints_the_auto_accept_eligibility(repo, tmp_path, monkeypatch, capsys):
+    _record_with_ignored_lines(monkeypatch, repo)
     _finish(repo, tmp_path, monkeypatch, (None, None, []), "one")
     first = capsys.readouterr().out
     _finish(repo, tmp_path, monkeypatch, (None, None, []), "two")

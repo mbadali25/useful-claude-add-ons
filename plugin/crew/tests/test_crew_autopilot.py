@@ -307,7 +307,9 @@ def _auto_row(number=2, block=0, provider="codex", family="gpt"):
     row = _round(number, "FINDINGS")
     row.update({"counts": {"BLOCK": block, "FIX": 1, "NIT": 0}, "findings": [LINE],
                 "webtest_open": review_ledger.WEBTEST_NA, "refunded": False,
-                "provider": provider, "model_family": family})
+                "provider": provider, "model_family": family,
+                # L-0576's count, as its `record` writes it (owner decision #6).
+                "ignored_lines": 0})
     return row
 
 
