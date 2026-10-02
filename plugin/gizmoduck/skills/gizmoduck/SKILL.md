@@ -134,7 +134,8 @@ These back the `/gizmoduck:*` commands; all use `gizmoduck.py`:
   which removes only that run's files and the target directories its
   scan-meta.json names, and exits 2 removing nothing when it cannot tell. A
   target directory that already exists and that no earlier run owns is refused
-  (exit 2) on any run.
+  (exit 2) on any run, and so is a report.md, findings.jsonl or other routine
+  file in a directory with no scan-meta.json.
   sqlmap needs `--confirm-active` by name, and only after the user has
   authorised active testing of that target.
 - **update** — `gizmoduck.py update` refreshes the Nuclei engine and templates.

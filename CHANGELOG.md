@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `gizmoduck` 0.5.5: `routine` subcommand and the dated docs/security-scans layout (T-0107)
+### Added — `gizmoduck` 0.5.4: `routine` subcommand and the dated docs/security-scans layout (T-0107)
 
 - **What changed.** `gizmoduck.py routine <manifest.yaml>` calls routine.py's
   existing `load_manifest` and `run_routine`, then renders the combined report
@@ -34,23 +34,28 @@ All notable changes to this repository are documented here. Format follows [Keep
   fire. A directory already holding a `scan-meta.json` is refused without
   `--replace`, which removes that `scan-meta.json` first, then the earlier run's
   files and only the target directories it names, and exits 2 removing nothing
-  when it cannot tell which those are (or one is a symlink). A target
+  when it cannot tell which those are (or one is a symlink or a junction). A target
   directory that already exists and that no earlier run there owns is refused
   with exit 2 on any run, so routine never adopts, and later removes, a
-  directory it did not create.
-  `scan-meta.json` and `report.*` are written complete-then-renamed.
+  directory it did not create; likewise a file routine writes (`report.md`,
+  `findings.jsonl`, ...) found in a directory with no `scan-meta.json` is
+  refused rather than overwritten.
+  `scan-meta.json` and `report.*` are written complete-then-renamed (a
+  same-directory temp, `newline="\n"`, fsynced before the swap, keeping
+  the file's mode or the umask's). The PyYAML install hint quotes the
+  interpreter path for the shell it will be pasted into.
   Every routine-only flag, and `--run-manifest`, is refused on any other command.
 - **Unchanged.** The flat Nuclei report, byte for byte; every other subcommand
   stays stdlib-only (`routine` imports routine.py, and so PyYAML, lazily); no
   slash command; no hook; crew's endpoint-ledger path `docs/security-scans/<ep-id>.md`
   is untouched, and the dated layout does not satisfy it (follow-up in `TODO.md`).
-- **Sabotage.** Seventeen entries, (a) to (q), listed in
-  `plugin/gizmoduck/scripts/_test/test_routine_cli.py`'s docstring. (h) to (q) and
+- **Sabotage.** Twenty-two entries, (a) to (v), listed in
+  `plugin/gizmoduck/scripts/_test/test_routine_cli.py`'s docstring. (h) to (v) and
   the rewritten (d) came with the review round-1 fixes and were each run against
   the committed `gizmoduck.py` and confirmed RED; (d) now fails the write itself
   half-way, because failing before the write could not tell an atomic helper
   from a plain `open(path, "w")`.
-- gizmoduck 0.5.3 -> 0.5.5 (0.5.4 was set before the review round-1 fixes and never released; `plugin.json`, `marketplace.json`, `plugin/PLUGINS.md`).
+- gizmoduck 0.5.3 -> 0.5.4, one patch above main, set again after the last content change so the drift check measures from it (`plugin.json`, `marketplace.json`, `plugin/PLUGINS.md`).
 
 ### Fixed - `crew` 1.0.114, `obsidian-vault` 0.4.16: every pwsh the test suites spawn gets its own XDG_CACHE_HOME (L-0557)
 

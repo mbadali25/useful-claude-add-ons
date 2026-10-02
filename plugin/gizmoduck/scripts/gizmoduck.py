@@ -50,7 +50,9 @@ import datetime
 import hashlib
 import json
 import os
+import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -736,23 +738,51 @@ _ROUTINE_DEFAULT_OUT = "routine-out"
 
 
 def _atomic_write_text(path, text):
-    """Write `text` to a sibling temp file, then os.replace it over `path`.
+    """Write `text` to a temp file beside `path`, then os.replace it over `path`.
 
     `text` must be complete before this is called. A plain
     `with open(path, "w")` truncates `path` at open time, before the payload
     exists, so a write that raises leaves a zero-byte file where the earlier
     run's evidence was (project CLAUDE.md, the `open(p, "w")` landmine).
     Here a failure costs the temp file and nothing else: `path` holds either
-    the old bytes or the new ones, never neither."""
-    tmp = f"{path}.tmp-{os.getpid()}"
+    the old bytes or the new ones, never neither. The temp is named for
+    `path` (mkstemp, same directory), flushed and fsynced before the swap,
+    and written with `newline="\n"` so a Windows run writes the same bytes
+    as a POSIX one."""
+    path = Path(path)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f"{path.name}.tmp-")
+    os.close(fd)
+    replaced = False
     try:
-        with open(tmp, "w", encoding="utf-8") as fh:
+        os.chmod(tmp, _mode_for(path))
+        with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
         os.replace(tmp, path)
-    except BaseException:
-        if os.path.exists(tmp):
+        replaced = True
+    finally:
+        if not replaced and os.path.exists(tmp):
             os.unlink(tmp)
-        raise
+
+
+def _mode_for(path):
+    """The permission bits a replacement of `path` should carry: its own when
+    it exists, else what a plain `open(path, "w")` would give under the
+    current umask. mkstemp's 0600 would otherwise make every report
+    owner-only."""
+    try:
+        return stat.S_IMODE(os.stat(path).st_mode)
+    except FileNotFoundError:
+        umask = os.umask(0)
+        os.umask(umask)
+        return 0o666 & ~umask
+
+
+def _shell_quote(arg):
+    """`arg` quoted for the shell the user will paste a printed command into:
+    cmd.exe / PowerShell rules on Windows, POSIX sh elsewhere."""
+    return subprocess.list2cmdline([arg]) if os.name == "nt" else shlex.quote(arg)
 
 
 def _gizmoduck_version():
@@ -841,6 +871,14 @@ def _utc_now():
     return datetime.datetime.now(datetime.timezone.utc)
 
 
+def _is_link(path):
+    """True for a symlink, and on Windows for a junction too: a junction is
+    not a symlink to `Path.is_symlink`, yet removing or writing through one
+    reaches outside the output directory just the same."""
+    isjunction = getattr(os.path, "isjunction", None)  # Python 3.12+
+    return Path(path).is_symlink() or bool(isjunction and isjunction(path))
+
+
 def _is_plain_dir_name(name):
     """True for a target name that is safe as `<out>/<name>/`: one path
     component, never `.` or `..`, no separator (`/`, `\\`), no drive colon,
@@ -927,9 +965,9 @@ def _earlier_run_dirs(outdir, meta_path):
             raise ValueError(f"{meta_path} names a target {name!r} that is not a plain "
                              f"directory name")
         child = outdir / name
-        if child.is_symlink():
-            raise ValueError(f"{child} is a symlink; routine removes only real directories "
-                             f"it wrote")
+        if _is_link(child):
+            raise ValueError(f"{child} is a symlink or junction; routine removes only real "
+                             f"directories it wrote")
         if child.is_dir():
             dirs.append(child)
     return dirs
@@ -943,7 +981,7 @@ def _unowned_target_dirs(outdir, manifest, owned):
     with a target named `docs`). So the run is refused instead."""
     owned = {Path(d) for d in owned}
     return [outdir / t.name for t in manifest.targets
-            if ((outdir / t.name).is_symlink() or (outdir / t.name).exists())
+            if (_is_link(outdir / t.name) or (outdir / t.name).exists())
             and (outdir / t.name) not in owned]
 
 
@@ -975,8 +1013,9 @@ def cmd_routine(manifest_path, out, *, scan_root=None, date=None, replace=False,
     nothing was written: PyYAML missing, a refused manifest, an output
     directory that already holds an earlier run's scan-meta.json without
     `replace`, a `replace` that cannot tell which directories the earlier
-    run owns, or a target directory that already exists and that no earlier
-    run in the directory owns.
+    run owns, or a target directory - or, with no scan-meta.json, a file
+    routine writes - that already exists and that no earlier run in the
+    directory owns.
 
     `routine` needs PyYAML, so it is imported here rather than at module top:
     every other command stays stdlib-only, and a missing PyYAML is a usage
@@ -989,7 +1028,7 @@ def cmd_routine(manifest_path, out, *, scan_root=None, date=None, replace=False,
         import routine
     except ImportError as exc:
         print(f"routine: needs PyYAML, which this interpreter cannot import ({exc}); install "
-              f"it with `{sys.executable} -m pip install pyyaml`", file=sys.stderr)
+              f"it with `{_shell_quote(sys.executable)} -m pip install pyyaml`", file=sys.stderr)
         return 2
 
     try:
@@ -1022,10 +1061,17 @@ def cmd_routine(manifest_path, out, *, scan_root=None, date=None, replace=False,
                   f"--out/--date", file=sys.stderr)
             return 2
     unowned = _unowned_target_dirs(outdir, manifest, dirs)
+    if not meta_path.exists():
+        # No scan-meta.json: no earlier run owns anything here, so a file named
+        # like one routine writes is the operator's own (`--out .` in a checkout
+        # with a report.md) and is never overwritten.
+        unowned += [outdir / f for f in ROUTINE_FILES
+                    if _is_link(outdir / f) or (outdir / f).exists()]
     if unowned:
         names = ", ".join(str(d) for d in unowned)
         print(f"routine: {names} already exists and no earlier run in this directory owns it; "
-              f"routine writes each target into <out>/<name>/ and only removes what it wrote. "
+              f"routine writes its own files and each target's <out>/<name>/ there, and only "
+              f"replaces what an earlier run wrote. "
               f"Nothing was written or removed; move it aside, rename the target, or choose "
               f"another --out/--date", file=sys.stderr)
         return 2

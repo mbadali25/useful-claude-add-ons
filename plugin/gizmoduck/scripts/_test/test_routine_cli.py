@@ -68,6 +68,22 @@ must go red):
          test_replace_refuses_a_new_target_directory_the_earlier_run_did_not_own
   (q) a target named after a file routine writes in the output directory
       -> test_manifest_errors_write_nothing[reserved-name] / [reserved-name-case]
+  (r) a file routine writes (report.md, findings.jsonl, ...) that already
+      exists in a directory with no scan-meta.json, overwritten anyway (the
+      neighbour of (p) for files: `--out .` in a checkout replaces the
+      operator's own report.md)
+      -> test_a_routine_file_no_earlier_run_owns_is_refused [report.md] /
+         [findings.jsonl] / [symlink]
+  (s) the atomic write without newline="\\n" or without fsync before the swap
+      -> test_atomic_write_states_newline_and_fsyncs_before_the_swap
+  (t) the link check that misses a junction (Path.is_symlink alone)
+      -> test_replace_refuses_a_target_directory_that_is_a_junction
+  (u) the atomic write leaving mkstemp's 0600, or not keeping an existing
+      file's mode
+      -> test_atomic_write_keeps_the_mode_a_plain_write_would_give [None] /
+         [416]
+  (v) the PyYAML install hint printing the interpreter path unquoted
+      -> test_missing_pyyaml_hint_quotes_the_interpreter_path
 """
 import datetime
 import importlib.util
@@ -390,6 +406,31 @@ def test_a_target_directory_no_earlier_run_owns_is_refused(gz, fixture, tmp_path
     assert all(a.run_calls == [] for a in reg.ADAPTERS.values())
 
 
+@pytest.mark.parametrize("shape", ["report.md", "findings.jsonl", "symlink"])
+def test_a_routine_file_no_earlier_run_owns_is_refused(gz, fixture, tmp_path, capsys, shape):
+    """With no scan-meta.json, no earlier run owns the directory, so a file
+    named like one routine writes is the operator's, never overwritten."""
+    out = tmp_path / "out"
+    out.mkdir()
+    if shape == "symlink":
+        elsewhere = tmp_path / "elsewhere.md"
+        elsewhere.write_text("keep", encoding="utf-8")
+        _symlink_or_skip(out / "report.md", elsewhere)
+        kept, name = elsewhere, "report.md"
+    else:
+        (out / shape).write_text("keep", encoding="utf-8")
+        kept, name = out / shape, shape
+    reg = _registry()
+
+    rc = _run(gz, fixture, tmp_path, reg, confirm=True)
+
+    assert rc == 2
+    assert "no earlier run in this directory owns it" in capsys.readouterr().err
+    assert kept.read_text(encoding="utf-8") == "keep"
+    assert sorted(p.name for p in out.iterdir()) == [name]
+    assert all(a.run_calls == [] for a in reg.ADAPTERS.values())
+
+
 def test_replace_refuses_a_new_target_directory_the_earlier_run_did_not_own(gz, fixture,
                                                                            tmp_path, capsys):
     out = _earlier_run(gz, tmp_path, names=("site-a",))
@@ -517,6 +558,92 @@ def test_atomic_write_leaves_the_original_when_the_write_raises(gz, tmp_path, mo
 
     assert target.read_bytes() == b"ORIGINAL"
     assert list(tmp_path.iterdir()) == [target]
+
+
+def test_atomic_write_states_newline_and_fsyncs_before_the_swap(gz, tmp_path, monkeypatch):
+    """PYTHON-01/04: the temp is opened with newline="\\n" (a Windows run must
+    write LF, which a Linux run cannot show by bytes alone), and fsynced
+    before os.replace makes it the destination."""
+    target = tmp_path / "report.md"
+    events = []
+    real_open, real_fsync, real_replace = open, gz.os.fsync, gz.os.replace
+
+    def _open(file, *args, **kwargs):
+        if "w" in (args[0] if args else kwargs.get("mode", "r")):
+            events.append(("open", Path(file).parent, kwargs.get("newline")))
+        return real_open(file, *args, **kwargs)  # pylint: disable=consider-using-with
+
+    def _fsync(fd):
+        events.append(("fsync",))
+        return real_fsync(fd)
+
+    def _replace(src, dst):
+        events.append(("replace",))
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(gz, "open", _open, raising=False)
+    monkeypatch.setattr(gz.os, "fsync", _fsync)
+    monkeypatch.setattr(gz.os, "replace", _replace)
+
+    gz._atomic_write_text(target, "a\nb\n")
+
+    assert events == [("open", tmp_path, "\n"), ("fsync",), ("replace",)]
+    assert target.read_bytes() == b"a\nb\n"
+    assert list(tmp_path.iterdir()) == [target]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits; Windows chmod sets read-only only")
+@pytest.mark.parametrize("existing", [None, 0o640])
+def test_atomic_write_keeps_the_mode_a_plain_write_would_give(gz, tmp_path, existing):
+    """mkstemp creates its file 0600. A new report gets the umask's mode, as a
+    plain open(path, "w") would give it, and an existing one keeps its own."""
+    target = tmp_path / "report.md"
+    if existing is not None:
+        target.write_text("old", encoding="utf-8")
+        target.chmod(existing)
+    old_umask = os.umask(0o022)
+    try:
+        gz._atomic_write_text(target, "new")
+    finally:
+        os.umask(old_umask)
+
+    assert target.stat().st_mode & 0o777 == (existing if existing is not None else 0o644)
+
+
+def test_missing_pyyaml_hint_quotes_the_interpreter_path(gz, fixture, tmp_path, capsys,
+                                                         monkeypatch):
+    """The printed install command must survive a path with a space in it
+    (C:\\Program Files\\Python312\\python.exe, /opt/my python/bin/python3)."""
+    monkeypatch.setitem(sys.modules, "routine", None)
+    monkeypatch.setattr(gz.sys, "executable", "/opt/my python/bin/python3")
+
+    rc = gz.cmd_routine(str(fixture), str(tmp_path / "out"))
+
+    assert rc == 2
+    err = capsys.readouterr().err
+    expected = (subprocess.list2cmdline(["/opt/my python/bin/python3"]) if os.name == "nt"
+                else "'/opt/my python/bin/python3'")
+    assert f"{expected} -m pip install pyyaml" in err
+    assert not (tmp_path / "out").exists()
+
+
+def test_replace_refuses_a_target_directory_that_is_a_junction(gz, fixture, tmp_path, capsys,
+                                                                monkeypatch):
+    """PYTHON-13: a Windows junction is not a symlink to Path.is_symlink, but
+    removing through one reaches outside the output directory all the same.
+    Linux cannot make a junction, so os.path.isjunction is faked for the one
+    path; NOT RUN ON WINDOWS against a real junction."""
+    out = _earlier_run(gz, tmp_path, names=("site-a",))
+    earlier_meta = (out / "scan-meta.json").read_bytes()
+    junction = str(out / "site-a")
+    monkeypatch.setattr(gz.os.path, "isjunction", lambda p: str(p) == junction, raising=False)
+
+    rc = _run(gz, fixture, tmp_path, _registry(), confirm=True, replace=True)
+
+    assert rc == 2
+    assert "symlink or junction" in capsys.readouterr().err
+    assert (out / "scan-meta.json").read_bytes() == earlier_meta
+    assert (out / "site-a").is_dir()
 
 
 _BAD_MANIFESTS = {

@@ -156,20 +156,22 @@ not run, so **4 is not a clean result**; the last stdout line starts
 `2`: a usage or manifest error, and nothing was written. Findings never change the status.
 
 **A same-day rerun is refused.** A directory that already holds a `scan-meta.json` is an
-earlier run's evidence, so `routine` exits 2 without touching it unless `--replace` is named.
-`--replace` removes the earlier run's files and only the per-target directories its
+earlier run's evidence, so `routine` exits 2 without touching it unless `--replace` is
+named. `--replace` removes the earlier run's files and only the per-target directories its
 `scan-meta.json` names; anything else in the directory (a `.git`, your own files) is left
 alone. It removes that `scan-meta.json` first, so a replace interrupted part-way leaves no
 `scan-meta.json` at all, exactly like an interrupted first run, never the old one describing
 files that are gone. When it cannot tell which directories the earlier run owns (an
 unreadable or older `scan-meta.json`, a target name that is not a plain directory name, or a
-named directory that is a symlink) it exits 2 and removes nothing. A target directory
-that already exists (or is a symlink) and that no earlier run in the directory owns is
-refused the same way, on a first run as on `--replace`: writing into it would make it the
-run's own, and the next `--replace` would remove a directory routine never created. After
-an interrupted run, move its partial target directories aside before rerunning.
-`scan-meta.json` and
-`report.*` are written complete-then-renamed, never truncated in place.
+named directory that is a symlink or, on Windows, a junction) it exits 2 and removes
+nothing. A target directory that already exists (or is a symlink) and that no earlier run in
+the directory owns is refused the same way, on a first run as on `--replace`: writing into
+it would make it the run's own, and the next `--replace` would remove a directory routine
+never created. In a directory with no `scan-meta.json`, a file named like one routine writes
+(`report.md`, `findings.jsonl` and the rest) is refused the same way rather than
+overwritten. After an interrupted run, move its partial files and target directories aside
+before rerunning. `scan-meta.json` and `report.*` are written complete-then-renamed, never
+truncated in place.
 
 **sqlmap has two gates, and both stay.** `options.sqlmap: true` makes a target a candidate;
 it fires only when `--confirm-active` is named in full (no abbreviation is accepted). A
