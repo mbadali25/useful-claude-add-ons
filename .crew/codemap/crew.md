@@ -1559,10 +1559,10 @@ then the train is advisory.
   `excluded: not recorded by this manifest (unknown)` (T-0099)
   (`plugin/crew/hooks/scripts/review_prompt.py:106`).
 - DERIVED (T-0079): the READ-line rule of the review verdict is
-  `review_verdict._covers` (`plugin/crew/hooks/scripts/review_verdict.py:143`):
+  `review_verdict._covers` (`plugin/crew/hooks/scripts/review_verdict.py:147`):
   a READ token counts for a part when, `\` read as `/` and `normpath`ed, it
   IS the part's listed path, or has no directory and is its file name;
-  `parse` applies it at `plugin/crew/hooks/scripts/review_verdict.py:191`.
+  `parse` applies it at `plugin/crew/hooks/scripts/review_verdict.py:197`.
   The prompt quotes `review_verdict.READ_FORM`
   (`plugin/crew/hooks/scripts/review_verdict.py:108`) in `_bundle_block`
   (`plugin/crew/hooks/scripts/review_prompt.py:93`) and on the webtest
@@ -1572,22 +1572,22 @@ then the train is advisory.
   scratch path (`plugin/crew/hooks/scripts/review_run.py:401`). `parse` and
   `codex_final_message` split reviewer output on `\n` only, never
   `str.splitlines()`, whose U+2028 break cut a Codex event mid-JSON
-  (`plugin/crew/hooks/scripts/review_verdict.py:164`,
-  `plugin/crew/hooks/scripts/review_verdict.py:254`). The rest of
+  (`plugin/crew/hooks/scripts/review_verdict.py:168`,
+  `plugin/crew/hooks/scripts/review_verdict.py:260`). The rest of
   `review_prompt.py`, `review_run.py` and `review_verdict.py` was not opened.
 - DERIVED (L-0576): `parse` recovers a FINDINGS round despite stray lines
-  (`plugin/crew/hooks/scripts/review_verdict.py:202`): only beside a finding, with no
-  other reason (`prior_reasons` lead the list, `:182`; `review_run.finish` passes its
+  (`plugin/crew/hooks/scripts/review_verdict.py:208`): only beside a finding, with no
+  other reason (`prior_reasons` lead the list, `:188`; `review_run.finish` passes its
   bundle/webtest/stream reasons in, `plugin/crew/hooks/scripts/review_run.py:409`), and
-  only when no stray line is `contract_like` (`plugin/crew/hooks/scripts/review_verdict.py:132`;
-  the shortfall wording net `_SHORTFALL` is `:122`). The ignored lines go to
+  only when no stray line is `contract_like` (`plugin/crew/hooks/scripts/review_verdict.py:133`;
+  the shortfall wording net `_SHORTFALL` is `:123`). The ignored lines go to
   review.json's `ignored_lines` (`plugin/crew/hooks/scripts/review_run.py:425`), a
   `review: FINDINGS kept; ...` line (`:464`) and, as a count, the ledger row
   (`plugin/crew/hooks/scripts/review_ledger.py:328`).
 - DERIVED (T-0087, crew 1.0.53): an INCOMPLETE round is classed by
-  `review_verdict.failure_class` (`plugin/crew/hooks/scripts/review_verdict.py:232`):
+  `review_verdict.failure_class` (`plugin/crew/hooks/scripts/review_verdict.py:238`):
   `tree` when a bundle or webtest reason was added, else `tool` when the answer was
-  not `delivered` (`parse` returns it, `plugin/crew/hooks/scripts/review_verdict.py:219`),
+  not `delivered` (`parse` returns it, `plugin/crew/hooks/scripts/review_verdict.py:225`),
   else `reviewer`. `VERDICTS`, `FINDING_FORM` and the class names are at
   `plugin/crew/hooks/scripts/review_verdict.py:90`, `:93` and `:95`, and the Codex
   event and item vocabularies start at `:98`. `review_run.finish` computes the class at

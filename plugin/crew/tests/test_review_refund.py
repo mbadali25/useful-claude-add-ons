@@ -279,11 +279,11 @@ def _finish_claude(repo, tmp_path, body, before=None):
               "--root", str(repo), "--ticket", "T1", "--scratch", str(scratch),
               "--provider", "claude"]
     subprocess.run(common + ["--reserve-only"], capture_output=True,
-                   stdin=subprocess.DEVNULL, check=True)
+                   stdin=subprocess.DEVNULL, check=True, timeout=120)
     result = subprocess.run(common + ["--round", "1", "--output", str(scratch / "out.txt"),
                                       "--exit-code", "0", "--work-dir", str(work)],
                             capture_output=True, text=True, stdin=subprocess.DEVNULL,
-                            check=False)
+                            check=False, timeout=120)
     return result, json.loads((work / "review.json").read_text(encoding="utf-8"))
 
 

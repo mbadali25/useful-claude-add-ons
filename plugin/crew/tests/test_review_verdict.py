@@ -180,6 +180,8 @@ BLOCK_LINE = "BLOCK|b.py:2|breaks badly|call it"
     (["## Findings"], []),
     (["```"], ["```"]),
     (["```text"], ["```"]),
+    (["```FIX"], ["```"]),
+    (["~~~"], ["~~~"]),
     (["Two defects below."], ["", "Everything else reads correctly."]),
 ])
 def test_parse_harmless_stray_lines_beside_findings_are_recovered(before, after):
@@ -192,6 +194,16 @@ def test_parse_harmless_stray_lines_beside_findings_are_recovered(before, after)
     assert (result["verdict"], result["reasons"], result["ignored"], result["counts"]) == (
         rv.FINDINGS, [], [line for line in before + after if line],
         {"BLOCK": 1, "FIX": 1, "NIT": 0})
+
+
+def test_parse_ignored_lines_are_kept_verbatim():
+    """Review round 1 FIX: the ignored lines were stored stripped."""
+    text = ACKS + f"{FIX_LINE}\n  Closing note, indented.  \r\n"
+
+    result = rv.parse(text, 0, expected_parts=PARTS)
+
+    assert (result["verdict"], result["ignored"]) == (
+        rv.FINDINGS, ["  Closing note, indented.  "])
 
 
 @pytest.mark.parametrize("stray", ["Looks fine.", "## Verdict", "```"])

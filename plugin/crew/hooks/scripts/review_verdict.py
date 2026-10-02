@@ -115,6 +115,7 @@ _READ = re.compile(r"^READ\|(.*\S.*)$")
 # line is "could not tell" and keeps the round INCOMPLETE; only a stray line
 # that is none of these is harmless enough to ignore beside findings.
 _DECORATION = re.compile(r"^(?:[\s`*_>#+-]|\d+[.)])+")
+_FENCE = re.compile(r"^(?:`{3,}|~{3,})[\w.+#-]*$")
 _KEYWORD = r"BLOCK|FIX|NIT|READ|CLEAN"
 _ON_BARE = (re.compile(rf"^(?:{_KEYWORD})\b", re.IGNORECASE),)
 # An admission that the review itself fell short reads as could-not-tell too,
@@ -130,8 +131,11 @@ _ON_LINE = (re.compile(r"\|.*\|.*\|"),) + tuple(
 
 
 def contract_like(line):
-    """True when `line` might be a contract line the parser could not read."""
-    bare = _DECORATION.sub("", line)
+    """True when `line` might be a contract line the parser could not read.
+    A code fence is markup, so its info string (```FIX) is never read as a
+    keyword; the whole-line checks still apply to it."""
+    line = line.strip()
+    bare = "" if _FENCE.match(line) else _DECORATION.sub("", line)
     return (any(p.search(bare) for p in _ON_BARE)
             or any(p.search(line) for p in _ON_LINE))
 
@@ -177,7 +181,9 @@ def parse(text, exit_code, timed_out=False, expected_parts=(), prior_reasons=())
             counts[match.group(1)] += 1
             findings.append(line)
             continue
-        unparseable.append(line)
+        # Kept as written (only a "\r" line end dropped): an ignored line
+        # is reported verbatim, so a person reads what the reviewer wrote.
+        unparseable.append(raw[:-1] if raw.endswith("\r") else raw)
 
     reasons = list(prior_reasons)
     if timed_out:
@@ -206,7 +212,7 @@ def parse(text, exit_code, timed_out=False, expected_parts=(), prior_reasons=())
             ignored = unparseable
         else:
             reasons.append(f"{len(unparseable)} output line(s) match no part of the contract, "
-                           f"first: {unparseable[0][:120]!r}")
+                           f"first: {unparseable[0].strip()[:120]!r}")
     if not clean_lines and not findings and not reasons:
         reasons.append("the output has neither CLEAN nor a finding")
 

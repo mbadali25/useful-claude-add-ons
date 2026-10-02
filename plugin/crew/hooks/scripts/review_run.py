@@ -463,7 +463,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
         print(f"review: INCOMPLETE because {reason}")
     if result["ignored"]:
         print(f"review: {result['verdict']} kept; {len(result['ignored'])} line(s) outside the "
-              f"contract were ignored, first: {result['ignored'][0][:120]!r} - read them in "
+              f"contract were ignored, first: {result['ignored'][0].strip()[:120]!r} - read them in "
               "out.txt and report them with the findings")
     if failure == review_verdict.TOOL and review["refunded"]:
         print(f"review: round {number} was a tool failure ({result['reasons'][0]}); refunded - "

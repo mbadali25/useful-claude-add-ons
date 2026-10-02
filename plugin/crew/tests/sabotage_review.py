@@ -558,8 +558,8 @@ REVIEW_FIX_MUTATIONS = (
         # Markdown decoration hides the keyword: `- FIX|...` reads as prose.
         "contract-like check stops stripping markdown decoration",
         REVIEW_VERDICT,
-        '    bare = _DECORATION.sub("", line)\n',
-        "    bare = line\n",
+        '    bare = "" if _FENCE.match(line) else _DECORATION.sub("", line)\n',
+        '    bare = "" if _FENCE.match(line) else line\n',
         ("tests/test_review_verdict.py::"
          "test_parse_a_contract_like_stray_line_is_incomplete"),
     ),
@@ -624,5 +624,23 @@ REVIEW_FIX_MUTATIONS = (
         '    if result["ignored"]:\n        print(f"review: {result[\'verdict\']} kept; ',
         '    if False:\n        print(f"review: {result[\'verdict\']} kept; ',
         "tests/test_review_refund.py::test_finish_reports_ignored_lines",
+    ),
+    (
+        # Review round 1 FIX: a fence's info string (```FIX) read as a
+        # keyword, so a fenced, well-formed finding burned the round.
+        "a code fence's info string is read as a contract keyword",
+        REVIEW_VERDICT,
+        '    bare = "" if _FENCE.match(line) else _DECORATION.sub("", line)\n',
+        '    bare = _DECORATION.sub("", line)\n',
+        ("tests/test_review_verdict.py::"
+         "test_parse_harmless_stray_lines_beside_findings_are_recovered"),
+    ),
+    (
+        # Review round 1 FIX: ignored lines stored stripped, not as written.
+        "ignored lines are stored stripped",
+        REVIEW_VERDICT,
+        '        unparseable.append(raw[:-1] if raw.endswith("\\r") else raw)\n',
+        "        unparseable.append(line)\n",
+        "tests/test_review_verdict.py::test_parse_ignored_lines_are_kept_verbatim",
     ),
 )

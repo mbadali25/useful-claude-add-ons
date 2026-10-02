@@ -27,7 +27,7 @@ does not implement.
   the parser before this change gave 53 FINDINGS, 1 CLEAN, 2 INCOMPLETE; after it, T-0100 r2 is
   FINDINGS and the reviewer-declared T-0028 round stays INCOMPLETE. Most of the ledgers' 17
   historic INCOMPLETEs were already recovered by T-0079 and T-0072's fixes.
-- Eleven new `sabotage_review.py` entries; the `crew_standards.py` proposals docstring and the
+- Thirteen new `sabotage_review.py` entries; the `crew_standards.py` proposals docstring and the
   crew-qa-standards R5 wording are a follow-up feature PR (tooling-PR rule).
 
 ### Added — `crew` 1.0.106: T-0040's shell-route sabotage mutations (W-0115)
