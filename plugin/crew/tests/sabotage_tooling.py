@@ -6,6 +6,7 @@ the runner, its restore guarantees and its reporting are all `sabotage.py`'s.
 Run that file, not this one.
 """
 import os
+import shutil
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(CREW, "hooks", "scripts")
@@ -277,6 +278,82 @@ TOOLING_MUTATIONS = (
         "tests/test_review_golden.py::test_corpus_leak_check_refuses_a_planted_host_name",
     ),
 )
+
+# L-0572: declared subset coverage under `verify-gate --all`. Each mutation
+# makes the gate credit a subset it must run, or makes the record treat a
+# credit as a measurement. The .ps1 ones need pwsh to run their test, so
+# they are appended only where it exists (a skipped test reads as green).
+GATE_SH = os.path.join(SCRIPTS, "verify-gate.sh")
+GATE_PS1 = os.path.join(SCRIPTS, "verify-gate.ps1")
+_COVER = "tests/test_verify_gate_subset_cover.py::"
+TOOLING_MUTATIONS += (
+    (
+        "sh: a superset that failed still credits its subsets",
+        GATE_SH,
+        '    [ "${STATUS_AT[$((10#$p))]:-}" = "pass" ] || return 1\n',
+        "    :\n",
+        _COVER + "test_superset_not_passing_runs_subset[1-sh]",
+    ),
+    (
+        "sh: Stop mode plans coverage too",
+        GATE_SH,
+        'if budget is None and _vr is not None and hasattr(_vr, "cover_plan"):\n',
+        'if _vr is not None and hasattr(_vr, "cover_plan"):\n',
+        _COVER + "test_stop_mode_never_credits[sh]",
+    ),
+    (
+        "sh: a tree that moved after the superset still credits",
+        GATE_SH,
+        '    if [ -n "$COVER_SNAP0" ] && [ "$COVER_SNAP0" = "$COVER_SNAP1" ]; then\n',
+        "    if true; then\n",
+        _COVER + "test_tree_changed_after_superset_runs_subset[sh]",
+    ),
+    (
+        "planner: a command also named by `always` is credited",
+        VERIFY_RECORD,
+        "            if any(c in pinned or not owners[c] <= candidates for c in rule_cmds[ri]):\n",
+        "            if any(not owners[c] <= candidates for c in rule_cmds[ri]):\n",
+        _COVER + "test_command_also_in_always_runs[sh]",
+    ),
+    (
+        "planner: PYTEST_ADDOPTS no longer declines credit",
+        VERIFY_RECORD,
+        '    if environ.get("PYTEST_ADDOPTS", "").strip():\n',
+        "    if False:\n",
+        _COVER + "test_pytest_addopts_runs_subset[sh]",
+    ),
+    (
+        "planner: a subset under another env is credited",
+        VERIFY_RECORD,
+        "            elif _rule_env(rule) != _rule_env(sup):\n",
+        "            elif False:\n",
+        _COVER + "test_invalid_declaration_runs_subset_and_says_why[env mismatch-sh]",
+    ),
+    (
+        "record: a credited command's 0s is cached as the rule's cost",
+        VERIFY_RECORD,
+        '        if rule.get("unknown") and all(s == "pass" for s in statuses):\n',
+        '        if rule.get("unknown"):\n',
+        _COVER + "test_record_covered_is_clean_and_never_cached",
+    ),
+)
+if shutil.which("pwsh"):
+    TOOLING_MUTATIONS += (
+        (
+            "ps1: a superset that failed still credits its subsets",
+            GATE_PS1,
+            ' -or $statusAt[$pi] -ne "pass") {\n',
+            ") {\n",
+            _COVER + "test_superset_not_passing_runs_subset[1-ps1]",
+        ),
+        (
+            "ps1: Stop mode plans coverage too",
+            GATE_PS1,
+            "if ($All -and $matchPy -and (Test-Path $verifyRecordScript)) {\n",
+            "if ($matchPy -and (Test-Path $verifyRecordScript)) {\n",
+            _COVER + "test_stop_mode_never_credits[ps1]",
+        ),
+    )
 
 # Outside the plugin: present only in the marketplace repo, never in an
 # installed copy, so these are appended only when their targets exist.
