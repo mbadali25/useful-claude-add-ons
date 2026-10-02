@@ -199,7 +199,7 @@ Notable rules, re-read directly:
   indices"), so rule 23's "DELIBERATELY UNCHECKED" `why` no longer describes
   what happens to a codemap edit: any `.crew/codemap/` change without a
   regenerated `.claude/rules/` now fails the Stop gate. Since T-0501 (crew
-  1.0.115) the command also prints advisory `anchor behind:` /
+  1.0.117) the command also prints advisory `anchor behind:` /
   `anchor unresolvable:` / `anchors: could not tell` lines, and its `why`
   says so: they never change its exit code, so this rule still passes on a
   stale-but-synced codemap by design.

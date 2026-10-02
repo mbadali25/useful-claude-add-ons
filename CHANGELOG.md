@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.115: `rules` says when it generates from a code map whose anchor needs re-check (T-0501)
+### Changed — `crew` 1.0.117: `rules` says when it generates from a code map whose anchor needs re-check (T-0501)
 
 - **What changed.** `crew_instructions.py rules` and `rules --check` print, after
   the `wrote`/`stale:`/`missing:`/`orphan:`/`hand-written` lines, one advisory line
@@ -46,7 +46,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   A third, by hand: dropping `check_instructions.py`'s prefix filter reds three
   `instruction-budgets.py` cases, `edited-behind`'s "exactly one problem and no
   'anchor' line" among them.
-- Bumped `1.0.114 -> 1.0.115` (1.0.62, 1.0.70, 1.0.106 and 1.0.109 on its branch; 1.0.115 since merging main's 1.0.110, L-0516, and kept after merging main's 1.0.114, L-0557 #300, as still the next free version past main; 1.0.116 is claimed by the L-0555 lane).
+- Bumped `1.0.114 -> 1.0.117` (1.0.62, 1.0.70, 1.0.106, 1.0.109 and 1.0.115 on its branch; re-set after merging main's 1.0.114, L-0557 #300, because the merge changed `plugin/crew/` after 1.0.115 was set; 1.0.116 is claimed by the L-0555 lane).
 
 ### Fixed - `crew` 1.0.114, `obsidian-vault` 0.4.16: every pwsh the test suites spawn gets its own XDG_CACHE_HOME (L-0557)
 
