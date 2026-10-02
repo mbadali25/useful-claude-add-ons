@@ -181,9 +181,17 @@ ruff 0.16.9, ShellCheck 0.11.0 (`shellcheck-py==0.11.0.1`), actionlint
 | Tool | Invocation | Exit statuses read as "ran" | Output crew reads | Parse-abort marker |
 |------|------------|-----------------------------|-------------------|--------------------|
 | ruff | `check --output-format json --exit-zero --no-cache <args> <files>` | 0 | a JSON list; `filename` (absolute), `code`, `message` | `code` `invalid-syntax` (null codes are read as it): ruff then reports nothing else for that file |
-| ShellCheck | `-f json1 <args> <files>` | 0 none, 1 findings (2 unreadable file, 3 bad syntax, 4 bad options are errors) | `{"comments": [...]}`; `file` (as passed), `code` (int, read as `SC<code>`), `message` | `SC1072` ("Fix any mentioned problems and try again"): parsing of that file stopped |
+| ShellCheck | `-f json1 --rcfile <bundle .shellcheckrc>` (or `--norc` when the bundle has none) `<args> <files>` | 0 none, 1 findings (2 unreadable file, 3 bad syntax, 4 bad options are errors) | `{"comments": [...]}`; `file` (as passed), `code` (int, read as `SC<code>`), `message` | `SC1072` ("Fix any mentioned problems and try again"): parsing of that file stopped |
 | actionlint | `-format '{{json .}}' -no-color <args> <files>` | 0 none, 1 findings (2 bad flag, 3 fatal are errors) | a JSON list; `filepath` (as passed), `kind`, `message` | `kind` `syntax-check` |
 | PSScriptAnalyzer | `pwsh -NoProfile -NonInteractive -File <script> <file-list> <rule-list>` | 0 (the script exits 3 on any error, an unknown `-IncludeRule` name included) | one JSON line from `ConvertTo-Json`; `file`, `rule`, `severity`, `message` | `severity` `ParseError` |
+
+Each linter runs with stdin closed, a copy of the environment with every
+variable whose name carries TOKEN, SECRET, PASSWORD, API_KEY or CREDENTIAL
+dropped, and `XDG_CONFIG_HOME` pointed at an empty directory, so a
+user-level ruff config cannot judge the bundle. `HOME` is kept, because
+`uvx`'s cache and PowerShell's user module path live under it. A `command`
+that resolves to a `.cmd`/`.bat` shim is refused as could-not-check, because
+cmd.exe would re-parse the file names.
 
 **How crew reads it.** Anything outside the table is "could not check",
 never a pass: another exit status, a timeout, output that is not the JSON

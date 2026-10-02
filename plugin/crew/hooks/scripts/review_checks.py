@@ -65,6 +65,9 @@ CONFIG_KEY = "preReview"
 VERIFY_MAP = os.path.join(".crew", "verify.json")
 RESULT_FILE = "prereview.json"
 DEFAULT_TIMEOUT = 300
+GIT_TIMEOUT = 60
+# Never handed to a linter: it needs none of them (PYTHON-08).
+_SECRET_MARKERS = ("TOKEN", "SECRET", "PASSWORD", "PASSWD", "API_KEY", "APIKEY", "CREDENTIAL")
 SHOWN = 40
 EXIT_PASS, EXIT_NEW, EXIT_USAGE, EXIT_COULD_NOT = 0, 1, 2, 3
 
@@ -89,6 +92,7 @@ LINTER_KEYS = {"tool", "command", "args", "paths", "timeout", "rules"}
 # files, so no path or rule name is ever quoted into a command line.
 _PSSA_SCRIPT = r"""param([string]$ListFile, [string]$RulesFile)
 $ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 try {
     Import-Module PSScriptAnalyzer -ErrorAction Stop
     $rules = @(Get-Content -LiteralPath $RulesFile | Where-Object { $_ })
@@ -166,9 +170,18 @@ def _name(spec):
     return spec["tool"]
 
 
+def _git(root, *args):
+    try:
+        return subprocess.run(["git", *args], cwd=root, capture_output=True,
+                              stdin=subprocess.DEVNULL, timeout=GIT_TIMEOUT, check=False)
+    except subprocess.TimeoutExpired as exc:
+        raise CouldNotCheck(f"git {args[0]} timed out after {GIT_TIMEOUT}s") from exc
+    except OSError as exc:
+        raise CouldNotCheck(f"could not start git: {exc}") from exc
+
+
 def _git_blob(root, blob):
-    proc = subprocess.run(["git", "cat-file", "blob", blob], cwd=root, capture_output=True,
-                          stdin=subprocess.DEVNULL, check=False)
+    proc = _git(root, "cat-file", "blob", blob)
     if proc.returncode != 0:
         raise CouldNotCheck(f"git cannot read blob {blob[:12]}: "
                             f"{proc.stderr.decode('utf-8', 'replace').strip()}")
@@ -179,7 +192,14 @@ def changed_files(manifest):
     """The bundle's entries a linter could read: not deleted, not a symlink,
     submodule or binary."""
     rows = []
-    for entry in manifest.get("entries") or []:
+    entries = manifest.get("entries")
+    if not isinstance(entries, list):
+        raise ValueError("its entries are not a list")
+    for entry in entries:
+        if not (isinstance(entry, dict) and all(
+                isinstance(entry.get(k), str) and entry.get(k)
+                for k in ("status", "path", "new_id"))):
+            raise ValueError(f"an entry is not the shape review_patch writes: {entry!r:.200}")
         if entry.get("status") == "D" or entry.get("binary") or entry.get("submodule"):
             continue
         if entry.get("new_mode") in SKIPPED_MODES:
@@ -191,6 +211,16 @@ def changed_files(manifest):
 def _selected(spec, entries):
     globs = spec.get("paths") or TOOLS[spec["tool"]]["globs"]
     return [e for e in entries if any(crew_ticket.path_matches(e["path"], g) for g in globs)]
+
+
+def _inside(tmp, side, rel):
+    """tmp/side/rel, refused when rel would land outside tmp/side (an absolute
+    path or `..` in a tampered manifest)."""
+    root = os.path.realpath(os.path.join(tmp, side))
+    target = os.path.realpath(os.path.join(root, rel))
+    if os.path.isabs(rel) or os.path.commonpath([root, target]) != root:
+        raise CouldNotCheck(f"the manifest names a path outside the tree: {rel!r}")
+    return target
 
 
 def _write(path, data):
@@ -213,9 +243,7 @@ def _config_blobs(root, manifest):
             if entry.get("status") != "D":
                 found[rel] = _git_blob(root, entry["new_id"])
             continue
-        probe = subprocess.run(["git", "cat-file", "-e", f"{manifest['base']}:{rel}"], cwd=root,
-                               capture_output=True, stdin=subprocess.DEVNULL, check=False)
-        if probe.returncode == 0:
+        if _git(root, "cat-file", "-e", f"{manifest['base']}:{rel}").returncode == 0:
             found[rel] = _git_blob(root, f"{manifest['base']}:{rel}")
     return found
 
@@ -227,13 +255,13 @@ def _materialise(root, entries, configs, tmp):
     with_base = set()
     for side in ("base", "head"):
         for rel, data in configs.items():
-            _write(os.path.join(tmp, side, rel), data)
+            _write(_inside(tmp, side, rel), data)
     for entry in entries:
         rel = entry["path"]
-        _write(os.path.join(tmp, "head", rel), _git_blob(root, entry["new_id"]))
+        _write(_inside(tmp, "head", rel), _git_blob(root, entry["new_id"]))
         old = entry.get("old_id") or _ZERO
         if entry.get("status") != "A" and old != _ZERO:
-            _write(os.path.join(tmp, "base", rel), _git_blob(root, old))
+            _write(_inside(tmp, "base", rel), _git_blob(root, old))
             with_base.add(rel)
     return with_base
 
@@ -246,14 +274,32 @@ def _command(spec):
     exe = argv[0] if os.path.isabs(argv[0]) else shutil.which(argv[0])
     if not exe:
         raise CouldNotCheck(f"{argv[0]} is not on PATH (command: {' '.join(argv)})")
-    return [exe] + argv[1:]
+    if os.path.splitext(exe)[1].lower() in (".cmd", ".bat"):
+        # cmd.exe would re-parse every file name argument (PYTHON-06).
+        raise CouldNotCheck(f"{exe} is a batch-file shim; name the real executable in `command`")
+    return [os.path.abspath(exe)] + argv[1:]
+
+
+def _child_env(tmp):
+    """The linter's environment: a copy with secrets dropped, and an empty
+    XDG_CONFIG_HOME so a user-level ruff or ShellCheck config cannot judge one
+    machine's bundle differently from another's (PYTHON-08). HOME is kept:
+    uvx's cache and PowerShell's user module path live under it."""
+    env = {k: v for k, v in os.environ.items()
+           if not any(marker in k.upper() for marker in _SECRET_MARKERS)}
+    config = os.path.join(tmp, "xdg-config")
+    os.makedirs(config, exist_ok=True)
+    env["XDG_CONFIG_HOME"] = config
+    return env
 
 
 def _spawn(argv, cwd, timeout):
+    env = _child_env(cwd)
     try:
+        # surrogateescape: tool output carries paths, which must round-trip.
         proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", stdin=subprocess.DEVNULL, timeout=timeout,
-                              check=False)
+                              errors="surrogateescape", stdin=subprocess.DEVNULL,
+                              timeout=timeout, env=env, check=False)
     except subprocess.TimeoutExpired as exc:
         raise CouldNotCheck(f"timed out after {timeout}s") from exc
     except OSError as exc:
@@ -298,7 +344,12 @@ def _run_ruff(argv, spec, tmp, files, timeout):
 
 
 def _run_shellcheck(argv, spec, tmp, files, timeout):
-    proc = _spawn(argv + ["-f", "json1"] + list(spec.get("args") or []) + files, tmp, timeout)
+    # One rc file for both trees, the bundle's, or none: never one found by
+    # walking up past the throwaway tree, or the user's ~/.shellcheckrc.
+    rcfile = os.path.join(tmp, "head", ".shellcheckrc")
+    rc_args = ["--rcfile", rcfile] if os.path.isfile(rcfile) else ["--norc"]
+    proc = _spawn(argv + ["-f", "json1"] + rc_args + list(spec.get("args") or []) + files, tmp,
+                  timeout)
     _expect(proc, (0, 1), "shellcheck")
     data = _loads(proc.stdout, "shellcheck")
     rows = data.get("comments") if isinstance(data, dict) else None
@@ -372,7 +423,7 @@ def check_one(root, spec, entries, manifest):
                     aborted.append(f"{rel} ({'bundle' if side == 'head' else 'base'}: "
                                    f"{rule} {message})")
                 counts[side][(rel, rule, " ".join(str(message).split()))] += 1
-    except (CouldNotCheck, KeyError, TypeError, OSError) as exc:
+    except (CouldNotCheck, KeyError, TypeError, AttributeError, ValueError, OSError) as exc:
         result.update(status=COULD_NOT, detail=_detail(exc))
         return result
     if aborted:
@@ -450,7 +501,7 @@ def record(scratch, bundle_sha256, results, overridden, stood_down, configured=T
     path = os.path.join(scratch, RESULT_FILE)
     text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
     tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
     os.replace(tmp, path)
 

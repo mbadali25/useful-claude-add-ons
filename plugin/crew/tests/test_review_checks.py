@@ -28,6 +28,9 @@ _FAKE = textwrap.dedent(r'''
     import json, os, sys, time
     tool, args = sys.argv[1], sys.argv[2:]
     mode = os.environ.get("FAKE_LINT_MODE", "")
+    if os.environ.get("FAKE_LINT_ARGV_OUT"):
+        with open(os.environ["FAKE_LINT_ARGV_OUT"], "w", encoding="utf-8") as fh:
+            json.dump({"argv": sys.argv[1:], "env": dict(os.environ)}, fh)
     if mode == "rc":
         sys.stderr.write("fake: broken\n"); sys.exit(4)
     if mode == "sleep":
@@ -414,3 +417,78 @@ def test_real_pssa_unknown_rule_is_could_not_check(tmp_path):
     result = _one(repo, tmp_path)
 
     assert (result["status"], "PSNoSuchRuleL0574" in result["detail"]) == (rc.COULD_NOT, True), result
+
+
+def _tamper(manifest_path, change):
+    with open(manifest_path, encoding="utf-8") as fh:
+        manifest = json.load(fh)
+    change(manifest)
+    with open(manifest_path, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh)
+
+
+@pytest.mark.parametrize("change", ["entries-not-list", "entry-not-dict", "path-not-str"])
+def test_a_manifest_of_the_wrong_shape_is_could_not_check(tmp_path, fake, change):
+    repo = _start(tmp_path, {"a.py": "x\n"}, [_linter(fake, "ruff")])
+    _edit(repo, "a.py", "y\n")
+    manifest = _bundle(repo, tmp_path)
+    _tamper(manifest, {
+        "entries-not-list": lambda m: m.update(entries={"a.py": 1}),
+        "entry-not-dict": lambda m: m.update(entries=["a.py"]),
+        "path-not-str": lambda m: m["entries"][0].update(path=7)}[change])
+
+    results, _ = rc.run_checks(str(repo), manifest)
+
+    assert (results[0]["name"], results[0]["status"]) == ("manifest", rc.COULD_NOT), results
+
+
+@pytest.mark.parametrize("path", ["../escape.py", "/abs/escape.py"])
+def test_a_path_outside_the_tree_is_could_not_check(tmp_path, fake, path):
+    repo = _start(tmp_path, {"a.py": "x\n"}, [_linter(fake, "ruff")])
+    _edit(repo, "a.py", "y\n")
+    manifest = _bundle(repo, tmp_path)
+    _tamper(manifest, lambda m: m["entries"][0].update(path=path))
+
+    result = rc.run_checks(str(repo), manifest)[0][0]
+
+    assert (result["status"], "outside the tree" in result["detail"],
+            os.path.exists(tmp_path / "escape.py")) == (rc.COULD_NOT, True, False), result
+
+
+def test_a_batch_shim_is_could_not_check(tmp_path):
+    shim = tmp_path / "lint.cmd"
+    shim.write_text("@echo off\n", encoding="utf-8")
+    repo = _start(tmp_path, {"a.py": "x\n"}, [{"tool": "ruff", "command": [str(shim)]}])
+    _edit(repo, "a.py", "y\n")
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], "batch-file shim" in result["detail"]) == (rc.COULD_NOT, True)
+
+
+def test_the_linter_gets_no_secrets_and_no_user_config(tmp_path, fake, monkeypatch):
+    out = tmp_path / "seen.json"
+    repo = _start(tmp_path, {"run.sh": "x\n"}, [_linter(fake, "shellcheck")])
+    _edit(repo, "run.sh", "y\n")
+    monkeypatch.setenv("FAKE_LINT_ARGV_OUT", str(out))
+    monkeypatch.setenv("GH_TOKEN", "do-not-pass")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "user-config"))
+
+    assert _one(repo, tmp_path)["status"] == rc.PASS
+    seen = json.loads(out.read_text(encoding="utf-8"))
+
+    assert ("GH_TOKEN" in seen["env"], seen["env"]["XDG_CONFIG_HOME"].startswith(
+        str(tmp_path / "user-config")), "--norc" in seen["argv"]) == (False, False, True), seen
+
+
+def test_shellcheck_reads_the_bundles_rc_file(tmp_path, fake, monkeypatch):
+    out = tmp_path / "seen.json"
+    repo = _start(tmp_path, {".shellcheckrc": "disable=SC2086\n", "run.sh": "x\n"},
+                  [_linter(fake, "shellcheck")])
+    _edit(repo, "run.sh", "y\n")
+    monkeypatch.setenv("FAKE_LINT_ARGV_OUT", str(out))
+
+    _one(repo, tmp_path)
+    argv = json.loads(out.read_text(encoding="utf-8"))["argv"]
+
+    assert argv[argv.index("--rcfile") + 1].endswith(os.path.join("head", ".shellcheckrc")), argv
