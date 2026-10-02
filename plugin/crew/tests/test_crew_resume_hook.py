@@ -110,7 +110,13 @@ needs_proc = pytest.mark.skipif(not os.path.isdir("/proc/self") or os.name == "n
 
 def _claude(tmp_path, name):
     """A copy of bash named `claude`: to crew_resume.session_process it is
-    the Claude Code process, and the nearest one to every hook it starts."""
+    the Claude Code process, and the nearest one to every hook it starts.
+
+    On Windows the real bash, not a copy: Git's `bin\\bash.exe` launcher
+    re-execs `..\\usr\\bin\\bash.exe` relative to itself, so a copy has nothing
+    to run, and `session_process` is None there whatever the name (T-0076)."""
+    if os.name == "nt":
+        return _BASH
     home = tmp_path / f"claude-{name}"
     home.mkdir()
     exe = home / "claude"

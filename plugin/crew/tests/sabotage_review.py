@@ -11,6 +11,8 @@ REVIEW_VERDICT = os.path.join(CREW, "hooks", "scripts", "review_verdict.py")
 REVIEW_LEDGER = os.path.join(CREW, "hooks", "scripts", "review_ledger.py")
 REVIEW_RUN = os.path.join(CREW, "hooks", "scripts", "review_run.py")
 REVIEW_PATCH = os.path.join(CREW, "hooks", "scripts", "review_patch.py")
+REVIEW_PROMPT = os.path.join(CREW, "hooks", "scripts", "review_prompt.py")
+REVIEW_GATE = os.path.join(CREW, "hooks", "scripts", "review_gate.py")
 
 REVIEW_FIX_MUTATIONS = (
     # The T1 review-fix round. Each was also run by hand against the tracked
@@ -34,6 +36,62 @@ REVIEW_FIX_MUTATIONS = (
         '        patch = _run_raw(root, ["diff"] + _DIFF_FLAGS + [base_sha, working_tree])\n',
         ("tests/test_review_patch.py::"
          "test_work_entries_already_in_the_index_stay_out_of_the_bundle"),
+    ),
+    # T-0092 (crew 1.0.54): generated graphify-out/ leaves the bundle. Each
+    # was run by hand against the tracked file, restored with `git checkout`.
+    (
+        # The diffs read graphify-out/ again: a reviewer is handed ~120 parts
+        # of generated JSON and the Claude fallback comes back INCOMPLETE.
+        "the bundle diff no longer excludes graphify-out",
+        REVIEW_PATCH,
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"]\n',
+        '_EXCLUDE_SPEC = [":(exclude).work"]\n',
+        ("tests/test_review_patch.py::"
+         "test_generated_graph_dir_is_excluded_and_says_so"),
+    ),
+    (
+        # The manifest stops naming graphify-out/: a reviewer reads a bundle
+        # with the graph left out and nothing records that it was.
+        "the manifest stops saying graphify-out is excluded",
+        REVIEW_PATCH,
+        'EXCLUDED = (".work/", "graphify-out/")\n',
+        'EXCLUDED = (".work/",)\n',
+        ("tests/test_review_patch.py::"
+         "test_generated_graph_dir_is_excluded_and_says_so"),
+    ),
+    (
+        # The prompt stops naming the excluded paths: a reviewer can report
+        # CLEAN on a bundle without knowing anything was left out of it.
+        "the review prompt stops naming the excluded paths",
+        REVIEW_PROMPT,
+        ('    if isinstance(excluded, list) and all(isinstance(p, str) and p.strip() for p in excluded):\n'
+         '        out.append("  excluded (never in the bundle): "\n'
+         '                   + (", ".join(excluded) if excluded else "none"))\n'
+         '    else:\n'
+         '        out.append("  excluded: not recorded by this manifest (unknown)")\n'),
+        "    pass\n",
+        ("tests/test_review_prompt.py::"
+         "test_build_names_the_excluded_paths"),
+    ),
+    (
+        # T-0099: an empty exclusion list collapses into the unknown line, so a
+        # manifest that says "nothing was left out" reads as one that cannot say.
+        "an empty exclusion list prints as unknown",
+        REVIEW_PROMPT,
+        "    if isinstance(excluded, list) and all(isinstance(p, str) and p.strip() for p in excluded):\n",
+        "    if excluded and isinstance(excluded, list) and all(isinstance(p, str) and p.strip() for p in excluded):\n",
+        ("tests/test_review_prompt.py::"
+         "test_an_empty_exclusion_list_is_not_reported_as_unknown"),
+    ),
+    (
+        # T-0099 rounds 1-2: a blank entry passes as a path, so `[""]` or
+        # `[" "]` prints a blank known list instead of the unknown line.
+        "a blank exclusion entry reads as a known list",
+        REVIEW_PROMPT,
+        "    if isinstance(excluded, list) and all(isinstance(p, str) and p.strip() for p in excluded):\n",
+        "    if isinstance(excluded, list) and all(isinstance(p, str) for p in excluded):\n",
+        ("tests/test_review_prompt.py::"
+         "test_a_malformed_exclusion_value_reads_as_unknown"),
     ),
     (
         # An older round's result lands after a later round was reserved.
@@ -283,5 +341,187 @@ REVIEW_FIX_MUTATIONS = (
         "            stdout, stderr = \"\", \"\"\n",
         ("tests/test_review_run_launch.py::"
          "test_post_kill_communicate_is_bounded_and_keeps_the_partial_output"),
+    ),
+    # T-0079: a READ line counts for a part when it is the part's path as
+    # listed, or its bare file name -- and for nothing else. Each rule below
+    # has its own proof.
+    (
+        # Exact comparison against the listed path gone: only bare names count,
+        # so a reviewer echoing the listed path is INCOMPLETE (T-0009 round 4).
+        "the READ parser compares bare names only again",
+        REVIEW_VERDICT,
+        "    if token == listed:\n        return True\n",
+        "    if False:\n        return True\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_full_path_read_counts_for_its_listed_part"),
+    ),
+    (
+        # A file name alone is not an identity: part-002 of another bundle
+        # would cover this bundle's part-002.
+        "any READ token is reduced to its basename",
+        REVIEW_VERDICT,
+        "    return \"/\" not in token and token == posixpath.basename(listed)\n",
+        "    return posixpath.basename(token) == posixpath.basename(listed)\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_same_basename_in_another_directory_counts_for_nothing"),
+    ),
+    (
+        # The loosest rule: any READ line at all covers every part, so a path
+        # outside the bundle stands in for a part nobody claimed to read.
+        "any READ line counts for any part",
+        REVIEW_VERDICT,
+        "    return \"/\" not in token and token == posixpath.basename(listed)\n",
+        "    return True\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_read_of_a_path_outside_the_bundle_counts_for_nothing"),
+    ),
+    (
+        # A Windows reviewer writing C:/... for a listed C:\... is INCOMPLETE.
+        "READ paths are no longer separator-normalised",
+        REVIEW_VERDICT,
+        "    return posixpath.normpath(path.strip().replace(\"\\\\\", \"/\"))\n",
+        "    return posixpath.normpath(path.strip())\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_differently_spelled_listed_path_counts"),
+    ),
+    (
+        # A listed path under a directory with a space cannot be acknowledged.
+        "a READ path containing a space is unparseable again",
+        REVIEW_VERDICT,
+        "_READ = re.compile(r\"^READ\\|(.*\\S.*)$\")\n",
+        "_READ = re.compile(r\"^READ\\|(\\S+)$\")\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_listed_path_with_a_space_counts"),
+    ),
+    (
+        # The parser handed bare names while the prompt lists full paths.
+        "review_run expects bare part names again",
+        REVIEW_RUN,
+        "    parts = [p.get(\"path\") or p[\"name\"] for p in manifest.get(\"parts\") or []]\n",
+        "    parts = [p[\"name\"] for p in manifest.get(\"parts\") or []]\n",
+        ("tests/test_webtest_guard.py::"
+         "test_review_reads_written_as_the_listed_paths_are_clean"),
+    ),
+    (
+        # The overflow file's READ must match the full path the prompt printed.
+        "review_run expects the webtest overflow file by bare name again",
+        REVIEW_RUN,
+        "        parts.append(os.path.join(args.scratch, review_prompt.WEBTEST_FINDINGS_FILE))\n",
+        "        parts.append(review_prompt.WEBTEST_FINDINGS_FILE)\n",
+        ("tests/test_webtest_guard.py::"
+         "test_review_the_overflow_file_needs_its_own_read"),
+    ),
+    (
+        # The prompt asking for a form the parser does not state is the defect.
+        "the bundle prompt asks for READ|<its file name> again",
+        REVIEW_PROMPT,
+        "           f\"{review_verdict.READ_FORM} on its own line. A READ line for a path in any\",\n",
+        "           \"READ|<its file name> on its own line. A READ line for a path in any\",\n",
+        ("tests/test_review_prompt.py::"
+         "test_build_states_the_read_form_the_parser_accepts"),
+    ),
+    (
+        # The webtest overflow line asking for the bare name again. The bundle
+        # block states READ_FORM too, so the test reads the overflow line alone.
+        "the webtest overflow line asks for a bare READ name again",
+        REVIEW_PROMPT,
+        "                   f\"and output {review_verdict.READ_FORM} for that file on its own line. \"\n",
+        "                   f\"and output READ|{WEBTEST_FINDINGS_FILE} on its own line. \"\n",
+        ("tests/test_webtest_guard.py::"
+         "test_review_prompt_hands_over_every_row_through_a_file_past_the_inline_limit"),
+    ),
+    (
+        # splitlines() also breaks at U+2028 and the C0 separators, cutting a
+        # verdict line in two (T-0079 amendment).
+        "the verdict parser splits reviewer output with splitlines again",
+        REVIEW_VERDICT,
+        '    for raw in (text or "").split("\\n"):\n',
+        '    for raw in (text or "").splitlines():\n',
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_verdict_line_holding_a_unicode_line_break_is_one_line"),
+    ),
+    (
+        # A raw U+2028 inside a Codex event's JSON cut it mid-object and scored
+        # T-0072 round 4 INCOMPLETE.
+        "the Codex event reader splits with splitlines again",
+        REVIEW_VERDICT,
+        '    for line in (jsonl or "").split("\\n"):\n',
+        '    for line in (jsonl or "").splitlines():\n',
+        ("tests/test_review_verdict.py::"
+         "test_codex_final_message_an_event_holding_a_unicode_line_break_parses_intact"),
+    ),
+    # crew 1.0.65: gate first, and no second round on an unchanged CLEAN
+    # bundle. Each was run by hand against the tracked file and confirmed RED.
+    (
+        # The preflight is skipped: a round is spent on a tree the gate has
+        # not passed, which is the whole cost this exists to avoid.
+        "review_run reserves a round without asking the gate",
+        REVIEW_RUN,
+        "    short = preflight(args)\n    if short is not None:\n        return short\n",
+        "    short = None\n",
+        ("tests/test_review_gate.py::"
+         "test_an_unverified_tree_is_refused_with_exit_5_and_no_round_spent"),
+    ),
+    (
+        # "Could not tell" reviews as though it were "passed".
+        "an UNKNOWN gate state is let through to a review",
+        REVIEW_RUN,
+        "    if state in (review_gate.UNVERIFIED, review_gate.UNKNOWN):\n        if args.allow_unverified:\n",
+        "    if state in (review_gate.UNVERIFIED,):\n        if args.allow_unverified:\n",
+        ("tests/test_review_gate.py::"
+         "test_an_unknown_gate_state_is_refused_like_an_unverified_one"),
+    ),
+    (
+        # An unreadable repository collapses into VERIFIED.
+        "gate_state reads an unreadable repository as VERIFIED",
+        REVIEW_GATE,
+        "        return UNKNOWN, str(exc)\n",
+        "        return VERIFIED, str(exc)\n",
+        "tests/test_review_gate.py::test_git_failing_is_unknown_not_verified",
+    ),
+    (
+        # The digest is never compared: any edit after a pass still reads
+        # as verified.
+        "gate_state stops comparing the fingerprint",
+        REVIEW_GATE,
+        "    if current != recorded:\n",
+        "    if False:\n",
+        "tests/test_review_gate.py::test_any_change_after_the_pass_is_unverified[content]",
+    ),
+    (
+        # A new untracked file is invisible to the changed set, so it is
+        # neither hashed nor noticed.
+        "gate_state's changed set drops untracked files",
+        REVIEW_GATE,
+        ('    text = _git(root, "diff", "--name-only", "HEAD") + "\\n" + \\\n'
+         '        _git(root, "ls-files", "--others", "--exclude-standard")\n'),
+        '    text = _git(root, "diff", "--name-only", "HEAD")\n',
+        "tests/test_review_gate.py::test_any_change_after_the_pass_is_unverified[new-untracked]",
+    ),
+    (
+        # Commits after the last pass are waved through.
+        "gate_state stops checking the marker against HEAD",
+        REVIEW_GATE,
+        "        if marker != head:\n",
+        "        if False:\n",
+        "tests/test_review_gate.py::test_a_marker_behind_head_is_unverified",
+    ),
+    (
+        # Must-allow: the gate's own marker counts as a change, so a clean
+        # tree the gate just passed is refused forever.
+        "gate_state counts the gate's own markers as material",
+        REVIEW_GATE,
+        "        if not verify_fingerprint._material(changed):  # pylint: disable=protected-access\n",
+        "        if not changed:\n",
+        "tests/test_review_gate.py::test_after_the_real_gate_passes_the_tree_is_verified[clean-tree]",
+    ),
+    (
+        # A person's acceptance of one round's FINDINGS stands in for a
+        # clean review of the tree.
+        "an owner-accepted receipt short-circuits a review",
+        REVIEW_RUN,
+        '    if ok and (data.get("receipt") or {}).get("kind") == "clean":\n',
+        "    if ok:\n",
+        "tests/test_review_gate.py::test_owner_accepted_findings_do_not_short_circuit",
     ),
 )

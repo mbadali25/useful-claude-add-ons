@@ -1313,6 +1313,7 @@ SKILL_KEYS=(
   "intune-graph"
   "jira-manager"
   "knowbe4-admin"
+  "mailgun"
   "mermaid-svg-bitbucket"
   "notify"
   "obsidian-canvas"
@@ -1349,6 +1350,7 @@ SKILL_NAME=(
   "intune-graph            - Intune via Graph: devices, compliance, app deployment"
   "jira-manager            - Jira Cloud REST API: JQL, create, transition, worklog"
   "knowbe4-admin           - KnowBe4 KSAT: SCIM sync diagnosis, reporting, writes"
+  "mailgun                 - Mailgun API: send, receive, events, stats, domain config"
   "mermaid-svg-bitbucket   - Pre-render Mermaid to SVG so Bitbucket displays it"
   "notify                  - Ping your phone or inbox: Telegram bot (two-way) or email"
   "obsidian-canvas         - Obsidian .canvas files as JSON: maps, boards, diagrams"
@@ -1388,7 +1390,7 @@ PLUGIN_KEYS=(
   "rule-of-two"
 )
 PLUGIN_NAME=(
-  "crew                    - Virtual dev team: 4 agents, 35 commands, safety hooks"
+  "crew                    - Virtual dev team: 4 agents, 36 commands, safety hooks"
   "gizmoduck               - Nuclei scans: diff, triaged reports, SDP tickets. No hooks"
   "localgpu                - Local models via Ollama: index, search, ask. MCP, no hooks"
   "obsidian-vault          - Multi-vault memory: gardener/reflector agents, bridge+guard hooks"

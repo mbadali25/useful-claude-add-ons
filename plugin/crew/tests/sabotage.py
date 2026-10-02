@@ -74,10 +74,16 @@ from sabotage_webtest import WEBTEST_MUTATIONS
 from sabotage_event_claim import EVENT_CLAIM_MUTATIONS
 from sabotage_refresh import REFRESH_MUTATIONS
 from sabotage_resume import RESUME_MUTATIONS
-from sabotage_autopilot import AUTOPILOT_MUTATIONS
+from sabotage_autopilot import AUTOPILOT_MUTATIONS, POLICY_MUTATIONS
 from sabotage_tracker import TRACKER_MUTATIONS
 from sabotage_route import ROUTE_MUTATIONS
+from sabotage_config import CONFIG_MENU_MUTATIONS
 from sabotage_approval import APPROVAL_MUTATIONS
+from sabotage_tooling import TOOLING_MUTATIONS
+from sabotage_limit_worktree import LIMIT_WORKTREE_MUTATIONS
+from sabotage_qa import QA_AUDIT_MUTATIONS
+from sabotage_standards import STANDARDS_MUTATIONS
+from sabotage_shell import SHELL_MUTATIONS
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__)))))
@@ -1072,16 +1078,16 @@ MUTATIONS = (
         # hardcoded tier, so setting `autonomous` warned about `act` and
         # described only what `act` grants -- omitting the one thing the tier
         # adds. Same bug class as the rank fix two entries up: the warning
-        # under-describes the grant it is there to announce.
+        # under-describes the grant it is there to announce. (T-0075: re-anchored
+        # on print_changes, where the successor moved the `!` line.)
         "the widening warning names a hardcoded tier",
         CONFIG,
-        '                _, normalise, notes = _RATCHETED[change["path"]]\n'
-        '                granted = normalise(change["after"])\n'
-        '                print(f"  ! {change[\'path\']} widens to `{granted}`: "\n'
-        '                      + notes[granted])',
-        '                print("  ! pm.authority widens to `act`: the PM will '
+        '            print(f"  ! {change[\'path\']} widens to "\n'
+        '                  f"`{json.dumps(change[\'after\']).strip(chr(34))}`: "\n'
+        '                  + widening_note(change["path"], change["after"]))',
+        '            print("  ! pm.authority widens to `act`: the PM will '
         'dispatch "\n'
-        '                      "roles itself and report after.")',
+        '                  "roles itself and report after.")',
         ("tests/test_crew_config.py::"
          "test_the_widening_warning_names_the_tier_it_grants"),
     ),
@@ -3045,12 +3051,17 @@ MUTATIONS = (
     ),
 )
 # The T1 review-fix, T3 scope, T5 cloud-guard, context, migrate, auto-cycle, T-0008 refresh-check,
-# T-0006 resume, T-0004 autopilot, T-0021 tracker, T-0023 route and T-0024 group-approval mutations live in the
-# sabotage_*.py siblings: this file is at `.pylintrc`'s max-module-lines, and raising that limit again is the move its
-# own comment warns against.
+# T-0006 resume, T-0004 autopilot, T-0021 tracker, T-0023 route, T-0024 group-approval, T-0075 config menu
+# and T-0040 shell-route
+# mutations live in the sabotage_*.py siblings: this file is at `.pylintrc`'s max-module-lines, and raising that
+# limit again is the move its own comment warns against.
 MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS + CLOUD_GUARD_MUTATIONS + SCOPE_MUTATIONS
               + AUTOCYCLE_MUTATIONS + WEBTEST_MUTATIONS + EVENT_CLAIM_MUTATIONS + REFRESH_MUTATIONS
-              + RESUME_MUTATIONS + AUTOPILOT_MUTATIONS + TRACKER_MUTATIONS + ROUTE_MUTATIONS + APPROVAL_MUTATIONS)
+              + RESUME_MUTATIONS + AUTOPILOT_MUTATIONS + TRACKER_MUTATIONS + ROUTE_MUTATIONS
+              + POLICY_MUTATIONS + APPROVAL_MUTATIONS + CONFIG_MENU_MUTATIONS
+              + LIMIT_WORKTREE_MUTATIONS
+              + QA_AUDIT_MUTATIONS + TOOLING_MUTATIONS
+              + STANDARDS_MUTATIONS + SHELL_MUTATIONS)
 
 # pytest's own exit codes (documented, not this file's invention): 0 all
 # passed; 1 at least one test FAILED (a real assertion, or an error raised

@@ -9,6 +9,7 @@
     "provider": "auto",
     "order": [
       "codex",
+      "kimi",
       "copilot",
       "claude"
     ],
@@ -18,6 +19,9 @@
       "reasoningEffort": null
     },
     "copilot": {
+      "model": null
+    },
+    "kimi": {
       "model": null
     },
     "roles": {}
@@ -30,6 +34,9 @@
       "reasoningEffort": null
     },
     "copilot": {
+      "model": null
+    },
+    "kimi": {
       "model": null
     },
     "roles": {}
@@ -126,6 +133,10 @@
     "shell": null,
     "windowsHostIp": null
   },
+  "shellRoute": {
+    "mode": null,
+    "distro": null
+  },
   "pm": {
     "enabled": true,
     "mode": "adaptive",
@@ -203,7 +214,10 @@
   },
   "autopilot": {
     "mode": "off",
-    "maxPhases": 12
+    "maxPhases": 12,
+    "deploy": "none",
+    "approval": "risk",
+    "questions": "risk"
   },
   "route": {
     "enabled": false

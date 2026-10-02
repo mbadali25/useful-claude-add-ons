@@ -45,11 +45,9 @@ import hashlib
 # Fixed at the SOURCE - the read site ALSO strips '\r' defensively (see
 # verify-gate.sh/.ps1's `tr -d '\r'` at each call site), but a source that
 # never emits '\r' is the fix that does not depend on every caller
-# remembering the workaround.
-try:
-    sys.stdout.reconfigure(newline="\n")
-except (AttributeError, ValueError):
-    pass
+# remembering the workaround. Done in `main`, not at import (T-0087): the
+# consumers that import this module for `read_record` must not have their
+# own process's stdout changed by the import.
 
 RECORD_PATH = os.path.join(".crew", ".verify-gate.record.json")
 TIMINGS_PATH = os.path.join(".crew", ".verify-gate.timings.json")
@@ -77,6 +75,20 @@ def _load_state(path):
 
 def _load(path):
     return _load_state(path)[0]
+
+
+def read_record(root):
+    """(state, rules) for `<root>/.crew/.verify-gate.record.json`: state is
+    "absent", "ok" or "corrupt", rules {} unless ok. The one reader the
+    record's consumers (review_prompt.py, crew_status.py) share; a record
+    whose `rules` is not an object is corrupt -- which rules are owed is then
+    UNKNOWN, never "none"."""
+    data, state = _load_state(os.path.join(root, RECORD_PATH))
+    if state != "ok":
+        return state, {}
+    if not isinstance(data.get("rules"), dict):
+        return "corrupt", {}
+    return "ok", data["rules"]
 
 
 def _save(path, data):
@@ -719,6 +731,12 @@ def cmd_timings_get():
 
 
 def main(argv):
+    # Every line this module writes is read one record per line by a shell;
+    # see the comment above RECORD_PATH for the '\r' this prevents.
+    try:
+        sys.stdout.reconfigure(newline="\n")
+    except (AttributeError, ValueError):
+        pass
     usage = "usage: verify_record.py sync|report|timings-get|rule-key|scan-reach"
     if len(argv) < 2:
         print(usage, file=sys.stderr)

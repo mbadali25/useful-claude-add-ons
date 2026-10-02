@@ -33,6 +33,7 @@ summarises.
 Files: create/modify/test, exact paths, `path:line` where modifying
 Test: the check that proves this step, by name or by the command that runs it
 Risk: what breaks if this step is wrong, or "low"
+Standards: the crew-standards ids this step triggers, or "none - <why>"
 - [ ] the concrete actions, not "implement the feature"
 
 ### Step 2: ...
@@ -44,7 +45,7 @@ Risk: what breaks if this step is wrong, or "low"
    every line have a step? Walk the steps: does every Files: entry sit inside
    the spec's Touch? A step that doesn't is not silently kept — either the
    step is wrong or the spec is missing a glob; fix whichever is true before
-   step 6.
+   step 6. Does every step name the standards its Files and Risk trigger?
 6. **Plan mode.** Show me the plan. Do not start implementing. A plan I have
    not agreed to is not a plan — same rule this file always had.
 

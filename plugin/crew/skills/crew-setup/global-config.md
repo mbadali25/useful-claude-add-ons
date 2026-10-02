@@ -1,7 +1,10 @@
 # The machine-global config walkthrough
 
 Shared by the `crew-setup` skill, `/crew:config` and `/crew:init` Phase 1. One
-source of truth.
+source of truth for what the machine-layer keys mean. `/crew:config` with no
+argument (and `/crew:config-setup`) now asks through the menu in
+`config-menu.md`: its machine layer is step 2 below, its recommendations cite
+this file, and its Save is step 3.
 
 `~/.claude/crew/config.json` sets defaults for **every crew repo on this
 machine**. Until 0.16.0 nothing in crew ever wrote it or asked about it, and
@@ -55,7 +58,12 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root <repo> --expla
 ```
 
 Every globally-settable key with its effective value and the layer that decided
-it: `repo`, `global`, or `default`. Show this table before asking anything.
+it: `repo`, `global`, or `default`. Show this table before asking anything. Its
+first line names the repo layer's file and where it came from:
+`repo layer: <path> (own)`, or `(main checkout)` in a linked worktree that
+inherits the main checkout's config, or `(unknown)` when git could not tell. An
+`(own)` line in a lane whose main checkout has a config too adds that the main
+checkout's is not read - often a default an older crew heal wrote there.
 `--root` is optional outside a repo — with no `.crew/config.json` the `repo`
 layer is simply empty, which is the right answer for a user who has no repo in
 mind yet.
@@ -77,6 +85,11 @@ nothing, and a key that quietly does nothing is worse than one refused out
 loud — name each and say which repo's `.crew/config.json` it belongs in.
 
 ## 2. Ask, one block at a time
+
+In the menu this is the **machine** layer: `crew_config_menu.py spec --layer
+machine` lists every key below with its current value, its source and the
+values to pick from, recommendation first. The guidance in this section is
+what to say about each one.
 
 Do not ask about everything. Ask about what the table above shows coming from
 `default` and what the user has a real answer for. In this order:
@@ -159,7 +172,21 @@ there everywhere; making them say so once per repository was the friction that
 produced this split. A repo that genuinely wants its memory in `.crew/` still
 overrides `memory.mode` in its own config.
 
+**`shellRoute.mode` and `shellRoute.distro`**, on native Windows only. Which
+shell is fast is a fact about the machine. Run `crew_shell.py probe --write`,
+and `measure --write` when the state is `usable`, then offer `auto` (default),
+`wsl`, `powershell` or `gitbash` with the numbers. On `not-installed`, print the
+`wsl --install -d Ubuntu` recommendation and never run it. See "Choosing the
+shell route on Windows" in `platform.md`.
+
 ## 3. Show the plan, then write
+
+From the menu, Save runs `crew_config_menu.py save --changes '<json>'` (a dry
+run over both layers, printing each layer's digest, `absent` for a file that
+does not exist yet) and then the same with `--apply --expect-machine
+<digest>` — see `config-menu.md` step 4. It calls the same writer as the
+command below, which prints a `digest:` line too and takes `--expect
+<digest|absent>` with `--apply`.
 
 Dry run first — this is the default, and it is what the user says yes to:
 
@@ -169,10 +196,14 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py \
   --set qa.roles='{"review": {"provider": "codex", "model": "gpt-5.6-luna"}}'
 ```
 
-Each `--set` takes `path=JSON`, so a string needs its quotes (`'"act"'`), and
+Each `--set` takes `path=JSON`, so a string needs its quotes (`'"act"'`; a
+bare `act` is refused, exit 2), and
 `true`, `false`, `null`, lists and objects are written as JSON. `qa.roles` and
-`dev.roles` are set as whole objects — the table is open, so any role name is
-accepted, including one this release does not ship. The output names every key
+`dev.roles` are set one role at a time: each role named in the value is
+written as a whole pin, and the other roles' pins already in the file are
+kept. The table is open, so any role name is accepted, including one this
+release does not ship. A block value (`guards='{"forcePush": "ask"}'`) is
+written leaf by leaf the same way, keeping the block's other keys. The output names every key
 that would change, from what to what, and prints a `!` line for a widening of
 `pm.authority`.
 
@@ -182,8 +213,9 @@ not a bug to route around.
 
 ## 4. Say what this did not do
 
-- It did not touch any `.crew/config.json`. The repo layer still wins over
-  everything written here.
+- The machine layer did not touch any `.crew/config.json`; a repo change is
+  the menu's repo layer, through `--set --repo`. The repo layer still wins over
+  everything written here, except for the ratcheted keys.
 - It did not change `schema`, `tier` or `roles` anywhere — those are repo
   facts.
 - If any per-role pin changed, run `--models` once more and read the resulting

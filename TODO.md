@@ -4,6 +4,35 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- **Proposed follow-ups to L-0520 (the merge train, slice 1)**, not filed as tickets: (1) a delta
+  gate - a review bundle of the interdiff since the gated sha plus the merge resolutions, a ledger
+  rule for delta rounds (owner question: does one spend the two-round budget), and
+  `crew_train.py check-land` accepting a delta receipt (today it accepts only a full receipt on
+  the merged head, `plugin/crew/hooks/scripts/crew_train.py::check_land`); (2) scheduling -
+  L-0515's dependency skip, phases only for owner-named tickets, `crew_autopilot.py` showing the
+  train position, small PRs first, and the machine-local lane scripts calling `acquire`,
+  `catch-up`, `check-land` and `release --merged`; (3) tighter specs - an `## Accepted limits`
+  section carried into `plugin/crew/hooks/scripts/review_prompt.py`'s brief as "do not re-open".
+- **T-0028 follow-ups (Kimi Code provider).**
+  (a) A pre-reserve probe for `copilot`, as codex has had since T-0088 (`review_run.py --probe`)
+  and kimi gets with L-0527. (b) `qa.kimi.reasoningEffort` once a per-invocation effort lever is measured;
+  the only candidate, `KIMI_MODEL_THINKING_EFFORT`, is unverified against a config alias, and
+  `kimi_env` drops every `KIMI_MODEL_*` today. (c) The review launch itself
+  is L-0527 (tooling only, cut from main after this ticket merges); its follow-ups (a
+  fingerprint for codex and copilot, codex stream-error redaction, writes inside `.git`) are
+  recorded there. (d) `/crew:plan` dispatching to a `dev.roles.planner` pin -
+  a follow-up ticket, id to be recorded here when it is filed. (e)
+  `plugin/crew/agents/reviewer.md:27` still names the old order `(codex, copilot, claude)`.
+  (f) Review round 1 NIT, outside T-0028's Touch: `plugin/localgpu/README.md:275` and
+  `plugin/localgpu/commands/crew.md:30` still state crew's `qa.order` default as
+  `["codex", "copilot", "claude"]` and say `/crew:model` validates "exactly those three names";
+  both are false since crew 1.0.44 (`grep -n 'three names' plugin/localgpu/README.md
+  plugin/localgpu/commands/crew.md`). A localgpu version bump comes with the fix. (g) Review
+  round 1 NIT: `.crew/codemap/install-scripts.md`'s re-verify prose cites enough `plugin/crew`
+  files that `crew_context.derive_paths` returns `['scripts/**', 'plugin/crew/**']`, so
+  `.claude/rules/install-scripts.md:4` loads the install-script landmines in every
+  `plugin/crew/**` session; trim the citations at the next `/crew:onboard --refresh
+  install-scripts`.
 - **Not done, follow-up to T-0006**: `resume.auto` has no narrowing. `context.autoClear` can be
   narrowed on the machine to `onlyRepos` / `onlySessions` (`crew_autocycle.in_scope`);
   `resume.auto` arms every crew repo the machine file reaches, and a repo can only veto it
@@ -4153,8 +4182,11 @@ Enforced by the same hooks (approval receipts, scope guard, cloud guard, review 
 "autopilot arrives in 1.1.0" instead of dropping it silently.
 **Partly shipped in crew 1.0.41 (T-0004):** `/crew:autopilot [<id>]` drives ONE ticket with `autopilot.mode: plan`,
 stopping for every approval, review acceptance, brainstorm and open question; the migrate note now points at it. Still
-open, each its own ticket depending on T-0004: **T-0010** approval/questions policies (`self|risk`, cli self-approval,
-`questions.md` research - `crew_ticket.parse_risk` is the reader it will trust); **T-0011** `ship: pr|merge`, the
+open, each its own ticket depending on T-0004: **T-0010** approval/questions policies - BUILT (branch
+`T-0010-solo`, awaiting review; lands after T-0018 and T-0024, which both landed first, so it carries b6920a99's
+owner-only `via=autopilot` refusal itself): `autopilot.approval|questions: human|self|risk`, the
+`autopilot` receipt behind `scope.allowCliApproval` as the one documented exception to T-0018's read-only
+`crew_autopilot.py`, `questions.md` + `questions-check` (round 2's two FIXes, filed as T-0078, folded in); **T-0011** `ship: pr|merge`, the
 same-family high-risk merge refusal and the known-fixture CI list; **T-0012** `mode: backlog`, goal decomposition,
 `crew_ticket.py mint`, `.work/autopilot/<slug>.json`, per-run ticket/token caps and consuming
 `resume: /crew:autopilot --goal <slug>` (autopilot stops on that line today).
@@ -4470,12 +4502,15 @@ pid 2363532, which is no longer running; `git status --porcelain` shows 15 modif
 `plugin/crew/CONFIG.md` and `docs/guides/crew/src/`. This is most likely the partial burn-in fix work the
 2026-09-24 handoff says to check before re-dispatching FAILs 1-7. Nobody has reviewed it. Whoever picks up the burn-in fixes should start from it rather than starting over.
 
-### CLAUDE.md still lists `skills/intune-graph/scripts/export_report.py:90` as a live landmine - OPEN (filed 2026-09-24, PM)
+### CLAUDE.md still lists `skills/intune-graph/scripts/export_report.py:90` as a live landmine - CLOSED by T-0091 (filed 2026-09-24, PM; closed 2026-09-28)
 
 crew:explorer reported on 2026-09-24 that 60c79407 (PR #210) fixed it (`_download` now stages writes through `mkstemp` and
 `os.replace`, `skills/intune-graph/scripts/export_report.py:136-243`). CLAUDE.md's truncating-`open` landmine still calls
 this "the live one" and says three unfixed files remain. Relayed, not re-read by the PM. A developer should re-run the AST scan that
 paragraph describes and correct the count. Deferred because CLAUDE.md is not the PM's to edit and the codemap refresh did not depend on it.
+
+Closed by T-0091: the AST scan was reconstructed, calibrated against the original eight sites at ac93221d^, re-run at f54af3fa
+(57 sites, 9 shipped, none live on reading), and CLAUDE.md's paragraph rewritten from that output.
 
 ### win-repo hand-offs from the merge/pipe-capture/test-hygiene pass (filed 2026-09-24) - OPEN
 
@@ -5045,7 +5080,7 @@ Filed by T-0014. Each item below has no ticket of its own (T-0002..T-0013 carry 
 - **verify-gate looks for tickets at the 0.20 layout** - `plugin/crew/hooks/scripts/scope_report.py:62` reads only `.work/tickets/<id>.md` and `.work/cache/<id>.md` (`_TICKET_DIRS` at `:41`), so for a 1.0 ticket folder (`.work/tickets/<id>/spec.md`) it prints "ticket file is missing" (`:174`-`:178`) instead of the outside-scope list. Read `<id>/spec.md`'s Touch through `crew_ticket.parse_touch` first.
 - **Hooks and CLI approval read `.crew/config.json`; `/crew:migrate` writes `.crew/crew.json`** - `plugin/crew/hooks/scripts/crew_state.py:263` (`load_config`), `plugin/crew/hooks/scripts/crew_ticket.py:518` (`scope.allowCliApproval`, read at `:520`) and `:684` (`scope.mode`) read only `config.json`, while `plugin/crew/hooks/scripts/crew_migrate.py:473` writes the migrated settings to `crew.json` and keeps `config.json` (table at `:11`). The split is partial, not total: `plugin/crew/hooks/scripts/crew_context.py:121` (`load_crew_config`) reads `crew.json` before `config.json`, so `memory.inject` (`inject_enabled`, `:142`) is live from `crew.json`, and `plugin/crew/hooks/scripts/crew_autoclear_setup.py:579` rewrites `context.autoClear` in both files. A setting read through `load_config` or `crew_ticket` and changed only in `crew.json` has no effect. Pick one file as the source every hook reads, or have migrate say which settings are live where.
 - **HTTP deploys and workspace changes pass `cloud_guard.py` unclassified (deferred from T-0005/T-0009)** - under `gh`, `plugin/crew/hooks/scripts/cloud_guard.py:1131` recognises only `gh pr merge --admin`, and the file contains no `curl` handling (`grep -c curl` is 0 at `f2bb919b`). Reproduced at `f2bb919b`: `cloud_guard.scan("bash", ...)` returns no finding for `gh api -X POST repos/o/r/actions/workflows/deploy.yml/dispatches`, `gh run rerun 12345`, `gh workflow run deploy.yml`, `gh api -X DELETE repos/o/r`, or a `curl -X DELETE`/`-X POST` to `app.terraform.io/api/v2/...` (TFC/HCP workspace delete and run create). Needs a URL-and-method parser whose `unknown` environment is never allowed unattended, plus a must-block/must-allow suite, sabotage-tested, per CLAUDE.md's rule for a blocking hook.
-- **Constraint: the review bundle excludes only `.work/`** - `plugin/crew/hooks/scripts/review_patch.py:96` (`EXCLUDED = (".work/",)`), so any tracked artifact written after review (a codemap refresh, a graphify rebuild, a TODO entry) changes the bundle and stales the receipt. Resolved by ordering in T-0004 and T-0008; recorded as a constraint on anything that writes tracked files after `/crew:review`, not as a defect to fix.
+- **Constraint: the review bundle excludes only `.work/` and, since crew 1.0.54 (T-0092), generated `graphify-out/`** - `plugin/crew/hooks/scripts/review_patch.py:104` (`EXCLUDED = (".work/", "graphify-out/")`), so any other tracked artifact written after review (a codemap refresh, a diagram render, a TODO entry - no longer a graphify rebuild) changes the bundle and stales the receipt. Resolved by ordering in T-0004 and T-0008; recorded as a constraint on anything that writes tracked files after `/crew:review`, not as a defect to fix.
 - **`sabotage.py` ends FAIL on Linux with the same 14 non-red entries** - `python3 plugin/crew/tests/sabotage.py` ends `SABOTAGE SUITE: FAIL`; its verdict loop (`plugin/crew/tests/sabotage.py:3237`, `:3246`) checks only the exit code, with no SKIPPED-vs-PASSED distinction. Identical list at `c5f4aa62`, at T-0003's `cf3bc0d8`, and re-run for this entry at `f2bb919b`: 13 STILL GREEN, 1 RED BUT UNPROVEN (exit 4). Most target PowerShell-gate tests that skip off Windows. The Get-CrewChildTabRecheck entry is already filed above ("sabotage.py's own aggregate run has the same SKIPPED-vs-PASSED gap"); the other 12 STILL GREEN, with labels exactly as `sabotage.py` spells them and the line each is defined on:
   `promote-gate.ps1 reads an unreadable map as one that gates nothing` (`:482`);
   `the frozen artifact path is stored with native separators` (`:1868`);

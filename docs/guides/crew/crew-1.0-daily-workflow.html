@@ -109,7 +109,7 @@ uses <code>crew:explorer</code> to pin down <code>path:line</code> evidence, and
 <code>spec.md</code> with Intent, Exclusions, Evidence, Unknowns, Touch and Acceptance.
 <code>.work/INDEX.md</code> gets a row.</p>
 <p><strong>3. Plan.</strong> You type <code>/crew:plan T-0091</code>. The session reads <code>spec.md</code>, writes
-one step per unit of work in <code>plan.md</code> (Files/Test/Risk each), checks every
+one step per unit of work in <code>plan.md</code> (Files/Test/Risk/Standards each), checks every
 Files: entry against the spec's Touch globs, and enters <strong>plan mode</strong> to show
 you the whole thing. You review it. On your yes, it asks you to type
 <code>/crew:approve T-0091</code>. crew's prompt hook sees that you typed it and writes
@@ -125,16 +125,42 @@ Touch globs before it happens, not after.</p>
 <p><strong>5–6. Tests and docs.</strong> Coverage lands as part of implementing the plan's
 steps. <code>/crew:docs</code> runs next and usually says "none" — most tickets touch no
 document that needs updating.</p>
-<p><strong>7. Review.</strong> <code>/crew:implement</code> calls <code>/crew:review T-0091</code> last, after tests
-and docs. Codex reviews the bundle (or Copilot, or the Claude fallback,
+<p><strong>6b. The standards self-check.</strong> Before the review, the session answers every
+development standard in the effective set (crew's generic GEN standards, any
+per-language set a changed file matches, and this repository's
+<code>.crew/standards.md</code> overlay) in <code>.work/tickets/T-0091/selfcheck.md</code>:
+<code>addressed</code> with evidence, or <code>n/a</code> with a reason. <code>crew_standards.py stamp</code>
+refuses an incomplete answer sheet and binds a complete one to the exact
+review bundle, so any later edit needs a new stamp.</p>
+<p><strong>7. Review.</strong> <code>/crew:implement</code> calls <code>/crew:review T-0091</code> last, after tests,
+docs and the self-check; without a current stamp the review refuses before it
+spends a round. Codex reviews the bundle (or Copilot, or the Claude fallback,
 whichever survives the author-family strike), reports BLOCK/FIX/NIT lines,
 and you fix the BLOCKs. Two rounds total, ticket-wide — a third is refused and
-the ticket becomes <code>NEEDS_REPLAN</code>.</p>
+the ticket becomes <code>NEEDS_REPLAN</code>. Each round's findings go into a
+<code>standards-proposals-r&lt;N&gt;.md</code> file, one row per finding; you approve or reject
+each proposed standard, and nothing is added to a standards file on its own.</p>
+<p>With parallel lanes in one clone, arm its <strong>merge train</strong> once (<code>crew_train.py arm</code>, L-0520).
+Lanes still implement at the same time, overlapping Touch or not; only gate and land queue.
+Before the review round, <code>crew_train.py acquire --ticket T-0091</code> takes the train: a ticket whose
+Touch overlaps one already holding it waits (exit 1, colliding paths named) and gates next, in the
+order the lanes reached their gate, while a ticket with a disjoint Touch gates at once. Catch up with <code>crew_train.py catch-up --ticket
+T-0091</code> - a <code>git merge</code> of the base, never a rebase, with git rerere on so a conflict resolved
+once replays next time. A replay is left unstaged and listed: inspect it, <code>git add</code> it, and show
+it to the reviewer. crew never turns on <code>rerere.autoupdate</code>, and the version files
+(<code>plugin.json</code>, <code>marketplace.json</code>, <code>PLUGINS.md</code>, <code>CHANGELOG.md</code>) are never replayed - they come
+back conflicted, named as forgotten, for you to resolve by hand.</p>
 <p><strong>8. Done.</strong> You type <code>/crew:done T-0091</code>. Three checks, all required: the
 review receipt rebuilds clean, the verify gate is clean, and the completion
 audit (the whole tree diffed against the scope base) finds nothing outside
 scope. Any one failing refuses the close and names what to fix. On success it
 appends a metrics row, marks the ticket done, and clears a stale handoff.</p>
+<p>With the train armed, landing is part of done: <code>crew_train.py check-land --ticket T-0091 --pr
+&lt;n&gt;</code> refuses unless T-0091 holds the train, <code>git merge-tree</code> against the base is clean, the base
+has not moved in Touch paths, and HEAD carries the review receipt and a green gate; then it prints
+<code>gh pr merge &lt;n&gt; --merge --match-head-commit &lt;sha&gt;</code> for you to run (crew never merges). After the
+merge, <code>crew_train.py release --ticket T-0091 --merged &lt;merge sha&gt;</code> frees the train and tells every
+overlapping lane to merge the base now.</p>
 <h2 id="what-each-hook-does-in-order">What Each Hook Does, in Order</h2>
 <table>
 <thead>
@@ -233,6 +259,11 @@ reasons unrelated to the change under test. Outside that image the visual rule r
 <td>amend <code>spec.md</code>'s Touch and re-approve the plan, or don't make the edit</td>
 </tr>
 <tr>
+<td><code>/crew:review</code> exits 2 with <code>review-run: self-check: ...</code></td>
+<td>the standards self-check is missing, incomplete, or stamped for an earlier state of the change</td>
+<td>answer <code>.work/tickets/&lt;id&gt;/selfcheck.md</code>, run <code>crew_standards.py stamp --root . --ticket &lt;id&gt;</code>, rebuild the bundle and run the round again; no round was spent</td>
+</tr>
+<tr>
 <td><code>/crew:done</code> reports <code>NEEDS_REPLAN</code></td>
 <td>the review budget (two rounds) is spent</td>
 <td><code>/crew:plan &lt;id&gt;</code> for a successor plan; no third round</td>
@@ -279,7 +310,13 @@ sha256 of <code>spec.md</code> and <code>plan.md</code> in <code>&lt;git-common-
 <code>approved_via: "user-prompt"</code>. If the contract does not validate, the hook blocks the prompt and
 says why. That file is outside the worktree, and the scope guard refuses any Write or Edit to it
 and any shell command that runs <code>crew_ticket.py approve</code>, so the session cannot approve its own
-plan. The approval is a step you take, not a lock.</p>
+plan. The one exception is opt-in: with <code>scope.allowCliApproval: true</code> and <code>autopilot.approval</code>
+set to <code>self</code> (or <code>risk</code>, for a <code>risk: low</code> spec), <code>/crew:autopilot</code> runs
+<code>crew_autopilot.py approve</code>. It writes what every approval route writes: <code>approval.json</code> (marked
+<code>approved_via: "autopilot"</code>), <code>scope-tickets.json</code> on a ticket's first approval, and, for a
+distinct successor plan under a spent review budget, the review ledger moved
+NEEDS_REPLAN -&gt; IN_REVIEW. Both default off, so out of the box nothing self-approves. The
+approval is a step you take, not a lock.</p>
 <p><code>crew_ticket.py status --ticket T-0042</code> prints one of three states:</p>
 <ul>
 <li><code>approved</code>: both files match the receipt.</li>
@@ -292,8 +329,10 @@ plan. The approval is a step you take, not a lock.</p>
 <li>The ticket's own <code>.work/tickets/&lt;id&gt;/</code> files are always allowed, so you can amend the spec and
   plan.</li>
 <li>Any other file needs a current approval and a path inside Touch.</li>
-<li>Nothing else is exempt, including <code>.crew/</code>, <code>TODO.md</code>, <code>.claude/</code> and crew's own policy files.
-  If the ticket changes one of them, list it in Touch.</li>
+<li>The code map, the diagrams dir, the graph dir and <code>.claude/rules/</code> are writable for an approved
+  ticket, because <code>/crew:implement</code> step 6 refreshes them.</li>
+<li>Nothing else is exempt: <code>.crew/</code> beyond the code map, <code>TODO.md</code>, the rest of <code>.claude/</code> and
+  crew's own policy files. If the ticket changes one of them, list it in Touch.</li>
 <li>Approval receipts, the review ledger and the scope base are always refused.</li>
 </ul>
 <p>The guard checks the real file a symlink points to and the path as written, so a link cannot
@@ -309,8 +348,19 @@ Refusals look like this:</p>
 change files. So when the session stops, the completion audit compares the whole tree with the
 commit the ticket started from. It covers committed, staged, unstaged and untracked changes, and
 both ends of a rename. If any changed path is outside Touch, the audit blocks the stop and lists
-the paths in six lines or fewer. It never blocks the continuation it caused. <code>/crew:done</code> runs
-the same check:</p>
+the paths in six lines or fewer. It never blocks the continuation it caused.</p>
+<p>A changed refresh artifact passes the audit only when a path the ticket changed reaches it and the
+edit is a re-anchor (the <code>anchor:</code> or provenance sha moved forward to a commit on this branch) or a
+regeneration (<code>.claude/rules/</code> as <code>crew_instructions.py rules</code> writes them, the graph after a code
+change). A deleted rendered diagram or graph file, a symlink at or along an artifact's path, or
+a file whose git mode changed never passes. A map claim edited without a re-anchor is listed with
+<code>[anchor did not move]</code>, and belongs in Touch if that is what the ticket means to do. When git cannot answer, a rule file
+cannot be read, a short anchor is ambiguous (two commits share it), the artifact dirs
+cannot be resolved, or a directory the hook cannot search hides whether the config, a rule or a
+map exists, or two configured artifact dirs are equally specific for a path, the listing says
+<code>[could not tell: ...]</code>, and that never passes. (These verdicts are <code>crew_refresh_check.py</code>'s;
+the audit applies them once L-0540 lands, and until then admits the artifact dirs for an approved
+ticket.) <code>/crew:done</code> runs the same check:</p>
 <pre><code class="language-bash">python3 &lt;crew&gt;/hooks/scripts/completion_audit.py --check --ticket T-0042
 </code></pre>
 <p>The audit sees what git sees. Gitignored files, including everything under <code>.crew/</code>, and <code>.work/</code>
@@ -324,7 +374,8 @@ are outside it.</p>
 <p>Between steps 1 and 3 the approval is stale. The guard refuses edits outside the ticket directory
 until you approve again.</p>
 <h3 id="after-two-review-rounds-a-successor-plan">After Two Review Rounds: A Successor Plan</h3>
-<p>If a ticket uses both review rounds without an accepted receipt, it moves to <code>NEEDS_REPLAN</code>.
+<p>If a ticket uses both review rounds without an accepted receipt (refunded tool-failure rounds do
+not count), it moves to <code>NEEDS_REPLAN</code>.
 Write a different plan and approve it. <code>approve</code> reports <code>review may continue</code>, and the ledger
 gives the new plan two fresh rounds. Approving the same plan again is refused and exits with
 status 3.</p>

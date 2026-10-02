@@ -1,0 +1,33 @@
+READ|part-001-of-028.patch
+READ|part-002-of-028.patch
+READ|part-003-of-028.patch
+READ|part-004-of-028.patch
+READ|part-005-of-028.patch
+READ|part-006-of-028.patch
+READ|part-007-of-028.patch
+READ|part-008-of-028.patch
+READ|part-009-of-028.patch
+READ|part-010-of-028.patch
+READ|part-011-of-028.patch
+READ|part-012-of-028.patch
+READ|part-013-of-028.patch
+READ|part-014-of-028.patch
+READ|part-015-of-028.patch
+READ|part-016-of-028.patch
+READ|part-017-of-028.patch
+READ|part-018-of-028.patch
+READ|part-019-of-028.patch
+READ|part-020-of-028.patch
+READ|part-021-of-028.patch
+READ|part-022-of-028.patch
+READ|part-023-of-028.patch
+READ|part-024-of-028.patch
+READ|part-025-of-028.patch
+READ|part-026-of-028.patch
+READ|part-027-of-028.patch
+READ|part-028-of-028.patch
+FIX|plugin/crew/hooks/scripts/review_run.py:301|reviewer_changes decides which directory to set aside as `graph.out` only after the review has run, by reading the tree the reviewer could write to. A reviewer that creates `.crew/crew.json` containing `{"graph":{"out":".crew"}}` gets every write under `.crew/` excused. That covers the gitignored `.crew/config.json` (round 1's own example) and, in this repo, the tracked `.crew/verify.json` and `.crew/codemap/*`. The round then reads CLEAN, so the round-1 fix for :179 can be walked around one rung over|In a scratch repo with `.crew/config.json` gitignored and present, take before=tree_fingerprint(root). Then rewrite `.crew/config.json` and write `.crew/crew.json` = `{"graph":{"out":".crew"}}`, and take after=tree_fingerprint(root). reviewer_changes(root, before, after) returns `([], ['.crew/config.json', '.crew/crew.json'])` (measured): nothing is counted. graph_out(root) was `graphify-out` before the writes and `.crew` after them.
+FIX|plugin/crew/hooks/scripts/review_run.py:623|When the `before` fingerprint is None, the round is already certain to end INCOMPLETE (_run_kimi appends KIMI_TREE_UNKNOWN at :587). run() still spends the probe request, reserves the round and launches the full review anyway. Round 1's fix makes this reachable: the fingerprint now hashes the contents of ignored files, and one unreadable ignored file makes _path_digest return None (:235). So one root-owned `.env` in a user's repo spends a round on every Kimi review, and reaches NEEDS_REPLAN after two, with no reviewer at fault. That is the quota-incident shape this ticket exists to prevent|In a scratch repo with `.env` gitignored, owned by root and mode 600, run review_run.py --provider kimi as an unprivileged user (runuser -u nobody) with the fake kimi (FAKE_KIMI_PROBE=ok). Measured: exit 3, INCOMPLETE, reasons ["kimi: the working tree could not be fingerprinted..."], and the ledger rounds are ['completed'].
+FIX|plugin/crew/hooks/scripts/review_run.py:221|Round 1's :179 fix now hashes every ignored file. Round 1's :464 fix sets aside only graph.out, so any other process that writes an ignored cache during the review still gets blamed on the reviewer and spends the round as INCOMPLETE. Examples are a background or other-session pytest (`.pytest_cache`, `__pycache__`), ruff (`.ruff_cache`), and an IDE. This worktree has about 140 such ignored cache files right now. A commit from another session moves `:HEAD` and has the same effect. This is the neighbour of the :464 fix, and the :179 fix widened it|In a scratch repo that ignores `__pycache__/` and `.pytest_cache/`, run review_run.py --provider kimi with the fake kimi and FAKE_KIMI_WRITES=".pytest_cache/v/cache/lastfailed,pkg/__pycache__/m.cpython-314.pyc". That is the same simulated concurrent write test_run_kimi_graph_rebuild_during_the_review_is_not_the_reviewers uses. Measured: exit 3, INCOMPLETE, "the working tree changed during the review ... .pytest_cache/v/cache/lastfailed, pkg/__pycache__/m.cpython-314.pyc", and the ledger rounds are ['completed'].
+FIX|.crew/verify.json:275|This is the neighbour of round 1's verify.json fix. Rule 24's `why` says it maps the files "whose Kimi prose test_kimi_docs.py checks". But `plugin/crew/commands/model.md` (test_the_three_ids_appear_in_crew_providers_and_model_md, test_model_md_offers_the_pin_table_and_says_it_is_not_shipped) and `skills/crew-providers/alternative-providers.md` (test_alternative_providers_points_to_the_first_class_kimi_route) match only rules 0 and 10, and neither rule runs test_kimi_docs.py. test_every_kimi_file_reaches_a_rule_that_runs_its_tests does not list either file, so deleting model.md's Kimi pin table or its kimi family-strike row passes the Stop gate|In a copy, blank model.md's `**Kimi pins crew OFFERS` line and rewrite the kimi family row's "`kimi` QA and any Copilot Kimi pin" to "that Copilot pin", keeping the line count. check-marketplace.py reports "all checks passed" and validate-prompts.py exits 0, but test_kimi_docs.py goes 2 failed (measured).
+NIT|plugin/crew/hooks/scripts/kimi_probe.py:223|classify checks for a quota or rate-limit match before it looks for PROBE_OK. A transient 429 that the CLI retried (a `turn.step.retrying` record with `"status_code":429` / rate_limit_reached_error) and then completed with PROBE_OK at exit 0 therefore reads as `rate-limited`, and Kimi is skipped for that review. review_verdict._kimi_error says the opposite for the same record ("NOT one: the CLI retries and may still complete the turn")|kimi_probe.classify('{"role":"meta","type":"turn.step.retrying","status_code":429,"error_message":"rate_limit_reached_error"}\n{"role":"assistant","content":"PROBE_OK"}\n', '', 0, False) returns ('rate-limited', ...), while review_verdict.kimi_final_message on the same stream returns ('PROBE_OK', None).

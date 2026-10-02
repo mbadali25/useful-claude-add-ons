@@ -1,0 +1,26 @@
+READ|part-001-of-024.patch
+READ|part-002-of-024.patch
+READ|part-003-of-024.patch
+READ|part-004-of-024.patch
+READ|part-005-of-024.patch
+READ|part-006-of-024.patch
+READ|part-007-of-024.patch
+READ|part-008-of-024.patch
+READ|part-009-of-024.patch
+READ|part-010-of-024.patch
+READ|part-011-of-024.patch
+READ|part-012-of-024.patch
+READ|part-013-of-024.patch
+READ|part-014-of-024.patch
+READ|part-015-of-024.patch
+READ|part-016-of-024.patch
+READ|part-017-of-024.patch
+READ|part-018-of-024.patch
+READ|part-019-of-024.patch
+READ|part-020-of-024.patch
+READ|part-021-of-024.patch
+READ|part-022-of-024.patch
+READ|part-023-of-024.patch
+READ|part-024-of-024.patch
+FIX|plugin/crew/commands/autopilot.md:63|The open-question procedure never specifies the required `questions.md` shape or exact `taken:` syntax; the validator reveals that shape only after failure, while the procedure says any non-valid result must stop, so autopilot can follow its prompt yet fail before taking an authorized answer.|Run `/crew:autopilot` with an open question and `questions=self`; write a plausible researched options file without the undocumented literal `Research:`, `(recommended)`, or `taken: Option <id> by autopilot (<policy>)` forms, then run `questions-check`: it exits 1 and line 67 requires stopping.
+FIX|.crew/verify.json:301|The T-0010 assertions for `commands/autopilot.md` live in `test_crew_autopilot_policy.py`, but that command remains mapped only to the older autopilot/lifecycle suites, so the targeted verify gate can miss regressions in the new policy procedure.|Delete the `crew_autopilot.py approve --root . --ticket <ticket>` route from `commands/autopilot.md` and run the verify rules selected for that changed path; the old mapped suites do not require it, while `test_command_routes_approval_through_policy` would fail but is not selected.

@@ -1,0 +1,29 @@
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-001-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-002-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-003-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-004-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-005-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-006-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-007-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-008-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-009-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-010-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-011-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-012-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-013-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-014-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-015-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-016-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-017-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-018-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-019-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-020-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-021-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-022-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-023-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-024-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-025-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-026-of-027.patch
+READ|<ROOT>/.work/review/T-0072-build--jYbGs3/diff.txt.parts/part-027-of-027.patch
+BLOCK|plugin/crew/.claude-plugin/plugin.json:3|The declared 1.0.50 no longer sits one patch above current main and HEAD omits the now-landed T-0079; landing this creates two different crew releases at 1.0.50, so `claude plugin update` can treat T-0072 as already installed.|Run `git merge-base --is-ancestor origin/main HEAD; echo $?` (1), then compare `git show origin/main:plugin/crew/.claude-plugin/plugin.json` with this file: both declare 1.0.50.
+FIX|.crew/verify.json:301|Rule 27 was not re-priced for the final test set: its provenance claims 527 passes, 59 deploy mutations and 133 total mutations from round 4, while the current tree has 64 deploy and 140 total mutations, so the required final-state timing and pass-count receipt is absent.|Run `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=plugin/crew/tests python3 -c 'import sabotage_autopilot as s; print(len(s.DEPLOY_MUTATIONS), len(s.AUTOPILOT_MUTATIONS))'`; it prints `64 140`, contradicting this line's `59` and `133`.

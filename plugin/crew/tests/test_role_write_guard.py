@@ -26,6 +26,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -2217,18 +2218,26 @@ def _stub(path, reports=None):
     actually be launched no longer proves what an un-executing resolver's
     tests once could.
 
-    `reports`, if given, is echoed to stdout when the stub is invoked --
-    simulating a real interpreter's `sys.executable` answer. Omitted, the
-    stub produces NO output at all when run, simulating a WindowsApps
-    alias that does nothing in this non-interactive context -- as opposed
-    to merely LOOKING like a real interpreter to `Get-Command`, which is
-    the bug this section's header already names as fixed once before.
+    `reports`, if given, is the `sys.executable` the stub claims when it is
+    invoked. It is echoed as the one JSON line the probe parses
+    (`{"v": [3, 12], "exe": <reports>, "impl": "cpython"}`), simulating a
+    real 3.12 interpreter. A bare path is no longer an answer: the probe
+    accepts a candidate only when its last stdout line is that JSON, so a
+    stub echoing just the path is rejected like a stub that says nothing,
+    and every must-allow case below would fail for a fixture reason
+    (T-0089). Omitted, the stub produces NO output at all when run,
+    simulating a WindowsApps alias that does nothing in this
+    non-interactive context -- as opposed to merely LOOKING like a real
+    interpreter to `Get-Command`, which is the bug this section's header
+    already names as fixed once before.
     """
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="ascii") as handle:
-        handle.write("@echo off\r\n")
-        if reports:
-            handle.write("echo " + reports + "\r\n")
+    lines = ["@echo off"]
+    if reports:
+        answer = {"v": [3, 12], "exe": reports, "impl": "cpython"}
+        lines.append("echo " + json.dumps(answer, separators=(",", ":")))
+    with open(path, "w", encoding="ascii", newline="\r\n") as handle:
+        handle.write("\n".join(lines) + "\n")
     return path
 
 
@@ -2328,7 +2337,12 @@ def test_bash_agrees_it_finds_nothing_in_the_same_layout(tmp_path):
     stub.write_text("#!/bin/sh\nexit 0\n", encoding="ascii", newline="\n")
     os.chmod(stub, 0o755)
     real_py = real / "python3"
-    real_py.write_text("#!/bin/sh\necho " + str(real_py) + "\n",
+    # Quoted, because `sh` treats an unquoted backslash as an escape: on
+    # Windows `echo D:\temp\...\python3` prints `D:temp...python3`, the
+    # resolver's `-x` check on that mangled path fails, and the guard exits
+    # 2 with "no usable python found" -- a fixture failure, not the
+    # resolver's (T-0089). On Linux the path has no backslashes either way.
+    real_py.write_text("#!/bin/sh\necho " + shlex.quote(str(real_py)) + "\n",
                         encoding="ascii", newline="\n")
     os.chmod(real_py, 0o755)
 
