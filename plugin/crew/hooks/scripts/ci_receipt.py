@@ -157,20 +157,10 @@ def _material_changes(root):
 
 
 def _no_gate_reason(root):
-    """The NO_GATE reason, or None -- the same two tests `review_gate` makes."""
-    vmap = os.path.join(root, ".crew", "verify.json")
-    if not os.path.isfile(vmap):
-        return "no .crew/verify.json - there is no verify gate here to be green against"
-    try:
-        with open(os.path.join(root, ".crew", "config.json"), encoding="utf-8") as fh:
-            config = fh.read()
-    except FileNotFoundError:
-        return None
-    except (OSError, ValueError) as exc:
-        raise Unreadable(f".crew/config.json could not be read: {exc}") from exc
-    if review_gate._STOOD_DOWN_RE.search(config):  # pylint: disable=protected-access
-        return '"verifyGate": false in .crew/config.json - the gate is stood down'
-    return None
+    """The NO_GATE reason, or None. Asked of `review_gate.gate_state` itself, so
+    the stand-down test (and the repo-config read behind it) has one home."""
+    state, why = review_gate.gate_state(root)
+    return why if state == NO_GATE else None
 
 
 # --- build (runner side) -----------------------------------------------------------
