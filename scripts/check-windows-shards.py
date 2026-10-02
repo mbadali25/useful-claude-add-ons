@@ -63,6 +63,12 @@ REQUIRED_JOBS = ("default", "slow", "wallclock")
 WHOLE_SETS = ("slow", "wallclock")
 
 
+def escape_annotation(text: str) -> str:
+    """GitHub's workflow-command data encoding: a test name holding a line
+    break must not start a command line of its own."""
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
 def mangle(nodeid: str) -> tuple:
     """(classname, name) as pytest's junitxml writes them for `nodeid`."""
     path, bracket, params = nodeid.partition("[")
@@ -81,8 +87,10 @@ def read_collected(path: str) -> tuple:
         # Written on Windows by a redirected python: CRLF line ends, which
         # newline=None (universal newlines) reads as "\n". Strict decoding: a
         # transcript that is not UTF-8 is a failure, not a guess.
+        # Split on "\n" only: str.splitlines() also breaks on U+2028, U+0085
+        # and other characters a node id may legally hold.
         with open(path, encoding="utf-8", errors="strict", newline=None) as fh:
-            lines = fh.read().splitlines()
+            lines = fh.read().split("\n")
     except (OSError, UnicodeDecodeError) as exc:
         return [], [f"{path}: cannot read: {exc}"]
     ids = []
@@ -273,7 +281,7 @@ def main(argv=None) -> int:
         for name in WHOLE_SETS:
             problems += check_whole_set(args.artifacts, name)
     for problem in problems:
-        print(f"::error::{problem}")
+        print(f"::error::{escape_annotation(problem)}")
     if problems:
         print(f"crew-shell-matrix (windows-latest): FAIL, {len(problems)} problem(s)")
         return 1

@@ -162,6 +162,26 @@ def case_crlf_collection_from_windows_passes(root):
     return run(root), (0, "each ran exactly once")
 
 
+def case_unicode_line_separator_in_an_id_passes(root):
+    # U+2028 and U+0085 are line breaks to str.splitlines() but not to pytest:
+    # an id holding one is one record, not two.
+    ids = IDS + ["plugin/crew/tests/test_u.py::test_sep[a\u2028b]",
+                 "plugin/crew/tests/test_u.py::test_sep[c\x85d]"]
+    text = collected_text(ids, deselected=3)
+    build(root, [ids[0::3], ids[1::3], ids[2::3]], collected=[text, text, text])
+    return run(root), (0, "8 tests collected by each of 3 shards")
+
+
+def case_annotation_text_cannot_forge_a_workflow_command(root):
+    groups = good_groups()
+    groups[0].append("plugin/crew/tests/test_x.py::test_bad[a\n::warning::forged]")
+    build(root, groups)
+    rc, text = run(root)
+    if any(line.startswith("::warning::forged") for line in text.splitlines()):
+        rc = 99
+    return (rc, text), (1, "%0A::warning::forged")
+
+
 def case_shard_job_failed_fails(root):
     build(root, good_groups())
     jobs = ["--job", "default=failure", "--job", "slow=success", "--job", "wallclock=success"]
