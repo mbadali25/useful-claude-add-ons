@@ -300,8 +300,6 @@ jobs:
     if: needs.crew-windows-decide.outputs.run == 'true'
     runs-on: ${{ fromJSON(needs.crew-windows-decide.outputs.runs-on) }}
     timeout-minutes: 40
-    env:
-      PYTHONIOENCODING: utf-8
     strategy:
       fail-fast: false
       matrix:
@@ -323,6 +321,12 @@ jobs:
         pip install "pytest~=8.0" pytest-xdist pyyaml "pytest-split==0.11.0"
     - name: Collect the whole default set (what the shards must cover together)
       if: runner.os == 'Windows'
+      # utf-8 for the collection file only. NOT job-wide: the run steps'
+      # hooks inherit it, so a hook's python child writes utf-8 to bash and
+      # test_the_session_key_is_the_same_in_every_flavour[sh] fails
+      # (2 underscores for one non-ASCII char). main runs those steps without it.
+      env:
+        PYTHONIOENCODING: utf-8
       shell: pwsh
       run: |
         New-Item -ItemType Directory -Force -Path crew-ci | Out-Null
@@ -347,8 +351,6 @@ jobs:
     if: needs.crew-windows-decide.outputs.run == 'true'
     runs-on: ${{ fromJSON(needs.crew-windows-decide.outputs.runs-on) }}
     timeout-minutes: 40
-    env:
-      PYTHONIOENCODING: utf-8
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python
@@ -362,6 +364,12 @@ jobs:
         pip install "pytest~=8.0" pytest-xdist pyyaml
     - name: Collect crew's slow set
       if: runner.os == 'Windows'
+      # utf-8 for the collection file only. NOT job-wide: the run steps'
+      # hooks inherit it, so a hook's python child writes utf-8 to bash and
+      # test_the_session_key_is_the_same_in_every_flavour[sh] fails
+      # (2 underscores for one non-ASCII char). main runs those steps without it.
+      env:
+        PYTHONIOENCODING: utf-8
       shell: pwsh
       run: |
         New-Item -ItemType Directory -Force -Path crew-ci | Out-Null
@@ -386,8 +394,6 @@ jobs:
     if: needs.crew-windows-decide.outputs.run == 'true'
     runs-on: ${{ fromJSON(needs.crew-windows-decide.outputs.runs-on) }}
     timeout-minutes: 30
-    env:
-      PYTHONIOENCODING: utf-8
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python
@@ -401,6 +407,12 @@ jobs:
         pip install "pytest~=8.0" pytest-xdist pyyaml
     - name: Collect crew's wall-clock-bounded set
       if: runner.os == 'Windows'
+      # utf-8 for the collection file only. NOT job-wide: the run steps'
+      # hooks inherit it, so a hook's python child writes utf-8 to bash and
+      # test_the_session_key_is_the_same_in_every_flavour[sh] fails
+      # (2 underscores for one non-ASCII char). main runs those steps without it.
+      env:
+        PYTHONIOENCODING: utf-8
       shell: pwsh
       run: |
         New-Item -ItemType Directory -Force -Path crew-ci | Out-Null
