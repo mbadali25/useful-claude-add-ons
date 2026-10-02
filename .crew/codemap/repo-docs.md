@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@d41c2c94
+anchor: useful-claude-add-ons@1f5400df
 verified: 2026-10-01
 
 ## Re-derive provenance
@@ -1574,3 +1574,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `3afec6e6` -> `d640eba3` on 2026-10-01 (L-0574 round-2 fixes and the crew 1.0.122 bump; ten CHANGELOG citations moved +2 by difflib, the crew map's version sentence now reads 1.0.122).**
 
 **Re-anchored `d640eba3` -> `d41c2c94` on 2026-10-01 (L-0574: a sabotage anchor re-targeted and the graph rebuilt; no cited line moved).**
+
+**Re-anchored `d41c2c94` -> `1f5400df` on 2026-10-01 (L-0574 round-3 fixes; ten CHANGELOG citations moved +6 by difflib).**
