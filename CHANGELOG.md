@@ -18,9 +18,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   `references/api.md` gains the PUT reviewer body, a "Default reviewers"
   sub-list, a "Pipeline and deployment variables" section and two Gotchas.
   Every API sentence cites its Atlassian page. Both catalog rows' "Use cases"
-  column names the two new symptoms. `scripts/_test/merge_gate.sh` gains an
-  eight-case "documentation invariants" section that keeps the entries, the
-  trailing slash and the two catalog rows from drifting.
+  column names the two new symptoms. Reviewer uuids are read from
+  `values[].user.uuid` on `effective-default-reviewers`, the project-level list
+  and workspace members; only the repo-level `default-reviewers` list answers
+  with `values[].uuid`. `scripts/_test/merge_gate.sh` gains a
+  "documentation invariants" section that keeps the entries, the trailing
+  slash, the uuid path, the scopes, a citation on every new `api.md` bullet and
+  the two catalog rows from drifting; each check reads only the section it
+  guards, and the token scan reports a read error as "could not tell".
 - **Why.** The aws-managed-services session's report of 2026-09-28, items 18
   (variables GETs without the trailing slash read as empty - a false "variable
   not present"), 19 (repository access tokens cannot be created over the Cloud
