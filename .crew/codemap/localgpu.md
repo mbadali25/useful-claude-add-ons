@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@2b372b84
+anchor: useful-claude-add-ons@252dd5d4
 verified: 2026-10-01
 
 # localgpu
@@ -1738,3 +1738,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Merged `979ea023` (L-0510) + `8d84786d` (main: T-0503 #270 bitbucket 1.2.3, W-0117 #302 crew 1.0.115) on L-0510-build, 2026-10-02 (merge `9f39dd61`, rerere off, owner decision #9), anchored at `9f39dd61`.** Both provenance blocks are kept above, main's first. Neither T-0503 nor W-0117 touched `review_ledger.py`, `review_run.py`, `crew_autopilot.py`, `commands/review.md` or `commands/autopilot.md`, so L-0510's citations read as L-0510 drew them at `e7227a2b` (`receipt_stands` `:644`, `check_receipt` `:748`, `auto_accept` `:607`, `_review_json_problem` `:578`, `check_follow_up` `:674`, `summary` `:838`). Main's citations are main's.
 
 **Merged L-0510 (`553f4aa0`, the UTF-8 console fix) + `04dde5a2` (main: L-0578 #304 crew 1.0.119, W-0120 #307) on L-0510-build, 2026-10-02 (merge `41aa4e2a`, rerere off, standing go #9), anchored at `2b372b84`.** Both provenance blocks are kept above, main's first. L-0578 changed `review_run.py` (the metrics row) and `commands/review.md` step 6; every `review_run.py` citation in this note was re-derived on the merged file by difflib from each parent and read with `sed -n` (preflight `:555`, called at `:642`; `--provider` `:739`; `finish`'s parts `:438`/`:440`; `failure_class` `:458`; refund lines `:508`/`:511`; `_webtest_open` `:412`; `auto_accept_line` `:421`). `review_ledger.py` gained `utf8_stdio` after `summary` (`:838`), so no earlier citation moved.
+
+**Re-anchored `2b372b84` -> `252dd5d4` on 2026-10-02 (L-0510 review round 6 fixes, owner decision #10; merge `24f3ec25` of origin/main `d2ec37d3`, README only).** `d551680c` changed `review_ledger.py` (`read_review_json` `:599` and `_receipt_binds_review_json` `:721` new, `receipt_stands` gained `root, ticket`, `hashlib` imported, docstring +5), `crew_autopilot.py` (one line edited in place), `commands/review.md` (step 3 quoted in place), the L-0510 tests, CHANGELOG and README. `crew.md`'s `review_ledger.py` citations were re-read with `grep -n` by name (`receipt_stands` `:695`, `check_receipt` `:819`, `auto_accept` `:655`, `check_follow_up` `:742`, `summary` `:909`, `BUDGET` `:132`, `REFUND_LIMIT` `:135`). No other note cites a moved line.
