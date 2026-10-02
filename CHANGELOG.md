@@ -37,6 +37,14 @@ merging origin/main `52489039` (T-0040, crew 1.0.98). L-0510's 1.0.90, 1.0.93, 1
   refused as recovered; a missing, mistyped or unreadable count or `review.json` is refused as
   could-not-tell, never read as 0. This release does not write the field, so until L-0576 lands
   every round stops for the owner.
+- **An auto receipt binds the `review.json` it read** (review round 6): it carries
+  `review_json_sha256` (of the exact bytes) and `ignored_lines`, and `--check-receipt` and autopilot
+  re-read the file, so an edited, missing, linked or unreadable `review.json` means the receipt does
+  not stand. `review.json` is read without following a link, with a duplicate key at any depth
+  refused as could-not-tell, and must name the round's number (never a bool) and bundle.
+  `--check-follow-up` reads `direction.md` with `newline=""` and splits on `\n` only (a CRLF line
+  drops its one `\r`; a bare CR, U+2028, U+2029, U+0085, `\v` and `\f` are text). `/crew:review` step
+  3's closure commands quote `${CLAUDE_PLUGIN_ROOT}`.
 - **The ledger, `review_run.py` and `crew_autopilot.py` write UTF-8 whatever the console code
   page**, so a finding carrying U+2028 or any character cp1252 lacks no longer raises
   `UnicodeEncodeError` on a Windows console after the receipt is written (found by the native

@@ -15,8 +15,10 @@ the auto string can come only from the guarded verb. Must-block and
 must-allow pairs; `sabotage_review.py` flips each guard and names the test
 here that goes red. Every repository is built under tmp_path.
 """
+import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import types
@@ -210,6 +212,21 @@ def _final_by(provider, family):
     return build
 
 
+def _review_json_with(**fields):
+    """This round's review.json as `_round` wrote it, with `fields` replaced
+    (a value `_ABSENT` removes its key)."""
+    def change(repo):
+        data = json.loads((repo / ".work" / "tickets" / T / "review.json").read_text(
+            encoding="utf-8"))
+        for key, value in fields.items():
+            if value is _ABSENT:
+                data.pop(key, None)
+            else:
+                data[key] = value
+        _review_json(repo, json.dumps(data))
+    return change
+
+
 def _final_then(change):
     def build(repo):
         _good(repo)
@@ -279,28 +296,26 @@ REFUSALS = [
     ("review-json-missing", _final_then(
         lambda repo: os.remove(repo / ".work" / "tickets" / T / "review.json")),
      FOLLOW, "review.json"),
-    ("review-json-no-ignored-lines", _final_then(
-        lambda repo: _review_json(repo, json.dumps({"round": 2}))), FOLLOW, "review.json"),
-    ("review-json-recovered", _final_then(
-        lambda repo: _review_json(repo, json.dumps({"round": 2, "ignored_lines": 1}))),
-     FOLLOW, "recovered"),
+    ("review-json-no-ignored-lines", _final_then(_review_json_with(ignored_lines=_ABSENT)),
+     FOLLOW, "no readable ignored_lines count"),
+    ("review-json-recovered", _final_then(_review_json_with(ignored_lines=1)), FOLLOW,
+     "recovered from 1 stray line(s)"),
     # Review round 5 BLOCK: L-0576 writes an int count; any other shape --
     # a list, a string, a bool, a negative -- is could-not-tell, never 0.
-    ("review-json-ignored-list", _final_then(
-        lambda repo: _review_json(repo, json.dumps({"round": 2, "ignored_lines": []}))),
-     FOLLOW, "no readable ignored_lines count"),
-    ("review-json-ignored-string", _final_then(
-        lambda repo: _review_json(repo, json.dumps({"round": 2, "ignored_lines": "0"}))),
-     FOLLOW, "no readable ignored_lines count"),
-    ("review-json-ignored-bool", _final_then(
-        lambda repo: _review_json(repo, json.dumps({"round": 2, "ignored_lines": False}))),
-     FOLLOW, "no readable ignored_lines count"),
-    ("review-json-ignored-negative", _final_then(
-        lambda repo: _review_json(repo, json.dumps({"round": 2, "ignored_lines": -1}))),
-     FOLLOW, "no readable ignored_lines count"),
-    ("review-json-other-round", _final_then(
-        lambda repo: _review_json(repo, json.dumps({"round": 1, "ignored_lines": 0}))),
-     FOLLOW, "review.json"),
+    ("review-json-ignored-list", _final_then(_review_json_with(ignored_lines=[])), FOLLOW,
+     "no readable ignored_lines count"),
+    ("review-json-ignored-string", _final_then(_review_json_with(ignored_lines="0")), FOLLOW,
+     "no readable ignored_lines count"),
+    ("review-json-ignored-bool", _final_then(_review_json_with(ignored_lines=False)), FOLLOW,
+     "no readable ignored_lines count"),
+    ("review-json-ignored-negative", _final_then(_review_json_with(ignored_lines=-1)), FOLLOW,
+     "no readable ignored_lines count"),
+    ("review-json-other-round", _final_then(_review_json_with(round=1)), FOLLOW,
+     "is not round 2's"),
+    ("review-json-other-bundle", _final_then(_review_json_with(bundle_sha256="0" * 64)),
+     FOLLOW, "is for bundle"),
+    ("review-json-no-bundle", _final_then(_review_json_with(bundle_sha256=_ABSENT)), FOLLOW,
+     "is for bundle"),
     ("webtest-open-missing", _final_without("webtest_open"), FOLLOW, "webtest"),
     ("webtest-open-none", _final_with(webtest_open=None), FOLLOW, "webtest"),
     ("webtest-open-false", _final_with(webtest_open=False), FOLLOW, "webtest"),
@@ -503,12 +518,199 @@ def test_check_receipt_requires_the_auto_rows_guard(repo, tamper):
         == expected, result.stdout
 
 
-def test_receipt_stands_owner_and_clean_unchanged():
+def test_receipt_stands_owner_and_clean_unchanged(tmp_path):
     row = {"round": 1, "status": "completed", "verdict": "FINDINGS"}
-    assert (rl.receipt_stands({"kind": "owner-accepted", "round": 1}, row),
-            rl.receipt_stands({"kind": "auto-accepted", "round": 1}, row),
+    root = str(tmp_path)
+    assert (rl.receipt_stands({"kind": "owner-accepted", "round": 1}, row, root, T),
+            rl.receipt_stands({"kind": "auto-accepted", "round": 1}, row, root, T),
             rl.receipt_stands({"kind": "clean", "round": 1},
-                              dict(row, verdict="CLEAN"))) == (True, False, True)
+                              dict(row, verdict="CLEAN"), root, T)) == (True, False, True)
+
+
+# --- review round 6 BLOCK 1: the auto receipt binds the review.json it read ---
+
+def _review_json_path(repo):
+    return repo / ".work" / "tickets" / T / "review.json"
+
+
+def _accepted(repo):
+    _good(repo)
+    _good(repo)
+    assert _auto(repo).returncode == 0
+
+
+def test_auto_receipt_records_the_review_json_it_read(repo):
+    _accepted(repo)
+
+    receipt = _receipt(repo)
+
+    digest = hashlib.sha256(_review_json_path(repo).read_bytes()).hexdigest()
+    assert (receipt["review_json_sha256"], receipt["ignored_lines"]) == (digest, 0)
+
+
+def _rj_recovered(repo):
+    data = json.loads(_review_json_path(repo).read_text(encoding="utf-8"))
+    data["ignored_lines"] = 3
+    _review_json(repo, json.dumps(data))
+
+
+def _rj_reformatted(repo):
+    data = json.loads(_review_json_path(repo).read_text(encoding="utf-8"))
+    _review_json(repo, json.dumps(data, indent=4))
+
+
+def _rj_missing(repo):
+    os.remove(_review_json_path(repo))
+
+
+def _rj_unreadable(repo):
+    _review_json(repo, "{not json")
+
+
+def _rj_symlink(repo):
+    path = _review_json_path(repo)
+    copy = repo.parent / "elsewhere.json"
+    copy.write_bytes(path.read_bytes())
+    os.remove(path)
+    try:
+        os.symlink(copy, path)
+    except (OSError, NotImplementedError):
+        pytest.skip("this platform cannot create a symlink")
+
+
+def _receipt_edit(change):
+    def tamper(repo):
+        _edit(repo, lambda data: change(data["receipt"]))
+    return tamper
+
+
+@pytest.mark.parametrize("tamper", [
+    _rj_recovered, _rj_reformatted, _rj_missing, _rj_unreadable, _rj_symlink,
+    _receipt_edit(lambda r: r.pop("review_json_sha256")),
+    _receipt_edit(lambda r: r.update(review_json_sha256="ab" * 31)),
+    _receipt_edit(lambda r: r.update(review_json_sha256="AB" * 32)),
+    _receipt_edit(lambda r: r.update(review_json_sha256="0" * 64)),
+    _receipt_edit(lambda r: r.update(review_json_sha256=None)),
+    _receipt_edit(lambda r: r.pop("ignored_lines")),
+    _receipt_edit(lambda r: r.update(ignored_lines=1)),
+    _receipt_edit(lambda r: r.update(ignored_lines=False)),
+], ids=["recovered", "reformatted", "missing", "unreadable", "symlink", "hash-missing",
+        "hash-short", "hash-upper", "hash-other", "hash-none", "count-missing", "count-1",
+        "count-false"])
+def test_auto_receipt_does_not_stand_once_review_json_moves(repo, tamper):
+    _accepted(repo)
+    assert _cli(repo, "--check-receipt").returncode == 0
+    tamper(repo)
+
+    result = _cli(repo, "--check-receipt")
+
+    assert result.returncode == 1, result.stdout
+
+
+# --- review round 6 BLOCK 2: duplicate keys anywhere are could-not-tell -------
+
+@pytest.mark.parametrize("text", [
+    '{"round": 2, "ignored_lines": 3, "ignored_lines": 0}',
+    '{"round": 2, "ignored_lines": 0, "counts": {"BLOCK": 1, "BLOCK": 0}}',
+    '{"round": 2, "ignored_lines": 0, "rows": [{"a": 1}, {"a": 1, "a": 2}]}',
+    '{"round": 1, "round": 2, "ignored_lines": 0}',
+], ids=["top-level", "nested", "in-a-list", "round-key"])
+def test_auto_accept_refuses_duplicate_keys_in_review_json(repo, text):
+    _good(repo)
+    _good(repo)
+    data = json.loads(_review_json_path(repo).read_text(encoding="utf-8"))
+    body = json.dumps({k: v for k, v in data.items() if k not in ("round", "ignored_lines")})
+    _review_json(repo, text[:-1] + ", " + body[1:])
+    before = _ledger_bytes(repo)
+
+    result = _auto(repo)
+
+    assert (result.returncode, "duplicate key" in result.stderr,
+            _ledger_bytes(repo) == before) == (1, True, True), result.stderr
+
+
+def test_auto_accept_refuses_a_symlinked_review_json(repo):
+    _good(repo)
+    _good(repo)
+    _rj_symlink(repo)
+
+    result = _auto(repo)
+
+    assert (result.returncode, "link" in result.stderr) == (1, True), result.stderr
+
+
+def test_auto_accept_refuses_a_bool_round_in_review_json(repo):
+    """`True == 1`: review.json's round `true` must not pass as round 1."""
+    _round_one = _good(repo)
+    assert _round_one == 1
+    _edit(repo, lambda data: data.update(state=rl.IN_REVIEW))
+    data = json.loads(_review_json_path(repo).read_text(encoding="utf-8"))
+    data["round"] = True
+    _review_json(repo, json.dumps(data))
+
+    problem, _ = rl._review_json_problem(str(repo), T, rl.status(str(repo), T)["rounds"][-1])  # pylint: disable=protected-access
+
+    assert "is not round 1's" in (problem or ""), problem
+
+
+def test_auto_accept_refuses_a_review_json_for_another_bundle(repo):
+    _good(repo)
+    _good(repo)
+    data = json.loads(_review_json_path(repo).read_text(encoding="utf-8"))
+    data["bundle_sha256"] = "0" * 64
+    _review_json(repo, json.dumps(data))
+
+    result = _auto(repo)
+
+    assert (result.returncode, "bundle" in result.stderr) == (1, True), result.stderr
+
+
+# --- review round 6 FIX 5: the step-3 closure commands survive a spaced path --
+
+def _step3_closure_lines():
+    path = os.path.join(context._ROOT, "commands", "review.md")  # pylint: disable=protected-access
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    start = text.index("3. **Closure (L-0510).**")
+    block = text[start:text.index("\n4. ", start)]
+    return [line for line in block.split("\n") if "CLAUDE_PLUGIN_ROOT" in line]
+
+
+def test_step3_closure_commands_quote_the_plugin_root():
+    lines = _step3_closure_lines()
+    unquoted = [line for line in lines if re.search(r'(?<!")\$\{CLAUDE_PLUGIN_ROOT\}', line)]
+
+    assert (len(lines) >= 2, unquoted) == (True, []), lines
+
+
+# --- review round 6 FIX 4: only "\n" separates direction.md lines -------------
+
+def _follow_two(repo, sep, end="\n"):
+    _good(repo)
+    _good(repo)
+    assert _auto(repo).returncode == 0
+    folder = repo / ".work" / "tickets" / FOLLOW
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "direction.md").write_bytes(
+        (f"# {FOLLOW}{end}{FIX_LINE}{sep}{NIT_LINE}{end}").encode("utf-8"))
+
+
+@pytest.mark.parametrize("sep, end, code", [
+    ("\n", "\n", 0),
+    ("\r\n", "\r\n", 0),
+    ("\r", "\n", 1),
+    ("\u2028", "\n", 1),
+    ("\u2029", "\n", 1),
+    ("\u0085", "\n", 1),
+    ("\x0b", "\n", 1),
+    ("\x0c", "\n", 1),
+], ids=["lf", "crlf", "bare-cr", "u2028", "u2029", "nel", "vt", "ff"])
+def test_check_follow_up_splits_direction_md_on_newline_only(repo, sep, end, code):
+    _follow_two(repo, sep, end)
+
+    result = _cli(repo, "--check-follow-up")
+
+    assert result.returncode == code, result.stdout
 
 
 # --- --check-follow-up: the follow-up ticket quotes every line verbatim -------

@@ -119,6 +119,7 @@ Exit codes: 0 ok; 1 refused / receipt invalid / error; 2 usage.
 import argparse
 import collections
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -575,33 +576,80 @@ def auto_accept_refusal(data, ticket):
     return None
 
 
-def _review_json_problem(root, ticket, row):
-    """None when this round's review.json is readable, is for `row`'s round
-    and its `ignored_lines` count is 0; else why not (owner decision 2026-10-01 #6).
-    The row already carries the count; this is the second witness the owner
-    asked for, so an unreadable file is could-not-tell, never a pass."""
-    path = os.path.join(root, ".work", "tickets", ticket, "review.json")
+class _DuplicateKey(ValueError):
+    """A JSON object names one key twice; json.load would keep the last."""
+
+
+def _refuse_duplicate_keys(pairs):
+    seen = {}
+    for key, value in pairs:
+        if key in seen:
+            raise _DuplicateKey(f"duplicate key {key!r}")
+        seen[key] = value
+    return seen
+
+
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _review_json_path(root, ticket):
+    return os.path.join(root, ".work", "tickets", ticket, "review.json")
+
+
+def read_review_json(root, ticket):
+    """(review, sha256, problem) for this ticket's review.json, read once as
+    bytes: never through a link, never with a duplicate key at any depth
+    (review round 6 BLOCK 2: json.load keeps the last of two), and hashed
+    over exactly the bytes parsed so a receipt can bind them (BLOCK 1).
+    `problem` is None or a could-not-tell reason; on a problem `review`
+    and `sha256` are None."""
+    path = _review_json_path(root, ticket)
     try:
-        with open(path, encoding="utf-8") as fh:
-            review = json.load(fh)
+        if os.path.islink(path):
+            return None, None, (f"{path} is a link; not following it: could not tell "
+                                "whether the verdict was recovered from stray lines")
+        with open(path, "rb") as fh:
+            raw = fh.read()
+        review = json.loads(raw.decode("utf-8"), object_pairs_hook=_refuse_duplicate_keys)
+    except _DuplicateKey as exc:
+        return None, None, (f"{path} has a {exc}: could not tell which value the round "
+                            "recorded")
     except (OSError, ValueError) as exc:
-        return (f"{path} is unreadable ({exc}): could not tell whether round "
-                f"{row.get('round')}'s verdict was recovered from stray lines")
-    if not isinstance(review, dict) or review.get("round") != row.get("round"):
-        got = review.get("round") if isinstance(review, dict) else review
+        return None, None, (f"{path} is unreadable ({exc}): could not tell whether the "
+                            "verdict was recovered from stray lines")
+    return review, hashlib.sha256(raw).hexdigest(), None
+
+
+def _review_json_problem(root, ticket, row):
+    """(problem, sha256). problem is None when this round's review.json is
+    readable, is for `row`'s round and bundle, and its `ignored_lines` count
+    is 0; else why not (owner decision 2026-10-01 #6). The row already carries
+    the count; this is the second witness the owner asked for, so an
+    unreadable file is could-not-tell, never a pass."""
+    path = _review_json_path(root, ticket)
+    review, digest, problem = read_review_json(root, ticket)
+    if problem:
+        return problem, None
+    got = review.get("round") if isinstance(review, dict) else review
+    # `True == 1`: a bool round would pass as round 1, so the type is checked.
+    if not isinstance(review, dict) or isinstance(got, bool) or got != row.get("round"):
         return (f"{path} is not round {row.get('round')}'s (it reads {got!r}): could not "
-                "tell whether the verdict was recovered from stray lines")
+                "tell whether the verdict was recovered from stray lines"), None
+    if review.get("bundle_sha256") != row.get("bundle_sha256"):
+        return (f"{path} is for bundle {str(review.get('bundle_sha256'))[:12]}, not the "
+                f"round's {str(row.get('bundle_sha256'))[:12]}: could not tell whether the "
+                "verdict was recovered from stray lines"), None
     # L-0576 writes the count here as an int (the lines go to `ignored_text`).
     # Any other shape is could-not-tell, never 0 (review round 5 BLOCK).
     count = review.get("ignored_lines")
     if not _is_count(count):
         return (f"{path} carries no readable ignored_lines count ({count!r}): could not "
                 f"tell whether round {row.get('round')}'s verdict was recovered from stray "
-                "lines")
+                "lines"), None
     if count:
         return (f"{path}: round {row.get('round')}'s verdict was recovered from "
-                f"{count} stray line(s); a recovered round is the owner's to accept")
-    return None
+                f"{count} stray line(s); a recovered round is the owner's to accept"), None
+    return None, digest
 
 
 def auto_accept(root, ticket, follow_up):
@@ -622,7 +670,7 @@ def auto_accept(root, ticket, follow_up):
         if refusal:
             raise LedgerError(f"--auto-accept refused: {refusal}")
         row = data["rounds"][-1]
-        problem = _review_json_problem(root, ticket, row)
+        problem, review_digest = _review_json_problem(root, ticket, row)
         if problem:
             raise LedgerError(f"--auto-accept refused: {problem}")
         if _current_hash(root, row.get("base")) != row.get("bundle_sha256"):
@@ -634,6 +682,9 @@ def auto_accept(root, ticket, follow_up):
             "verdict": "FINDINGS", "accepted_by": AUTO_BY, "accepted_at": _now(),
             "findings": list(row["findings"]), "follow_up": follow_up,
             "provider": row.get("provider"), "model_family": row.get("model_family"),
+            # What the review.json witness read, so receipt_stands can tell a
+            # later edit (review round 6 BLOCK 1).
+            "review_json_sha256": review_digest, "ignored_lines": 0,
         }
         data["state"] = ACCEPTED
         return data, data["receipt"]
@@ -641,12 +692,15 @@ def auto_accept(root, ticket, follow_up):
     return _mutate(root, ticket, change)
 
 
-def receipt_stands(receipt, latest):
+def receipt_stands(receipt, latest, root, ticket):
     """Whether `receipt` stands on `latest`, the latest recorded round: a
     CLEAN round under a clean receipt; FINDINGS owner-accepted; or FINDINGS
-    auto-accepted whose row still passes the guard and whose lines, provider
+    auto-accepted whose row still passes the guard, whose lines, provider
     and model family are the row's (review r3: a receipt that misstates the
-    family the guard checked does not stand)."""
+    family the guard checked does not stand), and whose review.json still
+    hashes to the bytes the guard read, with a count of 0 (review r6 BLOCK 1;
+    an edited, missing, linked or unreadable file is could-not-tell, so the
+    receipt does not stand)."""
     if not isinstance(receipt, dict) or not isinstance(latest, dict):
         return False
     if latest.get("status") != "completed" or receipt.get("round") != latest.get("round"):
@@ -660,7 +714,21 @@ def receipt_stands(receipt, latest):
     return (receipt.get("kind") == AUTO_KIND and receipt.get("accepted_by") == AUTO_BY
             and receipt.get("findings") == latest.get("findings")
             and _receipt_names_the_reviewer(receipt, latest)
-            and _auto_row_problem(latest) is None)
+            and _auto_row_problem(latest) is None
+            and _receipt_binds_review_json(receipt, latest, root, ticket))
+
+
+def _receipt_binds_review_json(receipt, latest, root, ticket):
+    """The auto receipt's `review_json_sha256` is a lowercase sha256 equal to
+    review.json's bytes now, its `ignored_lines` is exactly int 0, and the
+    file still passes the witness check for this round."""
+    digest, count = receipt.get("review_json_sha256"), receipt.get("ignored_lines")
+    if not isinstance(digest, str) or not _SHA256_RE.match(digest):
+        return False
+    if type(count) is not int or count != 0:  # pylint: disable=unidiomatic-typecheck
+        return False
+    problem, now = _review_json_problem(root, ticket, latest)
+    return problem is None and now == digest
 
 
 def _receipt_names_the_reviewer(receipt, latest):
@@ -696,11 +764,14 @@ def check_follow_up(root, ticket):
         return False, f"the receipt's follow-up id is unusable: {exc}"
     path = os.path.join(root, ".work", "tickets", follow_up, "direction.md")
     try:
-        with open(path, encoding="utf-8") as fh:
-            # Newline only, never splitlines(): U+2028 and friends are text
-            # inside a finding, not separators (review round 4 FIX 2). Text
-            # mode has already folded \r\n into \n.
-            have = collections.Counter(fh.read().split("\n"))
+        # newline="": no universal-newline translation, so a bare \r is text,
+        # never a break (review round 6 FIX 4). Lines split on "\n" only --
+        # never splitlines(), which also breaks on U+2028, U+0085, \v, \f
+        # (review round 4 FIX 2) -- and a CRLF line drops its one "\r", so a
+        # direction.md checked out with Windows line endings still matches.
+        with open(path, encoding="utf-8", newline="") as fh:
+            have = collections.Counter(
+                line[:-1] if line.endswith("\r") else line for line in fh.read().split("\n"))
     except OSError as exc:
         return False, f"follow-up {follow_up}: cannot read {path} ({exc.strerror or exc})"
     except UnicodeDecodeError as exc:
@@ -760,7 +831,7 @@ def check_receipt(root, ticket):
     if not isinstance(latest, dict) or latest.get("round") != receipt.get("round"):
         return False, (f"receipt is for round {receipt.get('round')}, not the latest recorded "
                        "round; only the latest round's verdict counts")
-    if not receipt_stands(receipt, latest):
+    if not receipt_stands(receipt, latest, root, ticket):
         return False, (f"round {latest.get('round')} is {latest.get('verdict') or 'not completed'}"
                        "; a receipt stands only on a CLEAN or owner-accepted round, or an "
                        "auto-accepted 0-BLOCK one")

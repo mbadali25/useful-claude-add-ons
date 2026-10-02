@@ -11,6 +11,7 @@ is built under tmp_path; nothing touches the real one or ~/.claude.
 `sabotage_autopilot.py` mutates the must-stop branches to prove these tests
 can fail.
 """
+import hashlib
 import json
 import os
 import subprocess
@@ -318,13 +319,41 @@ def _auto_receipt(number=2):
                 findings=[LINE], follow_up="L-9999", provider="codex", model_family="gpt")
 
 
+def _bound_auto_receipt(root, number=2):
+    """An auto receipt bound to a review.json for its round, as auto_accept
+    writes both (review round 6 BLOCK 1)."""
+    raw = json.dumps({"round": number, "bundle_sha256": "a" * 64,
+                      "ignored_lines": 0}).encode("utf-8")
+    path = os.path.join(str(root), ".work", "tickets", T, "review.json")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as fh:
+        fh.write(raw)
+    return dict(_auto_receipt(number), review_json_sha256=hashlib.sha256(raw).hexdigest(),
+                ignored_lines=0)
+
+
 def test_next_auto_accepted_findings_move_on(tmp_path, monkeypatch):
     root = _approved(tmp_path)
-    _ledger(root, [_auto_row(1), _auto_row(2)], state="ACCEPTED", receipt=_auto_receipt())
+    _ledger(root, [_auto_row(1), _auto_row(2)], state="ACCEPTED",
+            receipt=_bound_auto_receipt(root))
     _receipt_ok(monkeypatch, True)
     _refresh(monkeypatch, "fresh")
 
     assert _next(root)["phase"] == "done"
+
+
+def test_next_auto_receipt_with_an_edited_review_json_stops(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    receipt = _bound_auto_receipt(root)
+    _write(os.path.join(str(root), ".work", "tickets", T, "review.json"),
+           json.dumps({"round": 2, "bundle_sha256": "a" * 64, "ignored_lines": 3}))
+    _ledger(root, [_auto_row(1), _auto_row(2)], state="ACCEPTED", receipt=receipt)
+    _receipt_ok(monkeypatch, True)
+    _refresh(monkeypatch, "fresh")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"]) == ("accept-review", True)
 
 
 def test_next_auto_receipt_on_a_block_row_stops(tmp_path, monkeypatch):

@@ -512,7 +512,8 @@ def _review_phase(top, ticket, evidence, answer):
     # L-0510: the ledger's one predicate decides whether a FINDINGS receipt
     # stands (owner-accepted, or auto-accepted with its row still passing the
     # guard), so this and /crew:done's --check-receipt cannot disagree.
-    if latest.get("verdict") == "FINDINGS" and not review_ledger.receipt_stands(receipt, latest):
+    if latest.get("verdict") == "FINDINGS" and not review_ledger.receipt_stands(
+            receipt, latest, top, ticket):
         data, state = review_ledger.load(ledger["path"])
         refusal = (review_ledger.auto_accept_refusal(data, ticket) if state == "ok"
                    else f"ledger is {state}: could not tell")

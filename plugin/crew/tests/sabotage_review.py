@@ -299,7 +299,7 @@ REVIEW_FIX_MUTATIONS = (
         # The latest round's verdict is not read (L-0510: through receipt_stands).
         "--check-receipt does not read the latest round's verdict",
         REVIEW_LEDGER,
-        "    if not receipt_stands(receipt, latest):\n",
+        "    if not receipt_stands(receipt, latest, root, ticket):\n",
         "    if False:\n",
         ("tests/test_review_receipt.py::"
          "test_check_receipt_fails_when_the_latest_round_is_not_clean_or_accepted"),
@@ -629,8 +629,8 @@ REVIEW_FIX_MUTATIONS = (
         # The follow-up's lines are stripped: an indented copy passes.
         "--check-follow-up strips the follow-up's lines",
         REVIEW_LEDGER,
-        '            have = collections.Counter(fh.read().split("\\n"))\n',
-        '            have = collections.Counter(x.strip() for x in fh.read().split("\\n"))\n',
+        '                line[:-1] if line.endswith("\\r") else line for line in fh.read().split("\\n"))\n',
+        '                line.strip() for line in fh.read().split("\\n"))\n',
         "tests/test_review_auto_accept.py::test_check_follow_up_refuses_by_name[indented-line]",
     ),
     (
@@ -653,8 +653,8 @@ REVIEW_FIX_MUTATIONS = (
         # An auto receipt keeps standing after its row is edited to a BLOCK.
         "receipt_stands stops re-checking the auto row",
         REVIEW_LEDGER,
-        "            and _auto_row_problem(latest) is None)\n",
-        "            and True)\n",
+        "            and _auto_row_problem(latest) is None\n",
+        "            and True\n",
         "tests/test_review_auto_accept.py::test_check_receipt_requires_the_auto_rows_guard[row-block-1]",
     ),
     (
@@ -700,8 +700,8 @@ REVIEW_FIX_MUTATIONS = (
         # splitlines() back: U+2028 inside a quoted finding splits the line.
         "the follow-up check splits on U+2028 again",
         REVIEW_LEDGER,
-        '            have = collections.Counter(fh.read().split("\\n"))\n',
-        "            have = collections.Counter(fh.read().splitlines())\n",
+        '                line[:-1] if line.endswith("\\r") else line for line in fh.read().split("\\n"))\n',
+        '                line[:-1] if line.endswith("\\r") else line for line in fh.read().splitlines())\n',
         "tests/test_review_auto_accept.py::test_check_follow_up_keeps_a_u2028_finding_on_one_line",
     ),
     # Owner decision 2026-10-01 #6: recovered verdicts never auto-accept. Run
@@ -747,6 +747,76 @@ REVIEW_FIX_MUTATIONS = (
         "    review_ledger.utf8_stdio()\n",
         "",
         "tests/test_review_auto_accept.py::test_autopilot_main_switches_its_streams_to_utf8_first",
+    ),
+    # Review round 6 (owner decision 2026-10-02 #10). Each run by hand, seen red.
+    (
+        # BLOCK 1: the auto receipt stops re-checking the review.json it read.
+        "receipt_stands stops re-checking review.json",
+        REVIEW_LEDGER,
+        "            and _receipt_binds_review_json(receipt, latest, root, ticket))\n",
+        "            and True)\n",
+        "tests/test_review_auto_accept.py::"
+        "test_auto_receipt_does_not_stand_once_review_json_moves[recovered]",
+    ),
+    (
+        # BLOCK 1 neighbour: the count is compared but the bytes are not.
+        "receipt_stands compares review.json's count but not its hash",
+        REVIEW_LEDGER,
+        "    return problem is None and now == digest\n",
+        "    return problem is None\n",
+        "tests/test_review_auto_accept.py::"
+        "test_auto_receipt_does_not_stand_once_review_json_moves[reformatted]",
+    ),
+    (
+        # BLOCK 2: json keeps the last of two duplicate keys again.
+        "review.json is parsed with duplicate keys allowed",
+        REVIEW_LEDGER,
+        "        review = json.loads(raw.decode(\"utf-8\"), object_pairs_hook=_refuse_duplicate_keys)\n",
+        "        review = json.loads(raw.decode(\"utf-8\"))\n",
+        "tests/test_review_auto_accept.py::"
+        "test_auto_accept_refuses_duplicate_keys_in_review_json[top-level]",
+    ),
+    (
+        # BLOCK 2 neighbour: review.json is followed through a link.
+        "review.json is read through a link",
+        REVIEW_LEDGER,
+        "        if os.path.islink(path):\n            return None, None, (f\"{path} is a link;",
+        "        if False:\n            return None, None, (f\"{path} is a link;",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses_a_symlinked_review_json",
+    ),
+    (
+        # Neighbour: a review.json written for another bundle is taken as the witness.
+        "review.json's bundle is not compared with the round's",
+        REVIEW_LEDGER,
+        "    if review.get(\"bundle_sha256\") != row.get(\"bundle_sha256\"):\n",
+        "    if False:\n",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses_a_review_json_for_another_bundle",
+    ),
+    (
+        # Neighbour found before round 7: `True == 1` lets a bool round in
+        # review.json pass as round 1.
+        "review.json's round is compared without its type",
+        REVIEW_LEDGER,
+        "isinstance(got, bool) or got != row.get(\"round\"):\n",
+        "got != row.get(\"round\"):\n",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses_a_bool_round_in_review_json",
+    ),
+    (
+        # FIX 5: the step-3 auto-accept command splits on a spaced plugin path.
+        "review.md's step-3 auto-accept command leaves the plugin root unquoted",
+        REVIEW_DOC,
+        '`python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py" --ticket "$TICKET" --auto-accept',
+        '`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py --ticket "$TICKET" --auto-accept',
+        "tests/test_review_auto_accept.py::test_step3_closure_commands_quote_the_plugin_root",
+    ),
+    (
+        # FIX 4: universal newlines fold a bare CR into a line break again.
+        "direction.md is read with universal newlines",
+        REVIEW_LEDGER,
+        '        with open(path, encoding="utf-8", newline="") as fh:\n',
+        '        with open(path, encoding="utf-8") as fh:\n',
+        "tests/test_review_auto_accept.py::"
+        "test_check_follow_up_splits_direction_md_on_newline_only[bare-cr]",
     ),
     (
         # L-0578: the metrics row goes back to depending on prose step 6,
