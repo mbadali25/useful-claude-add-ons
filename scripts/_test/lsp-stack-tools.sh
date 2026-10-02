@@ -52,6 +52,9 @@ TMP="$(mktemp -d)" && [ -n "$TMP" ] && [ -d "$TMP" ] || {
   exit 2
 }
 trap 'rm -rf "$TMP"' EXIT
+# pwsh's startup profile goes in this run's own dir, never the shared
+# ~/.cache/powershell one that concurrent pwsh race on (L-0557). pwsh creates it.
+export XDG_CACHE_HOME="$TMP/xdg-cache"
 # Same TMPDIR pin as uv-install.sh, for the same reason: every case below does
 # 'rm -rf "$STUBS"' style cleanup, and TMPDIR is caller-controlled.
 _tmpdir="${TMPDIR:-/tmp}"

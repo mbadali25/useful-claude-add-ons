@@ -46,6 +46,11 @@ limit the test protects.
   `DisableParallelization = true`.
 - **Evidence.** Under `-n auto` in CI, `ps1=10.25s` against a 10s bound on 2 of 6 jobs. Serially,
   all 12 such items passed.
+- **Not a fixed sleep.** A test that sleeps a fixed time and then checks a condition is not a
+  wall-clock test: poll the condition until a deadline well under the thing's natural lifetime,
+  and return the last value so a real survivor still fails. Evidence (L-0516): a 0.5 s sleep
+  before a survivor check failed in CI with one survivor; a pidfile read as soon as it existed
+  saw it empty in 389 of 500 tight reads.
 
 ## H4 — Fixtures never inherit the developer's or runner's global state [audited]
 
@@ -57,6 +62,7 @@ A fixture repository or process must not read the real global config. Pin, per t
 | Background git maintenance | `maintenance.auto=false`, `gc.auto=0` | git 2.55 detaches `maintenance run --auto`; a "writes nothing" test saw `.git/objects/maintenance.lock` vanish mid-snapshot |
 | Machine-global tool config | point the path at a file that does not exist | crew's `~/.claude/crew/config.json` |
 | Ambient env (`CLAUDE_PROJECT_DIR`, `HOME`) | `monkeypatch.delenv` / explicit `env=` | green in CI, red on the maintainer's machine |
+| Shared tool cache raced by concurrent children (pwsh's startup profile) | a per-test `XDG_CACHE_HOME` | concurrent pwsh crashed at start-up (-6 "Stack overflow.", -11 SIGSEGV), about 1 `-m slow -n 12` run in 20-50; with the profile unwritable, 150/150 clean |
 
 - **Apply.** Pin through `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_n` / `GIT_CONFIG_VALUE_n`,
   **appended after** whatever count the runner already carries. Cloud containers export their

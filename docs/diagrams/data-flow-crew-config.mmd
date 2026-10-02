@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@89ebda03 on 2026-10-01. Verify before trusting.
+%% Generated from useful-claude-add-ons@6053b65d on 2026-10-01. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_config_files.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_shell.py
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
@@ -708,6 +708,9 @@ flowchart TB
 %% provider and the launch gate are not drawn. No node or edge changed.
 %% c43a54c1 -> f4adf923 (T-0028 re-sets crew 1.0.85): release files only; no cited line moved.
 %% f4adf923 -> 328fdf4a (T-0028 round-7 fixes in kimi_probe.py, crew 1.0.85): no cited line moved.
+%% 328fdf4a -> fe524012 (L-0513, the gate runner; no plugin version): of the Anchors paths only CLAUDE.md
+%% changed - a two-line gate-runner pointer in Commands (+2 from :14). No comment here cites a current
+%% CLAUDE.md line, and no count, node or edge changed.
 %% Re-anchored 2697bf67 -> 401f6e0f (T-0505, after merging main a7524aac): of the Anchors paths only
 %% plugin/crew/CONFIG.md changed - one sentence in the environments.* subsection of section 16
 %% (:1644-1646, +2 lines: .crew/verify.json is read from the session's project directory even when
@@ -732,3 +735,36 @@ flowchart TB
 %% Merged 66651b69 (T-0040-land) + 6e581365 (main) on T-0040-land, 2026-10-01 (merge of origin/main
 %% 44d3dbc6, crew 1.0.97, rerere off): both provenance blocks kept, main's first; header at the main tip.
 %% The Anchors list keeps T-0040's crew_shell.py. No node or edge changed by the merge.
+%% Re-anchored 44d3dbc6 -> 1390bb23 (L-0516 merges main 52489039, T-0040 #290 landed after the 44d3dbc6
+%% anchor): git diff 04dd6c5b 1390bb23 over CONFIG.md, crew_config.py and crew_shell.py is empty, so every
+%% line cited here reads as T-0040-land drew it. No node or edge changed.
+%% Re-anchored 1390bb23 -> 0027f794 (L-0516 merges main 05a679bf, L-0558 #293, crew 1.0.103): git diff --name-only
+%% 1390bb23 0027f794 over the Anchors paths is empty, so every line cited here reads as before. No node or edge changed.
+%% Re-anchored 6e581365 -> de32cb87 (L-0513 merges origin/main 44d3dbc6, T-0110 crew 1.0.97): of the Anchors
+%% paths only CLAUDE.md changed - L-0513's two-line gate-runner pointer in Commands (+2 from :14). No
+%% comment here cites a CLAUDE.md line, and no node or edge changed.
+%% Re-anchored de32cb87 -> f23b01b4 (L-0513 review round 5 fixes): `git diff --name-only de32cb87 f23b01b4`
+%% over the Anchors paths returns nothing. No node or edge changed.
+%% Re-anchored 44d3dbc6 / f23b01b4 -> 71038cb9 (L-0513: round 6 BLOCK amendment, merge of origin/main 52489039
+%% (T-0040, crew 1.0.98, rerere off) at 74130bbd, rules 22/40 repriced): of the Anchors paths CLAUDE.md, CONFIG.md, crew_config.py and crew_shell.py differ from L-0513's side,
+%% all by T-0040, which main's side of this diagram (header and provenance above) already drew; CLAUDE.md
+%% also carries L-0513's two-line gate-runner pointer. No comment here cites a line those changes moved,
+%% and no node or edge changed.
+%% Re-anchored 71038cb9 / 89ebda03 -> 0d159692 (L-0513 merges origin/main 05a679bf: L-0558, crew 1.0.102,
+%% rerere off): `git diff --name-only 71038cb9 0d159692` over the Anchors paths returns nothing. No node or edge changed.
+%% Re-anchored 0027f794 / 0d159692 -> ec95c8aa (L-0516 merges origin/main cacf7ff0, L-0513 #301,
+%% rerere off; crew 1.0.104): of the Anchors paths only CLAUDE.md changed (L-0513's two-line gate-runner pointer), which main's side of this diagram already drew; no comment here cites a CLAUDE.md line. No node or edge changed.
+%% Re-anchored 44d3dbc6 -> 90186613 (L-0557 merges main 52489039, T-0040 #290, at 327e6ec1; crew 1.0.101):
+%% of the Anchors paths, CONFIG.md, crew_config.py and crew_shell.py changed since 44d3dbc6, all by T-0040, whose
+%% citations above were re-read on its merged tree 52489039; all three are byte-identical to 52489039 at 90186613
+%% (git diff --quiet). L-0557 touches none of them. No node or edge changed.
+%% Re-anchored 89ebda03 (main) and 90186613 (L-0557) -> 773ce841 (L-0557 merges main 05a679bf, L-0558 #293, at 2169bd11,
+%% rerere off; crew 1.0.105): both provenance blocks kept, main's first; header at the new anchor. L-0557 touches no
+%% Anchors path, and no line this diagram cites moved. No node or edge changed.
+%% Re-anchored 0d159692 (main) and 773ce841 (L-0557) -> a9608aa5 (L-0557 merges main cacf7ff0, L-0513 #301, rerere off;
+%% crew 1.0.105): both provenance blocks kept, main's first; header at the new anchor. Neither L-0513 nor L-0557 touches an
+%% Anchors path. No node or edge changed.
+%% Re-anchored a9608aa5 -> c43a9ce3 (L-0557 merges main ddcbf90d, W-0115 #299, rerere off; crew 1.0.111): W-0115
+%% touches no Anchors path. No node or edge changed.
+%% Re-anchored 5ffffbe3 (main) and c43a9ce3 (L-0557) -> 6053b65d (L-0557 merges main 2906dcbd, L-0516 #298, rerere off;
+%% crew 1.0.114): both provenance blocks kept, main's first; L-0516 and L-0557 touch no Anchors path. No node or edge changed.
