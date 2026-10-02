@@ -56,11 +56,8 @@ slow-marker logic, or to a hook only the matrix exercises, can pass one and stil
 Both jobs' `ubuntu-latest` placement is the default, not a fixed fact: when the
 repo variable `CREW_RUNNER` is `self-hosted`, the `test` job and the
 `crew-shell-matrix` ubuntu leg run on the owner's self-hosted pool
-(`[self-hosted, linux, x64, crew]`) instead; every other job and workflow stays
-GitHub-hosted except the `crew-windows-*` jobs. Those run on the self-hosted
-`[self-hosted, Windows, crew-win]` pool (owner 2026-10-02), set by `crew-windows-decide`'s
-`runs_on` output and not by `CREW_RUNNER`, so that pool must be online for the required
-Windows check to finish; a fork pull request's Windows jobs stay on `windows-latest`. Fork pull requests never reach the
+(`[self-hosted, linux, x64, crew]`) instead; the `windows-latest` jobs and every
+other job and workflow stay GitHub-hosted. Fork pull requests never reach the
 pool: this repo is public, so only non-PR events (push, schedule, manual
 dispatch) and pull requests from branches of this repo use it. The owner's runner playbook
 (mbadali25/github-runner-infra) sets the variable on `make up` and unsets it on

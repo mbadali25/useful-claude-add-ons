@@ -181,10 +181,7 @@ jobs:
     # pytest-xdist is installed HERE only, as a speed-up: the suite does not
     # depend on it and runs the same without `-n`.
     #
-    # Opt-in self-hosted Linux pool, this ubuntu leg only. The Windows half runs
-    # in the crew-windows-* jobs below, which take runs-on from
-    # crew-windows-decide (the self-hosted crew-win pool, fork PRs on
-    # windows-latest) and do not read CREW_RUNNER. The owner's runner playbook
+    # Opt-in self-hosted pool. The owner's runner playbook
     # (mbadali25/github-runner-infra) sets repo variable CREW_RUNNER=self-hosted
     # on `make up` and unsets it on `make down`, so required checks never wait on
     # a torn-down runner pool. Unset, the leg runs on matrix.os as before.
@@ -293,19 +290,9 @@ jobs:
         fi
         echo "run=$run" >> "$GITHUB_OUTPUT"
         # Where every crew-windows-* job runs, as JSON for fromJSON(): a label
-        # string or a label array. The ONE place to retarget them; the gate's
-        # check name does not change. Owner 2026-10-02: the self-hosted
-        # crew-win pool (winrepo2-1..4, anew-inf01-1..2) for every non-PR
-        # event and for pull requests from branches of this repo. A fork PR
-        # stays on windows-latest (owner 2026-09-30, "No fork PRs"): this
-        # repo is public. Unlike the Linux pool this is not gated on
-        # CREW_RUNNER, so the crew-win runners must be online for the
-        # required check to finish.
-        if [ "${{ github.event_name }}" != pull_request ] || [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ]; then
-          echo 'runs_on=["self-hosted","Windows","crew-win"]' >> "$GITHUB_OUTPUT"
-        else
-          echo 'runs_on="windows-latest"' >> "$GITHUB_OUTPUT"
-        fi
+        # string or a label array. The ONE place to retarget them (e.g. at a
+        # self-hosted Windows pool); the gate's check name does not change.
+        echo 'runs_on="windows-latest"' >> "$GITHUB_OUTPUT"
 
   crew-windows-default:
     name: crew-windows-default (${{ matrix.group }}/3)
