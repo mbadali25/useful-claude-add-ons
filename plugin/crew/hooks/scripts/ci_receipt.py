@@ -413,12 +413,16 @@ def _receipt_bytes(fetch, slug, run, head):
 
 
 def _mismatch(receipt, want):
-    """The first field of `receipt` that does not equal `want`, or None."""
+    """The first field of `receipt` that does not equal `want`, or None.
+
+    Type and value both: Python's `==` holds 1 == True and False == 0, so a
+    receipt saying `"pass": 1` or `"gate": {"rc": false}` would otherwise match.
+    """
     for path, expected in want:
         node = receipt
         for key in path.split("."):
             node = node.get(key) if isinstance(node, dict) else None
-        if node != expected:
+        if type(node) is not type(expected) or node != expected:
             return f"receipt {path} is {node!r}, expected {expected!r}"
     return None
 

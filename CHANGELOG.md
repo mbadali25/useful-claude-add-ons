@@ -4,6 +4,13 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.0.133: `ci_receipt.py check` compares receipt fields by type as well as value
+
+- `_mismatch` used `==` alone, which holds `1 == True` and `False == 0`, so a receipt saying
+  `"pass": 1`, `"clean": 1` or `"gate": {"rc": false}` matched. Each now mismatches; three new
+  must-block cases in `test_ci_receipt.py` go red with the old comparison.
+- The `test_ci_receipt.py` rule in `.crew/verify.json` is re-priced at 20s (99 passed in 16.4s).
+
 ### Added — `crew` 1.0.132: the verify gate runs on the self-hosted pool and leaves a receipt; `ci_receipt.py check` reports whether it matches HEAD (L-0555, diagnostic)
 
 - **`.github/workflows/verify-gate.yml`** runs `verify-gate.sh --all` on pushes to `L-*`, `T-*` and

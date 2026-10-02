@@ -308,6 +308,10 @@ BLOCKED = {
         root, outstanding=[{"label": "r", "status": "skipped", "reason": "rc 77"}])),
     "not-clean": lambda root: _api(root, receipt=_receipt(root, clean=False)),
     "pass-false": lambda root: _api(root, receipt=_receipt(root, **{"pass": False})),
+    # `==` alone holds 1 == True and False == 0: each of these matched before.
+    "pass-is-int-one": lambda root: _api(root, receipt=_receipt(root, **{"pass": 1})),
+    "clean-is-int-one": lambda root: _api(root, receipt=_receipt(root, clean=1)),
+    "gate-rc-is-false": lambda root: _api(root, receipt=_receipt(root, gate__rc=False)),
 }
 
 
