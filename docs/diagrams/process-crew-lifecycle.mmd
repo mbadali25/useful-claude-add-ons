@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@b4f04e23 on 2026-10-02. Verify before trusting.
+%% Generated from useful-claude-add-ons@273ec0f6 on 2026-10-02. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -132,7 +132,7 @@
 %%     :12-13 recorded -> approval.json bound to the digest of spec.md AND plan.md;
 %%     :15 refused -> prompt blocked. Hook registered at
 %%     plugin/crew/hooks/hooks.json:14 (approval-hook.sh, UserPromptSubmit).
-%%   plugin/crew/commands/implement.md:15-18 refuses unless `crew_ticket.py validate`
+%%   plugin/crew/commands/implement.md:14-17 refuses unless `crew_ticket.py validate`
 %%     reports the plan approved; :31 scope_base --record, then crew_tracker.py
 %%     move --to in-progress (:36, `--reopen` on a successor plan :37); :41 steps
 %%     in order, test first; :59 changed-file list; :69 verify; :89-112 step 6:
@@ -273,7 +273,7 @@
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
-    small -- yes --> fix["/crew:fix - same phases,<br/>one step each, one review round<br/>fix.md:2, :75, :94"]
+    small -- yes --> fix["/crew:fix - same phases,<br/>one step each, one review round<br/>fix.md:2, :75, :95"]
     small -- no --> BR
 
     subgraph brainstorm["/crew:brainstorm"]
@@ -312,10 +312,10 @@ flowchart TB
     ap2 --> planned["spec.md header 'status: planned'<br/>keeps the approval,<br/>crew_tracker.py move --to planned<br/>plan.md:60-63"]
 
     subgraph implement["/crew:implement"]
-        planned --> im0{"crew_ticket.py validate:<br/>plan approved?<br/>implement.md:18-24"}
+        planned --> im0{"crew_ticket.py validate:<br/>plan approved?<br/>implement.md:17-23"}
         im0 -- "no / stale" --> imx([refuse: /crew:plan id --approve])
-        im0 -- yes --> im1["scope_base --record, then<br/>crew_tracker.py move --to in-progress<br/>:29, :34"]
-        im1 --> im2["steps in order, test first<br/>:39; scope-guard on every write<br/>hooks.json:31 (PreToolUse, Touch)"]
+        im0 -- yes --> im1["scope_base --record, then<br/>crew_tracker.py move --to in-progress<br/>:28, :33"]
+        im1 --> im2["recurring-findings checklist<br/>for the Touch paths, then<br/>steps in order, test first<br/>:38-42; scope-guard on every write<br/>hooks.json:31 (PreToolUse, Touch)"]
         im2 --> im3a["changed-file list, verify<br/>:57, :67"]
         im3a --> im3["step 6: tests, then /crew:docs<br/>:86-91"]
         im3 --> rf1{"crew_refresh_check.py<br/>:93"}
@@ -501,3 +501,13 @@ flowchart TB
 %% block :579-589 -> :615-625 (difflib); review.md :447-450, crew_refresh_check.py :93 and
 %% done.md :50-61 did not move. No node's meaning changed: the metrics row L-0578 adds is
 %% written inside the round, which this diagram draws as one node.
+
+%% Re-anchored 6053b65d -> dac06883 (L-0575, the recurring-findings checklist): implement.md step 2 now prints
+%% recurring_findings.py's checklist before the first plan step (im2's label and :38-42), and the method paragraph
+%% lost a line, so im0 :18-24 -> :17-23, im1 :29/:34 -> :28/:33 and the :15-18 note -> :14-17 (difflib). fix.md
+%% step 4 gained one line after :85, so the fix node :94 -> :95. No edge changed.
+%% Re-anchored dac06883 -> 871c5043 (L-0575 review round 1): implement.md step 2 re-wrapped in place
+%% (quoted plugin root); its line count and every cited line are unchanged. No node or edge changed.
+%% Re-anchored b4f04e23 (main) and 871c5043 (L-0575) -> 2859ab05 (L-0575 merges origin/main 8d84786d at f12f742c and d2ec37d3 at 2859ab05, rerere disabled; crew 1.0.123. Both provenance histories kept, main's first. Body citations were mapped with difflib from the tree each line came from (4234c443 for L-0575's lines, d2ec37d3 for main's): ten CHANGELOG.md citations in crew.md moved +19 (L-0575's entry above main's); verification-harness.md's two verify.json ranges were set by hand to :448-453 (rule 41) and :455-465 (L-0575's rule); crew.md's version sentence reads 1.0.123. History notes were not re-mapped. No suite was executed for this note). No node or edge changed.
+%% Re-anchored b4f04e23 (main) and 2859ab05 (L-0575) -> 99c8f66e (L-0575 merges origin/main 7ba4f9ea (L-0572 #309 crew 1.0.126, L-0593 #312) at 99c8f66e, rerere disabled; crew 1.0.129 is set in the last commit. Body citations were mapped with difflib from the tree each line came from (9dad04ef for L-0575's lines, 7ba4f9ea for main's): ten CHANGELOG.md citations in crew.md moved +21 (L-0572's entry, below L-0575's); verification-harness.md's verify.json ranges were set by hand to :469-476 (rule 41) and :486-496 (L-0575's rule, after L-0572's at :478-485). History notes were not re-mapped. No suite was executed for this note). No node or edge changed.
+%% Re-anchored 99c8f66e (L-0575; main did not change this diagram) -> 273ec0f6 (L-0575 merges origin/main a9b4734d (L-0576 #306 crew 1.0.128, L-0577 #305, T-0107 #273) at 273ec0f6, rerere disabled; crew 1.0.129 is re-set in the last commit. Both provenance histories kept, main's first. Body citations were mapped with difflib from the tree each line came from (986c9ca5 for L-0575's lines, a9b4734d for main's): ten CHANGELOG.md citations in crew.md moved +113 (main's new entries sit below L-0575's), and ten plugin/crew/README.md citations in crew.md and repo-docs.md moved +2 (L-0575's README paragraph at :727 sits above them); verification-harness.md's verify.json ranges were set by hand to :474-481 (rule 41), :483-490 (L-0572) and :491-501 (L-0575, last). History notes were not re-mapped. No suite was executed for this note). No node or edge changed.
