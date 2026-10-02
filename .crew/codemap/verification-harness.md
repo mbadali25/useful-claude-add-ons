@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@a4ffe1de
+anchor: useful-claude-add-ons@18b764dc
 verified: 2026-10-01
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -2204,3 +2204,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `5143dbcd` -> `ded603a7` on 2026-10-02 (L-0574: the gate's pylint findings fixed; no cited line moved).**
 
 **Re-anchored `ded603a7` -> `a4ffe1de` on 2026-10-02 (L-0574 merges origin/main 7ba4f9ea, crew 1.0.126: citations into files main changed re-mapped by difflib, two verify.json:418 read by hand as :439).**
+
+**Re-anchored `a4ffe1de` -> `18b764dc` on 2026-10-02 (L-0574: merge of origin/main 22292d63 (rerere disabled, scope re-based to it) and the round-5 fixes; ten CHANGELOG citations moved by difflib).**
