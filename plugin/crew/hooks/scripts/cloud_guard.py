@@ -2572,8 +2572,7 @@ def environments_config(root):
             out["nonProd"] = [v.strip() for v in cfg["environments"].get("nonProd", [])]
             out["workflows"] = dict(cfg["environments"].get("workflows", {}))
     out["dispatchProblem"] = out["problem"] or crew_config.global_environments_problem()
-    out["prodUnattended"] = crew_config.resolve_ratcheted(
-        root, "environments.prodUnattended")["effective"] is True
+    out["prodUnattended"] = crew_config.resolve_ratcheted(root, "environments.prodUnattended")["effective"] is True
     out["engaged"] = bool(out["nonProd"] or out["prodUnattended"] or out["problem"])
     return out
 
@@ -2790,8 +2789,7 @@ def _track(argv, ctx, seq, fed, shell="bash"):
 OP_UNREADABLE_LINE = "line-not-literal"
 
 
-GATE_HELPERS = (_unwrap, _shell_args, _pwsh_payload, _ps_normalise,
-                _head_name, _lex_ps)
+GATE_HELPERS = (_unwrap, _shell_args, _pwsh_payload, _ps_normalise, _head_name, _lex_ps)
 
 
 def _literal_gate(shell, text):
