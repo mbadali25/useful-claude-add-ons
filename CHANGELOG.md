@@ -39,18 +39,26 @@ All notable changes to this repository are documented here. Format follows [Keep
   with exit 2 on any run, so routine never adopts, and later removes, a
   directory it did not create; likewise a file routine writes (`report.md`,
   `findings.jsonl`, ...) found in a directory with no `scan-meta.json` is
-  refused rather than overwritten.
+  refused rather than overwritten. A run holds `.gizmoduck-routine.lock` in
+  its output directory, so a second run there exits 2. The manifest is read
+  once and the checked bytes are the ones loaded. An active-scan gate option
+  (`zap_active`, `nmap_vuln`, `sqlmap`) must be a YAML boolean; a quoted
+  `"false"` is refused. A target name is letters, digits, `.`, `_`, `-`,
+  not a Windows device name and not a case-variant of another target's.
   `scan-meta.json` and `report.*` are written complete-then-renamed (a
   same-directory temp, `newline="\n"`, fsynced before the swap, keeping
-  the file's mode or the umask's). The PyYAML install hint quotes the
+  the file's mode or the umask's, the swap retried on a transient Windows
+  `PermissionError`); `report.pdf` too, with wkhtmltopdf bounded at 300 s.
+  `report --run-manifest` refuses a cell that is not a mapping of string
+  `target`, `tool` and `status`. The PyYAML install hint quotes the
   interpreter path for the shell it will be pasted into.
   Every routine-only flag, and `--run-manifest`, is refused on any other command.
 - **Unchanged.** The flat Nuclei report, byte for byte; every other subcommand
   stays stdlib-only (`routine` imports routine.py, and so PyYAML, lazily); no
   slash command; no hook; crew's endpoint-ledger path `docs/security-scans/<ep-id>.md`
   is untouched, and the dated layout does not satisfy it (follow-up in `TODO.md`).
-- **Sabotage.** Twenty-two entries, (a) to (v), listed in
-  `plugin/gizmoduck/scripts/_test/test_routine_cli.py`'s docstring. (h) to (v) and
+- **Sabotage.** Twenty-nine entries, (a) to (ac), listed in
+  `plugin/gizmoduck/scripts/_test/test_routine_cli.py`'s docstring. (h) to (ac) and
   the rewritten (d) came with the review round-1 fixes and were each run against
   the committed `gizmoduck.py` and confirmed RED; (d) now fails the write itself
   half-way, because failing before the write could not tell an atomic helper

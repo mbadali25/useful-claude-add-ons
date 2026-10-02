@@ -84,6 +84,27 @@ must go red):
          [416]
   (v) the PyYAML install hint printing the interpreter path unquoted
       -> test_missing_pyyaml_hint_quotes_the_interpreter_path
+  Review round 2 (codex), each confirmed red against the code it fixed:
+  (w) an active-scan gate option accepted as a string ("false" is truthy)
+      -> test_manifest_errors_write_nothing[gate-option-string] /
+         [sqlmap-option-string]
+  (x) the manifest checked from one read and loaded from a second
+      -> test_the_manifest_is_read_once
+  (y) the output-directory lock not exclusive, or not released
+      -> test_a_run_already_holding_the_directory_is_refused,
+         test_a_second_run_started_mid_run_is_refused_and_the_lock_released,
+         test_the_lock_is_released_when_the_run_raises
+  (z) report.pdf rendered straight to its final name, or wkhtmltopdf unbounded
+      -> test_report_pdf_is_rendered_to_a_temp_then_renamed,
+         test_html_to_pdf_bounds_wkhtmltopdf_and_falls_through_on_timeout
+  (aa) a run-manifest cell's shape unchecked
+      -> test_report_unreadable_run_manifest_is_a_usage_error[cell-*]
+  (ab) os.replace not retried on a transient PermissionError
+      -> test_atomic_write_retries_a_transient_permission_error
+  (ac) the target-name rule loosened: no allowlist, Windows device names or
+      case-variant duplicates
+      -> test_manifest_errors_write_nothing[newline-name] / [pipe-name] /
+         [trailing-dot-name] / [windows-device-name] / [case-duplicate-name]
 """
 import datetime
 import importlib.util
@@ -122,7 +143,7 @@ def gz(scripts_dir):
 def _no_pdf_renderer(gz, monkeypatch):
     """A PDF renderer on the test machine must not decide what these tests
     see; `files.report_pdf` is asserted null, the no-renderer case."""
-    monkeypatch.setattr(gz, "html_to_pdf", lambda html, out: False)
+    monkeypatch.setattr(gz, "html_to_pdf", lambda html, out, **_kw: False)
 
 
 def _registry(**overrides):
@@ -646,6 +667,193 @@ def test_replace_refuses_a_target_directory_that_is_a_junction(gz, fixture, tmp_
     assert (out / "site-a").is_dir()
 
 
+def test_a_true_gate_option_still_enables_its_tool(gz, fixture, tmp_path):
+    """The must-allow side of the gate-option check: a real boolean passes."""
+    rc = _run(gz, fixture, tmp_path, _registry(), confirm=True)
+
+    assert rc == 0
+    assert _cells(tmp_path / "out")[("site-a", "sqlmap")]["status"].startswith("ran")
+
+
+def test_the_manifest_is_read_once(gz, fixture, tmp_path, monkeypatch):
+    """The checked bytes are the loaded bytes: a manifest swapped after the
+    shape check (to a target named ../escape) is never what runs."""
+    manifest = tmp_path / "m.yaml"
+    manifest.write_bytes(Path(fixture("manifest-routine-cli.yaml")).read_bytes())
+    real_check = gz._check_manifest_shape
+
+    def _check_then_swap(*args, **kwargs):
+        result = real_check(*args, **kwargs)
+        manifest.write_text("authorized_by: t\ntargets:\n"
+                            "  - {name: ../escape, kind: web, url: 'https://e.invalid/'}\n",
+                            encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(gz, "_check_manifest_shape", _check_then_swap)
+
+    rc = gz.cmd_routine(str(manifest), str(tmp_path / "out"), registry=_registry(),
+                        date=_DATE, confirm=True)
+
+    assert rc == 0
+    assert [t["name"] for t in _meta(tmp_path / "out")["targets"]] == ["site-a", "site-b"]
+    assert not (tmp_path / "escape").exists()
+
+
+def test_a_run_already_holding_the_directory_is_refused(gz, fixture, tmp_path, capsys):
+    """Two runs never share an output directory: the second finds the first's
+    lock and exits 2 without running a scanner or touching the lock."""
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / gz.ROUTINE_LOCK).write_text("held", encoding="utf-8")
+    reg = _registry()
+
+    rc = _run(gz, fixture, tmp_path, reg, confirm=True)
+
+    assert rc == 2
+    assert "another routine run holds" in capsys.readouterr().err
+    assert sorted(p.name for p in out.iterdir()) == [gz.ROUTINE_LOCK]
+    assert (out / gz.ROUTINE_LOCK).read_text(encoding="utf-8") == "held"
+    assert all(a.run_calls == [] for a in reg.ADAPTERS.values())
+
+
+def test_a_second_run_started_mid_run_is_refused_and_the_lock_released(gz, fixture, tmp_path,
+                                                                       capsys):
+    """The race itself: a second cmd_routine on the same directory, started
+    while the first is inside its scanners, is refused; the first finishes and
+    releases its lock."""
+    inner = {}
+
+    def _nuclei_starts_a_second_run(target, outdir, opts):
+        inner["rc"] = _run(gz, fixture, tmp_path, _registry(), confirm=True)
+        return _ok("nuclei-raw")(target, outdir, opts)
+
+    reg = _registry(nuclei=FakeAdapter("nuclei", ["web", "host"],
+                                       run_fn=_nuclei_starts_a_second_run))
+
+    rc = _run(gz, fixture, tmp_path, reg, confirm=True)
+
+    assert inner["rc"] == 2
+    assert "another routine run holds" in capsys.readouterr().err
+    assert rc == 0
+    assert not (tmp_path / "out" / gz.ROUTINE_LOCK).exists()
+
+
+def test_the_lock_is_released_when_the_run_raises(gz, fixture, tmp_path, monkeypatch):
+    def _boom(*_a, **_kw):
+        raise RuntimeError("scanner exploded")
+
+    monkeypatch.setattr(gz, "load", _boom)
+
+    with pytest.raises(RuntimeError, match="scanner exploded"):
+        _run(gz, fixture, tmp_path, _registry(), confirm=True)
+
+    assert not (tmp_path / "out" / gz.ROUTINE_LOCK).exists()
+
+
+def test_report_pdf_is_rendered_to_a_temp_then_renamed(gz, fixture, tmp_path, monkeypatch):
+    out = tmp_path / "out"
+    seen = {}
+
+    def _render(html, path, **kwargs):
+        seen["path"], seen["kwargs"] = Path(path), kwargs
+        Path(path).write_bytes(b"%PDF-complete")
+        return True
+
+    monkeypatch.setattr(gz, "html_to_pdf", _render)
+
+    rc = _run(gz, fixture, tmp_path, _registry(), confirm=True)
+
+    assert rc == 0
+    assert seen["path"].parent == out and seen["path"].name != "report.pdf"
+    assert seen["kwargs"].get("timeout") == gz.PDF_TIMEOUT_SECONDS
+    assert (out / "report.pdf").read_bytes() == b"%PDF-complete"
+    assert not seen["path"].exists()
+    assert _meta(out)["files"]["report_pdf"] == "report.pdf"
+
+
+def test_a_failed_pdf_render_leaves_no_partial_pdf(gz, fixture, tmp_path, monkeypatch):
+    out = tmp_path / "out"
+
+    def _half_render(html, path, **_kw):
+        Path(path).write_bytes(b"%PDF-trunc")
+        return False
+
+    monkeypatch.setattr(gz, "html_to_pdf", _half_render)
+
+    rc = _run(gz, fixture, tmp_path, _registry(), confirm=True)
+
+    assert rc == 0
+    assert not (out / "report.pdf").exists()
+    assert not [p for p in out.iterdir() if p.name.startswith("report.pdf")]
+    assert _meta(out)["files"]["report_pdf"] is None
+
+
+def test_html_to_pdf_bounds_wkhtmltopdf_and_falls_through_on_timeout(scripts_dir, tmp_path,
+                                                                     monkeypatch):
+    """A fresh copy of the module: the autouse fixture stubs html_to_pdf on `gz`."""
+    spec = importlib.util.spec_from_file_location("gz_pdf", scripts_dir / "gizmoduck.py")
+    gz = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gz)
+    calls = []
+
+    def _hangs(argv, **kwargs):
+        calls.append(kwargs.get("timeout"))
+        raise subprocess.TimeoutExpired(argv, kwargs.get("timeout"))
+
+    monkeypatch.setattr(gz.shutil, "which", lambda name: "/fake/wkhtmltopdf")
+    monkeypatch.setattr(gz.subprocess, "run", _hangs)
+    monkeypatch.setitem(sys.modules, "weasyprint", None)
+
+    ok = gz.html_to_pdf("<p>x</p>", str(tmp_path / "r.pdf"), timeout=7)
+
+    assert ok is False
+    assert calls == [7]
+    assert not (tmp_path / "r.pdf").exists()
+
+
+def test_atomic_write_retries_a_transient_permission_error(gz, tmp_path, monkeypatch):
+    """Windows: antivirus or a reader briefly holding the destination makes
+    os.replace raise PermissionError; a bounded retry gets past it."""
+    target = tmp_path / "report.md"
+    real_replace = gz.os.replace
+    attempts = []
+
+    def _held_once(src, dst):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise PermissionError(13, "The process cannot access the file")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(gz.os, "replace", _held_once)
+    monkeypatch.setattr(gz.time, "sleep", lambda _s: None)
+
+    gz._atomic_write_text(target, "new")
+
+    assert len(attempts) == 2
+    assert target.read_text(encoding="utf-8") == "new"
+    assert list(tmp_path.iterdir()) == [target]
+
+
+def test_atomic_write_gives_up_after_a_bounded_number_of_attempts(gz, tmp_path, monkeypatch):
+    target = tmp_path / "report.md"
+    target.write_bytes(b"ORIGINAL")
+    attempts = []
+
+    def _always_held(src, dst):
+        attempts.append(1)
+        raise PermissionError(13, "The process cannot access the file")
+
+    monkeypatch.setattr(gz.os, "replace", _always_held)
+    monkeypatch.setattr(gz.time, "sleep", lambda _s: None)
+
+    with pytest.raises(PermissionError):
+        gz._atomic_write_text(target, "new")
+
+    assert len(attempts) == gz.REPLACE_ATTEMPTS
+    assert target.read_bytes() == b"ORIGINAL"
+    assert list(tmp_path.iterdir()) == [target]
+
+
 _BAD_MANIFESTS = {
     "no-auth": ("targets:\n  - {name: a, kind: web, url: 'https://a.invalid/'}\n",
                 "authorized_by"),
@@ -692,6 +900,33 @@ _BAD_MANIFESTS = {
                             "  - {name: Scan-Meta.JSON, kind: web, url: 'https://a.invalid/'}\n"),
                            "is a file routine writes in the output directory"),
     "missing-file": (None, "No such file or directory"),
+    "gate-option-string": (("authorized_by: t\ntargets:\n"
+                            "  - {name: a, kind: web, url: 'https://a.invalid/',"
+                            " options: {nmap_vuln: 'false'}}\n"),
+                           "targets[0] option 'nmap_vuln' must be true or false"),
+    "sqlmap-option-string": (("authorized_by: t\ntargets:\n"
+                              "  - {name: a, kind: web, url: 'https://a.invalid/',"
+                              " options: {sqlmap: 'yes'}}\n"),
+                             "targets[0] option 'sqlmap' must be true or false"),
+    "case-duplicate-name": (("authorized_by: t\ntargets:\n"
+                             "  - {name: site, kind: web, url: 'https://a.invalid/'}\n"
+                             "  - {name: SITE, kind: web, url: 'https://b.invalid/'}\n"),
+                            "differ only in case"),
+    "windows-device-name": (("authorized_by: t\ntargets:\n"
+                             "  - {name: Con, kind: web, url: 'https://a.invalid/'}\n"),
+                            "reserved on Windows"),
+    "windows-device-name-ext": (("authorized_by: t\ntargets:\n"
+                                 "  - {name: nul.txt, kind: web, url: 'https://a.invalid/'}\n"),
+                                "reserved on Windows"),
+    "trailing-dot-name": (("authorized_by: t\ntargets:\n"
+                           "  - {name: 'a.', kind: web, url: 'https://a.invalid/'}\n"),
+                          "targets[0] needs a 'name'"),
+    "newline-name": (("authorized_by: t\ntargets:\n"
+                      "  - {name: \"a\\n## Forged\", kind: web, url: 'https://a.invalid/'}\n"),
+                     "targets[0] needs a 'name'"),
+    "pipe-name": (("authorized_by: t\ntargets:\n"
+                   "  - {name: 'a|b', kind: web, url: 'https://a.invalid/'}\n"),
+                  "targets[0] needs a 'name'"),
 }
 
 
@@ -964,7 +1199,9 @@ def test_report_run_manifest_on_flat_input_renders_the_flat_golden(gz, monkeypat
     assert md_out.read_text(encoding="utf-8") == golden
 
 
-@pytest.mark.parametrize("case", ["missing", "not-json", "no-cells"])
+@pytest.mark.parametrize("case", ["missing", "not-json", "no-cells", "cell-not-a-mapping",
+                                  "cell-missing-tool", "cell-status-not-a-string",
+                                  "cell-errors-not-a-list"])
 def test_report_unreadable_run_manifest_is_a_usage_error(gz, monkeypatch, fixture, tmp_path,
                                                          capsys, case):
     bad = tmp_path / "bad.json"
@@ -972,6 +1209,16 @@ def test_report_unreadable_run_manifest_is_a_usage_error(gz, monkeypatch, fixtur
         bad.write_text("{not json", encoding="utf-8")
     elif case == "no-cells":
         bad.write_text('{"authorized_by": "x"}', encoding="utf-8")
+    elif case == "cell-not-a-mapping":
+        bad.write_text('{"cells": [1]}', encoding="utf-8")
+    elif case == "cell-missing-tool":
+        bad.write_text('{"cells": [{"target": "a", "status": "ran"}]}', encoding="utf-8")
+    elif case == "cell-status-not-a-string":
+        bad.write_text('{"cells": [{"target": "a", "tool": "t", "status": 1}]}',
+                       encoding="utf-8")
+    elif case == "cell-errors-not-a-list":
+        bad.write_text('{"cells": [{"target": "a", "tool": "t", "status": "ran", '
+                       '"errors": 5}]}', encoding="utf-8")
     md_out = tmp_path / "r.md"
 
     code = _main_exit(gz, monkeypatch, ["report", str(fixture("combined-findings.jsonl")),

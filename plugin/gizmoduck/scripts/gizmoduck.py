@@ -50,12 +50,14 @@ import datetime
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -689,7 +691,11 @@ def render_html(findings, min_sev, title, run_manifest=None):
     )
 
 
-def html_to_pdf(html_str, out_path):
+def html_to_pdf(html_str, out_path, timeout=None):
+    """Render `html_str` to `out_path` with wkhtmltopdf, else WeasyPrint.
+    `timeout` (seconds) bounds wkhtmltopdf; one that does not finish in time
+    is killed and treated like one that failed. None keeps the unbounded
+    behaviour `report` has always had."""
     wk = shutil.which("wkhtmltopdf")
     if wk:
         with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False, encoding="utf-8") as t:
@@ -702,9 +708,9 @@ def html_to_pdf(html_str, out_path):
             # fallback below and take the whole report command with it, when the
             # fallback would have produced the file.
             if subprocess.run([wk, "-q", "--enable-local-file-access", tmp, out_path],
-                              check=False).returncode == 0:
+                              check=False, timeout=timeout).returncode == 0:
                 return True
-        except OSError:
+        except (OSError, subprocess.TimeoutExpired):
             pass
         finally:
             os.unlink(tmp)
@@ -735,6 +741,23 @@ SCAN_META_SCHEMA = 1
 ROUTINE_FILES = ("scan-meta.json", "findings.jsonl", "run-manifest.json",
                  "report.md", "report.html", "report.pdf")
 _ROUTINE_DEFAULT_OUT = "routine-out"
+# Held for the whole run (created O_EXCL), so two runs never share an output
+# directory. A run killed outright leaves it behind; the refusal names it.
+ROUTINE_LOCK = ".gizmoduck-routine.lock"
+# wkhtmltopdf gets this long before routine gives up on report.pdf.
+PDF_TIMEOUT_SECONDS = 300
+# os.replace attempts before a PermissionError (a Windows reader or
+# antivirus holding the destination) is reported rather than retried.
+REPLACE_ATTEMPTS = 5
+# Target names: one portable path component. Letters, digits, `.`, `_`, `-`;
+# starting with a letter or digit, not ending with `.`, at most 64 chars.
+# Anything else (a separator, whitespace, a newline or `|` that would forge
+# report.md's structure) is refused rather than escaped.
+_TARGET_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+# Device names Windows reserves in every directory, with or without an extension.
+_WINDOWS_DEVICE_NAMES = frozenset(
+    ["CON", "PRN", "AUX", "NUL"] + [f"COM{i}" for i in range(1, 10)]
+    + [f"LPT{i}" for i in range(1, 10)])
 
 
 def _atomic_write_text(path, text):
@@ -759,11 +782,26 @@ def _atomic_write_text(path, text):
             fh.write(text)
             fh.flush()
             os.fsync(fh.fileno())
-        os.replace(tmp, path)
+        _replace(tmp, path)
         replaced = True
     finally:
         if not replaced and os.path.exists(tmp):
             os.unlink(tmp)
+
+
+def _replace(src, dst):
+    """os.replace, retried REPLACE_ATTEMPTS times on PermissionError: on
+    Windows a reader or antivirus briefly holding `dst` makes the swap fail
+    with a sharing violation that clears on its own. The bound is a count,
+    never a wall-clock deadline; the last failure is raised."""
+    for attempt in range(1, REPLACE_ATTEMPTS + 1):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == REPLACE_ATTEMPTS:
+                raise
+            time.sleep(0.05 * attempt)
 
 
 def _mode_for(path):
@@ -864,6 +902,14 @@ def _load_run_manifest(path):
         data = json.load(fh)
     if not isinstance(data, dict) or not isinstance(data.get("cells"), list):
         raise ValueError(f"{path}: not a run manifest (no 'cells' list)")  # noqa: TRY004
+    for i, cell in enumerate(data["cells"]):
+        if not isinstance(cell, dict) or not all(
+                isinstance(cell.get(k), str) for k in ("target", "tool", "status")):
+            raise ValueError(f"{path}: cells[{i}] needs string 'target', 'tool' and "  # noqa: TRY004
+                             f"'status', not {cell!r}")
+        if cell.get("errors") is not None and not isinstance(cell["errors"], list):
+            raise ValueError(f"{path}: cells[{i}] 'errors' must be a list, "  # noqa: TRY004
+                             f"not {cell['errors']!r}")
     return data
 
 
@@ -880,26 +926,48 @@ def _is_link(path):
 
 
 def _is_plain_dir_name(name):
-    """True for a target name that is safe as `<out>/<name>/`: one path
-    component, never `.` or `..`, no separator (`/`, `\\`), no drive colon,
-    no NUL, no leading or trailing whitespace. The name becomes a directory
-    that `--replace` later removes, so anything that could resolve outside
-    the output directory is refused rather than trusted."""
-    return (isinstance(name, str) and name.strip() == name
-            and name not in ("", ".", "..")
-            and not any(c in name for c in "/\\:\0"))
+    """True for a target name that is safe as `<out>/<name>/` on every
+    platform: it matches _TARGET_NAME_RE (one component, no separator,
+    whitespace, control character or Markdown table pipe, not `.` or `..`,
+    not ending with `.`). The name becomes a directory that `--replace` later
+    removes and a row in report.md, so anything else is refused rather than
+    trusted. Windows device names are refused separately, with their own
+    message (`_is_windows_device_name`)."""
+    return (isinstance(name, str) and _TARGET_NAME_RE.fullmatch(name) is not None
+            and not name.endswith("."))
 
 
-def _check_manifest_shape(path, yaml):
-    """Refuse, as ValueError, a manifest whose types load_manifest does not
-    check itself: a top-level list, a non-string `authorized_by`, `targets`
-    that is not a list, a target that is not a mapping, a target `name` that
-    is missing or not a plain directory name, and a `kind`, location, `tools`
-    or `options` of the wrong type. Without this those reach load_manifest or
-    run_routine as AttributeError / TypeError - exit 1 and a traceback, and
-    for a bad name an output directory already created."""
-    with open(path, encoding="utf-8") as fh:
-        data = yaml.safe_load(fh)
+def _is_windows_device_name(name):
+    """CON, nul.txt, Com1.log ...: Windows maps these to devices in every
+    directory, so `<out>/<name>/` cannot be created there."""
+    return name.split(".", 1)[0].upper() in _WINDOWS_DEVICE_NAMES
+
+
+def _gate_option_keys(registry):
+    """The option keys whose truthiness switches active scanning on: every
+    adapter's ACTIVE_OPTS (nmap_vuln, zap_active) and the name of every
+    opt-in-only active adapter (sqlmap). Their values must be real booleans:
+    YAML's `zap_active: "false"` is a non-empty string, which routine.py reads
+    as true."""
+    keys = set()
+    for name, mod in registry.ADAPTERS.items():
+        keys.update(getattr(mod, "ACTIVE_OPTS", None) or [])
+        if not getattr(mod, "DEFAULT_ENABLED", True) and getattr(mod, "ACTIVE", False):
+            keys.add(name)
+    return keys
+
+
+def _check_manifest_shape(data, gate_keys):
+    """Refuse, as ValueError, a parsed manifest whose types load_manifest
+    does not check itself: a top-level list, a non-string `authorized_by`,
+    `targets` that is not a list, a target that is not a mapping, a target
+    `name` that is missing, not a plain directory name, a Windows device
+    name, a routine file's name, or the same as another name but for case,
+    a `kind`, location, `tools` or `options` of the wrong type, and an
+    active-scan gate option (`gate_keys`) that is not a boolean. Without this
+    those reach load_manifest or run_routine as AttributeError / TypeError -
+    exit 1 and a traceback, for a bad name an output directory already
+    created, and for a quoted "false" an active scan."""
     if data is None:
         return
     if not isinstance(data, dict):
@@ -911,6 +979,7 @@ def _check_manifest_shape(path, yaml):
     targets = data.get("targets")
     if targets is not None and not isinstance(targets, list):
         raise ValueError(f"'targets' must be a list, not a {type(targets).__name__}")
+    seen = {}
     for i, raw in enumerate(targets or []):
         if not isinstance(raw, dict):
             raise ValueError(f"targets[{i}] must be a mapping (name, kind, location), "  # noqa: TRY004
@@ -924,6 +993,14 @@ def _check_manifest_shape(path, yaml):
         if name.casefold() in {f.casefold() for f in ROUTINE_FILES}:
             raise ValueError(f"targets[{i}] name {name!r} is a file routine writes in the "
                              f"output directory; <out>/{name}/ would collide with it")
+        if _is_windows_device_name(name):
+            raise ValueError(f"targets[{i}] name {name!r} is a device name reserved on "
+                             f"Windows; <out>/{name}/ cannot be created there")
+        if name.casefold() in seen and seen[name.casefold()] != name:
+            raise ValueError(f"targets[{i}] name {name!r} and {seen[name.casefold()]!r} "
+                             f"differ only in case; on a case-insensitive filesystem they "
+                             f"would share one directory")
+        seen.setdefault(name.casefold(), name)
         if not isinstance(raw.get("kind"), str):
             raise ValueError(f"targets[{i}] 'kind' must be a string, "  # noqa: TRY004
                              f"not {raw.get('kind')!r}")
@@ -938,6 +1015,10 @@ def _check_manifest_shape(path, yaml):
         options = raw.get("options")
         if options is not None and not isinstance(options, dict):
             raise ValueError(f"targets[{i}] 'options' must be a mapping, not {options!r}")
+        for key in sorted(gate_keys & set(options or {})):
+            if not isinstance(options[key], bool):
+                raise ValueError(f"targets[{i}] option {key!r} must be true or false, not "
+                                 f"{options[key]!r}; it switches active scanning on")
 
 
 def _earlier_run_dirs(outdir, meta_path):
@@ -971,6 +1052,26 @@ def _earlier_run_dirs(outdir, meta_path):
         if child.is_dir():
             dirs.append(child)
     return dirs
+
+
+def _render_pdf(html, pdf_path):
+    """Render report.pdf to a temp beside it and swap it in, so the final name
+    only ever holds a complete PDF; a renderer that fails, or is killed at
+    PDF_TIMEOUT_SECONDS, leaves no report.pdf (an earlier run's is removed,
+    since it would describe other findings) and no temp. True when written."""
+    fd, tmp = tempfile.mkstemp(dir=pdf_path.parent, prefix=f"{pdf_path.name}.tmp-")
+    os.close(fd)
+    try:
+        if not html_to_pdf(html, tmp, timeout=PDF_TIMEOUT_SECONDS):
+            if pdf_path.exists():
+                pdf_path.unlink()
+            return False
+        os.chmod(tmp, _mode_for(pdf_path))
+        _replace(tmp, pdf_path)
+        return True
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
 
 
 def _unowned_target_dirs(outdir, manifest, owned):
@@ -1032,8 +1133,7 @@ def cmd_routine(manifest_path, out, *, scan_root=None, date=None, replace=False,
         return 2
 
     try:
-        _check_manifest_shape(manifest_path, routine.yaml)
-        manifest = routine.load_manifest(manifest_path, registry=registry)
+        manifest = _load_checked_manifest(routine, manifest_path, registry)
     except (routine.AuthorizationError, ValueError, OSError, routine.yaml.YAMLError) as exc:
         print(f"routine: manifest refused: {exc}", file=sys.stderr)
         return 2
@@ -1045,6 +1145,46 @@ def cmd_routine(manifest_path, out, *, scan_root=None, date=None, replace=False,
     else:
         outdir = Path(out)
 
+    outdir.mkdir(parents=True, exist_ok=True)
+    lock = outdir / ROUTINE_LOCK
+    try:
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        print(f"routine: another routine run holds {lock}; two runs must never share an "
+              f"output directory. Nothing was written. If no run is active (one was killed), "
+              f"delete {lock} and rerun", file=sys.stderr)
+        return 2
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(f"pid {os.getpid()} started {_utc_now().isoformat()}\n")
+        return _routine_in(outdir, routine, manifest, manifest_path, date_str,
+                           replace=replace, confirm=confirm, title=title, min_sev=min_sev,
+                           registry=registry)
+    finally:
+        os.unlink(lock)
+
+
+def _load_checked_manifest(routine, manifest_path, registry):
+    """Read the manifest ONCE, shape-check those bytes, and hand load_manifest
+    a private copy of exactly them. Checking one read and loading a second
+    would let a manifest swapped in between (a target named `../escape`)
+    run unchecked."""
+    raw = Path(manifest_path).read_bytes()
+    reg = registry if registry is not None else routine.default_registry
+    _check_manifest_shape(routine.yaml.safe_load(raw.decode("utf-8")), _gate_option_keys(reg))
+    fd, private = tempfile.mkstemp(prefix="gizmoduck-manifest-", suffix=".yaml")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(raw)
+        return routine.load_manifest(private, registry=registry)
+    finally:
+        os.unlink(private)
+
+
+def _routine_in(outdir, routine, manifest, manifest_path, date_str, *, replace, confirm, title,
+                min_sev, registry):
+    """cmd_routine's body once it holds `outdir`'s lock: the ownership checks,
+    the run, and the report set. Returns cmd_routine's exit status."""
     meta_path = outdir / "scan-meta.json"
     dirs = []
     if meta_path.exists():
@@ -1088,13 +1228,10 @@ def cmd_routine(manifest_path, out, *, scan_root=None, date=None, replace=False,
     html = render_html(findings, min_sev, title, run_manifest=run_manifest)
     _atomic_write_text(outdir / "report.md", md)
     _atomic_write_text(outdir / "report.html", html)
-    pdf_path = outdir / "report.pdf"
-    pdf_ok = html_to_pdf(html, str(pdf_path))
+    pdf_ok = _render_pdf(html, outdir / "report.pdf")
     if not pdf_ok:
-        print("routine: no PDF renderer (wkhtmltopdf or weasyprint) - report.pdf not "
-              "written; report.html is complete", file=sys.stderr)
-        if pdf_path.exists():
-            pdf_path.unlink()
+        print("routine: no PDF renderer (wkhtmltopdf or weasyprint) produced report.pdf; "
+              "report.html is complete", file=sys.stderr)
 
     coverage = _coverage_summary(run_manifest)
     files = {"findings": "findings.jsonl", "run_manifest": "run-manifest.json",

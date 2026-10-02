@@ -112,12 +112,16 @@ targets:
 Default tools per kind: `web` nuclei, zap, nikto, nmap, testssl; `host` nuclei, nmap,
 testssl; `iac` checkov, trivy; `deps` trivy, dependency-check; `code` semgrep. A manifest
 with no `authorized_by`, a duplicate `name`, an unknown `kind`, a target missing its
-location, or a value of the wrong type is refused before anything runs, with exit 2. A `name`
-becomes the directory `<out>/<name>/`, so it must be a plain directory name: no `/`, `\`
-or `:`, no leading or trailing space, not `.` or `..`, and not the name of a file routine
-writes there (`report.md`, `scan-meta.json` and the rest, in any case). `routine` needs
-PyYAML; without
-it the command exits 2 and names it.
+location, or a value of the wrong type is refused before anything runs, with exit 2. A
+`name` becomes the directory `<out>/<name>/` and a row in `report.md`, so it must be
+portable: letters, digits, `.`, `_` and `-` only, starting with a letter or digit, not
+ending with `.`, at most 64 characters, not a Windows device name (`CON`, `nul.txt`, `COM1`
+...), not the name of a file routine writes there (`report.md`, `scan-meta.json` and the
+rest, in any case), and not the same as another target's name but for case. The options that
+switch active scanning on (`zap_active`, `nmap_vuln`, `sqlmap`) must be YAML `true` or
+`false`: a quoted `"false"` is refused, because it would read as true. The manifest is read
+once; what was checked is what runs. `routine` needs PyYAML; without it the command exits 2
+and names it.
 
 Two output layouts, one of them per run:
 
@@ -170,8 +174,11 @@ it would make it the run's own, and the next `--replace` would remove a director
 never created. In a directory with no `scan-meta.json`, a file named like one routine writes
 (`report.md`, `findings.jsonl` and the rest) is refused the same way rather than
 overwritten. After an interrupted run, move its partial files and target directories aside
-before rerunning. `scan-meta.json` and `report.*` are written complete-then-renamed, never
-truncated in place.
+before rerunning. `scan-meta.json` and `report.*`, `report.pdf` included, are written to a
+temp beside them and renamed into place, never truncated in place; wkhtmltopdf gets 300
+seconds. A run holds `.gizmoduck-routine.lock` in the output directory for its whole length,
+so a second run on the same directory exits 2; a run killed outright leaves the lock behind,
+and the refusal names it to delete once no run is active.
 
 **sqlmap has two gates, and both stay.** `options.sqlmap: true` makes a target a candidate;
 it fires only when `--confirm-active` is named in full (no abbreviation is accepted). A
