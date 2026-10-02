@@ -582,18 +582,24 @@ def prereview_gate(args):
     true; COULD NOT CHECK refuses unless --allow-unverified; only an ACTIVE
     incident stands either down, and logs the skip. Every decision is written
     to <scratch>/prereview.json for `finish` to copy into review.json."""
-    results, configured = review_checks.run_checks(args.root, args.manifest)
+    try:
+        results, configured = review_checks.run_checks(args.root, args.manifest)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        # Boundary: an escaped exception would exit 1, which reads as FINDINGS.
+        results, configured = [{"name": "pre-review", "status": review_checks.COULD_NOT,
+                                "files": 0, "new": [],
+                                "detail": f"{type(exc).__name__}: {exc}"}], True
     bundle = _bundle_sha(args.manifest)
     if not configured:
         sys.stderr.write(f"review-run: pre-review checks: none configured "
                          f"({review_checks.VERIFY_MAP} has no {review_checks.CONFIG_KEY})\n")
-        review_checks.record(args.scratch, bundle, [], False, False, configured=False)
+        _record(args.scratch, bundle, [], False, False, configured=False)
         return None
     for line in review_checks.lines(results):
         sys.stderr.write(f"review-run: {line}\n")
     verdict = review_checks.overall(results)
     if verdict == review_checks.PASS:
-        review_checks.record(args.scratch, bundle, results, False, False)
+        _record(args.scratch, bundle, results, False, False)
         return None
     incident = crew_incident.read_state(args.root, crew_state.load_config(args.root))
     if incident["active"]:
@@ -602,14 +608,14 @@ def prereview_gate(args):
                 review_checks.FAIL, review_checks.COULD_NOT)))
         sys.stderr.write(f"review-run: incident {incident['id']} is active; the pre-review "
                          "checks stand down and the skip is logged\n")
-        review_checks.record(args.scratch, bundle, results, False, True)
+        _record(args.scratch, bundle, results, False, True)
         return None
     if verdict == review_checks.COULD_NOT and args.allow_unverified:
         sys.stderr.write("review-run: pre-review checks could not check everything; reviewing "
                          "anyway (--allow-unverified); review.json records the override\n")
-        review_checks.record(args.scratch, bundle, results, True, False)
+        _record(args.scratch, bundle, results, True, False)
         return None
-    review_checks.record(args.scratch, bundle, results, False, False)
+    _record(args.scratch, bundle, results, False, False)
     if verdict == review_checks.FAIL:
         sys.stderr.write("review-run: the bundle adds linter findings its base did not have. No "
                          "round reserved. Fix them (or suppress one with the tool's own inline "
@@ -621,6 +627,16 @@ def prereview_gate(args):
                          "again, or pass --allow-unverified to review anyway (review.json "
                          "records the override)\n")
     return EXIT_UNVERIFIED
+
+
+def _record(scratch, bundle, results, overridden, stood_down, configured=True):
+    """Write prereview.json; a write that fails is said, never fatal: the
+    decision is already made, and `finish` then reads `not-recorded`."""
+    try:
+        review_checks.record(scratch, bundle, results, overridden, stood_down, configured)
+    except OSError as exc:
+        sys.stderr.write(f"review-run: could not record the pre-review checks in {scratch} "
+                         f"({exc}); review.json will say not-recorded\n")
 
 
 def _bundle_sha(manifest_path):

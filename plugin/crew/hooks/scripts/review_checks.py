@@ -52,6 +52,7 @@ import argparse
 import collections
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -79,6 +80,7 @@ CONFIG_FILES = ("ruff.toml", ".ruff.toml", "pyproject.toml", ".shellcheckrc",
                 os.path.join(".github", "actionlint.yml"))
 SKIPPED_MODES = ("120000", "160000")  # a symlink's blob is its target; a submodule has none
 _ZERO = "0" * 40
+_DIGITS = re.compile(r"\d+")
 
 TOOLS = {
     "ruff": {"globs": ("**/*.py",)},
@@ -105,7 +107,9 @@ try {
         exit 3
     }
     $rows = foreach ($path in @(Get-Content -LiteralPath $ListFile | Where-Object { $_ })) {
-        $params = @{ Path = $path }
+        # -Path takes wildcards: a name with [ ] would match nothing and
+        # read as clean, so the name is escaped to match only itself.
+        $params = @{ Path = [System.Management.Automation.WildcardPattern]::Escape($path) }
         if ($rules.Count -gt 0) { $params.IncludeRule = $rules }
         foreach ($r in @(Invoke-ScriptAnalyzer @params)) {
             [pscustomobject]@{ file = $path; rule = [string]$r.RuleName;
@@ -148,7 +152,8 @@ def load_config(root):
         problems.append(f"{CONFIG_KEY}: unknown key(s) {', '.join(unknown_block)}")
     for index, spec in enumerate(linters):
         where = f'{CONFIG_KEY}.linters[{index}]'
-        if not isinstance(spec, dict) or spec.get("tool") not in TOOLS:
+        if not isinstance(spec, dict) or not isinstance(spec.get("tool"), str) \
+                or spec["tool"] not in TOOLS:
             problems.append(f"{where}: tool must be one of {', '.join(sorted(TOOLS))}")
             continue
         unknown = sorted(set(spec) - LINTER_KEYS)
@@ -193,8 +198,8 @@ def _git_blob(root, blob):
 
 
 def changed_files(manifest):
-    """The bundle's entries a linter could read: not deleted, not a symlink,
-    submodule or binary."""
+    """The bundle's entries a linter could read: not deleted, not a symlink
+    (its blob is a link target, not a script) and not a submodule."""
     rows = []
     entries = manifest.get("entries")
     if not isinstance(entries, list):
@@ -204,7 +209,9 @@ def changed_files(manifest):
                 isinstance(entry.get(k), str) and entry.get(k)
                 for k in ("status", "path", "new_id"))):
             raise ValueError(f"an entry is not the shape review_patch writes: {entry!r:.200}")
-        if entry.get("status") == "D" or entry.get("binary") or entry.get("submodule"):
+        # A file git calls binary is still linted (a UTF-16 .ps1 is one): the
+        # tool, not git's heuristic, decides whether it can read it.
+        if entry.get("status") == "D" or entry.get("submodule"):
             continue
         if entry.get("new_mode") in SKIPPED_MODES:
             continue
@@ -352,7 +359,10 @@ def _split(tmp, path):
 
 
 def _run_ruff(argv, spec, tmp, files, timeout):
-    proc = _spawn(argv + ["check", "--output-format", "json", "--exit-zero", "--no-cache"]
+    # E902 (the file could not be read) is selected whatever the config says,
+    # or an unreadable file would be reported as nothing at all.
+    proc = _spawn(argv + ["check", "--output-format", "json", "--exit-zero", "--no-cache",
+                          "--extend-select", "E902"]
                   + list(spec.get("args") or []) + files, tmp, timeout)
     _expect(proc, (0,), "ruff")
     rows = _loads(proc.stdout, "ruff")
@@ -360,8 +370,9 @@ def _run_ruff(argv, spec, tmp, files, timeout):
         raise CouldNotCheck("ruff output is not a list")
     for row in rows:
         code = row.get("code") or "invalid-syntax"
+        # invalid-syntax: parsing stopped; E902: the file could not be read.
         yield _split(tmp, row["filename"]) + (code, row.get("message", ""),
-                                               code == "invalid-syntax")
+                                               code in ("invalid-syntax", "E902"))
 
 
 def _run_shellcheck(argv, spec, tmp, files, timeout):
@@ -379,8 +390,9 @@ def _run_shellcheck(argv, spec, tmp, files, timeout):
     _consistent(proc, rows, "shellcheck")
     for row in rows:
         code = f"SC{row['code']}"
+        # SC1072: parsing stopped; SC1071: a shell ShellCheck does not check.
         yield _split(tmp, os.path.join(tmp, row["file"])) + (code, row.get("message", ""),
-                                                              code == "SC1072")
+                                                              code in ("SC1072", "SC1071"))
 
 
 def _run_actionlint(argv, spec, tmp, files, timeout):
@@ -389,7 +401,11 @@ def _run_actionlint(argv, spec, tmp, files, timeout):
     config = [os.path.join(tmp, "head", ".github", name)
               for name in ("actionlint.yaml", "actionlint.yml")]
     config = [c for c in config if os.path.isfile(c)][:1]
-    proc = _spawn(argv + ["-format", "{{json .}}", "-no-color"]
+    # Its embedded shellcheck and pyflakes passes are switched off by name:
+    # actionlint silently skips them when the binaries are not on PATH, so
+    # leaving them on would make the same bundle's answer depend on the host.
+    # `run:` scripts are therefore NOT checked here (documented, not hidden).
+    proc = _spawn(argv + ["-format", "{{json .}}", "-no-color", "-shellcheck=", "-pyflakes="]
                   + (["-config-file", config[0]] if config else [])
                   + list(spec.get("args") or []) + files, tmp, timeout)
     _expect(proc, (0, 1), "actionlint")
@@ -451,7 +467,7 @@ def check_one(root, spec, entries, manifest):
                 if abort:
                     aborted.append(f"{rel} ({'bundle' if side == 'head' else 'base'}: "
                                    f"{rule} {message})")
-                counts[side][(rel, rule, " ".join(str(message).split()))] += 1
+                counts[side][(rel, rule, _normalise(message))] += 1
     except (CouldNotCheck, KeyError, TypeError, AttributeError, ValueError, OSError) as exc:
         result.update(status=COULD_NOT, detail=_detail(exc))
         return result
@@ -470,6 +486,13 @@ def check_one(root, spec, entries, manifest):
                   detail=f"{sum(r['count'] for r in new)} new finding(s)" if new else
                   f"no new findings in {len(selected)} file(s)")
     return result
+
+
+def _normalise(message):
+    """Whitespace collapsed and every digit run read as N: messages that
+    quote a line or column ("from line 3", "SC2086:info:2:28") would
+    otherwise make a moved finding look new."""
+    return _DIGITS.sub("N", " ".join(str(message).split()))
 
 
 def _detail(exc):
@@ -572,7 +595,13 @@ def main(argv):
     parser.add_argument("--root", default=".")
     parser.add_argument("--manifest", required=True)
     args = parser.parse_args(argv)
-    results, configured = run_checks(os.path.abspath(args.root), args.manifest)
+    try:
+        results, configured = run_checks(os.path.abspath(args.root), args.manifest)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        # The CLI's boundary: exit 1 means "new findings", so a crash must not
+        # leave through the default traceback status.
+        print(f"pre-review checks: COULD NOT CHECK - {type(exc).__name__}: {exc}")
+        return EXIT_COULD_NOT
     if not configured:
         print(f"pre-review checks: none configured ({VERIFY_MAP} has no {CONFIG_KEY})")
         return EXIT_PASS

@@ -246,6 +246,7 @@ def test_could_not_check_cases(tmp_path, fake, monkeypatch, case):
      "list of strings"),
     (json.dumps({rc.CONFIG_KEY: {"linters": [{"tool": "ruff"}], "linter": []}}),
      "unknown key(s) linter"),
+    (json.dumps({rc.CONFIG_KEY: {"linters": [{"tool": ["ruff"]}]}}), "tool must be one of"),
 ])
 def test_a_config_it_cannot_read_is_could_not_check(tmp_path, verify_json, fragment):
     repo = _start(tmp_path, {"a.py": "x\n"}, [])
@@ -551,3 +552,79 @@ def test_record_leaves_no_staging_file(tmp_path):
     rc.record(str(tmp_path), "sha-a", [], False, False)
 
     assert sorted(os.listdir(tmp_path)) == [rc.RESULT_FILE]
+
+
+def test_a_shell_shellcheck_does_not_support_is_could_not_check(tmp_path, fake):
+    repo = _start(tmp_path, {"run.sh": "# LINT 1071 zsh is not supported\n"},
+                  [_linter(fake, "shellcheck")])
+    _edit(repo, "run.sh", "# LINT 1071 zsh is not supported\nmore\n")
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], "SC1071" in result["detail"]) == (rc.COULD_NOT, True), result
+
+
+@pytest.mark.parametrize("message, same_as", [
+    ("Redefinition of unused `os` from line 3", "Redefinition of unused `os` from line 5"),
+    ("SC2086:info:2:28: Double quote", "SC2086:info:7:3: Double  quote")])
+def test_line_numbers_inside_a_message_do_not_make_a_finding_new(message, same_as):
+    assert rc._normalise(message) == rc._normalise(same_as)  # pylint: disable=protected-access
+
+
+def test_actionlint_runs_without_its_host_dependent_passes(tmp_path, fake, monkeypatch):
+    out = tmp_path / "seen.json"
+    rel = ".github/workflows/ci.yml"
+    repo = _start(tmp_path, {rel: "x\n"}, [_linter(fake, "actionlint")])
+    _edit(repo, rel, "y\n")
+    monkeypatch.setenv("FAKE_LINT_ARGV_OUT", str(out))
+
+    _one(repo, tmp_path)
+    argv = json.loads(out.read_text(encoding="utf-8"))["argv"]
+
+    assert ("-shellcheck=" in argv, "-pyflakes=" in argv) == (True, True), argv
+
+
+def test_real_ruff_moved_redefinition_is_not_new(tmp_path):
+    if not _ruff_present():
+        pytest.skip("ruff is not importable by this python, so this real-tool case did not run")
+    repo = _start(tmp_path, {"ruff.toml": '[lint]\nselect = ["F"]\n',
+                             "a.py": "import os\nimport os\n"}, [{"tool": "ruff"}])
+    _edit(repo, "a.py", "\n\nimport os\nimport os\n")
+
+    assert _one(repo, tmp_path)["status"] == rc.PASS
+
+
+def test_real_ruff_unreadable_file_is_could_not_check(tmp_path):
+    if not _ruff_present():
+        pytest.skip("ruff is not importable by this python, so this real-tool case did not run")
+    repo = _start(tmp_path, {"ruff.toml": '[lint]\nselect = ["F"]\n'},
+                  [{"tool": "ruff", "args": ["--extend-select", "BLE001"]}])
+    (repo / "a.py").write_bytes(b"# -*- coding: latin-1 -*-\nx = 'caf\xe9'\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "latin-1")
+    (repo / ".base").write_text(git(repo, "rev-parse", "HEAD").strip(), encoding="utf-8")
+    (repo / "a.py").write_bytes(b"# -*- coding: latin-1 -*-\nx = 'caf\xe9'\ntry:\n    x = 1\n"
+                                b"except Exception:\n    x = 2\n")
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], "E902" in result["detail"]) == (rc.COULD_NOT, True), result
+
+
+@pytest.mark.parametrize("name, encoding", [("t/a[1].ps1", "utf-8"), ("u.ps1", "utf-16")])
+def test_real_pssa_reads_awkward_names_and_utf16(tmp_path, name, encoding):
+    if not _pssa_present():
+        pytest.skip("pwsh with PSScriptAnalyzer is not installed, so this real-tool case did not run")
+    repo = _start(tmp_path, {}, [{"tool": "psscriptanalyzer",
+                                  "rules": ["PSAvoidUsingEmptyCatchBlock"]}])
+    (repo / name).parent.mkdir(parents=True, exist_ok=True)
+    (repo / name).write_text("Write-Output 'a'\n", encoding=encoding)
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "ps")
+    (repo / ".base").write_text(git(repo, "rev-parse", "HEAD").strip(), encoding="utf-8")
+    (repo / name).write_text("try { Write-Output 'a' } catch { }\n", encoding=encoding)
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], [r["rule"] for r in result["new"]]) == (
+        rc.FAIL, ["PSAvoidUsingEmptyCatchBlock"]), result

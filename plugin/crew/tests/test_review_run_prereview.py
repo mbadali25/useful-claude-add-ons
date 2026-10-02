@@ -256,3 +256,17 @@ def test_claude_completion_carries_prereview(tmp_path, fake, record):
     review = json.loads((tmp_path / "work" / "review.json").read_text(encoding="utf-8"))
     expected = rc.PASS if record == "kept" else rc.NOT_RECORDED
     assert (done.returncode, review["prereview"]["result"]) == (0, expected), done.stderr
+
+
+def test_a_record_that_cannot_be_written_is_said_not_fatal(tmp_path, fake):
+    repo, scratch = _setup(tmp_path, [_ruff(fake)], py_text="clean\n")
+    missing = tmp_path / "no-such-scratch"
+
+    result = subprocess.run(
+        [sys.executable, _RUN, "--root", str(repo), "--ticket", TICKET, "--scratch", str(missing),
+         "--manifest", str(scratch / "manifest.json"), "--provider", "claude", "--reserve-only"],
+        capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False, timeout=120)
+
+    assert (result.returncode, "ROUND=1" in result.stdout,
+            "could not record the pre-review checks" in result.stderr) == (0, True, True), (
+        result.stdout + result.stderr)

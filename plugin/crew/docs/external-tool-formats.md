@@ -180,9 +180,9 @@ ruff 0.16.9, ShellCheck 0.11.0 (`shellcheck-py==0.11.0.1`), actionlint
 
 | Tool | Invocation | Exit statuses read as "ran" | Output crew reads | Parse-abort marker |
 |------|------------|-----------------------------|-------------------|--------------------|
-| ruff | `check --output-format json --exit-zero --no-cache <args> <files>` | 0 | a JSON list; `filename` (absolute), `code`, `message` | `code` `invalid-syntax` (null codes are read as it): ruff then reports nothing else for that file |
-| ShellCheck | `-f json1 --rcfile <bundle .shellcheckrc>` (or `--norc` when the bundle has none) `<args> <files>` | 0 none, 1 findings (2 unreadable file, 3 bad syntax, 4 bad options are errors) | `{"comments": [...]}`; `file` (as passed), `code` (int, read as `SC<code>`), `message` | `SC1072` ("Fix any mentioned problems and try again"): parsing of that file stopped |
-| actionlint | `-format '{{json .}}' -no-color [-config-file <bundle .github/actionlint.y(a)ml>] <args> <files>` (1.7.12 discovers only `actionlint.yaml` by itself) | 0 none, 1 findings (2 bad flag, 3 fatal are errors) | a JSON list; `filepath` (as passed), `kind`, `message` | `kind` `syntax-check` |
+| ruff | `check --output-format json --exit-zero --no-cache --extend-select E902 <args> <files>` | 0 | a JSON list; `filename` (absolute), `code`, `message` | `code` `invalid-syntax` (null codes are read as it), or `E902` (the file could not be read, e.g. not UTF-8; selected always, because an unselected E902 reports nothing): ruff then reports nothing else for that file |
+| ShellCheck | `-f json1 --rcfile <bundle .shellcheckrc>` (or `--norc` when the bundle has none) `<args> <files>` | 0 none, 1 findings (2 unreadable file, 3 bad syntax, 4 bad options are errors) | `{"comments": [...]}`; `file` (as passed), `code` (int, read as `SC<code>`), `message` | `SC1072` ("Fix any mentioned problems and try again"): parsing of that file stopped; `SC1071`: a shell ShellCheck does not check (zsh, fish) |
+| actionlint | `-format '{{json .}}' -no-color -shellcheck= -pyflakes= [-config-file <bundle .github/actionlint.y(a)ml>] <args> <files>` (1.7.12 discovers only `actionlint.yaml` by itself) | 0 none, 1 findings (2 bad flag, 3 fatal are errors) | a JSON list; `filepath` (as passed), `kind`, `message` | `kind` `syntax-check` |
 | PSScriptAnalyzer | `pwsh -NoProfile -NonInteractive -File <script> <file-list> <rule-list>` | 0 (the script exits 3 on any error, an unknown `-IncludeRule` name included) | one JSON line from `ConvertTo-Json`; `file`, `rule`, `severity`, `message` | `severity` `ParseError` |
 
 Each linter runs with stdin closed, a copy of the environment with every
@@ -192,6 +192,17 @@ user-level ruff config cannot judge the bundle. `HOME` is kept, because
 `uvx`'s cache and PowerShell's user module path live under it. A `command`
 that resolves to a `.cmd`/`.bat` shim is refused as could-not-check, because
 cmd.exe would re-parse the file names.
+
+actionlint's embedded shellcheck and pyflakes passes are switched off by
+name: actionlint silently skips them when those binaries are not on PATH, so
+leaving them on would make one bundle's answer depend on the host. `run:`
+scripts inside workflows are therefore not checked by this pass. PowerShell
+file names go to `-Path` escaped with `WildcardPattern.Escape`, because
+`-Path` takes wildcards and `a[1].ps1` would otherwise match nothing and read
+as clean. A file git calls binary (a UTF-16 `.ps1`) is still handed to the
+linter, and the tool decides whether it can read it. Every message has its
+digit runs read as `N` before counting, because ruff (`from line 3`) and
+actionlint (`SC2086:info:2:28`) quote positions inside messages.
 
 **How crew reads it.** Anything outside the table is "could not check",
 never a pass: another exit status, a timeout, output that is not the JSON
