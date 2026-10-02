@@ -1129,9 +1129,8 @@ $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'bitbucket';               Selected = $true; Name = 'bitbucket               - Bitbucket Cloud: git auth, PRs, pipelines, REST API' }
     [pscustomobject]@{ Key = 'checkpoint-email';        Selected = $true; Name = 'checkpoint-email        - Check Point Email Security: phishing triage, quarantine' }
     [pscustomobject]@{ Key = 'cisco-meraki';            Selected = $true; Name = 'cisco-meraki            - Meraki Dashboard API: inventory, events, config changes' }
-    [pscustomobject]@{ Key = 'claude-code-defaults';    Selected = $true; Name = 'claude-code-defaults    - Claude Code config: settings.json, permissions, hooks' }
-    [pscustomobject]@{ Key = 'claude-code-tuneup';      Selected = $true; Name = 'claude-code-tuneup      - Audit a slow Claude Code setup: dupes, hooks, context' }
     [pscustomobject]@{ Key = 'cloudflare';              Selected = $true; Name = 'cloudflare              - Cloudflare v4: DNS, WAF, cache, Workers, Zero Trust' }
+    [pscustomobject]@{ Key = 'config-tuneup';           Selected = $true; Name = 'config-tuneup           - Audit a slow Claude Code setup: dupes, hooks, context' }
     [pscustomobject]@{ Key = 'doc-builder';             Selected = $true; Name = 'doc-builder             - Reports + SOPs -> DOCX/PDF via Word or LibreOffice, brand pack sets the style' }
     [pscustomobject]@{ Key = 'drata';                   Selected = $true; Name = 'drata                   - Drata: controls, monitors, evidence, audit prep' }
     [pscustomobject]@{ Key = 'exchange-mailbox-cleanup';Selected = $true; Name = 'exchange-mailbox-cleanup - M365 offboarding walkthrough: hold, preserve, delete, export' }
@@ -1150,6 +1149,7 @@ $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'power-automate-api';      Selected = $true; Name = 'power-automate-api      - Power Automate flows via API: definitions, auth errors' }
     [pscustomobject]@{ Key = 'repo-docs';               Selected = $true; Name = 'repo-docs               - Whole doc set: CLAUDE.md, READMEs, architecture, handoff' }
     [pscustomobject]@{ Key = 'report-builder';          Selected = $true; Name = 'report-builder          - Deprecated - use doc-builder' }
+    [pscustomobject]@{ Key = 'session-defaults';        Selected = $true; Name = 'session-defaults        - Claude Code config: settings.json, permissions, hooks' }
     [pscustomobject]@{ Key = 'shipstation';             Selected = $true; Name = 'shipstation             - ShipStation V2/V1/ShipEngine: labels, rates, orders' }
     [pscustomobject]@{ Key = 'solomon-doc-builder';     Selected = $true; Name = 'solomon-doc-builder     - Brand pack only: Solomon house style for doc-builder' }
     [pscustomobject]@{ Key = 'solomon-sop-maker';       Selected = $true; Name = 'solomon-sop-maker       - Deprecated - use doc-builder + solomon-doc-builder' }

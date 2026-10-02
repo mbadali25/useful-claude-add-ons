@@ -9,13 +9,13 @@ One-line bootstrap — no `git clone` needed. Pulls the prerequisite installer s
 **Windows** (elevated PowerShell):
 
 ```powershell
-irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/f7caa37d2cfc694330c3cf2b305592ff473e3194/scripts/install-prerequisites.ps1' | iex
+irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/04dde5a228f0c29e5009691a655bcc38b3d9d48d/scripts/install-prerequisites.ps1' | iex
 ```
 
 **Linux**:
 
 ```bash
-curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/f7caa37d2cfc694330c3cf2b305592ff473e3194/scripts/install-prerequisites.sh' | bash
+curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/04dde5a228f0c29e5009691a655bcc38b3d9d48d/scripts/install-prerequisites.sh' | bash
 ```
 
 Both links are pinned to a specific commit SHA rather than `main`, so the exact script you're running is fixed and auditable — it can't silently change between when you review it and when you run it. **Update the SHA above whenever `scripts/install-prerequisites.*` changes**: after merging to `main`, run `git rev-parse HEAD` and swap it into both URLs.
@@ -639,6 +639,19 @@ Generated from [`skills/UPDATE.md`](skills/UPDATE.md) by `scripts/sync-updates.p
 
 ### Unreleased
 
+Two skills renamed, same content. `claude plugin validate --strict` reserves
+the `claude-` prefix for Anthropic's own plugins, so `claude-code-defaults` is
+now **`session-defaults`** (1.1.0) and `claude-code-tuneup` is now
+**`config-tuneup`** (1.1.0). A copy installed under an old name no longer
+receives updates. Uninstall the old name, then install the new one:
+
+```
+claude plugin uninstall claude-code-defaults@useful-claude-add-ons
+claude plugin install session-defaults@useful-claude-add-ons
+claude plugin uninstall claude-code-tuneup@useful-claude-add-ons
+claude plugin install config-tuneup@useful-claude-add-ons
+```
+
 Nine new skills, taking the marketplace from 25 to 34.
 
 - **`jira-manager`** — Jira Cloud over the REST API v3 with an email + API
@@ -815,9 +828,8 @@ See [`Skill-Authoring-Standard.md`](Skill-Authoring-Standard.md) for how a skill
 | [`bitbucket`](skills/bitbucket) | SCM / DevOps | Git over HTTPS with Atlassian API tokens plus the Bitbucket Cloud REST API — PRs, pipelines, comments, branches. | A push or clone failing 401/403/410 against `bitbucket.org`; opening and reviewing a PR; adding reviewers when the repo has no default reviewers; a pipeline or deployment variable reading as absent; working out why a Pipelines build failed. | Automatic |
 | [`checkpoint-email`](skills/checkpoint-email) | Security | Check Point Email Security (Harmony Email & Collaboration / Avanan) — search entities, triage phishing/malware/DLP/BEC, remediate with a dry-run gate. | A reported phishing message that needs quarantining across every mailbox; restoring a false positive; pulling a month of BEC/DLP detections for a report. | Automatic |
 | [`cisco-meraki`](skills/cisco-meraki) | Cloud / Networking | Cisco Meraki Dashboard API v1 for a single org — inventory and device status, event and config-change logs, security/IDS events, Air Marshal, live diagnostics, and MX/MS/MR config changes gated behind snapshot → diff → confirm with rollback. | "Which APs are offline?"; "Who changed the firewall rules?"; cycling a flapping switch port; adding a VLAN; confirming a branch VPN came back up. | Automatic |
-| [`claude-code-defaults`](skills/claude-code-defaults) | Claude Code / Config | Configures how Claude Code itself behaves by default — `CLAUDE.md` instructions vs `settings.json` enforcement, permission allow/deny/ask rules and modes, hooks, default model, and which scope (user, project, local, managed) each belongs in. Inventories existing config and merges rather than clobbering. | "Stop asking me for permission every time"; "Why is Claude ignoring my `CLAUDE.md`?"; standardizing Claude Code across a team or an MDM-managed fleet. | Automatic |
-| [`claude-code-tuneup`](skills/claude-code-tuneup) | Claude Code / Config | Audits an installation for what is making it slow or bloated — the same skill installed twice, hooks spawning a process on every tool call, `SessionStart` hooks injecting context, plugins installed but disabled, overlapping MCP servers, oversized `CLAUDE.md` and unscoped rules — and returns a ranked cleanup plan with the exact command per item. Read-only until you approve. | "Claude Code feels slow"; startup or every Bash call lagging; compacting far too early; a skill firing twice or the wrong one firing; tidying up after an install script added a dozen plugins at once. | Automatic |
 | [`cloudflare`](skills/cloudflare) | Cloud / Networking | Cloudflare v4 API — DNS, zones, cache purge, WAF/rulesets, page rules, SSL/TLS, Workers/KV/R2, Zero Trust, analytics. | Adding or correcting a DNS record; purging cache after a deploy; a WAF rule blocking legitimate traffic; auditing Zero Trust access policies. | Automatic |
+| [`config-tuneup`](skills/config-tuneup) | Claude Code / Config | Audits an installation for what is making it slow or bloated — the same skill installed twice, hooks spawning a process on every tool call, `SessionStart` hooks injecting context, plugins installed but disabled, overlapping MCP servers, oversized `CLAUDE.md` and unscoped rules — and returns a ranked cleanup plan with the exact command per item. Read-only until you approve. | "Claude Code feels slow"; startup or every Bash call lagging; compacting far too early; a skill firing twice or the wrong one firing; tidying up after an install script added a dozen plugins at once. | Automatic |
 | [`doc-builder`](skills/doc-builder) | Docs / Reporting | Finished documents as DOCX and PDF through Word, or LibreOffice where Word is absent, in the house style of whichever brand pack is installed. Two pipelines behind one routing rule: findings and tabular content go HTML-to-Word; step-by-step procedures with screenshots go python-docx OOXML, which is the only path that survives Word's `wp:effectExtent` border clipping. Also install [`solomon-doc-builder`](skills/solomon-doc-builder) for automatic Solomon branding; `--brand neutral` (or `DOC_BUILDER_BRAND=neutral`) always turns it back off. | "Write this up for management"; an SOP for setting up the VPN with screenshots; a findings report that came out unstyled black-on-white; "turn this into a Word doc I can send to the client". | Automatic |
 | [`drata`](skills/drata) | Compliance | Drata Public API — controls, monitoring tests, evidence, personnel, policies, frameworks, risks, vendors, assets across US/EU/APAC regions. | SOC 2 or ISO 27001 audit prep; exporting evidence or a personnel roster for an auditor; chasing a failing monitor; a CI compliance gate. | Automatic |
 | [`exchange-mailbox-cleanup`](skills/exchange-mailbox-cleanup) | M365 / Exchange | Walks a non-technical operator through Exchange Online mailbox cleanup and offboarding, one step at a time - preflight and module install under the user profile, SDP ticket, litigation hold, preservation baseline, account deletion, eDiscovery export. Typed confirmation naming the count on every irreversible step. | "Sarah left on Friday - put her mailbox on hold and free up the licence"; a `holdlist.csv` of leavers from HR; "delete the account but keep the email". | Automatic |
@@ -836,6 +848,7 @@ See [`Skill-Authoring-Standard.md`](Skill-Authoring-Standard.md) for how a skill
 | [`power-automate-api`](skills/power-automate-api) | Automation | Microsoft Power Automate cloud flows through the API instead of the maker portal — flow definitions, expressions the designer mangles, trigger inputs, connection references, and run history. | A flow definition that must change reliably; an expression the designer refuses; a connection reference running as the wrong identity; `InvalidAuthenticationAudience` or `AADSTS7000218` from `api.flow.microsoft.com`. | Automatic |
 | [`repo-docs`](skills/repo-docs) | Docs | Generates and refreshes a whole documentation set for a codebase — `CLAUDE.md`, root and per-directory READMEs, API/function reference, architecture doc, `TODO.md`, `SECURITY.md`, `CHANGELOG.md`, handoff notes — re-runnable without clobbering human edits. | Handing a project off to someone else; "the docs are stale"; onboarding notes after a large refactor; wrapping up a substantial session. | Automatic |
 | [`report-builder`](skills/report-builder) | Deprecated | **Deprecated 2026-09-10 - use [`doc-builder`](skills/doc-builder).** Redirect stub only; its report pipeline moved to `doc-builder` unchanged. | Nothing new. The stub exists so links and references to the old name still resolve. | Automatic |
+| [`session-defaults`](skills/session-defaults) | Claude Code / Config | Configures how Claude Code itself behaves by default — `CLAUDE.md` instructions vs `settings.json` enforcement, permission allow/deny/ask rules and modes, hooks, default model, and which scope (user, project, local, managed) each belongs in. Inventories existing config and merges rather than clobbering. | "Stop asking me for permission every time"; "Why is Claude ignoring my `CLAUDE.md`?"; standardizing Claude Code across a team or an MDM-managed fleet. | Automatic |
 | [`shipstation`](skills/shipstation) | E-commerce / Logistics | ShipStation across its three APIs (V2, legacy V1, ShipEngine) — shipments, labels, rates, carriers, warehouses, inventory, products, orders, tracking, batches, manifests. | A label or rate call returning 401/403/429; deciding between API V2 and V1; reconciling orders, shipments, or inventory across stores. | Automatic |
 | [`solomon-doc-builder`](skills/solomon-doc-builder) | Docs / Reporting | Brand pack only - the Solomon Associates house style for `doc-builder`: palette, SOP template and footer. No logic of its own; installing it makes Solomon the default brand for every document. Not uninstalling it is not the off switch - `doc-builder --brand neutral` (or `DOC_BUILDER_BRAND=neutral`) is. | Installed alongside `doc-builder` so Solomon-branded output is automatic rather than something you have to remember to ask for. | Automatic |
 | [`solomon-sop-maker`](skills/solomon-sop-maker) | Deprecated | **Deprecated 2026-09-10 - use [`doc-builder`](skills/doc-builder) with the [`solomon-doc-builder`](skills/solomon-doc-builder) brand pack.** Redirect stub only. | Nothing new. The stub exists so links and references to the old name still resolve. | Automatic |
