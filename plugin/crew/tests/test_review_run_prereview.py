@@ -287,3 +287,29 @@ def test_allow_unverified_never_passes_a_new_finding_beside_a_parse_failure(tmp_
 
     assert (result.returncode, _ledger_snapshot(repo) == before,
             _record(scratch)["result"]) == (5, True, rc.FAIL), result.stderr
+
+
+def test_the_record_is_bound_to_the_manifest_the_checks_read(tmp_path, fake, monkeypatch):
+    """Review round 4: the bundle hash comes from the same read of the
+    manifest as the linted entries. A manifest replaced while the linters run
+    cannot have the results recorded against it."""
+    import argparse  # pylint: disable=import-outside-toplevel
+    import review_run  # pylint: disable=import-outside-toplevel
+    repo, scratch = _setup(tmp_path, [_ruff(fake)], py_text="x\n")
+    manifest = scratch / "manifest.json"
+    checked = json.loads(manifest.read_text(encoding="utf-8"))["bundle_sha256"]
+    real = rc.check_one
+
+    def swapping(*args, **kwargs):
+        result = real(*args, **kwargs)
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["bundle_sha256"] = "b" * 64
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(rc, "check_one", swapping)
+    args = argparse.Namespace(root=str(repo), manifest=str(manifest), scratch=str(scratch),
+                              allow_unverified=False, ticket=TICKET)
+
+    assert (review_run.prereview_gate(args), _record(scratch)["bundle_sha256"]) == (
+        None, checked)

@@ -49,6 +49,14 @@ _FAKE = textwrap.dedent(r'''
                           for f in (open(args[-2]).read().split() if tool == "pwsh"
                                     else [a for a in args if os.path.isfile(a)])]))
         sys.exit(1 if tool == "actionlint" else 0)
+    if mode in ("orphan", "orphan-exit"):
+        import subprocess
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        with open(os.environ["FAKE_LINT_PID_OUT"], "w", encoding="utf-8") as fh:
+            fh.write(str(child.pid))
+        if mode == "orphan":
+            time.sleep(60)
+        print("[]"); sys.exit(0)
     if mode == "rc1-none":
         print(json.dumps({"comments": []}) if tool == "shellcheck" else "[]"); sys.exit(1)
     if tool == "pwsh":
@@ -63,21 +71,34 @@ _FAKE = textwrap.dedent(r'''
                 rows.append((name, rule, msg, False))
             elif line.startswith("# ABORT"):
                 rows.append((name, None, "parse stopped here", True))
+    bad = os.environ.get("FAKE_LINT_BAD_ROW", "")
+    bad_file = next((f for f in files if f.startswith(bad + "/") or f"/{bad}/" in f), None)
+    def extra(key, where):
+        """One row with no message, after the good ones: in a head or base
+        file, or naming no file at all ("nowhere")."""
+        if not bad:
+            return []
+        row = {"code": "X1", "kind": "x", "rule": "R", "severity": "Warning", "level": "warning"}
+        if bad_file:
+            row[key] = where(bad_file)
+        return [row]
     if tool == "ruff":
         print(json.dumps([{"filename": os.path.abspath(n), "message": m,
-                           "code": None if a else r} for n, r, m, a in rows])); sys.exit(0)
+                           "code": None if a else r} for n, r, m, a in rows]
+                         + extra("filename", os.path.abspath))); sys.exit(0)
     if tool == "shellcheck":
         print(json.dumps({"comments": [{"file": n, "code": 1072 if a else int(r),
-                                        "level": "error", "message": m} for n, r, m, a in rows]}))
-        sys.exit(1 if rows else 0)
+                                        "level": "error", "message": m} for n, r, m, a in rows]
+                          + extra("file", str)}))
+        sys.exit(0 if mode == "rc0-rows" else 1 if rows or bad else 0)
     if tool == "actionlint":
         print(json.dumps([{"filepath": n, "kind": "syntax-check" if a else r, "message": m}
-                          for n, r, m, a in rows]))
-        sys.exit(1 if rows else 0)
+                          for n, r, m, a in rows] + extra("filepath", str)))
+        sys.exit(0 if mode == "rc0-rows" else 1 if rows or bad else 0)
     if tool == "pwsh":
         print(json.dumps([{"file": n, "rule": r or "", "message": m,
                            "severity": "ParseError" if a else "Warning"}
-                          for n, r, m, a in rows])); sys.exit(0)
+                          for n, r, m, a in rows] + extra("file", str))); sys.exit(0)
 ''')
 
 _TOOLS = {  # tool -> (fake argv[1], a file it lints, a rule name it would report)
@@ -563,6 +584,7 @@ def test_a_record_of_the_wrong_shape_is_not_recorded(tmp_path):
 
 
 _ROW = {"name": "ruff", "status": rc.PASS, "files": 1, "new": [], "detail": ""}
+_NEW = {"path": "a.py", "rule": "X", "message": "m", "count": 1}
 
 
 @pytest.mark.parametrize("payload", [
@@ -576,18 +598,33 @@ _ROW = {"name": "ruff", "status": rc.PASS, "files": 1, "new": [], "detail": ""}
     {"result": rc.PASS, "checks": [dict(_ROW, files=True)]},
     {"result": rc.PASS, "checks": [dict(_ROW, new="none")]},
     {"result": rc.PASS, "checks": [dict(_ROW, detail=None)]},
-    {"result": rc.FAIL, "checks": [dict(_ROW, status=rc.FAIL, new=[{"path": "a.py"}])]}])
+    {"result": rc.FAIL, "checks": [dict(_ROW, status=rc.FAIL, new=[{"path": "a.py"}])]},
+    # review round 4: each row's status has to agree with its own findings
+    {"result": rc.PASS, "checks": [dict(_ROW, new=[_NEW])]},
+    {"result": rc.COULD_NOT, "checks": [dict(_ROW, status=rc.COULD_NOT, new=[_NEW])]},
+    {"result": rc.PASS, "checks": [dict(_ROW, status=rc.NA, new=[_NEW])]},
+    {"result": rc.FAIL, "checks": [dict(_ROW, status=rc.FAIL)]},
+    {"result": rc.FAIL, "checks": [dict(_ROW, status=rc.FAIL, new=[dict(_NEW, count=0)])]},
+    {"result": rc.PASS, "checks": [dict(_ROW, status=rc.NA, files=2)]},
+    # ... and the flags with the result they can only come with
+    {"result": rc.PASS, "checks": [_ROW], "overridden": True},
+    {"result": rc.FAIL, "checks": [dict(_ROW, status=rc.FAIL, new=[_NEW])], "overridden": True},
+    {"result": rc.PASS, "checks": [_ROW], "stood_down": True},
+    {"result": rc.NOT_CONFIGURED, "checks": [], "stood_down": True},
+    {"result": rc.COULD_NOT, "checks": [dict(_ROW, status=rc.COULD_NOT)],
+     "overridden": True, "stood_down": True}])
 def test_a_record_that_contradicts_itself_is_not_recorded(tmp_path, payload):
     """Review round 3: a same-bundle record is accepted only in the shape
     record() writes, and only when its result is what its checks add up to."""
     (tmp_path / rc.RESULT_FILE).write_text(json.dumps(dict(
-        payload, bundle_sha256="sha-a", overridden=False, stood_down=False)), encoding="utf-8")
+        dict(overridden=False, stood_down=False), bundle_sha256="sha-a", **payload)),
+        encoding="utf-8")
 
     assert rc.recorded(str(tmp_path), "sha-a")["result"] == rc.NOT_RECORDED
 
 
 @pytest.mark.parametrize("checks, configured", [
-    ([_ROW], True), ([dict(_ROW, status=rc.NA)], True), ([], False),
+    ([_ROW], True), ([dict(_ROW, status=rc.NA, files=0)], True), ([], False),
     ([dict(_ROW, status=rc.FAIL, new=[{"path": "a.py", "rule": "X", "message": "m",
                                        "count": 1}])], True),
     ([dict(_ROW, status=rc.COULD_NOT, detail="tool missing")], True)])
@@ -595,6 +632,120 @@ def test_every_record_record_writes_reads_back(tmp_path, checks, configured):
     rc.record(str(tmp_path), "sha-a", checks, False, False, configured)
 
     assert rc.recorded(str(tmp_path), "sha-a")["result"] == rc.overall(checks, configured)
+
+
+@pytest.mark.parametrize("checks, overridden, stood_down", [
+    ([dict(_ROW, status=rc.COULD_NOT)], True, False),
+    ([dict(_ROW, status=rc.COULD_NOT)], False, True),
+    ([dict(_ROW, status=rc.FAIL, new=[_NEW])], False, True)])
+def test_an_override_or_stand_down_record_reads_back(tmp_path, checks, overridden, stood_down):
+    rc.record(str(tmp_path), "sha-a", checks, overridden, stood_down)
+
+    assert rc.recorded(str(tmp_path), "sha-a")["result"] == rc.overall(checks)
+
+
+@pytest.mark.parametrize("content", ["[]", "null", '"text"', "3"])
+def test_a_verify_map_that_is_not_an_object_is_could_not_check(tmp_path, content):
+    """Review round 4: valid JSON that is not an object is a broken map, not
+    an absent `preReview` key."""
+    repo = init_repo(tmp_path / "r")
+    (repo / ".crew").mkdir()
+    (repo / ".crew" / "verify.json").write_text(content, encoding="utf-8")
+
+    results, configured = rc.run_checks(str(repo), str(tmp_path / "unused.json"))
+
+    assert (configured, [(r["name"], r["status"]) for r in results]) == (
+        True, [("config", rc.COULD_NOT)]), results
+
+
+def test_a_verify_map_without_the_key_is_still_not_configured(tmp_path):
+    repo = init_repo(tmp_path / "r")
+    (repo / ".crew").mkdir()
+    (repo / ".crew" / "verify.json").write_text('{"version": 1}', encoding="utf-8")
+
+    assert rc.run_checks(str(repo), str(tmp_path / "unused.json")) == ([], False)
+
+
+@pytest.mark.parametrize("tool", sorted(_TOOLS))
+@pytest.mark.parametrize("where", ["head", "nowhere"])
+def test_a_bad_row_does_not_discard_a_known_new_finding(tmp_path, fake, monkeypatch, tool,
+                                                        where):
+    """Review round 4: a row the checks cannot read, after a good one, leaves
+    the good rows standing. A NEW finding still FAILs (never overridable);
+    the bad row is named in the detail."""
+    _, rel, rule = _TOOLS[tool]
+    repo = _start(tmp_path, {rel: "line one\n"}, [_linter(fake, tool)])
+    _edit(repo, rel, f"line one\n# LINT {rule} a new problem\n")
+    monkeypatch.setenv("FAKE_LINT_BAD_ROW", where)
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], len(result["new"]), "could not read" in result["detail"]) == (
+        rc.FAIL, 1, True), result
+
+
+@pytest.mark.parametrize("tool", sorted(_TOOLS))
+def test_a_bad_base_row_leaves_that_file_unchecked(tmp_path, fake, monkeypatch, tool):
+    """The base output for that file is incomplete, so a head finding in it
+    may already be in the base: that file is could-not-check, like a base
+    parse abort."""
+    _, rel, rule = _TOOLS[tool]
+    repo = _start(tmp_path, {rel: "line one\n"}, [_linter(fake, tool)])
+    _edit(repo, rel, f"line one\n# LINT {rule} a new problem\n")
+    monkeypatch.setenv("FAKE_LINT_BAD_ROW", "base")
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], result["new"]) == (rc.COULD_NOT, []), result
+
+
+def test_a_bad_base_row_in_one_file_does_not_hide_a_new_finding_in_another(
+        tmp_path, fake, monkeypatch):
+    repo = _start(tmp_path, {"a.py": "x\n", "b.py": "x\n"}, [_linter(fake, "ruff")])
+    _edit(repo, "a.py", "y\n")
+    _edit(repo, "b.py", "x\n# LINT BLE001 a new problem\n")
+    monkeypatch.setenv("FAKE_LINT_BAD_ROW", "base")
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], [r["path"] for r in result["new"]]) == (rc.FAIL, ["b.py"]), result
+
+
+def _alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as fh:
+            return fh.read().split(") ", 1)[1][0] != "Z"
+    except OSError:
+        return True
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups; Windows uses taskkill /T")
+@pytest.mark.parametrize("mode", ["orphan", "orphan-exit"])
+def test_the_timeout_holds_when_a_child_keeps_the_output_open(tmp_path, fake, monkeypatch, mode):
+    """Review round 4: a linter (or one it leaves behind after exiting)
+    whose child holds stdout open must still time out, and the whole group is
+    killed, not only the direct child."""
+    import time  # pylint: disable=import-outside-toplevel
+    pid_out = tmp_path / "child.pid"
+    repo = _start(tmp_path, {"a.py": "x\n"}, [_linter(fake, "ruff", timeout=2)])
+    _edit(repo, "a.py", "y\n")
+    monkeypatch.setenv("FAKE_LINT_MODE", mode)
+    monkeypatch.setenv("FAKE_LINT_PID_OUT", str(pid_out))
+
+    started = time.monotonic()
+    result = _one(repo, tmp_path)
+    elapsed = time.monotonic() - started
+    pid = int(pid_out.read_text(encoding="utf-8"))
+    deadline = time.monotonic() + 5
+    while _alive(pid) and time.monotonic() < deadline:
+        time.sleep(0.1)
+
+    assert (result["status"], "timed out" in result["detail"], elapsed < 20, _alive(pid)) == (
+        rc.COULD_NOT, True, True, False), (result, elapsed)
 
 
 def test_a_config_renamed_away_is_gone_from_the_bundle(tmp_path, fake, monkeypatch):
@@ -759,3 +910,21 @@ def test_a_parse_failure_alone_is_still_could_not_check(tmp_path, fake):
     _edit(repo, "b.sh", "# ABORT\n")
 
     assert _one(repo, tmp_path)["status"] == rc.COULD_NOT
+
+
+@pytest.mark.parametrize("tool", ["actionlint", "shellcheck"])
+@pytest.mark.parametrize("in_base, expected", [(False, rc.FAIL), (True, rc.COULD_NOT)])
+def test_a_status_that_disagrees_with_its_rows_keeps_the_rows(tmp_path, fake, monkeypatch, tool,
+                                                              in_base, expected):
+    """Neighbour of review round 4's bad-row BLOCK: exit 0 beside finding rows
+    is a partial answer, but the rows it did print are kept, so a NEW finding
+    among them still FAILs. With nothing new it is could-not-check."""
+    _, rel, rule = _TOOLS[tool]
+    finding = f"# LINT {rule} a problem\n"
+    repo = _start(tmp_path, {rel: finding if in_base else "line one\n"}, [_linter(fake, tool)])
+    _edit(repo, rel, finding + "more\n")
+    monkeypatch.setenv("FAKE_LINT_MODE", "rc0-rows")
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], "disagree" in result["detail"]) == (expected, True), result

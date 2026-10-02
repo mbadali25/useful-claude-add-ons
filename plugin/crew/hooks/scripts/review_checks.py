@@ -54,6 +54,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -146,7 +147,10 @@ def load_config(root):
             data = json.load(fh)
     except (OSError, ValueError) as exc:
         return None, f"{VERIFY_MAP} could not be read: {exc}"
-    if not isinstance(data, dict) or CONFIG_KEY not in data:
+    if not isinstance(data, dict):
+        # Valid JSON that is not an object is a broken map, not an absent key.
+        return None, f"{VERIFY_MAP} is not a JSON object (it holds {type(data).__name__})"
+    if CONFIG_KEY not in data:
         return None, None
     block = data[CONFIG_KEY]
     linters = block.get("linters") if isinstance(block, dict) else None
@@ -323,18 +327,58 @@ def _child_env(tmp):
     return env
 
 
+_REAP_SECONDS = 5
+
+
+def _kill_tree(proc):
+    """Kill the linter and everything it started. subprocess.run kills only
+    the direct child, and on Windows then waits for EOF on pipes a
+    grandchild may hold open forever (review round 4)."""
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                           capture_output=True, stdin=subprocess.DEVNULL, check=False,
+                           timeout=_REAP_SECONDS)
+        else:
+            os.killpg(proc.pid, signal.SIGKILL)
+    except (OSError, subprocess.SubprocessError):
+        pass  # already gone, or taskkill missing: proc.kill() below still runs
+    try:
+        proc.kill()
+    except OSError:
+        pass  # already exited
+
+
 def _spawn(argv, cwd, timeout):
     env = _child_env(cwd)
+    group = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt"
+             else {"start_new_session": True})
     try:
         # surrogateescape: tool output carries paths, which must round-trip.
-        proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, encoding="utf-8",
-                              errors="surrogateescape", stdin=subprocess.DEVNULL,
-                              timeout=timeout, env=env, check=False)
-    except subprocess.TimeoutExpired as exc:
-        raise CouldNotCheck(f"timed out after {timeout}s") from exc
+        proc = subprocess.Popen(argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, encoding="utf-8", errors="surrogateescape",
+                                stdin=subprocess.DEVNULL, env=env, **group)
     except OSError as exc:
         raise CouldNotCheck(f"could not start {argv[0]}: {exc}") from exc
-    return proc
+    try:
+        # The timeout covers EOF too: a child left holding stdout after the
+        # linter exits is a timeout, never a wait without end.
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        _kill_tree(proc)
+        try:
+            proc.communicate(timeout=_REAP_SECONDS)
+        except subprocess.TimeoutExpired:
+            for pipe in (proc.stdout, proc.stderr):
+                pipe.close()
+        raise CouldNotCheck(f"timed out after {timeout}s") from exc
+    # A linter that exited cleanly may still have left children behind.
+    if os.name != "nt":
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except OSError:
+            pass  # the group is empty: nothing was left behind
+    return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
 
 
 def _expect(proc, ok_codes, tool):
@@ -352,11 +396,39 @@ def _message(row, tool):
     return message
 
 
+class _BadRow:
+    """A row the checks could not read. Yielded in place of raising, so the
+    rows already read are kept (review round 4). `where` is (side, rel) when
+    the row names a file inside the trees, else None."""
+    __slots__ = ("where", "reason")
+
+    def __init__(self, where, reason):
+        self.where, self.reason = where, reason
+
+
+_ROW_ERRORS = (CouldNotCheck, KeyError, TypeError, AttributeError, ValueError)
+
+
+def _each(rows, tool, tmp, locate, parse):
+    for row in rows:
+        try:
+            yield parse(row)
+        except _ROW_ERRORS as exc:
+            try:
+                where = _split(tmp, locate(row))
+            except _ROW_ERRORS:
+                where = None
+            yield _BadRow(where, f"{tool} reported a row it could not read "
+                                 f"({_detail(exc)}): {row!r:.200}")
+
+
 def _consistent(proc, rows, tool):
     """Exit 1 is the tool's own "findings" status and 0 its "none": output
-    that contradicts the status is a partial answer, not a clean one."""
+    that contradicts the status is a partial answer, not a clean one. It is
+    yielded as a bad row naming no file, so the rows the tool did print are
+    still read and a NEW finding among them still FAILs (review round 4)."""
     if (proc.returncode == 1) != bool(rows):
-        raise CouldNotCheck(f"{tool} exited {proc.returncode} but reported {len(rows)} "
+        yield _BadRow(None, f"{tool} exited {proc.returncode} but reported {len(rows)} "
                             "finding(s); the status and the output disagree")
 
 
@@ -387,11 +459,12 @@ def _run_ruff(argv, spec, tmp, files, timeout):
     rows = _loads(proc.stdout, "ruff")
     if not isinstance(rows, list):
         raise CouldNotCheck("ruff output is not a list")
-    for row in rows:
+    def parse(row):
         code = row.get("code") or "invalid-syntax"
         # invalid-syntax: parsing stopped; E902: the file could not be read.
-        yield _split(tmp, row["filename"]) + (code, _message(row, "ruff"),
-                                               code in ("invalid-syntax", "E902"))
+        return _split(tmp, row["filename"]) + (code, _message(row, "ruff"),
+                                                code in ("invalid-syntax", "E902"))
+    yield from _each(rows, "ruff", tmp, lambda row: row["filename"], parse)
 
 
 def _run_shellcheck(argv, spec, tmp, files, timeout):
@@ -406,12 +479,14 @@ def _run_shellcheck(argv, spec, tmp, files, timeout):
     rows = data.get("comments") if isinstance(data, dict) else None
     if not isinstance(rows, list):
         raise CouldNotCheck("shellcheck json1 output has no comments list")
-    _consistent(proc, rows, "shellcheck")
-    for row in rows:
+    yield from _consistent(proc, rows, "shellcheck")
+    def parse(row):
         code = f"SC{row['code']}"
         # SC1072: parsing stopped; SC1071: a shell ShellCheck does not check.
-        yield _split(tmp, os.path.join(tmp, row["file"])) + (code, _message(row, "shellcheck"),
-                                                              code in ("SC1072", "SC1071"))
+        return _split(tmp, os.path.join(tmp, row["file"])) + (
+            code, _message(row, "shellcheck"), code in ("SC1072", "SC1071"))
+    yield from _each(rows, "shellcheck", tmp, lambda row: os.path.join(tmp, row["file"]),
+                     parse)
 
 
 def _run_actionlint(argv, spec, tmp, files, timeout):
@@ -431,11 +506,13 @@ def _run_actionlint(argv, spec, tmp, files, timeout):
     rows = _loads(proc.stdout, "actionlint")
     if not isinstance(rows, list):
         raise CouldNotCheck("actionlint output is not a list")
-    _consistent(proc, rows, "actionlint")
-    for row in rows:
+    yield from _consistent(proc, rows, "actionlint")
+    def parse(row):
         kind = row.get("kind") or "?"
-        yield _split(tmp, os.path.join(tmp, row["filepath"])) + (
+        return _split(tmp, os.path.join(tmp, row["filepath"])) + (
             kind, _message(row, "actionlint"), kind == "syntax-check")
+    yield from _each(rows, "actionlint", tmp, lambda row: os.path.join(tmp, row["filepath"]),
+                     parse)
 
 
 def _run_pssa(argv, spec, tmp, files, timeout):
@@ -455,10 +532,11 @@ def _run_pssa(argv, spec, tmp, files, timeout):
         rows = [rows]
     if not isinstance(rows, list):
         raise CouldNotCheck("psscriptanalyzer output is not a list")
-    for row in rows:
-        yield _split(tmp, row["file"]) + (row.get("rule") or "?",
-                                          _message(row, "psscriptanalyzer"),
-                                          row.get("severity") == "ParseError")
+    def parse(row):
+        return _split(tmp, row["file"]) + (row.get("rule") or "?",
+                                           _message(row, "psscriptanalyzer"),
+                                           row.get("severity") == "ParseError")
+    yield from _each(rows, "psscriptanalyzer", tmp, lambda row: row["file"], parse)
 
 
 RUNNERS = {"ruff": _run_ruff, "shellcheck": _run_shellcheck,
@@ -480,12 +558,23 @@ def check_one(root, spec, entries, manifest):
             files = [f"head/{e['path']}" for e in selected]
             files += [f"base/{rel}" for rel in sorted(with_base)]
             counts = {"base": collections.Counter(), "head": collections.Counter()}
-            aborted, unparsed = [], set()
+            aborted, aborted_files, unparsed, bad = [], set(), set(), []
             rows = RUNNERS[spec["tool"]](argv, spec, tmp, files,
                                          spec.get("timeout") or DEFAULT_TIMEOUT)
-            for side, rel, rule, message, abort in rows:
+            for row in rows:
+                if isinstance(row, _BadRow):
+                    # A bad BASE row leaves that file's base count short, so
+                    # its head findings may not be new: unchecked, like a base
+                    # parse abort. A bad head row, or one naming no file,
+                    # leaves the rows read so far standing as they are.
+                    bad.append(row.reason)
+                    if row.where is not None and row.where[0] == "base":
+                        unparsed.add(row.where[1])
+                    continue
+                side, rel, rule, message, abort = row
                 if abort:
                     unparsed.add(rel)
+                    aborted_files.add(rel)
                     aborted.append(f"{rel} ({'bundle' if side == 'head' else 'base'}: "
                                    f"{rule} {message})")
                 counts[side][(rel, rule, _normalise(message))] += 1
@@ -500,13 +589,19 @@ def check_one(root, spec, entries, manifest):
         added = n - counts["base"][key]
         if added > 0 and key[0] not in unparsed:
             new.append({"path": key[0], "rule": key[1], "message": key[2], "count": added})
-    unchecked = (f"{name} could not parse {len(unparsed)} file(s), so they were not checked: "
-                 + "; ".join(sorted(set(aborted)))) if aborted else ""
+    parts = []
+    if aborted:
+        parts.append(f"{name} could not parse {len(aborted_files)} "
+                     "file(s), so they were not checked: " + "; ".join(sorted(set(aborted))))
+    if bad:
+        parts.append(f"{len(bad)} output row(s) could not be read: " + "; ".join(bad[:3])
+                     + (f"; and {len(bad) - 3} more" if len(bad) > 3 else ""))
+    unchecked = "; ".join(parts)
     if new:
         detail = f"{sum(r['count'] for r in new)} new finding(s)"
         result.update(status=FAIL, new=new,
                       detail=detail + (f"; also {unchecked}" if unchecked else ""))
-    elif aborted:
+    elif unchecked:
         result.update(status=COULD_NOT, detail=unchecked)
     else:
         result.update(status=PASS, detail=f"no new findings in {len(selected)} file(s)")
@@ -533,6 +628,28 @@ def _detail(exc):
 def run_checks(root, manifest_path):
     """(results, configured). results is a list of check_one dicts; a config
     or manifest problem is one could-not-check row named `config`/`manifest`."""
+    results, configured, _ = run_checks_bound(root, manifest_path)
+    return results, configured
+
+
+def run_checks_bound(root, manifest_path):
+    """(results, configured, bundle_sha256): the hash comes from the same read
+    of the manifest as the entries the linters checked, so a manifest replaced
+    mid-run cannot have these results recorded against it (review round 4).
+    bundle_sha256 is None when the manifest could not be read."""
+    manifest, manifest_problem = None, None
+    try:
+        with open(manifest_path, encoding="utf-8") as fh:
+            manifest = json.load(fh)
+    except (OSError, ValueError) as exc:
+        manifest_problem = exc
+    bundle = manifest.get("bundle_sha256") if isinstance(manifest, dict) else None
+    bundle = bundle if isinstance(bundle, str) else None
+    results, configured = _run_checks(root, manifest, manifest_problem)
+    return results, configured, bundle
+
+
+def _run_checks(root, manifest, manifest_problem):
     linters, problem = load_config(root)
     if problem:
         return [{"name": "config", "status": COULD_NOT, "files": 0, "new": [],
@@ -540,8 +657,8 @@ def run_checks(root, manifest_path):
     if linters is None:
         return [], False
     try:
-        with open(manifest_path, encoding="utf-8") as fh:
-            manifest = json.load(fh)
+        if manifest_problem is not None:
+            raise manifest_problem
         entries = changed_files(manifest)
         if not isinstance(manifest.get("base"), str) or not manifest["base"]:
             raise ValueError("it names no base commit")
@@ -617,10 +734,20 @@ def recorded(scratch, bundle_sha256):
                 "reason": f"{RESULT_FILE} is not the shape record() writes"}
     configured = payload["result"] != NOT_CONFIGURED
     if (not configured and payload["checks"]) or \
-            payload["result"] != overall(payload["checks"], configured):
+            payload["result"] != overall(payload["checks"], configured) or \
+            not _flags_fit(payload):
         return {"result": NOT_RECORDED,
                 "reason": f"{RESULT_FILE} states a result its checks do not add up to"}
     return payload
+
+
+def _flags_fit(payload):
+    """An override exists only for COULD NOT CHECK, a stand-down only for a
+    result that would otherwise refuse, and never both (prereview_gate)."""
+    overridden, stood_down, result = payload["overridden"], payload["stood_down"], payload["result"]
+    if overridden and (stood_down or result != COULD_NOT):
+        return False
+    return not stood_down or result in (FAIL, COULD_NOT)
 
 
 def _is_int(value):
@@ -628,14 +755,21 @@ def _is_int(value):
 
 
 def _is_check_row(row):
-    """A check row exactly as check_one / run_checks build it."""
+    """A check row exactly as check_one / run_checks build it: findings only
+    on a FAIL row and a FAIL row only with findings, and an n/a row checked
+    no file (review round 4)."""
+    if not (isinstance(row, dict) and isinstance(row.get("new"), list)):
+        return False
+    if (row.get("status") == FAIL) != bool(row["new"]) or (
+            row.get("status") == NA and row.get("files") != 0):
+        return False
     return (isinstance(row, dict)
             and isinstance(row.get("name"), str)
             and row.get("status") in (PASS, FAIL, COULD_NOT, NA)
             and _is_int(row.get("files"))
             and isinstance(row.get("detail"), str)
             and isinstance(row.get("new"), list)
-            and all(isinstance(n, dict) and _is_int(n.get("count"))
+            and all(isinstance(n, dict) and _is_int(n.get("count")) and n["count"] > 0
                     and all(isinstance(n.get(k), str) for k in ("path", "rule", "message"))
                     for n in row["new"]))
 

@@ -583,13 +583,15 @@ def prereview_gate(args):
     incident stands either down, and logs the skip. Every decision is written
     to <scratch>/prereview.json for `finish` to copy into review.json."""
     try:
-        results, configured = review_checks.run_checks(args.root, args.manifest)
+        # One read of the manifest gives both the entries linted and the hash
+        # recorded, so a replaced manifest cannot borrow these results.
+        results, configured, bundle = review_checks.run_checks_bound(args.root, args.manifest)
     except Exception as exc:  # noqa: BLE001 - boundary, see below  pylint: disable=broad-exception-caught
         # Boundary: an escaped exception would exit 1, which reads as FINDINGS.
-        results, configured = [{"name": "pre-review", "status": review_checks.COULD_NOT,
-                                "files": 0, "new": [],
-                                "detail": f"{type(exc).__name__}: {exc}"}], True
-    bundle = _bundle_sha(args.manifest)
+        # No hash is trusted here: the record is written for no bundle at all.
+        results, configured, bundle = [{"name": "pre-review", "status": review_checks.COULD_NOT,
+                                        "files": 0, "new": [],
+                                        "detail": f"{type(exc).__name__}: {exc}"}], True, None
     if not configured:
         sys.stderr.write(f"review-run: pre-review checks: none configured "
                          f"({review_checks.VERIFY_MAP} has no {review_checks.CONFIG_KEY})\n")
@@ -637,17 +639,6 @@ def _record(scratch, bundle, results, overridden, stood_down, configured=True):
     except OSError as exc:
         sys.stderr.write(f"review-run: could not record the pre-review checks in {scratch} "
                          f"({exc}); review.json will say not-recorded\n")
-
-
-def _bundle_sha(manifest_path):
-    """The manifest's bundle_sha256, or None when it cannot be read (the
-    checks have already said so as a could-not-check `manifest` row)."""
-    try:
-        with open(manifest_path, encoding="utf-8") as fh:
-            value = json.load(fh).get("bundle_sha256")
-    except (OSError, ValueError, AttributeError):
-        return None
-    return value if isinstance(value, str) else None
 
 
 def run(args):

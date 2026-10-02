@@ -211,7 +211,12 @@ value (`requires 2` to `requires 3`) is a new finding. A row with no
 never a pass: another exit status, a timeout, output that is not the JSON
 shown (empty output included), a field missing from a row, or, for
 ShellCheck and actionlint, a status that contradicts the output (exit 1 with
-no findings, or exit 0 with some). A parse-abort marker on either side
+no findings, or exit 0 with some). A bad row, or a contradicting status, does
+not throw away the rows that could be read: a new finding among them still
+refuses. A bad row naming a base-side file leaves only that file unchecked,
+because its base count is short. A timeout kills the linter's whole process
+group (`taskkill /T` on Windows), and covers a child left holding the output
+open after the linter exits. A parse-abort marker on either side
 makes that file "could not check" too, because the tool did not analyse it.
 That covers only that file: a new finding in any other file still refuses
 the round, and `--allow-unverified` does not override it.
