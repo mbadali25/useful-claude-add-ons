@@ -22,7 +22,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   select. ShellCheck (`-S warning`) and actionlint run through pinned `uvx` packages. PSScriptAnalyzer
   runs a 13-rule correctness and fail-open allowlist (no WriteHost or naming rules).
   check-marketplace, self-claims and version drift are not duplicated, because the verify gate the
-  preflight already requires runs them.
+  preflight already requires runs them. actionlint runs with its embedded shellcheck and pyflakes
+  passes off, because it skips them silently when those binaries are missing, so `run:` scripts in
+  workflows are not checked by this pass.
 - **Known COULD NOT CHECK until a follow-up lands.** ShellCheck stops parsing
   `scripts/install-prerequisites.sh` (a malformed `disable=... - reason` directive, `:1675`) and
   `scripts/_test/lsp-stack-tools.sh` (a prose `# shellcheck/...` comment, `:7`), so a bundle that
