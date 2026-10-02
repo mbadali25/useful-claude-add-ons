@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.0.113<!-- claim: plugin-version:crew --> |
+| **Version** | 1.0.114<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents, 36 commands, 31 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
@@ -31,7 +31,7 @@ menu item 21 is unticked by default.**
 |---|---|---|
 | `cloud-guard.sh` / `.ps1` | `PreToolUse` on the Bash / PowerShell tool | **Off by default** (`guards.cloudGuard`: `off`/`report`/`block`). Judges `terraform`/`tofu` apply/destroy, `aws` delete/terminate/`rm --recursive`, `az` delete/purge, SQL `DROP`/`TRUNCATE` and force push, and checks the effective AWS profile/region and Azure subscription against the pinned `cloud.*` values; an unknown identity is never allowed unattended, and it never emits an allow |
 | `promote-gate.sh` / `.ps1` | `PreToolUse` on the Bash / PowerShell tool | Refuses a declared `deploy` command unless the `requires` environment has an all-pass row for this sha, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean |
-| `approval-hook.sh` / `.ps1` | `UserPromptSubmit` | Records a ticket's plan approval only when the prompt *you* typed is `/crew:approve <id>`: validates `spec.md` and `plan.md` and writes the receipt bound to both hashes, or blocks the prompt and says why. When the prompt you typed is exactly `/crew:autopilot <id>` (or `run <id>`) and that ticket has a folder, re-points this worktree's active ticket to it and says which ticket it left (T-0504). Any other prompt: no output, exit 0 |
+| `approval-hook.sh` / `.ps1` | `UserPromptSubmit` | Records a ticket's plan approval only when the prompt *you* typed is `/crew:approve <id>`: validates `spec.md` and `plan.md` and writes the receipt bound to both hashes, or blocks the prompt and says why. Any other prompt: no output, exit 0 |
 | `scope-guard.sh` / `.ps1` | `PreToolUse` on Write/Edit/MultiEdit/NotebookEdit/Bash/PowerShell | **Off by default** (`scope.mode`: `off`/`report`/`block`/`auto`; `/crew:init` writes `auto` for a new repo). Refuses an edit with no current approval or outside the spec's Touch, and a shell command that runs `crew_ticket.py approve` or writes crew state — see "Scope and approval" |
 | `completion-audit.sh` / `.ps1` | `Stop` | **Off by default**, same `scope.mode`. Diffs the whole tree against the ticket's start commit and blocks the stop once if any changed path is outside Touch, shell-made writes included |
 | `handoff-read.sh` / `.ps1` | `SessionStart` | Resets its once-per-session markers; prints the prior handoff after a clear, compact, or resume only when `memory.inject` is false |
@@ -596,7 +596,7 @@ Nothing keeps running afterwards — there were no hooks. Ollama, the models it 
 | | |
 |---|---|
 | **Source** | [`obsidian-vault/`](obsidian-vault) |
-| **Version** | 0.4.15<!-- claim: plugin-version:obsidian-vault --> |
+| **Version** | 0.4.16<!-- claim: plugin-version:obsidian-vault --> |
 | **Install** | `claude plugin install obsidian-vault@useful-claude-add-ons` |
 | **Registers** | 2 agents, 11 commands, 3 skills, 8 hook entries (3 scripts × `.sh`/`.ps1`) across 4 events |
 | **Upstream guide** | [`obsidian-vault/README.md`](obsidian-vault/README.md) |
