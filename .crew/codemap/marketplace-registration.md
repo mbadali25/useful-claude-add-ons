@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6053b65d
+anchor: useful-claude-add-ons@11ec013a
 verified: 2026-10-01
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -1376,3 +1376,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `b83598eb` -> `92c93bf7` on 2026-10-01 (T-0504).** `git diff --name-only b83598eb 92c93bf7` is the code maps, rules and diagrams of the note above and the six rebuilt guide outputs (`docs/guides/crew/crew-1.0-daily-workflow.*`, `crew-1.0-troubleshooting.*`); no body citation points into a changed line. Nothing was executed for this note.
 
 **Re-anchored `5ffffbe3` (main's side) and `92c93bf7` (T-0504's side) -> `b5f8d333` on 2026-10-01 (T-0504 merges main 2906dcbd at 464d9bd0 with rerere disabled; crew 1.0.113).** Both histories are kept above, main's first. Main's side since `05a679bf` touched none of T-0504's code files, so T-0504's citations into them stand as re-read at `92c93bf7`; main's citations into `.crew/verify.json` and `CHANGELOG.md` were mapped by diff from `5ffffbe3` (T-0504's verify.json paths add lines inside rules 25, 27 and 31), and the present-tense ranges of rules 25-31 re-read by content. Nothing was executed for this note.
+
+**Re-anchored `6053b65d` (main's side) and `b5f8d333` (T-0504's side) -> `11ec013a` on 2026-10-01 (T-0504 merges main `ffd11270`, L-0557 #300, at `45f107a9` with rerere disabled; crew 1.0.118 at `11ec013a`).** Both provenance histories are kept above, main's first. Body citations were mapped with difflib from the tree each line came from (`53793b1b` for T-0504's lines, `ffd11270` for main's) to this tree (`/root/crew-tmp/t-0504/remap2p.py`, machine-local); dated `**Re-anchored` notes keep the lines of their own commit. Main's side since `2906dcbd` (L-0557: pwsh XDG_CACHE_HOME in the test suites) touched none of T-0504's code files; T-0504's CHANGELOG entry moved main's `CHANGELOG.md` citations +50 and T-0504's verify.json and README lines moved main's `.crew/verify.json` and `plugin/crew/README.md` citations. No suite was executed for this note.
