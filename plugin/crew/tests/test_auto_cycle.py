@@ -296,6 +296,7 @@ def test_the_forced_continuation_hands_over_to_auto_clear(flavor, tmp_path):
 
 
 @pytest.mark.skipif(_BASH is None, reason="needs bash")
+@pytest.mark.wallclock
 def test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay(tmp_path):
     """FIX (Codex): auto-clear.sh's detached tmux/xdotool sender used to
     inherit fd 3 -- the real hook stdout `cw_run_auto_clear` dup's onto it

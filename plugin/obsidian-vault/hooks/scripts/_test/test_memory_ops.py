@@ -998,8 +998,12 @@ def _t_schedule_quoting():
         if match:
             probe = (f"[Console]::Out.Write({match.group(1)} + [char]10 + "
                      f"{match.group(2)})")
+            # Its own startup-profile cache (L-0557): no shared ~/.cache/powershell.
             got = subprocess.run([pwsh, "-NoProfile", "-NonInteractive", "-Command", probe],
-                                 cwd=tmp, capture_output=True, text=True, check=False).stdout
+                                 cwd=tmp, capture_output=True, text=True, check=False,
+                                 env=dict(os.environ,
+                                          XDG_CACHE_HOME=os.path.join(tmp, "xdg-cache"))
+                                 ).stdout
             check("PowerShell reads -Execute and -Argument back as the exact text",
                   got.split("\n"), [fake_py, subprocess.list2cmdline([script, "garden-run"])])
             check_true("and executed nothing", not any(n.startswith("PWNED")
