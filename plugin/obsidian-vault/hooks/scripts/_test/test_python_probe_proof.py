@@ -76,13 +76,17 @@ def ps1_resolve(stem, path):
               + f"Write-Output (\"REJ=\" + ($script:{camel}Rejected -join '; '))\n")
     with tempfile.NamedTemporaryFile("w", suffix=".ps1", delete=False, encoding="utf-8") as handle:
         handle.write(driver)
+    # Its own startup-profile cache per call (L-0557): no shared ~/.cache/powershell.
+    xdg = tempfile.mkdtemp(prefix="probe-proof-xdg-")
     try:
         done = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File", handle.name],
-                              env=dict(os.environ, PATH=path, OS="Windows_NT"),
+                              env=dict(os.environ, PATH=path, OS="Windows_NT",
+                                       XDG_CACHE_HOME=xdg),
                               stdin=subprocess.DEVNULL, capture_output=True, text=True,
                               check=False, timeout=120)
     finally:
         os.unlink(handle.name)
+        shutil.rmtree(xdg, ignore_errors=True)
     return _parse(done.stdout)
 
 

@@ -2866,6 +2866,17 @@ the comment.
 | `validate-prompts.py` | Frontmatter parses, tools are real, referenced agents and paths exist, read-only agents hold no write tools, commands that spawn subagents are permitted to | **whether the prompts produce good work** |
 | `pytest tests/` | The python modules, and that the `.sh` and `.ps1` flavours of `context-watch`, `verify-gate` and `promote-gate` agree - including the emergency lane's expiry, which is the one property that keeps a forgotten incident from ungating a repo forever | anything on a platform the suite is not running on; the Windows-only cases skip elsewhere |
 
+Every pwsh those suites spawn runs with a throwaway `XDG_CACHE_HOME` of its own
+(L-0557). pwsh reads its multicore-JIT startup profile from
+`$XDG_CACHE_HOME/powershell/StartupProfileData-NonInteractive` at start-up and
+rewrites it at exit, so concurrent pwsh sharing `~/.cache/powershell` race on one
+file, and the loser dies before running a statement ("Stack overflow.", exit -6,
+or SIGSEGV, -11). `tests/conftest.py` sets the variable per test and refuses, by
+audit hook, a pwsh spawned without it; `tests/test_pwsh_cache_isolation.py` scans
+every `tests`/`_test` suite in the repo, Python and shell, for a pwsh spawn that
+would skip it. There is no retry. Windows pwsh keeps the profile under
+`LOCALAPPDATA`, so the variable changes nothing there.
+
 That last gap is real and no test closes it. Every command and every agent is an
 instruction to a model; only a live session running a real ticket exercises
 them. Setup Phase 7 exists for exactly that, and it is the one thing here that
