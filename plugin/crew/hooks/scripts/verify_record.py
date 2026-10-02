@@ -32,6 +32,7 @@ import json
 import math
 import os
 import re
+import stat
 import subprocess
 import sys
 import hashlib
@@ -543,7 +544,7 @@ def cover_plan(rules, rule_order, rule_cmds, cmds, always=(), environ=None):
                 changed = True
     if not candidates:
         return cmds, none, notices
-    if environ.get("PYTEST_ADDOPTS", "").strip():
+    if environ.get("PYTEST_ADDOPTS", "") != "":
         notices.append("verify-gate: PYTEST_ADDOPTS is set, so a subset's test selection may "
                        "differ from its superset's - declared coverage NOT applied, every rule runs")
         return cmds, none, notices
@@ -587,8 +588,66 @@ def tree_snapshot(root):
         if out.returncode != 0:
             return None
         listing.extend(p for p in out.stdout.decode("utf-8", "surrogateescape").split("\0") if p)
+    paths = sorted(set(listing))
+    meta = _tree_meta(root, paths)
+    if meta is None:
+        return None
     import verify_fingerprint  # pylint: disable=import-outside-toplevel
-    return verify_fingerprint.fingerprint(root, sorted(set(listing)))
+    return verify_fingerprint.fingerprint(root, paths) + "-" + meta
+
+
+def _tree_meta(root, paths):
+    """What the content fingerprint does not see, hashed per path BEFORE it
+    runs (review r1): the file type and permission bits from lstat, and a
+    symlink's own target text (the fingerprint follows the link, so two
+    dangling targets both read as "absent"). Anything that is not a regular
+    file, a directory or a symlink to one - a FIFO, a socket, a device -
+    returns None: the fingerprint would block opening a FIFO, and an
+    unreadable entry is could-not-tell, which means no credit."""
+    digest = hashlib.sha256()
+    for rel in paths:
+        full = os.path.join(root, rel)
+        name = rel.encode("utf-8", "surrogateescape")
+        try:
+            st = os.lstat(full)
+        except FileNotFoundError:
+            digest.update(b"\0" + name + b":absent")
+            continue
+        except OSError:
+            return None
+        if stat.S_ISLNK(st.st_mode):
+            try:
+                target = os.readlink(full)
+                followed = os.stat(full)
+            except FileNotFoundError:
+                followed = None
+            except OSError:
+                return None
+            if followed is not None and not (stat.S_ISREG(followed.st_mode)
+                                             or stat.S_ISDIR(followed.st_mode)):
+                return None
+            digest.update(b"\0" + name + b":link:" + os.fsencode(target))
+        elif stat.S_ISREG(st.st_mode) or stat.S_ISDIR(st.st_mode):
+            kind = b"f" if stat.S_ISREG(st.st_mode) else b"d"
+            digest.update(b"\0" + name + b":" + kind + b"%o" % stat.S_IMODE(st.st_mode))
+        else:
+            return None
+    return digest.hexdigest()
+
+
+def _str_list(value):
+    """`value` itself when it is a list of strings; TypeError otherwise. A
+    number where a command should be is a malformed payload, not a command."""
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise TypeError("expected a list of strings")
+    return list(value)
+
+
+def _int_list(value):
+    if not isinstance(value, list) or not all(isinstance(v, int) and not isinstance(v, bool)
+                                              for v in value):
+        raise TypeError("expected a list of integers")
+    return list(value)
 
 
 def cmd_cover_plan():
@@ -600,13 +659,14 @@ def cmd_cover_plan():
     try:
         payload = json.load(sys.stdin)
         rules = payload["rules"]
-        rule_order = [int(r) for r in payload["rule_order"]]
-        rule_cmds = {int(k): [str(c) for c in v] for k, v in payload["rule_cmds"].items()}
-        cmds = [str(c) for c in payload["cmds"]]
-        always = [str(c) for c in (payload.get("always") or [])]
+        rule_order = _int_list(payload["rule_order"])
+        rule_cmds = {int(k): _str_list(v) for k, v in payload["rule_cmds"].items()}
+        cmds = _str_list(payload["cmds"])
+        always = _str_list(payload.get("always") or [])
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return 1
-    if not isinstance(rules, list):
+    if not isinstance(rules, list) or not all(isinstance(k, str) and k.isdigit()
+                                              for k in payload["rule_cmds"]):
         return 1
     order, guards, notices = cover_plan(rules, rule_order, rule_cmds, cmds, always)
     print(json.dumps({"cmds": order, "guards": guards, "notices": notices}))

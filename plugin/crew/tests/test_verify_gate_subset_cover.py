@@ -213,14 +213,46 @@ def test_tree_changed_after_superset_runs_subset(flavour, tmp_path):
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)
-def test_pytest_addopts_runs_subset(flavour, tmp_path):
+@pytest.mark.parametrize("addopts", ["-m slow", " "])
+def test_pytest_addopts_runs_subset(flavour, addopts, tmp_path):
     root, log = _repo(tmp_path, [_sup(), _sub()])
 
-    res = _run(flavour, root, "--all", env={"PYTEST_ADDOPTS": "-m slow"})
+    res = _run(flavour, root, "--all", env={"PYTEST_ADDOPTS": addopts})
 
     assert res.returncode == 0, res.stderr
     assert _lines(log) == ["sup", "sub"], res.stderr
     assert "PYTEST_ADDOPTS is set" in res.stderr
+
+
+_POSIX = pytest.mark.skipif(os.name == "nt", reason="symlinks and mode bits are POSIX cases")
+
+
+@_POSIX
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+@pytest.mark.parametrize("change", ["chmod +x a.py", "ln -sfn missing-b link"])
+def test_tree_metadata_change_after_superset_runs_subset(flavour, change, tmp_path):
+    """Review r1: a mode flip or a retargeted (dangling) symlink leaves every
+    file's BYTES alone, so a content-only snapshot would still credit."""
+    root, log = _repo(tmp_path, [_sup("echo sup >> {log}; " + change), _sub()])
+    os.symlink("missing-a", root / "link")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "link")
+
+    res = _run(flavour, root, "--all")
+
+    assert _lines(log) == ["sup", "sub"], res.stderr
+    assert "working tree changed during this run" in res.stderr
+
+
+@_POSIX
+def test_tree_snapshot_refuses_a_fifo_without_blocking(tmp_path):
+    _git(tmp_path, "init", "-q")
+    os.mkfifo(tmp_path / "pipe")
+
+    res = subprocess.run([sys.executable, os.path.join(_SCRIPTS, "verify_record.py"), "tree-snapshot"],
+                         cwd=str(tmp_path), capture_output=True, text=True, check=False, timeout=60)
+
+    assert (res.returncode, res.stdout) == (1, "")
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)
@@ -426,7 +458,10 @@ def test_tree_snapshot_moves_with_the_tree(tmp_path):
 
 
 @pytest.mark.parametrize("payload", ["not json", "[]", '{"rules": []}',
-                                     '{"rules": {}, "rule_order": [], "rule_cmds": {}, "cmds": []}'])
+                                     '{"rules": {}, "rule_order": [], "rule_cmds": {}, "cmds": []}',
+                                     '{"rules": [], "rule_order": [], "rule_cmds": {}, "cmds": [1]}',
+                                     '{"rules": [], "rule_order": [true], "rule_cmds": {}, "cmds": []}',
+                                     '{"rules": [], "rule_order": [], "rule_cmds": {"x": []}, "cmds": []}'])
 def test_cover_plan_cli_refuses_malformed_input(payload):
     res = subprocess.run([sys.executable, os.path.join(_SCRIPTS, "verify_record.py"), "cover-plan"],
                          input=payload, capture_output=True, text=True, check=False, timeout=60)

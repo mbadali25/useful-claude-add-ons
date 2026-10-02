@@ -318,7 +318,7 @@ TOOLING_MUTATIONS += (
     (
         "planner: PYTEST_ADDOPTS no longer declines credit",
         VERIFY_RECORD,
-        '    if environ.get("PYTEST_ADDOPTS", "").strip():\n',
+        '    if environ.get("PYTEST_ADDOPTS", "") != "":\n',
         "    if False:\n",
         _COVER + "test_pytest_addopts_runs_subset[sh]",
     ),
@@ -328,6 +328,20 @@ TOOLING_MUTATIONS += (
         "            elif _rule_env(rule) != _rule_env(sup):\n",
         "            elif False:\n",
         _COVER + "test_invalid_declaration_runs_subset_and_says_why[env mismatch-sh]",
+    ),
+    (
+        "snapshot: mode bits and symlink targets dropped from the snapshot",
+        VERIFY_RECORD,
+        '    return verify_fingerprint.fingerprint(root, paths) + "-" + meta\n',
+        "    return verify_fingerprint.fingerprint(root, paths)\n",
+        _COVER + "test_tree_metadata_change_after_superset_runs_subset[chmod +x a.py-sh]",
+    ),
+    (
+        "cover-plan: a non-string command is coerced instead of refused",
+        VERIFY_RECORD,
+        "    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):\n",
+        "    if not isinstance(value, list):\n",
+        _COVER + "test_cover_plan_cli_refuses_malformed_input",
     ),
     (
         "record: a credited command's 0s is cached as the rule's cost",
