@@ -24,6 +24,7 @@ import crew_autopilot
 import crew_resume
 import crew_status
 import crew_ticket
+import review_checks
 import review_ledger
 import review_patch
 import review_prompt
@@ -359,3 +360,44 @@ def test_tooling_alone_checker_passes_its_must_block_must_allow_suite():
                           stdin=subprocess.DEVNULL, check=False)
 
     assert done.returncode == 0, done.stdout[-4000:] + done.stderr[-2000:]
+
+
+def test_prereview_reads_only_manifest_keys(tmp_path, monkeypatch):
+    """L-0574: review_checks reads the manifest review_patch really wrote, and
+    only the keys (and entry fields) that producer writes."""
+    repo = init_repo(tmp_path / "r")
+    (repo / "gone.py").write_text("x = 1\n", encoding="utf-8")
+    (repo / "ruff.toml").write_text("[lint]\n", encoding="utf-8")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "base")
+    base = git(repo, "rev-parse", "HEAD")
+    (repo / "gone.py").unlink()
+    (repo / "m.py").write_text("x = 2\n", encoding="utf-8")
+    (repo / ".crew").mkdir()
+    (repo / ".crew" / "verify.json").write_text(json.dumps({review_checks.CONFIG_KEY: {"linters": [
+        {"tool": "ruff", "command": [sys.executable, "-c", "print('[]')"]}]}}), encoding="utf-8")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    manifest, _ = review_patch.build(str(repo), base, str(scratch / "diff.txt"),
+                                     str(scratch / "manifest.json"))
+    produced_entry_keys = set().union(*(set(e) for e in manifest["entries"]))
+    seen = []
+
+    def load(fh, **kw):
+        if os.path.abspath(fh.name) != str(scratch / "manifest.json"):
+            return json.load(fh, **kw)
+        rec = json.load(fh, object_hook=Recording, **kw)
+        seen.append(rec)
+        return rec
+
+    monkeypatch.setattr(review_checks, "json", types.SimpleNamespace(
+        load=load, loads=json.loads, dumps=json.dumps))
+    Recording.log = []
+    results, configured = review_checks.run_checks(str(repo), str(scratch / "manifest.json"))
+    top = _keys(Recording.log, seen[0])
+    entry_keys = set().union(*(_keys(Recording.log, e) for e in seen[0]["entries"]))
+    Recording.log = None
+
+    assert (configured, [r["status"] for r in results]) == (True, [review_checks.PASS]), results
+    assert top and top <= set(review_patch.MANIFEST_KEYS), top
+    assert entry_keys and entry_keys <= produced_entry_keys, entry_keys - produced_entry_keys

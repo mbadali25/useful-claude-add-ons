@@ -49,6 +49,33 @@
     "non-empty every time and `default` unreachable."
   ],
 
+  "preReview": {
+    "_note": [
+      "Read by review_run.py (review_checks.py) BEFORE a review round is reserved, not by the Stop gate (L-0574).",
+      "Each changed file in the review bundle is linted at its base blob and at its bundle blob; a finding the bundle ADDS",
+      "(keyed path+rule+message, line numbers ignored) refuses the round with exit 5. A tool that is missing, crashes, times",
+      "out, prints unparseable output or cannot parse a changed file is COULD NOT CHECK - never a pass - and also refuses",
+      "unless --allow-unverified. check-marketplace.py, self-claims and version drift are NOT here: the verify gate already",
+      "runs them (rules[0] and the docs/scripts rules) and the review preflight already refuses a tree that gate has not passed.",
+      "ruff: the repo's ruff.toml plus the fail-open rules S110/S112/BLE001, which ruff.toml does not select (9/1/106 findings",
+      "repo-wide at ffd11270 - they block only when a bundle adds one). shellcheck/actionlint: not on PATH on the Linux host,",
+      "so they run through pinned uvx packages. psscriptanalyzer: an allowlist of correctness and fail-open rules measured",
+      "against the 466 findings over the 44 tracked PowerShell files at ffd11270 (230 PSAvoidUsingWriteHost and the other",
+      "style rules - nouns, verbs, ShouldProcess, positional parameters - are deliberately not listed)."
+    ],
+    "linters": [
+      {"tool": "ruff", "args": ["--extend-select", "S110,S112,BLE001"]},
+      {"tool": "shellcheck", "command": ["uvx", "--from", "shellcheck-py==0.11.0.1", "shellcheck"],
+       "args": ["-S", "warning"]},
+      {"tool": "psscriptanalyzer", "rules": [
+        "PSAvoidUsingEmptyCatchBlock", "PSReviewUnusedParameter", "PSUseDeclaredVarsMoreThanAssignments",
+        "PSAvoidAssignmentToAutomaticVariable", "PSPossibleIncorrectUsageOfRedirectionOperator",
+        "PSPossibleIncorrectUsageOfAssignmentOperator", "PSPossibleIncorrectComparisonWithNull",
+        "PSAvoidUsingInvokeExpression", "PSAvoidOverwritingBuiltInCmdlets", "PSAvoidGlobalVars",
+        "PSUseCmdletCorrectly", "PSMisleadingBacktick", "PSAvoidDefaultValueSwitchParameter"]},
+      {"tool": "actionlint", "command": ["uvx", "--from", "actionlint-py==1.7.12.25", "actionlint"]}
+    ]
+  },
   "rules": [
     { "paths": [".claude-plugin/marketplace.json", "**/.claude-plugin/plugin.json",
                 "**/pyproject.toml", "plugin/**", "skills/**", "MARKETPLACE.md",

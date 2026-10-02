@@ -79,8 +79,8 @@ review.json carries `failure_class`, and `refunded` / `refund_refused` as the
 ledger recorded them; a `review:` line says whether the round was refunded. A
 refunded round still exits 3.
 
-BEFORE ANY ROUND IS RESERVED, three questions, in this order (`preflight`,
-then `standards_gate`):
+BEFORE ANY ROUND IS RESERVED, four questions, in this order (`preflight`,
+then `prereview_gate`, then `standards_gate`):
 
   1. Does a CLEAN receipt already cover this exact bundle
      (`review_ledger.check_receipt`, the check `/crew:done` gates on)? Then
@@ -94,20 +94,34 @@ then `standards_gate`):
      would refuse for free is the most expensive way to find out it is red.
      `--allow-unverified` reviews it anyway, and review.json says it did.
      No verify map, or a gate stood down, proceeds and says so.
-  3. Only then (`standards_gate`, T-0085): is the standards self-check
+  3. Then (`prereview_gate`, L-0574): does the bundle add a linter finding
+     its own base did not have (`review_checks.py`, configured under
+     `preReview` in `.crew/verify.json`)? A NEW finding is exit 5, no round
+     spent, and `--allow-unverified` does not override it. A check that could
+     not run (missing tool, crash, timeout, bad output, a file the tool could
+     not parse, a config it cannot read) is COULD NOT CHECK, never a pass:
+     exit 5 too, unless `--allow-unverified`, which review.json records as
+     `prereview.overridden`. Only an active incident stands both down, and
+     logs a `prereview-checks` skip. No `preReview` key proceeds and says so.
+  4. Only then (`standards_gate`, T-0085): is the standards self-check
      complete and stamped for this bundle? Missing or stale is exit 2, no
      round spent -- see STANDARDS SELF-CHECK above. A CLEAN receipt (1) never
-     asks for a self-check, and an unverified gate (2) is refused with exit 5
-     before one is asked for.
+     asks for a self-check, and a refusal at (2) or (3) comes first.
+
+Questions 3 and 4 are not asked when the budget is already spent: the
+reservation refuses that (exit 4) whatever they would say.
 
 Every round's review.json carries `gate` (the state observed at verdict time)
 and `elapsed_s` (reservation to verdict, from the ledger's own timestamps), and
-the `review:` summary line prints both.
+the `review:` summary line prints both. It also carries `prereview`: the
+<scratch>/prereview.json question 3 wrote for this bundle, or
+`{"result": "not-recorded", "reason": ...}` -- never a bare null.
 
 Exit codes: 0 CLEAN; 1 FINDINGS; 3 INCOMPLETE; 4 budget refused
-(NEEDS_REPLAN); 5 not run, verify gate not green (no round spent); 2 usage or
-setup error, or the standards self-check missing or stale -- not run, no round
-spent. Exit 5 (gate) is decided before exit 2 (self-check) is asked for.
+(NEEDS_REPLAN); 5 not run, verify gate not green or a pre-review check new or
+could not check (no round spent); 2 usage or setup error, or the standards
+self-check missing or stale -- not run, no round spent. Exit 5 is decided
+before exit 2 (self-check) is asked for.
 """
 import argparse
 import datetime
@@ -123,6 +137,7 @@ import crew_common
 import crew_incident
 import crew_standards
 import crew_state
+import review_checks
 import review_gate
 import review_ledger
 import review_limit
@@ -444,6 +459,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     review["refunded"] = row.get("refunded") is True
     review["refund_refused"] = row.get("refund_refused")
     review["elapsed_s"] = round_elapsed(args.root, args.ticket, number)
+    review["prereview"] = review_checks.recorded(args.scratch, manifest.get("bundle_sha256"))
     work_dir = args.work_dir or os.path.join(args.root, ".work", "tickets", args.ticket)
     _write_atomic(os.path.join(work_dir, "review.json"),
                   json.dumps(review, indent=2, sort_keys=True) + "\n")
@@ -558,6 +574,66 @@ def standards_gate(args):
     return None
 
 
+def prereview_gate(args):
+    """None to go on and reserve; EXIT_UNVERIFIED to refuse with nothing spent.
+
+    The pre-review checks (L-0574, `review_checks.py`): no new linter finding
+    in the bundle against its own base. NEW findings refuse whatever else is
+    true; COULD NOT CHECK refuses unless --allow-unverified; only an ACTIVE
+    incident stands either down, and logs the skip. Every decision is written
+    to <scratch>/prereview.json for `finish` to copy into review.json."""
+    results, configured = review_checks.run_checks(args.root, args.manifest)
+    bundle = _bundle_sha(args.manifest)
+    if not configured:
+        sys.stderr.write(f"review-run: pre-review checks: none configured "
+                         f"({review_checks.VERIFY_MAP} has no {review_checks.CONFIG_KEY})\n")
+        review_checks.record(args.scratch, bundle, [], False, False, configured=False)
+        return None
+    for line in review_checks.lines(results):
+        sys.stderr.write(f"review-run: {line}\n")
+    verdict = review_checks.overall(results)
+    if verdict == review_checks.PASS:
+        review_checks.record(args.scratch, bundle, results, False, False)
+        return None
+    incident = crew_incident.read_state(args.root, crew_state.load_config(args.root))
+    if incident["active"]:
+        crew_incident.log_skip(args.root, "prereview-checks", f"{verdict}: " + "; ".join(
+            f"{r['name']} {r['status']}" for r in results if r["status"] in (
+                review_checks.FAIL, review_checks.COULD_NOT)))
+        sys.stderr.write(f"review-run: incident {incident['id']} is active; the pre-review "
+                         "checks stand down and the skip is logged\n")
+        review_checks.record(args.scratch, bundle, results, False, True)
+        return None
+    if verdict == review_checks.COULD_NOT and args.allow_unverified:
+        sys.stderr.write("review-run: pre-review checks could not check everything; reviewing "
+                         "anyway (--allow-unverified); review.json records the override\n")
+        review_checks.record(args.scratch, bundle, results, True, False)
+        return None
+    review_checks.record(args.scratch, bundle, results, False, False)
+    if verdict == review_checks.FAIL:
+        sys.stderr.write("review-run: the bundle adds linter findings its base did not have. No "
+                         "round reserved. Fix them (or suppress one with the tool's own inline "
+                         "directive and a reason), then review again. --allow-unverified does "
+                         "not override a new finding\n")
+    else:
+        sys.stderr.write("review-run: a pre-review check could not run, so this tree is not "
+                         "known clean. No round reserved. Install or repair the tool and review "
+                         "again, or pass --allow-unverified to review anyway (review.json "
+                         "records the override)\n")
+    return EXIT_UNVERIFIED
+
+
+def _bundle_sha(manifest_path):
+    """The manifest's bundle_sha256, or None when it cannot be read (the
+    checks have already said so as a could-not-check `manifest` row)."""
+    try:
+        with open(manifest_path, encoding="utf-8") as fh:
+            value = json.load(fh).get("bundle_sha256")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return value if isinstance(value, str) else None
+
+
 def run(args):
     exe = prompt = None
     if args.provider in LAUNCHED:
@@ -583,7 +659,9 @@ def run(args):
     ledger = review_ledger.status(args.root, args.ticket)
     if not (ledger.get("state") == review_ledger.NEEDS_REPLAN
             or ledger.get("rounds_left") == 0):
-        refused = standards_gate(args)
+        refused = prereview_gate(args)
+        if refused is None:
+            refused = standards_gate(args)
         if refused is not None:
             return refused
 

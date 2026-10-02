@@ -2,7 +2,8 @@
 
 crew parses the output of three tools it does not own: the Codex CLI (the
 review stream), `wsl.exe` (tool resolution on Windows) and `gh` (posting a
-review to a pull request). This page records what crew relies on from each,
+review to a pull request). Since L-0574 it also parses four linters' output
+before a review round is reserved; they have their own section at the end. This page records what crew relies on from each,
 where the fact comes from, and what was probed on which host. Every fact
 carries its source and the date it was read. When a tool's output changes,
 this page is the first thing to check, and
@@ -16,7 +17,7 @@ It is never a pass.
 
 ## Codex CLI
 
-**What crew calls.** `review_run.command_for` (`plugin/crew/hooks/scripts/review_run.py:211-221`)
+**What crew calls.** `review_run.command_for` (`plugin/crew/hooks/scripts/review_run.py:226-236`)
 runs `codex exec` with these flags and nothing else:
 
 | Flag | Meaning |
@@ -61,7 +62,7 @@ raw U+2028 (`plugin/crew/tests/golden/review/uca-t0072--T-0072-build--2BJpY8/eve
 `agent_message` item's text. It counts a turn as complete only on
 `turn.completed`. A `turn.failed`, an `error` event or an unparseable line is
 an error, and a stream with no completed turn is also an error. The verdict
-parser (`review_run.py:406`) turns any of those into INCOMPLETE of class
+parser (`review_run.py:421`) turns any of those into INCOMPLETE of class
 `tool`, which is refunded. Every event and item type in the committed corpus is
 one of the documented types (`test_golden_codex_events_use_documented_types`).
 On 2026-09-28, the 26 local streams used only `thread.started`, `turn.started`,
@@ -107,9 +108,9 @@ Probed: not probed. The T-0087 host is Linux (Ubuntu) with no `wsl.exe`, so `tes
 
 **What crew calls.** On Windows, `shutil.which("codex")` or `shutil.which("copilot")`
 resolves an npm-installed CLI to its `.cmd` shim. `review_run.through_batch_shim`
-(`plugin/crew/hooks/scripts/review_run.py:186`) names a provider whose resolved
-path ends `.cmd` or `.bat` (`BATCH_SHIM_SUFFIXES`, `:147`), and
-`review_run.prompt_argument` (`:193`) never hands such a provider the prompt
+(`plugin/crew/hooks/scripts/review_run.py:201`) names a provider whose resolved
+path ends `.cmd` or `.bat` (`BATCH_SHIM_SUFFIXES`, `:162`), and
+`review_run.prompt_argument` (`:208`) never hands such a provider the prompt
 inline: it passes the one-line pointer to `prompt.txt` that an over-limit prompt
 already gets, and says why on stderr.
 
@@ -165,3 +166,32 @@ the response as JSON, and `--jq` selects from it
 (https://cli.github.com/manual/gh_api, read 2026-09-28).
 
 Probed: gh version 2.46.0 on Linux (Ubuntu), 2026-09-28. `gh pr review --help` lists `-a, --approve`, `-b, --body`, `-F, --body-file`, `-c, --comment`, `-r, --request-changes`.
+
+## Pre-review linters (L-0574)
+
+**What crew calls.** `review_checks.py` runs each linter `.crew/verify.json`
+lists under `preReview` once, over both throwaway trees (base and bundle),
+with stdin closed and argv lists only. The `command` slot may replace the
+binary (this repo runs ShellCheck and actionlint through pinned `uvx`
+packages). Facts below were probed on this Linux host on 2026-10-01 with
+ruff 0.16.9, ShellCheck 0.11.0 (`shellcheck-py==0.11.0.1`), actionlint
+1.7.12 (`actionlint-py==1.7.12.25`) and PSScriptAnalyzer 1.25.0 under pwsh
+7.6.5. They were not probed on Windows.
+
+| Tool | Invocation | Exit statuses read as "ran" | Output crew reads | Parse-abort marker |
+|------|------------|-----------------------------|-------------------|--------------------|
+| ruff | `check --output-format json --exit-zero --no-cache <args> <files>` | 0 | a JSON list; `filename` (absolute), `code`, `message` | `code` `invalid-syntax` (null codes are read as it): ruff then reports nothing else for that file |
+| ShellCheck | `-f json1 <args> <files>` | 0 none, 1 findings (2 unreadable file, 3 bad syntax, 4 bad options are errors) | `{"comments": [...]}`; `file` (as passed), `code` (int, read as `SC<code>`), `message` | `SC1072` ("Fix any mentioned problems and try again"): parsing of that file stopped |
+| actionlint | `-format '{{json .}}' -no-color <args> <files>` | 0 none, 1 findings (2 bad flag, 3 fatal are errors) | a JSON list; `filepath` (as passed), `kind`, `message` | `kind` `syntax-check` |
+| PSScriptAnalyzer | `pwsh -NoProfile -NonInteractive -File <script> <file-list> <rule-list>` | 0 (the script exits 3 on any error, an unknown `-IncludeRule` name included) | one JSON line from `ConvertTo-Json`; `file`, `rule`, `severity`, `message` | `severity` `ParseError` |
+
+**How crew reads it.** Anything outside the table is "could not check",
+never a pass: another exit status, a timeout, output that is not the JSON
+shown, or a field missing from a row. A parse-abort marker on either side
+makes that file "could not check" too, because the tool did not analyse it.
+`-IncludeRule` silently ignores a rule name PSScriptAnalyzer does not know,
+so the script compares the allowlist with `Get-ScriptAnalyzerRule` first. The
+tests that pin these shapes are `tests/test_review_checks.py` (one fake
+speaking all four formats, plus real ruff and real PSScriptAnalyzer cases,
+which are skipped with a reason when the tool is absent).
+
