@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@273ec0f6
+anchor: useful-claude-add-ons@9835a09f
 verified: 2026-10-02
 
 ## Re-derive provenance
@@ -1592,3 +1592,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `b4f04e23` (main) and L-0575's `2859ab05` -> `99c8f66e` on 2026-10-02 (L-0575 merges origin/main 7ba4f9ea (L-0572 #309 crew 1.0.126, L-0593 #312) at 99c8f66e, rerere disabled; crew 1.0.129 is set in the last commit. Body citations were mapped with difflib from the tree each line came from (9dad04ef for L-0575's lines, 7ba4f9ea for main's): ten CHANGELOG.md citations in crew.md moved +21 (L-0572's entry, below L-0575's); verification-harness.md's verify.json ranges were set by hand to :469-476 (rule 41) and :486-496 (L-0575's rule, after L-0572's at :478-485). History notes were not re-mapped. No suite was executed for this note).**
 
 **Re-anchored `d6e51bb8` (main) and L-0575's `99c8f66e` -> `273ec0f6` on 2026-10-02 (L-0575 merges origin/main a9b4734d (L-0576 #306 crew 1.0.128, L-0577 #305, T-0107 #273) at 273ec0f6, rerere disabled; crew 1.0.129 is re-set in the last commit. Both provenance histories kept, main's first. Body citations were mapped with difflib from the tree each line came from (986c9ca5 for L-0575's lines, a9b4734d for main's): ten CHANGELOG.md citations in crew.md moved +113 (main's new entries sit below L-0575's), and ten plugin/crew/README.md citations in crew.md and repo-docs.md moved +2 (L-0575's README paragraph at :727 sits above them); verification-harness.md's verify.json ranges were set by hand to :474-481 (rule 41), :483-490 (L-0572) and :491-501 (L-0575, last). History notes were not re-mapped. No suite was executed for this note).**
+
+**Re-anchored `273ec0f6` -> `9835a09f` on 2026-10-02 (L-0597, docs only, no plugin change).** `9835a09f` rewrites `.claude/skills/steward/SKILL.md:41-43` and `Skill-Pipeline.md:59` to say main lands PRs as merge commits (`gh pr merge --merge`), replacing lines in place; no line was added or removed in either file, so no citation in this map moved. `git diff --name-only 273ec0f6 9835a09f` is those two paths only. No line this map cites says how main is merged. No suite was executed for this note.
