@@ -23,7 +23,11 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    # The Windows leg runs on the self-hosted crew-win pool (owner, 2026-10-02).
+    # matrix.os stays windows-latest so the required check keeps its name,
+    # test (windows-latest). Fork PRs stay on GitHub-hosted runners: this repo
+    # is public and fork code never runs on self-hosted machines.
+    runs-on: ${{ (matrix.os == 'windows-latest' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","Windows","crew-win"]') || matrix.os }}
     defaults:
       run:
         working-directory: mcp-servers
