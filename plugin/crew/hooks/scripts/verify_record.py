@@ -539,7 +539,8 @@ def cover_plan(rules, rule_order, rule_cmds, cmds, always=(), environ=None):
     while changed:
         changed = False
         for ri in sorted(candidates):
-            if any(c in pinned or not owners[c] <= candidates for c in rule_cmds[ri]):
+            if any(c.split("\x1c", 1)[0] in pinned or not owners[c] <= candidates
+                   for c in rule_cmds[ri]):
                 candidates.discard(ri)
                 changed = True
     if not candidates:
@@ -588,6 +589,18 @@ def tree_snapshot(root):
         if out.returncode != 0:
             return None
         listing.extend(p for p in out.stdout.decode("utf-8", "surrogateescape").split("\0") if p)
+    try:
+        flags = subprocess.run(("git", "-c", "core.quotePath=false", "ls-files", "-v", "-z"),
+                               cwd=root, capture_output=True, check=False, timeout=120,
+                               stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    # Review r2: skip-worktree (`S`) and assume-unchanged (a lowercase tag)
+    # make git stop reporting a path's working-tree edits, so neither listing
+    # above would see them. Refuse rather than model it: could-not-tell.
+    if flags.returncode != 0 or any(e[:1] == "S" or e[:1].islower()
+                                    for e in flags.stdout.decode("utf-8", "surrogateescape").split("\0") if e):
+        return None
     paths = sorted(set(listing))
     meta = _tree_meta(root, paths)
     if meta is None:

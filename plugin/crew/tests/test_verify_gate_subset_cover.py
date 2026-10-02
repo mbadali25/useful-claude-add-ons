@@ -418,6 +418,31 @@ def test_plan_declines(always, shared, environ):
     assert guards == [None] * len(order)
 
 
+def test_plan_declines_an_env_suffixed_command_whose_text_is_in_always():
+    ident = "sub" + "\x1c" + '{"ENV":"qa"}'
+    rules = [{"run": ["sub"], "coveredBy": "s", "env": {"ENV": "qa"}},
+             {"id": "s", "run": ["s1"], "env": {"ENV": "qa"}}]
+    s1 = "s1" + "\x1c" + '{"ENV":"qa"}'
+
+    _, guards, _ = verify_record.cover_plan(rules, [0, 1], {0: [ident], 1: [s1]},
+                                            [ident, s1, "sub"], ["sub"], environ={})
+
+    assert guards == [None, None, None]
+
+
+@pytest.mark.parametrize("flag", ["--skip-worktree", "--assume-unchanged"])
+def test_tree_snapshot_refuses_hidden_index_flags(flag, tmp_path):
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.email", "t@example.invalid")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "a.py").write_text("1", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "x")
+    _git(tmp_path, "update-index", flag, "a.py")
+
+    assert verify_record.tree_snapshot(str(tmp_path)) is None
+
+
 def test_record_covered_is_clean_and_never_cached(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".crew").mkdir()

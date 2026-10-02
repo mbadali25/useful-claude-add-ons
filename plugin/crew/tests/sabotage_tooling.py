@@ -311,8 +311,8 @@ TOOLING_MUTATIONS += (
     (
         "planner: a command also named by `always` is credited",
         VERIFY_RECORD,
-        "            if any(c in pinned or not owners[c] <= candidates for c in rule_cmds[ri]):\n",
-        "            if any(not owners[c] <= candidates for c in rule_cmds[ri]):\n",
+        '            if any(c.split("\\x1c", 1)[0] in pinned or not owners[c] <= candidates\n',
+        "            if any(not owners[c] <= candidates\n",
         _COVER + "test_command_also_in_always_runs[sh]",
     ),
     (

@@ -71,10 +71,10 @@ To run everything with no budget:
 
     bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-gate.sh --all
 
-(or `-All` on PowerShell). Give every rule a measured `seconds` (step 6 times
-them); a rule with no `seconds` is UNKNOWN cost, not free: it always runs. Under
-`--all` a rule declaring `"coveredBy": "<id>"` is credited COVERED, not re-run, when
-the rule with that `id` passed earlier in the same run on an unchanged tree (CONFIG.md §19).
+(or `-All` on the PowerShell flavour). Give every rule a measured `seconds`
+when you write the map -- step 6 already times them. A rule with no `seconds`
+is UNKNOWN cost, not free: it always runs and the gate says its cost is
+unstated, which is the honest default but a poor one to leave in place.
 
 With `--sync`: run
 `bash ${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/scripts/map-audit.sh` and reconcile.
