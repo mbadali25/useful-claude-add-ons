@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@f5cab1f9
-verified: 2026-10-01
+anchor: useful-claude-add-ons@e60394fd
+verified: 2026-10-02
 
 # localgpu
 
@@ -1722,3 +1722,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `bbd9a66d` -> `8730119f` on 2026-09-29 (T-0107 merges origin/main `8ab733d7`). Current despite the lag.** `8730119f` merges origin/main (T-0010 landed, crew 1.0.61, main's anchor `bbd9a66d`) into `T-0107-build`; the conflicts were this header and the provenance tail, resolved mechanically - main's anchor taken, both sides' provenance kept, main's first. `git diff --numstat bbd9a66d 8730119f -- README.md plugin/README.md` is `1 1` for each: T-0107's gizmoduck catalog row, still `README.md:875` and `plugin/README.md:415`, edited in place. No citation outside provenance covers either line, and `plugin/PLUGINS.md` changes only at `:441`, `:446`, `:451` and `:470` (+2 after it), where no note cites a line. Nothing was executed for this note.
 
 **Re-anchored `6053b65d` -> `40292eca` on 2026-10-02 (T-0107 merges origin/main `ffd11270`, without rerere). Current despite the lag.** `40292eca` merges origin/main into `T-0107-build`; the header conflict took main's anchor and both sides' provenance notes were kept, main's first. `crew_refresh_check.py` named README.md and plugin/README.md: `git diff --numstat 6053b65d 40292eca -- README.md plugin/README.md` is `1 1` for each, T-0107's gizmoduck catalog row edited in place, now `README.md:876` (main's side added a line above it) and `plugin/README.md:415`. The only citations covering those lines sit in dated notes that state their own commit's coordinates. gizmoduck is re-set to 0.5.4, one patch above main's 0.5.3, after the last content change. Nothing was executed for this note.
+
+**Re-anchored `f5cab1f9` -> `e60394fd` on 2026-10-02 (T-0107 merges origin/main `8d84786d`, without rerere). Current despite the lag.** `e60394fd` merges origin/main (W-0117, crew 1.0.115) into `T-0107-build`; the header conflict took main's anchor and both sides' provenance notes were kept, main's first. Against the scope base `8d84786d`, `crew_refresh_check.py` named README.md and plugin/README.md: `git diff --numstat 8d84786d e60394fd -- README.md plugin/README.md` is `1 1` for each, T-0107's gizmoduck catalog row edited in place, still `README.md:876` and `plugin/README.md:415`. The only citations covering those lines sit in dated notes that state their own commit's coordinates. gizmoduck stays 0.5.5 (main is 0.5.3). Nothing was executed for this note.
