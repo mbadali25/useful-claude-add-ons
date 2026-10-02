@@ -10,8 +10,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   `config-tuneup`.** `claude plugin validate --strict` (claude CLI 2.1.287) refuses both old
   names as reserved: a third party's plugin name cannot start with `claude-`. `_verify/smoke.sh`
   runs that check wherever the CLI is installed, so it failed on every such machine and every
-  crew Stop gate failed with it. CI skips the check when the CLI is absent, which is why CI
-  stayed green.
+  crew Stop gate failed with it. CI runs the same check but installs a pinned CLI, 2.1.278
+  (`.github/workflows/marketplace.yml`), and has stayed green with both names; 2.1.278 itself
+  was not run locally.
 - **What moved.** The directories (`git mv`), the marketplace entries, both install scripts'
   skill catalogs, the three catalog lists (`README.md`, `skills/README.md`, `INSTALLATION.md`),
   each `SKILL.md` frontmatter `name`, and the in-skill references. Every list stays
