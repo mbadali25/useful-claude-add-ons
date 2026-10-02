@@ -26,6 +26,7 @@ import re
 import sys
 import time
 
+import crew_common
 from crew_common import git_out, read_text
 import crew_autocycle
 import crew_context
@@ -180,7 +181,7 @@ def settings(root, global_path=None):
     if _auto(machine) is not True:
         return {"armed": False, "reason": "resume.auto is not true in ~/.claude/crew/config.json"}
     for name in ("crew.json", "config.json"):
-        if _auto(_load(os.path.join(root, ".crew", name))) is False:
+        if _auto(_load(crew_common.repo_config_file(root, name))) is False:
             return {"armed": False, "reason": f"resume.auto is false in .crew/{name}"}
     return {"armed": True, "reason": ""}
 

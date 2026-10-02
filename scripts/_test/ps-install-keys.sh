@@ -64,6 +64,9 @@ fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+# pwsh's startup profile goes in this run's own dir, never the shared
+# ~/.cache/powershell one that concurrent pwsh race on (L-0557). pwsh creates it.
+export XDG_CACHE_HOME="$TMP/xdg-cache"
 mkdir -p "$TMP/bin" "$TMP/cfg"
 
 # pwsh.exe is a native Windows process: every path crossing into it goes through

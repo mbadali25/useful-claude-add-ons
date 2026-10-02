@@ -197,8 +197,8 @@ DEPLOY_MUTATIONS = (
      ',)\n',
      _D + "test_corrupt_machine_layer_asks"),
     ("a corrupt repo layer reads as absent", AUTOPILOT,
-     '    layers = (("repo", os.path.join(top, ".crew", "config.json")),\n',
-     '    layers = (("repo", os.path.join(top, ".crew", "absent.json")),\n',
+     '    layers = (("repo", crew_common.repo_config_file(top, "config.json")),\n',
+     '    layers = (("repo", crew_common.repo_config_file(top, "absent.json")),\n',
      _D + "test_corrupt_repo_layer_names_could_not_tell"),
     ("a malformed environments block passes", AUTOPILOT,
      '    if crew_config.layer_state(path, environments=True) != "ok":\n',
@@ -837,10 +837,10 @@ POLICY_MUTATIONS = (
     # ---- amendment 2026-09-27 (plan Step 6): the approve exception to T-0018's
     # read-only module. approve is the only writer; route and status are T-0018's.
     ("a read-only subcommand writes", AUTOPILOT,
-     '    crew_json = _read_json(os.path.join(top, ".crew", "crew.json"))\n',
+     '    crew_json = _read_json(crew_common.repo_config_file(top, "crew.json"))\n',
      ('    os.makedirs(os.path.join(top, ".work"), exist_ok=True)\n'
       '    open(os.path.join(top, ".work", "settings-ran"), "a").close()\n'
-      '    crew_json = _read_json(os.path.join(top, ".crew", "crew.json"))\n'),
+      '    crew_json = _read_json(crew_common.repo_config_file(top, "crew.json"))\n'),
      _P + "test_approve_is_the_only_writing_subcommand"),
     ("deploy-allowed writes (T-0072's subcommand under T-0010's only-writer rule)", AUTOPILOT,
      '    elif args.action == "deploy-allowed":\n        text, json_text, report = _cli_deploy(args)\n',

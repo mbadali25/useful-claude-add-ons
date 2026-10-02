@@ -1,0 +1,26 @@
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-001-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-002-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-003-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-004-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-005-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-006-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-007-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-008-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-009-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-010-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-011-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-012-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-013-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-014-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-015-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-016-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-017-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-018-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-019-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-020-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-021-of-022.patch
+READ|<ROOT>/.work/review/T-0009-deploy-guard--ViINtj/diff.txt.parts/part-022-of-022.patch
+BLOCK|plugin/crew/hooks/scripts/crew_guards.py:2192|PowerShell switches are treated as value-taking parameters, so a switch before a runtime gh target hides a production dispatch from the guard|With deploy-prod.yml listed as production and cloudGuard armed, run `$x = 'g'+'h'; Start-Process -NoNewWindow $x -ArgumentList 'workflow run deploy-prod.yml'`; PowerShell launches gh, but dispatch_answer returns unlisted and scan emits no finding.
+BLOCK|plugin/crew/hooks/scripts/crew_guards.py:2197|PowerShell target parameters are recognized only by their full names, so valid unique abbreviations bypass dispatch detection|With the same configuration, run `$x = 'g'+'h'; Start-Process -Fi $x -ArgumentList 'workflow run deploy-prod.yml'`; PowerShell binds `-Fi` to `-FilePath` and dispatches, while dispatch_answer returns unlisted.
+FIX|plugin/crew/hooks/scripts/crew_guards.py:2284|Opaque alias/launcher detection combines a gh mention in one command with a workflow word in another, denying lines that send no dispatch|Configure any nonempty workflows map and run `alias g=gh; echo workflow`; dispatch_answer reports line-not-literal and the default block policy denies it although gh is never executed.
+BLOCK|.crew/verify.json:117|The required verification gate still has no recorded clean pass, so the updated 1861-case claim and acceptance suite are unevidenced|Both `.crew/.verify-verified-at` and `.crew/.verify-gate.record.json` are absent, exactly as the supplied test-receipt section reports.

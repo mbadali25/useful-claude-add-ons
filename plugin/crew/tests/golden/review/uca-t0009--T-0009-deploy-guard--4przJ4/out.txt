@@ -1,0 +1,37 @@
+READ|part-001-of-031.patch
+READ|part-002-of-031.patch
+READ|part-003-of-031.patch
+READ|part-004-of-031.patch
+READ|part-005-of-031.patch
+READ|part-006-of-031.patch
+READ|part-007-of-031.patch
+READ|part-008-of-031.patch
+READ|part-009-of-031.patch
+READ|part-010-of-031.patch
+READ|part-011-of-031.patch
+READ|part-012-of-031.patch
+READ|part-013-of-031.patch
+READ|part-014-of-031.patch
+READ|part-015-of-031.patch
+READ|part-016-of-031.patch
+READ|part-017-of-031.patch
+READ|part-018-of-031.patch
+READ|part-019-of-031.patch
+READ|part-020-of-031.patch
+READ|part-021-of-031.patch
+READ|part-022-of-031.patch
+READ|part-023-of-031.patch
+READ|part-024-of-031.patch
+READ|part-025-of-031.patch
+READ|part-026-of-031.patch
+READ|part-027-of-031.patch
+READ|part-028-of-031.patch
+READ|part-029-of-031.patch
+READ|part-030-of-031.patch
+READ|part-031-of-031.patch
+BLOCK|plugin/crew/hooks/scripts/crew_guards.py:2965|Multiple unknown dispatches can crash the hook because reconciliation sorts tuples containing incomparable `None` and string workflow names, so unattended execution is not denied|Configure `environments.workflows.deploy.yml`, then scan `gh workflow run; gh workflow run deploy.yml`; `cloud_guard.scan` raises `TypeError: '<' not supported between instances of 'str' and 'NoneType'`
+BLOCK|plugin/crew/hooks/scripts/crew_guards.py:2983|A live approval survives a config edit that reclassifies a second dispatch because the marker hashes only the highest-ranked dispatch, not every classified dispatch|With `a.yml: production`, `b.yml: staging`, and nonProd `staging`, approve `gh workflow run a.yml; gh workflow run b.yml`; change `b.yml` to `production` within 900 seconds and rerun—the marker key remains the `a.yml` production key and allows both
+BLOCK|.crew/verify.json:208|The required exact-HEAD clean verify receipt is absent and the remaining record marks the ruff rule skipped, so Step 11 and the round-4 acceptance check were not completed|At HEAD `cc754aa0`, `.crew/.verify-verified-at` is missing and `.crew/.verify-gate.record.json` records rules[15] as `SKIP (rc 77, environment absent) - not verified`
+FIX|plugin/crew/hooks/scripts/crew_guards.py:1834|Bash aliases and hash copies are applied retroactively to commands before their definition, contradicting the “rest of the line” rule and blocking unrelated commands|With a nonempty workflows map, run `g workflow run deploy-prod.yml; alias g=gh` or place `hash -p /usr/bin/gh g` second; the guard reports could-not-tell even though the earlier `g` was not that alias/copy
+FIX|plugin/crew/hooks/scripts/crew_guards.py:2482|An alias is treated as a gh copy when any word in its value names gh, although the specified rule requires the value’s first word to name gh|Run `alias g='echo gh'; g workflow run deploy-prod.yml`; `g` invokes `echo`, but the guard classifies it as another name for gh and refuses the line
+FIX|plugin/crew/hooks/scripts/crew_guards.py:2554|PowerShell rejects commas even inside a whole single-quoted literal, narrowing the specified literal grammar and refusing valid input values|Map `deploy.yml` to `input:environment`, make `staging,*` nonProd, and run `gh workflow run deploy.yml -f 'environment=staging,west'` in PowerShell; it returns line-not-literal instead of classifying nonProd

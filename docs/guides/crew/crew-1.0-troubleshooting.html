@@ -272,8 +272,26 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   approve</code> on a <code>NEEDS_REPLAN</code> ticket opens a fresh budget of two rounds counted from the successor
   plan; the rounds already spent stay in the ledger and are not erased.</p>
 <ul>
-<li><strong>Symptom: <code>/crew:done</code> refuses with a receipt error.</strong>
-  <strong>Check:</strong></li>
+<li>
+<p><strong>Symptom: a round came back <code>INCOMPLETE</code>.</strong>
+  <strong>Check:</strong> the <code>review:</code> lines, or <code>failure_class</code> in <code>.work/tickets/&lt;id&gt;/review.json</code>. An
+  INCOMPLETE round has one of three classes. <code>tool</code> means the answer never arrived intact: a
+  timeout, a bad or unknown exit, empty output, or a failed Codex stream. <code>tree</code> means a bundle part
+  or web-test report changed under the reviewer. <code>reviewer</code> means the output arrived and broke the
+  contract.
+  <strong>Fix:</strong> a <code>tool</code> round is refunded automatically, up to two per plan. The line reads
+  <code>review: round N was a tool failure (...); refunded</code>. Only the failed round is given back: the
+  rerun <code>/crew:review</code> reserves a new round, charged like any other unless it is a tool failure
+  too, so a ticket with one charged round that reruns and gets FINDINGS has spent the budget. If
+  Codex is out of quota, use the next eligible provider. A third tool failure under
+  one plan reads <code>NOT refunded - refund limit 2 per plan reached</code> and counts. A <code>reviewer</code> or <code>tree</code>
+  round always counts. Rebuild the bundle (tree), or rerun and read what the reviewer wrote
+  (reviewer).</p>
+</li>
+<li>
+<p><strong>Symptom: <code>/crew:done</code> refuses with a receipt error.</strong>
+  <strong>Check:</strong></p>
+</li>
 </ul>
 <pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --check-receipt
 </code></pre>
@@ -285,17 +303,75 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   <strong>Fix:</strong> if the edit was deliberate, get the ticket reviewed again (spends the next round); if it
   was accidental, revert the edit and re-check.</p>
 <ul>
+<li><strong>Symptom: Codex hit a usage limit.</strong> The probe printed <code>PROBE=limited</code> (exit 5) with the
+  error on <code>PROBE_DETAIL=...</code>, or a round printed <code>review: codex usage limit in round N: ...</code>.
+  <strong>Cause:</strong> Codex's usage limit, rate limit, quota or spend cap - its own message is quoted.
+  <strong>What happens:</strong> that round runs on the Claude reviewer, announced as
+  <code>same-family (codex limit)</code> and not independent; the limit is recorded in
+  <code>&lt;git-common-dir&gt;/crew/review-limit/&lt;ticket&gt;.json</code> and applies to the next round only. The
+  round is spent like any other. To check Codex yourself without spending one:</li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_run.py&quot; --root . --ticket &lt;id&gt; --scratch &lt;dir&gt; \
+  --provider codex --probe
+</code></pre>
+<ul>
 <li><strong>Symptom: you want to send a ticket back without spending the third round.</strong></li>
 </ul>
 <pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --reject --by &lt;who&gt;
 </code></pre>
 <p>Refuses on a ticket already <code>ACCEPTED</code> or already <code>NEEDS_REPLAN</code>.</p>
+<ul>
+<li><strong>Symptom: <code>crew_train.py acquire</code> exits 1, <code>waiting behind &lt;ticket&gt;</code>.</strong> The clone's merge train
+  is armed (L-0520) and an overlapping ticket holds it, or queued first on the same base.
+  <strong>Check:</strong></li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/crew_train.py&quot; --root . status
+</code></pre>
+<p>Each waiting entry lists the ticket it is behind and every colliding pair (<code>&lt;mine&gt; x &lt;theirs&gt;</code>);
+  <code>touch: undeclared: &lt;why&gt;</code> means that ticket's spec has no usable <code>## Touch</code>, which overlaps
+  everything.
+  <strong>Fix:</strong> wait for the holder to land and release, then acquire again before reviewing; fix an
+  undeclared Touch in the spec. <code>merge &lt;base&gt; first</code> means the base moved in this ticket's Touch:
+  run <code>crew_train.py catch-up --ticket &lt;id&gt;</code> and review the merged head. <code>could not tell</code> (exit 3)
+  means the train state could not be read — the message names the file; nothing is guessed.</p>
+<ul>
+<li><strong>Symptom: a lane holds the train and its session died.</strong> <code>status</code> prints <code>stale?:</code> beside it
+  (worktree missing, head already in the base, held for hours). Nothing releases it
+  automatically, by design.
+  <strong>Fix:</strong> once you are sure it is dead:</li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/crew_train.py&quot; --root . release --ticket &lt;id&gt; --force \
+  --by &lt;who&gt; --reason &quot;&lt;why&gt;&quot;
+</code></pre>
+<p>The release is logged as a <code>force-release</code> event that the other lanes see.</p>
+<ul>
+<li><strong>Symptom: <code>check-land</code> says the base moved in Touch paths.</strong> Another ticket landed changes to
+  paths this ticket touches after it was gated, so the verdict covers a different tree.
+  <strong>Fix:</strong> <code>crew_train.py catch-up --ticket &lt;id&gt;</code> (a merge; conflicts and rerere-replayed files
+  are listed and left unstaged for you to inspect, <code>git add</code> and commit; a version file is never
+  replayed and comes back conflicted), gate the merged head again (<code>/crew:review</code>),
+  then <code>check-land</code> again. <code>merge-tree: HEAD conflicts with &lt;base&gt;</code> is the same fix with a
+  conflict to resolve first.</li>
+</ul>
 <h2 id="scope-approval-and-the-completion-audit">Scope: Approval and the Completion Audit</h2>
 <p>A ticket's contract lives in <code>.work/tickets/&lt;id&gt;/</code>: <code>spec.md</code>'s <code>## Touch</code> section names every path
 the ticket may change; <code>plan.md</code>'s <code>Files:</code> lines must each fall inside Touch. Two hooks hold a
 session to that contract — see <a href="daily-workflow-scope.md">Daily workflow: scope and approval</a> for the
 contract itself. This section is what goes wrong with the approval and the audit.</p>
 <ul>
+<li><strong>Symptom: a lane worktree does not see my settings</strong> (a CLI approval refused, <code>scope.mode</code>
+  read as <code>off</code>, guards at their defaults). <code>.crew/*</code> is gitignored, so <code>git worktree add</code> makes a
+  checkout with no crew config.
+  <strong>Check:</strong> <code>/crew:status</code> prints <code>config   inherited from the main checkout (&lt;path&gt;) ...</code> when
+  the worktree reads the main checkout's <code>.crew/config.json</code> (crew 1.0.69+, T-0088), and
+  <code>crew_config.py --root . --explain</code> starts with <code>repo layer: &lt;path&gt; (&lt;source&gt;)</code>.
+  <strong>Cause and fix:</strong> a worktree with its own <code>.crew/config.json</code> or <code>.crew/crew.json</code> reads only
+  those, never merged with the main checkout's - delete them to inherit. <code>/crew:status</code> names
+  that case: <code>... the main checkout's (&lt;path&gt;) is not read ...</code>. A lane made before 1.0.69 almost
+  always has one, a default that crew's SessionStart heal wrote there. <code>(unknown)</code> means git
+  could not name the main checkout; then no default is written either. The shell and PowerShell readers (<code>verify-gate.sh</code>,
+  <code>_common.sh</code>, <code>notify.sh</code>, the handoff scripts, <code>promote-gate.ps1</code>, <code>scope-guard.ps1</code>,
+  <code>cloud-guard.ps1</code>, <code>auto-clear.ps1</code>) do not inherit yet.</li>
 <li><strong>Symptom: an edit inside Touch is still refused.</strong>
   <strong>Check:</strong> approval status.</li>
 </ul>
@@ -352,6 +428,35 @@ contract itself. This section is what goes wrong with the approval and the audit
   with exit 2: "no usable python ... failing closed". Fix by installing a real Python 3, not by
   reading the closed refusal as a false positive.</p>
 </li>
+</ul>
+<h2 id="promote-gate-blocks-a-worktree-deploy">Promote Gate Blocks a Worktree Deploy</h2>
+<p><code>promote-gate.sh</code> / <code>.ps1</code>, the <code>PreToolUse</code> hook on declared <code>deploy</code> commands. Since T-0505 it
+judges <strong>the tree the deploy runs from</strong>: the Bash call's <code>cwd</code>, moved by a leading <code>cd &lt;dir&gt; &amp;&amp;</code>
+and named by any <code>git -C &lt;dir&gt;</code>. That tree must be a worktree of the same repository, clean, and at
+every literal sha the command names. <code>.crew/verify.json</code>, <code>.work/PROMOTIONS.md</code> and the
+<code>.crew/.approved-&lt;env&gt;-&lt;sha&gt;</code> markers are still read from the session's project directory.</p>
+<ul>
+<li><strong>"the tree this deploy runs from ('...') is dirty"</strong> names the tree it judged. If that is the
+  main checkout while you meant a worktree, run the command there: <code>cd &lt;worktree&gt; &amp;&amp; &lt;deploy&gt;</code>, or
+  enter the worktree first. A dirty main checkout no longer blocks a clean worktree.</li>
+<li><strong>"no all-pass row for sha X"</strong> where X is the worktree's sha: the upstream environment passed a
+  different sha. Promote the worktree's sha upstream first; a row for the main checkout's sha does
+  not carry over.</li>
+<li><strong>"the command names commit '...', but the tree it runs from ... is at ..."</strong>: a literal
+  <code>ref=&lt;sha&gt;</code> that is not the tree's HEAD. Deploy from a tree at that sha, or drop the literal.</li>
+<li><strong>"changes directory after it starts"</strong> (a later <code>cd</code>, <code>bash -c 'cd ...'</code>, <code>env -C</code>, <code>make -C</code>),
+  <strong>"names more than one tree"</strong>, <strong>"not a form the gate reads with certainty"</strong> or <strong><code>--git-dir</code></strong>:
+  the gate will not guess. Put a single literal <code>cd &lt;dir&gt; &amp;&amp;</code> first, or use <code>git -C &lt;dir&gt;</code> - and
+  note the directory the command itself runs in must be clean too.</li>
+<li><strong>"index entries flagged skip-worktree or assume-unchanged"</strong>: those flags hide edits from
+  <code>git status</code>; clear them in the tree being deployed.</li>
+<li><strong>"has uncommitted changes: it ..."</strong> also fires when the map is deleted or untracked, or edited
+  under skip-worktree: the gate compares the file with HEAD's copy, not with <code>git status</code>.</li>
+<li><strong>".crew/verify.json in the project dir ... has uncommitted changes"</strong>: commit or revert the map;
+  an uncommitted map is not policy.</li>
+<li>Never route around a block by running the deploy yourself with <code>!</code>. <code>/crew:promote</code> fixes the
+  precondition the message names and asks you only for a <code>requireHuman</code> yes or a genuinely
+  interactive step.</li>
 </ul>
 <h2 id="cloud-guard-false-positives">Cloud Guard False Positives</h2>
 <p><code>cloud-guard.sh</code> / <code>cloud_guard.py</code>, a <code>PreToolUse</code> hook on <code>Bash</code> and <code>PowerShell</code>. <strong>Ships off</strong>

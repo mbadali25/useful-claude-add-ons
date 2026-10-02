@@ -1,0 +1,44 @@
+READ|part-001-of-037.patch
+READ|part-002-of-037.patch
+READ|part-003-of-037.patch
+READ|part-004-of-037.patch
+READ|part-005-of-037.patch
+READ|part-006-of-037.patch
+READ|part-007-of-037.patch
+READ|part-008-of-037.patch
+READ|part-009-of-037.patch
+READ|part-010-of-037.patch
+READ|part-011-of-037.patch
+READ|part-012-of-037.patch
+READ|part-013-of-037.patch
+READ|part-014-of-037.patch
+READ|part-015-of-037.patch
+READ|part-016-of-037.patch
+READ|part-017-of-037.patch
+READ|part-018-of-037.patch
+READ|part-019-of-037.patch
+READ|part-020-of-037.patch
+READ|part-021-of-037.patch
+READ|part-022-of-037.patch
+READ|part-023-of-037.patch
+READ|part-024-of-037.patch
+READ|part-025-of-037.patch
+READ|part-026-of-037.patch
+READ|part-027-of-037.patch
+READ|part-028-of-037.patch
+READ|part-029-of-037.patch
+READ|part-030-of-037.patch
+READ|part-031-of-037.patch
+READ|part-032-of-037.patch
+READ|part-033-of-037.patch
+READ|part-034-of-037.patch
+READ|part-035-of-037.patch
+READ|part-036-of-037.patch
+READ|part-037-of-037.patch
+FIX|plugin/crew/hooks/scripts/crew_coord.py:808|Joining segments with unescaped dots conflates different repositories; a claim in one blocks an unrelated ticket in another.|owner_name('https://gitlab.com/team/a.b/repo.git') and owner_name('https://gitlab.com/team/a/b.repo.git') both return gitlab.com.team.a.b.repo. In-memory cmd_claim reproduction returns 0 for the first repository and 1 for the second.
+FIX|plugin/crew/hooks/scripts/crew_coord.py:730|Azure name normalization conflates distinct projects and repositories by replacing characters with hyphens and stripping punctuation.|owner_name('https://dev.azure.com/org/My%20Project/_git/repo') and owner_name('https://dev.azure.com/org/My-Project/_git/repo') both return dev.azure.com.org.my-project.repo. In-memory cmd_claim reproduction refuses the second repository's T-1 because the first holds it.
+FIX|plugin/crew/hooks/scripts/crew_coord.py:749|Relative local origin paths are not resolved against the repository root, so two spellings of one repository produce separate claims and permit two holders.|Configure a clone rooted at /srv/work with origin remote.git and another clone with origin /srv/work/remote.git, using one shared coordination remote/channel. owner_name returns remote versus srv.work.remote; in-memory cmd_claim reproduction grants T-1 to both holders.
+FIX|plugin/crew/hooks/scripts/crew_coord.py:833|Failure of the preliminary origin-config probe is treated as an absent origin and falls back to the directory name, potentially granting a second claim under a guessed key.|Stub run_git for config --get-all remote.origin.url to return GitRun(128,b'','fatal: could not read config'), leaving other calls successful. repo_key returns the directory key and says there is no origin instead of raising UnknownKey.
+FIX|plugin/crew/tests/test_crew_coord.py:1081|The new default suite contains unguarded POSIX APIs and fails the Windows CI job.|On Windows, test_a_second_heartbeat_loop_for_the_same_claim_exits reaches os.getuid(), which is unavailable. test_heartbeat_process_exits_after_pid_gone also accesses unavailable signal.SIGKILL at line 974. The workflow runs these unmarked tests in its Windows default-suite step.
+NIT|plugin/crew/hooks/scripts/crew_coord.py:1021|An oversized JSON integer bypasses the intended TTL usage-error handling because math.isfinite raises before the upper-bound comparison.|Make resolve_config return {'coord': {'ttlMinutes': 10**400}} and call ttl_minutes('.'): reproduced OverflowError: int too large to convert to float, rather than UsageError naming coord.ttlMinutes.
+NIT|plugin/crew/tests/test_crew_coord.py:249|Bare-remote reproductions and runtime verification remain unverified because this sandbox permits no filesystem writes.|Pytest and scripts/check-marketplace.py both fail creating temporary directories with “No usable temporary directory found”. Round-4 bare-remote alias/Azure reproductions and sabotage execution therefore could not run; 197 tests collect and all 73 mutation replacements match and compile, which does not establish passing tests or RED mutations.

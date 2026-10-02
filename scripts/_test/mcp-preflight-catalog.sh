@@ -76,6 +76,9 @@ TMP="$(mktemp -d)" && [ -n "$TMP" ] && [ -d "$TMP" ] || {
 # mktemp DID create but that then fails the pin would otherwise leak forever -
 # nothing would ever rm -rf it, since the trap that does that wasn't set yet.
 trap 'rm -rf "$TMP"' EXIT
+# pwsh's startup profile goes in this run's own dir, never the shared
+# ~/.cache/powershell one that concurrent pwsh race on (L-0557). pwsh creates it.
+export XDG_CACHE_HOME="$TMP/xdg-cache"
 # Every guard below that bounds a write to "$TMP"/* becomes a no-op check against
 # the literal pattern '/*' if $TMP is ever empty - it would match ANY absolute
 # path, including the filesystem root, and a case's 'rm -rf "$fx"' or 'chmod' could

@@ -75,7 +75,7 @@ prints.
 per ROLE, which provider and model back it, which family that speaks as,
 whether the self-review guard is barring it, and which fallback is armed.
 """
-
+# pylint: disable=too-many-lines  # over 3400 after T-0088; the split is a T-0088 follow-up ticket
 import argparse
 import collections
 import copy
@@ -88,6 +88,7 @@ import shutil
 import sys
 import time
 
+import crew_common
 import crew_config_files
 import crew_state
 
@@ -128,10 +129,10 @@ GLOBAL_CONFIG_PATH = crew_state.GLOBAL_CONFIG_PATH
 DEV_PROVIDERS = crew_state.DEV_PROVIDERS
 QA_PROVIDERS = crew_state.QA_PROVIDERS
 
-# Providers that are a CLI on PATH, and so have a meaningful `which()` answer.
-# `claude` is an in-session subagent, not a binary. `localgpu` is a binary but
-# is deliberately NOT on PATH -- see `localgpu_which`.
-PATH_PROVIDERS = ("codex", "copilot")
+# Providers that are a CLI on PATH, and so have a meaningful `which()` answer. `claude` is an
+# in-session subagent, not a binary. `localgpu` is a binary but is deliberately NOT on PATH -- see
+# `localgpu_which`. `kimi` on PATH is presence only; `kimi_probe.py` says whether it can review.
+PATH_PROVIDERS = ("codex", "copilot", "kimi")
 
 
 def localgpu_which(which=None):
@@ -328,6 +329,14 @@ def default_config():
             "shell": None,
             "windowsHostIp": None,
         },
+        # T-0040. Which shell crew's jobs run in on Windows (`crew_shell.py`).
+        # A preference, not in `platform.*`, which platform-sync rewrites every
+        # SessionStart. Not `route` (prompt routing, `crew_route.py`) either.
+        # Modes: `auto`, `wsl`, `powershell`, `gitbash`. `mode` is null here so
+        # a repo that chose nothing inherits the machine's value
+        # (`without_null_shadows`, review round 2); unset everywhere,
+        # `crew_shell.mode` reads it as `auto`.
+        "shellRoute": {"mode": None, "distro": None},
         "pm": copy.deepcopy(crew_state.PM_DEFAULTS),
         "graph": copy.deepcopy(crew_upgrade.GRAPH_BLOCK),
         "docs": copy.deepcopy(crew_upgrade.DOCS_BLOCK),
@@ -564,6 +573,10 @@ def default_global_config():
         # T-0023's routing switch, settable machine-wide (see the comment in
         # `default_config()` for why a repo file can still veto it).
         "route": {"enabled": False},
+        # T-0040. Which shell is fast is a fact about the machine (Git Bash's
+        # per-fork cost differs 16-21x between two of the owner's hosts), so
+        # the shell route is settable here; a repo may still override it.
+        "shellRoute": {"mode": "auto", "distro": None},
     }
 
 
@@ -1260,7 +1273,7 @@ def production_declaration(root, name):
     and reports it; this is what makes that report true.
     """
     key = PROD_DECL_KEYS[name]
-    path = os.path.join(root, ".crew", "config.json")
+    path = crew_common.repo_config_file(root, "config.json")
     try:
         with open(path, encoding="utf-8-sig", errors="replace") as handle:
             raw = handle.read()
@@ -1851,7 +1864,30 @@ def inspect_global(root, path=None):
 # --- What actually backs each role -----------------------------------------
 
 
-def order_candidates(cfg, author, which=None, probe=None):
+def review_launchable():
+    """The providers `/crew:review` can actually run: `review_run.LAUNCHED` plus the
+    in-session `claude` subagent, as a frozenset; None when that list could not be read.
+
+    THE LAUNCH GATE (T-0028, owner 2026-09-30). This is the one coupling between the
+    provider table and the review harness, kept to a single named list on purpose:
+    `order_candidates` refuses a `qa.order` entry this set does not name, so a provider
+    that validates and is first in the walk (Kimi, second in the default order since
+    crew 1.0.78) is never offered to a review nothing can launch. The gate names no
+    provider: adding one to `review_run.LAUNCHED` (L-0527 adds `kimi`) is the whole
+    change that makes it eligible. `test_launch_gate_agrees_with_review_run` pins it.
+    Could-not-tell (the import fails, or the list is not a tuple of names) is None,
+    and the caller reads None as "not launchable", never as "everything launches"."""
+    try:
+        import review_run  # pylint: disable=import-outside-toplevel
+    except Exception:  # pylint: disable=broad-except  # any import failure is could-not-tell
+        return None
+    launched = getattr(review_run, "LAUNCHED", None)
+    if not isinstance(launched, tuple) or not all(isinstance(p, str) for p in launched):
+        return None
+    return frozenset(launched) | {"claude"}
+
+
+def order_candidates(cfg, author, which=None, probe=None, launchable=None):
     """Which of `qa.order` could actually review a diff `author` wrote. Pure.
 
     The per-role table answers "what is each role pinned to". It does NOT
@@ -1868,7 +1904,8 @@ def order_candidates(cfg, author, which=None, probe=None):
     `{"provider", "model", "family", "onPath", "eligible", "why"}`. `why` is
     None when the candidate is eligible and otherwise names the single reason
     it is not, in the order the walk itself would find them: not a provider
-    QA recognises, then absent from PATH, then family unknown, then same
+    QA recognises, then not launchable by `/crew:review` (`review_launchable`,
+    the launch gate), then absent from PATH, then family unknown, then same
     family as the author, then a failed probe. A `copilot` with no
     `qa.copilot.model` has NO knowable family -- that is why the walkthroughs
     insist on pinning it before Copilot may review at all.
@@ -1890,6 +1927,9 @@ def order_candidates(cfg, author, which=None, probe=None):
     does with its real round trip.
     """
     which = shutil.which if which is None else which
+    # The launch gate: `launchable` is the set `/crew:review` can run (default
+    # `review_launchable()`); None there is could-not-tell, and nothing passes it.
+    launchable = review_launchable() if launchable is None else launchable
     # `author` is a single family, an iterable of them, or None -- plural
     # because a stale dispatch record strikes two. See
     # `crew_state.author_families`.
@@ -1913,6 +1953,10 @@ def order_candidates(cfg, author, which=None, probe=None):
             on_path = bool(which(provider))
         if provider not in QA_PROVIDERS:
             why = f"`{provider}` is not a provider QA recognises"
+        elif launchable is None:
+            why = "could not tell whether /crew:review can launch it (review_run.LAUNCHED unreadable)"
+        elif provider not in launchable:
+            why = f"/crew:review cannot launch `{provider}` yet (not in review_run.LAUNCHED)"
         elif not on_path:
             why = "not on PATH"
         elif fam is None:
@@ -2132,7 +2176,22 @@ def role_status(row):
     return "eligible"
 
 
-def _print_models(report):
+def _repo_layer_line(root):
+    """`repo layer: <path> (<source>)` -- which `.crew/config.json` the repo
+    layer was read from; in a linked worktree with none of its own, the main
+    checkout's (T-0088)."""
+    crew_dir, source, detail = crew_common.repo_config_dir(root)
+    line = f"repo layer: {os.path.join(crew_dir, 'config.json')} ({source})"
+    if source == crew_common.SOURCE_UNKNOWN:
+        line += f" - {detail}"
+    shadowed = crew_common.shadowed_main_config(root) if source == crew_common.SOURCE_OWN else ""
+    if shadowed:
+        line += " - " + crew_common.shadow_note(shadowed)
+    return line
+
+
+def _print_models(report, root="."):
+    print(_repo_layer_line(root))
     # A fact about the CONFIG, printed ahead of anything role-shaped -- a
     # hand-edited file naming a provider nothing resolves is a problem with
     # what was read, not with any one row's resolution.
@@ -3143,7 +3202,8 @@ CREW_JSON_NOTICE = (
 # --- CLI -------------------------------------------------------------------
 
 
-def _print_explain(rows):
+def _print_explain(rows, root="."):
+    print(_repo_layer_line(root))
     width = max((len(r["path"]) for r in rows), default=4)
     print(f"{'key'.ljust(width)}  source    value")
     narrowed, ignored = [], []
@@ -3367,7 +3427,7 @@ def main(argv=None):
         if args.json:
             print(json.dumps(report, indent=2))
         else:
-            _print_models(report)
+            _print_models(report, args.root)
         return 0
 
     if args.check:
@@ -3392,7 +3452,7 @@ def main(argv=None):
     if args.json or not args.explain:
         print(json.dumps(rows, indent=2))
     else:
-        _print_explain(rows)
+        _print_explain(rows, args.root)
     return 0
 
 

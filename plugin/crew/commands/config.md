@@ -34,9 +34,17 @@ changed in 0.16.0 and both are silent if unmentioned:
   a repo's own `.crew/config.json`, which is why step 1's `source` column
   exists.
 
+On native Windows the walkthrough also probes WSL (`crew_shell.py probe --write`)
+and offers `shellRoute.mode`: `auto`, `wsl`, `powershell` or `gitbash`.
+
 This command works with no repo in mind: `--root` is optional, and with no
 `.crew/config.json` the `repo` layer is simply empty and the menu offers the
-machine layer only.
+machine layer only. In a linked git worktree with no crew config of its own,
+the `repo` layer is the main checkout's file; `--explain` and `--models` print it first, as
+`repo layer: <path> (<own | main checkout | unknown>)`. An `own` line in a linked
+worktree whose main checkout also has a config adds `the main checkout's (<path>)
+is not read`: own wins whole, and a crew <= 1.0.68 heal wrote a default into
+every lane that had none, so say which it is before trusting the lane's settings.
 
 How it writes, whatever the arguments say:
 
