@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@8b21ecc3
+anchor: useful-claude-add-ons@1e2762a0
 verified: 2026-10-01
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -565,3 +565,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `3a33161c` -> `79c116b4` on 2026-10-01 (L-0555 gate fix: `ci_receipt.py` asks `review_gate.gate_state` for NO_GATE instead of reading `.crew/config.json` itself; `plugin/crew/BUDGETS.md` count corrected; crew 1.0.116 re-set at `79c116b4`).** `git diff --name-only 3a33161c 79c116b4` outside refresh artifacts returns `plugin/crew/hooks/scripts/ci_receipt.py` and `plugin/crew/BUDGETS.md` (the count line only, changed in place, so the `plugin/crew/BUDGETS.md:10` and `:11` citations keep their lines; the version files net to no change). No note cites `ci_receipt.py` at a line, so every citation maps onto itself. No suite was executed for this note.
 
 **Re-anchored `79c116b4` -> `8b21ecc3` on 2026-10-01 (L-0555 pre-review fix: `ci_receipt.py` resolves gh with shutil.which and folds the check reason onto one line; crew 1.0.116 re-set).** `git diff --name-only 79c116b4 8b21ecc3` outside refresh artifacts returns `plugin/crew/hooks/scripts/ci_receipt.py` and `plugin/crew/tests/test_ci_receipt.py` (the version files net to no change). No note cites either at a line, so every citation maps onto itself. No suite was executed for this note.
+
+**Re-anchored `8b21ecc3` -> `1e2762a0` on 2026-10-02 (L-0555 review round 1 fixes: `ci_receipt.py` requires the receipt's gate_impl to match HEAD's and its docstring says diagnostic; the verify.json rule is priced 10s from measured runs; crew 1.0.116 re-set).** `git diff --name-only 8b21ecc3 1e2762a0` outside refresh artifacts returns `plugin/crew/hooks/scripts/ci_receipt.py`, `plugin/crew/tests/test_ci_receipt.py` and `.crew/verify.json` (the last rule's line edited in place, no line moved); the version files net to no change. Every citation maps onto itself. No suite was executed for this note.
