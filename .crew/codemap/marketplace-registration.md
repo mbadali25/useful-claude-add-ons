@@ -1,4 +1,3 @@
-
 anchor: useful-claude-add-ons@39e1237a
 verified: 2026-10-01
 paths: scripts/**, plugin/PLUGINS.md
