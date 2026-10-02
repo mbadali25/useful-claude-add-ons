@@ -39,6 +39,16 @@ _FAKE = textwrap.dedent(r'''
         print("this is not json"); sys.exit(0)
     if mode == "empty":
         sys.exit(0)
+    if mode == "nomessage":
+        if tool == "shellcheck":
+            print(json.dumps({"comments": [{"file": f, "code": 2086, "level": "warning"}
+                                           for f in args if os.path.isfile(f)]}))
+            sys.exit(1)
+        print(json.dumps([{"filename": os.path.abspath(f), "filepath": f, "file": f,
+                           "code": "BLE001", "kind": "expression", "rule": "R"}
+                          for f in (open(args[-2]).read().split() if tool == "pwsh"
+                                    else [a for a in args if os.path.isfile(a)])]))
+        sys.exit(1 if tool == "actionlint" else 0)
     if mode == "rc1-none":
         print(json.dumps({"comments": []}) if tool == "shellcheck" else "[]"); sys.exit(1)
     if tool == "pwsh":
@@ -566,9 +576,28 @@ def test_a_shell_shellcheck_does_not_support_is_could_not_check(tmp_path, fake):
 
 @pytest.mark.parametrize("message, same_as", [
     ("Redefinition of unused `os` from line 3", "Redefinition of unused `os` from line 5"),
-    ("SC2086:info:2:28: Double quote", "SC2086:info:7:3: Double  quote")])
+    ("SC2086:info:2:28: Double quote", "SC2086:info:7:3: Double  quote"),
+    ("defined at line 4, column 9", "defined at line 40, column 1")])
 def test_line_numbers_inside_a_message_do_not_make_a_finding_new(message, same_as):
     assert rc._normalise(message) == rc._normalise(same_as)  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("message, other", [
+    ("requires 2 approvals", "requires 3 approvals"),
+    ("Line too long (120 > 110)", "Line too long (140 > 110)"),
+    ("SC2086 at depth 1", "SC2086 at depth 2")])
+def test_digits_that_are_not_positions_still_tell_findings_apart(message, other):
+    assert rc._normalise(message) != rc._normalise(other)  # pylint: disable=protected-access
+
+
+def test_a_changed_value_in_a_message_is_a_new_finding(tmp_path, fake):
+    repo = _start(tmp_path, {"a.py": "# LINT X99 requires 2 approvals\n"}, [_linter(fake, "ruff")])
+    _edit(repo, "a.py", "# LINT X99 requires 3 approvals\n")
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], [r["message"] for r in result["new"]]) == (
+        rc.FAIL, ["requires 3 approvals"]), result
 
 
 def test_actionlint_runs_without_its_host_dependent_passes(tmp_path, fake, monkeypatch):
@@ -628,3 +657,34 @@ def test_real_pssa_reads_awkward_names_and_utf16(tmp_path, name, encoding):
 
     assert (result["status"], [r["rule"] for r in result["new"]]) == (
         rc.FAIL, ["PSAvoidUsingEmptyCatchBlock"]), result
+
+
+@pytest.mark.parametrize("tool", sorted(_TOOLS))
+def test_a_row_with_no_message_is_could_not_check(tmp_path, fake, monkeypatch, tool):
+    _, rel, _ = _TOOLS[tool]
+    repo = _start(tmp_path, {rel: "x\n"}, [_linter(fake, tool)])
+    _edit(repo, rel, "y\n")
+    monkeypatch.setenv("FAKE_LINT_MODE", "nomessage")
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], "message" in result["detail"]) == (rc.COULD_NOT, True), result
+
+
+def test_a_parse_failure_does_not_hide_a_new_finding_elsewhere(tmp_path, fake):
+    repo = _start(tmp_path, {"a.sh": "x\n", "b.sh": "x\n"}, [_linter(fake, "shellcheck")])
+    _edit(repo, "a.sh", "x\n# LINT 2086 a new problem\n")
+    _edit(repo, "b.sh", "# ABORT\n")
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], [r["path"] for r in result["new"]],
+            "b.sh" in result["detail"]) == (rc.FAIL, ["a.sh"], True), result
+
+
+def test_a_parse_failure_alone_is_still_could_not_check(tmp_path, fake):
+    repo = _start(tmp_path, {"a.sh": "x\n", "b.sh": "x\n"}, [_linter(fake, "shellcheck")])
+    _edit(repo, "a.sh", "x\nmore\n")
+    _edit(repo, "b.sh", "# ABORT\n")
+
+    assert _one(repo, tmp_path)["status"] == rc.COULD_NOT

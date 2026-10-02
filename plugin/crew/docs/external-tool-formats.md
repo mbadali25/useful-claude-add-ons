@@ -200,9 +200,12 @@ scripts inside workflows are therefore not checked by this pass. PowerShell
 file names go to `-Path` escaped with `WildcardPattern.Escape`, because
 `-Path` takes wildcards and `a[1].ps1` would otherwise match nothing and read
 as clean. A file git calls binary (a UTF-16 `.ps1`) is still handed to the
-linter, and the tool decides whether it can read it. Every message has its
-digit runs read as `N` before counting, because ruff (`from line 3`) and
-actionlint (`SC2086:info:2:28`) quote positions inside messages.
+linter, and the tool decides whether it can read it. Before counting, line
+and column positions inside a message are read as `N` (`line 3`, `column 9`,
+a `2:28:` pair), because ruff (`from line 3`) and actionlint
+(`SC2086:info:2:28`) quote them. Every other digit is kept, so a changed
+value (`requires 2` to `requires 3`) is a new finding. A row with no
+`message` string is "could not check".
 
 **How crew reads it.** Anything outside the table is "could not check",
 never a pass: another exit status, a timeout, output that is not the JSON
@@ -210,6 +213,8 @@ shown (empty output included), a field missing from a row, or, for
 ShellCheck and actionlint, a status that contradicts the output (exit 1 with
 no findings, or exit 0 with some). A parse-abort marker on either side
 makes that file "could not check" too, because the tool did not analyse it.
+That covers only that file: a new finding in any other file still refuses
+the round, and `--allow-unverified` does not override it.
 `-IncludeRule` silently ignores a rule name PSScriptAnalyzer does not know,
 so the script compares the allowlist with `Get-ScriptAnalyzerRule` first. The
 tests that pin these shapes are `tests/test_review_checks.py` (one fake

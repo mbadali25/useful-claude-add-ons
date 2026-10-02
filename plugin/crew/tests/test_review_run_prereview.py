@@ -47,12 +47,15 @@ def _missing():
     return {"tool": "ruff", "command": ["no-such-linter-l0574"]}
 
 
-def _setup(tmp_path, linters, py_text="# LINT BLE001 new\n", gate=False, crew_cfg=None):
+def _setup(tmp_path, linters, py_text="# LINT BLE001 new\n", gate=False, crew_cfg=None,
+           extra=None):
     """A repo with an approval receipt, its crew config and verify map written
     BEFORE the self-check is stamped, a .py change, a stamped self-check and
     a bundle. `linters` None writes no `preReview` key."""
     repo = init_repo(tmp_path / "r")
     (repo / "m.py").write_text("x0\n", encoding="utf-8")
+    for rel in extra or {}:
+        (repo / rel).write_text("x\n", encoding="utf-8")
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "py")
     scope_base.record(str(repo), TICKET)
@@ -71,6 +74,8 @@ def _setup(tmp_path, linters, py_text="# LINT BLE001 new\n", gate=False, crew_cf
         verify[rc.CONFIG_KEY] = {"linters": linters}
     (repo / ".crew" / "verify.json").write_text(json.dumps(verify), encoding="utf-8")
     (repo / "m.py").write_text(py_text, encoding="utf-8")
+    for rel, text in (extra or {}).items():
+        (repo / rel).write_text(text, encoding="utf-8")
     _stamp(repo)
     scratch = tmp_path / "scratch"
     _bundle(repo, scratch)
@@ -270,3 +275,15 @@ def test_a_record_that_cannot_be_written_is_said_not_fatal(tmp_path, fake):
     assert (result.returncode, "ROUND=1" in result.stdout,
             "could not record the pre-review checks" in result.stderr) == (0, True, True), (
         result.stdout + result.stderr)
+
+
+def test_allow_unverified_never_passes_a_new_finding_beside_a_parse_failure(tmp_path, fake):
+    sh = {"tool": "shellcheck", "command": [sys.executable, fake, "shellcheck"]}
+    repo, scratch = _setup(tmp_path, [sh], py_text="x\n", extra={
+        "a.sh": "x\n# LINT 2086 a new problem\n", "b.sh": "# ABORT\n"})
+    before = _ledger_snapshot(repo)
+
+    result = _run(repo, scratch, tmp_path, "claude", "--allow-unverified")
+
+    assert (result.returncode, _ledger_snapshot(repo) == before,
+            _record(scratch)["result"]) == (5, True, rc.FAIL), result.stderr

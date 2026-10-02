@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added - `crew` (version allocated at landing): no new linter findings before a review round is reserved (L-0574)
+### Added - `crew` 1.0.122: no new linter findings before a review round is reserved (L-0574)
 
 - **What.** `review_run.py` asks a new question 3 before it reserves a round, after the CLEAN-receipt
   check and the verify gate and before the standards self-check. `hooks/scripts/review_checks.py`
@@ -17,7 +17,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   output, a config it cannot read, or a file the tool could not parse on either side all read
   `COULD NOT CHECK`. That refuses too (exit 5), unless `--allow-unverified`, which `review.json`
   records as `prereview.overridden`. Only an active incident stands the checks down, logging a
-  `prereview-checks` skip.
+  `prereview-checks` skip. A file the tool could not parse is unchecked on its own: a new finding in
+  any other file still refuses, override or not. Only line and column positions in a message are
+  ignored when matching findings; any other changed number is a new finding.
 - **This repo's config.** ruff adds the fail-open rules S110/S112/BLE001, which `ruff.toml` does not
   select. ShellCheck (`-S warning`) and actionlint run through pinned `uvx` packages. PSScriptAnalyzer
   runs a 13-rule correctness and fail-open allowlist (no WriteHost or naming rules).

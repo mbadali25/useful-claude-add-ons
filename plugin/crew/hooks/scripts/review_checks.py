@@ -80,7 +80,13 @@ CONFIG_FILES = ("ruff.toml", ".ruff.toml", "pyproject.toml", ".shellcheckrc",
                 os.path.join(".github", "actionlint.yml"))
 SKIPPED_MODES = ("120000", "160000")  # a symlink's blob is its target; a submodule has none
 _ZERO = "0" * 40
-_DIGITS = re.compile(r"\d+")
+# Positions only, never other numbers (review round 2): "line 3", "lines
+# 3-4", "column 9", "col 9", and a "L:C:" pair such as actionlint's
+# "SC2086:info:2:28:". "requires 2 approvals" keeps its 2.
+_POSITIONS = (
+    (re.compile(r"\b(lines?|columns?|col)\s+\d+(?:\s*-\s*\d+)?", re.IGNORECASE), r"\1 N"),
+    (re.compile(r"(?<![\w.])\d+:\d+(?=:)"), "N:N"),
+)
 
 TOOLS = {
     "ruff": {"globs": ("**/*.py",)},
@@ -333,6 +339,15 @@ def _expect(proc, ok_codes, tool):
         raise CouldNotCheck(f"{tool} exited {proc.returncode}: {tail[:400] or 'no output'}")
 
 
+def _message(row, tool):
+    """The row's message, which every format above carries: a row without
+    one is a partial answer, never an empty-message finding."""
+    message = row.get("message") if isinstance(row, dict) else None
+    if not isinstance(message, str):
+        raise CouldNotCheck(f"{tool} reported a row with no message: {row!r:.200}")
+    return message
+
+
 def _consistent(proc, rows, tool):
     """Exit 1 is the tool's own "findings" status and 0 its "none": output
     that contradicts the status is a partial answer, not a clean one."""
@@ -371,7 +386,7 @@ def _run_ruff(argv, spec, tmp, files, timeout):
     for row in rows:
         code = row.get("code") or "invalid-syntax"
         # invalid-syntax: parsing stopped; E902: the file could not be read.
-        yield _split(tmp, row["filename"]) + (code, row.get("message", ""),
+        yield _split(tmp, row["filename"]) + (code, _message(row, "ruff"),
                                                code in ("invalid-syntax", "E902"))
 
 
@@ -391,7 +406,7 @@ def _run_shellcheck(argv, spec, tmp, files, timeout):
     for row in rows:
         code = f"SC{row['code']}"
         # SC1072: parsing stopped; SC1071: a shell ShellCheck does not check.
-        yield _split(tmp, os.path.join(tmp, row["file"])) + (code, row.get("message", ""),
+        yield _split(tmp, os.path.join(tmp, row["file"])) + (code, _message(row, "shellcheck"),
                                                               code in ("SC1072", "SC1071"))
 
 
@@ -416,7 +431,7 @@ def _run_actionlint(argv, spec, tmp, files, timeout):
     for row in rows:
         kind = row.get("kind") or "?"
         yield _split(tmp, os.path.join(tmp, row["filepath"])) + (
-            kind, row.get("message", ""), kind == "syntax-check")
+            kind, _message(row, "actionlint"), kind == "syntax-check")
 
 
 def _run_pssa(argv, spec, tmp, files, timeout):
@@ -437,7 +452,8 @@ def _run_pssa(argv, spec, tmp, files, timeout):
     if not isinstance(rows, list):
         raise CouldNotCheck("psscriptanalyzer output is not a list")
     for row in rows:
-        yield _split(tmp, row["file"]) + (row.get("rule") or "?", row.get("message", ""),
+        yield _split(tmp, row["file"]) + (row.get("rule") or "?",
+                                          _message(row, "psscriptanalyzer"),
                                           row.get("severity") == "ParseError")
 
 
@@ -460,39 +476,48 @@ def check_one(root, spec, entries, manifest):
             files = [f"head/{e['path']}" for e in selected]
             files += [f"base/{rel}" for rel in sorted(with_base)]
             counts = {"base": collections.Counter(), "head": collections.Counter()}
-            aborted = []
+            aborted, unparsed = [], set()
             rows = RUNNERS[spec["tool"]](argv, spec, tmp, files,
                                          spec.get("timeout") or DEFAULT_TIMEOUT)
             for side, rel, rule, message, abort in rows:
                 if abort:
+                    unparsed.add(rel)
                     aborted.append(f"{rel} ({'bundle' if side == 'head' else 'base'}: "
                                    f"{rule} {message})")
                 counts[side][(rel, rule, _normalise(message))] += 1
     except (CouldNotCheck, KeyError, TypeError, AttributeError, ValueError, OSError) as exc:
         result.update(status=COULD_NOT, detail=_detail(exc))
         return result
-    if aborted:
-        files = {line.split(" (", 1)[0] for line in aborted}
-        result.update(status=COULD_NOT, detail=(
-            f"{name} could not parse {len(files)} file(s), so they were not checked: "
-            + "; ".join(sorted(set(aborted)))))
-        return result
+    # A file the tool could not parse is unchecked, but only that file: a
+    # NEW finding in any other file still refuses (FAIL), which
+    # --allow-unverified never overrides (review round 2).
     new = []
     for key, n in sorted(counts["head"].items()):
         added = n - counts["base"][key]
-        if added > 0:
+        if added > 0 and key[0] not in unparsed:
             new.append({"path": key[0], "rule": key[1], "message": key[2], "count": added})
-    result.update(status=FAIL if new else PASS, new=new,
-                  detail=f"{sum(r['count'] for r in new)} new finding(s)" if new else
-                  f"no new findings in {len(selected)} file(s)")
+    unchecked = (f"{name} could not parse {len(unparsed)} file(s), so they were not checked: "
+                 + "; ".join(sorted(set(aborted)))) if aborted else ""
+    if new:
+        detail = f"{sum(r['count'] for r in new)} new finding(s)"
+        result.update(status=FAIL, new=new,
+                      detail=detail + (f"; also {unchecked}" if unchecked else ""))
+    elif aborted:
+        result.update(status=COULD_NOT, detail=unchecked)
+    else:
+        result.update(status=PASS, detail=f"no new findings in {len(selected)} file(s)")
     return result
 
 
 def _normalise(message):
-    """Whitespace collapsed and every digit run read as N: messages that
-    quote a line or column ("from line 3", "SC2086:info:2:28") would
-    otherwise make a moved finding look new."""
-    return _DIGITS.sub("N", " ".join(str(message).split()))
+    """Whitespace collapsed and line/column positions read as N: messages
+    that quote one ("from line 3", "SC2086:info:2:28") would otherwise make a
+    moved finding look new. Every other digit is kept, so a changed value
+    ("requires 2" -> "requires 3") is a different finding."""
+    text = " ".join(str(message).split())
+    for pattern, replacement in _POSITIONS:
+        text = pattern.sub(replacement, text)
+    return text
 
 
 def _detail(exc):
