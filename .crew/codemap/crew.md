@@ -1020,7 +1020,7 @@ the sha256 of everything the rule is rendered from (`rule_digest`, `:105`), the 
 INDEX.md's Covers cell for it, and the note's Landmines headlines (else its Entry points), capped at
 `RULES_MAX_LINES` = 30 (`:81`). `--check` (`rules`, `:191`) writes nothing and reports each rule
 file missing, stale or orphaned; a hand-written file at a generated path is never overwritten and
-fails `--check`. `.crew/verify.json` rule 24 (`.crew/verify.json:275`) runs `--check` for any change under
+fails `--check`. `.crew/verify.json` rule 24 (`.crew/verify.json:284`) runs `--check` for any change under
 `.claude/rules/**` or `.crew/codemap/**`, so **a code-map edit without a regeneration fails the Stop
 gate** - see `verification-harness.md`. DERIVED from the source above; the command was run by
 T-0015 against this refresh.
@@ -1247,12 +1247,12 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   `test_overlapping_artifact_dirs_classify_by_the_most_specific` and
   `test_equally_specific_artifact_dirs_are_could_not_tell`)
   `plugin/crew/tests/refresh_fixtures.py`, with mutations in
-  `plugin/crew/tests/sabotage_refresh.py`; `.crew/verify.json:276-294` (rule
+  `plugin/crew/tests/sabotage_refresh.py`; `.crew/verify.json:285-294` (rule
   25) maps them, `implement.md`, `done.md`, since review round 3
   `scope_guard.py`, `completion_audit.py`, `crew_freshness.py` and
   `scope_base.py` with their own suites, and since T-0094 `crew_instructions.py`,
   to one pytest rule; since T-0094 review round 2 `test_refresh_admission.py`
-  is its own rule 32 (`.crew/verify.json:349-356`, 12s) so it fits the Stop
+  is its own rule 32 (`.crew/verify.json:365-356`, 12s) so it fits the Stop
   budget beside rules 0 and 15, and rule 25 (58s) is deferred at Stop on a
   hook-script edit (its `why` says so first). Confirmed
   present, **not run and not read** by this note.
@@ -1587,10 +1587,10 @@ then the train is advisory.
 - DERIVED (L-0576): `parse` recovers a FINDINGS round despite stray lines
   (`plugin/crew/hooks/scripts/review_verdict.py:210`): only beside a finding, with no
   other reason (`prior_reasons` lead the list, `:190`; `review_run.finish` passes its
-  bundle/webtest/stream reasons in, `plugin/crew/hooks/scripts/review_run.py:409`), and
+  bundle/webtest/stream reasons in, `plugin/crew/hooks/scripts/review_run.py:420`), and
   only when no stray line is `contract_like` (`plugin/crew/hooks/scripts/review_verdict.py:135`;
   the shortfall wording net `_SHORTFALL` is `:125`). The ignored lines go to
-  review.json's `ignored_text`, with the count as `ignored_lines` (`plugin/crew/hooks/scripts/review_run.py:428`), a
+  review.json's `ignored_text`, with the count as `ignored_lines` (`plugin/crew/hooks/scripts/review_run.py:439`), a
   `review: FINDINGS kept; ...` line (`:467`) and, as a count, the ledger row
   (`plugin/crew/hooks/scripts/review_ledger.py:339`; null when review.json's value is missing or not a non-negative int, never 0).
 - DERIVED (T-0087, crew 1.0.53): an INCOMPLETE round is classed by
@@ -1616,7 +1616,7 @@ then the train is advisory.
 - DERIVED (T-0087): the shared definitions at each review seam are
   `review_patch.MANIFEST_KEYS` / `OPTIONAL_MANIFEST_KEYS` / `PART_KEYS`
   (`plugin/crew/hooks/scripts/review_patch.py:126`, `:123`, `:124`) and
-  `verify_record.read_record` (`plugin/crew/hooks/scripts/verify_record.py:80`), now
+  `verify_record.read_record` (`plugin/crew/hooks/scripts/verify_record.py:82`), now
   the one gate-record reader for `review_prompt._receipts_block`
   (`plugin/crew/hooks/scripts/review_prompt.py:173`) and `crew_status._verify_line`
   (`plugin/crew/hooks/scripts/crew_status.py:155`). The producer-to-consumer tests
@@ -2811,7 +2811,7 @@ Re-read by hand: the `/crew:autopilot` section (`crew_autopilot.py` 1478 lines; 
 the `settings` text line, and the owner-only group-confirm refusal in `crew_ticket.approve`
 (`plugin/crew/hooks/scripts/crew_ticket.py:742-744`, `approve` `:723`); the `crew.json` warning
 (`:744-748`); `POLICY_MUTATIONS` (54, `plugin/crew/tests/sabotage_autopilot.py:376`, registered
-at `plugin/crew/tests/sabotage.py:3057`); the config leaf count (124, no key added by either
+at `plugin/crew/tests/sabotage.py:3058`); the config leaf count (124, no key added by either
 side; `plugin/crew/tests/test_crew_config.py:281`); the version (1.0.50); T-0004's CHANGELOG
 "117 -> 119" (`:732-733`); and the routing and approval verify rules (30 `:317-325`, 31
 `:327-334`). No test was run by this note.
@@ -3096,11 +3096,11 @@ The `.gitignore` un-ignore list (`:279-337`, four paths since T-0085's `!.crew/s
 
 **Re-anchored `9631c707` -> `c99e31f6` on 2026-09-28 (T-0092, crew 1.0.52).** `c99e31f6` is T-0092's crew 1.0.52 version commit on `T-0092-build`, cut from main `f54af3fa` (T-0072's landing merge, whose only commit past `9631c707` is the refresh `f1f118de`). `git diff --name-only 9631c707 c99e31f6`, refresh artifacts aside, returns T-0092's files: `plugin/crew/hooks/scripts/review_patch.py` (+8: the docstring paragraph on `graphify-out/` and one comment line; `EXCLUDED` / `_EXCLUDE_SPEC` now at `:104-105`), `plugin/crew/hooks/scripts/review_prompt.py` (+4: one docstring line and the `excluded` line at `:89-91`, so `:84` -> `:85` and `:239` -> `:243`), `test_review_patch.py`, `test_review_prompt.py`, `sabotage_review.py`, line-neutral edits to `plugin/crew/README.md` (`:726`, `:860`), `plugin/crew/commands/review.md` (`:328-332` reflowed in place), `crew_autopilot.py` (`:55-56`), `completion_audit.py` (`:74-75`) and `TODO.md` (`:5048`), `CHANGELOG.md` (+26 at the top) and the three version files (1.0.52 at `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json:3`, `plugin/PLUGINS.md:14`). Every body citation of the form `path:line` into those files was compared by script between `9631c707` and `c99e31f6`. The only live citations that moved were `review_prompt.py:84` and `:239`, re-pointed to `:85` and `:243` and re-read; a DERIVED bullet for the exclusion (`review_patch.py:104-105`, `review_prompt.py:89`) is added beside the review-pipeline line, and the version sentence moves to 1.0.52. Every other differing citation is a version-file line changed in place or a `CHANGELOG.md` line inside a dated provenance note, which states that commit's line and is left as history. Only the T-0092 test files were executed for this note.
 
-**Re-anchored `c99e31f6` -> `3c4f1a68` on 2026-09-28 (T-0092 merged onto `c426c018`, crew 1.0.53).** `95cc12cf` merged origin/main `c426c018` (T-0076 landed as crew 1.0.52 at `e329eb8f`) into `T-0092-build`; the merge was clean (both sides had set the version files to 1.0.52). `3c4f1a68` re-bumps crew to 1.0.53 and moves T-0092's four `1.0.52` mentions (`review_patch.py`'s docstring, `plugin/crew/README.md:871`, `TODO.md:5048`, the two test-file comments) to 1.0.53, all in place. `git diff --name-only c99e31f6 3c4f1a68`, refresh artifacts aside, returns T-0076's files - `plugin/crew/hooks/scripts/crew_context.py` (+4 inside `emit`, so `sys.stdout.write` moves `:1086` -> `:1090`), `plugin/crew/README.md` (`:1691` in place), `scripts/_test/uv-install.sh` and twelve test files - plus `CHANGELOG.md` (T-0076's entry merged below T-0092's) and the version files. Every body citation of the form `path:line` into those files was compared by script between `c99e31f6` and `3c4f1a68`: the only differences are version-file lines changed in place and `CHANGELOG.md` lines inside dated provenance notes, left as history; nothing here cites `crew_context.py` at or below `:1104`. The version sentence and the T-0092 DERIVED bullet move to 1.0.53. Nothing was executed for this note.
+**Re-anchored `c99e31f6` -> `3c4f1a68` on 2026-09-28 (T-0092 merged onto `c426c018`, crew 1.0.53).** `95cc12cf` merged origin/main `c426c018` (T-0076 landed as crew 1.0.52 at `e329eb8f`) into `T-0092-build`; the merge was clean (both sides had set the version files to 1.0.52). `3c4f1a68` re-bumps crew to 1.0.53 and moves T-0092's four `1.0.52` mentions (`review_patch.py`'s docstring, `plugin/crew/README.md:875`, `TODO.md:5048`, the two test-file comments) to 1.0.53, all in place. `git diff --name-only c99e31f6 3c4f1a68`, refresh artifacts aside, returns T-0076's files - `plugin/crew/hooks/scripts/crew_context.py` (+4 inside `emit`, so `sys.stdout.write` moves `:1094` -> `:1094`), `plugin/crew/README.md` (`:1695` in place), `scripts/_test/uv-install.sh` and twelve test files - plus `CHANGELOG.md` (T-0076's entry merged below T-0092's) and the version files. Every body citation of the form `path:line` into those files was compared by script between `c99e31f6` and `3c4f1a68`: the only differences are version-file lines changed in place and `CHANGELOG.md` lines inside dated provenance notes, left as history; nothing here cites `crew_context.py` at or below `:1108`. The version sentence and the T-0092 DERIVED bullet move to 1.0.53. Nothing was executed for this note.
 
-**Re-anchored `c192b83d` / `3c4f1a68` -> `25d2de63` on 2026-09-28 (T-0092 merged onto `f8b6c8d7`, T-0091, crew 1.0.53).** `25d2de63` merges origin/main `f8b6c8d7` (T-0091 landed at `c192b83d`: `CLAUDE.md`'s Landmines paragraph and a `TODO.md` entry, no plugin bumped) into `T-0092-build`. The code-map, INDEX, rules, diagram and graph conflicts were resolved mechanically - both sides' provenance notes kept, main's first; the anchor taken from this note. Every body citation of the form `path:line` was compared by script twice: `c192b83d` -> `25d2de63` differs only on T-0092's own lines (the exclusion, the re-pointed `review_prompt.py` lines, `plugin/crew/README.md:871` in place, the version lines), and `3c4f1a68` -> `25d2de63` only on T-0091's `CLAUDE.md` lines, which T-0091's own notes above cite at `c192b83d`, and on `TODO.md:5048`, cited in T-0092's notes above as that commit's line: T-0091's three added lines move the bullet to `:5051`. Nothing was executed for this note.
+**Re-anchored `c192b83d` / `3c4f1a68` -> `25d2de63` on 2026-09-28 (T-0092 merged onto `f8b6c8d7`, T-0091, crew 1.0.53).** `25d2de63` merges origin/main `f8b6c8d7` (T-0091 landed at `c192b83d`: `CLAUDE.md`'s Landmines paragraph and a `TODO.md` entry, no plugin bumped) into `T-0092-build`. The code-map, INDEX, rules, diagram and graph conflicts were resolved mechanically - both sides' provenance notes kept, main's first; the anchor taken from this note. Every body citation of the form `path:line` was compared by script twice: `c192b83d` -> `25d2de63` differs only on T-0092's own lines (the exclusion, the re-pointed `review_prompt.py` lines, `plugin/crew/README.md:875` in place, the version lines), and `3c4f1a68` -> `25d2de63` only on T-0091's `CLAUDE.md` lines, which T-0091's own notes above cite at `c192b83d`, and on `TODO.md:5048`, cited in T-0092's notes above as that commit's line: T-0091's three added lines move the bullet to `:5051`. Nothing was executed for this note.
 
-**Re-anchored `25d2de63` -> `136f4b33` on 2026-09-28 (T-0092 merged onto `ff59160f`, T-0089, crew 1.0.54).** `e2220836` merges origin/main `ff59160f` (T-0089 landed as crew 1.0.53 at `0f526a8c`: `plugin/crew/tests/test_role_write_guard.py` fixtures and a `CHANGELOG.md` entry) into `T-0092-build`; the merge was clean. `136f4b33` re-bumps crew to 1.0.54 and moves T-0092's `1.0.53` mentions (`review_patch.py`'s docstring, `plugin/crew/README.md:871`, `TODO.md:5051`, the two test-file comments, its `CHANGELOG.md` heading) to 1.0.54, all in place. Every body citation of the form `path:line` into a file changed between `25d2de63` and `136f4b33` was compared by script: the only differences are version-file lines changed in place, `plugin/crew/README.md:871` in place, and lines cited inside dated provenance notes (`CHANGELOG.md`, which T-0089's entry shifts by 12 lines below `:80`, and `TODO.md:5048`), left as history at their own commit. No citation into `test_role_write_guard.py` exists here. The version sentence and the T-0092 DERIVED bullet move to 1.0.54. Nothing was executed for this note.
+**Re-anchored `25d2de63` -> `136f4b33` on 2026-09-28 (T-0092 merged onto `ff59160f`, T-0089, crew 1.0.54).** `e2220836` merges origin/main `ff59160f` (T-0089 landed as crew 1.0.53 at `0f526a8c`: `plugin/crew/tests/test_role_write_guard.py` fixtures and a `CHANGELOG.md` entry) into `T-0092-build`; the merge was clean. `136f4b33` re-bumps crew to 1.0.54 and moves T-0092's `1.0.53` mentions (`review_patch.py`'s docstring, `plugin/crew/README.md:875`, `TODO.md:5051`, the two test-file comments, its `CHANGELOG.md` heading) to 1.0.54, all in place. Every body citation of the form `path:line` into a file changed between `25d2de63` and `136f4b33` was compared by script: the only differences are version-file lines changed in place, `plugin/crew/README.md:875` in place, and lines cited inside dated provenance notes (`CHANGELOG.md`, which T-0089's entry shifts by 12 lines below `:80`, and `TODO.md:5048`), left as history at their own commit. No citation into `test_role_write_guard.py` exists here. The version sentence and the T-0092 DERIVED bullet move to 1.0.54. Nothing was executed for this note.
 
 ## Re-anchor provenance - `938e3b11` + `136f4b33` -> `3648f59a`, 2026-09-28 (T-0075 review round 5, merge of `6387ab49`)
 
@@ -3166,7 +3166,7 @@ keeps T-0075's 36 slash commands), the leaf table and paragraph (re-executed: 12
 `plugin/crew/tests/test_crew_config.py:288` asserts 125; T-0004's "117 -> 119" is `CHANGELOG.md:1538`),
 `AUTOPILOT_DEFAULTS` (`crew_state.py:1094-1095`, deep-copied at `crew_config.py:384`), the autopilot and
 policy rule sentences (`.crew/verify.json` `:298-306`, `:307-313`, tracker `:314-321`, route `:322-330`,
-approval `:332-339`; `POLICY_MUTATIONS` 55 by `len()`, appended at `plugin/crew/tests/sabotage.py:3058`),
+approval `:332-339`; `POLICY_MUTATIONS` 55 by `len()`, appended at `plugin/crew/tests/sabotage.py:3059`),
 and `evaluate_triggers` (`crew_state.py:2906`) with `default_config` / `default_global_config`
 (`crew_config.py:243` / `:396`). Nothing else was executed for this note.
 
@@ -3452,7 +3452,7 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 
 **Re-anchored `0d159692` (main, L-0513 #301) and `773ce841` (L-0557) -> `a9608aa5` on 2026-10-01 (L-0557 merges main `cacf7ff0`, L-0513 #301: `scripts/gate-runner.py`, no plugin version; rerere disabled; crew stays 1.0.105).** Both provenance histories are kept, main's first. Where both sides had re-mapped the same citation, main's line was taken, and each citation was then mapped with difflib from the tree its line came from (`cacf7ff0` for main's lines, `95036b4c` for L-0557's) to this tree: 10 `CHANGELOG.md` citations taken from main's side moved +22 (L-0557's entry above them). No suite was executed for this note.
 
-**Re-anchored `a9608aa5` -> `c43a9ce3` on 2026-10-01 (L-0557 merges main `ddcbf90d`, W-0115 #299, crew 1.0.106, at `0597e5c6` with rerere disabled, and re-sets crew 1.0.111 at `c43a9ce3`).** The merge touched no code map. `git diff --name-only a9608aa5 c43a9ce3` outside refresh artifacts is W-0115's `plugin/crew/tests/sabotage.py`, `sabotage_shell.py` and `.crew/verify.json` plus the version files and CHANGELOG; each citation into a changed file was mapped with difflib from `92448f1a` to this tree: 10 `CHANGELOG.md` citations moved +15 (W-0115's entry), and `plugin/crew/tests/sabotage.py:3055`/`:3056` moved to `:3057`/`:3058`; the version sentence reads 1.0.111. No suite was executed for this note.
+**Re-anchored `a9608aa5` -> `c43a9ce3` on 2026-10-01 (L-0557 merges main `ddcbf90d`, W-0115 #299, crew 1.0.106, at `0597e5c6` with rerere disabled, and re-sets crew 1.0.111 at `c43a9ce3`).** The merge touched no code map. `git diff --name-only a9608aa5 c43a9ce3` outside refresh artifacts is W-0115's `plugin/crew/tests/sabotage.py`, `sabotage_shell.py` and `.crew/verify.json` plus the version files and CHANGELOG; each citation into a changed file was mapped with difflib from `92448f1a` to this tree: 10 `CHANGELOG.md` citations moved +15 (W-0115's entry), and `plugin/crew/tests/sabotage.py:3056`/`:3056` moved to `:3058`/`:3058`; the version sentence reads 1.0.111. No suite was executed for this note.
 
 **Re-anchored `5ffffbe3` (main, L-0516 #298) and `c43a9ce3` (L-0557) -> `6053b65d` on 2026-10-01 (L-0557 merges main `2906dcbd`, L-0516 #298, crew 1.0.110, at `2f3fb34c` with rerere disabled, and re-sets crew 1.0.114 at `6053b65d`).** Both provenance histories are kept, main's first, and main's body citations were taken where both sides had re-mapped the same one. Each citation into a changed file was then mapped with difflib from the tree its line came from (`2906dcbd` for main's lines, `a54ff87b` for L-0557's) to this tree: 10 `CHANGELOG.md` citations moved (+22 from main's side, +35 from L-0557's); the `.crew/verify.json:433-439` range in L-0516's provenance note was kept, because mapping it would stretch it across L-0557's rule. No suite was executed for this note.
 
@@ -3483,3 +3483,11 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `b4f04e23` (main) and L-0575's `2859ab05` -> `99c8f66e` on 2026-10-02 (L-0575 merges origin/main 7ba4f9ea (L-0572 #309 crew 1.0.126, L-0593 #312) at 99c8f66e, rerere disabled; crew 1.0.129 is set in the last commit. Body citations were mapped with difflib from the tree each line came from (9dad04ef for L-0575's lines, 7ba4f9ea for main's): ten CHANGELOG.md citations in crew.md moved +21 (L-0572's entry, below L-0575's); verification-harness.md's verify.json ranges were set by hand to :469-476 (rule 41) and :486-496 (L-0575's rule, after L-0572's at :478-485). History notes were not re-mapped. No suite was executed for this note).**
 
 **Re-anchored `d6e51bb8` (main) and L-0575's `99c8f66e` -> `273ec0f6` on 2026-10-02 (L-0575 merges origin/main a9b4734d (L-0576 #306 crew 1.0.128, L-0577 #305, T-0107 #273) at 273ec0f6, rerere disabled; crew 1.0.129 is re-set in the last commit. Both provenance histories kept, main's first. Body citations were mapped with difflib from the tree each line came from (986c9ca5 for L-0575's lines, a9b4734d for main's): ten CHANGELOG.md citations in crew.md moved +113 (main's new entries sit below L-0575's), and ten plugin/crew/README.md citations in crew.md and repo-docs.md moved +2 (L-0575's README paragraph at :727 sits above them); verification-harness.md's verify.json ranges were set by hand to :474-481 (rule 41), :483-490 (L-0572) and :491-501 (L-0575, last). History notes were not re-mapped. No suite was executed for this note).**
+
+**Citations re-pointed at anchor `273ec0f6` on 2026-10-02 (after L-0576 #306 and L-0575 #311; refresh artifacts only).** Each `path:N` citation, and each bare `:N` following one, was checked against the commit that last wrote its line (`git blame`). A citation counted as moved when that commit's line differed from HEAD's, and either it held at the previous anchor `d6e51bb8` or it was written outside that anchor's history. 18 had moved and are re-pointed to the identical line:
+- `review_run.py` `:409` -> `:420` and `:428` -> `:439` (L-0576's lines, shifted by L-0578's metrics call).
+- `verify_record.py:80` -> `:82`.
+- `.crew/verify.json` `:275/:276/:349` -> `:284/:285/:365`.
+- `plugin/crew/README.md` `:871/:1086/:1090/:1104/:1691` -> `+4`.
+- `plugin/crew/tests/sabotage.py` `:3055/:3057/:3058` -> `+1`.
+None of those files changed between `273ec0f6` and `d2ef30e2`, so the anchor stays. No claim's meaning changed.
