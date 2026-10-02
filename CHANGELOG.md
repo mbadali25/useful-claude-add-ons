@@ -20,6 +20,66 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **The sabotage entry rides separately** (rule 36: `sabotage_refresh.py` is harness and lands
   alone).
 
+### Changed — `bitbucket` 1.2.3: variables read back with the trailing slash, repository access tokens are UI-only, reviewers on Bitbucket (T-0503)
+
+- **What changed.** `skills/bitbucket/SKILL.md` gains a fourth common task,
+  "Add reviewers to PR #12" (`effective-default-reviewers`, then a
+  read-modify-write `PUT pullrequests/{id}` carrying the existing title and the
+  full `reviewers` list), a "Pipeline and deployment variables: read back with
+  the trailing slash" section (an empty `values` from the slash-less path is
+  "could not tell", not "absent"), a "Repository access tokens are UI-only on
+  Cloud" section, two Safety rails bullets (never ask for a token creation or
+  rotation page to be pasted; a token seen in chat is leaked - revoke and
+  recreate), and a trigger clause in the frontmatter `description`.
+  `references/api.md` gains the PUT reviewer body, a "Default reviewers"
+  sub-list, a "Pipeline and deployment variables" section and two Gotchas.
+  Every API sentence cites its Atlassian page. Both catalog rows' "Use cases"
+  column names the two new symptoms. Reviewer uuids are read from
+  `values[].user.uuid` on `effective-default-reviewers`, the project-level list
+  and workspace members; only the repo-level `default-reviewers` list answers
+  with `values[].uuid`. `scripts/_test/merge_gate.sh` gains a
+  "documentation invariants" section that keeps the entries, the trailing
+  slash, the uuid path, the scopes, a citation on every new `api.md` bullet and
+  the two catalog rows from drifting; each check reads only the section it
+  guards, and the token scan reports a read error as "could not tell".
+- **Why.** The aws-managed-services session's report of 2026-09-28, items 18
+  (variables GETs without the trailing slash read as empty - a false "variable
+  not present"), 19 (repository access tokens cannot be created over the Cloud
+  REST API, and a live token was pasted into chat from the rotate dialog) and
+  20 (the GitHub-only CODEOWNERS / `gh pr create --reviewer` habit has no
+  Bitbucket twin).
+- **Not reproduced.** The slash-less GET's HTTP 200 with `"values": []`; the
+  access-token endpoints' 404s and the "Access token rotated" dialog carrying
+  the value three times in its page HTML; the reviewer PUT's HTTP 200 with the
+  description preserved. All are the reporter's observations and the skill
+  text says so ("reported 2026-09-28, not reproduced here"). No call was made
+  against a Bitbucket workspace.
+- **Unchanged.** `scripts/bb.sh` and `scripts/merge_gate.sh` behaviour, the
+  marketplace `description`, the install scripts' menu text, `skills/UPDATE.md`.
+- Bumped `bitbucket` 1.2.2 -> 1.2.3.
+
+### Fixed - `crew` 1.0.114, `obsidian-vault` 0.4.16: every pwsh the test suites spawn gets its own XDG_CACHE_HOME (L-0557)
+
+- **Cause.** pwsh reads its multicore-JIT startup profile,
+  `$XDG_CACHE_HOME/powershell/StartupProfileData-NonInteractive`, at start-up and rewrites it at
+  exit. Concurrent pwsh sharing `~/.cache/powershell` race on that one file, and a reader that
+  catches it half-written dies before running a statement ("Stack overflow.", exit -6, or
+  SIGSEGV, -11) - about one `-m slow -n 12` run in 20-50 on the self-hosted runners.
+- **Test code only.** `plugin/crew/tests/conftest.py` gives each test its own
+  `XDG_CACHE_HOME`, a directory `tmp_path_factory.mktemp` creates beside `tmp_path` (inside it,
+  it showed up in nine tests that assert what their `tmp_path` holds), and installs an audit hook
+  that refuses a pwsh spawned with any other cache dir. The `pwsh()` helpers in both `test_flavour_guard.py` copies, the
+  obsidian-vault Python suites, and the ten shell suites under `scripts/_test/` and
+  `plugin/obsidian-vault/hooks/scripts/_test/` set it too. New
+  `plugin/crew/tests/test_pwsh_cache_isolation.py` scans every tracked `tests`/`_test` suite,
+  Python by AST and shell by line, for a pwsh spawn that would skip it, and needs no pwsh. It
+  judges the value as well as the name (empty, `None`, `~`, `.cache` or the home directory fail),
+  counts only a set that always runs (not one inside a branch, an unused dict or a helper's dead
+  code, only what a helper returns), and reports a suite it cannot read as `file:0` rather than
+  skipping it. No
+  retry and no crash-signature matching. Hooks and production scripts are unchanged (L-0559);
+  Windows pwsh keeps its profile under `LOCALAPPDATA`, so the variable changes nothing there.
+
 ### Fixed — `crew` 1.0.110: the timing-flaky crew tests poll with a deadline instead of sleeping a fixed time (L-0516)
 
 - **New `tests/poll_fixtures.py`.** `poll_until(probe, done, timeout)` probes at least once and
