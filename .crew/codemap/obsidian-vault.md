@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@3afec6e6
+anchor: useful-claude-add-ons@d640eba3
 verified: 2026-10-01
 
 ## Does
@@ -1175,3 +1175,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `17dc6d23` -> `8177fdff` on 2026-10-01 (L-0574 review round 1 and pre-round fixes).** The commits since changed `review_checks.py`, its tests, `sabotage_prereview.py`, `docs/external-tool-formats.md`, `BUDGETS.md`'s count line and `CHANGELOG.md`; difflib found no citation in this map that moved.
 
 **Re-anchored `8177fdff` -> `3afec6e6` on 2026-10-01 (L-0574: noqa BLE001 on two boundary catches, same lines; difflib moved no citation).**
+
+**Re-anchored `3afec6e6` -> `d640eba3` on 2026-10-01 (L-0574 round-2 fixes and the crew 1.0.122 bump; ten CHANGELOG citations moved +2 by difflib, the crew map's version sentence now reads 1.0.122).**
