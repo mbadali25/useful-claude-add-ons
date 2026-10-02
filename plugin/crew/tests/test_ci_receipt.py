@@ -9,6 +9,7 @@ cases put a fake `gh` first on PATH for the same reason.
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -717,3 +718,19 @@ def test_workflow_installs_a_pinned_mmdc_so_the_diagram_rule_does_not_skip(workf
     runs = [str(s.get("run", "")) for s in data["jobs"]["verify-gate"]["steps"]]
 
     assert any("@mermaid-js/mermaid-cli@12.0.0" in r for r in runs)
+
+
+def test_workflow_installs_nothing_into_the_shared_toolcache(workflow):
+    # Concurrent jobs on other branches share the host's toolcache: every
+    # pip and npm install must land under this job's RUNNER_TEMP instead.
+    _, data = workflow
+    lines = [line.strip() for s in data["jobs"]["verify-gate"]["steps"]
+             for line in str(s.get("run", "")).splitlines()]
+    pip = [ln for ln in lines if "pip install" in ln]
+    npm_global = [ln for ln in lines if re.search(r"npm install\b.*\s-g\b", ln)]
+
+    assert pip and npm_global
+    assert all(ln.startswith('"$RUNNER_TEMP/gate-venv/bin/python" -m pip') for ln in pip), pip
+    assert all('--prefix "$RUNNER_TEMP/gate-npm"' in ln for ln in npm_global), npm_global
+    assert any('"$RUNNER_TEMP/gate-venv/bin" >> "$GITHUB_PATH"' in ln for ln in lines)
+    assert any('"$RUNNER_TEMP/gate-npm/bin" >> "$GITHUB_PATH"' in ln for ln in lines)

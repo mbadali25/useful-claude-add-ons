@@ -58,17 +58,24 @@ jobs:
     # that rule exit 77 (SKIP), a SKIP never advances the verified marker, and
     # then no receipt can pass. pwsh comes from the host (infra role
     # host_base/pwsh); Chromium's shared libraries for mmdc too (infra #12).
+    # Jobs on other branches share this host and setup-python/setup-node's
+    # toolcache, so nothing installs there: tools go into this job's
+    # RUNNER_TEMP, which the runner empties at the start and end of each job.
     - name: Install the gate's Python tools
       run: |
-        python -m pip install --upgrade pip
-        pip install 'pytest~=8.0' pytest-xdist pyyaml python-docx numpy pillow requests 'pylint~=4.0' ruff
+        python -m venv "$RUNNER_TEMP/gate-venv"
+        echo "$RUNNER_TEMP/gate-venv/bin" >> "$GITHUB_PATH"
+        "$RUNNER_TEMP/gate-venv/bin/python" -m pip install --upgrade pip
+        "$RUNNER_TEMP/gate-venv/bin/python" -m pip install 'pytest~=8.0' pytest-xdist pyyaml python-docx numpy pillow requests 'pylint~=4.0' ruff
     - name: Install mcp-servers dependencies
       run: npm --prefix mcp-servers ci
     # Pinned: the version proven on the pool host (github-runner-infra #12,
     # bc1c04b, which installed headless Chrome's libraries). mmdc is not on the
-    # host's PATH; this puts it on setup-node's, so render.sh does not SKIP.
+    # host's PATH; this puts it on the job's own, so render.sh does not SKIP.
     - name: Install mmdc
-      run: npm install -g @mermaid-js/mermaid-cli@12.0.0
+      run: |
+        npm install -g --prefix "$RUNNER_TEMP/gate-npm" @mermaid-js/mermaid-cli@12.0.0
+        echo "$RUNNER_TEMP/gate-npm/bin" >> "$GITHUB_PATH"
     # A self-hosted workspace outlives the job. The receipt must rest on
     # evidence THIS run wrote, so any earlier marker, record or fingerprint is
     # removed first, and the build step requires a marker newer than the

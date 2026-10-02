@@ -4,12 +4,17 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.133: `ci_receipt.py check` compares receipt fields by type as well as value
+### Fixed — `crew` 1.0.133: `ci_receipt.py check` compares receipt fields by type as well as value; the verify-gate workflow stops installing into the shared toolcache
 
 - `_mismatch` used `==` alone, which holds `1 == True` and `False == 0`, so a receipt saying
   `"pass": 1`, `"clean": 1` or `"gate": {"rc": false}` matched. Each now mismatches; three new
   must-block cases in `test_ci_receipt.py` go red with the old comparison.
-- The `test_ci_receipt.py` rule in `.crew/verify.json` is re-priced at 20s (99 passed in 16.4s).
+- `verify-gate.yml` installs nothing into the host's shared toolcache: pip goes into a venv and
+  mmdc into an npm prefix, both under the job's own `RUNNER_TEMP`, each put on `GITHUB_PATH`.
+  Jobs for different branches run concurrently on one host, and `pip install` / `npm install -g`
+  into setup-python's and setup-node's toolcache let them collide and carry state between runs.
+  A new workflow test fails against the old steps.
+- The `test_ci_receipt.py` rule in `.crew/verify.json` is re-priced at 20s (100 passed in 18.3s).
 
 ### Added — `crew` 1.0.132: the verify gate runs on the self-hosted pool and leaves a receipt; `ci_receipt.py check` reports whether it matches HEAD (L-0555, diagnostic)
 
