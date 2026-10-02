@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.0.129<!-- claim: plugin-version:crew --> |
+| **Version** | 1.0.128<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents, 36 commands, 31 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
@@ -441,17 +441,17 @@ The hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGa
 
 ---
 
-## `gizmoduck` — Nuclei scans, diffed and triaged into tickets
+## `gizmoduck` — Nuclei and a multi-tool scan routine, diffed and triaged into tickets
 
 | | |
 |---|---|
 | **Source** | [`gizmoduck/`](gizmoduck) |
-| **Version** | 0.5.3<!-- claim: plugin-version:gizmoduck --> |
+| **Version** | 0.5.5<!-- claim: plugin-version:gizmoduck --> |
 | **Install** | `claude plugin install gizmoduck@useful-claude-add-ons` |
 | **Registers** | 6 commands, 1 skill. **No agents, no hooks** — nothing runs unless you type a command |
 | **Upstream guide** | [`gizmoduck/README.md`](gizmoduck/README.md) |
 
-Runs [Nuclei](https://github.com/projectdiscovery/nuclei) against hosts and websites, then does the part that usually gets skipped: diffs the run against a baseline so you see what is genuinely new, renders a triaged report, and turns Critical and High findings into ServiceDesk Plus tickets after one batch confirmation. Nuclei is MIT-licensed and self-hosted, so the whole loop runs locally — no export step, no API quota, no findings leaving the machine.
+Runs [Nuclei](https://github.com/projectdiscovery/nuclei) against hosts and websites, or the whole scanner routine (checkov, trivy, dependency-check, semgrep, ZAP, testssl, nmap, nikto, and sqlmap only when confirmed by name) from one manifest, then does the part that usually gets skipped: diffs the run against a baseline so you see what is genuinely new, renders a triaged report, and turns Critical and High findings into ServiceDesk Plus tickets after one batch confirmation. Nuclei is MIT-licensed and self-hosted, so the whole loop runs locally — no export step, no API quota, no findings leaving the machine.
 
 **Only scan assets you own or have written permission to test.** The bundled skill says so in its first paragraph and tells the session to confirm authorisation when a target does not look like the user's. That is a prompt, not an enforcement mechanism: nothing here can tell whose host an IP is, so the check is yours to actually make.
 
@@ -470,7 +470,9 @@ Runs [Nuclei](https://github.com/projectdiscovery/nuclei) against hosts and webs
 
 ### The CLI underneath
 
-Everything is one Python file, `scripts/gizmoduck.py`, with `scan`, `summary`, `report`, `tickets`, `diff`, `doctor`, and `update` subcommands. It is usable directly, which matters for scheduling: a cron job or a scheduled task can run the scan and the diff without a Claude session in the loop.
+Everything is one Python file, `scripts/gizmoduck.py`, with `scan`, `routine`, `summary`, `report`, `tickets`, `diff`, `doctor`, and `update` subcommands. It is usable directly, which matters for scheduling: a cron job or a scheduled task can run the scan and the diff without a Claude session in the loop. `routine <manifest.yaml>` runs every scanner the manifest resolves and exits 4 when any cell did not run, so a scheduler can tell a partial run from a clean one without reading the report.
+
+With `--scan-root <module-dir>` a routine run lands in `<module-dir>/docs/security-scans/<YYYY-MM-DD>/`: `findings.jsonl`, `run-manifest.json`, `report.md`, `report.html`, `report.pdf` when a renderer is present, and `scan-meta.json` (gizmoduck's own schema 1: version, timestamps, the authorization statement, targets, coverage counts and whether coverage was complete, finding counts). A directory that already holds a `scan-meta.json` is refused unless `--replace` is named, and `report --run-manifest` re-renders a routine run with its coverage table. That dated layout is separate from crew's endpoint ledger path, `docs/security-scans/<ep-id>.md`.
 
 `tickets` does not call ServiceDesk Plus itself, and it is gated: without `--yes` it prints a preview of the candidate tickets (severity + subject, one per line), a digest over that exact batch, and the rerun command carrying it, then exits 3 with a `GIZMODUCK_CONFIRMATION_REQUIRED` marker, emitting no records at all. Only with `--yes <digest>` — the digest the preview just printed, passed after the batch has been shown to and approved by the user — does it emit one ticket payload per finding: subject prefixed `[Nuclei <template-id>]`, severity, CVSS, CVE, affected hosts, remediation. A `--yes` whose digest does not match what `tickets` recomputes right now — a different findings file, a different `--min-severity`, findings that changed in between — is refused with `GIZMODUCK_APPROVAL_MISMATCH` rather than silently creating whatever the current batch turns out to be. The session then opens or updates the approved records through the ServiceDesk Plus tools it already has. The template-id prefix is what makes the second run idempotent: a finding whose ticket is still open gets a note instead of a duplicate.
 

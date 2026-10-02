@@ -221,13 +221,13 @@
       "name": "crew",
       "source": "./plugin/crew",
       "description": "Virtual dev team for multi-repo legacy work - one interactive session owns a ticket from brainstorm through spec, plan, implement, tests, docs and review to done; 4 context-isolated agents (explorer, reviewer, security, researcher) plus on-demand stack skills, 36 slash commands, 31 bundled skills, and deterministic hooks: a budgeted context hook (on by default) that carries the handoff across a clear or compaction, plan-approval and scope guards with a completion audit, an opt-in cloud/destructive guard, and a verify gate that fails unverified turns. /crew:migrate carries a 0.20 setup forward.",
-      "version": "1.0.129"
+      "version": "1.0.128"
     },
     {
       "name": "gizmoduck",
       "source": "./plugin/gizmoduck",
-      "description": "Nuclei vulnerability scans on hosts and websites, diffed against a baseline, rendered as triaged Markdown/HTML/PDF reports that itemise Critical/High/Medium and count the rest, and turned into ServiceDesk Plus tickets for Critical and High findings after one batch confirmation. No hooks, no agents.",
-      "version": "0.5.3"
+      "description": "Nuclei vulnerability scans on hosts and websites, or the whole scanner routine (checkov, trivy, dependency-check, semgrep, ZAP, testssl, nmap, nikto, gated sqlmap) from one manifest with a coverage table and a dated docs/security-scans layout, diffed against a baseline, rendered as triaged Markdown/HTML/PDF reports that itemise Critical/High/Medium and count the rest, and turned into ServiceDesk Plus tickets for Critical and High findings after one batch confirmation. No hooks, no agents.",
+      "version": "0.5.5"
     },
     {
       "name": "localgpu",

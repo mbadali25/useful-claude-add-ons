@@ -526,6 +526,144 @@ REVIEW_FIX_MUTATIONS = (
         "    if ok:\n",
         "tests/test_review_gate.py::test_owner_accepted_findings_do_not_short_circuit",
     ),
+    # L-0576: harmless stray lines beside findings are recovered; CLEAN stays
+    # exact and anything that might be a contract line stays INCOMPLETE.
+    (
+        # The pre-L-0576 strictness: any stray line burns the round.
+        "a stray prose line beside findings is INCOMPLETE again",
+        REVIEW_VERDICT,
+        "        if (findings and not reasons\n",
+        "        if (False and findings and not reasons\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_harmless_stray_lines_beside_findings_are_recovered"),
+    ),
+    (
+        # Recovery reaches CLEAN: a CLEAN wrapped in prose or a fence passes.
+        "stray lines beside a CLEAN are recovered",
+        REVIEW_VERDICT,
+        "        if (findings and not reasons\n",
+        "        if ((findings or clean_lines) and not reasons\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_clean_with_any_stray_line_is_incomplete"),
+    ),
+    (
+        # A decorated or malformed finding is ignored as prose: a BLOCK the
+        # parser could not read is dropped while the round reads FINDINGS.
+        "contract-like stray lines are recovered as prose",
+        REVIEW_VERDICT,
+        "                and not any(contract_like(line) for line in unparseable)):\n",
+        "                and True):\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_contract_like_stray_line_is_incomplete"),
+    ),
+    (
+        # Markdown decoration hides the keyword: `- FIX|...` reads as prose.
+        "contract-like check stops stripping markdown decoration",
+        REVIEW_VERDICT,
+        '    bare = "" if _FENCE.match(line) else _DECORATION.sub("", line)\n',
+        '    bare = "" if _FENCE.match(line) else line\n',
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_contract_like_stray_line_is_incomplete"),
+    ),
+    (
+        # A reviewer that admits in prose it fell short is ignored as prose.
+        "a stray line admitting a shortfall is recovered as prose",
+        REVIEW_VERDICT,
+        "_ON_LINE = (re.compile(r\"\\|.*\\|.*\\|\"),) + tuple(\n"
+        "    re.compile(p, re.IGNORECASE) for p in _SHORTFALL)\n",
+        "_ON_LINE = (re.compile(r\"\\|.*\\|.*\\|\"),)\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_contract_like_stray_line_is_incomplete"),
+    ),
+    (
+        # A lower-case keyword reads as prose: `block a.py:1 ...` is ignored.
+        "contract keywords are matched in capitals only",
+        REVIEW_VERDICT,
+        '_ON_BARE = (re.compile(rf"^(?:{_KEYWORD})\\b", re.IGNORECASE),)\n',
+        '_ON_BARE = (re.compile(rf"^(?:{_KEYWORD})\\b"),)\n',
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_contract_like_stray_line_is_incomplete"),
+    ),
+    (
+        # finish's own tree/stream reasons are added after the parse again,
+        # so a stray line is recovered on a round they make INCOMPLETE.
+        "finish adds its outside reasons after recovery",
+        REVIEW_RUN,
+        "                                  prior_reasons=extra_reasons)\n",
+        "                                  prior_reasons=())\n",
+        "tests/test_review_refund.py::test_finish_recovers_nothing_when_the_bundle_changed",
+    ),
+    (
+        # The ledger forgets that a round was recovered.
+        "the ledger row drops the ignored-line count",
+        REVIEW_LEDGER,
+        '            "ignored_lines": _ignored_count(review.get("ignored_lines")),\n',
+        '            "ignored_lines": 0,\n',
+        "tests/test_review_refund.py::test_ledger_row_counts_the_ignored_lines",
+    ),
+    (
+        # Recovery runs despite a missing READ, a bad exit or a timeout, so
+        # the stray-line reason disappears from an INCOMPLETE round.
+        "recovery ignores the round's other reasons",
+        REVIEW_VERDICT,
+        "        if (findings and not reasons\n",
+        "        if (findings\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_recovery_never_masks_another_reason"),
+    ),
+    (
+        # The ignored lines vanish from review.json.
+        "review.json drops the ignored lines",
+        REVIEW_RUN,
+        '        "ignored_lines": len(result["ignored"]), "ignored_text": result["ignored"],\n',
+        '        "ignored_lines": 0, "ignored_text": [],\n',
+        "tests/test_review_refund.py::test_finish_reports_ignored_lines",
+    ),
+    (
+        # The ignored lines are never named on a `review:` line.
+        "review_run stops printing the ignored lines",
+        REVIEW_RUN,
+        '    if result["ignored"]:\n        print(f"review: {result[\'verdict\']} kept; ',
+        '    if False:\n        print(f"review: {result[\'verdict\']} kept; ',
+        "tests/test_review_refund.py::test_finish_reports_ignored_lines",
+    ),
+    (
+        # Review round 1 FIX: a fence's info string (```FIX) read as a
+        # keyword, so a fenced, well-formed finding burned the round.
+        "a code fence's info string is read as a contract keyword",
+        REVIEW_VERDICT,
+        '    bare = "" if _FENCE.match(line) else _DECORATION.sub("", line)\n',
+        '    bare = _DECORATION.sub("", line)\n',
+        ("tests/test_review_verdict.py::"
+         "test_parse_harmless_stray_lines_beside_findings_are_recovered"),
+    ),
+    (
+        # Review round 1 FIX: ignored lines stored stripped, not as written.
+        "ignored lines are stored stripped",
+        REVIEW_VERDICT,
+        '        unparseable.append(raw[:-1] if raw.endswith("\\r") else raw)\n',
+        "        unparseable.append(line)\n",
+        "tests/test_review_verdict.py::test_parse_ignored_lines_are_kept_verbatim",
+    ),
+    (
+        # Review round 2 FIX: a fence with a space before its info string
+        # ("``` FIX") was not a fence, so its info word read as a keyword.
+        "a fence with a space before its info string is not a fence",
+        REVIEW_VERDICT,
+        '_FENCE = re.compile(r"^(?:`{3,}|~{3,})[ \\t]*[\\w.+#-]*$")\n',
+        '_FENCE = re.compile(r"^(?:`{3,}|~{3,})[\\w.+#-]*$")\n',
+        ("tests/test_review_verdict.py::"
+         "test_parse_harmless_stray_lines_beside_findings_are_recovered"),
+    ),
+    (
+        # L-0510 lane: an unknown ignored-line count read as 0 ("none").
+        "the ledger records an unknown ignored-line count as 0",
+        REVIEW_LEDGER,
+        "        return value\n    return None\n",
+        "        return value\n    return 0\n",
+        ("tests/test_review_refund.py::"
+         "test_ledger_row_records_an_unknown_ignored_count_as_null_never_0"),
+    ),
     (
         # L-0578: the metrics row goes back to depending on prose step 6,
         # which lanes skipped for 118 of 162 rounds.
