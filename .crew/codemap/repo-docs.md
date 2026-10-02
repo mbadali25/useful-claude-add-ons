@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@2859ab05
+anchor: useful-claude-add-ons@99c8f66e
 verified: 2026-10-01
 
 ## Re-derive provenance
@@ -1574,3 +1574,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `1066a28d` -> `871c5043` on 2026-10-02 (L-0575 review round 1 fixes).** `git diff --name-only 1066a28d 871c5043` returns `.crew/verify.json` (the L-0575 rule's why, in place), `plugin/crew/BUDGETS.md` (the count at `:11`), `plugin/crew/README.md` (the L-0575 paragraph, in place), `plugin/crew/commands/implement.md` (step 2 re-wrapped in place, still 120 lines), `recurring_findings.py`, its data file and its suite. Each citation into a changed file was mapped with difflib from `1066a28d` to this tree: no citation moved. No suite was executed for this note.
 
 **Re-anchored `b4f04e23` (main) and L-0575's `871c5043` -> `2859ab05` on 2026-10-02 (L-0575 merges origin/main 8d84786d at f12f742c and d2ec37d3 at 2859ab05, rerere disabled; crew 1.0.123. Both provenance histories kept, main's first. Body citations were mapped with difflib from the tree each line came from (4234c443 for L-0575's lines, d2ec37d3 for main's): ten CHANGELOG.md citations in crew.md moved +19 (L-0575's entry above main's); verification-harness.md's two verify.json ranges were set by hand to :448-453 (rule 41) and :455-465 (L-0575's rule); crew.md's version sentence reads 1.0.123. History notes were not re-mapped. No suite was executed for this note).**
+
+**Re-anchored `b4f04e23` (main) and L-0575's `2859ab05` -> `99c8f66e` on 2026-10-02 (L-0575 merges origin/main 7ba4f9ea (L-0572 #309 crew 1.0.126, L-0593 #312) at 99c8f66e, rerere disabled; crew 1.0.129 is set in the last commit. Body citations were mapped with difflib from the tree each line came from (9dad04ef for L-0575's lines, 7ba4f9ea for main's): ten CHANGELOG.md citations in crew.md moved +21 (L-0572's entry, below L-0575's); verification-harness.md's verify.json ranges were set by hand to :469-476 (rule 41) and :486-496 (L-0575's rule, after L-0572's at :478-485). History notes were not re-mapped. No suite was executed for this note).**
