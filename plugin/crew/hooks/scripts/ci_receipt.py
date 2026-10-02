@@ -105,7 +105,12 @@ EXIT_USAGE = 2
 
 _GH_TIMEOUT_S = 60
 _RECORD = os.path.join(".crew", ".verify-gate.record.json")
-_REMOTE_RE = re.compile(r"github\.com[:/]+([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$")
+# The host must BE github.com: anchored at the start, in the https/ssh URL form
+# or the scp form, so a host that merely carries "github.com" in its path never
+# passes for one.
+_REMOTE_RE = re.compile(
+    r"^(?:(?:https?|ssh|git)://(?:[^@/]+@)?github\.com(?::\d+)?/|(?:[^@/:]+@)?github\.com:)"
+    r"([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$")
 _ELAPSED_RE = re.compile(r"^verify-gate: (\d+)s  (.+)$")
 _SKIP_RE = re.compile(r"^verify-gate: SKIP \(rc 77[^)]*\): (.+)$")
 _FAILED_RE = re.compile(r"^VERIFY FAILED: (.+)$")
@@ -160,11 +165,15 @@ def _material_changes(root):
     return verify_fingerprint._material(changed)  # pylint: disable=protected-access
 
 
-def _no_gate_reason(root):
-    """The NO_GATE reason, or None. Asked of `review_gate.gate_state` itself, so
-    the stand-down test (and the repo-config read behind it) has one home."""
+def _gate_switch(root):
+    """(NO_GATE | UNKNOWN | "live", reason): whether the local gate is stood down.
+    Asked of `review_gate.gate_state` itself, so the stand-down test (and the
+    repo-config read behind it) has one home. UNKNOWN stays UNKNOWN: a gate state
+    that could not be read must never pass for a live gate. VERIFIED and
+    UNVERIFIED both mean the gate is live; the local marker is not this check's
+    evidence, so which of the two it is does not matter here."""
     state, why = review_gate.gate_state(root)
-    return why if state == NO_GATE else None
+    return (state if state in (NO_GATE, UNKNOWN) else "live"), why
 
 
 # --- build (runner side) -----------------------------------------------------------
@@ -415,9 +424,12 @@ def _mismatch(receipt, want):
 
 
 def _local(root):
-    """(head, tree, blob, worktree blob, material changes): one observation."""
+    """(head, tree, blob, worktree blob, material changes, gate switch): one
+    observation. The switch is in it so a stand-down written while the network
+    check runs is a change, like any other, between the first and last look."""
     return (_git(root, "rev-parse", "HEAD"), _git(root, "rev-parse", "HEAD^{tree}"),
-            _verify_blob(root), _worktree_blob(root), _material_changes(root))
+            _verify_blob(root), _worktree_blob(root), _material_changes(root),
+            _gate_switch(root)[0])
 
 
 def check(root, fetch=None):
@@ -428,11 +440,15 @@ def check(root, fetch=None):
     fetch = gh_fetch if fetch is None else fetch
     head = None
     try:
-        no_gate = _no_gate_reason(root)
-        if no_gate:
-            return NO_GATE, no_gate, head
+        switch, why = _gate_switch(root)
+        if switch == NO_GATE:
+            return NO_GATE, why, head
+        if switch == UNKNOWN:
+            return UNKNOWN, f"whether the gate is stood down could not be told: {why}", head
         first = _local(root)
-        head, tree, blob, worktree, material = first
+        head, tree, blob, worktree, material, _ = first
+        if first[5] != "live":
+            raise Unreadable("the gate's stand-down changed while the receipt was being checked")
         if blob is None:
             return UNVERIFIED, "HEAD carries no .crew/verify.json; a CI receipt cannot cover it", head
         if worktree != blob:
@@ -486,8 +502,8 @@ def check(root, fetch=None):
             raise Unreadable(f"the newest {WORKFLOW_FILE} run for HEAD changed while the "
                              "receipt was being checked")
         if _local(root) != first:
-            raise Unreadable("HEAD, its tree, .crew/verify.json or the working tree changed "
-                             "while the receipt was being checked")
+            raise Unreadable("HEAD, its tree, .crew/verify.json, the working tree or the "
+                             "gate's stand-down changed while the receipt was being checked")
     except Unreadable as exc:
         return UNKNOWN, str(exc), head
     except Exception as exc:  # pylint: disable=broad-except

@@ -434,10 +434,46 @@ def test_check_without_origin_main_could_not_tell(tmp_path):
     assert state == cr.UNKNOWN
 
 
-def test_check_with_a_non_github_remote_could_not_tell(tmp_path):
+@pytest.mark.parametrize("url", [
+    "https://gitlab.example/owner/repo.git",
+    f"https://gitlab.example/github.com/{SLUG}.git",
+    f"git@gitlab.example:github.com/{SLUG}.git",
+    f"https://github.com.evil.example/{SLUG}.git",
+    f"https://notgithub.com/{SLUG}.git",
+    f"ssh://git@gitlab.example/github.com/{SLUG}.git",
+], ids=["other-host", "github-in-path", "scp-github-in-path", "github-prefix-host",
+        "github-suffix-host", "ssh-github-in-path"])
+def test_check_with_a_non_github_remote_could_not_tell(tmp_path, url):
     root = _repo(tmp_path)
     api = _api(root)
-    git(root, "remote", "set-url", "origin", "https://gitlab.example/owner/repo.git")
+    git(root, "remote", "set-url", "origin", url)
+
+    state, _, _ = _check(root, api)
+
+    assert state == cr.UNKNOWN
+
+
+@pytest.mark.parametrize("url", [
+    f"https://github.com/{SLUG}.git",
+    f"https://github.com/{SLUG}",
+    f"https://x-access-token@github.com/{SLUG}.git",
+    f"git@github.com:{SLUG}.git",
+    f"ssh://git@github.com/{SLUG}.git",
+], ids=["https", "https-no-suffix", "https-userinfo", "scp", "ssh"])
+def test_check_accepts_every_github_remote_form(tmp_path, url):
+    root = _repo(tmp_path)
+    api = _api(root)
+    git(root, "remote", "set-url", "origin", url)
+
+    state, reason, _ = _check(root, api)
+
+    assert state == cr.VERIFIED, reason
+
+
+def test_check_when_the_stand_down_cannot_be_read_could_not_tell(tmp_path):
+    root = _repo(tmp_path)
+    api = _api(root)
+    (root / ".crew" / "config.json").mkdir()
 
     state, _, _ = _check(root, api)
 
@@ -488,8 +524,13 @@ def _map_mid_check(root, _api_map):
     (root / ".crew" / "verify.json").write_text(json.dumps(_map("echo x")), encoding="utf-8")
 
 
-@pytest.mark.parametrize("change", [_rerun_mid_check, _edit_mid_check, _map_mid_check],
-                         ids=["rerun-started", "local-edit", "map-edited"])
+def _stand_down_mid_check(root, _api_map):
+    (root / ".crew" / "config.json").write_text('{"verifyGate": false}', encoding="utf-8")
+
+
+@pytest.mark.parametrize("change", [_rerun_mid_check, _edit_mid_check, _map_mid_check,
+                                    _stand_down_mid_check],
+                         ids=["rerun-started", "local-edit", "map-edited", "stood-down"])
 def test_check_when_anything_changes_mid_check_could_not_tell(tmp_path, change):
     root = _repo(tmp_path)
     api = _api(root)
