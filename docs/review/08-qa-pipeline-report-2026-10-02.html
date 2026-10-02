@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>QA Pipeline Speed-ups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Dark-only theme. Layout: one reading column; a verdict strip, a before/after chart, then a ledger of changes grouped by status. */
+:root{
+  --bg:#121614; --surface:#1a201d; --fg:#e4ebe7; --muted:#9aa8a0; --line:#2c3531;
+  --accent:#5cc3a4; --accent-soft:#1d3a31;
+  --good:#5cc98a; --warn:#e3a54a; --bad:#f08a80; --neutral:#8d9893;
+  --before:#45524c; --after:#5cc3a4;
+  --f-display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body:"IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono:"IBM Plex Mono", ui-monospace, "Cascadia Mono", Menlo, monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{background:#121614}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 var(--f-body);padding-inline:16px;padding-block:28px 48px}
+.wrap{max-width:860px;margin:0 auto;display:grid;gap:36px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;line-height:1.15}
+h1{font-size:clamp(28px,5vw,40px);font-weight:700}
+h2{font-size:22px;font-weight:700}
+h3{font-size:16px;font-weight:600;font-family:var(--f-body)}
+p{margin:0;max-width:68ch}
+.eyebrow{font:500 12px/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lede{color:var(--muted);font-size:16px}
+header{display:grid;gap:12px}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.section{display:grid;gap:16px}
+/* verdict strip */
+.verdicts{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.verdict{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:grid;gap:6px;border-top:3px solid var(--neutral)}
+.verdict.good{border-top-color:var(--good)} .verdict.warn{border-top-color:var(--warn)} .verdict.flat{border-top-color:var(--neutral)}
+.verdict .big{font:700 26px/1.1 var(--f-display);font-variant-numeric:tabular-nums}
+.verdict .what{font-weight:600}
+.verdict .n{font:400 12px/1.4 var(--f-mono);color:var(--muted)}
+/* chart */
+.chart{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:18px 16px;display:grid;gap:14px;overflow-x:auto}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.key{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:2px;display:inline-block}
+.rows{display:grid;gap:14px;min-width:520px}
+.row{display:grid;grid-template-columns:190px 1fr;gap:12px;align-items:center}
+.row .label{font-size:14px;font-weight:500}
+.row .label small{display:block;font:400 12px/1.3 var(--f-mono);color:var(--muted)}
+.bars{display:grid;gap:4px}
+.bar{position:relative;height:16px;background:linear-gradient(to right,var(--line) 1px,transparent 1px) 0 0/25% 100%;border-left:1px solid var(--line)}
+.fill{height:100%;border-radius:0 2px 2px 0}
+.fill.b{background:var(--before)} .fill.a{background:var(--after)}
+.val{position:absolute;top:-1px;font:500 12px/16px var(--f-mono);color:var(--fg);white-space:nowrap;padding-left:6px}
+.axis{display:grid;grid-template-columns:190px 1fr;gap:12px;min-width:520px}
+.ticks{display:flex;justify-content:space-between;font:400 11px var(--f-mono);color:var(--muted)}
+.note{font-size:13px;color:var(--muted)}
+/* tables */
+.tablewrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;min-width:560px;font-size:14px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:500 12px/1.3 var(--f-mono);letter-spacing:.04em;text-transform:uppercase;color:var(--muted);background:var(--bg)}
+tr:last-child td{border-bottom:0}
+td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.id{font-family:var(--f-mono);font-weight:500;white-space:nowrap}
+/* status pills */
+.pill{display:inline-block;font:500 11px/1 var(--f-mono);padding:4px 7px;border-radius:999px;white-space:nowrap;border:1px solid currentColor}
+.pill.merged{color:var(--good)} .pill.landing{color:var(--accent)} .pill.review{color:var(--warn)} .pill.queued{color:var(--neutral)} .pill.blocked{color:var(--neutral)}
+/* tabs */
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tab{font:500 13px var(--f-body);background:transparent;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:6px 12px;cursor:pointer}
+.tab[aria-selected="true"]{background:var(--accent-soft);color:var(--fg);border-color:var(--accent)}
+.tab:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.findings{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.finding{border-left:3px solid var(--accent);padding:4px 0 4px 12px;display:grid;gap:4px}
+.finding .k{font:700 20px/1.2 var(--f-display);font-variant-numeric:tabular-nums}
+.caveats{display:grid;gap:8px;padding-left:18px;margin:0}
+.caveats li{max-width:68ch}
+footer{font-size:12px;color:var(--muted);font-family:var(--f-mono);border-top:1px solid var(--line);padding-top:14px}
+@media (max-width:560px){.row,.axis{grid-template-columns:130px 1fr}}
+@media (prefers-reduced-motion:no-preference){.fill{transition:width .4s ease}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<header>
+  <span class="eyebrow">useful-claude-add-ons · CI and QA gate · measured 2026-10-02</span>
+  <h1>Is the QA pipeline faster yet?</h1>
+  <p class="lede">More reliable, not faster yet. The fixes that have merged so far removed the infrastructure failures that were turning CI red. The changes aimed at wall time (Windows sharding, gate skips, fewer review rounds) are still in review, so their effect cannot show in the numbers yet.</p>
+</header>
+
+<section class="section" aria-labelledby="v">
+  <h2 id="v">Verdict by area</h2>
+  <div class="verdicts">
+    <div class="verdict good"><span class="what">Linux CI failures</span><span class="big mono">37% → 0%</span><span class="n">test (3.12): 21 of 57 failed before, 0 of 8 after</span></div>
+    <div class="verdict good"><span class="what">Runner infrastructure errors</span><span class="big mono">0 after</span><span class="n">temp-dir, probe-timeout and pwsh drive-root errors: none in 8 commits</span></div>
+    <div class="verdict flat"><span class="what">Windows CI wall time</span><span class="big mono">37 min</span><span class="n">p50 37.1 before (n=11), 37.4 after (n=5); sharding not merged</span></div>
+    <div class="verdict warn"><span class="what">Local full gate</span><span class="big mono">18 → 24 min</span><span class="n">p50 1072s (n=31) → 1428s (n=13); more rules and a busier host</span></div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="c">
+  <h2 id="c">Failure rate of required jobs, before and after</h2>
+  <div class="chart" role="figure" aria-label="Failure rate per required CI job before and after the fixes">
+    <div class="legend"><span class="key"><span class="sw" style="background:var(--before)"></span>Before (09-30 11:17Z – 10-01 12:26Z)</span><span class="key"><span class="sw" style="background:var(--after)"></span>After (10-01 22:54Z – 10-02 06:37Z)</span></div>
+    <div class="rows" id="rows"></div>
+    <div class="axis"><span></span><div class="ticks"><span>0%</span><span>10%</span><span>20%</span><span>30%</span><span>40%</span></div></div>
+    <p class="note">Bar length is the share of runs that failed, on a 0–40% scale. The single Windows failure after the fixes was a real bug in an unmerged branch (T-0504), not a flake. Marketplace-check failures before were real findings rather than infrastructure, so its drop reflects cleaner branches.</p>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="d">
+  <h2 id="d">Job duration, p50</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Required job</th><th>Before p50 / p90</th><th>After p50 / p90</th><th>Runs before / after</th></tr></thead>
+    <tbody>
+      <tr><td>crew-shell-matrix (windows-latest)</td><td class="num">37.1 / 41.5 min</td><td class="num">37.4 / 41.1 min</td><td class="num">11 / 5</td></tr>
+      <tr><td>test (3.12)</td><td class="num">7.3 / 9.1 min</td><td class="num">7.5 / 7.7 min</td><td class="num">57 / 8</td></tr>
+      <tr><td>crew-shell-matrix (ubuntu)</td><td class="num">4.3 / 6.2 min</td><td class="num">3.1 / 3.3 min</td><td class="num">57 / 8</td></tr>
+      <tr><td>shell</td><td class="num">3.1 min</td><td class="num">3.1 min</td><td class="num">47 / 8</td></tr>
+      <tr><td>Marketplace check</td><td class="num">1.9 min</td><td class="num">2.1 min</td><td class="num">37 / 8</td></tr>
+      <tr><td>Local <span class="mono">verify-gate --all</span></td><td class="num">1072 s</td><td class="num">1428 s</td><td class="num">31 / 13</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">The ubuntu leg's p90 tightened from 6.2 to 3.3 minutes, consistent with fewer runs stalling on runner problems. The local gate grew from 40–47 to 49–50 rules over the same period and ran while several lanes shared the host, so the slowdown is not attributed to any single change.</p>
+</section>
+
+<section class="section" aria-labelledby="w">
+  <h2 id="w">Where the time actually goes</h2>
+  <p>From the evaluation on 2026-10-01: 49 review ledgers, 162 review rounds, 370 CI runs, and 1018 workflow phase runs.</p>
+  <div class="findings">
+    <div class="finding"><span class="k mono">95 min</span><span>median fix work between review rounds, against 8 minutes for the review itself</span></div>
+    <div class="finding"><span class="k mono">3.3 rounds</span><span>mean per ticket; 21 of 49 tickets went over the 2-round budget; 7 of 162 rounds were CLEAN</span></div>
+    <div class="finding"><span class="k mono">57%</span><span>of a full local gate run spent re-testing subsets the full-suite rule already covered</span></div>
+    <div class="finding"><span class="k mono">37 min</span><span>for the required Windows job, rerun on every open PR after each merge to main</span></div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="i">
+  <h2 id="i">Improvements</h2>
+  <div class="tabs" role="tablist" aria-label="Filter improvements by status">
+    <button class="tab" role="tab" id="t-all" aria-selected="true" data-f="all">All</button>
+    <button class="tab" role="tab" id="t-merged" aria-selected="false" data-f="merged">Merged</button>
+    <button class="tab" role="tab" id="t-review" aria-selected="false" data-f="review">In review or landing</button>
+    <button class="tab" role="tab" id="t-queued" aria-selected="false" data-f="queued">Queued</button>
+  </div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Item</th><th>What it changes</th><th>Status</th><th>Expected effect</th></tr></thead>
+    <tbody id="items"></tbody>
+  </table></div>
+</section>
+
+<section class="section" aria-labelledby="k">
+  <h2 id="k">What this cannot tell you yet</h2>
+  <ul class="caveats">
+    <li>The after window is 24 runs over 8 commits in about 8 hours. That is enough to see the infrastructure errors stop; it is not enough to state a flake rate. A week of runs would settle it.</li>
+    <li>No commit after the fixes was rerun, so pass-on-rerun cannot be compared (8 of 36 failing commit/job pairs passed on rerun before).</li>
+    <li>Review-round numbers after the cutoff (mean 1.9) cover tickets still in flight, so they are not an improvement yet. The review-process tickets have not merged.</li>
+    <li>Windows sharding (L-0577) has not had its first CI run, so the projected 12–15 minute Windows job is an estimate.</li>
+  </ul>
+</section>
+
+<footer>Sources: GitHub Actions jobs API for mbadali25/useful-claude-add-ons; review ledgers in .git/crew/review; verify-gate logs in lane worktrees; evaluation evidence in .work/qa-eval-2026-10-01. Before window ends at the runner-infra #11 deploy, 2026-10-01 12:26Z; after window starts at the L-0557 merge, 22:54Z.</footer>
+</div>
+
+<script>
+(function(){
+  var jobs=[
+    {name:"test (3.12)",sub:"required",b:[21,57],a:[0,8]},
+    {name:"crew-shell-matrix ubuntu",sub:"not required",b:[13,57],a:[0,8]},
+    {name:"crew-shell-matrix windows",sub:"required",b:[4,11],a:[1,5]},
+    {name:"Marketplace check",sub:"required",b:[10,37],a:[0,8]},
+    {name:"shell",sub:"required",b:[0,47],a:[0,8]}
+  ];
+  var MAX=40, rows=document.getElementById("rows");
+  jobs.forEach(function(j){
+    var pb=100*j.b[0]/j.b[1], pa=100*j.a[0]/j.a[1];
+    var r=document.createElement("div"); r.className="row";
+    r.innerHTML='<div class="label">'+j.name+'<small>'+j.sub+'</small></div>'+
+      '<div class="bars">'+bar("b",pb,j.b)+bar("a",pa,j.a)+'</div>';
+    rows.appendChild(r);
+  });
+  function bar(k,p,c){
+    var w=Math.min(p,MAX)/MAX*100;
+    return '<div class="bar"><div class="fill '+k+'" style="width:'+w+'%"></div><span class="val" style="left:'+w+'%">'+p.toFixed(0)+'% · '+c[0]+'/'+c[1]+'</span></div>';
+  }
+  var items=[
+    ["github-runner-infra #10","Cleanup after each job stopped deleting idle runners' temp folders","merged","Ended the temp-dir failures behind L-0558's 187 + 104 failing tests"],
+    ["github-runner-infra #11","Each runner's cleanup only sweeps its own temp folder","merged","Fixed #10's regression that deleted a starting job's pytest folder"],
+    ["github-runner-infra #12","Headless Chrome libraries on the runner host","merged","Diagram rendering can run on the runners, needed by L-0555"],
+    ["L-0516","Timing-sensitive tests poll with a deadline; unique test tokens","merged","Removed the top flake: parallel CI jobs killing each other's test processes"],
+    ["L-0557","Each PowerShell run gets its own cache folder","merged","Removed cross-test PowerShell cache corruption"],
+    ["L-0513","One shared gate runner (scripts/gate-runner.py)","merged","Foundation for parallel and CI-run gates"],
+    ["L-0578","Metrics log written in code for every review round","landing","Makes review-round improvements measurable (73 of 162 rounds were missing)"],
+    ["L-0577","Windows CI job split into 3 parallel jobs plus a final check","landing","Windows job from about 37 to an estimated 12–15 minutes per run"],
+    ["L-0576","Review rounds no longer thrown out for harmless format errors","landing","Fewer wasted rounds; unknown counts stay unknown"],
+    ["L-0574","Linters and checks before a review round is reserved","review","Catches mechanical findings before a 95-minute fix cycle"],
+    ["L-0575","Checklist from past findings, picked by touched files","review","Higher first-round yield for implementer and reviewer"],
+    ["L-0555","Gate runs in CI on the self-hosted pool","review","Takes the 18–24 minute gate off the laptop; ends out-of-memory kills"],
+    ["L-0510","Auto-accept a 0-BLOCK final round from a different-family reviewer","review","Fewer owner stops on clean-enough final rounds"],
+    ["L-0573","Review rounds remember earlier findings","queued","Targets the lack of convergence across rounds"],
+    ["L-0572","Gate skips subsets the full suite already covered","queued","About 9–10 minutes off every full gate run"],
+    ["L-0512","Gate result cached by tree","queued","No repeat gate runs on an identical tree"],
+    ["L-0522","Lighter gate and review after a catch-up merge","queued","Ends waivers for merge-only changes"],
+    ["L-0581","Windows CI moved onto 6 self-hosted Windows runners","queued","Warm runners for the split Windows jobs; blocked on L-0577"],
+    ["L-0582 / L-0583","Metrics readers find the main checkout; backfill 118 missing rounds","queued","Before-and-after review numbers become comparable"],
+    ["L-0587","Fix two ShellCheck directives that stop parsing","queued","Lets the pre-review check cover two install scripts"]
+  ];
+  var body=document.getElementById("items");
+  var label={merged:"merged",landing:"landing",review:"in review",queued:"queued"};
+  items.forEach(function(it){
+    var tr=document.createElement("tr"); tr.dataset.s=it[2];
+    tr.innerHTML='<td class="id">'+it[0]+'</td><td>'+it[1]+'</td><td><span class="pill '+it[2]+'">'+label[it[2]]+'</span></td><td>'+it[3]+'</td>';
+    body.appendChild(tr);
+  });
+  var tabs=document.querySelectorAll(".tab");
+  tabs.forEach(function(t){t.addEventListener("click",function(){
+    tabs.forEach(function(x){x.setAttribute("aria-selected",x===t?"true":"false")});
+    var f=t.dataset.f;
+    body.querySelectorAll("tr").forEach(function(tr){
+      var s=tr.dataset.s;
+      tr.hidden=!(f==="all"||s===f||(f==="review"&&(s==="review"||s==="landing")));
+    });
+  })});
+})();
+</script>
+</body>
+</html>

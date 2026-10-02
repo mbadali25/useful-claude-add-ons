@@ -17,6 +17,7 @@ the input to the redesign in `04-redesign.md`. The owner has accepted their reco
 | `04-redesign.md` | Claude Fable 5.1 and Codex gpt-6-astra, merged | the accepted crew 1.0 design and the owner's decisions; `04a`, `04b` and `04c` hold the two designs and their cross-reviews |
 | `05-setup-audit.md` | Claude Fable 5.1 auditor | machine-wide plugins, skills, hooks, MCP servers and Codex config, with keep/remove/add tables and the missing hooks |
 | `07-web-testing-research.md` | Claude Fable 5.1 researcher | Playwright Test Agents, Playwright and Chrome DevTools MCP, axe and visual regression; the design `/crew:webtest` follows |
+| `08-qa-pipeline-report-2026-10-02.html` | Claude Opus 5.5, with Codex gpt-6-sol second opinions | CI and QA gate measured before and after the 2026-10-01 runner and flake fixes, where the pipeline's time goes, and the status of every speed-up ticket (open it in a browser) |
 
 A published summary of 01 lives at https://claude.ai/artifact/DxYFsqXexjqW1CAe1xMLgq (private).
 
