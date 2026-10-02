@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@6053b65d on 2026-10-01. Verify before trusting.
+%% Generated from useful-claude-add-ons@59e91ecc on 2026-10-02. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_config_files.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_shell.py, plugin/crew/hooks/scripts/cloud_guard.py
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
@@ -813,6 +813,13 @@ flowchart TB
 %% touches no Anchors path. No node or edge changed.
 %% Re-anchored 5ffffbe3 (main) and c43a9ce3 (L-0557) -> 6053b65d (L-0557 merges main 2906dcbd, L-0516 #298, rerere off;
 %% crew 1.0.114): both provenance blocks kept, main's first; L-0516 and L-0557 touch no Anchors path. No node or edge changed.
+
+%% Merged d0627649 (T-0009) + 8d84786d (main) -> f7bb1af2, re-anchored to 59e91ecc (crew 1.0.124), 2026-10-02:
+%% rerere off. Both sides' crew_config / crew_guards / cloud_guard citations were re-mapped onto the merged files
+%% by a line-level difflib match before the three-way merge, then the nodes re-checked with grep -n: counts re-executed
+%% 131 / 73 / 58 leaves, 11 guard names, 14 read-side and 15 write-side ratchet keys; cloud_guard.py is back in the
+%% Anchors line (T-0009's Dispatch subgraph cites it). Both provenance blocks kept, T-0009's first. Nodes changed:
+%% the counts above, ENVIRONMENTS_DEFAULTS :260 (workflows repo-only), the WIDEN edge (15 keys, E1's 14).
 
     subgraph Dispatch["environments.workflows's one reader - the grammar runs before the parser (T-0009)"]
         direction TB
