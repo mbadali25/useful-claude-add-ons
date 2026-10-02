@@ -320,7 +320,7 @@ TOOLING_MUTATIONS += (
         VERIFY_RECORD,
         '    if environ.get("PYTEST_ADDOPTS", "") != "":\n',
         "    if False:\n",
-        _COVER + "test_pytest_addopts_runs_subset[sh]",
+        _COVER + "test_pytest_addopts_runs_subset[-m slow-sh]",
     ),
     (
         "planner: a subset under another env is credited",
