@@ -1,5 +1,5 @@
 ---
-name: claude-code-tuneup
+name: config-tuneup
 description: >
   Audit a Claude Code installation for what is making it slow, bloated, or unpredictable -
   duplicate skills loaded twice, hooks firing on every tool call, SessionStart hooks
@@ -120,6 +120,6 @@ Re-run `cc_audit.py` after the cleanup and show the before/after counts.
 
 ## Related
 
-`claude-code-defaults` covers *configuring* Claude Code — writing `settings.json`,
+`session-defaults` covers *configuring* Claude Code — writing `settings.json`,
 permission rules, hooks, and choosing the right scope. Use that one to make a change; use
 this one to find out what to change.
