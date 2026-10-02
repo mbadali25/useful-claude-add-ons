@@ -233,6 +233,13 @@ REFUSALS = [
     ("findings-unknown-severity", _final_with(counts={"BLOCK": 0, "FIX": 1, "NIT": 0},
                                               findings=["READ|src/a.py"]), FOLLOW,
      "neither a FIX nor a NIT"),
+    # Review round 4 FIX 1: a FIX prefix hid a BLOCK-form line after a line break.
+    ("finding-embedded-newline", _final_with(counts={"BLOCK": 0, "FIX": 1, "NIT": 0},
+                                             findings=[FIX_LINE + "\n" + BLOCK_LINE]), FOLLOW,
+     "line break"),
+    ("finding-embedded-cr", _final_with(counts={"BLOCK": 0, "FIX": 1, "NIT": 0},
+                                        findings=[FIX_LINE + "\r" + BLOCK_LINE]), FOLLOW,
+     "line break"),
     ("webtest-open-missing", _final_without("webtest_open"), FOLLOW, "webtest"),
     ("webtest-open-none", _final_with(webtest_open=None), FOLLOW, "webtest"),
     ("webtest-open-false", _final_with(webtest_open=False), FOLLOW, "webtest"),
@@ -552,6 +559,20 @@ def test_check_follow_up_counts_duplicate_lines(repo, copies, code):
     result = _cli(repo, "--check-follow-up")
 
     assert result.returncode == code, result.stdout
+
+
+def test_check_follow_up_keeps_a_u2028_finding_on_one_line(repo):
+    """Review round 4 FIX 2: only a newline separates the protocol's lines, so a
+    finding carrying U+2028, quoted verbatim on one line, is quoted."""
+    line = "FIX|src/a.py:12|left\u2028right|run it"
+    _good(repo)
+    _good(repo, counts={"BLOCK": 0, "FIX": 1, "NIT": 0}, findings=[line])
+    assert _auto(repo).returncode == 0
+    _direction(repo, f"# {FOLLOW}\n\n```\n{line}\n```\n")
+
+    result = _cli(repo, "--check-follow-up")
+
+    assert result.returncode == 0, result.stdout
 
 
 # --- review_run.finish records the evidence the guard reads -------------------

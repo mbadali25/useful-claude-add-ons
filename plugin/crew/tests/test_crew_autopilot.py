@@ -1246,6 +1246,13 @@ def test_command_runs_auto_accept_only_when_eligible():
             "back through `next`" in text) == (True, True, True, True, True)
 
 
+def test_command_exempts_the_auto_accept_follow_up_from_the_new_ticket_stop():
+    """Review round 4 BLOCK: section 4's no-new-ticket stop must name section 3's
+    step 3.3 follow-up as its one exception, or the two sections contradict."""
+    text = " ".join(_command_text().split())
+    assert "new ticket (T-0012) except section 3's step 3.3 follow-up" in text
+
+
 def test_command_activates_the_ticket_only_without_a_pointer():
     text = _command_text()
     assert ("activate=1" in text, "crew_ticket.py activate --root . --ticket <ticket>" in text,

@@ -495,6 +495,12 @@ def _auto_row_problem(row):
     if not isinstance(findings, list) or not all(isinstance(f, str) for f in findings):
         return (f"round {row.get('round')} carries no finding lines (recorded before L-0510, "
                 "or by a caller that did not pass them): could not tell")
+    # One finding is one line. A line break inside a string can hide a
+    # BLOCK-form line behind a FIX prefix (review round 4 FIX 1).
+    broken = [f for f in findings if "\n" in f or "\r" in f]
+    if broken:
+        return (f"round {row.get('round')} lists a finding with an embedded line break "
+                f"({broken[0]!r}): could not tell")
     if any(f.strip().startswith("BLOCK|") for f in findings):
         return f"round {row.get('round')} lists a BLOCK line; a BLOCK is never auto-accepted"
     other = [f for f in findings if not f.strip().startswith(("FIX|", "NIT|"))]
@@ -643,7 +649,10 @@ def check_follow_up(root, ticket):
     path = os.path.join(root, ".work", "tickets", follow_up, "direction.md")
     try:
         with open(path, encoding="utf-8") as fh:
-            have = collections.Counter(fh.read().splitlines())
+            # Newline only, never splitlines(): U+2028 and friends are text
+            # inside a finding, not separators (review round 4 FIX 2). Text
+            # mode has already folded \r\n into \n.
+            have = collections.Counter(fh.read().split("\n"))
     except OSError as exc:
         return False, f"follow-up {follow_up}: cannot read {path} ({exc.strerror or exc})"
     except UnicodeDecodeError as exc:

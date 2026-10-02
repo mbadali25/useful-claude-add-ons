@@ -627,8 +627,8 @@ REVIEW_FIX_MUTATIONS = (
         # The follow-up's lines are stripped: an indented copy passes.
         "--check-follow-up strips the follow-up's lines",
         REVIEW_LEDGER,
-        "            have = collections.Counter(fh.read().splitlines())\n",
-        "            have = collections.Counter(x.strip() for x in fh.read().splitlines())\n",
+        '            have = collections.Counter(fh.read().split("\\n"))\n',
+        '            have = collections.Counter(x.strip() for x in fh.read().split("\\n"))\n',
         "tests/test_review_auto_accept.py::test_check_follow_up_refuses_by_name[indented-line]",
     ),
     (
@@ -683,5 +683,23 @@ REVIEW_FIX_MUTATIONS = (
         "",
         "tests/test_review_auto_accept.py::test_check_receipt_requires_the_auto_rows_guard"
         "[receipt-family-claude]",
+    ),
+    # Review round 4 (owner decision 2026-10-01 #5). Each run by hand against
+    # the tracked file, seen red, restored with `git checkout --`.
+    (
+        # A FIX prefix hides a BLOCK-form line after an embedded newline.
+        "auto-accept stops refusing a finding with a line break",
+        REVIEW_LEDGER,
+        "    if broken:\n",
+        "    if False:  # pylint: disable=using-constant-test\n",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[finding-embedded-newline]",
+    ),
+    (
+        # splitlines() back: U+2028 inside a quoted finding splits the line.
+        "the follow-up check splits on U+2028 again",
+        REVIEW_LEDGER,
+        '            have = collections.Counter(fh.read().split("\\n"))\n',
+        "            have = collections.Counter(fh.read().splitlines())\n",
+        "tests/test_review_auto_accept.py::test_check_follow_up_keeps_a_u2028_finding_on_one_line",
     ),
 )
