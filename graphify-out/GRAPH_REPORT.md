@@ -1,7 +1,7 @@
 # Graph Report - uca-l0555  (2026-10-02)
 
 ## Corpus Check
-- 1130 files · ~2,598,493 words
+- 1130 files · ~2,599,096 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 63 file(s) not represented in the graph (top: (none) 34, .mmd 8, .jsonl 5)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `932efda5`
+- Built from commit: `b38a1e04`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -1497,7 +1497,7 @@ Nodes (33): Landmines, AdminAuthMode, AdminCredentialChain, AZURE_CLI_WELL_KNOWN
 
 ### Community 128 - "ci_receipt.py"
 Cohesion: 0.09
-Nodes (44): Added — `crew` 1.0.120: the verify gate runs on the self-hosted pool and leaves a receipt; `ci_receipt.py check` reports whether it matches HEAD (L-0555, diagnostic), artifact_name(), build(), check(), gate_impl(), _gate_switch(), gh_fetch(), _git() (+36 more)
+Nodes (44): Added — `crew` 1.0.127: the verify gate runs on the self-hosted pool and leaves a receipt; `ci_receipt.py check` reports whether it matches HEAD (L-0555, diagnostic), artifact_name(), build(), check(), gate_impl(), _gate_switch(), gh_fetch(), _git() (+36 more)
 
 ### Community 129 - "test_review_ledger.py"
 Cohesion: 0.07
