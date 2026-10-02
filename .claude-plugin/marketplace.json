@@ -32,21 +32,15 @@
       "version": "1.1.0"
     },
     {
-      "name": "claude-code-defaults",
-      "source": "./skills/claude-code-defaults",
-      "description": "Configure how Claude Code behaves by default - CLAUDE.md instructions, settings.json, permission allow/deny/ask rules and modes, hooks, default model, and which scope (user/project/local/managed) each belongs in.",
-      "version": "1.0.1"
-    },
-    {
-      "name": "claude-code-tuneup",
-      "source": "./skills/claude-code-tuneup",
-      "description": "Audit a Claude Code install for what makes it slow or bloated - duplicate skills, per-tool-call hooks, SessionStart injections, disabled-but-installed plugins, overlapping MCP servers, oversized CLAUDE.md - and return a ranked cleanup plan.",
-      "version": "1.0.0"
-    },
-    {
       "name": "cloudflare",
       "source": "./skills/cloudflare",
       "description": "Cloudflare v4 API - DNS, zones, cache, WAF, page rules, SSL/TLS, Workers/KV/R2, Zero Trust, analytics.",
+      "version": "1.1.0"
+    },
+    {
+      "name": "config-tuneup",
+      "source": "./skills/config-tuneup",
+      "description": "Audit a Claude Code install for what makes it slow or bloated - duplicate skills, per-tool-call hooks, SessionStart injections, disabled-but-installed plugins, overlapping MCP servers, oversized CLAUDE.md - and return a ranked cleanup plan.",
       "version": "1.1.0"
     },
     {
@@ -158,6 +152,12 @@
       "version": "2.0.0"
     },
     {
+      "name": "session-defaults",
+      "source": "./skills/session-defaults",
+      "description": "Configure how Claude Code behaves by default - CLAUDE.md instructions, settings.json, permission allow/deny/ask rules and modes, hooks, default model, and which scope (user/project/local/managed) each belongs in.",
+      "version": "1.1.0"
+    },
+    {
       "name": "shipstation",
       "source": "./skills/shipstation",
       "description": "ShipStation across V2, legacy V1, and ShipEngine - shipments, labels, rates, carriers, warehouses, inventory, products, orders, tracking, batches, manifests.",
@@ -221,7 +221,7 @@
       "name": "crew",
       "source": "./plugin/crew",
       "description": "Virtual dev team for multi-repo legacy work - one interactive session owns a ticket from brainstorm through spec, plan, implement, tests, docs and review to done; 4 context-isolated agents (explorer, reviewer, security, researcher) plus on-demand stack skills, 36 slash commands, 31 bundled skills, and deterministic hooks: a budgeted context hook (on by default) that carries the handoff across a clear or compaction, plan-approval and scope guards with a completion audit, an opt-in cloud/destructive guard, and a verify gate that fails unverified turns. /crew:migrate carries a 0.20 setup forward.",
-      "version": "1.0.115"
+      "version": "1.0.119"
     },
     {
       "name": "gizmoduck",

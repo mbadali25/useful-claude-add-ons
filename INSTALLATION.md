@@ -152,9 +152,8 @@ claude plugin install aws-opensearch@useful-claude-add-ons
 claude plugin install bitbucket@useful-claude-add-ons
 claude plugin install checkpoint-email@useful-claude-add-ons
 claude plugin install cisco-meraki@useful-claude-add-ons
-claude plugin install claude-code-defaults@useful-claude-add-ons
-claude plugin install claude-code-tuneup@useful-claude-add-ons
 claude plugin install cloudflare@useful-claude-add-ons
+claude plugin install config-tuneup@useful-claude-add-ons
 claude plugin install drata@useful-claude-add-ons
 claude plugin install i-have-adhd@useful-claude-add-ons
 claude plugin install infra-work-ticketing@useful-claude-add-ons
@@ -167,6 +166,7 @@ claude plugin install notify@useful-claude-add-ons
 claude plugin install power-automate-api@useful-claude-add-ons
 claude plugin install repo-docs@useful-claude-add-ons
 claude plugin install report-builder@useful-claude-add-ons
+claude plugin install session-defaults@useful-claude-add-ons
 claude plugin install shipstation@useful-claude-add-ons
 claude plugin install sophos-central@useful-claude-add-ons
 claude plugin install terraform-docs-readme@useful-claude-add-ons
