@@ -287,10 +287,14 @@ def reserve(root, ticket, provider, model=None):
 
 
 def _ignored_count(value):
-    """review.json's `ignored_lines`: an int count (L-0576). Anything else -- a
-    record written before the field existed -- counts as 0 here; review.json
-    itself is never read back for an acceptance decision."""
-    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+    """review.json's `ignored_lines`: a non-negative int count (L-0576), kept
+    as is. Anything else -- missing, null, a bool, a string, a negative -- is
+    unknown and recorded as None, never 0: 0 means "none were ignored", and
+    a reader (L-0510's auto-accept) must be able to tell that from "could not
+    tell"."""
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
 
 
 def record(root, ticket, number, review):

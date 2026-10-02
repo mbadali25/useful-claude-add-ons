@@ -1586,7 +1586,7 @@ then the train is advisory.
   the shortfall wording net `_SHORTFALL` is `:125`). The ignored lines go to
   review.json's `ignored_text`, with the count as `ignored_lines` (`plugin/crew/hooks/scripts/review_run.py:428`), a
   `review: FINDINGS kept; ...` line (`:467`) and, as a count, the ledger row
-  (`plugin/crew/hooks/scripts/review_ledger.py:335`).
+  (`plugin/crew/hooks/scripts/review_ledger.py:339`; null when review.json's value is missing or not a non-negative int, never 0).
 - DERIVED (T-0087, crew 1.0.53): an INCOMPLETE round is classed by
   `review_verdict.failure_class` (`plugin/crew/hooks/scripts/review_verdict.py:240`):
   `tree` when a bundle or webtest reason was added, else `tool` when the answer was

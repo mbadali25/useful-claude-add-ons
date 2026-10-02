@@ -653,4 +653,13 @@ REVIEW_FIX_MUTATIONS = (
         ("tests/test_review_verdict.py::"
          "test_parse_harmless_stray_lines_beside_findings_are_recovered"),
     ),
+    (
+        # L-0510 lane: an unknown ignored-line count read as 0 ("none").
+        "the ledger records an unknown ignored-line count as 0",
+        REVIEW_LEDGER,
+        "        return value\n    return None\n",
+        "        return value\n    return 0\n",
+        ("tests/test_review_refund.py::"
+         "test_ledger_row_records_an_unknown_ignored_count_as_null_never_0"),
+    ),
 )

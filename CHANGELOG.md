@@ -21,14 +21,15 @@ does not implement.
   bundle/stream reason (`parse` now takes these as `prior_reasons`, so `review_run.finish` can no
   longer recover a round its own checks fail).
 - **Shown, not dropped.** `review.json` carries `ignored_lines` (an int on every round, 0 when none; the
-  contract L-0510 reads) and the lines verbatim in `ignored_text`, the ledger row the count, and
+  contract L-0510 reads) and the lines verbatim in `ignored_text`, the ledger row the count (null,
+  never 0, when review.json's value is missing or malformed), and
   `review_run` prints `review: FINDINGS kept; N line(s) outside the contract were ignored, first:
   ...`; `/crew:review` step 3.1 reports them verbatim.
 - **Measured.** Over every preserved review on the Linux host (56 with an out.txt and manifest),
   the parser before this change gave 53 FINDINGS, 1 CLEAN, 2 INCOMPLETE; after it, T-0100 r2 is
   FINDINGS and the reviewer-declared T-0028 round stays INCOMPLETE. Most of the ledgers' 17
   historic INCOMPLETEs were already recovered by T-0079 and T-0072's fixes.
-- Thirteen new `sabotage_review.py` entries; the `crew_standards.py` proposals docstring and the
+- Fifteen new `sabotage_review.py` entries; the `crew_standards.py` proposals docstring and the
   crew-qa-standards R5 wording are a follow-up feature PR (tooling-PR rule).
 
 ### Fixed - `crew` 1.0.114, `obsidian-vault` 0.4.16: every pwsh the test suites spawn gets its own XDG_CACHE_HOME (L-0557)

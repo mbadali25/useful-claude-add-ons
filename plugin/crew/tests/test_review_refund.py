@@ -306,6 +306,36 @@ def test_ledger_row_counts_the_ignored_lines(repo, tmp_path):
     assert rl.status(str(repo), "T1")["rounds"][-1]["ignored_lines"] == 1
 
 
+_MISSING = object()
+
+
+@pytest.mark.parametrize("value", [_MISSING, None, "3", 2.0, True, False, -1, [], ["x"]],
+                         ids=["missing", "null", "str", "float", "true", "false", "negative",
+                              "empty-list", "list"])
+def test_ledger_row_records_an_unknown_ignored_count_as_null_never_0(repo, value):
+    """L-0510 lane: unknown never becomes 0. A review.json whose `ignored_lines`
+    is missing or not a non-negative int leaves the ledger row's count null."""
+    ok, number, message = rl.reserve(str(repo), "T1", "codex")
+    assert ok, message
+    review = _review("FINDINGS")
+    if value is not _MISSING:
+        review["ignored_lines"] = value
+
+    rl.record(str(repo), "T1", number, review)
+
+    assert _rows(repo)[-1]["ignored_lines"] is None
+
+
+@pytest.mark.parametrize("value", [0, 1, 7])
+def test_ledger_row_keeps_a_valid_ignored_count(repo, value):
+    ok, number, message = rl.reserve(str(repo), "T1", "codex")
+    assert ok, message
+
+    rl.record(str(repo), "T1", number, dict(_review("FINDINGS"), ignored_lines=value))
+
+    assert _rows(repo)[-1]["ignored_lines"] == value
+
+
 def test_finish_recovers_nothing_when_the_bundle_changed(repo, tmp_path):
     """A tree reason found by `finish` itself rules recovery out: the round is
     INCOMPLETE, the stray line is a reason, and nothing says FINDINGS kept."""
@@ -327,7 +357,8 @@ def test_finish_records_no_ignored_lines_on_a_strict_round(repo, tmp_path):
 
     assert (result.returncode, review["ignored_lines"], review["ignored_text"],
             " kept; " in result.stdout) == (1, 0, [], False), result.stdout + result.stderr
-    assert type(review["ignored_lines"]) is int  # L-0510 reads it as an int
+    assert isinstance(review["ignored_lines"], int) and not isinstance(
+        review["ignored_lines"], bool)  # L-0510 reads it as an int
 
 
 def test_refund_limit_holds_through_review_run(repo, tmp_path):
