@@ -47,11 +47,21 @@ written as `/`.
 FAILURE. Nothing here may change a round's verdict or exit code: `record`
 catches every exception and returns a `review:` line naming it and quoting the
 exact row to append by hand. A write cut short after some bytes landed says so,
-so the partial row is replaced rather than a second row added beside it.
+so the partial row is replaced rather than a second row added beside it; a
+close that fails after every byte landed says the row IS written.
+
+LINKS AND SPECIAL FILES. The checkout decides what `.crew` and
+`.crew/metrics.md` are. A symlinked `.crew` directory or metrics file, or a
+metrics path that is not a regular file (a FIFO would block forever after the
+ledger has recorded the round), is refused: nothing followed, nothing written,
+the row quoted. The open uses O_NOFOLLOW and O_NONBLOCK where the platform has
+them, and the descriptor is checked to be a regular file before anything is
+read or written.
 """
 import datetime
 import json
 import os
+import stat
 
 import crew_common
 import crew_incident
@@ -121,7 +131,7 @@ def _codex_limit_before(root, ticket, number):
 def family_tag(root, ticket, number, provider, reviewer_family, note=""):
     """The family part of the reviewer cell - see THE ROW. May raise."""
     said = (note or "").split()
-    if provider == "claude" and (PROBE_LIMITED_NOTE in said or CODEX_LIMIT in (note or "")
+    if provider == "claude" and (PROBE_LIMITED_NOTE in said
                                  or _codex_limit_before(root, ticket, number)):
         return CODEX_LIMIT
     families, source = crew_state.author_families(root, crew_state.load_config(root))
@@ -152,24 +162,50 @@ class PartialWrite(OSError):
     """Some of the row's bytes reached the file before the write failed."""
 
 
+class NotARegularFile(OSError):
+    """The metrics path, or its `.crew` directory, is a symlink or not a plain
+    file. Nothing is followed and nothing is written."""
+
+
+_OPEN_FLAGS = (os.O_RDWR | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+               | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+
+
+def _refuse_links(path):
+    """Refuse a symlinked `.crew` directory or metrics file, and anything at
+    the path that is not a regular file: the checkout decides what these are,
+    and a writer that follows them appends to a file outside it, or blocks
+    forever on a FIFO after the ledger has already recorded the round."""
+    parent = os.path.dirname(path)
+    if os.path.islink(parent):
+        raise NotARegularFile(f"{parent} is a symlink; not following it")
+    try:
+        mode = os.lstat(path).st_mode
+    except FileNotFoundError:
+        return
+    if not stat.S_ISREG(mode):
+        raise NotARegularFile(f"{path} is not a regular file; not writing through it")
+
+
 def append(path, line):
     """Append `line` and a newline, after a newline if the file does not end
-    in one, through one O_APPEND descriptor, looping on a short write. Raises
-    OSError, or PartialWrite once any byte has landed."""
-    prefix = ""
-    try:
-        with open(path, "rb") as handle:
-            handle.seek(0, os.SEEK_END)
-            if handle.tell():
-                handle.seek(-1, os.SEEK_END)
-                prefix = "" if handle.read(1) == b"\n" else "\n"
-    except FileNotFoundError:
-        pass
-    data = (prefix + line + "\n").encode("utf-8")
+    in one, through one O_APPEND descriptor that follows no symlink and never
+    blocks on a FIFO, looping on a short write. Returns "" or, when the close
+    failed AFTER every byte landed, that error - the row IS written. Raises
+    NotARegularFile or OSError before any byte lands, PartialWrite after."""
+    _refuse_links(path)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+    _refuse_links(path)
+    fd = os.open(path, _OPEN_FLAGS, 0o644)
     done = 0
     try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise NotARegularFile(f"{path} is not a regular file; not writing through it")
+        prefix = ""
+        if os.fstat(fd).st_size:
+            os.lseek(fd, -1, os.SEEK_END)
+            prefix = "" if os.read(fd, 1) == b"\n" else "\n"
+        data = (prefix + line + "\n").encode("utf-8")
         while done < len(data):
             try:
                 wrote = os.write(fd, data[done:])
@@ -180,8 +216,17 @@ def append(path, line):
             if wrote <= 0:
                 raise PartialWrite(f"{done} of {len(data)} bytes written: write returned {wrote}")
             done += wrote
-    finally:
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        raise
+    try:
         os.close(fd)
+    except OSError as exc:
+        return _one_line(exc)
+    return ""
 
 
 def record(root, ticket, number, review, manifest_path, note=""):
@@ -203,10 +248,13 @@ def record(root, ticket, number, review, manifest_path, note=""):
         if problem:
             return (f"review: metrics row NOT written ({_one_line(problem)}); append it by hand to the "
                     f"main checkout's .crew/metrics.md: {line}")
-        append(path, line)
+        closed = append(path, line)
     except PartialWrite as exc:
         return (f"review: metrics row PARTLY written to {path} ({_one_line(exc)}); replace the partial "
                 f"last line by hand with: {line}")
     except Exception as exc:  # pylint: disable=broad-except  # noqa: BLE001 - keep the verdict
         return f"review: metrics row NOT written ({_one_line(exc)}); append it by hand: {line}"
+    if closed:
+        return (f"review: metrics row appended to {path} (closing it then failed: {closed}; "
+                "the row is written - do not append it again)")
     return f"review: metrics row appended to {path}"

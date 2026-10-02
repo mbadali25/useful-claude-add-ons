@@ -13,6 +13,7 @@ REVIEW_RUN = os.path.join(CREW, "hooks", "scripts", "review_run.py")
 REVIEW_PATCH = os.path.join(CREW, "hooks", "scripts", "review_patch.py")
 REVIEW_PROMPT = os.path.join(CREW, "hooks", "scripts", "review_prompt.py")
 REVIEW_GATE = os.path.join(CREW, "hooks", "scripts", "review_gate.py")
+REVIEW_METRICS = os.path.join(CREW, "hooks", "scripts", "review_metrics.py")
 
 REVIEW_FIX_MUTATIONS = (
     # The T1 review-fix round. Each was also run by hand against the tracked
@@ -545,5 +546,14 @@ REVIEW_FIX_MUTATIONS = (
         '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"]\n',
         "tests/test_review_patch.py::"
         "test_metrics_row_stays_out_of_the_bundle_and_the_rest_of_crew_stays_in",
+    ),
+    (
+        # L-0578 review r1 BLOCK: a symlinked .crew directory is followed and
+        # the row lands in a file outside the checkout.
+        "the metrics writer follows a symlinked .crew directory",
+        REVIEW_METRICS,
+        "    if os.path.islink(parent):\n",
+        "    if False:\n",
+        "tests/test_review_metrics.py::test_a_symlinked_crew_dir_is_not_followed",
     ),
 )

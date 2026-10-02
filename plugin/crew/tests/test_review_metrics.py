@@ -359,3 +359,87 @@ def test_a_multi_line_error_prints_as_one_line(monkeypatch, tmp_path):
                                  str(tmp_path / "manifest.json"))
 
     assert ("\n" in line, "first line second line" in line) == (False, True)
+
+
+def _record(tmp_path):
+    return review_metrics.record(str(tmp_path), "T1", 1, {"verdict": "CLEAN", "counts": {}},
+                                 str(tmp_path / "manifest.json"))
+
+
+@pytest.fixture(name="known_family")
+def _known_family(monkeypatch):
+    monkeypatch.setattr(review_metrics, "family_tag", lambda *a, **k: "family unknown, author from x")
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink") or sys.platform == "win32",
+                    reason="symlinks need privileges on Windows")
+def test_a_symlinked_metrics_file_is_not_followed(tmp_path, known_family):
+    outside = tmp_path / "outside.txt"
+    outside.write_text("victim\n", encoding="utf-8")
+    (tmp_path / ".crew").mkdir()
+    os.symlink(outside, tmp_path / ".crew" / "metrics.md")
+
+    line = _record(tmp_path)
+
+    assert (line.startswith("review: metrics row NOT written"),
+            outside.read_text(encoding="utf-8")) == (True, "victim\n"), line
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink") or sys.platform == "win32",
+                    reason="symlinks need privileges on Windows")
+def test_a_symlinked_crew_dir_is_not_followed(tmp_path, known_family):
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    os.symlink(elsewhere, tmp_path / ".crew")
+
+    line = _record(tmp_path)
+
+    assert (line.startswith("review: metrics row NOT written"), os.listdir(elsewhere)) == (
+        True, []), line
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs on this platform")
+def test_a_fifo_is_refused_without_blocking(tmp_path, known_family):
+    (tmp_path / ".crew").mkdir()
+    os.mkfifo(tmp_path / ".crew" / "metrics.md")
+
+    line = _record(tmp_path)
+
+    assert line.startswith("review: metrics row NOT written"), line
+
+
+def test_a_regular_file_is_still_appended(tmp_path, known_family):
+    (tmp_path / ".crew").mkdir()
+    (tmp_path / ".crew" / "metrics.md").write_text("old\n", encoding="utf-8")
+
+    line = _record(tmp_path)
+
+    assert ((tmp_path / ".crew" / "metrics.md").read_text(encoding="utf-8").count("\n"),
+            line.startswith("review: metrics row appended to ")) == (2, True), line
+
+
+def test_a_close_failing_after_the_write_says_the_row_is_written(monkeypatch, tmp_path,
+                                                                    known_family):
+    real = os.close
+
+    def close_then_fail(fd):
+        real(fd)
+        raise OSError(5, "Input/output error")
+    monkeypatch.setattr(review_metrics.os, "close", close_then_fail)
+
+    line = _record(tmp_path)
+
+    assert ("the row is written" in line,
+            (tmp_path / ".crew" / "metrics.md").read_text(encoding="utf-8").count("| T1 |")) == (
+        True, 1), line
+
+
+def test_prose_naming_the_limit_does_not_label_it(monkeypatch):
+    monkeypatch.setattr(review_metrics.crew_state, "author_families",
+                        lambda root, cfg: (frozenset({"claude"}), "config"))
+    monkeypatch.setattr(review_metrics, "_codex_limit_before", lambda *a: False)
+
+    tag = review_metrics.family_tag("/nonexistent-l0578", "T1", 1, "claude", "claude",
+                                    "codex-probe=0 same-family: codex limit was not observed")
+
+    assert tag == "same-family, author from config"
