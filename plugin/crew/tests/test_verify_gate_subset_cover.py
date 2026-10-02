@@ -20,6 +20,7 @@ The .ps1 flavour is exercised wherever pwsh exists: on a non-Windows host it
 is run with OS=Windows_NT, which is the only thing its first line checks
 (`verify-gate.ps1:45`); Resolve-CrewBash then finds the host's bash.
 """
+import glob
 import json
 import os
 import shutil
@@ -447,7 +448,7 @@ def _pytest_targets_are_inside_the_suite(cmd):
         path = target.split("::", 1)[0]
         if not path.startswith("plugin/crew/tests/") or "/" in path[len("plugin/crew/tests/"):]:
             return False
-        hits = [h for h in __import__("glob").glob(os.path.join(_REPO, path))
+        hits = [h for h in glob.glob(os.path.join(_REPO, path))
                 if os.path.dirname(h) == suite]
         if not hits or not all(os.path.basename(h).startswith("test_") and h.endswith(".py")
                                 for h in hits):
@@ -456,8 +457,8 @@ def _pytest_targets_are_inside_the_suite(cmd):
 
 
 def test_repo_map_declarations_are_valid_and_plausible():
-    rules = json.loads(open(os.path.join(_REPO, ".crew", "verify.json"),
-                            encoding="utf-8").read())["rules"]
+    with open(os.path.join(_REPO, ".crew", "verify.json"), encoding="utf-8") as fh:
+        rules = json.load(fh)["rules"]
     valid, notices = verify_record.cover_declarations(rules)
     supersets = {rules[j]["run"][0] for j in valid.values()}
 

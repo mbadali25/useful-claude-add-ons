@@ -547,7 +547,7 @@ def cover_plan(rules, rule_order, rule_cmds, cmds, always=(), environ=None):
         notices.append("verify-gate: PYTEST_ADDOPTS is set, so a subset's test selection may "
                        "differ from its superset's - declared coverage NOT applied, every rule runs")
         return cmds, none, notices
-    moved = [c for c in cmds if c in owners and owners[c] <= candidates and c not in pinned]
+    moved = [c for c in cmds if c in owners and owners[c] <= candidates]
     moved_set = set(moved)
     order = [c for c in cmds if c not in moved_set] + moved
     pos = {c: k for k, c in enumerate(order)}
