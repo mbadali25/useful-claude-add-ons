@@ -15,7 +15,7 @@ Pick them up in the order below: tickets closest to landing first, then the rest
 | Order | Ticket | INDEX status | Phase | Branch | Draft PR |
 |---|---|---|---|---|---|
 | 1 | [T-0503](T-0503.md) - bitbucket skill: trailing-slash variables endpoints, access tokens are UI-only (and the ro | in-progress | Implement done; refresh-check waiver being applied when stopped | `T-0503-build` | #270 |
-| 2 | [T-0504](T-0504.md) - crew stops asking the owner to run its own bookkeeping commands (crew_ticket.py activate a | in-progress | Implement done - Review round 1 was starting | `T-0504-build` | #271 |
+| 2 | [T-0504](T-0504.md) - PULLED BACK LOCAL 2026-10-01, cloud must not work it - crew runs its own bookkeeping commands | in-progress (local) | owned by the local lane | `T-0504-build` | #271 |
 | 3 | [T-0501](T-0501.md) - crew_instructions.py rules warns (or refuses) when generating .claude/rules from codemaps  | in-progress | Review round 1 complete (FINDINGS) - Fix next | `T-0501-build` | #272 |
 | 4 | [T-0107](T-0107.md) - gizmoduck routine CLI: headless checkov/trivy/dependency-check/semgrep/zap/testssl/nmap/ni | in-progress | Fix after review round 1 (in progress) | `T-0107-build` | #273 |
 | 5 | [T-0104](T-0104.md) - webtest scaffold for multi-module repos: detect modules, honour testDir, close the gaps it | approved | Implement (in progress when stopped) | `T-0104-build` | #274 |
