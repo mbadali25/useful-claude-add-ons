@@ -584,7 +584,7 @@ def prereview_gate(args):
     to <scratch>/prereview.json for `finish` to copy into review.json."""
     try:
         results, configured = review_checks.run_checks(args.root, args.manifest)
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except Exception as exc:  # noqa: BLE001 - boundary, see below  pylint: disable=broad-exception-caught
         # Boundary: an escaped exception would exit 1, which reads as FINDINGS.
         results, configured = [{"name": "pre-review", "status": review_checks.COULD_NOT,
                                 "files": 0, "new": [],

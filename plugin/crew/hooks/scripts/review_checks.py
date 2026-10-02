@@ -597,7 +597,7 @@ def main(argv):
     args = parser.parse_args(argv)
     try:
         results, configured = run_checks(os.path.abspath(args.root), args.manifest)
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except Exception as exc:  # noqa: BLE001 - boundary, see below  pylint: disable=broad-exception-caught
         # The CLI's boundary: exit 1 means "new findings", so a crash must not
         # leave through the default traceback status.
         print(f"pre-review checks: COULD NOT CHECK - {type(exc).__name__}: {exc}")
