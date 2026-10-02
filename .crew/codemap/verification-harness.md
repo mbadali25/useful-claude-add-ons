@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@11ec013a
+anchor: useful-claude-add-ons@164cc92b
 verified: 2026-10-01
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -48,7 +48,7 @@ L-0516's poll-fixture rule, inserted right after the whole-suite rule as rule 10
 `test_crew_fixtures.py`). Every rule from the old rule 10 (`crew_upgrade.py`) on is therefore one
 higher, and every line from `:177` on six lines further down, than the paragraphs below state
 where they read main's tree (L-0513's rule 22 text at `:256-260` is `:262-266` here, its rule 40
-at `:426-430` is rule 41 at `:432-436`); `default` is `:449` and `unmapped` `:450`.
+at `:426-430` is rule 41 at `:432-436`); `default` is `:460` and `unmapped` `:450`.
 
 **DERIVED, read in full via `json.load` on L-0520 PR 1's merge of main `844bfc36` (T-0028 landed as
 crew 1.0.85): 430 lines, 40 rules.** Main's 39 rules plus L-0520's merge train rule, which sits as
@@ -156,7 +156,7 @@ Notable rules, re-read directly:
   normalisation one byte too wide lets a scope or risk change through unapproved, and names the
   `APPROVAL DIGEST` entries in `plugin/crew/tests/sabotage_scope.py` as the mutations proving
   the tests can fail. Both paths also match rule 0 and rule 15 (`**/*.py`) by `fnmatch`.
-  Since T-0004, `crew_ticket.py` also carries `header_line`/`parse_risk` (`:517-519`, the spec
+  Since T-0004, `crew_ticket.py` also carries `header_line`/`parse_risk` (`:519-521`, the spec
   header's `risk:`; unknown reads `high`, never `low`), which only
   `plugin/crew/tests/test_crew_autopilot.py` exercises — a rule 27 test, while rule 27's `paths`
   do not name `crew_ticket.py`. So an edit there runs rules 0, 11 and 15, none of which runs
@@ -2157,3 +2157,4 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `5ffffbe3` (main's side) and `92c93bf7` (T-0504's side) -> `b5f8d333` on 2026-10-01 (T-0504 merges main 2906dcbd at 464d9bd0 with rerere disabled; crew 1.0.113).** Both histories are kept above, main's first. Main's side since `05a679bf` touched none of T-0504's code files, so T-0504's citations into them stand as re-read at `92c93bf7`; main's citations into `.crew/verify.json` and `CHANGELOG.md` were mapped by diff from `5ffffbe3` (T-0504's verify.json paths add lines inside rules 25, 27 and 31), and the present-tense ranges of rules 25-31 re-read by content. Nothing was executed for this note.
 
 **Re-anchored `6053b65d` (main's side) and `b5f8d333` (T-0504's side) -> `11ec013a` on 2026-10-01 (T-0504 merges main `ffd11270`, L-0557 #300, at `45f107a9` with rerere disabled; crew 1.0.118 at `11ec013a`).** Both provenance histories are kept above, main's first. Body citations were mapped with difflib from the tree each line came from (`53793b1b` for T-0504's lines, `ffd11270` for main's) to this tree (`/root/crew-tmp/t-0504/remap2p.py`, machine-local); dated `**Re-anchored` notes keep the lines of their own commit. Main's side since `2906dcbd` (L-0557: pwsh XDG_CACHE_HOME in the test suites) touched none of T-0504's code files; T-0504's CHANGELOG entry moved main's `CHANGELOG.md` citations +50 and T-0504's verify.json and README lines moved main's `.crew/verify.json` and `plugin/crew/README.md` citations. No suite was executed for this note.
+**Re-anchored `11ec013a` -> `164cc92b` on 2026-10-02 (T-0504 review round 1 fixes: `crew_ticket.py` root modelling, pointer lock and compare-and-swap; `crew_autopilot.py` `_hollow_receipt`; `approval_hook.py` `_folder`; the build branch back to crew 1.0.114 under REPO-03).** Body citations were mapped with difflib from `5fe263fb` to this tree (`/root/crew-tmp/t-0504/citemap3.py`, machine-local): 2 body citations moved by difflib (`CHANGELOG.md`, `crew_ticket.py`). Dated `**Re-anchored` notes keep the lines of their own commit. No suite was executed for this note.
