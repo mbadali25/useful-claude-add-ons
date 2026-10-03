@@ -59,12 +59,32 @@ def test_no_map_is_na(tmp_path):
 
 # --- G1 reach (D10) ------------------------------------------------------------------------
 
-def test_g1_a_rule_without_reach_is_a_gap(tmp_path):
-    rule = _rule()
+def _undeclared(run):
+    rule = _rule(run=run)
     del rule["reach"]
-    _map(tmp_path, rules=[_rule(), rule])
+    return rule
+
+
+def test_g1_a_rule_the_stop_gate_defers_is_named_skipped(tmp_path):
+    _map(tmp_path, rules=[_rule(), _undeclared(["curl -fsS https://x/health"])])
     row = _row(tmp_path, "G1")
-    assert row["status"] == qa_audit.GAP and "SKIPPED" in row["evidence"] and "rules 1" in row["evidence"]
+    assert row["status"] == qa_audit.GAP
+    assert "1 rule(s) SKIPPED on every Stop" in row["evidence"] and "rules[1] verb: curl" in row["evidence"]
+
+
+def test_g1_an_undeclared_local_rule_runs_and_is_not_called_skipped(tmp_path):
+    """CONFIG.md §19: a plain local command runs on Stop without `reach`. It is
+    still a GAP (the standard wants it declared) but never reads as skipped."""
+    _map(tmp_path, rules=[_undeclared(["python3 -m pytest tests -q"])])
+    row = _row(tmp_path, "G1")
+    assert row["status"] == qa_audit.GAP
+    assert "SKIPPED" not in row["evidence"] and "run but declare no `reach`" in row["evidence"]
+
+
+def test_g1_without_the_gate_classifier_is_unknown(tmp_path, monkeypatch):
+    monkeypatch.setattr(qa_audit_env, "verify_record", None)
+    _map(tmp_path, rules=[_undeclared(["pytest -q"])])
+    assert _row(tmp_path, "G1")["status"] == qa_audit.UNKNOWN
 
 
 def test_g1_unpriced_rule_is_a_gap(tmp_path):
@@ -321,10 +341,8 @@ def test_stamp_outside_git_is_none(tmp_path):
 
 def test_fleet_names_each_checkout_and_d10(tmp_path):
     a, b = tmp_path / "a", tmp_path / "group" / "b"
-    rule = _rule()
-    del rule["reach"]
-    _map(a, rules=[rule])
-    _map(b, rules=[_rule()])
+    _map(a, rules=[_undeclared(["bash -c 'make test'"])])
+    _map(b, rules=[_rule(), _undeclared(["pytest -q"])])
     _write(b, ".crew/STATUS.md", "| Phase | State |\n|---|---|\n| 1 | done |\n| 5 | done |\n| 8 | todo |\n")
     out = qa_audit.fleet(str(tmp_path))
     line_a = next(ln for ln in out.splitlines() if ln.startswith("| a |"))

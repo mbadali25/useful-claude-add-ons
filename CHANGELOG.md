@@ -4,8 +4,12 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.157: QA standards for repositories crew sets up (L-0618)
+### Added — `crew` 1.0.158: QA standards for repositories crew sets up (L-0618)
 
+- G1 asks the Stop gate's own classifier (`verify_record.scan_reach`, CONFIG.md §19) which
+  undeclared rules it defers, and names only those as skipped: a plain local command without
+  `reach` still runs on Stop, so the review's "every rule without `reach` is skipped" overstated
+  D10. `--all-repos` reports D10 only for a deferred rule. Its `reach` references cite §19, not §18.
 - `qa_doc.py`'s diagrams draw without crossing lines: a red result ends in its own fix node
   instead of looping back to the gate, and the audit loop is its own straight-line diagram
   (`docs/diagrams/process-qa-audit.mmd`). `test_the_gate_diagram_has_no_back_edge` holds it.

@@ -27,7 +27,8 @@ the audit reads have moved since. It is the only write, and only on request.
 
 `--all-repos ROOT` prints one line per crew checkout found under ROOT (a
 directory holding `.crew/`, at most two levels down): the setup phase reached,
-the GAP and UNKNOWN counts, and whether D10 (rules without `reach`) is live.
+the GAP and UNKNOWN counts, and whether D10 is live: an undeclared rule the
+Stop gate's own classifier defers (CONFIG.md §19).
 
 Usage: qa_audit.py [--root DIR] [--json] [--strict] [--stamp] [--all-repos ROOT]
 Exit: 0 report printed; 1 with --strict and any GAP or UNKNOWN; 2 usage.
@@ -375,7 +376,7 @@ def fleet(base):
     for repo in crew_checkouts(base):
         rows = audit(repo)
         d10 = next((r for r in rows if r["rule"] == "G1"), None)
-        d10_text = {GAP: "YES" if d10 and "reach" in d10["evidence"] else "no",
+        d10_text = {GAP: "YES" if d10 and "SKIPPED" in d10["evidence"] else "no",
                     PASS: "no", NA: "no map"}.get(d10["status"] if d10 else UNKNOWN, "unknown")
         lines.append(f"| {os.path.relpath(repo, base)} | {_phase_reached(repo)} | "
                      f"{sum(r['status'] == GAP for r in rows)} | "

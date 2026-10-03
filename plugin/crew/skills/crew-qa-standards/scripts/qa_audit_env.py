@@ -17,6 +17,16 @@ import json
 import os
 import re
 import subprocess
+import sys
+
+# The Stop gate's own reach classifier, read (never changed) so G1 and the gate
+# cannot disagree about which undeclared rules are deferred. CONFIG.md §19.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                os.pardir, os.pardir, os.pardir, "hooks", "scripts"))
+try:
+    import verify_record  # noqa: E402  pylint: disable=wrong-import-position
+except ImportError:  # a copy of this skill without crew's hooks beside it
+    verify_record = None
 
 PASS, GAP, NA, UNKNOWN = "PASS", "GAP", "N/A", "UNKNOWN"
 REF = "references/environments.md"
@@ -110,9 +120,28 @@ def _map_or_row(root, rule, title):
 
 # --- G: gate rules that can fail ----------------------------------------------------------
 
+def deferred_on_stop(root, rules):
+    """{index: reason} for each rule without `reach` that the Stop gate defers,
+    by verify_record.scan_reach -- the gate's own classifier. None when that
+    module is not importable: an unknown, never an empty dict."""
+    if verify_record is None:
+        return None
+    out = {}
+    for i, rule in enumerate(rules):
+        if "reach" in rule:
+            continue
+        status, detail = verify_record.scan_reach(as_list(rule.get("run")), root)
+        if status != "local":
+            out[i] = f"{status}{': ' + detail if detail else ''}"
+    return out
+
+
 def check_rule_reach(root, ci, tests):
-    """G1 (standard 19, defect D10): a rule without `reach` is skipped on Stop,
-    so the gate records skips while its marker advances having run nothing."""
+    """G1 (standard 19, defect D10): an undeclared rule whose command has shell
+    syntax, a remote verb or a wrapper script is deferred on every Stop, so the
+    gate records it as skipped while its marker advances (CONFIG.md §19). An
+    undeclared plain local command still runs; it is a GAP only because the
+    standard wants every rule declared."""
     title = "Every gate rule declares reach and seconds"
     vmap, row = _map_or_row(root, "G1", title)
     if row:
@@ -120,20 +149,29 @@ def check_rule_reach(root, ci, tests):
     rules = [r for r in vmap.get("rules") or [] if isinstance(r, dict)]
     if not rules:
         return _row("G1", title, NA, "verify.json declares no rules")
-    no_reach = [str(i) for i, r in enumerate(rules) if "reach" not in r]
+    no_reach = [i for i, r in enumerate(rules) if "reach" not in r]
     no_seconds = [str(i) for i, r in enumerate(rules)
                   if not isinstance(r.get("seconds"), (int, float)) or isinstance(r.get("seconds"), bool)]
-    if no_reach or no_seconds:
-        parts = []
-        if no_reach:
-            parts.append(f"{len(no_reach)} of {len(rules)} rule(s) have no `reach` and are SKIPPED on "
-                         f"every Stop (rules {', '.join(no_reach[:8])}); declare each by hand "
-                         "(CONFIG.md §18) until L-0562's --stamp-reach lands")
-        if no_seconds:
-            parts.append(f"{len(no_seconds)} rule(s) have no numeric `seconds` (rules "
-                         f"{', '.join(no_seconds[:8])})")
-        return _row("G1", title, GAP, "; ".join(parts))
-    return _row("G1", title, PASS, f"all {len(rules)} rule(s) declare reach and seconds")
+    if not no_reach and not no_seconds:
+        return _row("G1", title, PASS, f"all {len(rules)} rule(s) declare reach and seconds")
+    deferred = deferred_on_stop(root, rules) if no_reach else {}
+    if deferred is None:
+        return _row("G1", title, UNKNOWN, f"{len(no_reach)} rule(s) have no `reach`, and the gate's "
+                    "classifier (hooks/scripts/verify_record.py) could not be imported to tell which "
+                    "the Stop gate skips")
+    parts = []
+    if deferred:
+        parts.append(f"{len(deferred)} rule(s) SKIPPED on every Stop: " + "; ".join(
+            f"rules[{i}] {why}" for i, why in list(deferred.items())[:6]))
+    runs = [str(i) for i in no_reach if i not in deferred]
+    if runs:
+        parts.append(f"{len(runs)} rule(s) run but declare no `reach` (rules {', '.join(runs[:8])})")
+    if no_reach:
+        parts.append("declare each by hand (CONFIG.md §19) until L-0562's --stamp-reach lands")
+    if no_seconds:
+        parts.append(f"{len(no_seconds)} rule(s) have no numeric `seconds` (rules "
+                     f"{', '.join(no_seconds[:8])})")
+    return _row("G1", title, GAP, "; ".join(parts))
 
 
 def _fire_and_forget(command):
