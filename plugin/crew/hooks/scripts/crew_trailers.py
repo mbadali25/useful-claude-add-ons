@@ -26,6 +26,9 @@ both layers means nothing is forbidden and nothing here refuses. Three uses:
   every commit that merge brought in -- other people's, many carrying the
   trailer. Following first parents keeps the ticket's own commits, a merge
   commit made on the ticket branch included, and drops what it merged in.
+  The limit: a ticket commit that reaches HEAD only as a merge's second
+  parent (a side branch merged in with `--no-ff`) is not read. Crew never
+  makes that shape; a person who does should check that branch by hand.
   It REPORTS and never refuses: a refusal would be curable only by a
   history rewrite, which is the owner's decision and stales the review
   receipt. Any unexpected exception, an import failure included, is

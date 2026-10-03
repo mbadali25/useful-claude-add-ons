@@ -2669,7 +2669,9 @@ unreadable, or any unexpected error, printed as `<Type>: <message>`), exiting
 would then report every commit that merge brought in (other people's, many
 carrying the trailer). Following first parents keeps the ticket's own commits,
 including a merge commit made on the ticket branch, and leaves out what it
-merged in. It is a report: it never refuses done and crew never rewrites the
+merged in. The limit: a ticket commit that reaches HEAD only as a merge's second
+parent (a side branch merged in with `--no-ff`) is not read; crew never makes
+that shape, so check such a branch by hand. It is a report: it never refuses done and crew never rewrites the
 commits, because a rewrite is the owner's decision and stales the review
 receipt. A line derived from a fallback scope base says so.
 
