@@ -1,0 +1,20 @@
+%% Generated from useful-claude-add-ons@452b30cc on 2026-10-02. Verify before trusting.
+%% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_shell.py
+%% Purpose: shellRoute: the two config keys read through resolve_config, beside the machine-local probe cache that is not a config layer, both feeding crew_shell.decide().
+%% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
+%% Note SR: shellRoute.mode / shellRoute.distro both layers, plugin/crew/hooks/scripts/crew_config.py:339 /
+%%    :579 read by crew_shell.settings through resolve_config; an unrecognised mode reads as auto and is named
+%% Note SRC: ~/.claude/crew/shell-route.json crew_shell.probe_path() - the machine-local probe cache written
+%%    only by probe --write and measure --write; NOT a config layer, never merged
+%% Note SRD: crew_shell.decide() / status_line() plugin/crew/hooks/scripts/crew_shell.py:560 / :923 native
+%%    Windows only - off Windows, plain bash -c
+flowchart LR
+
+    subgraph ShellRoute["T-0040: shellRoute is config; the probe's answer is not"]
+        direction TB
+        SR["<b>shellRoute.mode / .distro</b><br/>both layers, read through<br/>resolve_config"]
+        SRC[("<b>~/.claude/crew/shell-route.json</b><br/>the probe cache -<br/>NOT a config layer")]
+        SRD["<b>crew_shell.decide() / status_line()</b><br/>native Windows only"]
+        SR --> SRD
+        SRC --> SRD
+    end

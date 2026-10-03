@@ -14,9 +14,15 @@ Diagram: $ARGUMENTS
    deployment topology to others, and drawing the wrong one wastes both our time.
 3. Write Mermaid source to `docs/diagrams/<name>.mmd`, with the provenance
    comment and anchor list at the top.
+   Add a `%% Purpose:` line: what a reader learns from the diagram, in a sentence.
 4. Render: `bash ${CLAUDE_PLUGIN_ROOT}/skills/crew-diagrams/scripts/render.sh docs/diagrams`
-5. Show me the source. If `mmdc` is not installed, say so and give me the install
-   line rather than silently skipping the render.
+5. Check: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/crew-diagrams/scripts/diagram_check.py docs/diagrams/out`.
+   A FAIL is not done: redraw (a loop back gets its own end box; over 15 boxes
+   splits along its subgraphs) and check again. If `mmdc` is not installed,
+   nothing was measured: say NOT VERIFIED and give me the install line.
+6. Page: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/crew-diagrams/scripts/diagram_doc.py --dir docs/diagrams --write`
+   writes `docs/diagrams/README.md` and `index.html` with every diagram embedded.
+7. Show me the source and the check table.
 
 With `refresh`: for each existing `.mmd`, diff its anchor files against HEAD.
 Re-verify and update only the ones whose anchors moved. Report which diagrams you

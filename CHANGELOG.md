@@ -4,6 +4,25 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.160: a measured readability standard for every diagram crew draws
+
+- `crew-diagrams/scripts/diagram_check.py` measures the rendered Mermaid SVG rather than the
+  source: lines crossing, a line through a box that is not one of its ends, an edge label covering
+  a box, another label or another edge's line, and more than 15 boxes all FAIL; a box or edge label
+  over 6 lines of text is a warning. Shapes drawn with relative paths (cylinders) are measured, and
+  a box it cannot measure makes the diagram UNKNOWN, never a quiet PASS. Sequence, state and ER
+  diagrams are NOT CHECKED.
+- `crew-diagrams/scripts/diagram_doc.py` writes `docs/diagrams/README.md` and `index.html`: every
+  diagram embedded beside its `%% Purpose:`, its anchors, its readability verdict (from the render,
+  never guessed) and a "Box details" table built from `%% Note <id>:` lines, so a short box loses
+  no detail. Refuses to overwrite a page it did not generate.
+- `crew-diagrams` SKILL.md and `/crew:diagram`: render, check (a FAIL is not done), then the page;
+  the standard locations are `docs/diagrams/*.mmd`, the generated page beside them, renders in the
+  ignored `out/`.
+- This repo's diagrams: five that failed (63, 54, 40, 31 and 18 boxes; 32 and 10 crossings) are
+  split into overviews plus parts, and wordy boxes are shortened with their detail moved to notes.
+  All 33 pass. Every original box, line and comment is accounted for (checked by script per file).
+
 ### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 
 - `crew_train.py check-land` judges the verify gate through `review_gate.accepted_state`: the local

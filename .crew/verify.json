@@ -533,7 +533,13 @@
       "run": ["python3 -m pytest plugin/crew/tests/test_pytest_rule.py -q"],
       "reach": "local",
       "why": "pytest_rule.py runs the crew rules above that call it: `-n auto -m \"not wallclock\"` then `-m wallclock` serially, the way pytest-crew.yml runs the suite, or one serial run without xdist. Its exit code is what the gate reads, so the suite pins every combination: exit 5 from one half is not a failure, from both it is, and a half killed by a signal is a failure (max() of the codes would have read 0). 1.6s here. reach: local - a unit suite with the pytest calls stubbed."
-    }
+    },
+    { "paths": ["plugin/crew/skills/crew-diagrams/scripts/diagram_check.py", "plugin/crew/skills/crew-diagrams/scripts/diagram_doc.py",
+                "plugin/crew/tests/test_diagram_check.py", "plugin/crew/tests/test_diagram_doc.py", "plugin/crew/tests/fixtures/diagrams/**"],
+      "seconds": 2,
+      "run": ["python3 -m pytest plugin/crew/tests/test_diagram_check.py plugin/crew/tests/test_diagram_doc.py -q"],
+      "reach": "local",
+      "why": "crew diagram readability standard (crew 1.0.160): diagram_check.py measures a rendered Mermaid SVG (crossings, a line through a box, label overlaps, box count, wordy boxes) and diagram_doc.py writes docs/diagrams/README.md and index.html. Pure Python over committed fixtures (three real Mermaid 11 renders and hand-written SVGs), so unlike the render.sh rule it needs no mmdc and never skips. 23 passed in 0.3s, 2026-10-03, 4-CPU container. Every guard sabotage-tested by hand, each red. reach: local - fixtures and tmp_path only." }
   ],
 
   "default": ["bash _verify/smoke.sh"],

@@ -1,0 +1,85 @@
+%% Generated from useful-claude-add-ons@452b30cc on 2026-10-02. Verify before trusting.
+%% Anchors: plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py
+%% Purpose: The keys that do not follow repo-beats-global: the two ratchet tables (read side and write side), the thirteen keys that resolve by the lower rank, and how a corrupt config file forces the role-write guard to block.
+%% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
+%% WHAT CREW 1.0 CHANGED IN THIS FLOW, in the order the sections below draw it:
+%%  1. A FOURTH guard vocabulary, `cloudGuard` - same words as `roleWrites`
+%%     (off/report/block), its own switch. `crew_guards.ALL_GUARD_NAMES` is now
+%%     TEN names (six GUARD_NAMES + two PROD_GUARD_NAMES + roleWrites +
+%%     cloudGuard), all ten present as leaves in BOTH default_config() and
+%%     default_global_config() - confirmed by executing leaf_paths() in this
+%%     worktree, not assumed from the tuple.
+%%  2. The ratchet table grew again: write-side crew_config._RATCHETED is now
+%%     14 keys, read-side crew_guards.RATCHETED_KEYS is 13 (T-0005 added
+%%     environments.prodUnattended to both) - executed and
+%%     diffed (`set(_RATCHETED) - set(RATCHETED_KEYS)`), and the ONLY
+%%     difference is still `pm.authority`, exactly the asymmetry the previous
+%%     anchor drew at a smaller size. The tuple SHAPES still disagree
+%%     ((function, function, dict) write-side vs (tuple, function, function)
+%%     read-side), confirmed by `type()` on each element, not asserted.
+%% Note RG: <b>READ side: crew_guards.RATCHETED_KEYS</b> plugin/crew/hooks/scripts/crew_guards.py:522-549
+%%    <b>13 keys</b> (executed + len()'d, this pass): install.policy, change.requireForProduction,
+%%    environments.prodUnattended (T-0005), and all TEN guards.* - terraformApply, forcePush, adminMerge,
+%%    mergeGate, cloudDestructive, sqlDestructive, prodDatabase, prodServer, roleWrites, <b>cloudGuard
+%%    (new)</b>. Consumed by crew_config.resolve_ratcheted() :831 via crew_guards.effective_ratcheted() :564,
+%%    called at crew_config.py:875
+%% Note RC: <b>WRITE side: crew_config._RATCHETED</b> plugin/crew/hooks/scripts/crew_config.py:2510 (extended
+%%    through :2622) <b>14 keys</b>: the same thirteen PLUS pm.authority. pm.authority is still NOT in
+%%    RATCHETED_KEYS - it resolves by ordinary precedence and only needs a widening NOTE when /crew:config
+%%    writes it
+%% Note RSHAPE: Confirmed by import + diff + type(), not asserted: 13-key intersection, pm.authority the only
+%%    difference (`set(_RATCHETED) - set(RATCHETED_KEYS) == {'pm.authority'}`), and the tuple field order
+%%    STILL differs -- (function, function, dict) here, (tuple, function, function) there -- so the two still
+%%    cannot be collapsed into one table as written
+%% Note LS: crew_config.layer_state(path) plugin/crew/hooks/scripts/crew_config.py:920 classifies ONE config
+%%    file, either layer (cloud=True / environments=True - the cloud guard's reads only - also call a
+%%    malformed cloud / environments block corrupt): <b>absent</b> - nothing there (os.path.lexists false, so
+%%    a DANGLING SYMLINK is corrupt, not absent). <b>corrupt</b> - present but not the shape this key needs: unreadable,
+%%    invalid JSON, not an object, or an object where <i>#quot;guards#quot; in parsed</i> and guards is not
+%%    itself a dict (an EXPLICIT null is corrupt, not an unset key). <b>ok</b> - everything else
+%% Note FORCE: plugin/crew/hooks/scripts/role_write_guard.py calls layer_state for BOTH layers at :760-761,
+%%    ORs them into forced_by_corruption :762, and sets policy = #quot;block#quot; UNCONDITIONALLY at :764-765
+%%    -- BEFORE the <i>elif policy == #quot;off#quot;: return 0</i> early exit at :766-767
+%% Note E1: <b>Every key in crew_guards.RATCHETED_KEYS :522-549 -- install.policy,
+%%    change.requireForProduction, environments.prodUnattended and all TEN guards.* -- resolves by the LOWER
+%%    rank, not by repo-beats-global.</b> CONFIG.md section 15 covers install.policy, section 16 the guards,
+%%    section 18 guards.roleWrites; environments.* is a subsection of section 16.
+%% Note E2: The effective value at each key is the <b>lower-ranked of the two layers</b> -
+%%    crew_guards.effective_ratcheted :564, reached through crew_config.resolve_ratcheted :831.
+%% Note E3: Why: crew reads config out of CLONED repositories. A repo shipping install.policy: auto, or
+%%    guards.cloudGuard: report, would, under precedence, override a machine owner who chose manual or off.
+%% Note E4: Absent counts as the narrowest tier on either side for ELEVEN of the thirteen, so the WIDEST grant
+%%    requires BOTH layers to agree.
+%% Note E5: <b>guards.roleWrites and guards.cloudGuard are the two exceptions to E4, and the only keys here
+%%    whose DEFAULT is not their FLOOR.</b> ROLE_WRITE_POLICIES is (block, report, off); ROLE_WRITE_DEFAULT is
+%%    <b>off</b>, the WIDEST tier, for both names - cloudGuard reuses roleWrites' own normalise/rank functions
+%%    rather than growing a second copy (crew_guards.py:450-487, guard_tiers() :490-504).
+%% Note E6: install.policy: auto is safe only because no repo-controlled string can become a command -
+%%    crew_guards.INSTALLABLE maps a name to a literal argv tuple, consulted BEFORE the policy. Asserted in
+%%    tests/test_install_policy.py.
+flowchart TB
+
+    subgraph Ratchet["Two DIFFERENT ratchet tables, not one - 14 write-side, 13 read-side"]
+        direction TB
+        RG["<b>READ side:</b><br/>crew_guards.RATCHETED_KEYS<br/>13 keys"]
+        RC["<b>WRITE side:</b><br/>crew_config._RATCHETED<br/>14 keys: the thirteen + pm.authority"]
+        RSHAPE["Confirmed by import + diff + type():<br/>tuple field order differs, so<br/>not one table as written"]
+        RG --- RC --- RSHAPE
+    end
+    subgraph Corrupt["A corrupt config file is its own state, and it BEATS the ratchet"]
+        direction TB
+        LS["<b>crew_config.layer_state(path)</b><br/>absent / corrupt / ok,<br/>either layer"]
+        FORCE["<b>role_write_guard.py</b><br/>corruption in either layer<br/>forces policy = block"]
+        LS --> FORCE
+    end
+    FORCE -.->|"overrides the resolved value"| Ratchet
+    subgraph Except["Thirteen keys do NOT follow the precedence above (read-side ratchet)"]
+        direction TB
+        E1["<b>13 RATCHETED_KEYS</b><br/>resolve by the LOWER rank,<br/>not by repo-beats-global"]
+        E2["effective value = the<br/><b>lower-ranked</b> of the two layers<br/>effective_ratcheted :564"]
+        E3["Why: crew reads config<br/>out of CLONED repositories"]
+        E4["Absent = the narrowest tier<br/>for ELEVEN of the thirteen"]
+        E5["<b>guards.roleWrites, guards.cloudGuard</b><br/>the two exceptions to E4:<br/>DEFAULT is not their FLOOR"]
+        E6["install.policy: auto is safe -<br/>no repo string becomes a command<br/>(crew_guards.INSTALLABLE)"]
+        E1 --- E2 --- E3 --- E4 --- E5 --- E6
+    end
