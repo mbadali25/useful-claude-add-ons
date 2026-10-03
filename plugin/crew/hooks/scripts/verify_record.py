@@ -615,16 +615,38 @@ def tree_snapshot(root, stable=False):
     if meta is None:
         return None
     import verify_fingerprint  # pylint: disable=import-outside-toplevel
-    return verify_fingerprint.fingerprint(root, paths) + "-" + meta
+    snap = verify_fingerprint.fingerprint(root, paths) + "-" + meta
+    if stable:
+        refs = _refs_digest(root)
+        if refs is None:
+            return None
+        snap += "-" + refs
+    return snap
+
+
+def _refs_digest(root):
+    """Every ref and the commit it names, hashed (review r1 on the tree-pass
+    cache): a rule may read a ref the working tree does not show -- rules[39]
+    diffs `origin/main...HEAD` -- so a fetch that moves `origin/main` must
+    empty the cache as surely as an edit. None when git cannot list them."""
+    try:
+        out = subprocess.run(("git", "for-each-ref", "--format=%(refname) %(objectname)"),
+                             cwd=root, capture_output=True, check=False, timeout=120,
+                             stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return hashlib.sha256(out.stdout).hexdigest()
 
 
 # --- the tree-pass cache ---------------------------------------------------
 #
 # A command that exited 0 is not re-run while the tree is byte-for-byte the
-# tree it passed on. The key is `tree_snapshot(stable=True)` -- HEAD, the
-# deciders (.crew/verify.json, .crew/config.json), and the index entry, bytes,
-# type and mode of every tracked and untracked (not ignored) path -- so ANY
-# edit anywhere, not just to a rule's own `paths`, empties it. A rule's
+# tree it passed on. The key is `tree_snapshot(stable=True)` -- HEAD, every
+# ref, the deciders (.crew/verify.json, .crew/config.json), and the index
+# entry, bytes, type and mode of every tracked and untracked (not ignored)
+# path -- so ANY edit anywhere, or a fetch, empties it. A rule's
 # `paths` say when it must run, never everything it reads, which is why a
 # per-rule key would be unsound and this one is the whole tree.
 #
