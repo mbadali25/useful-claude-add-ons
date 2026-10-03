@@ -4,14 +4,15 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.215: QA standards for repositories crew sets up (L-0618)
+### Added — `crew` 1.0.219: QA standards for repositories crew sets up (L-0618)
 
 - E5 no longer reads "could not tell" as a pass: `live` parses to yes / no / unknown (only `no`,
   `n`, `false` are no), a live credential's reach must name a known or declared environment
   (`production only` is production; `not prod` or `prod replica` is unknown, not production), and
-  acceptance is an allow-list: an ISO date, or `accepted` / `yes` with an optional date and name.
-  A refusal word anywhere (`no`, `never`, `denied`, `pending`, ...) is not an acceptance, and any
-  other text is UNKNOWN, never accepted. An unparseable `.crew/verify.json` makes E5 UNKNOWN. Header columns match whole words,
+  acceptance is a strict grammar over the cell in its own case: an ISO date, or `accepted` / `yes`
+  with an optional capitalised name (1-3 words, optionally after `by`) and date, either order. A
+  refusal word anywhere (`no`, `never`, `denied`, `pending`, `revoked`, `expired`, ...) is not an
+  acceptance, and any other text (`accepted maybe`, `approved`, `ok`) is UNKNOWN, never accepted. An unparseable `.crew/verify.json` makes E5 UNKNOWN. Header columns match whole words,
   so "Delivered" is not `live`. An unreadable runbook, `.gitignore` or inventory is UNKNOWN, not
   missing; `qa_doc.py --write` refuses an unreadable file instead of overwriting it; a failed
   `git ls-files` makes G4 UNKNOWN. Found in review of PR #337.
