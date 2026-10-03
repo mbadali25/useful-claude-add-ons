@@ -27,10 +27,13 @@ confirming, not re-deriving:
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_status.py --root .
 ```
 
-Read its `verify` line. Anything other than every rule `pass` — `fail`,
-`unverified`, or no record at all — refuses done. Run `./_verify/smoke.sh` (or
-the mapped `.crew/verify.json` rule) yourself first if this is the first time
-this session has checked.
+Read its `verify` line. Every rule `pass` passes this check. Anything else —
+`fail`, `unverified`, or no record at all — passes only if a CI receipt proves
+the self-hosted gate passed every rule on exactly this committed tree:
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ci_receipt.py check --root .` exits
+0 with `CI_RECEIPT VERIFIED`. Any other exit (local edits, no run for HEAD, an
+unreadable artifact) refuses done; say its `CI_RECEIPT` line. Otherwise run
+`./_verify/smoke.sh` (or the mapped `.crew/verify.json` rule) yourself first.
 
 ## Check 3 — the completion audit
 
