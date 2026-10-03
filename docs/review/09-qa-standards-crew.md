@@ -282,9 +282,9 @@ The owner's private companion page for this review, which names the two reposito
 | # | Question | Decision |
 |---|---|---|
 | 1 | Ship D10 as slice 0 now? | **Yes.** D10 lands first as slice 0, and the two repositories' sessions are told the Stop gate there may run nothing today. |
-| 2 | Slicing | **As proposed in section 4:** 0, then a (audit, report-only), b (correct-by-default templates and phases), c (slice b's sabotage tooling PR), d (review validity). |
+| 2 | Slicing | **As proposed in section 4, without slice d:** 0, then a (audit, report-only), b (correct-by-default templates and phases), c (slice b's sabotage tooling PR). Slice d moves out under question 7. |
 | 3 | Does an audit GAP block a setup phase? | **No hard block.** A phase with an open GAP is marked `partial` with the GAP recorded, never `done`, and the audit never adds a hook. |
 | 4 | Live third-party credentials outside production | **A GAP that needs a recorded owner acceptance**, not a hard refusal. |
 | 5 | CI template | **GitHub Actions first.** Bitbucket Pipelines follows in a later slice. |
 | 6 | Who fixes the two repositories? | **Each repository's own session** runs the audit as the acceptance evidence and lands its fixes under its own tickets. |
-| 7 | Where does review validity (D8) live? | **Here, as slice d**, coordinated with the QA-rounds stream in `08-qa-rounds-analysis.md` so it is not built twice. |
+| 7 | Where does review validity (D8) live? | **In the QA-rounds stream** (`08-qa-rounds-analysis.md`), not here. D8 is review-harness work (`review_*.py`), which that stream already owns; keeping it in L-0618 would put two streams on the same harness files, which land alone. |
