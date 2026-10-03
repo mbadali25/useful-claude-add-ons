@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@34c9a8bc
+anchor: useful-claude-add-ons@370a7a5b
 verified: 2026-10-01
 
 ## Re-derive provenance
@@ -1553,3 +1553,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `22aeb5a8` -> `9581933e` on 2026-10-02 (L-0574: external-tool-formats.md citation fix and the crew 1.0.131 re-set; no cited line moved).**
 
 **Re-anchored `9581933e` -> `34c9a8bc` on 2026-10-02 (L-0574 merges origin/main 0487fc39 at bd459af7 (rerere disabled; both provenance histories kept, main's first) and fixes review round 7 at 4a35e5d2; citations re-mapped by difflib, bare review_run.py citations re-read by hand).**
+
+**Re-anchored `34c9a8bc` -> `370a7a5b` on 2026-10-02 (L-0574 merges origin/main e0c70fc9 (L-0555 #310, #317, L-0597 #316; crew 1.0.134) at 370a7a5b, rerere disabled: both provenance histories kept (main's first), citations into files either side changed re-mapped by difflib (67 moved), the verify.json heading corrected to 48 rules).**
