@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 23:12 UTC
+Last updated: 2026-10-03 23:15 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 23:15: Fixes pushed: #372 a2651e47 (1.0.208, rekey cache, null reach, cwd classify, --map removed); #375 be507112 + 16e92602 (1.0.210, parser/UNKNOWN fixes; 7 stale diagrams re-rendered, all 33 PASS); #351 c610fe28 (1.0.217, --first-parent limit documented); #359 built + pushed 66d25049 (1.0.216). Sonnet re-reviews started: #372, #375, #351 (round 3); first review: #359. Next free version: 1.0.218.
 - 23:12: #359 T-0025 built (11/11 sabotage red, suite 8924 passed pre-fix) but not pushed: version commit was not last. Decision: version-only final commit 1.0.216 (no reset), remove docs/tickets/T-0025, then push. Harness follow-ups: scope_guard deny text, review.md no-ticket stop, sabotage_help.py. After merge: re-pin README install URLs (both install scripts' label changed 36->37 commands). Next free: 1.0.217.
 - 23:10: #337 re-review round 2: FAIL - new BLOCK (E5 acceptance is a deny-list: 'denied','never','rejected 2026-10-01' pass) + 2 FIX (reach negations 'not prod' read as prod; unreadable verify.json gives N/A). Original 4 resolved. Sent back to fixer; target crew 1.0.215. #351 fixes pushed (be8365c3, crew 1.0.211 + code map --first-parent); Sonnet re-review of #351 started. Next free version: 1.0.216.
 - 23:08: #337 fixes pushed (4aa98c36, crew 1.0.209): E5 BLOCK fixed (live yes/no/unknown, blank reach UNKNOWN, acceptance must be affirmative), read_text absent vs unreadable, whole-word headers + env-name reach parsing, G4 ls-files rc. Each test red with fix reverted. Sonnet re-review of #337 started.
