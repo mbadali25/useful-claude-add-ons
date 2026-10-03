@@ -115,7 +115,11 @@ check "hook commands: \${CLAUDE_PLUGIN_ROOT} quoted, PowerShell ends with ; exit
 # That is how plugin/localgpu/bootstrap.ps1 passed a gate that never opened it.
 # Pass the tracked-and-untracked union explicitly so new files are covered.
 ps_check() {
-  [ -n "$PWSH" ] || { echo "pwsh not found - install it or drop this check"; return 1; }
+  # A missing pwsh is "could not run", not "broken" (CLAUDE.md, Landmines): it
+  # SKIPs, visibly, like claude_validate_check below. CI's ubuntu runner carries
+  # pwsh, and marketplace.yml's own "PowerShell static checks" step fails there
+  # if it ever goes missing, so the skip cannot hide it in CI.
+  [ -n "$PWSH" ] || { echo "pwsh not found: NOT VERIFIED here (CI runs it)"; return 2; }
   local rc=0 untracked n
 
   # check-powershell.ps1 declares `param([string]$Path)` - ONE string, not an array.
@@ -139,7 +143,7 @@ EOF
   echo "(tracked: CI mode; untracked checked individually: $n)"
   return $rc
 }
-check "powershell: every .ps1 parses and every Verb-Noun call resolves (incl. untracked)" ps_check
+check_optional "powershell: every .ps1 parses and every Verb-Noun call resolves (incl. untracked)" ps_check
 
 # --- check 8: the audit's own label()/canon() contract -----------------------
 check "crew-setup: every recommended CLAUDE.md heading round-trips through canon()" \

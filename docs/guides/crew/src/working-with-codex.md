@@ -81,6 +81,14 @@ approval receipt is told the gate does not apply, and during a declared incident
 CLEAN receipt that already covers the bundle answers CLEAN without it, and a tree the verify gate
 has not passed is refused (exit 5) before it.
 
+After the standards checklist comes the **recurring-findings checklist**: the defect classes earlier
+reviews kept finding (processes and races, claims not true at the commit, tests that cannot fail,
+fail-open handling, PowerShell/Bash drift, guard bypass, version and registration), only those whose
+path globs meet the files the diff changes, a few probes each. It is the same list
+`/crew:implement` showed the developer before the first plan step. It does not bound the review,
+and an item the diff does not touch is not a finding. When the bundle's manifest cannot say which
+files changed, every class is listed under an `UNKNOWN:` line rather than none.
+
 Between the verify gate and the self-check, `review_run.py` lints the bundle's changed files with
 the linters `.crew/verify.json` lists under `preReview` (L-0574). Each file is linted at its base
 and at the bundle, and a finding the bundle adds refuses the round (exit 5, nothing spent) before
