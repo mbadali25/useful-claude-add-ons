@@ -45,9 +45,9 @@ def _spec(root, ticket, touch_lines):
         encoding="utf-8")
 
 
-def _cli(*args):
+def _cli(*args, timeout=60):
     return subprocess.run([sys.executable, SCRIPT, *args], capture_output=True, text=True,
-                          check=False, timeout=60, stdin=subprocess.DEVNULL)
+                          check=False, timeout=timeout, stdin=subprocess.DEVNULL)
 
 
 # ---- the shipped data -------------------------------------------------------------
@@ -71,11 +71,19 @@ def test_shipped_checklist_parses_and_fits():
     assert len(lines) <= rf.MAX_LINES
 
 
-def test_shipped_checklist_covers_the_five_target_classes():
-    titles = " ".join(e["title"].lower() for e in rf.parse(rf.data_path())[0])
+SEVEN_CLASSES = (("RF-01", "race"), ("RF-02", "not true"), ("RF-03", "test"),
+                 ("RF-04", "unknown"), ("RF-05", "powershell"), ("RF-06", "guard"),
+                 ("RF-07", "version"))
 
-    for word in ("unknown", "test", "says", "powershell", "version"):
-        assert word in titles, word
+
+def test_shipped_checklist_pins_the_seven_classes():
+    """L-0592 (L-0575 round 2): every curated class is pinned by id and by its
+    keyword, so deleting or renaming any one of them goes red."""
+    entries = rf.parse(rf.data_path())[0]
+
+    assert [e["id"] for e in entries] == [sid for sid, _ in SEVEN_CLASSES]
+    assert all(word in e["title"].lower() for e, (_, word) in zip(entries, SEVEN_CLASSES)), \
+        [e["title"] for e in entries]
 
 
 # ---- path scoping -----------------------------------------------------------------
@@ -304,3 +312,215 @@ def test_data_comes_from_the_plugin_not_the_root(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
     assert _ids(result.stdout.splitlines()) and set(_ids(result.stdout.splitlines())) <= set(shipped)
     assert _ids(lines) == _ids(result.stdout.splitlines())
+
+
+# ---- L-0592: the L-0575 round-2 fixes ----------------------------------------------
+
+SCRIPTS = os.path.dirname(os.path.abspath(rf.__file__))
+NEEDS_FIFO = pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="os.mkfifo is absent here")
+NEEDS_DEVICE = pytest.mark.skipif(os.name == "nt", reason="no POSIX character device to link to")
+NON_REGULAR = [pytest.param("fifo", marks=NEEDS_FIFO),
+               pytest.param("symlink-to-fifo", marks=NEEDS_FIFO),
+               "directory",
+               pytest.param("symlink-to-device", marks=NEEDS_DEVICE)]
+# os.open of a directory raises PermissionError on Windows before any fstat, so
+# there only "cannot be read" is asserted for that one kind.
+WINDOWS_DIRECTORY = os.name == "nt"
+
+
+def _non_regular(folder, kind, name):
+    target = folder / name
+    if kind == "fifo":
+        os.mkfifo(target)
+    elif kind == "symlink-to-fifo":
+        os.mkfifo(folder / f"{name}.fifo")
+        os.symlink(folder / f"{name}.fifo", target)
+    elif kind == "directory":
+        target.mkdir()
+    else:
+        os.symlink(os.devnull, target)
+    return target
+
+
+def _says_not_regular(line, kind):
+    return (WINDOWS_DIRECTORY and kind == "directory") or "not a regular file" in line
+
+
+@pytest.mark.parametrize("kind", NON_REGULAR)
+def test_scope_unknown_spec_not_a_regular_file(tmp_path, kind):
+    """A spec.md that is a FIFO used to hang the implementer in open(). Now it
+    is a scope UNKNOWN that names why, within a bound, and lists every class."""
+    folder = tmp_path / ".work" / "tickets" / "L-0001"
+    folder.mkdir(parents=True)
+    _non_regular(folder, kind, "spec.md")
+    shipped = [e["id"] for e in rf.parse(rf.data_path())[0]]
+    result = _cli("--root", str(tmp_path), "--ticket", "L-0001", timeout=20)
+    unknown = [line for line in result.stdout.splitlines() if line.startswith("UNKNOWN:")]
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert len(unknown) == 1 and "cannot be read" in unknown[0], unknown
+    assert _says_not_regular(unknown[0], kind), unknown
+    assert _ids(result.stdout.splitlines()) == shipped
+
+
+@pytest.mark.parametrize("kind", NON_REGULAR)
+def test_data_not_a_regular_file(tmp_path, kind):
+    data = _non_regular(tmp_path, kind, "data.md")
+    result = _cli("--root", str(tmp_path), "--paths", "a.py", "--data", str(data), timeout=20)
+    unreadable = [line for line in result.stdout.splitlines() if line.startswith("UNREADABLE:")]
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert len(unreadable) == 1 and _says_not_regular(unreadable[0], kind), result.stdout
+    assert NONE_KEYED not in result.stdout
+
+
+@pytest.mark.parametrize("kind", NON_REGULAR)
+def test_read_regular_never_opens_a_non_regular_file(tmp_path, kind, monkeypatch):
+    """Layer 1: the type is checked by path before anything is opened, so a
+    device that blocks on open is never reached."""
+    target = _non_regular(tmp_path, kind, "x.md")
+
+    def no_open(*_args, **_kwargs):
+        raise AssertionError(f"os.open was called for a {kind}")
+
+    monkeypatch.setattr(rf.os, "open", no_open)
+    with pytest.raises(OSError, match="not a regular file"):
+        rf._read_regular(str(target))  # pylint: disable=protected-access
+
+
+SWAP = r"""
+import os, sys
+sys.path.insert(0, sys.argv[1])
+import recurring_findings as rf
+fifo, regular = sys.argv[2], os.stat(sys.argv[3])
+real_stat = os.stat
+def swapped(path, *args, **kwargs):
+    return regular if os.fspath(path) == fifo else real_stat(path, *args, **kwargs)
+os.stat = swapped
+try:
+    text = rf._read_regular(fifo)
+except OSError as exc:
+    print("REFUSED", exc)
+    sys.exit(0)
+print("READ", repr(text))
+sys.exit(3)
+"""
+
+
+@NEEDS_FIFO
+def test_read_regular_refuses_a_fifo_swapped_in_after_stat(tmp_path):
+    """Layer 2: a FIFO swapped in between the stat and the open (simulated by
+    a stat that reports a regular file) is opened non-blocking and refused by
+    fstat. In a child process with a bound: a blocking open is a timeout."""
+    fifo = tmp_path / "swap.md"
+    os.mkfifo(fifo)
+    regular = tmp_path / "regular.md"
+    regular.write_text("x", encoding="utf-8")
+    result = subprocess.run([sys.executable, "-c", SWAP, SCRIPTS, str(fifo), str(regular)],
+                            capture_output=True, text=True, check=False, timeout=20,
+                            stdin=subprocess.DEVNULL)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "not a regular file" in result.stdout
+
+
+def test_select_touch_file_does_not_cover_descendants(tmp_path):
+    (tmp_path / "plugin" / "crew" / "docs").mkdir(parents=True)
+    (tmp_path / "plugin" / "crew" / "README.md").write_text("x", encoding="utf-8")
+    data = _data(tmp_path, _section("RF-01", '["plugin/crew/README.md/*.py"]')
+                 + _section("RF-02", '["plugin/crew/docs/*.py"]')
+                 + _section("RF-03", '["plugin/crew/new/*.py"]'))
+    entries, _ = rf.parse(data)
+    touch = ["plugin/crew/README.md", "plugin/crew/docs", "plugin/crew/new"]
+    chosen = rf.select(entries, touch, touch=True, root=str(tmp_path))
+
+    assert [e["id"] for e in chosen] == ["RF-02", "RF-03"]
+
+
+@pytest.mark.parametrize("root", [None, ""])
+@pytest.mark.parametrize("call", ["matches", "select", "select-no-entries", "select-no-paths"])
+def test_select_touch_needs_a_root(tmp_path, call, root):
+    """Without a root a Touch entry cannot be told file from directory: the
+    call refuses, even when there is nothing to iterate, rather than answer."""
+    entries, _ = rf.parse(_data(tmp_path, _section("RF-01")))
+    calls = {
+        "matches": lambda: rf.matches("a/b", "**/*.py", touch=True, root=root),
+        "select": lambda: rf.select(entries, ["a/b"], touch=True, root=root),
+        "select-no-entries": lambda: rf.select([], ["a/b"], touch=True, root=root),
+        "select-no-paths": lambda: rf.select(entries, [], touch=True, root=root),
+    }
+
+    with pytest.raises(ValueError, match="needs the root"):
+        calls[call]()
+
+
+def test_implementer_block_reads_a_touch_file_as_a_file(tmp_path):
+    (tmp_path / "plugin" / "crew").mkdir(parents=True)
+    (tmp_path / "plugin" / "crew" / "README.md").write_text("x", encoding="utf-8")
+    data = _data(tmp_path, _section("RF-01", '["plugin/crew/README.md/*.py"]')
+                 + _section("RF-02", '["**/*.md"]'))
+    _spec(tmp_path, "L-0001", ["- `plugin/crew/README.md`"])
+    lines, complete = rf.implementer_block(str(tmp_path), "L-0001", data=data)
+
+    assert complete is True
+    assert _ids(lines) == ["RF-02"]
+
+
+def _many_bad(count):
+    return "".join(f"## bad heading {n}\n" for n in range(count)) + _section("RF-01")
+
+
+@pytest.mark.parametrize("reader", ["review", "implementer"])
+def test_scope_unknown_survives_note_truncation(tmp_path, reader):
+    data = _data(tmp_path, _many_bad(70))
+    if reader == "review":
+        lines = rf.review_block(str(tmp_path), dict(EMPTY, staged_files=None), data=data)
+    else:
+        _spec(tmp_path, "L-0001", [])
+        lines, _ = rf.implementer_block(str(tmp_path), "L-0001", data=data)
+
+    assert any(line.startswith("UNKNOWN:") for line in lines)
+    assert any("more notes not shown" in line for line in lines)
+    assert len(lines) <= rf.MAX_LINES
+
+
+def test_render_header_bound():
+    two = ["UNKNOWN: a", "UNKNOWN: b"]
+
+    assert len(rf.render(["h"] * (rf.MAX_LINES - 1), [])) == rf.MAX_LINES
+    assert len(rf.render(["h"] * (rf.MAX_LINES - 3), [], two)) <= rf.MAX_LINES
+    for header, notes in ((rf.MAX_LINES, []), (61, []),
+                          (rf.MAX_LINES - 3, two + ["PROBLEM: x"])):
+        with pytest.raises(ValueError, match="cannot fit"):
+            rf.render(["h"] * header, [], notes)
+
+
+@pytest.mark.parametrize("with_entry", [False, True])
+@pytest.mark.parametrize("data", [0, 1, 56, 200])
+@pytest.mark.parametrize("scope", [0, 1, 3])
+@pytest.mark.parametrize("header", [1, 3, 10])
+def test_render_required_lines_table(tmp_path, header, scope, data, with_entry):
+    entries = rf.parse(_data(tmp_path, _section("RF-01", probes=4)))[0] if with_entry else []
+    notes = [f"PROBLEM: d{n}" for n in range(data)] + [f"UNKNOWN: s{n}" for n in range(scope)]
+    lines = rf.render(["h"] * header, entries, notes)
+
+    assert len(lines) <= rf.MAX_LINES
+    assert all(f"UNKNOWN: s{n}" in lines for n in range(scope))
+    assert (not data) or any(line.startswith("PROBLEM:") or "more notes" in line
+                             for line in lines)
+
+
+@pytest.mark.parametrize("bad", [0, 1, 70, 200])
+@pytest.mark.parametrize("scope_unknown", [False, True])
+@pytest.mark.parametrize("reader", ["review", "implementer"])
+def test_readers_never_exceed_the_cap(tmp_path, reader, scope_unknown, bad):
+    data = _data(tmp_path, _many_bad(bad))
+    if reader == "review":
+        lines = rf.review_block(str(tmp_path), {} if scope_unknown else _manifest("a.py"),
+                                data=data)
+    else:
+        _spec(tmp_path, "L-0001", [] if scope_unknown else ["- `a.py`"])
+        lines, _ = rf.implementer_block(str(tmp_path), "L-0001", data=data)
+
+    assert len(lines) <= rf.MAX_LINES
+    assert any(line.startswith("UNKNOWN:") for line in lines) is scope_unknown
