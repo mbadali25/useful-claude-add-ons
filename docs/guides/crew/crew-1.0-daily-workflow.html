@@ -162,7 +162,11 @@ appends a metrics row, marks the ticket done, and clears a stale handoff.</p>
 <p>With the train armed, landing is part of done: <code>crew_train.py check-land --ticket T-0091 --pr
 &lt;n&gt;</code> refuses unless T-0091 holds the train, <code>git merge-tree</code> against the base is clean, the base
 has not moved in Touch paths, and HEAD carries the review receipt and a green gate; then it prints
-<code>gh pr merge &lt;n&gt; --merge --match-head-commit &lt;sha&gt;</code> for you to run (crew never merges). After the
+<code>gh pr merge &lt;n&gt; --merge --match-head-commit &lt;sha&gt;</code> for you to run (crew never merges). When it
+refuses, land in this order: <code>crew_train.py catch-up</code> (resolve any conflict), bump the version one
+past the base's, refresh the artifacts, commit, gate the merged head, then <code>check-land</code> again, so the
+tree the gate passed is the tree that lands. After the review, a re-anchor changes only the
+<code>anchor:</code> sha and regenerates the rules; its provenance goes in the ticket's <code>notes.md</code>. After the
 merge, <code>crew_train.py release --ticket T-0091 --merged &lt;merge sha&gt;</code> frees the train and tells every
 overlapping lane to merge the base now.</p>
 <h2 id="what-each-hook-does-in-order">What Each Hook Does, in Order</h2>
