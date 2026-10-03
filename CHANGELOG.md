@@ -4,6 +4,34 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.164: worktree-aware autopilot reads; the refresh check tells fresh from committed (T-0063)
+
+- `crew_autopilot.py next` and `resume` read a ticket's `.work/INDEX.md` row from the main checkout
+  (the first record of `git worktree list --porcelain`) when the lane worktree's INDEX has none.
+  `--json` names the file that answered as `index_source`. Rows in both checkouts whose status
+  cells differ stop as the new `index-disagreement`; a listing git cannot give is kept in the stop's
+  reason, never read as "no row". A ticket folder that exists only in the main checkout stops as
+  `folder-elsewhere`, naming the `cp -r` to make: autopilot never reads a contract from another
+  checkout, because the scope guard reads Touch from this one.
+- `crew_refresh_check.py` has a fifth value, `fresh-uncommitted`: every artifact is current, but a
+  path under the refresh-artifact dirs is modified, staged, or untracked and not ignored. `--json`
+  lists them as `uncommitted`, the text prints an `uncommitted:` line, and the CLI exits 1.
+  Precedence is unknown > stale > fresh-uncommitted > fresh; a listing git cannot give is `unknown`.
+  `/crew:done` check 4 refuses it, `/crew:implement` step 6 commits the listed paths, and autopilot
+  runs it as a `commit-refresh` phase (`git add -- <paths> && git commit -m ... -- <paths>`, so nothing else staged rides along), before review and after
+  an accepted review alike: the review bundle is the working state, so the commit keeps a receipt
+  current (a real-repo test pins the bundle hash across it).
+- The code graph reads `fresh` when it is behind by sha but graphify's own
+  `<graph.out>/manifest.json` records the current MD5 of every committed code path that moved since
+  `built_at_commit`. graphify leaves `graph.json` untouched when the topology did not change, so the
+  graph used to read `stale` for ever after such a change. A missing or unparseable manifest keeps
+  the sha answer and says so; uncommitted code is never confirmed. Every `save_manifest` caller in
+  graphify 0.9.65 and 0.9.74 was re-read first: each runs after a successful `graph.json` write or a
+  same-topology confirmation.
+- T-0063's sixteen sabotage mutations are not in this release: `plugin/crew/tests/sabotage*.py` is
+  a harness path, and a harness change lands alone (T-0087), so they follow in their own lane.
+  Each was run red against this tree before it was split out.
+
 ### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 
 - `crew_train.py check-land` judges the verify gate through `review_gate.accepted_state`: the local
