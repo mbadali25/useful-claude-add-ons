@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.155: `/crew:verify --stamp-reach` declares `reach` on undeclared rules (L-0562)
+### Added — `crew` 1.0.180: `/crew:verify --stamp-reach` declares `reach` on undeclared rules (L-0562)
 
 - `hooks/scripts/verify_reach.py`: for each rule without `reach`, proposes `local` when the Stop
   gate's own classifier (`verify_record.scan_reach`, CONFIG.md §19) already runs it and `network`
@@ -15,6 +15,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   (`docs/review/09-qa-standards-crew.md`).
 - `commands/verify.md` documents it and its `reach` citation now names CONFIG.md §19, not §18
   (`guards.roleWrites`).
+- `verify_reach.py` reads the map with `newline=""`, so a CRLF `verify.json` keeps its line
+  endings when stamped (QA finding; a CRLF round-trip test covers it).
 
 ### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 
