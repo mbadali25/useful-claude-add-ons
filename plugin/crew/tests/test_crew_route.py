@@ -605,6 +605,8 @@ _ROUTE_TAIL = "if the user plainly meant something else, ask."
       "command": "/crew:" + _HUGE}, _ASK_TAIL),
     ({"outcome": "route", "intent": "brainstorm", "ticket": None,
       "command": "not a crew command " + _HUGE}, _ASK_TAIL),
+    ({"outcome": "route", "intent": "continue", "ticket": _HUGE, "source": _HUGE,
+      "phase": _HUGE, "command": "/crew:implement T-1"}, _ROUTE_TAIL),
     ({"outcome": "route", "intent": "review", "ticket": _HUGE, "source": _HUGE,
       "command": "/crew:review T-1"}, _ROUTE_TAIL),
 ])
