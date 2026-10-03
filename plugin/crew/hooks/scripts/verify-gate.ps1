@@ -440,6 +440,11 @@ Set-Location $root
 # Absolute from here on: the rule loop returns to $root before every rule, and
 # a "." that was correct at this line points somewhere else once a rule has cd'd.
 $root = (Get-Location).Path
+# Rule commands run with CLAUDE_PLUGIN_ROOT set when the caller left it unset or empty
+# - the twin of verify-gate.sh, where the rationale lives.
+if (-not $env:CLAUDE_PLUGIN_ROOT) {
+  $env:CLAUDE_PLUGIN_ROOT = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+}
 
 if (Test-Path .crew/config.json) {
   $cfg = Get-Content .crew/config.json -Raw | ConvertFrom-Json
