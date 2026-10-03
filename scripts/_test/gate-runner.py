@@ -635,7 +635,7 @@ def case_ci_drift_compound_commands(tmp: str) -> None:
     runner_, root, yaml = _drift_fixture(tmp)
 
     def chain(doc):
-        for step in doc["jobs"]["test-set"]["steps"]:
+        for step in doc["jobs"]["test"]["steps"]:
             if isinstance(step.get("run"), str) and "pip install" in step["run"]:
                 step["run"] = "pip install pytest && python3 scripts/new-check.py\n"
                 return
