@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@39ebbc18
-verified: 2026-10-02
+anchor: useful-claude-add-ons@0c683860
+verified: 2026-10-03
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -37,7 +37,9 @@ including the slow version-drift walk `_verify/smoke.sh` skips), and
 them and is wired into CI but not into the local Stop gate: see
 "`scripts/check_instructions.py`" below.
 
-## `.crew/verify.json` — 45 rules
+## `.crew/verify.json` — 49 rules
+
+**DERIVED via `json.load` on T-0049 at `0c683860` (origin/main `2a2d6e07` plus T-0049): 515 lines, 49 rules.** Main's 48 plus T-0049's in-flight rule at `.crew/verify.json:483-490` (`crew_inflight.py`, `crew_holder.py`, `crew_autopilot.py` and their suites, priced 14s), placed before L-0555's `ci_receipt.py` rule (`:491`); L-0572's subset-cover rule is `:493-500` and L-0575's the last at `:501-511`; `default` is `:513` and `unmapped` `:514`. The paragraphs below read older trees.
 
 **L-0555 PR 1 (`3a33161c`): 459 lines, 45 rules.** The last rule (`.crew/verify.json:454`) is L-0555's: `ci_receipt.py`, `test_ci_receipt.py` and `.github/workflows/verify-gate.yml`, running `test_ci_receipt.py`. The 44th is L-0557's (see its re-anchor note); the account below is the 43-rule state it extends.
 
@@ -440,7 +442,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2423-2430` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2424-2431` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -691,13 +693,13 @@ their own, in both the `test` job and (since L-0577) the `crew-windows-*` jobs. 
   (`scripts/gate-runner.py`) and its suite `scripts/_test/gate-runner.py`, priced 60s; the
   same suite is rule 22's command. Not review harness: `scripts/check-tooling-pr.py` reports
   no harness path for it.
-- `.crew/verify.json:492-502` (the last rule since L-0575, after L-0572's subset-cover rule at `:483-490`) — the recurring-findings checklist suite
+- `.crew/verify.json:501-511` (the last rule since L-0575, after L-0572's subset-cover rule at `:493-500` and T-0049's in-flight rule at `:483-490`) — the recurring-findings checklist suite
   (`test_recurring_findings.py`) for `recurring_findings.py` and its data, priced 3s.
 - `.crew/verify.json:474-481` (rule 41) — T-0040's shell-route suites
   (`test_crew_shell.py`, `test_status.py`) for `crew_shell.py` and `crew_status.py`, priced 17s;
   its sabotage entries split out to W-0115.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
-  `plugin/crew/CONFIG.md:2423-2430` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2424-2431` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:825-835`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -2258,3 +2260,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `6475c41c` -> `35b9e6d9` on 2026-10-02 (L-0592 review round 1 fixes).** Of this map's paths only the test module test_recurring_findings.py changed (its render table made exhaustive); this map cites no line of it. No claim changed.
 
 **Re-anchored `4fc93b19` (main, L-0587) and `35b9e6d9` (L-0592) -> `39ebbc18` on 2026-10-02 (L-0592 merges origin/main 6ac3b1b3, L-0587 #319 and #322; rerere disabled; crew 1.0.139).** Main's maps, INDEX and diagram were taken and L-0592's notes re-applied after main's. Since main's anchor, L-0592 changed five files under the crew plugin (README, the implement command, recurring_findings.py, two test modules) with no line moved, and main's re-pin changed two root README lines in place. No citation moved; no claim changed.
+
+**Re-anchored `39ebbc18` -> `0c683860` on 2026-10-03 (T-0049: merge of origin/main `2a2d6e07` at `b903cac7`, rerere disabled; crew 1.0.146).** Since `39ebbc18` the documented paths changed by main's L-0592 landing and by T-0049's own files (crew_inflight.py and crew_holder.py new; crew_autopilot.py, crew_state.py, autopilot.md, the crew README, CONFIG.md, verify.json, the version files, BUDGETS.md, CHANGELOG and tests). A difflib re-map of every path-qualified `path:line` citation in this map from `2a2d6e07` to `0c683860`, history sections skipped, moved the CONFIG.md citations (+1, T-0049's stop-list row) and the verify.json rule citations (T-0049's rule inserted at `:483-490`); each re-read. New DERIVED line: 515 lines, 49 rules. Citations inside past re-anchor notes are left as written.

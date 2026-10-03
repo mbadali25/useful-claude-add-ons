@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@39ebbc18
-verified: 2026-10-02
+anchor: useful-claude-add-ons@0c683860
+verified: 2026-10-03
 paths: scripts/**, plugin/PLUGINS.md
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -1440,3 +1440,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `6475c41c` -> `35b9e6d9` on 2026-10-02 (L-0592 review round 1 fixes).** Of this map's paths only the test module test_recurring_findings.py changed (its render table made exhaustive); this map cites no line of it. No claim changed.
 
 **Re-anchored `4fc93b19` (main, L-0587) and `35b9e6d9` (L-0592) -> `39ebbc18` on 2026-10-02 (L-0592 merges origin/main 6ac3b1b3, L-0587 #319 and #322; rerere disabled; crew 1.0.139).** Main's maps, INDEX and diagram were taken and L-0592's notes re-applied after main's. Since main's anchor, L-0592 changed five files under the crew plugin (README, the implement command, recurring_findings.py, two test modules) with no line moved, and main's re-pin changed two root README lines in place. No citation moved; no claim changed.
+
+**Re-anchored `39ebbc18` -> `0c683860` on 2026-10-03 (T-0049: merge of origin/main `2a2d6e07` at `b903cac7`, rerere disabled; crew 1.0.146).** Since `39ebbc18` the documented paths changed by main's L-0592 landing and by T-0049's own files (crew_inflight.py and crew_holder.py new; crew_autopilot.py, crew_state.py, autopilot.md, the crew README, CONFIG.md, verify.json, the version files, BUDGETS.md, CHANGELOG and tests). A difflib re-map of every path-qualified `path:line` citation in this map from `2a2d6e07` to `0c683860`, history sections skipped, moved no body citation; the only moved ones sit in past re-anchor notes and are left as written. No claim changed.

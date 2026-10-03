@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@a81e4382 on 2026-10-02. Verify before trusting.
+%% Generated from useful-claude-add-ons@0c683860 on 2026-10-03. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_config_files.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_shell.py
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
@@ -488,7 +488,7 @@ flowchart TB
     subgraph Merge["resolve_config() - plugin/crew/hooks/scripts/crew_config.py:789 - the single resolver"]
         direction TB
         NULLS["without_null_shadows()<br/>plugin/crew/hooks/scripts/crew_config.py:645<br/>drops a repo <i>null</i> ONLY where the global<br/>layer supplies a real value."]
-        M1["merge_defaults(default_config(), global)<br/>call: crew_config.py:822<br/>def: plugin/crew/hooks/scripts/crew_state.py:1348"]
+        M1["merge_defaults(default_config(), global)<br/>call: crew_config.py:822<br/>def: plugin/crew/hooks/scripts/crew_state.py:1353"]
         M2["merge_defaults(that, repo)<br/>call: crew_config.py:823"]
         SCHEMA{"schema<br/>lifted OUT of the merge<br/>crew_config.py:824-827"}
         OUT(["resolved config<br/><i>repo beats global beats default</i><br/>this is ONLY .crew/config.json's precedence -<br/>autoClear's own read path bypasses it, below"])
@@ -774,3 +774,6 @@ flowchart TB
 %% Re-anchored 6053b65d -> 080dd3cc (L-0555 merges main c7a9e649): of the Anchors paths only CONFIG.md changed,
 %% +12 lines on L-0572's verify-gate `coveredBy` rule (cited by name only). No node or edge changed.
 %% Re-anchored -> a81e4382 (L-0555 merges main 0487fc39: L-0575 #311, L-0599 #315, rerere off): main's body and its L-0575 re-anchor notes were taken. L-0555 touches no Anchors path. No node or edge changed.
+%% Re-anchored a81e4382 -> 0c683860 (T-0049 merges main 2a2d6e07, rerere off; crew 1.0.146): of the Anchors paths CONFIG.md
+%% (+1, the stop-list's in-flight row) and crew_state.py (+5 in AUTONOMOUS_STOPS) changed; merge_defaults' def moved
+%% :1348 -> :1353 and was re-read. No node or edge changed.
