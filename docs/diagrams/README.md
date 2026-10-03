@@ -243,9 +243,9 @@ flowchart TB
 | Box | Details |
 |---|---|
 | `RG` | READ side: crew_guards.RATCHETED_KEYS plugin/crew/hooks/scripts/crew_guards.py:522-549 13 keys (executed + len()'d, this pass): install.policy, change.requireForProduction, environments.prodUnattended (T-0005), and all TEN guards.* - terraformApply, forcePush, adminMerge, mergeGate, cloudDestructive, sqlDestructive, prodDatabase, prodServer, roleWrites, cloudGuard (new). Consumed by crew_config.resolve_ratcheted() :831 via crew_guards.effective_ratcheted() :564, called at crew_config.py:875 |
-| `RC` | WRITE side: crew_config._RATCHETED plugin/crew/hooks/scripts/crew_config.py:2510 (extended through :2622) 14 keys: the same thirteen PLUS pm.authority. pm.authority is still NOT in RATCHETED_KEYS - it resolves by ordinary precedence and only needs a widening NOTE when /crew:config writes it |
+| `RC` | WRITE side: crew_config._RATCHETED plugin/crew/hooks/scripts/crew_config.py:2527 (extended through :2622) 14 keys: the same thirteen PLUS pm.authority. pm.authority is still NOT in RATCHETED_KEYS - it resolves by ordinary precedence and only needs a widening NOTE when /crew:config writes it |
 | `RSHAPE` | Confirmed by import + diff + type(), not asserted: 13-key intersection, pm.authority the only difference (`set(_RATCHETED) - set(RATCHETED_KEYS) == {'pm.authority'}`), and the tuple field order STILL differs -- (function, function, dict) here, (tuple, function, function) there -- so the two still cannot be collapsed into one table as written |
-| `LS` | crew_config.layer_state(path) plugin/crew/hooks/scripts/crew_config.py:920 classifies ONE config file, either layer (cloud=True / environments=True - the cloud guard's reads only - also call a malformed cloud / environments block corrupt): absent - nothing there (os.path.lexists false, so a DANGLING SYMLINK is corrupt, not absent). corrupt - present but not the shape this key needs: unreadable, invalid JSON, not an object, or an object where "guards" in parsed and guards is not itself a dict (an EXPLICIT null is corrupt, not an unset key). ok - everything else |
+| `LS` | crew_config.layer_state(path) plugin/crew/hooks/scripts/crew_config.py:937 classifies ONE config file, either layer (cloud=True / environments=True - the cloud guard's reads only - also call a malformed cloud / environments block corrupt): absent - nothing there (os.path.lexists false, so a DANGLING SYMLINK is corrupt, not absent). corrupt - present but not the shape this key needs: unreadable, invalid JSON, not an object, or an object where "guards" in parsed and guards is not itself a dict (an EXPLICIT null is corrupt, not an unset key). ok - everything else |
 | `FORCE` | plugin/crew/hooks/scripts/role_write_guard.py calls layer_state for BOTH layers at :760-761, ORs them into forced_by_corruption :762, and sets policy = "block" UNCONDITIONALLY at :764-765 -- BEFORE the elif policy == "off": return 0 early exit at :766-767 |
 | `E1` | Every key in crew_guards.RATCHETED_KEYS :522-549 -- install.policy, change.requireForProduction, environments.prodUnattended and all TEN guards.* -- resolves by the LOWER rank, not by repo-beats-global. CONFIG.md section 15 covers install.policy, section 16 the guards, section 18 guards.roleWrites; environments.* is a subsection of section 16. |
 | `E2` | The effective value at each key is the lower-ranked of the two layers - crew_guards.effective_ratcheted :564, reached through crew_config.resolve_ratcheted :831. |
@@ -279,7 +279,7 @@ flowchart TB
         FILT["<b>filter_global()</b><br/>returns (kept, ignored)"]
     end
 
-    subgraph Merge["resolve_config() - plugin/crew/hooks/scripts/crew_config.py:789 - the single resolver"]
+    subgraph Merge["resolve_config() - plugin/crew/hooks/scripts/crew_config.py:806 - the single resolver"]
         direction TB
         NULLS["<b>without_null_shadows()</b><br/>drops a repo <i>null</i> only where<br/>the global layer supplies a value"]
         M1["<b>merge_defaults</b><br/>(default_config(), global)"]
@@ -304,13 +304,13 @@ flowchart TB
 
 | Box | Details |
 |---|---|
-| `DEF` | default_config() plugin/crew/hooks/scripts/crew_config.py:244 129 leaves (executed, this pass) composed from crew_state's PM_DEFAULTS :1108, QA_DEFAULTS :1160, DEV_DEFAULTS :1170, WORKTREE_DEFAULTS :1198, CONTEXT_DEFAULTS :735, RESUME_DEFAULTS :698, AUTOPILOT_DEFAULTS :1097 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS :48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS :222, CLOUD_DEFAULTS :239 - repo-only, ENVIRONMENTS_DEFAULTS :251 - nonProd repo-only), and crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK :107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK :173 / CHANGE_BLOCK :203 |
-| `GLB` | ~/.claude/crew/config.json read_global_config() plugin/crew/hooks/scripts/crew_config.py:736 never raises - absent, malformed or non-object all return {}, because this is reached from a SessionStart hook |
+| `DEF` | default_config() plugin/crew/hooks/scripts/crew_config.py:245 129 leaves (executed, this pass) composed from crew_state's PM_DEFAULTS :1108, QA_DEFAULTS :1160, DEV_DEFAULTS :1170, WORKTREE_DEFAULTS :1198, CONTEXT_DEFAULTS :735, RESUME_DEFAULTS :698, AUTOPILOT_DEFAULTS :1097 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS :48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS :222, CLOUD_DEFAULTS :239 - repo-only, ENVIRONMENTS_DEFAULTS :251 - nonProd repo-only), and crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK :107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK :173 / CHANGE_BLOCK :203 |
+| `GLB` | ~/.claude/crew/config.json read_global_config() plugin/crew/hooks/scripts/crew_config.py:753 never raises - absent, malformed or non-object all return {}, because this is reached from a SessionStart hook |
 | `REPO` | .crew/config.json - schema 7 crew_state.load_config() plugin/crew/hooks/scripts/crew_state.py:267 NOT the same file crew_context.py reads first - see the TwoFiles section below |
-| `TMPL` | default_global_config() plugin/crew/hooks/scripts/crew_config.py:405 72 leaves (executed, this pass) across 18 blocks: qa, dev, worktree, secondOpinion, memory (2 of 5 repo leaves), notify, pm, context.autoClear (8 of 9 - unsafeFocus is excluded, see AutoClear below), resume, docs, bitbucket, github, install, guards (all TEN names), environments (prodUnattended only), change, route, shellRoute - the single definition both rules below are enforced against |
-| `PRUNE` | _prune() plugin/crew/hooks/scripts/crew_config.py:668 keeps only keys present in the template. Descends structurally, so naming a block grants only the leaves under it. |
-| `FILT` | filter_global() plugin/crew/hooks/scripts/crew_config.py:694 returns (kept, ignored) |
-| `NULLS` | without_null_shadows() plugin/crew/hooks/scripts/crew_config.py:645 drops a repo null ONLY where the global layer supplies a real value. |
+| `TMPL` | default_global_config() plugin/crew/hooks/scripts/crew_config.py:422 72 leaves (executed, this pass) across 18 blocks: qa, dev, worktree, secondOpinion, memory (2 of 5 repo leaves), notify, pm, context.autoClear (8 of 9 - unsafeFocus is excluded, see AutoClear below), resume, docs, bitbucket, github, install, guards (all TEN names), environments (prodUnattended only), change, route, shellRoute - the single definition both rules below are enforced against |
+| `PRUNE` | _prune() plugin/crew/hooks/scripts/crew_config.py:685 keeps only keys present in the template. Descends structurally, so naming a block grants only the leaves under it. |
+| `FILT` | filter_global() plugin/crew/hooks/scripts/crew_config.py:711 returns (kept, ignored) |
+| `NULLS` | without_null_shadows() plugin/crew/hooks/scripts/crew_config.py:662 drops a repo null ONLY where the global layer supplies a real value. |
 | `M1` | merge_defaults(default_config(), global) call: crew_config.py:822 def: plugin/crew/hooks/scripts/crew_state.py:1348 |
 | `OUT` | resolved config repo beats global beats default this is ONLY .crew/config.json's precedence - autoClear's own read path bypasses it, below |
 
@@ -337,7 +337,7 @@ flowchart LR
 
 | Box | Details |
 |---|---|
-| `SR` | shellRoute.mode / shellRoute.distro both layers, plugin/crew/hooks/scripts/crew_config.py:339 / :579 read by crew_shell.settings through resolve_config; an unrecognised mode reads as auto and is named |
+| `SR` | shellRoute.mode / shellRoute.distro both layers, plugin/crew/hooks/scripts/crew_config.py:340 / :579 read by crew_shell.settings through resolve_config; an unrecognised mode reads as auto and is named |
 | `SRC` | ~/.claude/crew/shell-route.json crew_shell.probe_path() - the machine-local probe cache written only by probe --write and measure --write; NOT a config layer, never merged |
 | `SRD` | crew_shell.decide() / status_line() plugin/crew/hooks/scripts/crew_shell.py:560 / :923 native Windows only - off Windows, plain bash -c |
 
@@ -453,15 +453,15 @@ flowchart TB
 
 | Box | Details |
 |---|---|
-| `PLAN` | plan_global_write() plugin/crew/hooks/scripts/crew_config.py:2905 pure; on global_snapshot() :2856, which REFUSES an unparsable or non-object machine file instead of merging onto {} (absent = ABSENT) |
+| `PLAN` | plan_global_write() plugin/crew/hooks/scripts/crew_config.py:2922 pure; on global_snapshot() :2856, which REFUSES an unparsable or non-object machine file instead of merging onto {} (absent = ABSENT) |
 | `ISG` | per LEAF: leaf_updates() :2643, value_allowed() :2759 MACHINE_REFUSED :2679 (consent keys, inside a whole-block value too), is_global_path() :717, a block emptied or replaced, null_means() :2716 (an enum key's null refused), enum_values() :2625; round 5: a path under a leaf or an object at a leaf :2766-2776 |
 | `MERGED` | merged_problems() :2818 - the FILE the write produces, every known leaf by _content_problem() :2791: an enum value outside its values, a consent key (machine), an armed veto key (repo), a key under or an object at a leaf :2804-2807 refuses an unrelated write (pre-existing), then validate_providers() :178 on the merged file (qa.order a list, qa/dev.roles and each pin an object or null :206-237) |
-| `WIDEN` | _plan_on() :2872 writes assignments() :2662 - the judged leaves (a block's siblings survive; one whole pin per role) - marking each leaf with _widens() plugin/crew/hooks/scripts/crew_config.py:2326. RANK, not equality. |
-| `WRITE` | write_global_config() plugin/crew/hooks/scripts/crew_config.py:2924 the only function in crew that writes outside the repo. Re-plans on the bytes read under the lock; --expect DIGEST/absent refuses a changed file (GlobalWriteConflict :2259); any other OSError (directory, lock, write) is GlobalWriteRefused :2947, exit 2 |
-| `RPLAN` | plan_repo_write() plugin/crew/hooks/scripts/crew_config.py:3105 on repo_snapshot() :3093 (refuses a missing or malformed file rather than creating one) and machine_view() :3124 (the machine file and its digest, one read) |
+| `WIDEN` | _plan_on() :2872 writes assignments() :2662 - the judged leaves (a block's siblings survive; one whole pin per role) - marking each leaf with _widens() plugin/crew/hooks/scripts/crew_config.py:2343. RANK, not equality. |
+| `WRITE` | write_global_config() plugin/crew/hooks/scripts/crew_config.py:2941 the only function in crew that writes outside the repo. Re-plans on the bytes read under the lock; --expect DIGEST/absent refuses a changed file (GlobalWriteConflict :2259); any other OSError (directory, lock, write) is GlobalWriteRefused :2947, exit 2 |
+| `RPLAN` | plan_repo_write() plugin/crew/hooks/scripts/crew_config.py:3122 on repo_snapshot() :3093 (refuses a missing or malformed file rather than creating one) and machine_view() :3124 (the machine file and its digest, one read) |
 | `RREF` | RepoWriteRefused (class :2957) REPO_REFUSED :2972 - platform, schema, scope.mode, scope.allowCliApproval, the machine-only autoClear paths; a block emptied or replaced is refused (is_repo_path :3029); REPO_VETO_ONLY :2993 takes only false / null (by identity, is_repo_veto :2996) |
 | `RWIDEN` | repo_widens() :3037 - the ratchet against what is in force, plus _REPO_WIDENING :3006; a repo value held down by the machine layer is named, not marked as a widening |
-| `RWRITE` | write_repo_config() plugin/crew/hooks/scripts/crew_config.py:3131 the same compare-and-swap (RepoWriteConflict :2961), and --expect-global binds the machine file under its lock; never creates the file; an OSError is RepoWriteRefused :3162, exit 2 |
+| `RWRITE` | write_repo_config() plugin/crew/hooks/scripts/crew_config.py:3148 the same compare-and-swap (RepoWriteConflict :2961), and --expect-global binds the machine file under its lock; never creates the file; an OSError is RepoWriteRefused :3162, exit 2 |
 
 - **Source:** `data-flow-crew-config-write.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`
@@ -1150,7 +1150,7 @@ flowchart TB
 | `pf0` | preflight first (#264): a CLEAN receipt covers this bundle? verify gate passed this tree? review_run.py:672, :846 |
 | `pr0` | no linter finding the bundle adds against its base? could every configured linter check? review_run.py prereview_gate :731 |
 | `rv0` | self-check stamped for this bundle and standards set? review_run.py standards_gate |
-| `rv1` | on one bundle; prompt ends with the standards checklist |
+| `rv1` | on one bundle; prompt carries the standards checklist, then the recurring-findings checklist, then any web tests |
 | `rv3` | report findings and every ignored line verbatim (:498-500); final round, 0 BLOCK? else fix, or the owner accepts :503, :505-508 |
 | `pr0->fx0` | NEW finding: exit 5, no round spent, not overridable; or COULD NOT CHECK: exit 5 unless --allow-unverified |
 | `pf0->replan` | the budget refusal answers first, no pre-review checks, no self-check |

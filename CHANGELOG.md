@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.160: a measured readability standard for every diagram crew draws
+### Added — `crew` 1.0.188: a measured readability standard for every diagram crew draws
 
 - `crew-diagrams/scripts/diagram_check.py` measures the rendered Mermaid SVG rather than the
   source: lines crossing, a line through a box that is not one of its ends, an edge label covering
@@ -35,6 +35,19 @@ All notable changes to this repository are documented here. Format follows [Keep
   CI is unaffected: the runner carries `pwsh`, and the "PowerShell static checks" step fails if
   it ever does not.
 
+### Added - `crew` 1.0.162: the recurring-findings checklist in the review prompt (L-0601, L-0592 PR 2)
+
+- **What.** `review_prompt.build` now appends `recurring_findings.review_block` after the development
+  standards checklist and before the web tests, so every reviewer (Codex, Copilot or the Claude
+  fallback) reads the same recurring-findings classes the implementer saw, scoped to the bundle's
+  changed files. The block says it does not bound the review; an unusable manifest lists every class
+  under `UNKNOWN:`.
+- **Sabotage.** New `plugin/crew/tests/sabotage_recurring.py` (seventeen entries: L-0575's checklist
+  guards, L-0592's eight fixes, and the prompt dropping the block), appended to `sabotage.py`'s
+  MUTATIONS; each goes red on its named test.
+- **Docs.** `/crew:review`'s contract comment, the crew README's prompt paragraph, the
+  working-with-codex guide (rebuilt), the crew code map and the lifecycle diagram. `.crew/verify.json`'s
+  recurring-findings rule now also runs `test_review_prompt.py`.
 ### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 
 - `crew_train.py check-land` judges the verify gate through `review_gate.accepted_state`: the local

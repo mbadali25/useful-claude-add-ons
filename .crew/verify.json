@@ -520,12 +520,14 @@
       "paths": [
         "plugin/crew/hooks/scripts/recurring_findings.py",
         "plugin/crew/skills/crew-qa-standards/references/recurring-findings.md",
-        "plugin/crew/tests/test_recurring_findings.py"
+        "plugin/crew/tests/test_recurring_findings.py",
+        "plugin/crew/hooks/scripts/review_prompt.py",
+        "plugin/crew/tests/sabotage_recurring.py"
       ],
       "seconds": 3,
-      "run": ["python3 -m pytest plugin/crew/tests/test_recurring_findings.py -q"],
+      "run": ["python3 -m pytest plugin/crew/tests/test_recurring_findings.py plugin/crew/tests/test_review_prompt.py -q"],
       "reach": "local",
-      "why": "L-0575. recurring_findings.py prints the curated recurring-findings checklist for a change's paths: to the implementer from the spec's Touch list, and (review_block) from a review bundle's changed files. The suite holds the shipped data to its format and line cap (an added section that overflows fails it, a parsed section count that differs from the file's headings fails it, and sections out of descending count order fail it), the path scoping both ways, and every way the data or the scope can be unknown (each must print UNKNOWN, UNREADABLE or PROBLEM, never an empty list or 'no class applies'). The six module mutations meant for sabotage_recurring.py each went red on their named test, applied alone by hand on this host, 2026-10-01. 54 passed in 0.6-11s (load-dependent) at review round 1's fixes, measured 2026-10-02 on the Linux host; the 3 is process start-up with headroom. Re-time rather than trusting it. reach: local - every case writes a throwaway tree under tmp_path." },
+      "why": "L-0575. recurring_findings.py prints the curated recurring-findings checklist for a change's paths: to the implementer from the spec's Touch list, and (review_block) from a review bundle's changed files. The suite holds the shipped data to its format and line cap (an added section that overflows fails it, a parsed section count that differs from the file's headings fails it, and sections out of descending count order fail it), the path scoping both ways, and every way the data or the scope can be unknown (each must print UNKNOWN, UNREADABLE or PROBLEM, never an empty list or 'no class applies'). The six module mutations meant for sabotage_recurring.py each went red on their named test, applied alone by hand on this host, 2026-10-01. 54 passed in 0.6-11s (load-dependent) at review round 1's fixes, measured 2026-10-02 on the Linux host; the 3 is process start-up with headroom. Re-time rather than trusting it. L-0601: review_prompt.build carries review_block after the standards checklist, so this rule also runs test_review_prompt.py and covers review_prompt.py and sabotage_recurring.py (seventeen mutations, each run alone through sabotage.py's runner and RED on this host, 2026-10-03); both suites 121 passed in 2.6s wall, measured 2026-10-03 on the Linux host. reach: local - every case writes a throwaway tree under tmp_path." },
     {
       "paths": ["plugin/crew/tests/pytest_rule.py", "plugin/crew/tests/test_pytest_rule.py"],
       "seconds": 2,
@@ -539,7 +541,7 @@
       "seconds": 2,
       "run": ["python3 -m pytest plugin/crew/tests/test_diagram_check.py plugin/crew/tests/test_diagram_doc.py -q"],
       "reach": "local",
-      "why": "crew diagram readability standard (crew 1.0.160): diagram_check.py measures a rendered Mermaid SVG (crossings, a line through a box, label overlaps, box count, wordy boxes) and diagram_doc.py writes docs/diagrams/README.md and index.html. Pure Python over committed fixtures (three real Mermaid 11 renders and hand-written SVGs), so unlike the render.sh rule it needs no mmdc and never skips. 23 passed in 0.3s, 2026-10-03, 4-CPU container. Every guard sabotage-tested by hand, each red. reach: local - fixtures and tmp_path only." }
+      "why": "crew diagram readability standard (crew 1.0.188): diagram_check.py measures a rendered Mermaid SVG (crossings, a line through a box, label overlaps, box count, wordy boxes) and diagram_doc.py writes docs/diagrams/README.md and index.html. Pure Python over committed fixtures (three real Mermaid 11 renders and hand-written SVGs), so unlike the render.sh rule it needs no mmdc and never skips. 23 passed in 0.3s, 2026-10-03, 4-CPU container. Every guard sabotage-tested by hand, each red. reach: local - fixtures and tmp_path only." }
   ],
 
   "default": ["bash _verify/smoke.sh"],

@@ -2,7 +2,7 @@
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py
 %% Purpose: The two writers behind /crew:config --set: the machine-file planner and the repo-file planner, the per-leaf and merged-file checks both share, and where each refuses.
 %% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
-%% Note PLAN: plan_global_write() plugin/crew/hooks/scripts/crew_config.py:2905 <i>pure</i>; on
+%% Note PLAN: plan_global_write() plugin/crew/hooks/scripts/crew_config.py:2922 <i>pure</i>; on
 %%    global_snapshot() :2856, which REFUSES an unparsable or non-object machine file instead of merging onto
 %%    {} (absent = ABSENT)
 %% Note ISG: per LEAF: leaf_updates() :2643, value_allowed() :2759 MACHINE_REFUSED :2679 (consent keys, inside
@@ -15,12 +15,12 @@
 %%    :178 on the merged file (qa.order a list, qa/dev.roles and each pin an object or null :206-237)
 %% Note WIDEN: _plan_on() :2872 writes assignments() :2662 - the judged leaves (a block's siblings survive;
 %%    one whole pin per role) - marking each leaf with _widens()
-%%    plugin/crew/hooks/scripts/crew_config.py:2326. RANK, not equality.
-%% Note WRITE: write_global_config() plugin/crew/hooks/scripts/crew_config.py:2924 the only function in crew
+%%    plugin/crew/hooks/scripts/crew_config.py:2343. RANK, not equality.
+%% Note WRITE: write_global_config() plugin/crew/hooks/scripts/crew_config.py:2941 the only function in crew
 %%    that writes outside the repo. Re-plans on the bytes read under the lock; --expect DIGEST|absent refuses
 %%    a changed file (GlobalWriteConflict :2259); any other OSError (directory, lock, write) is
 %%    GlobalWriteRefused :2947, exit 2
-%% Note RPLAN: plan_repo_write() plugin/crew/hooks/scripts/crew_config.py:3105 on repo_snapshot() :3093
+%% Note RPLAN: plan_repo_write() plugin/crew/hooks/scripts/crew_config.py:3122 on repo_snapshot() :3093
 %%    (refuses a missing or malformed file rather than creating one) and machine_view() :3124 (the machine
 %%    file and its digest, one read)
 %% Note RREF: RepoWriteRefused (class :2957) REPO_REFUSED :2972 - platform, schema, scope.mode,
@@ -28,7 +28,7 @@
 %%    (is_repo_path :3029); REPO_VETO_ONLY :2993 takes only false / null (by identity, is_repo_veto :2996)
 %% Note RWIDEN: repo_widens() :3037 - the ratchet against what is in force, plus _REPO_WIDENING :3006; a repo
 %%    value held down by the machine layer is named, not marked as a widening
-%% Note RWRITE: write_repo_config() plugin/crew/hooks/scripts/crew_config.py:3131 the same compare-and-swap
+%% Note RWRITE: write_repo_config() plugin/crew/hooks/scripts/crew_config.py:3148 the same compare-and-swap
 %%    (RepoWriteConflict :2961), and --expect-global binds the machine file under its lock; never creates the
 %%    file; an OSError is RepoWriteRefused :3162, exit 2
 flowchart TB

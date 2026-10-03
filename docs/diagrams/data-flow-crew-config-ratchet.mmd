@@ -23,7 +23,7 @@
 %%    mergeGate, cloudDestructive, sqlDestructive, prodDatabase, prodServer, roleWrites, <b>cloudGuard
 %%    (new)</b>. Consumed by crew_config.resolve_ratcheted() :831 via crew_guards.effective_ratcheted() :564,
 %%    called at crew_config.py:875
-%% Note RC: <b>WRITE side: crew_config._RATCHETED</b> plugin/crew/hooks/scripts/crew_config.py:2510 (extended
+%% Note RC: <b>WRITE side: crew_config._RATCHETED</b> plugin/crew/hooks/scripts/crew_config.py:2527 (extended
 %%    through :2622) <b>14 keys</b>: the same thirteen PLUS pm.authority. pm.authority is still NOT in
 %%    RATCHETED_KEYS - it resolves by ordinary precedence and only needs a widening NOTE when /crew:config
 %%    writes it
@@ -31,7 +31,7 @@
 %%    difference (`set(_RATCHETED) - set(RATCHETED_KEYS) == {'pm.authority'}`), and the tuple field order
 %%    STILL differs -- (function, function, dict) here, (tuple, function, function) there -- so the two still
 %%    cannot be collapsed into one table as written
-%% Note LS: crew_config.layer_state(path) plugin/crew/hooks/scripts/crew_config.py:920 classifies ONE config
+%% Note LS: crew_config.layer_state(path) plugin/crew/hooks/scripts/crew_config.py:937 classifies ONE config
 %%    file, either layer (cloud=True / environments=True - the cloud guard's reads only - also call a
 %%    malformed cloud / environments block corrupt): <b>absent</b> - nothing there (os.path.lexists false, so
 %%    a DANGLING SYMLINK is corrupt, not absent). <b>corrupt</b> - present but not the shape this key needs: unreadable,
