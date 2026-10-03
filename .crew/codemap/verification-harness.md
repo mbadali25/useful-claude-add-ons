@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@52f03271
+anchor: useful-claude-add-ons@eab5ff10
 verified: 2026-10-01
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -2306,3 +2306,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `819a2d2b` -> `d95d8b25` on 2026-10-02 (L-0574 merges origin/main 2a2d6e07 (L-0592 #325, crew 1.0.139: recurring_findings.py, implement.md step 2 re-wrapped in place, README) at d95d8b25, rerere disabled: both provenance histories kept (main's first), citations re-mapped by difflib; crew is set to 1.0.140).**
 
 **Re-anchored `d95d8b25` -> `52f03271` on 2026-10-03 (L-0522 PR 1 at 52f03271, on main 8123fe74 (L-0574 #323, crew 1.0.140): `crew_train.py` check-land's two catch-up refusals name the landing order (`LANDING_ORDER`, six lines added above `check_land`, three in the module docstring); `done.md`, `implement.md` step 6, the README train section and `daily-workflow.md` say the same; BUDGETS re-measured; citations re-mapped by difflib).**
+
+**Re-anchored `52f03271` -> `eab5ff10` on 2026-10-03 (L-0522 PR 1 review round 1 fixes): the landing order now reads "..., gate the merged head, review it again if `review_ledger.py --check-receipt` reads stale, then check-land again" in `crew_train.py` (`LANDING_ORDER`, one line longer, one docstring line), `done.md`, `implement.md:114`, README and `daily-workflow.md`; the bare `crew_train.py` citations in this note's merge-train section re-mapped by difflib.**

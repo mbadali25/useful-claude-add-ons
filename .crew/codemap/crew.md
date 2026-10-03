@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@52f03271
+anchor: useful-claude-add-ons@eab5ff10
 verified: 2026-10-01
 
 ## Re-derive provenance
@@ -1393,50 +1393,50 @@ then the train is advisory.
 
 - **What it is.** One locked queue per clone serialising gate+land per overlapping Touch set;
   lanes still implement in parallel. State under `<git-common-dir>/crew/train/` via `train_dir`
-  (`plugin/crew/hooks/scripts/crew_train.py:279`, on `crew_ticket.state_dir`): `state.json`
-  (`SCHEMA` `:129`), `events.jsonl` (`read_events` `:587`), `merge-log/<id>.jsonl`
-  (`merge_log_path` `:294`, `read_merge_log` `:1167`). No config key: `arm`
-  (`:799`) publishes a complete `state.json` with `os.link`, which fails if it exists; `disarm`
-  (`:829`) refuses under the lock while entries exist.
-- **Fail closed.** `load` (`:383`) returns `absent` only when `_absent` (`:303`) proves
+  (`plugin/crew/hooks/scripts/crew_train.py:280`, on `crew_ticket.state_dir`): `state.json`
+  (`SCHEMA` `:130`), `events.jsonl` (`read_events` `:588`), `merge-log/<id>.jsonl`
+  (`merge_log_path` `:295`, `read_merge_log` `:1168`). No config key: `arm`
+  (`:800`) publishes a complete `state.json` with `os.link`, which fails if it exists; `disarm`
+  (`:830`) refuses under the lock while entries exist.
+- **Fail closed.** `load` (`:384`) returns `absent` only when `_absent` (`:304`) proves
   `state.json` missing (ENOENT under a directory ancestor); unreadable, unparseable, a malformed
-  top-level field (`_state_problem` `:362`: `schema` an integer 1 and `seq`/`order` non-bool non-negative ints via `_count`
-  `:357`, `entries` a list, `armed_at`/`armed_by` strings) or a malformed entry (`_entry_problem`
-  `:331`) is `could not tell`. `read_events` names, on every read and whatever its seq, every unparseable line and every record failing
-  `_event_problem` (`:573`; `EVENT_KINDS` `:137`) instead of skipping it; `_notices` (`:764`)
+  top-level field (`_state_problem` `:363`: `schema` an integer 1 and `seq`/`order` non-bool non-negative ints via `_count`
+  `:358`, `entries` a list, `armed_at`/`armed_by` strings) or a malformed entry (`_entry_problem`
+  `:332`) is `could not tell`. `read_events` names, on every read and whatever its seq, every unparseable line and every record failing
+  `_event_problem` (`:574`; `EVENT_KINDS` `:138`) instead of skipping it; `_notices` (`:765`)
   turns each into a `could not tell whether ... concerns you` line, and `arm` refuses on one.
-  `_Lock` (`:424`) is `review_ledger._Lock`'s shape plus an owner token checked before removal,
-  `LOCK_WAIT_SECONDS` (`:130`), never removed for age. `_mutate` (`:543`) refuses absent as
+  `_Lock` (`:425`) is `review_ledger._Lock`'s shape plus an owner token checked before removal,
+  `LOCK_WAIT_SECONDS` (`:131`), never removed for age. `_mutate` (`:544`) refuses absent as
   `NotArmed` (exit 1) and anything else unreadable as `TrainError` (exit 3), numbers events past
-  `max(state.seq, _last_seq)` (`:524`), and hands them to `_commit` (`:471`), which appends the
+  `max(state.seq, _last_seq)` (`:525`), and hands them to `_commit` (`:472`), which appends the
   events FIRST and then `os.replace`s the state, truncating the events file back (or removing it)
-  when either fails. `touch_of` (`:622`) returns `None` (overlaps everything) for any Touch that is
-  not a readable, problem-free, non-empty list. `_plain` (`:167`) refuses CLI values that carry
+  when either fails. `touch_of` (`:623`) returns `None` (overlaps everything) for any Touch that is
+  not a readable, problem-free, non-empty list. `_plain` (`:168`) refuses CLI values that carry
   control characters, and refs that start with `-` or hold whitespace (exit 2).
-- **Overlap and the hold rule.** `_prefix` (`:643`) is the case-folded segments before the
-  first glob segment; `entries_overlap` (`:662`) is a segment-prefix test; `touch_overlap`
-  (`:668`) returns every colliding pair, refresh artifacts dropped by `effective`
-  (`:657`, `REFRESH_PREFIXES` `:133`) - for OVERLAP only. `meets_touch` (`:678`) judges the full
-  Touch for the moved-path checks and the notices (L-0558). `_blockers` (`:731`) is every holder,
-  and every earlier-ordered waiter, on the same base with an overlapping Touch. `acquire` (`:865`)
+- **Overlap and the hold rule.** `_prefix` (`:644`) is the case-folded segments before the
+  first glob segment; `entries_overlap` (`:663`) is a segment-prefix test; `touch_overlap`
+  (`:669`) returns every colliding pair, refresh artifacts dropped by `effective`
+  (`:658`, `REFRESH_PREFIXES` `:134`) - for OVERLAP only. `meets_touch` (`:679`) judges the full
+  Touch for the moved-path checks and the notices (L-0558). `_blockers` (`:732`) is every holder,
+  and every earlier-ordered waiter, on the same base with an overlapping Touch. `acquire` (`:866`)
   upserts the entry, prints unseen notices, logs a `wait` event with each blocker's pairs, or
-  refuses `merge <base> first` when `_moved_paths` (`:687`) finds base commits touching Touch, or
-  holds and logs `acquire`. `_stale` (`:704`) is printed evidence only.
-- **Catch-up and land.** `catch_up` (`:1089`) refuses an in-progress merge or a dirty tree
+  refuses `merge <base> first` when `_moved_paths` (`:688`) finds base commits touching Touch, or
+  holds and logs `acquire`. `_stale` (`:705`) is printed evidence only.
+- **Catch-up and land.** `catch_up` (`:1090`) refuses an in-progress merge or a dirty tree
   (untracked files count, `.work/` excluded), fetches `<remote>/<branch>` bases (`_fetch`
-  `:1045`: explicit `+refs/heads/<branch>:refs/remotes/<remote>/<branch>` refspec, then the base
-  must equal `FETCH_HEAD` or could-not-tell; it returns that SHA, which the merge, `_merge_tree` and `_moved_paths` then use instead of the ref by name), runs `ensure_rerere` (`:985`; `rerere.enabled` only,
+  `:1046`: explicit `+refs/heads/<branch>:refs/remotes/<remote>/<branch>` refspec, then the base
+  must equal `FETCH_HEAD` or could-not-tell; it returns that SHA, which the merge, `_merge_tree` and `_moved_paths` then use instead of the ref by name), runs `ensure_rerere` (`:986`; `rerere.enabled` only,
   `--worktree` only when `extensions.worktreeConfig` is already true, else `--local`), then
   `git -c rerere.autoupdate=false merge --no-edit <fetched sha>`, so a replay stays unmerged and unstaged.
   It parses `Resolved`/`Staged '<path>' using previous resolution.`, runs `_forget_version_files`
-  (`:1009`; `VERSION_FILES` `:147`: `git rerere forget` then `git checkout -m` on each still
-  unmerged with index stages 2 and 3 (`_both_sides` `:999`), so a modify/delete conflict stays as the merge left it) and logs `conflicted`, `rerere_replayed` and `rerere_forgotten`; it never commits a
+  (`:1010`; `VERSION_FILES` `:148`: `git rerere forget` then `git checkout -m` on each still
+  unmerged with index stages 2 and 3 (`_both_sides` `:1000`), so a modify/delete conflict stays as the merge left it) and logs `conflicted`, `rerere_replayed` and `rerere_forgotten`; it never commits a
   conflicted or rerere-resolved merge, and a merge state it cannot read is `could not tell`
-  (exit 3). `check_land` (`:1237`): hold, fetch, `_merge_tree` (`:1215`,
+  (exit 3). `check_land` (`:1239`): hold, fetch, `_merge_tree` (`:1216`,
   `--write-tree --name-only`; exit 1 lists conflicts, other codes are could-not-tell),
   moved-in-Touch, `review_ledger.check_receipt`, `review_gate.gate_state`, then re-checks the hold
   and HEAD under the lock and prints `LAND_OK` and the `gh pr merge ... --match-head-commit` line
-  and logs `check-land`. `release` (`:902`) logs `release`, `merged` (paths from
+  and logs `check-land`. `release` (`:903`) logs `release`, `merged` (paths from
   `<sha>^1..<sha>`, `null` when unreadable) or `force-release` (needs `--by` and `--reason`).
 - **Callers and tests.** No crew script imports it in this release;
   `plugin/crew/tests/test_crew_train.py` allows only `review_run.py` and `review_prompt.py` to (the
@@ -3580,3 +3580,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `819a2d2b` -> `d95d8b25` on 2026-10-02 (L-0574 merges origin/main 2a2d6e07 (L-0592 #325, crew 1.0.139: recurring_findings.py, implement.md step 2 re-wrapped in place, README) at d95d8b25, rerere disabled: both provenance histories kept (main's first), citations re-mapped by difflib; crew is set to 1.0.140).**
 
 **Re-anchored `d95d8b25` -> `52f03271` on 2026-10-03 (L-0522 PR 1 at 52f03271, on main 8123fe74 (L-0574 #323, crew 1.0.140): `crew_train.py` check-land's two catch-up refusals name the landing order (`LANDING_ORDER`, six lines added above `check_land`, three in the module docstring); `done.md`, `implement.md` step 6, the README train section and `daily-workflow.md` say the same; BUDGETS re-measured; citations re-mapped by difflib).**
+
+**Re-anchored `52f03271` -> `eab5ff10` on 2026-10-03 (L-0522 PR 1 review round 1 fixes): the landing order now reads "..., gate the merged head, review it again if `review_ledger.py --check-receipt` reads stale, then check-land again" in `crew_train.py` (`LANDING_ORDER`, one line longer, one docstring line), `done.md`, `implement.md:114`, README and `daily-workflow.md`; the bare `crew_train.py` citations in this note's merge-train section re-mapped by difflib.**

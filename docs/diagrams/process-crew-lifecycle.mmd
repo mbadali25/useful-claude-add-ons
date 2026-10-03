@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@52f03271 on 2026-10-03. Verify before trusting.
+%% Generated from useful-claude-add-ons@eab5ff10 on 2026-10-03. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -363,7 +363,7 @@ flowchart TB
         dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:82-85"}
         ln0 -- yes --> ln1{"crew_train.py check-land:<br/>holds the train, merge-tree clean,<br/>base unmoved in Touch, receipt + gate<br/>done.md:88-92"}
         ln1 -- LAND_OK --> ln2["you run the printed gh pr merge<br/>--merge --match-head-commit sha;<br/>then release --merged sha<br/>(crew never merges) :93-94"]
-        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit,<br/>gate the merged head<br/>:95-98" --> im5
+        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit, gate,<br/>review again if the receipt is stale<br/>:95-99" --> im5
     end
 
     fix -.-> BR
@@ -547,3 +547,4 @@ flowchart TB
 %% Re-anchored 0891d6a6 -> 4dcad808 (L-0574 merges main 6ac3b1b3 at 4dcad808, rerere disabled): main changed none of the files this diagram cites (L-0587 touched scripts/, .crew/verify.json, a workflow and README's pin); both provenance histories kept. No node or edge changed.
 %% Re-anchored 4dcad808 -> d95d8b25 (L-0574 merges main 2a2d6e07, L-0592 #325, at d95d8b25, rerere disabled): implement.md step 2 re-wrapped in place by L-0592, line count unchanged, so im2 :38-42 and im0 :17-23 hold; review_run.py did not change. No node or edge changed.
 %% Re-anchored d95d8b25 -> 52f03271 (L-0522 PR 1, on main 8123fe74): done.md's catch-up refusal now names the landing order (catch up, resolve, bump, refresh, commit, gate, rerun), so the ln1 edge reads :95-98 with that order; implement.md step 6 joined two lines and gained one, so im4 reads :110-112, im5 :113 and the status-edit note implement.md:111; crew_train.py's refusal text changed, no node cites its lines. No node added or removed.
+%% Re-anchored 52f03271 -> eab5ff10 (L-0522 PR 1 review round 1 fixes): done.md's landing order gained 'review it again if review_ledger.py --check-receipt reads stale', one line longer, so the ln1 edge reads :95-99 and names it; implement.md:114 (after im5's :113) now also names the anchor-only re-anchor rule; no node added or removed.
