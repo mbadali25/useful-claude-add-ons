@@ -9,7 +9,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 - Bumped `1.0.163 -> 1.0.196`. New `crew_autopilot.py ship --root . --ticket <id>` and a `ship`
   phase in `next`, both only while autopilot is armed; unarmed, a done ticket still reads `closed`
   and gh is never asked. `commands/autopilot.md` runs it at `phase=ship` and stays inside its
-  110-line budget (109).
+  110-line budget (110).
 - New repo-only keys in the `autopilot` block: `ship` (`merge` default, or `pr`; anything else
   reads as `pr` with a warning), `knownFailures` (`[]`; check names matched exactly) and
   `ciTimeoutMinutes` (`60`). The repo config leaf count goes from 129 to 132; `crew-setup`'s
