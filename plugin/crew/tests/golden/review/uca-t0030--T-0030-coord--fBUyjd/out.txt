@@ -1,0 +1,42 @@
+READ|part-001-of-036.patch
+READ|part-002-of-036.patch
+READ|part-003-of-036.patch
+READ|part-004-of-036.patch
+READ|part-005-of-036.patch
+READ|part-006-of-036.patch
+READ|part-007-of-036.patch
+READ|part-008-of-036.patch
+READ|part-009-of-036.patch
+READ|part-010-of-036.patch
+READ|part-011-of-036.patch
+READ|part-012-of-036.patch
+READ|part-013-of-036.patch
+READ|part-014-of-036.patch
+READ|part-015-of-036.patch
+READ|part-016-of-036.patch
+READ|part-017-of-036.patch
+READ|part-018-of-036.patch
+READ|part-019-of-036.patch
+READ|part-020-of-036.patch
+READ|part-021-of-036.patch
+READ|part-022-of-036.patch
+READ|part-023-of-036.patch
+READ|part-024-of-036.patch
+READ|part-025-of-036.patch
+READ|part-026-of-036.patch
+READ|part-027-of-036.patch
+READ|part-028-of-036.patch
+READ|part-029-of-036.patch
+READ|part-030-of-036.patch
+READ|part-031-of-036.patch
+READ|part-032-of-036.patch
+READ|part-033-of-036.patch
+READ|part-034-of-036.patch
+READ|part-035-of-036.patch
+READ|part-036-of-036.patch
+BLOCK|plugin/crew/hooks/scripts/crew_coord.py:391|The round-2 namespace fix is one rung short. current_holder records holder.pidns = /proc/self/ns/pid even when the holder's CLAUDE_PID is invisible from that namespace, and probe_holder (:376) treats an equal namespace string as proof that "gone" is real. Namespace ids are inode numbers the kernel recycles lowest-free, so every short-lived bwrap --unshare-pid sandbox (one per Claude Code Bash command) tends to get the same pid:[N] as the last one. So when a claim was made inside the sandbox and recover runs in a later sandbox, the namespaces match, the live pid reads ESRCH (gone), and the claim of a still-running session is adopted. That gives two holders, which is the failure this ticket exists to prevent. The README/CHANGELOG line "a namespace that differs ... cannot tell (tested with a real bwrap)" covers only a host-recorded namespace. One fix: record pidns (and trust gone) only when probe_pid(CLAUDE_PID) read alive at claim time, else record None.|On this host (kernel 7.0.0), `for i in 1 2 3 4 5; do bwrap --unshare-pid --dev-bind / / --proc /proc readlink /proc/self/ns/pid; done` prints pid:[4026533189] twice in five runs. In a throwaway bare remote plus clone wt (origin via insteadOf), with `sleep 3000 &` as live P: run `CLAUDECODE=1 CLAUDE_CODE_SESSION_ID=sess-a CLAUDE_PID=P bwrap --unshare-pid --dev-bind / / --proc /proc python3 crew_coord.py claim --root wt --remote origin --channel t --ticket T-1 --no-heartbeat` (it records pidns pid:[4026533189], pid_start null). Then run the same bwrap wrapper with CLAUDE_CODE_SESSION_ID=sess-b and `recover --ticket T-1 --no-heartbeat`. The first try prints `adopted owner.repo__T-1 from sess-a (pid P gone)`, `kill -0 P` still succeeds, and log.jsonl records the adopt (reproduced).
+FIX|plugin/crew/hooks/scripts/crew_coord.py:963|holder_tag keys the heartbeat lock by session id and pid only, while same_holder (:395) also counts worktree (and machine and pid_start) as part of the holder. So the round-2 lock fix misses its neighbouring case: the same session and pid releasing a ticket in one worktree and claiming it from another within one interval is a new holder that shares the old loop's lock. The new loop exits with "another heartbeat loop already runs ... as this holder". The old loop then exits at its next tick ("only the holder may heartbeat"), and the live claim has no heartbeat, so it reads owner unknown after the TTL.|Set ttlMinutes 1 (interval 20s) and use TMPDIR=scratch. With CLAUDE_CODE_SESSION_ID=sess-c CLAUDE_PID=P3 (live): run `claim --root wt --ticket T-2`, then `release --root wt --ticket T-2`, then `claim --root wt2 --ticket T-2`. t-owner.repo__T-2.log shows "another heartbeat loop already runs for owner.repo__T-2 as this holder; exiting", and 17s later "is no longer working for this session; exiting". `ps` then shows no heartbeat-loop for T-2 while P3 is alive (reproduced).
+FIX|plugin/crew/hooks/scripts/crew_coord.py:748|The key's ticket half is taken verbatim and case-sensitively, so one ticket still gets two holders. Round 2's third reproduction (UCA:t-0030) survives through the half that was not canonicalised: `--ticket T-0030` and `--ticket t-0030` give owner.repo__T-0030 and owner.repo__t-0030, and both are granted.|In a throwaway fixture: sess-1 (live P1) runs `claim --root wt --ticket T-0030 --no-heartbeat` (rc=0). sess-2 (live P2) runs `claim --root wt2 --ticket owner.repo:t-0030 --no-heartbeat` (rc=0). status lists two working holders, sess-1 and sess-2, for the same ticket (reproduced).
+FIX|plugin/crew/hooks/scripts/crew_coord.py:699|owner_name takes the last two path parts. For Azure DevOps https URLs (https://dev.azure.com/Org/Proj/_git/Repo) the owner part is "_git", which fails the rule, so the key falls back to the local directory name. The ssh form of the same repository (git@ssh.dev.azure.com:v3/Org/Proj/Repo) derives proj.repo. So https and ssh clones of one repository get different keys, and a ticket gets two holders, the same failure the round-2 derived-key fix was meant to close.|Make two clones of one throwaway bare remote. Give clone repo-https origin https://dev.azure.com/Org/Proj/_git/Repo and clone repo-ssh origin git@ssh.dev.azure.com:v3/Org/Proj/Repo (both via insteadOf). sess-1 and sess-2 each run `claim --ticket T-1 --no-heartbeat`. Both get rc=0, and the channel holds claims/repo-https__T-1.json and claims/proj.repo__T-1.json (reproduced).
+NIT|plugin/crew/hooks/scripts/crew_coord.py:890|ttl_minutes accepts NaN and Infinity, which Python's json accepts in .crew/config.json. The plan says an invalid value warns and uses 30. Instead, NaN disables stale detection (age > nan is never true), and both values crash _maybe_start_heartbeat (int(nan) or int(inf)) after the claim was pushed, so a granted claim exits 1 with a traceback, which reads as refused.|Write {"coord":{"ttlMinutes": NaN}} to wt/.crew/config.json and run claim --ticket T-9 (without --no-heartbeat). It ends with "ValueError: cannot convert float NaN to integer", rc=1, and the remote's claims/owner.repo__T-9.json has state working (reproduced).
+NIT|.crew/codemap/verification-harness.md:390|Rule 24 is cited as `.crew/verify.json:262-269` here, in .claude/rules/verification-harness.md:18, and in crew.md, repo-docs.md and marketplace-registration.md. The rule spans :262-268; :269 is the rules array's closing "],".|awk 'NR>=262 && NR<=269' .crew/verify.json: line 268 is the rule's "why" and closing brace, and line 269 is "  ],".

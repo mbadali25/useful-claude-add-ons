@@ -9,8 +9,9 @@ stops on anything it could not read, and never merges a high- or
 unknown-risk ticket whose completed review rounds are all same-family
 (`claude`, or no `model_family` at all). Everything that runs `gh` or
 `git push` is stubbed here; no test reaches a network or a real remote.
-`sabotage_autopilot.py` mutates each refusing branch to prove these tests can
-fail.
+Each refusing branch was sabotaged by hand (break it, see its test red,
+restore); the SHIP_MUTATIONS that make that permanent in
+`sabotage_autopilot.py` are a harness-only follow-up (CLAUDE.md, T-0087).
 """
 import json
 import os
@@ -228,15 +229,20 @@ def _receipt_ok(monkeypatch, ok=True):
                         lambda root, ticket: (ok, "receipt current" if ok else "receipt is stale"))
 
 
+NODE = "PR_kwDOtest7"
+
+
 def _pr(state="OPEN", number=7, head=None):
     return {"number": number, "state": state, "url": f"https://example.test/pull/{number}",
-            "headRefOid": head or "0" * 40}
+            "headRefOid": head or "0" * 40, "id": NODE}
 
 
 class FakeGh:
     """Stands in for `crew_autopilot._run_gh`: answers by the argv's first two
-    words, consuming a list one call at a time (its last entry repeats), and
-    records every argv it was handed."""
+    words, consuming a list one call at a time (its last entry repeats) or
+    calling a function with the argv, and records every argv it was handed.
+    The one GraphQL mutation ship may ever send is dequeuePullRequest: any
+    other fails the test that sent it."""
 
     def __init__(self, **answers):
         self.answers = answers
@@ -244,11 +250,13 @@ class FakeGh:
 
     def __call__(self, top, args):
         self.calls.append(list(args))
+        if list(args[:2]) == ["api", "graphql"] and "mutation" in " ".join(args):
+            assert "query=" + crew_autopilot._DEQUEUE in args, args  # pylint: disable=protected-access
         key = "_".join(args[:2])
         answer = self.answers.get(key)
         if isinstance(answer, list):
             answer = answer.pop(0) if len(answer) > 1 else answer[0]
-        return answer
+        return answer(args) if callable(answer) else answer
 
     def ran(self, *prefix):
         return [c for c in self.calls if c[:len(prefix)] == list(prefix)]
@@ -559,17 +567,41 @@ class Clock:
             self.on_sleep()
 
 
-def _ship_env(tmp_path, monkeypatch, fake, families=("gpt",), push_ok=True, **block):
+class Remote:
+    """The PR as GitHub holds it: none until `gh pr create`, then OPEN at
+    `head`, and MERGED once `gh pr merge` succeeds (unless `merges` is
+    False: gh exits 0 and the PR stays OPEN, as when it queued it)."""
+
+    def __init__(self, head, has_pr=True, merges=True, merge_answer=(0, "", "")):
+        self.head = head
+        self.has_pr = has_pr
+        self.merges = merges
+        self.merged = False
+        self.merge_answer = merge_answer
+
+    def view(self, _args):
+        if not self.has_pr:
+            return (1, "", NO_PR)
+        return _view(_pr("MERGED" if self.merged else "OPEN", head=self.head))
+
+    def create(self, _args):
+        self.has_pr = True
+        return (0, "https://example.test/pull/7\n", "")
+
+    def merge(self, _args):
+        self.merged = self.merges and self.merge_answer[0] == 0
+        return self.merge_answer
+
+
+def _ship_env(tmp_path, monkeypatch, fake, families=("gpt",), push_ok=True, has_pr=True,
+              **block):
     root = _done_ticket(tmp_path, **block)
     _ledger(root, *families)
     _receipt_ok(monkeypatch)
-    head = git(root, "rev-parse", "HEAD").strip()
-    for key, value in list(fake.answers.items()):
-        if isinstance(value, list):
-            fake.answers[key] = [_view(dict(v, headRefOid=head)) if isinstance(v, dict)
-                                 else v for v in value]
-        elif isinstance(value, dict):
-            fake.answers[key] = _view(dict(value, headRefOid=head))
+    remote = Remote(git(root, "rev-parse", "HEAD").strip(), has_pr=has_pr)
+    fake.answers.setdefault("pr_view", remote.view)
+    fake.answers.setdefault("pr_create", remote.create)
+    fake.answers.setdefault("pr_merge", remote.merge)
     fake.answers.setdefault("repo_view", (0, json.dumps({"defaultBranchRef": {"name": "main"}}),
                                           ""))
     fake.answers.setdefault("api_graphql", _gql(_queue(False, False)))
@@ -580,41 +612,46 @@ def _ship_env(tmp_path, monkeypatch, fake, families=("gpt",), push_ok=True, **bl
     clock = Clock()
     monkeypatch.setattr(crew_autopilot, "_clock", clock.time)
     monkeypatch.setattr(crew_autopilot, "_sleep", clock.sleep)
-    return root, pushes, clock
+    return root, pushes, clock, remote
+
+
+def _green():
+    return FakeGh(pr_checks=_checks(("check", "pass")))
+
+
+def _commit(root, message="later"):
+    git(root, "commit", "-q", "--allow-empty", "-m", message)
+    return git(root, "rev-parse", "HEAD").strip()
 
 
 def test_ship_merges_when_green_and_reports_what_it_rested_on(tmp_path, monkeypatch):
-    fake = FakeGh(pr_view=[(1, "", NO_PR), (1, "", NO_PR), _pr("OPEN"), _pr("OPEN"),
-                           _pr("MERGED")],
-                  pr_create=(0, "https://example.test/pull/7\n", ""),
-                  pr_checks=_checks(("check", "pass")), pr_merge=(0, "", ""))
-    root, pushes, _ = _ship_env(tmp_path, monkeypatch, fake, families=("claude", "gpt"))
+    fake = _green()
+    root, pushes, _, _ = _ship_env(tmp_path, monkeypatch, fake, families=("claude", "gpt"),
+                                   has_pr=False)
 
     got = crew_autopilot.ship(str(root), T)
 
-    assert (got["action"], got["stop"], pushes, got["pr"], got["checks"], got["families"]) == (
+    assert (got["action"], got["stop"], pushes, got["pr"], got["checks"], got["families"],
+            len(fake.ran("pr", "create"))) == (
         "merged", False, [BRANCH], "https://example.test/pull/7",
-        [{"name": "check", "state": "pass"}], ["claude", "gpt"])
+        [{"name": "check", "state": "pass"}], ["claude", "gpt"], 1)
 
 
 def test_ship_merge_command_is_merge_commit_without_admin(tmp_path, monkeypatch):
-    fake = FakeGh(pr_view=[(1, "", NO_PR), _pr("OPEN"), _pr("OPEN"), _pr("MERGED")],
-                  pr_checks=_checks(("check", "pass")), pr_merge=(0, "", ""))
-    root, _, _ = _ship_env(tmp_path, monkeypatch, fake)
+    fake = _green()
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake)
     head = git(root, "rev-parse", "HEAD").strip()
 
     crew_autopilot.ship(str(root), T)
 
     assert (fake.ran("pr", "merge"), [c for c in fake.calls if {"--squash", "--rebase",
                                                                  "--admin"} & set(c)]) == (
-        [["pr", "merge", "7", "--merge", "--match-head-commit", head]], [])
+        [crew_autopilot.merge_argv(7, head)], [])
 
 
 def test_ship_pr_policy_opens_and_never_merges(tmp_path, monkeypatch):
-    fake = FakeGh(pr_view=[(1, "", NO_PR), (1, "", NO_PR), _pr("OPEN")],
-                  pr_create=(0, "", ""), pr_checks=_checks(("check", "pass")),
-                  pr_merge=(0, "", ""))
-    root, _, _ = _ship_env(tmp_path, monkeypatch, fake, ship="pr")
+    fake = _green()
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake, ship="pr", has_pr=False)
 
     got = crew_autopilot.ship(str(root), T)
 
@@ -623,9 +660,8 @@ def test_ship_pr_policy_opens_and_never_merges(tmp_path, monkeypatch):
 
 
 def test_ship_timeout_pending_stops(tmp_path, monkeypatch):
-    fake = FakeGh(pr_view=_pr("OPEN"), pr_checks=_checks(("check", "pending"), code=8),
-                  pr_merge=(0, "", ""))
-    root, _, clock = _ship_env(tmp_path, monkeypatch, fake, ciTimeoutMinutes=2)
+    fake = FakeGh(pr_checks=_checks(("check", "pending"), code=8))
+    root, _, clock, _ = _ship_env(tmp_path, monkeypatch, fake, ciTimeoutMinutes=2)
 
     got = crew_autopilot.ship(str(root), T)
 
@@ -633,27 +669,23 @@ def test_ship_timeout_pending_stops(tmp_path, monkeypatch):
             set(clock.slept) <= {30}) == ("stop", True, [], True, True)
 
 
+def _pending_then_green(polls=1):
+    return FakeGh(pr_checks=[_checks(("check", "pending"), code=8)] * polls
+                  + [_checks(("check", "pass"))])
+
+
 def test_ship_waits_then_merges_when_checks_go_green(tmp_path, monkeypatch):
-    fake = FakeGh(pr_view=_pr("OPEN"), pr_merge=(0, "", ""),
-                  pr_checks=[_checks(("check", "pending"), code=8), _checks(("check", "pass"))])
-    root, _, clock = _ship_env(tmp_path, monkeypatch, fake)
-    fake.answers["pr_view"] = [fake.answers["pr_view"], fake.answers["pr_view"],
-                               fake.answers["pr_view"], _view(_pr("MERGED"))]
+    fake = _pending_then_green()
+    root, _, clock, _ = _ship_env(tmp_path, monkeypatch, fake)
 
     got = crew_autopilot.ship(str(root), T)
 
     assert (got["action"], clock.slept) == ("merged", [30])
 
 
-def _pending_then_green(*extra):
-    return FakeGh(pr_view=_pr("OPEN"), pr_merge=(0, "", ""),
-                  pr_checks=[_checks(("check", "pending"), code=8)] * (1 + len(extra))
-                  + [_checks(("check", "pass"))])
-
-
 def test_ship_green_after_the_deadline_stops(tmp_path, monkeypatch):
-    fake = _pending_then_green("second pending poll")
-    root, _, clock = _ship_env(tmp_path, monkeypatch, fake, ciTimeoutMinutes=1)
+    fake = _pending_then_green(polls=2)
+    root, _, clock, _ = _ship_env(tmp_path, monkeypatch, fake, ciTimeoutMinutes=1)
     clock.drift = 10
 
     got = crew_autopilot.ship(str(root), T)
@@ -663,7 +695,7 @@ def test_ship_green_after_the_deadline_stops(tmp_path, monkeypatch):
 
 def test_ship_rereads_the_review_families_while_waiting(tmp_path, monkeypatch):
     fake = _pending_then_green()
-    root, _, clock = _ship_env(tmp_path, monkeypatch, fake, families=("gpt",))
+    root, _, clock, _ = _ship_env(tmp_path, monkeypatch, fake, families=("gpt",))
     clock.on_sleep = lambda: _ledger(root, "claude")
 
     got = crew_autopilot.ship(str(root), T)
@@ -674,7 +706,7 @@ def test_ship_rereads_the_review_families_while_waiting(tmp_path, monkeypatch):
 
 def test_ship_disarmed_while_waiting_stops(tmp_path, monkeypatch):
     fake = _pending_then_green()
-    root, _, clock = _ship_env(tmp_path, monkeypatch, fake)
+    root, _, clock, _ = _ship_env(tmp_path, monkeypatch, fake)
     clock.on_sleep = lambda: _config(root, mode="off")
 
     got = crew_autopilot.ship(str(root), T)
@@ -684,7 +716,7 @@ def test_ship_disarmed_while_waiting_stops(tmp_path, monkeypatch):
 
 def test_ship_policy_changed_to_pr_while_waiting_never_merges(tmp_path, monkeypatch):
     fake = _pending_then_green()
-    root, _, clock = _ship_env(tmp_path, monkeypatch, fake)
+    root, _, clock, _ = _ship_env(tmp_path, monkeypatch, fake)
     clock.on_sleep = lambda: _config(root, ship="pr")
 
     got = crew_autopilot.ship(str(root), T)
@@ -694,7 +726,7 @@ def test_ship_policy_changed_to_pr_while_waiting_never_merges(tmp_path, monkeypa
 
 def test_ship_receipt_staled_while_waiting_stops(tmp_path, monkeypatch):
     fake = _pending_then_green()
-    root, _, _ = _ship_env(tmp_path, monkeypatch, fake)
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake)
     answers = iter([(True, "receipt current")])
     monkeypatch.setattr(review_ledger, "check_receipt", lambda _root, _ticket: next(
         answers, (False, "receipt is stale")))
@@ -708,9 +740,8 @@ def test_ship_receipt_staled_while_waiting_stops(tmp_path, monkeypatch):
 @pytest.mark.parametrize("answer", [_gql(_queue(True, False)), _gql(_queue(False, True)),
                                     None, (1, "", "HTTP 502\n")])
 def test_ship_merge_queue_or_unreadable_queue_never_merges(tmp_path, monkeypatch, answer):
-    fake = FakeGh(pr_view=_pr("OPEN"), pr_checks=_checks(("check", "pass")),
-                  pr_merge=(0, "", ""), api_graphql=answer)
-    root, _, _ = _ship_env(tmp_path, monkeypatch, fake)
+    fake = FakeGh(pr_checks=_checks(("check", "pass")), api_graphql=answer)
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake)
 
     got = crew_autopilot.ship(str(root), T)
 
@@ -719,9 +750,8 @@ def test_ship_merge_queue_or_unreadable_queue_never_merges(tmp_path, monkeypatch
 
 
 def test_ship_high_risk_same_family_never_merges(tmp_path, monkeypatch):
-    fake = FakeGh(pr_view=_pr("OPEN"), pr_checks=_checks(("check", "pass")),
-                  pr_merge=(0, "", ""))
-    root, _, _ = _ship_env(tmp_path, monkeypatch, fake, families=("claude", None))
+    fake = _green()
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake, families=("claude", None))
 
     got = crew_autopilot.ship(str(root), T)
 
@@ -729,9 +759,8 @@ def test_ship_high_risk_same_family_never_merges(tmp_path, monkeypatch):
 
 
 def test_ship_refuses_the_default_branch_before_pushing(tmp_path, monkeypatch):
-    fake = FakeGh(pr_view=(1, "", NO_PR), pr_merge=(0, "", ""),
-                  repo_view=(0, json.dumps({"defaultBranchRef": {"name": BRANCH}}), ""))
-    root, pushes, _ = _ship_env(tmp_path, monkeypatch, fake)
+    fake = FakeGh(repo_view=(0, json.dumps({"defaultBranchRef": {"name": BRANCH}}), ""))
+    root, pushes, _, _ = _ship_env(tmp_path, monkeypatch, fake, has_pr=False)
 
     got = crew_autopilot.ship(str(root), T)
 
@@ -739,8 +768,8 @@ def test_ship_refuses_the_default_branch_before_pushing(tmp_path, monkeypatch):
 
 
 def test_ship_unreadable_default_branch_stops_before_pushing(tmp_path, monkeypatch):
-    fake = FakeGh(pr_view=(1, "", NO_PR), repo_view=None)
-    root, pushes, _ = _ship_env(tmp_path, monkeypatch, fake)
+    fake = FakeGh(repo_view=None)
+    root, pushes, _, _ = _ship_env(tmp_path, monkeypatch, fake, has_pr=False)
 
     got = crew_autopilot.ship(str(root), T)
 
@@ -748,8 +777,8 @@ def test_ship_unreadable_default_branch_stops_before_pushing(tmp_path, monkeypat
 
 
 def test_ship_push_failure_stops(tmp_path, monkeypatch):
-    fake = FakeGh(pr_view=(1, "", NO_PR), pr_create=(0, "", ""))
-    root, _, _ = _ship_env(tmp_path, monkeypatch, fake, push_ok=False)
+    fake = FakeGh()
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake, push_ok=False, has_pr=False)
 
     got = crew_autopilot.ship(str(root), T)
 
@@ -757,10 +786,8 @@ def test_ship_push_failure_stops(tmp_path, monkeypatch):
 
 
 def test_ship_pr_create_failure_stops(tmp_path, monkeypatch):
-    fake = FakeGh(pr_view=[(1, "", NO_PR), (1, "", NO_PR), _pr("OPEN")],
-                  pr_create=(1, "", "GraphQL error\n"), pr_checks=_checks(("check", "pass")),
-                  pr_merge=(0, "", ""))
-    root, _, _ = _ship_env(tmp_path, monkeypatch, fake)
+    fake = FakeGh(pr_create=(1, "", "GraphQL error\n"), pr_checks=_checks(("check", "pass")))
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake, has_pr=False)
 
     got = crew_autopilot.ship(str(root), T)
 
@@ -768,44 +795,58 @@ def test_ship_pr_create_failure_stops(tmp_path, monkeypatch):
             fake.ran("pr", "merge")) == (True, True, [])
 
 
-def test_ship_head_moved_stops_without_merging(tmp_path, monkeypatch):
-    fake = FakeGh(pr_view=_pr("OPEN"), pr_checks=_checks(("check", "pass")),
-                  pr_merge=(0, "", ""))
-    root, _, _ = _ship_env(tmp_path, monkeypatch, fake)
-    fake.answers["pr_view"] = [fake.answers["pr_view"], fake.answers["pr_view"],
-                               _view(_pr("OPEN", head="f" * 40))]
+def test_ship_pr_head_moved_after_ci_stops_without_merging(tmp_path, monkeypatch):
+    fake = _green()
+    root, _, _, remote = _ship_env(tmp_path, monkeypatch, fake)
+
+    def receipt(_root, _ticket):
+        if fake.ran("pr", "checks"):
+            remote.head = "f" * 40
+        return True, "receipt current"
+    monkeypatch.setattr(review_ledger, "check_receipt", receipt)
 
     got = crew_autopilot.ship(str(root), T)
 
-    assert (got["stop"], fake.ran("pr", "merge")) == (True, [])
+    assert (got["stop"], "f" * 40 in got["reason"], fake.ran("pr", "merge")) == (
+        True, True, [])
+
+
+def test_ship_pr_head_that_is_not_the_push_stops_before_ci(tmp_path, monkeypatch):
+    fake = _green()
+    root, _, _, remote = _ship_env(tmp_path, monkeypatch, fake)
+    remote.head = "f" * 40
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["stop"], fake.ran("pr", "checks"), fake.ran("pr", "merge")) == (True, [], [])
 
 
 def test_ship_merge_failure_stops(tmp_path, monkeypatch):
-    fake = FakeGh(pr_view=[_pr("OPEN"), _pr("OPEN"), _pr("OPEN"), _pr("MERGED")],
-                  pr_checks=_checks(("check", "pass")),
-                  pr_merge=(1, "", "Pull request is not mergeable\n"))
-    root, _, _ = _ship_env(tmp_path, monkeypatch, fake)
+    fake = _green()
+    root, _, _, remote = _ship_env(tmp_path, monkeypatch, fake)
+    remote.merge_answer = (1, "", "Pull request is not mergeable\n")
 
     got = crew_autopilot.ship(str(root), T)
 
-    assert (got["action"], got["stop"]) == ("stop", True)
+    assert (got["action"], got["stop"], "not mergeable" in got["reason"]) == (
+        "stop", True, True)
 
 
 def test_ship_merge_that_does_not_read_merged_stops(tmp_path, monkeypatch):
-    fake = FakeGh(pr_view=_pr("OPEN"), pr_checks=_checks(("check", "pass")),
-                  pr_merge=(0, "", ""))
-    root, _, _ = _ship_env(tmp_path, monkeypatch, fake)
+    fake = _green()
+    root, _, _, remote = _ship_env(tmp_path, monkeypatch, fake)
+    remote.merges = False
 
     got = crew_autopilot.ship(str(root), T)
 
-    assert (got["stop"], fake.ran("pr", "merge") != []) == (True, True)
+    assert (got["stop"], fake.ran("pr", "merge") != [], "not MERGED" in got["reason"]) == (
+        True, True, True)
 
 
 def test_ship_unreadable_ledger_stops_without_merging(tmp_path, monkeypatch):
-    fake = FakeGh(pr_view=_pr("OPEN"), pr_checks=_checks(("check", "pass")),
-                  pr_merge=(0, "", ""))
-    root, _, _ = _ship_env(tmp_path, monkeypatch, fake,
-                           header="status: done   risk: low")
+    fake = _green()
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake,
+                              header="status: done   risk: low")
     _write(review_ledger.ledger_path(str(root), T), "{not json")
 
     got = crew_autopilot.ship(str(root), T)
@@ -815,8 +856,8 @@ def test_ship_unreadable_ledger_stops_without_merging(tmp_path, monkeypatch):
 
 
 def test_ship_refuses_when_next_is_not_ship(tmp_path, monkeypatch):
-    fake = FakeGh(pr_view=_pr("MERGED"))
-    root, pushes, _ = _ship_env(tmp_path, monkeypatch, fake)
+    fake = FakeGh(pr_view=_view(_pr("MERGED")))
+    root, pushes, _, _ = _ship_env(tmp_path, monkeypatch, fake)
 
     got = crew_autopilot.ship(str(root), T)
 
@@ -824,20 +865,251 @@ def test_ship_refuses_when_next_is_not_ship(tmp_path, monkeypatch):
 
 
 def test_ship_unarmed_refuses(tmp_path, monkeypatch):
-    fake = FakeGh(pr_view=(1, "", NO_PR))
-    root, pushes, _ = _ship_env(tmp_path, monkeypatch, fake, mode="off")
+    fake = FakeGh()
+    root, pushes, _, _ = _ship_env(tmp_path, monkeypatch, fake, mode="off", has_pr=False)
 
     got = crew_autopilot.ship(str(root), T)
 
     assert (got["stop"], pushes, fake.calls) == (True, [], [])
 
 
+# --- review round 2: the checks, the commit, the ledger and the tree it rests on --
+
+def test_read_checks_measured_row_reads_exact_name_and_bucket(monkeypatch):
+    monkeypatch.setattr(crew_autopilot, "_run_gh", FakeGh(pr_checks=(
+        1, "crew (windows-latest)\tfail\t1m2s\thttps://example.test/1\tExit 1\n"
+           "check\tpass\t0\thttps://example.test/2\t\n", "")))
+
+    got = crew_autopilot.read_checks(".", 7)
+
+    assert got == [{"name": "crew (windows-latest)", "state": "fail"},
+                   {"name": "check", "state": "pass"}]
+
+
+@pytest.mark.parametrize("answer", [
+    (1, "check\tfail\tfail\t1m\turl\t\n", ""),
+    (1, "check\tfail\t1m\turl\tdescription\twith a tab\n", ""),
+    (0, "check\tpass\t1m\turl\n", ""),
+])
+def test_read_checks_tab_in_name_is_unreadable(tmp_path, monkeypatch, answer):
+    monkeypatch.setattr(crew_autopilot, "_run_gh", FakeGh(pr_checks=answer))
+    alone = crew_autopilot.read_checks(".", 7)
+    fake = FakeGh(pr_checks=answer)
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake, knownFailures=["check"])
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (alone, got["stop"], fake.ran("pr", "merge")) == (None, True, [])
+
+
+def test_ship_stops_when_a_commit_lands_after_passing_checks(tmp_path, monkeypatch):
+    fake = FakeGh()
+    root, _, _, remote = _ship_env(tmp_path, monkeypatch, fake)
+
+    def checks(_args):
+        if remote.head == git(root, "rev-parse", "HEAD").strip():
+            remote.head = _commit(root, "B")
+        return _checks(("check", "pass"))
+    fake.answers["pr_checks"] = checks
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["stop"], remote.head in got["reason"], fake.ran("pr", "merge")) == (
+        True, True, [])
+
+
+def test_ship_with_no_new_commit_merges_the_head_it_pushed(tmp_path, monkeypatch):
+    fake = _green()
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake)
+    head_a = git(root, "rev-parse", "HEAD").strip()
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["action"], fake.ran("pr", "merge")) == (
+        "merged", [crew_autopilot.merge_argv(7, head_a)])
+
+
+def _successor_ledger(root):
+    """A Claude-only ledger under a successor plan: what a high-risk merge
+    must never rest on."""
+    path = review_ledger.ledger_path(str(root), T)
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+    data["successors"] = [{"after_round": len(data["rounds"]), "plan_sha256": "b" * 64}]
+    data["rounds"].append(dict(data["rounds"][-1], round=len(data["rounds"]) + 1,
+                               model_family="claude"))
+    _write(path, json.dumps(data))
+
+
+def test_ship_stops_when_the_ledger_is_replaced_after_the_last_poll(tmp_path, monkeypatch):
+    fake = _green()
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake, families=("gpt",))
+
+    def receipt(_root, _ticket):
+        if fake.ran("pr", "checks"):
+            _successor_ledger(root)
+        return True, "receipt current"
+    monkeypatch.setattr(review_ledger, "check_receipt", receipt)
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["stop"], "ledger changed" in got["reason"], fake.ran("pr", "merge")) == (
+        True, True, [])
+
+
+def test_ship_unchanged_ledger_merges_on_the_gates_families(tmp_path, monkeypatch):
+    fake = _green()
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake, families=("claude", "gpt"))
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["action"], got["families"]) == ("merged", ["claude", "gpt"])
+
+
+def _queue_read_that(root, moves):
+    def read(_top, _number):
+        if moves:
+            _commit(root, "B")
+        return False
+    return read
+
+
+def test_ship_stops_when_head_moves_during_the_queue_read(tmp_path, monkeypatch):
+    fake = _green()
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake)
+    monkeypatch.setattr(crew_autopilot, "read_merge_queue", _queue_read_that(root, True))
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["stop"], "HEAD moved" in got["reason"], fake.ran("pr", "merge")) == (
+        True, True, [])
+
+
+def test_ship_queue_read_without_a_commit_merges_with_the_pushed_head(tmp_path, monkeypatch):
+    fake = _green()
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake)
+    head_a = git(root, "rev-parse", "HEAD").strip()
+    monkeypatch.setattr(crew_autopilot, "read_merge_queue", _queue_read_that(root, False))
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["action"], fake.ran("pr", "merge")) == (
+        "merged", [["pr", "merge", "7", "--merge", "--match-head-commit", head_a]])
+
+
+def test_ship_refuses_a_dirty_tracked_file_before_pushing(tmp_path, monkeypatch):
+    fake = _green()
+    root, pushes, _, _ = _ship_env(tmp_path, monkeypatch, fake)
+    _write(root / "src" / "app.py", "x = 2\n")
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["stop"], "working tree" in got["reason"], pushes,
+            fake.ran("pr", "merge")) == (True, True, [], [])
+
+
+def test_ship_refuses_an_untracked_file_before_pushing(tmp_path, monkeypatch):
+    fake = _green()
+    root, pushes, _, _ = _ship_env(tmp_path, monkeypatch, fake)
+    _write(root / "src" / "new.py", "y = 1\n")
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["stop"], "working tree" in got["reason"], pushes,
+            fake.ran("pr", "merge")) == (True, True, [], [])
+
+
+def test_ship_ignored_file_is_not_a_dirty_tree(tmp_path, monkeypatch):
+    fake = _green()
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake)
+    _write(root / ".work" / "scratch.txt", "notes\n")
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert got["action"] == "merged"
+
+
+def test_ship_tree_dirtied_while_waiting_never_merges(tmp_path, monkeypatch):
+    fake = _pending_then_green()
+    root, pushes, clock, _ = _ship_env(tmp_path, monkeypatch, fake)
+    clock.on_sleep = lambda: _write(root / "src" / "app.py", "x = 3\n")
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (pushes, "working tree" in got["reason"], fake.ran("pr", "merge")) == (
+        [BRANCH], True, [])
+
+
+def test_ship_unreadable_tree_stops(tmp_path, monkeypatch):
+    fake = _green()
+    root, pushes, _, _ = _ship_env(tmp_path, monkeypatch, fake)
+    real = crew_autopilot.git_out
+    monkeypatch.setattr(crew_autopilot, "git_out", lambda top, *args: (
+        None if args[:1] == ("status",) else real(top, *args)))
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["stop"], "could not tell whether the working tree" in got["reason"],
+            pushes) == (True, True, [])
+
+
+def test_phase_dirty_tree_stops(tmp_path, monkeypatch):
+    root = _done_ticket(tmp_path)
+    _receipt_ok(monkeypatch)
+    monkeypatch.setattr(crew_autopilot, "_run_gh", FakeGh(pr_view=(1, "", NO_PR)))
+    _write(root / "src" / "app.py", "x = 2\n")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], crew_autopilot.DIRTY in got["reason"]) == (
+        "ship", True, True)
+
+
+@pytest.mark.parametrize("queue_after", [_gql(_queue(True, True)), None])
+def test_ship_dequeues_a_pr_gh_queued(tmp_path, monkeypatch, queue_after):
+    fake = _green()
+    root, _, _, remote = _ship_env(tmp_path, monkeypatch, fake)
+    remote.merges = False
+    fake.answers["api_graphql"] = lambda args: (
+        (0, "{}", "") if "query=" + crew_autopilot._DEQUEUE in args  # pylint: disable=protected-access
+        else queue_after if fake.ran("pr", "merge") else _gql(_queue(False, False)))
+
+    got = crew_autopilot.ship(str(root), T)
+
+    dequeues = [c for c in fake.calls if "query=" + crew_autopilot._DEQUEUE in c]  # pylint: disable=protected-access
+    assert (got["stop"], "merge queue" in got["reason"], "dequeued it: succeeded" in
+            got["reason"], dequeues) == (True, True, True, [crew_autopilot.dequeue_argv(NODE)])
+
+
+def test_ship_unreadable_queue_after_merge_dequeues_and_stops(tmp_path, monkeypatch):
+    fake = _green()
+    root, _, _, remote = _ship_env(tmp_path, monkeypatch, fake)
+    remote.merges = False
+    answers = iter([_gql(_queue(False, False))])
+    fake.answers["api_graphql"] = lambda args: (
+        (1, "", "HTTP 502\n") if "query=" + crew_autopilot._DEQUEUE in args  # pylint: disable=protected-access
+        else next(answers, None))
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["stop"], "could not tell whether gh handed the PR to a merge queue" in
+            got["reason"], "dequeued it: failed: HTTP 502" in got["reason"],
+            fake.ran("pr", "merge") != []) == (True, True, True, True)
+
+
+def test_ship_merge_that_reads_merged_never_dequeues(tmp_path, monkeypatch):
+    fake = _green()
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake)
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["action"], [c for c in fake.calls if "mutation" in " ".join(c)]) == (
+        "merged", [])
+
+
 def test_cli_ship_prints_one_line_and_the_evidence(tmp_path, monkeypatch, capsys):
-    fake = FakeGh(pr_view=_pr("OPEN"), pr_checks=_checks(("check", "pass")),
-                  pr_merge=(0, "", ""))
-    root, _, _ = _ship_env(tmp_path, monkeypatch, fake, families=("claude",))
-    fake.answers["pr_view"] = [fake.answers["pr_view"], fake.answers["pr_view"],
-                               fake.answers["pr_view"], _view(_pr("MERGED"))]
+    fake = _green()
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake, families=("claude",))
 
     code = crew_autopilot.main(["ship", "--root", str(root), "--ticket", T])
     out = capsys.readouterr().out.splitlines()
@@ -917,13 +1189,3 @@ def test_ci_timeout_bad_value_reads_60(tmp_path, value):
 
     assert (got["ciTimeoutMinutes"], any("ciTimeoutMinutes" in w for w in got["warnings"])) == (
         60, True)
-
-
-# --- step 4: sabotage anchors ------------------------------------------------------
-
-def test_every_ship_sabotage_anchor_is_present_exactly_once():
-    from sabotage_autopilot import SHIP_MUTATIONS  # pylint: disable=import-outside-toplevel
-    for label, target, find, _replace, test in SHIP_MUTATIONS:
-        with open(target, encoding="utf-8") as handle:
-            assert handle.read().count(find) == 1, label
-        assert test.startswith("tests/test_crew_autopilot_ship.py::"), label

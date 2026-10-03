@@ -33,6 +33,7 @@ summarises.
 Files: create/modify/test, exact paths, `path:line` where modifying
 Test: the check that proves this step, by name or by the command that runs it
 Risk: what breaks if this step is wrong, or "low"
+Standards: the crew-standards ids this step triggers, or "none - <why>"
 - [ ] the concrete actions, not "implement the feature"
 
 ### Step 2: ...
@@ -44,7 +45,7 @@ Risk: what breaks if this step is wrong, or "low"
    every line have a step? Walk the steps: does every Files: entry sit inside
    the spec's Touch? A step that doesn't is not silently kept — either the
    step is wrong or the spec is missing a glob; fix whichever is true before
-   step 6.
+   step 6. Does every step name the standards its Files and Risk trigger?
 6. **Plan mode.** Show me the plan. Do not start implementing. A plan I have
    not agreed to is not a plan — same rule this file always had.
 
@@ -56,9 +57,12 @@ UserPromptSubmit hook records the approval only from my own prompt. It writes
 `<git-common-dir>/crew/tickets/$1/approval.json`,
 bound to both files' digests; editing `plan.md` afterward invalidates it, which
 is what makes `/crew:implement`'s refusal mean something. Then set
-`spec.md`'s header to `status: planned` and `.work/INDEX.md`'s row to match.
+`spec.md`'s header to `status: planned` and move the tracker to match:
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket $1 --to planned`.
 Changing that one value keeps the approval; never add a `status:` to plan.md,
-because a token added where there was none stales it.
+because a token added where there was none stales it. Print the tracker's
+lines verbatim; on exit 3 run the command it printed; on exit 1 tell me
+`tracker not updated: <reason>` — the approval stands.
 
 ## `--approve`
 

@@ -5,16 +5,60 @@
     python3 crew_autopilot.py resume --root . [--ticket <id>] [--json]
     python3 crew_autopilot.py settings --root . [--json]
     python3 crew_autopilot.py stops [--json]
+    python3 crew_autopilot.py deploy-allowed --root . --env <name> --class <class>
+                                             [--json]
+    python3 crew_autopilot.py route --root . --args "<the command's arguments>" [--json]
+    python3 crew_autopilot.py route --root . --first <token> [--json]
+    python3 crew_autopilot.py status --root . [--ticket <id>] [--json]
+                                     (at most 12 lines; --json is one line)
+    python3 crew_autopilot.py approve --root . --ticket <id>
+    python3 crew_autopilot.py questions-check --root . --ticket <id> [--json]
     python3 crew_autopilot.py ship --root . --ticket <id> [--json]
 
 T-0004. The lifecycle is prose commands (spec, plan, implement, review,
 done); `/crew:autopilot` follows each one's procedure in-session. This module
 is what names the NEXT one, from files on disk and nothing else, so a skipped
-phase is visible and a phase that cannot be told stops. Read-only, except
-`ship` (T-0011): it never writes a file, never approves, never accepts a
-review. `ship` pushes the ticket's branch, opens its PR and may run
-`gh pr merge <n> --merge --match-head-commit <HEAD>`; it writes no file
-either.
+phase is visible and a phase that cannot be told stops. Read-only except
+`approve`, and only when `approval_policy` allows under the configured policy;
+it never accepts a review. That is the single file it writes (T-0010, below):
+`next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check`,
+T-0072's `deploy-allowed` and T-0011's `ship` write no file. `ship` is the one
+action outside the checkout: it pushes the ticket's branch, opens its PR and
+may run `gh pr merge <n> --merge --match-head-commit <HEAD>` (below). `approve` writes exactly what
+`crew_ticket.approve` writes for every approval route, `/crew:approve` included,
+all under `<git-common-dir>/crew/`: `approval.json`; `scope-tickets.json`, the scope
+ramp's list, on a ticket's first approval; and, when the review ledger is
+NEEDS_REPLAN and the plan is a distinct successor, the ledger itself, moved
+NEEDS_REPLAN -> IN_REVIEW (the successor continuation). Run as a script it writes no
+bytecode either, however it is invoked (`-B` or not); a module that imports it
+keeps its own bytecode setting.
+
+## approve and questions-check -- the two policies (T-0010)
+
+`autopilot.approval` and `autopilot.questions` are `human|self|risk`
+(default `risk`); any other value reads as `human`, with a warning.
+
+`approval_policy` allows only when `scope.allowCliApproval` is exactly
+`true` in `.crew/config.json` -- at every setting -- and the review ledger is
+readable (a NEEDS_REPLAN one included: a distinct successor plan is its only
+way out, and the ledger refuses a plan approved before); then
+`human` never allows, `self` allows any risk, `risk` only a spec header that
+says `risk: low`. An absent or unparseable risk is `high`
+(`crew_ticket.parse_risk`), never `low`. `approve` also needs autopilot
+armed, writes the receipt with `approved_via: "autopilot"` and prints
+`self-approved <id> under approval=<policy>, risk=<risk>`; a refusal exits 2
+with `refused: <why>`. `crew_ticket.accepted` re-asks `approval_policy` on
+every read, so an `autopilot` receipt stands only while the policy still says
+yes. `question_policy` is the same decision for an open question -- `take`
+the researched recommendation or `stop` -- with no `allowCliApproval` rule.
+
+`questions-check` validates `.work/tickets/<id>/questions.md` (the shape is
+QUESTIONS_SHAPE, printed when it fails) and prints `valid= action= policy=
+risk=`, then one `taken:` line per question autopilot answered. A `taken:`
+line is valid only for the recommended option, only naming a policy that
+takes (`self` or `risk` -- the one in force when it was taken, so a later
+policy change does not void an honest record), and only while the policy in
+force says `take`. Exit 0 valid, 1 not.
 
 ## next -- the phase from disk, first match wins
 
@@ -28,6 +72,7 @@ either.
   ... PR merged                          closed              stop
   ... PR open, `autopilot.ship: pr`      closed              stop, merge by hand
   ... PR closed unmerged, other state    ship                stop
+  ... working tree differs from HEAD     ship                stop
   ... receipt no longer stands           ship                stop
   ... no PR, or open under `merge`       ship                crew_autopilot.py ship
   `## Open questions` with an item       open-questions      stop
@@ -35,7 +80,7 @@ either.
   spec fails crew_ticket.validate        spec                stop
   no plan.md                             plan                /crew:plan <id>
   plan fails crew_ticket.validate        plan                stop
-  approval not accepted                  approve             stop, the human types it
+  approval not accepted                  approve             stop, unless the policy allows
   review ledger UNKNOWN                  review              stop
   review ledger NEEDS_REPLAN             replan              stop
   no review round under this plan        implement           /crew:implement <id>
@@ -56,12 +101,17 @@ exactly `merge` opens the PR and stops. `merge` needs every required check
 reported yet waits (stopping at `ciTimeoutMinutes`); an unreadable or unknown
 state, `skipping` or an unlisted failure stops. A `high` or unknown risk whose
 completed rounds are all `claude` or carry no `model_family` stops before CI
-is read. `ship` re-reads the settings, risk and review families on every
-poll, stops on a green that lands past the deadline, re-checks the review
-receipt after CI, refuses a base branch with a merge queue (or one it cannot
-read), and binds the merge to the HEAD it checked. `_run_gh` is the only code
-here that runs gh; gh 2.46's `gh pr checks` has no --json, so `read_checks`
-parses its text, names and buckets verbatim.
+is read. `ship` refuses a dirty working tree (before the push and again before
+the merge), takes HEAD once right after the push and holds the PR's head and
+this checkout's HEAD to it before and after every poll and right before the
+merge, re-reads the settings, risk and review families (with the hash of the
+ledger bytes they came from) on every poll, stops on a green that lands past
+the deadline, re-checks the review receipt after CI against that same ledger
+hash, refuses a base branch with a merge queue (or one it cannot read), binds
+the merge to the HEAD it checked, and dequeues a PR gh queued anyway.
+`_run_gh` is the only code here that runs gh; gh 2.46's `gh pr checks` has no
+--json, so `read_checks` parses its text, names and buckets verbatim, and a row
+that is not exactly five fields makes the whole read unreadable.
 
 `closed` sits right after the spec is read, not last: a ticket `/crew:done`
 closed is never re-driven because a later commit staled its receipt. The
@@ -71,8 +121,8 @@ outside `crew_ticket.STATUS_VALUES` -- stops, with a reason saying only the
 header changed.
 
 Refresh runs after implement and before every review round, never after an
-accepted receipt: a review bundle excludes only `.work/`
-(`review_patch.py`), so a refresh written after review stales the receipt and
+accepted receipt: a review bundle excludes only `.work/` and `graphify-out/`
+(`review_patch.py`), so a codemap, diagram or rules refresh stales the receipt and
 `/crew:done` refuses. T-0008's `crew_refresh_check.ticket_freshness` judges
 the artifacts. A `stale` one is refreshed with the command it names. An
 `unknown` one is refreshed only in T-0008's orphaned-anchor case (the anchor
@@ -98,11 +148,30 @@ A ticket that differs from this worktree's active-ticket pointer stops, naming
 both: the scope guard and the completion audit judge edits by the pointer.
 With no pointer, `activate` tells the command to set it to the ticket it drives.
 
-Exit 0 always; the answer is in the output. An exception inside `next` or
-`resume` prints `stop=1` with its reason: a crash is "cannot tell", never
+Exit 0 always (`ship` included), but for `approve` and `questions-check` (above); the answer is
+in the output. An exception inside `next` or `resume` prints `stop=1` with its reason: a crash is "cannot tell", never
 silence the command could read as permission.
+
+## deploy-allowed -- may autopilot deploy here without asking (T-0072)
+
+`deploy_allowed` answers `allow`, `ask` or `refuse` for one environment. It
+resolves the checkout root ONCE, as text, refusing when it cannot, and judges
+only that root (`root` in the result). Each probe answers present, absent or
+could-not-tell; could-not-tell never reads as absent. First match wins: an
+incident file present or could-not-tell refuses; an unusable name, a class not
+`nonProd`/`prod`, or a config layer could-not-tell or not ok asks; autopilot
+off or `deploy: none` asks; `nonProd` allows under `nonprod`/`all`; `prod`
+only under `all` with `environments.prodUnattended` true in BOTH layers and
+`guards.cloudGuard` a plain `block`. A crash asks. The CLI prints one line per
+stream (`--json` too), and `verdict=ask` even for a crash it cannot describe.
+
+The consumer (T-0045, not built here) calls it immediately before each
+dispatch, passes the class from T-0005's classifier, proceeds only on the exact
+verdict `allow`, and persists every non-empty `report`. `allow` is necessary,
+not sufficient: T-0009's hook, promote-gate and every other gate still decide.
 """
 import argparse
+import hashlib
 import importlib
 import json
 import os
@@ -111,6 +180,11 @@ import subprocess
 import sys
 import time
 
+if __name__ == "__main__":
+    # Before the sibling imports: the direct CLI writes no bytecode either.
+    sys.dont_write_bytecode = True
+
+import crew_common
 import crew_config
 import crew_state
 import crew_ticket
@@ -118,6 +192,8 @@ import review_ledger
 from crew_common import git_out, read_text
 
 AUTOPILOT = "/crew:autopilot"
+# `autopilot.deploy` (T-0072): where a deploy may run without asking.
+DEPLOY_VALUES = ("none", "nonprod", "all")
 UNAVAILABLE = "unavailable"
 FRESH = "fresh"
 STALE = "stale"
@@ -163,15 +239,30 @@ PROCEDURE_STOPS = (
     ("failed-done-check", "a /crew:done check refused: it is not retried around"),
     ("failed-phase", "a phase's own procedure refused or stopped"),
 )
-# In this version these always wait for a person (T-0010 may add policies).
+# A person, unless the T-0010 policy named says otherwise; `human` always stops.
 HUMAN_STOPS = (
     ("brainstorm", "/crew:brainstorm and direction approval are a human dialogue"),
-    ("plan-approval", "plan approval: the human types /crew:approve <id>"),
-    ("review-acceptance", "accepting review FINDINGS is the owner's"),
+    ("plan-approval", ("plan approval: the human types /crew:approve <id>, unless "
+                       "autopilot.approval allows `crew_autopilot.py approve` "
+                       "(needs scope.allowCliApproval: true)")),
+    ("review-acceptance", ("accepting review FINDINGS with any BLOCK, or any round "
+                           "review_ledger.py --auto-accept refuses, is the owner's, at "
+                           "every setting")),
     ("open-questions", "an open question in direction.md, spec.md or plan.md is answered "
-                       "by a person"),
+                       "by a person, unless autopilot.questions takes the researched "
+                       "recommendation"),
 )
 
+# T-0018: the command's subcommands. A later ticket adds its name to AVAILABLE
+# and drops it from ARRIVES when it replaces the router's stop.
+SUBCOMMANDS = ("status", "run", "assign", "goal", "focus")
+AVAILABLE = frozenset({"status", "run"})
+ARRIVES = {"assign": "T-0019", "goal": "T-0012", "focus": "T-0020"}
+GOAL_FLAG = "--goal"
+UNKNOWN_SUB = ("unknown subcommand; one of " + "|".join(SUBCOMMANDS)
+               + ", or a ticket id")
+# The INDEX.md id shape, whole-string; [0-9], not \d, which is any Unicode digit.
+_INDEX_ID = re.compile(r"^[A-Z][A-Z0-9]*-[0-9]+$")
 
 # --- ship (T-0011) -------------------------------------------------------------
 # A review is same-family when its `model_family` is `claude` or absent: the
@@ -239,9 +330,20 @@ def ship_decision(policy, risk, checks, families, known_failures):
         " except known failure(s) " + ", ".join(allowed) if allowed else "")}
 
 
-# `gh pr checks` (gh 2.46 has no --json for it) prints, off a TTY, one
-# `name<TAB>bucket<TAB>elapsed<TAB>url` line per check and exits 0 (all
-# passed), 1 (a failure) or 8 (pending). `cancel` is not a pass.
+# `gh pr checks` (gh 2.46 has no --json for it) prints, off a TTY, one row per
+# check and exits 0 (all passed), 1 (a failure) or 8 (pending). The row is
+# `name<TAB>bucket<TAB>elapsed<TAB>link<TAB>description`: exactly
+# _CHECK_FIELDS fields, the last empty when the check has no description, and
+# no trailing tab. Measured from gh v2.46.0's source, not a live PR (review
+# round 2's port, 2026-10-03: the cloud host has gh 2.89 and no GraphQL, so a
+# real 2.46 run could not be taken there) - `pkg/cmd/pr/checks/output.go`'s
+# non-TTY `addRow` adds those five fields, and go-gh v2.6.0's tsv printer
+# joins a row's fields with one tab and ends it with "\n". gh prints the name
+# and the description unescaped, so a tab inside either shifts every field
+# after it, and no parser can tell such a row apart: any other field count
+# makes the whole read unreadable, and `ship` stops. `cancel` is printed as
+# `fail` by gh itself; it is mapped here too, never to a pass.
+_CHECK_FIELDS = 5
 _BUCKETS = {"pass": "pass", "fail": "fail", "pending": "pending", "skipping": "skipping",
             "cancel": "fail"}
 _CHECK_EXITS = {0: ("pass", "skipping"), 1: ("fail",), 8: ("pending",)}
@@ -251,6 +353,7 @@ PUSH_TIMEOUT = 300
 POLL_SECONDS = 30
 _sleep = time.sleep
 _clock = time.monotonic
+DIRTY = "the working tree differs from HEAD - commit or discard first"
 
 
 def merge_argv(number, head):
@@ -259,6 +362,15 @@ def merge_argv(number, head):
     bound to `head` - the commit whose checks and receipt were read - so a
     push that lands after the last read is refused by GitHub, not merged."""
     return ["pr", "merge", str(number), "--merge", "--match-head-commit", head]
+
+
+_DEQUEUE = "mutation($id:ID!){dequeuePullRequest(input:{id:$id}){clientMutationId}}"
+
+
+def dequeue_argv(node_id):
+    """The one GraphQL mutation `ship` ever runs: taking a PR gh queued back
+    out of its merge queue, used only to undo ship's own merge call."""
+    return ["api", "graphql", "-f", "query=" + _DEQUEUE, "-f", f"id={node_id}"]
 
 
 def push_argv(branch):
@@ -301,10 +413,10 @@ def _push(top, branch):
 
 
 def read_pr(top, branch):
-    """`{"number", "state", "url", "headRefOid"}` for `branch`'s PR,
+    """`{"number", "state", "url", "headRefOid", "id"}` for `branch`'s PR,
     `{"state": "NONE"}` when gh says exactly that the branch has none, or
     None when the state could not be read."""
-    got = _run_gh(top, ["pr", "view", branch, "--json", "number,state,url,headRefOid"])
+    got = _run_gh(top, ["pr", "view", branch, "--json", "number,state,url,headRefOid,id"])
     if got is None:
         return None
     code, out, err = got
@@ -324,12 +436,12 @@ def read_pr(top, branch):
 def read_checks(top, number):
     """`[{"name", "state"}]` for PR `number`'s required checks, `[]` when gh
     reports none yet, or None when they could not be read -- gh failed, an
-    exit code outside 0/1/8, a line without a tab, anything on stderr beside
-    the rows, or an exit code that disagrees with the lines (0 with a pending
-    one, 1 with no failure, 8 with none pending). Names and buckets are read
-    verbatim: `knownFailures` matches a name exactly, so a padded or
-    re-cased one is a different check, and a bucket gh did not print exactly
-    reads `unknown`."""
+    exit code outside 0/1/8, a row that is not exactly _CHECK_FIELDS fields,
+    anything on stderr beside the rows, or an exit code that disagrees with
+    the rows (0 with a pending one, 1 with no failure, 8 with none pending).
+    Names and buckets are read verbatim: `knownFailures` matches a name
+    exactly, so a padded or re-cased one is a different check, and a bucket
+    gh did not print exactly reads `unknown`."""
     got = _run_gh(top, ["pr", "checks", str(number), "--required"])
     if got is None or got[0] not in _CHECK_EXITS:
         return None
@@ -342,7 +454,7 @@ def read_checks(top, number):
     checks = []
     for line in lines:
         parts = line.split("\t")
-        if len(parts) < 2 or not parts[0].strip():
+        if len(parts) != _CHECK_FIELDS or not parts[0].strip():
             return None
         checks.append({"name": parts[0],
                        "state": _BUCKETS.get(parts[1], "unknown")})
@@ -381,6 +493,19 @@ def read_merge_queue(top, number):
     return any(flags)
 
 
+def _dequeue(top, pr):
+    """What became of taking `pr` back out of a merge queue, as text."""
+    node = pr.get("id") if isinstance(pr, dict) else None
+    if not isinstance(node, str) or not node:
+        return "not attempted: the PR's node id could not be read"
+    got = _run_gh(top, dequeue_argv(node))
+    if got is None:
+        return "failed: gh could not run"
+    if got[0] != 0:
+        return "failed: " + ((got[2] or got[1]).strip() or f"exit {got[0]}")
+    return "succeeded"
+
+
 def _branch(top):
     branch = git_out(top, "rev-parse", "--abbrev-ref", "HEAD")
     return branch if branch and branch != "HEAD" else None
@@ -391,6 +516,31 @@ def _default_branch(top):
     ref = data.get("defaultBranchRef") if isinstance(data, dict) else None
     name = ref.get("name") if isinstance(ref, dict) else None
     return name if isinstance(name, str) and name else None
+
+
+def _clean_tree(top):
+    """True when the working tree is HEAD (ignored files aside), False when it
+    differs, None when git could not tell -- which is a stop too. A receipt
+    can cover uncommitted edits that `git push` does not carry."""
+    out = git_out(top, "status", "--porcelain", "--untracked-files=all")
+    return None if out is None else out == ""
+
+
+def _tree_stop(top):
+    """The reason to stop on the working tree, or ""."""
+    clean = _clean_tree(top)
+    if clean is None:
+        return "could not tell whether the working tree differs from HEAD (git status failed)"
+    return "" if clean else DIRTY
+
+
+def _ledger_hash(top, ticket):
+    """sha256 of the review ledger's bytes, or None when it cannot be read."""
+    try:
+        with open(review_ledger.ledger_path(top, ticket), "rb") as handle:
+            return hashlib.sha256(handle.read()).hexdigest()
+    except (OSError, ValueError):
+        return None
 
 
 def _families(top, ticket):
@@ -405,20 +555,22 @@ def _families(top, ticket):
 
 def _ship_gate(top, ticket):
     """What a merge rests on, read from disk again on every poll: the
-    settings, the spec's risk and the completed rounds' review families.
-    CI can run for an hour, and in that time the owner may disarm autopilot,
-    change `ship` or `knownFailures`, or the ledger may move to a successor
-    plan - so nothing read before the wait is trusted after it. `stop` is a
-    reason, or None."""
+    settings, the spec's risk, the completed rounds' review families and the
+    hash of the ledger bytes those families came from. CI can run for an
+    hour, and in that time the owner may disarm autopilot, change `ship` or
+    `knownFailures`, or the ledger may move to a successor plan - so nothing
+    read before the wait is trusted after it. `stop` is a reason, or None."""
     config = settings(top)
     spec = read_text(os.path.join(crew_ticket.ticket_dir(top, ticket), "spec.md")) or ""
+    ledger = _ledger_hash(top, ticket)
     families = _families(top, ticket)
     gate = {"config": config, "risk": crew_ticket.parse_risk(spec)["risk"],
-            "families": families, "stop": None}
+            "families": families, "ledger": ledger, "stop": None}
     if not config["armed"]:
         gate["stop"] = "autopilot.mode is not armed any more - a person ships it"
-    if families is None:
-        gate["stop"] = "the review ledger is unreadable, so the review families cannot be told"
+    if families is None or ledger is None or _ledger_hash(top, ticket) != ledger:
+        gate["stop"] = ("the review ledger is unreadable, or changed while it was read, so "
+                        "the review families cannot be told")
     return gate
 
 
@@ -454,6 +606,10 @@ def _ship_phase(top, ticket, answer, why):
     if state not in ("NONE", "OPEN"):
         return answer("ship", True, f"PR #{pr.get('number')} for {branch} is {state}, not "
                       "open or merged - a person decides")
+    tree = _tree_stop(top)
+    if tree:
+        return answer("ship", True, f"{tree}: a push carries only commits, so what was "
+                      "reviewed would not be what ships - a human decides")
     ok, message = review_ledger.check_receipt(top, ticket)
     if not ok:
         return answer("ship", True, f"the review receipt no longer stands ({message}): "
@@ -470,14 +626,105 @@ def _ship_result(ticket, action, stop, reason, pr=None, checks=None, families=No
             "checks": checks, "families": families}
 
 
+def _head_stop(top, branch, head, where):
+    """The reason the PR's head or this checkout's HEAD is no longer `head`,
+    or "": the checks, the receipt and the merge must all be about one
+    commit."""
+    local = git_out(top, "rev-parse", "HEAD")
+    if local != head:
+        return (f"this checkout's HEAD moved {where} ({local or 'unreadable'} vs {head}): "
+                "the checks read are not for what was reviewed - never merged")
+    now = read_pr(top, branch)
+    if now is None or now.get("state") != "OPEN" or now.get("headRefOid") != head:
+        return (f"the PR's head is not the commit ship pushed {where} "
+                f"({(now or {}).get('headRefOid') or (now or {}).get('state', 'unreadable')} "
+                f"vs {head}): the checks read are not for what was reviewed - never merged")
+    return ""
+
+
+def _wait_for_ci(top, ticket, branch, pr, head):
+    """Poll the required checks until `ship_decision` says merge, or return
+    the stop. `(result, decision, checks, gate)`: `result` is a finished
+    `_ship_result` when it stopped, else None."""
+    gate = _ship_gate(top, ticket)
+    if gate["stop"]:
+        return _ship_result(ticket, "stop", True, gate["stop"], pr, None,
+                            gate["families"]), None, None, gate
+    minutes = gate["config"]["ciTimeoutMinutes"]
+    deadline = _clock() + minutes * 60
+    while True:
+        moved = _head_stop(top, branch, head, "before a poll")
+        checks = read_checks(top, pr["number"])
+        moved = moved or _head_stop(top, branch, head, "while the checks were read")
+        gate = _ship_gate(top, ticket)
+        families = gate["families"]
+        if moved:
+            return _ship_result(ticket, "stop", True, moved, pr, checks,
+                                families), None, checks, gate
+        if gate["stop"]:
+            return _ship_result(ticket, "stop", True, gate["stop"], pr, checks,
+                                families), None, checks, gate
+        decision = ship_decision(gate["config"]["ship"], gate["risk"], checks, families,
+                                 gate["config"]["knownFailures"])
+        # Read after the checks, not before: a green that arrives past the
+        # deadline is a stop, the same as a pending one.
+        late = _clock() >= deadline
+        if decision["action"] == "merge" and not late:
+            return None, decision, checks, gate
+        if decision["action"] not in ("merge", "wait"):
+            opened = decision["action"] == "open-pr"
+            return _ship_result(ticket, "open-pr" if opened else "stop", not opened,
+                                decision["reason"], pr, checks, families), None, checks, gate
+        if late:
+            return _ship_result(ticket, "stop", True, f"{decision['reason']} after "
+                                f"{minutes} min (autopilot.ciTimeoutMinutes) - never merged",
+                                pr, checks, families), None, checks, gate
+        _sleep(min(POLL_SECONDS, deadline - _clock()))
+
+
+def _pre_merge_stop(top, ticket, branch, pr, head, gate):
+    """Every check between CI turning green and the merge call, or ""."""
+    # The receipt was checked before the push; commits made while CI ran
+    # would ship unreviewed without this second look.
+    stands, why = review_ledger.check_receipt(top, ticket)
+    if not stands:
+        return (f"the review receipt no longer stands ({why}) after waiting on CI - never "
+                "merged")
+    if _ledger_hash(top, ticket) != gate["ledger"]:
+        return ("the review ledger changed after the review families were read: the "
+                "receipt checked is not the one the families came from - never merged")
+    moved = _head_stop(top, branch, head, "after CI")
+    if moved:
+        return moved
+    tree = _tree_stop(top)
+    if tree:
+        return f"{tree} - never merged"
+    queue = read_merge_queue(top, pr["number"])
+    if queue is not False:
+        return (("the base branch has a merge queue, or the PR is in one" if queue else
+                 "could not tell whether the base branch has a merge queue") + ": a queue "
+                "picks its own merge method and keeps merging after ship stops - a person "
+                "merges")
+    # Last, right before the call: the ledger and this checkout's HEAD again.
+    if _ledger_hash(top, ticket) != gate["ledger"]:
+        return "the review ledger changed just before the merge - never merged"
+    local = git_out(top, "rev-parse", "HEAD")
+    if local != head:
+        return (f"this checkout's HEAD moved just before the merge ({local or 'unreadable'} "
+                f"vs {head}) - never merged")
+    return ""
+
+
 def ship(root, ticket):
     """Push the branch, open its PR if none, then under `ship: merge` poll
     the required checks every POLL_SECONDS up to `ciTimeoutMinutes`, feeding
     `ship_decision` from a gate read afresh each poll, and on `merge` - once
-    the receipt still stands, the PR's head is this HEAD and no merge queue
-    is involved - run exactly `merge_argv`. Runs only when `next` names
-    `ship` -- which it never does unarmed. Every answer names the PR, the
-    checks and the review families it rested on."""
+    the receipt still stands on the same ledger the families came from, the
+    PR's head and this checkout's HEAD are still the commit pushed, the tree
+    is clean and no merge queue is involved - run exactly `merge_argv`. A
+    merge that leaves the PR not MERGED in a queue is dequeued and stops.
+    Runs only when `next` names `ship` -- which it never does unarmed. Every
+    answer names the PR, the checks and the review families it rested on."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     # Unarmed, `next` names `closed` (see `_ship_phase`), so this refuses too.
     phase = next_phase(top, ticket)
@@ -490,10 +737,19 @@ def ship(root, ticket):
         return _ship_result(ticket, "stop", True, f"will not push {branch or '(no branch)'}: "
                             f"the default branch is {default or 'unreadable'}, and ship "
                             "pushes only a ticket branch that is not it")
+    tree = _tree_stop(top)
+    if tree:
+        return _ship_result(ticket, "stop", True, f"{tree} - nothing pushed")
     pushed, detail = _push(top, branch)
     if not pushed:
         return _ship_result(ticket, "stop", True, f"git push -u origin {branch} failed: "
                             f"{detail}")
+    # The one commit everything after rests on, taken once, before any check
+    # is read: a commit that lands later is a stop, never re-sampled.
+    head = git_out(top, "rev-parse", "HEAD")
+    if not head:
+        return _ship_result(ticket, "stop", True, "could not read this checkout's HEAD "
+                            "after pushing")
     pr = read_pr(top, branch)
     if pr is not None and pr["state"] == "NONE":
         created = _run_gh(top, ["pr", "create", "--head", branch, "--fill"])
@@ -506,67 +762,46 @@ def ship(root, ticket):
         return _ship_result(ticket, "stop", True, "could not read an open PR for "
                             f"{branch} after pushing ({(pr or {}).get('state', 'unreadable')})",
                             pr)
-    gate = _ship_gate(top, ticket)
-    if gate["stop"]:
-        return _ship_result(ticket, "stop", True, gate["stop"], pr, None, gate["families"])
-    minutes = gate["config"]["ciTimeoutMinutes"]
-    deadline = _clock() + minutes * 60
-    while True:
-        checks = read_checks(top, pr["number"])
-        gate = _ship_gate(top, ticket)
-        families = gate["families"]
-        if gate["stop"]:
-            return _ship_result(ticket, "stop", True, gate["stop"], pr, checks, families)
-        decision = ship_decision(gate["config"]["ship"], gate["risk"], checks, families,
-                                 gate["config"]["knownFailures"])
-        # Read after the checks, not before: a green that arrives past the
-        # deadline is a stop, the same as a pending one.
-        late = _clock() >= deadline
-        if decision["action"] == "merge" and not late:
-            break
-        if decision["action"] not in ("merge", "wait"):
-            opened = decision["action"] == "open-pr"
-            return _ship_result(ticket, "open-pr" if opened else "stop", not opened,
-                                decision["reason"], pr, checks, families)
-        if late:
-            return _ship_result(ticket, "stop", True, f"{decision['reason']} after "
-                                f"{minutes} min (autopilot."
-                                "ciTimeoutMinutes) - never merged", pr, checks, families)
-        _sleep(min(POLL_SECONDS, deadline - _clock()))
-    head = git_out(top, "rev-parse", "HEAD")
-    # The receipt was checked before the push; commits made while CI ran
-    # would ship unreviewed without this second look.
-    stands, why = review_ledger.check_receipt(top, ticket)
-    if not stands:
-        return _ship_result(ticket, "stop", True, f"the review receipt no longer stands ({why}) "
-                            "after waiting on CI - never merged", pr, checks, families)
-    now = read_pr(top, branch)
-    if not head or now is None or now.get("state") != "OPEN" or now.get("headRefOid") != head:
-        return _ship_result(ticket, "stop", True, "the PR's head is not this checkout's HEAD "
-                            f"({(now or {}).get('headRefOid')} vs {head}): the checks read are "
-                            "not for what was reviewed - never merged", pr, checks, families)
+    if pr.get("headRefOid") != head:
+        return _ship_result(ticket, "stop", True, "the PR's head is not the commit ship "
+                            f"pushed ({pr.get('headRefOid')} vs {head}) - never merged", pr)
+    stopped, decision, checks, gate = _wait_for_ci(top, ticket, branch, pr, head)
+    if stopped:
+        return stopped
+    families = gate["families"]
+    why = _pre_merge_stop(top, ticket, branch, pr, head, gate)
+    if why:
+        return _ship_result(ticket, "stop", True, why, pr, checks, families)
+    merged = _run_gh(top, merge_argv(pr["number"], head))
+    after = read_pr(top, branch)
+    if merged is not None and merged[0] == 0 and after is not None \
+            and after.get("state") == "MERGED":
+        return _ship_result(ticket, "merged", False, decision["reason"], pr, checks, families)
+    failed = ("gh pr merge --merge failed: " + ((merged[2] or merged[1]).strip() if merged
+                                                 else "gh could not run")
+              if merged is None or merged[0] != 0 else
+              "gh pr merge exited 0 but the PR reads "
+              f"{(after or {}).get('state', 'unreadable')}, not MERGED")
     queue = read_merge_queue(top, pr["number"])
     if queue is not False:
-        return _ship_result(ticket, "stop", True, (
-            "the base branch has a merge queue, or the PR is in one" if queue else
-            "could not tell whether the base branch has a merge queue") + ": a queue picks its "
-            "own merge method and keeps merging after ship stops - a person merges", pr,
-            checks, families)
-    merged = _run_gh(top, merge_argv(pr["number"], head))
-    if merged is None or merged[0] != 0:
-        return _ship_result(ticket, "stop", True, "gh pr merge --merge failed: "
-                            + ((merged[2] or merged[1]).strip() if merged else
-                               "gh could not run"), pr, checks, families)
-    after = read_pr(top, branch)
-    if after is None or after.get("state") != "MERGED":
-        return _ship_result(ticket, "stop", True, "gh pr merge exited 0 but the PR reads "
-                            f"{(after or {}).get('state', 'unreadable')}, not MERGED - a "
-                            "human looks", pr, checks, families)
-    return _ship_result(ticket, "merged", False, decision["reason"], pr, checks, families)
+        outcome = _dequeue(top, after if isinstance(after, dict) and after.get("id") else pr)
+        return _ship_result(ticket, "stop", True, f"{failed}; " + (
+            "the PR is in a merge queue, or its base branch has one" if queue else
+            "could not tell whether gh handed the PR to a merge queue")
+            + f" - a queue merges with its own method after ship stops, so ship dequeued "
+            f"it: {outcome}. A person merges", pr, checks, families)
+    return _ship_result(ticket, "stop", True, f"{failed} - a human looks", pr, checks,
+                        families)
 
 
 def _rel(top, path):
-    return os.path.relpath(path, top).replace("\\", "/")
+    """`path` relative to `top` for evidence lines, or `path` itself when there
+    is no relative form: on Windows a path on another drive than `top` makes
+    `os.path.relpath` raise ValueError (T-0077)."""
+    try:
+        return os.path.relpath(path, top).replace("\\", "/")
+    except ValueError:
+        return path.replace("\\", "/")
 
 
 def _index_rows(top):
@@ -731,8 +966,10 @@ def _header_only_change(contract, receipt):
     return None
 
 
-def _phase(root, ticket):
-    """`next`'s phase table (module docstring), with no session guard."""
+def _phase(root, ticket, policy=True):
+    """`next`'s phase table (module docstring), with no session guard.
+    `policy=False` is `status`'s read: the approve and open-questions reasons
+    then name no policy, so status reads the same under every setting."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     folder = crew_ticket.ticket_dir(top, ticket)
     evidence = []
@@ -778,7 +1015,8 @@ def _phase(root, ticket):
     if questions:
         return answer("open-questions", True, "unanswered under ## Open questions: "
                       + "; ".join(f"{name}: {item}" for name, item in questions[:4])
-                      + " - a person answers (write `none - <answer>` or check it `[x]`)")
+                      + " - a person answers (write `none - <answer>` or check it `[x]`). "
+                      + (_question_hint(top, ticket) if policy else POLICY_FREE_QUESTIONS))
     if contract["spec.md"] is None:
         return answer("spec", False, "no spec.md", f"/crew:spec {ticket}")
     spec_only = crew_ticket.validate(top, ticket, {"spec.md": contract["spec.md"],
@@ -803,9 +1041,9 @@ def _phase(root, ticket):
             f"`status: {_header_status(crew_ticket._text(contract['spec.md']))}`), an edit "  # pylint: disable=protected-access
             "T-0026's approval digest keeps only for a receipt written since T-0026 and a "
             "value in crew_ticket.STATUS_VALUES; this one is older or the value is not")
-        return answer("approve", True, f"{why}. Only the human types "
-                      f"/crew:approve {ticket}; autopilot never approves",
-                      f"/crew:approve {ticket}")
+        hint = (_approval_hint(top, ticket) if policy
+                else POLICY_FREE_APPROVE.format(ticket=ticket))
+        return answer("approve", True, f"{why}. {hint}", f"/crew:approve {ticket}")
     return _review_phase(top, ticket, evidence, answer)
 
 
@@ -825,7 +1063,8 @@ def _review_phase(top, ticket, evidence, answer):
                       "UNKNOWN (unreadable): the rounds spent cannot be counted")
     if ledger["state"] == review_ledger.NEEDS_REPLAN:
         return answer("replan", True, f"{ticket} is NEEDS_REPLAN: the review budget is "
-                      "spent; a successor plan needs the human's /crew:approve",
+                      "spent; a different plan continues it once approved (the approve "
+                      "phase and autopilot.approval decide by whom)",
                       f"/crew:plan {ticket}")
     rounds = _current_rounds(ledger)
     if not rounds:
@@ -837,11 +1076,18 @@ def _review_phase(top, ticket, evidence, answer):
                       "result: a reviewer is running or died, and another /crew:review "
                       "spends the next round - a human decides")
     receipt = ledger.get("receipt") or {}
-    if latest.get("verdict") == "FINDINGS" and not (
-            receipt.get("kind") == "owner-accepted"
-            and receipt.get("round") == latest.get("round")):
-        return answer("accept-review", True, f"round {latest.get('round')} is FINDINGS: "
-                      "the owner accepts with review_ledger.py --accept --by <owner>, "
+    # L-0510: the ledger's one predicate decides whether a FINDINGS receipt
+    # stands (owner-accepted, or auto-accepted with its row still passing the
+    # guard), so this and /crew:done's --check-receipt cannot disagree.
+    if latest.get("verdict") == "FINDINGS" and not review_ledger.receipt_stands(receipt, latest, top, ticket):
+        data, state = review_ledger.load(ledger["path"])
+        refusal = (review_ledger.auto_accept_refusal(data, ticket) if state == "ok"
+                   else f"ledger is {state}: could not tell")
+        how = ("the --auto-accept guard passes but no receipt was written: run "
+               "review_ledger.py --auto-accept --follow-up <id> (/crew:review step 3), or "
+               if refusal is None else f"review_ledger.py --auto-accept refuses it ({refusal}): ")
+        return answer("accept-review", True, f"round {latest.get('round')} is FINDINGS; "
+                      f"{how}the owner accepts with review_ledger.py --accept --by <owner>, "
                       "or fixes then /crew:review")
     ok, message = review_ledger.check_receipt(top, ticket)
     left = ledger.get("rounds_left", 0)
@@ -850,11 +1096,25 @@ def _review_phase(top, ticket, evidence, answer):
                       f"({message}): /crew:review would reserve a third round and put "
                       f"{ticket} in NEEDS_REPLAN, which only a new approved plan leaves. A "
                       "human reverts the edit that staled the receipt, or replans")
+    if latest.get("refunded") is True and not ok:
+        # Marked so `next_phase` does not read this rerun as "no progress"
+        # (its docstring says what bounds it). Only the review itself: a
+        # refresh that left its artifact stale is still no progress.
+        found = _toward_review(top, ticket, answer, ok, message,
+                               f"round {latest.get('round')} was a tool failure and "
+                               "was refunded; ")
+        return dict(found, refunded_rerun=found["phase"] == "review")
     if latest.get("verdict") != "CLEAN" and not ok:
         return answer("accept-review", True, f"round {latest.get('round')} is "
                       f"{latest.get('verdict') or 'without a verdict'}: the reviewer did not "
                       "finish reading, and it cannot be accepted - a human reruns "
                       "/crew:review (spending a round) or replans")
+    return _toward_review(top, ticket, answer, ok, message)
+
+
+def _toward_review(top, ticket, answer, ok, message, note=""):
+    """Refresh before the next review round, then review; or done once a
+    receipt stands. `note` prefixes the review reason (a refunded round)."""
     refresh = _refresh_state(top, ticket)
     if refresh["state"] == UNAVAILABLE:
         return answer("refresh", True, refresh["reason"])
@@ -863,7 +1123,7 @@ def _review_phase(top, ticket, evidence, answer):
         return answer("refresh", not command,
                       f"before the next review round - {refresh['reason']}", command)
     if not ok:
-        return answer("review", False, f"{message}; artifacts fresh",
+        return answer("review", False, f"{note}{message}; artifacts fresh",
                       f"/crew:review {ticket}")
     if refresh["state"] != FRESH:
         return answer("stale-after-review", True, "an artifact is stale after an "
@@ -872,15 +1132,21 @@ def _review_phase(top, ticket, evidence, answer):
     return answer("done", False, f"{message}; artifacts fresh", f"/crew:done {ticket}")
 
 
-def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None):
+def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
+               policy=True):
     """`{"ticket", "phase", "stop", "reason", "command", "evidence"}`. A
     `stop` phase's `command` is what the HUMAN types, never run by autopilot.
     `max_phases` and `last_command` are the session's count and the command it
-    last ran: reaching the count, or being handed the same command again, stops.
+    last ran: reaching the count, or being handed the same command again, stops
+    -- except `/crew:review` after a refunded tool-failure round: each run that
+    records a round moves the ledger, `review_ledger.REFUND_LIMIT` per plan
+    bounds how many are refunded, and `max_phases` bounds one that records none.
     So does a phase that would run while `crew_ticket.resolve_active` -- what
-    the scope guard reads -- names another ticket, none, or a broken pointer."""
+    the scope guard reads -- names another ticket, none, or a broken pointer.
+    `policy=False` is `status`'s: see `_phase`."""
     crew_ticket.check_ticket(ticket)
-    result = _phase(root, ticket)
+    result = _phase(root, ticket, policy)
+    rerun = result.pop("refunded_rerun", False)
     if result["stop"]:
         return result
     active, where, broken = crew_ticket.resolve_active(
@@ -895,19 +1161,42 @@ def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None):
         return dict(result, stop=True, reason=(
             f"autopilot.maxPhases ({max_phases}) reached after {phases_run} phases; next "
             f"would be {result['phase']} - run /crew:autopilot {ticket} again"))
-    if last_command and result["command"] == last_command:
+    if last_command and result["command"] == last_command and not rerun:
         return dict(result, stop=True, reason=(
             f"no progress: {last_command} ran and the files on disk still name it "
             f"({result['reason']}) - a human looks at why"))
     return result
 
 
+HANDOFF_ABSENT = "no .work/HANDOFF.md"
+HANDOFF_UNREADABLE = "unknown - .work/HANDOFF.md exists but could not be read"
+
+
+def _read_handoff(top):
+    """(text, why_not): `.work/HANDOFF.md`'s text, or None with why. Only a
+    file that is not there is absent; one that is there and cannot be read
+    -- denied, a directory, a dangling or looping symlink, or a `.work` that
+    is a dangling symlink -- is unknown, never absent (read_text says None
+    for all of them)."""
+    work = os.path.join(top, ".work")
+    path = os.path.join(work, "HANDOFF.md")
+    try:
+        with open(path, "r", encoding="utf-8-sig", errors="replace") as handle:
+            return handle.read(), ""
+    except FileNotFoundError:
+        # open() follows links: a dangling one raises this too, but its entry is there.
+        if os.path.lexists(path) or (os.path.lexists(work) and not os.path.isdir(work)):
+            return None, HANDOFF_UNREADABLE
+        return None, HANDOFF_ABSENT
+    except (OSError, ValueError):
+        return None, HANDOFF_UNREADABLE
+
+
 def _handoff_ticket(top):
     """(ticket, hint, stop_reason, why_not) from `.work/HANDOFF.md`."""
-    path = os.path.join(top, ".work", "HANDOFF.md")
-    text = read_text(path)
+    text, why = _read_handoff(top)
     if text is None:
-        return None, "", None, "no .work/HANDOFF.md"
+        return None, "", None, why
     try:
         resume = importlib.import_module("crew_resume")
         parsed = resume.parse_resume(text)
@@ -943,10 +1232,11 @@ def _handoff_ticket(top):
     return arg, (render(parsed) if callable(render) else f"{command} {arg}"), None, ""
 
 
-def resume_target(root, ticket=None):
+def resume_target(root, ticket=None, policy=True):
     """`{"ticket", "source", "stop", "hint", "disagreement", "reason",
     "fallthrough", "next", "activate"}` -- see the module docstring's order.
-    `ticket` is the command's `$1`; it is still held to the active pointer."""
+    `ticket` is the command's `$1`; it is still held to the active pointer.
+    `policy=False` is `status`'s: see `_phase`."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     fallthrough = []
 
@@ -993,7 +1283,7 @@ def resume_target(root, ticket=None):
                        f"is {active}, and the scope guard and completion audit judge edits "
                        f"by {active}'s approval and Touch. Run /crew:autopilot {active}, or "
                        f"the human re-points it: crew_ticket.py activate --ticket {ticket}")
-    disk = next_phase(top, ticket)
+    disk = next_phase(top, ticket, policy=policy)
     disagreement = ""
     if hint and not hint.startswith(AUTOPILOT + " ") and hint != disk["command"]:
         disagreement = (f"the handoff says {hint}, the disk says "
@@ -1013,12 +1303,62 @@ def _read_json(path):
         return None
 
 
+def _unreadable_autopilot(top):
+    """Why the repo's `autopilot` block cannot be told, or "" when it can.
+    `crew_config.resolve_config` collapses a malformed file, and
+    `merge_defaults` a non-object block, to the defaults; this reads the raw
+    file first so neither collapse is taken for a configured value. The file is
+    `crew_common.repo_config_file`'s -- the one `resolve_config` reads, which in
+    a lane worktree is the main checkout's (T-0088)."""
+    data, state = crew_ticket._read_json(  # pylint: disable=protected-access
+        crew_common.repo_config_file(top, "config.json"))
+    if state == "corrupt":
+        return ".crew/config.json exists but could not be read as JSON"
+    if state == "ok" and not isinstance(data, dict):
+        return (f".crew/config.json is {type(data).__name__}, not a JSON object, so it "
+                "could not be read")
+    block = data.get("autopilot") if state == "ok" else None
+    if block is not None and not isinstance(block, dict):
+        return f"autopilot in .crew/config.json is {block!r}, not an object"
+    return ""
+
+
 def settings(root):
-    """`{"mode", "armed", "maxPhases", "saw", "warnings"}`. Read through
-    `crew_config.resolve_config` -- `.crew/config.json` over the defaults, the
-    file `crew_ticket.cli_approval_allowed` reads. `mode` arms only when it is
-    exactly the string `plan`; `maxPhases` must be a positive int, else 12."""
+    """`{"mode", "armed", "maxPhases", "saw", "deploy", "deploySaw", "approval",
+    "questions", "ship", "knownFailures", "ciTimeoutMinutes", "warnings"}`. Read through `crew_config.resolve_config` --
+    `.crew/config.json` over the defaults, the file
+    `crew_ticket.cli_approval_allowed` reads. `mode` arms only when it is
+    exactly the string `plan`; `maxPhases` must be a positive int, else 12;
+    `deploy` is exactly one of DEPLOY_VALUES, else `none`; `approval` and
+    `questions` must be one of POLICIES, else `human`; `ship` is exactly one of
+    SHIP_POLICIES, else `pr` (the non-merging direction); `knownFailures` a
+    list of strings, else `[]`; `ciTimeoutMinutes` a positive int, else 60.
+
+    A `.crew/config.json` that is present but unreadable, or an `autopilot`
+    value that is not an object, is could-not-tell: both policies read
+    UNKNOWN, `mode` reads `off`, `deploy` reads `none`, and a warning names
+    the cause. That is never the default `risk`, which `resolve_config` would
+    otherwise hand back for both. An absent file or an absent (or null) block
+    is known and reads the defaults. `deploy_allowed` reads `_settings_at`,
+    after its own per-layer checks, not this."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    cause = _unreadable_autopilot(top)
+    if cause:
+        return {"mode": "off", "armed": False,
+                "maxPhases": crew_state.AUTOPILOT_DEFAULTS["maxPhases"],
+                "saw": None, "deploy": "none", "deploySaw": None,
+                "approval": UNKNOWN, "questions": UNKNOWN,
+                "ship": "pr", "knownFailures": [],
+                "ciTimeoutMinutes": crew_state.AUTOPILOT_DEFAULTS["ciTimeoutMinutes"],
+                "warnings": [(f"{cause}, so autopilot.approval and autopilot.questions "
+                              "could not be told (both read as unknown, which never "
+                              "approves or takes an answer) and autopilot reads as off")]}
+    return _settings_at(top)
+
+
+def _settings_at(top):
+    """`settings` for a checkout root already resolved: no lookup of its own,
+    so `deploy_allowed` reads the settings of the one root it judged."""
     block = crew_config.resolve_config(top).get("autopilot")
     block = block if isinstance(block, dict) else {}
     warnings = []
@@ -1033,12 +1373,26 @@ def settings(root):
         warnings.append(f"autopilot.maxPhases is {limit!r}, not a positive integer; "
                         f"using {default}")
         limit = default
-    ship = block.get("ship")
-    if ship not in SHIP_POLICIES:
+    deploy_saw = block.get("deploy", "none")
+    deploy = deploy_saw if _exact(deploy_saw, DEPLOY_VALUES) else "none"
+    if deploy != deploy_saw:
+        warnings.append(f"autopilot.deploy is {deploy_saw!r}: only the exact strings "
+                        "'nonprod' and 'all' arm it, so it reads as none")
+    if deploy != "none":
+        warnings.append(f"autopilot.deploy is {deploy!r}, but nothing in this crew version "
+                        "dispatches a deploy: T-0045 consumes it; deploy-allowed answers "
+                        "the policy only")
+    crew_json = _read_json(crew_common.repo_config_file(top, "crew.json"))
+    if isinstance(crew_json, dict) and "autopilot" in crew_json \
+            and "autopilot" not in crew_state.load_config(top):
+        warnings.append("autopilot is set in .crew/crew.json, which crew does not read "
+                        "for this key; move it to .crew/config.json")
+    ship = block.get("ship", crew_state.AUTOPILOT_DEFAULTS["ship"])
+    if not _exact(ship, SHIP_POLICIES):
         warnings.append(f"autopilot.ship is {ship!r}, not 'pr' or 'merge'; reading it as "
                         "'pr' (open the PR, never merge)")
         ship = "pr"
-    known = block.get("knownFailures")
+    known = block.get("knownFailures", [])
     if not isinstance(known, list) or not all(isinstance(k, str) for k in known):
         warnings.append(f"autopilot.knownFailures is {known!r}, not a list of check names; "
                         "using [] (no failing check is excused)")
@@ -1049,14 +1403,469 @@ def settings(root):
         warnings.append(f"autopilot.ciTimeoutMinutes is {timeout!r}, not a positive "
                         f"integer; using {default_timeout}")
         timeout = default_timeout
-    crew_json = _read_json(os.path.join(top, ".crew", "crew.json"))
-    if isinstance(crew_json, dict) and "autopilot" in crew_json \
-            and "autopilot" not in crew_state.load_config(top):
-        warnings.append("autopilot is set in .crew/crew.json, which crew does not read "
-                        "for this key; move it to .crew/config.json")
+    policies = {}
+    for key in ("approval", "questions"):
+        policies[key], warning = _policy_setting(block, key)
+        warnings += [warning] if warning else []
     return {"mode": "plan" if armed else "off", "armed": armed, "maxPhases": limit,
+            "saw": mode, "deploy": deploy, "deploySaw": deploy_saw,
+            "approval": policies["approval"], "questions": policies["questions"],
             "ship": ship, "knownFailures": list(known), "ciTimeoutMinutes": timeout,
-            "saw": mode, "warnings": warnings}
+            "warnings": warnings}
+
+
+def _exact(value, allowed):
+    """`value` is one of the strings in `allowed`, compared as a string: `True`
+    and `1` compare equal to nothing here, and neither does `"All"`."""
+    return isinstance(value, str) and value in allowed
+
+
+def _probe(path):
+    """`("present" | "absent" | "could-not-tell", detail)` for one path: the
+    only place this module asks whether a path exists. The try holds the one
+    `os.lstat`. Only a missing file (or a missing directory on the way) is
+    absent; anything else raised -- PermissionError, ELOOP, a NUL, a crash --
+    could not tell, and never reads as absent (`os.path.lexists` would)."""
+    try:
+        os.lstat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return "absent", ""
+    except Exception as exc:  # pylint: disable=broad-except
+        return "could-not-tell", type(exc).__name__
+    return "present", ""
+
+
+def _resolve_root(root):
+    """`(top, "")`, or `(None, problem)`: the checkout root, looked up ONCE
+    per `deploy_allowed` and passed to everything after it. The try holds the
+    one lookup, so its failure is never mistaken for a missing file. A root
+    that is not text (a bytes path) is a problem too: every path after this
+    joins str parts onto it, and that join must not be able to raise."""
+    try:
+        top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    except Exception as exc:  # pylint: disable=broad-except
+        return None, f"could not find the checkout ({type(exc).__name__})"
+    if not isinstance(top, str):
+        return None, f"could not find the checkout (a {type(top).__name__} path, not text)"
+    return top, ""
+
+
+def _layer_problem(label, path):
+    """Why the `label` config layer at `path` cannot be relied on, or `""`
+    when it is absent or ok. `layer_state` is asked only about a path the
+    probe saw present, so its `absent` (a `lexists` that could not tell) is a
+    contradiction and asks, never a layer nobody set."""
+    state, detail = _probe(path)
+    if state == "absent":
+        return ""
+    if state != "present":
+        return f"could not tell whether the {label} config layer can be read ({detail})"
+    if crew_config.layer_state(path, environments=True) != "ok":
+        return f"could not read the {label} config layer"
+    return ""
+
+
+def _decide(top, env_name, env_class, machine_path):
+    """`(verdict, reason, deploy)`, the Design table's rows 1-11 in order, for
+    the root `top` that `deploy_allowed` resolved; never looks it up again.
+    The incident probe runs first, ahead of the `cloud_guard` import: a
+    failure after it asks, and asking would downgrade an emergency's refusal."""
+    state, detail = _probe(os.path.join(top, ".crew", "incident.json"))
+    if state == "present":
+        return "refuse", "an emergency may be active (.crew/incident.json exists)", None
+    if state != "absent":
+        return "refuse", f"could not tell whether an emergency is active ({detail})", None
+    import cloud_guard  # pylint: disable=import-outside-toplevel
+    if not isinstance(env_name, str) or not env_name.strip() or not env_name.isprintable():
+        return "ask", f"could not tell which environment: {_safe_text(env_name)}", None
+    known = (cloud_guard.ENV_NONPROD, cloud_guard.ENV_PROD)
+    cls = env_class if isinstance(env_class, str) else ""
+    if cls not in known:
+        return "ask", (f"crew could not classify {env_name} "
+                       f"(class {_safe_text(env_class)})"), None
+    layers = (("repo", crew_common.repo_config_file(top, "config.json")),
+              ("machine", machine_path))
+    for label, path in layers:
+        problem = _layer_problem(label, path)
+        if problem:
+            return "ask", problem, None
+    current = _settings_at(top)
+    deploy = current["deploy"]
+    if not current["armed"]:
+        return "ask", "autopilot.mode is not plan", deploy
+    if deploy == "none":
+        return "ask", "autopilot.deploy is none", deploy
+    if cls == cloud_guard.ENV_NONPROD:
+        return "allow", f"autopilot.deploy={deploy} allows nonProd", deploy
+    if deploy != "all":
+        return "ask", "autopilot.deploy is nonprod; production needs all", deploy
+    ratchet = crew_config.resolve_ratcheted(top, "environments.prodUnattended",
+                                            path=machine_path)
+    if ratchet["effective"] is not True:
+        short = [name for name, key in (("repo", "repo"), ("machine", "global"))
+                 if ratchet[key] is not True]
+        where = " and ".join(short) or f"held down by {ratchet['heldDownBy']}"
+        return "ask", (f"environments.prodUnattended is not true in the {where} config "
+                       "layer; production needs true in both"), deploy
+    mode = cloud_guard.resolve_mode(top)
+    if mode != ("block", ""):
+        note = f": {mode[1]}" if mode[1] else ""
+        return "ask", (f"guards.cloudGuard is {mode[0]}{note}, so T-0009's guard is not "
+                       "armed to enforce the dispatch"), deploy
+    return "allow", ("autopilot.deploy=all and environments.prodUnattended=true in both "
+                     "config layers (repo and machine), guards.cloudGuard=block"), deploy
+
+
+def _safe_text(value, render=repr):
+    """`render(value)`, or a placeholder naming its type when that raises: a
+    value crew cannot print is still one it can name in a reason."""
+    try:
+        return render(value)
+    except Exception:  # pylint: disable=broad-except
+        return f"<unprintable {type(value).__name__}>"
+
+
+def _crash_reason(exc):
+    return (f"crew_autopilot raised {type(exc).__name__}: {_safe_text(exc, str)} - "
+            "cannot tell, so ask")
+
+
+def _env_label(env_name):
+    usable = isinstance(env_name, str) and env_name.strip() and env_name.isprintable()
+    return env_name if usable else _safe_text(env_name)
+
+
+def _deploy_report(env_name, verdict, reason, env_class):
+    """The line every production decision carries, `""` for any other class."""
+    if env_class != "prod":
+        return ""
+    return f"unattended production: {_env_label(env_name)} {verdict} - {reason}"
+
+
+def deploy_allowed(root, env_name, env_class):
+    """`{"verdict", "reason", "report", "env", "envClass", "deploy", "root"}`
+    for one environment: may autopilot deploy there without asking a person?
+    Read-only and never raises; "could not tell" asks and an emergency
+    refuses. The checkout root is resolved once, here, and `root` names it. See
+    the module docstring's `deploy-allowed` section for the rows and the
+    consumer contract."""
+    top, problem = _resolve_root(root)
+    machine_path = crew_config.GLOBAL_CONFIG_PATH
+    deploy = None
+    try:
+        if problem:
+            verdict, reason = "refuse", f"could not tell whether an emergency is active: {problem}"
+        else:
+            verdict, reason, deploy = _decide(top, env_name, env_class, machine_path)
+    except Exception as exc:  # pylint: disable=broad-except
+        # A crash cannot tell whether production is allowed: it asks.
+        verdict, reason = "ask", _crash_reason(exc)
+    try:
+        report = _deploy_report(env_name, verdict, reason, env_class)
+    except Exception as exc:  # pylint: disable=broad-except
+        # Which environment, or whether it is production, cannot be told: the
+        # decision asks (a refusal stays one, with its reason) and is reported.
+        if verdict != "refuse":
+            verdict, reason = "ask", _crash_reason(exc)
+        report = f"unattended production: <unnamed environment> {verdict} - {reason}"
+    return {"verdict": verdict, "reason": reason, "report": report,
+            "env": env_name, "envClass": env_class, "deploy": deploy, "root": top}
+
+
+# --- T-0010: the approval and questions policies ------------------------------
+
+POLICIES = ("human", "self", "risk")
+HUMAN, SELF, RISK = POLICIES
+TAKE, STOP = "take", "stop"
+ALLOW_CLI = "scope.allowCliApproval"
+
+
+def _policy_setting(block, key):
+    """(policy, warning). Anything but one of POLICIES -- a typo, a bool, a
+    list -- is `human`, which always stops: an unreadable policy is never
+    read as permission."""
+    value = block.get(key, crew_state.AUTOPILOT_DEFAULTS[key])
+    if isinstance(value, str) and value in POLICIES:
+        return value, ""
+    return HUMAN, (f"autopilot.{key} is {value!r}, not one of {'|'.join(POLICIES)}; it "
+                   "reads as human, which always stops")
+
+
+def _ticket_risk(top, ticket):
+    """`crew_ticket.parse_risk` of the spec's header; a spec that is missing
+    or unreadable is `high`, unknown -- never `low`. So is a header naming
+    `risk:` more than once (`# T-9 cut risk: low paths  status: spec  risk:
+    high`): parse_risk takes the first, and which one the owner meant cannot
+    be told, so neither is trusted to grant anything."""
+    try:
+        spec = crew_ticket.read_contract(top, ticket)["spec.md"]
+        text = crew_ticket._text(spec) if spec is not None else ""  # pylint: disable=protected-access
+    except (crew_ticket.TicketError, OSError, ValueError):
+        text = ""
+    if len(re.findall(r"\brisk:", crew_ticket.header_line(text), re.IGNORECASE)) > 1:
+        return {"risk": "high", "known": False}
+    return crew_ticket.parse_risk(text)
+
+
+def _decision(top, ticket, key):
+    """(policy, risk, warnings), or raises when the settings cannot be read."""
+    conf = settings(top)
+    return conf[key], _ticket_risk(top, ticket), [
+        w for w in conf["warnings"] if f"autopilot.{key} " in w]
+
+
+def _risk_words(risk):
+    return (f"risk: {risk['risk']}" if risk["known"]
+            else "no risk: low|med|high in the spec header (reads as high)")
+
+
+def approval_policy(root, ticket):
+    """`{"allow", "policy", "risk", "known", "reason", "warnings"}` -- whether
+    autopilot may approve `ticket`'s plan itself. Never allows unless
+    `scope.allowCliApproval` is exactly true, at any setting; `human` never,
+    `self` at any risk, `risk` only on a known `risk: low`. A NEEDS_REPLAN
+    ledger is no refusal: approving a distinct successor plan is the only way
+    out of it, and `crew_ticket.approve` hands that plan to
+    `review_ledger.continue_with_successor_plan`, which refuses one approved
+    before. An unreadable ledger refuses, like anything that cannot be told."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    try:
+        policy, risk, warnings = _decision(top, ticket, "approval")
+        allowed = crew_ticket.cli_approval_allowed(top)
+        ledger = review_ledger.status(top, ticket).get("state")
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        return {"allow": False, "policy": UNKNOWN, "risk": "high", "known": False,
+                "warnings": [], "reason": (f"could not tell whether autopilot may approve "
+                                           f"({type(exc).__name__}: {exc})")}
+    result = {"allow": False, "policy": policy, "risk": risk["risk"],
+              "known": risk["known"], "warnings": warnings}
+    if policy == UNKNOWN:
+        why = (f"could not tell autopilot.approval ({'; '.join(warnings) or 'unreadable'}); "
+               "the human approves")
+    elif not allowed:
+        why = (f"{ALLOW_CLI} is not exactly true in .crew/config.json, so no approval but "
+               "the human's counts")
+    elif policy == HUMAN:
+        why = "autopilot.approval is human: plan approval always waits for the owner"
+    elif ledger == review_ledger.UNKNOWN:
+        why = ("the review ledger is unreadable, so whether this plan may continue review "
+               "cannot be told; the human approves")
+    elif policy == SELF:
+        return dict(result, allow=True, reason=f"autopilot.approval is self ({_risk_words(risk)})")
+    elif risk["known"] and risk["risk"] == "low":
+        return dict(result, allow=True, reason="autopilot.approval is risk and the spec "
+                    "header says risk: low")
+    else:
+        why = f"autopilot.approval is risk and the spec has {_risk_words(risk)}"
+    return dict(result, reason=why)
+
+
+def question_policy(root, ticket):
+    """`{"action": take|stop, "policy", "risk", "known", "reason", "warnings"}`
+    for an open question whose researched options are in questions.md. `human`
+    stops, `self` takes the recommendation, `risk` takes it only on a known
+    `risk: low`. No `allowCliApproval` rule; anything unreadable stops."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    try:
+        policy, risk, warnings = _decision(top, ticket, "questions")
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        return {"action": STOP, "policy": UNKNOWN, "risk": "high", "known": False,
+                "warnings": [], "reason": (f"could not tell the questions policy "
+                                           f"({type(exc).__name__}: {exc})")}
+    result = {"action": STOP, "policy": policy, "risk": risk["risk"],
+              "known": risk["known"], "warnings": warnings}
+    if policy == UNKNOWN:
+        return dict(result, reason=(f"could not tell autopilot.questions "
+                                    f"({'; '.join(warnings) or 'unreadable'}): a person answers"))
+    if policy == SELF:
+        return dict(result, action=TAKE, reason="autopilot.questions is self")
+    if policy == RISK and risk["known"] and risk["risk"] == "low":
+        return dict(result, action=TAKE, reason="autopilot.questions is risk and the "
+                    "spec header says risk: low")
+    if policy == HUMAN:
+        return dict(result, reason="autopilot.questions is human: a person answers")
+    return dict(result, reason=f"autopilot.questions is risk and the spec has "
+                               f"{_risk_words(risk)}")
+
+
+# `status`'s approve and open-questions sentences: fixed text, so the report
+# reads the same under every autopilot.approval and autopilot.questions value
+# (T-0018's status reads no policy; `next` names the policy's route instead).
+POLICY_FREE_APPROVE = ("The human types /crew:approve {ticket}. status reads no approval "
+                       "policy: crew_autopilot.py settings shows whether autopilot.approval "
+                       "lets /crew:autopilot approve it instead")
+POLICY_FREE_QUESTIONS = ("status reads no questions policy: crew_autopilot.py settings shows "
+                         "whether autopilot.questions lets /crew:autopilot research and "
+                         "answer them instead")
+
+
+def _approval_hint(top, ticket):
+    """The approve phase's second sentence: which route approves, and why."""
+    got = approval_policy(top, ticket)
+    if got["allow"]:
+        return (f"{got['reason']}: autopilot runs crew_autopilot.py approve --root . "
+                f"--ticket {ticket}, and reports it")
+    return f"Only the human types /crew:approve {ticket} ({got['reason']})"
+
+
+def _question_hint(top, ticket):
+    got = question_policy(top, ticket)
+    return (f"autopilot.questions: action={got['action']} ({got['reason']}); research, "
+            f"write questions.md, then crew_autopilot.py questions-check --ticket {ticket}")
+
+
+def approve(root, ticket):
+    """(exit code, text). This module's one writing path, only when autopilot
+    is armed and `approval_policy` allows: `crew_ticket.approve` with
+    `via=autopilot`, which asks `approval_policy` again and then writes
+    `approval.json`, `scope-tickets.json` on a ticket's first approval, and,
+    for a distinct successor plan under a NEEDS_REPLAN ledger, the ledger
+    moved NEEDS_REPLAN -> IN_REVIEW. Exit 3 when that continuation refused."""
+    crew_ticket.check_ticket(ticket)
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    human = f"the human types /crew:approve {ticket}"
+    if not settings(top)["armed"]:
+        return 2, (f"refused: autopilot.mode is not plan, so autopilot approves nothing; "
+                   f"{human}")
+    got = approval_policy(top, ticket)
+    if not got["allow"]:
+        return 2, f"refused: {got['reason']}; {human}"
+    _receipt, successor = crew_ticket.approve(
+        top, ticket, by=f"autopilot:{got['policy']}", via=crew_ticket.AUTOPILOT)
+    text = (f"self-approved {ticket} under approval={got['policy']}, "
+            f"risk={got['risk'] if got['known'] else 'unknown (high)'}")
+    if successor is not None and not successor[0]:
+        return 3, f"{text}\nreview is still NEEDS_REPLAN -- {successor[1]}"
+    return 0, text
+
+
+QUESTIONS_SHAPE = (
+    "## Q1: <the question, one line>",
+    "Research: <what crew:explorer (repo) and crew:researcher (outside) found, sourced>",
+    "### Option A (recommended): <title>   <- the recommendation is always first",
+    "Cost: <what choosing it costs>",
+    "### Option B: <title>   <- 2 to 4 options, each with its Cost: line",
+    "Cost: <what choosing it costs>",
+    "taken: Option A by autopilot (<policy>)   <- only once autopilot took it",
+)
+RECOMMENDED = "(recommended)"
+_Q_RE = re.compile(r"^##[ \t]+Q([0-9]+)\b[ \t]*:?[ \t]*(.*)$")
+_OPTION_RE = re.compile(r"^###[ \t]+Option[ \t]+([A-Za-z0-9]+)\b(.*)$")
+_COST_RE = re.compile(r"^(?:[-*][ \t]+)?Cost:[ \t]*\S")
+_RESEARCH_RE = re.compile(r"^(?:[-*][ \t]+)?Research:[ \t]*\S")
+_TAKEN_RE = re.compile(r"^taken:[ \t]*(.*?)[ \t]*$")
+_TAKEN_FORM = re.compile(r"^Option[ \t]+([A-Za-z0-9]+)[ \t]+by autopilot[ \t]+\(([^()]*)\)$")
+
+
+def _question_blocks(text):
+    """[(number, title, preamble, options, taken)] -- each `## Q<n>` section;
+    `options` is [(id, rest, lines)], `taken` every `taken:` value in it. A
+    `#`/`##` heading that is not a question ends the section."""
+    blocks, current, option = [], None, None
+    for line in (text or "").splitlines():
+        found = _Q_RE.match(line)
+        if found:
+            current = (found.group(1), found.group(2).strip(), [], [], [])
+            blocks.append(current)
+            option = None
+            continue
+        if re.match(r"^#{1,2}[ \t]", line):
+            current = option = None
+            continue
+        if current is None:
+            continue
+        taken = _TAKEN_RE.match(line)
+        if taken:
+            current[4].append(taken.group(1))
+            continue
+        heading = _OPTION_RE.match(line)
+        if heading:
+            option = (heading.group(1), heading.group(2), [])
+            current[3].append(option)
+            continue
+        (option[2] if option is not None else current[2]).append(line)
+    return blocks
+
+
+def _question_problems(block, decision):
+    """(problems, taken) for one `## Q<n>` section, judged against the
+    questions policy in force (`decision`, from `question_policy`). A `taken:`
+    line's `(<policy>)` records the policy that took it, which may differ from
+    today's: it must name one that takes (`self` or `risk`), and today's must
+    say `take`."""
+    number, title, preamble, options, taken = block
+    name, problems = f"Q{number}", []
+    if not title:
+        problems.append(f"{name}: the heading states no question")
+    if not any(_RESEARCH_RE.match(line) for line in preamble):
+        problems.append(f"{name}: no Research: line before the options - research it first")
+    if not 2 <= len(options) <= 4:
+        problems.append(f"{name}: {len(options)} options; it needs 2-4")
+    marked = [oid for oid, rest, _lines in options if RECOMMENDED in rest]
+    if not options or RECOMMENDED not in options[0][1] or len(marked) != 1:
+        problems.append(f"{name}: the first option, and only it, must be marked "
+                        f"{RECOMMENDED}")
+    problems += [f"{name}: Option {oid} has no Cost: line" for oid, _rest, lines in options
+                 if not any(_COST_RE.match(line) for line in lines)]
+    reported = []
+    if len(taken) > 1:
+        problems.append(f"{name}: {len(taken)} taken: lines; at most one")
+    for value in taken[:1]:
+        form = _TAKEN_FORM.match(value)
+        if not form:
+            problems.append(f"{name}: taken: {value!r} is not "
+                            "`Option <id> by autopilot (<policy>)`")
+            continue
+        oid, policy = form.groups()
+        if not options or oid != options[0][0]:
+            problems.append(f"{name}: taken Option {oid}, not the recommended option")
+        # The name is history: the policy that took it then. It must be one
+        # that can take at all; whether taking is allowed NOW is the next check.
+        if policy not in (SELF, RISK):
+            problems.append(f"{name}: taken under {policy!r}, a policy that never takes "
+                            f"(only {SELF} or {RISK} does)")
+        if decision["action"] != TAKE:
+            problems.append(f"{name}: taken, but the questions policy says stop: "
+                            f"{decision['reason']}")
+        reported.append(f"{name}: {value}")
+    return problems, reported
+
+
+def questions_check(root, ticket):
+    """`{"valid", "action", "policy", "risk", "known", "reason", "warnings",
+    "questions", "taken", "problems"}` for `.work/tickets/<id>/questions.md`.
+    Valid only when every question has the QUESTIONS_SHAPE and every
+    `taken:` line names a policy that takes, while the policy in force says
+    `take` (`_question_problems`)."""
+    crew_ticket.check_ticket(ticket)
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    decision = question_policy(top, ticket)
+    path = os.path.join(crew_ticket.ticket_dir(top, ticket), "questions.md")
+    blocks = _question_blocks(read_text(path))
+    problems, taken = [], []
+    if not blocks:
+        problems.append(f"{_rel(top, path)} has no `## Q<n>` question")
+    numbers = [block[0] for block in blocks]
+    problems += [f"Q{n}: numbered twice" for n in sorted(set(numbers)) if numbers.count(n) > 1]
+    for block in blocks:
+        found, reported = _question_problems(block, decision)
+        problems += found
+        taken += reported
+    return dict(decision, valid=not problems, questions=len(blocks), taken=taken,
+                problems=problems)
+
+
+def questions_text(result):
+    risk = result["risk"] if result.get("known") else "high(unknown)"
+    lines = [_line(valid=int(result["valid"]), action=result["action"],
+                   policy=result["policy"], risk=risk, questions=result["questions"],
+                   taken=len(result["taken"]), reason=result["reason"])]
+    lines += [f"problem: {p}" for p in result["problems"]]
+    lines += [f"taken: {t}" for t in result["taken"]]
+    lines += [f"warning: {w}" for w in result["warnings"]]
+    if not result["valid"]:
+        lines += ["shape:"] + [f"  {row}" for row in QUESTIONS_SHAPE]
+    return "\n".join(lines)
 
 
 def stops():
@@ -1067,62 +1876,476 @@ def stops():
             "human": rows(HUMAN_STOPS), "procedure": rows(PROCEDURE_STOPS)}
 
 
+def _existing_ticket(top, token):
+    """Whether `token` is a plain ticket id naming a `.work/tickets/` folder."""
+    try:
+        return os.path.isdir(crew_ticket.ticket_dir(top, token))
+    except crew_ticket.TicketError:
+        return False
+
+
+def route(root, first):
+    """`{"sub", "stop", "reason"}` for the command's first argument. First
+    match, exact and case-sensitive: a SUBCOMMANDS name; nothing or `--goal`
+    (run); an INDEX-shaped id or an existing `.work/tickets/<token>/` (run).
+    Anything else stops: `crew_ticket` accepts `stauts` as an id, so a typo
+    is refused here rather than driven as a ticket."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    token = first or ""
+    if token in SUBCOMMANDS:
+        sub = token
+    elif token == "":
+        sub = "run"
+    elif token == GOAL_FLAG:
+        return {"sub": "run", "stop": True,
+                "reason": f"run {GOAL_FLAG} <slug> arrives with {ARRIVES['goal']}"}
+    elif _INDEX_ID.fullmatch(token) or _existing_ticket(top, token):
+        sub = "run"
+    else:
+        return {"sub": "", "stop": True, "reason": UNKNOWN_SUB}
+    if sub not in AVAILABLE:
+        return {"sub": sub, "stop": True,
+                "reason": f"{AUTOPILOT} {sub} arrives with {ARRIVES.get(sub, 'a later ticket')}"}
+    return {"sub": sub, "stop": False, "reason": ""}
+
+
+NOT_A_TICKET = ("not a ticket id: at most one, INDEX-shaped (T-0018) or naming an "
+                "existing .work/tickets/<id>/")
+
+
+def route_args(root, text):
+    """`route` for the command's whole argument string, plus `ticket`: the
+    word after a subcommand, or a bare ticket id itself. The command passes
+    `$ARGUMENTS` whole because Claude Code numbers positional arguments from
+    `$0` and leaves an out-of-range `$N` literal. A second word that is not a
+    ticket, or a third word, stops; it is never read as a ticket."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    words = (text or "").split()
+    got = dict(route(top, words[0] if words else ""), ticket="")
+    if got["stop"]:
+        return got
+    rest = words[1:] if words and words[0] in SUBCOMMANDS else words
+    if words[:1] == ["run"] and rest[:1] == [GOAL_FLAG]:
+        return dict(route(top, GOAL_FLAG), ticket="")
+    if len(rest) > 1 or (rest and not (_INDEX_ID.fullmatch(rest[0])
+                                       or _existing_ticket(top, rest[0]))):
+        return dict(got, stop=True, reason=NOT_A_TICKET)
+    return dict(got, ticket=rest[0] if rest else "")
+
+
+# Who acts when `next` stops at each phase it names. A phase not here -- a
+# rename, `invalid` from a crash -- reads `unknown`, never `autopilot`.
+WAITING = {phase: "owner" for phase in (
+    "brainstorm", "direction-approval", "open-questions", "spec", "plan", "approve",
+    "review", "replan", "implement", "accept-review", "refresh", "stale-after-review",
+    "done")}
+WAITING["ship"] = "owner"
+WAITING["closed"] = "nobody"
+STATUS_MAX_LINES = 12
+# The states `review_ledger.status` reports for a ledger it could read. Its
+# UNKNOWN is also a string a file can hold, with a count computed beside it.
+LEDGER_STATES = ("EMPTY", review_ledger.IN_REVIEW, review_ledger.REVIEWED,
+                 review_ledger.ACCEPTED, review_ledger.NEEDS_REPLAN)
+T0006_UNAVAILABLE = "unavailable (T-0006 not landed)"
+
+
+def _reserved_round(top, ticket):
+    """Whether the latest round under the current plan is reserved, unfinished."""
+    try:
+        rounds = _current_rounds(review_ledger.status(top, ticket))
+    except Exception:  # pylint: disable=broad-except
+        return False
+    return bool(rounds) and rounds[-1].get("status") != "completed"
+
+
+def _bare(top):
+    """What bare `/crew:autopilot` would take: `resume_target(top)`, or None
+    when it raised -- could not tell, which is never read as agreeing. Read
+    with no policy, as everything status composes is."""
+    try:
+        return resume_target(top, policy=False)
+    except Exception:  # pylint: disable=broad-except
+        return None
+
+
+def _takes(bare, ticket, source=None):
+    """Whether bare `/crew:autopilot` drives `ticket` (from `source`, if named)."""
+    return (bare is not None and not bare.get("stop") and bare.get("ticket") == ticket
+            and source in (None, bare.get("source")))
+
+
+def _waiting(top, result, bare):
+    phase, command = result.get("phase"), result.get("command")
+    who = WAITING.get(phase, UNKNOWN)
+    if who == UNKNOWN:
+        return f"unknown (phase {phase!r} is not one status maps)"
+    if who == "nobody":
+        return "nobody - the ticket is closed"
+    if phase == "review" and result.get("stop") and _reserved_round(top, result["ticket"]):
+        return "reviewer - a round is reserved with no result"
+    if not result.get("stop"):
+        # Bare `/crew:autopilot` reads the handoff before any argument, so it
+        # is named only when it would drive this same ticket.
+        if _takes(bare, result["ticket"]):
+            return f"autopilot - run {AUTOPILOT} to continue"
+        return f"autopilot - run {_drive(result['ticket'])} to continue"
+    try:
+        guard = not _phase(top, result["ticket"], policy=False)["stop"]
+    except Exception:  # pylint: disable=broad-except
+        return "unknown (could not tell which check stopped the phase)"
+    if guard:
+        return _repoint(top, result["ticket"])
+    return f"owner - types {command}" if command else "owner - see the phase reason"
+
+
+def _repoint(top, ticket):
+    """Who clears a stop `next_phase` made on the active pointer, not the phase:
+    its `command` is what autopilot would run, never what the owner types."""
+    active, where, broken = crew_ticket.resolve_active(top)
+    if broken:
+        return ("owner - fixes the broken active-ticket pointer: "
+                f"crew_ticket.py activate --ticket {ticket}")
+    if where != "active-ticket":
+        return f"autopilot - run {_drive(ticket)} to continue; it activates {ticket} first"
+    repoint = f"owner - re-points this worktree: crew_ticket.py activate --ticket {ticket}"
+    try:
+        closed = _closed(top, active)
+    except Exception:  # pylint: disable=broad-except
+        closed = None
+    if closed is None:
+        return f"{repoint} (could not tell whether {active} is still open)"
+    if closed:
+        return f"{repoint} ({active} is closed)"
+    return f"{repoint}, or runs {_drive(active)}"
+
+
+def _drive(ticket):
+    """The command that drives `ticket`. `route` reads a SUBCOMMANDS name as
+    the subcommand, so a ticket named like one is driven as `run <id>`; every
+    other id keeps the bare `/crew:autopilot <id>` form."""
+    if ticket in SUBCOMMANDS:
+        return f"{AUTOPILOT} run {ticket}"
+    return f"{AUTOPILOT} {ticket}"
+
+
+def _closed(top, ticket):
+    """Whether either fact `next` closes a ticket on says so: INDEX.md's status
+    or spec.md's `status: done` header. Read directly, because `_phase` checks
+    direction.md first and a closed ticket without one reads `brainstorm`."""
+    if _index_status(top, ticket) in INDEX_DONE:
+        return True
+    spec = crew_ticket.read_contract(top, ticket)["spec.md"]
+    # read_contract returns None for a spec it could not read as well as for an
+    # absent one; only absence says "not closed".
+    if spec is None and os.path.lexists(os.path.join(crew_ticket.ticket_dir(top, ticket),
+                                                     "spec.md")):
+        return None
+    return spec is not None and _header_status(
+        crew_ticket._text(spec)) == "done"  # pylint: disable=protected-access
+
+
+def _review(top, ticket):
+    """The ledger's rounds, or `unknown`: a corrupt ledger has no `rounds_left`,
+    and a missing count is never read as the budget. A ledger whose state is
+    UNKNOWN, or one review_ledger never writes, still gets a count computed
+    from its rounds; that count is never printed."""
+    try:
+        ledger = review_ledger.status(top, ticket)
+    except Exception:  # pylint: disable=broad-except
+        return "unknown (ledger unreadable)"
+    state = ledger.get("state")
+    if state == review_ledger.UNKNOWN:
+        return "unknown (ledger unreadable)"
+    if state not in LEDGER_STATES:
+        return "unknown (ledger state is not one review_ledger writes)"
+    left = ledger.get("rounds_left")
+    if isinstance(left, bool) or not isinstance(left, int):
+        return "unknown (ledger unreadable)"
+    return f"{state}, {left} of {ledger.get('budget')} rounds left"
+
+
+def _resume_line(top, bare):
+    """The handoff's `resume:` line and whether bare `/crew:autopilot` --
+    `bare`, `resume_target`'s answer -- takes it. Only `crew_resume`'s own
+    fixed reasons, its re-rendered tokens and `resume_target`'s stop reason
+    are shown; nothing is echoed from the file."""
+    text, why = _read_handoff(top)
+    if text is None:
+        return why
+    try:
+        resume = importlib.import_module("crew_resume")
+    except ImportError:
+        return T0006_UNAVAILABLE
+    try:
+        parsed = resume.parse_resume(text)
+        rendered = resume.render(parsed) if parsed.get("ok") else ""
+    except Exception as exc:  # pylint: disable=broad-except
+        return f"not usable: crew_resume raised {type(exc).__name__}"
+    if not rendered:
+        return f"not usable: {parsed.get('reason') or 'no reason given'}"
+    if bare is None:
+        return f"{rendered} (unknown: resume_target raised, so whether it is usable " \
+               "could not be told)"
+    if parsed.get("command") == AUTOPILOT and parsed.get("kind") == "goal":
+        return f"not usable: {rendered} - goal resume arrives with {ARRIVES['goal']}"
+    # `_handoff_ticket`'s checks in its order, in fixed text, on THIS read's
+    # text: `bare` came from an earlier read the file may have been rewritten
+    # since, so it vouches for the ticket only after these pass.
+    if parsed.get("kind") != "ticket" or not parsed.get("arg"):
+        return f"not usable: {rendered} - it names no ticket"
+    branch = crew_state._HANDOFF_BRANCH_RE.search(text)  # pylint: disable=protected-access
+    head = crew_state._HANDOFF_HEAD_RE.search(text)  # pylint: disable=protected-access
+    here_head = (git_out(top, "rev-parse", "HEAD") or "").lower()
+    if not branch or branch.group(1) != git_out(top, "rev-parse", "--abbrev-ref", "HEAD"):
+        return f"not usable: {rendered} - its branch: does not match this checkout"
+    if not head or not here_head or not here_head.startswith(head.group(1).lower()):
+        return f"not usable: {rendered} - its head: does not match this checkout"
+    if not _existing_ticket(top, parsed["arg"]):
+        return f"not usable: {rendered} - its ticket has no .work/tickets/ folder"
+    if _takes(bare, parsed.get("arg"), "handoff"):
+        return f"{rendered} (usable)"
+    if bare.get("stop"):
+        return f"not usable: {rendered} - {bare.get('reason') or 'resume_target stopped'}"
+    return f"not usable: {rendered} - bare {AUTOPILOT} does not take it"
+
+
+def status(root, ticket=None):
+    """`{"mode", "maxPhases", "warnings", "ticket", "source", "reason", "phase",
+    "command", "stop", "phase_reason", "waiting", "review", "resume_line",
+    "fallthrough", "disagreement"}`. Read-only: composes `settings`,
+    `resume_target` (or `next_phase` for an argument), `review_ledger.status`
+    and `crew_resume`. Whatever it cannot tell reads `unknown`. It reads no
+    approval or questions policy (`policy=False`): its lines are the same
+    under every setting, and `next` is what names the policy's route."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    conf = settings(top)
+    if ticket:
+        crew_ticket.check_ticket(ticket)
+        if os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
+            pick = {"ticket": ticket, "source": "argument", "reason": "", "fallthrough": [],
+                    "disagreement": "", "next": next_phase(top, ticket, policy=False)}
+        else:
+            pick = {"ticket": None, "source": "argument", "fallthrough": [],
+                    "disagreement": "", "next": None,
+                    "reason": f"{ticket} has no .work/tickets/ folder"}
+        bare = _bare(top)
+    else:
+        pick = bare = resume_target(top, policy=False)
+    disk = pick.get("next") or {}
+    found = pick.get("ticket")
+    return {"mode": conf["mode"], "maxPhases": conf["maxPhases"], "warnings": conf["warnings"],
+            "ticket": found, "source": pick.get("source"), "reason": pick.get("reason", ""),
+            "phase": disk.get("phase") or UNKNOWN, "command": disk.get("command") or "",
+            "stop": bool(disk.get("stop", True)), "phase_reason": disk.get("reason", ""),
+            "waiting": _waiting(top, disk, bare) if found else "owner - see the ticket line",
+            "review": _review(top, found) if found else "unknown (no ticket)",
+            "resume_line": _resume_line(top, bare),
+            "fallthrough": list(pick.get("fallthrough") or []),
+            "disagreement": pick.get("disagreement") or ""}
+
+
+def _one_line(value):
+    return " ".join(str(value).split())
+
+
+def status_text(result):
+    """At most STATUS_MAX_LINES lines; every field folded onto one line."""
+    lines = [f"mode: plan, maxPhases {result.get('maxPhases')}"
+             if result.get("mode") == "plan" else
+             "mode: off - `autopilot.mode: plan` in .crew/config.json arms it"]
+    if result.get("ticket"):
+        lines.append(f"ticket: {result['ticket']} (from {result.get('source')})")
+    else:
+        lines.append(f"ticket: none - {result.get('reason') or 'cannot tell'}")
+    if result.get("stop"):
+        lines.append(f"phase: {result.get('phase')}, stopped - "
+                     f"{result.get('phase_reason') or 'cannot tell'}")
+    else:
+        lines.append(f"phase: {result.get('phase')} - next: {result.get('command')}")
+    lines += [f"waiting on: {result.get('waiting')}", f"review: {result.get('review')}",
+              f"resume: {result.get('resume_line')}"]
+    lines += [f"fell through: {why}" for why in result.get("fallthrough") or [] if why]
+    if result.get("disagreement"):
+        lines.append(f"disagreement: {result['disagreement']}")
+    lines += [f"warning: {w}" for w in result.get("warnings") or []]
+    lines = [_one_line(line) for line in lines]
+    if len(lines) > STATUS_MAX_LINES:
+        extra = len(lines) - STATUS_MAX_LINES + 1
+        lines = lines[:STATUS_MAX_LINES - 1] + [
+            f"(+{extra} more: crew_autopilot.py resume / settings print them)"]
+    return "\n".join(lines)
+
+
 def _failure(exc):
+    """A `next`/`resume`/`status` crash as text, even when `str(exc)` raises."""
     if isinstance(exc, crew_ticket.TicketError):
-        return str(exc)
-    return f"crew_autopilot raised {type(exc).__name__}: {exc} - cannot tell, so stop"
+        return _safe_text(exc, str)
+    return (f"crew_autopilot raised {type(exc).__name__}: {_safe_text(exc, str)} - "
+            "cannot tell, so stop")
 
 
 def _line(**fields):
     return " ".join(f"{k}={v}" for k, v in fields.items())
 
 
+def _policy_main(args):
+    """`approve` and `questions-check`: exit 0 only on a yes. A crash is a
+    refusal (exit 1), never an approval or a valid file."""
+    try:
+        if args.action == "approve":
+            code, text = approve(args.root, args.ticket)
+            result = {"code": code, "text": text}
+        else:
+            result = questions_check(args.root, args.ticket)
+            code, text = (0 if result["valid"] else 1), questions_text(result)
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        code, text = 1, _one_line(f"refused: {_failure(exc)}")
+        result = {"code": code, "text": text}
+    sys.stdout.write((json.dumps(result, indent=2) if args.json else text) + "\n")
+    return code
+
+
+def _cli_value(value, token=False):
+    """`value` as one field of deploy-allowed's one line: itself when it is a
+    printable string (for a `token`, non-empty with no whitespace either),
+    else its repr, which escapes every line break. So nothing the CLI was
+    handed, and no exception text, can print a second line to read as a
+    verdict (review round 3)."""
+    text = value if isinstance(value, str) else _safe_text(value)
+    plain = text.isprintable() and not (token and (not text or any(
+        char.isspace() for char in text)))
+    return text if plain else _safe_text(text)
+
+
+def _cli_deploy(args):
+    """deploy-allowed's `(text, json_text, report)`; never raises. Stage 1
+    builds all three from `deploy_allowed` inside one try. Stage 2, on any
+    exception from stage 1 (a raise, a result missing a key, a value JSON
+    cannot dump), builds them from the literal verdict `ask`; the exception
+    only decorates the reason, and one that cannot be described gets a
+    constant."""
+    try:
+        result = deploy_allowed(args.root, args.env, args.env_class)
+        text = _line(**{"verdict": result["verdict"],
+                        "env": _cli_value(result["env"], token=True),
+                        "class": _cli_value(result["envClass"], token=True),
+                        "reason": _cli_value(result["reason"])})
+        report = _cli_value(result["report"]) if result["report"] else ""
+        return text, json.dumps(result), report
+    except Exception as exc:  # pylint: disable=broad-except
+        # deploy_allowed never raises; if stage 1 does, that cannot tell: ask.
+        try:
+            reason = _crash_reason(exc)
+        except Exception:  # pylint: disable=broad-except
+            reason = ("crew_autopilot raised an exception it could not describe - "
+                      "cannot tell, so ask")
+    env, cls = _cli_value(args.env, token=True), _cli_value(args.env_class, token=True)
+    text = _line(**{"verdict": "ask", "env": env, "class": cls, "reason": _cli_value(reason)})
+    report = (f"unattended production: {env} ask - {_cli_value(reason)}"
+              if args.env_class == "prod" else "")
+    return text, json.dumps({"verdict": "ask", "reason": reason, "report": report,
+                             "env": args.env, "envClass": args.env_class, "deploy": None,
+                             "root": None}), report
+
+
 def _ship_text(result):
     checks = result["checks"]
     families = result["families"]
     return "\n".join([
-        _line(action=result["action"], stop=int(result["stop"]), pr=result["pr"] or "",
-              reason=result["reason"]),
-        "checks: " + (", ".join(f"{c.get('name')}={c.get('state')}" for c in checks)
-                      if checks else "(none read)" if checks is None else "(none reported)"),
-        "families: " + (", ".join(_family(f) or "unknown" for f in families)
-                        if families else "(not read)" if families is None else "(none)")])
+        _one_line(_line(action=result["action"], stop=int(result["stop"]),
+                        pr=result["pr"] or "", reason=result["reason"])),
+        _one_line("checks: " + (", ".join(f"{c.get('name')}={c.get('state')}" for c in checks)
+                                if checks else "(none read)" if checks is None
+                                else "(none reported)")),
+        _one_line("families: " + (", ".join(_family(f) or "unknown" for f in families)
+                                  if families else "(not read)" if families is None
+                                  else "(none)"))])
 
 
 def main(argv):
+    # `next` quotes the ledger's auto-accept refusal, which can quote reviewer
+    # text: write UTF-8 whatever the console code page (review_ledger.utf8_stdio).
+    review_ledger.utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="action", required=True)
-    for name in ("next", "resume", "settings", "stops", "ship"):
+    for name in ("next", "resume", "settings", "stops", "route", "status", "approve",
+                 "questions-check"):
         action = sub.add_parser(name)
         action.add_argument("--json", action="store_true")
         if name != "stops":
             action.add_argument("--root", default=".")
-    sub.choices["next"].add_argument("--ticket", required=True)
-    sub.choices["ship"].add_argument("--ticket", required=True)
+    ship_action = sub.add_parser("ship")
+    ship_action.add_argument("--json", action="store_true")
+    ship_action.add_argument("--root", default=".")
+    for name in ("next", "approve", "questions-check", "ship"):
+        sub.choices[name].add_argument("--ticket", required=True)
     sub.choices["resume"].add_argument("--ticket", default="")
+    sub.choices["status"].add_argument("--ticket", default="")
+    given = sub.choices["route"].add_mutually_exclusive_group()
+    given.add_argument("--args", default=None)
+    given.add_argument("--first", default=None)
     sub.choices["next"].add_argument("--phases-run", type=int, default=0)
     sub.choices["next"].add_argument("--last-command", default="")
+    deploy = sub.add_parser("deploy-allowed")
+    deploy.add_argument("--json", action="store_true")
+    deploy.add_argument("--root", default=".")
+    deploy.add_argument("--env", required=True)
+    # No `choices`: a class crew does not know reaches deploy_allowed and asks.
+    deploy.add_argument("--class", dest="env_class", required=True)
+    argv = list(argv)
+    if argv[:1] == ["route"]:
+        # `--goal` or `-h` is a value here, never an option: `--args=<v>`.
+        for flag in ("--args", "--first"):
+            at = argv.index(flag) if flag in argv else -1
+            if 0 <= at < len(argv) - 1:
+                argv[at:at + 2] = [f"{flag}={argv[at + 1]}"]
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
-    # Read-only: git must not even refresh the index's stat cache.
+    # Read-only but for approve's receipt and ship's push: git must not even
+    # refresh the index's stat cache.
     os.environ["GIT_OPTIONAL_LOCKS"] = "0"
-    if args.action == "stops":
-        result = stops()
-        text = "\n".join(f"{kind} {row['id']}: {row['text']}"
-                         for kind, rows in result.items() for row in rows)
-    elif args.action == "settings":
-        result = settings(args.root)
-        text = "\n".join([_line(mode=result["mode"], maxPhases=result["maxPhases"])]
-                         + [f"warning: {w}" for w in result["warnings"]])
-    elif args.action == "ship":
+    if args.action in ("approve", "questions-check"):
+        return _policy_main(args)
+    if args.action == "ship":
         try:
             result = ship(args.root, args.ticket)
         except Exception as exc:  # pylint: disable=broad-except
             # A crash cannot tell whether it is safe to merge: a stop, never silence.
             result = _ship_result(args.ticket, "stop", True, _failure(exc))
         text = _ship_text(result)
+    elif args.action == "status":
+        try:
+            result = status(args.root, args.ticket or None)
+            text = status_text(result)
+        except Exception as exc:  # pylint: disable=broad-except
+            # A crash cannot tell where the ticket stands: say so, never nothing.
+            result = {"status": UNKNOWN, "reason": _failure(exc)}
+            text = _one_line(f"status: unknown - {_failure(exc)}")
+    elif args.action == "route" and args.first is not None:
+        result = route(args.root, args.first)
+        text = _line(sub=result["sub"], stop=int(result["stop"]), reason=result["reason"])
+    elif args.action == "route":
+        result = route_args(args.root, args.args or "")
+        text = _line(sub=result["sub"], stop=int(result["stop"]), ticket=result["ticket"],
+                     reason=result["reason"])
+    elif args.action == "stops":
+        result = stops()
+        text = "\n".join(f"{kind} {row['id']}: {row['text']}"
+                         for kind, rows in result.items() for row in rows)
+    elif args.action == "settings":
+        result = settings(args.root)
+        text = "\n".join([_line(mode=result["mode"], maxPhases=result["maxPhases"],
+                                deploy=result["deploy"])]
+                         + [_line(approval=result["approval"], questions=result["questions"])]
+                         + [f"warning: {w}" for w in result["warnings"]])
+    elif args.action == "deploy-allowed":
+        text, json_text, report = _cli_deploy(args)
+        if report:
+            sys.stderr.write(report + "\n")
+        if args.json:
+            text = json_text
     elif args.action == "resume":
         try:
             result = resume_target(args.root, args.ticket or None)
@@ -1147,7 +2370,10 @@ def main(argv):
                       "command": "", "reason": _failure(exc), "evidence": []}
         text = _line(phase=result["phase"], stop=int(result["stop"]),
                      command=result["command"], reason=result["reason"])
-    sys.stdout.write((json.dumps(result, indent=2) if args.json else text) + "\n")
+    if args.json and args.action != "deploy-allowed":
+        # status holds STATUS_MAX_LINES as JSON too: one line, nothing dropped.
+        text = json.dumps(result, indent=None if args.action == "status" else 2)
+    sys.stdout.write(text + "\n")
     return 0
 
 

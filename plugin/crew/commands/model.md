@@ -112,8 +112,8 @@ at the one moment it matters:
 | `qa.codex.reasoningEffort` | one of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Codex rejects anything else with a 400 |
 | `qa.copilot.model` | must not start with `claude-`. Copilot's own default is `claude-sonnet-4.6`; a Claude reviewer of Claude-written code is the failure this ordering exists to avoid |
 | `qa.provider` | `auto`, or a name that appears in `qa.order` |
-| `dev.provider` | `claude`, `codex` or `copilot` only (`crew_config.DEV_PROVIDERS`) |
-| `qa.provider` / `qa.order` / `qa.roles.<role>.provider` | `claude`, `codex` or `copilot` only (`crew_config.QA_PROVIDERS`) |
+| `dev.provider` | `claude`, `codex`, `copilot` or `kimi` only (`crew_config.DEV_PROVIDERS`) |
+| `qa.provider` / `qa.order` / `qa.roles.<role>.provider` | `claude`, `codex`, `copilot` or `kimi` only (`crew_config.QA_PROVIDERS`) |
 
 **`localgpu` is refused in every one of these slots**, `dev.provider` included —
 it is not a provider crew dispatches a role to at all. Admitting it to
@@ -200,12 +200,10 @@ QA rungs it just disqualified:
 |---|---|---|
 | `claude` | `claude` (the `reviewer` fallback) | unchanged — Codex or Copilot |
 | `gpt` (any codex model) | every codex pin, whichever model | Copilot pinned off Claude, else `reviewer` |
-| `kimi` (a Kimi Copilot pin) | that Copilot pin | the next family in `qa.order` |
+| `kimi` (Kimi Code CLI, any model; or a Kimi Copilot pin) | `kimi` QA and any Copilot Kimi pin | the next family in `qa.order` |
 
-The family comes from `model.split("-")[0]`. That is why **`gpt-5.6-sol` and
-`gpt-5.6-luna` are the same `gpt` family as `gpt-6-astra`**: a diff written by
-codex bars all three, and QA falls to claude or kimi. Codex QA pins therefore
-apply to work codex did **not** write.
+The family is the model's leading letters after any `vendor/` prefix, except that `claude` and `kimi` are decided by the provider (the Kimi Code id `k3` would otherwise read as family `k` and clear Kimi to review Kimi).
+That is why **`gpt-5.6-sol` and `gpt-5.6-luna` are the same `gpt` family as `gpt-6-astra`**: a diff written by codex bars all three, and QA falls to claude or kimi. Codex QA pins therefore apply to work codex did **not** write.
 
 Say this consequence out loud whenever the QA pins are named:
 
@@ -213,6 +211,8 @@ Say this consequence out loud whenever the QA pins are named:
 > codex-authored, so the Sol and Luna QA pins fire on claude-authored work and
 > comparatively rarely elsewhere. That may be exactly what you want. It should
 > not be something you discover from a review log.
+
+**Kimi pins crew OFFERS, never applies** (not shipped: the `roles` tables stay empty; write one only when the user says so): `qa.roles.review` -> kimi `k3`; `qa.roles.phase1` and `qa.roles.gate` -> kimi `kimi-for-coding`; `qa.roles.smoke` -> kimi `kimi-for-coding-highspeed`; `dev.roles.planner` -> kimi `k3` (valid and family-guarded now, but no command reads it yet - a follow-up ticket).
 
 Do not silently rewrite `qa.order` or a `roles` pin to enforce this. Tell the
 user what the consequence is and let them decide — a config that quietly

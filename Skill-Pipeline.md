@@ -56,7 +56,7 @@ Use [`superpowers:requesting-code-review`](https://github.com/obra/superpowers) 
 
 ## Stage 4 — Merge
 
-- Squash or rebase-merge to `main` once approved and Stage 2 checks are green.
+- Merge to `main` as a merge commit (`gh pr merge --merge`, never squash or rebase) once approved and Stage 2 checks are green.
 - Delete the branch after merge.
 
 ## Stage 5 — Release

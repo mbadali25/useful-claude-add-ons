@@ -1,6 +1,21 @@
 name: MCP servers (Microsoft)
 
-on: [push, pull_request]
+# push runs only on main: a feature branch is tested by its pull_request run
+# (the merge result), not twice. pull_request alone would never test main
+# itself after a merge, so both are declared.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# One run per PR at a time: a new push to the PR cancels the superseded run.
+# Every non-PR run (push to main, schedule, workflow_dispatch) gets its own
+# group via run_id, so nothing on main is ever cancelled or queued behind
+# another run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:

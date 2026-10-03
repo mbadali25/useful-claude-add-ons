@@ -1,6 +1,21 @@
 name: Marketplace
 
-on: [push, pull_request]
+# push runs only on main: a feature branch is tested by its pull_request run
+# (the merge result), not twice. pull_request alone would never test main
+# itself after a merge, so both are declared.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# One run per PR at a time: a new push to the PR cancels the superseded run.
+# Every non-PR run (push to main, schedule, workflow_dispatch) gets its own
+# group via run_id, so nothing on main is ever cancelled or queued behind
+# another run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
@@ -59,6 +74,12 @@ jobs:
       # different half of the fix.
       - name: Version-drift commit-shape suite
         run: python3 scripts/_test/version-drift.py
+      # The fan-in behind the required `crew-shell-matrix (windows-latest)`
+      # check (pytest-crew.yml's crew-windows-gate). Each case is one way a
+      # test could be lost, or a Windows job not run, while that check went
+      # green (L-0577).
+      - name: Windows shard fan-in suite
+        run: python3 scripts/_test/windows-shards.py
       # The UPDATE.md mirrors are generated, so the only thing keeping them
       # honest is a gate that fails. Without this step the generator's --check
       # mode is a check nobody runs, which is worse than no check: the blocks
@@ -67,6 +88,14 @@ jobs:
         run: python3 scripts/sync-updates.py --check
       - name: Shell syntax
         run: bash -n scripts/install-prerequisites.sh
+      # An own-line `# shellcheck` comment ShellCheck cannot parse is SC1073, and
+      # ShellCheck then stops checking the WHOLE file. install-prerequisites.sh
+      # and scripts/_test/lsp-stack-tools.sh were unchecked that way until L-0587.
+      # The suite's grammar check is stdlib; its cross-check uses the runner
+      # image's own shellcheck (0.9.0 on ubuntu-24.04) and prints SKIPPED only
+      # where shellcheck is absent.
+      - name: ShellCheck directive suite
+        run: python3 scripts/_test/shellcheck-directives.py
       # Runs here because it needs nothing but bash: the end-to-end cases use --dry-run
       # or a stub 'claude'. The drift suite is the one that cannot - it drives the real
       # Claude Code CLI.
@@ -154,6 +183,13 @@ jobs:
       # up as a version bump here, not a silent behaviour change.
       - name: Install the Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code@2.1.278
+      # _verify/smoke.sh holds two checks no other step runs: the crew-setup
+      # canon() round-trip and version agreement across pyproject.toml,
+      # plugin.json, marketplace.json and every Python-source copy. It runs
+      # after the CLI install so its own `claude plugin validate` check runs
+      # rather than skipping. Found by crew's QA audit (L-0618, item E7).
+      - name: Smoke checks (_verify/smoke.sh)
+        run: bash _verify/smoke.sh
       - name: claude plugin validate --strict
         run: |
           claude plugin validate --strict .

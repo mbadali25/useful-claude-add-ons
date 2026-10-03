@@ -32,6 +32,8 @@ import json
 import math
 import os
 import re
+import stat
+import subprocess
 import sys
 import hashlib
 
@@ -45,11 +47,9 @@ import hashlib
 # Fixed at the SOURCE - the read site ALSO strips '\r' defensively (see
 # verify-gate.sh/.ps1's `tr -d '\r'` at each call site), but a source that
 # never emits '\r' is the fix that does not depend on every caller
-# remembering the workaround.
-try:
-    sys.stdout.reconfigure(newline="\n")
-except (AttributeError, ValueError):
-    pass
+# remembering the workaround. Done in `main`, not at import (T-0087): the
+# consumers that import this module for `read_record` must not have their
+# own process's stdout changed by the import.
 
 RECORD_PATH = os.path.join(".crew", ".verify-gate.record.json")
 TIMINGS_PATH = os.path.join(".crew", ".verify-gate.timings.json")
@@ -77,6 +77,20 @@ def _load_state(path):
 
 def _load(path):
     return _load_state(path)[0]
+
+
+def read_record(root):
+    """(state, rules) for `<root>/.crew/.verify-gate.record.json`: state is
+    "absent", "ok" or "corrupt", rules {} unless ok. The one reader the
+    record's consumers (review_prompt.py, crew_status.py) share; a record
+    whose `rules` is not an object is corrupt -- which rules are owed is then
+    UNKNOWN, never "none"."""
+    data, state = _load_state(os.path.join(root, RECORD_PATH))
+    if state != "ok":
+        return state, {}
+    if not isinstance(data.get("rules"), dict):
+        return "corrupt", {}
+    return "ok", data["rules"]
 
 
 def _save(path, data):
@@ -406,6 +420,365 @@ def cmd_time_key(cmd):
     return hashlib.sha1(cmd.encode("utf-8")).hexdigest()[:16]
 
 
+# --- declared coverage (L-0572) -------------------------------------------
+#
+# `verify-gate --all` used to spend more than half its time re-running crew
+# test-subset rules whose tests the full-suite rule had just run and passed
+# (992s total, 536s of it subset reruns, /root/crew-tmp/l-0558/verify-final.log).
+# A rule may now DECLARE that another rule covers it: the superset carries
+# `"id": "<name>"`, the subset `"coveredBy": "<name>"`. Nothing is inferred
+# from command text. The planner below only decides what MAY be credited and
+# in what order; whether a command IS credited is decided at run time by the
+# gate, from the superset's actual exit codes in the same invocation.
+#
+# Shared by both flavours for the same reason as scan_reach: verify-gate.sh
+# imports it, verify-gate.ps1 pipes JSON to `cover-plan`. Every way this can
+# go wrong resolves to RUNNING the subset, never to crediting it.
+COVERED = "covered"
+
+
+def _rule_env(rule):
+    """The env a rule's commands run under, filtered exactly as the gates
+    filter it (string names to string values)."""
+    env = rule.get("env") if isinstance(rule, dict) else None
+    if not isinstance(env, dict):
+        return {}
+    return {k: v for k, v in env.items() if isinstance(k, str) and isinstance(v, str)}
+
+
+def _runnable(run):
+    """True when `run` is a non-empty list of non-blank command strings.
+    A blank command is skipped by verify-gate.sh and executed by the .ps1,
+    so a superset carrying one is not evidence either flavour agrees on."""
+    return (isinstance(run, list) and bool(run)
+            and all(isinstance(c, str) and c.strip() for c in run))
+
+
+def cover_declarations(rules):
+    """({subset index: superset index}, notices) for every VALID declaration.
+
+    A declaration is ignored, with a notice naming why, when its value is not
+    a non-empty string, names no rule `id` or one more than one rule claims,
+    names the rule itself, names a rule that itself declares `coveredBy` (no
+    chains, so no cycles), names a rule with no runnable commands, or the two
+    rules declare different `env` (the superset's pass was under another
+    environment). Ignored means the subset runs - the safe direction."""
+    if not isinstance(rules, list):
+        return {}, []
+    ids, notices = {}, []
+    for i, rule in enumerate(rules):
+        if isinstance(rule, dict) and "id" in rule:
+            rid = rule["id"]
+            if isinstance(rid, str) and rid.strip():
+                ids.setdefault(rid, []).append(i)
+            else:
+                notices.append(f"verify-gate: rules[{i}] has an `id` that is not a non-empty "
+                               "string - no rule can name it in coveredBy")
+    valid = {}
+    for i, rule in enumerate(rules):
+        if not isinstance(rule, dict) or "coveredBy" not in rule:
+            continue
+        target = rule["coveredBy"]
+        why = None
+        if not isinstance(target, str) or not target.strip():
+            why = "is not a non-empty string"
+        elif target not in ids:
+            why = "names no rule id"
+        elif len(ids[target]) > 1:
+            why = "names an id more than one rule declares"
+        else:
+            j = ids[target][0]
+            sup = rules[j]
+            if j == i:
+                why = "names the rule itself"
+            elif "coveredBy" in sup:
+                why = "names a rule that itself declares coveredBy (no chains)"
+            elif not _runnable(sup.get("run")):
+                why = "names a rule with no runnable commands"
+            elif _rule_env(rule) != _rule_env(sup):
+                why = "declares an env different from the superset's"
+        if why:
+            notices.append(f"verify-gate: rules[{i}] coveredBy {target!r} ignored - {why}; "
+                           "the rule runs")
+        else:
+            valid[i] = ids[target][0]
+    return valid, notices
+
+
+def cover_plan(rules, rule_order, rule_cmds, cmds, always=(), environ=None):
+    """(cmds, guards, notices) for one `--all` run.
+
+    `cmds` comes back reordered: every command a covered subset may be
+    credited for moves to the end, in its original relative order, so its
+    superset has run (and its exit code is known) before it is reached.
+    `guards[k]` is None (run cmds[k] as usual) or {"rules": [superset rule
+    indices], "pos": [positions of every command of those supersets]}, all
+    earlier than k; the gate credits cmds[k] only when every one of those
+    positions exited 0 this run.
+
+    A rule is a candidate only when its declaration is valid, its superset
+    matched this run and contributed commands, and EVERY command it names is
+    owned by candidates alone - never by `always`, an undeclared rule or the
+    superset. That last part is a fixpoint, so a candidate sharing one
+    command with a rule that must run is disqualified whole, and no rule's
+    own command order ever changes. A non-empty PYTEST_ADDOPTS declines all
+    credit: an ambient `-m` there would make a subset select tests the
+    superset's own explicit `-m` deselects."""
+    environ = os.environ if environ is None else environ
+    cmds = list(cmds)
+    valid, notices = cover_declarations(rules)
+    none = [None] * len(cmds)
+    owners = {}
+    for ri in rule_order:
+        for c in rule_cmds.get(ri, []):
+            owners.setdefault(c, set()).add(ri)
+    pinned = set(always or ())
+    contributed = {ri for ri in rule_order if rule_cmds.get(ri)}
+    candidates = {ri for ri in contributed if valid.get(ri) in contributed}
+    changed = True
+    while changed:
+        changed = False
+        for ri in sorted(candidates):
+            if any(c.split("\x1c", 1)[0] in pinned or not owners[c] <= candidates
+                   for c in rule_cmds[ri]):
+                candidates.discard(ri)
+                changed = True
+    if not candidates:
+        return cmds, none, notices
+    if environ.get("PYTEST_ADDOPTS", "") != "":
+        notices.append("verify-gate: PYTEST_ADDOPTS is set, so a subset's test selection may "
+                       "differ from its superset's - declared coverage NOT applied, every rule runs")
+        return cmds, none, notices
+    moved = [c for c in cmds if c in owners and owners[c] <= candidates]
+    moved_set = set(moved)
+    order = [c for c in cmds if c not in moved_set] + moved
+    pos = {c: k for k, c in enumerate(order)}
+    guards = []
+    for k, c in enumerate(order):
+        if c not in moved_set:
+            guards.append(None)
+            continue
+        sups = sorted({valid[ri] for ri in owners[c]})
+        positions = sorted({pos[x] for j in sups for x in rule_cmds[j]})
+        guards.append({"rules": sups, "pos": positions}
+                      if positions and all(p < k for p in positions) else None)
+    if sorted(order) != sorted(cmds) or len(guards) != len(order):
+        return cmds, none, notices + ["verify-gate: declared coverage plan failed its own "
+                                      "check - NOT applied, every rule runs"]
+    return order, guards, notices
+
+
+def tree_snapshot(root, stable=False):
+    """A digest of the whole working tree as the checks would read it - HEAD,
+    every ref (stable=True only: the tree-pass cache), the deciders, and the
+    index entry and bytes of every tracked, deleted, renamed and untracked
+    (not ignored) path - or None when git cannot list
+    it. The gate takes one before the first command and one before the first
+    coverage credit; a credit needs the two equal, so a superset's pass is
+    only ever credited for the tree it actually ran against."""
+    listing = []
+    for args in (("ls-files", "-z"),
+                 ("ls-files", "-z", "--others", "--exclude-standard"),
+                 ("diff", "--name-only", "-z", "--cached"),
+                 ("diff", "--name-only", "-z", "HEAD")):
+        try:
+            out = subprocess.run(("git", "-c", "core.quotePath=false") + args, cwd=root,
+                                 capture_output=True, check=False, timeout=120,
+                                 stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if out.returncode != 0:
+            return None
+        listing.extend(p for p in out.stdout.decode("utf-8", "surrogateescape").split("\0") if p)
+    try:
+        flags = subprocess.run(("git", "-c", "core.quotePath=false", "ls-files", "-v", "-z"),
+                               cwd=root, capture_output=True, check=False, timeout=120,
+                               stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    # Review r2: skip-worktree (`S`) and assume-unchanged (a lowercase tag)
+    # make git stop reporting a path's working-tree edits, so neither listing
+    # above would see them. Refuse rather than model it: could-not-tell.
+    if flags.returncode != 0 or any(e[:1] == "S" or e[:1].islower()
+                                    for e in flags.stdout.decode("utf-8", "surrogateescape").split("\0") if e):
+        return None
+    paths = sorted(set(listing))
+    if stable:
+        # ACROSS runs (the tree-pass cache), the gate's own files differ by
+        # construction -- the lock it holds now, the marker and record the
+        # last run wrote -- so they are left out by NAME, the list the
+        # fingerprint already excludes. Within one run (coverage) they stay
+        # in, unchanged from before.
+        import verify_fingerprint  # pylint: disable=import-outside-toplevel
+        paths = [p for p in paths
+                 if not verify_fingerprint._gate_owned(p.replace(os.sep, "/"))]  # pylint: disable=protected-access
+    meta = _tree_meta(root, paths)
+    if meta is None:
+        return None
+    import verify_fingerprint  # pylint: disable=import-outside-toplevel
+    snap = verify_fingerprint.fingerprint(root, paths) + "-" + meta
+    if stable:
+        refs = _refs_digest(root)
+        if refs is None:
+            return None
+        snap += "-" + refs
+    return snap
+
+
+def _refs_digest(root):
+    """Every ref and the commit it names, hashed (review r1 on the tree-pass
+    cache): a rule may read a ref the working tree does not show -- rules[39]
+    diffs `origin/main...HEAD` -- so a fetch that moves `origin/main` must
+    empty the cache as surely as an edit. None when git cannot list them."""
+    try:
+        out = subprocess.run(("git", "for-each-ref", "--format=%(refname) %(objectname)"),
+                             cwd=root, capture_output=True, check=False, timeout=120,
+                             stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return hashlib.sha256(out.stdout).hexdigest()
+
+
+# --- the tree-pass cache ---------------------------------------------------
+#
+# A command that exited 0 is not re-run while the tree is byte-for-byte the
+# tree it passed on. The key is `tree_snapshot(stable=True)` -- HEAD, every
+# ref, the deciders (.crew/verify.json, .crew/config.json), and the index
+# entry, bytes, type and mode of every tracked and untracked (not ignored)
+# path -- so ANY edit anywhere, or a fetch, empties it. A rule's
+# `paths` say when it must run, never everything it reads, which is why a
+# per-rule key would be unsound and this one is the whole tree.
+#
+# What it buys: an acutely deferred Stop on an unchanged tree runs only what
+# it has not yet run, instead of re-running the same cheap rules and
+# deferring the same expensive one again; and `--all` on the tree a Stop just
+# checked skips what that Stop already ran. Ignored files (node_modules, a
+# venv) are not in the key, exactly as they are not in the gate's own
+# fingerprint; CREW_VERIFY_FRESH=1 turns the cache off for one run.
+PASSES_PATH = os.path.join(".crew", ".verify-gate.passes.json")
+
+
+def passes_load(root, snapshot):
+    """The command identities that passed on `snapshot`, or an empty set when
+    the file is absent, unreadable, wrong-shaped, for another tree, or
+    CREW_VERIFY_FRESH=1 is set. Every could-not-tell is "re-run"."""
+    if not snapshot or os.environ.get("CREW_VERIFY_FRESH") == "1":
+        return set()
+    try:
+        with open(os.path.join(root, PASSES_PATH), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return set()
+    if not isinstance(data, dict) or data.get("snapshot") != snapshot:
+        return set()
+    cmds = data.get("cmds")
+    if not isinstance(cmds, list) or not all(isinstance(c, str) for c in cmds):
+        return set()
+    return set(cmds)
+
+
+def passes_save(root, snapshot, cmd_log):
+    """Record what passed on `snapshot`: the commands whose cmd_log status is
+    "pass", plus what was already recorded for this same snapshot. Credited
+    ("covered") commands add nothing of their own. Written whole to a temp
+    file and renamed, never truncated in place."""
+    keep = passes_load(root, snapshot)
+    keep.update(e["cmd"] for e in cmd_log
+                if isinstance(e, dict) and e.get("status") == "pass" and isinstance(e.get("cmd"), str))
+    text = json.dumps({"snapshot": snapshot, "cmds": sorted(keep)}, separators=(",", ":"))
+    path = os.path.join(root, PASSES_PATH)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+    os.replace(tmp, path)
+
+
+def passes_clear(root):
+    try:
+        os.remove(os.path.join(root, PASSES_PATH))
+    except FileNotFoundError:
+        pass
+
+
+def _tree_meta(root, paths):
+    """What the content fingerprint does not see, hashed per path BEFORE it
+    runs (review r1): the file type and permission bits from lstat, and a
+    symlink's own target text (the fingerprint follows the link, so two
+    dangling targets both read as "absent"). Anything that is not a regular
+    file, a directory or a symlink to one - a FIFO, a socket, a device -
+    returns None: the fingerprint would block opening a FIFO, and an
+    unreadable entry is could-not-tell, which means no credit."""
+    digest = hashlib.sha256()
+    for rel in paths:
+        full = os.path.join(root, rel)
+        name = rel.encode("utf-8", "surrogateescape")
+        try:
+            st = os.lstat(full)
+        except FileNotFoundError:
+            digest.update(b"\0" + name + b":absent")
+            continue
+        except OSError:
+            return None
+        if stat.S_ISLNK(st.st_mode):
+            try:
+                target = os.readlink(full)
+                followed = os.stat(full)
+            except FileNotFoundError:
+                followed = None
+            except OSError:
+                return None
+            if followed is not None and not (stat.S_ISREG(followed.st_mode)
+                                             or stat.S_ISDIR(followed.st_mode)):
+                return None
+            digest.update(b"\0" + name + b":link:" + os.fsencode(target))
+        elif stat.S_ISREG(st.st_mode) or stat.S_ISDIR(st.st_mode):
+            kind = b"f" if stat.S_ISREG(st.st_mode) else b"d"
+            digest.update(b"\0" + name + b":" + kind + b"%o" % stat.S_IMODE(st.st_mode))
+        else:
+            return None
+    return digest.hexdigest()
+
+
+def _str_list(value):
+    """`value` itself when it is a list of strings; TypeError otherwise. A
+    number where a command should be is a malformed payload, not a command."""
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise TypeError("expected a list of strings")
+    return list(value)
+
+
+def _int_list(value):
+    if not isinstance(value, list) or not all(isinstance(v, int) and not isinstance(v, bool)
+                                              for v in value):
+        raise TypeError("expected a list of integers")
+    return list(value)
+
+
+def cmd_cover_plan():
+    """CLI entry for verify-gate.ps1. stdin: {"rules": [...], "always": [...],
+    "rule_order": [int], "rule_cmds": {"<int>": [identity]}, "cmds":
+    [identity]} - the .ps1's OWN parsed map, never a second read of the
+    file. stdout: {"cmds": [...], "guards": [...], "notices": [...]}. Any
+    malformed input exits 1 with nothing on stdout: no plan, no credit."""
+    try:
+        payload = json.load(sys.stdin)
+        rules = payload["rules"]
+        rule_order = _int_list(payload["rule_order"])
+        rule_cmds = {int(k): _str_list(v) for k, v in payload["rule_cmds"].items()}
+        cmds = _str_list(payload["cmds"])
+        always = _str_list(payload.get("always") or [])
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return 1
+    if not isinstance(rules, list) or not all(isinstance(k, str) and k.isdigit()
+                                              for k in payload["rule_cmds"]):
+        return 1
+    order, guards, notices = cover_plan(rules, rule_order, rule_cmds, cmds, always)
+    print(json.dumps({"cmds": order, "guards": guards, "notices": notices}))
+    return 0
+
+
 REASON_TEXT = {
     "chronic": "permanently over budget - run /crew:verify --all",
     "skipped": "SKIP (rc 77, environment absent) - not verified",
@@ -451,7 +824,7 @@ def cmd_sync():
              "chronic"|"reach_declared"|"reach_undeclared"|"reach_wrapper"|
              "reach_syntax"|"clean_tree_required", "reason":..., "cmds": [...],
              "unknown": bool}, ...],
-         "cmd_log": [{"cmd":..., "status": "pass"|"fail"|"skip77",
+         "cmd_log": [{"cmd":..., "status": "pass"|"fail"|"skip77"|"covered",
              "elapsed": N}, ...]}
 
     `matched_rules` is every rule that matched a changed path this turn,
@@ -484,9 +857,11 @@ def cmd_sync():
       - normal, and one of its commands came back rc=77 (and none failed):
         record "skipped". Not a pass, not a fail -- see verify-gate.sh/.ps1's
         SKIP handling.
-      - normal, and every command reports "pass" (not merely "neither fail
-        nor skip77" -- see the explicit `all(... == "pass")` check in
-        `_sync`): the rule is CLEAN. Any previous entry for it is cleared,
+      - normal, and every command reports "pass" or "covered" (credited by
+        a declared superset that passed this same `--all` run, L-0572) - not
+        merely "neither fail nor skip77", see the explicit check in `_sync`:
+        the rule is CLEAN. Its timing is cached only when every command
+        actually ran. Any previous entry for it is cleared,
         and if it had no declared or cached cost (`unknown`), its measured
         elapsed time is written to the timings cache so the NEXT Stop can
         price it instead of running it forever.
@@ -609,18 +984,24 @@ def _sync(sha, matched, cmd_log, all_run=False):
                 "sha": sha,
             }
             continue
-        if not all(s == "pass" for s in statuses):
-            # Defensive: today "pass"/"fail"/"skip77" are the only three
-            # values a cmd_log status can carry, and both other values are
-            # handled above, so this is unreachable in practice. Kept
-            # explicit rather than falling through to "clean" by default -
-            # an unrecognised status must not silently read as a pass, the
-            # same fail-safe direction this module's docstring already
-            # states for a corrupt record.
+        if not all(s in ("pass", COVERED) for s in statuses):
+            # Defensive: "pass"/"fail"/"skip77"/"covered" are the only values
+            # a cmd_log status can carry, and the others are handled above,
+            # so this is unreachable in practice. Kept explicit rather than
+            # falling through to "clean" by default - an unrecognised status
+            # must not silently read as a pass, the same fail-safe direction
+            # this module's docstring already states for a corrupt record.
             continue
-        # Every command this rule names ran and passed: clean.
+        # Every command this rule names ran and passed, or was credited by a
+        # superset that ran and passed this same run (L-0572): clean.
         entries.pop(key, None)
-        if rule.get("unknown"):
+        # Only a rule whose every command actually RAN has a wall time worth
+        # caching. A credited command took 0s here and costs its full price
+        # wherever it runs, so caching it would price the rule as free.
+        # Cached for EVERY rule, declared `seconds` or not: the gates price a
+        # declared rule at min(declared, cached), so a stale over-statement
+        # stops reading as chronic once one clean run here measures it.
+        if all(s == "pass" for s in statuses):
             # STORE EVEN 0s, as max(1, ceil(...)). `if total > 0` used to
             # discard a subsecond measurement outright, so a genuinely fast
             # rule with no declared `seconds` never got cached at all and
@@ -719,7 +1100,14 @@ def cmd_timings_get():
 
 
 def main(argv):
-    usage = "usage: verify_record.py sync|report|timings-get|rule-key|scan-reach"
+    # Every line this module writes is read one record per line by a shell;
+    # see the comment above RECORD_PATH for the '\r' this prevents.
+    try:
+        sys.stdout.reconfigure(newline="\n")
+    except (AttributeError, ValueError):
+        pass
+    usage = ("usage: verify_record.py sync|report|timings-get|rule-key|scan-reach|"
+             "cover-plan|tree-snapshot|passes-load|passes-save|passes-clear")
     if len(argv) < 2:
         print(usage, file=sys.stderr)
         return 2
@@ -737,6 +1125,38 @@ def main(argv):
         cmd_rule_key()
     elif cmd == "scan-reach":
         cmd_scan_reach()
+    elif cmd == "cover-plan":
+        return cmd_cover_plan()
+    elif cmd == "tree-snapshot":
+        snap = tree_snapshot(os.getcwd(), stable="--stable" in argv[2:])
+        if not snap:
+            return 1
+        print(snap)
+    elif cmd == "passes-save":
+        # argv[2] is the snapshot the run started on; stdin is the run's
+        # cmd_log, one JSON object per line, as `sync` reads it.
+        if len(argv) < 3 or not argv[2]:
+            print(usage, file=sys.stderr)
+            return 2
+        log = []
+        for line in sys.stdin.read().splitlines():
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(entry, dict):
+                log.append(entry)
+        try:
+            passes_save(os.getcwd(), argv[2], log)
+        except OSError as exc:
+            print(f"verify-gate: the tree-pass cache could not be written ({exc})", file=sys.stderr)
+            return 1
+    elif cmd == "passes-load":
+        # The PowerShell gate's half (the .sh matcher imports this module):
+        # the identities that passed on argv[2], as one JSON list.
+        print(json.dumps(sorted(passes_load(os.getcwd(), argv[2] if len(argv) > 2 else ""))))
+    elif cmd == "passes-clear":
+        passes_clear(os.getcwd())
     else:
         print(usage, file=sys.stderr)
         return 2

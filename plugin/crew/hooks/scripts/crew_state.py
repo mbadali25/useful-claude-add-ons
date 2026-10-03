@@ -19,6 +19,7 @@ import sys
 import time
 import uuid
 
+import crew_common
 import crew_incident
 
 # The endpoint ledger is its own module now, the three shared readers are a
@@ -71,6 +72,7 @@ from crew_guards import (
     CHANGE_REQUIREMENT_DEFAULT,  # noqa: F401
     CLOUD_DEFAULTS,  # noqa: F401
     CLOUD_GUARD_NAMES,  # noqa: F401
+    ENVIRONMENTS_DEFAULTS,  # noqa: F401
     GUARD_APPROVAL_PREFIX,  # noqa: F401
     GUARD_APPROVAL_TTL,  # noqa: F401
     GUARD_DEFAULTS,  # noqa: F401
@@ -98,6 +100,8 @@ from crew_guards import (
     normalise_guard_policy,  # noqa: F401
     normalise_install_policy,  # noqa: F401
     normalise_require_for_production,  # noqa: F401
+    normalise_prod_unattended,  # noqa: F401
+    prod_unattended_rank,  # noqa: F401
     normalise_role_writes,  # noqa: F401
     require_change_rank,  # noqa: F401
     role_writes_rank,  # noqa: F401
@@ -261,8 +265,10 @@ def _table_status(line, ticket_text):
 
 
 def load_config(root):
-    """Parse .crew/config.json. Returns {} when absent, malformed, or not a dict."""
-    text = read_text(os.path.join(root, ".crew", "config.json"))
+    """Parse .crew/config.json -- the main checkout's in a linked worktree with no
+    config of its own (`crew_common.repo_config_dir`). Returns {} when absent,
+    malformed, or not a dict."""
+    text = read_text(crew_common.repo_config_file(root, "config.json"))
     if text is None:
         return {}
     try:
@@ -1080,16 +1086,21 @@ AUTONOMOUS_STOPS = (
 
 # `/crew:autopilot` (T-0004): drives one ticket through the lifecycle phases
 # `crew_autopilot.py next` names from disk. `mode` is armed only by the exact
-# string `plan`; anything else -- a typo included -- is `off`
-# (crew_autopilot.settings). `maxPhases` bounds the phases one invocation runs.
-# Every AUTONOMOUS_STOPS entry above binds it too: commands/autopilot.md names
-# each one, and a test iterates this tuple against that file.
+# string `plan`, a typo is `off`; `maxPhases` bounds the phases one run takes.
+# `deploy` (T-0072) is exactly `none`, `nonprod` or `all`, else `none`, and is
+# read by crew_autopilot.deploy_allowed. Every AUTONOMOUS_STOPS entry above
+# binds it too: commands/autopilot.md names each, a test iterates the tuple.
+# `approval` and `questions` (T-0010) are `human|self|risk`: what autopilot
+# does at plan approval and at an open question. `risk` acts only on a spec
+# header saying `risk: low`; any other value reads as `human`, and approval
+# needs `scope.allowCliApproval: true` besides (crew_autopilot.approval_policy).
 # T-0011 adds the ship phase after `/crew:done`: `ship` is `pr` (push and open
-# the PR, then stop) or `merge` (also `gh pr merge <n> --merge`, a merge commit, once every
-# required check passes or fails only on a name EXACTLY in `knownFailures`);
-# any other value reads as `pr`, the non-merging direction. A check still
-# pending after `ciTimeoutMinutes` stops; it never merges.
-AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "ship": "merge", "knownFailures": [],
+# the PR, then stop) or `merge` (also `gh pr merge <n> --merge`, a merge commit,
+# once every required check passes or fails only on a name EXACTLY in
+# `knownFailures`); any other value reads as `pr`, the non-merging direction. A
+# check still pending after `ciTimeoutMinutes` stops; it never merges.
+AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk",
+                      "questions": "risk", "ship": "merge", "knownFailures": [],
                       "ciTimeoutMinutes": 60}
 
 # How many tickets one session's work becomes. The default is `system`: one
@@ -1147,12 +1158,18 @@ PM_DEFAULTS = {
 # OFFER that table instead; see `skills/crew-setup/global-config.md`.
 FALLBACK_DEFAULT = "claude-sonnet-5"
 
+# `kimi` is second in `order` (T-0028): its family is known without a pin, so
+# unlike an unpinned `copilot` it can actually be reached. Its block has a
+# `model` only -- no `reasoningEffort`, because the Kimi Code CLI has no
+# per-call effort flag, and a key that silently does nothing reads as a knob
+# that is configured. Effort stays in the config.toml alias's `default_effort`.
 QA_DEFAULTS = {
     "provider": "auto",
-    "order": ["codex", "copilot", "claude"],
+    "order": ["codex", "kimi", "copilot", "claude"],
     "fallback": FALLBACK_DEFAULT,
     "codex": {"model": None, "reasoningEffort": None},
     "copilot": {"model": None},
+    "kimi": {"model": None},
     "roles": {},
 }
 
@@ -1161,6 +1178,7 @@ DEV_DEFAULTS = {
     "fallback": FALLBACK_DEFAULT,
     "codex": {"model": None, "reasoningEffort": None},
     "copilot": {"model": None},
+    "kimi": {"model": None},
     "roles": {},
 }
 
@@ -1400,7 +1418,10 @@ def merge_defaults(defaults, supplied, discarded=None, _path=""):
 # two authors remembering to keep two tuples in sync.
 #
 # The split is the whole point, so it is two names rather than one set with a
-# comment. Both tuples are the same three names -- `localgpu` is in NEITHER.
+# comment. Both tuples are the same four names -- `localgpu` is in NEITHER.
+# `kimi` (the Kimi Code CLI, T-0028) joined both: every `qa.roles.<r>` and
+# `dev.roles.<r>` slot accepts a kimi pin, and its family is fixed by provider
+# (see `family`).
 #
 # It was briefly admitted to `DEV_PROVIDERS` alone, on the reasoning that a
 # local 7B is a legitimate provider for work whose failure is VISIBLE -- an
@@ -1432,8 +1453,8 @@ def merge_defaults(defaults, supplied, discarded=None, _path=""):
 # outside this set is not a reviewer at all, so it is barred rather than
 # left to a family check that may not even fire (`family()` answers None for
 # a name it does not recognise, and None must never read as "no conflict").
-DEV_PROVIDERS = ("claude", "codex", "copilot")
-QA_PROVIDERS = ("claude", "codex", "copilot")
+DEV_PROVIDERS = ("claude", "codex", "copilot", "kimi")
+QA_PROVIDERS = ("claude", "codex", "copilot", "kimi")
 
 
 def family(provider, model=None):
@@ -1460,15 +1481,34 @@ def family(provider, model=None):
     genuinely does not say which. None, never a placeholder string: two unset
     Copilot models must not compare equal to each other and report BARRED when
     the real reason is "unset".
+
+    `kimi` (the Kimi Code CLI) is `kimi` whatever it is pinned to, decided by
+    the provider BEFORE the model is read. Its model ids are `k3`,
+    `kimi-for-coding` and `kimi-for-coding-highspeed`, and `k3` has leading
+    letters `k` -- so the model rule would answer `k`, which compares unequal
+    to a Copilot-hosted Kimi pin (`kimi-k3` -> `kimi`) and would clear Kimi to
+    review Kimi's own work. The CLI serves only Kimi models, so the provider
+    alone is the proof.
+
+    The same trap waits wherever else a bare Kimi Code id is served -- the
+    documented Kimi-through-Codex route, or a Copilot pin -- so a model whose
+    leading letters are exactly `k` followed by a digit (`k3`, `K3`,
+    `kimi-code/k3`) is `kimi` whatever the provider. That is a SHAPE, not an
+    id list: it goes stale no faster than the leading-letters rule itself,
+    and `kimi-k3`, `keystone-1` and a bare `k` are untouched by it.
     """
     if provider == "claude":
         return "claude"
+    if provider == "kimi":
+        return "kimi"
     if isinstance(model, str) and model.strip():
         # Namespace off first (`openai/gpt-5`), then the leading letters, so
         # every separator convention collapses to the same token: `-`, `_`,
         # `.`, and a bare digit boundary as in `gpt5`.
         bare = model.strip().lower().rsplit("/", 1)[-1]
         head = re.match(r"[a-z]+", bare)
+        if re.match(r"k\d", bare):
+            return "kimi"
         return head.group() if head else bare
     if provider == "codex":
         return "gpt"
@@ -1494,6 +1534,10 @@ MODEL_DISPLAY = {
     "gpt-5.6-luna": "GPT-5.6 Luna",
     "kimi-k2.7-code": "Kimi 2.7",
     "kimi-k3": "Kimi 3",
+    # The Kimi Code CLI's own ids (T-0028), owner-supplied 2026-09-25.
+    "k3": "Kimi K3",
+    "kimi-for-coding": "Kimi for Coding",
+    "kimi-for-coding-highspeed": "Kimi for Coding (highspeed)",
 }
 
 

@@ -1472,6 +1472,9 @@ def test_34_a_skip_beside_a_failure_still_deletes_the_fingerprint(
     )
 
 
+# wallclock (T-0110): an elapsed-time bound, so it runs serially, never under -n.
+# Native -n auto (20 workers): the gate took 17.5s against its 10s bound; serially it passes.
+@pytest.mark.wallclock
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_34b_a_backgrounded_grandchild_holding_stdout_does_not_wedge_the_gate(
         flavour, tmp_path):
@@ -1562,6 +1565,9 @@ def test_34b_a_backgrounded_grandchild_holding_stdout_does_not_wedge_the_gate(
                 pass
 
 
+# wallclock (T-0110): an elapsed-time bound, so it runs serially, never under -n.
+# Native -n auto (20 workers): the gate took 14.8s against its 10s bound; serially it passes.
+@pytest.mark.wallclock
 @pytest.mark.skipif(_BASH is None, reason="needs bash")
 def test_34c_a_large_rule_output_is_capped_not_read_in_full(tmp_path):
     """The other half of test_34b's fix: reading the rule's own output back
@@ -1741,6 +1747,9 @@ def test_34c3_a_seven_digit_cap_override_is_validated_numerically(
     )
 
 
+# wallclock (T-0110): an elapsed-time bound, so it runs serially, never under -n.
+# Native -n auto (20 workers): the gate took 16.6s against its 10s bound; serially it passes.
+@pytest.mark.wallclock
 @pytest.mark.skipif(
     _BASH_NO_PREPEND is None,
     reason=(
@@ -1951,14 +1960,26 @@ def test_34d_ps1_a_temp_dir_failure_falls_back_to_crew_not_a_pipe(
     # fail GetTempFileName() on this host.
     bogus_temp = tmp_path / "not-a-directory"
     bogus_temp.write_text("blocking TMP/TEMP", encoding="utf-8")
+    # The bash the gate itself will run its rule under - asked of the gate's
+    # own resolver, which walks up from git.exe, rather than `resolve_bash`,
+    # which starts from PATH order and can name another Git install (T-0110
+    # review round 2). Resolved before `env` exists: it only reads PATH,
+    # which `env` below leaves as it is.
+    bash = crew_fixtures.gate_bash(_PWSH, _PS1)
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
                TMP=str(bogus_temp), TEMP=str(bogus_temp))
 
-    result = crew_fixtures.run_gate(
-        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
-        input="{}", cwd=str(root), env=env,
-        capture_output=True, text=True, check=False,
-        timeout=_GATE_TIMEOUT)
+    # The gate runs its rule under that bash, which inherits this env. Were
+    # that the first MSYS process on the host, it would make `/tmp` this
+    # FILE for every bash other xdist workers start meanwhile (T-0110). The
+    # pin keeps that from happening; pwsh's own GetTempFileName() still sees
+    # TMP=a file and still fails, which is what this test is about.
+    with crew_fixtures.msys_tmp_pinned(bash, env):
+        result = crew_fixtures.run_gate(
+            [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
+            input="{}", cwd=str(root), env=env,
+            capture_output=True, text=True, check=False,
+            timeout=_GATE_TIMEOUT)
     assert result.returncode != 0, (
         "the fixture rule deliberately exits 1; the gate must fail too. "
         + result.stderr
@@ -2627,6 +2648,9 @@ def test_28_the_real_verify_json_scans_clean_for_every_rule():
 _STDIN_BOUND_DEADLINE_S = 20  # generous over the ~5s read bound each flavour declares
 
 
+# wallclock (T-0110): an elapsed-time bound, so it runs serially, never under -n.
+# Native -n auto (20 workers): [sh] hit the 20s TimeoutExpired; serially it passes.
+@pytest.mark.wallclock
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_40_an_open_never_closed_stdin_does_not_park_the_gate(flavour, tmp_path):
     """Neither flavour may hang waiting on stdin that is open (a real pipe,
@@ -2679,6 +2703,9 @@ def test_40_an_open_never_closed_stdin_does_not_park_the_gate(flavour, tmp_path)
     )
 
 
+# wallclock (T-0110): an elapsed-time bound, so it runs serially, never under -n.
+# Native -n auto (20 workers): not seen failing; test_40's ps1 twin, same 20s bound.
+@pytest.mark.wallclock
 @pytest.mark.skipif(_PWSH is None, reason="needs pwsh")
 def test_40b_the_ps1_gate_bounds_stdin_on_linux_too(tmp_path):
     """The .ps1 half of test_40, exercised for real rather than skipped: pwsh
@@ -2829,6 +2856,9 @@ def _trickle(stdin, lines, interval_s):
         pass  # the gate returned (or was killed) before the trickle finished
 
 
+# wallclock (T-0110): an elapsed-time bound, so it runs serially, never under -n.
+# Native -n auto (20 workers): hit the 20s TimeoutExpired; serially it passes.
+@pytest.mark.wallclock
 @pytest.mark.skipif(_BASH is None, reason="needs bash")
 def test_51_a_trickling_sh_stdin_producer_does_not_park_the_gate(tmp_path):
     """MUST-BLOCK the per-line-timeout shape. A producer that sends complete

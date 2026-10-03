@@ -51,7 +51,9 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/platform.md` whenever the platform
 result is Windows or WSL. Three things there change whether the setup works at
 all: repo location under WSL (an order of magnitude in test runtime), `localhost`
 not reaching the Windows host under WSL2, and CRLF line endings breaking shell
-scripts with a misleading error.
+scripts with a misleading error. On native Windows it also covers choosing the
+shell route (`shellRoute.mode`: `auto`, `wsl`, `powershell`, `gitbash`), which
+`crew_shell.py probe --write` and `measure --write` inform.
 
 Report what it found and what you propose to create. Wait for approval.
 
@@ -114,10 +116,12 @@ taking precedence over it — see "Global config, and how it layers with the
 repo file" in `README.md` §11.
 
 The global file has its own guided walkthrough, `/crew:config`, defined in
-`global-config.md` beside this file. Offer it during Phase 1; never run it
-without being asked, and never write `~/.claude` on your own initiative — the
-same reasoning that forbids deleting a global `find-skills`. Setup itself
-still writes only the repo file.
+`global-config.md` beside this file. With no argument it opens a menu
+(`config-menu.md`; `/crew:config-setup` is the same menu) that sets either
+layer, machine or repo, from a list of values and deletes the repo config with
+a backup. Offer it during Phase 1; never run it without being asked, and never
+write `~/.claude` on your own initiative — the same reasoning that forbids
+deleting a global `find-skills`. Setup itself still writes only the repo file.
 
 ```json
 {
@@ -126,10 +130,11 @@ still writes only the repo file.
   "roles": ["explorer", "reviewer"],
   "qa": {
     "provider": "auto",
-    "order": ["codex", "copilot", "claude"],
+    "order": ["codex", "kimi", "copilot", "claude"],
     "fallback": "claude-sonnet-5",
     "codex": { "model": null, "reasoningEffort": null },
     "copilot": { "model": null },
+    "kimi": { "model": null },
     "roles": {}
   },
   "dev": {
@@ -137,6 +142,7 @@ still writes only the repo file.
     "fallback": "claude-sonnet-5",
     "codex": { "model": null, "reasoningEffort": null },
     "copilot": { "model": null },
+    "kimi": { "model": null },
     "roles": {}
   },
   "worktree": { "root": null },
@@ -152,6 +158,7 @@ still writes only the repo file.
   "emergency": { "standDown": true, "ttlMinutes": 120, "maxTtlMinutes": 480 },
   "notify": { "provider": "none", "urlEnv": null, "tokenEnv": null, "chatId": null, "events": ["phase", "gate", "waiting"] },
   "platform": { "os": null, "wsl": null, "shell": null, "windowsHostIp": null },
+  "shellRoute": { "mode": null, "distro": null },
   "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only", "ticketGranularity": "system", "maxDispatches": 3 },
   "graph": { "enabled": true, "tool": "graphify", "out": "graphify-out", "mode": "code-only", "commitHook": false },
   "docs": { "theme": null, "reportTheme": null },
@@ -163,11 +170,13 @@ still writes only the repo file.
               "prodDatabase": "none", "prodServer": "none", "roleWrites": "off", "cloudGuard": "off" },
   "production": { "databases": [], "hosts": [] },
   "cloud": { "awsProfiles": [], "awsRegions": [], "azureSubscriptions": [] },
+  "environments": { "nonProd": [], "prodUnattended": false },
   "change": { "requester": null, "implementor": null, "requireForProduction": false,
               "sdpTemplate": "Change Management Request", "jiraIssueType": "Change", "category": null },
   "scope": { "mode": "off", "allowCliApproval": false },
-  "autopilot": { "mode": "off", "maxPhases": 12, "ship": "merge", "knownFailures": [],
-                 "ciTimeoutMinutes": 60 }
+  "autopilot": { "mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk",
+                 "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60 },
+  "route": { "enabled": false }
 }
 ```
 
@@ -374,12 +383,14 @@ the first secret exists is the only time it is free.
 # directory git never entered - every negation below would silently do nothing.
 .crew/*
 
-# The named un-ignore list, and it is a closed list. These three describe the
+# The named un-ignore list, and it is a closed list. These four describe the
 # CODE, are decided once, and are worth the same on every clone: the code map,
-# the endpoint ledger a security scan is owed against, and the verification map.
+# the endpoint ledger a security scan is owed against, the verification map and
+# the development standards overlay (crew-standards; absent is fine).
 !.crew/codemap/
 !.crew/endpoints.json
 !.crew/verify.json
+!.crew/standards.md
 
 # Documentation, not mechanism: `.crew/*` above already ignores every one of
 # these and no negation re-admits them, so deleting these lines changes nothing

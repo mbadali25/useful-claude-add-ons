@@ -24,14 +24,19 @@ import sys
 sys.dont_write_bytecode = True
 
 # pylint: disable=wrong-import-position
-import argparse
-import json
-import os
-import subprocess
+import argparse  # noqa: E402
+import json  # noqa: E402
+import os  # noqa: E402
+import subprocess  # noqa: E402
 
-import crew_freshness
-import crew_migrate
-from crew_common import read_text
+import crew_common  # noqa: E402
+import crew_freshness  # noqa: E402
+import crew_migrate  # noqa: E402
+import crew_shell  # noqa: E402
+import crew_tracker  # noqa: E402
+import review_ledger  # noqa: E402
+import verify_record  # noqa: E402
+from crew_common import read_text  # noqa: E402
 
 MAX_LINES = 40
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -59,24 +64,39 @@ def _json(path):
         return "corrupt"
 
 
+def _tracker_line(root):
+    # Both config shapes, through the one resolver every tracker write uses:
+    # crew.json's kind shown while the commands gated on config.json's string
+    # was how the two disagreed with nothing reporting it.
+    return "tracker  " + crew_tracker.describe(crew_tracker.resolve(root))
+
+
 def _config_lines(root):
-    crew = _json(os.path.join(root, ".crew", "crew.json"))
-    legacy = _json(os.path.join(root, ".crew", "config.json"))
+    crew = _json(crew_common.repo_config_file(root, "crew.json"))
+    legacy = _json(crew_common.repo_config_file(root, "config.json"))
+    lines, cfg = _config_lines_for(root, crew, legacy)
+    # Which file is in force, when it is not simply this checkout's (T-0088).
+    source = crew_common.repo_config_source_line(root)
+    if source:
+        lines.insert(1, f"config   {source}")
+    return lines, cfg
+
+
+def _config_lines_for(root, crew, legacy):
     if crew is not None and not isinstance(crew, dict):
         return ["config   .crew/crew.json unreadable - status cannot tell the setup"], {}
     if isinstance(crew, dict):
         agents = crew.get("agents") or []
-        tracker = (crew.get("tracker") or {}).get("kind", "?") if isinstance(crew.get("tracker"), dict) else "?"
         return [f"config   .crew/crew.json schema {crew.get('schema', '?')}",
                 f"roster   {', '.join(agents) or 'none'} (1.0 roster: {', '.join(crew_migrate.ROSTER)})",
-                f"tracker  {tracker}"], crew
+                _tracker_line(root)], crew
     if isinstance(legacy, dict):
         roles = legacy.get("roles") if isinstance(legacy.get("roles"), list) else []
         kept = [r for r in crew_migrate.ROSTER
                 if r in roles or any(crew_migrate.RENAMED.get(x) == r for x in roles)]
         return [f"config   .crew/config.json schema {legacy.get('schema', '?')} - run /crew:migrate",
                 f"roster   {len(roles)} roles active; 1.0 keeps {', '.join(kept) or 'none of them'}",
-                f"tracker  {legacy.get('tracker', '?')}"], legacy
+                _tracker_line(root)], legacy
     if crew == "corrupt" or legacy == "corrupt":
         return ["config   unreadable JSON in .crew/ - status cannot tell the setup"], {}
     return ["config   none - run /crew:init"], {}
@@ -114,25 +134,31 @@ def _review_lines(root):
     names.sort(key=lambda n: os.path.getmtime(os.path.join(folder, n)), reverse=True)
     lines = []
     for name in names[:3]:
-        data = _json(os.path.join(folder, name))
-        if not isinstance(data, dict):
+        path = os.path.join(folder, name)
+        # The ledger's own summary, so status counts rounds exactly as the
+        # budget does: refunded tool-failure rounds are not "used" (T-0087).
+        summary = review_ledger.summary(*review_ledger.load(path), name[:-5], path)
+        if summary["state"] == review_ledger.UNKNOWN:
             lines.append(f"review   {name[:-5]}: UNKNOWN (ledger unreadable)")
             continue
-        rounds = data.get("rounds") if isinstance(data.get("rounds"), list) else []
-        lines.append(f"review   {name[:-5]}: {data.get('state') or 'EMPTY'}, {len(rounds)}/2 rounds")
+        used = f"{summary['rounds_spent']}/{summary['budget']} rounds used"
+        line = f"review   {name[:-5]}: {summary['state']}, {used}"
+        if summary["rounds_refunded"]:
+            line += f", {summary['rounds_refunded']} refunded"
+        lines.append(line)
     if len(names) > 3:
         lines.append(f"review   (+{len(names) - 3} older ledgers)")
     return lines
 
 
 def _verify_line(root):
-    record = _json(os.path.join(root, ".crew", ".verify-gate.record.json"))
-    if record is None:
+    state, rules = verify_record.read_record(root)
+    if state == "absent":
         return "verify   no gate record yet"
-    if not isinstance(record, dict) or not isinstance(record.get("rules"), dict):
+    if state != "ok":
         return "verify   UNKNOWN (gate record unreadable)"
     counts = {}
-    for rule in record["rules"].values():
+    for rule in rules.values():
         state = rule.get("status", "unknown") if isinstance(rule, dict) else "unknown"
         counts[state] = counts.get(state, 0) + 1
     return "verify   " + (", ".join(f"{v} {k}" for k, v in sorted(counts.items())) or "no rules recorded")
@@ -195,6 +221,11 @@ def collect(root, memory=False):
     lines += _ticket_lines(root)
     lines += _review_lines(root)
     lines.append(_verify_line(root))
+    # T-0040: native Windows only. Read from config and the machine-local
+    # probe cache; runs no wsl.exe, no pwsh and no git.
+    shell = crew_shell.status_line(root)
+    if shell:
+        lines.append(shell)
     lines.append(_codemap_line(root, cfg))
     lines.append(_metrics_line(root))
     handoff = os.path.isfile(os.path.join(root, ".work", "HANDOFF.md"))

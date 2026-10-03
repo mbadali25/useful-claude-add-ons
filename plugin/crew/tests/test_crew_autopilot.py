@@ -11,6 +11,7 @@ is built under tmp_path; nothing touches the real one or ~/.claude.
 `sabotage_autopilot.py` mutates the must-stop branches to prove these tests
 can fail.
 """
+import hashlib
 import json
 import os
 import subprocess
@@ -300,6 +301,106 @@ def test_next_owner_accepted_findings_move_on(tmp_path, monkeypatch):
     assert _next(root)["phase"] == "done"
 
 
+LINE = "FIX|src/app.py:1|the loop never stops|run it offline"
+
+
+def _auto_row(number=2, block=0, provider="codex", family="gpt"):
+    row = _round(number, "FINDINGS")
+    row.update({"counts": {"BLOCK": block, "FIX": 1, "NIT": 0}, "findings": [LINE],
+                "webtest_open": review_ledger.WEBTEST_NA, "refunded": False,
+                "provider": provider, "model_family": family,
+                # L-0576's count, as its `record` writes it (owner decision #6).
+                "ignored_lines": 0})
+    return row
+
+
+def _auto_receipt(number=2):
+    return dict(_receipt(number, review_ledger.AUTO_KIND), accepted_by=review_ledger.AUTO_BY,
+                findings=[LINE], follow_up="L-9999", provider="codex", model_family="gpt")
+
+
+def _bound_auto_receipt(root, number=2):
+    """An auto receipt bound to a review.json for its round, as auto_accept
+    writes both (review round 6 BLOCK 1)."""
+    raw = json.dumps({"round": number, "bundle_sha256": "a" * 64,
+                      "ignored_lines": 0}).encode("utf-8")
+    path = os.path.join(str(root), ".work", "tickets", T, "review.json")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as fh:
+        fh.write(raw)
+    return dict(_auto_receipt(number), review_json_sha256=hashlib.sha256(raw).hexdigest(),
+                ignored_lines=0)
+
+
+def test_next_auto_accepted_findings_move_on(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_auto_row(1), _auto_row(2)], state="ACCEPTED",
+            receipt=_bound_auto_receipt(root))
+    _receipt_ok(monkeypatch, True)
+    _refresh(monkeypatch, "fresh")
+
+    assert _next(root)["phase"] == "done"
+
+
+def test_next_auto_receipt_with_an_edited_review_json_stops(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    receipt = _bound_auto_receipt(root)
+    _write(os.path.join(str(root), ".work", "tickets", T, "review.json"),
+           json.dumps({"round": 2, "bundle_sha256": "a" * 64, "ignored_lines": 3}))
+    _ledger(root, [_auto_row(1), _auto_row(2)], state="ACCEPTED", receipt=receipt)
+    _receipt_ok(monkeypatch, True)
+    _refresh(monkeypatch, "fresh")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"]) == ("accept-review", True)
+
+
+def test_next_auto_receipt_on_a_block_row_stops(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_auto_row(1), _auto_row(2, block=1)], state="ACCEPTED",
+            receipt=_auto_receipt())
+    _receipt_ok(monkeypatch, True)
+    _refresh(monkeypatch, "fresh")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"]) == ("accept-review", True)
+
+
+def test_next_eligible_round_without_receipt_names_auto_accept(tmp_path):
+    root = _approved(tmp_path)
+    _ledger(root, [_auto_row(1), _auto_row(2)], state="REVIEWED")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "review_ledger.py --auto-accept" in got["reason"]) == (
+        "accept-review", True, True), got["reason"]
+
+
+def test_next_ineligible_findings_quote_the_refusal(tmp_path):
+    root = _approved(tmp_path)
+    _ledger(root, [_auto_row(1), _auto_row(2, block=1)], state="REVIEWED")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "a BLOCK is never auto-accepted" in got["reason"],
+            "--accept --by <owner>" in got["reason"]) == ("accept-review", True, True, True), \
+        got["reason"]
+
+
+def test_next_same_family_round_quotes_the_family_refusal(tmp_path):
+    root = _approved(tmp_path)
+    _ledger(root, [_auto_row(1), _auto_row(2, provider="claude", family="claude")],
+            state="REVIEWED")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "same family" in got["reason"],
+            "--auto-accept refuses it" in got["reason"]) == (
+        "accept-review", True, True, True), got["reason"]
+
+
 def test_next_refresh_before_rereview(tmp_path, monkeypatch):
     root = _approved(tmp_path)
     _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED", receipt=_receipt(1))
@@ -586,6 +687,67 @@ def test_cli_that_raises_prints_a_stop(tmp_path, monkeypatch, capsys, action):
 
     out = capsys.readouterr().out
     assert (code, "stop=1" in out, "disk on fire" in out) == (0, True, True)
+
+
+class _UnprintableError(RuntimeError):
+    """An exception whose `__str__` raises (T-0072 review round 4's neighbour)."""
+
+    def __str__(self):
+        raise ValueError("no str")
+
+
+def _raise_unprintable(*_args, **_kwargs):
+    raise _UnprintableError()
+
+
+def test_next_crash_that_cannot_be_described_still_stops(tmp_path, monkeypatch, capsys):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    monkeypatch.setattr(crew_autopilot, "next_phase", _raise_unprintable)
+
+    code = crew_autopilot.main(["next", "--root", str(root), "--ticket", T])
+
+    assert (code, "stop=1" in capsys.readouterr().out) == (0, True)
+
+
+def test_resume_crash_that_cannot_be_described_still_stops(tmp_path, monkeypatch, capsys):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    monkeypatch.setattr(crew_autopilot, "resume_target", _raise_unprintable)
+
+    code = crew_autopilot.main(["resume", "--root", str(root), "--ticket", T])
+
+    assert (code, "stop=1" in capsys.readouterr().out) == (0, True)
+
+
+def test_status_crash_that_cannot_be_described_still_prints_unknown(tmp_path, monkeypatch,
+                                                                    capsys):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+    monkeypatch.setattr(crew_autopilot, "status", _raise_unprintable)
+
+    code = crew_autopilot.main(["status", "--root", str(root), "--ticket", T])
+
+    assert (code, capsys.readouterr().out.startswith("status: unknown")) == (0, True)
+
+
+def test_next_ticket_error_that_cannot_be_described_still_stops(tmp_path, monkeypatch,
+                                                                capsys):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+
+    class _UnprintableTicketError(crew_autopilot.crew_ticket.TicketError):
+        def __str__(self):
+            raise ValueError("no str")
+
+    def boom(*_args, **_kwargs):
+        raise _UnprintableTicketError()
+
+    monkeypatch.setattr(crew_autopilot, "next_phase", boom)
+
+    code = crew_autopilot.main(["next", "--root", str(root), "--ticket", T])
+
+    assert (code, "stop=1" in capsys.readouterr().out) == (0, True)
 
 
 def test_cli_next_prints_one_line_and_exits_zero(tmp_path):
@@ -1074,7 +1236,8 @@ def test_stops_lists_every_autonomous_stop():
 def test_autopilot_defaults_are_the_config_block():
     import crew_config  # pylint: disable=import-outside-toplevel
     assert crew_config.default_config()["autopilot"] == {
-        "mode": "off", "maxPhases": 12, "ship": "merge", "knownFailures": [],
+        "mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk",
+        "questions": "risk", "ship": "merge", "knownFailures": [],
         "ciTimeoutMinutes": 60}
 
 
@@ -1108,10 +1271,24 @@ def test_command_ends_the_review_phase_at_the_verdict():
             "back through `next`" in text) == (True, True, True)
 
 
+def test_command_runs_auto_accept_only_when_eligible():
+    text = " ".join(_command_text().split())
+    assert ("`review: auto-accept: eligible`" in text, "--auto-accept" in text,
+            REVIEW_VERDICT_RULE in text, "never fix and rerun" in text,
+            "back through `next`" in text) == (True, True, True, True, True)
+
+
+def test_command_exempts_the_auto_accept_follow_up_from_the_new_ticket_stop():
+    """Review round 4 BLOCK: section 4's no-new-ticket stop must name section 3's
+    step 3.3 follow-up as its one exception, or the two sections contradict."""
+    text = " ".join(_command_text().split())
+    assert "new ticket (T-0012) except section 3's step 3.3 follow-up" in text
+
+
 def test_command_activates_the_ticket_only_without_a_pointer():
     text = _command_text()
     assert ("activate=1" in text, "crew_ticket.py activate --root . --ticket <ticket>" in text,
-            "resume --root . --ticket $1" in text) == (True, True, True)
+            "resume --root . --ticket <ticket>" in text) == (True, True, True)
 
 
 def test_command_says_the_status_edit_keeps_the_approval():
@@ -1128,7 +1305,7 @@ def test_command_leaves_accept_and_pr_review_to_the_human():
 
 def test_command_reads_no_answer_as_a_stop():
     text = " ".join(_command_text().split())
-    assert "Anything but a `stop=0` line" in text
+    assert "No output, a traceback or a non-zero exit is a stop" in text
 
 
 def test_code_enforced_stops_are_not_procedure_stops():
@@ -1141,8 +1318,11 @@ def test_command_never_types_approve():
     text = _command_text()
     approving = [line for line in text.splitlines()
                  if "/crew:approve" in line and "human" not in line.lower()]
-    assert ("crew_ticket.py approve" in text, "approval.json" in text, approving) == (
-        False, False, [])
+    # T-0010 review round 3: the one `approval.json` is the exception sentence
+    # naming what section 3's `approve` script writes -- never a file to write.
+    rest = text.replace("it writes `approval.json`, `scope-tickets.json`", "", 1)
+    assert ("crew_ticket.py approve" in text, "approval.json" in rest, approving,
+            text.count("approval.json")) == (False, False, [], 1)
 
 
 def test_command_drives_through_the_cli_and_writes_the_resume_line():
@@ -1159,7 +1339,29 @@ def test_every_autopilot_sabotage_anchor_is_present_exactly_once():
     for label, target, find, _replace, test in AUTOPILOT_MUTATIONS:
         with open(target, encoding="utf-8") as handle:
             assert handle.read().count(find) == 1, label
-        assert test.startswith("tests/test_crew_autopilot.py::"), label
+        assert test.startswith(("tests/test_crew_autopilot.py::",
+                                "tests/test_crew_autopilot_deploy.py::",
+                                "tests/test_crew_autopilot_status.py::")), label
+    # T-0010's POLICY_MUTATIONS, the approve exception's six included: they
+    # share these targets, so an anchor either list moves must stay unique.
+    from sabotage_autopilot import POLICY_MUTATIONS  # pylint: disable=import-outside-toplevel
+    for label, target, find, _replace, test in POLICY_MUTATIONS:
+        with open(target, encoding="utf-8") as handle:
+            assert handle.read().count(find) == 1, label
+        assert test.startswith(("tests/test_crew_autopilot_policy.py::",
+                                "tests/test_crew_autopilot.py::",
+                                "tests/test_crew_autopilot_status.py::",
+                                "tests/test_crew_route.py::", "tests/test_crew_ticket.py::",
+                                "tests/test_scope_guard.py::")), label
+
+
+def test_status_sabotage_is_registered_with_sabotage_py():
+    import sabotage  # pylint: disable=import-outside-toplevel
+    from sabotage_autopilot import STATUS_MUTATIONS  # pylint: disable=import-outside-toplevel
+
+    missing = [m[0] for m in STATUS_MUTATIONS if m not in sabotage.MUTATIONS]
+
+    assert (len(STATUS_MUTATIONS), missing) == (45, [])
 
 
 def test_autopilot_block_is_repo_only():
@@ -1168,3 +1370,78 @@ def test_autopilot_block_is_repo_only():
 
     assert (kept, bool(ignored), crew_config.is_global_path("autopilot.mode")) == (
         {}, True, False)
+
+
+# --- T-0087: a refunded tool-failure round goes back to review -----------------------
+
+def test_next_refunded_incomplete_goes_to_review(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [dict(_round(1, "INCOMPLETE"), refunded=True, failure_class="tool")],
+            state="REVIEWED")
+    _receipt_ok(monkeypatch, False)
+    _refresh(monkeypatch, "fresh")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], got["command"], "refunded" in got["reason"]) == (
+        "review", False, f"/crew:review {T}", True)
+
+
+def test_next_refunded_incomplete_refreshes_first(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [dict(_round(1, "INCOMPLETE"), refunded=True, failure_class="tool")],
+            state="REVIEWED")
+    _receipt_ok(monkeypatch, False)
+    _refresh(monkeypatch, "stale")
+
+    got = _next(root)
+
+    assert got["phase"] == "refresh"
+
+
+def test_next_refunded_rerun_after_review_is_not_no_progress(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [dict(_round(1, "INCOMPLETE"), refunded=True, failure_class="tool")],
+            state="REVIEWED")
+    _receipt_ok(monkeypatch, False)
+    _refresh(monkeypatch, "fresh")
+
+    got = _next(root, phases_run=1, last_command=f"/crew:review {T}", max_phases=12)
+
+    assert (got["phase"], got["stop"], got["command"], sorted(got)) == (
+        "review", False, f"/crew:review {T}",
+        ["command", "evidence", "phase", "reason", "stop", "ticket"])
+
+
+def test_next_refunded_round_with_a_refresh_still_stale_is_no_progress(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [dict(_round(1, "INCOMPLETE"), refunded=True, failure_class="tool")],
+            state="REVIEWED")
+    _receipt_ok(monkeypatch, False)
+    _refresh(monkeypatch, "stale", command="graphify update .")
+
+    got = _next(root, phases_run=1, last_command="graphify update .", max_phases=12)
+
+    assert (got["phase"], got["stop"], got["reason"].startswith("no progress")) == (
+        "refresh", True, True)
+
+
+def test_next_unrefunded_rerun_after_review_is_still_no_progress(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "CLEAN")], state="REVIEWED")
+    _receipt_ok(monkeypatch, False)
+    _refresh(monkeypatch, "fresh")
+
+    got = _next(root, phases_run=1, last_command=f"/crew:review {T}", max_phases=12)
+
+    assert (got["stop"], got["reason"].startswith("no progress")) == (True, True)
+
+
+def test_module_defines_each_function_once():
+    import ast  # pylint: disable=import-outside-toplevel
+    with open(_SCRIPT, encoding="utf-8") as handle:
+        tree = ast.parse(handle.read())
+    names = [node.name for node in tree.body
+             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+
+    assert sorted({n for n in names if names.count(n) > 1}) == []

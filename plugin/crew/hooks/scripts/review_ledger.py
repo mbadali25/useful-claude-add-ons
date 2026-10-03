@@ -21,6 +21,19 @@ That refusal, and an explicit `--reject --by <who>`, are the only ways into
 NEEDS_REPLAN: a completed round 2 -- FINDINGS or INCOMPLETE -- leaves the
 ticket REVIEWED, so the owner can still accept round 2's FINDINGS.
 
+REFUNDS (T-0087). A round the TOOL lost -- recorded INCOMPLETE with
+`failure_class: "tool"` (`review_verdict.failure_class`: the answer never
+arrived intact) -- is refunded automatically: its row says `refunded: true`
+and it does not count against `BUDGET`. At most `REFUND_LIMIT` rounds per plan
+are refunded; the next one is recorded `refunded: false` with
+`refund_refused` saying why, and counts. Never refunded: a `reviewer` or
+`tree` INCOMPLETE, a FINDINGS or CLEAN round, a round with no recorded result
+(still `reserved`, above), and rows written before this rule (no
+`failure_class`). `_spent` keeps meaning "rows reserved since the successor
+boundary" -- the boundary checks in `record` and `accept` read it -- and
+`_charged` (spent minus refunded) is what the budget uses. Nothing else resets
+the count.
+
 ATOMICITY. Every mutation holds `<ticket>.lock`, created with
 O_CREAT|O_EXCL, for the read-modify-write, and replaces the ledger with
 `os.replace` from a temp file in the same directory. Two concurrent
@@ -47,10 +60,47 @@ accepting an older completed round used to move NEEDS_REPLAN back to
 ACCEPTED. Round 2's FINDINGS are acceptable -- the budget is exhausted only
 when it is spent with nothing accepted, which is the refused third
 reservation.
+AUTO-ACCEPT (L-0510, owner policy 2026-09-30). `--auto-accept --follow-up <id>`
+takes no `--by`: it writes a receipt of kind `auto-accepted` whose
+`accepted_by` is fixed to `AUTO_BY`, carrying the round's finding lines
+verbatim (`findings`), the follow-up ticket id and the model family. It runs
+every check `--accept` runs, then the guard (`auto_accept_refusal`): the
+round was reviewed by another model family than the author's -- its
+`provider` is codex or kimi (`AUTO_PROVIDERS`) and its `model_family` a
+non-empty string that is not `claude` (owner decision 2026-10-01 #3; a
+Claude-fallback round, a missing provider or family, and any other provider
+are refused); the round's verdict is exactly FINDINGS; its counts are a dict whose BLOCK, FIX
+and NIT are ints (never a bool) and not negative; BLOCK is 0; `findings` is a
+list of strings, none a `BLOCK|` line, each a `FIX|` or `NIT|` line, as many
+of each as its own count (never only the total) and at least one;
+none carrying an embedded line break; `ignored_lines` (L-0576's count of the
+stray lines a verdict was recovered despite) is 0 on the row, and this
+round's `.work/tickets/<id>/review.json` counts 0 (owner decision
+2026-10-01 #6: a recovered round is the owner's; a missing, mistyped or
+unreadable count is could-not-tell, never 0, and this branch does not
+write the field); `webtest_open` is 0 or `WEBTEST_NA`; and the round is final -- `_charged`
+has reached `BUDGET`, so the next reservation would be refused. Every case
+the ledger cannot tell is a refusal, never a 0: an INCOMPLETE or CLEAN
+verdict, a missing or mistyped count, a missing `findings` or `webtest_open`
+(which is every row recorded before this rule), an unreadable ledger. A
+refusal raises and changes nothing. `--accept` refuses a `--by` beginning
+`auto:` (any case), so that string can come only from the guarded verb.
+`receipt_stands` is the one predicate for whether a FINDINGS receipt stands
+-- `owner-accepted`, or `auto-accepted` with its row still passing the guard
+and its lines, provider and model family equal to the row's -- and both `check_receipt` and
+`crew_autopilot` call it. `--check-follow-up` confirms the follow-up's
+`.work/tickets/<id>/direction.md` holds every receipt line verbatim as a
+whole line, as many times as the receipt carries it; a direction.md that is
+not UTF-8, or a receipt whose kind is none of clean, owner-accepted and
+auto-accepted, is could-not-tell, never "not applicable". A CLEAN round
+stands only under a receipt of kind `clean`.
+The ledger never files the follow-up; `/crew:review` step 3 does.
+
 Either way the receipt carries the bundle sha256 the reviewer read, and
 `--check-receipt` rebuilds the bundle from the receipt's base and exits
 non-zero unless the hash still matches -- and unless the receipt is for the
-latest recorded round, that round is CLEAN or owner-accepted, and the state
+latest recorded round, that round is CLEAN or its receipt stands
+(`receipt_stands`), and the state
 is not NEEDS_REPLAN, so an older round's receipt never outlives a later
 verdict. `/crew:done` (T4) gates on it.
 
@@ -67,7 +117,9 @@ old receipt is cleared, and nothing else resets the count.
 Exit codes: 0 ok; 1 refused / receipt invalid / error; 2 usage.
 """
 import argparse
+import collections
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -78,6 +130,25 @@ import time
 import review_patch
 
 BUDGET = 2
+# A constant like BUDGET: bounds a refund loop at four launched rounds per
+# two-round budget. No flag, env var or config key reads into it.
+REFUND_LIMIT = 2
+
+# L-0510: the auto-accept receipt. Constants, like BUDGET: no flag, env var or
+# config key turns the policy on or off or changes the string.
+AUTO_KIND = "auto-accepted"
+AUTO_BY = "auto: 0 BLOCK, owner policy 2026-09-30"
+AUTO_PREFIX = "auto:"
+# `webtest_open` when the healer-skip check did not apply to the round. None
+# means it applied and could not be read: could not tell, never 0.
+WEBTEST_NA = "not-applicable"
+# Owner decision 2026-10-01 #3: only a reviewer from another model family than
+# the author's auto-accepts. The author is `claude` (crew's developer runs
+# in-session); the providers whose family is not claude's by construction are
+# codex and kimi. Copilot hosts several families, so it is an unknown provider
+# here, never guessed. Constants: no config is read for either.
+AUTHOR_FAMILY = "claude"
+AUTO_PROVIDERS = ("codex", "kimi")
 
 NEEDS_REPLAN = "NEEDS_REPLAN"
 IN_REVIEW = "IN_REVIEW"
@@ -139,6 +210,20 @@ def _load(path):
         return {}, "corrupt"
     if not isinstance(data, dict) or not isinstance(data.get("rounds", []), list):
         return {}, "corrupt"
+    # `_spent` and `_boundary` read the latest successor row: a `successors`
+    # that is not a list of objects is unreadable, never a crash (T-0087). Any
+    # wrong type on that path -- `{}`, `0`, `""`, `false` or `null` for the
+    # list, an `after_round` that is missing, not an integer, a boolean, or
+    # outside the rounds it splits -- is unreadable too, never "no successor"
+    # or "boundary 0" (review round 5).
+    successors = data.get("successors", [])
+    if not isinstance(successors, list) or not all(isinstance(s, dict) for s in successors):
+        return {}, "corrupt"
+    if successors:
+        after = successors[-1].get("after_round")
+        if (not isinstance(after, int) or isinstance(after, bool)
+                or not 0 <= after <= len(data.get("rounds", []))):
+            return {}, "corrupt"
     return data, "ok"
 
 
@@ -200,6 +285,25 @@ def _spent(data):
     return len(data.get("rounds", [])) - (after if isinstance(after, int) else 0)
 
 
+def _boundary(data):
+    """Index of the first round under the current plan (the latest successor's
+    `after_round`, or 0 without one)."""
+    successors = data.get("successors") or []
+    after = successors[-1].get("after_round", 0) if successors else 0
+    return after if isinstance(after, int) else 0
+
+
+def _refunded(data):
+    """Rounds under the current plan that were refunded as tool failures."""
+    return sum(1 for r in data.get("rounds", [])[_boundary(data):]
+               if isinstance(r, dict) and r.get("refunded") is True)
+
+
+def _charged(data):
+    """Rounds under the current plan that count against BUDGET."""
+    return _spent(data) - _refunded(data)
+
+
 def _fresh(ticket):
     return {"ticket": ticket, "budget": BUDGET, "state": None, "rounds": [],
             "refused": [], "receipt": None}
@@ -218,11 +322,11 @@ def reserve(root, ticket, provider, model=None):
             data = _fresh(ticket)
         rounds = data.setdefault("rounds", [])
         exhausted = (False, None,
-                     f"review budget exhausted: {_spent(data)} of {BUDGET} rounds used. "
+                     f"review budget exhausted: {_charged(data)} of {BUDGET} rounds used. "
                      f"State is {NEEDS_REPLAN}; only an approved successor plan continues")
         if data.get("state") == NEEDS_REPLAN:
             return None, exhausted
-        if _spent(data) >= BUDGET:
+        if _charged(data) >= BUDGET:
             data["state"] = NEEDS_REPLAN
             data.setdefault("refused", []).append({"at": _now(), "provider": provider})
             return data, exhausted
@@ -230,9 +334,22 @@ def reserve(root, ticket, provider, model=None):
         rounds.append({"round": number, "status": "reserved", "reserved_at": _now(),
                        "provider": provider, "model": model or None, "pid": os.getpid()})
         data["state"] = IN_REVIEW
-        return data, (True, number, f"round {number} of {BUDGET} reserved")
+        return data, (True, number,
+                      f"round {number} reserved ({_charged(data)} of {BUDGET} budget rounds "
+                      f"used, {_refunded(data)} refunded)")
 
     return _mutate(root, ticket, change)
+
+
+def _ignored_count(value):
+    """review.json's `ignored_lines`: a non-negative int count (L-0576), kept
+    as is. Anything else -- missing, null, a bool, a string, a negative -- is
+    unknown and recorded as None, never 0: 0 means "none were ignored", and
+    a reader (L-0510's auto-accept) must be able to tell that from "could not
+    tell"."""
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
 
 
 def record(root, ticket, number, review):
@@ -271,7 +388,22 @@ def record(root, ticket, number, review):
             "verdict": review["verdict"], "counts": review.get("counts"),
             "bundle_sha256": review.get("bundle_sha256"), "base": review.get("base"),
             "head": review.get("head"), "model_family": review.get("model_family"),
+            "failure_class": review.get("failure_class"),
+            # How many stray lines a FINDINGS round was recovered despite
+            # (L-0576): an acceptance can see the round was not strictly read.
+            "ignored_lines": _ignored_count(review.get("ignored_lines")),
         })
+        # L-0510: stored only when the caller passed them, so a row from a
+        # caller that never did reads as "could not tell" to the guard.
+        for key in ("findings", "webtest_open"):
+            if key in review:
+                row[key] = review[key]
+        if review["verdict"] == "INCOMPLETE" and review.get("failure_class") == "tool":
+            row["refunded"] = _refunded(data) < REFUND_LIMIT
+            if not row["refunded"]:
+                row["refund_refused"] = f"refund limit {REFUND_LIMIT} per plan reached"
+        else:
+            row["refunded"] = False
         if review["verdict"] == "CLEAN":
             data["receipt"] = {
                 "kind": "clean", "round": number, "bundle_sha256": review["bundle_sha256"],
@@ -291,6 +423,9 @@ def accept(root, ticket, by):
     and refuses when the tree no longer matches the bundle that round read."""
     if not isinstance(by, str) or not by.strip():
         raise LedgerError("--accept needs --by <who is accepting>")
+    if by.strip().lower().startswith(AUTO_PREFIX):
+        raise LedgerError(f"--by {by.strip()!r}: the {AUTO_PREFIX!r} prefix is reserved for "
+                          "--auto-accept, which checks the round itself")
 
     def change(data, state):
         if state != "ok":
@@ -330,6 +465,338 @@ def accept(root, ticket, by):
         return data, data["receipt"]
 
     return _mutate(root, ticket, change)
+
+
+def _is_count(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _family_problem(row):
+    """None when the row's reviewer is from another model family than the
+    author's, read from the provider and family recorded on the row; else why
+    not. A missing or unknown value is could-not-tell, never a pass."""
+    provider, family = row.get("provider"), row.get("model_family")
+    if not isinstance(provider, str) or not provider:
+        return (f"round {row.get('round')} records no provider ({provider!r}): could not "
+                "tell the reviewer's family")
+    if provider == AUTHOR_FAMILY:
+        return (f"round {row.get('round')} was reviewed by {provider}, the same family as "
+                "the author; a same-family round needs the owner's --accept")
+    if provider not in AUTO_PROVIDERS:
+        return (f"round {row.get('round')} was reviewed by {provider!r}, an unknown provider "
+                f"for auto-accept (only {', '.join(AUTO_PROVIDERS)}): could not tell")
+    if not isinstance(family, str) or not family.strip():
+        return (f"round {row.get('round')} records no model family ({family!r}): could not "
+                "tell the reviewer's family")
+    if family.strip().lower() == AUTHOR_FAMILY:
+        return (f"round {row.get('round')}'s reviewer family is {family}, the same family as "
+                "the author; a same-family round needs the owner's --accept")
+    return None
+
+
+def _auto_row_problem(row):
+    """None when a completed FINDINGS row's own evidence allows an auto
+    receipt, else why not. Shared by `auto_accept_refusal` and
+    `receipt_stands`, so the two cannot drift. Every unknown is a reason."""
+    problem = _family_problem(row)
+    if problem:
+        return problem
+    counts = row.get("counts")
+    if not isinstance(counts, dict):
+        return f"round {row.get('round')} has no readable counts ({counts!r}): could not tell"
+    for sev in ("BLOCK", "FIX", "NIT"):
+        if not _is_count(counts.get(sev)):
+            return (f"round {row.get('round')}'s {sev} count is {counts.get(sev)!r}, not a "
+                    "non-negative integer: could not tell")
+    if counts["BLOCK"] != 0:
+        return (f"round {row.get('round')} has {counts['BLOCK']} BLOCK finding(s); a BLOCK "
+                "is never auto-accepted")
+    findings = row.get("findings")
+    if not isinstance(findings, list) or not all(isinstance(f, str) for f in findings):
+        return (f"round {row.get('round')} carries no finding lines (recorded before L-0510, "
+                "or by a caller that did not pass them): could not tell")
+    # One finding is one line. A line break inside a string can hide a
+    # BLOCK-form line behind a FIX prefix (review round 4 FIX 1).
+    broken = [f for f in findings if "\n" in f or "\r" in f]
+    if broken:
+        return (f"round {row.get('round')} lists a finding with an embedded line break "
+                f"({broken[0]!r}): could not tell")
+    if any(f.strip().startswith("BLOCK|") for f in findings):
+        return f"round {row.get('round')} lists a BLOCK line; a BLOCK is never auto-accepted"
+    other = [f for f in findings if not f.strip().startswith(("FIX|", "NIT|"))]
+    if other:
+        return (f"round {row.get('round')} lists a line that is neither a FIX nor a NIT "
+                f"({other[0]!r}): could not tell")
+    # Per severity, never the total: one NIT line under counts FIX=1, NIT=0
+    # agrees on the sum and disagrees on what was found.
+    fixes = sum(1 for f in findings if f.strip().startswith("FIX|"))
+    if not findings or (fixes, len(findings) - fixes) != (counts["FIX"], counts["NIT"]):
+        return (f"round {row.get('round')}'s finding lines ({fixes} FIX + "
+                f"{len(findings) - fixes} NIT) do not agree with its counts "
+                f"({counts['FIX']} FIX + {counts['NIT']} NIT): could not tell")
+    # Owner decision 2026-10-01 #6: L-0576's `ignored_lines` counts the stray
+    # lines a FINDINGS verdict was recovered despite. Recovered is the owner's;
+    # an absent or unread count is could-not-tell, never 0.
+    ignored = row.get("ignored_lines")
+    if not _is_count(ignored):
+        return (f"round {row.get('round')} has no readable ignored_lines ({ignored!r}; "
+                "recorded before L-0576, or unreadable): could not tell whether its "
+                "verdict was recovered from stray lines")
+    if ignored:
+        return (f"round {row.get('round')}'s verdict was recovered from {ignored} stray "
+                "line(s) (ignored_lines); a recovered round is the owner's to accept")
+    if "webtest_open" not in row:
+        return (f"round {row.get('round')} has no webtest state (recorded before L-0510): "
+                "could not tell")
+    webtest = row["webtest_open"]
+    # Never a membership test: `False in (0, WEBTEST_NA)` is true.
+    if not ((type(webtest) is int and webtest == 0) or webtest == WEBTEST_NA):  # pylint: disable=unidiomatic-typecheck
+        return (f"round {row.get('round')}'s webtest state is {webtest!r}: open healer "
+                "skips are never accepted, and an unread check is could-not-tell")
+    return None
+
+
+def auto_accept_refusal(data, ticket):
+    """None when the latest round may be auto-accepted, else the reason. Pure:
+    reads only `data` (a loaded ledger). The tree-hash check needs the
+    repository and is `auto_accept`'s."""
+    if not isinstance(data, dict):
+        return "the ledger is unreadable: could not tell"
+    if data.get("state") == NEEDS_REPLAN:
+        return f"{ticket} is {NEEDS_REPLAN}; only an approved successor plan continues"
+    rounds = data.get("rounds") or []
+    if not rounds or not isinstance(rounds[-1], dict):
+        return "no review round to accept"
+    row = rounds[-1]
+    if row.get("status") != "completed":
+        return f"round {row.get('round')}, the most recent, has no result yet"
+    if len(rounds) - _spent(data) >= row.get("round", 0):
+        return (f"round {row.get('round')} reviewed the plan a successor replaced; only a "
+                "round under the current plan can be accepted")
+    if row.get("verdict") != "FINDINGS":
+        failure = f" ({row.get('failure_class')})" if row.get("failure_class") else ""
+        return (f"round {row.get('round')} is {row.get('verdict')}{failure}; only a FINDINGS "
+                "round is auto-accepted")
+    problem = _auto_row_problem(row)
+    if problem:
+        return problem
+    if _charged(data) < BUDGET:
+        return (f"not the final round: {_charged(data)} of {BUDGET} budget rounds used; fix "
+                "and run the next round")
+    receipt = data.get("receipt") or {}
+    if receipt.get("round") == row.get("round"):
+        return (f"round {row.get('round')} was already accepted by "
+                f"{receipt.get('accepted_by')} at {receipt.get('accepted_at')}")
+    return None
+
+
+class _DuplicateKey(ValueError):
+    """A JSON object names one key twice; json.load would keep the last."""
+
+
+def _refuse_duplicate_keys(pairs):
+    seen = {}
+    for key, value in pairs:
+        if key in seen:
+            raise _DuplicateKey(f"duplicate key {key!r}")
+        seen[key] = value
+    return seen
+
+
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _review_json_path(root, ticket):
+    return os.path.join(root, ".work", "tickets", ticket, "review.json")
+
+
+def read_review_json(root, ticket):
+    """(review, sha256, problem) for this ticket's review.json, read once as
+    bytes: never through a link, never with a duplicate key at any depth
+    (review round 6 BLOCK 2: json.load keeps the last of two), and hashed
+    over exactly the bytes parsed so a receipt can bind them (BLOCK 1).
+    `problem` is None or a could-not-tell reason; on a problem `review`
+    and `sha256` are None."""
+    path = _review_json_path(root, ticket)
+    try:
+        if os.path.islink(path):
+            return None, None, (f"{path} is a link; not following it: could not tell "
+                                "whether the verdict was recovered from stray lines")
+        with open(path, "rb") as fh:
+            raw = fh.read()
+        review = json.loads(raw.decode("utf-8"), object_pairs_hook=_refuse_duplicate_keys)
+    except _DuplicateKey as exc:
+        return None, None, (f"{path} has a {exc}: could not tell which value the round "
+                            "recorded")
+    except (OSError, ValueError) as exc:
+        return None, None, (f"{path} is unreadable ({exc}): could not tell whether the "
+                            "verdict was recovered from stray lines")
+    return review, hashlib.sha256(raw).hexdigest(), None
+
+
+def _review_json_problem(root, ticket, row):
+    """(problem, sha256). problem is None when this round's review.json is
+    readable, is for `row`'s round and bundle, and its `ignored_lines` count
+    is 0; else why not (owner decision 2026-10-01 #6). The row already carries
+    the count; this is the second witness the owner asked for, so an
+    unreadable file is could-not-tell, never a pass."""
+    path = _review_json_path(root, ticket)
+    review, digest, problem = read_review_json(root, ticket)
+    if problem:
+        return problem, None
+    got = review.get("round") if isinstance(review, dict) else review
+    # `True == 1`: a bool round would pass as round 1, so the type is checked.
+    if not isinstance(review, dict) or isinstance(got, bool) or got != row.get("round"):
+        return (f"{path} is not round {row.get('round')}'s (it reads {got!r}): could not "
+                "tell whether the verdict was recovered from stray lines"), None
+    if review.get("bundle_sha256") != row.get("bundle_sha256"):
+        return (f"{path} is for bundle {str(review.get('bundle_sha256'))[:12]}, not the "
+                f"round's {str(row.get('bundle_sha256'))[:12]}: could not tell whether the "
+                "verdict was recovered from stray lines"), None
+    # L-0576 writes the count here as an int (the lines go to `ignored_text`).
+    # Any other shape is could-not-tell, never 0 (review round 5 BLOCK).
+    count = review.get("ignored_lines")
+    if not _is_count(count):
+        return (f"{path} carries no readable ignored_lines count ({count!r}): could not "
+                f"tell whether round {row.get('round')}'s verdict was recovered from stray "
+                "lines"), None
+    if count:
+        return (f"{path}: round {row.get('round')}'s verdict was recovered from "
+                f"{count} stray line(s); a recovered round is the owner's to accept"), None
+    return None, digest
+
+
+def auto_accept(root, ticket, follow_up):
+    """Accept the latest round under the owner policy of 2026-09-30, or raise
+    LedgerError naming the condition that failed (and change nothing)."""
+    if not follow_up:
+        raise LedgerError("--auto-accept needs --follow-up <id>: the ticket its FIX/NIT "
+                          "lines go to")
+    check_ticket(follow_up)
+    if follow_up == ticket:
+        raise LedgerError(f"--follow-up {follow_up} is the ticket itself; the follow-up is "
+                          "a new ticket")
+
+    def change(data, state):
+        if state != "ok":
+            raise LedgerError(f"--auto-accept refused: ledger is {state}; could not tell")
+        refusal = auto_accept_refusal(data, ticket)
+        if refusal:
+            raise LedgerError(f"--auto-accept refused: {refusal}")
+        row = data["rounds"][-1]
+        problem, review_digest = _review_json_problem(root, ticket, row)
+        if problem:
+            raise LedgerError(f"--auto-accept refused: {problem}")
+        if _current_hash(root, row.get("base")) != row.get("bundle_sha256"):
+            raise LedgerError("--auto-accept refused: the tree has changed since that review, "
+                              "so accepting it would accept code nobody reviewed")
+        data["receipt"] = {
+            "kind": AUTO_KIND, "round": row["round"],
+            "bundle_sha256": row["bundle_sha256"], "base": row["base"],
+            "verdict": "FINDINGS", "accepted_by": AUTO_BY, "accepted_at": _now(),
+            "findings": list(row["findings"]), "follow_up": follow_up,
+            "provider": row.get("provider"), "model_family": row.get("model_family"),
+            # What the review.json witness read, so receipt_stands can tell a
+            # later edit (review round 6 BLOCK 1).
+            "review_json_sha256": review_digest, "ignored_lines": 0,
+        }
+        data["state"] = ACCEPTED
+        return data, data["receipt"]
+
+    return _mutate(root, ticket, change)
+
+
+def receipt_stands(receipt, latest, root, ticket):
+    """Whether `receipt` stands on `latest`, the latest recorded round: a
+    CLEAN round under a clean receipt; FINDINGS owner-accepted; or FINDINGS
+    auto-accepted whose row still passes the guard, whose lines, provider
+    and model family are the row's (review r3: a receipt that misstates the
+    family the guard checked does not stand), and whose review.json still
+    hashes to the bytes the guard read, with a count of 0 (review r6 BLOCK 1;
+    an edited, missing, linked or unreadable file is could-not-tell, so the
+    receipt does not stand)."""
+    if not isinstance(receipt, dict) or not isinstance(latest, dict):
+        return False
+    if latest.get("status") != "completed" or receipt.get("round") != latest.get("round"):
+        return False
+    if latest.get("verdict") == "CLEAN":
+        return receipt.get("kind") == "clean"
+    if latest.get("verdict") != "FINDINGS":
+        return False
+    if receipt.get("kind") == "owner-accepted":
+        return True
+    return (receipt.get("kind") == AUTO_KIND and receipt.get("accepted_by") == AUTO_BY
+            and receipt.get("findings") == latest.get("findings")
+            and _receipt_names_the_reviewer(receipt, latest)
+            and _auto_row_problem(latest) is None
+            and _receipt_binds_review_json(receipt, latest, root, ticket))
+
+
+def _receipt_binds_review_json(receipt, latest, root, ticket):
+    """The auto receipt's `review_json_sha256` is a lowercase sha256 equal to
+    review.json's bytes now, its `ignored_lines` is exactly int 0, and the
+    file still passes the witness check for this round."""
+    digest, count = receipt.get("review_json_sha256"), receipt.get("ignored_lines")
+    if not isinstance(digest, str) or not _SHA256_RE.match(digest):
+        return False
+    if type(count) is not int or count != 0:  # pylint: disable=unidiomatic-typecheck
+        return False
+    problem, now = _review_json_problem(root, ticket, latest)
+    return problem is None and now == digest
+
+
+def _receipt_names_the_reviewer(receipt, latest):
+    """The auto receipt's provider and model family are the row's, both
+    present: the receipt carries the family the guard checked, never another."""
+    pairs = ((receipt.get("provider"), latest.get("provider")),
+             (receipt.get("model_family"), latest.get("model_family")))
+    return all(isinstance(mine, str) and mine and mine == row for mine, row in pairs)
+
+
+def check_follow_up(root, ticket):
+    """(ok, message). For an auto-accepted receipt: the follow-up ticket's
+    direction.md under `root` holds every receipt line verbatim as a whole
+    line, as many times as the receipt carries it. Only a clean or
+    owner-accepted receipt is not applicable; any other kind is could-not-tell."""
+    data, state = _load(ledger_path(root, ticket))
+    if state != "ok":
+        return False, f"ledger is {state}; could not tell whether a follow-up is owed"
+    receipt = data.get("receipt")
+    if not isinstance(receipt, dict):
+        return False, f"no receipt for {ticket}; run --check-receipt first"
+    if receipt.get("kind") in ("clean", "owner-accepted"):
+        return True, f"not applicable: the receipt is {receipt.get('kind')}, not {AUTO_KIND}"
+    if receipt.get("kind") != AUTO_KIND:
+        return False, (f"the receipt's kind is {receipt.get('kind')!r}, none of clean, "
+                       f"owner-accepted or {AUTO_KIND}: could not tell")
+    lines, follow_up = receipt.get("findings"), receipt.get("follow_up")
+    if not isinstance(lines, list) or not lines or not all(isinstance(x, str) for x in lines):
+        return False, "the auto-accepted receipt carries no finding lines: could not tell"
+    try:
+        check_ticket(follow_up)
+    except LedgerError as exc:
+        return False, f"the receipt's follow-up id is unusable: {exc}"
+    path = os.path.join(root, ".work", "tickets", follow_up, "direction.md")
+    try:
+        # newline="": no universal-newline translation, so a bare \r is text,
+        # never a break (review round 6 FIX 4). Lines split on "\n" only --
+        # never splitlines(), which also breaks on U+2028, U+0085, \v, \f
+        # (review round 4 FIX 2) -- and a CRLF line drops its one "\r", so a
+        # direction.md checked out with Windows line endings still matches.
+        with open(path, encoding="utf-8", newline="") as fh:
+            have = collections.Counter(
+                line[:-1] if line.endswith("\r") else line for line in fh.read().split("\n"))
+    except OSError as exc:
+        return False, f"follow-up {follow_up}: cannot read {path} ({exc.strerror or exc})"
+    except UnicodeDecodeError as exc:
+        return False, f"follow-up {follow_up}: {path} is not UTF-8 ({exc.reason}): could not tell"
+    # Verbatim, never stripped, and counted: a line the receipt carries twice
+    # is owed twice.
+    missing = list((collections.Counter(lines) - have).elements())
+    if missing:
+        return False, (f"follow-up {follow_up}: {path} lacks {len(missing)} of {len(lines)} "
+                       f"line(s) as a whole line, first: {missing[0]}")
+    return True, f"follow-up {follow_up} quotes all {len(lines)} line(s) ({path})"
 
 
 def reject(root, ticket, by):
@@ -378,12 +845,10 @@ def check_receipt(root, ticket):
     if not isinstance(latest, dict) or latest.get("round") != receipt.get("round"):
         return False, (f"receipt is for round {receipt.get('round')}, not the latest recorded "
                        "round; only the latest round's verdict counts")
-    accepted = (latest.get("verdict") == "CLEAN"
-                or (latest.get("verdict") == "FINDINGS"
-                    and receipt.get("kind") == "owner-accepted"))
-    if latest.get("status") != "completed" or not accepted:
+    if not receipt_stands(receipt, latest, root, ticket):
         return False, (f"round {latest.get('round')} is {latest.get('verdict') or 'not completed'}"
-                       "; a receipt stands only on a CLEAN or owner-accepted round")
+                       "; a receipt stands only on a CLEAN or owner-accepted round, or an "
+                       "auto-accepted 0-BLOCK one")
     try:
         current = _current_hash(root, receipt.get("base"))
     except LedgerError as exc:
@@ -452,20 +917,43 @@ def continue_with_successor_plan(root, ticket, plan_hash):
     return _mutate(root, ticket, change)
 
 
-def status(root, ticket):
-    path = ledger_path(root, ticket)
-    data, state = _load(path)
+load = _load
+
+
+def summary(data, state, ticket, path):
+    """The status dict for a loaded ledger: what `status` returns and what
+    `/crew:status` renders, so the two cannot count rounds differently."""
     if state == "corrupt":
         return {"ticket": ticket, "path": path, "state": UNKNOWN}
     rounds = data.get("rounds", [])
     return {"ticket": ticket, "path": path, "state": data.get("state") or "EMPTY",
             "rounds_used": len(rounds), "budget": BUDGET,
-            "rounds_left": max(0, BUDGET - _spent(data)), "rounds": rounds,
+            "rounds_spent": _charged(data), "rounds_refunded": _refunded(data),
+            "refund_limit": REFUND_LIMIT,
+            "rounds_left": max(0, BUDGET - _charged(data)), "rounds": rounds,
             "successors": data.get("successors") or [],
             "receipt": data.get("receipt")}
 
 
+def status(root, ticket):
+    path = ledger_path(root, ticket)
+    return summary(*_load(path), ticket, path)
+
+
+def utf8_stdio():
+    """Write stdout and stderr as UTF-8 whatever the console code page: a
+    finding line is reviewer text, and on a Windows cp1252 console printing
+    one carrying U+2028 (or any character cp1252 lacks) raised
+    UnicodeEncodeError after the receipt was written (win-repo-2, 75bd0aea).
+    A stream that cannot be reconfigured is left as it is."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8")
+
+
 def main(argv):
+    utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", default=".")
     parser.add_argument("--ticket", required=True)
@@ -478,11 +966,19 @@ def main(argv):
     action.add_argument("--reject", action="store_true",
                         help="send the ticket to NEEDS_REPLAN now (needs --by)")
     action.add_argument("--check-receipt", action="store_true")
+    action.add_argument("--auto-accept", action="store_true",
+                        help="accept a final 0-BLOCK FINDINGS round (needs --follow-up; "
+                             "takes no --by)")
+    action.add_argument("--check-follow-up", action="store_true",
+                        help="an auto-accepted receipt's follow-up quotes every line")
     action.add_argument("--successor-plan", metavar="PLAN_SHA256")
     parser.add_argument("--provider", default="claude")
     parser.add_argument("--model")
     parser.add_argument("--by", help="who accepts or rejects, with --accept / --reject")
+    parser.add_argument("--follow-up", help="with --auto-accept: the follow-up ticket id")
     args = parser.parse_args(argv)
+    if args.auto_accept and args.by is not None:
+        parser.error("--auto-accept takes no --by: its accepted_by is fixed")
     root = os.path.abspath(args.root)
 
     try:
@@ -507,6 +1003,18 @@ def main(argv):
             return 0
         if args.check_receipt:
             ok, message = check_receipt(root, args.ticket)
+            print(f"review-ledger: {message}")
+            return 0 if ok else 1
+        if args.auto_accept:
+            receipt = auto_accept(root, args.ticket, args.follow_up)
+            print(f"review-ledger: round {receipt['round']} FINDINGS auto-accepted "
+                  f"({AUTO_BY}), follow-up {receipt['follow_up']}, "
+                  f"{len(receipt['findings'])} line(s)")
+            for line in receipt["findings"]:
+                print(line)
+            return 0
+        if args.check_follow_up:
+            ok, message = check_follow_up(root, args.ticket)
             print(f"review-ledger: {message}")
             return 0 if ok else 1
         ok, message = continue_with_successor_plan(root, args.ticket, args.successor_plan)

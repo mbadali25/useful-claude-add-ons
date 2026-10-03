@@ -1,0 +1,13 @@
+{
+  "counts": {
+    "BLOCK": 0,
+    "FIX": 3,
+    "NIT": 0
+  },
+  "delivered": true,
+  "failure_class": null,
+  "origin": "uca-t0010-solo/T-0010-solo--oR52Cv",
+  "parts_missing": [],
+  "read_form": "full",
+  "verdict": "FINDINGS"
+}

@@ -3,6 +3,7 @@
     "provider": "auto",
     "order": [
       "codex",
+      "kimi",
       "copilot",
       "claude"
     ],
@@ -12,6 +13,9 @@
       "reasoningEffort": null
     },
     "copilot": {
+      "model": null
+    },
+    "kimi": {
       "model": null
     },
     "roles": {}
@@ -24,6 +28,9 @@
       "reasoningEffort": null
     },
     "copilot": {
+      "model": null
+    },
+    "kimi": {
       "model": null
     },
     "roles": {}
@@ -109,6 +116,9 @@
     "roleWrites": "off",
     "cloudGuard": "off"
   },
+  "environments": {
+    "prodUnattended": false
+  },
   "change": {
     "requester": null,
     "implementor": null,
@@ -116,5 +126,12 @@
     "sdpTemplate": "Change Management Request",
     "jiraIssueType": "Change",
     "category": null
+  },
+  "route": {
+    "enabled": false
+  },
+  "shellRoute": {
+    "mode": "auto",
+    "distro": null
   }
 }

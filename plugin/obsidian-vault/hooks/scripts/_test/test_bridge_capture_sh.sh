@@ -51,6 +51,9 @@ winpath() {
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
+# pwsh's startup profile goes in this run's own dir, never the shared
+# ~/.cache/powershell one that concurrent pwsh race on (L-0557). pwsh creates it.
+export XDG_CACHE_HOME="$work/xdg-cache"
 
 # ---------------------------------------------------------------- fixtures --
 mkdir -p "$work/tools"

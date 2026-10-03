@@ -148,10 +148,16 @@ def _git(root, *args):
                           check=True).stdout.strip()
 
 
-def _handoff(root, resume="/crew:done T-0001", branch=None, head=None, extra=""):
+def _stamp():
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+
+
+def _handoff(root, resume="/crew:done T-0001", branch=None, head=None, extra="", written=None):
+    """A handoff note. `written=None` stamps the current second; a Fixture
+    passes its own stamp so two default notes in one test are one note."""
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD") if branch is None else branch
     head = _git(root, "rev-parse", "--short", "HEAD") if head is None else head
-    lines = ["# Handoff", f"written: {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}",
+    lines = ["# Handoff", f"written: {_stamp() if written is None else written}",
              "ticket: T-0001"]
     if branch is not False:
         lines.append(f"branch: {branch}")
@@ -169,6 +175,8 @@ class Fixture:
     def __init__(self, tmp_path, machine=True, commands=("spec", "plan", "implement", "review",
                                                          "done", "status")):
         self.root = context_fixtures.make_repo(tmp_path)
+        # One stamp per fixture: a re-stamped note is a different note (T-0042 flake).
+        self.written = _stamp()
         (self.root / ".work" / "tickets" / "T-0001").mkdir(parents=True)
         (self.root / ".work" / "tickets" / "T-0001" / "spec.md").write_text("spec\n", encoding="utf-8")
         self.global_path = tmp_path / "home" / ".claude" / "crew" / "config.json"
@@ -188,12 +196,34 @@ class Fixture:
     def repo_file(self, name, value):
         (self.root / ".crew" / name).write_text(json.dumps({"resume": {"auto": value}}), encoding="utf-8")
 
-    def decide(self, text=None, source="clear", session="s1", **kwargs):
-        text = _handoff(self.root) if text is None else text
+    def bind(self, text=None, session="s1"):
+        """Record `text` as written by this session and (stubbed) process, the
+        way the PostToolUse recorder does after a Write of the handoff (T-0042)."""
+        text = _handoff(self.root, written=self.written) if text is None else text
+        path = self.root.parent / "authored-handoff.md"
+        path.write_bytes(text.encode("utf-8"))
+        return crew_resume.record_author(str(self.root), session, str(path))
+
+    def decide(self, text=None, source="clear", session="s1", bound=True, **kwargs):
+        """`bound=True` first records the note as this session's own, so every
+        test written before T-0042 keeps its meaning; `bound=False` does not."""
+        text = _handoff(self.root, written=self.written) if text is None else text
+        if bound:
+            self.bind(text, session)
         payload = {"hook_event_name": "SessionStart", "source": source, "session_id": session,
                    "cwd": str(self.root)}
         return crew_resume.decide(str(self.root), payload, text, str(self.plugin),
                                   global_path=str(self.global_path), **kwargs)
+
+
+_ME = {"pid": 4242, "start": 777}
+
+
+@pytest.fixture(autouse=True)
+def _this_process(monkeypatch):
+    """Every in-process test runs as one fixed Claude Code process. The real
+    ancestry walk is exercised end to end in test_crew_resume_hook.py."""
+    monkeypatch.setattr(crew_resume, "session_process", lambda pid=None: dict(_ME))
 
 
 @pytest.fixture
@@ -219,11 +249,12 @@ def test_decide_runs_when_armed_and_matching(fx):
 
 
 def test_decide_writes_nothing(fx):
+    fx.bind()
     before = _tree(fx.root)
 
-    fx.decide()
-    fx.decide(source="startup")
-    fx.decide(text=_handoff(fx.root, head="0000000"))
+    fx.decide(bound=False)
+    fx.decide(source="startup", bound=False)
+    fx.decide(text=_handoff(fx.root, head="0000000"), bound=False)
 
     assert _tree(fx.root) == before
 
@@ -253,8 +284,10 @@ def test_default_machine_path_is_read_when_none_is_given(fx, monkeypatch):
     import crew_state  # pylint: disable=import-outside-toplevel
     monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(fx.global_path))
     payload = {"hook_event_name": "SessionStart", "source": "clear", "session_id": "s1"}
+    text = _handoff(fx.root)
+    fx.bind(text)
 
-    got = crew_resume.decide(str(fx.root), payload, _handoff(fx.root), str(fx.plugin))
+    got = crew_resume.decide(str(fx.root), payload, text, str(fx.plugin))
 
     assert got["action"] == "run"
 
@@ -440,6 +473,24 @@ def test_same_handoff_never_fires_twice(fx):
     assert (ok, got["action"], "already resumed" in got["reason"]) == (True, "wait", True)
 
 
+def test_same_handoff_never_fires_twice_across_a_second_boundary(fx, monkeypatch):
+    """T-0042 flake: the fixture used to re-stamp `written:` on every decide,
+    so a second boundary between the two decides made a new note (new sha)
+    and the consumed-once guard never saw the first. Forced here by moving
+    `time.gmtime` one second forward on every call."""
+    real = time.gmtime
+    ticks = iter(range(1, 1000))
+    monkeypatch.setattr(time, "gmtime", lambda secs=None: real((time.time() if secs is None else secs)
+                                                               + (next(ticks) if secs is None else 0)))
+    first = fx.decide()
+    ok, _ = crew_resume.record_run(str(fx.root), first)
+    (fx.root / ".work" / "tickets" / "T-0001" / "plan.md").write_text("progress\n", encoding="utf-8")
+
+    got = fx.decide()
+
+    assert (ok, got["action"], "already resumed" in got["reason"]) == (True, "wait", True), got
+
+
 def test_same_command_no_progress_second_time_waits(fx):
     ok, _ = crew_resume.record_run(str(fx.root), fx.decide())
 
@@ -571,15 +622,25 @@ def _cli(*args, stdin=""):
     return done.returncode, done.stdout
 
 
+def _bind_for_cli(fx):
+    """The CLI runs in its own process, where the in-process identity stub
+    does not reach, so the CLI tests resume a manual /compact: bound by
+    session_id, the same on every host (T-0042)."""
+    path = fx.root / ".work" / "HANDOFF.md"
+    path.write_text(_handoff(fx.root, written=fx.written), encoding="utf-8")
+    crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
+    crew_resume.record_author(str(fx.root), "s1", str(path))
+
+
 def test_cli_decide_and_record(fx):
-    (fx.root / ".work" / "HANDOFF.md").write_text(_handoff(fx.root), encoding="utf-8")
+    _bind_for_cli(fx)
     common = ["--root", str(fx.root), "--session", "s1", "--global-path", str(fx.global_path),
               "--plugin-root", str(fx.plugin)]
 
-    code, out = _cli("decide", *common, "--source", "clear", "--json")
+    code, out = _cli("decide", *common, "--source", "compact", "--json")
     decision = json.loads(out)
     rcode, rout = _cli("record", "--root", str(fx.root), "--decision-json", "-", stdin=out)
-    again = json.loads(_cli("decide", *common, "--source", "clear", "--json")[1])
+    again = json.loads(_cli("decide", *common, "--source", "compact", "--json")[1])
 
     assert (code, decision["action"], decision["prompt"], rcode, json.loads(rout)["ok"], again["action"]) == \
         (0, "run", "/crew:done T-0001", 0, True, "wait")
@@ -653,9 +714,9 @@ def test_unlistable_ticket_subdirectory_is_an_unknown_not_progress(fx, monkeypat
 def test_cli_decide_applies_the_staleness_rule(fx):
     """Review NIT :453. The CLI is T-0013's entry point and can run without
     the SessionStart archive having run first."""
-    text = _handoff(fx.root).replace(
-        f"written: {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}",
-        f"written: {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - 10 * 86400))}")
+    # Stamped directly: a replace() of "now" missed whenever a second
+    # boundary fell between building the note and rebuilding the stamp.
+    text = _handoff(fx.root, written=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - 10 * 86400)))
     (fx.root / ".work" / "HANDOFF.md").write_text(text, encoding="utf-8")
 
     _code, out = _cli("decide", "--root", str(fx.root), "--session", "s1", "--source", "clear", "--json",
@@ -667,9 +728,9 @@ def test_cli_decide_applies_the_staleness_rule(fx):
 
 
 def test_cli_decide_runs_on_a_fresh_note(fx):
-    (fx.root / ".work" / "HANDOFF.md").write_text(_handoff(fx.root), encoding="utf-8")
+    _bind_for_cli(fx)
 
-    _code, out = _cli("decide", "--root", str(fx.root), "--session", "s1", "--source", "clear", "--json",
+    _code, out = _cli("decide", "--root", str(fx.root), "--session", "s1", "--source", "compact", "--json",
                       "--global-path", str(fx.global_path), "--plugin-root", str(fx.plugin))
 
     assert json.loads(out)["action"] == "run"
@@ -794,6 +855,7 @@ _UNREADABLE_STATE = [
     pytest.param(b"", id="empty"),
     pytest.param(b"[]", id="not-an-object"),
     pytest.param(b'{"worktrees": []}', id="worktrees-not-an-object"),
+    pytest.param(b"{}", id="no-worktrees-key"),
     pytest.param(b'\xff\xfe{"worktrees": {}}', id="not-utf8"),
     pytest.param("dir", id="a-directory"),
     pytest.param("dangling", id="a-dangling-symlink"),
@@ -813,7 +875,13 @@ def test_an_unreadable_resume_state_waits_rather_than_runs(fx, content):
     assert (ok, got["action"], "resume-state.json" in got["reason"]) == (True, "wait", True), got
 
 
+_DROP = object()
+
+
 def _mangle_entry(fx, field, value):
+    """Set `field` of this worktree's entry to `value` (the whole entry when
+    `field` is None, a key of "last" when it is ("last", key)); `_DROP`
+    deletes it instead."""
     path = crew_resume.state_path(str(fx.root))
     with open(path, encoding="utf-8") as handle:
         state = json.load(handle)
@@ -821,7 +889,12 @@ def _mangle_entry(fx, field, value):
     if field is None:
         state["worktrees"][key] = value
     else:
-        state["worktrees"][key][field] = value
+        owner, name = (state["worktrees"][key]["last"], field[1]) if isinstance(field, tuple) \
+            else (state["worktrees"][key], field)
+        if value is _DROP:
+            del owner[name]
+        else:
+            owner[name] = value
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(json.dumps(state))
 
@@ -830,11 +903,19 @@ def _mangle_entry(fx, field, value):
     pytest.param(None, [], id="entry-not-an-object"),
     pytest.param("consumed", "abc", id="consumed-not-a-list"),
     pytest.param("last", "abc", id="last-not-an-object"),
+    pytest.param(None, {}, id="entry-empty"),
+    pytest.param("consumed", _DROP, id="consumed-missing"),
+    pytest.param("last", _DROP, id="last-missing"),
+    pytest.param(("last", "prompt"), _DROP, id="last-prompt-missing"),
+    pytest.param(("last", "fingerprint"), None, id="last-fingerprint-not-a-string"),
 ])
 def test_a_resume_state_entry_of_the_wrong_shape_waits(fx, field, value):
     """Review round 3 FIX :417, the neighbour: this worktree's entry, or a
     field of it, in a shape record_run never writes is as unknown as a file
-    that does not parse."""
+    that does not parse. A PARTIAL entry is that too (T-0042, before review
+    round 2): a missing "consumed" read as nothing consumed, a missing "last"
+    as no loop history, so a partial record let an already-resumed handoff
+    come back `run`."""
     ok, _ = crew_resume.record_run(str(fx.root), fx.decide())
     _mangle_entry(fx, field, value)
 
@@ -953,3 +1034,423 @@ def test_a_ticket_id_with_non_ascii_digits_is_refused(ticket):
     parsed = crew_resume.parse_resume(f"resume: /crew:done {ticket}\n")
 
     assert (parsed["ok"], "ABC-123" in parsed["reason"]) == (False, True), parsed
+
+
+# --- T-0042: round 4 ---------------------------------------------------------
+
+def _refuse_lstat(monkeypatch, target):
+    """os.lstat raises PermissionError for `target` only: what a directory
+    this user cannot search looks like, without needing a non-root user."""
+    real = os.lstat
+
+    def refusing(path, *args, **kwargs):
+        if os.path.abspath(os.fspath(path)) == os.path.abspath(os.fspath(target)):
+            raise PermissionError(13, "Permission denied", os.fspath(path))
+        return real(path, *args, **kwargs)
+    monkeypatch.setattr(crew_resume.os, "lstat", refusing)
+
+
+@pytest.mark.parametrize("resume", [
+    pytest.param("/crew:done T-0001", id="done"),
+    pytest.param("/crew:status", id="status"),
+])
+def test_a_resume_state_that_cannot_be_stat_ed_waits(fx, monkeypatch, resume):
+    """Review round 4 FIX: `os.path.lexists` is False on ANY stat error, so a
+    resume-state.json whose directory could not be searched read as "no
+    history" and an already-resumed command came back `run`."""
+    text = _handoff(fx.root, resume=resume, written=fx.written)
+    ok, _ = crew_resume.record_run(str(fx.root), fx.decide(text=text))
+    _refuse_lstat(monkeypatch, crew_resume.state_path(str(fx.root)))
+
+    got = fx.decide(text=text)
+
+    assert (ok, got["action"], "resume-state.json" in got["reason"]) == (True, "wait", True), got
+
+
+def test_record_run_refuses_a_resume_state_that_cannot_be_stat_ed(fx, monkeypatch):
+    decision = fx.decide()
+    path = crew_resume.state_path(str(fx.root))
+    _refuse_lstat(monkeypatch, path)
+
+    ok, reason = crew_resume.record_run(str(fx.root), decision)
+
+    assert (ok, "resume-state.json" in reason, os.path.exists(path)) == (False, True, False), reason
+
+
+def test_an_index_that_cannot_be_stat_ed_is_an_unknown(fx, monkeypatch):
+    """Round 4 FIX, the neighbour: INDEX.md decided absence the same way."""
+    (fx.root / ".work" / "INDEX.md").write_text("| T-0001 | implement |\n", encoding="utf-8")
+    _refuse_lstat(monkeypatch, fx.root / ".work" / "INDEX.md")
+
+    fingerprint = crew_resume.progress_fingerprint(str(fx.root), "T-0001")
+    got = fx.decide()
+
+    assert (fingerprint, got["action"], "fingerprint" in got["reason"]) == (None, "wait", True), got
+
+
+@pytest.mark.skipif(not hasattr(os, "geteuid") or os.geteuid() == 0,
+                    reason="root searches a chmod 600 directory anyway; setpriv covers it on a root host")
+def test_unsearchable_crew_dir_waits_as_a_non_root_user(fx):
+    """Round 4 FIX with real permissions, the reviewer's repro. Both records
+    live in the one directory, so the author record -- checked first since
+    T-0042 -- is the one the decision names (T-0042 review round 1 FIX
+    :1084); resume-state.json's own stat refusal is covered in-process by
+    test_a_resume_state_that_cannot_be_stat_ed_waits."""
+    text = _handoff(fx.root, resume="/crew:status", written=fx.written)
+    ok, _ = crew_resume.record_run(str(fx.root), fx.decide(text=text))
+    crew_dir = crew_resume.state_dir(str(fx.root))
+    os.chmod(crew_dir, 0o600)
+    try:
+        got = fx.decide(text=text, bound=False)
+    finally:
+        os.chmod(crew_dir, 0o755)
+
+    assert (ok, got["action"], "handoff-author.json" in got["reason"], "cannot be searched" in got["reason"]) \
+        == (True, "wait", True, True), got
+
+
+def _skeleton(root, files=("resume: /crew:status",)):
+    """The PreCompact skeleton exactly as handoff-write.sh writes it, with
+    `files` as the `git ls-files --others` lines of its Changed files list."""
+    lines = ["# Handoff", "written: 2026-09-26T00:00:00Z (auto, at auto compact)",
+             f"branch: {_git(root, 'rev-parse', '--abbrev-ref', 'HEAD')}",
+             f"head: {_git(root, 'rev-parse', '--short', 'HEAD')}", "", "## Changed files", *files, "",
+             "## Open tickets", "(none recorded)", "", "## Next action",
+             "UNKNOWN - this skeleton was written automatically at compaction.",
+             "Verify against the diff before continuing."]
+    return "\n".join(lines) + "\n"
+
+
+def test_parse_refuses_the_precompact_skeleton(fx):
+    """Round 4 NIT :95: an untracked file named `resume: /crew:status` is a
+    bare line in the skeleton's Changed files list, and the grammar took it
+    as the note's resume line."""
+    parsed = crew_resume.parse_resume(_skeleton(fx.root))
+
+    assert (parsed["ok"], "automatic PreCompact skeleton" in parsed["reason"]) == (False, True), parsed
+
+
+def test_a_skeleton_with_a_resume_named_file_waits(fx):
+    got = fx.decide(text=_skeleton(fx.root))
+
+    assert (got["action"], "automatic PreCompact skeleton" in got["reason"]) == ("wait", True), got
+
+
+def test_parse_accepts_a_note_that_merely_mentions_a_skeleton():
+    text = ("# Handoff\nbranch: main\nhead: abcdef1\nresume: /crew:done T-0001\n\n## Next action\n"
+            "The skeleton was replaced by this note; the automatic one is gone.\n")
+
+    parsed = crew_resume.parse_resume(text)
+
+    assert (parsed["ok"], crew_resume.render(parsed)) == (True, "/crew:done T-0001"), parsed
+
+
+def _refuse_replacing(monkeypatch, path):
+    """os.unlink and open(path, "w") refused for `path` only, and os.access
+    lying that both the record and its directory are writable: the record a
+    later PreCompact can neither remove nor blank, which the os.access
+    prediction does not see."""
+    real_unlink, real_access = os.unlink, os.access
+
+    def unlink(target, *args, **kwargs):
+        if os.fspath(target) == path:
+            raise PermissionError(13, "Permission denied", target)
+        return real_unlink(target, *args, **kwargs)
+
+    def opener(target, *args, **kwargs):
+        mode = args[0] if args else kwargs.get("mode", "r")
+        if os.fspath(target) == path and "w" in mode:
+            raise PermissionError(13, "Permission denied", target)
+        return open(target, *args, **kwargs)
+    monkeypatch.setattr(crew_resume.os, "unlink", unlink)
+    monkeypatch.setattr(crew_resume, "open", opener, raising=False)
+    monkeypatch.setattr(crew_resume.os, "access", lambda target, mode, *a, **k: True
+                        if os.fspath(target) in (path, os.path.dirname(path)) else real_access(target, mode, *a, **k))
+
+
+def test_a_record_a_later_precompact_could_not_replace_is_not_manual(fx, monkeypatch):
+    """Round 4 NIT :402, the reviewer's repro: os.access PREDICTED
+    replaceability, so a record that survived a failed PreCompact still read
+    `manual` whenever access() said yes. The failure is now recorded."""
+    crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
+    path = crew_resume.precompact_path(str(fx.root), "s1")
+    _refuse_replacing(monkeypatch, path)
+
+    ok = crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "auto"})
+
+    assert (ok, os.path.exists(crew_resume.stuck_path(str(fx.root), "s1")),
+            crew_resume._compact_was_manual(str(fx.root), "s1")) == (False, True, False)  # pylint: disable=protected-access
+
+
+def test_a_stuck_marker_that_cannot_be_stat_ed_is_not_manual(fx, monkeypatch):
+    crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
+    _refuse_lstat(monkeypatch, crew_resume.stuck_path(str(fx.root), "s1"))
+
+    assert crew_resume._compact_was_manual(str(fx.root), "s1") is False  # pylint: disable=protected-access
+
+
+def test_a_successful_record_clears_the_stuck_marker(fx):
+    stuck = crew_resume.stuck_path(str(fx.root), "s1")
+    os.makedirs(os.path.dirname(stuck), exist_ok=True)
+    with open(stuck, "w", encoding="utf-8") as handle:
+        handle.write("{}")
+
+    ok = crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
+
+    assert (ok, os.path.exists(stuck), crew_resume._compact_was_manual(str(fx.root), "s1")) == \
+        (True, False, True)  # pylint: disable=protected-access
+
+
+def test_stuck_markers_older_than_a_day_are_pruned(fx):
+    state = crew_resume.state_dir(str(fx.root))
+    os.makedirs(state, exist_ok=True)
+    old, fresh = os.path.join(state, "precompact-old.stuck"), os.path.join(state, "precompact-fresh.stuck")
+    for path in (old, fresh):
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("{}")
+    stale = time.time() - 25 * 3600
+    os.utime(old, (stale, stale))
+
+    crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
+
+    assert sorted(n for n in os.listdir(state) if n.endswith(".stuck")) == ["precompact-fresh.stuck"]
+
+
+
+# --- T-0042 step 6: a handoff resumes only in the session that wrote it -----
+
+def _other_process(monkeypatch, value):
+    monkeypatch.setattr(crew_resume, "session_process", lambda pid=None: value)
+
+
+def test_clear_runs_for_the_session_that_wrote_the_handoff(fx):
+    fx.bind()
+
+    got = fx.decide(bound=False)
+
+    assert (got["action"], got["prompt"]) == ("run", "/crew:done T-0001"), got
+
+
+def test_clear_waits_on_a_handoff_another_session_wrote(fx, monkeypatch):
+    """Round 4 NIT :421: decide bound the note to the checkout only, so a
+    /clear in ANOTHER terminal on the same worktree resumed this one's note."""
+    fx.bind()
+    _other_process(monkeypatch, {"pid": 5151, "start": 888})
+
+    got = fx.decide(bound=False)
+
+    assert (got["action"], "written by another session" in got["reason"]) == ("wait", True), got
+
+
+def test_clear_waits_when_this_process_cannot_be_identified(fx, monkeypatch):
+    fx.bind()
+    _other_process(monkeypatch, None)
+
+    got = fx.decide(bound=False)
+
+    assert (got["action"], "could not be identified" in got["reason"]) == ("wait", True), got
+
+
+def test_clear_waits_when_the_author_process_was_not_identified(fx, monkeypatch):
+    """The neighbour: an author record whose process was unknown when it was
+    written matches nothing -- not even a reader that is also unknown."""
+    _other_process(monkeypatch, None)
+    fx.bind()
+    _other_process(monkeypatch, dict(_ME))
+
+    got = fx.decide(bound=False)
+
+    assert (got["action"], "written by another session" in got["reason"]) == ("wait", True), got
+
+
+def test_compact_runs_for_the_session_that_wrote_the_handoff(fx):
+    crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
+    fx.bind(session="s1")
+
+    got = fx.decide(source="compact", session="s1", bound=False)
+
+    assert (got["action"], got["prompt"]) == ("run", "/crew:done T-0001"), got
+
+
+def test_compact_waits_on_a_handoff_another_session_wrote(fx):
+    crew_resume.write_precompact_record(str(fx.root), {"session_id": "s2", "trigger": "manual"})
+    fx.bind(session="s1")
+
+    got = fx.decide(source="compact", session="s2", bound=False)
+
+    assert (got["action"], "written by another session" in got["reason"]) == ("wait", True), got
+
+
+def test_a_handoff_with_no_author_record_waits(fx):
+    got = fx.decide(bound=False)
+
+    assert (got["action"], "no record of which session wrote" in got["reason"]) == ("wait", True), got
+
+
+def test_a_handoff_changed_since_its_author_wrote_it_waits(fx):
+    fx.bind()
+
+    got = fx.decide(text=_handoff(fx.root, written=fx.written, extra="Edited by Bash."), bound=False)
+
+    assert (got["action"], "changed since its author session wrote it" in got["reason"]) == ("wait", True), got
+
+
+def _write_author(fx, content):
+    path = crew_resume.author_path(str(fx.root))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if os.path.lexists(path):
+        os.unlink(path)
+    if content == "dir":
+        os.makedirs(path)
+    else:
+        with open(path, "wb") as handle:
+            handle.write(content)
+    return path
+
+
+@pytest.mark.parametrize("content", [
+    pytest.param(b'{"worktrees": ', id="truncated"),
+    pytest.param(b"[]", id="not-an-object"),
+    pytest.param(b'{"worktrees": []}', id="worktrees-not-an-object"),
+    pytest.param("entry", id="entry-not-an-object"),
+    pytest.param("dir", id="a-directory"),
+    pytest.param("lstat", id="lstat-permission-error"),
+])
+def test_an_unreadable_author_record_waits(fx, monkeypatch, content):
+    fx.bind()
+    path = crew_resume.author_path(str(fx.root))
+    if content == "lstat":
+        _refuse_lstat(monkeypatch, path)
+    elif content == "entry":
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        (key,) = data["worktrees"]
+        data["worktrees"][key] = "nope"
+        _write_author(fx, json.dumps(data).encode("utf-8"))
+    else:
+        _write_author(fx, content)
+
+    got = fx.decide(bound=False)
+
+    assert (got["action"], "handoff-author.json" in got["reason"]) == ("wait", True), got
+
+
+def test_record_author_that_cannot_read_the_handoff_leaves_no_entry(fx):
+    """A recorder that could not read the note must not leave the PREVIOUS
+    note's entry standing for it."""
+    fx.bind()
+
+    ok, reason = crew_resume.record_author(str(fx.root), "s1", str(fx.root / "no-such-handoff.md"))
+
+    got = fx.decide(bound=False)
+    assert (ok, bool(reason), got["action"], "no record of which session wrote" in got["reason"]) == \
+        (False, True, "wait", True), got
+
+
+def test_record_author_writes_this_worktrees_entry(fx):
+    text = _handoff(fx.root, written=fx.written)
+
+    ok, _ = fx.bind(text, session="s9")
+
+    with open(crew_resume.author_path(str(fx.root)), encoding="utf-8") as handle:
+        (entry,) = json.load(handle)["worktrees"].values()
+    assert (ok, entry["session_id"], entry["process"],
+            entry["sha256"] == crew_resume.hashlib.sha256(text.encode("utf-8")).hexdigest()) == \
+        (True, "s9", _ME, True)
+
+
+def test_a_failed_author_write_leaves_no_entry_behind(fx, monkeypatch):
+    """s2 rewrote the same note and its record did not land: s1's entry must
+    not keep vouching for a note s1 no longer wrote last."""
+    crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
+    fx.bind(session="s1")
+
+    def refuse(_src, _dst):
+        raise PermissionError(13, "Permission denied")
+    monkeypatch.setattr(crew_resume.os, "replace", refuse)
+    ok, _ = fx.bind(session="s2")
+    monkeypatch.undo()
+    monkeypatch.setattr(crew_resume, "session_process", lambda pid=None: dict(_ME))
+
+    got = fx.decide(source="compact", session="s1", bound=False)
+
+    assert (ok, got["action"]) == (False, "wait"), got
+
+
+def test_an_author_lock_that_cannot_be_taken_leaves_no_entry_behind(fx, monkeypatch):
+    """Review round 1 FIX :285: s2 rewrote the same note and could not take
+    the author lock, so s1's entry kept vouching for a note s1 no longer
+    wrote last."""
+    crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
+    fx.bind(session="s1")
+    monkeypatch.setattr(crew_resume.crew_context, "acquire_lock", lambda *_a, **_k: False)
+    ok, _ = fx.bind(session="s2")
+    monkeypatch.undo()
+    monkeypatch.setattr(crew_resume, "session_process", lambda pid=None: dict(_ME))
+
+    got = fx.decide(source="compact", session="s1", bound=False)
+
+    assert (ok, got["action"], "no record of which session wrote" in got["reason"]) == \
+        (False, "wait", True), got
+
+
+def test_an_author_lock_failure_that_cannot_drop_the_record_says_so(fx, monkeypatch):
+    """The neighbour: nothing is left that needs no write, so the recorder
+    must at least not report the failure as the plain lock one."""
+    fx.bind(session="s1")
+    monkeypatch.setattr(crew_resume.crew_context, "acquire_lock", lambda *_a, **_k: False)
+
+    def refuse(_path):
+        raise PermissionError(13, "Permission denied")
+    monkeypatch.setattr(crew_resume.os, "unlink", refuse)
+
+    ok, reason = fx.bind(session="s2")
+
+    assert (ok, "previous record may still stand" in reason) == (False, True), reason
+
+
+def test_a_failed_author_removal_leaves_no_entry_behind(fx, monkeypatch):
+    """Review round 1 FIX :311: s2's note could not be read and the write
+    removing s1's entry failed; cleanup skipped the drop because s2 had no
+    entry, so s1's entry survived and still matched."""
+    crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
+    fx.bind(session="s1")
+    real_open = open
+
+    def refuse_tmp(path, *args, **kwargs):
+        if str(path).endswith(".tmp"):
+            raise PermissionError(13, "Permission denied")
+        return real_open(path, *args, **kwargs)
+    monkeypatch.setattr(crew_resume, "read_text", lambda _path: None)
+    monkeypatch.setattr(crew_resume, "open", refuse_tmp, raising=False)
+    ok, reason = fx.bind(session="s2")
+    monkeypatch.undo()
+    monkeypatch.setattr(crew_resume, "session_process", lambda pid=None: dict(_ME))
+
+    got = fx.decide(source="compact", session="s1", bound=False)
+
+    assert (ok, "handoff-author.json was not written" in reason, got["action"],
+            "no record of which session wrote" in got["reason"]) == (False, True, "wait", True), got
+
+
+# --- T-0042 step 7: every wait reason is named where people read ------------
+
+_DOCS = ("plugin/crew/README.md", "plugin/crew/skills/crew-context/SKILL.md",
+         "docs/guides/crew/src/auto-cycle.md", "plugin/crew/CONFIG.md")
+_REASON_PHRASES = ("internal error", "automatic PreCompact skeleton", "written by another session",
+                   "no record of which session wrote", "could not be identified",
+                   "changed since its author session wrote it", "handoff-author.json",
+                   "resume-state.json", "cannot be searched")
+
+
+def test_every_wait_reason_is_named_in_the_docs():
+    """Round 4 NIT :650: `internal error` was produced and named in none of
+    the four reason lists; every reason T-0042 adds is held to the same."""
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    missing = []
+    for rel in _DOCS:
+        with open(os.path.join(repo, rel), encoding="utf-8") as handle:
+            text = " ".join(handle.read().split())
+        missing += [f"{rel}: {phrase!r}" for phrase in _REASON_PHRASES if phrase not in text]
+
+    assert missing == []

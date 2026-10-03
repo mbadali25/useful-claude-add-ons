@@ -5,7 +5,9 @@ description: >-
   produce a triaged report, and open ServiceDesk Plus tickets for the serious
   findings after one batch confirmation. Use whenever the user wants to scan a new site they deployed, check a
   host or their environment for vulnerabilities, mentions Nuclei, or points at a
-  targets file or a Nuclei JSONL output. Works on WSL/Linux and Windows.
+  targets file or a Nuclei JSONL output. Also runs the whole scanner routine
+  (checkov, trivy, dependency-check, semgrep, ZAP, testssl, nmap, nikto) from a
+  manifest headless. Works on WSL/Linux and Windows.
 ---
 
 # Nuclei scan, report & triage
@@ -123,6 +125,21 @@ These back the `/gizmoduck:*` commands; all use `gizmoduck.py`:
   as a deploy/regression check; offer to ticket new Critical/High items.
 - **report** / **tickets** — regenerate a report or open tickets from an existing
   `findings.jsonl` without rescanning.
+- **routine** — `gizmoduck.py routine <manifest.yaml> [--out DIR | --scan-root MODULE_DIR]`
+  runs every resolved scanner and writes findings.jsonl, run-manifest.json,
+  scan-meta.json and the report with its coverage table (see the README's
+  "Routine" section for the manifest format). Exit 4 means some cell did not run
+  and the result is NOT clean - say so, never summarise it as a clean scan. A
+  directory that already holds a scan-meta.json is refused without `--replace`,
+  which removes only that run's files and the target directories its
+  scan-meta.json names, and exits 2 removing nothing when it cannot tell. A
+  target directory that already exists and that no earlier run owns is refused
+  (exit 2) on any run, and so is a report.md, findings.jsonl or other routine
+  file in a directory with no scan-meta.json. A run holds
+  `.gizmoduck-routine.lock` in its output directory; a second run there exits
+  2, and a lock left by a killed run is deleted by hand once no run is active.
+  sqlmap needs `--confirm-active` by name, and only after the user has
+  authorised active testing of that target.
 - **update** — `gizmoduck.py update` refreshes the Nuclei engine and templates.
 - **doctor** — `gizmoduck.py doctor` verifies nuclei, templates, python, and
   wkhtmltopdf; if anything's missing, point the user at the bootstrap scripts.

@@ -11,10 +11,10 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.0.42<!-- claim: plugin-version:crew --> |
+| **Version** | 1.0.163<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 4 agents, 35 commands, 29 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
+| **Registers** | 4 agents, 36 commands, 31 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -36,7 +36,7 @@ menu item 21 is unticked by default.**
 | `completion-audit.sh` / `.ps1` | `Stop` | **Off by default**, same `scope.mode`. Diffs the whole tree against the ticket's start commit and blocks the stop once if any changed path is outside Touch, shell-made writes included |
 | `handoff-read.sh` / `.ps1` | `SessionStart` | Resets its once-per-session markers; prints the prior handoff after a clear, compact, or resume only when `memory.inject` is false |
 | `platform-sync.sh` / `.ps1` | `SessionStart` | Detects this machine and repairs the `platform` block in `.crew/config.json` - machine-local (`.crew/*` is ignored; the un-ignore list is `codemap/`, `endpoints.json`, `verify.json`), so the block goes wrong in place rather than in transit: one checkout opened from Windows and from WSL, or WSL2's `windowsHostIp` after a reboot. **Writes config**, and is the only hook that does: the seven derived facts (`os`, `wsl`, `wslVersion`, `distro`, `shell`, `repoFilesystem`, `windowsHostIp`) and nothing a human chose. Also recreates `config.json` itself when `.crew/` exists but the file is missing or unreadable - backing up a malformed one to `config.json.broken` first - and never when `.crew/` does not exist. Reports, without changing, a preference this OS cannot honour |
-| `crew-context.sh` / `.ps1` | `SessionStart`, `UserPromptSubmit`, `PostToolUse` on Read/Edit/Write/MultiEdit and vault MCP tools, `SubagentStart` | **On by default since 1.0.0; `memory.inject: false` in `.crew/config.json` turns it off, and then it emits and logs nothing.** Injects branch/HEAD, code-map anchor state and the handoff at SessionStart, budgeted code-map slices and vault-labelled recall per turn, and is the only channel that reaches a dispatched subagent (`SubagentStart`). Never blocks. `handoff-read` stops printing the handoff while this is on, so the two never inject it twice |
+| `crew-context.sh` / `.ps1` | `SessionStart`, `UserPromptSubmit`, `PostToolUse` on Read/Edit/Write/MultiEdit and vault MCP tools, `SubagentStart` | **On by default since 1.0.0; `memory.inject: false` in `.crew/config.json` turns it off, and then it emits and logs nothing.** Injects branch/HEAD, code-map anchor state and the handoff at SessionStart, budgeted code-map slices and vault-labelled recall per turn, and is the only channel that reaches a dispatched subagent (`SubagentStart`). Never blocks. `handoff-read` stops printing the handoff while this is on, so the two never inject it twice. With `route.enabled: true` (off by default, since 1.0.43) a whole-prompt lifecycle phrase such as `implement it` or `continue` adds one `crew route:` line naming the `/crew:` command and ticket, or asking which ticket; it never routes to `/crew:approve` |
 | `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; **fails the turn** on red, on a changed path with no rule, or on a deploy that wrote no promotion row. Honours `stop_hook_active`, so a red check cannot pin the session. Stands down while an emergency lane is open, recording what did not run |
 | `context-watch.sh` / `.ps1` | `Stop` | Reads actual window occupancy from the transcript's last `message.usage` record and asks for a handoff once per session, at the later of `context.warnAt` and `context.reserveTokens` of remaining headroom; instructs a full wrap-up instead if `context.autoWrapUp` is `true`. On the following turn it invokes `auto-clear`, which is inert unless `context.autoClear.enabled` is `true` |
 | `auto-clear.sh` / `.ps1` | called by `context-watch`, not registered | **Experimental, off by default.** Types `/clear` into the *terminal* once the handoff is written — it cannot clear the conversation, it drives the terminal the way a human would. `tmux` targets a pane by id; every other method needs an explicit `windowTitle` and refuses without one. Refusals go to `.crew/.autoclear.log`, because a `Stop` hook's stderr is invisible on exit 0 |
@@ -58,6 +58,8 @@ Committed suites, all sabotage-tested: `hooks/scripts/_test/run-tests.sh` (the g
 **The `Stop` gate is additionally inert until you build its map.** `verify-gate.sh` reads `.crew/verify.json`; with no such file there is nothing to run. `/crew:verify` builds it. Set `verifyGate: false` in `.crew/config.json` to disable the gate without uninstalling.
 
 **Windows — fixed in 0.2.0, corrected in 0.3.0.** In 0.2.0 `guard.sh` and `verify-gate.sh` exited 0 on MSYS/MINGW to "defer" to `.ps1` twins that nothing ever invoked, so on Windows the command guard blocked nothing and the `Stop` gate ran nothing — which reads as "the gate passed" rather than "the gate never ran". 0.3.0 registers **both flavours on every matcher-less event on purpose**, not because each one fires — `hooks.json` has no way to know in advance which shell a given machine actually has, so both are wired and one is expected to fail; `PreToolUse` is the exception, where `guard.sh`/`guard.ps1` and `promote-gate.sh`/`promote-gate.ps1` are registered on separate `Bash` and `PowerShell` matchers instead, so the branch is by *which tool Claude used*, not by OS. The PowerShell side carries `shell: powershell`, a field Claude Code documents and reads — it runs that entry via PowerShell without needing `CLAUDE_CODE_USE_POWERSHELL_TOOL`. What is not configurable is the *default* interpreter for a bare `command` string with no `shell` field: that goes to `sh -c` on macOS/Linux and to **Git Bash** on Windows (PowerShell only when Git Bash isn't installed) — so a `bash` resolved from some non-MSYS parent process is not necessarily what runs it. On Windows this is measured, not hypothetical: Git for Windows ships two `bash.exe` binaries, and `usr/bin/bash.exe` exits 127 running these scripts where `bin/bash.exe` runs them fine, so which one resolves first on `PATH` decides whether the `.sh` side works at all; on a machine where a non-MSYS parent process resolved `bash` to the WSL launcher, the `.sh` side exited 127 on every script while the `.ps1` twin exited 0. **One flavour failing is expected behavior, not a bug** — it is not evidence the hook itself didn't run. What is genuinely unverified is the opposite combination, real hook-runner behavior with **no `pwsh` on Linux**; that was never exercised, so treat it as unconfirmed rather than assumed fine. The remaining requirement on Windows is that Git Bash (or WSL) is on `PATH` for the `.sh` half to have any chance; without any bash at all, that half never fires, and the plugin does not pretend otherwise.
+
+**Windows shell route (T-0040).** On native Windows, crew's long-running jobs (per-step tests and verify-map checks in `/crew:implement`, graphify builds) run through `crew_shell.py run`, which picks the shell from `shellRoute.mode` (`auto`, `wsl`, `powershell`, `gitbash`) and prints one `crew-shell:` line naming the route and why. `auto` uses WSL2 when it is usable and either the repo lives inside WSL or a measurement showed WSL faster; otherwise plain argv runs directly and bash syntax in Git Bash, never pwsh. `wsl` refuses with exit 3 rather than fall back, and a bash string never goes to pwsh. `/crew:status` gains a Windows-only `shell` line. No hook changed, and nothing changes on Linux, macOS or inside WSL.
 
 **`python3` is no longer required.** The scripts resolve `python3`, then `python`, then `py`, and `guard.sh` prefers `jq` when it is present. With none of them available the affected hook says so on stderr and exits 0 rather than failing open in silence.
 
@@ -124,11 +126,12 @@ to CI or to branch protection.
 
 | Command | Purpose |
 |---|---|
-| `/crew:approve <ticket-id>` | Approve a ticket's plan - only you can, by typing this; the prompt hook records the receipt |
-| `/crew:autopilot [ticket id]` | Resume one ticket from the handoff and drive it through the lifecycle until a human is needed - off until `autopilot.mode: plan`; approval and review acceptance always stop |
+| `/crew:approve <ticket-id>` | Approve a ticket's plan - only you can, by typing this, unless you opt `/crew:autopilot` into `autopilot.approval`; the prompt hook records the receipt |
+| `/crew:autopilot [status\|run] [ticket id]` | Report a ticket's standing (`status`, read-only) or drive it through the lifecycle until a human is needed (`run`) - off until `autopilot.mode: plan`; review acceptance always stops, and plan approval stops unless `autopilot.approval` lets `crew_autopilot.py approve` write the receipt, its one write (needs `scope.allowCliApproval: true`); `autopilot.deploy` (default `none`) says where a deploy may run unattended - production only with `environments.prodUnattended` true in both layers |
 | `/crew:brainstorm <what needs doing>` | Brainstorm a request into an approved direction, before it becomes a spec |
 | `/crew:change <new \| status <id> \| close <id> \| list>` | File, check and close a change request — SDP, Jira or local |
-| `/crew:config [--show]` | Show where every crew setting comes from, and guide the machine-global config |
+| `/crew:config [--show \| --models]` | Show where every crew setting comes from; with no argument, a menu that sets the machine or repo config and deletes the repo config with a backup |
+| `/crew:config-setup` | Set up crew config from a menu - machine or repo layer, dry run then apply, or delete the repo config |
 | `/crew:debug <the symptom, or a ticket id, e.g. "login 500s after deploy" or T-0042>` | Find the cause of a defect before anyone proposes a fix |
 | `/crew:diagram <architecture \| data-flow <area> \| process <name> \| sequence <flow> \| refresh>` | Create or refresh diagrams from the actual code |
 | `/crew:docs [--audit]` | Update the documents this change should touch — and only those |
@@ -211,11 +214,12 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `crew-brainstorm` | Turn a request into an approved direction before it becomes a spec — one question per message, options with the recommendation first. Backs `/crew:brainstorm`; adapted from `superpowers` (MIT, `NOTICE.md`) |
 | `crew-plan` | Turn an approved spec into a step-by-step plan — files, tests and risk per step, no placeholders, self-reviewed against Touch. Backs `/crew:plan`; adapted from `superpowers` (MIT, `NOTICE.md`) |
 | `crew-execute` | Execute an approved plan task by task — TDD per step, a ruling instead of a silent deviation. Backs `/crew:implement`; adapted from `superpowers` (MIT, `NOTICE.md`) |
+| `crew-standards` | Build-time development standards mined from crew's own QA reviews, generic and per-language (Python so far); the required pre-review self-check, the reviewer's checklist appendix and the findings-to-standards loop. Backs `/crew:plan`, `/crew:implement`, `/crew:review` |
 | `stack-angular` | Angular and AngularJS pitfalls, checks and `verify.json` wiring — change detection, RxJS, subscription leaks, injector hierarchy |
 | `stack-bash` | Bash pitfalls, checks and `verify.json` wiring — quoting, pipeline exit codes, Git Bash surprises |
 | `stack-dotnet` | .NET pitfalls, checks and `verify.json` wiring — DI lifetimes, async, EF Core change tracking, a short .NET Framework 4.8 section |
 | `stack-powershell` | Windows PowerShell 5.1 and PowerShell 7 pitfalls, checks and `verify.json` wiring — encoding defaults, TLS, module compatibility, hardening |
-| `stack-python` | Python pitfalls, checks and `verify.json` wiring — mutable defaults, exception widening, async, text/bytes encoding |
+| `stack-python` | Python pitfalls, checks and `verify.json` wiring — mutable defaults, exception widening, async, text/bytes encoding; the PYTHON standards set's pointer and its candidates |
 | `stack-sql` | SQL Server, MySQL and PostgreSQL pitfalls, checks and `verify.json` wiring — sargability, NULL semantics, per-engine locking |
 | `stack-terraform` | Terraform pitfalls, checks and `verify.json` wiring — state, plan replacements, `count`/`for_each` re-indexing, module interfaces |
 | `stack-web` | Playwright web UI testing pitfalls, checks and `verify.json` wiring — role/testid locators, web-first assertions, trace and visual-baseline discipline, accessibility via axe. Backs `/crew:webtest` |
@@ -437,17 +441,17 @@ The hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGa
 
 ---
 
-## `gizmoduck` — Nuclei scans, diffed and triaged into tickets
+## `gizmoduck` — Nuclei and a multi-tool scan routine, diffed and triaged into tickets
 
 | | |
 |---|---|
 | **Source** | [`gizmoduck/`](gizmoduck) |
-| **Version** | 0.5.3<!-- claim: plugin-version:gizmoduck --> |
+| **Version** | 0.5.6<!-- claim: plugin-version:gizmoduck --> |
 | **Install** | `claude plugin install gizmoduck@useful-claude-add-ons` |
 | **Registers** | 6 commands, 1 skill. **No agents, no hooks** — nothing runs unless you type a command |
 | **Upstream guide** | [`gizmoduck/README.md`](gizmoduck/README.md) |
 
-Runs [Nuclei](https://github.com/projectdiscovery/nuclei) against hosts and websites, then does the part that usually gets skipped: diffs the run against a baseline so you see what is genuinely new, renders a triaged report, and turns Critical and High findings into ServiceDesk Plus tickets after one batch confirmation. Nuclei is MIT-licensed and self-hosted, so the whole loop runs locally — no export step, no API quota, no findings leaving the machine.
+Runs [Nuclei](https://github.com/projectdiscovery/nuclei) against hosts and websites, or the whole scanner routine (checkov, trivy, dependency-check, semgrep, ZAP, testssl, nmap, nikto, and sqlmap only when confirmed by name) from one manifest, then does the part that usually gets skipped: diffs the run against a baseline so you see what is genuinely new, renders a triaged report, and turns Critical and High findings into ServiceDesk Plus tickets after one batch confirmation. Nuclei is MIT-licensed and self-hosted, so the whole loop runs locally — no export step, no API quota, no findings leaving the machine.
 
 **Only scan assets you own or have written permission to test.** The bundled skill says so in its first paragraph and tells the session to confirm authorisation when a target does not look like the user's. That is a prompt, not an enforcement mechanism: nothing here can tell whose host an IP is, so the check is yours to actually make.
 
@@ -466,7 +470,9 @@ Runs [Nuclei](https://github.com/projectdiscovery/nuclei) against hosts and webs
 
 ### The CLI underneath
 
-Everything is one Python file, `scripts/gizmoduck.py`, with `scan`, `summary`, `report`, `tickets`, `diff`, `doctor`, and `update` subcommands. It is usable directly, which matters for scheduling: a cron job or a scheduled task can run the scan and the diff without a Claude session in the loop.
+Everything is one Python file, `scripts/gizmoduck.py`, with `scan`, `routine`, `summary`, `report`, `tickets`, `diff`, `doctor`, and `update` subcommands. It is usable directly, which matters for scheduling: a cron job or a scheduled task can run the scan and the diff without a Claude session in the loop. `routine <manifest.yaml>` runs every scanner the manifest resolves and exits 4 when any cell did not run, so a scheduler can tell a partial run from a clean one without reading the report.
+
+With `--scan-root <module-dir>` a routine run lands in `<module-dir>/docs/security-scans/<YYYY-MM-DD>/`: `findings.jsonl`, `run-manifest.json`, `report.md`, `report.html`, `report.pdf` when a renderer is present, and `scan-meta.json` (gizmoduck's own schema 1: version, timestamps, the authorization statement, targets, coverage counts and whether coverage was complete, finding counts). A directory that already holds a `scan-meta.json` is refused unless `--replace` is named, and `report --run-manifest` re-renders a routine run with its coverage table. That dated layout is separate from crew's endpoint ledger path, `docs/security-scans/<ep-id>.md`.
 
 `tickets` does not call ServiceDesk Plus itself, and it is gated: without `--yes` it prints a preview of the candidate tickets (severity + subject, one per line), a digest over that exact batch, and the rerun command carrying it, then exits 3 with a `GIZMODUCK_CONFIRMATION_REQUIRED` marker, emitting no records at all. Only with `--yes <digest>` — the digest the preview just printed, passed after the batch has been shown to and approved by the user — does it emit one ticket payload per finding: subject prefixed `[Nuclei <template-id>]`, severity, CVSS, CVE, affected hosts, remediation. A `--yes` whose digest does not match what `tickets` recomputes right now — a different findings file, a different `--min-severity`, findings that changed in between — is refused with `GIZMODUCK_APPROVAL_MISMATCH` rather than silently creating whatever the current batch turns out to be. The session then opens or updates the approved records through the ServiceDesk Plus tools it already has. The template-id prefix is what makes the second run idempotent: a finding whose ticket is still open gets a note instead of a duplicate.
 
@@ -592,7 +598,7 @@ Nothing keeps running afterwards — there were no hooks. Ollama, the models it 
 | | |
 |---|---|
 | **Source** | [`obsidian-vault/`](obsidian-vault) |
-| **Version** | 0.4.14<!-- claim: plugin-version:obsidian-vault --> |
+| **Version** | 0.4.16<!-- claim: plugin-version:obsidian-vault --> |
 | **Install** | `claude plugin install obsidian-vault@useful-claude-add-ons` |
 | **Registers** | 2 agents, 11 commands, 3 skills, 8 hook entries (3 scripts × `.sh`/`.ps1`) across 4 events |
 | **Upstream guide** | [`obsidian-vault/README.md`](obsidian-vault/README.md) |
