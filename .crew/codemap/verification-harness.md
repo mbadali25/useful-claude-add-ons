@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@5d8f732b
+anchor: useful-claude-add-ons@59c4b3ba
 verified: 2026-10-03
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -2348,3 +2348,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `aab858e9` -> `9dd98ee8` on 2026-10-03 (T-0046 review round 2 self-check).** `bedeadf9` adds six rows to `test_crew_bookkeeping.py` (short, trailing and empty path segments, a case-differing path, and two digit-run cases) after three hand-run mutations of `crew_bookkeeping.py` survived the 20-row table, and updates the T-0046 rule's measurement in `.crew/verify.json` in place (`:537-543` unchanged); crew 1.0.158 re-set at `9dd98ee8`. No body citation in this map points at a line that moved.
 
 **Re-anchored `9dd98ee8` -> `5d8f732b` on 2026-10-03 (T-0046 review round 2 self-check, second pass).** `test_crew_bookkeeping.py` gains four rows (a marker in a code span, a number past the bind window, a non-str path, a str whose `splitlines` raises) after four more hand-run mutations survived; the T-0046 rule's measurement in `.crew/verify.json` is updated in place (`:537-543` unchanged); crew 1.0.158 re-set at `5d8f732b`. No body citation in this map points at a line that moved.
+
+**Re-anchored `5d8f732b` -> `59c4b3ba` on 2026-10-03 (T-0046 merges origin/main `34d9f267`: L-0600 #332, refresh artifacts of crew.md, INDEX and the lifecycle diagram only; #335 docs/review only; rerere disabled).** No file this map cites changed in the merge; no body citation moved.
