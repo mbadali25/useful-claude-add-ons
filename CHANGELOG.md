@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed - `crew` 1.0.189: accepted-findings follow-up for T-0023, T-0024, T-0042 (T-0069)
+### Fixed - `crew` 1.0.224: accepted-findings follow-up for T-0023, T-0024, T-0042 (T-0069)
 
 - **T-0023 r2 FIX 1 (route clipping).** A route whose command `_clip` would change - cut past
   `FIELD_CHARS["command"]` (200) or with its whitespace reflowed - is now an `ask` in `decide`, and
@@ -21,7 +21,12 @@ All notable changes to this repository are documented here. Format follows [Keep
   place when the unlink is refused (a crew state directory without write permission); an empty
   record reads as unreadable and waits. `test_an_undeletable_author_record_is_blanked_and_waits`
   (lock and write paths), the neighbour now refuses the blank too, and a real-permission twin
-  (skips as root; passed under `setpriv` as uid 65534).
+  (skips as root; passed under `setpriv` as uid 65534). Review round 1 FIX: when the unlink AND
+  the blank both fail, `_drop_author` leaves `handoff-author.json.stuck` and `_author_refusal` waits
+  while it stands (or cannot be stat'ed) until a later record lands; when the marker cannot be
+  written either, a record that neither its file nor its directory lets anyone replace or remove
+  is not trusted. Six new tests, including a 0444-record-in-a-0555-directory twin that returned
+  `run` before the fix under `setpriv`; both new wait reasons are named in the four reason lists.
 - **T-0042 r2 FIX 2 (pwsh-only fixture).** `_claude` in `test_crew_resume_hook.py` skips by name
   without bash instead of raising TypeError; `test_never_emits_initial_user_message` is parametrised
   and its `wait`/`off` cases no longer need the fixture.
@@ -29,6 +34,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   `_wrote`) and every new sabotage entry are harness paths (`scripts/check-tooling-pr.py` `HARNESS`),
   so they land in a harness-only follow-up. Every existing sabotage anchor on the changed files is
   kept, and all 75 shipped mutations aimed at them were re-run through `sabotage.py`: RED.
+
 ### Added — `VERIFYING.md`: how to verify a change, for people and any AI agent
 
 - A root page mapping every verification layer to its command, when to run it and what it costs,
