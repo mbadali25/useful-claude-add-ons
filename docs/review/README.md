@@ -18,6 +18,7 @@ the input to the redesign in `04-redesign.md`. The owner has accepted their reco
 | `05-setup-audit.md` | Claude Fable 5.1 auditor | machine-wide plugins, skills, hooks, MCP servers and Codex config, with keep/remove/add tables and the missing hooks |
 | `07-web-testing-research.md` | Claude Fable 5.1 researcher | Playwright Test Agents, Playwright and Chrome DevTools MCP, axe and visual regression; the design `/crew:webtest` follows |
 | `08-qa-rounds-analysis.md` | Claude Opus 5.5 and Codex gpt-6-astra, merged (2026-10-03) | why tickets take ~6 review rounds and the ranked changes to land most in 2-3, corroborated by SRL and TSS |
+| `09-qa-standards-crew.md` | Claude Opus 5.5 (L-0618 lane), with answers from two production repos (2026-10-03) | QA environment, verify gate, review and CI standards crew should template, check and audit; repos anonymised |
 
 A published summary of 01 lives at https://claude.ai/artifact/DxYFsqXexjqW1CAe1xMLgq (private).
 
