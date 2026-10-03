@@ -417,25 +417,35 @@ def _moved_in_tree(root, sha, paths):
 
 
 def _judge(root, sha, reached, untracked):
-    """(status, reason, refreshable, moved) for an artifact anchored at
-    `sha`, over `reached`: the ticket's changed paths this artifact cites.
-    `moved` is the committed paths that changed since `sha` -- only on a
-    `stale` with nothing uncommitted among them, else None, so a caller
-    confirming them another way (the graph's manifest) reads no prose."""
+    """(status, reason, refreshable) for an artifact anchored at `sha`, over
+    `reached`: the ticket's changed paths this artifact cites."""
     if _git_lines(root, "cat-file", "-e", sha + "^{commit}") is None:
         return UNKNOWN, (f"anchor {sha} names no commit in this repository (a "
-                         "squash-merged or rebased branch?); a refresh re-anchors it"), True, None
+                         "squash-merged or rebased branch?); a refresh re-anchors it"), True
     moved = _moved_in_tree(root, sha, reached)
     if moved is None:
-        return UNKNOWN, f"git could not diff {sha[:12]} against the working tree", False, None
+        return UNKNOWN, f"git could not diff {sha[:12]} against the working tree", False
     new = [p for p in reached if p in untracked]
     if not moved and not new:
-        return FRESH, f"nothing it cites moved since {sha[:12]}", False, None
+        return FRESH, f"nothing it cites moved since {sha[:12]}", False
     dirty = (_moved_in_tree(root, "HEAD", moved) if moved else []) or []
     pending = sorted(set(new) | set(dirty))
     if pending:
-        return STALE, f"uncommitted changes in {_few(pending)}: commit, then refresh", True, None
-    return STALE, f"{_few(sorted(moved))} changed since its anchor {sha[:12]}", True, moved
+        return STALE, f"uncommitted changes in {_few(pending)}: commit, then refresh", True
+    return STALE, f"{_few(sorted(moved))} changed since its anchor {sha[:12]}", True
+
+
+def _committed_moves(root, sha, reached, untracked):
+    """The paths of `reached` that changed since `sha`, when every one of
+    them is committed; else None -- nothing moved, git could not answer, or
+    an uncommitted change among them, `_judge`'s "commit, then refresh"
+    case, which no other evidence may confirm (T-0063). A flag, not
+    `_judge`'s prose, so the graph's manifest check reads no reason text."""
+    moved = _moved_in_tree(root, sha, reached)
+    if not moved or any(p in untracked for p in reached):
+        return None
+    dirty = _moved_in_tree(root, "HEAD", moved)
+    return None if dirty is None or dirty else moved
 
 
 def _uncommitted(top, dirs, untracked):
@@ -1217,7 +1227,7 @@ def _codemaps(root, changed, untracked):
                                 "no `anchor:` line, so nothing about it can be checked",
                                 command, refreshable=True))
             continue
-        status, reason, refreshable, _moved = _judge(root, anchor.group(1), reached, untracked)
+        status, reason, refreshable = _judge(root, anchor.group(1), reached, untracked)
         found.append(_entry("codemap", stem, status, reason, command, refreshable))
     return found
 
@@ -1260,7 +1270,7 @@ def _diagrams(root, dirpath, changed, code, untracked):
                                 "no provenance header (`%% Generated from <repo>@<sha>`)",
                                 command))
             continue
-        status, reason, refreshable, _moved = _judge(root, anchor.group(1), reached, untracked)
+        status, reason, refreshable = _judge(root, anchor.group(1), reached, untracked)
         found.append(_entry("diagram", stem, status, reason, command, refreshable))
     return found
 
@@ -1319,7 +1329,8 @@ def _graph(root, info, graph_out, code, untracked, which):
                       "graph.json carries no built_at_commit, so its provenance is unknown",
                       command, refreshable=True)
     sha = info["builtAt"]
-    status, reason, refreshable, moved = _judge(root, sha, code, untracked)
+    status, reason, refreshable = _judge(root, sha, code, untracked)
+    moved = _committed_moves(root, sha, code, untracked) if status == STALE else None
     if moved:
         # T-0063: graphify leaves graph.json and its built_at_commit alone
         # when the topology did not change, so the sha alone reads stale for
@@ -1387,7 +1398,9 @@ def _unconfirmed(result, stop, reason):
     reason; an artifact already unknown keeps its own, and a missing graph
     file stays not applicable -- no base changes either."""
     for item in result["artifacts"]:
-        if item["status"] in (FRESH, FRESH_UNCOMMITTED, STALE):
+        if item["status"] == FRESH_UNCOMMITTED:
+            item["status"] = FRESH  # measured as fresh; demoted with the rest below
+        if item["status"] in (FRESH, STALE):
             item.update(status=UNKNOWN, refreshable=False,
                         reason=f"{stop} - measured {item['status']} against it, "
                                "which confirms nothing")
@@ -1509,7 +1522,9 @@ def _render(ticket, result):
     if result.get("uncommitted"):
         lines.append(f"  uncommitted: {_few(result['uncommitted'])} - commit these, then re-run")
     if not result["artifacts"]:
-        if result["status"] in (FRESH, FRESH_UNCOMMITTED, STALE):
+        if result["status"] in (FRESH, STALE):
+            lines.append("  no codemap, diagram or graph cites a path this ticket changed")
+        elif result["status"] == FRESH_UNCOMMITTED:
             lines.append("  no codemap, diagram or graph cites a path this ticket changed")
         else:
             lines.append(f"  not measured - {result.get('stop') or result['reason']}")

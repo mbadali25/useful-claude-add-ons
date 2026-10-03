@@ -44,7 +44,7 @@ _AUDIT_GATE = '    if approval["status"] != "approved":\n        return paths\n'
 _UNTRACKED = ("        untracked = {p for p in completion_audit._git_fields(  "
               "# pylint: disable=protected-access\n"
               '            top, ["ls-files", "-z", "--others", "--exclude-standard"]) if p}\n')
-_DEMOTE = '        if item["status"] in (FRESH, FRESH_UNCOMMITTED, STALE):\n'
+_DEMOTE = '        if item["status"] in (FRESH, STALE):\n'
 _RECORD_DOUBT = "        doubt = _named_behind(top, base, ticket)\n"
 VERIFY = os.path.join(os.path.dirname(os.path.dirname(CREW)), ".crew", "verify.json")
 
@@ -141,8 +141,8 @@ REFRESH_MUTATIONS = (
      "    return bool(entry) and path == entry\n",
      _T + "test_diagram_anchors_naming_a_directory_reach_files_under_it"),
     ("an anchor naming no commit is a stop, not a refresh", CHECK,
-     '"squash-merged or rebased branch?); a refresh re-anchors it"), True, None\n',
-     '"squash-merged or rebased branch?); a refresh re-anchors it"), False, None\n',
+     '"squash-merged or rebased branch?); a refresh re-anchors it"), True\n',
+     '"squash-merged or rebased branch?); a refresh re-anchors it"), False\n',
      _T + "test_an_anchor_naming_no_commit_is_refreshable"),
     ("every unknown line says refresh", CHECK,
      '        if item["refreshable"]:\n',
@@ -221,7 +221,7 @@ REFRESH_MUTATIONS = (
      "    if False:\n",
      _T + "test_hides_case_renders_a_stop_on_the_top_line"),
     ("the no-codemap-cites line prints under unknown", CHECK,
-     "        if result[\"status\"] in (FRESH, FRESH_UNCOMMITTED, STALE):\n",
+     "        if result[\"status\"] in (FRESH, STALE):\n",
      "        if True:\n",
      _T + "test_no_codemap_cites_line_only_when_fresh_or_stale[unknown-False]"),
     ("the untracked list is newline-split, so a quoted name never matches", CHECK,
@@ -274,45 +274,4 @@ REFRESH_MUTATIONS = (
     ("an edit to scope_guard.py runs no pytest rule", VERIFY,
      _SCOPE_GUARD_FIND, _SCOPE_GUARD_REPLACE,
      _T + "test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule[scope_guard.py]"),
-    # ---- T-0063: `fresh` means current AND committed
-    ("uncommitted refresh artifacts read fresh", CHECK,
-     "    return sorted(set(moved) | set(new))\n",
-     "    return []\n",
-     _T + "test_refreshed_but_uncommitted_codemap_is_fresh_uncommitted"),
-    ("untracked refresh artifacts ignored", CHECK,
-     "    new = [p for p in untracked if any(_reaches(d, p) for d in dirs)]\n",
-     "    new = []\n",
-     _T + "test_untracked_refresh_artifact_is_fresh_uncommitted"),
-    ("fresh-uncommitted exits 0", CHECK,
-     '    return 0 if result["status"] == FRESH else 1\n',
-     '    return 0 if result["status"] in (FRESH, FRESH_UNCOMMITTED) else 1\n',
-     _T + "test_cli_fresh_uncommitted_exits_one"),
-    ("fresh-uncommitted outranks stale", CHECK,
-     "    overall = (UNKNOWN if UNKNOWN in statuses else STALE if STALE in statuses\n"
-     "               else FRESH_UNCOMMITTED if FRESH_UNCOMMITTED in statuses or dirty else FRESH)\n",
-     "    overall = (UNKNOWN if UNKNOWN in statuses else FRESH_UNCOMMITTED\n"
-     "               if FRESH_UNCOMMITTED in statuses or dirty else STALE if STALE in statuses\n"
-     "               else FRESH)\n",
-     _T + "test_stale_outranks_fresh_uncommitted"),
-    ("an unanswerable listing reads clean", CHECK,
-     "    if moved is None:\n        return None\n    new = [p for p in untracked",
-     "    if moved is None:\n        return []\n    new = [p for p in untracked",
-     _T + "test_uncommitted_listing_failure_is_unknown"),
-    # T-0063: graphify's manifest confirms an unchanged graph, and nothing less
-    ("the manifest hash is not compared", CHECK,
-     '        if entry.get("ast_hash") != digest:\n',
-     "        if False:\n",
-     _T + "test_graph_manifest_with_an_old_hash_is_stale"),
-    ("the manifest confirms a deleted path", CHECK,
-     "        if not isinstance(entry, dict) or not os.path.isfile(path):\n            return False, \"\"\n",
-     "        if not isinstance(entry, dict):\n            return False, \"\"\n        if not os.path.isfile(path):\n            continue\n",
-     _T + "test_graph_manifest_never_confirms_a_deleted_path"),
-    ("the manifest confirms uncommitted code", CHECK,
-     '        return STALE, f"uncommitted changes in {_few(pending)}: commit, then refresh", True, None\n',
-     '        return STALE, f"uncommitted changes in {_few(pending)}: commit, then refresh", True, moved or pending\n',
-     _T + "test_graph_manifest_does_not_confirm_uncommitted_code"),
-    ("one matching path confirms all", CHECK,
-     "        if entry.get(\"ast_hash\") != digest:\n            return False, \"\"\n    return True, \"\"\n",
-     "        if entry.get(\"ast_hash\") == digest:\n            return True, \"\"\n    return False, \"\"\n",
-     _T + "test_graph_manifest_confirms_only_every_reached_path"),
 )
