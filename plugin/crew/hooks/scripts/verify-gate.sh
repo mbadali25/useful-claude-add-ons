@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+# The plugin root, resolved HERE: a relative BASH_SOURCE stops resolving once
+# the gate cd's into the project. `pwd -W` is Git Bash's native form (D:/...),
+# which a native python can open; elsewhere it is not an option, so `pwd`.
+# CDPATH emptied: a match makes `cd` echo the directory into the value.
+GATE_PLUGIN_ROOT="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." >/dev/null 2>&1 &&
+  { pwd -W 2>/dev/null || pwd; })"
 
 # --price is an OPERATOR command only, and is handled here, before ANYTHING
 # else in this file - before the stdin read below, which a terminal
@@ -350,6 +356,20 @@ fi
 # empty so the matcher always sees the same argv shape.
 BUDGET_FLAG=""
 [ "${1:-}" = "--all" ] && BUDGET_FLAG="--all"
+
+# --- CLAUDE_PLUGIN_ROOT for the rule commands ------------------------------
+# A verify.json rule can call a crew script (`python3
+# "$CLAUDE_PLUGIN_ROOT/hooks/scripts/..."`) and get the same answer under the
+# Stop hook and under `/crew:verify --all`. A hook process receives it from
+# Claude Code (plugins/components docs); the Bash tool that runs `--all`
+# substitutes it into the command text but is not documented to export it.
+# Set when absent or empty, never replaced: the caller's value is the one the
+# hook runtime chose. Unresolvable (GATE_PLUGIN_ROOT empty) leaves it unset,
+# so a `${CLAUDE_PLUGIN_ROOT:?}` rule fails loudly rather than reading `/`.
+if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -n "$GATE_PLUGIN_ROOT" ]; then
+  CLAUDE_PLUGIN_ROOT="$GATE_PLUGIN_ROOT"
+  export CLAUDE_PLUGIN_ROOT
+fi
 
 # --- the unchanged-turn skip ---------------------------------------------
 #
