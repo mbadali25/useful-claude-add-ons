@@ -939,8 +939,11 @@ def test_a_blank_title_falls_back_to_the_directory_name(tmp_path):
 
 
 def test_outside_a_git_work_tree_the_disk_decides_and_says_so(tmp_path):
-    root = make_repo(tmp_path)
-    shutil.rmtree(root / ".git")
+    # A copy without `.git`, not an rmtree of it: git's object files are
+    # read-only, and on Windows that rmtree fails with WinError 5.
+    repo = make_repo(tmp_path)
+    root = tmp_path / "no-git"
+    shutil.copytree(repo, root, ignore=shutil.ignore_patterns(".git"))
 
     problems, _ = ci.agents(str(root))
 

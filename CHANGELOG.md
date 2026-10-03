@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.168: setup, onboard and verify generate `AGENTS.md`, and the gate keeps it current
+### Changed — `crew` 1.0.169: setup, onboard and verify generate `AGENTS.md`, and the gate keeps it current
 
 - `crew_instructions.py agents` had no caller: only `rules` was run, so a crew repo told Codex and
   other agents nothing about how to verify a change. `crew-setup` (step 4), `/crew:onboard` (step 6)
@@ -38,6 +38,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   `/crew:verify`), 7 NIT; all taken but a false positive on a command that merely echoes the rule.
   Round 2, 0 BLOCK, 1 FIX (step 7 named a directory an LLM could take as the working directory, and
   could add the rule twice), 5 NIT; all taken.
+- CI (Windows) caught the non-git test deleting `.git` with `shutil.rmtree`, which git's read-only
+  object files refuse there (WinError 5); it now copies the repo without `.git` instead.
 
 ### Added — `VERIFYING.md`: how to verify a change, for people and any AI agent
 
