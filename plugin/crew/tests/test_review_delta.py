@@ -471,9 +471,12 @@ def test_manifest_duplicate_key_is_stale(world):
     _stale(world, "plugin.json")
 
 
-def test_nested_version_key_change_is_stale(world):
-    _commit(world.lane, {"plugin/p/.claude-plugin/plugin.json": PLUGIN.format(
-        name="p", v="1.0.0").replace('"flag": true', '"hooks": {"x": {"version": "1.0.0"}}')}, "n")
+def test_nested_version_key_change_is_stale(tmp_path):
+    """The nested version is in the base, so only the version-location rule can
+    stale it (a nested `version` normalised like the top-level one keeps)."""
+    nested = PLUGIN.format(name="p", v="1.0.0").replace('"flag": true',
+                                                         '"hooks": {"x": {"version": "1.0.0"}}')
+    world = _make_world(tmp_path, {"plugin/p/.claude-plugin/plugin.json": nested})
     _review(world)
     files = _bump_plugin(world, PLUGIN.format(name="p", v="1.0.1").replace(
         '"flag": true', '"hooks": {"x": {"version": "9.9.9"}}'))
@@ -643,12 +646,11 @@ def test_excluded_paths_force_added_on_the_delta_path_are_stale(world, files):
     _stale(world, "excluded path changed")
 
 
-def test_non_excepted_graph_file_present_before_review_modified_after_is_stale(world):
-    """R5-1: an existing, non-excepted file under graphify-out/ modified after
-    review (status M), so only the whole-path exception list stales it."""
-    _write(world.lane, "graphify-out/cache.json", "{}\n")
-    git(world.lane, "add", "-f", "graphify-out/cache.json")
-    git(world.lane, "commit", "-qm", "cache")
+def test_non_excepted_graph_file_present_before_review_modified_after_is_stale(tmp_path):
+    """R5-1: an existing, non-excepted file under graphify-out/ (in the base, so
+    no range sees it added) modified after review (status M): only the
+    whole-path exception list stales it."""
+    world = _make_world(tmp_path, {"graphify-out/cache.json": "{}\n"})
     _review(world)
     _write(world.lane, "graphify-out/cache.json", '{"x": 1}\n')
     git(world.lane, "commit", "-qam", "cache moved")
@@ -1014,7 +1016,7 @@ def _preflight(world, monkeypatch, gate):
     import argparse  # pylint: disable=import-outside-toplevel
     import review_gate  # pylint: disable=import-outside-toplevel
     import review_run  # pylint: disable=import-outside-toplevel
-    monkeypatch.setattr(review_gate, "gate_state", lambda root: (gate, "fixture"))
+    monkeypatch.setattr(review_gate, "accepted_state", lambda root, fetch=None: (gate, "fixture"))
     args = argparse.Namespace(root=str(world.lane), ticket=TICKET, provider="codex",
                               allow_unverified=False)
     return review_run, args

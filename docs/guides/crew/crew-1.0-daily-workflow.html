@@ -164,8 +164,9 @@ appends a metrics row, marks the ticket done, and clears a stale handoff.</p>
 has not moved in Touch paths, and HEAD carries the review receipt and a green gate; then it prints
 <code>gh pr merge &lt;n&gt; --merge --match-head-commit &lt;sha&gt;</code> for you to run (crew never merges). When it
 refuses, land in this order: <code>crew_train.py catch-up</code> (resolve any conflict), bump the version one
-past the base's, refresh the artifacts, commit, gate the merged head, then <code>check-land</code> again, so the
-tree the gate passed is the tree that lands. After the review, a re-anchor changes only the
+past the base's, refresh the artifacts, commit, gate the merged head, review it again if
+<code>review_ledger.py --check-receipt</code> reads stale, then <code>check-land</code> again, so the tree the gate
+passed is the tree that lands. After the review, a re-anchor changes only the
 <code>anchor:</code> sha and regenerates the rules; its provenance goes in the ticket's <code>notes.md</code>. After the
 merge, <code>crew_train.py release --ticket T-0091 --merged &lt;merge sha&gt;</code> frees the train and tells every
 overlapping lane to merge the base now.</p>

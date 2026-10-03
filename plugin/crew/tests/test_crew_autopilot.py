@@ -11,6 +11,7 @@ is built under tmp_path; nothing touches the real one or ~/.claude.
 `sabotage_autopilot.py` mutates the must-stop branches to prove these tests
 can fail.
 """
+import hashlib
 import json
 import os
 import subprocess
@@ -298,6 +299,106 @@ def test_next_owner_accepted_findings_move_on(tmp_path, monkeypatch):
     _refresh(monkeypatch, "fresh")
 
     assert _next(root)["phase"] == "done"
+
+
+LINE = "FIX|src/app.py:1|the loop never stops|run it offline"
+
+
+def _auto_row(number=2, block=0, provider="codex", family="gpt"):
+    row = _round(number, "FINDINGS")
+    row.update({"counts": {"BLOCK": block, "FIX": 1, "NIT": 0}, "findings": [LINE],
+                "webtest_open": review_ledger.WEBTEST_NA, "refunded": False,
+                "provider": provider, "model_family": family,
+                # L-0576's count, as its `record` writes it (owner decision #6).
+                "ignored_lines": 0})
+    return row
+
+
+def _auto_receipt(number=2):
+    return dict(_receipt(number, review_ledger.AUTO_KIND), accepted_by=review_ledger.AUTO_BY,
+                findings=[LINE], follow_up="L-9999", provider="codex", model_family="gpt")
+
+
+def _bound_auto_receipt(root, number=2):
+    """An auto receipt bound to a review.json for its round, as auto_accept
+    writes both (review round 6 BLOCK 1)."""
+    raw = json.dumps({"round": number, "bundle_sha256": "a" * 64,
+                      "ignored_lines": 0}).encode("utf-8")
+    path = os.path.join(str(root), ".work", "tickets", T, "review.json")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as fh:
+        fh.write(raw)
+    return dict(_auto_receipt(number), review_json_sha256=hashlib.sha256(raw).hexdigest(),
+                ignored_lines=0)
+
+
+def test_next_auto_accepted_findings_move_on(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_auto_row(1), _auto_row(2)], state="ACCEPTED",
+            receipt=_bound_auto_receipt(root))
+    _receipt_ok(monkeypatch, True)
+    _refresh(monkeypatch, "fresh")
+
+    assert _next(root)["phase"] == "done"
+
+
+def test_next_auto_receipt_with_an_edited_review_json_stops(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    receipt = _bound_auto_receipt(root)
+    _write(os.path.join(str(root), ".work", "tickets", T, "review.json"),
+           json.dumps({"round": 2, "bundle_sha256": "a" * 64, "ignored_lines": 3}))
+    _ledger(root, [_auto_row(1), _auto_row(2)], state="ACCEPTED", receipt=receipt)
+    _receipt_ok(monkeypatch, True)
+    _refresh(monkeypatch, "fresh")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"]) == ("accept-review", True)
+
+
+def test_next_auto_receipt_on_a_block_row_stops(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_auto_row(1), _auto_row(2, block=1)], state="ACCEPTED",
+            receipt=_auto_receipt())
+    _receipt_ok(monkeypatch, True)
+    _refresh(monkeypatch, "fresh")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"]) == ("accept-review", True)
+
+
+def test_next_eligible_round_without_receipt_names_auto_accept(tmp_path):
+    root = _approved(tmp_path)
+    _ledger(root, [_auto_row(1), _auto_row(2)], state="REVIEWED")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "review_ledger.py --auto-accept" in got["reason"]) == (
+        "accept-review", True, True), got["reason"]
+
+
+def test_next_ineligible_findings_quote_the_refusal(tmp_path):
+    root = _approved(tmp_path)
+    _ledger(root, [_auto_row(1), _auto_row(2, block=1)], state="REVIEWED")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "a BLOCK is never auto-accepted" in got["reason"],
+            "--accept --by <owner>" in got["reason"]) == ("accept-review", True, True, True), \
+        got["reason"]
+
+
+def test_next_same_family_round_quotes_the_family_refusal(tmp_path):
+    root = _approved(tmp_path)
+    _ledger(root, [_auto_row(1), _auto_row(2, provider="claude", family="claude")],
+            state="REVIEWED")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "same family" in got["reason"],
+            "--auto-accept refuses it" in got["reason"]) == (
+        "accept-review", True, True, True), got["reason"]
 
 
 def test_next_refresh_before_rereview(tmp_path, monkeypatch):
@@ -1246,6 +1347,20 @@ def test_command_ends_the_review_phase_at_the_verdict():
     text = " ".join(_command_text().split())
     assert (REVIEW_VERDICT_RULE in text, "never fix and rerun" in text,
             "back through `next`" in text) == (True, True, True)
+
+
+def test_command_runs_auto_accept_only_when_eligible():
+    text = " ".join(_command_text().split())
+    assert ("`review: auto-accept: eligible`" in text, "--auto-accept" in text,
+            REVIEW_VERDICT_RULE in text, "never fix and rerun" in text,
+            "back through `next`" in text) == (True, True, True, True, True)
+
+
+def test_command_exempts_the_auto_accept_follow_up_from_the_new_ticket_stop():
+    """Review round 4 BLOCK: section 4's no-new-ticket stop must name section 3's
+    step 3.3 follow-up as its one exception, or the two sections contradict."""
+    text = " ".join(_command_text().split())
+    assert "new ticket (T-0012) except section 3's step 3.3 follow-up" in text
 
 
 def test_command_activates_the_ticket_only_without_a_pointer():

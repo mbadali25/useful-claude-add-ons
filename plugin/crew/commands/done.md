@@ -27,10 +27,15 @@ confirming, not re-deriving:
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_status.py --root .
 ```
 
-Read its `verify` line. Anything other than every rule `pass` — `fail`,
-`unverified`, or no record at all — refuses done. Run `./_verify/smoke.sh` (or
-the mapped `.crew/verify.json` rule) yourself first if this is the first time
-this session has checked.
+Read its `verify` line. Every rule `pass` passes this check. Anything else —
+`fail`, `unverified`, or no record at all — passes only on what
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ci_receipt.py check --root .` says:
+exit 0 `CI_RECEIPT VERIFIED` (the self-hosted gate passed every rule on exactly
+this committed tree), or exit 4 `NO_GATE` (no verify map, or the gate is stood
+down; `check-land` and `/crew:review` pass it too). Any other exit (local edits,
+no run for HEAD, an unreadable artifact) refuses done; say its `CI_RECEIPT`
+line. Then run `./_verify/smoke.sh` (or the mapped `.crew/verify.json` rule)
+yourself and re-read the `verify` line.
 
 ## Check 3 — the completion audit
 
@@ -95,7 +100,8 @@ printed, then `crew_train.py release --ticket "$1" --merged <merge sha>`. A
 refusal names `crew_train.py catch-up` (a merge, never a rebase). Land in this
 order, so the tree the gate passed is the tree that lands: catch up (resolve any
 conflict), bump the version one past the base's, refresh the artifacts, commit,
-gate the merged head, then rerun this command. After the review, a re-anchor
+gate the merged head, review it again if `review_ledger.py --check-receipt`
+reads stale, then rerun this command. After the review, a re-anchor
 changes only the sha on the `anchor:` line (or a diagram's header) and
 regenerates the rules; its provenance sentence goes in the ticket's `notes.md`,
 since any other byte in a code map, rules file or diagram is read as unreviewed.

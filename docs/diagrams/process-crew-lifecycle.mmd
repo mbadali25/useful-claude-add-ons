@@ -1,4 +1,18 @@
-%% Generated from useful-claude-add-ons@52f03271 on 2026-10-03. Verify before trusting.
+%% Generated from useful-claude-add-ons@7bdb1196 on 2026-10-03. Verify before trusting.
+%% Re-anchored b8d09685 -> 452b30cc: 204e813b changes one review_run.py line (print -> _out), no line moved; no node or edge changed.
+%% Re-anchored d95d8b25 (main) -> b8d09685 (L-0510 merges origin/main 8123fe74 at 8c04c783, rerere off): main's pr0 pre-review nodes kept beside L-0510's rv3 auto-accept edges; review_run.py preflight :672, :846, prereview_gate :731, budget :850-861 re-derived on the merged file.
+%% Re-anchored 39ebbc18 -> a06dd790 (L-0510 merges origin/main 2a2d6e07 at 39c290be, rerere off): main changed no Anchors path line this diagram cites. No node or edge changed.
+%% Re-anchored 4fc93b19 -> 96a69068 (L-0510 merges origin/main bd3e9ad1 at d3f26a4b, rerere off): main changed no Anchors path line this diagram cites. No node or edge changed.
+%% Re-anchored a81e4382 (main) and d05b0211 (L-0510) -> 77e8dcfd (L-0510 merges origin/main e0c70fc9 at e6dc6b1b, rerere off): both provenance blocks kept, main's first; main changed no Anchors path line this diagram cites. No node or edge changed.
+%% Re-anchored 273ec0f6 (main) and 97b65952 (L-0510) -> d05b0211 (L-0510 merges origin/main 0487fc39 at ec508e5e, rerere off): both provenance blocks kept, main's first; review_run.py preflight :555, :642 -> :563, :650 and budget :646-656 -> :654-664 (rv/pf nodes); review.md INCOMPLETE class/refund :484-485 -> :485-486 (L-0576's verdict sentence). No edge changed.
+%% Re-anchored 252dd5d4 -> 97b65952 (merge of origin/main 7ba4f9ea): no cited file changed. No node or edge changed.
+%% Re-anchored 2b372b84 -> 252dd5d4 (L-0510 round 6 fixes): review.md step 3 edited in place, review_run.py unchanged; no cited line moved. No node or edge changed.
+%% Merged L-0510 + 04dde5a2 (main: L-0578 #304, W-0120 #307) at 41aa4e2a (rerere off), anchored at 2b372b84: both provenance blocks
+%% kept, main's first; review_run.py citations re-derived on the merged file (preflight :555, :642; budget :646-656). No node or edge changed.
+%% Merged 39e1237a (L-0510) + 6053b65d (main, L-0557 #300, crew 1.0.114) at 122fc10d (rerere off), re-anchored to 6ffb589d: both provenance
+%% blocks kept, main's first; neither side changed an Anchors path line this diagram cites. No node or edge changed.
+%% Merged a98be035 (L-0510) + ec95c8aa (main, crew 1.0.110) at d4193b70 (rerere off), re-anchored to 8f0df4ca: both provenance blocks kept,
+%% main's first; main changed no review.md / review_run.py line and L-0510 no line main cites here. No node or edge changed.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -142,19 +156,21 @@
 %%     move --to review (:110-111); then /crew:review last (:112). :114-118
 %%     step 7: done is /crew:done's.
 %%     Scope guard: plugin/crew/hooks/hooks.json:31 (scope-guard.sh, PreToolUse).
-%%   plugin/crew/commands/review.md:25-29 two rounds per ticket, a third is refused
+%%   plugin/crew/commands/review.md:25-28 two rounds per ticket, a third is refused
 %%     -> NEEDS_REPLAN; :440 exit codes 0 CLEAN / 1 FINDINGS / 3 INCOMPLETE /
-%%     4 NEEDS_REPLAN / 2 not run; :449 Claude fallback; :480 the verdict is the
-%%     script's; :487-488 an INCOMPLETE's class and the tool-failure refund;
-%%     :504-505 round 2 is the last (rounds not refunded); :509 --accept --by <who>; :512 a CLEAN
+%%     4 NEEDS_REPLAN / 2 not run; :451 Claude fallback; :482 the verdict is the
+%%     script's; :485-486 an INCOMPLETE's class and the tool-failure refund;
+%%     :502-504 round 2 is the last (rounds not refunded); :505-506 a final 0-BLOCK
+%%     round auto-accepts (--auto-accept --follow-up, L-0510); :507 anything else stops
+%%     for the owner with 2-4 options; :508 --accept --by <who>; :510 a CLEAN
 %%     round writes its receipt itself.
 %%   plugin/crew/commands/done.md:7 all four checks must pass; :10-13 check 1
-%%     review receipt (--check-receipt); :21-27 check 2 verify gate via
-%%     crew_status.py; :35-38 check 3 completion audit (:43-48: a refresh artifact
-%%     not admitted is listed with its reason); :50-61 check 4
-%%     crew_refresh_check.py (:53), read-only, refuses on stale/unknown and never
-%%     refreshes; :63-69 all pass -> spec.md `status: done`, keeping the approval
-%%     (:65-66), then crew_tracker.py move --to done (:67); :74 crew_metrics record.
+%%     review receipt (--check-receipt); :21-29 check 2 verify gate via
+%%     crew_status.py; :37-40 check 3 completion audit (:45-50: a refresh artifact
+%%     not admitted is listed with its reason); :52-63 check 4
+%%     crew_refresh_check.py (:55), read-only, refuses on stale/unknown and never
+%%     refreshes; :65-71 all pass -> spec.md `status: done`, keeping the approval
+%%     (:67-68), then crew_tracker.py move --to done (:69); :76 crew_metrics record.
 %%     Stop hooks: plugin/crew/hooks/hooks.json:58 (verify-gate.sh), :62 (completion-audit.sh).
 %%   plugin/crew/commands/fix.md:2 the light path - every phase, each compressed
 %%     to one step; :27 crew_tracker.py create (`id taken` -> next free id, :28-29;
@@ -164,7 +180,7 @@
 %% --
 %% Status edits after approval (T-0026): three steps edit spec.md's header status
 %% AFTER approval - plan.md:60 (`planned`), implement.md:111 (`review`) and
-%% done.md:61 (`status: done`). Until T-0026 the receipt hashed both files whole,
+%% done.md:70 (`status: done`). Until T-0026 the receipt hashed both files whole,
 %% so each left it stale; the done.md case was seen live on 2026-09-25. A
 %% `crew-approval/2` receipt now binds approval_digest
 %% (plugin/crew/hooks/scripts/crew_ticket.py:534-575), which normalises only line
@@ -328,23 +344,23 @@ flowchart TB
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
-        im5 --> pf0{"preflight first (#264):<br/>a CLEAN receipt covers this bundle?<br/>verify gate passed this tree?<br/>review_run.py:641, :815"}
+        im5 --> pf0{"preflight first (#264):<br/>a CLEAN receipt covers this bundle?<br/>verify gate passed this tree?<br/>review_run.py:672, :846"}
         pf0 -- "CLEAN receipt: CLEAN,<br/>no round, no self-check" --> rcpt
-        pf0 -- "gate not passed or unknown:<br/>exit 5, no round spent,<br/>self-check not asked<br/>review.md:450" --> vg0["run the verify gate,<br/>then review again"]
+        pf0 -- "gate not passed or unknown:<br/>exit 5, no round spent,<br/>self-check not asked<br/>review.md:449" --> vg0["run the verify gate,<br/>then review again"]
         vg0 --> im5
-        pf0 -- "go on" --> pr0{"pre-review checks (L-0574):<br/>no linter finding the bundle adds<br/>against its base? could every<br/>configured linter check?<br/>review_run.py prereview_gate :700"}
-        pr0 -- "NEW finding: exit 5, no round spent,<br/>not overridable; or COULD NOT CHECK:<br/>exit 5 unless --allow-unverified<br/>review.md:450" --> fx0["fix the finding or the tool,<br/>then review again"]
+        pf0 -- "go on" --> pr0{"pre-review checks (L-0574):<br/>no linter finding the bundle adds<br/>against its base? could every<br/>configured linter check?<br/>review_run.py prereview_gate :731"}
+        pr0 -- "NEW finding: exit 5, no round spent,<br/>not overridable; or COULD NOT CHECK:<br/>exit 5 unless --allow-unverified<br/>review.md:449" --> fx0["fix the finding or the tool,<br/>then review again"]
         fx0 --> im5
         pr0 -- "pass / n/a / none configured,<br/>override recorded, or an active<br/>incident (skip logged)" --> rv0{"self-check stamped for<br/>this bundle and standards set?<br/>review_run.py standards_gate"}
-        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no pre-review checks, no self-check<br/>review_run.py:819-830" --> replan
-        rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:447-450" --> sc1
-        rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle;<br/>prompt ends with the standards checklist<br/>review.md:25-29, :452"]
-        rv1 --> rv2{"verdict (the script's)<br/>:441, :484"}
-        rv2 -- CLEAN --> rcpt["receipt written<br/>:511"]
-        rv2 -- FINDINGS --> rv3{"fix, or<br/>user accepts?<br/>:504, :508"}
-        rv3 -- accept --> rcpt
+        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no pre-review checks, no self-check<br/>review_run.py:850-861" --> replan
+        rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:446-449" --> sc1
+        rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle;<br/>prompt ends with the standards checklist<br/>review.md:25-28, :451"]
+        rv1 --> rv2{"verdict (the script's)<br/>:440, :483"}
+        rv2 -- CLEAN --> rcpt["receipt written<br/>:510"]
+        rv2 -- FINDINGS --> rv3{"final round, 0 BLOCK?<br/>else fix, or the<br/>owner accepts<br/>:503, :505-508"}
+        rv3 -- "auto-accept (L-0510): eligible,<br/>no specialist/control BLOCK;<br/>one follow-up ticket :505-506<br/>- or the owner accepts :508" --> rcpt
         rv3 -- "fix, round 2" --> rv1
-        rv2 -- "INCOMPLETE (tool failure: refunded, :487-488)" --> rv1
+        rv2 -- "INCOMPLETE (tool failure: refunded, :485-486)" --> rv1
         rv2 -- "INCOMPLETE (reviewer / tree): counts" --> rv1
         rv2 -- "third round refused" --> replan([NEEDS_REPLAN:<br/>back to /crew:plan])
     end
@@ -352,18 +368,18 @@ flowchart TB
 
     subgraph done["/crew:done - all four or nothing<br/>done.md:7"]
         rcpt --> dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
-        dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py<br/>:21-27"}
-        dn2 -- pass --> dn3{"3 completion audit<br/>(refresh artifacts: re-anchor or<br/>regeneration the change reaches)<br/>:35-48"}
-        dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:50-61"}
-        dn5 -- fresh --> dn4["spec.md 'status: done' (keeps the approval),<br/>crew_tracker.py move --to done,<br/>crew_metrics record<br/>:63-74"]
+        dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py, or a CI receipt for HEAD<br/>(ci_receipt.py check)<br/>:21-38"}
+        dn2 -- pass --> dn3{"3 completion audit<br/>(refresh artifacts: re-anchor or<br/>regeneration the change reaches)<br/>:40-53"}
+        dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:55-66"}
+        dn5 -- fresh --> dn4["spec.md 'status: done' (keeps the approval),<br/>crew_tracker.py move --to done,<br/>crew_metrics record<br/>:68-79"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
         dn5 -- "stale / unknown" --> dnx
-        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:82-85"}
-        ln0 -- yes --> ln1{"crew_train.py check-land:<br/>holds the train, merge-tree clean,<br/>base unmoved in Touch, receipt + gate<br/>done.md:88-92"}
-        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge<br/>--merge --match-head-commit sha;<br/>then release --merged sha<br/>(crew never merges) :93-94"]
-        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit,<br/>gate the merged head<br/>:95-98" --> im5
+        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:87-90"}
+        ln0 -- yes --> ln1{"crew_train.py check-land:<br/>holds the train, merge-tree clean,<br/>base unmoved in Touch, receipt + gate<br/>done.md:93-97"}
+        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge<br/>--merge --match-head-commit sha;<br/>then release --merged sha<br/>(crew never merges) :98-99"]
+        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit, gate,<br/>review again if the receipt is stale<br/>:99-104" --> im5
     end
 
     fix -.-> BR
@@ -546,4 +562,17 @@ flowchart TB
 %% Re-anchored e2c11c0b -> 0891d6a6 (L-0574 merges main ffeb0e2f, L-0598 #321, at 26d2c1c0, then the round-9 fixes in review_checks.py): main changed crew_standards.py from :726 (proposals), past every line this diagram cites (sc1 :105-109 is implement.md); review_run.py did not change. No node or edge changed.
 %% Re-anchored 0891d6a6 -> 4dcad808 (L-0574 merges main 6ac3b1b3 at 4dcad808, rerere disabled): main changed none of the files this diagram cites (L-0587 touched scripts/, .crew/verify.json, a workflow and README's pin); both provenance histories kept. No node or edge changed.
 %% Re-anchored 4dcad808 -> d95d8b25 (L-0574 merges main 2a2d6e07, L-0592 #325, at d95d8b25, rerere disabled): implement.md step 2 re-wrapped in place by L-0592, line count unchanged, so im2 :38-42 and im0 :17-23 hold; review_run.py did not change. No node or edge changed.
+%% Re-drawn 8bf710ed -> 963d2905 (L-0510, review closure, crew 1.0.90): of the anchored paths
+%% review.md (step 3.3 rewritten, :25-28 compacted), done.md (check 1 gained six lines, so every
+%% done.md citation from check 2 down moved +6) and review_run.py (findings / webtest_open recorded,
+%% +31 above preflight) changed. rv3 now asks whether the final round has 0 BLOCK, and its edge to
+%% rcpt is the --auto-accept path or the owner's --accept. Citations mapped by difflib from
+%% 66651b69 to 963d2905 (/root/crew-tmp/l-0510/tools/remap.py, machine-local) and each re-read.
+%% Merged 490f4ec1 (L-0510) + 52489039 (main, T-0040 #290, crew 1.0.98) on L-0510-build, 2026-10-01
+%% (merge 58fc8da8, rerere off), re-anchored to 5254bbfe (crew 1.0.103): header and provenance conflicted,
+%% both provenance blocks kept, main's first; review.md / review_run.py citations (L-0510's) and implement.md / done.md / crew_refresh_check.py
+%% citations (main's) re-read on the merged tree with sed -n; each on the same text. No node or edge changed.
+
 %% Re-anchored d95d8b25 -> 52f03271 (L-0522 PR 1, on main 8123fe74): done.md's catch-up refusal now names the landing order (catch up, resolve, bump, refresh, commit, gate, rerun), so the ln1 edge reads :95-98 with that order; implement.md step 6 joined two lines and gained one, so im4 reads :110-112, im5 :113 and the status-edit note implement.md:111; crew_train.py's refusal text changed, no node cites its lines. No node added or removed.
+%% Re-anchored 52f03271 -> eab5ff10 (L-0522 PR 1 review round 1 fixes): done.md's landing order gained 'review it again if review_ledger.py --check-receipt reads stale', one line longer, so the ln1 edge reads :95-99 and names it; implement.md:114 (after im5's :113) now also names the anchor-only re-anchor rule; no node added or removed.
+%% Re-anchored 452b30cc (main) and eab5ff10 (L-0522) -> 7bdb1196 (L-0522 PR 1 merges main f808e5f0, crew 1.0.154): main grew done.md check 2 by five lines (the CI receipt), so dn2 reads :21-38 and names the CI receipt, dn3 :40-53, dn5 :55-66, dn4 :68-79, ln0 :87-90, ln1 :93-97, ln2 :98-99, the refusal edge :99-104 and the status-edit note done.md:70; review_run.py cites are main's.

@@ -509,6 +509,41 @@ def test_check_land_requires_receipt_on_merged_head(repo, capsys, monkeypatch):
     assert code == 0, out
 
 
+def _receipt(monkeypatch, state, reason):
+    """Local gate UNVERIFIED; `ci_receipt.check` answers `state`."""
+    import ci_receipt  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(review_ledger, "check_receipt",
+                        lambda root, ticket: (True, "receipt current: fixture"))
+    monkeypatch.setattr(review_gate, "gate_state",
+                        lambda root: (review_gate.UNVERIFIED, "never gated here"))
+    monkeypatch.setattr(ci_receipt, "check",
+                        lambda root, fetch=None: (state, reason, "abc"))
+
+
+def test_check_land_lands_on_a_ci_receipt_for_head(repo, capsys, monkeypatch):
+    """A CI receipt proving the gate passed on HEAD's committed tree stands in
+    for the 17-20 minute local `verify-gate --all` (review_gate.accepted_state)."""
+    lane = _holding_lane(repo, capsys)
+    _receipt(monkeypatch, review_gate.VERIFIED, "CI receipt from run 7")
+
+    code, out = _cli(capsys, lane, "check-land", "--ticket", "T-1", "--no-fetch")
+
+    assert code == 0 and "LAND_OK" in out and "CI receipt from run 7" in out, out
+
+
+@pytest.mark.parametrize("state", ["UNVERIFIED", "UNKNOWN", "NO_GATE"])
+def test_check_land_refuses_on_any_other_receipt_answer(repo, capsys, monkeypatch, state):
+    """Only a receipt VERIFIED upgrades; an unreadable or absent one leaves the
+    local UNVERIFIED standing, and check-land refuses."""
+    lane = _holding_lane(repo, capsys)
+    _receipt(monkeypatch, state, "receipt says no")
+
+    code, out = _cli(capsys, lane, "check-land", "--ticket", "T-1", "--no-fetch")
+
+    assert code == 1 and "LAND_OK" not in out, out
+    assert "never gated here" in out and f"CI receipt {state}: receipt says no" in out, out
+
+
 def test_check_land_refuses_merge_tree_conflict(repo, capsys, monkeypatch):
     lane = _holding_lane(repo, capsys, touch=("f.txt",))
     _passing_verdict(monkeypatch)
@@ -519,7 +554,8 @@ def test_check_land_refuses_merge_tree_conflict(repo, capsys, monkeypatch):
 
 
 _LANDING_ORDER = ("bump the version one past the base, refresh artifacts, commit, gate the "
-                  "merged head, then check-land again")
+                  "merged head, review it again if review_ledger.py --check-receipt reads "
+                  "stale, then check-land again")
 
 
 @pytest.mark.parametrize("refusal", ["conflict", "moved"])

@@ -26,8 +26,7 @@ TICKET="${1:-$(awk -F'|' 'NF>1{gsub(/^[ \t]+|[ \t]+$/,"",$2);if($2~/^(open|in-pr
 total** (`review_ledger.py`, in `<git-common-dir>/crew/review/<id>.json`,
 shared by every worktree). A round is reserved before the reviewer launches,
 so a crashed one still counts; a third is refused and the ticket becomes
-`NEEDS_REPLAN`. Round 2's FINDINGS can still be accepted until then. No flag,
-variable or config key raises or resets it.
+`NEEDS_REPLAN`. Step 3.3 says how round 2's FINDINGS close. No flag, variable or config key changes it.
 
 `mktemp`'s branch-prefixed, randomly-suffixed directory is ticket-scoped (the
 branch name) and session-scoped (no other process can be handed the same
@@ -298,10 +297,10 @@ AUTHOR_SOURCE=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).g
 # already applied the guard -- this is the list to pick from, in order, and an
 # empty one is the "no independent reviewer" state, not an error.
 ELIGIBLE=$(python3 -c '
-import json, sys
-report = json.load(open(sys.argv[1]))
-print(" ".join(c["provider"] for c in report.get("qaFallThrough") or []
-                if c.get("eligible")))' "$REPORT")
+import json, sys  # kimi has no review_run.py runner (T-0028): named on stderr, never tried
+report = json.load(open(sys.argv[1])); ok = [c["provider"] for c in report.get("qaFallThrough") or [] if c.get("eligible")]
+[sys.stderr.write("review: " + p + " is eligible but has no review runner - skipped\n") for p in ok if p not in ("codex", "copilot", "claude")]
+print(" ".join(p for p in ok if p in ("codex", "copilot", "claude")))' "$REPORT")
 echo "authors=$AUTHORS source=$AUTHOR_SOURCE eligible=${ELIGIBLE:-<none>}"
 ```
 
@@ -503,12 +502,12 @@ loses the most time to.
 2. Fix all BLOCK items. Rerun `./_verify/smoke.sh`. Rerun this review once — round 2 is the last,
    counting only rounds not refunded. A refusal (exit 4, `NEEDS_REPLAN`) is terminal in this
    release: stop, say so, and replan the ticket; there is no third round.
-3. If you disagree with a finding, say so explicitly and let me decide. If I
-   accept FINDINGS as they stand, record it — the receipt names who and when:
-   `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py --ticket "$TICKET" --accept --by "<who>"`.
-   Only the most recent round can be accepted, once, including round 2, and not
-   once the ticket is `NEEDS_REPLAN` (a refused third reservation, or
-   `review_ledger.py --ticket "$TICKET" --reject --by "<who>"`). A CLEAN round writes its receipt itself. `review_ledger.py --ticket "$TICKET" --check-receipt` rebuilds the bundle and fails if anything changed since - except where the delta gate (L-0522) proves the ticket's own delta byte-identical across a catch-up merge, a version bump or an anchor-only refresh (`receipt kept by delta gate: ...`, judged on HEAD's tree with a clean checkout); anything it cannot prove reads stale.
+3. **Closure (L-0510).** `review: auto-accept: eligible` (a final round: FINDINGS, 0 BLOCK, no open healer skip, no verdict recovered from stray lines (`ignored_lines` 0 and readable), reviewed by Codex or Kimi) AND no BLOCK from step 0b's specialists or step 2d's controls, which the ledger never sees: mint the next free id as `/crew:brainstorm` step 1 does, run
+   `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py" --ticket "$TICKET" --auto-accept --follow-up <id>`, then `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py" create --root . --ticket <id> --title "<title>"` and write its `direction.md`: source ticket, round, bundle sha, then every line printed after the first, verbatim, one per line inside one fenced block, no `>` or list prefix (`--check-follow-up` matches whole lines verbatim, as many times as the receipt carries each). A same-family (Claude-fallback) round is never eligible: it is mine to accept. `tracker not updated: <reason>` stops for me.
+   Anything else (any BLOCK, a `refused -` line, a specialist BLOCK, an unverified control) stops for me with 2-4 options, recommended first, each with a one-line tradeoff (reject and replan / I accept as is / fix and I grant a round). Disagree with a finding? Say so. If I accept, record it - the receipt names who and when; a `--by` starting `auto:` is refused:
+   `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py" --ticket "$TICKET" --accept --by "<who>"`.
+   Only the most recent round can be accepted, once, and not once the ticket is `NEEDS_REPLAN` (a refused third reservation, or `review_ledger.py --ticket "$TICKET" --reject --by "<who>"`).
+   A CLEAN round writes its receipt itself. `review_ledger.py --ticket "$TICKET" --check-receipt` rebuilds the bundle and fails if anything changed since - except where the delta gate (L-0522) proves the ticket's own delta byte-identical across a catch-up merge, a version bump or an anchor-only refresh (`receipt kept by delta gate: ...`, judged on HEAD's tree with a clean checkout); anything it cannot prove reads stale.
 4. **Land the verdict as a review, not a comment.** If the change is on a GitHub PR, post the outcome
    with `gh pr review` so it exists as an artifact that tooling and branch protection can see:
 
