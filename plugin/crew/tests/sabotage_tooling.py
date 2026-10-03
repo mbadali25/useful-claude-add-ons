@@ -383,10 +383,20 @@ TOOLING_MUTATIONS += (
         # a round the gate reserved on a CI receipt is told MISSING.
         "review_prompt: a CI receipt the gate accepted is not shown to the reviewer",
         os.path.join(SCRIPTS, "review_prompt.py"),
-        "        if state == review_gate.VERIFIED:\n",
-        "        if False:  # pylint: disable=using-constant-test\n",
+        "            if state == review_gate.VERIFIED:\n",
+        "            if False:  # pylint: disable=using-constant-test\n",
         ("tests/test_review_prompt.py::"
          "test_a_ci_receipt_the_gate_accepts_is_what_the_reviewer_is_told"),
+    ),
+    (
+        # Review r1 BLOCK: without the local question first, a local pass on
+        # a dirty tree reaches accepted_state and is printed as a CI receipt.
+        "review_prompt: a local pass on a dirty tree is labelled a CI receipt",
+        os.path.join(SCRIPTS, "review_prompt.py"),
+        "        local, local_why = _ask(review_gate.gate_state, root)\n",
+        "        local, local_why = review_gate.UNVERIFIED, \"\"\n",
+        ("tests/test_review_prompt.py::"
+         "test_a_local_pass_on_a_dirty_tree_is_never_called_a_ci_receipt"),
     ),
     (
         # docs/review/08 defect 2: the recurring-findings block has no caller.

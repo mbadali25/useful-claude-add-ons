@@ -50,6 +50,7 @@ import sys
 
 import crew_standards
 import recurring_findings
+import review_checks
 import review_gate
 import review_verdict
 import verify_record
@@ -163,22 +164,36 @@ def _head(root):
         return ""
 
 
-def _gate_answer(root):
-    """(state, reason) from `review_gate.accepted_state`, the answer
-    `review_run.py` reserved this round on; a call that raises is UNKNOWN,
-    never a pass."""
+REASON_MAX = 400
+
+
+def _reason(text):
+    """A gate reason as ONE line: control characters escaped (a git or gh
+    stderr carried in a reason can be multi-line, and a line of its own in
+    the prompt reads as an instruction) and capped at REASON_MAX."""
+    one = review_checks.one_line(str(text))
+    return one if len(one) <= REASON_MAX else one[:REASON_MAX] + "... (truncated)"
+
+
+def _ask(question, root):
+    """(state, reason) from a review_gate question; a call that raises is
+    UNKNOWN, never a pass."""
     try:
-        return review_gate.accepted_state(root)
+        return question(root)
     except Exception as exc:  # pylint: disable=broad-except
         return review_gate.UNKNOWN, f"{exc.__class__.__name__}: {exc}"
 
 
 def _receipts_block(root, manifest):
     """The verify evidence, as the gate that reserved this round judged it
-    (docs/review/08, defect 1). The local marker is read first; only when it
-    does not show HEAD clean is `accepted_state` asked, so a CI receipt for
-    HEAD -- which `review_run.py` already accepted -- is what the reviewer is
-    told, instead of a MISSING line that contradicts the gate."""
+    (docs/review/08, defect 1). A clean local pass on HEAD needs no question.
+    Otherwise the LOCAL gate is asked first (`review_gate.gate_state`): a
+    dirty tree its fingerprint covers is a local VERIFIED, and a repo with no
+    gate is NO_GATE -- neither is a receipt, and neither is MISSING. Only a
+    local UNVERIFIED or UNKNOWN asks `accepted_state`, the answer
+    `review_run.py` reserves on, which may take a CI receipt for HEAD; then,
+    and only then, the local record's rows are marked superseded, because a
+    receipt is a `--all` run with nothing outstanding."""
     out = ["== Test receipts (verify gate) =="]
     marker = os.path.join(root, ".crew", ".verify-verified-at")
     verified = (_read(marker) or "").strip()
@@ -187,19 +202,25 @@ def _receipts_block(root, manifest):
     if verified and verified == head and not manifest.get("dirty"):
         out.append(f"Last clean verify pass: {verified[:12]} = HEAD, tree clean.")
     else:
-        state, reason = _gate_answer(root)
-        if state == review_gate.VERIFIED:
-            receipt = True
-            out.append(f"CI receipt: VERIFIED for HEAD - {reason}")
-        elif not verified:
-            out.append("MISSING: no .crew/.verify-verified-at -- the verify gate has not "
-                       "recorded a clean pass in this checkout.")
+        local, local_why = _ask(review_gate.gate_state, root)
+        if local == review_gate.VERIFIED:
+            out.append(f"Local gate: VERIFIED - {_reason(local_why)}")
+        elif local == review_gate.NO_GATE:
+            out.append(f"No verify gate: {_reason(local_why)}")
         else:
-            out.append(f"Last clean verify pass: {verified[:12]}; HEAD is {head[:12]}"
-                       f"{', tree dirty' if manifest.get('dirty') else ''}. Changes after "
-                       "that pass have NOT been through the gate.")
-        if not receipt:
-            out.append(f"Gate answer for HEAD: {state}: {reason}")
+            state, reason = _ask(review_gate.accepted_state, root)
+            if state == review_gate.VERIFIED:
+                receipt = True
+                out.append(f"CI receipt: VERIFIED for HEAD - {_reason(reason)}")
+            else:
+                if not verified:
+                    out.append("MISSING: no .crew/.verify-verified-at -- the verify gate has "
+                               "not recorded a clean pass in this checkout.")
+                else:
+                    out.append(f"Last clean verify pass: {verified[:12]}; HEAD is {head[:12]}"
+                               f"{', tree dirty' if manifest.get('dirty') else ''}. Changes "
+                               "after that pass have NOT been through the gate.")
+                out.append(f"Gate answer for HEAD: {state}: {_reason(reason)}")
     state, rules = verify_record.read_record(root)
     shown = verify_record.RECORD_PATH.replace("\\", "/")
     if state == "absent":

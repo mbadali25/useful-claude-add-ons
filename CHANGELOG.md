@@ -4,20 +4,28 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.155: the review prompt shows the gate's real answer and the recurring-findings classes (docs/review/08, defects 1 and 2)
+### Fixed — `crew` 1.0.156: the review prompt shows the gate's real answer and the recurring-findings classes (docs/review/08, defects 1 and 2)
 
 - `review_prompt._receipts_block` told the reviewer `MISSING: no .crew/.verify-verified-at` on a round
   `review_run.py` had reserved on a verified CI receipt for HEAD (`review_gate.accepted_state`, crew
-  1.0.153): the prompt read the local marker only. When the marker does not show HEAD clean it now
-  asks `accepted_state`, the answer the round was reserved on. A receipt VERIFIED reads
-  `CI receipt: VERIFIED for HEAD - <reason>`, with the local record's rows marked superseded; any
-  other answer keeps the local lines and adds `Gate answer for HEAD: <state>: <reason>`; a call that
-  raises is `UNKNOWN`, never a pass. A clean local pass on HEAD asks no receipt. Both analyses in
-  `docs/review/08-qa-rounds-analysis.md` found this; 16 earlier BLOCKs quote the MISSING sentence.
+  1.0.153): the prompt read the local marker only. Unless the marker shows HEAD clean, it now asks the
+  local gate first (`gate_state`): a dirty tree its fingerprint covers reads `Local gate: VERIFIED`,
+  and a repo with no gate reads `No verify gate: <why>` instead of MISSING (`review_run.py` proceeds
+  on both). Only a local UNVERIFIED or UNKNOWN asks `accepted_state`: a receipt VERIFIED reads
+  `CI receipt: VERIFIED for HEAD - <reason>`, with the local record's rows marked superseded (a
+  receipt is a `--all` run with nothing outstanding); any other answer keeps the local lines and adds
+  `Gate answer for HEAD: <state>: <reason>`; a question that raises is `UNKNOWN`, never a pass.
+  Every reason is folded to one line (`review_checks.one_line`) and capped at 400 characters, so gh
+  or git stderr cannot open lines of its own in the prompt. Building the prompt on a tree the marker
+  does not cover can now make the receipt's `gh api` calls, as `review_run.py` already does.
 - `recurring_findings.review_block` was written for the reviewer and had no caller. `review_prompt.build`
-  now appends it after the standards checklist, scoped to the bundle's changed files.
-- Five new `test_review_prompt.py` cases, four red before the fix (the fifth pins that a clean local
-  pass asks no receipt); two mutations registered in `sabotage_tooling.py`, both red.
+  now appends it after the standards checklist, scoped to the bundle's changed files. `README.md`
+  and `review.md`'s comment list both additions.
+- Nine new `test_review_prompt.py` cases; four were red before the fix, and the rest pin the review
+  round 1 cases (a dirty tree covered locally, NO_GATE, a multi-line reason, a scoped block, no
+  receipt asked on a clean pass). `test_build_states_every_missing_piece` now expects `No verify gate`
+  for its gate-less fixture. Three mutations registered in `sabotage_tooling.py`, all red; Sonnet 5.5
+  review round 1 (1 BLOCK, 4 FIX, 3 NIT) closed.
 
 ### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 
