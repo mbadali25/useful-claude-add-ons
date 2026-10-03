@@ -149,7 +149,8 @@ SUBMODULE_MODE = "160000"
 # driving both with a manifest this module really wrote.
 MANIFEST_KEYS = ("base", "head", "branch", "dirty", "committed_files", "staged_files",
                  "unstaged_files", "untracked_files", "entries", "renames", "mode_changes",
-                 "binary_files", "submodules", "excluded", "patch_bytes", "max_part_bytes",
+                 "binary_files", "submodules", "excluded", "merged_main", "bundle_base_tree",
+                 "patch_bytes", "max_part_bytes",
                  "bundle_sha256", "patch_path", "parts_dir", "parts")
 OPTIONAL_MANIFEST_KEYS = ("webtest", "manifest_path")
 PART_KEYS = ("name", "path", "bytes", "sha256")

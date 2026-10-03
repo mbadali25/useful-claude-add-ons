@@ -688,7 +688,7 @@ def auto_accept(root, ticket, follow_up):
         problem, review_digest = _review_json_problem(root, ticket, row)
         if problem:
             raise LedgerError(f"--auto-accept refused: {problem}")
-        if _current_hash(root, row.get("base")) != row.get("bundle_sha256"):
+        if _current_hash(root, row.get("base"))[0] != row.get("bundle_sha256"):
             raise LedgerError("--auto-accept refused: the tree has changed since that review, "
                               "so accepting it would accept code nobody reviewed")
         data["receipt"] = {
