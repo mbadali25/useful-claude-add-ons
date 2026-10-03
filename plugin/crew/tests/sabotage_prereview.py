@@ -10,6 +10,8 @@ import os
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKS = os.path.join(CREW, "hooks", "scripts", "review_checks.py")
 RUN = os.path.join(CREW, "hooks", "scripts", "review_run.py")
+INSTALL_MAP = os.path.join(os.path.dirname(os.path.dirname(CREW)), ".crew", "codemap",
+                           "install-scripts.md")
 _C = "tests/test_review_checks.py::"
 _R = "tests/test_review_run_prereview.py::"
 
@@ -132,9 +134,8 @@ PREREVIEW_MUTATIONS = (
      "            bundle = json.load(fh).get(\"bundle_sha256\")\n",
      _R + "test_the_record_is_bound_to_the_manifest_the_checks_read"),
     ("a timeout kills only the direct child", CHECKS,
-     "        else:\n            os.killpg(proc.pid, signal.SIGKILL)\n"
-     "    except (OSError, subprocess.SubprocessError):\n",
-     "        else:\n            pass\n    except (OSError, subprocess.SubprocessError):\n",
+     "        else:\n            os.killpg(proc.pid, signal.SIGKILL)\n    except OSError:\n",
+     "        else:\n            pass\n    except OSError:\n",
      _C + "test_the_timeout_holds_when_a_child_keeps_the_output_open"),
     ("a record with a flag its result cannot carry is accepted", CHECKS,
      "            not _flags_fit(payload):\n",
@@ -180,10 +181,10 @@ PREREVIEW_MUTATIONS = (
      "                if False:\n"
      "                    raise CouldNotCheck(f\"the linter config",
      _C + "test_a_linter_config_that_is_a_symlink_is_could_not_check"),
-    ("taskkill is run by bare name", CHECKS,
-     "                subprocess.run([killer, \"/F\", \"/T\", \"/PID\", str(proc.pid)],\n",
-     "                subprocess.run([\"taskkill\", \"/F\", \"/T\", \"/PID\", str(proc.pid)],\n",
-     _C + "test_taskkill_is_run_by_absolute_path"),
+    ("a Windows timeout ends the linter but not its job", CHECKS,
+     "        if job is not None:\n            job.terminate()\n        else:\n            os.killpg(",
+     "        if False:\n            job.terminate()\n        else:\n            os.killpg(",
+     _C + "test_the_windows_timeout_kills_the_whole_job"),
     ("a linter is resolved with the current directory searched", CHECKS,
      "    exe = resolve_executable(argv[0])\n",
      "    exe = shutil.which(argv[0])\n",
@@ -282,4 +283,38 @@ PREREVIEW_MUTATIONS = (
      "    return _CONTROL.sub(lambda m:",
      "    return str(text)\n    return _CONTROL.sub(lambda m:",
      _C + "test_a_newline_in_any_field_never_forges_a_status_line"),
+    # review round 8 (owner decision 2026-10-02: fix all four, last round)
+    ("any N:N: pair in a message reads as a position", CHECKS,
+     '    (re.compile(r"\\b(SC\\d{4}:(?:error|warning|info|style):)\\d+:\\d+(?=:)"), r"\\1N:N"),\n',
+     '    (re.compile(r"(?<![\\w.])\\d+:\\d+(?=:)"), "N:N"),\n',
+     _C + "test_a_value_shaped_like_a_position_still_tells_findings_apart"),
+    ("a job Windows will not make is run without one", CHECKS,
+     '            raise CouldNotCheck(f"could not make a job object for {argv[0]}: {exc}") from exc\n',
+     "            job = None\n",
+     _C + "test_a_job_that_cannot_be_made_is_could_not_check"),
+    ("a clean exit leaves the linter's job running", CHECKS,
+     "    if job is not None:\n        job.terminate()\n    else:\n        try:\n",
+     "    if False:\n        job.terminate()\n    else:\n        try:\n",
+     _C + "test_a_linter_that_exits_cleanly_still_has_its_job_ended"),
+    ("the reviewer's job is not ended on a timeout", RUN,
+     "            # By handle: safe whether or not the leader has already exited.\n"
+     "            job.terminate()\n",
+     "            pass\n",
+     _R + "test_a_provider_whose_leader_exited_has_its_job_ended_on_timeout"),
+    ("review_run's stderr writer keeps newlines", RUN,
+     '    sys.stderr.write(review_checks.one_line(body) + "\\n")\n',
+     '    sys.stderr.write(body + "\\n")\n',
+     _R + "test_a_scratch_path_with_a_newline_never_forges_a_status_line"),
+    ("review_run's stdout writer keeps newlines", RUN,
+     '    sys.stdout.write(review_checks.one_line(text) + "\\n")\n',
+     '    sys.stdout.write(text + "\\n")\n',
+     _R + "test_the_writers_keep_one_line"),
+    ("the self-check note is printed as it came", RUN,
+     "    note = _one(note) if note else note\n",
+     "",
+     _R + "test_a_self_check_note_with_a_newline_prints_on_one_line"),
+    ("install-scripts' paths are left to citation counts", INSTALL_MAP,
+     "paths: plugin/crew/**, scripts/**\n",
+     "",
+     "tests/test_review_contracts.py::test_the_install_scripts_rule_loads_for_the_install_scripts"),
 )

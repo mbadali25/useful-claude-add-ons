@@ -1,5 +1,6 @@
 # install-scripts
 anchor: useful-claude-add-ons@370a7a5b
+paths: plugin/crew/**, scripts/**
 verified: 2026-10-01
 
 ## Re-derive provenance

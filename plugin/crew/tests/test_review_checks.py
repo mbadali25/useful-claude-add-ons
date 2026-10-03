@@ -1138,41 +1138,19 @@ def test_a_linter_config_that_is_a_symlink_is_could_not_check(tmp_path, fake):
 
 def test_taskkill_is_run_by_absolute_path(monkeypatch, tmp_path):
     """Review round 5 FIX :339: never a bare `taskkill` a repository could
-    shadow from the current directory."""
-    seen = []
+    shadow from the current directory. review_run's no-job fallback is its
+    only user since review round 8 moved the linters to a job object."""
     _exe(tmp_path / "Windows" / "System32", "taskkill.exe")
-    monkeypatch.setattr(rc.os, "name", "nt")
     monkeypatch.setenv("SystemRoot", str(tmp_path / "Windows"))
-    monkeypatch.setattr(rc.subprocess, "run", lambda argv, **_: seen.append(argv))
 
-    class _Proc:
-        pid = 4242
-
-        def kill(self):
-            seen.append("kill")
-
-    rc._kill_tree(_Proc())  # pylint: disable=protected-access
-
-    assert seen == [[os.path.join(str(tmp_path / "Windows"), "System32", "taskkill.exe"),
-                     "/F", "/T", "/PID", "4242"], "kill"], seen
+    assert rc.taskkill() == os.path.join(str(tmp_path / "Windows"), "System32", "taskkill.exe")
 
 
 def test_no_taskkill_without_a_system_root(monkeypatch):
-    seen = []
-    monkeypatch.setattr(rc.os, "name", "nt")
     monkeypatch.delenv("SystemRoot", raising=False)
     monkeypatch.delenv("SYSTEMROOT", raising=False)
-    monkeypatch.setattr(rc.subprocess, "run", lambda argv, **_: seen.append(argv))
 
-    class _Proc:
-        pid = 4242
-
-        def kill(self):
-            seen.append("kill")
-
-    rc._kill_tree(_Proc())  # pylint: disable=protected-access
-
-    assert seen == ["kill"], seen
+    assert rc.taskkill() is None
 
 
 def test_a_linter_is_never_found_in_the_current_directory(tmp_path, monkeypatch):
@@ -1778,3 +1756,96 @@ def test_the_cli_prints_a_crash_on_one_line(tmp_path, monkeypatch, capsys):
 
     assert rc.main(["--manifest", str(tmp_path / "m.json")]) == rc.EXIT_COULD_NOT
     assert [l for l in capsys.readouterr().out.splitlines() if l.startswith("review-run:")] == []
+
+
+# ---- review round 8 (owner decision 2026-10-02: fix all four, last round) ----
+
+@pytest.mark.parametrize("message, other", [
+    ("requires 12:30:00", "requires 13:30:00"),
+    ("port mapping 8080:80:tcp is open", "port mapping 8081:80:tcp is open"),
+    ("aspect ratio 16:9: unsupported", "aspect ratio 4:3: unsupported"),
+    ("timestamp 2026-10-02T12:30:00Z", "timestamp 2026-10-02T12:31:00Z")])
+def test_a_value_shaped_like_a_position_still_tells_findings_apart(message, other):
+    """Review round 8 BLOCK :97: only a position FIELD reads as N:N; a time,
+    a port pair or a ratio in the message is a value."""
+    assert rc._normalise(message) != rc._normalise(other)  # pylint: disable=protected-access
+
+
+def test_shellcheck_positions_quoted_by_actionlint_still_read_as_n():
+    assert rc._normalise("SC2086:info:2:28: Double quote") == rc._normalise(  # pylint: disable=protected-access
+        "SC2086:warning:7:3: Double quote".replace("warning", "info"))
+
+
+def test_a_changed_time_in_a_message_is_a_new_finding(tmp_path, fake):
+    repo = _start(tmp_path, {"a.sh": "# LINT 2086 expires 12:30:00\n"}, [_linter(fake, "shellcheck")])
+    _edit(repo, "a.sh", "# LINT 2086 expires 13:30:00\n")
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], len(result["new"])) == (rc.FAIL, 1), result
+
+
+class _FakeJob:
+    """Stands in for a Windows job object: records what _spawn asks of it
+    and, on terminate, kills the orphan the fake linter left behind."""
+    def __init__(self, pid_file):
+        self.calls, self.pid_file = [], pid_file
+
+    def adopt(self, proc):
+        self.calls.append(("adopt", proc.pid))
+
+    def terminate(self):
+        self.calls.append(("terminate",))
+        try:
+            with open(self.pid_file, encoding="utf-8") as fh:
+                os.kill(int(fh.read()), 9)
+        except (OSError, ValueError):
+            pass
+
+    def close(self):
+        self.calls.append(("close",))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="drives the Windows branch with a fake job on POSIX")
+@pytest.mark.parametrize("mode", ["orphan", "orphan-exit"])
+def test_the_windows_timeout_kills_the_whole_job(tmp_path, fake, monkeypatch, mode):
+    """Review round 8 FIX :574: taskkill /T /PID cannot find a linter that
+    already exited, so its child kept the pipe. On Windows the linter runs in
+    a job object, and a timeout terminates the job, orphans included."""
+    pid_file = tmp_path / "pid"
+    job = _FakeJob(str(pid_file))
+    monkeypatch.setattr(rc, "_WINDOWS", True)
+    monkeypatch.setattr(rc, "new_job", lambda kill_on_close: job)
+    monkeypatch.setattr(rc, "_group_flags", lambda: {"start_new_session": True})
+    monkeypatch.setenv("FAKE_LINT_MODE", mode)
+    monkeypatch.setenv("FAKE_LINT_PID_OUT", str(pid_file))
+
+    with pytest.raises(rc.CouldNotCheck, match="timed out"):
+        rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 2)  # pylint: disable=protected-access
+
+    assert [c[0] for c in job.calls] == ["adopt", "terminate", "close"], job.calls
+
+
+@pytest.mark.skipif(os.name == "nt", reason="drives the Windows branch with a fake job on POSIX")
+def test_a_job_that_cannot_be_made_is_could_not_check(tmp_path, fake, monkeypatch):
+    def broken(kill_on_close):
+        raise OSError(5, "access denied")
+    monkeypatch.setattr(rc, "_WINDOWS", True)
+    monkeypatch.setattr(rc, "new_job", broken)
+
+    with pytest.raises(rc.CouldNotCheck, match="job object"):
+        rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 5)  # pylint: disable=protected-access
+
+
+@pytest.mark.skipif(os.name == "nt", reason="drives the Windows branch with a fake job on POSIX")
+def test_a_linter_that_exits_cleanly_still_has_its_job_ended(tmp_path, fake, monkeypatch):
+    """Like killpg after a clean exit on POSIX: nothing it started outlives it."""
+    job = _FakeJob(str(tmp_path / "pid"))
+    monkeypatch.setattr(rc, "_WINDOWS", True)
+    monkeypatch.setattr(rc, "new_job", lambda kill_on_close: job)
+    monkeypatch.setattr(rc, "_group_flags", lambda: {"start_new_session": True})
+    monkeypatch.setenv("FAKE_LINT_MODE", "empty")
+
+    rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 5)  # pylint: disable=protected-access
+
+    assert [c[0] for c in job.calls] == ["adopt", "terminate", "close"], job.calls

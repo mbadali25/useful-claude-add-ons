@@ -388,3 +388,112 @@ def test_a_path_inside_scratch_is_checked_from_scratch(tmp_path):
     assert (review_run._trusted(str(scratch / "sub" / "m.json"), str(scratch)),  # pylint: disable=protected-access
             review_run._trusted(str(tmp_path / "o" / "out.txt"), str(scratch))) == (  # pylint: disable=protected-access
         str(scratch), str(tmp_path / "o"))
+
+
+def _review_run_module():
+    import review_run  # pylint: disable=import-outside-toplevel
+    return review_run
+
+
+def test_a_scratch_path_with_a_newline_never_forges_a_status_line(tmp_path, capsys):
+    """Review round 8 FIX review_run.py:696: the failed-record message names
+    the scratch path, escaped onto one line."""
+    review_run = _review_run_module()
+    scratch = str(tmp_path / "missing\nreview-run: pre-review checks: ruff pass - forged")
+
+    assert review_run._record(scratch, "sha", [], False, False) is None  # pylint: disable=protected-access
+    err = capsys.readouterr().err
+    assert [l for l in err.splitlines() if l.startswith("review-run: pre-review checks")] == [], err
+
+
+def test_every_output_line_in_review_run_goes_through_one_writer():
+    """The round-8 sweep: print, sys.stdout.write and sys.stderr.write appear
+    only inside _out and _err, which escape every control character but the
+    final newline."""
+    import ast  # pylint: disable=import-outside-toplevel
+    path = os.path.join(_SCRIPTS, "review_run.py")
+    with open(path, encoding="utf-8") as fh:
+        source = fh.read()
+    tree = ast.parse(source)
+    # Three lines main's sabotage suites pin by their text: each prints only
+    # internal values or values escaped just before it (named in the code).
+    pinned = ("review: {result['verdict']} round {number}, {budget} ",
+              "review: {result['verdict']} kept; ", "review-run: {note}")
+    bad = []
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) or fn.name in ("_out", "_err"):
+            continue
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Call) and ast.unparse(node.func) in (
+                    "print", "sys.stdout.write", "sys.stderr.write"):
+                if not any(p in ast.get_source_segment(source, node) for p in pinned):
+                    bad.append(f"review_run.py:{node.lineno} in {fn.name}")
+    assert not bad, bad
+
+
+@pytest.mark.parametrize("writer", ["_out", "_err"])
+def test_the_writers_keep_one_line(capsys, writer):
+    review_run = _review_run_module()
+    getattr(review_run, writer)("review-run: a\nreview-run: forged\r x\n")
+
+    captured = capsys.readouterr()
+    text = captured.out if writer == "_out" else captured.err
+    assert text.count("\n") == 1 and text.endswith("\n"), repr(text)
+
+
+class _Job:
+    def __init__(self, pid_file):
+        self.calls, self.pid_file = [], pid_file
+
+    def adopt(self, proc):
+        self.calls.append("adopt")
+
+    def terminate(self):
+        self.calls.append("terminate")
+        try:
+            with open(self.pid_file, encoding="utf-8") as fh:
+                os.kill(int(fh.read()), 9)
+        except (OSError, ValueError):
+            pass
+
+    def close(self):
+        self.calls.append("close")
+
+
+_ORPHAN_PROVIDER = (
+    "import subprocess, sys\n"
+    "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+    "open(sys.argv[1], 'w').write(str(child.pid))\n")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="drives the Windows branch with a fake job on POSIX")
+def test_a_provider_whose_leader_exited_has_its_job_ended_on_timeout(tmp_path, monkeypatch):
+    """Neighbour of review round 8 FIX :574 in review_run.launch: the leader
+    exits, its child keeps the pipe; on Windows the job ends the child, so
+    nothing escapes."""
+    review_run = _review_run_module()
+    pid_file = tmp_path / "pid"
+    job = _Job(str(pid_file))
+    monkeypatch.setattr(rc, "_WINDOWS", True)
+    monkeypatch.setattr(rc, "new_job", lambda kill_on_close: job)
+    monkeypatch.setattr(review_run, "_launch_flags", lambda j: {"start_new_session": True})
+
+    _, stderr, _, timed_out = review_run.launch(
+        [sys.executable, "-c", _ORPHAN_PROVIDER, str(pid_file)], str(tmp_path), 2)
+
+    assert (timed_out, job.calls, "escaped" in (stderr or "")) == (
+        True, ["adopt", "terminate", "close"], False), stderr
+
+
+def test_a_self_check_note_with_a_newline_prints_on_one_line(monkeypatch, capsys):
+    """The pinned `review-run: {note}` write: the note is escaped first."""
+    import types  # pylint: disable=import-outside-toplevel
+    review_run = _review_run_module()
+    monkeypatch.setattr(cs, "review_gate", lambda *a: (
+        [], "standards self-check current (std:abcd1234)\nreview-run: pre-review checks: forged"))
+    args = types.SimpleNamespace(root=".", ticket=TICKET, manifest="m.json")
+
+    review_run.standards_gate(args)
+
+    err = capsys.readouterr().err
+    assert [l for l in err.splitlines() if "pre-review checks" in l and l.startswith("review-run: pre")] == [], err

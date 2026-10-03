@@ -94,7 +94,11 @@ _ZERO = "0" * 40
 # "SC2086:info:2:28:". "requires 2 approvals" keeps its 2.
 _POSITIONS = (
     (re.compile(r"\b(lines?|columns?|col)\s+\d+(?:\s*-\s*\d+)?", re.IGNORECASE), r"\1 N"),
-    (re.compile(r"(?<![\w.])\d+:\d+(?=:)"), "N:N"),
+    # Only a ShellCheck position FIELD, `SC2086:info:2:28:` as actionlint
+    # quotes it (review round 8 BLOCK :97): any other `N:N:` is a value - a
+    # time `12:30:00`, a port pair `8080:80:`, a ratio `16:9:` - and a
+    # changed value is a new finding.
+    (re.compile(r"\b(SC\d{4}:(?:error|warning|info|style):)\d+:\d+(?=:)"), r"\1N:N"),
 )
 
 TOOLS = {
@@ -559,25 +563,111 @@ def _child_env(tmp):
 
 
 _REAP_SECONDS = 5
+_WINDOWS = os.name == "nt"
+_CREATE_SUSPENDED = 0x00000004
+_KILL_ON_JOB_CLOSE = 0x00002000
+_EXTENDED_LIMIT_INFORMATION = 9
 
 
-def _kill_tree(proc):
+class WindowsJob:
+    """A Windows job object holding a process and everything it starts
+    (review round 8 FIX :574): `taskkill /T /PID` walks parent pids, so it
+    cannot reach a child whose parent already exited, and that child kept
+    the output pipe open. A job holds the child whatever its parent does.
+
+    The process is started suspended and resumed only once it is in the job,
+    so nothing it starts can be born outside it. kill_on_close also ends the
+    job when its last handle closes (this process dying included)."""
+
+    def __init__(self, kill_on_close):
+        import ctypes  # pylint: disable=import-outside-toplevel
+        from ctypes import wintypes  # pylint: disable=import-outside-toplevel
+        self._ctypes = ctypes
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        self._ntdll = ctypes.WinDLL("ntdll")
+        k32.CreateJobObjectW.restype = wintypes.HANDLE
+        k32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+        k32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p,
+                                                wintypes.DWORD]
+        k32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        k32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        k32.CloseHandle.argtypes = [wintypes.HANDLE]
+        self._ntdll.NtResumeProcess.argtypes = [wintypes.HANDLE]
+        self._k32 = k32
+        self._handle = k32.CreateJobObjectW(None, None)
+        if not self._handle:
+            raise OSError(ctypes.get_last_error(), "CreateJobObjectW failed")
+        if kill_on_close:
+            class _Basic(ctypes.Structure):  # JOBOBJECT_BASIC_LIMIT_INFORMATION
+                _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64),
+                            ("PerJobUserTimeLimit", ctypes.c_int64),
+                            ("LimitFlags", wintypes.DWORD),
+                            ("MinimumWorkingSetSize", ctypes.c_size_t),
+                            ("MaximumWorkingSetSize", ctypes.c_size_t),
+                            ("ActiveProcessLimit", wintypes.DWORD),
+                            ("Affinity", ctypes.c_size_t),
+                            ("PriorityClass", wintypes.DWORD),
+                            ("SchedulingClass", wintypes.DWORD)]
+
+            class _Extended(ctypes.Structure):  # JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+                _fields_ = [("BasicLimitInformation", _Basic),
+                            ("IoInfo", ctypes.c_uint64 * 6),
+                            ("ProcessMemoryLimit", ctypes.c_size_t),
+                            ("JobMemoryLimit", ctypes.c_size_t),
+                            ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                            ("PeakJobMemoryUsed", ctypes.c_size_t)]
+            info = _Extended()
+            info.BasicLimitInformation.LimitFlags = _KILL_ON_JOB_CLOSE
+            if not k32.SetInformationJobObject(self._handle, _EXTENDED_LIMIT_INFORMATION,
+                                               ctypes.byref(info), ctypes.sizeof(info)):
+                error = ctypes.get_last_error()
+                self.close()
+                raise OSError(error, "SetInformationJobObject failed")
+
+    def adopt(self, proc):
+        """Put the suspended `proc` in the job, then let it run."""
+        handle = int(proc._handle)  # pylint: disable=protected-access
+        if not self._k32.AssignProcessToJobObject(self._handle, handle):
+            raise OSError(self._ctypes.get_last_error(), "AssignProcessToJobObject failed")
+        if self._ntdll.NtResumeProcess(handle) != 0:
+            raise OSError(errno.EIO, "NtResumeProcess failed")
+
+    def terminate(self):
+        self._k32.TerminateJobObject(self._handle, 1)
+
+    def close(self):
+        if self._handle:
+            self._k32.CloseHandle(self._handle)
+            self._handle = None
+
+
+def new_job(kill_on_close):
+    """A WindowsJob; a seam the tests replace on POSIX."""
+    return WindowsJob(kill_on_close)
+
+
+def _group_flags():
+    """Popen keywords that put the linter in a group of its own: suspended in
+    a new process group on Windows (resumed by WindowsJob.adopt), a new
+    session elsewhere."""
+    if _WINDOWS:
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | _CREATE_SUSPENDED}
+    return {"start_new_session": True}
+
+
+def _kill_tree(proc, job):
     """Kill the linter and everything it started. subprocess.run kills only
     the direct child, and on Windows then waits for EOF on pipes a
-    grandchild may hold open forever (review round 4)."""
+    grandchild may hold open forever (review round 4). On Windows the job
+    ends every process in it, a child whose parent already exited included
+    (review round 8)."""
     try:
-        if os.name == "nt":
-            # By absolute path: a bare name would let a taskkill.exe in the
-            # current directory run (review round 5). No SystemRoot, no taskkill.
-            killer = taskkill()
-            if killer:
-                subprocess.run([killer, "/F", "/T", "/PID", str(proc.pid)],
-                               capture_output=True, stdin=subprocess.DEVNULL, check=False,
-                               timeout=_REAP_SECONDS)
+        if job is not None:
+            job.terminate()
         else:
             os.killpg(proc.pid, signal.SIGKILL)
-    except (OSError, subprocess.SubprocessError):
-        pass  # already gone, or taskkill missing: proc.kill() below still runs
+    except OSError:
+        pass  # already gone: proc.kill() below still runs
     try:
         proc.kill()
     except OSError:
@@ -586,23 +676,43 @@ def _kill_tree(proc):
 
 def _spawn(argv, cwd, timeout):
     env = _child_env(cwd)
-    group = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt"
-             else {"start_new_session": True})
+    job = None
+    if _WINDOWS:
+        try:
+            job = new_job(kill_on_close=True)
+        except OSError as exc:
+            # Without a job a timeout cannot promise to end the whole tree.
+            raise CouldNotCheck(f"could not make a job object for {argv[0]}: {exc}") from exc
+    try:
+        return _run_in(job, argv, cwd, timeout, env)
+    finally:
+        if job is not None:
+            job.close()
+
+
+def _run_in(job, argv, cwd, timeout, env):
     try:
         # surrogateescape: tool output carries paths, which must round-trip.
         # Not a `with` block: on a timeout the group is killed before any wait.
         proc = subprocess.Popen(  # pylint: disable=consider-using-with
             argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="surrogateescape",
-            stdin=subprocess.DEVNULL, env=env, **group)
+            stdin=subprocess.DEVNULL, env=env, **_group_flags())
     except OSError as exc:
         raise CouldNotCheck(f"could not start {argv[0]}: {exc}") from exc
+    if job is not None:
+        try:
+            job.adopt(proc)
+        except OSError as exc:
+            proc.kill()
+            proc.communicate()
+            raise CouldNotCheck(f"could not put {argv[0]} in its job object: {exc}") from exc
     try:
         # The timeout covers EOF too: a child left holding stdout after the
         # linter exits is a timeout, never a wait without end.
         stdout, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired as exc:
-        _kill_tree(proc)
+        _kill_tree(proc, job)
         try:
             proc.communicate(timeout=_REAP_SECONDS)
         except subprocess.TimeoutExpired:
@@ -610,7 +720,9 @@ def _spawn(argv, cwd, timeout):
                 pipe.close()
         raise CouldNotCheck(f"timed out after {timeout}s") from exc
     # A linter that exited cleanly may still have left children behind.
-    if os.name != "nt":
+    if job is not None:
+        job.terminate()
+    else:
         try:
             os.killpg(proc.pid, signal.SIGKILL)
         except OSError:

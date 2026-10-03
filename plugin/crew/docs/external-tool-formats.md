@@ -17,7 +17,7 @@ It is never a pass.
 
 ## Codex CLI
 
-**What crew calls.** `review_run.command_for` (`plugin/crew/hooks/scripts/review_run.py:260-270`)
+**What crew calls.** `review_run.command_for` (`plugin/crew/hooks/scripts/review_run.py:279-289`)
 runs `codex exec` with these flags and nothing else:
 
 | Flag | Meaning |
@@ -62,7 +62,7 @@ raw U+2028 (`plugin/crew/tests/golden/review/uca-t0072--T-0072-build--2BJpY8/eve
 `agent_message` item's text. It counts a turn as complete only on
 `turn.completed`. A `turn.failed`, an `error` event or an unparseable line is
 an error, and a stream with no completed turn is also an error. The verdict
-parser (`review_run.py:458`) turns any of those into INCOMPLETE of class
+parser (`review_run.py:521`) turns any of those into INCOMPLETE of class
 `tool`, which is refunded. Every event and item type in the committed corpus is
 one of the documented types (`test_golden_codex_events_use_documented_types`).
 On 2026-09-28, the 26 local streams used only `thread.started`, `turn.started`,
@@ -109,9 +109,9 @@ Probed: not probed. The T-0087 host is Linux (Ubuntu) with no `wsl.exe`, so `tes
 **What crew calls.** On Windows, `review_checks.resolve_executable("codex")` or
 `resolve_executable("copilot")` (the absolute `PATH` entries only, never the current
 directory) resolves an npm-installed CLI to its `.cmd` shim. `review_run.through_batch_shim`
-(`plugin/crew/hooks/scripts/review_run.py:235`) names a provider whose resolved
+(`plugin/crew/hooks/scripts/review_run.py:254`) names a provider whose resolved
 path ends `.cmd` or `.bat` (`BATCH_SHIM_SUFFIXES`, `:172`), and
-`review_run.prompt_argument` (`:242`) never hands such a provider the prompt
+`review_run.prompt_argument` (`:261`) never hands such a provider the prompt
 inline: it passes the one-line pointer to `prompt.txt` that an over-limit prompt
 already gets, and says why on stderr.
 
@@ -203,8 +203,9 @@ file names go to `-Path` escaped with `WildcardPattern.Escape`, because
 as clean. A file git calls binary (a UTF-16 `.ps1`) is still handed to the
 linter, and the tool decides whether it can read it. Before counting, line
 and column positions inside a message are read as `N` (`line 3`, `column 9`,
-a `2:28:` pair), because ruff (`from line 3`) and actionlint
-(`SC2086:info:2:28`) quote them. Every other digit is kept, so a changed
+and the `2:28` of a ShellCheck field such as `SC2086:info:2:28:`), because
+ruff (`from line 3`) and actionlint quote them. Any other `N:N` is a value
+and is kept: a time (`12:30:00`), a port pair (`8080:80:`), a ratio (`16:9:`). Every other digit is kept, so a changed
 value (`requires 2` to `requires 3`) is a new finding. A row with no
 `message` string is "could not check".
 
@@ -218,9 +219,14 @@ status, or a contradicting status, does not throw away the rows that could be
 read: a new finding among them still refuses, and `--allow-unverified` does
 not override it. A bad row naming a base-side file leaves only that file unchecked,
 because its base count is short. A timeout kills the linter's whole process
-group (`%SystemRoot%\System32\taskkill.exe /T` on Windows, never a bare
-`taskkill`), and covers a child left holding the output open after the linter
-exits. Every program (git, each linter, pwsh, taskkill, the reviewer CLIs) is
+group, and covers a child left holding the output open after the linter
+exits. On Windows the linter starts suspended inside a job object and is
+resumed once it is in it, so a timeout ends every process it started, a child
+whose parent already exited included (`taskkill /T` walks parent pids and
+cannot find that child); a job Windows will not make is "could not check".
+The review runner puts the reviewer CLI in a job the same way, falling back to
+`%SystemRoot%\System32\taskkill.exe /T` (never a bare `taskkill`) only when
+no job can be made. Every program (git, each linter, pwsh, taskkill, the reviewer CLIs) is
 found by `review_checks.resolve_executable`: an absolute path, or the absolute
 `PATH` entries only. On Windows `shutil.which` searches the current directory
 first, so it is not used there. PSScriptAnalyzer takes no `args`: the key is

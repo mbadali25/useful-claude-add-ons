@@ -406,3 +406,17 @@ def test_prereview_reads_only_manifest_keys(tmp_path, monkeypatch):
     assert (configured, [r["status"] for r in results]) == (True, [review_checks.PASS]), results
     assert top and top <= set(review_patch.MANIFEST_KEYS), top
     assert entry_keys and entry_keys <= produced_entry_keys, entry_keys - produced_entry_keys
+
+
+def test_the_install_scripts_rule_loads_for_the_install_scripts():
+    """Review round 8 FIX .claude/rules/install-scripts.md:3: the rule's paths
+    were derived from citation counts, and other tickets' re-anchor notes
+    pushed `scripts/` under the 15% floor. The map names its paths, and the
+    generated rule carries them."""
+    import crew_context  # pylint: disable=import-outside-toplevel
+    with open(os.path.join(REPO, ".crew", "codemap", "install-scripts.md"), encoding="utf-8") as fh:
+        derived = crew_context.derive_paths(REPO, fh.read())
+    with open(os.path.join(REPO, ".claude", "rules", "install-scripts.md"), encoding="utf-8") as fh:
+        rule = fh.read().split("\n---\n", 1)[0]
+
+    assert ("scripts/**" in derived, '  - "scripts/**"' in rule) == (True, True), (derived, rule)

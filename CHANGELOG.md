@@ -61,6 +61,12 @@ All notable changes to this repository are documented here. Format follows [Keep
   instead of a finding with a default. Records are `prereview-<ticket>-r<N>.json`, so two tickets
   sharing a scratch directory each keep round 1. Every printed path, rule, message and error is one
   line, its control characters escaped, so a file name cannot forge a status line.
+- **Review round 8.** Only a ShellCheck position field (`SC2086:info:2:28:`) is read as a position,
+  so a changed time, port pair or ratio in a message is a new finding. On Windows a linter, and the
+  reviewer CLI, run inside a job object started suspended, so a timeout ends a child whose parent
+  already exited. Every line `review_run.py` prints is escaped onto one line, the scratch path in a
+  failed-record message included. `install-scripts`' code map names its `paths:`, so its rule loads
+  for `scripts/**` again however many citations other tickets add.
 - **This repo's config.** ruff adds the fail-open rules S110/S112/BLE001, which `ruff.toml` does not
   select. ShellCheck (`-S warning`) and actionlint run through pinned `uvx` packages. PSScriptAnalyzer
   runs a 13-rule correctness and fail-open allowlist (no WriteHost or naming rules).
