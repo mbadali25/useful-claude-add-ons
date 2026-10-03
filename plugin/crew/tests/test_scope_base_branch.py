@@ -169,7 +169,8 @@ def test_a_corrupt_config_could_not_tell(clone, text):
     (clone / ".crew" / "config.json").write_text(text, encoding="utf-8")
     base, source, reason = scope_base.resolve(str(clone), "T-1")
     assert (base, source) == (None, "unknown"), reason
-    assert "could not tell" in reason and ".crew/config.json" in reason
+    assert "could not tell" in reason
+    assert os.path.join(".crew", "config.json") in reason
 
 
 # --- could not tell ---------------------------------------------------------

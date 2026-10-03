@@ -102,7 +102,6 @@ RECORD = os.path.join(".crew", ".scope-base")
 RECORDED = "record"
 # No base: the configured base branch could not be read or names no commit.
 UNKNOWN = "unknown"
-CONFIG = os.path.join(".crew", "config.json")
 
 _REASON_RECORDED = "the commit {ticket} started from, recorded by /crew:work"
 _REASON_RECORDED_FALLBACK = (
@@ -145,28 +144,30 @@ def read_base_branch(root):
     object, or a value that is not a non-empty string is `(None, problem)` --
     the fail-closed rule of `crew_ticket.configured_mode`, because guessing
     the default there is exactly the silent fallback the key replaces."""
-    path = os.path.join(root, CONFIG)
+    # The resolved repo config -- a worktree with no `.crew/` of its own reads
+    # the main checkout's -- the same file `crew_ticket.configured_mode` reads.
+    path = crew_common.repo_config_file(root, "config.json")
     text = crew_common.read_text(path)
     if text is None:
         if os.path.exists(path):
-            return None, f"{CONFIG} exists but cannot be read"
+            return None, f"{path} exists but cannot be read"
         return None, None
     try:
         data = json.loads(text)
     except ValueError:
-        return None, f"{CONFIG} does not parse"
+        return None, f"{path} does not parse"
     if not isinstance(data, dict):
-        return None, f"{CONFIG} is not a JSON object"
+        return None, f"{path} is not a JSON object"
     tickets = data.get("tickets")
     if tickets is None:
         return None, None
     if not isinstance(tickets, dict):
-        return None, f"tickets in {CONFIG} is not an object"
+        return None, f"tickets in {path} is not an object"
     value = tickets.get("baseBranch")
     if value is None:
         return None, None
     if not isinstance(value, str) or not value.strip():
-        return None, (f"tickets.baseBranch {value!r} in {CONFIG} is not a "
+        return None, (f"tickets.baseBranch {value!r} in {path} is not a "
                       "branch name")
     return value.strip(), None
 

@@ -2974,7 +2974,7 @@ MUTATIONS = (
         # origin/HEAD again, and TSS-510's 492-file bundle comes back.
         "tickets.baseBranch is ignored",
         SCOPE_BASE,
-        "    path = os.path.join(root, CONFIG)\n",
+        '    path = crew_common.repo_config_file(root, "config.json")\n',
         "    return None, None\n",
         ("tests/test_scope_base_branch.py::"
          "test_a_branch_cut_from_the_configured_base_records_exact"),
