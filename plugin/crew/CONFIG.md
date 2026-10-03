@@ -679,7 +679,7 @@ them:
 
 ## 10. Global-settable keys — 72
 
-72 measured (`leaf_paths(default_global_config())`, crew 1.0.206); the table
+72 measured (`leaf_paths(default_global_config())`, crew 1.0.207); the table
 below lists 66 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
 `guards.sqlDestructive` and `environments.prodUnattended` (§16) are
 global-settable and not tabled here; `shellRoute.mode` and `shellRoute.distro`
