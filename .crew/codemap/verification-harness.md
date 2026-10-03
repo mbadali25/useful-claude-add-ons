@@ -157,10 +157,10 @@ Notable rules, re-read directly:
   holds it, imported at `plugin/crew/tests/sabotage.py:87`. Its `PLATFORM_MUTATIONS` are appended
   last in the `MUTATIONS +=` statement (`plugin/crew/tests/sabotage.py:3069`), and `run_test`
   (`plugin/crew/tests/sabotage.py:3080`) delegates to `run_target`
-  (`plugin/crew/tests/sabotage_platform.py:252`). That function runs each entry's pytest with
+  (`plugin/crew/tests/sabotage_platform.py:255`). That function runs each entry's pytest with
   `--junitxml`, a collection plugin, no `-x`, and ambient `PYTEST_ADDOPTS` dropped. It runs in the
   entry's own session (a job object on Windows) under a 900 s timeout, and the tree is always killed
-  after. `verdict` (`plugin/crew/tests/sabotage_platform.py:309`) gives `RED (good)` only on exit 1
+  after. `verdict` (`plugin/crew/tests/sabotage_platform.py:312`) gives `RED (good)` only on exit 1
   with every collected case reported, at least one failed, and none skipped or errored. An
   all-skipped run is COULD-NOT-TELL. `PLATFORM_ONLY` (`plugin/crew/tests/sabotage_platform.py:53`)
   entries are not applied off their platforms and are counted in the summary. The signal handler
@@ -2358,4 +2358,4 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 
 **Re-anchored `452b30cc` -> `afaad3a8` on 2026-10-03 (L-0608 merges origin/main f808e5f0 (crew 1.0.154: #328, #329, #330) at 10594367 with rerere on (CHANGELOG only), then aims eight sabotage entries; crew is set to 1.0.165).** L-0608's own change is `plugin/crew/tests/sabotage_platform.py` (new), `sabotage.py`, `sabotage_standards.py`, `test_sabotage_harness.py`, `test_cloud_guard_environments.py`, `test_endpoints.py`, `test_install_policy.py`, `.crew/verify.json` (upgrade/sabotage-harness rule), README, TODO and CHANGELOG. Every full `path:line` citation into a file changed since `452b30cc` (main's 28 commits included) was re-mapped by script (difflib), with `.crew/verify.json` ranges whose end line changed taken from the nearest unchanged line; two citations main moved by editing the line itself were re-read by hand (`review_run.py:952`, `verify_record.py:571`). Version and count lines stay on the lines they cite. No suite was executed for this note.
 
-**Re-anchored `afaad3a8` -> `e8e7b388` on 2026-10-03 (L-0608: the gate's full sabotage run re-aimed eighteen of #329's entries in `sabotage_tooling.py` at their `[sh]`/`[ps1]` case and declared six Windows-only in `sabotage_platform.py`).** No line moved in `sabotage_tooling.py` (each target string grew in place); `sabotage_platform.py`'s `run_target`/`verdict` citations re-read by hand (`:252`, `:309`). No suite was executed for this note.
+**Re-anchored `afaad3a8` -> `e8e7b388` on 2026-10-03 (L-0608: the gate's full sabotage run re-aimed eighteen of #329's entries in `sabotage_tooling.py` at their `[sh]`/`[ps1]` case and declared six Windows-only in `sabotage_platform.py`).** No line moved in `sabotage_tooling.py` (each target string grew in place); `sabotage_platform.py`'s `run_target`/`verdict` citations re-read by hand (`:255`, `:312`). No suite was executed for this note.

@@ -226,8 +226,11 @@ def _kill_tree(proc, job):
         kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
         kernel32.CloseHandle(handle)
     elif os.name == "nt":
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
-                       capture_output=True, check=False)
+        try:
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                           capture_output=True, check=False, timeout=60)
+        except subprocess.TimeoutExpired:
+            pass  # proc.kill() below still ends the entry's own process
     else:
         try:
             os.killpg(proc.pid, signal.SIGKILL)
