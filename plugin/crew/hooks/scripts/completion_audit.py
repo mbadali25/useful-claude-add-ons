@@ -38,18 +38,12 @@ from the same bytes the approval hash was checked against -- or, for that
 same approved ticket, one of the refresh-artifact paths
 (`crew_refresh_check.REFRESH_ARTIFACT_PATHS`: the code map, the diagrams
 dir, `graph.out`, `.claude/rules/`), which `/crew:implement` step 6's
-refreshes write and no Touch names -- or, for that same approved ticket, a
-`plugin/*/BUDGETS.md` whose only change is the number a `crew-markdown-lines`
-claim marker binds (T-0046, `crew_bookkeeping.claim_numbers_only`, judged
-from the base blob as checkout would write it and the file on disk). A
-BUDGETS.md with no base blob (added, or the new end of a rename), a deleted,
-linked or undecodable one, one whose text did not change (a mode change), or
-one git cannot read, is judged against Touch as before. When the ticket's
+refreshes write and no Touch names. When the ticket's
 approval is not current or did not come from the user's prompt
 (`crew_ticket.accepted`: stale, none, or a `cli` receipt without
 `scope.allowCliApproval`), Touch itself is unapproved, so every changed path
-fails -- a refresh artifact and a claim re-measure included, since both
-allowances are gated on the same approval: an edited spec cannot widen what the audit accepts until the
+fails -- a refresh artifact included, since the allowance is gated on the
+same approval: an edited spec cannot widen what the audit accepts until the
 user approves it again. A broken active-ticket pointer fails the audit too.
 
 ## As a Stop hook
@@ -72,7 +66,6 @@ import os
 import subprocess
 import sys
 
-import crew_bookkeeping
 import crew_ticket
 import scope_base
 
@@ -194,39 +187,6 @@ def _outside_refresh_artifacts(top, paths, approval):
     return [p for p in paths if not crew_refresh_check.is_refresh_artifact(p, dirs)]
 
 
-def _claim_bookkeeping(top, base, path):
-    """True when `path` is a BUDGETS.md whose change since `base` only
-    re-measures its claim number. The base side is the blob as checkout
-    would write it (`cat-file --filters`), so a line-ending conversion is not
-    read as a change; anything unreadable is False."""
-    if not crew_bookkeeping.matches_budgets(path):
-        return False
-    work = os.path.join(top, *path.split("/"))
-    if os.path.islink(work) or not os.path.isfile(work):
-        return False
-    try:
-        fields = _git_fields(top, ["cat-file", "--filters", f"{base}:{path}"])
-        before = "\0".join(fields)
-        before.encode("utf-8")
-        with open(work, encoding="utf-8", newline="") as handle:
-            after = handle.read()
-    except (RuntimeError, OSError, UnicodeError):
-        return False
-    if before == after:
-        # git reports a change the text does not show: a mode or type change.
-        return False
-    return crew_bookkeeping.claim_numbers_only(before, after, path)[0]
-
-
-def _outside_claim_bookkeeping(top, base, paths, approval):
-    """`paths` minus each BUDGETS.md whose change is a claim re-measure
-    (module docstring) -- only when the ticket holds the same current,
-    user-prompt approval the refresh allowance needs."""
-    if approval["status"] == "approved":
-        return [p for p in paths if not _claim_bookkeeping(top, base, p)]
-    return paths
-
-
 def audit(root, ticket):
     """(ok, lines). `lines` explains a failure; empty on a pass."""
     top = crew_ticket.toplevel(root)
@@ -243,7 +203,6 @@ def audit(root, ticket):
     # allowance all share the bytes.
     approval = crew_ticket.accepted(top, ticket)
     paths = _outside_refresh_artifacts(top, paths, approval)
-    paths = _outside_claim_bookkeeping(top, base, paths, approval)
     if not paths:
         return True, []
     note = "" if source == scope_base.RECORDED else " (base is a fallback: shows MORE)"

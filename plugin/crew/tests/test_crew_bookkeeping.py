@@ -1,11 +1,11 @@
 """T-0046: `crew_bookkeeping.claim_numbers_only`, the one predicate the scope
-guard and the completion audit share for the `crew-markdown-lines` claim in
-`plugin/*/BUDGETS.md`.
+guard and the completion audit will share (wired by L-0610) for the
+`crew-markdown-lines` claim in `plugin/*/BUDGETS.md`.
 
 It is the whole allowance, so it is tested as a table: every must-block row
 returns False AND names the rule that refused it (a row refused by a later
-rule than the one it exists for is a vacuous row, and `sabotage_bookkeeping.py`
-relies on the reason to tell them apart), and every must-allow row returns
+rule than the one it exists for is a vacuous row, and L-0610's sabotage entries
+rely on the reason to tell them apart), and every must-allow row returns
 True. The grammar is restated from `scripts/check-marketplace.py`, so a
 lockstep test compares the two.
 """

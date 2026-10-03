@@ -41,20 +41,9 @@ the payload in, so the two shells cannot disagree.
    carry a write anywhere else. A configured dir resolving to the repository
    root opens nothing. Config is already this guard's trust root --
    `scope.mode` lives there -- so a configured dir is not a new way round it.
-7. With that SAME approval, a Write, Edit or MultiEdit of an existing
-   `plugin/*/BUDGETS.md` passes when it only re-measures the number a
-   `crew-markdown-lines` claim marker binds (T-0046): the after-text is
-   computed exactly from the call -- Write's `content`, Edit's one exact
-   replacement (every one under `replace_all`), MultiEdit's edits in order --
-   and `crew_bookkeeping.claim_numbers_only` must pass it against the file on
-   disk. The real and the named path must be the same file, so a link cannot
-   carry the write. A call whose after-text cannot be computed (an
-   `old_string` missing or not unique, a NotebookEdit, an unreadable or new
-   file) is not exempt, and Touch decides as before.
    Nothing else is exempt: not the rest of `.crew/`, not `TODO.md`, not the
-   rest of `.claude/`, not crew's policy files, not any other line of
-   BUDGETS.md, not the version files. Put them in Touch if the ticket is
-   meant to change them.
+   rest of `.claude/`, not crew's policy files. Put them in Touch if the
+   ticket is meant to change them.
 
 ## Bash and PowerShell
 
@@ -114,7 +103,6 @@ import re
 import sys
 import time
 
-import crew_bookkeeping
 import crew_ticket
 import role_write_guard
 
@@ -230,95 +218,6 @@ def _refresh_artifact(top, real_rel, checks, approval):
     import crew_refresh_check  # pylint: disable=import-outside-toplevel
     dirs = crew_refresh_check.refresh_artifact_paths(top)
     return all(crew_refresh_check.is_refresh_artifact(r, dirs) for r in checks)
-
-
-def _apply(text, old, new, replace_all):
-    """`text` with one Edit applied as the Edit tool applies it, or None
-    when the tool would refuse it (missing, or not unique without
-    `replace_all`)."""
-    if not isinstance(old, str) or not isinstance(new, str) or not old:
-        return None
-    hits = text.count(old)
-    if hits == 0:
-        return None
-    if replace_all is True:
-        return text.replace(old, new)
-    if hits != 1:
-        return None
-    return text.replace(old, new, 1)
-
-
-def _after_text(tool, tool_input, current):
-    """The file's exact text after this call, or None when it cannot be
-    computed from the call alone."""
-    if tool == "Write":
-        content = tool_input.get("content")
-        return content if isinstance(content, str) else None
-    if tool == "Edit":
-        return _apply(current, tool_input.get("old_string"), tool_input.get("new_string"),
-                      tool_input.get("replace_all", False))
-    if tool == "MultiEdit":
-        edits = tool_input.get("edits")
-        if not isinstance(edits, list) or not edits:
-            return None
-        text = current
-        for edit in edits:
-            if not isinstance(edit, dict) or edit.get("file_path") not in (
-                    None, tool_input.get("file_path")):
-                return None
-            text = _apply(text, edit.get("old_string"), edit.get("new_string"),
-                          edit.get("replace_all", False))
-            if text is None:
-                return None
-        return text
-    return None
-
-
-def _claim_bookkeeping(top, real_rel, named_rel, approval, payload):
-    """True only for a re-measure of a BUDGETS.md claim number by an
-    approved ticket (module docstring, rule 7). Anything it cannot establish
-    is False, and the Touch check decides."""
-    approved = approval["status"] == "approved"
-    if not approved or real_rel is None or named_rel is None:
-        return False
-    if real_rel != named_rel:
-        return False
-    if not crew_bookkeeping.matches_budgets(named_rel):
-        return False
-    if not isinstance(payload, dict) or payload.get("tool_name") not in ("Write", "Edit",
-                                                                       "MultiEdit"):
-        return False
-    tool_input = payload.get("tool_input")
-    if not isinstance(tool_input, dict):
-        return False
-    path = os.path.join(top, *real_rel.split("/"))
-    if os.path.islink(path) or not os.path.isfile(path):
-        return False
-    try:
-        with open(path, encoding="utf-8", newline="") as handle:
-            current = handle.read()
-    except (OSError, UnicodeDecodeError):
-        return False
-    after = _after_text(payload["tool_name"], tool_input, current)
-    if after is None:
-        return False
-    return crew_bookkeeping.claim_numbers_only(current, after, named_rel)[0]
-
-
-def bookkeeping_verdict(top, approval, payload, base, verdict):
-    """`verdict` -- a `(path, ok, reason)` from `classify` -- turned into a
-    pass when it failed and the call is a claim re-measure of an approved
-    ticket (module docstring, rule 7). Judged after `classify`, never inside
-    it, so every refusal `classify` makes is unchanged for any other path."""
-    target, ok, _reason = verdict
-    if ok:
-        return verdict
-    absolute = target if os.path.isabs(target) else os.path.join(base, target)
-    real = role_write_guard._resolve_real_target(absolute)  # pylint: disable=protected-access
-    real_rel, named_rel = _rel(real, top), _rel(os.path.normpath(absolute), top)
-    if _claim_bookkeeping(top, real_rel, named_rel, approval, payload):
-        return target, True, "a claim-number edit of an approved ticket (bookkeeping)"
-    return verdict
 
 
 def protected(top, state, target, base):
@@ -483,7 +382,6 @@ def decide(data):
         approval = crew_ticket.accepted(root, ticket)
         verdicts = [(p,) + classify(top, common, ticket, approval["touch"], approval, p, base)
                     for p in paths]
-        verdicts = [bookkeeping_verdict(top, approval, data, base, v) for v in verdicts]
     bad = [(p, reason) for p, ok, reason in verdicts if not ok]
     if not bad:
         return 0

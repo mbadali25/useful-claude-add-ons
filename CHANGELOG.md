@@ -4,23 +4,19 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added - `crew` 1.0.147: an approved ticket may re-measure the BUDGETS.md claim number without Touch (T-0046)
+### Added - `crew` 1.0.147: `crew_bookkeeping.claim_numbers_only`, the BUDGETS.md claim-number predicate (T-0046)
 
-- **Scope guard and completion audit.** For a ticket with a current approval from the user's prompt
-  (a `cli` receipt only under `scope.allowCliApproval`), a change to `plugin/*/BUDGETS.md` whose only
-  difference is the digit runs of the one line a `<!-- claim: crew-markdown-lines -->` marker binds
-  no longer needs that file in Touch. Both hooks judge it with one predicate,
-  `crew_bookkeeping.claim_numbers_only`, whose claim grammar a lockstep test holds equal to
-  `scripts/check-marketplace.py`'s. The guard computes the exact text after a Write, an Edit (its
-  `old_string` must match once, or `replace_all`) or a MultiEdit; the audit compares the base blob
-  with the file on disk. Every other change still needs Touch: another line, a moved marker, an
-  added or removed line, a line-ending change, a new or deleted BUDGETS.md, a mode change, a link,
-  a NotebookEdit, and anything either hook cannot read. Version files are not exempt.
-- **Tests.** Must-block and must-allow suites for the predicate, the guard and the audit, and 15
-  sabotage mutations in `tests/sabotage_bookkeeping.py`, each red on its named test.
+- **The predicate, not yet wired.** `plugin/crew/hooks/scripts/crew_bookkeeping.py` decides whether
+  a change to `plugin/*/BUDGETS.md` only re-measures the number on the one line a
+  `<!-- claim: crew-markdown-lines -->` marker binds: same line count, same marker bindings, every
+  differing line a bound one, differing only in its digit runs. Anything else, including input it
+  cannot read, is False with the refusing rule named; it never raises. Its claim grammar is
+  restated from `scripts/check-marketplace.py`, and a lockstep test holds the two equal.
+- **No behaviour change yet.** Nothing imports the module in this release. The scope guard and the
+  completion audit are wired to it by L-0610, a separate tooling PR under the owner's tooling-PR
+  rule, so that an approved ticket may re-measure the claim without BUDGETS.md in its Touch.
 - **Dropped.** T-0046's second part, listing graphify outputs by hash in the review bundle, was
-  dropped by owner decision: main's T-0092 already excludes `graphify-out/` from the bundle, so
-  `review_patch.py`, the ledger and existing receipts are unchanged.
+  dropped by owner decision: main's T-0092 already excludes `graphify-out/` from the bundle.
 
 ### Fixed - `crew` 1.0.139: the recurring-findings checklist's L-0575 round-2 findings (L-0592)
 

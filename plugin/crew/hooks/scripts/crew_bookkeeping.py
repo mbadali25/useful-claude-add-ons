@@ -7,9 +7,11 @@ fails the gate when that number is wrong. Every ticket that adds or resizes a
 every such ticket needed BUDGETS.md in its Touch or it stopped at the scope
 guard or the completion audit.
 
-`claim_numbers_only(before, after, path)` is the one predicate both hooks use
-to let an approved ticket make that re-measure without Touch. It is True only
-when ALL of these hold:
+`claim_numbers_only(before, after, path)` is the one predicate both hooks will
+use to let an approved ticket make that re-measure without Touch. The hooks
+are wired to it by L-0610, a separate tooling PR (the owner's tooling-PR rule);
+until that lands nothing imports this module. It is True only when ALL of
+these hold:
 
 - `path` is `plugin/<one segment>/BUDGETS.md`, compared case-sensitively;
 - both sides are `str` (bytes, None or anything else is "could not tell");
@@ -21,8 +23,8 @@ when ALL of these hold:
   at least one such run on each side.
 
 Anything else is False with the first failing rule named, and so is anything
-this module cannot evaluate: it never raises. The caller treats False as "not
-exempt", and the Touch check decides as it did before this module existed.
+this module cannot evaluate: it never raises. A caller is to treat False as
+"not exempt", so the Touch check decides as it did before this module existed.
 
 What is NOT bookkeeping: any other line of the file, any other claim kind, any
 other Markdown file, and the version files (plugin.json, marketplace.json,

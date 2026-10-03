@@ -84,7 +84,6 @@ from sabotage_limit_worktree import LIMIT_WORKTREE_MUTATIONS
 from sabotage_qa import QA_AUDIT_MUTATIONS
 from sabotage_standards import STANDARDS_MUTATIONS
 from sabotage_shell import SHELL_MUTATIONS
-from sabotage_bookkeeping import BOOKKEEPING_MUTATIONS
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__)))))
@@ -3053,8 +3052,8 @@ MUTATIONS = (
     ),
 )
 # The T1 review-fix, T3 scope, T5 cloud-guard, context, migrate, auto-cycle, T-0008 refresh-check,
-# T-0006 resume, T-0004 autopilot, T-0021 tracker, T-0023 route, T-0024 group-approval, T-0075 config menu,
-# T-0040 shell-route and T-0046 bookkeeping
+# T-0006 resume, T-0004 autopilot, T-0021 tracker, T-0023 route, T-0024 group-approval, T-0075 config menu
+# and T-0040 shell-route
 # mutations live in the sabotage_*.py siblings: this file is at `.pylintrc`'s max-module-lines, and raising that
 # limit again is the move its own comment warns against.
 MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS + CLOUD_GUARD_MUTATIONS + SCOPE_MUTATIONS
@@ -3063,7 +3062,7 @@ MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS +
               + POLICY_MUTATIONS + APPROVAL_MUTATIONS + CONFIG_MENU_MUTATIONS
               + LIMIT_WORKTREE_MUTATIONS
               + QA_AUDIT_MUTATIONS + TOOLING_MUTATIONS
-              + STANDARDS_MUTATIONS + SHELL_MUTATIONS + BOOKKEEPING_MUTATIONS)
+              + STANDARDS_MUTATIONS + SHELL_MUTATIONS)
 
 # pytest's own exit codes (documented, not this file's invention): 0 all
 # passed; 1 at least one test FAILED (a real assertion, or an error raised
