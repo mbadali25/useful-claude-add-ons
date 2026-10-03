@@ -57,6 +57,10 @@ it merges if its number has been passed.
 | #365 | T-0058 | blocked | T-0052, T-0012, T-0019 | |
 | #366 | T-0059 | blocked | T-0011 (#353), T-0037, T-0052 | |
 
+**Not started anywhere (no branch, nothing on `main`):** T-0016, T-0037 and T-0049. Together they block
+#356, #363, #364, #365 and #366. Owner's ticket agent: confirm that each ticket exists and is ready to
+build, or create it.
+
 ## Owner decisions (2026-10-03)
 
 | # | Question | Decision |
