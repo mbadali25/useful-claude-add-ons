@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.123: `/crew:autopilot assign` and `crew_ticket.py mint` (T-0019)
+### Added — `crew` 1.0.144: `/crew:autopilot assign` and `crew_ticket.py mint` (T-0019)
 
 - **What changed.** `crew_ticket.mint(root, title, status="ready", direction=None)`
   (CLI `crew_ticket.py mint --root . --title <t> [--status ready|direction]
@@ -53,7 +53,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   appended to `AUTOPILOT_MUTATIONS`.
 - Bumped `1.0.61 -> 1.0.62`, then `1.0.62 -> 1.0.63` for review round 1's fixes,
   then `1.0.115 -> 1.0.123` after merging main `8d84786d` (crew 1.0.115);
-  1.0.116-1.0.122 are claimed or burned by other lanes.
+  1.0.116-1.0.122 are claimed or burned by other lanes; then `1.0.139 -> 1.0.144`
+  after merging main `2a2d6e07` (crew 1.0.139); 1.0.140-1.0.143 are held by
+  other lanes.
 ### Fixed - `crew` 1.0.139: the recurring-findings checklist's L-0575 round-2 findings (L-0592)
 
 - **No hang on a FIFO.** `recurring_findings.py` reads a spec or its data file only when it is a
