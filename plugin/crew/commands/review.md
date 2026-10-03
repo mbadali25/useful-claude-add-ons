@@ -26,8 +26,7 @@ TICKET="${1:-$(awk -F'|' 'NF>1{gsub(/^[ \t]+|[ \t]+$/,"",$2);if($2~/^(open|in-pr
 total** (`review_ledger.py`, in `<git-common-dir>/crew/review/<id>.json`,
 shared by every worktree). A round is reserved before the reviewer launches,
 so a crashed one still counts; a third is refused and the ticket becomes
-`NEEDS_REPLAN`. Round 2's FINDINGS can still be accepted until then. No flag,
-variable or config key raises or resets it.
+`NEEDS_REPLAN`. Step 3.3 says how round 2's FINDINGS close. No flag, variable or config key changes it.
 
 `mktemp`'s branch-prefixed, randomly-suffixed directory is ticket-scoped (the
 branch name) and session-scoped (no other process can be handed the same
@@ -298,10 +297,10 @@ AUTHOR_SOURCE=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).g
 # already applied the guard -- this is the list to pick from, in order, and an
 # empty one is the "no independent reviewer" state, not an error.
 ELIGIBLE=$(python3 -c '
-import json, sys
-report = json.load(open(sys.argv[1]))
-print(" ".join(c["provider"] for c in report.get("qaFallThrough") or []
-                if c.get("eligible")))' "$REPORT")
+import json, sys  # kimi has no review_run.py runner (T-0028): named on stderr, never tried
+report = json.load(open(sys.argv[1])); ok = [c["provider"] for c in report.get("qaFallThrough") or [] if c.get("eligible")]
+[sys.stderr.write("review: " + p + " is eligible but has no review runner - skipped\n") for p in ok if p not in ("codex", "copilot", "claude")]
+print(" ".join(p for p in ok if p in ("codex", "copilot", "claude")))' "$REPORT")
 echo "authors=$AUTHORS source=$AUTHOR_SOURCE eligible=${ELIGIBLE:-<none>}"
 ```
 
@@ -447,7 +446,7 @@ denied by policy settings` is org or enterprise policy — report that exact
 cause. Exit 2 means nothing launched and no round was spent: not on PATH (walk
 to the next eligible provider), or `review-run: self-check: ...` - the standards
 self-check is missing or stale for this bundle (every provider): answer
-`.work/tickets/$TICKET/selfcheck.md`, run the `crew_standards.py stamp` it names, rebuild. Exit 5 (`$REVIEW_STATUS`, not the probe's `$PROBE_STATUS` 5): the verify gate has not passed this tree, no round spent; every provider refuses it, so run the gate first (or pass `--allow-unverified` and say so). The order is fixed: a CLEAN receipt covering this bundle answers CLEAN first and asks for no self-check; an unverified gate is refused with exit 5 before the self-check is asked for; only then can exit 2 name a self-check problem. A Codex round whose call fails on a usage limit stays INCOMPLETE, prints `review: codex usage limit in round N: '<the error>'` and is recorded after the verdict, in `<git-common-dir>/crew/review-limit/<ticket>.json` (not the ledgers' folder, which `/crew:status` lists): the next probe answers `limited` from that record without a call, so the next round runs step 2c; the round after it probes Codex live again. A record that cannot be written prints `could not record it (...)` instead; the round is still INCOMPLETE (exit 3) and the next probe calls Codex live.
+`.work/tickets/$TICKET/selfcheck.md`, run the `crew_standards.py stamp` it names, rebuild. Exit 5 (`$REVIEW_STATUS`, not the probe's `$PROBE_STATUS` 5), no round spent, every provider, means one of two things. Either the verify gate has not passed this tree: run the gate first, or pass `--allow-unverified` and say so. Or a pre-review check refused it (`review-run: pre-review checks: ...` lines, L-0574). `FAIL` with `NEW` lines means the bundle adds a linter finding its base did not have: fix it, or suppress it with the tool's own inline directive and a reason, then rebuild. `--allow-unverified` does not override a new finding. `COULD NOT CHECK` means a configured linter could not run or could not parse a changed file. Install or repair it, or pass `--allow-unverified` and say so; `review.json` records `prereview.overridden`. The order is fixed: a CLEAN receipt covering this bundle answers CLEAN first and asks for nothing else; an unverified gate is refused with exit 5 before the pre-review checks run; a pre-review refusal (exit 5) comes before the self-check is asked for; only then can exit 2 name a self-check problem. A spent budget skips both. A Codex round whose call fails on a usage limit stays INCOMPLETE, prints `review: codex usage limit in round N: '<the error>'` and is recorded after the verdict, in `<git-common-dir>/crew/review-limit/<ticket>.json` (not the ledgers' folder, which `/crew:status` lists): the next probe answers `limited` from that record without a call, so the next round runs step 2c; the round after it probes Codex live again. A record that cannot be written prints `could not record it (...)` instead; the round is still INCOMPLETE (exit 3) and the next probe calls Codex live.
 
 **Step 2c — Claude fallback.** Invoke the `crew:reviewer` subagent with the
 SAME bundle 2a and 2b just read: the exact `$SCRATCH/prompt.txt` content —
@@ -470,7 +469,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TI
   --output "$SCRATCH/out.txt" --exit-code 0 --note "codex-probe=${PROBE_STATUS:-not-run}"
 ```
 
-An empty `ROUND` means do not dispatch: a refusal (budget spent, exit 5 above, or the self-check as in 2a), or `ALREADY_CLEAN=1`, a CLEAN receipt already covering this bundle.
+An empty `ROUND` means do not dispatch: a refusal (budget spent, exit 5 above - gate or pre-review checks - or the self-check as in 2a), or `ALREADY_CLEAN=1`, a CLEAN receipt already covering this bundle.
 
 The fallback is genuinely weaker than a different family: the same model family reviewing itself
 finds fewer defects. Tell me when it is what ran, so I review harder myself.
@@ -503,12 +502,12 @@ loses the most time to.
 2. Fix all BLOCK items. Rerun `./_verify/smoke.sh`. Rerun this review once — round 2 is the last,
    counting only rounds not refunded. A refusal (exit 4, `NEEDS_REPLAN`) is terminal in this
    release: stop, say so, and replan the ticket; there is no third round.
-3. If you disagree with a finding, say so explicitly and let me decide. If I
-   accept FINDINGS as they stand, record it — the receipt names who and when:
-   `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py --ticket "$TICKET" --accept --by "<who>"`.
-   Only the most recent round can be accepted, once, including round 2, and not
-   once the ticket is `NEEDS_REPLAN` (a refused third reservation, or
-   `review_ledger.py --ticket "$TICKET" --reject --by "<who>"`). A CLEAN round writes its receipt itself. `review_ledger.py --ticket "$TICKET" --check-receipt` rebuilds the bundle and fails if anything changed since.
+3. **Closure (L-0510).** `review: auto-accept: eligible` (a final round: FINDINGS, 0 BLOCK, no open healer skip, no verdict recovered from stray lines (`ignored_lines` 0 and readable), reviewed by Codex or Kimi) AND no BLOCK from step 0b's specialists or step 2d's controls, which the ledger never sees: mint the next free id as `/crew:brainstorm` step 1 does, run
+   `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py" --ticket "$TICKET" --auto-accept --follow-up <id>`, then `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py" create --root . --ticket <id> --title "<title>"` and write its `direction.md`: source ticket, round, bundle sha, then every line printed after the first, verbatim, one per line inside one fenced block, no `>` or list prefix (`--check-follow-up` matches whole lines verbatim, as many times as the receipt carries each). A same-family (Claude-fallback) round is never eligible: it is mine to accept. `tracker not updated: <reason>` stops for me.
+   Anything else (any BLOCK, a `refused -` line, a specialist BLOCK, an unverified control) stops for me with 2-4 options, recommended first, each with a one-line tradeoff (reject and replan / I accept as is / fix and I grant a round). Disagree with a finding? Say so. If I accept, record it - the receipt names who and when; a `--by` starting `auto:` is refused:
+   `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py" --ticket "$TICKET" --accept --by "<who>"`.
+   Only the most recent round can be accepted, once, and not once the ticket is `NEEDS_REPLAN` (a refused third reservation, or `review_ledger.py --ticket "$TICKET" --reject --by "<who>"`).
+   A CLEAN round writes its receipt itself. `review_ledger.py --ticket "$TICKET" --check-receipt` rebuilds the bundle and fails if anything changed since.
 4. **Land the verdict as a review, not a comment.** If the change is on a GitHub PR, post the outcome
    with `gh pr review` so it exists as an artifact that tooling and branch protection can see:
 
