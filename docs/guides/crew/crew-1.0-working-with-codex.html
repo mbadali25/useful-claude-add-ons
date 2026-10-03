@@ -169,6 +169,12 @@ approval receipt is told the gate does not apply, and during a declared incident
 (<code>/crew:emergency</code>) the gate stands down and logs the skip. The self-check is asked for last: a
 CLEAN receipt that already covers the bundle answers CLEAN without it, and a tree the verify gate
 has not passed is refused (exit 5) before it.</p>
+<p>Between the verify gate and the self-check, <code>review_run.py</code> lints the bundle's changed files with
+the linters <code>.crew/verify.json</code> lists under <code>preReview</code> (L-0574). Each file is linted at its base
+and at the bundle, and a finding the bundle adds refuses the round (exit 5, nothing spent) before
+Codex is launched. <code>--allow-unverified</code> does not override a new finding. A linter that could not run,
+or could not parse a changed file, reads <code>COULD NOT CHECK</code>, never a pass. It refuses too, unless
+<code>--allow-unverified</code> is given, and <code>review.json</code> records that override as <code>prereview.overridden</code>.</p>
 <h2 id="when-codex-hits-a-usage-limit">When Codex Hits a Usage Limit</h2>
 <p>Having <code>codex</code> on <code>PATH</code> does not mean it can review: a logged-out, rate-limited or out-of-credits
 Codex is installed and fails at the first call. So <code>/crew:review</code> makes one minimal real call first,
