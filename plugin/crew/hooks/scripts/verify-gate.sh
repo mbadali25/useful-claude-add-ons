@@ -372,6 +372,17 @@ BUDGET_FLAG=""
 # No python means no fingerprint and no skip -- the safe direction.
 FP_PY=$(crew_py 2>/dev/null) || FP_PY=""
 FP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The rule commands run with CLAUDE_PLUGIN_ROOT set, so a verify.json rule can
+# call a crew script (`python3 "$CLAUDE_PLUGIN_ROOT/hooks/scripts/..."`) and
+# get the same answer under the Stop hook and under `/crew:verify --all`. A
+# hook process receives it from Claude Code (plugins/components docs); the
+# Bash tool that runs `--all` substitutes it into the command text but is not
+# documented to export it. Set only when absent: the hook's own value is a
+# native path on Windows, which this shell's `pwd` form is not.
+if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+  CLAUDE_PLUGIN_ROOT="$(cd "$FP_DIR/../.." && pwd)"
+  export CLAUDE_PLUGIN_ROOT
+fi
 FP_FILE=".crew/.verify-gate.fingerprint"
 FINGERPRINT=""
 if [ -n "$FP_PY" ] && [ -f "$FP_DIR/verify_fingerprint.py" ] && [ "$BUDGET_FLAG" != "--all" ]; then

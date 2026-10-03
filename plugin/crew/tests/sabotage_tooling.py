@@ -649,3 +649,25 @@ if shutil.which("pwsh"):
              "test_a_withdrawn_credit_never_clears_the_rule_s_record"),
         ),
     )
+
+# The gate exports CLAUDE_PLUGIN_ROOT to its rule commands when unset.
+TOOLING_MUTATIONS += (
+    (
+        # Unexported, a rule's child process (python3 under `/crew:verify
+        # --all`) never sees it: the rule fails there and passes at Stop.
+        "the gate does not export CLAUDE_PLUGIN_ROOT to its rule commands",
+        GATE_SH,
+        "  export CLAUDE_PLUGIN_ROOT\n",
+        "  :\n",
+        "tests/test_verify_gate_plugin_root.py::test_an_unset_plugin_root_is_the_gates_own",
+    ),
+    (
+        # Replacing the hook's own value swaps a native Windows path for the
+        # bash form.
+        "the gate replaces a CLAUDE_PLUGIN_ROOT its caller set",
+        GATE_SH,
+        'if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ]; then\n',
+        "if true; then\n",
+        "tests/test_verify_gate_plugin_root.py::test_a_plugin_root_the_caller_set_is_kept",
+    ),
+)
