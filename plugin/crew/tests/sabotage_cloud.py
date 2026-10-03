@@ -375,8 +375,8 @@ CLOUD_GUARD_MUTATIONS += (
      '    if out["policy"] == "block-x":\n        return "deny"',
      _EB + "[block-not-loosened]"),
     ("cloud guard env: prodUnattended read from the repo alone", GUARD,
-     '    out["prodUnattended"] = crew_config.resolve_ratcheted(\n'
-     '        root, "environments.prodUnattended")["effective"] is True\n',
+     '    out["prodUnattended"] = crew_config.resolve_ratcheted(root, '
+     '"environments.prodUnattended")["effective"] is True\n',
      '    out["prodUnattended"] = crew_state.load_config(root).get(\n'
      '        "environments", {}).get("prodUnattended") is True\n',
      _EB + "[prod-repo-only-unattended]"),
