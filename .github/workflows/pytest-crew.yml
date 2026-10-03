@@ -192,17 +192,20 @@ jobs:
       # Reached only when every step above succeeded (no `if: always()`),
       # and only on a leg that does work. The fan-in requires this marker
       # for both sets of its version, so a leg whose steps were skipped
-      # cannot read as a pass there.
+      # cannot read as a pass there. Written under runner.temp, which the
+      # runner empties at the start of every job: a self-hosted workspace
+      # persists between runs, so a marker left there by an earlier run
+      # could otherwise be uploaded or read as this run's.
       if: env.RUN_LEG == 'true'
       run: |
-        mkdir -p leg-marker
-        echo "ran" > leg-marker/${{ matrix.set }}
+        mkdir -p "$RUNNER_TEMP/leg-marker"
+        echo "ran" > "$RUNNER_TEMP/leg-marker/${{ matrix.set }}"
     - name: Upload the marker
       if: env.RUN_LEG == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: test-ran-${{ matrix.set }}-${{ matrix.python-version }}
-        path: leg-marker/
+        path: ${{ runner.temp }}/leg-marker/
         if-no-files-found: error
         retention-days: 3
 
@@ -231,12 +234,15 @@ jobs:
       run: echo "::notice::PR CI runs Python 3.12 only. This ${{ matrix.python-version }} leg was SKIPPED, not passed; it runs on push to main, workflow_dispatch and the nightly schedule."
     - name: Download this version's leg markers
       if: env.RUN_LEG == 'true'
-      # A missing marker is the next step's to report, by name.
+      # A missing marker is the next step's to report, by name. Into
+      # runner.temp (emptied at every job start), never the workspace: this
+      # job has no checkout, and on the self-hosted pool its workspace keeps
+      # whatever an earlier run left there.
       continue-on-error: true
       uses: actions/download-artifact@v4
       with:
         pattern: test-ran-*-${{ matrix.python-version }}
-        path: leg-markers
+        path: ${{ runner.temp }}/leg-markers
         merge-multiple: true
     - name: Check both sets ran and passed
       env:
@@ -248,7 +254,7 @@ jobs:
         fi
         if [ "$RUN_LEG" = true ]; then
           for set in default wallclock; do
-            if [ ! -f "leg-markers/$set" ]; then
+            if [ ! -f "$RUNNER_TEMP/leg-markers/$set" ]; then
               echo "::error::test-$set (${{ matrix.python-version }}) left no marker: its steps did not all run and pass."
               exit 1
             fi
@@ -258,8 +264,8 @@ jobs:
 
   crew-shell-matrix:
     # The full bash/pwsh driver matrix for crew's hooks -- every test marked
-    # `slow` (plugin/crew/tests/conftest.py). The `test` job above runs crew's
-    # DEFAULT set, which deselects it: there the python driver runs every
+    # `slow` (plugin/crew/tests/conftest.py). The `test-default` legs above
+    # run crew's DEFAULT set, which deselects it: there the python driver runs every
     # decision case and the shells run a parity sample per hook. This job is
     # what keeps the rest of the matrix run on Linux; the crew-windows-* jobs
     # below run it, and the rest of crew's suite, natively on Windows.

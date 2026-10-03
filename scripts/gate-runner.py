@@ -258,7 +258,7 @@ EXCLUDED_CI = (
     ("pytest-crew.yml", "python3 scripts/check-windows-shards.py *",
      "the Windows fan-in (L-0577): reads CI job results and artifacts, which a lane does not "
      "have; its suite scripts/_test/windows-shards.py is the windows-shards step"),
-    ("pytest-crew.yml", "mkdir -p leg-marker",
+    ("pytest-crew.yml", 'mkdir -p "$RUNNER_TEMP/leg-marker"',
      "test-set's per-leg marker for the `test` fan-in (L-0590); checks nothing"),
     ("mcp-servers.yml", "npm ci", INSTALL + "; the npm test step SKIPs without node_modules"),
 )
