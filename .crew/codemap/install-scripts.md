@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@11b03045
+anchor: useful-claude-add-ons@4fa4d722
 paths: plugin/crew/**, scripts/**
 verified: 2026-10-03
 
@@ -347,7 +347,7 @@ through their own package managers.
   `SKILL_KEYS`/`SKILL_NAME` rows and PowerShell equivalents are absent,
   confirmed by `git diff` (they are pure deletions in this range, not moved
   elsewhere) and by grepping the current file for either string (zero hits in
-  `scripts/install-prerequisites.sh`/`.ps1`). `README.md:749` (outside this
+  `scripts/install-prerequisites.sh`/`.ps1`). `README.md:750` (outside this
   note's scope) explains the replacement: `obsidian-vault`'s portable
   `obsidian-memory-contract` profiles.
 
@@ -1622,3 +1622,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
 
 **Re-anchored `0620587f` -> `11b03045` on 2026-10-03 (T-0022, crew 1.0.191).** T-0022 changed files this map names (`crew_autopilot.py`, the crew README and command files, `.crew/verify.json` with one rule appended, `TODO.md`, `CHANGELOG.md`, the version files, `BUDGETS.md`); a difflib re-map from `b9b12794` (T-0022's merge of origin/main `7846261c`) to `11b03045` moved no body citation here, and the version and Markdown-total lines it touched were edited in place. Version claims in this map were not re-derived. No suite was executed for this note.
+
+**Re-anchored `11b03045` -> `4fa4d722` on 2026-10-03 (T-0022 review round 1, crew 1.0.226; T-0022 merged origin/main `1d43e9fe` (#380, crew 1.0.167: the verify gate's `CLAUDE_PLUGIN_ROOT`) at `adca8c54` and `fe4d5996` (#381, `VERIFYING.md`) at `fa4de438`).** Body citations into files changed in that range were moved by difflib where they hold current lines (history parentheticals left); main's #380/#381 claims were not re-derived. No suite was executed for this note.

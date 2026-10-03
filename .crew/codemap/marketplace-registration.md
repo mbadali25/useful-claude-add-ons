@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@11b03045
+anchor: useful-claude-add-ons@4fa4d722
 verified: 2026-10-03
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -34,7 +34,7 @@ and fails if `<dir>/.claude-plugin/marketplace.json` exists.
 **DERIVED**, by the same method the previous anchor used — partition
 `marketplace.json`'s flat `plugins` array by `source` prefix
 (`./skills/` vs `./plugin/`) — and independently confirmed by running the
-gate. `scripts/check-marketplace.py:1665-1666` still derives `plugins` as
+gate. `scripts/check-marketplace.py:1751-1752` still derives `plugins` as
 `len(entries) - skills`, so an entry matching neither prefix would silently
 count as a plugin; the "neither" set is empty at this anchor, same as at
 `5d1fc5fd`.
@@ -63,7 +63,7 @@ against disk:
 
 | Claim | Stated | On disk | Where |
 |---|---|---|---|
-| agents | 4 | `ls plugin/crew/agents/*.md` → 4 | `.claude-plugin/marketplace.json:217`, `plugin/PLUGINS.md:17`, `README.md:168`/`:887`, `INSTALLATION.md:252`, `plugin/README.md:414` |
+| agents | 4 | `ls plugin/crew/agents/*.md` → 4 | `.claude-plugin/marketplace.json:217`, `plugin/PLUGINS.md:17`, `README.md:168`/`:888`, `INSTALLATION.md:252`, `plugin/README.md:414` |
 | commands | 36 | `find plugin/crew/commands -name '*.md'` → 36 (T-0004 added `autopilot.md`, T-0075 `config-setup.md`) | same sites **except `INSTALLATION.md:252`, which still reads "34 slash commands"** — unmarked, so no check catches it |
 | skills | 31 | `find plugin/crew/skills -maxdepth 1 -mindepth 1 -type d` → 31 (T-0085 added `crew-standards`, #267 `crew-qa-standards`; both read 30 on their own branches, 31 from T-0085's landing merge) | same sites, each `<!-- claim: plugin-skills:crew -->`-marked; **at `22399a9c` `INSTALLATION.md:252` and `plugin/README.md:414` still read 29** (outside T-0085's Touch), so `check_self_claims` fails on both; both read 30 from `b82035e6` (the Touch amendment) and the check passes |
 | hook entries | 34 | walking `plugin/crew/hooks/hooks.json`'s 8 events → 34 command entries | same sites |
@@ -226,7 +226,7 @@ against synthetic fixtures and never reads this repo's own docs.
 
 - `.claude-plugin/marketplace.json:217` — crew's `description`, now correct
   against disk on every measured count.
-- `scripts/check-marketplace.py:1639` — `main()`, sixteen checks in the same
+- `scripts/check-marketplace.py:1724` — `main()`, sixteen checks in the same
   order as `verification-harness.md` records.
 - `scripts/check-marketplace.py:104` — `check_registration`.
 - `scripts/check-marketplace.py:301`, `:329`, `:383` — `check_catalogs`,
@@ -1532,3 +1532,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
 
 **Re-anchored `0620587f` -> `11b03045` on 2026-10-03 (T-0022, crew 1.0.191).** T-0022 changed files this map names (`crew_autopilot.py`, the crew README and command files, `.crew/verify.json` with one rule appended, `TODO.md`, `CHANGELOG.md`, the version files, `BUDGETS.md`); a difflib re-map from `b9b12794` (T-0022's merge of origin/main `7846261c`) to `11b03045` moved no body citation here, and the version and Markdown-total lines it touched were edited in place. Version claims in this map were not re-derived. No suite was executed for this note.
+
+**Re-anchored `11b03045` -> `4fa4d722` on 2026-10-03 (T-0022 review round 1, crew 1.0.226; T-0022 merged origin/main `1d43e9fe` (#380, crew 1.0.167: the verify gate's `CLAUDE_PLUGIN_ROOT`) at `adca8c54` and `fe4d5996` (#381, `VERIFYING.md`) at `fa4de438`).** Body citations into files changed in that range were moved by difflib where they hold current lines (history parentheticals left); main's #380/#381 claims were not re-derived. No suite was executed for this note.

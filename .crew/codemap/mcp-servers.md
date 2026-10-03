@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@11b03045
+anchor: useful-claude-add-ons@4fa4d722
 verified: 2026-10-03
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -711,3 +711,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
 
 **Re-anchored `0620587f` -> `11b03045` on 2026-10-03 (T-0022, crew 1.0.191).** Of the files T-0022 changed this map cites only `TODO.md`, which gained 13 lines at `:7`: the three current `TODO.md` citations moved +13 (`:218` -> `:231`, `:229` -> `:242`, `:310-317` -> `:323-330`), each re-read; the old values were kept as history beside them. No claim changed; no suite was executed for this note.
+
+**Re-anchored `11b03045` -> `4fa4d722` on 2026-10-03 (T-0022 review round 1, crew 1.0.226; T-0022 merged origin/main `1d43e9fe` (#380, crew 1.0.167: the verify gate's `CLAUDE_PLUGIN_ROOT`) at `adca8c54` and `fe4d5996` (#381, `VERIFYING.md`) at `fa4de438`).** Body citations into files changed in that range were moved by difflib where they hold current lines (history parentheticals left); main's #380/#381 claims were not re-derived. No suite was executed for this note.

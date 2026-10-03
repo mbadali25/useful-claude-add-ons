@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@11b03045
+anchor: useful-claude-add-ons@4fa4d722
 verified: 2026-10-03
 
 ## Re-derive provenance
@@ -182,13 +182,13 @@ listing the directory.
   `.claude-plugin/marketplace.json` `crew` description, and both install
   scripts' `PLUGIN_NAME` crew rows all read **4 agents, 36 commands, 29
   skills (30 at `22399a9c`, where T-0085 added `crew-standards` and moved
-  `plugin/PLUGINS.md:17`, `README.md:168`/`:887` and the description to 30
+  `plugin/PLUGINS.md:17`, `README.md:168`/`:888` and the description to 30
   while `plugin/README.md:414` and `INSTALLATION.md:252`, outside its Touch,
   still read 29 and fail `check_self_claims`; both read 30
   from `b82035e6`, the Touch amendment), 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events** at
   `e95e5964` (34 commands until T-0004 added `commands/autopilot.md`, 35
   until T-0075 added `commands/config-setup.md`; every site listed here was
-  bumped in `ecf69e43` and again in `a77a42d6`, and `README.md:168`/`:887`
+  bumped in `ecf69e43` and again in `a77a42d6`, and `README.md:168`/`:888`
   carry the same 36) —
   independently re-derived from the filesystem (`ls plugin/crew/agents/*.md`
   = 4, `commands/*.md` = 36, `skills/*/` = 29) and from `hooks.json` (parsed
@@ -204,7 +204,7 @@ listing the directory.
 - `SKILL_KEYS` dropped **36 -> 34**: `claude-memories-canvas` and
   `claude-memories-vault` removed from both install scripts' catalogs and
   from `skills/`. `skills/README.md` lost the two corresponding table rows in
-  this range (confirmed by diff — pure deletions, not moves). `README.md:749`
+  this range (confirmed by diff — pure deletions, not moves). `README.md:750`
   (outside this note's tracked pathspec, read directly) explains the
   replacement: `obsidian-vault`'s portable `obsidian-memory-contract`
   profiles.
@@ -310,7 +310,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:2321` (on T-0022, four README lines added above it; `:2317` on L-0510's merge of main `8123fe74`; `:2314` on L-0510's merge of main `e0c70fc9`; `:2312` on main at `e0c70fc9` (L-0575, L-0555); `:2287` on L-0510's merge of main `52489039`; `:2285` on T-0040-land's merge of main `66651b69`; `:2276` on L-0510 at `963d2905`; `:2274` on L-0520 PR 1's merge of main `844bfc36`; `:2272` on L-0520 PR 1 at `8bf710ed` and on T-0040-land at `a54ca704`; `:2261` on main at T-0028's landing `844bfc36`; on T-0085's landing merge of main `a61a6f38`; `:2227` on T-0085's merge of main `8ab733d7`; `:2222` on T-0085's merge of main `2693d0fa`; `:2098` on T-0085's branch at `8abf7ffe`; `:2209` on T-0010-solo's merge of `e878cc31`; `:2085` on T-0010-solo at `d7c7c75c`, `:2077` at `c817782f`, `:2074` at `89c9ee9a`, `:2063` at `50e67586`; `:2204` at `3648f59a`, T-0075's round-5 docs after its merge of `6387ab49`; `:2201` at `938e3b11`, T-0075's round-4 docs after its merge of `f54af3fa`; `:2192` at `3724731b`, T-0075 after its merge of `e6e10432`; `:2174` on T-0075's merge of `d2fbd408`; `:2080` at `d2fbd408`, `:1817` on T-0024's branch at `45345812`, `:2166` on T-0075's branch at `763eaeff`, `:2132` at `764f6018`, `:2072` at `67caa4b8`, `:2107` on T-0075's `f7163410`, `:2057` at `bebbb97f`, `:2084` on T-0075's `e95e5964`, `:2049` on T-0018's first landing merge at `fbc27b49`, `:2034` at `db14619c`, `:1964` on T-0018's branch at `e6b696fb`, `:1990` at T-0023's `a1acd9b7`, `:2052` at T-0021's `74f52fae`, `:2011` at `c2ae46ab`, `:1981` at T-0042's `f0b12ee6`, `:1935` at `2b18f7ab`, `:1831` at T-0021's `bcb77ce2`, `:1809` at `07ca3972`, `:1764` at `a0c0847e`, `:1735` at `8ebbdedc`, `:1794` at T-0006's `2bb92f32`, `:1733` at `c35edda5`; on T-0005's branch `:1859` at `a26ad8c0`, `:1815` at `aa7f9841`, `:1800` at `1e210476`, `:1793` at `3a57b2d2`, `:1772` at `2170d72e`, `:1733` at `8d447a7d`; `:1730` at `f2bb919b`, `:1609` before that,
+  `plugin/crew/README.md:2322` (on T-0022, four README lines added above it; `:2317` on L-0510's merge of main `8123fe74`; `:2314` on L-0510's merge of main `e0c70fc9`; `:2312` on main at `e0c70fc9` (L-0575, L-0555); `:2287` on L-0510's merge of main `52489039`; `:2285` on T-0040-land's merge of main `66651b69`; `:2276` on L-0510 at `963d2905`; `:2274` on L-0520 PR 1's merge of main `844bfc36`; `:2272` on L-0520 PR 1 at `8bf710ed` and on T-0040-land at `a54ca704`; `:2261` on main at T-0028's landing `844bfc36`; on T-0085's landing merge of main `a61a6f38`; `:2227` on T-0085's merge of main `8ab733d7`; `:2222` on T-0085's merge of main `2693d0fa`; `:2098` on T-0085's branch at `8abf7ffe`; `:2209` on T-0010-solo's merge of `e878cc31`; `:2085` on T-0010-solo at `d7c7c75c`, `:2077` at `c817782f`, `:2074` at `89c9ee9a`, `:2063` at `50e67586`; `:2204` at `3648f59a`, T-0075's round-5 docs after its merge of `6387ab49`; `:2201` at `938e3b11`, T-0075's round-4 docs after its merge of `f54af3fa`; `:2192` at `3724731b`, T-0075 after its merge of `e6e10432`; `:2174` on T-0075's merge of `d2fbd408`; `:2080` at `d2fbd408`, `:1817` on T-0024's branch at `45345812`, `:2166` on T-0075's branch at `763eaeff`, `:2132` at `764f6018`, `:2072` at `67caa4b8`, `:2107` on T-0075's `f7163410`, `:2057` at `bebbb97f`, `:2084` on T-0075's `e95e5964`, `:2049` on T-0018's first landing merge at `fbc27b49`, `:2034` at `db14619c`, `:1964` on T-0018's branch at `e6b696fb`, `:1990` at T-0023's `a1acd9b7`, `:2052` at T-0021's `74f52fae`, `:2011` at `c2ae46ab`, `:1981` at T-0042's `f0b12ee6`, `:1935` at `2b18f7ab`, `:1831` at T-0021's `bcb77ce2`, `:1809` at `07ca3972`, `:1764` at `a0c0847e`, `:1735` at `8ebbdedc`, `:1794` at T-0006's `2bb92f32`, `:1733` at `c35edda5`; on T-0005's branch `:1859` at `a26ad8c0`, `:1815` at `aa7f9841`, `:1800` at `1e210476`, `:1793` at `3a57b2d2`, `:1772` at `2170d72e`, `:1733` at `8d447a7d`; `:1730` at `f2bb919b`, `:1609` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -1732,3 +1732,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
 
 **Re-anchored `0620587f` -> `11b03045` on 2026-10-03 (T-0022, crew 1.0.191).** T-0022 inserted 13 lines at `TODO.md:7` and four lines into `plugin/crew/README.md` above `:2317` (two autopilot phase-table rows and one paragraph): the current `render.sh` citation moved `TODO.md:1230` -> `:1243` and the runbooks citation `plugin/crew/README.md:2317` -> `:2321`, each re-read, the old values kept as history. `CHANGELOG.md` gained T-0022's entry at the top of `[Unreleased]`; no current citation here points below it. No suite was executed for this note.
+
+**Re-anchored `11b03045` -> `4fa4d722` on 2026-10-03 (T-0022 review round 1, crew 1.0.226; T-0022 merged origin/main `1d43e9fe` (#380, crew 1.0.167: the verify gate's `CLAUDE_PLUGIN_ROOT`) at `adca8c54` and `fe4d5996` (#381, `VERIFYING.md`) at `fa4de438`).** Body citations into files changed in that range were moved by difflib where they hold current lines (history parentheticals left); main's #380/#381 claims were not re-derived. No suite was executed for this note.
