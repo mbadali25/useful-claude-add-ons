@@ -527,6 +527,36 @@
       "reach": "local",
       "why": "L-0575. recurring_findings.py prints the curated recurring-findings checklist for a change's paths: to the implementer from the spec's Touch list, and (review_block) from a review bundle's changed files. The suite holds the shipped data to its format and line cap (an added section that overflows fails it, a parsed section count that differs from the file's headings fails it, and sections out of descending count order fail it), the path scoping both ways, and every way the data or the scope can be unknown (each must print UNKNOWN, UNREADABLE or PROBLEM, never an empty list or 'no class applies'). The six module mutations meant for sabotage_recurring.py each went red on their named test, applied alone by hand on this host, 2026-10-01. 54 passed in 0.6-11s (load-dependent) at review round 1's fixes, measured 2026-10-02 on the Linux host; the 3 is process start-up with headroom. Re-time rather than trusting it. reach: local - every case writes a throwaway tree under tmp_path." },
     {
+      "paths": [
+        "plugin/crew/hooks/scripts/crew_keys.py",
+        "plugin/crew/hooks/scripts/crew_config.py",
+        "plugin/crew/hooks/scripts/crew_state.py",
+        "plugin/crew/hooks/scripts/crew_guards.py",
+        "plugin/crew/hooks/scripts/crew_platform.py",
+        "plugin/crew/hooks/scripts/crew_autopilot.py",
+        "plugin/crew/hooks/scripts/crew_shell.py",
+        "plugin/crew/hooks/scripts/crew_tracker.py",
+        "plugin/crew/hooks/scripts/crew_ticket.py",
+        "plugin/crew/skills/crew-graph/scripts/crew_upgrade.py",
+        "plugin/crew/CONFIG.md",
+        "plugin/crew/tests/test_crew_keys.py",
+        "docs/guides/crew/**",
+        "skills/doc-builder/scripts/**",
+        "scripts/_test/config-reference.py",
+        "scripts/_test/crew-guide.py"
+      ],
+      "seconds": 12,
+      "run": [
+        "python3 -m pytest plugin/crew/tests/test_crew_keys.py -q",
+        "python3 docs/guides/crew/src/config_reference.py --check",
+        "python3 scripts/_test/config-reference.py",
+        "python3 docs/guides/crew/src/build.py --check",
+        "python3 scripts/_test/crew-guide.py"
+      ],
+      "reach": "local",
+      "why": "T-0048. crew_keys.py is the one table the configuration reference is generated from; config_reference.py renders docs/guides/crew/src/configuration-reference.md and the two key tables in plugin/crew/CONFIG.md from it and from the defaults in crew_config/crew_state/crew_guards/crew_upgrade, which is why a change to any of those files runs this rule: a changed default or value tuple stales the committed reference. test_crew_keys.py holds the table to one row per config leaf, value tuples by identity, code-branch values through the real readers, and no COMING key in the code. config-reference.py and crew-guide.py are the must-block/must-allow suites for the generator's --check (which check-marketplace.py's check_config_reference also runs, so CI covers the reference) and for guide.md's paths, commands, ticket ids and key counts. build.py --check rebuilds every guide's HTML in memory and compares it with the committed file; it is LOCAL ONLY because CI's Python has no markdown module, and it compares HTML only: DOCX and PDF are not compared, because LibreOffice's output is not byte-stable. A missing markdown module is exit 2 (did not run), never a pass. Measured 2026-10-03 on a 4-CPU Linux container at load average 13.3/8.7/6.2 (other lanes running): all five commands 9.2s end to end (47 passed for the pytest file); 12 leaves headroom, re-time rather than trusting it. The ten sabotage mutations for crew_keys.py (sabotage_keys.py) each went red on their named test; they land as a separate tooling change under the harness rule. reach: local - every suite works on throwaway copies under a temp directory and reads only this checkout; no network call."
+    },
+    {
       "paths": ["plugin/crew/tests/pytest_rule.py", "plugin/crew/tests/test_pytest_rule.py"],
       "seconds": 2,
       "coveredBy": "crew-suite",
