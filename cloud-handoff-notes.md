@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 23:08 UTC
+Last updated: 2026-10-03 23:10 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 23:10: #337 re-review round 2: FAIL - new BLOCK (E5 acceptance is a deny-list: 'denied','never','rejected 2026-10-01' pass) + 2 FIX (reach negations 'not prod' read as prod; unreadable verify.json gives N/A). Original 4 resolved. Sent back to fixer; target crew 1.0.215. #351 fixes pushed (be8365c3, crew 1.0.211 + code map --first-parent); Sonnet re-review of #351 started. Next free version: 1.0.216.
 - 23:08: #337 fixes pushed (4aa98c36, crew 1.0.209): E5 BLOCK fixed (live yes/no/unknown, blank reach UNKNOWN, acceptance must be affirmative), read_text absent vs unreadable, whole-word headers + env-name reach parsing, G4 ls-files rc. Each test red with fix reverted. Sonnet re-review of #337 started.
 - 23:07: #360 re-review (Sonnet 5.5) on 23556e0f: PASS, 0 BLOCK, 0 FIX (NITs only) -> CLEAN; merges on its turn once CI green. #337 fix agent committed 3 commits locally (73054896, 911b9dcf, 4aa98c36 = 1.0.209), gating before push.
 - 23:06: #360 FIX fixed and pushed (23556e0f, crew 1.0.212): guide + README no longer say questions need allowCliApproval; crew-guide.py rule (e) added, sabotage red. DOCX/PDF NOT rebuilt (LibreOffice broken here) - owner: run build.py --guide guide. Sonnet re-review of #360 started.
