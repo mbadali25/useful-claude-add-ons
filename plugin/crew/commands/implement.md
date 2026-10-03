@@ -112,6 +112,11 @@ digest normalises only the header's status value — and run
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket $1 --to review`,
 handled as in step 1: the Review lane means the review is outstanding.
 **Then, last, `/crew:review $1`** — its receipt covers the refreshes; a later one stales it.
+On a catch-up merge after the review (`crew_train.py catch-up`), keep this order: resolve, bump the
+version one past the base's, refresh, commit, then the verify gate and `check-land` - so the gated
+tree is the tree that lands. A re-anchor after the review changes only the sha on the `anchor:` line
+(or a diagram's header) and regenerates the rules; the provenance sentence goes in the ticket's
+`notes.md`.
 
 ## 7. Done is not this command's
 

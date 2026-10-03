@@ -518,6 +518,30 @@ def test_check_land_refuses_merge_tree_conflict(repo, capsys, monkeypatch):
     assert code == 1 and "conflict" in out and "f.txt" in out, out
 
 
+_LANDING_ORDER = ("bump the version one past the base, refresh artifacts, commit, gate the "
+                  "merged head, then check-land again")
+
+
+@pytest.mark.parametrize("refusal", ["conflict", "moved"])
+def test_check_land_refusal_names_bump_and_refresh_before_the_gate(repo, capsys, monkeypatch,
+                                                                    refusal):
+    """Both catch-up refusals name the landing order L-0522 fixes: bump and
+    refresh BEFORE the gate, so the gated tree is the tree that lands."""
+    if refusal == "conflict":
+        lane = _holding_lane(repo, capsys, touch=("f.txt",))
+        _commit(lane, "f.txt", "lane line\n")
+        _commit(repo, "f.txt", "main line\n")
+        hint = f"  run crew_train.py catch-up --ticket T-1, resolve, {_LANDING_ORDER}"
+    else:
+        lane = _holding_lane(repo, capsys)
+        _commit(repo, "a.txt", "main moved a\n")
+        hint = f"  run crew_train.py catch-up --ticket T-1, {_LANDING_ORDER}"
+    _passing_verdict(monkeypatch)
+    code, out = _cli(capsys, lane, "check-land", "--ticket", "T-1", "--no-fetch")
+    assert code == 1, out
+    assert hint in out.splitlines(), out
+
+
 def test_check_land_requires_the_hold(repo, capsys, monkeypatch):
     _passing_verdict(monkeypatch)
     _spec(repo, "T-1", ["a.txt"])

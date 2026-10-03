@@ -90,7 +90,10 @@ clean (exit 1 lists the conflicted paths; anything else, e.g. a git older than
 2.38, is could not tell); the base not moved in Touch paths since HEAD's
 merge-base with it (moved only outside Touch is allowed and said); a current
 review receipt (`review_ledger.check_receipt`) and a verify gate VERIFIED or
-NO_GATE (`review_gate.gate_state`) on HEAD. Then it prints `LAND_OK head=<sha>`
+NO_GATE (`review_gate.gate_state`) on HEAD. A catch-up refusal names the landing
+order (catch-up, resolve, bump the version one past the base, refresh artifacts,
+commit, gate the merged head, check-land), so the gated tree is the landed tree.
+Then it prints `LAND_OK head=<sha>`
 and the `gh pr merge <pr> --merge --match-head-commit <sha>` to run. Crew
 never merges. After the merge, `release --merged <sha>` records the merged
 paths; every overlapping entry is told once, on its next `acquire` or
@@ -1225,6 +1228,12 @@ def _merge_tree(top, base):
                      f"needed): {(err or out).strip()[:300]}")
 
 
+# The landing order every catch-up refusal names (L-0522): bump and refresh
+# come BEFORE the gate, so the tree the gate passed is the tree that lands.
+LANDING_ORDER = ("bump the version one past the base, refresh artifacts, commit, gate the "
+                 "merged head, then check-land again")
+
+
 def check_land(root, ticket, base=None, pr=None, fetch=True):
     top = _top(root)
     crew_ticket.check_ticket(ticket)
@@ -1253,14 +1262,14 @@ def check_land(root, ticket, base=None, pr=None, fetch=True):
         return EXIT_REFUSED, lines + [f"merge-tree: HEAD conflicts with {base} in: "
                                       f"{', '.join(conflicts)}",
                                       f"  run crew_train.py catch-up --ticket {ticket}, "
-                                      "resolve, gate the merged head, then check-land again"]
+                                      f"resolve, {LANDING_ORDER}"]
     behind, moved = _moved_paths(top, base_sha)
     in_touch = [p for p in moved if meets_touch(p, entry.get("touch"))]
     if in_touch:
         return EXIT_REFUSED, lines + [f"{base} moved in Touch paths since HEAD's merge-base: "
                                       f"{', '.join(in_touch)}",
-                                      f"  run crew_train.py catch-up --ticket {ticket}, gate "
-                                      "the merged head, then check-land again"]
+                                      f"  run crew_train.py catch-up --ticket {ticket}, "
+                                      f"{LANDING_ORDER}"]
     if behind:
         lines.append(f"base moved outside Touch only ({len(moved)} paths); the verdict on "
                      "HEAD still covers every Touch path")
