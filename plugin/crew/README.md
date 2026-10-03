@@ -871,6 +871,7 @@ Any other word (`stauts`, `Status`, `rm`) stops with "unknown subcommand; one of
 | On disk | Phase | |
 |---|---|---|
 | in a lane worktree, the ticket folder only in the main checkout | `folder-elsewhere` | stop — names the `cp -r` to make; a contract is never read from another checkout, because the scope guard reads Touch from this one |
+| no ticket folder here, and `git worktree list` could not name the main checkout | `folder-elsewhere` | stop — says it could not tell whether the folder is in the main checkout, and why; never read as "no folder" |
 | no `direction.md`, or INDEX status `direction` | `brainstorm` / `direction-approval` | stop — a human dialogue |
 | INDEX rows for the ticket here and in the main checkout whose status cells differ | `direction-approval` | stop — `index-disagreement`, naming both files and both cells |
 | no INDEX table row for the ticket here or, in a lane worktree, in the main checkout (or no INDEX), or a status cell that is not `ready`, `open`, `spec`, `planned`, `approved`, `in-progress`, `implement` or `review` | `direction-approval` | stop — cannot tell whether the direction was approved (Jira and ServiceDesk Plus modes write no row; a blank or unknown cell is not a yes) |

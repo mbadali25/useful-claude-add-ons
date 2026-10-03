@@ -60,6 +60,7 @@ force says `take`. Exit 0 valid, 1 not.
 ## next -- the phase from disk, first match wins
 
   folder only in the main checkout       folder-elsewhere    stop, naming the copy
+  no folder here, main checkout unknown  folder-elsewhere    stop (cannot tell)
   no direction.md                        brainstorm          stop
   INDEX rows here and in main differ     direction-approval  stop (index-disagreement)
   INDEX status `direction`, or no row    direction-approval  stop (no row: cannot tell)
@@ -350,19 +351,24 @@ def _index_row(top, ticket):
 
 
 def _main_folder(top, ticket):
-    """`<main>/.work/tickets/<id>/` when only the main checkout holds it --
-    named, never read: the scope guard reads Touch from this checkout."""
+    """`(there, why)`: `there` is `<main>/.work/tickets/<id>/` when only the
+    main checkout holds it -- named, never read: the scope guard reads Touch
+    from this checkout. `why` is set when this checkout has no folder and
+    the main checkout could not be named: could-not-tell, never "absent"."""
     if os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
-        return None
-    main, _why = _main_checkout(top)
+        return None, ""
+    main, why = _main_checkout(top)
     there = crew_ticket.ticket_dir(main, ticket) if main else None
-    return there if there and os.path.isdir(there) else None
+    return (there if there and os.path.isdir(there) else None), why
 
 
-def _folder_elsewhere(top, ticket, there):
+def _folder_elsewhere(top, ticket, there, why=""):
+    if not there:
+        return (f"{ticket} has no .work/tickets/ folder here, and autopilot could not tell "
+                f"whether the ticket folder is in the main checkout: {why}")
     return (f"{ticket}'s folder is only in the main checkout ({there}); copy it here first: "
-            f"cp -r {there} {crew_ticket.ticket_dir(top, ticket)} - autopilot never reads "
-            "a ticket's contract from another checkout")
+            f"cp -r {shlex.quote(there)} {shlex.quote(crew_ticket.ticket_dir(top, ticket))} "
+            "- autopilot never reads a ticket's contract from another checkout")
 
 
 def _is_open(ticket, line):
@@ -535,9 +541,9 @@ def _phase(root, ticket, policy=True):
         return {"ticket": ticket, "phase": phase, "stop": stop, "reason": reason,
                 "command": command, "evidence": list(evidence), "index_source": source}
 
-    there = _main_folder(top, ticket)
-    if there:
-        return answer("folder-elsewhere", True, _folder_elsewhere(top, ticket, there))
+    there, why = _main_folder(top, ticket)
+    if there or why:
+        return answer("folder-elsewhere", True, _folder_elsewhere(top, ticket, there, why))
     direction = os.path.join(folder, "direction.md")
     evidence.append(_rel(top, direction))
     if not os.path.isfile(direction):
@@ -843,9 +849,9 @@ def resume_target(root, ticket=None, policy=True):
     hint, source, why = "", "argument", ""
     if ticket:
         crew_ticket.check_ticket(ticket)
-        there = _main_folder(top, ticket)
-        if there:
-            return stopped(source, _folder_elsewhere(top, ticket, there))
+        there, missing_why = _main_folder(top, ticket)
+        if there or missing_why:
+            return stopped(source, _folder_elsewhere(top, ticket, there, missing_why))
         if not os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
             return stopped(source, f"{ticket} has no .work/tickets/ folder")
     else:

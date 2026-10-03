@@ -1561,6 +1561,39 @@ def test_an_unreadable_main_checkout_is_cannot_tell(tmp_path, monkeypatch):
         True, True, False), got
 
 
+def _listing_fails(monkeypatch):
+    """`git worktree list` fails; every other git call is real."""
+    real = crew_autopilot.git_out
+    monkeypatch.setattr(crew_autopilot, "git_out", lambda top, *args: (
+        None if args[:2] == ("worktree", "list") else real(top, *args)))
+
+
+@pytest.mark.parametrize("call", [crew_autopilot.next_phase, crew_autopilot.resume_target])
+def test_no_local_folder_and_a_failed_listing_is_cannot_tell(tmp_path, monkeypatch, call):
+    """Review FIX 1: the main checkout holds the folder, but the listing that
+    would name it failed -- the stop names that, not brainstorm or "absent"."""
+    main, lane = _lane(tmp_path)
+    _ticket(main, status="ready")
+    _listing_fails(monkeypatch)
+
+    got = call(str(lane), T)
+
+    assert (got["stop"], "could not tell whether the ticket folder is in the main checkout"
+            in got["reason"], "git worktree list failed" in got["reason"],
+            "brainstorm" in got["reason"]) == (True, True, True, False), got
+
+
+def test_folder_elsewhere_quotes_a_path_with_a_space(tmp_path):
+    """Review FIX 2: the printed `cp -r` survives a space in either path."""
+    lane = tmp_path / "my lane"
+    there = str(tmp_path / "main checkout" / ".work" / "tickets" / T)
+
+    reason = crew_autopilot._folder_elsewhere(str(lane), T, there)  # pylint: disable=protected-access
+
+    dest = crew_ticket.ticket_dir(str(lane), T)
+    assert f"cp -r '{there}' '{dest}' " in reason, reason
+
+
 def test_resume_finds_the_open_ticket_through_the_main_checkout_index(tmp_path):
     main, lane = _lane(tmp_path)
     _index(main, f"{T} | ready | high | r | title")

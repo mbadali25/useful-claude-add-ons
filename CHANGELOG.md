@@ -11,8 +11,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   `--json` names the file that answered as `index_source`. Rows in both checkouts whose status
   cells differ stop as the new `index-disagreement`; a listing git cannot give is kept in the stop's
   reason, never read as "no row". A ticket folder that exists only in the main checkout stops as
-  `folder-elsewhere`, naming the `cp -r` to make: autopilot never reads a contract from another
-  checkout, because the scope guard reads Touch from this one.
+  `folder-elsewhere`, naming the `cp -r` to make (both paths shell-quoted): autopilot never reads
+  a contract from another checkout, because the scope guard reads Touch from this one. With no
+  folder here and a listing git cannot give, it stops as `folder-elsewhere` saying it could not
+  tell whether the ticket folder is in the main checkout, never as "needs /crew:brainstorm".
 - `crew_refresh_check.py` has a fifth value, `fresh-uncommitted`: every artifact is current, but a
   path under the refresh-artifact dirs is modified, staged, or untracked and not ignored. `--json`
   lists them as `uncommitted`, the text prints an `uncommitted:` line, and the CLI exits 1.
