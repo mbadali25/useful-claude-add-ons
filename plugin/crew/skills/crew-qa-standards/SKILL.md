@@ -40,7 +40,7 @@ gap costs the tokens the standards exist to save.
 3. **Fix one GAP at a time**, each through the repo's own gate, with the rule's evidence in
    the commit message. H4 and R10 fixes need a test that goes red with the fix removed.
 4. **Record what you did not apply**, and why, in `.crew/STATUS.md`. A GAP left silently reads
-   as one nobody saw.
+   as one nobody saw. During setup, a phase with an open GAP is `partial`, never `done`.
 5. **Stamp and document.** `qa_audit.py --root . --stamp` records the audited HEAD in
    `.crew/.qa-audit-at`; the `qaAuditStale` session trigger fires when there is no stamp, or when
    `.crew/verify.json`, `_verify/`, CI or `.gitignore` moved since it. Then
@@ -52,7 +52,7 @@ gap costs the tokens the standards exist to save.
 
 | Trigger | What runs |
 |---|---|
-| `/crew:init` Phase 5 and Phase 8 | the audit; each GAP fixed or recorded before the phase is `done` |
+| `/crew:init` Phase 5 and Phase 8 | the audit; a phase with an open GAP is `partial`, never `done` |
 | `/crew:init --audit` | the audit alone, then the doc dry run |
 | `/crew:upgrade` | the audit as a report, after the codemap migration |
 | `qaAuditStale` at session start | no stamp yet, or an audited path moved since the stamp |

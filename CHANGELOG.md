@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.155: QA standards for repositories crew sets up (L-0618)
+### Added — `crew` 1.0.156: QA standards for repositories crew sets up (L-0618)
 
 - `crew-qa-standards` gains `references/environments.md` (G1-G5, E1-E7) and `qa_audit_env.py`,
   whose items join `qa_audit.py`'s report under the same PASS / GAP / N/A / UNKNOWN answers: rules
@@ -24,8 +24,12 @@ All notable changes to this repository are documented here. Format follows [Keep
   `docs/diagrams/`. Dry run by default; never overwrites a file it did not generate.
 - `/crew:init --audit [--all-repos DIR]`; `/crew:upgrade` step 5c re-runs the audit as a report;
   setup Phase 8 audits the `environments` block it just wrote.
-- Not in this change (the ticket's slices b-d): corrected `_verify` templates, `--audit --fix`, a CI
-  template per stack, and the sabotage entries for the new checks (a separate tooling PR).
+- Follows the owner decisions in the review's section 6: a setup phase with an open GAP is
+  `partial`, never `done`, and no hook is added; a live credential outside production is a GAP
+  until an owner acceptance is recorded; review validity (D8) moves to the QA-rounds stream.
+- Not in this change: slice b (corrected `_verify` templates, `--audit --fix`, a GitHub Actions CI
+  template first), slice c (the sabotage entries, a separate tooling PR), and L-0562's
+  `--stamp-reach`, which G1's GAP text no longer points to.
 
 ### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 

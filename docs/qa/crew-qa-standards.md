@@ -14,7 +14,7 @@ example for this repository is [`README.md`](README.md).
 |---|---|
 | What runs? | `qa_audit.py`, in the `crew-qa-standards` skill |
 | Does it change anything? | No. It reports. `--stamp` writes one marker file, only when asked |
-| Does it block? | No. It is not a hook. The gate stays what `.crew/verify.json` says |
+| Does it block? | No hook, ever. During setup, a phase with an open GAP is `partial`, never `done` |
 | What does it check? | Harness (H), review (R), gate (G) and environment (E) items |
 | What are the answers? | PASS, GAP, N/A, UNKNOWN. UNKNOWN is never a pass |
 | When does it run? | Setup, upgrade, `/crew:init --audit`, and when `qaAuditStale` fires |
@@ -32,7 +32,7 @@ flowchart TD
   stale -->|no| quiet(["quiet"])
   audit["qa_audit.py --root ."] --> report["report table<br/>GAP and UNKNOWN first"]
   report --> fix["fix one GAP through the repo's own gate"]
-  report --> record["or record why not<br/>in .crew/STATUS.md"]
+  report --> record["or leave it open:<br/>the phase is partial, GAP named<br/>in .crew/STATUS.md"]
   fix --> stamp["qa_audit.py --stamp<br/>writes .crew/.qa-audit-at"]
   record --> stamp
   stamp --> doc["qa_doc.py --write<br/>docs/qa + docs/diagrams"]
@@ -101,12 +101,24 @@ flowchart LR
 | Document the QA process | `qa_doc.py --root .` (dry run), then `--write` |
 | The same, guided | `/crew:init --audit` |
 
-## What this change does not do yet
+## Owner decisions this follows
 
-From the ticket's proposed slicing, these are later work:
+Recorded in section 6 of the review on 2026-10-03.
+
+| # | Decision | How it shows here |
+|---|---|---|
+| 1 | D10 ships first (slice 0) | G1 is in this first change |
+| 2 | Slices 0, a, b, c | This change is 0 + a: the audit, report-only |
+| 3 | No hard block | An open GAP makes a setup phase `partial`, never `done`; no hook |
+| 4 | Live credentials outside production need an owner acceptance | E5's acceptance column |
+| 5 | GitHub Actions first | The CI template in slice b starts there; Bitbucket follows |
+| 6 | Each repository's own session fixes its gaps | The audit is their acceptance evidence |
+| 7 | Review validity (D8) lives in the QA-rounds stream | Not part of this standard |
+
+## What this change does not do yet
 
 | Slice | Content |
 |---|---|
-| b | corrected `_verify` templates, `--audit --fix`, a CI template per stack, `holds` in the promote gate |
+| b | corrected `_verify` templates, `--audit --fix`, a GitHub Actions CI template, `holds` in the promote gate |
 | c | sabotage entries for the new checks (harness: its own tooling PR) |
-| d | review-validity checks (D8), coordinated with the QA-rounds work |
+| L-0562 | `/crew:verify --stamp-reach`, which fixes a G1 GAP in one step. Until it lands, declare `reach` by hand |

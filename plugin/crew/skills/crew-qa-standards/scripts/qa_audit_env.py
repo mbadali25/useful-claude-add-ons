@@ -127,8 +127,8 @@ def check_rule_reach(root, ci, tests):
         parts = []
         if no_reach:
             parts.append(f"{len(no_reach)} of {len(rules)} rule(s) have no `reach` and are SKIPPED on "
-                         f"every Stop (rules {', '.join(no_reach[:8])}); stamp them with "
-                         "`/crew:verify --stamp-reach`")
+                         f"every Stop (rules {', '.join(no_reach[:8])}); declare each by hand "
+                         "(CONFIG.md §18) until L-0562's --stamp-reach lands")
         if no_seconds:
             parts.append(f"{len(no_seconds)} rule(s) have no numeric `seconds` (rules "
                          f"{', '.join(no_seconds[:8])})")

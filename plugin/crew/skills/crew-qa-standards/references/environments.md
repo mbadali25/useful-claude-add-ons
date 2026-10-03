@@ -17,7 +17,8 @@ A rule with no `reach` is recorded as skipped on every Stop while the verified-a
 to HEAD, so the gate runs nothing and reads green (D10, both repositories).
 
 - **Check.** `.crew/verify.json`: every rule has `reach` and a numeric `seconds`.
-- **Apply.** `/crew:verify --stamp-reach` (L-0562), then time each rule in the gate's own
+- **Apply.** Declare `reach` on each rule by hand (CONFIG.md §18); L-0562's
+  `/crew:verify --stamp-reach` will do it once it lands. Then time each rule in the gate's own
   profile-less shell, not a login shell. A rule that mutates state gets `requiresCleanTree` or
   `reach: "host"`.
 
@@ -137,13 +138,15 @@ One repository ran none of its local `_verify` checks in CI (D5).
   non-admin user** (14); **browser smoke per role and viewport** (13, `/crew:webtest`).
 - **Test identities are not production customers** (7) and **host-only overrides are named** (8).
 - **Required-check names and branch protection are recorded** (26); **runtime parity** (27).
-- **Review receipts and reviewer config** (33, 34) are review-harness changes and land in their
-  own tooling PR (D8).
+- **Review receipts and reviewer config** (33, 34, D8) belong to the QA-rounds stream
+  (`docs/review/08-qa-rounds-analysis.md`), not this standard: owner decision 7.
 
 ## Applying
 
-Run the audit, fix one GAP at a time through the repo's gate, record what you did not fix in
-`.crew/STATUS.md`, then stamp:
+Run the audit and fix one GAP at a time through the repo's gate. A setup phase with a GAP still
+open is `partial` in `.crew/STATUS.md`, with the GAP named, never `done` (owner decision 3). A live
+third-party credential outside production is a GAP until the inventory records an owner acceptance
+(decision 4). Then stamp:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/crew-qa-standards/scripts/qa_audit.py --root . --stamp
