@@ -22,32 +22,52 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test:
+  test-set:
+    # The Linux Python suites, as one matrix over python-version x set (L-0590):
+    #   default    crew's default set with -n (xdist), plus gizmoduck's and the
+    #              skill suites, then cisco-meraki and wazuh-onprem;
+    #   wallclock  crew's `-m wallclock` set, serially (see the default step).
+    # The two sets of one version run as parallel jobs instead of one after
+    # the other, so a PR's 3.12 legs overlap (the wallclock set was ~110 s of
+    # serial tail on every leg). The REQUIRED checks `test (3.11|3.12|3.13)`
+    # are the `test` fan-in below, not these jobs.
+    #
     # Opt-in self-hosted pool. The owner's runner playbook
     # (mbadali25/github-runner-infra) sets repo variable CREW_RUNNER=self-hosted
     # on `make up` and unsets it on `make down`, so required checks never wait on
     # a torn-down runner pool. Unset, this is ubuntu-latest exactly as before.
     # Fork PRs never reach the pool (owner 2026-09-30, "No fork PRs"): this repo
     # is public, so only non-PR events and same-repo PRs may use it.
+    name: test-${{ matrix.set }} (${{ matrix.python-version }})
     runs-on: ${{ (vars.CREW_RUNNER == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","linux","x64","crew"]') || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
+      # One leg at a time on every non-PR event (push to main, schedule,
+      # dispatch). Those run all six legs, and the self-hosted pool is six
+      # runners on ONE 16-vCPU host: three Python legs at once there were the
+      # source of main's timing-test flakes (BRIEF 2026-10-01). No merge
+      # waits on a non-PR run (protection requires a PR up to date with main,
+      # not main green), so main pays the serial time. A PR does work on 3.12
+      # only and keeps both of its legs in parallel.
+      max-parallel: ${{ github.event_name == 'pull_request' && 6 || 1 }}
       matrix:
         # Matches the pylint job's floor: pylint 4 needs >=3.10, and these
         # scripts are stdlib-only so there is nothing else to pin against.
         python-version: ["3.11", "3.12", "3.13"]
+        set: [default, wallclock]
     env:
       # PR CI runs Python 3.12 only; push to main, workflow_dispatch and the
       # nightly schedule run the whole matrix. The 3.11/3.13 legs still EXIST
-      # on a PR, because branch protection requires their check names: a
-      # job-level `if:` cannot read `matrix`, so every step below is gated on
-      # this instead and those legs finish green in seconds having run nothing
-      # but the notice step. Env values are strings, hence == 'true'.
+      # on a PR, because a job-level `if:` cannot read `matrix`, so every step
+      # below is gated on this instead and those legs finish green in seconds
+      # having run nothing but the notice step. Env values are strings, hence
+      # == 'true'. The `test` fan-in carries the SAME expression; it does not
+      # trust it, though: it also requires this job's per-leg marker.
       RUN_LEG: ${{ github.event_name != 'pull_request' || matrix.python-version == '3.12' }}
     steps:
     - name: Python ${{ matrix.python-version }} leg SKIPPED on pull_request
       if: env.RUN_LEG != 'true'
-      run: echo "::notice::PR CI runs Python 3.12 only. This ${{ matrix.python-version }} leg was SKIPPED, not passed; it runs on push to main, workflow_dispatch and the nightly schedule."
+      run: echo "::notice::PR CI runs Python 3.12 only. This ${{ matrix.python-version }} ${{ matrix.set }} leg was SKIPPED, not passed; it runs on push to main, workflow_dispatch and the nightly schedule."
     - uses: actions/checkout@v4
       if: env.RUN_LEG == 'true'
     - name: Set up Python ${{ matrix.python-version }}
@@ -85,7 +105,7 @@ jobs:
         # the same way the yaml one below does, taking the whole job with it.
         pip install 'pytest~=8.0' pytest-xdist pyyaml python-docx numpy pillow requests
     - name: Run crew + gizmoduck plugin tests and the collision-free skill suites
-      if: env.RUN_LEG == 'true'
+      if: env.RUN_LEG == 'true' && matrix.set == 'default'
       # Scoped to named directories on purpose, and NOT because of
       # skills/cisco-meraki/tests/test_live_smoke.py -- which is what this
       # comment used to claim. That file is decorated
@@ -118,14 +138,14 @@ jobs:
       # bound -- serially it held one core at ~33% -- so workers overlap the
       # waits. EXCEPT the `wallclock` set (crew's conftest): those assert
       # elapsed time against a real hook timeout, and beside busy workers one
-      # read 10.25s against its 10s bound on 2 of 6 jobs. They run in the
-      # step below, serially, so the bound stays the real one.
+      # read 10.25s against its 10s bound on 2 of 6 jobs. They run serially
+      # in this job's `wallclock` legs, so the bound stays the real one.
       run: pytest plugin/crew/tests/ plugin/gizmoduck/scripts/_test/ skills/mermaid-svg-bitbucket/tests/ skills/notify/tests/ skills/doc-builder/scripts/_test/ skills/intune-graph/scripts/_test/ -n auto -m "not wallclock" -v
     - name: Run crew's wall-clock-bounded tests serially
-      if: env.RUN_LEG == 'true'
+      if: env.RUN_LEG == 'true' && matrix.set == 'wallclock'
       run: pytest plugin/crew/tests/ -m wallclock -v
     - name: Run the cisco-meraki skill tests
-      if: env.RUN_LEG == 'true'
+      if: env.RUN_LEG == 'true' && matrix.set == 'default'
       # A SEPARATE pytest process, and it has to be. plugin/crew/tests/ and
       # skills/cisco-meraki/tests/ each contain a file named `context.py`
       # whose import side effect is what puts that skill's scripts/ on
@@ -145,7 +165,7 @@ jobs:
       # work around a runner detail.
       run: pytest skills/cisco-meraki/tests/ -v
     - name: Run the wazuh-onprem skill tests
-      if: env.RUN_LEG == 'true'
+      if: env.RUN_LEG == 'true' && matrix.set == 'default'
       # skills/wazuh-onprem/scripts/_test/test_manager_config_remote_paths.py
       # puts scripts/ on sys.path itself (no separate context.py file, so it
       # does not hit the context.py collision the step above works around)
@@ -158,6 +178,74 @@ jobs:
       # sys.modules collision documented above, and a separate step is what
       # keeps that always false rather than merely false today.
       run: pytest skills/wazuh-onprem/scripts/_test/ -v
+
+    - name: Mark this leg as run
+      # Reached only when every step above succeeded (no `if: always()`),
+      # and only on a leg that does work. The fan-in requires this marker
+      # for both sets of its version, so a leg whose steps were skipped
+      # cannot read as a pass there.
+      if: env.RUN_LEG == 'true'
+      run: |
+        mkdir -p leg-marker
+        echo "ran" > leg-marker/${{ matrix.set }}
+    - name: Upload the marker
+      if: env.RUN_LEG == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-ran-${{ matrix.set }}-${{ matrix.python-version }}
+        path: leg-marker/
+        if-no-files-found: error
+        retention-days: 3
+
+  test:
+    # The REQUIRED checks `test (3.11)`, `test (3.12)`, `test (3.13)`: the
+    # job id and matrix are what produce those names, so neither changes.
+    # A fan-in over `test-set` (L-0590). `always()`, because a skipped
+    # required check counts as passed: this job must run whatever happened
+    # above and fail on anything but success. `needs.test-set.result` is ONE
+    # result over all six legs, so on a non-PR event any failed leg turns
+    # all three checks red (the `test-<set> (<python>)` checks say which);
+    # on a PR only the 3.12 legs do work.
+    needs: test-set
+    if: always()
+    runs-on: ${{ (vars.CREW_RUNNER == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","linux","x64","crew"]') || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    env:
+      RUN_LEG: ${{ github.event_name != 'pull_request' || matrix.python-version == '3.12' }}
+    steps:
+    - name: Python ${{ matrix.python-version }} leg SKIPPED on pull_request
+      if: env.RUN_LEG != 'true'
+      run: echo "::notice::PR CI runs Python 3.12 only. This ${{ matrix.python-version }} leg was SKIPPED, not passed; it runs on push to main, workflow_dispatch and the nightly schedule."
+    - name: Download this version's leg markers
+      if: env.RUN_LEG == 'true'
+      # A missing marker is the next step's to report, by name.
+      continue-on-error: true
+      uses: actions/download-artifact@v4
+      with:
+        pattern: test-ran-*-${{ matrix.python-version }}
+        path: leg-markers
+        merge-multiple: true
+    - name: Check both sets ran and passed
+      env:
+        SET_RESULT: ${{ needs.test-set.result }}
+      run: |
+        if [ "$SET_RESULT" != success ]; then
+          echo "::error::test-set finished '$SET_RESULT', not success: see the test-default/test-wallclock checks for the failed leg."
+          exit 1
+        fi
+        if [ "$RUN_LEG" = true ]; then
+          for set in default wallclock; do
+            if [ ! -f "leg-markers/$set" ]; then
+              echo "::error::test-$set (${{ matrix.python-version }}) left no marker: its steps did not all run and pass."
+              exit 1
+            fi
+          done
+        fi
+        echo "test-set: $SET_RESULT; markers present for this version where required."
 
   crew-shell-matrix:
     # The full bash/pwsh driver matrix for crew's hooks -- every test marked
