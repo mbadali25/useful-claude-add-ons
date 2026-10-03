@@ -4,7 +4,8 @@
 # The plugin root, resolved HERE: a relative BASH_SOURCE stops resolving once
 # the gate cd's into the project. `pwd -W` is Git Bash's native form (D:/...),
 # which a native python can open; elsewhere it is not an option, so `pwd`.
-GATE_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null &&
+# CDPATH emptied: a match makes `cd` echo the directory into the value.
+GATE_PLUGIN_ROOT="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." >/dev/null 2>&1 &&
   { pwd -W 2>/dev/null || pwd; })"
 
 # --price is an OPERATOR command only, and is handled here, before ANYTHING

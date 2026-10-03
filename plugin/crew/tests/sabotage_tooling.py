@@ -682,7 +682,8 @@ TOOLING_MUTATIONS += (
     ),
     (
         # Resolved after the gate cd's into the project, a relative script
-        # path resolves to nothing and the root came out as `/`.
+        # path no longer names the plugin (the old code exported `/`; this
+        # mutation exports the project dir).
         "the gate resolves its plugin root after leaving the caller's directory",
         GATE_SH,
         '  CLAUDE_PLUGIN_ROOT="$GATE_PLUGIN_ROOT"\n',

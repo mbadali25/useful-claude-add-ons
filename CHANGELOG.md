@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed — `crew` 1.0.165: the verify gate sets `CLAUDE_PLUGIN_ROOT` for its rule commands
+### Fixed — `crew` 1.0.166: the verify gate sets `CLAUDE_PLUGIN_ROOT` for its rule commands
 
 - A `verify.json` rule that calls a crew script as `python3 "$CLAUDE_PLUGIN_ROOT/hooks/scripts/..."`
   ran under the Stop hook, which Claude Code gives that variable, but under `/crew:verify --all` the
@@ -14,8 +14,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   (two levels above the script) when the caller left it unset or empty, and never replace a value the
   caller set. The `.sh` resolves that root at its first line, before it `cd`s into the project, so a
   gate started by a relative path still finds it (resolved later, it came out as `/`), and on Git Bash
-  it takes `pwd -W`'s native `D:/...` form, which a native python can open. Unresolvable, the
-  variable stays unset, so a `${CLAUDE_PLUGIN_ROOT:?}` rule fails loudly. Groundwork for a rule that
+  it takes `pwd -W`'s native `D:/...` form, which a native python can open (`CDPATH` emptied, so
+  `cd` cannot echo into the value). Unresolvable, the variable stays unset, so a
+  `${CLAUDE_PLUGIN_ROOT:?}` rule fails loudly; that branch is untested, since no way was found to
+  make the `cd` fail. Groundwork for a rule that
   checks `AGENTS.md` against `verify.json` with crew's own generator.
 - `test_verify_gate_plugin_root.py` runs the real gate with a rule that reads the variable from its own
   process environment (a value visible only to the gate's shell, and not exported, does not pass):
@@ -24,7 +26,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   against `verify-gate.ps1`, registered only on native Windows with pwsh, the one place its cases run.
   The file joins `.crew/verify.json`'s verify-gate rule. Review (Sonnet 5.5): 0 BLOCK, 3 FIX (Git
   Bash's `/d/...` form, the relative start, the untested empty value), 3 NIT; all fixed but the
-  `.ps1` cases running off Windows, which the gate's own Windows-only guard rules out.
+  `.ps1` cases running off Windows, which the gate's own Windows-only guard rules out. Round 2: 0
+  BLOCK, 0 FIX, 3 NIT (`CDPATH`, a mutation comment, the untested unresolvable branch), all taken.
 
 ### Fixed — `crew` 1.0.163: the review prompt shows the gate's real answer for HEAD (docs/review/08, defect 1)
 
