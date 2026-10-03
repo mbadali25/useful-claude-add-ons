@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@a81e4382
+anchor: useful-claude-add-ons@77e8dcfd
 verified: 2026-10-02
 
 ## Does
@@ -1253,3 +1253,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `252dd5d4` -> `97b65952` on 2026-10-02 (L-0510, merge `48cf52dd` of origin/main `7ba4f9ea`, crew 1.0.126 -> 1.0.130).** Main brought L-0572's `verify-gate.sh`/`.ps1`, `verify_record.py`, CONFIG.md and its own codemap edits; it touched none of the files L-0510's citations name (`review_ledger.py`, `crew_autopilot.py`, `review_run.py`, `commands/review.md`, `commands/autopilot.md`), so no L-0510 citation moved; L-0572's citations were written against main and carried by the merge unchanged.
 
 **Re-anchored `273ec0f6` (main) and L-0510's `97b65952` -> `d05b0211` on 2026-10-02 (L-0510 merges origin/main `0487fc39` (L-0599 #315, crew 1.0.129; L-0576, L-0577, T-0107, L-0575 before it) at `ec508e5e`, rerere off; crew 1.0.130 set last at `d05b0211`).** Both provenance histories kept, main's first. In `crew.md` the `review_ledger.py`, `review_run.py` and `review_verdict.py` citations were re-derived on the merged files by function name (`grep -n '^def '`) and difflib from the tree each line came from: L-0510's ledger lines moved +14 (L-0576's `_ignored_count` and `record` row above them), `review_run.py`'s preflight `:563`/`:650`, provider list `:747` and refund lines `:517`/`:520`, `review_verdict.py`'s `VERDICTS`/`FINDING_FORM`/class names `:90`/`:93`/`:95`; main's L-0576 paragraph's three stale lines set to `review_run.py:447`, `:467`, `:513` and `review_ledger.py:394`. One L-0510 sentence that said the field was not written now says L-0576 writes it. Other maps: no cited line moved. History notes were not re-mapped.
+
+**Re-anchored `a81e4382` (main) and L-0510's `d05b0211` -> `77e8dcfd` on 2026-10-02 (L-0510 merges origin/main `e0c70fc9` (#317, L-0597 #316, L-0555 #310; crew 1.0.134) at `e6dc6b1b`, rerere off; crew 1.0.137 set last at `77e8dcfd`).** Both provenance histories kept, main's first. Main touched none of `review_ledger.py`, `review_run.py`, `review_verdict.py`, `crew_autopilot.py`, `review.md` or `autopilot.md`; `crew.md`'s `crew_autopilot.py` `questions_check` `:1246` / `QUESTIONS_SHAPE` `:1154` are L-0510's merged-file lines (main's side read `:1232` / `:1140` without L-0510's autopilot change); `repo-docs.md`'s README citation is `:2314` on the merged README (L-0555 +23). History notes were not re-mapped.
