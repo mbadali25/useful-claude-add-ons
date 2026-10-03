@@ -122,7 +122,7 @@ Enforcement is session-local, like every other gate here: an incident stands
 the hooks down for sessions in this repository on this machine. It does nothing
 to CI or to branch protection.
 
-### Commands — 35, all explicit
+### Commands — 37, all explicit
 
 | Command | Purpose |
 |---|---|
@@ -140,6 +140,7 @@ to CI or to branch protection.
 | `/crew:fix <one sentence - what is wrong and where>` | The light path - every lifecycle phase present, each compressed to one step |
 | `/crew:gate <disable \| enable \| status> <github \| bitbucket>` | Take a repository's merge gate down and put it back, from the export |
 | `/crew:handoff [--clear]` | Write the handoff note for the next session |
+| `/crew:help [command \| question \| commands \| ticket id]` | What to do next, and what any crew command is for - with no argument, where you are, the one command to type next and 2-3 related ones in at most 8 lines; read-only, it never runs what it names |
 | `/crew:implement <ticket id>` | Implement an approved plan for a ticket, then tests, docs and review |
 | `/crew:init [--status \| --phase N]` | Guided phased setup for this repo — resumable, one phase at a time |
 | `/crew:jira-sync <ISSUE-KEY> [--push]` | Sync a ticket between Jira (via MCP) and the local cache |
