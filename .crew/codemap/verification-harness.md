@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@7d14a9ad
+anchor: useful-claude-add-ons@b4ceedb8
 verified: 2026-10-03
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -2342,3 +2342,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `b8d09685` -> `452b30cc` on 2026-10-03.** `204e813b` routes `review_run.finish`'s auto-accept line through `_out` (main's L-0574 one-writer test), one line, no line count change, so no citation moved; `452b30cc` re-sets crew 1.0.142 last.
 
 **Re-anchored `452b30cc` (main) and L-0604's `f98444b9` -> `7d14a9ad` on 2026-10-03 (L-0604 merges origin/main `f808e5f0` (#328 crew 1.0.144, #329 1.0.153, #330 1.0.154) at `2a448f13`, rerere off; crew 1.0.163 set last).** Main's maps, INDEX, diagrams and rules were taken and this note replaces L-0604's two earlier ones (`3eb9fa1f`: R5, the proposals docstring, the README verdict row, the troubleshooting guide, two tests; `f98444b9`: the README recovery paragraph, in place). Main's three PRs since `452b30cc` did not refresh the maps, so every body citation of the form path:N into a file changed since `452b30cc` was re-mapped by script (difflib from `452b30cc` to this tree; equal hunks, and same-size replaced hunks by position; provenance sections not re-mapped; a bare :N binds to the last path named on its line): 38 moved in this map, none unmappable. Each moved line was compared old against new; one differs in text, review_run.py's --provider argument now reads the PROVIDERS tuple, which still names codex, copilot and claude. Line positions only: claims describing #328-#330's behaviour (the CI receipt in /crew:done check 2 and check-land, the tree-pass cache, measured pricing, xdist rules) were not re-verified by this note. Nothing was executed for it beyond the script and grep.
+
+**Re-anchored `7d14a9ad` -> `b4ceedb8` on 2026-10-03 (L-0604 merges origin/main `6bcb8b8c`: L-0600 #332 refreshed crew.md and the lifecycle diagram, two docs/review files; crew still 1.0.154).** No file this map cites changed between them except the crew version files, already 1.0.163 since `1203aa63` and untouched by main (positions unchanged), so no citation moved. Nothing was executed for this note beyond git diff --name-only.
