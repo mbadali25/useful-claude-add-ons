@@ -1,4 +1,5 @@
-%% Generated from useful-claude-add-ons@452b30cc on 2026-10-03. Verify before trusting.
+%% Generated from useful-claude-add-ons@3cec4f78 on 2026-10-03. Verify before trusting.
+%% Re-anchored 452b30cc -> 3cec4f78 (T-0049 merges origin/main f808e5f0): of the Anchors paths main changed done.md (#330: check 2 accepts a CI receipt for HEAD, +5 lines), review.md, review_run.py and crew_train.py; review.md :25-28/:446-449 and review_run.py :672/:731/:846/:850-861 did not move (line diff), crew_train.py is cited by name only; done.md node dn2 now names the CI receipt and every done.md citation after :29 moved +5 (re-read with sed -n).
 %% Re-anchored b8d09685 -> 452b30cc: 204e813b changes one review_run.py line (print -> _out), no line moved; no node or edge changed.
 %% Re-anchored d95d8b25 (main) -> b8d09685 (L-0510 merges origin/main 8123fe74 at 8c04c783, rerere off): main's pr0 pre-review nodes kept beside L-0510's rv3 auto-accept edges; review_run.py preflight :672, :846, prereview_gate :731, budget :850-861 re-derived on the merged file.
 %% Re-anchored 39ebbc18 -> a06dd790 (L-0510 merges origin/main 2a2d6e07 at 39c290be, rerere off): main changed no Anchors path line this diagram cites. No node or edge changed.
@@ -368,18 +369,18 @@ flowchart TB
 
     subgraph done["/crew:done - all four or nothing<br/>done.md:7"]
         rcpt --> dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
-        dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py<br/>:21-27"}
-        dn2 -- pass --> dn3{"3 completion audit<br/>(refresh artifacts: re-anchor or<br/>regeneration the change reaches)<br/>:35-48"}
-        dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:50-61"}
-        dn5 -- fresh --> dn4["spec.md 'status: done' (keeps the approval),<br/>crew_tracker.py move --to done,<br/>crew_metrics record<br/>:63-74"]
+        dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py, or a CI receipt<br/>for HEAD (ci_receipt.py check)<br/>:21-38"}
+        dn2 -- pass --> dn3{"3 completion audit<br/>(refresh artifacts: re-anchor or<br/>regeneration the change reaches)<br/>:40-53"}
+        dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:55-66"}
+        dn5 -- fresh --> dn4["spec.md 'status: done' (keeps the approval),<br/>crew_tracker.py move --to done,<br/>crew_metrics record<br/>:68-79"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
         dn5 -- "stale / unknown" --> dnx
-        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:82-85"}
-        ln0 -- yes --> ln1{"crew_train.py check-land:<br/>holds the train, merge-tree clean,<br/>base unmoved in Touch, receipt + gate<br/>done.md:88-92"}
-        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge<br/>--merge --match-head-commit sha;<br/>then release --merged sha<br/>(crew never merges) :93-94"]
-        ln1 -- "refused: catch-up,<br/>gate the merged head again<br/>:95-96" --> im5
+        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:87-90"}
+        ln0 -- yes --> ln1{"crew_train.py check-land:<br/>holds the train, merge-tree clean,<br/>base unmoved in Touch, receipt + gate<br/>done.md:93-97"}
+        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge<br/>--merge --match-head-commit sha;<br/>then release --merged sha<br/>(crew never merges) :98-99"]
+        ln1 -- "refused: catch-up,<br/>gate the merged head again<br/>:100-101" --> im5
     end
 
     fix -.-> BR
