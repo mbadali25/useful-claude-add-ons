@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 23:18 UTC
+Last updated: 2026-10-03 23:19 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 23:19: #337 round-3 re-review: FAIL, 1 BLOCK (acceptance 'name' slot takes any lowercase word: 'accepted revoked/expired/maybe' PASS). Reach + map fixes confirmed. Decision: strict whole-cell grammar (accepted|yes [by Capitalised Name<=3] [ISO date]; refusal word -> no; else UNKNOWN). Sent to fixer; target 1.0.219. Next free: 1.0.220.
 - 23:18: #357 T-0020 built + pushed d4dd47a3 (crew 1.0.190): focus = existing pointer, no new hook; full suite 8891 passed; 22/22 sabotage red. Harness follow-up: 4 mutations in sabotage_autopilot.py. Note: autopilot.md now 117/120 lines (tight for T-0012/T-0019). Sonnet review of #357 started. Ports T-0051/T-0064 held until a build finishes (load ~25).
 - 23:17: #375 re-review on 16e92602: original BLOCK + 6 FIX resolved (all 33 real renders PASS), but 4 new FIX (arc flags not 0/1-validated, 2nd M joined by a segment, unrecognised edges -> PASS with 0 edges, mtime freshness not proof). Sent back to fixer; target crew 1.0.218. Next free: 1.0.219.
 - 23:17: #359 T-0025 first review on 66d25049: PASS, 0 BLOCK, 0 FIX (3 NITs) -> CLEAN. Install scripts changed as a matched pair (36->37 label); README re-pin needed after it merges.
