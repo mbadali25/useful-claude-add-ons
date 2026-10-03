@@ -4,7 +4,7 @@ Live log of the cloud session working PRs #337, #350–#375 and #378 (session
 `session_014TLaGTaf3GDU1wccRotE67`). It is updated and pushed after every action, so if the session
 stops, the last entry is where it stopped. Ticket status and dependencies are in `pending-tickets.md`.
 
-Last updated: 2026-10-03 23:03 UTC
+Last updated: 2026-10-03 23:04 UTC
 
 ## Standing rules (owner, 2026-10-03)
 
@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 23:04: #374: red crew-shell-matrix (windows) on b64a18d5 is a cancelled superseded run (log: decide job 'cancelled'), not a failure. Note: frequent pushes to this branch cancel each other; only the latest head's CI counts.
 - 23:03: Re-review #378 + #350: both PASS, all 4 earlier FIX resolved. Pair note: #350 must be merged forward after #378 lands (planned re-merge step). Uncommitted qa_audit_env.py in the primary checkout is the #337 fix agent's work in progress, not abandoned.
 - 23:03: Helper in place: each action from now appends one line here and pushes.
 - 23:03: Started this file (owner request). Earlier entries are in order, without exact times.
