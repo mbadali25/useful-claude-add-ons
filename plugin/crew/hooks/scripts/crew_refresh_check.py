@@ -32,7 +32,13 @@ asks of it for the status line, narrowed here to THIS ticket:
            path (anything outside `GRAPH_NONCODE_PATHS` and `graph.out`).
            Refresh: `graphify update .` where the repo tracks GRAPH_REPORT.md
            beside the graph, else `graphify . --no-viz --code-only` -- the
-           choice `_read_graph`'s `reportTracked` already encodes.
+           choice `_read_graph`'s `reportTracked` already encodes. graphify
+           leaves graph.json and its `built_at_commit` untouched when the
+           topology did not change, so a graph behind by sha is still
+           `fresh` when graphify's own `<graph.out>/manifest.json` records
+           the current MD5 (`ast_hash`) of every committed code path that
+           moved since then (T-0063, `_manifest_confirms`). A manifest that
+           is missing or does not parse leaves the sha answer.
 
 "The ticket changed" is `scope_base.resolve` then
 `completion_audit.changed_paths`: the base against the WORKING TREE plus
@@ -197,6 +203,7 @@ file even under `--no-optional-locks`. Standard library only.
 import argparse
 import errno
 import fnmatch
+import hashlib
 import io
 import json
 import os
@@ -410,22 +417,25 @@ def _moved_in_tree(root, sha, paths):
 
 
 def _judge(root, sha, reached, untracked):
-    """(status, reason, refreshable) for an artifact anchored at `sha`, over
-    `reached`: the ticket's changed paths this artifact cites."""
+    """(status, reason, refreshable, moved) for an artifact anchored at
+    `sha`, over `reached`: the ticket's changed paths this artifact cites.
+    `moved` is the committed paths that changed since `sha` -- only on a
+    `stale` with nothing uncommitted among them, else None, so a caller
+    confirming them another way (the graph's manifest) reads no prose."""
     if _git_lines(root, "cat-file", "-e", sha + "^{commit}") is None:
         return UNKNOWN, (f"anchor {sha} names no commit in this repository (a "
-                         "squash-merged or rebased branch?); a refresh re-anchors it"), True
+                         "squash-merged or rebased branch?); a refresh re-anchors it"), True, None
     moved = _moved_in_tree(root, sha, reached)
     if moved is None:
-        return UNKNOWN, f"git could not diff {sha[:12]} against the working tree", False
+        return UNKNOWN, f"git could not diff {sha[:12]} against the working tree", False, None
     new = [p for p in reached if p in untracked]
     if not moved and not new:
-        return FRESH, f"nothing it cites moved since {sha[:12]}", False
+        return FRESH, f"nothing it cites moved since {sha[:12]}", False, None
     dirty = (_moved_in_tree(root, "HEAD", moved) if moved else []) or []
     pending = sorted(set(new) | set(dirty))
     if pending:
-        return STALE, f"uncommitted changes in {_few(pending)}: commit, then refresh", True
-    return STALE, f"{_few(sorted(moved))} changed since its anchor {sha[:12]}", True
+        return STALE, f"uncommitted changes in {_few(pending)}: commit, then refresh", True, None
+    return STALE, f"{_few(sorted(moved))} changed since its anchor {sha[:12]}", True, moved
 
 
 def _uncommitted(top, dirs, untracked):
@@ -1207,7 +1217,7 @@ def _codemaps(root, changed, untracked):
                                 "no `anchor:` line, so nothing about it can be checked",
                                 command, refreshable=True))
             continue
-        status, reason, refreshable = _judge(root, anchor.group(1), reached, untracked)
+        status, reason, refreshable, _moved = _judge(root, anchor.group(1), reached, untracked)
         found.append(_entry("codemap", stem, status, reason, command, refreshable))
     return found
 
@@ -1250,9 +1260,46 @@ def _diagrams(root, dirpath, changed, code, untracked):
                                 "no provenance header (`%% Generated from <repo>@<sha>`)",
                                 command))
             continue
-        status, reason, refreshable = _judge(root, anchor.group(1), reached, untracked)
+        status, reason, refreshable, _moved = _judge(root, anchor.group(1), reached, untracked)
         found.append(_entry("diagram", stem, status, reason, command, refreshable))
     return found
+
+
+def _manifest_confirms(root, graph_dir, paths):
+    """`(True, "")` when graphify's `<graph.out>/manifest.json` records, for
+    every one of `paths`, an existing file whose MD5 is its `ast_hash` (keyed
+    repo-relative, or absolute as graphify writes outside a root); `(False,
+    why)` otherwise, `why` non-empty only when the manifest is missing or not
+    usable. Read, never written. Safe because graphify saves the manifest
+    only after a successful graph.json write or a same-topology confirmation:
+    re-read in graphify 0.9.65 (watch.py:1965 after the no-cluster write or
+    its same-graph check, :2010 on the same-topology path, :2178 after
+    to_json and the replace; cli.py:4304 on "no incremental changes",
+    :4427 after write_json_atomic, :4611 after to_json, which exits first
+    when it refuses; the skill runbooks' save_manifest runs after their
+    build) and again in 0.9.74 at shifted lines, same order (T-0063)."""
+    text = read_text(os.path.join(graph_dir, "manifest.json"))
+    if text is None:
+        return False, "graphify's manifest.json is missing or unreadable, so not usable"
+    try:
+        manifest = json.loads(text)
+    except ValueError:
+        return False, "graphify's manifest.json does not parse, so not usable"
+    if not isinstance(manifest, dict):
+        return False, "graphify's manifest.json is not an object, so not usable"
+    for rel in paths:
+        path = os.path.join(root, *rel.split("/"))
+        entry = manifest.get(rel, manifest.get(path))
+        if not isinstance(entry, dict) or not os.path.isfile(path):
+            return False, ""
+        try:
+            with open(path, "rb") as handle:
+                digest = hashlib.md5(handle.read(), usedforsecurity=False).hexdigest()
+        except OSError:
+            return False, ""
+        if entry.get("ast_hash") != digest:
+            return False, ""
+    return True, ""
 
 
 def _graph(root, info, graph_out, code, untracked, which):
@@ -1271,7 +1318,18 @@ def _graph(root, info, graph_out, code, untracked, which):
         return _entry("graph", graph_out, UNKNOWN,
                       "graph.json carries no built_at_commit, so its provenance is unknown",
                       command, refreshable=True)
-    status, reason, refreshable = _judge(root, info["builtAt"], code, untracked)
+    sha = info["builtAt"]
+    status, reason, refreshable, moved = _judge(root, sha, code, untracked)
+    if moved:
+        # T-0063: graphify leaves graph.json and its built_at_commit alone
+        # when the topology did not change, so the sha alone reads stale for
+        # ever. Its manifest says whether it saw these exact bytes.
+        confirmed, why = _manifest_confirms(root, os.path.dirname(info["path"]), moved)
+        if confirmed:
+            return _entry("graph", graph_out, FRESH, "graphify's manifest records the "
+                          "current content of every changed code path (topology unchanged "
+                          f"since {sha[:12]})", command)
+        reason += f"; {why}" if why else ""
     return _entry("graph", graph_out, status, reason, command, refreshable)
 
 

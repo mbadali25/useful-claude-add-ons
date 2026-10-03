@@ -1106,3 +1106,97 @@ def test_committing_the_refresh_reads_fresh(tmp_path):
     result = _check(root)
 
     assert (result["status"], result["uncommitted"]) == ("fresh", []), result
+
+
+# --- T-0063: graphify's manifest confirms an unchanged graph ---------------------
+
+def _md5(root, rel):
+    with open(os.path.join(str(root), *rel.split("/")), "rb") as handle:
+        return hashlib.md5(handle.read(), usedforsecurity=False).hexdigest()
+
+
+def _manifest(root, entries):
+    """`graphify-out/manifest.json` as graphify 0.9.65 writes it, git-ignored
+    as this repo ignores it -- through `.git/info/exclude` here, so the ignore
+    rule is not itself a code path the ticket changed."""
+    with open(os.path.join(str(root), ".git", "info", "exclude"), "a",
+              encoding="utf-8", newline="\n") as handle:
+        handle.write("graphify-out/*\n!graphify-out/graph.json\n!graphify-out/GRAPH_REPORT.md\n")
+    _write(root, "graphify-out/manifest.json", json.dumps(
+        {path: {"mtime": 0, "seen": 0, "ast_hash": digest, "semantic_hash": ""}
+         for path, digest in entries.items()}))
+
+
+def test_graph_confirmed_by_the_manifest_is_fresh(tmp_path):
+    root, start = _repo(tmp_path)
+    _graph(root, start)
+    _commit(root, "src/app.py", "print('changed, same topology')\n")
+    _manifest(root, {"src/app.py": _md5(root, "src/app.py")})
+
+    result = _check(root)
+    graph = _artifact(result, "graph", "graphify-out")
+
+    assert (result["status"], graph["status"], "manifest" in graph["reason"]) == (
+        "fresh", "fresh", True), result
+
+
+def test_graph_manifest_with_an_old_hash_is_stale(tmp_path):
+    root, start = _repo(tmp_path)
+    _graph(root, start)
+    old = _md5(root, "src/app.py")
+    _commit(root, "src/app.py", "print('changed')\n")
+    _manifest(root, {"src/app.py": old})
+
+    graph = _artifact(_check(root), "graph", "graphify-out")
+
+    assert (graph["status"], graph["command"]) == ("stale", "graphify update ."), graph
+
+
+def test_graph_manifest_never_confirms_a_deleted_path(tmp_path):
+    root, start = _repo(tmp_path)
+    _graph(root, start)
+    old = _md5(root, "src/other.py")
+    _git(root, "rm", "-q", "src/other.py")
+    _git(root, "commit", "-q", "-m", "delete other")
+    _manifest(root, {"src/other.py": old})
+
+    graph = _artifact(_check(root), "graph", "graphify-out")
+
+    assert graph["status"] == "stale", graph
+
+
+def test_graph_manifest_does_not_confirm_uncommitted_code(tmp_path):
+    root, start = _repo(tmp_path)
+    _graph(root, start)
+    _write(root, "src/app.py", "print('edited, not committed')\n")
+    _manifest(root, {"src/app.py": _md5(root, "src/app.py")})
+
+    graph = _artifact(_check(root), "graph", "graphify-out")
+
+    assert (graph["status"], "commit, then refresh" in graph["reason"]) == ("stale", True), graph
+
+
+def test_graph_unparseable_manifest_is_the_sha_answer(tmp_path):
+    root, start = _repo(tmp_path)
+    _graph(root, start)
+    _commit(root, "src/app.py", "print('changed')\n")
+    _manifest(root, {})
+    _write(root, "graphify-out/manifest.json", "{")
+
+    graph = _artifact(_check(root), "graph", "graphify-out")
+
+    assert (graph["status"], "manifest" in graph["reason"],
+            "not usable" in graph["reason"]) == ("stale", True, True), graph
+
+
+def test_graph_manifest_confirms_only_every_reached_path(tmp_path):
+    root, start = _repo(tmp_path)
+    _graph(root, start)
+    _commit(root, "src/app.py", "print('changed')\n")
+    old = _md5(root, "src/other.py")
+    _commit(root, "src/other.py", "print('changed too')\n")
+    _manifest(root, {"src/app.py": _md5(root, "src/app.py"), "src/other.py": old})
+
+    graph = _artifact(_check(root), "graph", "graphify-out")
+
+    assert graph["status"] == "stale", graph
