@@ -97,6 +97,14 @@ def allowed_address(found):
     return found.endswith("@example.com") or "noreply" in found or found.startswith("git@")
 
 
+def _host_word(host):
+    """The host name as a WHOLE word, the one boundary `redact` and `leak` share.
+    `leak` used a bare substring, so a host called `vm` was found inside the
+    fixture id `...-vmVkDU` and the corpus check failed on that machine only,
+    while `redact` (whole word) had correctly left it alone."""
+    return re.compile(r"(?<![A-Za-z0-9_-])" + re.escape(host) + r"(?![A-Za-z0-9_-])")
+
+
 def redact(text, checkout_root):
     """Machine-specific paths and the host name to placeholders; nothing else.
     Each match needs a boundary on BOTH sides: a path starts where no word or
@@ -117,8 +125,7 @@ def redact(text, checkout_root):
         text = re.sub(_START + re.escape(tmp) + "/", "<TMP>/", text)
     host = socket.gethostname()
     if host:
-        text = re.sub(r"(?<![A-Za-z0-9_-])" + re.escape(host) + r"(?![A-Za-z0-9_-])",
-                      "<HOST>", text)
+        text = _host_word(host).sub("<HOST>", text)
     # A person's address (a `git log` author line inside a Codex stream) is
     # normalised like a path; the leak check below stays as the backstop.
     return EMAIL.sub(lambda m: m.group(0) if allowed_address(m.group(0)) else "<EMAIL>", text)
@@ -130,7 +137,7 @@ def leak(text):
         if pattern.search(text):
             return name
     host = socket.gethostname()
-    if host and host in text:
+    if host and _host_word(host).search(text):
         return "host name"
     for found in EMAIL.findall(text):
         if not allowed_address(found):

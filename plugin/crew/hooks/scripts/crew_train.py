@@ -90,10 +90,11 @@ clean (exit 1 lists the conflicted paths; anything else, e.g. a git older than
 2.38, is could not tell); the base not moved in Touch paths since HEAD's
 merge-base with it (moved only outside Touch is allowed and said); a current
 review receipt (`review_ledger.check_receipt`) and a verify gate VERIFIED or
-NO_GATE (`review_gate.gate_state`) on HEAD. A catch-up refusal names the landing
-order (catch-up, resolve, bump the version one past the base, refresh artifacts,
-commit, gate the merged head, review again if the receipt reads stale,
-check-land), so the gated tree is the landed tree.
+NO_GATE on HEAD (`review_gate.accepted_state`: the local gate evidence, or a
+CI receipt that proves the gate passed on exactly HEAD's committed tree). A
+catch-up refusal names the landing order (catch-up, resolve, bump the version
+one past the base, refresh artifacts, commit, gate the merged head, review again
+if the receipt reads stale, check-land), so the gated tree is the landed tree.
 Then it prints `LAND_OK head=<sha>`
 and the `gh pr merge <pr> --merge --match-head-commit <sha>` to run. Crew
 never merges. After the merge, `release --merged <sha>` records the merged
@@ -1279,7 +1280,7 @@ def check_land(root, ticket, base=None, pr=None, fetch=True):
     if not ok:
         return EXIT_REFUSED, lines + [f"review receipt: {message}"]
     lines.append(f"review receipt: {message}")
-    gate, reason = review_gate.gate_state(top)
+    gate, reason = review_gate.accepted_state(top)
     if gate not in (review_gate.VERIFIED, review_gate.NO_GATE):
         return EXIT_REFUSED, lines + [f"verify gate {gate}: {reason}"]
     lines.append(f"verify gate {gate}: {reason}")
