@@ -4,6 +4,31 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.190: `/crew:autopilot focus`, a scope lock on one ticket (T-0020)
+
+- **Why.** The owner's standing ask: roles "drifting into unrelated rabbit holes". Focus locks
+  autopilot onto one ticket so it cannot wander to another, cannot carry an unrelated change past
+  the next phase, and has somewhere to put what it noticed.
+- **What.** `/crew:autopilot focus <id>` / `focus off` / `focus` set, release or show this
+  worktree's active-ticket pointer (`crew_ticket.activate` / `deactivate`); no new state, no new
+  hook. `focus <id>` refuses a ticket with no `.work/tickets/<id>/`, a broken pointer, or a pointer
+  on another ticket, writing nothing. While focused the router refuses `run` of another ticket
+  (named, or from the handoff), `assign` and `goal`, naming `/crew:autopilot focus off`; a broken
+  pointer refuses all but `status` and `focus off`; the `.work/INDEX.md` fallback is never a focus.
+  Once the plan is approved, `next` runs `completion_audit.audit` read-only and stops as `drift` on
+  a changed path outside Touch, or when the audit could not run. `focus --findings --ticket <id>`
+  names `TODO.md` when the approved Touch covers it, else `.work/tickets/<id>/out-of-scope.md`.
+  Every `focus` output ends with a reminder that Claude Code's built-in `/focus` only toggles the
+  display and only the user can type it. `focus off` routes only from exactly those two words, and
+  `crew_ticket.deactivate` has one call site (AST-tested).
+- **Tests.** `plugin/crew/tests/test_crew_autopilot_focus.py`; `autopilot.md` section 6 (5 lines),
+  the file at 117 of 120 lines (`test_lifecycle_commands.py` now leaves 3 for T-0012 and T-0019).
+  The four planned sabotage entries were run by hand, all red; adding them to
+  `sabotage_autopilot.py` is a harness-only follow-up (it is in `HARNESS`).
+- **Docs.** The crew README ("Focus" under "Scope and approval", the subcommand table, the stops),
+  `plugin/PLUGINS.md`, the crew code map, the generated rules, and `.crew/verify.json`'s autopilot
+  rule.
+
 ### Fixed — `crew` 1.0.163: the review prompt shows the gate's real answer for HEAD (docs/review/08, defect 1)
 
 - `review_prompt._receipts_block` told the reviewer `MISSING: no .crew/.verify-verified-at` on a round

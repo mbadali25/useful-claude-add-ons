@@ -22,8 +22,8 @@ import crew_autopilot
 import crew_ticket
 from review_fixtures import git
 from scope_fixtures import approve_as_user, make_repo
-from test_crew_autopilot import (  # noqa: F401  pylint: disable=unused-import
-    _COMMAND, _SCRIPT, _approved, _handoff, _index, _snapshot, _ticket, _write, stub_resume)
+from test_crew_autopilot import (_COMMAND, _SCRIPT, _approved, _handoff, _index, _snapshot,
+                                 _ticket, _write)
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _HOOKS = os.path.join(_ROOT, "hooks", "hooks.json")
@@ -300,7 +300,8 @@ def test_guard_refuses_other_ticket_directly(tmp_path):
     assert (got is not None, T in (got or ""), RELEASE in (got or "")) == (True, True, True)
 
 
-def test_guard_refuses_handoff_other_ticket(tmp_path, stub_resume):  # pylint: disable=redefined-outer-name,unused-argument
+def test_guard_refuses_handoff_other_ticket(tmp_path):
+    """The real crew_resume (T-0006) parses the handoff's resume: line."""
     root = _focused(tmp_path)
     _handoff(root, f"resume: /crew:autopilot {OTHER}")
 
