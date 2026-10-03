@@ -199,3 +199,75 @@ def test_the_cache_can_always_be_refused(flavour, how, tmp_path):
     second = _run(flavour, root, env=env)
     assert second.returncode == 0, second.stderr
     assert _log(log) == ["A", "A"], how + ": " + second.stderr
+
+
+def _unverify(root):
+    """Drop both markers, so the next Stop re-matches and re-runs the rule
+    rather than skipping on the gate's own whole-tree fingerprint."""
+    for name in (".verify-verified-at", ".verify-gate.fingerprint"):
+        (root / ".crew" / name).unlink(missing_ok=True)
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_all_never_credits(flavour, tmp_path):
+    """MUST-BLOCK (review r1). --all means run everything: a pass cached for
+    this very tree is not credited there, though Stop would credit it."""
+    log = tmp_path / "ran.log"
+    root = _repo(tmp_path, [_rule("A", 5, log)])
+    assert _run(flavour, root).returncode == 0
+    assert (root / ".crew" / ".verify-gate.passes.json").exists()
+
+    second = _run(flavour, root, "--all")
+    assert second.returncode == 0, second.stderr
+    assert _log(log) == ["A", "A"], "--all credited a cached pass. " + second.stderr
+    assert "not re-run" not in second.stderr, second.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_moved_ref_runs_it_again(flavour, tmp_path):
+    """MUST-BLOCK (review r1). A rule may read a ref the working tree does not
+    show (rules[39] diffs origin/main...HEAD), so a fetch that moves one is
+    as much a new tree as an edit."""
+    log = tmp_path / "ran.log"
+    root = _repo(tmp_path, [_rule("A", 5, log)])
+    assert _run(flavour, root).returncode == 0
+    _unverify(root)
+    subprocess.run(("git", "update-ref", "refs/remotes/origin/main", "HEAD"), cwd=root,
+                   check=True, capture_output=True,
+                   timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+
+    second = _run(flavour, root)
+    assert second.returncode == 0, second.stderr
+    assert _log(log) == ["A", "A"], "a moved ref left the cached pass credited. " + second.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_tree_that_moves_after_a_credit_withdraws_it(flavour, tmp_path):
+    """MUST-BLOCK (review r1). The second Stop credits A for the tree it
+    started on, then B edits the tree. A was never checked against the tree
+    the run ended on, so the run is not verified: the marker stays put and
+    the next Stop runs A and B again -- and, the tree now stable, converges."""
+    log = tmp_path / "ran.log"
+    root = _repo(tmp_path, [_rule("A", 40, log),
+                            _rule("B", 40, log, " && echo y > generated.txt")])
+    assert _run(flavour, root).returncode == 0
+    assert _log(log) == ["A"]
+    _forget_timings(root)
+
+    second = _run(flavour, root)
+    assert second.returncode == 0, second.stderr
+    assert _log(log) == ["A", "B"], second.stderr
+    assert "withdrawn" in second.stderr, second.stderr
+    assert _marker(root) != _head(root), (
+        "the marker advanced on a credit the moved tree withdrew. " + second.stderr)
+    assert not (root / ".crew" / ".verify-gate.passes.json").exists()
+    _forget_timings(root)
+
+    third = _run(flavour, root)
+    assert third.returncode == 0, third.stderr
+    assert _log(log) == ["A", "B", "A"], third.stderr
+    _forget_timings(root)
+    fourth = _run(flavour, root)
+    assert fourth.returncode == 0, fourth.stderr
+    assert _log(log) == ["A", "B", "A", "B"], fourth.stderr
+    assert _marker(root) == _head(root), fourth.stderr

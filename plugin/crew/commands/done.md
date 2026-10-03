@@ -28,12 +28,14 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_status.py --root .
 ```
 
 Read its `verify` line. Every rule `pass` passes this check. Anything else —
-`fail`, `unverified`, or no record at all — passes only if a CI receipt proves
-the self-hosted gate passed every rule on exactly this committed tree:
-`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ci_receipt.py check --root .` exits
-0 with `CI_RECEIPT VERIFIED`. Any other exit (local edits, no run for HEAD, an
-unreadable artifact) refuses done; say its `CI_RECEIPT` line. Otherwise run
-`./_verify/smoke.sh` (or the mapped `.crew/verify.json` rule) yourself first.
+`fail`, `unverified`, or no record at all — passes only on what
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ci_receipt.py check --root .` says:
+exit 0 `CI_RECEIPT VERIFIED` (the self-hosted gate passed every rule on exactly
+this committed tree), or exit 4 `NO_GATE` (no verify map, or the gate is stood
+down; `check-land` and `/crew:review` pass it too). Any other exit (local edits,
+no run for HEAD, an unreadable artifact) refuses done; say its `CI_RECEIPT`
+line. Then run `./_verify/smoke.sh` (or the mapped `.crew/verify.json` rule)
+yourself and re-read the `verify` line.
 
 ## Check 3 — the completion audit
 

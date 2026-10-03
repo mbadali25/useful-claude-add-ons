@@ -147,7 +147,8 @@ record_verified() {
 # re-match and re-run every turn from then on. It stays unverified anyway:
 # verify_record.py persists it by content hash and reports it every run
 # until it is actually checked, via /crew:verify --all.
-fully_verified() { [ "${DEFERRED_COUNT:-1}" -eq 0 ]; }
+# TREE_MOVED: tree-pass credits withdrawn after the loop, same effect.
+fully_verified() { [ "${DEFERRED_COUNT:-1}" -eq 0 ] && [ "${TREE_MOVED:-0}" -eq 0 ]; }
 
 record_verified_fingerprint() {
   [ -n "$FINGERPRINT" ] || return 0
@@ -747,7 +748,16 @@ CHANGED_FILE=$(mktemp 2>/dev/null) || { echo "VERIFY GATE: cannot create temp fi
 printf '%s
 ' "$CHANGED" > "$CHANGED_FILE"
 
-MATCHED=$("$PY" - "$CHANGED_FILE" "$BUDGET_FLAG" "$FP_DIR" << 'PY'
+# The tree-pass cache's key, taken ONCE, here, before the matcher reads the
+# cache for it (review r1): the matcher, the run loop and the save after it
+# all mean this one snapshot, so there is no second read for the tree to
+# move between. A move after this point is caught after the loop instead.
+TREE_PRE=""
+if [ -n "$PY" ] && [ -f "$FP_DIR/verify_record.py" ]; then
+  TREE_PRE=$("$PY" "$FP_DIR/verify_record.py" tree-snapshot --stable 2>/dev/null | tr -d '\r\n')
+fi
+
+MATCHED=$("$PY" - "$CHANGED_FILE" "$BUDGET_FLAG" "$FP_DIR" "$TREE_PRE" << 'PY'
 import json,sys,fnmatch,io,os,re
 try:
     sys.stdout.reconfigure(newline="\n")
@@ -1030,8 +1040,9 @@ for f in changed:
                     # timed on one host and go stale, and an over-stated rule
                     # that reads as over the budget alone is chronic: never
                     # run at Stop at all. min() can only make a rule cheaper,
-                    # so it can turn a chronic deferral into a run, and never
-                    # a run into a deferral. The cache is rewritten from every
+                    # so it can turn this rule's chronic deferral into a run,
+                    # never this rule's run into a deferral (the budget it now
+                    # takes can still defer a LATER rule acutely). The cache is rewritten from every
                     # clean run, so a rule that slows down re-prices upward.
                     cached = _timings.get(key)
                     if (isinstance(cached, int) and not isinstance(cached, bool)
@@ -1151,19 +1162,21 @@ for _ri in sorted(measured_below):
 
 # --- the tree-pass cache (verify_record.passes_load) ------------------------
 # A command that passed on this exact tree (tree_snapshot(stable=True): HEAD,
-# the deciders, and every tracked and untracked path's bytes, type and mode)
-# is credited by the run loop instead of re-run. A RULE every one of whose
-# commands is credited costs nothing here, so it cannot spend the budget or
-# be deferred: an acutely deferred Stop on an unchanged tree runs what it has
-# not run yet, instead of the same cheap rules again. Any failure here means
-# an empty cache, and every command runs.
-tree_snap, tree_cached = "", set()
-if _vr is not None and hasattr(_vr, "passes_load"):
+# every ref, the deciders, and every tracked and untracked path's bytes, type
+# and mode; bash took it and passes it as argv[4]) is credited by the run loop
+# instead of re-run. A RULE every one of whose commands is credited costs
+# nothing here, so it cannot spend the budget or be deferred: an acutely
+# deferred Stop on an unchanged tree runs what it has not run yet, instead of
+# the same cheap rules again. ONLY at Stop: --all means "run everything", the
+# promise test_all_never_skips holds it to. Any failure here means an empty
+# cache, and every command runs.
+tree_snap = sys.argv[4] if len(sys.argv) > 4 else ""
+tree_cached = set()
+if STOP_MODE and tree_snap and _vr is not None and hasattr(_vr, "passes_load"):
     try:
-        tree_snap = _vr.tree_snapshot(".", stable=True) or ""
         tree_cached = _vr.passes_load(".", tree_snap)
     except Exception:  # pylint: disable=broad-except
-        tree_snap, tree_cached = "", set()
+        tree_cached = set()
 for _ri in rule_order:
     if (_ri in rule_secs and rule_cmds.get(_ri)
             and all(c in tree_cached for c in rule_cmds[_ri])):
@@ -1358,8 +1371,7 @@ sys.stdout.write("\x1e".join(cmds) + "\x1d" + "\x1e".join(unmatched) + "\x1d" + 
                  + "\x1d" + str(int(max_cost))
                  + "\x1d" + extras
                  + "\x1d" + cover_record
-                 + "\x1d" + "\x1e".join("1" if c in tree_cached else "" for c in cmds)
-                 + "\x1d" + tree_snap + "\n")
+                 + "\x1d" + "\x1e".join("1" if c in tree_cached else "" for c in cmds) + "\n")
 PY
 )
 # CAPTURE FIRST, STRIP SECOND - not piped directly through `tr -d '\r'` on
@@ -1456,14 +1468,12 @@ COVER_AT=()
 while IFS= read -r COVER_LINE; do
   COVER_AT+=("$COVER_LINE")
 done <<< "$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 7p | tr '\036' '\n')"
-# Records 8 and 9: which positions passed on this exact tree in an earlier
-# run, and the snapshot the matcher read that from. Missing or short means
-# "not cached", which runs the command - the safe direction.
+# Record 8: which positions passed on TREE_PRE in an earlier run. Missing or
+# short means "not cached", which runs the command - the safe direction.
 TREE_AT=()
 while IFS= read -r TREE_LINE; do
   TREE_AT+=("$TREE_LINE")
 done <<< "$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 8p | tr '\036' '\n')"
-TREE_SNAP=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 9p | tr '\036' '\n' | tr -d '\r\n')
 if [ -n "$NOTICES" ]; then
   printf '%s\n' "$NOTICES" >&2
 fi
@@ -1598,20 +1608,11 @@ lock_extend
 # bytes of every tracked and untracked path) is taken before the first
 # command and again at the first credit; unequal, or unreadable either time,
 # turns credit off for the rest of the run and every subset runs.
-# The tree-pass cache, run-time half: the tree the loop starts on must be the
-# one the matcher read the cache for, or nothing is credited; and the passes
-# are saved after the loop only if the tree is STILL that one.
-TREE_PRE=""
-TREE_CREDIT=0
+# The tree-pass cache, run-time half: a position the matcher marked is
+# credited for TREE_PRE. Whether the tree is STILL TREE_PRE is settled once,
+# after the loop: moved, and every such credit is withdrawn (TREE_MOVED).
 TREE_N=0
-if [ -n "$PY" ] && [ -n "$TREE_SNAP" ]; then
-  TREE_PRE=$("$PY" "$FP_DIR/verify_record.py" tree-snapshot --stable 2>/dev/null | tr -d '\r')
-  if [ "$TREE_PRE" = "$TREE_SNAP" ]; then
-    TREE_CREDIT=1
-  elif printf '%s\n' "${TREE_AT[@]}" | grep -q .; then
-    echo "verify-gate: the tree changed between reading the tree-pass cache and running - nothing credited from it, every command runs" >&2
-  fi
-fi
+TREE_MOVED=0
 POS=-1
 STATUS_AT=()
 COVERED_N=0
@@ -1669,11 +1670,12 @@ print(text + "\x1e" + (envjson if sep else ""), end="")
   fi
   c="${SPLIT%%$'\x1e'*}"
   ENV_JSON="${SPLIT#*$'\x1e'}"
-  if [ "$TREE_CREDIT" = 1 ] && [ "${TREE_AT[$POS]:-}" = 1 ]; then
+  if [ -n "$TREE_PRE" ] && [ "${TREE_AT[$POS]:-}" = 1 ]; then
     echo "verify-gate: PASSED on this exact tree in an earlier run - not re-run: $c" >&2
     STATUS_AT[$POS]="covered"
     TREE_N=$((TREE_N + 1))
-    LOG_LINE=$("$PY" -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": "covered", "elapsed": 0}))' "$IDENT" 2>/dev/null | tr -d '\r')
+    # "tree" LAST, so the withdrawal after the loop can match it at end of line.
+    LOG_LINE=$("$PY" -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": "covered", "elapsed": 0, "tree": True}))' "$IDENT" 2>/dev/null | tr -d '\r')
     [ -n "$LOG_LINE" ] && CMD_LOG="$CMD_LOG
 $LOG_LINE"
     continue
@@ -1918,16 +1920,22 @@ fi
 # Save what passed, for this tree only, and only when the tree did not move
 # while the rules ran: a rule that edits files, or an edit made meanwhile,
 # means the passes describe no single tree, so the cache is cleared instead.
+# A MOVED tree also withdraws this run's credits (review r1): they were
+# passes on TREE_PRE, and nothing here checked the tree the run ended on. So
+# their log lines are dropped before the record sync (a rule missing a
+# command reads as not run, its record left as it was), and the run is not
+# verified, so neither marker advances and the next Stop re-matches them.
 if [ -n "$PY" ] && [ -f "$FP_DIR/verify_record.py" ]; then
-  if [ -z "$TREE_PRE" ]; then
-    TREE_PRE=$("$PY" "$FP_DIR/verify_record.py" tree-snapshot --stable 2>/dev/null | tr -d '\r')
-    [ "$TREE_PRE" = "$TREE_SNAP" ] || TREE_PRE=""
-  fi
-  TREE_POST=$("$PY" "$FP_DIR/verify_record.py" tree-snapshot --stable 2>/dev/null | tr -d '\r')
+  TREE_POST=$("$PY" "$FP_DIR/verify_record.py" tree-snapshot --stable 2>/dev/null | tr -d '\r\n')
   if [ -n "$TREE_PRE" ] && [ "$TREE_PRE" = "$TREE_POST" ]; then
     printf '%s\n' "$CMD_LOG" | "$PY" "$FP_DIR/verify_record.py" passes-save "$TREE_PRE" >&2
   else
     "$PY" "$FP_DIR/verify_record.py" passes-clear >/dev/null 2>&1
+    if [ "$TREE_N" -gt 0 ]; then
+      TREE_MOVED=1
+      CMD_LOG=$(printf '%s\n' "$CMD_LOG" | grep -v '"tree": true}$' || true)
+      echo "verify-gate: the tree changed during this run, so the $TREE_N command(s) credited from the tree-pass cache are withdrawn - not verified on the tree this run ended on" >&2
+    fi
   fi
 fi
 
@@ -2043,6 +2051,8 @@ elif [ "$SYNC_STATUS" -ne 0 ]; then
   : # verify_record.py already printed why, on stderr, above.
 elif [ "$ANY_SKIPPED" -ne 0 ]; then
   echo "verify-gate: the verified baseline was NOT advanced - at least one command exited 77 (SKIP) and was not actually checked this turn." >&2
+elif [ "${TREE_MOVED:-0}" -ne 0 ]; then
+  echo "verify-gate: the verified baseline was NOT advanced - the tree changed during this run, and $TREE_N credited command(s) were not checked against it." >&2
 else
   echo "verify-gate: the verified baseline was NOT advanced - $DEFERRED_COUNT rule command(s) were deferred and have not been checked against this tree." >&2
 fi

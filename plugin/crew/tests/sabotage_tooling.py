@@ -332,8 +332,8 @@ TOOLING_MUTATIONS += (
     (
         "snapshot: mode bits and symlink targets dropped from the snapshot",
         VERIFY_RECORD,
-        '    return verify_fingerprint.fingerprint(root, paths) + "-" + meta\n',
-        "    return verify_fingerprint.fingerprint(root, paths)\n",
+        '    snap = verify_fingerprint.fingerprint(root, paths) + "-" + meta\n',
+        "    snap = verify_fingerprint.fingerprint(root, paths)\n",
         _COVER + "test_tree_metadata_change_after_superset_runs_subset[chmod +x a.py-sh]",
     ),
     (
@@ -470,7 +470,7 @@ if os.path.isfile(CHECKER) and os.path.isfile(VERIFY_JSON):
         ),
     )
 
-# crew 1.0.137 / 1.0.139: the Stop gate's measured pricing and tree-pass cache.
+# The Stop gate's measured pricing and tree-pass cache.
 # Kept here, not in sabotage.py, which sits at pylint's 3400-line module cap.
 TOOLING_MUTATIONS += (
     (
@@ -517,6 +517,34 @@ TOOLING_MUTATIONS += (
         ("tests/test_verify_gate_tree_cache.py::"
          "test_a_rule_that_edits_the_tree_leaves_no_cache"),
     ),
+    (
+        # Review r1: --all reads the cache and credits from it, so "run
+        # everything" silently runs less.
+        "--all credits from the tree-pass cache",
+        GATE_SH,
+        "if STOP_MODE and tree_snap and _vr is not None and hasattr(_vr, \"passes_load\"):\n",
+        "if tree_snap and _vr is not None and hasattr(_vr, \"passes_load\"):\n",
+        "tests/test_verify_gate_tree_cache.py::test_all_never_credits",
+    ),
+    (
+        # Review r1: refs left out of the key, so a fetch that moves
+        # origin/main keeps crediting a rule that diffs against it.
+        "record: the tree-pass cache key ignores refs",
+        VERIFY_RECORD,
+        '        snap += "-" + refs\n',
+        "        snap += \"\"\n",
+        "tests/test_verify_gate_tree_cache.py::test_a_moved_ref_runs_it_again",
+    ),
+    (
+        # Review r1: a tree that moved after a credit keeps the credit, and
+        # the marker advances over a command never checked on the end tree.
+        "a tree that moved after a tree-pass credit still verifies the run",
+        GATE_SH,
+        "      TREE_MOVED=1\n",
+        "      TREE_MOVED=0\n",
+        ("tests/test_verify_gate_tree_cache.py::"
+         "test_a_tree_that_moves_after_a_credit_withdraws_it"),
+    ),
 )
 if shutil.which("pwsh"):
     TOOLING_MUTATIONS += (
@@ -546,5 +574,20 @@ if shutil.which("pwsh"):
             "    if ($treePre) {\n",
             ("tests/test_verify_gate_tree_cache.py::"
              "test_a_rule_that_edits_the_tree_leaves_no_cache"),
+        ),
+        (
+            "the PowerShell gate credits from the tree-pass cache under -All",
+            GATE_PS1,
+            "    if ($treePre -and $stopMode) {\n",
+            "    if ($treePre) {\n",
+            "tests/test_verify_gate_tree_cache.py::test_all_never_credits",
+        ),
+        (
+            "the PowerShell gate keeps a credit after the tree moved",
+            GATE_PS1,
+            "      if ($treeN -gt 0) {\n        $treeMoved = $true\n      }\n",
+            "      if ($treeN -gt 0) {\n        $treeMoved = $false\n      }\n",
+            ("tests/test_verify_gate_tree_cache.py::"
+             "test_a_tree_that_moves_after_a_credit_withdraws_it"),
         ),
     )

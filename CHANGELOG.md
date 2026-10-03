@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.148: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
+### Changed — `crew` 1.0.150: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 
 - `crew_train.py check-land` judges the verify gate through `review_gate.accepted_state`: the local
   gate evidence, or a CI receipt (`ci_receipt.check`) proving the self-hosted gate passed on exactly
@@ -12,12 +12,28 @@ All notable changes to this repository are documented here. Format follows [Keep
   the local refusal standing with the receipt's reason appended. Four new `test_crew_train.py`
   cases; red when check-land goes back to `gate_state`.
 - `/crew:done` Check 2 passes on every rule `pass`, or else on `ci_receipt.py check` exiting 0 with
-  `CI_RECEIPT VERIFIED`; any other exit refuses and its `CI_RECEIPT` line is reported.
+  `CI_RECEIPT VERIFIED` or 4 `NO_GATE` (no verify map, or the gate stood down: what `check-land` and
+  `/crew:review` already pass); any other exit refuses and its `CI_RECEIPT` line is reported.
+- `README.md` stops saying nothing accepts the receipt: its section names the three consumers and
+  why the Stop hook is not one, and the land check counts a receipt VERIFIED as `VERIFIED`
+  (review round 1).
 - `ci_receipt.py`'s docstring names its three consumers, and why the Stop hook is not one: network
   calls in a hook that runs every turn, to save a run the 60s Stop budget already keeps short.
 
-### Changed — `crew` 1.0.147: verify/review harness - a declared rule is priced at min(declared, measured), a command that passed on this exact tree is not re-run, a CI receipt for HEAD satisfies `/crew:review`'s gate, and two small fixes
+### Changed — `crew` 1.0.149: verify/review harness - a declared rule is priced at min(declared, measured), a command that passed on this exact tree is not re-run, a CI receipt for HEAD satisfies `/crew:review`'s gate, and two small fixes
 
+- Review round 1 on the tree-pass cache. Its key now includes every ref (`git for-each-ref`): a
+  rule may read a ref the tree does not show (rules[39] diffs `origin/main...HEAD`), so a fetch
+  empties it. It credits only at Stop: `--all` runs everything again, as `test_all_never_skips`
+  promises. The snapshot is taken once in bash before the matcher reads the cache, and passed to
+  it, so there is no second read for the tree to move between. A tree that moves after a credit
+  (a rule that edits files, an edit meanwhile) withdraws the run's credits: their log lines are
+  dropped before the record sync and neither marker advances, so the next Stop runs them. Three new
+  cases (`--all`, a moved ref, a tree moved after a credit, which also proves the next two Stops
+  converge); five new mutations (sh, record, ps1), each sh/record one red, and two existing
+  entries (the matcher's record separator, the snapshot's mode bits) re-anchored, both still red. `verify-gate.ps1` reads
+  the cache's JSON array by assigning before `@()`, since Windows PowerShell 5.1's
+  `ConvertFrom-Json` emits an array as one pipeline object and nothing was credited there.
 - `tests/test_review_eligible.py` runs the `$ELIGIBLE` snippet in `crew_fixtures.resolve_bash()` with
   `python3` mapped to the test's own interpreter: on windows-latest a bare `bash` plus Git Bash's
   missing `python3` exited 1 (root CLAUDE.md, Landmines).
@@ -50,14 +66,14 @@ All notable changes to this repository are documented here. Format follows [Keep
 **The verify gate does not re-run what already passed on this exact tree.**
 
 - Both gate flavours credit a command that passed on this exact tree instead of re-running it.
-  The key is `verify_record.tree_snapshot(stable=True)`: HEAD, the deciders, and every tracked and
-  untracked path's bytes, type and mode, minus the gate's own files by name (the lock it holds,
+  The key is `verify_record.tree_snapshot(stable=True)`: HEAD, every ref, the deciders, and every
+  tracked and untracked path's bytes, type and mode, minus the gate's own files by name (the lock it holds,
   the marker and record the last run wrote), so any edit anywhere empties it. A per-rule key on a
   rule's own `paths` would be unsound: a rule reads more than the paths that trigger it.
 - A rule all of whose commands are credited costs 0 against the Stop budget. An acutely deferred
   Stop on an unchanged tree used to re-run the same rules and defer the same one again; it now
-  runs what it has not run yet and converges. `/crew:verify --all` on the tree a Stop just
-  checked skips what that Stop ran.
+  runs what it has not run yet and converges. Only at Stop: `/crew:verify --all` runs
+  everything, and saves its passes for the next Stop.
 - Passes are saved only when the tree is the same after the loop as before it (a rule that edits
   files leaves no cache), only for status `pass`, and merged with what was already recorded for
   that same tree. `CREW_VERIFY_FRESH=1` runs everything. Written to a temp file and renamed.
@@ -85,8 +101,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   measurement from this machine, and say so (`priced at 3s, measured on this machine, below its
   declared 90s`). A declared price is timed once on one host and goes stale; a rule stated over
   the Stop budget alone is chronic and never runs at Stop, however fast it is here. The minimum can
-  only make a rule cheaper, so it can turn a chronic deferral into a run and never a run into a
-  deferral. Only a positive JSON integer prices a rule (not true, 2.5, "3", 0, -1 or null), in
+  only make a rule cheaper, so it can turn that rule's chronic deferral into a run and never that
+  rule's run into a deferral; the budget it now takes can still defer a later rule acutely. Only a positive JSON integer prices a rule (not true, 2.5, "3", 0, -1 or null), in
   both flavours.
 - `verify_record.py` caches the wall time of every rule whose commands all ran and passed, not
   only rules with no declared `seconds`, so there is a measurement to take the minimum of. Credited
