@@ -4,6 +4,47 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.197: crew notify, rebuilt: deploy results and "stopped" questions, each led by a subject (T-0051)
+
+- **One sender.** `plugin/crew/hooks/scripts/crew_notify.py` (`send`, `hook`, `config`; stdlib only; always
+  exits 0) replaces the send logic that `notify.sh` and `notify.ps1` each carried. The two are now thin
+  wrappers that keep `event_claim.py`'s one-sender election and hand the payload over.
+- **Two events send.** `deploy`: every `/crew:promote` result, `Promotion passed` silent and `Deploy FAILED`
+  loud. `question`: Claude Code stopped and is waiting on you, from the `Notification` hook filtered on
+  `notification_type` (`permission_prompt`, `worker_permission_prompt`, `elicitation_dialog`,
+  `elicitation_url_dialog`, `agent_needs_input`, or `notify.questionTypes`). `idle_prompt` never pings; an
+  unknown or missing type stays quiet and is logged to `<git-common-dir>/crew/notify/unrecognised.log`.
+  `blocker` is reserved until T-0060: accepted in `notify.events`, sends nothing.
+- **Every line leads with a subject** (`Question`, `Needs permission`, `Promotion passed`, `Deploy FAILED`),
+  then `[<repo>/<branch>]` (the ticket on a detached HEAD, never `HEAD`), the active ticket and its phase, and
+  what Claude is waiting on: the payload's message plus the pending question, the pending tool, or the last
+  assistant text, read from the transcript, capped at 200 characters and redacted. A fixed "Claude is waiting
+  on you" is never sent.
+- **Measured, not assumed** (a live `Notification` capture on Claude Code 2.1.285, pinned as test fixtures):
+  a Bash permission prompt and an AskUserQuestion both arrive as `permission_prompt` with the fixed message
+  "Claude needs your permission", naming neither tool, so the tool is read from the transcript's pending
+  `tool_use`. A message that does name AskUserQuestion is still honoured.
+- **Less spam.** One ping per waiting episode (`session_id` + `prompt_id`); the same event + ticket + reason
+  once per `notify.realertHours` (default 6). Both records advance only on a confirmed send. Telegram's 429
+  `retry_after` is honoured once inside a 10 s budget, sends are paced a second apart, and text goes as
+  escaped HTML - ported from the notify skill's `tg.py`, not imported.
+- **Retired:** the `/crew:init` per-phase and `/crew:done` per-ticket pings, and both `context-watch` pings.
+  `/crew:review`'s per-round line stays in `review.md` (a harness file, removed by a harness-only change) and
+  sends nothing: `review` maps to the reserved `blocker`. An old config still works: `gate` reads as
+  `deploy`, `waiting` as `question`, `phase`/`review`/`done` as `blocker`, each with a notice, never a
+  silent drop.
+- **Config.** The machine-global `notify` block is honoured (the twins read only `.crew/config.json` before);
+  a repo value overrides it, and an explicit repo `"provider": "none"` opts out with a notice. The repo and
+  global templates now write `provider: null`, so notifications stay off until a provider is set. The notify
+  skill's `telegram.bot_token_env` / `chat_id` fill a null `tokenEnv` / `chatId`, read-only; its example chat
+  id counts as unset. New keys `notify.realertHours` and `notify.questionTypes` (131 repo / 74 global leaves).
+- **Tests.** `test_crew_notify.py` (a local HTTP server stands in for `api.telegram.org`; no test reads the
+  machine's global config or reaches the network), `test_crew_notify_hooks.py` (including a bash-only
+  must-block/must-allow case for the twin claim), and the updated twin tests. `.crew/verify.json` maps the
+  sender and both wrappers to them. The sabotage module (`sabotage_notify.py`, 17 mutations, each run by hand
+  red on its named test) is a harness-only follow-up, since `sabotage*.py` is in `check-tooling-pr.py`'s
+  `HARNESS`. The pwsh parity cases skip without pwsh and were not run.
+
 ### Added — `VERIFYING.md`: how to verify a change, for people and any AI agent
 
 - A root page mapping every verification layer to its command, when to run it and what it costs,
