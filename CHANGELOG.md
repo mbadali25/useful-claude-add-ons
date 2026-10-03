@@ -41,6 +41,34 @@ All notable changes to this repository are documented here. Format follows [Keep
   template first), slice c (the sabotage entries, a separate tooling PR), and L-0562's
   `--stamp-reach`, which G1's GAP text no longer points to.
 
+### Fixed — `crew` 1.0.163: the review prompt shows the gate's real answer for HEAD (docs/review/08, defect 1)
+
+- `review_prompt._receipts_block` told the reviewer `MISSING: no .crew/.verify-verified-at` on a round
+  `review_run.py` had reserved on a verified CI receipt for HEAD (`review_gate.accepted_state`, crew
+  1.0.153): the prompt read the local marker only. Unless the marker shows HEAD clean, it now asks the
+  local gate ONCE (`gate_state`): a dirty tree its fingerprint covers reads `Local gate: VERIFIED`,
+  and a repo with no gate reads `No verify gate: <why>` instead of MISSING (`review_run.py` proceeds
+  on both). Only a local UNVERIFIED or UNKNOWN asks the CI receipt, through `ci_receipt.check` itself
+  -- the upgrade `accepted_state` makes, without its second `gate_state` call, so a local pass that
+  lands mid-build can never be printed as a receipt. A receipt VERIFIED reads
+  `CI receipt: VERIFIED for HEAD - <reason>`, with the local record's rows marked superseded (a
+  receipt is a `--all` run with nothing outstanding); any other answer keeps the local lines and adds
+  `Gate answer for HEAD: <local>: <why>; CI receipt <state>: <why>`; a question that raises is
+  `UNKNOWN`, never a pass. Every reason and the marker's own text are folded to one line
+  (`review_checks.one_line`), and each reason is capped at 400 characters on its own, so gh or git
+  stderr cannot open lines of its own in the prompt and a long local reason cannot hide the
+  receipt's answer. Building the prompt on a tree the marker does not cover can now make the
+  receipt's `gh api` calls, as `review_run.py` already does.
+- Defect 2 (`recurring_findings.review_block` had no caller) was fixed independently by L-0601 (#327,
+  crew 1.0.162), which landed first; this change keeps its one call, its tests and its mutation, and
+  drops the duplicates this branch had. `README.md` and `review.md` name the receipt wording.
+- `test_review_prompt.py` gains 18 receipt-block cases; four were red on main before the fix. The rest
+  pin what three Sonnet 5.5 review rounds found (round 1: 1 BLOCK, 4 FIX, 3 NIT, the BLOCK a local
+  pass on a dirty tree printed as a receipt; round 2: 0 BLOCK, 2 FIX, 3 NIT, the same label reached
+  by a race; round 3: 0 BLOCK, 0 FIX, 4 NIT). `test_build_states_every_missing_piece` now expects
+  `No verify gate` for its gate-less fixture. Three mutations are registered in `sabotage_tooling.py`,
+  all red; each mutation a review round found surviving was re-run by hand and is red.
+
 ### Changed — repository: `_verify/smoke.sh` runs in CI, and a missing `pwsh` is a SKIP
 
 - `marketplace.yml` runs `_verify/smoke.sh` after the Claude Code CLI install. Two of its checks
