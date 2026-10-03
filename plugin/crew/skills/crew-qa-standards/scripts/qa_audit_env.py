@@ -497,8 +497,34 @@ _ACCEPT_RE = re.compile(
     rf"(?i:accepted|yes)[.,]?(?:\s+{_BY_NAME}(?:\s+{_ISO})?|\s+{_ISO}(?:\s+{_BY_NAME})?)?")
 
 
+# Inside a `by` name a stem would refuse real people (Denise, Waite, Staley), so
+# there a token refuses only as one of these whole word forms; the short words
+# (no, n, na, n/a, false) never apply inside a name (Matthew N Badali, Na-Young).
+NAME_REFUSAL_FORMS = frozenset((
+    "revoked", "revoke", "rejected", "reject", "denied", "deny", "refused", "refuse", "expired",
+    "expire", "withdrawn", "withdraw", "cancelled", "canceled", "cancel", "rescinded", "retracted",
+    "lapsed", "void", "invalid", "pending", "tbd", "todo", "unknown", "awaiting", "waiting",
+    "declined", "maybe", "perhaps", "conditional", "conditionally", "tentative", "tentatively",
+    "provisional", "draft", "unverified", "proposed", "superseded", "disputed", "inactive",
+    "disabled", "obsolete", "stale", "unaccepted", "never", "nobody", "none", "not"))
+_BY_NAME_SPAN_RE = re.compile(rf"(?i:\bby)\s+({_NAME})")
+
+
 def _refuses(token):
     return token in NOT_ACCEPTED or token.startswith(NOT_ACCEPTED_STEMS)
+
+
+def _refusal(text):
+    """The word that refuses an acceptance cell, or None. Outside the `by` name a
+    token refuses as a NOT_ACCEPTED word or by a NOT_ACCEPTED_STEMS prefix; inside
+    it, only as a whole NAME_REFUSAL_FORMS word."""
+    span = _BY_NAME_SPAN_RE.search(text)
+    name = span.group(1) if span else ""
+    outside = text[:span.start(1)] + " " + text[span.end(1):] if span else text
+    for word in re.findall(r"[a-z]+(?:/[a-z]+)?", outside.lower()):
+        if _refuses(word):
+            return word
+    return next((w for w in re.findall(r"[a-z]+", name.lower()) if w in NAME_REFUSAL_FORMS), None)
 
 
 def _header_col(header, words):
@@ -557,11 +583,17 @@ def _iso_date(token):
 
 
 def parse_acceptance(cell):
-    """"yes", "no" or "unknown", judged on the cell's original case (see _ACCEPT_RE).
+    """"yes", "no" or "unknown"; see acceptance()."""
+    return acceptance(cell)[0]
 
-    no:      blank or ASCII punctuation only (`-`, `?`), or any token that is a
-             NOT_ACCEPTED word or starts with a NOT_ACCEPTED_STEMS stem
-             ("rejected 2026-10-01", "accepted by Nobody", "accepted Cancelled").
+
+def acceptance(cell):
+    """(state, refusing word or None). The state is "yes", "no" or "unknown",
+    judged on the cell's original case (see _ACCEPT_RE).
+
+    no:      blank or ASCII punctuation only (`-`, `?`), or a refusal word
+             (_refusal: "rejected 2026-10-01", "accepted Cancelled",
+             "accepted by Nobody"; not "accepted by Denise").
     yes:     the whole cell is an ISO date, or matches _ACCEPT_RE
              ("accepted", "Accepted by Matthew", "accepted by Matthew Badali 2026-10-01").
     unknown: everything else -- "accepted Matthew" (no `by`), "accepted Under
@@ -569,12 +601,13 @@ def parse_acceptance(cell):
              non-ASCII name. Never read as an acceptance."""
     text = re.sub(r"[`*]", "", cell).strip()
     if re.fullmatch(r"[\s!-/:-@\[-`{-~]*", text):
-        return "no"
-    if any(_refuses(w) for w in re.findall(r"[a-z]+(?:/[a-z]+)?", text.lower())):
-        return "no"
+        return "no", None
+    word = _refusal(text)
+    if word:
+        return "no", word
     if not (_DATE_RE.fullmatch(text) or _ACCEPT_RE.fullmatch(text)):
-        return "unknown"
-    return "yes" if all(_iso_date(d) for d in _DATE_RE.findall(text)) else "unknown"
+        return "unknown", None
+    return ("yes" if all(_iso_date(d) for d in _DATE_RE.findall(text)) else "unknown"), None
 
 
 def check_secrets_inventory(root, ci, tests):
@@ -616,8 +649,11 @@ def check_secrets_inventory(root, ci, tests):
         if unparsed:
             unknown.append(f"`{name}` is live and its reach `{', '.join(unparsed)}` names no known environment")
         raw = r[accept_col].strip() if accept_col is not None and accept_col < len(r) else ""
-        accepted = parse_acceptance(raw) if nonprod else "yes"
-        if accepted == "no":
+        accepted, refused_by = acceptance(raw) if nonprod else ("yes", None)
+        if accepted == "no" and refused_by:
+            bad.append(f"`{name}` is live and reaches {', '.join(nonprod)}: `{name}` acceptance "
+                       f"refused by the word `{refused_by}`")
+        elif accepted == "no":
             bad.append(f"`{name}` is live and reaches {', '.join(nonprod)} with no owner acceptance")
         elif accepted == "unknown":
             unknown.append(f"`{name}` is live and reaches {', '.join(nonprod)}; its acceptance "

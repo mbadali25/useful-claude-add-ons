@@ -135,19 +135,29 @@ Non-production held live payment and shipping credentials for weeks (D4).
     that each start with an uppercase ASCII letter (`Matthew`, `Matthew Badali`, `O'Neil`,
     `Jean-Luc`). Examples: `accepted`, `ACCEPTED`, `yes`, `2026-10-01`, `yes 2026-10-01`,
     `Accepted by Matthew`, `accepted by Matthew Badali 2026-10-01`, `accepted 2026-10-01 by Matthew`.
-  - **Not accepted (GAP):** blank or punctuation only (`-`, `?`), or any word, a `by` name
-    included, that is `no`, `n`, `na`, `n/a`, `not` or `false`, or that starts with one of: revok,
-    reject, deni, deny, refus, expir, withdr, cancel, rescind, retract, laps, void, invalid, never,
-    nobody, none, pending, tbd, todo, unknown, await, wait, declin, maybe, perhaps, condition,
-    tentativ, provision, draft, unverif, propos, supersed, disput, inactiv, disabl, obsolet, stale,
-    unaccept. So `accepted Cancelled`, `yes Draft`, `accepted but expired` and `accepted by Nobody`
+  - **Not accepted (GAP):** blank or punctuation only (`-`, `?`), or any word outside a `by`
+    name that is `no`, `n`, `na`, `n/a`, `not` or `false`, or that starts with one of: revok, reject,
+    deni, deny, refus, expir, withdr, cancel, rescind, retract, laps, void, invalid, never, nobody,
+    none, pending, tbd, todo, unknown, await, wait, declin, maybe, perhaps, condition, tentativ,
+    provision, draft, unverif, propos, supersed, disput, inactiv, disabl, obsolet, stale, unaccept.
+    So `accepted Cancelled`, `yes Draft`, `accepted but expired` and `accepted by Nobody`
     are GAPs.
   - **Unknown (E5 UNKNOWN for that row):** everything else, never an acceptance: a name without
     `by` (`accepted Matthew`, `accepted, Matthew`), `accepted Under Review`, `accepted soon`,
     `accepted (verbally)`, `accepted by the owner on 2026-10-01`, `approved`, `ok`, `y`, `✅`.
-  - **Limits.** Names are ASCII only: `accepted by José` reads UNKNOWN, so write an ASCII form
-    (`accepted by Jose`). A qualifier written as a capitalised name after `by` that no stem above
-    catches (`accepted by Later`) cannot be told from a name, which is why the form is
+  - **Inside a `by` name** the stems and the short words do not apply, so `accepted by Denise`,
+    `accepted by Waite` and `accepted by Matthew N Badali` are names. There a word refuses only as
+    a whole refusal word: revoked, revoke, rejected, reject, denied, deny, refused, refuse, expired,
+    expire, withdrawn, withdraw, cancelled, canceled, cancel, rescinded, retracted, lapsed, void,
+    invalid, pending, tbd, todo, unknown, awaiting, waiting, declined, maybe, perhaps, conditional,
+    conditionally, tentative, tentatively, provisional, draft, unverified, proposed, superseded,
+    disputed, inactive, disabled, obsolete, stale, unaccepted, never, nobody, none, not. The GAP
+    names the word that refused.
+  - **Limits.** A refusal word written as a name after `by` still refuses (`accepted by Nobody`,
+    `accepted by Matthew Revoked`), even if someone is really called that. Names are ASCII only:
+    `accepted by José` reads UNKNOWN, so write an ASCII form (`accepted by Jose`). A qualifier
+    written as a capitalised name after `by` that is not a whole refusal word
+    (`accepted by Later`, `accepted by Pendingly`) cannot be told from a name, which is why the form is
     `accepted by <person> <date>` and nothing else.
 
 | Name | Reaches | Live | Accepted |
