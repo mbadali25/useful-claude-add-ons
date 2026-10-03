@@ -288,7 +288,10 @@ function Resolve-CrewPython {
           try { $null = $proc.WaitForExit(2000) } catch { }
         } elseif ($proc.ExitCode -eq 0 -and $outTask.Wait(1000)) {
           $line = @(($outTask.Result -split "`r?`n") | Where-Object { $_.Trim() })[-1]
-          $probe = $line | ConvertFrom-Json
+          # An empty answer leaves $line null, and piping $null into ConvertFrom-Json is a
+          # NON-terminating binding error this try never catches: it reached stderr as a red
+          # error block on every hook, though the candidate was rightly rejected (T-0097).
+          $probe = if ($line) { $line | ConvertFrom-Json } else { $null }
           $v = @($probe.v)
           if ($probe.impl -in @('cpython', 'pypy') -and $v.Count -ge 2 -and
               ($v[0] -is [long] -or $v[0] -is [int]) -and ($v[1] -is [long] -or $v[1] -is [int]) -and
@@ -1343,6 +1346,58 @@ if ($null -ne $budget) {
       [string]$deferred.Count + '. The deferred ones were NOT checked - run /crew:verify.')
   }
 }
+# --- declared coverage (L-0572), -All only ---------------------------------
+# The twin of verify-gate.sh's block, where the full rationale lives. WHAT
+# may be credited is decided by ONE planner, verify_record.cover_plan, which
+# this flavour reaches through `cover-plan` with its OWN parsed map (no
+# second read of the file); WHETHER it is credited is decided in the run
+# loop from the superset's exit codes. The answer is checked before use -
+# the same commands, a guard per command - and anything else means no plan
+# and every rule runs.
+$coverGuards = @()
+if ($All -and $matchPy -and (Test-Path $verifyRecordScript)) {
+  try {
+    $ruleCmdsOut = [ordered]@{}
+    foreach ($k in $ruleCmds.Keys) { $ruleCmdsOut[[string]$k] = @($ruleCmds[$k]) }
+    $coverPayload = ConvertTo-Json -Compress -Depth 20 -InputObject ([ordered]@{
+      rules = @($vm.rules)
+      always = @(@($vm.always) | Where-Object { $_ -is [string] })
+      rule_order = @($ruleOrder)
+      rule_cmds = $ruleCmdsOut
+      cmds = @($cmds)
+    })
+    $global:LASTEXITCODE = 0
+    $coverOut = ($coverPayload | & $matchPy $verifyRecordScript cover-plan 2>$null) | Out-String
+    if ($LASTEXITCODE -eq 0 -and $coverOut.Trim()) {
+      $plan = $coverOut | ConvertFrom-Json -ErrorAction Stop
+      $planCmds = @($plan.cmds)
+      $planGuards = @($plan.guards)
+      $same = ($planCmds.Count -eq $cmds.Count) -and ($planGuards.Count -eq $planCmds.Count)
+      if ($same) {
+        $want = [System.Collections.Generic.List[string]]::new()
+        foreach ($c in $cmds) { $want.Add([string]$c) }
+        $got = [System.Collections.Generic.List[string]]::new()
+        foreach ($c in $planCmds) { $got.Add([string]$c) }
+        $want.Sort([System.StringComparer]::Ordinal)
+        $got.Sort([System.StringComparer]::Ordinal)
+        for ($i = 0; $i -lt $want.Count; $i++) {
+          if (-not [string]::Equals($want[$i], $got[$i], [System.StringComparison]::Ordinal)) { $same = $false; break }
+        }
+      }
+      if ($same) {
+        $cmds = [System.Collections.ArrayList]@()
+        foreach ($c in $planCmds) { [void]$cmds.Add([string]$c) }
+        $coverGuards = $planGuards
+      } else {
+        [void]$notices.Add("verify-gate: the declared coverage plan did not match this run's commands - NOT applied, every rule runs")
+      }
+      foreach ($n in @($plan.notices)) { if ($n) { [void]$notices.Add([string]$n) } }
+    }
+  } catch {
+    $coverGuards = @()
+    [void]$notices.Add("verify-gate: declared coverage NOT applied ($($_.Exception.Message)) - every rule runs")
+  }
+}
 # Printed BEFORE the run, so a turn killed part-way still says what it was
 # never going to check.
 foreach ($n in $notices) { [Console]::Error.WriteLine($n) }
@@ -1547,11 +1602,64 @@ $anySkipped = $false
 # One entry per command actually run this turn - the twin of CMD_LOG in
 # verify-gate.sh, fed to verify_record.py sync after the loop.
 $cmdLog = [System.Collections.ArrayList]@()
+# Declared coverage, the run-time half - the twin of verify-gate.sh's, where
+# the rationale lives: only "pass" at every guarded position credits, and a
+# whole-tree snapshot taken before the first command must equal one taken
+# at the first credit, or credit is off for the rest of the run. $pos is
+# incremented first thing in every iteration, so it stays aligned with
+# $coverGuards whatever the body does.
+function Get-CrewTreeSnapshot {
+  if (-not $matchPy -or -not (Test-Path $verifyRecordScript)) { return "" }
+  Push-Location $root
+  try {
+    $global:LASTEXITCODE = 0
+    $snapOut = (& $matchPy $verifyRecordScript tree-snapshot 2>$null) | Out-String
+    if ($LASTEXITCODE -eq 0) { return $snapOut.Trim() }
+    return ""
+  } catch { return "" } finally { Pop-Location }
+}
+$pos = -1
+$statusAt = @{}
+$coveredN = 0
+$coverState = ""
+$coverSnap0 = ""
+if (@($coverGuards | Where-Object { $_ }).Count -gt 0) { $coverSnap0 = Get-CrewTreeSnapshot }
 foreach ($ident in $cmds) {
+  $pos++
   # $ident is an IDENTITY (text, or text+`u{1c}+env JSON) - see
   # Get-CrewIdentity above. Split it in-process (PowerShell strings need no
   # subprocess round-trip the way bash's read loop does).
   $c = Get-CrewIdentityText $ident
+  $guard = if ($pos -lt $coverGuards.Count) { $coverGuards[$pos] } else { $null }
+  $credit = $false
+  if ($guard) {
+    $gpos = @($guard.pos)
+    $credit = $gpos.Count -gt 0
+    foreach ($p in $gpos) {
+      $pi = 0
+      if (-not [int]::TryParse([string]$p, [ref]$pi) -or $pi -lt 0 -or $pi -ge $pos -or $statusAt[$pi] -ne "pass") {
+        $credit = $false
+        break
+      }
+    }
+    if ($credit -and -not $coverState) {
+      $coverSnap1 = Get-CrewTreeSnapshot
+      if ($coverSnap0 -and $coverSnap0 -eq $coverSnap1) {
+        $coverState = "ok"
+      } else {
+        $coverState = "off"
+        [Console]::Error.WriteLine("verify-gate: the working tree changed during this run, or its snapshot could not be read - declared coverage NOT applied, every remaining subset rule runs")
+      }
+    }
+    if ($coverState -ne "ok") { $credit = $false }
+  }
+  if ($credit) {
+    [Console]::Error.WriteLine("verify-gate: COVERED by rules[" + (@($guard.rules) -join ',') + "] (passed this run): $c")
+    $statusAt[$pos] = "covered"
+    $coveredN++
+    [void]$cmdLog.Add([ordered]@{ cmd = $ident; status = "covered"; elapsed = 0 })
+    continue
+  }
   $envJson = if ($ident.Length -gt $c.Length) { $ident.Substring($c.Length + 1) } else { "" }
   $spec = @{}
   if ($envJson) {
@@ -1823,6 +1931,7 @@ foreach ($ident in $cmds) {
   # record-sync classification (matching THIS log against those lists) has
   # to key on the same thing, or two rules sharing command text under
   # different env would collide back into one entry.
+  $statusAt[$pos] = $cmdStatus
   [void]$cmdLog.Add([ordered]@{ cmd = $ident; status = $cmdStatus; elapsed = $ruleElapsed })
   # Heartbeat AFTER the rule, matching verify-gate.sh exactly.
   Update-CrewLock -LockPath $lock -Token $lockToken
@@ -1831,6 +1940,9 @@ foreach ($ident in $cmds) {
   Write-CrewLockDeadline -LockPath $lock -Token $lockToken -Ttl $lockTtl -MaxCost $maxCost
 }
 [Console]::Error.WriteLine("verify-gate: ${totalElapsed}s total across $($cmds.Count) rule command(s)")
+if ($coveredN -gt 0) {
+  [Console]::Error.WriteLine("verify-gate: $coveredN of them COVERED by a declared superset rule that passed this run - not re-run")
+}
 Set-Location $root
 
 if ($unmapped.Count -gt 0 -and $vm.unmapped -eq "fail") {

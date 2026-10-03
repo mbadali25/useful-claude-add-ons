@@ -1,6 +1,7 @@
 """Throwaway git repositories and a fake reviewer CLI for the review-adapter
 tests. Everything is built under pytest's tmp_path: no test here touches the
 real repository, its ledger directory, or ~/.claude."""
+import json
 import os
 import subprocess
 import sys
@@ -57,6 +58,19 @@ def init_repo(root):
 #   hang      sleep far past any test timeout
 #   crash     kill the parent (review_run.py) -- an orchestrator crash
 #   turnfail  a JSON stream whose turn failed, exit 0
+#   prose     a completed turn whose only agent message is prose: no READ
+#             lines, no verdict -- a reviewer that broke the contract (T-0087)
+#   golden    replay a REAL `codex exec --json` stream from the golden corpus
+#             (FAKE_REVIEWER_GOLDEN_STREAM) byte for byte, except its last
+#             agent message, which becomes READ lines for the parts this
+#             prompt lists -- full paths, or bare names with
+#             FAKE_REVIEWER_READ_FORM=bare -- followed by the non-READ lines of
+#             FAKE_REVIEWER_GOLDEN_OUT. The canary's mode (T-0087): it answers
+#             the way reviewers do, not the way the parser wants.
+#
+# Whatever the mode, a prompt that says its instructions are in a file (the
+# form review_run.prompt_argument passes when the prompt is over
+# INLINE_PROMPT_LIMIT) is read from that file, as a real reviewer does.
 #   escape    fork a detached `setsid` grandchild that inherits this
 #             process's stdout/stderr and outlives it, then exit immediately
 #             -- the leader-already-gone shape review_run.py's `launch` BLOCK
@@ -82,11 +96,67 @@ _FAKE = r'''
 import json, os, re, signal, subprocess, sys, time
 prompt = sys.argv[-1]
 sys.stdin.read()
+m = re.search(r"instructions are in the file (.+?)\. Read that file", prompt)
+if m:
+    with open(m.group(1), encoding="utf-8") as fh:
+        prompt = fh.read()
 mode = os.environ.get("FAKE_REVIEWER_MODE", "clean")
+if mode == "golden":
+    listed = re.findall(r"^  (\S.*part-\d{3}-of-\d{3}\.patch)$", prompt, re.M)
+    if os.environ.get("FAKE_REVIEWER_READ_FORM", "full") == "bare":
+        listed = [p.replace("\\", "/").rsplit("/", 1)[-1] for p in listed]
+    with open(os.environ["FAKE_REVIEWER_GOLDEN_OUT"], encoding="utf-8", newline="") as fh:
+        body = [l for l in fh.read().split("\n") if l.strip() and not l.startswith("READ|")]
+    with open(os.environ["FAKE_REVIEWER_GOLDEN_STREAM"], encoding="utf-8", newline="") as fh:
+        lines = fh.read().split("\n")
+    last = None
+    for i, line in enumerate(lines):
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        item = event.get("item")
+        if event.get("type") == "item.completed" and isinstance(item, dict) \
+                and item.get("type") == "agent_message":
+            last = i
+    lines[last] = json.dumps({"type": "item.completed", "item": {
+        "id": "item_canary", "type": "agent_message",
+        "text": "\n".join(["READ|" + p for p in listed] + body)}}, ensure_ascii=False)
+    sys.stdout.buffer.write("\n".join(lines).encode("utf-8"))
+    sys.exit(0)
 if mode == "hang":
     time.sleep(120)
+def _parent_of(pid):
+    # Windows only: the .cmd shim's cmd.exe sits between this script and
+    # review_run.py, so the parent to kill is the shim's own parent (T-0076).
+    import ctypes
+    from ctypes import wintypes
+    class Entry(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                    ("th32ProcessID", wintypes.DWORD), ("th32DefaultHeapID", ctypes.c_void_p),
+                    ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long),
+                    ("dwFlags", wintypes.DWORD), ("szExeFile", ctypes.c_char * 260)]
+    kernel = ctypes.windll.kernel32
+    kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    snap = kernel.CreateToolhelp32Snapshot(2, 0)
+    entry = Entry()
+    entry.dwSize = ctypes.sizeof(Entry)
+    found = None
+    more = kernel.Process32First(snap, ctypes.byref(entry))
+    while more and found is None:
+        if entry.th32ProcessID == pid:
+            found = entry.th32ParentProcessID
+        more = kernel.Process32Next(snap, ctypes.byref(entry))
+    kernel.CloseHandle(snap)
+    return found
 if mode == "crash":
-    os.kill(os.getppid(), getattr(signal, "SIGKILL", signal.SIGTERM))
+    target = os.getppid()
+    if os.name == "nt":
+        target = _parent_of(target) or target
+    os.kill(target, getattr(signal, "SIGKILL", signal.SIGTERM))
     time.sleep(5)
     sys.exit(0)
 if mode == "fail":
@@ -103,6 +173,8 @@ if mode == "escape":
 parts = sorted(set(re.findall(r"part-\d{3}-of-\d{3}\.patch", prompt)))
 body = "\n".join("READ|" + p for p in parts)
 body += "\nFIX|seed.txt:1|breaks|repro" if mode == "findings" else "\nCLEAN"
+if mode == "prose":
+    body = "I reviewed the change and it looks fine."
 events = [{"type": "thread.started"}, {"type": "turn.started"},
           {"type": "item.completed", "item": {"type": "agent_message", "text": body}}]
 events.append({"type": "turn.failed", "error": {"message": "stream died"}}
@@ -141,3 +213,31 @@ def env_with_path(directory, **extra):
     env["FAKE_REVIEWER_ESCAPE_LIFETIME"] = str(ESCAPE_CHILD_LIFETIME_S)
     env.update(extra)
     return env
+
+
+_SCRIPTS = os.path.dirname(os.path.abspath(review_run.__file__))
+
+
+def bundle(repo, scratch):
+    """Cut the review bundle for `repo`'s working tree against HEAD into
+    `scratch` (diff, manifest, a prompt naming every part)."""
+    base = git(repo, "rev-parse", "HEAD")
+    scratch.mkdir(parents=True, exist_ok=True)
+    subprocess.run([sys.executable, os.path.join(_SCRIPTS, "review_patch.py"),
+                    "--root", str(repo), "--base", base,
+                    "--out", str(scratch / "diff.txt"),
+                    "--manifest", str(scratch / "manifest.json")],
+                   check=True, capture_output=True, stdin=subprocess.DEVNULL)
+    (scratch / "prompt.txt").write_text(
+        "Review. " + " ".join(p["name"] for p in json.loads(
+            (scratch / "manifest.json").read_text(encoding="utf-8"))["parts"]),
+        encoding="utf-8")
+
+
+def run_review(repo, scratch, fakes, mode, *extra, **env_extra):
+    """Run review_run.py for ticket T1 with the fake codex in `mode`."""
+    return subprocess.run(
+        [sys.executable, os.path.join(_SCRIPTS, "review_run.py"), "--root", str(repo),
+         "--ticket", "T1", "--scratch", str(scratch), "--provider", "codex"] + list(extra),
+        capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False,
+        env=env_with_path(fakes, FAKE_REVIEWER_MODE=mode, **env_extra), timeout=120)

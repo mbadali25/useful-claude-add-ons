@@ -1,0 +1,42 @@
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-001-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-002-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-003-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-004-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-005-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-006-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-007-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-008-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-009-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-010-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-011-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-012-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-013-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-014-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-015-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-016-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-017-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-018-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-019-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-020-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-021-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-022-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-023-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-024-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-025-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-026-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-027-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-028-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-029-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-030-of-031.patch
+READ|<ROOT>/.work/review/T-0075-build--B9KfGV/diff.txt.parts/part-031-of-031.patch
+BLOCK|.crew/verify.json:129|required final-gate evidence is absent, so rule 17 and the touched config suites have no recorded acceptance result|`test -e .crew/.verify-gate.record.json` fails and `python3 plugin/crew/hooks/scripts/verify_record.py report` prints no per-rule record
+BLOCK|plugin/crew/hooks/scripts/crew_config.py:2756|both planners validate a block's leaves but assign the original parent block, dropping untouched sibling and unknown keys and hiding leaf-level widening|plan `{"context":{"autoClear":{"method":"escape"}}}` against a snapshot whose `context.autoClear` also contains `enabled` and `x-unknown`; the returned merge contains only `method`
+FIX|plugin/crew/hooks/scripts/crew_config.py:2698|merged-file validation checks only enums and providers, so pre-existing known leaves forbidden at that layer survive unrelated writes|put repo `context.autoClear.enabled: true` or `scope.mode: off`, then plan `tracker: jira`; it is accepted instead of naming the bad pre-existing key
+FIX|plugin/crew/hooks/scripts/crew_config_menu.py:493|an absent file has a null digest, but expectation checks and writer arguments omit falsy expectations, so a first-write dry run cannot compare-and-swap against absence|dry-run a machine change with no global file, create that file before apply, then observe that the printed `none` cannot be passed as a digest and apply without it merges instead of conflicting
+BLOCK|plugin/crew/hooks/scripts/crew_config_menu.py:472|a repo-only Save depends on the machine file for widening decisions but neither records nor checks its digest, allowing the approved dry run to change semantics before apply|with global and repo `guards.forcePush=block`, dry-run repo `allow`, change global to `allow`, then apply with the unchanged repo digest; the formerly held-down edit is written as an unapproved effective widening
+BLOCK|plugin/crew/hooks/scripts/crew_config_menu.py:818|the apply CLI creates a fresh delete plan, so the typed confirmation is not bound to the preview the owner reviewed|run `delete-repo`, edit config.json, then run `delete-repo --confirm NAME --apply`; the edited bytes are deleted instead of producing “changed since the preview”
+BLOCK|plugin/crew/hooks/scripts/crew_config_files.py:252|destination refusal is a check-then-replace race, so a backup created after `lexists` is overwritten and lost|pause `move_aside` after the false existence check, create `dest`, then resume; `os.replace` silently replaces the existing backup
+BLOCK|plugin/crew/hooks/scripts/crew_config_menu.py:786|mismatch rollback checks for a replacement config and then uses overwriting `os.replace`, so a foreign save in that gap is destroyed|force a held-byte mismatch, pause after `lexists(path)` returns false, create a new config at `path`, then resume; rollback overwrites it with the moved bytes
+BLOCK|plugin/crew/hooks/scripts/crew_config_menu.py:752|delete accepts a symlink to valid JSON but the resulting backup is rejected by restore's realpath/location rule, breaking the verified-restorable guarantee|symlink `.crew/config.json` to a valid JSON file outside `.crew`, delete it, then run the printed restore command; restore exits 2 saying the backup is outside `.crew`
+FIX|plugin/crew/hooks/scripts/crew_config_menu.py:974|an explicitly empty `--pending` value bypasses JSON and shape validation instead of exiting 2|run `crew_config_menu.py spec --layer machine --pending '' --json`; it proceeds as though no pending argument was supplied
+NIT|plugin/crew/README.md:1013|documentation says the repo writer refuses whole-block writes, contradicting the specified and implemented acceptance of non-empty blocks after per-leaf validation|compare this bullet with the per-leaf block behavior documented at lines 1021-1024 and `plan_repo_write({"qa": {"provider": "codex"}})`

@@ -99,6 +99,17 @@ even on Windows. See
 the harness matches CI. Native Windows works but doubles the surface area for no
 benefit unless the application genuinely requires it.
 
+**On native Windows, crew picks a shell route for its long-running jobs.** The
+per-step tests and verify-map checks in `/crew:implement`, and graphify builds,
+run through `crew_shell.py run`. It routes by `shellRoute.mode` (`auto`, `wsl`,
+`powershell` or `gitbash`) and prints one `crew-shell:` line naming the route
+and why. `auto` uses WSL2 when it is usable and either the repo lives inside
+WSL or a measurement showed WSL faster for this repo. Otherwise it runs plain
+argv directly and bash syntax in Git Bash. A bash string never goes to pwsh.
+`/crew:status` shows the route on a `shell` line. Hooks do not change, and
+nothing changes on Linux, macOS or inside WSL. See "Choosing the shell route on
+Windows" in `skills/crew-setup/platform.md`.
+
 ### The three WSL problems worth knowing before they cost you an hour
 
 **Repo location decides your test runtime.** A clone under `/mnt/c/...` sits on
@@ -344,9 +355,10 @@ The skill will:
 <!-- crew-ignore-policy:list -->
 **Commit the part that is about the code, not the part that is about your box.**
 The policy `/crew:init` writes is `.crew/*` ignored plus a named un-ignore list —
-`!.crew/codemap/`, `!.crew/endpoints.json`, `!.crew/verify.json`. Those three
-describe the repository: the code map, the endpoint ledger a security scan is
-owed against, and the verification map. Commit them, and `_verify/`, `docs/adr/`
+`!.crew/codemap/`, `!.crew/endpoints.json`, `!.crew/verify.json`,
+`!.crew/standards.md`. Those four describe the repository: the code map, the
+endpoint ledger a security scan is owed against, the verification map and the
+development standards overlay (the `crew-standards` skill). Commit them, and `_verify/`, `docs/adr/`
 and `CLAUDE.md` with them. `.crew/config.json`, `.crew/STATUS.md`, the transcripts
 and the gate's own marker files stay out, and so does the whole of `.work/` —
 they describe one checkout on one machine. (This line used to say `.work/`
@@ -712,6 +724,10 @@ The session reads exactly one ticket file, delegates the search to `explorer`, p
 
 If the change added behavior with no smoke coverage, the implementing session adds a check. A feature without a check is how the next change breaks it silently. Review comes after the tests and the docs (since 0.20.17), so the reviewer reads the finished change rather than a draft that later edits move out from under it.
 
+Before the first plan step, `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/recurring_findings.py" --root . --ticket <id>` prints the **recurring-findings checklist**: the defect classes earlier reviews kept finding (processes and races, claims that are not true at HEAD, tests that cannot fail, fail-open handling, PowerShell/Bash drift, guard bypass, version and registration, in descending order of how often they were found), only those whose path globs meet the spec's Touch list, at most four probes each and 60 lines in all, with a cut announced by id. The data is the tracked `skills/crew-qa-standards/references/recurring-findings.md`, so every machine prints the same list; an unreadable spec or Touch list (a spec that is not a regular file, such as a FIFO, included) lists every class under `UNKNOWN:` and exits 1, and an unreadable or malformed data file prints `UNREADABLE:`/`PROBLEM:` instead, never "no class applies", and also exits 1. `/crew:implement` pastes it into every developer dispatch and re-runs it before the self-check. It is advisory: no gate reads it.
+
+Between the refresh and the review sits the **required standards self-check** (see "Development standards" below): every standard in the effective set answered in `.work/tickets/<id>/selfcheck.md`, then stamped with `crew_standards.py stamp`. `/crew:review` refuses to spend a round without a current stamp.
+
 ### Review it
 
 ```
@@ -720,9 +736,9 @@ If the change added behavior with no smoke coverage, the implementing session ad
 
 Codex if available, the `reviewer` agent if not — and it always tells you which ran. Findings are reported verbatim before any argument about them. `BLOCK` items get fixed, smoke reruns, review runs once more — and that second round is the last one.
 
-The reviewer reads a **bundle**, not a `git diff` of the committed range: `hooks/scripts/review_patch.py` stages committed, staged, unstaged and untracked changes into a temporary index (your own index is never written) and diffs the ticket base against it. Renames, file-mode changes, binary files (git's marker plus both blob ids and sizes) and submodules are listed in the manifest. A large bundle is split into ordered parts — never truncated — and the manifest records a sha256 over them. Since T-0046 the three graphify outputs at the repository root — `graphify-out/graph.json`, `GRAPH_REPORT.md` and `graph.html` — are not diffed when they arrive as a plain add, modify or delete of a regular file: the patch ends with a listing giving each one's status, path, both blob ids, and the sha256 and size of its new content (the manifest's `generated`, and the prompt names them). They were 94-97% of every bundle measured, and reviewers who could not read 24-37 parts returned `INCOMPLETE`. Anything else under `graphify-out/`, a rename or copy, a mode change, a link (or a `graphify-out` that is one) and a differently cased name are diffed in full, and the paths are fixed — a `graph.out` elsewhere keeps the full diff.
+The reviewer reads a **bundle**, not a `git diff` of the committed range: `hooks/scripts/review_patch.py` stages committed, staged, unstaged and untracked changes into a temporary index (your own index is never written) and diffs the ticket base against it. Renames, file-mode changes, binary files (git's marker plus both blob ids and sizes) and submodules are listed in the manifest. A large bundle is split into ordered parts — never truncated — and the manifest records a sha256 over them. `.work/` (crew's scratch) and the generated `graphify-out/` are never in the bundle; the manifest's `excluded` names both and the prompt's bundle block prints them, so a reviewer knows what was left out (T-0092).
 
-Then it appends a line to `.crew/metrics.md`. That line is not bookkeeping; `/crew:status` reads it to show whether any of this is catching anything.
+Then `review_run.py` itself appends the round's line to `.crew/metrics.md` - the main checkout's, also from a linked worktree - right after the ledger records the round: `<date> | <ticket> | <provider>/<model> (r<N>, std:..., <family>) | <BLOCK> | <FIX>`, with `INCOMPLETE` in both count cells for a round with no verdict and the family named against the author's (`same-family`, `different family` only when a dispatch record proves it, `different family unproven` when it came from config, `family unknown` when it could not be read, or `same-family: codex limit`), and the `std:` token the round was reserved under, never one recomputed afterwards. A symlinked or junctioned `.crew`, or a metrics path that is not a regular file, is refused, not followed. It used to be a prose step, and 118 of 162 rounds had no line (L-0578). A write that fails never changes the verdict; it prints the exact line to append by hand. That line is not bookkeeping; `/crew:status` reads it to show whether any of this is catching anything.
 
 ### Review: verdicts and the two-round budget
 
@@ -732,40 +748,83 @@ Then it appends a line to `.crew/metrics.md`. That line is not bookkeeping; `/cr
 
 | Verdict | When |
 |---|---|
-| `CLEAN` | exactly one `CLEAN` line, exit 0, and a `READ|<part>` line for every bundle part |
-| `FINDINGS` | at least one `BLOCK`, `FIX` or `NIT` line, and nothing below applies |
-| `INCOMPLETE` | non-zero exit, unknown exit, timeout, empty output, any line outside the contract (a code fence, or a finding with an empty field, included), a part not acknowledged, a bundle part that no longer matches its manifest size and sha256, an unreadable line in Codex's event stream, or `CLEAN` beside findings |
+| `CLEAN` | exactly one `CLEAN` line, exit 0, and a READ line for every bundle part - its path exactly as listed, or its bare file name |
+| `FINDINGS` | at least one `BLOCK`, `FIX` or `NIT` line, and nothing below applies - including a round recovered despite harmless stray lines (below) |
+| `INCOMPLETE` | non-zero exit, unknown exit, timeout, empty output, any line outside the contract that is not recovered (a finding with an empty field, a decorated or lower-case contract line, a `|`-table row, an admission that the review fell short, and any stray line beside `CLEAN`, included), a part not acknowledged, a bundle part that no longer matches its manifest size and sha256, an unreadable line in Codex's event stream, or `CLEAN` beside findings. Each INCOMPLETE is classed `tool`, `reviewer` or `tree` (`review_verdict.failure_class`); only `tool` is refunded (below) |
 
-`INCOMPLETE` is never `CLEAN`. Codex runs as `codex exec --json --sandbox read-only` with stdin closed, and a turn that failed in its event stream is `INCOMPLETE` even when the process exited 0. Each round writes `.work/tickets/<id>/review.json` (verdict, counts, provider, model, model family, bundle hash, base/head, round).
+**Harmless stray lines are recovered, never beside `CLEAN` (L-0576).** A round whose findings parse, whose every part is acknowledged, that exited 0 and has no other reason, is `FINDINGS` even when it also printed prose, a heading or a code fence - the shape that cost T-0100 round 2. The ignored lines go in `review.json`'s `ignored_text`, their count in its `ignored_lines` (an int on every round, 0 when none) and in the ledger row (null there when that value is missing or malformed - unknown is never 0), and a `review: FINDINGS kept; N line(s) outside the contract were ignored` line names the first; report them with the findings. A stray line that might be a contract line the parser failed to read, or that admits the review fell short ("incomplete", "skipped", "truncated", "could not review", ...), is "could not tell" and keeps the round `INCOMPLETE`; that wording net cannot be complete, which is why recovery never reaches `CLEAN` and the lines are always shown. `review_verdict.py`'s docstring states the rule in full.
 
-**Two rounds per ticket, in total.** `hooks/scripts/review_ledger.py` keeps the ledger at `<git-common-dir>/crew/review/<id>.json`, so every worktree of the repo shares it. `review_run.py` reserves the round *before* it launches the reviewer, so a reviewer that crashes or hangs has still spent it. A third reservation is refused and the ticket becomes `NEEDS_REPLAN`; that refusal and an explicit `review_ledger.py --ticket <id> --reject --by <who>` are the only ways in, so finishing round 2 with `FINDINGS` or `INCOMPLETE` leaves the ticket `REVIEWED`, not `NEEDS_REPLAN`. A result is recorded only for the most recent reserved round, only once, and only by the provider and model it was reserved for; once `NEEDS_REPLAN`, no result changes the state. No environment variable, flag or config key raises or resets the budget; deleting the ledger file by hand is outside that promise, and is what a reviewer of your repo's history would see. Since crew 1.0 (T3) the one way past `NEEDS_REPLAN` is an approved successor plan: approving a *different* plan (`/crew:approve <id>`) opens a fresh budget of two rounds under that plan (see "Scope and approval" below); re-approving the same plan does not.
+A READ line naming anything else - a path outside the bundle, or the same file name in another directory - counts for no part; the part it failed to cover is what makes the round `INCOMPLETE`. The prompt quotes that form from `review_verdict.READ_FORM`, so the two cannot disagree again (T-0079). From crew 1.0.50, `review.json`'s `parts_expected` and `parts_missing` name each part by its listed path, not its bare file name. `INCOMPLETE` is never `CLEAN`. Codex runs as `codex exec --json --sandbox read-only` with stdin closed, and a turn that failed in its event stream is `INCOMPLETE` even when the process exited 0. Each round writes `.work/tickets/<id>/review.json` (verdict, counts, provider, model, model family, bundle hash, base/head, round).
 
-**The receipt is bound to the bundle.** A `CLEAN` round writes an acceptance receipt carrying the bundle sha256. `FINDINGS` you decide to accept become one only through `review_ledger.py --ticket <id> --accept --by <who>`, which records who and when and refuses if the tree changed since that round. It accepts only the most recent round, only once that round completed with `FINDINGS`, only once per round, and never once the ticket is `NEEDS_REPLAN` — so round 2's FINDINGS can be accepted until a third reservation is refused or the ticket is rejected, and not after (since 0.20.18). `review_ledger.py --ticket <id> --check-receipt` rebuilds the bundle from the receipt's base and exits non-zero when there is no receipt or the hash differs — any edit after review invalidates it; committing the reviewed change does not. The graphify listing is inside the hashed patch, so a graph refreshed after review changes its sha256 and stales the receipt exactly as a diffed graph did. A round and its receipt record `bundle_scheme: "crew-review/generated-1"`; a receipt written before T-0046 has none and is checked against the full diff it was written over, so no in-flight receipt goes stale on upgrade, and an unknown scheme reads as not checkable, never as a fallback. `/crew:done` will gate on it; for now, run it yourself before you open the pull request.
+**Two rounds per ticket, in total.** `hooks/scripts/review_ledger.py` keeps the ledger at `<git-common-dir>/crew/review/<id>.json`, so every worktree of the repo shares it; the merge train (below) keeps its queue beside it, at `<git-common-dir>/crew/train/`. `review_run.py` reserves the round *before* it launches the reviewer, so a reviewer that crashes or hangs has still spent it. A third reservation is refused and the ticket becomes `NEEDS_REPLAN`; that refusal and an explicit `review_ledger.py --ticket <id> --reject --by <who>` are the only ways in, so finishing round 2 with `FINDINGS` or `INCOMPLETE` leaves the ticket `REVIEWED`, not `NEEDS_REPLAN`. A result is recorded only for the most recent reserved round, only once, and only by the provider and model it was reserved for; once `NEEDS_REPLAN`, no result changes the state. No environment variable, flag or config key raises or resets the budget; deleting the ledger file by hand is outside that promise, and is what a reviewer of your repo's history would see. Since crew 1.0 (T3) the one way past `NEEDS_REPLAN` is an approved successor plan: approving a *different* plan (`/crew:approve <id>`) opens a fresh budget of two rounds under that plan (see "Scope and approval" below); re-approving the same plan does not.
 
-The prompt every reviewer reads also carries the ticket's spec sections (Intent, Exclusions, Evidence, Unknowns, Acceptance checks) from `.work/tickets/<id>/spec.md`, the plan from `plan.md`, the codemap landmines, and the verify gate's latest receipts. A missing piece is written into the prompt as `MISSING`, never left out.
+**A round the tool lost is refunded (crew 1.0.76, T-0087).** An `INCOMPLETE` round is classed from facts, not from reason text, in this order. A bundle part or web-test report that changed under the reviewer is `tree`. Otherwise, an answer that never arrived intact is `tool`: a timeout, an unknown or non-zero exit, empty output, or a failed or unreadable Codex stream. Anything else is `reviewer`, meaning output that arrived and broke the contract. Only `tool` is refunded, automatically and at most `REFUND_LIMIT` (2) times per plan. A refunded round stays in the ledger, but it is not charged against the two-round budget. A third tool failure under the same plan is recorded as `refund_refused` and counts. These are never refunded: `reviewer` and `tree` rounds, a round with no recorded result, and ledger rows written before 1.0.76, which carry no `failure_class`. The refund shows in the ledger row (`failure_class`, `refunded`, `refund_refused`), in `review.json`, in the `review:` lines (`review: round N was a tool failure (...); refunded - ...`) and in `/crew:status` (`1/2 rounds used, 1 refunded`). Nothing else resets the count, and a successor plan starts both the budget and the refund count afresh. This is the review-side twin of T-0082's gate rule: a killed, hung or timed-out run is "could not tell", never a pass.
+
+**Harness checks (T-0087).** A committed golden corpus of real, redacted reviewer output (`tests/golden/review/`, built by `tests/golden_build.py`, which also replays every local review with `--check-local`) runs through the verdict parser. `tests/test_review_contracts.py` feeds each producer's real output to its real consumer at every review-format seam: the manifest, READ and finding lines, the verdict vocabulary, the gate record and the approval and ledger paths. `tests/test_review_canary.py` runs a whole review end to end against a replayed real Codex stream. `.crew/verify.json`'s harness rule runs all of these, plus `scripts/check-tooling-pr.py`, which refuses feature work riding on a harness change. The facts crew relies on from Codex CLI, `wsl.exe` and `gh` output are in `docs/external-tool-formats.md`, with sources.
+
+**The receipt is bound to the bundle.** A `CLEAN` round writes an acceptance receipt carrying the bundle sha256. `FINDINGS` you decide to accept become one only through `review_ledger.py --ticket <id> --accept --by <who>`, which records who and when and refuses if the tree changed since that round. It accepts only the most recent round, only once that round completed with `FINDINGS`, only once per round, and never once the ticket is `NEEDS_REPLAN` — so round 2's FINDINGS can be accepted until a third reservation is refused or the ticket is rejected, and not after (since 0.20.18). `review_ledger.py --ticket <id> --check-receipt` rebuilds the bundle from the receipt's base and exits non-zero when there is no receipt or the hash differs — any edit after review invalidates it; committing the reviewed change does not. `/crew:done` will gate on it; for now, run it yourself before you open the pull request.
+
+The prompt every reviewer reads also carries the ticket's spec sections (Intent, Exclusions, Evidence, Unknowns, Acceptance checks) from `.work/tickets/<id>/spec.md`, the plan from `plan.md`, the codemap landmines, the verify gate's latest receipts, and the development standards checklist (below). A missing piece is written into the prompt as `MISSING`, never left out.
 
 You open the pull request. The crew stops at the boundary of your judgment.
 
+### Landing through the merge train
+
+Parallel lanes that gate against a base which then moves pay for a catch-up merge and a fresh gate round each time. Since L-0520 a clone can serialise the **gate+land** stage per overlapping Touch set while lanes keep implementing in parallel — nothing on the implement path consults the train. `hooks/scripts/crew_train.py` keeps one locked queue per clone under `<git-common-dir>/crew/train/` (`state.json`, an append-only `events.jsonl`, and `merge-log/<id>.jsonl`), shared by every worktree of the clone.
+
+- **Armed per clone, not by config.** `crew_train.py arm` creates `state.json` exclusively; until then nothing changes, so a single session is untouched. `disarm` refuses while any entry exists. There is no config key.
+- **The queue rule.** An entry (one ticket on one base) holds the train iff no holding entry and no earlier-queued waiting entry on the same base has an overlapping Touch set. Overlapping tickets gate and land one at a time in the order they reached their gate; disjoint ones hold at once; the same Touch on two bases is two trains. Overlap is conservative: two Touch entries overlap when the literal prefix of one (its case-folded segments before the first wildcard segment) is a segment prefix of the other, so `a/*.py` and `a/b/c.py` serialise. Refresh artifacts (`.crew/codemap/`, `.claude/rules/`, `docs/diagrams/`, `graphify-out/`) are not counted for overlap; version files named in Touch are, so in this repo crew tickets share one train. The moved-path checks below (`merge <base> first`, `check-land`) and the merged-path notices judge the **full** Touch, refresh artifacts included: a base that moved a path the ticket names is a tree its verdict did not cover (L-0558). An undeclared Touch — no spec.md, no `## Touch`, no bullet, a parse problem, unreadable — overlaps everything, and `status` names it `undeclared: <why>`.
+- **Take it before the gate round.** `crew_train.py acquire --ticket <id>` holds the train or refuses (exit 1): waiting behind an overlapping ticket, or `merge <base> first` when the base holds commits touching this ticket's Touch that HEAD lacks. It names the blocker and each colliding pair (`colliding: <mine> x <theirs>`), and every wait is logged as a `wait` event with those paths. In this release the lane (or you) calls it before `/crew:review`; `review_run.py` taking it itself is a follow-up (L-0526).
+- **Catch-up is a merge, with rerere but never autoupdate.** `crew_train.py catch-up --ticket <id>` fetches the base (see the land check; a failed fetch is could-not-tell, exit 3), makes `rerere.enabled` true in this worktree (`git config --worktree` when `extensions.worktreeConfig` is already on, else `--local`; never `--global`, never switching the extension on), and runs `git -c rerere.autoupdate=false merge --no-edit` on the SHA that fetch returned (never the ref by name) — never a rebase or cherry-pick. It never writes `rerere.autoupdate` (owner rule, 2026-09-30: a shared rerere cache once replayed another lane's version resolution unseen), so a replayed resolution is left in the working tree **unstaged** for you to inspect and `git add`. The version files — `plugin/crew/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md`, `CHANGELOG.md` — are never replayed: each one the merge left conflicted gets `git rerere forget` and its conflict markers back (`git checkout -m`), and the output names it as forgotten, for you to resolve by hand. It refuses a dirty tree (untracked files outside `.work/` included), and never commits a conflicted or rerere-resolved merge: `MERGE_HEAD` is left for you to resolve, `git add` and `git commit --no-edit`. Every catch-up is a line in `merge-log/<id>.jsonl` (head before, base sha, outcome, conflicted, rerere-replayed and rerere-forgotten files); `merge-log --ticket <id>` prints it; show the replayed files to your reviewer as changes to review (the prompt lists them itself once L-0526 lands). It works whether or not the train is armed.
+- **The land check.** `crew_train.py check-land --ticket <id> [--pr <n>]` refuses unless this worktree's entry holds the train, the base fetched (with an explicit `+refs/heads/<branch>:refs/remotes/<remote>/<branch>` refspec, so the ref judged is the one fetched even where `remote.<remote>.fetch` is unset; a base that then disagrees with `FETCH_HEAD` is could-not-tell; every later check judges that fetched SHA, never the ref by name, which another worktree's fetch can move), `git merge-tree --write-tree <base> HEAD` is clean (conflicts are listed; a git older than 2.38 is could-not-tell), the base has not moved in Touch paths since HEAD's merge-base with it (moved only outside Touch is allowed and said), and HEAD carries a current review receipt and a verify gate `VERIFIED` or `NO_GATE`; HEAD is read once before those checks, and the hold and HEAD are re-checked under the lock before it answers. Then it prints `LAND_OK head=<sha>` and `gh pr merge <n> --merge --match-head-commit <sha>`. Crew never merges, pushes or opens the PR. After the merge, `release --ticket <id> --merged <merge sha>` records the merged paths; every overlapping entry is told once, on its next `acquire` or `status`, `<id> merged <sha> touching <paths> - merge <base> now` (a merge whose paths cannot be read is told to every entry).
+- **Nothing is broken silently.** The train is "not armed" only when `state.json` is proven missing (not found under a directory); one that cannot be looked up, read or parsed, has an unknown schema, a malformed top-level field (`schema`, `seq`, `order`, `entries`, `armed_at`, `armed_by`; a boolean or float is never an integer) or a malformed entry, a git call that fails, and a lock still held after 10 seconds are could-not-tell (exit 3); an `events.jsonl` record without an event's shape is told to every entry as `could not tell whether ... concerns you` on every read until the file is repaired, whatever its seq, never skipped, and `arm` refuses on it; events are written before `state.json` and both are rolled back if either write fails, so no hold or release commits unlogged; a lock is never removed for being old. A hold that looks dead (its worktree gone, its head already in the base, held for hours) is printed `stale?: <evidence>` and never released automatically: `release --force --by <who> --reason <text>` releases it and logs a `force-release` event the other lanes see.
+
+Exit codes: 0 ok or holding, 1 refused or waiting (and `train not armed`), 2 usage, 3 could not tell. What it does not cover: lanes in separate clones of one repository (each clone has its own train), and a delta gate — until one exists, the verdict `check-land` accepts after a catch-up is a full review receipt on the merged head.
+
+### Development standards and the pre-review self-check
+
+Review kept finding the same classes of defect, so since T-0085 crew applies them the first time the code is written. The `crew-standards` skill ships **GEN-01 to GEN-12**, crew-generic standards mined from crew's own QA review findings (`skills/crew-standards/references/generic.md`; each cites the findings that earned it and needs three distinct reviewed change sets). Per-language sets (T-0086) are further files in that directory, each applying when a changed file matches its `applies-to` globs, under the same three-change-set bar. The first ships: `references/python.md`, set `PYTHON`, nine standards (PYTHON-01, -03, -04, -06, -07, -08, -10, -11, -13), applied when a changed file matches `**/*.py`; the `stack-python` skill lists its eight candidates, which lack a third change set. The other stacks (SQL, PHP, PowerShell, .NET, Terraform, Node.js, Angular) follow as further files.
+
+A repository adds its own in the **overlay**, `.crew/standards.md` (set `REPO`, tracked through the ignore policy's un-ignore list): standards of its own and `## Supplements <GEN-id>` sections carrying its literal commands. The overlay adds and supplements; it never removes, reuses or weakens a plugin standard. No overlay means generic only, and the summary says so. An overlay that cannot be read, is not UTF-8 or is malformed is could-not-tell: the stamp and the review gate refuse until it is fixed.
+
+| Where | What happens |
+|---|---|
+| `/crew:plan` | Each step carries `Standards: <ids>` (or `none - <why>`), and the self-review asks whether every step names them |
+| `/crew:implement`, `/crew:fix` | `crew_standards.py init` writes `selfcheck.md` with a row per effective standard; each is `addressed` with evidence or `n/a` with a reason; `crew_standards.py stamp` refuses an incomplete record and binds a complete one to the review bundle's sha256 and the standards digest. A recorded start that is gone or no longer an ancestor of HEAD stamps against the same merge-base fallback `/crew:review` bundles with, marked `(fallback)`; so does a start first recorded on a branch already past the default branch (recorded as the merge-base, a guess). A `.crew/.scope-base` that cannot be read is refused without naming `--record`, which would rewrite it with one ticket's entry. Any later edit needs a new stamp |
+| `review_run.py` | Before reserving the round, for every provider, once the budget is known not to be spent (a spent budget is refused first, exit 4): a missing, unreadable, incomplete, unstamped or stale self-check is exit 2, no round spent. It applies to a ticket with an approval receipt, or whose receipt cannot be proven absent; in an active incident it stands down and logs a `standards-selfcheck` skip. On a pass it prints `review-run: standards self-check current (std:<8 hex>)` |
+| The review prompt | Ends with the effective set's rules and self-check questions. The author's answers are withheld from the prompt, so the reviewer judges applicability itself, and the list does not bound the review. Withheld, not hidden: `selfcheck.md` stays in `.work/tickets/<id>/`, which a reviewer that can read the checkout could open; the prompt never names it |
+| After a round | `crew_standards.py proposals` writes `standards-proposals-r<N>.md` with every BLOCK/FIX line verbatim, and refuses an `out.txt` the verdict parser calls INCOMPLETE, writing nothing; you approve or reject each proposed standard or amendment. Nothing is added to a standards file automatically |
+| `.crew/metrics.md` | Written by `review_run.py`, one row per recorded round, in the main checkout. The reviewer cell carries `std:<first 8 of the digest>` (or `std:none`, or `std:unknown` when it could not be computed); `crew_standards.py metric` prints first-round BLOCK+FIX per ticket before (no `std:` token) and after (`std:<8 hex>`), with unknown-round rows, `std:none` rows and unreadable `std:` tokens counted on neither side, and "not enough data" below 10 tickets a side. `--record` appends a pipe-free summary line the other readers skip |
+
 ### Scope and approval
 
-A crew 1.0 ticket is a directory, `.work/tickets/<id>/`, holding `direction.md`, `spec.md` (Intent, Exclusions, Evidence, Unknowns, **Touch**, Acceptance checks) and `plan.md` (steps, each with `Files:`, `Test:` and `Risk:`). `## Touch` is one repo-relative glob or path per bullet line; `*`, `?` and `[...]` match within one path segment and never cross `/`, `**` spans segments, and an entry with no wildcard also covers everything under it as a directory. These scripts in `hooks/scripts/` enforce it:
+A crew 1.0 ticket is a directory, `.work/tickets/<id>/`, holding `direction.md`, `spec.md` (Intent, Exclusions, Evidence, Unknowns, **Touch**, Acceptance checks) and `plan.md` (steps, each with `Files:`, `Test:`, `Risk:` and `Standards:`). `## Touch` is one repo-relative glob or path per bullet line; `*`, `?` and `[...]` match within one path segment and never cross `/`, `**` spans segments, and an entry with no wildcard also covers everything under it as a directory. These scripts in `hooks/scripts/` enforce it:
 
 | Script | What it does |
 |---|---|
 | `crew_ticket.py validate --ticket <id>` | Every spec section present; every plan `Files:` entry inside Touch. A plan path outside Touch is an error, never a silent widening. |
-| `/crew:approve <id>` — `approval_hook.py` (UserPromptSubmit) | **How you approve.** When the prompt *you* submit is exactly `/crew:approve <id>`, the hook reads `spec.md` and `plan.md` once, validates those bytes and writes `<git-common-dir>/crew/tickets/<id>/approval.json` with their sha256 and their approval digest (below), `approved_via: "user-prompt"`, and the prompt's session id and time. A contract that does not validate blocks the prompt and says why; nothing is recorded. |
+| `/crew:approve <id>` — `approval_hook.py` (UserPromptSubmit) | **How you approve.** (Several tickets at once: below.) When the prompt *you* submit is exactly `/crew:approve <id>`, the hook reads `spec.md` and `plan.md` once, validates those bytes and writes `<git-common-dir>/crew/tickets/<id>/approval.json` with their sha256 and their approval digest (below), `approved_via: "user-prompt"`, and the prompt's session id and time. A contract that does not validate blocks the prompt and says why; nothing is recorded. |
 | `crew_ticket.py approve --ticket <id> [--by <who>]` | The same receipt from a shell, for tests and CI, marked `approved_via: "cli"`. The guard and the audit accept a `cli` receipt only when `scope.allowCliApproval` is `true` (default `false`). |
+| `crew_autopilot.py approve --ticket <id>` | T-0010: the `autopilot` receipt (`approved_via: "autopilot"`), written only while autopilot is armed and `autopilot.approval` allows it — which always needs `scope.allowCliApproval: true`. `accepted` re-checks the policy on every read. It approves one ticket at a time and can never carry a group confirm: `crew_ticket.approve` refuses `via=autopilot` with an `expect`. |
 | `crew_ticket.py status --ticket <id>` | `approved`, `stale` (spec or plan edited since, other than the header's status value) or `none`. Exit 0 only for `approved`. |
 | `crew_ticket.py activate --ticket <id>` | Makes `<id>` this worktree's active ticket (`<git-common-dir>/crew/active-ticket`, keyed by worktree). Without it, the open ticket in `.work/INDEX.md` is used when its `.work/tickets/<id>/` directory exists. |
 | `scope_guard.py` (PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit\|Bash\|PowerShell`) | Refuses an edit when the active ticket has no current approval from your prompt, or when the target is outside Touch. Refuses a shell command that runs `crew_ticket.py approve`, names the approval hook, or writes under `<git-common-dir>/crew/`. |
-| `completion_audit.py` (Stop) | Diffs the whole tree against the ticket's scope base — committed, staged, unstaged and untracked, both ends of a rename — so shell-made writes are caught too. `--check --ticket <id>` is the form `/crew:done` calls. |
+| `completion_audit.py` (Stop) | Diffs the whole tree against the ticket's scope base — committed, staged, unstaged and untracked, both ends of a rename — so shell-made writes are caught too. A refresh artifact is admitted without Touch only when the ticket's change reaches it and the edit is a re-anchor or a regeneration (`crew_refresh_check.artifact_verdicts`, crew 1.0.81; the audit applies it once L-0540 lands, and until then admits the whole artifact dirs under approval, as since 1.0.36). `--check --ticket <id>` is the form `/crew:done` calls. |
 | `crew_refresh_check.py --root . --ticket <id> [--json]` | Read-only (since 1.0.36). Per code map, diagram and code graph that the ticket's changed paths reach: `fresh`, `stale` (with the refresh command — `/crew:onboard --refresh <subsystem>`, `/crew:diagram refresh`, and for the graph `graphify update .` where the repo tracks `GRAPH_REPORT.md` beside `graph.json`, else `graphify . --no-viz --code-only`) or `unknown`; `not applicable` when the repo has no graph file. `--json` adds `base_source` (`record`, or the fallback used) and `stop` (why no refresh can settle the answer, or null). Exit 0 only when everything is `fresh`. |
 
-**Artifacts stay current (since 1.0.36).** The order is implement, then refresh artifacts, then review, then done. `/crew:implement` step 6 runs `crew_refresh_check.py` after `/crew:docs`, runs the command each `stale` line names, commits, and re-runs until `fresh` — before `/crew:review`, so the reviewer reads the refreshed artifacts and the receipt covers them. `/crew:done`'s check 4 runs the same check and refuses on anything but `fresh`; it never runs a refresh itself, because a write after review stales check 1's receipt. Staleness is scoped to the paths the ticket changed (scope base against the working tree plus untracked files) and the paths each artifact cites, so an anchor lag from commits outside those paths does not refuse, and an uncommitted edit in a cited path reads `stale` ("commit, then refresh"). Release bookkeeping — `CHANGELOG.md`, `TODO.md` (where check 3 files every ticket's findings), `plugin/PLUGINS.md`, `.claude-plugin/marketplace.json`, any `.claude-plugin/plugin.json`, `plugin/*/BUDGETS.md` — never stales an artifact on its own: every release moves it without invalidating a word. A code map's citations are backticked paths with an optional `:line` or `:start-end`, dot-directories included; a cited directory, or one named on a diagram's `%% Anchors:` line, reaches every path under it. An anchor that names no commit, a code map citing no path, a diff git could not run, a graph with no `built_at_commit`, graphify missing on this machine, a code-map or diagrams dir that cannot be listed, a map or diagram that cannot be read, a `.crew/crew.json` or `.crew/config.json` that exists and does not parse (never read as the defaults), and a scope base that hides the change (none at all, or a fallback equal to HEAD — on the default branch the merge-base is HEAD and hides every commit) are each `unknown`, which refuses like `stale`. Any other fallback base (the merge-base with the default branch, a `record-fallback` entry) is used only when HEAD is on a branch that is not the default one and no commit behind the base names the ticket in its subject — otherwise the ticket's commits may already sit behind it (work pushed to the default branch, or a branch fast-forwarded into it and given one more commit), and the answer is `unknown`, `fallback base <sha> may hide <ticket>'s commits`. A recorded base gets the same subject check: `scope_base.py --record` in a successor checkout whose earlier commits already reached the default branch records HEAD, and the answer is `unknown`, `recorded base <sha> may hide <ticket>'s commits`. Whenever the base hides or may hide the change, every artifact measured against it reads `unknown` too, its reason the top line's stop, in the text and in `--json`'s `artifacts[]` — a `fresh` measured against the wrong diff is never printed. When a fallback base is used, every artifact line says `[fallback base]`. A ticket whose commits reached the default branch under subjects that do not name it is not caught. Some `unknown`s a refresh settles: an anchor that names no commit (usually a squash-merged branch), a map citing no path, or a graph with no `built_at_commit` print `refresh with <command>` like a `stale` line, and `/crew:implement` runs it. The rest print `stop`, and are reported rather than refreshed around; a scope base or config that cannot be trusted puts the `stop` on the top line, and when nothing was measured the output says `not measured - <why>` rather than claiming no artifact is reached. Documents are reported `not measured` — whether a change should touch one is `/crew:docs`'s judgement — and never `fresh`. The refreshes write paths no Touch names, so an approved ticket may write them anyway — see "What the guard judges".
+**Artifacts stay current (since 1.0.36).** The order is implement, then refresh artifacts, then review, then done. `/crew:implement` step 6 runs `crew_refresh_check.py` after `/crew:docs`, runs the command each `stale` line names, commits, and re-runs until `fresh` — before `/crew:review`, so the reviewer reads the refreshed artifacts and the receipt covers them. `/crew:done`'s check 4 runs the same check and refuses on anything but `fresh`; it never runs a refresh itself, because a write after review stales check 1's receipt. Staleness is scoped to the paths the ticket changed (scope base against the working tree plus untracked files) and the paths each artifact cites, so an anchor lag from commits outside those paths does not refuse, and an uncommitted edit in a cited path reads `stale` ("commit, then refresh"). Release bookkeeping — `CHANGELOG.md`, `TODO.md` (where check 3 files every ticket's findings), `plugin/PLUGINS.md`, `.claude-plugin/marketplace.json`, any `.claude-plugin/plugin.json`, `plugin/*/BUDGETS.md` — never stales an artifact on its own: every release moves it without invalidating a word. A code map's citations are backticked paths with an optional `:line` or `:start-end`, dot-directories included; a cited directory, or one named on a diagram's `%% Anchors:` line, reaches every path under it. An anchor that names no commit, a code map citing no path, a diff git could not run, a graph with no `built_at_commit`, graphify missing on this machine, a code-map or diagrams dir that cannot be listed, a map or diagram that cannot be read, a `.crew/crew.json` or `.crew/config.json` that exists and does not parse (never read as the defaults), and a scope base that hides the change (none at all, or a fallback equal to HEAD — on the default branch the merge-base is HEAD and hides every commit) are each `unknown`, which refuses like `stale`. Any other fallback base (the merge-base with the default branch, a `record-fallback` entry) is used only when HEAD is on a branch that is not the default one and no commit behind the base names the ticket in its subject — otherwise the ticket's commits may already sit behind it (work pushed to the default branch, or a branch fast-forwarded into it and given one more commit), and the answer is `unknown`, `fallback base <sha> may hide <ticket>'s commits`. A recorded base gets the same subject check: `scope_base.py --record` in a successor checkout whose earlier commits already reached the default branch records HEAD, and the answer is `unknown`, `recorded base <sha> may hide <ticket>'s commits`. Whenever the base hides or may hide the change, every artifact measured against it reads `unknown` too, its reason the top line's stop, in the text and in `--json`'s `artifacts[]` — a `fresh` measured against the wrong diff is never printed. When a fallback base is used, every artifact line says `[fallback base]`. A ticket whose commits reached the default branch under subjects that do not name it is not caught. Some `unknown`s a refresh settles: an anchor that names no commit (usually a squash-merged branch), a map citing no path, or a graph with no `built_at_commit` print `refresh with <command>` like a `stale` line, and `/crew:implement` runs it. The rest print `stop`, and are reported rather than refreshed around; a scope base or config that cannot be trusted puts the `stop` on the top line, and when nothing was measured the output says `not measured - <why>` rather than claiming no artifact is reached. Documents are reported `not measured` — whether a change should touch one is `/crew:docs`'s judgement — and never `fresh`. The refreshes write paths no Touch names, so an approved ticket may write them — and the audit admits them only in the shape a refresh leaves (see "What the guard judges").
 
 **BUDGETS.md claim numbers are bookkeeping (since T-0046).** An approved ticket — the same current approval from your prompt — may change the digit runs of the one line a `<!-- claim: crew-markdown-lines -->` marker binds in `plugin/*/BUDGETS.md` without that file in its Touch, so a ticket that adds or resizes a `plugin/crew/*.md` file can re-measure the total `scripts/check-marketplace.py` checks. The scope guard computes the file's exact text after a Write, an Edit (its `old_string` must match once, or `replace_all`) or a MultiEdit and judges it with `crew_bookkeeping.claim_numbers_only`; the completion audit judges the base blob against the file on disk. Every other change still needs Touch: another line of the file, a marker moved, a line added or removed, a line-ending change, a new or deleted BUDGETS.md, a mode change, a link, a NotebookEdit, and anything either hook cannot read. Version files (plugin.json, marketplace.json, PLUGINS.md, CHANGELOG.md) are not exempt — specs keep listing them.
 
-**What the guard judges.** The real path, following symlinks and junctions the way the OS will, *and* the path as named, when that is inside the worktree — so a link cannot carry a write out of Touch or launder one into it. `..` is resolved where the OS resolves it. The ticket's own `.work/tickets/<id>/` files are always writable, so you can amend the spec and plan. Since 1.0.36 a ticket with a current approval from your prompt (a `cli` receipt only under `scope.allowCliApproval`) may also write the refresh-artifact paths — `.crew/codemap/`, the configured diagrams dir (`docs.diagramsDir`), the graph dir (`graph.out`) and `.claude/rules/` — because `/crew:implement` step 6 refreshes them for every ticket whose changes reach them, and no Touch names them. The completion audit accepts them under the same condition. The match is on whole path segments after `..` is collapsed (`.crew/codemapX` is not the code map), both the real and the named path must be artifacts, and a configured dir that resolves to the repository root opens nothing. Nothing else is exempt: not the rest of `.crew/`, not `TODO.md`, not the rest of `.claude/`, not crew's own policy files — put them in Touch if the ticket changes them. Anything under `<git-common-dir>/crew/` (approval receipts, the review ledger, the active-ticket pointer, the ramp count) and `.crew/.scope-base` are refused to Write/Edit in every mode but `off`, ticket or no ticket. A path outside the worktree (a scratch directory) is not a repository path and is allowed, except the git directory.
+**What the guard judges.** The real path, following symlinks and junctions the way the OS will, *and* the path as named, when that is inside the worktree — so a link cannot carry a write out of Touch or launder one into it. `..` is resolved where the OS resolves it. The ticket's own `.work/tickets/<id>/` files are always writable, so you can amend the spec and plan. Since 1.0.36 a ticket with a current approval from your prompt (a `cli` receipt only under `scope.allowCliApproval`) may also write the refresh-artifact paths — `.crew/codemap/`, the configured diagrams dir (`docs.diagramsDir`), the graph dir (`graph.out`) and `.claude/rules/` — because `/crew:implement` step 6 refreshes them for every ticket whose changes reach them, and no Touch names them. The guard admits the whole dir, because a write-time check sees one Edit of a multi-Edit refresh (claims first, `anchor:` last) and would refuse the legitimate intermediate state. The completion audit is narrower (`crew_refresh_check.artifact_verdicts`, crew 1.0.81, applied by the audit once L-0540 lands): under the same approval it admits a changed artifact without Touch only when a path the ticket changed since its scope base reaches it — merged-in main paths included; of the release bookkeeping only a `.claude-plugin/plugin.json`, so a version bump reaches the map citing it, while `CHANGELOG.md`, `marketplace.json` and the rest, which every release moves and most maps cite, reach nothing — and the edit is a re-anchor or a regeneration. A code map (not `INDEX.md`, `UPGRADE.md` or `MIGRATION.md`) must exist in the base and on disk, its BASE copy must cite a changed path (an edit cannot cite its way in), and its `anchor:` must have moved forward to a commit that is HEAD or behind it — never backwards from a base anchor on HEAD's history, and an anchor whose text did not change never moved; its claims, line numbers and prose may change with it. `INDEX.md` passes when every line that differs from the base, deleted lines included, is the row of such a map. A diagram source is reached through its base copy's `%% Anchors:` line (none: any code path) and its provenance sha must move the same way; a rendered diagram passes beside its admitted same-stem source, whatever the case of the source's extension. A `.claude/rules/` file passes when its bytes equal what `crew_instructions.py rules` writes, or when it was a generated rule no map expects any more and was removed. The graph dir passes when the ticket changed a code path. Every kind must also be a regular file on disk: a deleted rendered diagram or graph file, a symlink at the path or along its directories, a file whose git mode differs from its base copy's, or one git stages as a link (120000) or gitlink (160000) never passes, and when two configured artifact dirs hold a path the most specific one decides its kind (two equally specific ones are could-not-tell). Anything else there is judged against Touch, and the audit's listing names why in brackets: `[anchor did not move]`, `[no changed path reaches it]`, `[anchor <sha> is not reachable from HEAD]`, `[anchor moved from <sha> to <sha>, not forward]`, `[new file, not a re-anchor]`, `[INDEX.md line <n> is not the row of a re-anchored map]` (`base line <n>` for a deleted one), `[bytes differ from expected_rules ...]`, `[graph changed with no code change since the base]`, `[deleted, not a regeneration]`, `[a symlink, which no refresh writes]`, `[mode changed from <a> to <b>, ...]`. When git, a base copy, the config or the rule renderer cannot answer, a rule file cannot be read, a short base or new anchor is ambiguous (two commits share it), the base's tree cannot be read, the artifact dirs themselves cannot be resolved, or a directory the hook cannot search hides whether the config, a rule or a map exists (only a path proven missing is absent), the verdict is `[could not tell: ...]`, which never admits. An unapproved ticket's artifacts are not judged at all. So an edit to a map's version sentence without moving its `anchor:` (what `93da92af` did) now needs Touch or a re-anchor. The audit judges shape and reach, not truth: a re-anchored map's claims stay the reviewer's. The match is on whole path segments after `..` is collapsed (`.crew/codemapX` is not the code map), both the real and the named path must be artifacts, and a configured dir that resolves to the repository root opens nothing. Nothing else is exempt: not the rest of `.crew/`, not `TODO.md`, not the rest of `.claude/`, not crew's own policy files — put them in Touch if the ticket changes them. Anything under `<git-common-dir>/crew/` (approval receipts, the review ledger, the merge train's state, the active-ticket pointer, the ramp count) and `.crew/.scope-base` are refused to Write/Edit in every mode but `off`, ticket or no ticket. A path outside the worktree (a scratch directory) is not a repository path and is allowed, except the git directory.
+
+**Approving several tickets at once (since 1.0.48).** One prompt may name several tickets: `/crew:approve T-4 T-5` (spaces, or commas between two ids — `T-1,` and `,T-1` are refused), a range `/crew:approve T-0010..T-0012` (one prefix, start ≤ end, padded like the start), or the one plain-text form — the whole prompt, on one line — `approve T-1 and T-2`, `please approve T-1, T-2, and T-3`, `approve T-0010 through T-0012` (`thru`/`to` too). An id in the plain-text form is prefix-dash-number, so "approve it", "lgtm" and "does the reviewer approve T-1?" are not approvals. At most 20 tickets per request. A range token that is also a ticket folder is refused as ambiguous. Only the prompt's own command counts: in the expanded `<command-name>`/`<command-args>` form the tags must be the prompt's outermost structure with nothing outside them (for a single id too, since 1.0.45), and a command tag nested inside another (an example, a quoted `<command-message>`) or left unclosed is refused; a command quoted in a code fence or mid-sentence is not an approval.
+
+- **Nothing is recorded on the first prompt.** Any request for more than one ticket, and *any* plain-text request (even for one), is checked ticket by ticket and then blocked with a PENDING list — one line per ticket with its plan and spec sha256 prefixes. Nothing is written but the list itself (`<git-common-dir>/crew/approval-pending/`, one per worktree). A single `/crew:approve <id>` still records at once.
+- **You confirm with `/crew:approve --confirm`**, on one line with nothing else on it (whitespace after it — spaces, blank lines — is ignored; any other text after a line break refuses it), in the same session (a `/clear` starts a new one and voids the list) and within 10 minutes. Then every ticket is checked again, and every spec.md and plan.md must still hash to what the list showed you. "yes" is not a confirm: it is the commonest reply to any question, and would confirm a list you were not looking at. The confirm is yours only: autopilot's self-approval (`autopilot.approval`) approves one ticket at a time and is refused if it carries a group's hashes.
+- **Refuse all, never the rest.** If any ticket fails — no folder, a contract that does not validate, a row closed in `.work/INDEX.md` (`done`, `merged`, `closed`, `shipped`, `complete(d)`; the row's id cell is its first id-shaped cell — an index column is skipped — matched whole and in any case; a row naming it as a whole cell elsewhere, or with no status cell, cannot be told and is refused), an unreadable receipt, or a hash that changed before the confirm — nothing is recorded, nothing stays pending, and every failing id is named with its reason. A subset is a decision you did not make.
+- **Receipts stay per ticket.** Each confirmed ticket gets its own `approval.json`, `approved_via: "user-prompt"`, bound to its own hashes and the confirm prompt's session and prompt ids — written through the same `crew_ticket.approve` as a single approval, with the confirmed hashes passed in, so a file edited between the check and the write is refused. A NEEDS_REPLAN ticket goes through the same successor-plan rule. There is no cross-file transaction: a write that fails part-way blocks the prompt and names which tickets were recorded and which were not — judged by this confirm's own entry (its session, prompt and hashes) in each receipt's history, never by history growth another session could cause, and "could not tell" when a receipt cannot be read.
+- **Any approval-shaped prompt replaces or clears the list**, and a confirm consumes it whatever the outcome. The wrappers now hand python any prompt containing the word "approve"; with no usable python only a prompt containing `crew:approve` is blocked, so a plain-text approval then passes through unrecorded rather than blocking every prompt that uses the word.
 
 **Amending scope** is editing `spec.md` `## Touch` (and `plan.md`), then `/crew:approve <id>` again. The edit makes the approval stale, so edits outside the ticket directory are refused until you approve.
 
@@ -782,13 +841,15 @@ A crew 1.0 ticket is a directory, `.work/tickets/<id>/`, holding `direction.md`,
 
 A `.crew/config.json` that exists but does not parse, or a value outside those four, is treated as `block` and says so. A hook payload that does not parse is refused whenever the effective mode is `block` (`auto` past its ramp included). An active-ticket pointer naming a ticket that does not exist is refused under `block`, never read as "no ticket". If python cannot run at all, the wrappers fail closed unless `.crew/config.json` is absent or *provably* sets `scope.mode` to `off`. bash has no JSON parser, so from bash a config that exists is never provable: with no usable python, a present config blocks writes and the Stop until python is available. PowerShell proves it with a strict `System.Text.Json` parse (not `ConvertFrom-Json`, which accepts trailing commas), and fails closed where that type cannot load; the Stop audit then blocks at most once in a row per session, so a broken python cannot loop the Stop.
 
-**Threat model.** These guards stop *drift and accidental bypass*: a session editing outside the plan, approving its own plan through the CLI, or writing the approval state through Write/Edit or an obvious shell command. They do not stop a session that sets out to forge local state. It has a shell, and the receipt, the active-ticket pointer and the ramp count are files on your machine: a command that hides the path in a variable or an encoded string, or a script that writes JSON, passes the textual shell check. The Stop audit and review are the backstop — the audit diffs the whole tree after the fact, and a reviewer sees the change and the receipt's `approved_via`. Treat an approval as "the user asked, and nothing obviously went around it", not as a signature.
+**Threat model.** These guards stop *drift and accidental bypass*: a session editing outside the plan, approving its own plan through the CLI, or writing the approval state through Write/Edit or an obvious shell command. They do not stop a session that sets out to forge local state. It has a shell, and the receipt, the active-ticket pointer and the ramp count are files on your machine: a command that hides the path in a variable or an encoded string, or a script that writes JSON, passes the textual shell check. The Stop audit and review are the backstop — the audit diffs the whole tree after the fact, and a reviewer sees the change and the receipt's `approved_via`. Treat an approval as "the user asked, and nothing obviously went around it", not as a signature. The merge train's state (`<git-common-dir>/crew/train/`) is the same kind of local file: a session set on it could forge a hold or a release, so the train prevents lanes colliding by accident, and `check-land`'s `merge-tree`, receipt and gate checks — and your review of the merge — are the backstop.
 
 **What this does not do.** The edit guard judges only the four editing tools against Touch; the Stop audit is what catches `sed -i`, redirects and formatters, after the fact. The audit sees what git sees: gitignored files (`.crew/*` among them) and `.work/` are outside it.
 
 ### Autopilot: one ticket, driven until a person is needed
 
 `/crew:autopilot [<id>]` (since 1.0.41, **off by default**) drives one ticket through spec, plan, approval, implement, refresh artifacts, review and done, following each phase command's own procedure in the same session. It does not decide the order itself: every turn it runs `hooks/scripts/crew_autopilot.py next --root . --ticket <id>`, which names the next phase from files on disk only, so a skipped phase is visible and a phase that cannot be told stops.
+
+**One writer, by design (T-0010).** `crew_autopilot.py` is read-only — `next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check` and T-0072's `deploy-allowed` write no file — except `approve`, and only when `autopilot.approval` allows it under the configured policy (below; it always needs `scope.allowCliApproval: true`, which defaults to `false`, so out of the box nothing self-approves). `approve` writes exactly what `crew_ticket.approve` writes for every approval route, `/crew:approve` included, all under `<git-common-dir>/crew/`: `approval.json`; the scope ramp's `scope-tickets.json` on a ticket's first approval; and, when the review ledger is NEEDS_REPLAN and the plan is a distinct successor, the ledger itself, moved NEEDS_REPLAN -> IN_REVIEW (the successor continuation, which opens a fresh review budget). `route` and `status` read no policy of their own: `route` answers the same, and `status`'s lines — the approve and open-questions reasons included — read the same under every setting (`next` is what names the policy's route); the one policy effect `status` shows is `crew_ticket.accepted`'s, which honours an `autopilot` receipt only while the policy still allows it; `approve` and `questions-check` are script subcommands, not `/crew:autopilot` subcommands. Nothing in autopilot accepts a review.
 
 **Subcommands** (since 1.0.47, T-0018). The command hands its whole argument string to `crew_autopilot.py route --root . --args '$ARGUMENTS'`, which decides the subcommand and the ticket in code, so a typo is refused rather than driven as a ticket id. It is single-quoted, and arguments holding a quote, `$`, a backtick or a backslash stop before anything runs, so the shell never expands them; `route --first <token>` routes one token alone. The whole string, not `$1`/`$2`: Claude Code numbers positional arguments from `$0` and leaves an out-of-range `$N` literal (measured on 2.1.283), so `$2` never reaches a command.
 
@@ -814,13 +875,14 @@ Any other word (`stauts`, `Status`, `rm`) stops with "unknown subcommand; one of
 | an item under an `Open questions` heading (any level, sub-headings included) in direction.md, spec.md or plan.md | `open-questions` | stop — answered by writing `none - <answer>` or checking it `[x]`; `None of us has decided` is still open |
 | no `spec.md` / no `plan.md` | `spec` / `plan` | runs `/crew:spec` / `/crew:plan` |
 | `crew_ticket.validate` refuses | `spec` / `plan` | stop, with the problems |
-| approval not accepted (none, stale, or `cli`) | `approve` | stop — **you** type `/crew:approve <id>` |
+| approval not accepted (none, stale, a `cli` receipt without `scope.allowCliApproval: true`, or an `autopilot` receipt the policy no longer allows) | `approve` | stop — **you** type `/crew:approve <id>`, unless `autopilot.approval` allows (`self`, or `risk` for a `risk: low` spec; both need `scope.allowCliApproval: true` and autopilot armed): then `/crew:autopilot` runs `crew_autopilot.py approve` and reports it. `status` names only `/crew:approve <id>` here, under every setting |
 | review ledger `UNKNOWN` / `NEEDS_REPLAN` | `review` / `replan` | stop |
 | no review round under the current plan | `implement` | runs `/crew:implement` (its step 6 runs tests, docs, the refresh check, then review) |
 | latest round reserved with no result | `review` | stop — another run would spend a round |
 | latest round FINDINGS, not owner-accepted | `accept-review` | stop — acceptance is the owner's |
 | no receipt stands and no review round is left | `review` | stop — `/crew:review` would reserve a third round and write NEEDS_REPLAN, which only a new approved plan leaves; revert the edit that staled the receipt, or replan |
-| latest round INCOMPLETE | `accept-review` | stop — it cannot be accepted; a human reruns review or replans |
+| latest round INCOMPLETE, a refunded tool failure | `review` (`refresh` first when stale) | runs `/crew:review` |
+| latest round INCOMPLETE (not refunded) | `accept-review` | stop — it cannot be accepted; a human reruns review or replans |
 | receipt not current, artifacts stale | `refresh` | runs the command T-0008's check names |
 | receipt not current, an artifact unknown for a cause a refresh cannot settle | `refresh` | stop |
 | receipt not current, artifacts fresh | `review` | runs `/crew:review` |
@@ -829,17 +891,19 @@ Any other word (`stauts`, `Status`, `rm`) stops with "unknown subcommand; one of
 
 **Implement's status edit keeps the approval.** `/crew:implement` step 7 writes `status: review` into spec.md's header, which T-0026's approval digest normalises, so `next` moves on. An approval that edit still stales — a receipt written before T-0026, or a value outside `crew_ticket.STATUS_VALUES` — stops at `approve`; when changing only that `status:` word back makes spec.md hash to the approved bytes (and plan.md is unchanged), the reason says only the header changed, so it reads differently from a Touch widened mid-implement.
 
-**A review phase ends at its verdict.** Whether reached as `/crew:review` or inside `/crew:implement` step 6, autopilot stops following `review.md` once the round is recorded and its BLOCK and FIX lines are reported: step 3.2's fix-and-rerun, `review_ledger.py --accept` and `gh pr review` are the human's. The next `next` stops at FINDINGS or INCOMPLETE, and any later round goes back through `next`, which puts a refresh before it.
+**A review phase ends at its verdict.** Whether reached as `/crew:review` or inside `/crew:implement` step 6, autopilot stops following `review.md` once the round is recorded and its BLOCK and FIX lines are reported: step 3.2's fix-and-rerun, `review_ledger.py --accept` and `gh pr review` are the human's. The next `next` stops at FINDINGS or an unrefunded INCOMPLETE, and any later round goes back through `next`, which puts a refresh before it.
 
 **The ticket is re-checked every turn.** `next` stops (`ticket-mismatch`) before any phase that would run while `crew_ticket.resolve_active` — what the scope guard and the completion audit read — names another ticket, none, or a broken pointer. Anything `next` or `resume` raises prints `stop=1` with the exception, and the command treats any answer but a `stop=0` line as a stop.
 
-**Refresh sits between implement and review, every round.** A review bundle excludes `.work/` and lists the graphify outputs by hash rather than diffing them, so a refresh written after an accepted review still stales its receipt and `/crew:done` refuses; autopilot therefore never refreshes after review. The freshness judgement is T-0008's `crew_refresh_check.ticket_freshness`. A `stale` artifact is refreshed with the command it names. An `unknown` one is refreshed only in T-0008's orphaned-anchor case — the anchor names no commit (a squash merge dropped it), T-0008 marks it refreshable and names the command; every other `unknown` (graphify missing, no or a fallback scope base, a check that raised) stops, as `/crew:implement` step 6 does. When the module cannot be imported the phase stops as "refresh-artifacts unavailable (T-0008 not landed)" rather than being skipped.
+**Refresh sits between implement and review, every round.** A review bundle excludes only `.work/` and generated `graphify-out/`, so a codemap, diagram or `.claude/rules/` refresh written after an accepted review stales its receipt and `/crew:done` refuses (a graph rebuild alone no longer does, since 1.0.54); autopilot therefore never refreshes after review. The freshness judgement is T-0008's `crew_refresh_check.ticket_freshness`. A `stale` artifact is refreshed with the command it names. An `unknown` one is refreshed only in T-0008's orphaned-anchor case — the anchor names no commit (a squash merge dropped it), T-0008 marks it refreshable and names the command; every other `unknown` (graphify missing, no or a fallback scope base, a check that raised) stops, as `/crew:implement` step 6 does. When the module cannot be imported the phase stops as "refresh-artifacts unavailable (T-0008 not landed)" rather than being skipped.
 
 **Which ticket** (`crew_autopilot.py resume [--ticket <id>]`): the id you gave; else the handoff's `resume:` line, parsed by T-0006's `crew_resume.parse_resume` and used only when the handoff's `branch:` and `head:` match this checkout and the ticket folder exists; then this worktree's active ticket; then `.work/INDEX.md`, **only when exactly one** open ticket has a folder — several open tickets and no pointer stop and list them. A handoff that cannot be used (no line, `resume: none`, unparseable, branch or head mismatch, no folder, T-0006 not installed) falls through with its reason printed; `## Next action` prose is never guessed from. When the handoff names a different command from the one disk names, disk wins and the disagreement is printed. `resume: /crew:autopilot --goal <slug>` stops until T-0012. **A ticket that is not this worktree's active one stops**, naming both — the scope guard and the completion audit judge edits by the active pointer; with no pointer set, autopilot activates the ticket it drives (`crew_ticket.py activate`). When context runs low, autopilot writes `resume: /crew:autopilot <id>` into the handoff and stops.
 
-**Stops.** Always a person in this version: `brainstorm`, `plan-approval`, `review-acceptance`, `open-questions`. Enforced by `next` from disk: `needs-replan`, `needs-replan-or-revert`, `unknown-ledger`, `failed-validate`, `direction-unknown`, `unsettled-artifact`, `ticket-mismatch`, `max-phases`, `no-progress` (the command just run is named again). Enforced by the command's procedure, not by `next` — which sees them only as `no-progress` if the same command comes round again: `review-verdict`, `failed-done-check`, `failed-phase`. And every `AUTONOMOUS_STOPS` entry — `offboard-role`, `delete-map`, `rewrite-metrics`, `git-destruction` — which `commands/autopilot.md` names and a test pins against `crew_state.AUTONOMOUS_STOPS`. `crew_autopilot.py stops` lists them all from code. No deploy, merge, PR or new ticket: T-0005, T-0011, T-0012.
+**Stops.** Always a person: `brainstorm` and `review-acceptance` — accepting review FINDINGS (`review_ledger.py --accept`) is never automatic, at any setting. `plan-approval` and `open-questions` are a person unless the owner's policy below allows. Enforced by `next` from disk: `needs-replan`, `needs-replan-or-revert`, `unknown-ledger`, `failed-validate`, `direction-unknown`, `unsettled-artifact`, `ticket-mismatch`, `max-phases`, `no-progress` (the command just run is named again; not `/crew:review` after a refunded tool-failure round, which is a new round each time it records one). Enforced by the command's procedure, not by `next` — which sees them only as `no-progress` if the same command comes round again: `review-verdict`, `failed-done-check`, `failed-phase`. And every `AUTONOMOUS_STOPS` entry — `offboard-role`, `delete-map`, `rewrite-metrics`, `git-destruction` — which `commands/autopilot.md` names and a test pins against `crew_state.AUTONOMOUS_STOPS`. `crew_autopilot.py stops` lists them all from code. No deploy, merge, PR or new ticket: T-0005, T-0011, T-0012.
 
-**Settings** (`.crew/config.json`, repo only): `autopilot.mode` — `off` (default) or `plan`; only the exact string `plan` arms it, and any other value reads as `off` with a warning. `autopilot.maxPhases` — phases one invocation may run, default 12; anything but a positive integer reads as 12 with a warning. An `autopilot` block only in `.crew/crew.json` is reported, not silently ignored. `crew_autopilot.py settings --root .` shows what is in force.
+**Settings** (`.crew/config.json`, repo only): `autopilot.mode` — `off` (default) or `plan`; only the exact string `plan` arms it, and any other value reads as `off` with a warning. `autopilot.maxPhases` — phases one invocation may run, default 12; anything but a positive integer reads as 12 with a warning. `autopilot.deploy` — `none` (default), `nonprod` or `all`: where a deploy may run without asking. Production needs `all` **and** `environments.prodUnattended: true` in **both** config layers, with `guards.cloudGuard` armed in `block`; anything crew cannot tell asks, and an active emergency refuses. `crew_autopilot.py deploy-allowed --env <name> --class <class>` answers `allow`, `ask` or `refuse` and prints a report line for every production decision. Nothing in this version dispatches a deploy — the key is inert until T-0045 consumes it (CONFIG.md §20). An `autopilot` block only in `.crew/crew.json` is reported, not silently ignored. `crew_autopilot.py settings --root .` shows what is in force: `mode`, `maxPhases` and `deploy` on its first line, `approval` and `questions` on the second, and all five with `--json`.
+
+**Approval and questions policies** (T-0010). `autopilot.approval` and `autopilot.questions` are `human`, `self` or `risk` (default `risk`); any other value reads as `human`, with a warning, and `human` always stops. At the plan-approval phase autopilot runs `crew_autopilot.py approve --root . --ticket <id>`: `self` approves at any risk, `risk` only when the spec's header says `risk: low` (a missing or unparseable risk is `high`). **Every setting also needs `scope.allowCliApproval: true`**, a readable config (a `.crew/config.json` that exists but cannot be read as a JSON object, or an `autopilot` value that is not an object, reads both policies as `unknown` — could not tell — so `approve` refuses, a question stops and autopilot reads as off; an absent file or block still reads the defaults), autopilot armed, and a readable review ledger. A NEEDS_REPLAN ledger does not refuse: approving a different successor plan is its only way out, and the ledger still refuses a plan approved before (`crew_autopilot.py approve` exits 3 and says so). The receipt says `approved_via: "autopilot"`, the command prints `self-approved <id> under approval=<policy>, risk=<risk>`, and `crew_ticket.accepted` re-asks the policy on every read — a later spec edit, `approval: human` or `allowCliApproval: false` demotes it. The scope guard allows only that bare command, only while the policy says yes; `crew_ticket.py approve` stays refused. Autopilot never uses the group confirm ("Approving several tickets at once"): that stays the owner's own prompt, and `crew_ticket.approve` refuses an `autopilot` approval that carries a group's hashes, whatever the policy says. At an open question autopilot researches it (crew:explorer, crew:researcher), writes `.work/tickets/<id>/questions.md` — 2-4 options per question, the recommendation first, each with a `Cost:`, plus a `Research:` line — and `crew_autopilot.py questions-check --root . --ticket <id>` validates it and prints `action=take|stop`: `self` takes the recommendation, `risk` only on `risk: low`, `human` stops. A taken answer is recorded as `taken: Option <id> by autopilot (<policy>)`, naming the policy that took it; the check refuses one naming a policy that never takes (only `self` or `risk` does), and every `taken:` line while the policy in force says `stop` — a later switch between `self` and `risk` does not void an earlier honest record. Every self-approval and taken answer is reported by name.
 
 ### Plain-text lifecycle: short prompts that name a command
 
@@ -898,7 +962,7 @@ layers, lowest precedence first:
 |---|---|---|
 | Built-in defaults | `hooks/scripts/crew_config.py`'s `default_config()` | Nothing — this is code, not a file |
 | Global | `~/.claude/crew/config.json` | `/crew:config` — a guided walkthrough that shows the plan first and writes only after a yes. It is also the only thing in crew that writes outside the repository. Hand-editing still works. |
-| Repo | `.crew/config.json` | `/crew:init` (first write); `platform-sync` (the `platform` block, and the whole file when it heals — see §3) |
+| Repo | `.crew/config.json` | `/crew:init` (first write); `platform-sync` (the `platform` block, and the whole file when it heals — see §3); the `/crew:config` menu (`crew_config.py --set ... --repo`, `crew_config_menu.py save`) |
 
 Repo overrides global overrides built-in defaults, merged recursively with
 `crew_state.merge_defaults` — the same policy `/crew:upgrade` uses to bring a
@@ -920,6 +984,36 @@ Two things never go through this layering, on purpose:
   missing or broken `.crew/config.json` always writes plain built-in
   defaults — never a merge that could smuggle a global preference into a
   file every teammate who clones the repo will also read.
+
+**In a linked git worktree.** `.crew/*` is gitignored, so a lane made with
+`git worktree add` starts with no `.crew/config.json` or `.crew/crew.json`. Since
+crew 1.0.69 (T-0088) such a worktree reads the **main checkout's** repo config,
+found through `git rev-parse --git-common-dir` (`crew_common.repo_config_dir`).
+A worktree with either file of its own reads only its own files: they win whole,
+even when partial, and are **never merged** with the main checkout's. When `.git`
+is a file but git cannot name the main checkout, the source is `unknown`,
+nothing is inherited, and `/crew:status` and `/crew:config --explain` say so
+rather than showing the config as simply absent. A submodule, or a bare common
+directory, is its own repo. Inheritance is read-only: no writer (`/crew:init`,
+the heal path, `platform-sync`, `/crew:migrate`, the auto-clear setup) ever
+writes the main checkout's file, and the heal path no longer creates a default
+config in an inheriting worktree, because that default would shadow the owner's
+(nor in one where git could not tell; it asks again next session).
+
+**A lane made before 1.0.69 still reads its own file.** Every SessionStart heal
+on crew 1.0.68 or earlier wrote a default `.crew/config.json` into a lane that
+had none, and that file wins whole. `/crew:status` and `/crew:config --explain`
+say so (`... the main checkout's (<path>) is not read ...`); if the lane's file is
+a default nobody edited, delete it (and `.crew/crew.json`) to inherit.
+
+**Behaviour change:** every Python guard in a lane worktree now reads the owner's
+settings where it read the built-in defaults before - `guards.forcePush: allow`
+instead of `block`, `scope.mode`, `scope.allowCliApproval`, `roleWrites` and
+`cloudGuard` the same way. Ratcheted guard keys still take the narrower of repo
+and machine-global. A lane that wants its own guards writes its own
+`.crew/config.json`, and that file then wins whole. **Not yet covered:** the shell
+and PowerShell readers of `.crew/config.json` (`verify-gate.sh`, `_common.sh`, `notify.sh`, `handoff-read.sh`, `handoff-write.sh`, `promote-gate.ps1`, `scope-guard.ps1`, `cloud-guard.ps1` and `auto-clear.ps1`) still read only the
+worktree's own file.
 
 ### `/crew:config` — see where a value comes from, and set the global file
 
@@ -971,6 +1065,130 @@ A global file that is missing, empty, or fails to parse is treated exactly
 like an absent one — the same reasoning `_read_config_strict` documents for
 the repo side — so a typo in your global config degrades one repo's settings
 to defaults rather than breaking every session on the machine.
+
+### The `/crew:config` menu — set either layer, or delete the repo config
+
+`/crew:config` with no argument, and its alias `/crew:config-setup`, open a
+menu (`skills/crew-setup/config-menu.md`, backed by
+`hooks/scripts/crew_config_menu.py`). Pick the **layer** — this machine's
+`~/.claude/crew/config.json` or this repo's `.crew/config.json` — then an
+**area** (models, autopilot, guards, notify, memory and tracker, auto-clear,
+other), then a **setting**, then a **value from a list**. Each value shows the
+current effective value, the layer that decided it, and the recommendation
+first; the owner never has to type one.
+
+- **Data-driven.** The rows are `crew_config.py`'s own key lists
+  (`default_global_config()` for the machine layer, `default_config()` for the
+  repo), so a key added to crew appears with no menu edit, and a committed test
+  runs every offered value through the writer. The machine layer also lists
+  `platform.*` and `schema` read-only, and an absent or unparseable
+  `.crew/config.json` makes every repo row read-only with the writer's own
+  refusal as the reason.
+- **Offered means accepted.** Every candidate value is probed through the
+  layer's own planner on the file Save would produce, the pending set
+  included (`spec --pending`). A row no value can pass — a bad value already
+  in the file, such as an unknown `qa.provider` — is read-only with the
+  planner's reason, which names the key to fix first.
+- **Selection only, Save once per layer.** Picks collect in a pending set that
+  spans areas and both layers. Save validates **both** layers before writing
+  either, shows the dry-run diff with `!` widening lines and "held down by the
+  machine-global layer" lines, then writes each changed layer once. A write
+  that fails or is refused after validation (the file changed underneath)
+  reports which layer landed and which did not. The dry run prints each
+  changed layer's `digest:`, and the machine digest whenever anything
+  changes, since a repo value's widening marks are judged against the
+  machine file (as this Save leaves it); `absent` names a file that does not
+  exist. `--apply --expect-machine/--expect-repo` checks both before either
+  write and binds each writer to them, the repo write to the machine digest
+  too, so a file another session changed or created since the dry run is
+  refused, never merged over. Discard writes nothing.
+- **One validated repo writer.** `crew_config.py --set PATH=JSON --repo
+  [--apply]` (`plan_repo_write` / `write_repo_config`) merges, refuses unknown
+  keys, takes a whole-block value leaf by leaf (as the machine writer does),
+  checks enum values, validates providers, writes
+  atomically and keeps the file's line ending and BOM. It refuses `platform.*`
+  (platform-sync owns it), `schema`, and `context.autoClear.onlyRepos` /
+  `.onlySessions` (read from the machine file only), and takes only a veto
+  (`false`) or `null` for `context.autoClear.enabled` and `resume.auto` —
+  exactly those, by identity, so `0` is refused.
+- **Both writers judge per leaf, write per leaf, and judge the whole file.**
+  Each update is expanded to its leaves, so a whole-block value such as
+  `context={"autoClear": {"unsafeFocus": true}}` cannot carry a refused key
+  past the machine writer, and each leaf is written on its own: the block's
+  untouched siblings (unknown keys included) survive, and a widening is
+  marked on the leaf that widens. A role-table value (`qa.roles`) is written
+  one whole pin per role, the other pins kept. `null` is accepted only where
+  the layer gives it a meaning: at the repo layer it inherits the machine
+  value for a machine-settable key, or clears a veto; an open key is unset;
+  an enum key at the machine layer refuses it. Then the merged file is
+  checked, every known leaf: a bad enum value, a consent key in the machine
+  file, or an armed veto-only key in the repo file already there refuses an
+  unrelated write, naming the key to fix first. Nothing goes under a leaf
+  and no object sits at one; `qa.roles` / `dev.roles` and their entries are
+  objects or `null`, so `qa.roles=1` is refused rather than wiping every pin.
+- **Both writers are compare-and-swap.** Read, merge and replace happen inside
+  an `O_CREAT|O_EXCL` lock file beside the config (`config.json.lock`, 3 s
+  wait, then a refusal naming the lock and its PID), so two sessions never
+  merge against stale snapshots; `--set` prints `digest:` (`absent` for no
+  file) and `--apply --expect <digest|absent>` refuses a file that changed,
+  or appeared, since; `--set --repo` also prints `machine digest:` and takes
+  `--expect-global`. A malformed machine file is refused rather than
+  overwritten from `{}`. An OS error (a lock, the machine directory, the
+  write) is a refusal with exit 2, never a traceback.
+- **`crew_config_files.py` is the one file layer** under both writers, delete
+  and restore: the lock, the strict read, the `restorable` predicate and the
+  regular-file read delete and restore share, the digest, the atomic
+  replace, and the no-clobber move: a rename that never replaces an existing
+  destination, by the rename itself rather than a check before it.
+- **`scope.*` is refused on purpose.** `scope.mode` and
+  `scope.allowCliApproval` are the scope guard's trust root, and
+  `.crew/config.json` is untracked, so the completion audit (which diffs
+  tracked files) would never see a one-command write that disarmed it. They
+  stay a hand edit by the owner or `/crew:init`, shown read-only in the menu.
+- **Delete the repo config.** Two phases. The preview reads and holds the
+  file's bytes and walks its own leaves: a `!` on anything that widens
+  (`scope.mode` returning to `off` included), `-> (removed)` for a key crew
+  does not know, a `stays` line for a ratcheted key the repo narrowed under a
+  wider machine value (deleting does not widen it), and the `platform.*`
+  keys platform-sync writes (`crew_platform.DERIVED_KEYS`) in a "re-detected
+  by platform-sync" group, which promises no value: a key it finds none for on
+  this machine is left unset. Any other `platform.*` key is `-> (removed)`.
+  Then the `repo digest:` and
+  `machine digest:` it was built from. A file a restore could not take back
+  (unparsable, empty, `{}`, not an object, or not a regular file, such as a
+  symlink) is refused: that is platform-sync's to heal, or the owner's to
+  remove by hand. The delete requires the typed repo name (the checkout's
+  `git rev-parse --show-toplevel` basename) and both preview digests
+  (`--expect-repo`, `--expect-machine`), so it is the delete the preview
+  showed; then, under the machine lock and then the repo config lock (crew's
+  one nesting order), it reads the machine digest again (a machine write since
+  the preview refuses, exit 2, nothing deleted),
+  moves the file to `.crew/config.json.bak-<UTC timestamp>` in one rename —
+  the backup is the original, never a copy — and compares the moved bytes
+  with the held ones: a file that changed since the preview is moved straight
+  back, never over a file saved in between, and nothing is deleted. A file
+  another writer puts at `.crew/config.json` during the rename is never
+  unlinked: it keeps a second name, `*.moving`, and the command exits 1
+  naming the backup, the config and that name — nothing is lost. It prints the restore command three ways,
+  `restore (sh):`, `restore (cmd):` and `restore (PowerShell):`
+  (`crew_config_menu.py restore-repo --from <backup> --apply`); each form is
+  executed by a test, and restore accepts exactly what delete does, exiting 1
+  the same way when another writer interleaves with its move-aside. Until the next
+  SessionStart there is no config, so `isCrew` is false and every hook that
+  gates on it stands down; then platform-sync's heal recreates the built-in
+  defaults. `.crew/crew.json`, `verify.json`, backups and ticket state are
+  untouched.
+- **Headless.** With no way to ask, `crew_config_menu.py spec --layer
+  <layer>` prints the plan and a write needs the explicit
+  `save --changes '<json>' --apply --expect-machine/--expect-repo <digest>` or
+  `delete-repo --confirm <name> --apply --expect-repo <digest>
+  --expect-machine <digest>`.
+
+Both writers now refuse a value outside the key's own tier or provider list
+(`pm.authority`, `pm.ticketGranularity`, `qa.provider`, `dev.provider` and every
+ratcheted key), refuse `null` for one of those at the machine layer, and refuse
+a `--set` value that is not JSON. Before T-0075 a global `--set
+pm.authority=bogus` was written and then read as `report-only`.
 
 ### §11b. `guards` — the guardrails you can turn down, per machine
 
@@ -1288,7 +1506,11 @@ Put `codex` on your `PATH` and set `qa.provider` to `auto` or `codex`. `/crew:re
 
 `auto` is the shipped default, so a machine with `codex` installed gets Codex review without configuring anything.
 
-Without Codex, `/crew:review` walks `qa.order` — `["codex", "copilot", "claude"]` by default — and takes the first provider that probes clean, announcing every one it skipped and why.
+Without Codex, `/crew:review` walks `qa.order` — `["codex", "kimi", "copilot", "claude"]` by default — and takes the first provider whose probe answers — a real call for Codex (`review_run.py --probe`), not just `command -v` — announcing every one it skipped and why.
+
+When that Codex call fails on a usage limit, rate limit or quota (Codex's own messages, cited in `hooks/scripts/review_limit.py`), the round runs on the `reviewer` fallback instead, pinned or not, announced as `same-family (codex limit)` with the error quoted. A limit hit in the middle of a round is recorded beside the review ledger, so the next round goes to Claude without another call; the one after probes Codex again (T-0088).
+
+Kimi Code (`kimi`) is the second rung of the default order since crew 1.0.85. Its family is `kimi` whatever it is pinned to, so it needs no pin to be independent of a Claude author, and every `qa.roles.<r>` and `dev.roles.<r>` slot accepts a Kimi pin. `/crew:review` does not launch it yet: the launch (the probe before the round is reserved, and a working-tree fingerprint, since `kimi -p` cannot be made read-only by a flag) is crew's review harness and lands separately as L-0527. Until then the launch gate keeps it out of the walk: `crew_config.review_launchable()` is `review_run.LAUNCHED` plus the in-session `claude`, and a `qa.order` provider outside it is reported `no - /crew:review cannot launch kimi yet` and skipped; adding `kimi` to `review_run.LAUNCHED` is what makes it eligible. `kimi_probe.py` answers now whether Kimi could review: `ok`, `not-installed`, `not-authenticated`, `rate-limited` or `unknown`, and only `ok` is launchable; `providers.sh --probe-kimi` runs it. See `skills/crew-providers/SKILL.md`, "Kimi Code".
 
 GitHub Copilot is the middle rung, and it earns its place for one reason: it is a gateway to model families nothing else here reaches. Pin `qa.copilot.model` to a Google model such as `gemini-3.7-flash` and the reviewer is genuinely independent of both the author and Codex. Confirm the name against Copilot's current catalog rather than copying one from documentation - the names churn, and a stale one fails at startup with `Model "<name>" from --model flag is not available`. Leave it unset and Copilot is **skipped entirely** — its own default is `claude-sonnet-4.6`, the author's family, so an unpinned Copilot would be a same-family review wearing an independent one's costume. That is worse than the fallback below, which at least admits what it is.
 
@@ -1484,9 +1706,9 @@ swapped for a link after the checks is refused rather than written through.
 That fd follows its directory if it is renamed out of the vault, so the walk is
 repeated and matched by device and inode before the temp is written, before the
 replace and after it; a note that landed in a directory that left is removed
-through the fd. Windows has no such calls: there the directory's real path is
-re-checked at the same three points. On both, a move inside the last window
-remains a residual race.
+through the fd. Windows has no such calls, so it holds the directories instead (since 1.0.49, T-0077): it opens a handle on the vault and on every directory down to the target, each denying `FILE_SHARE_DELETE`, and keeps them open for the length of the write, so the OS refuses to rename any of them meanwhile. A handle that is a reparse point, not a directory, the wrong vault, or has no file id is refused (no file id is "could not tell", never "the same"), and the path is still re-checked against the held directory's id at the same three points.
+A platform with neither mechanism refuses the write. On POSIX a move inside the last window
+remains a residual race; on Windows the held handles close it.
 
 **Whose card.** The ticket note is written once and never rewritten, and
 records `repo-id:` — the origin URL lowercased with `.git` dropped, or the git
@@ -1664,7 +1886,7 @@ You don't need it to. The lifecycle already covers the cycle:
 |---|---|---|
 | Nearing the limit | `Stop` | Estimates usage, asks for a handoff before the turn ends |
 | Auto-compaction imminent | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
-| After `/clear`, `/compact`, resume | `SessionStart` | Prints the handoff — stdout is injected as context |
+| After `/clear`, `/compact`, resume | `SessionStart` | Prints the handoff — stdout is injected as context, byte-exact LF on every OS |
 
 So: crew tells you it's time, you type `/clear`, and the next session opens
 already holding the note. The one manual step is the `/clear` — which is the
@@ -1948,6 +2170,29 @@ explained it:
 The implementing session checks for these before writing anything, so it wires into
 what exists instead of building a parallel suite that will drift out of
 agreement with it.
+
+### The verify gate on CI: a receipt, diagnostic for now
+
+This repository's `.github/workflows/verify-gate.yml` runs `verify-gate.sh --all`
+on a pushed lane branch (`L-*`, `T-*`, `W-*`) on the self-hosted runner pool, only
+while the repo variable `CREW_RUNNER` is `self-hosted`, and uploads a receipt
+built by `hooks/scripts/ci_receipt.py build`. The receipt binds the verdict
+(`review_gate.gate_state` asked on the runner, not the job's exit code) to the
+head sha, its tree, the `.crew/verify.json` blob and a digest of the gate
+implementation.
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ci_receipt.py check --root .
+```
+
+prints `CI_RECEIPT <STATE> head=<sha> <reason>` and exits 0 VERIFIED, 1
+UNVERIFIED, 3 UNKNOWN (could not tell: `gh`, the network or the artifact
+unreadable) or 4 NO_GATE. VERIFIED needs the newest run for HEAD to have
+succeeded, that attempt's one artifact to match HEAD, its tree and map exactly,
+a clean local tree, and no change on this branch to the gate implementation or
+the producer. **Nothing accepts the receipt yet**: `/crew:done`, `/crew:review`
+and `crew_train.py check-land` still read the local gate. Wiring them to it is a
+separate tooling change.
 
 ### Linters
 
@@ -2272,12 +2517,29 @@ Every promotion appends a row to `.work/PROMOTIONS.md`, failures included:
 ### What a hook enforces, and what it cannot
 
 `promote-gate.sh` fires on `PreToolUse` and refuses any command matching a
-declared `deploy` entry unless, for the sha at HEAD:
+declared `deploy` entry unless, for the sha at HEAD of **the tree the deploy
+runs from** (the Bash call's `cwd`, moved by a leading `cd <dir> &&` and named
+by any `git -C <dir>`; it must be a worktree of the same repository, and any
+literal sha in the command must be its HEAD):
 
 - every environment in `requires` has an **all-pass** row in `.work/PROMOTIONS.md`
 - `rollback` is set: a runbook that exists and carries `last verified: YYYY-MM-DD` inside 90 days, or the literal `"none"` plus a `rollbackReason` - an absent key blocks the deploy
 - `requireHuman` has an approval marker at `.crew/.approved-<env>-<sha>`
-- the working tree is clean - you cannot deploy a sha plus uncommitted changes
+- that tree is clean - you cannot deploy a sha plus uncommitted changes
+
+So a clean worktree deploys while the main checkout is dirty, and a clean main
+checkout cannot wave a dirty or wrong-sha worktree through. `.crew/verify.json`,
+`.work/PROMOTIONS.md`, the approval markers and `.crew/.deploy-in-flight` are
+read from the session's project directory on purpose - they are gitignored
+per-checkout state that a fresh worktree lacks and a throwaway one could forge -
+so an uncommitted change to the project's `.crew/verify.json` (edit, deletion,
+untracked, or hidden by skip-worktree - compared with HEAD's copy) blocks too.
+The directory the command runs in must also be clean. A command that changes
+directory after it starts (`env -C` and `make -C` included), names two trees,
+uses `--git-dir`, or puts `git` in a form the gate cannot read with certainty is
+refused rather than guessed at (T-0505). When the gate blocks,
+`/crew:promote` fixes the precondition it names; it never hands the owner the
+command to run past the hook.
 
 **Limitation: this enforcement lives in the session, not the repo.** All three
 gates - `guard.sh`, `verify-gate.sh`, `promote-gate.sh` - are hooks that run
@@ -2487,12 +2749,12 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:work` | Removed in 1.0 — a stub that says to use `/crew:implement` |
 | `/crew:brainstorm <what needs doing>` | crew 1.0 lifecycle: brainstorm a request into an approved direction, before it becomes a spec |
 | `/crew:spec <id>` | Fill the ticket contract — Intent, Exclusions, Evidence, Unknowns, Touch, Acceptance checks |
-| `/crew:approve <id>` | **Typed by you only** (`disable-model-invocation`): the UserPromptSubmit hook records the plan approval from your own prompt — see "Scope and approval" |
+| `/crew:approve <id>` | **Typed by you only** (`disable-model-invocation`): the UserPromptSubmit hook records the plan approval from your own prompt; several ids or a range go pending until your `/crew:approve --confirm` — see "Scope and approval" |
 | `/crew:implement <id>` | Implement an approved plan, then tests, docs, artifact refresh and review; refuses without a current approval |
 | `/crew:done <id>` | Close a ticket: accepted review receipt, clean verify gate, passing completion audit and current artifacts, or no close |
 | `/crew:fix <one sentence>` | The light path — every lifecycle phase present, each compressed to one step |
 | `/crew:autopilot [status\|run] [<id>]` | `run` (or a bare id, or nothing): drive one ticket through the lifecycle until a person is needed; with no id, resume from the handoff's `resume:` line, the active ticket, or the one open ticket. Off until `autopilot.mode: plan`. `status`: a read-only 12-line report. `assign`, `goal`, `focus` arrive with T-0019, T-0012, T-0020 — see "Autopilot" |
-| `/crew:review` | Independent QA — Codex, then Copilot, then Claude: the first that probes clean |
+| `/crew:review` | Independent QA — Codex, then Copilot, then Claude: the first that probes clean (a real call for Codex; a Codex usage limit runs Claude) |
 | `/crew:onboard [--refresh <area>]` | Build or refresh the code map |
 | `/crew:reference [--api\|--features\|--audit]` | Enumerate the API and features into `docs/reference/`, anchored to `file:line` |
 | `/crew:init` | Guided phased setup, resumable |
@@ -2513,18 +2775,19 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:model` | Report the resolved provider and model for every role, and which family would be reviewing which — see §12 |
 | `/crew:status [--memory]` | Read-only status in at most 40 lines - config, roster, tickets, review budget, gate, codemap, handoff; `--memory` adds the context hook's stats |
 | `/crew:migrate [--preview\|--apply\|--rollback <dir>]` | crew 1.0: one-time move of `.crew/config.json` to `.crew/crew.json`, tickets and tracker caches to `.work/tickets/<id>/`, `metrics.md` to `metrics.jsonl`; previews first, backs up, applies atomically, rolls back |
-| `/crew:config [--show]` | Show where every setting comes from, and walk the machine-global config — see §11 |
+| `/crew:config [--show\|--models]` | Show where every setting comes from; with no argument, the menu that sets the machine or repo config from a list and deletes the repo config with a backup — see §11 |
+| `/crew:config-setup` | The `/crew:config` menu under its own name — see §11 |
 | `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
 | `/crew:change <new\|status <id>\|close <id>\|list>` | File a change request into SDP, Jira or `.work/changes/`, one process either way. `new` refuses to file while any of the template's questions 1–9 is unanswered or a placeholder and names which; `close` refuses without the post-change validation results — see §24b |
 
-35 commands.<!-- claim: plugin-commands:crew -->
+36 commands.<!-- claim: plugin-commands:crew -->
 
 ### Agents
 
 | Agent | Tools | Model | Tier | Role |
 |---|---|---|---|---|
 | `explorer` | read-only | `opus` | 0 | Maps code, returns summaries not contents |
-| `reviewer` | read-only + Bash | `opus` | 0 | Hostile review; the last rung of `qa.order`, reached when neither Codex nor Copilot probes clean. Renamed from `qa-reviewer` in 1.0 |
+| `reviewer` | read-only + Bash | `opus` | 0 | Hostile review; the last rung of `qa.order`, reached when neither Codex nor Copilot probes clean, or when Codex's probe hits a usage limit. Renamed from `qa-reviewer` in 1.0 |
 | `security` | read-only + Bash | `sonnet` | 1 | Exploitable defects in the diff |
 | `researcher` | read-only + web | `sonnet` | 2 | External research only. Every claim carries its source |
 
@@ -2545,7 +2808,7 @@ with three hooks registered and unlisted.
 
 | Script | Event | Behavior |
 |---|---|---|
-| `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
+| `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree the deploy runs from (payload `cwd`, leading `cd`, `git -C`; same repository) is clean and at that sha. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
 | `cloud-guard.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | **Off by default** (`guards.cloudGuard`). Judges destructive cloud, Terraform and SQL commands and force push against the pinned `cloud.*` identity — see [Cloud guard](#cloud-guard) |
 | `role-write-guard.sh` / `.ps1` | `PreToolUse` on Write / Edit | **Off by default** (`guards.roleWrites`: `block`/`report`/`off`). Keyed on the calling subagent's `agent_type`; enforces a role's write scope mechanically — CONFIG.md §18 |
 | `approval-hook.sh` / `.ps1` | `UserPromptSubmit` | Records a ticket's plan approval only when the prompt *you* typed is `/crew:approve <id>`: validates `spec.md` and `plan.md` and writes the receipt bound to both hashes, or blocks the prompt and says why. Any other prompt: no output, exit 0 |
@@ -2608,6 +2871,17 @@ the comment.
 | `setup-walkthrough.sh` | Phases 0-8 scripts run against a real mixed-stack repo and produce their artifacts | that a human would like the result |
 | `validate-prompts.py` | Frontmatter parses, tools are real, referenced agents and paths exist, read-only agents hold no write tools, commands that spawn subagents are permitted to | **whether the prompts produce good work** |
 | `pytest tests/` | The python modules, and that the `.sh` and `.ps1` flavours of `context-watch`, `verify-gate` and `promote-gate` agree - including the emergency lane's expiry, which is the one property that keeps a forgotten incident from ungating a repo forever | anything on a platform the suite is not running on; the Windows-only cases skip elsewhere |
+
+Every pwsh those suites spawn runs with a throwaway `XDG_CACHE_HOME` of its own
+(L-0557). pwsh reads its multicore-JIT startup profile from
+`$XDG_CACHE_HOME/powershell/StartupProfileData-NonInteractive` at start-up and
+rewrites it at exit, so concurrent pwsh sharing `~/.cache/powershell` race on one
+file, and the loser dies before running a statement ("Stack overflow.", exit -6,
+or SIGSEGV, -11). `tests/conftest.py` sets the variable per test and refuses, by
+audit hook, a pwsh spawned without it; `tests/test_pwsh_cache_isolation.py` scans
+every `tests`/`_test` suite in the repo, Python and shell, for a pwsh spawn that
+would skip it. There is no retry. Windows pwsh keeps the profile under
+`LOCALAPPDATA`, so the variable changes nothing there.
 
 That last gap is real and no test closes it. Every command and every agent is an
 instruction to a model; only a live session running a real ticket exercises

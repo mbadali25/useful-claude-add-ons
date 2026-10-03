@@ -58,24 +58,19 @@ keeps out `.work` entries the copied index already held (force-added, or
 committed at the base): they are in the temp tree, and on both sides of the
 range, but no diff reads them.
 
-GENERATED FILES (T-0046). The regenerated graphify outputs were 94-97% of
-every bundle measured on 2026-09-26, and reviewers who could not read 24-37
-parts returned INCOMPLETE. `compute` therefore omits exactly `GENERATED` --
-`graphify-out/graph.json`, `GRAPH_REPORT.md` and `graph.html` at the
-repository root, compared case-sensitively, never read from `graph.out` --
-when one arrives as a plain add, modify or delete of a regular file, and
-appends a listing to the patch: a header line, then one line per omitted file
-with its status, path, both blob ids, the sha256 of its new content and its
-size. Everything else is diffed as before: a rename or copy, a link, a mode
-or type change, a submodule, any other file under `graphify-out/`, a nested
-or case-variant name, and every file when `graphify-out` is itself a link.
-The listing lives IN the patch bytes, so `bundle_sha256`, the part check,
-the receipt, `--accept` and `--check-receipt` all bind it with no new
-comparison: a graph written after review changes its sha256 and stales the
-receipt, as a diffed graph did. The listing is kept whole in the last part.
-The manifest names it (`generated`) and the scheme (`bundle_scheme`);
-`compute(..., omit_generated=False)` builds today's bytes exactly, and is how
-`review_ledger` checks a receipt written before this scheme existed.
+Generated `graphify-out/` (graphify's `graph.json` and `GRAPH_REPORT.md`,
+rebuilt by a command and never hand-edited, 24 MB in this repository) is
+excluded the same way since crew 1.0.54 (T-0092), and `excluded` names it:
+a Claude review of a bundle carrying it came back INCOMPLETE on 77 of 80
+parts. The pathspec is root-anchored, so a look-alike such as
+`docs/graphify-out/` or `graphify-out-notes/` stays in the bundle.
+
+`.crew/metrics.md` is excluded the same way since L-0578, for `.work/`'s
+reason: `review_run.py` appends a row to it after every round, between
+building this bundle and checking its receipt, so in a repository that does
+not gitignore `.crew/` a CLEAN receipt would stop checking the moment it was
+written. Only that one file: the rest of `.crew/` (config, verify map,
+standards) is reviewable.
 
 CLI: --root <repo> --base <sha> --out <patch-file> --manifest <json-file>
      [--parts-dir <dir>] [--max-part-bytes N]
@@ -110,10 +105,11 @@ EXIT_NOTHING_TO_REVIEW = 2
 # and small enough that a reviewer acknowledging each part is meaningful.
 DEFAULT_MAX_PART_BYTES = 200 * 1024
 
-# Pathspec excluding crew's scratch space from every diff and listing. Never
-# passed to `git add`: there it fails outright when `.work` is gitignored.
-EXCLUDED = (".work/",)
-_EXCLUDE_SPEC = [":(exclude).work"]
+# Pathspecs excluding crew's scratch space and the generated graph from every
+# diff and listing. Never passed to `git add`: there it fails outright when
+# `.work` is gitignored.
+EXCLUDED = (".work/", "graphify-out/", ".crew/metrics.md")
+_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out", ":(exclude).crew/metrics.md"]
 
 # Flags every diff here runs with, so a user's own git config cannot change
 # the bytes: no colour codes, no external diff driver, no textconv filter,
@@ -122,16 +118,17 @@ _DIFF_FLAGS = ["--no-color", "--no-ext-diff", "--no-textconv", "-M", "--full-ind
 
 SUBMODULE_MODE = "160000"
 
-# T-0046 (module docstring, GENERATED FILES). Literal repository-root paths;
-# config never widens what a reviewer does not see.
-GENERATED = ("graphify-out/graph.json", "graphify-out/GRAPH_REPORT.md",
-             "graphify-out/graph.html")
-BUNDLE_SCHEME = "crew-review/generated-1"
-LISTING_PREFIX = "crew-review-generated:"
-LISTING_HEADER = (LISTING_PREFIX + " {n} generated file(s) omitted; each is listed by "
-                  "path, both blob ids and the sha256 of its new content")
-_GENERATED_STATUS = ("A", "M", "D")
-_GENERATED_MODES = ("100644", "000000")
+# The manifest contract (T-0087). `compute` + `build` write exactly
+# MANIFEST_KEYS (plus `webtest` in a Playwright repository); `manifest_path` is
+# set by review_prompt.main. Its consumers -- review_prompt.py and
+# review_run.py -- read nothing else, which test_review_contracts.py checks by
+# driving both with a manifest this module really wrote.
+MANIFEST_KEYS = ("base", "head", "branch", "dirty", "committed_files", "staged_files",
+                 "unstaged_files", "untracked_files", "entries", "renames", "mode_changes",
+                 "binary_files", "submodules", "excluded", "patch_bytes", "max_part_bytes",
+                 "bundle_sha256", "patch_path", "parts_dir", "parts")
+OPTIONAL_MANIFEST_KEYS = ("webtest", "manifest_path")
+PART_KEYS = ("name", "path", "bytes", "sha256")
 
 
 def _run_raw(root, args, env=None):
@@ -246,49 +243,6 @@ def _entries(root, base_sha, tree):
     return entries
 
 
-def _generated(entries, root):
-    """The entries `compute` omits and lists instead (module docstring,
-    GENERATED FILES). Everything else is diffed."""
-    if os.path.islink(os.path.join(root, "graphify-out")):
-        return []
-    return [e for e in entries
-            if e["status"] in _GENERATED_STATUS
-            and e["path"] == e["old_path"] and e["path"] in GENERATED
-            and e["old_mode"] in _GENERATED_MODES and e["new_mode"] in _GENERATED_MODES
-            and not e["submodule"]]
-
-
-def _listing(root, omitted):
-    """(rows, bytes) for the omitted entries, sorted by path. The sha256
-    is over the new blob as git stores it; a delete has none."""
-    rows = []
-    for entry in sorted(omitted, key=lambda e: e["path"]):
-        if entry["status"] == "D":
-            digest, size = "-", "-"
-        else:
-            blob = _run_raw(root, ["cat-file", "blob", entry["new_id"]])
-            digest, size = hashlib.sha256(blob).hexdigest(), len(blob)
-        rows.append({"status": entry["status"], "path": entry["path"],
-                     "old_id": entry["old_id"], "new_id": entry["new_id"],
-                     "sha256": digest, "bytes": size})
-    if not rows:
-        return rows, b""
-    lines = [LISTING_HEADER.format(n=len(rows))] + [
-        f"omitted {r['status']} {r['path']} old {r['old_id']} new {r['new_id']} "
-        f"sha256 {r['sha256']} bytes {r['bytes']}" for r in rows]
-    return rows, ("\n".join(lines) + "\n").encode("utf-8")
-
-
-def _place_listing(parts, listing, max_bytes):
-    """`parts` with the listing appended, kept whole in the last part when
-    it fits there, else in parts of its own. Concatenation is unchanged."""
-    if not listing:
-        return parts
-    if parts and len(parts[-1]) + len(listing) <= max_bytes:
-        return parts[:-1] + [parts[-1] + listing]
-    return parts + split_parts(listing, max_bytes)
-
-
 def split_parts(data, max_bytes):
     """Split `data` (bytes) into ordered chunks of at most `max_bytes`,
     preferring `diff --git` file boundaries, then line boundaries, then the
@@ -339,12 +293,10 @@ def bundle_sha256(parts):
     return digest.hexdigest()
 
 
-def compute(root, base, max_part_bytes=DEFAULT_MAX_PART_BYTES, omit_generated=True):
+def compute(root, base, max_part_bytes=DEFAULT_MAX_PART_BYTES):
     """Build the bundle in memory: (manifest_dict, patch_bytes, parts).
     Writes nothing. Raises RuntimeError on any git failure, and on an empty
-    patch despite detected changes. `omit_generated=False` builds the bytes
-    of the scheme before T-0046 exactly: every generated file diffed, no
-    listing, no `bundle_scheme`."""
+    patch despite detected changes."""
     root = os.path.abspath(root)
 
     head = _run(root, ["rev-parse", "HEAD"]).strip()
@@ -383,24 +335,16 @@ def compute(root, base, max_part_bytes=DEFAULT_MAX_PART_BYTES, omit_generated=Tr
         _run(root, ["add", "-A", "--", "."], env=env)
         working_tree = _run(root, ["write-tree"], env=env).strip()
 
-        entries = _entries(root, base_sha, working_tree)
-        omitted = _generated(entries, root) if omit_generated else []
         # ONE diff: base -> the full working state (committed range, staged,
         # unstaged and untracked all folded into the tree `write-tree` just
         # produced). Binary files get git's own "Binary files ... differ"
         # marker -- no `--binary` flag -- and `--full-index` puts both full
         # blob ids on the `index` line, so the bytes still change with them.
-        # The omitted generated files are excluded literally, so no glob
-        # character in a name can widen what is left out.
-        only = only + [f":(exclude,literal){e['path']}" for e in omitted]
         patch = _run_raw(root, ["diff"] + _DIFF_FLAGS + [base_sha, working_tree] + only)
-        generated, listing = _listing(root, omitted)
+        entries = _entries(root, base_sha, working_tree)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
-    if listing and patch and not patch.endswith(b"\n"):
-        listing = b"\n" + listing
-    diff, patch = patch, patch + listing
     if not patch and (dirty or committed_files):
         # The bug this script exists to prevent: something was detected as
         # changed and the patch is still empty.
@@ -410,7 +354,7 @@ def compute(root, base, max_part_bytes=DEFAULT_MAX_PART_BYTES, omit_generated=Tr
             "this is a defect in review_patch.py, not a clean diff"
         )
 
-    parts = _place_listing(split_parts(diff, max_part_bytes), listing, max_part_bytes)
+    parts = split_parts(patch, max_part_bytes)
     manifest = {
         "base": base_sha,
         "head": head,
@@ -430,9 +374,6 @@ def compute(root, base, max_part_bytes=DEFAULT_MAX_PART_BYTES, omit_generated=Tr
         "max_part_bytes": max_part_bytes,
         "bundle_sha256": bundle_sha256(parts) if parts else None,
     }
-    if omit_generated:
-        manifest["bundle_scheme"] = BUNDLE_SCHEME
-        manifest["generated"] = generated
     # Playwright repositories only: the trace zips and axe results the
     # reviewer opens beside the patch, bounded by webtest_guard.MAX_ARTIFACTS.
     listing = webtest_guard.artifacts(root)

@@ -39,6 +39,7 @@ failing test, run it, implement the minimal code, run it again, commit.
 Files: create/modify/test, exact paths, `path:line` where modifying existing code
 Test: the check that proves this step, by name or by the command that runs it
 Risk: what breaks if this step is wrong, or "low"
+Standards: the crew-standards ids this step triggers, or "none - <why>"
 - [ ] concrete actions - what to actually do, not what the result should be
 ```
 
@@ -67,6 +68,8 @@ cheaper than catching it from a refused write.
 4. **Touch coverage.** Confirmed above - restate it here rather than skip it
    because it was "already checked": this is the review that catches the
    check being forgotten under time pressure, not the check itself.
+5. **Standards.** Does every step name the standards its Files and Risk
+   trigger (the `crew-standards` skill; `crew_standards.py sets` lists them)?
 
 Fix inline. No need to re-review once fixed - just fix and move on. This is a
 checklist you run yourself, not a subagent dispatch.

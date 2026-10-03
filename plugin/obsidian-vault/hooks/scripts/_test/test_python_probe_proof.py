@@ -76,13 +76,17 @@ def ps1_resolve(stem, path):
               + f"Write-Output (\"REJ=\" + ($script:{camel}Rejected -join '; '))\n")
     with tempfile.NamedTemporaryFile("w", suffix=".ps1", delete=False, encoding="utf-8") as handle:
         handle.write(driver)
+    # Its own startup-profile cache per call (L-0557): no shared ~/.cache/powershell.
+    xdg = tempfile.mkdtemp(prefix="probe-proof-xdg-")
     try:
         done = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File", handle.name],
-                              env=dict(os.environ, PATH=path, OS="Windows_NT"),
+                              env=dict(os.environ, PATH=path, OS="Windows_NT",
+                                       XDG_CACHE_HOME=xdg),
                               stdin=subprocess.DEVNULL, capture_output=True, text=True,
                               check=False, timeout=120)
     finally:
         os.unlink(handle.name)
+        shutil.rmtree(xdg, ignore_errors=True)
     return _parse(done.stdout)
 
 
@@ -99,15 +103,22 @@ def stub(directory, name, body):
     return directory
 
 
-def tools(base):
-    """/usr/bin and /bin minus python*/py*, so nothing rescues a case."""
+def tools(base, sources=("/usr/bin", "/bin")):
+    """/usr/bin and /bin minus python*/py*, so nothing rescues a case. The
+    first dir holding a name wins, as in PATH lookup: a source dir whose
+    realpath was already linked is skipped (`/bin -> usr/bin`), and a name
+    already linked is skipped by `lexists`, since `exists` follows the link
+    and read a dangling one (Ubuntu 26.04's `/usr/bin/grub-ntldr-img`) as
+    absent, so it was linked twice and raised FileExistsError (L-0529)."""
     out = base / "tools"
     out.mkdir()
-    for source in ("/usr/bin", "/bin"):
-        if not os.path.isdir(source):
+    seen = set()
+    for source in sources:
+        if not os.path.isdir(source) or os.path.realpath(source) in seen:
             continue
+        seen.add(os.path.realpath(source))
         for name in os.listdir(source):
-            if name.startswith(("python", "py")) or (out / name).exists():
+            if name.startswith(("python", "py")) or os.path.lexists(out / name):
                 continue
             os.symlink(os.path.join(source, name), out / name)
     return out
@@ -301,7 +312,57 @@ def check_no_percent_reaches_cmd():
             f"cmd.exe expands the same way: {crew_line.strip()!r}")
 
 
+def check_tools_tolerates_duplicate_names():
+    """L-0529: a dir symlinked to another, holding a dangling relative link,
+    does not raise; two distinct dirs holding one name link the first."""
+    if os.name == "nt":
+        return
+    base = pathlib.Path(tempfile.mkdtemp())
+    try:
+        real = base / "usr" / "bin"
+        real.mkdir(parents=True)
+        (real / "grub-ntldr-img").symlink_to(os.path.join("..", "lib", "grub", "missing"))
+        (base / "bin").symlink_to(os.path.join("usr", "bin"), target_is_directory=True)
+        try:
+            got = sorted(os.listdir(tools(base, (str(real), str(base / "bin")))))
+        except FileExistsError as exc:
+            got = f"raised {exc}"
+        check("tools(): a symlinked alias dir with a dangling link", got, ["grub-ntldr-img"])
+        first, second = base / "a", base / "b"
+        for directory in (first, second):
+            directory.mkdir()
+            (directory / "tool").write_text("", encoding="ascii")
+        farm = base / "second"
+        farm.mkdir()
+        out = tools(farm, (str(first), str(second)))
+        check("tools(): the first dir holding a name wins", os.readlink(out / "tool"),
+              str(first / "tool"))
+        (first / "dangling").symlink_to("not-installed")
+        (second / "dangling").write_text("", encoding="ascii")
+        farm = base / "fourth"
+        farm.mkdir()
+        try:
+            got = os.readlink(tools(farm, (str(first), str(second))) / "dangling")
+        except FileExistsError as exc:
+            got = f"raised {exc}"
+        check("tools(): a dangling entry in the first dir still shadows the name later", got,
+              str(first / "dangling"))
+        listed, real_listdir = [], os.listdir
+        os.listdir = lambda d: listed.append(d) or real_listdir(d)
+        try:
+            farm = base / "third"
+            farm.mkdir()
+            tools(farm, (str(real), str(base / "bin")))
+        finally:
+            os.listdir = real_listdir
+        check("tools(): a dir already linked through an alias is not listed again", listed,
+              [str(real)])
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
 run()
+check_tools_tolerates_duplicate_names()
 check_no_dead_memo()
 check_cmd_bat_routing_present()
 check_no_percent_reaches_cmd()

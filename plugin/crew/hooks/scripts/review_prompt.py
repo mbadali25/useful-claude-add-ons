@@ -3,7 +3,8 @@
 `/crew:review` builds ONE prompt that every reviewer reads byte-for-byte; this
 script writes the part of it that is about the ticket rather than the diff:
 
-  - the bundle parts, in order, and the READ acknowledgement each needs;
+  - the bundle parts, in order, and the READ acknowledgement each needs,
+    and the paths the manifest excluded;
   - the ticket's spec sections -- Intent, Exclusions, Evidence, Unknowns,
     Acceptance checks -- from `.work/tickets/<id>/spec.md` (or, for a
     files-mode ticket with no spec.md yet, `.work/tickets/<id>.md`);
@@ -11,6 +12,12 @@ script writes the part of it that is about the ticket rather than the diff:
   - the test receipts: the verify gate's last verified commit
     (`.crew/.verify-verified-at`) against HEAD, and every rule its record
     (`.crew/.verify-gate.record.json`) still lists as NOT VERIFIED.
+
+  - the development standards checklist (T-0085): the effective standards
+    set's ids, rules and self-check questions from `crew_standards.
+    checklist_block`, stating that the author's self-check answers are
+    withheld (`selfcheck.md` is never read here) and that the list does not
+    bound the review; an unreadable overlay is written `UNREADABLE: ...`.
 
 Anything missing is written as `MISSING: ...` naming the path looked at. A
 reviewer handed a prompt with no acceptance section cannot tell "this ticket
@@ -35,6 +42,10 @@ import os
 import re
 import subprocess
 import sys
+
+import crew_standards
+import review_verdict
+import verify_record
 
 SPEC_SECTIONS = ("Intent", "Exclusions", "Evidence", "Unknowns", "Acceptance checks")
 WEBTEST_FINDINGS_MAX = 50
@@ -79,9 +90,19 @@ def _bundle_block(manifest):
     out = [f"== Bundle: {len(parts)} part(s), {manifest.get('patch_bytes', 0)} bytes, "
            f"sha256 {manifest.get('bundle_sha256')} ==",
            "Read EVERY part below, in order, in full. After reading each one, output",
-           "READ|<its file name> on its own line. A part with no READ line makes the",
-           "review INCOMPLETE."]
+           f"{review_verdict.READ_FORM} on its own line. A READ line for a path in any",
+           "other directory counts for nothing; a part with no READ line makes the review "
+           "INCOMPLETE."]
     out += [f"  {p['path']}" for p in parts]
+    # Three states, one line each (T-0099): an empty list is a manifest saying
+    # nothing was left out; no key, or anything but a list of non-blank strings,
+    # is one that cannot say, and must not read as either of the known answers.
+    excluded = manifest.get("excluded")
+    if isinstance(excluded, list) and all(isinstance(p, str) and p.strip() for p in excluded):
+        out.append("  excluded (never in the bundle): "
+                   + (", ".join(excluded) if excluded else "none"))
+    else:
+        out.append("  excluded: not recorded by this manifest (unknown)")
     out.append(f"Manifest (file categories, renames, modes, binaries, submodules): "
                f"{manifest.get('manifest_path', 'manifest.json')}")
     for key, label in (("renames", "renamed"), ("mode_changes", "mode changed"),
@@ -89,10 +110,6 @@ def _bundle_block(manifest):
                        ("submodules", "submodule")):
         if manifest.get(key):
             out.append(f"  {label}: {', '.join(manifest[key])}")
-    generated = [g.get("path") for g in manifest.get("generated") or [] if isinstance(g, dict)]
-    if generated:
-        out.append("  generated (listed by path and sha256 at the end of the last part, not "
-                   f"shown; do not report them unread): {', '.join(generated)}")
     return out
 
 
@@ -153,17 +170,13 @@ def _receipts_block(root, manifest):
         out.append(f"Last clean verify pass: {verified[:12]}; HEAD is {head[:12]}"
                    f"{', tree dirty' if manifest.get('dirty') else ''}. Changes after that "
                    "pass have NOT been through the gate.")
-    record_path = os.path.join(root, ".crew", ".verify-gate.record.json")
-    raw = _read(record_path)
-    if raw is None:
-        out.append("MISSING: no .crew/.verify-gate.record.json (no per-rule record).")
+    state, rules = verify_record.read_record(root)
+    shown = verify_record.RECORD_PATH.replace("\\", "/")
+    if state == "absent":
+        out.append(f"MISSING: no {shown} (no per-rule record).")
         return out
-    try:
-        rules = json.loads(raw).get("rules")
-    except (ValueError, AttributeError):
-        rules = None
-    if not isinstance(rules, dict):
-        out.append("UNREADABLE: .crew/.verify-gate.record.json does not parse; which rules "
+    if state != "ok":
+        out.append(f"UNREADABLE: {shown} does not parse; which rules "
                    "are unverified is UNKNOWN.")
     elif not rules:
         out.append("Per-rule record: no rule is outstanding.")
@@ -237,8 +250,8 @@ def _webtest_block(root, ticket, manifest, out_dir=None):
         out += every[:WEBTEST_FINDINGS_MAX]
         out.append(f"  ... and {len(every) - WEBTEST_FINDINGS_MAX} more. ALL {len(every)} rows "
                    f"are in {overflow}: read that file in full, carry every FINDING row in it, "
-                   f"and output READ|{WEBTEST_FINDINGS_FILE} on its own line. Without that "
-                   "READ line the review is INCOMPLETE.")
+                   f"and output {review_verdict.READ_FORM} for that file on its own line. "
+                   "Without that READ line the review is INCOMPLETE.")
     else:
         out += every
     out.append("Carry every FINDING row into your findings as FIX: a healer skip is a "
@@ -251,6 +264,7 @@ def build(root, ticket, manifest, out_dir=None):
     lines = []
     for block in (_bundle_block(manifest), _spec_block(root, ticket),
                   _plan_block(root, ticket), _receipts_block(root, manifest),
+                  crew_standards.checklist_block(root, manifest),
                   _webtest_block(root, ticket, manifest, out_dir)):
         if not block:
             continue

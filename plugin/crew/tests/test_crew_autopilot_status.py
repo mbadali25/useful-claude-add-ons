@@ -277,6 +277,23 @@ def test_status_ledger_without_a_rounds_count_is_unknown(tmp_path, monkeypatch):
     assert got["review"] == "unknown (ledger unreadable)"
 
 
+def test_status_ledger_on_another_drive_is_still_reported(tmp_path, monkeypatch):
+    """T-0077: `os.path.relpath` raises when the path and the repo are on
+    different Windows drives (pytest's tmp on D:, a checkout on C:). Simulated
+    here so it runs everywhere: the status is still the ledger's outcome."""
+    root = _approved(tmp_path)
+    monkeypatch.setattr(review_ledger, "status", lambda *_a: {
+        "ticket": T, "path": "p", "state": review_ledger.IN_REVIEW, "budget": 2})
+
+    def across_drives(path, start=os.curdir):
+        raise ValueError(f"path is on mount 'C:', start on mount 'D:' ({path!r}, {start!r})")
+    monkeypatch.setattr(crew_autopilot.os.path, "relpath", across_drives)
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert got["review"] == "unknown (ledger unreadable)"
+
+
 def test_status_ledger_that_says_unknown_prints_no_rounds_count(tmp_path):
     root = _approved(tmp_path)
     _ledger(root, [], state="UNKNOWN")
@@ -1093,3 +1110,63 @@ def test_every_status_sabotage_anchor_is_present_exactly_once():
         prefix, name = test.split("::")
         assert (prefix, callable(globals().get(name))) == (
             "tests/test_crew_autopilot_status.py", True), label
+
+
+# --- T-0010: route and status are untouched by the approval policy -------------
+
+ROUTE_ARGS = ("", "status", "run T-1", "T-1", "status T-1")
+
+
+@pytest.mark.parametrize("policy", ["human", "self", "risk"])
+def test_route_and_status_unaffected_by_approval_policy(tmp_path, policy):
+    from test_crew_autopilot_policy import _repo  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, approval=policy, risk="low")
+    config = root / ".crew" / "config.json"
+    with_policy = config.read_text(encoding="utf-8")
+    before = _git_state(root)
+    code, lines = _lines(root)
+    after = _git_state(root)
+    routed = [crew_autopilot.route_args(str(root), text) for text in ROUTE_ARGS]
+    _write(config, json.dumps({"scope": json.loads(with_policy)["scope"]}))
+
+    plain = [crew_autopilot.route_args(str(root), text) for text in ROUTE_ARGS]
+
+    assert (code, _field(lines, "waiting on"), after == before, routed == plain) == (
+        0, f"waiting on: owner - types /crew:approve {T}", True, True)
+
+
+def _status_under(root, config, key, value, ticket):
+    """status's text with `autopilot.<key>` set to `value` in `config`."""
+    settings = json.loads(config.read_text(encoding="utf-8"))
+    settings["autopilot"][key] = value
+    _write(config, json.dumps(settings))
+    return crew_autopilot.status_text(crew_autopilot.status(str(root), ticket))
+
+
+@pytest.mark.parametrize("ticket", [None, T])
+@pytest.mark.parametrize("policy", ["self", "risk"])
+def test_status_at_approve_reads_the_same_under_an_allowing_policy(tmp_path, policy, ticket):
+    from test_crew_autopilot_policy import _repo  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, approval="human", risk="low")
+    config = root / ".crew" / "config.json"
+    human = _status_under(root, config, "approval", "human", ticket)
+
+    allowing = _status_under(root, config, "approval", policy, ticket)
+
+    assert (allowing == human, "crew_autopilot.py approve" in allowing,
+            f"waiting on: owner - types /crew:approve {T}" in allowing) == (True, False, True)
+
+
+@pytest.mark.parametrize("ticket", [None, T])
+def test_status_at_open_questions_reads_the_same_under_every_questions_policy(tmp_path,
+                                                                             ticket):
+    from test_crew_autopilot_policy import _repo  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, questions="human", risk="low")
+    _write(root / ".work" / "tickets" / T / "direction.md",
+           "go\n\n## Open questions\n- which database?\n")
+    config = root / ".crew" / "config.json"
+    texts = [_status_under(root, config, "questions", value, ticket)
+             for value in ("human", "self", "risk")]
+
+    assert (texts[1:] == texts[:1] * 2, "action=" in texts[0],
+            "phase: open-questions, stopped" in texts[0]) == (True, False, True)

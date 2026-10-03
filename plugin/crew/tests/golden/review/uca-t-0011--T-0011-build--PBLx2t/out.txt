@@ -1,0 +1,29 @@
+READ|part-001-of-022.patch
+READ|part-002-of-022.patch
+READ|part-003-of-022.patch
+READ|part-004-of-022.patch
+READ|part-005-of-022.patch
+READ|part-006-of-022.patch
+READ|part-007-of-022.patch
+READ|part-008-of-022.patch
+READ|part-009-of-022.patch
+READ|part-010-of-022.patch
+READ|part-011-of-022.patch
+READ|part-012-of-022.patch
+READ|part-013-of-022.patch
+READ|part-014-of-022.patch
+READ|part-015-of-022.patch
+READ|part-016-of-022.patch
+READ|part-017-of-022.patch
+READ|part-018-of-022.patch
+READ|part-019-of-022.patch
+READ|part-020-of-022.patch
+READ|part-021-of-022.patch
+READ|part-022-of-022.patch
+BLOCK|plugin/crew/hooks/scripts/crew_autopilot.py:478|The merge request does not bind the validated HEAD, so it can merge a different commit.|Let the final read_pr return local HEAD A, then push B before gh merges; the command has no expected-head constraint and can merge B. [gh implementation](https://raw.githubusercontent.com/cli/cli/v2.46.0/pkg/cmd/pr/merge/merge.go)
+BLOCK|plugin/crew/hooks/scripts/crew_autopilot.py:334|Trimming check names violates exact knownFailures matching.|Stub gh checks as (1, " check \tfail\t1m\turl\t\n", ""); knownFailures=["check"] authorizes merging the differently named failing check.
+BLOCK|plugin/crew/hooks/scripts/crew_autopilot.py:336|Exit 1 with passing rows and an error is accepted as green; stderr and the missing failure row are ignored.|Stub _run_gh as (1, "check\tpass\t1m\turl\t\n", "output incomplete"); read_checks followed by ship_decision("merge", "low", checks, ["gpt"], []) returns merge.
+BLOCK|plugin/crew/hooks/scripts/crew_autopilot.py:458|Review families remain cached throughout CI polling, allowing a high-risk ticket to merge after its current reviews become same-family only.|Start waiting with a GPT round; replace the ledger with an approved successor plan's completed Claude-only rounds before CI turns green. ship still merges using the old families.
+FIX|plugin/crew/hooks/scripts/crew_autopilot.py:472|The receipt is checked only before pushing and waiting; later unreviewed commits can ship.|While CI is pending, commit and push B, making the receipt stale. When checks pass, local HEAD and PR head both equal B, so ship merges without rechecking the receipt.
+FIX|plugin/crew/hooks/scripts/crew_autopilot.py:460|A passing poll bypasses the timeout check, allowing merges after ciTimeoutMinutes expires.|Set the timeout to one minute; have checks remain pending through the deadline, then make the next poll return pass at 70 seconds. ship returns merged.
+FIX|plugin/crew/hooks/scripts/crew_autopilot.py:478|A required merge queue can override --merge with squash/rebase and continue merging after ship reports a stop.|Ship to a branch whose merge queue uses squash. gh queues the PR using the queue's strategy; the subsequent OPEN state produces stop, but the queued merge remains active. [gh implementation](https://raw.githubusercontent.com/cli/cli/v2.46.0/pkg/cmd/pr/merge/merge.go)

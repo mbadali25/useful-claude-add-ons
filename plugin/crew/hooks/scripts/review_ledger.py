@@ -21,6 +21,19 @@ That refusal, and an explicit `--reject --by <who>`, are the only ways into
 NEEDS_REPLAN: a completed round 2 -- FINDINGS or INCOMPLETE -- leaves the
 ticket REVIEWED, so the owner can still accept round 2's FINDINGS.
 
+REFUNDS (T-0087). A round the TOOL lost -- recorded INCOMPLETE with
+`failure_class: "tool"` (`review_verdict.failure_class`: the answer never
+arrived intact) -- is refunded automatically: its row says `refunded: true`
+and it does not count against `BUDGET`. At most `REFUND_LIMIT` rounds per plan
+are refunded; the next one is recorded `refunded: false` with
+`refund_refused` saying why, and counts. Never refunded: a `reviewer` or
+`tree` INCOMPLETE, a FINDINGS or CLEAN round, a round with no recorded result
+(still `reserved`, above), and rows written before this rule (no
+`failure_class`). `_spent` keeps meaning "rows reserved since the successor
+boundary" -- the boundary checks in `record` and `accept` read it -- and
+`_charged` (spent minus refunded) is what the budget uses. Nothing else resets
+the count.
+
 ATOMICITY. Every mutation holds `<ticket>.lock`, created with
 O_CREAT|O_EXCL, for the read-modify-write, and replaces the ledger with
 `os.replace` from a temp file in the same directory. Two concurrent
@@ -78,6 +91,9 @@ import time
 import review_patch
 
 BUDGET = 2
+# A constant like BUDGET: bounds a refund loop at four launched rounds per
+# two-round budget. No flag, env var or config key reads into it.
+REFUND_LIMIT = 2
 
 NEEDS_REPLAN = "NEEDS_REPLAN"
 IN_REVIEW = "IN_REVIEW"
@@ -139,6 +155,20 @@ def _load(path):
         return {}, "corrupt"
     if not isinstance(data, dict) or not isinstance(data.get("rounds", []), list):
         return {}, "corrupt"
+    # `_spent` and `_boundary` read the latest successor row: a `successors`
+    # that is not a list of objects is unreadable, never a crash (T-0087). Any
+    # wrong type on that path -- `{}`, `0`, `""`, `false` or `null` for the
+    # list, an `after_round` that is missing, not an integer, a boolean, or
+    # outside the rounds it splits -- is unreadable too, never "no successor"
+    # or "boundary 0" (review round 5).
+    successors = data.get("successors", [])
+    if not isinstance(successors, list) or not all(isinstance(s, dict) for s in successors):
+        return {}, "corrupt"
+    if successors:
+        after = successors[-1].get("after_round")
+        if (not isinstance(after, int) or isinstance(after, bool)
+                or not 0 <= after <= len(data.get("rounds", []))):
+            return {}, "corrupt"
     return data, "ok"
 
 
@@ -200,6 +230,25 @@ def _spent(data):
     return len(data.get("rounds", [])) - (after if isinstance(after, int) else 0)
 
 
+def _boundary(data):
+    """Index of the first round under the current plan (the latest successor's
+    `after_round`, or 0 without one)."""
+    successors = data.get("successors") or []
+    after = successors[-1].get("after_round", 0) if successors else 0
+    return after if isinstance(after, int) else 0
+
+
+def _refunded(data):
+    """Rounds under the current plan that were refunded as tool failures."""
+    return sum(1 for r in data.get("rounds", [])[_boundary(data):]
+               if isinstance(r, dict) and r.get("refunded") is True)
+
+
+def _charged(data):
+    """Rounds under the current plan that count against BUDGET."""
+    return _spent(data) - _refunded(data)
+
+
 def _fresh(ticket):
     return {"ticket": ticket, "budget": BUDGET, "state": None, "rounds": [],
             "refused": [], "receipt": None}
@@ -218,11 +267,11 @@ def reserve(root, ticket, provider, model=None):
             data = _fresh(ticket)
         rounds = data.setdefault("rounds", [])
         exhausted = (False, None,
-                     f"review budget exhausted: {_spent(data)} of {BUDGET} rounds used. "
+                     f"review budget exhausted: {_charged(data)} of {BUDGET} rounds used. "
                      f"State is {NEEDS_REPLAN}; only an approved successor plan continues")
         if data.get("state") == NEEDS_REPLAN:
             return None, exhausted
-        if _spent(data) >= BUDGET:
+        if _charged(data) >= BUDGET:
             data["state"] = NEEDS_REPLAN
             data.setdefault("refused", []).append({"at": _now(), "provider": provider})
             return data, exhausted
@@ -230,9 +279,22 @@ def reserve(root, ticket, provider, model=None):
         rounds.append({"round": number, "status": "reserved", "reserved_at": _now(),
                        "provider": provider, "model": model or None, "pid": os.getpid()})
         data["state"] = IN_REVIEW
-        return data, (True, number, f"round {number} of {BUDGET} reserved")
+        return data, (True, number,
+                      f"round {number} reserved ({_charged(data)} of {BUDGET} budget rounds "
+                      f"used, {_refunded(data)} refunded)")
 
     return _mutate(root, ticket, change)
+
+
+def _ignored_count(value):
+    """review.json's `ignored_lines`: a non-negative int count (L-0576), kept
+    as is. Anything else -- missing, null, a bool, a string, a negative -- is
+    unknown and recorded as None, never 0: 0 means "none were ignored", and
+    a reader (L-0510's auto-accept) must be able to tell that from "could not
+    tell"."""
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
 
 
 def record(root, ticket, number, review):
@@ -271,17 +333,23 @@ def record(root, ticket, number, review):
             "verdict": review["verdict"], "counts": review.get("counts"),
             "bundle_sha256": review.get("bundle_sha256"), "base": review.get("base"),
             "head": review.get("head"), "model_family": review.get("model_family"),
+            "failure_class": review.get("failure_class"),
+            # How many stray lines a FINDINGS round was recovered despite
+            # (L-0576): an acceptance can see the round was not strictly read.
+            "ignored_lines": _ignored_count(review.get("ignored_lines")),
         })
-        if review.get("bundle_scheme") is not None:
-            row["bundle_scheme"] = review["bundle_scheme"]
+        if review["verdict"] == "INCOMPLETE" and review.get("failure_class") == "tool":
+            row["refunded"] = _refunded(data) < REFUND_LIMIT
+            if not row["refunded"]:
+                row["refund_refused"] = f"refund limit {REFUND_LIMIT} per plan reached"
+        else:
+            row["refunded"] = False
         if review["verdict"] == "CLEAN":
             data["receipt"] = {
                 "kind": "clean", "round": number, "bundle_sha256": review["bundle_sha256"],
                 "base": review["base"], "verdict": "CLEAN", "accepted_by": None,
                 "accepted_at": row["completed_at"],
             }
-            if row.get("bundle_scheme") is not None:
-                data["receipt"]["bundle_scheme"] = row["bundle_scheme"]
             data["state"] = ACCEPTED
         else:
             data["state"] = REVIEWED
@@ -321,7 +389,7 @@ def accept(root, ticket, by):
         if receipt.get("round") == row["round"]:
             raise LedgerError(f"round {row['round']} was already accepted by "
                               f"{receipt.get('accepted_by')} at {receipt.get('accepted_at')}")
-        current = _current_hash(root, row.get("base"), row.get("bundle_scheme"))
+        current = _current_hash(root, row.get("base"))
         if current != row.get("bundle_sha256"):
             raise LedgerError("the tree has changed since that review, so accepting it would "
                               "accept code nobody reviewed")
@@ -330,8 +398,6 @@ def accept(root, ticket, by):
             "bundle_sha256": row["bundle_sha256"], "base": row["base"],
             "verdict": "FINDINGS", "accepted_by": by.strip(), "accepted_at": _now(),
         }
-        if row.get("bundle_scheme") is not None:
-            data["receipt"]["bundle_scheme"] = row["bundle_scheme"]
         data["state"] = ACCEPTED
         return data, data["receipt"]
 
@@ -359,22 +425,11 @@ def reject(root, ticket, by):
     return _mutate(root, ticket, change)
 
 
-def _current_hash(root, base, scheme=None):
-    """The bundle hash the tree builds now, under the scheme the round was
-    recorded with (T-0046). No scheme is a round from before schemes
-    existed: every generated file diffed, as it was then. An unknown scheme
-    is refused rather than guessed, so it can never read as current."""
+def _current_hash(root, base):
     if not base:
         raise LedgerError("the recorded round has no base commit")
-    if scheme is None:
-        omit = False
-    elif scheme == review_patch.BUNDLE_SCHEME:
-        omit = True
-    else:
-        raise LedgerError(f"unknown bundle scheme {scheme!r}; this crew builds "
-                          f"{review_patch.BUNDLE_SCHEME!r} and pre-scheme receipts only")
     try:
-        manifest, _, _ = review_patch.compute(root, base, omit_generated=omit)
+        manifest, _, _ = review_patch.compute(root, base)
     except RuntimeError as exc:
         raise LedgerError(f"could not rebuild the bundle: {exc}") from exc
     return manifest["bundle_sha256"]
@@ -402,7 +457,7 @@ def check_receipt(root, ticket):
         return False, (f"round {latest.get('round')} is {latest.get('verdict') or 'not completed'}"
                        "; a receipt stands only on a CLEAN or owner-accepted round")
     try:
-        current = _current_hash(root, receipt.get("base"), receipt.get("bundle_scheme"))
+        current = _current_hash(root, receipt.get("base"))
     except LedgerError as exc:
         return False, f"receipt could not be checked: {exc}"
     if current != receipt["bundle_sha256"]:
@@ -469,17 +524,27 @@ def continue_with_successor_plan(root, ticket, plan_hash):
     return _mutate(root, ticket, change)
 
 
-def status(root, ticket):
-    path = ledger_path(root, ticket)
-    data, state = _load(path)
+load = _load
+
+
+def summary(data, state, ticket, path):
+    """The status dict for a loaded ledger: what `status` returns and what
+    `/crew:status` renders, so the two cannot count rounds differently."""
     if state == "corrupt":
         return {"ticket": ticket, "path": path, "state": UNKNOWN}
     rounds = data.get("rounds", [])
     return {"ticket": ticket, "path": path, "state": data.get("state") or "EMPTY",
             "rounds_used": len(rounds), "budget": BUDGET,
-            "rounds_left": max(0, BUDGET - _spent(data)), "rounds": rounds,
+            "rounds_spent": _charged(data), "rounds_refunded": _refunded(data),
+            "refund_limit": REFUND_LIMIT,
+            "rounds_left": max(0, BUDGET - _charged(data)), "rounds": rounds,
             "successors": data.get("successors") or [],
             "receipt": data.get("receipt")}
+
+
+def status(root, ticket):
+    path = ledger_path(root, ticket)
+    return summary(*_load(path), ticket, path)
 
 
 def main(argv):

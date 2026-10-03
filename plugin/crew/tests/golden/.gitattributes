@@ -1,0 +1,3 @@
+# The corpus is a byte-exact replay of real reviewer output: an autocrlf checkout
+# rewrote it to CRLF on the Windows job of PR #260, so no file here is converted.
+* -text
