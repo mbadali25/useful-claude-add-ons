@@ -32,7 +32,7 @@ it merges if its number has been passed.
 
 | PR | Ticket | State | Blocked by | Crew version |
 |---|---|---|---|---|
-| #350 | T-0061 | built; merging main and verifying (harness half is #378, 1.0.181) | | 1.0.184 |
+| #350 | T-0061 | merged with main, verified; in review. Merge after #378 (harness half, 1.0.181) | #378 | 1.0.184 |
 | #351 | T-0066 | part 1 merged with main, verified; in review | | 1.0.185 |
 | #355 | T-0013 | merged with main, verified; in review | | 1.0.186 |
 | #360 | T-0048 | merged with main, verified; in review | | 1.0.200 |
