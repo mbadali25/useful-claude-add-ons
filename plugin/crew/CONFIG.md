@@ -162,10 +162,13 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **68**
-leaves. `leaf_paths(default_config())` yields **123**, so **55** are repo-only.
-For all 123, `filter_global` and `plan_global_write` agree on whether the path is
-settable. (122 / 67 / 55 on T-0072's branch, which added the repo-only
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **72**
+leaves. `leaf_paths(default_config())` yields **130**, so **58** are repo-only.
+For all 130, `filter_global` and `is_global_path` (which `plan_global_write`
+refuses on) agree on whether the path is settable. (Measured with `leaf_paths`
+on T-0061's branch after merging main 34d9f267; the repo-only
+`tickets.baseBranch` is the one T-0061 added. This paragraph said 68 / 123 / 55
+until then, behind main's 72 / 129 / 57. 122 / 67 / 55 on T-0072's branch, which added the repo-only
 `autopilot.deploy`; 122 / 68 / 54 on main after T-0023 added `route.enabled` to
 both layers; 121 / 67 / 54 before either.
 66 / 119 before crew 1.0.42 merged T-0005, which added
@@ -782,7 +785,7 @@ that role — `/crew:review` resolves `review`'s model that way
 
 ---
 
-## 11. Repo-only keys — all 41
+## 11. Repo-only keys — 58 leaves
 
 Refused in the global file by `plan_global_write`, and pruned out of it by
 `filter_global` if some other tool wrote one. Each is a fact about one
@@ -842,6 +845,7 @@ repository or one checkout.
 | `autopilot.deploy` | `"none"`, `"nonprod"` or `"all"` | `"none"` | `crew_autopilot.settings` and `crew_autopilot.deploy_allowed` — where a deploy may run without asking; production also needs `environments.prodUnattended`, §20 |
 | `autopilot.approval` | `"human"`, `"self"` or `"risk"` | `"risk"` | `crew_autopilot.approval_policy`, read by `crew_autopilot.py approve`, `crew_ticket.accepted` and `scope_guard.py`, §20 |
 | `autopilot.questions` | `"human"`, `"self"` or `"risk"` | `"risk"` | `crew_autopilot.question_policy`, read by `crew_autopilot.py questions-check` and `next`, §20 |
+| `tickets.baseBranch` | string or `null` | `null` | `scope_base.base_branch` — the branch ticket branches are cut from; read by `crew_ticket.py activate`, `/crew:implement`, `/crew:review`, the completion audit, the refresh check, `scope_report` and `webtest_guard`, all through `scope_base` |
 
 `context.reserveTokens: null` means *off*, and survives as `null` — this is the
 case `null_shadows` is deliberately narrow to protect (§1).
@@ -850,6 +854,20 @@ case `null_shadows` is deliberately narrow to protect (§1).
 machine facts into the repo config. That is why it is repo-only despite
 describing a machine: the value records what *this checkout* resolved, and a
 global override would make every repo on the box report the first one's answer.
+
+`tickets.baseBranch` (T-0061) names the branch ticket branches are cut from,
+for a repository that integrates on `development` rather than `main`. `null`
+keeps the old default: `origin/HEAD`'s target, then `origin/main`, then `main`.
+A value is tried as given when it contains `/`, then as `origin/<value>`, then
+as `<value>`, and the first that names a commit is the base branch. When none
+does, or `.crew/config.json` does not parse, the scope base is **could not
+tell**: `scope_base.py --record` writes nothing and exits 1, `--base` and
+`--changed` print nothing and exit 3, and the completion audit fails. It never
+falls back to `origin/HEAD`. The key is read from the resolved repo config
+(`crew_common.repo_config_file`), like `scope.mode`: a worktree with no
+`.crew/` of its own reads the main checkout's. The rows above omit
+`scope.*`, `cloud.*`, `environments.nonProd` and `production.*`, which have
+their own sections; the 58 is `leaf_paths`, not a row count.
 
 `shellRoute.*` (T-0040) is a preference, not a detected fact, so it is not in
 `platform.*`: platform-sync rewrites `platform.shell` every SessionStart. It is

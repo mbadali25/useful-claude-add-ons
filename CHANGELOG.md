@@ -4,6 +4,25 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.158: `tickets.baseBranch`, the branch ticket branches are cut from (T-0061)
+
+- New repo-only config key `tickets.baseBranch` (default `null`, meaning `origin/HEAD`'s target,
+  then `origin/main`, then `main`, as before), declared in `crew_config.default_config()`, the
+  config template and `crew-setup`'s prose template, after `autopilot`. It is absent from
+  `default_global_config()`: which branch a repo integrates on is a fact about that repo. The
+  declared-leaf count is 130 (`test_crew_config.py`), 58 of them repo-only.
+- `CONFIG.md` §11 documents it: candidate order (`<value>` as given when it contains `/`, then
+  `origin/<value>`, then `<value>`) and "could not tell" when none names a commit or the config
+  does not parse - `scope_base.py --record` exits 1 and writes nothing, `--base`/`--changed` exit 3
+  with nothing on stdout, the completion audit fails, and nothing falls back to `origin/HEAD`.
+- `/crew:implement` step 1 says a record `crew_ticket.py activate` already made is kept and an exit
+  1 means fix `tickets.baseBranch`; step 3 stops on `--base`'s exit 3 instead of diffing against an
+  empty string. `crew-execute` names the same.
+- The reader of the key - `scope_base.read_base_branch` / `base_branch`, `--base`'s exit 3,
+  `activate` recording at branch cut, and the re-derivation of a fallback entry guessed against
+  another ref - is T-0061's harness half. Those files are on the review/gate harness list
+  (`scripts/check-tooling-pr.py`), so they land in their own PR, before this one.
+
 ### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 
 - `crew_train.py check-land` judges the verify gate through `review_gate.accepted_state`: the local
