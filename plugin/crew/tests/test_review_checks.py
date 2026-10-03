@@ -2088,7 +2088,7 @@ _BIDI = ["\u061c", "\u200e", "\u200f", "\u202a", "\u202b", "\u202c", "\u202d", "
 def test_one_line_escapes_every_bidi_control(char):
     """Review round 10 FIX :159: every Bidi_Control code point is escaped, so
     a name or message cannot visually reorder a status line."""
-    assert rc.one_line("a" + char + "b") == "a\\u%04xb" % ord(char)
+    assert rc.one_line("a" + char + "b") == f"a\\u{ord(char):04x}b"
 
 
 def test_a_bidi_control_in_a_changed_name_prints_escaped(tmp_path, fake):
@@ -2315,7 +2315,7 @@ def test_a_failed_output_read_is_could_not_check(tmp_path, fake, monkeypatch):
     real_popen = subprocess.Popen
 
     def popen(*args, **kwargs):
-        proc = real_popen(*args, **kwargs)
+        proc = real_popen(*args, **kwargs)  # pylint: disable=consider-using-with
         stderr_fd[0] = proc.stderr.fileno()
         return proc
     monkeypatch.setattr(rc.subprocess, "Popen", popen)
@@ -2340,7 +2340,7 @@ def test_a_selector_error_still_ends_and_reaps_the_linter(tmp_path, fake, monkey
     monkeypatch.setenv("FAKE_LINT_PID_OUT", str(pid_out))
     real = selectors.DefaultSelector
 
-    class Refusing(real):
+    class Refusing(real):  # pylint: disable=too-many-ancestors
         def register(self, fileobj, events, data=None):
             raise OSError(9, "reg")
     monkeypatch.setattr(selectors, "DefaultSelector", Refusing)

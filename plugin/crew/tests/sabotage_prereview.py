@@ -331,8 +331,12 @@ PREREVIEW_MUTATIONS = (
      '        data = json.loads(raw.decode("utf-8"))\n',
      _C + "test_a_verify_map_with_a_duplicate_key_is_could_not_check"),
     ('a lone surrogate is printed raw', CHECKS,
-     '_CONTROL = re.compile("[\\x00-\\x1f\\x7f-\\x9f\\u061c\\u200e\\u200f\\u202a-\\u202e\\u2028\\u2029"\n                      "\\u2066-\\u2069\\ud800-\\udfff]")\n',
-     '_CONTROL = re.compile("[\\x00-\\x1f\\x7f-\\x9f\\u061c\\u200e\\u200f\\u202a-\\u202e\\u2028\\u2029"\n                      "\\u2066-\\u2069]")\n',
+     '_CONTROL = re.compile("[\\x00-\\x1f\\x7f-\\x9f\\u061c\\u200e\\u200f\\u202a-\\u202e\\u2028\\'
+     'u2029"\n'
+     '                      "\\u2066-\\u2069\\ud800-\\udfff]")\n',
+     '_CONTROL = re.compile("[\\x00-\\x1f\\x7f-\\x9f\\u061c\\u200e\\u200f\\u202a-\\u202e\\u2028\\'
+     'u2029"\n'
+     '                      "\\u2066-\\u2069]")\n',
      _C + "test_a_lone_surrogate_prints_escaped"),
     ("a crash in the CLI leaves through exit 1", CHECKS,
      "    try:\n        return _main(argv)\n",
@@ -349,7 +353,8 @@ PREREVIEW_MUTATIONS = (
      _C + "test_real_pssa_clean_files_pass"),
     ('a null PSSA row is dropped as no finding (S1b)', CHECKS,
      'raise CouldNotCheck("psscriptanalyzer output is not a list")\n        return rows\n',
-     'raise CouldNotCheck("psscriptanalyzer output is not a list")\n        return [r for r in rows if r is not None]\n',
+     'raise CouldNotCheck("psscriptanalyzer output is not a list")\n'
+     '        return [r for r in rows if r is not None]\n',
      _C + "test_pssa_output_that_is_not_a_list_of_rows_is_never_pass"),
     ('a Windows timeout with no taskkill falls to killpg (S2)', RUN,
      '                try:\n                    proc.kill()  # TerminateProcess by the handle Popen holds\n',
@@ -372,15 +377,19 @@ PREREVIEW_MUTATIONS = (
      '                except KeyError as exc:\n                    reasons.append(f"the reviewer\'s output',
      _R + "test_claude_output_that_is_not_a_regular_file_is_incomplete"),
     ('an unreadable manifest at finish escapes (S3b)', RUN,
-     '        manifest = json.loads(_read(args.manifest, _trusted(args.manifest, args.scratch)))\n    except (OSError, ValueError) as exc:',
-     '        manifest = json.loads(_read(args.manifest, _trusted(args.manifest, args.scratch)))\n    except KeyError as exc:',
+     '        manifest = json.loads(_read(args.manifest, _trusted(args.manifest, args.scratch)))\n'
+     '    except (OSError, ValueError) as exc:',
+     '        manifest = json.loads(_read(args.manifest, _trusted(args.manifest, args.scratch)))\n'
+     '    except KeyError as exc:',
      _R + "test_an_unreadable_manifest_at_finish_is_incomplete"),
     ('a malformed manifest object is used as is (S3c)', RUN,
      '    problem = _manifest_problem(manifest)\n',
      '    problem = None\n',
      _R + "test_an_unreadable_manifest_at_finish_is_incomplete"),
     ('bidi controls print raw (S4)', CHECKS,
-     '_CONTROL = re.compile("[\\x00-\\x1f\\x7f-\\x9f\\u061c\\u200e\\u200f\\u202a-\\u202e\\u2028\\u2029"\n                      "\\u2066-\\u2069\\ud800-\\udfff]")\n',
+     '_CONTROL = re.compile("[\\x00-\\x1f\\x7f-\\x9f\\u061c\\u200e\\u200f\\u202a-\\u202e\\u2028\\'
+     'u2029"\n'
+     '                      "\\u2066-\\u2069\\ud800-\\udfff]")\n',
      '_CONTROL = re.compile("[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029"\n                      "\\ud800-\\udfff]")\n',
      _C + "test_one_line_escapes_every_bidi_control"),
     ("a clean linter's leftover survives (S5a)", CHECKS,
@@ -404,7 +413,16 @@ PREREVIEW_MUTATIONS = (
      '    except OSError:\n        refused = None  # the group held only the zombie',
      _C + "test_a_leftover_that_cannot_be_signalled_is_could_not_check"),
     ('a selector error skips the cleanup (S5g)', CHECKS,
-     '        try:\n            selector = selectors.DefaultSelector()\n            selector.register(proc.stdout, selectors.EVENT_READ, "out")\n            selector.register(proc.stderr, selectors.EVENT_READ, "err")\n        except (OSError, ValueError) as exc:',
-     '        selector = selectors.DefaultSelector()\n        selector.register(proc.stdout, selectors.EVENT_READ, "out")\n        selector.register(proc.stderr, selectors.EVENT_READ, "err")\n        try:\n            pass\n        except (OSError, ValueError) as exc:',
+     '        try:\n'
+     '            selector = selectors.DefaultSelector()\n'
+     '            selector.register(proc.stdout, selectors.EVENT_READ, "out")\n'
+     '            selector.register(proc.stderr, selectors.EVENT_READ, "err")\n'
+     '        except (OSError, ValueError) as exc:',
+     '        selector = selectors.DefaultSelector()\n'
+     '        selector.register(proc.stdout, selectors.EVENT_READ, "out")\n'
+     '        selector.register(proc.stderr, selectors.EVENT_READ, "err")\n'
+     '        try:\n'
+     '            pass\n'
+     '        except (OSError, ValueError) as exc:',
      _C + "test_a_selector_error_still_ends_and_reaps_the_linter"),
 )
