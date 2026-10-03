@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@9dd98ee8
+anchor: useful-claude-add-ons@5d8f732b
 verified: 2026-10-03
 
 # localgpu
@@ -1870,3 +1870,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `586cabe0` -> `aab858e9` on 2026-10-03 (T-0046 merges origin/main `f808e5f0` - #328, #329, #330, crew 1.0.154 - at `cbe74d03`, rerere disabled; crew 1.0.158 set last at `aab858e9`).** Main's three PRs changed crew_config.py, verify-gate.sh/.ps1, verify_record.py, review_run.py, crew_train.py, done.md, review.md, CONFIG.md, README.md and .crew/verify.json without moving these maps. Every body citation to a file changed since `586cabe0` was re-mapped by a line diff (difflib, equal blocks only) and rewritten where it moved; a citation whose own line changed was re-read by hand. `.crew/verify.json` rules 1-48 keep their line ranges (main edited their content in place: `seconds`, `coveredBy`, `why`), so rule citations stand; the prose describing those rules' prices and coverage was not re-verified against main's edits. Moved: three crew_config.py citations, one line each, by a line diff.
 
 **Re-anchored `aab858e9` -> `9dd98ee8` on 2026-10-03 (T-0046 review round 2 self-check).** `bedeadf9` adds six rows to `test_crew_bookkeeping.py` (short, trailing and empty path segments, a case-differing path, and two digit-run cases) after three hand-run mutations of `crew_bookkeeping.py` survived the 20-row table, and updates the T-0046 rule's measurement in `.crew/verify.json` in place (`:537-543` unchanged); crew 1.0.158 re-set at `9dd98ee8`. No body citation in this map points at a line that moved.
+
+**Re-anchored `9dd98ee8` -> `5d8f732b` on 2026-10-03 (T-0046 review round 2 self-check, second pass).** `test_crew_bookkeeping.py` gains four rows (a marker in a code span, a number past the bind window, a non-str path, a str whose `splitlines` raises) after four more hand-run mutations survived; the T-0046 rule's measurement in `.crew/verify.json` is updated in place (`:537-543` unchanged); crew 1.0.158 re-set at `5d8f732b`. No body citation in this map points at a line that moved.
