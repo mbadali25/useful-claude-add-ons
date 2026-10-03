@@ -128,15 +128,15 @@ the diff, and commit the pricing separately.
 
     python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify_reach.py --root . [--apply] [--set N=local|network|host]
 
-Declares `reach` on every rule that has none, from the gate's own classifier
-(below): a rule the gate already runs gets `local`, one it defers for a remote
-verb gets `network`. So `--apply` never changes what Stop runs; it writes down
-what Stop already does. A rule deferred for shell syntax or a wrapper script is
-listed as undecided and written only by `--set N=...`: making it run on every
-Stop is a person's call. Dry run by default. It edits the map's text in place
-(never re-serialises it) and refuses unless the result parses back to the
-original plus exactly the new keys. Show the table, ask, then commit the diff
-on its own, as with `--price`.
+Declares `reach` on every rule that has none (absent or `null`), from the gate's
+own classifier (below), run from `--root` as the gate runs from the project root:
+a rule the gate already runs gets `local`, one it defers for a remote verb gets
+`network`. `reach` is part of `rule_key`, so it then moves each stamped rule's
+measured timing and record entry to the new key: `--apply` changes neither what
+Stop runs nor what it costs. Syntax- and wrapper-deferred rules are undecided,
+written only by `--set N=...`. Dry run by default. It edits the map's text in
+place, refusing unless it parses back to the original plus exactly the new keys.
+Show the table, ask, then commit the diff on its own, as with `--price`.
 
 ## reach: `local` | `network` | `host`
 

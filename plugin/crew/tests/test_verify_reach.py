@@ -1,8 +1,9 @@
 """`/crew:verify --stamp-reach` (L-0562): proposals come from the Stop gate's
-own classifier, `--apply` never changes what the gate runs, a deferred rule
+own classifier, `--apply` changes neither what the gate runs nor its price (caches re-keyed), a deferred rule
 runs only on an explicit `--set`, and the map's text is edited in place, never
 re-serialised. Every map is a throwaway file under tmp_path."""
 import json
+import os
 
 import context  # noqa: F401  pylint: disable=unused-import
 import verify_reach
@@ -34,9 +35,10 @@ def _run(tmp_path, *args):
     return verify_reach.main(["--root", str(tmp_path), *args])
 
 
-def test_proposals_follow_the_gates_own_classifier(tmp_path):
+def test_proposals_follow_the_gates_own_classifier(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     _, vmap = verify_reach.load(str(_repo(tmp_path)))
-    got = {e["index"]: e["propose"] for e in verify_reach.plan(vmap, str(tmp_path))}
+    got = {e["index"]: e["propose"] for e in verify_reach.plan(vmap)}
     assert got == {0: "local", 1: "network", 2: None}  # rule 3 already declares reach
 
 
@@ -48,18 +50,93 @@ def test_dry_run_writes_nothing_and_names_the_undecided_rule(tmp_path, capsys):
     assert "undecided: rules 2" in out and "SKIPPED on Stop" in out and "dry run" in out
 
 
+CACHED = """{"rules": [
+  {"paths": ["a"], "run": ["true"], "seconds": 200},
+  {"paths": ["b"], "run": ["python3 -m pytest b -q"]},
+  {"paths": ["c"], "run": ["curl -fsS https://qa.example/x"], "seconds": 3},
+  {"paths": ["d"], "run": ["true"], "requiresCleanTree": true}
+]}
+"""
+
+
+def _gate_view(rule, timings, root):
+    """verify-gate.sh's view of one matched rule on Stop (~1036-1081): what
+    excludes it, its price, and whether it is truly unknown (mandatory)."""
+    cached = timings.get(verify_record.rule_key(rule))
+    secs = rule.get("seconds")
+    if isinstance(secs, (int, float)):
+        price = cached if isinstance(cached, int) and 0 < cached < secs else secs
+    else:
+        price = cached if isinstance(cached, int) and cached > 0 else None
+    reach = rule.get("reach")
+    if rule.get("requiresCleanTree") is True:
+        excluded = "clean_tree_required"
+    elif isinstance(reach, str) and reach != "local":
+        excluded = "reach_declared"
+    elif reach is None and verify_record.scan_reach(rule["run"], root)[0] != "local":
+        excluded = "reach_undeclared"
+    else:
+        excluded = None
+    return excluded is None, price, price is None
+
+
 def test_apply_never_changes_what_the_stop_gate_runs(tmp_path):
-    path = _repo(tmp_path)
-    before = json.loads(MAP)["rules"]
+    """Runs, price and mandatory status are the same before and after, with
+    the measured-timings cache and the record in play: `reach` is part of
+    rule_key, so the stamp has to carry their entries to the new keys."""
+    path = _repo(tmp_path, CACHED)
+    before = json.loads(CACHED)["rules"]
+    keys = [verify_record.rule_key(r) for r in before]
+    timings = tmp_path / ".crew" / ".verify-gate.timings.json"
+    timings.write_text(json.dumps({"rules": {keys[0]: 5, keys[1]: 7}}), encoding="utf-8")
+    record = tmp_path / ".crew" / ".verify-gate.record.json"
+    owed = {"status": "reach_undeclared", "reason": "x", "label": "rules[2]", "sha": "s"}
+    record.write_text(json.dumps({"rules": {keys[2]: owed}}), encoding="utf-8")
+    view = [_gate_view(r, {keys[0]: 5, keys[1]: 7}, str(tmp_path)) for r in before]
+    assert view[:2] == [(True, 5, False), (True, 7, False)]  # priced from the cache
+
     assert _run(tmp_path, "--apply") == 0
     after = json.loads(path.read_text(encoding="utf-8"))["rules"]
-    for old, new in zip(before, after):
-        runs_before = "reach" in old and old["reach"] == "local" or "reach" not in old and \
-            verify_record.scan_reach(old["run"], str(tmp_path))[0] == "local"
-        runs_after = new.get("reach") == "local" or "reach" not in new and \
-            verify_record.scan_reach(new["run"], str(tmp_path))[0] == "local"
-        assert runs_before == runs_after, new
-    assert [r.get("reach") for r in after] == ["local", "network", None, "local"]
+    assert [r.get("reach") for r in after] == ["local", "local", "network", "local"]
+    cache = json.loads(timings.read_text(encoding="utf-8"))["rules"]
+    assert [_gate_view(r, cache, str(tmp_path)) for r in after] == view
+    rec = json.loads(record.read_text(encoding="utf-8"))["rules"]
+    assert rec == {verify_record.rule_key(after[2]): owed}  # the obligation moved, not orphaned
+
+
+def test_an_unreadable_cache_is_named_and_the_map_still_written(tmp_path, capsys):
+    path = _repo(tmp_path, CACHED)
+    (tmp_path / ".crew" / ".verify-gate.timings.json").write_text("{ nope", encoding="utf-8")
+    assert _run(tmp_path, "--apply") == 0
+    assert "timings.json is unreadable" in capsys.readouterr().err
+    assert json.loads(path.read_text(encoding="utf-8"))["rules"][0]["reach"] == "local"
+
+
+def test_a_null_reach_is_undeclared_and_replaced_not_duplicated(tmp_path):
+    text = ('{"rules": [{"paths": ["a"], "run": ["true"], "reach": null},\n'
+            '  {"paths": ["b"], "run": ["bash -c x"], "reach": null}, {}]}\n')
+    path = _repo(tmp_path, text)
+    assert _run(tmp_path, "--apply", "--set", "1=host") == 0
+    out = path.read_text(encoding="utf-8")
+    assert out.count('"reach"') == 3 and "null" not in out
+    assert [r.get("reach") for r in json.loads(out)["rules"]] == ["local", "host", "local"]
+
+
+def test_it_classifies_from_root_as_the_gate_classifies_from_its_cwd(tmp_path, monkeypatch):
+    seen = []
+    real = verify_record.scan_reach
+    monkeypatch.setattr(verify_record, "scan_reach",
+                        lambda run, root: seen.append((root, os.getcwd())) or real(run, root))
+    _repo(tmp_path)
+    assert _run(tmp_path) == 0
+    assert seen and all(r == cwd == os.path.realpath(tmp_path) for r, cwd in seen)
+
+
+def test_a_clean_tree_rule_is_not_shown_as_running(tmp_path, capsys):
+    _repo(tmp_path, CACHED)
+    assert _run(tmp_path) == 0
+    row = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("| 3 |")][0]
+    assert "SKIPPED on Stop (requiresCleanTree)" in row
 
 
 def test_apply_edits_text_in_place_and_keeps_every_other_byte(tmp_path):
