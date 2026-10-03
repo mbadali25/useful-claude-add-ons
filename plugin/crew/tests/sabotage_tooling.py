@@ -7,6 +7,7 @@ Run that file, not this one.
 """
 import os
 import shutil
+import sys
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(CREW, "hooks", "scripts")
@@ -647,5 +648,59 @@ if shutil.which("pwsh"):
             "  $cmdLog = [System.Collections.ArrayList]@($cmdLog)\n",
             ("tests/test_verify_gate_tree_cache.py::"
              "test_a_withdrawn_credit_never_clears_the_rule_s_record"),
+        ),
+    )
+
+# The gate exports CLAUDE_PLUGIN_ROOT to its rule commands when unset.
+TOOLING_MUTATIONS += (
+    (
+        # Unexported, a rule's child process (python3 under `/crew:verify
+        # --all`) never sees it: the rule fails there and passes at Stop.
+        "the gate does not export CLAUDE_PLUGIN_ROOT to its rule commands",
+        GATE_SH,
+        "  export CLAUDE_PLUGIN_ROOT\n",
+        "  :\n",
+        "tests/test_verify_gate_plugin_root.py::test_an_unset_plugin_root_is_the_gates_own",
+    ),
+    (
+        # Replacing the hook's own value swaps a native Windows path for the
+        # bash form.
+        "the gate replaces a CLAUDE_PLUGIN_ROOT its caller set",
+        GATE_SH,
+        'if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -n "$GATE_PLUGIN_ROOT" ]; then\n',
+        'if [ -n "$GATE_PLUGIN_ROOT" ]; then\n',
+        "tests/test_verify_gate_plugin_root.py::test_a_plugin_root_the_caller_set_is_kept",
+    ),
+    (
+        # An empty value kept as empty: a rule's `$CLAUDE_PLUGIN_ROOT/...`
+        # becomes `/hooks/...`.
+        "the gate keeps an empty CLAUDE_PLUGIN_ROOT",
+        GATE_SH,
+        'if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -n "$GATE_PLUGIN_ROOT" ]; then\n',
+        'if [ "${CLAUDE_PLUGIN_ROOT+set}" != set ] && [ -n "$GATE_PLUGIN_ROOT" ]; then\n',
+        "tests/test_verify_gate_plugin_root.py::test_an_unset_plugin_root_is_the_gates_own",
+    ),
+    (
+        # Resolved after the gate cd's into the project, a relative script
+        # path no longer names the plugin (the old code exported `/`; this
+        # mutation exports the project dir).
+        "the gate resolves its plugin root after leaving the caller's directory",
+        GATE_SH,
+        '  CLAUDE_PLUGIN_ROOT="$GATE_PLUGIN_ROOT"\n',
+        '  CLAUDE_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null; pwd)"\n',
+        ("tests/test_verify_gate_plugin_root.py::"
+         "test_a_gate_started_by_a_relative_path_still_finds_its_root"),
+    ),
+)
+# The .ps1 cases run only on native Windows (verify-gate.ps1 exits early
+# elsewhere), so its mutation would survive anywhere else.
+if sys.platform.startswith("win") and shutil.which("pwsh"):
+    TOOLING_MUTATIONS += (
+        (
+            "the PowerShell gate does not set CLAUDE_PLUGIN_ROOT for its rule commands",
+            GATE_PS1,
+            "  $env:CLAUDE_PLUGIN_ROOT = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path\n",
+            "  $null = 0\n",
+            "tests/test_verify_gate_plugin_root.py::test_an_unset_plugin_root_is_the_gates_own",
         ),
     )
