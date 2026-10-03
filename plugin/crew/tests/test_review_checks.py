@@ -41,6 +41,26 @@ _FAKE = textwrap.dedent(r'''
         print("this is not json"); sys.exit(0)
     if mode == "empty":
         sys.exit(0)
+    if mode == "setsid-holder":
+        import subprocess
+        child = subprocess.Popen([sys.executable, "-c",
+                                  "import os, time; os.setsid(); time.sleep(60)"])
+        with open(os.environ["FAKE_LINT_PID_OUT"], "w", encoding="utf-8") as fh:
+            fh.write(str(child.pid))
+        print("[]"); sys.exit(0)
+    if mode == "sleep-pid":
+        with open(os.environ["FAKE_LINT_PID_OUT"], "w", encoding="utf-8") as fh:
+            fh.write(str(os.getpid()))
+        sys.stderr.write("x"); sys.stderr.flush()
+        time.sleep(60)
+    if mode == "detached":
+        import subprocess
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+        with open(os.environ["FAKE_LINT_PID_OUT"], "w", encoding="utf-8") as fh:
+            fh.write(str(child.pid))
+        print("[]"); sys.exit(0)
     if mode == "raw":
         out = os.environ.get("FAKE_LINT_STDOUT", "")
         if out == "ROW_AND_NULL":
@@ -2131,17 +2151,241 @@ def test_any_crash_in_the_cli_is_could_not_check(monkeypatch):
     assert rc.main(["--manifest", "m.json"]) == rc.EXIT_COULD_NOT
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+_LINUX_WAITID = pytest.mark.skipif(
+    not (hasattr(os, "waitid") and hasattr(os, "WNOWAIT") and os.path.isdir("/proc/self")),
+    reason="needs os.waitid with WNOWAIT and /proc (Linux); elsewhere a clean exit's leftovers "
+           "are not ended")
+
+
+def _zombie(pid):
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as fh:
+            return fh.read().split(") ", 1)[1][0] == "Z"
+    except OSError:
+        return False
+
+
+@_LINUX_WAITID
 def test_a_reaped_linter_s_group_is_never_signalled(tmp_path, fake, monkeypatch):
-    """Round 9 FIX :727: after communicate() the leader is reaped and its
-    group id may be reused; only an unreaped leader's group is signalled."""
+    """Round 9 FIX :727, kept by L-0605: the group is signalled only while
+    the leader is an unreaped zombie, whose pid and group id cannot be reused."""
     seen = []
+    real = os.killpg
+
+    def recording(pgid, sig):
+        seen.append(_zombie(pgid))
+        real(pgid, sig)
+    monkeypatch.setattr(rc.os, "killpg", recording)
+    monkeypatch.setenv("FAKE_LINT_MODE", "empty")
+
+    rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 10)  # pylint: disable=protected-access
+
+    assert (len(seen) >= 1, all(seen)) == (True, True), seen
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+def test_without_waitid_a_clean_linter_s_group_is_never_signalled(tmp_path, fake, monkeypatch):
+    """Where os.waitid is missing (macOS) the leader is reaped by
+    communicate() first, so nothing may be signalled after it."""
+    seen = []
+    monkeypatch.delattr(rc.os, "waitid", raising=False)
     monkeypatch.setattr(rc.os, "killpg", lambda pgid, sig: seen.append(pgid))
     monkeypatch.setenv("FAKE_LINT_MODE", "empty")
 
     rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 10)  # pylint: disable=protected-access
 
     assert seen == [], seen
+
+
+def _kill_quietly(pid):
+    try:
+        os.kill(pid, 9)
+    except OSError:
+        pass
+
+
+@_LINUX_WAITID
+def test_a_clean_linter_s_detached_leftover_is_ended(tmp_path, fake, monkeypatch):
+    """L-0605 / ADR 0005: a background process a linter leaves after a CLEAN
+    exit, its stdio detached, is ended with the group before the reap."""
+    pid_out = tmp_path / "child.pid"
+    repo = _start(tmp_path, {"a.py": "x\n"}, [_linter(fake, "ruff")])
+    _edit(repo, "a.py", "y\n")
+    monkeypatch.setenv("FAKE_LINT_MODE", "detached")
+    monkeypatch.setenv("FAKE_LINT_PID_OUT", str(pid_out))
+
+    result = _one(repo, tmp_path)
+    pid = int(pid_out.read_text(encoding="utf-8"))
+    try:
+        gone = not _alive_after(pid, 5)
+    finally:
+        _kill_quietly(pid)
+
+    assert (result["status"], gone) == (rc.PASS, True), result
+
+
+def _alive_after(pid, wait):
+    import time  # pylint: disable=import-outside-toplevel
+    deadline = time.monotonic() + wait
+    while _alive(pid) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    return _alive(pid)
+
+
+_LEAVER = textwrap.dedent("""
+    import json, os, sys, time
+    sys.path[:0] = [{tests!r}, {scripts!r}]
+    import review_checks as rc
+    import test_review_checks as t
+    started = time.monotonic()
+    try:
+        rc._spawn([sys.executable, {fake!r}, "ruff"], {cwd!r}, {timeout})
+        print(json.dumps(["no error", time.monotonic() - started]))
+    except rc.CouldNotCheck as exc:
+        print(json.dumps([str(exc), time.monotonic() - started]))
+""")
+
+
+@_LINUX_WAITID
+def test_a_leftover_that_left_the_group_cannot_hang_the_check(tmp_path, fake, monkeypatch):
+    """Spec review r1 BLOCK: a child that setsid()s out of the group and
+    keeps stdout open costs at most timeout + _REAP_SECONDS, in a child
+    Python under an outer timeout so a hang is a failure, not a stuck suite."""
+    pid_out = tmp_path / "child.pid"
+    env = dict(os.environ, FAKE_LINT_MODE="setsid-holder", FAKE_LINT_PID_OUT=str(pid_out))
+    code = _LEAVER.format(tests=os.path.dirname(os.path.abspath(__file__)), scripts=_SCRIPTS,
+                          fake=fake, cwd=str(tmp_path), timeout=2)
+    try:
+        proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                              env=env, stdin=subprocess.DEVNULL, check=False, timeout=60)
+    finally:
+        if pid_out.exists():
+            _kill_quietly(int(pid_out.read_text(encoding="utf-8")))
+    detail, elapsed = json.loads(proc.stdout.strip().splitlines()[-1])
+
+    assert ("timed out" in detail, elapsed < 2 + rc._REAP_SECONDS + 5) == (  # pylint: disable=protected-access
+        True, True), (detail, elapsed, proc.stderr)
+
+
+@_LINUX_WAITID
+def test_the_post_kill_drain_and_reap_share_one_deadline(tmp_path, fake, monkeypatch):
+    """Spec review r2 FIX: after the kill, the drain and the reap share one
+    _REAP_SECONDS deadline; the reap gets only what the drain left."""
+    import time  # pylint: disable=import-outside-toplevel
+    pid_out = tmp_path / "child.pid"
+    monkeypatch.setattr(rc, "_REAP_SECONDS", 2)
+    monkeypatch.setenv("FAKE_LINT_MODE", "setsid-holder")
+    monkeypatch.setenv("FAKE_LINT_PID_OUT", str(pid_out))
+    given = []
+    real_wait = subprocess.Popen.wait
+
+    def wait(self, timeout=None):
+        given.append(timeout)
+        return real_wait(self, timeout=timeout)
+    monkeypatch.setattr(subprocess.Popen, "wait", wait)
+
+    started = time.monotonic()
+    try:
+        with pytest.raises(rc.CouldNotCheck, match="timed out"):
+            rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 1)  # pylint: disable=protected-access
+    finally:
+        if pid_out.exists():
+            _kill_quietly(int(pid_out.read_text(encoding="utf-8")))
+    elapsed = time.monotonic() - started
+
+    bounded = [g for g in given if g is not None]
+    assert (bounded != [] and max(bounded) <= 0.5, elapsed < 6) == (True, True), (given, elapsed)
+
+
+@_LINUX_WAITID
+def test_a_failed_output_read_is_could_not_check(tmp_path, fake, monkeypatch):
+    """Spec review r1/r2 FIX: a read error is could-not-check, and the
+    still-running linter is killed and reaped before it is raised."""
+    import time  # pylint: disable=import-outside-toplevel
+    pid_out = tmp_path / "lint.pid"
+    monkeypatch.setenv("FAKE_LINT_MODE", "sleep-pid")
+    monkeypatch.setenv("FAKE_LINT_PID_OUT", str(pid_out))
+    real = rc._read_chunk  # pylint: disable=protected-access
+
+    def failing(stream):
+        if stream.fileno() == stderr_fd[0]:
+            raise OSError(5, "boom")
+        return real(stream)
+    stderr_fd = [None]
+    real_popen = subprocess.Popen
+
+    def popen(*args, **kwargs):
+        proc = real_popen(*args, **kwargs)
+        stderr_fd[0] = proc.stderr.fileno()
+        return proc
+    monkeypatch.setattr(rc.subprocess, "Popen", popen)
+    monkeypatch.setattr(rc, "_read_chunk", failing)
+
+    started = time.monotonic()
+    with pytest.raises(rc.CouldNotCheck, match="could not read"):
+        rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 30)  # pylint: disable=protected-access
+    elapsed = time.monotonic() - started
+    pid = int(pid_out.read_text(encoding="utf-8"))
+
+    assert (elapsed < 10, os.path.exists(f"/proc/{pid}")) == (True, False), elapsed
+
+
+@_LINUX_WAITID
+def test_a_selector_error_still_ends_and_reaps_the_linter(tmp_path, fake, monkeypatch):
+    """Spec review r4 FIX: an OSError registering the pipes, after the
+    linter started, still kills, closes and reaps it."""
+    import selectors  # pylint: disable=import-outside-toplevel
+    pid_out = tmp_path / "lint.pid"
+    monkeypatch.setenv("FAKE_LINT_MODE", "sleep-pid")
+    monkeypatch.setenv("FAKE_LINT_PID_OUT", str(pid_out))
+    real = selectors.DefaultSelector
+
+    class Refusing(real):
+        def register(self, fileobj, events, data=None):
+            raise OSError(9, "reg")
+    monkeypatch.setattr(selectors, "DefaultSelector", Refusing)
+    before = len(os.listdir("/proc/self/fd"))
+
+    with pytest.raises(rc.CouldNotCheck, match="could not watch"):
+        rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 30)  # pylint: disable=protected-access
+    pid = int(pid_out.read_text(encoding="utf-8")) if pid_out.exists() else None
+
+    assert (pid is None or not os.path.exists(f"/proc/{pid}"),
+            len(os.listdir("/proc/self/fd")) - before) == (True, 0)
+
+
+@_LINUX_WAITID
+def test_a_leftover_that_cannot_be_signalled_is_could_not_check(tmp_path, fake, monkeypatch):
+    """Spec review r2 BLOCK: PermissionError from the post-exit killpg means
+    a member was not ended: could-not-check, and the leader still reaped."""
+    reaped = []
+
+    def refusing(pgid, sig):
+        reaped.append(pgid)
+        raise PermissionError(1, "not permitted")
+    monkeypatch.setattr(rc.os, "killpg", refusing)
+    monkeypatch.setenv("FAKE_LINT_MODE", "empty")
+
+    with pytest.raises(rc.CouldNotCheck, match="could not end"):
+        rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 10)  # pylint: disable=protected-access
+
+    assert (len(reaped), os.path.exists(f"/proc/{reaped[0]}")) == (1, False), reaped
+
+
+@_LINUX_WAITID
+def test_the_drain_closes_its_pipes_on_every_path(tmp_path, fake, monkeypatch):
+    """Spec review r3 FIX: no descriptor is left behind, on success or on a
+    read error."""
+    before = len(os.listdir("/proc/self/fd"))
+    monkeypatch.setenv("FAKE_LINT_MODE", "empty")
+    for _ in range(20):
+        rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 10)  # pylint: disable=protected-access
+    monkeypatch.setattr(rc, "_read_chunk", lambda stream: (_ for _ in ()).throw(OSError(5, "x")))
+    for _ in range(5):
+        with pytest.raises(rc.CouldNotCheck):
+            rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 10)  # pylint: disable=protected-access
+
+    assert len(os.listdir("/proc/self/fd")) == before
 
 
 @pytest.mark.skipif(os.name != "nt", reason="a real job object exists only on Windows")
