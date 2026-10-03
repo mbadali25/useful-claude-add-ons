@@ -520,6 +520,30 @@ def test_e5_names_near_the_new_forms_still_pass(tmp_path, value):
     assert row["status"] == qa_audit.PASS, (value, row["evidence"])
 
 
+@pytest.mark.parametrize("value, word", [
+    ("accepted by Ann Revoked'", "revoked"), ("accepted by Ann Revoked's", "revoked"),
+    ("accepted by Ann No'", "no"), ("accepted by Ann Not'", "not"), ("accepted by No'one", "no")])
+def test_e5_a_refusal_form_with_an_apostrophe_is_named(tmp_path, value, word):
+    row = _e5(tmp_path, f"| X | staging | yes | {value} |")
+    assert row["status"] == qa_audit.GAP, (value, row["evidence"])
+    assert f"refused by the word `{word}`" in row["evidence"], row["evidence"]
+
+
+@pytest.mark.parametrize("value", ["accepted by O'Neil", "accepted by D'Angelo", "accepted by Matthew's",
+                                   "accepted by Ann Lee's"])
+def test_e5_an_apostrophe_name_still_passes(tmp_path, value):
+    row = _e5(tmp_path, f"| X | staging | yes | {value} |")
+    assert row["status"] == qa_audit.PASS, (value, row["evidence"])
+
+
+@pytest.mark.parametrize("word, want", [("Revoked\u2019s", "revoked"), ("No\u2019one", "no"),
+                                        ("O\u2019Neil", None)])
+def test_e5_a_curly_apostrophe_is_split_too(word, want):
+    hits = [f for f in qa_audit_env._name_forms(word)  # pylint: disable=protected-access
+            if f in qa_audit_env.NAME_REFUSAL_FORMS]
+    assert (hits[0] if hits else None) == want
+
+
 def test_e5_a_declared_hyphenated_environment_is_read(tmp_path):
     _map(tmp_path, environments={"staging-eu": {}})
     row = _e5(tmp_path, "| K | staging-eu | yes | |")

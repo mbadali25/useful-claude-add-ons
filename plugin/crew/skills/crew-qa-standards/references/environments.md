@@ -148,8 +148,9 @@ Non-production held live payment and shipping credentials for weeks (D4).
   - **Inside a `by` name** the stems and the words `n`, `na` and `false` do not apply, so
     `accepted by Denise`, `accepted by Waite`, `accepted by Matthew N Badali` and
     `accepted by Na-Young Kim` are names. There a word refuses only as one of these whole refusal
-    words, matched case-insensitively on the word, on each part split by `-`, and on the parts
-    joined (`No-one`): no, no-one, noone, not, never, nobody, none, revoke, revoked, revokes,
+    words, matched case-insensitively on the word, on each part split by `-` or an apostrophe, on
+    the word without a trailing `'s` or `'`, and on the parts joined (`No-one`, `No'one`,
+    `Revoked's`; `O'Neil` and `Ann Lee's` stay names): no, no-one, noone, not, never, nobody, none, revoke, revoked, revokes,
     revoking, revocation, reject, rejected, rejects, rejecting, rejection, deny, denied, denies,
     denying, denial, refuse, refused, refuses, refusing, expire, expired, expires, expiring, expiry,
     withdraw, withdrawn, withdrew, withdrawing, cancel, cancelled, canceled, cancels, cancelling,

@@ -521,9 +521,11 @@ def _refuses(token):
 
 def _name_forms(word):
     """The forms of one name word that are checked against NAME_REFUSAL_FORMS:
-    each `-` part, then the word whole and joined ("No-one": no, one, no-one, noone)."""
+    each part split on `-` and apostrophes (which also drops a trailing `'s` or
+    `'`), then the word whole and joined ("No-one": no, one, no-one, noone;
+    "Revoked's": revoked, s, ...). O'Neil gives o / neil, neither a refusal."""
     word = word.lower()
-    return [*word.split("-"), word, word.replace("-", "")]
+    return [*re.split(r"[-'\u2019]", word), word, re.sub(r"[-'\u2019]", "", word)]
 
 
 def _refusal(text):
