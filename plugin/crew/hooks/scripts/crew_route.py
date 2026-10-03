@@ -27,6 +27,8 @@ approval is the human's to type (T-0024 owns group approval).
 
   no row matches                                  none   (no line at all)
   status                                          route  /crew:status
+  help, what now, what's next, where are we       route  /crew:help (T-0025)
+  how do i [use] <x> (never approval)             route  /crew:help <x>
   brainstorm <topic>                              route  /crew:brainstorm <topic>
   explicit id with a .work/tickets/<id>/ folder   route
   explicit id without one                         ask    "no such ticket"
@@ -91,6 +93,11 @@ PHRASES = (
      (rf"close {_REF}(?: out)?", rf"mark {_REF} (?:as )?done")),
     ("continue", None, "continue", (r"continue", r"keep going", r"carry on")),
     ("status", "/crew:status", "none", (r"status", r"crew status")),
+    # T-0025: `/crew:help` reads this table too; its questions resolve here.
+    ("help", "/crew:help", "none",
+     (r"help", r"crew help", r"what now", r"what(?:'s|\u2019s| is) next", r"where are we")),
+    ("help-topic", "/crew:help", "topic",
+     (r"how do i (?:use )?(?!.*approv)(?P<topic>.+)",)),
 )
 
 AMBIGUOUS = ("do it", "go", "go ahead", "yes", "ok", "sure", "done", "next", "ship it")
