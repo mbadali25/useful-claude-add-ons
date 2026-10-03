@@ -379,6 +379,36 @@ TOOLING_MUTATIONS += (
         "tests/test_verify_gate_tree_cache.py::test_the_cache_can_always_be_refused",
     ),
     (
+        # docs/review/08 defect 1: the prompt reads the local marker only, so
+        # a round the gate reserved on a CI receipt is told MISSING.
+        "review_prompt: a CI receipt the gate accepted is not shown to the reviewer",
+        os.path.join(SCRIPTS, "review_prompt.py"),
+        "            if r_state == review_gate.VERIFIED:\n",
+        "            if False:  # pylint: disable=using-constant-test\n",
+        ("tests/test_review_prompt.py::"
+         "test_a_ci_receipt_the_gate_accepts_is_what_the_reviewer_is_told"),
+    ),
+    (
+        # Review r1 BLOCK: without the local question first, a local pass on
+        # a dirty tree reaches accepted_state and is printed as a CI receipt.
+        "review_prompt: a local pass on a dirty tree is labelled a CI receipt",
+        os.path.join(SCRIPTS, "review_prompt.py"),
+        "        local, local_why = _ask(review_gate.gate_state, root)\n",
+        "        local, local_why = review_gate.UNVERIFIED, \"\"\n",
+        ("tests/test_review_prompt.py::"
+         "test_a_local_pass_on_a_dirty_tree_is_never_called_a_ci_receipt"),
+    ),
+    (
+        # Review r2: accepted_state re-asks gate_state, so a local pass that
+        # lands mid-build comes back VERIFIED and is printed as a receipt.
+        "review_prompt: the receipt is asked through accepted_state (a race)",
+        os.path.join(SCRIPTS, "review_prompt.py"),
+        "            r_state, r_reason = _ask(_receipt, root)\n",
+        "            r_state, r_reason = _ask(review_gate.accepted_state, root)\n",
+        ("tests/test_review_prompt.py::"
+         "test_a_local_pass_that_lands_mid_build_is_never_a_ci_receipt"),
+    ),
+    (
         "review_gate: a receipt that is not VERIFIED still upgrades the gate",
         os.path.join(SCRIPTS, "review_gate.py"),
         "    if r_state == VERIFIED:\n",
