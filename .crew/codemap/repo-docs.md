@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@452b30cc
+anchor: useful-claude-add-ons@233f006c
 verified: 2026-10-01
 
 ## Re-derive provenance
@@ -1732,3 +1732,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `6e09bf2d` -> `a0143b4b` on 2026-10-03 (T-0009: the `prodUnattended` sabotage entry in `plugin/crew/tests/sabotage_cloud.py` re-anchored onto `cloud_guard.py`'s one-line statement at `1c62c16f`, same line count; crew stepped back to 1.0.139 at `a7cec311` and 1.0.145 re-set last at `a0143b4b`). Current despite the lag.** `git diff --name-only 6e09bf2d a0143b4b` outside the refresh artifacts and version files is that one test file, which this map cites by no line.
 
 **Re-anchored `a0143b4b` -> `38d7e1a1` on 2026-10-03 (T-0009 round-6 self-check fixes: a workflow name holding a character that does not show is unknown, `plugin/crew/hooks/scripts/crew_guards.py`, `plugin/crew/tests/test_cloud_guard_deploy.py`, `plugin/crew/tests/sabotage_cloud.py`, README/CONFIG/BUDGETS/CHANGELOG; crew stepped back to 1.0.139 at `37c5067e` and 1.0.145 re-set at `4d09beaa`).** README.md moved +1 at its guards prose: the live `README.md:2400` citation re-mapped.
+
+**Re-anchored `452b30cc` (main) and `38d7e1a1` (T-0009) -> `233f006c` on 2026-10-03 (T-0009 merges origin/main `f808e5f0`, #328-#330, crew 1.0.154, at `f80b43b5` with rerere off, and sets crew 1.0.156 at `233f006c`).** The header took main's anchor and `paths:` line; both provenance blocks kept, main's first. Every `path:N` citation into a file either side changed since `2a2d6e07` was re-mapped by a line-level difflib match from the side whose line it is onto the merged file, and bare `crew_config.py` citations only where the symbol named before them sits on the new line. Main's own changes after `452b30cc` (#328-#330) moved citations only by that re-map; claims about them were not re-derived here.
