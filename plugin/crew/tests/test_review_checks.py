@@ -1849,3 +1849,131 @@ def test_a_linter_that_exits_cleanly_still_has_its_job_ended(tmp_path, fake, mon
     rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 5)  # pylint: disable=protected-access
 
     assert [c[0] for c in job.calls] == ["adopt", "terminate", "close"], job.calls
+
+
+# ---- review round 9 (owner grant 2026-10-02: final round 10) ----
+
+def test_a_later_linter_that_raises_never_discards_an_earlier_new_finding(tmp_path, fake):
+    """Round 9 BLOCK :948: a `paths` glob that makes matching raise (1200
+    `**/` segments: RecursionError) is that linter's COULD NOT CHECK only;
+    the first linter's NEW finding still FAILs."""
+    repo = _start(tmp_path, {"a.py": "x\n"},
+                  [_linter(fake, "ruff"),
+                   _linter(fake, "shellcheck", paths=["**/" * 1200 + "*.sh"])])
+    _edit(repo, "a.py", "x\n# LINT BLE001 new\n")
+
+    results, _ = rc.run_checks(str(repo), _bundle(repo, tmp_path))
+
+    assert ([(r["name"], r["status"]) for r in results], rc.overall(results)) == (
+        [("ruff", rc.FAIL), ("shellcheck", rc.COULD_NOT)], rc.FAIL), results
+
+
+def test_a_linter_that_raises_anything_is_its_own_could_not_check(tmp_path, fake, monkeypatch):
+    """Neighbour: any exception out of one linter's run stays in that row."""
+    repo = _start(tmp_path, {"a.py": "x\n", "b.sh": "x\n"},
+                  [_linter(fake, "ruff"), _linter(fake, "shellcheck")])
+    _edit(repo, "a.py", "x\n# LINT BLE001 new\n")
+    _edit(repo, "b.sh", "y\n")
+    real = rc.RUNNERS["shellcheck"]
+    def boom(*_a, **_k):
+        raise RuntimeError("runner bug")
+        yield  # pylint: disable=unreachable
+    monkeypatch.setitem(rc.RUNNERS, "shellcheck", boom)
+
+    results, _ = rc.run_checks(str(repo), _bundle(repo, tmp_path))
+    monkeypatch.setitem(rc.RUNNERS, "shellcheck", real)
+
+    assert [(r["name"], r["status"]) for r in results] == [
+        ("ruff", rc.FAIL), ("shellcheck", rc.COULD_NOT)], results
+
+
+@pytest.mark.parametrize("tool", ["shellcheck", "actionlint", "ruff"])
+def test_duplicate_keys_in_linter_output_are_could_not_check(tmp_path, fake, tool):
+    """Round 9 BLOCK :810: `{"comments": [finding], "comments": []}` read by
+    json.loads keeps the empty list and passes. A duplicate key is refused."""
+    _, rel, rule = _TOOLS[tool]
+    repo = _start(tmp_path, {rel: "line one\n"}, [_linter(fake, tool)])
+    _edit(repo, rel, f"line one\n# LINT {rule} a problem\n")
+    shim = tmp_path / "dup.py"
+    shim.write_text(textwrap.dedent('''
+        import json, subprocess, sys
+        out = subprocess.run([sys.executable] + sys.argv[1:], capture_output=True, text=True)
+        data = json.loads(out.stdout)
+        if isinstance(data, dict):
+            text = out.stdout.rstrip()[:-1] + ', "comments": []}'
+        else:
+            rows = [json.dumps(r)[:-1] + ', "message": "m2"}' for r in data]
+            text = "[" + ", ".join(rows) + "]"
+        print(text); sys.exit(0 if isinstance(data, dict) else out.returncode)
+    '''), encoding="utf-8")
+    _config(repo, [dict(_linter(fake, tool), command=[sys.executable, str(shim), fake,
+                                                       _TOOLS[tool][0]])])
+
+    result = _one(repo, tmp_path)
+
+    assert (result["status"], "duplicate" in result["detail"]) == (rc.COULD_NOT, True), result
+
+
+def test_a_verify_map_with_a_duplicate_key_is_could_not_check(tmp_path, fake):
+    """Neighbour: two `preReview` blocks, the second a narrower valid one,
+    never read as whichever came last."""
+    repo = _plain(tmp_path)
+    (repo / ".crew").mkdir()
+    (repo / ".crew" / "verify.json").write_text(
+        '{"version": 1, "preReview": {"linters": [{"tool": "ruff"}]}, '
+        '"preReview": {"linters": [{"tool": "shellcheck"}]}}',
+        encoding="utf-8")
+
+    results, configured = rc.run_checks(str(repo), _bundle(repo, tmp_path))
+
+    assert (configured, [(r["name"], r["status"]) for r in results]) == (
+        True, [("config", rc.COULD_NOT)]), results
+
+
+def test_a_lone_surrogate_prints_escaped():
+    """Round 9 FIX :165: one_line escapes a lone surrogate too, so a strict
+    UTF-8 stream never raises on it."""
+    assert rc.one_line("bad \ud800 key").encode("utf-8") == b"bad \\ud800 key"
+
+
+def test_the_cli_exits_could_not_check_never_1_on_a_surrogate(tmp_path, fake):
+    """End to end: an escaped surrogate in an unknown key; the CLI on a strict
+    UTF-8 stdout prints it and exits 3, never 1 (new findings)."""
+    repo = _start(tmp_path, {"a.py": "x\n"}, [dict(_linter(fake, "ruff"), **{"k\ud800": 1})])
+    (repo / ".crew" / "verify.json").write_text(
+        (repo / ".crew" / "verify.json").read_text(encoding="utf-8").replace(
+            "\\ud800", "\\\\ud800").replace("\\\\ud800", "\\ud800"), encoding="utf-8")
+    _edit(repo, "a.py", "y\n")
+    manifest = _bundle(repo, tmp_path)
+    env = dict(os.environ, PYTHONIOENCODING="utf-8:strict", PYTHONUTF8="1")
+
+    proc = subprocess.run([sys.executable, os.path.join(_SCRIPTS, "review_checks.py"),
+                           "--root", str(repo), "--manifest", manifest],
+                          capture_output=True, text=True, env=env, check=False,
+                          stdin=subprocess.DEVNULL, encoding="utf-8", errors="replace")
+
+    assert (proc.returncode, "\\ud800" in proc.stdout) == (rc.EXIT_COULD_NOT, True), (
+        proc.stdout, proc.stderr)
+
+
+def test_any_crash_in_the_cli_is_could_not_check(monkeypatch):
+    """Neighbour: a crash after the checks (in printing) is not exit 1."""
+    monkeypatch.setattr(rc, "run_checks", lambda *a: ([{"name": "ruff", "status": rc.PASS,
+                                                        "files": 1, "new": [], "detail": "x"}],
+                                                      True))
+    monkeypatch.setattr(rc, "lines", lambda results: (_ for _ in ()).throw(RuntimeError("x")))
+
+    assert rc.main(["--manifest", "m.json"]) == rc.EXIT_COULD_NOT
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+def test_a_reaped_linter_s_group_is_never_signalled(tmp_path, fake, monkeypatch):
+    """Round 9 FIX :727: after communicate() the leader is reaped and its
+    group id may be reused; only an unreaped leader's group is signalled."""
+    seen = []
+    monkeypatch.setattr(rc.os, "killpg", lambda pgid, sig: seen.append(pgid))
+    monkeypatch.setenv("FAKE_LINT_MODE", "empty")
+
+    rc._spawn([sys.executable, fake, "ruff"], str(tmp_path), 10)  # pylint: disable=protected-access
+
+    assert seen == [], seen

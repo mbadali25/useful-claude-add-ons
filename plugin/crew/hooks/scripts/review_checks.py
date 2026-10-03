@@ -156,12 +156,14 @@ try {
 
 # C0, DEL, C1 and the Unicode line/paragraph separators: anything that can
 # start a new line on a terminal or in a log (review round 7 FIX :847).
-_CONTROL = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029]")
+_CONTROL = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029\ud800-\udfff]")
 
 
 def one_line(text):
     """`text` with every control character escaped, so a path, rule, message
-    or error the tool or the repo chose can never print a line of its own."""
+    or error the tool or the repo chose can never print a line of its own.
+    A lone surrogate is escaped too (review round 9 FIX :165), so a strict
+    UTF-8 stream never raises on it."""
     return _CONTROL.sub(lambda m: f"\\x{ord(m.group()):02x}" if ord(m.group()) < 0x100
                         else f"\\u{ord(m.group()):04x}", str(text))
 
@@ -365,7 +367,7 @@ def load_config(root, manifest):
     if raw is None:
         return None, None
     try:
-        data = json.loads(raw.decode("utf-8"))
+        data = strict_json(raw.decode("utf-8"))
     except ValueError as exc:  # UnicodeDecodeError is a ValueError
         return None, f"{VERIFY_MAP} could not be read: {exc}"
     if not isinstance(data, dict):
@@ -719,10 +721,14 @@ def _run_in(job, argv, cwd, timeout, env):
             for pipe in (proc.stdout, proc.stderr):
                 pipe.close()
         raise CouldNotCheck(f"timed out after {timeout}s") from exc
-    # A linter that exited cleanly may still have left children behind.
+    # A linter that exited cleanly may still have left children behind. On
+    # Windows the job ends them by handle. On POSIX its group is signalled
+    # only while the leader is unreaped (review round 9 FIX :727, review_run's
+    # guard): communicate() has reaped it here, so its group id may already
+    # belong to an unrelated process, and nothing is signalled.
     if job is not None:
         job.terminate()
-    else:
+    elif proc.returncode is None:
         try:
             os.killpg(proc.pid, signal.SIGKILL)
         except OSError:
@@ -805,9 +811,24 @@ def _consistent(proc, rows, tool):
                             "finding(s); the status and the output disagree")
 
 
+def _unique_keys(pairs):
+    keys = [key for key, _ in pairs]
+    repeated = sorted({key for key in keys if keys.count(key) > 1})
+    if repeated:
+        raise ValueError(f"duplicate key(s) {', '.join(map(repr, repeated))}")
+    return dict(pairs)
+
+
+def strict_json(text):
+    """json.loads that refuses a duplicate key (review round 9 BLOCK :810):
+    `{"comments": [finding], "comments": []}` keeps only the empty list, so
+    whichever copy came last would silently win."""
+    return json.loads(text, object_pairs_hook=_unique_keys)
+
+
 def _loads(text, tool):
     try:
-        return json.loads(text)
+        return strict_json(text)
     except ValueError as exc:
         raise CouldNotCheck(f"{tool} output is not the JSON it promises: {exc}; "
                             f"output began {text[:120]!r}") from exc
@@ -1044,7 +1065,7 @@ def run_checks_bound(root, manifest_path, scratch=None):
     manifest, manifest_problem = None, None
     base = scratch or os.path.dirname(os.path.abspath(manifest_path))
     try:
-        manifest = json.loads(read_regular(manifest_path, base).decode("utf-8"))
+        manifest = strict_json(read_regular(manifest_path, base).decode("utf-8"))
     except (OSError, ValueError) as exc:
         manifest_problem = exc
     bundle = _bundle_hash(manifest)
@@ -1072,7 +1093,19 @@ def _run_checks(root, manifest, manifest_problem):
                  "detail": problem}], True
     if linters is None:
         return [], False
-    return [check_one(root, spec, entries, manifest) for spec in linters], True
+    return [_isolated(root, spec, entries, manifest) for spec in linters], True
+
+
+def _isolated(root, spec, entries, manifest):
+    """check_one, with anything it raises kept in this linter's own row
+    (review round 9 BLOCK :948): a glob that makes matching raise
+    RecursionError, or a runner bug, never discards another linter's NEW
+    result, and overall() puts any FAIL ahead of COULD NOT CHECK."""
+    try:
+        return check_one(root, spec, entries, manifest)
+    except Exception as exc:  # noqa: BLE001 - a boundary per linter  pylint: disable=broad-exception-caught
+        return {"name": _name(spec), "status": COULD_NOT, "files": 0, "new": [],
+                "detail": f"the check itself failed: {type(exc).__name__}: {exc}"}
 
 
 def _bundle_hash(manifest):
@@ -1147,7 +1180,7 @@ def bind_record(staged, scratch, ticket, number):
     """The staged record becomes round `number`'s, ticket and round written
     inside so a file moved or copied between rounds does not match."""
     target = round_record_path(scratch, ticket, number)
-    payload = json.loads(read_regular(staged, scratch).decode("utf-8"))
+    payload = strict_json(read_regular(staged, scratch).decode("utf-8"))
     payload.update(ticket=ticket, round=number)
     _write_json(scratch, target, payload)
     os.remove(staged)
@@ -1165,7 +1198,7 @@ def recorded(scratch, bundle_sha256, ticket, number):
         return {"result": NOT_RECORDED, "reason": str(exc)}
     name = os.path.basename(path)
     try:
-        payload = json.loads(read_regular(path, scratch).decode("utf-8"))
+        payload = strict_json(read_regular(path, scratch).decode("utf-8"))
     except FileNotFoundError:
         return {"result": NOT_RECORDED, "reason": f"no {name} in the scratch directory"}
     except (OSError, ValueError) as exc:
@@ -1227,6 +1260,21 @@ def _is_check_row(row):
 
 
 def main(argv):
+    """Exit 1 only for a real new finding: any crash, the printing included,
+    is EXIT_COULD_NOT (review round 9 FIX :165)."""
+    try:
+        sys.stdout.reconfigure(errors="backslashreplace")
+    except (AttributeError, ValueError):
+        pass  # a replaced stdout (tests): one_line already escapes what matters
+    try:
+        return _main(argv)
+    except Exception as exc:  # noqa: BLE001 - the CLI's boundary  pylint: disable=broad-exception-caught
+        sys.stderr.write(f"pre-review checks: COULD NOT CHECK - {type(exc).__name__}: "
+                         f"{one_line(exc)}\n")
+        return EXIT_COULD_NOT
+
+
+def _main(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", default=".")
     parser.add_argument("--manifest", required=True)

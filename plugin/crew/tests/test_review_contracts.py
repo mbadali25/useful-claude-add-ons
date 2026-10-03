@@ -384,14 +384,17 @@ def test_prereview_reads_only_manifest_keys(tmp_path, monkeypatch):
     produced_entry_keys = set().union(*(set(e) for e in manifest["entries"]))
     seen = []
 
-    # The manifest is read through read_regular and parsed with json.loads
-    # (L-0574 round-7 sweep): the parse of exactly its text is the one recorded.
+    # The manifest is read through read_regular and parsed by strict_json
+    # (json.loads with a duplicate-key object_pairs_hook, review round 9): the
+    # parse of exactly its text is the one recorded, each object still passing
+    # through the strict hook before it is wrapped.
     manifest_text = (scratch / "manifest.json").read_text(encoding="utf-8")
 
     def loads(text, **kw):
         if text != manifest_text or seen:
             return json.loads(text, **kw)
-        rec = json.loads(text, object_hook=Recording, **kw)
+        strict = kw.pop("object_pairs_hook", dict)
+        rec = json.loads(text, object_pairs_hook=lambda pairs: Recording(strict(pairs)), **kw)
         seen.append(rec)
         return rec
 

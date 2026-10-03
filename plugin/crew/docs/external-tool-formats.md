@@ -211,7 +211,8 @@ value (`requires 2` to `requires 3`) is a new finding. A row with no
 
 **How crew reads it.** Anything outside the table is "could not check",
 never a pass: another exit status, a timeout, output that is not the JSON
-shown (empty output included), a field missing from a row or of the wrong
+shown (empty output included), a JSON object with a duplicate key (which
+copy a parser keeps is not something to trust), a field missing from a row or of the wrong
 type (no `kind`, `rule`, `severity` or `code` is ever filled with a default),
 or, for ShellCheck and actionlint, a status that contradicts the output (exit
 1 with no findings, or exit 0 with some). A bad row, an unexpected exit
