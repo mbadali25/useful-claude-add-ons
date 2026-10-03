@@ -135,17 +135,22 @@ try {
         [Console]::Error.WriteLine("psscriptanalyzer: unknown rule(s): " + ($unknown -join ', '))
         exit 3
     }
-    $rows = foreach ($path in @(Get-Content -Raw -Encoding utf8 -LiteralPath $ListFile | ConvertFrom-Json)) {
+    # A typed list, never a foreach statement's output (L-0605, review round
+    # 10 BLOCK :148): an empty statement leaves AutomationNull, which @()
+    # turns into [] only by an engine rule; a real $null there prints [null].
+    $rows = [System.Collections.Generic.List[object]]::new()
+    foreach ($path in @(Get-Content -Raw -Encoding utf8 -LiteralPath $ListFile | ConvertFrom-Json)) {
         # -Path takes wildcards: a name with [ ] would match nothing and
         # read as clean, so the name is escaped to match only itself.
         $params = @{ Path = [System.Management.Automation.WildcardPattern]::Escape($path) }
         if ($rules.Count -gt 0) { $params.IncludeRule = $rules }
         foreach ($r in @(Invoke-ScriptAnalyzer @params)) {
-            [pscustomobject]@{ file = $path; rule = [string]$r.RuleName;
-                               severity = [string]$r.Severity; message = [string]$r.Message }
+            $rows.Add([pscustomobject]@{ file = $path; rule = [string]$r.RuleName;
+                                         severity = [string]$r.Severity;
+                                         message = [string]$r.Message })
         }
     }
-    [Console]::Out.WriteLine((ConvertTo-Json -InputObject @($rows) -Depth 3 -Compress))
+    [Console]::Out.WriteLine((ConvertTo-Json -InputObject $rows.ToArray() -Depth 3 -Compress))
     exit 0
 } catch {
     [Console]::Error.WriteLine("psscriptanalyzer: " + $_.Exception.Message)
