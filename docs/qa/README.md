@@ -5,7 +5,7 @@
 
 | Item | Value |
 |---|---|
-| Commit | `3b8519e1` |
+| Commit | `24ad2f0d` |
 | Generated | 2026-10-03 |
 | Verify map | ok (49 rule(s)) |
 | Environments | none declared |
@@ -14,25 +14,30 @@
 
 ## How a change is checked
 
-Every change passes the Stop gate, review and CI before it merges. The QA audit runs beside that loop: it never blocks, it reports. Dashed red boxes are gaps.
+Every change passes the Stop gate, review and CI before it merges. Dashed red boxes are gaps.
 
 ```mermaid
 flowchart TD
   edit(["change"]) --> stop["Stop gate<br/>49 rule(s) in .crew/verify.json"]
-  stop -->|red| fix["fix and re-run"] --> stop
+  stop -->|red| fix1["fix, then the Stop gate runs again"]
   stop -->|green| review["review<br/>(/crew:review)"]
   review --> ci["CI<br/>10 workflow file(s)"]
-  ci -->|red| fix
+  ci -->|red| fix2["fix, push, CI runs again"]
   ci -->|green| merge(["merge"])
   merge --> ladder["promotion ladder<br/>(see the ladder diagram)"]
-  subgraph audit ["QA audit (report-only)"]
-    direction TB
-    trig["session start: qaAuditStale"] --> run["qa_audit.py --root ."]
-    run --> result["3 GAP, 0 UNKNOWN"]
-    result --> act["fix one GAP through the gate,<br/>or record why not in .crew/STATUS.md"]
-    act --> stamp["qa_audit.py --stamp"]
-  end
   classDef gap stroke:#c0392b,stroke-width:2px,stroke-dasharray:4 3
+```
+
+## How the QA audit runs
+
+The audit reports and never blocks. During setup, a phase with an open GAP is `partial`, never `done`.
+
+```mermaid
+flowchart LR
+  trig["qaAuditStale<br/>at session start"] --> run["qa_audit.py"]
+  run --> result["3 GAP, 0 UNKNOWN"]
+  result --> act["fix one GAP<br/>through the gate<br/>open GAP: phase partial"]
+  act --> stamp["qa_audit.py --stamp"]
 ```
 
 ## Promotion ladder
@@ -100,7 +105,7 @@ UNKNOWN means the audit could not tell. It is not a pass.
 
 | Rule | Status | Check | Evidence |
 |---|---|---|---|
-| H2 | GAP | Parallel test runner | pytest without -n on a large suite: .github/workflows/pytest-crew.yml:286 (5775 tests), .github/workflows/pytest-crew.yml:289 (5775 tests), .github/workflows/pytest-crew.yml:337 (4650 tests), .github/workflows/pytest-crew.yml:380 (4650 tests); serial and small enough that workers would cost more: .github/workflows/pytest-crew.yml:146 (137 tests), .github/workflows/pytest-crew.yml:160 (31 tests) |
+| H2 | GAP | Parallel test runner | pytest without -n on a large suite: .github/workflows/pytest-crew.yml:286 (5777 tests), .github/workflows/pytest-crew.yml:289 (5777 tests), .github/workflows/pytest-crew.yml:337 (4652 tests), .github/workflows/pytest-crew.yml:380 (4652 tests); serial and small enough that workers would cost more: .github/workflows/pytest-crew.yml:146 (137 tests), .github/workflows/pytest-crew.yml:160 (31 tests) |
 | H6 | GAP | Fast linter: rule set named, version pinned | ruff installed unpinned at .github/workflows/verify-gate.yml:69 |
 | E7 | GAP | CI runs the _verify entry points the gate runs | run locally, never in CI (mark the rule `localOnly` if that is deliberate): _verify/smoke.sh |
 | H3 | PASS | Wall-clock tests run serially | parallel runs exclude a marker that a serial run selects; not judged (select a marker subset): .github/workflows/pytest-crew.yml:209, .github/workflows/pytest-crew.yml:386 |
@@ -129,4 +134,4 @@ This page is generated. Edit `.crew/verify.json`, `_verify/` or CI, then re-run:
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/crew-qa-standards/scripts/qa_doc.py --root . --write
 ```
 
-The diagram sources are `docs/diagrams/process-qa-gates.mmd` and `docs/diagrams/process-qa-ladder.mmd`.
+The diagram sources are `docs/diagrams/process-qa-gates.mmd`, `process-qa-ladder.mmd` and `process-qa-audit.mmd`.

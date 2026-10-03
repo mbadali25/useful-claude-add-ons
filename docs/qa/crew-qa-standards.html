@@ -26,19 +26,18 @@ a { color: inherit; }
 <div class="scroll"><table><thead><tr><th>Question</th><th>Answer</th></tr></thead><tbody><tr><td>What runs?</td><td><code>qa_audit.py</code>, in the <code>crew-qa-standards</code> skill</td></tr><tr><td>Does it change anything?</td><td>No. It reports. <code>--stamp</code> writes one marker file, only when asked</td></tr><tr><td>Does it block?</td><td>No hook, ever. During setup, a phase with an open GAP is <code>partial</code>, never <code>done</code></td></tr><tr><td>What does it check?</td><td>Harness (H), review (R), gate (G) and environment (E) items</td></tr><tr><td>What are the answers?</td><td>PASS, GAP, N/A, UNKNOWN. UNKNOWN is never a pass</td></tr><tr><td>When does it run?</td><td>Setup, upgrade, <code>/crew:init --audit</code>, and when <code>qaAuditStale</code> fires</td></tr><tr><td>How is the result documented?</td><td><code>qa_doc.py</code> writes <code>docs/qa/</code> (Markdown + HTML) and the diagram sources</td></tr></tbody></table></div>
 <h2>When it runs</h2>
 <pre class="mermaid">flowchart TD
+  sess[&quot;session start&quot;] --&gt; stale{&quot;qaAuditStale?&lt;br/&gt;no stamp, or audited&lt;br/&gt;paths moved since&quot;}
+  stale --&gt;|no| quiet([&quot;quiet&quot;])
   init[&quot;/crew:init&lt;br/&gt;Phase 5 and Phase 8&quot;] --&gt; audit
   ask[&quot;/crew:init --audit&quot;] --&gt; audit
   upg[&quot;/crew:upgrade&lt;br/&gt;step 5c&quot;] --&gt; audit
-  sess[&quot;session start&quot;] --&gt; stale{&quot;qaAuditStale?&lt;br/&gt;no stamp, or audited&lt;br/&gt;paths moved since&quot;}
   stale --&gt;|yes| audit
-  stale --&gt;|no| quiet([&quot;quiet&quot;])
   audit[&quot;qa_audit.py --root .&quot;] --&gt; report[&quot;report table&lt;br/&gt;GAP and UNKNOWN first&quot;]
-  report --&gt; fix[&quot;fix one GAP through the repo&#x27;s own gate&quot;]
-  report --&gt; record[&quot;or leave it open:&lt;br/&gt;the phase is partial, GAP named&lt;br/&gt;in .crew/STATUS.md&quot;]
+  report --&gt; fix[&quot;fix one GAP&lt;br/&gt;through the repo&#x27;s own gate&quot;]
+  report --&gt; open[&quot;leave it open:&lt;br/&gt;phase is partial,&lt;br/&gt;GAP named in STATUS.md&quot;]
   fix --&gt; stamp[&quot;qa_audit.py --stamp&lt;br/&gt;writes .crew/.qa-audit-at&quot;]
-  record --&gt; stamp
-  stamp --&gt; doc[&quot;qa_doc.py --write&lt;br/&gt;docs/qa + docs/diagrams&quot;]
-  doc -.-&gt; sess</pre>
+  open --&gt; stamp
+  stamp --&gt; doc[&quot;qa_doc.py --write&lt;br/&gt;docs/qa + docs/diagrams&quot;]</pre>
 <p>The audited paths are <code>.crew/verify.json</code>, <code>_verify/</code>, the CI files and <code>.gitignore</code>. A repo that was set up before this version has no stamp, so it hears <code>qaAuditStale</code> once on its next session.</p>
 <h2>What each answer means</h2>
 <pre class="mermaid">flowchart LR

@@ -24,19 +24,18 @@ example for this repository is [`README.md`](README.md).
 
 ```mermaid
 flowchart TD
+  sess["session start"] --> stale{"qaAuditStale?<br/>no stamp, or audited<br/>paths moved since"}
+  stale -->|no| quiet(["quiet"])
   init["/crew:init<br/>Phase 5 and Phase 8"] --> audit
   ask["/crew:init --audit"] --> audit
   upg["/crew:upgrade<br/>step 5c"] --> audit
-  sess["session start"] --> stale{"qaAuditStale?<br/>no stamp, or audited<br/>paths moved since"}
   stale -->|yes| audit
-  stale -->|no| quiet(["quiet"])
   audit["qa_audit.py --root ."] --> report["report table<br/>GAP and UNKNOWN first"]
-  report --> fix["fix one GAP through the repo's own gate"]
-  report --> record["or leave it open:<br/>the phase is partial, GAP named<br/>in .crew/STATUS.md"]
+  report --> fix["fix one GAP<br/>through the repo's own gate"]
+  report --> open["leave it open:<br/>phase is partial,<br/>GAP named in STATUS.md"]
   fix --> stamp["qa_audit.py --stamp<br/>writes .crew/.qa-audit-at"]
-  record --> stamp
+  open --> stamp
   stamp --> doc["qa_doc.py --write<br/>docs/qa + docs/diagrams"]
-  doc -.-> sess
 ```
 
 The audited paths are `.crew/verify.json`, `_verify/`, the CI files and `.gitignore`. A repo that

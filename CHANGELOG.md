@@ -4,8 +4,11 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.156: QA standards for repositories crew sets up (L-0618)
+### Added — `crew` 1.0.157: QA standards for repositories crew sets up (L-0618)
 
+- `qa_doc.py`'s diagrams draw without crossing lines: a red result ends in its own fix node
+  instead of looping back to the gate, and the audit loop is its own straight-line diagram
+  (`docs/diagrams/process-qa-audit.mmd`). `test_the_gate_diagram_has_no_back_edge` holds it.
 - `crew-qa-standards` gains `references/environments.md` (G1-G5, E1-E7) and `qa_audit_env.py`,
   whose items join `qa_audit.py`'s report under the same PASS / GAP / N/A / UNKNOWN answers: rules
   without `reach` (D10, the Stop gate that runs nothing), fire-and-forget commands, the `_verify`

@@ -7,6 +7,7 @@ files) plus the audit's own report, and writes:
   docs/qa/qa-process.html              the same content as one HTML page
   docs/diagrams/process-qa-gates.mmd   the gate flow, crew-diagrams provenance header
   docs/diagrams/process-qa-ladder.mmd  the promotion ladder, same header
+  docs/diagrams/process-qa-audit.mmd   the audit loop, same header
 
 DRY RUN BY DEFAULT. Without `--write` it prints what it would write and
 writes nothing. With `--write` it never overwrites a file that lacks its
@@ -33,6 +34,7 @@ MD_PATH = os.path.join("docs", "qa", "README.md")
 HTML_PATH = os.path.join("docs", "qa", "qa-process.html")
 GATES_MMD = os.path.join("docs", "diagrams", "process-qa-gates.mmd")
 LADDER_MMD = os.path.join("docs", "diagrams", "process-qa-ladder.mmd")
+AUDIT_MMD = os.path.join("docs", "diagrams", "process-qa-audit.mmd")
 MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"
 MAX_RULE_ROWS = 40
 
@@ -103,29 +105,22 @@ def ladder_diagram(envs):
     return "\n".join(lines)
 
 
-def gates_diagram(vmap_state, rules, ci_names, rows):
-    """How a change is checked, from edit to merge, with the audit loop beside it."""
-    gaps = sum(r["status"] == qa_audit.GAP for r in rows)
-    unknown = sum(r["status"] == qa_audit.UNKNOWN for r in rows)
+def gates_diagram(vmap_state, rules, ci_names):
+    """How a change is checked, from edit to merge. Each red result ends in its
+    own fix node instead of looping back: a back edge is what made Mermaid's
+    layout cross lines."""
     stop = (f"Stop gate<br/>{len(rules)} rule(s) in .crew/verify.json" if vmap_state == "ok"
             else "Stop gate<br/>no .crew/verify.json: falls back to _verify/smoke.sh")
     ci = f"CI<br/>{len(ci_names)} workflow file(s)" if ci_names else "CI<br/>none found"
     lines = [
         "flowchart TD",
         f'  edit(["change"]) --> stop[{_label(stop)}]',
-        '  stop -->|red| fix["fix and re-run"] --> stop',
+        '  stop -->|red| fix1["fix, then the Stop gate runs again"]',
         '  stop -->|green| review["review<br/>(/crew:review)"]',
         f"  review --> ci[{_label(ci)}]",
-        '  ci -->|red| fix',
+        '  ci -->|red| fix2["fix, push, CI runs again"]',
         '  ci -->|green| merge(["merge"])',
         '  merge --> ladder["promotion ladder<br/>(see the ladder diagram)"]',
-        '  subgraph audit ["QA audit (report-only)"]',
-        '    direction TB',
-        '    trig["session start: qaAuditStale"] --> run["qa_audit.py --root ."]',
-        f'    run --> result[{_label(f"{gaps} GAP, {unknown} UNKNOWN")}]',
-        '    result --> act["fix one GAP through the gate,<br/>or record why not in .crew/STATUS.md"]',
-        '    act --> stamp["qa_audit.py --stamp"]',
-        "  end",
     ]
     if not ci_names:
         lines.append("  class ci gap")
@@ -133,6 +128,20 @@ def gates_diagram(vmap_state, rules, ci_names, rows):
         lines.append("  class stop gap")
     lines.append("  classDef gap stroke:#c0392b,stroke-width:2px,stroke-dasharray:4 3")
     return "\n".join(lines)
+
+
+def audit_diagram(rows):
+    """The QA audit loop as one straight line: report-only, and an open GAP
+    leaves a setup phase partial (owner decision 3)."""
+    gaps = sum(r["status"] == qa_audit.GAP for r in rows)
+    unknown = sum(r["status"] == qa_audit.UNKNOWN for r in rows)
+    return "\n".join([
+        "flowchart LR",
+        '  trig["qaAuditStale<br/>at session start"] --> run["qa_audit.py"]',
+        f'  run --> result[{_label(f"{gaps} GAP, {unknown} UNKNOWN")}]',
+        '  result --> act["fix one GAP<br/>through the gate<br/>open GAP: phase partial"]',
+        '  act --> stamp["qa_audit.py --stamp"]',
+    ])
 
 
 def collect(root):
@@ -147,7 +156,8 @@ def collect(root):
         "repo": os.path.basename(os.path.abspath(root)), "sha": sha,
         "date": datetime.date.today().isoformat(), "state": state, "envs": envs,
         "rules": rules, "ci": [rel for rel, _ in ci], "rows": rows,
-        "gates": gates_diagram(state, rules, [rel for rel, _ in ci], rows),
+        "gates": gates_diagram(state, rules, [rel for rel, _ in ci]),
+        "audit": audit_diagram(rows),
         "ladder": ladder_diagram(envs),
     }
 
@@ -166,8 +176,11 @@ def _sections(data):
                f"{counts['N/A']} N/A |\n")
     out = [("Summary", summary, None)]
     out.append(("How a change is checked",
-                "Every change passes the Stop gate, review and CI before it merges. The QA audit runs "
-                "beside that loop: it never blocks, it reports. Dashed red boxes are gaps.", data["gates"]))
+                "Every change passes the Stop gate, review and CI before it merges. Dashed red boxes "
+                "are gaps.", data["gates"]))
+    out.append(("How the QA audit runs",
+                "The audit reports and never blocks. During setup, a phase with an open GAP is "
+                "`partial`, never `done`.", data["audit"]))
     env_table = "| Environment | Deploy | Smoke | Regression | Verify | Rollback | Data |\n" \
                 "|---|---|---|---|---|---|---|\n"
     for name, env in data["envs"].items():
@@ -202,8 +215,8 @@ def _sections(data):
     out.append(("Keeping this page current",
                 "This page is generated. Edit `.crew/verify.json`, `_verify/` or CI, then re-run:\n\n"
                 "```bash\npython3 ${CLAUDE_PLUGIN_ROOT}/skills/crew-qa-standards/scripts/qa_doc.py "
-                "--root . --write\n```\n\nThe diagram sources are `docs/diagrams/process-qa-gates.mmd` and "
-                "`docs/diagrams/process-qa-ladder.mmd`.\n", None))
+                "--root . --write\n```\n\nThe diagram sources are `docs/diagrams/process-qa-gates.mmd`, "
+                "`process-qa-ladder.mmd` and `process-qa-audit.mmd`.\n", None))
     return out
 
 
@@ -308,6 +321,7 @@ def outputs(root):
         HTML_PATH: render_html(data),
         GATES_MMD: render_mmd(data, data["gates"], anchors),
         LADDER_MMD: render_mmd(data, data["ladder"], anchors[:1]),
+        AUDIT_MMD: render_mmd(data, data["audit"], anchors),
     }
 
 
