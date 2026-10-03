@@ -1569,3 +1569,78 @@ def test_resume_finds_the_open_ticket_through_the_main_checkout_index(tmp_path):
     got = crew_autopilot.resume_target(str(lane))
 
     assert (got["ticket"], got["source"]) == (T, ".work/INDEX.md (main checkout)"), got
+
+
+# --- T-0063: a fresh refresh is committed before review and done ---------------
+
+_PATHS = [".crew/codemap/app.md", "docs/diagrams/a b.mmd"]
+_COMMIT = ("git add -- .crew/codemap/app.md 'docs/diagrams/a b.mmd' && "
+           f'git commit -m "{T}: commit refreshed artifacts"')
+
+
+def _uncommitted(monkeypatch, paths):
+    import crew_refresh_check  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(crew_refresh_check, "ticket_freshness", lambda root, ticket: {
+        "status": "fresh-uncommitted", "reason": "scope base abc (recorded)",
+        "stop": None, "artifacts": [], "uncommitted": list(paths)})
+
+
+def test_next_commit_refresh_before_review(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "CLEAN")], state="REVIEWED")
+    _receipt_ok(monkeypatch, False)
+    _uncommitted(monkeypatch, _PATHS)
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], got["command"]) == ("commit-refresh", False, _COMMIT), got
+
+
+def test_next_commit_refresh_after_an_accepted_review(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED", receipt=_receipt(1))
+    _receipt_ok(monkeypatch, True)
+    _uncommitted(monkeypatch, _PATHS)
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], got["command"]) == ("commit-refresh", False, _COMMIT), got
+
+
+def test_next_done_only_when_committed(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED", receipt=_receipt(1))
+    _receipt_ok(monkeypatch, True)
+    _freshness(monkeypatch, "fresh")
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], got["command"]) == ("done", False, f"/crew:done {T}"), got
+
+
+def test_next_commit_refresh_with_no_paths_stops(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED", receipt=_receipt(1))
+    _receipt_ok(monkeypatch, True)
+    _uncommitted(monkeypatch, [])
+
+    got = _next(root)
+
+    assert (got["stop"], got["phase"] != "done", got["command"]) == (True, True, ""), got
+
+
+def test_committing_refreshed_artifacts_keeps_the_review_bundle(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _write(root / ".gitignore", ".work/\n.crew/*\n!.crew/codemap/\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "track the code map")
+    base = git(root, "rev-parse", "HEAD")
+    _write(root / "src" / "app.py", "x = 2\n")
+    git(root, "commit", "-qam", "the ticket's change")
+    _write(root / ".crew" / "codemap" / "app.md", "# app\nanchor: HEAD\n- `src/app.py:1`\n")
+    before = review_ledger._current_hash(str(root), base)  # pylint: disable=protected-access
+
+    git(root, "add", "--", ".crew/codemap/app.md")
+    git(root, "commit", "-qm", f"{T}: commit refreshed artifacts")
+
+    assert review_ledger._current_hash(str(root), base) == before  # pylint: disable=protected-access

@@ -693,6 +693,18 @@ WORKTREE_MUTATIONS = (
      """                      + (f" ({row['why']})" if row["why"] else "")\n""",
      '                      + ""\n',
      _T + "test_an_unreadable_main_checkout_is_cannot_tell"),
+    ("fresh-uncommitted reads as fresh", AUTOPILOT,
+     '        return {"state": UNCOMMITTED, "command": "", "reason": result.get("reason", ""),\n',
+     '        return {"state": FRESH, "command": "", "reason": result.get("reason", ""),\n',
+     _T + "test_next_commit_refresh_after_an_accepted_review"),
+    ("the commit names no paths", AUTOPILOT,
+     '    command = ("git add -- " + " ".join(shlex.quote(p) for p in paths)\n',
+     '    command = ("git add -- ."\n',
+     _T + "test_next_commit_refresh_before_review"),
+    ("an empty list proceeds", AUTOPILOT,
+     '    if not paths:\n        return answer("commit-refresh", True,',
+     '    if False:\n        return answer("commit-refresh", True,',
+     _T + "test_next_commit_refresh_with_no_paths_stops"),
 )
 
 AUTOPILOT_MUTATIONS += WORKTREE_MUTATIONS

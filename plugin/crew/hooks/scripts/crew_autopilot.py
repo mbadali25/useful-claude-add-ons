@@ -79,6 +79,8 @@ force says `take`. Exit 0 valid, 1 not.
   latest round FINDINGS, not accepted    accept-review       stop
   no receipt and no round left           review              stop, never a third reserve
   latest round INCOMPLETE                accept-review       stop
+  artifacts fresh-uncommitted            commit-refresh      git add -- <paths> && git commit
+                                                             (stop when it names no path)
   receipt not current, artifacts stale   refresh             the refresh command
   receipt not current, artifacts fresh   review              /crew:review <id>
   receipt current, artifacts stale       stale-after-review  stop, nothing written
@@ -109,7 +111,10 @@ names no commit, a refresh re-anchors it, and the line carries a command);
 every other `unknown` -- a missing tool, no or a fallback scope base, a check
 that raised -- stops, as `/crew:implement` step 6 does. When the module
 cannot be imported the phase stops as "refresh-artifacts unavailable (T-0008
-not landed)" -- never skipped.
+not landed)" -- never skipped. `fresh-uncommitted`
+(T-0063) is `commit-refresh`, before review and after an accepted one alike:
+it commits exactly the paths the check lists, which leaves the working state
+-- the review bundle -- byte for byte as it was.
 
 ## resume -- which ticket
 
@@ -154,6 +159,7 @@ import importlib
 import json
 import os
 import re
+import shlex
 import sys
 
 if __name__ == "__main__":
@@ -175,6 +181,9 @@ FRESH = "fresh"
 STALE = "stale"
 UNKNOWN = "unknown"
 UNSETTLED = "unsettled"
+# T-0063: every artifact current, a refreshed file not yet committed.
+FRESH_UNCOMMITTED = "fresh-uncommitted"
+UNCOMMITTED = "uncommitted"
 # T-0008's reason for the one `unknown` a refresh settles: the anchor names no
 # commit here (a squash merge dropped it), and re-anchoring is the refresh.
 ORPHANED_ANCHOR = "names no commit"
@@ -467,6 +476,9 @@ def _refresh_state(root, ticket):
     status = result.get("status")
     if status == FRESH:
         return {"state": FRESH, "command": "", "reason": result.get("reason", "")}
+    if status == FRESH_UNCOMMITTED:
+        return {"state": UNCOMMITTED, "command": "", "reason": result.get("reason", ""),
+                "paths": [p for p in result.get("uncommitted") or [] if isinstance(p, str)]}
     pending = [a for a in result.get("artifacts") or [] if a.get("status") in (STALE, UNKNOWN)]
     named = [f"{a.get('kind')} {a.get('name')}: {a.get('status')} - {a.get('reason')}"
              + (f" (refresh: {a.get('command')})" if _settles(a) else " (a refresh cannot "
@@ -666,6 +678,8 @@ def _toward_review(top, ticket, answer, ok, message, note=""):
     refresh = _refresh_state(top, ticket)
     if refresh["state"] == UNAVAILABLE:
         return answer("refresh", True, refresh["reason"])
+    if refresh["state"] == UNCOMMITTED:
+        return _commit_refresh(ticket, answer, refresh["paths"])
     if not ok and refresh["state"] != FRESH:
         command = refresh["command"] if refresh["state"] == STALE else ""
         return answer("refresh", not command,
@@ -678,6 +692,22 @@ def _toward_review(top, ticket, answer, ok, message, note=""):
                       "accepted review; refreshing now would stale the receipt - human "
                       f"decides. {refresh['reason']}")
     return answer("done", False, f"{message}; artifacts fresh", f"/crew:done {ticket}")
+
+
+def _commit_refresh(ticket, answer, paths):
+    """T-0063: every artifact is current but its refresh is uncommitted. The
+    commit names exactly those paths; it changes no byte of the working
+    state, which is what the review bundle is, so a receipt stays current
+    and the same phase applies before review and after an accepted one."""
+    if not paths:
+        return answer("commit-refresh", True, "the refresh check says fresh-uncommitted "
+                      "and names no path to commit - a human looks")
+    command = ("git add -- " + " ".join(shlex.quote(p) for p in paths)
+               + f' && git commit -m "{ticket}: commit refreshed artifacts"')
+    shown = ", ".join(paths[:4]) + (f" (+{len(paths) - 4} more)" if len(paths) > 4 else "")
+    return answer("commit-refresh", False, f"refreshed artifacts are uncommitted: {shown}; "
+                  "the review bundle is the working state, so this commit leaves any "
+                  "receipt current", command)
 
 
 def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
