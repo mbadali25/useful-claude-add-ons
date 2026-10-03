@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.192: `/crew:help`, contextual help from the files on disk (T-0025)
+### Added — `crew` 1.0.216: `/crew:help`, contextual help from the files on disk (T-0025)
 
 - `/crew:help` with no argument prints at most 8 lines: where you are (ticket, where it came
   from, phase), what it waits on, ONE `next:` command and why, and 2-3 `also:` commands for that
