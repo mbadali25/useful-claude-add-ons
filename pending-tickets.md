@@ -7,7 +7,7 @@ from this file and updates **Status** as work lands.
 Status values: `needs ticket`, `ready`, `in progress`, `in review (PR #n)`, `blocked: <why>`,
 `done (PR #n)`, `owner action`.
 
-Last updated: 2026-10-03 (PRs #350-#373 added).
+Last updated: 2026-10-03. Tracks L-0618's follow-ups, this session's PRs (#337, #372, #374, #375) and the handed-over PRs #350-#373. Other open PRs (#376, #377, #378, #379, #380 and #274-#349 outside that range) belong to other sessions and appear here only where they block or are blocked by a tracked PR.
 
 ## Summary
 
@@ -121,7 +121,7 @@ blocks three more.
 
 | # | Question | Decision |
 |---|---|---|
-| 1 | Merge order for the open PRs | #374, then #373, #372, #337, #375. Each crew PR is re-bumped and merged with `main` after the one before it lands |
+| 1 | Merge order for the open PRs | #374, then #373, #372, #337, #375 (as decided; #373 has since merged). Superseded 2026-10-03 by the owner's review-gated merge approval: #372, #337, #375, #378, #350, #371, #351, #355, #360, #368, then #374 last. Each crew PR is re-merged with `main` and re-bumped when it reaches the front |
 | 2 | Box limit per diagram | 15 (`diagram_check.MAX_NODES`) |
 | 3 | Should `render.sh` fail on a readability FAIL? | No. The check is its own step; `/crew:diagram` treats a FAIL as not done |
 | 4 | Diagram standard for other skills (row 10) | Each skill references the crew-diagrams rules and runs `diagram_check.py` only where crew is installed; no hard dependency on crew |
