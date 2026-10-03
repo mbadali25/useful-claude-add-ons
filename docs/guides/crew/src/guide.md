@@ -188,9 +188,19 @@ Source: `plugin/crew/hooks/scripts/scope_guard.py`,
 `plugin/crew/hooks/scripts/cloud_guard.py` and
 `plugin/crew/hooks/scripts/promote-gate.sh`.
 
-Every hook that can block ships disabled: `scope.mode` is `off` unless
-`/crew:init` set it, and `guards.cloudGuard` and `guards.roleWrites` are
-`off`.
+What is on by default, and what is not:
+
+- **Off until you arm it:** the scope guard (`scope.mode` is `off` unless
+  `/crew:init` set it), the cloud guard's hook (`guards.cloudGuard: off`) and
+  the role-write guard (`guards.roleWrites: off`).
+- **`block` by default:** the six policy guards (`guards.terraformApply`,
+  `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`,
+  `sqlDestructive`) and the two production guards (`prodDatabase`,
+  `prodServer`, which default to `none`). The policy guards take effect only
+  once `guards.cloudGuard` is armed, except `mergeGate`, which `/crew:gate`
+  reads.
+- **On by default:** the Stop verify gate (`verifyGate: true`) blocks when a
+  verify rule fails.
 
 **The scope guard** (`scope.mode`) runs before each Write, Edit, MultiEdit and
 NotebookEdit. It refuses an edit when the active ticket has no current
@@ -340,14 +350,18 @@ re-measure it. Fix: add it to Touch and re-measure. T-0046 plans to admit
 release bookkeeping like this without a Touch entry.
 
 **A background agent dies part-way.**
-Cause: the account's session limit stopped it, not the work. Fix: check what
-it committed, then resume from the handoff rather than starting again.
+Possible cause: something outside the work stopped it, such as a usage or
+session limit on the account. Fix: check what it committed, then resume from
+the handoff rather than starting again.
 
 **`pwsh` crashes on start with `Stack overflow.`**
-Cause: on a snap install, a torn write left a corrupt
-`StartupProfileData-NonInteractive` file in `~/.cache/powershell`. Fix: move
-that file aside; pwsh rebuilds it on the next start. Ticket T-0506 tracks the
-cause.
+Cause: a corrupt `StartupProfileData-NonInteractive` file in
+`~/.cache/powershell`. The leading explanation, not yet confirmed, is a torn
+write: several pwsh processes (a snap install, here) rewriting that one file
+at once. Fix: move that file aside; pwsh rebuilds it on the next start. crew's
+own test suites now give every pwsh they spawn a throwaway `XDG_CACHE_HOME`,
+so they cannot corrupt it (`plugin/crew/README.md`, section 25). Ticket
+T-0506 tracks the cause.
 
 **`--accept` refuses: "the tree has changed since that review".**
 Cause: you ran `review_ledger.py --accept` from a checkout whose tree is not
