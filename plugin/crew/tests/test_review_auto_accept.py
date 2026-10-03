@@ -954,9 +954,31 @@ def _record_with_ignored_lines(monkeypatch, repo):
     monkeypatch.setattr(rl, "record", record)
 
 
+def _record_before_l0576(monkeypatch, repo):
+    """A round recorded before L-0576: neither the ledger row nor review.json
+    carries `ignored_lines` (L-0576 now writes it on every round)."""
+    real_record, real_write = rl.record, review_run._write_atomic
+
+    def record(root, ticket, number, review):
+        state = real_record(root, ticket, number, review)
+        _edit(repo, lambda data: data["rounds"][-1].pop("ignored_lines", None))
+        return state
+
+    def write(path, text):
+        if os.path.basename(path) == "review.json":
+            data = json.loads(text)
+            data.pop("ignored_lines", None)
+            data.pop("ignored_text", None)
+            text = json.dumps(data, indent=2, sort_keys=True) + "\n"
+        real_write(path, text)
+    monkeypatch.setattr(rl, "record", record)
+    monkeypatch.setattr(review_run, "_write_atomic", write)
+
+
 def test_finish_without_ignored_lines_cannot_tell(repo, tmp_path, monkeypatch, capsys):
-    """Until L-0576 records the count, no round reads as eligible: the
-    eligibility line names the missing field as could-not-tell."""
+    """A round recorded before L-0576 carries no count, so it never reads as
+    eligible: the eligibility line names the missing field as could-not-tell."""
+    _record_before_l0576(monkeypatch, repo)
     _finish(repo, tmp_path, monkeypatch, (None, None, []), "one")
     _finish(repo, tmp_path, monkeypatch, (None, None, []), "two")
     out = capsys.readouterr().out
