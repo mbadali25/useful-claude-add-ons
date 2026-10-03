@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@42effe14
+anchor: useful-claude-add-ons@a715032d
 verified: 2026-10-03
 
 ## Re-derive provenance
@@ -541,11 +541,11 @@ they disagree:
   `crew.json` alone [does nothing for autoClear behaviour, which
   `crew_config.py` still reads from `config.json`]". This is a real,
   present-tense inconsistency, not a hypothetical. T-0004's
-  `crew_autopilot.settings` (`plugin/crew/hooks/scripts/crew_autopilot.py:759`)
+  `crew_autopilot.settings` (`plugin/crew/hooks/scripts/crew_autopilot.py:823`)
   sides with `config.json` explicitly: it reads through
   `crew_config.resolve_config` and warns when `autopilot` is set in
   `crew.json` but not `config.json` ("crew does not read [it] for this key;
-  move it to .crew/config.json", `:814-818`, in `_settings_at` `:788`). T-0023's
+  move it to .crew/config.json", `:878-882`, in `_settings_at` `:852`). T-0023's
   `crew_route.settings` (`plugin/crew/hooks/scripts/crew_route.py:297`) does
   the same for `route` (`:322-325`) - and it is the sharper case, because
   its only caller is `crew_context.route_item`, inside the one hook that reads
@@ -664,42 +664,42 @@ DERIVED at `89f73d79` (T-0018) and on T-0010-solo (T-0010), re-read together at 
 at `50a275ea` (T-0010's merge of `f96e9ec9` and review round 4's fixes), and at `d7c7c75c` (T-0010's
 merge of `6387ab49`: T-0072's `deploy-allowed`, whose line citations T-0072 re-read on its merge of
 `67caa4b8` at `21429244`, joins the same module).
-`plugin/crew/commands/autopilot.md` (110 lines since T-0010, 100 since T-0018,
+`plugin/crew/commands/autopilot.md` (117 lines since T-0020, 110 since T-0010, 100 since T-0018,
 `allowed-tools: Read, Write, Edit, Bash, Agent, Skill`, `:4`) first
 routes its whole argument string, single-quoted (`## 0. Route`, `:14-27`), then either
 prints `status` (`## 1. status`, `:29-36`, read-only, armed or not) or drives
 one ticket through the phase commands **in-session**, following each
 command's own procedure; the run refuses unless armed (`:46-47`). The reader
-behind it, `plugin/crew/hooks/scripts/crew_autopilot.py` (1751 lines), is
-read-only except T-0010's `approve`, only when `approval_policy` allows, which writes what
+behind it, `plugin/crew/hooks/scripts/crew_autopilot.py` (2019 lines since T-0020), is
+read-only except T-0010's `approve` and T-0020's `focus` (below), only when `approval_policy` allows, which writes what
 `crew_ticket.approve` writes for every route: `approval.json`, `scope-tickets.json` on a
 ticket's first approval, and a distinct successor plan's NEEDS_REPLAN -> IN_REVIEW ledger move
-(module docstring, `:1-141`; the owner's carve-out of 2026-09-27),
-with nine subcommands: `next`, `resume`, `settings`, `stops`, `route`, `status`, T-0072's
-`deploy-allowed` (read-only too), and T-0010's `approve` and `questions-check` - script
-subcommands, not `/crew:autopilot` ones.
-`next_phase` (`:568`) names the next phase from files on disk, first match wins (the table at
-`:60-84`); `resume_target` (`:668`) picks the ticket (the handoff's `resume:` line only
+(module docstring, `:1-164`; the owner's carve-out of 2026-09-27),
+with ten subcommands: `next`, `resume`, `settings`, `stops`, `route`, `status`, T-0072's
+`deploy-allowed` (read-only too), T-0010's `approve` and `questions-check`, and T-0020's `focus` -
+script subcommands, not `/crew:autopilot` ones (`status` and `focus` share a name with one).
+`next_phase` (`:593`) names the next phase from files on disk, first match wins (the table at
+`:83-107`); `resume_target` (`:731`) picks the ticket (the handoff's `resume:` line only
 when its branch and head match, per `plugin/crew/commands/autopilot.md:48-49`);
-`settings` (`:759`, the lookup, then `_settings_at` `:788`, which `deploy_allowed` reads directly)
+`settings` (`:823`, the lookup, then `_settings_at` `:852`, which `deploy_allowed` reads directly)
 arms only on the exact string `plan`, falls back to `maxPhases` 12 for anything not a positive
-int, reads `deploy` only as the exact strings in `DEPLOY_VALUES` (`:162`), and warns on each; a `.crew/config.json` that
+int, reads `deploy` only as the exact strings in `DEPLOY_VALUES` (`:185`), and warns on each; a `.crew/config.json` that
 exists but is not a readable JSON object, or an `autopilot` value that is not an object, reads
-`mode` off and both policies `unknown` with one warning (`_unreadable_autopilot`, `:739`, which reads
+`mode` off and both policies `unknown` with one warning (`_unreadable_autopilot`, `:803`, which reads
 the raw file because `resolve_config` and `merge_defaults` collapse both to the defaults; review
 round 4; the check sits in `settings` only, so `deploy_allowed`'s own per-layer probes are
 unchanged), while an absent file or block reads the defaults. Its first text line prints `mode`,
 `maxPhases` and `deploy` (T-0072's line, pinned exactly by `test_settings_line_names_deploy`), its
 second `approval` and `questions`. `stops`
-(`:1283`) lists every stop from code: `crew_state.AUTONOMOUS_STOPS`,
-`FIXED_STOPS` (`:186`, nine), `PROCEDURE_STOPS` (`:203`, three) and
-`HUMAN_STOPS` (`:209`, four - brainstorm, plan approval, review acceptance,
+(`:1347`) lists every stop from code: `crew_state.AUTONOMOUS_STOPS`,
+`FIXED_STOPS` (`:209`, ten since T-0020's `drift`), `PROCEDURE_STOPS` (`:228`, three) and
+`HUMAN_STOPS` (`:234`, four - brainstorm, plan approval, review acceptance,
 open questions; plan approval and open questions wait for a person unless T-0010's policy
 allows; review acceptance is FINDINGS with any BLOCK, or a round `review_ledger.py
 --auto-accept` refuses, since L-0510).
 
 **Review closure (L-0510, crew 1.0.94).** DERIVED at the anchor below. `_review_phase`
-(`plugin/crew/hooks/scripts/crew_autopilot.py:491`) asks `review_ledger.receipt_stands`
+(`plugin/crew/hooks/scripts/crew_autopilot.py:516`) asks `review_ledger.receipt_stands`
 (`plugin/crew/hooks/scripts/review_ledger.py:709`) whether a FINDINGS receipt stands, the same
 predicate `check_receipt` (`:833`) uses (a CLEAN round stands only under a `clean`
 receipt): `owner-accepted`, or `auto-accepted` with
@@ -715,48 +715,48 @@ not `AUTHOR_FAMILY` (claude), every missing or unknown value a refusal; a findin
 and prints `auto_accept_line` (`:523`). JUDGEMENT: autopilot never calls `auto_accept`; the
 command prose (`plugin/crew/commands/autopilot.md:86`) runs it inside the review phase.
 
-T-0018 (crew 1.0.43) added the router and `status`. `route_args` (`:1328`)
+T-0018 (crew 1.0.43) added the router and `status`. `route_args` (`:1400`)
 takes the command's `$ARGUMENTS` whole - Claude Code 2.1.283 substitutes
 `$0` with the first argument and leaves an out-of-range `$N` literal, so a
-positional `$1`/`$2` never carried the ticket - and `route` (`:1299`) decides
-the subcommand: `SUBCOMMANDS` (`:224`), of which only `status` and `run` are
-`AVAILABLE`; `assign`/`goal`/`focus` stop naming T-0019/T-0012/T-0020; a
+positional `$1`/`$2` never carried the ticket - and `route` (`:1363`) decides
+the subcommand: `SUBCOMMANDS` (`:249`), of which `status`, `run` and (since T-0020) `focus` are
+`AVAILABLE`; `assign`/`goal` stop naming T-0019/T-0012; a
 bare INDEX-shaped id or existing `.work/tickets/<id>/` is `run`; any other
 word - `approve` and `questions-check` included - a second word that is not a ticket, or a
 third word stops (`run --goal` stops naming T-0012); `route --first <token>` routes one token
-alone. `status` (`:1523`) composes `settings`, `resume_target` or `next_phase`,
-`review_ledger.status` and `crew_resume`, and `status_text` (`:1562`) caps it
-at 12 lines; `--json` prints the same dict as one line of JSON (`main`, `:1662`), inside the
+alone. `status` (`:1758`) composes `settings`, `resume_target` or `next_phase`,
+`review_ledger.status` and `crew_resume`, and `status_text` (`:1797`) caps it
+at 12 lines; `--json` prints the same dict as one line of JSON (`main`, `:1897`), inside the
 cap (round 5); what it cannot tell reads `unknown`. Neither reads the approval policy: `status`
 composes `resume_target` / `next_phase` / `_phase` with `policy=False` (T-0010 review round 3),
 so its approve and open-questions reasons are the fixed `POLICY_FREE_APPROVE` /
-`POLICY_FREE_QUESTIONS` (`:1106`, `:1109`) and at the approve phase it names `/crew:approve <id>`
+`POLICY_FREE_QUESTIONS` (`:1170`, `:1173`) and at the approve phase it names `/crew:approve <id>`
 under every setting (`test_route_and_status_unaffected_by_approval_policy`,
 `test_status_at_approve_reads_the_same_under_an_allowing_policy`); the one policy effect it shows is
 `crew_ticket.accepted`'s demotion of an `autopilot` receipt the policy no longer allows. Its `resume:` line reads usable
 only where bare `/crew:autopilot` - `resume_target` itself - would take it (`_resume_line`,
-`:1478`; `_takes`, `:1382`), asked only after `_resume_line`'s own read of the handoff passes the
+`:1713`; `_takes`, `:1614`), asked only after `_resume_line`'s own read of the handoff passes the
 branch, head and folder checks, so a file rewritten after `resume_target` read it is never
 vouched for by that earlier read (round 5), and says `unknown` when `resume_target` raised, or when
-`.work/HANDOFF.md` exists but cannot be read (`_read_handoff`, `:608`, which `resume`'s
+`.work/HANDOFF.md` exists but cannot be read (`_read_handoff`, `:671`, which `resume`'s
 fall-through shares - only a file that is not there reads `no .work/HANDOFF.md`; a dangling
 or looping symlink, or a `.work` that is a dangling symlink, is there and reads `unknown`, round 5). A `next` stop
 made on the active-ticket pointer rather than the phase waits on re-pointing it (`_repoint`,
-`:1412`), never on the owner typing the phase's command, and offers driving the active ticket
-only while it is not closed - read by `_closed` (`:1442`) from INDEX.md's status and spec.md's
+`:1647`), never on the owner typing the phase's command, and offers driving the active ticket
+only while it is not closed - read by `_closed` (`:1677`) from INDEX.md's status and spec.md's
 `status: done` header directly, so no `direction.md` cannot hide either; a `spec.md` that exists
 but cannot be read makes `_closed` return None, and the offer becomes "could not tell whether
 <active> is still open" (round 4). A `stop=0` phase names
-bare `/crew:autopilot` only when that drives the same ticket (`_waiting`, `:1388`). Every drive
-suggestion goes through `_drive` (`:1433`), which writes `/crew:autopilot run <id>` for an id that
+bare `/crew:autopilot` only when that drives the same ticket (`_waiting`, `:1620`). Every drive
+suggestion goes through `_drive` (`:1668`), which writes `/crew:autopilot run <id>` for an id that
 is exactly a `SUBCOMMANDS` name - `route` would read the bare name as the subcommand - and the
 bare `/crew:autopilot <id>` otherwise. Its `review:`
-line (`_review`, `:1458`) prints a rounds count only for a ledger state in `LEDGER_STATES`
-(`:1358`); a state of `UNKNOWN`, or one review_ledger never writes, reads `unknown`.
+line (`_review`, `:1693`) prints a rounds count only for a ledger state in `LEDGER_STATES`
+(`:1590`); a state of `UNKNOWN`, or one review_ledger never writes, reads `unknown`.
 `plugin/crew/commands/autopilot.md` runs every `crew_autopilot.py` line as `python3 -B`, and the
 script itself sets `sys.dont_write_bytecode` under `__main__` before its sibling imports
-(`:149-151`), so neither the command nor the direct CLI writes a bytecode cache into the plugin;
-a module importing it keeps its own setting. `main` registers `deploy-allowed` at `:1683`
+(`:172-174`), so neither the command nor the direct CLI writes a bytecode cache into the plugin;
+a module importing it keeps its own setting. `main` registers `deploy-allowed` at `:1924`
 (T-0072; the policy itself is the `deploy_allowed` paragraph below). Defaults live in
 `crew_state.AUTOPILOT_DEFAULTS` (`plugin/crew/hooks/scripts/crew_state.py:1097-1098`,
 `{"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk"}`
@@ -767,7 +767,7 @@ since T-0072 and T-0010 merged), deep-copied into `default_config()`
 `crew_ticket.parse_risk` (`plugin/crew/hooks/scripts/crew_ticket.py:509`)
 also landed in T-0004: it reads `risk:` from the spec header line only, and
 an absent or unrecognised value reads as `high` with `known: False`, never
-`low`. Its consumer is T-0010's `_ticket_risk` (`plugin/crew/hooks/scripts/crew_autopilot.py:1006`).
+`low`. Its consumer is T-0010's `_ticket_risk` (`plugin/crew/hooks/scripts/crew_autopilot.py:1070`).
 Tests: `plugin/crew/tests/test_crew_autopilot.py`,
 `plugin/crew/tests/test_crew_autopilot_status.py`,
 `plugin/crew/tests/test_lifecycle_commands.py`; mutations
@@ -775,8 +775,38 @@ Tests: `plugin/crew/tests/test_crew_autopilot.py`,
 `AUTOPILOT_MUTATIONS`); `.crew/verify.json` rule 28 (`:345-354`; rule 27 at `:300-308` on T-0094's merge of `8ab733d7`, `:298-306` before, until L-0516 inserted rule 10); T-0010's policy rule 29 (`:355-362`; rule 28 at `:310-316`, `:307-313` before),
 T-0021's tracker rule 30, T-0023's routing rule 31 and T-0024's group-approval rule 32 follow it. Confirmed present, **not run** by this note.
 
+**T-0020 (`/crew:autopilot focus`, a scope lock on one ticket, crew 1.0.190).** DERIVED at
+`a715032d` (T-0020's merge of origin/main `7846261c`). Focus is this worktree's active-ticket
+pointer and nothing else: no new state file, no new hook, and `crew_ticket.py`, `scope_guard.py`,
+`completion_audit.py` and `plugin/crew/hooks/hooks.json` unchanged (module docstring `:38-54`).
+`focus_state` (`plugin/crew/hooks/scripts/crew_autopilot.py:1449`) is `resolve_active`'s ticket
+only when its source is `active-ticket`, never the `.work/INDEX.md` fallback. `focus_set`
+(`:1494`) refuses a broken pointer, a ticket with no `.work/tickets/<id>/` (`activate` checks
+only the id's shape), and a pointer on another ticket, writing nothing; otherwise it is the one
+`crew_ticket.activate` call (`:1516`). `focus_off` (`:1520`) holds the module's one
+`crew_ticket.deactivate` call (`:1528`, pinned by an AST test) and reports a pointer still broken
+after it. `focus_guard` (`:1461`) lets `status` and `focus off` through, refuses everything else
+under a broken pointer, and under a focus on T-A refuses all but `run`/`focus` with no ticket or
+T-A. `route` (`:1363`) calls it after resolving the subcommand and before the `AVAILABLE` check
+(`:1387`; `--goal` at `:1380`), `route_args` (`:1400`) sets `off` only for exactly `focus off`
+(`:1412`) and guards the ticket word (`:1425`), and `resume_target` appends its refusal to the
+handoff/pointer disagreement (`:782`). `next_phase` asks `_drift` (`:638`) first (`:609`): only
+ahead of a phase the loop would run (`POLICY_PHASES`, `:635`, are judged too), only when focused
+on this ticket and `crew_ticket.accepted` is `approved`, it runs `completion_audit.audit`
+read-only, and a failure or a raise stops as `drift` (`FIXED_STOPS`, `:221`; `_waiting` names
+the owner, `:1627`). `findings_target` (`:1544`) names `TODO.md` only when the APPROVED Touch
+covers it, else `.work/tickets/<id>/out-of-scope.md`. `focus_text` (`:1559`) ends every `focus`
+output with `FOCUS_REMINDER` (`:1435`); `main` registers `focus` at `:1911` and runs it at
+`:1946`. `plugin/crew/commands/autopilot.md` section 6 (`:111-117`) maps `focus <ticket>`,
+`focus off` (route's `off=1`) and `focus` to the CLI, and names `focus off` nowhere else.
+Tests `plugin/crew/tests/test_crew_autopilot_focus.py` (87 cases); `test_lifecycle_commands.py`
+holds `autopilot.md` to 117 lines, 3 left for T-0012 and T-0019. Its four planned mutations live
+in no sabotage file: `sabotage_autopilot.py` is in `HARNESS` (`scripts/check-tooling-pr.py`), so
+they were run by hand and are a harness-only follow-up. `.crew/verify.json`'s autopilot rule maps
+the new test file.
+
 **T-0010 (approval and questions policies, DERIVED on T-0010-solo, crew 1.0.50 on T-0077's main).**
-`approval_policy` (`plugin/crew/hooks/scripts/crew_autopilot.py:1034`) refuses a `policy: unknown`
+`approval_policy` (`plugin/crew/hooks/scripts/crew_autopilot.py:1098`) refuses a `policy: unknown`
 (an unreadable config or non-object `autopilot` block, review round 4) in its own branch before
 every other test, and otherwise returns `allow` only when
 `crew_ticket.cli_approval_allowed` is true (`scope.allowCliApproval` exactly `true`, at every
@@ -784,21 +814,21 @@ setting), the review ledger is not UNKNOWN (NEEDS_REPLAN does not refuse since r
 a distinct successor plan is its only way out, and `review_ledger.continue_with_successor_plan`
 refuses a plan approved before, so `approve` exits 3), and then `self` (any risk) or
 `risk` on a known `risk: low`; `human` never; a settings read that raises is `policy: unknown`,
-refused. `question_policy` (`:1075`) is `take|stop` by the same rule without the
-`allowCliApproval` term, and stops on `unknown`. `approve` (`:1129`) also needs `mode: plan`, then calls
+refused. `question_policy` (`:1139`) is `take|stop` by the same rule without the
+`allowCliApproval` term, and stops on `unknown`. `approve` (`:1193`) also needs `mode: plan`, then calls
 `crew_ticket.approve(..., via=crew_ticket.AUTOPILOT)` - the module's one writing path, which lands
 `approval.json`; on a ticket's first approval, the scope ramp's `scope-tickets.json`
 (`crew_ticket._register_ramp`, `plugin/crew/hooks/scripts/crew_ticket.py:705`, as for every
 route); and, for a distinct successor plan under a NEEDS_REPLAN ledger, the ledger moved
-NEEDS_REPLAN -> IN_REVIEW (`review_ledger.continue_with_successor_plan`, `plugin/crew/hooks/scripts/review_ledger.py:884`). `questions_check` (`:1246`) validates
-`.work/tickets/<id>/questions.md` against `QUESTIONS_SHAPE` (`:1154`) and refuses a `taken:` line
+NEEDS_REPLAN -> IN_REVIEW (`review_ledger.continue_with_successor_plan`, `plugin/crew/hooks/scripts/review_ledger.py:884`). `questions_check` (`:1310`) validates
+`.work/tickets/<id>/questions.md` against `QUESTIONS_SHAPE` (`:1218`) and refuses a `taken:` line
 naming a policy that never takes (only `self`/`risk` do; the name is history, not compared with
 today's) or any `taken:` while the policy in force says `stop`. `next` appends
-`_approval_hint` (`:1114`) / `_question_hint` (`:1123`) to the `approve` and `open-questions`
-stops (`:479` for approve), which stay `stop=1`; `commands/autopilot.md` section 3 (`:72-80`)
+`_approval_hint` (`:1178`) / `_question_hint` (`:1187`) to the `approve` and `open-questions`
+stops (`:504` for approve), which stay `stop=1`; `commands/autopilot.md` section 3 (`:72-80`)
 runs the policy on exactly those two `stop=1` lines before stopping, with `python3 -B`, and
-states the `questions.md` shape `questions_check` enforces (review round 2). `main` (`:1662`)
-sends both to `_policy_main` (`:1602`) before T-0018's branches. In
+states the `questions.md` shape `questions_check` enforces (review round 2). `main` (`:1897`)
+sends both to `_policy_main` (`:1837`) before T-0018's branches. In
 `plugin/crew/hooks/scripts/crew_ticket.py`: `AUTOPILOT = "autopilot"` (`:144`), `_autopilot_refusal`
 (`:654`), `accepted` (`:671`) demotes an `autopilot` receipt unless that refusal is None, and
 `approve` (`:724`) refuses an `autopilot` via the policy denies, and refuses `via=autopilot` with
@@ -852,19 +882,19 @@ T-0010's policy rule 29 (`:355-362`) sits after T-0072's autopilot rule 28 (`:34
 `json.load` puts T-0023's routing rule at index 30, and at 31 since L-0516's rule 10.)
 
 **`deploy_allowed` (T-0072, crew 1.0.51).** DERIVED at `80326b1d` (T-0072's review-round-4 redesign, `35733d76`); lines re-read after its merge of T-0077 (`a4eb2f55`, `_rel` +6 at `:170`) and its review-round-5 fix (`0f488706`, `_resolve_root` +4), and again at `d7c7c75c` on T-0010-solo's merge of `6387ab49`, where T-0010's code above it moved every line (re-read by `grep -n` per symbol).
-`crew_autopilot.deploy_allowed` (`plugin/crew/hooks/scripts/crew_autopilot.py:957`) is the policy
+`crew_autopilot.deploy_allowed` (`plugin/crew/hooks/scripts/crew_autopilot.py:1021`) is the policy
 layer for a deploy without asking: `allow`, `ask` or `refuse` for one environment, rows in the
-order the module docstring's `deploy-allowed` section (`:124-140`) states. It resolves the checkout
-root **once**, through `_resolve_root` (`:850`, whose try holds only the `toplevel` lookup; any
+order the module docstring's `deploy-allowed` section (`:147-163`) states. It resolves the checkout
+root **once**, through `_resolve_root` (`:914`, whose try holds only the `toplevel` lookup; any
 exception, or a root that is not text such as a bytes path, is row 0, `refuse`), reads `crew_config.GLOBAL_CONFIG_PATH` once as `machine_path`, and
-hands both to `_decide(top, env_name, env_class, machine_path)` (`:880`), which never looks the
-root up again: settings come from `_settings_at(top)` (`:788`; `settings(root)` `:759` is the lookup
+hands both to `_decide(top, env_name, env_class, machine_path)` (`:944`), which never looks the
+root up again: settings come from `_settings_at(top)` (`:852`; `settings(root)` `:823` is the lookup
 plus that call) and the ratchet from `resolve_ratcheted(top, "environments.prodUnattended",
-path=machine_path)`. The result names the root it judged (`root`). `_probe` (`:835`) is the only
+path=machine_path)`. The result names the root it judged (`root`). `_probe` (`:899`) is the only
 existence check in the module: a try holding one `os.lstat`, `FileNotFoundError`/`NotADirectoryError`
 absent, any other exception `could-not-tell` with its type, else present. The incident file
 present or could-not-tell refuses, before `import cloud_guard` (review round 1). An unusable name
-or a class outside `cloud_guard.ENV_NONPROD`/`ENV_PROD` asks; `_layer_problem` (`:865`) asks for a
+or a class outside `cloud_guard.ENV_NONPROD`/`ENV_PROD` asks; `_layer_problem` (`:929`) asks for a
 layer the probe could not tell about, and for a present layer `crew_config.layer_state(...,
 environments=True)` does not call `ok` - so `layer_state`'s `lexists` collapse is consulted only for
 a path this module saw present (review round 4). Production allows only under `deploy: all` with
@@ -1345,7 +1375,7 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   `EXIT_USAGE` (`review_run.py:724`) unless `crew_incident.read_state` is active, which logs
   a `standards-selfcheck` skip (`:714`) and reserves.
 - **Checklist.** `review_prompt.build` puts `crew_standards.checklist_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:272`, defined at `crew_standards.py:664`)
+  (`plugin/crew/hooks/scripts/review_prompt.py:341`, defined at `crew_standards.py:664`)
   after the test receipts; it never reads `selfcheck.md`. When the manifest's file lists
   are unusable it lists the always-on sets (those whose `applies-to` holds `"**"`) under an
   `UNKNOWN:` line. Since L-0601 the next block is `recurring_findings.review_block(root,
@@ -1499,9 +1529,9 @@ then the train is advisory.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:1312` — `ticket_freshness`,
   the library entry point; `main()` at `:1412`; `artifact_verdicts` at `:1019`,
   the admission judgement (T-0094) that L-0540 wires into the audit.
-- `plugin/crew/hooks/scripts/crew_autopilot.py:568` — `next_phase`, read-only;
-  `main()` at `:1662` is the `next` / `resume` / `settings` / `stops` /
-  `route` / `status` / `deploy-allowed` / `approve` / `questions-check` CLI
+- `plugin/crew/hooks/scripts/crew_autopilot.py:593` — `next_phase`, read-only;
+  `main()` at `:1897` is the `next` / `resume` / `settings` / `stops` /
+  `route` / `status` / `deploy-allowed` / `approve` / `questions-check` / `focus` CLI
   `plugin/crew/commands/autopilot.md` calls.
 - `plugin/crew/hooks/scripts/crew_route.py:211` — `decide`, read-only
   route / ask / none for a prompt; `main()` at `:333` is the `settings` /
@@ -1590,7 +1620,7 @@ then the train is advisory.
   an empty list as `excluded (never in the bundle): none`, and a missing
   key or anything but a list of non-blank strings as
   `excluded: not recorded by this manifest (unknown)` (T-0099)
-  (`plugin/crew/hooks/scripts/review_prompt.py:111`).
+  (`plugin/crew/hooks/scripts/review_prompt.py:119`).
 - DERIVED (T-0079): the READ-line rule of the review verdict is
   `review_verdict._covers` (`plugin/crew/hooks/scripts/review_verdict.py:149`):
   a READ token counts for a part when, `\` read as `/` and `normpath`ed, it
@@ -1598,8 +1628,8 @@ then the train is advisory.
   `parse` applies it at `plugin/crew/hooks/scripts/review_verdict.py:199`.
   The prompt quotes `review_verdict.READ_FORM`
   (`plugin/crew/hooks/scripts/review_verdict.py:108`) in `_bundle_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:98`) and on the webtest
-  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:258`), and
+  (`plugin/crew/hooks/scripts/review_prompt.py:106`) and on the webtest
+  overflow line (`plugin/crew/hooks/scripts/review_prompt.py:327`), and
   `review_run.finish` hands `parse` the manifest `path`s
   (`plugin/crew/hooks/scripts/review_run.py:540`) and the overflow file's
   scratch path (`plugin/crew/hooks/scripts/review_run.py:542`). `parse` and
@@ -1635,18 +1665,18 @@ then the train is advisory.
   `reserve` tests `_charged` against `BUDGET`. `summary` (`:923`, `load = _load` at
   `:920`) is the dict `status` returns and the one `crew_status._review_lines`
   renders (`plugin/crew/hooks/scripts/crew_status.py:140`). Autopilot sends a
-  refunded round back to review (`plugin/crew/hooks/scripts/crew_autopilot.py:532`,
-  `_toward_review` `:548`), and `next_phase`'s no-progress stop (`:597`) lets that
+  refunded round back to review (`plugin/crew/hooks/scripts/crew_autopilot.py:557`,
+  `_toward_review` `:573`), and `next_phase`'s no-progress stop (`:626`) lets that
   rerun through even when `/crew:review` was the command just run (review round 1).
   Only the review rerun: the marker is set when `_toward_review` answers `review`
-  (`:539`), so a refresh named again with its artifact still stale stops as no
+  (`:564`), so a refresh named again with its artifact still stale stops as no
   progress (review round 4).
 - DERIVED (T-0087): the shared definitions at each review seam are
   `review_patch.MANIFEST_KEYS` / `OPTIONAL_MANIFEST_KEYS` / `PART_KEYS`
   (`plugin/crew/hooks/scripts/review_patch.py:126`, `:123`, `:124`) and
   `verify_record.read_record` (`plugin/crew/hooks/scripts/verify_record.py:82`), now
   the one gate-record reader for `review_prompt._receipts_block`
-  (`plugin/crew/hooks/scripts/review_prompt.py:178`) and `crew_status._verify_line`
+  (`plugin/crew/hooks/scripts/review_prompt.py:245`) and `crew_status._verify_line`
   (`plugin/crew/hooks/scripts/crew_status.py:155`). The producer-to-consumer tests
   are `plugin/crew/tests/test_review_contracts.py`. The golden corpus of real,
   redacted reviewer output is `plugin/crew/tests/golden/review/` (41 fixtures, one
@@ -3649,3 +3679,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `452b30cc` (main) and L-0601's `8d5134b5` -> `0620587f` on 2026-10-03 (L-0601 merges origin/main f808e5f0: L-0510 #318, #328, #329, #330, crew 1.0.154; rerere disabled; crew 1.0.162 set last).** Main's maps were anchored at `452b30cc` while main changed 34 more files after it; their citations into those files were moved by difflib from `452b30cc` to the merge (78 moved; 17 whose line itself changed were moved by the offset of the line above and each checked to cite the same construct, e.g. `verify_record.py` `tree_snapshot`, `review_run.py` `--provider`, the rules' `why` lines). L-0601's own edits were re-applied after main's text. Main's claims about #328-#330 were not re-derived; no suite was executed for this note.
 
 **Re-anchored `f808e5f0` (main, L-0600) and L-0601's `3e53c568` -> `42effe14` on 2026-10-03 (L-0601 merges origin/main 34d9f267: L-0600 #332, L-0618 docs #335; rerere disabled; crew 1.0.162 kept).** Main changed no code after `f808e5f0`, only this map, INDEX, the lifecycle diagram, the generated rules and docs/review. Main's map, with L-0600's citation correction, was taken whole; its citations into files L-0601 changed were moved by difflib from main to the merge (17 moved: review_prompt.py by five, CHANGELOG.md by thirteen for L-0601's entry, sabotage.py by one; plugin.json:3 and PLUGINS.md:14 are the version lines, which L-0601 rewrote in place). L-0601's version sentence and Checklist bullet were then re-applied, and its four provenance notes above were carried over after main's. No claim of L-0600's was re-derived; no suite was executed for this note.
+
+**Re-anchored `42effe14` -> `a715032d` on 2026-10-03 (T-0020: `/crew:autopilot focus`; merges origin/main `4f6ef540`, then `7846261c`, crew 1.0.163).** `a715032d` is T-0020's second merge of origin/main, on top of its implementation commit `a23a0155`. `git diff --name-only 42effe14 a715032d -- plugin/crew/hooks/scripts/crew_autopilot.py plugin/crew/commands/autopilot.md` names both, so every citation into `crew_autopilot.py` in the `/crew:autopilot` section, the settings note, the rules bullets and the refund bullet was moved by difflib from origin/main's copy (60 moved; `route`'s def line changed with its new `ticket` parameter and was re-taken with `grep -n`); `autopilot.md`'s cited lines did not move (its route lines were rewritten in place and section 6 appended). Claims T-0020 made untrue were rewritten: the line counts, ten script subcommands, `FIXED_STOPS` ten, `focus` in `AVAILABLE`, and `focus` in the CLI list; the T-0020 paragraph is new. Main's 1.0.163 change moved five body citations into `review_prompt.py` (`:272`, `:111`, `:98`, `:258`, `:178`), moved here by difflib from `42effe14` to the same text (`:341`, `:119`, `:106`, `:327`, `:245`); its claims were not re-derived; no suite was executed for this note beyond the T-0020 gates.
