@@ -4,6 +4,33 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.191: autopilot's docs phase and tracker step (T-0022)
+
+- `crew_docs_check.py --root . --ticket <id> [--json] [--explain]`, read-only: one line per document --
+  CHANGELOG (per changed marketplace entry), each triggered README, SECURITY.md, TODO.md -- as
+  `updated`, `not needed (<reason>)`, `MISSING` or `not applicable`, plus `adr, runbooks: not
+  measured`; exit 0 only with nothing MISSING or unknown. The CHANGELOG rule is mechanical: an entry
+  whose source changed needs a line added under `## [Unreleased]` naming `` `<name>` `` and its
+  current version, and no recorded reason waives it; release bookkeeping (T-0008's
+  `RELEASE_BOOKKEEPING`, imported) and `.work/` alone owe none. README and SECURITY.md need an edit or
+  a recorded reason once triggered; each deferral must reach TODO.md's added lines. No scope base, a
+  base T-0008 would not trust, or an unreadable `docs.json` is `unknown`, which refuses. Git is read
+  through plumbing only, so the check never rewrites `.git/index`.
+- `/crew:docs <id>` records its decisions in `.work/tickets/<id>/docs.json` and runs the check;
+  `/crew:implement` step 6 orders tests, docs, the docs check, the refresh, then review; `/crew:done`
+  gains check 5, the same check, which refuses and never edits a document.
+- `crew_autopilot.next` runs a `docs` phase (`/crew:docs <id>`) before the refresh and every review
+  round while a document is owed (`unknown` read as owed), stops after two runs recorded since the
+  latest review round (`docs-missing`), and stops without writing when one is owed after an accepted
+  receipt (`docs-after-review`). `crew_autopilot.py tracker --root . --ticket <id> [--after CMD]`
+  derives the status from disk and calls T-0021's `crew_tracker.move`: continue on updated or
+  unchanged, the sync command handed back on delegated, a stop with the reason and the
+  `crew_tracker.py move` retry on could not update, and "T-0021 not landed" without the module.
+  `test_tracker_move_after_receipt_keeps_bundle_hash` shows a move leaves `review_patch`'s bundle hash
+  unchanged for the files kind, an Obsidian vault outside the worktree and an ignored one inside it.
+- Not in this change: `sabotage_docs.py` (sabotage*.py is review harness, T-0087's land-alone rule);
+  its mutations were run by hand, 21 of 21 red, and the harness PR is a TODO.md item.
+
 ### Fixed — `crew` 1.0.163: the review prompt shows the gate's real answer for HEAD (docs/review/08, defect 1)
 
 - `review_prompt._receipts_block` told the reviewer `MISSING: no .crew/.verify-verified-at` on a round
