@@ -55,6 +55,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   1.0.116-1.0.122 are claimed or burned by other lanes; then `1.0.139 -> 1.0.144`
   after merging main `2a2d6e07` (crew 1.0.139); 1.0.140-1.0.143 are held by
   other lanes.
+
 ### Added - `crew` 1.0.140: no new linter findings before a review round is reserved (L-0574)
 
 - **What.** `review_run.py` asks a new question 3 before it reserves a round, after the CLEAN-receipt
