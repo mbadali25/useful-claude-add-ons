@@ -41,6 +41,30 @@ def _git_init(root):
         subprocess.run(["git", "-C", str(root), *args], check=True, env=env, capture_output=True)
 
 
+def _deny(monkeypatch, suffix):
+    """Make qa_audit_env's open() raise PermissionError for paths ending in
+    suffix. chmod 000 cannot do it: the container runs as root."""
+    real = open
+
+    def fake(path, *args, **kwargs):
+        if str(path).endswith(suffix):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real(path, *args, **kwargs)
+    monkeypatch.setattr(qa_audit_env, "open", fake, raising=False)
+
+
+def test_read_text_tells_absent_from_unreadable(tmp_path, monkeypatch):
+    assert qa_audit_env.read_text(str(tmp_path / "missing.md")) is None
+    _write(tmp_path, "x.md", "x")
+    _deny(monkeypatch, "x.md")
+    try:
+        qa_audit_env.read_text(str(tmp_path / "x.md"))
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError("an unreadable file read as absent")
+
+
 def test_every_new_item_is_in_the_report(tmp_path):
     rules = {r["rule"] for r in qa_audit.audit(str(tmp_path))}
     assert {"G1", "G2", "G3", "G4", "G5", "E1", "E2", "E3", "E4", "E5", "E6", "E7"} <= rules
@@ -170,6 +194,20 @@ def test_g4_an_ignored_build_dir_passes(tmp_path):
     assert _row(tmp_path, "G4")["status"] == qa_audit.PASS
 
 
+def test_g4_a_failed_ls_files_is_unknown_not_untracked(tmp_path, monkeypatch):
+    _write(tmp_path, ".gitignore", "node_modules/\n")
+    _git_init(tmp_path)
+    _write(tmp_path, "node_modules/x.js", "x")
+    real = qa_audit_env._git  # pylint: disable=protected-access
+
+    def fake(root, *args):
+        if args[0] == "ls-files":
+            return subprocess.CompletedProcess(args, 128, "", "fatal: index file corrupt")
+        return real(root, *args)
+    monkeypatch.setattr(qa_audit_env, "_git", fake)
+    assert _row(tmp_path, "G4")["status"] == qa_audit.UNKNOWN
+
+
 def test_g4_outside_git_is_unknown(tmp_path):
     _write(tmp_path, "node_modules/x.js", "x")
     assert _row(tmp_path, "G4")["status"] == qa_audit.UNKNOWN
@@ -182,6 +220,14 @@ def test_g5_a_bare_crew_dir_line_is_a_gap(tmp_path):
     _write(tmp_path, ".gitignore", ".crew/\n.work/\n")
     row = _row(tmp_path, "G5")
     assert row["status"] == qa_audit.GAP and "negation" in row["evidence"]
+
+
+def test_g5_an_unreadable_gitignore_is_unknown_not_missing(tmp_path, monkeypatch):
+    _write(tmp_path, ".crew/config.json", "{}")
+    _write(tmp_path, ".gitignore", ".crew/*\n.crew/.approved-*\n.work/\n")
+    _deny(monkeypatch, ".gitignore")
+    row = _row(tmp_path, "G5")
+    assert row["status"] == qa_audit.UNKNOWN and "could not read" in row["evidence"]
 
 
 def test_g5_the_full_block_passes(tmp_path):
@@ -228,6 +274,14 @@ def test_e2_a_stale_rehearsal_is_a_gap(tmp_path):
     _write(tmp_path, "docs/rb.md", f"last verified: {old}\n")
     _map(tmp_path, environments={"production": {"rollback": "docs/rb.md"}})
     assert "91 days" in _row(tmp_path, "E2")["evidence"]
+
+
+def test_e2_an_unreadable_runbook_is_unknown_not_missing(tmp_path, monkeypatch):
+    _write(tmp_path, "docs/rb.md", f"last verified: {datetime.date.today().isoformat()}\n")
+    _map(tmp_path, environments={"production": {"rollback": "docs/rb.md"}})
+    _deny(monkeypatch, "rb.md")
+    row = _row(tmp_path, "E2")
+    assert row["status"] == qa_audit.UNKNOWN and "could not read runbook" in row["evidence"]
 
 
 def test_e2_fresh_rehearsal_and_reasoned_none_pass(tmp_path):
@@ -299,6 +353,82 @@ def test_e5_accepted_or_production_only_passes(tmp_path):
 def test_e5_an_inventory_without_the_columns_is_a_gap(tmp_path):
     _write(tmp_path, ".crew/secrets.md", "| Name | Where |\n|---|---|\n| K | vault |\n")
     assert "live" in _row(tmp_path, "E5")["evidence"]
+
+
+_SECRETS_HEAD = "| Name | Reaches | Live | Accepted |\n|---|---|---|---|\n"
+
+
+def _e5(root, *rows):
+    _write(root, ".crew/secrets.md", _SECRETS_HEAD + "".join(r + "\n" for r in rows))
+    return _row(root, "E5")
+
+
+def test_e5_row_a_a_no_in_the_accepted_column_is_not_an_acceptance(tmp_path):
+    row = _e5(tmp_path, "| A | prod, staging | yes | no |")
+    assert row["status"] == qa_audit.GAP and "`A`" in row["evidence"] and "staging" in row["evidence"]
+
+
+def test_e5_row_b_an_unknown_live_cell_is_unknown_not_pass(tmp_path):
+    row = _e5(tmp_path, "| B | staging | ? | |")
+    assert row["status"] == qa_audit.UNKNOWN and "`B`" in row["evidence"]
+
+
+def test_e5_row_c_a_live_credential_with_a_blank_reach_is_unknown(tmp_path):
+    row = _e5(tmp_path, "| C | | yes | |")
+    assert row["status"] == qa_audit.UNKNOWN and "`C`" in row["evidence"]
+
+
+def test_e5_row_d_tbd_live_is_unknown(tmp_path):
+    row = _e5(tmp_path, "| D | staging | TBD | |")
+    assert row["status"] == qa_audit.UNKNOWN and "`D`" in row["evidence"]
+
+
+def test_e5_row_e_pending_is_not_an_acceptance(tmp_path):
+    row = _e5(tmp_path, "| E | staging | yes | pending |")
+    assert row["status"] == qa_audit.GAP and "`E`" in row["evidence"]
+
+
+def test_e5_all_five_review_rows_together_are_a_gap_naming_the_unknowns(tmp_path):
+    row = _e5(tmp_path, "| A | prod, staging | yes | no |", "| B | staging | ? | |", "| C | | yes | |",
+              "| D | staging | TBD | |", "| E | staging | yes | pending |")
+    assert row["status"] == qa_audit.GAP
+    for name in ("`A`", "`B`", "`C`", "`D`", "`E`"):
+        assert name in row["evidence"], name
+
+
+def test_e5_affirmative_acceptances_and_explicit_no_pass(tmp_path):
+    row = _e5(tmp_path, "| K1 | qa | yes | 2026-10-01 |", "| K2 | staging | y | accepted |",
+              "| K3 | dev / qa | true | Matthew |", "| K4 | qa | Yes (rotated) | yes |",
+              "| K5 | staging | no | |", "| K6 | production only | ? | |")
+    assert row["status"] == qa_audit.PASS, row["evidence"]
+
+
+def test_e5_a_live_reach_naming_no_environment_is_unknown(tmp_path):
+    row = _e5(tmp_path, "| K | the vault | yes | |")
+    assert row["status"] == qa_audit.UNKNOWN and "the vault" in row["evidence"]
+
+
+def test_e5_a_declared_environment_name_is_read_as_nonproduction(tmp_path):
+    _map(tmp_path, environments={"blue": {}, "green": {"requireHuman": True}})
+    assert _e5(tmp_path, "| K | green | yes | |")["status"] == qa_audit.PASS
+    assert _e5(tmp_path, "| K | blue | yes | |")["status"] == qa_audit.GAP
+
+
+def test_e5_a_delivered_column_is_not_the_live_column(tmp_path):
+    _write(tmp_path, ".crew/secrets.md", "| Name | Delivered | Reaches |\n|---|---|---|\n| K | yes | qa |\n")
+    row = _row(tmp_path, "E5")
+    assert row["status"] == qa_audit.GAP and "no live column" in row["evidence"]
+
+
+def test_e5_production_only_is_production(tmp_path):
+    assert qa_audit_env.parse_reach("production only", {}) == (["production"], [])
+    assert qa_audit_env.parse_reach("`qa`/staging", {}) == (["qa", "staging"], [])
+
+
+def test_e5_an_unreadable_inventory_is_unknown(tmp_path, monkeypatch):
+    _write(tmp_path, ".crew/secrets.md", _SECRETS_HEAD + "| K | qa | no | |\n")
+    _deny(monkeypatch, "secrets.md")
+    assert _row(tmp_path, "E5")["status"] == qa_audit.UNKNOWN
 
 
 # --- E6 served verifiers, E7 CI parity (D5, D9) ----------------------------------------------

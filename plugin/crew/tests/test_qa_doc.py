@@ -102,6 +102,29 @@ def test_a_hand_written_doc_is_refused_and_kept(tmp_path, capsys):
     assert (tmp_path / "docs/qa/qa-process.html").exists()
 
 
+def test_an_unreadable_doc_is_refused_not_overwritten(tmp_path, monkeypatch, capsys):
+    _ladder_repo(tmp_path)
+    _write(tmp_path, "docs/qa/README.md", "# our QA notes\n")
+    real = open
+
+    def fake(path, *args, **kwargs):  # chmod 000 does not stop root, so deny the read here
+        if str(path).endswith("README.md"):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real(path, *args, **kwargs)
+    monkeypatch.setattr(qa_audit_env, "open", fake, raising=False)
+    assert qa_doc.main(["--root", str(tmp_path), "--write"]) == 1
+    assert (tmp_path / "docs/qa/README.md").read_text(encoding="utf-8") == "# our QA notes\n"
+    assert "REFUSED docs/qa/README.md: it exists but could not be read" in capsys.readouterr().err
+
+
+def test_a_marker_quoted_below_the_top_is_not_the_marker(tmp_path):
+    _ladder_repo(tmp_path)
+    hand = "# our QA notes\n" + "\n" * 10 + f"we used to run `{qa_doc.GENERATED}`\n"
+    _write(tmp_path, "docs/qa/README.md", hand)
+    assert qa_doc.main(["--root", str(tmp_path), "--write"]) == 1
+    assert (tmp_path / "docs/qa/README.md").read_text(encoding="utf-8") == hand
+
+
 def test_a_generated_doc_is_regenerated(tmp_path):
     _ladder_repo(tmp_path)
     assert qa_doc.main(["--root", str(tmp_path), "--write"]) == 0

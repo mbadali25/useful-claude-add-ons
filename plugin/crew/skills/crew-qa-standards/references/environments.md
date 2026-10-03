@@ -112,7 +112,23 @@ deploys (D2).
 Non-production held live payment and shipping credentials for weeks (D4).
 
 - **Check.** `.crew/secrets.md` (names, never values) has a reaches column and a live column. A
-  live credential reaching a non-production environment needs a filled acceptance column.
+  live credential reaching a non-production environment needs an owner acceptance.
+- **Columns** are found by whole header words: reaches (`reach`, `reaches`, `environment(s)`,
+  `env(s)`), `live`, and accepted (`accept`, `accepted`, `acceptance`). A "Delivered" column is not
+  `live`.
+- **Live** is `yes`, `y`, `true` or `live`, or `no`, `n` or `false`; a note in parentheses after it is
+  ignored. Anything else (`?`, `TBD`, blank) is unknown, and an unknown row that may reach a
+  non-production environment makes E5 UNKNOWN, naming the row. Only a reach that is production
+  alone settles the row whatever `live` says.
+- **Reaches** splits on `,`, `;` and `/`. Each part counts by the environment names in it: the
+  declared `environments` keys, the production names (`prod`, `production`, `prd`, `live`) and the
+  usual non-production ones (`dev`, `development`, `local`, `ci`, `test`, `testing`, `qa`, `uat`,
+  `stage`, `staging`, `preprod`, `sandbox`, `demo`, `preview`). `production only` is production. A
+  live credential whose reach is blank, or has a part naming none of these, is UNKNOWN.
+- **Accepted** must be affirmative: a date (`2026-10-01`), `accepted`, `yes`, or a name. Blank,
+  `-`, `?`, and a cell starting with `no`, `not`, `pending`, `TBD`, `todo`, `none`, `n/a`,
+  `unknown`, `rejected`, `declined`, `awaiting` or `waiting` is not an acceptance, so a live
+  non-production credential with one is a GAP.
 
 | Name | Reaches | Live | Accepted |
 |---|---|---|---|

@@ -353,21 +353,19 @@ def _phase_reached(root):
 
 def crew_checkouts(base):
     """Directories at most two levels under base (base included) holding `.crew/`."""
-    found = []
-    for depth_root, depth in ((base, 0),):
-        stack = [(depth_root, depth)]
-        while stack:
-            here, level = stack.pop()
-            if os.path.isdir(os.path.join(here, ".crew")):
-                found.append(here)
-            if level < 2:
-                try:
-                    names = sorted(os.listdir(here), reverse=True)
-                except OSError:
-                    continue
-                stack += [(os.path.join(here, n), level + 1) for n in names
-                          if n not in SKIP_DIRS and not n.startswith(".")
-                          and os.path.isdir(os.path.join(here, n))]
+    found, stack = [], [(base, 0)]
+    while stack:
+        here, level = stack.pop()
+        if os.path.isdir(os.path.join(here, ".crew")):
+            found.append(here)
+        if level < 2:
+            try:
+                names = sorted(os.listdir(here), reverse=True)
+            except OSError:
+                continue
+            stack += [(os.path.join(here, n), level + 1) for n in names
+                      if n not in SKIP_DIRS and not n.startswith(".")
+                      and os.path.isdir(os.path.join(here, n))]
     return sorted(found)
 
 

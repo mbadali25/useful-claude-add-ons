@@ -37,6 +37,7 @@ LADDER_MMD = os.path.join("docs", "diagrams", "process-qa-ladder.mmd")
 AUDIT_MMD = os.path.join("docs", "diagrams", "process-qa-audit.mmd")
 MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"
 MAX_RULE_ROWS = 40
+MARKER_LINES = 5  # the marker is on line 1 (md), 2 (html) or 3 (mmd); a quote of it lower down is not one
 
 
 def _git(root, *args):
@@ -326,14 +327,19 @@ def outputs(root):
 
 
 def write(root, files):
-    """Write each file whose current copy is absent or carries GENERATED.
-    Returns (written, refused)."""
+    """Write each file whose current copy is absent or carries GENERATED in its
+    first MARKER_LINES lines. A file that exists but cannot be read is refused:
+    unreadable is not absent. Returns (written, refused), refused as (rel, why)."""
     written, refused = [], []
     for rel, text in files.items():
         path = os.path.join(root, rel)
-        current = qa_audit_env.read_text(path)
-        if current is not None and GENERATED not in current:
-            refused.append(rel)
+        try:
+            current = qa_audit_env.read_text(path)
+        except OSError as exc:
+            refused.append((rel, f"it exists but could not be read ({exc.strerror or type(exc).__name__})"))
+            continue
+        if current is not None and GENERATED not in "\n".join(current.split("\n")[:MARKER_LINES]):
+            refused.append((rel, f"it exists and is not marked '{GENERATED}'"))
             continue
         os.makedirs(os.path.dirname(path), exist_ok=True)
         tmp = path + ".tmp"
@@ -361,9 +367,8 @@ def main(argv):
     written, refused = write(root, files)
     for rel in written:
         print(f"wrote {qa_audit_env.posix(rel)}")
-    for rel in refused:
-        print(f"REFUSED {qa_audit_env.posix(rel)}: it exists and is not marked '{GENERATED}' -- move it aside or "
-              "merge by hand", file=sys.stderr)
+    for rel, why in refused:
+        print(f"REFUSED {qa_audit_env.posix(rel)}: {why} -- move it aside or merge by hand", file=sys.stderr)
     return 1 if refused else 0
 
 

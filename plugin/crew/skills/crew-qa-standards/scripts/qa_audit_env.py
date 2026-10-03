@@ -65,10 +65,14 @@ def _row(rule, title, status, evidence):
 
 
 def read_text(path):
+    """The file's text, or None when it does not exist. Any other OSError
+    (permission, a directory, I/O) propagates: a file that exists but cannot be
+    read is "could not tell", never "absent", so every caller answers UNKNOWN
+    for it and qa_doc refuses to overwrite it."""
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
             return fh.read()
-    except OSError:
+    except (FileNotFoundError, NotADirectoryError):
         return None
 
 
@@ -250,9 +254,14 @@ def check_verify_scripts(root, ci, tests):
         return _row("G3", title, NA, "no _verify/*.sh")
     bad = []
     for path in scripts:
-        text = read_text(path)
+        try:
+            text = read_text(path)
+        except OSError as exc:
+            text, why = None, exc.strerror or type(exc).__name__
+        else:
+            why = "it vanished while being read"
         if text is None:
-            return _row("G3", title, UNKNOWN, f"could not read {os.path.relpath(path, root)}")
+            return _row("G3", title, UNKNOWN, f"could not read {os.path.relpath(path, root)} ({why})")
         bad += [f"{os.path.relpath(path, root)}: {d}" for d in _script_defects(text)]
     if bad:
         return _row("G3", title, GAP, "; ".join(bad[:6]))
@@ -282,7 +291,8 @@ def check_generated_ignored(root, ci, tests):
     for name in present:
         ignored = _git(root, "check-ignore", "-q", name)
         listed = _git(root, "ls-files", "--", name)
-        if ignored is None or listed is None or ignored.returncode not in (0, 1):
+        if ignored is None or listed is None or ignored.returncode not in (0, 1) \
+                or listed.returncode != 0:  # a failed ls-files is silent stdout, not "untracked"
             return _row("G4", title, UNKNOWN, f"git could not answer for {name}/")
         if listed.stdout.strip():
             tracked.append(name)
@@ -301,7 +311,10 @@ def check_crew_ignore_block(root, ci, tests):
     title = ".gitignore carries crew's .crew/* block"
     if not os.path.isdir(os.path.join(root, ".crew")):
         return _row("G5", title, NA, "no .crew/ directory")
-    text = read_text(os.path.join(root, ".gitignore"))
+    try:
+        text = read_text(os.path.join(root, ".gitignore"))
+    except OSError as exc:
+        return _row("G5", title, UNKNOWN, f"could not read .gitignore ({exc.strerror or type(exc).__name__})")
     if text is None:
         return _row("G5", title, GAP, "no .gitignore; the promotion approval marker would be tracked")
     lines = {ln.strip() for ln in text.split("\n")}
@@ -354,7 +367,7 @@ def check_env_rollback(root, ci, tests):
     envs, row = _envs_or_row(root, "E2", title)
     if row:
         return row
-    bad, today = [], datetime.date.today()
+    bad, unread, today = [], [], datetime.date.today()
     for name, env in envs.items():
         rb = env.get("rollback")
         if rb is None:
@@ -365,7 +378,11 @@ def check_env_rollback(root, ci, tests):
         elif not isinstance(rb, str):
             bad.append(f"{name}: `rollback` is not a path")
         else:
-            text = read_text(os.path.join(root, rb))
+            try:
+                text = read_text(os.path.join(root, rb))
+            except OSError as exc:
+                unread.append(f"{name}: could not read runbook {rb} ({exc.strerror or type(exc).__name__})")
+                continue
             match = _LAST_VERIFIED_RE.search(text or "")
             if text is None:
                 bad.append(f"{name}: runbook {rb} does not exist")
@@ -380,7 +397,9 @@ def check_env_rollback(root, ci, tests):
                 if age > ROLLBACK_MAX_DAYS:
                     bad.append(f"{name}: {rb} last rehearsed {age} days ago (ceiling {ROLLBACK_MAX_DAYS})")
     if bad:
-        return _row("E2", title, GAP, "; ".join(bad))
+        return _row("E2", title, GAP, "; ".join(bad + unread))
+    if unread:
+        return _row("E2", title, UNKNOWN, "; ".join(unread))
     return _row("E2", title, PASS, f"{len(envs)} environment(s) carry a rehearsed rollback or a reason")
 
 
@@ -448,33 +467,115 @@ def _cell(row, index):
     return row[index].lower() if index is not None and index < len(row) else ""
 
 
+# E5's vocabulary. Only these words decide `live`; anything else is unknown.
+LIVE_YES = ("yes", "y", "true", "live")
+LIVE_NO = ("no", "n", "false")
+# Environment words a reaches cell may use besides the declared `environments` keys.
+NONPROD_NAMES = ("dev", "development", "local", "ci", "test", "testing", "qa", "uat", "stage",
+                 "staging", "preprod", "pre-prod", "sandbox", "demo", "preview")
+# An acceptance cell starting with one of these words is not an acceptance.
+NOT_ACCEPTED = ("no", "n", "false", "not", "pending", "tbd", "todo", "none", "n/a", "na",
+                "unknown", "rejected", "declined", "awaiting", "waiting")
+_DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+
+
+def _header_col(header, words):
+    """Index of the first header cell holding one of `words` as a whole word."""
+    pattern = re.compile(r"\b(?:" + "|".join(map(re.escape, words)) + r")\b")
+    return next((i for i, h in enumerate(header) if pattern.search(h.strip("`*_ "))), None)
+
+
+def _plain(cell):
+    return re.sub(r"[`*_]", "", cell).strip()
+
+
+def parse_live(cell):
+    """"yes", "no" or "unknown". A trailing parenthesis is a note ("yes (rotated)");
+    every word outside LIVE_YES and LIVE_NO -- `?`, TBD, blank -- is unknown."""
+    word = _plain(cell).split("(")[0].strip().rstrip(".")
+    if word in LIVE_YES:
+        return "yes"
+    if word in LIVE_NO:
+        return "no"
+    return "unknown"
+
+
+def parse_reach(cell, envs):
+    """(environment names, unparsed parts). The cell splits on `,`, `;` and `/`;
+    a part counts by the known environment names among its words, so
+    "production only" is production and "only" is not an environment. A part
+    with no known name is unparsed, and so is an empty cell."""
+    known = set(PROD_NAMES) | set(NONPROD_NAMES) | {k.lower() for k in envs}
+    found, unparsed = [], []
+    for part in (p.strip() for p in re.split(r"[,;/]", _plain(cell))):
+        if not part:
+            continue
+        names = [w for w in re.findall(r"[a-z0-9][a-z0-9_-]*", part) if w in known]
+        if names:
+            found += [n for n in names if n not in found]
+        else:
+            unparsed.append(part)
+    if not found and not unparsed:
+        unparsed.append("(empty)")
+    return found, unparsed
+
+
+def is_accepted(cell):
+    """True for an affirmative acceptance: a date, `accepted`, `yes` or a name.
+    Blank, punctuation (`-`, `?`) and a cell starting with a NOT_ACCEPTED word
+    (no, pending, TBD, ...) are not."""
+    text = _plain(cell)
+    if not re.search(r"[a-z0-9]", text):
+        return False
+    if _DATE_RE.search(text):
+        return True
+    first = re.match(r"[a-z0-9/]+", text)
+    return not (first and first.group(0) in NOT_ACCEPTED)
+
+
 def check_secrets_inventory(root, ci, tests):
-    """E5 (standard 6, defect D4): which environment does each credential reach, and is it live."""
+    """E5 (standard 6, defect D4): which environment does each credential reach, and is it live.
+    A row whose `live` or reach cannot be read is UNKNOWN, never a pass (09 §6)."""
     title = "Credential inventory: reach and live columns"
     path = os.path.join(root, ".crew", "secrets.md")
     state, vmap = load_map(root)
     envs = environments(vmap) if state == "ok" else {}
-    if not os.path.isfile(path):
+    try:
+        text = read_text(path)
+    except OSError as exc:
+        return _row("E5", title, UNKNOWN, f"could not read .crew/secrets.md ({exc.strerror or type(exc).__name__})")
+    if text is None:
         if envs:
             return _row("E5", title, GAP, "environments are declared but .crew/secrets.md does not exist")
         return _row("E5", title, NA, "no environments block and no .crew/secrets.md")
-    header, rows = _table(read_text(path) or "")
-    reach_col = next((i for i, h in enumerate(header) if "reach" in h or "environment" in h), None)
-    live_col = next((i for i, h in enumerate(header) if "live" in h), None)
+    header, rows = _table(text)
+    reach_col = _header_col(header, ("reach", "reaches", "environment", "environments", "env", "envs"))
+    live_col = _header_col(header, ("live",))
     if reach_col is None or live_col is None:
         missing = [n for n, c in (("reaches", reach_col), ("live", live_col)) if c is None]
         return _row("E5", title, GAP, f".crew/secrets.md has no {' or '.join(missing)} column")
-    accept_col = next((i for i, h in enumerate(header) if "accept" in h), None)
-    bad = []
+    accept_col = _header_col(header, ("accept", "accepted", "acceptance"))
+    bad, unknown, by_name = [], [], {k.lower(): v for k, v in envs.items()}
     for r in rows:
-        if not re.match(r"\s*(yes|y|true|live)\b", _cell(r, live_col)):
+        name = r[0] if r else "?"
+        live = parse_live(_cell(r, live_col))
+        if live == "no":
             continue
-        reached = [e for e in re.split(r"[\s,;/]+", _cell(r, reach_col)) if e]
-        nonprod = [e for e in reached if e not in PROD_NAMES]
-        if nonprod and not _cell(r, accept_col).strip(" -"):
-            bad.append(f"`{r[0]}` is live and reaches {', '.join(nonprod)} with no owner acceptance")
+        reached, unparsed = parse_reach(_cell(r, reach_col), envs)
+        nonprod = [e for e in reached if not is_production(e, by_name.get(e, {}))]
+        if live == "unknown":
+            if nonprod or unparsed:  # production-only cannot be a GAP whatever `live` says
+                unknown.append(f"`{name}`: live is `{_cell(r, live_col) or '(blank)'}`, not yes or no")
+            continue
+        if unparsed:
+            unknown.append(f"`{name}` is live and its reach `{', '.join(unparsed)}` names no known environment")
+        if nonprod and not is_accepted(_cell(r, accept_col)):
+            bad.append(f"`{name}` is live and reaches {', '.join(nonprod)} with no owner acceptance")
     if bad:
-        return _row("E5", title, GAP, "; ".join(bad[:5]))
+        return _row("E5", title, GAP, "; ".join(bad[:5])
+                    + (f"; also could not tell: {'; '.join(unknown[:5])}" if unknown else ""))
+    if unknown:
+        return _row("E5", title, UNKNOWN, "; ".join(unknown[:5]))
     return _row("E5", title, PASS, f"{len(rows)} credential(s) inventoried; no unaccepted live one "
                 "reaches a non-production environment")
 
