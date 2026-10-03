@@ -162,22 +162,52 @@ def _windows(tmp_path, windows):
     return {"CREW_AUTOCLEAR_WINDOW_STUB": str(path)}
 
 
-def _sendable(flavor, tmp_path, root):
-    """A target each flavour can identify uniquely: a tmux pane whose pid is
-    this test process (an ancestor of the script) for bash, and one stubbed
-    window owned by this test process for PowerShell.
+# Native Windows has no tmux, and the tmux pane check cannot confirm a pane
+# there (`crew_autocycle._ppid` has no Windows parent-pid walk, so it fails
+# closed). Where a test's property is not tmux's own, the bash flavour takes
+# the xdotool title fallback on nt instead of skipping: a stubbed xdotool,
+# DISPLAY=:0, and exactly one stubbed window whose title is configured
+# (T-0076). Linux keeps tmux.
+_SH_VIA_XDOTOOL = os.name == "nt"
+_SH_TITLE = "CrewAutoCycleTestWindow"
+_NO_NATIVE_TMUX = ("no native tmux; the pane check has no Windows parent-pid walk "
+                   "and fails closed (T-0076)")
+
+
+def _send_method(flavor):
+    """The machine-file keys naming the method `_sendable`'s target uses.
 
     `method="sendkeys"` is explicit for ps1: since `auto` now resolves to
     `notify` on native Windows (the owner decision this method never
     exercises), a helper whose whole job is a WINDOW target has to ask for
     the method that still uses one."""
+    if flavor == "ps1":
+        return {"method": "sendkeys"}
+    if _SH_VIA_XDOTOOL:
+        return {"method": "xdotool", "windowTitle": _SH_TITLE}
+    return {"method": "tmux"}
+
+
+def _tmux_env(tmp_path, pane_pid=None):
+    """A fake tmux whose one pane reports `pane_pid` (default: this test
+    process, an ancestor of the script)."""
+    pane_pid = os.getpid() if pane_pid is None else pane_pid
+    bindir = tmp_path / "fakebin"
+    crew_fixtures.write_shim(bindir, "tmux", f"#!/bin/sh\necho {pane_pid}\n",
+                             f"@echo off\r\necho {pane_pid}\r\n")
+    return crew_fixtures.shim_env("sh", bindir, TMUX="/tmp/fake,1,0", TMUX_PANE="%7")
+
+
+def _sendable(flavor, tmp_path, root):
+    """A target each flavour can identify uniquely: a tmux pane whose pid is
+    this test process (an ancestor of the script) for bash -- on native
+    Windows, the xdotool title fallback instead (see `_SH_VIA_XDOTOOL`) --
+    and one stubbed window owned by this test process for PowerShell."""
+    _machine(root, **_send_method(flavor))
+    if flavor == "sh" and _SH_VIA_XDOTOOL:
+        return _xdotool_env(tmp_path, [{"id": 4242, "pid": 999999, "title": _SH_TITLE}])
     if flavor == "sh":
-        bindir = tmp_path / "fakebin"
-        crew_fixtures.write_shim(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n",
-                                 f"@echo off\r\necho {os.getpid()}\r\n")
-        _machine(root, method="tmux")
-        return crew_fixtures.shim_env("sh", bindir, TMUX="/tmp/fake,1,0", TMUX_PANE="%7")
-    _machine(root, method="sendkeys")
+        return _tmux_env(tmp_path)
     return _windows(tmp_path, [{"id": 4242, "pid": os.getpid(), "title": "Claude Code"}])
 
 
@@ -266,6 +296,7 @@ def test_the_forced_continuation_hands_over_to_auto_clear(flavor, tmp_path):
 
 
 @pytest.mark.skipif(_BASH is None, reason="needs bash")
+@pytest.mark.wallclock
 def test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay(tmp_path):
     """FIX (Codex): auto-clear.sh's detached tmux/xdotool sender used to
     inherit fd 3 -- the real hook stdout `cw_run_auto_clear` dup's onto it
@@ -300,30 +331,42 @@ def test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay(tmp_pa
     after `kill_process_group`. On POSIX this is NOT closed the same way:
     `setsid` deliberately moves the sender into a NEW process group, so
     `killpg` on the leader's own recorded pgid cannot reach it either --
-    see TODO.md."""
-    root = _repo(tmp_path, method="tmux", delaySeconds=30)
+    see TODO.md.
+
+    On native Windows the sender is the xdotool one (`_SH_VIA_XDOTOOL`):
+    the fd-3 property is the detached sender's, whichever method it types
+    with. The deadline there is 20s, not 5s, for the reason and measurement
+    `test_the_detached_sender_does_not_outlive_kill_process_group` gives --
+    still under the sender's 30s delay, so a sender holding the pipe open
+    still fails it."""
+    method = _send_method("sh")
+    root = _repo(tmp_path, delaySeconds=30, **method)
     _machine(root)
     _write_marker(root)
     _write_handoff(root)
-    bindir = tmp_path / "fakebin"
-    crew_fixtures.write_shim(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n")
+    if _SH_VIA_XDOTOOL:
+        send_env = _xdotool_env(tmp_path, [{"id": 1, "pid": 999999, "title": _SH_TITLE}])
+    else:
+        bindir = tmp_path / "fakebin"
+        crew_fixtures.write_shim(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n")
+        send_env = {"PATH": crew_fixtures.shell_path("sh", [bindir]),
+                    "TMUX": "/tmp/fake,1,0", "TMUX_PANE": "%7"}
     home = tmp_path / "home"  # `_machine` writes to root.parent/"home" == tmp_path/"home"
     env = dict(os.environ, HOME=str(home), USERPROFILE=str(home),
-               CLAUDE_PROJECT_DIR=str(root),
-               PATH=crew_fixtures.shell_path("sh", [bindir]),
-               TMUX="/tmp/fake,1,0", TMUX_PANE="%7")
+               CLAUDE_PROJECT_DIR=str(root), **send_env)
     payload = _stop(root, root / ".work" / "irrelevant.jsonl", active=True)
+    deadline = 20 if os.name == "nt" else 5
 
     started = time.time()
     result = crew_fixtures.run_gate(
         [_BASH, _script("sh", "context-watch")], cwd=str(root), env=env,
         input=json.dumps(payload), capture_output=True, text=True,
-        timeout=5, check=False)
+        timeout=deadline, check=False)
     elapsed = time.time() - started
 
     assert result.returncode == 0, result.stderr
-    assert elapsed < 5, elapsed
-    assert "sent - method tmux" in _log(root), _log(root) + result.stderr
+    assert elapsed < deadline, elapsed
+    assert f"sent - method {method['method']}" in _log(root), _log(root) + result.stderr
 
 
 @pytest.mark.skipif(os.name != "nt" or _BASH is None,
@@ -582,7 +625,7 @@ def test_an_unrecognised_autoclear_key_is_logged_and_the_default_still_applies(f
     apart."""
     root = _repo(tmp_path)
     env = _sendable(flavor, tmp_path, root)
-    _machine(root, method="tmux" if flavor == "sh" else "sendkeys", delay=4)
+    _machine(root, **_send_method(flavor), delay=4)
     _write_marker(root)
     _write_handoff(root)
 
@@ -601,7 +644,7 @@ def test_a_numeric_string_delay_is_accepted_silently(flavor, tmp_path):
     a warning either."""
     root = _repo(tmp_path)
     env = _sendable(flavor, tmp_path, root)
-    _machine(root, method="tmux" if flavor == "sh" else "sendkeys", delaySeconds="4")
+    _machine(root, **_send_method(flavor), delaySeconds="4")
     _write_marker(root)
     _write_handoff(root)
 
@@ -617,7 +660,7 @@ def test_an_unusable_delay_seconds_is_logged_and_the_default_still_applies(flavo
     the numeric-string case above) must warn, naming the effective value."""
     root = _repo(tmp_path)
     env = _sendable(flavor, tmp_path, root)
-    _machine(root, method="tmux" if flavor == "sh" else "sendkeys", delaySeconds="soon")
+    _machine(root, **_send_method(flavor), delaySeconds="soon")
     _write_marker(root)
     _write_handoff(root)
 
@@ -678,7 +721,7 @@ def test_a_negative_delay_seconds_is_logged_and_the_default_still_applies(tmp_pa
 def test_only_the_machine_can_opt_in_and_a_repo_can_only_opt_out(flavor, machine, repo, tmp_path):
     root = _repo(tmp_path, **({} if repo is None else {"enabled": repo}))
     env = _sendable(flavor, tmp_path, root)
-    _machine(root, enabled=machine, **({"method": "tmux"} if flavor == "sh" else {}))
+    _machine(root, enabled=machine, **(_send_method(flavor) if flavor == "sh" else {}))
     _write_marker(root)
     _write_handoff(root)
 
@@ -743,6 +786,9 @@ def test_the_window_is_identified_uniquely_or_not_at_all(flavor, case, windows, 
         # environment falsify a window's owner at runtime, in production.
         real_pid = request.getfixturevalue("_real_foreign_pid")
         windows = [dict(w, pid=real_pid) if w["pid"] == 999999 else w for w in windows]
+    if flavor == "sh" and os.name == "nt" and any(w["pid"] == _ME for w in windows):
+        pytest.skip("owner-pid matching needs an ancestor walk the bash flavour has no Windows "
+                    "branch for (_ppid, crew_autocycle.py); it fails closed there (T-0076)")
     del case
     root = _repo(tmp_path)
     if flavor == "sh":
@@ -853,13 +899,18 @@ def test_resolve_crew_link_root_classifies_drive_unc_and_rootless_targets(
 @pytest.mark.skipif(_BASH is None, reason="needs bash")
 # A fixed id for this process's pid: under pytest-xdist each worker has its
 # own pid, and ids that differ between workers abort the whole run.
-@pytest.mark.parametrize("pane_pid,sent", [pytest.param(os.getpid(), True, id="own-pid-True"),
-                                           pytest.param(999999, False, id="999999-False")])
+# The refusal case still runs on native Windows: it proves the pane check
+# fails closed there. Only the accepting case needs a parent-pid walk.
+@pytest.mark.parametrize("pane_pid,sent", [
+    pytest.param(os.getpid(), True, id="own-pid-True",
+                 marks=pytest.mark.skipif(os.name == "nt", reason=_NO_NATIVE_TMUX)),
+    pytest.param(999999, False, id="999999-False")])
 def test_a_tmux_pane_must_be_the_one_running_this_session(pane_pid, sent, tmp_path):
+    """tmux's own mechanics, so never the xdotool fallback `_sendable` takes
+    on native Windows: the fake tmux and method are set here directly."""
     root = _repo(tmp_path)
-    env = _sendable("sh", tmp_path, root)
-    crew_fixtures.write_shim(tmp_path / "fakebin", "tmux", f"#!/bin/sh\necho {pane_pid}\n",
-                             f"@echo off\r\necho {pane_pid}\r\n")
+    _machine(root, method="tmux")
+    env = _tmux_env(tmp_path, pane_pid)
     _write_marker(root)
     _write_handoff(root)
 
@@ -980,6 +1031,10 @@ def test_the_configured_delay_reaches_the_dry_run_plan_at_several_values(flavor,
 
 
 @pytest.mark.skipif(_BASH is None, reason="needs bash")
+@pytest.mark.skipif(os.name == "nt", reason=(
+    "no native tmux (T-0076), and the xdotool sender cannot stand in: this test shims "
+    "`bash` on PATH, but Git's bin\\bash.exe launcher prepends /mingw64/bin:/usr/bin, so "
+    "the sender's `bash` always resolves to /usr/bin/bash and the shim is never reached"))
 @pytest.mark.parametrize("delay", [1, 4, 6, 9])
 def test_the_configured_delay_reaches_the_detached_senders_own_sleep_argument(tmp_path, delay):
     """The value handed to the DETACHED sender -- not merely echoed by the
@@ -1027,7 +1082,10 @@ def test_the_configured_delay_reaches_the_detached_senders_own_sleep_argument(tm
                             input=json.dumps(payload), capture_output=True, text=True,
                             timeout=5, check=False)
     deadline = time.time() + 5
-    while time.time() < deadline and not sleep_log.exists():
+    # Wait for the shim's WRITE, not the file: `>>` creates it before `cut`
+    # writes, and under a parallel run the read landed in that gap ('' == '1').
+    while time.time() < deadline and not (
+            sleep_log.exists() and sleep_log.read_text(encoding="utf-8").strip()):
         time.sleep(0.02)
 
     assert result.returncode == 0, result.stderr
@@ -1045,13 +1103,18 @@ def test_auto_does_not_resolve_to_notify_off_windows_with_no_capability(flavor, 
     _write_marker(root)
     _write_handoff(root)
 
+    # sh gets OS="" (read exactly as unset): on native Windows it would
+    # otherwise inherit this process's OS=Windows_NT and correctly resolve
+    # to `notify`, which is the OTHER test's case, not this one.
+    off_windows = {"OS": ""} if flavor == "sh" else {}
     result = _invoke(flavor, "auto-clear", root, args=("--session", SESSION_A, "--dry-run"),
-                     env_extra=dict(_NO_CAPABILITY_ENV))
+                     env_extra=dict(_NO_CAPABILITY_ENV, **off_windows))
 
     if flavor == "sh":
-        # The .sh flavour has no forced OS -- it genuinely reads whatever
-        # $OS this test process happens to have, which is never Windows_NT
-        # in this suite's own environment.
+        # The .sh flavour has no forced OS -- `_invoke` passes this test
+        # process's own environment through, which carries OS=Windows_NT on
+        # a native Windows host, so the OS="" above is what makes this the
+        # off-Windows case on every host.
         assert "would send" not in result.stdout
         assert "no usable method" in result.stderr
     else:
@@ -1175,7 +1238,7 @@ def _proc_comm(pid):
 
 def _scoped(flavor, tmp_path, root, session=SESSION_A, **scope):
     env = _sendable(flavor, tmp_path, root)
-    _machine(root, **({"method": "tmux"} if flavor == "sh" else {}), **scope)
+    _machine(root, **(_send_method(flavor) if flavor == "sh" else {}), **scope)
     _write_marker(root, session)
     _write_handoff(root)
     return _invoke(flavor, "auto-clear", root, args=("--session", session, "--dry-run"),
@@ -1288,6 +1351,23 @@ _SCOPE_CASES = [
     ("both-session-misses", {"onlyRepos": [_ROOT_TOKEN], "onlySessions": [SESSION_B]}, "silent"),
     ("both-repo-misses", {"onlyRepos": ["{root}-other"], "onlySessions": [SESSION_A]}, "silent"),
 ]
+# The "sh" expectation above is POSIX's; these two cases differ under the
+# Win32 rules the sh flavour's native python applies on Windows.
+_SH_WIN32_PATH_RULES = {"repo-trailing-space", "repo-backslashes"}
+
+
+def _posix_shaped(tmp_path, name):
+    """A path the `windows=False` rules accept on every host. POSIX: a real
+    directory under `tmp_path`, exactly as before. Native Windows: a
+    lexical `/`-rooted path, since `tmp_path` is `C:\\...` there, which the
+    POSIX rules refuse as relative -- and `normalise_repo_path` runs no
+    realpath when the rules it applies are not this host's, so nothing
+    needs to exist."""
+    if os.name == "nt":
+        return pathlib.PurePosixPath("/tmp/crew-autocycle-scope") / name
+    path = tmp_path / name
+    path.mkdir()
+    return path
 
 
 def _fill(value, root):
@@ -1302,15 +1382,22 @@ def _fill(value, root):
 @by_flavor
 @pytest.mark.parametrize("case,scope,expect", _SCOPE_CASES, ids=[c[0] for c in _SCOPE_CASES])
 def test_the_machine_can_narrow_auto_clear_to_listed_repos_and_sessions(
-        flavor, case, scope, expect, tmp_path):
+        flavor, case, scope, expect, tmp_path, request):
+    if flavor == "sh" and case in _SH_WIN32_PATH_RULES:
+        request.applymarker(pytest.mark.xfail(os.name == "nt", strict=True, reason=(
+            "on native Windows the sh flavour's python applies Win32 path rules "
+            "(normalise_repo_path windows=os.name == 'nt'), so this entry arms where "
+            "POSIX refuses it -- an sh/ps1 parity divergence the owner has not ruled "
+            "on (T-0076 spec, Unknowns); the hook is deliberately unchanged")))
     del case
     if isinstance(expect, dict):
         expect = expect[flavor]
     if expect == "armed":
         # Only an "armed" case reaches method/window resolution -- in_scope
         # refuses every "silent" one first -- so only these depend on a
-        # capability this host may genuinely lack.
-        if flavor == "sh" and not _real_tmux_on_path():
+        # capability this host may genuinely lack. Native Windows needs no
+        # real tmux: `_sendable` takes the stubbed xdotool fallback there.
+        if flavor == "sh" and not _SH_VIA_XDOTOOL and not _real_tmux_on_path():
             pytest.skip("tmux is not on PATH on this host, so this case can "
                         "only be PROVED armed by actually resolving a method "
                         "- see test_in_scope_decides_the_scope_matrix_with_"
@@ -1340,12 +1427,13 @@ def test_in_scope_decides_the_scope_matrix_with_no_subprocess_on_every_os(
     POSIX only (`windows=False`): the "sh" expectation applies, since that is
     the branch a real POSIX `tmp_path` exercises; the Windows branch already
     has its own dedicated in-process cases (`test_in_scope_on_windows_is_
-    case_insensitive_for_repos_only` and neighbours)."""
+    case_insensitive_for_repos_only` and neighbours). On native Windows the
+    root is POSIX-shaped (`_posix_shaped`), so the same rules see the same
+    shape of path."""
     del case
     if isinstance(expect, dict):
         expect = expect["sh"]
-    root = tmp_path / "repo"
-    root.mkdir()
+    root = _posix_shaped(tmp_path, "repo")
     cfg = {key: _fill(value, root) for key, value in scope.items()}
 
     result = crew_autocycle.in_scope(cfg, str(root), SESSION_A, windows=False)
@@ -1584,8 +1672,10 @@ def test_a_trailing_space_in_an_only_repos_entry_does_not_authorise_the_bare_pat
     named "<repo> " with a trailing space matched the space-free repo too --
     a repo NOT listed must never come into scope. Whitespace is a legal
     POSIX filename character and two paths that differ only by it are two
-    different paths."""
-    root = os.getcwd()
+    different paths. On native Windows the root is POSIX-shaped
+    (`_posix_shaped`): the cwd is `C:\\...` there, which these rules refuse
+    outright, so the second assertion could never hold."""
+    root = str(_posix_shaped(None, "repo")) if os.name == "nt" else os.getcwd()
     cfg = {"onlyRepos": [root + " "]}
 
     assert crew_autocycle.in_scope(cfg, root, "s", windows=False) is False
@@ -1620,6 +1710,10 @@ def test_windows_repo_matching_does_not_casefold_a_sharp_s():
 # --- review round 3 (crew-1.0-r4-scope) ------------------------------------
 
 
+@pytest.mark.skipif(os.name == "nt", reason=(
+    "needs a real symlinked tmp dir resolved under the POSIX rules: normalise_repo_path "
+    "runs realpath only when windows= matches the host, so windows=False on native "
+    "Windows is lexical and refuses the C:\\ tmp_path outright (T-0076)"))
 def test_normalise_repo_path_resolves_a_dotdot_after_a_symlinked_component(tmp_path):
     """The Python twin's realpath call must not share auto-clear.ps1's
     lexical-collapse bug: `os.path.realpath` resolves every component of a

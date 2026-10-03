@@ -267,35 +267,126 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   or <code>INCOMPLETE</code> — leaves the ticket state <code>REVIEWED</code>, so its <code>FINDINGS</code> can still be accepted. A
   <strong>third</strong> reservation attempt is refused outright and the state becomes <code>NEEDS_REPLAN</code>; that
   refusal, and an explicit <code>--reject</code>, are the only two ways into <code>NEEDS_REPLAN</code>.
-  <strong>Fix:</strong> own the FINDINGS with <code>--accept --by &lt;who&gt;</code> (only the most recent completed round, only
-  once, never once <code>NEEDS_REPLAN</code>), or write a new plan and get it approved — <code>crew_ticket.py
+  <strong>Fix:</strong> a final round with 0 BLOCK from a Codex or Kimi reviewer closes itself: <code>review: auto-accept: eligible</code>, then
+  <code>--auto-accept --follow-up &lt;id&gt;</code> writes an <code>auto-accepted</code> receipt and its FIX/NIT lines go
+  verbatim into one follow-up ticket. A <code>review: auto-accept: refused - &lt;reason&gt;</code> line names what
+  stopped it (any BLOCK, INCOMPLETE, not the final round, an open healer skip, a count it could not
+  read, a same-family Claude-fallback round, a provider or family it could not tell, or a verdict
+  recovered from stray lines - <code>ignored_lines</code> above 0, or missing or unreadable, which is
+  could-not-tell, as on a round recorded before L-0576 wrote the count). Otherwise own the FINDINGS with <code>--accept --by &lt;who&gt;</code> (only the most recent completed round,
+  only once, never once <code>NEEDS_REPLAN</code>; a name starting <code>auto:</code> is refused), or write a new plan and get it approved — <code>crew_ticket.py
   approve</code> on a <code>NEEDS_REPLAN</code> ticket opens a fresh budget of two rounds counted from the successor
   plan; the rounds already spent stay in the ledger and are not erased.</p>
 <ul>
-<li><strong>Symptom: <code>/crew:done</code> refuses with a receipt error.</strong>
-  <strong>Check:</strong></li>
+<li>
+<p><strong>Symptom: a round came back <code>INCOMPLETE</code>.</strong>
+  <strong>Check:</strong> the <code>review:</code> lines, or <code>failure_class</code> in <code>.work/tickets/&lt;id&gt;/review.json</code>. An
+  INCOMPLETE round has one of three classes. <code>tool</code> means the answer never arrived intact: a
+  timeout, a bad or unknown exit, empty output, or a failed Codex stream. <code>tree</code> means a bundle part
+  or web-test report changed under the reviewer. <code>reviewer</code> means the output arrived and broke the
+  contract. Harmless prose, a heading or a code fence beside well-formed findings, with every part
+  acknowledged and exit 0, no longer does that: the round is FINDINGS, and the ignored lines are
+  printed on a <code>review: FINDINGS kept; ...</code> line and kept in <code>review.json</code>'s <code>ignored_text</code> (<code>ignored_lines</code> is their count). A
+  stray line beside <code>CLEAN</code>, a misformatted contract line (<code>- FIX|...</code>, <code>fix|...</code>, a <code>|</code> table row)
+  or a line admitting the review fell short ("skipped", "truncated", "could not review") is still
+  INCOMPLETE <code>reviewer</code>.
+  <strong>Fix:</strong> a <code>tool</code> round is refunded automatically, up to two per plan. The line reads
+  <code>review: round N was a tool failure (...); refunded</code>. Only the failed round is given back: the
+  rerun <code>/crew:review</code> reserves a new round, charged like any other unless it is a tool failure
+  too, so a ticket with one charged round that reruns and gets FINDINGS has spent the budget. If
+  Codex is out of quota, use the next eligible provider. A third tool failure under
+  one plan reads <code>NOT refunded - refund limit 2 per plan reached</code> and counts. A <code>reviewer</code> or <code>tree</code>
+  round always counts. Rebuild the bundle (tree), or rerun and read what the reviewer wrote
+  (reviewer).</p>
+</li>
+<li>
+<p><strong>Symptom: <code>/crew:done</code> refuses with a receipt error.</strong>
+  <strong>Check:</strong></p>
+</li>
 </ul>
 <pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --check-receipt
 </code></pre>
 <p>A <code>CLEAN</code> verdict writes a receipt automatically; a <code>FINDINGS</code> verdict only becomes one through
-  <code>--accept</code>. <code>--check-receipt</code> rebuilds the review bundle from the receipt's recorded base and
+  <code>--accept</code>, or <code>--auto-accept</code> on a final 0-BLOCK round. An <code>auto-accepted</code> receipt stands only
+  while its round still reads 0 BLOCK with the same lines from the same Codex or Kimi reviewer the receipt names. <code>--check-follow-up</code> fails until the
+  follow-up's <code>direction.md</code> quotes every line verbatim (a line the receipt carries twice, twice),
+  and on a non-UTF-8 file or an unknown receipt kind. <code>/crew:done</code> does not run it yet (L-0568 adds
+  it to check 1), so run it yourself before closing. <code>--check-receipt</code> rebuilds the review bundle from the receipt's recorded base and
   fails unless the hash still matches, the receipt is for the <strong>latest</strong> recorded round, and the
   state is not <code>NEEDS_REPLAN</code> — so editing a file after the reviewer read it, or after the receipt
   was written, invalidates the receipt even though nothing about the ledger itself looks wrong.
   <strong>Fix:</strong> if the edit was deliberate, get the ticket reviewed again (spends the next round); if it
   was accidental, revert the edit and re-check.</p>
 <ul>
+<li><strong>Symptom: Codex hit a usage limit.</strong> The probe printed <code>PROBE=limited</code> (exit 5) with the
+  error on <code>PROBE_DETAIL=...</code>, or a round printed <code>review: codex usage limit in round N: ...</code>.
+  <strong>Cause:</strong> Codex's usage limit, rate limit, quota or spend cap - its own message is quoted.
+  <strong>What happens:</strong> that round runs on the Claude reviewer, announced as
+  <code>same-family (codex limit)</code> and not independent; the limit is recorded in
+  <code>&lt;git-common-dir&gt;/crew/review-limit/&lt;ticket&gt;.json</code> and applies to the next round only. The
+  round is spent like any other. To check Codex yourself without spending one:</li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_run.py&quot; --root . --ticket &lt;id&gt; --scratch &lt;dir&gt; \
+  --provider codex --probe
+</code></pre>
+<ul>
 <li><strong>Symptom: you want to send a ticket back without spending the third round.</strong></li>
 </ul>
 <pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --reject --by &lt;who&gt;
 </code></pre>
 <p>Refuses on a ticket already <code>ACCEPTED</code> or already <code>NEEDS_REPLAN</code>.</p>
+<ul>
+<li><strong>Symptom: <code>crew_train.py acquire</code> exits 1, <code>waiting behind &lt;ticket&gt;</code>.</strong> The clone's merge train
+  is armed (L-0520) and an overlapping ticket holds it, or queued first on the same base.
+  <strong>Check:</strong></li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/crew_train.py&quot; --root . status
+</code></pre>
+<p>Each waiting entry lists the ticket it is behind and every colliding pair (<code>&lt;mine&gt; x &lt;theirs&gt;</code>);
+  <code>touch: undeclared: &lt;why&gt;</code> means that ticket's spec has no usable <code>## Touch</code>, which overlaps
+  everything.
+  <strong>Fix:</strong> wait for the holder to land and release, then acquire again before reviewing; fix an
+  undeclared Touch in the spec. <code>merge &lt;base&gt; first</code> means the base moved in this ticket's Touch:
+  run <code>crew_train.py catch-up --ticket &lt;id&gt;</code> and review the merged head. <code>could not tell</code> (exit 3)
+  means the train state could not be read — the message names the file; nothing is guessed.</p>
+<ul>
+<li><strong>Symptom: a lane holds the train and its session died.</strong> <code>status</code> prints <code>stale?:</code> beside it
+  (worktree missing, head already in the base, held for hours). Nothing releases it
+  automatically, by design.
+  <strong>Fix:</strong> once you are sure it is dead:</li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/crew_train.py&quot; --root . release --ticket &lt;id&gt; --force \
+  --by &lt;who&gt; --reason &quot;&lt;why&gt;&quot;
+</code></pre>
+<p>The release is logged as a <code>force-release</code> event that the other lanes see.</p>
+<ul>
+<li><strong>Symptom: <code>check-land</code> says the base moved in Touch paths.</strong> Another ticket landed changes to
+  paths this ticket touches after it was gated, so the verdict covers a different tree.
+  <strong>Fix:</strong> <code>crew_train.py catch-up --ticket &lt;id&gt;</code> (a merge; conflicts and rerere-replayed files
+  are listed and left unstaged for you to inspect, <code>git add</code> and commit; a version file is never
+  replayed and comes back conflicted), gate the merged head again (<code>/crew:review</code>),
+  then <code>check-land</code> again. <code>merge-tree: HEAD conflicts with &lt;base&gt;</code> is the same fix with a
+  conflict to resolve first.</li>
+</ul>
 <h2 id="scope-approval-and-the-completion-audit">Scope: Approval and the Completion Audit</h2>
 <p>A ticket's contract lives in <code>.work/tickets/&lt;id&gt;/</code>: <code>spec.md</code>'s <code>## Touch</code> section names every path
 the ticket may change; <code>plan.md</code>'s <code>Files:</code> lines must each fall inside Touch. Two hooks hold a
 session to that contract — see <a href="daily-workflow-scope.md">Daily workflow: scope and approval</a> for the
 contract itself. This section is what goes wrong with the approval and the audit.</p>
 <ul>
+<li><strong>Symptom: a lane worktree does not see my settings</strong> (a CLI approval refused, <code>scope.mode</code>
+  read as <code>off</code>, guards at their defaults). <code>.crew/*</code> is gitignored, so <code>git worktree add</code> makes a
+  checkout with no crew config.
+  <strong>Check:</strong> <code>/crew:status</code> prints <code>config   inherited from the main checkout (&lt;path&gt;) ...</code> when
+  the worktree reads the main checkout's <code>.crew/config.json</code> (crew 1.0.69+, T-0088), and
+  <code>crew_config.py --root . --explain</code> starts with <code>repo layer: &lt;path&gt; (&lt;source&gt;)</code>.
+  <strong>Cause and fix:</strong> a worktree with its own <code>.crew/config.json</code> or <code>.crew/crew.json</code> reads only
+  those, never merged with the main checkout's - delete them to inherit. <code>/crew:status</code> names
+  that case: <code>... the main checkout's (&lt;path&gt;) is not read ...</code>. A lane made before 1.0.69 almost
+  always has one, a default that crew's SessionStart heal wrote there. <code>(unknown)</code> means git
+  could not name the main checkout; then no default is written either. The shell and PowerShell readers (<code>verify-gate.sh</code>,
+  <code>_common.sh</code>, <code>notify.sh</code>, the handoff scripts, <code>promote-gate.ps1</code>, <code>scope-guard.ps1</code>,
+  <code>cloud-guard.ps1</code>, <code>auto-clear.ps1</code>) do not inherit yet.</li>
 <li><strong>Symptom: an edit inside Touch is still refused.</strong>
   <strong>Check:</strong> approval status.</li>
 </ul>
@@ -306,10 +397,12 @@ contract itself. This section is what goes wrong with the approval and the audit
   stale immediately</strong> — that is deliberate: an edited spec cannot silently widen what the guard
   accepts. Only a receipt from the user's own prompt counts by default; a <code>cli</code>-sourced receipt
   (written by <code>crew_ticket.py approve</code> directly, for tests/CI) is accepted only when
-  <code>.crew/config.json</code> sets <code>scope.allowCliApproval: true</code>.
-  <strong>Fix:</strong> re-approve. The user types <code>/crew:approve &lt;id&gt;</code> again — nothing else can write the
-  receipt; <code>scope_guard.py</code> refuses a Write/Edit under <code>&lt;git-common-dir&gt;/crew/</code> in every mode but
-  <code>off</code>, so a session cannot forge or refresh its own approval.</p>
+  <code>.crew/config.json</code> sets <code>scope.allowCliApproval: true</code>, and an <code>autopilot</code> receipt (from
+  <code>crew_autopilot.py approve</code>) only while that is true and <code>autopilot.approval</code> still allows it.
+  <strong>Fix:</strong> re-approve. The user types <code>/crew:approve &lt;id&gt;</code> again — the only other route is
+  <code>/crew:autopilot</code> under an opted-in <code>autopilot.approval</code>; <code>scope_guard.py</code> refuses a Write/Edit
+  under <code>&lt;git-common-dir&gt;/crew/</code> in every mode but <code>off</code>, so a session cannot forge or refresh its
+  own approval.</p>
 <ul>
 <li>
 <p><strong>Symptom: you need to touch one more path mid-ticket.</strong>
@@ -350,6 +443,35 @@ contract itself. This section is what goes wrong with the approval and the audit
   with exit 2: "no usable python ... failing closed". Fix by installing a real Python 3, not by
   reading the closed refusal as a false positive.</p>
 </li>
+</ul>
+<h2 id="promote-gate-blocks-a-worktree-deploy">Promote Gate Blocks a Worktree Deploy</h2>
+<p><code>promote-gate.sh</code> / <code>.ps1</code>, the <code>PreToolUse</code> hook on declared <code>deploy</code> commands. Since T-0505 it
+judges <strong>the tree the deploy runs from</strong>: the Bash call's <code>cwd</code>, moved by a leading <code>cd &lt;dir&gt; &amp;&amp;</code>
+and named by any <code>git -C &lt;dir&gt;</code>. That tree must be a worktree of the same repository, clean, and at
+every literal sha the command names. <code>.crew/verify.json</code>, <code>.work/PROMOTIONS.md</code> and the
+<code>.crew/.approved-&lt;env&gt;-&lt;sha&gt;</code> markers are still read from the session's project directory.</p>
+<ul>
+<li><strong>"the tree this deploy runs from ('...') is dirty"</strong> names the tree it judged. If that is the
+  main checkout while you meant a worktree, run the command there: <code>cd &lt;worktree&gt; &amp;&amp; &lt;deploy&gt;</code>, or
+  enter the worktree first. A dirty main checkout no longer blocks a clean worktree.</li>
+<li><strong>"no all-pass row for sha X"</strong> where X is the worktree's sha: the upstream environment passed a
+  different sha. Promote the worktree's sha upstream first; a row for the main checkout's sha does
+  not carry over.</li>
+<li><strong>"the command names commit '...', but the tree it runs from ... is at ..."</strong>: a literal
+  <code>ref=&lt;sha&gt;</code> that is not the tree's HEAD. Deploy from a tree at that sha, or drop the literal.</li>
+<li><strong>"changes directory after it starts"</strong> (a later <code>cd</code>, <code>bash -c 'cd ...'</code>, <code>env -C</code>, <code>make -C</code>),
+  <strong>"names more than one tree"</strong>, <strong>"not a form the gate reads with certainty"</strong> or <strong><code>--git-dir</code></strong>:
+  the gate will not guess. Put a single literal <code>cd &lt;dir&gt; &amp;&amp;</code> first, or use <code>git -C &lt;dir&gt;</code> - and
+  note the directory the command itself runs in must be clean too.</li>
+<li><strong>"index entries flagged skip-worktree or assume-unchanged"</strong>: those flags hide edits from
+  <code>git status</code>; clear them in the tree being deployed.</li>
+<li><strong>"has uncommitted changes: it ..."</strong> also fires when the map is deleted or untracked, or edited
+  under skip-worktree: the gate compares the file with HEAD's copy, not with <code>git status</code>.</li>
+<li><strong>".crew/verify.json in the project dir ... has uncommitted changes"</strong>: commit or revert the map;
+  an uncommitted map is not policy.</li>
+<li>Never route around a block by running the deploy yourself with <code>!</code>. <code>/crew:promote</code> fixes the
+  precondition the message names and asks you only for a <code>requireHuman</code> yes or a genuinely
+  interactive step.</li>
 </ul>
 <h2 id="cloud-guard-false-positives">Cloud Guard False Positives</h2>
 <p><code>cloud-guard.sh</code> / <code>cloud_guard.py</code>, a <code>PreToolUse</code> hook on <code>Bash</code> and <code>PowerShell</code>. <strong>Ships off</strong>
@@ -501,47 +623,6 @@ setting that changes when Claude Code's auto-compact fires.</p>
 <code>/clear</code> or <code>/compact</code> — self-initiated or Claude Code's own auto-compact — <code>handoff-read.sh</code>
 reloads <code>.work/HANDOFF.md</code> back into context automatically, so a compaction you did not ask for
 still resumes from the last written handoff rather than from nothing.</p>
-<h2 id="graph-refresh-refused-secrets-denylisted-path">Graph Refresh Refused: Secrets-Denylisted Path</h2>
-<p>graphify reads every file its ignore rules do not exclude and records the symbols it finds in
-<code>graph.json</code>. For a file git tracks, <code>.gitignore</code> does not stop it: only <code>.graphifyignore</code> does.
-So crew checks, before it names or runs a graph build, that the root <code>.graphifyignore</code> excludes
-every file the secrets denylist matches.</p>
-<ul>
-<li><strong>Symptom: <code>refresh-check</code> prints <code>graph graphify-out: unknown - graphify would read N
-  secrets-denylisted path(s) .graphifyignore does not exclude: ...; stop - a refresh cannot settle
-  this</code>,</strong> or <code>/crew:status</code> prints <code>graph-ignore  UNCOVERED</code>.
-  <strong>Check:</strong> which files, and from which source.</li>
-</ul>
-<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/crew_graph_ignore.py&quot; --root . --check --json
-</code></pre>
-<p>The denylist is the built-in patterns (<code>.env</code>, <code>.env.*</code> but not <code>.env.example</code>, <code>*.pem</code>,
-  <code>*.key</code>, <code>*.p12</code>, <code>*.pfx</code>, <code>id_rsa*</code>, <code>id_ed25519*</code>), <code>.claude/secrets-denylist</code> if it exists,
-  and every in-repo <code>Read(...)</code> rule in <code>permissions.deny</code> of <code>.claude/settings.json</code> and
-  <code>.claude/settings.local.json</code>. <code>sources</code> in the JSON names which ones were read.
-  <strong>Fix:</strong> add the missing patterns, then check again.</p>
-<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/crew_graph_ignore.py&quot; --root . --write
-</code></pre>
-<p>It appends only the missing patterns, under one marked block, and leaves every existing line as
-  it was. Commit <code>.graphifyignore</code>, then re-run the refresh check.</p>
-<ul>
-<li>
-<p><strong>Symptom: <code>denylist coverage unknown: &lt;reason&gt;</code></strong> (the refresh check) or <code>graph-ignore  unknown</code>
-  (<code>/crew:status</code>).
-  <strong>Check:</strong> the reason names it: git missing, a settings file that does not parse, an unreadable
-  <code>.claude/secrets-denylist</code> or <code>.graphifyignore</code>, a nested <code>.graphifyignore</code> (only the root one is
-  evaluated, and a nested one could re-include a file with <code>!</code>), or a deny-all <code>Read</code> rule.
-  <strong>Fix:</strong> repair what it names. An unknown is never read as covered, so no refresh is named until
-  it is fixed.</p>
-</li>
-<li>
-<p><strong>Symptom: a graph was built before the fix</strong> (by hand, or by graphify's post-commit hook, which
-  bypasses crew).
-  <strong>Fix:</strong> treat that graph as holding text from the secret files. Delete the graph output
-  directory (<code>graphify-out/</code> by default), run <code>--write</code>, check that <code>--check</code> exits 0, then
-  rebuild. Commit the rebuild if the output is tracked. The crew-graph skill's <strong>Tainted graph</strong>
-  section has the same steps.</p>
-</li>
-</ul>
 <h2 id="turning-things-off">Turning Things Off</h2>
 <p>Every switch named above, in one place. "Off" for a guard means the <code>PreToolUse</code> hook still fires
 but returns immediately without judging anything; "off" for <code>verifyGate</code> means the
@@ -596,7 +677,7 @@ but returns immediately without judging anything; "off" for <code>verifyGate</co
 <td><code>scope.allowCliApproval</code></td>
 <td>repo only</td>
 <td>bool</td>
-<td><code>false</code>: only a <code>/crew:approve</code> typed by the user counts</td>
+<td><code>false</code>: only a <code>/crew:approve</code> typed by the user counts (no <code>cli</code> or <code>autopilot</code> receipt)</td>
 </tr>
 <tr>
 <td><code>verifyGate</code></td>
@@ -639,7 +720,12 @@ but returns immediately without judging anything; "off" for <code>verifyGate</co
 <p><code>~/.claude/crew/config.json</code> is the machine-global layer; <code>.crew/config.json</code> is per-repo and wins
 where both speak. A <strong>ratcheted</strong> key (marked above) can only be <em>narrowed</em> by the repo relative to
 the machine-global value, never widened — a repo cloned from someone else cannot silently loosen a
-guard the machine owner set to <code>block</code>. <code>/crew:config</code> shows where each setting actually came from.</p>
+guard the machine owner set to <code>block</code>. <code>/crew:config --show</code> shows where each setting actually came
+from, and <code>/crew:config</code> with no argument (alias <code>/crew:config-setup</code>) sets either layer from a menu:
+it marks a repo value that widens a guard with <code>!</code>, and names a repo value the machine layer holds
+down. The same menu can delete a repo's <code>.crew/config.json</code>: it moves the file to a backup in one
+rename, compares it with what the preview read (a file that changed since is put back and nothing
+is deleted), and prints the command that restores it for sh, cmd and PowerShell.</p>
 <h2 id="web-testing">Web Testing</h2>
 <p><strong>Symptom:</strong> <code>--select web-testing</code> (or the ticked default row) fails, or Playwright
 runs but the visual rule never passes.</p>
@@ -679,6 +765,12 @@ runs but the visual rule never passes.</p>
   both. This is not double-firing to fix — it is how the same hook reaches both shells; each
   PowerShell twin stands itself down on the wrong platform (<code>$env:OS -ne 'Windows_NT'</code>) rather than
   the bash twin doing that job.</li>
+<li><strong>Tests and checks are slow on Windows.</strong> Read <code>/crew:status</code>'s <code>shell</code> line first. It names the
+  shell route crew's jobs take (<code>shellRoute.mode</code>: <code>auto</code>, <code>wsl</code>, <code>powershell</code>, <code>gitbash</code>) and why.
+  <code>WSL never probed</code> means nobody ran <code>crew_shell.py probe --write</code>; <code>not-installed</code> comes with the
+  <code>wsl --install -d Ubuntu</code> recommendation, which crew prints and never runs. A repo on a Windows
+  drive goes to WSL under <code>auto</code> only after <code>crew_shell.py measure --write</code> has shown WSL faster
+  there. See "Choosing the shell route on Windows" in <code>plugin/crew/skills/crew-setup/platform.md</code>.</li>
 </ul>
 <h2 id="auto-wrap-up-auto-clear-and-auto-resume">Auto Wrap-Up, Auto-Clear and Auto-Resume</h2>
 <p>This section is folded into the troubleshooting guide (<code>troubleshooting.md</code>), linked from it as
@@ -813,8 +905,12 @@ in the machine-global config, because it drives this machine's keyboard:</p>
 </tr>
 </tbody>
 </table>
-<p><code>/crew:config</code> shows where each value comes from and walks you through the global file. To turn the
-cycle off on a machine, set <code>context.autoClear.enabled</code> to <code>false</code> or delete the key.</p>
+<p><code>/crew:config --show</code> shows where each value comes from. <code>/crew:config</code> with no argument (or
+<code>/crew:config-setup</code>) opens a menu that sets either file from a list of values, with a dry run
+before anything is written. To turn the cycle off on a machine, set <code>context.autoClear.enabled</code> to
+<code>false</code> or delete the key. In a repo the menu offers only the veto (<code>false</code>) or <code>null</code> for
+<code>context.autoClear.enabled</code> and <code>resume.auto</code>, and shows <code>onlyRepos</code>/<code>onlySessions</code> read-only,
+because only the machine file can arm or narrow them.</p>
 <h4 id="arming-one-scratch-repo-while-other-sessions-are-live">Arming one scratch repo while other sessions are live</h4>
 <p><code>enabled: true</code> arms auto-clear in <strong>every</strong> Claude session on the machine, not just the one you
 are testing. If other sessions are running, one of them can get <code>/clear</code> typed into its terminal

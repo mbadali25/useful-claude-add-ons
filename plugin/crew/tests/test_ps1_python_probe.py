@@ -30,6 +30,7 @@ body still reaches, just by a different (fail-closed) path.
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import time
@@ -76,6 +77,9 @@ def _stub(directory, name, body, win_body=None):
     non-resolution, which an unrunnable batch file still produces."""
     directory.mkdir(parents=True, exist_ok=True)
     if os.name == "nt":
+        # Git Bash never matches `name.cmd` for a bare `name`, so bash's
+        # resolvers get the extensionless sh stub beside it (T-0076).
+        (directory / name).write_text("#!/bin/sh\n" + body + "\n", encoding="ascii", newline="\n")
         path = directory / (name + ".cmd")
         path.write_text("@echo off\r\n" + (win_body if win_body is not None else body) + "\r\n",
                         encoding="ascii", newline="\r\n")
@@ -108,27 +112,34 @@ def _hung(directory, names=("python3",)):
 
 def _tools(tmp_path):
     """Everything in /usr/bin and /bin EXCEPT python, so bash's resolvers have
-    `tr`/`cut` and no fixture can be rescued by the host's own interpreter."""
+    `tr`/`cut` and no fixture can be rescued by the host's own interpreter.
+
+    On Windows `/usr/bin` is not a path Python can open (it resolves to the
+    current drive's root), so Git's own tools directory is used as it
+    stands, once it is proven to hold no python (T-0076)."""
+    found = shutil.which("tr") if os.name == "nt" else None
+    if found:
+        native = pathlib.Path(found).parent
+        if not [n for n in os.listdir(native) if n.lower().startswith(("python", "py"))]:
+            return native
     tools = tmp_path / "tools"
     tools.mkdir()
-    for source in ("/usr/bin", "/bin"):
-        if not os.path.isdir(source):
-            continue
-        for name in os.listdir(source):
-            if name.startswith(("python", "py")) or (tools / name).exists():
-                continue
-            os.symlink(os.path.join(source, name), tools / name)
+    crew_fixtures.link_path_dirs(tools, skip=lambda name: name.startswith(("python", "py")))
     return tools
 
 
-def _print_python(path_entries, stem="completion-audit"):
+def _print_python_run(path_entries, stem="completion-audit"):
     env = dict(os.environ, OS="Windows_NT", PATH=os.pathsep.join(map(str, path_entries)))
     done = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File",
                            str(SCRIPTS / (stem + ".ps1")), "-PrintPython"],
                           env=env, stdin=subprocess.DEVNULL, capture_output=True,
                           text=True, check=False, timeout=60)
     assert done.returncode == 0, done.stderr
-    return done.stdout.strip()
+    return done
+
+
+def _print_python(path_entries, stem="completion-audit"):
+    return _print_python_run(path_entries, stem).stdout.strip()
 
 
 def _bash_resolver(fn, path_entries):
@@ -138,11 +149,24 @@ def _bash_resolver(fn, path_entries):
     script = f'. "{SCRIPTS / "_common.sh"}"; {fn}'
     done = subprocess.run([BASH, "-c", script], env=env, stdin=subprocess.DEVNULL,
                           capture_output=True, text=True, check=False, timeout=60)
-    return done.stdout.strip() if done.returncode == 0 else ""
+    out = done.stdout.strip() if done.returncode == 0 else ""
+    cygpath = shutil.which("cygpath") if os.name == "nt" else None
+    if out.startswith("/") and cygpath:
+        # bash spells a Windows file the MSYS way (/c/...); pwsh spells the
+        # same file C:\...  Compare the file, not the spelling (T-0076).
+        out = subprocess.run([cygpath, "-w", out], capture_output=True, text=True,
+                             check=False, timeout=30).stdout.strip() or out
+    return out
 
 
 def _runs(interpreter):
-    done = subprocess.run([interpreter, "-c", "print(1)"], capture_output=True,
+    """Whether `interpreter` runs, launched the way its callers launch it:
+    `crew_py`'s callers are bash scripts, and on Windows the candidate it
+    names can be an extensionless sh stub only bash can start (T-0076)."""
+    argv = [interpreter, "-c", "print(1)"]
+    if os.name == "nt" and BASH:
+        argv = [BASH, "-c", '"$0" -c "print(1)"', interpreter]
+    done = subprocess.run(argv, capture_output=True,
                           text=True, check=False, timeout=30)
     return done.returncode == 0 and done.stdout.strip() == "1"
 
@@ -287,6 +311,24 @@ def test_a_broken_alias_falls_through_to_a_real_python_of_the_same_name(tmp_path
 
 
 @needs_pwsh
+def test_a_silent_candidate_is_rejected_without_writing_to_stderr(tmp_path):
+    """T-0097: a candidate that exits 0 and prints nothing leaves `$line` null,
+    and `$null | ConvertFrom-Json` is a NON-terminating binding error the
+    probe's `try` never catches, so every hook on such a host printed a red
+    "Cannot bind argument to parameter 'InputObject'" block while resolving
+    correctly. The silent candidate must be rejected quietly: the working
+    interpreter behind it wins, and stderr stays empty."""
+    silent = tmp_path / "silent"
+    _stub(silent, "python3", "exit 0", win_body="exit /b 0")
+    real = tmp_path / "real"
+    _working(real, ("python",))
+
+    done = _print_python_run([silent, real, _tools(tmp_path)])
+
+    assert (done.stdout.strip(), done.stderr) == (REAL, "")
+
+
+@needs_pwsh
 @needs_bash
 def test_bash_strict_agrees_on_a_same_named_python_behind_a_broken_alias(tmp_path):
     """Was a strict xfail: `command -v` took only the first match per name.
@@ -413,6 +455,7 @@ def _many_hung(tmp_path, count, name="python3"):
 
 @needs_pwsh
 @needs_bash
+@pytest.mark.wallclock
 def test_an_overall_deadline_bounds_several_hung_candidates(tmp_path):
     """Four candidates at the per-candidate 3s bound cost 12s+ before even
     reaching a real python further down PATH -- past the shortest hook
@@ -469,6 +512,7 @@ def _hang_forever(directory, names=("python3",)):
 
 @needs_pwsh
 @needs_bash
+@pytest.mark.wallclock
 def test_near_deadline_candidates_then_a_hang_stay_within_the_hook_timeout(tmp_path):
     """Four candidates that each fail after 1.8s (7.2s total, comfortably
     under the 8s deadline) followed by one that hangs. Before the fix the

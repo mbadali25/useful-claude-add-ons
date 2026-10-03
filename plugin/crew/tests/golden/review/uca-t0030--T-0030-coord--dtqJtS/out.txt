@@ -1,0 +1,45 @@
+READ|part-001-of-037.patch
+READ|part-002-of-037.patch
+READ|part-003-of-037.patch
+READ|part-004-of-037.patch
+READ|part-005-of-037.patch
+READ|part-006-of-037.patch
+READ|part-007-of-037.patch
+READ|part-008-of-037.patch
+READ|part-009-of-037.patch
+READ|part-010-of-037.patch
+READ|part-011-of-037.patch
+READ|part-012-of-037.patch
+READ|part-013-of-037.patch
+READ|part-014-of-037.patch
+READ|part-015-of-037.patch
+READ|part-016-of-037.patch
+READ|part-017-of-037.patch
+READ|part-018-of-037.patch
+READ|part-019-of-037.patch
+READ|part-020-of-037.patch
+READ|part-021-of-037.patch
+READ|part-022-of-037.patch
+READ|part-023-of-037.patch
+READ|part-024-of-037.patch
+READ|part-025-of-037.patch
+READ|part-026-of-037.patch
+READ|part-027-of-037.patch
+READ|part-028-of-037.patch
+READ|part-029-of-037.patch
+READ|part-030-of-037.patch
+READ|part-031-of-037.patch
+READ|part-032-of-037.patch
+READ|part-033-of-037.patch
+READ|part-034-of-037.patch
+READ|part-035-of-037.patch
+READ|part-036-of-037.patch
+READ|part-037-of-037.patch
+FIX|plugin/crew/hooks/scripts/crew_coord.py:889|file:// origins bypass realpath resolution, so equivalent local origins can grant two holders for one ticket.|With /var/run resolving to /run, owner_name(_resolved('/var/run/coord.git', '/wt')) returns file_.run.coord, while the file:///var/run/coord.git spelling returns file_.var.run.coord. In-memory cmd_claim calls for T-1 return 0 for both holders.
+FIX|plugin/crew/hooks/scripts/crew_coord.py:816|Azure structural markers are interpreted before percent-decoding, so an encoded DefaultCollection produces a second key for the same repository.|Compare https://org.visualstudio.com/DefaultCollection/_git/Repo with https://org.visualstudio.com/%44efaultCollection/_git/Repo: keys are dev_2eazure_2ecom.org.repo.repo and dev_2eazure_2ecom.org.defaultcollection.repo. In-memory T-1 claims by different holders both return 0.
+FIX|plugin/crew/hooks/scripts/crew_coord.py:862|Local-path normalization conflates distinct repositories on case-sensitive filesystems; stripping .git also conflates distinct directory names.|/srv/git/Repo.git and /srv/git/repo.git both produce file_.srv.git.repo; /srv/git/repo and /srv/git/repo.git also collide. In-memory claims reproduce the unrelated second repository being refused because the first holds T-1.
+FIX|plugin/crew/hooks/scripts/crew_coord.py:783|A malformed network URL with no host is accepted as a local repository key instead of could-not-tell.|owner_name('https:///owner/repo') returns ('file_.owner.repo', None). With a separate valid coordination remote, this guessed origin key reaches the claim path rather than raising UnknownKey.
+FIX|plugin/crew/hooks/scripts/crew_coord.py:683|Push configuration probe failures are silently treated as missing settings, potentially redirecting a push to the fetch URL.|Stub get-url --push to return /intended.git, remote.origin.url to return /read-only.git, and the remote.origin.pushurl config probe to fail with exit 128. push_env still returns a usable configuration containing only /read-only.git instead of refusing as unknown.
+FIX|plugin/crew/tests/test_crew_coord.py:505|The default Windows suite still launches a POSIX shell script directly through native Python subprocess, so the receivepack test cannot succeed.|Run test_push_carries_the_remotes_receivepack_but_never_mirror on Windows: FAKE_SSH calls the extensionless #!/bin/sh wrapper through subprocess.call without a shell interpreter; process creation fails and the claim cannot return the asserted 0.
+NIT|plugin/crew/tests/test_crew_coord.py:249|Bare-remote reproductions, suite results, and RED mutation claims remain unverified because filesystem writes are prohibited here.|Pytest and check-marketplace.py fail with “No usable temporary directory found”. Read-only collection finds 229 tests; all 84 mutation replacements match once, compile, and name collected tests, which does not establish runtime success.
+NIT|graphify-out/graph.json:1|The requested full-text review remains incomplete: READ lines include programmatic reads, and generated graph sections received structural validation rather than full-text inspection.|Every part's bytes and checksum were checked; generated patches reconstruct the expected blobs and graph references validate, but these checks do not substitute for the requested inspection of every line.

@@ -1,7 +1,10 @@
 # UserPromptSubmit: record a plan approval when the user types
-# `/crew:approve <id>`. PowerShell twin of approval-hook.sh -- both delegate to
-# approval_hook.py. Exit 0 lets the prompt through; exit 2 blocks it with the
-# reason, which is what happens when an approval was asked for and not recorded.
+# `/crew:approve <id>` (or a group, confirmed by `/crew:approve --confirm`).
+# PowerShell twin of approval-hook.sh -- both delegate to approval_hook.py.
+# Exit 0 lets the prompt through; exit 2 blocks it with the reason, which is
+# what happens when an approval was asked for and not recorded. Python runs
+# for any prompt containing the word `approve`; with no usable python only a
+# prompt containing `crew:approve` blocks (the .sh's rule, same order).
 param(
   # Probe seam, the twin of role-write-guard.ps1's -PrintPython.
   [switch]$PrintPython
@@ -156,7 +159,10 @@ function Resolve-CrewPython {
           try { $null = $proc.WaitForExit(2000) } catch { }
         } elseif ($proc.ExitCode -eq 0 -and $outTask.Wait(1000)) {
           $line = @(($outTask.Result -split "`r?`n") | Where-Object { $_.Trim() })[-1]
-          $probe = $line | ConvertFrom-Json
+          # An empty answer leaves $line null, and piping $null into ConvertFrom-Json is a
+          # NON-terminating binding error this try never catches: it reached stderr as a red
+          # error block on every hook, though the candidate was rightly rejected (T-0097).
+          $probe = if ($line) { $line | ConvertFrom-Json } else { $null }
           $v = @($probe.v)
           if ($probe.impl -in @('cpython', 'pypy') -and $v.Count -ge 2 -and
               ($v[0] -is [long] -or $v[0] -is [int]) -and ($v[1] -is [long] -or $v[1] -is [int]) -and
@@ -205,10 +211,11 @@ $raw = [System.Text.Encoding]::UTF8.GetString($stdinBytes)
 
 # The common case is a prompt that is not an approval: leave before any
 # python is looked for.
-if ($raw -notmatch 'crew:approve') { exit 0 }
+if ($raw -notmatch '(?i)approve') { exit 0 }
 
 $py = Resolve-CrewPython
 if (-not $py) {
+  if ($raw -cnotmatch 'crew:approve') { exit 0 }
   [Console]::Error.WriteLine("crew: /crew:approve was NOT recorded -- no usable python to validate the plan.")
   exit 2
 }

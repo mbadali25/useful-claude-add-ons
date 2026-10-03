@@ -53,6 +53,7 @@ import shutil
 import subprocess
 import sys
 
+import crew_common
 import crew_config
 import hook_once
 
@@ -228,6 +229,20 @@ def heal_config(root):
     """
     if not os.path.isdir(os.path.join(root, ".crew")):
         return None, None
+    # A linked worktree with no config of its own reads the main checkout's
+    # (T-0088); a default written here would shadow the owner's settings.
+    crew_dir, source, detail = crew_common.repo_config_dir(root)
+    if source == crew_common.SOURCE_MAIN:
+        return None, (f"## config - this linked worktree has no .crew/config.json of its own; "
+                      f"crew reads the main checkout's ({os.path.join(crew_dir, 'config.json')}), "
+                      "so none is created here")
+    # "Could not tell" is not "own": a default written now would be the
+    # worktree's own config for good, shadowing the owner's once git answers
+    # again. Nothing is written; the next session asks git again.
+    if source == crew_common.SOURCE_UNKNOWN:
+        return None, (f"## config - could not tell whether this linked worktree inherits the "
+                      f"main checkout's config ({detail}), so no default .crew/config.json is "
+                      "created here; the next session asks git again")
 
     path = os.path.join(root, CONFIG_PATH)
     try:

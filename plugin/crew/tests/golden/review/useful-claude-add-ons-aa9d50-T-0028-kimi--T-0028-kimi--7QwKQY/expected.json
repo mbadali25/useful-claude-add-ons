@@ -1,0 +1,13 @@
+{
+  "counts": {
+    "BLOCK": 0,
+    "FIX": 4,
+    "NIT": 1
+  },
+  "delivered": true,
+  "failure_class": null,
+  "origin": "useful-claude-add-ons-aa9d50-T-0028-kimi/T-0028-kimi--7QwKQY",
+  "parts_missing": [],
+  "read_form": "bare",
+  "verdict": "FINDINGS"
+}

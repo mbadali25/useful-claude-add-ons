@@ -1,0 +1,13 @@
+{
+  "counts": {
+    "BLOCK": 4,
+    "FIX": 3,
+    "NIT": 0
+  },
+  "delivered": true,
+  "failure_class": null,
+  "origin": "uca-t-0011/T-0011-build--PBLx2t",
+  "parts_missing": [],
+  "read_form": "bare",
+  "verdict": "FINDINGS"
+}

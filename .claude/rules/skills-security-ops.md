@@ -3,9 +3,9 @@ paths:
   - "skills/wazuh-onprem/**"
   - "skills/cisco-meraki/**"
 ---
-<!-- crew:generated source=.crew/codemap/skills-security-ops.md sha256=65047ddc0c96e988 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/skills-security-ops.md sha256=e72907827307eb8b -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # skills-security-ops
-Code map anchor `f2bb919b`; if it is behind HEAD, re-check with `git diff --name-only f2bb919b..HEAD -- <cited paths>`.
+Code map anchor `22399a9c`; if it is behind HEAD, re-check with `git diff --name-only 22399a9c..HEAD -- <cited paths>`.
 Covers: cisco-meraki + wazuh-onprem. Records that Wazuh's generic post/put/delete have no gate in code — only prose — and that the skill with the ungated verbs is the one with no tests.
 ## Landmines
 - Wazuh's generic `post` / `put` / `delete` have no gate in code.

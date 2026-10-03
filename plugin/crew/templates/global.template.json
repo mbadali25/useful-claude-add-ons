@@ -3,6 +3,7 @@
     "provider": "auto",
     "order": [
       "codex",
+      "kimi",
       "copilot",
       "claude"
     ],
@@ -12,6 +13,9 @@
       "reasoningEffort": null
     },
     "copilot": {
+      "model": null
+    },
+    "kimi": {
       "model": null
     },
     "roles": {}
@@ -24,6 +28,9 @@
       "reasoningEffort": null
     },
     "copilot": {
+      "model": null
+    },
+    "kimi": {
       "model": null
     },
     "roles": {}
@@ -122,5 +129,9 @@
   },
   "route": {
     "enabled": false
+  },
+  "shellRoute": {
+    "mode": "auto",
+    "distro": null
   }
 }

@@ -50,7 +50,13 @@ sha256 of `spec.md` and `plan.md` in `<git-common-dir>/crew/tickets/T-0042/appro
 `approved_via: "user-prompt"`. If the contract does not validate, the hook blocks the prompt and
 says why. That file is outside the worktree, and the scope guard refuses any Write or Edit to it
 and any shell command that runs `crew_ticket.py approve`, so the session cannot approve its own
-plan. The approval is a step you take, not a lock.
+plan. The one exception is opt-in: with `scope.allowCliApproval: true` and `autopilot.approval`
+set to `self` (or `risk`, for a `risk: low` spec), `/crew:autopilot` runs
+`crew_autopilot.py approve`. It writes what every approval route writes: `approval.json` (marked
+`approved_via: "autopilot"`), `scope-tickets.json` on a ticket's first approval, and, for a
+distinct successor plan under a spent review budget, the review ledger moved
+NEEDS_REPLAN -> IN_REVIEW. Both default off, so out of the box nothing self-approves. The
+approval is a step you take, not a lock.
 
 `crew_ticket.py status --ticket T-0042` prints one of three states:
 
@@ -65,8 +71,10 @@ Before every Write, Edit, MultiEdit or NotebookEdit, the guard checks the target
 - The ticket's own `.work/tickets/<id>/` files are always allowed, so you can amend the spec and
   plan.
 - Any other file needs a current approval and a path inside Touch.
-- Nothing else is exempt, including `.crew/`, `TODO.md`, `.claude/` and crew's own policy files.
-  If the ticket changes one of them, list it in Touch.
+- The code map, the diagrams dir, the graph dir and `.claude/rules/` are writable for an approved
+  ticket, because `/crew:implement` step 6 refreshes them.
+- Nothing else is exempt: `.crew/` beyond the code map, `TODO.md`, the rest of `.claude/` and
+  crew's own policy files. If the ticket changes one of them, list it in Touch.
 - Approval receipts, the review ledger and the scope base are always refused.
 
 The guard checks the real file a symlink points to and the path as written, so a link cannot
@@ -86,8 +94,20 @@ The guard only sees the editing tools. A `sed -i`, a shell redirect or a formatt
 change files. So when the session stops, the completion audit compares the whole tree with the
 commit the ticket started from. It covers committed, staged, unstaged and untracked changes, and
 both ends of a rename. If any changed path is outside Touch, the audit blocks the stop and lists
-the paths in six lines or fewer. It never blocks the continuation it caused. `/crew:done` runs
-the same check:
+the paths in six lines or fewer. It never blocks the continuation it caused.
+
+A changed refresh artifact passes the audit only when a path the ticket changed reaches it and the
+edit is a re-anchor (the `anchor:` or provenance sha moved forward to a commit on this branch) or a
+regeneration (`.claude/rules/` as `crew_instructions.py rules` writes them, the graph after a code
+change). A deleted rendered diagram or graph file, a symlink at or along an artifact's path, or
+a file whose git mode changed never passes. A map claim edited without a re-anchor is listed with
+`[anchor did not move]`, and belongs in Touch if that is what the ticket means to do. When git cannot answer, a rule file
+cannot be read, a short anchor is ambiguous (two commits share it), the artifact dirs
+cannot be resolved, or a directory the hook cannot search hides whether the config, a rule or a
+map exists, or two configured artifact dirs are equally specific for a path, the listing says
+`[could not tell: ...]`, and that never passes. (These verdicts are `crew_refresh_check.py`'s;
+the audit applies them once L-0540 lands, and until then admits the artifact dirs for an approved
+ticket.) `/crew:done` runs the same check:
 
 ```bash
 python3 <crew>/hooks/scripts/completion_audit.py --check --ticket T-0042
@@ -107,7 +127,8 @@ until you approve again.
 
 ## After two review rounds: a successor plan
 
-If a ticket uses both review rounds without an accepted receipt, it moves to `NEEDS_REPLAN`.
+If a ticket uses both review rounds without an accepted receipt (refunded tool-failure rounds do
+not count), it moves to `NEEDS_REPLAN`.
 Write a different plan and approve it. `approve` reports `review may continue`, and the ledger
 gives the new plan two fresh rounds. Approving the same plan again is refused and exits with
 status 3.

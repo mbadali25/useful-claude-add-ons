@@ -1,0 +1,59 @@
+name: Runner auto-start
+
+# The self-hosted runner host (mbadali25/github-runner-infra) stops itself after
+# IDLE_STOP_HOURS without a job, and stopping deletes CREW_RUNNER, so CI falls
+# back to GitHub-hosted runners rather than waiting. This workflow notices that
+# on the next push or PR and asks github-runner-infra to start the host again
+# ("Runners > start": start, wait for all runners Idle, set CREW_RUNNER).
+#
+# The run that notices stays on hosted runners; runs after the host is back
+# (a few minutes) land on the self-hosted pool. Nothing here can stop, resize
+# or tear down the host - it only dispatches `start`.
+#
+# Needs secret RUNNER_START_TOKEN: a fine-grained PAT scoped to
+# mbadali25/github-runner-infra only, Actions: read and write. Without it the
+# job says so and exits 0 - auto-start is optional, CI never depends on it.
+# Fork PRs get no secrets, so they never start the host.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+# Many pushes in a row must not queue many starts.
+concurrency:
+  group: runner-autostart
+  cancel-in-progress: false
+
+jobs:
+  start-if-stopped:
+    # CREW_RUNNER is set only while the host is up and its runners are Idle.
+    if: vars.CREW_RUNNER != 'self-hosted'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch Runners > start unless one is already pending
+        env:
+          GH_TOKEN: ${{ secrets.RUNNER_START_TOKEN }}
+          INFRA_REPO: mbadali25/github-runner-infra
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::RUNNER_START_TOKEN is not set, so the self-hosted runners were NOT started. CI runs on GitHub-hosted runners."
+            exit 0
+          fi
+          # REST endpoints throughout, never `gh run list --workflow` or
+          # `gh workflow run`: both first read the workflow file through the
+          # contents API, which a token holding only Actions permission gets a
+          # 404 from ("workflow runners.yml not found on the default branch").
+          pending=$(gh api "repos/$INFRA_REPO/actions/workflows/runners.yml/runs?per_page=20" \
+                      --jq '[.workflow_runs[] | select(.status != "completed")] | length')
+          if [ "$pending" -gt 0 ]; then
+            echo "::notice::A Runners run is already queued or in progress in $INFRA_REPO; not starting another."
+            exit 0
+          fi
+          gh api -X POST "repos/$INFRA_REPO/actions/workflows/runners.yml/dispatches" \
+            -f ref=main -f 'inputs[action]=start'
+          echo "::notice::Self-hosted runners were stopped; dispatched Runners > start in $INFRA_REPO."

@@ -217,6 +217,17 @@ def _manifest(tmp_path):
     return json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
 
 
+def _seed_graph(repo):
+    """Track a generated `graphify-out/` at the base, the shape this
+    repository has (`git ls-files graphify-out/` lists both files)."""
+    (repo / "graphify-out").mkdir()
+    (repo / "graphify-out" / "graph.json").write_text('{"nodes": 1}\n', encoding="utf-8")
+    (repo / "graphify-out" / "GRAPH_REPORT.md").write_text("# report\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "graph")
+    return _git(repo, "rev-parse", "HEAD")
+
+
 def test_rename_mode_change_and_binary_appear_in_the_manifest(repo, tmp_path):
     base = _git(repo, "rev-parse", "HEAD")
     (repo / "tool.sh").write_text("echo hi\n", encoding="utf-8")
@@ -319,7 +330,7 @@ def test_work_dir_is_excluded_and_says_so(repo, tmp_path):
     assert result.returncode == 0, result.stderr
     manifest = _manifest(tmp_path)
     assert manifest["untracked_files"] == ["real.txt"]
-    assert manifest["excluded"] == [".work/"]
+    assert manifest["excluded"] == [".work/", "graphify-out/", ".crew/metrics.md"]
     assert b"scratch" not in (tmp_path / "diff.txt").read_bytes()
 
 
@@ -370,3 +381,93 @@ def test_work_entries_already_in_the_index_stay_out_of_the_bundle(repo, tmp_path
     assert result.returncode == 0, result.stderr
     patch = (tmp_path / "diff.txt").read_bytes()
     assert b".work/" not in patch and b"scratch" not in patch
+
+
+# ---- 1.0.54 (T-0092): generated graphify-out/ is excluded like .work/ -------
+
+def test_generated_graph_dir_is_excluded_and_says_so(repo, tmp_path):
+    """A 24 MB `graphify-out/graph.json` split into ~120 parts left a Claude
+    review INCOMPLETE on 77 of 80 parts (T-0075 round 5). The generated graph
+    stays out of every diff, listing and entry, and the manifest says so."""
+    base = _seed_graph(repo)
+    (repo / "graphify-out" / "graph.json").write_text('{"nodes": 2}\n', encoding="utf-8")
+    (repo / "graphify-out" / "new.json").write_text("{}\n", encoding="utf-8")
+    (repo / "real.txt").write_text("real\n", encoding="utf-8")
+
+    result = _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+
+    assert result.returncode == 0, result.stderr
+    patch = (tmp_path / "diff.txt").read_bytes()
+    assert b"real" in patch
+    assert b"graphify-out/" not in patch
+    assert b'"nodes": 2' not in patch
+    m = _manifest(tmp_path)
+    assert m["excluded"] == [".work/", "graphify-out/", ".crew/metrics.md"]
+    listed = (m["committed_files"] + m["unstaged_files"] + m["untracked_files"]
+              + [e["path"] for e in m["entries"]])
+    assert not [p for p in listed if p.startswith("graphify-out/")]
+    assert m["untracked_files"] == ["real.txt"]
+
+
+def test_graph_only_change_keeps_the_bundle_hash(repo, tmp_path):
+    """A graph rebuild after an accepted review no longer stales its receipt;
+    a real edit still does (guards against a hash that ignores everything)."""
+    base = _seed_graph(repo)
+    (repo / "real.txt").write_text("real\n", encoding="utf-8")
+    _git(repo, "add", "real.txt")
+    _git(repo, "commit", "-qm", "real")
+
+    _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+    h1 = _manifest(tmp_path)["bundle_sha256"]
+    (repo / "graphify-out" / "graph.json").write_text('{"nodes": 3}\n', encoding="utf-8")
+    (repo / "graphify-out" / "extra.json").write_text("{}\n", encoding="utf-8")
+    _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+    h2 = _manifest(tmp_path)["bundle_sha256"]
+    with open(repo / "real.txt", "a", encoding="utf-8") as fh:
+        fh.write("more\n")
+    _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+    h3 = _manifest(tmp_path)["bundle_sha256"]
+
+    assert h1 is not None
+    assert h2 == h1
+    assert h3 != h1
+
+
+def test_look_alike_paths_are_still_bundled(repo, tmp_path):
+    """Must-not: the exclusion is root-anchored, so a hand-written file under
+    a similarly named path -- a sibling `graphify-out-notes/` or a nested
+    `docs/graphify-out/` -- still reaches the reviewer."""
+    base = _seed_graph(repo)
+    (repo / "graphify-out" / "graph.json").write_text('{"nodes": 4}\n', encoding="utf-8")
+    (repo / "graphify-out-notes").mkdir()
+    (repo / "graphify-out-notes" / "README.md").write_text("notes\n", encoding="utf-8")
+    (repo / "docs" / "graphify-out").mkdir(parents=True)
+    (repo / "docs" / "graphify-out" / "x.md").write_text("nested\n", encoding="utf-8")
+
+    result = _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+
+    assert result.returncode == 0, result.stderr
+    m = _manifest(tmp_path)
+    assert m["untracked_files"] == ["docs/graphify-out/x.md", "graphify-out-notes/README.md"]
+    patch = (tmp_path / "diff.txt").read_bytes()
+    assert b"notes" in patch and b"nested" in patch
+    assert b"graphify-out/graph.json" not in patch
+
+
+# ---- L-0578: review_run.py appends .crew/metrics.md between bundle and receipt ----
+
+def test_metrics_row_stays_out_of_the_bundle_and_the_rest_of_crew_stays_in(repo, tmp_path):
+    """review_run.py writes the round's row after the bundle is built; in a repo
+    that does not gitignore .crew/ that row must not change what the receipt
+    rebuilds, while every other .crew/ file is still reviewed."""
+    base = _git(repo, "rev-parse", "HEAD")
+    (repo / ".crew").mkdir()
+    (repo / ".crew" / "metrics.md").write_text("2026-10-01 | T1 | x (r1) | 0 | 0\n",
+                                               encoding="utf-8")
+    (repo / ".crew" / "verify.json").write_text("{}\n", encoding="utf-8")
+
+    result = _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+
+    assert result.returncode == 0, result.stderr
+    assert (_manifest(tmp_path)["untracked_files"],
+            b"(r1)" in (tmp_path / "diff.txt").read_bytes()) == ([".crew/verify.json"], False)

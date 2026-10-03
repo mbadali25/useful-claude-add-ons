@@ -58,6 +58,20 @@ keeps out `.work` entries the copied index already held (force-added, or
 committed at the base): they are in the temp tree, and on both sides of the
 range, but no diff reads them.
 
+Generated `graphify-out/` (graphify's `graph.json` and `GRAPH_REPORT.md`,
+rebuilt by a command and never hand-edited, 24 MB in this repository) is
+excluded the same way since crew 1.0.54 (T-0092), and `excluded` names it:
+a Claude review of a bundle carrying it came back INCOMPLETE on 77 of 80
+parts. The pathspec is root-anchored, so a look-alike such as
+`docs/graphify-out/` or `graphify-out-notes/` stays in the bundle.
+
+`.crew/metrics.md` is excluded the same way since L-0578, for `.work/`'s
+reason: `review_run.py` appends a row to it after every round, between
+building this bundle and checking its receipt, so in a repository that does
+not gitignore `.crew/` a CLEAN receipt would stop checking the moment it was
+written. Only that one file: the rest of `.crew/` (config, verify map,
+standards) is reviewable.
+
 CLI: --root <repo> --base <sha> --out <patch-file> --manifest <json-file>
      [--parts-dir <dir>] [--max-part-bytes N]
 
@@ -91,10 +105,11 @@ EXIT_NOTHING_TO_REVIEW = 2
 # and small enough that a reviewer acknowledging each part is meaningful.
 DEFAULT_MAX_PART_BYTES = 200 * 1024
 
-# Pathspec excluding crew's scratch space from every diff and listing. Never
-# passed to `git add`: there it fails outright when `.work` is gitignored.
-EXCLUDED = (".work/",)
-_EXCLUDE_SPEC = [":(exclude).work"]
+# Pathspecs excluding crew's scratch space and the generated graph from every
+# diff and listing. Never passed to `git add`: there it fails outright when
+# `.work` is gitignored.
+EXCLUDED = (".work/", "graphify-out/", ".crew/metrics.md")
+_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out", ":(exclude).crew/metrics.md"]
 
 # Flags every diff here runs with, so a user's own git config cannot change
 # the bytes: no colour codes, no external diff driver, no textconv filter,
@@ -102,6 +117,18 @@ _EXCLUDE_SPEC = [":(exclude).work"]
 _DIFF_FLAGS = ["--no-color", "--no-ext-diff", "--no-textconv", "-M", "--full-index"]
 
 SUBMODULE_MODE = "160000"
+
+# The manifest contract (T-0087). `compute` + `build` write exactly
+# MANIFEST_KEYS (plus `webtest` in a Playwright repository); `manifest_path` is
+# set by review_prompt.main. Its consumers -- review_prompt.py and
+# review_run.py -- read nothing else, which test_review_contracts.py checks by
+# driving both with a manifest this module really wrote.
+MANIFEST_KEYS = ("base", "head", "branch", "dirty", "committed_files", "staged_files",
+                 "unstaged_files", "untracked_files", "entries", "renames", "mode_changes",
+                 "binary_files", "submodules", "excluded", "patch_bytes", "max_part_bytes",
+                 "bundle_sha256", "patch_path", "parts_dir", "parts")
+OPTIONAL_MANIFEST_KEYS = ("webtest", "manifest_path")
+PART_KEYS = ("name", "path", "bytes", "sha256")
 
 
 def _run_raw(root, args, env=None):

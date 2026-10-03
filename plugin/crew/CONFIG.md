@@ -36,7 +36,7 @@ print(json.dumps(c.leaf_paths(c.default_global_config()), indent=1))"
 
 | Layer | File | Read by |
 |---|---|---|
-| repo | `.crew/config.json` in the repository root | `crew_state.load_config` |
+| repo | `.crew/config.json` in the repository root - or, in a linked worktree with neither `.crew/config.json` nor `.crew/crew.json`, the main checkout's (`crew_common.repo_config_dir`) | `crew_state.load_config` |
 | machine-global | `~/.claude/crew/config.json` | `crew_config.py::read_global_config` |
 
 Both are optional. `read_global_config` **never raises**: an absent, malformed,
@@ -112,6 +112,41 @@ files on migration rather than only resolving them for a read
 
 ---
 
+### In a linked worktree
+
+Since crew 1.0.69 (T-0088) every Python reader of the repo config opens
+`crew_common.repo_config_file(root, name)`, which resolves the `.crew/`
+directory in this order:
+
+1. The worktree's own `.crew/` when it holds `config.json` **or** `crew.json`.
+   Both files are then read from there and nothing is inherited, even when
+   they are partial: the two checkouts' files are never merged.
+2. `.git` a directory, or missing: the repository's own `.crew/`, with no git call.
+3. `.git` a file (a linked worktree or a submodule): `git rev-parse
+   --git-dir --git-common-dir`, each path joined to the worktree's top (no
+   `--path-format`, which git before 2.31 does not know). A submodule (git-dir equals
+   common-dir) or a bare common directory (not named `.git`) has no main
+   checkout and reads its own `.crew/`. Otherwise the main checkout's `.crew/`,
+   when it holds either file.
+4. When git cannot answer, the source is `unknown`: the worktree's own `.crew/`
+   is read (nothing inherited), and `/crew:status` and `/crew:config --explain`
+   print that git could not tell.
+
+**A lane made before crew 1.0.69 has a config of its own already.** Every
+SessionStart heal on crew 1.0.68 or earlier wrote a default `.crew/config.json`
+into a lane worktree that had none, so rule 1 applies and nothing is inherited.
+`/crew:status` and `/crew:config --explain` name that case: a linked worktree
+whose own file is in force while the main checkout also has one prints `the
+main checkout's (<path>) is not read`. If the lane's file is a default nobody
+edited, delete it (and `.crew/crew.json`, if present) to inherit; from 1.0.69
+the heal path creates nothing there again.
+
+The writers never follow it: `crew_platform` (heal and `platform-sync`),
+`crew_autoclear_setup`, `crew_migrate`, `/crew:init` and the machine-global writer
+keep their own-path behaviour, and the heal path creates nothing in a worktree
+that inherits a config, or in one where git could not tell. The shell and PowerShell readers (`verify-gate.sh`, `_common.sh`, `notify.sh`, `handoff-read.sh`, `handoff-write.sh`, `promote-gate.ps1`, `scope-guard.ps1`, `cloud-guard.ps1` and `auto-clear.ps1`) are not
+routed yet and read only the worktree's own file.
+
 ## 2. The invariant
 
 > **What the global file may WRITE is exactly what the global layer may SUPPLY.**
@@ -127,10 +162,13 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **67**
-leaves. `leaf_paths(default_config())` yields **121**, so **54** are repo-only.
-For all 121, `filter_global` and `plan_global_write` agree on whether the path is
-settable. (66 / 119 before crew 1.0.42 merged T-0005, which added
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **68**
+leaves. `leaf_paths(default_config())` yields **123**, so **55** are repo-only.
+For all 123, `filter_global` and `plan_global_write` agree on whether the path is
+settable. (122 / 67 / 55 on T-0072's branch, which added the repo-only
+`autopilot.deploy`; 122 / 68 / 54 on main after T-0023 added `route.enabled` to
+both layers; 121 / 67 / 54 before either.
+66 / 119 before crew 1.0.42 merged T-0005, which added
 `environments.prodUnattended` to both layers and the repo-only
 `environments.nonProd`; this paragraph said 117 at that point, not counting
 T-0004's repo-only `autopilot.mode` and `autopilot.maxPhases`. 65 / 116 before
@@ -656,18 +694,20 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 
 | Key | Type | Default |
 |---|---|---|
-| `qa.provider` | `auto` \| `claude` \| `codex` \| `copilot` | `"auto"` |
-| `qa.order` | list (a leaf; replaced wholesale) | `["codex", "copilot", "claude"]` |
+| `qa.provider` | `auto` \| `claude` \| `codex` \| `copilot` \| `kimi` | `"auto"` |
+| `qa.order` | list (a leaf; replaced wholesale) | `["codex", "kimi", "copilot", "claude"]` |
 | `qa.fallback` | string | `"claude-sonnet-5"` |
 | `qa.codex.model` | string or `null` | `null` |
 | `qa.codex.reasoningEffort` | string or `null` | `null` |
 | `qa.copilot.model` | string or `null` | `null` |
+| `qa.kimi.model` | a Kimi Code model id (`k3`, `kimi-for-coding`, `kimi-for-coding-highspeed`) or `null` for the CLI's own `default_model`; no `reasoningEffort` key | `null` |
 | `qa.roles` | open table (empty dict = leaf) | `{}` |
-| `dev.provider` | `claude` \| `codex` \| `copilot` | `"claude"` |
+| `dev.provider` | `claude` \| `codex` \| `copilot` \| `kimi` | `"claude"` |
 | `dev.fallback` | string | `"claude-sonnet-5"` |
 | `dev.codex.model` | string or `null` | `null` |
 | `dev.codex.reasoningEffort` | string or `null` | `null` |
 | `dev.copilot.model` | string or `null` | `null` |
+| `dev.kimi.model` | a Kimi Code model id or `null`, as `qa.kimi.model` | `null` |
 | `dev.roles` | open table | `{}` |
 | `worktree.root` | path or `null` | `null` |
 | `secondOpinion.provider` | string | `"none"` |
@@ -722,7 +762,7 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 | `route.enabled` | boolean; only the JSON value `true` arms it, and a repo value wins over the machine one (§21) | `false` |
 
 `crew_state.QA_PROVIDERS` and `DEV_PROVIDERS` are both
-`["claude", "codex", "copilot"]` (dumped by execution). `qa.provider`
+`["claude", "codex", "copilot", "kimi"]` (dumped by execution). `qa.provider`
 additionally accepts `"auto"`; a `dev.provider` of `"auto"` is **not** valid —
 `crew_config.py::validate_providers` checks `qa.provider` against
 `QA_PROVIDERS + ["auto"]` and `dev.provider` against `DEV_PROVIDERS` alone.
@@ -790,6 +830,8 @@ repository or one checkout.
 | `platform.wsl` | boolean or `null` | `null` | `crew_platform.py` |
 | `platform.shell` | string or `null` | `null` | `crew_platform.py` |
 | `platform.windowsHostIp` | string or `null` | `null` | `crew_platform.py` |
+| `shellRoute.mode` | `"auto"`, `"wsl"`, `"powershell"`, `"gitbash"` or `null` | `null` (repo), `"auto"` (machine) | `crew_shell.mode` — the shell crew's long-running jobs run in on native Windows; both layers; a repo `null` inherits the machine value and unset everywhere reads as `auto`; an unrecognised value reads as `auto` and is named on the route line and the `/crew:status` `shell` line |
+| `shellRoute.distro` | string or `null` | `null` | `crew_shell.configured_distro` — the WSL distro to probe and route to; `null` takes the default (`*`) distro, never one picked by list order |
 | `graph.enabled` | boolean | `true` | **no consumer found**, §9 |
 | `graph.tool` | string | `"graphify"` | **no consumer found**, §9 |
 | `graph.out` | path | `"graphify-out"` | `crew_state.py` |
@@ -797,6 +839,9 @@ repository or one checkout.
 | `graph.commitHook` | boolean | `false` | **no consumer found**, §9 |
 | `autopilot.mode` | `"off"` or `"plan"` | `"off"` | `crew_autopilot.settings` — only the exact string `plan` arms `/crew:autopilot`, §20 |
 | `autopilot.maxPhases` | positive integer | `12` | `crew_autopilot.settings`, read by `crew_autopilot.next_phase`, §20 |
+| `autopilot.deploy` | `"none"`, `"nonprod"` or `"all"` | `"none"` | `crew_autopilot.settings` and `crew_autopilot.deploy_allowed` — where a deploy may run without asking; production also needs `environments.prodUnattended`, §20 |
+| `autopilot.approval` | `"human"`, `"self"` or `"risk"` | `"risk"` | `crew_autopilot.approval_policy`, read by `crew_autopilot.py approve`, `crew_ticket.accepted` and `scope_guard.py`, §20 |
+| `autopilot.questions` | `"human"`, `"self"` or `"risk"` | `"risk"` | `crew_autopilot.question_policy`, read by `crew_autopilot.py questions-check` and `next`, §20 |
 
 `context.reserveTokens: null` means *off*, and survives as `null` — this is the
 case `null_shadows` is deliberately narrow to protect (§1).
@@ -805,6 +850,15 @@ case `null_shadows` is deliberately narrow to protect (§1).
 machine facts into the repo config. That is why it is repo-only despite
 describing a machine: the value records what *this checkout* resolved, and a
 global override would make every repo on the box report the first one's answer.
+
+`shellRoute.*` (T-0040) is a preference, not a detected fact, so it is not in
+`platform.*`: platform-sync rewrites `platform.shell` every SessionStart. It is
+settable on both layers, because which shell is fast is a fact about the
+machine and a repo may still override it. The probe's answer is not config: it
+lives in the machine-local cache `~/.claude/crew/shell-route.json`, written only
+by `crew_shell.py probe --write` and `measure --write`. `shellRoute` is not
+`route`: `route` routes plain-text prompts to `/crew:` commands, and
+`shellRoute` picks the shell a job runs in.
 
 ---
 
@@ -1254,7 +1308,7 @@ earn its own section: see §18, not the tables immediately below.
 | `cloud.awsRegions` | list of globs | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
 | `cloud.azureSubscriptions` | list of globs (id or name) | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
 | `environments.nonProd` | list of globs | `[]` | **repo only** | `cloud_guard.py::environments_config` |
-| `environments.prodUnattended` | `true` \| `false` | `false` | both, **true only when both say `true`** | `cloud_guard.py::environments_config` |
+| `environments.prodUnattended` | `true` \| `false` | `false` | both, **true only when both say `true`** | `cloud_guard.py::environments_config`, `crew_autopilot.deploy_allowed` |
 
 Read one with `crew_config.py --guard <name> [--json]`, which prints the
 decision, both layers' values and which one is holding it down. The two shell
@@ -1600,7 +1654,9 @@ denied unattended for a prod or unknown target.
 **Not a promotion gate.** `prodUnattended` does not stand down
 `promote-gate.sh`'s `requireHuman` (`promote-gate.sh`, the `requireHuman`
 check), which still applies independently: fully unattended production also
-needs that off. `.crew/verify.json` stays promote-gate's list of environments;
+needs that off. `.crew/verify.json` stays promote-gate's list of environments,
+read from the session's project directory even when the deploy runs from a
+linked worktree (whose HEAD and cleanliness are what the gate then checks);
 `crew_config.py --check` warns when a `nonProd` glob covers one it marks
 `requireHuman: true`.
 
@@ -1629,6 +1685,119 @@ An unknown value fails closed to `block` on whichever layer carries it
 (`normalise_guard_policy`), and both sides are normalised **before** they are
 ranked — so a typo costs capability rather than granting it, and a widening
 *from* an unknown still reads as a widening.
+
+### Writing the repo layer, and the enum check both writers share
+
+`/crew:config`'s menu (T-0075) writes `.crew/config.json` through one path,
+`crew_config.plan_repo_write` / `write_repo_config` (CLI
+`crew_config.py --set PATH=JSON --repo [--apply]`). It does not change what
+either layer means on read; it marks what a repo edit changes **in force**:
+
+- A **ratcheted** key compares `effective_ratcheted` before and after, by rank.
+  Repo `guards.forcePush` `block` -> `allow` under a machine `allow` prints
+  `! guards.forcePush widens to`; the same edit under a machine `block` does
+  not widen, and prints `held down by the machine-global layer at block`
+  instead.
+- `pm.authority` resolves by precedence, so its before-value is the repo's own,
+  else the machine's, ranked by `_RATCHETED`.
+- Three repo-only consents are marked by value: `context.autoClear.unsafeFocus:
+  true`, `autopilot.mode: "plan"` and `verifyGate: false`
+  (`crew_config._REPO_WIDENING`).
+
+Every update is judged per LEAF (`crew_config.leaf_updates`, recursive), by
+the one predicate both planners and the menu share, `value_allowed(dotted,
+layer, value)`: a whole-block value is expanded, so
+`context={"autoClear": {"unsafeFocus": true}}` is judged as
+`context.autoClear.unsafeFocus` and refused at the machine layer
+(`MACHINE_REFUSED` names the two consent keys), and one good leaf does not
+carry a bad one. A block set to `{}`, or replaced by a scalar, is refused off
+an open table (`guards: {}` refused, `qa.roles.review: {}` is "no pin").
+
+Each judged leaf is also what is WRITTEN (`crew_config.assignments`, review
+round 3): a block value is written leaf by leaf, so the block's untouched
+siblings, unknown keys included, survive, and a widening is marked on the leaf
+that widens (`{"guards": {"forcePush": "allow"}}` prints
+`! guards.forcePush widens to`). A value at an open role table (`qa.roles`,
+`dev.roles`) is written one ENTRY at a time, each entry a whole pin, so the
+other roles' pins survive and a new pin never inherits the old one's model.
+
+It refuses, naming the key and the reason: a path that is not a leaf of
+`default_config()` (unknown keys, and a block emptied or replaced by a scalar,
+such as `scope: {}`, that would drop a leaf the per-key rules guard),
+`platform.*`, `schema`,
+`scope.mode`, `scope.allowCliApproval`, `context.autoClear.onlyRepos` /
+`.onlySessions`, and anything but exactly `false` or `null` for
+`context.autoClear.enabled` or `resume.auto` (only the machine file arms
+those). That test is by identity (`crew_config.is_repo_veto`), not `in (False,
+None)`: `0 == False` in Python, and the readers (`crew_autocycle`,
+`crew_resume`) compare with `is False`, so a written `0` would veto nothing. It
+refuses to write when the file is absent or does not parse, rather than
+creating a config from one key or overwriting the only copy -- and the menu
+reads the file the same strict way, so over an absent or unparseable
+`.crew/config.json` every repo row is read-only with that refusal as its
+reason, rather than offered and then refused at Save.
+
+**Enum values are checked on both writers.** `crew_config.enum_values` returns
+the tuple each reader normalises against — the `RATCHETED_KEYS` tiers,
+`AUTHORITIES`, `TICKET_GRANULARITIES`, `auto` + `QA_PROVIDERS`, and
+`DEV_PROVIDERS` — and a value outside it is refused. This is a behaviour
+change for the global `--set`: it used to write `pm.authority: "bogus"` and
+read it back as `report-only`.
+
+**The null rule** (`crew_config.null_means`). At the repo layer a `null` on a
+veto-only key clears the veto, and on a key the machine file may set it
+inherits the machine value (`without_null_shadows` drops it on read); either
+layer, a `null` on an open key (no tuple) is unset. A `null` on an enum key at
+the machine layer is refused: it is outside every tuple its reader normalises
+against. A legacy `null` already in a file is tolerated; the rule judges what
+is being written now. Each change carries its meaning (`null`), and the dry
+run prints it.
+
+**The merged file is judged whole** (`crew_config.merged_problems`): every
+untouched known leaf of the file the write would produce is checked for what
+its presence means at that layer (`_content_problem`): an enum value outside
+its tuple (a legacy `null` tolerated), a consent key (`MACHINE_REFUSED`) in
+the machine file, and a veto-only key holding anything but `false`/`null` in
+the repo file. One already there refuses an unrelated write as `pre-existing
+...`: an enum value says `fix that key first` (it can be fixed in the same
+write), the other two `remove it by hand first` (no crew writer sets or
+removes them). Unknown keys are never judged. JUDGEMENT: refusals of a write
+are not refusals of content, so a `REPO_REFUSED` key in the repo file
+(`/crew:init` and platform-sync write them) and a repo-only key in the
+machine file (pruned by `filter_global` on every read) do not block a write.
+Then `validate_providers` runs on the merged file at both layers, wrapped as
+the layer's refusal. `qa.order` must be a list of QA providers or `null`: any
+other shape (`1`, `true`, `"codex"`, an object) is refused at both layers with
+exit 2, never a traceback, including when it is already in the file an
+unrelated write merges onto (the menu then shows the rows it blocks read-only,
+naming `qa.order`). A path past a template leaf (`pm.authority.a`) and an
+object at a leaf (`pm.authority={"a": 1}`, `notify.chatId={}`) are refused at
+both layers, on the update and when already in the file (`pre-existing`,
+fixable in the same write). `qa.roles` and `dev.roles`, and each entry under
+them, must be an object or `null`: a string, number, boolean or array there is
+refused with exit 2 at both layers, the file included, since the reader drops
+it and `qa.roles=1` would silently wipe every pin.
+
+**Compare-and-swap, both files.** `write_global_config` and
+`write_repo_config` re-run their plan on the bytes read inside
+`crew_config_files.update_json`: an `O_CREAT|O_EXCL` lock file beside the
+config (`<file>.lock`, the review ledger's construction; 3 s wait, then a
+refusal naming the lock and the PID inside it), a strict read, and a
+sibling-fsync-replace that keeps CRLF and a UTF-8 BOM. `--set` prints the
+digest (sha256) of the bytes it planned against, `absent` when there is no
+file, and `--apply --expect <digest|absent>` refuses a file that changed, or
+appeared, since (`RepoWriteConflict` / `GlobalWriteConflict`, subclasses of
+the refusals, so every existing `except` still catches them). Without
+`--expect` the merge is onto the file under the lock. A repo write's widening
+marks read the machine file, so `--set --repo` also prints `machine digest:`
+and `--expect-global <digest|absent>` binds it: `write_repo_config` reads the
+machine file once under the machine lock (always taken, creating its
+directory when absent, never the file; taken before the repo lock, the one
+nesting order) and refuses one that changed since. The machine writer now refuses an unparsable or non-object global file
+instead of replacing it from the read path's `{}` collapse. A foreign writer
+(an editor's save) is not serialised by the lock. An OS error from either
+lock, the machine directory or the write itself is refused with exit 2,
+nothing written and the path named, never a traceback.
 
 ### One resolver, two flavours
 
@@ -2165,6 +2334,22 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   chronic, and still blocks the sha marker exactly as before this feature —
   that case really is unverified for THIS commit, not permanently
   unverifiable, and freezing the baseline is the correct answer for it.
+- **Pricing**. A rule's cost is its declared `seconds`, or the
+  smaller of that and a measurement of it on this machine
+  (`.crew/.verify-gate.timings.json`), never the larger: a stale
+  over-statement stops reading as chronic once one clean run measures it.
+- **The tree-pass cache**. At Stop, a command that passed is credited,
+  not re-run, while the tree is byte-for-byte the tree it passed on
+  (`.crew/.verify-gate.passes.json`, keyed on HEAD, every ref,
+  `.crew/verify.json`, `.crew/config.json` and every tracked and untracked
+  path's bytes, type and mode). A rule all of whose commands are credited
+  costs nothing, so an acute deferral on an unchanged tree runs what it has
+  not run yet instead of the same rules again. `/crew:verify --all` never
+  credits; it runs everything and saves its passes. If the tree changes
+  during a run that credited something, the credits are withdrawn and the
+  run does not count as verified. Any edit anywhere, or a fetch, empties it; ignored files (`node_modules`, a
+  venv) are not in the key, as they are not in the fingerprint. Set
+  `CREW_VERIFY_FRESH=1` in the environment to run everything for one run.
 - A rule declaring `"reach"` other than `"local"` is recorded as
   `"reach_declared"` and never runs on Stop — only under `/crew:verify --all`
   and the merge gate. Declaring `"reach": "local"` runs on Stop with NO
@@ -2217,6 +2402,18 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   reason: the working tree is dirty by definition during ordinary work, so a
   rule that refuses on a dirty tree is a permanent red there and a real
   check only under `--all` against a clean checkout.
+- A rule declaring `"coveredBy": "<id>"` (L-0572) names another rule's
+  `"id"` as running a superset of its checks. Under `--all` only, its
+  commands run last and are recorded as `covered` - clean, but never cached
+  as a timing - when every command of that rule exited 0 earlier in the same
+  run, a whole-tree snapshot taken before the first command still matches,
+  and `PYTEST_ADDOPTS` is empty. Anything else runs it: a superset that
+  failed, exited 77 or was killed, did not match, or changed the tree; a
+  command `always` or an undeclared rule also names; an invalid declaration
+  (unknown or duplicate id, itself, a chain, a superset with no runnable
+  command, a different `env`), which is ignored with a named notice. Stop
+  mode never credits. This repo declares `rules[9]` (the full crew suite)
+  `crew-suite` and its pytest-only subsets `coveredBy` it.
 - A rule whose command exits 77 is recorded as `"skipped"` — the
   `_verify/smoke.sh` and GNU automake convention for "skipped, environment
   absent". Not a pass, not a fail: it does not fail the Stop turn and it is
@@ -2275,19 +2472,123 @@ driven is a fact about that checkout.
 |---|---|---|---|
 | `autopilot.mode` | `"off"` | `crew_autopilot.settings`, through `crew_config.resolve_config` | Only the exact string `"plan"` arms it. `"Plan"`, `"plan "`, `true`, `"on"`, `null` — anything else — reads as `off`, and `settings` prints which value it saw. A typo must not arm a driver. |
 | `autopilot.maxPhases` | `12` | `crew_autopilot.settings`; `next_phase` stops once the session's phase count reaches it | Anything but a positive integer (`0`, `-3`, `"12"`, `true`, `2.5`) reads as `12`, with a warning. |
+| `autopilot.deploy` | `"none"` | `crew_autopilot.settings`; `crew_autopilot.deploy_allowed` (T-0072) | Only the exact strings `"none"`, `"nonprod"` and `"all"` are read as themselves. `"All"`, `"all "`, `"prod"`, `true`, `1`, `null` — anything else — read as `none`, with a warning naming the value. Set only in the machine file, it takes effect nowhere (repo only). |
+| `autopilot.approval` | `"risk"` | `crew_autopilot.approval_policy` (T-0010): whether `crew_autopilot.py approve` may record the plan approval itself | Anything but exactly `human`, `self` or `risk` (`"Self"`, `true`, `null`) reads as `human`, with a warning. `human` always stops. A `.crew/config.json` that exists but is not a readable JSON object, or an `autopilot` value that is not an object, reads as `unknown` (could not tell): `approve` refuses, and `mode` reads `off`. An absent file or block reads the default. |
+| `autopilot.questions` | `"risk"` | `crew_autopilot.question_policy` (T-0010): whether autopilot takes the researched recommendation for an open question | Same: anything else reads as `human`, which always stops; an unreadable config or non-object block reads as `unknown`, and a question stops. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
 adds reads the same one. `/crew:migrate` writes `.crew/crew.json`, which crew
 does not read for this key; an `autopilot` block found only there is reported
 by `settings` ("move it to .crew/config.json") rather than read as `off` with
-no word.
+no word. `settings` prints `mode`, `maxPhases` and `deploy` on its first text
+line, `approval` and `questions` on its second, and all five with `--json`.
 
-**What arming it does not change.** Plan approval, review acceptance,
-brainstorm and open questions always stop for a person in this version; every
-`AUTONOMOUS_STOPS` id (§5) binds it; no guard, hook, review budget or
-completion audit is relaxed. `pm.authority: autonomous` from 0.20 arms nothing —
+**The two policies (T-0010).** `autopilot.approval` decides the
+plan-approval phase: `human` always stops for `/crew:approve`; `self` lets
+`crew_autopilot.py approve --root . --ticket <id>` record the approval at any
+risk; `risk` does so only when the spec's header line says `risk: low` (an
+absent or unparseable risk is `high`, never `low`). At **every** setting the
+approval also needs `scope.allowCliApproval` exactly `true`, autopilot armed,
+and a readable review ledger. A NEEDS_REPLAN ledger does not refuse: approving
+a different successor plan is the only way out of it, and the ledger still
+refuses a plan approved before (`approve` then exits 3 and says so). The
+receipt says `approved_via:
+"autopilot"` and `approved_by: "autopilot:<policy>"`, and `crew_ticket.accepted`
+re-asks the policy on every read: turn the policy to `human`, set
+`allowCliApproval` false, or edit the spec, and the scope guard and the
+completion audit stop honouring it. The scope guard allows exactly the bare
+command `python3 [-B] <path>/crew_autopilot.py approve [--root .] --ticket <ID>`
+and only while the policy says yes; `crew_ticket.py approve` stays refused.
+`autopilot.questions` decides an open question: autopilot researches it
+(crew:explorer for the repo, crew:researcher outside), writes
+`.work/tickets/<id>/questions.md` (2-4 options per question, the
+recommendation first, each with a `Cost:` line, and a `Research:` line), and
+`crew_autopilot.py questions-check` validates it and says `take` or `stop`.
+`self` takes the recommendation, `risk` only on `risk: low`, `human` stops; a
+`taken: Option <id> by autopilot (<policy>)` line records each one under the
+policy that took it. The check refuses a `taken:` line naming a policy that
+never takes (only `self` or `risk` does), and any `taken:` line while the
+policy in force says `stop`; switching between `self` and `risk` later does
+not void an earlier honest record. Every
+self-approval and every taken answer is reported by name. Autopilot approves one
+ticket at a time: a group approval and its `/crew:approve --confirm` stay the
+owner's, and `crew_ticket.approve` refuses an `autopilot` approval carrying a
+group's hashes.
+
+**The one writer.** `crew_autopilot.py` is read-only except `approve`, and
+only when `autopilot.approval` allows it. `approve` writes exactly what
+`crew_ticket.approve` writes for every approval route, all under
+`<git-common-dir>/crew/`: `approval.json`; the scope ramp's
+`scope-tickets.json` on a ticket's first approval; and, when the review ledger
+is NEEDS_REPLAN and the plan is a distinct successor, the ledger itself, moved
+NEEDS_REPLAN -> IN_REVIEW (the successor continuation, a fresh review budget).
+`next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check` and
+T-0072's `deploy-allowed` write nothing, and T-0018's `route` and `status` read no policy of their own:
+`status`'s lines, the approve and open-questions reasons included, read the
+same under every setting, and at the approve phase it names
+`/crew:approve <id>`; `next` is what names the policy's route. The one policy
+effect `status` shows is `crew_ticket.accepted`'s: an `autopilot` receipt
+stands only while the policy still allows it.
+
+**What arming it does not change.** Review acceptance and brainstorm always
+stop for a person, at every setting — accepting review FINDINGS with any
+BLOCK (`review_ledger.py --accept`) is never automatic; the one exception is
+not a setting either: a final 0-BLOCK round from a Codex or Kimi reviewer (never a
+same-family Claude-fallback round, never a verdict recovered from stray lines) is accepted by the ledger-guarded
+`review_ledger.py --auto-accept` (L-0510), and no config key changes that; every
+`AUTONOMOUS_STOPS` id (§5) binds it; no hook, review budget or completion
+audit is relaxed. `pm.authority: autonomous` from 0.20 arms nothing —
 `/crew:migrate` keeps it under `retired.pm` and its note points here.
+
+**Production without asking (T-0072).** `autopilot.deploy` says where a deploy
+may run with no person asked: `none` (the default) nowhere, `nonprod` in a
+`nonProd` environment only, `all` in production too. Production needs **two
+opt-ins**: `autopilot.deploy: all` in the repo's `.crew/config.json`, **and**
+`environments.prodUnattended: true` in **both** config layers (§16, the
+ratchet: a repo cannot grant it alone, and neither can the machine file). It
+also needs `guards.cloudGuard` to resolve to a plain `block`, so T-0009's guard
+is armed to enforce the dispatch. `crew_autopilot.deploy_allowed(root, env,
+class)` answers, first match wins:
+
+| Condition | Verdict |
+|---|---|
+| the checkout cannot be found (the lookup raised), `.crew/incident.json` exists in any form, or its path cannot be checked for any reason | `refuse` — an emergency may be active |
+| the environment name is blank, not a string, or not printable | `ask` — could not tell which environment |
+| the class is not exactly `nonProd` or `prod` (T-0005's classes; `unknown` included) | `ask` — crew could not classify it |
+| either config layer could not be checked (its path cannot be stat'ed for any reason but a missing file), or is present and not ok (unreadable, not JSON, a bad `guards` or `environments` block) | `ask` — could not read that layer |
+| `autopilot.mode` is not `plan`, or `autopilot.deploy` is `none` | `ask` |
+| `nonProd`, with `nonprod` or `all` | `allow` |
+| `prod`, with `nonprod` | `ask` |
+| `prod`, with `all`, and `prodUnattended` not `true` in both layers | `ask`, naming the layer |
+| `prod`, with `all`, and `guards.cloudGuard` not a plain `block` (a fail-closed `block` with a note included) | `ask` |
+| `prod`, with `all`, otherwise | `allow` |
+
+The checkout root is resolved **once** per answer, and that one root is what
+the incident check, both layers and every row judge; the result names it
+(`root`). Every path is probed for present, absent or could-not-tell, and
+could-not-tell never reads as absent: it refuses for the incident file and
+asks for a config layer. A crash inside the decision asks, and so does one
+building its report or printing a value it was handed; the CLI prints
+`verdict=ask` even for a crash it cannot describe. The incident check runs
+before anything that can fail to import, so a crash never turns an
+emergency's `refuse` into `ask`. Every production decision — `allow`, `ask`
+or `refuse` — carries a report line naming the environment
+(`unattended production: <env> <verdict> - <reason>`). The CLI is
+`crew_autopilot.py deploy-allowed --root . --env <name> --class <class>
+[--json]`: the verdict line (or one line of JSON) on stdout, the report on
+stderr, exit 0. Each is one line, the verdict first: a value that is not plain
+printable text (a class or environment holding whitespace included) prints as
+its repr, so no input can add a line a consumer would read as a second verdict.
+
+**Inert until T-0045.** Nothing in this crew version dispatches a deploy, so
+`settings` warns whenever `autopilot.deploy` is not `none`. The consumer
+(T-0045) calls `deploy_allowed` immediately before each dispatch, passes the
+class from T-0005's classifier, proceeds only on the exact verdict `allow`
+(anything else — `ask`, `refuse`, no answer, a non-zero exit — stops), and
+persists every report. `allow` is necessary, not sufficient: T-0009's hook,
+promote-gate (`requireHuman`, the post-deploy proof) and every other gate
+still decide.
 
 ---
 

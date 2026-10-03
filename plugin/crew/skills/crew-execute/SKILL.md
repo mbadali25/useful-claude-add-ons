@@ -38,6 +38,13 @@ does not keep a separate ledger file the way upstream's does.
    the end - a later step's passing test does not tell you an earlier one's
    assumption was ever validated.
 
+On native Windows, run each step's test through
+`python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_shell.py" run -- "<test command>"`
+and repeat its `crew-shell:` route line in your report. On Git Bash without
+`python3`, use `python` or `py -3` with the same arguments. It picks the shell from
+`shellRoute.mode`; see "Choosing the shell route on Windows" in
+`crew-setup/platform.md`. Elsewhere, run the command as written.
+
 ## Rulings, not stalls
 
 Conflicts, ambiguities and plan defects get decided, not escalated by
@@ -70,6 +77,13 @@ Two branches, and only one applies at a time:
   inside the plan's assumptions): this is a defect, not a planning gap - use
   `crew-debugging`'s Iron Law rather than patching the symptom the failing
   test happened to surface.
+
+## Before review: the self-check
+
+The last thing before `/crew:review` is the required standards self-check -
+the `crew-standards` skill says how. Answer every standard with evidence or a
+reason, then stamp it. A standard that fired on a fix is re-run over the
+fixed line's whole class, not only the line.
 
 ## Narration
 

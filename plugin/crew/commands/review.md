@@ -26,8 +26,7 @@ TICKET="${1:-$(awk -F'|' 'NF>1{gsub(/^[ \t]+|[ \t]+$/,"",$2);if($2~/^(open|in-pr
 total** (`review_ledger.py`, in `<git-common-dir>/crew/review/<id>.json`,
 shared by every worktree). A round is reserved before the reviewer launches,
 so a crashed one still counts; a third is refused and the ticket becomes
-`NEEDS_REPLAN`. Round 2's FINDINGS can still be accepted until then. No flag,
-variable or config key raises or resets it.
+`NEEDS_REPLAN`. Step 3.3 says how round 2's FINDINGS close. No flag, variable or config key changes it.
 
 `mktemp`'s branch-prefixed, randomly-suffixed directory is ticket-scoped (the
 branch name) and session-scoped (no other process can be handed the same
@@ -236,7 +235,7 @@ first surviving provider that passes its probe:
 
 | Provider | Probe | Runs |
 |---|---|---|
-| `codex` | `command -v codex` | step 2a |
+| `codex` | `review_run.py ... --provider codex --probe`, run by the `case` line that opens Step 2's bundle block (after `$QA_MODEL`/`$QA_EFFORT` are set), which leaves `$PROBE_STATUS` and `$PROBE_DETAIL`: one minimal real call, no round reserved (`command -v` is not a probe: a logged-out or limited Codex is on `PATH` and fails at the first call) | exit 0 (ok): step 2a. Exit 6 (failed) or 7 (unknown, timed out): skip Codex with `PROBE_DETAIL` quoted - a pinned `codex` hard-fails, as before. Exit 5 (limited): **a Codex usage limit runs the round on Claude** - step 2c, pinned or not (owner, 2026-09-28: "if we hit a codex limit please use claude ads the reviewer"), announced `same-family (codex limit)`, not independent, with `PROBE_DETAIL` quoted verbatim; the round is spent like any other (a refund is T-0087's). The patterns are Codex's own messages, cited in `review_limit.py`. Any other exit is no answer about Codex (2 a usage error, 1 the probe crashed): stop and quote it; never read it as ok or as limited |
 | `copilot` | `command -v copilot` **and** `qa.copilot.model` is set | step 2b |
 | `claude` | always passes | step 2c |
 
@@ -298,10 +297,10 @@ AUTHOR_SOURCE=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).g
 # already applied the guard -- this is the list to pick from, in order, and an
 # empty one is the "no independent reviewer" state, not an error.
 ELIGIBLE=$(python3 -c '
-import json, sys
-report = json.load(open(sys.argv[1]))
-print(" ".join(c["provider"] for c in report.get("qaFallThrough") or []
-                if c.get("eligible")))' "$REPORT")
+import json, sys  # kimi has no review_run.py runner (T-0028): named on stderr, never tried
+report = json.load(open(sys.argv[1])); ok = [c["provider"] for c in report.get("qaFallThrough") or [] if c.get("eligible")]
+[sys.stderr.write("review: " + p + " is eligible but has no review runner - skipped\n") for p in ok if p not in ("codex", "copilot", "claude")]
+print(" ".join(p for p in ok if p in ("codex", "copilot", "claude")))' "$REPORT")
 echo "authors=$AUTHORS source=$AUTHOR_SOURCE eligible=${ELIGIBLE:-<none>}"
 ```
 
@@ -320,16 +319,16 @@ the reason a rung was lost, rather than presenting the narrower candidate list
 as though it were a preference.
 
 ```bash
-
+case " $ELIGIBLE " in *" codex "*) PROBE_OUT=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" --scratch "$SCRATCH" --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT" --probe); PROBE_STATUS=$?; PROBE_DETAIL=$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^PROBE_DETAIL=//p'); echo "codex probe: exit $PROBE_STATUS - $PROBE_DETAIL";; *) PROBE_STATUS=; PROBE_DETAIL=;; esac  # T-0088: the Codex probe, only when codex is a candidate; $PROBE_STATUS picks Step 1's table row
 # $BASE comes from step 1a. Reuse it; do not recompute it here. A second
 # derivation can disagree with the first, and then the staleness verdict was
 # about a different range than the diff the reviewer actually read.
 #
-# review_patch.py builds ONE bundle: committed range PLUS staged, unstaged and
-# untracked changes, with renames, modes, binaries and submodules in the
-# manifest, split into parts (never truncated) and hashed. `git diff
-# "$BASE"...HEAD` alone gave a 0-byte patch on a dirty tree (found by Codex,
-# `docs/review/03-codex-review.md`). The real index is never written.
+# review_patch.py builds ONE bundle: committed range PLUS staged, unstaged and untracked
+# changes, never `.work/` or generated `graphify-out/` (the manifest's `excluded`), with
+# renames, modes, binaries and submodules in the manifest, split into parts (never
+# truncated) and hashed. `git diff "$BASE"...HEAD` alone gave a 0-byte patch on a dirty
+# tree (found by Codex, `docs/review/03-codex-review.md`). The real index is never written.
 MANIFEST="$SCRATCH/manifest.json"
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_patch.py \
   --root . --base "$BASE" --out "$SCRATCH/diff.txt" --manifest "$MANIFEST"
@@ -342,8 +341,9 @@ elif [ "$PATCH_STATUS" -ne 0 ]; then
   exit "$PATCH_STATUS"
 fi
 
-# The ticket contract: bundle parts + READ acks, spec sections (Intent,
-# Exclusions, Evidence, Unknowns, Acceptance checks), plan, test receipts, web tests.
+# The ticket contract: bundle parts + READ acks, spec sections (Intent, Exclusions,
+# Evidence, Unknowns, Acceptance checks), plan, test receipts (or a CI receipt the gate accepted),
+# the standards checklist (never the self-check answers), the recurring-findings checklist, web tests.
 # Anything absent is written as MISSING, never left out.
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_prompt.py --root . \
   --ticket "$TICKET" --manifest "$MANIFEST" --out "$SCRATCH/contract.txt"
@@ -437,14 +437,16 @@ of reporting it. Empty model/effort pass no flag.
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
   --scratch "$SCRATCH" --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT"
 # or: --provider copilot --model "$QA_COPILOT_MODEL"
-REVIEW_STATUS=$?   # 0 CLEAN, 1 FINDINGS, 3 INCOMPLETE, 4 NEEDS_REPLAN, 2 not run
+REVIEW_STATUS=$?   # 0 CLEAN, 1 FINDINGS, 3 INCOMPLETE, 4 NEEDS_REPLAN, 5 gate red, 2 not run
 ```
 
 `reasoningEffort` accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`;
 Codex rejects a wrong one with an HTTP 400. Copilot exiting non-zero with `Access
 denied by policy settings` is org or enterprise policy — report that exact
-cause. Exit 2 means nothing launched (not on PATH) and no round was spent; walk
-to the next eligible provider.
+cause. Exit 2 means nothing launched and no round was spent: not on PATH (walk
+to the next eligible provider), or `review-run: self-check: ...` - the standards
+self-check is missing or stale for this bundle (every provider): answer
+`.work/tickets/$TICKET/selfcheck.md`, run the `crew_standards.py stamp` it names, rebuild. Exit 5 (`$REVIEW_STATUS`, not the probe's `$PROBE_STATUS` 5), no round spent, every provider, means one of two things. Either the verify gate has not passed this tree: run the gate first, or pass `--allow-unverified` and say so. Or a pre-review check refused it (`review-run: pre-review checks: ...` lines, L-0574). `FAIL` with `NEW` lines means the bundle adds a linter finding its base did not have: fix it, or suppress it with the tool's own inline directive and a reason, then rebuild. `--allow-unverified` does not override a new finding. `COULD NOT CHECK` means a configured linter could not run or could not parse a changed file. Install or repair it, or pass `--allow-unverified` and say so; `review.json` records `prereview.overridden`. The order is fixed: a CLEAN receipt covering this bundle answers CLEAN first and asks for nothing else; an unverified gate is refused with exit 5 before the pre-review checks run; a pre-review refusal (exit 5) comes before the self-check is asked for; only then can exit 2 name a self-check problem. A spent budget skips both. A Codex round whose call fails on a usage limit stays INCOMPLETE, prints `review: codex usage limit in round N: '<the error>'` and is recorded after the verdict, in `<git-common-dir>/crew/review-limit/<ticket>.json` (not the ledgers' folder, which `/crew:status` lists): the next probe answers `limited` from that record without a call, so the next round runs step 2c; the round after it probes Codex live again. A record that cannot be written prints `could not record it (...)` instead; the round is still INCOMPLETE (exit 3) and the next probe calls Codex live.
 
 **Step 2c — Claude fallback.** Invoke the `crew:reviewer` subagent with the
 SAME bundle 2a and 2b just read: the exact `$SCRATCH/prompt.txt` content —
@@ -464,88 +466,83 @@ ROUND=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --tic
 # ... dispatch crew:reviewer; write its output to $SCRATCH/out.txt ...
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
   --scratch "$SCRATCH" --provider claude --round "$ROUND" \
-  --output "$SCRATCH/out.txt" --exit-code 0
+  --output "$SCRATCH/out.txt" --exit-code 0 --note "codex-probe=${PROBE_STATUS:-not-run}"
 ```
 
-An empty `ROUND` is a refusal (budget spent): do not dispatch.
+An empty `ROUND` means do not dispatch: a refusal (budget spent, exit 5 above - gate or pre-review checks - or the self-check as in 2a), or `ALREADY_CLEAN=1`, a CLEAN receipt already covering this bundle.
 
-The fallback is genuinely weaker than a different family: the same model family
-reviewing itself finds fewer defects. Tell me when it is what ran, so I review
-harder myself.
+The fallback is genuinely weaker than a different family: the same model family reviewing itself
+finds fewer defects. Tell me when it is what ran, so I review harder myself.
 
-**The shared prompt is written in step 2**, before any provider runs. Do not
-re-word it per provider: identical instructions are what make a differing
-defect count a fact about the model rather than about the prompt.
+**The shared prompt is written in step 2**, before any provider runs. Do not re-word it per
+provider: identical instructions are what make a differing defect count a fact about the model
+rather than about the prompt.
 
-Read ONLY `$SCRATCH/out.txt` and the `review:` lines. Never load the diff back
-into your context. **The verdict is the script's, not yours**: CLEAN only for
-exactly `CLEAN` at exit 0 with every part acknowledged; any BLOCK/FIX/NIT is
-FINDINGS; a non-zero exit, empty or unparseable output, a skipped part or a
-timeout is INCOMPLETE — never report INCOMPLETE as clean.
+Read ONLY `$SCRATCH/out.txt` and the `review:` lines. Never load the diff back into your context.
+**The verdict is the script's, not yours**: CLEAN only for exactly `CLEAN` at exit 0, every part acknowledged,
+no other line; any BLOCK/FIX/NIT is FINDINGS, even beside harmless stray prose (the script ignores it and names
+it on a `review: FINDINGS kept; ...` line); a non-zero exit, empty output, a possibly misformatted contract line,
+a line admitting the review fell short, a skipped part or a timeout is INCOMPLETE — never report INCOMPLETE as
+clean. Only a `tool` INCOMPLETE (no intact answer) is refunded, up to two per plan, as its `review:` line says; its rerun is a new round.
 
-**Step 2d — re-run the failing control, do not read about it.** If the diff
-adds or edits a test, guard, assertion or smoke step, the author is expected to
-have broken it on purpose and shown it go red. A pasted RED transcript is a
-claim about a mutation, not the mutation. Where the check is runnable here, run
-it yourself: revert the guard's condition (or delete the line it asserts on),
-run the check, confirm it fails with a message naming the thing under test,
-then restore. Report which controls you re-ran and which you could only take on
-the author's word. An unverified control is a BLOCK, not a NIT — a check that
-has never been shown to fail is the defect class this crew loses the most time
-to.
+**Step 2d — re-run the failing control, do not read about it.** If the diff adds or edits a test,
+guard, assertion or smoke step, the author is expected to have broken it on purpose and shown it go
+red. A pasted RED transcript is a claim about a mutation, not the mutation. Where the check is
+runnable here, run it yourself: revert the guard's condition (or delete the line it asserts on),
+run the check, confirm it fails with a message naming the thing under test, then restore. Report
+which controls you re-ran and which you could only take on the author's word. An unverified control
+is a BLOCK, not a NIT — a check that has never been shown to fail is the defect class this crew
+loses the most time to.
 
 **Step 3 — act.**
-1. Report every BLOCK and FIX line verbatim. Do not soften or argue before
-   showing me. State the review range and file list **from `$MANIFEST`**, not
-   by re-deriving it: base, head, branch, whether the tree was dirty, and
-   which category (committed / staged / unstaged / untracked) each changed
-   file fell into is the one record of what was actually reviewed.
-2. Fix all BLOCK items. Rerun `./_verify/smoke.sh`. Rerun this review once —
-   round 2 is the last. A refusal (exit 4, `NEEDS_REPLAN`) is terminal in this
+1. Report every BLOCK and FIX line verbatim; do not soften or argue first. If a `review: FINDINGS kept; ...` line
+   printed, also show every ignored line verbatim (`review.json` `ignored_text`, counted by `ignored_lines`): the script
+   ignored them, it did not read them for defects. State the review range and file list **from `$MANIFEST`**, not re-derived:
+   base, head, branch, dirty or not, and each changed file's category (committed / staged / unstaged / untracked).
+2. Fix all BLOCK items. Rerun `./_verify/smoke.sh`. Rerun this review once — round 2 is the last,
+   counting only rounds not refunded. A refusal (exit 4, `NEEDS_REPLAN`) is terminal in this
    release: stop, say so, and replan the ticket; there is no third round.
-3. If you disagree with a finding, say so explicitly and let me decide. If I
-   accept FINDINGS as they stand, record it — the receipt names who and when:
-   `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py --ticket "$TICKET" --accept --by "<who>"`.
-   Only the most recent round can be accepted, once, including round 2, and not
-   once the ticket is `NEEDS_REPLAN` (a refused third reservation, or
-   `review_ledger.py --ticket "$TICKET" --reject --by "<who>"`). A CLEAN round writes its receipt itself. `review_ledger.py --ticket "$TICKET"
-   --check-receipt` rebuilds the bundle and fails if anything changed since.
-4. **Land the verdict as a review, not a comment.** If the change is on a
-   GitHub PR, post the outcome with `gh pr review` so it exists as an artifact
-   that tooling and branch protection can see:
+3. **Closure (L-0510).** `review: auto-accept: eligible` (a final round: FINDINGS, 0 BLOCK, no open healer skip, no verdict recovered from stray lines (`ignored_lines` 0 and readable), reviewed by Codex or Kimi) AND no BLOCK from step 0b's specialists or step 2d's controls, which the ledger never sees: mint the next free id as `/crew:brainstorm` step 1 does, run
+   `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py" --ticket "$TICKET" --auto-accept --follow-up <id>`, then `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py" create --root . --ticket <id> --title "<title>"` and write its `direction.md`: source ticket, round, bundle sha, then every line printed after the first, verbatim, one per line inside one fenced block, no `>` or list prefix (`--check-follow-up` matches whole lines verbatim, as many times as the receipt carries each). A same-family (Claude-fallback) round is never eligible: it is mine to accept. `tracker not updated: <reason>` stops for me.
+   Anything else (any BLOCK, a `refused -` line, a specialist BLOCK, an unverified control) stops for me with 2-4 options, recommended first, each with a one-line tradeoff (reject and replan / I accept as is / fix and I grant a round). Disagree with a finding? Say so. If I accept, record it - the receipt names who and when; a `--by` starting `auto:` is refused:
+   `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py" --ticket "$TICKET" --accept --by "<who>"`.
+   Only the most recent round can be accepted, once, and not once the ticket is `NEEDS_REPLAN` (a refused third reservation, or `review_ledger.py --ticket "$TICKET" --reject --by "<who>"`).
+   A CLEAN round writes its receipt itself. `review_ledger.py --ticket "$TICKET" --check-receipt` rebuilds the bundle and fails if anything changed since.
+4. **Land the verdict as a review, not a comment.** If the change is on a GitHub PR, post the outcome
+   with `gh pr review` so it exists as an artifact that tooling and branch protection can see:
 
    ```bash
    gh pr review <PR> --request-changes --body-file "$SCRATCH/out.txt"   # any BLOCK
    gh pr review <PR> --approve        --body "<reviewer>: CLEAN"        # no BLOCK
    ```
 
-   A verdict posted as `gh pr comment` is invisible to every mechanism that
-   could act on it: nothing distinguishes approved from blocked from
-   never-reviewed without a human reading threads, and an unprotected branch
-   cannot refuse a merge on the strength of a comment. Say which form you used.
+   A verdict posted as `gh pr comment` is invisible to every mechanism that could act on it: nothing
+   distinguishes approved from blocked from never-reviewed without a human reading threads, and an
+   unprotected branch cannot refuse a merge on the strength of a comment. Say which form you used.
    If the repo has no PR yet, say that instead of silently skipping the step.
 5. If `notify.provider` is not `none`, send one line:
    `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh review "<n> BLOCK, <n> FIX (<reviewer>)"`
    Counts only. Never the findings themselves — those stay in the repo.
-6. Append the result to `.crew/metrics.md`: `<date> | <ticket> | <reviewer> | <n BLOCK> | <n FIX>`
-   (counts from `review.json`; an INCOMPLETE round is recorded as INCOMPLETE, not as 0/0)
-7. Name every specialist from step 0 that ran, every one that a matched rule
-   asked for but you skipped, and every one that a matched rule named but that
-   **is not installed on this machine**. A review that quietly dropped the `dba`
-   pass on a migration reads exactly like one that had nothing to find, and a
-   rule naming an agent this box does not have fails the same way while looking
-   even more normal — there is nothing to skip, so nothing feels skipped.
+6. The metrics row is `review_run.py`'s, not yours (L-0578: hand rows were skipped for 118 of 162 rounds): it appends `<date> | <ticket> | <provider>/<model> (r<N>, std:..., <family>) | <n BLOCK> | <n FIX>`
+   to the MAIN checkout's `.crew/metrics.md` (also from a worktree) and prints `review: metrics row appended to <path>`. INCOMPLETE is written as INCOMPLETE, a Codex-limit fallback as `same-family: codex limit`.
+   **Never append a scored row by hand** - a second row for a round is a second divisor. If it printed `metrics row NOT written` or `PARTLY written`, append (or replace with) exactly the row it quoted.
+7. `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py proposals --root . --ticket "$TICKET" --scratch "$SCRATCH" --round <N>`,
+   then fill each finding's row as the `crew-standards` skill says; I approve or reject each.
+   An INCOMPLETE round's `out.txt` is refused (exit 1, nothing written): report that, not "no findings".
+8. Name every specialist from step 0 that ran, every one that a matched rule asked for but you
+   skipped, and every one that a matched rule named but that **is not installed on this machine**. A
+   review that quietly dropped the `dba` pass on a migration reads exactly like one that had nothing
+   to find, and a rule naming an agent this box does not have fails the same way while looking even
+   more normal — there is nothing to skip, so nothing feels skipped.
 
-   Record the not-installed ones in `.crew/metrics.md` too. `/crew:status` reads
-   that file, and "this rule has asked for `security-auditor` eleven times and
-   never got it" is exactly the evidence that should drive either installing it
-   or deleting the rule.
-8. Name the author family **and its source** in the same breath as the reviewer:
-   `recorded dispatch <role>/<provider>/<model>`, `READ FROM CONFIG - no
-   dispatch recorded`, or `STALE RECORD - both families struck`. Which family
-   was barred is only checkable by a reader who knows whether the bar rests on a
-   fact or on a guess, and that is the whole difference this record exists to
-   make visible.
+   Record the not-installed ones too, as a `-`-count row in the file step 6's `review:` line named. `/crew:status` reads that file, and
+   "this rule has asked for `security-auditor` eleven times and never got it" is exactly the
+   evidence that should drive either installing it or deleting the rule.
+9. Name the author family **and its source** in the same breath as the reviewer: `recorded dispatch
+   <role>/<provider>/<model>`, `READ FROM CONFIG - no dispatch recorded`, or `STALE RECORD - both
+   families struck` - and a Codex-limit round as `claude (same-family: codex limit)` with the
+   probe's quoted `PROBE_DETAIL`. Which family was barred is only checkable by a reader who knows
+   whether the bar rests on a fact or on a guess, and that is the whole difference this record
+   exists to make visible.
 
-That metrics line is not bookkeeping. `/crew:status` reads it to show whether
-this setup is actually catching anything.
+That metrics line is not bookkeeping. `/crew:status` reads it to show whether this setup is actually catching anything.

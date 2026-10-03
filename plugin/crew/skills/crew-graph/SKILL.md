@@ -56,6 +56,11 @@ over a secret already holds it (**Tainted graph** below). Then:
 graphify . --no-viz --code-only
 ```
 
+On native Windows, run it as
+`python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_shell.py" run -- "graphify . --no-viz --code-only"`
+and quote the `crew-shell:` route line (see `crew-setup/platform.md`). On Git
+Bash without `python3`, use `python` or `py -3` with the same arguments.
+
 This is the default, always. Both flags matter and neither is optional:
 
 - **`--code-only`** skips docs, papers, and images. Without it, graphify
