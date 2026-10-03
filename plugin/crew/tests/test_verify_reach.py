@@ -69,6 +69,16 @@ def test_apply_edits_text_in_place_and_keeps_every_other_byte(tmp_path):
     assert text.replace(' "reach": "local",', "", 1).replace(' "reach": "network",', "", 1) == MAP
 
 
+def test_apply_keeps_crlf_line_endings(tmp_path):
+    path = tmp_path / ".crew" / "verify.json"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(MAP.replace("\n", "\r\n").encode("utf-8"))
+    assert _run(tmp_path, "--apply") == 0
+    raw = path.read_bytes().decode("utf-8")
+    assert "\n" not in raw.replace("\r\n", "")
+    assert raw.replace(' "reach": "local",', "", 1).replace(' "reach": "network",', "", 1) == MAP.replace("\n", "\r\n")
+
+
 def test_a_deferred_rule_runs_only_on_an_explicit_set(tmp_path):
     path = _repo(tmp_path)
     assert _run(tmp_path, "--apply", "--set", "2=local") == 0

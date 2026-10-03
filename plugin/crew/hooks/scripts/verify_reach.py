@@ -41,7 +41,7 @@ PROPOSE = {"local": "local", "verb": "network"}
 def load(path):
     """(text, map) or raises ValueError naming why the map cannot be used."""
     try:
-        with open(path, encoding="utf-8") as fh:
+        with open(path, encoding="utf-8", newline="") as fh:  # keep CRLF: "every other byte"
             text = fh.read()
     except OSError as exc:
         raise ValueError(f"cannot read {path}: {exc}") from exc
