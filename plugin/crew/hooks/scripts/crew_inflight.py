@@ -455,7 +455,7 @@ def holds(top, ticket, me, runner, now=None, here=False):
             answer = _answer(UNKNOWN, ticket, "cannot tell who is asking: CLAUDE_CODE_SESSION_ID is absent")
         answer = dict(answer, signals=[{"state": s["state"], "reason": s["reason"]} for s in signals])
         return answer
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001 - could not tell is in flight, never free  # pylint: disable=broad-except
         return _answer(UNKNOWN, ticket, f"could not tell ({type(exc).__name__}: {exc})")
 
 
@@ -852,7 +852,7 @@ def main(argv=None):
         print(f"crew-inflight: {exc}", file=sys.stderr)
         _result("usage", str(exc))
         return EXIT_USAGE
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001 - the CLI boundary: any crash answers unknown (exit EXIT_UNKNOWN), never free  # pylint: disable=broad-except
         _result(UNKNOWN, f"could not tell ({type(exc).__name__}: {exc}); nothing more was written")
         return EXIT_UNKNOWN
 

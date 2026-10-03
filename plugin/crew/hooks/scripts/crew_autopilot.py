@@ -573,7 +573,7 @@ def _in_flight(root, ticket, result, runner):
     try:
         held = crew_inflight.holds(top, ticket, crew_holder.current_holder(top),
                                    runner or crew_inflight.expand_runner("autopilot"))
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001 - a crash in the in-flight check is in flight (unknown), never the phase  # pylint: disable=broad-except
         held = {"state": crew_inflight.UNKNOWN, "reason": f"could not tell ({_failure(exc)})",
                 "runner": None, "since": None, "clear": ""}
     if held["state"] in crew_inflight.GO:
