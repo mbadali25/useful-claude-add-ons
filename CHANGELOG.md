@@ -50,6 +50,32 @@ All notable changes to this repository are documented here. Format follows [Keep
   after the push, one ledger for the families and the receipt, the pre-merge HEAD re-read, the dirty
   tree, and the dequeue.
 
+### Added — `VERIFYING.md`: how to verify a change, for people and any AI agent
+
+- A root page mapping every verification layer to its command, when to run it and what it costs,
+  with a "which layers do I need?" table first: the marketplace gate, smoke, crew's verify gate (by
+  hand with `--all`, since without it the gate defers every rule over the Stop budget, and in the
+  background for an agent), `scripts/gate-runner.py`, `_verify/run-all.sh`, CI and its receipts,
+  the test suites run directly, and what no automated layer runs. Linked from the README's
+  Documentation table and from `AGENTS.md`'s "How to verify a change".
+- `check-marketplace.py`'s new `check_verifying_doc` fails when the page names a repository path that
+  does not exist: inline spans, fenced blocks (backtick or tilde, also opened on a list item), link
+  targets (anchors stripped) and bare root docs (`AGENTS.md`). It does not skip a path whose first
+  segment is missing, so a misspelt top-level directory is caught. Absolute paths, URLs,
+  `<placeholders>`, globs and `$VARS` are skipped. A missing page fails only when README.md or
+  AGENTS.md links to it, so other suites' fixture roots are unaffected.
+- `scripts/_test/verifying-doc.py` (must-fail and must-pass cases, and a check that `main()` calls the
+  check) runs in `marketplace.yml`, `gate-runner.py` and `.crew/verify.json`'s `scripts/**` rule;
+  `VERIFYING.md` joins the docs rule's paths. Each behaviour was sabotaged by hand and turned the
+  suite red. None is registered: every mutation registry is a harness path under T-0087.
+- Review (Sonnet 5.5): 0 BLOCK, 8 FIX, 6 NIT. FIX: no `main()` wiring test, the AGENTS.md link
+  untested, three false or incomplete claims (when `.ps1` cases skip, what triggers CI, when a receipt
+  is accepted), no warning that an agent must background `--all`, a "minimum" that disagreed with
+  `AGENTS.md`, and list-item fences misread. All taken, as were the NITs except reference links,
+  HTML `href` and wrapped spans, which the docstring now names as known limits. Round 2: 0 BLOCK,
+  3 FIX (a fence that never closes silenced everything after it, now a failure of its own; run-all
+  claimed to cover all of smoke; untested fence and link edge cases), 5 NIT; all taken but a
+  stronger `main()` wiring test.
 ### Fixed — `crew` 1.0.167: the verify gate sets `CLAUDE_PLUGIN_ROOT` for its rule commands
 
 - A `verify.json` rule that calls a crew script as `python3 "$CLAUDE_PLUGIN_ROOT/hooks/scripts/..."`
