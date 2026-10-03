@@ -5139,3 +5139,13 @@ Pre-existing on `origin/main` at `9de3afe5` (measured by scanning each command w
 
 - **gizmoduck/crew: the routine's dated `docs/security-scans/<date>/` layout does not satisfy crew's endpoint ledger.** The ledger reads a flat `docs/security-scans/<ep-id>.md` (`plugin/crew/hooks/scripts/crew_endpoints.py:1008-1012`) and confirms it through `_artifact_confirms_scan` (`:1163`). A bridge - the ledger accepting a dated directory holding `report.md` with the `**Total finding instances:**` marker, or the routine also writing `<ep-id>.md` - is a crew change with its own bump.
 - **`docs/guides/gizmoduck/*.{html,docx,pdf}` describe gizmoduck with no routine CLI** (`docs/guides/gizmoduck/gizmoduck-technical-reference.html:146` still says the routine "has no slash command or skill entry point") and have no tracked source. Rebuild them with doc-builder from `plugin/gizmoduck/README.md` once the routine has been used in anger.
+
+## Three sabotage entries read STILL GREEN on main (filed 2026-10-03 by L-0608)
+
+Found by L-0608's full Linux run (the first to reach its summary since the azureProfile OOM), and by
+L-0605's gate at main: `the marker's shape check is dropped` and `a round of true passes for round 1`
+(both RED in L-0520's runs, STILL GREEN since), and `install-scripts' paths are left to citation
+counts` (`plugin/crew/tests/sabotage_prereview.py`). Their targets ran and passed under the mutation:
+real vacuity, not a platform skip. Each needs its target test re-checked against the code it guards.
+Also still open: `docs.theme default goes back to the string neutral` exits 4 (its target does not
+collect).

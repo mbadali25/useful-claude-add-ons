@@ -112,7 +112,7 @@ STANDARDS_MUTATIONS = (
         STANDARDS,
         "        return None, [f\"{label}: not UTF-8 ({exc.reason} at byte {exc.start})\"], raw\n",
         "        return None, [\"absent\"], raw\n",
-        "tests/test_crew_standards.py::test_bad_overlay_refuses",
+        "tests/test_crew_standards.py::test_bad_overlay_refuses[not-utf8]",
     ),
     (
         "a stamp for another bundle passes",
@@ -142,7 +142,7 @@ STANDARDS_MUTATIONS = (
         STANDARDS,
         "                if target not in plugin_ids:\n",
         "                if False:\n",
-        "tests/test_crew_standards.py::test_bad_overlay_refuses",
+        "tests/test_crew_standards.py::test_bad_overlay_refuses[supplements-unknown-id]",
     ),
     (
         "a plugin set may claim the overlay's set name",
@@ -159,7 +159,7 @@ STANDARDS_MUTATIONS = (
         "    except OSError as exc:\n"
         "        return False, (f\"could not tell whether {ticket} has an approval receipt \"\n",
         ("tests/test_crew_standards.py::"
-         "test_gate_applies_when_the_receipt_cannot_be_looked_up"),
+         "test_gate_applies_when_the_receipt_cannot_be_looked_up[ticket-dir-is-a-file]"),
     ),
     (
         "a file parent Windows reports as not-found reads as absent",

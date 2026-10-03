@@ -2519,7 +2519,7 @@ MUTATIONS = (
         'entries.setdefault(path, []).append(" ".join(fields[:3]))',
         'entries.setdefault(path, []).append(" ".join(fields[:1]))',
         ("tests/test_verify_gate_fingerprint.py::"
-         "test_a_failing_tree_is_never_skipped_whatever_moved"),
+         "test_a_failing_tree_is_never_skipped_whatever_moved[staged-contents-sh]"),
     ),
     (
         # Whitespace stripped back off each path, which hashed a DIFFERENT
@@ -2580,7 +2580,7 @@ MUTATIONS = (
         "                elif c not in deferred:\n"
         "                    deferred.append(c)\n",
         ("tests/test_verify_gate_stop_budget.py::"
-         "test_a_rule_that_fits_is_not_split_across_its_commands"),
+         "test_a_rule_that_fits_is_not_split_across_its_commands[sh]"),
     ),
     (
         # The matched pair's half, and not a duplicate. The arithmetic lives
@@ -2653,7 +2653,7 @@ MUTATIONS = (
         "      HOLD_DEADLINE=$(cat \"$LOCK/deadline\" 2>/dev/null | "
         "tr -dc \"0-9\")\n",
         ("tests/test_verify_gate_lock_window.py::"
-         "test_an_unparseable_deadline_is_not_a_held_lock"),
+         "test_an_unparseable_deadline_is_not_a_held_lock[negative-huge-sh]"),
     ),
     (
         # The PowerShell half, and NOT the same defect: this flavour never
@@ -2726,7 +2726,7 @@ MUTATIONS = (
         "  *) ENV_TTL=$((10#$CREW_VERIFY_LOCK_TTL))",
         "  *) ENV_TTL=$CREW_VERIFY_LOCK_TTL",
         ("tests/test_verify_gate_lock_window.py::"
-         "test_a_zero_prefixed_ttl_is_decimal_and_still_publishes_a_deadline"),
+         "test_a_zero_prefixed_ttl_is_decimal_and_still_publishes_a_deadline[sh]"),
     ),
     (
         # Deduplication weakens the obligation again: the commands that carry
@@ -2819,7 +2819,7 @@ MUTATIONS = (
         "_file_digest(full).encode(\"ascii\"))\n",
         "        digest.update(_file_digest(full).encode(\"ascii\"))\n",
         ("tests/test_verify_gate_fingerprint.py::"
-         "test_a_failing_tree_is_never_skipped_whatever_moved"),
+         "test_a_failing_tree_is_never_skipped_whatever_moved[submodule-contents-sh]"),
     ),
     (
         # 0.19.94's hoist-and-charge, restored verbatim: each mandatory
