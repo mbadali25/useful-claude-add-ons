@@ -81,6 +81,18 @@ _LONG_RULE = {
     "default": [], "unmapped": "ignore",
 }
 
+# The same stated cost, run instantly, for the cases that only need the
+# challenger to RECLAIM an abandoned lock and then run its rule. Whether a
+# lock is held is read from the EXISTING lock's deadline and token age, never
+# from the challenger's rule, so `sleep 6` there proved nothing and cost each
+# case about 6 real seconds (eight cases on Linux, sixteen on Windows).
+_RECLAIM_RULE = {
+    "version": 1,
+    "rules": [{"paths": ["a.py"], "seconds": 8, "run": ["echo RAN"],
+               "why": "states 8s like _LONG_RULE, returns at once"}],
+    "default": [], "unmapped": "ignore",
+}
+
 
 def _repo(tmp_path, verify_map=None):
     root = tmp_path / "repo"
@@ -107,14 +119,14 @@ def _cmd(flavour):
     return [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1]
 
 
-def _env(root):
+def _env(root, ttl=_TTL):
     return dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
-                CREW_VERIFY_LOCK_TTL=_TTL)
+                CREW_VERIFY_LOCK_TTL=ttl)
 
 
-def _run(flavour, root):
+def _run(flavour, root, ttl=_TTL):
     return crew_fixtures.run_gate(
-        _cmd(flavour), input="{}", cwd=str(root), env=_env(root),
+        _cmd(flavour), input="{}", cwd=str(root), env=_env(root, ttl),
         capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
 
@@ -122,6 +134,9 @@ def _lock(root):
     return root / ".crew" / ".verify-gate.lock"
 
 
+# wallclock (T-0110): an elapsed-time bound, so it runs serially, never under -n.
+# Native -n auto (20 workers): "the holder published no token/deadline within 12s"; serially it passes.
+@pytest.mark.wallclock
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_a_rule_longer_than_the_ttl_keeps_its_lock(flavour, tmp_path):
     """MUST-ALLOW, and the defect itself: the holder is still working, well
@@ -207,7 +222,7 @@ def test_an_expired_deadline_is_still_reclaimed(flavour, tmp_path):
     """MUST-BLOCK, and what stops the fix becoming a lock that can never go
     stale. A holder that died leaves a deadline in the past; the gate must
     take the lock and actually run."""
-    root = _repo(tmp_path)
+    root = _repo(tmp_path, _RECLAIM_RULE)
     lock = _lock(root)
     lock.mkdir(parents=True)
     (lock / "token").write_text("abandoned-holder", encoding="utf-8")
@@ -223,7 +238,7 @@ def test_an_expired_deadline_is_still_reclaimed(flavour, tmp_path):
         "reclaimed, or a killed holder wedges the gate for ever. "
         + result.stderr
     )
-    assert "sleep 6" in result.stderr, (
+    assert "echo RAN" in result.stderr, (
         "having reclaimed the lock the gate must actually RUN the rule. "
         + result.stderr
     )
@@ -234,7 +249,7 @@ def test_a_lock_with_no_deadline_falls_back_to_the_age_window(flavour, tmp_path)
     """Backwards compatibility, and it is load-bearing during a rollout: a
     lock written by a version that never published a deadline must age exactly
     as it used to rather than being treated as held for ever."""
-    root = _repo(tmp_path)
+    root = _repo(tmp_path, _RECLAIM_RULE)
     lock = _lock(root)
     lock.mkdir(parents=True)
     (lock / "token").write_text("old-version-holder", encoding="utf-8")
@@ -250,6 +265,19 @@ def test_a_lock_with_no_deadline_falls_back_to_the_age_window(flavour, tmp_path)
     )
 
 
+# The window here is _FRESH_TTL, not _TTL. The token is stamped `now` and the
+# gate reads its age only after starting up: Git Bash or pwsh plus python
+# resolution. Against a 3s window that start-up WAS the margin, and it ran out
+# natively on Windows (T-0110): under -n auto (20 workers) in runs 1 and 2, and
+# once serially in the -m wallclock step, each reading "a lock with no deadline
+# but a token newer than the TTL is still held". The property is "inside the age
+# window, still held", not where the window's edge is; the stale half above sits
+# 600s past its 3s window for the same reason, and test_lock_ttl_env_var_* own
+# the TTL value itself.
+_FRESH_TTL = "60"
+
+
+@pytest.mark.wallclock
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_a_fresh_lock_with_no_deadline_still_backs_off(flavour, tmp_path):
     """The other half of the fallback: inside the age window, still held."""
@@ -260,7 +288,7 @@ def test_a_fresh_lock_with_no_deadline_still_backs_off(flavour, tmp_path):
     now = time.time()
     os.utime(lock / "token", (now, now))
 
-    result = _run(flavour, root)
+    result = _run(flavour, root, ttl=_FRESH_TTL)
     assert "backed off" in result.stderr, (
         "a lock with no deadline but a token newer than the TTL is still "
         "held. " + result.stderr
@@ -468,6 +496,9 @@ def _published_window(flavour, tmp_path, env_ttl):
     return deadline - now
 
 
+# wallclock (T-0110): an elapsed-time bound, so it runs serially, never under -n.
+# Native -n auto (20 workers): a 6s window (> 5): the deadline moved between the rule's two reads; serially it passes.
+@pytest.mark.wallclock
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_lock_ttl_env_var_narrows_the_window(flavour, tmp_path):
     """Sanity check for the seam's intended direction: a smaller value is
@@ -548,7 +579,7 @@ def _abandoned_lock(root, deadline_text):
 @pytest.mark.parametrize("case", sorted(_MALFORMED_DEADLINES))
 def test_an_unparseable_deadline_is_not_a_held_lock(flavour, case, tmp_path):
     """MUST-BLOCK. Every one of these must reclaim and RUN."""
-    root = _repo(tmp_path)
+    root = _repo(tmp_path, _RECLAIM_RULE)
     _abandoned_lock(root, _MALFORMED_DEADLINES[case])
 
     result = _run(flavour, root)
@@ -558,7 +589,7 @@ def test_an_unparseable_deadline_is_not_a_held_lock(flavour, case, tmp_path):
         "mean NOT HELD; coercing it into a number is how -9999999999 became a "
         "deadline in 2286. " + result.stderr
     )
-    assert "echo RAN" in result.stderr or "sleep" in result.stderr, (
+    assert "echo RAN" in result.stderr, (
         "having reclaimed the lock the gate must actually RUN the rule. "
         + result.stderr
     )
@@ -601,7 +632,7 @@ def test_both_flavours_read_the_same_deadline_the_same_way(value, tmp_path):
     """
     verdicts = {}
     for flavour in ("sh", "ps1"):
-        root = _repo(tmp_path / (flavour + "-" + value))
+        root = _repo(tmp_path / (flavour + "-" + value), _RECLAIM_RULE)
         _abandoned_lock(root, value)
         result = _run(flavour, root)
         verdicts[flavour] = "backed off" in result.stderr

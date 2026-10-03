@@ -489,3 +489,46 @@ def test_reserve_after_needs_replan_is_refused_without_writing(repo):
     with open(rl.ledger_path(str(repo), "T1"), "rb") as fh:
         after = fh.read()
     assert (ok, number, rl.NEEDS_REPLAN in message, after) == (False, None, True, before)
+
+
+# Review round 5 FIX: a wrong-typed `successors` path read as a normal known
+# budget ("no successor plan") instead of UNKNOWN.
+_TWO_ROUNDS = [{"round": 1, "status": "completed", "verdict": "FINDINGS"},
+               {"round": 2, "status": "completed", "verdict": "FINDINGS"}]
+
+
+def _write_ledger(repo, data):
+    path = rl.ledger_path(str(repo), "T1")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    text = json.dumps(data)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    return path
+
+
+@pytest.mark.parametrize("successors", [
+    {}, 0, "", False, None, [{"after_round": "2"}], [{"after_round": True}],
+    [{"after_round": None}], [{}], [{"after_round": -1}], [{"after_round": 3}]])
+def test_a_wrong_typed_successors_path_reads_unknown(repo, successors):
+    path = _write_ledger(repo, {"state": "REVIEWED", "rounds": _TWO_ROUNDS,
+                                "successors": successors})
+    with open(path, encoding="utf-8") as fh:
+        before = fh.read()
+
+    reserved = rl.reserve(str(repo), "T1", "codex")
+
+    with open(path, encoding="utf-8") as fh:
+        after = fh.read()
+    assert (rl.status(str(repo), "T1")["state"], reserved[:2], "UNKNOWN" in reserved[2],
+            after == before) == (rl.UNKNOWN, (False, None), True, True)
+
+
+@pytest.mark.parametrize("extra, left", [
+    ({}, 0), ({"successors": []}, 0),
+    ({"successors": [{"after_round": 2, "plan_sha256": "a" * 64}]}, 2)])
+def test_a_well_formed_successors_path_still_reads(repo, extra, left):
+    _write_ledger(repo, dict({"state": "REVIEWED", "rounds": _TWO_ROUNDS}, **extra))
+
+    got = rl.status(str(repo), "T1")
+
+    assert (got["state"], got["rounds_left"]) == ("REVIEWED", left)

@@ -54,7 +54,11 @@ approving it, it refuses here and tells you which. Assuming it passes, it
 records the scope base (`scope_base.py --record`), works the plan step by
 step — test first, watch it fail, implement, watch it pass — and the
 **plan-approval + scope guard hook** blocks any write outside the spec's
-Touch globs before it happens, not after.
+Touch globs before it happens, not after. Before the first step it prints the
+recurring-findings checklist (`recurring_findings.py --ticket T-0091`): the
+defect classes earlier reviews kept finding on paths like the spec's Touch
+list, a few probes each, kept open while the plan is worked and handed to
+whichever developer types.
 
 **5–6. Tests and docs.** Coverage lands as part of implementing the plan's
 steps. `/crew:docs` runs next and usually says "none" — most tickets touch no
@@ -77,11 +81,29 @@ the ticket becomes `NEEDS_REPLAN`. Each round's findings go into a
 `standards-proposals-r<N>.md` file, one row per finding; you approve or reject
 each proposed standard, and nothing is added to a standards file on its own.
 
+With parallel lanes in one clone, arm its **merge train** once (`crew_train.py arm`, L-0520).
+Lanes still implement at the same time, overlapping Touch or not; only gate and land queue.
+Before the review round, `crew_train.py acquire --ticket T-0091` takes the train: a ticket whose
+Touch overlaps one already holding it waits (exit 1, colliding paths named) and gates next, in the
+order the lanes reached their gate, while a ticket with a disjoint Touch gates at once. Catch up with `crew_train.py catch-up --ticket
+T-0091` - a `git merge` of the base, never a rebase, with git rerere on so a conflict resolved
+once replays next time. A replay is left unstaged and listed: inspect it, `git add` it, and show
+it to the reviewer. crew never turns on `rerere.autoupdate`, and the version files
+(`plugin.json`, `marketplace.json`, `PLUGINS.md`, `CHANGELOG.md`) are never replayed - they come
+back conflicted, named as forgotten, for you to resolve by hand.
+
 **8. Done.** You type `/crew:done T-0091`. Three checks, all required: the
 review receipt rebuilds clean, the verify gate is clean, and the completion
 audit (the whole tree diffed against the scope base, not counting a file that
 is byte-identical to main as last merged) finds nothing outside scope. Any one failing refuses the close and names what to fix. On success it
 appends a metrics row, marks the ticket done, and clears a stale handoff.
+
+With the train armed, landing is part of done: `crew_train.py check-land --ticket T-0091 --pr
+<n>` refuses unless T-0091 holds the train, `git merge-tree` against the base is clean, the base
+has not moved in Touch paths, and HEAD carries the review receipt and a green gate; then it prints
+`gh pr merge <n> --merge --match-head-commit <sha>` for you to run (crew never merges). After the
+merge, `crew_train.py release --ticket T-0091 --merged <merge sha>` frees the train and tells every
+overlapping lane to merge the base now.
 
 ## What each hook does, in order
 

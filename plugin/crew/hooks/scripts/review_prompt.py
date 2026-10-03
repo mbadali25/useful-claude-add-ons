@@ -46,6 +46,7 @@ import sys
 import crew_standards
 import merged_main
 import review_verdict
+import verify_record
 
 SPEC_SECTIONS = ("Intent", "Exclusions", "Evidence", "Unknowns", "Acceptance checks")
 WEBTEST_FINDINGS_MAX = 50
@@ -94,9 +95,15 @@ def _bundle_block(manifest):
            "other directory counts for nothing; a part with no READ line makes the review "
            "INCOMPLETE."]
     out += [f"  {p['path']}" for p in parts]
+    # Three states, one line each (T-0099): an empty list is a manifest saying
+    # nothing was left out; no key, or anything but a list of non-blank strings,
+    # is one that cannot say, and must not read as either of the known answers.
     excluded = manifest.get("excluded")
-    out.append(f"  excluded (never in the bundle): {', '.join(excluded)}" if excluded
-               else "  excluded: none recorded")
+    if isinstance(excluded, list) and all(isinstance(p, str) and p.strip() for p in excluded):
+        out.append("  excluded (never in the bundle): "
+                   + (", ".join(excluded) if excluded else "none"))
+    else:
+        out.append("  excluded: not recorded by this manifest (unknown)")
     out.append(_merged_main_line(manifest.get("merged_main")))
     out.append(f"Manifest (file categories, renames, modes, binaries, submodules): "
                f"{manifest.get('manifest_path', 'manifest.json')}")
@@ -197,17 +204,13 @@ def _receipts_block(root, manifest):
         out.append(f"Last clean verify pass: {verified[:12]}; HEAD is {head[:12]}"
                    f"{', tree dirty' if manifest.get('dirty') else ''}. Changes after that "
                    "pass have NOT been through the gate.")
-    record_path = os.path.join(root, ".crew", ".verify-gate.record.json")
-    raw = _read(record_path)
-    if raw is None:
-        out.append("MISSING: no .crew/.verify-gate.record.json (no per-rule record).")
+    state, rules = verify_record.read_record(root)
+    shown = verify_record.RECORD_PATH.replace("\\", "/")
+    if state == "absent":
+        out.append(f"MISSING: no {shown} (no per-rule record).")
         return out
-    try:
-        rules = json.loads(raw).get("rules")
-    except (ValueError, AttributeError):
-        rules = None
-    if not isinstance(rules, dict):
-        out.append("UNREADABLE: .crew/.verify-gate.record.json does not parse; which rules "
+    if state != "ok":
+        out.append(f"UNREADABLE: {shown} does not parse; which rules "
                    "are unverified is UNKNOWN.")
     elif not rules:
         out.append("Per-rule record: no rule is outstanding.")

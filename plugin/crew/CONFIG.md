@@ -694,18 +694,20 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 
 | Key | Type | Default |
 |---|---|---|
-| `qa.provider` | `auto` \| `claude` \| `codex` \| `copilot` | `"auto"` |
-| `qa.order` | list (a leaf; replaced wholesale) | `["codex", "copilot", "claude"]` |
+| `qa.provider` | `auto` \| `claude` \| `codex` \| `copilot` \| `kimi` | `"auto"` |
+| `qa.order` | list (a leaf; replaced wholesale) | `["codex", "kimi", "copilot", "claude"]` |
 | `qa.fallback` | string | `"claude-sonnet-5"` |
 | `qa.codex.model` | string or `null` | `null` |
 | `qa.codex.reasoningEffort` | string or `null` | `null` |
 | `qa.copilot.model` | string or `null` | `null` |
+| `qa.kimi.model` | a Kimi Code model id (`k3`, `kimi-for-coding`, `kimi-for-coding-highspeed`) or `null` for the CLI's own `default_model`; no `reasoningEffort` key | `null` |
 | `qa.roles` | open table (empty dict = leaf) | `{}` |
-| `dev.provider` | `claude` \| `codex` \| `copilot` | `"claude"` |
+| `dev.provider` | `claude` \| `codex` \| `copilot` \| `kimi` | `"claude"` |
 | `dev.fallback` | string | `"claude-sonnet-5"` |
 | `dev.codex.model` | string or `null` | `null` |
 | `dev.codex.reasoningEffort` | string or `null` | `null` |
 | `dev.copilot.model` | string or `null` | `null` |
+| `dev.kimi.model` | a Kimi Code model id or `null`, as `qa.kimi.model` | `null` |
 | `dev.roles` | open table | `{}` |
 | `worktree.root` | path or `null` | `null` |
 | `secondOpinion.provider` | string | `"none"` |
@@ -760,7 +762,7 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 | `route.enabled` | boolean; only the JSON value `true` arms it, and a repo value wins over the machine one (§21) | `false` |
 
 `crew_state.QA_PROVIDERS` and `DEV_PROVIDERS` are both
-`["claude", "codex", "copilot"]` (dumped by execution). `qa.provider`
+`["claude", "codex", "copilot", "kimi"]` (dumped by execution). `qa.provider`
 additionally accepts `"auto"`; a `dev.provider` of `"auto"` is **not** valid —
 `crew_config.py::validate_providers` checks `qa.provider` against
 `QA_PROVIDERS + ["auto"]` and `dev.provider` against `DEV_PROVIDERS` alone.
@@ -828,6 +830,8 @@ repository or one checkout.
 | `platform.wsl` | boolean or `null` | `null` | `crew_platform.py` |
 | `platform.shell` | string or `null` | `null` | `crew_platform.py` |
 | `platform.windowsHostIp` | string or `null` | `null` | `crew_platform.py` |
+| `shellRoute.mode` | `"auto"`, `"wsl"`, `"powershell"`, `"gitbash"` or `null` | `null` (repo), `"auto"` (machine) | `crew_shell.mode` — the shell crew's long-running jobs run in on native Windows; both layers; a repo `null` inherits the machine value and unset everywhere reads as `auto`; an unrecognised value reads as `auto` and is named on the route line and the `/crew:status` `shell` line |
+| `shellRoute.distro` | string or `null` | `null` | `crew_shell.configured_distro` — the WSL distro to probe and route to; `null` takes the default (`*`) distro, never one picked by list order |
 | `graph.enabled` | boolean | `true` | **no consumer found**, §9 |
 | `graph.tool` | string | `"graphify"` | **no consumer found**, §9 |
 | `graph.out` | path | `"graphify-out"` | `crew_state.py` |
@@ -846,6 +850,15 @@ case `null_shadows` is deliberately narrow to protect (§1).
 machine facts into the repo config. That is why it is repo-only despite
 describing a machine: the value records what *this checkout* resolved, and a
 global override would make every repo on the box report the first one's answer.
+
+`shellRoute.*` (T-0040) is a preference, not a detected fact, so it is not in
+`platform.*`: platform-sync rewrites `platform.shell` every SessionStart. It is
+settable on both layers, because which shell is fast is a fact about the
+machine and a repo may still override it. The probe's answer is not config: it
+lives in the machine-local cache `~/.claude/crew/shell-route.json`, written only
+by `crew_shell.py probe --write` and `measure --write`. `shellRoute` is not
+`route`: `route` routes plain-text prompts to `/crew:` commands, and
+`shellRoute` picks the shell a job runs in.
 
 ---
 
@@ -1641,7 +1654,9 @@ denied unattended for a prod or unknown target.
 **Not a promotion gate.** `prodUnattended` does not stand down
 `promote-gate.sh`'s `requireHuman` (`promote-gate.sh`, the `requireHuman`
 check), which still applies independently: fully unattended production also
-needs that off. `.crew/verify.json` stays promote-gate's list of environments;
+needs that off. `.crew/verify.json` stays promote-gate's list of environments,
+read from the session's project directory even when the deploy runs from a
+linked worktree (whose HEAD and cleanliness are what the gate then checks);
 `crew_config.py --check` warns when a `nonProd` glob covers one it marks
 `requireHuman: true`.
 
@@ -2319,6 +2334,22 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   chronic, and still blocks the sha marker exactly as before this feature —
   that case really is unverified for THIS commit, not permanently
   unverifiable, and freezing the baseline is the correct answer for it.
+- **Pricing**. A rule's cost is its declared `seconds`, or the
+  smaller of that and a measurement of it on this machine
+  (`.crew/.verify-gate.timings.json`), never the larger: a stale
+  over-statement stops reading as chronic once one clean run measures it.
+- **The tree-pass cache**. At Stop, a command that passed is credited,
+  not re-run, while the tree is byte-for-byte the tree it passed on
+  (`.crew/.verify-gate.passes.json`, keyed on HEAD, every ref,
+  `.crew/verify.json`, `.crew/config.json` and every tracked and untracked
+  path's bytes, type and mode). A rule all of whose commands are credited
+  costs nothing, so an acute deferral on an unchanged tree runs what it has
+  not run yet instead of the same rules again. `/crew:verify --all` never
+  credits; it runs everything and saves its passes. If the tree changes
+  during a run that credited something, the credits are withdrawn and the
+  run does not count as verified. Any edit anywhere, or a fetch, empties it; ignored files (`node_modules`, a
+  venv) are not in the key, as they are not in the fingerprint. Set
+  `CREW_VERIFY_FRESH=1` in the environment to run everything for one run.
 - A rule declaring `"reach"` other than `"local"` is recorded as
   `"reach_declared"` and never runs on Stop — only under `/crew:verify --all`
   and the merge gate. Declaring `"reach": "local"` runs on Stop with NO
@@ -2371,6 +2402,18 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   reason: the working tree is dirty by definition during ordinary work, so a
   rule that refuses on a dirty tree is a permanent red there and a real
   check only under `--all` against a clean checkout.
+- A rule declaring `"coveredBy": "<id>"` (L-0572) names another rule's
+  `"id"` as running a superset of its checks. Under `--all` only, its
+  commands run last and are recorded as `covered` - clean, but never cached
+  as a timing - when every command of that rule exited 0 earlier in the same
+  run, a whole-tree snapshot taken before the first command still matches,
+  and `PYTEST_ADDOPTS` is empty. Anything else runs it: a superset that
+  failed, exited 77 or was killed, did not match, or changed the tree; a
+  command `always` or an undeclared rule also names; an invalid declaration
+  (unknown or duplicate id, itself, a chain, a superset with no runnable
+  command, a different `env`), which is ignored with a named notice. Stop
+  mode never credits. This repo declares `rules[9]` (the full crew suite)
+  `crew-suite` and its pytest-only subsets `coveredBy` it.
 - A rule whose command exits 77 is recorded as `"skipped"` — the
   `_verify/smoke.sh` and GNU automake convention for "skipped, environment
   absent". Not a pass, not a fail: it does not fail the Stop turn and it is
@@ -2489,8 +2532,11 @@ effect `status` shows is `crew_ticket.accepted`'s: an `autopilot` receipt
 stands only while the policy still allows it.
 
 **What arming it does not change.** Review acceptance and brainstorm always
-stop for a person, at every setting — accepting review FINDINGS
-(`review_ledger.py --accept`) is never automatic; every
+stop for a person, at every setting — accepting review FINDINGS with any
+BLOCK (`review_ledger.py --accept`) is never automatic; the one exception is
+not a setting either: a final 0-BLOCK round from a Codex or Kimi reviewer (never a
+same-family Claude-fallback round, never a verdict recovered from stray lines) is accepted by the ledger-guarded
+`review_ledger.py --auto-accept` (L-0510), and no config key changes that; every
 `AUTONOMOUS_STOPS` id (§5) binds it; no hook, review budget or completion
 audit is relaxed. `pm.authority: autonomous` from 0.20 arms nothing —
 `/crew:migrate` keeps it under `retired.pm` and its note points here.

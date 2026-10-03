@@ -262,7 +262,7 @@ cat <<'MSG'
  Or drive it through the plugin:
    /gizmoduck:scan https://your-new-site.com high
 
- For the full nine-tool routine across a manifest of targets:
-   /gizmoduck:doctor    (confirm what actually installed)
+ For the full scanner routine across a manifest of targets:
+   python3 scripts/gizmoduck.py routine targets.yaml --scan-root .   (then /gizmoduck:doctor confirms what installed)
 ------------------------------------------------------------
 MSG

@@ -16,7 +16,7 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
   ----------------------
     [x] Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)
     [x] Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check
-  > [x] This repo's marketplace + 34 of 34 skills  >
+  > [x] This repo's marketplace + 35 of 35 skills  >
     [x] Team plugins: superpowers, frontend-design, excalidraw-generator
     ...
     [ ] Strix AI pentesting CLI (needs Docker + an LLM API key)
@@ -42,7 +42,7 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
 
 | Row | What → picks | Non-interactive equivalent |
 |---|---|---|
-| 3 | the 34 skills<!-- claim: skills-count --> in this repo | `--skills` / `-Skills` |
+| 3 | the 35 skills<!-- claim: skills-count --> in this repo | `--skills` / `-Skills` |
 | 4 | superpowers, frontend-design, excalidraw-generator | `--team` / `-Team` |
 | 6 | the 5 community plugins | `--community` / `-Community` |
 | 19 | this repo's own plugins (`crew`, `gizmoduck`, `localgpu`, `obsidian-vault`) | `--plugins` / `-Plugins` |
@@ -152,20 +152,21 @@ claude plugin install aws-opensearch@useful-claude-add-ons
 claude plugin install bitbucket@useful-claude-add-ons
 claude plugin install checkpoint-email@useful-claude-add-ons
 claude plugin install cisco-meraki@useful-claude-add-ons
-claude plugin install claude-code-defaults@useful-claude-add-ons
-claude plugin install claude-code-tuneup@useful-claude-add-ons
 claude plugin install cloudflare@useful-claude-add-ons
+claude plugin install config-tuneup@useful-claude-add-ons
 claude plugin install drata@useful-claude-add-ons
 claude plugin install i-have-adhd@useful-claude-add-ons
 claude plugin install infra-work-ticketing@useful-claude-add-ons
 claude plugin install intune-graph@useful-claude-add-ons
 claude plugin install jira-manager@useful-claude-add-ons
 claude plugin install knowbe4-admin@useful-claude-add-ons
+claude plugin install mailgun@useful-claude-add-ons
 claude plugin install mermaid-svg-bitbucket@useful-claude-add-ons
 claude plugin install notify@useful-claude-add-ons
 claude plugin install power-automate-api@useful-claude-add-ons
 claude plugin install repo-docs@useful-claude-add-ons
 claude plugin install report-builder@useful-claude-add-ons
+claude plugin install session-defaults@useful-claude-add-ons
 claude plugin install shipstation@useful-claude-add-ons
 claude plugin install sophos-central@useful-claude-add-ons
 claude plugin install terraform-docs-readme@useful-claude-add-ons
@@ -267,7 +268,7 @@ Six more rows, also off by default. None of them are MCP servers.
   | Script | Event | What it does the moment the plugin is enabled |
   |---|---|---|
   | `guard.sh` / `.ps1` | `PreToolUse` on Bash and PowerShell | Blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, prod-targeted commands, and any command that would print a secret into the transcript |
-  | `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash and PowerShell | Refuses a command matching a declared `deploy` entry unless every `requires` environment has an all-pass row in `.work/PROMOTIONS.md`, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean |
+  | `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash and PowerShell | Refuses a command matching a declared `deploy` entry unless every `requires` environment has an all-pass row in `.work/PROMOTIONS.md`, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree the deploy runs from (payload `cwd`, leading `cd`, `git -C`; same repository) is clean and at that sha |
   | `handoff-read.sh` / `.ps1` | `SessionStart` | Resets its once-per-session markers; prints the last handoff after a clear, compact, or resume only when `memory.inject` is false |
   | `crew-context.sh` / `.ps1` | `SessionStart`, `UserPromptSubmit`, `PostToolUse` on Read/Edit/Write/MultiEdit and vault MCP tools, `SubagentStart` | **On by default since 1.0.0; `memory.inject: false` in `.crew/config.json` turns it off, and then it emits and logs nothing.** Injects branch/HEAD, code-map anchor state and the handoff at SessionStart, budgeted code-map slices and vault-labelled recall per turn, and is the only channel that reaches a dispatched subagent (`SubagentStart`). Never blocks. `handoff-read` stops printing the handoff while this is on, so the two never inject it twice |
   | `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to and **fails the turn** on red, or on a changed path with no rule |

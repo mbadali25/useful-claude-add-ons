@@ -80,6 +80,7 @@ import argparse
 import collections
 import copy
 import fnmatch
+import functools
 import hashlib
 import json
 import os
@@ -129,10 +130,10 @@ GLOBAL_CONFIG_PATH = crew_state.GLOBAL_CONFIG_PATH
 DEV_PROVIDERS = crew_state.DEV_PROVIDERS
 QA_PROVIDERS = crew_state.QA_PROVIDERS
 
-# Providers that are a CLI on PATH, and so have a meaningful `which()` answer.
-# `claude` is an in-session subagent, not a binary. `localgpu` is a binary but
-# is deliberately NOT on PATH -- see `localgpu_which`.
-PATH_PROVIDERS = ("codex", "copilot")
+# Providers that are a CLI on PATH, and so have a meaningful `which()` answer. `claude` is an
+# in-session subagent, not a binary. `localgpu` is a binary but is deliberately NOT on PATH -- see
+# `localgpu_which`. `kimi` on PATH is presence only; `kimi_probe.py` says whether it can review.
+PATH_PROVIDERS = ("codex", "copilot", "kimi")
 
 
 def localgpu_which(which=None):
@@ -329,6 +330,14 @@ def default_config():
             "shell": None,
             "windowsHostIp": None,
         },
+        # T-0040. Which shell crew's jobs run in on Windows (`crew_shell.py`).
+        # A preference, not in `platform.*`, which platform-sync rewrites every
+        # SessionStart. Not `route` (prompt routing, `crew_route.py`) either.
+        # Modes: `auto`, `wsl`, `powershell`, `gitbash`. `mode` is null here so
+        # a repo that chose nothing inherits the machine's value
+        # (`without_null_shadows`, review round 2); unset everywhere,
+        # `crew_shell.mode` reads it as `auto`.
+        "shellRoute": {"mode": None, "distro": None},
         "pm": copy.deepcopy(crew_state.PM_DEFAULTS),
         "graph": copy.deepcopy(crew_upgrade.GRAPH_BLOCK),
         "docs": copy.deepcopy(crew_upgrade.DOCS_BLOCK),
@@ -392,6 +401,22 @@ def default_config():
         # file leaves the key out.
         "route": {"enabled": False},
     }
+
+
+@functools.lru_cache(maxsize=1)
+def _default_template():
+    """ONE `default_config()`, shared, for readers that only walk its shape.
+
+    NEVER mutate it and never hand it to a caller that might: it is the same
+    object on every call, which is the whole point. `_shape` runs once per
+    dotted key a planner judges, and building the `/crew:config` menu probes
+    every offered choice through a planner, so a fresh deep copy per lookup
+    was ~50,000 copies for one menu - 93% of a profiled `menu_spec` call.
+    `default_config()` reads only module constants, so one build is current
+    for the life of the process. Writers keep calling `default_config()`.
+    A test that monkeypatches one of those constants must call
+    `_default_template.cache_clear()`, or these readers keep the old shape."""
+    return default_config()
 
 
 def default_global_config():
@@ -565,6 +590,10 @@ def default_global_config():
         # T-0023's routing switch, settable machine-wide (see the comment in
         # `default_config()` for why a repo file can still veto it).
         "route": {"enabled": False},
+        # T-0040. Which shell is fast is a fact about the machine (Git Bash's
+        # per-fork cost differs 16-21x between two of the owner's hosts), so
+        # the shell route is settable here; a repo may still override it.
+        "shellRoute": {"mode": "auto", "distro": None},
     }
 
 
@@ -1852,7 +1881,30 @@ def inspect_global(root, path=None):
 # --- What actually backs each role -----------------------------------------
 
 
-def order_candidates(cfg, author, which=None, probe=None):
+def review_launchable():
+    """The providers `/crew:review` can actually run: `review_run.LAUNCHED` plus the
+    in-session `claude` subagent, as a frozenset; None when that list could not be read.
+
+    THE LAUNCH GATE (T-0028, owner 2026-09-30). This is the one coupling between the
+    provider table and the review harness, kept to a single named list on purpose:
+    `order_candidates` refuses a `qa.order` entry this set does not name, so a provider
+    that validates and is first in the walk (Kimi, second in the default order since
+    crew 1.0.78) is never offered to a review nothing can launch. The gate names no
+    provider: adding one to `review_run.LAUNCHED` (L-0527 adds `kimi`) is the whole
+    change that makes it eligible. `test_launch_gate_agrees_with_review_run` pins it.
+    Could-not-tell (the import fails, or the list is not a tuple of names) is None,
+    and the caller reads None as "not launchable", never as "everything launches"."""
+    try:
+        import review_run  # pylint: disable=import-outside-toplevel
+    except Exception:  # pylint: disable=broad-except  # any import failure is could-not-tell
+        return None
+    launched = getattr(review_run, "LAUNCHED", None)
+    if not isinstance(launched, tuple) or not all(isinstance(p, str) for p in launched):
+        return None
+    return frozenset(launched) | {"claude"}
+
+
+def order_candidates(cfg, author, which=None, probe=None, launchable=None):
     """Which of `qa.order` could actually review a diff `author` wrote. Pure.
 
     The per-role table answers "what is each role pinned to". It does NOT
@@ -1869,7 +1921,8 @@ def order_candidates(cfg, author, which=None, probe=None):
     `{"provider", "model", "family", "onPath", "eligible", "why"}`. `why` is
     None when the candidate is eligible and otherwise names the single reason
     it is not, in the order the walk itself would find them: not a provider
-    QA recognises, then absent from PATH, then family unknown, then same
+    QA recognises, then not launchable by `/crew:review` (`review_launchable`,
+    the launch gate), then absent from PATH, then family unknown, then same
     family as the author, then a failed probe. A `copilot` with no
     `qa.copilot.model` has NO knowable family -- that is why the walkthroughs
     insist on pinning it before Copilot may review at all.
@@ -1891,6 +1944,9 @@ def order_candidates(cfg, author, which=None, probe=None):
     does with its real round trip.
     """
     which = shutil.which if which is None else which
+    # The launch gate: `launchable` is the set `/crew:review` can run (default
+    # `review_launchable()`); None there is could-not-tell, and nothing passes it.
+    launchable = review_launchable() if launchable is None else launchable
     # `author` is a single family, an iterable of them, or None -- plural
     # because a stale dispatch record strikes two. See
     # `crew_state.author_families`.
@@ -1914,6 +1970,10 @@ def order_candidates(cfg, author, which=None, probe=None):
             on_path = bool(which(provider))
         if provider not in QA_PROVIDERS:
             why = f"`{provider}` is not a provider QA recognises"
+        elif launchable is None:
+            why = "could not tell whether /crew:review can launch it (review_run.LAUNCHED unreadable)"
+        elif provider not in launchable:
+            why = f"/crew:review cannot launch `{provider}` yet (not in review_run.LAUNCHED)"
         elif not on_path:
             why = "not on PATH"
         elif fam is None:
@@ -2612,7 +2672,7 @@ def leaf_updates(updates):
 
 def _is_open_table(dotted):
     """True for `qa.roles` / `dev.roles` themselves: an empty dict default."""
-    node = _dig(default_config(), tuple(dotted.split(".")))
+    node = _dig(_default_template(), tuple(dotted.split(".")))
     return isinstance(node, dict) and not node
 
 
@@ -2647,7 +2707,7 @@ MACHINE_REFUSED["graph.obsidian.confirmed"] = (
 def _shape(dotted):
     """`block`, `open` (at or under an open table), `leaf`, `under` (past a
     template leaf, which takes a value, not keys) or `unknown`."""
-    node = default_config()
+    node = _default_template()
     for part in dotted.split("."):
         if isinstance(node, dict) and not node:
             return "open"
@@ -2735,7 +2795,7 @@ def value_allowed(dotted, layer, value):
     if value is None:
         if null_means(dotted, layer) is not None:
             return None
-        default = _dig(default_config(), tuple(dotted.split(".")))
+        default = _dig(_default_template(), tuple(dotted.split(".")))
         return (f"{dotted} = null is not one of its values here "
                 f"({_values_text(allowed)}); pick one of them, or its default "
                 f"{None if default is _MISSING else default!r}")

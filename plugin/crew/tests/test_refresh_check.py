@@ -960,8 +960,10 @@ def test_no_artifact_keeps_a_measured_status_under_a_fallback_equal_to_head(tmp_
             if a["kind"] == "codemap"] == [("unknown", False)], result
 
 
+# crew_instructions.py joined in T-0094: the audit's rule admission is
+# `expected_rules`, so an edit there can widen a blocking check.
 _GUARD_MODULES = ("crew_refresh_check.py", "scope_guard.py", "completion_audit.py",
-                  "crew_freshness.py", "scope_base.py")
+                  "crew_freshness.py", "scope_base.py", "crew_instructions.py")
 
 
 def _gate_matches(path, pat):

@@ -255,6 +255,141 @@ def test_shipped_sets_cite_nothing_local_only():
     assert offenders == []
 
 
+# ---- T-0086: the per-language stack sets -------------------------------------------
+
+_ADMITTED_PYTHON = [f"PYTHON-{n:02d}" for n in (1, 3, 4, 6, 7, 8, 10, 11, 13)]
+_STACK_SETS = sorted(n for n in os.listdir(_REFS) if n.endswith(".md") and n != "generic.md")
+
+
+def test_python_set_parses_with_every_field():
+    parsed, problems, _ = cs.parse_set(os.path.join(_REFS, "python.md"))
+
+    assert parsed is not None, problems
+    assert (problems, parsed["set"], parsed["applies_to"],
+            [s["id"] for s in parsed["standards"]]) == (
+        [], "PYTHON", ["**/*.py"], _ADMITTED_PYTHON)
+
+
+def _change_set_problems(std):
+    count, _, names = std["fields"]["Change sets"].partition(":")
+    listed = [n.strip() for n in names.split(",") if n.strip()]
+    earned = std["fields"]["Earned by"].splitlines()
+    cited = [n for n in listed
+             if any(line.startswith(f"- {n} ") or f"`{n}`" in line for line in earned)]
+    problems = []
+    if not count.strip().isdigit() or int(count) < 3:
+        problems.append(f"count {count.strip()!r} is not a number of at least 3")
+    elif len(listed) != int(count):
+        problems.append(f"count {count.strip()} but {len(listed)} names")
+    if len(set(listed)) != len(listed):
+        problems.append("a name is repeated")
+    if len(cited) < 3:
+        problems.append(f"only {cited} cited in Earned by")
+    return problems
+
+
+@pytest.mark.parametrize("name", _STACK_SETS)
+def test_every_stack_standard_names_and_cites_three_change_sets(name):
+    """A stack set ships only standards earned by at least three distinct
+    reviewed change sets (crew-standards/SKILL.md), each visible in Earned by."""
+    parsed, problems, _ = cs.parse_set(os.path.join(_REFS, name))
+    assert parsed is not None, problems
+
+    short = {std["id"]: _change_set_problems(std) for std in parsed["standards"]}
+
+    assert {sid: found for sid, found in short.items() if found} == {}
+
+
+_WHY_COUNT_RE = re.compile(r"\b(\d+) findings? across (\d+) change\s+sets\b")
+
+
+@pytest.mark.parametrize("name", _STACK_SETS)
+def test_every_stack_standard_why_states_its_change_set_count(name):
+    """A Why's "N findings across M change sets" names the same M as its
+    Change sets line, and N is at least M: one finding per change set is the floor."""
+    parsed, problems, _ = cs.parse_set(os.path.join(_REFS, name))
+    assert parsed is not None, problems
+
+    wrong = {}
+    for std in parsed["standards"]:
+        claim = _WHY_COUNT_RE.search(std["fields"]["Why"])
+        listed = std["fields"]["Change sets"].partition(":")[0].strip()
+        if claim is None:
+            wrong[std["id"]] = "Why states no 'N findings across M change sets'"
+        elif claim.group(2) != listed or int(claim.group(1)) < int(claim.group(2)):
+            wrong[std["id"]] = f"Why {claim.group(0)!r}, Change sets {listed}"
+
+    assert wrong == {}
+
+
+# Each count below was taken by hand from the defects the standard's own Why
+# enumerates, and each enumerated defect was matched to a quoted finding in its
+# Earned by (review round 1, FIX python.md:245: PYTHON-07 said 6 and listed 7).
+# A new or edited standard updates this table with a fresh count, never a copy
+# of the number the Why already states.
+_PYTHON_FINDINGS = {
+    "PYTHON-01": 3, "PYTHON-03": 3, "PYTHON-04": 4, "PYTHON-06": 3, "PYTHON-07": 7,
+    "PYTHON-08": 6, "PYTHON-10": 4, "PYTHON-11": 5, "PYTHON-13": 5,
+}
+
+
+def test_python_why_finding_counts_match_their_enumerations():
+    parsed, problems, _ = cs.parse_set(os.path.join(_REFS, "python.md"))
+    assert parsed is not None, problems
+
+    stated = {}
+    for std in parsed["standards"]:
+        claim = _WHY_COUNT_RE.search(std["fields"]["Why"])
+        stated[std["id"]] = int(claim.group(1)) if claim else None
+
+    assert stated == _PYTHON_FINDINGS
+
+
+@pytest.mark.parametrize("name", _STACK_SETS)
+def test_every_stack_set_line_count_is_the_same_by_newline_and_splitlines(name):
+    """A raw U+2028/U+2029 (or \\v, \\f, \\x1c-\\x1e, \\x85) is a line to
+    splitlines() and not to wc -l, so BUDGETS.md's Markdown total would depend
+    on which counter read it (review round 2, FIX BUDGETS.md:11)."""
+    with open(os.path.join(_REFS, name), encoding="utf-8", newline="") as fh:
+        text = fh.read()
+
+    assert len(text.splitlines()) == text.count("\n")
+
+
+def test_python_sources_quote_whole_spans_without_elision():
+    """Every Source quote is checked verbatim against the raw page, so none may
+    be cut with [...]: an elided span is not in the page (review round 2, FIX
+    python.md:79)."""
+    parsed, problems, _ = cs.parse_set(os.path.join(_REFS, "python.md"))
+    assert parsed is not None, problems
+
+    elided = [std["id"] for std in parsed["standards"]
+              if re.search(r"\[(\.\.\.|…)\]", std["fields"]["Source"])]
+
+    assert elided == []
+
+
+def test_python_set_applies_to_python_files_only():
+    def applies(files):
+        return "PYTHON" in cs.effective_set(_REPO_ROOT, files)["sets"]
+
+    assert (applies(["plugin/crew/hooks/scripts/x.py"]), applies(["setup.py"]),
+            applies(["README.md"]), applies(["plugin/crew/x.pyc"])) == (
+        True, True, False, False)
+
+
+def test_shipped_sets_cite_no_machine_local_note():
+    offenders = []
+    for name in sorted(os.listdir(_REFS)):
+        with open(os.path.join(_REFS, name), encoding="utf-8") as fh:
+            for number, line in enumerate(fh, 1):
+                if re.search(r"/repos/|claude-memories|wiki/concepts|/\.claude/projects/|auto-memory",
+                             line):
+                    offenders.append(f"{name}:{number}: {line.strip()[:80]}")
+
+    assert offenders == []
+
+
 # The owner accepted three amendments from review round 1's proposals
 # (.work/tickets/T-0085/standards-proposals-r1.md, "Owner decision", 2026-09-28):
 # #2 and #3 into GEN-01, #4 into REPO-03, #6 into GEN-04.
@@ -1042,7 +1177,7 @@ def test_stamp_refuses_an_unreadable_scope_record_without_naming_record(tmp_path
 _INCOMPLETE_OUTPUTS = {
     "empty": "",
     "bullet": "READ|part-001-of-001.patch\n- BLOCK|a.py:1|first breaks|run it\n",
-    "fenced": "READ|part-001-of-001.patch\n```\nBLOCK|a.py:1|first breaks|run it\n```\n",
+    "fenced-clean": "READ|part-001-of-001.patch\n```\nCLEAN\n```\n",
     "neither": "READ|part-001-of-001.patch\n",
 }
 
@@ -1064,6 +1199,26 @@ def test_proposals_refuses_an_incomplete_output_and_writes_nothing(tmp_path, sha
 
     assert (first.returncode, "INCOMPLETE" in first.stderr, written, second.returncode) == (
         1, True, False, 0), (first.stdout, first.stderr, second.stderr)
+
+
+def test_proposals_writes_the_findings_of_a_recovered_round(tmp_path):
+    """A fence around well-formed findings is a harmless stray line; the
+    parser recovers the round as FINDINGS (L-0576), so its BLOCK is proposed."""
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (scratch / "out.txt").write_text(
+        "READ|part-001-of-001.patch\n```\nBLOCK|a.py:1|first breaks|run it\n```\n",
+        encoding="utf-8")
+    root = tmp_path / "root"
+    root.mkdir()
+
+    result = _cli("proposals", "--root", str(root), "--ticket", "T-1", "--scratch",
+                  str(scratch), "--round", "1")
+
+    text = (root / ".work" / "tickets" / "T-1" / "standards-proposals-r1.md").read_text(
+        encoding="utf-8")
+    assert (result.returncode, "BLOCK|a.py:1|first breaks|run it" in text) == (
+        0, True), result.stderr
 
 
 @pytest.mark.parametrize("out", ["READ|part-001-of-001.patch\nCLEAN\n",

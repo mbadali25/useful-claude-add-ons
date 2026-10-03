@@ -1,0 +1,13 @@
+{
+  "counts": {
+    "BLOCK": 4,
+    "FIX": 1,
+    "NIT": 0
+  },
+  "delivered": true,
+  "failure_class": null,
+  "origin": "uca-t0009/T-0009-deploy-guard--2bGz22",
+  "parts_missing": [],
+  "read_form": "full",
+  "verdict": "FINDINGS"
+}

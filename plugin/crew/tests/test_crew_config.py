@@ -31,6 +31,7 @@ import crew_config
 import crew_config_files
 import crew_fixtures
 import crew_platform
+import crew_shell
 import crew_state
 import crew_upgrade
 
@@ -114,6 +115,19 @@ def test_every_global_key_is_a_real_repo_config_key():
             node = node[part]
 
 
+def test_shell_route_is_on_both_layers():
+    """T-0040. Which shell is fast is a fact about the machine, and a repo may
+    still override it, so `shellRoute` sits in both layers. It is a new block
+    rather than a `platform.*` key because platform-sync rewrites `platform.*`
+    every SessionStart, and it is not the old draft name `wslRouting`. The repo
+    layer's `mode` is null so an untouched repo inherits the machine's (review
+    round 2 FIX 1); the machine layer spells out `auto`."""
+    assert crew_config.default_config()["shellRoute"] == {"mode": None, "distro": None}
+    assert crew_config.default_global_config()["shellRoute"] == {"mode": "auto", "distro": None}
+    for layer in (crew_config.default_config(), crew_config.default_global_config()):
+        assert "wslRouting" not in layer
+
+
 def test_default_global_config_returns_a_fresh_object_each_call():
     first = crew_config.default_global_config()
     first["pm"]["authority"] = "act"
@@ -187,6 +201,43 @@ def test_default_config_returns_a_fresh_docs_and_bitbucket_block():
     assert crew_upgrade.DOCS_BLOCK["theme"] is None
     assert crew_upgrade.BITBUCKET_BLOCK["mergeGate"]["enabled"] is False
     assert crew_config.default_config()["docs"]["theme"] is None
+
+
+def test_shape_readers_share_one_template_and_writers_still_get_fresh_copies():
+    """`_shape` reads a cached `_default_template()` instead of deep-copying
+    the whole default per lookup (that copy was 93% of a `/crew:config` menu
+    build). The cache must agree with a fresh `default_config()` on every
+    path, and a caller mutating `default_config()`'s result must not reach
+    it."""
+    assert crew_config._default_template() is crew_config._default_template()
+    assert crew_config._default_template() == crew_config.default_config()
+
+    fresh = crew_config.default_config()
+    fresh["qa"]["order"] = "mutated"
+    fresh["route"] = {}
+    assert crew_config._default_template()["qa"]["order"] != "mutated"
+    assert crew_config._shape("route") == "block"
+    assert crew_config._shape("route.enabled") == "leaf"
+    assert crew_config._shape("qa.roles") == "open"
+    assert crew_config._shape("route.enabled.x") == "under"
+    assert crew_config._shape("no.such.key") == "unknown"
+
+
+def test_shape_lookups_build_no_default_config(monkeypatch):
+    """The cost guard: once the template exists, a shape lookup builds no new
+    default. Reverting any `_shape` / `_is_open_table` / `value_allowed`
+    read to `default_config()` makes this raise. `pm.authority` at the
+    machine layer reaches `value_allowed`'s lookup; `qa.order` there returns
+    early through `null_means` and never does."""
+    crew_config._default_template()
+
+    def _built(*_a, **_k):
+        raise AssertionError("a shape lookup deep-copied default_config()")
+    monkeypatch.setattr(crew_config, "default_config", _built)
+    crew_config._shape("route.enabled")
+    crew_config._is_open_table("qa.roles")
+    crew_config._content_problem("qa.order", "repo", None)
+    crew_config.value_allowed("pm.authority", "machine", None)
 
 
 def test_docs_and_bitbucket_are_settable_globally():
@@ -282,10 +333,18 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # 123 with T-0072: the repo-only `autopilot.deploy`, re-measured after
     # merging main's T-0023. 125 with T-0010's `autopilot.approval` and
     # `autopilot.questions`, re-measured after merging main's T-0072.
+    # 127 with T-0040: `shellRoute.mode` and `shellRoute.distro`,
+    # measured by running this test after merging main 6a8c60b1.
     assert "route.enabled" in declared
     assert "autopilot.deploy" in declared
     assert {"autopilot.approval", "autopilot.questions"} <= declared
-    assert len(declared) == 125
+    assert "shellRoute.mode" in declared and "shellRoute.distro" in declared
+    # 127 with T-0028: `qa.kimi.model` and `dev.kimi.model`, measured after
+    # merging main's 125. 129 with T-0040's two and T-0028's two, measured
+    # by running this test on T-0040-land after merging main 844bfc36.
+    assert "qa.kimi.model" in declared
+    assert "dev.kimi.model" in declared
+    assert len(declared) == 129
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():
@@ -1482,6 +1541,8 @@ _NULLABLE_GLOBAL_KEYS = (
     ("qa", "codex", "model"),
     ("notify", "chatId"),
     ("secondOpinion", "model"),
+    # T-0040 review round 2 FIX 1: the template pinned `auto` here.
+    ("shellRoute", "mode"),
 )
 
 
@@ -1523,6 +1584,31 @@ def test_a_repo_null_does_not_shadow_a_global_value():
         merged = crew_state.merge_defaults(
             crew_state.merge_defaults(defaults, global_cfg), pruned)
         assert _dig_plain(merged, parts) == wanted, ".".join(parts)
+
+
+def test_a_template_repo_inherits_the_machine_shell_route(tmp_path, monkeypatch):
+    """T-0040 review round 2 FIX 1, its repro: set the machine-global
+    `shellRoute.mode` to `wsl`, initialise a repo from the template, and read
+    `resolve_config`. It returned `auto`: the template pinned it, so a repo
+    owner who chose nothing overrode the machine owner who did."""
+    _global(tmp_path, monkeypatch, contents={"shellRoute": {"mode": "wsl", "distro": "Debian"}})
+    root = crew_fixtures.make_repo(tmp_path, config=_committed_template(), git=False)
+    assert crew_config.resolve_config(str(root))["shellRoute"] == {"mode": "wsl", "distro": "Debian"}
+
+    # A choice the repo owner did make still wins.
+    chosen = copy.deepcopy(_committed_template())
+    chosen["shellRoute"]["mode"] = "gitbash"
+    other = crew_fixtures.make_repo(tmp_path / "other", config=chosen, git=False)
+    assert crew_config.resolve_config(str(other))["shellRoute"]["mode"] == "gitbash"
+
+
+def test_with_no_layer_setting_it_the_shell_route_reads_as_auto(tmp_path, monkeypatch):
+    """Null in the repo layer and no machine file: `crew_shell.mode` reads the
+    unset mode as `auto`, the behaviour the template used to spell out."""
+    _global(tmp_path, monkeypatch, contents=None)
+    root = crew_fixtures.make_repo(tmp_path, config=_committed_template(), git=False)
+    resolved = crew_config.resolve_config(str(root))
+    assert crew_shell.mode(resolved) == ("auto", None)
 
 
 def test_a_real_repo_value_still_beats_the_global():
@@ -3022,3 +3108,32 @@ def test_set_cli_takes_absent_for_a_first_machine_write(tmp_path, capsys):
     assert "digest: absent" in out
     assert stale == 2 and "changed since it was read" in err
     assert json.loads(gpath.read_text(encoding="utf-8")) == {"x-other": 1}
+
+_CONFIG_MD_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), os.pardir, "CONFIG.md",
+)
+
+
+def _config_md_row(text, key):
+    rows = [line for line in text.splitlines()
+            if line.startswith(f"| `{key}` |")]
+    assert len(rows) == 1, (key, rows)
+    return rows[0]
+
+
+def test_config_md_and_setup_template_state_the_kimi_defaults():
+    """T-0028: CONFIG.md's global-key table carries `qa.kimi.model` and
+    `dev.kimi.model`, the new `qa.order` default, and `kimi` in both provider
+    enumerations -- the same values `default_config()` holds. The setup
+    template is compared in full by the test above."""
+    with open(_CONFIG_MD_PATH, encoding="utf-8") as handle:
+        text = handle.read()
+    defaults = crew_config.default_config()
+    order = json.dumps(defaults["qa"]["order"]).replace('","', '", "')
+
+    assert order in _config_md_row(text, "qa.order")
+    assert _config_md_row(text, "qa.kimi.model").endswith("| `null` |")
+    assert _config_md_row(text, "dev.kimi.model").endswith("| `null` |")
+    assert "`kimi`" in _config_md_row(text, "qa.provider")
+    assert "`kimi`" in _config_md_row(text, "dev.provider")
+    assert json.dumps(list(crew_config.QA_PROVIDERS)).replace('","', '", "') in text

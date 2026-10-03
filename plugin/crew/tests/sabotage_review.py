@@ -14,6 +14,7 @@ REVIEW_PATCH = os.path.join(CREW, "hooks", "scripts", "review_patch.py")
 REVIEW_PROMPT = os.path.join(CREW, "hooks", "scripts", "review_prompt.py")
 MERGED_MAIN = os.path.join(CREW, "hooks", "scripts", "merged_main.py")
 REVIEW_GATE = os.path.join(CREW, "hooks", "scripts", "review_gate.py")
+REVIEW_METRICS = os.path.join(CREW, "hooks", "scripts", "review_metrics.py")
 
 REVIEW_FIX_MUTATIONS = (
     # The T1 review-fix round. Each was also run by hand against the tracked
@@ -45,8 +46,9 @@ REVIEW_FIX_MUTATIONS = (
         # of generated JSON and the Claude fallback comes back INCOMPLETE.
         "the bundle diff no longer excludes graphify-out",
         REVIEW_PATCH,
-        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"]\n',
-        '_EXCLUDE_SPEC = [":(exclude).work"]\n',
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out", '
+        '":(exclude).crew/metrics.md"]\n',
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude).crew/metrics.md"]\n',
         ("tests/test_review_patch.py::"
          "test_generated_graph_dir_is_excluded_and_says_so"),
     ),
@@ -55,8 +57,8 @@ REVIEW_FIX_MUTATIONS = (
         # with the graph left out and nothing records that it was.
         "the manifest stops saying graphify-out is excluded",
         REVIEW_PATCH,
-        'EXCLUDED = (".work/", "graphify-out/")\n',
-        'EXCLUDED = (".work/",)\n',
+        'EXCLUDED = (".work/", "graphify-out/", ".crew/metrics.md")\n',
+        'EXCLUDED = (".work/", ".crew/metrics.md")\n',
         ("tests/test_review_patch.py::"
          "test_generated_graph_dir_is_excluded_and_says_so"),
     ),
@@ -65,11 +67,34 @@ REVIEW_FIX_MUTATIONS = (
         # CLEAN on a bundle without knowing anything was left out of it.
         "the review prompt stops naming the excluded paths",
         REVIEW_PROMPT,
-        ('    out.append(f"  excluded (never in the bundle): {\', \'.join(excluded)}" if excluded\n'
-         '               else "  excluded: none recorded")\n'),
+        ('    if isinstance(excluded, list) and all(isinstance(p, str) and p.strip() for p in excluded):\n'
+         '        out.append("  excluded (never in the bundle): "\n'
+         '                   + (", ".join(excluded) if excluded else "none"))\n'
+         '    else:\n'
+         '        out.append("  excluded: not recorded by this manifest (unknown)")\n'),
         "    pass\n",
         ("tests/test_review_prompt.py::"
          "test_build_names_the_excluded_paths"),
+    ),
+    (
+        # T-0099: an empty exclusion list collapses into the unknown line, so a
+        # manifest that says "nothing was left out" reads as one that cannot say.
+        "an empty exclusion list prints as unknown",
+        REVIEW_PROMPT,
+        "    if isinstance(excluded, list) and all(isinstance(p, str) and p.strip() for p in excluded):\n",
+        "    if excluded and isinstance(excluded, list) and all(isinstance(p, str) and p.strip() for p in excluded):\n",
+        ("tests/test_review_prompt.py::"
+         "test_an_empty_exclusion_list_is_not_reported_as_unknown"),
+    ),
+    (
+        # T-0099 rounds 1-2: a blank entry passes as a path, so `[""]` or
+        # `[" "]` prints a blank known list instead of the unknown line.
+        "a blank exclusion entry reads as a known list",
+        REVIEW_PROMPT,
+        "    if isinstance(excluded, list) and all(isinstance(p, str) and p.strip() for p in excluded):\n",
+        "    if isinstance(excluded, list) and all(isinstance(p, str) for p in excluded):\n",
+        ("tests/test_review_prompt.py::"
+         "test_a_malformed_exclusion_value_reads_as_unknown"),
     ),
     (
         # An older round's result lands after a later round was reserved.
@@ -272,10 +297,10 @@ REVIEW_FIX_MUTATIONS = (
          "test_check_receipt_fails_once_needs_replan_even_on_the_latest_clean_round"),
     ),
     (
-        # The latest round's verdict is not read.
+        # The latest round's verdict is not read (L-0510: through receipt_stands).
         "--check-receipt does not read the latest round's verdict",
         REVIEW_LEDGER,
-        "    if latest.get(\"status\") != \"completed\" or not accepted:\n",
+        "    if not receipt_stands(receipt, latest, root, ticket):\n",
         "    if False:\n",
         ("tests/test_review_receipt.py::"
          "test_check_receipt_fails_when_the_latest_round_is_not_clean_or_accepted"),
@@ -628,5 +653,504 @@ REVIEW_FIX_MUTATIONS = (
         '    if ok and (data.get("receipt") or {}).get("kind") == "clean":\n',
         "    if ok:\n",
         "tests/test_review_gate.py::test_owner_accepted_findings_do_not_short_circuit",
+    ),
+    # L-0510: the auto-accept guard. Each was run by hand against the tracked
+    # file, seen red, and restored with `git checkout --`.
+    (
+        # A final round with a BLOCK is auto-accepted.
+        "auto-accept stops refusing a BLOCK count",
+        REVIEW_LEDGER,
+        '    if counts["BLOCK"] != 0:\n',
+        "    if False:\n",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[block-1-count-only]",
+    ),
+    (
+        # An INCOMPLETE round -- the reviewer never finished reading -- is
+        # auto-accepted.
+        "auto-accept stops refusing a non-FINDINGS verdict",
+        REVIEW_LEDGER,
+        '    if row.get("verdict") != "FINDINGS":\n        failure = ',
+        "    if False:\n        failure = ",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[incomplete-reviewer]",
+    ),
+    (
+        # Round 1 of 2 is auto-accepted: the lane never fixes and reruns.
+        "auto-accept stops requiring the final round",
+        REVIEW_LEDGER,
+        "    if _charged(data) < BUDGET:\n",
+        "    if False:\n",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[round-1-of-2]",
+    ),
+    (
+        # An open healer skip is auto-accepted.
+        "auto-accept stops reading the webtest state",
+        REVIEW_LEDGER,
+        "    if not ((type(webtest) is int and webtest == 0) or webtest == WEBTEST_NA):",
+        "    if False:",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[webtest-open-1]",
+    ),
+    (
+        # A membership test: `False in (0, WEBTEST_NA)` is true, so a webtest
+        # state of `false` passes as 0.
+        "auto-accept's webtest check lets a bool through",
+        REVIEW_LEDGER,
+        "    if not ((type(webtest) is int and webtest == 0) or webtest == WEBTEST_NA):",
+        "    if webtest not in (0, WEBTEST_NA):",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[webtest-open-false]",
+    ),
+    (
+        # Finding lines that disagree with the counts are taken as read.
+        "auto-accept stops checking lines against counts",
+        REVIEW_LEDGER,
+        ('    if not findings or (fixes, len(findings) - fixes) != (counts["FIX"], '
+         'counts["NIT"]):\n'),
+        "    if False:\n",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[findings-disagree]",
+    ),
+    # L-0510 fix round. Each was run by hand against the tracked file, seen
+    # red, and restored with `git checkout --`.
+    (
+        # Only the total is compared: one NIT line under counts FIX=1, NIT=0
+        # is auto-accepted.
+        "auto-accept compares only the total of FIX and NIT lines",
+        REVIEW_LEDGER,
+        ('    if not findings or (fixes, len(findings) - fixes) != (counts["FIX"], '
+         'counts["NIT"]):\n'),
+        '    if not findings or len(findings) != counts["FIX"] + counts["NIT"]:\n',
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[findings-fix-count-nit-line]",
+    ),
+    (
+        # A line that is neither FIX| nor NIT| is taken as a finding.
+        "auto-accept stops refusing a line of no known severity",
+        REVIEW_LEDGER,
+        "    if other:\n",
+        "    if False:\n",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[findings-unknown-severity]",
+    ),
+    (
+        # A receipt of an unknown kind reads as "not applicable".
+        "--check-follow-up passes a receipt of an unknown kind",
+        REVIEW_LEDGER,
+        '        return False, (f"the receipt\'s kind is',
+        '        return True, (f"the receipt\'s kind is',
+        ("tests/test_review_auto_accept.py::"
+         "test_check_follow_up_unknown_kind_is_could_not_tell[garbage]"),
+    ),
+    (
+        # A CLEAN round stands under a receipt of any kind.
+        "receipt_stands stops reading a CLEAN receipt's kind",
+        REVIEW_LEDGER,
+        '        return receipt.get("kind") == "clean"\n',
+        "        return True\n",
+        ("tests/test_review_auto_accept.py::"
+         "test_check_receipt_refuses_a_clean_round_with_an_unknown_kind"),
+    ),
+    (
+        # A follow-up that is not UTF-8 crashes with a traceback.
+        "--check-follow-up stops catching a decode error",
+        REVIEW_LEDGER,
+        "    except UnicodeDecodeError as exc:\n",
+        "    except KeyError as exc:\n",
+        "tests/test_review_auto_accept.py::test_check_follow_up_refuses_by_name[not-utf8]",
+    ),
+    (
+        # The follow-up's lines are stripped: an indented copy passes.
+        "--check-follow-up strips the follow-up's lines",
+        REVIEW_LEDGER,
+        '                line[:-1] if line.endswith("\\r") else line for line in fh.read().split("\\n"))\n',
+        '                line.strip() for line in fh.read().split("\\n"))\n',
+        "tests/test_review_auto_accept.py::test_check_follow_up_refuses_by_name[indented-line]",
+    ),
+    (
+        # A line the receipt carries twice is satisfied by one copy.
+        "--check-follow-up stops counting duplicate lines",
+        REVIEW_LEDGER,
+        "    missing = list((collections.Counter(lines) - have).elements())\n",
+        "    missing = [line for line in lines if line not in have]\n",
+        "tests/test_review_auto_accept.py::test_check_follow_up_counts_duplicate_lines[one-copy]",
+    ),
+    (
+        # The owner path forges the auto receipt's string.
+        "--accept stops reserving the auto: prefix",
+        REVIEW_LEDGER,
+        "    if by.strip().lower().startswith(AUTO_PREFIX):\n",
+        "    if False:\n",
+        "tests/test_review_auto_accept.py::test_owner_accept_refuses_the_auto_prefix",
+    ),
+    (
+        # An auto receipt keeps standing after its row is edited to a BLOCK.
+        "receipt_stands stops re-checking the auto row",
+        REVIEW_LEDGER,
+        "            and _auto_row_problem(latest) is None\n",
+        "            and True\n",
+        "tests/test_review_auto_accept.py::test_check_receipt_requires_the_auto_rows_guard[row-block-1]",
+    ),
+    (
+        # The lines the follow-up must quote are never recorded.
+        "finish stops recording the finding lines",
+        REVIEW_RUN,
+        '        "findings": result["findings"], "webtest_open"',
+        '        "webtest_open"',
+        "tests/test_review_auto_accept.py::test_finish_records_findings_and_webtest_state",
+    ),
+    # L-0510, owner decision 2026-10-01 #3: the family rule. Run by hand
+    # against the tracked file, seen red, restored with `git checkout --`.
+    (
+        # The family check is removed: a Claude-fallback (same-family) round
+        # auto-accepts.
+        "auto-accept stops checking the reviewer's family",
+        REVIEW_LEDGER,
+        "    problem = _family_problem(row)\n    if problem:\n        return problem\n",
+        "",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[same-family-claude]",
+    ),
+    (
+        # Review round 3 FIX 2: the receipt's provider and family are never
+        # compared with the row's, so a receipt naming claude still stands.
+        "auto receipt stops naming the row's reviewer",
+        REVIEW_LEDGER,
+        "            and _receipt_names_the_reviewer(receipt, latest)\n",
+        "",
+        "tests/test_review_auto_accept.py::test_check_receipt_requires_the_auto_rows_guard"
+        "[receipt-family-claude]",
+    ),
+    # Review round 4 (owner decision 2026-10-01 #5). Each run by hand against
+    # the tracked file, seen red, restored with `git checkout --`.
+    (
+        # A FIX prefix hides a BLOCK-form line after an embedded newline.
+        "auto-accept stops refusing a finding with a line break",
+        REVIEW_LEDGER,
+        "    if broken:\n",
+        "    if False:  # pylint: disable=using-constant-test\n",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[finding-embedded-newline]",
+    ),
+    (
+        # splitlines() back: U+2028 inside a quoted finding splits the line.
+        "the follow-up check splits on U+2028 again",
+        REVIEW_LEDGER,
+        '                line[:-1] if line.endswith("\\r") else line for line in fh.read().split("\\n"))\n',
+        '                line[:-1] if line.endswith("\\r") else line for line in fh.read().splitlines())\n',
+        "tests/test_review_auto_accept.py::test_check_follow_up_keeps_a_u2028_finding_on_one_line",
+    ),
+    # Owner decision 2026-10-01 #6: recovered verdicts never auto-accept. Run
+    # by hand against the tracked file, seen red, restored.
+    (
+        # A row recorded before L-0576 reads as 0 stray lines, so an unread
+        # count passes as "not recovered".
+        "auto-accept defaults a missing ignored_lines to 0",
+        REVIEW_LEDGER,
+        '    ignored = row.get("ignored_lines")\n',
+        '    ignored = row.get("ignored_lines", 0)\n',
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[ignored-lines-missing]",
+    ),
+    (
+        # Review round 5 BLOCK: review.json's count is not checked for shape,
+        # so an empty list (or any falsy value) reads as 0 stray lines.
+        "auto-accept reads any falsy review.json ignored_lines as 0",
+        REVIEW_LEDGER,
+        "    if not _is_count(count):\n",
+        "    if count and not _is_count(count):\n",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[review-json-ignored-list]",
+    ),
+    # win-repo-2 at 75bd0aea: a cp1252 console. Each run by hand, seen red.
+    (
+        # The ledger CLI prints finding lines in the console's code page again.
+        "the ledger CLI stops writing UTF-8",
+        REVIEW_LEDGER,
+        "def main(argv):\n    utf8_stdio()\n",
+        "def main(argv):\n",
+        "tests/test_review_auto_accept.py::"
+        "test_auto_accept_prints_a_non_cp1252_finding_on_a_cp1252_console",
+    ),
+    (
+        "review_run stops switching its streams to UTF-8",
+        REVIEW_RUN,
+        "    review_ledger.utf8_stdio()\n",
+        "",
+        "tests/test_review_auto_accept.py::test_review_run_main_switches_its_streams_to_utf8_first",
+    ),
+    (
+        "crew_autopilot stops switching its streams to UTF-8",
+        os.path.join(CREW, "hooks", "scripts", "crew_autopilot.py"),
+        "    review_ledger.utf8_stdio()\n",
+        "",
+        "tests/test_review_auto_accept.py::test_autopilot_main_switches_its_streams_to_utf8_first",
+    ),
+    # Review round 6 (owner decision 2026-10-02 #10). Each run by hand, seen red.
+    (
+        # BLOCK 1: the auto receipt stops re-checking the review.json it read.
+        "receipt_stands stops re-checking review.json",
+        REVIEW_LEDGER,
+        "            and _receipt_binds_review_json(receipt, latest, root, ticket))\n",
+        "            and True)\n",
+        "tests/test_review_auto_accept.py::"
+        "test_auto_receipt_does_not_stand_once_review_json_moves[recovered]",
+    ),
+    (
+        # BLOCK 1 neighbour: the count is compared but the bytes are not.
+        "receipt_stands compares review.json's count but not its hash",
+        REVIEW_LEDGER,
+        "    return problem is None and now == digest\n",
+        "    return problem is None\n",
+        "tests/test_review_auto_accept.py::"
+        "test_auto_receipt_does_not_stand_once_review_json_moves[reformatted]",
+    ),
+    (
+        # BLOCK 2: json keeps the last of two duplicate keys again.
+        "review.json is parsed with duplicate keys allowed",
+        REVIEW_LEDGER,
+        "        review = json.loads(raw.decode(\"utf-8\"), object_pairs_hook=_refuse_duplicate_keys)\n",
+        "        review = json.loads(raw.decode(\"utf-8\"))\n",
+        "tests/test_review_auto_accept.py::"
+        "test_auto_accept_refuses_duplicate_keys_in_review_json[top-level]",
+    ),
+    (
+        # BLOCK 2 neighbour: review.json is followed through a link.
+        "review.json is read through a link",
+        REVIEW_LEDGER,
+        "        if os.path.islink(path):\n            return None, None, (f\"{path} is a link;",
+        "        if False:\n            return None, None, (f\"{path} is a link;",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses_a_symlinked_review_json",
+    ),
+    (
+        # Neighbour: a review.json written for another bundle is taken as the witness.
+        "review.json's bundle is not compared with the round's",
+        REVIEW_LEDGER,
+        "    if review.get(\"bundle_sha256\") != row.get(\"bundle_sha256\"):\n",
+        "    if False:\n",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses_a_review_json_for_another_bundle",
+    ),
+    (
+        # Neighbour found before round 7: `True == 1` lets a bool round in
+        # review.json pass as round 1.
+        "review.json's round is compared without its type",
+        REVIEW_LEDGER,
+        "isinstance(got, bool) or got != row.get(\"round\"):\n",
+        "got != row.get(\"round\"):\n",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses_a_bool_round_in_review_json",
+    ),
+    (
+        # FIX 5: the step-3 auto-accept command splits on a spaced plugin path.
+        "review.md's step-3 auto-accept command leaves the plugin root unquoted",
+        REVIEW_DOC,
+        '`python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py" --ticket "$TICKET" --auto-accept',
+        '`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py --ticket "$TICKET" --auto-accept',
+        "tests/test_review_auto_accept.py::test_step3_closure_commands_quote_the_plugin_root",
+    ),
+    (
+        # FIX 4: universal newlines fold a bare CR into a line break again.
+        "direction.md is read with universal newlines",
+        REVIEW_LEDGER,
+        '        with open(path, encoding="utf-8", newline="") as fh:\n',
+        '        with open(path, encoding="utf-8") as fh:\n',
+        "tests/test_review_auto_accept.py::"
+        "test_check_follow_up_splits_direction_md_on_newline_only[bare-cr]",
+    ),
+    # L-0576: harmless stray lines beside findings are recovered; CLEAN stays
+    # exact and anything that might be a contract line stays INCOMPLETE.
+    (
+        # The pre-L-0576 strictness: any stray line burns the round.
+        "a stray prose line beside findings is INCOMPLETE again",
+        REVIEW_VERDICT,
+        "        if (findings and not reasons\n",
+        "        if (False and findings and not reasons\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_harmless_stray_lines_beside_findings_are_recovered"),
+    ),
+    (
+        # Recovery reaches CLEAN: a CLEAN wrapped in prose or a fence passes.
+        "stray lines beside a CLEAN are recovered",
+        REVIEW_VERDICT,
+        "        if (findings and not reasons\n",
+        "        if ((findings or clean_lines) and not reasons\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_clean_with_any_stray_line_is_incomplete"),
+    ),
+    (
+        # A decorated or malformed finding is ignored as prose: a BLOCK the
+        # parser could not read is dropped while the round reads FINDINGS.
+        "contract-like stray lines are recovered as prose",
+        REVIEW_VERDICT,
+        "                and not any(contract_like(line) for line in unparseable)):\n",
+        "                and True):\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_contract_like_stray_line_is_incomplete"),
+    ),
+    (
+        # Markdown decoration hides the keyword: `- FIX|...` reads as prose.
+        "contract-like check stops stripping markdown decoration",
+        REVIEW_VERDICT,
+        '    bare = "" if _FENCE.match(line) else _DECORATION.sub("", line)\n',
+        '    bare = "" if _FENCE.match(line) else line\n',
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_contract_like_stray_line_is_incomplete"),
+    ),
+    (
+        # A reviewer that admits in prose it fell short is ignored as prose.
+        "a stray line admitting a shortfall is recovered as prose",
+        REVIEW_VERDICT,
+        "_ON_LINE = (re.compile(r\"\\|.*\\|.*\\|\"),) + tuple(\n"
+        "    re.compile(p, re.IGNORECASE) for p in _SHORTFALL)\n",
+        "_ON_LINE = (re.compile(r\"\\|.*\\|.*\\|\"),)\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_contract_like_stray_line_is_incomplete"),
+    ),
+    (
+        # A lower-case keyword reads as prose: `block a.py:1 ...` is ignored.
+        "contract keywords are matched in capitals only",
+        REVIEW_VERDICT,
+        '_ON_BARE = (re.compile(rf"^(?:{_KEYWORD})\\b", re.IGNORECASE),)\n',
+        '_ON_BARE = (re.compile(rf"^(?:{_KEYWORD})\\b"),)\n',
+        ("tests/test_review_verdict.py::"
+         "test_parse_a_contract_like_stray_line_is_incomplete"),
+    ),
+    (
+        # finish's own tree/stream reasons are added after the parse again,
+        # so a stray line is recovered on a round they make INCOMPLETE.
+        "finish adds its outside reasons after recovery",
+        REVIEW_RUN,
+        "                                  prior_reasons=extra_reasons)\n",
+        "                                  prior_reasons=())\n",
+        "tests/test_review_refund.py::test_finish_recovers_nothing_when_the_bundle_changed",
+    ),
+    (
+        # The ledger forgets that a round was recovered.
+        "the ledger row drops the ignored-line count",
+        REVIEW_LEDGER,
+        '            "ignored_lines": _ignored_count(review.get("ignored_lines")),\n',
+        '            "ignored_lines": 0,\n',
+        "tests/test_review_refund.py::test_ledger_row_counts_the_ignored_lines",
+    ),
+    (
+        # Recovery runs despite a missing READ, a bad exit or a timeout, so
+        # the stray-line reason disappears from an INCOMPLETE round.
+        "recovery ignores the round's other reasons",
+        REVIEW_VERDICT,
+        "        if (findings and not reasons\n",
+        "        if (findings\n",
+        ("tests/test_review_verdict.py::"
+         "test_parse_recovery_never_masks_another_reason"),
+    ),
+    (
+        # The ignored lines vanish from review.json.
+        "review.json drops the ignored lines",
+        REVIEW_RUN,
+        '        "ignored_lines": len(result["ignored"]), "ignored_text": result["ignored"],\n',
+        '        "ignored_lines": 0, "ignored_text": [],\n',
+        "tests/test_review_refund.py::test_finish_reports_ignored_lines",
+    ),
+    (
+        # The ignored lines are never named on a `review:` line.
+        "review_run stops printing the ignored lines",
+        REVIEW_RUN,
+        '    if result["ignored"]:\n        print(f"review: {result[\'verdict\']} kept; ',
+        '    if False:\n        print(f"review: {result[\'verdict\']} kept; ',
+        "tests/test_review_refund.py::test_finish_reports_ignored_lines",
+    ),
+    (
+        # Review round 1 FIX: a fence's info string (```FIX) read as a
+        # keyword, so a fenced, well-formed finding burned the round.
+        "a code fence's info string is read as a contract keyword",
+        REVIEW_VERDICT,
+        '    bare = "" if _FENCE.match(line) else _DECORATION.sub("", line)\n',
+        '    bare = _DECORATION.sub("", line)\n',
+        ("tests/test_review_verdict.py::"
+         "test_parse_harmless_stray_lines_beside_findings_are_recovered"),
+    ),
+    (
+        # Review round 1 FIX: ignored lines stored stripped, not as written.
+        "ignored lines are stored stripped",
+        REVIEW_VERDICT,
+        '        unparseable.append(raw[:-1] if raw.endswith("\\r") else raw)\n',
+        "        unparseable.append(line)\n",
+        "tests/test_review_verdict.py::test_parse_ignored_lines_are_kept_verbatim",
+    ),
+    (
+        # Review round 2 FIX: a fence with a space before its info string
+        # ("``` FIX") was not a fence, so its info word read as a keyword.
+        "a fence with a space before its info string is not a fence",
+        REVIEW_VERDICT,
+        '_FENCE = re.compile(r"^(?:`{3,}|~{3,})[ \\t]*[\\w.+#-]*$")\n',
+        '_FENCE = re.compile(r"^(?:`{3,}|~{3,})[\\w.+#-]*$")\n',
+        ("tests/test_review_verdict.py::"
+         "test_parse_harmless_stray_lines_beside_findings_are_recovered"),
+    ),
+    (
+        # L-0510 lane: an unknown ignored-line count read as 0 ("none").
+        "the ledger records an unknown ignored-line count as 0",
+        REVIEW_LEDGER,
+        "        return value\n    return None\n",
+        "        return value\n    return 0\n",
+        ("tests/test_review_refund.py::"
+         "test_ledger_row_records_an_unknown_ignored_count_as_null_never_0"),
+    ),
+    (
+        # L-0578: the metrics row goes back to depending on prose step 6,
+        # which lanes skipped for 118 of 162 rounds.
+        "a recorded round writes no metrics row",
+        REVIEW_RUN,
+        "    metrics_line = review_metrics.record(args.root, args.ticket, number, review,\n",
+        '    metrics_line = "review: no row"; _unused = (\n',
+        "tests/test_review_metrics.py::test_codex_findings_round_appends_one_scored_row",
+    ),
+    (
+        # L-0578: the row the round writes changes the bundle, so a CLEAN
+        # receipt in a repo that does not gitignore .crew/ stops checking.
+        "the metrics row is reviewed as part of the bundle",
+        REVIEW_PATCH,
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out", '
+        '":(exclude).crew/metrics.md"]\n',
+        '_EXCLUDE_SPEC = [":(exclude).work", ":(exclude)graphify-out"]\n',
+        "tests/test_review_patch.py::"
+        "test_metrics_row_stays_out_of_the_bundle_and_the_rest_of_crew_stays_in",
+    ),
+    (
+        # L-0578 review r1 BLOCK: a symlinked .crew directory is followed and
+        # the row lands in a file outside the checkout.
+        "the metrics writer follows a symlinked .crew directory",
+        REVIEW_METRICS,
+        "    if is_link_or_junction(parent):\n"
+        "        raise NotARegularFile(f\"{parent} is a link or junction; not following it\")\n"
+        "    try:\n",
+        "    if False:\n"
+        "        raise NotARegularFile(f\"{parent} is a link or junction; not following it\")\n"
+        "    try:\n",
+        "tests/test_review_metrics.py::test_a_junction_parent_is_refused",
+    ),
+    (
+        # L-0578 review r2 BLOCK: the open follows a .crew symlink swapped in
+        # after the pre-check (check-then-open race).
+        "the metrics open follows the .crew directory",
+        REVIEW_METRICS,
+        "    if nofollow and directory and os.open in os.supports_dir_fd:\n",
+        "    if False:\n",
+        "tests/test_review_metrics.py::"
+        "test_the_open_itself_refuses_a_crew_symlink_swapped_in_after_the_check",
+    ),
+    (
+        # L-0578 review r2 FIX: a marker naming another provider passes for a
+        # Codex limit.
+        "a limit marker of any provider claims a codex limit",
+        REVIEW_METRICS,
+        '    if not isinstance(previous, int) or isinstance(previous, bool) or provider != "codex" \\\n',
+        "    if not isinstance(previous, int) or isinstance(previous, bool) \\\n",
+        "tests/test_review_metrics.py::test_a_malformed_limit_marker_is_unreadable_not_a_limit",
+    ),
+    (
+        # L-0578 review r2 FIX: a malformed config reads as config provenance.
+        "an unreadable config is reported as config provenance",
+        REVIEW_METRICS,
+        '    if source == "config" and config_unreadable(root):\n',
+        "    if False:\n",
+        "tests/test_review_metrics.py::test_a_malformed_config_is_not_reported_as_config_provenance",
+    ),
+    (
+        # L-0578 review r2 FIX: the row takes a reservation record for
+        # another round.
+        "a reservation token for another round is used",
+        REVIEW_METRICS,
+        "                or kept.get(\"round\") != number or isinstance(kept.get(\"round\"), bool):\n",
+        "                or isinstance(kept.get(\"round\"), bool):\n",
+        "tests/test_review_metrics.py::test_a_reservation_record_for_another_round_is_not_used",
     ),
 )

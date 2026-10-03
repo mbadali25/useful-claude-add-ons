@@ -147,7 +147,8 @@ record_verified() {
 # re-match and re-run every turn from then on. It stays unverified anyway:
 # verify_record.py persists it by content hash and reports it every run
 # until it is actually checked, via /crew:verify --all.
-fully_verified() { [ "${DEFERRED_COUNT:-1}" -eq 0 ]; }
+# TREE_MOVED: tree-pass credits withdrawn after the loop, same effect.
+fully_verified() { [ "${DEFERRED_COUNT:-1}" -eq 0 ] && [ "${TREE_MOVED:-0}" -eq 0 ]; }
 
 record_verified_fingerprint() {
   [ -n "$FINGERPRINT" ] || return 0
@@ -747,7 +748,16 @@ CHANGED_FILE=$(mktemp 2>/dev/null) || { echo "VERIFY GATE: cannot create temp fi
 printf '%s
 ' "$CHANGED" > "$CHANGED_FILE"
 
-MATCHED=$("$PY" - "$CHANGED_FILE" "$BUDGET_FLAG" "$FP_DIR" << 'PY'
+# The tree-pass cache's key, taken ONCE, here, before the matcher reads the
+# cache for it (review r1): the matcher, the run loop and the save after it
+# all mean this one snapshot, so there is no second read for the tree to
+# move between. A move after this point is caught after the loop instead.
+TREE_PRE=""
+if [ -n "$PY" ] && [ -f "$FP_DIR/verify_record.py" ]; then
+  TREE_PRE=$("$PY" "$FP_DIR/verify_record.py" tree-snapshot --stable 2>/dev/null | tr -d '\r\n')
+fi
+
+MATCHED=$("$PY" - "$CHANGED_FILE" "$BUDGET_FLAG" "$FP_DIR" "$TREE_PRE" << 'PY'
 import json,sys,fnmatch,io,os,re
 try:
     sys.stdout.reconfigure(newline="\n")
@@ -991,6 +1001,7 @@ def _rule_key(rule):
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:16]
 
 measured_used = {}   # rule index -> True when its cost came from the cache
+measured_below = {} # rule index -> declared seconds a cheaper measurement replaced
 truly_unknown = {}   # rule index -> True when it needs a fresh measurement
 
 # COMMAND IDENTITY includes the rule's declared env, not just its text. Two
@@ -1024,6 +1035,20 @@ for f in changed:
                 if (isinstance(secs, (int, float))
                         and not isinstance(secs, bool) and secs >= 0):
                     rule_secs[ri] = secs
+                    # A measurement on THIS machine below the declared price
+                    # wins; one above it never does. Declared `seconds` are
+                    # timed on one host and go stale, and an over-stated rule
+                    # that reads as over the budget alone is chronic: never
+                    # run at Stop at all. min() can only make a rule cheaper,
+                    # so it can turn this rule's chronic deferral into a run,
+                    # never this rule's run into a deferral (the budget it now
+                    # takes can still defer a LATER rule acutely). The cache is rewritten from every
+                    # clean run, so a rule that slows down re-prices upward.
+                    cached = _timings.get(key)
+                    if (isinstance(cached, int) and not isinstance(cached, bool)
+                            and 0 < cached < secs):
+                        rule_secs[ri] = cached
+                        measured_below[ri] = secs
                 else:
                     cached = _timings.get(key)
                     if isinstance(cached, int) and cached > 0:
@@ -1131,6 +1156,36 @@ for _fn in fallback_notices:
 for _ri in sorted(measured_used):
     notices.append("verify-gate: rules[%d] priced from a cached measurement (%ss, measured not declared) - "
                     "add `seconds` to verify.json to make this permanent" % (_ri, int(rule_secs[_ri])))
+for _ri in sorted(measured_below):
+    notices.append("verify-gate: rules[%d] priced at %ss, measured on this machine, below its declared %ss"
+                   % (_ri, int(rule_secs[_ri]), measured_below[_ri]))
+
+# --- the tree-pass cache (verify_record.passes_load) ------------------------
+# A command that passed on this exact tree (tree_snapshot(stable=True): HEAD,
+# every ref, the deciders, and every tracked and untracked path's bytes, type
+# and mode; bash took it and passes it as argv[4]) is credited by the run loop
+# instead of re-run. A RULE every one of whose commands is credited costs
+# nothing here, so it cannot spend the budget or be deferred: an acutely
+# deferred Stop on an unchanged tree runs what it has not run yet, instead of
+# the same cheap rules again. ONLY at Stop: --all means "run everything", the
+# promise test_all_never_skips holds it to. Any failure here means an empty
+# cache, and every command runs.
+tree_snap = sys.argv[4] if len(sys.argv) > 4 else ""
+tree_cached = set()
+if STOP_MODE and tree_snap and _vr is not None and hasattr(_vr, "passes_load"):
+    try:
+        tree_cached = _vr.passes_load(".", tree_snap)
+    except Exception:  # pylint: disable=broad-except
+        tree_cached = set()
+for _ri in rule_order:
+    if (_ri in rule_secs and rule_cmds.get(_ri)
+            and all(c in tree_cached for c in rule_cmds[_ri])):
+        rule_secs[_ri] = 0
+if tree_cached:
+    _n = sum(1 for c in cmds if c in tree_cached)
+    if _n:
+        notices.append("verify-gate: %d command(s) passed on this exact tree in an earlier run "
+                       "and are credited, not re-run (CREW_VERIFY_FRESH=1 runs them anyway)" % _n)
 
 if budget is not None:
     unknown = [c for c in cmds if c not in cost]
@@ -1238,6 +1293,30 @@ if budget is not None:
             + (" plus " + str(len(unknown)) + " of unstated cost" if unknown else "")
             + ", deferred " + str(len(deferred))
             + ". The deferred ones were NOT checked - run /crew:verify.")
+# --- declared coverage (L-0572), --all only --------------------------------
+# A rule declaring `"coveredBy": "<id>"` may be credited instead of re-run
+# when the rule carrying that `id` ran and passed earlier in this same run.
+# verify_record.cover_plan decides only WHICH commands may be credited and
+# moves them to the end; the run loop below decides whether each IS, from
+# the superset's exit codes. Stop mode never reaches this: its budget order
+# is its own contract, and the full-suite superset is chronic there anyway.
+# No verify_record, or any failure here, means no plan and every rule runs.
+cover_guards = [None] * len(cmds)
+if budget is None and _vr is not None and hasattr(_vr, "cover_plan"):
+    try:
+        _ccmds, _cguards, _cnotes = _vr.cover_plan(
+            cfg.get("rules", []) or [], rule_order, rule_cmds, cmds,
+            [c for c in (cfg.get("always", []) or []) if isinstance(c, str)])
+        cmds, cover_guards = _ccmds, _cguards
+        notices.extend(_cnotes)
+    except Exception as _cexc:  # pylint: disable=broad-except
+        notices.append("verify-gate: declared coverage NOT applied (%s: %s) - every rule runs"
+                       % (type(_cexc).__name__, _cexc))
+# Record 7, aligned one-to-one with record 1: `<superset rule indices>;<positions>`
+# for a command that may be credited, empty for every other.
+cover_record = "\x1e".join(
+    "" if not g else ",".join(str(r) for r in g["rules"]) + ";" + ",".join(str(p) for p in g["pos"])
+    for g in cover_guards)
 # Two records down one channel. The RECORD separator is \x1d (ASCII group
 # separator) and the FIELD separator inside each record is \x1e; neither can
 # appear in a command, because reject_unrepresentable above refused the map
@@ -1290,7 +1369,9 @@ extras = json.dumps({"matched_rules": matched_rules})
 sys.stdout.write("\x1e".join(cmds) + "\x1d" + "\x1e".join(unmatched) + "\x1d" + "\x1e".join(notices)
                  + "\x1d" + str(acute_count)
                  + "\x1d" + str(int(max_cost))
-                 + "\x1d" + extras + "\n")
+                 + "\x1d" + extras
+                 + "\x1d" + cover_record
+                 + "\x1d" + "\x1e".join("1" if c in tree_cached else "" for c in cmds) + "\n")
 PY
 )
 # CAPTURE FIRST, STRIP SECOND - not piped directly through `tr -d '\r'` on
@@ -1379,6 +1460,20 @@ esac
 # persist per-rule status and update the measured-timings cache. A single
 # line (json.dumps with no indent), so sed -n 6p on the \x1d split is safe.
 EXTRAS=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 6p)
+# Record 7 (L-0572): one guard per line, aligned with $CMDS, empty for a
+# command that is never credited. Missing or short means "no guard", which
+# runs the command - the safe direction. Read into an indexed array (bash
+# 3.2 has no mapfile) so the run loop can look a guard up by position.
+COVER_AT=()
+while IFS= read -r COVER_LINE; do
+  COVER_AT+=("$COVER_LINE")
+done <<< "$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 7p | tr '\036' '\n')"
+# Record 8: which positions passed on TREE_PRE in an earlier run. Missing or
+# short means "not cached", which runs the command - the safe direction.
+TREE_AT=()
+while IFS= read -r TREE_LINE; do
+  TREE_AT+=("$TREE_LINE")
+done <<< "$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 8p | tr '\036' '\n')"
 if [ -n "$NOTICES" ]; then
   printf '%s\n' "$NOTICES" >&2
 fi
@@ -1500,7 +1595,58 @@ lock_extend
 # leader-exited group). CONFIG.md states the resulting limitation: this gate
 # does not reap what a rule leaves running in the background: a rule must
 # not background work.
+# --- declared coverage, the run-time half (L-0572) -------------------------
+# COVER_AT (record 7) names, per position, the commands of a declared
+# superset that must ALL have exited 0 earlier in THIS run for the command
+# at that position to be credited instead of run. Only "pass" satisfies a
+# guard: fail, skip77 (77), a killed run (137/143 are just non-zero here),
+# a covered or an absent status all mean the subset runs.
+#
+# The same run is not proof of the same TREE: a rule, an editor or another
+# session can change files between the superset finishing and the credit.
+# So a whole-tree snapshot (verify_record.tree_snapshot: HEAD, index and the
+# bytes of every tracked and untracked path) is taken before the first
+# command and again at the first credit; unequal, or unreadable either time,
+# turns credit off for the rest of the run and every subset runs.
+# The tree-pass cache, run-time half: a position the matcher marked is
+# credited for TREE_PRE. Whether the tree is STILL TREE_PRE is settled once,
+# after the loop: moved, and every such credit is withdrawn (TREE_MOVED).
+TREE_N=0
+TREE_MOVED=0
+POS=-1
+STATUS_AT=()
+COVERED_N=0
+COVER_STATE=""
+COVER_SNAP0=""
+if [ -n "$PY" ] && printf '%s\n' "${COVER_AT[@]}" | grep -q .; then
+  COVER_SNAP0=$("$PY" "$FP_DIR/verify_record.py" tree-snapshot 2>/dev/null | tr -d '\r')
+fi
+cover_credit() {
+  local positions p
+  positions="${1#*;}"
+  if [ -z "$positions" ] || [ "$positions" = "$1" ]; then return 1; fi
+  IFS=, read -r -a GPOS <<< "$positions"
+  [ "${#GPOS[@]}" -gt 0 ] || return 1
+  for p in "${GPOS[@]}"; do
+    case "$p" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$((10#$p))" -lt "$POS" ] || return 1
+    [ "${STATUS_AT[$((10#$p))]:-}" = "pass" ] || return 1
+  done
+  if [ -z "$COVER_STATE" ]; then
+    COVER_SNAP1=$("$PY" "$FP_DIR/verify_record.py" tree-snapshot 2>/dev/null | tr -d '\r')
+    if [ -n "$COVER_SNAP0" ] && [ "$COVER_SNAP0" = "$COVER_SNAP1" ]; then
+      COVER_STATE=ok
+    else
+      COVER_STATE=off
+      echo "verify-gate: the working tree changed during this run, or its snapshot could not be read - declared coverage NOT applied, every remaining subset rule runs" >&2
+    fi
+  fi
+  [ "$COVER_STATE" = ok ]
+}
 while IFS= read -r IDENT; do
+  # Incremented BEFORE any `continue`, so positions stay aligned with
+  # record 7 even across a blank line.
+  POS=$((POS + 1))
   [ -z "$IDENT" ] && continue
   # IDENT is a matcher IDENTITY: the literal command text, and - only when
   # its rule declared "env" - a \x1c-joined canonical env JSON. Split it via
@@ -1524,6 +1670,26 @@ print(text + "\x1e" + (envjson if sep else ""), end="")
   fi
   c="${SPLIT%%$'\x1e'*}"
   ENV_JSON="${SPLIT#*$'\x1e'}"
+  if [ -n "$TREE_PRE" ] && [ "${TREE_AT[$POS]:-}" = 1 ]; then
+    echo "verify-gate: PASSED on this exact tree in an earlier run - not re-run: $c" >&2
+    STATUS_AT[$POS]="covered"
+    TREE_N=$((TREE_N + 1))
+    # "tree" LAST, so the withdrawal after the loop can match it at end of line.
+    LOG_LINE=$("$PY" -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": "covered", "elapsed": 0, "tree": True}))' "$IDENT" 2>/dev/null | tr -d '\r')
+    [ -n "$LOG_LINE" ] && CMD_LOG="$CMD_LOG
+$LOG_LINE"
+    continue
+  fi
+  GUARD="${COVER_AT[$POS]:-}"
+  if [ -n "$GUARD" ] && cover_credit "$GUARD"; then
+    echo "verify-gate: COVERED by rules[${GUARD%%;*}] (passed this run): $c" >&2
+    STATUS_AT[$POS]="covered"
+    COVERED_N=$((COVERED_N + 1))
+    LOG_LINE=$("$PY" -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": "covered", "elapsed": 0}))' "$IDENT" 2>/dev/null | tr -d '\r')
+    [ -n "$LOG_LINE" ] && CMD_LOG="$CMD_LOG
+$LOG_LINE"
+    continue
+  fi
   # --- env pinning ---------------------------------------------------
   # Every PINNED_VARS name (verify_record.py: ENV, AWS_PROFILE, ... TF_VAR_environment) is
   # unset for every rule command UNLESS the owning rule declares "env" for
@@ -1719,6 +1885,7 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
   else
     CMD_STATUS="pass"
   fi
+  STATUS_AT[$POS]="$CMD_STATUS"
   RULE_ELAPSED=$(( $(date +%s) - RULE_START ))
   TOTAL_ELAPSED=$(( TOTAL_ELAPSED + RULE_ELAPSED ))
   echo "verify-gate: ${RULE_ELAPSED}s  $c" >&2
@@ -1744,6 +1911,33 @@ done <<< "$CMDS"
 
 echo "verify-gate: ${TOTAL_ELAPSED}s total across $(printf '%s
 ' "$CMDS" | grep -c .) rule command(s)" >&2
+if [ "$COVERED_N" -gt 0 ]; then
+  echo "verify-gate: $COVERED_N of them COVERED by a declared superset rule that passed this run - not re-run" >&2
+fi
+if [ "$TREE_N" -gt 0 ]; then
+  echo "verify-gate: $TREE_N of them PASSED on this exact tree in an earlier run - not re-run" >&2
+fi
+# Save what passed, for this tree only, and only when the tree did not move
+# while the rules ran: a rule that edits files, or an edit made meanwhile,
+# means the passes describe no single tree, so the cache is cleared instead.
+# A MOVED tree also withdraws this run's credits (review r1): they were
+# passes on TREE_PRE, and nothing here checked the tree the run ended on. So
+# their log lines are dropped before the record sync (a rule missing a
+# command reads as not run, its record left as it was), and the run is not
+# verified, so neither marker advances and the next Stop re-matches them.
+if [ -n "$PY" ] && [ -f "$FP_DIR/verify_record.py" ]; then
+  TREE_POST=$("$PY" "$FP_DIR/verify_record.py" tree-snapshot --stable 2>/dev/null | tr -d '\r\n')
+  if [ -n "$TREE_PRE" ] && [ "$TREE_PRE" = "$TREE_POST" ]; then
+    printf '%s\n' "$CMD_LOG" | "$PY" "$FP_DIR/verify_record.py" passes-save "$TREE_PRE" >&2
+  else
+    "$PY" "$FP_DIR/verify_record.py" passes-clear >/dev/null 2>&1
+    if [ "$TREE_N" -gt 0 ]; then
+      TREE_MOVED=1
+      CMD_LOG=$(printf '%s\n' "$CMD_LOG" | grep -v '"tree": true}$' || true)
+      echo "verify-gate: the tree changed during this run, so the $TREE_N command(s) credited from the tree-pass cache are withdrawn - not verified on the tree this run ended on" >&2
+    fi
+  fi
+fi
 
 if [ -n "$UNMAPPED" ] && grep -q '"unmapped"[[:space:]]*:[[:space:]]*"fail"' .crew/verify.json; then
   echo "UNMAPPED CHANGES - .crew/verify.json has no rule for:" >&2
@@ -1857,6 +2051,10 @@ elif [ "$SYNC_STATUS" -ne 0 ]; then
   : # verify_record.py already printed why, on stderr, above.
 elif [ "$ANY_SKIPPED" -ne 0 ]; then
   echo "verify-gate: the verified baseline was NOT advanced - at least one command exited 77 (SKIP) and was not actually checked this turn." >&2
+elif [ "${TREE_MOVED:-0}" -ne 0 ]; then
+  ALSO_DEFERRED=""
+  [ "${DEFERRED_COUNT:-0}" -gt 0 ] && ALSO_DEFERRED="; $DEFERRED_COUNT rule command(s) were also deferred"
+  echo "verify-gate: the verified baseline was NOT advanced - the tree changed during this run, and $TREE_N credited command(s) were not checked against it$ALSO_DEFERRED." >&2
 else
   echo "verify-gate: the verified baseline was NOT advanced - $DEFERRED_COUNT rule command(s) were deferred and have not been checked against this tree." >&2
 fi

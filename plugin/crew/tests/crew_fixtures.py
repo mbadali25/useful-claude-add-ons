@@ -3,6 +3,7 @@
 A fixture is a real git repository with a real commit, because the code under
 test asks git for HEAD and comparing against a mocked sha would test the mock.
 """
+import contextlib
 import ctypes
 import json
 import os
@@ -13,6 +14,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 
 import pytest
 
@@ -751,6 +753,147 @@ def resolve_bash():
     return _BASH
 
 
+# What the `msys_tmp_pinned` holder runs: announce itself, then wait on stdin
+# so it exits when the block ends. A module constant so a test can swap in a
+# holder that starts but never announces.
+_PIN_HOLDER_SCRIPT = "echo pinned; read -r _"
+
+# How long `msys_tmp_pinned` waits for the holder's "pinned" line. A sane
+# bash prints it in well under a second; a stalled one must not sit in
+# readline() until the CI job's own limit (T-0110 review round 1).
+PIN_STARTUP_TIMEOUT_S = 30
+
+# After killing a holder that never announced, how long to let its stdout
+# reader drain before raising anyway (the reader is a daemon thread).
+PIN_READER_GRACE_S = 5
+
+
+def first_line_within(proc, bound_s, who, consequence=""):
+    """`proc`'s first stdout line, read within `bound_s` seconds, or a
+    RuntimeError naming `who` once `proc` has been stopped.
+
+    A reader thread with a bounded join, because select() does not work on
+    Windows pipes. On timeout it closes `proc`'s stdin, kills it, waits with
+    a bound, and gives the reader `PIN_READER_GRACE_S` to drain. Closing
+    stdin first matters: Git's bin/bash.exe is a shim whose usr/bin/bash.exe
+    child also holds stdout, and killing the shim leaves that child running
+    until its `read` sees EOF. `proc` needs stdin and stdout pipes."""
+    lines = []
+    reader = threading.Thread(
+        target=lambda: lines.append(proc.stdout.readline()), daemon=True)
+    reader.start()
+    reader.join(bound_s)
+    if not reader.is_alive():
+        return lines[0] if lines else ""
+    proc.stdin.close()
+    proc.kill()
+    proc.wait(timeout=GATE_SUBPROCESS_TIMEOUT_S)
+    reader.join(PIN_READER_GRACE_S)
+    raise RuntimeError(
+        f"{who} did not announce itself within {bound_s}s; killed it "
+        f"(exit {proc.poll()})" + (f" {consequence}" if consequence else "")
+        + ("" if not reader.is_alive() else
+           f"; its stdout reader was still blocked {PIN_READER_GRACE_S}s "
+           "later, so a grandchild still holds the pipe"))
+
+
+def gate_bash(pwsh, ps1, env=None):
+    """The bash verify-gate.ps1's own Resolve-CrewBash picks under `env`
+    (default: this process' environment), via its `-PrintBash` probe, or
+    None when it resolves none (the gate then refuses rather than run bash).
+
+    A test that runs the PowerShell gate pins THIS bash, not `resolve_bash`'s:
+    the gate walks up from git.exe, `resolve_bash` starts from PATH order, and
+    with two Git installs they can name different MSYS runtimes - pinning
+    the wrong one leaves the gate children's shared region unpinned (T-0110
+    review round 2). Resolve it under an env WITHOUT the poisoned TMP/TEMP:
+    the probe itself is a launch, and it only reads PATH."""
+    result = run_gate(
+        [pwsh, "-NoProfile", "-NonInteractive", "-File", ps1, "-PrintBash"],
+        env=dict(os.environ) if env is None else env,
+        stdin=subprocess.DEVNULL, capture_output=True, text=True,
+        check=False, timeout=GATE_SUBPROCESS_TIMEOUT_S)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"gate_bash: {ps1} -PrintBash exited {result.returncode}: "
+            f"{result.stderr.strip()}")
+    return result.stdout.strip() or None
+
+
+@contextlib.contextmanager
+def msys_tmp_pinned(bash, poisoned_env):
+    """Run a block that starts MSYS processes under `poisoned_env` (TMP/TEMP
+    pointing somewhere that is not a directory) without turning `/tmp` into
+    that path for every other Git-Bash process on the host.
+
+    Git for Windows mounts `/tmp` as `usertemp` (its etc/fstab), resolved
+    from the TMP/TEMP of the process that CREATES the MSYS runtime's
+    per-user, per-installation shared mount table - and every MSYS process
+    started while that region lives shares it. A child handed TMP=<a file>
+    that happens to be the first MSYS process on an idle host therefore
+    breaks every bash any other pytest-xdist worker starts meanwhile:
+    `bash.exe: warning: /tmp must be a valid directory name`, then `VERIFY
+    GATE: cannot create temp file` in an unrelated test (T-0110; CI jobs
+    109709668000 and 109307433677).
+
+    This holds one MSYS process, started with THIS process' environment,
+    open for the whole block, so the region already exists - created sane -
+    when the block's own children start, and they join it instead. The
+    holder waits on its stdin rather than sleeping, so it exits as soon as
+    the block ends or this process dies. Before yielding it proves the pin
+    took: a probe of `bash` under `poisoned_env` must see `/tmp` as a
+    directory, or this raises instead of running a test that would poison
+    the host. The region is per installation, so `bash` must belong to the
+    same MSYS install the block's children use: for verify-gate.ps1, pass
+    `gate_bash(...)`, which asks the gate's own resolver.
+
+    `test_msys_tmp_pin.py` checks both halves: the hazard, on a private copy
+    of the runtime, and that every crew test overriding TMP/TEMP runs here.
+    A no-op off Windows and when `bash` is None (such callers skip anyway).
+    """
+    if bash is None or not sys.platform.startswith("win"):
+        yield
+        return
+    holder = subprocess.Popen(
+        [bash, "-c", _PIN_HOLDER_SCRIPT], env=dict(os.environ),
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL, text=True, encoding="utf-8")
+    try:
+        # The bound is read at call time so a test can shorten it.
+        ready = first_line_within(
+            holder, PIN_STARTUP_TIMEOUT_S,
+            f"msys_tmp_pinned: holder {bash!r}",
+            "rather than run the block unpinned").strip()
+        if ready != "pinned":
+            raise RuntimeError(
+                f"msys_tmp_pinned: holder {bash!r} did not start "
+                f"(read {ready!r}, exit {holder.poll()})")
+        probe = subprocess.run(
+            [bash, "-c", "if [ -d /tmp ]; then echo tmp-is-dir; fi"],
+            env=poisoned_env, capture_output=True, text=True, encoding="utf-8",
+            check=False,
+            timeout=GATE_SUBPROCESS_TIMEOUT_S)
+        if probe.stdout.strip() != "tmp-is-dir":
+            raise RuntimeError(
+                "msys_tmp_pinned: a process under the poisoned env still "
+                f"does not see /tmp as a directory (stdout={probe.stdout!r} "
+                f"stderr={probe.stderr!r}) - the pin did not take, so the "
+                "block would poison /tmp for the whole host")
+        yield
+    finally:
+        try:
+            holder.stdin.close()
+        except OSError:
+            pass
+        try:
+            holder.wait(timeout=GATE_SUBPROCESS_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            holder.kill()
+            # Bounded too: a TimeoutExpired here names the stuck holder
+            # instead of hanging the run.
+            holder.wait(timeout=GATE_SUBPROCESS_TIMEOUT_S)
+
+
 _BASH_NO_PREPEND = "unprobed"
 
 
@@ -859,6 +1002,115 @@ def resolve_pwsh():
     return _PWSH
 
 
+# --- per-test pwsh startup-profile isolation (L-0557) -------------------------
+#
+# pwsh reads `$XDG_CACHE_HOME/powershell/StartupProfileData-NonInteractive` at
+# start-up and rewrites it at exit. Concurrent pwsh sharing one file race on
+# it, and a reader that catches it half-written dies before running anything:
+# "Stack overflow." (-6) or SIGSEGV (-11). conftest gives every test its own
+# XDG_CACHE_HOME and installs `pwsh_cache_audit` so a pwsh spawned without one
+# is refused. No retry and no crash-signature matching, by owner decision.
+# On Windows pwsh keeps the profile under LOCALAPPDATA, so the variable is a
+# no-op there and the check still passes.
+
+# The directory a pwsh spawn's XDG_CACHE_HOME must sit under right now: the
+# current test's own cache dir during a test, the session dir outside one, None
+# before conftest's configure and after its unconfigure (the check is off).
+_PWSH_CACHE_ROOT = None
+_PWSH_CACHE_SESSION = None
+_PWSH_AUDIT_INSTALLED = False
+_PWSH_NAMES = ("pwsh", "powershell")
+
+
+def pwsh_cache_session_dir():
+    """The session-wide XDG_CACHE_HOME conftest set at configure, or None."""
+    return _PWSH_CACHE_SESSION
+
+
+def _argv0(executable, args):
+    """argv[0] as text: `executable` when given, else the first element of a
+    list, else the first token of a command-line string (quoted or not)."""
+    if executable is not None:
+        return os.fsdecode(executable)
+    if isinstance(args, (str, bytes, os.PathLike)):
+        line = os.fsdecode(args).lstrip()
+        if line.startswith('"'):
+            return line[1:].split('"', 1)[0]
+        return line.split(None, 1)[0] if line else ""
+    try:
+        first = list(args)[0]
+    except (TypeError, IndexError):
+        return ""
+    return os.fsdecode(first)
+
+
+def _is_pwsh(argv0):
+    base = re.split(r"[\\/]", argv0)[-1].lower()
+    if base.endswith(".exe"):
+        base = base[:-4]
+    return base in _PWSH_NAMES
+
+
+def _env_get(env, key):
+    if env is None:
+        env = os.environ
+    for name, value in env.items():
+        name = os.fsdecode(name)
+        if name == key or (os.name == "nt" and name.upper() == key):
+            return os.fsdecode(value)
+    return None
+
+
+def _norm(path):
+    return os.path.normcase(os.path.realpath(path))
+
+
+def pwsh_cache_violation(executable, args, env, allowed_root):
+    """None when the spawn is not pwsh, or its XDG_CACHE_HOME sits under
+    `allowed_root`; else a one-line reason. `env is None` means os.environ,
+    as for subprocess. Pure: the audit hook supplies the arguments."""
+    if not _is_pwsh(_argv0(executable, args)):
+        return None
+    value = _env_get(env, "XDG_CACHE_HOME")
+    if value is None:
+        return "XDG_CACHE_HOME is unset, so pwsh would use the user default ~/.cache"
+    if not value:
+        return "XDG_CACHE_HOME is empty, so pwsh would use the user default ~/.cache"
+    if _norm(value) == _norm(os.path.join(os.path.expanduser("~"), ".cache")):
+        return f"XDG_CACHE_HOME={value} is the user default, shared by every pwsh"
+    root = _norm(allowed_root)
+    here = _norm(value)
+    if here != root and not here.startswith(root.rstrip(os.sep) + os.sep):
+        return f"XDG_CACHE_HOME={value} is outside this test's directory {allowed_root}"
+    return None
+
+
+def pwsh_cache_audit(event, payload):
+    """`sys.addaudithook` callback: refuse a pwsh spawn whose cache is not
+    this test's own. Raising aborts the spawn before the process exists."""
+    if event != "subprocess.Popen" or _PWSH_CACHE_ROOT is None:
+        return
+    executable, args, _cwd, env = payload
+    reason = pwsh_cache_violation(executable, args, env, _PWSH_CACHE_ROOT)
+    if reason:
+        raise RuntimeError("pwsh spawned without its own XDG_CACHE_HOME (L-0557): " + reason)
+
+
+def install_pwsh_cache_audit():
+    """Install the audit hook once per process; hooks cannot be removed."""
+    global _PWSH_AUDIT_INSTALLED  # pylint: disable=global-statement
+    if not _PWSH_AUDIT_INSTALLED:
+        sys.addaudithook(pwsh_cache_audit)
+        _PWSH_AUDIT_INSTALLED = True
+
+
+def set_pwsh_cache_session(path):
+    """Record the session dir (or None) and make it the current root."""
+    global _PWSH_CACHE_SESSION, _PWSH_CACHE_ROOT  # pylint: disable=global-statement
+    _PWSH_CACHE_SESSION = path
+    _PWSH_CACHE_ROOT = path
+
+
 # The full per-shell matrix. `conftest.py` registers the marker and deselects
 # it from a default run; `pytest -m slow` or `--run-slow` runs it. Only the
 # bash and pwsh drivers of a decision case carry it: the python driver runs
@@ -945,6 +1197,34 @@ def _is_git_launcher(bash):
     return parts[-2:] == ["bin", "bash.exe"] and "usr" not in parts
 
 
+def link_path_dirs(dest, sources=("/usr/bin", "/bin"), skip=lambda name: False):
+    """Symlink every entry of each `sources` dir into `dest`, skipping names
+    for which `skip(name)` is true. The first dir holding a name wins, as in
+    PATH lookup (L-0529).
+
+    Two dedupes, both needed. A source dir whose realpath was already linked
+    is skipped: with `/bin -> usr/bin` the second pass is the first again. A
+    name already in `dest` is skipped by `lexists`, not `exists`: `exists`
+    follows the link, so an entry whose own target is missing (Ubuntu
+    26.04's `/usr/bin/grub-ntldr-img -> ../lib/grub/...`, dangling when only
+    `grub-pc` is installed) read as absent and was linked a second time,
+    raising FileExistsError on the self-hosted runners."""
+    seen = set()
+    for source in sources:
+        if not os.path.isdir(source):
+            continue
+        real = os.path.realpath(source)
+        if real in seen:
+            continue
+        seen.add(real)
+        for name in os.listdir(source):
+            target = os.path.join(dest, name)
+            if skip(name) or os.path.lexists(target):
+                continue
+            os.symlink(os.path.join(source, name), target)
+    return dest
+
+
 def shell_path(flavor, dirs, base=None, windows=None, cygpath=None):
     """The PATH value `flavor` ("sh" or "ps1") should be handed, with `dirs`
     first and `base` (default: this process's PATH) behind them.
@@ -996,6 +1276,9 @@ def write_shim(directory, name, sh_body="#!/bin/sh\nexit 0\n",
 def shim_env(flavor, bindir, **extra):
     """`{"PATH": ...}` with `bindir` first, built for `flavor`, plus `extra`."""
     env = {"PATH": shell_path(flavor, [bindir])}
+    # Built from scratch, so the per-test pwsh cache (L-0557) is copied in.
+    if "XDG_CACHE_HOME" in os.environ:
+        env["XDG_CACHE_HOME"] = os.environ["XDG_CACHE_HOME"]
     env.update(extra)
     return env
 

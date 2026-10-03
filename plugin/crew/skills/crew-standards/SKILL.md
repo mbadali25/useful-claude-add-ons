@@ -17,7 +17,9 @@ script is `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py`.
   change sets; its `Change sets` line names them.
 - **Stack sets** - further files in `references/` (per language, T-0086),
   each with an `applies-to` glob list; a set applies when a changed file
-  matches one of its globs.
+  matches one of its globs. The first is `references/python.md`, set
+  `PYTHON`, `applies-to: ["**/*.py"]`; the other stacks follow as further
+  files, under the same three-change-set bar.
 - **The repository overlay** - `.crew/standards.md`, set `REPO`, read when it
   exists. It adds standards (`## REPO-01 <name>`) and `## Supplements
   <GEN-id>` sections carrying the repository's literal commands for a plugin
