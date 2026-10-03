@@ -19,8 +19,10 @@ _T = "tests/test_recurring_findings.py::"
 
 def _section(sid, nxt):
     """The text of data section `sid` up to section `nxt`, read when this
-    module loads, so the deletion mutation removes exactly one section."""
-    with open(DATA, encoding="utf-8", newline="") as fh:
+    module loads, so the deletion mutation removes exactly one section. Read
+    the way `sabotage.read` reads a target (newlines translated): a CRLF
+    checkout on Windows must yield the same anchor text the runner sees."""
+    with open(DATA, encoding="utf-8") as fh:
         text = fh.read()
     start = text.index(f"## {sid} ")
     return text[start:text.index(f"## {nxt} ", start)]
