@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.71: autopilot leaves in-flight work alone (T-0049)
+### Changed — `crew` 1.0.146: autopilot leaves in-flight work alone (T-0049)
 
 - **In-flight markers.** New `hooks/scripts/crew_inflight.py` (`begin`,
   `beat`, `end`, `status`, `pick`, `lane-lines`, and the owner's `clear`)
