@@ -74,6 +74,12 @@ jobs:
       # different half of the fix.
       - name: Version-drift commit-shape suite
         run: python3 scripts/_test/version-drift.py
+      # The fan-in behind the required `crew-shell-matrix (windows-latest)`
+      # check (pytest-crew.yml's crew-windows-gate). Each case is one way a
+      # test could be lost, or a Windows job not run, while that check went
+      # green (L-0577).
+      - name: Windows shard fan-in suite
+        run: python3 scripts/_test/windows-shards.py
       # The UPDATE.md mirrors are generated, so the only thing keeping them
       # honest is a gate that fails. Without this step the generator's --check
       # mode is a check nobody runs, which is worse than no check: the blocks
@@ -82,6 +88,14 @@ jobs:
         run: python3 scripts/sync-updates.py --check
       - name: Shell syntax
         run: bash -n scripts/install-prerequisites.sh
+      # An own-line `# shellcheck` comment ShellCheck cannot parse is SC1073, and
+      # ShellCheck then stops checking the WHOLE file. install-prerequisites.sh
+      # and scripts/_test/lsp-stack-tools.sh were unchecked that way until L-0587.
+      # The suite's grammar check is stdlib; its cross-check uses the runner
+      # image's own shellcheck (0.9.0 on ubuntu-24.04) and prints SKIPPED only
+      # where shellcheck is absent.
+      - name: ShellCheck directive suite
+        run: python3 scripts/_test/shellcheck-directives.py
       # Runs here because it needs nothing but bash: the end-to-end cases use --dry-run
       # or a stub 'claude'. The drift suite is the one that cannot - it drives the real
       # Claude Code CLI.

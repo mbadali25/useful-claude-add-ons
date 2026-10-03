@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@3d96623a on 2026-10-02. Verify before trusting.
+%% Generated from useful-claude-add-ons@39ebbc18 on 2026-10-03. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_standards.py, plugin/crew/hooks/scripts/review_run.py, plugin/crew/hooks/scripts/crew_train.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> standards self-check -> review -> done.
 %% --
@@ -132,7 +132,7 @@
 %%     :12-13 recorded -> approval.json bound to the digest of spec.md AND plan.md;
 %%     :15 refused -> prompt blocked. Hook registered at
 %%     plugin/crew/hooks/hooks.json:14 (approval-hook.sh, UserPromptSubmit).
-%%   plugin/crew/commands/implement.md:15-18 refuses unless `crew_ticket.py validate`
+%%   plugin/crew/commands/implement.md:14-17 refuses unless `crew_ticket.py validate`
 %%     reports the plan approved; :31 scope_base --record, then crew_tracker.py
 %%     move --to in-progress (:36, `--reopen` on a successor plan :37); :41 steps
 %%     in order, test first; :59 changed-file list; :69 verify; :89-112 step 6:
@@ -145,7 +145,7 @@
 %%   plugin/crew/commands/review.md:25-29 two rounds per ticket, a third is refused
 %%     -> NEEDS_REPLAN; :440 exit codes 0 CLEAN / 1 FINDINGS / 3 INCOMPLETE /
 %%     4 NEEDS_REPLAN / 2 not run; :449 Claude fallback; :480 the verdict is the
-%%     script's; :485-486 an INCOMPLETE's class and the tool-failure refund;
+%%     script's; :487-488 an INCOMPLETE's class and the tool-failure refund;
 %%     :504-505 round 2 is the last (rounds not refunded); :509 --accept --by <who>; :512 a CLEAN
 %%     round writes its receipt itself.
 %%   plugin/crew/commands/done.md:7 all four checks must pass; :10-13 check 1
@@ -266,10 +266,14 @@
 %% Re-anchored 8bf710ed -> bf7ce780 (L-0558, crew 1.0.87): of the anchored paths only crew_train.py changed
 %% (round-2 fixes, rerere rule); no node cites it by line, done.md is unchanged. No node or edge changed.
 %% Re-anchored bf7ce780 -> dbad6519 (L-0558 self-review fixes): only crew_train.py changed among the anchors. No node or edge changed.
+%% L-0576 (review verdict recovers harmless stray lines beside findings): review.md's verdict
+%% paragraph grew two lines (:483-488), so the refund sentence moved :485-486 -> :487-488 (the
+%% edge and the :148 comment say so); :441, :446-450, :452 and :484 (the verdict paragraph's
+%% start) hold, and step 3.1 grew two lines below every line cited here. No node or edge changed.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
-    small -- yes --> fix["/crew:fix - same phases,<br/>one step each, one review round<br/>fix.md:2, :75, :94"]
+    small -- yes --> fix["/crew:fix - same phases,<br/>one step each, one review round<br/>fix.md:2, :75, :95"]
     small -- no --> BR
 
     subgraph brainstorm["/crew:brainstorm"]
@@ -308,10 +312,10 @@ flowchart TB
     ap2 --> planned["spec.md header 'status: planned'<br/>keeps the approval,<br/>crew_tracker.py move --to planned<br/>plan.md:60-63"]
 
     subgraph implement["/crew:implement"]
-        planned --> im0{"crew_ticket.py validate:<br/>plan approved?<br/>implement.md:18-24"}
+        planned --> im0{"crew_ticket.py validate:<br/>plan approved?<br/>implement.md:17-23"}
         im0 -- "no / stale" --> imx([refuse: /crew:plan id --approve])
-        im0 -- yes --> im1["scope_base --record, then<br/>crew_tracker.py move --to in-progress<br/>:29, :34"]
-        im1 --> im2["steps in order, test first<br/>:39; scope-guard on every write<br/>hooks.json:31 (PreToolUse, Touch)"]
+        im0 -- yes --> im1["scope_base --record, then<br/>crew_tracker.py move --to in-progress<br/>:28, :33"]
+        im1 --> im2["recurring-findings checklist<br/>for the Touch paths, then<br/>steps in order, test first<br/>:38-42; scope-guard on every write<br/>hooks.json:31 (PreToolUse, Touch)"]
         im2 --> im3a["changed-file list, verify<br/>:57, :67"]
         im3a --> im3["step 6: tests, then /crew:docs<br/>:86-91"]
         im3 --> rf1{"crew_refresh_check.py<br/>:93"}
@@ -324,12 +328,12 @@ flowchart TB
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
-        im5 --> pf0{"preflight first (#264):<br/>a CLEAN receipt covers this bundle?<br/>verify gate passed this tree?<br/>review_run.py:508, :575"}
+        im5 --> pf0{"preflight first (#264):<br/>a CLEAN receipt covers this bundle?<br/>verify gate passed this tree?<br/>review_run.py:532, :619"}
         pf0 -- "CLEAN receipt: CLEAN,<br/>no round, no self-check" --> rcpt
         pf0 -- "gate not passed or unknown:<br/>exit 5, no round spent,<br/>self-check not asked<br/>review.md:450" --> vg0["run the verify gate,<br/>then review again"]
         vg0 --> im5
         pf0 -- "go on" --> rv0{"self-check stamped for<br/>this bundle and standards set?<br/>review_run.py standards_gate"}
-        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no self-check asked<br/>review_run.py:579-589" --> replan
+        pf0 -- "no rounds left or NEEDS_REPLAN:<br/>the budget refusal answers first,<br/>no self-check asked<br/>review_run.py:623-633" --> replan
         rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:447-450" --> sc1
         rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle;<br/>prompt ends with the standards checklist<br/>review.md:25-29, :452"]
         rv1 --> rv2{"verdict (the script's)<br/>:441, :484"}
@@ -337,7 +341,7 @@ flowchart TB
         rv2 -- FINDINGS --> rv3{"fix, or<br/>user accepts?<br/>:504, :508"}
         rv3 -- accept --> rcpt
         rv3 -- "fix, round 2" --> rv1
-        rv2 -- "INCOMPLETE (tool failure: refunded, :485-486)" --> rv1
+        rv2 -- "INCOMPLETE (tool failure: refunded, :487-488)" --> rv1
         rv2 -- "INCOMPLETE (reviewer / tree): counts" --> rv1
         rv2 -- "third round refused" --> replan([NEEDS_REPLAN:<br/>back to /crew:plan])
     end
@@ -491,6 +495,29 @@ flowchart TB
 %% touches no Anchors path. No node or edge changed.
 %% Re-anchored 5ffffbe3 (main) and c43a9ce3 (L-0557) -> 6053b65d (L-0557 merges main 2906dcbd, L-0516 #298, rerere off;
 %% crew 1.0.114): both provenance blocks kept, main's first; L-0516 and L-0557 touch no Anchors path. No node or edge changed.
+%% Re-anchored for L-0578 at b4f04e23 (merge of main 8d84786d, W-0117 #302; crew 1.0.119):
+%% of the anchored paths review_run.py, review.md and crew_refresh_check.py changed since
+%% 6053b65d. review_run.py's preflight citation :508, :575 -> :524, :611 and the budget
+%% block :579-589 -> :615-625 (difflib); review.md :447-450, crew_refresh_check.py :93 and
+%% done.md :50-61 did not move. No node's meaning changed: the metrics row L-0578 adds is
+%% written inside the round, which this diagram draws as one node.
+
+%% Re-anchored 6053b65d -> dac06883 (L-0575, the recurring-findings checklist): implement.md step 2 now prints
+%% recurring_findings.py's checklist before the first plan step (im2's label and :38-42), and the method paragraph
+%% lost a line, so im0 :18-24 -> :17-23, im1 :29/:34 -> :28/:33 and the :15-18 note -> :14-17 (difflib). fix.md
+%% step 4 gained one line after :85, so the fix node :94 -> :95. No edge changed.
+%% Re-anchored dac06883 -> 871c5043 (L-0575 review round 1): implement.md step 2 re-wrapped in place
+%% (quoted plugin root); its line count and every cited line are unchanged. No node or edge changed.
+%% Re-anchored b4f04e23 (main) and 871c5043 (L-0575) -> 2859ab05 (L-0575 merges origin/main 8d84786d at f12f742c and d2ec37d3 at 2859ab05, rerere disabled; crew 1.0.123. Both provenance histories kept, main's first. Body citations were mapped with difflib from the tree each line came from (4234c443 for L-0575's lines, d2ec37d3 for main's): ten CHANGELOG.md citations in crew.md moved +19 (L-0575's entry above main's); verification-harness.md's two verify.json ranges were set by hand to :448-453 (rule 41) and :455-465 (L-0575's rule); crew.md's version sentence reads 1.0.123. History notes were not re-mapped. No suite was executed for this note). No node or edge changed.
+%% Re-anchored b4f04e23 (main) and 2859ab05 (L-0575) -> 99c8f66e (L-0575 merges origin/main 7ba4f9ea (L-0572 #309 crew 1.0.126, L-0593 #312) at 99c8f66e, rerere disabled; crew 1.0.129 is set in the last commit. Body citations were mapped with difflib from the tree each line came from (9dad04ef for L-0575's lines, 7ba4f9ea for main's): ten CHANGELOG.md citations in crew.md moved +21 (L-0572's entry, below L-0575's); verification-harness.md's verify.json ranges were set by hand to :469-476 (rule 41) and :486-496 (L-0575's rule, after L-0572's at :478-485). History notes were not re-mapped. No suite was executed for this note). No node or edge changed.
+%% Re-anchored 99c8f66e (L-0575; main did not change this diagram) -> 273ec0f6 (L-0575 merges origin/main a9b4734d (L-0576 #306 crew 1.0.128, L-0577 #305, T-0107 #273) at 273ec0f6, rerere disabled; crew 1.0.129 is re-set in the last commit. Both provenance histories kept, main's first. Body citations were mapped with difflib from the tree each line came from (986c9ca5 for L-0575's lines, a9b4734d for main's): ten CHANGELOG.md citations in crew.md moved +113 (main's new entries sit below L-0575's), and ten plugin/crew/README.md citations in crew.md and repo-docs.md moved +2 (L-0575's README paragraph at :727 sits above them); verification-harness.md's verify.json ranges were set by hand to :474-481 (rule 41), :483-490 (L-0572) and :491-501 (L-0575, last). History notes were not re-mapped. No suite was executed for this note). No node or edge changed.
+%% Re-anchored b4f04e23 -> fa63852d (L-0555 merges main dd95135a, L-0578 #304, rerere off; crew 1.0.127):
+%% L-0555 touches no Anchors path. No node or edge changed.
+%% Re-anchored fa63852d -> f937576e (L-0555 merges main 04dde5a2, W-0120 #307): no Anchors path changed. No node or edge changed.
+%% Re-anchored -> a81e4382 (L-0555 merges main 0487fc39: L-0575 #311, L-0599 #315, rerere off): main's body and its L-0575 re-anchor notes were taken. L-0555 touches no Anchors path. No node or edge changed.
+%% Re-anchored a81e4382 -> 4fc93b19 (L-0587 merges main ffeb0e2f: L-0598 #321, rerere off). Of the Anchors paths only crew_standards.py changed (+4 lines at :729, in proposals); the one node citing a line range (:105-109) is not in that file. No node or edge changed.
+%% Re-anchored a81e4382 -> 6475c41c (L-0592): of the Anchors paths only implement.md changed, step 2 re-wrapped in its same lines (:40-44, the exit-1 note now names UNKNOWN, UNREADABLE and PROBLEM). im2's label and citation still hold. No node or edge changed.
+%% Re-anchored 4fc93b19 (main) -> 39ebbc18 (L-0592 merges main 6ac3b1b3): of the Anchors paths only implement.md changed since main's anchor (step 2 re-wrapped in its same lines). No node or edge changed.
 
 %% Re-anchored bbd9a66d -> 835ce179 (T-0019, crew 1.0.62): of the Anchors paths only crew_ticket.py
 %% changed - +15 lines in the module docstring and imports (T-0019's "Minting" paragraph), then

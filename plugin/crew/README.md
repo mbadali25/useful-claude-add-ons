@@ -724,6 +724,8 @@ The session reads exactly one ticket file, delegates the search to `explorer`, p
 
 If the change added behavior with no smoke coverage, the implementing session adds a check. A feature without a check is how the next change breaks it silently. Review comes after the tests and the docs (since 0.20.17), so the reviewer reads the finished change rather than a draft that later edits move out from under it.
 
+Before the first plan step, `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/recurring_findings.py" --root . --ticket <id>` prints the **recurring-findings checklist**: the defect classes earlier reviews kept finding (processes and races, claims that are not true at HEAD, tests that cannot fail, fail-open handling, PowerShell/Bash drift, guard bypass, version and registration, in descending order of how often they were found), only those whose path globs meet the spec's Touch list, at most four probes each and 60 lines in all, with a cut announced by id. The data is the tracked `skills/crew-qa-standards/references/recurring-findings.md`, so every machine prints the same list; an unreadable spec or Touch list (a spec that is not a regular file, such as a FIFO, included) lists every class under `UNKNOWN:` and exits 1, and an unreadable or malformed data file prints `UNREADABLE:`/`PROBLEM:` instead, never "no class applies", and also exits 1. `/crew:implement` pastes it into every developer dispatch and re-runs it before the self-check. It is advisory: no gate reads it.
+
 Between the refresh and the review sits the **required standards self-check** (see "Development standards" below): every standard in the effective set answered in `.work/tickets/<id>/selfcheck.md`, then stamped with `crew_standards.py stamp`. `/crew:review` refuses to spend a round without a current stamp.
 
 ### Review it
@@ -736,7 +738,7 @@ Codex if available, the `reviewer` agent if not — and it always tells you whic
 
 The reviewer reads a **bundle**, not a `git diff` of the committed range: `hooks/scripts/review_patch.py` stages committed, staged, unstaged and untracked changes into a temporary index (your own index is never written) and diffs the ticket base against it. Renames, file-mode changes, binary files (git's marker plus both blob ids and sizes) and submodules are listed in the manifest. A large bundle is split into ordered parts — never truncated — and the manifest records a sha256 over them. `.work/` (crew's scratch) and the generated `graphify-out/` are never in the bundle; the manifest's `excluded` names both and the prompt's bundle block prints them, so a reviewer knows what was left out (T-0092).
 
-Then it appends a line to `.crew/metrics.md`. That line is not bookkeeping; `/crew:status` reads it to show whether any of this is catching anything.
+Then `review_run.py` itself appends the round's line to `.crew/metrics.md` - the main checkout's, also from a linked worktree - right after the ledger records the round: `<date> | <ticket> | <provider>/<model> (r<N>, std:..., <family>) | <BLOCK> | <FIX>`, with `INCOMPLETE` in both count cells for a round with no verdict and the family named against the author's (`same-family`, `different family` only when a dispatch record proves it, `different family unproven` when it came from config, `family unknown` when it could not be read, or `same-family: codex limit`), and the `std:` token the round was reserved under, never one recomputed afterwards. A symlinked or junctioned `.crew`, or a metrics path that is not a regular file, is refused, not followed. It used to be a prose step, and 118 of 162 rounds had no line (L-0578). A write that fails never changes the verdict; it prints the exact line to append by hand. That line is not bookkeeping; `/crew:status` reads it to show whether any of this is catching anything.
 
 ### Review: verdicts and the two-round budget
 
@@ -747,8 +749,10 @@ Then it appends a line to `.crew/metrics.md`. That line is not bookkeeping; `/cr
 | Verdict | When |
 |---|---|
 | `CLEAN` | exactly one `CLEAN` line, exit 0, and a READ line for every bundle part - its path exactly as listed, or its bare file name |
-| `FINDINGS` | at least one `BLOCK`, `FIX` or `NIT` line, and nothing below applies |
-| `INCOMPLETE` | non-zero exit, unknown exit, timeout, empty output, any line outside the contract (a code fence, or a finding with an empty field, included), a part not acknowledged, a bundle part that no longer matches its manifest size and sha256, an unreadable line in Codex's event stream, or `CLEAN` beside findings. Each INCOMPLETE is classed `tool`, `reviewer` or `tree` (`review_verdict.failure_class`); only `tool` is refunded (below) |
+| `FINDINGS` | at least one `BLOCK`, `FIX` or `NIT` line, and nothing below applies - including a round recovered despite harmless stray lines (below) |
+| `INCOMPLETE` | non-zero exit, unknown exit, timeout, empty output, any line outside the contract that is not recovered (a finding with an empty field, a decorated or lower-case contract line, a `|`-table row, an admission that the review fell short, and any stray line beside `CLEAN`, included), a part not acknowledged, a bundle part that no longer matches its manifest size and sha256, an unreadable line in Codex's event stream, or `CLEAN` beside findings. Each INCOMPLETE is classed `tool`, `reviewer` or `tree` (`review_verdict.failure_class`); only `tool` is refunded (below) |
+
+**Harmless stray lines are recovered, never beside `CLEAN` (L-0576).** A round whose findings parse, whose every part is acknowledged, that exited 0 and has no other reason, is `FINDINGS` even when it also printed prose, a heading or a code fence - the shape that cost T-0100 round 2. The ignored lines go in `review.json`'s `ignored_text`, their count in its `ignored_lines` (an int on every round, 0 when none) and in the ledger row (null there when that value is missing or malformed - unknown is never 0), and a `review: FINDINGS kept; N line(s) outside the contract were ignored` line names the first; report them with the findings. A stray line that might be a contract line the parser failed to read, or that admits the review fell short ("incomplete", "skipped", "truncated", "could not review", ...), is "could not tell" and keeps the round `INCOMPLETE`; that wording net cannot be complete, which is why recovery never reaches `CLEAN` and the lines are always shown. `review_verdict.py`'s docstring states the rule in full.
 
 A READ line naming anything else - a path outside the bundle, or the same file name in another directory - counts for no part; the part it failed to cover is what makes the round `INCOMPLETE`. The prompt quotes that form from `review_verdict.READ_FORM`, so the two cannot disagree again (T-0079). From crew 1.0.50, `review.json`'s `parts_expected` and `parts_missing` name each part by its listed path, not its bare file name. `INCOMPLETE` is never `CLEAN`. Codex runs as `codex exec --json --sandbox read-only` with stdin closed, and a turn that failed in its event stream is `INCOMPLETE` even when the process exited 0. Each round writes `.work/tickets/<id>/review.json` (verdict, counts, provider, model, model family, bundle hash, base/head, round).
 
@@ -790,7 +794,7 @@ A repository adds its own in the **overlay**, `.crew/standards.md` (set `REPO`, 
 | `review_run.py` | Before reserving the round, for every provider, once the budget is known not to be spent (a spent budget is refused first, exit 4): a missing, unreadable, incomplete, unstamped or stale self-check is exit 2, no round spent. It applies to a ticket with an approval receipt, or whose receipt cannot be proven absent; in an active incident it stands down and logs a `standards-selfcheck` skip. On a pass it prints `review-run: standards self-check current (std:<8 hex>)` |
 | The review prompt | Ends with the effective set's rules and self-check questions. The author's answers are withheld from the prompt, so the reviewer judges applicability itself, and the list does not bound the review. Withheld, not hidden: `selfcheck.md` stays in `.work/tickets/<id>/`, which a reviewer that can read the checkout could open; the prompt never names it |
 | After a round | `crew_standards.py proposals` writes `standards-proposals-r<N>.md` with every BLOCK/FIX line verbatim, and refuses an `out.txt` the verdict parser calls INCOMPLETE, writing nothing; you approve or reject each proposed standard or amendment. Nothing is added to a standards file automatically |
-| `.crew/metrics.md` | The reviewer cell carries `std:<first 8 of the digest>`, the token `review_run.py` printed (or `std:none`); `crew_standards.py metric` prints first-round BLOCK+FIX per ticket before (no `std:` token) and after (`std:<8 hex>`), with unknown-round rows, `std:none` rows and unreadable `std:` tokens counted on neither side, and "not enough data" below 10 tickets a side. `--record` appends a pipe-free summary line the other readers skip |
+| `.crew/metrics.md` | Written by `review_run.py`, one row per recorded round, in the main checkout. The reviewer cell carries `std:<first 8 of the digest>` (or `std:none`, or `std:unknown` when it could not be computed); `crew_standards.py metric` prints first-round BLOCK+FIX per ticket before (no `std:` token) and after (`std:<8 hex>`), with unknown-round rows, `std:none` rows and unreadable `std:` tokens counted on neither side, and "not enough data" below 10 tickets a side. `--record` appends a pipe-free summary line the other readers skip |
 
 ### Scope and approval
 
@@ -2170,6 +2174,29 @@ explained it:
 The implementing session checks for these before writing anything, so it wires into
 what exists instead of building a parallel suite that will drift out of
 agreement with it.
+
+### The verify gate on CI: a receipt, diagnostic for now
+
+This repository's `.github/workflows/verify-gate.yml` runs `verify-gate.sh --all`
+on a pushed lane branch (`L-*`, `T-*`, `W-*`) on the self-hosted runner pool, only
+while the repo variable `CREW_RUNNER` is `self-hosted`, and uploads a receipt
+built by `hooks/scripts/ci_receipt.py build`. The receipt binds the verdict
+(`review_gate.gate_state` asked on the runner, not the job's exit code) to the
+head sha, its tree, the `.crew/verify.json` blob and a digest of the gate
+implementation.
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ci_receipt.py check --root .
+```
+
+prints `CI_RECEIPT <STATE> head=<sha> <reason>` and exits 0 VERIFIED, 1
+UNVERIFIED, 3 UNKNOWN (could not tell: `gh`, the network or the artifact
+unreadable) or 4 NO_GATE. VERIFIED needs the newest run for HEAD to have
+succeeded, that attempt's one artifact to match HEAD, its tree and map exactly,
+a clean local tree, and no change on this branch to the gate implementation or
+the producer. **Nothing accepts the receipt yet**: `/crew:done`, `/crew:review`
+and `crew_train.py check-land` still read the local gate. Wiring them to it is a
+separate tooling change.
 
 ### Linters
 

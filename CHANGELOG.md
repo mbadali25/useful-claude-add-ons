@@ -54,6 +54,293 @@ All notable changes to this repository are documented here. Format follows [Keep
 - Bumped `1.0.61 -> 1.0.62`, then `1.0.62 -> 1.0.63` for review round 1's fixes,
   then `1.0.115 -> 1.0.123` after merging main `8d84786d` (crew 1.0.115);
   1.0.116-1.0.122 are claimed or burned by other lanes.
+### Fixed - `crew` 1.0.139: the recurring-findings checklist's L-0575 round-2 findings (L-0592)
+
+- **No hang on a FIFO.** `recurring_findings.py` reads a spec or its data file only when it is a
+  regular file: refused by its stat before any open, then opened non-blocking and refused by
+  `fstat` if one was swapped in. A FIFO, device or directory `spec.md` is now `UNKNOWN:` (exit 1)
+  instead of hanging the implementer; as the data file it is `UNREADABLE:`.
+- **A Touch file is a file.** A Touch match needs the repository root (`matches` and `select`
+  raise `ValueError` without one), so an existing regular file no longer covers paths under it.
+- **UNKNOWN survives a full block.** The 60-line block keeps every `UNKNOWN:` line and drops only
+  data notes, counted in one line; a header too long to leave room raises instead of overflowing.
+- **Tests and docs.** The shipped-data test pins RF-01..RF-07; `/crew:implement` step 2 and the
+  README say exit 1 prints an `UNKNOWN`, `UNREADABLE` or `PROBLEM` line. Each fix was sabotaged by
+  hand and went red; the committed sabotage entries and the reviewer-prompt wiring follow in L-0601.
+
+### Changed — `crew` 1.0.135: the standards proposals docstring and crew-qa-standards R5 state L-0576's recovered verdict (L-0598)
+
+- `crew_standards.proposals`'s docstring no longer says any unreadable line refuses a round. A round
+  `review_verdict.parse` recovered despite harmless stray prose or a code fence is FINDINGS, and its
+  findings are proposed; a stray line that might be a misformatted contract line, or that admits the
+  review fell short, is still INCOMPLETE even beside well-formed findings.
+- `skills/crew-qa-standards/references/review.md` R5 says the same: a contract-like or shortfall
+  stray line is INCOMPLETE; harmless stray prose or a code fence beside well-formed findings is
+  ignored and reported, and the round is FINDINGS; never recovered beside CLEAN. No behaviour change.
+
+### Fixed — `crew` 1.0.134: `ci_receipt.py check` compares receipt fields by type as well as value; the verify-gate workflow stops installing into the shared toolcache
+
+- `_mismatch` used `==` alone, which holds `1 == True` and `False == 0`, so a receipt saying
+  `"pass": 1`, `"clean": 1` or `"gate": {"rc": false}` matched. Each now mismatches; three new
+  must-block cases in `test_ci_receipt.py` go red with the old comparison.
+- `verify-gate.yml` installs nothing into the host's shared toolcache: pip goes into a venv and
+  mmdc into an npm prefix, both under the job's own `RUNNER_TEMP`, each put on `GITHUB_PATH`.
+  Jobs for different branches run concurrently on one host, and `pip install` / `npm install -g`
+  into setup-python's and setup-node's toolcache let them collide and carry state between runs.
+  A new workflow test fails against the old steps.
+- The `test_ci_receipt.py` rule in `.crew/verify.json` is re-priced at 20s (100 passed in 18.3s).
+
+### Added — `crew` 1.0.132: the verify gate runs on the self-hosted pool and leaves a receipt; `ci_receipt.py check` reports whether it matches HEAD (L-0555, diagnostic)
+
+- **`.github/workflows/verify-gate.yml`** runs `verify-gate.sh --all` on pushes to `L-*`, `T-*` and
+  `W-*` branches, on the self-hosted pool only while `CREW_RUNNER=self-hosted`, never on a pull
+  request event (fork code cannot reach the pool). `contents: read`, no repository secret,
+  credentials not persisted. Earlier gate evidence in the reused workspace is removed first.
+- **`hooks/scripts/ci_receipt.py build`** writes the receipt from `review_gate.gate_state` on the
+  runner, bound to head, tree, the `.crew/verify.json` blob and `gate_impl` (a digest of the gate
+  implementation), refusing a marker older than the gate's start. Uploaded as
+  `crew-verify-receipt-<attempt>`.
+- **`ci_receipt.py check`** answers VERIFIED / UNVERIFIED / UNKNOWN / NO_GATE. It takes the newest
+  run for HEAD before reading its status, binds the artifact to that run and sha, requires a clean
+  local tree and no branch change to the gate implementation, and re-reads everything, the
+  stand-down included, at the end. An unreadable stand-down is UNKNOWN; origin's host must be github.com.
+- Diagnostic only: no consumer accepts the receipt yet. `scripts/gate-runner.py` classifies the
+  workflow as excluded; a `.crew/verify.json` rule runs `test_ci_receipt.py`.
+
+### Fixed - `gizmoduck` 0.5.6: main's Pylint `build (3.11)` leg red on a guarded `os.path.isjunction` call (L-0599)
+
+- **What.** Since T-0107 (75681fba) pylint 4 on Python 3.11 reported
+  `plugin/gizmoduck/scripts/gizmoduck.py:925:58: E1102: isjunction is not callable (not-callable)`
+  and exited 2, while its summary line still read 10.00/10. `os.path.isjunction` exists only on
+  3.12+, so on 3.11 pylint infers the `getattr(os.path, "isjunction", None)` result as `None` and
+  cannot see the `isjunction and` guard before the call. A false positive: `_is_link` is unchanged.
+- **Fix.** A line-scoped `# pylint: disable=not-callable` on the call, and the guard's comment says
+  why, the same treatment `plugin/crew/hooks/scripts/crew_migrate.py`'s `_is_link` already has. No
+  line was added, so no line citation moves. Pylint on the file under 3.11 now exits 0 (was 2);
+  3.12 and 3.13 exit 0 as before.
+
+### Fixed — `scripts/install-prerequisites.sh` and `scripts/_test/lsp-stack-tools.sh` parse under ShellCheck again; repository tooling, no plugin version (L-0587)
+
+- **What was wrong.** `install-prerequisites.sh:1675` read
+  `# shellcheck disable=SC2059 - the template is ours, from GROUP_LABEL.`; ShellCheck takes the
+  ` - reason` tail as part of the directive, reports SC1073/SC1072 and stops checking the whole
+  file. `lsp-stack-tools.sh:7` was header prose that began with the lowercase word
+  `shellcheck/...`, which ShellCheck also reads as a directive. Neither file had been checked past
+  those lines. Measured with shellcheck 0.11.0 and 0.9.0 (the version on GitHub's ubuntu-24.04).
+- **Fix.** Comments only: `:1675` uses the documented trailing-comment form
+  (`# shellcheck disable=SC2059 # the template is ours, ...`), so SC2059 stays suppressed on the
+  `GROUP_LABEL` printf; `:7` now reads `ShellCheck/...`. `install-prerequisites.ps1` is unchanged:
+  it formats the same label with `-f` and carries no PSScriptAnalyzer suppression to keep in step.
+- **New suite.** `scripts/_test/shellcheck-directives.py` (stdlib) fails on any own-line
+  `# shellcheck` comment in a tracked `*.sh` that the directive grammar rejects (keys and their
+  values, as measured under 0.9.0 and 0.11.0), with must-block
+  and must-allow cases, an empty-extraction check and, when `shellcheck` is on PATH, a cross-check
+  against real ShellCheck (SKIPPED, loudly, when it is not). It runs as a `marketplace.yml` step,
+  in `scripts/gate-runner.py`'s table and in `.crew/verify.json`'s `scripts/**` rule.
+- **Not fixed here.** Now that ShellCheck reads both files, it reports 28 findings under 0.11.0
+  (30 under 0.9.0: SC2034, SC2004, SC2016, SC2155 and a few others). They are out of scope and left
+  for a follow-up.
+- **README.** The install URLs are re-pinned to the merge commit in a follow-up PR.
+
+### Added - `crew` 1.0.129: a recurring-findings checklist, scoped to a ticket's paths, for the implementer (L-0575)
+
+- **What.** `plugin/crew/skills/crew-qa-standards/references/recurring-findings.md` lists seven
+  defect classes earlier reviews kept finding (fail-open handling, tests that cannot fail, claims not
+  true at HEAD, processes and races, PowerShell/Bash drift, version and registration, guard bypass),
+  each with path globs, its measured count and at most four probes. New
+  `plugin/crew/hooks/scripts/recurring_findings.py --root . --ticket <id>` prints the classes whose
+  globs meet the spec's Touch list, capped at 60 lines with any cut named by id. `/crew:implement`
+  step 2 runs it before the first plan step, pastes it into every developer dispatch and re-runs it
+  before the self-check; `/crew:fix` step 4 does the same.
+- **Unknown stays unknown.** An unreadable or malformed data file prints `UNREADABLE:`/`PROBLEM:`
+  and never "no class applies"; an unreadable spec, any Touch problem or an unusable manifest
+  prints `UNKNOWN:` and lists every class; the CLI exits 1 whenever it prints one of these.
+- **Evidence.** Counted 2026-10-01 over 625 unique finding lines (539 BLOCK/FIX) from 54 review
+  ledgers and 177 reviewer `out.txt` files on the Linux host; keyword classes, overlapping. The
+  review prompt gains the same block in a follow-up tooling PR (`review_prompt.py` is review harness,
+  `scripts/check-tooling-pr.py`).
+
+
+### Changed — `crew` 1.0.128: harmless stray lines beside findings no longer burn a review round (L-0576)
+
+A tooling-only change to the review verdict parser. Paired with L-0514 (bounded retry), which it
+does not implement.
+
+- **Recovered, never beside CLEAN.** `review_verdict.parse` scores a round FINDINGS when its
+  findings parse, every bundle part has a READ line, the reviewer exited 0, no other reason applies,
+  and its only contract break is stray prose, a heading or a code fence. T-0100 round 2 was
+  INCOMPLETE for one trailing paragraph beside four well-formed findings; it now replays FINDINGS
+  (new golden fixture). CLEAN is unchanged: any stray line beside it is still INCOMPLETE.
+- **Could-not-tell stays INCOMPLETE.** A stray line that might be a misformatted contract line (a
+  keyword in any case after markdown decoration, a finding with an empty field, a `|` table row)
+  or that admits the review fell short ("incomplete", "skipped", "truncated", "could not review",
+  "ran out", ...) keeps the round INCOMPLETE, as do a missing READ, a bad exit, a timeout and a
+  bundle/stream reason (`parse` now takes these as `prior_reasons`, so `review_run.finish` can no
+  longer recover a round its own checks fail).
+- **Shown, not dropped.** `review.json` carries `ignored_lines` (an int on every round, 0 when none; the
+  contract L-0510 reads) and the lines verbatim in `ignored_text`, the ledger row the count (null,
+  never 0, when review.json's value is missing or malformed), and
+  `review_run` prints `review: FINDINGS kept; N line(s) outside the contract were ignored, first:
+  ...`; `/crew:review` step 3.1 reports them verbatim.
+- **Measured.** Over every preserved review on the Linux host (56 with an out.txt and manifest),
+  the parser before this change gave 53 FINDINGS, 1 CLEAN, 2 INCOMPLETE; after it, T-0100 r2 is
+  FINDINGS and the reviewer-declared T-0028 round stays INCOMPLETE. Most of the ledgers' 17
+  historic INCOMPLETEs were already recovered by T-0079 and T-0072's fixes.
+- Fifteen new `sabotage_review.py` entries; the `crew_standards.py` proposals docstring and the
+  crew-qa-standards R5 wording are a follow-up feature PR (tooling-PR rule).
+### Added — `gizmoduck` 0.5.5: `routine` subcommand and the dated docs/security-scans layout (T-0107)
+
+- **What changed.** `gizmoduck.py routine <manifest.yaml>` calls routine.py's
+  existing `load_manifest` and `run_routine`, then renders the combined report
+  with its coverage table from the run's own `findings.jsonl` and
+  `run-manifest.json`. Output goes to `--out DIR` (default `routine-out/`) or,
+  with `--scan-root MODULE_DIR [--date YYYY-MM-DD]`, to
+  `MODULE_DIR/docs/security-scans/YYYY-MM-DD/`, holding `findings.jsonl`,
+  `run-manifest.json`, `report.md`, `report.html`, `report.pdf` when a renderer
+  is present, and `scan-meta.json` (gizmoduck's own schema 1: version,
+  timestamps, `authorized_by`, targets, coverage counts and `complete`, finding
+  counts, the file names). `report` gains `--run-manifest run-manifest.json`, so
+  a routine run re-renders with its coverage table.
+- **Why.** aws-ops report items 8 and 12: `run_routine` was the only path to
+  checkov, trivy, dependency-check, semgrep, ZAP, testssl, nmap, nikto and sqlmap
+  and nothing shipped called it, so only nuclei was runnable headless; and
+  nothing wrote the dated layout. The reporter vendored a pinned copy of the
+  scripts to work around both.
+- **Exit codes.** 0 when every cell ran; 4 when every output was written but some
+  cell did not run (the last stdout line starts `GIZMODUCK_ROUTINE_INCOMPLETE:`;
+  a run with no cells is not complete); 2 for a usage or manifest error (a
+  wrong-typed manifest value, a target `name` that is not a plain directory
+  name or names a file routine writes, or PyYAML missing included), with
+  nothing written. Findings never
+  change the status.
+- **Gates.** sqlmap's two gates are routine.py's and unchanged: `options.sqlmap`
+  makes a target a candidate, and `--confirm-active`, asked for by name, lets it
+  fire. A directory already holding a `scan-meta.json` is refused without
+  `--replace`, which removes that `scan-meta.json` first, then the earlier run's
+  files and only the target directories it names, and exits 2 removing nothing
+  when it cannot tell which those are (or one is a symlink or a junction). A target
+  directory that already exists and that no earlier run there owns is refused
+  with exit 2 on any run, so routine never adopts, and later removes, a
+  directory it did not create; likewise a file routine writes (`report.md`,
+  `findings.jsonl`, ...) found in a directory with no `scan-meta.json` is
+  refused rather than overwritten. A run holds `.gizmoduck-routine.lock` in
+  its output directory, so a second run there exits 2. The manifest is read
+  once and the checked bytes are the ones loaded. An active-scan gate option
+  (`zap_active`, `nmap_vuln`, `sqlmap`) must be a YAML boolean; a quoted
+  `"false"` is refused. A target name is letters, digits, `.`, `_`, `-`,
+  not a Windows device name and not a case-variant of another target's.
+  `scan-meta.json` and `report.*` are written complete-then-renamed (a
+  same-directory temp, `newline="\n"`, fsynced before the swap, keeping
+  the file's mode or the umask's, the swap retried on a transient Windows
+  `PermissionError`); `report.pdf` too, with wkhtmltopdf bounded at 300 s.
+  `report --run-manifest` refuses a cell that is not a mapping of string
+  `target`, `tool` and `status`. The PyYAML install hint quotes the
+  interpreter path for the shell it will be pasted into.
+  Every routine-only flag, and `--run-manifest`, is refused on any other command.
+- **Unchanged.** The flat Nuclei report, byte for byte; every other subcommand
+  stays stdlib-only (`routine` imports routine.py, and so PyYAML, lazily); no
+  slash command; no hook; crew's endpoint-ledger path `docs/security-scans/<ep-id>.md`
+  is untouched, and the dated layout does not satisfy it (follow-up in `TODO.md`).
+- **Sabotage.** Twenty-nine entries, (a) to (ac), listed in
+  `plugin/gizmoduck/scripts/_test/test_routine_cli.py`'s docstring. (h) to (ac) and
+  the rewritten (d) came with the review round-1 fixes and were each run against
+  the committed `gizmoduck.py` and confirmed RED; (d) now fails the write itself
+  half-way, because failing before the write could not tell an atomic helper
+  from a plain `open(path, "w")`.
+- gizmoduck 0.5.3 -> 0.5.5: 0.5.4 was declared on this branch before the review round-2 fixes and never released, so the version is set again after the last content change and the drift check measures from there (`plugin.json`, `marketplace.json`, `plugin/PLUGINS.md`).
+
+### Changed — CI: crew's Windows suite runs as parallel jobs behind one required fan-in, repository tooling, no plugin version (L-0577)
+
+- **The Windows leg of `crew-shell-matrix` is now five jobs.** It was one serial job with a p50 of
+  37.1 min (default set 27.4, slow 8.8, wallclock 2.2), rerun on every open PR after each merge
+  because branch protection is strict. `.github/workflows/pytest-crew.yml` now runs
+  `crew-windows-default` (the default set, PowerShell parity sample included, split in 3 by
+  pytest-split 0.11.0), `crew-windows-slow` and `crew-windows-wallclock` (still serial) in
+  parallel, behind `crew-windows-decide` (T-0110's PR path rule, unchanged). The saving is not
+  measured yet; the first PR run is what measures it.
+- **The required check name did not change.** The fan-in `crew-windows-gate` is named
+  `crew-shell-matrix (windows-latest)`, runs `if: always()`, and passes only through
+  `scripts/check-windows-shards.py`: every Windows job succeeded, each shard collected the
+  identical default set, the shards' JUnit name every collected test exactly once, and slow and
+  wallclock ran exactly what they collected. Anything missing or unreadable fails it.
+  `crew-shell-matrix (ubuntu-latest)` keeps its name and commands.
+- **Every Windows set reports `--durations=50` and uploads its collection and JUnit** (14-day
+  artifacts); the default shards also upload pytest-split durations, so a later change can commit
+  a durations file and split by time rather than by count.
+- **One place to retarget.** Every `crew-windows-*` job takes `runs-on` from one
+  `crew-windows-decide` output (`windows-latest` today), and the Windows steps run under
+  `shell: pwsh` with `python`, so moving them to a self-hosted Windows pool changes one line.
+- `scripts/_test/windows-shards.py` (35 cases) tests the fan-in and runs in `marketplace.yml`;
+  `scripts/gate-runner.py` learns the `runner.os == 'Windows'` step condition and the fan-in call.
+
+### Changed — `crew` 1.0.126: `verify-gate --all` credits declared subset rules instead of re-running them (L-0572)
+
+- **A rule may carry `"id"`, and a rule may declare `"coveredBy": "<id>"`.** Under `--all` only, the
+  declared subset's commands move to the end of the run and are logged
+  `verify-gate: COVERED by rules[N] (passed this run)` instead of re-run, but only when every command
+  of the named rule exited 0 earlier in the same run and a snapshot of the working tree (HEAD, index,
+  every tracked and untracked path's bytes, mode and symlink target) is unchanged since before the
+  first command. Anything else runs the subset: the superset failed, skipped (77), was killed or did
+  not match; Stop mode; any `PYTEST_ADDOPTS`; a command also in `always` or in another rule; an
+  unknown, duplicate, self, chained or env-mismatched declaration (named in a notice); a snapshot that
+  cannot be taken (FIFOs, skip-worktree or assume-unchanged entries). One planner,
+  `verify_record.cover_plan`, serves both `verify-gate.sh` and `verify-gate.ps1`.
+- **A credited command is recorded as status `covered`**: clean for the obligation record, never
+  cached as a timing. CONFIG.md §19 documents the keys.
+- **This repo declares `rules[9]` as `crew-suite`**, and 23 pytest-only subset rules are covered by
+  it. Measured back to back on one host: `--all` 1164s on origin/main, 520s on the branch (23
+  credited). Owner-accepted risks: ignored files are outside the snapshot, and a credited subset
+  loses its local serial run when xdist is installed.
+- **Tests:** `plugin/crew/tests/test_verify_gate_subset_cover.py` (both flavours) and eleven
+  sabotage entries in `plugin/crew/tests/sabotage_tooling.py`, each red.
+
+### Changed — `session-defaults` 1.1.0 and `config-tuneup` 1.1.0: two skills renamed off the reserved `claude-` prefix (W-0120)
+
+- **`claude-code-defaults` is now `session-defaults`, and `claude-code-tuneup` is now
+  `config-tuneup`.** `claude plugin validate --strict` (claude CLI 2.1.287) refuses both old
+  names as reserved: a third party's plugin name cannot start with `claude-`. `_verify/smoke.sh`
+  runs that check wherever the CLI is installed, so it failed on every such machine and every
+  crew Stop gate failed with it. CI runs the same check but installs a pinned CLI, 2.1.278
+  (`.github/workflows/marketplace.yml`), and has stayed green with both names; 2.1.278 itself
+  was not run locally.
+- **What moved.** The directories (`git mv`), the marketplace entries, both install scripts'
+  skill catalogs, the three catalog lists (`README.md`, `skills/README.md`, `INSTALLATION.md`),
+  each `SKILL.md` frontmatter `name`, and the in-skill references. Every list stays
+  alphabetical, so both rows change position. The skills' content is otherwise unchanged.
+- **Migrating.** A copy installed under an old name no longer receives updates, because the
+  marketplace no longer lists it. Uninstall the old name, then install the new one:
+
+  ```
+  claude plugin uninstall claude-code-defaults@useful-claude-add-ons
+  claude plugin install session-defaults@useful-claude-add-ons
+  claude plugin uninstall claude-code-tuneup@useful-claude-add-ons
+  claude plugin install config-tuneup@useful-claude-add-ons
+  ```
+
+  Re-running either install script installs the new names, and it leaves the old ones
+  installed. Entries below this one keep the old names, because that is what they shipped as.
+
+### Fixed - `crew` 1.0.119: `review_run.py` writes the `.crew/metrics.md` row for every review round (L-0578)
+
+- **Cause.** The row was prose step 6 of `/crew:review`, after the verdict, notify and PR
+  review, and lanes and headless reviewers skipped it: on 2026-10-01 the review ledgers held 162
+  rounds and the main checkout's `.crew/metrics.md` 59 scored rows, with 27 of 49 tickets having
+  none anywhere. Rows written from a lane landed in the lane worktree's own gitignored `.crew/`,
+  which the main checkout never reads (25 of them).
+- **Fix.** New `review_metrics.py`, called by `review_run.finish` right after the ledger accepts
+  the round: one row per round into the MAIN checkout's `.crew/metrics.md`, also from a linked
+  worktree; `INCOMPLETE` count cells for a round with no verdict; the `std:` token the round was
+  reserved under (`<scratch>/reserved-std.json` for the claude provider's two calls), never one
+  recomputed; the reviewer's family against the author's, with where that came from
+  (`different family` only on a dispatch record, `family unknown` for an unreadable config or
+  marker, `same-family: codex limit` from a well-formed limit marker or `--note codex-probe=5`).
+  A link or junction at `.crew`, a linked metrics file or a FIFO is refused, not followed. A write
+  that fails never changes the verdict or exit code and prints the row to append by hand.
+  `review_patch.py` leaves `.crew/metrics.md` out of the bundle, so the row never stales a CLEAN
+  receipt. `commands/review.md` step 6 now forbids a hand-written scored row.
+- **Not here.** The readers (`crew_state.read_metrics`, `crew_standards.metric`, `/crew:status`)
+  still read `<root>/.crew/`, so from a linked worktree they do not see these rows yet (L-0582),
+  and the 118 historical rounds with no row are not backfilled (L-0583).
 
 ### Fixed — `crew` 1.0.115: refresh admission refuses a mode change that exists only in the index (W-0117)
 
@@ -11562,7 +11849,7 @@ A tooling change: this release carries no feature work.
   that already had `superpowers@claude-plugins-official` — which items 6 and 7 register —
   the install was skipped, leaving an orphaned `superpowers-marketplace` registration and
   a second, disabled `superpowers@superpowers-marketplace` entry: exactly the duplicate
-  [`skills/claude-code-tuneup`](skills/claude-code-tuneup/references/symptoms.md) tells you
+  [`skills/claude-code-tuneup`](skills/config-tuneup/references/symptoms.md) tells you
   to clean up. Item 4 now takes Superpowers from `anthropics/claude-plugins-official`, the
   marketplace the scripts already register elsewhere, so there is one source for it.
 

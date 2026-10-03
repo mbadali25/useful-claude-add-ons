@@ -16,7 +16,7 @@ It is never a pass.
 
 ## Codex CLI
 
-**What crew calls.** `review_run.command_for` (`plugin/crew/hooks/scripts/review_run.py:211-221`)
+**What crew calls.** `review_run.command_for` (`plugin/crew/hooks/scripts/review_run.py:222-232`)
 runs `codex exec` with these flags and nothing else:
 
 | Flag | Meaning |
@@ -46,14 +46,14 @@ Item details are `#[serde(tag = "type", rename_all = "snake_case")]`.
 
 **Where the docs and the source diverge.** The source also defines item types
 `collab_tool_call` and `error`, and the docs page does not list them.
-`review_verdict.CODEX_ITEM_TYPES` (`plugin/crew/hooks/scripts/review_verdict.py:82`)
-follows the source. `CODEX_EVENT_TYPES` (`:80`) is the eight event names.
+`review_verdict.CODEX_ITEM_TYPES` (`plugin/crew/hooks/scripts/review_verdict.py:100`)
+follows the source. `CODEX_EVENT_TYPES` (`:98`) is the eight event names.
 
 **Line separators arrive raw.** serde_json escapes only bytes 0x00-0x1F, `"`
 and `\` (its `ESCAPE` table, https://github.com/serde-rs/json/blob/master/src/ser.rs,
 read 2026-09-28). So U+2028 and U+2029 inside a message reach the stream
 unescaped. Python's `str.splitlines()` splits on them and cuts one event in
-two. `review_verdict.codex_final_message` (`:192`) splits on `"\n"` only. That
+two. `review_verdict.codex_final_message` (`:257`) splits on `"\n"` only. That
 bug cost T-0072 its round 4. The golden corpus commits one stream that carries
 raw U+2028 (`plugin/crew/tests/golden/review/uca-t0072--T-0072-build--2BJpY8/events.jsonl`).
 
@@ -61,7 +61,7 @@ raw U+2028 (`plugin/crew/tests/golden/review/uca-t0072--T-0072-build--2BJpY8/eve
 `agent_message` item's text. It counts a turn as complete only on
 `turn.completed`. A `turn.failed`, an `error` event or an unparseable line is
 an error, and a stream with no completed turn is also an error. The verdict
-parser (`review_run.py:406`) turns any of those into INCOMPLETE of class
+parser (`review_run.py:419`) turns any of those into INCOMPLETE of class
 `tool`, which is refunded. Every event and item type in the committed corpus is
 one of the documented types (`test_golden_codex_events_use_documented_types`).
 On 2026-09-28, the 26 local streams used only `thread.started`, `turn.started`,
@@ -107,9 +107,9 @@ Probed: not probed. The T-0087 host is Linux (Ubuntu) with no `wsl.exe`, so `tes
 
 **What crew calls.** On Windows, `shutil.which("codex")` or `shutil.which("copilot")`
 resolves an npm-installed CLI to its `.cmd` shim. `review_run.through_batch_shim`
-(`plugin/crew/hooks/scripts/review_run.py:186`) names a provider whose resolved
-path ends `.cmd` or `.bat` (`BATCH_SHIM_SUFFIXES`, `:147`), and
-`review_run.prompt_argument` (`:193`) never hands such a provider the prompt
+(`plugin/crew/hooks/scripts/review_run.py:197`) names a provider whose resolved
+path ends `.cmd` or `.bat` (`BATCH_SHIM_SUFFIXES`, `:158`), and
+`review_run.prompt_argument` (`:204`) never hands such a provider the prompt
 inline: it passes the one-line pointer to `prompt.txt` that an over-limit prompt
 already gets, and says why on stderr.
 

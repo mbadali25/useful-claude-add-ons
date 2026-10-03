@@ -137,6 +137,18 @@ def test_implement_refuses_without_approval():
     assert _implement_refuses_without_approval(text)
 
 
+def test_implement_names_every_checklist_exit_1_prefix():
+    """L-0592 (L-0575 round 2): recurring_findings.py exits 1 on a scope
+    UNKNOWN and on unreadable or malformed data, which print only UNREADABLE
+    or PROBLEM. Step 2 must name all three, or the implementer is told to read
+    a line that does not exist."""
+    text = _read(os.path.join(COMMANDS, "implement.md"))
+    step = text.split("\n## 2.", 1)[1].split("\n## ", 1)[0]
+    paragraph = next(p for p in step.split("\n\n") if "recurring_findings.py" in p)
+
+    assert [w for w in ("UNKNOWN", "UNREADABLE", "PROBLEM") if w not in paragraph] == []
+
+
 DONE_CHECKS = (
     'review_ledger.py --ticket "$1" --check-receipt',
     'crew_status.py --root .',
