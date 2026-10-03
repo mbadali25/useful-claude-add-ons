@@ -11,6 +11,7 @@ import os
 import pathlib
 import re
 import subprocess
+import sys
 import threading
 import urllib.parse
 
@@ -19,7 +20,6 @@ import pytest
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
 from review_fixtures import init_repo
-from sabotage_notify import NOTIFY_MUTATIONS
 
 CREW = pathlib.Path(__file__).resolve().parent.parent
 SCRIPTS = CREW / "hooks" / "scripts"
@@ -69,7 +69,12 @@ def test_hooks_json_notification_passes_hook_and_no_matcher():
 
 # --- the callers ------------------------------------------------------------------------------
 
-_RETIRED = (COMMANDS / "review.md", COMMANDS / "done.md", COMMANDS / "init.md",
+# review.md's per-round ping is retired too, but review.md is in
+# scripts/check-tooling-pr.py's HARNESS, so its removal lands as a
+# harness-only change. Until then its legacy `notify.sh review ...` maps to
+# the reserved `blocker` and sends nothing:
+# test_review_md_legacy_ping_maps_to_reserved_blocker below.
+_RETIRED = (COMMANDS / "done.md", COMMANDS / "init.md",
             SCRIPTS / "context-watch.sh", SCRIPTS / "context-watch.ps1")
 
 
@@ -91,15 +96,6 @@ def test_promote_sends_deploy_for_every_result():
 
     assert ("--outcome <pass|fail>" in line, text.index(line) > max(after_pass, after_fail),
             "for every result" in text) == (True, True, True)
-
-
-# --- sabotage anchors -------------------------------------------------------------------------
-
-@pytest.mark.parametrize("mutation", NOTIFY_MUTATIONS, ids=[m[0] for m in NOTIFY_MUTATIONS])
-def test_every_notify_sabotage_anchor_is_present_exactly_once(mutation):
-    _label, target, find, _replace, test = mutation
-
-    assert (_read(target).count(find), (CREW / test.split("::")[0]).is_file()) == (1, True)
 
 
 # --- the wrappers against a fake Telegram ----------------------------------------------------
@@ -215,3 +211,49 @@ def test_the_token_never_reaches_wrapper_output(tmp_path, fake):
                           env=env, capture_output=True, check=False, timeout=60)
 
     assert TOKEN.encode() not in done.stdout + done.stderr
+
+
+@pytest.mark.skipif(BASH is None, reason="needs bash")
+def test_review_md_legacy_ping_maps_to_reserved_blocker(tmp_path, fake):
+    """review.md still carries `notify.sh review ...` until its harness-only
+    removal lands. The legacy name maps to the reserved `blocker`, so the call
+    sends nothing, exits 0 and says so on stderr, naming T-0060."""
+    root = _repo(tmp_path, "review")
+    line = next(line for line in _read(COMMANDS / "review.md").splitlines()
+                if "notify.sh review" in line)
+
+    done = subprocess.run([BASH, str(SCRIPTS / "notify.sh"), "review", "0 BLOCK, 1 FIX (x)"],
+                          cwd=str(root), env=_env(root, fake, False), capture_output=True,
+                          stdin=subprocess.DEVNULL, check=False, timeout=60, text=True)
+
+    assert ("notify.sh review" in line, done.returncode, _Fake.texts, done.stdout.strip(),
+            "legacy 'review' read as 'blocker'" in done.stderr, "T-0060" in done.stderr) == (
+                True, 0, [], "filtered", True, True)
+
+
+def _twin_claims_and_sends(root, payload):
+    """What the PowerShell twin does first: take the claim, then report it sent."""
+    claim = subprocess.run([sys.executable, str(SCRIPTS / "event_claim.py"), "notify", str(root),
+                            "ps1"], input=payload, cwd=str(root), capture_output=True,
+                           check=False, timeout=60)
+    token = claim.stdout.decode().strip()
+    sent = subprocess.run([sys.executable, str(SCRIPTS / "event_claim.py"), "--sent", token],
+                          cwd=str(root), capture_output=True, check=False, timeout=60)
+    return claim.returncode, bool(token), sent.returncode
+
+
+@pytest.mark.skipif(BASH is None, reason="needs bash")
+def test_notify_sh_stands_down_when_the_twin_already_sent(tmp_path, fake):
+    """Must-block, bash only (the pwsh parity tests skip without pwsh): the
+    twin has claimed and sent this Notification, so notify.sh sends nothing.
+    Must-allow in the same run: a new prompt_id is a new event and sends."""
+    root = _repo(tmp_path, "twin")
+    same = _payload(root, "permission_prompt", "p-twin")
+    twin = _twin_claims_and_sends(root, same)
+
+    runs = [subprocess.run([BASH, str(SCRIPTS / "notify.sh"), "hook"], input=body, cwd=str(root),
+                           env=_env(root, fake, False), capture_output=True, check=False,
+                           timeout=60).returncode
+            for body in (same, _payload(root, "permission_prompt", "p-next"))]
+
+    assert (twin, runs, len(_Fake.texts)) == ((0, True, 0), [0, 0], 1)

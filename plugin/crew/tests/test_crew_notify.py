@@ -145,6 +145,13 @@ def _isolate(tmp_path, monkeypatch):
     monkeypatch.setattr(crew_notify, "SKILL_CONFIG_PATH", str(tmp_path / "no-skill.json"))
     monkeypatch.setattr(crew_notify, "PACE_SECONDS", 0.0)
     monkeypatch.setenv(TOKEN_ENV, TOKEN)
+    # Never the real network and never this machine's own global config: a
+    # test that does not ask for the fake Telegram gets a closed local port,
+    # and one that does not call _global gets no global layer at all.
+    monkeypatch.setenv("CREW_NOTIFY_TELEGRAM_BASE", "http://127.0.0.1:9")
+    missing = str(tmp_path / "no-global-config.json")
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", missing)
+    monkeypatch.setattr(crew_config.crew_state, "GLOBAL_CONFIG_PATH", missing)
 
 
 def _repo(tmp_path, notify=None, ticket=("T-0042", "implement")):
@@ -773,3 +780,18 @@ def test_every_entry_point_exits_0(tmp_path, case):
         runs.append(_cli(root, "send", "--outcome", "maybe", env=env))
 
     assert [run.returncode for run in runs] == [0] * len(runs)
+
+
+def test_shipped_defaults_send_nothing(tmp_path, monkeypatch, telegram, capsys):
+    """Off by default: a repo written from the shipped template under the
+    shipped global template sends nothing, for a question or a deploy."""
+    template = json.loads((pathlib.Path(crew_config.__file__).resolve().parent.parent.parent
+                           / "templates" / "config.template.json").read_text(encoding="utf-8"))
+    root = _repo(tmp_path, notify=template["notify"])
+    _global(tmp_path, monkeypatch, crew_config.default_global_config()["notify"])
+
+    words = (crew_notify.hook(str(root), json.dumps(_payload("permission_prompt", root)).encode()),
+             crew_notify.send(str(root), "deploy", "qa abc - FAILED at gate 2", outcome="fail"))
+
+    assert (words, telegram.requests, "notify.provider is none" in capsys.readouterr().err) == (
+        ("off", "off"), [], True)

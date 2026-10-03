@@ -364,7 +364,10 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # by running this test on T-0040-land after merging main 844bfc36.
     assert "qa.kimi.model" in declared
     assert "dev.kimi.model" in declared
-    assert len(declared) == 129
+    # 131 with T-0051's `notify.realertHours` and `notify.questionTypes`,
+    # measured by running this test after merging main (crew 1.0.167).
+    assert {"notify.realertHours", "notify.questionTypes"} <= declared
+    assert len(declared) == 131
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():

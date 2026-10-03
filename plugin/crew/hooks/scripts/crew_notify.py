@@ -622,7 +622,9 @@ def _deliver(root, cfg, event, reason, ticket, unblock, kind, episode):
 
 def _filter(cfg, event):
     """`(event, result_or_None)`: the mapped event, or the word to return."""
-    event = LEGACY.get(event, event)
+    if event in LEGACY:
+        _say(f"legacy '{event}' read as '{LEGACY[event]}'")
+        event = LEGACY[event]
     if event in RESERVED:
         _say(f"'{event}' is reserved until T-0060 gives it a sender; nothing sent")
         return event, "filtered"

@@ -156,7 +156,7 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "context": { "enabled": true, "warnAt": 0.5, "budgetTokens": null, "reserveTokens": 0, "handoffPath": ".work/HANDOFF.md", "keepTranscripts": 5, "autoClear": { "enabled": null, "method": "auto", "windowTitle": null, "command": "/clear", "delaySeconds": 3, "minHandoffLines": 5, "unsafeFocus": false, "onlyRepos": null, "onlySessions": null }, "autoWrapUp": true, "autoResume": true, "staleHandoff": { "maxAgeHours": 72, "maxCommitsBehind": 3 } },
   "resume": { "auto": null },
   "emergency": { "standDown": true, "ttlMinutes": 120, "maxTtlMinutes": 480 },
-  "notify": { "provider": "none", "urlEnv": null, "tokenEnv": null, "chatId": null, "events": ["phase", "gate", "waiting"] },
+  "notify": { "provider": null, "urlEnv": null, "tokenEnv": null, "chatId": null, "events": ["blocker", "deploy", "question"], "realertHours": 6, "questionTypes": null },
   "platform": { "os": null, "wsl": null, "shell": null, "windowsHostIp": null },
   "shellRoute": { "mode": null, "distro": null },
   "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only", "ticketGranularity": "system", "maxDispatches": 3 },

@@ -148,7 +148,9 @@ so a failed send is retried next time rather than lost.
 **Retired.** The per-phase, per-review and per-ticket pings are gone. An old
 config's `events` still works: `gate` reads as `deploy`, `waiting` as
 `question`, and `phase`, `review` and `done` as the reserved `blocker` - each
-with a one-line notice, never a silent drop.
+with a one-line notice, never a silent drop. `/crew:review` still carries its
+`notify.sh review` line until a harness-only change removes it; it maps to
+`blocker` and sends nothing.
 
 Secrets live in environment variables. The webhook URL **is** the credential for
 Teams — anyone holding it can post to that channel as the Flow bot. Treat it
