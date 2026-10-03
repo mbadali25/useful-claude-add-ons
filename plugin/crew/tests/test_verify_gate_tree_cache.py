@@ -1,8 +1,8 @@
 """The verify gate's tree-pass cache (verify_record.passes_load / passes_save).
 
 A command that passed is credited, not re-run, while the tree is byte-for-byte
-the tree it passed on -- tree_snapshot(stable=True): HEAD, the deciders, and
-every tracked and untracked path. MUST-ALLOW: an acutely deferred Stop on an
+the tree it passed on -- tree_snapshot(stable=True): HEAD, every ref, the
+deciders, and every tracked and untracked path. Only at Stop, never --all. MUST-ALLOW: an acutely deferred Stop on an
 unchanged tree runs only what it has not run yet, and converges. MUST-BLOCK:
 any edit anywhere, a rule that edits the tree while it runs, a failure,
 CREW_VERIFY_FRESH=1 and a corrupt cache all mean "run it again".
@@ -271,3 +271,45 @@ def test_a_tree_that_moves_after_a_credit_withdraws_it(flavour, tmp_path):
     assert fourth.returncode == 0, fourth.stderr
     assert _log(log) == ["A", "B", "A", "B"], fourth.stderr
     assert _marker(root) == _head(root), fourth.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_withdrawn_credit_never_clears_the_rule_s_record(flavour, tmp_path):
+    """MUST-BLOCK (review r2). The withdrawal drops a credited command's log
+    line before the record sync, not only the marker: kept, it would read as
+    "covered", the rule as clean, and a standing record entry for it -- an
+    obligation still owed -- would be popped by a run that never checked it
+    on the tree it ended on. A dropped line reads as "not run" and leaves the
+    entry exactly as it was."""
+    import verify_record  # pylint: disable=import-outside-toplevel
+    log = tmp_path / "ran.log"
+    rule_a = _rule("A", 40, log)
+    root = _repo(tmp_path, [rule_a, _rule("B", 40, log, " && echo y > generated.txt")])
+    assert _run(flavour, root).returncode == 0
+    assert _log(log) == ["A"]
+    _forget_timings(root)
+    record = root / ".crew" / ".verify-gate.record.json"
+    data = json.loads(record.read_text(encoding="utf-8")) if record.exists() else {}
+    owed = {"status": "skipped", "reason": "owed", "label": "A", "sha": ""}
+    data.setdefault("rules", {})[verify_record.rule_key(rule_a)] = owed
+    record.write_text(json.dumps(data), encoding="utf-8")
+
+    second = _run(flavour, root)
+    assert second.returncode == 0, second.stderr
+    assert _log(log) == ["A", "B"], second.stderr
+    assert "withdrawn" in second.stderr, second.stderr
+    rules = json.loads(record.read_text(encoding="utf-8")).get("rules", {})
+    assert rules.get(verify_record.rule_key(rule_a)) == owed, (
+        "a withdrawn credit cleared rule A's standing record entry. " + second.stderr)
+
+
+def test_refs_that_cannot_be_listed_mean_no_stable_snapshot(tmp_path, monkeypatch):
+    """MUST-BLOCK (review r2). Could-not-tell about the refs is no key at all
+    -- never a key without them, which would credit across a fetch."""
+    import verify_record  # pylint: disable=import-outside-toplevel
+    assert verify_record._refs_digest(str(tmp_path)) is None  # pylint: disable=protected-access
+    root = _repo(tmp_path, [])
+    assert verify_record.tree_snapshot(str(root), stable=True)
+    monkeypatch.setattr(verify_record, "_refs_digest", lambda _root: None)
+    assert verify_record.tree_snapshot(str(root), stable=True) is None
+    assert verify_record.tree_snapshot(str(root)), "the coverage snapshot never reads refs"

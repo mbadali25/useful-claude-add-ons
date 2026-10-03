@@ -2052,7 +2052,9 @@ elif [ "$SYNC_STATUS" -ne 0 ]; then
 elif [ "$ANY_SKIPPED" -ne 0 ]; then
   echo "verify-gate: the verified baseline was NOT advanced - at least one command exited 77 (SKIP) and was not actually checked this turn." >&2
 elif [ "${TREE_MOVED:-0}" -ne 0 ]; then
-  echo "verify-gate: the verified baseline was NOT advanced - the tree changed during this run, and $TREE_N credited command(s) were not checked against it." >&2
+  ALSO_DEFERRED=""
+  [ "${DEFERRED_COUNT:-0}" -gt 0 ] && ALSO_DEFERRED="; $DEFERRED_COUNT rule command(s) were also deferred"
+  echo "verify-gate: the verified baseline was NOT advanced - the tree changed during this run, and $TREE_N credited command(s) were not checked against it$ALSO_DEFERRED." >&2
 else
   echo "verify-gate: the verified baseline was NOT advanced - $DEFERRED_COUNT rule command(s) were deferred and have not been checked against this tree." >&2
 fi

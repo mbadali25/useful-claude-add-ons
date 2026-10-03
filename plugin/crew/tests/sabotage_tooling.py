@@ -545,6 +545,26 @@ TOOLING_MUTATIONS += (
         ("tests/test_verify_gate_tree_cache.py::"
          "test_a_tree_that_moves_after_a_credit_withdraws_it"),
     ),
+    (
+        # Review r2: the withdrawn credits' log lines reach the record sync,
+        # so the rule reads as clean and its standing entry is popped.
+        "a withdrawn tree-pass credit still reaches the record sync",
+        GATE_SH,
+        "      CMD_LOG=$(printf '%s\\n' \"$CMD_LOG\" | grep -v '\"tree\": true}$' || true)\n",
+        "      :\n",
+        ("tests/test_verify_gate_tree_cache.py::"
+         "test_a_withdrawn_credit_never_clears_the_rule_s_record"),
+    ),
+    (
+        # Review r2: refs that cannot be listed read as "no refs", a key
+        # that then credits across a fetch.
+        "record: refs that cannot be listed still give a stable snapshot",
+        VERIFY_RECORD,
+        "        if refs is None:\n            return None\n",
+        "        refs = refs or \"\"\n",
+        ("tests/test_verify_gate_tree_cache.py::"
+         "test_refs_that_cannot_be_listed_mean_no_stable_snapshot"),
+    ),
 )
 if shutil.which("pwsh"):
     TOOLING_MUTATIONS += (
@@ -589,5 +609,13 @@ if shutil.which("pwsh"):
             "      if ($treeN -gt 0) {\n        $treeMoved = $false\n      }\n",
             ("tests/test_verify_gate_tree_cache.py::"
              "test_a_tree_that_moves_after_a_credit_withdraws_it"),
+        ),
+        (
+            "the PowerShell gate keeps a withdrawn credit in the record sync",
+            GATE_PS1,
+            "  $cmdLog = [System.Collections.ArrayList]@(@($cmdLog) | Where-Object { -not $_.Contains('tree') })\n",
+            "  $cmdLog = [System.Collections.ArrayList]@($cmdLog)\n",
+            ("tests/test_verify_gate_tree_cache.py::"
+             "test_a_withdrawn_credit_never_clears_the_rule_s_record"),
         ),
     )
