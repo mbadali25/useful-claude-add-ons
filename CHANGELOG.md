@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed - `crew` (version allocated at land): the recurring-findings checklist's L-0575 round-2 findings (L-0592)
+### Fixed - `crew` 1.0.139: the recurring-findings checklist's L-0575 round-2 findings (L-0592)
 
 - **No hang on a FIFO.** `recurring_findings.py` reads a spec or its data file only when it is a
   regular file: refused by its stat before any open, then opened non-blocking and refused by
