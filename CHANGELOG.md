@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Fixed - `crew` 1.0.164: pre-review checks, L-0574's round-10 follow-ups (L-0605)
+### Fixed - `crew` 1.0.168: pre-review checks, L-0574's round-10 follow-ups (L-0605)
 
 - **PSScriptAnalyzer's clean output.** Review round 10 reported that a clean `.ps1` printed `[null]`
   and read COULD NOT CHECK. It did not reproduce on Linux (pwsh 7.6.5, PSSA 1.25.0) or on Windows
