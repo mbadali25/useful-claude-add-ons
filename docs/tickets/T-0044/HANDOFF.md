@@ -9,7 +9,7 @@ Handed to a cloud session on 2026-10-03 by owner instruction. Do not pick up loc
 - **Review ledger:** none (no review round reserved)
 - **Branch:** `T-0044-build`
 - **Ticket files published here:** `docs/tickets/T-0044/direction.md`, `docs/tickets/T-0044/plan.md`, `docs/tickets/T-0044/spec.md`
-- **Branch state:** existing local branch, 0 commit(s) not on main; pushed as is
+- **Branch state:** new branch from origin/main; no implementation yet (docs only)
 
 The ticket files are copies of the gitignored `.work/tickets/T-0044/` as of 2026-10-03. `direction.md` is the approved direction, `spec.md` the ticket contract, and `plan.md` the approved step plan where present. Read them before writing code.
 
