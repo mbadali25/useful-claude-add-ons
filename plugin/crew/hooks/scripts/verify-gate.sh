@@ -1149,6 +1149,31 @@ for _ri in sorted(measured_below):
     notices.append("verify-gate: rules[%d] priced at %ss, measured on this machine, below its declared %ss"
                    % (_ri, int(rule_secs[_ri]), measured_below[_ri]))
 
+# --- the tree-pass cache (verify_record.passes_load) ------------------------
+# A command that passed on this exact tree (tree_snapshot(stable=True): HEAD,
+# the deciders, and every tracked and untracked path's bytes, type and mode)
+# is credited by the run loop instead of re-run. A RULE every one of whose
+# commands is credited costs nothing here, so it cannot spend the budget or
+# be deferred: an acutely deferred Stop on an unchanged tree runs what it has
+# not run yet, instead of the same cheap rules again. Any failure here means
+# an empty cache, and every command runs.
+tree_snap, tree_cached = "", set()
+if _vr is not None and hasattr(_vr, "passes_load"):
+    try:
+        tree_snap = _vr.tree_snapshot(".", stable=True) or ""
+        tree_cached = _vr.passes_load(".", tree_snap)
+    except Exception:  # pylint: disable=broad-except
+        tree_snap, tree_cached = "", set()
+for _ri in rule_order:
+    if (_ri in rule_secs and rule_cmds.get(_ri)
+            and all(c in tree_cached for c in rule_cmds[_ri])):
+        rule_secs[_ri] = 0
+if tree_cached:
+    _n = sum(1 for c in cmds if c in tree_cached)
+    if _n:
+        notices.append("verify-gate: %d command(s) passed on this exact tree in an earlier run "
+                       "and are credited, not re-run (CREW_VERIFY_FRESH=1 runs them anyway)" % _n)
+
 if budget is not None:
     unknown = [c for c in cmds if c not in cost]
     # MANDATORY-NESS IS A PROPERTY OF THE RULE, NOT OF A COMMAND ON ITS OWN,
@@ -1332,7 +1357,9 @@ sys.stdout.write("\x1e".join(cmds) + "\x1d" + "\x1e".join(unmatched) + "\x1d" + 
                  + "\x1d" + str(acute_count)
                  + "\x1d" + str(int(max_cost))
                  + "\x1d" + extras
-                 + "\x1d" + cover_record + "\n")
+                 + "\x1d" + cover_record
+                 + "\x1d" + "\x1e".join("1" if c in tree_cached else "" for c in cmds)
+                 + "\x1d" + tree_snap + "\n")
 PY
 )
 # CAPTURE FIRST, STRIP SECOND - not piped directly through `tr -d '\r'` on
@@ -1429,6 +1456,14 @@ COVER_AT=()
 while IFS= read -r COVER_LINE; do
   COVER_AT+=("$COVER_LINE")
 done <<< "$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 7p | tr '\036' '\n')"
+# Records 8 and 9: which positions passed on this exact tree in an earlier
+# run, and the snapshot the matcher read that from. Missing or short means
+# "not cached", which runs the command - the safe direction.
+TREE_AT=()
+while IFS= read -r TREE_LINE; do
+  TREE_AT+=("$TREE_LINE")
+done <<< "$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 8p | tr '\036' '\n')"
+TREE_SNAP=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 9p | tr '\036' '\n' | tr -d '\r\n')
 if [ -n "$NOTICES" ]; then
   printf '%s\n' "$NOTICES" >&2
 fi
@@ -1563,6 +1598,20 @@ lock_extend
 # bytes of every tracked and untracked path) is taken before the first
 # command and again at the first credit; unequal, or unreadable either time,
 # turns credit off for the rest of the run and every subset runs.
+# The tree-pass cache, run-time half: the tree the loop starts on must be the
+# one the matcher read the cache for, or nothing is credited; and the passes
+# are saved after the loop only if the tree is STILL that one.
+TREE_PRE=""
+TREE_CREDIT=0
+TREE_N=0
+if [ -n "$PY" ] && [ -n "$TREE_SNAP" ]; then
+  TREE_PRE=$("$PY" "$FP_DIR/verify_record.py" tree-snapshot --stable 2>/dev/null | tr -d '\r')
+  if [ "$TREE_PRE" = "$TREE_SNAP" ]; then
+    TREE_CREDIT=1
+  elif printf '%s\n' "${TREE_AT[@]}" | grep -q .; then
+    echo "verify-gate: the tree changed between reading the tree-pass cache and running - nothing credited from it, every command runs" >&2
+  fi
+fi
 POS=-1
 STATUS_AT=()
 COVERED_N=0
@@ -1620,6 +1669,15 @@ print(text + "\x1e" + (envjson if sep else ""), end="")
   fi
   c="${SPLIT%%$'\x1e'*}"
   ENV_JSON="${SPLIT#*$'\x1e'}"
+  if [ "$TREE_CREDIT" = 1 ] && [ "${TREE_AT[$POS]:-}" = 1 ]; then
+    echo "verify-gate: PASSED on this exact tree in an earlier run - not re-run: $c" >&2
+    STATUS_AT[$POS]="covered"
+    TREE_N=$((TREE_N + 1))
+    LOG_LINE=$("$PY" -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": "covered", "elapsed": 0}))' "$IDENT" 2>/dev/null | tr -d '\r')
+    [ -n "$LOG_LINE" ] && CMD_LOG="$CMD_LOG
+$LOG_LINE"
+    continue
+  fi
   GUARD="${COVER_AT[$POS]:-}"
   if [ -n "$GUARD" ] && cover_credit "$GUARD"; then
     echo "verify-gate: COVERED by rules[${GUARD%%;*}] (passed this run): $c" >&2
@@ -1853,6 +1911,24 @@ echo "verify-gate: ${TOTAL_ELAPSED}s total across $(printf '%s
 ' "$CMDS" | grep -c .) rule command(s)" >&2
 if [ "$COVERED_N" -gt 0 ]; then
   echo "verify-gate: $COVERED_N of them COVERED by a declared superset rule that passed this run - not re-run" >&2
+fi
+if [ "$TREE_N" -gt 0 ]; then
+  echo "verify-gate: $TREE_N of them PASSED on this exact tree in an earlier run - not re-run" >&2
+fi
+# Save what passed, for this tree only, and only when the tree did not move
+# while the rules ran: a rule that edits files, or an edit made meanwhile,
+# means the passes describe no single tree, so the cache is cleared instead.
+if [ -n "$PY" ] && [ -f "$FP_DIR/verify_record.py" ]; then
+  if [ -z "$TREE_PRE" ]; then
+    TREE_PRE=$("$PY" "$FP_DIR/verify_record.py" tree-snapshot --stable 2>/dev/null | tr -d '\r')
+    [ "$TREE_PRE" = "$TREE_SNAP" ] || TREE_PRE=""
+  fi
+  TREE_POST=$("$PY" "$FP_DIR/verify_record.py" tree-snapshot --stable 2>/dev/null | tr -d '\r')
+  if [ -n "$TREE_PRE" ] && [ "$TREE_PRE" = "$TREE_POST" ]; then
+    printf '%s\n' "$CMD_LOG" | "$PY" "$FP_DIR/verify_record.py" passes-save "$TREE_PRE" >&2
+  else
+    "$PY" "$FP_DIR/verify_record.py" passes-clear >/dev/null 2>&1
+  fi
 fi
 
 if [ -n "$UNMAPPED" ] && grep -q '"unmapped"[[:space:]]*:[[:space:]]*"fail"' .crew/verify.json; then

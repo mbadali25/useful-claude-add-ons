@@ -1262,6 +1262,40 @@ foreach ($ri in ($measuredUsed.Keys | Sort-Object)) {
 foreach ($ri in ($measuredBelow.Keys | Sort-Object)) {
   [void]$notices.Add("verify-gate: rules[$ri] priced at $([int]$ruleSecs[$ri])s, measured on this machine, below its declared $($measuredBelow[$ri])s")
 }
+# --- the tree-pass cache - the twin of verify-gate.sh's block ---------------
+# A command that passed on this exact tree (verify_record.py tree-snapshot
+# --stable) is credited by the run loop, not re-run; a rule every one of
+# whose commands is credited costs nothing, so it cannot spend the budget or
+# be deferred. Any failure here: an empty cache, and every command runs.
+$treeSnap = ""
+$treeCached = @{}
+if ($matchPy -and (Test-Path $verifyRecordScript)) {
+  Push-Location $root
+  try {
+    $global:LASTEXITCODE = 0
+    $snapOut = (& $matchPy $verifyRecordScript tree-snapshot --stable 2>$null) | Out-String
+    if ($LASTEXITCODE -eq 0) { $treeSnap = $snapOut.Trim() }
+    if ($treeSnap) {
+      $global:LASTEXITCODE = 0
+      $loadOut = (& $matchPy $verifyRecordScript passes-load $treeSnap 2>$null) | Out-String
+      if ($LASTEXITCODE -eq 0 -and $loadOut.Trim()) {
+        foreach ($id in @($loadOut | ConvertFrom-Json -ErrorAction Stop)) {
+          if ($id -is [string]) { $treeCached[$id] = $true }
+        }
+      }
+    }
+  } catch { $treeSnap = ""; $treeCached = @{} } finally { Pop-Location }
+}
+foreach ($ri in $ruleOrder) {
+  if ($ruleSecs.ContainsKey($ri) -and @($ruleCmds[$ri]).Count -gt 0 -and
+      @(@($ruleCmds[$ri]) | Where-Object { -not $treeCached.ContainsKey($_) }).Count -eq 0) {
+    $ruleSecs[$ri] = [double]0
+  }
+}
+$treeHits = @($cmds | Where-Object { $treeCached.ContainsKey($_) }).Count
+if ($treeHits -gt 0) {
+  [void]$notices.Add("verify-gate: $treeHits command(s) passed on this exact tree in an earlier run and are credited, not re-run (CREW_VERIFY_FRESH=1 runs them anyway)")
+}
 $chronicRules = [System.Collections.ArrayList]@()
 $acuteRules = [System.Collections.ArrayList]@()
 # The deferred COUNT, kept apart from the notice TEXT. $notices mixes two
@@ -1637,6 +1671,33 @@ function Get-CrewTreeSnapshot {
     return ""
   } catch { return "" } finally { Pop-Location }
 }
+# The tree the loop starts on must be the one the cache was read for, or
+# nothing is credited; passes are saved after the loop only if it is still
+# that tree - the twin of verify-gate.sh's TREE_PRE / TREE_POST.
+function Get-CrewStableSnapshot {
+  if (-not $matchPy -or -not (Test-Path $verifyRecordScript)) { return "" }
+  Push-Location $root
+  try {
+    $global:LASTEXITCODE = 0
+    $out = (& $matchPy $verifyRecordScript tree-snapshot --stable 2>$null) | Out-String
+    if ($LASTEXITCODE -eq 0) { return $out.Trim() }
+    return ""
+  } catch { return "" } finally { Pop-Location }
+}
+$treePre = ""
+$treeCredit = $false
+$treeN = 0
+if ($treeSnap) {
+  $treePre = Get-CrewStableSnapshot
+  if ($treePre -and $treePre -eq $treeSnap) {
+    $treeCredit = $true
+  } else {
+    $treePre = ""
+    if ($treeHits -gt 0) {
+      [Console]::Error.WriteLine("verify-gate: the tree changed between reading the tree-pass cache and running - nothing credited from it, every command runs")
+    }
+  }
+}
 $pos = -1
 $statusAt = @{}
 $coveredN = 0
@@ -1649,6 +1710,13 @@ foreach ($ident in $cmds) {
   # Get-CrewIdentity above. Split it in-process (PowerShell strings need no
   # subprocess round-trip the way bash's read loop does).
   $c = Get-CrewIdentityText $ident
+  if ($treeCredit -and $treeCached.ContainsKey($ident)) {
+    [Console]::Error.WriteLine("verify-gate: PASSED on this exact tree in an earlier run - not re-run: $c")
+    $statusAt[$pos] = "covered"
+    $treeN++
+    [void]$cmdLog.Add([ordered]@{ cmd = $ident; status = "covered"; elapsed = 0 })
+    continue
+  }
   $guard = if ($pos -lt $coverGuards.Count) { $coverGuards[$pos] } else { $null }
   $credit = $false
   if ($guard) {
@@ -1963,6 +2031,20 @@ if ($coveredN -gt 0) {
   [Console]::Error.WriteLine("verify-gate: $coveredN of them COVERED by a declared superset rule that passed this run - not re-run")
 }
 Set-Location $root
+if ($treeN -gt 0) {
+  [Console]::Error.WriteLine("verify-gate: $treeN of them PASSED on this exact tree in an earlier run - not re-run")
+}
+if ($matchPy -and (Test-Path $verifyRecordScript)) {
+  try {
+    $treePost = Get-CrewStableSnapshot
+    if ($treePre -and $treePre -eq $treePost) {
+      $logLines = @($cmdLog | ForEach-Object { ConvertTo-Json -Compress -Depth 5 -InputObject $_ }) -join "`n"
+      $logLines | & $matchPy $verifyRecordScript passes-save $treePre 2>&1 | ForEach-Object { [Console]::Error.WriteLine($_) }
+    } else {
+      & $matchPy $verifyRecordScript passes-clear *> $null
+    }
+  } catch { }
+}
 
 if ($unmapped.Count -gt 0 -and $vm.unmapped -eq "fail") {
   [Console]::Error.WriteLine("UNMAPPED CHANGES - .crew/verify.json has no rule for:")

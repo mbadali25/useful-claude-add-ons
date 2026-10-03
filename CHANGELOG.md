@@ -4,6 +4,26 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.139: the verify gate does not re-run what already passed on this exact tree
+
+- Both gate flavours credit a command that passed on this exact tree instead of re-running it.
+  The key is `verify_record.tree_snapshot(stable=True)`: HEAD, the deciders, and every tracked and
+  untracked path's bytes, type and mode, minus the gate's own files by name (the lock it holds,
+  the marker and record the last run wrote), so any edit anywhere empties it. A per-rule key on a
+  rule's own `paths` would be unsound: a rule reads more than the paths that trigger it.
+- A rule all of whose commands are credited costs 0 against the Stop budget. An acutely deferred
+  Stop on an unchanged tree used to re-run the same rules and defer the same one again; it now
+  runs what it has not run yet and converges. `/crew:verify --all` on the tree a Stop just
+  checked skips what that Stop ran.
+- Passes are saved only when the tree is the same after the loop as before it (a rule that edits
+  files leaves no cache), only for status `pass`, and merged with what was already recorded for
+  that same tree. `CREW_VERIFY_FRESH=1` runs everything. Written to a temp file and renamed.
+- `tests/test_verify_gate_tree_cache.py`: convergence, three kinds of edit, a tree-editing rule, a
+  failure, and FRESH / corrupt / other-tree caches. Sabotage-checked eight ways (sh and record
+  entries registered; the ps1 twins checked by hand under `pwsh` 7.4 with `OS=Windows_NT`, and the
+  whole file passes for both flavours that way). Also re-anchors three existing sabotage entries
+  (the matcher's record separator, and golden_build's two host-name entries 1.0.138 moved).
+
 ### Fixed — `crew` 1.0.138: the golden leak check reads the host name as a whole word; `/crew:review` says when it skips a provider it cannot run
 
 - `golden_build.leak` finds the host name only as a whole word, the boundary `redact` already

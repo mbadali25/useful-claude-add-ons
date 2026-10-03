@@ -2420,10 +2420,13 @@ MUTATIONS = (
         '              + "\\x1d" + str(acute_count)\n   '
         '              + "\\x1d" + str(int(max_cost))\n   '
         '              + "\\x1d" + extras\n   '
-        '              + "\\x1d" + cover_record + "\\n")',
+        '              + "\\x1d" + cover_record\n   '
+        '              + "\\x1d" + "\\x1e".join("1" if c in tree_cached else "" for c in cmds)\n   '
+        '              + "\\x1d" + tree_snap + "\\n")',
         'print("\\x1e".join(cmds))\nprint("\\x1e".join(unmatched'
         '))\nprint("\\x1e".join(notices))\nprint(str(acute_count'
-        '))\nprint(str(int(max_cost)))\nprint(extras)\nprint(cover_record)',
+        '))\nprint(str(int(max_cost)))\nprint(extras)\nprint(cover_record)'
+        '\nprint("\\x1e".join("1" if c in tree_cached else "" for c in cmds))\nprint(tree_snap)',
         ("tests/test_verify_gate_rule_framing.py::"
          "test_the_two_halves_of_the_framing_contract_agree"),
     ),
@@ -2819,6 +2822,44 @@ MUTATIONS = (
         "                            and 0 < cached < secs):\n",
         ("tests/test_verify_gate_stop_budget.py::"
          "test_an_unusable_measurement_leaves_the_declared_price"),
+    ),
+    (
+        # The tree-pass cache stops zeroing a fully-credited rule's price: it
+        # is credited if it runs, but it still spends the budget, so the rule
+        # it was deferring stays deferred on every Stop of an unchanged tree.
+        "a rule that passed on this exact tree still spends the Stop budget",
+        VERIFY_SH,
+        "        rule_secs[_ri] = 0\n",
+        "        pass\n",
+        ("tests/test_verify_gate_tree_cache.py::"
+         "test_an_acutely_deferred_stop_converges_on_an_unchanged_tree"),
+    ),
+    (
+        # Its PowerShell twin.
+        "the PowerShell gate charges a rule that passed on this exact tree",
+        VERIFY_PS1,
+        "    $ruleSecs[$ri] = [double]0\n",
+        "    $null = $ri\n",
+        ("tests/test_verify_gate_tree_cache.py::"
+         "test_an_acutely_deferred_stop_converges_on_an_unchanged_tree"),
+    ),
+    (
+        # Passes saved although the tree moved while the rules ran: they then
+        # describe no single tree, and the next run credits them anyway.
+        "the tree-pass cache is saved after the tree moved during the run",
+        VERIFY_SH,
+        '  if [ -n "$TREE_PRE" ] && [ "$TREE_PRE" = "$TREE_POST" ]; then\n',
+        '  if [ -n "$TREE_PRE" ]; then\n',
+        ("tests/test_verify_gate_tree_cache.py::"
+         "test_a_rule_that_edits_the_tree_leaves_no_cache"),
+    ),
+    (
+        "the PowerShell gate saves the tree-pass cache after the tree moved",
+        VERIFY_PS1,
+        "    if ($treePre -and $treePre -eq $treePost) {\n",
+        "    if ($treePre) {\n",
+        ("tests/test_verify_gate_tree_cache.py::"
+         "test_a_rule_that_edits_the_tree_leaves_no_cache"),
     ),
     (
         # A gitlink goes back to being read as a file. `open()` on a directory

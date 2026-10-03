@@ -568,7 +568,7 @@ def cover_plan(rules, rule_order, rule_cmds, cmds, always=(), environ=None):
     return order, guards, notices
 
 
-def tree_snapshot(root):
+def tree_snapshot(root, stable=False):
     """A digest of the whole working tree as the checks would read it - HEAD,
     the deciders, and the index entry and bytes of every tracked, deleted,
     renamed and untracked (not ignored) path - or None when git cannot list
@@ -602,11 +602,81 @@ def tree_snapshot(root):
                                     for e in flags.stdout.decode("utf-8", "surrogateescape").split("\0") if e):
         return None
     paths = sorted(set(listing))
+    if stable:
+        # ACROSS runs (the tree-pass cache), the gate's own files differ by
+        # construction -- the lock it holds now, the marker and record the
+        # last run wrote -- so they are left out by NAME, the list the
+        # fingerprint already excludes. Within one run (coverage) they stay
+        # in, unchanged from before.
+        import verify_fingerprint  # pylint: disable=import-outside-toplevel
+        paths = [p for p in paths
+                 if not verify_fingerprint._gate_owned(p.replace(os.sep, "/"))]  # pylint: disable=protected-access
     meta = _tree_meta(root, paths)
     if meta is None:
         return None
     import verify_fingerprint  # pylint: disable=import-outside-toplevel
     return verify_fingerprint.fingerprint(root, paths) + "-" + meta
+
+
+# --- the tree-pass cache ---------------------------------------------------
+#
+# A command that exited 0 is not re-run while the tree is byte-for-byte the
+# tree it passed on. The key is `tree_snapshot(stable=True)` -- HEAD, the
+# deciders (.crew/verify.json, .crew/config.json), and the index entry, bytes,
+# type and mode of every tracked and untracked (not ignored) path -- so ANY
+# edit anywhere, not just to a rule's own `paths`, empties it. A rule's
+# `paths` say when it must run, never everything it reads, which is why a
+# per-rule key would be unsound and this one is the whole tree.
+#
+# What it buys: an acutely deferred Stop on an unchanged tree runs only what
+# it has not yet run, instead of re-running the same cheap rules and
+# deferring the same expensive one again; and `--all` on the tree a Stop just
+# checked skips what that Stop already ran. Ignored files (node_modules, a
+# venv) are not in the key, exactly as they are not in the gate's own
+# fingerprint; CREW_VERIFY_FRESH=1 turns the cache off for one run.
+PASSES_PATH = os.path.join(".crew", ".verify-gate.passes.json")
+
+
+def passes_load(root, snapshot):
+    """The command identities that passed on `snapshot`, or an empty set when
+    the file is absent, unreadable, wrong-shaped, for another tree, or
+    CREW_VERIFY_FRESH=1 is set. Every could-not-tell is "re-run"."""
+    if not snapshot or os.environ.get("CREW_VERIFY_FRESH") == "1":
+        return set()
+    try:
+        with open(os.path.join(root, PASSES_PATH), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return set()
+    if not isinstance(data, dict) or data.get("snapshot") != snapshot:
+        return set()
+    cmds = data.get("cmds")
+    if not isinstance(cmds, list) or not all(isinstance(c, str) for c in cmds):
+        return set()
+    return set(cmds)
+
+
+def passes_save(root, snapshot, cmd_log):
+    """Record what passed on `snapshot`: the commands whose cmd_log status is
+    "pass", plus what was already recorded for this same snapshot. Credited
+    ("covered") commands add nothing of their own. Written whole to a temp
+    file and renamed, never truncated in place."""
+    keep = passes_load(root, snapshot)
+    keep.update(e["cmd"] for e in cmd_log
+                if isinstance(e, dict) and e.get("status") == "pass" and isinstance(e.get("cmd"), str))
+    text = json.dumps({"snapshot": snapshot, "cmds": sorted(keep)}, separators=(",", ":"))
+    path = os.path.join(root, PASSES_PATH)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+    os.replace(tmp, path)
+
+
+def passes_clear(root):
+    try:
+        os.remove(os.path.join(root, PASSES_PATH))
+    except FileNotFoundError:
+        pass
 
 
 def _tree_meta(root, paths):
@@ -1014,7 +1084,7 @@ def main(argv):
     except (AttributeError, ValueError):
         pass
     usage = ("usage: verify_record.py sync|report|timings-get|rule-key|scan-reach|"
-             "cover-plan|tree-snapshot")
+             "cover-plan|tree-snapshot|passes-load|passes-save|passes-clear")
     if len(argv) < 2:
         print(usage, file=sys.stderr)
         return 2
@@ -1035,10 +1105,35 @@ def main(argv):
     elif cmd == "cover-plan":
         return cmd_cover_plan()
     elif cmd == "tree-snapshot":
-        snap = tree_snapshot(os.getcwd())
+        snap = tree_snapshot(os.getcwd(), stable="--stable" in argv[2:])
         if not snap:
             return 1
         print(snap)
+    elif cmd == "passes-save":
+        # argv[2] is the snapshot the run started on; stdin is the run's
+        # cmd_log, one JSON object per line, as `sync` reads it.
+        if len(argv) < 3 or not argv[2]:
+            print(usage, file=sys.stderr)
+            return 2
+        log = []
+        for line in sys.stdin.read().splitlines():
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(entry, dict):
+                log.append(entry)
+        try:
+            passes_save(os.getcwd(), argv[2], log)
+        except OSError as exc:
+            print(f"verify-gate: the tree-pass cache could not be written ({exc})", file=sys.stderr)
+            return 1
+    elif cmd == "passes-load":
+        # The PowerShell gate's half (the .sh matcher imports this module):
+        # the identities that passed on argv[2], as one JSON list.
+        print(json.dumps(sorted(passes_load(os.getcwd(), argv[2] if len(argv) > 2 else ""))))
+    elif cmd == "passes-clear":
+        passes_clear(os.getcwd())
     else:
         print(usage, file=sys.stderr)
         return 2

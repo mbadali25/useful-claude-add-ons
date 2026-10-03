@@ -187,8 +187,8 @@ TOOLING_MUTATIONS = (
         # (s) The host name is replaced inside longer words again.
         "the host name is replaced as a bare substring",
         GOLDEN_BUILD,
-        '        text = re.sub(r"(?<![A-Za-z0-9_-])" + re.escape(host) + r"(?![A-Za-z0-9_-])",\n',
-        '        text = re.sub(re.escape(host) + r"(?![A-Za-z0-9_-])",\n',
+        '    return re.compile(r"(?<![A-Za-z0-9_-])" + re.escape(host) + r"(?![A-Za-z0-9_-])")\n',
+        '    return re.compile(re.escape(host) + r"(?![A-Za-z0-9_-])")\n',
         "tests/test_review_golden.py::test_redact_leaves_prose_that_only_contains_a_machine_string",
     ),
     (
@@ -273,7 +273,7 @@ TOOLING_MUTATIONS = (
         # (ai) ... or the builder's leak check forgets the host name.
         "golden_build.leak no longer looks for the host name",
         GOLDEN_BUILD,
-        '    if host and host in text:\n        return "host name"\n',
+        '    if host and _host_word(host).search(text):\n        return "host name"\n',
         '    if False:\n        return "host name"\n',
         "tests/test_review_golden.py::test_corpus_leak_check_refuses_a_planted_host_name",
     ),
@@ -356,6 +356,27 @@ TOOLING_MUTATIONS += (
         '        if all(s == "pass" for s in statuses):\n',
         '        if rule.get("unknown") and all(s == "pass" for s in statuses):\n',
         "tests/test_verify_gate_stop_budget.py::test_a_declared_rule_that_passes_is_measured",
+    ),
+    (
+        "record: the tree-pass cache is read for any tree",
+        VERIFY_RECORD,
+        '    if not isinstance(data, dict) or data.get("snapshot") != snapshot:\n',
+        '    if not isinstance(data, dict):\n',
+        "tests/test_verify_gate_tree_cache.py::test_any_edit_anywhere_runs_it_again",
+    ),
+    (
+        "record: a failing command is saved to the tree-pass cache",
+        VERIFY_RECORD,
+        '                if isinstance(e, dict) and e.get("status") == "pass" and isinstance(e.get("cmd"), str))\n',
+        '                if isinstance(e, dict) and isinstance(e.get("cmd"), str))\n',
+        "tests/test_verify_gate_tree_cache.py::test_a_failure_is_never_cached",
+    ),
+    (
+        "record: CREW_VERIFY_FRESH=1 no longer refuses the tree-pass cache",
+        VERIFY_RECORD,
+        '    if not snapshot or os.environ.get("CREW_VERIFY_FRESH") == "1":\n',
+        '    if not snapshot:\n',
+        "tests/test_verify_gate_tree_cache.py::test_the_cache_can_always_be_refused",
     ),
 )
 if shutil.which("pwsh"):
