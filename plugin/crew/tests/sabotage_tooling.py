@@ -261,8 +261,8 @@ TOOLING_MUTATIONS = (
         # (s) The host name is replaced inside longer words again.
         "the host name is replaced as a bare substring",
         GOLDEN_BUILD,
-        '        text = re.sub(r"(?<![A-Za-z0-9_-])" + re.escape(host) + r"(?![A-Za-z0-9_-])",\n',
-        '        text = re.sub(re.escape(host) + r"(?![A-Za-z0-9_-])",\n',
+        '    return re.compile(r"(?<![A-Za-z0-9_-])" + re.escape(host) + r"(?![A-Za-z0-9_-])")\n',
+        '    return re.compile(re.escape(host) + r"(?![A-Za-z0-9_-])")\n',
         "tests/test_review_golden.py::test_redact_leaves_prose_that_only_contains_a_machine_string",
     ),
     (
@@ -347,7 +347,7 @@ TOOLING_MUTATIONS = (
         # (ai) ... or the builder's leak check forgets the host name.
         "golden_build.leak no longer looks for the host name",
         GOLDEN_BUILD,
-        '    if host and host in text:\n        return "host name"\n',
+        '    if host and _host_word(host).search(text):\n        return "host name"\n',
         '    if False:\n        return "host name"\n',
         "tests/test_review_golden.py::test_corpus_leak_check_refuses_a_planted_host_name",
     ),
@@ -406,8 +406,8 @@ TOOLING_MUTATIONS += (
     (
         "snapshot: mode bits and symlink targets dropped from the snapshot",
         VERIFY_RECORD,
-        '    return verify_fingerprint.fingerprint(root, paths) + "-" + meta\n',
-        "    return verify_fingerprint.fingerprint(root, paths)\n",
+        '    snap = verify_fingerprint.fingerprint(root, paths) + "-" + meta\n',
+        "    snap = verify_fingerprint.fingerprint(root, paths)\n",
         _COVER + "test_tree_metadata_change_after_superset_runs_subset[chmod +x a.py-sh]",
     ),
     (
@@ -420,9 +420,51 @@ TOOLING_MUTATIONS += (
     (
         "record: a credited command's 0s is cached as the rule's cost",
         VERIFY_RECORD,
-        '        if rule.get("unknown") and all(s == "pass" for s in statuses):\n',
-        '        if rule.get("unknown"):\n',
+        '        if all(s == "pass" for s in statuses):\n',
+        '        if True:\n',
         _COVER + "test_record_covered_is_clean_and_never_cached",
+    ),
+    (
+        "record: a rule with a declared price is never measured again",
+        VERIFY_RECORD,
+        '        if all(s == "pass" for s in statuses):\n',
+        '        if rule.get("unknown") and all(s == "pass" for s in statuses):\n',
+        "tests/test_verify_gate_stop_budget.py::test_a_declared_rule_that_passes_is_measured",
+    ),
+    (
+        "record: the tree-pass cache is read for any tree",
+        VERIFY_RECORD,
+        '    if not isinstance(data, dict) or data.get("snapshot") != snapshot:\n',
+        '    if not isinstance(data, dict):\n',
+        "tests/test_verify_gate_tree_cache.py::test_any_edit_anywhere_runs_it_again",
+    ),
+    (
+        "record: a failing command is saved to the tree-pass cache",
+        VERIFY_RECORD,
+        '                if isinstance(e, dict) and e.get("status") == "pass" and isinstance(e.get("cmd"), str))\n',
+        '                if isinstance(e, dict) and isinstance(e.get("cmd"), str))\n',
+        "tests/test_verify_gate_tree_cache.py::test_a_failure_is_never_cached",
+    ),
+    (
+        "record: CREW_VERIFY_FRESH=1 no longer refuses the tree-pass cache",
+        VERIFY_RECORD,
+        '    if not snapshot or os.environ.get("CREW_VERIFY_FRESH") == "1":\n',
+        '    if not snapshot:\n',
+        "tests/test_verify_gate_tree_cache.py::test_the_cache_can_always_be_refused",
+    ),
+    (
+        "review_gate: a receipt that is not VERIFIED still upgrades the gate",
+        os.path.join(SCRIPTS, "review_gate.py"),
+        "    if r_state == VERIFIED:\n",
+        "    if r_state != NO_GATE:\n",
+        "tests/test_review_gate_receipt.py::test_any_other_receipt_answer_leaves_the_local_verdict",
+    ),
+    (
+        "review_gate: a receipt is consulted for a tree already VERIFIED or with no gate",
+        os.path.join(SCRIPTS, "review_gate.py"),
+        "    if state not in (UNVERIFIED, UNKNOWN):\n        return state, reason\n",
+        "",
+        "tests/test_review_gate_receipt.py::test_a_verdict_that_needs_no_upgrade_never_asks_for_a_receipt",
     ),
 )
 if shutil.which("pwsh"):
@@ -499,5 +541,155 @@ if os.path.isfile(CHECKER) and os.path.isfile(VERIFY_JSON):
             ' plugin/crew/tests/test_status.py -q"]',
             ' -q"]',
             _RULE_PATHS,
+        ),
+    )
+
+# The Stop gate's measured pricing and tree-pass cache.
+# Kept here, not in sabotage.py, which sits at pylint's 3400-line module cap.
+TOOLING_MUTATIONS += (
+    (
+        # min(declared, measured) turned into "measured wins": a stale cache
+        # ABOVE the declared price makes a rule that fits chronic, and Stop
+        # stops running it. The whole safety argument is the minimum.
+        "a dearer cached measurement replaces a declared price",
+        GATE_SH,
+        "                            and 0 < cached < secs):\n",
+        "                            and 0 < cached):\n",
+        ("tests/test_verify_gate_stop_budget.py::"
+         "test_a_dearer_measurement_never_defers_a_declared_rule"),
+    ),
+    (
+        # A JSON true is an int in python; without the bool test a cached
+        # `true` prices a 90s rule at 1s.
+        "a cached true prices a declared rule",
+        GATE_SH,
+        "                    if (isinstance(cached, int) and not isinstance(cached, bool)\n"
+        "                            and 0 < cached < secs):\n",
+        "                    if (isinstance(cached, int)\n"
+        "                            and 0 < cached < secs):\n",
+        ("tests/test_verify_gate_stop_budget.py::"
+         "test_an_unusable_measurement_leaves_the_declared_price"),
+    ),
+    (
+        # The tree-pass cache stops zeroing a fully-credited rule's price: it
+        # is credited if it runs, but it still spends the budget, so the rule
+        # it was deferring stays deferred on every Stop of an unchanged tree.
+        "a rule that passed on this exact tree still spends the Stop budget",
+        GATE_SH,
+        "        rule_secs[_ri] = 0\n",
+        "        pass\n",
+        ("tests/test_verify_gate_tree_cache.py::"
+         "test_an_acutely_deferred_stop_converges_on_an_unchanged_tree"),
+    ),
+    (
+        # Passes saved although the tree moved while the rules ran: they then
+        # describe no single tree, and the next run credits them anyway.
+        "the tree-pass cache is saved after the tree moved during the run",
+        GATE_SH,
+        '  if [ -n "$TREE_PRE" ] && [ "$TREE_PRE" = "$TREE_POST" ]; then\n',
+        '  if [ -n "$TREE_PRE" ]; then\n',
+        ("tests/test_verify_gate_tree_cache.py::"
+         "test_a_rule_that_edits_the_tree_leaves_no_cache"),
+    ),
+    (
+        # Review r1: --all reads the cache and credits from it, so "run
+        # everything" silently runs less.
+        "--all credits from the tree-pass cache",
+        GATE_SH,
+        "if STOP_MODE and tree_snap and _vr is not None and hasattr(_vr, \"passes_load\"):\n",
+        "if tree_snap and _vr is not None and hasattr(_vr, \"passes_load\"):\n",
+        "tests/test_verify_gate_tree_cache.py::test_all_never_credits",
+    ),
+    (
+        # Review r1: refs left out of the key, so a fetch that moves
+        # origin/main keeps crediting a rule that diffs against it.
+        "record: the tree-pass cache key ignores refs",
+        VERIFY_RECORD,
+        '        snap += "-" + refs\n',
+        "        snap += \"\"\n",
+        "tests/test_verify_gate_tree_cache.py::test_a_moved_ref_runs_it_again",
+    ),
+    (
+        # Review r1: a tree that moved after a credit keeps the credit, and
+        # the marker advances over a command never checked on the end tree.
+        "a tree that moved after a tree-pass credit still verifies the run",
+        GATE_SH,
+        "      TREE_MOVED=1\n",
+        "      TREE_MOVED=0\n",
+        ("tests/test_verify_gate_tree_cache.py::"
+         "test_a_tree_that_moves_after_a_credit_withdraws_it"),
+    ),
+    (
+        # Review r2: the withdrawn credits' log lines reach the record sync,
+        # so the rule reads as clean and its standing entry is popped.
+        "a withdrawn tree-pass credit still reaches the record sync",
+        GATE_SH,
+        "      CMD_LOG=$(printf '%s\\n' \"$CMD_LOG\" | grep -v '\"tree\": true}$' || true)\n",
+        "      :\n",
+        ("tests/test_verify_gate_tree_cache.py::"
+         "test_a_withdrawn_credit_never_clears_the_rule_s_record"),
+    ),
+    (
+        # Review r2: refs that cannot be listed read as "no refs", a key
+        # that then credits across a fetch.
+        "record: refs that cannot be listed still give a stable snapshot",
+        VERIFY_RECORD,
+        "        if refs is None:\n            return None\n",
+        "        refs = refs or \"\"\n",
+        ("tests/test_verify_gate_tree_cache.py::"
+         "test_refs_that_cannot_be_listed_mean_no_stable_snapshot"),
+    ),
+)
+if shutil.which("pwsh"):
+    TOOLING_MUTATIONS += (
+        (
+            # Its PowerShell twin.
+            "the PowerShell gate lets a dearer measurement replace a declared price",
+            GATE_PS1,
+            "              if (($cached -is [int] -or $cached -is [long]) -and $cached -gt 0 -and\n"
+            "                  $cached -lt [double]$r.seconds) {\n",
+            "              if (($cached -is [int] -or $cached -is [long]) -and $cached -gt 0) {\n",
+            ("tests/test_verify_gate_stop_budget.py::"
+             "test_a_dearer_measurement_never_defers_a_declared_rule"),
+        ),
+        (
+            # Its PowerShell twin.
+            "the PowerShell gate charges a rule that passed on this exact tree",
+            GATE_PS1,
+            "    $ruleSecs[$ri] = [double]0\n",
+            "    $null = $ri\n",
+            ("tests/test_verify_gate_tree_cache.py::"
+             "test_an_acutely_deferred_stop_converges_on_an_unchanged_tree"),
+        ),
+        (
+            "the PowerShell gate saves the tree-pass cache after the tree moved",
+            GATE_PS1,
+            "    if ($treePre -and $treePre -eq $treePost) {\n",
+            "    if ($treePre) {\n",
+            ("tests/test_verify_gate_tree_cache.py::"
+             "test_a_rule_that_edits_the_tree_leaves_no_cache"),
+        ),
+        (
+            "the PowerShell gate credits from the tree-pass cache under -All",
+            GATE_PS1,
+            "    if ($treePre -and $stopMode) {\n",
+            "    if ($treePre) {\n",
+            "tests/test_verify_gate_tree_cache.py::test_all_never_credits",
+        ),
+        (
+            "the PowerShell gate keeps a credit after the tree moved",
+            GATE_PS1,
+            "      if ($treeN -gt 0) {\n        $treeMoved = $true\n      }\n",
+            "      if ($treeN -gt 0) {\n        $treeMoved = $false\n      }\n",
+            ("tests/test_verify_gate_tree_cache.py::"
+             "test_a_tree_that_moves_after_a_credit_withdraws_it"),
+        ),
+        (
+            "the PowerShell gate keeps a withdrawn credit in the record sync",
+            GATE_PS1,
+            "  $cmdLog = [System.Collections.ArrayList]@(@($cmdLog) | Where-Object { -not $_.Contains('tree') })\n",
+            "  $cmdLog = [System.Collections.ArrayList]@($cmdLog)\n",
+            ("tests/test_verify_gate_tree_cache.py::"
+             "test_a_withdrawn_credit_never_clears_the_rule_s_record"),
         ),
     )

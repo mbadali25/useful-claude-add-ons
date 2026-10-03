@@ -1098,6 +1098,7 @@ try {
   }
 } catch { $timings = @{} }
 $measuredUsed = @{}   # rule index -> $true when cost came from the cache
+$measuredBelow = @{}  # rule index -> declared seconds a cheaper measurement replaced
 $trulyUnknown = @{}   # rule index -> $true when it needs a fresh measurement
 # COMMAND IDENTITY includes the rule's declared env - the twin of the same
 # fix in verify-gate.sh, where the full rationale lives. Two rules running
@@ -1140,6 +1141,21 @@ foreach ($f in $changed) {
           $ruleKeys[$ri] = $key
           if (Test-CrewSeconds $r.seconds) {
             $ruleSecs[$ri] = [double]$r.seconds
+            # A cheaper measurement on this machine wins, a dearer one never
+            # does - the twin of verify-gate.sh's block, where the full
+            # rationale lives. A TYPE test, not [int]::TryParse: TryParse
+            # reads the JSON string "3" as 3, which the .sh side's
+            # int-not-bool test refuses (measured: the pair disagreed on it).
+            # ConvertFrom-Json yields [long] (7.x) or [int] (5.1) for a JSON
+            # integer, [bool] for true and [double] for 2.5.
+            if ($timings.ContainsKey($key)) {
+              $cached = $timings[$key]
+              if (($cached -is [int] -or $cached -is [long]) -and $cached -gt 0 -and
+                  $cached -lt [double]$r.seconds) {
+                $ruleSecs[$ri] = [double]$cached
+                $measuredBelow[$ri] = [double]$r.seconds
+              }
+            }
           } elseif ($timings.ContainsKey($key)) {
             $cached = 0
             if ([int]::TryParse([string]$timings[$key], [ref]$cached) -and $cached -gt 0) {
@@ -1264,6 +1280,54 @@ foreach ($fn in $fallbackNotices) {
 }
 foreach ($ri in ($measuredUsed.Keys | Sort-Object)) {
   [void]$notices.Add("verify-gate: rules[$ri] priced from a cached measurement ($([int]$ruleSecs[$ri])s, measured not declared) - add ``seconds`` to verify.json to make this permanent")
+}
+foreach ($ri in ($measuredBelow.Keys | Sort-Object)) {
+  [void]$notices.Add("verify-gate: rules[$ri] priced at $([int]$ruleSecs[$ri])s, measured on this machine, below its declared $($measuredBelow[$ri])s")
+}
+# --- the tree-pass cache - the twin of verify-gate.sh's block ---------------
+# Every python call below is fed `$null |`, the convention this file's git
+# calls follow: a native child that inherits the hook's own stdin - held
+# open and never closed by the caller - parks on Windows, and the gate never
+# returns (test_40 / test_40b, red on windows-latest without it).
+# A command that passed on this exact tree (verify_record.py tree-snapshot
+# --stable) is credited by the run loop, not re-run; a rule every one of
+# whose commands is credited costs nothing, so it cannot spend the budget or
+# be deferred. ONLY at Stop: -All runs everything. $treePre is taken ONCE,
+# here, and is the key the loop credits for and the save after it compares
+# against (review r1). Any failure here: an empty cache, and every command runs.
+$treePre = ""
+$treeCached = @{}
+if ($matchPy -and (Test-Path $verifyRecordScript)) {
+  Push-Location $root
+  try {
+    $global:LASTEXITCODE = 0
+    $snapOut = ($null | & $matchPy $verifyRecordScript tree-snapshot --stable 2>$null) | Out-String
+    if ($LASTEXITCODE -eq 0) { $treePre = $snapOut.Trim() }
+    if ($treePre -and $stopMode) {
+      $global:LASTEXITCODE = 0
+      $loadOut = ($null | & $matchPy $verifyRecordScript passes-load $treePre 2>$null) | Out-String
+      if ($LASTEXITCODE -eq 0 -and $loadOut.Trim()) {
+        # Assign FIRST, then @(): Windows PowerShell 5.1's ConvertFrom-Json
+        # emits a JSON array as ONE object down a pipeline, so
+        # @($x | ConvertFrom-Json) is a one-element array holding the array,
+        # no element of which is a [string] - and nothing was ever credited.
+        $parsed = $loadOut | ConvertFrom-Json -ErrorAction Stop
+        foreach ($id in @($parsed)) {
+          if ($id -is [string]) { $treeCached[$id] = $true }
+        }
+      }
+    }
+  } catch { $treePre = ""; $treeCached = @{} } finally { Pop-Location }
+}
+foreach ($ri in $ruleOrder) {
+  if ($ruleSecs.ContainsKey($ri) -and @($ruleCmds[$ri]).Count -gt 0 -and
+      @(@($ruleCmds[$ri]) | Where-Object { -not $treeCached.ContainsKey($_) }).Count -eq 0) {
+    $ruleSecs[$ri] = [double]0
+  }
+}
+$treeHits = @($cmds | Where-Object { $treeCached.ContainsKey($_) }).Count
+if ($treeHits -gt 0) {
+  [void]$notices.Add("verify-gate: $treeHits command(s) passed on this exact tree in an earlier run and are credited, not re-run (CREW_VERIFY_FRESH=1 runs them anyway)")
 }
 $chronicRules = [System.Collections.ArrayList]@()
 $acuteRules = [System.Collections.ArrayList]@()
@@ -1640,6 +1704,21 @@ function Get-CrewTreeSnapshot {
     return ""
   } catch { return "" } finally { Pop-Location }
 }
+# Passes are saved after the loop only if the tree is still $treePre, and a
+# moved tree withdraws this run's credits - the twin of verify-gate.sh's
+# TREE_PRE / TREE_POST / TREE_MOVED.
+function Get-CrewStableSnapshot {
+  if (-not $matchPy -or -not (Test-Path $verifyRecordScript)) { return "" }
+  Push-Location $root
+  try {
+    $global:LASTEXITCODE = 0
+    $out = ($null | & $matchPy $verifyRecordScript tree-snapshot --stable 2>$null) | Out-String
+    if ($LASTEXITCODE -eq 0) { return $out.Trim() }
+    return ""
+  } catch { return "" } finally { Pop-Location }
+}
+$treeN = 0
+$treeMoved = $false
 $pos = -1
 $statusAt = @{}
 $coveredN = 0
@@ -1652,6 +1731,13 @@ foreach ($ident in $cmds) {
   # Get-CrewIdentity above. Split it in-process (PowerShell strings need no
   # subprocess round-trip the way bash's read loop does).
   $c = Get-CrewIdentityText $ident
+  if ($treePre -and $treeCached.ContainsKey($ident)) {
+    [Console]::Error.WriteLine("verify-gate: PASSED on this exact tree in an earlier run - not re-run: $c")
+    $statusAt[$pos] = "covered"
+    $treeN++
+    [void]$cmdLog.Add([ordered]@{ cmd = $ident; status = "covered"; elapsed = 0; tree = $true })
+    continue
+  }
   $guard = if ($pos -lt $coverGuards.Count) { $coverGuards[$pos] } else { $null }
   $credit = $false
   if ($guard) {
@@ -1966,6 +2052,31 @@ if ($coveredN -gt 0) {
   [Console]::Error.WriteLine("verify-gate: $coveredN of them COVERED by a declared superset rule that passed this run - not re-run")
 }
 Set-Location $root
+if ($treeN -gt 0) {
+  [Console]::Error.WriteLine("verify-gate: $treeN of them PASSED on this exact tree in an earlier run - not re-run")
+}
+if ($matchPy -and (Test-Path $verifyRecordScript)) {
+  try {
+    $treePost = Get-CrewStableSnapshot
+    if ($treePre -and $treePre -eq $treePost) {
+      $logLines = @($cmdLog | ForEach-Object { ConvertTo-Json -Compress -Depth 5 -InputObject $_ }) -join "`n"
+      $logLines | & $matchPy $verifyRecordScript passes-save $treePre 2>&1 | ForEach-Object { [Console]::Error.WriteLine($_) }
+    } else {
+      $null | & $matchPy $verifyRecordScript passes-clear *> $null
+      if ($treeN -gt 0) {
+        $treeMoved = $true
+      }
+    }
+  } catch { if ($treeN -gt 0) { $treeMoved = $true } }
+}
+# A moved tree (or one that could not be read) withdraws this run's
+# tree-pass credits - see verify-gate.sh: their log entries are dropped
+# before the record sync and neither marker advances.
+if ($treeMoved) {
+  # .Contains, not $_.tree: a missing key is a throw under Set-StrictMode.
+  $cmdLog = [System.Collections.ArrayList]@(@($cmdLog) | Where-Object { -not $_.Contains('tree') })
+  [Console]::Error.WriteLine("verify-gate: the tree changed during this run, so the $treeN command(s) credited from the tree-pass cache are withdrawn - not verified on the tree this run ended on")
+}
 
 if ($unmapped.Count -gt 0 -and $vm.unmapped -eq "fail") {
   [Console]::Error.WriteLine("UNMAPPED CHANGES - .crew/verify.json has no rule for:")
@@ -2080,7 +2191,7 @@ if ($null -ne $headMoved -and $headMoved) {
 # elseif chain below, round 3 moved it above the elseif chain but still
 # after `exit 2`, round 4 moved it again to before that exit too).
 
-$fullyVerified = ($deferredCount -eq 0) -and (-not $anySkipped) -and ($syncStatus -eq 0)
+$fullyVerified = ($deferredCount -eq 0) -and (-not $treeMoved) -and (-not $anySkipped) -and ($syncStatus -eq 0)
 
 if ($fullyVerified) {
   if ($fingerprint) {
@@ -2096,6 +2207,9 @@ if ($fullyVerified) {
   # verify_record.py already printed why, on stderr, above.
 } elseif ($anySkipped) {
   [Console]::Error.WriteLine("verify-gate: the verified baseline was NOT advanced - at least one command exited 77 (SKIP) and was not actually checked this turn.")
+} elseif ($treeMoved) {
+  $alsoDeferred = if ($deferredCount -gt 0) { "; $deferredCount rule command(s) were also deferred" } else { "" }
+  [Console]::Error.WriteLine("verify-gate: the verified baseline was NOT advanced - the tree changed during this run, and $treeN credited command(s) were not checked against it$alsoDeferred.")
 } else {
   [Console]::Error.WriteLine("verify-gate: the verified baseline was NOT advanced - $deferredCount rule command(s) were deferred and have not been checked against this tree.")
 }
