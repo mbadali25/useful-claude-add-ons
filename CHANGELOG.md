@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added - `crew` 1.0.131: no new linter findings before a review round is reserved (L-0574)
+### Added - `crew` 1.0.136: no new linter findings before a review round is reserved (L-0574)
 
 - **What.** `review_run.py` asks a new question 3 before it reserves a round, after the CLEAN-receipt
   check and the verify gate and before the standards self-check. `hooks/scripts/review_checks.py`
@@ -72,6 +72,35 @@ All notable changes to this repository are documented here. Format follows [Keep
   `scripts/install-prerequisites.sh` (a malformed `disable=... - reason` directive, `:1675`) and
   `scripts/_test/lsp-stack-tools.sh` (a prose `# shellcheck/...` comment, `:7`), so a bundle that
   changes either file reads COULD NOT CHECK for ShellCheck until those lines are fixed.
+
+### Fixed — `crew` 1.0.134: `ci_receipt.py check` compares receipt fields by type as well as value; the verify-gate workflow stops installing into the shared toolcache
+
+- `_mismatch` used `==` alone, which holds `1 == True` and `False == 0`, so a receipt saying
+  `"pass": 1`, `"clean": 1` or `"gate": {"rc": false}` matched. Each now mismatches; three new
+  must-block cases in `test_ci_receipt.py` go red with the old comparison.
+- `verify-gate.yml` installs nothing into the host's shared toolcache: pip goes into a venv and
+  mmdc into an npm prefix, both under the job's own `RUNNER_TEMP`, each put on `GITHUB_PATH`.
+  Jobs for different branches run concurrently on one host, and `pip install` / `npm install -g`
+  into setup-python's and setup-node's toolcache let them collide and carry state between runs.
+  A new workflow test fails against the old steps.
+- The `test_ci_receipt.py` rule in `.crew/verify.json` is re-priced at 20s (100 passed in 18.3s).
+
+### Added — `crew` 1.0.132: the verify gate runs on the self-hosted pool and leaves a receipt; `ci_receipt.py check` reports whether it matches HEAD (L-0555, diagnostic)
+
+- **`.github/workflows/verify-gate.yml`** runs `verify-gate.sh --all` on pushes to `L-*`, `T-*` and
+  `W-*` branches, on the self-hosted pool only while `CREW_RUNNER=self-hosted`, never on a pull
+  request event (fork code cannot reach the pool). `contents: read`, no repository secret,
+  credentials not persisted. Earlier gate evidence in the reused workspace is removed first.
+- **`hooks/scripts/ci_receipt.py build`** writes the receipt from `review_gate.gate_state` on the
+  runner, bound to head, tree, the `.crew/verify.json` blob and `gate_impl` (a digest of the gate
+  implementation), refusing a marker older than the gate's start. Uploaded as
+  `crew-verify-receipt-<attempt>`.
+- **`ci_receipt.py check`** answers VERIFIED / UNVERIFIED / UNKNOWN / NO_GATE. It takes the newest
+  run for HEAD before reading its status, binds the artifact to that run and sha, requires a clean
+  local tree and no branch change to the gate implementation, and re-reads everything, the
+  stand-down included, at the end. An unreadable stand-down is UNKNOWN; origin's host must be github.com.
+- Diagnostic only: no consumer accepts the receipt yet. `scripts/gate-runner.py` classifies the
+  workflow as excluded; a `.crew/verify.json` rule runs `test_ci_receipt.py`.
 
 ### Fixed - `gizmoduck` 0.5.6: main's Pylint `build (3.11)` leg red on a guarded `os.path.isjunction` call (L-0599)
 
