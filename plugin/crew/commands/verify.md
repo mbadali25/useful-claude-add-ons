@@ -1,6 +1,6 @@
 ---
 description: Build or refresh the verification map from evidence
-argument-hint: "[--refresh] [--price]"
+argument-hint: "[--refresh] [--price] [--stamp-reach [--apply] [--set N=REACH]]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent
 ---
 
@@ -124,6 +124,20 @@ dirties a committed file. It is never reachable from the Stop hook and is
 never invoked automatically by this command either — run it by hand, review
 the diff, and commit the pricing separately.
 
+## `--stamp-reach` (operator only, L-0562)
+
+    python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify_reach.py --root . [--apply] [--set N=local|network|host]
+
+Declares `reach` on every rule that has none, from the gate's own classifier
+(below): a rule the gate already runs gets `local`, one it defers for a remote
+verb gets `network`. So `--apply` never changes what Stop runs; it writes down
+what Stop already does. A rule deferred for shell syntax or a wrapper script is
+listed as undecided and written only by `--set N=...`: making it run on every
+Stop is a person's call. Dry run by default. It edits the map's text in place
+(never re-serialises it) and refuses unless the result parses back to the
+original plus exactly the new keys. Show the table, ask, then commit the diff
+on its own, as with `--price`.
+
 ## reach: `local` | `network` | `host`
 
 The Stop gate runs ONLY `local` rules. `network`/`host` rules run under
@@ -190,7 +204,8 @@ undeclared rule would be, never silently reintroduced through it.
 `--price` refuses to time a verb-, syntax-, or wrapper-classified rule
 outright, in both directions, same as the gate. The
 `verifyReachUndeclared` trigger in `crew_state.py` separately flags any rule
-with no `reach` at all — see `CONFIG.md` §18 for the full classification.
+with no `reach` at all — see `CONFIG.md` §19 for the full classification,
+and `--stamp-reach` above to declare them.
 
 ## Environment pinning
 

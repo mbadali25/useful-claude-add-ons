@@ -4,6 +4,18 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.155: `/crew:verify --stamp-reach` declares `reach` on undeclared rules (L-0562)
+
+- `hooks/scripts/verify_reach.py`: for each rule without `reach`, proposes `local` when the Stop
+  gate's own classifier (`verify_record.scan_reach`, CONFIG.md §19) already runs it and `network`
+  when it defers it for a remote verb. `--apply` writes those, so it never changes what Stop runs.
+  A rule deferred for shell syntax or a wrapper script is listed as undecided and written only by
+  `--set N=local|network|host`. The map is edited as text in place and refused unless it parses
+  back to the original plus exactly the new keys. This is the fix half of D10
+  (`docs/review/09-qa-standards-crew.md`).
+- `commands/verify.md` documents it and its `reach` citation now names CONFIG.md §19, not §18
+  (`guards.roleWrites`).
+
 ### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 
 - `crew_train.py check-land` judges the verify gate through `review_gate.accepted_state`: the local

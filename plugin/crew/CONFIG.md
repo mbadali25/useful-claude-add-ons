@@ -2397,6 +2397,11 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
     declare, so a deferred command named there is excluded from the
     fallback exactly like an undeclared rule would be, never reintroduced
     through it.
+- `/crew:verify --stamp-reach` (`hooks/scripts/verify_reach.py`, L-0562)
+  declares `reach` on undeclared rules from this same classification:
+  `local` where the gate already runs the rule, `network` where it defers
+  it for a remote verb. Syntax- and wrapper-deferred rules are left for a
+  person (`--set N=...`), so applying it never changes what Stop runs.
 - A rule declaring `"requiresCleanTree": true` is recorded as
   `"clean_tree_required"` and is never run on Stop either, for the same
   reason: the working tree is dirty by definition during ordinary work, so a
