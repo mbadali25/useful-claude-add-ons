@@ -24,8 +24,8 @@
     "reason": "T8: to trim"
   },
   "plugin/crew/commands/upgrade.md": {
-    "lines": 375,
-    "reason": "T8: to trim"
+    "lines": 384,
+    "reason": "raised: L-0618 adds step 5c, the QA audit re-run as a report on every upgrade, so a repo set up before an audit item existed is judged by it"
   },
   "plugin/crew/commands/verify.md": {
     "lines": 211,

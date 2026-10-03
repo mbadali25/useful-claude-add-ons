@@ -451,11 +451,19 @@ not the gate, which only looks for it. And the rollback runbook
 needs a literal `last verified: YYYY-MM-DD` line, because that is what the hook
 greps for.
 
+**Then audit what you declared.** `qa_audit.py --root .` (see Phase 5) now answers its E items
+against this block: data provenance per non-production environment, a rehearsed rollback on every
+rung, no deploy of `$(git rev-parse HEAD)`, deploy workflows that fail loudly, the credential
+inventory's reaches and live columns. Ask me about each GAP rather than filling the key yourself.
+Then `qa_doc.py --root . --write` documents the process under `docs/qa/` with its diagrams, and
+`qa_audit.py --root . --stamp` records the audit.
+
 **Done when:** the `environments` block matches how this repo genuinely ships,
 `.work/PROMOTIONS.md` exists with its header, production has a `rollback` path
 pointing at a runbook that carries a fresh `last verified` line, `.gitignore`
 carries the §3c block (`.crew/*`, the un-ignore list, `.crew/.approved-*` and
-`.work/` below it), and `--dry-run` prints a sequence I recognise.
+`.work/` below it), `--dry-run` prints a sequence I recognise, and every E-item GAP is fixed or
+recorded in `.crew/STATUS.md`.
 
 ## Phase 7 — First real ticket
 

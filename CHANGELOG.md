@@ -4,6 +4,29 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.155: QA standards for repositories crew sets up (L-0618)
+
+- `crew-qa-standards` gains `references/environments.md` (G1-G5, E1-E7) and `qa_audit_env.py`,
+  whose items join `qa_audit.py`'s report under the same PASS / GAP / N/A / UNKNOWN answers: rules
+  without `reach` (D10, the Stop gate that runs nothing), fire-and-forget commands, the `_verify`
+  template's known bugs in the repo's copy, unignored build directories, the `.crew/*` ignore block,
+  non-production data provenance, rollback rehearsed on every rung, deploys of
+  `$(git rev-parse HEAD)`, deploy workflows that swallow exit codes, the credential inventory's
+  reaches and live columns, verifiers under a web root, and `_verify` entry points CI never runs.
+  Report-only; it never deploys, reads a secret value or calls a remote host.
+- `qa_audit.py --stamp` records the audited HEAD in `.crew/.qa-audit-at`; `--all-repos DIR` prints
+  one line per crew checkout (setup phase, GAP and UNKNOWN counts, D10 live or not).
+- New session trigger `qaAuditStale` (`crew_state.py`): no stamp yet, or `.crew/verify.json`,
+  `_verify/`, CI or `.gitignore` moved since it; an unanswerable diff fires. Every existing crew
+  repo hears it once after this update.
+- `qa_doc.py` documents a repo's QA process: `docs/qa/README.md` with the gate-flow and promotion
+  ladder diagrams embedded as Mermaid, `docs/qa/qa-process.html`, and the `.mmd` sources under
+  `docs/diagrams/`. Dry run by default; never overwrites a file it did not generate.
+- `/crew:init --audit [--all-repos DIR]`; `/crew:upgrade` step 5c re-runs the audit as a report;
+  setup Phase 8 audits the `environments` block it just wrote.
+- Not in this change (the ticket's slices b-d): corrected `_verify` templates, `--audit --fix`, a CI
+  template per stack, and the sabotage entries for the new checks (a separate tooling PR).
+
 ### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 
 - `crew_train.py check-land` judges the verify gate through `review_gate.accepted_state`: the local
