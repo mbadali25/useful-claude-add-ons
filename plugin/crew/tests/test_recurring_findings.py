@@ -496,18 +496,24 @@ def test_render_header_bound():
 
 
 @pytest.mark.parametrize("with_entry", [False, True])
-@pytest.mark.parametrize("data", [0, 1, 56, 200])
-@pytest.mark.parametrize("scope", [0, 1, 3])
-@pytest.mark.parametrize("header", [1, 3, 10])
-def test_render_required_lines_table(tmp_path, header, scope, data, with_entry):
+def test_render_required_lines_table(tmp_path, with_entry):
+    """Every combination the spec names, exhaustively: header 1-10 lines,
+    0-3 UNKNOWN notes, 0-200 data notes, no entry or one 5-line entry."""
     entries = rf.parse(_data(tmp_path, _section("RF-01", probes=4)))[0] if with_entry else []
-    notes = [f"PROBLEM: d{n}" for n in range(data)] + [f"UNKNOWN: s{n}" for n in range(scope)]
-    lines = rf.render(["h"] * header, entries, notes)
+    bad = []
+    for header in range(1, 11):
+        for scope in range(4):
+            for data in range(201):
+                notes = ([f"PROBLEM: d{n}" for n in range(data)]
+                         + [f"UNKNOWN: s{n}" for n in range(scope)])
+                lines = rf.render(["h"] * header, entries, notes)
+                if (len(lines) > rf.MAX_LINES
+                        or not all(f"UNKNOWN: s{n}" in lines for n in range(scope))
+                        or (data and not any(line.startswith("PROBLEM:") or "more notes" in line
+                                             for line in lines))):
+                    bad.append((header, scope, data))
 
-    assert len(lines) <= rf.MAX_LINES
-    assert all(f"UNKNOWN: s{n}" in lines for n in range(scope))
-    assert (not data) or any(line.startswith("PROBLEM:") or "more notes" in line
-                             for line in lines)
+    assert bad == []
 
 
 @pytest.mark.parametrize("bad", [0, 1, 70, 200])
