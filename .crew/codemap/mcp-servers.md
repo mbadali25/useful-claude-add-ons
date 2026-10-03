@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@a81e4382
+anchor: useful-claude-add-ons@407f2b33
 verified: 2026-10-02
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -617,3 +617,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `5467b110` -> `2594c90f` on 2026-10-02 (L-0555 merges origin/main `a9b4734d`, L-0576 #306, crew 1.0.128; rerere disabled; crew 1.0.132).** No citation in this map moved.
 
 **Re-anchored `2594c90f` (L-0555) and `273ec0f6` (main) -> `a81e4382` on 2026-10-02 (L-0555 merges origin/main `0487fc39`: L-0575 #311, crew 1.0.129, and L-0599 #315, gizmoduck 0.5.6; rerere disabled; crew 1.0.132 re-set after the merge).** The anchor, INDEX and provenance hunks conflicted: both sides' provenance was kept, main's first. Citation-number hunks took main's side. No citation in this map moved.
+
+**Re-anchored `a81e4382` -> `407f2b33` on 2026-10-02 (L-0587, repository tooling, no plugin version).** `git diff --name-only a81e4382 407f2b33` is main's own history to e0c70fc9 plus L-0587's three commits. L-0587 changes `scripts/install-prerequisites.sh:1675` and `scripts/_test/lsp-stack-tools.sh:7` in place (comment text only, no line added or removed), `.crew/verify.json` rules[3] in place (one command appended on the existing last `run` line, its `why` extended; no line added), adds `scripts/_test/shellcheck-directives.py`, one `_py_suite` TABLE row in `scripts/gate-runner.py` (after `version-drift`, +1 line at `:155`), one step in `.github/workflows/marketplace.yml` (+8 lines after the Shell syntax step) and a CHANGELOG entry (+23 lines near the top). No current citation in this map points into `scripts/gate-runner.py` or `marketplace.yml` past the insertion; the `CHANGELOG.md` line numbers in this map sit in past provenance paragraphs that record the tree they were read at, and are left as written. No claim in this note was re-derived; no suite was executed for this note.
