@@ -18,6 +18,10 @@ script writes the part of it that is about the ticket rather than the diff:
     checklist_block`, stating that the author's self-check answers are
     withheld (`selfcheck.md` is never read here) and that the list does not
     bound the review; an unreadable overlay is written `UNREADABLE: ...`.
+  - the recurring-findings checklist (L-0575, L-0601): the defect classes
+    earlier reviews kept finding, keyed to the bundle's changed files, from
+    `recurring_findings.review_block`; it says the list does not bound the
+    review, and an unusable manifest lists every class under `UNKNOWN:`.
 
 Anything missing is written as `MISSING: ...` naming the path looked at. A
 reviewer handed a prompt with no acceptance section cannot tell "this ticket
@@ -45,6 +49,7 @@ import sys
 
 import crew_standards
 import merged_main
+import recurring_findings
 import review_verdict
 import verify_record
 
@@ -299,6 +304,7 @@ def build(root, ticket, manifest, out_dir=None):
     for block in (_bundle_block(manifest), _spec_block(root, ticket),
                   _plan_block(root, ticket), _receipts_block(root, manifest),
                   crew_standards.checklist_block(root, manifest),
+                  recurring_findings.review_block(root, manifest),
                   _webtest_block(root, ticket, manifest, out_dir)):
         if not block:
             continue
