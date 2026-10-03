@@ -89,8 +89,8 @@ review.json carries `failure_class`, and `refunded` / `refund_refused` as the
 ledger recorded them; a `review:` line says whether the round was refunded. A
 refunded round still exits 3.
 
-BEFORE ANY ROUND IS RESERVED, three questions, in this order (`preflight`,
-then `standards_gate`):
+BEFORE ANY ROUND IS RESERVED, four questions, in this order (`preflight`,
+then `prereview_gate`, then `standards_gate`):
 
   1. Does a CLEAN receipt already cover this exact bundle
      (`review_ledger.check_receipt`, the check `/crew:done` gates on)? Then
@@ -104,27 +104,40 @@ then `standards_gate`):
      would refuse for free is the most expensive way to find out it is red.
      `--allow-unverified` reviews it anyway, and review.json says it did.
      No verify map, or a gate stood down, proceeds and says so.
-  3. Only then (`standards_gate`, T-0085): is the standards self-check
+  3. Then (`prereview_gate`, L-0574): does the bundle add a linter finding
+     its own base did not have (`review_checks.py`, configured under
+     `preReview` in `.crew/verify.json`)? A NEW finding is exit 5, no round
+     spent, and `--allow-unverified` does not override it. A check that could
+     not run (missing tool, crash, timeout, bad output, a file the tool could
+     not parse, a config it cannot read) is COULD NOT CHECK, never a pass:
+     exit 5 too, unless `--allow-unverified`, which review.json records as
+     `prereview.overridden`. Only an active incident stands both down, and
+     logs a `prereview-checks` skip. No `preReview` key proceeds and says so.
+  4. Only then (`standards_gate`, T-0085): is the standards self-check
      complete and stamped for this bundle? Missing or stale is exit 2, no
      round spent -- see STANDARDS SELF-CHECK above. A CLEAN receipt (1) never
-     asks for a self-check, and an unverified gate (2) is refused with exit 5
-     before one is asked for.
+     asks for a self-check, and a refusal at (2) or (3) comes first.
+
+Questions 3 and 4 are not asked when the budget is already spent: the
+reservation refuses that (exit 4) whatever they would say.
 
 Every round's review.json carries `gate` (the state observed at verdict time)
 and `elapsed_s` (reservation to verdict, from the ledger's own timestamps), and
-the `review:` summary line prints both.
+the `review:` summary line prints both. It also carries `prereview`: the
+<scratch>/prereview.json question 3 wrote for this bundle, or
+`{"result": "not-recorded", "reason": ...}` -- never a bare null.
 
 Exit codes: 0 CLEAN; 1 FINDINGS; 3 INCOMPLETE; 4 budget refused
-(NEEDS_REPLAN); 5 not run, verify gate not green (no round spent); 2 usage or
-setup error, or the standards self-check missing or stale -- not run, no round
-spent. Exit 5 (gate) is decided before exit 2 (self-check) is asked for.
+(NEEDS_REPLAN); 5 not run, verify gate not green or a pre-review check new or
+could not check (no round spent); 2 usage or setup error, or the standards
+self-check missing or stale -- not run, no round spent. Exit 5 is decided
+before exit 2 (self-check) is asked for.
 """
 import argparse
 import datetime
 import hashlib
 import json
 import os
-import shutil
 import signal
 import subprocess
 import sys
@@ -133,6 +146,7 @@ import crew_common
 import crew_incident
 import crew_standards
 import crew_state
+import review_checks
 import review_gate
 import review_ledger
 import review_limit
@@ -165,9 +179,52 @@ PROBE_OK, PROBE_LIMITED, PROBE_FAILED, PROBE_UNKNOWN = "ok", "limited", "failed"
 VERIFY_GATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "verify-gate.sh")
 
 
-def _read(path):
-    with open(path, encoding="utf-8", errors="replace") as fh:
-        return fh.read()
+def _one(value):
+    return review_checks.one_line(value)
+
+
+def _out(text):
+    """Every stdout line review_run prints: control characters escaped
+    (review_checks.one_line), so a path, reason or error can never start a
+    line of its own (L-0574 review round 8 sweep). A newline is added."""
+    sys.stdout.write(review_checks.one_line(text) + "\n")
+    sys.stdout.flush()
+
+
+def _err(text):
+    """Every stderr message: one line, control characters escaped but the
+    final newline, which every caller ends with."""
+    body = text[:-1] if text.endswith("\n") else text
+    sys.stderr.write(review_checks.one_line(body) + "\n")
+
+
+def _read(path, base):
+    """Text of a regular file inside `base`, through review_checks.read_regular
+    (class b): a symlink at the file or at any directory between `base` and it,
+    a FIFO or a device raises NotRegularFile, an OSError, instead of being
+    followed or blocking (L-0574 review round 7)."""
+    return review_checks.read_regular(path, base).decode("utf-8", errors="replace").replace(
+        "\r\n", "\n").replace("\r", "\n")
+
+
+def _trusted(path, scratch):
+    """The directory a read of `path` is checked from: the scratch directory
+    when `path` is inside it (where /crew:review puts the manifest, the
+    output and the prompt), else the path's own directory, which is where the
+    operator pointed it."""
+    path, scratch = os.path.abspath(path), os.path.abspath(scratch)
+    try:
+        inside = os.path.commonpath([path, scratch]) == scratch
+    except ValueError:  # another drive on Windows
+        inside = False
+    return scratch if inside else os.path.dirname(path)
+
+
+def _part_base(path):
+    """review_patch writes parts into `<out>.parts/`; the directory holding
+    that directory is the one trusted, so `<out>.parts` itself is checked."""
+    folder = os.path.dirname(os.path.abspath(path))
+    return os.path.dirname(folder) if folder.endswith(".parts") else folder
 
 
 def _decode_partial(value):
@@ -205,14 +262,14 @@ def prompt_argument(prompt_path, exe=None):
     """`exe` is the resolved provider binary. The prompt goes inline only when
     it fits INLINE_PROMPT_LIMIT and `exe` is not a batch shim; otherwise the
     argument is a one-line pointer to `prompt_path`, said on stderr."""
-    text = _read(prompt_path)
+    text = _read(prompt_path, os.path.dirname(os.path.abspath(prompt_path)))
     if len(text) <= INLINE_PROMPT_LIMIT and not through_batch_shim(exe):
         return text
     if len(text) > INLINE_PROMPT_LIMIT:
-        sys.stderr.write(f"review-run: prompt is {len(text)} chars, over the inline limit; "
+        _err(f"review-run: prompt is {len(text)} chars, over the inline limit; "
                          f"the reviewer is told to read {prompt_path}\n")
     else:
-        sys.stderr.write(f"review-run: {os.path.basename(exe)} is a batch shim and cmd.exe ends "
+        _err(f"review-run: {os.path.basename(exe)} is a batch shim and cmd.exe ends "
                          "its arguments at the first line break; the reviewer is told to read "
                          f"{prompt_path}\n")
     return (f"Your complete instructions are in the file {prompt_path}. Read that file in "
@@ -274,26 +331,71 @@ def launch(cmd, root, timeout):
     another. Reports the run as timed out either way, with whatever output
     had already arrived, rather than waiting on a descendant that is not
     coming back.
+
+    On Windows (L-0574 review round 8, the neighbour of review_checks'
+    FIX :574) the provider runs in a job object: a timeout ends every process
+    in it, a descendant whose leader already exited included, so nothing is
+    left holding the pipe. Membership is by handle, never a reusable pid.
     """
-    popen_kwargs = {}
-    if os.name == "nt":
-        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-    else:
-        popen_kwargs["start_new_session"] = True
+    job = _reviewer_job()
+    try:
+        return _launch(job, cmd, root, timeout)
+    finally:
+        if job is not None:
+            job.close()
+
+
+def _reviewer_job():
+    """A job object for the provider on Windows, or None (POSIX, or a job
+    Windows would not make: the taskkill /T path below is then all there is,
+    said on stderr). kill_on_close is off: like POSIX, a provider's
+    leftovers after a clean exit are not this script's to end."""
+    if not review_checks._WINDOWS:  # pylint: disable=protected-access
+        return None
+    try:
+        return review_checks.new_job(kill_on_close=False)
+    except OSError as exc:
+        _err(f"review-run: no job object for the provider ({exc}); a timeout falls back to "
+             "taskkill /T, which cannot reach a child whose parent already exited\n")
+        return None
+
+
+def _launch_flags(job):
+    if review_checks._WINDOWS:  # pylint: disable=protected-access
+        flags = subprocess.CREATE_NEW_PROCESS_GROUP
+        if job is not None:
+            flags |= review_checks._CREATE_SUSPENDED  # pylint: disable=protected-access
+        return {"creationflags": flags}
+    return {"start_new_session": True}
+
+
+def _launch(job, cmd, root, timeout):
     try:
         proc = subprocess.Popen(  # pylint: disable=consider-using-with
             cmd, cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
-            **popen_kwargs)
+            **_launch_flags(job))
     except OSError as exc:
         return "", f"could not start {cmd[0]}: {exc}", None, False
+    if job is not None:
+        try:
+            job.adopt(proc)
+        except OSError as exc:
+            proc.kill()
+            proc.communicate()
+            return "", f"could not put {cmd[0]} in its job object: {exc}", None, False
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
+        if job is not None:
+            # By handle: safe whether or not the leader has already exited.
+            job.terminate()
         escaped = False
         if proc.poll() is None:
-            if os.name == "nt":
-                subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+            killer = review_checks.taskkill() if os.name == "nt" else None
+            if os.name == "nt" and killer:
+                # Absolute, never a bare `taskkill` (L-0574 round-7 sweep).
+                subprocess.run([killer, "/T", "/F", "/PID", str(proc.pid)],
                                capture_output=True, timeout=30, check=False)
             else:
                 try:
@@ -303,8 +405,9 @@ def launch(cmd, root, timeout):
         else:
             # Leader already exited and been reaped: its pid (and any pgid
             # numbered the same) is free for reuse, so no bare-number signal
-            # is safe here. Whatever kept the pipe open is on its own.
-            escaped = True
+            # is safe here. Without a job, whatever kept the pipe open is on
+            # its own; with one, job.terminate() above already ended it.
+            escaped = job is None
         try:
             stdout, stderr = proc.communicate(timeout=POST_KILL_TIMEOUT)
         except subprocess.TimeoutExpired as exc:
@@ -333,8 +436,7 @@ def bundle_problems(manifest):
     total = 0
     for row in rows:
         try:
-            with open(row["path"], "rb") as fh:
-                data = fh.read()
+            data = review_checks.read_regular(row["path"], _part_base(row["path"]))
         except (OSError, KeyError, TypeError) as exc:
             problems.append(f"bundle part {row.get('name')} could not be read: {exc}")
             continue
@@ -354,7 +456,7 @@ def bundle_problems(manifest):
 
 def _findings_doc(root, ticket):
     try:
-        doc = json.loads(_read(webtest_guard.findings_path(root, ticket)))
+        doc = json.loads(_read(webtest_guard.findings_path(root, ticket), root))
     except (OSError, ValueError):
         return None
     return doc if isinstance(doc, dict) else None
@@ -403,7 +505,7 @@ def webtest_check(root, ticket, manifest):
 
 def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     """Verdict -> ledger -> review.json. Returns the process exit code."""
-    manifest = json.loads(_read(args.manifest))
+    manifest = json.loads(_read(args.manifest, _trusted(args.manifest, args.scratch)))
     # The parts as the prompt lists them -- full paths -- so a READ line that
     # echoes the listed path counts (T-0079). A part with no path falls back to
     # its name, which review_verdict still matches exactly.
@@ -459,6 +561,8 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     review["refunded"] = row.get("refunded") is True
     review["refund_refused"] = row.get("refund_refused")
     review["elapsed_s"] = round_elapsed(args.root, args.ticket, number)
+    review["prereview"] = review_checks.recorded(args.scratch, manifest.get("bundle_sha256"),
+                                                 args.ticket, number)
     # Before review.json: the row is owed once the ledger holds the round.
     metrics_line = review_metrics.record(args.root, args.ticket, number, review,
                                          review_metrics.reserved_std(args, number),
@@ -472,28 +576,33 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     spent, refunded = ledger.get("rounds_spent"), ledger.get("rounds_refunded")
     budget = (f"{spent if isinstance(spent, int) else '?'} of {review_ledger.BUDGET} "
               f"budget rounds used" + (f", {refunded} refunded" if refunded else ""))
+    # Kept as print(): main's sabotage suites pin this line. Every value in
+    # it is internal (the verdict constant, counts) or escaped here.
     print(f"review: {result['verdict']} round {number}, {budget} "
           f"({counts['BLOCK']} BLOCK, {counts['FIX']} FIX, {counts['NIT']} NIT) "
-          f"{args.provider}/{args.model or 'default'} family={review['model_family']} "
-          f"ledger={state} gate={review['gate']['state']} "
+          f"{_one(args.provider)}/{_one(args.model or 'default')} "
+          f"family={_one(review['model_family'])} "
+          f"ledger={_one(state)} gate={_one(review['gate']['state'])} "
           f"elapsed={_fmt_elapsed(review['elapsed_s'])}")
-    print(metrics_line)
+    _out(metrics_line)
     for reason in result["reasons"]:
-        print(f"review: INCOMPLETE because {reason}")
+        _out(f"review: INCOMPLETE because {reason}")
+    # Kept as print() (a pinned line): the verdict is a constant, the
+    # ignored line goes out through !r, which escapes its newlines.
     if result["ignored"]:
         print(f"review: {result['verdict']} kept; {len(result['ignored'])} line(s) outside the "
               f"contract were ignored, first: {result['ignored'][0].strip()[:120]!r} - read them in "
               "out.txt and report them with the findings")
     if failure == review_verdict.TOOL and review["refunded"]:
-        print(f"review: round {number} was a tool failure ({result['reasons'][0]}); refunded - "
+        _out(f"review: round {number} was a tool failure ({result['reasons'][0]}); refunded - "
               f"{ledger.get('rounds_spent')} of {review_ledger.BUDGET} budget rounds used")
     elif failure == review_verdict.TOOL:
-        print(f"review: round {number} was a tool failure; NOT refunded - "
+        _out(f"review: round {number} was a tool failure; NOT refunded - "
               f"{review['refund_refused']}")
     elif failure:
-        print(f"review: round {number} is INCOMPLETE ({failure}) and counts against the budget")
+        _out(f"review: round {number} is INCOMPLETE ({failure}) and counts against the budget")
     if webtest_verdict:
-        print(f"review: {result['verdict']} because {webtest_verdict}")
+        _out(f"review: {result['verdict']} because {webtest_verdict}")
     return {review_verdict.CLEAN: EXIT_CLEAN, review_verdict.FINDINGS: EXIT_FINDINGS}.get(
         result["verdict"], EXIT_INCOMPLETE)
 
@@ -535,24 +644,24 @@ def preflight(args):
     ok, message = review_ledger.check_receipt(args.root, args.ticket)
     data, _ = review_ledger._load(review_ledger.ledger_path(args.root, args.ticket))  # pylint: disable=protected-access
     if ok and (data.get("receipt") or {}).get("kind") == "clean":
-        print(f"review: CLEAN from the existing receipt ({message}) - nothing in the bundle "
+        _out(f"review: CLEAN from the existing receipt ({message}) - nothing in the bundle "
               "changed since that clean round, so no round was spent")
         if args.provider not in LAUNCHED:
-            print("ALREADY_CLEAN=1")
+            _out("ALREADY_CLEAN=1")
         return EXIT_CLEAN
     state, reason = review_gate.gate_state(args.root)
     if state in (review_gate.UNVERIFIED, review_gate.UNKNOWN):
         if args.allow_unverified:
-            sys.stderr.write(f"review-run: gate {state}: {reason}. Reviewing anyway "
+            _err(f"review-run: gate {state}: {reason}. Reviewing anyway "
                              "(--allow-unverified); review.json records the override\n")
             return None
-        sys.stderr.write(
+        _err(
             f"review-run: gate {state}: {reason}. No round reserved. Run the verify gate on "
             f"this tree first (bash \"{VERIFY_GATE}\" </dev/null, or end the turn so the "
             "Stop gate runs), then review again. "
             "--allow-unverified reviews it anyway and records that it did.\n")
         return EXIT_UNVERIFIED
-    sys.stderr.write(f"review-run: gate {state}: {reason}\n")
+    _err(f"review-run: gate {state}: {reason}\n")
     return None
 
 
@@ -564,19 +673,21 @@ def standards_gate(args):
     active incident the gate stands down and logs the skip, as verify-gate.sh
     does for its own."""
     problems, note = crew_standards.review_gate(args.root, args.ticket, args.manifest)
+    # Escaped here because the write below is kept as it was (a pinned line).
+    note = _one(note) if note else note
     if note:
         sys.stderr.write(f"review-run: {note}\n")
     if problems:
         incident = crew_incident.read_state(args.root, crew_state.load_config(args.root))
         if incident["active"]:
             crew_incident.log_skip(args.root, "standards-selfcheck", "; ".join(problems))
-            sys.stderr.write(f"review-run: incident {incident['id']} is active; the standards "
+            _err(f"review-run: incident {incident['id']} is active; the standards "
                              "self-check stands down and the skip is logged\n")
             args.reserved_std = "std:none"
             return None
         for problem in problems:
-            sys.stderr.write(f"review-run: self-check: {problem}\n")
-        sys.stderr.write("review-run: answer .work/tickets/<id>/selfcheck.md, then run "
+            _err(f"review-run: self-check: {problem}\n")
+        _err("review-run: answer .work/tickets/<id>/selfcheck.md, then run "
                          f"crew_standards.py stamp --root . --ticket {args.ticket}; nothing "
                          "launched, no round spent\n")
         return EXIT_USAGE
@@ -584,6 +695,91 @@ def standards_gate(args):
     # recomputation after the review (L-0578 review round 2).
     args.reserved_std = review_metrics.std_from_note(note)
     return None
+
+
+def prereview_gate(args):
+    """None to go on and reserve; EXIT_UNVERIFIED to refuse with nothing spent.
+
+    The pre-review checks (L-0574, `review_checks.py`): no new linter finding
+    in the bundle against its own base. NEW findings refuse whatever else is
+    true; COULD NOT CHECK refuses unless --allow-unverified; only an ACTIVE
+    incident stands either down, and logs the skip. Every decision is written
+    to <scratch>/prereview.json for `finish` to copy into review.json."""
+    try:
+        # One read of the manifest gives both the entries linted and the hash
+        # recorded, so a replaced manifest cannot borrow these results.
+        results, configured, bundle = review_checks.run_checks_bound(
+            args.root, args.manifest, _trusted(args.manifest, args.scratch))
+    except Exception as exc:  # noqa: BLE001 - boundary, see below  pylint: disable=broad-exception-caught
+        # Boundary: an escaped exception would exit 1, which reads as FINDINGS.
+        # No hash is trusted here: the record is written for no bundle at all.
+        results, configured, bundle = [{"name": "pre-review", "status": review_checks.COULD_NOT,
+                                        "files": 0, "new": [],
+                                        "detail": f"{type(exc).__name__}: {exc}"}], True, None
+    if not configured:
+        _err(f"review-run: pre-review checks: none configured "
+                         f"({review_checks.VERIFY_MAP} has no {review_checks.CONFIG_KEY})\n")
+        args.prereview_staged = _record(args.scratch, bundle, [], False, False,
+                                        configured=False)
+        return None
+    for line in review_checks.lines(results):
+        _err(f"review-run: {line}\n")
+    verdict = review_checks.overall(results)
+    if verdict == review_checks.PASS:
+        args.prereview_staged = _record(args.scratch, bundle, results, False, False)
+        return None
+    incident = crew_incident.read_state(args.root, crew_state.load_config(args.root))
+    if incident["active"]:
+        crew_incident.log_skip(args.root, "prereview-checks", f"{verdict}: " + "; ".join(
+            f"{r['name']} {r['status']}" for r in results if r["status"] in (
+                review_checks.FAIL, review_checks.COULD_NOT)))
+        _err(f"review-run: incident {incident['id']} is active; the pre-review "
+                         "checks stand down and the skip is logged\n")
+        args.prereview_staged = _record(args.scratch, bundle, results, False, True)
+        return None
+    if verdict == review_checks.COULD_NOT and args.allow_unverified:
+        _err("review-run: pre-review checks could not check everything; reviewing "
+                         "anyway (--allow-unverified); review.json records the override\n")
+        args.prereview_staged = _record(args.scratch, bundle, results, True, False)
+        return None
+    args.prereview_staged = _record(args.scratch, bundle, results, False, False)
+    if verdict == review_checks.FAIL:
+        _err("review-run: the bundle adds linter findings its base did not have. No "
+                         "round reserved. Fix them (or suppress one with the tool's own inline "
+                         "directive and a reason), then review again. --allow-unverified does "
+                         "not override a new finding\n")
+    else:
+        _err("review-run: a pre-review check could not run, so this tree is not "
+                         "known clean. No round reserved. Install or repair the tool and review "
+                         "again, or pass --allow-unverified to review anyway (review.json "
+                         "records the override)\n")
+    return EXIT_UNVERIFIED
+
+
+def _record(scratch, bundle, results, overridden, stood_down, configured=True):
+    """Stage this run's record; a write that fails is said, never fatal: the
+    decision is already made, and `finish` then reads `not-recorded`. Returns
+    the staged path for _bind_record, or None."""
+    try:
+        return review_checks.record(scratch, bundle, results, overridden, stood_down,
+                                    configured)
+    except OSError as exc:
+        _err(f"review-run: could not record the pre-review checks in {scratch} "
+                         f"({exc}); review.json will say not-recorded\n")
+        return None
+
+
+def _bind_record(args, number):
+    """Bind this run's staged record to the round `reserve` just gave it, so
+    `finish` for that round reads it and no other run's (class d)."""
+    staged = getattr(args, "prereview_staged", None)
+    if not staged:
+        return
+    try:
+        review_checks.bind_record(staged, args.scratch, args.ticket, number)
+    except (OSError, ValueError) as exc:
+        _err(f"review-run: could not bind the pre-review record to round {number} "
+                         f"({exc}); review.json will say not-recorded\n")
 
 
 def _keep_reserved_std(args, number):
@@ -598,7 +794,7 @@ def _keep_reserved_std(args, number):
         _write_atomic(os.path.join(args.scratch, review_metrics.RESERVED_STD_FILE),
                       json.dumps({"ticket": args.ticket, "round": number, "std": token}) + "\n")
     except OSError as exc:
-        sys.stderr.write(f"review-run: could not record this round's std: token ({exc}); its "
+        _err(f"review-run: could not record this round's std: token ({exc}); its "
                          "metrics row will say std:unknown\n")
 
 
@@ -606,12 +802,12 @@ def run(args):
     exe = prompt = None
     if args.provider in LAUNCHED:
         if args.provider == "copilot" and not args.model:
-            sys.stderr.write("review-run: copilot needs --model (qa.copilot.model); an "
+            _err("review-run: copilot needs --model (qa.copilot.model); an "
                              "unpinned Copilot is the author's family\n")
             return EXIT_USAGE
-        exe = shutil.which(args.provider)
+        exe = review_checks.resolve_executable(args.provider)
         if not exe:
-            sys.stderr.write(f"review-run: {args.provider} is not on PATH; nothing launched, "
+            _err(f"review-run: {args.provider} is not on PATH; nothing launched, "
                              "no round spent\n")
             return EXIT_USAGE
         prompt = prompt_argument(os.path.join(args.scratch, "prompt.txt"), exe)
@@ -627,18 +823,21 @@ def run(args):
     ledger = review_ledger.status(args.root, args.ticket)
     if not (ledger.get("state") == review_ledger.NEEDS_REPLAN
             or ledger.get("rounds_left") == 0):
-        refused = standards_gate(args)
+        refused = prereview_gate(args)
+        if refused is None:
+            refused = standards_gate(args)
         if refused is not None:
             return refused
 
     ok, number, message = review_ledger.reserve(args.root, args.ticket, args.provider,
                                                 args.model)
-    sys.stderr.write(f"review-run: {message}\n")
+    _err(f"review-run: {message}\n")
     if not ok:
         return EXIT_REFUSED
+    _bind_record(args, number)
     _keep_reserved_std(args, number)
     if args.provider not in LAUNCHED:
-        print(f"ROUND={number}")
+        _out(f"ROUND={number}")
         return EXIT_CLEAN
 
     cmd = command_for(args.provider, exe, args.root, prompt, args.model, args.effort)
@@ -670,7 +869,7 @@ def run(args):
         except OSError as exc:
             then = (f"could not record it ({exc}), so the next probe calls Codex live "
                     "instead of answering limited from the record")
-        print(f"review: codex usage limit in round {number}: {limit!r}; {then}")
+        _out(f"review: codex usage limit in round {number}: {limit!r}; {then}")
     return status
 
 
@@ -685,7 +884,7 @@ def probe(args):
     mark = review_limit.recorded(args.root, args.ticket)
     if mark:
         return PROBE_LIMITED, f"recorded in round {mark['round']}: {mark['error']}"
-    exe = shutil.which("codex")
+    exe = review_checks.resolve_executable("codex")
     if not exe:
         return PROBE_FAILED, "codex is not on PATH"
     timeout = args.probe_timeout
@@ -742,8 +941,8 @@ def main(argv):
                 parser.error("--probe reserves nothing; it takes neither --reserve-only "
                              "nor --round")
             outcome, detail = probe(args)
-            print(f"PROBE={outcome}")
-            print("PROBE_DETAIL=" + " ".join(str(detail).splitlines()))
+            _out(f"PROBE={outcome}")
+            _out("PROBE_DETAIL=" + " ".join(str(detail).splitlines()))
             return {PROBE_OK: EXIT_CLEAN, PROBE_LIMITED: EXIT_PROBE_LIMITED,
                     PROBE_FAILED: EXIT_PROBE_FAILED,
                     PROBE_UNKNOWN: EXIT_PROBE_UNKNOWN}[outcome]
@@ -753,13 +952,14 @@ def main(argv):
             if args.round is None or args.output is None or args.exit_code is None:
                 parser.error("the claude provider takes --reserve-only, or --round N "
                              "--output FILE --exit-code N after the subagent ran")
-            output = _read(args.output) if os.path.exists(args.output) else ""
+            output = (_read(args.output, _trusted(args.output, args.scratch))
+                      if os.path.exists(args.output) else "")
             return finish(args, args.round, output, args.exit_code, False)
         if args.reserve_only or args.round is not None:
             parser.error("--reserve-only and --round are for the claude provider only")
         return run(args)
     except review_ledger.LedgerError as exc:
-        sys.stderr.write(f"review-run: {exc}\n")
+        _err(f"review-run: {exc}\n")
         return EXIT_USAGE
 
 
