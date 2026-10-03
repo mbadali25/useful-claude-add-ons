@@ -75,7 +75,9 @@ _FAKE = textwrap.dedent(r'''
             elif line.startswith("# ABORT"):
                 rows.append((name, None, "parse stopped here", True))
     bad = os.environ.get("FAKE_LINT_BAD_ROW", "")
-    bad_file = next((f for f in files if f.startswith(bad + "/") or f"/{bad}/" in f), None)
+    # Separators normalised: on Windows os.path.join gives `...\\base/ps/x.ps1`.
+    bad_file = next((f for f in files if f.replace("\\", "/").startswith(bad + "/")
+                     or f"/{bad}/" in f.replace("\\", "/")), None)
     def extra(key, where):
         """One row with no message, after the good ones: in a head or base
         file, or naming no file at all ("nowhere")."""
@@ -1166,7 +1168,11 @@ def test_a_linter_is_never_found_in_the_current_directory(tmp_path, monkeypatch)
     monkeypatch.setenv("PATH", os.pathsep.join([".", "", str(tmp_path / "empty")]))
     monkeypatch.setenv("PATHEXT", ".EXE")
 
-    for system in ("posix", "nt"):
+    # The posix branch calls shutil.which, which decides from sys.platform:
+    # on a real Windows host it always searches the current directory, so
+    # POSIX can only be simulated on a host that is not Windows. The nt branch
+    # (the one production takes on Windows) runs on both.
+    for system in ("nt",) if sys.platform == "win32" else ("posix", "nt"):
         monkeypatch.setattr(rc.os, "name", system)
         with pytest.raises(rc.CouldNotCheck):
             rc._command({"tool": "ruff", "command": ["lintme"]})  # pylint: disable=protected-access
@@ -1181,12 +1187,15 @@ def test_a_linter_on_an_absolute_path_entry_is_found(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", str(bindir))
     monkeypatch.setenv("PATHEXT", ".EXE")
     found = {}
-    for system in ("posix", "nt"):
+    # shutil.which decides PATHEXT from sys.platform, so POSIX can only be
+    # simulated on a host that is not Windows; the nt branch runs on both.
+    systems = ("nt",) if sys.platform == "win32" else ("posix", "nt")
+    for system in systems:
         monkeypatch.setattr(rc.os, "name", system)
         found[system] = os.path.basename(
             rc._command({"tool": "ruff", "command": ["lintme"]})[0])  # pylint: disable=protected-access
 
-    assert found == {"posix": "lintme", "nt": "lintme.EXE"}, found
+    assert found == {s: {"posix": "lintme", "nt": "lintme.EXE"}[s] for s in systems}, found
 
 
 # --- round-7 class sweep (owner decision 2026-10-02) --------------------------
