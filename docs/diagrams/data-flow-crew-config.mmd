@@ -1,4 +1,18 @@
-%% Generated from useful-claude-add-ons@38d7e1a1 on 2026-10-03. Verify before trusting.
+%% Generated from useful-claude-add-ons@452b30cc on 2026-10-02. Verify before trusting.
+%% Re-anchored b8d09685 -> 452b30cc: 204e813b changes one review_run.py line (print -> _out), no line moved; no node or edge changed.
+%% Re-anchored 9cfd1458 (main) -> b8d09685 (L-0510 merges origin/main 8123fe74 at 8c04c783, rerere off): main changed no Anchors path line this diagram cites. No node or edge changed.
+%% Re-anchored 96a69068 -> a06dd790 (L-0510 merges origin/main 2a2d6e07 at 39c290be, rerere off): main changed no Anchors path line this diagram cites. No node or edge changed.
+%% Re-anchored 77e8dcfd -> 96a69068 (L-0510 merges origin/main bd3e9ad1 at d3f26a4b, rerere off): main changed no Anchors path line this diagram cites. No node or edge changed.
+%% Re-anchored a81e4382 (main) and d05b0211 (L-0510) -> 77e8dcfd (L-0510 merges origin/main e0c70fc9 at e6dc6b1b, rerere off): both provenance blocks kept, main's first; main changed no Anchors path line this diagram cites. No node or edge changed.
+%% Re-anchored 5c092bb6 (main) and 97b65952 (L-0510) -> d05b0211 (L-0510 merges origin/main 0487fc39 at ec508e5e, rerere off): both provenance blocks kept, main's first; no cited line moved. No node or edge changed.
+%% Re-anchored 252dd5d4 -> 97b65952 (merge of origin/main 7ba4f9ea): no cited file changed. No node or edge changed.
+%% Re-anchored 2b372b84 -> 252dd5d4 (L-0510 round 6 fixes): review.md step 3 edited in place, review_run.py unchanged; no cited line moved. No node or edge changed.
+%% Merged L-0510 + 04dde5a2 (main: L-0578 #304, W-0120 #307) at 41aa4e2a (rerere off), anchored at 2b372b84: both provenance blocks
+%% kept, main's first; review_run.py citations re-derived on the merged file (preflight :555, :642; budget :646-656). No node or edge changed.
+%% Merged 39e1237a (L-0510) + 6053b65d (main, L-0557 #300, crew 1.0.114) at 122fc10d (rerere off), re-anchored to 6ffb589d: both provenance
+%% blocks kept, main's first; neither side changed an Anchors path line this diagram cites. No node or edge changed.
+%% Merged a98be035 (L-0510) + ec95c8aa (main, crew 1.0.110) at d4193b70 (rerere off), re-anchored to 8f0df4ca: both provenance blocks kept,
+%% main's first; main changed no review.md / review_run.py line and L-0510 no line main cites here. No node or edge changed.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_config_files.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_shell.py, plugin/crew/hooks/scripts/cloud_guard.py
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
@@ -518,21 +532,21 @@ flowchart TB
 
     subgraph Sources["Three sources, lowest precedence first"]
         direction TB
-        DEF["default_config()<br/>plugin/crew/hooks/scripts/crew_config.py:244<br/><b>131 leaves</b> (executed, this pass)<br/>composed from crew_state's PM_DEFAULTS<br/>:1108, QA_DEFAULTS :1160, DEV_DEFAULTS<br/>:1170, WORKTREE_DEFAULTS :1198, CONTEXT_DEFAULTS<br/>:735, RESUME_DEFAULTS :698, AUTOPILOT_DEFAULTS :1097 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS<br/>:49, GUARD_DEFAULTS :199, PRODUCTION_DEFAULTS<br/>:223, CLOUD_DEFAULTS :240 - repo-only,<br/>ENVIRONMENTS_DEFAULTS :260 - nonProd and workflows repo-only), and<br/>crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK<br/>:107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK<br/>:173 / CHANGE_BLOCK :203"]
-        GLB[("~/.claude/crew/config.json<br/>read_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:738<br/><i>never raises</i> - absent, malformed or<br/>non-object all return {}, because this is<br/>reached from a SessionStart hook")]
+        DEF["default_config()<br/>plugin/crew/hooks/scripts/crew_config.py:245<br/><b>131 leaves</b> (executed, this pass)<br/>composed from crew_state's PM_DEFAULTS<br/>:1108, QA_DEFAULTS :1160, DEV_DEFAULTS<br/>:1170, WORKTREE_DEFAULTS :1198, CONTEXT_DEFAULTS<br/>:735, RESUME_DEFAULTS :698, AUTOPILOT_DEFAULTS :1097 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS<br/>:49, GUARD_DEFAULTS :199, PRODUCTION_DEFAULTS<br/>:223, CLOUD_DEFAULTS :240 - repo-only,<br/>ENVIRONMENTS_DEFAULTS :260 - nonProd and workflows repo-only), and<br/>crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK<br/>:107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK<br/>:173 / CHANGE_BLOCK :203"]
+        GLB[("~/.claude/crew/config.json<br/>read_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:755<br/><i>never raises</i> - absent, malformed or<br/>non-object all return {}, because this is<br/>reached from a SessionStart hook")]
         REPO[(".crew/config.json - schema 7<br/>crew_state.load_config()<br/>plugin/crew/hooks/scripts/crew_state.py:267<br/>NOT the same file crew_context.py reads<br/>first - see the TwoFiles section below")]
     end
 
     subgraph Gate["The global layer is filtered BEFORE it is merged"]
         direction TB
-        TMPL["default_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:407<br/><b>73 leaves</b> (executed, this pass) across<br/><b>18 blocks</b>: qa, dev, worktree, secondOpinion,<br/>memory (2 of 5 repo leaves), notify, pm,<br/>context.autoClear (8 of 9 - unsafeFocus is<br/>excluded, see AutoClear below), resume, docs,<br/>bitbucket, github, install, guards (all ELEVEN<br/>names), environments (prodUnattended only),<br/>change, route, shellRoute - the single definition both<br/>rules below are enforced against"]
-        PRUNE["_prune()<br/>plugin/crew/hooks/scripts/crew_config.py:670<br/>keeps only keys present in the template.<br/>Descends structurally, so naming a block<br/>grants only the leaves under it."]
-        FILT["filter_global()<br/>plugin/crew/hooks/scripts/crew_config.py:696<br/>returns (kept, ignored)"]
+        TMPL["default_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:424<br/><b>73 leaves</b> (executed, this pass) across<br/><b>18 blocks</b>: qa, dev, worktree, secondOpinion,<br/>memory (2 of 5 repo leaves), notify, pm,<br/>context.autoClear (8 of 9 - unsafeFocus is<br/>excluded, see AutoClear below), resume, docs,<br/>bitbucket, github, install, guards (all ELEVEN<br/>names), environments (prodUnattended only),<br/>change, route, shellRoute - the single definition both<br/>rules below are enforced against"]
+        PRUNE["_prune()<br/>plugin/crew/hooks/scripts/crew_config.py:687<br/>keeps only keys present in the template.<br/>Descends structurally, so naming a block<br/>grants only the leaves under it."]
+        FILT["filter_global()<br/>plugin/crew/hooks/scripts/crew_config.py:713<br/>returns (kept, ignored)"]
     end
 
-    subgraph Merge["resolve_config() - plugin/crew/hooks/scripts/crew_config.py:791 - the single resolver"]
+    subgraph Merge["resolve_config() - plugin/crew/hooks/scripts/crew_config.py:808 - the single resolver"]
         direction TB
-        NULLS["without_null_shadows()<br/>plugin/crew/hooks/scripts/crew_config.py:647<br/>drops a repo <i>null</i> ONLY where the global<br/>layer supplies a real value."]
+        NULLS["without_null_shadows()<br/>plugin/crew/hooks/scripts/crew_config.py:664<br/>drops a repo <i>null</i> ONLY where the global<br/>layer supplies a real value."]
         M1["merge_defaults(default_config(), global)<br/>call: crew_config.py:824<br/>def: plugin/crew/hooks/scripts/crew_state.py:1348"]
         M2["merge_defaults(that, repo)<br/>call: crew_config.py:825"]
         SCHEMA{"schema<br/>lifted OUT of the merge<br/>crew_config.py:826-829"}
@@ -554,12 +568,12 @@ flowchart TB
 
     subgraph Write["The WRITE side - /crew:config --set, and the menu's Save (machine layer)"]
         direction TB
-        PLAN["plan_global_write()<br/>plugin/crew/hooks/scripts/crew_config.py:2959<br/><i>pure</i>; on global_snapshot() :2910, which REFUSES<br/>an unparsable or non-object machine file<br/>instead of merging onto {} (absent = ABSENT)"]
-        ISG{"per LEAF: leaf_updates() :2643, value_allowed() :2759<br/>MACHINE_REFUSED :2679 (consent keys, inside a<br/>whole-block value too), is_global_path() :717,<br/>a block emptied or replaced, null_means() :2716<br/>(an enum key's null refused), enum_values() :2625;<br/>round 5: a path under a leaf or an object<br/>at a leaf :2766-2776"}
+        PLAN["plan_global_write()<br/>plugin/crew/hooks/scripts/crew_config.py:2976<br/><i>pure</i>; on global_snapshot() :2927, which REFUSES<br/>an unparsable or non-object machine file<br/>instead of merging onto {} (absent = ABSENT)"]
+        ISG{"per LEAF: leaf_updates() :2643, value_allowed() :2759<br/>MACHINE_REFUSED :2679 (consent keys, inside a<br/>whole-block value too), is_global_path() :717,<br/>a block emptied or replaced, null_means() :2716<br/>(an enum key's null refused), enum_values() :2625;<br/>round 5: a path under a leaf or an object<br/>at a leaf :2820-2830"}
         REFUSE>"GlobalWriteRefused (class :2255)<br/>names the path AND lists every allowed one"]
         MERGED{"merged_problems() :2818 - the FILE the write<br/>produces, every known leaf by _content_problem()<br/>:2791: an enum value outside its values, a consent<br/>key (machine), an armed veto key (repo), a key under<br/>or an object at a leaf :2804-2807 refuses an<br/>unrelated write (pre-existing), then<br/>validate_providers() :178 on the merged file<br/>(qa.order a list, qa/dev.roles and each pin<br/>an object or null :206-237)"}
-        WIDEN["_plan_on() :2872 writes assignments() :2662 -<br/>the judged leaves (a block's siblings survive;<br/>one whole pin per role) - marking each leaf with<br/>_widens() plugin/crew/hooks/scripts/crew_config.py:2367.<br/>RANK, not equality."]
-        WRITE["write_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:2978<br/>the only function in crew that writes outside<br/>the repo. Re-plans on the bytes read under the<br/>lock; --expect DIGEST|absent refuses a changed<br/>file (GlobalWriteConflict :2259); any other<br/>OSError (directory, lock, write) is<br/>GlobalWriteRefused :2947, exit 2"]
+        WIDEN["_plan_on() :2872 writes assignments() :2662 -<br/>the judged leaves (a block's siblings survive;<br/>one whole pin per role) - marking each leaf with<br/>_widens() plugin/crew/hooks/scripts/crew_config.py:2384.<br/>RANK, not equality."]
+        WRITE["write_global_config()<br/>plugin/crew/hooks/scripts/crew_config.py:2995<br/>the only function in crew that writes outside<br/>the repo. Re-plans on the bytes read under the<br/>lock; --expect DIGEST|absent refuses a changed<br/>file (GlobalWriteConflict :2259); any other<br/>OSError (directory, lock, write) is<br/>GlobalWriteRefused :2947, exit 2"]
     end
 
     PLAN --> ISG
@@ -584,10 +598,10 @@ flowchart TB
 
     subgraph RepoWrite["NEW (T-0075): the repo writer - /crew:config --set --repo, the only path into .crew/config.json"]
         direction TB
-        RPLAN["plan_repo_write()<br/>plugin/crew/hooks/scripts/crew_config.py:3159<br/>on repo_snapshot() :3147 (refuses a missing or<br/>malformed file rather than creating one) and<br/>machine_view() :3124 (the machine file and its<br/>digest, one read)"]
+        RPLAN["plan_repo_write()<br/>plugin/crew/hooks/scripts/crew_config.py:3176<br/>on repo_snapshot() :3164 (refuses a missing or<br/>malformed file rather than creating one) and<br/>machine_view() :3124 (the machine file and its<br/>digest, one read)"]
         RREF>"RepoWriteRefused (class :2957)<br/>REPO_REFUSED :2972 - platform, schema,<br/>scope.mode, scope.allowCliApproval, the<br/>machine-only autoClear paths; a block emptied or<br/>replaced is refused (is_repo_path :3029);<br/>REPO_VETO_ONLY :2993 takes only false / null<br/>(by identity, is_repo_veto :2996)"]
         RWIDEN["repo_widens() :3037 - the ratchet against<br/>what is in force, plus _REPO_WIDENING :3006;<br/>a repo value held down by the machine layer<br/>is named, not marked as a widening"]
-        RWRITE["write_repo_config()<br/>plugin/crew/hooks/scripts/crew_config.py:3185<br/>the same compare-and-swap (RepoWriteConflict<br/>:3015), and --expect-global binds the machine<br/>file under its lock; never creates the file;<br/>an OSError is RepoWriteRefused :3162, exit 2"]
+        RWRITE["write_repo_config()<br/>plugin/crew/hooks/scripts/crew_config.py:3202<br/>the same compare-and-swap (RepoWriteConflict<br/>:3015), and --expect-global binds the machine<br/>file under its lock; never creates the file;<br/>an OSError is RepoWriteRefused :3162, exit 2"]
         RPLAN -->|"refused leaf, or a bad value in the merged file"| RREF
         RPLAN --> RWIDEN --> RWRITE
     end
@@ -622,8 +636,8 @@ flowchart TB
 
     subgraph Ratchet["Two DIFFERENT ratchet tables, not one - 14 write-side, 13 read-side"]
         direction TB
-        RG["<b>READ side: crew_guards.RATCHETED_KEYS</b><br/>plugin/crew/hooks/scripts/crew_guards.py:533-560<br/><b>14 keys</b> (executed + len()'d, this pass):<br/>install.policy, change.requireForProduction,<br/>environments.prodUnattended (T-0005),<br/>and all ELEVEN guards.* - terraformApply, forcePush,<br/>adminMerge, mergeGate, cloudDestructive,<br/>sqlDestructive, deployWorkflow (T-0009), prodDatabase, prodServer,<br/>roleWrites, <b>cloudGuard (new)</b>.<br/>Consumed by crew_config.resolve_ratcheted() :833<br/>via crew_guards.effective_ratcheted() :574, called<br/>at crew_config.py:877"]
-        RC["<b>WRITE side: crew_config._RATCHETED</b><br/>plugin/crew/hooks/scripts/crew_config.py:2553<br/>(extended through :2676)<br/><b>15 keys</b>: the same fourteen PLUS pm.authority.<br/>pm.authority is still NOT in RATCHETED_KEYS -<br/>it resolves by ordinary precedence and only<br/>needs a widening NOTE when /crew:config writes it"]
+        RG["<b>READ side: crew_guards.RATCHETED_KEYS</b><br/>plugin/crew/hooks/scripts/crew_guards.py:533-560<br/><b>14 keys</b> (executed + len()'d, this pass):<br/>install.policy, change.requireForProduction,<br/>environments.prodUnattended (T-0005),<br/>and all ELEVEN guards.* - terraformApply, forcePush,<br/>adminMerge, mergeGate, cloudDestructive,<br/>sqlDestructive, deployWorkflow (T-0009), prodDatabase, prodServer,<br/>roleWrites, <b>cloudGuard (new)</b>.<br/>Consumed by crew_config.resolve_ratcheted() :850<br/>via crew_guards.effective_ratcheted() :574, called<br/>at crew_config.py:877"]
+        RC["<b>WRITE side: crew_config._RATCHETED</b><br/>plugin/crew/hooks/scripts/crew_config.py:2570<br/>(extended through :2676)<br/><b>15 keys</b>: the same fourteen PLUS pm.authority.<br/>pm.authority is still NOT in RATCHETED_KEYS -<br/>it resolves by ordinary precedence and only<br/>needs a widening NOTE when /crew:config writes it"]
         RSHAPE["Confirmed by import + diff + type(), not<br/>asserted: 13-key intersection, pm.authority the<br/>only difference (`set(_RATCHETED) -<br/>set(RATCHETED_KEYS) == {'pm.authority'}`), and<br/>the tuple field order STILL differs -- (function,<br/>function, dict) here, (tuple, function, function)<br/>there -- so the two still cannot be collapsed<br/>into one table as written"]
         RG --- RC --- RSHAPE
     end
@@ -633,7 +647,7 @@ flowchart TB
 
     subgraph Corrupt["A corrupt config file is its own state, and it BEATS the ratchet"]
         direction TB
-        LS["crew_config.layer_state(path)<br/>plugin/crew/hooks/scripts/crew_config.py:922<br/>classifies ONE config file, either layer<br/>(cloud=True / environments=True - the cloud<br/>guard's reads only - also call a malformed<br/>cloud / environments block corrupt):<br/><b>absent</b> - nothing there (os.path.lexists false,<br/>so a DANGLING SYMLINK is corrupt, not absent).<br/><b>corrupt</b> - present but not the shape this key<br/>needs: unreadable, invalid JSON, not an object, or<br/>an object where <i>#quot;guards#quot; in parsed</i> and guards<br/>is not itself a dict (an EXPLICIT null is corrupt,<br/>not an unset key).<br/><b>ok</b> - everything else"]
+        LS["crew_config.layer_state(path)<br/>plugin/crew/hooks/scripts/crew_config.py:939<br/>classifies ONE config file, either layer<br/>(cloud=True / environments=True - the cloud<br/>guard's reads only - also call a malformed<br/>cloud / environments block corrupt):<br/><b>absent</b> - nothing there (os.path.lexists false,<br/>so a DANGLING SYMLINK is corrupt, not absent).<br/><b>corrupt</b> - present but not the shape this key<br/>needs: unreadable, invalid JSON, not an object, or<br/>an object where <i>#quot;guards#quot; in parsed</i> and guards<br/>is not itself a dict (an EXPLICIT null is corrupt,<br/>not an unset key).<br/><b>ok</b> - everything else"]
         FORCE["plugin/crew/hooks/scripts/role_write_guard.py<br/>calls layer_state for BOTH layers at :760-761,<br/>ORs them into forced_by_corruption :762, and sets<br/>policy = #quot;block#quot; UNCONDITIONALLY at :764-765 --<br/>BEFORE the <i>elif policy == #quot;off#quot;: return 0</i><br/>early exit at :766-767"]
         LS --> FORCE
     end
@@ -699,7 +713,7 @@ flowchart TB
 
     subgraph ShellRoute["T-0040: shellRoute is config; the probe's answer is not"]
         direction TB
-        SR["shellRoute.mode / shellRoute.distro<br/>both layers, plugin/crew/hooks/scripts/crew_config.py:339 / :581<br/>read by crew_shell.settings through resolve_config;<br/>an unrecognised mode reads as auto and is named"]
+        SR["shellRoute.mode / shellRoute.distro<br/>both layers, plugin/crew/hooks/scripts/crew_config.py:340 / :598<br/>read by crew_shell.settings through resolve_config;<br/>an unrecognised mode reads as auto and is named"]
         SRC[("~/.claude/crew/shell-route.json<br/>crew_shell.probe_path() - the machine-local probe cache<br/>written only by probe --write and measure --write;<br/>NOT a config layer, never merged")]
         SRD["crew_shell.decide() / status_line()<br/>plugin/crew/hooks/scripts/crew_shell.py:560 / :923<br/>native Windows only - off Windows, plain bash -c"]
         SR --> SRD
@@ -820,6 +834,18 @@ flowchart TB
 %% +12 lines on L-0572's verify-gate `coveredBy` rule (cited by name only). No node or edge changed.
 %% Re-anchored -> a81e4382 (L-0555 merges main 0487fc39: L-0575 #311, L-0599 #315, rerere off): main's body and its L-0575 re-anchor notes were taken. L-0555 touches no Anchors path. No node or edge changed.
 
+%% Re-anchored 6053b65d -> 9cfd1458 (L-0574, after merging main 7ba4f9ea): of the anchored paths only
+%% plugin/crew/CONFIG.md changed - L-0572 #309 added 12 lines on verify.json "coveredBy" rules, which
+%% is the verify map, not the crew-config data flow drawn here. This diagram cites CONFIG.md by name
+%% only; no node or edge changed.
+%% 328fdf4a -> 963d2905 (L-0510, review closure, crew 1.0.90): of the Anchors paths only CONFIG.md
+%% changed, two lines inside section 20's "What arming it does not change" paragraph; every
+%% section heading above it kept its number and the diagram cites CONFIG.md by section only.
+%% No node or edge changed.
+%% Merged 490f4ec1 (L-0510) + 52489039 (main, T-0040 #290, crew 1.0.98) on L-0510-build, 2026-10-01
+%% (merge 58fc8da8, rerere off), re-anchored to 5254bbfe (crew 1.0.103): header and provenance conflicted,
+%% both provenance blocks kept, main's first; the Anchors list keeps T-0040's crew_shell.py; CONFIG.md is cited by section only and
+%% L-0510's two lines sit inside section 20. No node or edge changed.
 %% Re-anchored decb2b49 -> 38d7e1a1 (T-0009 round-6 self-check fixes; crew 1.0.145 re-set): crew_guards.py gained an import (+1 from :33),
 %% 4 comment lines and 1 tuple at _WORKFLOW_NON_LITERAL_RE (+5 from ~:2090) and 2 lines in _workflow_literal (+7 from ~:2720);
 %% every crew_guards citation here re-mapped by difflib and re-read by symbol (6 Dispatch, RATCHETED_KEYS, dispatch_answer :2935).
@@ -837,7 +863,7 @@ flowchart TB
 
     subgraph Dispatch["environments.workflows's one reader - the grammar runs before the parser (T-0009)"]
         direction TB
-        DENV["cloud_guard.environments_config(root)<br/>plugin/crew/hooks/scripts/cloud_guard.py:2539<br/>workflows from the REPO file only;<br/>a malformed repo block empties it and sets problem;<br/>dispatchProblem :2574 adds the GLOBAL block's<br/>(crew_config.global_environments_problem :1083) -<br/>dispatches only, terraform still reads problem"]
+        DENV["cloud_guard.environments_config(root)<br/>plugin/crew/hooks/scripts/cloud_guard.py:2539<br/>workflows from the REPO file only;<br/>a malformed repo block empties it and sets problem;<br/>dispatchProblem :2574 adds the GLOBAL block's<br/>(crew_config.global_environments_problem :1100) -<br/>dispatches only, terraform still reads problem"]
         DGATE{"crew_guards.dispatch_answer<br/>plugin/crew/hooks/scripts/crew_guards.py:2935<br/>dispatch_trigger :2551 (a run-time command word<br/>by its argv's shape, _hole_shape :2183; a PowerShell<br/>launcher or alias only with full parameter names,<br/>_ps_untrusted_dispatch :2292), then<br/>dispatch_first_non_literal :2651 -<br/>BEFORE any parsing"}
         DCNT>"could not tell: unknown, op line-not-literal<br/>asks when attended, denied unattended"]
         DPARSE["dispatch_scopes :2818, then<br/>dispatch_environment :2865<br/>nonProd / prod / unknown / unlisted"]

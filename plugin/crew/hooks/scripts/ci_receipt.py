@@ -8,9 +8,12 @@ slot on a shared box that OOM-kills it at the 6G cap. The self-hosted runner
 pool sits idle most of the day. `.github/workflows/verify-gate.yml` runs the
 same gate there on a pushed lane branch and uploads what this module's
 `build` writes; `check` reports whether that result provably describes the
-commit checked out here. Diagnostic in this release: no gate consumer
-(`/crew:done`, `review_run.py`, `crew_train.py check-land`, the Stop hook)
-accepts it yet; that wiring is a separate tooling change.
+commit checked out here. Three consumers accept a VERIFIED receipt when the
+local gate evidence does not hold: `review_run.py` and `crew_train.py
+check-land` through `review_gate.accepted_state` (only ever an upgrade), and
+`/crew:done`'s Check 2 through this module's `check` CLI. The Stop hook does
+not consult it: that would be network calls in a hook that runs every turn,
+to save a run the 60s Stop budget already keeps short.
 
 WHAT `build` RECORDS (runner side, after the gate). The verdict is not the
 gate's exit status. It is `review_gate.gate_state` asked on the runner, the

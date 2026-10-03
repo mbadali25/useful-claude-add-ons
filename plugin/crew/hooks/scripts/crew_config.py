@@ -80,6 +80,7 @@ import argparse
 import collections
 import copy
 import fnmatch
+import functools
 import hashlib
 import json
 import os
@@ -402,6 +403,22 @@ def default_config():
         # file leaves the key out.
         "route": {"enabled": False},
     }
+
+
+@functools.lru_cache(maxsize=1)
+def _default_template():
+    """ONE `default_config()`, shared, for readers that only walk its shape.
+
+    NEVER mutate it and never hand it to a caller that might: it is the same
+    object on every call, which is the whole point. `_shape` runs once per
+    dotted key a planner judges, and building the `/crew:config` menu probes
+    every offered choice through a planner, so a fresh deep copy per lookup
+    was ~50,000 copies for one menu - 93% of a profiled `menu_spec` call.
+    `default_config()` reads only module constants, so one build is current
+    for the life of the process. Writers keep calling `default_config()`.
+    A test that monkeypatches one of those constants must call
+    `_default_template.cache_clear()`, or these readers keep the old shape."""
+    return default_config()
 
 
 def default_global_config():
@@ -2709,7 +2726,7 @@ def leaf_updates(updates):
 
 def _is_open_table(dotted):
     """True for `qa.roles` / `dev.roles` themselves: an empty dict default."""
-    node = _dig(default_config(), tuple(dotted.split(".")))
+    node = _dig(_default_template(), tuple(dotted.split(".")))
     return isinstance(node, dict) and not node
 
 
@@ -2744,7 +2761,7 @@ MACHINE_REFUSED["graph.obsidian.confirmed"] = (
 def _shape(dotted):
     """`block`, `open` (at or under an open table), `leaf`, `under` (past a
     template leaf, which takes a value, not keys) or `unknown`."""
-    node = default_config()
+    node = _default_template()
     for part in dotted.split("."):
         if isinstance(node, dict) and not node:
             return "open"
@@ -2832,7 +2849,7 @@ def value_allowed(dotted, layer, value):
     if value is None:
         if null_means(dotted, layer) is not None:
             return None
-        default = _dig(default_config(), tuple(dotted.split(".")))
+        default = _dig(_default_template(), tuple(dotted.split(".")))
         return (f"{dotted} = null is not one of its values here "
                 f"({_values_text(allowed)}); pick one of them, or its default "
                 f"{None if default is _MISSING else default!r}")
