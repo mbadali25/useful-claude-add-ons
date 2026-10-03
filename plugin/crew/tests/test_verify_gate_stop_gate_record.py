@@ -3060,7 +3060,7 @@ def test_52_a_clean_stop_never_sets_all_clean_at(flavour, tmp_path):
     assert (done.returncode, _record(root).get("all_clean_at")) == (0, None), done.stderr
 
 
-_CLEAN_OUTCOME = {"failed": False, "skipped": False, "deferred": 0}
+_CLEAN_OUTCOME = {"failed": False, "skipped": False, "deferred": 0, "tree_moved": False}
 
 
 def _unit_sync(tmp_path, monkeypatch, sha="c" * 40, matched=None, cmd_log=None, all_run=True,
@@ -3087,14 +3087,16 @@ def test_52_all_clean_at_unit_control_is_the_sha(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("case", ["missing", "failed", "skipped", "deferred", "deferred-bool",
-                                  "wrong-type", "head-moved"])
+                                  "wrong-type", "head-moved", "tree-moved", "tree-moved-absent"])
 def test_52_all_clean_at_needs_a_clean_outcome(tmp_path, monkeypatch, case):
     outcome = {"missing": "absent", "failed": dict(_CLEAN_OUTCOME, failed=True),
                "skipped": dict(_CLEAN_OUTCOME, skipped=True),
                "deferred": dict(_CLEAN_OUTCOME, deferred=1),
                "deferred-bool": dict(_CLEAN_OUTCOME, deferred=False),
                "wrong-type": dict(_CLEAN_OUTCOME, failed=0),
-               "head-moved": _CLEAN_OUTCOME}[case]
+               "head-moved": _CLEAN_OUTCOME,
+               "tree-moved": dict(_CLEAN_OUTCOME, tree_moved=True),
+               "tree-moved-absent": {k: v for k, v in _CLEAN_OUTCOME.items() if k != "tree_moved"}}[case]
 
     got, _ = _unit_sync(tmp_path, monkeypatch, outcome=outcome,
                         head_moved=(case == "head-moved"))

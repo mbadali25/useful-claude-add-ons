@@ -2050,9 +2050,10 @@ try:
     deferred = int(sys.argv[6])
 except ValueError:
     deferred = -1
-outcome = {"failed": sys.argv[4] != "0", "skipped": sys.argv[5] != "0", "deferred": deferred}
+outcome = {"failed": sys.argv[4] != "0", "skipped": sys.argv[5] != "0", "deferred": deferred,
+           "tree_moved": sys.argv[8] != "0"}
 print(json.dumps({"sha": sys.argv[2], "all": sys.argv[3] == "--all", "matched_rules": extras.get("matched_rules", []), "cmd_log": cmd_log, "outcome": outcome, "head_moved": sys.argv[7] != "0"}))
-' "$EXTRAS" "$SYNC_SHA" "$BUDGET_FLAG" "$FAILED" "$ANY_SKIPPED" "${DEFERRED_COUNT:-1}" "$HEAD_MOVED" <<< "$CMD_LOG" | tr -d '\r' | "$PY" "$SYNC_PY" sync >&2
+' "$EXTRAS" "$SYNC_SHA" "$BUDGET_FLAG" "$FAILED" "$ANY_SKIPPED" "${DEFERRED_COUNT:-1}" "$HEAD_MOVED" "${TREE_MOVED:-1}" <<< "$CMD_LOG" | tr -d '\r' | "$PY" "$SYNC_PY" sync >&2
     SYNC_STATUS=$?
   else
     echo "verify-gate: could not sync the record (verify_record.py not found at $SYNC_PY); NOT advancing the marker" >&2

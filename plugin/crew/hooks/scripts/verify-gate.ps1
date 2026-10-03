@@ -2150,7 +2150,7 @@ try {
       all = [bool]$All
       matched_rules = $extrasObj.matched_rules
       cmd_log = @($cmdLog)
-      outcome = [ordered]@{ failed = [bool]$failed; skipped = [bool]$anySkipped; deferred = [int]$deferredCount }
+      outcome = [ordered]@{ failed = [bool]$failed; skipped = [bool]$anySkipped; deferred = [int]$deferredCount; tree_moved = [bool]$treeMoved }
       head_moved = [bool]$headMoved
     }
     $payloadJson = ConvertTo-Json -InputObject $payload -Depth 10 -Compress

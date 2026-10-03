@@ -930,12 +930,14 @@ def _current_rule_keys():
 
 def _clean_outcome(outcome, head_moved):
     """True only for the gate's own report of a run with no failure, no skip,
-    no deferral and HEAD unmoved. Anything missing or mistyped is False: a
+    no deferral, no tree-pass credit withdrawn because the tree moved
+    (`tree_moved`, the gate's TREE_MOVED / $treeMoved), and HEAD unmoved. Anything missing or mistyped is False: a
     gate that predates the field never stamps `all_clean_at`."""
     if head_moved is not False or not isinstance(outcome, dict):
         return False
     deferred = outcome.get("deferred")
     return (outcome.get("failed") is False and outcome.get("skipped") is False
+            and outcome.get("tree_moved") is False
             and isinstance(deferred, int) and not isinstance(deferred, bool)
             and deferred == 0)
 
