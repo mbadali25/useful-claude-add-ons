@@ -39,8 +39,9 @@ not a clean review, so it does **not** short-circuit.
 One line per defect, `SEVERITY|file:line|what breaks|how to reproduce`, with severity
 `BLOCK`/`FIX`/`NIT`. A script computes the verdict. Empty output, a non-zero exit, a timeout, an
 unacknowledged part, or a stray line that might be a misformatted contract line or admits the
-review fell short is **INCOMPLETE**, never CLEAN. Harmless stray prose beside well-formed findings
-is ignored and reported, never beside CLEAN (L-0576). Findings are reported verbatim, BLOCK first.
+review fell short is **INCOMPLETE**, never CLEAN. Harmless stray prose or a code fence beside
+well-formed findings is ignored and reported, and the round is **FINDINGS**; never recovered beside
+CLEAN (L-0576). Findings are reported verbatim, BLOCK first.
 
 ## R6 — The reviewer is independent of the author
 
