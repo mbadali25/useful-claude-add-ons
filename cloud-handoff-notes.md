@@ -72,6 +72,7 @@ Batch 3, not started: #361 T-0050 (1.0.193), #369 T-0044 (1.0.194), #370 T-0038 
 
 ## Log (newest first)
 
+- 23:33: #352 review: PASS 0 BLOCK, 2 FIX (both unlink+blank fail -> stale author record still trusted, must wait; remove docs/tickets/T-0069). Sent to builder; target 1.0.224. Next free: 1.0.225. #372: waiting CI on 11d5194e (bf87f024 run was cancelled).
 - 23:33: #372 red Windows fan-in on bf87f024 = default/slow jobs CANCELLED by the 11d5194e push (wallclock passed); not a failure. #337 round-5 FIX pushed (4e77771a, crew 1.0.222): stems stay out of 'by' names, GAP names the word. Round-6 Sonnet re-review started.
 - 23:32: #358 T-0022 built + pushed 99409651 (crew 1.0.191): docs + tracker autopilot phases, crew_docs_check.py; suite 8869 passed; 21/21 sabotage red; harness follow-up sabotage_docs.py. Sonnet review of #358 started. Port T-0051 (#362, 1.0.197, WIP-unverified) started in /home/user/pr-362. #337 round-6 commits made locally (to 1.0.222), gating.
 - 23:31: #372 merge-only re-review on 11d5194e: CLEAN (0/0/0). Review rule satisfied on the current head; waiting for CI on 11d5194e, then merge.
