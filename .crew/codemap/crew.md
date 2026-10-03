@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@3eb9fa1f
+anchor: useful-claude-add-ons@f98444b9
 verified: 2026-10-03
 
 ## Re-derive provenance
@@ -3529,3 +3529,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `4fc93b19` (main, L-0587) and `35b9e6d9` (L-0592) -> `39ebbc18` on 2026-10-02 (L-0592 merges origin/main 6ac3b1b3, L-0587 #319 and #322; rerere disabled; crew 1.0.139).** Main's maps, INDEX and diagram were taken and L-0592's notes re-applied after main's. Since main's anchor, L-0592 changed five files under the crew plugin (README, the implement command, recurring_findings.py, two test modules) with no line moved, and main's re-pin changed two root README lines in place. No citation moved; no claim changed.
 
 **Re-anchored `39ebbc18` -> `3eb9fa1f` on 2026-10-03 (L-0604: the shortfall rule says its wording list cannot be complete; docs, a docstring and two tests).** Since `39ebbc18`, L-0604 changed the crew README (one verdict-table row, in place), BUDGETS.md (the count, in place), crew_standards.py (the proposals docstring, +5 lines from 731; no function below it is cited by line here), crew-qa-standards' review.md (R5, +3 lines from 41), the troubleshooting guide source (+2 lines from 134) and its rebuilt HTML/DOCX/PDF, and two test modules (test_review_verdict.py, test_crew_standards.py; one test each, inserted). Paths are named without citation markup so this note does not shift the map's derived rule paths. No live citation moved (a troubleshooting.md line number inside an older note records that note's commit); no claim changed.
+
+**Re-anchored `3eb9fa1f` -> `f98444b9` on 2026-10-03 (L-0604 review round 1 FIX).** Since `3eb9fa1f`, apart from CHANGELOG.md (release bookkeeping) and the refresh artifacts, only the crew README changed: one recovery-paragraph sentence about the shortfall wording list, reworded in place (no line added or removed). No citation moved; no claim changed.
