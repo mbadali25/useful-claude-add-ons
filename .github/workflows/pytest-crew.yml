@@ -245,11 +245,18 @@ jobs:
   # `on: pull_request: paths:` filter: that would drop the whole workflow and
   # leave its required checks pending.
   #
-  # The split is by count until a durations file is committed: with none,
-  # pytest-split's least_duration weighs every test equally and deals them
-  # round-robin by name, which spreads each function's parametrisations across
-  # the shards. Each shard stores its measured durations (durations.json in
-  # its artifact) so that file can be built from real Windows timings.
+  # The split is by measured Windows time: .github/crew-windows-durations.json
+  # is the three shards' durations.json from run 37088914100 (main 6ac3b1b3)
+  # merged. By count, the shards ran 6.8 / 10.0 / 11.2 min (2026-10-03); the
+  # same tests dealt by those durations sum to within 1% of each other. A test
+  # the file does not name is weighed at the file's average, so a new test
+  # costs balance, never coverage (the gate still checks every collected test
+  # ran exactly once). Each shard copies the file in and stores its updated
+  # durations back into its artifact: to refresh, merge the three artifacts'
+  # durations.json into the committed file, LEAVING OUT test_review_golden.py's
+  # test_leak_* ids: their parameters are secret-shaped fixtures, built at run
+  # time in the test, and written out literally GitHub push protection
+  # refuses the push.
   #
   # Runner: every crew-windows-* job takes `runs-on` from
   # crew-windows-decide's `runs-on` output, set in one line there. The Windows
@@ -336,7 +343,9 @@ jobs:
     - name: Run crew's default set, shard ${{ matrix.group }} of 3
       if: runner.os == 'Windows'
       shell: pwsh
-      run: python -m pytest plugin/crew/tests -n auto -m "not wallclock" -v --splits 3 --group ${{ matrix.group }} --splitting-algorithm least_duration --store-durations --durations-path crew-ci/durations.json --durations=50 --junitxml=crew-ci/junit.xml
+      run: |
+        Copy-Item .github/crew-windows-durations.json crew-ci/durations.json
+        python -m pytest plugin/crew/tests -n auto -m "not wallclock" -v --splits 3 --group ${{ matrix.group }} --splitting-algorithm least_duration --store-durations --durations-path crew-ci/durations.json --durations=50 --junitxml=crew-ci/junit.xml
     - name: Upload the collection, JUnit and durations
       if: always()
       uses: actions/upload-artifact@v4

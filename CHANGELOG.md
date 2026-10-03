@@ -4,6 +4,26 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed — `crew` 1.0.136: `/crew:config`'s menu stops deep-copying the whole default config per key lookup; Windows CI shards split by measured time; lock-window tests stop sleeping
+
+- `crew_config._shape`, `_is_open_table` and `_content_problem`'s default lookup read one cached
+  `_default_template()` instead of calling `default_config()`, which deep-copies every default block.
+  Building the menu probes every offered choice through a planner, so one `menu_spec` made about
+  50,000 copies, 93% of its profiled time. `test_config_menu.py` went from 67s to 3s (`-n 4`, 4 CPUs;
+  146 of the crew suite's 677 test-seconds before). Writers still get a fresh `default_config()`.
+  Two new tests: the cache agrees with a fresh default and a caller's mutation never reaches it; and
+  a shape lookup builds no default at all, red when any of the three call sites is reverted.
+- `.github/crew-windows-durations.json` holds the Windows default set's measured durations, merged
+  from the three shards of run 37088914100, and each `crew-windows-default` shard splits by it.
+  By count the shards ran 6.8 / 10.0 / 11.2 min; by these durations they sum within 1%. Mapped
+  to the `.github/workflows/**` rule in `.crew/verify.json`.
+- `test_verify_gate_lock_window.py`'s reclaim cases (expired, missing and six unparseable deadlines,
+  plus the Windows parity case) run an instant rule stating the same 8s cost instead of `sleep 6`.
+  Whether a lock is held is read from the existing lock, never from the challenger's rule, so the
+  sleep proved nothing: ~58s of sh cases now take ~15s. They now require the rule to have run
+  (`echo RAN`); sabotage-checked by repairing a malformed deadline into digits, never expiring a
+  deadline, and reclaiming without running, each red.
+
 ### Changed — `crew` 1.0.135: the standards proposals docstring and crew-qa-standards R5 state L-0576's recovered verdict (L-0598)
 
 - `crew_standards.proposals`'s docstring no longer says any unreadable line refuses a round. A round

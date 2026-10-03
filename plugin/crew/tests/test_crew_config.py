@@ -203,6 +203,40 @@ def test_default_config_returns_a_fresh_docs_and_bitbucket_block():
     assert crew_config.default_config()["docs"]["theme"] is None
 
 
+def test_shape_readers_share_one_template_and_writers_still_get_fresh_copies():
+    """`_shape` reads a cached `_default_template()` instead of deep-copying
+    the whole default per lookup (that copy was 93% of a `/crew:config` menu
+    build). The cache must agree with a fresh `default_config()` on every
+    path, and a caller mutating `default_config()`'s result must not reach
+    it."""
+    assert crew_config._default_template() is crew_config._default_template()
+    assert crew_config._default_template() == crew_config.default_config()
+
+    fresh = crew_config.default_config()
+    fresh["qa"]["order"] = "mutated"
+    fresh["route"] = {}
+    assert crew_config._default_template()["qa"]["order"] != "mutated"
+    assert crew_config._shape("route") == "block"
+    assert crew_config._shape("route.enabled") == "leaf"
+    assert crew_config._shape("qa.roles") == "open"
+    assert crew_config._shape("route.enabled.x") == "under"
+    assert crew_config._shape("no.such.key") == "unknown"
+
+
+def test_shape_lookups_build_no_default_config(monkeypatch):
+    """The cost guard: once the template exists, a shape lookup builds no new
+    default. Reverting any `_shape` / `_is_open_table` / `_content_problem`
+    read to `default_config()` makes this raise."""
+    crew_config._default_template()
+
+    def _built(*_a, **_k):
+        raise AssertionError("a shape lookup deep-copied default_config()")
+    monkeypatch.setattr(crew_config, "default_config", _built)
+    crew_config._shape("route.enabled")
+    crew_config._is_open_table("qa.roles")
+    crew_config._content_problem("qa.order", "repo", None)
+
+
 def test_docs_and_bitbucket_are_settable_globally():
     """The criterion this feature dies silently on. A block absent from
     `default_global_config()` is pruned out of the global layer by
