@@ -4,6 +4,31 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.192: `/crew:help`, contextual help from the files on disk (T-0025)
+
+- `/crew:help` with no argument prints at most 8 lines: where you are (ticket, where it came
+  from, phase), what it waits on, ONE `next:` command and why, and 2-3 `also:` commands for that
+  phase. State comes only from `crew_autopilot.status` (T-0004's `resume_target`/`next_phase`,
+  T-0018's waiting-on mapping); `crew_help.py` parses no INDEX, receipt or ledger itself. A stop's
+  `next:` is what you type, and approval is always "you type `/crew:approve <id>`". Several open
+  tickets with no pointer are listed and never picked; a broken pointer or no ticket says so.
+- `/crew:help <command>` prints purpose, when, arguments and next for every command file (with or
+  without `/crew:`); `/crew:help <question>` resolves through T-0023's `crew_route.match`, the one
+  phrase table (a test finds no pattern module or compile call in `crew_help.py`); `/crew:help
+  <id>` is the same 8 lines for that ticket; `/crew:help commands` lists every command by an
+  advisory group, core first. Read-only and exit 0: the tests snapshot every file and mtime.
+- `crew_route.PHRASES` gains `help` (`help`, `what now`, `what's next`, `where are we`) and
+  `help-topic` (`how do i [use] <x>` -> `/crew:help <x>`, never for approval). Bare `next` and
+  `done` still route nowhere.
+- `/crew:implement` step 0 runs `crew_ticket.py status` (validate checks the contract, not the
+  approval) and names the one fix - `/crew:plan $1`, or the user types `/crew:approve $1` -
+  instead of `/crew:plan $1 --approve`, which records nothing.
+- Not in this release (review-harness paths, a harness-only follow-up in TODO.md): the scope
+  guard's no-approval deny text, `review.md`'s no-ticket stop, and `sabotage_help.py`.
+- The command surface recommendation (core, through-help, merge candidates, specialist, removal
+  stubs) is advisory and filed to TODO.md as an owner decision; nothing is hidden or renamed.
+  crew registers 37 commands.
+
 ### Fixed — `crew` 1.0.163: the review prompt shows the gate's real answer for HEAD (docs/review/08, defect 1)
 
 - `review_prompt._receipts_block` told the reviewer `MISSING: no .crew/.verify-verified-at` on a round
