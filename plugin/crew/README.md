@@ -1194,7 +1194,8 @@ Six keys added by schema 6, in **two vocabularies**: four are
 `block` | `ask` | `allow`, shipping as `block`; the two production-access keys
 are `none` | `read` | `full`, shipping as `none`. Since then `guards.roleWrites`
 (see §18 of CONFIG.md) and, with the cloud guard, `guards.cloudDestructive`,
-`guards.sqlDestructive` and the `guards.cloudGuard` switch. The command keys
+`guards.sqlDestructive`, `guards.deployWorkflow` and the `guards.cloudGuard`
+switch. The command keys
 below govern something **only while `guards.cloudGuard` is `report` or
 `block`** — it ships `off`; see [Cloud guard](#cloud-guard).
 

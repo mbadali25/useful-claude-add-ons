@@ -1769,7 +1769,9 @@ not run at all.
 **Unknown**, and never allowed unattended, on a literal line: no `<name>` input
 given (the workflow's default is not read), conflicting values, a value or
 workflow the parser still will not read as a name (a single-quoted `'$ENV'`,
-`'Deploy *'`), a second workflow argument (gh takes one), and no workflow
+`'Deploy *'`, or a name holding a character that does not show: a control, a
+line or paragraph separator, a bidi or zero-width mark, or a blank other than
+a plain space), a second workflow argument (gh takes one), and no workflow
 named (gh prompts for one).
 
 **The decision**, after `guards.deployWorkflow` has been ratcheted (so `ask`

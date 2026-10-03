@@ -484,8 +484,8 @@ closed by where the check sits, not by a patch at the call site.
   consent key cannot ride inside a block; `value_allowed` (`:2813`) judges each leaf: the layer's
   path rule (`MACHINE_REFUSED` `:2733` via `_consent_refusal` `:2785`, and `is_global_path` `:719`
   at the machine layer; `REPO_REFUSED` `:3026`, `is_repo_path` `:3083` (`_shape` `:2744` is a leaf
-  or open; since round 5 `_shape` also returns `under` for a path past a template leaf, `:2655`) and `REPO_VETO_ONLY` `:3047` by identity, `is_repo_veto` `:3050`, at the repo layer), a
-  path under a leaf (`:2724`) and an object at a leaf (both round 5, both layers), a
+  or open; since round 5 `_shape` also returns `under` for a path past a template leaf, `:2752`) and `REPO_VETO_ONLY` `:3047` by identity, `is_repo_veto` `:3050`, at the repo layer), a
+  path under a leaf (`:2821`) and an object at a leaf (both round 5, both layers), a
   block emptied or replaced by a scalar, the null rule (`null_means`, `:2770`), then membership in
   `enum_values` (`:2679`). `assignments` (`:2716`) is what is WRITTEN: the same leaves for a block
   (its untouched siblings, unknown keys included, survive; the widening is marked on the leaf),
@@ -508,14 +508,14 @@ closed by where the check sits, not by a patch at the call site.
   `write_global_config` (`:2978`), which re-runs `_plan_on` on the bytes `update_json` read under
   the lock, `expect` (a digest or `ABSENT`) refusing a changed file (`GlobalWriteConflict`);
   any other `OSError` from the directory, the lock or the write is a `GlobalWriteRefused`
-  naming the path (`:2904`, round 5), exit 2 and never a traceback.
+  naming the path (`:3002`, round 5), exit 2 and never a traceback.
 - **Repo:** `plan_repo_write` (`:3159`) on `repo_snapshot` (`:3147`, strict: absent or malformed
   is refused, never created) and `machine_view` (`:3178`, the filtered machine file and its
   `state_digest` from one `read_tolerant`) / `write_repo_config` (`:3185`), the same
   compare-and-swap (`RepoWriteConflict`), plus `expect_global`: the machine file is read once under
   `machine_lock` (taken before the repo lock, even when `~/.claude/crew/` is absent) and a changed
   one is refused; an `OSError` from the machine directory, either lock or the write is a
-  `RepoWriteRefused` (`:3118`, round 5). `!` on a widening: the ratchet by what is in force (`repo_widens`, `:2993`) and
+  `RepoWriteRefused` (`:3217`, round 5). `!` on a widening: the ratchet by what is in force (`repo_widens`, `:2993`) and
   the `_REPO_WIDENING` table (`:3060`).
 - **CLI:** `--set PATH=JSON [--repo] [--apply [--expect DIGEST|absent] [--expect-global
   DIGEST|absent]]` through `_set_layer` (`:3305`), which prints `digest:` of the bytes the plan
