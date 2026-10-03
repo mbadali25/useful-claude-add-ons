@@ -1,7 +1,7 @@
 # Graph Report - uca-t0009  (2026-10-03)
 
 ## Corpus Check
-- 1141 files · ~2,682,361 words
+- 1141 files · ~2,682,872 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 63 file(s) not represented in the graph (top: (none) 34, .mmd 8, .jsonl 5)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `6ecc20da`
+- Built from commit: `4ebeedc0`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
