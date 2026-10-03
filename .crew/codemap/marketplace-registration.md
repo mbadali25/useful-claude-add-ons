@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@452b30cc
+anchor: useful-claude-add-ons@53e69de9
 verified: 2026-10-01
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -34,7 +34,7 @@ and fails if `<dir>/.claude-plugin/marketplace.json` exists.
 **DERIVED**, by the same method the previous anchor used — partition
 `marketplace.json`'s flat `plugins` array by `source` prefix
 (`./skills/` vs `./plugin/`) — and independently confirmed by running the
-gate. `scripts/check-marketplace.py:1665-1666` still derives `plugins` as
+gate. `scripts/check-marketplace.py:1706-1707` still derives `plugins` as
 `len(entries) - skills`, so an entry matching neither prefix would silently
 count as a plugin; the "neither" set is empty at this anchor, same as at
 `5d1fc5fd`.
@@ -180,13 +180,13 @@ claim it was wrong about was removed, not because it was corrected in place.
 ## Two version-check paths, still not one
 
 **DERIVED, unchanged in shape.** `scripts/check-marketplace.py`'s own
-`main()` (`:1639-1674`) calls all sixteen checks, `check_versions` included,
-at `:1659` in call order. `_verify/smoke.sh` is confirmed byte-identical to
+`main()` (`:1679-1715`) calls all seventeen checks, `check_versions` included,
+at `:1699` in call order (T-0048 added `check_config_reference` at `:1701`). `_verify/smoke.sh` is confirmed byte-identical to
 `5d1fc5fd` (`git diff --stat` empty) — its `run_marketplace_check()`
 (`:72-98`) still exposes the same six named groups calling the same eight
 functions (`registration`, `skills`, `plugins`, `catalogs`, `menus`,
-`hooks`), so the gap is still **eight of sixteen**: `check_versions`,
-`check_self_claims`, `check_crew_ignore_policy`,
+`hooks`), so the gap is now **nine of seventeen**: `check_versions`,
+`check_self_claims`, `check_config_reference`, `check_crew_ignore_policy`,
 `check_argument_hint_frontmatter`, `check_license_consistency`,
 `check_command_backtick_spans`, `check_description_claims` and
 `check_catalog_claims` are all invisible to `bash _verify/smoke.sh`. The
@@ -226,7 +226,7 @@ against synthetic fixtures and never reads this repo's own docs.
 
 - `.claude-plugin/marketplace.json:217` — crew's `description`, now correct
   against disk on every measured count.
-- `scripts/check-marketplace.py:1639` — `main()`, sixteen checks in the same
+- `scripts/check-marketplace.py:1679` — `main()`, seventeen checks in the same
   order as `verification-harness.md` records.
 - `scripts/check-marketplace.py:104` — `check_registration`.
 - `scripts/check-marketplace.py:301`, `:329`, `:383` — `check_catalogs`,
@@ -1522,3 +1522,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `d95d8b25` (main) and L-0510's `a06dd790` -> `b8d09685` on 2026-10-03 (L-0510 merges origin/main `8123fe74` (L-0574 #323; crew 1.0.140) at `8c04c783`, rerere off; crew 1.0.142 set last at `b8d09685`).** Both provenance histories kept, main's first. In `crew.md` main's L-0574 `review_run.py` citations were re-derived on the merged file (L-0510 adds 8 lines above `finish` and 28 through it): by difflib, and by name for `prereview_gate` `:731` (called `:857`), `standards_gate` `:699` (at `:859`) and `review_ledger.reserve` `:863`, which main's side had stale; L-0510's `review_ledger.py` citations are unchanged. `verification-harness.md`'s `sabotage.py` citations moved +1 (main's import at `:87`; main's side had them stale). History notes were not re-mapped.
 
 **Re-anchored `b8d09685` -> `452b30cc` on 2026-10-03.** `204e813b` routes `review_run.finish`'s auto-accept line through `_out` (main's L-0574 one-writer test), one line, no line count change, so no citation moved; `452b30cc` re-sets crew 1.0.142 last.
+
+**Re-anchored `452b30cc` -> `53e69de9` on 2026-10-03 (T-0048, the full crew guide and the generated configuration reference, crew 1.0.161).** T-0048 changes, among cited paths, `.crew/verify.json` (one rule appended last, so no rule number moves), `plugin/crew/CONFIG.md` (the key tables of sections 10 and 11 become generated tables; the other sections are byte-identical), `scripts/check-marketplace.py` (`check_config_reference` added), `scripts/_test/self-claims.py` (one list entry), `docs/guides/crew/src/build.py` and `README.md`, and the release files; it adds `plugin/crew/hooks/scripts/crew_keys.py` and the guide sources. Path-qualified body citations into the changed files were mapped by a `difflib` line diff from origin/main `34d9f267` (`t0048-remap.py`, session scratchpad), each landing on the same line text; 2 moved in this note. `main()`'s check count (sixteen -> seventeen, `check_config_reference`) and the smoke-path gap (nine of seventeen) were re-read and corrected. Re-anchor only; no test suite was executed for this note.
