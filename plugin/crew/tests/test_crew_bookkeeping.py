@@ -56,7 +56,22 @@ FENCED = BUDGETS + """
 ```
 """
 
+CODE_SPAN = BUDGETS + """
+The marker's form is `<!-- claim: crew-markdown-lines -->`, shown here as code.
+77 lines in that example.
+"""
+
+FAR = "<!-- claim: crew-markdown-lines -->\n" + "filler\n" * 12 + "5 lines past the window\n"
+
 LINES = BUDGETS.splitlines(keepends=True)
+
+
+class _RaisingStr(str):
+    """A str whose splitlines raises: the one way past the type check into
+    an exception, so the catch-all is exercised."""
+
+    def splitlines(self, keepends=False):
+        raise RuntimeError("boom")
 
 
 def _swap(text, old, new):
@@ -118,6 +133,12 @@ MUST_BLOCK = [
      _swap(BUDGETS, "18,176 lines", "18,200 lines"), "not plugin/*/BUDGETS.md"),
     ("case-differs", "plugin/crew/budgets.md", BUDGETS,
      _swap(BUDGETS, "18,176 lines", "18,200 lines"), "not plugin/*/BUDGETS.md"),
+    ("marker-in-code-span", PATH, CODE_SPAN, _swap(CODE_SPAN, "77 lines", "78 lines"),
+     "no crew-markdown-lines marker binds"),
+    ("number-past-window", PATH, FAR, _swap(FAR, "5 lines", "6 lines"),
+     "no crew-markdown-lines marker binds"),
+    ("path-not-a-string", None, BUDGETS,
+     _swap(BUDGETS, "18,176 lines", "18,200 lines"), "not plugin/*/BUDGETS.md"),
     ("undecodable", PATH, BUDGETS.encode("utf-8") + b"\xff",
      _swap(BUDGETS, "18,176 lines", "18,200 lines"), "could not tell"),
 ]
@@ -149,7 +170,8 @@ def test_identical_is_allowed_as_unchanged():
     assert cb.claim_numbers_only(BUDGETS, BUDGETS, PATH) == (True, "unchanged")
 
 
-@pytest.mark.parametrize("before,after", [(None, ""), (object(), "x")])
+@pytest.mark.parametrize("before,after", [(None, ""), (object(), "x"),
+                                          (_RaisingStr("a 1 lines\n"), "a 2 lines\n")])
 def test_never_raises(before, after):
     assert cb.claim_numbers_only(before, after, PATH) == (False, "could not tell")
 
