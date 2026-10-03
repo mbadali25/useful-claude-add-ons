@@ -34,7 +34,7 @@ it merges if its number has been passed.
 |---|---|---|---|---|
 | #350 | T-0061 | built; merging main and verifying (harness half is #378, 1.0.181) | | 1.0.184 |
 | #351 | T-0066 | part 1 merged with main, verified; in review | | 1.0.185 |
-| #355 | T-0013 | built; merging main and verifying | | 1.0.186 |
+| #355 | T-0013 | merged with main, verified; in review | | 1.0.186 |
 | #360 | T-0048 | merged with main, verified; in review | | 1.0.200 |
 | #368 | T-0063 | built; merging main and verifying | | 1.0.201 |
 | #371 | T-0100 | built; harness files, may need a tooling-PR split | | 1.0.202 |
@@ -64,6 +64,7 @@ it merges if its number has been passed.
 |---|---|---|
 | T-0066 (#351) part 2 | The scope guard refuses a commit carrying a `git.forbiddenTrailers` trailer: `scope_guard.py`, `test_scope_guard_trailers.py` (must-block/must-allow), `sabotage_trailers.py` + `sabotage.py` entry, the scope-guard doc rows | needs ticket |
 | T-0048 (#360) | `sabotage_keys.py` (ten mutations, shown red by hand) registered in `sabotage.py` | needs ticket |
+| T-0013 (#355) | `sabotage_resume_typing.py` registered in `sabotage.py` | needs ticket |
 
 **Re-bumps:** merging `main` always needs a new crew version set after the merge (the drift check dates a version from the first commit that declared it). 1.0.180 -> 1.0.199 (#372), 1.0.183 -> 1.0.200 (#360), 1.0.182 -> 1.0.201 (#368), 1.0.166 -> 1.0.202 (#371). Next free: 1.0.203.
 
