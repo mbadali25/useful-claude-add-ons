@@ -252,10 +252,14 @@ def current_holder(top):
 def same_holder(a, b):
     """One holder is one session id in one process, on one machine and in one
     worktree: session, machine, worktree and pid all equal, and the pid's start
-    time equal wherever both sides recorded one. The same session id from
+    time equal wherever both sides recorded one. A missing pid on either side is
+    never the same holder (T-0049 review round 3). The same session id from
     another process or worktree -- `claude --resume <id>` while the original
     still runs -- is ANOTHER holder: refused, never silently reclaimed."""
     if not (a and b):
+        return False
+    # No CLAUDE_PID on either side proves no process: two such holders are never one.
+    if a.get("pid") is None or b.get("pid") is None:
         return False
     if (a["session"], a["machine"], a.get("pid")) != (b["session"], b["machine"], b.get("pid")):
         return False

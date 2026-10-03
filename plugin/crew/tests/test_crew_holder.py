@@ -339,3 +339,8 @@ def test_processes_in_skips_a_process_gone_mid_scan(monkeypatch, tmp_path, live_
     monkeypatch.setattr(crew_holder.os, "readlink", vanish)
 
     assert crew_holder.processes_in(str(tmp_path / "wt"))[0] in ("none", "live")
+
+
+@pytest.mark.parametrize("left, right", [(None, None), (None, 10), (10, None)], ids=["both", "left", "right"])
+def test_same_holder_is_false_when_a_pid_is_missing(left, right):
+    assert crew_holder.same_holder(_holder(pid=left), _holder(pid=right)) is False

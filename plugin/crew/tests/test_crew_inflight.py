@@ -1123,3 +1123,49 @@ def test_clear_command_quotes_a_root_with_a_space(tmp_path):
     argv = shlex.split(command.split("   (")[0].replace("<your name>", "Owner"))
     assert argv[argv.index("--root") + 1] == root
     assert argv[argv.index("--round") + 1] == "2"
+
+
+# --- review round 3 (T-0049) ---------------------------------------------------------
+
+@pytest.mark.parametrize("field", ["head_at_begin", "phase", "branch", "runner_beat_at", "began_at"])
+def test_working_marker_missing_a_written_field_is_unknown(capsys, monkeypatch, repo, clock, live_pid, field):  # pylint: disable=unused-argument
+    _session(monkeypatch, "sess-a", live_pid)
+    code, out = _begin(capsys, repo["main"], "autopilot")
+    assert code == 0, out
+    path = crew_inflight.marker_path(repo["main"], TICKET)
+    record = _marker(repo)
+    del record[field]
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(record, handle)
+    before = _marker_bytes(repo)
+
+    code, out = _begin(capsys, repo["main"], "autopilot")
+
+    _assert_refused(code, out, repo, before, 3, "unknown")
+
+
+@pytest.mark.parametrize("field", ["pid", "pid_start", "bridge_session"])
+def test_working_marker_holder_missing_a_written_field_is_unknown(capsys, monkeypatch, repo, clock, live_pid, field):  # pylint: disable=unused-argument
+    _session(monkeypatch, "sess-a", live_pid)
+    code, out = _begin(capsys, repo["main"], "autopilot")
+    assert code == 0, out
+    path = crew_inflight.marker_path(repo["main"], TICKET)
+    record = _marker(repo)
+    del record["holder"][field]
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(record, handle)
+    before = _marker_bytes(repo)
+
+    code, out = _begin(capsys, repo["main"], "autopilot")
+
+    _assert_refused(code, out, repo, before, 3, "unknown")
+
+
+def test_begin_without_claude_pid_is_unknown_and_writes_nothing(capsys, monkeypatch, repo, clock, live_pid):  # pylint: disable=unused-argument
+    _session(monkeypatch, "sess-a", live_pid)
+    monkeypatch.delenv("CLAUDE_PID")
+
+    code, out = _begin(capsys, repo["main"], "autopilot")
+
+    _assert_refused(code, out, repo, None, 3, "unknown")
+    assert "CLAUDE_PID" in out

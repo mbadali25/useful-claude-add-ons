@@ -114,10 +114,14 @@ FREE, MINE, LIVE, STALE, ELSEWHERE, UNKNOWN = "free", "mine", "live", "stale", "
 GO = (FREE, MINE)
 _RUNNER_ID = re.compile(r"[A-Za-z0-9._:/@-]{1,120}")
 _REQUIRED = {
-    "working": ("runner", "holder", "worktree", "began_at", "heartbeat_at"),
+    # Every field `begin` writes: a working marker missing one is unreadable (unknown),
+    # never a holder to compare against (T-0049 review round 3).
+    "working": ("runner", "holder", "worktree", "branch", "head_at_begin", "began_at", "heartbeat_at",
+                "runner_beat_at", "phase"),
     "ended": ("runner", "worktree", "ended_at"),
     "cleared": ("runner", "cleared_at", "cleared_by"),
 }
+_HOLDER_FIELDS = ("session", "bridge_session", "pid", "pid_start", "pidns", "machine", "worktree")
 _GIT_TIMEOUT = 30
 
 
@@ -215,6 +219,9 @@ def _valid(record):
         if not (isinstance(holder, dict) and isinstance(holder.get("session"), str)
                 and isinstance(holder.get("machine"), str) and isinstance(holder.get("worktree"), str)):
             return "holder is not a holder"
+        gaps = [f for f in _HOLDER_FIELDS if f not in holder]
+        if gaps:
+            return f"holder is missing {', '.join(gaps)}"
     return ""
 
 
@@ -554,6 +561,10 @@ def cmd_begin(args):
     runner = expand_runner(args.runner)
     if me is None or runner is None:
         _result(UNKNOWN, "cannot tell who is asking: CLAUDE_CODE_SESSION_ID is absent; nothing written")
+        return EXIT_UNKNOWN
+    if me.get("pid") is None:
+        _result(UNKNOWN, "cannot tell which process is asking: CLAUDE_PID is absent, so no marker could "
+                "ever be proved this runner's; nothing written")
         return EXIT_UNKNOWN
     worktree = os.path.realpath(args.worktree or top)
     with _locked(top):

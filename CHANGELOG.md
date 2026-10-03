@@ -52,6 +52,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   `next` makes the runner and reason it takes from another runner's marker
   printable, and the displayed `clear` command quotes `--root`. Findings 3, 4,
   6 and 8 of that round are L-0617.
+- **Review round 3.** A working marker missing any field `begin` writes
+  (`head_at_begin`, `phase`, the holder's `pid` and the rest) is unreadable:
+  `unknown`, never `mine`. A missing `CLAUDE_PID` on either side is never the
+  same holder, and `begin` refuses `unknown` without one. FIX 3 and 4 of that
+  round are L-0617.
 
 ### Changed — `crew` 1.0.154: `crew_train.py check-land` and `/crew:done` accept a CI receipt for HEAD
 
