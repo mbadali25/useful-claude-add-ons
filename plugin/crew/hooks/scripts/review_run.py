@@ -536,9 +536,45 @@ def webtest_check(root, ticket, manifest):
     return rows, record, reasons
 
 
+def _manifest_problem(manifest):
+    """The first field `finish` and its callees read that is malformed, or None."""
+    if not isinstance(manifest, dict):
+        return "not a JSON object"
+    parts = manifest.get("parts")
+    if parts is not None:
+        if not isinstance(parts, list):
+            return "parts is not a list"
+        for part in parts:
+            if not isinstance(part, dict):
+                return "a part is not an object"
+            path, name = part.get("path"), part.get("name")
+            if not ((isinstance(path, str) and path) or (not path and isinstance(name, str)
+                                                         and name)):
+                return "a part has no non-empty path or name"
+    for key in ("bundle_sha256", "head", "base"):
+        if manifest.get(key) is not None and not isinstance(manifest[key], str):
+            return f"{key} is not a string"
+    return None
+
+
+def _finish_manifest(args):
+    """(manifest, reasons). After a reservation the manifest may have been
+    swapped: unreadable or malformed, it is `{}` and a tree reason, so the
+    round is INCOMPLETE and review.json is still written (L-0605, the
+    neighbour of review round 10 FIX :955)."""
+    try:
+        manifest = json.loads(_read(args.manifest, _trusted(args.manifest, args.scratch)))
+    except (OSError, ValueError) as exc:
+        return {}, [f"the manifest {args.manifest} could not be read ({exc})"]
+    problem = _manifest_problem(manifest)
+    if problem:
+        return {}, [f"the manifest {args.manifest} is malformed ({problem})"]
+    return manifest, []
+
+
 def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     """Verdict -> ledger -> review.json. Returns the process exit code."""
-    manifest = json.loads(_read(args.manifest, _trusted(args.manifest, args.scratch)))
+    manifest, manifest_reasons = _finish_manifest(args)
     # The parts as the prompt lists them -- full paths -- so a READ line that
     # echoes the listed path counts (T-0079). A part with no path falls back to
     # its name, which review_verdict still matches exactly.
@@ -547,7 +583,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
         parts.append(os.path.join(args.scratch, review_prompt.WEBTEST_FINDINGS_FILE))
     rows, webtest_record, webtest_reasons = webtest_check(args.root, args.ticket, manifest)
     stream_reasons = list(extra_reasons)
-    extra_reasons = list(extra_reasons) + bundle_problems(manifest)
+    extra_reasons = list(extra_reasons) + manifest_reasons + bundle_problems(manifest)
     extra_reasons += webtest_reasons
     # The outside reasons go INTO the parse, so a stray line is never
     # recovered on a round they make INCOMPLETE (L-0576).
@@ -985,9 +1021,17 @@ def main(argv):
             if args.round is None or args.output is None or args.exit_code is None:
                 parser.error("the claude provider takes --reserve-only, or --round N "
                              "--output FILE --exit-code N after the subagent ran")
-            output = (_read(args.output, _trusted(args.output, args.scratch))
-                      if os.path.exists(args.output) else "")
-            return finish(args, args.round, output, args.exit_code, False)
+            output, reasons = "", []
+            if os.path.exists(args.output):
+                # After the reservation: an output read_regular refuses is an
+                # INCOMPLETE round, never an escaped exception (L-0605,
+                # review round 10 FIX :955).
+                try:
+                    output = _read(args.output, _trusted(args.output, args.scratch))
+                except OSError as exc:
+                    reasons.append(f"the reviewer's output {args.output} could not be read "
+                                   f"({exc})")
+            return finish(args, args.round, output, args.exit_code, False, reasons)
         if args.reserve_only or args.round is not None:
             parser.error("--reserve-only and --round are for the claude provider only")
         return run(args)
