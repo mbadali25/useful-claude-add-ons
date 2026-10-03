@@ -4,6 +4,52 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.196: `/crew:autopilot` ships a ticket after `/crew:done` (T-0011)
+
+- Bumped `1.0.163 -> 1.0.196`. New `crew_autopilot.py ship --root . --ticket <id>` and a `ship`
+  phase in `next`, both only while autopilot is armed; unarmed, a done ticket still reads `closed`
+  and gh is never asked. `commands/autopilot.md` runs it at `phase=ship` and stays inside its
+  110-line budget (109).
+- New repo-only keys in the `autopilot` block: `ship` (`merge` default, or `pr`; anything else
+  reads as `pr` with a warning), `knownFailures` (`[]`; check names matched exactly) and
+  `ciTimeoutMinutes` (`60`). The repo config leaf count goes from 129 to 132; `crew-setup`'s
+  inline copy, the config template and `test_crew_autopilot.py`'s pinned block carry them.
+- `next` on a done ticket reads the branch's PR with `gh pr view <branch> --json
+  number,state,url,headRefOid,id`. MERGED reads `closed`, and so does an open PR under `ship: pr`
+  ("PR #n open, merge by hand"). A detached HEAD, a gh failure, an answer that is not a PR state,
+  a PR closed without merging, a working tree that differs from HEAD, or a review receipt that no
+  longer stands stops. Only gh's exact "no pull requests found for branch" answer reads as no PR.
+- `ship` refuses the default branch and a dirty working tree (tracked or untracked, ignored files
+  aside) before it pushes with `git push -u origin <branch>` (never with force), takes HEAD once
+  right after the push, and opens the PR when there is none. Under `merge` it polls `gh pr checks
+  <n> --required` every 30 s and runs exactly `gh pr merge <n> --merge --match-head-commit
+  <HEAD>` - a merge commit, never `--squash`, `--rebase` or `--admin`, because a squash or rebase
+  rewrites the commits refresh anchors name (D-028) - only when every required check passes or
+  fails under a name listed exactly in `knownFailures`.
+- What the merge rests on is re-read: the settings, the spec's risk, the review families and the
+  sha256 of the ledger bytes they came from on every poll; the PR's head and this checkout's HEAD
+  before and after every poll and right before the merge; the review receipt after CI, on that same
+  ledger; the tree again; and the base branch's merge queue (`gh api graphql`; a queue, or one that
+  cannot be read, stops). A green that lands after `ciTimeoutMinutes` stops like a pending one. A
+  merge call that leaves the PR not MERGED with a queue on (or unreadable) is dequeued once with
+  `dequeuePullRequest`, the only GraphQL mutation `ship` sends, and stops.
+- gh 2.46's `gh pr checks` has no `--json`, so its text rows are parsed, names and states verbatim.
+  A row that is not exactly five tab-separated fields (gh prints a name and a description
+  unescaped, so a tab in one shifts the rest) makes the read unreadable, as do stderr beside the
+  rows and an exit code the rows contradict. The five fields are read from gh v2.46.0's source,
+  not measured on a live PR.
+- A `high`-risk ticket, or one with no risk in its header, never merges when every completed review
+  round is `claude` or has no `model_family`. Codex, the only cross-family reviewer here, was out
+  until 2026-10-01; while it is unavailable every `high`-risk ticket stops at `ship: merge` with
+  its PR open.
+- New `tests/test_crew_autopilot_ship.py` (146 cases, gh and push stubbed) and a `.crew/verify.json`
+  rule for it. Every refusing branch was sabotaged by hand (70 mutations, all red). The matching
+  `SHIP_MUTATIONS` in `sabotage_autopilot.py` are left for a harness-only change (T-0087); this
+  release changes no harness file.
+- Carries review round 2's six findings on the branch (4 BLOCK, 2 FIX): the field count, HEAD taken
+  after the push, one ledger for the families and the receipt, the pre-merge HEAD re-read, the dirty
+  tree, and the dequeue.
+
 ### Fixed — `crew` 1.0.163: the review prompt shows the gate's real answer for HEAD (docs/review/08, defect 1)
 
 - `review_prompt._receipts_block` told the reviewer `MISSING: no .crew/.verify-verified-at` on a round
