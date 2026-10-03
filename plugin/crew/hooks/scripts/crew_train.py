@@ -92,7 +92,8 @@ merge-base with it (moved only outside Touch is allowed and said); a current
 review receipt (`review_ledger.check_receipt`) and a verify gate VERIFIED or
 NO_GATE (`review_gate.gate_state`) on HEAD. A catch-up refusal names the landing
 order (catch-up, resolve, bump the version one past the base, refresh artifacts,
-commit, gate the merged head, check-land), so the gated tree is the landed tree.
+commit, gate the merged head, review again if the receipt reads stale,
+check-land), so the gated tree is the landed tree.
 Then it prints `LAND_OK head=<sha>`
 and the `gh pr merge <pr> --merge --match-head-commit <sha>` to run. Crew
 never merges. After the merge, `release --merged <sha>` records the merged
@@ -1231,7 +1232,8 @@ def _merge_tree(top, base):
 # The landing order every catch-up refusal names (L-0522): bump and refresh
 # come BEFORE the gate, so the tree the gate passed is the tree that lands.
 LANDING_ORDER = ("bump the version one past the base, refresh artifacts, commit, gate the "
-                 "merged head, then check-land again")
+                 "merged head, review it again if review_ledger.py --check-receipt reads "
+                 "stale, then check-land again")
 
 
 def check_land(root, ticket, base=None, pr=None, fetch=True):

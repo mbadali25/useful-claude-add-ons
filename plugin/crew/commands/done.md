@@ -95,7 +95,8 @@ printed, then `crew_train.py release --ticket "$1" --merged <merge sha>`. A
 refusal names `crew_train.py catch-up` (a merge, never a rebase). Land in this
 order, so the tree the gate passed is the tree that lands: catch up (resolve any
 conflict), bump the version one past the base's, refresh the artifacts, commit,
-gate the merged head, then rerun this command. After the review, a re-anchor
+gate the merged head, review it again if `review_ledger.py --check-receipt`
+reads stale, then rerun this command. After the review, a re-anchor
 changes only the sha on the `anchor:` line (or a diagram's header) and
 regenerates the rules; its provenance sentence goes in the ticket's `notes.md`,
 since any other byte in a code map, rules file or diagram is read as unreviewed.

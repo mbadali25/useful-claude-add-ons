@@ -111,7 +111,7 @@ Set `spec.md`'s header to `status: review` — that edit keeps the approval: the
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket $1 --to review`,
 handled as in step 1: the Review lane means the review is outstanding.
 **Then, last, `/crew:review $1`** — its receipt covers the refreshes; a later one stales it.
-A catch-up after review lands in `/crew:done`'s order: resolve, bump, refresh, commit, gate, check-land.
+A catch-up after review lands in `/crew:done`'s order (resolve, bump, refresh, commit, gate, re-review if the receipt reads stale, check-land); a re-anchor after review changes only the `anchor:` sha, provenance in `notes.md`.
 
 ## 7. Done is not this command's
 

@@ -519,7 +519,8 @@ def test_check_land_refuses_merge_tree_conflict(repo, capsys, monkeypatch):
 
 
 _LANDING_ORDER = ("bump the version one past the base, refresh artifacts, commit, gate the "
-                  "merged head, then check-land again")
+                  "merged head, review it again if review_ledger.py --check-receipt reads "
+                  "stale, then check-land again")
 
 
 @pytest.mark.parametrize("refusal", ["conflict", "moved"])

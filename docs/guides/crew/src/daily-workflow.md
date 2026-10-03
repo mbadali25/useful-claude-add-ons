@@ -103,8 +103,9 @@ With the train armed, landing is part of done: `crew_train.py check-land --ticke
 has not moved in Touch paths, and HEAD carries the review receipt and a green gate; then it prints
 `gh pr merge <n> --merge --match-head-commit <sha>` for you to run (crew never merges). When it
 refuses, land in this order: `crew_train.py catch-up` (resolve any conflict), bump the version one
-past the base's, refresh the artifacts, commit, gate the merged head, then `check-land` again, so the
-tree the gate passed is the tree that lands. After the review, a re-anchor changes only the
+past the base's, refresh the artifacts, commit, gate the merged head, review it again if
+`review_ledger.py --check-receipt` reads stale, then `check-land` again, so the tree the gate
+passed is the tree that lands. After the review, a re-anchor changes only the
 `anchor:` sha and regenerates the rules; its provenance goes in the ticket's `notes.md`. After the
 merge, `crew_train.py release --ticket T-0091 --merged <merge sha>` frees the train and tells every
 overlapping lane to merge the base now.
