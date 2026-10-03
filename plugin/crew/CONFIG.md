@@ -2447,10 +2447,10 @@ gate reaching in afterward to kill what a rule left running.
 
 `/crew:autopilot` (T-0004, since 1.0.41) drives one ticket through the
 lifecycle phases `crew_autopilot.next_phase` names from disk, following each
-phase command's procedure in-session, and stops wherever a person is needed
-(or, with `assign`, mints one ticket from free text first; no key of its own:
-T-0019, and the ticket it mints is approved under `autopilot.approval` like any
-other). Its block is **repo only**: absent from `default_global_config()`, so
+phase command's procedure in-session, and stops wherever a person is needed.
+`crew_ticket.py assign` (T-0019; the `/crew:autopilot assign` route lands with
+L-0611) mints one ticket from a staged direction, with no key of its own, and
+that ticket is approved under `autopilot.approval` like any other. Its block is **repo only**: absent from `default_global_config()`, so
 `filter_global` prunes it from the machine file. Whether one checkout may be
 driven is a fact about that checkout.
 
@@ -2503,7 +2503,7 @@ owner's, and `crew_ticket.approve` refuses an `autopilot` approval carrying a
 group's hashes.
 
 **The one writer.** `crew_autopilot.py` is read-only except `approve`, and
-only when `autopilot.approval` allows it (`assign`'s new ticket is written by
+only when `autopilot.approval` allows it (a ticket `assign` mints is written by
 `crew_ticket.py assign` and `mint`, not by this script). `approve` writes exactly what
 `crew_ticket.approve` writes for every approval route, all under
 `<git-common-dir>/crew/`: `approval.json`; the scope ramp's

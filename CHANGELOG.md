@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Added — `crew` 1.0.144: `/crew:autopilot assign` and `crew_ticket.py mint` (T-0019)
+### Added — `crew` 1.0.144: `crew_ticket.py mint` and `crew_ticket.py assign` (T-0019)
 
 - **What changed.** `crew_ticket.mint(root, title, status="ready", direction=None)`
   (CLI `crew_ticket.py mint --root . --title <t> [--status ready|direction]
@@ -20,11 +20,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   `.work/autopilot/`, symlinks resolved; `title:`, `risk:`, and the four
   `/crew:brainstorm` sections, none empty) and that autopilot is armed, then
   mints exactly one `ready` ticket whose direction.md starts with an
-  `origin: /crew:autopilot assign` provenance line. `/crew:autopilot assign
-  <work>` researches the work into that file, runs `assign`, and drives the
-  ticket as `run` does. The router makes `assign` available and stops
-  `route --args 'assign <text>'` so the work is never read as a ticket or put
-  on a shell line.
+  `origin: /crew:autopilot assign` provenance line.
+- **Split (owner's tooling-PR rule, 2026-09-30).** `crew_ticket.py` is review
+  harness to `scripts/check-tooling-pr.py`, so the `/crew:autopilot assign`
+  route - the router change in `crew_autopilot.py`, `autopilot.md`'s assign
+  lines and their tests - lands separately as L-0611. Until it does,
+  `/crew:autopilot assign` still stops with "arrives with T-0019", and
+  `crew_ticket.py assign` is reachable from the command line: stage the file,
+  run it, then `/crew:autopilot run <id>`.
 - **Approval.** An assigned ticket is approved under `autopilot.approval` like
   any other (the owner's 2026-09-26 "Follow the policy"); the origin line
   changes no policy answer (`test_origin_line_changes_no_policy`, and a
@@ -38,24 +41,21 @@ All notable changes to this repository are documented here. Format follows [Keep
   `KeyboardInterrupt`) releases the claimed folder unless its INDEX row is
   already written; then the folder is kept and the refusal says so. A `move`
   that raises leaves the ticket at `direction` with a warning.
-- **Review round 1.** `autopilot.md` section 0 scopes its quote rule past
-  `assign` ("Otherwise, if the arguments hold a quote ...") and names
-  `route --first assign` as a runnable `python3 -B ${CLAUDE_PLUGIN_ROOT}/...`
-  path. A staging file or `mint --direction-file` with a BOM is read as
+- **Review round 1.** A staging file or `mint --direction-file` with a BOM is read as
   `utf-8-sig`; `mint --status` outside `ready|direction` prints `refused:` and
   exits 1 instead of an argparse exit 2; `assign --direction-file` resolves a
   relative path against `--root`, not the current directory.
 - **Unchanged.** `crew_tracker.py`; `/crew:brainstorm`'s and `/crew:fix`'s prose
-  id pick (moving them onto `mint` is a follow-up); T-0010's policies. The
-  `autopilot.md` budget: T-0019 took 4 lines (114 of 120), leaving T-0012 and
-  T-0020 6.
-- **Sabotage.** 30 `ASSIGN_MUTATIONS` in `plugin/crew/tests/sabotage_autopilot.py`,
+  id pick (moving them onto `mint` is a follow-up); T-0010's policies;
+  `crew_autopilot.py` and `autopilot.md` (L-0611's).
+- **Sabotage.** 27 `ASSIGN_MUTATIONS` in `plugin/crew/tests/sabotage_autopilot.py`,
   appended to `AUTOPILOT_MUTATIONS`.
 - Bumped `1.0.61 -> 1.0.62`, then `1.0.62 -> 1.0.63` for review round 1's fixes,
   then `1.0.115 -> 1.0.123` after merging main `8d84786d` (crew 1.0.115);
   1.0.116-1.0.122 are claimed or burned by other lanes; then `1.0.139 -> 1.0.144`
   after merging main `2a2d6e07` (crew 1.0.139); 1.0.140-1.0.143 are held by
   other lanes.
+
 ### Fixed - `crew` 1.0.139: the recurring-findings checklist's L-0575 round-2 findings (L-0592)
 
 - **No hang on a FIFO.** `recurring_findings.py` reads a spec or its data file only when it is a

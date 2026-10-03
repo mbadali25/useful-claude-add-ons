@@ -26,10 +26,9 @@ from scope_fixtures import PLAN, SPEC, make_repo
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _TICKET_SCRIPT = os.path.join(_ROOT, "hooks", "scripts", "crew_ticket.py")
-_COMMAND = os.path.join(_ROOT, "commands", "autopilot.md")
 T = "T-0001"
 POLICIES = ("human", "self", "risk")
-ASSIGN_COUNT = 30
+ASSIGN_COUNT = 27
 
 STAGED = """title: add a dry-run flag
 risk: {risk}
@@ -459,89 +458,6 @@ def test_assign_is_not_a_crew_autopilot_subparser(tmp_path, capsys):
     capsys.readouterr()
 
     assert (code, _tickets(root), _index(root)) == (2, [], None)
-
-
-# --- step 4: the router and the command's assign lines --------------------------
-
-def test_route_first_assign_is_available(tmp_path):
-    root = make_repo(tmp_path, mode="off")
-
-    got = crew_autopilot.route(str(root), "assign")
-
-    assert (got["sub"], got["stop"], got["reason"]) == ("assign", False, "")
-
-
-def test_route_args_assign_with_text_refuses(tmp_path):
-    root = make_repo(tmp_path, mode="off")
-
-    got = crew_autopilot.route_args(str(root), "assign fix the parser")
-
-    assert (got["sub"], got["stop"], got["ticket"],
-            "route --root . --first assign" in got["reason"]) == ("assign", True, "", True)
-
-
-def test_route_args_assign_with_a_ticket_id_refuses_too(tmp_path):
-    root = make_repo(tmp_path, mode="off")
-
-    got = crew_autopilot.route_args(str(root), "assign T-0019")
-
-    assert (got["stop"], got["ticket"]) == (True, "")
-
-
-def test_route_args_run_assign_still_drives_a_ticket_folder_named_assign(tmp_path):
-    root = make_repo(tmp_path, mode="off")
-    (root / ".work" / "tickets" / "assign").mkdir(parents=True)
-
-    got = crew_autopilot.route_args(str(root), "run assign")
-
-    assert (got["sub"], got["stop"], got["ticket"]) == ("run", False, "assign")
-
-
-def _command():
-    with open(_COMMAND, encoding="utf-8") as handle:
-        return handle.read()
-
-
-def test_assign_lines_at_most_4():
-    lines = _command().splitlines()
-    start = next(i for i, line in enumerate(lines) if line.startswith("`assign <text>`"))
-
-    assert (lines[start - 1], len(lines) - (start - 1) <= 4, len(lines) <= 114) == (
-        "", True, True)
-
-
-def test_assign_section_never_puts_arguments_on_a_shell_line():
-    lines = _command().splitlines()
-    both = [line for line in lines if "$ARGUMENTS" in line and "assign" in line]
-    shell = [line for line in lines if "crew_ticket.py assign" in line]
-
-    assert (both, len(shell), all(
-        "crew_ticket.py assign --root . --direction-file .work/autopilot/assign-<n>.md" in line
-        for line in shell)) == ([], 1, True)
-
-
-def test_assign_section_skips_the_route_shell_line():
-    flat = " ".join(_command().split())
-
-    assert ("If the first word is exactly `assign`, run `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/"
-            "scripts/crew_autopilot.py route --root . --first assign` in place of this shell "
-            "line" in flat, "`sub=assign`: the assign lines" in flat) == (True, True)
-
-
-def test_section_0_quote_rule_is_scoped_past_assign():
-    flat = " ".join(_command().split())
-    route = flat.index("If the first word is exactly `assign`")
-
-    assert flat.find("Otherwise, if the arguments hold a quote, `$`, a backtick or a backslash, "
-                     "stop without running anything", route) > route
-
-
-def test_assign_section_names_the_stop():
-    flat = " ".join(_command().split())
-
-    assert ("Anything else - `refused:`, no output, a traceback - print it and stop: nothing "
-            "was minted" in flat, "`ticket=<id>`: announce `assigned <id>` and run sections "
-            "2 to 5" in flat) == (True, True)
 
 
 def test_assign_sabotage_is_registered_with_sabotage_py():

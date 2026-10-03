@@ -934,7 +934,7 @@ POLICY_MUTATIONS = (
      "tests/test_crew_autopilot.py::test_module_defines_each_function_once"),
 )
 
-# ---- T-0019: `crew_ticket.mint`, `crew_ticket.assign` and the `assign` route.
+# ---- T-0019: `crew_ticket.mint` and `crew_ticket.assign` (the `assign` route is L-0611's).
 # One per refusing branch, each red on its named test, plus one in the
 # allowing direction: an origin rule put back into approval_policy, which the
 # owner removed on 2026-09-26 ("Follow the policy"). Appended to
@@ -1001,10 +1001,6 @@ ASSIGN_MUTATIONS = (
      '        risk = "high"\n',
      '        risk = "low"\n',
      _A + "test_assign_unknown_risk_is_high"),
-    ("route: assign's text is read as a run", AUTOPILOT,
-     '    if words[:1] == ["assign"] and len(words) > 1:\n',
-     "    if False:\n",
-     _A + "test_route_args_assign_with_text_refuses"),
     # The allowing direction: the 2026-09-25 origin rule, put back.
     ("approval_policy: an assigned ticket always waits for the human", AUTOPILOT,
      ('    top = crew_ticket.toplevel(root) or os.path.abspath(root)\n    try:\n'
@@ -1088,15 +1084,6 @@ ASSIGN_MUTATIONS = (
      "            got = assign(root, args.direction_file)\n",
      "            got = assign(root, os.path.abspath(args.direction_file))\n",
      _A + "test_assign_cli_relative_direction_file_resolves_under_root"),
-    ("FIX: section 0's quote rule covers assign too", COMMAND,
-     "Otherwise, if the arguments hold a quote, `$`, a",
-     "If the arguments hold a quote, `$`, a",
-     _A + "test_section_0_quote_rule_is_scoped_past_assign"),
-    ("NIT: section 0's assign route is not a runnable path", COMMAND,
-     ("`python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route --root . "
-      "--first assign` in place"),
-     "`crew_autopilot.py route --root . --first assign` in place",
-     _A + "test_assign_section_skips_the_route_shell_line"),
 )
 
 AUTOPILOT_MUTATIONS += ASSIGN_MUTATIONS
