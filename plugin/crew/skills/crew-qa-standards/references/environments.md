@@ -116,19 +116,23 @@ Non-production held live payment and shipping credentials for weeks (D4).
 - **Columns** are found by whole header words: reaches (`reach`, `reaches`, `environment(s)`,
   `env(s)`), `live`, and accepted (`accept`, `accepted`, `acceptance`). A "Delivered" column is not
   `live`.
-- **Live** is `yes`, `y`, `true` or `live`, or `no`, `n` or `false`; a note in parentheses after it is
-  ignored. Anything else (`?`, `TBD`, blank) is unknown, and an unknown row that may reach a
-  non-production environment makes E5 UNKNOWN, naming the row. Only a reach that is production
-  alone settles the row whatever `live` says.
-- **Reaches** splits on `,`, `;` and `/`. Each part counts by the environment names in it: the
-  declared `environments` keys, the production names (`prod`, `production`, `prd`, `live`) and the
-  usual non-production ones (`dev`, `development`, `local`, `ci`, `test`, `testing`, `qa`, `uat`,
-  `stage`, `staging`, `preprod`, `sandbox`, `demo`, `preview`). `production only` is production. A
-  live credential whose reach is blank, or has a part naming none of these, is UNKNOWN.
-- **Accepted** must be affirmative: a date (`2026-10-01`), `accepted`, `yes`, or a name. Blank,
-  `-`, `?`, and a cell starting with `no`, `not`, `pending`, `TBD`, `todo`, `none`, `n/a`,
-  `unknown`, `rejected`, `declined`, `awaiting` or `waiting` is not an acceptance, so a live
-  non-production credential with one is a GAP.
+- **Live** is `yes`, `y`, `true` or `live` (a note in parentheses may follow), or `no`, `n` or
+  `false` standing alone. Anything else (`?`, `TBD`, blank, `no (live soon)`) is unknown, and an
+  unknown row that may reach a non-production environment makes E5 UNKNOWN, naming the row. Only a
+  reach that is production alone settles the row whatever `live` says.
+- **Reaches** splits on `,`, `;` and `/`. A part parses only when every word in it is an
+  environment name or `only` / `and`: the declared `environments` keys, the production names
+  (`prod`, `production`, `prd`, `live`) and the usual non-production ones (`dev`, `development`,
+  `local`, `ci`, `test`, `testing`, `qa`, `uat`, `stage`, `staging`, `preprod`, `sandbox`, `demo`,
+  `preview`). `production only`, `prod/staging` and `prod + dev` parse; `not prod`, `all but prod`,
+  `prod replica` and `non-production` do not. A live credential whose reach is blank or has a part
+  that does not parse is UNKNOWN. An unparseable `.crew/verify.json` makes E5 UNKNOWN.
+- **Accepted** is an allow-list. Accepted: an ISO date alone (`2026-10-01`), or `accepted` / `yes`
+  followed by at most one date and a name of up to three words, in either order
+  (`accepted 2026-10-01 Matthew`, `yes, by Ann Lee`). Not accepted, so a GAP: blank, `-`, `?`, or
+  any of `no`, `not`, `never`, `denied`, `rejected`, `declined`, `pending`, `TBD`, `todo`,
+  `nobody`, `none`, `n/a`, `unknown`, `awaiting`, `waiting` anywhere in the cell. Anything else,
+  `accepted?` or a bare name included, is UNKNOWN for that row, never an acceptance.
 
 | Name | Reaches | Live | Accepted |
 |---|---|---|---|

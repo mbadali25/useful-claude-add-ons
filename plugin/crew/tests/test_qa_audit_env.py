@@ -7,6 +7,8 @@ import json
 import os
 import subprocess
 
+import pytest
+
 import context  # noqa: F401  pylint: disable=unused-import
 import qa_audit
 import qa_audit_env
@@ -346,7 +348,7 @@ def test_e5_a_live_credential_reaching_qa_unaccepted_is_a_gap(tmp_path):
 def test_e5_accepted_or_production_only_passes(tmp_path):
     _write(tmp_path, ".crew/secrets.md",
            "| Name | Reaches | Live | Accepted |\n|---|---|---|---|\n"
-           "| PAY_KEY | production | yes | |\n| MAIL_KEY | qa | yes | owner 2026-10-01 |\n")
+           "| PAY_KEY | production | yes | |\n| MAIL_KEY | qa | yes | accepted 2026-10-01 owner |\n")
     assert _row(tmp_path, "E5")["status"] == qa_audit.PASS
 
 
@@ -398,7 +400,7 @@ def test_e5_all_five_review_rows_together_are_a_gap_naming_the_unknowns(tmp_path
 
 def test_e5_affirmative_acceptances_and_explicit_no_pass(tmp_path):
     row = _e5(tmp_path, "| K1 | qa | yes | 2026-10-01 |", "| K2 | staging | y | accepted |",
-              "| K3 | dev / qa | true | Matthew |", "| K4 | qa | Yes (rotated) | yes |",
+              "| K3 | dev / qa | true | accepted Matthew |", "| K4 | qa | Yes (rotated) | yes |",
               "| K5 | staging | no | |", "| K6 | production only | ? | |")
     assert row["status"] == qa_audit.PASS, row["evidence"]
 
@@ -423,6 +425,54 @@ def test_e5_a_delivered_column_is_not_the_live_column(tmp_path):
 def test_e5_production_only_is_production(tmp_path):
     assert qa_audit_env.parse_reach("production only", {}) == (["production"], [])
     assert qa_audit_env.parse_reach("`qa`/staging", {}) == (["qa", "staging"], [])
+
+
+@pytest.mark.parametrize("value", ["denied", "never", "Nobody", "rejected 2026-10-01",
+                                   "2026-10-01 not accepted", "accepted by nobody", "-", ""])
+def test_e5_a_refusal_anywhere_is_not_an_acceptance(tmp_path, value):
+    row = _e5(tmp_path, f"| X | staging | yes | {value} |")
+    assert row["status"] == qa_audit.GAP and "`X`" in row["evidence"], (value, row["evidence"])
+
+
+@pytest.mark.parametrize("value", ["accepted?", "Matthew", "owner 2026-10-01", "accepted 2026-13-45",
+                                   "accepted 2026-10-01 2026-10-02", "yes, ok-ish!"])
+def test_e5_an_unrecognised_acceptance_is_unknown_not_accepted(tmp_path, value):
+    row = _e5(tmp_path, f"| X | staging | yes | {value} |")
+    assert row["status"] == qa_audit.UNKNOWN and "`X`" in row["evidence"], (value, row["evidence"])
+
+
+@pytest.mark.parametrize("value", ["2026-10-01", "accepted", "yes", "Accepted 2026-10-01 Matthew",
+                                   "accepted Matthew 2026-10-01", "yes, by Ann Lee", "**accepted** (2026-10-01)"])
+def test_e5_the_affirmative_acceptance_forms_pass(tmp_path, value):
+    row = _e5(tmp_path, f"| X | staging | yes | {value} |")
+    assert row["status"] == qa_audit.PASS, (value, row["evidence"])
+
+
+@pytest.mark.parametrize("reach", ["not production", "not prod", "all but prod", "prod replica",
+                                   "non-production", "prod except qa", "prod mirror", "like prod"])
+def test_e5_a_qualified_reach_is_unknown_not_production(tmp_path, reach):
+    row = _e5(tmp_path, f"| X | {reach} | yes | |")
+    assert row["status"] == qa_audit.UNKNOWN and "`X`" in row["evidence"], (reach, row["evidence"])
+
+
+@pytest.mark.parametrize("reach, names", [("production only", ["production"]),
+                                          ("prod/staging", ["prod", "staging"]),
+                                          ("prod + dev", ["prod", "dev"]),
+                                          ("qa and staging", ["qa", "staging"])])
+def test_e5_plain_reaches_still_parse(reach, names):
+    assert qa_audit_env.parse_reach(reach, {}) == (names, [])
+
+
+def test_e5_an_unparseable_map_is_unknown_not_na(tmp_path):
+    _write(tmp_path, ".crew/verify.json", "{bad")
+    row = _row(tmp_path, "E5")
+    assert row["status"] == qa_audit.UNKNOWN and "environments map" in row["evidence"]
+
+
+@pytest.mark.parametrize("cell, want", [("no", "no"), ("No.", "no"), ("no (live soon)", "unknown"),
+                                        ("no, but real", "unknown"), ("yes (rotated)", "yes")])
+def test_e5_a_no_with_trailing_text_is_unknown(cell, want):
+    assert qa_audit_env.parse_live(cell.lower()) == want
 
 
 def test_e5_an_unreadable_inventory_is_unknown(tmp_path, monkeypatch):

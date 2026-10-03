@@ -473,10 +473,15 @@ LIVE_NO = ("no", "n", "false")
 # Environment words a reaches cell may use besides the declared `environments` keys.
 NONPROD_NAMES = ("dev", "development", "local", "ci", "test", "testing", "qa", "uat", "stage",
                  "staging", "preprod", "pre-prod", "sandbox", "demo", "preview")
-# An acceptance cell starting with one of these words is not an acceptance.
-NOT_ACCEPTED = ("no", "n", "false", "not", "pending", "tbd", "todo", "none", "n/a", "na",
-                "unknown", "rejected", "declined", "awaiting", "waiting")
-_DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+# Words a reaches part may hold besides environment names: they join names, never qualify one.
+REACH_FILLER = ("only", "and")
+# One of these words anywhere in an acceptance cell refuses it.
+NOT_ACCEPTED = ("no", "n", "false", "not", "never", "denied", "rejected", "declined", "pending",
+                "tbd", "todo", "nobody", "none", "n/a", "na", "unknown", "awaiting", "waiting")
+ACCEPT_WORDS = ("accepted", "yes")
+_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+_NAME_WORD_RE = re.compile(r"[a-z][a-z.'-]*")
+MAX_NAME_WORDS = 3
 
 
 def _header_col(header, words):
@@ -490,28 +495,32 @@ def _plain(cell):
 
 
 def parse_live(cell):
-    """"yes", "no" or "unknown". A trailing parenthesis is a note ("yes (rotated)");
-    every word outside LIVE_YES and LIVE_NO -- `?`, TBD, blank -- is unknown."""
-    word = _plain(cell).split("(")[0].strip().rstrip(".")
-    if word in LIVE_YES:
-        return "yes"
-    if word in LIVE_NO:
+    """"yes", "no" or "unknown". A yes may carry a note in parentheses ("yes
+    (rotated)"); a no must stand alone, because "no (live soon)" is not a no.
+    Every other value -- `?`, TBD, blank -- is unknown."""
+    plain = _plain(cell)
+    if plain.rstrip(".") in LIVE_NO:
         return "no"
+    if plain.split("(")[0].strip().rstrip(".") in LIVE_YES:
+        return "yes"
     return "unknown"
 
 
 def parse_reach(cell, envs):
-    """(environment names, unparsed parts). The cell splits on `,`, `;` and `/`;
-    a part counts by the known environment names among its words, so
-    "production only" is production and "only" is not an environment. A part
-    with no known name is unparsed, and so is an empty cell."""
+    """(environment names, unparsed parts). The cell splits on `,`, `;` and `/`.
+    A part parses only when every word in it is a known environment name or a
+    REACH_FILLER word: "production only" and "prod + dev" parse, while "not
+    prod", "all but prod", "prod replica" and "non-production" are unparsed,
+    because a qualifier dropped would turn them into production. An empty cell
+    is unparsed too."""
     known = set(PROD_NAMES) | set(NONPROD_NAMES) | {k.lower() for k in envs}
     found, unparsed = [], []
     for part in (p.strip() for p in re.split(r"[,;/]", _plain(cell))):
         if not part:
             continue
-        names = [w for w in re.findall(r"[a-z0-9][a-z0-9_-]*", part) if w in known]
-        if names:
+        words = re.findall(r"[a-z0-9][a-z0-9_-]*", part)
+        names = [w for w in words if w in known]
+        if names and all(w in known or w in REACH_FILLER for w in words):
             found += [n for n in names if n not in found]
         else:
             unparsed.append(part)
@@ -520,17 +529,45 @@ def parse_reach(cell, envs):
     return found, unparsed
 
 
-def is_accepted(cell):
-    """True for an affirmative acceptance: a date, `accepted`, `yes` or a name.
-    Blank, punctuation (`-`, `?`) and a cell starting with a NOT_ACCEPTED word
-    (no, pending, TBD, ...) are not."""
+def _iso_date(token):
+    if not _DATE_RE.fullmatch(token):
+        return False
+    try:
+        datetime.date.fromisoformat(token)
+    except ValueError:
+        return False
+    return True
+
+
+def parse_acceptance(cell):
+    """"yes", "no" or "unknown" -- an allow-list, so text nobody wrote a rule
+    for is never read as an acceptance.
+
+    no:      blank, punctuation only (`-`, `?`), or a NOT_ACCEPTED word anywhere
+             ("rejected 2026-10-01", "2026-10-01 not accepted", "Nobody").
+    yes:     the whole cell is an ISO date, or `accepted` / `yes` followed by at
+             most one date and a name of up to MAX_NAME_WORDS words, in either
+             order ("accepted 2026-10-01 Matthew", "yes, by Ann Lee").
+    unknown: anything else, including "accepted?" and a bare name."""
     text = _plain(cell)
     if not re.search(r"[a-z0-9]", text):
-        return False
-    if _DATE_RE.search(text):
-        return True
-    first = re.match(r"[a-z0-9/]+", text)
-    return not (first and first.group(0) in NOT_ACCEPTED)
+        return "no"
+    if any(w in NOT_ACCEPTED for w in re.findall(r"[a-z]+(?:/[a-z]+)?", text)):
+        return "no"
+    if _iso_date(text):
+        return "yes"
+    tokens = [t for t in re.split(r"[\s,;:()]+", text) if t]
+    if not tokens or tokens[0] not in ACCEPT_WORDS:
+        return "unknown"
+    dates = names = 0
+    for token in tokens[1:]:
+        if _iso_date(token):
+            dates += 1
+        elif token == "by" or _NAME_WORD_RE.fullmatch(token):
+            names += token != "by"
+        else:
+            return "unknown"
+    return "yes" if dates <= 1 and names <= MAX_NAME_WORDS else "unknown"
 
 
 def check_secrets_inventory(root, ci, tests):
@@ -539,7 +576,9 @@ def check_secrets_inventory(root, ci, tests):
     title = "Credential inventory: reach and live columns"
     path = os.path.join(root, ".crew", "secrets.md")
     state, vmap = load_map(root)
-    envs = environments(vmap) if state == "ok" else {}
+    if state == "unreadable":  # its environment names decide reach; same answer as E2
+        return _row("E5", title, UNKNOWN, "could not read the environments map (.crew/verify.json)")
+    envs = environments(vmap)
     try:
         text = read_text(path)
     except OSError as exc:
@@ -569,8 +608,12 @@ def check_secrets_inventory(root, ci, tests):
             continue
         if unparsed:
             unknown.append(f"`{name}` is live and its reach `{', '.join(unparsed)}` names no known environment")
-        if nonprod and not is_accepted(_cell(r, accept_col)):
+        accepted = parse_acceptance(_cell(r, accept_col)) if nonprod else "yes"
+        if accepted == "no":
             bad.append(f"`{name}` is live and reaches {', '.join(nonprod)} with no owner acceptance")
+        elif accepted == "unknown":
+            unknown.append(f"`{name}` is live and reaches {', '.join(nonprod)}; its acceptance "
+                           f"`{_cell(r, accept_col)}` is not a recognised form")
     if bad:
         return _row("E5", title, GAP, "; ".join(bad[:5])
                     + (f"; also could not tell: {'; '.join(unknown[:5])}" if unknown else ""))
