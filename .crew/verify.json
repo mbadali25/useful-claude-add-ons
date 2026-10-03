@@ -295,7 +295,7 @@
       "reach": "local",
       "why": "7s. Editing the harness means running it. run-all.sh (~6 min) and run-all.sh --with-hooks (which HANGS) are deliberately unreachable from any rule. reach: local - _verify/smoke.sh's own header says there is no service to curl and no live host this repo reaches (see rule 1's identical declaration for the same script)." },
 
-    { "paths": [".github/workflows/**", ".github/crew-windows-durations.json"],
+    { "paths": [".github/workflows/**"],
       "seconds": 60,
       "run": ["python3 scripts/_test/gate-runner.py"],
       "reach": "local",

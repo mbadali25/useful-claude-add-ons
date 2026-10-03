@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.144: faster crew tests - the config menu stops deep-copying defaults per key, verify rules run under xdist with wallclock tests serially, Windows CI shards split by measured time, lock-window tests stop sleeping
+### Changed — `crew` 1.0.144: faster crew tests - the config menu stops deep-copying defaults per key, verify rules run under xdist with wallclock tests serially, lock-window tests stop sleeping
 
 - `crew_config._shape`, `_is_open_table` and `value_allowed`'s default lookup read one cached
   `_default_template()` instead of calling `default_config()`, which deep-copies every default block.
@@ -15,10 +15,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   a shape lookup builds no default at all, red when any of the three call sites is reverted (each
   reverted in turn; the third needed a `value_allowed("pm.authority", "machine", None)` probe,
   since `qa.order` returns early through `null_means` before reaching it).
-- `.github/crew-windows-durations.json` holds the Windows default set's measured durations, merged
-  from the three shards of run 37088914100, and each `crew-windows-default` shard splits by it.
-  By count the shards ran 6.8 / 10.0 / 11.2 min; by these durations they sum within 1%. Mapped
-  to the `.github/workflows/**` rule in `.crew/verify.json`.
+- Tried and dropped: splitting the Windows default set by a committed durations file (merged from
+  run 37088914100's shards). Run 37127570976, twice: the shards balanced, but their total rose from
+  28 to ~35 min and the slowest from 11.2 to 12.5 min, so the split stays by count. The finding is
+  recorded beside the split in `pytest-crew.yml`.
 - `test_verify_gate_lock_window.py`'s reclaim cases (expired, missing and six unparseable deadlines,
   plus the Windows parity case) run an instant rule stating the same 8s cost instead of `sleep 6`.
   Whether a lock is held is read from the existing lock, never from the challenger's rule, so the
