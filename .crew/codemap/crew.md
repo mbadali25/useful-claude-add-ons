@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@0c683860
+anchor: useful-claude-add-ons@ef7dad84
 verified: 2026-10-03
 
 ## Re-derive provenance
@@ -800,7 +800,7 @@ registered at `plugin/crew/tests/sabotage.py:77` and `:3059`; `.crew/verify.json
 
 ## In-flight markers (T-0049, crew 1.0.146)
 
-DERIVED at `0c683860` (T-0049-build after merging main `2a2d6e07`).
+DERIVED at `0c683860` (T-0049-build after merging main `2a2d6e07`); re-read at `ef7dad84`, where no file this section cites changed.
 `plugin/crew/hooks/scripts/crew_inflight.py` (861 lines) keeps one marker per ticket at
 `<git-common-dir>/crew/inflight/<TICKET>.json` (`inflight_dir` `:155`, `marker_path` `:162`), so every
 worktree of a clone sees who is driving a ticket. Every write is under the lock (`_locked` `:269`) and
@@ -828,7 +828,7 @@ Tests `test_crew_inflight.py`, `test_crew_holder.py`, `test_crew_autopilot_infli
 session default is `plugin/crew/tests/conftest.py`'s autouse `_a_session`. The in-flight
 sabotage mutations are not on this branch: they move to L-0613, the tooling PR that follows (a
 harness change lands alone, `scripts/check-tooling-pr.py`);
-`.crew/verify.json:483-490` is its rule. Wave (L-0588) and goal (L-0589) runners are not wired yet.
+`.crew/verify.json:510-516` is its rule. Wave (L-0588) and goal (L-0589) runners are not wired yet.
 
 ## Plain-text lifecycle routing (T-0023, crew 1.0.43)
 
@@ -3613,3 +3613,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `819a2d2b` -> `d95d8b25` on 2026-10-02 (L-0574 merges origin/main 2a2d6e07 (L-0592 #325, crew 1.0.139: recurring_findings.py, implement.md step 2 re-wrapped in place, README) at d95d8b25, rerere disabled: both provenance histories kept (main's first), citations re-mapped by difflib; crew is set to 1.0.140).**
 
 **Re-anchored `39ebbc18` -> `0c683860` on 2026-10-03 (T-0049: merge of origin/main `2a2d6e07` at `b903cac7`, rerere disabled; crew 1.0.146).** Since `39ebbc18` the documented paths changed by main's L-0592 landing and by T-0049's own files (crew_inflight.py and crew_holder.py new; crew_autopilot.py, crew_state.py, autopilot.md, the crew README, CONFIG.md, verify.json, the version files, BUDGETS.md, CHANGELOG and tests). A difflib re-map of every path-qualified `path:line` citation in this map from `2a2d6e07` to `0c683860`, history sections skipped, moved the body citations into crew_state.py (+5 below AUTONOMOUS_STOPS), crew_autopilot.py and their bare follow-ons; each was re-read at `0c683860`. Claims changed: AUTONOMOUS_STOPS now names five (T-0049's `in-flight`), `FIXED_STOPS` ten (`handover-elsewhere`), `stops`/`next_phase`/`main` lines, the version sentence; new section "In-flight markers (T-0049, crew 1.0.146)". Citations inside past re-anchor notes are left as written.
+
+**Re-anchored `0c683860` -> `ef7dad84` on 2026-10-03 (T-0049 split and merge of origin/main `8123fe74`, crew 1.0.140 there; T-0049 stays 1.0.146).** `1446c5f4` moved the in-flight sabotage mutations to L-0613, the tooling PR that follows (sabotage.py back to the merge base, sabotage_inflight.py removed; check-tooling-pr.py had refused the mixed diff); `ef7dad84` merged main: L-0574 (#327: review_checks.py, review_run.py's pre-review gate, review.md, verify.json's preReview block and rules). Provenance keeps both histories (main's first). Body citations were mapped from the side their line came from onto the merge with a line diff (`/root/crew-tmp/t-0049/remap_merge.py`; provenance sections left as written); the verify.json, CONFIG.md and README.md citations in the conflicted lines were re-read with `sed -n` on the merge. Main changed nothing but version and refresh files between its own anchor `d95d8b25` and `8123fe74`.
