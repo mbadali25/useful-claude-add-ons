@@ -328,3 +328,327 @@ def test_status_review_line_survives_rounds_that_are_not_objects(tmp_path):
 
     assert (done.returncode, "review   T1: REVIEWED, 2/2 rounds used" in done.stdout) == (
         0, True), done.stdout + done.stderr
+
+
+# --- L-0602: the verify line is /crew:done check 2's evidence -------------------
+#
+# Clean ONLY after a fully clean `verify-gate.sh --all` at HEAD on a committed
+# tree, with nothing outstanding; every other state is a named refusal. The
+# allow cases and most block cases drive the real gate.
+
+import crew_fixtures  # noqa: E402  pylint: disable=wrong-import-position
+import review_gate  # noqa: E402  pylint: disable=wrong-import-position
+import verify_record  # noqa: E402  pylint: disable=wrong-import-position
+from review_fixtures import git, init_repo  # noqa: E402  pylint: disable=wrong-import-position
+
+CLEAN = crew_status.VERIFY_CLEAN
+_GATE_SH = os.path.join(os.path.dirname(crew_status.__file__), "verify-gate.sh")
+_GATE_BASH = crew_fixtures.resolve_bash()
+needs_bash = pytest.mark.skipif(_GATE_BASH is None, reason="runs the real verify-gate.sh")
+_RECORD = os.path.join(".crew", ".verify-gate.record.json")
+_MARKER = os.path.join(".crew", ".verify-verified-at")
+
+
+def _gate_map(run="test ! -e ../flag"):
+    return {"version": 1,
+            "rules": [{"paths": ["**"], "run": [run], "reach": "local", "seconds": 1}],
+            "default": [], "unmapped": "ignore"}
+
+
+def _gate_repo(tmp_path, verify_map=None):
+    root = init_repo(tmp_path / "r")
+    (root / ".gitignore").write_text(".crew/*\n!.crew/verify.json\n", encoding="utf-8")
+    (root / ".crew").mkdir()
+    (root / ".crew" / "verify.json").write_text(json.dumps(verify_map or _gate_map()),
+                                                encoding="utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "map")
+    return root
+
+
+def _run_gate(root, *args):
+    return crew_fixtures.run_gate(
+        [_GATE_BASH, _GATE_SH, *args], input="{}", cwd=str(root),
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
+        capture_output=True, text=True, check=False,
+        timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+
+
+def _clean_repo(tmp_path):
+    root = _gate_repo(tmp_path)
+    done = _run_gate(root, "--all")
+    assert done.returncode == 0, done.stderr
+    return root
+
+
+def _line(root):
+    return crew_status._verify_line(str(root))  # pylint: disable=protected-access
+
+
+def _write_record(root, data):
+    (root / _RECORD).write_text(json.dumps(data), encoding="utf-8")
+
+
+def _refused(line, word):
+    return (line.startswith(CLEAN), word in line)
+
+
+@needs_bash
+def test_verify_line_is_clean_after_a_clean_all_on_a_committed_tree(tmp_path):
+    root = _clean_repo(tmp_path)
+
+    line = _line(root)
+
+    assert line.startswith(CLEAN) and git(root, "rev-parse", "HEAD")[:12] in line, line
+
+
+@needs_bash
+def test_verify_line_is_clean_after_a_clean_all_and_a_quiet_stop_after_it(tmp_path):
+    root = _clean_repo(tmp_path)
+    assert _run_gate(root).returncode == 0
+
+    assert _line(root).startswith(CLEAN)
+
+
+@needs_bash
+def test_verify_line_refuses_a_stop_only_pass(tmp_path):
+    root = _gate_repo(tmp_path)
+    (root / "seed.txt").write_text("edited\n", encoding="utf-8")
+    assert _run_gate(root).returncode == 0
+    git(root, "commit", "-qam", "edit")
+    assert _run_gate(root).returncode == 0
+
+    assert _refused(_line(root), "no clean --all at HEAD") == (False, True)
+
+
+@needs_bash
+def test_verify_line_refuses_after_a_failed_all_at_the_same_head(tmp_path):
+    root = _clean_repo(tmp_path)
+    (tmp_path / "flag").write_text("", encoding="utf-8")
+    assert _run_gate(root, "--all").returncode == 2
+
+    assert _refused(_line(root), "no clean --all at HEAD") == (False, True)
+
+
+@needs_bash
+def test_verify_line_refuses_a_clean_all_at_an_older_head(tmp_path):
+    root = _clean_repo(tmp_path)
+    (root / "new.txt").write_text("x\n", encoding="utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "later")
+
+    assert _refused(_line(root), "no clean --all at HEAD") == (False, True)
+
+
+@needs_bash
+def test_verify_line_refuses_a_dirty_tree_even_when_the_fingerprint_matches(tmp_path):
+    root = _clean_repo(tmp_path)
+    (root / "seed.txt").write_text("dirty\n", encoding="utf-8")
+    assert _run_gate(root).returncode == 0
+    assert review_gate.gate_state(str(root))[0] == review_gate.VERIFIED
+
+    assert _refused(_line(root), "differ from HEAD") == (False, True)
+
+
+@needs_bash
+def test_verify_line_refuses_a_staged_deletion_masked_by_a_directory(tmp_path):
+    root = _clean_repo(tmp_path)
+    git(root, "rm", "-q", "seed.txt")
+    assert _run_gate(root).returncode == 0
+    (root / "seed.txt").mkdir()
+
+    assert _refused(_line(root), "differ from HEAD") == (False, True)
+
+
+@needs_bash
+def test_verify_line_refuses_an_untracked_file(tmp_path):
+    root = _clean_repo(tmp_path)
+    (root / "new.txt").write_text("x\n", encoding="utf-8")
+
+    assert _refused(_line(root), "NOT VERIFIED") == (False, True)
+
+
+@needs_bash
+def test_verify_line_refuses_a_clean_record_when_the_marker_is_missing(tmp_path):
+    root = _clean_repo(tmp_path)
+    (root / _MARKER).unlink()
+    assert verify_record.read_record_meta(str(root)) == ("ok", {}, git(root, "rev-parse", "HEAD"))
+
+    assert _refused(_line(root), "NOT VERIFIED") == (False, True)
+
+
+@needs_bash
+def test_verify_line_refuses_an_unreadable_marker_as_unknown(tmp_path):
+    root = _clean_repo(tmp_path)
+    (root / _MARKER).unlink()
+    (root / _MARKER).mkdir()
+
+    assert _refused(_line(root), "verify   UNKNOWN") == (False, True)
+
+
+@needs_bash
+@pytest.mark.parametrize("record", [{"rules": {}}, {"rules": {}, "all_clean_at": None},
+                                    {"rules": {}, "all_clean_at": "d" * 40}],
+                         ids=["missing", "null", "other"])
+def test_verify_line_refuses_without_a_clean_all_at_head(tmp_path, record):
+    root = _clean_repo(tmp_path)
+    _write_record(root, record)
+
+    assert _refused(_line(root), "no clean --all at HEAD") == (False, True)
+
+
+@needs_bash
+@pytest.mark.parametrize("entry, expected", [
+    ({"status": "skipped"}, "verify   1 skipped"),
+    ({"status": "chronic"}, "verify   1 chronic"),
+    ({"status": "reach_undeclared"}, "verify   1 reach_undeclared"),
+    ({"status": "chronic", "orphaned": True}, "verify   1 chronic"),
+], ids=["skipped", "chronic", "reach", "orphaned"])
+def test_verify_line_refuses_an_outstanding_rule_even_after_a_clean_all(tmp_path, entry,
+                                                                        expected):
+    root = _clean_repo(tmp_path)
+    head = git(root, "rev-parse", "HEAD")
+    _write_record(root, {"rules": {"k": dict(entry, label="rules[0]", reason="x", sha=head)},
+                         "all_clean_at": head})
+    assert review_gate.gate_state(str(root))[0] == review_gate.VERIFIED
+
+    assert _line(root) == expected
+
+
+@needs_bash
+@pytest.mark.parametrize("case, expected", [
+    ("corrupt", "verify   UNKNOWN (gate record unreadable)"),
+    ("absent", "verify   no gate record yet"),
+])
+def test_verify_line_refuses_a_bad_record(tmp_path, case, expected):
+    root = _clean_repo(tmp_path)
+    if case == "corrupt":
+        (root / _RECORD).write_text("{not json", encoding="utf-8")
+    else:
+        (root / _RECORD).unlink()
+
+    assert _line(root) == expected
+
+
+def test_verify_line_refuses_when_git_cannot_be_read(tmp_path):
+    root = tmp_path / "not-a-repo"
+    (root / ".crew").mkdir(parents=True)
+    (root / ".crew" / "verify.json").write_text(json.dumps(_gate_map()), encoding="utf-8")
+    (root / _MARKER).write_text("0" * 40 + "\n", encoding="utf-8")
+    _write_record(root, {"rules": {}, "all_clean_at": "0" * 40})
+
+    assert _refused(_line(root), "verify   UNKNOWN") == (False, True)
+
+
+@pytest.mark.parametrize("case", ["no-map", "stood-down"])
+def test_verify_line_refuses_with_no_gate(tmp_path, case):
+    root = init_repo(tmp_path / "r")
+    (root / ".crew").mkdir()
+    if case == "stood-down":
+        (root / ".crew" / "verify.json").write_text(json.dumps(_gate_map()), encoding="utf-8")
+        (root / ".crew" / "config.json").write_text('{"verifyGate": false}', encoding="utf-8")
+    head = git(root, "rev-parse", "HEAD")
+    _write_record(root, {"rules": {}, "all_clean_at": head})
+
+    assert _refused(_line(root), "verify   no gate") == (False, True)
+
+
+@needs_bash
+def test_verify_line_refuses_while_the_gate_lock_is_held(tmp_path):
+    root = _clean_repo(tmp_path)
+    (root / ".crew" / ".verify-gate.lock").mkdir()
+
+    assert _refused(_line(root), "gate running") == (False, True)
+
+
+def _wrap_gate_state(monkeypatch, on_call):
+    real = review_gate.gate_state
+    calls = []
+
+    def wrapper(root):
+        calls.append(root)
+        on_call(len(calls))
+        return real(root)
+
+    monkeypatch.setattr(review_gate, "gate_state", wrapper)
+
+
+@needs_bash
+def test_verify_line_rereads_the_record_after_the_gate_state(tmp_path, monkeypatch):
+    root = _clean_repo(tmp_path)
+    head = git(root, "rev-parse", "HEAD")
+
+    def add_entry(n):
+        if n == 1:
+            _write_record(root, {"rules": {"k": {"status": "skipped", "label": "r",
+                                                 "reason": "x", "sha": head}},
+                                 "all_clean_at": head})
+
+    _wrap_gate_state(monkeypatch, add_entry)
+
+    assert _refused(_line(root), "moved while it was read") == (False, True)
+
+
+@needs_bash
+def test_verify_line_refuses_when_head_moves_during_the_read(tmp_path, monkeypatch):
+    root = _clean_repo(tmp_path)
+
+    def commit(n):
+        if n == 1:
+            git(root, "commit", "-q", "--allow-empty", "-m", "moved")
+
+    _wrap_gate_state(monkeypatch, commit)
+
+    assert _line(root).startswith(CLEAN) is False
+
+
+@needs_bash
+def test_verify_line_refuses_a_tree_edited_during_the_read(tmp_path, monkeypatch):
+    root = _clean_repo(tmp_path)
+
+    def edit(n):
+        if n == 2:
+            (root / "seed.txt").write_text("edited mid-read\n", encoding="utf-8")
+
+    _wrap_gate_state(monkeypatch, edit)
+
+    assert _line(root).startswith(CLEAN) is False
+
+
+@needs_bash
+@pytest.mark.parametrize("case", ["marker", "tree"])
+def test_verify_line_refuses_a_change_at_the_tail_of_the_read(tmp_path, monkeypatch, case):
+    root = _clean_repo(tmp_path)
+    real = crew_status._git  # pylint: disable=protected-access
+    calls = []
+
+    def tail(r, *args):
+        if args == ("rev-parse", "HEAD"):
+            calls.append(args)
+            if len(calls) == 2:
+                if case == "marker":
+                    (root / _MARKER).unlink()
+                else:
+                    (root / "seed.txt").write_text("edited at the tail\n", encoding="utf-8")
+        return real(r, *args)
+
+    monkeypatch.setattr(crew_status, "_git", tail)
+
+    assert _line(root).startswith(CLEAN) is False
+
+
+@needs_bash
+def test_status_is_read_only_when_the_gate_state_is_computed(tmp_path):
+    root = _clean_repo(tmp_path)
+    sentinel = tmp_path / "fsmonitor-ran"
+    hook = tmp_path / "fsmonitor.sh"
+    hook.write_text(f"#!/bin/sh\ntouch '{sentinel}'\nexit 1\n", encoding="utf-8", newline="\n")
+    hook.chmod(0o755)
+    git(root, "config", "core.fsmonitor", str(hook))
+    before = _stat_tree(root)
+
+    done = _run(root)
+
+    assert (done.returncode, sentinel.exists(), _stat_tree(root) == before,
+            any(line.startswith(CLEAN) for line in done.stdout.splitlines())) == (
+                0, False, True, True), done.stdout + done.stderr

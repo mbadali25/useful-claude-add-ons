@@ -4,6 +4,32 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed - `crew` VERSION_TBD: the verify gate records a fully clean `--all`, and the status line can show check 2 passing (L-0602, PR 1 of 2)
+
+- **Why.** `/crew:done` check 2 read `crew_status.py`'s `verify` line, and a clean gate always left
+  `verify   no rules recorded`: `verify_record._sync` removes every rule that passes, so the record
+  only ever lists what is owed. Every landing needed an owner waiver (L-0576, L-0555, L-0598).
+- **Gate behaviour changes (both flavours).** An `--all` run first clears the record's
+  `all_clean_at`, after taking the lock and before running anything; if that write fails it exits 2
+  and runs nothing (`could not clear the previous clean --all evidence; nothing ran`). Both gates
+  now read HEAD once before matching and record only that sha, so a command that moves HEAD during
+  the run gets nothing recorded and the gate exits 2 (`HEAD moved during the run`). The sync payload
+  carries the gate's own outcome (failed, skipped, deferred), so a failing `default`/`always`
+  command or `"unmapped": "fail"` withholds `all_clean_at` even though no matched rule failed.
+- **The record.** `all_clean_at` is the HEAD of the last fully clean `--all` sync; any other sync
+  sets it to `null`, and a clean Stop sync leaves it as it was. `verify_record.read_record_meta`
+  reads it; a malformed value makes the record corrupt.
+- **The status line.** `verify   clean at <sha>: --all passed at HEAD, nothing outstanding, tree
+  committed` appears only when the record is empty with `all_clean_at` at HEAD,
+  `review_gate.gate_state` is VERIFIED and nothing material differs from HEAD, read twice inside
+  one window (marker and tree last, the gate lock checked at both ends, git run with fsmonitor
+  off). Everything else is a named refusal (`gate running`, `no gate record yet`, `UNKNOWN`, an
+  outstanding count, `NOT VERIFIED (no clean --all at HEAD ...)`, `NOT VERIFIED (<n> path(s) differ
+  from HEAD ...)`, `no gate`). `done.md`'s check 2 text changes in PR 2.
+- **Proof.** Must-allow and must-block tests in `test_status.py` and `test_verify_gate_stop_gate_record.py`
+  (both flavours); ten new `sabotage_tooling.py` mutations, each red on its named test. Follow-ups
+  F1-F6 are L-0607.
+
 ### Added - `crew` 1.0.140: no new linter findings before a review round is reserved (L-0574)
 
 - **What.** `review_run.py` asks a new question 3 before it reserves a round, after the CLEAN-receipt

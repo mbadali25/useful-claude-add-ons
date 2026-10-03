@@ -2421,9 +2421,30 @@ hatch; a rule that genuinely needs a variable declares it, in the map, next
 to the command that needs it.
 
 **Unknown never resolves to the permissive value, in any of this.** A
-`.crew/.verify-gate.record.json` that cannot be read is treated as empty —
-losing only history, never fabricating a clean rule that never ran (see
-`verify_record.py`'s module docstring). A `.crew/config.json` that cannot be
+`.crew/.verify-gate.record.json` that cannot be read is corrupt, not empty: a
+Stop refuses to advance the marker over it, and only an `--all` run rebuilds it
+(`verify_record.py` `_sync`, `record_lost`). It never fabricates a clean rule
+that never ran.
+
+**What `/crew:done` check 2 reads (L-0602).** The record's `rules` hold only
+what is still owed — a rule that passes is removed — so an empty record proves
+nothing by itself. The record also carries `all_clean_at`: the HEAD of the last
+**fully clean `--all`** sync (every rule passed or was credited, nothing
+skipped, deferred or never-ran, no entry or orphan left, and the gate's own
+outcome — which covers its `default`/`always` commands and `"unmapped": "fail"`
+— clean). Any other sync sets it to `null`; a clean Stop sync leaves it alone.
+Both gates now read HEAD once before matching and record only that sha: a
+command that moves HEAD during the run gets nothing recorded and the gate exits
+2 (`HEAD moved during the run`). An `--all` run first clears `all_clean_at`,
+after taking the lock and before any command; if that write fails it exits 2
+and runs nothing (`could not clear the previous clean --all evidence`).
+`crew_status.py`'s `verify` line reads `verify   clean at <sha>: ...` only when
+the record is empty with `all_clean_at` at HEAD, `review_gate.gate_state` is
+VERIFIED, and nothing material differs from HEAD, all read twice inside one
+window (marker and tree last, the gate lock checked at both ends). A read-only
+check cannot see a writer that acts after its last read; the Stop gate stays
+the enforcement. The evidence is this checkout's files and names no worktree
+(follow-ups in L-0607). A `.crew/config.json` that cannot be
 read leaves `verify.stopBudgetSeconds` at its compiled default (60) rather
 than removing the budget. See `commands/verify.md` for the full mechanism and
 `hooks/scripts/verify_record.py` / `verify_price.py` for the code.

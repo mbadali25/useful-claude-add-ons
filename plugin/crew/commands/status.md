@@ -29,7 +29,7 @@ summary above or below it, and do not pad it with advice.
 | `roster` | `agents` in crew.json, or `roles` measured against the 1.0 four | - |
 | `tickets` / `open` | `.work/tickets/`, `.work/INDEX.md` | - |
 | `review` | review ledgers under the git common dir, newest three: state, rounds used of the budget, and refunded tool-failure rounds (`review_ledger.summary`) | a ledger that will not parse |
-| `verify` | `.crew/.verify-gate.record.json`, counted by status | record unreadable |
+| `verify` | `/crew:done` check 2's evidence: `.crew/.verify-gate.record.json` (outstanding rules, counted by status, and `all_clean_at`, the HEAD of the last fully clean `--all`), `review_gate.gate_state` (marker at HEAD), and nothing material differing from HEAD, read twice inside one window. Only `verify   clean at <sha>: ...` passes check 2 | record, marker, git or digest unreadable, or something moved during the read |
 | `shell` | Windows only: `shellRoute` config and the `crew_shell.py probe` cache; runs no `wsl.exe` or `pwsh` | never probed - run /crew:config |
 | `codemap` | anchors checked by path diff, as `crew_freshness.read_knowledge` does | no git |
 | `metrics` | `.crew/metrics.jsonl`, else `.crew/metrics.md` | - |

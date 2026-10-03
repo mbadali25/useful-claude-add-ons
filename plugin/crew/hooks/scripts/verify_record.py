@@ -27,6 +27,21 @@ FAIL-SAFE DIRECTION. An unreadable or corrupt record is treated as EMPTY, not
 as "everything already verified" -- the same direction as DEFERRED_COUNT
 defaulting to 1 in verify-gate.sh. Losing this file loses only history; it
 never invents a clean rule that never ran.
+
+`all_clean_at` (L-0602). `rules` only ever holds what is still OWED -- a rule
+that passes is removed -- so an empty record proves nothing on its own, and
+/crew:done check 2 used to read it as "no rules recorded" and refuse every
+clean gate. The record therefore also carries `all_clean_at`: the HEAD sha of
+the last FULLY CLEAN `--all` sync (every matched rule ran and passed or was
+credited, nothing deferred, skipped or never-ran, no entry or orphan left, the
+record not lost, and the gate's own outcome -- which also covers its
+`default`/`always` commands and `"unmapped": "fail"` -- reported no failure,
+skip or deferral, with HEAD unmoved since the run began). Any sync short of
+that sets it to null, except a fully clean NON-`--all` sync, which leaves it
+as it was. The gate clears it (`clear-all-clean`) before an `--all` starts, so
+a run whose own record write later fails can never leave an earlier value
+standing behind its failure. It is evidence for the repository content at that
+sha in THIS checkout's files; it names no worktree.
 """
 import json
 import math
@@ -79,18 +94,35 @@ def _load(path):
     return _load_state(path)[0]
 
 
-def read_record(root):
-    """(state, rules) for `<root>/.crew/.verify-gate.record.json`: state is
-    "absent", "ok" or "corrupt", rules {} unless ok. The one reader the
-    record's consumers (review_prompt.py, crew_status.py) share; a record
-    whose `rules` is not an object is corrupt -- which rules are owed is then
-    UNKNOWN, never "none"."""
+_SHA_RE = re.compile(r"\A(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
+
+
+def _is_sha(value):
+    return isinstance(value, str) and bool(_SHA_RE.match(value))
+
+
+def read_record_meta(root):
+    """(state, rules, all_clean_at) for `<root>/.crew/.verify-gate.record.json`.
+    state is "absent", "ok" or "corrupt"; rules {} and all_clean_at None unless
+    ok. A record whose `rules` is not an object, or whose `all_clean_at` is
+    present but neither null nor a sha, is corrupt -- which rules are owed, or
+    whether a clean --all happened, is then UNKNOWN, never "none"."""
     data, state = _load_state(os.path.join(root, RECORD_PATH))
     if state != "ok":
-        return state, {}
+        return state, {}, None
     if not isinstance(data.get("rules"), dict):
-        return "corrupt", {}
-    return "ok", data["rules"]
+        return "corrupt", {}, None
+    clean_at = data.get("all_clean_at")
+    if clean_at is not None and not _is_sha(clean_at):
+        return "corrupt", {}, None
+    return "ok", data["rules"], clean_at
+
+
+def read_record(root):
+    """(state, rules): `read_record_meta` without `all_clean_at`. The one reader
+    the record's consumers (review_prompt.py, crew_status.py) share."""
+    state, rules, _ = read_record_meta(root)
+    return state, rules
 
 
 def _save(path, data):
@@ -781,7 +813,9 @@ def cmd_sync():
     matched = payload.get("matched_rules") or []
     cmd_log = payload.get("cmd_log") or []
     all_run = bool(payload.get("all")) if isinstance(payload, dict) else False
-    return _sync(sha, matched, cmd_log, all_run)
+    outcome = payload.get("outcome") if isinstance(payload, dict) else None
+    head_moved = payload.get("head_moved") if isinstance(payload, dict) else None
+    return _sync(sha, matched, cmd_log, all_run, outcome, head_moved)
 
 
 def _current_rule_keys():
@@ -801,7 +835,38 @@ def _current_rule_keys():
     return {rule_key(r) for r in rules if isinstance(r, dict)}
 
 
-def _sync(sha, matched, cmd_log, all_run=False):
+def _clean_outcome(outcome, head_moved):
+    """True only for the gate's own report of a run with no failure, no skip,
+    no deferral and HEAD unmoved. Anything missing or mistyped is False: a
+    gate that predates the field never stamps `all_clean_at`."""
+    if head_moved is not False or not isinstance(outcome, dict):
+        return False
+    deferred = outcome.get("deferred")
+    return (outcome.get("failed") is False and outcome.get("skipped") is False
+            and isinstance(deferred, int) and not isinstance(deferred, bool)
+            and deferred == 0)
+
+
+def cmd_clear_all_clean():
+    """Run by the gate after it takes its lock and before an `--all` runs any
+    command: `all_clean_at` -> null, `rules` kept. A corrupt record becomes
+    {"rules": {}, "all_clean_at": null} -- its obligations were already lost,
+    and the `--all` that follows re-derives every rule, the documented
+    recovery. Exit 0 only when the write succeeded; the gate aborts otherwise,
+    so no run can fail behind an older clean value it could not clear."""
+    record, state = _load_state(RECORD_PATH)
+    if state == "corrupt" or not isinstance(record.get("rules"), dict):
+        record = {"rules": {}}
+    record["all_clean_at"] = None
+    err = _save(RECORD_PATH, record)
+    if err is not None:
+        print(f"verify-gate: could not clear the previous clean --all evidence ({err})",
+              file=sys.stderr)
+        return False
+    return True
+
+
+def _sync(sha, matched, cmd_log, all_run=False, outcome=None, head_moved=None):
 
     status_by_cmd = {}
     elapsed_by_cmd = {}
@@ -832,6 +897,9 @@ def _sync(sha, matched, cmd_log, all_run=False):
     if not isinstance(timings.get("rules"), dict):
         timings["rules"] = {}
 
+    # Anything short of every matched rule running clean: L-0602's all_clean_at
+    # is withheld (null) on any of it.
+    dirty = False
     for rule in matched:
         if not isinstance(rule, dict):
             continue
@@ -841,6 +909,7 @@ def _sync(sha, matched, cmd_log, all_run=False):
         label = rule.get("label", key)
         kind = rule.get("kind")
         if kind in _NEVER_RAN_KINDS:
+            dirty = True
             entries[key] = {
                 "status": kind,
                 "reason": rule.get("reason") or REASON_TEXT.get(kind, ""),
@@ -852,6 +921,8 @@ def _sync(sha, matched, cmd_log, all_run=False):
         if not cmds:
             continue
         statuses = [status_by_cmd.get(c) for c in cmds]
+        if not all(s in ("pass", COVERED) for s in statuses):
+            dirty = True
         if any(s is None for s in statuses):
             # At least one of this rule's commands never ran this turn --
             # an acute budget deferral. Leave whatever was recorded before
@@ -948,6 +1019,15 @@ def _sync(sha, matched, cmd_log, all_run=False):
                 orphaned += 1
 
     record["rules"] = entries
+    run_clean = (not dirty and not record_lost and not entries and not orphaned
+                 and _clean_outcome(outcome, head_moved)
+                 and all(row.get("status") in ("pass", COVERED)
+                         for row in cmd_log if isinstance(row, dict)))
+    if all_run and run_clean and _is_sha(sha):
+        record["all_clean_at"] = sha
+    elif all_run or not run_clean or not _is_sha(record.get("all_clean_at")):
+        # A fully clean Stop sync is the only one that keeps an earlier value.
+        record["all_clean_at"] = None
     record_err = _save(RECORD_PATH, record)
     timings_err = _save(TIMINGS_PATH, timings)
     failure = record_err or timings_err
@@ -1011,7 +1091,7 @@ def main(argv):
     except (AttributeError, ValueError):
         pass
     usage = ("usage: verify_record.py sync|report|timings-get|rule-key|scan-reach|"
-             "cover-plan|tree-snapshot")
+             "cover-plan|tree-snapshot|clear-all-clean")
     if len(argv) < 2:
         print(usage, file=sys.stderr)
         return 2
@@ -1021,6 +1101,8 @@ def main(argv):
         # could not be persisted must not let the sha marker or fingerprint
         # advance either. See _sync's "STALE OBLIGATIONS" / failure handling.
         return 0 if cmd_sync() else 1
+    if cmd == "clear-all-clean":
+        return 0 if cmd_clear_all_clean() else 1
     if cmd == "report":
         cmd_report()
     elif cmd == "timings-get":

@@ -224,7 +224,7 @@ _RECORDS = [
     (json.dumps({"rules": []}), "corrupt", "UNREADABLE",
      "verify   UNKNOWN (gate record unreadable)"),
     (json.dumps({"rules": {}}), "ok", "Per-rule record: no rule is outstanding",
-     "verify   no rules recorded"),
+     "verify   no gate - no .crew/verify.json, or the gate is stood down; check 2 cannot pass"),
     (json.dumps({"rules": {"k": {"label": "rules[3]", "reason": "SKIP", "status": "skipped"}}}),
      "ok", "NOT VERIFIED: rules[3]: SKIP", "verify   1 skipped"),
 ]

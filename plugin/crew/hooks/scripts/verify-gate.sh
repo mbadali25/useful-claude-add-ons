@@ -116,10 +116,15 @@ fi
 # A dirty tree is deliberately not recorded either -- HEAD is the only thing a
 # future diff can be taken against, and the working tree the checks actually
 # saw is not addressable by any sha.
+# L-0602: the commit recorded is START_HEAD, read once before BASE and CHANGED,
+# never HEAD as it stands after the commands ran -- a command that commits
+# would otherwise get a commit nobody checked stamped as verified. If HEAD has
+# moved since, nothing is recorded.
 record_verified() {
+  [ -n "${START_HEAD:-}" ] || return 0
   VERIFIED=$(git rev-parse HEAD 2>/dev/null) || return 0
-  [ -n "$VERIFIED" ] || return 0
-  mkdir -p .crew 2>/dev/null && printf '%s\n' "$VERIFIED" > .crew/.verify-verified-at
+  [ "$VERIFIED" = "$START_HEAD" ] || return 0
+  mkdir -p .crew 2>/dev/null && printf '%s\n' "$START_HEAD" > .crew/.verify-verified-at
 }
 
 # The fingerprint twin, written ONLY where everything ran and everything
@@ -194,6 +199,7 @@ record_verified_fingerprint() {
 # behaviour, and a gate that silently verifies less when its input is absent is
 # this repo's recurring bug: an unknown collapsing into the permissive value.
 # This baseline fails the other way.
+START_HEAD=$(git rev-parse HEAD 2>/dev/null) || START_HEAD=""
 BASE=""
 if [ -f .crew/.verify-verified-at ]; then
   read -r CAND < .crew/.verify-verified-at
@@ -735,6 +741,19 @@ fi
 # that exists in case some OTHER broken-but-`command -v`-resolvable
 # interpreter ever slips past crew_py_strict the same way.
 PY=$(crew_py_strict) || { echo "VERIFY GATE: no python (python3, python or py) resolves to a PROVED working interpreter anywhere on PATH - .crew/verify.json cannot be read and nothing can be verified. Work is not complete. Install python (3.10+) on this machine, or set \"verifyGate\": false in .crew/config.json to stand this gate down deliberately (honoured at the top of this file)." >&2; exit 2; }
+
+# L-0602: an --all run first clears the previous clean --all evidence
+# (`all_clean_at` in the per-rule record), after the lock is held and before
+# any command runs. If that cannot be written, nothing runs: otherwise a run
+# whose own record write later failed would leave the older clean value
+# standing behind its failure, and /crew:done check 2 would read it.
+if [ "$BUDGET_FLAG" = "--all" ]; then
+  CLEAR_PY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  "$PY" "$CLEAR_PY_DIR/verify_record.py" clear-all-clean >&2 || {
+    echo "verify-gate: could not clear the previous clean --all evidence; nothing ran" >&2
+    exit 2
+  }
+fi
 
 # The changed-file list goes through a temp FILE, never argv. E2BIG counts argv
 # PLUS the environment, so a hook invoked with a large environment fails to exec
@@ -1903,7 +1922,13 @@ SYNC_STATUS=99
 if [ -n "$PY" ] && [ -n "$EXTRAS" ]; then
   SYNC_PY="$FP_DIR/verify_record.py"
   if [ -f "$SYNC_PY" ]; then
-    SYNC_SHA=$(git rev-parse HEAD 2>/dev/null)
+    # L-0602: the payload names START_HEAD (what was matched and run), the
+    # gate's own outcome (FAILED also covers default/always commands and
+    # "unmapped": "fail"), and whether HEAD moved during the run.
+    SYNC_SHA="$START_HEAD"
+    NOW_HEAD=$(git rev-parse HEAD 2>/dev/null) || NOW_HEAD=""
+    HEAD_MOVED=0
+    { [ -z "$START_HEAD" ] || [ "$NOW_HEAD" != "$START_HEAD" ]; } && HEAD_MOVED=1
     "$PY" -c '
 import json, sys
 try:
@@ -1920,8 +1945,13 @@ for line in sys.stdin.read().split("\n"):
         cmd_log.append(json.loads(line))
     except ValueError:
         pass
-print(json.dumps({"sha": sys.argv[2], "all": sys.argv[3] == "--all", "matched_rules": extras.get("matched_rules", []), "cmd_log": cmd_log}))
-' "$EXTRAS" "$SYNC_SHA" "$BUDGET_FLAG" <<< "$CMD_LOG" | tr -d '\r' | "$PY" "$SYNC_PY" sync >&2
+try:
+    deferred = int(sys.argv[6])
+except ValueError:
+    deferred = -1
+outcome = {"failed": sys.argv[4] != "0", "skipped": sys.argv[5] != "0", "deferred": deferred}
+print(json.dumps({"sha": sys.argv[2], "all": sys.argv[3] == "--all", "matched_rules": extras.get("matched_rules", []), "cmd_log": cmd_log, "outcome": outcome, "head_moved": sys.argv[7] != "0"}))
+' "$EXTRAS" "$SYNC_SHA" "$BUDGET_FLAG" "$FAILED" "$ANY_SKIPPED" "${DEFERRED_COUNT:-1}" "$HEAD_MOVED" <<< "$CMD_LOG" | tr -d '\r' | "$PY" "$SYNC_PY" sync >&2
     SYNC_STATUS=$?
   else
     echo "verify-gate: could not sync the record (verify_record.py not found at $SYNC_PY); NOT advancing the marker" >&2
@@ -1935,6 +1965,10 @@ fi
 # part in this decision on purpose: whether the record write succeeded or
 # not, a turn with a real failure exits 2 either way.
 [ "$FAILED" -eq 0 ] || exit 2
+if [ "${HEAD_MOVED:-1}" -ne 0 ] && [ -n "${NOW_HEAD+x}" ]; then
+  echo "verify-gate: HEAD moved during the run (${START_HEAD:0:12} -> ${NOW_HEAD:0:12}); nothing was verified" >&2
+  exit 2
+fi
 
 # THREE things must ALL hold before either marker may advance: nothing was
 # ACUTELY deferred (fully_verified), nothing SKIPPED (rc 77 is not a check),

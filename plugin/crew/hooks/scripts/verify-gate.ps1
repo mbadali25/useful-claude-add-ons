@@ -461,12 +461,14 @@ if (Test-CrewIncidentActive) {
 
 # Records the commit this gate has proven clean. Mirrors record_verified in
 # verify-gate.sh; called on every exit-0 path and on none that exit nonzero.
+# L-0602: writes $startHead (read once before $base and $changed), and nothing
+# if HEAD has moved since - the twin of record_verified in verify-gate.sh.
 function Write-CrewVerified {
+  if (-not $script:startHead) { return }
   $verified = ($null | git rev-parse HEAD 2>$null)
-  if ($verified) {
-    if (-not (Test-Path .crew)) { New-Item -ItemType Directory .crew -Force | Out-Null }
-    Set-Content -Path .crew/.verify-verified-at -Value $verified.Trim() -Encoding ascii
-  }
+  if (-not $verified -or $verified.Trim() -ne $script:startHead) { return }
+  if (-not (Test-Path .crew)) { New-Item -ItemType Directory .crew -Force | Out-Null }
+  Set-Content -Path .crew/.verify-verified-at -Value $script:startHead -Encoding ascii
 }
 
 # SCOPE. Mirrors verify-gate.sh exactly; the long rationale lives there. In
@@ -474,6 +476,8 @@ function Write-CrewVerified {
 # turn this gate would otherwise have blocked, so the baseline is now the last
 # commit the gate actually verified, falling back to the merge-base with the
 # default branch, falling back to HEAD. Unknown resolves to checking MORE.
+$script:startHead = ($null | git rev-parse HEAD 2>$null)
+if ($script:startHead) { $script:startHead = $script:startHead.Trim() } else { $script:startHead = "" }
 $base = ""
 if (Test-Path .crew/.verify-verified-at) {
   $cand = (Get-Content .crew/.verify-verified-at -TotalCount 1 -ErrorAction SilentlyContinue)
@@ -1062,6 +1066,24 @@ $ruleKeys = @{}
 # Get-CrewRuleKey / verify_record.py call rather than re-resolving per rule.
 $matchPy = Resolve-CrewPython
 $verifyRecordScript = Join-Path $PSScriptRoot 'verify_record.py'
+
+# L-0602: -All clears the previous clean --all evidence before any command
+# runs, after the lock is held; if it cannot, nothing runs. Twin of the same
+# block in verify-gate.sh.
+if ($All) {
+  $cleared = $false
+  try {
+    if ($matchPy -and (Test-Path $verifyRecordScript)) {
+      $global:LASTEXITCODE = 0
+      & $matchPy $verifyRecordScript clear-all-clean 2>&1 | ForEach-Object { [Console]::Error.WriteLine($_) }
+      $cleared = ($LASTEXITCODE -eq 0)
+    }
+  } catch { $cleared = $false }
+  if (-not $cleared) {
+    [Console]::Error.WriteLine("verify-gate: could not clear the previous clean --all evidence; nothing ran")
+    exit 2
+  }
+}
 $timings = @{}
 try {
   if (Test-Path .crew/.verify-gate.timings.json) {
@@ -2007,12 +2029,18 @@ try {
   $syncPy = Resolve-CrewPython
   $syncScript = Join-Path $PSScriptRoot 'verify_record.py'
   if ($syncPy -and (Test-Path $syncScript)) {
-    $syncSha = ($null | git rev-parse HEAD 2>$null)
+    # L-0602: START head, the gate's own outcome, and whether HEAD moved.
+    $syncSha = $script:startHead
+    $nowHead = ($null | git rev-parse HEAD 2>$null)
+    if ($nowHead) { $nowHead = $nowHead.Trim() } else { $nowHead = "" }
+    $headMoved = (-not $script:startHead) -or ($nowHead -ne $script:startHead)
     $payload = [ordered]@{
       sha = $syncSha
       all = [bool]$All
       matched_rules = $extrasObj.matched_rules
       cmd_log = @($cmdLog)
+      outcome = [ordered]@{ failed = [bool]$failed; skipped = [bool]$anySkipped; deferred = [int]$deferredCount }
+      head_moved = [bool]$headMoved
     }
     $payloadJson = ConvertTo-Json -InputObject $payload -Depth 10 -Compress
     $global:LASTEXITCODE = 0
@@ -2030,6 +2058,12 @@ try {
 # part in this decision on purpose: whether the record write succeeded or
 # not, a turn with a real failure exits 2 either way.
 if ($failed) { exit 2 }
+if ($null -ne $headMoved -and $headMoved) {
+  $s12 = if ($script:startHead.Length -ge 12) { $script:startHead.Substring(0, 12) } else { $script:startHead }
+  $n12 = if ($nowHead.Length -ge 12) { $nowHead.Substring(0, 12) } else { $nowHead }
+  [Console]::Error.WriteLine("verify-gate: HEAD moved during the run ($s12 -> $n12); nothing was verified")
+  exit 2
+}
 
 # THREE things must ALL hold before either marker may advance - the twin of
 # the same three-part guard in verify-gate.sh, where the full rationale

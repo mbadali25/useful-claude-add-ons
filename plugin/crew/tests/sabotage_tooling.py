@@ -17,6 +17,9 @@ REVIEW_PATCH = os.path.join(SCRIPTS, "review_patch.py")
 CREW_STATUS = os.path.join(SCRIPTS, "crew_status.py")
 CREW_AUTOPILOT = os.path.join(SCRIPTS, "crew_autopilot.py")
 VERIFY_RECORD = os.path.join(SCRIPTS, "verify_record.py")
+VERIFY_GATE_SH = os.path.join(SCRIPTS, "verify-gate.sh")
+STATUS_TEST = "tests/test_status.py::"
+STOP_RECORD_TEST = "tests/test_verify_gate_stop_gate_record.py::"
 GOLDEN_BUILD = os.path.join(CREW, "tests", "golden_build.py")
 FORMATS_TEST = os.path.join(CREW, "tests", "test_external_tool_formats.py")
 GOLDEN_TEST = os.path.join(CREW, "tests", "test_review_golden.py")
@@ -26,6 +29,77 @@ CHECKER = os.path.join(REPO, "scripts", "check-tooling-pr.py")
 VERIFY_JSON = os.path.join(REPO, ".crew", "verify.json")
 
 TOOLING_MUTATIONS = (
+    # --- L-0602: /crew:done check 2 (the verify line) and all_clean_at ---------
+    (
+        "check 2: the gate state is not required (UNVERIFIED reads clean)",
+        CREW_STATUS,
+        "    if gate != review_gate.VERIFIED:\n",
+        "    if False:\n",
+        STATUS_TEST + "test_verify_line_refuses_a_clean_record_when_the_marker_is_missing",
+    ),
+    (
+        "check 2: an UNKNOWN gate state reads clean",
+        CREW_STATUS,
+        "    if gate != review_gate.VERIFIED:\n",
+        "    if gate not in (review_gate.VERIFIED, review_gate.UNKNOWN):\n",
+        STATUS_TEST + "test_verify_line_refuses_an_unreadable_marker_as_unknown",
+    ),
+    (
+        "check 2: all_clean_at is not compared with HEAD",
+        CREW_STATUS,
+        "    if clean_at != head1:\n",
+        "    if False:\n",
+        STATUS_TEST + "test_verify_line_refuses_a_stop_only_pass",
+    ),
+    (
+        "check 2: a dirty tree passes when the fingerprint matches",
+        CREW_STATUS,
+        "    if material1:\n",
+        "    if False:\n",
+        STATUS_TEST + "test_verify_line_refuses_a_dirty_tree_even_when_the_fingerprint_matches",
+    ),
+    (
+        "check 2: the record is not read again after the gate state",
+        CREW_STATUS,
+        "            second = verify_record.read_record_meta(root)\n",
+        "            second = first\n",
+        STATUS_TEST + "test_verify_line_rereads_the_record_after_the_gate_state",
+    ),
+    (
+        "all_clean_at ignores the gate's failed outcome",
+        VERIFY_RECORD,
+        '    return (outcome.get("failed") is False and outcome.get("skipped") is False\n',
+        '    return (outcome.get("skipped") is False\n',
+        STOP_RECORD_TEST + "test_52_all_clean_at_needs_a_clean_outcome[failed]",
+    ),
+    (
+        "all_clean_at is stamped by a clean Stop, not only by --all",
+        VERIFY_RECORD,
+        "    if all_run and run_clean and _is_sha(sha):\n",
+        "    if run_clean and _is_sha(sha):\n",
+        STOP_RECORD_TEST + "test_52_a_clean_stop_never_sets_all_clean_at[sh]",
+    ),
+    (
+        "verify-gate.sh reports a failing run as not failed",
+        VERIFY_GATE_SH,
+        'outcome = {"failed": sys.argv[4] != "0",',
+        'outcome = {"failed": False,',
+        STOP_RECORD_TEST + "test_52_a_failed_fallback_clears_all_clean_at[sh-unmapped]",
+    ),
+    (
+        "verify-gate.sh no longer notices HEAD moving during the run",
+        VERIFY_GATE_SH,
+        '    { [ -z "$START_HEAD" ] || [ "$NOW_HEAD" != "$START_HEAD" ]; } && HEAD_MOVED=1\n',
+        "    :\n",
+        STOP_RECORD_TEST + "test_52_a_run_that_moves_head_stamps_nothing[sh]",
+    ),
+    (
+        "verify-gate.sh runs --all although the old evidence was not cleared",
+        VERIFY_GATE_SH,
+        '  "$PY" "$CLEAR_PY_DIR/verify_record.py" clear-all-clean >&2 || {\n',
+        '  "$PY" "$CLEAR_PY_DIR/verify_record.py" clear-all-clean >&2 || true || {\n',
+        STOP_RECORD_TEST + "test_52_all_cannot_start_without_clearing_its_evidence[sh]",
+    ),
     (
         # (a) A bundle/webtest reason no longer outranks "not delivered": a
         # round whose tree moved under the reviewer is refunded as the tool's.
@@ -117,8 +191,8 @@ TOOLING_MUTATIONS = (
         # (k) A record whose rules are not an object reads as "nothing owed".
         "a corrupt gate record reads as ok",
         VERIFY_RECORD,
-        '    if not isinstance(data.get("rules"), dict):\n        return "corrupt", {}\n',
-        '    if not isinstance(data.get("rules"), dict):\n        return "ok", {}\n',
+        '    if not isinstance(data.get("rules"), dict):\n        return "corrupt", {}, None\n',
+        '    if not isinstance(data.get("rules"), dict):\n        return "ok", {}, None\n',
         "tests/test_review_contracts.py::test_gate_record_consumers_share_one_reader",
     ),
     (

@@ -34,7 +34,9 @@ import crew_freshness  # noqa: E402
 import crew_migrate  # noqa: E402
 import crew_shell  # noqa: E402
 import crew_tracker  # noqa: E402
+import review_gate  # noqa: E402
 import review_ledger  # noqa: E402
+import verify_fingerprint  # noqa: E402
 import verify_record  # noqa: E402
 from crew_common import read_text  # noqa: E402
 
@@ -151,17 +153,98 @@ def _review_lines(root):
     return lines
 
 
+# /crew:done check 2 passes only on a line starting with this (L-0602).
+VERIFY_CLEAN = "verify   clean"
+_GATE_LOCK = os.path.join(".crew", ".verify-gate.lock")
+
+
+class _QuietGit:
+    """Run review_gate's own git calls with fsmonitor off and no optional
+    locks, so status stays read-only (the same two settings `_git` above
+    uses). review_gate passes no environment of its own, so the settings go
+    in through GIT_CONFIG_COUNT, appended to any the caller already set, and
+    os.environ is restored exactly afterwards."""
+
+    _KEYS = ("GIT_CONFIG_COUNT", "GIT_OPTIONAL_LOCKS")
+
+    def __enter__(self):
+        self.saved = {k: os.environ.get(k) for k in self._KEYS}
+        count = int(os.environ.get("GIT_CONFIG_COUNT") or "0")
+        self.added = (f"GIT_CONFIG_KEY_{count}", f"GIT_CONFIG_VALUE_{count}")
+        self.saved.update({k: os.environ.get(k) for k in self.added})
+        os.environ[self.added[0]] = "core.fsmonitor"
+        os.environ[self.added[1]] = "false"
+        os.environ["GIT_CONFIG_COUNT"] = str(count + 1)
+        os.environ["GIT_OPTIONAL_LOCKS"] = "0"
+        return self
+
+    def __exit__(self, *exc):
+        for key, value in self.saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        return False
+
+
+def _material_now(root):
+    return verify_fingerprint._material(review_gate.changed_now(root))  # pylint: disable=protected-access
+
+
 def _verify_line(root):
-    state, rules = verify_record.read_record(root)
+    """Check 2's evidence, read inside one window (L-0602): the per-rule record
+    lists nothing outstanding and names a fully clean --all at HEAD
+    (`all_clean_at`), review_gate says VERIFIED, and nothing material differs
+    from HEAD. The marker and the tree are read last. A read-only check cannot
+    see a writer that acts after its last read, or one that edits and restores
+    inside the window; the Stop gate stays the enforcement."""
+    if os.path.lexists(os.path.join(root, _GATE_LOCK)):
+        return "verify   gate running - rerun when it finishes"
+    head1 = _git(root, "rev-parse", "HEAD")
+    first = verify_record.read_record_meta(root)
+    state, rules, clean_at = first
     if state == "absent":
         return "verify   no gate record yet"
     if state != "ok":
         return "verify   UNKNOWN (gate record unreadable)"
-    counts = {}
-    for rule in rules.values():
-        state = rule.get("status", "unknown") if isinstance(rule, dict) else "unknown"
-        counts[state] = counts.get(state, 0) + 1
-    return "verify   " + (", ".join(f"{v} {k}" for k, v in sorted(counts.items())) or "no rules recorded")
+    if rules:
+        counts = {}
+        for rule in rules.values():
+            status = rule.get("status", "unknown") if isinstance(rule, dict) else "unknown"
+            counts[status] = counts.get(status, 0) + 1
+        return "verify   " + ", ".join(f"{v} {k}" for k, v in sorted(counts.items()))
+    try:
+        with _QuietGit():
+            gate1 = review_gate.gate_state(root)
+            material1 = _material_now(root) if gate1[0] != review_gate.NO_GATE else []
+            second = verify_record.read_record_meta(root)
+            head2 = _git(root, "rev-parse", "HEAD")
+            gate2 = review_gate.gate_state(root)
+            material2 = _material_now(root) if gate2[0] != review_gate.NO_GATE else []
+    except Exception as exc:  # pylint: disable=broad-except
+        return f"verify   UNKNOWN ({type(exc).__name__}: {exc})"
+    if os.path.lexists(os.path.join(root, _GATE_LOCK)):
+        return "verify   gate running - rerun when it finishes"
+    if gate1[0] == gate2[0] == review_gate.NO_GATE:
+        return ("verify   no gate - no .crew/verify.json, or the gate is stood down; "
+                "check 2 cannot pass")
+    if head1 is None:
+        return f"verify   UNKNOWN (HEAD could not be read; gate state: {gate1[1]})"
+    if (head1 != head2 or first != second or gate1[0] != gate2[0]
+            or material1 != material2):
+        return ("verify   UNKNOWN (HEAD, the gate record, the gate state or the tree moved "
+                "while it was read - rerun)")
+    if clean_at != head1:
+        last = clean_at[:12] if clean_at else "none"
+        return f"verify   NOT VERIFIED (no clean --all at HEAD: last clean --all {last})"
+    gate, reason = gate1
+    if gate != review_gate.VERIFIED:
+        word = "NOT VERIFIED" if gate == review_gate.UNVERIFIED else "UNKNOWN"
+        return f"verify   {word} ({reason})"
+    if material1:
+        return (f"verify   NOT VERIFIED ({len(material1)} path(s) differ from HEAD - commit, "
+                "then run /crew:verify --all)")
+    return f"{VERIFY_CLEAN} at {head1[:12]}: --all passed at HEAD, nothing outstanding, tree committed"
 
 
 def _codemap_line(root, cfg):

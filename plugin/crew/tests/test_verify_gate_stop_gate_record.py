@@ -2899,3 +2899,229 @@ def test_51_a_trickling_sh_stdin_producer_does_not_park_the_gate(tmp_path):
     out = proc.stdout.read() if proc.stdout else ""
     err = proc.stderr.read() if proc.stderr else ""
     assert proc.returncode == 0, f"stdout: {out} stderr: {err}"
+
+
+# --- L-0602: all_clean_at, the gate's outcome, START_HEAD, the --all pre-clear ---
+#
+# /crew:done check 2 reads `all_clean_at`: the HEAD of the last FULLY clean
+# --all sync. These drive both real gates and read the record they leave.
+
+def _head(root):
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(root), check=True,
+                          capture_output=True, text=True,
+                          timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S).stdout.strip()
+
+
+def _local(paths, run):
+    return {"paths": paths, "run": run, "reach": "local", "seconds": 1}
+
+
+def _flag_map(**extra):
+    vmap = {"version": 1,
+            "rules": [_local(["README.md", ".crew/**"], ["test ! -e ../flag"])],
+            "default": [], "unmapped": "ignore"}
+    vmap.update(extra)
+    return vmap
+
+
+def _clean_all(flavour, root):
+    done = _run(flavour, root, "--all")
+    assert done.returncode == 0, done.stderr
+    assert _record(root).get("all_clean_at") == _head(root), done.stderr
+    return done
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_52_a_clean_all_sets_all_clean_at(flavour, tmp_path):
+    root = _repo(tmp_path, _flag_map())
+
+    _clean_all(flavour, root)
+
+
+@pytest.mark.parametrize("case", ["all-fail", "all-skip", "stop-fail"])
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_52_a_failed_run_clears_all_clean_at(flavour, case, tmp_path):
+    run = ["test ! -e ../flag || exit 77"] if case == "all-skip" else ["test ! -e ../flag"]
+    vmap = {"version": 1, "rules": [_local(["README.md", ".crew/**"], run)],
+            "default": [], "unmapped": "ignore"}
+    root = _repo(tmp_path, vmap)
+    _clean_all(flavour, root)
+    (tmp_path / "flag").write_text("", encoding="utf-8")
+    if case == "stop-fail":
+        (root / "README.md").write_text("edited", encoding="utf-8")
+
+    done = _run(flavour, root) if case == "stop-fail" else _run(flavour, root, "--all")
+
+    assert _record(root).get("all_clean_at") is None, done.stderr
+
+
+@pytest.mark.parametrize("case", ["default", "always", "always-skip", "unmapped"])
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_52_a_failed_fallback_clears_all_clean_at(flavour, case, tmp_path):
+    """r3 BLOCK 1: a failing default/always command or an unmapped path under
+    "unmapped": "fail" is no matched rule, so only the gate's own outcome in
+    the payload can withhold all_clean_at."""
+    ok_rule = _local(["README.md", ".crew/**"], ["echo ok"])
+    vmap = {"version": 1, "rules": [ok_rule], "default": [], "unmapped": "ignore"}
+    if case == "default":
+        vmap["rules"] = [_local(["never-matches.txt"], ["echo ok"])]
+        vmap["default"] = ["test ! -e ../flag"]
+    elif case == "always":
+        vmap["always"] = ["test ! -e ../flag"]
+    elif case == "always-skip":
+        vmap["always"] = ["test ! -e ../flag || exit 77"]
+    else:
+        vmap["unmapped"] = "fail"
+    root = _repo(tmp_path, vmap)
+    _clean_all(flavour, root)
+    if case == "unmapped":
+        (root / "unmapped.txt").write_text("x", encoding="utf-8")
+    else:
+        (tmp_path / "flag").write_text("", encoding="utf-8")
+
+    done = _run(flavour, root, "--all")
+
+    assert _record(root).get("all_clean_at") is None, done.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_52_a_run_that_moves_head_stamps_nothing(flavour, tmp_path):
+    """r3 BLOCK 2: a command that commits must not get the new HEAD stamped."""
+    vmap = {"version": 1,
+            "rules": [_local(["README.md"], ["git commit -q --allow-empty -m moved"])],
+            "default": [], "unmapped": "ignore"}
+    root = _repo(tmp_path, vmap)
+    start = _head(root)
+
+    done = _run(flavour, root, "--all")
+
+    assert (done.returncode, "HEAD moved during the run" in done.stderr,
+            _record(root).get("all_clean_at"), _head(root) != start,
+            (root / ".crew" / ".verify-verified-at").exists()) == (2, True, None, True, False), \
+        done.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_52_all_cannot_start_without_clearing_its_evidence(flavour, tmp_path):
+    """r3 BLOCK 3: when the record cannot be written, no --all runs - so no
+    failing run can hide behind an older all_clean_at it could not clear."""
+    vmap = {"version": 1, "rules": [_local(["README.md"], ["touch ../ran"])],
+            "default": [], "unmapped": "ignore"}
+    root = _repo(tmp_path, vmap)
+    _clean_all(flavour, root)
+    (tmp_path / "ran").unlink()
+    (root / ".crew" / ".verify-gate.record.json.tmp").mkdir()
+
+    done = _run(flavour, root, "--all")
+
+    assert (done.returncode, "could not clear the previous clean --all evidence" in done.stderr,
+            (tmp_path / "ran").exists()) == (2, True, False), done.stderr
+
+
+def test_52_clear_all_clean_keeps_rules(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".crew").mkdir()
+    entry = {"status": "skipped", "label": "rules[0]", "reason": "x", "sha": "a" * 40}
+    (tmp_path / ".crew" / ".verify-gate.record.json").write_text(
+        json.dumps({"rules": {"k": entry}, "all_clean_at": "b" * 40}), encoding="utf-8")
+
+    assert verify_record.cmd_clear_all_clean() is True
+
+    assert _record(tmp_path) == {"rules": {"k": entry}, "all_clean_at": None}
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_52_all_still_rebuilds_a_corrupt_record(flavour, tmp_path):
+    root = _repo(tmp_path, _flag_map())
+    (root / ".crew" / ".verify-gate.record.json").write_text("not json", encoding="utf-8")
+
+    _clean_all(flavour, root)
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_52_a_clean_stop_keeps_all_clean_at(flavour, tmp_path):
+    root = _repo(tmp_path, _flag_map())
+    _clean_all(flavour, root)
+    before = _record(root)["all_clean_at"]
+    (root / "README.md").write_text("edited", encoding="utf-8")
+
+    done = _run(flavour, root)
+
+    assert (done.returncode, _record(root).get("all_clean_at")) == (0, before), done.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_52_a_clean_stop_never_sets_all_clean_at(flavour, tmp_path):
+    root = _repo(tmp_path, _flag_map())
+    (root / "README.md").write_text("edited", encoding="utf-8")
+
+    done = _run(flavour, root)
+
+    assert (done.returncode, _record(root).get("all_clean_at")) == (0, None), done.stderr
+
+
+_CLEAN_OUTCOME = {"failed": False, "skipped": False, "deferred": 0}
+
+
+def _unit_sync(tmp_path, monkeypatch, sha="c" * 40, matched=None, cmd_log=None, all_run=True,
+               outcome=None, head_moved=False, record=None):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".crew").mkdir(exist_ok=True)
+    rule = {"paths": ["a.py"], "run": ["echo ok"]}
+    (tmp_path / ".crew" / "verify.json").write_text(
+        json.dumps({"version": 1, "rules": [rule]}), encoding="utf-8")
+    if record is not None:
+        (tmp_path / ".crew" / ".verify-gate.record.json").write_text(record, encoding="utf-8")
+    key = verify_record.rule_key(rule)
+    if matched is None:
+        matched = [{"key": key, "label": "rules[0]", "kind": "normal", "cmds": ["echo ok"]}]
+    if cmd_log is None:
+        cmd_log = [{"cmd": "echo ok", "status": "pass", "elapsed": 0}]
+    verify_record._sync(sha, matched, cmd_log, all_run,  # pylint: disable=protected-access
+                        _CLEAN_OUTCOME if outcome is None else outcome, head_moved)
+    return _record(tmp_path).get("all_clean_at"), key
+
+
+def test_52_all_clean_at_unit_control_is_the_sha(tmp_path, monkeypatch):
+    assert _unit_sync(tmp_path, monkeypatch)[0] == "c" * 40
+
+
+@pytest.mark.parametrize("case", ["missing", "failed", "skipped", "deferred", "deferred-bool",
+                                  "wrong-type", "head-moved"])
+def test_52_all_clean_at_needs_a_clean_outcome(tmp_path, monkeypatch, case):
+    outcome = {"missing": "absent", "failed": dict(_CLEAN_OUTCOME, failed=True),
+               "skipped": dict(_CLEAN_OUTCOME, skipped=True),
+               "deferred": dict(_CLEAN_OUTCOME, deferred=1),
+               "deferred-bool": dict(_CLEAN_OUTCOME, deferred=False),
+               "wrong-type": dict(_CLEAN_OUTCOME, failed=0),
+               "head-moved": _CLEAN_OUTCOME}[case]
+
+    got, _ = _unit_sync(tmp_path, monkeypatch, outcome=outcome,
+                        head_moved=(case == "head-moved"))
+
+    assert got is None
+
+
+@pytest.mark.parametrize("case", ["bad-sha", "empty-sha", "never-ran", "missing-cmd",
+                                  "lost-record", "orphan"])
+def test_52_all_clean_at_is_null_unless_fully_clean(tmp_path, monkeypatch, case):
+    kwargs = {}
+    if case == "bad-sha":
+        kwargs["sha"] = "not-a-sha"
+    elif case == "empty-sha":
+        kwargs["sha"] = ""
+    elif case == "never-ran":
+        kwargs["matched"] = [{"key": "k", "label": "r", "kind": "chronic", "cmds": ["echo ok"]}]
+    elif case == "missing-cmd":
+        kwargs["cmd_log"] = []
+    elif case == "lost-record":
+        kwargs["all_run"] = False
+        kwargs["record"] = "not json"
+    else:
+        stale = {"status": "chronic", "label": "old", "reason": "x", "sha": "a" * 40}
+        kwargs["all_run"] = False
+        kwargs["record"] = json.dumps({"rules": {"gone": stale}, "all_clean_at": "c" * 40})
+
+    got, _ = _unit_sync(tmp_path, monkeypatch, **kwargs)
+
+    assert got is None
